@@ -2,6 +2,10 @@
 
 An eBook reader with a built-in AI reading assistant. Works with your ChatGPT subscription, API keys, and local models.
 
+<a href="https://www.youtube.com/watch?v=LNPL-dAxOV0">
+  <img src="https://img.youtube.com/vi/LNPL-dAxOV0/maxresdefault.jpg" alt="Quill demo" />
+</a>
+
 <table>
   <tr>
     <td><img src="assets/home.png" alt="Library view" /></td>
@@ -12,6 +16,8 @@ An eBook reader with a built-in AI reading assistant. Works with your ChatGPT su
     <td align="center"><em>Reader with AI chat & word lookup</em></td>
   </tr>
 </table>
+
+> Also on iOS — [Quill on the App Store](https://apps.apple.com/us/app/quill-ai-book-reader/id6762075206). Your library, reading progress, highlights, and settings sync between Mac, iPhone, and iPad via iCloud.
 
 ## Features
 
@@ -27,9 +33,11 @@ An eBook reader with a built-in AI reading assistant. Works with your ChatGPT su
 
 ### Organization
 - **Library** — Grid/list views, search, status filters, collections
-- **iCloud Sync** — Sync books, progress, and settings across Macs
+- **iCloud Sync** — Sync books, progress, highlights, and settings across Mac, iPhone, and iPad
 
 ## Download
+
+### macOS
 
 Grab the latest `.dmg` from the [Releases](https://github.com/yicheng47/quill/releases) page:
 
@@ -41,6 +49,10 @@ Grab the latest `.dmg` from the [Releases](https://github.com/yicheng47/quill/re
 Open the `.dmg` and drag **Quill.app** to your Applications folder.
 
 **Requirements:** macOS 14.4 (Sonoma) or later for PDF support. EPUB files work on earlier versions.
+
+### iOS
+
+[Quill on the App Store](https://apps.apple.com/us/app/quill-ai-book-reader/id6762075206) — iPhone and iPad. Signs in to the same iCloud account as the Mac app to keep your library in sync.
 
 ## AI Setup
 
