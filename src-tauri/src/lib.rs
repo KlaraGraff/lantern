@@ -433,6 +433,22 @@ pub fn run() {
             // `ubiquity_dir = None` and therefore no engine boot, even
             // though their durable state said "sync on." Every write
             // after that stayed in `_pending_publish` indefinitely.
+            // Self-heal: if .migration_complete survived but quill.db
+            // was deleted (e.g. user cleared app data via Finder, which
+            // skips hidden dot-files), remove the stale marker so the
+            // app starts fresh instead of booting the sync engine into
+            // an empty database — which blocks setup() reading iCloud
+            // peer files that may be evicted/slow.
+            if sync::migration::is_migration_complete(&local_dir)
+                && !local_dir.join("quill.db").exists()
+            {
+                log::warn!(
+                    "sync: .migration_complete present but quill.db missing — \
+                     clearing stale marker to start fresh"
+                );
+                let _ = std::fs::remove_file(local_dir.join(".migration_complete"));
+            }
+
             let icloud_was_enabled = icloud::is_icloud_enabled(&local_dir);
             let ubiquity_dir =
                 sync::migration::resolve_ubiquity_dir(&local_dir, icloud_was_enabled);
