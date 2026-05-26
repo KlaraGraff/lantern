@@ -154,10 +154,10 @@ pub fn sync_status(
         || icloud::is_icloud_available();
     let enabled = sync_state.engine_snapshot()?.is_some();
 
-    // Peer list + pending counts only matter when sync is on. Skip
-    // the iCloud directory reads entirely when disabled — they can
-    // stall on evicted files and there's nothing to show anyway.
-    let (peer_infos, pending_events, last_replay_at) = if enabled {
+    // Peer list + outbox count when the user has sync enabled (even
+    // if the engine hasn't booted yet — e.g. during async boot or
+    // offline queue-only mode). Skip when fully disabled.
+    let (peer_infos, pending_events, last_replay_at) = if sync_enabled {
         let peers = match shared_dir.as_ref() {
             Some(dir) => peers::list_peers(dir, &device.device_uuid).unwrap_or_else(|e| {
                 log::warn!("sync_status: list_peers failed: {e}");
@@ -458,6 +458,23 @@ pub fn sync_disable(
     }
 
     sync::migration::remove_sync_settings(&local.0)?;
+
+    // Final sweep: if the async boot thread installed an engine/watcher
+    // between our initial snapshot and the marker removal, clear it now.
+    // Without this, a boot that races with disable can leave a watcher
+    // thread alive after sync is "off."
+    {
+        let mut eg = sync_state.engine.lock()
+            .map_err(|e| AppError::Other(format!("engine mutex: {e}")))?;
+        let mut wg = sync_state.watcher.lock()
+            .map_err(|e| AppError::Other(format!("watcher mutex: {e}")))?;
+        if eg.is_some() || wg.is_some() {
+            log::warn!("sync_disable: boot thread installed engine during disable — clearing");
+            *eg = None;
+            *wg = None;
+            sync_writer.set_log(None);
+        }
+    }
 
     Ok(())
 }
