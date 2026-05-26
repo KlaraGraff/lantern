@@ -154,40 +154,34 @@ pub fn sync_status(
         || icloud::is_icloud_available();
     let enabled = sync_state.engine_snapshot()?.is_some();
 
-    // Peer list + per-peer pending events. Both are cheap reads off
-    // the shared folder; both can fail individually without making
-    // the whole status call hard-fail (settings UI just shows fewer
-    // peers / `pending = 0`).
-    let peers = match shared_dir.as_ref() {
-        Some(dir) => peers::list_peers(dir, &device.device_uuid).unwrap_or_else(|e| {
-            log::warn!("sync_status: list_peers failed: {e}");
-            Vec::new()
-        }),
-        None => Vec::new(),
-    };
-    let watermarks = read_watermarks(&db).unwrap_or_default();
-    let peer_infos: Vec<PeerInfo> = peers
-        .into_iter()
-        .map(|p| {
-            let pending = match shared_dir.as_ref() {
-                Some(dir) => count_pending_for_peer(dir, &p.device_uuid, watermarks.iter()
-                    .find(|(d, _)| d == &p.device_uuid)
-                    .and_then(|(_, w)| w.as_deref())),
-                None => 0,
-            };
-            PeerInfo {
+    // Peer list + pending counts only matter when sync is on. Skip
+    // the iCloud directory reads entirely when disabled — they can
+    // stall on evicted files and there's nothing to show anyway.
+    let (peer_infos, pending_events, last_replay_at) = if enabled {
+        let peers = match shared_dir.as_ref() {
+            Some(dir) => peers::list_peers(dir, &device.device_uuid).unwrap_or_else(|e| {
+                log::warn!("sync_status: list_peers failed: {e}");
+                Vec::new()
+            }),
+            None => Vec::new(),
+        };
+        let infos: Vec<PeerInfo> = peers
+            .into_iter()
+            .map(|p| PeerInfo {
                 device_uuid: p.device_uuid,
                 name: p.name,
                 platform: p.platform,
                 app_version: p.app_version,
                 last_seen: p.last_seen,
-                pending_events: pending,
-            }
-        })
-        .collect();
-
-    let pending_events = count_local_outbox(&db).unwrap_or(0);
-    let last_replay_at = read_last_replay_at(&db).unwrap_or(None);
+                pending_events: 0,
+            })
+            .collect();
+        let pending = count_local_outbox(&db).unwrap_or(0);
+        let last = read_last_replay_at(&db).unwrap_or(None);
+        (infos, pending, last)
+    } else {
+        (Vec::new(), 0, None)
+    };
 
     Ok(SyncStatus {
         enabled,
@@ -578,17 +572,6 @@ fn publish_bootstrap_snapshot(
     Ok(())
 }
 
-fn read_watermarks(db: &Db) -> AppResult<Vec<(String, Option<String>)>> {
-    let conn = db.reader();
-    let mut stmt = conn.prepare(
-        "SELECT peer_device, last_event_id FROM _replay_state",
-    )?;
-    let rows = stmt
-        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)))?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
-}
-
 fn count_local_outbox(db: &Db) -> AppResult<i64> {
     let conn = db.reader();
     let n: i64 = conn
@@ -608,61 +591,6 @@ fn read_last_replay_at(db: &Db) -> AppResult<Option<i64>> {
         .ok()
         .flatten();
     Ok(v)
-}
-
-/// Cheap "lines past the watermark" counter for one peer's log.
-/// Reads the file, splits on `\n`, and counts entries with `id >`
-/// the stored watermark via a string compare on the JSON `"id"`
-/// field. Returns 0 on any read/parse error — the count is purely
-/// for the settings UI's "pending" pill.
-fn count_pending_for_peer(shared_dir: &Path, peer: &str, watermark: Option<&str>) -> i64 {
-    use crate::icloud;
-    let log_path = shared_dir.join("logs").join(format!("{peer}.jsonl"));
-    if !log_path.exists() || icloud::has_icloud_placeholder(&log_path) {
-        return 0;
-    }
-    let bytes = {
-        let path = log_path.clone();
-        let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = tx.send(fs::read(&path));
-        });
-        match rx.recv_timeout(std::time::Duration::from_secs(2)) {
-            Ok(Ok(b)) => b,
-            _ => return 0,
-        }
-    };
-    let mut count = 0i64;
-    for line in bytes.split(|&b| b == b'\n') {
-        if line.is_empty() {
-            continue;
-        }
-        // Pull "id":"..." with a permissive substring search instead
-        // of full JSON parse — this runs every status poll and we
-        // don't want to deserialize every event for an approximate
-        // count.
-        let s = match std::str::from_utf8(line) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        let id_start = match s.find(r#""id":""#) {
-            Some(i) => i + 6,
-            None => continue,
-        };
-        let id_end = match s[id_start..].find('"') {
-            Some(i) => id_start + i,
-            None => continue,
-        };
-        let id = &s[id_start..id_end];
-        let past_watermark = match watermark {
-            Some(w) => id > w,
-            None => true,
-        };
-        if past_watermark {
-            count += 1;
-        }
-    }
-    count
 }
 
 /// True when `name` matches the iCloud-evicted-placeholder pattern
@@ -942,42 +870,6 @@ mod tests {
         copy_dir_contents(&src, &dst).unwrap();
         assert!(dst.join("a.epub").exists());
         assert!(src.join("a.epub").exists(), "copy must not delete source");
-    }
-
-    #[test]
-    fn count_pending_for_peer_handles_missing_log() {
-        let tmp = TempDir::new().unwrap();
-        let n = count_pending_for_peer(tmp.path(), "nope", None);
-        assert_eq!(n, 0);
-    }
-
-    #[test]
-    fn count_pending_for_peer_counts_lines_past_watermark() {
-        let tmp = TempDir::new().unwrap();
-        let logs = tmp.path().join("logs");
-        fs::create_dir_all(&logs).unwrap();
-        let log = logs.join("peer-A.jsonl");
-        let payload = r#""ts":1,"device":"peer-A","v":1,"type":"x","payload":{}"#;
-        let lines = format!(
-            r#"{{"id":"01HZA00000000000000000A001",{payload}}}
-{{"id":"01HZA00000000000000000A002",{payload}}}
-{{"id":"01HZA00000000000000000A003",{payload}}}
-"#,
-        );
-        fs::write(&log, lines).unwrap();
-
-        // No watermark — count all 3.
-        assert_eq!(count_pending_for_peer(tmp.path(), "peer-A", None), 3);
-        // Past id-A001 — count 2.
-        assert_eq!(
-            count_pending_for_peer(tmp.path(), "peer-A", Some("01HZA00000000000000000A001")),
-            2
-        );
-        // Past the last id — count 0.
-        assert_eq!(
-            count_pending_for_peer(tmp.path(), "peer-A", Some("01HZA00000000000000000A003")),
-            0
-        );
     }
 
     /// Regression for PR #193's review finding: enabling sync on a
