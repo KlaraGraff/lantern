@@ -48,10 +48,11 @@ function deriveTitle(userMsg: string): string {
   return title;
 }
 
-/** Generate a chat title using a dedicated AI call with per-request event channel. */
+/** Generate a chat title using a dedicated AI call with per-request event channel.
+ *  Titles from the user's first message alone so it can run concurrently with
+ *  the response stream instead of waiting for it to finish. */
 async function generateAiTitle(
   userMsg: string,
-  assistantMsg: string,
 ): Promise<string | null> {
   const requestId = `title-${Date.now()}`;
   const eventName = `ai-title-chunk-${requestId}`;
@@ -91,7 +92,7 @@ async function generateAiTitle(
   // Fire the command (returns immediately, streaming happens in background)
   invoke("ai_generate_title", {
     userMessage: userMsg,
-    assistantMessage: assistantMsg,
+    assistantMessage: "",
     requestId,
   }).catch(() => {
     unlisten();
@@ -116,6 +117,10 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [titling, setTitling] = useState(false);
+  // True from mount until the first initialize() resolves. Consumers gate
+  // sending on this so a message can't be sent (and lazily create a *new*
+  // chat) before the existing session chat has loaded.
+  const [initializing, setInitializing] = useState(true);
   const [chatId, setChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<ChatRecord[]>([]);
 
@@ -124,6 +129,14 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
   const messagesRef = useRef<ChatMessage[]>([]);
   const chatIdRef = useRef<string | null>(null);
   const streamingRef = useRef(false);
+  const initializingRef = useRef(true);
+
+  // Keep the ref in lockstep with the state so send() (which reads refs to
+  // avoid stale closures) can refuse while initialization is in flight.
+  const setInitializingSynced = (v: boolean) => {
+    initializingRef.current = v;
+    setInitializing(v);
+  };
 
   // Cleanup stream listener on unmount
   useEffect(() => {
@@ -215,25 +228,35 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
 
   const initialize = useCallback(async (bid?: string) => {
     const targetBook = bid || bookId;
-    if (!targetBook) return;
-    if (initializedBookRef.current === targetBook) return;
+    if (!targetBook) { setInitializingSynced(false); return; }
+    if (initializedBookRef.current === targetBook) { setInitializingSynced(false); return; }
     initializedBookRef.current = targetBook;
+    setInitializingSynced(true);
 
-    const chatList = await refreshChats(targetBook);
-    if (chatList.length > 0) {
-      await loadChat(chatList[0].id);
-    } else {
-      // No chats yet — show empty state without creating a DB record.
-      // A chat will be created lazily on first send.
-      setChatId(null);
-      chatIdRef.current = null;
-      updateMessages([]);
+    try {
+      const chatList = await refreshChats(targetBook);
+      if (chatList.length > 0) {
+        await loadChat(chatList[0].id);
+      } else {
+        // No chats yet — show empty state without creating a DB record.
+        // A chat will be created lazily on first send.
+        setChatId(null);
+        chatIdRef.current = null;
+        updateMessages([]);
+      }
+    } finally {
+      setInitializingSynced(false);
     }
   }, [bookId, refreshChats, loadChat]);
 
   /* eslint-disable react-hooks/preserve-manual-memoization */
   const send = useCallback(
     async (content: string, context?: string, contextCfi?: string) => {
+      // Refuse while the session chat is still loading — otherwise the lazy
+      // chat-creation path below would spawn a *new* chat and miss the
+      // existing one. Belt-and-suspenders alongside the UI gate.
+      if (initializingRef.current) return;
+
       let currentChatId = chatIdRef.current;
       const currentBookId = bookId;
 
@@ -246,8 +269,29 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       }
       if (!currentChatId) return;
 
-      // Show title loading immediately for new chats
-      if (isNewChat) setTitling(true);
+      // New chat: generate the title from the user's message, concurrently with
+      // the response stream (not after it), showing a loading state until it
+      // lands. Falls back to a truncated title if the AI call fails.
+      if (isNewChat && currentBookId) {
+        const titleSource = context || content;
+        setTitling(true);
+        generateAiTitle(titleSource).then(async (aiTitle) => {
+          try {
+            // Only auto-title if the chat is still untitled — the user (or a
+            // synced rename) may have renamed it while generation was pending.
+            const chat = await invoke<ChatRecord>("get_chat", { chatId: currentChatId });
+            if (chat.title === "New chat") {
+              const title = aiTitle || deriveTitle(titleSource);
+              if (title) {
+                await invoke("rename_chat", { chatId: currentChatId, title });
+                await refreshChats(currentBookId);
+              }
+            }
+          } catch { /* ignore */ } finally {
+            setTitling(false);
+          }
+        });
+      }
 
       const userMessage: ChatMessage = {
         id: nextMsgId(),
@@ -308,25 +352,6 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
               } catch (err) {
                 console.error("Failed to save assistant message:", err);
               }
-            }
-
-            // Auto-title: use AI with per-request channel, fallback to truncation
-            if (currentBookId && isNewChat) {
-              try {
-                const chat = await invoke<ChatRecord>("get_chat", { chatId: currentChatId });
-                if (chat.title === "New chat") {
-                  const userText = context || content;
-                  const aiTitle = await generateAiTitle(userText, fullContent);
-                  const title = aiTitle || deriveTitle(userText);
-                  if (title) {
-                    await invoke("rename_chat", { chatId: currentChatId, title });
-                    await refreshChats(currentBookId);
-                  }
-                }
-              } catch {
-                // Ignore auto-title errors
-              }
-              setTitling(false);
             }
 
             return;
@@ -433,6 +458,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
     messages,
     streaming,
     titling,
+    initializing,
     send,
     reset,
     initialize,

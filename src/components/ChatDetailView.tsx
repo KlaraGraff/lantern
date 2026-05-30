@@ -17,7 +17,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
   const { t } = useTranslation();
   const {
     messages, streaming, send, initialize,
-    chatId, chats, titling, loadChat, deleteChat, renameChat,
+    chatId, chats, titling, initializing, loadChat, deleteChat, renameChat,
   } = useAiChat(chat.book_id, { title: chat.book_title ?? undefined });
 
   const [input, setInput] = useState("");
@@ -45,7 +45,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
   }, [editingTitle]);
 
   const handleSend = () => {
-    if (!input.trim() || streaming) return;
+    if (!input.trim() || streaming || initializing) return;
     send(input.trim());
     setInput("");
   };
@@ -99,6 +99,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
               <span
                 className="text-[15px] font-semibold text-text-primary tracking-[-0.23px] truncate cursor-default"
                 onDoubleClick={() => {
+                  if (titling) return;
                   setTitleDraft(currentTitle);
                   setEditingTitle(true);
                 }}
@@ -167,14 +168,17 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={t("ai.placeholder")}
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
             rows={2}
             className="flex-1 h-[60px] bg-bg-input rounded-lg px-3 py-2 text-[14px] text-text-primary placeholder:text-text-placeholder tracking-[-0.15px] leading-5 outline-none border border-transparent focus:border-accent resize-none"
           />
           <button
             onClick={handleSend}
-            disabled={!input.trim() || streaming}
+            disabled={!input.trim() || streaming || initializing}
             className={`size-[60px] shrink-0 rounded-lg flex items-center justify-center cursor-pointer bg-accent text-white ${
-              !input.trim() || streaming ? "opacity-50" : ""
+              !input.trim() || streaming || initializing ? "opacity-50" : ""
             }`}
           >
             {streaming ? (
