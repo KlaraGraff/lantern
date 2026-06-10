@@ -1,6 +1,6 @@
 [package]
 name = "quill"
-version = "1.2.6"
+version = "1.2.7"
 description = "An AI-powered ebook reader"
 authors = ["you"]
 edition = "2021"
