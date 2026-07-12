@@ -56,13 +56,14 @@ export default function SettingsPage() {
   // AI config
   const [provider, setProvider] = useState("openai");
   const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState("gpt-5.3-codex");
+  const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
+  const [model, setModel] = useState("gpt-4o-mini");
   const [baseUrl, setBaseUrl] = useState("https://api.openai.com");
   const [temperature, setTemperature] = useState(0.3);
   const [keepAlive, setKeepAlive] = useState("30m");
 
   // OAuth
-  const [authMode, setAuthMode] = useState<"api_key" | "oauth">("oauth");
+  const [authMode, setAuthMode] = useState<"api_key" | "oauth">("api_key");
   const [oauthStatus, setOauthStatus] = useState<{ connected: boolean; account_id: string | null }>({ connected: false, account_id: null });
   const [oauthLoading, setOauthLoading] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
@@ -117,15 +118,20 @@ export default function SettingsPage() {
 
   const handleSaveAI = async () => {
     try {
-      await saveBulk({
+      const nextSettings: Record<string, string> = {
         ai_provider: provider,
-        ai_api_key: apiKey,
         ai_model: model,
         ai_base_url: baseUrl,
         ai_temperature: String(temperature),
         ai_keep_alive: keepAlive,
         ai_auth_mode: authMode,
-      });
+      };
+      if (apiKey.trim()) nextSettings.ai_api_key = apiKey.trim();
+      await saveBulk(nextSettings);
+      if (apiKey.trim()) {
+        setApiKey("");
+        setApiKeyConfigured(true);
+      }
       setAiDirty(false);
       showSavedToast(t("settings.ai.savedToast"));
     } catch (err) {
@@ -137,7 +143,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (loading) return;
     if (settings.ai_provider) setProvider(settings.ai_provider);
-    if (settings.ai_api_key) setApiKey(settings.ai_api_key);
+    setApiKeyConfigured(settings.ai_api_key_configured === "true");
     if (settings.ai_model) setModel(settings.ai_model);
     if (settings.ai_base_url) setBaseUrl(settings.ai_base_url);
     if (settings.ai_temperature) setTemperature(parseFloat(settings.ai_temperature));
@@ -156,6 +162,10 @@ export default function SettingsPage() {
     setLookupTranslationLanguage(settings.lookup_translation_language || settings.language || "en");
     setShowTranslation(settings.show_translation === "true");
   }, [settings, loading]);
+
+  useEffect(() => {
+    invoke<boolean>("ai_api_key_configured").then(setApiKeyConfigured).catch(() => {});
+  }, []);
 
   // Fetch iCloud status on mount
   useEffect(() => {
@@ -231,15 +241,16 @@ export default function SettingsPage() {
       setOauthToast(true);
       setTimeout(() => setOauthToast(false), 2000);
       // Auto-save AI configuration after successful OAuth login
-      await saveBulk({
+      const nextSettings: Record<string, string> = {
         ai_provider: provider,
-        ai_api_key: apiKey,
         ai_model: model,
         ai_base_url: baseUrl,
         ai_temperature: String(temperature),
         ai_keep_alive: keepAlive,
         ai_auth_mode: authMode,
-      });
+      };
+      if (apiKey.trim()) nextSettings.ai_api_key = apiKey.trim();
+      await saveBulk(nextSettings);
       setAiDirty(false);
     } catch (err) {
       setOauthError(err instanceof Error ? err.message : String(err));
@@ -436,7 +447,7 @@ export default function SettingsPage() {
                     type="password"
                     value={apiKey}
                     onChange={(e) => { setApiKey(e.target.value); setAiDirty(true); }}
-                    placeholder={provider === "anthropic" ? "sk-ant-..." : "sk-..."}
+                    placeholder={apiKeyConfigured ? t("settings.ai.apiKeyStored") : provider === "anthropic" ? "sk-ant-..." : "sk-..."}
                   />
                   <p className="text-[12px] text-text-muted mt-1.5">
                     {t("settings.ai.apiKeyHint")}
