@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Languages,
@@ -12,23 +12,42 @@ import {
   ArrowDownAZ,
   ArrowDownWideNarrow,
   ArrowUpWideNarrow,
+  Download,
+  GraduationCap,
+  CheckCircle2,
+  History,
 } from "lucide-react";
 import Button from "./ui/Button";
-import { useAllDictionary, type DictionaryWord } from "../hooks/useDictionary";
+import { useAllDictionary, useAllLookupHistory, type DictionaryWord } from "../hooks/useDictionary";
 import { timeAgo } from "../utils/timeAgo";
 import VocabDetailModal from "./VocabDetailModal";
+import { openReaderWindow } from "../utils/openReaderWindow";
 
 type SortMode = "newest" | "oldest" | "az";
 type ViewMode = "list" | "card";
+type ContentTab = "vocab" | "history";
 
 export default function DictionaryContent() {
   const { t } = useTranslation();
-  const { words, remove } = useAllDictionary();
+  const { words, remove, updateMastery } = useAllDictionary();
+  const { records } = useAllLookupHistory();
   const [sort, setSort] = useState<SortMode>("newest");
   const [view, setView] = useState<ViewMode>("list");
   const [search, setSearch] = useState("");
   const [bookFilter, setBookFilter] = useState<string | null>(null);
   const [activeWord, setActiveWord] = useState<DictionaryWord | null>(null);
+  const [reviewOnly, setReviewOnly] = useState(false);
+  const [contentTab, setContentTab] = useState<ContentTab>("vocab");
+  const [now, setNow] = useState(0);
+
+  useEffect(() => {
+    const updateNow = () => setNow(Date.now());
+    updateNow();
+    const timer = window.setInterval(updateNow, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const dueWords = useMemo(() => words.filter((word) => word.next_review_at !== null && word.next_review_at <= now), [now, words]);
 
   const filtered = useMemo(() => {
     let result = words;
@@ -39,8 +58,11 @@ export default function DictionaryContent() {
     if (bookFilter) {
       result = result.filter((w) => w.book_id === bookFilter);
     }
+    if (reviewOnly) {
+      result = result.filter((w) => w.next_review_at !== null && w.next_review_at <= now);
+    }
     return result;
-  }, [words, search, bookFilter]);
+  }, [words, search, bookFilter, reviewOnly, now]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
@@ -85,6 +107,38 @@ export default function DictionaryContent() {
   }, [words, t]);
 
   const isEmpty = words.length === 0;
+  const filteredRecords = useMemo(() => records.filter((record) => {
+    const query = search.toLowerCase().trim();
+    if (query && ![record.lookup_text, record.definition, record.context_sentence, record.book_title]
+      .filter(Boolean)
+      .some((value) => value!.toLowerCase().includes(query))) return false;
+    return !bookFilter || record.book_id === bookFilter;
+  }), [bookFilter, records, search]);
+  const historyBookPills = useMemo(() => {
+    const map = new Map<string, { title: string; count: number }>();
+    for (const record of records) {
+      const current = map.get(record.book_id) ?? { title: record.book_title || t("common.unknownBook"), count: 0 };
+      current.count++;
+      map.set(record.book_id, current);
+    }
+    return Array.from(map.entries()).map(([id, value]) => ({ id, ...value }));
+  }, [records, t]);
+
+  const scheduleLearning = (word: DictionaryWord) => updateMastery(word.id, "learning", now + 24 * 60 * 60 * 1000);
+  const markMastered = (word: DictionaryWord) => updateMastery(word.id, "mastered", null);
+  const exportCsv = () => {
+    const escape = (value: string | null | undefined) => `"${(value ?? "").replace(/"/g, '""')}"`;
+    const lines = [
+      ["word", "definition", "context", "book", "mastery", "reviews", "next_review_at"].map(escape).join(","),
+      ...words.map((word) => [word.word, word.definition, word.context_sentence, word.book_title, word.mastery, String(word.review_count), word.next_review_at ? new Date(word.next_review_at).toISOString() : ""].map(escape).join(",")),
+    ];
+    const href = URL.createObjectURL(new Blob([`\uFEFF${lines.join("\n")}`], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = "quill-vocabulary.csv";
+    link.click();
+    URL.revokeObjectURL(href);
+  };
 
   return (
     <div className="flex-1 flex flex-col min-w-0">
@@ -93,9 +147,18 @@ export default function DictionaryContent() {
         <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-11" />
         <div className="pt-11 flex items-center justify-between mb-6">
           <h1 className="text-[24px] font-semibold text-text-primary tracking-[0.07px]">
-            {t("vocab.title")}
+            {contentTab === "vocab" ? t("vocab.title") : t("vocab.history")}
           </h1>
           <div className="flex items-center gap-0">
+            <button
+              type="button"
+              title={t("vocab.export")}
+              aria-label={t("vocab.export")}
+              onClick={exportCsv}
+              className="size-9 flex items-center justify-center rounded-lg text-text-muted hover:bg-bg-input cursor-pointer"
+            >
+              <Download size={16} />
+            </button>
             <Button variant="icon" size="md" active={view === "card"} onClick={() => setView("card")}>
               <LayoutGrid size={16} />
             </Button>
@@ -121,9 +184,32 @@ export default function DictionaryContent() {
         </div>
       </div>
 
+      <div className="flex items-center gap-1 px-page pb-3 border-b border-border">
+        <Button variant="ghost" size="sm" active={contentTab === "vocab"} onClick={() => setContentTab("vocab")}>
+          <Languages size={14} />
+          {t("vocab.savedTab")}
+        </Button>
+        <Button variant="ghost" size="sm" active={contentTab === "history"} onClick={() => setContentTab("history")}>
+          <History size={14} />
+          {t("vocab.historyTab")}
+          <span className="text-[11px] text-text-muted">{records.length}</span>
+        </Button>
+      </div>
+
       {/* Book filter pills + sort */}
-      {!isEmpty && (
+      {(contentTab === "vocab" ? !isEmpty : records.length > 0) && (
         <div className="flex items-center gap-2 px-page pt-2 pb-4 overflow-x-auto border-b border-border">
+          {contentTab === "vocab" && <button
+            type="button"
+            onClick={() => setReviewOnly((value) => !value)}
+            className={`flex items-center gap-1.5 h-8 px-[13px] rounded-full text-[12px] font-medium cursor-pointer shrink-0 transition-colors border ${
+              reviewOnly ? "bg-accent-bg border-accent/30 text-accent-text" : "bg-bg-surface border-border text-text-secondary hover:bg-bg-muted"
+            }`}
+          >
+            <GraduationCap size={12} />
+            {t("vocab.reviewDue")}
+            <span className="text-[11px]">{dueWords.length}</span>
+          </button>}
           <button
             onClick={() => setBookFilter(null)}
             className={`flex items-center gap-1.5 h-8 px-[13px] rounded-full text-[12px] font-medium cursor-pointer shrink-0 transition-colors border ${
@@ -135,10 +221,10 @@ export default function DictionaryContent() {
             <BookOpen size={12} className={bookFilter === null ? "text-accent-text" : ""} />
             {t("common.allBooks")}
             <span className={`text-[11px] ${bookFilter === null ? "text-accent-text" : "text-text-muted"}`}>
-              {words.length}
+              {contentTab === "vocab" ? words.length : records.length}
             </span>
           </button>
-          {bookPills.map((pill) => (
+          {(contentTab === "vocab" ? bookPills : historyBookPills).map((pill) => (
             <button
               key={pill.id}
               onClick={() => setBookFilter(bookFilter === pill.id ? null : pill.id)}
@@ -156,7 +242,7 @@ export default function DictionaryContent() {
             </button>
           ))}
 
-          <div className="ml-auto flex items-center gap-1 shrink-0">
+          {contentTab === "vocab" && <div className="ml-auto flex items-center gap-1 shrink-0">
             <button
               onClick={() => setSort("newest")}
               className={`flex items-center gap-1 h-7 px-2.5 rounded-lg text-[11px] font-medium cursor-pointer transition-colors ${
@@ -184,13 +270,53 @@ export default function DictionaryContent() {
               <ArrowDownAZ size={12} />
               {t("vocab.az")}
             </button>
-          </div>
+          </div>}
         </div>
       )}
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-page pb-20">
-        {isEmpty ? (
+        {contentTab === "history" ? (
+          records.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full">
+              <div className="size-16 rounded-full bg-bg-input flex items-center justify-center mb-4">
+                <History size={28} className="text-text-muted" />
+              </div>
+              <h2 className="text-[18px] font-medium text-text-primary mb-2">{t("vocab.historyEmpty")}</h2>
+              <p className="text-[14px] text-text-muted text-center max-w-[296px]">{t("vocab.historyEmptySub")}</p>
+            </div>
+          ) : (
+            <div className="max-w-[720px] space-y-2">
+              {filteredRecords.map((record) => (
+                <div key={record.id} className="border border-border rounded-lg bg-bg-surface px-4 py-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="text-[15px] font-semibold text-text-primary">{record.lookup_text}</p>
+                      <p className="mt-1 text-[13px] text-text-secondary line-clamp-2 whitespace-pre-line">{record.definition}</p>
+                    </div>
+                    <span className="shrink-0 text-[11px] text-text-muted">{timeAgo(record.last_looked_up_at)}</span>
+                  </div>
+                  {record.context_sentence && <p className="mt-2 text-[12px] italic text-text-muted line-clamp-2">"{record.context_sentence}"</p>}
+                  <div className="mt-2 flex items-center gap-3 text-[11px] text-text-muted">
+                    <span className="flex items-center gap-1 min-w-0"><BookOpen size={12} /><span className="truncate">{record.book_title || t("common.unknownBook")}</span></span>
+                    {record.chapter && <span className="truncate">{record.chapter}</span>}
+                    {record.lookup_count > 1 && <span>{t("vocab.lookedUpCount", { count: record.lookup_count })}</span>}
+                    {record.cfi && (
+                      <button
+                        type="button"
+                        onClick={() => openReaderWindow(record.book_id, { openVocab: true, cfi: record.cfi })}
+                        className="ml-auto flex items-center gap-1 text-accent-text hover:opacity-70 cursor-pointer"
+                      >
+                        {t("vocab.openInReader")} <FileText size={12} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {filteredRecords.length === 0 && <p className="pt-8 text-center text-[14px] text-text-muted">{t("vocab.noMatches")}</p>}
+            </div>
+          )
+        ) : isEmpty ? (
           <div className="flex flex-col items-center justify-center h-full">
             <div className="size-16 rounded-full bg-bg-input flex items-center justify-center mb-4">
               <Languages size={28} className="text-text-muted" />
@@ -226,6 +352,9 @@ export default function DictionaryContent() {
                         <span className="block text-[14px] font-semibold text-text-primary leading-5">
                           {word.word}
                         </span>
+                        <span className={`inline-flex mt-1 text-[10px] font-medium ${word.mastery === "mastered" ? "text-success-text" : word.mastery === "learning" ? "text-accent-text" : "text-text-muted"}`}>
+                          {t(`vocab.mastery.${word.mastery}`)}
+                        </span>
                         {word.book_title && (
                           <span className="flex items-center gap-1 text-[11px] text-text-muted mt-0.5">
                             <BookOpen size={10} />
@@ -241,7 +370,27 @@ export default function DictionaryContent() {
                           </p>
                         )}
                       </div>
-                      <div className="flex items-center gap-3 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
+                        {word.mastery !== "mastered" && (
+                          <button
+                            type="button"
+                            onClick={(event) => { event.stopPropagation(); markMastered(word); }}
+                            title={t("vocab.markMastered")}
+                            className="size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-surface hover:text-success-text cursor-pointer"
+                          >
+                            <CheckCircle2 size={14} />
+                          </button>
+                        )}
+                        {word.mastery !== "learning" && word.mastery !== "mastered" && (
+                          <button
+                            type="button"
+                            onClick={(event) => { event.stopPropagation(); scheduleLearning(word); }}
+                            title={t("vocab.startLearning")}
+                            className="size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-surface hover:text-accent-text cursor-pointer"
+                          >
+                            <GraduationCap size={14} />
+                          </button>
+                        )}
                         <span className="text-[11px] text-text-muted">{timeAgo(word.created_at)}</span>
                         <button
                           onClick={(e) => {

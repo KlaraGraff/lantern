@@ -47,6 +47,15 @@ interface FoliateView extends HTMLElement {
   deleteAnnotation(annotation: { value: string }): Promise<void>;
   deselect(): void;
 }
+
+interface LookupRecord {
+  cfi: string | null;
+}
+
+interface VocabMarker {
+  cfi: string | null;
+  mastery: string;
+}
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 type PdfOverlay = { layers: React.CSSProperties[] } | null;
@@ -89,18 +98,20 @@ function getReaderThemeVars(theme: string): Record<string, string> | undefined {
       "--color-accent-bg": "#f3e8ff",
     };
     case "paper": return {
-      "--color-bg-page": "#E8D5B8",
-      "--color-bg-surface": "#F2E2C9",
-      "--color-bg-muted": "#ECD9BC",
-      "--color-bg-input": "#E2CEAF",
-      "--color-text-primary": "#34271B",
-      "--color-text-body": "#34271B",
-      "--color-text-secondary": "#5C4A38",
-      "--color-text-muted": "#8B7355",
-      "--color-text-placeholder": "#8B7355",
-      "--color-border": "#D4BA97",
-      "--color-border-light": "#E2CEAF",
-      "--color-accent-bg": "#E8D0B0",
+      "--color-bg-page": "#F4F0E7",
+      "--color-bg-surface": "#FAF7F0",
+      "--color-bg-muted": "#F7F3EB",
+      "--color-bg-input": "#EFE9DD",
+      "--color-text-primary": "#29251E",
+      "--color-text-body": "#29251E",
+      "--color-text-secondary": "#5F584D",
+      "--color-text-muted": "#827969",
+      "--color-text-placeholder": "#9A907F",
+      "--color-border": "#DDD5C8",
+      "--color-border-light": "#EEE8DD",
+      "--color-accent": "#A36A31",
+      "--color-accent-text": "#8A5728",
+      "--color-accent-bg": "#F0E3D1",
     };
     case "quiet": return {
       "--color-bg-page": "#5A5A63",
@@ -190,6 +201,13 @@ const highlightColorMap: Record<string, string> = {
   blue: "#60A5FA",
   pink: "#F472B6",
   purple: "#A78BFA",
+};
+
+const wordMarkerColor = {
+  lookup: "__lookup__",
+  vocabNew: "__vocab_new__",
+  learning: "__learning__",
+  mastered: "__mastered__",
 };
 
 const appWindow = getCurrentWebviewWindow();
@@ -290,7 +308,7 @@ export default function Reader() {
   } | null>(null);
   const [readerSettings, setReaderSettings] = useState<ReaderSettingsState>(() => ({
     theme: getDefaultReaderTheme(),
-    font: "georgia",
+    font: "palatino",
     fontSize: 26,
     brightness: 100,
     readingMode: "scrolling",
@@ -299,7 +317,13 @@ export default function Reader() {
     charSpacing: 0,
     wordSpacing: 0,
     margins: 0,
+    showLookupMarkers: true,
+    showNewVocabMarkers: true,
+    showLearningMarkers: true,
+    showMasteredMarkers: false,
   }));
+  const readerSettingsRef = useRef(readerSettings);
+  readerSettingsRef.current = readerSettings;
 
   const settingsAnchorRef = useRef<HTMLButtonElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -343,6 +367,10 @@ export default function Reader() {
         charSpacing: bookSettings.charSpacing ?? (g.char_spacing ? parseInt(g.char_spacing) : prev.charSpacing),
         wordSpacing: bookSettings.wordSpacing ?? (g.word_spacing ? parseInt(g.word_spacing) : prev.wordSpacing),
         margins: bookSettings.margins ?? (g.margins ? parseInt(g.margins) : prev.margins),
+        showLookupMarkers: bookSettings.showLookupMarkers ?? prev.showLookupMarkers,
+        showNewVocabMarkers: bookSettings.showNewVocabMarkers ?? prev.showNewVocabMarkers,
+        showLearningMarkers: bookSettings.showLearningMarkers ?? prev.showLearningMarkers,
+        showMasteredMarkers: bookSettings.showMasteredMarkers ?? prev.showMasteredMarkers,
       }));
       const savedZoom = localStorage.getItem(`reader-zoom-${bookId}`);
       if (savedZoom === "fit") {
@@ -676,25 +704,64 @@ export default function Reader() {
         });
       }) as EventListener);
 
-      // Highlight overlay system
+      // Highlight and word-marker overlay system. Markers are keyed by the
+      // exact CFI selected by the reader, so no EPUB text is rewritten or
+      // globally scanned. Manual highlights always win when ranges coincide.
       view.addEventListener("create-overlay", ((e: CustomEvent) => {
         const { index: _sectionIndex } = e.detail; // eslint-disable-line @typescript-eslint/no-unused-vars
-        // Load highlights for this section
         if (bookId) {
-          invoke<Highlight[]>("list_highlights", { bookId }).then((hls) => {
-            for (const hl of hls) {
-              try {
-                view.addAnnotation({ value: hl.cfi_range, color: hl.color });
-              } catch {
-                // Invalid CFI
+          Promise.all([
+            invoke<Highlight[]>("list_highlights", { bookId }),
+            invoke<LookupRecord[]>("list_lookup_records", { bookId }),
+            invoke<VocabMarker[]>("list_vocab_words", { bookId }),
+          ]).then(([highlights, lookups, vocab]) => {
+            const manual = new Set(highlights.map((hl) => hl.cfi_range));
+            const markers = new Map<string, string>();
+            const markerSettings = readerSettingsRef.current;
+            for (const lookupRecord of lookups) {
+              if (markerSettings.showLookupMarkers && lookupRecord.cfi && !manual.has(lookupRecord.cfi)) {
+                markers.set(lookupRecord.cfi, wordMarkerColor.lookup);
               }
             }
+            for (const word of vocab) {
+              if (!word.cfi || manual.has(word.cfi)) continue;
+              if (word.mastery === "mastered") {
+                if (markerSettings.showMasteredMarkers) markers.set(word.cfi, wordMarkerColor.mastered);
+              } else if (word.mastery === "learning") {
+                if (markerSettings.showLearningMarkers) markers.set(word.cfi, wordMarkerColor.learning);
+              } else if (markerSettings.showNewVocabMarkers) {
+                markers.set(word.cfi, wordMarkerColor.vocabNew);
+              }
+            }
+            for (const hl of highlights) view.addAnnotation({ value: hl.cfi_range, color: hl.color }).catch(() => {});
+            for (const [cfi, color] of markers) view.addAnnotation({ value: cfi, color }).catch(() => {});
           }).catch(() => {});
         }
       }) as EventListener);
 
       view.addEventListener("draw-annotation", ((e: CustomEvent) => {
         const { draw, annotation } = e.detail;
+        if (annotation.color === wordMarkerColor.lookup || annotation.color === wordMarkerColor.vocabNew || annotation.color === wordMarkerColor.learning || annotation.color === wordMarkerColor.mastered) {
+          const color = annotation.color === wordMarkerColor.learning
+            ? "#68A68A"
+            : annotation.color === wordMarkerColor.vocabNew ? "#B78538" : annotation.color === wordMarkerColor.mastered ? "#789B8D" : "#8D7C65";
+          draw((rects: DOMRectList) => {
+            const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            g.setAttribute("fill", color);
+            g.setAttribute("opacity", annotation.color === wordMarkerColor.lookup ? "0.55" : annotation.color === wordMarkerColor.mastered ? "0.45" : "0.72");
+            for (const { left, top, height, width } of rects) {
+              const el = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+              el.setAttribute("x", String(left));
+              el.setAttribute("y", String(top + height - 1.5));
+              el.setAttribute("height", "1.5");
+              el.setAttribute("width", String(width));
+              el.setAttribute("rx", "0.75");
+              g.append(el);
+            }
+            return g;
+          });
+          return;
+        }
         const color = highlightColorMap[annotation.color] || highlightColorMap.yellow;
         const isPdf = book?.format === "pdf";
         draw((rects: DOMRectList) => {
@@ -826,6 +893,21 @@ export default function Reader() {
     // bookReady is in deps so this re-runs once foliate finishes init —
     // fixes a race where DB-loaded settings arrive before view.renderer exists.
   }, [readerSettings, book?.format, bookReady]);
+
+  // Foliate rebuilds the overlay whenever a section is re-rendered. Trigger
+  // that lightweight redraw when marker visibility changes, so toggles take
+  // effect on the current chapter without reopening the book.
+  const markerVisibility = [
+    readerSettings.showLookupMarkers,
+    readerSettings.showNewVocabMarkers,
+    readerSettings.showLearningMarkers,
+    readerSettings.showMasteredMarkers,
+  ].join(":");
+  useEffect(() => {
+    if (book?.format === "pdf") return;
+    const renderer = viewRef.current?.renderer as { render?: () => void } | undefined;
+    renderer?.render?.();
+  }, [book?.format, markerVisibility]);
 
   const zoomRef = useRef<number | "fit">(zoom);
   zoomRef.current = zoom;
@@ -1565,6 +1647,10 @@ export default function Reader() {
           chapter={lookup.chapter}
           bookId={bookId!}
           cfi={lookup.cfi}
+          onAskFollowUp={(quote, cfi) => {
+            setAiContext({ text: quote, cfi });
+            setSidePanel("ai");
+          }}
           onClose={() => setLookup(null)}
         />
       )}

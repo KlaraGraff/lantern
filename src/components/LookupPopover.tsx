@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { X, Loader2, Sparkles, BookmarkPlus, Check, Copy, Settings } from "lucide-react";
+import { X, Loader2, Sparkles, BookmarkPlus, Check, Copy, Settings, MessageSquareMore } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
 import { LOOKUP_PROSE } from "./lookup-prose";
@@ -19,6 +19,7 @@ interface LookupPopoverProps {
   bookId: string;
   cfi?: string;
   onClose: () => void;
+  onAskFollowUp?: (quote: string, cfi?: string) => void;
 }
 
 function useStreamingLookup(
@@ -138,10 +139,12 @@ export default function LookupPopover({
   bookId,
   cfi,
   onClose,
+  onAskFollowUp,
 }: LookupPopoverProps) {
   const { t } = useTranslation();
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+  const historySavedRef = useRef(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
   // Two concurrent AI streams
@@ -157,6 +160,20 @@ export default function LookupPopover({
   const hasConfigurationError = aiNotConfigured || translationLanguageNotConfigured;
   const allDone = !definition.streaming && !context.streaming;
   const hasContent = definition.content || context.content;
+
+  useEffect(() => {
+    if (!allDone || !hasContent || hasConfigurationError || historySavedRef.current) return;
+    historySavedRef.current = true;
+    invoke("save_lookup_record", {
+      bookId,
+      lookupText: word,
+      contextSentence: sentence || null,
+      chapter: chapter || null,
+      cfi: cfi || null,
+      definition: displayedDefinitionContent(definition.contentRef.current),
+      contextExplanation: context.contentRef.current || null,
+    }).catch((err) => console.error("Failed to save lookup history:", err));
+  }, [allDone, bookId, cfi, chapter, context.contentRef, definition.contentRef, hasConfigurationError, hasContent, sentence, word]);
 
   // Position clamping — re-run whenever the popover resizes (e.g. as content streams in)
   const [pos, setPos] = useState({ left: x, top: y });
@@ -340,14 +357,34 @@ export default function LookupPopover({
       {/* Footer — Save & Copy */}
       {allDone && hasContent && !hasConfigurationError && (
         <div className="flex items-center justify-between px-4 py-2.5 border-t border-border/40">
-          <button
-            onClick={handleSave}
-            disabled={saved}
-            className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-accent-text hover:opacity-70 disabled:opacity-50 disabled:cursor-default"
-          >
-            {saved ? <Check size={14} /> : <BookmarkPlus size={14} />}
-            {saved ? t("lookup.saved") : t("lookup.saveToDict")}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSave}
+              disabled={saved}
+              className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-accent-text hover:opacity-70 disabled:opacity-50 disabled:cursor-default"
+            >
+              {saved ? <Check size={14} /> : <BookmarkPlus size={14} />}
+              {saved ? t("lookup.saved") : t("lookup.saveToDict")}
+            </button>
+            {onAskFollowUp && (
+              <button
+                onClick={() => {
+                  const quote = [
+                    `Word: ${word}`,
+                    `Sentence: ${sentence}`,
+                    `Definition: ${displayedDefinitionContent(definition.contentRef.current)}`,
+                    context.contentRef.current ? `In context: ${context.contentRef.current}` : "",
+                  ].filter(Boolean).join("\n\n");
+                  onAskFollowUp(quote, cfi);
+                  onClose();
+                }}
+                className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-text-secondary hover:text-accent-text"
+              >
+                <MessageSquareMore size={14} />
+                {t("lookup.askFollowUp")}
+              </button>
+            )}
+          </div>
           <button
             onClick={handleCopy}
             className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-text-muted hover:opacity-70"

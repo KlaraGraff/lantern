@@ -19,6 +19,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (11, include_str!("../migrations/011_lww_tiebreak_and_outbox.sql")),
     (12, include_str!("../migrations/012_vocab_context_explanation.sql")),
     (13, include_str!("../migrations/013_covers_in_db.sql")),
+    (14, include_str!("../migrations/014_lookup_history.sql")),
 ];
 
 /// SQLite handle for the local materialized view.
@@ -439,7 +440,7 @@ mod tests {
         let conn = db.conn.lock().unwrap();
         let version: i64 =
             conn.query_row("SELECT version FROM schema_version", [], |r| r.get(0)).unwrap();
-        assert_eq!(version, 13);
+        assert_eq!(version, MIGRATIONS.last().unwrap().0);
     }
 
     #[test]
@@ -475,7 +476,7 @@ mod tests {
         Db::run_migrations_on(&conn).unwrap();
         let version: i64 =
             conn.query_row("SELECT version FROM schema_version", [], |r| r.get(0)).unwrap();
-        assert_eq!(version, 13);
+        assert_eq!(version, MIGRATIONS.last().unwrap().0);
     }
 
     #[test]

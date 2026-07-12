@@ -14,12 +14,19 @@ pub fn get_all_settings(db: State<'_, Db>, secrets: State<'_, Secrets>) -> AppRe
         .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
         .collect::<Result<HashMap<_, _>, _>>()?;
 
-    // Merge sensitive keys from secrets store
-    if let Some(value) = secrets.get("ai_api_key") {
-        settings.insert("ai_api_key".to_string(), value);
-    }
+    // Never expose secret values to the webview. The UI only needs to know
+    // whether a key exists so it can preserve it when unrelated settings save.
+    settings.insert(
+        "ai_api_key_configured".to_string(),
+        secrets.get("ai_api_key").is_some().to_string(),
+    );
 
     Ok(settings)
+}
+
+#[tauri::command]
+pub fn ai_api_key_configured(secrets: State<'_, Secrets>) -> bool {
+    secrets.get("ai_api_key").is_some()
 }
 
 #[tauri::command]

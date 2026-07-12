@@ -19,14 +19,16 @@ export default function AiSettings({ settings, loading, saveBulk, showSavedToast
 
   // AI config
   const [provider, setProvider] = useState("openai");
+  const [providerLabel, setProviderLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState("gpt-5.3-codex");
+  const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
+  const [model, setModel] = useState("gpt-4o-mini");
   const [baseUrl, setBaseUrl] = useState("https://api.openai.com");
   const [temperature, setTemperature] = useState(0.3);
   const [keepAlive, setKeepAlive] = useState("30m");
 
   // OAuth
-  const [authMode, setAuthMode] = useState<"api_key" | "oauth">("oauth");
+  const [authMode, setAuthMode] = useState<"api_key" | "oauth">("api_key");
   const [oauthStatus, setOauthStatus] = useState<{ connected: boolean; account_id: string | null }>({ connected: false, account_id: null });
   const [oauthLoading, setOauthLoading] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
@@ -35,13 +37,18 @@ export default function AiSettings({ settings, loading, saveBulk, showSavedToast
   useEffect(() => {
     if (loading) return;
     if (settings.ai_provider) setProvider(settings.ai_provider);
-    if (settings.ai_api_key) setApiKey(settings.ai_api_key);
+    setApiKeyConfigured(settings.ai_api_key_configured === "true");
     if (settings.ai_model) setModel(settings.ai_model);
     if (settings.ai_base_url) setBaseUrl(settings.ai_base_url);
+    if (settings.ai_provider_label) setProviderLabel(settings.ai_provider_label);
     if (settings.ai_temperature) setTemperature(parseFloat(settings.ai_temperature));
     if (settings.ai_keep_alive) setKeepAlive(settings.ai_keep_alive);
     if (settings.ai_auth_mode) setAuthMode(settings.ai_auth_mode as "api_key" | "oauth");
   }, [settings, loading]);
+
+  useEffect(() => {
+    invoke<boolean>("ai_api_key_configured").then(setApiKeyConfigured).catch(() => {});
+  }, []);
 
   // Fetch OAuth status when provider is OpenAI
   useEffect(() => {
@@ -64,15 +71,22 @@ export default function AiSettings({ settings, loading, saveBulk, showSavedToast
 
   const handleSaveAI = async () => {
     try {
-      await saveBulk({
+      const nextSettings: Record<string, string> = {
         ai_provider: provider,
-        ai_api_key: apiKey,
+        ai_provider_label: providerLabel,
         ai_model: model,
         ai_base_url: baseUrl,
         ai_temperature: String(temperature),
         ai_keep_alive: keepAlive,
         ai_auth_mode: authMode,
-      });
+      };
+      // Blank means "keep the securely stored key", not "erase it".
+      if (apiKey.trim()) nextSettings.ai_api_key = apiKey.trim();
+      await saveBulk(nextSettings);
+      if (apiKey.trim()) {
+        setApiKey("");
+        setApiKeyConfigured(true);
+      }
       setAiDirty(false);
       showSavedToast(t("settings.ai.savedToast"));
     } catch (err) {
@@ -89,7 +103,7 @@ export default function AiSettings({ settings, loading, saveBulk, showSavedToast
       // Auto-save AI configuration after successful OAuth login
       await saveBulk({
         ai_provider: provider,
-        ai_api_key: apiKey,
+        ai_provider_label: providerLabel,
         ai_model: model,
         ai_base_url: baseUrl,
         ai_temperature: String(temperature),
@@ -133,15 +147,16 @@ export default function AiSettings({ settings, loading, saveBulk, showSavedToast
               if (p === "ollama") {
                 setBaseUrl("http://localhost:11434"); setModel("qwen3.5");
               } else if (p === "openai") {
-                setBaseUrl("https://api.openai.com"); setModel("gpt-5.3-codex"); setAuthMode("oauth");
+                setBaseUrl("https://api.openai.com"); setModel("gpt-4o-mini"); setAuthMode("api_key");
               } else if (p === "anthropic") {
                 setBaseUrl(""); setModel("claude-sonnet-4-20250514");
               } else {
-                setBaseUrl(""); setModel("");
+                setBaseUrl(""); setModel(""); setAuthMode("api_key");
               }
             }}
             options={[
               { value: "openai", label: "OpenAI" },
+              { value: "custom", label: t("settings.ai.customCompatible") },
               { value: "anthropic", label: "Anthropic" },
               { value: "ollama", label: "Ollama (Local)" },
             ]}
@@ -182,6 +197,19 @@ export default function AiSettings({ settings, loading, saveBulk, showSavedToast
             </button>
           </div>
           <p className="text-[12px] text-text-muted mt-1.5">{t("settings.ai.authMethodHint")}</p>
+        </div>
+      )}
+
+      {provider === "custom" && (
+        <div className="py-3 border-b border-border">
+          <p className="text-[14px] font-medium text-text-primary mb-1.5">
+            {t("settings.ai.providerName")}
+          </p>
+          <Input
+            value={providerLabel}
+            onChange={(e) => { setProviderLabel(e.target.value); setAiDirty(true); }}
+            placeholder={t("settings.ai.providerNamePlaceholder")}
+          />
         </div>
       )}
 
@@ -240,7 +268,7 @@ export default function AiSettings({ settings, loading, saveBulk, showSavedToast
       )}
 
       {/* API Key (for Anthropic / OpenAI Compatible -- hidden when OpenAI + OAuth) */}
-      {(provider === "anthropic" || (provider === "openai" && authMode === "api_key")) && (
+      {(provider === "anthropic" || provider === "custom" || (provider === "openai" && authMode === "api_key")) && (
         <div className="py-3 border-b border-border">
           <p className="text-[14px] font-medium text-text-primary mb-1.5">
             {t("settings.ai.apiKey")}
@@ -249,7 +277,7 @@ export default function AiSettings({ settings, loading, saveBulk, showSavedToast
             type="password"
             value={apiKey}
             onChange={(e) => { setApiKey(e.target.value); setAiDirty(true); }}
-            placeholder={provider === "anthropic" ? "sk-ant-..." : "sk-..."}
+            placeholder={apiKeyConfigured ? t("settings.ai.apiKeyStored") : provider === "anthropic" ? "sk-ant-..." : "sk-..."}
           />
           <p className="text-[12px] text-text-muted mt-1.5">
             {t("settings.ai.apiKeyHint")}
@@ -258,7 +286,7 @@ export default function AiSettings({ settings, loading, saveBulk, showSavedToast
       )}
 
       {/* Base URL (for Ollama / OpenAI Compatible / Anthropic) */}
-      {(provider === "ollama" || (provider === "openai" && authMode === "api_key") || provider === "anthropic") && (
+      {(provider === "ollama" || provider === "custom" || (provider === "openai" && authMode === "api_key") || provider === "anthropic") && (
         <div className="py-3 border-b border-border">
           <p className="text-[14px] font-medium text-text-primary mb-1.5">
             {t("settings.ai.baseUrl")}

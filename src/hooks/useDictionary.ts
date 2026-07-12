@@ -17,6 +17,22 @@ export interface DictionaryWord {
   book_title: string | null;
 }
 
+export interface LookupRecord {
+  id: string;
+  book_id: string;
+  lookup_text: string;
+  normalized_text: string;
+  context_sentence: string | null;
+  chapter: string | null;
+  cfi: string | null;
+  definition: string;
+  context_explanation: string | null;
+  created_at: number;
+  last_looked_up_at: number;
+  lookup_count: number;
+  book_title: string | null;
+}
+
 export function useDictionary(bookId: string) {
   const [words, setWords] = useState<DictionaryWord[]>([]);
 
@@ -91,5 +107,30 @@ export function useAllDictionary() {
     setWords((prev) => prev.filter((w) => w.id !== id));
   }, []);
 
-  return { words, refresh, remove };
+  const updateMastery = useCallback(async (id: string, mastery: "new" | "learning" | "mastered", nextReviewAt: number | null) => {
+    await invoke("update_vocab_mastery", { id, mastery, nextReviewAt });
+    setWords((prev) => prev.map((word) => word.id === id
+      ? { ...word, mastery, next_review_at: nextReviewAt, review_count: word.review_count + 1, updated_at: Date.now() }
+      : word));
+  }, []);
+
+  return { words, refresh, remove, updateMastery };
+}
+
+export function useAllLookupHistory() {
+  const [records, setRecords] = useState<LookupRecord[]>([]);
+
+  const refresh = useCallback(async () => {
+    try {
+      setRecords(await invoke<LookupRecord[]>("list_all_lookup_records"));
+    } catch (err) {
+      console.error("Failed to load lookup history:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { records, refresh };
 }

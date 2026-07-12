@@ -6,6 +6,7 @@ pub mod chats;
 pub mod collections;
 pub mod mcp;
 pub mod oauth;
+pub mod lookup_history;
 pub mod settings;
 pub mod sync;
 pub mod translation;

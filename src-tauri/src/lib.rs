@@ -625,6 +625,7 @@ pub fn run() {
             commands::books::update_book_metadata,
             // Settings
             commands::settings::get_all_settings,
+            commands::settings::ai_api_key_configured,
             commands::settings::get_setting,
             commands::settings::set_setting,
             commands::settings::set_settings_bulk,
@@ -667,6 +668,10 @@ pub fn run() {
             commands::vocab::update_vocab_mastery,
             commands::vocab::list_vocab_due_for_review,
             commands::vocab::get_vocab_stats,
+            // Local lookup history
+            commands::lookup_history::save_lookup_record,
+            commands::lookup_history::list_lookup_records,
+            commands::lookup_history::list_all_lookup_records,
             // Chats
             commands::chats::create_chat,
             commands::chats::list_chats,

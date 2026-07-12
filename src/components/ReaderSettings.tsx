@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Sun, Check, ScrollText, BookOpen, File, Files } from "lucide-react";
+import Toggle from "./ui/Toggle";
 import Select from "./ui/Select";
 
 const sliderClass =
@@ -8,7 +9,7 @@ const sliderClass =
 
 const themes = [
   { id: "original", label: "Original", color: "bg-reader-original-bg border border-reader-original-border", pdf: true },
-  { id: "paper", label: "Sepia", color: "bg-reader-paper-bg", pdf: true },
+  { id: "paper", label: "Reading Paper", color: "bg-reader-paper-bg border border-reader-original-border", pdf: true },
   { id: "quiet", label: "Gray", color: "bg-reader-quiet-bg", pdf: true },
   { id: "dark", label: "Dark", color: "bg-reader-dark-bg border border-reader-dark-border", pdf: true },
 ] as const;
@@ -17,7 +18,7 @@ export const FONT_SIZE_MIN = 12;
 export const FONT_SIZE_MAX = 48;
 
 export const fonts = [
-  { id: "system", label: "System", family: "Inter, system-ui, sans-serif" },
+  { id: "system", label: "System", family: "system-ui, -apple-system, 'PingFang SC', sans-serif" },
   { id: "georgia", label: "Georgia", family: "Georgia, serif" },
   { id: "palatino", label: "Palatino", family: "Palatino, serif" },
   { id: "inter", label: "Inter", family: "Inter, sans-serif" },
@@ -41,6 +42,10 @@ export interface ReaderSettingsState {
   charSpacing: number; // percentage, 0 = normal
   wordSpacing: number; // percentage, 0 = normal
   margins: number; // pixels, 0 = none
+  showLookupMarkers: boolean;
+  showNewVocabMarkers: boolean;
+  showLearningMarkers: boolean;
+  showMasteredMarkers: boolean;
 }
 
 interface ReaderSettingsProps {
@@ -59,7 +64,7 @@ export function getFontFamily(fontId: ReaderFont): string {
 export function getThemeStyles(themeId: ReaderTheme) {
   switch (themeId) {
     case "paper":
-      return { body: "#F2E2C9", text: "#34271B" };
+      return { body: "#FAF7F0", text: "#29251E" };
     case "quiet":
       return { body: "#71717b", text: "#fafafa" };
     case "dark":
@@ -70,7 +75,7 @@ export function getThemeStyles(themeId: ReaderTheme) {
 }
 
 export function getDefaultReaderTheme(): ReaderTheme {
-  return document.documentElement.classList.contains("dark") ? "dark" : "original";
+  return document.documentElement.classList.contains("dark") ? "dark" : "paper";
 }
 
 export default function ReaderSettings({ open, onClose, anchorRef, settings, onSettingsChange, bookFormat }: ReaderSettingsProps) {
@@ -325,6 +330,26 @@ export default function ReaderSettings({ open, onClose, anchorRef, settings, onS
           />
         </div>
       </div>)}
+
+      {bookFormat !== "pdf" && (
+        <div className="px-4 py-3 border-t border-border-light flex flex-col gap-3">
+          <p className="text-[11px] font-medium text-text-muted tracking-[0.5px] uppercase">{t("readerSettings.wordMarkers")}</p>
+          {[
+            ["showLookupMarkers", "readerSettings.lookupMarkers"],
+            ["showNewVocabMarkers", "readerSettings.newVocabMarkers"],
+            ["showLearningMarkers", "readerSettings.learningMarkers"],
+            ["showMasteredMarkers", "readerSettings.masteredMarkers"],
+          ].map(([key, label]) => (
+            <div key={key} className="flex items-center justify-between gap-4">
+              <span className="text-[13px] text-text-primary">{t(label)}</span>
+              <Toggle
+                checked={settings[key as keyof Pick<ReaderSettingsState, "showLookupMarkers" | "showNewVocabMarkers" | "showLearningMarkers" | "showMasteredMarkers">]}
+                onChange={(checked) => update({ [key]: checked } as Partial<ReaderSettingsState>)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
