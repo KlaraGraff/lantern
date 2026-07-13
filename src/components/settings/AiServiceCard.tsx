@@ -89,8 +89,6 @@ interface AiServiceCardProps {
   healthStale: boolean;
   oauthStatus: OAuthStatus;
   oauthLoading: boolean;
-  index: number;
-  total: number;
   dragging: boolean;
   dropTarget: boolean;
   onToggleExpanded: () => void;
@@ -153,7 +151,7 @@ function profileHealth(
       className: "bg-bg-input text-text-muted",
     };
   }
-  if (profile.state === "active") {
+  if (profile.state === "active" && profile.last_error_kind == null) {
     return {
       label: t("settings.ai.health.available"),
       className: "bg-success/10 text-success-text",
@@ -183,6 +181,27 @@ function credentialStateLabel(
   return t("settings.ai.keyState", { state: credential.state });
 }
 
+const CONNECTION_ERROR_KEYS: Record<string, string> = {
+  credential_invalid: "credentialInvalid",
+  auth: "auth",
+  permission: "permission",
+  rate_limit: "rateLimit",
+  quota: "quota",
+  network: "network",
+  provider_5xx: "provider5xx",
+  protocol: "protocol",
+  request: "request",
+  not_configured: "notConfigured",
+};
+
+function connectionErrorLabel(
+  kind: string | undefined,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  const key = kind ? CONNECTION_ERROR_KEYS[kind] : undefined;
+  return key ? t(`settings.ai.testError.${key}`) : (kind ?? t("settings.ai.unknownError"));
+}
+
 function Switch({
   checked,
   disabled,
@@ -209,8 +228,8 @@ function Switch({
     >
       <span
         aria-hidden="true"
-        className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-transform ${
-          checked ? "translate-x-[22px]" : "translate-x-0.5"
+        className={`absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow transition-transform ${
+          checked ? "translate-x-5" : "translate-x-0"
         }`}
       />
     </button>
@@ -230,8 +249,6 @@ export default function AiServiceCard({
   healthStale,
   oauthStatus,
   oauthLoading,
-  index,
-  total,
   dragging,
   dropTarget,
   onToggleExpanded,
@@ -275,7 +292,6 @@ export default function AiServiceCard({
   const health = profileHealth(profile, testResult, healthStale, t);
   const latency = healthStale ? null : (testResult?.total_ms ?? profile.last_latency_ms);
   const usesApiKeys = profile.auth_mode === "api_key" && profile.provider !== "ollama";
-  const modelListId = `ai-models-${profile.id}`;
 
   const setProvider = (provider: string) => {
     const defaults: Record<string, Pick<AiProfile, "auth_mode" | "base_url" | "model" | "keep_alive">> = {
@@ -348,7 +364,7 @@ export default function AiServiceCard({
   };
 
   const handleOrderKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (profileBusy) return;
+    if (profileBusy || expanded) return;
     if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
     event.preventDefault();
     void onMove(event.key === "ArrowUp" ? -1 : 1);
@@ -365,8 +381,8 @@ export default function AiServiceCard({
       <div className="flex min-h-[68px] items-center gap-2 px-2.5 py-2">
         <button
           type="button"
-          draggable={!profileBusy}
-          disabled={profileBusy}
+          draggable={!profileBusy && !expanded}
+          disabled={profileBusy || expanded}
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
           onKeyDown={handleOrderKeyDown}
@@ -545,7 +561,6 @@ export default function AiServiceCard({
                 disabled={profileBusy}
                 className="min-w-0 flex-1"
                 value={profile.model}
-                list={modelListId}
                 maxLength={200}
                 onChange={(event) => onChange({ model: event.target.value })}
                 placeholder={t("settings.ai.modelPlaceholder")}
@@ -561,9 +576,15 @@ export default function AiServiceCard({
                 <RefreshCw size={15} className={loadingModels ? "animate-spin" : ""} />
               </button>
             </div>
-            <datalist id={modelListId}>
-              {modelOptions.map((model) => <option key={model} value={model} />)}
-            </datalist>
+            {modelOptions.length > 0 && (
+              <Select
+                className="mt-2 w-full"
+                value={modelOptions.includes(profile.model) ? profile.model : ""}
+                placeholder={t("settings.ai.chooseFetchedModel")}
+                onChange={(model) => onChange({ model })}
+                options={modelOptions.map((model) => ({ value: model, label: model }))}
+              />
+            )}
             <span className="mt-1 block text-[10px] leading-4 text-text-muted">
               {modelOptions.length > 0
                 ? t("settings.ai.modelsFound", { count: modelOptions.length })
@@ -740,40 +761,24 @@ export default function AiServiceCard({
               testResult.success ? "bg-success/10 text-success-text" : "bg-danger-bg text-danger-text"
             }`}>
               {testResult.success
-                ? t("settings.ai.testSuccess", {
-                    latency: testResult.total_ms,
-                    attempts: testResult.attempt_count,
-                  })
+                ? testResult.first_response_ms != null
+                  ? t("settings.ai.testSuccessDetailed", {
+                      firstResponse: testResult.first_response_ms,
+                      total: testResult.total_ms,
+                      attempts: testResult.attempt_count,
+                    })
+                  : t("settings.ai.testSuccess", {
+                      latency: testResult.total_ms,
+                      attempts: testResult.attempt_count,
+                    })
                 : t("settings.ai.testFailed", {
-                    reason: testResult.error_kind ?? t("settings.ai.unknownError"),
+                    reason: connectionErrorLabel(testResult.error_kind, t),
                     latency: testResult.total_ms,
                   })}
             </div>
           )}
 
-          <div className="mt-4 flex min-h-9 items-center justify-between gap-2 border-t border-border-light pt-3">
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                disabled={index === 0 || profileBusy}
-                onClick={() => void onMove(-1)}
-                title={t("settings.ai.moveUp")}
-                aria-label={t("settings.ai.moveServiceUp", { name: profile.label })}
-                className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25"
-              >
-                <ArrowUp size={14} />
-              </button>
-              <button
-                type="button"
-                disabled={index === total - 1 || profileBusy}
-                onClick={() => void onMove(1)}
-                title={t("settings.ai.moveDown")}
-                aria-label={t("settings.ai.moveServiceDown", { name: profile.label })}
-                className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25"
-              >
-                <ArrowDown size={14} />
-              </button>
-            </div>
+          <div className="mt-4 flex min-h-9 items-center justify-end gap-2 border-t border-border-light pt-3">
             {confirmDelete ? (
               <div className="flex min-w-0 items-center gap-2">
                 <span className="truncate text-[11px] text-danger-text">{t("settings.ai.deleteConfirm")}</span>

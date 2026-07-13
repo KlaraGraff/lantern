@@ -486,6 +486,12 @@ pub fn run() {
             std::fs::create_dir_all(&local_dir).expect("failed to create app data dir");
             std::fs::create_dir_all(local_dir.join("prepared"))
                 .expect("failed to create text preparation cache");
+            let imported_font_dir = local_dir.join("imported-fonts");
+            std::fs::create_dir_all(&imported_font_dir)
+                .expect("failed to create imported font directory");
+            app.asset_protocol_scope()
+                .allow_directory(&imported_font_dir, true)
+                .expect("failed to allow imported fonts in asset scope");
 
             // Self-heal: if .sync_setting survived but quill.db
             // was deleted (e.g. user cleared app data via Finder, which
@@ -684,6 +690,10 @@ pub fn run() {
             commands::settings::set_book_settings_bulk,
             commands::settings::open_settings_on_main,
             commands::settings::open_library_on_main,
+            // Local reading fonts (font binaries are never synced)
+            commands::fonts::import_custom_fonts,
+            commands::fonts::list_custom_fonts,
+            commands::fonts::delete_custom_font,
             // Learner profile and exam-to-CEFR estimates
             commands::language_assessments::estimate_cefr,
             commands::language_assessments::summarize_language_assessments,
@@ -710,6 +720,12 @@ pub fn run() {
             commands::word_marks::set_word_mark_rule_enabled,
             commands::word_marks::remove_word_mark,
             commands::word_marks::list_word_marks,
+            commands::word_marks::set_word_mark_exception,
+            commands::word_marks::list_word_mark_exceptions,
+            commands::word_marks::ensure_lookup_occurrence_mark,
+            commands::word_marks::set_lookup_occurrence_mark_enabled,
+            commands::word_marks::list_lookup_occurrence_marks,
+            commands::word_marks::clear_lookup_marks_for_book,
             // Collections
             commands::collections::list_collections,
             commands::collections::create_collection,

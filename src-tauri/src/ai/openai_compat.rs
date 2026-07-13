@@ -22,7 +22,12 @@ pub async fn stream_chat(
     emitted: Arc<AtomicBool>,
 ) -> AppResult<()> {
     let client = crate::ai::http_client();
-    let url = format!("{}/v1/chat/completions", base_url.trim_end_matches('/'));
+    let base = base_url.trim_end_matches('/');
+    let url = if base.ends_with("/v1") {
+        format!("{base}/chat/completions")
+    } else {
+        format!("{base}/v1/chat/completions")
+    };
 
     let mut body = serde_json::json!({
         "model": model,

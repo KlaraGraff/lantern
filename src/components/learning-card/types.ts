@@ -22,7 +22,7 @@ export type LearningModuleId =
   | "memory_aid"
   | "source_excerpt";
 
-export type SelectionMenuKind = "phrase" | "passage";
+export type SelectionMenuKind = "word" | "phrase" | "passage";
 export type SelectionMenuActionId =
   | "define"
   | "explain"

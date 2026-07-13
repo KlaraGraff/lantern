@@ -22,6 +22,7 @@ use crate::error::{AppError, AppResult};
 use crate::icloud;
 use crate::pdfium;
 use crate::sync::events::{BookImportPayload, EventBody, NotePayload};
+use crate::sync::merge::{self, entity};
 use crate::sync::writer::SyncWriter;
 use crate::LocalDir;
 
@@ -501,8 +502,8 @@ fn canonical_roman_number(value: &str) -> bool {
     canonical == upper
 }
 
-fn number_word_kind(value: &str) -> Option<u8> {
-    match trim_heading_separator(value).to_ascii_uppercase().as_str() {
+fn simple_number_word_kind(value: &str) -> Option<u8> {
+    match value {
         "ZERO" | "TEN" | "ELEVEN" | "TWELVE" | "THIRTEEN" | "FOURTEEN" | "FIFTEEN" | "SIXTEEN"
         | "SEVENTEEN" | "EIGHTEEN" | "NINETEEN" => Some(1),
         "ONE" | "TWO" | "THREE" | "FOUR" | "FIVE" | "SIX" | "SEVEN" | "EIGHT" | "NINE" => Some(2),
@@ -512,6 +513,17 @@ fn number_word_kind(value: &str) -> Option<u8> {
         "HUNDRED" => Some(4),
         _ => None,
     }
+}
+
+fn number_word_kind(value: &str) -> Option<u8> {
+    let cleaned = trim_heading_separator(value).to_ascii_uppercase();
+    simple_number_word_kind(&cleaned).or_else(|| {
+        let (tens, units) = cleaned.split_once('-')?;
+        (!units.contains('-')
+            && simple_number_word_kind(tens) == Some(3)
+            && simple_number_word_kind(units) == Some(2))
+        .then_some(1)
+    })
 }
 
 fn english_number_phrase_len(words: &[&str]) -> usize {
@@ -1345,14 +1357,15 @@ fn load_prepared_document(
         if path.exists() {
             let _ = fs::remove_file(path);
         }
-        if fs::rename(recovery_path, path).is_ok() {
-            let _ = fs::remove_file(&temporary_path);
-            let _ = fs::remove_file(&backup_path);
-            log::warn!(
-                "recovered interrupted text cache replacement at {}",
-                path.display()
-            );
+        if fs::rename(recovery_path, path).is_err() {
+            return None;
         }
+        let _ = fs::remove_file(&temporary_path);
+        let _ = fs::remove_file(&backup_path);
+        log::warn!(
+            "recovered interrupted text cache replacement at {}",
+            path.display()
+        );
         return Some(document);
     }
     None
@@ -2921,33 +2934,12 @@ pub(crate) fn do_delete_book_with_note_policy(
                 events.push(EventBody::NoteUpsert(note));
             }
         }
-        tx.execute(
-            "DELETE FROM chat_messages WHERE chat_id IN (SELECT id FROM chats WHERE book_id = ?1)",
-            params![id],
-        )?;
-        tx.execute("DELETE FROM chats WHERE book_id = ?1", params![id])?;
-        tx.execute(
-            "DELETE FROM collection_books WHERE book_id = ?1",
-            params![id],
-        )?;
-        tx.execute("DELETE FROM highlights WHERE book_id = ?1", params![id])?;
-        tx.execute("DELETE FROM bookmarks WHERE book_id = ?1", params![id])?;
-        tx.execute("DELETE FROM vocab_words WHERE book_id = ?1", params![id])?;
-        tx.execute("DELETE FROM lookup_records WHERE book_id = ?1", params![id])?;
-        tx.execute(
-            "DELETE FROM word_mark_rules WHERE book_id = ?1",
-            params![id],
-        )?;
-        tx.execute(
-            "DELETE FROM notes WHERE book_id = ?1 AND scope = 'book'",
-            params![id],
-        )?;
-        tx.execute(
-            "UPDATE notes SET book_id = NULL WHERE book_id = ?1 AND scope = 'global'",
-            params![id],
-        )?;
-        tx.execute("DELETE FROM book_settings WHERE book_id = ?1", params![id])?;
-        tx.execute("DELETE FROM books WHERE id = ?1", params![id])?;
+        // Keep the local command path byte-equivalent to replaying the
+        // published BookDelete event. In particular, cascade_delete records
+        // chat tombstones before removing chats so delayed messages cannot
+        // materialize as orphans on this device or in its next snapshot.
+        merge::cascade_delete(tx, entity::BOOK, id, now)?;
+        merge::insert_tombstone(tx, entity::BOOK, id, now)?;
         events.push(EventBody::BookDelete { id: id.to_string() });
         Ok(())
     })?;
@@ -3436,6 +3428,25 @@ mod tests {
     }
 
     #[test]
+    fn text_parser_accepts_valid_hyphenated_word_numbers_only() {
+        let text = "BOOK ONE\nCHAPTER TWENTY-ONE\nBody\nCHAPTER ONE HUNDRED TWENTY-THREE\nMore\nCHAPTER TWENTY-TEN\nProse\nCHAPTER TWENTY--ONE\nEnd";
+        let (_, toc, _) = text_document_parts(text, true);
+        let entries = toc
+            .iter()
+            .map(|entry| (entry.title.as_str(), entry.depth))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            entries,
+            [
+                ("BOOK ONE", 0),
+                ("CHAPTER TWENTY-ONE", 1),
+                ("CHAPTER ONE HUNDRED TWENTY-THREE", 1),
+            ]
+        );
+    }
+
+    #[test]
     fn text_parser_reflows_consistently_hard_wrapped_paragraphs() {
         let first = "alpha beta gamma delta epsilon zeta eta theta iota kappa";
         let second = "lambda mu nu xi omicron pi rho sigma tau upsilon omega";
@@ -3756,6 +3767,22 @@ mod tests {
         assert_eq!(recovered.chunks[0].blocks[0].text, "Replacement");
         assert!(path.exists());
         assert!(!temporary_path.exists());
+    }
+
+    #[test]
+    fn prepared_document_recovery_fails_when_sidecar_cannot_be_published() {
+        let dir = TempDir::new().unwrap();
+        let document = sample_text_document("abc");
+        let path = prepared_document_path(dir.path(), "book-id");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("occupied"), b"keep target non-empty").unwrap();
+
+        let temporary_path = prepared_document_temporary_path(&path).unwrap();
+        fs::write(&temporary_path, serde_json::to_vec(&document).unwrap()).unwrap();
+
+        assert!(load_prepared_document(&path, Some("abc")).is_none());
+        assert!(path.is_dir());
+        assert!(temporary_path.is_file());
     }
 
     fn setup() -> (TempDir, Db) {
@@ -4558,6 +4585,145 @@ mod tests {
         assert_eq!(
             note,
             (None, "detached".into(), None, "quoted passage".into())
+        );
+    }
+
+    #[test]
+    fn delete_book_command_persists_book_and_chat_tombstones() {
+        let (_dir, db) = setup();
+        insert_book(&db, "b1", "epub");
+        let now = chrono::Utc::now().timestamp_millis();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO highlights
+                 (id, book_id, cfi_range, color, created_at, updated_at)
+                 VALUES ('h1', 'b1', 'epubcfi(/6/2!)', 'yellow', ?1, ?1)",
+                params![now],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO bookmarks (id, book_id, cfi, created_at, updated_at)
+                 VALUES ('bm1', 'b1', 'epubcfi(/6/2!)', ?1, ?1)",
+                params![now],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO vocab_words
+                 (id, book_id, word, definition, created_at, updated_at)
+                 VALUES ('v1', 'b1', 'term', 'definition', ?1, ?1)",
+                params![now],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO lookup_records
+                 (id, book_id, lookup_text, normalized_text, definition,
+                  created_at, last_looked_up_at)
+                 VALUES ('lookup1', 'b1', 'Term', 'term', 'definition', ?1, ?1)",
+                params![now],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO collections
+                 (id, name, sort_order, created_at, updated_at)
+                 VALUES ('c1', 'Collection', 0, ?1, ?1)",
+                params![now],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO collection_books
+                 (collection_id, book_id, created_at, updated_at)
+                 VALUES ('c1', 'b1', ?1, ?1)",
+                params![now],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO book_settings (book_id, key, value)
+                 VALUES ('b1', 'font_size', '18')",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO word_mark_rules
+                 (id, book_id, normalized_word, display_word, match_mode, color,
+                  enabled, created_at, updated_at, updated_by_device)
+                 VALUES ('rule1', 'b1', 'term', 'Term', 'exact', 'lookup', 1,
+                         ?1, ?1, 'dev-A')",
+                params![now],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO word_mark_exceptions
+                 (id, rule_id, book_id, normalized_word, location, excluded,
+                  created_at, updated_at, updated_by_device)
+                 VALUES ('exception1', 'rule1', 'b1', 'term', 'location', 1,
+                         ?1, ?1, 'dev-A')",
+                params![now],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO chats
+                 (id, book_id, title, pinned, created_at, updated_at, updated_by_device)
+                 VALUES ('ch1', 'b1', 'Chat', 0, ?1, ?1, 'dev-A')",
+                params![now],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO chat_messages
+                 (id, chat_id, role, content, created_at, updated_at)
+                 VALUES ('m1', 'ch1', 'user', 'hello', ?1, ?1)",
+                params![now],
+            )
+            .unwrap();
+        }
+
+        let sync = SyncWriter::new("dev-A".into());
+        do_delete_book("b1", &db, &sync).unwrap();
+
+        let conn = db.conn.lock().unwrap();
+        let tombstones: Vec<(String, String, i64)> = conn
+            .prepare("SELECT entity, id, ts FROM _tombstones ORDER BY entity, id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(tombstones.len(), 2);
+        assert_eq!(&tombstones[0].0, "book");
+        assert_eq!(&tombstones[0].1, "b1");
+        assert_eq!(&tombstones[1].0, "chat");
+        assert_eq!(&tombstones[1].1, "ch1");
+        assert_eq!(
+            tombstones[0].2, tombstones[1].2,
+            "the cascaded chat tombstone must use the book-delete timestamp"
+        );
+
+        for table in [
+            "books",
+            "highlights",
+            "bookmarks",
+            "vocab_words",
+            "lookup_records",
+            "collection_books",
+            "book_settings",
+            "word_mark_rules",
+            "word_mark_exceptions",
+            "chats",
+            "chat_messages",
+        ] {
+            let count: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 0, "book deletion must clear {table}");
+        }
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM collections", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            1,
+            "deleting a book must not delete its collection"
         );
     }
 }

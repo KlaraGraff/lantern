@@ -24,8 +24,16 @@ const wordModules = (language: FixtureLanguage): Partial<Record<LearningModuleId
     word_info: content("interfaces", ["原形：interface", "常见复数形式：interfaces"], [], ["/ˈɪntəfeɪsɪz/", "noun", "plural"]),
     target_translation: content("界面；交界处；接口"),
     common_senses: content("常见含义", [], [
-      { title: "交界处", text: "两个系统或领域接触并互动的位置。", examples: [{ source: "The teams work at the interface of design and engineering.", target: "这些团队在设计与工程的交界处协作。" }] },
-      { title: "接口", text: "让人或系统进行操作、连接的方式。" },
+      { title: "交界处", text: "两个系统或领域接触并互动的位置。", examples: [
+        { source: "The teams work at the interface of design and engineering.", target: "这些团队在设计与工程的交界处协作。" },
+        { source: "Many discoveries happen at the interface between physics and biology.", target: "许多发现产生于物理学与生物学的交界处。" },
+        { source: "The course studies the interface of language and culture.", target: "这门课程研究语言与文化的交汇关系。" },
+      ] },
+      { title: "接口", text: "让人或系统进行操作、连接的方式。", examples: [
+        { source: "The app has a simple user interface.", target: "这个应用有一个简洁的用户界面。" },
+        { source: "The device uses a wireless interface.", target: "这个设备使用无线接口。" },
+        { source: "The interface lets the two systems exchange data.", target: "这个接口让两个系统交换数据。" },
+      ] },
     ]),
     collocations: content("常见搭配", [], [
       { title: "user interface", text: "用户界面" },
@@ -45,8 +53,16 @@ const wordModules = (language: FixtureLanguage): Partial<Record<LearningModuleId
     word_info: content("interfaces", ["Lemma: interface", "Common plural: interfaces"], [], ["/ˈɪntəfeɪsɪz/", "noun", "plural"]),
     target_translation: content("界面；交界处；接口"),
     common_senses: content("Common meanings", [], [
-      { title: "A meeting point", text: "A place where two systems or fields interact.", examples: [{ source: "The teams work at the interface of design and engineering.", target: "这些团队在设计与工程的交界处协作。" }] },
-      { title: "A control surface", text: "The way a person or system connects to a tool." },
+      { title: "A meeting point", text: "A place where two systems or fields interact.", examples: [
+        { source: "The teams work at the interface of design and engineering.", target: "这些团队在设计与工程的交界处协作。" },
+        { source: "Many discoveries happen at the interface between physics and biology.", target: "许多发现产生于物理学与生物学的交界处。" },
+        { source: "The course studies the interface of language and culture.", target: "这门课程研究语言与文化的交汇关系。" },
+      ] },
+      { title: "A control surface", text: "The way a person or system connects to a tool.", examples: [
+        { source: "The app has a simple user interface.", target: "这个应用有一个简洁的用户界面。" },
+        { source: "The device uses a wireless interface.", target: "这个设备使用无线接口。" },
+        { source: "The interface lets the two systems exchange data.", target: "这个接口让两个系统交换数据。" },
+      ] },
     ]),
     collocations: content("Common combinations", [], [
       { title: "user interface", text: "The controls and screens used to operate software." },
@@ -65,7 +81,11 @@ const phraseModules = (language: FixtureLanguage): Partial<Record<LearningModule
     context_meaning: content("这里表示某件事最终反而带来了积极、意外的结果。", ["说话者是在回顾一个起初看似不利的变化。"]),
     target_translation: content("结果证明这是因祸得福。"),
     common_senses: content("常用于描述坏事带来未预料到的好处。", [], [
-      { title: "a blessing in disguise", text: "表面是坏事，后来才发现有好处。", examples: [{ source: "Missing that train was a blessing in disguise.", target: "没赶上那班火车反而是因祸得福。" }] },
+      { title: "a blessing in disguise", text: "表面是坏事，后来才发现有好处。", examples: [
+        { source: "Missing that train was a blessing in disguise.", target: "没赶上那班火车反而是因祸得福。" },
+        { source: "The rejected application was a blessing in disguise.", target: "申请被拒后来证明反而是件好事。" },
+        { source: "The delay proved to be a blessing in disguise.", target: "这次延误最终证明是因祸得福。" },
+      ] },
     ]),
     collocations: content("常与 turn out to be、prove to be 搭配。"),
     grammar_analysis: content("整个短语在句中作表语。", ["in disguise 是介词短语，修饰 blessing。"]),
@@ -76,7 +96,11 @@ const phraseModules = (language: FixtureLanguage): Partial<Record<LearningModule
     context_meaning: content("Something that first looked harmful but later produced an unexpected benefit.", ["The speaker is looking back after the positive result became clear."]),
     target_translation: content("结果证明这是因祸得福。"),
     common_senses: content("Used when a bad event leads to an unforeseen advantage.", [], [
-      { title: "a blessing in disguise", text: "An apparent problem that later proves helpful.", examples: [{ source: "Missing that train was a blessing in disguise.", target: "没赶上那班火车反而是因祸得福。" }] },
+      { title: "a blessing in disguise", text: "An apparent problem that later proves helpful.", examples: [
+        { source: "Missing that train was a blessing in disguise.", target: "没赶上那班火车反而是因祸得福。" },
+        { source: "The rejected application was a blessing in disguise.", target: "申请被拒后来证明反而是件好事。" },
+        { source: "The delay proved to be a blessing in disguise.", target: "这次延误最终证明是因祸得福。" },
+      ] },
     ]),
     collocations: content("Often follows turn out to be or prove to be."),
     grammar_analysis: content("The full phrase is a subject complement.", ["In disguise is a prepositional phrase modifying blessing."]),
@@ -91,9 +115,26 @@ const passageModules = (language: FixtureLanguage): Partial<Record<LearningModul
     target_translation: content("新的想法往往产生于成熟领域之间的交界处。"),
     grammar_analysis: content("主干是 New ideas emerge。", ["often 是频率副词；at the interfaces 是地点状语；between established fields 修饰 interfaces。"]),
     key_terms: content("理解这句话的三个关键词", [], [
-      { title: "emerge", text: "出现、逐渐显现。", examples: [{ source: "A clear pattern began to emerge.", target: "一个清晰的模式开始显现。" }] },
-      { title: "interfaces", text: "发生互动的交界处。" },
-      { title: "established", text: "已经成熟、得到认可的。" },
+      { title: "emerge", text: "出现、逐渐显现。", examples: [
+        { source: "A clear pattern began to emerge.", target: "一个清晰的模式开始显现。" },
+        { source: "New evidence emerged during the study.", target: "研究期间出现了新的证据。" },
+        { source: "She emerged as a strong leader.", target: "她逐渐成为一位有能力的领导者。" },
+      ] },
+      { title: "interfaces", text: "发生互动的交界处。", examples: [
+        { source: "Innovation grows at the interface of art and science.", target: "创新在艺术与科学的交汇处发展。" },
+        { source: "The role sits at the interface between teams.", target: "这个岗位处于多个团队的协作交界处。" },
+        { source: "They improved the interface between research and practice.", target: "他们改善了研究与实践之间的衔接。" },
+      ] },
+      { title: "established", text: "已经成熟、得到认可的。", examples: [
+        { source: "It is an established method.", target: "这是一种公认的方法。" },
+        { source: "She challenged an established view.", target: "她质疑了一种既有观点。" },
+        { source: "The firm entered an established market.", target: "这家公司进入了一个成熟市场。" },
+      ] },
+      { title: "fields", text: "知识、研究或工作的领域。" },
+      { title: "often", text: "表示某事经常发生，但并非总是如此。" },
+      { title: "between", text: "说明两个或多个对象之间的关系。" },
+      { title: "ideas", text: "这里指新的观点、方案或发现。" },
+      { title: "new", text: "强调此前不存在或尚未被提出。" },
     ]),
     idioms: content("本句没有必须整体理解的习语。"),
     references: content("established fields 指上文讨论的传统学科。"),
@@ -105,9 +146,26 @@ const passageModules = (language: FixtureLanguage): Partial<Record<LearningModul
     target_translation: content("新的想法往往产生于成熟领域之间的交界处。"),
     grammar_analysis: content("The main clause is New ideas emerge.", ["Often is an adverb of frequency; at the interfaces gives the place; between established fields modifies interfaces."]),
     key_terms: content("Three terms carry the meaning", [], [
-      { title: "emerge", text: "To appear or gradually become clear.", examples: [{ source: "A clear pattern began to emerge.", target: "一个清晰的模式开始显现。" }] },
-      { title: "interfaces", text: "Places where different things interact." },
-      { title: "established", text: "Already recognized and well developed." },
+      { title: "emerge", text: "To appear or gradually become clear.", examples: [
+        { source: "A clear pattern began to emerge.", target: "一个清晰的模式开始显现。" },
+        { source: "New evidence emerged during the study.", target: "研究期间出现了新的证据。" },
+        { source: "She emerged as a strong leader.", target: "她逐渐成为一位有能力的领导者。" },
+      ] },
+      { title: "interfaces", text: "Places where different things interact.", examples: [
+        { source: "Innovation grows at the interface of art and science.", target: "创新在艺术与科学的交汇处发展。" },
+        { source: "The role sits at the interface between teams.", target: "这个岗位处于多个团队的协作交界处。" },
+        { source: "They improved the interface between research and practice.", target: "他们改善了研究与实践之间的衔接。" },
+      ] },
+      { title: "established", text: "Already recognized and well developed.", examples: [
+        { source: "It is an established method.", target: "这是一种公认的方法。" },
+        { source: "She challenged an established view.", target: "她质疑了一种既有观点。" },
+        { source: "The firm entered an established market.", target: "这家公司进入了一个成熟市场。" },
+      ] },
+      { title: "fields", text: "Areas of knowledge, study, or work." },
+      { title: "often", text: "Shows that something happens frequently, but not always." },
+      { title: "between", text: "Expresses a relationship involving two or more things." },
+      { title: "ideas", text: "New thoughts, plans, or discoveries in this context." },
+      { title: "new", text: "Not previously present or proposed." },
     ]),
     idioms: content("There is no fixed idiom that must be read as one unit."),
     references: content("Established fields refers to the traditional disciplines discussed earlier."),

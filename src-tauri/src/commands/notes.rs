@@ -5,6 +5,7 @@ use tauri::State;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::sync::events::{normalize_learning_term, EventBody, NotePayload};
+use crate::sync::merge::{self, entity};
 use crate::sync::validation::{validate_entity_id, validate_note_fields};
 use crate::sync::writer::SyncWriter;
 
@@ -82,9 +83,12 @@ pub fn save_note(
         &content,
         &content_format,
     )?;
-    let timestamp = chrono::Utc::now().timestamp_millis();
+    let timestamp = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();
     sync.with_tx(&db, timestamp, |tx, events| {
+        if merge::is_tombstoned(tx, entity::NOTE, &id)? {
+            return Err(AppError::Other("NOTE_ALREADY_DELETED".to_string()));
+        }
         let effective_book_id = match book_id.as_deref() {
             Some(candidate) => {
                 let exists: bool = tx.query_row(
@@ -141,15 +145,20 @@ pub fn save_note(
     .map_err(Into::into)
 }
 
-#[tauri::command]
-pub fn delete_note(id: String, db: State<'_, Db>, sync: State<'_, SyncWriter>) -> AppResult<()> {
-    validate_entity_id(&id)?;
-    let timestamp = chrono::Utc::now().timestamp_millis();
-    sync.with_tx(&db, timestamp, |tx, events| {
+fn delete_note_inner(id: &str, db: &Db, sync: &SyncWriter) -> AppResult<()> {
+    validate_entity_id(id)?;
+    let timestamp = sync.next_logical_timestamp();
+    sync.with_tx(db, timestamp, |tx, events| {
         tx.execute("DELETE FROM notes WHERE id = ?1", params![id])?;
-        events.push(EventBody::NoteDelete { id: id.clone() });
+        merge::insert_tombstone(tx, entity::NOTE, id, timestamp)?;
+        events.push(EventBody::NoteDelete { id: id.to_string() });
         Ok(())
     })
+}
+
+#[tauri::command]
+pub fn delete_note(id: String, db: State<'_, Db>, sync: State<'_, SyncWriter>) -> AppResult<()> {
+    delete_note_inner(&id, &db, &sync)
 }
 
 #[tauri::command]
@@ -248,6 +257,7 @@ pub fn list_context_notes(
 mod tests {
     use super::*;
     use rusqlite::Connection;
+    use tempfile::TempDir;
 
     #[test]
     fn normalizes_lookup_words_without_substring_matching() {
@@ -311,5 +321,42 @@ mod tests {
             })
             .unwrap();
         assert_eq!(original, "legacy note");
+    }
+
+    #[test]
+    fn deleting_a_note_persists_a_local_tombstone_for_snapshots() {
+        let directory = TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let sync = SyncWriter::new("dev-A".into());
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO notes
+                 (id, anchor_kind, scope, content, content_format,
+                  created_at, updated_at, updated_by_device)
+                 VALUES ('note-1', 'selection', 'detached', 'remember',
+                         'plain_text', 1000, 1000, 'dev-A')",
+                [],
+            )
+            .unwrap();
+        }
+
+        delete_note_inner("note-1", &db, &sync).unwrap();
+
+        let conn = db.reader();
+        let remaining: i64 = conn
+            .query_row("SELECT COUNT(*) FROM notes WHERE id = 'note-1'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let tombstone: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM _tombstones WHERE entity = 'note' AND id = 'note-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(remaining, 0);
+        assert_eq!(tombstone, 1);
     }
 }

@@ -2,9 +2,16 @@ import { useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { listen } from "@tauri-apps/api/event";
 import Home from "./pages/Home";
 import Reader from "./pages/Reader";
 import { reconcileLanguage } from "./i18n";
+import {
+  installCustomFontFaces,
+  isCustomFontRecordList,
+  loadCustomFonts,
+  type CustomFontRecord,
+} from "./components/custom-fonts";
 
 const isMainWindow = getCurrentWebviewWindow().label === "main";
 
@@ -40,6 +47,16 @@ export default function App() {
     // Reconcile the language we picked synchronously from localStorage with
     // the persisted DB value (and persist to the DB on first launch).
     reconcileLanguage();
+    loadCustomFonts().catch((error) => console.error("Failed to load custom fonts:", error));
+    const unlistenFonts = listen<CustomFontRecord[]>("custom-fonts-changed", (event) => {
+      if (isCustomFontRecordList(event.payload)) {
+        installCustomFontFaces(event.payload);
+        return;
+      }
+      // Compatibility with an already-running backend from before the event
+      // acquired its font-list payload during development hot reloads.
+      loadCustomFonts().catch((error) => console.error("Failed to refresh custom fonts:", error));
+    });
 
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = () => {
@@ -48,7 +65,10 @@ export default function App() {
       }
     };
     mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
+    return () => {
+      mq.removeEventListener("change", handler);
+      unlistenFonts.then((stop) => stop()).catch(() => {});
+    };
   }, []);
 
   const content = (

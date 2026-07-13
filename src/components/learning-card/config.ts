@@ -17,7 +17,7 @@ import type {
 export const LEARNING_CARD_CONFIG_SETTING_KEY = "learning_card_config";
 
 export const CARD_KIND_ORDER: LearningCardKind[] = ["word", "phrase", "passage"];
-export const SELECTION_MENU_KIND_ORDER: SelectionMenuKind[] = ["phrase", "passage"];
+export const SELECTION_MENU_KIND_ORDER: SelectionMenuKind[] = ["word", "phrase", "passage"];
 export const DENSITY_ORDER: ContentDensity[] = ["compact", "standard", "detailed"];
 
 export const CARD_TARGET_WIDTHS: Record<LearningCardKind, Record<ContentDensity, number>> = {
@@ -73,12 +73,20 @@ export const MODULE_DEFINITIONS: Record<LearningCardKind, LearningModuleDefiniti
   ],
 };
 
-const menuAction = (id: SelectionMenuActionId): SelectionMenuActionDefinition => ({
+const menuAction = (id: SelectionMenuActionId, labelKey?: string): SelectionMenuActionDefinition => ({
   id,
-  labelKey: `settings.tools.menuActions.${id}`,
+  labelKey: labelKey ?? `settings.tools.menuActions.${id}`,
 });
 
 export const MENU_ACTION_DEFINITIONS: Record<SelectionMenuKind, SelectionMenuActionDefinition[]> = {
+  word: [
+    menuAction("define", "settings.tools.menuActions.lookup"),
+    menuAction("ask_ai"),
+    menuAction("collect"),
+    menuAction("highlight"),
+    menuAction("copy"),
+    menuAction("translate"),
+  ],
   phrase: [
     menuAction("define"),
     menuAction("ask_ai"),
@@ -139,6 +147,7 @@ export function createDefaultCardDesignConfig(): CardDesignConfigV1 {
       ),
     },
     selectionMenus: {
+      word: MENU_ACTION_DEFINITIONS.word.map(({ id }) => ({ id, enabled: id !== "translate" })),
       phrase: MENU_ACTION_DEFINITIONS.phrase.map(({ id }) => ({ id, enabled: id !== "translate" })),
       passage: MENU_ACTION_DEFINITIONS.passage.map(({ id }) => ({ id, enabled: id !== "translate" })),
     },
@@ -258,6 +267,7 @@ export function parseCardDesignConfig(value: unknown): CardDesignConfigV1 {
       passage: parseCard("passage", cards.passage, defaults.cards.passage),
     },
     selectionMenus: {
+      word: parseMenu("word", selectionMenus.word, defaults.selectionMenus.word),
       phrase: parseMenu("phrase", selectionMenus.phrase, defaults.selectionMenus.phrase),
       passage: parseMenu("passage", selectionMenus.passage, defaults.selectionMenus.passage),
     },

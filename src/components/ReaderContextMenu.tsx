@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
   BookmarkPlus,
   Copy,
@@ -17,7 +17,9 @@ interface ReaderContextMenuProps {
   y: number;
   text: string;
   kind: InteractionKind;
-  highlighted?: boolean;
+  marked?: boolean;
+  hasBookWordMark?: boolean;
+  markStateLoading?: boolean;
   showTranslate?: boolean;
   order?: ReaderMenuAction[];
   onClose: () => void;
@@ -27,7 +29,8 @@ interface ReaderContextMenuProps {
   onLookup: () => void;
   onTranslate: () => void;
   onSave: () => void;
-  onToggleHighlight?: () => void;
+  onToggleMark?: () => void;
+  onRemoveBookWordMark?: () => void;
 }
 
 export default function ReaderContextMenu({
@@ -35,7 +38,9 @@ export default function ReaderContextMenu({
   y,
   text,
   kind,
-  highlighted = false,
+  marked = false,
+  hasBookWordMark = false,
+  markStateLoading = false,
   showTranslate = false,
   order = ["primary", "ask-ai", "save", "highlight", "copy"],
   onClose,
@@ -45,15 +50,16 @@ export default function ReaderContextMenu({
   onLookup,
   onTranslate,
   onSave,
-  onToggleHighlight,
+  onToggleMark,
+  onRemoveBookWordMark,
 }: ReaderContextMenuProps) {
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const actions = useMemo(() => {
     const values = [...order];
     if (showTranslate && !values.includes("translate")) values.splice(1, 0, "translate");
-    return values.filter((action) => action !== "highlight" || onToggleHighlight);
-  }, [onToggleHighlight, order, showTranslate]);
+    return values.filter((action) => action !== "highlight" || onToggleMark);
+  }, [onToggleMark, order, showTranslate]);
 
   useEffect(() => {
     const buttons = menuRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']");
@@ -86,24 +92,36 @@ export default function ReaderContextMenu({
     };
   }, [onClose]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = menuRef.current;
     if (!element) return;
-    const rect = element.getBoundingClientRect();
-    const left = Math.max(8, Math.min(x, window.innerWidth - rect.width - 8));
-    const top = y + rect.height <= window.innerHeight - 8
-      ? y
-      : Math.max(8, y - rect.height - 8);
-    element.style.left = `${left}px`;
-    element.style.top = `${top}px`;
-  }, [x, y, actions.length]);
+    const positionMenu = () => {
+      const rect = element.getBoundingClientRect();
+      const left = Math.max(8, Math.min(x, window.innerWidth - rect.width - 8));
+      const top = y + rect.height <= window.innerHeight - 8
+        ? y
+        : Math.max(8, y - rect.height - 8);
+      element.style.left = `${left}px`;
+      element.style.top = `${top}px`;
+    };
+    positionMenu();
+    const observer = new ResizeObserver(positionMenu);
+    observer.observe(element);
+    window.addEventListener("resize", positionMenu);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", positionMenu);
+    };
+  }, [x, y]);
 
   const primaryIsLookup = kind !== "passage";
   const definitions: Record<ReaderMenuAction, { label: string; icon: typeof Sparkles; run: () => void }> = {
     primary: {
-      label: primaryIsLookup
-        ? t("contextMenu.definePhrase", { defaultValue: "释义" })
-        : t("contextMenu.interpretPassage", { defaultValue: "解读" }),
+      label: kind === "word"
+        ? t("contextMenu.lookUp", { defaultValue: "查词" })
+        : primaryIsLookup
+          ? t("contextMenu.definePhrase", { defaultValue: "释义" })
+          : t("contextMenu.interpretPassage", { defaultValue: "解读" }),
       icon: Sparkles,
       run: primaryIsLookup ? onLookup : onExplain,
     },
@@ -118,11 +136,13 @@ export default function ReaderContextMenu({
       run: onSave,
     },
     highlight: {
-      label: highlighted
-        ? t("contextMenu.removeHighlight", { defaultValue: "取消高亮" })
-        : t("contextMenu.highlight"),
+      label: marked
+        ? kind === "word"
+          ? t("contextMenu.removeCurrentMark", { defaultValue: "取消当前标记" })
+          : t("contextMenu.removeHighlight", { defaultValue: "取消标记" })
+        : t("contextMenu.mark", { defaultValue: "标记" }),
       icon: Highlighter,
-      run: onToggleHighlight ?? (() => {}),
+      run: onToggleMark ?? (() => {}),
     },
     translate: {
       label: t("contextMenu.translateOnly", { defaultValue: "仅翻译" }),
@@ -147,20 +167,41 @@ export default function ReaderContextMenu({
       {actions.map((action) => {
         const definition = definitions[action];
         const Icon = definition.icon;
+        const showRemoveBookWordMark = action === "highlight"
+          && kind === "word"
+          && marked
+          && hasBookWordMark
+          && onRemoveBookWordMark;
         return (
-          <button
-            key={action}
-            type="button"
-            role="menuitem"
-            onClick={definition.run}
-            className="mx-1 flex h-9 w-[calc(100%-8px)] items-center gap-3 rounded-sm px-3 text-left text-[13px] font-medium text-text-primary hover:bg-accent-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <Icon size={16} className="shrink-0 text-text-muted" />
-            <span className="min-w-0 flex-1 truncate">{definition.label}</span>
-            {action === "copy" ? (
-              <span className="text-[11px] text-text-muted">{navigator.platform.includes("Mac") ? "⌘C" : "Ctrl+C"}</span>
-            ) : null}
-          </button>
+          <div key={action}>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={definition.run}
+              disabled={action === "highlight" && markStateLoading}
+              aria-busy={action === "highlight" && markStateLoading ? true : undefined}
+              className="mx-1 flex h-9 w-[calc(100%-8px)] items-center gap-3 rounded-sm px-3 text-left text-[13px] font-medium text-text-primary hover:bg-accent-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-wait disabled:opacity-50"
+            >
+              <Icon size={16} className="shrink-0 text-text-muted" />
+              <span className="min-w-0 flex-1 truncate">{definition.label}</span>
+              {action === "copy" ? (
+                <span className="text-[11px] text-text-muted">{navigator.platform.includes("Mac") ? "⌘C" : "Ctrl+C"}</span>
+              ) : null}
+            </button>
+            {showRemoveBookWordMark && (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={onRemoveBookWordMark}
+                className="mx-1 flex h-9 w-[calc(100%-8px)] items-center gap-3 rounded-sm px-3 text-left text-[13px] font-medium text-text-primary hover:bg-accent-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <Highlighter size={16} className="shrink-0 text-text-muted" />
+                <span className="min-w-0 flex-1 truncate">
+                  {t("contextMenu.removeBookWordMark", { defaultValue: "取消全书同词标记" })}
+                </span>
+              </button>
+            )}
+          </div>
         );
       })}
     </div>

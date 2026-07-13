@@ -120,7 +120,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
 
   const updateProfile = useCallback((id: string, patch: Partial<AiProfile>) => {
     setProfiles((current) => updateOne(current, id, patch));
-    if (["provider", "auth_mode", "base_url", "model"].some((key) => key in patch)) {
+    if (["provider", "auth_mode", "base_url", "model", "temperature", "keep_alive"].some((key) => key in patch)) {
       setStaleHealthIds((current) => new Set(current).add(id));
       setTestResults((current) => {
         const next = { ...current };
@@ -358,26 +358,43 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     setTestingId(profile.id);
     setError(null);
     try {
-      const persisted = dirtyIds.has(profile.id) ? await persistProfile(profile) : profile;
-      const result = await invoke<AiConnectionTestResult>("ai_test_profile", { id: persisted.id });
+      const result = await invoke<AiConnectionTestResult>("ai_test_profile", {
+        id: profile.id,
+        provider: profile.provider,
+        authMode: profile.auth_mode,
+        baseUrl: profile.base_url?.trim() || null,
+        model: profile.model,
+        temperature: profile.temperature,
+        keepAlive: profile.keep_alive?.trim() || null,
+      });
       setTestResults((current) => ({ ...current, [profile.id]: result }));
       setStaleHealthIds((current) => {
         const next = new Set(current);
         next.delete(profile.id);
         return next;
       });
-      setProfiles((current) => updateOne(current, profile.id, {
-        state: result.success ? "active" : "cooldown",
-        last_error_kind: result.error_kind ?? null,
-        last_used_at: result.tested_at,
-        last_latency_ms: result.total_ms,
-      }));
-      setSavedProfiles((current) => updateOne(current, profile.id, {
-        state: result.success ? "active" : "cooldown",
-        last_error_kind: result.error_kind ?? null,
-        last_used_at: result.tested_at,
-        last_latency_ms: result.total_ms,
-      }));
+      try {
+        const [nextProfiles] = await Promise.all([
+          invoke<AiProfile[]>("ai_list_profiles"),
+          refreshCredentials(profile.id),
+        ]);
+        const persisted = nextProfiles.find((item) => item.id === profile.id);
+        if (persisted) {
+          const health = {
+            state: persisted.state,
+            cooldown_until: persisted.cooldown_until,
+            last_error_kind: persisted.last_error_kind,
+            last_used_at: persisted.last_used_at,
+            last_latency_ms: persisted.last_latency_ms,
+          };
+          // Preserve unsaved form fields while refreshing only authoritative
+          // health metadata written by a test of the saved configuration.
+          setProfiles((current) => updateOne(current, profile.id, health));
+          setSavedProfiles((current) => updateOne(current, profile.id, health));
+        }
+      } catch (refreshError) {
+        setError(errorText(refreshError));
+      }
       showSavedToast(result.success ? t("settings.ai.connectionAvailable") : t("settings.ai.connectionUnavailable"));
     } catch (nextError) {
       setError(errorText(nextError));
@@ -472,9 +489,9 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     setError(null);
     try {
       const oauthProfile = { ...profile, auth_mode: "oauth" as const, base_url: null };
-      await persistProfile(oauthProfile);
       const status = await invoke<OAuthStatus>("openai_oauth_login");
       setOauthStatus(status);
+      await persistProfile(oauthProfile);
       markHealthStale(profile.id);
       showSavedToast(t("settings.ai.oauthSuccess"));
     } catch (nextError) {
@@ -546,7 +563,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
         </div>
       ) : (
         <div className="space-y-2">
-          {profiles.map((profile, index) => (
+          {profiles.map((profile) => (
             <AiServiceCard
               key={profile.id}
               profile={profile}
@@ -561,8 +578,6 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
               healthStale={staleHealthIds.has(profile.id)}
               oauthStatus={oauthStatus}
               oauthLoading={oauthLoading}
-              index={index}
-              total={profiles.length}
               dragging={draggingId === profile.id}
               dropTarget={dropTargetId === profile.id && draggingId !== profile.id}
               onToggleExpanded={() => setExpandedId((current) => current === profile.id ? null : profile.id)}

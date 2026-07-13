@@ -103,25 +103,30 @@ fn estimate_from_thresholds(score: f64, thresholds: &[(f64, &str)]) -> String {
         .unwrap_or_else(|| "A1".to_string())
 }
 
-fn score_range(exam_type: &str, reading: bool) -> Option<(f64, f64)> {
+fn score_constraints(exam_type: &str, reading: bool) -> Option<(f64, f64, f64)> {
     match (exam_type, reading) {
-        ("ielts", _) => Some((0.0, 9.0)),
-        ("toefl_ibt", false) => Some((0.0, 120.0)),
-        ("toefl_ibt", true) => Some((0.0, 30.0)),
-        ("toeic_lr", false) => Some((10.0, 990.0)),
-        ("toeic_lr", true) => Some((5.0, 495.0)),
-        ("cambridge", _) => Some((80.0, 230.0)),
-        ("det", _) => Some((10.0, 160.0)),
-        ("cet4" | "cet6", false) => Some((0.0, 710.0)),
-        ("cet4" | "cet6", true) => Some((0.0, 249.0)),
+        ("ielts", _) => Some((0.0, 9.0, 0.5)),
+        ("toefl_ibt", false) => Some((0.0, 120.0, 1.0)),
+        ("toefl_ibt", true) => Some((0.0, 30.0, 1.0)),
+        ("toeic_lr", false) => Some((10.0, 990.0, 1.0)),
+        ("toeic_lr", true) => Some((5.0, 495.0, 1.0)),
+        ("cambridge", _) => Some((80.0, 230.0, 1.0)),
+        ("det", _) => Some((10.0, 160.0, 1.0)),
+        ("cet4" | "cet6", false) => Some((0.0, 710.0, 1.0)),
+        ("cet4" | "cet6", true) => Some((0.0, 249.0, 1.0)),
         _ => None,
     }
 }
 
 fn estimate_one(exam_type: &str, score: f64, reading: bool) -> AppResult<(String, String)> {
-    let (minimum, maximum) = score_range(exam_type, reading)
+    let (minimum, maximum, step) = score_constraints(exam_type, reading)
         .ok_or_else(|| AppError::Other("LANGUAGE_EXAM_UNSUPPORTED".to_string()))?;
-    if !score.is_finite() || score < minimum || score > maximum {
+    let step_count = (score - minimum) / step;
+    if !score.is_finite()
+        || score < minimum
+        || score > maximum
+        || (step_count - step_count.round()).abs() > 1e-8
+    {
         return Err(AppError::Other("LANGUAGE_SCORE_INVALID".to_string()));
     }
     let thresholds: &[(f64, &str)] = match (exam_type, reading) {
@@ -405,6 +410,70 @@ fn summarize_assessments(assessments: &[LanguageAssessment]) -> Option<LanguageA
     })
 }
 
+fn save_language_assessment_in(
+    db: &Db,
+    exam_type: String,
+    overall_score: f64,
+    reading_score: Option<f64>,
+    exam_date: Option<String>,
+) -> AppResult<LanguageAssessment> {
+    let exam_date = normalized_exam_date(exam_date)?;
+    let estimate = estimate_cefr(exam_type.clone(), overall_score, reading_score)?;
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().timestamp_millis();
+    let stored = {
+        let mut conn = db
+            .conn
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+        let transaction = conn.transaction()?;
+        transaction.execute(
+            "INSERT INTO language_assessments
+             (id, exam_type, overall_score, reading_score, exam_date, mapping_version,
+              estimated_cefr, confidence, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+            params![
+                id,
+                exam_type,
+                overall_score,
+                reading_score,
+                exam_date,
+                estimate.mapping_version,
+                estimate.estimated_cefr,
+                estimate.confidence,
+                now
+            ],
+        )?;
+        let stored = transaction.query_row(
+            "SELECT id, exam_type, overall_score, reading_score, exam_date, mapping_version,
+                    estimated_cefr, confidence, created_at, updated_at
+             FROM language_assessments WHERE id = ?1",
+            params![id],
+            row_to_assessment,
+        )?;
+        transaction.commit()?;
+        stored
+    };
+    enrich_assessment(stored)
+}
+
+fn delete_language_assessment_in(db: &Db, id: &str) -> AppResult<()> {
+    let mut conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
+    let transaction = conn.transaction()?;
+    let deleted = transaction.execute(
+        "DELETE FROM language_assessments WHERE id = ?1",
+        params![id],
+    )?;
+    if deleted == 0 {
+        return Err(AppError::Other("LANGUAGE_ASSESSMENT_NOT_FOUND".to_string()));
+    }
+    transaction.commit()?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn save_language_assessment(
     exam_type: String,
@@ -413,36 +482,7 @@ pub fn save_language_assessment(
     exam_date: Option<String>,
     db: State<'_, Db>,
 ) -> AppResult<LanguageAssessment> {
-    let exam_date = normalized_exam_date(exam_date)?;
-    let estimate = estimate_cefr(exam_type.clone(), overall_score, reading_score)?;
-    let id = uuid::Uuid::new_v4().to_string();
-    let now = chrono::Utc::now().timestamp_millis();
-    let conn = db.reader();
-    conn.execute(
-        "INSERT INTO language_assessments
-         (id, exam_type, overall_score, reading_score, exam_date, mapping_version,
-          estimated_cefr, confidence, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
-        params![
-            id,
-            exam_type,
-            overall_score,
-            reading_score,
-            exam_date,
-            estimate.mapping_version,
-            estimate.estimated_cefr,
-            estimate.confidence,
-            now
-        ],
-    )?;
-    let stored = conn.query_row(
-        "SELECT id, exam_type, overall_score, reading_score, exam_date, mapping_version,
-                estimated_cefr, confidence, created_at, updated_at
-         FROM language_assessments WHERE id = ?1",
-        params![id],
-        row_to_assessment,
-    )?;
-    enrich_assessment(stored)
+    save_language_assessment_in(&db, exam_type, overall_score, reading_score, exam_date)
 }
 
 #[tauri::command]
@@ -460,19 +500,13 @@ pub fn summarize_language_assessments(
 
 #[tauri::command]
 pub fn delete_language_assessment(id: String, db: State<'_, Db>) -> AppResult<()> {
-    let deleted = db.reader().execute(
-        "DELETE FROM language_assessments WHERE id = ?1",
-        params![id],
-    )?;
-    if deleted == 0 {
-        return Err(AppError::Other("LANGUAGE_ASSESSMENT_NOT_FOUND".to_string()));
-    }
-    Ok(())
+    delete_language_assessment_in(&db, &id)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn reading_disagreement_returns_a_range() {
@@ -502,6 +536,14 @@ mod tests {
         let estimate = estimate_cefr("cet6".to_string(), 520.0, None).unwrap();
         assert_eq!(estimate.estimated_cefr, "B2");
         assert_eq!(estimate.confidence, "low");
+    }
+
+    #[test]
+    fn rejects_scores_outside_the_exam_increment() {
+        assert!(estimate_cefr("ielts".to_string(), 6.25, None).is_err());
+        assert!(estimate_cefr("toeic_lr".to_string(), 782.5, None).is_err());
+        assert!(estimate_cefr("det".to_string(), 112.5, None).is_err());
+        assert!(estimate_cefr("ielts".to_string(), 6.5, None).is_ok());
     }
 
     fn assessment(
@@ -634,5 +676,36 @@ mod tests {
         );
         assert!(normalized_exam_date(Some("March 9".to_string())).is_err());
         assert!(normalized_exam_date(Some("2999-01-01".to_string())).is_err());
+    }
+
+    #[test]
+    fn save_and_delete_persist_through_the_writable_connection() {
+        let directory = TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+
+        let saved = save_language_assessment_in(
+            &db,
+            "ielts".to_string(),
+            6.5,
+            Some(7.0),
+            Some("2025-03-09".to_string()),
+        )
+        .unwrap();
+        let stored = load_language_assessments(&db).unwrap();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].id, saved.id);
+        assert_eq!(stored[0].reading_score, Some(7.0));
+
+        delete_language_assessment_in(&db, &saved.id).unwrap();
+        assert!(load_language_assessments(&db).unwrap().is_empty());
+    }
+
+    #[test]
+    fn deleting_an_unknown_assessment_returns_a_stable_error() {
+        let directory = TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+
+        let error = delete_language_assessment_in(&db, "missing").unwrap_err();
+        assert_eq!(error.to_string(), "LANGUAGE_ASSESSMENT_NOT_FOUND");
     }
 }

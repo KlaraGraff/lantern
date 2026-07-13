@@ -19,11 +19,14 @@ import Button from "../components/ui/Button";
 import AiPanel from "../components/AiPanel";
 import BookmarksPanel from "../components/BookmarksPanel";
 import ReaderSettings, { type ReaderSettingsState } from "../components/ReaderSettings";
-import { getFontFamily, getThemeStyles, getDefaultReaderTheme, getReaderCapabilities } from "../components/reader-settings";
+import {
+  getFontFamily,
+  getThemeStyles,
+  getDefaultReaderTheme,
+  getReaderCapabilities,
+  isReaderFontAvailable,
+} from "../components/reader-settings";
 import ReaderContextMenu, { type ReaderMenuAction } from "../components/ReaderContextMenu";
-import HighlightToolbar from "../components/HighlightToolbar";
-import LookupPopover from "../components/LookupPopover";
-import ExplainPopover from "../components/ExplainPopover";
 import DictionaryPanel from "../components/DictionaryPanel";
 import TranslationPopover from "../components/TranslationPopover";
 import TableOfContents from "../components/TableOfContents";
@@ -43,7 +46,9 @@ import {
   type SerializableRect,
 } from "../components/reader-interaction";
 import {
+  planCfiHighlightRemoval,
   planCfiHighlightMutation,
+  planTextHighlightRemoval,
   planTextHighlightMutation,
   type HighlightMutationPlan,
 } from "../components/highlight-ranges";
@@ -56,6 +61,25 @@ import {
   parseCardDesignConfig,
   type CardDesignConfigV1,
 } from "../components/learning-card";
+import {
+  MARKER_STYLE_SETTING_KEY,
+  createDefaultMarkerStyleConfig,
+  effectiveAutomaticMarkerStyle,
+  markerHighlightCss,
+  markerOverlayStyle,
+  parseMarkerStyleConfig,
+  type MarkerStyleConfigV1,
+  type MarkerVisualStyleV1,
+} from "../components/marker-style";
+import {
+  installCustomFontFacesInDocument,
+  loadCustomFonts,
+  type CustomFontRecord,
+} from "../components/custom-fonts";
+import {
+  listenForReadingAssistanceSettingsChanged,
+  readingAssistanceSettingsChanged,
+} from "../components/reading-assistance-events";
 
 // foliate-js <foliate-view> web component interface
 /* eslint-disable @typescript-eslint/no-explicit-any -- foliate-js has no TS definitions */
@@ -71,16 +95,10 @@ interface FoliateView extends HTMLElement {
   lastLocation: any;
   history: { back(): void; forward(): void; canGoBack: boolean; canGoForward: boolean; addEventListener: EventTarget["addEventListener"]; removeEventListener: EventTarget["removeEventListener"] };
   getCFI(index: number, range: Range): string;
-  addAnnotation(annotation: { value: string; color?: string }): Promise<any>;
+  resolveCFI(cfi: string): { index: number; anchor: (doc: Document) => Range };
+  addAnnotation(annotation: { value: string; color?: string; styleKind?: AnnotationStyleKind }): Promise<any>;
   deleteAnnotation(annotation: { value: string }): Promise<void>;
   deselect(): void;
-}
-
-interface LookupRecord {
-  lookup_text: string;
-  context_sentence: string | null;
-  chapter: string | null;
-  cfi: string | null;
 }
 
 interface VocabMarker {
@@ -93,8 +111,21 @@ interface WordMarkRule {
   enabled: boolean;
 }
 
+interface WordMarkException {
+  normalized_word: string;
+  location: string;
+  excluded: boolean;
+}
+
+interface LookupOccurrenceMark {
+  location: string;
+  enabled: boolean;
+}
+
 type MarkerKind = "lookup" | "vocab";
 type Marker = { color: string; kind: MarkerKind };
+type AnnotationStyleKind = "manual" | "automatic" | "vocab";
+type AppliedAnnotation = { color: string; styleKind: AnnotationStyleKind };
 type ReaderNavigation = {
   navigationId?: string;
   cfi?: string;
@@ -256,6 +287,38 @@ const wordMarkerColor = {
   mastered: "__mastered__",
 };
 
+function drawMarkerRects(
+  rects: DOMRectList,
+  style: MarkerVisualStyleV1,
+  isPdf: boolean,
+) {
+  const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  group.setAttribute("fill", style.color);
+  for (const { left, top, bottom, height, width } of rects) {
+    if (style.background) {
+      const background = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      const pad = isPdf ? 1 : 0;
+      background.setAttribute("x", String(Math.floor(left)));
+      background.setAttribute("y", String(top - pad));
+      background.setAttribute("height", String(height + pad * 2));
+      background.setAttribute("width", String(Math.ceil(width)));
+      background.setAttribute("rx", isPdf ? "1" : "0");
+      background.setAttribute("opacity", String(style.opacity / 100));
+      group.append(background);
+    }
+    if (style.underline) {
+      const underline = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      underline.setAttribute("x", String(left));
+      underline.setAttribute("y", String(bottom - 1.5));
+      underline.setAttribute("height", "1.5");
+      underline.setAttribute("width", String(width));
+      underline.setAttribute("rx", "0.75");
+      group.append(underline);
+    }
+  }
+  return group;
+}
+
 const readerMenuActionMap: Record<string, ReaderMenuAction> = {
   define: "primary",
   explain: "primary",
@@ -350,46 +413,28 @@ export default function Reader() {
   const [availabilityRetry, setAvailabilityRetry] = useState(0);
   const [readerError, setReaderError] = useState<string | null>(null);
   const [readerRetry, setReaderRetry] = useState(0);
+  const [pdfTextLayerNotice, setPdfTextLayerNotice] = useState(false);
   const [textInitialLocation, setTextInitialLocation] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ReaderInteraction | null>(null);
-  const [contextSelectionFullyHighlighted, setContextSelectionFullyHighlighted] = useState(false);
+  const [contextSelectionFullyMarked, setContextSelectionFullyMarked] = useState(false);
+  const [contextManualSelectionFullyMarked, setContextManualSelectionFullyMarked] = useState(false);
+  const [contextHasManualSelectionMark, setContextHasManualSelectionMark] = useState(false);
+  const [contextHasLookupOccurrenceMark, setContextHasLookupOccurrenceMark] = useState(false);
+  const [contextHasBookWordMark, setContextHasBookWordMark] = useState(false);
+  const [contextBookWordMarkExcluded, setContextBookWordMarkExcluded] = useState(false);
+  const [contextMarkStateLoading, setContextMarkStateLoading] = useState(false);
   const [learningCardConfig, setLearningCardConfig] = useState<CardDesignConfigV1>(DEFAULT_CARD_DESIGN_CONFIG);
   const [learningInteraction, setLearningInteraction] = useState<ReaderInteraction | null>(null);
   const [readerRect, setReaderRect] = useState<SerializableRect | null>(null);
   const [aiContext, setAiContext] = useState<{ text: string; cfi?: string } | undefined>();
   const [initialChatId, setInitialChatId] = useState<string | undefined>();
   const [activeVocabCfi, setActiveVocabCfi] = useState<string | null>(null);
-  const [lookup, setLookup] = useState<{
-    x: number;
-    y: number;
-    word: string;
-    sentence: string;
-    bookTitle?: string;
-    chapter?: string;
-    cfi?: string;
-  } | null>(null);
-  const [explain, setExplain] = useState<{
-    x: number;
-    y: number;
-    text: string;
-    sentence: string;
-    bookTitle?: string;
-    chapter?: string;
-    cfi?: string;
-  } | null>(null);
   const [translation, setTranslation] = useState<{
     x: number;
     y: number;
     text: string;
     context?: string;
     cfi?: string;
-  } | null>(null);
-  const [highlightToolbar, setHighlightToolbar] = useState<{
-    x: number;
-    y: number;
-    highlightId: string;
-    cfiRange: string;
-    color: string;
   } | null>(null);
   const [readerSettings, setReaderSettings] = useState<ReaderSettingsState>(() => ({
     theme: getDefaultReaderTheme(),
@@ -409,6 +454,64 @@ export default function Reader() {
   }));
   const readerSettingsRef = useRef(readerSettings);
   const autoHighlightLookupsRef = useRef(true);
+  const [markerStyle, setMarkerStyle] = useState<MarkerStyleConfigV1>(createDefaultMarkerStyleConfig);
+  const markerStyleRef = useRef(markerStyle);
+  const markMatchingWordsRef = useRef(markerStyle.markMatchingWords);
+  const singleWordClickActionRef = useRef<"menu" | "none">("menu");
+  const doubleClickQuickLookupRef = useRef(true);
+  const [singleWordClickAction, setSingleWordClickAction] = useState<"menu" | "none">("menu");
+  const [doubleClickQuickLookup, setDoubleClickQuickLookup] = useState(true);
+
+  const applyReadingAssistanceSettings = useCallback((settings: Record<string, string>) => {
+    const singleClick = settings.single_word_click_action === "none" ? "none" : "menu";
+    const doubleClick = settings.double_click_quick_lookup !== "false";
+    const nextMarkerStyle = parseMarkerStyleConfig(settings[MARKER_STYLE_SETTING_KEY]);
+    singleWordClickActionRef.current = singleClick;
+    doubleClickQuickLookupRef.current = doubleClick;
+    autoHighlightLookupsRef.current = settings.auto_highlight_lookup_words !== "false";
+    markerStyleRef.current = nextMarkerStyle;
+    markMatchingWordsRef.current = nextMarkerStyle.markMatchingWords;
+    setSingleWordClickAction(singleClick);
+    setDoubleClickQuickLookup(doubleClick);
+    setMarkerStyle(nextMarkerStyle);
+    setLearningCardConfig(parseCardDesignConfig(settings.learning_card_config));
+  }, []);
+
+  const readingAssistanceSettingsRef = useRef<Record<string, string>>({});
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    const refresh = async () => {
+      const settings = await getAllSettings().catch(() => null);
+      if (!disposed && settings) {
+        readingAssistanceSettingsRef.current = settings;
+        applyReadingAssistanceSettings(settings);
+      }
+    };
+    listenForReadingAssistanceSettingsChanged(refresh).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    }).catch(() => {});
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [applyReadingAssistanceSettings]);
+
+  useEffect(() => {
+    const refreshOnFocus = async () => {
+      const settings = await getAllSettings().catch(() => null);
+      if (!settings || !readingAssistanceSettingsChanged(
+        settings,
+        readingAssistanceSettingsRef.current,
+      )) return;
+      readingAssistanceSettingsRef.current = settings;
+      applyReadingAssistanceSettings(settings);
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    return () => window.removeEventListener("focus", refreshOnFocus);
+  }, [applyReadingAssistanceSettings]);
 
   const settingsAnchorRef = useRef<HTMLButtonElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -417,22 +520,28 @@ export default function Reader() {
   const zoomRef = useRef<number | "fit">(zoom);
   const fitPctRef = useRef(100);
   const autoMarkersRef = useRef(new Map<string, Marker>());
-  const appliedAnnotationsRef = useRef(new Map<string, string>());
+  const appliedAnnotationsRef = useRef(new Map<string, AppliedAnnotation>());
   const navigationFlashRef = useRef(new Map<string, number>());
   const pendingNavigationRef = useRef<ReaderNavigation | null>(null);
   const textReaderNavigateRef = useRef<((location: string, flash?: boolean) => void) | null>(null);
   const [textNavigationRegistration, setTextNavigationRegistration] = useState(0);
   const markerSnapshotRef = useRef<{
     highlights: Highlight[];
-    lookups: LookupRecord[];
     vocab: VocabMarker[];
+    lookupOccurrences: LookupOccurrenceMark[];
   } | null>(null);
   const isDragging = useRef(false);
   const chaptersRef = useRef<TocChapter[]>([]);
   const pendingWordClickRef = useRef<number | null>(null);
+  const pendingSelectionMenuRef = useRef<number | null>(null);
+  const readerInteractionGenerationRef = useRef(0);
+  const forceClickSuppressedUntilRef = useRef(0);
+  const pdfTextLayerNoticeTimerRef = useRef<number | null>(null);
+  const annotationClickDocumentRef = useRef<Document | null>(null);
   const contextMenuRequestRef = useRef(0);
   const loadedInteractionDocumentsRef = useRef(new Set<Document>());
   const wordMarkWordsRef = useRef<string[]>([]);
+  const wordMarkExceptionsRef = useRef(new Set<string>());
 
   const handleTextBookReady = useCallback((document: TextBookDocument) => {
     const textChapters = document.toc.map((entry) => ({
@@ -443,7 +552,7 @@ export default function Reader() {
     }));
     chaptersRef.current = textChapters;
     setChapters(textChapters);
-    setCurrentChapterIndex(0);
+    setCurrentChapterIndex((current) => current < 0 ? 0 : current);
     setBookReady(true);
     setReaderError(null);
   }, []);
@@ -451,6 +560,7 @@ export default function Reader() {
   const handleTextBookProgress = useCallback((nextProgress: number, textLocationValue: string, chapterIndex: number) => {
     setProgress(nextProgress);
     currentCfiRef.current = textLocationValue;
+    setTextInitialLocation(textLocationValue);
     setCurrentChapterIndex(chapterIndex);
     if (bookId) updateReadingProgress(bookId, nextProgress, textLocationValue).catch(() => {});
   }, [bookId]);
@@ -459,6 +569,13 @@ export default function Reader() {
     if (pendingWordClickRef.current !== null) {
       window.clearTimeout(pendingWordClickRef.current);
       pendingWordClickRef.current = null;
+    }
+  }, []);
+
+  const cancelPendingSelectionMenu = useCallback(() => {
+    if (pendingSelectionMenuRef.current !== null) {
+      window.clearTimeout(pendingSelectionMenuRef.current);
+      pendingSelectionMenuRef.current = null;
     }
   }, []);
 
@@ -471,29 +588,111 @@ export default function Reader() {
       : planCfiHighlightMutation(interaction.location, highlights, "yellow", interaction.text)
   ), []);
 
+  const getHighlightRemovalPlan = useCallback(async (
+    interaction: ReaderInteraction,
+    highlights: Highlight[],
+  ): Promise<HighlightMutationPlan | null> => (
+    interaction.source === "text"
+      ? planTextHighlightRemoval(interaction.location, highlights)
+      : planCfiHighlightRemoval(interaction.location, highlights)
+  ), []);
+
   const openLearningInteraction = useCallback((interaction: ReaderInteraction) => {
     cancelPendingWordClick();
-    if (interaction.trigger === "selection-contextmenu") {
+    cancelPendingSelectionMenu();
+    if (interaction.trigger !== "word-quick-lookup") {
       const requestToken = ++contextMenuRequestRef.current;
       setContextMenu(interaction);
-      setContextSelectionFullyHighlighted(false);
+      setContextMarkStateLoading(Boolean(bookId));
+      setContextSelectionFullyMarked(false);
+      setContextManualSelectionFullyMarked(false);
+      setContextHasManualSelectionMark(false);
+      setContextHasLookupOccurrenceMark(false);
+      setContextHasBookWordMark(false);
+      setContextBookWordMarkExcluded(false);
       if (bookId) {
-        invoke<Highlight[]>("list_highlights", { bookId }).then(async (highlights) => {
+        Promise.all([
+          invoke<Highlight[]>("list_highlights", { bookId }),
+          interaction.kind === "word"
+            ? invoke<WordMarkRule[]>("list_word_marks", { bookId })
+            : Promise.resolve([]),
+          interaction.kind === "word"
+            ? invoke<WordMarkException[]>("list_word_mark_exceptions", { bookId })
+            : Promise.resolve([]),
+          interaction.kind === "word"
+            ? invoke<LookupOccurrenceMark[]>("list_lookup_occurrence_marks", { bookId })
+            : Promise.resolve([]),
+        ]).then(async ([highlights, wordMarks, exceptions, occurrences]) => {
           if (contextMenuRequestRef.current !== requestToken) return;
-          const plan = await getHighlightMutationPlan(interaction, highlights);
+          const [plan, removalPlan] = await Promise.all([
+            getHighlightMutationPlan(interaction, highlights),
+            getHighlightRemovalPlan(interaction, highlights),
+          ]);
           if (contextMenuRequestRef.current !== requestToken) return;
-          setContextSelectionFullyHighlighted(plan?.fullyHighlighted ?? false);
-        }).catch(() => {});
+          const hasBookRule = wordMarks.some((rule) => (
+            rule.enabled && rule.normalized_word === interaction.normalizedText
+          ));
+          const isExcluded = hasBookRule && exceptions.some((exception) => (
+            exception.excluded
+            && exception.normalized_word === interaction.normalizedText
+            && exception.location === interaction.location
+          ));
+          const manualFullyMarked = Boolean(plan?.fullyHighlighted);
+          const hasManualSelectionMark = Boolean(removalPlan?.removeIds.length);
+          const hasLookupOccurrence = occurrences.some((mark) => (
+            mark.enabled && mark.location === interaction.location
+          ));
+          setContextManualSelectionFullyMarked(manualFullyMarked);
+          setContextHasManualSelectionMark(hasManualSelectionMark);
+          setContextHasLookupOccurrenceMark(hasLookupOccurrence);
+          setContextHasBookWordMark(hasBookRule);
+          setContextBookWordMarkExcluded(isExcluded);
+          setContextSelectionFullyMarked(
+            manualFullyMarked || hasLookupOccurrence || (hasBookRule && !isExcluded),
+          );
+          setContextMarkStateLoading(false);
+        }).catch(() => {
+          if (contextMenuRequestRef.current === requestToken) setContextMarkStateLoading(false);
+        });
+      } else {
+        setContextMarkStateLoading(false);
       }
       return;
     }
-    if (bookId && autoHighlightLookupsRef.current) {
+    contextMenuRequestRef.current += 1;
+    setContextMenu(null);
+    setContextMarkStateLoading(false);
+    setLearningInteraction(interaction);
+  }, [
+    bookId,
+    cancelPendingSelectionMenu,
+    cancelPendingWordClick,
+    getHighlightMutationPlan,
+    getHighlightRemovalPlan,
+  ]);
+
+  const handleLookupSuccess = useCallback((interaction: ReaderInteraction) => {
+    if (!bookId
+      || interaction.kind !== "word"
+      || !interaction.location
+      || !autoHighlightLookupsRef.current) return;
+
+    if (markMatchingWordsRef.current && supportsWordMarkers) {
       invoke("ensure_word_mark_rule", { bookId, word: interaction.text, color: "lookup" })
         .then(() => window.dispatchEvent(new CustomEvent("word-mark-changed", { detail: { bookId } })))
         .catch(() => {});
+      return;
     }
-    setLearningInteraction(interaction);
-  }, [bookId, cancelPendingWordClick, getHighlightMutationPlan]);
+
+    if (!supportsManualAnnotations) return;
+    invoke("ensure_lookup_occurrence_mark", {
+      bookId,
+      word: interaction.text,
+      location: interaction.location,
+    }).then(() => {
+      window.dispatchEvent(new CustomEvent("lookup-mark-changed", { detail: { bookId } }));
+    }).catch(() => {});
+  }, [bookId, supportsManualAnnotations, supportsWordMarkers]);
 
   const handleTextBookError = useCallback((error: string) => {
     setReaderError(error);
@@ -505,19 +704,34 @@ export default function Reader() {
     setTextNavigationRegistration((value) => value + 1);
   }, []);
 
-  const handleTextHighlightClick = useCallback((highlight: Highlight, rect: DOMRect) => {
-    setHighlightToolbar({
-      x: rect.left + rect.width / 2,
-      y: rect.top,
-      highlightId: highlight.id,
-      cfiRange: highlight.cfi_range,
-      color: highlight.color,
-    });
-  }, []);
+  const handleTextHighlightClick = useCallback((highlight: Highlight, rect: DOMRect, fallbackText?: string) => {
+    const text = highlight.text_content?.trim() || fallbackText?.trim();
+    if (!text) return;
+    cancelPendingWordClick();
+    pendingWordClickRef.current = window.setTimeout(() => {
+      pendingWordClickRef.current = null;
+      openLearningInteraction({
+        trigger: "selection-menu",
+        kind: classifySelection(text),
+        text,
+        normalizedText: normalizeInteractionText(text),
+        context: text,
+        location: highlight.cfi_range,
+        anchorRect: serializableRect(rect),
+        source: "text",
+        format: "text",
+      });
+    }, 240);
+  }, [cancelPendingWordClick, openLearningInteraction]);
 
   useEffect(() => {
     readerSettingsRef.current = readerSettings;
   }, [readerSettings]);
+
+  useEffect(() => {
+    markerStyleRef.current = markerStyle;
+    markMatchingWordsRef.current = markerStyle.markMatchingWords;
+  }, [markerStyle]);
 
   useEffect(() => {
     zoomRef.current = zoom;
@@ -562,16 +776,18 @@ export default function Reader() {
 
     const snapshot = markerSnapshotRef.current;
     if (!snapshot) return;
-    const { highlights, lookups, vocab } = snapshot;
+    const { highlights, vocab, lookupOccurrences } = snapshot;
     const manual = new Set(highlights.map((highlight) => highlight.cfi_range));
     const settings = readerSettingsRef.current;
     const next = new Map<string, Marker>();
-    if (supportsWordMarkers) {
-      for (const lookup of lookups) {
-        if (settings.showLookupMarkers && lookup.cfi && !manual.has(lookup.cfi)) {
-          next.set(lookup.cfi, { color: wordMarkerColor.lookup, kind: "lookup" });
+    if (settings.showLookupMarkers) {
+      for (const mark of lookupOccurrences) {
+        if (mark.enabled && mark.location && !manual.has(mark.location)) {
+          next.set(mark.location, { color: wordMarkerColor.lookup, kind: "lookup" });
         }
       }
+    }
+    if (supportsWordMarkers) {
       for (const word of vocab) {
         if (!word.cfi || manual.has(word.cfi)) continue;
         if (word.mastery === "mastered" && settings.showMasteredMarkers) {
@@ -585,19 +801,91 @@ export default function Reader() {
     }
 
     autoMarkersRef.current = next;
-    const desired = new Map([...next.entries()].map(([cfi, marker]) => [cfi, marker.color]));
-    for (const highlight of highlights) desired.set(highlight.cfi_range, highlight.color);
+    const desired = new Map<string, AppliedAnnotation>([...next.entries()].map(([cfi, marker]) => [
+      cfi,
+      { color: marker.color, styleKind: marker.kind === "lookup" ? "automatic" : "vocab" },
+    ]));
+    for (const highlight of highlights) {
+      desired.set(highlight.cfi_range, { color: highlight.color, styleKind: "manual" });
+    }
     const previous = appliedAnnotationsRef.current;
     const cfis = new Set([...previous.keys(), ...desired.keys()]);
     await Promise.all([...cfis].map(async (cfi) => {
-      const oldColor = previous.get(cfi);
-      const newColor = desired.get(cfi);
-      if (!reapplyVisible && oldColor === newColor) return;
-      if (oldColor !== undefined) await view.deleteAnnotation({ value: cfi }).catch(() => {});
-      if (newColor !== undefined) await view.addAnnotation({ value: cfi, color: newColor }).catch(() => {});
+      const oldAnnotation = previous.get(cfi);
+      const newAnnotation = desired.get(cfi);
+      if (!reapplyVisible
+        && oldAnnotation?.color === newAnnotation?.color
+        && oldAnnotation?.styleKind === newAnnotation?.styleKind) return;
+      if (oldAnnotation !== undefined) await view.deleteAnnotation({ value: cfi }).catch(() => {});
+      if (newAnnotation !== undefined) {
+        await view.addAnnotation({
+          value: cfi,
+          color: newAnnotation.color,
+          styleKind: newAnnotation.styleKind,
+        }).catch(() => {});
+      }
     }));
     appliedAnnotationsRef.current = desired;
   }, [supportsManualAnnotations, supportsWordMarkers]);
+
+  const applyFoliateMarkerStyles = useCallback(() => {
+    const view = viewRef.current;
+    if (!view || !capabilities.supportsReflowSettings) return;
+    const config = markerStyleRef.current;
+    const automaticStyle = effectiveAutomaticMarkerStyle(config);
+    for (const { doc, index } of view.renderer?.getContents?.() ?? []) {
+      if (!doc || typeof index !== "number") continue;
+      installCustomFontFacesInDocument(doc);
+      applyWordMarkHighlights(
+        doc,
+        readerSettingsRef.current.showLookupMarkers ? wordMarkWordsRef.current : [],
+        "quill-word-marks",
+        undefined,
+        (word, range) => {
+          const location = view.getCFI(index, range);
+          return !wordMarkExceptionsRef.current.has(`${word}\0${location}`);
+        },
+        markerHighlightCss(
+          markerOverlayStyle(automaticStyle),
+        ),
+      );
+    }
+  }, [capabilities.supportsReflowSettings]);
+
+  useEffect(() => {
+    const refreshFonts = async (event: Event) => {
+      const records = (event as CustomEvent<CustomFontRecord[]>).detail ?? [];
+      const available = new Set(records.map((font) => font.id));
+      setReaderSettings((current) => {
+        if (!current.font.startsWith("custom-") || available.has(current.font)) return current;
+        const next = { ...current, font: "system" };
+        readerSettingsRef.current = next;
+        if (bookId) {
+          localStorage.setItem(`reader-settings-${bookId}`, JSON.stringify(next));
+        }
+        return next;
+      });
+      const storedMarkerStyle = await invoke<string | null>("get_setting", {
+        key: MARKER_STYLE_SETTING_KEY,
+      }).catch(() => null);
+      const nextMarkerStyle = parseMarkerStyleConfig(storedMarkerStyle);
+      markerStyleRef.current = nextMarkerStyle;
+      markMatchingWordsRef.current = nextMarkerStyle.markMatchingWords;
+      setMarkerStyle(nextMarkerStyle);
+
+      const view = viewRef.current;
+      if (!view) return;
+      for (const { doc } of view.renderer?.getContents?.() ?? []) {
+        if (doc) installCustomFontFacesInDocument(doc);
+      }
+      if (capabilities.supportsReflowSettings) {
+        view.renderer?.setStyles?.(getReaderCSS(readerSettingsRef.current));
+      }
+      applyFoliateMarkerStyles();
+    };
+    window.addEventListener("custom-font-faces-loaded", refreshFonts);
+    return () => window.removeEventListener("custom-font-faces-loaded", refreshFonts);
+  }, [applyFoliateMarkerStyles, bookId, capabilities.supportsReflowSettings]);
 
   const flashNavigationTarget = useCallback(async (cfi: string) => {
     if (isTextBook) {
@@ -614,36 +902,53 @@ export default function Reader() {
       if (navigationFlashRef.current.get(cfi) !== token || viewRef.current !== view) return;
       navigationFlashRef.current.delete(cfi);
       await view.deleteAnnotation({ value: cfi }).catch(() => {});
-      const color = appliedAnnotationsRef.current.get(cfi);
-      if (color) await view.addAnnotation({ value: cfi, color }).catch(() => {});
+      const annotation = appliedAnnotationsRef.current.get(cfi);
+      if (annotation) {
+        await view.addAnnotation({
+          value: cfi,
+          color: annotation.color,
+          styleKind: annotation.styleKind,
+        }).catch(() => {});
+      }
     }, 3000);
   }, [isTextBook, supportsCfiNavigation]);
 
   const refreshAnnotations = useCallback(async (reapplyVisible = false) => {
     if (isTextBook) return;
     if (!bookId || !viewRef.current || !supportsManualAnnotations) return;
-    const highlights = await invoke<Highlight[]>("list_highlights", { bookId });
-    const [lookups, vocab] = supportsWordMarkers
-      ? await Promise.all([
-        invoke<LookupRecord[]>("list_lookup_records", { bookId }),
-        invoke<VocabMarker[]>("list_vocab_words", { bookId }),
-      ])
-      : [[], []] as [LookupRecord[], VocabMarker[]];
-    markerSnapshotRef.current = { highlights, lookups, vocab };
+    const [highlights, vocab, lookupOccurrences] = await Promise.all([
+      invoke<Highlight[]>("list_highlights", { bookId }),
+      supportsWordMarkers
+        ? invoke<VocabMarker[]>("list_vocab_words", { bookId })
+        : Promise.resolve([]),
+      invoke<LookupOccurrenceMark[]>("list_lookup_occurrence_marks", { bookId }),
+    ]);
+    markerSnapshotRef.current = { highlights, vocab, lookupOccurrences };
     await applyAnnotations(reapplyVisible);
-  }, [applyAnnotations, bookId, isTextBook, supportsManualAnnotations, supportsWordMarkers]);
+    applyFoliateMarkerStyles();
+  }, [applyAnnotations, applyFoliateMarkerStyles, bookId, isTextBook, supportsManualAnnotations, supportsWordMarkers]);
 
   // Load book metadata and default settings from DB
   useEffect(() => {
     if (!bookId) return;
+    let cancelled = false;
+    dbSettingsLoaded.current = null;
+    setLoading(true);
+    setReaderError(null);
+    setBook(null);
     autoMarkersRef.current.clear();
     appliedAnnotationsRef.current.clear();
     navigationFlashRef.current.clear();
     markerSnapshotRef.current = null;
     currentCfiRef.current = null;
+    chaptersRef.current = [];
+    setChapters([]);
+    setCurrentChapterIndex(-1);
+    setBookReady(false);
     setTextInitialLocation(null);
     getBook(bookId)
       .then((b) => {
+        if (cancelled) return;
         currentCfiRef.current = b.current_cfi;
         setTextInitialLocation(b.current_cfi);
         setBook(b);
@@ -651,32 +956,42 @@ export default function Reader() {
           appWindow.setTitle(b.title);
         }
       })
-      .catch(() => setBook(null))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (!cancelled) setBook(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
-    getAllSettings().then((globalSettings) => {
+    Promise.all([getAllSettings(), loadCustomFonts()]).then(([globalSettings]) => {
+      if (cancelled) return;
       const saved = localStorage.getItem(`reader-settings-${bookId}`);
       const bookSettings = saved ? JSON.parse(saved) as Partial<ReaderSettingsState> : {};
       const g = globalSettings;
-      autoHighlightLookupsRef.current = g.auto_highlight_lookup_words !== "false";
-      setLearningCardConfig(parseCardDesignConfig(g.learning_card_config));
-      setReaderSettings((prev) => ({
-        ...prev,
-        theme: bookSettings.theme || (g.reader_theme as ReaderSettingsState["theme"]) || prev.theme,
-        brightness: bookSettings.brightness ?? (g.brightness ? parseInt(g.brightness) : prev.brightness),
-        pageColumns: bookSettings.pageColumns ?? (g.page_columns ? parseInt(g.page_columns) as ReaderSettingsState["pageColumns"] : prev.pageColumns),
-        font: bookSettings.font || (g.font_family as ReaderSettingsState["font"]) || prev.font,
-        fontSize: bookSettings.fontSize ?? (g.font_size ? parseInt(g.font_size) : prev.fontSize),
-        readingMode: bookSettings.readingMode || (g.reading_mode as ReaderSettingsState["readingMode"]) || prev.readingMode,
-        lineSpacing: bookSettings.lineSpacing ?? (g.line_spacing ? parseFloat(g.line_spacing) : prev.lineSpacing),
-        charSpacing: bookSettings.charSpacing ?? (g.char_spacing ? parseInt(g.char_spacing) : prev.charSpacing),
-        wordSpacing: bookSettings.wordSpacing ?? (g.word_spacing ? parseInt(g.word_spacing) : prev.wordSpacing),
-        margins: bookSettings.margins ?? (g.margins ? parseInt(g.margins) : prev.margins),
-        showLookupMarkers: bookSettings.showLookupMarkers ?? prev.showLookupMarkers,
-        showNewVocabMarkers: bookSettings.showNewVocabMarkers ?? prev.showNewVocabMarkers,
-        showLearningMarkers: bookSettings.showLearningMarkers ?? prev.showLearningMarkers,
-        showMasteredMarkers: bookSettings.showMasteredMarkers ?? prev.showMasteredMarkers,
-      }));
+      readingAssistanceSettingsRef.current = g;
+      applyReadingAssistanceSettings(g);
+      setReaderSettings((prev) => {
+        const requestedFont = bookSettings.font || (g.font_family as ReaderSettingsState["font"]) || prev.font;
+        const next = {
+          ...prev,
+          theme: bookSettings.theme || (g.reader_theme as ReaderSettingsState["theme"]) || prev.theme,
+          brightness: bookSettings.brightness ?? (g.brightness ? parseInt(g.brightness) : prev.brightness),
+          pageColumns: bookSettings.pageColumns ?? (g.page_columns ? parseInt(g.page_columns) as ReaderSettingsState["pageColumns"] : prev.pageColumns),
+          font: isReaderFontAvailable(requestedFont) ? requestedFont : "system",
+          fontSize: bookSettings.fontSize ?? (g.font_size ? parseInt(g.font_size) : prev.fontSize),
+          readingMode: bookSettings.readingMode || (g.reading_mode as ReaderSettingsState["readingMode"]) || prev.readingMode,
+          lineSpacing: bookSettings.lineSpacing ?? (g.line_spacing ? parseFloat(g.line_spacing) : prev.lineSpacing),
+          charSpacing: bookSettings.charSpacing ?? (g.char_spacing ? parseInt(g.char_spacing) : prev.charSpacing),
+          wordSpacing: bookSettings.wordSpacing ?? (g.word_spacing ? parseInt(g.word_spacing) : prev.wordSpacing),
+          margins: bookSettings.margins ?? (g.margins ? parseInt(g.margins) : prev.margins),
+          showLookupMarkers: bookSettings.showLookupMarkers ?? prev.showLookupMarkers,
+          showNewVocabMarkers: bookSettings.showNewVocabMarkers ?? prev.showNewVocabMarkers,
+          showLearningMarkers: bookSettings.showLearningMarkers ?? prev.showLearningMarkers,
+          showMasteredMarkers: bookSettings.showMasteredMarkers ?? prev.showMasteredMarkers,
+        };
+        readerSettingsRef.current = next;
+        return next;
+      });
       const savedZoom = localStorage.getItem(`reader-zoom-${bookId}`);
       if (savedZoom === "fit") {
         setZoom("fit");
@@ -686,22 +1001,25 @@ export default function Reader() {
           setZoom(parsedZoom);
         }
       }
-      dbSettingsLoaded.current = true;
+      dbSettingsLoaded.current = bookId;
     }).catch(() => {});
-  }, [bookId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [applyReadingAssistanceSettings, bookId]);
 
   // Persist reader settings to localStorage when they change — only after load completes
   // to avoid overwriting saved values with defaults during initialization
-  const dbSettingsLoaded = useRef(false);
+  const dbSettingsLoaded = useRef<string | null>(null);
   useEffect(() => {
-    if (!dbSettingsLoaded.current) return;
+    if (dbSettingsLoaded.current !== bookId) return;
     localStorage.setItem(`reader-settings-${bookId}`, JSON.stringify(readerSettings));
   }, [bookId, readerSettings]);
 
   // Persist per-book PDF zoom after load. Debounce to avoid thrashing during
   // rapid zoom-button clicks; only write once the user settles.
   useEffect(() => {
-    if (!dbSettingsLoaded.current) return;
+    if (dbSettingsLoaded.current !== bookId) return;
     if (book?.format !== "pdf") return;
     const handle = window.setTimeout(() => {
       localStorage.setItem(`reader-zoom-${bookId}`, zoom === "fit" ? "fit" : String(zoom));
@@ -784,6 +1102,7 @@ export default function Reader() {
   useEffect(() => {
     if (!book || !viewerRef.current || book.available === false || isTextBook) return;
 
+    const interactionGeneration = ++readerInteractionGenerationRef.current;
     const container = viewerRef.current;
     container.innerHTML = "";
     loadedInteractionDocumentsRef.current.clear();
@@ -795,12 +1114,19 @@ export default function Reader() {
 
     const initFoliate = async () => {
       if (supportsWordMarkers && bookId) {
-        const rules = await invoke<WordMarkRule[]>("list_word_marks", { bookId }).catch(() => []);
+        const [rules, exceptions] = await Promise.all([
+          invoke<WordMarkRule[]>("list_word_marks", { bookId }).catch(() => []),
+          invoke<WordMarkException[]>("list_word_mark_exceptions", { bookId }).catch(() => []),
+        ]);
         wordMarkWordsRef.current = rules
           .filter((rule) => rule.enabled)
           .map((rule) => rule.normalized_word);
+        wordMarkExceptionsRef.current = new Set(exceptions
+          .filter((exception) => exception.excluded)
+          .map((exception) => `${exception.normalized_word}\0${exception.location}`));
       } else {
         wordMarkWordsRef.current = [];
+        wordMarkExceptionsRef.current.clear();
       }
       // Load foliate-js web components (from public/ dir, loaded as native ES module)
       if (!customElements.get("foliate-view")) {
@@ -962,36 +1288,89 @@ export default function Reader() {
 
       // Handle section loads — text selection, keyboard, highlights
       view.addEventListener("load", ((e: CustomEvent) => {
-        const { doc, index } = e.detail;
+        const { doc, index } = e.detail as { doc: Document; index: number };
+        installCustomFontFacesInDocument(doc);
         if (loadedInteractionDocumentsRef.current.has(doc)) return;
         loadedInteractionDocumentsRef.current.add(doc);
-        if (supportsWordMarkers) {
-          applyWordMarkHighlights(doc, wordMarkWordsRef.current);
+        // Manual and automatic marker typography is applied only after this
+        // document has joined Foliate's mounted contents collection.
+        window.requestAnimationFrame(applyFoliateMarkerStyles);
+
+        if (book.format === "pdf") {
+          const showMissingPdfTextLayerNotice = () => {
+            const canvas = doc.querySelector("#canvas > canvas") as HTMLCanvasElement | null;
+            const textLayer = doc.querySelector(".textLayer") as HTMLElement | null;
+            const textLayerRendered = textLayer?.querySelector(".endOfContent");
+            if (
+              !canvas
+              || canvas.width <= 0
+              || canvas.height <= 0
+              || !textLayer
+              || !textLayerRendered
+              || textLayer.textContent?.trim()
+            ) return;
+            setPdfTextLayerNotice(true);
+            if (pdfTextLayerNoticeTimerRef.current !== null) {
+              window.clearTimeout(pdfTextLayerNoticeTimerRef.current);
+            }
+            pdfTextLayerNoticeTimerRef.current = window.setTimeout(() => {
+              pdfTextLayerNoticeTimerRef.current = null;
+              setPdfTextLayerNotice(false);
+            }, 5000);
+          };
+          doc.addEventListener("click", showMissingPdfTextLayerNotice);
+          doc.addEventListener("contextmenu", showMissingPdfTextLayerNotice);
         }
 
-        // Context menu inside content
-        doc.addEventListener("contextmenu", (ev: MouseEvent) => {
-          cancelPendingWordClick();
-          if (!supportsSelection) return;
+        const interactionForSelection = (trigger: ReaderInteraction["trigger"]) => {
+          if (!supportsSelection) return null;
           const range = selectedRange(doc);
-          if (!range) return;
+          if (!range) return null;
           const text = range.toString().trim();
           const location = view.getCFI(index, range);
-          if (!text || !location) return;
-          ev.preventDefault();
-          openLearningInteraction({
-            trigger: "selection-contextmenu",
+          if (!text || !location) return null;
+          return {
+            trigger,
             kind: classifySelection(text, doc.documentElement.lang || undefined),
             text,
             normalizedText: normalizeInteractionText(text),
             context: contextForRange(range, text),
             location,
             anchorRect: viewportRectForRange(range),
-            source: "foliate",
-            format: book.format === "pdf" ? "pdf" : "epub",
+            source: "foliate" as const,
+            format: book.format === "pdf" ? "pdf" as const : "epub" as const,
             locale: doc.documentElement.lang || undefined,
-          });
+          };
+        };
+
+        const scheduleSelectionMenu = () => {
+          cancelPendingSelectionMenu();
+          pendingSelectionMenuRef.current = window.setTimeout(() => {
+            pendingSelectionMenuRef.current = null;
+            if (readerInteractionGenerationRef.current !== interactionGeneration) return;
+            const interaction = interactionForSelection("selection-menu");
+            if (interaction && interaction.kind !== "word") openLearningInteraction(interaction);
+          }, 150);
+        };
+
+        // Selection menus normally open when the selection settles. The
+        // context-menu event remains a keyboard and right-click fallback.
+        doc.addEventListener("selectionchange", scheduleSelectionMenu);
+        doc.addEventListener("contextmenu", (ev: MouseEvent) => {
+          cancelPendingWordClick();
+          cancelPendingSelectionMenu();
+          const interaction = interactionForSelection("selection-menu");
+          if (!interaction) return;
+          ev.preventDefault();
+          openLearningInteraction(interaction);
         });
+        const preserveSystemForceClick = () => {
+          forceClickSuppressedUntilRef.current = Date.now() + 600;
+          cancelPendingWordClick();
+          cancelPendingSelectionMenu();
+        };
+        doc.addEventListener("webkitmouseforcewillbegin", preserveSystemForceClick);
+        doc.addEventListener("webkitmouseforcedown", preserveSystemForceClick);
 
         // Keyboard navigation inside content docs
         doc.addEventListener("keydown", (ev: KeyboardEvent) => {
@@ -1015,9 +1394,11 @@ export default function Reader() {
         // A short delay keeps single-click lookup from racing double-click
         // selection and Foliate's existing-annotation activation.
         doc.addEventListener("click", (ev: MouseEvent) => {
+          if (annotationClickDocumentRef.current === doc) return;
           setContextMenu(null);
-          setHighlightToolbar(null);
           cancelPendingWordClick();
+          if (Date.now() < forceClickSuppressedUntilRef.current) return;
+          if (singleWordClickActionRef.current === "none") return;
           if (!supportsSelection || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return;
           if (isInteractiveReaderTarget(ev.target)) return;
           const selection = doc.getSelection?.();
@@ -1029,7 +1410,7 @@ export default function Reader() {
           const normalizedText = normalizeInteractionText(text);
           if (!text || !normalizedText || !location) return;
           const interaction: ReaderInteraction = {
-            trigger: "word-click",
+            trigger: "word-menu",
             kind: "word",
             text,
             normalizedText,
@@ -1043,9 +1424,33 @@ export default function Reader() {
           pendingWordClickRef.current = window.setTimeout(() => {
             pendingWordClickRef.current = null;
             openLearningInteraction(interaction);
-          }, 180);
+          }, 240);
         });
-        doc.addEventListener("dblclick", cancelPendingWordClick);
+        doc.addEventListener("dblclick", (ev: MouseEvent) => {
+          cancelPendingWordClick();
+          cancelPendingSelectionMenu();
+          if (!doubleClickQuickLookupRef.current) return;
+          if (!supportsSelection || isInteractiveReaderTarget(ev.target)) return;
+          const range = wordRangeAtPoint(doc, ev.clientX, ev.clientY, doc.documentElement.lang || undefined);
+          if (!range) return;
+          const text = range.toString().trim();
+          const location = view.getCFI(index, range);
+          const normalizedText = normalizeInteractionText(text);
+          if (!text || !normalizedText || !location) return;
+          ev.preventDefault();
+          openLearningInteraction({
+            trigger: "word-quick-lookup",
+            kind: "word",
+            text,
+            normalizedText,
+            context: contextForRange(range, text),
+            location,
+            anchorRect: viewportRectForRange(range),
+            source: "foliate",
+            format: book.format === "pdf" ? "pdf" : "epub",
+            locale: doc.documentElement.lang || undefined,
+          });
+        });
 
         // Cross-iframe deselect: each PDF page renders in its own iframe
         // with its own Selection object, so clicking on a neighbor page
@@ -1062,7 +1467,6 @@ export default function Reader() {
               otherDoc.defaultView?.getSelection()?.removeAllRanges();
             }
           }
-          setHighlightToolbar(null);
         });
       }) as EventListener);
 
@@ -1081,6 +1485,18 @@ export default function Reader() {
 
       view.addEventListener("draw-annotation", ((e: CustomEvent) => {
         const { draw, annotation } = e.detail;
+        if (annotation.styleKind === "manual" || annotation.styleKind === "automatic") {
+          const config = markerStyleRef.current;
+          const style = annotation.styleKind === "manual"
+            ? config.manual
+            : effectiveAutomaticMarkerStyle(config);
+          draw((rects: DOMRectList) => drawMarkerRects(
+            rects,
+            markerOverlayStyle(style),
+            book?.format === "pdf",
+          ));
+          return;
+        }
         if (annotation.color === wordMarkerColor.lookup || annotation.color === wordMarkerColor.vocabNew || annotation.color === wordMarkerColor.learning || annotation.color === wordMarkerColor.mastered) {
           const color = annotation.color === wordMarkerColor.learning
             ? "#68A68A"
@@ -1127,54 +1543,90 @@ export default function Reader() {
       view.addEventListener("show-annotation", ((e: CustomEvent) => {
         cancelPendingWordClick();
         const { value, range } = e.detail;
-        const marker = autoMarkersRef.current.get(value);
-        if (marker) {
-          if (marker.kind === "vocab") {
-            setActiveVocabCfi(value);
-            setSidePanel("vocab");
-          } else if (range && bookId) {
-            invoke<LookupRecord[]>("list_lookup_records", { bookId }).then((records) => {
-              const record = records.find((item) => item.cfi === value);
-              if (!record) return;
-              const rect = range.getBoundingClientRect();
-              const iframe = range.startContainer?.ownerDocument?.defaultView?.frameElement as HTMLElement | null;
-              const iframeRect = iframe?.getBoundingClientRect();
-              setLookup({
-                x: rect.left + (iframeRect?.left ?? 0) + rect.width / 2,
-                y: rect.top + (iframeRect?.top ?? 0),
-                word: record.lookup_text,
-                sentence: record.context_sentence || record.lookup_text,
-                bookTitle: book?.title,
-                chapter: record.chapter || undefined,
-                cfi: record.cfi || undefined,
-              });
-            }).catch(() => {});
+        const ownerDocument = range?.startContainer?.ownerDocument ?? null;
+        annotationClickDocumentRef.current = ownerDocument;
+        queueMicrotask(() => {
+          if (annotationClickDocumentRef.current === ownerDocument) {
+            annotationClickDocumentRef.current = null;
           }
+        });
+        const marker = autoMarkersRef.current.get(value);
+        if (marker?.kind === "vocab") {
+          setActiveVocabCfi(value);
+          setSidePanel("vocab");
+          return;
+        }
+        if (marker?.kind === "lookup" && range) {
+          const rect = range.getBoundingClientRect();
+          const iframe = range.startContainer?.ownerDocument?.defaultView?.frameElement as HTMLElement | null;
+          const iframeRect = iframe?.getBoundingClientRect();
+          const text = range.toString().trim();
+          if (!text) return;
+          openLearningInteraction({
+            trigger: "selection-menu",
+            kind: "word",
+            text,
+            normalizedText: normalizeInteractionText(text),
+            context: contextForRange(range, text),
+            location: value,
+            anchorRect: {
+              left: rect.left + (iframeRect?.left ?? 0),
+              top: rect.top + (iframeRect?.top ?? 0),
+              right: rect.right + (iframeRect?.left ?? 0),
+              bottom: rect.bottom + (iframeRect?.top ?? 0),
+              width: rect.width,
+              height: rect.height,
+            },
+            source: "foliate",
+            format: book?.format === "pdf" ? "pdf" : "epub",
+            locale: range.startContainer.ownerDocument?.documentElement.lang || undefined,
+          });
           return;
         }
         // Find the highlight in the DB to get its id and color
-        if (bookId) {
-          invoke<Highlight[]>("list_highlights", { bookId }).then((hls) => {
-            const hl = hls.find((h) => h.cfi_range === value);
-            if (hl && range) {
-              const rect = range.getBoundingClientRect();
-              // The range is inside an iframe, offset to main viewport
-              const iframe = range.startContainer?.ownerDocument?.defaultView?.frameElement as HTMLElement | null;
-              let offsetX = 0, offsetY = 0;
-              if (iframe) {
-                const iframeRect = iframe.getBoundingClientRect();
-                offsetX = iframeRect.left;
-                offsetY = iframeRect.top;
+        if (bookId && range) {
+          const requestToken = ++contextMenuRequestRef.current;
+          setContextMenu(null);
+          pendingWordClickRef.current = window.setTimeout(() => {
+            pendingWordClickRef.current = null;
+            invoke<Highlight[]>("list_highlights", { bookId }).then((hls) => {
+              if (contextMenuRequestRef.current !== requestToken) return;
+              const hl = hls.find((h) => h.cfi_range === value);
+              if (hl) {
+                const rect = range.getBoundingClientRect();
+                // The range is inside an iframe, offset to main viewport
+                const iframe = range.startContainer?.ownerDocument?.defaultView?.frameElement as HTMLElement | null;
+                let offsetX = 0, offsetY = 0;
+                if (iframe) {
+                  const iframeRect = iframe.getBoundingClientRect();
+                  offsetX = iframeRect.left;
+                  offsetY = iframeRect.top;
+                }
+                const text = hl.text_content?.trim() || range.toString().trim();
+                if (!text) return;
+                if (contextMenuRequestRef.current !== requestToken) return;
+                openLearningInteraction({
+                  trigger: "selection-menu",
+                  kind: classifySelection(text, range.startContainer.ownerDocument?.documentElement.lang || undefined),
+                  text,
+                  normalizedText: normalizeInteractionText(text),
+                  context: contextForRange(range, text),
+                  location: hl.cfi_range,
+                  anchorRect: {
+                    left: rect.left + offsetX,
+                    top: rect.top + offsetY,
+                    right: rect.right + offsetX,
+                    bottom: rect.bottom + offsetY,
+                    width: rect.width,
+                    height: rect.height,
+                  },
+                  source: "foliate",
+                  format: book?.format === "pdf" ? "pdf" : "epub",
+                  locale: range.startContainer.ownerDocument?.documentElement.lang || undefined,
+                });
               }
-              setHighlightToolbar({
-                x: rect.left + offsetX + rect.width / 2,
-                y: rect.top + offsetY,
-                highlightId: hl.id,
-                cfiRange: hl.cfi_range,
-                color: hl.color,
-              });
-            }
-          }).catch(() => {});
+            }).catch(() => {});
+          }, 240);
         }
       }) as EventListener);
 
@@ -1217,7 +1669,15 @@ export default function Reader() {
     const loadedDocuments = loadedInteractionDocumentsRef.current;
     return () => {
       cancelled = true;
+      readerInteractionGenerationRef.current += 1;
       cancelPendingWordClick();
+      cancelPendingSelectionMenu();
+      if (pdfTextLayerNoticeTimerRef.current !== null) {
+        window.clearTimeout(pdfTextLayerNoticeTimerRef.current);
+        pdfTextLayerNoticeTimerRef.current = null;
+      }
+      setPdfTextLayerNotice(false);
+      annotationClickDocumentRef.current = null;
       if (backButtonTimerRef.current !== null) {
         window.clearTimeout(backButtonTimerRef.current);
         backButtonTimerRef.current = null;
@@ -1236,7 +1696,7 @@ export default function Reader() {
     // below, so the derived dep stays `null` for them and the effect won't
     // re-run.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [book, book?.format === "pdf" ? readerSettings.readingMode : null, applyAnnotations, capabilities, isTextBook, supportsManualAnnotations, supportsSelection, readerRetry]);
+  }, [book, book?.format === "pdf" ? readerSettings.readingMode : null, applyAnnotations, applyFoliateMarkerStyles, capabilities, isTextBook, supportsManualAnnotations, supportsSelection, readerRetry]);
 
   // Apply reader settings reactively
   useEffect(() => {
@@ -1279,25 +1739,40 @@ export default function Reader() {
   ].join(":");
   useEffect(() => {
     refreshAnnotations().catch(() => {});
-  }, [bookReady, markerVisibility, refreshAnnotations]);
+  }, [bookReady, markerVisibility, markerStyle, refreshAnnotations]);
 
   useEffect(() => {
     if (!bookId || !supportsWordMarkers || isTextBook) return;
     const refresh = (event: Event) => {
       const detail = (event as CustomEvent<{ bookId?: string }>).detail;
       if (detail?.bookId && detail.bookId !== bookId) return;
-      invoke<WordMarkRule[]>("list_word_marks", { bookId }).then((rules) => {
+      Promise.all([
+        invoke<WordMarkRule[]>("list_word_marks", { bookId }),
+        invoke<WordMarkException[]>("list_word_mark_exceptions", { bookId }),
+      ]).then(([rules, exceptions]) => {
         wordMarkWordsRef.current = rules
           .filter((rule) => rule.enabled)
           .map((rule) => rule.normalized_word);
-        for (const doc of loadedInteractionDocumentsRef.current) {
-          applyWordMarkHighlights(doc, wordMarkWordsRef.current);
-        }
+        wordMarkExceptionsRef.current = new Set(exceptions
+          .filter((exception) => exception.excluded)
+          .map((exception) => `${exception.normalized_word}\0${exception.location}`));
+        applyFoliateMarkerStyles();
       }).catch(() => {});
     };
     window.addEventListener("word-mark-changed", refresh);
     return () => window.removeEventListener("word-mark-changed", refresh);
-  }, [bookId, isTextBook, supportsWordMarkers]);
+  }, [applyFoliateMarkerStyles, bookId, isTextBook, supportsWordMarkers]);
+
+  useEffect(() => {
+    if (!bookId || isTextBook) return;
+    const refresh = (event: Event) => {
+      const detail = (event as CustomEvent<{ bookId?: string }>).detail;
+      if (detail?.bookId && detail.bookId !== bookId) return;
+      refreshAnnotations().catch(() => {});
+    };
+    window.addEventListener("lookup-mark-changed", refresh);
+    return () => window.removeEventListener("lookup-mark-changed", refresh);
+  }, [bookId, isTextBook, refreshAnnotations]);
 
   useEffect(() => {
     const refreshForCurrentBook = (event: Event) => {
@@ -1599,7 +2074,7 @@ export default function Reader() {
     if (!isStandaloneWindow) navigate(location.pathname, { replace: true });
   }, [bookReady, flashNavigationTarget, location.state, location.pathname, navigate, supportsCfiNavigation]);
 
-  if (loading) {
+  if (loading || (bookId !== undefined && book?.id !== bookId)) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-3">
         <Loader2 size={24} className="animate-spin text-text-muted" />
@@ -1645,6 +2120,7 @@ export default function Reader() {
                   .catch((error) => setReaderError(error instanceof Error ? error.message : String(error)));
                 return;
               }
+              setReaderError(null);
               setReaderRetry((value) => value + 1);
             }}
           >
@@ -1826,6 +2302,12 @@ export default function Reader() {
             settings={readerSettings}
             onSettingsChange={setReaderSettings}
             capabilities={capabilities}
+            onClearLookupMarks={bookId ? async () => {
+              await invoke("clear_lookup_marks_for_book", { bookId });
+              window.dispatchEvent(new CustomEvent("word-mark-changed", { detail: { bookId } }));
+              window.dispatchEvent(new CustomEvent("lookup-mark-changed", { detail: { bookId } }));
+              await refreshAnnotations();
+            } : undefined}
           />
 
           {supportsCfiNavigation && <>
@@ -1890,7 +2372,6 @@ export default function Reader() {
               // else" from the reader's perspective. Drop the in-iframe text
               // selection so the highlight doesn't linger.
               viewRef.current?.deselect?.();
-              setHighlightToolbar(null);
             }}
           >
             {isTextBook ? (
@@ -1905,6 +2386,9 @@ export default function Reader() {
                 onError={handleTextBookError}
                 onRegisterNavigation={registerTextBookNavigation}
                 onHighlightClick={handleTextHighlightClick}
+                singleWordClickAction={singleWordClickAction}
+                doubleClickQuickLookup={doubleClickQuickLookup}
+                markerStyle={markerStyle}
               />
             ) : (
               <div
@@ -1924,6 +2408,14 @@ export default function Reader() {
                 />
               ));
             })()}
+            {book.format === "pdf" && pdfTextLayerNotice && (
+              <div
+                role="status"
+                className="pointer-events-none absolute bottom-5 left-1/2 z-30 max-w-[min(420px,calc(100%_-_24px))] -translate-x-1/2 rounded-md border border-border bg-bg-surface px-3 py-2 text-center text-[12px] leading-5 text-text-secondary shadow-popover"
+              >
+                {t("reader.pdfNoTextLayer")}
+              </div>
+            )}
             {!bookReady && (
               <div className="absolute inset-0 z-20 bg-bg-surface flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
@@ -2051,8 +2543,10 @@ export default function Reader() {
           y={contextMenu.anchorRect.top}
           text={contextMenu.text}
           kind={contextMenu.kind}
-          highlighted={contextSelectionFullyHighlighted}
-          order={learningCardConfig.selectionMenus[contextMenu.kind === "passage" ? "passage" : "phrase"]
+          marked={contextSelectionFullyMarked}
+          hasBookWordMark={contextHasBookWordMark}
+          markStateLoading={contextMarkStateLoading}
+          order={learningCardConfig.selectionMenus[contextMenu.kind]
             .filter((item) => item.enabled)
             .map((item) => readerMenuActionMap[item.id])}
           onClose={() => {
@@ -2064,7 +2558,7 @@ export default function Reader() {
             setContextMenu(null);
           }}
           onExplain={() => {
-            setLearningInteraction(contextMenu);
+            setLearningInteraction({ ...contextMenu, trigger: "word-quick-lookup" });
             setContextMenu(null);
           }}
           onQuote={() => {
@@ -2076,7 +2570,7 @@ export default function Reader() {
             setContextMenu(null);
           }}
           onLookup={() => {
-            setLearningInteraction(contextMenu);
+            setLearningInteraction({ ...contextMenu, trigger: "word-quick-lookup" });
             setContextMenu(null);
           }}
           onTranslate={() => {
@@ -2103,23 +2597,97 @@ export default function Reader() {
             }).catch((error) => console.error("Failed to save selection:", error));
             setContextMenu(null);
           }}
-          onToggleHighlight={supportsManualAnnotations ? (() => {
+          onToggleMark={supportsManualAnnotations ? (() => {
             const interaction = contextMenu;
+            const manualFullyMarked = contextManualSelectionFullyMarked;
+            const hasManualSelectionMark = contextHasManualSelectionMark;
+            const hasLookupOccurrence = contextHasLookupOccurrenceMark;
+            const hasBookRule = contextHasBookWordMark;
+            const bookRuleExcluded = contextBookWordMarkExcluded;
             contextMenuRequestRef.current += 1;
             setContextMenu(null);
             if (!interaction.location || !bookId) return;
-            invoke<Highlight[]>("list_highlights", { bookId }).then(async (highlights) => {
-              const plan = await getHighlightMutationPlan(interaction, highlights);
-              if (!plan) return;
-              return invoke<Highlight[]>("replace_highlights", {
+            const replaceManualMarks = async (plan: HighlightMutationPlan | null) => {
+              if (!plan || (plan.removeIds.length === 0 && plan.additions.length === 0)) return;
+              await invoke<Highlight[]>("replace_highlights", {
                 bookId,
                 removeIds: plan.removeIds,
                 additions: plan.additions,
-              }).then(async () => {
-                window.dispatchEvent(new CustomEvent("highlight-changed", { detail: { bookId } }));
-                await refreshAnnotations();
               });
-            }).catch((err) => console.error("Failed to toggle highlight:", err));
+              window.dispatchEvent(new CustomEvent("highlight-changed", { detail: { bookId } }));
+            };
+            (async () => {
+              const highlights = await invoke<Highlight[]>("list_highlights", { bookId });
+              if (interaction.kind === "word" && contextSelectionFullyMarked) {
+                if (hasLookupOccurrence) {
+                  await invoke("set_lookup_occurrence_mark_enabled", {
+                    bookId,
+                    word: interaction.text,
+                    location: interaction.location,
+                    enabled: false,
+                  });
+                  window.dispatchEvent(new CustomEvent("lookup-mark-changed", { detail: { bookId } }));
+                }
+                if (hasManualSelectionMark) {
+                  await replaceManualMarks(await getHighlightRemovalPlan(interaction, highlights));
+                }
+                if (hasBookRule && !bookRuleExcluded) {
+                  await invoke("set_word_mark_exception", {
+                    bookId,
+                    word: interaction.text,
+                    location: interaction.location,
+                    excluded: true,
+                  });
+                  window.dispatchEvent(new CustomEvent("word-mark-changed", { detail: { bookId } }));
+                }
+              } else if (interaction.kind === "word" && hasBookRule) {
+                if (bookRuleExcluded) {
+                  await invoke("set_word_mark_exception", {
+                    bookId,
+                    word: interaction.text,
+                    location: interaction.location,
+                    excluded: false,
+                  });
+                  window.dispatchEvent(new CustomEvent("word-mark-changed", { detail: { bookId } }));
+                } else {
+                  // The fully-marked branch above owns removal. This path is
+                  // retained for defensive state refreshes only.
+                  return;
+                }
+              } else if (interaction.kind === "word"
+                && !manualFullyMarked
+                && supportsWordMarkers
+                && markMatchingWordsRef.current) {
+                await invoke("set_word_mark_rule_enabled", {
+                  bookId,
+                  word: interaction.text,
+                  enabled: true,
+                  color: "lookup",
+                });
+                window.dispatchEvent(new CustomEvent("word-mark-changed", { detail: { bookId } }));
+              } else if (interaction.kind === "word") {
+                await replaceManualMarks(await getHighlightMutationPlan(interaction, highlights));
+              } else {
+                const plan = manualFullyMarked
+                  ? await getHighlightRemovalPlan(interaction, highlights)
+                  : await getHighlightMutationPlan(interaction, highlights);
+                await replaceManualMarks(plan);
+              }
+              await refreshAnnotations();
+            })().catch((err) => console.error("Failed to toggle mark:", err));
+          }) : undefined}
+          onRemoveBookWordMark={contextMenu.kind === "word" && contextHasBookWordMark ? (() => {
+            const interaction = contextMenu;
+            contextMenuRequestRef.current += 1;
+            setContextMenu(null);
+            if (!bookId) return;
+            invoke("remove_word_mark", { bookId, word: interaction.text })
+              .then(async () => {
+                window.dispatchEvent(new CustomEvent("word-mark-changed", { detail: { bookId } }));
+                window.dispatchEvent(new CustomEvent("lookup-mark-changed", { detail: { bookId } }));
+                await refreshAnnotations();
+              })
+              .catch((error) => console.error("Failed to remove book word mark:", error));
           }) : undefined}
         />
       )}
@@ -2143,38 +2711,7 @@ export default function Reader() {
           onViewAllNotes={() => {
             invoke("open_library_on_main", { filter: "notes" }).catch(() => {});
           }}
-        />
-      )}
-
-      {lookup && (
-        <LookupPopover
-          x={lookup.x}
-          y={lookup.y}
-          word={lookup.word}
-          sentence={lookup.sentence}
-          bookTitle={lookup.bookTitle}
-          chapter={lookup.chapter}
-          bookId={bookId!}
-          cfi={lookup.cfi}
-          onAskFollowUp={(quote, cfi) => {
-            setAiContext({ text: quote, cfi });
-            setSidePanel("ai");
-          }}
-          onClose={() => setLookup(null)}
-        />
-      )}
-
-      {explain && (
-        <ExplainPopover
-          x={explain.x}
-          y={explain.y}
-          text={explain.text}
-          sentence={explain.sentence}
-          bookTitle={explain.bookTitle}
-          chapter={explain.chapter}
-          bookId={bookId!}
-          cfi={explain.cfi}
-          onClose={() => setExplain(null)}
+          onLookupSuccess={handleLookupSuccess}
         />
       )}
 
@@ -2190,32 +2727,6 @@ export default function Reader() {
         />
       )}
 
-      {highlightToolbar && (
-        <HighlightToolbar
-          x={highlightToolbar.x}
-          y={highlightToolbar.y}
-          currentColor={highlightToolbar.color}
-          onChangeColor={(color) => {
-            invoke("update_highlight_color", { id: highlightToolbar.highlightId, color })
-              .then(async () => {
-                window.dispatchEvent(new CustomEvent("highlight-changed", { detail: { bookId } }));
-                await refreshAnnotations();
-                setHighlightToolbar((prev) => prev ? { ...prev, color } : null);
-              })
-              .catch((err) => console.error("Failed to update highlight color:", err));
-          }}
-          onDelete={() => {
-            invoke("remove_highlight", { id: highlightToolbar.highlightId })
-              .then(async () => {
-                window.dispatchEvent(new CustomEvent("highlight-changed", { detail: { bookId } }));
-                await refreshAnnotations();
-                setHighlightToolbar(null);
-              })
-              .catch((err) => console.error("Failed to remove highlight:", err));
-          }}
-          onClose={() => setHighlightToolbar(null)}
-        />
-      )}
     </div>
   );
 }

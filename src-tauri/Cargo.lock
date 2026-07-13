@@ -3987,8 +3987,10 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "toml_edit 0.22.27",
+ "ttf-parser",
  "ulid",
  "uuid",
+ "wuff",
  "zip 2.4.2",
 ]
 
@@ -7281,6 +7283,18 @@ dependencies = [
  "windows-core 0.61.2",
  "windows-version",
  "x11-dl",
+]
+
+[[package]]
+name = "wuff"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f0bd4b3863c66b53b6569ff8470434a7191ab07642fe8ddb3f9558ced547fe0"
+dependencies = [
+ "arrayvec",
+ "brotli-decompressor",
+ "bytes",
+ "flate2",
 ]
 
 [[package]]

@@ -22,6 +22,12 @@ pub async fn stream_chat(
     emitted: Arc<AtomicBool>,
 ) -> AppResult<()> {
     let client = crate::ai::http_client();
+    let base = base_url.trim_end_matches('/');
+    let url = if base.ends_with("/v1") {
+        format!("{base}/messages")
+    } else {
+        format!("{base}/v1/messages")
+    };
 
     // Anthropic uses a separate system parameter
     let system_msg = messages
@@ -52,7 +58,7 @@ pub async fn stream_chat(
     });
 
     let mut request = client
-        .post(format!("{}/v1/messages", base_url.trim_end_matches('/')))
+        .post(url)
         .header("anthropic-version", "2023-06-01")
         .header("content-type", "application/json");
 

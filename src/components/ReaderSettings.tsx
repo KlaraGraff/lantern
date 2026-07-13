@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Sun, Check, ScrollText, BookOpen, File, Files } from "lucide-react";
+import { Sun, Check, ScrollText, BookOpen, File, Files, Loader2, Trash2 } from "lucide-react";
 import Toggle from "./ui/Toggle";
 import Select from "./ui/Select";
 import {
@@ -43,12 +43,24 @@ interface ReaderSettingsProps {
   settings: ReaderSettingsState;
   onSettingsChange: (settings: ReaderSettingsState) => void;
   capabilities: ReaderCapabilities;
+  onClearLookupMarks?: () => Promise<void>;
 }
 
-export default function ReaderSettings({ open, onClose, anchorRef, settings, onSettingsChange, capabilities }: ReaderSettingsProps) {
+export default function ReaderSettings({
+  open,
+  onClose,
+  anchorRef,
+  settings,
+  onSettingsChange,
+  capabilities,
+  onClearLookupMarks,
+}: ReaderSettingsProps) {
   const { t } = useTranslation();
   const popoverRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ top: 0, right: 0 });
+  const [clearLookupConfirm, setClearLookupConfirm] = useState(false);
+  const [clearLookupBusy, setClearLookupBusy] = useState(false);
+  const [clearLookupError, setClearLookupError] = useState(false);
 
   useEffect(() => {
     if (open && anchorRef.current) {
@@ -75,6 +87,12 @@ export default function ReaderSettings({ open, onClose, anchorRef, settings, onS
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open, onClose, anchorRef]);
+
+  useEffect(() => {
+    if (open) return;
+    setClearLookupConfirm(false);
+    setClearLookupError(false);
+  }, [open]);
 
   const update = (partial: Partial<ReaderSettingsState>) => {
     onSettingsChange({ ...settings, ...partial });
@@ -313,6 +331,65 @@ export default function ReaderSettings({ open, onClose, anchorRef, settings, onS
               />
             </div>
           ))}
+        </div>
+      )}
+
+      {onClearLookupMarks && (
+        <div className="px-4 py-3 border-t border-border-light">
+          {clearLookupConfirm ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-[12px] leading-5 text-text-muted">
+                {t("readerSettings.clearLookupMarksConfirm")}
+              </p>
+              {clearLookupError && (
+                <p role="alert" className="text-[12px] text-danger-text">
+                  {t("readerSettings.clearLookupMarksFailed")}
+                </p>
+              )}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={clearLookupBusy}
+                  className="h-8 px-2 rounded-md text-[12px] text-text-muted hover:bg-bg-input disabled:opacity-50"
+                  onClick={() => {
+                    setClearLookupConfirm(false);
+                    setClearLookupError(false);
+                  }}
+                >
+                  {t("common.cancel")}
+                </button>
+                <button
+                  type="button"
+                  disabled={clearLookupBusy}
+                  className="h-8 px-2 rounded-md inline-flex items-center gap-1.5 text-[12px] text-danger-text hover:bg-danger-bg disabled:opacity-50"
+                  onClick={async () => {
+                    setClearLookupBusy(true);
+                    setClearLookupError(false);
+                    try {
+                      await onClearLookupMarks();
+                      setClearLookupConfirm(false);
+                    } catch {
+                      setClearLookupError(true);
+                    } finally {
+                      setClearLookupBusy(false);
+                    }
+                  }}
+                >
+                  {clearLookupBusy ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                  {t("readerSettings.clearLookupMarksAction")}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="h-8 -mx-2 px-2 rounded-md inline-flex items-center gap-2 text-[12px] text-danger-text hover:bg-danger-bg"
+              onClick={() => setClearLookupConfirm(true)}
+            >
+              <Trash2 size={13} />
+              {t("readerSettings.clearLookupMarks")}
+            </button>
+          )}
         </div>
       )}
     </div>

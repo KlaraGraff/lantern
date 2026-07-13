@@ -37,7 +37,6 @@ pub struct HighlightReplacement {
     pub color: String,
     pub note: Option<String>,
     pub text_content: Option<String>,
-    pub created_at: Option<i64>,
 }
 
 #[tauri::command]
@@ -250,7 +249,11 @@ pub fn replace_highlights(
         let mut created = Vec::with_capacity(additions.len());
         for addition in &additions {
             let id = uuid::Uuid::new_v4().to_string();
-            let created_at = addition.created_at.unwrap_or(now).min(now).max(0);
+            // A split or merged range is a new synced entity. Its add event
+            // carries the command timestamp, so using that same timestamp for
+            // both local fields keeps local SQL, peer replay, and snapshots
+            // equivalent even when part of an older range is retained.
+            let created_at = now;
             tx.execute(
                 "INSERT INTO highlights (id, book_id, cfi_range, color, note, text_content, created_at, updated_at, updated_by_device)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)",
@@ -359,4 +362,87 @@ pub fn update_highlight_color(
         });
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::params;
+    use tauri::Manager;
+    use tempfile::TempDir;
+
+    #[test]
+    fn replacement_highlights_use_one_current_command_timestamp() {
+        let dir = TempDir::new().unwrap();
+        let db = Db::init(dir.path()).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO books
+                 (id, title, author, file_path, format, status, progress,
+                  created_at, updated_at)
+                 VALUES ('b1', 'Book', 'Author', 'books/b1.epub', 'epub',
+                         'reading', 0, 1, 1)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO highlights
+                 (id, book_id, cfi_range, color, created_at, updated_at,
+                  updated_by_device)
+                 VALUES ('old', 'b1', 'old-range', 'yellow', 1, 1, 'dev-A')",
+                [],
+            )
+            .unwrap();
+        }
+
+        let app = tauri::test::mock_app();
+        assert!(app.manage(db));
+        assert!(app.manage(SyncWriter::new("dev-A".into())));
+        let before = chrono::Utc::now().timestamp_millis();
+        let created = replace_highlights(
+            "b1".into(),
+            vec!["old".into()],
+            vec![HighlightReplacement {
+                cfi_range: "new-range".into(),
+                color: "blue".into(),
+                note: Some("note".into()),
+                text_content: Some("text".into()),
+            }],
+            app.state::<Db>(),
+            app.state::<SyncWriter>(),
+        )
+        .unwrap();
+        let after = chrono::Utc::now().timestamp_millis();
+
+        assert_eq!(created.len(), 1);
+        assert_eq!(created[0].created_at, created[0].updated_at);
+        assert!((before..=after).contains(&created[0].created_at));
+
+        let conn = app.state::<Db>();
+        let conn = conn.conn.lock().unwrap();
+        let stored: (i64, i64, String) = conn
+            .query_row(
+                "SELECT created_at, updated_at, updated_by_device
+                 FROM highlights WHERE id = ?1",
+                params![created[0].id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            stored,
+            (created[0].created_at, created[0].updated_at, "dev-A".into())
+        );
+        let tombstone_ts: i64 = conn
+            .query_row(
+                "SELECT ts FROM _tombstones WHERE entity = 'highlight' AND id = 'old'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            tombstone_ts, created[0].created_at,
+            "replacement deletes and additions must share the command timestamp"
+        );
+    }
 }

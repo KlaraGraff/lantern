@@ -4,6 +4,7 @@ pub mod bookmarks;
 pub mod books;
 pub mod chats;
 pub mod collections;
+pub mod fonts;
 pub mod language_assessments;
 pub mod lookup_history;
 pub mod mcp;

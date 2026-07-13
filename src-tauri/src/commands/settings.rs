@@ -239,8 +239,8 @@ pub fn ai_delete_profile(
 #[tauri::command]
 pub async fn ai_list_models(
     profile_id: String,
-    provider: Option<String>,
-    auth_mode: Option<String>,
+    provider: String,
+    auth_mode: String,
     base_url: Option<String>,
     db: State<'_, Db>,
     secrets: State<'_, Secrets>,
@@ -249,13 +249,32 @@ pub async fn ai_list_models(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn ai_test_profile(
     id: String,
+    provider: String,
+    auth_mode: String,
+    base_url: Option<String>,
+    model: String,
+    temperature: f64,
+    keep_alive: Option<String>,
     app: AppHandle,
     db: State<'_, Db>,
     secrets: State<'_, Secrets>,
 ) -> AppResult<router::AiConnectionTestResult> {
-    router::test_profile(&app, &db, &secrets, &id).await
+    router::test_profile(
+        &app,
+        &db,
+        &secrets,
+        &id,
+        provider,
+        auth_mode,
+        base_url,
+        model,
+        temperature,
+        keep_alive,
+    )
+    .await
 }
 
 #[tauri::command]

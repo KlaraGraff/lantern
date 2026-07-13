@@ -36,6 +36,7 @@ interface LearningCardControllerProps {
   onClose: () => void;
   onAskAi: (quote: string, location?: string) => void;
   onViewAllNotes?: () => void;
+  onLookupSuccess?: (interaction: ReaderInteraction) => void;
 }
 
 function moduleText(content: LearningModuleContent | undefined): string {
@@ -101,6 +102,7 @@ export default function LearningCardController({
   onClose,
   onAskAi,
   onViewAllNotes,
+  onLookupSuccess,
 }: LearningCardControllerProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [retry, setRetry] = useState(0);
@@ -153,6 +155,7 @@ export default function LearningCardController({
       if (!active) return;
       setResult(response);
       setLoading(false);
+      if (interaction.kind === "word") onLookupSuccess?.(interaction);
       const projected = projection(response);
       invoke("save_lookup_record", {
         bookId,
@@ -177,7 +180,7 @@ export default function LearningCardController({
       active = false;
       invoke("ai_cancel", { requestId }).catch(() => {});
     };
-  }, [bookId, bookTitle, chapter, config, interaction, retry]);
+  }, [bookId, bookTitle, chapter, config, interaction, onLookupSuccess, retry]);
 
   useEffect(() => {
     refreshNotes().catch(() => {});

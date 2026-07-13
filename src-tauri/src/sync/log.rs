@@ -521,7 +521,7 @@ mod tests {
     }
 
     #[test]
-    fn reopen_seeds_from_the_max_supported_v1_or_v2_event() {
+    fn reopen_seeds_from_the_max_supported_legacy_or_current_event() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("logs").join("dev-A.jsonl");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();

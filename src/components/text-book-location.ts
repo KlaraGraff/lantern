@@ -59,13 +59,18 @@ export function textLocation(start: number, end = start): string {
 export function parseTextLocation(value: string | null | undefined): ParsedTextLocation | null {
   if (!value?.startsWith("textloc:")) return null;
   if (value.startsWith("textloc:v2:")) {
-    const parts = value.slice("textloc:v2:".length).split(":").map(Number);
-    if (parts.length !== 2 || parts.some((part) => !Number.isSafeInteger(part) || part < 0)) return null;
-    return { version: 2, start: parts[0], end: parts[1] };
+    const match = /^textloc:v2:(\d+):(\d+)$/.exec(value);
+    if (!match) return null;
+    const start = Number(match[1]);
+    const end = Number(match[2]);
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start) return null;
+    return { version: 2, start, end };
   }
 
-  const parts = value.slice("textloc:".length).split(":").map(Number);
-  if (parts.length !== 6 || parts.some((part) => !Number.isSafeInteger(part) || part < 0)) return null;
+  const match = /^textloc:(\d+):(\d+):(\d+):(\d+):(\d+):(\d+)$/.exec(value);
+  if (!match) return null;
+  const parts = match.slice(1).map(Number);
+  if (parts.some((part) => !Number.isSafeInteger(part))) return null;
   return {
     version: 1,
     startChapter: parts[0],
@@ -90,6 +95,6 @@ export function resolveTextLocation(
   if (!Number.isSafeInteger(startBase) || !Number.isSafeInteger(endBase)) return null;
   const start = startBase + parsed.startOffset;
   const end = endBase + parsed.endOffset;
-  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end)) return null;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start) return null;
   return { version: 2, start, end };
 }

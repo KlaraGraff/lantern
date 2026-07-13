@@ -22,14 +22,17 @@
 //! its parent — the orphan row lands and becomes visible once the
 //! parent arrives on a later tick.
 
-use rusqlite::{params, Transaction};
+use std::collections::BTreeMap;
+
+use rusqlite::{params, OptionalExtension, Transaction};
 use serde_json::Value;
 
 use crate::error::{AppError, AppResult};
 
 use super::events::{
-    BookImportPayload, BookmarkPayload, ChatMessagePayload, Event, EventBody, HighlightPayload,
-    NotePayload, VocabPayload, WordMarkPayload,
+    word_mark_exception_id, BookImportPayload, BookmarkPayload, ChatMessagePayload, Event,
+    EventBody, HighlightPayload, LookupOccurrenceMarkPayload, NotePayload, VocabPayload,
+    WordMarkExceptionPayload, WordMarkPayload,
 };
 
 /// Fold `event` into `tx`. Idempotent — applying the same event twice is a
@@ -93,6 +96,12 @@ pub fn apply_event(tx: &Transaction, event: &Event) -> AppResult<()> {
         EventBody::NoteDelete { id } => apply_note_delete(tx, event, id),
         EventBody::WordMarkUpsert(payload) => apply_word_mark_upsert(tx, event, payload),
         EventBody::WordMarkDelete { id } => apply_word_mark_delete(tx, event, id),
+        EventBody::WordMarkExceptionSet(payload) => {
+            apply_word_mark_exception_set(tx, event, payload)
+        }
+        EventBody::LookupOccurrenceMarkSet(payload) => {
+            apply_lookup_occurrence_mark_set(tx, event, payload)
+        }
 
         EventBody::TranslationAdd(_) | EventBody::TranslationDelete { .. } => Ok(()),
 
@@ -138,6 +147,8 @@ pub mod entity {
     pub const VOCAB: &str = "vocab";
     pub const NOTE: &str = "note";
     pub const WORD_MARK: &str = "word_mark";
+    pub const WORD_MARK_EXCEPTION: &str = "word_mark_exception";
+    pub const LOOKUP_OCCURRENCE_MARK: &str = "lookup_occurrence_mark";
     pub const COLLECTION: &str = "collection";
     /// Composite-key entity for `collection_books`. Id format:
     /// `"<collection_id>:<book_id>"`.
@@ -170,7 +181,8 @@ pub fn tombstone_timestamp(tx: &Transaction, entity: &str, id: &str) -> AppResul
 
 pub fn insert_tombstone(tx: &Transaction, entity: &str, id: &str, ts: i64) -> AppResult<()> {
     tx.execute(
-        "INSERT OR IGNORE INTO _tombstones (entity, id, ts) VALUES (?1, ?2, ?3)",
+        "INSERT INTO _tombstones (entity, id, ts) VALUES (?1, ?2, ?3)
+         ON CONFLICT(entity, id) DO UPDATE SET ts = MAX(_tombstones.ts, excluded.ts)",
         params![entity, id, ts],
     )?;
     Ok(())
@@ -238,6 +250,22 @@ pub fn cascade_delete(tx: &Transaction, entity: &str, id: &str, ts: i64) -> AppR
             )?;
             Ok(())
         }
+        entity::WORD_MARK_EXCEPTION => {
+            tx.execute(
+                "UPDATE word_mark_exceptions SET excluded = 0, updated_at = MAX(updated_at, ?2)
+                 WHERE id = ?1",
+                params![id, ts],
+            )?;
+            Ok(())
+        }
+        entity::LOOKUP_OCCURRENCE_MARK => {
+            tx.execute(
+                "UPDATE lookup_occurrence_marks SET enabled = 0, updated_at = MAX(updated_at, ?2)
+                 WHERE id = ?1",
+                params![id, ts],
+            )?;
+            Ok(())
+        }
         "translation" => Ok(()),
         entity::CHAT_MESSAGE => {
             tx.execute("DELETE FROM chat_messages WHERE id = ?1", params![id])?;
@@ -270,7 +298,15 @@ fn cascade_delete_book(tx: &Transaction, id: &str, ts: i64) -> AppResult<()> {
     tx.execute("DELETE FROM vocab_words WHERE book_id = ?1", params![id])?;
     tx.execute("DELETE FROM lookup_records WHERE book_id = ?1", params![id])?;
     tx.execute(
+        "DELETE FROM word_mark_exceptions WHERE book_id = ?1",
+        params![id],
+    )?;
+    tx.execute(
         "DELETE FROM word_mark_rules WHERE book_id = ?1",
+        params![id],
+    )?;
+    tx.execute(
+        "DELETE FROM lookup_occurrence_marks WHERE book_id = ?1",
         params![id],
     )?;
     tx.execute(
@@ -709,6 +745,134 @@ fn apply_note_delete(tx: &Transaction, event: &Event, id: &str) -> AppResult<()>
     insert_tombstone(tx, entity::NOTE, id, event.ts)
 }
 
+#[derive(Debug)]
+struct LegacyWordMarkException {
+    location: String,
+    excluded: bool,
+    created_at: i64,
+    updated_at: i64,
+    updated_by_device: String,
+}
+
+/// Move exception rows that still point at a pre-stable rule id onto the
+/// canonical rule entity. The stable id is identity metadata, so changing it
+/// must not strand an otherwise newer exception behind an orphaned rule id.
+///
+/// `preserve_values` is used by the local one-time canonicalization command:
+/// it carries the user's exclusions across the identity repair. Replay and
+/// snapshot rule updates pass `false`, making the effective rule tuple the
+/// usual reset barrier while still retaining any genuinely newer exception.
+pub(crate) fn reconcile_legacy_word_mark_exceptions(
+    tx: &Transaction,
+    legacy_rule_id: &str,
+    canonical_rule_id: &str,
+    book_id: &str,
+    normalized_word: &str,
+    barrier_ts: i64,
+    barrier_device: &str,
+    preserve_values: bool,
+) -> AppResult<Vec<WordMarkExceptionPayload>> {
+    if legacy_rule_id == canonical_rule_id {
+        return Ok(Vec::new());
+    }
+
+    let rows = {
+        let mut statement = tx.prepare(
+            "SELECT location, excluded, created_at, updated_at, updated_by_device
+             FROM word_mark_exceptions
+             WHERE rule_id = ?1 OR rule_id = ?2",
+        )?;
+        statement
+            .query_map(params![legacy_rule_id, canonical_rule_id], |row| {
+                Ok(LegacyWordMarkException {
+                    location: row.get(0)?,
+                    excluded: row.get::<_, i64>(1)? != 0,
+                    created_at: row.get(2)?,
+                    updated_at: row.get(3)?,
+                    updated_by_device: row.get(4)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Both ids may have received the same location while sync was catching
+    // up. Collapse that pair with the same LWW tuple used everywhere else.
+    let mut by_location: BTreeMap<String, LegacyWordMarkException> = BTreeMap::new();
+    for row in rows {
+        match by_location.entry(row.location.clone()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(row);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                let current = entry.get_mut();
+                let earliest_created_at = current.created_at.min(row.created_at);
+                if (current.updated_at, current.updated_by_device.as_str())
+                    < (row.updated_at, row.updated_by_device.as_str())
+                {
+                    *current = row;
+                }
+                current.created_at = earliest_created_at;
+            }
+        }
+    }
+
+    tx.execute(
+        "DELETE FROM word_mark_exceptions WHERE rule_id = ?1 OR rule_id = ?2",
+        params![legacy_rule_id, canonical_rule_id],
+    )?;
+
+    let barrier = (barrier_ts, barrier_device);
+    let mut publishable = Vec::with_capacity(by_location.len());
+    for (_, mut row) in by_location {
+        let row_tuple = (row.updated_at, row.updated_by_device.as_str());
+        if row_tuple < barrier {
+            if !preserve_values {
+                row.excluded = false;
+            }
+            row.updated_at = barrier_ts;
+            row.updated_by_device = barrier_device.to_string();
+        }
+        let id = word_mark_exception_id(canonical_rule_id, &row.location);
+        tx.execute(
+            "INSERT INTO word_mark_exceptions
+             (id, rule_id, book_id, normalized_word, location, excluded,
+              created_at, updated_at, updated_by_device)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                id,
+                canonical_rule_id,
+                book_id,
+                normalized_word,
+                row.location,
+                row.excluded as i64,
+                row.created_at,
+                row.updated_at,
+                row.updated_by_device,
+            ],
+        )?;
+
+        // An event body inherits the command's envelope timestamp. Only rows
+        // lifted to that tuple can be faithfully represented in this batch;
+        // a newer row is retained locally and will already be present in its
+        // originating event stream or the next snapshot.
+        if (row.updated_at, row.updated_by_device.as_str()) == barrier {
+            publishable.push(WordMarkExceptionPayload {
+                id,
+                rule_id: canonical_rule_id.to_string(),
+                book_id: book_id.to_string(),
+                normalized_word: normalized_word.to_string(),
+                location: row.location,
+                excluded: row.excluded,
+                created_at: row.created_at,
+            });
+        }
+    }
+    Ok(publishable)
+}
+
 fn apply_word_mark_upsert(
     tx: &Transaction,
     event: &Event,
@@ -728,7 +892,15 @@ fn apply_word_mark_upsert(
         "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2",
         params![entity::WORD_MARK, payload.id],
     )?;
-    tx.execute(
+    let prior_rule_id: Option<String> = tx
+        .query_row(
+            "SELECT id FROM word_mark_rules
+             WHERE book_id = ?1 AND normalized_word = ?2 AND match_mode = ?3",
+            params![payload.book_id, payload.normalized_word, payload.match_mode],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let changed = tx.execute(
         "INSERT INTO word_mark_rules (id, book_id, normalized_word, display_word, match_mode, color, enabled, created_at, updated_at, updated_by_device)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
          ON CONFLICT(book_id, normalized_word, match_mode) DO UPDATE SET id = excluded.id,
@@ -750,6 +922,51 @@ fn apply_word_mark_upsert(
             event.device,
         ],
     )?;
+    let repaired_legacy_id = prior_rule_id
+        .as_deref()
+        .is_some_and(|prior_id| prior_id != payload.id);
+    if repaired_legacy_id {
+        // Identity repair is independent of LWW content. Even when the
+        // incoming payload loses to a newer local tuple, the natural-key row
+        // must use the canonical id or its exceptions and snapshots remain
+        // invalid forever.
+        tx.execute(
+            "UPDATE word_mark_rules SET id = ?1
+             WHERE book_id = ?2 AND normalized_word = ?3 AND match_mode = ?4",
+            params![
+                payload.id,
+                payload.book_id,
+                payload.normalized_word,
+                payload.match_mode
+            ],
+        )?;
+        let (effective_ts, effective_device): (i64, String) = tx.query_row(
+            "SELECT updated_at, updated_by_device FROM word_mark_rules WHERE id = ?1",
+            params![payload.id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        reconcile_legacy_word_mark_exceptions(
+            tx,
+            prior_rule_id.as_deref().expect("legacy id checked above"),
+            &payload.id,
+            &payload.book_id,
+            &payload.normalized_word,
+            effective_ts,
+            &effective_device,
+            false,
+        )?;
+    } else if changed > 0 {
+        // The rule tuple is a reset barrier for its occurrence exceptions.
+        // Store disabled rows rather than deleting them so delayed older
+        // events cannot resurrect exclusions after an explicit re-mark.
+        tx.execute(
+            "UPDATE word_mark_exceptions
+             SET excluded = 0, updated_at = ?2, updated_by_device = ?3
+             WHERE rule_id = ?1
+               AND (updated_at < ?2 OR (updated_at = ?2 AND updated_by_device < ?3))",
+            params![payload.id, event.ts, event.device],
+        )?;
+    }
     Ok(())
 }
 
@@ -757,10 +974,126 @@ fn apply_word_mark_delete(tx: &Transaction, event: &Event, id: &str) -> AppResul
     // Compatibility for logs produced by the first development build. New
     // commands publish WordMarkUpsert(enabled=false), but replaying the legacy
     // delete should converge to the same disabled state when the row exists.
-    tx.execute(
+    let current_tuple: Option<(i64, String)> = tx
+        .query_row(
+            "SELECT updated_at, updated_by_device FROM word_mark_rules WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    if current_tuple
+        .as_ref()
+        .is_some_and(|(ts, device)| (*ts, device.as_str()) > (event.ts, event.device.as_str()))
+    {
+        return Ok(());
+    }
+    let changed = tx.execute(
         "UPDATE word_mark_rules SET enabled = 0, updated_at = ?2, updated_by_device = ?3
          WHERE id = ?1 AND (updated_at < ?2 OR (updated_at = ?2 AND updated_by_device < ?3))",
         params![id, event.ts, event.device],
+    )?;
+    if changed > 0 {
+        tx.execute(
+            "UPDATE word_mark_exceptions
+             SET excluded = 0, updated_at = ?2, updated_by_device = ?3
+             WHERE rule_id = ?1
+               AND (updated_at < ?2 OR (updated_at = ?2 AND updated_by_device < ?3))",
+            params![id, event.ts, event.device],
+        )?;
+    }
+    // A compatibility delete may arrive before its older upsert. Retaining a
+    // timestamped tombstone is what makes that delivery order converge; a
+    // genuinely newer full upsert is still allowed to supersede it above.
+    insert_tombstone(tx, entity::WORD_MARK, id, event.ts)
+}
+
+fn apply_word_mark_exception_set(
+    tx: &Transaction,
+    event: &Event,
+    payload: &WordMarkExceptionPayload,
+) -> AppResult<()> {
+    if parent_tombstoned(tx, &[(entity::BOOK, &payload.book_id)])? {
+        return Ok(());
+    }
+    // Keep a validated exception even if its parent rule has not replayed yet.
+    // Cross-device clock skew can order a dependent event ahead of its parent;
+    // query paths join against an enabled rule, so the temporary orphan stays
+    // invisible and becomes effective once the parent arrives.
+    let parent_tuple = tx
+        .query_row(
+            "SELECT updated_at, updated_by_device FROM word_mark_rules WHERE id = ?1",
+            params![payload.rule_id],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    // If a newer parent is already materialized, persist the same disabled
+    // barrier row that applying the exception first and the parent second
+    // would have produced. Dropping the stale event outright is visually
+    // equivalent but breaks byte-for-byte convergence and later snapshots.
+    let (excluded, updated_at, updated_by_device) = match parent_tuple {
+        Some((ts, device)) if (ts, device.as_str()) > (event.ts, event.device.as_str()) => {
+            (false, ts, device)
+        }
+        _ => (payload.excluded, event.ts, event.device.clone()),
+    };
+    tx.execute(
+        "INSERT INTO word_mark_exceptions
+         (id, rule_id, book_id, normalized_word, location, excluded,
+          created_at, updated_at, updated_by_device)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         ON CONFLICT(rule_id, location) DO UPDATE SET
+           id = excluded.id, book_id = excluded.book_id,
+           normalized_word = excluded.normalized_word,
+           excluded = excluded.excluded, updated_at = excluded.updated_at,
+           updated_by_device = excluded.updated_by_device
+         WHERE word_mark_exceptions.updated_at < excluded.updated_at
+            OR (word_mark_exceptions.updated_at = excluded.updated_at
+                AND word_mark_exceptions.updated_by_device < excluded.updated_by_device)",
+        params![
+            payload.id,
+            payload.rule_id,
+            payload.book_id,
+            payload.normalized_word,
+            payload.location,
+            excluded as i64,
+            payload.created_at,
+            updated_at,
+            updated_by_device,
+        ],
+    )?;
+    Ok(())
+}
+
+fn apply_lookup_occurrence_mark_set(
+    tx: &Transaction,
+    event: &Event,
+    payload: &LookupOccurrenceMarkPayload,
+) -> AppResult<()> {
+    if parent_tombstoned(tx, &[(entity::BOOK, &payload.book_id)])? {
+        return Ok(());
+    }
+    tx.execute(
+        "INSERT INTO lookup_occurrence_marks
+         (id, book_id, normalized_word, display_word, location, enabled,
+          created_at, updated_at, updated_by_device)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         ON CONFLICT(book_id, location) DO UPDATE SET
+           id=excluded.id, normalized_word=excluded.normalized_word,
+           display_word=excluded.display_word, enabled=excluded.enabled,
+           updated_at=excluded.updated_at, updated_by_device=excluded.updated_by_device
+         WHERE (lookup_occurrence_marks.updated_at, lookup_occurrence_marks.updated_by_device)
+             < (excluded.updated_at, excluded.updated_by_device)",
+        params![
+            payload.id,
+            payload.book_id,
+            payload.normalized_word,
+            payload.display_word,
+            payload.location,
+            payload.enabled as i64,
+            payload.created_at,
+            event.ts,
+            event.device,
+        ],
     )?;
     Ok(())
 }
@@ -1051,6 +1384,25 @@ mod tests {
         })
     }
 
+    fn word_mark_exception(
+        book: &str,
+        location: &str,
+        excluded: bool,
+        created_at: i64,
+    ) -> EventBody {
+        let normalized_word = "term".to_string();
+        let rule_id = word_mark_rule_id(book, &normalized_word, "exact");
+        EventBody::WordMarkExceptionSet(WordMarkExceptionPayload {
+            id: word_mark_exception_id(&rule_id, location),
+            rule_id,
+            book_id: book.into(),
+            normalized_word,
+            location: location.into(),
+            excluded,
+            created_at,
+        })
+    }
+
     // -----------------------------------------------------------------------
     // book.import / book.delete + tombstone semantics
     // -----------------------------------------------------------------------
@@ -1180,6 +1532,197 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM word_mark_rules", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn word_mark_exception_can_arrive_before_its_older_parent_rule() {
+        let mut db = open_db();
+        apply_all(&mut db, &[ev(1000, "dev-A", import_book("b1"))]);
+        db.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+
+        // Simulate separate sync ticks: the exception's peer is available
+        // first, while the causally-earlier rule from another peer arrives
+        // later. Keep FK checks on to prove migration 022 does not make the
+        // protocol depend on the production connection's FK pragma. The
+        // temporary orphan must survive and become effective.
+        apply_all(
+            &mut db,
+            &[ev(
+                3000,
+                "dev-B",
+                word_mark_exception("b1", "epubcfi(/6/4!)", true, 3000),
+            )],
+        );
+        let orphan: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM word_mark_exceptions WHERE excluded = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(orphan, 1);
+        db.execute_batch("PRAGMA foreign_keys=OFF;").unwrap();
+
+        apply_all(
+            &mut db,
+            &[ev(2000, "dev-A", word_mark("b1", true, "lookup", 2000))],
+        );
+        let effective: i64 = db
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM word_mark_exceptions e
+                 JOIN word_mark_rules r ON r.id = e.rule_id
+                 WHERE e.excluded = 1 AND r.enabled = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(effective, 1);
+    }
+
+    #[test]
+    fn word_mark_rule_update_is_a_lww_reset_barrier_for_older_exceptions() {
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(2000, "dev-A", word_mark("b1", true, "lookup", 2000)),
+                ev(
+                    3000,
+                    "dev-A",
+                    word_mark_exception("b1", "epubcfi(/6/4!)", true, 3000),
+                ),
+                ev(4000, "dev-B", word_mark("b1", false, "lookup", 2000)),
+            ],
+        );
+        let row: (i64, i64, String) = db
+            .query_row(
+                "SELECT excluded, updated_at, updated_by_device
+                 FROM word_mark_exceptions",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(row, (0, 4000, "dev-B".into()));
+
+        // A delayed older exception cannot resurrect the occurrence.
+        apply_all(
+            &mut db,
+            &[ev(
+                3500,
+                "dev-C",
+                word_mark_exception("b1", "epubcfi(/6/4!)", true, 3000),
+            )],
+        );
+        let excluded: i64 = db
+            .query_row("SELECT excluded FROM word_mark_exceptions", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(excluded, 0);
+    }
+
+    #[test]
+    fn same_timestamp_rule_and_exception_converge_by_device_tiebreaker() {
+        let mut rule_then_exception = open_db();
+        apply_all(
+            &mut rule_then_exception,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(2000, "dev-A", word_mark("b1", true, "lookup", 2000)),
+                ev(
+                    3000,
+                    "dev-A",
+                    word_mark_exception("b1", "epubcfi(/6/4!)", true, 3000),
+                ),
+                ev(3000, "dev-B", word_mark("b1", true, "lookup", 2000)),
+            ],
+        );
+
+        let mut exception_then_rule = open_db();
+        apply_all(
+            &mut exception_then_rule,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(2000, "dev-A", word_mark("b1", true, "lookup", 2000)),
+                ev(3000, "dev-B", word_mark("b1", true, "lookup", 2000)),
+                ev(
+                    3000,
+                    "dev-A",
+                    word_mark_exception("b1", "epubcfi(/6/4!)", true, 3000),
+                ),
+            ],
+        );
+
+        let read = |db: &Connection| -> (i64, i64, String) {
+            db.query_row(
+                "SELECT excluded, updated_at, updated_by_device
+                 FROM word_mark_exceptions",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap()
+        };
+        assert_eq!(read(&rule_then_exception), (0, 3000, "dev-B".into()));
+        assert_eq!(read(&exception_then_rule), read(&rule_then_exception));
+    }
+
+    #[test]
+    fn legacy_word_mark_delete_blocks_an_older_late_upsert_but_not_a_newer_one() {
+        let mut db = open_db();
+        let rule_id = word_mark_rule_id("b1", "term", "exact");
+        apply_all(
+            &mut db,
+            &[
+                ev(
+                    3000,
+                    "dev-B",
+                    EventBody::WordMarkDelete {
+                        id: rule_id.clone(),
+                    },
+                ),
+                ev(1000, "dev-A", import_book("b1")),
+                ev(2000, "dev-A", word_mark("b1", true, "lookup", 2000)),
+            ],
+        );
+        let suppressed: i64 = db
+            .query_row("SELECT COUNT(*) FROM word_mark_rules", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(suppressed, 0);
+
+        apply_all(
+            &mut db,
+            &[ev(4000, "dev-C", word_mark("b1", true, "lookup", 4000))],
+        );
+        let restored: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM word_mark_rules WHERE enabled = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(restored, 1);
+    }
+
+    #[test]
+    fn repeated_tombstones_keep_the_newest_timestamp_independent_of_order() {
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(3000, "dev-B", EventBody::NoteDelete { id: "n1".into() }),
+                ev(1000, "dev-A", EventBody::NoteDelete { id: "n1".into() }),
+            ],
+        );
+        let timestamp: i64 = db
+            .query_row(
+                "SELECT ts FROM _tombstones WHERE entity = 'note' AND id = 'n1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(timestamp, 3000);
     }
 
     #[test]

@@ -28,7 +28,6 @@ export interface HighlightAddition {
   color: string;
   note: string | null;
   textContent: string | null;
-  createdAt: number | null;
 }
 
 export interface HighlightMutationPlan {
@@ -62,7 +61,6 @@ interface PlannedRange<Position> {
   color: string;
   note: string | null;
   textContent: string | null;
-  createdAt: number | null;
 }
 
 type Compare<Position> = (left: Position, right: Position) => number;
@@ -131,7 +129,6 @@ function planRanges<Position>(
           color: highlight.color,
           note: highlight.note,
           textContent: null,
-          createdAt: highlight.created_at ?? null,
         });
       }
       if (compare(highlight.end, selection.end) > 0) {
@@ -141,7 +138,6 @@ function planRanges<Position>(
           color: highlight.color,
           note: highlight.note,
           textContent: null,
-          createdAt: highlight.created_at ?? null,
         });
       }
     }
@@ -189,7 +185,6 @@ function planRanges<Position>(
         color: highlight.color,
         note: highlight.note,
         textContent: null,
-        createdAt: highlight.created_at ?? null,
       });
     }
     if (compare(highlight.end, mergedEnd) > 0) {
@@ -199,7 +194,6 @@ function planRanges<Position>(
         color: highlight.color,
         note: highlight.note,
         textContent: null,
-        createdAt: highlight.created_at ?? null,
       });
     }
   }
@@ -210,7 +204,6 @@ function planRanges<Position>(
     color: targetColor,
     note: null,
     textContent: removeIds.size === 0 ? selectedText : null,
-    createdAt: null,
   });
   return { fullyHighlighted, removeIds: [...removeIds], additions };
 }
@@ -234,8 +227,48 @@ function createLocationPlan<Position>(
         color: addition.color,
         note: addition.note,
         textContent: addition.textContent,
-        createdAt: addition.createdAt,
       })),
+  };
+}
+
+function createRemovalPlan<Position>(
+  selection: { start: Position; end: Position },
+  highlights: PositionedHighlight<Position>[],
+  compare: Compare<Position>,
+  serialize: (start: Position, end: Position) => string,
+): HighlightMutationPlan {
+  const removeIds = new Set<string>();
+  const additions: HighlightAddition[] = [];
+  for (const highlight of highlights) {
+    if (!overlaps(selection, highlight, compare)) continue;
+    removeIds.add(highlight.id);
+    if (compare(highlight.start, selection.start) < 0) {
+      const end = minimum(highlight.end, selection.start, compare);
+      if (compare(highlight.start, end) < 0) {
+        additions.push({
+          cfiRange: serialize(highlight.start, end),
+          color: highlight.color,
+          note: highlight.note,
+          textContent: null,
+        });
+      }
+    }
+    if (compare(highlight.end, selection.end) > 0) {
+      const start = maximum(highlight.start, selection.end, compare);
+      if (compare(start, highlight.end) < 0) {
+        additions.push({
+          cfiRange: serialize(start, highlight.end),
+          color: highlight.color,
+          note: highlight.note,
+          textContent: null,
+        });
+      }
+    }
+  }
+  return {
+    fullyHighlighted: isRangeFullyHighlighted(selection, highlights, compare),
+    removeIds: [...removeIds],
+    additions,
   };
 }
 
@@ -264,6 +297,24 @@ export function planTextHighlightMutation(
     textLocation,
     targetColor,
     selectedText,
+  );
+}
+
+export function planTextHighlightRemoval(
+  selectionLocation: string,
+  highlights: StoredHighlightLocation[],
+): HighlightMutationPlan | null {
+  const selection = textInterval(selectionLocation);
+  if (!selection) return null;
+  const positioned = highlights.flatMap((highlight) => {
+    const interval = textInterval(highlight.cfi_range);
+    return interval ? [{ ...highlight, ...interval }] : [];
+  });
+  return createRemovalPlan(
+    selection,
+    positioned,
+    (left, right) => left - right,
+    textLocation,
   );
 }
 
@@ -363,5 +414,25 @@ export async function planCfiHighlightMutation(
     (start, end) => buildCfiRange(start, end, cfi),
     targetColor,
     selectedText,
+  );
+}
+
+export async function planCfiHighlightRemoval(
+  selectionLocation: string,
+  highlights: StoredHighlightLocation[],
+  cfiModule?: CfiModule,
+): Promise<HighlightMutationPlan | null> {
+  const cfi = cfiModule ?? await loadCfiModule();
+  const selection = cfiInterval(selectionLocation, cfi);
+  if (!selection) return null;
+  const positioned = highlights.flatMap((highlight) => {
+    const interval = cfiInterval(highlight.cfi_range, cfi);
+    return interval ? [{ ...highlight, ...interval }] : [];
+  });
+  return createRemovalPlan(
+    selection,
+    positioned,
+    (left, right) => cfi.compare(left, right),
+    (start, end) => buildCfiRange(start, end, cfi),
   );
 }

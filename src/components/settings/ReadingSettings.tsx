@@ -1,8 +1,18 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Check } from "lucide-react";
+import { Check, Download, Trash2 } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import Select from "../ui/Select";
-import { fonts, FONT_SIZE_MIN, FONT_SIZE_MAX, getDefaultReaderTheme, type ReaderTheme } from "../reader-settings";
+import {
+  customFontFamily,
+  fonts,
+  FONT_SIZE_MIN,
+  FONT_SIZE_MAX,
+  getDefaultReaderTheme,
+  type ReaderTheme,
+} from "../reader-settings";
+import { loadCustomFonts, type CustomFontRecord } from "../custom-fonts";
+import { notifyReadingAssistanceSettingsChanged } from "../reading-assistance-events";
 import type { SettingsProps } from "./types";
 
 const READER_THEME_OPTIONS: {
@@ -65,7 +75,7 @@ function NumberInput({ value, onChange, onBlur, suffix, min, max }: {
   );
 }
 
-export default function ReadingSettings({ settings, loading, save, showSavedToast }: SettingsProps) {
+export default function ReadingSettings({ settings, loading, refresh, save, showSavedToast }: SettingsProps) {
   const { t } = useTranslation();
   const [readerTheme, setReaderTheme] = useState<ReaderTheme>(getDefaultReaderTheme());
   const [fontFamily, setFontFamily] = useState("georgia");
@@ -73,6 +83,15 @@ export default function ReadingSettings({ settings, loading, save, showSavedToas
   const [lineSpacing, setLineSpacing] = useState(1.8);
   const [wordSpacing, setWordSpacing] = useState(0);
   const [margins, setMargins] = useState(0);
+  const [customFonts, setCustomFonts] = useState<CustomFontRecord[]>([]);
+  const [fontBusy, setFontBusy] = useState(false);
+  const [fontError, setFontError] = useState<string | null>(null);
+
+  const fontOptions = [
+    ...fonts.filter((font) => font.group === "system").map((font) => ({ value: font.id, label: `${t("settings.layout.fontGroupSystem")} · ${font.label}` })),
+    ...fonts.filter((font) => font.group === "built-in").map((font) => ({ value: font.id, label: `${t("settings.layout.fontGroupBuiltIn")} · ${font.label}` })),
+    ...fonts.filter((font) => font.group === "custom").map((font) => ({ value: font.id, label: `${t("settings.layout.fontGroupMine")} · ${font.label}` })),
+  ];
 
   useEffect(() => {
     if (loading) return;
@@ -83,6 +102,22 @@ export default function ReadingSettings({ settings, loading, save, showSavedToas
     if (settings.word_spacing) setWordSpacing(parseInt(settings.word_spacing));
     if (settings.margins) setMargins(parseInt(settings.margins));
   }, [settings, loading]);
+
+  const refreshCustomFonts = useCallback(async () => {
+    const records = await loadCustomFonts();
+    setCustomFonts(records);
+    return records;
+  }, []);
+
+  const selectedCustomFontIsMissing = (records: CustomFontRecord[]) => (
+    fontFamily.startsWith("custom-")
+    && !records.some((record) => record.id === fontFamily)
+  );
+
+  useEffect(() => {
+    if (loading) return;
+    refreshCustomFonts().catch((error) => console.error("Failed to load custom fonts:", error));
+  }, [loading, refreshCustomFonts]);
 
   return (
     <div>
@@ -126,8 +161,95 @@ export default function ReadingSettings({ settings, loading, save, showSavedToas
           className="w-[160px] shrink-0"
           value={fontFamily}
           onChange={(v) => { setFontFamily(v); save("font_family", v); showSavedToast(); }}
-          options={fonts.map((f) => ({ value: f.id, label: f.label }))}
+          options={fontOptions}
         />
+      </div>
+      <div className="border-t border-border-light py-3">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[13px] font-medium text-text-primary">{t("settings.layout.customFonts")}</p>
+            <p className="mt-0.5 text-[11px] leading-[17px] text-text-muted">{t("settings.layout.customFontsHint")}</p>
+          </div>
+          <button
+            type="button"
+            disabled={fontBusy}
+            onClick={async () => {
+              setFontBusy(true);
+              setFontError(null);
+              try {
+                await invoke<CustomFontRecord[]>("import_custom_fonts");
+                await refreshCustomFonts();
+                showSavedToast();
+              } catch (error) {
+                console.error("Failed to import fonts:", error);
+                setFontError(t("settings.layout.fontImportFailed"));
+              } finally {
+                setFontBusy(false);
+              }
+            }}
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium text-text-secondary hover:bg-bg-input disabled:opacity-50"
+          >
+            <Download size={13} />
+            {t("settings.layout.importFonts")}
+          </button>
+        </div>
+        {customFonts.length > 0 && (
+          <div className="mt-3 space-y-1.5">
+            {customFonts.map((font) => (
+              <div key={font.id} className="flex min-h-9 items-center justify-between gap-3 rounded-md bg-bg-input px-3">
+                <span className="min-w-0 truncate text-[12px] text-text-primary" style={{ fontFamily: customFontFamily(font.id) }}>
+                  {font.family_name}
+                </span>
+                <button
+                  type="button"
+                  title={t("settings.layout.deleteFont")}
+                  aria-label={t("settings.layout.deleteFont")}
+                  disabled={fontBusy}
+                  onClick={async () => {
+                    setFontBusy(true);
+                    setFontError(null);
+                    try {
+                      await invoke("delete_custom_font", { id: font.id });
+                      const records = await refreshCustomFonts();
+                      if (selectedCustomFontIsMissing(records)) setFontFamily("system");
+                      await refresh();
+                      await notifyReadingAssistanceSettingsChanged([
+                        "font_family",
+                        "marker_style_config",
+                      ]);
+                      showSavedToast();
+                    } catch (error) {
+                      console.error("Failed to delete font:", error);
+                      // Re-read the backend after any failure. This also heals
+                      // the UI when an older backend reports an error after
+                      // already deleting its database row.
+                      const records = await refreshCustomFonts().catch(() => null);
+                      await refresh().catch(() => {});
+                      if (records && selectedCustomFontIsMissing(records)) {
+                        setFontFamily("system");
+                        await notifyReadingAssistanceSettingsChanged([
+                          "font_family",
+                          "marker_style_config",
+                        ]).catch(() => {});
+                      }
+                      setFontError(t("settings.layout.fontDeleteFailed"));
+                    } finally {
+                      setFontBusy(false);
+                    }
+                  }}
+                  className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-surface hover:text-danger-text disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {fontError && (
+          <p role="alert" className="mt-2 text-[11px] leading-4 text-danger-text">
+            {fontError}
+          </p>
+        )}
       </div>
       {/* Font Size */}
       <div className="flex items-center justify-between h-[73px]">

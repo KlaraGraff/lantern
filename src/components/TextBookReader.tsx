@@ -2,11 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getFontFamily, getThemeStyles } from "./reader-settings";
+import {
+  effectiveAutomaticMarkerStyle,
+  markerFontFamily,
+  markerStyleCss,
+  type MarkerStyleConfigV1,
+} from "./marker-style";
 import type { ReaderSettingsState } from "./ReaderSettings";
 import type { Highlight } from "../hooks/useBookmarks";
 import {
   classifySelection,
-  applyWordMarkHighlights,
   contextForRange,
   isInteractiveReaderTarget,
   normalizeInteractionText,
@@ -31,7 +36,10 @@ interface TextBookReaderProps {
   onInteraction: (interaction: ReaderInteraction) => void;
   onError: (error: string) => void;
   onRegisterNavigation: (navigate: (location: string, flash?: boolean) => void) => void;
-  onHighlightClick: (highlight: Highlight, rect: DOMRect) => void;
+  onHighlightClick: (highlight: Highlight, rect: DOMRect, fallbackText?: string) => void;
+  singleWordClickAction?: "menu" | "none";
+  doubleClickQuickLookup?: boolean;
+  markerStyle: MarkerStyleConfigV1;
 }
 
 interface WordMarkRule {
@@ -39,13 +47,16 @@ interface WordMarkRule {
   enabled: boolean;
 }
 
-const HIGHLIGHT_COLORS: Record<string, string> = {
-  yellow: "#FBBF24",
-  green: "#34D399",
-  blue: "#60A5FA",
-  pink: "#F472B6",
-  purple: "#A78BFA",
-};
+interface WordMarkException {
+  normalized_word: string;
+  location: string;
+  excluded: boolean;
+}
+
+interface LookupOccurrenceMark {
+  location: string;
+  enabled: boolean;
+}
 
 function textOffsetInBlock(element: HTMLElement, node: Node, offset: number): number {
   if (node !== element && !element.contains(node)) return 0;
@@ -245,9 +256,14 @@ function renderHighlightedBlock(
   block: TextBookBlock,
   document: TextBookDocument,
   highlights: Highlight[],
-  onHighlightClick: (highlight: Highlight, rect: DOMRect) => void,
+  onHighlightClick: (highlight: Highlight, rect: DOMRect, fallbackText?: string) => void,
+  markerStyle: MarkerStyleConfigV1,
+  readerFontFamily: string,
+  automaticWords: Set<string>,
+  automaticExceptions: Set<string>,
+  lookupOccurrenceMarks: LookupOccurrenceMark[],
 ): ReactNode[] {
-  const ranges = highlights
+  const manualRanges = highlights
     .flatMap((highlight, priority) => {
       const location = resolveTextLocation(highlight.cfi_range, document);
       if (!location || location.end <= block.source_start || location.start >= block.source_end) return [];
@@ -257,6 +273,41 @@ function renderHighlightedBlock(
     })
     .sort((a, b) => a.start - b.start || a.end - b.end || a.priority - b.priority);
 
+  const wholeBookAutomaticRanges = lexicalSegmentsForText(block.text).flatMap((segment) => {
+    const word = normalizeInteractionText(segment.segment);
+    if (!automaticWords.has(word)) return [];
+    const end = segment.index + segment.segment.length;
+    const location = textLocation(
+      renderedOffsetToSourceOffset(block, segment.index, "start"),
+      renderedOffsetToSourceOffset(block, end, "end"),
+    );
+    return automaticExceptions.has(`${word}\0${location}`) ? [] : [{ start: segment.index, end }];
+  });
+  const occurrenceAutomaticRanges = lookupOccurrenceMarks.flatMap((mark) => {
+    if (!mark.enabled) return [];
+    const location = resolveTextLocation(mark.location, document);
+    if (!location || location.end <= block.source_start || location.start >= block.source_end) return [];
+    const start = sourceOffsetToRenderedOffset(block, Math.max(location.start, block.source_start));
+    const end = sourceOffsetToRenderedOffset(block, Math.min(location.end, block.source_end));
+    return end > start ? [{ start, end }] : [];
+  });
+  const automaticRanges = [
+    ...wholeBookAutomaticRanges,
+    ...occurrenceAutomaticRanges,
+  ].filter((range, index, ranges) => (
+    ranges.findIndex((candidate) => candidate.start === range.start && candidate.end === range.end) === index
+  ));
+
+  const ranges = [
+    ...manualRanges.map((range) => ({ ...range, kind: "manual" as const })),
+    ...automaticRanges.map((range, priority) => ({
+      ...range,
+      highlight: null,
+      priority: manualRanges.length + priority,
+      kind: "automatic" as const,
+    })),
+  ].sort((a, b) => a.start - b.start || a.end - b.end || a.priority - b.priority);
+
   if (ranges.length === 0) return [block.text];
 
   // Split at every boundary instead of advancing a single cursor per stored
@@ -264,26 +315,28 @@ function renderHighlightedBlock(
   // inside an earlier one, including the non-overlapping text after it.
   const boundaries = [...new Set(ranges.flatMap((range) => [range.start, range.end]))]
     .sort((left, right) => left - right);
-  const segments: Array<{ start: number; end: number; highlight: Highlight | null }> = [];
+  const segments: Array<{ start: number; end: number; highlight: Highlight | null; kind: "manual" | "automatic" | null }> = [];
   let previous = 0;
   for (let index = 0; index < boundaries.length - 1; index += 1) {
     const start = boundaries[index];
     const end = boundaries[index + 1];
-    if (start > previous) segments.push({ start: previous, end: start, highlight: null });
+    if (start > previous) segments.push({ start: previous, end: start, highlight: null, kind: null });
     const active = ranges
       .filter((range) => range.start < end && range.end > start)
       .sort((left, right) => left.priority - right.priority)[0];
-    segments.push({ start, end, highlight: active?.highlight ?? null });
+    segments.push({ start, end, highlight: active?.highlight ?? null, kind: active?.kind ?? null });
     previous = end;
   }
   if (previous < block.text.length) {
-    segments.push({ start: previous, end: block.text.length, highlight: null });
+    segments.push({ start: previous, end: block.text.length, highlight: null, kind: null });
   }
 
   const coalesced = segments.reduce<typeof segments>((result, segment) => {
     if (segment.end <= segment.start) return result;
     const last = result[result.length - 1];
-    if (last?.end === segment.start && last.highlight?.id === segment.highlight?.id) {
+    if (last?.end === segment.start
+      && last.kind === segment.kind
+      && last.highlight?.id === segment.highlight?.id) {
       last.end = segment.end;
     } else {
       result.push({ ...segment });
@@ -293,6 +346,21 @@ function renderHighlightedBlock(
 
   const nodes: ReactNode[] = [];
   for (const segment of coalesced) {
+    if (segment.kind === "automatic") {
+      const automaticStyle = effectiveAutomaticMarkerStyle(markerStyle);
+      nodes.push(
+        <span
+          key={`automatic:${segment.start}:${segment.end}`}
+          style={markerStyleCss(
+            automaticStyle,
+            markerFontFamily(automaticStyle.font, readerFontFamily),
+          )}
+        >
+          {block.text.slice(segment.start, segment.end)}
+        </span>,
+      );
+      continue;
+    }
     if (!segment.highlight) {
       nodes.push(block.text.slice(segment.start, segment.end));
       continue;
@@ -301,10 +369,19 @@ function renderHighlightedBlock(
       <mark
         key={`${segment.highlight.id}:${segment.start}:${segment.end}`}
         className="cursor-pointer"
-        style={{ backgroundColor: `${HIGHLIGHT_COLORS[segment.highlight.color] || HIGHLIGHT_COLORS.yellow}88` }}
+        style={{
+          ...markerStyleCss(
+            markerStyle.manual,
+            markerFontFamily(markerStyle.manual.font, readerFontFamily),
+          ),
+        }}
         onClick={(event) => {
           event.stopPropagation();
-          onHighlightClick(segment.highlight!, event.currentTarget.getBoundingClientRect());
+          onHighlightClick(
+            segment.highlight!,
+            event.currentTarget.getBoundingClientRect(),
+            event.currentTarget.textContent ?? undefined,
+          );
         }}
       >
         {block.text.slice(segment.start, segment.end)}
@@ -312,6 +389,20 @@ function renderHighlightedBlock(
     );
   }
   return nodes;
+}
+
+function lexicalSegmentsForText(text: string) {
+  const Segmenter = (Intl as typeof Intl & {
+    Segmenter?: new (locale?: string, options?: { granularity: "word" }) => {
+      segment(value: string): Iterable<{ segment: string; index: number; isWordLike?: boolean }>;
+    };
+  }).Segmenter;
+  if (Segmenter) {
+    return Array.from(new Segmenter(undefined, { granularity: "word" }).segment(text))
+      .filter((segment) => segment.isWordLike);
+  }
+  return Array.from(text.matchAll(/[\p{L}\p{M}\p{N}]+(?:['’][\p{L}\p{M}\p{N}]+)*/gu))
+    .map((match) => ({ segment: match[0], index: match.index ?? 0 }));
 }
 
 function tocIndexAtOffset(document: TextBookDocument, sourceOffset: number) {
@@ -333,56 +424,119 @@ export default function TextBookReader({
   onError,
   onRegisterNavigation,
   onHighlightClick,
+  singleWordClickAction = "menu",
+  doubleClickQuickLookup = true,
+  markerStyle,
 }: TextBookReaderProps) {
   const [document, setDocument] = useState<TextBookDocument | null>(null);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [wordMarks, setWordMarks] = useState<WordMarkRule[]>([]);
+  const [wordMarkExceptions, setWordMarkExceptions] = useState<WordMarkException[]>([]);
+  const [lookupOccurrenceMarks, setLookupOccurrenceMarks] = useState<LookupOccurrenceMark[]>([]);
   const [preparationPending, setPreparationPending] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const initialLocationRef = useRef(initialLocation);
   const progressReadyRef = useRef(false);
+  const loadGenerationRef = useRef(0);
+  const loadActiveRef = useRef(false);
+  const loadInFlightRef = useRef<Promise<void> | null>(null);
+  const loadedGenerationRef = useRef<number | null>(null);
   const flashTimerRef = useRef<number | null>(null);
   const wordClickTimerRef = useRef<number | null>(null);
+  const selectionMenuTimerRef = useRef<number | null>(null);
+  const forceClickSuppressedUntilRef = useRef(0);
   const [flashOffset, setFlashOffset] = useState<number | null>(null);
   const documentBlocks = useMemo(
     () => document?.chunks.flatMap((chunk) => chunk.blocks) ?? [],
     [document],
   );
+  const readerFontFamily = getFontFamily(settings.font);
+  const automaticWordSet = useMemo(
+    () => new Set(settings.showLookupMarkers
+      ? wordMarks.map((rule) => normalizeInteractionText(rule.normalized_word))
+      : []),
+    [settings.showLookupMarkers, wordMarks],
+  );
+  const automaticExceptionSet = useMemo(
+    () => new Set(wordMarkExceptions.map((exception) => `${exception.normalized_word}\0${exception.location}`)),
+    [wordMarkExceptions],
+  );
+  const visibleLookupOccurrenceMarks = useMemo(
+    () => settings.showLookupMarkers ? lookupOccurrenceMarks : [],
+    [lookupOccurrenceMarks, settings.showLookupMarkers],
+  );
 
   const refreshHighlights = useCallback(async () => {
+    const generation = loadGenerationRef.current;
     const result = await invoke<Highlight[]>("list_highlights", { bookId });
+    if (!loadActiveRef.current || generation !== loadGenerationRef.current) return;
     setHighlights(result.filter((highlight) => highlight.cfi_range.startsWith("textloc:")));
   }, [bookId]);
 
   const refreshWordMarks = useCallback(async () => {
-    const result = await invoke<WordMarkRule[]>("list_word_marks", { bookId });
-    setWordMarks(result.filter((rule) => rule.enabled));
+    const generation = loadGenerationRef.current;
+    const [rules, exceptions, occurrences] = await Promise.all([
+      invoke<WordMarkRule[]>("list_word_marks", { bookId }),
+      invoke<WordMarkException[]>("list_word_mark_exceptions", { bookId }),
+      invoke<LookupOccurrenceMark[]>("list_lookup_occurrence_marks", { bookId }),
+    ]);
+    if (!loadActiveRef.current || generation !== loadGenerationRef.current) return;
+    setWordMarks(rules.filter((rule) => rule.enabled));
+    setWordMarkExceptions(exceptions.filter((exception) => exception.excluded));
+    setLookupOccurrenceMarks(occurrences.filter((mark) => mark.enabled));
   }, [bookId]);
 
-  const loadDocument = useCallback(async () => {
-    try {
-      const result = await invoke<TextBookDocument>("get_text_book_document", { bookId });
-      setPreparationPending(false);
-      setDocument(result);
-      onReady(result);
-      await Promise.all([refreshHighlights(), refreshWordMarks()]);
-    } catch (error) {
-      const message = formatError(error);
-      if (message.includes("TEXT_PREPARATION_PENDING")) setPreparationPending(true);
-      else {
+  const loadDocument = useCallback(() => {
+    if (!loadActiveRef.current) return Promise.resolve();
+    if (loadedGenerationRef.current === loadGenerationRef.current) return Promise.resolve();
+    if (loadInFlightRef.current) return loadInFlightRef.current;
+    const generation = loadGenerationRef.current;
+    const request = (async () => {
+      try {
+        const result = await invoke<TextBookDocument>("get_text_book_document", { bookId });
+        if (!loadActiveRef.current || generation !== loadGenerationRef.current) return;
         setPreparationPending(false);
-        onError(message);
+        loadedGenerationRef.current = generation;
+        progressReadyRef.current = false;
+        setDocument(result);
+        onReady(result);
+        await Promise.allSettled([refreshHighlights(), refreshWordMarks()]);
+      } catch (error) {
+        if (!loadActiveRef.current || generation !== loadGenerationRef.current) return;
+        const message = formatError(error);
+        if (message.includes("TEXT_PREPARATION_PENDING")) setPreparationPending(true);
+        else {
+          setPreparationPending(false);
+          onError(message);
+        }
       }
-    }
+    })().finally(() => {
+      if (loadInFlightRef.current === request) loadInFlightRef.current = null;
+    });
+    loadInFlightRef.current = request;
+    return request;
   }, [bookId, onError, onReady, refreshHighlights, refreshWordMarks]);
 
   useEffect(() => {
+    initialLocationRef.current = initialLocation;
+  }, [bookId, initialLocation]);
+
+  useEffect(() => {
+    loadGenerationRef.current += 1;
+    loadActiveRef.current = true;
+    loadInFlightRef.current = null;
+    loadedGenerationRef.current = null;
     setDocument(null);
     setPreparationPending(false);
     progressReadyRef.current = false;
-    initialLocationRef.current = initialLocation;
     loadDocument().catch(() => {});
-  }, [bookId, initialLocation, loadDocument]);
+    return () => {
+      loadActiveRef.current = false;
+      loadGenerationRef.current += 1;
+      loadInFlightRef.current = null;
+      loadedGenerationRef.current = null;
+    };
+  }, [bookId, loadDocument]);
 
   useEffect(() => {
     if (!preparationPending) return;
@@ -391,8 +545,10 @@ export default function TextBookReader({
   }, [loadDocument, preparationPending]);
 
   useEffect(() => {
+    const generation = loadGenerationRef.current;
     const unlisten = listen<{ book_id?: string; state?: string }>("book-preparation-changed", (event) => {
       if (event.payload.book_id !== bookId) return;
+      if (!loadActiveRef.current || generation !== loadGenerationRef.current) return;
       if (event.payload.state === "ready") loadDocument().catch(() => {});
       if (event.payload.state === "failed") {
         setPreparationPending(false);
@@ -409,25 +565,14 @@ export default function TextBookReader({
     };
     window.addEventListener("highlight-changed", refresh);
     window.addEventListener("word-mark-changed", refreshMarks);
+    window.addEventListener("lookup-mark-changed", refreshMarks);
     return () => {
       unlisten.then((stop) => stop());
       window.removeEventListener("highlight-changed", refresh);
       window.removeEventListener("word-mark-changed", refreshMarks);
+      window.removeEventListener("lookup-mark-changed", refreshMarks);
     };
   }, [bookId, loadDocument, onError, refreshHighlights, refreshWordMarks]);
-
-  useEffect(() => {
-    if (!document || !containerRef.current) return;
-    const frame = requestAnimationFrame(() => {
-      applyWordMarkHighlights(
-        window.document,
-        wordMarks.map((rule) => rule.normalized_word),
-        `quill-word-marks-${bookId}`,
-        containerRef.current ?? undefined,
-      );
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [bookId, document, highlights, wordMarks]);
 
   const navigateToLocation = useCallback((
     location: string,
@@ -457,6 +602,7 @@ export default function TextBookReader({
     const renderedOffset = targetBlock
       ? sourceOffsetToRenderedOffset(targetBlock, resolved.start)
       : 0;
+    initialLocationRef.current = textLocation(resolved.start);
     scrollRenderedOffsetIntoView(containerRef.current, target, renderedOffset, behavior);
     if (flash) {
       setFlashOffset(resolved.start);
@@ -480,22 +626,24 @@ export default function TextBookReader({
     let settleFrame = 0;
     const frame = requestAnimationFrame(() => {
       const location = initialLocationRef.current;
-      initialLocationRef.current = null;
       const restored = location ? navigateToLocation(location, false, "auto") : null;
       // Scrolling can dispatch synchronously. Enable persistence only after
       // the restoration scroll and its first scroll event have completed.
       settleFrame = requestAnimationFrame(() => {
         if (cancelled) return;
+        if (restored) {
+          const sourceEnd = documentBlocks[documentBlocks.length - 1]?.source_end ?? 0;
+          const sourceOffset = Math.min(Math.max(0, restored.start), sourceEnd);
+          const normalizedLocation = textLocation(sourceOffset);
+          initialLocationRef.current = normalizedLocation;
+          const progress = Math.round((sourceOffset / Math.max(1, sourceEnd)) * 100);
+          onProgress(
+            Math.min(100, Math.max(0, progress)),
+            normalizedLocation,
+            tocIndexAtOffset(document, sourceOffset),
+          );
+        }
         progressReadyRef.current = true;
-        if (!restored) return;
-        const sourceEnd = documentBlocks[documentBlocks.length - 1]?.source_end ?? 0;
-        const sourceOffset = Math.min(Math.max(0, restored.start), sourceEnd);
-        const progress = Math.round((sourceOffset / Math.max(1, sourceEnd)) * 100);
-        onProgress(
-          Math.min(100, Math.max(0, progress)),
-          textLocation(sourceOffset),
-          tocIndexAtOffset(document, sourceOffset),
-        );
       });
     });
     return () => {
@@ -536,9 +684,11 @@ export default function TextBookReader({
     const progress = atEnd
       ? 100
       : Math.round((sourceOffset / Math.max(1, sourceEnd)) * 100);
+    const location = textLocation(sourceOffset);
+    initialLocationRef.current = location;
     onProgress(
       Math.min(100, Math.max(0, progress)),
-      textLocation(sourceOffset),
+      location,
       tocIndexAtOffset(document, sourceOffset),
     );
   }, [document, documentBlocks, onProgress]);
@@ -575,7 +725,9 @@ export default function TextBookReader({
       const locale = window.document.documentElement.lang || undefined;
       return {
         trigger,
-        kind: trigger === "word-click" ? "word" : classifySelection(text, locale),
+        kind: trigger === "word-menu" || trigger === "word-quick-lookup"
+          ? "word"
+          : classifySelection(text, locale),
         text,
         normalizedText: normalizeInteractionText(text),
         context: contextForRange(range, startBlock.textContent || text),
@@ -594,31 +746,89 @@ export default function TextBookReader({
     }
   }, []);
 
+  const cancelSelectionMenu = useCallback(() => {
+    if (selectionMenuTimerRef.current !== null) {
+      window.clearTimeout(selectionMenuTimerRef.current);
+      selectionMenuTimerRef.current = null;
+    }
+  }, []);
+
   const handleTextClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     cancelWordClick();
+    if (Date.now() < forceClickSuppressedUntilRef.current) return;
+    if (singleWordClickAction === "none") return;
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     if (isInteractiveReaderTarget(event.target) || (event.target as Element | null)?.closest?.("mark")) return;
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed) return;
     const range = wordRangeAtPoint(window.document, event.clientX, event.clientY);
     if (!range || !containerRef.current?.contains(range.startContainer)) return;
-    const interaction = interactionFromRange(range, "word-click");
+    const interaction = interactionFromRange(range, "word-menu");
     if (!interaction?.normalizedText) return;
     wordClickTimerRef.current = window.setTimeout(() => {
       wordClickTimerRef.current = null;
       onInteraction(interaction);
-    }, 180);
-  }, [cancelWordClick, interactionFromRange, onInteraction]);
+    }, 240);
+  }, [cancelWordClick, interactionFromRange, onInteraction, singleWordClickAction]);
+
+  const handleTextDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    cancelWordClick();
+    cancelSelectionMenu();
+    if (!doubleClickQuickLookup) return;
+    if (event.button !== 0 || isInteractiveReaderTarget(event.target)) return;
+    const range = wordRangeAtPoint(window.document, event.clientX, event.clientY);
+    if (!range || !containerRef.current?.contains(range.startContainer)) return;
+    const interaction = interactionFromRange(range, "word-quick-lookup");
+    if (!interaction?.normalizedText) return;
+    event.preventDefault();
+    onInteraction(interaction);
+  }, [cancelSelectionMenu, cancelWordClick, doubleClickQuickLookup, interactionFromRange, onInteraction]);
+
+  const scheduleSelectionMenu = useCallback(() => {
+    cancelSelectionMenu();
+    selectionMenuTimerRef.current = window.setTimeout(() => {
+      selectionMenuTimerRef.current = null;
+      const range = selectedRange(window.document);
+      if (!range || !containerRef.current?.contains(range.commonAncestorContainer)) return;
+      const interaction = interactionFromRange(range, "selection-menu");
+      if (interaction && interaction.kind !== "word") onInteraction(interaction);
+    }, 150);
+  }, [cancelSelectionMenu, interactionFromRange, onInteraction]);
 
   const handleTextContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     cancelWordClick();
+    cancelSelectionMenu();
     const range = selectedRange(window.document);
     if (!range || !containerRef.current?.contains(range.commonAncestorContainer)) return;
-    const interaction = interactionFromRange(range, "selection-contextmenu");
+    const interaction = interactionFromRange(range, "selection-menu");
     if (!interaction) return;
     event.preventDefault();
     onInteraction(interaction);
-  }, [cancelWordClick, interactionFromRange, onInteraction]);
+  }, [cancelSelectionMenu, cancelWordClick, interactionFromRange, onInteraction]);
+
+  useEffect(() => {
+    window.document.addEventListener("selectionchange", scheduleSelectionMenu);
+    return () => {
+      window.document.removeEventListener("selectionchange", scheduleSelectionMenu);
+      cancelSelectionMenu();
+    };
+  }, [cancelSelectionMenu, scheduleSelectionMenu]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const preserveSystemForceClick = () => {
+      forceClickSuppressedUntilRef.current = Date.now() + 600;
+      cancelWordClick();
+      cancelSelectionMenu();
+    };
+    container.addEventListener("webkitmouseforcewillbegin", preserveSystemForceClick);
+    container.addEventListener("webkitmouseforcedown", preserveSystemForceClick);
+    return () => {
+      container.removeEventListener("webkitmouseforcewillbegin", preserveSystemForceClick);
+      container.removeEventListener("webkitmouseforcedown", preserveSystemForceClick);
+    };
+  }, [cancelSelectionMenu, cancelWordClick]);
 
   const typography = useMemo(() => ({
     backgroundColor: getThemeStyles(settings.theme).body,
@@ -638,7 +848,7 @@ export default function TextBookReader({
       style={typography}
       onScroll={handleScroll}
       onClick={handleTextClick}
-      onDoubleClick={cancelWordClick}
+      onDoubleClick={handleTextDoubleClick}
       onContextMenu={handleTextContextMenu}
     >
       {document && (
@@ -653,7 +863,17 @@ export default function TextBookReader({
                   && block.source_start <= flashOffset
                   && block.source_end >= flashOffset;
                 const className = `${isFlashing ? "outline outline-2 outline-purple-400 outline-offset-4" : ""} transition-colors`;
-                const content = renderHighlightedBlock(block, document, highlights, onHighlightClick);
+                const content = renderHighlightedBlock(
+                  block,
+                  document,
+                  highlights,
+                  onHighlightClick,
+                  markerStyle,
+                  readerFontFamily,
+                  automaticWordSet,
+                  automaticExceptionSet,
+                  visibleLookupOccurrenceMarks,
+                );
                 const attributes = {
                   key: block.source_start,
                   "data-text-source-start": block.source_start,

@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo } from "@tauri-apps/api/event";
@@ -48,6 +48,65 @@ const EXAM_OPTIONS = [
   { value: "cet6", label: "CET-6" },
 ];
 
+interface ScoreRule {
+  min: number;
+  max: number;
+  step: number;
+}
+
+interface ExamScoreRules {
+  overall: ScoreRule;
+  reading: ScoreRule;
+}
+
+const EXAM_SCORE_RULES: Record<string, ExamScoreRules> = {
+  ielts: {
+    overall: { min: 0, max: 9, step: 0.5 },
+    reading: { min: 0, max: 9, step: 0.5 },
+  },
+  toefl_ibt: {
+    overall: { min: 0, max: 120, step: 1 },
+    reading: { min: 0, max: 30, step: 1 },
+  },
+  toeic_lr: {
+    overall: { min: 10, max: 990, step: 1 },
+    reading: { min: 5, max: 495, step: 1 },
+  },
+  cambridge: {
+    overall: { min: 80, max: 230, step: 1 },
+    reading: { min: 80, max: 230, step: 1 },
+  },
+  det: {
+    overall: { min: 10, max: 160, step: 1 },
+    reading: { min: 10, max: 160, step: 1 },
+  },
+  cet4: {
+    overall: { min: 0, max: 710, step: 1 },
+    reading: { min: 0, max: 249, step: 1 },
+  },
+  cet6: {
+    overall: { min: 0, max: 710, step: 1 },
+    reading: { min: 0, max: 249, step: 1 },
+  },
+};
+
+function normalizedExplanationMode(value: string | undefined): string {
+  if (value === "english_by_level" || value === "chinese") return value;
+  if (value === "target_language") return "chinese";
+  return "adaptive_bilingual";
+}
+
+function legacyExplanationMode(value: string | undefined, language: string): string {
+  if (value !== "target_language") return normalizedExplanationMode(value);
+  return ["zh", "zh-CN", "zh-Hans"].includes(language) ? "chinese" : "adaptive_bilingual";
+}
+
+function scoreWithinRule(value: number, rule: ScoreRule): boolean {
+  if (!Number.isFinite(value) || value < rule.min || value > rule.max) return false;
+  const steps = (value - rule.min) / rule.step;
+  return Math.abs(steps - Math.round(steps)) < 1e-8;
+}
+
 function errorCode(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -57,7 +116,7 @@ function localDateInputValue(date = new Date()): string {
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
 }
 
-export default function GeneralSettings({ settings, loading, save, showSavedToast }: SettingsProps) {
+export default function GeneralSettings({ settings, loading, save, saveBulk, showSavedToast }: SettingsProps) {
   const { t } = useTranslation();
   const [displayName, setDisplayName] = useState("Reader");
   const [language, setLanguage] = useState("en");
@@ -66,6 +125,7 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
   const [cefrLevel, setCefrLevel] = useState("B1");
   const [cefrSource, setCefrSource] = useState("manual");
   const [explanationMode, setExplanationMode] = useState("adaptive_bilingual");
+  const [translationLanguage, setTranslationLanguage] = useState("zh");
   const [lowLevelEnglishAcknowledged, setLowLevelEnglishAcknowledged] = useState(false);
   const [showLowLevelEnglishWarning, setShowLowLevelEnglishWarning] = useState(false);
   const [examFormOpen, setExamFormOpen] = useState(false);
@@ -81,6 +141,7 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
   const [savingAssessment, setSavingAssessment] = useState(false);
   const [deletingAssessmentId, setDeletingAssessmentId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const migratedLanguageSignatureRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (loading) return;
@@ -92,15 +153,34 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
     }
     setCefrLevel(settings.cefr_level || "B1");
     setCefrSource(settings.cefr_source || "manual");
-    setExplanationMode(settings.explanation_mode || "adaptive_bilingual");
+    const translatedTo = settings.translation_language
+      || settings.lookup_translation_language
+      || "zh";
+    const mode = legacyExplanationMode(settings.explanation_mode, translatedTo);
+    setExplanationMode(mode);
+    setTranslationLanguage(translatedTo);
     const acknowledged = settings.cefr_low_level_english_warning_ack === "true";
     setLowLevelEnglishAcknowledged(acknowledged);
     setShowLowLevelEnglishWarning(
       !acknowledged
       && (settings.cefr_level === "A1" || settings.cefr_level === "A2")
-      && settings.explanation_mode === "english_by_level",
+      && mode === "english_by_level",
     );
-  }, [settings, loading]);
+    const migration: Record<string, string> = {};
+    if (settings.explanation_mode === "target_language") migration.explanation_mode = mode;
+    if (!settings.translation_language) migration.translation_language = translatedTo;
+    const migrationSignature = JSON.stringify(migration);
+    if (Object.keys(migration).length > 0
+      && migratedLanguageSignatureRef.current !== migrationSignature) {
+      migratedLanguageSignatureRef.current = migrationSignature;
+      void saveBulk(migration).catch((error) => {
+        if (migratedLanguageSignatureRef.current === migrationSignature) {
+          migratedLanguageSignatureRef.current = null;
+        }
+        console.error("Failed to migrate language settings:", error);
+      });
+    }
+  }, [settings, loading, saveBulk]);
 
   const refreshAssessments = useCallback(async () => {
     setAssessmentsLoading(true);
@@ -152,6 +232,11 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
         return current >= lower && current <= upper;
       })
     : [];
+  const examScoreRules = EXAM_SCORE_RULES[examType] ?? EXAM_SCORE_RULES.ielts;
+  const scorePlaceholder = (rule: ScoreRule) => t(
+    rule.step === 1 ? "settings.learner.scoreRange" : "settings.learner.scoreRangeStep",
+    { min: rule.min, max: rule.max, step: rule.step },
+  );
 
   const applyAssessmentLevel = async (level: string, source: string) => {
     setCefrLevel(level);
@@ -175,6 +260,11 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
     }
     if (readingScore.trim() !== "" && !Number.isFinite(Number(readingScore))) {
       setAssessmentError(t("settings.learner.readingInvalid"));
+      return;
+    }
+    if (!scoreWithinRule(Number(overallScore), examScoreRules.overall)
+      || (readingScore.trim() !== "" && !scoreWithinRule(Number(readingScore), examScoreRules.reading))) {
+      setAssessmentError(t("settings.learner.scoreOutOfRange"));
       return;
     }
     setSavingAssessment(true);
@@ -305,8 +395,27 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
           options={[
             { value: "adaptive_bilingual", label: t("settings.learner.adaptiveBilingual", { defaultValue: "Adaptive bilingual" }) },
             { value: "english_by_level", label: t("settings.learner.englishByLevel", { defaultValue: "English by level" }) },
-            { value: "target_language", label: t("settings.learner.targetLanguage", { defaultValue: "Use target language" }) },
+            { value: "chinese", label: t("settings.learner.chinese", { defaultValue: "Chinese" }) },
           ]}
+        />
+      </div>
+      <div className="flex min-h-[82px] flex-wrap items-center justify-between gap-4 py-3">
+        <div className="min-w-[220px] flex-1">
+          <p className="text-[14px] font-medium text-text-primary">
+            {t("settings.learner.translationLanguage")}
+          </p>
+          <p className="text-[12px] text-text-muted mt-0.5 max-w-[290px]">
+            {t("settings.learner.translationLanguageHint")}
+          </p>
+        </div>
+        <Select
+          className="w-[150px] shrink-0"
+          value={translationLanguage}
+          onChange={(value) => {
+            setTranslationLanguage(value);
+            void save("translation_language", value).then(() => showSavedToast());
+          }}
+          options={LANGUAGE_OPTIONS}
         />
       </div>
 
@@ -373,6 +482,7 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
 
         {examFormOpen && (
           <form
+            noValidate
             className="mt-3 rounded-md border border-border bg-bg-muted p-3"
             onSubmit={(event) => {
               event.preventDefault();
@@ -383,28 +493,38 @@ export default function GeneralSettings({ settings, loading, save, showSavedToas
               <Select
                 label={t("settings.learner.examType")}
                 value={examType}
-                onChange={(value) => { setExamType(value); setAssessmentError(null); }}
+                onChange={(value) => {
+                  setExamType(value);
+                  setAssessmentError(null);
+                  setAssessmentLoadFailed(false);
+                }}
                 options={EXAM_OPTIONS}
               />
               <label className="block text-[14px] font-semibold text-text-primary">
                 {t("settings.learner.overall")}
                 <input
                   type="number"
-                  step="any"
+                  min={examScoreRules.overall.min}
+                  max={examScoreRules.overall.max}
+                  step={examScoreRules.overall.step}
                   required
                   value={overallScore}
+                  placeholder={scorePlaceholder(examScoreRules.overall)}
                   onChange={(event) => setOverallScore(event.target.value)}
-                  className="mt-1.5 h-9 w-full min-w-0 rounded-lg border border-transparent bg-bg-input px-3 text-[13px] font-medium text-text-primary outline-none hover:border-border focus:border-accent"
+                  className="mt-1.5 h-9 w-full min-w-0 rounded-lg border border-transparent bg-bg-input px-3 text-[13px] font-medium text-text-primary placeholder:font-normal placeholder:text-text-placeholder outline-none hover:border-border focus:border-accent"
                 />
               </label>
               <label className="block text-[14px] font-semibold text-text-primary">
                 {t("settings.learner.readingOptional")}
                 <input
                   type="number"
-                  step="any"
+                  min={examScoreRules.reading.min}
+                  max={examScoreRules.reading.max}
+                  step={examScoreRules.reading.step}
                   value={readingScore}
+                  placeholder={scorePlaceholder(examScoreRules.reading)}
                   onChange={(event) => setReadingScore(event.target.value)}
-                  className="mt-1.5 h-9 w-full min-w-0 rounded-lg border border-transparent bg-bg-input px-3 text-[13px] font-medium text-text-primary outline-none hover:border-border focus:border-accent"
+                  className="mt-1.5 h-9 w-full min-w-0 rounded-lg border border-transparent bg-bg-input px-3 text-[13px] font-medium text-text-primary placeholder:font-normal placeholder:text-text-placeholder outline-none hover:border-border focus:border-accent"
                 />
               </label>
               <label className="block text-[14px] font-semibold text-text-primary">

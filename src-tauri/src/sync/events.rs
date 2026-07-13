@@ -17,10 +17,10 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 /// Schema version written by this client. Version 2 introduces learning notes
-/// and whole-book word-marker rules. Readers retain v1 support so an existing
-/// log can be replayed after upgrading, while older clients reject the v2
-/// envelope instead of advancing their watermark past data they cannot apply.
-pub const EVENT_SCHEMA_VERSION: u32 = 2;
+/// and whole-book word-marker rules; version 3 adds per-location exceptions.
+/// Readers retain old-version support while older clients reject newer
+/// envelopes instead of advancing their watermark past data they cannot apply.
+pub const EVENT_SCHEMA_VERSION: u32 = 3;
 pub const MIN_SUPPORTED_EVENT_SCHEMA_VERSION: u32 = 1;
 
 pub fn is_supported_event_schema_version(version: u32) -> bool {
@@ -46,6 +46,28 @@ pub fn word_mark_rule_id(book_id: &str, normalized_word: &str, match_mode: &str)
     hasher.update(b"\0");
     hasher.update(match_mode.as_bytes());
     format!("word-mark-{:x}", hasher.finalize())
+}
+
+/// Stable identity for one location excluded from an automatic word rule.
+/// A deterministic id makes concurrent exclusions of the same occurrence
+/// converge to one LWW row instead of creating duplicates on different Macs.
+pub fn word_mark_exception_id(rule_id: &str, location: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"quill-word-mark-exception-v1\0");
+    hasher.update(rule_id.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(location.as_bytes());
+    format!("word-mark-exception-{:x}", hasher.finalize())
+}
+
+/// Stable identity for one automatic lookup mark at a concrete location.
+pub fn lookup_occurrence_mark_id(book_id: &str, location: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"quill-lookup-occurrence-mark-v1\0");
+    hasher.update(book_id.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(location.as_bytes());
+    format!("lookup-occurrence-mark-{:x}", hasher.finalize())
 }
 
 /// One log line. Fields after `v` come from the tagged body and any unknown
@@ -138,6 +160,10 @@ pub enum EventBody {
     WordMarkUpsert(WordMarkPayload),
     #[serde(rename = "word_mark.delete")]
     WordMarkDelete { id: String },
+    #[serde(rename = "word_mark.exception.set")]
+    WordMarkExceptionSet(WordMarkExceptionPayload),
+    #[serde(rename = "lookup_occurrence_mark.set")]
+    LookupOccurrenceMarkSet(LookupOccurrenceMarkPayload),
 
     // Legacy no-op: saved translations were removed in #263. Keep these
     // variants so old peer logs deserialize and replay harmlessly.
@@ -284,6 +310,28 @@ pub struct WordMarkPayload {
     pub display_word: String,
     pub match_mode: String,
     pub color: String,
+    pub enabled: bool,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WordMarkExceptionPayload {
+    pub id: String,
+    pub rule_id: String,
+    pub book_id: String,
+    pub normalized_word: String,
+    pub location: String,
+    pub excluded: bool,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LookupOccurrenceMarkPayload {
+    pub id: String,
+    pub book_id: String,
+    pub normalized_word: String,
+    pub display_word: String,
+    pub location: String,
     pub enabled: bool,
     pub created_at: i64,
 }
@@ -463,6 +511,18 @@ mod tests {
             enabled: true,
             created_at: 1_714_770_000_000,
         })));
+        let exception_id = word_mark_exception_id(&marker_id, "epubcfi(/6/4!)");
+        roundtrip(&mk(EventBody::WordMarkExceptionSet(
+            WordMarkExceptionPayload {
+                id: exception_id,
+                rule_id: marker_id.clone(),
+                book_id: "b1".into(),
+                normalized_word: "serendipity".into(),
+                location: "epubcfi(/6/4!)".into(),
+                excluded: true,
+                created_at: 1_714_770_000_000,
+            },
+        )));
         roundtrip(&mk(EventBody::WordMarkDelete { id: marker_id }));
     }
 

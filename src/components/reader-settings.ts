@@ -1,13 +1,21 @@
 export const FONT_SIZE_MIN = 12;
 export const FONT_SIZE_MAX = 48;
 
-export const fonts = [
-  { id: "system", label: "System", family: "system-ui, -apple-system, 'PingFang SC', sans-serif" },
-  { id: "georgia", label: "Georgia", family: "Georgia, serif" },
-  { id: "palatino", label: "Palatino", family: "Palatino, serif" },
-  { id: "inter", label: "Inter", family: "Inter, sans-serif" },
-  { id: "times", label: "Times New Roman", family: "'Times New Roman', serif" },
-] as const;
+export interface ReaderFontOption {
+  id: string;
+  label: string;
+  family: string;
+  group: "system" | "built-in" | "custom";
+  filePath?: string;
+}
+
+export const fonts: ReaderFontOption[] = [
+  { id: "system", label: "System", family: "system-ui, -apple-system, 'PingFang SC', sans-serif", group: "system" },
+  { id: "georgia", label: "Georgia", family: "Georgia, serif", group: "system" },
+  { id: "palatino", label: "Palatino", family: "Palatino, serif", group: "system" },
+  { id: "times", label: "Times New Roman", family: "'Times New Roman', serif", group: "system" },
+  { id: "inter", label: "Inter", family: "Inter, sans-serif", group: "built-in" },
+];
 
 const themes = [
   { id: "original", label: "Original", color: "bg-reader-original-bg border border-reader-original-border", pdf: true },
@@ -17,7 +25,7 @@ const themes = [
 ] as const;
 
 export type ReaderTheme = (typeof themes)[number]["id"];
-export type ReaderFont = (typeof fonts)[number]["id"];
+export type ReaderFont = string;
 
 export interface ReaderCapabilities {
   // Selection and stored annotation support are deliberately separate from
@@ -50,7 +58,7 @@ export function getReaderCapabilities(format?: string): ReaderCapabilities {
       return {
         supportsSelection: true,
         supportsManualAnnotations: true,
-        supportsWordMarkers: false,
+        supportsWordMarkers: true,
         supportsCfiNavigation: true,
         supportsReflowSettings: true,
         supportsSpread: false,
@@ -113,7 +121,30 @@ export function getReaderThemes() {
 }
 
 export function getFontFamily(fontId: ReaderFont): string {
+  if (fontId.startsWith("custom-")) return `${customFontFamily(fontId)}, serif`;
   return fonts.find((font) => font.id === fontId)?.family ?? "Inter, system-ui, sans-serif";
+}
+
+export function isReaderFontAvailable(fontId: ReaderFont): boolean {
+  return fonts.some((font) => font.id === fontId);
+}
+
+export function customFontFamily(id: string) {
+  return `"QuillCustom-${id.replace(/[^a-zA-Z0-9_-]/g, "")}"`;
+}
+
+export function setCustomReaderFonts(customFonts: Array<{ id: string; family_name: string; file_path: string }>) {
+  const next = fonts.filter((font) => font.group !== "custom");
+  for (const font of customFonts) {
+    next.push({
+      id: font.id,
+      label: font.family_name,
+      family: `${customFontFamily(font.id)}, serif`,
+      group: "custom",
+      filePath: font.file_path,
+    });
+  }
+  fonts.splice(0, fonts.length, ...next);
 }
 
 export function getThemeStyles(themeId: ReaderTheme) {

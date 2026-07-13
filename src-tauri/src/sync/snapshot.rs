@@ -6,7 +6,7 @@
 //!
 //! ```jsonc
 //! {
-//!   "v": 2,
+//!   "v": 3,
 //!   "device": "<uuid>",
 //!   "id": "<latest event ULID included>",
 //!   "generated_at": <unix millis>,
@@ -26,7 +26,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
 
-use rusqlite::{params, Connection, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
@@ -46,7 +46,7 @@ pub const COMPACT_LOG_BYTE_THRESHOLD: u64 = 2 * 1024 * 1024; // 2 MB
 pub const COMPACT_LOG_EVENT_THRESHOLD: usize = 5_000;
 pub const COMPACT_AGE_THRESHOLD_MS: i64 = 30 * 24 * 60 * 60 * 1_000; // 30 days
 
-pub const SNAPSHOT_SCHEMA_VERSION: u32 = 2;
+pub const SNAPSHOT_SCHEMA_VERSION: u32 = 3;
 pub const MIN_SUPPORTED_SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 pub const MAX_SNAPSHOT_BYTES: u64 = 64 * 1024 * 1024;
 
@@ -84,6 +84,10 @@ pub struct SnapshotState {
     pub notes: BTreeMap<String, NoteRow>,
     #[serde(default)]
     pub word_mark_rules: BTreeMap<String, WordMarkRow>,
+    #[serde(default)]
+    pub word_mark_exceptions: BTreeMap<String, WordMarkExceptionRow>,
+    #[serde(default)]
+    pub lookup_occurrence_marks: BTreeMap<String, LookupOccurrenceMarkRow>,
     #[serde(default)]
     pub collections: BTreeMap<String, CollectionRow>,
     /// Keyed by `"<collection_id>:<book_id>"` — the same composite key the
@@ -201,6 +205,30 @@ pub struct WordMarkRow {
     pub display_word: String,
     pub match_mode: String,
     pub color: String,
+    pub enabled: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub updated_by_device: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WordMarkExceptionRow {
+    pub rule_id: String,
+    pub book_id: String,
+    pub normalized_word: String,
+    pub location: String,
+    pub excluded: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub updated_by_device: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LookupOccurrenceMarkRow {
+    pub book_id: String,
+    pub normalized_word: String,
+    pub display_word: String,
+    pub location: String,
     pub enabled: bool,
     pub created_at: i64,
     pub updated_at: i64,
@@ -459,6 +487,23 @@ impl Snapshot {
                 "SYNC_SNAPSHOT_ENVELOPE_INVALID".to_string(),
             ));
         }
+        // A lower envelope version must not smuggle state introduced by a
+        // newer schema. Otherwise an older client can accept the envelope,
+        // ignore the unknown field, and advance its watermark past data it
+        // never materialized.
+        if self.v < 2 && (!self.state.notes.is_empty() || !self.state.word_mark_rules.is_empty()) {
+            return Err(AppError::Other(
+                "SYNC_SNAPSHOT_ENVELOPE_INVALID".to_string(),
+            ));
+        }
+        if self.v < 3
+            && (!self.state.word_mark_exceptions.is_empty()
+                || !self.state.lookup_occurrence_marks.is_empty())
+        {
+            return Err(AppError::Other(
+                "SYNC_SNAPSHOT_WORD_MARK_EXCEPTION_INVALID".to_string(),
+            ));
+        }
         let snapshot_id = self
             .id
             .parse::<Ulid>()
@@ -518,6 +563,50 @@ impl Snapshot {
                 "SYNC_SNAPSHOT_WORD_MARK_INVALID",
             )?;
         }
+        for (id, exception) in &self.state.word_mark_exceptions {
+            super::validation::validate_word_mark_exception_fields(
+                id,
+                &exception.rule_id,
+                &exception.book_id,
+                &exception.normalized_word,
+                &exception.location,
+            )?;
+            super::validation::ensure_not_from_far_future(
+                exception.created_at,
+                "SYNC_SNAPSHOT_WORD_MARK_EXCEPTION_INVALID",
+            )?;
+            super::validation::ensure_not_from_far_future(
+                exception.updated_at,
+                "SYNC_SNAPSHOT_WORD_MARK_EXCEPTION_INVALID",
+            )?;
+        }
+        for (id, mark) in &self.state.lookup_occurrence_marks {
+            super::validation::validate_lookup_occurrence_mark_fields(
+                id,
+                &mark.book_id,
+                &mark.normalized_word,
+                &mark.display_word,
+                &mark.location,
+            )?;
+            super::validation::ensure_not_from_far_future(
+                mark.created_at,
+                "SYNC_SNAPSHOT_LOOKUP_OCCURRENCE_MARK_INVALID",
+            )?;
+            super::validation::ensure_not_from_far_future(
+                mark.updated_at,
+                "SYNC_SNAPSHOT_LOOKUP_OCCURRENCE_MARK_INVALID",
+            )?;
+        }
+        for (entity, tombstones) in &self.state.tombstones {
+            super::validation::validate_tombstone_entity(entity)?;
+            for tombstone in tombstones {
+                super::validation::validate_tombstone_id(entity, &tombstone.id)?;
+                super::validation::ensure_valid_sync_timestamp(
+                    tombstone.ts,
+                    "SYNC_SNAPSHOT_TOMBSTONE_INVALID",
+                )?;
+            }
+        }
         let prior: Option<(Option<String>, Option<String>)> = tx
             .query_row(
                 "SELECT last_snapshot_id, last_event_id
@@ -556,6 +645,23 @@ impl Snapshot {
         // removed pair, etc.
         for (entity, list) in &self.state.tombstones {
             for t in list {
+                if entity == merge::entity::WORD_MARK {
+                    let newer_rule_exists: bool = tx.query_row(
+                        "SELECT EXISTS(
+                           SELECT 1 FROM word_mark_rules
+                           WHERE id = ?1 AND updated_at > ?2
+                         )",
+                        params![t.id, t.ts],
+                        |row| row.get(0),
+                    )?;
+                    if newer_rule_exists {
+                        // Unlike permanent entity deletion, the legacy word
+                        // marker tombstone can be superseded by a newer full
+                        // upsert. Do not let an old peer snapshot disable that
+                        // already-materialized newer state.
+                        continue;
+                    }
+                }
                 merge::cascade_delete(tx, entity, &t.id, t.ts)?;
                 merge::insert_tombstone(tx, entity, &t.id, t.ts)?;
             }
@@ -568,19 +674,25 @@ impl Snapshot {
             upsert_book(tx, id, row)?;
         }
         for (id, row) in &self.state.highlights {
-            if merge::is_tombstoned(tx, merge::entity::HIGHLIGHT, id)? {
+            if merge::is_tombstoned(tx, merge::entity::HIGHLIGHT, id)?
+                || merge::is_tombstoned(tx, merge::entity::BOOK, &row.book_id)?
+            {
                 continue;
             }
             upsert_highlight(tx, id, row)?;
         }
         for (id, row) in &self.state.bookmarks {
-            if merge::is_tombstoned(tx, merge::entity::BOOKMARK, id)? {
+            if merge::is_tombstoned(tx, merge::entity::BOOKMARK, id)?
+                || merge::is_tombstoned(tx, merge::entity::BOOK, &row.book_id)?
+            {
                 continue;
             }
             insert_bookmark(tx, id, row)?;
         }
         for (id, row) in &self.state.vocab_words {
-            if merge::is_tombstoned(tx, merge::entity::VOCAB, id)? {
+            if merge::is_tombstoned(tx, merge::entity::VOCAB, id)?
+                || merge::is_tombstoned(tx, merge::entity::BOOK, &row.book_id)?
+            {
                 continue;
             }
             upsert_vocab(tx, id, row)?;
@@ -604,6 +716,18 @@ impl Snapshot {
             }
             upsert_word_mark(tx, id, row)?;
         }
+        for (id, row) in &self.state.word_mark_exceptions {
+            if merge::is_tombstoned(tx, merge::entity::BOOK, &row.book_id)? {
+                continue;
+            }
+            upsert_word_mark_exception(tx, id, row)?;
+        }
+        for (id, row) in &self.state.lookup_occurrence_marks {
+            if merge::is_tombstoned(tx, merge::entity::BOOK, &row.book_id)? {
+                continue;
+            }
+            upsert_lookup_occurrence_mark(tx, id, row)?;
+        }
         for (id, row) in &self.state.collections {
             if merge::is_tombstoned(tx, merge::entity::COLLECTION, id)? {
                 continue;
@@ -611,7 +735,10 @@ impl Snapshot {
             upsert_collection(tx, id, row)?;
         }
         for (key, row) in &self.state.collection_books {
-            if merge::is_tombstoned(tx, merge::entity::COLLECTION_BOOK, key)? {
+            if merge::is_tombstoned(tx, merge::entity::COLLECTION_BOOK, key)?
+                || merge::is_tombstoned(tx, merge::entity::COLLECTION, &row.collection_id)?
+                || merge::is_tombstoned(tx, merge::entity::BOOK, &row.book_id)?
+            {
                 continue;
             }
             upsert_collection_book(tx, row)?;
@@ -620,10 +747,20 @@ impl Snapshot {
             if merge::is_tombstoned(tx, merge::entity::CHAT, id)? {
                 continue;
             }
+            if merge::is_tombstoned(tx, merge::entity::BOOK, &row.book_id)? {
+                // Mirror apply_chat_create: a suppressed chat needs its own
+                // tombstone because chat messages only carry chat_id and
+                // cannot consult the deleted parent book. `created_at` is the
+                // original chat.create event time represented by the row.
+                merge::insert_tombstone(tx, merge::entity::CHAT, id, row.created_at)?;
+                continue;
+            }
             upsert_chat(tx, id, row)?;
         }
         for (id, row) in &self.state.chat_messages {
-            if merge::is_tombstoned(tx, merge::entity::CHAT_MESSAGE, id)? {
+            if merge::is_tombstoned(tx, merge::entity::CHAT_MESSAGE, id)?
+                || merge::is_tombstoned(tx, merge::entity::CHAT, &row.chat_id)?
+            {
                 continue;
             }
             insert_chat_message(tx, id, row)?;
@@ -1083,7 +1220,15 @@ fn upsert_word_mark(tx: &Transaction, id: &str, r: &WordMarkRow) -> AppResult<()
         "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2",
         params![merge::entity::WORD_MARK, id],
     )?;
-    tx.execute(
+    let prior_rule_id: Option<String> = tx
+        .query_row(
+            "SELECT id FROM word_mark_rules
+             WHERE book_id = ?1 AND normalized_word = ?2 AND match_mode = ?3",
+            params![r.book_id, r.normalized_word, r.match_mode],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let changed = tx.execute(
         "INSERT INTO word_mark_rules
          (id, book_id, normalized_word, display_word, match_mode, color, enabled,
           created_at, updated_at, updated_by_device)
@@ -1108,6 +1253,117 @@ fn upsert_word_mark(tx: &Transaction, id: &str, r: &WordMarkRow) -> AppResult<()
             r.created_at,
             r.updated_at,
             r.updated_by_device,
+        ],
+    )?;
+    let repaired_legacy_id = prior_rule_id
+        .as_deref()
+        .is_some_and(|prior_id| prior_id != id);
+    if repaired_legacy_id {
+        tx.execute(
+            "UPDATE word_mark_rules SET id = ?1
+             WHERE book_id = ?2 AND normalized_word = ?3 AND match_mode = ?4",
+            params![id, r.book_id, r.normalized_word, r.match_mode],
+        )?;
+        let (effective_ts, effective_device): (i64, String) = tx.query_row(
+            "SELECT updated_at, updated_by_device FROM word_mark_rules WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        merge::reconcile_legacy_word_mark_exceptions(
+            tx,
+            prior_rule_id.as_deref().expect("legacy id checked above"),
+            id,
+            &r.book_id,
+            &r.normalized_word,
+            effective_ts,
+            &effective_device,
+            false,
+        )?;
+    } else if changed > 0 {
+        tx.execute(
+            "UPDATE word_mark_exceptions
+             SET excluded = 0, updated_at = ?2, updated_by_device = ?3
+             WHERE rule_id = ?1
+               AND (updated_at < ?2 OR (updated_at = ?2 AND updated_by_device < ?3))",
+            params![id, r.updated_at, r.updated_by_device],
+        )?;
+    }
+    Ok(())
+}
+
+fn upsert_word_mark_exception(
+    tx: &Transaction,
+    id: &str,
+    r: &WordMarkExceptionRow,
+) -> AppResult<()> {
+    let parent_tuple = tx
+        .query_row(
+            "SELECT updated_at, updated_by_device FROM word_mark_rules WHERE id = ?1",
+            params![r.rule_id],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    let (excluded, updated_at, updated_by_device) = match parent_tuple {
+        Some((ts, device))
+            if (ts, device.as_str()) > (r.updated_at, r.updated_by_device.as_str()) =>
+        {
+            (false, ts, device)
+        }
+        _ => (r.excluded, r.updated_at, r.updated_by_device.clone()),
+    };
+    tx.execute(
+        "INSERT INTO word_mark_exceptions
+         (id, rule_id, book_id, normalized_word, location, excluded,
+          created_at, updated_at, updated_by_device)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         ON CONFLICT(rule_id, location) DO UPDATE SET
+           id=excluded.id, book_id=excluded.book_id,
+           normalized_word=excluded.normalized_word,
+           excluded=excluded.excluded, updated_at=excluded.updated_at,
+           updated_by_device=excluded.updated_by_device
+         WHERE (word_mark_exceptions.updated_at, word_mark_exceptions.updated_by_device)
+             < (excluded.updated_at, excluded.updated_by_device)",
+        params![
+            id,
+            r.rule_id,
+            r.book_id,
+            r.normalized_word,
+            r.location,
+            excluded as i64,
+            r.created_at,
+            updated_at,
+            updated_by_device,
+        ],
+    )?;
+    Ok(())
+}
+
+fn upsert_lookup_occurrence_mark(
+    tx: &Transaction,
+    id: &str,
+    row: &LookupOccurrenceMarkRow,
+) -> AppResult<()> {
+    tx.execute(
+        "INSERT INTO lookup_occurrence_marks
+         (id, book_id, normalized_word, display_word, location, enabled,
+          created_at, updated_at, updated_by_device)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         ON CONFLICT(book_id, location) DO UPDATE SET
+           id=excluded.id, normalized_word=excluded.normalized_word,
+           display_word=excluded.display_word, enabled=excluded.enabled,
+           updated_at=excluded.updated_at, updated_by_device=excluded.updated_by_device
+         WHERE (lookup_occurrence_marks.updated_at, lookup_occurrence_marks.updated_by_device)
+             < (excluded.updated_at, excluded.updated_by_device)",
+        params![
+            id,
+            row.book_id,
+            row.normalized_word,
+            row.display_word,
+            row.location,
+            row.enabled as i64,
+            row.created_at,
+            row.updated_at,
+            row.updated_by_device,
         ],
     )?;
     Ok(())
@@ -1417,6 +1673,60 @@ fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     }
     drop(stmt);
 
+    // per-location exclusions from automatic whole-book markers
+    let mut stmt = conn.prepare(
+        "SELECT id, rule_id, book_id, normalized_word, location, excluded,
+                created_at, updated_at, updated_by_device
+         FROM word_mark_exceptions",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            WordMarkExceptionRow {
+                rule_id: r.get(1)?,
+                book_id: r.get(2)?,
+                normalized_word: r.get(3)?,
+                location: r.get(4)?,
+                excluded: r.get::<_, i64>(5)? != 0,
+                created_at: r.get(6)?,
+                updated_at: r.get(7)?,
+                updated_by_device: r.get(8)?,
+            },
+        ))
+    })?;
+    for row in rows {
+        let (id, exception) = row?;
+        state.word_mark_exceptions.insert(id, exception);
+    }
+    drop(stmt);
+
+    // one-location automatic marks created by successful lookups
+    let mut stmt = conn.prepare(
+        "SELECT id, book_id, normalized_word, display_word, location, enabled,
+                created_at, updated_at, updated_by_device
+         FROM lookup_occurrence_marks",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            LookupOccurrenceMarkRow {
+                book_id: r.get(1)?,
+                normalized_word: r.get(2)?,
+                display_word: r.get(3)?,
+                location: r.get(4)?,
+                enabled: r.get::<_, i64>(5)? != 0,
+                created_at: r.get(6)?,
+                updated_at: r.get(7)?,
+                updated_by_device: r.get(8)?,
+            },
+        ))
+    })?;
+    for row in rows {
+        let (id, mark) = row?;
+        state.lookup_occurrence_marks.insert(id, mark);
+    }
+    drop(stmt);
+
     // collections
     let mut stmt = conn.prepare(
         "SELECT id, name, sort_order, created_at, updated_at, updated_by_device FROM collections",
@@ -1686,7 +1996,7 @@ mod tests {
         );
         let marker_id = word_mark_rule_id("b1", "term", "exact");
         state.word_mark_rules.insert(
-            marker_id,
+            marker_id.clone(),
             WordMarkRow {
                 book_id: "b1".into(),
                 normalized_word: "term".into(),
@@ -1696,6 +2006,19 @@ mod tests {
                 enabled: false,
                 created_at: 1_714_770_000_000,
                 updated_at: 1_714_770_000_100,
+                updated_by_device: "dev-A".into(),
+            },
+        );
+        state.word_mark_exceptions.insert(
+            word_mark_exception_id(&marker_id, "epubcfi(/6/4!)"),
+            WordMarkExceptionRow {
+                rule_id: marker_id,
+                book_id: "b1".into(),
+                normalized_word: "term".into(),
+                location: "epubcfi(/6/4!)".into(),
+                excluded: true,
+                created_at: 1_714_770_000_000,
+                updated_at: 1_714_770_000_050,
                 updated_by_device: "dev-A".into(),
             },
         );
@@ -1733,6 +2056,128 @@ mod tests {
         let outcome = snapshot.apply_peer(&tx, "dev-A").unwrap();
         assert_eq!(outcome, ApplyOutcome::Applied);
         tx.commit().unwrap();
+    }
+
+    #[test]
+    fn older_snapshot_versions_cannot_carry_newer_learning_state() {
+        let marker_id = word_mark_rule_id("b1", "term", "exact");
+        let exception_id = word_mark_exception_id(&marker_id, "epubcfi(/6/4!)");
+
+        let mut v1_state = SnapshotState::default();
+        v1_state.word_mark_rules.insert(
+            marker_id.clone(),
+            WordMarkRow {
+                book_id: "b1".into(),
+                normalized_word: "term".into(),
+                display_word: "Term".into(),
+                match_mode: "exact".into(),
+                color: "lookup".into(),
+                enabled: true,
+                created_at: 1_714_770_000_000,
+                updated_at: 1_714_770_000_000,
+                updated_by_device: "dev-A".into(),
+            },
+        );
+        let v1 = Snapshot {
+            v: 1,
+            device: "dev-A".into(),
+            id: "01HYZX0000000000000000FFF1".into(),
+            generated_at: 1_714_770_000_000,
+            truncated_before: None,
+            state: v1_state,
+        };
+        let mut db = open_db();
+        let tx = db.transaction().unwrap();
+        assert!(v1.apply_peer(&tx, "dev-A").is_err());
+        tx.rollback().unwrap();
+
+        let mut v2_state = SnapshotState::default();
+        v2_state.word_mark_exceptions.insert(
+            exception_id,
+            WordMarkExceptionRow {
+                rule_id: marker_id,
+                book_id: "b1".into(),
+                normalized_word: "term".into(),
+                location: "epubcfi(/6/4!)".into(),
+                excluded: true,
+                created_at: 1_714_770_000_000,
+                updated_at: 1_714_770_000_000,
+                updated_by_device: "dev-A".into(),
+            },
+        );
+        let v2 = Snapshot {
+            v: 2,
+            device: "dev-A".into(),
+            id: "01HYZX0000000000000000FFF2".into(),
+            generated_at: 1_714_770_000_000,
+            truncated_before: None,
+            state: v2_state,
+        };
+        let tx = db.transaction().unwrap();
+        assert!(v2.apply_peer(&tx, "dev-A").is_err());
+        tx.rollback().unwrap();
+    }
+
+    #[test]
+    fn snapshot_exception_respects_a_newer_local_parent_rule() {
+        let mut db = open_db();
+        apply_to(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import("b1")),
+                ev(
+                    4000,
+                    "dev-A",
+                    EventBody::WordMarkUpsert(WordMarkPayload {
+                        id: word_mark_rule_id("b1", "term", "exact"),
+                        book_id: "b1".into(),
+                        normalized_word: "term".into(),
+                        display_word: "Term".into(),
+                        match_mode: "exact".into(),
+                        color: "lookup".into(),
+                        enabled: true,
+                        created_at: 2000,
+                    }),
+                ),
+            ],
+        );
+
+        let rule_id = word_mark_rule_id("b1", "term", "exact");
+        let mut state = SnapshotState::default();
+        state.word_mark_exceptions.insert(
+            word_mark_exception_id(&rule_id, "epubcfi(/6/4!)"),
+            WordMarkExceptionRow {
+                rule_id,
+                book_id: "b1".into(),
+                normalized_word: "term".into(),
+                location: "epubcfi(/6/4!)".into(),
+                excluded: true,
+                created_at: 3000,
+                updated_at: 3000,
+                updated_by_device: "dev-B".into(),
+            },
+        );
+        let snapshot = Snapshot {
+            v: SNAPSHOT_SCHEMA_VERSION,
+            device: "dev-B".into(),
+            id: "01HYZX0000000000000000FFF3".into(),
+            generated_at: 1_714_770_000_000,
+            truncated_before: None,
+            state,
+        };
+        let tx = db.transaction().unwrap();
+        snapshot.apply_peer(&tx, "dev-B").unwrap();
+        tx.commit().unwrap();
+
+        let row: (i64, i64, String) = db
+            .query_row(
+                "SELECT excluded, updated_at, updated_by_device
+                 FROM word_mark_exceptions",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(row, (0, 4000, "dev-A".into()));
     }
 
     #[test]
@@ -2047,6 +2492,221 @@ mod tests {
     }
 
     #[test]
+    fn apply_peer_parent_tombstones_suppress_snapshot_children() {
+        let events = vec![
+            ev(1000, "dev-A", import("b1")),
+            ev(
+                1100,
+                "dev-A",
+                EventBody::HighlightAdd(HighlightPayload {
+                    id: "h1".into(),
+                    book_id: "b1".into(),
+                    cfi_range: "cfi".into(),
+                    color: "yellow".into(),
+                    note: None,
+                    text_content: None,
+                }),
+            ),
+            ev(
+                1200,
+                "dev-A",
+                EventBody::BookmarkAdd(BookmarkPayload {
+                    id: "bm1".into(),
+                    book_id: "b1".into(),
+                    cfi: "cfi".into(),
+                    label: None,
+                }),
+            ),
+            ev(
+                1300,
+                "dev-A",
+                EventBody::VocabAdd(VocabPayload {
+                    id: "v1".into(),
+                    book_id: "b1".into(),
+                    word: "term".into(),
+                    definition: "definition".into(),
+                    context_sentence: None,
+                    cfi: None,
+                    mastery: "new".into(),
+                    review_count: 0,
+                    next_review_at: None,
+                    review_interval_days: 0,
+                    last_reviewed_at: None,
+                    last_review_rating: None,
+                    fsrs_stability: None,
+                    fsrs_difficulty: None,
+                    fsrs_version: 1,
+                    created_at: None,
+                    context_explanation: None,
+                }),
+            ),
+            ev(
+                1350,
+                "dev-A",
+                EventBody::ChatCreate {
+                    id: "ch1".into(),
+                    book: "b1".into(),
+                    title: "Deleted book chat".into(),
+                    model: None,
+                },
+            ),
+            ev(
+                1375,
+                "dev-A",
+                EventBody::ChatMessageAdd(ChatMessagePayload {
+                    id: "m1".into(),
+                    chat_id: "ch1".into(),
+                    role: "user".into(),
+                    content: "stale message".into(),
+                    context: None,
+                    metadata: None,
+                }),
+            ),
+            ev(1400, "dev-A", import("b2")),
+            ev(
+                1500,
+                "dev-A",
+                EventBody::CollectionCreate {
+                    id: "c1".into(),
+                    name: "Collection".into(),
+                    sort_order: 0,
+                },
+            ),
+            ev(
+                1600,
+                "dev-A",
+                EventBody::CollectionBookAdd {
+                    collection: "c1".into(),
+                    book: "b2".into(),
+                },
+            ),
+            ev(1700, "dev-A", import("b3")),
+            ev(
+                1800,
+                "dev-A",
+                EventBody::ChatCreate {
+                    id: "ch3".into(),
+                    book: "b3".into(),
+                    title: "Chat".into(),
+                    model: None,
+                },
+            ),
+            ev(
+                1900,
+                "dev-A",
+                EventBody::ChatMessageAdd(ChatMessagePayload {
+                    id: "m3".into(),
+                    chat_id: "ch3".into(),
+                    role: "user".into(),
+                    content: "hello".into(),
+                    context: None,
+                    metadata: None,
+                }),
+            ),
+        ];
+        let snap = Snapshot::from_events("dev-A", &events).unwrap();
+        let mut local = open_db();
+        local
+            .execute(
+                "INSERT INTO _tombstones (entity, id, ts) VALUES ('book', 'b1', 2000)",
+                [],
+            )
+            .unwrap();
+        local
+            .execute(
+                "INSERT INTO _tombstones (entity, id, ts) VALUES ('collection', 'c1', 2000)",
+                [],
+            )
+            .unwrap();
+        local
+            .execute(
+                "INSERT INTO _tombstones (entity, id, ts) VALUES ('chat', 'ch3', 2000)",
+                [],
+            )
+            .unwrap();
+
+        let tx = local.transaction().unwrap();
+        snap.apply_peer(&tx, "dev-A").unwrap();
+        tx.commit().unwrap();
+
+        for table in [
+            "highlights",
+            "bookmarks",
+            "vocab_words",
+            "collection_books",
+            "chats",
+            "chat_messages",
+        ] {
+            let count: i64 = local
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(
+                count, 0,
+                "a stale snapshot must not recreate {table} below a tombstoned parent"
+            );
+        }
+        assert_eq!(
+            local
+                .query_row(
+                    "SELECT ts FROM _tombstones WHERE entity = 'chat' AND id = 'ch1'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1350,
+            "book suppression must leave the same chat tombstone as event replay"
+        );
+    }
+
+    #[test]
+    fn apply_peer_rejects_invalid_tombstone_metadata() {
+        let invalid_cases = [
+            ("unknown", "b1", 1000),
+            ("book", "../b1", 1000),
+            ("collection_book", "c1", 1000),
+            ("book", "b1", -1),
+            (
+                "book",
+                "b1",
+                chrono::Utc::now().timestamp_millis() + 48 * 60 * 60 * 1_000,
+            ),
+        ];
+
+        for (index, (entity, id, ts)) in invalid_cases.into_iter().enumerate() {
+            assert!(
+                (|| -> AppResult<()> {
+                    crate::sync::validation::validate_tombstone_entity(entity)?;
+                    crate::sync::validation::validate_tombstone_id(entity, id)?;
+                    crate::sync::validation::ensure_valid_sync_timestamp(
+                        ts,
+                        "SYNC_SNAPSHOT_TOMBSTONE_INVALID",
+                    )
+                })()
+                .is_err(),
+                "case {index} should be rejected: {entity}:{id}@{ts}"
+            );
+            let mut state = SnapshotState::default();
+            state
+                .tombstones
+                .insert(entity.into(), vec![TombstoneRow { id: id.into(), ts }]);
+            let snapshot = Snapshot {
+                v: SNAPSHOT_SCHEMA_VERSION,
+                device: "dev-A".into(),
+                id: format!("01HYZX0000000000000000{:04X}", 0xA000 + index),
+                generated_at: 1_714_770_000_000,
+                truncated_before: None,
+                state,
+            };
+            let mut local = open_db();
+            let tx = local.transaction().unwrap();
+            assert!(snapshot.apply_peer(&tx, "dev-A").is_err());
+            tx.rollback().unwrap();
+        }
+    }
+
+    #[test]
     fn apply_peer_lww_preserves_newer_local_value() {
         // Local DB has progress=80 (newer), peer snapshot has progress=10
         // (older). Apply must NOT overwrite the newer local value.
@@ -2280,6 +2940,36 @@ mod tests {
                 },
             ),
             ev(
+                1450,
+                "dev-A",
+                EventBody::WordMarkUpsert(WordMarkPayload {
+                    id: word_mark_rule_id("b1", "term", "exact"),
+                    book_id: "b1".into(),
+                    normalized_word: "term".into(),
+                    display_word: "Term".into(),
+                    match_mode: "exact".into(),
+                    color: "lookup".into(),
+                    enabled: true,
+                    created_at: 1450,
+                }),
+            ),
+            ev(
+                1460,
+                "dev-A",
+                EventBody::WordMarkExceptionSet(WordMarkExceptionPayload {
+                    id: word_mark_exception_id(
+                        &word_mark_rule_id("b1", "term", "exact"),
+                        "epubcfi(/6/4!)",
+                    ),
+                    rule_id: word_mark_rule_id("b1", "term", "exact"),
+                    book_id: "b1".into(),
+                    normalized_word: "term".into(),
+                    location: "epubcfi(/6/4!)".into(),
+                    excluded: true,
+                    created_at: 1460,
+                }),
+            ),
+            ev(
                 1500,
                 "dev-B",
                 EventBody::HighlightDelete { id: "h1".into() },
@@ -2320,6 +3010,8 @@ mod tests {
             "highlights",
             "bookmarks",
             "vocab_words",
+            "word_mark_rules",
+            "word_mark_exceptions",
             "collections",
             "collection_books",
             "chats",
@@ -2497,6 +3189,28 @@ mod tests {
                 collection: "c1".into(),
                 book: "b1".into(),
             },
+            EventBody::WordMarkUpsert(WordMarkPayload {
+                id: word_mark_rule_id("b1", "term", "exact"),
+                book_id: "b1".into(),
+                normalized_word: "term".into(),
+                display_word: "Term".into(),
+                match_mode: "exact".into(),
+                color: "lookup".into(),
+                enabled: true,
+                created_at: 1005,
+            }),
+            EventBody::WordMarkExceptionSet(WordMarkExceptionPayload {
+                id: word_mark_exception_id(
+                    &word_mark_rule_id("b1", "term", "exact"),
+                    "epubcfi(/6/4!)",
+                ),
+                rule_id: word_mark_rule_id("b1", "term", "exact"),
+                book_id: "b1".into(),
+                normalized_word: "term".into(),
+                location: "epubcfi(/6/4!)".into(),
+                excluded: true,
+                created_at: 1006,
+            }),
         ];
 
         // Direct-replay path: write events to a log, then read them
@@ -2535,7 +3249,14 @@ mod tests {
             .collect()
         };
 
-        for table in ["books", "highlights", "collections", "collection_books"] {
+        for table in [
+            "books",
+            "highlights",
+            "word_mark_rules",
+            "word_mark_exceptions",
+            "collections",
+            "collection_books",
+        ] {
             assert_eq!(
                 dump(&db_direct, table),
                 dump(&db_via_snap, table),

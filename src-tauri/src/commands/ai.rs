@@ -112,6 +112,12 @@ struct LearningCardRequestShape {
     default_density: String,
 }
 
+impl LearningCardRequestShape {
+    fn remove_module(&mut self, id: &str) {
+        self.modules.retain(|module| module.id != id);
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AiStreamChunk {
     pub delta: String,
@@ -186,10 +192,6 @@ pub fn ai_cancel(request_id: String) -> bool {
 
 const LOOKUP_TRANSLATION_MARKER: &str = "[[QUILL_TRANSLATION]]";
 
-/// Sentinel `lookup_language` value: respond in whatever language the
-/// selection is in, rather than a pinned target language.
-const LOOKUP_LANGUAGE_SELECTION: &str = "selection";
-
 fn language_name(code: &str) -> String {
     match code {
         "en" => "English",
@@ -204,44 +206,58 @@ fn language_name(code: &str) -> String {
     .to_string()
 }
 
-/// The "respond in X" clause for the main definition/context output. For the
-/// `selection` sentinel this instructs the model to mirror the selection's
-/// language; otherwise it resolves to a concrete language name.
-fn main_language_clause(language: &str) -> String {
-    if language == LOOKUP_LANGUAGE_SELECTION {
-        "the same language as the selected word/phrase".to_string()
+/// Normalize legacy or damaged values into the three user-visible modes.
+fn normalized_explanation_mode(mode: Option<&str>) -> &'static str {
+    match mode.map(str::trim) {
+        Some("english_by_level") => "english_by_level",
+        Some("chinese" | "target_language") => "chinese",
+        _ => "adaptive_bilingual",
+    }
+}
+
+fn configured_explanation_mode(mode: Option<&str>, translation_language: &str) -> &'static str {
+    let is_chinese = matches!(translation_language.trim(), "zh" | "zh-CN" | "zh-Hans");
+    if mode.map(str::trim) == Some("target_language") && !is_chinese {
+        "adaptive_bilingual"
     } else {
-        language_name(language)
+        normalized_explanation_mode(mode)
+    }
+}
+
+fn explanation_matches_translation(mode: &str, cefr: &str, translation_language: &str) -> bool {
+    match normalized_explanation_mode(Some(mode)) {
+        "chinese" => matches!(translation_language.trim(), "zh" | "zh-CN" | "zh-Hans"),
+        "english_by_level" => matches!(translation_language.trim(), "en" | "en-US" | "en-GB"),
+        "adaptive_bilingual" => {
+            matches!(normalized_cefr_level(cefr), "B2" | "C1" | "C2")
+                && matches!(translation_language.trim(), "en" | "en-US" | "en-GB")
+        }
+        _ => false,
     }
 }
 
 fn lookup_system_prompt(
     kind: &str,
-    language: &str,
-    lookup_translation_language: &str,
+    explanation_mode: &str,
+    cefr: &str,
+    translation_language: &str,
     show_translation: bool,
 ) -> String {
-    let should_show_translation = show_translation
-        && !lookup_translation_language.is_empty()
-        && lookup_translation_language != language;
+    let should_show_translation = show_translation && !translation_language.is_empty();
     let translation_prefix = if should_show_translation {
         format!(
             "Before the definition, provide a brief translation of the word/phrase in {}. The first line MUST be exactly `{}` followed immediately by the brief translation, then a newline. This marker is required machine-readable metadata, not a header. Keep the translation to a few words — no explanation, just the meaning. After that first line, proceed with the definition as usual. Do not put the marker anywhere except the first line.\n\n",
-            language_name(lookup_translation_language),
+            language_name(translation_language),
             LOOKUP_TRANSLATION_MARKER,
         )
     } else {
         String::new()
     };
-    let clause = main_language_clause(language);
-    let definition_language_prefix = if should_show_translation {
-        format!("After that first line, respond entirely in {}.\n\n", clause)
-    } else {
-        format!("Respond entirely in {}.\n\n", clause)
-    };
-    let context_language_prefix = format!("Respond entirely in {}.\n\n", clause);
+    let explanation_prefix = format!("{}\n\n", explanation_strategy(explanation_mode, cefr));
+    let definition_language_prefix = format!("{translation_prefix}{explanation_prefix}");
+    let context_language_prefix = explanation_prefix;
 
-    let def_prefix = format!("{translation_prefix}{definition_language_prefix}");
+    let def_prefix = definition_language_prefix;
     let ctx_prefix = &context_language_prefix;
 
     match kind {
@@ -437,17 +453,26 @@ fn learning_request_from_config(kind: &str, raw: &str) -> AppResult<LearningCard
     })
 }
 
-fn learning_language_strategy(
-    mode: &str,
-    cefr: &str,
-    explanation_language: &str,
-    target_language: &str,
-) -> String {
-    let level = if matches!(cefr, "A1" | "A2" | "B1" | "B2" | "C1" | "C2") {
+fn learning_language_strategy(mode: &str, cefr: &str, translation_language: &str) -> String {
+    let level = normalized_cefr_level(cefr);
+    let translation = language_name(translation_language);
+    format!(
+        "Learner level: {level}. Explanation mode: {}. Translation language: {translation}. {} The translation language applies only to the requested target_translation module; do not let it change the explanation language.",
+        normalized_explanation_mode(Some(mode)),
+        explanation_strategy(mode, level),
+    )
+}
+
+fn normalized_cefr_level(cefr: &str) -> &str {
+    if matches!(cefr, "A1" | "A2" | "B1" | "B2" | "C1" | "C2") {
         cefr
     } else {
         "B1"
-    };
+    }
+}
+
+fn explanation_strategy(mode: &str, cefr: &str) -> String {
+    let level = normalized_cefr_level(cefr);
     let english_constraint = match level {
         "A1" => "Use very short English sentences and basic words. Explain one core meaning at a time.",
         "A2" => "Use common everyday English and only simple linking words. Avoid abstract terminology.",
@@ -457,31 +482,26 @@ fn learning_language_strategy(
         "C2" => "You may analyze metaphor, style, and highly abstract meaning with native-level precision.",
         _ => unreachable!(),
     };
-    let target = language_name(target_language);
-    let explanation = language_name(explanation_language);
-    let strategy = match mode {
+    match normalized_explanation_mode(Some(mode)) {
         "english_by_level" => format!(
             "Write explanations in English at CEFR {level}. {english_constraint} If an advanced word is unavoidable, immediately explain it in simpler English."
         ),
-        "target_language" => format!(
-            "Write explanations in {explanation}. English examples may be included where requested, with a concise {target} gloss."
-        ),
+        "chinese" => (
+            "Write explanations in clear Chinese (Simplified). English source words, quotations, pronunciation, and examples may remain in English, but explanatory prose must be Chinese."
+        ).to_string(),
         _ if matches!(level, "A1" | "A2") => format!(
-            "Use adaptive bilingual explanation: accurate {target} is primary, followed by a very short CEFR {level} English explanation and English examples where requested. Do not mechanically repeat every sentence in both languages. {english_constraint}"
+            "Use adaptive bilingual explanation: accurate Chinese (Simplified) is primary, followed by a very short CEFR {level} English explanation and English examples where requested. Do not mechanically repeat every sentence in both languages. {english_constraint}"
         ),
         _ if level == "B1" => format!(
-            "Use adaptive bilingual explanation: simple CEFR B1 English is primary; add brief {target} only where an abstract point could be misunderstood. {english_constraint} Do not mechanically duplicate sentences."
+            "Use adaptive bilingual explanation: simple CEFR B1 English is primary; add brief Chinese (Simplified) only where an abstract point could be misunderstood. {english_constraint} Do not mechanically duplicate sentences."
         ),
         _ if level == "B2" => format!(
-            "Use English as the main explanation language at CEFR B2. Use {target} only for a subtle distinction or the requested target_translation module. {english_constraint}"
+            "Use English as the explanation language at CEFR B2. {english_constraint} Put Chinese only in the requested target_translation module; do not add a separate Chinese gloss to explanation modules."
         ),
         _ => format!(
-            "Use precise English at CEFR {level}. Use {target} only in the requested target_translation module. {english_constraint}"
+            "Use English as the explanation language at CEFR {level}, with precise wording appropriate to that level. {english_constraint} Put Chinese only in the requested target_translation module; do not add a separate Chinese gloss to explanation modules."
         ),
-    };
-    format!(
-        "Learner level: {level}. Configured explanation language: {explanation}. Configured target translation language: {target}. {strategy}"
-    )
+    }
 }
 
 fn learning_kind_instructions(kind: &str) -> &'static str {
@@ -498,8 +518,7 @@ fn learning_card_system_prompt(
     request: &LearningCardRequestShape,
     mode: &str,
     cefr: &str,
-    explanation_language: &str,
-    target_language: &str,
+    translation_language: &str,
 ) -> AppResult<String> {
     let requested = serde_json::to_string(request)
         .map_err(|error| AppError::Other(format!("LEARNING_CARD_CONFIG_INVALID: {error}")))?;
@@ -508,7 +527,7 @@ fn learning_card_system_prompt(
         request.example_count,
         request.key_term_count,
         learning_kind_instructions(kind),
-        learning_language_strategy(mode, cefr, explanation_language, target_language),
+        learning_language_strategy(mode, cefr, translation_language),
     ))
 }
 
@@ -626,8 +645,8 @@ pub async fn ai_learning_card(
     if request_id.len() > 128 || request_id.trim().is_empty() {
         return Err(AppError::Other("AI_REQUEST_ID_INVALID".to_string()));
     }
-    let request = learning_request_from_config(&kind, &card_config)?;
-    let (cefr, explanation_mode, explanation_language, target_language) = {
+    let mut request = learning_request_from_config(&kind, &card_config)?;
+    let (cefr, explanation_mode, translation_language) = {
         let conn = db.reader();
         let get = |key: &str| -> Option<String> {
             conn.query_row(
@@ -637,43 +656,26 @@ pub async fn ai_learning_card(
             )
             .ok()
         };
-        let interface_language = get("language").unwrap_or_else(|| "zh".to_string());
-        let lookup_language = get("lookup_language")
+        let translation_language = get("translation_language")
+            .or_else(|| get("lookup_translation_language"))
             .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| "selection".to_string());
-        let configured_explanation = if kind == "passage" {
-            get("explain_language")
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| "lookup".to_string())
-        } else {
-            lookup_language.clone()
-        };
-        let explanation_language = match configured_explanation.as_str() {
-            "lookup" => lookup_language.clone(),
-            "selection" => "en".to_string(),
-            _ => configured_explanation,
-        };
-        let target_language = if kind == "passage" {
-            get("translation_language")
-        } else {
-            get("lookup_translation_language")
-        }
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or(interface_language);
+            .unwrap_or_else(|| "zh".to_string());
         (
             get("cefr_level").unwrap_or_else(|| "B1".to_string()),
-            get("explanation_mode").unwrap_or_else(|| "adaptive_bilingual".to_string()),
-            explanation_language,
-            target_language,
+            configured_explanation_mode(get("explanation_mode").as_deref(), &translation_language)
+                .to_string(),
+            translation_language,
         )
     };
+    if explanation_matches_translation(&explanation_mode, &cefr, &translation_language) {
+        request.remove_module("target_translation");
+    }
     let system_prompt = learning_card_system_prompt(
         &kind,
         &request,
         &explanation_mode,
         &cefr,
-        &explanation_language,
-        &target_language,
+        &translation_language,
     )?;
     let user_payload = serde_json::json!({
         "selectedText": text,
@@ -737,7 +739,7 @@ pub async fn ai_lookup(
     db: State<'_, Db>,
     secrets: State<'_, Secrets>,
 ) -> AppResult<()> {
-    let (language, lookup_translation_language, show_translation) = {
+    let (explanation_mode, cefr, translation_language, show_translation) = {
         let conn = db.reader();
         let get = |key: &str| -> Option<String> {
             conn.query_row(
@@ -747,18 +749,16 @@ pub async fn ai_lookup(
             )
             .ok()
         };
-        let sys_language = get("language").unwrap_or_else(|| "en".to_string());
-        // lookup_language drives the main definition/context language; unset
-        // falls back to the selection's own language.
-        let lookup_language =
-            get("lookup_language").unwrap_or_else(|| LOOKUP_LANGUAGE_SELECTION.to_string());
-        let lookup_translation_language = get("lookup_translation_language")
+        let translation_language = get("translation_language")
+            .or_else(|| get("lookup_translation_language"))
             .map(|lang| lang.trim().to_string())
             .filter(|lang| !lang.is_empty())
-            .unwrap_or_else(|| sys_language.clone());
+            .unwrap_or_else(|| "zh".to_string());
         (
-            lookup_language,
-            lookup_translation_language,
+            configured_explanation_mode(get("explanation_mode").as_deref(), &translation_language)
+                .to_string(),
+            get("cefr_level").unwrap_or_else(|| "B1".to_string()),
+            translation_language,
             get("show_translation").unwrap_or_else(|| "false".to_string()),
         )
     };
@@ -778,8 +778,9 @@ pub async fn ai_lookup(
 
     let system_prompt = lookup_system_prompt(
         kind.as_str(),
-        &language,
-        lookup_translation_language.trim(),
+        &explanation_mode,
+        &cefr,
+        translation_language.trim(),
         show_translation == "true",
     );
 
@@ -821,18 +822,11 @@ pub async fn ai_lookup(
 /// deliberately no `max_tokens` cap, which would truncate mid-sentence.
 /// Unlike `ai_lookup`, there is no translation-gloss branch: that is a
 /// word-level concept and makes no sense for a whole passage. The only
-/// language handling is the response-language directive.
-fn explain_system_prompt(language: &str) -> String {
-    let target = if language == LOOKUP_LANGUAGE_SELECTION {
-        "the same language as the selected passage".to_string()
-    } else {
-        language_name(language)
-    };
-    let language_prefix = format!("Respond entirely in {}.\n\n", target);
-
+/// language handling comes from the shared explanation mode and CEFR level.
+fn explain_system_prompt(explanation_mode: &str, cefr: &str) -> String {
     format!(
-        "{}You are a reading assistant embedded in an ebook reader. The user selected a sentence or passage and wants to understand it in context.\n\nIn 2–3 sentences, explain what it means and why it matters here — clarify any difficult phrasing, allusion, or tone. Be direct and concise. Do not restate the passage, add headers or labels, or pad with preamble. Plain prose only.",
-        language_prefix
+        "{}\n\nYou are a reading assistant embedded in an ebook reader. The user selected a sentence or passage and wants to understand it in context.\n\nIn 2–3 sentences, explain what it means and why it matters here — clarify any difficult phrasing, allusion, or tone. Be direct and concise. Do not restate the passage, add headers or labels, or pad with preamble. Plain prose only.",
+        explanation_strategy(explanation_mode, cefr),
     )
 }
 
@@ -848,7 +842,7 @@ pub async fn ai_explain(
     db: State<'_, Db>,
     secrets: State<'_, Secrets>,
 ) -> AppResult<()> {
-    let language = {
+    let (explanation_mode, cefr) = {
         let conn = db.reader();
         let get = |key: &str| -> Option<String> {
             conn.query_row(
@@ -858,16 +852,15 @@ pub async fn ai_explain(
             )
             .ok()
         };
-        let lookup_language =
-            get("lookup_language").unwrap_or_else(|| LOOKUP_LANGUAGE_SELECTION.to_string());
-        let explain_language = get("explain_language")
-            .map(|lang| lang.trim().to_string())
-            .filter(|lang| !lang.is_empty());
-        let language = match explain_language.as_deref() {
-            Some("lookup") | None => lookup_language,
-            Some(lang) => lang.to_string(),
-        };
-        language
+        let translation_language = get("translation_language")
+            .or_else(|| get("lookup_translation_language"))
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| "zh".to_string());
+        (
+            configured_explanation_mode(get("explanation_mode").as_deref(), &translation_language)
+                .to_string(),
+            get("cefr_level").unwrap_or_else(|| "B1".to_string()),
+        )
     };
 
     let mut user_content = format!("Passage: \"{}\"", passage);
@@ -886,7 +879,7 @@ pub async fn ai_explain(
     let messages = vec![
         ChatMessage {
             role: "system".to_string(),
-            content: explain_system_prompt(&language),
+            content: explain_system_prompt(&explanation_mode, &cefr),
         },
         ChatMessage {
             role: "user".to_string(),
@@ -1045,7 +1038,7 @@ mod tests {
 
     #[test]
     fn explain_prompt_asks_for_brevity_and_no_headers() {
-        let p = explain_system_prompt("en");
+        let p = explain_system_prompt("english_by_level", "B1");
         assert!(p.contains("2–3 sentences"), "must request a short answer");
         assert!(
             p.contains("headers or labels"),
@@ -1056,90 +1049,77 @@ mod tests {
 
     #[test]
     fn explain_prompt_english_emits_english_directive() {
-        let p = explain_system_prompt("en");
-        assert!(p.contains("Respond entirely in English."));
+        let p = explain_system_prompt("english_by_level", "A2");
+        assert!(p.contains("Write explanations in English at CEFR A2."));
     }
 
     #[test]
-    fn explain_prompt_non_english_prepends_response_language() {
-        let zh = explain_system_prompt("zh");
-        assert!(zh.starts_with("Respond entirely in Chinese (Simplified)."));
-
-        let fr = explain_system_prompt("fr");
-        assert!(fr.starts_with("Respond entirely in French."));
+    fn chinese_mode_explains_in_chinese() {
+        let prompt = explain_system_prompt("chinese", "B2");
+        assert!(prompt.starts_with("Write explanations in clear Chinese (Simplified)."));
     }
 
     #[test]
-    fn explain_selection_uses_source_language() {
-        let p = explain_system_prompt("selection");
-        assert!(p.contains("the same language as the selected passage"));
+    fn legacy_target_language_mode_migrates_to_chinese_semantics() {
+        assert_eq!(
+            normalized_explanation_mode(Some("target_language")),
+            "chinese"
+        );
+        assert_eq!(
+            configured_explanation_mode(Some("target_language"), "fr"),
+            "adaptive_bilingual"
+        );
+        assert_eq!(
+            normalized_explanation_mode(Some("unexpected")),
+            "adaptive_bilingual"
+        );
     }
 
     #[test]
     fn explain_prompt_never_has_translation_gloss() {
         // The word-level "brief translation of the word/phrase" preamble from
         // ai_lookup must not leak into the passage-level explain prompt.
-        for lang in ["en", "zh", "fr"] {
-            let p = explain_system_prompt(lang);
+        for mode in ["english_by_level", "chinese", "adaptive_bilingual"] {
+            let p = explain_system_prompt(mode, "B1");
             assert!(
                 !p.to_lowercase().contains("translation of the"),
-                "explain must not carry ai_lookup's word-gloss logic (lang={lang})"
+                "explain must not carry ai_lookup's word-gloss logic (mode={mode})"
             );
         }
     }
 
     #[test]
     fn lookup_definition_prompt_marks_translation_when_target_differs() {
-        let p = lookup_system_prompt("definition", "en", "zh", true);
+        let p = lookup_system_prompt("definition", "english_by_level", "B1", "zh", true);
         assert!(p.contains(LOOKUP_TRANSLATION_MARKER));
         assert!(p.contains("Chinese (Simplified)"));
 
-        let non_english_lookup = lookup_system_prompt("definition", "zh", "en", true);
+        let non_english_lookup = lookup_system_prompt("definition", "chinese", "B1", "en", true);
         assert!(non_english_lookup.contains(LOOKUP_TRANSLATION_MARKER));
         assert!(non_english_lookup.contains("brief translation of the word/phrase in English"));
-        assert!(non_english_lookup
-            .contains("After that first line, respond entirely in Chinese (Simplified)."));
+        assert!(non_english_lookup.contains("Write explanations in clear Chinese (Simplified)."));
 
-        let same_language = lookup_system_prompt("definition", "en", "en", true);
-        assert!(!same_language.contains(LOOKUP_TRANSLATION_MARKER));
-
-        let disabled = lookup_system_prompt("definition", "en", "zh", false);
+        let disabled = lookup_system_prompt("definition", "english_by_level", "B1", "zh", false);
         assert!(!disabled.contains(LOOKUP_TRANSLATION_MARKER));
     }
 
     #[test]
     fn lookup_context_prompt_never_marks_english_translation() {
-        let p = lookup_system_prompt("context", "en", "zh", true);
+        let p = lookup_system_prompt("context", "english_by_level", "B1", "zh", true);
         assert!(!p.contains(LOOKUP_TRANSLATION_MARKER));
         assert!(!p.to_lowercase().contains("brief translation"));
     }
 
     #[test]
-    fn lookup_prompt_uses_lookup_language_names() {
-        let zh = lookup_system_prompt("definition", "zh", "en", true);
-        assert!(zh.contains("respond entirely in Chinese (Simplified)."));
+    fn lookup_prompt_uses_the_shared_explanation_mode() {
+        let zh = lookup_system_prompt("definition", "chinese", "B1", "en", true);
+        assert!(zh.contains("Write explanations in clear Chinese (Simplified)."));
     }
 
     #[test]
     fn lookup_english_emits_explicit_english_directive() {
-        let p = lookup_system_prompt("definition", "en", "", false);
-        assert!(p.contains("Respond entirely in English."));
-    }
-
-    #[test]
-    fn lookup_selection_uses_source_language() {
-        let p = lookup_system_prompt("definition", "selection", "", false);
-        assert!(p.contains("the same language as the selected word/phrase"));
-        assert!(!p.contains("Respond entirely in selection."));
-    }
-
-    #[test]
-    fn lookup_selection_allows_gloss() {
-        let p = lookup_system_prompt("definition", "selection", "en", true);
-        assert!(p.contains(LOOKUP_TRANSLATION_MARKER));
-        assert!(p.contains(
-            "After that first line, respond entirely in the same language as the selected word/phrase."
-        ));
+        let p = lookup_system_prompt("definition", "english_by_level", "B2", "", false);
+        assert!(p.contains("Write explanations in English at CEFR B2."));
     }
 
     #[test]
@@ -1246,9 +1226,78 @@ mod tests {
 
     #[test]
     fn low_cefr_adaptive_prompt_prioritizes_accurate_bilingual_output() {
-        let strategy = learning_language_strategy("adaptive_bilingual", "A1", "en", "zh");
+        let strategy = learning_language_strategy("adaptive_bilingual", "A1", "zh");
         assert!(strategy.contains("accurate Chinese (Simplified) is primary"));
         assert!(strategy.contains("very short CEFR A1 English"));
         assert!(strategy.contains("Do not mechanically repeat"));
+    }
+
+    #[test]
+    fn upper_cefr_adaptive_prompt_keeps_chinese_in_translation_module() {
+        for level in ["B2", "C1", "C2"] {
+            let strategy = learning_language_strategy("adaptive_bilingual", level, "zh");
+            assert!(strategy.contains("English"), "level={level}");
+            assert!(
+                strategy.contains("Chinese only in the requested target_translation module"),
+                "level={level}"
+            );
+            assert!(!strategy.contains("Add brief Chinese"), "level={level}");
+        }
+    }
+
+    #[test]
+    fn translation_language_does_not_change_chinese_explanation_mode() {
+        let strategy = learning_language_strategy("chinese", "B1", "en");
+        assert!(strategy.contains("Write explanations in clear Chinese (Simplified)."));
+        assert!(strategy.contains("Translation language: English."));
+        assert!(strategy.contains("applies only to the requested target_translation module"));
+    }
+
+    #[test]
+    fn pure_explanation_language_suppresses_redundant_translation_module() {
+        assert!(explanation_matches_translation("chinese", "B1", "zh"));
+        assert!(explanation_matches_translation("chinese", "B1", "zh-CN"));
+        assert!(explanation_matches_translation(
+            "english_by_level",
+            "B1",
+            "en"
+        ));
+        assert!(explanation_matches_translation(
+            "adaptive_bilingual",
+            "B2",
+            "en"
+        ));
+        assert!(explanation_matches_translation(
+            "adaptive_bilingual",
+            "C2",
+            "en-GB"
+        ));
+        assert!(!explanation_matches_translation("chinese", "B1", "en"));
+        assert!(!explanation_matches_translation(
+            "english_by_level",
+            "B1",
+            "zh"
+        ));
+        assert!(!explanation_matches_translation(
+            "adaptive_bilingual",
+            "B1",
+            "en"
+        ));
+        assert!(!explanation_matches_translation(
+            "adaptive_bilingual",
+            "C1",
+            "zh"
+        ));
+
+        let mut request = default_learning_request("word").unwrap();
+        request.remove_module("target_translation");
+        assert!(!request
+            .modules
+            .iter()
+            .any(|module| module.id == "target_translation"));
+        assert!(request
+            .modules
+            .iter()
+            .any(|module| module.id == "context_meaning"));
     }
 }

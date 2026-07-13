@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::error::{AppError, AppResult};
+use crate::sync::events::word_mark_rule_id;
 
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, include_str!("../migrations/001_init.sql")),
@@ -48,6 +49,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
         include_str!("../migrations/020_text_reader_preparation.sql"),
     ),
     (21, include_str!("../migrations/021_learning_tools.sql")),
+    (
+        22,
+        include_str!("../migrations/022_marker_styles_and_fonts.sql"),
+    ),
 ];
 
 /// SQLite handle for the local materialized view.
@@ -244,6 +249,69 @@ impl Db {
             }
         }
 
+        if current >= 22 {
+            Self::repair_legacy_word_mark_ids(conn)?;
+        }
+
+        Ok(())
+    }
+
+    /// Early learning-tools builds used random ids for the natural-keyed word
+    /// marker row. Repair identity before sync can dump a snapshot: schema v3
+    /// rejects non-canonical ids, and leaving exception rows on the old id
+    /// would silently make those exclusions ineffective.
+    fn repair_legacy_word_mark_ids(conn: &Connection) -> AppResult<()> {
+        let rows = {
+            let mut statement = conn.prepare(
+                "SELECT id, book_id, normalized_word, match_mode FROM word_mark_rules",
+            )?;
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let repairs: Vec<_> = rows
+            .into_iter()
+            .filter_map(|(legacy_id, book_id, normalized_word, match_mode)| {
+                let canonical_id = word_mark_rule_id(&book_id, &normalized_word, &match_mode);
+                (legacy_id != canonical_id).then_some((
+                    legacy_id,
+                    canonical_id,
+                    book_id,
+                    normalized_word,
+                    match_mode,
+                ))
+            })
+            .collect();
+        if repairs.is_empty() {
+            return Ok(());
+        }
+
+        let tx = conn.unchecked_transaction()?;
+        for (legacy_id, canonical_id, book_id, normalized_word, match_mode) in repairs {
+            tx.execute(
+                "UPDATE word_mark_rules SET id = ?1
+                 WHERE book_id = ?2 AND normalized_word = ?3 AND match_mode = ?4",
+                params![canonical_id, book_id, normalized_word, match_mode],
+            )?;
+            crate::sync::merge::reconcile_legacy_word_mark_exceptions(
+                &tx,
+                &legacy_id,
+                &canonical_id,
+                &book_id,
+                &normalized_word,
+                i64::MIN,
+                "",
+                true,
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -517,6 +585,8 @@ mod tests {
         assert!(tables.contains(&"_replay_state".to_string()));
         assert!(tables.contains(&"_tombstones".to_string()));
         assert!(tables.contains(&"_pending_publish".to_string()));
+        assert!(tables.contains(&"word_mark_exceptions".to_string()));
+        assert!(tables.contains(&"custom_fonts".to_string()));
     }
 
     #[test]

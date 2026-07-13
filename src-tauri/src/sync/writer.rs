@@ -63,7 +63,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicI64, Ordering},
     mpsc, Arc, Condvar, Mutex,
 };
 
@@ -162,6 +162,11 @@ pub struct SyncWriter {
     /// Per-book leading-edge throttle for `book.progress.set`. Key: book
     /// id. Value: unix millis of the most recent event we let through.
     progress_throttle: Mutex<HashMap<String, i64>>,
+    /// Process-local logical clock for mutations whose LWW state can be
+    /// toggled more than once inside one wall-clock millisecond. Cross-device
+    /// ties are still resolved by `updated_by_device`; this clock preserves
+    /// the user's order for rapid mutations emitted by this process.
+    logical_timestamp: AtomicI64,
     /// Test-only knob: when true, the Phase 2 outbox flush runs inline
     /// on the caller's thread instead of being dispatched to a
     /// background worker. Production always leaves this `false` so the
@@ -192,6 +197,7 @@ impl SyncWriter {
             log: Mutex::new(None),
             should_queue: AtomicBool::new(false),
             progress_throttle: Mutex::new(HashMap::new()),
+            logical_timestamp: AtomicI64::new(0),
             flush_inline_for_tests: AtomicBool::new(false),
             cover_tx: Mutex::new(None),
             flush_tx: Mutex::new(None),
@@ -245,6 +251,28 @@ impl SyncWriter {
 
     pub fn self_device(&self) -> &str {
         &self.self_device
+    }
+
+    /// Return a unix-millisecond timestamp that is strictly increasing for
+    /// this writer, even when two user actions happen in the same millisecond.
+    pub fn next_logical_timestamp(&self) -> i64 {
+        self.next_logical_timestamp_from(chrono::Utc::now().timestamp_millis())
+    }
+
+    fn next_logical_timestamp_from(&self, wall_clock: i64) -> i64 {
+        let mut previous = self.logical_timestamp.load(Ordering::SeqCst);
+        loop {
+            let next = wall_clock.max(previous.saturating_add(1));
+            match self.logical_timestamp.compare_exchange(
+                previous,
+                next,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => return next,
+                Err(current) => previous = current,
+            }
+        }
     }
 
     /// Toggle the device log. `Some(log)` means "drain `_pending_publish`
@@ -663,6 +691,16 @@ mod tests {
     fn book_count(conn: &Connection) -> i64 {
         conn.query_row("SELECT COUNT(*) FROM books", [], |r| r.get(0))
             .unwrap()
+    }
+
+    #[test]
+    fn logical_timestamp_is_strictly_monotonic_within_one_millisecond() {
+        let writer = SyncWriter::new("dev-A".into());
+
+        assert_eq!(writer.next_logical_timestamp_from(1_000), 1_000);
+        assert_eq!(writer.next_logical_timestamp_from(1_000), 1_001);
+        assert_eq!(writer.next_logical_timestamp_from(999), 1_002);
+        assert_eq!(writer.next_logical_timestamp_from(2_000), 2_000);
     }
 
     fn import_body(id: &str) -> EventBody {

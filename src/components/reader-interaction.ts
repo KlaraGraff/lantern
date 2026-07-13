@@ -10,7 +10,7 @@ export interface SerializableRect {
 }
 
 export interface ReaderInteraction {
-  trigger: "word-click" | "selection-contextmenu";
+  trigger: "word-menu" | "word-quick-lookup" | "selection-menu";
   kind: InteractionKind;
   text: string;
   normalizedText: string;
@@ -85,7 +85,8 @@ export function wordRangeAtPoint(
   if (!caret || caret.startContainer.nodeType !== Node.TEXT_NODE) return null;
   const node = caret.startContainer;
   const text = node.textContent ?? "";
-  const offset = Math.min(caret.startOffset, Math.max(0, text.length - 1));
+  const offset = caret.startOffset;
+  if (offset < 0 || offset >= text.length) return null;
   const segment = lexicalSegments(text, locale).find(({ segment, index }) => (
     offset >= index && offset < index + segment.length
   ));
@@ -162,6 +163,8 @@ export function applyWordMarkHighlights(
   normalizedWords: Iterable<string>,
   name = "quill-word-marks",
   root?: Node,
+  includeRange?: (word: string, range: Range) => boolean,
+  css?: string,
 ): boolean {
   const words = new Set(Array.from(normalizedWords, (word) => normalizeInteractionText(word)).filter(Boolean));
   const view = doc.defaultView as (Window & typeof globalThis & {
@@ -193,6 +196,8 @@ export function applyWordMarkHighlights(
       const range = doc.createRange();
       range.setStart(node, segment.index);
       range.setEnd(node, segment.index + segment.segment.length);
+      const normalized = normalizeInteractionText(segment.segment);
+      if (includeRange && !includeRange(normalized, range)) continue;
       ranges.push(range);
       if (ranges.length >= 20_000) break;
     }
@@ -200,11 +205,13 @@ export function applyWordMarkHighlights(
   }
 
   registry.set(name, new view.Highlight(...ranges));
-  if (!doc.getElementById("quill-word-mark-style")) {
-    const style = doc.createElement("style");
-    style.id = "quill-word-mark-style";
-    style.textContent = `::highlight(${name}) { background: rgba(163, 106, 49, 0.12); text-decoration: underline; text-decoration-color: rgba(141, 124, 101, 0.85); text-decoration-thickness: 1.5px; text-underline-offset: 0.14em; }`;
+  const styleId = `quill-word-mark-style-${name}`;
+  let style = doc.getElementById(styleId) as HTMLStyleElement | null;
+  if (!style) {
+    style = doc.createElement("style");
+    style.id = styleId;
     (doc.head ?? doc.documentElement).appendChild(style);
   }
+  style.textContent = `::highlight(${name}) { ${css ?? "background: rgba(163, 106, 49, 0.12); text-decoration: underline; text-decoration-color: rgba(141, 124, 101, 0.85); text-decoration-thickness: 1.5px; text-underline-offset: 0.14em;"} }`;
   return true;
 }

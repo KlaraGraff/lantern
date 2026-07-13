@@ -3,8 +3,9 @@ use std::path::{Component, Path, PathBuf};
 use crate::error::{AppError, AppResult};
 
 use super::events::{
-    is_supported_event_schema_version, normalize_learning_term, word_mark_rule_id, Event,
-    EventBody, NotePayload, WordMarkPayload,
+    is_supported_event_schema_version, lookup_occurrence_mark_id, normalize_learning_term,
+    word_mark_exception_id, word_mark_rule_id, Event, EventBody, LookupOccurrenceMarkPayload,
+    NotePayload, WordMarkExceptionPayload, WordMarkPayload,
 };
 
 const BOOK_EXTENSIONS: &[&str] = &[
@@ -32,6 +33,53 @@ pub fn validate_entity_id(id: &str) -> AppResult<()> {
         return Err(AppError::Other("SYNC_ENTITY_ID_INVALID".to_string()));
     }
     Ok(())
+}
+
+pub fn validate_tombstone_entity(entity: &str) -> AppResult<()> {
+    if matches!(
+        entity,
+        "book"
+            | "highlight"
+            | "bookmark"
+            | "vocab"
+            | "note"
+            | "word_mark"
+            | "word_mark_exception"
+            | "lookup_occurrence_mark"
+            | "collection"
+            | "collection_book"
+            | "chat"
+            | "chat_message"
+            | "translation"
+    ) {
+        return Ok(());
+    }
+    Err(AppError::Other(
+        "SYNC_SNAPSHOT_TOMBSTONE_INVALID".to_string(),
+    ))
+}
+
+pub fn validate_tombstone_id(entity: &str, id: &str) -> AppResult<()> {
+    validate_tombstone_entity(entity)?;
+    if entity == "collection_book" {
+        let Some((collection_id, book_id)) = id.split_once(':') else {
+            return Err(AppError::Other(
+                "SYNC_SNAPSHOT_TOMBSTONE_INVALID".to_string(),
+            ));
+        };
+        if book_id.contains(':') {
+            return Err(AppError::Other(
+                "SYNC_SNAPSHOT_TOMBSTONE_INVALID".to_string(),
+            ));
+        }
+        validate_entity_id(collection_id)
+            .map_err(|_| AppError::Other("SYNC_SNAPSHOT_TOMBSTONE_INVALID".to_string()))?;
+        validate_entity_id(book_id)
+            .map_err(|_| AppError::Other("SYNC_SNAPSHOT_TOMBSTONE_INVALID".to_string()))?;
+        return Ok(());
+    }
+    validate_entity_id(id)
+        .map_err(|_| AppError::Other("SYNC_SNAPSHOT_TOMBSTONE_INVALID".to_string()))
 }
 
 pub fn validate_peer_device(device: &str) -> AppResult<()> {
@@ -138,6 +186,83 @@ pub(crate) fn validate_word_mark_payload(payload: &WordMarkPayload) -> AppResult
     )
 }
 
+pub(crate) fn validate_word_mark_exception_fields(
+    id: &str,
+    rule_id: &str,
+    book_id: &str,
+    normalized_word: &str,
+    location: &str,
+) -> AppResult<()> {
+    validate_entity_id(id)?;
+    validate_entity_id(rule_id)?;
+    validate_entity_id(book_id)?;
+    if normalized_word.is_empty()
+        || normalized_word.len() > MAX_LEARNING_TERM_BYTES
+        || normalized_word.chars().any(char::is_control)
+        || normalize_learning_term(normalized_word) != normalized_word
+        || location.trim().is_empty()
+        || location.len() > MAX_NOTE_LOCATION_BYTES
+        || location.chars().any(char::is_control)
+        || rule_id != word_mark_rule_id(book_id, normalized_word, "exact")
+        || id != word_mark_exception_id(rule_id, location)
+    {
+        return Err(AppError::Other(
+            "SYNC_WORD_MARK_EXCEPTION_INVALID".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_word_mark_exception_payload(
+    payload: &WordMarkExceptionPayload,
+) -> AppResult<()> {
+    validate_word_mark_exception_fields(
+        &payload.id,
+        &payload.rule_id,
+        &payload.book_id,
+        &payload.normalized_word,
+        &payload.location,
+    )
+}
+
+pub(crate) fn validate_lookup_occurrence_mark_fields(
+    id: &str,
+    book_id: &str,
+    normalized_word: &str,
+    display_word: &str,
+    location: &str,
+) -> AppResult<()> {
+    validate_entity_id(id)?;
+    validate_entity_id(book_id)?;
+    if normalized_word.is_empty()
+        || normalized_word.len() > MAX_LEARNING_TERM_BYTES
+        || normalized_word.chars().any(char::is_control)
+        || normalize_learning_term(normalized_word) != normalized_word
+        || display_word.trim().is_empty()
+        || display_word.len() > MAX_WORD_MARK_DISPLAY_BYTES
+        || display_word.chars().any(char::is_control)
+        || location.trim().is_empty()
+        || location.len() > MAX_NOTE_LOCATION_BYTES
+        || location.chars().any(char::is_control)
+        || id != lookup_occurrence_mark_id(book_id, location)
+    {
+        return Err(AppError::Other(
+            "SYNC_LOOKUP_OCCURRENCE_MARK_INVALID".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_lookup_occurrence_mark_payload(payload: &LookupOccurrenceMarkPayload) -> AppResult<()> {
+    validate_lookup_occurrence_mark_fields(
+        &payload.id,
+        &payload.book_id,
+        &payload.normalized_word,
+        &payload.display_word,
+        &payload.location,
+    )
+}
+
 pub fn validate_event(event: &Event, expected_device: &str) -> AppResult<()> {
     validate_peer_device(expected_device)?;
     if event.device != expected_device {
@@ -210,6 +335,24 @@ pub fn validate_event(event: &Event, expected_device: &str) -> AppResult<()> {
             }
             validate_entity_id(id)?;
         }
+        EventBody::WordMarkExceptionSet(payload) => {
+            if event.v < 3 {
+                return Err(AppError::Other(
+                    "SYNC_WORD_MARK_EXCEPTION_INVALID".to_string(),
+                ));
+            }
+            validate_word_mark_exception_payload(payload)?;
+            ensure_not_from_far_future(payload.created_at, "SYNC_WORD_MARK_EXCEPTION_INVALID")?;
+        }
+        EventBody::LookupOccurrenceMarkSet(payload) => {
+            if event.v < 3 {
+                return Err(AppError::Other(
+                    "SYNC_LOOKUP_OCCURRENCE_MARK_INVALID".to_string(),
+                ));
+            }
+            validate_lookup_occurrence_mark_payload(payload)?;
+            ensure_not_from_far_future(payload.created_at, "SYNC_LOOKUP_OCCURRENCE_MARK_INVALID")?;
+        }
         _ => {}
     }
     Ok(())
@@ -223,6 +366,13 @@ pub fn ensure_not_from_far_future(timestamp_ms: i64, code: &str) -> AppResult<()
         return Err(AppError::Other(code.to_string()));
     }
     Ok(())
+}
+
+pub fn ensure_valid_sync_timestamp(timestamp_ms: i64, code: &str) -> AppResult<()> {
+    if timestamp_ms < 0 {
+        return Err(AppError::Other(code.to_string()));
+    }
+    ensure_not_from_far_future(timestamp_ms, code)
 }
 
 fn validate_relative_blob_path(path: &str, root: &str, extensions: &[&str]) -> AppResult<()> {
@@ -322,9 +472,49 @@ mod tests {
     }
 
     #[test]
-    fn rejects_timestamps_far_in_the_future() {
+    fn validates_snapshot_tombstone_entities_and_ids() {
+        for entity in [
+            "book",
+            "highlight",
+            "bookmark",
+            "vocab",
+            "note",
+            "word_mark",
+            "word_mark_exception",
+            "collection",
+            "chat",
+            "chat_message",
+            "translation",
+        ] {
+            assert!(
+                validate_tombstone_id(entity, "entity-1").is_ok(),
+                "expected {entity} to be allowed"
+            );
+        }
+        assert!(validate_tombstone_id("collection_book", "c1:b1").is_ok());
+        assert!(validate_tombstone_entity("unknown").is_err());
+        for (entity, id) in [
+            ("book", ""),
+            ("book", "../b1"),
+            ("book", "b1:extra"),
+            ("collection_book", "c1"),
+            ("collection_book", ":b1"),
+            ("collection_book", "c1:"),
+            ("collection_book", "c1:b1:extra"),
+        ] {
+            assert!(
+                validate_tombstone_id(entity, id).is_err(),
+                "accepted invalid tombstone id {entity}:{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn validates_snapshot_tombstone_timestamp_bounds() {
+        assert!(ensure_valid_sync_timestamp(0, "test").is_ok());
+        assert!(ensure_valid_sync_timestamp(-1, "test").is_err());
         let future = chrono::Utc::now().timestamp_millis() + MAX_FUTURE_CLOCK_SKEW_MS + 1;
-        assert!(ensure_not_from_far_future(future, "test").is_err());
+        assert!(ensure_valid_sync_timestamp(future, "test").is_err());
     }
 
     #[test]
@@ -374,6 +564,24 @@ mod tests {
             validate_word_mark_fields("random-id", "b1", "term", "Term", "exact", "lookup")
                 .is_err()
         );
+
+        let exception_id = word_mark_exception_id(&stable_id, "epubcfi(/6/4!)");
+        assert!(validate_word_mark_exception_fields(
+            &exception_id,
+            &stable_id,
+            "b1",
+            "term",
+            "epubcfi(/6/4!)",
+        )
+        .is_ok());
+        assert!(validate_word_mark_exception_fields(
+            &exception_id,
+            &stable_id,
+            "b1",
+            "other-term",
+            "epubcfi(/6/4!)",
+        )
+        .is_err());
     }
 
     #[test]

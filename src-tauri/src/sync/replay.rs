@@ -497,7 +497,11 @@ impl ReplayEngine {
             }
         }
 
-        all_events.sort_by(|a, b| (a.ts, &a.device).cmp(&(b.ts, &b.device)));
+        // Event ids are monotonic within a device. Include the id in the
+        // global order so two mutations emitted by one device in the same
+        // millisecond retain their append order instead of depending on the
+        // input vectors' incidental order.
+        all_events.sort_by(|a, b| (a.ts, &a.device, &a.id).cmp(&(b.ts, &b.device, &b.id)));
 
         let total_events = all_events.len();
         if total_events == 0 {

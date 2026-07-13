@@ -91,22 +91,40 @@ impl Secrets {
             let entry = self.keychain_entry(key).map_err(|error| {
                 AppError::Other(format!("Failed to access system credential store: {error}"))
             })?;
-            entry.set_password(value).map_err(|error| {
-                AppError::Other(format!(
+            let previous = match entry.get_password() {
+                Ok(value) => Some(value),
+                Err(keyring::Error::NoEntry) => None,
+                Err(error) => {
+                    return Err(AppError::Other(format!(
+                        "Failed to read existing secret from system credential store: {error}"
+                    )));
+                }
+            };
+            if let Err(error) = entry.set_password(value) {
+                self.restore_keychain_value(key, previous.as_deref());
+                return Err(AppError::Other(format!(
                     "Failed to save secret to system credential store: {error}"
-                ))
-            })?;
-            let stored = entry.get_password().map_err(|error| {
-                AppError::Other(format!(
-                    "Failed to verify secret in system credential store: {error}"
-                ))
-            })?;
+                )));
+            }
+            let stored = match entry.get_password() {
+                Ok(stored) => stored,
+                Err(error) => {
+                    self.restore_keychain_value(key, previous.as_deref());
+                    return Err(AppError::Other(format!(
+                        "Failed to verify secret in system credential store: {error}"
+                    )));
+                }
+            };
             if stored != value {
+                self.restore_keychain_value(key, previous.as_deref());
                 return Err(AppError::Other(
                     "SYSTEM_CREDENTIAL_STORE_VERIFICATION_FAILED".to_string(),
                 ));
             }
-            self.delete_legacy_value(key)?;
+            if let Err(error) = self.delete_legacy_value(key) {
+                self.restore_keychain_value(key, previous.as_deref());
+                return Err(error);
+            }
             return Ok(());
         }
 
@@ -122,50 +140,102 @@ impl Secrets {
     }
 
     pub fn delete_prefix(&self, prefix: &str) -> AppResult<()> {
+        let mut deleted = Vec::new();
         if self.use_keychain {
             for key in SENSITIVE_KEYS {
                 if key.starts_with(prefix) {
-                    match self
-                        .keychain_entry(key)
-                        .and_then(|entry| entry.delete_credential())
-                    {
-                        Ok(()) | Err(keyring::Error::NoEntry) => {}
+                    let entry = match self.keychain_entry(key) {
+                        Ok(entry) => entry,
                         Err(error) => {
+                            for (deleted_key, value) in &deleted {
+                                self.restore_keychain_value(deleted_key, Some(value));
+                            }
+                            return Err(AppError::Other(format!(
+                                "Failed to access system credential store: {error}"
+                            )));
+                        }
+                    };
+                    let previous = match entry.get_password() {
+                        Ok(value) => Some(value),
+                        Err(keyring::Error::NoEntry) => None,
+                        Err(error) => {
+                            for (deleted_key, value) in &deleted {
+                                self.restore_keychain_value(deleted_key, Some(value));
+                            }
+                            return Err(AppError::Other(format!(
+                                "Failed to read secret from system credential store: {error}"
+                            )));
+                        }
+                    };
+                    if let Some(value) = previous {
+                        if let Err(error) = entry.delete_credential() {
+                            self.restore_keychain_value(key, Some(&value));
+                            for (deleted_key, deleted_value) in &deleted {
+                                self.restore_keychain_value(deleted_key, Some(deleted_value));
+                            }
                             return Err(AppError::Other(format!(
                                 "Failed to remove secret from system credential store: {error}"
                             )));
                         }
+                        deleted.push(((*key).to_string(), value));
                     }
                 }
             }
         }
 
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|e| AppError::Other(e.to_string()))?;
-        conn.execute(
+        let conn = match self.conn.lock() {
+            Ok(conn) => conn,
+            Err(error) => {
+                for (key, value) in &deleted {
+                    self.restore_keychain_value(key, Some(value));
+                }
+                return Err(AppError::Other(error.to_string()));
+            }
+        };
+        if let Err(error) = conn.execute(
             "DELETE FROM secrets WHERE key LIKE ?1",
             params![format!("{}%", prefix)],
-        )?;
+        ) {
+            drop(conn);
+            for (key, value) in &deleted {
+                self.restore_keychain_value(key, Some(value));
+            }
+            return Err(error.into());
+        }
         Ok(())
     }
 
     pub fn delete(&self, key: &str) -> AppResult<()> {
+        let mut previous = None;
         if self.use_keychain {
-            match self
-                .keychain_entry(key)
-                .and_then(|entry| entry.delete_credential())
-            {
-                Ok(()) | Err(keyring::Error::NoEntry) => {}
+            let entry = self.keychain_entry(key).map_err(|error| {
+                AppError::Other(format!("Failed to access system credential store: {error}"))
+            })?;
+            previous = match entry.get_password() {
+                Ok(value) => Some(value),
+                Err(keyring::Error::NoEntry) => None,
                 Err(error) => {
+                    return Err(AppError::Other(format!(
+                        "Failed to read secret from system credential store: {error}"
+                    )));
+                }
+            };
+            if previous.is_some() {
+                if let Err(error) = entry.delete_credential() {
+                    self.restore_keychain_value(key, previous.as_deref());
                     return Err(AppError::Other(format!(
                         "Failed to remove secret from system credential store: {error}"
                     )));
                 }
             }
         }
-        self.delete_legacy_value(key)
+        if let Err(error) = self.delete_legacy_value(key) {
+            if self.use_keychain {
+                self.restore_keychain_value(key, previous.as_deref());
+            }
+            return Err(error);
+        }
+        Ok(())
     }
 
     /// Migrate sensitive keys from the main settings DB into the current
@@ -252,6 +322,22 @@ impl Secrets {
 
     fn keychain_entry(&self, key: &str) -> Result<Entry, keyring::Error> {
         Entry::new(&self.keychain_service, key)
+    }
+
+    fn restore_keychain_value(&self, key: &str, previous: Option<&str>) {
+        let result = match self.keychain_entry(key) {
+            Ok(entry) => match previous {
+                Some(value) => entry.set_password(value),
+                None => match entry.delete_credential() {
+                    Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+                    Err(error) => Err(error),
+                },
+            },
+            Err(error) => Err(error),
+        };
+        if let Err(error) = result {
+            log::error!("secrets: failed to restore {key} after a partial operation: {error}");
+        }
     }
 
     fn delete_legacy_value(&self, key: &str) -> AppResult<()> {

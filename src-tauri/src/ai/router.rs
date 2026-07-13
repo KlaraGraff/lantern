@@ -116,6 +116,7 @@ enum AiErrorKind {
     Provider5xx,
     Protocol,
     Request,
+    NotConfigured,
 }
 
 impl AiErrorKind {
@@ -130,6 +131,7 @@ impl AiErrorKind {
             Self::Provider5xx => "provider_5xx",
             Self::Protocol => "protocol",
             Self::Request => "request",
+            Self::NotConfigured => "not_configured",
         }
     }
 
@@ -164,6 +166,20 @@ fn classify_error(error: &AppError) -> AiErrorKind {
         AiErrorKind::CredentialInvalid
     } else if message.contains("status=401") || message.contains("unauthorized") {
         AiErrorKind::Auth
+    } else if [
+        "content_policy_violation",
+        "content_filter",
+        "moderation_blocked",
+        "safety_violation",
+    ]
+    .iter()
+    .any(|code| {
+        message.contains(&format!("code={code}"))
+            || message.contains(&format!("type={code}"))
+    }) {
+        // A policy rejection belongs to this request, not to the credential.
+        // Trying every key would repeat the same rejected request.
+        AiErrorKind::Request
     } else if message.contains("status=403") || message.contains("forbidden") {
         AiErrorKind::Permission
     } else if message.contains("status=402")
@@ -184,8 +200,17 @@ fn classify_error(error: &AppError) -> AiErrorKind {
         || message.contains("status=404")
         || message.contains("status=413")
         || message.contains("status=422")
+        || message.contains("ai_model_list_invalid")
+        || message.contains("ai_model_list_empty")
+        || message.contains("ai_model_list_too_large")
     {
         AiErrorKind::Request
+    } else if message.contains("ai_not_configured")
+        || message.contains("ai_no_usable_keys")
+        || message.contains("ai_keys_disabled")
+        || message.contains("ai_all_keys_invalid")
+    {
+        AiErrorKind::NotConfigured
     } else {
         AiErrorKind::Network
     }
@@ -493,7 +518,7 @@ fn update_credential_health(
         Some(AiErrorKind::Network | AiErrorKind::Provider5xx | AiErrorKind::Protocol) => {
             ("cooldown", Some(timestamp + 30 * 1000))
         }
-        Some(AiErrorKind::Request) => ("active", None),
+        Some(AiErrorKind::Request | AiErrorKind::NotConfigured) => ("active", None),
     };
     let _ = conn.execute(
         "UPDATE ai_credentials SET state = ?1, cooldown_until = ?2, last_error_kind = ?3, last_used_at = ?4, updated_at = ?4 WHERE id = ?5",
@@ -526,6 +551,7 @@ fn update_profile_health(
             ("cooldown", Some(timestamp + 30 * 1000))
         }
         Some(AiErrorKind::Request) => ("active", None),
+        Some(AiErrorKind::NotConfigured) => ("unavailable", None),
     };
     let latency = latency_ms.map(|value| value.min(i64::MAX as u64) as i64);
     let _ = conn.execute(
@@ -685,51 +711,13 @@ fn parse_model_ids(provider: &str, value: &serde_json::Value) -> AppResult<Vec<S
     Ok(models.into_iter().collect())
 }
 
-pub async fn list_models(
-    db: &Db,
-    secrets: &Secrets,
-    profile_id: &str,
-    provider: Option<String>,
-    auth_mode: Option<String>,
-    base_url: Option<String>,
+async fn list_models_once(
+    profile: &AiProfile,
+    endpoint: &str,
+    api_key: Option<&str>,
 ) -> AppResult<Vec<String>> {
-    let mut profile = profile_by_id(db, profile_id)?;
-    let (_, provider, auth_mode, base_url, _, _, _) = normalize_profile_config(
-        profile.view.label.clone(),
-        provider.unwrap_or_else(|| profile.view.provider.clone()),
-        auth_mode.unwrap_or_else(|| profile.view.auth_mode.clone()),
-        base_url.or_else(|| profile.view.base_url.clone()),
-        profile.view.model.clone(),
-        profile.view.temperature,
-        profile.view.keep_alive.clone(),
-    )?;
-    profile.view.provider = provider;
-    profile.view.auth_mode = auth_mode;
-    profile.view.base_url = base_url;
-
-    if profile.view.auth_mode == "oauth" {
-        return Err(AppError::Other("AI_MODEL_LIST_UNSUPPORTED".to_string()));
-    }
-
-    let credential = if profile.view.provider == "ollama" {
-        None
-    } else {
-        credentials_for(db, profile_id)?
-            .into_iter()
-            .find_map(|credential| {
-                secrets
-                    .get(&credential.secret_ref)
-                    .filter(|value| !value.trim().is_empty())
-                    .map(|key| (credential, key))
-            })
-    };
-    if profile.view.provider != "ollama" && credential.is_none() {
-        return Err(AppError::Other("AI_NO_USABLE_KEYS".to_string()));
-    }
-
-    let endpoint = models_endpoint(&profile.view)?;
     let mut request = crate::ai::http_client().get(endpoint);
-    if let Some((_, key)) = credential.as_ref() {
+    if let Some(key) = api_key {
         request = if profile.view.provider == "anthropic" {
             request
                 .header("x-api-key", key)
@@ -747,6 +735,79 @@ pub async fn list_models(
     }
     let value = read_json_limited(response).await?;
     parse_model_ids(&profile.view.provider, &value)
+}
+
+pub async fn list_models(
+    db: &Db,
+    secrets: &Secrets,
+    profile_id: &str,
+    provider: String,
+    auth_mode: String,
+    base_url: Option<String>,
+) -> AppResult<Vec<String>> {
+    let mut profile = profile_by_id(db, profile_id)?;
+    let (_, provider, auth_mode, base_url, _, _, _) = normalize_profile_config(
+        profile.view.label.clone(),
+        provider,
+        auth_mode,
+        base_url,
+        profile.view.model.clone(),
+        profile.view.temperature,
+        profile.view.keep_alive.clone(),
+    )?;
+    profile.view.provider = provider;
+    profile.view.auth_mode = auth_mode;
+    profile.view.base_url = base_url;
+
+    if profile.view.auth_mode == "oauth" {
+        return Err(AppError::Other("AI_MODEL_LIST_UNSUPPORTED".to_string()));
+    }
+
+    // Model discovery is an explicit settings action. Use enabled credentials
+    // even when inference health put them in cooldown, but do not mutate that
+    // health here: a provider may deny or omit `/models` while inference still
+    // works, and this request may be probing an unsaved URL/provider draft.
+    let endpoint = models_endpoint(&profile.view)?;
+    if profile.view.provider == "ollama" {
+        return list_models_once(&profile, &endpoint, None).await;
+    }
+
+    let candidates: Vec<_> = all_credentials_for(db, profile_id)?
+        .into_iter()
+        .filter(|credential| credential.view.enabled)
+        .collect();
+    if candidates.is_empty() {
+        return Err(AppError::Other("AI_NO_USABLE_KEYS".to_string()));
+    }
+
+    let mut last_error = None;
+    for credential in candidates {
+        let Some(key) = secrets
+            .get(&credential.secret_ref)
+            .filter(|value| !value.trim().is_empty())
+        else {
+            last_error = Some(AppError::Other("AI_CREDENTIAL_UNAVAILABLE".to_string()));
+            continue;
+        };
+
+        match list_models_once(&profile, &endpoint, Some(&key)).await {
+            Ok(models) => return Ok(models),
+            Err(error) => {
+                let kind = classify_error(&error);
+                if !kind.retryable() {
+                    return Err(error);
+                }
+                log::warn!(
+                    "ai router: profile={} credential={} model discovery failed kind={}, trying next candidate",
+                    profile.view.id,
+                    credential.view.id,
+                    kind.as_str()
+                );
+                last_error = Some(error);
+            }
+        }
+    }
+    Err(last_error.unwrap_or_else(|| AppError::Other("AI_NO_USABLE_KEYS".to_string())))
 }
 
 pub async fn stream_with_failover(
@@ -1268,6 +1329,7 @@ pub fn save_profile(
     temperature: f64,
     keep_alive: Option<String>,
 ) -> AppResult<AiProfileView> {
+    let existing = profile_by_id(db, &id)?.view;
     let (label, provider, auth_mode, base_url, model, temperature, keep_alive) =
         normalize_profile_config(
             label,
@@ -1278,15 +1340,30 @@ pub fn save_profile(
             temperature,
             keep_alive,
         )?;
+    let credential_health_stale = existing.provider != provider
+        || existing.auth_mode != auth_mode
+        || existing.base_url != base_url;
+    let profile_health_stale = credential_health_stale
+        || existing.model != model
+        || existing.temperature != temperature
+        || existing.keep_alive != keep_alive;
     let timestamp = now();
-    let conn = db.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    let changed = conn.execute(
-        "UPDATE ai_profiles SET label = ?1, provider = ?2, auth_mode = ?3, base_url = ?4, model = ?5, temperature = ?6, keep_alive = ?7, updated_at = ?8 WHERE id = ?9",
-        params![label, provider, auth_mode, base_url, model, temperature, keep_alive, timestamp, id],
+    let mut conn = db.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    let tx = conn.transaction()?;
+    let changed = tx.execute(
+        "UPDATE ai_profiles SET label = ?1, provider = ?2, auth_mode = ?3, base_url = ?4, model = ?5, temperature = ?6, keep_alive = ?7, state = CASE WHEN ?8 = 1 THEN 'active' ELSE state END, cooldown_until = CASE WHEN ?8 = 1 THEN NULL ELSE cooldown_until END, last_error_kind = CASE WHEN ?8 = 1 THEN NULL ELSE last_error_kind END, last_used_at = CASE WHEN ?8 = 1 THEN NULL ELSE last_used_at END, last_latency_ms = CASE WHEN ?8 = 1 THEN NULL ELSE last_latency_ms END, updated_at = ?9 WHERE id = ?10",
+        params![label, provider, auth_mode, base_url, model, temperature, keep_alive, profile_health_stale as i64, timestamp, id],
     )?;
     if changed != 1 {
         return Err(AppError::Other("AI_PROFILE_NOT_FOUND".to_string()));
     }
+    if credential_health_stale {
+        tx.execute(
+            "UPDATE ai_credentials SET state = 'active', cooldown_until = NULL, last_error_kind = NULL, last_used_at = NULL, updated_at = ?1 WHERE profile_id = ?2",
+            params![timestamp, id],
+        )?;
+    }
+    tx.commit()?;
     drop(conn);
     Ok(profile_by_id(db, &id)?.view)
 }
@@ -1605,13 +1682,66 @@ fn connection_test_result(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn profile_for_connection_test(
+    db: &Db,
+    profile_id: &str,
+    provider: String,
+    auth_mode: String,
+    base_url: Option<String>,
+    model: String,
+    temperature: f64,
+    keep_alive: Option<String>,
+) -> AppResult<(AiProfile, bool)> {
+    let mut profile = profile_by_id(db, profile_id)?;
+    let (_, provider, auth_mode, base_url, model, temperature, keep_alive) =
+        normalize_profile_config(
+            profile.view.label.clone(),
+            provider,
+            auth_mode,
+            base_url,
+            model,
+            temperature,
+            keep_alive,
+        )?;
+    let uses_saved_config = profile.view.provider == provider
+        && profile.view.auth_mode == auth_mode
+        && profile.view.base_url == base_url
+        && profile.view.model == model
+        && profile.view.temperature == temperature
+        && profile.view.keep_alive == keep_alive;
+    profile.view.provider = provider;
+    profile.view.auth_mode = auth_mode;
+    profile.view.base_url = base_url;
+    profile.view.model = model;
+    profile.view.temperature = temperature;
+    profile.view.keep_alive = keep_alive;
+    Ok((profile, uses_saved_config))
+}
+
+#[allow(clippy::too_many_arguments)]
 pub async fn test_profile(
     app: &AppHandle,
     db: &Db,
     secrets: &Secrets,
     profile_id: &str,
+    provider: String,
+    auth_mode: String,
+    base_url: Option<String>,
+    model: String,
+    temperature: f64,
+    keep_alive: Option<String>,
 ) -> AppResult<AiConnectionTestResult> {
-    let profile = profile_by_id(db, profile_id)?;
+    let (profile, record_health) = profile_for_connection_test(
+        db,
+        profile_id,
+        provider,
+        auth_mode,
+        base_url,
+        model,
+        temperature,
+        keep_alive,
+    )?;
     let messages = [ChatMessage {
         role: "user".to_string(),
         content: "Reply with OK.".to_string(),
@@ -1623,7 +1753,9 @@ pub async fn test_profile(
             Ok(token) => token,
             Err(error) => {
                 let kind = classify_error(&error);
-                update_profile_health(db, &profile, Some(kind), retry_after_ms(&error), None);
+                if record_health {
+                    update_profile_health(db, &profile, Some(kind), retry_after_ms(&error), None);
+                }
                 return Ok(connection_test_result(
                     &profile,
                     false,
@@ -1648,13 +1780,15 @@ pub async fn test_profile(
         .await;
         let total_ms = overall_started.elapsed().as_millis() as u64;
         let kind = result.as_ref().err().map(classify_error);
-        update_profile_health(
-            db,
-            &profile,
-            kind,
-            result.as_ref().err().and_then(retry_after_ms),
-            Some(total_ms),
-        );
+        if record_health {
+            update_profile_health(
+                db,
+                &profile,
+                kind,
+                result.as_ref().err().and_then(retry_after_ms),
+                Some(total_ms),
+            );
+        }
         return Ok(connection_test_result(
             &profile,
             result.is_ok(),
@@ -1672,13 +1806,15 @@ pub async fn test_profile(
             timed_stream_once(app, &profile, "", None, &messages, &event_name, Some(8)).await;
         let total_ms = overall_started.elapsed().as_millis() as u64;
         let kind = result.as_ref().err().map(classify_error);
-        update_profile_health(
-            db,
-            &profile,
-            kind,
-            result.as_ref().err().and_then(retry_after_ms),
-            Some(total_ms),
-        );
+        if record_health {
+            update_profile_health(
+                db,
+                &profile,
+                kind,
+                result.as_ref().err().and_then(retry_after_ms),
+                Some(total_ms),
+            );
+        }
         return Ok(connection_test_result(
             &profile,
             result.is_ok(),
@@ -1695,6 +1831,15 @@ pub async fn test_profile(
         .filter(|credential| credential.view.enabled)
         .collect();
     if candidates.is_empty() {
+        if record_health {
+            update_profile_health(
+                db,
+                &profile,
+                Some(AiErrorKind::NotConfigured),
+                None,
+                None,
+            );
+        }
         return Ok(connection_test_result(
             &profile,
             false,
@@ -1710,14 +1855,25 @@ pub async fn test_profile(
     let mut last_credential_id = None;
     let mut last_first_response_ms = None;
     let mut last_error_kind = Some(AiErrorKind::CredentialInvalid);
+    let mut last_retry_after = None;
     for credential in candidates {
         attempt_count += 1;
         last_credential_id = Some(credential.view.id.clone());
+        last_first_response_ms = None;
         let Some(key) = secrets
             .get(&credential.secret_ref)
             .filter(|value| !value.trim().is_empty())
         else {
-            update_credential_health(db, &credential, Some(AiErrorKind::CredentialInvalid), None);
+            if record_health {
+                update_credential_health(
+                    db,
+                    &credential,
+                    Some(AiErrorKind::CredentialInvalid),
+                    None,
+                );
+            }
+            last_error_kind = Some(AiErrorKind::CredentialInvalid);
+            last_retry_after = None;
             continue;
         };
         let event_name = format!("ai-profile-test-{}", uuid::Uuid::new_v4());
@@ -1726,9 +1882,11 @@ pub async fn test_profile(
         last_first_response_ms = first_response_ms;
         match result {
             Ok(()) => {
-                update_credential_health(db, &credential, None, None);
                 let total_ms = overall_started.elapsed().as_millis() as u64;
-                update_profile_health(db, &profile, None, None, Some(total_ms));
+                if record_health {
+                    update_credential_health(db, &credential, None, None);
+                    update_profile_health(db, &profile, None, None, Some(total_ms));
+                }
                 return Ok(connection_test_result(
                     &profile,
                     true,
@@ -1741,8 +1899,12 @@ pub async fn test_profile(
             }
             Err(error) => {
                 let kind = classify_error(&error);
-                update_credential_health(db, &credential, Some(kind), retry_after_ms(&error));
+                let retry_after = retry_after_ms(&error);
+                if record_health {
+                    update_credential_health(db, &credential, Some(kind), retry_after);
+                }
                 last_error_kind = Some(kind);
+                last_retry_after = retry_after;
                 if !kind.retryable() {
                     break;
                 }
@@ -1750,8 +1912,16 @@ pub async fn test_profile(
         }
     }
     let total_ms = overall_started.elapsed().as_millis() as u64;
-    if let Some(kind) = last_error_kind {
-        update_profile_health(db, &profile, Some(kind), None, Some(total_ms));
+    if record_health {
+        if let Some(kind) = last_error_kind {
+            update_profile_health(
+                db,
+                &profile,
+                Some(kind),
+                last_retry_after,
+                Some(total_ms),
+            );
+        }
     }
     Ok(connection_test_result(
         &profile,
@@ -1828,6 +1998,52 @@ pub async fn test_credential(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn model_list_server(
+        responses: Vec<(&'static str, &'static str)>,
+    ) -> (String, tokio::task::JoinHandle<Vec<String>>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let handle = tokio::spawn(async move {
+            let mut requests = Vec::with_capacity(responses.len());
+            for (status, body) in responses {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let mut buffer = [0_u8; 2048];
+                while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    let read = stream.read(&mut buffer).await.unwrap();
+                    if read == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&buffer[..read]);
+                }
+                requests.push(String::from_utf8_lossy(&request).into_owned());
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+            }
+            requests
+        });
+        (format!("http://{address}"), handle)
+    }
+
+    fn model_list_test_profile(db: &Db, base_url: String) -> AiProfileView {
+        create_profile(
+            db,
+            "Models".to_string(),
+            "custom".to_string(),
+            "api_key".to_string(),
+            Some(base_url),
+            "placeholder".to_string(),
+            0.2,
+            None,
+            true,
+        )
+        .unwrap()
+    }
 
     fn profile(provider: &str, base_url: Option<&str>) -> AiProfileView {
         AiProfileView {
@@ -1904,5 +2120,110 @@ mod tests {
     fn malformed_or_empty_model_lists_are_rejected() {
         assert!(parse_model_ids("openai", &serde_json::json!({"models": []})).is_err());
         assert!(parse_model_ids("openai", &serde_json::json!({"data": []})).is_err());
+    }
+
+    #[tokio::test]
+    async fn model_list_tries_the_next_enabled_credential_after_auth_failure() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let secrets = Secrets::init_in_memory().unwrap();
+        let (base_url, server) = model_list_server(vec![
+            (
+                "401 Unauthorized",
+                r#"{"error":{"code":"invalid_api_key"}}"#,
+            ),
+            ("200 OK", r#"{"data":[{"id":"backup-model"}]}"#),
+        ])
+        .await;
+        let profile = model_list_test_profile(&db, base_url);
+        let first = add_credential(
+            &db,
+            &secrets,
+            profile.id.clone(),
+            "First".to_string(),
+            "bad-key".to_string(),
+        )
+        .unwrap();
+        let second = add_credential(
+            &db,
+            &secrets,
+            profile.id.clone(),
+            "Second".to_string(),
+            "backup-key".to_string(),
+        )
+        .unwrap();
+
+        let models = list_models(
+            &db,
+            &secrets,
+            &profile.id,
+            profile.provider.clone(),
+            profile.auth_mode.clone(),
+            profile.base_url.clone(),
+        )
+        .await
+        .unwrap();
+        let requests = server.await.unwrap();
+
+        assert_eq!(models, vec!["backup-model".to_string()]);
+        assert_eq!(requests.len(), 2);
+        assert!(requests[0].contains("Bearer bad-key"));
+        assert!(requests[1].contains("Bearer backup-key"));
+        let credentials = list_credentials(&db, Some(&profile.id)).unwrap();
+        assert_eq!(credentials[0].id, first.id);
+        assert_eq!(credentials[0].state, "active");
+        assert!(credentials[0].last_used_at.is_none());
+        assert_eq!(credentials[1].id, second.id);
+        assert_eq!(credentials[1].state, "active");
+        assert!(credentials[1].last_used_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn model_list_does_not_rotate_keys_for_request_errors() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let secrets = Secrets::init_in_memory().unwrap();
+        let (base_url, server) = model_list_server(vec![(
+            "400 Bad Request",
+            r#"{"error":{"code":"invalid_endpoint"}}"#,
+        )])
+        .await;
+        let profile = model_list_test_profile(&db, base_url);
+        add_credential(
+            &db,
+            &secrets,
+            profile.id.clone(),
+            "First".to_string(),
+            "first-key".to_string(),
+        )
+        .unwrap();
+        add_credential(
+            &db,
+            &secrets,
+            profile.id.clone(),
+            "Second".to_string(),
+            "second-key".to_string(),
+        )
+        .unwrap();
+
+        let error = list_models(
+            &db,
+            &secrets,
+            &profile.id,
+            profile.provider.clone(),
+            profile.auth_mode.clone(),
+            profile.base_url.clone(),
+        )
+        .await
+        .unwrap_err();
+        let requests = server.await.unwrap();
+
+        assert!(error.to_string().contains("status=400"));
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].contains("Bearer first-key"));
+        let credentials = list_credentials(&db, Some(&profile.id)).unwrap();
+        assert!(credentials[0].last_error_kind.is_none());
+        assert!(credentials[0].last_used_at.is_none());
+        assert!(credentials[1].last_used_at.is_none());
     }
 }
