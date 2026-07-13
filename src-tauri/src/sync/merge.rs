@@ -782,7 +782,7 @@ pub(crate) fn reconcile_legacy_word_mark_exceptions(
              FROM word_mark_exceptions
              WHERE rule_id = ?1 OR rule_id = ?2",
         )?;
-        statement
+        let rows = statement
             .query_map(params![legacy_rule_id, canonical_rule_id], |row| {
                 Ok(LegacyWordMarkException {
                     location: row.get(0)?,
@@ -792,7 +792,8 @@ pub(crate) fn reconcile_legacy_word_mark_exceptions(
                     updated_by_device: row.get(4)?,
                 })
             })?
-            .collect::<Result<Vec<_>, _>>()?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
     };
     if rows.is_empty() {
         return Ok(Vec::new());

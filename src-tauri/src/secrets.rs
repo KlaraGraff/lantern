@@ -140,7 +140,7 @@ impl Secrets {
     }
 
     pub fn delete_prefix(&self, prefix: &str) -> AppResult<()> {
-        let mut deleted = Vec::new();
+        let mut deleted: Vec<(String, String)> = Vec::new();
         if self.use_keychain {
             for key in SENSITIVE_KEYS {
                 if key.starts_with(prefix) {

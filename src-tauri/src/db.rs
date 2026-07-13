@@ -265,7 +265,7 @@ impl Db {
             let mut statement = conn.prepare(
                 "SELECT id, book_id, normalized_word, match_mode FROM word_mark_rules",
             )?;
-            statement
+            let rows = statement
                 .query_map([], |row| {
                     Ok((
                         row.get::<_, String>(0)?,
@@ -274,7 +274,8 @@ impl Db {
                         row.get::<_, String>(3)?,
                     ))
                 })?
-                .collect::<Result<Vec<_>, _>>()?
+                .collect::<Result<Vec<_>, _>>()?;
+            rows
         };
         let repairs: Vec<_> = rows
             .into_iter()
