@@ -11,10 +11,6 @@ permissions:
 
 jobs:
   build-macos:
-    env:
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-
     strategy:
       fail-fast: false
       matrix:
@@ -50,8 +46,23 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Determine macOS signing mode
+        id: signing
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_CERTIFICATE_PASSWORD" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Import Apple Developer Certificate
-        if: ${{ env.APPLE_CERTIFICATE != '' && env.APPLE_CERTIFICATE_PASSWORD != '' }}
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
           KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
           echo $APPLE_CERTIFICATE | base64 --decode > certificate.p12
@@ -63,14 +74,16 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
 
       - name: Verify Certificate
-        if: ${{ env.APPLE_CERTIFICATE != '' && env.APPLE_CERTIFICATE_PASSWORD != '' }}
+        id: certificate
+        if: steps.signing.outputs.enabled == 'true'
         run: |
           CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
           CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
-          echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> $GITHUB_ENV
+          echo "identity=$CERT_ID" >> "$GITHUB_OUTPUT"
           echo "Certificate: $CERT_ID"
 
-      - name: Build Tauri app
+      - name: Build signed Tauri app
+        if: steps.signing.outputs.enabled == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
           QUILL_BUILD_COMMIT: ${{ github.sha }}
@@ -78,10 +91,31 @@ jobs:
           QUILL_BUILD_CHANNEL: stable
           QUILL_UPSTREAM_BASELINE: "1.2.10"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ steps.certificate.outputs.identity }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Quill Personal ${{ github.ref_name }}"
+          releaseBody: "See the [commits](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}) for details."
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.target }}
+
+      - name: Build unsigned Tauri app
+        if: steps.signing.outputs.enabled != 'true'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          QUILL_BUILD_COMMIT: ${{ github.sha }}
+          QUILL_BUILD_DATE: ${{ github.event.head_commit.timestamp }}
+          QUILL_BUILD_CHANNEL: stable
+          QUILL_UPSTREAM_BASELINE: "1.2.10"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
