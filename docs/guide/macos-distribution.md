@@ -6,7 +6,7 @@
 
 这解决的是签名完整性问题，不是 Apple 身份认证。用户首次打开仍会遇到 Gatekeeper 的“无法验证开发者”提示，需要在 Finder 中按住 Control 打开，或在“系统设置 -> 隐私与安全性”中选择“仍要打开”。不应将 ad-hoc 签名描述为已签名或已公证。
 
-发布前应确认每个 macOS 架构的任务都通过 `Verify macOS app signature`。若该步骤失败，不能发布该 DMG。
+发布前应确认 Apple Silicon macOS 任务通过 `Verify macOS app signature`。若该步骤失败，不能发布该 DMG。Intel macOS 不再是发布目标。
 
 ## 后续正式方案
 
@@ -25,7 +25,7 @@
 1. 加入 Apple Developer Program，并为 `com.klaragraff.quill` 创建 Developer ID Application 证书。
 2. 导出含私钥的 `.p12`，Base64 编码后写入 `APPLE_CERTIFICATE`，并配置证书密码。
 3. 为用于公证的 Apple Account 创建 app-specific password，并配置剩余三个 Secrets。
-4. 发布一个预发布标签，确认两种 macOS 架构的构建日志出现 Developer ID 身份与公证成功信息。
+4. 发布一个预发布标签，确认 Apple Silicon macOS 构建日志出现 Developer ID 身份与公证成功信息。
 5. 下载 DMG 后验证：`codesign --verify --deep --strict --verbose=4 <App>.app`、`spctl --assess --type execute --verbose=4 <App>.app`，并确认 `spctl` 接受应用。
 6. 仅在上述验证通过后，将正式 Release 发布，并再评估启用自动更新通道。
 

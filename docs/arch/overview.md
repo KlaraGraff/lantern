@@ -81,7 +81,7 @@ Separate process (no Tauri runtime):
 | Logging | **`tauri-plugin-log`** + panic hook | Rotated file logs (10MB × 3). Panic hook captures backtraces before the logger initializes. |
 | Auto-update | **`tauri-plugin-updater`** | Signed updates from GitHub Releases with minisign verification. |
 
-**Platform targets.** macOS (Apple Silicon + x64) primary. Windows (x64, NSIS installer) secondary. iCloud sync is macOS-only; on other platforms the app works fully but without cross-device sync.
+**Platform targets.** macOS (Apple Silicon) primary. Windows (x64, NSIS installer) secondary. Intel macOS is not a distributed target. iCloud sync is macOS-only; on other platforms the app works fully but without cross-device sync.
 
 ## 3. Domain model
 
@@ -426,7 +426,7 @@ Reader windows are independent Tauri windows. Closing the main window hides it o
 | Workflow | Trigger | Steps |
 |---|---|---|
 | `ci.yaml` | Pull request | TypeScript check, ESLint, `cargo clippy`, `cargo test --lib` |
-| `release.yml` | `v*` tag push | Build macOS (aarch64 + x86_64) + Windows, verify macOS ad-hoc signatures, create draft GitHub release; Developer ID signing and notarization activate when Apple credentials are configured |
+| `release.yml` | `v*` tag push | Build macOS (Apple Silicon) + Windows, verify macOS ad-hoc signatures, create draft GitHub release; Developer ID signing and notarization activate when Apple credentials are configured |
 
 ### 10.2 Release process
 

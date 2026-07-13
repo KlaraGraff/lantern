@@ -11,15 +11,6 @@ permissions:
 
 jobs:
   build-macos:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: aarch64-apple-darwin
-            arch: aarch64
-          - target: x86_64-apple-darwin
-            arch: x64
-
     runs-on: macos-latest
 
     steps:
@@ -36,7 +27,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: aarch64-apple-darwin
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -106,7 +97,7 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: >-
-            --target ${{ matrix.target }}
+            --target aarch64-apple-darwin
             --config '{"bundle":{"macOS":{"signingIdentity":"${{ steps.certificate.outputs.identity }}"}}}'
 
       - name: Build ad-hoc signed Tauri app
@@ -127,14 +118,14 @@ jobs:
           releaseBody: "See the [commits](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}) for details."
           releaseDraft: true
           prerelease: false
-          args: --target ${{ matrix.target }}
+          args: --target aarch64-apple-darwin
 
       - name: Verify macOS app signature
         if: >-
           success() &&
           (steps.build-signed.outcome == 'success' || steps.build-adhoc.outcome == 'success')
         run: |
-          APP_PATH="src-tauri/target/${{ matrix.target }}/release/bundle/macos/Quill Personal.app"
+          APP_PATH="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Quill Personal.app"
           test -d "$APP_PATH"
           codesign --verify --deep --strict --verbose=4 "$APP_PATH"
           codesign -dv --verbose=4 "$APP_PATH" 2>&1
