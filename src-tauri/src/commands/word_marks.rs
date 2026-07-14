@@ -717,11 +717,7 @@ pub fn list_lookup_occurrence_marks(
     Ok(rows)
 }
 
-fn clear_lookup_marks_for_book_inner(
-    book_id: &str,
-    db: &Db,
-    sync: &SyncWriter,
-) -> AppResult<()> {
+fn clear_lookup_marks_for_book_inner(book_id: &str, db: &Db, sync: &SyncWriter) -> AppResult<()> {
     validate_entity_id(book_id)?;
     let timestamp = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();
@@ -945,15 +941,9 @@ mod tests {
         let rule =
             set_word_mark_rule_enabled_inner("book", "Running", true, Some("lookup"), &db, &sync)
                 .unwrap();
-        let exception = set_word_mark_exception_inner(
-            "book",
-            "Running",
-            "textloc:v2:10:17",
-            true,
-            &db,
-            &sync,
-        )
-        .unwrap();
+        let exception =
+            set_word_mark_exception_inner("book", "Running", "textloc:v2:10:17", true, &db, &sync)
+                .unwrap();
         {
             let conn = db.conn.lock().unwrap();
             conn.execute(
@@ -975,13 +965,21 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .unwrap();
-        assert_eq!(stored.0, word_mark_exception_id(&canonical.id, &exception.location));
+        assert_eq!(
+            stored.0,
+            word_mark_exception_id(&canonical.id, &exception.location)
+        );
         assert_eq!(stored.1, canonical.id);
         assert_eq!(stored.2, 1, "identity repair must retain the exclusion");
         let pending: i64 = conn
-            .query_row("SELECT COUNT(*) FROM _pending_publish", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM _pending_publish", [], |row| {
+                row.get(0)
+            })
             .unwrap();
-        assert_eq!(pending, 2, "the rule and preserved exception must both publish");
+        assert_eq!(
+            pending, 2,
+            "the rule and preserved exception must both publish"
+        );
     }
 
     #[test]
@@ -1006,23 +1004,13 @@ mod tests {
     #[test]
     fn lookup_occurrence_ensure_preserves_an_explicit_removal() {
         let (_dir, db, sync) = setup();
-        let first = ensure_lookup_occurrence_mark_inner(
-            "book",
-            "Running",
-            "textloc:v2:10:17",
-            &db,
-            &sync,
-        )
-        .unwrap();
+        let first =
+            ensure_lookup_occurrence_mark_inner("book", "Running", "textloc:v2:10:17", &db, &sync)
+                .unwrap();
 
-        let unchanged = ensure_lookup_occurrence_mark_inner(
-            "book",
-            "Running",
-            "textloc:v2:10:17",
-            &db,
-            &sync,
-        )
-        .unwrap();
+        let unchanged =
+            ensure_lookup_occurrence_mark_inner("book", "Running", "textloc:v2:10:17", &db, &sync)
+                .unwrap();
         assert_eq!(unchanged.id, first.id);
         assert_eq!(unchanged.created_at, first.created_at);
         assert_eq!(unchanged.updated_at, first.updated_at);
@@ -1040,14 +1028,9 @@ mod tests {
         assert!(disabled.updated_at > first.updated_at);
         assert_eq!(disabled.created_at, first.created_at);
 
-        let still_disabled = ensure_lookup_occurrence_mark_inner(
-            "book",
-            "Running",
-            "textloc:v2:10:17",
-            &db,
-            &sync,
-        )
-        .unwrap();
+        let still_disabled =
+            ensure_lookup_occurrence_mark_inner("book", "Running", "textloc:v2:10:17", &db, &sync)
+                .unwrap();
         assert!(!still_disabled.enabled);
         assert_eq!(still_disabled.updated_at, disabled.updated_at);
         assert_eq!(still_disabled.id, first.id);
@@ -1082,7 +1065,9 @@ mod tests {
             assert_eq!(count, 0, "{table} should have no active lookup marks");
         }
         let pending_events: i64 = conn
-            .query_row("SELECT COUNT(*) FROM _pending_publish", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM _pending_publish", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(pending_events, 2);
     }
@@ -1090,15 +1075,8 @@ mod tests {
     #[test]
     fn removing_a_whole_book_rule_also_clears_same_term_occurrences() {
         let (_dir, db, sync) = setup();
-        set_lookup_occurrence_mark_inner(
-            "book",
-            "Running",
-            "textloc:v2:10:17",
-            true,
-            &db,
-            &sync,
-        )
-        .unwrap();
+        set_lookup_occurrence_mark_inner("book", "Running", "textloc:v2:10:17", true, &db, &sync)
+            .unwrap();
         set_word_mark_rule_enabled_inner("book", "Running", true, Some("lookup"), &db, &sync)
             .unwrap();
 

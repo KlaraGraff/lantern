@@ -5,7 +5,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::ai::oauth::{
     self, build_auth_url, clear_tokens, decode_jwt_account_id, exchange_code, generate_pkce,
-    generate_state, load_tokens, save_tokens, OAuthStatus, OAuthTokens,
+    generate_state, has_token_metadata, save_tokens, OAuthStatus, OAuthTokens,
 };
 use crate::error::{AppError, AppResult};
 use crate::secrets::Secrets;
@@ -49,16 +49,12 @@ pub async fn openai_oauth_login(
 
 #[tauri::command]
 pub async fn openai_oauth_status(secrets: State<'_, Secrets>) -> AppResult<OAuthStatus> {
-    match load_tokens(&secrets) {
-        Some(tokens) => Ok(OAuthStatus {
-            connected: true,
-            account_id: tokens.account_id,
-        }),
-        None => Ok(OAuthStatus {
-            connected: false,
-            account_id: None,
-        }),
-    }
+    Ok(OAuthStatus {
+        connected: has_token_metadata(&secrets),
+        // Account IDs are sensitive token metadata and are not needed to
+        // determine whether the OAuth service is configured.
+        account_id: None,
+    })
 }
 
 #[tauri::command]

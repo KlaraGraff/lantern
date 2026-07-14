@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { aiErrorMessageKey, getAiErrorCode, isAiSettingsError, type AiErrorCode } from "../utils/aiError";
+import { invokeWithVaultAccess } from "../utils/vaultAccess";
 
 interface TranslationPopoverProps {
   x: number;
@@ -104,7 +105,7 @@ function useStreamingTranslation(
       );
 
       try {
-        await invoke("ai_translate_passage", {
+        await invokeWithVaultAccess("ai_translate_passage", {
           text,
           context: context || null,
           bookId,

@@ -5,6 +5,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
 import Home from "./pages/Home";
 import Reader from "./pages/Reader";
+import VaultAccessDialog from "./components/VaultAccessDialog";
 import { reconcileLanguage } from "./i18n";
 import {
   installCustomFontFaces,
@@ -77,6 +78,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/reader/:bookId" element={<Reader />} />
       </Routes>
+      <VaultAccessDialog />
     </>
   );
 

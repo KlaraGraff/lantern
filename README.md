@@ -11,7 +11,7 @@ This is an independently maintained personal edition based on the open-source [Q
 - Saved vocabulary, lookup history, learning states, and optional markers in reflowable EPUB text.
 - Multiple API keys per provider profile. Before output begins, unavailable keys are tried in configured priority order.
 - OpenAI-compatible APIs, Anthropic, Ollama, and optional OpenAI OAuth.
-- Local-first library data. Secrets are stored in the operating system credential store, not returned to the webview.
+- Local-first library data. The operating system credential store holds one random vault master key; API keys and OAuth tokens are encrypted locally and are never returned to the webview.
 - Optional multi-device sync through a user-selected folder in iCloud Drive.
 
 ### Format Capabilities

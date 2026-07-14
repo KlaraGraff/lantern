@@ -554,11 +554,11 @@ pub fn run() {
             secrets
                 .migrate_from_settings(&db)
                 .expect("failed to migrate secrets");
-            secrets
-                .migrate_from_legacy_keychain_services(&db)
-                .expect("failed to migrate legacy Keychain secrets");
             ai::router::migrate_legacy_config(&db, &secrets)
                 .expect("failed to migrate AI profile configuration");
+            secrets
+                .register_legacy_candidates(&db)
+                .expect("failed to register legacy secret metadata");
 
             let sync_writer = SyncWriter::new(device.device_uuid.clone());
             sync_writer.set_process_lock_path(local_dir.join(".sync-transition.lock"));
@@ -664,6 +664,10 @@ pub fn run() {
             // Settings
             commands::settings::get_all_settings,
             commands::settings::ai_api_key_configured,
+            commands::settings::vault_status,
+            commands::settings::vault_prepare_write,
+            commands::settings::vault_authorize,
+            commands::settings::vault_deny,
             commands::settings::set_ai_api_key,
             commands::settings::ai_active_profile,
             commands::settings::ai_list_profiles,

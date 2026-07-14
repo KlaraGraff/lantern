@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { invokeWithVaultAccess } from "../utils/vaultAccess";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getAiErrorCode } from "../utils/aiError";
 
@@ -86,7 +87,7 @@ async function generateAiTitle(
       finish(title || null);
     });
     timeoutId = setTimeout(() => finish(null), 15000);
-    invoke("ai_generate_title", {
+    invokeWithVaultAccess("ai_generate_title", {
       userMessage: userMsg,
       assistantMessage: "",
       requestId,
@@ -395,7 +396,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         }));
 
       try {
-        await invoke("ai_chat", {
+        await invokeWithVaultAccess("ai_chat", {
           messages: apiMessages,
           bookTitle: bookContext?.title ?? null,
           bookAuthor: bookContext?.author ?? null,

@@ -185,6 +185,10 @@ fn spawn_routed_stream(
     });
 }
 
+fn ensure_stream_vault_ready(db: &Db, secrets: &Secrets) -> AppResult<()> {
+    crate::ai::router::ensure_stream_credentials_accessible(db, secrets)
+}
+
 #[tauri::command]
 pub fn ai_cancel(request_id: String) -> bool {
     crate::ai::router::cancel_request(&request_id)
@@ -706,6 +710,7 @@ pub async fn ai_learning_card(
     } else {
         3072
     };
+    ensure_stream_vault_ready(&db, &secrets)?;
     let completion = crate::ai::router::complete_with_failover(
         &app,
         &db,
@@ -803,6 +808,7 @@ pub async fn ai_lookup(
 
     let event_name = format!("ai-lookup-chunk-{}", request_id);
 
+    ensure_stream_vault_ready(&db, &secrets)?;
     spawn_routed_stream(
         app,
         db.inner().clone(),
@@ -889,6 +895,7 @@ pub async fn ai_explain(
 
     let event_name = format!("ai-lookup-chunk-{}", request_id);
 
+    ensure_stream_vault_ready(&db, &secrets)?;
     spawn_routed_stream(
         app,
         db.inner().clone(),
@@ -945,6 +952,7 @@ pub async fn ai_generate_title(
     ];
 
     let event_name = format!("ai-title-chunk-{}", request_id);
+    ensure_stream_vault_ready(&db, &secrets)?;
     spawn_routed_stream(
         app,
         db.inner().clone(),
@@ -1019,6 +1027,7 @@ pub async fn ai_chat(
     api_messages.extend(messages);
 
     let event_name = format!("ai-stream-chunk-{request_id}");
+    ensure_stream_vault_ready(&db, &secrets)?;
     spawn_routed_stream(
         app,
         db.inner().clone(),

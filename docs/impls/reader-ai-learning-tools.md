@@ -305,7 +305,7 @@
 ### 13.1 迁移与兼容
 
 - 数据库迁移 `021_learning_tools.sql` 与 `022_marker_styles_and_fonts.sql` 已加入迁移链；保留旧查询字段，并以可空 `result_json` 兼容旧历史记录。
-- AI 服务继续复用 `ai_profiles` 和系统凭据存储，不把 API Key 写入数据库、同步事件或 WebView 响应。
+- AI 服务继续复用 `ai_profiles`。系统凭据库只保存一把随机主密钥；API Key 以 AES-256-GCM 密文保存在本地 `secrets.db`，不进入主数据库、同步事件或 WebView 响应。
 - 文本阅读器 V2 的源偏移位置、旧 `textloc` 转换和后台准备流程保持兼容；EPUB/PDF 继续使用现有稳定位置格式。
 - 同步协议已升级到 v3，同时保留旧版本读取边界；v3 增加单词当前位置例外，笔记、全书单词规则、例外、删除 tombstone 和快照均需覆盖。例外乱序回放使用 `(updated_at, updated_by_device)` 与父规则的同一 LWW 屏障语义，事件、快照和压缩路径必须收敛到相同状态。
 

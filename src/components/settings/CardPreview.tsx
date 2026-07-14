@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { invokeWithVaultAccess } from "../../utils/vaultAccess";
 import { Bookmark, Copy, Highlighter, Languages, Loader2, MessageSquareMore, RotateCcw, WandSparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -193,7 +194,7 @@ export default function CardPreview({
     setRealLoading(true);
     setRealError(null);
     try {
-      const response = await invoke<LearningCardResult>("ai_learning_card", {
+      const response = await invokeWithVaultAccess<LearningCardResult>("ai_learning_card", {
         text: localResult.sourceText,
         context: localResult.modules.source_excerpt?.quote ?? localResult.sourceText,
         kind,

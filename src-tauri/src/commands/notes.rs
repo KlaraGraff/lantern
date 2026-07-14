@@ -345,9 +345,11 @@ mod tests {
 
         let conn = db.reader();
         let remaining: i64 = conn
-            .query_row("SELECT COUNT(*) FROM notes WHERE id = 'note-1'", [], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM notes WHERE id = 'note-1'",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         let tombstone: i64 = conn
             .query_row(

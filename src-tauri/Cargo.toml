@@ -41,8 +41,10 @@ schemars = "1"
 # plain `toml` crate).
 toml_edit = "0.22"
 sha2 = "0.10"
+aes-gcm = "0.10"
 base64 = "0.22"
 rand = "0.8"
+zeroize = "1"
 ulid = { version = "1", features = ["serde"] }
 notify = "6"
 gethostname = "0.5"
@@ -62,6 +64,7 @@ wuff = "0.2.7"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
+security-framework = "3"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSFileManager", "NSFileCoordinator", "NSString", "NSURL", "NSError", "block2"] }
 block2 = "0.6"

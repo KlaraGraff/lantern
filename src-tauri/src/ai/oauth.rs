@@ -211,22 +211,42 @@ pub fn decode_jwt_account_id(access_token: &str) -> Option<String> {
 }
 
 pub fn save_tokens(secrets: &Secrets, tokens: &OAuthTokens) -> AppResult<()> {
-    secrets.set("oauth_access_token", &tokens.access_token)?;
-    secrets.set("oauth_refresh_token", &tokens.refresh_token)?;
-    secrets.set("oauth_expires_at", &tokens.expires_at.to_string())?;
-    if let Some(ref id) = tokens.account_id {
-        secrets.set("oauth_account_id", id)?;
-    }
-    Ok(())
+    let expires_at = tokens.expires_at.to_string();
+    secrets.set_many(&[
+        ("oauth_access_token", Some(tokens.access_token.as_str())),
+        ("oauth_refresh_token", Some(tokens.refresh_token.as_str())),
+        ("oauth_expires_at", Some(expires_at.as_str())),
+        ("oauth_account_id", tokens.account_id.as_deref()),
+    ])
 }
 
-pub fn load_tokens(secrets: &Secrets) -> Option<OAuthTokens> {
-    Some(OAuthTokens {
-        access_token: secrets.get("oauth_access_token")?,
-        refresh_token: secrets.get("oauth_refresh_token")?,
-        expires_at: secrets.get("oauth_expires_at")?.parse().ok()?,
-        account_id: secrets.get("oauth_account_id"),
-    })
+/// Metadata-only status used while rendering settings. Reading token values
+/// here would ask the operating system for vault access merely because the
+/// user opened Settings.
+pub fn has_token_metadata(secrets: &Secrets) -> bool {
+    secrets.has_stored_secret_metadata("oauth_access_token")
+        || secrets.has_stored_secret_metadata("oauth_refresh_token")
+}
+
+pub fn load_tokens(secrets: &Secrets) -> AppResult<Option<OAuthTokens>> {
+    let Some(access_token) = secrets.get("oauth_access_token")? else {
+        return Ok(None);
+    };
+    let Some(refresh_token) = secrets.get("oauth_refresh_token")? else {
+        return Ok(None);
+    };
+    let Some(expires_at) = secrets.get("oauth_expires_at")? else {
+        return Ok(None);
+    };
+    let expires_at = expires_at
+        .parse()
+        .map_err(|_| AppError::Other("OAUTH_TOKEN_METADATA_INVALID".to_string()))?;
+    Ok(Some(OAuthTokens {
+        access_token,
+        refresh_token,
+        expires_at,
+        account_id: secrets.get("oauth_account_id")?,
+    }))
 }
 
 pub fn clear_tokens(secrets: &Secrets) -> AppResult<()> {
@@ -239,7 +259,7 @@ pub fn clear_tokens(secrets: &Secrets) -> AppResult<()> {
 /// Returns (access_token, account_id).
 pub async fn get_valid_token(secrets: &Secrets) -> AppResult<(String, Option<String>)> {
     let tokens =
-        load_tokens(secrets).ok_or_else(|| AppError::Other("AI_NOT_CONFIGURED".to_string()))?;
+        load_tokens(secrets)?.ok_or_else(|| AppError::Other("AI_NOT_CONFIGURED".to_string()))?;
 
     if tokens.expires_at > now_epoch() + 60 {
         return Ok((tokens.access_token, tokens.account_id));
@@ -373,7 +393,7 @@ mod tests {
         let secrets = Secrets::init_in_memory().unwrap();
 
         // Initially empty
-        assert!(load_tokens(&secrets).is_none());
+        assert!(load_tokens(&secrets).unwrap().is_none());
 
         // Save and load
         let tokens = OAuthTokens {
@@ -384,7 +404,7 @@ mod tests {
         };
         save_tokens(&secrets, &tokens).unwrap();
 
-        let loaded = load_tokens(&secrets).unwrap();
+        let loaded = load_tokens(&secrets).unwrap().unwrap();
         assert_eq!(loaded.access_token, "access_123");
         assert_eq!(loaded.refresh_token, "refresh_456");
         assert_eq!(loaded.expires_at, 1700000000);
@@ -399,15 +419,14 @@ mod tests {
         };
         save_tokens(&secrets, &tokens2).unwrap();
 
-        let loaded2 = load_tokens(&secrets).unwrap();
+        let loaded2 = load_tokens(&secrets).unwrap().unwrap();
         assert_eq!(loaded2.access_token, "new_access");
         assert_eq!(loaded2.expires_at, 1800000000);
-        // account_id still has old value since save_tokens only writes Some
-        assert_eq!(loaded2.account_id, Some("acct_789".to_string()));
+        assert_eq!(loaded2.account_id, None);
 
         // Clear
         clear_tokens(&secrets).unwrap();
-        assert!(load_tokens(&secrets).is_none());
+        assert!(load_tokens(&secrets).unwrap().is_none());
     }
 
     #[test]
@@ -422,7 +441,7 @@ mod tests {
         };
         save_tokens(&secrets, &tokens).unwrap();
 
-        let loaded = load_tokens(&secrets).unwrap();
+        let loaded = load_tokens(&secrets).unwrap().unwrap();
         assert_eq!(loaded.access_token, "at");
         assert_eq!(loaded.account_id, None);
     }

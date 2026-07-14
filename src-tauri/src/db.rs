@@ -262,9 +262,8 @@ impl Db {
     /// would silently make those exclusions ineffective.
     fn repair_legacy_word_mark_ids(conn: &Connection) -> AppResult<()> {
         let rows = {
-            let mut statement = conn.prepare(
-                "SELECT id, book_id, normalized_word, match_mode FROM word_mark_rules",
-            )?;
+            let mut statement = conn
+                .prepare("SELECT id, book_id, normalized_word, match_mode FROM word_mark_rules")?;
             let rows = statement
                 .query_map([], |row| {
                     Ok((

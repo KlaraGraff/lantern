@@ -9,6 +9,7 @@ import AiServiceCard, {
   type AiProfile,
 } from "./AiServiceCard";
 import type { SettingsProps } from "./types";
+import { invokeWithVaultAccess, prepareVaultForWrite } from "../../utils/vaultAccess";
 
 interface AiSettingsProps extends SettingsProps {
   onSaveRef?: (save: (() => void) | null) => void;
@@ -79,7 +80,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   }, []);
 
   const refreshOAuthStatus = useCallback(async () => {
-    const next = await invoke<OAuthStatus>("openai_oauth_status");
+    const next = await invokeWithVaultAccess<OAuthStatus>("openai_oauth_status");
     setOauthStatus(next);
   }, []);
 
@@ -358,7 +359,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     setTestingId(profile.id);
     setError(null);
     try {
-      const result = await invoke<AiConnectionTestResult>("ai_test_profile", {
+      const result = await invokeWithVaultAccess<AiConnectionTestResult>("ai_test_profile", {
         id: profile.id,
         provider: profile.provider,
         authMode: profile.auth_mode,
@@ -407,7 +408,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     setModelsLoadingId(profile.id);
     setError(null);
     try {
-      const models = await invoke<string[]>("ai_list_models", {
+      const models = await invokeWithVaultAccess<string[]>("ai_list_models", {
         profileId: profile.id,
         provider: profile.provider,
         authMode: profile.auth_mode,
@@ -425,7 +426,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   const addCredential = async (profileId: string, label: string, value: string) => {
     setError(null);
     try {
-      await invoke("ai_add_credential", { profileId, label, value });
+      await prepareVaultForWrite();
+      await invokeWithVaultAccess("ai_add_credential", { profileId, label, value });
       await refreshCredentials(profileId);
       markHealthStale(profileId);
       showSavedToast(t("settings.ai.keyAdded"));
@@ -438,7 +440,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   const replaceCredential = async (profileId: string, id: string, value: string) => {
     setError(null);
     try {
-      await invoke("ai_replace_credential", { id, value });
+      await prepareVaultForWrite();
+      await invokeWithVaultAccess("ai_replace_credential", { id, value });
       await refreshCredentials(profileId);
       markHealthStale(profileId);
       showSavedToast(t("settings.ai.keyReplaced"));
@@ -463,7 +466,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   const deleteCredential = async (profileId: string, id: string) => {
     setError(null);
     try {
-      await invoke("ai_delete_credential", { id });
+      await invokeWithVaultAccess("ai_delete_credential", { id });
       await refreshCredentials(profileId);
       markHealthStale(profileId);
     } catch (nextError) {
@@ -489,6 +492,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     setError(null);
     try {
       const oauthProfile = { ...profile, auth_mode: "oauth" as const, base_url: null };
+      await prepareVaultForWrite();
       const status = await invoke<OAuthStatus>("openai_oauth_login");
       setOauthStatus(status);
       await persistProfile(oauthProfile);
@@ -505,7 +509,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     setOauthLoading(true);
     setError(null);
     try {
-      await invoke("openai_oauth_logout");
+      await invokeWithVaultAccess("openai_oauth_logout");
       setOauthStatus({ connected: false, account_id: null });
       const affectedIds = profiles
         .filter((profile) => profile.provider === "openai" && profile.auth_mode === "oauth")

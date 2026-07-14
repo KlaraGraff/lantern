@@ -1,6 +1,6 @@
 //! Provider-neutral AI request routing and API credential failover.
 //!
-//! Secrets never leave this module: the database stores only a Keychain
+//! Secrets never leave this module: the database stores only an encrypted-vault
 //! reference, masked suffix, priority, and health metadata for each key.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -174,8 +174,7 @@ fn classify_error(error: &AppError) -> AiErrorKind {
     ]
     .iter()
     .any(|code| {
-        message.contains(&format!("code={code}"))
-            || message.contains(&format!("type={code}"))
+        message.contains(&format!("code={code}")) || message.contains(&format!("type={code}"))
     }) {
         // A policy rejection belongs to this request, not to the credential.
         // Trying every key would repeat the same rejected request.
@@ -291,20 +290,27 @@ pub fn migrate_legacy_config(db: &Db, secrets: &Secrets) -> AppResult<()> {
         .and_then(|value| value.parse::<f64>().ok())
         .unwrap_or(0.3);
     let keep_alive = get("ai_keep_alive");
-    let legacy_key = secrets
-        .get("ai_api_key")
-        .filter(|value| !value.trim().is_empty());
-    let credential = legacy_key.as_ref().map(|key| {
+    // Startup migration is metadata-only. Reading an old Keychain item here
+    // would show a system password dialog before the user has any context.
+    let has_legacy_ai_config = [
+        "ai_provider",
+        "ai_provider_label",
+        "ai_auth_mode",
+        "ai_base_url",
+        "ai_model",
+    ]
+    .iter()
+    .any(|key| get(key).is_some());
+    let legacy_key_exists = secrets.has_stored_secret_metadata("ai_api_key")
+        || get("ai_api_key_configured").is_some_and(|value| value == "true")
+        // Builds before profile metadata existed stored the one API key only
+        // in Keychain. Existing AI settings are a safe, metadata-only signal
+        // that the legacy account should be offered for import on first use.
+        || (auth_mode == "api_key" && provider != "ollama" && has_legacy_ai_config);
+    let credential = legacy_key_exists.then(|| {
         let id = uuid::Uuid::new_v4().to_string();
-        (id.clone(), format!("ai_api_key/{id}"), key)
+        (id, "ai_api_key".to_string())
     });
-
-    if let Some((_, secret_ref, key)) = credential.as_ref() {
-        // Keychain write happens before the SQL transaction. If the
-        // transaction fails below, the cleanup keeps the new secret private
-        // and leaves the legacy credential untouched for a later retry.
-        secrets.set(secret_ref, key)?;
-    }
 
     let result = (|| -> AppResult<()> {
         let tx = conn.transaction()?;
@@ -312,28 +318,21 @@ pub fn migrate_legacy_config(db: &Db, secrets: &Secrets) -> AppResult<()> {
             "INSERT INTO ai_profiles (id, label, provider, auth_mode, base_url, model, temperature, keep_alive, enabled, priority, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, 0, ?9, ?9)",
             params![profile_id, profile_label, provider, auth_mode, base_url, model, temperature, keep_alive, created_at],
         )?;
-        if let Some((credential_id, secret_ref, key)) = credential.as_ref() {
+        if let Some((credential_id, secret_ref)) = credential.as_ref() {
             tx.execute(
                 "INSERT INTO ai_credentials (id, profile_id, label, secret_ref, masked_suffix, enabled, priority, state, created_at, updated_at) VALUES (?1, ?2, 'Primary key', ?3, ?4, 1, 0, 'active', ?5, ?5)",
-                params![credential_id, profile_id, secret_ref, suffix(key), created_at],
+                params![credential_id, profile_id, secret_ref, "", created_at],
             )?;
         }
         tx.commit()?;
         Ok(())
     })();
     drop(conn);
-
-    if let Err(error) = result {
-        if let Some((_, secret_ref, _)) = credential.as_ref() {
-            let _ = secrets.delete(secret_ref);
-        }
-        return Err(error);
-    }
-
+    result?;
     if credential.is_some() {
-        if let Err(error) = secrets.delete("ai_api_key") {
-            log::warn!("ai router: migrated legacy API key but could not remove its old Keychain item: {error}");
-        }
+        // This is a durable metadata hint only. The old Keychain namespace is
+        // not probed until the user confirms the later import explanation.
+        secrets.register_legacy_candidate("ai_api_key")?;
     }
     Ok(())
 }
@@ -783,7 +782,7 @@ pub async fn list_models(
     let mut last_error = None;
     for credential in candidates {
         let Some(key) = secrets
-            .get(&credential.secret_ref)
+            .get(&credential.secret_ref)?
             .filter(|value| !value.trim().is_empty())
         else {
             last_error = Some(AppError::Other("AI_CREDENTIAL_UNAVAILABLE".to_string()));
@@ -1075,7 +1074,7 @@ async fn stream_with_failover_inner(
         let mut profile_failure = None;
         for credential in candidates {
             let Some(key) = secrets
-                .get(&credential.secret_ref)
+                .get(&credential.secret_ref)?
                 .filter(|value| !value.trim().is_empty())
             else {
                 update_credential_health(
@@ -1413,27 +1412,30 @@ pub fn reorder_profiles(db: &Db, ids: &[String]) -> AppResult<()> {
     Ok(())
 }
 
-fn restore_secrets(secrets: &Secrets, deleted: &[(String, Option<String>)]) {
-    for (secret_ref, value) in deleted {
-        if let Some(value) = value {
-            if let Err(error) = secrets.set(secret_ref, value) {
-                log::error!("ai router: failed to restore secret metadata reference after rollback: {error}");
-            }
-        }
-    }
-}
-
 pub fn delete_profile(db: &Db, secrets: &Secrets, id: &str) -> AppResult<()> {
     profile_by_id(db, id)?;
     let credentials = all_credentials_for(db, id)?;
-    let mut deleted = Vec::with_capacity(credentials.len());
-    for credential in credentials {
-        let old_value = secrets.get(&credential.secret_ref);
-        if let Err(error) = secrets.delete(&credential.secret_ref) {
-            restore_secrets(secrets, &deleted);
+    let snapshots = credentials
+        .iter()
+        .map(|credential| {
+            secrets
+                .snapshot_state(&credential.secret_ref)
+                .map(|snapshot| (credential.secret_ref.clone(), snapshot))
+        })
+        .collect::<AppResult<Vec<_>>>()?;
+    let mut removed = Vec::with_capacity(snapshots.len());
+    for (secret_ref, snapshot) in &snapshots {
+        if let Err(error) = secrets.delete(secret_ref) {
+            for (_, removed_snapshot) in &removed {
+                if let Err(restore_error) = secrets.restore_state(removed_snapshot) {
+                    log::error!(
+                        "ai router: failed to restore encrypted credential after delete rollback: {restore_error}"
+                    );
+                }
+            }
             return Err(error);
         }
-        deleted.push((credential.secret_ref, old_value));
+        removed.push((secret_ref.clone(), snapshot.clone()));
     }
 
     let delete_result = (|| -> AppResult<()> {
@@ -1454,7 +1456,13 @@ pub fn delete_profile(db: &Db, secrets: &Secrets, id: &str) -> AppResult<()> {
         Ok(())
     })();
     if let Err(error) = delete_result {
-        restore_secrets(secrets, &deleted);
+        for (_, snapshot) in &removed {
+            if let Err(restore_error) = secrets.restore_state(snapshot) {
+                log::error!(
+                    "ai router: failed to restore encrypted credential after metadata rollback: {restore_error}"
+                );
+            }
+        }
         return Err(error);
     }
     Ok(())
@@ -1525,14 +1533,14 @@ pub fn replace_credential(db: &Db, secrets: &Secrets, id: &str, value: &str) -> 
         return Err(AppError::Other("AI_API_KEY_EMPTY".to_string()));
     }
     let secret_ref = credential_by_id(db, id)?.secret_ref;
-    let old_value = secrets.get(&secret_ref);
+    // Preserve the complete local state for rollback. This includes a pending
+    // legacy-import marker when the user replaces a credential without first
+    // granting access to its old per-item Keychain record.
+    let previous = secrets.snapshot_state(&secret_ref)?;
     secrets.set(&secret_ref, value)?;
     let conn = db.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
     if let Err(error) = conn.execute("UPDATE ai_credentials SET masked_suffix = ?1, state = 'active', cooldown_until = NULL, last_error_kind = NULL, updated_at = ?2 WHERE id = ?3", params![suffix(value), now(), id]) {
-        match old_value {
-            Some(previous) => { let _ = secrets.set(&secret_ref, &previous); }
-            None => { let _ = secrets.delete(&secret_ref); }
-        }
+        let _ = secrets.restore_state(&previous);
         return Err(error.into());
     }
     Ok(())
@@ -1591,7 +1599,7 @@ pub fn reorder_credentials(db: &Db, ids: &[String]) -> AppResult<()> {
 
 pub fn delete_credential(db: &Db, secrets: &Secrets, id: &str) -> AppResult<()> {
     let secret_ref = credential_by_id(db, id)?.secret_ref;
-    let old_value = secrets.get(&secret_ref);
+    let snapshot = secrets.snapshot_state(&secret_ref)?;
     secrets.delete(&secret_ref)?;
     let delete_result = db
         .conn
@@ -1601,16 +1609,12 @@ pub fn delete_credential(db: &Db, secrets: &Secrets, id: &str) -> AppResult<()> 
     let changed = match delete_result {
         Ok(changed) => changed,
         Err(error) => {
-            if let Some(value) = old_value.as_ref() {
-                let _ = secrets.set(&secret_ref, value);
-            }
+            secrets.restore_state(&snapshot)?;
             return Err(error.into());
         }
     };
     if changed != 1 {
-        if let Some(value) = old_value {
-            let _ = secrets.set(&secret_ref, &value);
-        }
+        secrets.restore_state(&snapshot)?;
         return Err(AppError::Other("AI_CREDENTIAL_NOT_FOUND".to_string()));
     }
     Ok(())
@@ -1832,13 +1836,7 @@ pub async fn test_profile(
         .collect();
     if candidates.is_empty() {
         if record_health {
-            update_profile_health(
-                db,
-                &profile,
-                Some(AiErrorKind::NotConfigured),
-                None,
-                None,
-            );
+            update_profile_health(db, &profile, Some(AiErrorKind::NotConfigured), None, None);
         }
         return Ok(connection_test_result(
             &profile,
@@ -1861,7 +1859,7 @@ pub async fn test_profile(
         last_credential_id = Some(credential.view.id.clone());
         last_first_response_ms = None;
         let Some(key) = secrets
-            .get(&credential.secret_ref)
+            .get(&credential.secret_ref)?
             .filter(|value| !value.trim().is_empty())
         else {
             if record_health {
@@ -1914,13 +1912,7 @@ pub async fn test_profile(
     let total_ms = overall_started.elapsed().as_millis() as u64;
     if record_health {
         if let Some(kind) = last_error_kind {
-            update_profile_health(
-                db,
-                &profile,
-                Some(kind),
-                last_retry_after,
-                Some(total_ms),
-            );
+            update_profile_health(db, &profile, Some(kind), last_retry_after, Some(total_ms));
         }
     }
     Ok(connection_test_result(
@@ -1934,7 +1926,7 @@ pub async fn test_profile(
     ))
 }
 
-pub fn has_configured_service(db: &Db, secrets: &Secrets) -> bool {
+pub fn has_configured_service(db: &Db) -> bool {
     let Ok(profiles) = profiles(db, true) else {
         return false;
     };
@@ -1943,21 +1935,53 @@ pub fn has_configured_service(db: &Db, secrets: &Secrets) -> bool {
             return true;
         }
         if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" {
-            return secrets
-                .get("oauth_refresh_token")
-                .or_else(|| secrets.get("oauth_access_token"))
-                .is_some_and(|value| !value.trim().is_empty());
+            return true;
         }
         all_credentials_for(db, &profile.view.id)
             .unwrap_or_default()
             .into_iter()
-            .filter(|credential| credential.view.enabled)
-            .any(|credential| {
-                secrets
-                    .get(&credential.secret_ref)
-                    .is_some_and(|value| !value.trim().is_empty())
-            })
+            .find(|credential| credential.view.enabled)
+            .is_some()
     })
+}
+
+/// Validate access to the first usable credential a routed stream would use before
+/// the command detaches into a background task. This lets Tauri return the
+/// vault confirmation requirement to the webview, where the user can approve
+/// it and retry, instead of degrading it into an asynchronous stream error.
+pub fn ensure_stream_credentials_accessible(db: &Db, secrets: &Secrets) -> AppResult<()> {
+    let timestamp = now();
+    for profile in profiles(db, true)?.into_iter().filter(|profile| {
+        profile
+            .view
+            .cooldown_until
+            .is_none_or(|deadline| deadline <= timestamp)
+    }) {
+        if profile.view.provider == "ollama" {
+            return Ok(());
+        }
+        if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" {
+            // Probe only the first required token here. Once the vault is
+            // unlocked, the detached OAuth path can read the complete token
+            // set without introducing another system credential request.
+            if secrets
+                .get("oauth_access_token")?
+                .is_some_and(|value| !value.trim().is_empty())
+            {
+                return Ok(());
+            }
+            continue;
+        }
+        for credential in credentials_for(db, &profile.view.id)? {
+            if secrets
+                .get(&credential.secret_ref)?
+                .is_some_and(|value| !value.trim().is_empty())
+            {
+                return Ok(());
+            }
+        }
+    }
+    Ok(())
 }
 
 pub async fn test_credential(
@@ -1969,7 +1993,7 @@ pub async fn test_credential(
     let credential = credential_by_id(db, credential_id)?;
     let profile = profile_by_id(db, &credential.view.profile_id)?;
     let key = secrets
-        .get(&credential.secret_ref)
+        .get(&credential.secret_ref)?
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| AppError::Other("AI_CREDENTIAL_UNAVAILABLE".to_string()))?;
     let messages = [ChatMessage {
@@ -2120,6 +2144,160 @@ mod tests {
     fn malformed_or_empty_model_lists_are_rejected() {
         assert!(parse_model_ids("openai", &serde_json::json!({"models": []})).is_err());
         assert!(parse_model_ids("openai", &serde_json::json!({"data": []})).is_err());
+    }
+
+    #[test]
+    fn deleting_credential_removes_metadata_and_ciphertext() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let secrets = Secrets::init_in_memory().unwrap();
+        let profile = create_profile(
+            &db,
+            "Delete test".to_string(),
+            "custom".to_string(),
+            "api_key".to_string(),
+            Some("https://api.example/v1".to_string()),
+            "model".to_string(),
+            0.2,
+            None,
+            true,
+        )
+        .unwrap();
+        let credential = add_credential(
+            &db,
+            &secrets,
+            profile.id,
+            "Primary".to_string(),
+            "secret".to_string(),
+        )
+        .unwrap();
+        let secret_ref = credential_by_id(&db, &credential.id).unwrap().secret_ref;
+
+        delete_credential(&db, &secrets, &credential.id).unwrap();
+
+        assert!(credential_by_id(&db, &credential.id).is_err());
+        assert!(!secrets.has_encrypted_secret(&secret_ref).unwrap());
+    }
+
+    #[test]
+    fn deleting_profile_removes_all_credential_ciphertext() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let secrets = Secrets::init_in_memory().unwrap();
+        let profile = create_profile(
+            &db,
+            "Delete profile".to_string(),
+            "custom".to_string(),
+            "api_key".to_string(),
+            Some("https://api.example/v1".to_string()),
+            "model".to_string(),
+            0.2,
+            None,
+            true,
+        )
+        .unwrap();
+        let first = add_credential(
+            &db,
+            &secrets,
+            profile.id.clone(),
+            "First".to_string(),
+            "first-secret".to_string(),
+        )
+        .unwrap();
+        let second = add_credential(
+            &db,
+            &secrets,
+            profile.id.clone(),
+            "Second".to_string(),
+            "second-secret".to_string(),
+        )
+        .unwrap();
+        let refs = [first.id, second.id].map(|id| credential_by_id(&db, &id).unwrap().secret_ref);
+
+        delete_profile(&db, &secrets, &profile.id).unwrap();
+
+        assert!(profile_by_id(&db, &profile.id).is_err());
+        for secret_ref in refs {
+            assert!(!secrets.has_encrypted_secret(&secret_ref).unwrap());
+        }
+    }
+
+    #[test]
+    fn stream_preflight_surfaces_a_locked_vault_synchronously() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let secrets = Secrets::init_in_memory().unwrap();
+        let profile = create_profile(
+            &db,
+            "Locked vault".to_string(),
+            "custom".to_string(),
+            "api_key".to_string(),
+            Some("https://api.example/v1".to_string()),
+            "model".to_string(),
+            0.2,
+            None,
+            true,
+        )
+        .unwrap();
+        add_credential(
+            &db,
+            &secrets,
+            profile.id,
+            "Primary".to_string(),
+            "secret".to_string(),
+        )
+        .unwrap();
+        secrets.lock_for_test().unwrap();
+
+        let error = ensure_stream_credentials_accessible(&db, &secrets)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.starts_with("VAULT_CONFIRM_REQUIRED:unlock:"));
+    }
+
+    #[test]
+    fn stream_preflight_skips_missing_credentials_before_using_fallback() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let secrets = Secrets::init_in_memory().unwrap();
+        let profile = create_profile(
+            &db,
+            "Fallback".to_string(),
+            "custom".to_string(),
+            "api_key".to_string(),
+            Some("https://api.example/v1".to_string()),
+            "model".to_string(),
+            0.2,
+            None,
+            true,
+        )
+        .unwrap();
+        let missing = add_credential(
+            &db,
+            &secrets,
+            profile.id.clone(),
+            "Missing".to_string(),
+            "removed".to_string(),
+        )
+        .unwrap();
+        let fallback = add_credential(
+            &db,
+            &secrets,
+            profile.id,
+            "Fallback".to_string(),
+            "available".to_string(),
+        )
+        .unwrap();
+        let missing_ref = credential_by_id(&db, &missing.id).unwrap().secret_ref;
+        let fallback_ref = credential_by_id(&db, &fallback.id).unwrap().secret_ref;
+        secrets.delete(&missing_ref).unwrap();
+
+        assert!(ensure_stream_credentials_accessible(&db, &secrets).is_ok());
+        assert_eq!(
+            secrets.get(&fallback_ref).unwrap().as_deref(),
+            Some("available")
+        );
     }
 
     #[tokio::test]

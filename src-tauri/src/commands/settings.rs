@@ -10,7 +10,7 @@ use crate::secrets::Secrets;
 #[tauri::command]
 pub fn get_all_settings(
     db: State<'_, Db>,
-    secrets: State<'_, Secrets>,
+    _secrets: State<'_, Secrets>,
 ) -> AppResult<HashMap<String, String>> {
     // Release the reader lock before asking the AI router for credentials.
     // `list_credentials` may read the same connection again when no profile
@@ -31,25 +31,45 @@ pub fn get_all_settings(
         result
     };
 
-    // Never expose secret values to the webview. The UI only needs to know
-    // whether a key exists so it can preserve it when unrelated settings save.
-    let configured = router::has_configured_service(&db, &secrets) || {
-        secrets
-            .get("ai_api_key")
-            .is_some_and(|value| !value.trim().is_empty())
-    };
+    // This status is deliberately metadata-only. Opening the app, settings,
+    // or a reader window must never cause a system Keychain prompt.
+    let configured = router::has_configured_service(&db);
     settings.insert("ai_api_key_configured".to_string(), configured.to_string());
 
     Ok(settings)
 }
 
 #[tauri::command]
-pub fn ai_api_key_configured(db: State<'_, Db>, secrets: State<'_, Secrets>) -> bool {
-    router::has_configured_service(&db, &secrets) || {
-        secrets
-            .get("ai_api_key")
-            .is_some_and(|value| !value.trim().is_empty())
-    }
+pub fn ai_api_key_configured(db: State<'_, Db>) -> bool {
+    router::has_configured_service(&db)
+}
+
+#[tauri::command]
+pub fn vault_status(secrets: State<'_, Secrets>) -> AppResult<crate::secrets::VaultStatus> {
+    secrets.status()
+}
+
+#[tauri::command]
+pub fn vault_prepare_write(secrets: State<'_, Secrets>) -> AppResult<()> {
+    secrets.prepare_write()
+}
+
+#[tauri::command]
+pub fn vault_authorize(
+    reason: String,
+    request_id: Option<String>,
+    secrets: State<'_, Secrets>,
+) -> AppResult<()> {
+    secrets.authorize(&reason, request_id.as_deref())
+}
+
+#[tauri::command]
+pub fn vault_deny(
+    reason: String,
+    request_id: Option<String>,
+    secrets: State<'_, Secrets>,
+) -> AppResult<()> {
+    secrets.deny(&reason, request_id.as_deref())
 }
 
 #[tauri::command]

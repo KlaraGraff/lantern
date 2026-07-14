@@ -10,6 +10,7 @@ import type {
   LearningModuleContent,
 } from "./types";
 import LearningCardView from "./LearningCardView";
+import { invokeWithVaultAccess } from "../../utils/vaultAccess";
 
 interface LearningCardResponse extends LearningCardResult {
   provenance?: {
@@ -143,7 +144,7 @@ export default function LearningCardController({
     setError(null);
     const requestId = crypto.randomUUID();
     let active = true;
-    invoke<LearningCardResponse>("ai_learning_card", {
+    invokeWithVaultAccess<LearningCardResponse>("ai_learning_card", {
       text: interaction.text,
       context: interaction.context,
       kind: interaction.kind,

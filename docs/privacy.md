@@ -8,7 +8,9 @@ Quill Personal is a local-first ebook reader. Your library and learning data sta
 
 ## Local Storage
 
-Books, reading progress, highlights, bookmarks, lookup history, vocabulary, and chats are stored locally. API keys and OAuth tokens are stored in the operating system credential store. The app does not expose secret values to its webview or sync them to iCloud.
+Books, reading progress, highlights, bookmarks, lookup history, vocabulary, and chats are stored locally. The operating system credential store contains one random vault master key (`com.ryoyamada.quill` / `vault-master-key-v1`). API keys and OAuth tokens are encrypted with that key and stored only in the local secrets database; they are not stored as separate Password entries. The app does not expose secret values to its webview or sync them to iCloud.
+
+When an existing installation needs to import a credential saved by an older version, Quill first shows an in-app explanation. It requests access from the operating system only after the user explicitly confirms the import. Cancelling or denying the request stops that operation and does not start an automatic prompt loop.
 
 ## iCloud Drive Folder Sync
 

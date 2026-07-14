@@ -102,6 +102,7 @@ pub async fn ai_translate_passage(
     ];
 
     let event_name = format!("ai-translate-chunk-{}", request_id);
+    crate::ai::router::ensure_stream_credentials_accessible(&db, &secrets)?;
     let db = db.inner().clone();
     let secrets = secrets.inner().clone();
     // Keep the cancellation token available before the detached task starts.
