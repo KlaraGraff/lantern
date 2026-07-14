@@ -272,7 +272,7 @@
 ## 11. 测试矩阵概览
 
 完整步骤、环境、测试数据、通过标准和缺陷记录要求见：
-[v1.4.0 全量测试方案](../testing/reader-ai-learning-tools-v1.4.0-test-plan.md)。本轮只编写方案，不执行下列测试。
+[v1.4.1 全量测试方案](../testing/reader-ai-learning-tools-v1.4.1-test-plan.md)。本轮只编写方案，不执行下列测试。
 
 ### 11.1 自动化
 
@@ -328,4 +328,4 @@
 
 截至 2026-07-13，最终代码已完成静态人工审查，但最终收尾改动之后未执行全量测试、应用运行、构建或打包。先前阶段的检查结果不能替代对当前提交的完整验证。
 
-后续验证必须从头按 [v1.4.0 全量测试方案](../testing/reader-ai-learning-tools-v1.4.0-test-plan.md) 执行并单独记录证据。本轮只记录 `main` 提交，不创建 Tag 或安装包发布记录。
+后续验证必须从头按 [v1.4.1 全量测试方案](../testing/reader-ai-learning-tools-v1.4.1-test-plan.md) 执行并单独记录证据。当前计划状态仍为“待执行”；Tag 与安装包发布记录以 GitHub Release 为准。

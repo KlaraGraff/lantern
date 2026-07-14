@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useLayoutEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { invokeWithVaultAccess } from "../utils/vaultAccess";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -10,6 +10,8 @@ export interface ChatMessage {
   content: string;
   context?: string;
   contextCfi?: string;
+  contextAnalysis?: string;
+  reasoning?: string;
   dbId?: string;
 }
 
@@ -37,8 +39,53 @@ interface ChatMsgRecord {
 
 interface AiStreamChunk {
   delta: string;
+  reasoning_delta?: string;
   done: boolean;
   error?: string;
+}
+
+interface ChatMessageMetadata {
+  cfi?: string;
+  analysis?: string;
+  reasoning?: string;
+}
+
+function parseMessageMetadata(metadata: string | null): ChatMessageMetadata {
+  if (!metadata) return {};
+  try {
+    const parsed: unknown = JSON.parse(metadata);
+    if (!parsed || typeof parsed !== "object") return {};
+    const value = parsed as Record<string, unknown>;
+    return {
+      cfi: typeof value.cfi === "string" ? value.cfi : undefined,
+      analysis: typeof value.analysis === "string" ? value.analysis : undefined,
+      reasoning: typeof value.reasoning === "string" ? value.reasoning : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function serializeMessageMetadata(metadata: ChatMessageMetadata): string | null {
+  const compact = Object.fromEntries(
+    Object.entries(metadata).filter(([, value]) => typeof value === "string" && value.length > 0),
+  );
+  return Object.keys(compact).length > 0 ? JSON.stringify(compact) : null;
+}
+
+function messageContentForApi(message: ChatMessage): string {
+  const context: string[] = [];
+  if (message.context) {
+    context.push(`[Selected passage]\n${message.context}\n[/Selected passage]`);
+  }
+  if (message.contextAnalysis) {
+    context.push(
+      `[Existing learning-card analysis]\n${message.contextAnalysis}\n[/Existing learning-card analysis]`,
+    );
+  }
+  return context.length > 0
+    ? `${context.join("\n\n")}\n\n${message.content}`
+    : message.content;
 }
 
 /** Derive a short title from the user's first message (truncated at word boundary). */
@@ -129,33 +176,64 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
   const chatIdRef = useRef<string | null>(null);
   const streamingRef = useRef(false);
   const activeRequestIdRef = useRef<string | null>(null);
+  const activeAssistantIdRef = useRef<string | null>(null);
   const initializingRef = useRef(true);
+  const streamGenerationRef = useRef(0);
+  const streamFrameCleanupRef = useRef<(() => void) | null>(null);
+  const initializationGenerationRef = useRef(0);
+  const titleGenerationRef = useRef(0);
+  const bookIdRef = useRef(bookId);
+  const mountedRef = useRef(false);
+
+  useLayoutEffect(() => {
+    bookIdRef.current = bookId;
+  }, [bookId]);
+
+  const stopActiveStream = useCallback((cancelBackend = true) => {
+    const requestId = activeRequestIdRef.current;
+    streamGenerationRef.current += 1;
+    streamFrameCleanupRef.current?.();
+    streamFrameCleanupRef.current = null;
+    unlistenRef.current?.();
+    unlistenRef.current = null;
+    activeRequestIdRef.current = null;
+    activeAssistantIdRef.current = null;
+    streamingRef.current = false;
+    if (mountedRef.current) setStreaming(false);
+    if (cancelBackend && requestId) {
+      invoke("ai_cancel", { requestId }).catch(() => {});
+    }
+  }, []);
 
   // Keep the ref in lockstep with the state so send() (which reads refs to
   // avoid stale closures) can refuse while initialization is in flight.
   const setInitializingSynced = (v: boolean) => {
     initializingRef.current = v;
-    setInitializing(v);
+    if (mountedRef.current) setInitializing(v);
   };
 
   // Cleanup stream listener on unmount
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
-      unlistenRef.current?.();
-      unlistenRef.current = null;
-      if (activeRequestIdRef.current) invoke("ai_cancel", { requestId: activeRequestIdRef.current }).catch(() => {});
-      activeRequestIdRef.current = null;
+      mountedRef.current = false;
+      stopActiveStream();
     };
-  }, []);
+  }, [stopActiveStream]);
 
   // Reset initialization when bookId changes
   useEffect(() => {
+    initializationGenerationRef.current += 1;
+    titleGenerationRef.current += 1;
     if (bookId && initializedBookRef.current && initializedBookRef.current !== bookId) {
+      stopActiveStream();
       initializedBookRef.current = null;
+      setTitling(false);
     }
-  }, [bookId]);
+  }, [bookId, stopActiveStream]);
 
   const updateMessages = (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+    if (!mountedRef.current) return;
     setMessages((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
       messagesRef.current = next;
@@ -166,7 +244,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
   const refreshChats = useCallback(async (bid: string) => {
     try {
       const result = await invoke<ChatRecord[]>("list_chats", { bookId: bid });
-      setChats(result);
+      if (mountedRef.current && bookIdRef.current === bid) setChats(result);
       return result;
     } catch {
       return [];
@@ -175,12 +253,10 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
 
   const loadChat = useCallback(async (id: string) => {
     // Stop any active stream
-    if (streamingRef.current) {
-      unlistenRef.current?.();
-      unlistenRef.current = null;
-      setStreaming(false);
-      streamingRef.current = false;
-    }
+    if (streamingRef.current || activeRequestIdRef.current) stopActiveStream();
+    titleGenerationRef.current += 1;
+    setTitling(false);
+    const targetBookId = bookIdRef.current;
 
     // Set target immediately so rapid clicks can be detected
     setChatId(id);
@@ -190,19 +266,22 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       const msgs = await invoke<ChatMsgRecord[]>("list_chat_messages", { chatId: id });
 
       // Stale check: if user switched to another chat while we were loading, bail
-      if (chatIdRef.current !== id) return;
+      if (
+        !mountedRef.current
+        || chatIdRef.current !== id
+        || bookIdRef.current !== targetBookId
+      ) return;
 
       const mapped: ChatMessage[] = msgs.map((m) => {
-        let contextCfi: string | undefined;
-        if (m.metadata) {
-          try { contextCfi = JSON.parse(m.metadata).cfi; } catch { /* ignore */ }
-        }
+        const metadata = parseMessageMetadata(m.metadata);
         return {
           id: m.id,
           role: m.role as "user" | "assistant",
           content: m.content,
           context: m.context ?? undefined,
-          contextCfi,
+          contextCfi: metadata.cfi,
+          contextAnalysis: metadata.analysis,
+          reasoning: metadata.reasoning,
           dbId: m.id,
         };
       });
@@ -210,11 +289,12 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
     } catch (err) {
       console.error("Failed to load chat messages:", err);
     }
-  }, []);
+  }, [stopActiveStream]);
 
   const createChat = useCallback(async (bid: string) => {
     try {
       const chat = await invoke<ChatRecord>("create_chat", { bookId: bid, title: null, model: null });
+      if (!mountedRef.current || bookIdRef.current !== bid) return chat;
       setChatId(chat.id);
       chatIdRef.current = chat.id;
       updateMessages([]);
@@ -232,11 +312,18 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
     const targetBook = bid || bookId;
     if (!targetBook) { setInitializingSynced(false); return; }
     if (initializedBookRef.current === targetBook) { setInitializingSynced(false); return; }
+    const generation = initializationGenerationRef.current + 1;
+    initializationGenerationRef.current = generation;
     initializedBookRef.current = targetBook;
     setInitializingSynced(true);
 
     try {
       const chatList = await refreshChats(targetBook);
+      if (
+        !mountedRef.current
+        || initializationGenerationRef.current !== generation
+        || bookIdRef.current !== targetBook
+      ) return;
       if (chatList.length > 0) {
         await loadChat(chatList[0].id);
       } else {
@@ -247,16 +334,30 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         updateMessages([]);
       }
     } finally {
-      setInitializingSynced(false);
+      if (initializationGenerationRef.current === generation) {
+        setInitializingSynced(false);
+      }
     }
   }, [bookId, refreshChats, loadChat]);
 
   const send = useCallback(
-    async (content: string, context?: string, contextCfi?: string) => {
+    async (content: string, context?: string, contextCfi?: string, contextAnalysis?: string) => {
       // Refuse while the session chat is still loading — otherwise the lazy
       // chat-creation path below would spawn a *new* chat and miss the
       // existing one. Belt-and-suspenders alongside the UI gate.
-      if (initializingRef.current) return;
+      if (initializingRef.current || streamingRef.current) return;
+
+      const requestId = crypto.randomUUID();
+      const requestGeneration = streamGenerationRef.current + 1;
+      streamGenerationRef.current = requestGeneration;
+      activeRequestIdRef.current = requestId;
+      streamingRef.current = true;
+      setStreaming(true);
+      const isRequestActive = () => (
+        mountedRef.current
+        && activeRequestIdRef.current === requestId
+        && streamGenerationRef.current === requestGeneration
+      );
 
       let currentChatId = chatIdRef.current;
       const currentBookId = bookId;
@@ -265,16 +366,25 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       const isNewChat = !currentChatId;
       if (!currentChatId && currentBookId) {
         const chat = await createChat(currentBookId);
-        if (!chat) return;
+        if (!isRequestActive()) return;
+        if (!chat) {
+          stopActiveStream(false);
+          return;
+        }
         currentChatId = chat.id;
       }
-      if (!currentChatId) return;
+      if (!currentChatId) {
+        stopActiveStream(false);
+        return;
+      }
 
       // New chat: generate the title from the user's message, concurrently with
       // the response stream (not after it), showing a loading state until it
       // lands. Falls back to a truncated title if the AI call fails.
       if (isNewChat && currentBookId) {
         const titleSource = context || content;
+        const titleGeneration = titleGenerationRef.current + 1;
+        titleGenerationRef.current = titleGeneration;
         setTitling(true);
         generateAiTitle(titleSource).then(async (aiTitle) => {
           try {
@@ -289,7 +399,9 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
               }
             }
           } catch { /* ignore */ } finally {
-            setTitling(false);
+            if (mountedRef.current && titleGenerationRef.current === titleGeneration) {
+              setTitling(false);
+            }
           }
         });
       }
@@ -300,6 +412,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         content,
         context,
         contextCfi,
+        contextAnalysis,
       };
 
       const assistantId = nextMsgId();
@@ -308,14 +421,14 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         role: "assistant",
         content: "",
       };
+      activeAssistantIdRef.current = assistantId;
 
+      const apiHistory = [...messagesRef.current, userMessage];
       updateMessages((prev) => [...prev, userMessage, assistantMessage]);
-      setStreaming(true);
-      streamingRef.current = true;
 
       // Persist user message
       try {
-        const meta = contextCfi ? JSON.stringify({ cfi: contextCfi }) : null;
+        const meta = serializeMessageMetadata({ cfi: contextCfi, analysis: contextAnalysis });
         const saved = await invoke<ChatMsgRecord>("save_chat_message", {
           chatId: currentChatId,
           role: "user",
@@ -327,88 +440,167 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       } catch (err) {
         console.error("Failed to save user message:", err);
       }
+      if (!isRequestActive()) return;
 
       // Accumulate full assistant content for persistence
       let fullContent = "";
+      let fullReasoning = "";
+      let pendingContent = "";
+      let pendingReasoning = "";
+      let updateFrame: number | null = null;
 
-      const requestId = crypto.randomUUID();
-      activeRequestIdRef.current = requestId;
-      unlistenRef.current = await listen<AiStreamChunk>(
-        `ai-stream-chunk-${requestId}`,
-        async (event) => {
-          if (event.payload.done) {
-            setStreaming(false);
-            streamingRef.current = false;
-            activeRequestIdRef.current = null;
-            unlistenRef.current?.();
-            unlistenRef.current = null;
+      const flushStreamUpdate = () => {
+        if (updateFrame !== null) {
+          cancelAnimationFrame(updateFrame);
+          updateFrame = null;
+        }
+        if (!pendingContent && !pendingReasoning) return;
+        const contentDelta = pendingContent;
+        const reasoningDelta = pendingReasoning;
+        pendingContent = "";
+        pendingReasoning = "";
+        if (!isRequestActive()) return;
+        updateMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  content: m.content + contentDelta,
+                  reasoning: `${m.reasoning ?? ""}${reasoningDelta}` || undefined,
+                }
+              : m,
+          ),
+        );
+      };
 
-            if (event.payload.error) {
-              const errorCode = getAiErrorCode(event.payload.error) ?? "AI_STREAM_FAILED";
-              updateMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId
-                    ? { ...m, content: fullContent || errorCode }
-                    : m
-                )
-              );
+      const scheduleStreamUpdate = () => {
+        if (updateFrame !== null) return;
+        updateFrame = requestAnimationFrame(() => {
+          updateFrame = null;
+          if (!isRequestActive()) {
+            pendingContent = "";
+            pendingReasoning = "";
+            return;
+          }
+          flushStreamUpdate();
+        });
+      };
+
+      const discardStreamUpdate = () => {
+        if (updateFrame !== null) {
+          cancelAnimationFrame(updateFrame);
+          updateFrame = null;
+        }
+        pendingContent = "";
+        pendingReasoning = "";
+      };
+      streamFrameCleanupRef.current = discardStreamUpdate;
+
+      let streamUnlisten: UnlistenFn | null = null;
+      const finishRequest = () => {
+        if (!isRequestActive()) return false;
+        if (streamFrameCleanupRef.current === discardStreamUpdate) {
+          streamFrameCleanupRef.current = null;
+        }
+        if (unlistenRef.current === streamUnlisten) unlistenRef.current = null;
+        streamUnlisten?.();
+        streamUnlisten = null;
+        activeRequestIdRef.current = null;
+        if (activeAssistantIdRef.current === assistantId) activeAssistantIdRef.current = null;
+        streamingRef.current = false;
+        if (mountedRef.current) setStreaming(false);
+        return true;
+      };
+
+      try {
+        const registeredUnlisten = await listen<AiStreamChunk>(
+          `ai-stream-chunk-${requestId}`,
+          async (event) => {
+            if (!isRequestActive()) return;
+            if (event.payload.done) {
+              flushStreamUpdate();
+
+              if (event.payload.error) {
+                const errorCode = getAiErrorCode(event.payload.error) ?? "AI_STREAM_FAILED";
+                updateMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? { ...m, content: fullContent || errorCode }
+                      : m
+                  )
+                );
+                finishRequest();
+                return;
+              }
+
+              finishRequest();
+
+              // Only a provider-confirmed completed stream may become history.
+              if (fullContent) {
+                try {
+                  await invoke("save_chat_message", {
+                    chatId: currentChatId,
+                    role: "assistant",
+                    content: fullContent,
+                    context: null,
+                    metadata: serializeMessageMetadata({ reasoning: fullReasoning }),
+                  });
+                } catch (err) {
+                  console.error("Failed to save assistant message:", err);
+                }
+              }
+
               return;
             }
 
-            // Only a provider-confirmed completed stream may become history.
-            if (fullContent) {
-              try {
-                await invoke("save_chat_message", {
-                  chatId: currentChatId,
-                  role: "assistant",
-                  content: fullContent,
-                  context: null,
-                  metadata: null,
-                });
-              } catch (err) {
-                console.error("Failed to save assistant message:", err);
-              }
-            }
-
-            return;
-          }
-
-          fullContent += event.payload.delta;
-          updateMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantId
-                ? { ...m, content: m.content + event.payload.delta }
-                : m
-            )
-          );
+            const contentDelta = event.payload.delta || "";
+            const reasoningDelta = event.payload.reasoning_delta || "";
+            fullContent += contentDelta;
+            fullReasoning += reasoningDelta;
+            pendingContent += contentDelta;
+            pendingReasoning += reasoningDelta;
+            scheduleStreamUpdate();
+          },
+        );
+        streamUnlisten = registeredUnlisten;
+        if (!isRequestActive()) {
+          registeredUnlisten();
+          discardStreamUpdate();
+          return;
         }
-      );
+        unlistenRef.current = registeredUnlisten;
+      } catch (err) {
+        if (!isRequestActive()) return;
+        const errorContent = getAiErrorCode(err) ?? "AI_STREAM_FAILED";
+        updateMessages((prev) => prev.map((message) => (
+          message.id === assistantId ? { ...message, content: errorContent } : message
+        )));
+        finishRequest();
+        return;
+      }
 
       // Build API messages from current ref (avoids stale closure)
-      // Include each message's context inline so the AI sees all quoted passages
-      const apiMessages = messagesRef.current
-        .filter((m) => m.id !== assistantId)
+      // Include source quotes and any generated learning-card analysis inline so
+      // follow-up questions retain the full context without duplicating it in UI.
+      const apiMessages = apiHistory
+        .filter((message) => message.role === "user" || message.content.trim().length > 0)
         .map((m) => ({
           role: m.role,
-          content: m.context
-            ? `[Selected passage: "${m.context}"]\n\n${m.content}`
-            : m.content,
+          content: messageContentForApi(m),
         }));
 
       try {
+        if (!isRequestActive()) return;
         await invokeWithVaultAccess("ai_chat", {
           messages: apiMessages,
           bookTitle: bookContext?.title ?? null,
           bookAuthor: bookContext?.author ?? null,
           currentChapter: bookContext?.chapter ?? null,
           requestId,
-        });
+        }, isRequestActive);
       } catch (err) {
-        setStreaming(false);
-        streamingRef.current = false;
-        activeRequestIdRef.current = null;
-        unlistenRef.current?.();
-        unlistenRef.current = null;
+        if (!isRequestActive()) return;
+        flushStreamUpdate();
         const errorContent = getAiErrorCode(err) ?? "AI_STREAM_FAILED";
         updateMessages((prev) =>
           prev.map((m) =>
@@ -417,21 +609,27 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
               : m
           )
         );
+        finishRequest();
       }
     },
-    [bookId, bookContext?.title, bookContext?.author, bookContext?.chapter, createChat, refreshChats]
+    [bookId, bookContext?.title, bookContext?.author, bookContext?.chapter, createChat, refreshChats, stopActiveStream]
   );
 
   const cancel = useCallback(() => {
-    const requestId = activeRequestIdRef.current;
-    if (!requestId) return;
-    invoke("ai_cancel", { requestId }).catch(() => {});
-    activeRequestIdRef.current = null;
-    unlistenRef.current?.();
-    unlistenRef.current = null;
-    streamingRef.current = false;
-    setStreaming(false);
-  }, []);
+    if (!activeRequestIdRef.current && !streamingRef.current) return;
+    const assistantId = activeAssistantIdRef.current;
+    stopActiveStream();
+    if (!assistantId || !mountedRef.current) return;
+    setMessages((current) => {
+      const next = current.filter((message) => (
+        message.id !== assistantId
+        || Boolean(message.content.trim())
+        || Boolean(message.reasoning?.trim())
+      ));
+      messagesRef.current = next;
+      return next;
+    });
+  }, [stopActiveStream]);
 
   const deleteChat = useCallback(async (id: string) => {
     const currentBookId = bookId;
@@ -439,12 +637,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
 
     // Cancel active stream if deleting the streaming chat
     if (id === chatIdRef.current && streamingRef.current) {
-      if (activeRequestIdRef.current) invoke("ai_cancel", { requestId: activeRequestIdRef.current }).catch(() => {});
-      activeRequestIdRef.current = null;
-      unlistenRef.current?.();
-      unlistenRef.current = null;
-      setStreaming(false);
-      streamingRef.current = false;
+      stopActiveStream();
     }
 
     await invoke("delete_chat", { chatId: id });
@@ -460,7 +653,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         updateMessages([]);
       }
     }
-  }, [bookId, refreshChats, loadChat]);
+  }, [bookId, refreshChats, loadChat, stopActiveStream]);
 
   const renameChat = useCallback(async (id: string, title: string) => {
     await invoke("rename_chat", { chatId: id, title });
@@ -470,19 +663,14 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
   const reset = useCallback(async () => {
     if (!bookId) return;
     // Stop any active stream
-    if (streamingRef.current) {
-      if (activeRequestIdRef.current) invoke("ai_cancel", { requestId: activeRequestIdRef.current }).catch(() => {});
-      activeRequestIdRef.current = null;
-      unlistenRef.current?.();
-      unlistenRef.current = null;
-      setStreaming(false);
-      streamingRef.current = false;
-    }
+    if (streamingRef.current || activeRequestIdRef.current) stopActiveStream();
+    titleGenerationRef.current += 1;
+    setTitling(false);
     // Show empty state, lazy create on next send
     setChatId(null);
     chatIdRef.current = null;
     updateMessages([]);
-  }, [bookId]);
+  }, [bookId, stopActiveStream]);
 
   return {
     messages,

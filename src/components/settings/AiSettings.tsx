@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AlertCircle, Loader2, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -44,6 +44,27 @@ function profileLabel(value: string): string {
   return Array.from(value).slice(0, 100).join("");
 }
 
+function isProfileConfigValid(profile: AiProfile): boolean {
+  const label = profile.label.trim();
+  const model = profile.model.trim();
+  if (!label || Array.from(label).length > 100) return false;
+  if (!model || Array.from(model).length > 200) return false;
+  if (!Number.isFinite(profile.temperature) || profile.temperature < 0 || profile.temperature > 2) return false;
+  if (!(["openai", "anthropic", "ollama", "custom"] as string[]).includes(profile.provider)) return false;
+  if (profile.auth_mode === "oauth" && profile.provider !== "openai") return false;
+  const baseUrl = profile.base_url?.trim();
+  if (profile.provider === "custom" && !baseUrl) return false;
+  if (baseUrl) {
+    try {
+      const parsed = new URL(baseUrl);
+      if (!(["http:", "https:"] as string[]).includes(parsed.protocol) || !parsed.hostname) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
 function updateOne<T extends { id: string }>(items: T[], id: string, patch: Partial<T>): T[] {
   return items.map((item) => item.id === id ? { ...item, ...patch } : item);
 }
@@ -67,11 +88,43 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   const [error, setError] = useState<string | null>(null);
   const [oauthStatus, setOauthStatus] = useState<OAuthStatus>({ connected: false, account_id: null });
   const [oauthLoading, setOauthLoading] = useState(false);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const profilesRef = useRef<AiProfile[]>([]);
+  const savedProfilesRef = useRef<AiProfile[]>([]);
+  const saveInFlightRef = useRef<Promise<void> | null>(null);
+  const saveRequestedRef = useRef(false);
+  const saveNotificationRequestedRef = useRef(false);
+  const flushOnUnmountRef = useRef<() => void>(() => {});
+  const mountedRef = useRef(false);
+
+  const replaceProfiles = useCallback((next: AiProfile[]) => {
+    profilesRef.current = next;
+    setProfiles(next);
+  }, []);
+
+  const replaceSavedProfiles = useCallback((next: AiProfile[]) => {
+    savedProfilesRef.current = next;
+    setSavedProfiles(next);
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      flushOnUnmountRef.current();
+    };
+  }, []);
 
   const dirtyIds = useMemo(() => {
     const saved = new Map(savedProfiles.map((profile) => [profile.id, profile]));
     return new Set(profiles.filter((profile) => !sameProfileConfig(profile, saved.get(profile.id))).map((profile) => profile.id));
   }, [profiles, savedProfiles]);
+
+  const validDirtyIds = useMemo(() => new Set(
+    profiles
+      .filter((profile) => dirtyIds.has(profile.id) && isProfileConfigValid(profile))
+      .map((profile) => profile.id),
+  ), [dirtyIds, profiles]);
 
   const refreshCredentials = useCallback(async (profileId: string) => {
     const next = await invoke<AiCredential[]>("ai_list_credentials", { profileId });
@@ -95,8 +148,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
           await invoke<AiCredential[]>("ai_list_credentials", { profileId: profile.id }),
         ] as const),
       );
-      setProfiles(nextProfiles);
-      setSavedProfiles(nextProfiles);
+      replaceProfiles(nextProfiles);
+      replaceSavedProfiles(nextProfiles);
       setCredentials(Object.fromEntries(credentialEntries));
       setExpandedId((current) => current && nextProfiles.some((profile) => profile.id === current) ? current : null);
       try {
@@ -109,7 +162,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     } finally {
       setLoading(false);
     }
-  }, [refreshOAuthStatus]);
+  }, [refreshOAuthStatus, replaceProfiles, replaceSavedProfiles]);
 
   useEffect(() => {
     void load();
@@ -120,7 +173,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   }, [dirtyIds, onDirtyChange]);
 
   const updateProfile = useCallback((id: string, patch: Partial<AiProfile>) => {
-    setProfiles((current) => updateOne(current, id, patch));
+    const nextProfiles = updateOne(profilesRef.current, id, patch);
+    replaceProfiles(nextProfiles);
     if (["provider", "auth_mode", "base_url", "model", "temperature", "keep_alive"].some((key) => key in patch)) {
       setStaleHealthIds((current) => new Set(current).add(id));
       setTestResults((current) => {
@@ -137,7 +191,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
       });
     }
     setError(null);
-  }, []);
+  }, [replaceProfiles]);
 
   const markHealthStale = useCallback((profileId: string) => {
     setStaleHealthIds((current) => new Set(current).add(profileId));
@@ -159,34 +213,91 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
       temperature: profile.temperature,
       keepAlive: profile.keep_alive?.trim() || null,
     });
-    setProfiles((current) => updateOne(current, saved.id, saved));
-    setSavedProfiles((current) => updateOne(current, saved.id, saved));
-    return saved;
-  }, []);
-
-  const saveProfiles = useCallback(async () => {
-    const pending = profiles.filter((profile) => dirtyIds.has(profile.id));
-    if (pending.length === 0) return;
-    setSaving(true);
-    setError(null);
-    try {
-      for (const profile of pending) await persistProfile(profile);
-      showSavedToast(t("settings.ai.savedToast"));
-    } catch (nextError) {
-      setError(errorText(nextError));
-    } finally {
-      setSaving(false);
+    const nextSavedProfiles = updateOne(savedProfilesRef.current, saved.id, saved);
+    savedProfilesRef.current = nextSavedProfiles;
+    // A debounced save may resolve after the user has resumed typing. Only
+    // replace the draft when it is still the exact revision we persisted.
+    if (mountedRef.current) {
+      const nextProfiles = profilesRef.current.map((item) => (
+        item.id === saved.id && sameProfileConfig(item, profile) ? saved : item
+      ));
+      replaceProfiles(nextProfiles);
+      replaceSavedProfiles(nextSavedProfiles);
     }
-  }, [dirtyIds, persistProfile, profiles, showSavedToast, t]);
+    return saved;
+  }, [replaceProfiles, replaceSavedProfiles]);
+
+  const saveProfiles = useCallback((notify = true): Promise<void> => {
+    saveRequestedRef.current = true;
+    saveNotificationRequestedRef.current ||= notify;
+    if (saveInFlightRef.current) return saveInFlightRef.current;
+
+    const worker = (async () => {
+      let savedAny = false;
+      if (mountedRef.current) {
+        setSaving(true);
+        setError(null);
+      }
+      try {
+        while (saveRequestedRef.current) {
+          saveRequestedRef.current = false;
+          const savedById = new Map(savedProfilesRef.current.map((profile) => [profile.id, profile]));
+          const pending = profilesRef.current.filter((profile) => (
+            !sameProfileConfig(profile, savedById.get(profile.id)) && isProfileConfigValid(profile)
+          ));
+          for (const profile of pending) {
+            await persistProfile(profile);
+            savedAny = true;
+          }
+        }
+        if (savedAny && saveNotificationRequestedRef.current && mountedRef.current) {
+          showSavedToast(t("settings.ai.savedToast"));
+        }
+      } catch (nextError) {
+        saveRequestedRef.current = false;
+        if (mountedRef.current) setError(errorText(nextError));
+      } finally {
+        saveNotificationRequestedRef.current = false;
+        if (mountedRef.current) setSaving(false);
+      }
+    })();
+
+    saveInFlightRef.current = worker;
+    void worker.finally(() => {
+      saveInFlightRef.current = null;
+    });
+    return worker;
+  }, [persistProfile, showSavedToast, t]);
+
+  useEffect(() => {
+    flushOnUnmountRef.current = () => {
+      void saveProfiles(false);
+    };
+  }, [saveProfiles]);
 
   const requestSave = useCallback(() => {
-    void saveProfiles();
+    void saveProfiles(true);
   }, [saveProfiles]);
 
   useEffect(() => {
     onSaveRef?.(requestSave);
     return () => onSaveRef?.(null);
   }, [onSaveRef, requestSave]);
+
+  useEffect(() => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    if (loading || saving || validDirtyIds.size === 0) return;
+    autoSaveTimerRef.current = setTimeout(() => {
+      autoSaveTimerRef.current = null;
+      void saveProfiles(false);
+    }, 600);
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [loading, saveProfiles, saving, validDirtyIds]);
 
   const createProfile = async () => {
     setBusyId("new");
@@ -202,8 +313,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
         keepAlive: null,
         enabled: true,
       });
-      setProfiles((current) => [...current, created]);
-      setSavedProfiles((current) => [...current, created]);
+      replaceProfiles([...profilesRef.current, created]);
+      replaceSavedProfiles([...savedProfilesRef.current, created]);
       setCredentials((current) => ({ ...current, [created.id]: [] }));
       setExpandedId(created.id);
       showSavedToast(t("settings.ai.serviceCreated"));
@@ -234,8 +345,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
         temperature: profile.temperature,
         keepAlive: profile.keep_alive?.trim() || null,
       });
-      setProfiles((current) => [...current, configured]);
-      setSavedProfiles((current) => [...current, configured]);
+      replaceProfiles([...profilesRef.current, configured]);
+      replaceSavedProfiles([...savedProfilesRef.current, configured]);
       setCredentials((current) => ({ ...current, [configured.id]: [] }));
       setExpandedId(configured.id);
       showSavedToast(t("settings.ai.serviceDuplicated"));
@@ -261,8 +372,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     setError(null);
     try {
       await invoke("ai_delete_profile", { id });
-      setProfiles((current) => current.filter((profile) => profile.id !== id));
-      setSavedProfiles((current) => current.filter((profile) => profile.id !== id));
+      replaceProfiles(profilesRef.current.filter((profile) => profile.id !== id));
+      replaceSavedProfiles(savedProfilesRef.current.filter((profile) => profile.id !== id));
       setCredentials((current) => {
         const next = { ...current };
         delete next[id];
@@ -293,16 +404,16 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   };
 
   const toggleProfile = async (id: string, enabled: boolean) => {
-    const previous = profiles.find((profile) => profile.id === id)?.enabled ?? !enabled;
+    const previous = profilesRef.current.find((profile) => profile.id === id)?.enabled ?? !enabled;
     setBusyId(id);
-    setProfiles((current) => updateOne(current, id, { enabled }));
-    setSavedProfiles((current) => updateOne(current, id, { enabled }));
+    replaceProfiles(updateOne(profilesRef.current, id, { enabled }));
+    replaceSavedProfiles(updateOne(savedProfilesRef.current, id, { enabled }));
     setError(null);
     try {
       await invoke("ai_set_profile_enabled", { id, enabled });
     } catch (nextError) {
-      setProfiles((current) => updateOne(current, id, { enabled: previous }));
-      setSavedProfiles((current) => updateOne(current, id, { enabled: previous }));
+      replaceProfiles(updateOne(profilesRef.current, id, { enabled: previous }));
+      replaceSavedProfiles(updateOne(savedProfilesRef.current, id, { enabled: previous }));
       setError(errorText(nextError));
     } finally {
       setBusyId(null);
@@ -310,27 +421,27 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   };
 
   const applyProfileOrder = useCallback(async (next: AiProfile[]) => {
-    const previousProfiles = profiles;
-    const previousSaved = savedProfiles;
+    const previousProfiles = profilesRef.current;
+    const previousSaved = savedProfilesRef.current;
     const withPriority = next.map((profile, priority) => ({ ...profile, priority }));
     const nextSaved = withPriority.map((profile) => {
       const saved = previousSaved.find((item) => item.id === profile.id);
       return saved ? { ...saved, priority: profile.priority } : profile;
     });
-    setProfiles(withPriority);
-    setSavedProfiles(nextSaved);
+    replaceProfiles(withPriority);
+    replaceSavedProfiles(nextSaved);
     setBusyId("order");
     setError(null);
     try {
       await invoke("ai_reorder_profiles", { ids: withPriority.map((profile) => profile.id) });
     } catch (nextError) {
-      setProfiles(previousProfiles);
-      setSavedProfiles(previousSaved);
+      replaceProfiles(previousProfiles);
+      replaceSavedProfiles(previousSaved);
       setError(errorText(nextError));
     } finally {
       setBusyId(null);
     }
-  }, [profiles, savedProfiles]);
+  }, [replaceProfiles, replaceSavedProfiles]);
 
   const moveProfile = async (id: string, direction: -1 | 1) => {
     const index = profiles.findIndex((profile) => profile.id === id);
@@ -359,14 +470,20 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     setTestingId(profile.id);
     setError(null);
     try {
+      const latestProfile = profilesRef.current.find((item) => item.id === profile.id) ?? profile;
+      const savedProfile = savedProfilesRef.current.find((item) => item.id === profile.id);
+      if (!sameProfileConfig(latestProfile, savedProfile) && isProfileConfigValid(latestProfile)) {
+        await saveProfiles(false);
+      }
+      const testedProfile = profilesRef.current.find((item) => item.id === profile.id) ?? latestProfile;
       const result = await invokeWithVaultAccess<AiConnectionTestResult>("ai_test_profile", {
-        id: profile.id,
-        provider: profile.provider,
-        authMode: profile.auth_mode,
-        baseUrl: profile.base_url?.trim() || null,
-        model: profile.model,
-        temperature: profile.temperature,
-        keepAlive: profile.keep_alive?.trim() || null,
+        id: testedProfile.id,
+        provider: testedProfile.provider,
+        authMode: testedProfile.auth_mode,
+        baseUrl: testedProfile.base_url?.trim() || null,
+        model: testedProfile.model,
+        temperature: testedProfile.temperature,
+        keepAlive: testedProfile.keep_alive?.trim() || null,
       });
       setTestResults((current) => ({ ...current, [profile.id]: result }));
       setStaleHealthIds((current) => {
@@ -377,9 +494,9 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
       try {
         const [nextProfiles] = await Promise.all([
           invoke<AiProfile[]>("ai_list_profiles"),
-          refreshCredentials(profile.id),
+          refreshCredentials(testedProfile.id),
         ]);
-        const persisted = nextProfiles.find((item) => item.id === profile.id);
+        const persisted = nextProfiles.find((item) => item.id === testedProfile.id);
         if (persisted) {
           const health = {
             state: persisted.state,
@@ -390,8 +507,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
           };
           // Preserve unsaved form fields while refreshing only authoritative
           // health metadata written by a test of the saved configuration.
-          setProfiles((current) => updateOne(current, profile.id, health));
-          setSavedProfiles((current) => updateOne(current, profile.id, health));
+          replaceProfiles(updateOne(profilesRef.current, testedProfile.id, health));
+          replaceSavedProfiles(updateOne(savedProfilesRef.current, testedProfile.id, health));
         }
       } catch (refreshError) {
         setError(errorText(refreshError));
@@ -495,7 +612,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
       await prepareVaultForWrite();
       const status = await invoke<OAuthStatus>("openai_oauth_login");
       setOauthStatus(status);
-      await persistProfile(oauthProfile);
+      replaceProfiles(updateOne(profilesRef.current, oauthProfile.id, oauthProfile));
+      await saveProfiles(false);
       markHealthStale(profile.id);
       showSavedToast(t("settings.ai.oauthSuccess"));
     } catch (nextError) {
@@ -511,7 +629,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     try {
       await invokeWithVaultAccess("openai_oauth_logout");
       setOauthStatus({ connected: false, account_id: null });
-      const affectedIds = profiles
+      const affectedIds = profilesRef.current
         .filter((profile) => profile.provider === "openai" && profile.auth_mode === "oauth")
         .map((profile) => profile.id);
       setStaleHealthIds((current) => {

@@ -94,6 +94,7 @@ fn process_data(
             event_name,
             AiStreamChunk {
                 delta: String::new(),
+                reasoning_delta: None,
                 done: true,
                 error: None,
             },
@@ -103,12 +104,30 @@ fn process_data(
 
     let parsed: serde_json::Value = serde_json::from_str(data)
         .map_err(|_| AppError::Ai("AI_STREAM_PROTOCOL_ERROR: invalid JSON event".to_string()))?;
-    if let Some(delta) = parsed["choices"][0]["delta"]["content"].as_str() {
+    let choice_delta = &parsed["choices"][0]["delta"];
+    let reasoning = choice_delta["reasoning_content"]
+        .as_str()
+        .or_else(|| choice_delta["reasoning"].as_str())
+        .or_else(|| choice_delta["thinking"].as_str());
+    if let Some(reasoning) = reasoning.filter(|value| !value.is_empty()) {
+        emitted.store(true, Ordering::Relaxed);
+        let _ = app.emit(
+            event_name,
+            AiStreamChunk {
+                delta: String::new(),
+                reasoning_delta: Some(reasoning.to_string()),
+                done: false,
+                error: None,
+            },
+        );
+    }
+    if let Some(delta) = choice_delta["content"].as_str() {
         emitted.store(true, Ordering::Relaxed);
         let _ = app.emit(
             event_name,
             AiStreamChunk {
                 delta: delta.to_string(),
+                reasoning_delta: None,
                 done: false,
                 error: None,
             },

@@ -88,9 +88,9 @@ export default function ReadingSettings({ settings, loading, refresh, save, show
   const [fontError, setFontError] = useState<string | null>(null);
 
   const fontOptions = [
-    ...fonts.filter((font) => font.group === "system").map((font) => ({ value: font.id, label: `${t("settings.layout.fontGroupSystem")} · ${font.label}` })),
-    ...fonts.filter((font) => font.group === "built-in").map((font) => ({ value: font.id, label: `${t("settings.layout.fontGroupBuiltIn")} · ${font.label}` })),
-    ...fonts.filter((font) => font.group === "custom").map((font) => ({ value: font.id, label: `${t("settings.layout.fontGroupMine")} · ${font.label}` })),
+    ...fonts.filter((font) => font.group === "system").map((font) => ({ value: font.id, label: font.label, group: t("settings.layout.fontGroupSystem") })),
+    ...fonts.filter((font) => font.group === "built-in").map((font) => ({ value: font.id, label: font.label, group: t("settings.layout.fontGroupBuiltIn") })),
+    ...fonts.filter((font) => font.group === "custom").map((font) => ({ value: font.id, label: font.label, group: t("settings.layout.fontGroupMine") })),
   ];
 
   useEffect(() => {
@@ -158,7 +158,7 @@ export default function ReadingSettings({ settings, loading, refresh, save, show
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.fontFamilyHint")}</p>
         </div>
         <Select
-          className="w-[160px] shrink-0"
+          className="w-[190px] shrink-0"
           value={fontFamily}
           onChange={(v) => { setFontFamily(v); save("font_family", v); showSavedToast(); }}
           options={fontOptions}

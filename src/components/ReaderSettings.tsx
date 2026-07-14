@@ -1,8 +1,13 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Sun, Check, ScrollText, BookOpen, File, Files, Loader2, Trash2 } from "lucide-react";
+import { Sun, Check, ScrollText, BookOpen, File, Files, Keyboard, Loader2, MousePointer2, Trash2 } from "lucide-react";
 import Toggle from "./ui/Toggle";
 import Select from "./ui/Select";
+import {
+  bindingFromKeyboardEvent,
+  bindingFromMouseEvent,
+  formatPageTurnBinding,
+} from "./page-turn-bindings";
 import {
   FONT_SIZE_MAX,
   FONT_SIZE_MIN,
@@ -18,6 +23,7 @@ const sliderClass =
 
 export type ReadingMode = "scrolling" | "paginated";
 export type PageColumns = 1 | 2;
+export type PageTurnAnimation = "none" | "slide";
 
 export interface ReaderSettingsState {
   theme: ReaderTheme;
@@ -26,10 +32,15 @@ export interface ReaderSettingsState {
   brightness: number; // 0-100
   readingMode: ReadingMode;
   pageColumns: PageColumns; // 1 = single page, 2 = two pages side by side
+  pageTurnAnimation: PageTurnAnimation;
+  showBookProgress: boolean;
+  showPageNumbers: boolean;
+  previousPageBinding: string;
+  nextPageBinding: string;
   lineSpacing: number; // multiplier, e.g. 1.5
   charSpacing: number; // percentage, 0 = normal
   wordSpacing: number; // percentage, 0 = normal
-  margins: number; // pixels, 0 = none
+  margins: number; // percentage of the available reading width
   showLookupMarkers: boolean;
   showNewVocabMarkers: boolean;
   showLearningMarkers: boolean;
@@ -46,6 +57,84 @@ interface ReaderSettingsProps {
   onClearLookupMarks?: () => Promise<void>;
 }
 
+type BindingDirection = "previous" | "next";
+
+function PageTurnBindingButton({
+  direction,
+  value,
+  active,
+  onActivate,
+  onChange,
+}: {
+  direction: BindingDirection;
+  value: string;
+  active: boolean;
+  onActivate: (direction: BindingDirection | null) => void;
+  onChange: (value: string) => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const suppressContextMenuUntilRef = useRef(0);
+
+  useEffect(() => {
+    if (!active) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onActivate(null);
+        return;
+      }
+      const binding = bindingFromKeyboardEvent(event);
+      if (!binding) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onChange(binding);
+      onActivate(null);
+    };
+    const onMouseDown = (event: MouseEvent) => {
+      const binding = bindingFromMouseEvent(event);
+      if (!binding) return;
+      if (event.button === 2) suppressContextMenuUntilRef.current = Date.now() + 800;
+      event.preventDefault();
+      event.stopPropagation();
+      onChange(binding);
+      onActivate(null);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("mousedown", onMouseDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("mousedown", onMouseDown, true);
+    };
+  }, [active, onActivate, onChange]);
+
+  useEffect(() => {
+    const onContextMenu = (event: MouseEvent) => {
+      if (!active && Date.now() > suppressContextMenuUntilRef.current) return;
+      suppressContextMenuUntilRef.current = 0;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    window.addEventListener("contextmenu", onContextMenu, true);
+    return () => window.removeEventListener("contextmenu", onContextMenu, true);
+  }, [active]);
+
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={() => onActivate(active ? null : direction)}
+      className={`inline-flex h-8 min-w-[92px] items-center justify-center gap-1.5 rounded-md border px-2 text-[12px] font-medium transition-colors ${
+        active
+          ? "border-accent bg-accent-bg text-accent-text"
+          : "border-border bg-bg-input text-text-secondary hover:border-accent/50"
+      }`}
+    >
+      {value.startsWith("mouse:") ? <MousePointer2 size={13} /> : <Keyboard size={13} />}
+      <span>{active ? t("readerSettings.pressBinding") : formatPageTurnBinding(value, i18n.language)}</span>
+    </button>
+  );
+}
+
 export default function ReaderSettings({
   open,
   onClose,
@@ -57,19 +146,28 @@ export default function ReaderSettings({
 }: ReaderSettingsProps) {
   const { t } = useTranslation();
   const popoverRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ top: 0, right: 0 });
+  const [position, setPosition] = useState({ top: 0, right: 8, maxHeight: 0 });
   const [clearLookupConfirm, setClearLookupConfirm] = useState(false);
   const [clearLookupBusy, setClearLookupBusy] = useState(false);
   const [clearLookupError, setClearLookupError] = useState(false);
+  const [capturingBinding, setCapturingBinding] = useState<BindingDirection | null>(null);
 
-  useEffect(() => {
-    if (open && anchorRef.current) {
+  useLayoutEffect(() => {
+    if (!open) return;
+    const updatePosition = () => {
+      if (!anchorRef.current) return;
       const rect = anchorRef.current.getBoundingClientRect();
+      const top = Math.max(8, rect.bottom + 4);
+      const maxRight = Math.max(8, window.innerWidth - 320 - 8);
       setPosition({
-        top: rect.bottom + 4,
-        right: window.innerWidth - rect.right,
+        top,
+        right: Math.max(8, Math.min(window.innerWidth - rect.right, maxRight)),
+        maxHeight: Math.max(0, Math.min(760, window.innerHeight - top - 8)),
       });
-    }
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    return () => window.removeEventListener("resize", updatePosition);
   }, [open, anchorRef]);
 
   useEffect(() => {
@@ -92,11 +190,12 @@ export default function ReaderSettings({
     if (open) return;
     setClearLookupConfirm(false);
     setClearLookupError(false);
+    setCapturingBinding(null);
   }, [open]);
 
-  const update = (partial: Partial<ReaderSettingsState>) => {
+  const update = useCallback((partial: Partial<ReaderSettingsState>) => {
     onSettingsChange({ ...settings, ...partial });
-  };
+  }, [onSettingsChange, settings]);
 
   const themeLabels: Record<string, string> = {
     original: t("readerSettings.themeOriginal"),
@@ -110,8 +209,9 @@ export default function ReaderSettings({
   return (
     <div
       ref={popoverRef}
-      className="fixed z-50 w-[280px] bg-bg-surface border border-border rounded-xl shadow-popover flex flex-col"
-      style={{ top: position.top, right: position.right }}
+      data-reader-settings
+      className="fixed z-50 flex w-[320px] max-w-[calc(100dvw-16px)] flex-col overflow-y-auto rounded-lg border border-border bg-bg-surface shadow-popover"
+      style={{ top: position.top, right: position.right, maxHeight: position.maxHeight }}
     >
       {/* Font size toggle */}
       {capabilities.supportsReflowSettings && (<div className="flex items-center h-[60px] px-4 border-b border-border-light">
@@ -214,7 +314,7 @@ export default function ReaderSettings({
       </div>)}
 
       {/* Page columns — only formats whose renderer supports a spread. */}
-      {capabilities.supportsSpread && (<div className="px-4 py-3 border-b border-border-light">
+      {capabilities.supportsSpread && settings.readingMode === "paginated" && (<div className="px-4 py-3 border-b border-border-light">
         <p className="text-[11px] font-medium text-text-muted tracking-[0.5px] uppercase mb-2">{t("readerSettings.pageLayout")}</p>
         <div className="flex gap-2">
           <button
@@ -241,6 +341,85 @@ export default function ReaderSettings({
           </button>
         </div>
       </div>)}
+
+      {settings.readingMode === "paginated" && (
+        <div className="border-b border-border-light px-4 py-3">
+          <p className="mb-2 text-[11px] font-medium uppercase text-text-muted">{t("readerSettings.pageTurnAnimation")}</p>
+          <Select
+            value={settings.pageTurnAnimation}
+            onChange={(value) => update({ pageTurnAnimation: value as PageTurnAnimation })}
+            options={[
+              { value: "slide", label: t("readerSettings.animationSlide") },
+              { value: "none", label: t("readerSettings.animationNone") },
+            ]}
+          />
+        </div>
+      )}
+
+      <div className="border-b border-border-light px-4 py-3">
+        <p className="mb-2 text-[11px] font-medium uppercase text-text-muted">{t("readerSettings.progressDisplay")}</p>
+        <div className="flex flex-col gap-2.5">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-[13px] text-text-primary">{t("readerSettings.chapterProgressAlways")}</span>
+            <span className="text-[11px] text-text-muted">{t("readerSettings.alwaysOn")}</span>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-[13px] text-text-primary">{t("readerSettings.bookProgress")}</span>
+            <Toggle
+              label={t("readerSettings.bookProgress")}
+              checked={settings.showBookProgress}
+              onChange={(checked) => update({ showBookProgress: checked })}
+            />
+          </div>
+          {settings.readingMode === "paginated" && (
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-[13px] text-text-primary">{t("readerSettings.pageNumbers")}</span>
+              <Toggle
+                label={t("readerSettings.pageNumbers")}
+                checked={settings.showPageNumbers}
+                onChange={(checked) => update({ showPageNumbers: checked })}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="border-b border-border-light px-4 py-3">
+        <p className="text-[11px] font-medium uppercase text-text-muted">{t("readerSettings.pageTurnBindings")}</p>
+        <p className="mb-3 mt-1 text-[11px] leading-4 text-text-muted">{t("readerSettings.pageTurnBindingsHint")}</p>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[13px] text-text-primary">{t("readerSettings.previousPage")}</span>
+            <PageTurnBindingButton
+              direction="previous"
+              value={settings.previousPageBinding}
+              active={capturingBinding === "previous"}
+              onActivate={setCapturingBinding}
+              onChange={(value) => update({
+                previousPageBinding: value,
+                ...(value === settings.nextPageBinding
+                  ? { nextPageBinding: settings.previousPageBinding }
+                  : {}),
+              })}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[13px] text-text-primary">{t("readerSettings.nextPage")}</span>
+            <PageTurnBindingButton
+              direction="next"
+              value={settings.nextPageBinding}
+              active={capturingBinding === "next"}
+              onActivate={setCapturingBinding}
+              onChange={(value) => update({
+                nextPageBinding: value,
+                ...(value === settings.previousPageBinding
+                  ? { previousPageBinding: settings.nextPageBinding }
+                  : {}),
+              })}
+            />
+          </div>
+        </div>
+      </div>
 
       {capabilities.supportsReflowSettings && (<div className="px-4 py-3 flex flex-col gap-4">
         <p className="text-[11px] font-medium text-text-muted tracking-[0.5px] uppercase">{t("readerSettings.layout")}</p>
@@ -300,12 +479,12 @@ export default function ReaderSettings({
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between">
             <span className="text-[13px] font-medium text-text-primary">{t("readerSettings.margins")}</span>
-            <span className="text-[13px] text-text-muted">{settings.margins}px</span>
+            <span className="text-[13px] text-text-muted">{settings.margins}%</span>
           </div>
           <input
             type="range"
             min={0}
-            max={120}
+            max={30}
             step={1}
             value={settings.margins}
             onChange={(e) => update({ margins: Number(e.target.value) })}

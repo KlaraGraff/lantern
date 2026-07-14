@@ -5,6 +5,7 @@ import { ChevronDown, Check } from "lucide-react";
 interface SelectOption {
   value: string;
   label: string;
+  group?: string;
 }
 
 interface SelectProps {
@@ -18,6 +19,7 @@ interface SelectProps {
 
 const MENU_GAP = 4;
 const OPTION_HEIGHT = 40;
+const GROUP_HEIGHT = 24;
 const VIEWPORT_MARGIN = 8;
 
 export default function Select({ label, value, onChange, options, className = "", placeholder = "" }: SelectProps) {
@@ -28,6 +30,7 @@ export default function Select({ label, value, onChange, options, className = ""
   const [menuStyle, setMenuStyle] = useState<CSSProperties>();
 
   const selected = options.find((o) => o.value === value);
+  const groupCount = new Set(options.map((option) => option.group).filter(Boolean)).size;
 
   const handleClickOutside = useCallback(
     (e: MouseEvent) => {
@@ -60,7 +63,7 @@ export default function Select({ label, value, onChange, options, className = ""
   useLayoutEffect(() => {
     if (!open || !buttonRef.current) return;
     const rect = buttonRef.current.getBoundingClientRect();
-    const menuHeight = options.length * OPTION_HEIGHT + 2;
+    const menuHeight = options.length * OPTION_HEIGHT + groupCount * GROUP_HEIGHT + 2;
     const spaceBelow = window.innerHeight - rect.bottom - MENU_GAP - VIEWPORT_MARGIN;
     const spaceAbove = rect.top - MENU_GAP - VIEWPORT_MARGIN;
     const openUp = menuHeight > spaceBelow && spaceAbove > spaceBelow;
@@ -72,7 +75,7 @@ export default function Select({ label, value, onChange, options, className = ""
         ? { bottom: window.innerHeight - rect.top + MENU_GAP }
         : { top: rect.bottom + MENU_GAP }),
     });
-  }, [open, options.length]);
+  }, [groupCount, open, options.length]);
 
   return (
     <div className={`relative ${className}`} ref={ref}>
@@ -87,8 +90,8 @@ export default function Select({ label, value, onChange, options, className = ""
         onClick={() => setOpen((v) => !v)}
         className="w-full h-9 bg-bg-input rounded-lg px-3 text-[13px] font-medium text-text-primary flex items-center justify-between cursor-pointer border border-transparent hover:border-border transition-colors"
       >
-        <span>{selected?.label ?? placeholder}</span>
-        <ChevronDown size={16} className={`text-text-muted transition-transform ${open ? "rotate-180" : ""}`} />
+        <span className="min-w-0 truncate text-left">{selected?.label ?? placeholder}</span>
+        <ChevronDown size={16} className={`shrink-0 text-text-muted transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && menuStyle &&
@@ -103,25 +106,32 @@ export default function Select({ label, value, onChange, options, className = ""
             onMouseDown={(e) => e.stopPropagation()}
             className="fixed z-[70] bg-bg-surface border border-border rounded-xl shadow-popover overflow-y-auto"
           >
-            {options.map((option) => {
+            {options.map((option, index) => {
               const isActive = option.value === value;
+              const showGroup = option.group && option.group !== options[index - 1]?.group;
               return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => {
-                    onChange(option.value);
-                    setOpen(false);
-                  }}
-                  className={`w-full flex items-center justify-between px-4 h-10 text-[14px] cursor-pointer transition-colors ${
-                    isActive
-                      ? "bg-accent-bg text-accent-text"
-                      : "text-text-primary hover:bg-bg-input"
-                  }`}
-                >
-                  <span>{option.label}</span>
-                  {isActive && <Check size={16} className="text-accent-text" />}
-                </button>
+                <div key={option.value}>
+                  {showGroup && (
+                    <div className="flex h-6 items-end px-4 pb-1 text-[10px] font-medium text-text-muted">
+                      {option.group}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange(option.value);
+                      setOpen(false);
+                    }}
+                    className={`flex h-10 w-full cursor-pointer items-center justify-between gap-3 px-4 text-[14px] transition-colors ${
+                      isActive
+                        ? "bg-accent-bg text-accent-text"
+                        : "text-text-primary hover:bg-bg-input"
+                    }`}
+                  >
+                    <span className="min-w-0 truncate text-left">{option.label}</span>
+                    {isActive && <Check size={16} className="shrink-0 text-accent-text" />}
+                  </button>
+                </div>
               );
             })}
           </div>,

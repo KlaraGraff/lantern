@@ -10,7 +10,7 @@ interface AiPanelProps {
   bookTitle?: string;
   bookAuthor?: string;
   currentChapter?: string;
-  context?: { text: string; cfi?: string };
+  context?: { text: string; cfi?: string; analysis?: string };
   initialChatId?: string;
   onContextConsumed?: () => void;
   onNavigateToCfi?: (cfi: string) => void;
@@ -30,12 +30,14 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
   } = useAiChat(bookId, { title: bookTitle, author: bookAuthor, chapter: currentChapter });
 
   const [input, setInput] = useState("");
-  const [pendingQuote, setPendingQuote] = useState<{ text: string; cfi?: string } | undefined>();
+  const [pendingQuote, setPendingQuote] = useState<{ text: string; cfi?: string; analysis?: string } | undefined>();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [newChatFlash, setNewChatFlash] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
+  const followMessagesRef = useRef(true);
+  const scrollFrameRef = useRef<number | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   const currentChat = chats.find((c) => c.id === chatId);
@@ -54,10 +56,26 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
     }
   }, [initialChatId, chats.length, loadChat]);
 
-  // Auto-scroll to bottom on new messages
+  // A direct, frame-coalesced scroll avoids starting a smooth-scroll animation
+  // for every streamed token. Stop following as soon as the reader scrolls up.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    followMessagesRef.current = true;
+  }, [chatId]);
+
+  useEffect(() => {
+    if (!followMessagesRef.current || scrollFrameRef.current !== null) return;
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      const element = messagesScrollRef.current;
+      if (element && followMessagesRef.current) {
+        element.scrollTop = element.scrollHeight;
+      }
+    });
+  }, [messages, chatId]);
+
+  useEffect(() => () => {
+    if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
+  }, []);
 
   // Handle context from the "Quote" context-menu action — pin it as a pending
   // quote chip above the composer. Does NOT reset the chat or auto-send: the
@@ -79,7 +97,8 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
 
   const handleSend = () => {
     if (!input.trim() || streaming || initializing) return;
-    send(input.trim(), pendingQuote?.text, pendingQuote?.cfi);
+    followMessagesRef.current = true;
+    send(input.trim(), pendingQuote?.text, pendingQuote?.cfi, pendingQuote?.analysis);
     setPendingQuote(undefined);
     setInput("");
   };
@@ -219,7 +238,15 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-auto px-4 py-4" onClick={() => pickerOpen && setPickerOpen(false)}>
+      <div
+        ref={messagesScrollRef}
+        className="flex-1 overflow-auto px-4 py-4"
+        onScroll={(event) => {
+          const element = event.currentTarget;
+          followMessagesRef.current = element.scrollHeight - element.scrollTop - element.clientHeight <= 72;
+        }}
+        onClick={() => pickerOpen && setPickerOpen(false)}
+      >
         {messages.length === 0 ? (
           /* Empty state */
           <div className={`flex flex-col items-center justify-center h-full gap-3 transition-opacity duration-300 ${newChatFlash ? "opacity-0" : "opacity-100"}`}>
@@ -238,7 +265,8 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
                   key={prompt}
                   onClick={() => {
                     if (initializing) return;
-                    send(prompt, pendingQuote?.text, pendingQuote?.cfi);
+                    followMessagesRef.current = true;
+                    send(prompt, pendingQuote?.text, pendingQuote?.cfi, pendingQuote?.analysis);
                     setPendingQuote(undefined);
                   }}
                   disabled={initializing}
@@ -254,7 +282,7 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
             {messages.map((msg) => (
               <MessageBubble key={msg.id} msg={msg} messages={messages} streaming={streaming} onNavigateToCfi={onNavigateToCfi} />
             ))}
-            <div ref={messagesEndRef} />
+            <div />
           </div>
         )}
       </div>

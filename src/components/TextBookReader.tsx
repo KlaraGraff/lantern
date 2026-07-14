@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getFontFamily, getThemeStyles } from "./reader-settings";
+import { getEffectivePageColumns, getFontFamily, getThemeStyles } from "./reader-settings";
 import {
   effectiveAutomaticMarkerStyle,
   markerFontFamily,
   markerStyleCss,
   type MarkerStyleConfigV1,
 } from "./marker-style";
-import type { ReaderSettingsState } from "./ReaderSettings";
+import type { PageColumns, ReaderSettingsState } from "./ReaderSettings";
 import type { Highlight } from "../hooks/useBookmarks";
 import {
   classifySelection,
@@ -32,14 +32,34 @@ interface TextBookReaderProps {
   initialLocation?: string | null;
   settings: ReaderSettingsState;
   onReady: (document: TextBookDocument) => void;
-  onProgress: (progress: number, location: string, tocIndex: number) => void;
+  onProgress: (
+    progress: number,
+    location: string,
+    tocIndex: number,
+    details?: TextBookProgressDetails,
+  ) => void;
   onInteraction: (interaction: ReaderInteraction) => void;
   onError: (error: string) => void;
   onRegisterNavigation: (navigate: (location: string, flash?: boolean) => void) => void;
+  onRegisterPageNavigation?: (navigation: TextBookPageNavigation) => void;
   onHighlightClick: (highlight: Highlight, rect: DOMRect, fallbackText?: string) => void;
   singleWordClickAction?: "menu" | "none";
   doubleClickQuickLookup?: boolean;
   markerStyle: MarkerStyleConfigV1;
+}
+
+export interface TextBookPageNavigation {
+  prev: () => void;
+  next: () => void;
+}
+
+export interface TextBookProgressDetails {
+  chapterProgress: number;
+  page?: {
+    current: number;
+    visibleEnd: number;
+    total: number;
+  };
 }
 
 interface WordMarkRule {
@@ -131,7 +151,7 @@ function rectAtRenderedOffset(element: HTMLElement, renderedOffset: number): DOM
   return usableRangeRect(range);
 }
 
-function renderedOffsetFromCaretPoint(element: HTMLElement, x: number, y: number): number | null {
+function domPositionFromPoint(x: number, y: number): DomTextPosition | null {
   const caretDocument = document as Document & {
     caretPositionFromPoint?: (
       x: number,
@@ -140,12 +160,17 @@ function renderedOffsetFromCaretPoint(element: HTMLElement, x: number, y: number
     caretRangeFromPoint?: (x: number, y: number) => Range | null;
   };
   const caretPosition = caretDocument.caretPositionFromPoint?.(x, y);
-  if (caretPosition && (caretPosition.offsetNode === element || element.contains(caretPosition.offsetNode))) {
-    return textOffsetInBlock(element, caretPosition.offsetNode, caretPosition.offset);
-  }
+  if (caretPosition) return { node: caretPosition.offsetNode, offset: caretPosition.offset };
   const caretRange = caretDocument.caretRangeFromPoint?.(x, y);
-  if (caretRange && (caretRange.startContainer === element || element.contains(caretRange.startContainer))) {
-    return textOffsetInBlock(element, caretRange.startContainer, caretRange.startOffset);
+  return caretRange
+    ? { node: caretRange.startContainer, offset: caretRange.startOffset }
+    : null;
+}
+
+function renderedOffsetFromCaretPoint(element: HTMLElement, x: number, y: number): number | null {
+  const position = domPositionFromPoint(x, y);
+  if (position && (position.node === element || element.contains(position.node))) {
+    return textOffsetInBlock(element, position.node, position.offset);
   }
   return null;
 }
@@ -273,16 +298,18 @@ function renderHighlightedBlock(
     })
     .sort((a, b) => a.start - b.start || a.end - b.end || a.priority - b.priority);
 
-  const wholeBookAutomaticRanges = lexicalSegmentsForText(block.text).flatMap((segment) => {
-    const word = normalizeInteractionText(segment.segment);
-    if (!automaticWords.has(word)) return [];
-    const end = segment.index + segment.segment.length;
-    const location = textLocation(
-      renderedOffsetToSourceOffset(block, segment.index, "start"),
-      renderedOffsetToSourceOffset(block, end, "end"),
-    );
-    return automaticExceptions.has(`${word}\0${location}`) ? [] : [{ start: segment.index, end }];
-  });
+  const wholeBookAutomaticRanges = automaticWords.size === 0
+    ? []
+    : lexicalSegmentsForBlock(block).flatMap((segment) => {
+        const word = normalizeInteractionText(segment.segment);
+        if (!automaticWords.has(word)) return [];
+        const end = segment.index + segment.segment.length;
+        const location = textLocation(
+          renderedOffsetToSourceOffset(block, segment.index, "start"),
+          renderedOffsetToSourceOffset(block, end, "end"),
+        );
+        return automaticExceptions.has(`${word}\0${location}`) ? [] : [{ start: segment.index, end }];
+      });
   const occurrenceAutomaticRanges = lookupOccurrenceMarks.flatMap((mark) => {
     if (!mark.enabled) return [];
     const location = resolveTextLocation(mark.location, document);
@@ -391,30 +418,106 @@ function renderHighlightedBlock(
   return nodes;
 }
 
-function lexicalSegmentsForText(text: string) {
-  const Segmenter = (Intl as typeof Intl & {
-    Segmenter?: new (locale?: string, options?: { granularity: "word" }) => {
-      segment(value: string): Iterable<{ segment: string; index: number; isWordLike?: boolean }>;
-    };
-  }).Segmenter;
-  if (Segmenter) {
-    return Array.from(new Segmenter(undefined, { granularity: "word" }).segment(text))
-      .filter((segment) => segment.isWordLike);
-  }
-  return Array.from(text.matchAll(/[\p{L}\p{M}\p{N}]+(?:['’][\p{L}\p{M}\p{N}]+)*/gu))
-    .map((match) => ({ segment: match[0], index: match.index ?? 0 }));
+interface LexicalSegment {
+  segment: string;
+  index: number;
+  isWordLike?: boolean;
+}
+
+const Segmenter = (Intl as typeof Intl & {
+  Segmenter?: new (locale?: string, options?: { granularity: "word" }) => {
+    segment(value: string): Iterable<LexicalSegment>;
+  };
+}).Segmenter;
+const wordSegmenter = Segmenter ? new Segmenter(undefined, { granularity: "word" }) : null;
+const lexicalSegmentCache = new WeakMap<TextBookBlock, LexicalSegment[]>();
+
+function lexicalSegmentsForBlock(block: TextBookBlock) {
+  const cached = lexicalSegmentCache.get(block);
+  if (cached) return cached;
+  const segments = wordSegmenter
+    ? Array.from(wordSegmenter.segment(block.text))
+      .filter((segment) => segment.isWordLike)
+    : Array.from(block.text.matchAll(/[\p{L}\p{M}\p{N}]+(?:['’][\p{L}\p{M}\p{N}]+)*/gu))
+      .map((match) => ({ segment: match[0], index: match.index ?? 0 }));
+  lexicalSegmentCache.set(block, segments);
+  return segments;
 }
 
 function tocIndexAtOffset(document: TextBookDocument, sourceOffset: number) {
+  let low = 0;
+  let high = document.toc.length - 1;
   let current = 0;
-  for (let index = 0; index < document.toc.length; index += 1) {
-    if (document.toc[index].source_offset > sourceOffset) break;
-    current = index;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (document.toc[middle].source_offset <= sourceOffset) {
+      current = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
   }
   return current;
 }
 
-export default function TextBookReader({
+function chapterProgressAtOffset(
+  document: TextBookDocument,
+  tocIndex: number,
+  sourceOffset: number,
+  sourceEnd: number,
+) {
+  const chapterStart = document.toc[tocIndex]?.source_offset ?? 0;
+  let chapterEnd = sourceEnd;
+  for (let index = tocIndex + 1; index < document.toc.length; index += 1) {
+    if (document.toc[index].source_offset > chapterStart) {
+      chapterEnd = document.toc[index].source_offset;
+      break;
+    }
+  }
+  const fraction = (sourceOffset - chapterStart) / Math.max(1, chapterEnd - chapterStart);
+  return Math.min(100, Math.max(0, Math.round(fraction * 100)));
+}
+
+interface RenderedBlockEntry {
+  element: HTMLElement;
+  block: TextBookBlock;
+  top: number;
+  bottom: number;
+}
+
+function blockIndexAtOffset(blocks: TextBookBlock[], sourceOffset: number) {
+  let low = 0;
+  let high = blocks.length - 1;
+  let result = blocks.length - 1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (blocks[middle].source_end > sourceOffset) {
+      result = middle;
+      high = middle - 1;
+    } else {
+      low = middle + 1;
+    }
+  }
+  return Math.max(0, result);
+}
+
+function visibleBlockIndex(entries: RenderedBlockEntry[], targetTop: number) {
+  let low = 0;
+  let high = entries.length - 1;
+  let result = 0;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    if (entries[middle].bottom > targetTop) {
+      result = middle;
+      high = middle - 1;
+    } else {
+      low = middle + 1;
+    }
+  }
+  return result;
+}
+
+function TextBookReader({
   bookId,
   initialLocation,
   settings,
@@ -423,6 +526,7 @@ export default function TextBookReader({
   onInteraction,
   onError,
   onRegisterNavigation,
+  onRegisterPageNavigation,
   onHighlightClick,
   singleWordClickAction = "menu",
   doubleClickQuickLookup = true,
@@ -435,6 +539,13 @@ export default function TextBookReader({
   const [lookupOccurrenceMarks, setLookupOccurrenceMarks] = useState<LookupOccurrenceMark[]>([]);
   const [preparationPending, setPreparationPending] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const articleRef = useRef<HTMLElement>(null);
+  const renderedBlocksRef = useRef<RenderedBlockEntry[]>([]);
+  const renderedElementsByStartRef = useRef(new Map<number, HTMLElement>());
+  const layoutFrameRef = useRef<number | null>(null);
+  const scrollFrameRef = useRef<number | null>(null);
+  const paginationSettleTimerRef = useRef<number | null>(null);
+  const wheelTurnLockedUntilRef = useRef(0);
   const initialLocationRef = useRef(initialLocation);
   const progressReadyRef = useRef(false);
   const loadGenerationRef = useRef(0);
@@ -446,9 +557,18 @@ export default function TextBookReader({
   const selectionMenuTimerRef = useRef<number | null>(null);
   const forceClickSuppressedUntilRef = useRef(0);
   const [flashOffset, setFlashOffset] = useState<number | null>(null);
+  const isPaginated = settings.readingMode === "paginated";
+  const [effectivePageColumns, setEffectivePageColumns] = useState<PageColumns>(() => (
+    isPaginated ? settings.pageColumns : 1
+  ));
+  const pageTurnAnimation = settings.pageTurnAnimation;
   const documentBlocks = useMemo(
     () => document?.chunks.flatMap((chunk) => chunk.blocks) ?? [],
     [document],
+  );
+  const documentBlocksByStart = useMemo(
+    () => new Map(documentBlocks.map((block) => [block.source_start, block])),
+    [documentBlocks],
   );
   const readerFontFamily = getFontFamily(settings.font);
   const automaticWordSet = useMemo(
@@ -465,6 +585,26 @@ export default function TextBookReader({
     () => settings.showLookupMarkers ? lookupOccurrenceMarks : [],
     [lookupOccurrenceMarks, settings.showLookupMarkers],
   );
+
+  const updateEffectivePageColumns = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const next = getEffectivePageColumns(
+      { readingMode: settings.readingMode, pageColumns: settings.pageColumns },
+      container.clientWidth,
+      container.clientHeight,
+    );
+    setEffectivePageColumns((current) => current === next ? current : next);
+  }, [settings.pageColumns, settings.readingMode]);
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    updateEffectivePageColumns();
+    const observer = new ResizeObserver(updateEffectivePageColumns);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [updateEffectivePageColumns]);
 
   const refreshHighlights = useCallback(async () => {
     const generation = loadGenerationRef.current;
@@ -574,6 +714,130 @@ export default function TextBookReader({
     };
   }, [bookId, loadDocument, onError, refreshHighlights, refreshWordMarks]);
 
+  const updateRenderedBlockCache = useCallback(() => {
+    const container = containerRef.current;
+    const article = articleRef.current;
+    if (!container || !article) return;
+
+    const marginPercent = Math.min(30, Math.max(0, settings.margins));
+    if (isPaginated) {
+      if (container.scrollTop !== 0) container.scrollTop = 0;
+      const pageSlotWidth = container.clientWidth / effectivePageColumns;
+      const pageMargin = Math.max(12, pageSlotWidth * marginPercent / 100);
+      // The live reader viewport is the hard upper bound. A fixed minimum here
+      // would make narrow two-page layouts wider than their allocated slot.
+      const columnWidth = Math.max(1, pageSlotWidth - pageMargin * 2);
+      const columnGap = pageMargin * 2;
+      const widthValue = `${columnWidth}px`;
+      const gapValue = `${columnGap}px`;
+      if (article.style.columnWidth !== widthValue) article.style.columnWidth = widthValue;
+      if (article.style.columnGap !== gapValue) article.style.columnGap = gapValue;
+    } else {
+      if (container.scrollLeft !== 0) container.scrollLeft = 0;
+      article.style.removeProperty("column-width");
+      article.style.removeProperty("column-gap");
+    }
+
+    const elements = Array.from(article.querySelectorAll<HTMLElement>(
+      "[data-text-source-start][data-text-source-end]",
+    ));
+    const byStart = new Map<number, HTMLElement>();
+    const containerRect = container.getBoundingClientRect();
+    const scrollTop = container.scrollTop;
+    const entries = elements.flatMap((element) => {
+      const start = Number(element.dataset.textSourceStart);
+      const block = documentBlocksByStart.get(start);
+      if (!block) return [];
+      byStart.set(start, element);
+      if (isPaginated) return [{ element, block, top: 0, bottom: 0 }];
+      const rect = element.getBoundingClientRect();
+      return [{
+        element,
+        block,
+        top: rect.top - containerRect.top + scrollTop,
+        bottom: rect.bottom - containerRect.top + scrollTop,
+      }];
+    });
+    renderedElementsByStartRef.current = byStart;
+    renderedBlocksRef.current = entries;
+  }, [documentBlocksByStart, effectivePageColumns, isPaginated, settings.margins]);
+
+  const scheduleRenderedBlockCacheUpdate = useCallback(() => {
+    if (layoutFrameRef.current !== null) return;
+    layoutFrameRef.current = requestAnimationFrame(() => {
+      layoutFrameRef.current = null;
+      updateRenderedBlockCache();
+    });
+  }, [updateRenderedBlockCache]);
+
+  useEffect(() => {
+    if (!document || !containerRef.current || !articleRef.current) return;
+    scheduleRenderedBlockCacheUpdate();
+    const observer = new ResizeObserver(scheduleRenderedBlockCacheUpdate);
+    observer.observe(containerRef.current);
+    observer.observe(articleRef.current);
+    window.document.fonts?.addEventListener?.("loadingdone", scheduleRenderedBlockCacheUpdate);
+    window.addEventListener("resize", scheduleRenderedBlockCacheUpdate);
+    return () => {
+      observer.disconnect();
+      window.document.fonts?.removeEventListener?.("loadingdone", scheduleRenderedBlockCacheUpdate);
+      window.removeEventListener("resize", scheduleRenderedBlockCacheUpdate);
+      if (layoutFrameRef.current !== null) {
+        cancelAnimationFrame(layoutFrameRef.current);
+        layoutFrameRef.current = null;
+      }
+      renderedBlocksRef.current = [];
+      renderedElementsByStartRef.current.clear();
+    };
+  }, [document, scheduleRenderedBlockCacheUpdate]);
+
+  const paginationInfo = useCallback(() => {
+    const container = containerRef.current;
+    if (!container || !isPaginated) return undefined;
+    const viewportWidth = Math.max(1, container.clientWidth);
+    const pageSlotWidth = viewportWidth / effectivePageColumns;
+    const total = Math.max(1, Math.ceil((container.scrollWidth - 1) / pageSlotWidth));
+    const current = Math.min(total, Math.max(1, Math.round(container.scrollLeft / pageSlotWidth) + 1));
+    return {
+      current,
+      visibleEnd: Math.min(total, current + effectivePageColumns - 1),
+      total,
+    };
+  }, [effectivePageColumns, isPaginated]);
+
+  const scrollToSpread = useCallback((spreadIndex: number, behavior?: ScrollBehavior) => {
+    const container = containerRef.current;
+    if (!container || !isPaginated) return;
+    const viewportWidth = Math.max(1, container.clientWidth);
+    const maximumIndex = Math.max(0, Math.ceil(container.scrollWidth / viewportWidth) - 1);
+    const targetIndex = Math.min(maximumIndex, Math.max(0, spreadIndex));
+    container.scrollTo({
+      left: targetIndex * viewportWidth,
+      behavior: behavior ?? (pageTurnAnimation === "slide" ? "smooth" : "auto"),
+    });
+  }, [isPaginated, pageTurnAnimation]);
+
+  const navigateByPage = useCallback((direction: -1 | 1) => {
+    const container = containerRef.current;
+    if (!container) return;
+    if (isPaginated) {
+      const currentSpread = Math.round(container.scrollLeft / Math.max(1, container.clientWidth));
+      scrollToSpread(currentSpread + direction);
+      return;
+    }
+    container.scrollBy({
+      top: direction * Math.max(1, container.clientHeight - 64),
+      behavior: pageTurnAnimation === "slide" ? "smooth" : "auto",
+    });
+  }, [isPaginated, pageTurnAnimation, scrollToSpread]);
+
+  useEffect(() => {
+    onRegisterPageNavigation?.({
+      prev: () => navigateByPage(-1),
+      next: () => navigateByPage(1),
+    });
+  }, [navigateByPage, onRegisterPageNavigation]);
+
   const navigateToLocation = useCallback((
     location: string,
     flash = false,
@@ -582,35 +846,41 @@ export default function TextBookReader({
     if (!document || !containerRef.current) return null;
     const resolved = resolveTextLocation(location, document);
     if (!resolved) return null;
-    const blocks = [...containerRef.current.querySelectorAll<HTMLElement>(
-      "[data-text-source-start][data-text-source-end]",
-    )];
-    const target = blocks.find((block) => {
-      const range = blockRange(block);
-      return range && range.start <= resolved.start && range.end > resolved.start;
-    }) ?? blocks.find((block) => {
-      const range = blockRange(block);
-      return range && range.start >= resolved.start;
-    }) ?? blocks[blocks.length - 1];
+    if (renderedElementsByStartRef.current.size === 0) updateRenderedBlockCache();
+    const targetBlock = documentBlocks[blockIndexAtOffset(documentBlocks, resolved.start)];
+    const target = targetBlock
+      ? renderedElementsByStartRef.current.get(targetBlock.source_start)
+      : undefined;
     if (!target) return null;
-    const targetRange = blockRange(target);
-    const targetBlock = targetRange
-      ? documentBlocks.find((block) => (
-          block.source_start === targetRange.start && block.source_end === targetRange.end
-        ))
-      : null;
     const renderedOffset = targetBlock
       ? sourceOffsetToRenderedOffset(targetBlock, resolved.start)
       : 0;
     initialLocationRef.current = textLocation(resolved.start);
-    scrollRenderedOffsetIntoView(containerRef.current, target, renderedOffset, behavior);
+    if (isPaginated) {
+      const targetRect = rectAtRenderedOffset(target, renderedOffset) ?? target.getBoundingClientRect();
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const viewportWidth = Math.max(1, containerRef.current.clientWidth);
+      const pageSlotWidth = viewportWidth / effectivePageColumns;
+      const targetLeft = containerRef.current.scrollLeft + targetRect.left - containerRect.left;
+      const physicalPage = Math.max(0, Math.floor(targetLeft / Math.max(1, pageSlotWidth)));
+      scrollToSpread(Math.floor(physicalPage / effectivePageColumns), behavior);
+    } else {
+      scrollRenderedOffsetIntoView(containerRef.current, target, renderedOffset, behavior);
+    }
     if (flash) {
       setFlashOffset(resolved.start);
       if (flashTimerRef.current !== null) window.clearTimeout(flashTimerRef.current);
       flashTimerRef.current = window.setTimeout(() => setFlashOffset(null), 3000);
     }
     return resolved;
-  }, [document, documentBlocks]);
+  }, [
+    document,
+    documentBlocks,
+    effectivePageColumns,
+    isPaginated,
+    scrollToSpread,
+    updateRenderedBlockCache,
+  ]);
 
   useEffect(() => {
     onRegisterNavigation(navigateToLocation);
@@ -637,10 +907,15 @@ export default function TextBookReader({
           const normalizedLocation = textLocation(sourceOffset);
           initialLocationRef.current = normalizedLocation;
           const progress = Math.round((sourceOffset / Math.max(1, sourceEnd)) * 100);
+          const tocIndex = tocIndexAtOffset(document, sourceOffset);
           onProgress(
             Math.min(100, Math.max(0, progress)),
             normalizedLocation,
-            tocIndexAtOffset(document, sourceOffset),
+            tocIndex,
+            {
+              chapterProgress: chapterProgressAtOffset(document, tocIndex, sourceOffset, sourceEnd),
+              page: paginationInfo(),
+            },
           );
         }
         progressReadyRef.current = true;
@@ -651,47 +926,146 @@ export default function TextBookReader({
       cancelAnimationFrame(frame);
       if (settleFrame) cancelAnimationFrame(settleFrame);
     };
-  }, [document, documentBlocks, navigateToLocation, onProgress]);
+  }, [document, documentBlocks, navigateToLocation, onProgress, paginationInfo]);
 
-  const handleScroll = useCallback(() => {
+  const reportScrollProgress = useCallback(() => {
     const container = containerRef.current;
     if (!container || !document || !progressReadyRef.current) return;
-    const blocks = [...container.querySelectorAll<HTMLElement>("[data-text-source-start][data-text-source-end]")];
     const containerRect = container.getBoundingClientRect();
-    const visible = blocks.find((block) => block.getBoundingClientRect().bottom > containerRect.top + 24)
-      ?? blocks[0];
-    const range = visible ? blockRange(visible) : null;
-    if (!range) return;
-    const block = documentBlocks.find((candidate) => (
-      candidate.source_start === range.start && candidate.source_end === range.end
-    ));
-    let sourceOffset = range.start;
-    if (visible && block) {
-      const blockRect = visible.getBoundingClientRect();
-      const sampleY = Math.min(
-        Math.max(containerRect.top + 24, blockRect.top + 1),
-        Math.min(containerRect.bottom - 1, blockRect.bottom - 1),
-      );
-      const sampleX = Math.min(
-        Math.max(containerRect.left + 1, blockRect.left + 2),
-        Math.min(containerRect.right - 1, blockRect.right - 2),
-      );
-      const renderedOffset = renderedOffsetNearPoint(visible, sampleX, sampleY);
-      sourceOffset = renderedOffsetToSourceOffset(block, renderedOffset, "start");
+    let sourceOffset: number | null = null;
+
+    if (isPaginated) {
+      const marginPercent = Math.min(30, Math.max(0, settings.margins));
+      const pageSlotWidth = container.clientWidth / effectivePageColumns;
+      const pageMargin = Math.max(12, pageSlotWidth * marginPercent / 100);
+      const sampleX = Math.min(containerRect.right - 2, containerRect.left + pageMargin + 2);
+      const contentTop = containerRect.top + 48;
+      const sampleYs = [
+        contentTop + 2,
+        contentTop + 24,
+        contentTop + 64,
+        containerRect.top + container.clientHeight * 0.3,
+        containerRect.top + container.clientHeight * 0.5,
+      ].filter((value) => value < containerRect.bottom - 2);
+      for (const sampleY of sampleYs) {
+        const position = domPositionFromPoint(sampleX, sampleY);
+        const element = position ? blockFromNode(position.node) : null;
+        const range = element ? blockRange(element) : null;
+        const block = range ? documentBlocksByStart.get(range.start) : null;
+        if (!position || !element || !block) continue;
+        const renderedOffset = textOffsetInBlock(element, position.node, position.offset);
+        sourceOffset = renderedOffsetToSourceOffset(block, renderedOffset, "start");
+        break;
+      }
+    } else {
+      if (renderedBlocksRef.current.length === 0) updateRenderedBlockCache();
+      const entries = renderedBlocksRef.current;
+      const visible = entries[visibleBlockIndex(entries, container.scrollTop + 24)];
+      if (visible) {
+        const blockRect = visible.element.getBoundingClientRect();
+        const sampleY = Math.min(
+          Math.max(containerRect.top + 24, blockRect.top + 1),
+          Math.min(containerRect.bottom - 1, blockRect.bottom - 1),
+        );
+        const sampleX = Math.min(
+          Math.max(containerRect.left + 1, blockRect.left + 2),
+          Math.min(containerRect.right - 1, blockRect.right - 2),
+        );
+        const renderedOffset = renderedOffsetNearPoint(visible.element, sampleX, sampleY);
+        sourceOffset = renderedOffsetToSourceOffset(visible.block, renderedOffset, "start");
+      }
     }
+
     const sourceEnd = documentBlocks[documentBlocks.length - 1]?.source_end ?? 0;
-    const atEnd = container.scrollTop >= container.scrollHeight - container.clientHeight - 1;
+    const atEnd = isPaginated
+      ? container.scrollLeft >= container.scrollWidth - container.clientWidth - 1
+      : container.scrollTop >= container.scrollHeight - container.clientHeight - 1;
+    if (sourceOffset === null) {
+      const numerator = isPaginated ? container.scrollLeft : container.scrollTop;
+      const denominator = isPaginated
+        ? container.scrollWidth - container.clientWidth
+        : container.scrollHeight - container.clientHeight;
+      sourceOffset = Math.round((numerator / Math.max(1, denominator)) * sourceEnd);
+    }
+    sourceOffset = atEnd ? sourceEnd : Math.min(sourceEnd, Math.max(0, sourceOffset));
     const progress = atEnd
       ? 100
       : Math.round((sourceOffset / Math.max(1, sourceEnd)) * 100);
     const location = textLocation(sourceOffset);
     initialLocationRef.current = location;
+    const tocIndex = tocIndexAtOffset(document, sourceOffset);
     onProgress(
       Math.min(100, Math.max(0, progress)),
       location,
-      tocIndexAtOffset(document, sourceOffset),
+      tocIndex,
+      {
+        chapterProgress: chapterProgressAtOffset(document, tocIndex, sourceOffset, sourceEnd),
+        page: paginationInfo(),
+      },
     );
-  }, [document, documentBlocks, onProgress]);
+  }, [
+    document,
+    documentBlocks,
+    documentBlocksByStart,
+    effectivePageColumns,
+    isPaginated,
+    onProgress,
+    paginationInfo,
+    settings.margins,
+    updateRenderedBlockCache,
+  ]);
+
+  const scheduleScrollProgress = useCallback(() => {
+    if (scrollFrameRef.current !== null) return;
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      reportScrollProgress();
+    });
+  }, [reportScrollProgress]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      scheduleScrollProgress();
+      if (!isPaginated) return;
+      if (paginationSettleTimerRef.current !== null) {
+        window.clearTimeout(paginationSettleTimerRef.current);
+      }
+      paginationSettleTimerRef.current = window.setTimeout(() => {
+        paginationSettleTimerRef.current = null;
+        const spread = Math.round(container.scrollLeft / Math.max(1, container.clientWidth));
+        scrollToSpread(spread);
+      }, 140);
+    };
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener("scroll", handleScroll);
+      if (scrollFrameRef.current !== null) {
+        cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
+      if (paginationSettleTimerRef.current !== null) {
+        window.clearTimeout(paginationSettleTimerRef.current);
+        paginationSettleTimerRef.current = null;
+      }
+    };
+  }, [isPaginated, scheduleScrollProgress, scrollToSpread]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !isPaginated) return;
+    const handleWheel = (event: WheelEvent) => {
+      if (event.ctrlKey) return;
+      event.preventDefault();
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (Math.abs(delta) < 4 || Date.now() < wheelTurnLockedUntilRef.current) return;
+      wheelTurnLockedUntilRef.current = Date.now() + 360;
+      navigateByPage(delta > 0 ? 1 : -1);
+    };
+    container.addEventListener("wheel", handleWheel, { passive: false });
+    return () => container.removeEventListener("wheel", handleWheel);
+  }, [isPaginated, navigateByPage]);
 
   const interactionFromRange = useCallback((
     range: Range,
@@ -841,65 +1215,85 @@ export default function TextBookReader({
     filter: `brightness(${settings.brightness / 100})`,
   }), [settings]);
 
+  const renderedDocument = useMemo(() => document?.chunks.map((chunk, chunkIndex) => (
+    <section key={chunkIndex}>
+      {chunk.blocks.map((block) => {
+        const isFlashing = flashOffset !== null
+          && block.source_start <= flashOffset
+          && block.source_end >= flashOffset;
+        const className = `${isFlashing ? "outline outline-2 outline-purple-400 outline-offset-4" : ""} transition-colors`;
+        const content = renderHighlightedBlock(
+          block,
+          document,
+          highlights,
+          onHighlightClick,
+          markerStyle,
+          readerFontFamily,
+          automaticWordSet,
+          automaticExceptionSet,
+          visibleLookupOccurrenceMarks,
+        );
+        const attributes = {
+          key: block.source_start,
+          "data-text-source-start": block.source_start,
+          "data-text-source-end": block.source_end,
+        };
+        if (block.kind === "heading") {
+          return block.depth === 0 ? (
+            <h2 {...attributes} className={`mb-8 mt-14 text-[1.35em] font-semibold leading-snug ${className}`}>
+              {content}
+            </h2>
+          ) : (
+            <h3 {...attributes} className={`mb-6 mt-10 text-[1.15em] font-semibold leading-snug ${className}`}>
+              {content}
+            </h3>
+          );
+        }
+        return (
+          <p {...attributes} className={`mb-5 whitespace-pre-wrap ${className}`}>
+            {content}
+          </p>
+        );
+      })}
+    </section>
+  )) ?? null, [
+    automaticExceptionSet,
+    automaticWordSet,
+    document,
+    flashOffset,
+    highlights,
+    markerStyle,
+    onHighlightClick,
+    readerFontFamily,
+    visibleLookupOccurrenceMarks,
+  ]);
+
   return (
     <div
       ref={containerRef}
-      className="h-full overflow-y-auto overscroll-contain"
+      className={`h-full overscroll-contain ${isPaginated
+        ? "overflow-x-auto overflow-y-hidden [&::-webkit-scrollbar]:hidden"
+        : "overflow-y-auto overflow-x-hidden"}`}
       style={typography}
-      onScroll={handleScroll}
       onClick={handleTextClick}
       onDoubleClick={handleTextDoubleClick}
       onContextMenu={handleTextContextMenu}
     >
       {document && (
         <article
-          className="mx-auto py-12"
-          style={{ maxWidth: `${Math.max(560, 900 - settings.margins * 2)}px`, paddingLeft: `${Math.max(24, settings.margins)}px`, paddingRight: `${Math.max(24, settings.margins)}px` }}
+          ref={articleRef}
+          className={`w-full py-12 ${isPaginated ? "h-full" : "min-h-full"}`}
+          style={{
+            paddingLeft: `max(12px, ${isPaginated ? settings.margins / effectivePageColumns : settings.margins}%)`,
+            paddingRight: `max(12px, ${isPaginated ? settings.margins / effectivePageColumns : settings.margins}%)`,
+            columnFill: isPaginated ? "auto" : undefined,
+          }}
         >
-          {document.chunks.map((chunk, chunkIndex) => (
-            <section key={chunkIndex}>
-              {chunk.blocks.map((block) => {
-                const isFlashing = flashOffset !== null
-                  && block.source_start <= flashOffset
-                  && block.source_end >= flashOffset;
-                const className = `${isFlashing ? "outline outline-2 outline-purple-400 outline-offset-4" : ""} transition-colors`;
-                const content = renderHighlightedBlock(
-                  block,
-                  document,
-                  highlights,
-                  onHighlightClick,
-                  markerStyle,
-                  readerFontFamily,
-                  automaticWordSet,
-                  automaticExceptionSet,
-                  visibleLookupOccurrenceMarks,
-                );
-                const attributes = {
-                  key: block.source_start,
-                  "data-text-source-start": block.source_start,
-                  "data-text-source-end": block.source_end,
-                };
-                if (block.kind === "heading") {
-                  return block.depth === 0 ? (
-                    <h2 {...attributes} className={`mb-8 mt-14 text-[1.35em] font-semibold leading-snug ${className}`}>
-                      {content}
-                    </h2>
-                  ) : (
-                    <h3 {...attributes} className={`mb-6 mt-10 text-[1.15em] font-semibold leading-snug ${className}`}>
-                      {content}
-                    </h3>
-                  );
-                }
-                return (
-                  <p {...attributes} className={`mb-5 whitespace-pre-wrap ${className}`}>
-                    {content}
-                  </p>
-                );
-              })}
-            </section>
-          ))}
+          {renderedDocument}
         </article>
       )}
     </div>
   );
 }
+
+export default memo(TextBookReader);

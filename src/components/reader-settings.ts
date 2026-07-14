@@ -1,3 +1,5 @@
+import type { PageColumns, ReaderSettingsState } from "./ReaderSettings";
+
 export const FONT_SIZE_MIN = 12;
 export const FONT_SIZE_MAX = 48;
 
@@ -41,6 +43,15 @@ export interface ReaderCapabilities {
   supportsZoom: boolean;
 }
 
+export function getEffectivePageColumns(
+  settings: Pick<ReaderSettingsState, "readingMode" | "pageColumns">,
+  viewportWidth: number,
+  viewportHeight: number,
+): PageColumns {
+  if (settings.readingMode !== "paginated" || settings.pageColumns !== 2) return 1;
+  return Math.max(1, viewportWidth) > Math.max(1, viewportHeight) ? 2 : 1;
+}
+
 export function getReaderCapabilities(format?: string): ReaderCapabilities {
   switch ((format || "epub").toLowerCase()) {
     case "epub":
@@ -50,7 +61,7 @@ export function getReaderCapabilities(format?: string): ReaderCapabilities {
         supportsWordMarkers: true,
         supportsCfiNavigation: true,
         supportsReflowSettings: true,
-        supportsSpread: false,
+        supportsSpread: true,
         supportsContinuousScroll: true,
         supportsZoom: false,
       };
@@ -61,8 +72,8 @@ export function getReaderCapabilities(format?: string): ReaderCapabilities {
         supportsWordMarkers: true,
         supportsCfiNavigation: true,
         supportsReflowSettings: true,
-        supportsSpread: false,
-        supportsContinuousScroll: false,
+        supportsSpread: true,
+        supportsContinuousScroll: true,
         supportsZoom: false,
       };
     case "pdf":
@@ -87,7 +98,7 @@ export function getReaderCapabilities(format?: string): ReaderCapabilities {
         supportsWordMarkers: false,
         supportsCfiNavigation: false,
         supportsReflowSettings: true,
-        supportsSpread: false,
+        supportsSpread: true,
         supportsContinuousScroll: true,
         supportsZoom: false,
       };

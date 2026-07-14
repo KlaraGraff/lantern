@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ReaderInteraction, SerializableRect } from "../reader-interaction";
 import { getResponsiveLearningCardWidth } from "./config";
 import type {
@@ -11,6 +13,7 @@ import type {
 } from "./types";
 import LearningCardView from "./LearningCardView";
 import { invokeWithVaultAccess } from "../../utils/vaultAccess";
+import { LearningCardStreamParser } from "./streaming";
 
 interface LearningCardResponse extends LearningCardResult {
   provenance?: {
@@ -35,9 +38,21 @@ interface LearningCardControllerProps {
   config: CardDesignConfigV1;
   readerRect?: SerializableRect | DOMRect | null;
   onClose: () => void;
-  onAskAi: (quote: string, location?: string) => void;
+  onAskAi: (quote: string, location?: string, analysis?: string) => void;
   onViewAllNotes?: () => void;
   onLookupSuccess?: (interaction: ReaderInteraction) => void;
+}
+
+interface LearningCardStreamChunk {
+  delta: string;
+  reasoning_delta?: string;
+  done: boolean;
+  error?: string;
+}
+
+interface CardPoint {
+  left: number;
+  top: number;
 }
 
 function moduleText(content: LearningModuleContent | undefined): string {
@@ -74,7 +89,8 @@ function cardPosition(
     height: window.innerHeight,
   };
   const margin = 12;
-  const maxHeight = Math.max(240, Math.min(window.innerHeight * 0.75, reader.height - margin * 2));
+  const availableHeight = Math.max(0, reader.height - margin * 2);
+  const maxHeight = Math.min(window.innerHeight * 0.75, availableHeight);
   const preferredRight = interaction.anchorRect.right + 8;
   const preferredLeft = interaction.anchorRect.left - width - 8;
   const left = preferredRight + width <= reader.right - margin
@@ -91,6 +107,29 @@ function cardPosition(
     ? Math.min(interaction.anchorRect.bottom + 8, reader.bottom - maxHeight - margin)
     : Math.max(reader.top + margin, interaction.anchorRect.top - maxHeight - 8);
   return { left, top: Math.max(reader.top + margin, top), maxHeight };
+}
+
+function clampCardPoint(
+  point: CardPoint,
+  readerRect: SerializableRect | DOMRect | null | undefined,
+  cardWidth: number,
+  cardHeight: number,
+): CardPoint {
+  const reader = readerRect ?? {
+    left: 0,
+    top: 0,
+    right: window.innerWidth,
+    bottom: window.innerHeight,
+  };
+  const margin = 12;
+  const minLeft = reader.left + margin;
+  const minTop = reader.top + margin;
+  const maxLeft = Math.max(minLeft, reader.right - cardWidth - margin);
+  const maxTop = Math.max(minTop, reader.bottom - cardHeight - margin);
+  return {
+    left: Math.min(maxLeft, Math.max(minLeft, point.left)),
+    top: Math.min(maxTop, Math.max(minTop, point.top)),
+  };
 }
 
 export default function LearningCardController({
@@ -143,42 +182,78 @@ export default function LearningCardController({
     setLoading(true);
     setError(null);
     const requestId = crypto.randomUUID();
+    const allowedModuleIds = new Set(
+      config.cards[interaction.kind].modules
+        .filter((module) => module.enabled)
+        .map((module) => module.id),
+    );
+    const parser = new LearningCardStreamParser(allowedModuleIds);
     let active = true;
-    invokeWithVaultAccess<LearningCardResponse>("ai_learning_card", {
-      text: interaction.text,
-      context: interaction.context,
-      kind: interaction.kind,
-      bookTitle: bookTitle || null,
-      chapter: chapter || null,
-      cardConfig: JSON.stringify(config),
-      requestId,
-    }).then((response) => {
-      if (!active) return;
-      setResult(response);
-      setLoading(false);
-      if (interaction.kind === "word") onLookupSuccess?.(interaction);
-      const projected = projection(response);
-      invoke("save_lookup_record", {
-        bookId,
-        lookupText: interaction.text,
-        contextSentence: interaction.context || null,
-        chapter: chapter || null,
-        cfi: interaction.location || null,
-        definition: projected.definition,
-        contextExplanation: projected.contextExplanation,
-        resultJson: JSON.stringify(response),
-        providerProfileId: response.provenance?.profileId || null,
-        model: response.provenance?.model || null,
-      }).then(() => {
-        window.dispatchEvent(new CustomEvent("lookup-record-changed", { detail: { bookId, cfi: interaction.location } }));
-      }).catch(() => {});
-    }).catch((reason) => {
-      if (!active) return;
-      setError(reason instanceof Error ? reason.message : String(reason));
-      setLoading(false);
-    });
+    let unlisten: UnlistenFn | undefined;
+
+    const run = async () => {
+      try {
+        unlisten = await listen<LearningCardStreamChunk>(
+          `ai-learning-card-chunk-${requestId}`,
+          (event) => {
+            if (!active || event.payload.done || !event.payload.delta) return;
+            const streamedModules = parser.push(event.payload.delta);
+            if (Object.keys(streamedModules).length === 0) return;
+            setResult((current) => ({
+              ...current,
+              modules: { ...current.modules, ...streamedModules },
+            }));
+          },
+        );
+        if (!active) {
+          unlisten();
+          unlisten = undefined;
+          return;
+        }
+
+        const response = await invokeWithVaultAccess<LearningCardResponse>("ai_learning_card", {
+          text: interaction.text,
+          context: interaction.context,
+          kind: interaction.kind,
+          bookTitle: bookTitle || null,
+          chapter: chapter || null,
+          cardConfig: JSON.stringify(config),
+          requestId,
+        }, () => active);
+        if (!active) return;
+        setResult(response);
+        setLoading(false);
+        if (interaction.kind === "word") onLookupSuccess?.(interaction);
+        const projected = projection(response);
+        invoke("save_lookup_record", {
+          bookId,
+          lookupText: interaction.text,
+          contextSentence: interaction.context || null,
+          chapter: chapter || null,
+          cfi: interaction.location || null,
+          definition: projected.definition,
+          contextExplanation: projected.contextExplanation,
+          resultJson: JSON.stringify(response),
+          providerProfileId: response.provenance?.profileId || null,
+          model: response.provenance?.model || null,
+        }).then(() => {
+          window.dispatchEvent(new CustomEvent("lookup-record-changed", { detail: { bookId, cfi: interaction.location } }));
+        }).catch(() => {});
+      } catch (reason) {
+        if (!active) return;
+        setError(reason instanceof Error ? reason.message : String(reason));
+        setLoading(false);
+      } finally {
+        unlisten?.();
+        unlisten = undefined;
+      }
+    };
+
+    run();
     return () => {
       active = false;
+      unlisten?.();
+      unlisten = undefined;
       invoke("ai_cancel", { requestId }).catch(() => {});
     };
   }, [bookId, bookTitle, chapter, config, interaction, onLookupSuccess, retry]);
@@ -229,17 +304,87 @@ export default function LearningCardController({
     config.cards[interaction.kind],
     availableWidth,
   );
-  const position = cardPosition(interaction, bounds, width);
+  const initialPosition = cardPosition(interaction, bounds, width);
+  const [position, setPosition] = useState<CardPoint>(() => ({
+    left: initialPosition.left,
+    top: initialPosition.top,
+  }));
+  const positionRef = useRef(position);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    origin: CardPoint;
+  } | null>(null);
+
+  const updatePosition = useCallback((next: CardPoint) => {
+    const cardRect = wrapperRef.current?.getBoundingClientRect();
+    const clamped = clampCardPoint(
+      next,
+      bounds,
+      cardRect?.width ?? width,
+      cardRect?.height ?? initialPosition.maxHeight,
+    );
+    positionRef.current = clamped;
+    setPosition((current) => (
+      current.left === clamped.left && current.top === clamped.top ? current : clamped
+    ));
+  }, [bounds, initialPosition.maxHeight, width]);
+
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const clampCurrent = () => updatePosition(positionRef.current);
+    const observer = new ResizeObserver(clampCurrent);
+    observer.observe(wrapper);
+    window.addEventListener("resize", clampCurrent);
+    clampCurrent();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", clampCurrent);
+    };
+  }, [updatePosition]);
+
+  const onDragPointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      origin: positionRef.current,
+    };
+  }, []);
+
+  const onDragPointerMove = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    updatePosition({
+      left: drag.origin.left + event.clientX - drag.startX,
+      top: drag.origin.top + event.clientY - drag.startY,
+    });
+  }, [updatePosition]);
+
+  const onDragPointerEnd = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
+
   const actionStates = useMemo(() => ({
     collect: { collected, disabled: loading || Boolean(error) },
-    ask_ai: { disabled: false },
+    ask_ai: { disabled: loading || Boolean(error) },
     note: { disabled: false },
     copy: { copied, disabled: loading || Boolean(error) },
   }), [collected, copied, error, loading]);
 
   const onAction = useCallback(async (action: LearningCardActionId) => {
     if (action === "ask_ai") {
-      onAskAi(interaction.text, interaction.location);
+      onAskAi(interaction.text, interaction.location, JSON.stringify(result));
       return;
     }
     if (action === "note") {
@@ -304,7 +449,7 @@ export default function LearningCardController({
         result={result}
         config={config}
         availableWidth={availableWidth}
-        maxHeight={position.maxHeight}
+        maxHeight={initialPosition.maxHeight}
         loading={loading}
         error={error}
         notes={notes}
@@ -316,6 +461,9 @@ export default function LearningCardController({
         actionStates={actionStates}
         onAction={onAction}
         onClose={onClose}
+        onDragPointerDown={onDragPointerDown}
+        onDragPointerMove={onDragPointerMove}
+        onDragPointerEnd={onDragPointerEnd}
         onRetry={() => setRetry((value) => value + 1)}
         onNoteDraftChange={setNoteDraft}
         onNoteSave={saveNote}

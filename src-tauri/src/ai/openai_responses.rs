@@ -111,6 +111,21 @@ fn process_data(
                     event_name,
                     AiStreamChunk {
                         delta: delta.to_string(),
+                        reasoning_delta: None,
+                        done: false,
+                        error: None,
+                    },
+                );
+            }
+        }
+        "response.reasoning_summary_text.delta" | "response.reasoning_text.delta" => {
+            if let Some(delta) = parsed["delta"].as_str().filter(|value| !value.is_empty()) {
+                emitted.store(true, Ordering::Relaxed);
+                let _ = app.emit(
+                    event_name,
+                    AiStreamChunk {
+                        delta: String::new(),
+                        reasoning_delta: Some(delta.to_string()),
                         done: false,
                         error: None,
                     },
@@ -122,6 +137,7 @@ fn process_data(
                 event_name,
                 AiStreamChunk {
                     delta: String::new(),
+                    reasoning_delta: None,
                     done: true,
                     error: None,
                 },

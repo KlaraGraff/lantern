@@ -1,5 +1,6 @@
 import { useId } from "react";
-import { AlertCircle, Loader2, RotateCw, Sparkles, X } from "lucide-react";
+import type { PointerEvent as ReactPointerEvent } from "react";
+import { AlertCircle, GripHorizontal, Loader2, RotateCw, Sparkles, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   getLearningCardTargetWidth,
@@ -31,6 +32,9 @@ interface LearningCardViewProps {
   actionStates?: Partial<Record<LearningCardActionId, LearningCardActionState>>;
   onAction?: (action: LearningCardActionId) => void;
   onClose?: () => void;
+  onDragPointerDown?: (event: ReactPointerEvent<HTMLElement>) => void;
+  onDragPointerMove?: (event: ReactPointerEvent<HTMLElement>) => void;
+  onDragPointerEnd?: (event: ReactPointerEvent<HTMLElement>) => void;
   onRetry?: () => void;
   onNoteDraftChange?: (value: string) => void;
   onNoteSave?: () => void;
@@ -57,6 +61,9 @@ export default function LearningCardView({
   actionStates,
   onAction,
   onClose,
+  onDragPointerDown,
+  onDragPointerMove,
+  onDragPointerEnd,
   onRetry,
   onNoteDraftChange,
   onNoteSave,
@@ -85,12 +92,26 @@ export default function LearningCardView({
       className="flex min-h-0 max-w-full flex-col overflow-hidden rounded-md border border-border/80 bg-bg-surface shadow-context"
       style={{ width: `${width}px`, maxHeight }}
     >
-      <header className="flex min-h-11 shrink-0 items-center gap-2 border-b border-border/60 bg-accent-bg px-4 py-2.5">
+      <header
+        onPointerDown={(event) => {
+          if ((event.target as Element).closest("button,input,textarea,select,a")) return;
+          onDragPointerDown?.(event);
+        }}
+        onPointerMove={onDragPointerMove}
+        onPointerUp={onDragPointerEnd}
+        onPointerCancel={onDragPointerEnd}
+        className={`flex min-h-11 shrink-0 items-center gap-2 border-b border-border/60 bg-accent-bg px-4 py-2.5 ${
+          onDragPointerDown ? "touch-none cursor-grab select-none active:cursor-grabbing" : ""
+        }`}
+      >
         <Sparkles size={15} className="shrink-0 text-accent-text" aria-hidden="true" />
         <h2 id={titleId} className="min-w-0 flex-1 break-words text-[13px] font-semibold leading-5 text-accent-text">
           {title}
         </h2>
         {loading && <Loader2 size={14} className="shrink-0 animate-spin text-accent-text" aria-hidden="true" />}
+        {onDragPointerDown && (
+          <GripHorizontal size={15} className="shrink-0 text-text-muted" aria-hidden="true" />
+        )}
         {onClose && (
           <button
             type="button"

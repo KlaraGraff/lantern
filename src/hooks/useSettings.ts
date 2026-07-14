@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listenForSettingsChanged, notifySettingsChanged } from "../components/settings-events";
 
 export function useSettings() {
   const [settings, setSettings] = useState<Record<string, string>>({});
@@ -21,14 +22,31 @@ export function useSettings() {
     refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    listenForSettingsChanged((values) => {
+      if (!disposed) setSettings((current) => ({ ...current, ...values }));
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    }).catch(() => {});
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
   const saveBulk = useCallback(async (newSettings: Record<string, string>) => {
     await invoke("set_settings_bulk", { settings: newSettings });
     setSettings((prev) => ({ ...prev, ...newSettings }));
+    await notifySettingsChanged(newSettings).catch(() => {});
   }, []);
 
   const save = useCallback(async (key: string, value: string) => {
     await invoke("set_setting", { key, value });
     setSettings((prev) => ({ ...prev, [key]: value }));
+    await notifySettingsChanged({ [key]: value }).catch(() => {});
   }, []);
 
   return { settings, loading, refresh, saveBulk, save };

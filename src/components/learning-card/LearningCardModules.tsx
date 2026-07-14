@@ -175,10 +175,18 @@ function ModuleSection({
 
 export default function LearningCardModules({ card, kind, content, loading = false }: LearningCardModulesProps) {
   const definitions = new Map(MODULE_DEFINITIONS[kind].map((item) => [item.id, item]));
+  const enabledModules = card.modules.filter((module) => module.enabled);
+  const lastCompletedIndex = enabledModules.reduce(
+    (last, module, index) => hasContent(content[module.id]) ? index : last,
+    -1,
+  );
+  const visibleModules = loading
+    ? enabledModules.slice(0, Math.min(enabledModules.length, Math.max(1, lastCompletedIndex + 2)))
+    : enabledModules;
 
   return (
     <div className="divide-y divide-border/60" aria-busy={loading || undefined}>
-      {card.modules.filter((module) => module.enabled).map((module) => {
+      {visibleModules.map((module) => {
         const definition = definitions.get(module.id);
         if (!definition) return null;
         return (

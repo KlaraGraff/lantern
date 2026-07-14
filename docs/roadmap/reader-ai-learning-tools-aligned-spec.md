@@ -476,4 +476,4 @@
 
 对应实施计划见：[阅读器 AI 学习工具实施计划](../impls/reader-ai-learning-tools.md)。
 
-对应测试方案见：[v1.4.0 全量测试方案](../testing/reader-ai-learning-tools-v1.4.0-test-plan.md)。
+对应测试方案见：[v1.4.1 全量测试方案](../testing/reader-ai-learning-tools-v1.4.1-test-plan.md)。

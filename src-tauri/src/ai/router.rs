@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 use futures::StreamExt;
 use rusqlite::{params, OptionalExtension};
-use tauri::{AppHandle, Listener};
+use tauri::{AppHandle, Emitter, Listener};
 use tokio::sync::watch;
 
 use crate::commands::ai::ChatMessage;
@@ -857,6 +857,7 @@ pub async fn complete_with_failover(
     messages: &[ChatMessage],
     max_tokens: Option<u32>,
     request_id: Option<&str>,
+    forward_event_name: Option<&str>,
 ) -> AppResult<AiCompletion> {
     let event_name = format!("ai-internal-completion-{}", uuid::Uuid::new_v4());
     let output = Arc::new(Mutex::new(String::new()));
@@ -864,11 +865,16 @@ pub async fn complete_with_failover(
     let started = Instant::now();
     let listener_output = Arc::clone(&output);
     let listener_first_token = Arc::clone(&first_token_ms);
+    let forward_event_name = forward_event_name.map(str::to_string);
+    let forward_app = app.clone();
     let listener_id = app.listen(event_name.clone(), move |event| {
         let Ok(chunk) = serde_json::from_str::<crate::commands::ai::AiStreamChunk>(event.payload())
         else {
             return;
         };
+        if let Some(event_name) = forward_event_name.as_deref() {
+            let _ = forward_app.emit(event_name, &chunk);
+        }
         if chunk.done || chunk.delta.is_empty() {
             return;
         }
@@ -924,6 +930,14 @@ pub async fn complete_with_failover(
         first_token_ms,
         total_ms,
     })
+}
+
+fn connection_test_token_limit(profile: &AiProfile) -> Option<u32> {
+    // OpenAI-compatible reasoning endpoints frequently reject `max_tokens`
+    // (some require `max_completion_tokens`, while others accept neither).
+    // The production request leaves the field unset, so the health probe does
+    // the same. Anthropic requires a limit and accepts this small value.
+    (profile.view.provider == "anthropic").then_some(64)
 }
 
 async fn stream_with_failover_inner(
@@ -1779,7 +1793,7 @@ pub async fn test_profile(
             account_id.as_deref(),
             &messages,
             &event_name,
-            Some(8),
+            connection_test_token_limit(&profile),
         )
         .await;
         let total_ms = overall_started.elapsed().as_millis() as u64;
@@ -1806,8 +1820,16 @@ pub async fn test_profile(
 
     if profile.view.provider == "ollama" {
         let event_name = format!("ai-profile-test-{}", uuid::Uuid::new_v4());
-        let (result, first_response_ms, _) =
-            timed_stream_once(app, &profile, "", None, &messages, &event_name, Some(8)).await;
+        let (result, first_response_ms, _) = timed_stream_once(
+            app,
+            &profile,
+            "",
+            None,
+            &messages,
+            &event_name,
+            connection_test_token_limit(&profile),
+        )
+        .await;
         let total_ms = overall_started.elapsed().as_millis() as u64;
         let kind = result.as_ref().err().map(classify_error);
         if record_health {
@@ -1875,8 +1897,16 @@ pub async fn test_profile(
             continue;
         };
         let event_name = format!("ai-profile-test-{}", uuid::Uuid::new_v4());
-        let (result, first_response_ms, _) =
-            timed_stream_once(app, &profile, &key, None, &messages, &event_name, Some(8)).await;
+        let (result, first_response_ms, _) = timed_stream_once(
+            app,
+            &profile,
+            &key,
+            None,
+            &messages,
+            &event_name,
+            connection_test_token_limit(&profile),
+        )
+        .await;
         last_first_response_ms = first_response_ms;
         match result {
             Ok(()) => {
@@ -2001,8 +2031,16 @@ pub async fn test_credential(
         content: "Reply with OK.".to_string(),
     }];
     let event_name = format!("ai-credential-test-{}", uuid::Uuid::new_v4());
-    let (result, _, total_ms) =
-        timed_stream_once(app, &profile, &key, None, &messages, &event_name, Some(8)).await;
+    let (result, _, total_ms) = timed_stream_once(
+        app,
+        &profile,
+        &key,
+        None,
+        &messages,
+        &event_name,
+        connection_test_token_limit(&profile),
+    )
+    .await;
     update_credential_health(
         db,
         &credential,

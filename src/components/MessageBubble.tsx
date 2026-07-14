@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2, Settings } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Settings } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import Markdown from "react-markdown";
@@ -16,6 +17,7 @@ interface MessageBubbleProps {
 export default function MessageBubble({ msg, messages, streaming, onNavigateToCfi }: MessageBubbleProps) {
   const { t } = useTranslation();
   const isLast = msg === messages[messages.length - 1];
+  const [reasoningExpanded, setReasoningExpanded] = useState<boolean | null>(null);
 
   if (msg.role === "assistant") {
     const errorCode = isAiErrorCode(msg.content) ? msg.content : null;
@@ -42,21 +44,43 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
         </div>
       );
     }
+    const hasReasoning = Boolean(msg.reasoning?.trim());
+    const reasoningInProgress = streaming && isLast && !msg.content;
+    const reasoningOpen = reasoningExpanded ?? reasoningInProgress;
     return (
       <div className="bg-bg-surface border border-border rounded-lg px-[13px] py-[13px] max-w-[85%]">
-        {streaming && !msg.content && isLast ? (
+        {hasReasoning && (
+          <div className={msg.content ? "mb-2 border-b border-border pb-2" : ""}>
+            <button
+              type="button"
+              aria-expanded={reasoningOpen}
+              onClick={() => setReasoningExpanded(!reasoningOpen)}
+              className="flex w-full items-center gap-1.5 text-left text-[12px] font-medium text-text-muted hover:text-text-primary cursor-pointer"
+            >
+              {reasoningOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              {reasoningInProgress && <Loader2 size={12} className="animate-spin" />}
+              <span>{t(reasoningInProgress ? "ai.reasoningStreaming" : "ai.reasoning")}</span>
+            </button>
+            {reasoningOpen && (
+              <div className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap text-[12px] leading-[18px] text-text-muted">
+                {msg.reasoning}
+              </div>
+            )}
+          </div>
+        )}
+        {streaming && !msg.content && isLast && !hasReasoning ? (
           <span className="flex items-center gap-1.5 text-[14px] text-text-muted">
             <Loader2 size={14} className="animate-spin" />
             {t("ai.thinking")}
           </span>
-        ) : (
+        ) : msg.content ? (
           <div className="prose prose-sm max-w-none text-[14px] text-text-primary leading-5 tracking-[-0.15px] [&_h1]:text-[16px] [&_h2]:text-[15px] [&_h3]:text-[14px] [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1 [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-1.5 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-text-muted [&_code]:bg-bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[13px] [&_pre]:bg-bg-muted [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_strong]:font-semibold [&_em]:italic [&_hr]:border-border [&_a]:text-accent [&_a]:underline">
             <Markdown>{msg.content}</Markdown>
             {streaming && msg.content && isLast && (
               <Loader2 size={14} className="inline-block ml-1 animate-spin text-text-muted" />
             )}
           </div>
-        )}
+        ) : null}
       </div>
     );
   }

@@ -134,7 +134,15 @@ async function authorizeAfterConfirmation(
 export async function invokeWithVaultAccess<T>(
   command: string,
   args?: InvokeArgs,
+  shouldContinue?: () => boolean,
 ): Promise<T> {
+  const assertShouldContinue = () => {
+    if (shouldContinue && !shouldContinue()) {
+      throw new Error("REQUEST_CANCELLED");
+    }
+  };
+
+  assertShouldContinue();
   try {
     return await invoke<T>(command, args);
   } catch (error) {
@@ -143,6 +151,9 @@ export async function invokeWithVaultAccess<T>(
     await authorizeAfterConfirmation(confirmation.reason, confirmation.requestId);
   }
 
+  // The caller may have been cancelled while the user was deciding whether
+  // to unlock the vault. Do not turn that stale action into a new AI request.
+  assertShouldContinue();
   try {
     return await invoke<T>(command, args);
   } catch (error) {

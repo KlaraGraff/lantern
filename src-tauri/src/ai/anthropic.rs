@@ -111,12 +111,28 @@ fn process_data(
         .map_err(|_| AppError::Ai("AI_STREAM_PROTOCOL_ERROR: invalid JSON event".to_string()))?;
     match parsed["type"].as_str().unwrap_or("") {
         "content_block_delta" => {
+            if let Some(thinking) = parsed["delta"]["thinking"]
+                .as_str()
+                .filter(|value| !value.is_empty())
+            {
+                emitted.store(true, Ordering::Relaxed);
+                let _ = app.emit(
+                    event_name,
+                    AiStreamChunk {
+                        delta: String::new(),
+                        reasoning_delta: Some(thinking.to_string()),
+                        done: false,
+                        error: None,
+                    },
+                );
+            }
             if let Some(text) = parsed["delta"]["text"].as_str() {
                 emitted.store(true, Ordering::Relaxed);
                 let _ = app.emit(
                     event_name,
                     AiStreamChunk {
                         delta: text.to_string(),
+                        reasoning_delta: None,
                         done: false,
                         error: None,
                     },
@@ -128,6 +144,7 @@ fn process_data(
                 event_name,
                 AiStreamChunk {
                     delta: String::new(),
+                    reasoning_delta: None,
                     done: true,
                     error: None,
                 },

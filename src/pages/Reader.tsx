@@ -18,11 +18,17 @@ import {
 import Button from "../components/ui/Button";
 import AiPanel from "../components/AiPanel";
 import BookmarksPanel from "../components/BookmarksPanel";
-import ReaderSettings, { type ReaderSettingsState } from "../components/ReaderSettings";
+import ReaderSettings, {
+  type PageColumns,
+  type PageTurnAnimation,
+  type ReaderSettingsState,
+  type ReadingMode,
+} from "../components/ReaderSettings";
 import {
   getFontFamily,
   getThemeStyles,
   getDefaultReaderTheme,
+  getEffectivePageColumns,
   getReaderCapabilities,
   isReaderFontAvailable,
 } from "../components/reader-settings";
@@ -80,6 +86,13 @@ import {
   listenForReadingAssistanceSettingsChanged,
   readingAssistanceSettingsChanged,
 } from "../components/reading-assistance-events";
+import {
+  DEFAULT_NEXT_PAGE_BINDING,
+  DEFAULT_PREVIOUS_PAGE_BINDING,
+  keyboardEventMatchesBinding,
+  mouseEventMatchesBinding,
+} from "../components/page-turn-bindings";
+import { listenForSettingsChanged, notifySettingsChanged } from "../components/settings-events";
 
 // foliate-js <foliate-view> web component interface
 /* eslint-disable @typescript-eslint/no-explicit-any -- foliate-js has no TS definitions */
@@ -96,6 +109,7 @@ interface FoliateView extends HTMLElement {
   history: { back(): void; forward(): void; canGoBack: boolean; canGoForward: boolean; addEventListener: EventTarget["addEventListener"]; removeEventListener: EventTarget["removeEventListener"] };
   getCFI(index: number, range: Range): string;
   resolveCFI(cfi: string): { index: number; anchor: (doc: Document) => Range };
+  getSectionFractions(): number[];
   addAnnotation(annotation: { value: string; color?: string; styleKind?: AnnotationStyleKind }): Promise<any>;
   deleteAnnotation(annotation: { value: string }): Promise<void>;
   deselect(): void;
@@ -259,6 +273,47 @@ const getReaderCSS = (settings: ReaderSettingsState) => {
   `;
 };
 
+function applyReflowLayout(
+  view: FoliateView,
+  settings: ReaderSettingsState,
+  viewportWidth: number,
+  viewportHeight: number,
+) {
+  const isPaginated = settings.readingMode === "paginated";
+  const width = Math.max(1, viewportWidth);
+  const effectiveColumns = getEffectivePageColumns(settings, width, viewportHeight);
+  const columnWidth = width / effectiveColumns;
+  view.renderer.setAttribute("flow", isPaginated ? "paginated" : "scrolled");
+  view.renderer.setAttribute("gap", `${settings.margins}%`);
+  view.renderer.setAttribute("max-column-count", String(effectiveColumns));
+  // Keep every text column bounded by its share of the live reader viewport.
+  // The paginator applies this as a maximum, so publisher content may remain
+  // narrower but can never expand beyond the outer reader container.
+  view.renderer.setAttribute("max-inline-size", `${columnWidth}px`);
+  view.renderer.toggleAttribute(
+    "animated",
+    isPaginated && settings.pageTurnAnimation === "slide",
+  );
+}
+
+function applyPdfLayout(
+  view: FoliateView,
+  settings: ReaderSettingsState,
+  viewportWidth: number,
+  viewportHeight: number,
+) {
+  const effectiveColumns = getEffectivePageColumns(settings, viewportWidth, viewportHeight);
+  const columns = String(effectiveColumns);
+  const spread = effectiveColumns === 2 ? "auto" : "none";
+  if (view.renderer.getAttribute("max-column-count") !== columns) {
+    view.renderer.setAttribute("max-column-count", columns);
+  }
+  if (view.renderer.getAttribute("spread") !== spread) {
+    view.renderer.setAttribute("spread", spread);
+  }
+  return effectiveColumns;
+}
+
 const PANEL_MIN_WIDTH = 320;
 const PANEL_MAX_WIDTH = 700;
 const PANEL_DEFAULT_WIDTH = 525;
@@ -380,6 +435,95 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, code: string): P
 
 type ReaderAvailability = BookAvailabilityStatus | "checking" | "timeout" | "error";
 
+interface ReaderPageInfo {
+  current: number;
+  visibleEnd?: number;
+  total: number;
+}
+
+interface TextReaderProgressDetails {
+  chapterProgress: number;
+  page?: ReaderPageInfo;
+}
+
+const readerPreferenceSettingKeys = {
+  margins: "margins",
+  readingMode: "reading_mode",
+  pageColumns: "page_columns",
+  pageTurnAnimation: "page_turn_animation",
+  showBookProgress: "show_book_progress",
+  showPageNumbers: "show_page_numbers",
+  previousPageBinding: "previous_page_binding",
+  nextPageBinding: "next_page_binding",
+} as const;
+
+function booleanSetting(value: string | undefined, fallback: boolean): boolean {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return fallback;
+}
+
+function readingModeSetting(value: string | undefined, fallback: ReadingMode): ReadingMode {
+  return value === "paginated" || value === "scrolling" ? value : fallback;
+}
+
+function pageColumnsSetting(value: string | undefined, fallback: PageColumns): PageColumns {
+  return value === "1" ? 1 : value === "2" ? 2 : fallback;
+}
+
+function pageTurnAnimationSetting(value: string | undefined, fallback: PageTurnAnimation): PageTurnAnimation {
+  return value === "none" || value === "slide" ? value : fallback;
+}
+
+function marginSetting(value: string | number | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(30, Math.max(0, parsed)) : fallback;
+}
+
+function isEditableEventTarget(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  return Boolean(element?.closest?.("input, textarea, select, [contenteditable='true'], [role='textbox']"));
+}
+
+class ReadingProgressWriter {
+  private pending: { bookId: string; progress: number; cfi: string } | null = null;
+  private timer: number | null = null;
+  private inFlight = false;
+
+  queue(bookId: string, progress: number, cfi: string) {
+    this.pending = { bookId, progress, cfi };
+    if (this.timer !== null || this.inFlight) return;
+    this.schedule(750);
+  }
+
+  private schedule(delay: number) {
+    this.timer = window.setTimeout(() => {
+      this.timer = null;
+      void this.flush();
+    }, delay);
+  }
+
+  async flush() {
+    if (this.timer !== null) {
+      window.clearTimeout(this.timer);
+      this.timer = null;
+    }
+    if (this.inFlight) return;
+    const pending = this.pending;
+    if (!pending) return;
+    this.pending = null;
+    this.inFlight = true;
+    try {
+      await updateReadingProgress(pending.bookId, pending.progress, pending.cfi);
+    } catch {
+      // A newer position is more useful than retrying an older failed write.
+    } finally {
+      this.inFlight = false;
+      if (this.pending) this.schedule(250);
+    }
+  }
+}
+
 export default function Reader() {
   const { bookId } = useParams();
   const navigate = useNavigate();
@@ -404,8 +548,10 @@ export default function Reader() {
   const [chapters, setChapters] = useState<TocChapter[]>([]);
   const [currentChapterIndex, setCurrentChapterIndex] = useState(-1);
   const [progress, setProgress] = useState(0);
-  const [pageInfo, setPageInfo] = useState<{ current: number; total: number } | null>(null);
+  const [chapterProgress, setChapterProgress] = useState(0);
+  const [pageInfo, setPageInfo] = useState<ReaderPageInfo | null>(null);
   const currentCfiRef = useRef<string | null>(null);
+  const [progressWriter] = useState(() => new ReadingProgressWriter());
   const [bookReady, setBookReady] = useState(false);
   const [canGoBack, setCanGoBack] = useState(false);
   const backButtonTimerRef = useRef<number | null>(null);
@@ -426,7 +572,7 @@ export default function Reader() {
   const [learningCardConfig, setLearningCardConfig] = useState<CardDesignConfigV1>(DEFAULT_CARD_DESIGN_CONFIG);
   const [learningInteraction, setLearningInteraction] = useState<ReaderInteraction | null>(null);
   const [readerRect, setReaderRect] = useState<SerializableRect | null>(null);
-  const [aiContext, setAiContext] = useState<{ text: string; cfi?: string } | undefined>();
+  const [aiContext, setAiContext] = useState<{ text: string; cfi?: string; analysis?: string } | undefined>();
   const [initialChatId, setInitialChatId] = useState<string | undefined>();
   const [activeVocabCfi, setActiveVocabCfi] = useState<string | null>(null);
   const [translation, setTranslation] = useState<{
@@ -443,6 +589,11 @@ export default function Reader() {
     brightness: 100,
     readingMode: "scrolling",
     pageColumns: 2,
+    pageTurnAnimation: "slide",
+    showBookProgress: false,
+    showPageNumbers: false,
+    previousPageBinding: DEFAULT_PREVIOUS_PAGE_BINDING,
+    nextPageBinding: DEFAULT_NEXT_PAGE_BINDING,
     lineSpacing: 1.8,
     charSpacing: 0,
     wordSpacing: 0,
@@ -453,6 +604,11 @@ export default function Reader() {
     showMasteredMarkers: false,
   }));
   const readerSettingsRef = useRef(readerSettings);
+  const suppressPageTurnContextMenuUntilRef = useRef(0);
+  const pageTurnKeyboardBlockedRef = useRef(false);
+  const pageTurnOverlayOpenRef = useRef(false);
+  const readerPreferenceSaveTimerRef = useRef<number | null>(null);
+  const pendingReaderPreferencesRef = useRef<Record<string, string>>({});
   const autoHighlightLookupsRef = useRef(true);
   const [markerStyle, setMarkerStyle] = useState<MarkerStyleConfigV1>(createDefaultMarkerStyleConfig);
   const markerStyleRef = useRef(markerStyle);
@@ -516,6 +672,7 @@ export default function Reader() {
   const settingsAnchorRef = useRef<HTMLButtonElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
   const readerViewportRef = useRef<HTMLElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<FoliateView | null>(null);
   const zoomRef = useRef<number | "fit">(zoom);
   const fitPctRef = useRef(100);
@@ -524,6 +681,7 @@ export default function Reader() {
   const navigationFlashRef = useRef(new Map<string, number>());
   const pendingNavigationRef = useRef<ReaderNavigation | null>(null);
   const textReaderNavigateRef = useRef<((location: string, flash?: boolean) => void) | null>(null);
+  const textReaderPageNavigationRef = useRef<{ prev: () => void; next: () => void } | null>(null);
   const [textNavigationRegistration, setTextNavigationRegistration] = useState(0);
   const markerSnapshotRef = useRef<{
     highlights: Highlight[];
@@ -539,7 +697,7 @@ export default function Reader() {
   const pdfTextLayerNoticeTimerRef = useRef<number | null>(null);
   const annotationClickDocumentRef = useRef<Document | null>(null);
   const contextMenuRequestRef = useRef(0);
-  const loadedInteractionDocumentsRef = useRef(new Set<Document>());
+  const loadedInteractionDocumentsRef = useRef(new WeakSet<Document>());
   const wordMarkWordsRef = useRef<string[]>([]);
   const wordMarkExceptionsRef = useRef(new Set<string>());
 
@@ -557,13 +715,32 @@ export default function Reader() {
     setReaderError(null);
   }, []);
 
-  const handleTextBookProgress = useCallback((nextProgress: number, textLocationValue: string, chapterIndex: number) => {
+  const queueReadingProgress = useCallback((targetBookId: string, nextProgress: number, cfi: string) => {
+    progressWriter.queue(targetBookId, nextProgress, cfi);
+  }, [progressWriter]);
+
+  useEffect(() => {
+    const flush = () => { void progressWriter.flush(); };
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [bookId, progressWriter]);
+
+  const handleTextBookProgress = useCallback((
+    nextProgress: number,
+    textLocationValue: string,
+    chapterIndex: number,
+    details?: TextReaderProgressDetails,
+  ) => {
     setProgress(nextProgress);
+    setChapterProgress(details?.chapterProgress ?? nextProgress);
+    setPageInfo(details?.page ?? null);
     currentCfiRef.current = textLocationValue;
-    setTextInitialLocation(textLocationValue);
     setCurrentChapterIndex(chapterIndex);
-    if (bookId) updateReadingProgress(bookId, nextProgress, textLocationValue).catch(() => {});
-  }, [bookId]);
+    if (bookId) queueReadingProgress(bookId, nextProgress, textLocationValue);
+  }, [bookId, queueReadingProgress]);
 
   const cancelPendingWordClick = useCallback(() => {
     if (pendingWordClickRef.current !== null) {
@@ -704,6 +881,10 @@ export default function Reader() {
     setTextNavigationRegistration((value) => value + 1);
   }, []);
 
+  const registerTextBookPageNavigation = useCallback((navigation: { prev: () => void; next: () => void }) => {
+    textReaderPageNavigationRef.current = navigation;
+  }, []);
+
   const handleTextHighlightClick = useCallback((highlight: Highlight, rect: DOMRect, fallbackText?: string) => {
     const text = highlight.text_content?.trim() || fallbackText?.trim();
     if (!text) return;
@@ -729,6 +910,108 @@ export default function Reader() {
   }, [readerSettings]);
 
   useEffect(() => {
+    pageTurnOverlayOpenRef.current = Boolean(
+      settingsOpen || contextMenu || learningInteraction || translation,
+    );
+  }, [contextMenu, learningInteraction, settingsOpen, translation]);
+
+  useEffect(() => {
+    if (!sidePanel) pageTurnKeyboardBlockedRef.current = false;
+  }, [sidePanel]);
+
+  const flushReaderPreferences = useCallback(async () => {
+    readerPreferenceSaveTimerRef.current = null;
+    const values = pendingReaderPreferencesRef.current;
+    pendingReaderPreferencesRef.current = {};
+    if (Object.keys(values).length === 0) return;
+    try {
+      await invoke("set_settings_bulk", { settings: values });
+      await notifySettingsChanged(values).catch(() => {});
+    } catch {
+      pendingReaderPreferencesRef.current = {
+        ...values,
+        ...pendingReaderPreferencesRef.current,
+      };
+    }
+  }, []);
+
+  const scheduleReaderPreferenceSave = useCallback((values: Record<string, string>) => {
+    if (Object.keys(values).length === 0) return;
+    pendingReaderPreferencesRef.current = {
+      ...pendingReaderPreferencesRef.current,
+      ...values,
+    };
+    if (readerPreferenceSaveTimerRef.current !== null) {
+      window.clearTimeout(readerPreferenceSaveTimerRef.current);
+    }
+    readerPreferenceSaveTimerRef.current = window.setTimeout(() => {
+      void flushReaderPreferences();
+    }, 400);
+  }, [flushReaderPreferences]);
+
+  useEffect(() => () => {
+    if (readerPreferenceSaveTimerRef.current !== null) {
+      window.clearTimeout(readerPreferenceSaveTimerRef.current);
+    }
+    void flushReaderPreferences();
+  }, [flushReaderPreferences]);
+
+  const handleReaderSettingsChange = useCallback((next: ReaderSettingsState) => {
+    const previous = readerSettingsRef.current;
+    readerSettingsRef.current = next;
+    setReaderSettings(next);
+    const changed: Record<string, string> = {};
+    if (previous.margins !== next.margins) changed[readerPreferenceSettingKeys.margins] = String(next.margins);
+    if (previous.readingMode !== next.readingMode) changed[readerPreferenceSettingKeys.readingMode] = next.readingMode;
+    if (previous.pageColumns !== next.pageColumns) changed[readerPreferenceSettingKeys.pageColumns] = String(next.pageColumns);
+    if (previous.pageTurnAnimation !== next.pageTurnAnimation) changed[readerPreferenceSettingKeys.pageTurnAnimation] = next.pageTurnAnimation;
+    if (previous.showBookProgress !== next.showBookProgress) changed[readerPreferenceSettingKeys.showBookProgress] = String(next.showBookProgress);
+    if (previous.showPageNumbers !== next.showPageNumbers) changed[readerPreferenceSettingKeys.showPageNumbers] = String(next.showPageNumbers);
+    if (previous.previousPageBinding !== next.previousPageBinding) changed[readerPreferenceSettingKeys.previousPageBinding] = next.previousPageBinding;
+    if (previous.nextPageBinding !== next.nextPageBinding) changed[readerPreferenceSettingKeys.nextPageBinding] = next.nextPageBinding;
+    scheduleReaderPreferenceSave(changed);
+  }, [scheduleReaderPreferenceSave]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    listenForSettingsChanged((values) => {
+      if (disposed) return;
+      setReaderSettings((current) => {
+        const next = {
+          ...current,
+          margins: marginSetting(values[readerPreferenceSettingKeys.margins], current.margins),
+          readingMode: readingModeSetting(values[readerPreferenceSettingKeys.readingMode], current.readingMode),
+          pageColumns: pageColumnsSetting(values[readerPreferenceSettingKeys.pageColumns], current.pageColumns),
+          pageTurnAnimation: pageTurnAnimationSetting(
+            values[readerPreferenceSettingKeys.pageTurnAnimation],
+            current.pageTurnAnimation,
+          ),
+          showBookProgress: booleanSetting(
+            values[readerPreferenceSettingKeys.showBookProgress],
+            current.showBookProgress,
+          ),
+          showPageNumbers: booleanSetting(
+            values[readerPreferenceSettingKeys.showPageNumbers],
+            current.showPageNumbers,
+          ),
+          previousPageBinding: values[readerPreferenceSettingKeys.previousPageBinding] || current.previousPageBinding,
+          nextPageBinding: values[readerPreferenceSettingKeys.nextPageBinding] || current.nextPageBinding,
+        };
+        readerSettingsRef.current = next;
+        return next;
+      });
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    }).catch(() => {});
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
     markerStyleRef.current = markerStyle;
     markMatchingWordsRef.current = markerStyle.markMatchingWords;
   }, [markerStyle]);
@@ -749,6 +1032,88 @@ export default function Reader() {
     applyZoom(next);
     setZoom(next);
   }, [applyZoom]);
+
+  const turnReaderPage = useCallback((direction: "previous" | "next") => {
+    setContextMenu(null);
+    if (isTextBook) {
+      textReaderPageNavigationRef.current?.[direction === "previous" ? "prev" : "next"]();
+      return;
+    }
+    const view = viewRef.current;
+    if (!view) return;
+    void (direction === "previous" ? view.prev() : view.next());
+  }, [isTextBook]);
+
+  const handlePageTurnKeyDown = useCallback((event: KeyboardEvent) => {
+    if (event.defaultPrevented) return;
+    const target = event.target as HTMLElement | null;
+    if (target && panelRef.current?.contains(target)) {
+      pageTurnKeyboardBlockedRef.current = true;
+      return;
+    }
+    if (
+      pageTurnOverlayOpenRef.current
+      || pageTurnKeyboardBlockedRef.current
+      || isEditableEventTarget(target)
+    ) return;
+    if (
+      book?.format === "pdf"
+      && (event.metaKey || event.ctrlKey)
+      && (event.key === "=" || event.key === "+" || event.key === "-")
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleZoom(event.key === "-" ? -10 : 10);
+      return;
+    }
+    if (target?.closest?.("button, a, [role='button'], [data-reader-settings]")) return;
+    const settings = readerSettingsRef.current;
+    let direction: "previous" | "next" | null = null;
+    if (keyboardEventMatchesBinding(event, settings.previousPageBinding)) direction = "previous";
+    else if (keyboardEventMatchesBinding(event, settings.nextPageBinding)) direction = "next";
+    else if (!event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+      if (event.key === "ArrowLeft" || event.key === "ArrowUp") direction = "previous";
+      else if (event.key === "ArrowRight" || event.key === "ArrowDown") direction = "next";
+    }
+    if (!direction) return;
+    event.preventDefault();
+    event.stopPropagation();
+    turnReaderPage(direction);
+  }, [book?.format, handleZoom, turnReaderPage]);
+
+  const handlePageTurnMouseDown = useCallback((event: MouseEvent) => {
+    pageTurnKeyboardBlockedRef.current = false;
+    if (event.defaultPrevented || isEditableEventTarget(event.target)) return;
+    const settings = readerSettingsRef.current;
+    const direction = mouseEventMatchesBinding(event, settings.previousPageBinding)
+      ? "previous"
+      : mouseEventMatchesBinding(event, settings.nextPageBinding) ? "next" : null;
+    if (!direction) return;
+    if (event.button === 2) suppressPageTurnContextMenuUntilRef.current = Date.now() + 800;
+    event.preventDefault();
+    event.stopPropagation();
+    turnReaderPage(direction);
+  }, [turnReaderPage]);
+
+  const handlePageTurnContextMenu = useCallback((event: MouseEvent) => {
+    if (Date.now() > suppressPageTurnContextMenuUntilRef.current) return;
+    suppressPageTurnContextMenuUntilRef.current = 0;
+    event.preventDefault();
+    event.stopPropagation();
+  }, []);
+
+  useEffect(() => {
+    const viewport = readerViewportRef.current;
+    if (!viewport) return;
+    window.addEventListener("keydown", handlePageTurnKeyDown);
+    viewport.addEventListener("mousedown", handlePageTurnMouseDown, true);
+    viewport.addEventListener("contextmenu", handlePageTurnContextMenu, true);
+    return () => {
+      window.removeEventListener("keydown", handlePageTurnKeyDown);
+      viewport.removeEventListener("mousedown", handlePageTurnMouseDown, true);
+      viewport.removeEventListener("contextmenu", handlePageTurnContextMenu, true);
+    };
+  }, [handlePageTurnContextMenu, handlePageTurnKeyDown, handlePageTurnMouseDown]);
 
   const tocChapters = useMemo(() => chapters.map((chapter, i) => ({
     title: chapter.title,
@@ -944,6 +1309,9 @@ export default function Reader() {
     chaptersRef.current = [];
     setChapters([]);
     setCurrentChapterIndex(-1);
+    setProgress(0);
+    setChapterProgress(0);
+    setPageInfo(null);
     setBookReady(false);
     setTextInitialLocation(null);
     getBook(bookId)
@@ -976,14 +1344,28 @@ export default function Reader() {
           ...prev,
           theme: bookSettings.theme || (g.reader_theme as ReaderSettingsState["theme"]) || prev.theme,
           brightness: bookSettings.brightness ?? (g.brightness ? parseInt(g.brightness) : prev.brightness),
-          pageColumns: bookSettings.pageColumns ?? (g.page_columns ? parseInt(g.page_columns) as ReaderSettingsState["pageColumns"] : prev.pageColumns),
+          pageColumns: bookSettings.pageColumns ?? pageColumnsSetting(g.page_columns, prev.pageColumns),
           font: isReaderFontAvailable(requestedFont) ? requestedFont : "system",
           fontSize: bookSettings.fontSize ?? (g.font_size ? parseInt(g.font_size) : prev.fontSize),
-          readingMode: bookSettings.readingMode || (g.reading_mode as ReaderSettingsState["readingMode"]) || prev.readingMode,
+          readingMode: bookSettings.readingMode || readingModeSetting(g.reading_mode, prev.readingMode),
+          pageTurnAnimation: bookSettings.pageTurnAnimation
+            ?? pageTurnAnimationSetting(g.page_turn_animation, prev.pageTurnAnimation),
+          showBookProgress: bookSettings.showBookProgress
+            ?? booleanSetting(g.show_book_progress, prev.showBookProgress),
+          showPageNumbers: bookSettings.showPageNumbers
+            ?? booleanSetting(g.show_page_numbers, prev.showPageNumbers),
+          previousPageBinding: bookSettings.previousPageBinding
+            || g.previous_page_binding
+            || prev.previousPageBinding,
+          nextPageBinding: bookSettings.nextPageBinding
+            || g.next_page_binding
+            || prev.nextPageBinding,
           lineSpacing: bookSettings.lineSpacing ?? (g.line_spacing ? parseFloat(g.line_spacing) : prev.lineSpacing),
           charSpacing: bookSettings.charSpacing ?? (g.char_spacing ? parseInt(g.char_spacing) : prev.charSpacing),
           wordSpacing: bookSettings.wordSpacing ?? (g.word_spacing ? parseInt(g.word_spacing) : prev.wordSpacing),
-          margins: bookSettings.margins ?? (g.margins ? parseInt(g.margins) : prev.margins),
+          // Margins are intentionally global-first so edits in Settings and in
+          // the reader toolbar always stay synchronized.
+          margins: marginSetting(g.margins ?? bookSettings.margins, prev.margins),
           showLookupMarkers: bookSettings.showLookupMarkers ?? prev.showLookupMarkers,
           showNewVocabMarkers: bookSettings.showNewVocabMarkers ?? prev.showNewVocabMarkers,
           showLearningMarkers: bookSettings.showLearningMarkers ?? prev.showLearningMarkers,
@@ -1105,7 +1487,7 @@ export default function Reader() {
     const interactionGeneration = ++readerInteractionGenerationRef.current;
     const container = viewerRef.current;
     container.innerHTML = "";
-    loadedInteractionDocumentsRef.current.clear();
+    loadedInteractionDocumentsRef.current = new WeakSet<Document>();
     setBookReady(false);
     setReaderError(null);
 
@@ -1187,16 +1569,13 @@ export default function Reader() {
       // particular, fixed/comic renderers must not receive EPUB flow, column,
       // or typography settings merely because they share a Foliate view.
       if (capabilities.supportsReflowSettings) {
-        const isScrolling = readerSettings.readingMode === "scrolling";
-        view.renderer.setAttribute("flow", isScrolling ? "scrolled" : "paginated");
-        view.renderer.setAttribute("gap", "5%");
-        view.renderer.setAttribute("max-inline-size", "1000px");
-      }
-      if (capabilities.supportsSpread) {
-        view.renderer.setAttribute("max-column-count", String(readerSettings.pageColumns));
-      }
-      if (capabilities.supportsSpread && book.format === "pdf") {
-        view.renderer.setAttribute("spread", readerSettings.pageColumns === 1 ? "none" : "auto");
+        applyReflowLayout(view, readerSettings, container.clientWidth, container.clientHeight);
+      } else if (capabilities.supportsSpread) {
+        if (book.format === "pdf") {
+          applyPdfLayout(view, readerSettings, container.clientWidth, container.clientHeight);
+        } else {
+          view.renderer.setAttribute("max-column-count", String(readerSettings.pageColumns));
+        }
       }
       if (capabilities.supportsZoom && book.format === "pdf") {
         // Seed zoom from localStorage BEFORE view.init so CFI restore lands on
@@ -1246,14 +1625,44 @@ export default function Reader() {
 
       // Listen for location changes
       view.addEventListener("relocate", ((e: CustomEvent) => {
-        const { fraction, location, tocItem, cfi } = e.detail;
+        const { fraction, section, tocItem, cfi } = e.detail;
 
         const pct = Math.round((fraction ?? 0) * 100);
         setProgress(pct);
+        const sectionIndex = typeof section?.current === "number" ? section.current : -1;
+        const sectionFractions = view.getSectionFractions?.() ?? [];
+        const sectionStart = sectionFractions[sectionIndex];
+        const sectionEnd = sectionFractions[sectionIndex + 1];
+        const sectionProgress = Number.isFinite(sectionStart) && Number.isFinite(sectionEnd) && sectionEnd > sectionStart
+          ? ((fraction ?? sectionStart) - sectionStart) / (sectionEnd - sectionStart)
+          : 0;
+        setChapterProgress(Math.round(Math.max(0, Math.min(1, sectionProgress)) * 100));
         currentCfiRef.current = cfi;
 
-        if (location) {
-          setPageInfo({ current: location.current + 1, total: location.total });
+        const activeSettings = readerSettingsRef.current;
+        if (capabilities.supportsReflowSettings && activeSettings.readingMode === "paginated") {
+          const current = Number(view.renderer?.page);
+          const total = Math.max(1, Number(view.renderer?.pages) - 2);
+          setPageInfo(Number.isFinite(current) && Number.isFinite(total) ? {
+            current: Math.max(1, Math.min(total, current)),
+            total,
+          } : null);
+        } else if (book.format === "pdf" && sectionIndex >= 0 && section?.total > 0) {
+          const current = sectionIndex + 1;
+          const effectiveColumns = getEffectivePageColumns(
+            activeSettings,
+            container.clientWidth,
+            container.clientHeight,
+          );
+          setPageInfo({
+            current,
+            visibleEnd: effectiveColumns === 2
+              ? Math.min(section.total, current + 1)
+              : current,
+            total: section.total,
+          });
+        } else {
+          setPageInfo(null);
         }
 
         if (tocItem) {
@@ -1264,8 +1673,8 @@ export default function Reader() {
           if (idx !== -1) setCurrentChapterIndex(idx);
         }
 
-        if (bookId) {
-          updateReadingProgress(bookId, pct, cfi).catch(() => {});
+        if (bookId && cfi) {
+          queueReadingProgress(bookId, pct, cfi);
         }
       }) as EventListener);
 
@@ -1380,16 +1789,16 @@ export default function Reader() {
           } else if ((ev.metaKey || ev.ctrlKey) && ev.key === "]") {
             ev.preventDefault();
             view.history.forward();
-          } else if (ev.key === "ArrowLeft") view.prev();
-          else if (ev.key === "ArrowRight") view.next();
-          else if ((ev.metaKey || ev.ctrlKey) && (ev.key === "=" || ev.key === "+")) {
+          } else if ((ev.metaKey || ev.ctrlKey) && (ev.key === "=" || ev.key === "+")) {
             ev.preventDefault();
             if (book?.format === "pdf") handleZoom(10);
           } else if ((ev.metaKey || ev.ctrlKey) && ev.key === "-") {
             ev.preventDefault();
             if (book?.format === "pdf") handleZoom(-10);
-          }
+          } else handlePageTurnKeyDown(ev);
         });
+        doc.addEventListener("mousedown", handlePageTurnMouseDown, true);
+        doc.addEventListener("contextmenu", handlePageTurnContextMenu, true);
 
         // A short delay keeps single-click lookup from racing double-click
         // selection and Foliate's existing-annotation activation.
@@ -1666,7 +2075,6 @@ export default function Reader() {
       setBookReady(false);
     });
 
-    const loadedDocuments = loadedInteractionDocumentsRef.current;
     return () => {
       cancelled = true;
       readerInteractionGenerationRef.current += 1;
@@ -1688,7 +2096,6 @@ export default function Reader() {
         viewRef.current.remove();
         viewRef.current = null;
       }
-      loadedDocuments.clear();
     };
     // PDFs need a fresh `view` element when reading mode flips because
     // `pdf-mode="scroll"` is read once inside view.js's renderer pick.
@@ -1696,7 +2103,7 @@ export default function Reader() {
     // below, so the derived dep stays `null` for them and the effect won't
     // re-run.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [book, book?.format === "pdf" ? readerSettings.readingMode : null, applyAnnotations, applyFoliateMarkerStyles, capabilities, isTextBook, supportsManualAnnotations, supportsSelection, readerRetry]);
+  }, [book, book?.format === "pdf" ? readerSettings.readingMode : null, applyAnnotations, applyFoliateMarkerStyles, capabilities, handlePageTurnContextMenu, handlePageTurnKeyDown, handlePageTurnMouseDown, isTextBook, queueReadingProgress, supportsManualAnnotations, supportsSelection, readerRetry]);
 
   // Apply reader settings reactively
   useEffect(() => {
@@ -1705,19 +2112,15 @@ export default function Reader() {
 
     if (capabilities.supportsReflowSettings) {
       view.renderer.setStyles?.(getReaderCSS(readerSettings));
-      view.renderer.setAttribute("flow",
-        readerSettings.readingMode === "scrolling" ? "scrolled" : "paginated",
-      );
-      const baseWidth = 1000;
-      const marginOffset = readerSettings.margins * 2;
-      view.renderer.setAttribute("max-inline-size", `${Math.max(400, baseWidth - marginOffset)}px`);
-    }
-
-    if (capabilities.supportsSpread) {
-      view.renderer.setAttribute("max-column-count", String(readerSettings.pageColumns));
-    }
-    if (capabilities.supportsSpread && book?.format === "pdf") {
-      view.renderer.setAttribute("spread", readerSettings.pageColumns === 1 ? "none" : "auto");
+      const viewport = viewerRef.current ?? view;
+      applyReflowLayout(view, readerSettings, viewport.clientWidth, viewport.clientHeight);
+    } else if (capabilities.supportsSpread) {
+      if (book?.format === "pdf") {
+        const viewport = viewerRef.current ?? view;
+        applyPdfLayout(view, readerSettings, viewport.clientWidth, viewport.clientHeight);
+      } else {
+        view.renderer.setAttribute("max-column-count", String(readerSettings.pageColumns));
+      }
     }
 
     // Update brightness
@@ -1728,6 +2131,27 @@ export default function Reader() {
     // bookReady is in deps so this re-runs once foliate finishes init —
     // fixes a race where DB-loaded settings arrive before view.renderer exists.
   }, [readerSettings, book?.format, bookReady, capabilities]);
+
+  useEffect(() => {
+    if (!bookReady || !capabilities.supportsReflowSettings || !viewerRef.current) return;
+    let frame = 0;
+    const viewer = viewerRef.current;
+    const resize = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const view = viewRef.current;
+        if (view?.renderer) {
+          applyReflowLayout(view, readerSettingsRef.current, viewer.clientWidth, viewer.clientHeight);
+        }
+      });
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(viewer);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [bookReady, capabilities.supportsReflowSettings]);
 
   // Re-layout alone does not remove stale annotation DOM, so marker changes
   // update the mounted annotations directly.
@@ -1839,12 +2263,18 @@ export default function Reader() {
     const renderer = viewRef.current?.renderer;
     const foliateBook = viewRef.current?.book;
     if (!renderer || !foliateBook?.getPageSize) return;
-    const isSpread = readerSettings.pageColumns === 2;
     let cancelled = false;
     const update = async () => {
       try {
+        const effectiveColumns = getEffectivePageColumns(
+          readerSettingsRef.current,
+          renderer.clientWidth,
+          renderer.clientHeight,
+        );
         const first = await foliateBook.getPageSize(0);
-        const second = isSpread ? await foliateBook.getPageSize(1).catch(() => null) : null;
+        const second = effectiveColumns === 2
+          ? await foliateBook.getPageSize(1).catch(() => null)
+          : null;
         if (cancelled || !first?.width) return;
         const rowWidth = first.width + (second?.width ?? 0);
         const containerW = Math.max(renderer.clientWidth - 24, 1);
@@ -1864,6 +2294,16 @@ export default function Reader() {
       const renderer = viewRef.current?.renderer as (HTMLElement & { relayout?: () => void }) | undefined;
       if (!renderer) return;
       if (renderer.hasAttribute("resize-dragging")) return;
+      const view = viewRef.current;
+      const viewport = viewerRef.current;
+      if (view && viewport) {
+        applyPdfLayout(
+          view,
+          readerSettingsRef.current,
+          viewport.clientWidth,
+          viewport.clientHeight,
+        );
+      }
       if (typeof renderer.relayout === "function") {
         renderer.relayout();
         return;
@@ -1907,29 +2347,6 @@ export default function Reader() {
     setSidePanel((prev) => (prev === panel ? null : panel));
   };
 
-  // Keyboard navigation — parent document listener
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if (e.key === "ArrowLeft") viewRef.current?.prev();
-      else if (e.key === "ArrowRight") viewRef.current?.next();
-      // Cmd+/Cmd- zoom for PDFs
-      else if ((e.metaKey || e.ctrlKey) && (e.key === "=" || e.key === "+")) {
-        e.preventDefault();
-        if (book?.format === "pdf") handleZoom(10);
-      } else if ((e.metaKey || e.ctrlKey) && e.key === "-") {
-        e.preventDefault();
-        if (book?.format === "pdf") handleZoom(-10);
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [book?.format, handleZoom]);
-
-  const panelRef = useRef<HTMLDivElement>(null);
   const panelWidthRef = useRef(panelWidth);
 
   useEffect(() => {
@@ -2300,7 +2717,7 @@ export default function Reader() {
             onClose={() => setSettingsOpen(false)}
             anchorRef={settingsAnchorRef}
             settings={readerSettings}
-            onSettingsChange={setReaderSettings}
+            onSettingsChange={handleReaderSettingsChange}
             capabilities={capabilities}
             onClearLookupMarks={bookId ? async () => {
               await invoke("clear_lookup_marks_for_book", { bookId });
@@ -2385,6 +2802,7 @@ export default function Reader() {
                 onInteraction={openLearningInteraction}
                 onError={handleTextBookError}
                 onRegisterNavigation={registerTextBookNavigation}
+                onRegisterPageNavigation={registerTextBookPageNavigation}
                 onHighlightClick={handleTextHighlightClick}
                 singleWordClickAction={singleWordClickAction}
                 doubleClickQuickLookup={doubleClickQuickLookup}
@@ -2447,13 +2865,29 @@ export default function Reader() {
               <div className={`h-px w-full ${isStandaloneWindow ? "opacity-10" : "bg-border"}`} style={isStandaloneWindow ? { backgroundColor: "currentColor" } : undefined}>
                 <div
                   className="h-full transition-all"
-                  style={{ width: `${progress}%`, backgroundColor: isStandaloneWindow ? "currentColor" : "#9f9fa9", opacity: isStandaloneWindow ? 0.4 : undefined }}
+                  style={{ width: `${book.format === "pdf" ? progress : chapterProgress}%`, backgroundColor: isStandaloneWindow ? "currentColor" : "#9f9fa9", opacity: isStandaloneWindow ? 0.4 : undefined }}
                 />
               </div>
               <div className="flex items-center justify-between h-8">
-                <span className={`text-[12px] ${isStandaloneWindow ? "opacity-60" : "text-text-muted"}`}>
-                  {pageInfo ? t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total }) : `${progress}%`}
-                </span>
+                <div className={`flex min-w-0 items-center gap-2 text-[12px] tabular-nums ${isStandaloneWindow ? "opacity-60" : "text-text-muted"}`}>
+                  <span>
+                    {book.format === "pdf" && pageInfo
+                      ? t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total })
+                      : t("reader.chapterProgress", { progress: chapterProgress })}
+                  </span>
+                  {readerSettings.showBookProgress && book.format !== "pdf" && (
+                    <span className="border-l border-current/20 pl-2">
+                      {t("reader.bookProgress", { progress })}
+                    </span>
+                  )}
+                  {readerSettings.readingMode === "paginated" && readerSettings.showPageNumbers && pageInfo && book.format !== "pdf" && (
+                    <span className="border-l border-current/20 pl-2">
+                      {pageInfo.visibleEnd && pageInfo.visibleEnd > pageInfo.current
+                        ? t("reader.pageRangeOf", { current: pageInfo.current, end: pageInfo.visibleEnd, total: pageInfo.total })
+                        : t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total })}
+                    </span>
+                  )}
+                </div>
                 {book.format === "pdf" && (
                   <div className="flex items-center gap-1">
                     <Button variant="icon" size="sm" onClick={() => handleZoom(-10)}>
@@ -2472,11 +2906,7 @@ export default function Reader() {
                     </Button>
                   </div>
                 )}
-                <span className={`text-[12px] ${isStandaloneWindow ? "opacity-50" : "text-text-muted"}`}>
-                  {pageInfo && pageInfo.total > pageInfo.current
-                    ? t("reader.pagesLeft", { count: pageInfo.total - pageInfo.current })
-                    : ""}
-                </span>
+                <span className="w-8" aria-hidden="true" />
               </div>
             </div>
           </footer>
@@ -2488,7 +2918,14 @@ export default function Reader() {
             className="w-1 h-full shrink-0 cursor-col-resize touch-none hover:bg-accent/30 transition-colors z-10"
           />
         )}
-        <div ref={panelRef} className={sidePanel ? "shrink-0 h-full" : "hidden"} style={{ width: panelWidth }}>
+        <div
+          ref={panelRef}
+          className={sidePanel ? "shrink-0 h-full" : "hidden"}
+          style={{ width: panelWidth }}
+          onPointerDownCapture={() => {
+            pageTurnKeyboardBlockedRef.current = true;
+          }}
+        >
           <div className={sidePanel === "ai" ? "h-full" : "hidden"}>
             <AiPanel
               bookId={bookId}
@@ -2704,8 +3141,8 @@ export default function Reader() {
           config={learningCardConfig}
           readerRect={readerRect}
           onClose={() => setLearningInteraction(null)}
-          onAskAi={(quote, cfi) => {
-            setAiContext({ text: quote, cfi });
+          onAskAi={(quote, cfi, analysis) => {
+            setAiContext({ text: quote, cfi, analysis });
             setSidePanel("ai");
           }}
           onViewAllNotes={() => {
