@@ -17,11 +17,13 @@ const SCOPES: &str = "openid profile email offline_access";
 const CALLBACK_PORT: u16 = 1455;
 const REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
 const CALLBACK_TIMEOUT_SECS: u64 = 60;
+const CALLBACK_CONNECTION_TIMEOUT_SECS: u64 = 5;
+const MAX_CALLBACK_REQUEST_BYTES: usize = 16 * 1024;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OAuthTokens {
     pub access_token: String,
-    pub refresh_token: String,
+    pub refresh_token: Option<String>,
     pub expires_at: u64,
     pub account_id: Option<String>,
 }
@@ -93,30 +95,54 @@ pub async fn wait_for_callback(expected_state: &str) -> AppResult<String> {
     handle_callback(listener, expected_state).await
 }
 
-/// Accept a single connection on the listener, parse the OAuth callback, and return the code.
+/// Accept callbacks until a valid state arrives or the OAuth session expires.
+/// Invalid local connections receive an error page but cannot consume the one
+/// opportunity for the real browser callback to complete.
 async fn handle_callback(
     listener: tokio::net::TcpListener,
     expected_state: &str,
 ) -> AppResult<String> {
-    let (mut stream, _) = tokio::time::timeout(
-        std::time::Duration::from_secs(CALLBACK_TIMEOUT_SECS),
-        listener.accept(),
-    )
-    .await
-    .map_err(|_| AppError::Other("OAuth callback timed out after 60s".to_string()))?
-    .map_err(|e| AppError::Other(format!("Failed to accept connection: {}", e)))?;
+    let deadline =
+        tokio::time::Instant::now() + std::time::Duration::from_secs(CALLBACK_TIMEOUT_SECS);
+    loop {
+        let remaining = deadline
+            .checked_duration_since(tokio::time::Instant::now())
+            .ok_or_else(|| AppError::Other("OAuth callback timed out after 60s".to_string()))?;
+        let (mut stream, _) = tokio::time::timeout(remaining, listener.accept())
+            .await
+            .map_err(|_| AppError::Other("OAuth callback timed out after 60s".to_string()))?
+            .map_err(|error| AppError::Other(format!("Failed to accept connection: {error}")))?;
 
-    let mut buf = [0u8; 4096];
-    let n = stream.read(&mut buf).await?;
-    let request = String::from_utf8_lossy(&buf[..n]);
+        if let Some(code) = process_callback(&mut stream, expected_state, deadline).await? {
+            return Ok(code);
+        }
+    }
+}
 
-    // Parse first line: "GET /callback?code=xxx&state=yyy HTTP/1.1"
-    let first_line = request.lines().next().unwrap_or("");
-    let path = first_line.split_whitespace().nth(1).unwrap_or("");
+async fn process_callback(
+    stream: &mut tokio::net::TcpStream,
+    expected_state: &str,
+    deadline: tokio::time::Instant,
+) -> AppResult<Option<String>> {
+    let request = read_http_request(stream, deadline).await?;
+    let Some(request) = request else {
+        return Ok(None);
+    };
 
-    let full_url = format!("http://127.0.0.1{}", path);
-    let parsed = reqwest::Url::parse(&full_url)
-        .map_err(|e| AppError::Other(format!("Failed to parse callback URL: {}", e)))?;
+    // Parse first line: "GET /callback?code=xxx&state=yyy HTTP/1.1".
+    let Some(path) = request
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+    else {
+        write_callback_error(stream, "The callback request is malformed.").await;
+        return Ok(None);
+    };
+    let full_url = format!("http://127.0.0.1{path}");
+    let Ok(parsed) = reqwest::Url::parse(&full_url) else {
+        write_callback_error(stream, "The callback URL is invalid.").await;
+        return Ok(None);
+    };
 
     let mut code = None;
     let mut state = None;
@@ -128,22 +154,69 @@ async fn handle_callback(
         }
     }
 
-    let state = state.ok_or_else(|| AppError::Other("Missing state in callback".to_string()))?;
-    if state != expected_state {
-        let resp = "HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n\
-            <html><body><h1>Authentication Failed</h1><p>State mismatch. Please try again.</p></body></html>";
-        let _ = stream.write_all(resp.as_bytes()).await;
-        return Err(AppError::Other("OAuth state mismatch".to_string()));
+    if state.as_deref() != Some(expected_state) {
+        write_callback_error(
+            stream,
+            "State validation failed. Please return to Quill and try again.",
+        )
+        .await;
+        return Ok(None);
     }
+    let Some(code) = code.filter(|value| !value.is_empty()) else {
+        write_callback_error(
+            stream,
+            "The authorization code is missing. Please try again.",
+        )
+        .await;
+        return Ok(None);
+    };
 
-    let code =
-        code.ok_or_else(|| AppError::Other("Missing authorization code in callback".to_string()))?;
-
-    let resp = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n\
+    let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n\
         <html><body><h1>Authentication Successful</h1><p>You can close this window and return to Quill.</p></body></html>";
-    let _ = stream.write_all(resp.as_bytes()).await;
+    let _ = stream.write_all(response.as_bytes()).await;
+    Ok(Some(code))
+}
 
-    Ok(code)
+async fn read_http_request(
+    stream: &mut tokio::net::TcpStream,
+    deadline: tokio::time::Instant,
+) -> AppResult<Option<String>> {
+    let mut request = Vec::with_capacity(1024);
+    loop {
+        if request.len() >= MAX_CALLBACK_REQUEST_BYTES {
+            write_callback_error(stream, "The callback request is too large.").await;
+            return Ok(None);
+        }
+        let remaining = deadline
+            .checked_duration_since(tokio::time::Instant::now())
+            .ok_or_else(|| AppError::Other("OAuth callback timed out after 60s".to_string()))?;
+        let timeout = remaining.min(std::time::Duration::from_secs(
+            CALLBACK_CONNECTION_TIMEOUT_SECS,
+        ));
+        let mut buffer = [0u8; 1024];
+        let count = match tokio::time::timeout(timeout, stream.read(&mut buffer)).await {
+            Ok(Ok(count)) => count,
+            Ok(Err(error)) => return Err(error.into()),
+            Err(_) => {
+                write_callback_error(stream, "The callback request timed out.").await;
+                return Ok(None);
+            }
+        };
+        if count == 0 {
+            return Ok(None);
+        }
+        request.extend_from_slice(&buffer[..count]);
+        if request.windows(4).any(|window| window == b"\r\n\r\n") {
+            return Ok(Some(String::from_utf8_lossy(&request).into_owned()));
+        }
+    }
+}
+
+async fn write_callback_error(stream: &mut tokio::net::TcpStream, message: &str) {
+    let response = format!(
+        "HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n<html><body><h1>Authentication Failed</h1><p>{message}</p></body></html>"
+    );
+    let _ = stream.write_all(response.as_bytes()).await;
 }
 
 /// Exchange an authorization code for tokens.
@@ -214,7 +287,7 @@ pub fn save_tokens(secrets: &Secrets, tokens: &OAuthTokens) -> AppResult<()> {
     let expires_at = tokens.expires_at.to_string();
     secrets.set_many(&[
         ("oauth_access_token", Some(tokens.access_token.as_str())),
-        ("oauth_refresh_token", Some(tokens.refresh_token.as_str())),
+        ("oauth_refresh_token", tokens.refresh_token.as_deref()),
         ("oauth_expires_at", Some(expires_at.as_str())),
         ("oauth_account_id", tokens.account_id.as_deref()),
     ])
@@ -232,9 +305,9 @@ pub fn load_tokens(secrets: &Secrets) -> AppResult<Option<OAuthTokens>> {
     let Some(access_token) = secrets.get("oauth_access_token")? else {
         return Ok(None);
     };
-    let Some(refresh_token) = secrets.get("oauth_refresh_token")? else {
-        return Ok(None);
-    };
+    let refresh_token = secrets
+        .get("oauth_refresh_token")?
+        .filter(|token| !token.trim().is_empty());
     let Some(expires_at) = secrets.get("oauth_expires_at")? else {
         return Ok(None);
     };
@@ -266,11 +339,17 @@ pub async fn get_valid_token(secrets: &Secrets) -> AppResult<(String, Option<Str
     }
 
     // Token expired — refresh it
-    let response = refresh_access_token(&tokens.refresh_token).await?;
+    let Some(refresh_token) = tokens.refresh_token.as_deref() else {
+        clear_tokens(secrets)?;
+        return Err(AppError::Other(
+            "OAUTH_REAUTHENTICATION_REQUIRED".to_string(),
+        ));
+    };
+    let response = refresh_access_token(refresh_token).await?;
     let now = now_epoch();
     let new_tokens = OAuthTokens {
         access_token: response.access_token.clone(),
-        refresh_token: response.refresh_token.unwrap_or(tokens.refresh_token),
+        refresh_token: response.refresh_token.or(tokens.refresh_token),
         expires_at: now + response.expires_in.unwrap_or(3600),
         account_id: decode_jwt_account_id(&response.access_token).or(tokens.account_id),
     };
@@ -398,7 +477,7 @@ mod tests {
         // Save and load
         let tokens = OAuthTokens {
             access_token: "access_123".to_string(),
-            refresh_token: "refresh_456".to_string(),
+            refresh_token: Some("refresh_456".to_string()),
             expires_at: 1700000000,
             account_id: Some("acct_789".to_string()),
         };
@@ -406,14 +485,14 @@ mod tests {
 
         let loaded = load_tokens(&secrets).unwrap().unwrap();
         assert_eq!(loaded.access_token, "access_123");
-        assert_eq!(loaded.refresh_token, "refresh_456");
+        assert_eq!(loaded.refresh_token.as_deref(), Some("refresh_456"));
         assert_eq!(loaded.expires_at, 1700000000);
         assert_eq!(loaded.account_id, Some("acct_789".to_string()));
 
         // Overwrite (upsert)
         let tokens2 = OAuthTokens {
             access_token: "new_access".to_string(),
-            refresh_token: "new_refresh".to_string(),
+            refresh_token: Some("new_refresh".to_string()),
             expires_at: 1800000000,
             account_id: None,
         };
@@ -435,7 +514,7 @@ mod tests {
 
         let tokens = OAuthTokens {
             access_token: "at".to_string(),
-            refresh_token: "rt".to_string(),
+            refresh_token: Some("rt".to_string()),
             expires_at: 999,
             account_id: None,
         };
@@ -444,6 +523,25 @@ mod tests {
         let loaded = load_tokens(&secrets).unwrap().unwrap();
         assert_eq!(loaded.access_token, "at");
         assert_eq!(loaded.account_id, None);
+    }
+
+    #[tokio::test]
+    async fn expired_token_without_refresh_token_requires_reauthentication() {
+        let secrets = Secrets::init_in_memory().unwrap();
+        save_tokens(
+            &secrets,
+            &OAuthTokens {
+                access_token: "access".to_string(),
+                refresh_token: None,
+                expires_at: 0,
+                account_id: None,
+            },
+        )
+        .unwrap();
+
+        let error = get_valid_token(&secrets).await.unwrap_err().to_string();
+        assert_eq!(error, "OAUTH_REAUTHENTICATION_REQUIRED");
+        assert!(load_tokens(&secrets).unwrap().is_none());
     }
 
     #[tokio::test]
@@ -469,7 +567,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_handle_callback_state_mismatch() {
+    async fn test_handle_callback_ignores_state_mismatch_until_valid_callback() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
 
@@ -482,8 +580,16 @@ mod tests {
             "GET /auth/callback?code=code&state=wrong_state HTTP/1.1\r\nHost: localhost\r\n\r\n";
         stream.write_all(request.as_bytes()).await.unwrap();
 
-        let result = handle.await.unwrap();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("state mismatch"));
+        let mut valid_stream = tokio::net::TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .unwrap();
+        valid_stream
+            .write_all(
+                b"GET /auth/callback?code=valid_code&state=correct_state HTTP/1.1\r\nHost: localhost\r\n\r\n",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(handle.await.unwrap().unwrap(), "valid_code");
     }
 }

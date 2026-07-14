@@ -60,6 +60,7 @@ import {
 } from "../components/highlight-ranges";
 import { getBook, updateReadingProgress, checkBookAvailable, type Book, type BookAvailabilityStatus } from "../hooks/useBooks";
 import { getAllSettings } from "../hooks/useSettings";
+import { logIgnoredError } from "../utils/logIgnoredError";
 import type { Highlight } from "../hooks/useBookmarks";
 import {
   DEFAULT_CARD_DESIGN_CONFIG,
@@ -1497,8 +1498,14 @@ export default function Reader() {
     const initFoliate = async () => {
       if (supportsWordMarkers && bookId) {
         const [rules, exceptions] = await Promise.all([
-          invoke<WordMarkRule[]>("list_word_marks", { bookId }).catch(() => []),
-          invoke<WordMarkException[]>("list_word_mark_exceptions", { bookId }).catch(() => []),
+          invoke<WordMarkRule[]>("list_word_marks", { bookId }).catch((error) => {
+            logIgnoredError("reader.load-word-marks", error);
+            return [];
+          }),
+          invoke<WordMarkException[]>("list_word_mark_exceptions", { bookId }).catch((error) => {
+            logIgnoredError("reader.load-word-mark-exceptions", error);
+            return [];
+          }),
         ]);
         wordMarkWordsRef.current = rules
           .filter((rule) => rule.enabled)

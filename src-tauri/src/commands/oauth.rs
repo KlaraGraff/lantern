@@ -32,9 +32,13 @@ pub async fn openai_oauth_login(
         .as_secs();
     let account_id = decode_jwt_account_id(&response.access_token);
 
+    let refresh_token = response
+        .refresh_token
+        .filter(|token| !token.trim().is_empty())
+        .ok_or_else(|| AppError::Other("OAUTH_REFRESH_TOKEN_MISSING".to_string()))?;
     let tokens = OAuthTokens {
         access_token: response.access_token,
-        refresh_token: response.refresh_token.unwrap_or_default(),
+        refresh_token: Some(refresh_token),
         expires_at: now + response.expires_in.unwrap_or(3600),
         account_id: account_id.clone(),
     };

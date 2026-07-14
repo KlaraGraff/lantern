@@ -21,6 +21,13 @@ interface OAuthStatus {
   account_id: string | null;
 }
 
+interface VaultStatus {
+  state: "locked" | "ready" | "denied" | "unavailable";
+  encryptedSecretCount: number;
+  pendingLocalMigrationCount: number;
+  pendingLocalMigrationOldestAt: number | null;
+}
+
 const PROFILE_CONFIG_KEYS = [
   "label",
   "provider",
@@ -88,6 +95,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   const [error, setError] = useState<string | null>(null);
   const [oauthStatus, setOauthStatus] = useState<OAuthStatus>({ connected: false, account_id: null });
   const [oauthLoading, setOauthLoading] = useState(false);
+  const [vaultStatus, setVaultStatus] = useState<VaultStatus | null>(null);
+  const [securingPendingCredentials, setSecuringPendingCredentials] = useState(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profilesRef = useRef<AiProfile[]>([]);
   const savedProfilesRef = useRef<AiProfile[]>([]);
@@ -137,6 +146,11 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     setOauthStatus(next);
   }, []);
 
+  const refreshVaultStatus = useCallback(async () => {
+    const next = await invoke<VaultStatus>("vault_status");
+    setVaultStatus(next);
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -157,12 +171,17 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
       } catch {
         // OAuth is optional; profile and API-key configuration remain usable.
       }
+      try {
+        await refreshVaultStatus();
+      } catch {
+        // The migration reminder is informational and must not block AI setup.
+      }
     } catch (nextError) {
       setError(errorText(nextError));
     } finally {
       setLoading(false);
     }
-  }, [refreshOAuthStatus, replaceProfiles, replaceSavedProfiles]);
+  }, [refreshOAuthStatus, refreshVaultStatus, replaceProfiles, replaceSavedProfiles]);
 
   useEffect(() => {
     void load();
@@ -623,6 +642,21 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     }
   };
 
+  const securePendingCredentials = async () => {
+    setSecuringPendingCredentials(true);
+    setError(null);
+    try {
+      await prepareVaultForWrite();
+      const encrypted = await invokeWithVaultAccess<number>("vault_encrypt_pending_local_migrations");
+      await refreshVaultStatus();
+      showSavedToast(t("settings.ai.pendingCredentialsSecured", { count: encrypted }));
+    } catch (nextError) {
+      setError(errorText(nextError));
+    } finally {
+      setSecuringPendingCredentials(false);
+    }
+  };
+
   const logoutFromOpenAi = async () => {
     setOauthLoading(true);
     setError(null);
@@ -670,6 +704,25 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
           {t("settings.ai.addService")}
         </Button>
       </div>
+
+      {(vaultStatus?.pendingLocalMigrationCount ?? 0) > 0 && (
+        <div role="status" className="mb-3 flex items-center justify-between gap-3 rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-950 dark:border-amber-500/35 dark:bg-amber-950/25 dark:text-amber-100">
+          <div className="min-w-0">
+            <p className="font-medium">{t("settings.ai.pendingCredentialsTitle", { count: vaultStatus?.pendingLocalMigrationCount ?? 0 })}</p>
+            <p className="text-amber-900/80 dark:text-amber-100/75">{t("settings.ai.pendingCredentialsHint")}</p>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void securePendingCredentials()}
+            disabled={securingPendingCredentials || busyId != null || saving}
+            className="shrink-0"
+          >
+            {securingPendingCredentials ? <Loader2 size={14} className="animate-spin" /> : null}
+            {t("settings.ai.pendingCredentialsAction")}
+          </Button>
+        </div>
+      )}
 
       {error && (
         <div role="alert" className="mb-3 flex items-start gap-2 rounded-md bg-danger-bg px-3 py-2 text-[11px] leading-5 text-danger-text">

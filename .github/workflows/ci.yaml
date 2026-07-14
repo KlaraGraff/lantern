@@ -19,8 +19,22 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - run: npm audit --audit-level=high
       - run: npx tsc --noEmit
       - run: npm run lint
+
+  dependency-security:
+    name: Dependency Security
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - run: cargo audit
 
   backend:
     name: Backend

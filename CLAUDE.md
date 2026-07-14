@@ -18,7 +18,6 @@ src/                    # React frontend
     ui/                 # Primitives: Button, Input, Select, Slider, Toggle
     settings/           # Settings modal sections (one per tab)
   hooks/                # Custom hooks (useSettings, useBooks, useAiChat, etc.)
-  contexts/             # React context providers
   i18n/                 # Translation JSON files
 src-tauri/              # Rust backend
   src/commands/         # Tauri command modules

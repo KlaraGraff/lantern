@@ -176,13 +176,13 @@ pub fn list_notes(
     let search = search.filter(|value| !value.trim().is_empty());
     let pattern = search
         .as_ref()
-        .map(|value| format!("%{}%", value.trim().to_lowercase()));
+        .map(|value| crate::db::sqlite_contains_pattern(value.trim()));
     let conn = db.reader();
     let total: usize = conn.query_row(
         "SELECT COUNT(*) FROM notes n LEFT JOIN books b ON b.id = n.book_id
          WHERE (?1 IS NULL OR n.book_id = ?1)
            AND (?2 IS NULL OR n.anchor_kind = ?2)
-           AND (?3 IS NULL OR LOWER(n.content) LIKE ?3 OR LOWER(COALESCE(n.selected_text, '')) LIKE ?3 OR LOWER(COALESCE(n.normalized_word, '')) LIKE ?3 OR LOWER(COALESCE(b.title, '')) LIKE ?3)
+           AND (?3 IS NULL OR LOWER(n.content) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(n.selected_text, '')) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(n.normalized_word, '')) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(b.title, '')) LIKE ?3 ESCAPE '\\')
            AND (?4 IS NULL OR n.updated_at >= ?4)
            AND (?5 IS NULL OR n.updated_at <= ?5)",
         params![book_id, anchor_kind, pattern, updated_after, updated_before],
@@ -194,7 +194,7 @@ pub fn list_notes(
         "SELECT {NOTE_COLUMNS} FROM notes n LEFT JOIN books b ON b.id = n.book_id
          WHERE (?1 IS NULL OR n.book_id = ?1)
            AND (?2 IS NULL OR n.anchor_kind = ?2)
-           AND (?3 IS NULL OR LOWER(n.content) LIKE ?3 OR LOWER(COALESCE(n.selected_text, '')) LIKE ?3 OR LOWER(COALESCE(n.normalized_word, '')) LIKE ?3 OR LOWER(COALESCE(b.title, '')) LIKE ?3)
+           AND (?3 IS NULL OR LOWER(n.content) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(n.selected_text, '')) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(n.normalized_word, '')) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(b.title, '')) LIKE ?3 ESCAPE '\\')
            AND (?4 IS NULL OR n.updated_at >= ?4)
            AND (?5 IS NULL OR n.updated_at <= ?5)
            AND (?6 IS NULL OR printf('%020lld:%s', n.updated_at, n.id) < ?6)

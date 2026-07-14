@@ -6,11 +6,11 @@
 //!
 //! ## Forbidden surfaces — DO NOT ADD TOOLS THAT TOUCH:
 //!
-//! - `settings` table — `commands::settings::get_all_settings` merges
-//!   `ai_api_key` from secrets into its return map
-//!   (`commands/settings.rs:18-20`). Wrapping it as an MCP tool would
-//!   leak the API key. Future partial settings exposure must filter
-//!   against `Secrets::SENSITIVE_KEYS` (`secrets.rs:15-21`).
+//! - `settings` table — settings can contain sensitive legacy values. The
+//!   public `commands::settings::get_all_settings` filters them with
+//!   `Secrets::is_sensitive_key` and exposes only configuration metadata.
+//!   Any future partial settings tool must reuse that predicate rather than
+//!   selecting keys ad hoc.
 //! - `oauth` / OAuth tokens — `commands::oauth::*`.
 //! - Secrets store — separate `Mutex<Connection>`; never add a
 //!   `Secrets` clone to `McpState`.

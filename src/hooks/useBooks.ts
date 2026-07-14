@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 
 export interface Book {
   id: string;
@@ -97,18 +96,11 @@ export function useBooks(filter?: string, search?: string, collectionId?: string
   return { books, total, loading, loadingMore, hasMore, loadMore, refresh };
 }
 
-async function pickFile(): Promise<string | null> {
-  return open({
-    multiple: false,
-    filters: [{ name: "Books", extensions: ["epub", "pdf", "txt", "md", "markdown", "html", "htm", "mobi", "azw", "azw3", "fb2", "fbz", "cbz"] }],
-  });
+async function importFile(): Promise<Book | null> {
+  return invoke<Book | null>("import_book_from_dialog");
 }
 
-async function importFile(filePath: string): Promise<Book> {
-  return invoke<Book>("import_book", { filePath });
-}
-
-export const importBookDialog = { pickFile, importFile };
+export const importBookDialog = { importFile };
 
 export async function getBook(id: string): Promise<Book> {
   return invoke<Book>("get_book", { id });

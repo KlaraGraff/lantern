@@ -451,6 +451,15 @@ pub fn run() {
             }
         })
         .on_window_event(|window, event| {
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                commands::books::import_external_paths(
+                    paths.clone(),
+                    window.state::<Db>().inner(),
+                    window.state::<SyncWriter>().inner(),
+                    window.app_handle(),
+                );
+            }
+
             // On macOS, closing the main window via the red button should hide
             // it, not quit the app — matches the standard Mac convention. The
             // user reopens it from the dock icon (RunEvent::Reopen below) or
@@ -647,8 +656,9 @@ pub fn run() {
             commands::app::app_ready,
             commands::app::reveal_logs,
             commands::app::app_build_info,
+            commands::app::log_webview_warning,
             // Books
-            commands::books::import_book,
+            commands::books::import_book_from_dialog,
             commands::books::list_books,
             commands::books::get_book,
             commands::books::get_book_counts,
@@ -668,6 +678,7 @@ pub fn run() {
             commands::settings::vault_prepare_write,
             commands::settings::vault_authorize,
             commands::settings::vault_deny,
+            commands::settings::vault_encrypt_pending_local_migrations,
             commands::settings::set_ai_api_key,
             commands::settings::ai_active_profile,
             commands::settings::ai_list_profiles,
@@ -804,30 +815,20 @@ pub fn run() {
     app.run(|app_handle, event| match &event {
         #[cfg(target_os = "macos")]
         tauri::RunEvent::Opened { urls } => {
-            // Files dropped on dock icon or opened via file association
-            let paths: Vec<String> = urls
+            // Files dropped on the dock icon or opened through a file
+            // association are OS-originated selections, so import them without
+            // round-tripping their paths through the webview.
+            let paths: Vec<PathBuf> = urls
                 .iter()
                 .filter_map(|url| url.to_file_path().ok())
-                .filter(|p: &PathBuf| {
-                    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-                    ext.eq_ignore_ascii_case("epub")
-                        || ext.eq_ignore_ascii_case("pdf")
-                        || ext.eq_ignore_ascii_case("txt")
-                        || ext.eq_ignore_ascii_case("md")
-                        || ext.eq_ignore_ascii_case("markdown")
-                        || ext.eq_ignore_ascii_case("html")
-                        || ext.eq_ignore_ascii_case("htm")
-                        || ext.eq_ignore_ascii_case("mobi")
-                        || ext.eq_ignore_ascii_case("azw")
-                        || ext.eq_ignore_ascii_case("azw3")
-                        || ext.eq_ignore_ascii_case("fb2")
-                        || ext.eq_ignore_ascii_case("fbz")
-                        || ext.eq_ignore_ascii_case("cbz")
-                })
-                .filter_map(|p: PathBuf| p.to_str().map(String::from))
                 .collect();
             if !paths.is_empty() {
-                let _ = app_handle.emit("file-open", paths);
+                commands::books::import_external_paths(
+                    paths,
+                    app_handle.state::<Db>().inner(),
+                    app_handle.state::<SyncWriter>().inner(),
+                    app_handle,
+                );
             }
         }
         // Dock icon click while the app is already running. If the main

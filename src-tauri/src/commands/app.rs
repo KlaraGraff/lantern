@@ -4,6 +4,9 @@ use tauri_plugin_opener::OpenerExt;
 use crate::error::{AppError, AppResult};
 use crate::resolve_log_dir;
 
+const MAX_WEBVIEW_LOG_SCOPE_CHARS: usize = 96;
+const MAX_WEBVIEW_LOG_MESSAGE_CHARS: usize = 1_024;
+
 #[derive(Debug, serde::Serialize)]
 pub struct BuildInfo {
     pub version: String,
@@ -53,4 +56,16 @@ pub fn reveal_logs(app: AppHandle) -> AppResult<()> {
         .open_path(log_dir.to_string_lossy(), None::<&str>)
         .map_err(|e| AppError::Other(format!("open log dir: {e}")))?;
     Ok(())
+}
+
+/// Records intentional frontend fallbacks without exposing arbitrary-sized
+/// webview input to the application log.
+#[tauri::command]
+pub fn log_webview_warning(scope: String, message: String) {
+    let scope: String = scope.chars().take(MAX_WEBVIEW_LOG_SCOPE_CHARS).collect();
+    let message: String = message
+        .chars()
+        .take(MAX_WEBVIEW_LOG_MESSAGE_CHARS)
+        .collect();
+    log::warn!("webview fallback [{scope}]: {message}");
 }

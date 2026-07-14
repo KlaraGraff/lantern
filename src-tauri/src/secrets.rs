@@ -17,6 +17,9 @@ use zeroize::Zeroizing;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 
+// This is the intentionally chosen Quill Personal vault namespace. It differs
+// from the bundle identifier to preserve the Keychain identity introduced by
+// the credential-vault release; changing it requires an explicit migration.
 const VAULT_KEYCHAIN_SERVICE: &str = "com.ryoyamada.quill";
 const VAULT_MASTER_ACCOUNT: &str = "vault-master-key-v1";
 const LEGACY_KEYCHAIN_SERVICES: &[&str] = &[
@@ -73,6 +76,7 @@ pub struct VaultStatus {
     state: &'static str,
     encrypted_secret_count: i64,
     pending_local_migration_count: i64,
+    pending_local_migration_oldest_at: Option<i64>,
 }
 
 #[derive(Clone)]
@@ -135,7 +139,8 @@ impl Secrets {
              PRAGMA secure_delete=ON;
              CREATE TABLE IF NOT EXISTS secrets (
                  key TEXT PRIMARY KEY,
-                 value TEXT NOT NULL
+                 value TEXT NOT NULL,
+                 created_at INTEGER NOT NULL DEFAULT 0
              );
              CREATE TABLE IF NOT EXISTS encrypted_secrets (
                  key TEXT PRIMARY KEY,
@@ -154,12 +159,30 @@ impl Secrets {
                  created_at INTEGER NOT NULL
              );",
         )?;
+        // Older vault databases used a two-column `secrets` table. The
+        // timestamp lets the UI surface a persistent migration reminder
+        // without ever reading a credential value.
+        let has_created_at = conn
+            .prepare("PRAGMA table_info(secrets)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .any(|name| name == "created_at");
+        if !has_created_at {
+            conn.execute_batch(
+                "ALTER TABLE secrets ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
         Ok(())
     }
 
     /// This command is intentionally metadata-only and never accesses Keychain.
     pub fn status(&self) -> AppResult<VaultStatus> {
-        let (encrypted_secret_count, pending_local_migration_count) = {
+        let (
+            encrypted_secret_count,
+            pending_local_migration_count,
+            pending_local_migration_oldest_at,
+        ) = {
             let conn = self
                 .conn
                 .lock()
@@ -169,7 +192,9 @@ impl Secrets {
                     row.get(0)
                 })?;
             let pending = conn.query_row("SELECT COUNT(*) FROM secrets", [], |row| row.get(0))?;
-            (encrypted, pending)
+            let oldest =
+                conn.query_row("SELECT MIN(created_at) FROM secrets", [], |row| row.get(0))?;
+            (encrypted, pending, oldest)
         };
         let session = self
             .session
@@ -185,6 +210,7 @@ impl Secrets {
             state,
             encrypted_secret_count,
             pending_local_migration_count,
+            pending_local_migration_oldest_at,
         })
     }
 
@@ -486,6 +512,53 @@ impl Secrets {
         Ok(())
     }
 
+    /// Encrypt plaintext values that were deliberately staged during a legacy
+    /// upgrade. Callers must first obtain explicit vault authorization through
+    /// `prepare_write`; this method never reads Keychain by itself.
+    pub fn encrypt_pending_local_migrations(&self) -> AppResult<i64> {
+        let _operation = self
+            .operation_lock
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+        let master_key = self.master_key_or_confirmation("unlock")?;
+        let pending = {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|error| AppError::Other(error.to_string()))?;
+            let mut statement = conn.prepare("SELECT key, value FROM secrets")?;
+            let values = statement
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            values
+        };
+
+        let encrypted = pending
+            .iter()
+            .map(|(key, value)| {
+                self.encrypt_value(key, value, master_key.as_slice())
+                    .map(|payload| (key.as_str(), payload))
+            })
+            .collect::<AppResult<Vec<_>>>()?;
+        let count = encrypted.len() as i64;
+        if count == 0 {
+            return Ok(0);
+        }
+
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+        let tx = conn.unchecked_transaction()?;
+        for (key, (nonce, ciphertext)) in encrypted {
+            Self::store_encrypted_in_transaction(&tx, key, &nonce, &ciphertext)?;
+        }
+        tx.commit()?;
+        Ok(count)
+    }
+
     pub fn snapshot_state(&self, key: &str) -> AppResult<SecretStateSnapshot> {
         let conn = self
             .conn
@@ -733,9 +806,10 @@ impl Secrets {
                     .lock()
                     .map_err(|error| AppError::Other(error.to_string()))?;
                 conn.execute(
-                    "INSERT INTO secrets (key, value) VALUES (?1, ?2)
-                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                    params![key, value],
+                    "INSERT INTO secrets (key, value, created_at) VALUES (?1, ?2, ?3)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                         created_at = excluded.created_at",
+                    params![key, value, chrono::Utc::now().timestamp_millis()],
                 )?;
             }
             let db_conn = db
@@ -1426,6 +1500,31 @@ mod tests {
             Some("new-access")
         );
         assert_eq!(secrets.get("oauth_account_id").unwrap(), None);
+    }
+
+    #[test]
+    fn pending_local_migrations_are_encrypted_in_one_explicit_operation() {
+        let secrets = Secrets::init_in_memory().unwrap();
+        {
+            let conn = secrets.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO secrets (key, value, created_at) VALUES (?1, ?2, ?3)",
+                params!["ai_api_key/legacy", "plaintext-key", 123_i64],
+            )
+            .unwrap();
+        }
+
+        let status = secrets.status().unwrap();
+        assert_eq!(status.pending_local_migration_count, 1);
+        assert_eq!(status.pending_local_migration_oldest_at, Some(123));
+
+        assert_eq!(secrets.encrypt_pending_local_migrations().unwrap(), 1);
+        assert!(secrets.has_encrypted_secret("ai_api_key/legacy").unwrap());
+        assert_eq!(
+            secrets.get("ai_api_key/legacy").unwrap().as_deref(),
+            Some("plaintext-key")
+        );
+        assert_eq!(secrets.status().unwrap().pending_local_migration_count, 0);
     }
 
     #[test]

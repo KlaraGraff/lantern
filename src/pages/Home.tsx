@@ -224,79 +224,43 @@ export default function Home() {
     return () => { unlisten.then((fn) => fn()); };
   }, []);
 
-  // Listen for Tauri file drag-and-drop events
+  // Native drag/drop imports are handled by Rust so a webview command never
+  // receives an arbitrary absolute path. This listener only owns the visual
+  // drop state.
   useEffect(() => {
-    let cancelled = false;
-    const unlisten = getCurrentWebview().onDragDropEvent(async (event) => {
-      if (cancelled) return;
+    const unlisten = getCurrentWebview().onDragDropEvent((event) => {
       if (event.payload.type === "over" || event.payload.type === "enter") {
         setIsDragging(true);
-      } else if (event.payload.type === "drop") {
-        setIsDragging(false);
-        const books = event.payload.paths.filter((p) =>
-          [".epub", ".pdf", ".txt", ".md", ".markdown", ".html", ".htm", ".mobi", ".azw", ".azw3", ".fb2", ".fbz", ".cbz"].some((extension) => p.toLowerCase().endsWith(extension))
-        );
-        if (books.length > 0) {
-          setImporting(true);
-          try {
-            for (const filePath of books) {
-              try {
-                await importBookDialog.importFile(filePath);
-              } catch (err) {
-                console.error("Failed to import dropped book:", err);
-                setImportError(`${filePath.split("/").pop()}: ${formatError(err)}`);
-              }
-            }
-            refreshRef.current();
-            countsRefreshRef.current();
-          } finally {
-            setImporting(false);
-          }
-        }
       } else {
         setIsDragging(false);
-      }
-    });
-    return () => {
-      cancelled = true;
-      unlisten.then((fn) => fn());
-    };
-  }, []);
-
-  // Listen for files opened via dock icon drop or file association
-  useEffect(() => {
-    const unlisten = listen<string[]>("file-open", async (event) => {
-      const paths = event.payload;
-      if (paths.length === 0) return;
-      setImporting(true);
-      try {
-        for (const filePath of paths) {
-          try {
-            await importBookDialog.importFile(filePath);
-          } catch (err) {
-            console.error("Failed to import file-open book:", err);
-            setImportError(`${filePath.split("/").pop()}: ${formatError(err)}`);
-          }
-        }
-        refreshRef.current();
-        countsRefreshRef.current();
-      } finally {
-        setImporting(false);
       }
     });
     return () => { unlisten.then((fn) => fn()); };
   }, []);
 
+  // Covers native file association and drag/drop imports. The backend emits
+  // these after the copy has completed, so a refresh cannot race the import.
+  useEffect(() => {
+    const unlistenSuccess = listen("book-imported", () => {
+      refreshRef.current();
+      countsRefreshRef.current();
+    });
+    const unlistenFailure = listen<string>("book-import-failed", (event) => {
+      setImportError(formatError(event.payload));
+    });
+    return () => {
+      unlistenSuccess.then((fn) => fn());
+      unlistenFailure.then((fn) => fn());
+    };
+  }, []);
+
   const displayBooks = books;
 
   const handleImport = async () => {
-    let selected: string | null = null;
     try {
-      selected = await importBookDialog.pickFile();
-      if (!selected) return;
       setImporting(true);
       try {
-        const book = await importBookDialog.importFile(selected);
+        const book = await importBookDialog.importFile();
         if (book) {
           refresh();
           refreshCounts();
@@ -306,8 +270,7 @@ export default function Home() {
       }
     } catch (err) {
       console.error("Failed to import book:", err);
-      const name = selected ? selected.split("/").pop() : null;
-      setImportError(name ? `${name}: ${formatError(err)}` : formatError(err));
+      setImportError(formatError(err));
     }
   };
 

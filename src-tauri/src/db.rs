@@ -75,6 +75,17 @@ pub struct Db {
     pub data_dir: Arc<Mutex<PathBuf>>,
 }
 
+/// Escape user text for a literal SQLite `LIKE '%…%'` search. Callers must
+/// pair the resulting parameter with `ESCAPE '\\'` in the SQL expression.
+pub fn sqlite_contains_pattern(value: &str) -> String {
+    let escaped = value
+        .to_lowercase()
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    format!("%{escaped}%")
+}
+
 impl Clone for Db {
     fn clone(&self) -> Self {
         Self {
@@ -451,39 +462,38 @@ impl Db {
 
         log::info!("db: backfilling cover_data for {} books", rows.len());
 
-        // Phase 2: read files (no lock held)
-        let loaded: Vec<(String, Vec<u8>)> = rows
-            .into_iter()
-            .filter_map(|(id, cover_path)| {
-                let abs = match crate::sync::validation::resolve_cover_path(&data_dir, &cover_path)
-                {
-                    Ok(path) => path,
-                    Err(error) => {
-                        log::warn!("db: refusing unsafe cover path for {id}: {error}");
-                        return None;
-                    }
-                };
-                match fs::read(&abs) {
-                    Ok(bytes) => Some((id, bytes)),
-                    Err(e) => {
-                        log::warn!("db: backfill cover_data failed for {id}: {e}");
-                        None
-                    }
+        // Process one cover at a time: file I/O remains outside the lock while
+        // avoiding a transient Vec containing every cover in the library.
+        let mut backfilled = 0;
+        for (id, cover_path) in rows {
+            let abs = match crate::sync::validation::resolve_cover_path(&data_dir, &cover_path) {
+                Ok(path) => path,
+                Err(error) => {
+                    log::warn!("db: refusing unsafe cover path for {id}: {error}");
+                    continue;
                 }
-            })
-            .collect();
-
-        // Phase 3: brief write lock per cover
-        for (id, bytes) in &loaded {
+            };
+            let bytes = match fs::read(&abs) {
+                Ok(bytes) => bytes,
+                Err(error) => {
+                    log::warn!("db: backfill cover_data failed for {id}: {error}");
+                    continue;
+                }
+            };
             if let Ok(conn) = self.conn.lock() {
-                let _ = conn.execute(
-                    "UPDATE books SET cover_data = ?1 WHERE id = ?2",
-                    params![bytes, id],
-                );
+                if conn
+                    .execute(
+                        "UPDATE books SET cover_data = ?1 WHERE id = ?2",
+                        params![bytes, id],
+                    )
+                    .is_ok()
+                {
+                    backfilled += 1;
+                }
             }
         }
 
-        log::info!("db: backfilled {} cover(s)", loaded.len());
+        log::info!("db: backfilled {backfilled} cover(s)");
     }
 
     /// Migrate existing absolute paths in the books table to relative paths.
@@ -520,6 +530,32 @@ impl Db {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn sqlite_like_pattern_escapes_wildcards_and_escape_character() {
+        assert_eq!(
+            sqlite_contains_pattern("100%_ready\\now"),
+            "%100\\%\\_ready\\\\now%"
+        );
+
+        let conn = Connection::open_in_memory().unwrap();
+        let literal_match: bool = conn
+            .query_row(
+                "SELECT '100%_ready\\now' LIKE ?1 ESCAPE '\\'",
+                params![sqlite_contains_pattern("100%_ready\\now")],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let wildcard_match: bool = conn
+            .query_row(
+                "SELECT '100Xaready\\now' LIKE ?1 ESCAPE '\\'",
+                params![sqlite_contains_pattern("100%_ready\\now")],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(literal_match);
+        assert!(!wildcard_match);
+    }
 
     /// Regression for PR #192 review finding #1: `init_split` opens the
     /// SQLite file at `db_dir` but resolves binary blobs against

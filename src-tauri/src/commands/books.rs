@@ -14,6 +14,7 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 use zip::read::ZipArchive;
 
 use crate::db::Db;
@@ -53,6 +54,10 @@ struct PdfExtracted {
 const TEXT_DOCUMENT_VERSION: i32 = 2;
 const MAX_TEXT_IMPORT_BYTES: u64 = 25 * 1024 * 1024;
 const TXT_CHAPTER_TARGET_CHARS: usize = 24_000;
+const IMPORTABLE_BOOK_EXTENSIONS: &[&str] = &[
+    "epub", "pdf", "txt", "md", "markdown", "html", "htm", "mobi", "azw", "azw3", "fb2", "fbz",
+    "cbz",
+];
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -2381,19 +2386,81 @@ fn do_insert_book(
     Ok(())
 }
 
+fn import_user_selected_path(
+    path: &Path,
+    db: &Db,
+    sync: &SyncWriter,
+    app: &AppHandle,
+) -> AppResult<Book> {
+    let file_path = path
+        .to_str()
+        .ok_or_else(|| AppError::Other("BOOK_IMPORT_PATH_INVALID".to_string()))?;
+    let mut book = do_import_from_path(file_path, db, sync)?;
+    if book.render_format.as_deref() == Some("text") {
+        schedule_text_book_preparation(app.clone(), book.id.clone());
+    }
+    resolve_book_paths(&mut book, db)?;
+    Ok(book)
+}
+
+/// Import through a native file chooser. The webview never supplies an
+/// arbitrary path, which keeps this command within Tauri's file-scope model.
 #[tauri::command]
-pub async fn import_book(
-    file_path: String,
+pub async fn import_book_from_dialog(
+    app: AppHandle,
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
-    app: AppHandle,
-) -> AppResult<Book> {
-    let mut book = do_import_from_path(&file_path, &db, &sync)?;
-    if book.render_format.as_deref() == Some("text") {
-        schedule_text_book_preparation(app, book.id.clone());
+) -> AppResult<Option<Book>> {
+    let Some(selected) = app
+        .dialog()
+        .file()
+        .add_filter("Books", IMPORTABLE_BOOK_EXTENSIONS)
+        .blocking_pick_file()
+    else {
+        return Ok(None);
+    };
+    let path = selected
+        .into_path()
+        .map_err(|_| AppError::Other("BOOK_IMPORT_PATH_INVALID".to_string()))?;
+    import_user_selected_path(&path, &db, &sync, &app).map(Some)
+}
+
+/// Native drag/drop and OS file-association events have already been approved
+/// by the operating system. They are handled in Rust instead of forwarding a
+/// path through a webview command.
+pub(crate) fn import_external_paths(
+    paths: Vec<PathBuf>,
+    db: &Db,
+    sync: &SyncWriter,
+    app: &AppHandle,
+) {
+    for path in paths {
+        if !path.is_file() || !is_importable_book_path(&path) {
+            continue;
+        }
+        match import_user_selected_path(path.as_path(), db, sync, app) {
+            Ok(book) => {
+                let _ = app.emit("book-imported", book);
+            }
+            Err(error) => {
+                log::warn!(
+                    "import_book: native import failed for {}: {error}",
+                    path.display()
+                );
+                let _ = app.emit("book-import-failed", error.to_string());
+            }
+        }
     }
-    resolve_book_paths(&mut book, &db)?;
-    Ok(book)
+}
+
+fn is_importable_book_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            IMPORTABLE_BOOK_EXTENSIONS
+                .iter()
+                .any(|allowed| extension.eq_ignore_ascii_case(allowed))
+        })
 }
 
 pub(crate) fn do_import_from_path(file_path: &str, db: &Db, sync: &SyncWriter) -> AppResult<Book> {
@@ -2470,9 +2537,11 @@ pub(crate) fn query_books(
 
     if let Some(q) = search {
         if !q.is_empty() {
-            conditions
-                .push("(LOWER(books.title) LIKE ? OR LOWER(books.author) LIKE ?)".to_string());
-            let pattern = format!("%{}%", q.to_lowercase());
+            conditions.push(
+                r"(LOWER(books.title) LIKE ? ESCAPE '\' OR LOWER(books.author) LIKE ? ESCAPE '\')"
+                    .to_string(),
+            );
+            let pattern = crate::db::sqlite_contains_pattern(q);
             param_values.push(Box::new(pattern.clone()));
             param_values.push(Box::new(pattern));
         }
@@ -2513,7 +2582,10 @@ pub(crate) fn query_books(
             }
         }
         if search.is_some_and(|q| !q.is_empty()) {
-            cc.push("(LOWER(books.title) LIKE ? OR LOWER(books.author) LIKE ?)".to_string());
+            cc.push(
+                r"(LOWER(books.title) LIKE ? ESCAPE '\' OR LOWER(books.author) LIKE ? ESCAPE '\')"
+                    .to_string(),
+            );
         }
         if cc.is_empty() {
             String::new()
@@ -2540,7 +2612,7 @@ pub(crate) fn query_books(
     }
     if let Some(q) = search {
         if !q.is_empty() {
-            let pattern = format!("%{}%", q.to_lowercase());
+            let pattern = crate::db::sqlite_contains_pattern(q);
             count_params.push(Box::new(pattern.clone()));
             count_params.push(Box::new(pattern));
         }
@@ -2674,8 +2746,10 @@ pub(crate) fn query_books_lite(
     }
     if let Some(q) = search {
         if !q.is_empty() {
-            conditions.push("(LOWER(title) LIKE ? OR LOWER(author) LIKE ?)".to_string());
-            let pattern = format!("%{}%", q.to_lowercase());
+            conditions.push(
+                r"(LOWER(title) LIKE ? ESCAPE '\' OR LOWER(author) LIKE ? ESCAPE '\')".to_string(),
+            );
+            let pattern = crate::db::sqlite_contains_pattern(q);
             param_values.push(Box::new(pattern.clone()));
             param_values.push(Box::new(pattern));
         }

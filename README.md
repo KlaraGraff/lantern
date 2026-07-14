@@ -38,12 +38,16 @@ Current builds and release notes are published at [KlaraGraff/quill Releases](ht
 
 ## Development
 
-Requirements: Node.js, npm, Rust, and the Tauri prerequisites for the target platform.
+Requirements: Node.js, npm, Rust, and the Tauri prerequisites for the target platform. Clone with the reader engine submodule:
 
 ```bash
+git clone --recurse-submodules https://github.com/KlaraGraff/quill.git
+cd quill
 npm ci
 npm run tauri dev
 ```
+
+For an existing checkout, initialize it once with `git submodule update --init --recursive`.
 
 Useful static checks:
 

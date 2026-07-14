@@ -77,5 +77,5 @@ keyring = { version = "3", features = ["linux-native-sync-persistent", "crypto-r
 
 [dev-dependencies]
 tempfile = "3"
-lopdf = "0.40.0"
+lopdf = "0.42.0"
 tauri = { version = "2", features = ["test"] }

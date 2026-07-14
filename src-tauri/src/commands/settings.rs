@@ -73,6 +73,11 @@ pub fn vault_deny(
 }
 
 #[tauri::command]
+pub fn vault_encrypt_pending_local_migrations(secrets: State<'_, Secrets>) -> AppResult<i64> {
+    secrets.encrypt_pending_local_migrations()
+}
+
+#[tauri::command]
 pub fn get_setting(key: String, db: State<'_, Db>) -> AppResult<Option<String>> {
     if Secrets::is_sensitive_key(&key) {
         return Err(AppError::Other("SECRET_READ_FORBIDDEN".to_string()));
@@ -109,18 +114,25 @@ pub fn set_setting(key: String, value: String, db: State<'_, Db>) -> AppResult<(
 
 #[tauri::command]
 pub fn set_settings_bulk(settings: HashMap<String, String>, db: State<'_, Db>) -> AppResult<()> {
+    set_settings_bulk_inner(&settings, &db)
+}
+
+fn set_settings_bulk_inner(settings: &HashMap<String, String>, db: &Db) -> AppResult<()> {
+    if settings.keys().any(|key| Secrets::is_sensitive_key(key)) {
+        return Err(AppError::Other(
+            "SECRET_WRITE_REQUIRES_DEDICATED_COMMAND".to_string(),
+        ));
+    }
+
     let conn = db.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    let tx = conn.unchecked_transaction()?;
     for (key, value) in settings {
-        if Secrets::is_sensitive_key(&key) {
-            return Err(AppError::Other(
-                "SECRET_WRITE_REQUIRES_DEDICATED_COMMAND".to_string(),
-            ));
-        }
-        conn.execute(
+        tx.execute(
             "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2",
             params![key, value],
         )?;
     }
+    tx.commit()?;
     Ok(())
 }
 
@@ -385,6 +397,7 @@ pub fn set_book_settings_bulk(
 
 #[cfg(test)]
 mod tests {
+    use super::set_settings_bulk_inner;
     use crate::db::Db;
     use rusqlite::params;
     use std::collections::HashMap;
@@ -429,6 +442,27 @@ mod tests {
                 params![book_id, key, value],
             ).unwrap();
         }
+    }
+
+    #[test]
+    fn bulk_settings_validate_before_writing_any_value() {
+        let (_dir, db) = setup();
+        let mut settings = HashMap::new();
+        settings.insert("reader_theme".to_string(), "night".to_string());
+        settings.insert("ai_api_key".to_string(), "must-not-write".to_string());
+
+        let error = set_settings_bulk_inner(&settings, &db).unwrap_err();
+        assert_eq!(error.to_string(), "SECRET_WRITE_REQUIRES_DEDICATED_COMMAND");
+
+        let conn = db.conn.lock().unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM settings WHERE key = 'reader_theme' OR key = 'ai_api_key'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
     }
 
     #[test]

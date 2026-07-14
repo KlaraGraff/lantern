@@ -762,6 +762,7 @@ struct LegacyWordMarkException {
 /// it carries the user's exclusions across the identity repair. Replay and
 /// snapshot rule updates pass `false`, making the effective rule tuple the
 /// usual reset barrier while still retaining any genuinely newer exception.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn reconcile_legacy_word_mark_exceptions(
     tx: &Transaction,
     legacy_rule_id: &str,
