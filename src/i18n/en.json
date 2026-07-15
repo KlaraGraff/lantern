@@ -1039,9 +1039,6 @@
   "settings.tools.custom.unsavedDescription": "You have unsaved changes. Save them before leaving, or discard them.",
   "settings.tools.custom.discard": "Discard changes",
   "settings.tools.custom.continueEditing": "Continue editing",
-  "settings.tools.custom.defaultModuleName": "Custom section",
-  "settings.tools.custom.defaultActionName": "Custom action",
-  "settings.tools.custom.defaultPrompt": "Use the selected text and context to provide an accurate, concise, and useful explanation.",
   "settings.tools.custom.addModule": "Add custom module",
   "settings.tools.custom.addAction": "Add custom action",
 
