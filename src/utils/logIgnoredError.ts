@@ -13,8 +13,8 @@ function errorMessage(error: unknown): string {
 /** Use for deliberate degraded behavior; unexpected failures should be handled by the caller. */
 export function logIgnoredError(scope: string, error: unknown): void {
   const message = errorMessage(error);
-  if (import.meta.env.DEV) console.warn(`Quill fallback [${scope}]`, error);
+  if (import.meta.env.DEV) console.warn(`Lantern fallback [${scope}]`, error);
   void invoke("log_webview_warning", { scope, message }).catch((logError) => {
-    if (import.meta.env.DEV) console.warn("Could not record Quill fallback", logError);
+    if (import.meta.env.DEV) console.warn("Could not record Lantern fallback", logError);
   });
 }

@@ -4,7 +4,7 @@ GitHub issue: https://github.com/yicheng47/quill/issues/276
 
 ## Motivation
 
-Quill has no way to wipe local data from within the app. Users who want a fresh start, need to recover from corrupted state, or want to remove personal data — books, highlights, vocabulary, chat history, reading progress, API keys — before handing off a machine have to manually locate and delete the app data directory.
+Lantern has no way to wipe local data from within the app. Users who want a fresh start, need to recover from corrupted state, or want to remove personal data — books, highlights, vocabulary, chat history, reading progress, API keys — before handing off a machine have to manually locate and delete the app data directory.
 
 A reset action in Settings makes this safe and discoverable. Because it is irreversible and destroys everything, it must be guarded by a double confirmation so it cannot be triggered by a stray click.
 

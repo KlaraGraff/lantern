@@ -51,23 +51,33 @@ fn resolve_log_level(default: log::LevelFilter) -> log::LevelFilter {
 /// already in the setup() callback for `app_data_dir`.
 fn bundle_identifier_for_build() -> &'static str {
     if cfg!(debug_assertions) {
-        "com.klaragraff.quill-dev"
+        "com.klaragraff.lantern-dev"
     } else {
-        "com.klaragraff.quill"
+        "com.klaragraff.lantern"
     }
 }
 
-/// Copy data from the original app or the first Personal build whose bundle
-/// identifier contained a typo. This runs only before a new data directory
-/// gains `quill.db`, so it never overwrites data already owned by this build.
+/// Copy data from an earlier build's data directory: the pre-rename
+/// `com.klaragraff.quill` id, the original app, or the first Personal build
+/// whose bundle identifier contained a typo. This runs only before a new data
+/// directory gains `quill.db`, so it never overwrites data already owned by
+/// this build.
 fn migrate_legacy_app_data(target: &Path) -> error::AppResult<()> {
     if target.join("quill.db").exists() {
         return Ok(());
     }
     let legacy_ids: &[&str] = if cfg!(debug_assertions) {
-        &["com.klagragraff.quill-dev", "com.wycstudios.quill-dev"]
+        &[
+            "com.klaragraff.quill-dev",
+            "com.klagragraff.quill-dev",
+            "com.wycstudios.quill-dev",
+        ]
     } else {
-        &["com.klagragraff.quill", "com.wycstudios.quill"]
+        &[
+            "com.klaragraff.quill",
+            "com.klagragraff.quill",
+            "com.wycstudios.quill",
+        ]
     };
     for id in legacy_ids {
         let source = target.with_file_name(id);
@@ -193,7 +203,7 @@ pub fn mcp_stdio_main() {
 
     if !db_path.exists() {
         eprintln!(
-            "quill mcp: no library found at {} — launch the Quill app at least once to initialize it.",
+            "quill mcp: no library found at {} — launch the Lantern app at least once to initialize it.",
             db_path.display()
         );
         std::process::exit(1);
@@ -486,7 +496,7 @@ pub fn run() {
                     .app_data_dir()
                     .expect("failed to resolve app data dir");
                 if cfg!(debug_assertions) {
-                    base.with_file_name("com.klaragraff.quill-dev")
+                    base.with_file_name("com.klaragraff.lantern-dev")
                 } else {
                     base
                 }
@@ -900,7 +910,7 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&conf).expect("parse tauri.conf.json");
         let id = v["identifier"].as_str().expect("identifier field");
         assert_eq!(
-            id, "com.klaragraff.quill",
+            id, "com.klaragraff.lantern",
             "bundle identifier changed — update log path docs and migration",
         );
     }
@@ -955,9 +965,9 @@ mod tests {
     fn resolve_log_dir_uses_dev_suffix_in_debug() {
         let dir = resolve_log_dir();
         let expected_id = if cfg!(debug_assertions) {
-            "com.klaragraff.quill-dev"
+            "com.klaragraff.lantern-dev"
         } else {
-            "com.klaragraff.quill"
+            "com.klaragraff.lantern"
         };
         let dir_str = dir.to_string_lossy().to_string();
         assert!(
@@ -969,9 +979,9 @@ mod tests {
         // In debug builds, the prod-only id must not appear in the
         // path UNLESS it's the substring of the dev id itself.
         if cfg!(debug_assertions) {
-            let stripped = dir_str.replace("com.klaragraff.quill-dev", "");
+            let stripped = dir_str.replace("com.klaragraff.lantern-dev", "");
             assert!(
-                !stripped.contains("com.klaragraff.quill"),
+                !stripped.contains("com.klaragraff.lantern"),
                 "debug build log dir {dir_str} leaks the prod identifier outside the -dev suffix",
             );
         }

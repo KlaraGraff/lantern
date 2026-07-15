@@ -67,13 +67,13 @@ impl ServerHandler for QuillMcpHandler {
             .with_protocol_version(ProtocolVersion::LATEST)
             .with_server_info(implementation)
             .with_instructions(
-                "Quill MCP server. Read the local library, collections, full-text book \
+                "Lantern MCP server. Read the local library, collections, full-text book \
                  search with citations, existing book summaries, highlights, bookmarks, \
                  notes, vocabulary with FSRS state, lookup history, word marks, the user's \
                  CEFR language profile, and chat history. Full-text search and summaries \
-                 respect Quill's spoiler guard and never invoke embedding or AI services. \
+                 respect Lantern's spoiler guard and never invoke embedding or AI services. \
                  Batch library/collection writes and local index builds are available only \
-                 when write access is enabled in Quill settings.",
+                 when write access is enabled in Lantern settings.",
             )
     }
 }

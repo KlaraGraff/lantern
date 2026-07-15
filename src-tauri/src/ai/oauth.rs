@@ -157,7 +157,7 @@ async fn process_callback(
     if state.as_deref() != Some(expected_state) {
         write_callback_error(
             stream,
-            "State validation failed. Please return to Quill and try again.",
+            "State validation failed. Please return to Lantern and try again.",
         )
         .await;
         return Ok(None);
@@ -172,7 +172,7 @@ async fn process_callback(
     };
 
     let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n\
-        <html><body><h1>Authentication Successful</h1><p>You can close this window and return to Quill.</p></body></html>";
+        <html><body><h1>Authentication Successful</h1><p>You can close this window and return to Lantern.</p></body></html>";
     let _ = stream.write_all(response.as_bytes()).await;
     Ok(Some(code))
 }

@@ -25,7 +25,7 @@ absorb the cost.
 
 The north star is the NotebookLM experience — answers grounded in the actual source,
 clickable citations, a book-level overview — implemented with an architecture that fits a
-local-first, bring-your-own-key desktop app. Quill has one advantage NotebookLM cannot
+local-first, bring-your-own-key desktop app. Lantern has one advantage NotebookLM cannot
 match: it *is* the reader, so a citation can jump to the real passage in the book, not a
 sidebar text viewer.
 

@@ -4,7 +4,7 @@ GitHub issue: https://github.com/yicheng47/quill/issues/285
 
 ## Motivation
 
-Quill currently separates Chats and Vocab in the navigation, which makes the sidebar feel fragmented and gives Vocab an overly educational tone. Quill should feel like a calm reading app, not a study tool.
+Lantern currently separates Chats and Vocab in the navigation, which makes the sidebar feel fragmented and gives Vocab an overly educational tone. Lantern should feel like a calm reading app, not a study tool.
 
 Introduce **Memos** as a personal saved-material section for reader-owned artifacts. The label should feel lightweight and reader-native, while leaving room for Notes to join later when that separate feature ships.
 

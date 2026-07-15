@@ -28,6 +28,6 @@ A clear description of the bug.
 
 ## Environment
 
-- Quill version:
+- Lantern version:
 - macOS version:
 - AI provider:

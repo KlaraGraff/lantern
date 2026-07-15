@@ -171,14 +171,14 @@ pub(crate) fn require_sync(
         .ok_or_else(|| {
             ErrorData::invalid_request(
                 "Write access was not enabled when this MCP session started. \
-                 Enable it in Quill → Settings → MCP → Allow write access, \
+                 Enable it in Lantern → Settings → MCP → Allow write access, \
                  then restart the MCP client so a new session picks up the change.",
                 None,
             )
         })?;
 
     // Re-check the setting from SQLite so toggling write access off in
-    // the Quill UI takes effect immediately, without restarting the
+    // the Lantern UI takes effect immediately, without restarting the
     // MCP subprocess.
     let still_enabled = handler
         .state
@@ -199,7 +199,7 @@ pub(crate) fn require_sync(
 
     if !still_enabled {
         return Err(ErrorData::invalid_request(
-            "Write access was revoked. Re-enable it in Quill → Settings → MCP → Allow write access.",
+            "Write access was revoked. Re-enable it in Lantern → Settings → MCP → Allow write access.",
             None,
         ));
     }

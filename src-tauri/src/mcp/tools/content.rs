@@ -118,7 +118,7 @@ fn require_book(handler: &QuillMcpHandler, book_id: &str) -> Result<(), ErrorDat
 #[tool_router(router = content_router, vis = "pub(crate)")]
 impl QuillMcpHandler {
     #[tool(
-        description = "Search a book's local full-text FTS index and return citation-ready chunks. Respects Quill's global and per-book spoiler guard and never uses embeddings or AI calls. If the index is not ready, returns its status and no results."
+        description = "Search a book's local full-text FTS index and return citation-ready chunks. Respects Lantern's global and per-book spoiler guard and never uses embeddings or AI calls. If the index is not ready, returns its status and no results."
     )]
     pub async fn search_book_content(
         &self,
@@ -172,7 +172,7 @@ impl QuillMcpHandler {
     }
 
     #[tool(
-        description = "Read existing generated book or section summaries without generating new ones. Respects Quill's spoiler guard by withholding the whole-book overview and filtering unread sections."
+        description = "Read existing generated book or section summaries without generating new ones. Respects Lantern's spoiler guard by withholding the whole-book overview and filtering unread sections."
     )]
     pub async fn get_book_summaries(
         &self,

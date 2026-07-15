@@ -5,7 +5,7 @@
 
 ## Context
 
-Expose Quill's library to MCP-compatible AI clients (Claude Code, Codex) via a stdio MCP server. The MCP code lives inside the same `quill` binary; clients spawn `quill mcp` as a subprocess and exchange MCP messages over stdin/stdout. The subprocess opens the local SQLite materialized view (`quill.db`) **read-only** as a second SQLite connection, which works because the DB now runs in WAL mode (concurrent readers + one writer).
+Expose Lantern's library to MCP-compatible AI clients (Claude Code, Codex) via a stdio MCP server. The MCP code lives inside the same `quill` binary; clients spawn `quill mcp` as a subprocess and exchange MCP messages over stdin/stdout. The subprocess opens the local SQLite materialized view (`quill.db`) **read-only** as a second SQLite connection, which works because the DB now runs in WAL mode (concurrent readers + one writer).
 
 This plan ships in four phases. **Phase 1** stands up the stdio binary and the MCP handshake. **Phase 2** wires the library-management read tools. **Phase 3** ships the settings UI (per-client integration toggles + Copy MCP config). **Phase 4** adds write tools for book and collection management — the MCP subprocess opens the DB read-write, creates its own `SyncWriter`, and gates every write tool behind an opt-in "Allow write access" toggle (default off).
 
@@ -16,13 +16,13 @@ This plan ships in four phases. **Phase 1** stands up the stdio binary and the M
 These are the inputs to this plan. Do not relitigate while implementing — open a follow-up if a constraint conflicts with reality.
 
 1. **MCP scope = library management, not active reading.** Tools expose collections of saved data the user might want an AI client to help organize, search, or annotate (books, collections, highlights, bookmarks, vocab list, chat history). Active-reading-session state (current position, SRS due queue) stays in-app and is intentionally NOT exposed — the in-app reader is the right surface for that.
-2. **stdio transport, not HTTP.** AI clients spawn `quill mcp` as a subprocess and the MCP session lives as long as the client uses it. No port to manage, no auth surface, no in-process server inside the Tauri app. This is the standard MCP shape and works whether or not the Quill desktop app is currently running.
+2. **stdio transport, not HTTP.** AI clients spawn `quill mcp` as a subprocess and the MCP session lives as long as the client uses it. No port to manage, no auth surface, no in-process server inside the Tauri app. This is the standard MCP shape and works whether or not the Lantern desktop app is currently running.
 3. **Single binary, `mcp` subcommand.** `main.rs` dispatches on `argv[1] == "mcp"` to `quill_lib::mcp_stdio_main()`, otherwise launches the normal Tauri app. Avoids a second binary in the macOS app bundle and the packaging complexity that brings.
 4. **WAL journal mode** for `quill.db`. The stdio subprocess opens its own SQLite connection; WAL is what lets that coexist with the Tauri app's writer without serializing on the file lock. Was already safe to switch — DELETE mode was a hangover from the pre-Chunk-6 era when `quill.db` lived in iCloud.
 5. **Read-only by default.** Write tools (Phase 4) are gated behind a single "Allow write access" toggle in the MCP settings panel, default off. When off, the subprocess opens the DB read-only; when on, it opens read-write and creates its own `SyncWriter` so writes flow through the sync pipeline.
 6. **`search_highlights` / FTS — deferred to v1.1.** No FTS infra exists in `quill.db` today; AI clients can call `get_highlights(book_id)` and filter client-side for v1.
 7. **`get_vocab_stats` — included.** `commands/vocab.rs::get_vocab_stats` already exposes the aggregate; wiring it into MCP is a free win for library-overview queries.
-8. **Client integrations (v1): Claude Code + Codex CLI.** Settings UI auto-registers Quill in those two clients' config files. Custom integrations get a "Copy MCP config" escape hatch.
+8. **Client integrations (v1): Claude Code + Codex CLI.** Settings UI auto-registers Lantern in those two clients' config files. Custom integrations get a "Copy MCP config" escape hatch.
 
 ---
 
@@ -68,7 +68,7 @@ There's no in-process server. The lifecycle is whatever the AI client decides:
 4. rmcp handles the MCP handshake + tool calls until the client closes stdin (or sends `notifications/cancelled`).
 5. `serve_stdio` returns; `mcp_stdio_main` exits.
 
-Crash recovery is the client's problem. Quill's only invariant: open the DB read-only, don't pollute stdout.
+Crash recovery is the client's problem. Lantern's only invariant: open the DB read-only, don't pollute stdout.
 
 ### Write-tool architecture (Phase 4)
 
@@ -257,7 +257,7 @@ There is no SQL-level enforcement; the `Db` connection sees everything. Instead,
 
 Lives under the **AI Assistant** section of the existing Settings modal (NOT a standalone top-level tab). The MCP UI is a section among AI provider/model controls.
 
-Pattern follows tools that "auto-register Quill with each AI client": for each supported client (Claude Code, Codex), a toggle writes/removes the Quill entry in that client's MCP config file. A "Copy MCP config" escape hatch produces a JSON snippet for clients we don't natively support.
+Pattern follows tools that "auto-register Lantern with each AI client": for each supported client (Claude Code, Codex), a toggle writes/removes the `quill` entry in that client's MCP config file. A "Copy MCP config" escape hatch produces a JSON snippet for clients we don't natively support.
 
 ### Step 3.1: Settings rows (within AI Assistant section)
 
@@ -265,13 +265,13 @@ Pattern follows tools that "auto-register Quill with each AI client": for each s
 
 1. **Section header** "MCP Integrations" + short subtitle: "Let AI clients read your library — books, highlights, bookmarks, vocab, and chat history. Read-only."
 2. **Per-client toggle rows**, identical row shape to the General settings rows:
-   - **Claude Code CLI** — toggle. On = write entry to `~/.claude.json` (user-scoped) or project-scoped `.mcp.json` (decide per-platform). Subtext: "Auto-register Quill with Claude Code."
-   - **Codex CLI** — toggle. Subtext: "Auto-register Quill with Codex."
+   - **Claude Code CLI** — toggle. On = write entry to `~/.claude.json` (user-scoped) or project-scoped `.mcp.json` (decide per-platform). Subtext: "Auto-register Lantern with Claude Code."
+   - **Codex CLI** — toggle. Subtext: "Auto-register Lantern with Codex."
 3. **Custom MCP Server Configuration** subsection (collapsed-by-default):
    - Description: "For any MCP client we don't ship a direct integration for. Paste this JSON snippet into the client's MCP config."
    - "Copy MCP config" button — copies the JSON snippet (see §3.3).
 4. **Localhost-trust caveat** — full-width muted text block at the bottom of the section:
-   > Quill's MCP server runs as a local subprocess on this Mac. Any AI client running under your account can launch it and read your library. Don't enable MCP integrations on a shared machine without trusting every signed-in user.
+   > Lantern's MCP server runs as a local subprocess on this Mac. Any AI client running under your account can launch it and read your library. Don't enable MCP integrations on a shared machine without trusting every signed-in user.
 
 ### Step 3.2: Backend Tauri commands
 
@@ -284,14 +284,14 @@ pub fn mcp_integration_status() -> AppResult<McpIntegrationStatus>;
 
 #[tauri::command]
 pub fn mcp_set_integration(client: String, enabled: bool) -> AppResult<()>;
-//   client ∈ {"claude_code", "codex"}; writes/removes the Quill entry
+//   client ∈ {"claude_code", "codex"}; writes/removes the `quill` entry
 
 #[tauri::command]
 pub fn mcp_config_snippet() -> AppResult<String>;
 //   Returns the JSON snippet for manual config (used by Copy button)
 ```
 
-`binary_path` resolves via `std::env::current_exe()` so the registered command always points to *this build* of the Quill binary. On macOS that resolves to `<Quill.app>/Contents/MacOS/Quill` in a packaged install or `target/debug/quill` in dev.
+`binary_path` resolves via `std::env::current_exe()` so the registered command always points to *this build* of the Lantern binary. On macOS that resolves to `<Lantern.app>/Contents/MacOS/quill` in a packaged install or `target/debug/quill` in dev.
 
 Config-file paths per client (resolved at write-time, created if absent, never destructive merge):
 - **Claude Code:** `~/.claude.json` — read existing JSON, set `mcpServers.quill = {"command": <binary_path>, "args": ["mcp"]}`, write back. Removing reverses (delete the key if present).
@@ -303,7 +303,7 @@ Config-file paths per client (resolved at write-time, created if absent, never d
 {
   "mcpServers": {
     "quill": {
-      "command": "/path/to/Quill.app/Contents/MacOS/Quill",
+      "command": "/path/to/Lantern.app/Contents/MacOS/quill",
       "args": ["mcp"]
     }
   }
@@ -362,7 +362,7 @@ pub struct McpState {
 }
 ```
 
-Write tools check `self.state.sync.as_ref()` and return a clear error ("write access is disabled — enable it in Quill settings") when `None`.
+Write tools check `self.state.sync.as_ref()` and return a clear error ("write access is disabled — enable it in Lantern settings") when `None`.
 
 ### Step 4.3: Extract write helpers
 
@@ -458,8 +458,8 @@ The write tools are always registered in the tool router (they always appear in 
 > **MCP Integrations section structure (top to bottom):**
 > 1. **Section header** — "MCP Integrations" title + a `Plug` icon on the left in the gutter. Small "Beta" pill on the right.
 > 2. **Subtitle** — "Let AI clients read your library — books, highlights, bookmarks, vocab, and chat history. Read-only."
-> 3. **Claude Code CLI row** — label "Claude Code CLI", subtext "Auto-register Quill with Claude Code.", `Toggle` on the right.
-> 4. **Codex CLI row** — label "Codex CLI", subtext "Auto-register Quill with Codex.", `Toggle` on the right.
+> 3. **Claude Code CLI row** — label "Claude Code CLI", subtext "Auto-register Lantern with Claude Code.", `Toggle` on the right.
+> 4. **Codex CLI row** — label "Codex CLI", subtext "Auto-register Lantern with Codex.", `Toggle` on the right.
 > 5. **Custom MCP Server subsection** — collapsible. Header "Custom MCP Server Configuration" + "Copy MCP config" button on the right. Expanded body has a short paragraph + a syntax-highlighted JSON snippet preview.
 > 6. **Localhost-trust caveat** — full-width muted text block (`text-text-muted text-[12px] leading-5`), `ShieldAlert` icon in the gutter on the left.
 >
@@ -519,7 +519,7 @@ The write tools are always registered in the tool router (they always appear in 
    - Toggling Codex writes/removes `~/.codex/config.toml::[mcp_servers.quill]`.
    - Copy MCP config produces a valid JSON snippet matching the same shape.
 5. End-to-end with Claude Code:
-   - Enable in Quill settings → `claude mcp list` shows `quill` → invoke `list_books` from a Claude session → receives the library.
+   - Enable in Lantern settings → `claude mcp list` shows `quill` → invoke `list_books` from a Claude session → receives the library.
 6. Concurrency:
    - Tauri app running + `quill mcp` subprocess running simultaneously: subprocess reads succeed, app writes succeed (WAL allows both).
    - Forcibly killing the subprocess does NOT corrupt the WAL or block the Tauri app.

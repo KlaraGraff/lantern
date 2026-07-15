@@ -79,7 +79,7 @@ export async function openReaderWindow(
 
   new WebviewWindow(label, {
     url,
-    title: "Quill Personal",
+    title: "Lantern",
     width,
     height,
     minWidth: MIN_WIDTH,

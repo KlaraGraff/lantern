@@ -1,4 +1,4 @@
-//! Model Context Protocol server for Quill.
+//! Model Context Protocol server for Lantern.
 //!
 //! Driven over **stdio**: AI clients (Claude Code, Codex) spawn
 //! `quill mcp` as a subprocess and exchange MCP messages on

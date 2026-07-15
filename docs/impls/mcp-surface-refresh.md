@@ -2,7 +2,7 @@
 
 **Status:** Implemented on 2026-07-15.
 
-This refresh brings Quill's MCP server up to date with the learning tools,
+This refresh brings Lantern's MCP server up to date with the learning tools,
 Grounded Book Chat, local index management, spoiler guard, and batch library
 features introduced through v1.5.2.
 

@@ -300,7 +300,7 @@ Tests need PDFium available. The dev fallback path in `locate_pdfium_lib` handle
 
 ## Risks & verification
 
-- **macOS signing of bundled dylib.** Verify `codesign -dv --verbose=4 /path/to/Quill.app/Contents/Resources/libpdfium.dylib` after CI build. If notarization complains, switch from `bundle.resources` to `bundle.macOS.frameworks` so it lands in `Contents/Frameworks/` (the canonical location).
+- **macOS signing of bundled dylib.** Verify `codesign -dv --verbose=4 /path/to/Lantern.app/Contents/Resources/libpdfium.dylib` after CI build. If notarization complains, switch from `bundle.resources` to `bundle.macOS.frameworks` so it lands in `Contents/Frameworks/` (the canonical location).
 - **Universal binary on macOS.** Release builds arm64 and x86_64 separately and produces a universal `.app` via `lipo` — the dylib must match. Easiest: ship two separate `.app`s and let the updater pick; or `lipo` the two dylibs into one universal `libpdfium.dylib`. Cross-check what the current release.yml does for the Rust binary itself.
 - **Bundle size.** Installer grows ~6MB. Today's installer is ~15MB → ~21MB. Acceptable.
 - **Cold-start latency on first import.** ~50–150ms to load the dylib + symbol resolution. Amortized across all subsequent imports via the `OnceLock`.

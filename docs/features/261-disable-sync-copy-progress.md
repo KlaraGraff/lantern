@@ -14,7 +14,7 @@ Add an explicit disable-sync flow for "copy files to this Mac."
 
 In scope:
 
-- Disable confirmation copy that makes clear Quill will copy the iCloud library back to local storage before turning sync off.
+- Disable confirmation copy that makes clear Lantern will copy the iCloud library back to local storage before turning sync off.
 - Blocking progress UI while files are being localized/copied, with current/total progress and a short status label.
 - Backend progress events for the copy-back operation, separate from replay's `sync-progress` events.
 - Placeholder handling that triggers iCloud downloads for evicted files and keeps the copy-back operation waiting/retrying while progress remains visible.
@@ -54,7 +54,7 @@ Out of scope:
 ## Verification
 
 - Enable sync, then disable with all iCloud files local: progress reaches 100%, sync turns off, `data_dir` points local, books/covers open.
-- Disable with one or more evicted iCloud files: Quill triggers downloads, progress remains visible, and disable completes once files materialize.
+- Disable with one or more evicted iCloud files: Lantern triggers downloads, progress remains visible, and disable completes once files materialize.
 - If iCloud cannot materialize a file within the bounded wait, disable returns an error, sync remains enabled, and `data_dir` remains iCloud.
 - Large library: progress updates steadily and settings UI does not appear frozen.
 - Re-run disable after a partial previous copy: already-local files are skipped or counted as complete, and remaining files copy correctly.

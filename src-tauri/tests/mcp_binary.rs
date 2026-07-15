@@ -42,7 +42,7 @@ fn quill_binary() -> PathBuf {
 /// given a fake `$HOME`. macOS-only path layout.
 fn seed_db(home: &std::path::Path) -> rusqlite::Connection {
     // Mirrors `bundle_identifier_for_build()` for debug builds.
-    let identifier = "com.klaragraff.quill-dev";
+    let identifier = "com.klaragraff.lantern-dev";
     let app_data = home.join("Library/Application Support").join(identifier);
     std::fs::create_dir_all(&app_data).expect("mkdir app_data");
 

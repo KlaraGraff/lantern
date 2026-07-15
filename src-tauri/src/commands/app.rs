@@ -27,7 +27,7 @@ pub fn app_build_info() -> BuildInfo {
         commit: env!("QUILL_BUILD_COMMIT").to_string(),
         built_at: env!("QUILL_BUILD_DATE").to_string(),
         channel: env!("QUILL_BUILD_CHANNEL").to_string(),
-        bundle_identifier: "com.klaragraff.quill".to_string(),
+        bundle_identifier: "com.klaragraff.lantern".to_string(),
         repository: "https://github.com/KlaraGraff/quill".to_string(),
         upstream_repository: "https://github.com/yicheng47/quill".to_string(),
     }

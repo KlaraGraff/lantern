@@ -1,16 +1,16 @@
-# Quill — Architecture
+# Lantern — Architecture
 
-> The architecture doc defines *how* Quill works — the runtime picture, domain model, sync protocol, AI integration, and the design decisions behind each. For feature specs and roadmap, see [`../features/`](../features/) and [`../roadmap/`](../roadmap/).
+> The architecture doc defines *how* Lantern works — the runtime picture, domain model, sync protocol, AI integration, and the design decisions behind each. For feature specs and roadmap, see [`../features/`](../features/) and [`../roadmap/`](../roadmap/).
 
 ## 1. Overview
 
-Quill is a local-first AI-powered ebook reader. It reads EPUBs and PDFs, provides AI-assisted lookup/chat/translation, and syncs across devices via iCloud. The app is a Tauri 2 binary: Rust backend, React 19 + TypeScript webview, SQLite (WAL mode) for all persistent state, and a per-device JSONL event log for sync.
+Lantern is a local-first AI-powered ebook reader. It reads EPUBs and PDFs, provides AI-assisted lookup/chat/translation, and syncs across devices through a user-selected iCloud Drive folder. The app is a Tauri 2 binary: Rust backend, React 19 + TypeScript webview, SQLite (WAL mode) for all persistent state, and a per-device JSONL event log for sync.
 
 ### 1.1 Runtime picture
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ Tauri process (Quill desktop app)                                            │
+│ Tauri process (Lantern desktop app)                                          │
 │                                                                              │
 │  ┌───────────────────────────────────────────────────────────────────────┐   │
 │  │ React webview                                                         │   │
@@ -60,6 +60,8 @@ Separate process (no Tauri runtime):
 
 **The invariant this picture encodes.** `quill.db` is the single source of truth for the running app. The JSONL event logs are a replication transport, not a primary store. If you deleted every `.jsonl` file and every peer snapshot, the app would still work — it just wouldn't sync. This is the opposite of Runner's architecture (where the NDJSON *is* the primary store). The difference is intentional: a reading app needs fast indexed queries over 300+ books; an event log is the wrong shape for that.
 
+The binary name, MCP registration key, database filename, and storage schemas retain the internal `quill` identifier for compatibility. They are implementation identifiers, not the product display name.
+
 ## 2. Tech stack
 
 | Layer | Choice | Why |
@@ -85,7 +87,7 @@ Separate process (no Tauri runtime):
 
 ## 3. Domain model
 
-Quill's domain is a personal reading library. The objects are simpler than Runner's — there's no config-vs-runtime split because reading is inherently stateful (you're always mid-book).
+Lantern's domain is a personal reading library. The objects are simpler than Runner's — there's no config-vs-runtime split because reading is inherently stateful (you're always mid-book).
 
 ### 3.1 Relationship diagram
 
@@ -154,7 +156,7 @@ Sensitive settings (API keys, OAuth tokens) live in `secrets.db`, not the main s
 ### 4.1 Directory layout
 
 ```
-~/.app-data/com.wycstudios.quill/       (local_dir — always local, never synced)
+~/Library/Application Support/com.klaragraff.lantern/  (local_dir — always local, never synced)
 ├── quill.db                             materialized view of all app state
 ├── quill.db-wal                         WAL journal
 ├── secrets.db                           API keys, OAuth tokens
@@ -166,8 +168,8 @@ When sync is DISABLED, blobs also live here:
 ├── books/                               EPUB/PDF files
 └── covers/                              cover images
 
-When sync is ENABLED, blobs move to iCloud:
-~/Library/Mobile Documents/iCloud~com~wycstudios~quill/Documents/   (data_dir)
+When sync is ENABLED, blobs move to the user-selected iCloud Drive folder:
+~/Library/Mobile Documents/<selected-folder>/          (data_dir)
 ├── books/                               EPUB/PDF files (iCloud-synced)
 ├── covers/                              cover .img files (iCloud-synced)
 ├── logs/                                per-device JSONL event logs
@@ -196,7 +198,7 @@ The `Db::init_split(local_dir, data_dir)` constructor separates the database loc
 
 ## 5. Sync architecture — *event-sourced, peer-to-peer*
 
-Quill syncs across devices without a server. Each device writes its mutations to a local JSONL event log in the iCloud ubiquity container; iCloud syncs those files to other devices; each device replays peer logs into its local database.
+Lantern syncs across devices without a server. Each device writes its mutations to a local JSONL event log in the selected iCloud Drive folder; iCloud syncs those files to other devices; each device replays peer logs into its local database.
 
 ### 5.1 The sync loop
 
@@ -351,7 +353,7 @@ run()
 
 ### 8.1 Provider abstraction
 
-Quill supports multiple AI providers through a common streaming interface:
+Lantern supports multiple AI providers through a common streaming interface:
 
 | Provider | Module | Auth |
 |---|---|---|
@@ -440,7 +442,7 @@ The auto-updater polls `https://github.com/yicheng47/quill/releases/latest/downl
 
 ### 10.3 Dev/prod isolation
 
-Debug builds use `com.wycstudios.quill-dev` as the bundle identifier. This gives dev builds their own app-data directory, log directory, and iCloud container — a `pnpm tauri dev` session never touches production data.
+Debug builds use `com.klaragraff.lantern-dev` as the runtime bundle identifier for app-data and log paths. This keeps a `npm run tauri dev` session isolated from production data.
 
 ## 11. Key dependencies
 

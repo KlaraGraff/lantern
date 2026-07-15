@@ -270,7 +270,7 @@ pub async fn enable(db: &Db, secrets: &Secrets) -> AppResult<()> {
         .ok_or_else(|| AppError::Other("AI_EMBEDDING_SOURCE_UNAVAILABLE".to_string()))?;
     let probe = embeddings(
         &source,
-        vec!["Quill embedding capability probe".to_string()],
+        vec!["Lantern embedding capability probe".to_string()],
     )
     .await;
     match probe {
@@ -421,7 +421,7 @@ pub async fn probe_and_save(
         dimensions: DEFAULT_EMBEDDING_DIMENSIONS,
     };
     let response =
-        embeddings_internal(&source, vec!["Quill embedding probe".to_string()], false).await;
+        embeddings_internal(&source, vec!["Lantern embedding probe".to_string()], false).await;
     let latency_ms = started.elapsed().as_millis() as u64;
     let vector = match response {
         Ok(mut values) => values.pop().unwrap_or_default(),

@@ -92,7 +92,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "Quill Personal ${{ github.ref_name }}"
+          releaseName: "Lantern ${{ github.ref_name }}"
           releaseBody: "See the [commits](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}) for details."
           releaseDraft: true
           prerelease: false
@@ -114,7 +114,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "Quill Personal ${{ github.ref_name }}"
+          releaseName: "Lantern ${{ github.ref_name }}"
           releaseBody: "See the [commits](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}) for details."
           releaseDraft: true
           prerelease: false
@@ -125,7 +125,7 @@ jobs:
           success() &&
           (steps.build-signed.outcome == 'success' || steps.build-adhoc.outcome == 'success')
         run: |
-          APP_PATH="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Quill Personal.app"
+          APP_PATH="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Lantern.app"
           test -d "$APP_PATH"
           codesign --verify --deep --strict --verbose=4 "$APP_PATH"
           codesign -dv --verbose=4 "$APP_PATH" 2>&1
@@ -167,7 +167,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "Quill Personal ${{ github.ref_name }}"
+          releaseName: "Lantern ${{ github.ref_name }}"
           releaseBody: "See the [commits](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}) for details."
           releaseDraft: true
           prerelease: false

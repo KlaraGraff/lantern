@@ -5,7 +5,7 @@
 
 ## Motivation
 
-Users accumulate ebooks over years — many from sources that no longer exist. If the local library is lost (disk failure, accidental deletion, app reinstall), those files are gone. Quill should let users back up their book files to a user-chosen location (local NAS, external drive, any mounted folder) so they always have a recoverable copy.
+Users accumulate ebooks over years — many from sources that no longer exist. If the local library is lost (disk failure, accidental deletion, app reinstall), those files are gone. Lantern should let users back up their book files to a user-chosen location (local NAS, external drive, any mounted folder) so they always have a recoverable copy.
 
 This is distinct from sync (spec #31): backup is **one-way, file-level** — copy book and cover files out. No event logs, no bidirectional merge, no reading-state transfer. Think Time Machine for your library, not iCloud sync.
 
@@ -22,7 +22,7 @@ This is distinct from sync (spec #31): backup is **one-way, file-level** — cop
 
 ### Out of scope
 
-- Restoring from backup (manual — user drags files back into Quill to re-import)
+- Restoring from backup (manual — user drags files back into Lantern to re-import)
 - Backing up reading state, highlights, bookmarks, vocab (that's sync territory)
 - Scheduling (cron-style daily backups) — auto-on-change is sufficient
 - Remote/cloud API integration (S3, FTP) — if it's mounted as a folder, it works

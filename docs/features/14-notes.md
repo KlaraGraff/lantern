@@ -6,7 +6,7 @@
 
 ## Motivation
 
-Highlights capture *what* matters. Notes capture *why* it matters — your reactions, questions, connections, and reflections. Right now Quill only has highlights (with optional short annotations). There's no dedicated space for longer-form thinking while reading.
+Highlights capture *what* matters. Notes capture *why* it matters — your reactions, questions, connections, and reflections. Right now Lantern only has highlights (with optional short annotations). There's no dedicated space for longer-form thinking while reading.
 
 Adding AI to notes serves two distinct purposes:
 

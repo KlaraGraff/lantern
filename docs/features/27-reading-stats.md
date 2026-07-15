@@ -4,7 +4,7 @@
 
 ## Motivation
 
-Quill currently has no visibility into how a user actually reads. Time spent per book, total library reading time, finished-book counts, and annotation activity all live implicitly in the data but are never surfaced. This is a missed opportunity:
+Lantern currently has no visibility into how a user actually reads. Time spent per book, total library reading time, finished-book counts, and annotation activity all live implicitly in the data but are never surfaced. This is a missed opportunity:
 
 - **Motivation loop** — visible reading time and streaks make readers want to keep going (Kindle, Bookly, StoryGraph all lean on this).
 - **Self-knowledge** — users want to know "how long did this book actually take me?" and "which books did I annotate the most?"

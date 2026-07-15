@@ -16,7 +16,7 @@ This issue originally proposed a *new Updates settings pane* + top-center toast 
 
 - **Update-available → the existing top-center toast, extended** to carry the full lifecycle (available → downloading → auto-relaunch) plus manual-check feedback. (A titlebar pill in the sidebar's top drag band was considered and dropped: ~150px of usable width after the traffic lights is too narrow for the download label + progress bar. The toast has the room.)
 - **No update controls in Settings at all.** Not in About, and **no** new Updates pane.
-- **Check for Updates lives in the native app menu** (the "Quill" menu on macOS), next to About. This is the one deliberate divergence from Runner, which keeps it in Settings → Updates.
+- **Check for Updates lives in the native app menu** (the "Lantern" menu on macOS), next to About. This is the one deliberate divergence from Runner, which keeps it in Settings → Updates.
 - **Auto-check toggle moves to General settings.**
 - **After download → auto-relaunch.** No manual "Restart" step.
 - **About becomes a formal identity card**, modeled on Runner's About pane: centered icon + name + tagline, version/platform pills, link rows (GitHub, Documentation, License), © footer. No update UI.
@@ -31,7 +31,7 @@ The top-center toast stays where it is but becomes one persistent surface whose 
 
 | view | copy | action |
 |---|---|---|
-| `available` | "Quill v{ver} available" | **Update** → `downloadAndInstall()` |
+| `available` | "Lantern v{ver} available" | **Update** → `downloadAndInstall()` |
 | `downloading` (incl. `ready`) | "Downloading update… {progress}%" | thin progress bar; auto-relaunches on finish |
 | `checking` *(manual only)* | "Checking for updates…" | spinner |
 | `uptodate` *(manual only)* | "You're up to date" | auto-dismiss (~4s) |
@@ -51,7 +51,7 @@ The toast detects "up to date" by watching the `checking → idle` transition wh
 
 ### 2. Check for Updates in the app menu
 
-`src-tauri/src/lib.rs` currently augments only the Help submenu of `Menu::default`. Add a `check_for_updates` item to the **app submenu** (first submenu on macOS, the "Quill" menu), inserted just after About:
+`src-tauri/src/lib.rs` currently augments only the Help submenu of `Menu::default`. Add a `check_for_updates` item to the **app submenu** (first submenu on macOS, the "Lantern" menu), inserted just after About:
 
 ```rust
 // inside the .menu(|handle| { ... }) closure, after building `menu`
@@ -82,7 +82,7 @@ Move the toggle (and its `auto_check_updates` setting key — unchanged) from `A
 
 Rewrite `AboutSettings.tsx` as an identity card (Runner-modeled):
 
-- Centered block: `QuillLogo` (~56px), "Quill" wordmark, tagline (`settings.about.description`), then a row of mono pills — `v{version}` and a platform label (`darwin · arm64`, derived from `navigator.userAgent`, informational).
+- Centered block: `LanternLogo` (~56px), "Lantern" wordmark, tagline (`settings.about.description`), then a row of mono pills — `v{version}` and a platform label (`darwin · arm64`, derived from `navigator.userAgent`, informational).
 - Divider, then link rows: **GitHub** (`github.com/yicheng47/quill`), **Documentation** (README), **License** (MIT, trailing label). Links open via the `opener` plugin (already a dependency).
 - `© 2026 wyc studios` footer.
 - Remove: software-update row, progress bar, auto-check toggle, and all `useUpdate()` usage from this file.
@@ -97,7 +97,7 @@ Rewrite `AboutSettings.tsx` as an identity card (Runner-modeled):
 ## Out of scope
 
 - Localizing the native menu item (pre-existing English-at-boot limitation).
-- Auto-install-on-download behavior (Runner has it; Quill stays manual: pill shows Update → user clicks).
+- Auto-install-on-download behavior (Runner has it; Lantern stays manual: pill shows Update → user clicks).
 - Windows/Linux menu placement of Check-for-Updates (this pass targets the macOS app menu; the pill itself is cross-platform).
 
 ## Verification

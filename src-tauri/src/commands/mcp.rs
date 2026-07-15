@@ -1,8 +1,8 @@
 //! MCP client integration commands.
 //!
-//! Quill's MCP server runs as `quill mcp` over stdio (see
+//! Lantern's MCP server runs as `quill mcp` over stdio (see
 //! `src-tauri/src/mcp/server.rs`). For an AI client to use it, the
-//! client needs an entry in its config file pointing at the Quill
+//! client needs an entry in its config file pointing at the Lantern
 //! binary. These commands write/remove that entry on the user's
 //! behalf when they flip the per-client toggle in the settings UI,
 //! and inspect the files so the UI can render the current state.
@@ -34,7 +34,7 @@ use crate::db::Db;
 use crate::error::{AppError, AppResult};
 
 /// Snapshot returned to the settings UI. `binary_path` is the absolute
-/// path of *this* Quill binary — `current_exe()` at runtime — so the
+/// path of *this* Lantern binary — `current_exe()` at runtime — so the
 /// snippet always points at the build the user is actually running.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct McpIntegrationStatus {

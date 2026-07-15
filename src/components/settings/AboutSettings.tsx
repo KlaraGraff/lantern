@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Github, BookText, Scale, ExternalLink, GitFork, Bug, Check, Copy } from "lucide-react";
-import QuillLogo from "../QuillLogo";
+import LanternLogo from "../LanternLogo";
 
 const CURRENT_REPOSITORY_URL = "https://github.com/KlaraGraff/quill";
 const CURRENT_RELEASES_URL = `${CURRENT_REPOSITORY_URL}/releases`;
@@ -59,7 +59,7 @@ export default function AboutSettings() {
   const copyDiagnostics = async () => {
     if (!buildInfo) return;
     const details = [
-      `Quill Personal ${buildInfo.version}`,
+      `Lantern ${buildInfo.version}`,
       `Upstream baseline: ${buildInfo.upstream_baseline}`,
       `Commit: ${buildInfo.commit}`,
       `Built: ${buildInfo.built_at}`,
@@ -80,10 +80,10 @@ export default function AboutSettings() {
     <div className="flex flex-col min-h-full pb-2">
       {/* Identity */}
       <div className="flex flex-col items-center gap-3.5 pt-4 pb-6">
-        <QuillLogo size={56} className="rounded-2xl" />
+        <LanternLogo size={56} className="rounded-2xl" />
         <div className="flex flex-col items-center gap-1.5">
           <span className="text-[20px] font-semibold text-text-primary tracking-[0.5px]">
-            Quill Personal
+            Lantern
           </span>
           <span className="text-[12px] text-text-muted">{t("settings.about.description")}</span>
         </div>

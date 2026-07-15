@@ -1,4 +1,4 @@
-# Quill — Claude Code Instructions
+# Lantern — Claude Code Instructions
 
 ## Stack
 

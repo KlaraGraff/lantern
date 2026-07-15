@@ -1,14 +1,14 @@
-# Quill Personal
+# Lantern
 
 [简体中文](README.md) · [English](README.en.md)
 
 > You should not have to adapt to a fixed AI reading workflow.
 >
-> Quill Personal lets AI explain books in language you can understand, then lets you reshape the reading tools around your own goals.
+> Lantern lets AI explain books in language you can understand, then lets you reshape the reading tools around your own goals.
 
-Quill Personal is a desktop app for learning English through long-form reading, with macOS as its primary platform. It does more than add an “Ask AI” button to a reader: you decide how AI explains, how deeply it goes, what a learning card shows, and what happens when you select text.
+Lantern is a desktop app for learning English through long-form reading, with macOS as its primary platform. It does more than add an “Ask AI” button to a reader: you decide how AI explains, how deeply it goes, what a learning card shows, and what happens when you select text.
 
-From lightweight double-click lookups to AI workflows for complex sentences, literary analysis, exam preparation, or professional reading, Quill Personal can gradually become a reader that fits you.
+From lightweight double-click lookups to AI workflows for complex sentences, literary analysis, exam preparation, or professional reading, Lantern can gradually become a reader that fits you.
 
 This is an independently maintained personal edition based on the open-source [Quill](https://github.com/yicheng47/quill) project. It is not an official release of the original project.
 
@@ -16,7 +16,7 @@ This is an independently maintained personal edition based on the open-source [Q
 
 Many reading tools offer an “English explanation” option but answer with near-native vocabulary and complex sentences. One unfamiliar word becomes a new paragraph that is even harder to understand.
 
-Quill Personal uses your English proficiency as part of every explanation, rather than treating it as a display preference. Set your current CEFR level (A1–C2) in your learner profile, or record results for IELTS, TOEFL, TOEIC, Cambridge English, DET, CET-4, or CET-6 to estimate a learning level.
+Lantern uses your English proficiency as part of every explanation, rather than treating it as a display preference. Set your current CEFR level (A1–C2) in your learner profile, or record results for IELTS, TOEFL, TOEIC, Cambridge English, DET, CET-4, or CET-6 to estimate a learning level.
 
 For each word lookup, phrase explanation, and passage interpretation, AI considers your level alongside the explanation language, translation target, and content density:
 
@@ -29,7 +29,7 @@ Start by understanding the text, then gradually move toward understanding Englis
 
 ## Built-in modules are a starting point—build your own when they are not enough
 
-Quill Personal includes learning modules for contextual meaning, word information, common meanings, collocations, grammar, references, tone, writing patterns, memory aids, and more. Configure their visibility, order, default expansion state, and content density separately for words, phrases, and sentences/passages.
+Lantern includes learning modules for contextual meaning, word information, common meanings, collocations, grammar, references, tone, writing patterns, memory aids, and more. Configure their visibility, order, default expansion state, and content density separately for words, phrases, and sentences/passages.
 
 But presets should not limit your learning method.
 
@@ -64,7 +64,7 @@ For example, you can build modules for:
 - Supports OpenAI-compatible APIs, Anthropic, Ollama, and optional OpenAI OAuth.
 - Add multiple AI services, each with its own name, base URL, model, and priority.
 - Use a custom compatible API, such as a self-hosted gateway or another OpenAI-compatible provider.
-- Save multiple API keys for each service; before output begins, Quill Personal tries usable keys and services in priority order.
+- Save multiple API keys for each service; before output begins, Lantern tries usable keys and services in priority order.
 - Test connections and discover available models.
 - API keys and OAuth tokens stay in a local-only credential database on the current device. They are never returned to the webview or included in sync.
 
@@ -148,4 +148,4 @@ Repository conventions are in [AGENTS.md](AGENTS.md).
 
 ## Attribution and license
 
-Quill Personal is based on Quill by yicheng47. Original Quill copyright remains with its authors. This repository retains the original [MIT License](LICENSE), including its copyright notice.
+Lantern is based on Quill by yicheng47. Original Quill copyright remains with its authors. This repository retains the original [MIT License](LICENSE), including its copyright notice.

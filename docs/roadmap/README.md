@@ -1,4 +1,4 @@
-# Quill Roadmap
+# Lantern Roadmap
 
 | Milestone | Theme | Status |
 |-----------|-------|--------|

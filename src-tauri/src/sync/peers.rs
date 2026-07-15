@@ -61,7 +61,7 @@ pub fn current_platform() -> &'static str {
 
 /// Best-effort device name from the OS hostname, stripped of the common
 /// `.local` / `.lan` suffixes mDNS hangs on Mac and Linux boxes. Falls
-/// back to `"Quill"` if the OS reports an empty hostname (rare; mostly
+/// back to `"Lantern"` if the OS reports an empty hostname (rare; mostly
 /// hardened sandboxes).
 pub fn device_name() -> String {
     let raw = gethostname::gethostname().to_string_lossy().into_owned();
@@ -71,7 +71,7 @@ pub fn device_name() -> String {
         .unwrap_or(&raw)
         .trim();
     if trimmed.is_empty() {
-        "Quill".to_string()
+        "Lantern".to_string()
     } else {
         trimmed.to_string()
     }

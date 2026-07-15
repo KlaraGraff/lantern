@@ -1,10 +1,10 @@
-# Quill Agent Guide
+# Lantern Agent Guide
 
-This file is the repo-wide guide for any coding assistant working on Quill. Keep shared conventions here instead of putting them only in a tool-specific file such as `CLAUDE.md`.
+This file is the repo-wide guide for any coding assistant working on Lantern. Keep shared conventions here instead of putting them only in a tool-specific file such as `CLAUDE.md`.
 
 ## Product Context
 
-Quill is an AI-powered desktop ebook reader. It focuses on reading EPUB/PDF books, preserving a local library, and augmenting reading with AI lookup, explanations, translation, vocabulary, bookmarks, highlights, collections, and cross-device sync.
+Lantern is an AI-powered desktop ebook reader. It focuses on reading EPUB/PDF books, preserving a local library, and augmenting reading with AI lookup, explanations, translation, vocabulary, bookmarks, highlights, collections, and cross-device sync.
 
 Core vocabulary:
 
@@ -12,7 +12,7 @@ Core vocabulary:
 - **Reader**: the reading surface for a book, including progress, layout, highlights, bookmarks, and AI panels.
 - **Library**: the local SQLite materialized view plus book/cover blobs under the active data directory.
 - **Sync**: iCloud-backed event-log sync for library state and shared book/cover files.
-- **MCP**: Quill's local MCP server/client integration surface for AI tools to inspect or modify the library.
+- **MCP**: Lantern's local MCP server/client integration surface for AI tools to inspect or modify the library.
 
 ## Stack
 

@@ -1,6 +1,6 @@
 # Design
 
-Pencil (`.pen`) source files for the Quill desktop UI. Open these in the Pencil app; they are encrypted on disk and not meant to be read as plain text.
+Pencil (`.pen`) source files for the Lantern desktop UI. Open these in the Pencil app; they are encrypted on disk and not meant to be read as plain text.
 
 Conventions:
 - `quill-desktop.pen` is the canonical design source for the Tauri desktop app. Split into per-surface files (e.g. `reader.pen`, `library.pen`) only if `quill-desktop.pen` gets unwieldy.

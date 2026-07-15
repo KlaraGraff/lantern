@@ -4,7 +4,7 @@ Issue: https://github.com/yicheng47/quill/issues/263
 
 ## Problem
 
-Quill has three selection-based AI reading tools in the reader context menu: **Look Up**, **Explain**, and **Translate**.
+Lantern has three selection-based AI reading tools in the reader context menu: **Look Up**, **Explain**, and **Translate**.
 
 Their settings and persistence behavior drifted apart. Look Up has a settings pane, Translate has a separate settings pane, Explain has no settings, and saved translations add storage/sync/MCP/UI weight for something that is mostly useful only in the moment of reading.
 
