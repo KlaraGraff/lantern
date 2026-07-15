@@ -1041,9 +1041,6 @@
   "settings.tools.custom.unsavedDescription": "当前修改尚未保存。可以先保存，也可以放弃后离开。",
   "settings.tools.custom.discard": "放弃修改",
   "settings.tools.custom.continueEditing": "继续编辑",
-  "settings.tools.custom.defaultModuleName": "自定义版块",
-  "settings.tools.custom.defaultActionName": "自定义动作",
-  "settings.tools.custom.defaultPrompt": "结合选中文本与上下文，给出准确、简洁且有帮助的说明。",
   "settings.tools.custom.addModule": "添加自定义模块",
   "settings.tools.custom.addAction": "添加自定义动作",
 

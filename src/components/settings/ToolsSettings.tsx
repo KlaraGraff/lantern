@@ -407,6 +407,7 @@ export default function ToolsSettings({
           </div>
           <div className="mx-auto w-full max-w-[620px]">
             <CardDesignSettings
+              key={cardKind}
               kind={cardKind}
               value={config.cards[cardKind]}
               onChange={(card) => updateCard(cardKind, card)}
@@ -464,6 +465,7 @@ export default function ToolsSettings({
           </div>
           <div className="mx-auto w-full max-w-[620px]">
             <SelectionMenuSettings
+              key={menuKind}
               kind={menuKind}
               value={config.selectionMenus[menuKind]}
               onChange={(menu) => persistConfig({
