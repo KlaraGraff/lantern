@@ -1,44 +1,46 @@
 # Quill Personal
 
-Quill Personal is a macOS reading app for learning English through original books. It combines a warm, long-form reading surface with contextual AI lookup, a persistent reading conversation, vocabulary study, and in-text learning markers.
+[简体中文](README.md) · [English](README.en.md)
 
-This is an independently maintained personal edition based on the open-source [Quill](https://github.com/yicheng47/quill) project. It is not an official release of the original project.
+Quill Personal 是一款 macOS 阅读应用，帮助你通过原版书进行英语学习。它将温暖、适合长时间阅读的阅读界面，与上下文 AI 查词、持续的阅读对话、词汇学习和文内学习标记结合在一起。
 
-## What It Supports
+这是一个基于开源项目 [Quill](https://github.com/yicheng47/quill) 独立维护的个人版本，并非原项目的官方发行版。
 
-- Import support for EPUB, PDF, TXT, Markdown, HTML, MOBI/AZW/AZW3, FB2/FBZ, and CBZ.
-- Contextual word lookup, passage explanation, translation, and an expandable AI conversation panel per book.
-- Saved vocabulary, lookup history, learning states, and optional markers in reflowable EPUB text.
-- Multiple API keys per provider profile. Before output begins, unavailable keys are tried in configured priority order.
-- OpenAI-compatible APIs, Anthropic, Ollama, and optional OpenAI OAuth.
-- Local-first library data. API keys and OAuth tokens remain in a local-only credential database, are never returned to the webview, and do not participate in sync.
-- Optional multi-device sync through a user-selected folder in iCloud Drive.
+## 功能支持
 
-### Format Capabilities
+- 支持导入 EPUB、PDF、TXT、Markdown、HTML、MOBI/AZW/AZW3、FB2/FBZ 和 CBZ。
+- 每本书均提供上下文查词、段落解释、翻译和可展开的 AI 对话面板。
+- 保存词汇、查词历史、学习状态，并可在可重排 EPUB 文本中显示可选的学习标记。
+- 每个服务商配置可保存多个 API 密钥；开始生成前，会按配置优先级依次尝试可用密钥。
+- 支持 OpenAI 兼容 API、Anthropic、Ollama，以及可选的 OpenAI OAuth。
+- 本地优先保存书库数据。API 密钥和 OAuth 令牌仅保存在本地凭据数据库中，绝不返回给 Webview，也不会参与同步。
+- 可通过用户在 iCloud Drive 中选择的文件夹，在多台设备间同步。
 
-| Source format | Import behavior | Reading controls | Selection and manual highlights | Automatic vocabulary markers |
+### 文件格式能力
+
+| 源格式 | 导入方式 | 阅读控制 | 选择与手动高亮 | 自动词汇标记 |
 | --- | --- | --- | --- | --- |
-| EPUB | Reads natively | Font, spacing, margins, scroll/paginated flow | Supported | Supported |
-| TXT, Markdown, HTML | Original source is retained and converted to a stable internal EPUB | Same as EPUB | Supported | Supported |
-| PDF | Reads natively | Theme, zoom, single/two-page layout, scroll/paginated flow | Supported when the PDF has a usable text layer | Not included in the first release |
-| MOBI, AZW, AZW3, FB2, FBZ | Reads through Foliate's native parser | Reflow controls when the renderer supports them | Not currently exposed | Not supported |
-| CBZ | Reads natively | Theme only | Not supported | Not supported |
+| EPUB | 原生阅读 | 字体、行距、页边距、滚动/分页流式阅读 | 支持 | 支持 |
+| TXT、Markdown、HTML | 保留原始文件，并转换为稳定的内部 EPUB | 与 EPUB 相同 | 支持 | 支持 |
+| PDF | 原生阅读 | 主题、缩放、单页/双页布局、滚动/分页阅读 | PDF 具备可用文本层时支持 | 首个版本未提供 |
+| MOBI、AZW、AZW3、FB2、FBZ | 通过 Foliate 原生解析器阅读 | 渲染器支持时可使用流式阅读控制 | 暂未开放 | 不支持 |
+| CBZ | 原生阅读 | 仅主题 | 不支持 | 不支持 |
 
-Format support describes the current local import and reader integration. It does not imply DRM support or perfect rendering for every publisher-specific variant.
+文件格式支持描述的是当前本地导入和阅读器集成能力，并不代表支持 DRM，也不保证能完美渲染每一种出版商特定的文件变体。
 
-## Sync
+## 同步
 
-Quill Personal does not use the original Quill iCloud container. To sync, choose a folder inside your own iCloud Drive from Settings, then select that same folder on each Mac. The app stores its event log, books, and covers inside that folder.
+Quill Personal 不使用原版 Quill 的 iCloud 容器。请在“设置”中选择你自己 iCloud Drive 内的一个文件夹进行同步，然后在每台 Mac 上选择同一个文件夹。应用会将事件日志、书籍和封面存储在该文件夹中。
 
-This edition currently targets the macOS desktop app. It does not claim compatibility with the original Quill iOS app or its private iCloud data.
+当前版本面向 macOS 桌面端，不宣称与原版 Quill 的 iOS 应用或其私有 iCloud 数据兼容。
 
-## Download
+## 下载
 
-Current builds and release notes are published at [KlaraGraff/quill Releases](https://github.com/KlaraGraff/quill/releases). macOS builds currently use a valid ad-hoc signature, so Gatekeeper will still require a first-run confirmation. The signing and notarization roadmap is documented in [macOS distribution](docs/guide/macos-distribution.md). Automatic updates are disabled until this fork has its own signed release channel.
+当前构建和发行说明发布在 [KlaraGraff/quill Releases](https://github.com/KlaraGraff/quill/releases)。macOS 构建目前使用有效的临时签名，因此 Gatekeeper 仍会在首次运行时要求确认。签名和公证计划请参见 [macOS 分发](docs/guide/macos-distribution.md)。在此分支拥有自己的签名发行渠道前，自动更新保持禁用。
 
-## Development
+## 开发
 
-Requirements: Node.js 22, npm, Rust, and the Tauri prerequisites for the target platform. Clone with the reader engine submodule:
+要求：Node.js 22、npm、Rust，以及目标平台所需的 Tauri 前置依赖。克隆仓库时请一并获取阅读器引擎子模块：
 
 ```bash
 git clone --recurse-submodules https://github.com/KlaraGraff/quill.git
@@ -47,9 +49,9 @@ npm ci
 npm run tauri dev
 ```
 
-For an existing checkout, initialize it once with `git submodule update --init --recursive`.
+如果已经克隆仓库，请执行一次 `git submodule update --init --recursive` 初始化子模块。
 
-Useful static checks:
+常用静态检查：
 
 ```bash
 npm exec tsc --noEmit
@@ -57,8 +59,8 @@ npm run lint
 cd src-tauri && cargo check
 ```
 
-Repository conventions are in [AGENTS.md](AGENTS.md).
+仓库协作约定见 [AGENTS.md](AGENTS.md)。
 
-## Attribution And License
+## 致谢与许可证
 
-Quill Personal is based on Quill by yicheng47. Original Quill copyright remains with its authors. This repository retains the original [MIT License](LICENSE), including its copyright notice.
+Quill Personal 基于 yicheng47 开发的 Quill。原版 Quill 的版权仍归其作者所有；本仓库保留原始 [MIT License](LICENSE)，包括其中的版权声明。
