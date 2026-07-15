@@ -33,6 +33,7 @@ export interface ReaderSettingsState {
   readingMode: ReadingMode;
   pageColumns: PageColumns; // 1 = single page, 2 = two pages side by side
   pageTurnAnimation: PageTurnAnimation;
+  showChapterProgress: boolean;
   showBookProgress: boolean;
   showPageNumbers: boolean;
   previousPageBinding: string;
@@ -366,7 +367,11 @@ export default function ReaderSettings({
         <div className="flex flex-col gap-2.5">
           <div className="flex items-center justify-between gap-4">
             <span className="text-[13px] text-text-primary">{t("readerSettings.chapterProgressAlways")}</span>
-            <span className="text-[11px] text-text-muted">{t("readerSettings.alwaysOn")}</span>
+            <Toggle
+              label={t("readerSettings.chapterProgressAlways")}
+              checked={settings.showChapterProgress}
+              onChange={(checked) => update({ showChapterProgress: checked })}
+            />
           </div>
           <div className="flex items-center justify-between gap-4">
             <span className="text-[13px] text-text-primary">{t("readerSettings.bookProgress")}</span>

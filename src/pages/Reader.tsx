@@ -15,6 +15,7 @@ import {
   Plus,
 } from "lucide-react";
 import Button from "../components/ui/Button";
+import Toast from "../components/ui/Toast";
 import AiPanel from "../components/AiPanel";
 import BookmarksPanel from "../components/BookmarksPanel";
 import ReaderSettings, { type ReaderSettingsState } from "../components/ReaderSettings";
@@ -176,6 +177,7 @@ export default function Reader() {
   const [contextMarkStateLoading, setContextMarkStateLoading] = useState(false);
   const [learningCardConfig, setLearningCardConfig] = useState<CardDesignConfigV1>(DEFAULT_CARD_DESIGN_CONFIG);
   const [learningInteraction, setLearningInteraction] = useState<ReaderInteraction | null>(null);
+  const [readerToast, setReaderToast] = useState<string | null>(null);
   const [readerRect, setReaderRect] = useState<SerializableRect | null>(null);
   const [aiContext, setAiContext] = useState<{ text: string; cfi?: string; analysis?: string } | undefined>();
   const [initialChatId, setInitialChatId] = useState<string | undefined>();
@@ -323,6 +325,22 @@ export default function Reader() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!readerToast) return;
+    const timer = window.setTimeout(() => setReaderToast(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [readerToast]);
+
+  const openLearningCard = useCallback((interaction: ReaderInteraction) => {
+    const hasEnabledModule = learningCardConfig.cards[interaction.kind].modules
+      .some((module) => module.enabled);
+    if (!hasEnabledModule) {
+      setReaderToast(t("learningCard.allModulesDisabled"));
+      return;
+    }
+    setLearningInteraction(interaction);
+  }, [learningCardConfig, t]);
+
   const getHighlightMutationPlan = useCallback(async (
     interaction: ReaderInteraction,
     highlights: Highlight[],
@@ -406,13 +424,14 @@ export default function Reader() {
     contextMenuRequestRef.current += 1;
     setContextMenu(null);
     setContextMarkStateLoading(false);
-    setLearningInteraction(interaction);
+    openLearningCard(interaction);
   }, [
     bookId,
     cancelPendingSelectionMenu,
     cancelPendingWordClick,
     getHighlightMutationPlan,
     getHighlightRemovalPlan,
+    openLearningCard,
   ]);
 
   const handleLookupSuccess = useCallback((interaction: ReaderInteraction) => {
@@ -519,6 +538,7 @@ export default function Reader() {
     handlePageTurnContextMenu,
     handlePageTurnKeyDown,
     handlePageTurnMouseDown,
+    handlePageTurnWheel,
   } = usePageTurnInput({
     bookFormat: book?.format,
     settingsRef: readerSettingsRef,
@@ -587,12 +607,35 @@ export default function Reader() {
       await viewRef.current.goTo(source.sectionIndex);
       return;
     }
-    // The vendored foliate-js submodule is not initialized in this checkout,
-    // so the search API cannot be feature-verified here. Landing at the spine
-    // item is the specified resilient fallback when a snippet search is not
-    // available or does not resolve across formatting boundaries.
-    if (source.sectionHref && viewRef.current) {
-      await viewRef.current.goTo(source.sectionHref);
+    const view = viewRef.current;
+    if (!view) return;
+    const probe = source.snippet
+      ?.split("\n")[0]
+      ?.trim()
+      .slice(0, 80)
+      .replace(/\s+\S*$/, "")
+      .trim();
+    if (probe && probe.length >= 8 && Number.isInteger(source.sectionIndex)) {
+      try {
+        let cfi: string | undefined;
+        for await (const result of view.search({ query: probe, index: source.sectionIndex })) {
+          if (result === "done") break;
+          if (result.cfi) {
+            cfi = result.cfi;
+            break;
+          }
+        }
+        view.clearSearch();
+        if (cfi) {
+          await flashNavigationTarget(cfi);
+          return;
+        }
+      } catch {
+        view.clearSearch();
+      }
+    }
+    if (source.sectionHref) {
+      await view.goTo(source.sectionHref);
     }
   }, [book?.format, flashNavigationTarget, isTextBook, viewRef]);
 
@@ -697,6 +740,7 @@ export default function Reader() {
     handlePageTurnKeyDown,
     handlePageTurnMouseDown,
     handlePageTurnContextMenu,
+    handlePageTurnWheel,
   });
 
   useFoliateView({
@@ -1191,18 +1235,20 @@ export default function Reader() {
           >
             <div className="flex flex-col gap-2">
               <div className={`h-px w-full ${isStandaloneWindow ? "opacity-10" : "bg-border"}`} style={isStandaloneWindow ? { backgroundColor: "currentColor" } : undefined}>
-                <div
-                  className="h-full transition-all"
-                  style={{ width: `${book.format === "pdf" ? progress : chapterProgress}%`, backgroundColor: isStandaloneWindow ? "currentColor" : "#9f9fa9", opacity: isStandaloneWindow ? 0.4 : undefined }}
-                />
+                {(book.format === "pdf" || readerSettings.showChapterProgress) && (
+                  <div
+                    className="h-full transition-all"
+                    style={{ width: `${book.format === "pdf" ? progress : chapterProgress}%`, backgroundColor: isStandaloneWindow ? "currentColor" : "#9f9fa9", opacity: isStandaloneWindow ? 0.4 : undefined }}
+                  />
+                )}
               </div>
               <div className="flex items-center justify-between h-8">
                 <div className={`flex min-w-0 items-center gap-2 text-[12px] tabular-nums ${isStandaloneWindow ? "opacity-60" : "text-text-muted"}`}>
-                  <span>
-                    {book.format === "pdf" && pageInfo
-                      ? t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total })
-                      : t("reader.chapterProgress", { progress: chapterProgress })}
-                  </span>
+                  {book.format === "pdf" && pageInfo ? (
+                    <span>{t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total })}</span>
+                  ) : readerSettings.showChapterProgress ? (
+                    <span>{t("reader.chapterProgress", { progress: chapterProgress })}</span>
+                  ) : null}
                   {readerSettings.showBookProgress && book.format !== "pdf" && (
                     <span className="border-l border-current/20 pl-2">
                       {t("reader.bookProgress", { progress })}
@@ -1323,7 +1369,7 @@ export default function Reader() {
             setContextMenu(null);
           }}
           onExplain={() => {
-            setLearningInteraction({ ...contextMenu, trigger: "word-quick-lookup" });
+            openLearningCard({ ...contextMenu, trigger: "word-quick-lookup" });
             setContextMenu(null);
           }}
           onQuote={() => {
@@ -1335,7 +1381,7 @@ export default function Reader() {
             setContextMenu(null);
           }}
           onLookup={() => {
-            setLearningInteraction({ ...contextMenu, trigger: "word-quick-lookup" });
+            openLearningCard({ ...contextMenu, trigger: "word-quick-lookup" });
             setContextMenu(null);
           }}
           onTranslate={() => {
@@ -1491,6 +1537,8 @@ export default function Reader() {
           onClose={() => setTranslation(null)}
         />
       )}
+
+      {readerToast && <Toast>{readerToast}</Toast>}
 
     </div>
   );

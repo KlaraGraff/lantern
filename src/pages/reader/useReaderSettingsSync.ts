@@ -32,6 +32,7 @@ const readerPreferenceSettingKeys = {
   readingMode: "reading_mode",
   pageColumns: "page_columns",
   pageTurnAnimation: "page_turn_animation",
+  showChapterProgress: "show_chapter_progress",
   showBookProgress: "show_book_progress",
   showPageNumbers: "show_page_numbers",
   previousPageBinding: "previous_page_binding",
@@ -75,6 +76,7 @@ function createDefaultReaderSettings(): ReaderSettingsState {
     readingMode: "scrolling",
     pageColumns: 2,
     pageTurnAnimation: "slide",
+    showChapterProgress: true,
     showBookProgress: false,
     showPageNumbers: false,
     previousPageBinding: DEFAULT_PREVIOUS_PAGE_BINDING,
@@ -114,6 +116,8 @@ export function mergeStoredReaderSettings(
       || readingModeSetting(globalSettings.reading_mode, previous.readingMode),
     pageTurnAnimation: bookSettings.pageTurnAnimation
       ?? pageTurnAnimationSetting(globalSettings.page_turn_animation, previous.pageTurnAnimation),
+    showChapterProgress: bookSettings.showChapterProgress
+      ?? booleanSetting(globalSettings.show_chapter_progress, previous.showChapterProgress),
     showBookProgress: bookSettings.showBookProgress
       ?? booleanSetting(globalSettings.show_book_progress, previous.showBookProgress),
     showPageNumbers: bookSettings.showPageNumbers
@@ -200,6 +204,7 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
     if (previous.readingMode !== next.readingMode) changed[readerPreferenceSettingKeys.readingMode] = next.readingMode;
     if (previous.pageColumns !== next.pageColumns) changed[readerPreferenceSettingKeys.pageColumns] = String(next.pageColumns);
     if (previous.pageTurnAnimation !== next.pageTurnAnimation) changed[readerPreferenceSettingKeys.pageTurnAnimation] = next.pageTurnAnimation;
+    if (previous.showChapterProgress !== next.showChapterProgress) changed[readerPreferenceSettingKeys.showChapterProgress] = String(next.showChapterProgress);
     if (previous.showBookProgress !== next.showBookProgress) changed[readerPreferenceSettingKeys.showBookProgress] = String(next.showBookProgress);
     if (previous.showPageNumbers !== next.showPageNumbers) changed[readerPreferenceSettingKeys.showPageNumbers] = String(next.showPageNumbers);
     if (previous.previousPageBinding !== next.previousPageBinding) changed[readerPreferenceSettingKeys.previousPageBinding] = next.previousPageBinding;
@@ -227,6 +232,10 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
           pageTurnAnimation: pageTurnAnimationSetting(
             values[readerPreferenceSettingKeys.pageTurnAnimation],
             current.pageTurnAnimation,
+          ),
+          showChapterProgress: booleanSetting(
+            values[readerPreferenceSettingKeys.showChapterProgress],
+            current.showChapterProgress,
           ),
           showBookProgress: booleanSetting(
             values[readerPreferenceSettingKeys.showBookProgress],

@@ -26,20 +26,16 @@ export const CARD_TARGET_WIDTHS: Record<LearningCardKind, Record<ContentDensity,
   passage: { compact: 460, standard: 560, detailed: 680 },
 };
 
-const definition = (
-  id: LearningModuleId,
-  required = false,
-): LearningModuleDefinition => ({
+const definition = (id: LearningModuleId): LearningModuleDefinition => ({
   id,
-  required,
   labelKey: `settings.tools.modules.${id}`,
   descriptionKey: `settings.tools.modules.${id}Hint`,
 });
 
 export const MODULE_DEFINITIONS: Record<LearningCardKind, LearningModuleDefinition[]> = {
   word: [
-    definition("context_meaning", true),
-    definition("word_info", true),
+    definition("context_meaning"),
+    definition("word_info"),
     definition("target_translation"),
     definition("common_senses"),
     definition("collocations"),
@@ -51,7 +47,7 @@ export const MODULE_DEFINITIONS: Record<LearningCardKind, LearningModuleDefiniti
     definition("source_excerpt"),
   ],
   phrase: [
-    definition("context_meaning", true),
+    definition("context_meaning"),
     definition("target_translation"),
     definition("common_senses"),
     definition("collocations"),
@@ -61,7 +57,7 @@ export const MODULE_DEFINITIONS: Record<LearningCardKind, LearningModuleDefiniti
     definition("source_excerpt"),
   ],
   passage: [
-    definition("context_meaning", true),
+    definition("context_meaning"),
     definition("target_translation"),
     definition("grammar_analysis"),
     definition("key_terms"),
@@ -121,8 +117,8 @@ const defaultCard = (
   widthMode: "auto",
   exampleCount: 1,
   keyTermCount: kind === "passage" ? 3 : 3,
-  modules: MODULE_DEFINITIONS[kind].map(({ id, required }) =>
-    moduleConfig(id, required || enabled.includes(id), !collapsed.includes(id)),
+  modules: MODULE_DEFINITIONS[kind].map(({ id }) =>
+    moduleConfig(id, enabled.includes(id), !collapsed.includes(id)),
   ),
 });
 
@@ -132,17 +128,17 @@ export function createDefaultCardDesignConfig(): CardDesignConfigV1 {
     cards: {
       word: defaultCard(
         "word",
-        ["target_translation", "common_senses", "collocations", "morphology", "grammar_role"],
+        ["context_meaning", "word_info", "target_translation", "common_senses", "collocations", "morphology", "grammar_role"],
         ["morphology", "grammar_role"],
       ),
       phrase: defaultCard(
         "phrase",
-        ["target_translation", "common_senses", "collocations", "grammar_analysis", "idioms"],
+        ["context_meaning", "target_translation", "common_senses", "collocations", "grammar_analysis", "idioms"],
         ["grammar_analysis", "idioms"],
       ),
       passage: defaultCard(
         "passage",
-        ["target_translation", "grammar_analysis", "key_terms", "idioms", "references"],
+        ["context_meaning", "target_translation", "grammar_analysis", "key_terms", "idioms", "references"],
         ["grammar_analysis", "key_terms", "idioms", "references"],
       ),
     },
@@ -192,7 +188,7 @@ function parseModules(
     seen.add(moduleDefinition.id);
     parsed.push({
       id: moduleDefinition.id,
-      enabled: moduleDefinition.required ? true : typeof item.enabled === "boolean" ? item.enabled : fallback.enabled,
+      enabled: typeof item.enabled === "boolean" ? item.enabled : fallback.enabled,
       defaultExpanded: typeof item.defaultExpanded === "boolean"
         ? item.defaultExpanded
         : fallback.defaultExpanded,

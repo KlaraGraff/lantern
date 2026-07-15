@@ -546,7 +546,6 @@ function TextBookReader({
   const layoutFrameRef = useRef<number | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
   const paginationSettleTimerRef = useRef<number | null>(null);
-  const wheelTurnLockedUntilRef = useRef(0);
   const initialLocationRef = useRef(initialLocation);
   const progressReadyRef = useRef(false);
   const loadGenerationRef = useRef(0);
@@ -893,6 +892,25 @@ function TextBookReader({
   ]);
 
   useEffect(() => {
+    const container = containerRef.current;
+    if (!document || !container || !isPaginated) return;
+    let reanchorTimer: number | null = null;
+    const observer = new ResizeObserver(() => {
+      if (reanchorTimer !== null) window.clearTimeout(reanchorTimer);
+      reanchorTimer = window.setTimeout(() => {
+        reanchorTimer = null;
+        const location = initialLocationRef.current;
+        if (location) navigateToLocation(location, false, "auto");
+      }, 180);
+    });
+    observer.observe(container);
+    return () => {
+      observer.disconnect();
+      if (reanchorTimer !== null) window.clearTimeout(reanchorTimer);
+    };
+  }, [document, isPaginated, navigateToLocation]);
+
+  useEffect(() => {
     onRegisterNavigation(navigateToLocation);
     return () => {
       if (flashTimerRef.current !== null) window.clearTimeout(flashTimerRef.current);
@@ -1061,21 +1079,6 @@ function TextBookReader({
       }
     };
   }, [isPaginated, scheduleScrollProgress, scrollToSpread]);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !isPaginated) return;
-    const handleWheel = (event: WheelEvent) => {
-      if (event.ctrlKey) return;
-      event.preventDefault();
-      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-      if (Math.abs(delta) < 4 || Date.now() < wheelTurnLockedUntilRef.current) return;
-      wheelTurnLockedUntilRef.current = Date.now() + 360;
-      navigateByPage(delta > 0 ? 1 : -1);
-    };
-    container.addEventListener("wheel", handleWheel, { passive: false });
-    return () => container.removeEventListener("wheel", handleWheel);
-  }, [isPaginated, navigateByPage]);
 
   const interactionFromRange = useCallback((
     range: Range,

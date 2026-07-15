@@ -583,19 +583,45 @@ export function useFoliateView({
   useEffect(() => {
     if (!bookReady || !capabilities.supportsReflowSettings || !viewerRef.current) return;
     let frame = 0;
+    let trailingTimer: number | null = null;
     const viewer = viewerRef.current;
+    const applyCurrentLayout = () => {
+      const view = viewRef.current;
+      if (view?.renderer) {
+        applyReflowLayout(
+          view,
+          readerSettingsRef.current,
+          viewer.clientWidth,
+          viewer.clientHeight,
+        );
+      }
+    };
+    const applyTrailingLayout = () => {
+      trailingTimer = null;
+      if (viewRef.current?.renderer?.hasAttribute("resize-dragging")) {
+        trailingTimer = window.setTimeout(applyTrailingLayout, 200);
+        return;
+      }
+      applyCurrentLayout();
+    };
     const resize = () => {
+      if (viewRef.current?.renderer?.hasAttribute("resize-dragging")) {
+        if (frame) {
+          cancelAnimationFrame(frame);
+          frame = 0;
+        }
+        if (trailingTimer !== null) window.clearTimeout(trailingTimer);
+        trailingTimer = window.setTimeout(applyTrailingLayout, 200);
+        return;
+      }
+      if (trailingTimer !== null) {
+        window.clearTimeout(trailingTimer);
+        trailingTimer = null;
+      }
       if (frame) cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        const view = viewRef.current;
-        if (view?.renderer) {
-          applyReflowLayout(
-            view,
-            readerSettingsRef.current,
-            viewer.clientWidth,
-            viewer.clientHeight,
-          );
-        }
+        frame = 0;
+        applyCurrentLayout();
       });
     };
     const observer = new ResizeObserver(resize);
@@ -604,6 +630,7 @@ export function useFoliateView({
     reducedMotion.addEventListener("change", resize);
     return () => {
       if (frame) cancelAnimationFrame(frame);
+      if (trailingTimer !== null) window.clearTimeout(trailingTimer);
       observer.disconnect();
       reducedMotion.removeEventListener("change", resize);
     };
@@ -655,12 +682,13 @@ export function useFoliateView({
   useEffect(() => {
     if (!bookReady || book?.format !== "pdf" || !viewerRef.current) return;
     let frame = 0;
+    let trailingTimer: number | null = null;
     const viewer = viewerRef.current;
     const relayoutPdf = () => {
       const renderer = viewRef.current?.renderer as (HTMLElement & {
         relayout?: () => void;
       }) | undefined;
-      if (!renderer || renderer.hasAttribute("resize-dragging")) return;
+      if (!renderer) return;
       const view = viewRef.current;
       if (view) {
         applyPdfLayout(
@@ -678,12 +706,38 @@ export function useFoliateView({
       renderer.setAttribute("zoom", zoom === "fit" ? "fit-width" : String(zoom / 100));
     };
     const observer = new ResizeObserver(() => {
+      const renderer = viewRef.current?.renderer;
+      if (renderer?.hasAttribute("resize-dragging")) {
+        if (frame) {
+          cancelAnimationFrame(frame);
+          frame = 0;
+        }
+        if (trailingTimer !== null) window.clearTimeout(trailingTimer);
+        const runAfterDrag = () => {
+          trailingTimer = null;
+          if (viewRef.current?.renderer?.hasAttribute("resize-dragging")) {
+            trailingTimer = window.setTimeout(runAfterDrag, 200);
+            return;
+          }
+          relayoutPdf();
+        };
+        trailingTimer = window.setTimeout(runAfterDrag, 200);
+        return;
+      }
+      if (trailingTimer !== null) {
+        window.clearTimeout(trailingTimer);
+        trailingTimer = null;
+      }
       if (frame) cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(relayoutPdf);
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        relayoutPdf();
+      });
     });
     observer.observe(viewer);
     return () => {
       if (frame) cancelAnimationFrame(frame);
+      if (trailingTimer !== null) window.clearTimeout(trailingTimer);
       observer.disconnect();
     };
   }, [book?.format, bookReady, readerSettingsRef, viewRef, viewerRef, zoomRef]);

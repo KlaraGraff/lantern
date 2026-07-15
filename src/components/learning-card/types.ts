@@ -62,7 +62,6 @@ export interface LearningModuleDefinition {
   id: LearningModuleId;
   labelKey: string;
   descriptionKey: string;
-  required: boolean;
 }
 
 export interface SelectionMenuActionDefinition {

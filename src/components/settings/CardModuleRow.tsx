@@ -59,7 +59,6 @@ export default function CardModuleRow({
           <span className="min-w-0 flex-1 break-words text-[12px] font-medium text-text-primary">
             {t(definition.labelKey)}
           </span>
-          {definition.required && <span className="shrink-0 text-[10px] text-text-muted">{t("settings.tools.required")}</span>}
         </button>
         <button
           type="button"
@@ -90,7 +89,6 @@ export default function CardModuleRow({
             <span className="text-[12px] text-text-secondary">{t("settings.tools.showModule")}</span>
             <Toggle
               checked={value.enabled}
-              disabled={definition.required}
               label={t("settings.tools.toggleModule", { name: t(definition.labelKey) })}
               onChange={(enabled) => onChange({ ...value, enabled })}
             />

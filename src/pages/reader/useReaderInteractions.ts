@@ -54,6 +54,7 @@ interface ReaderInteractionsOptions {
   handlePageTurnKeyDown(event: KeyboardEvent): void;
   handlePageTurnMouseDown(event: MouseEvent): void;
   handlePageTurnContextMenu(event: MouseEvent): void;
+  handlePageTurnWheel(event: WheelEvent): void;
 }
 
 export function useReaderInteractions({
@@ -74,6 +75,7 @@ export function useReaderInteractions({
   handlePageTurnKeyDown,
   handlePageTurnMouseDown,
   handlePageTurnContextMenu,
+  handlePageTurnWheel,
 }: ReaderInteractionsOptions) {
   const installDocumentInteractions = useCallback(({
     doc,
@@ -264,6 +266,7 @@ export function useReaderInteractions({
     });
     doc.addEventListener("mousedown", handlePageTurnMouseDown, true);
     doc.addEventListener("contextmenu", handlePageTurnContextMenu, true);
+    doc.addEventListener("wheel", handlePageTurnWheel, { passive: false });
 
     doc.addEventListener("click", (event: MouseEvent) => {
       if (annotationClickDocumentRef.current === doc) return;
@@ -358,6 +361,7 @@ export function useReaderInteractions({
     handlePageTurnContextMenu,
     handlePageTurnKeyDown,
     handlePageTurnMouseDown,
+    handlePageTurnWheel,
     handleZoom,
     openLearningInteraction,
     pdfTextLayerNoticeTimerRef,

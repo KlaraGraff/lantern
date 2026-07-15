@@ -10,6 +10,8 @@ import {
   keyboardEventMatchesBinding,
   mouseEventMatchesBinding,
 } from "../../components/page-turn-bindings";
+import { createWheelPageTurnHandler } from "../../components/wheel-page-turn";
+import type { WheelPageTurnHandler } from "../../components/wheel-page-turn";
 
 type PageDirection = "previous" | "next";
 
@@ -42,6 +44,7 @@ export function usePageTurnInput({
   const suppressContextMenuUntilRef = useRef(0);
   const keyboardBlockedRef = useRef(false);
   const overlayOpenRef = useRef(false);
+  const wheelGestureRef = useRef<WheelPageTurnHandler | null>(null);
 
   useEffect(() => {
     overlayOpenRef.current = overlayOpen;
@@ -113,17 +116,44 @@ export function usePageTurnInput({
   }, []);
 
   useEffect(() => {
+    const gesture = createWheelPageTurnHandler({
+      turn: turnPage,
+      isEnabled: () => (
+        !overlayOpenRef.current
+        && settingsRef.current.readingMode === "paginated"
+      ),
+    });
+    wheelGestureRef.current = gesture;
+    return () => {
+      gesture.reset();
+      if (wheelGestureRef.current === gesture) wheelGestureRef.current = null;
+    };
+  }, [settingsRef, turnPage]);
+
+  const handlePageTurnWheel = useCallback((event: WheelEvent) => {
+    wheelGestureRef.current?.handleWheel(event);
+  }, []);
+
+  useEffect(() => {
     const viewport = readerViewportRef.current;
     if (!viewport) return;
     window.addEventListener("keydown", handlePageTurnKeyDown);
     viewport.addEventListener("mousedown", handlePageTurnMouseDown, true);
     viewport.addEventListener("contextmenu", handlePageTurnContextMenu, true);
+    viewport.addEventListener("wheel", handlePageTurnWheel, { passive: false });
     return () => {
       window.removeEventListener("keydown", handlePageTurnKeyDown);
       viewport.removeEventListener("mousedown", handlePageTurnMouseDown, true);
       viewport.removeEventListener("contextmenu", handlePageTurnContextMenu, true);
+      viewport.removeEventListener("wheel", handlePageTurnWheel);
     };
-  }, [handlePageTurnContextMenu, handlePageTurnKeyDown, handlePageTurnMouseDown, readerViewportRef]);
+  }, [
+    handlePageTurnContextMenu,
+    handlePageTurnKeyDown,
+    handlePageTurnMouseDown,
+    handlePageTurnWheel,
+    readerViewportRef,
+  ]);
 
   const blockPageTurnKeyboard = useCallback(() => {
     keyboardBlockedRef.current = true;
@@ -134,5 +164,6 @@ export function usePageTurnInput({
     handlePageTurnContextMenu,
     handlePageTurnKeyDown,
     handlePageTurnMouseDown,
+    handlePageTurnWheel,
   };
 }

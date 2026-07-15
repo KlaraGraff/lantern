@@ -21,6 +21,14 @@ export interface FoliateView extends HTMLElement {
   };
   getCFI(index: number, range: Range): string;
   resolveCFI(cfi: string): { index: number; anchor: (doc: Document) => Range };
+  search(opts: {
+    query: string;
+    index?: number;
+    matchCase?: boolean;
+    matchDiacritics?: boolean;
+    matchWholeWords?: boolean;
+  }): AsyncGenerator<{ cfi?: string; excerpt?: any; progress?: number } | "done">;
+  clearSearch(): void;
   getSectionFractions(): number[];
   addAnnotation(annotation: {
     value: string;
