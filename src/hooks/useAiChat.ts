@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect, useLayoutEffect } from "react
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getAiErrorCode } from "../utils/aiError";
+import { useSettings } from "./useSettings";
 
 export interface ChatMessage {
   id: string;
@@ -11,7 +12,19 @@ export interface ChatMessage {
   contextCfi?: string;
   contextAnalysis?: string;
   reasoning?: string;
+  sources?: CitedSource[];
   dbId?: string;
+}
+
+export interface CitedSource {
+  marker: string;
+  chunkId: string;
+  sectionIndex: number;
+  sectionHref?: string;
+  sectionTitle?: string;
+  snippet: string;
+  charStart?: number;
+  charEnd?: number;
 }
 
 interface ChatRecord {
@@ -43,10 +56,40 @@ interface AiStreamChunk {
   error?: string;
 }
 
+interface GroundingStatusEvent {
+  status: "building" | "unavailable";
+}
+
+interface SummaryProgressEvent {
+  done: number;
+  total: number;
+  phase: "sections" | "book" | "done" | "error";
+}
+
+interface BookAiState {
+  indexStatus: "ready" | "building" | "failed" | "unsupported" | "missing";
+  hasSummaries: boolean;
+  summariesStale: boolean;
+}
+
 interface ChatMessageMetadata {
   cfi?: string;
   analysis?: string;
   reasoning?: string;
+  sources?: CitedSource[];
+}
+
+function parseCitedSources(value: unknown): CitedSource[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const sources = value.filter((item): item is CitedSource => {
+    if (!item || typeof item !== "object") return false;
+    const source = item as Record<string, unknown>;
+    return typeof source.marker === "string"
+      && typeof source.chunkId === "string"
+      && typeof source.sectionIndex === "number"
+      && typeof source.snippet === "string";
+  });
+  return sources.length > 0 ? sources : undefined;
 }
 
 function parseMessageMetadata(metadata: string | null): ChatMessageMetadata {
@@ -59,6 +102,7 @@ function parseMessageMetadata(metadata: string | null): ChatMessageMetadata {
       cfi: typeof value.cfi === "string" ? value.cfi : undefined,
       analysis: typeof value.analysis === "string" ? value.analysis : undefined,
       reasoning: typeof value.reasoning === "string" ? value.reasoning : undefined,
+      sources: parseCitedSources(value.sources),
     };
   } catch {
     return {};
@@ -66,9 +110,11 @@ function parseMessageMetadata(metadata: string | null): ChatMessageMetadata {
 }
 
 function serializeMessageMetadata(metadata: ChatMessageMetadata): string | null {
-  const compact = Object.fromEntries(
-    Object.entries(metadata).filter(([, value]) => typeof value === "string" && value.length > 0),
-  );
+  const compact: ChatMessageMetadata = {};
+  if (metadata.cfi) compact.cfi = metadata.cfi;
+  if (metadata.analysis) compact.analysis = metadata.analysis;
+  if (metadata.reasoning) compact.reasoning = metadata.reasoning;
+  if (metadata.sources?.length) compact.sources = metadata.sources;
   return Object.keys(compact).length > 0 ? JSON.stringify(compact) : null;
 }
 
@@ -168,8 +214,14 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
   const [initializing, setInitializing] = useState(true);
   const [chatId, setChatId] = useState<string | null>(null);
   const [chats, setChats] = useState<ChatRecord[]>([]);
+  const [groundingStatus, setGroundingStatus] = useState<GroundingStatusEvent["status"] | null>(null);
+  const [summaryProgress, setSummaryProgress] = useState<SummaryProgressEvent | null>(null);
+  const [bookAiState, setBookAiState] = useState<BookAiState | null>(null);
+  const { settings } = useSettings();
 
   const unlistenRef = useRef<UnlistenFn | null>(null);
+  const groundingUnlistenRef = useRef<UnlistenFn | null>(null);
+  const summaryRequestIdRef = useRef<string | null>(null);
   const initializedBookRef = useRef<string | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
   const chatIdRef = useRef<string | null>(null);
@@ -195,6 +247,8 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
     streamFrameCleanupRef.current = null;
     unlistenRef.current?.();
     unlistenRef.current = null;
+    groundingUnlistenRef.current?.();
+    groundingUnlistenRef.current = null;
     activeRequestIdRef.current = null;
     activeAssistantIdRef.current = null;
     streamingRef.current = false;
@@ -230,6 +284,57 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       setTitling(false);
     }
   }, [bookId, stopActiveStream]);
+
+  const refreshBookAiState = useCallback(async () => {
+    if (!bookId) {
+      setBookAiState(null);
+      return null;
+    }
+    try {
+      const next = await invoke<BookAiState>("get_book_ai_state", { bookId });
+      if (bookIdRef.current === bookId) setBookAiState(next);
+      return next;
+    } catch {
+      return null;
+    }
+  }, [bookId]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: UnlistenFn | undefined;
+    void refreshBookAiState();
+    if (!bookId) return () => { disposed = true; };
+    listen<SummaryProgressEvent>(`ai-summary-progress-${bookId}`, (event) => {
+      if (disposed) return;
+      setSummaryProgress(event.payload);
+      if (event.payload.phase === "done" || event.payload.phase === "error") {
+        summaryRequestIdRef.current = null;
+        void refreshBookAiState();
+      }
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
+    }).catch(() => {});
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [bookId, refreshBookAiState]);
+
+  const prepareBookOverview = useCallback(async () => {
+    if (!bookId || summaryRequestIdRef.current) return;
+    const state = await refreshBookAiState();
+    if (!state || state.indexStatus !== "ready" || (state.hasSummaries && !state.summariesStale)) return;
+    const requestId = `summary-${crypto.randomUUID()}`;
+    summaryRequestIdRef.current = requestId;
+    setSummaryProgress({ done: 0, total: 0, phase: "sections" });
+    try {
+      await invoke("ai_prepare_book", { bookId, requestId });
+    } catch {
+      summaryRequestIdRef.current = null;
+      setSummaryProgress({ done: 0, total: 0, phase: "error" });
+    }
+  }, [bookId, refreshBookAiState]);
 
   const updateMessages = (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
     if (!mountedRef.current) return;
@@ -281,6 +386,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           contextCfi: metadata.cfi,
           contextAnalysis: metadata.analysis,
           reasoning: metadata.reasoning,
+          sources: metadata.sources,
           dbId: m.id,
         };
       });
@@ -345,6 +451,9 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       // chat-creation path below would spawn a *new* chat and miss the
       // existing one. Belt-and-suspenders alongside the UI gate.
       if (initializingRef.current || streamingRef.current) return;
+
+      setGroundingStatus(null);
+      if (settings.ai_summaries_auto !== "false") void prepareBookOverview();
 
       const requestId = crypto.randomUUID();
       const requestGeneration = streamGenerationRef.current + 1;
@@ -444,6 +553,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       // Accumulate full assistant content for persistence
       let fullContent = "";
       let fullReasoning = "";
+      let citedSources: CitedSource[] = [];
       let pendingContent = "";
       let pendingReasoning = "";
       let updateFrame: number | null = null;
@@ -502,6 +612,8 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           streamFrameCleanupRef.current = null;
         }
         if (unlistenRef.current === streamUnlisten) unlistenRef.current = null;
+        groundingUnlistenRef.current?.();
+        groundingUnlistenRef.current = null;
         streamUnlisten?.();
         streamUnlisten = null;
         activeRequestIdRef.current = null;
@@ -510,6 +622,22 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         if (mountedRef.current) setStreaming(false);
         return true;
       };
+
+      try {
+        const registeredGroundingUnlisten = await listen<GroundingStatusEvent>(
+          `ai-grounding-status-${requestId}`,
+          (event) => {
+            if (isRequestActive()) setGroundingStatus(event.payload.status);
+          },
+        );
+        groundingUnlistenRef.current = registeredGroundingUnlisten;
+        if (!isRequestActive()) {
+          registeredGroundingUnlisten();
+          return;
+        }
+      } catch {
+        // The status hint is optional; streaming chat remains usable without it.
+      }
 
       try {
         const registeredUnlisten = await listen<AiStreamChunk>(
@@ -542,7 +670,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
                     role: "assistant",
                     content: fullContent,
                     context: null,
-                    metadata: serializeMessageMetadata({ reasoning: fullReasoning }),
+                    metadata: serializeMessageMetadata({ reasoning: fullReasoning, sources: citedSources }),
                   });
                 } catch (err) {
                   console.error("Failed to save assistant message:", err);
@@ -590,13 +718,19 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
 
       try {
         if (!isRequestActive()) return;
-        await invoke("ai_chat", {
+        citedSources = await invoke<CitedSource[]>("ai_chat", {
           messages: apiMessages,
+          bookId: bookId ?? null,
           bookTitle: bookContext?.title ?? null,
           bookAuthor: bookContext?.author ?? null,
           currentChapter: bookContext?.chapter ?? null,
           requestId,
         });
+        if (isRequestActive() && citedSources.length > 0) {
+          updateMessages((previous) => previous.map((message) => (
+            message.id === assistantId ? { ...message, sources: citedSources } : message
+          )));
+        }
       } catch (err) {
         if (!isRequestActive()) return;
         flushStreamUpdate();
@@ -611,7 +745,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         finishRequest();
       }
     },
-    [bookId, bookContext?.title, bookContext?.author, bookContext?.chapter, createChat, refreshChats, stopActiveStream]
+    [bookId, bookContext?.title, bookContext?.author, bookContext?.chapter, createChat, prepareBookOverview, refreshChats, settings.ai_summaries_auto, stopActiveStream]
   );
 
   const cancel = useCallback(() => {
@@ -674,6 +808,11 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
   return {
     messages,
     streaming,
+    groundingStatus,
+    summaryProgress,
+    bookAiState,
+    summariesAuto: settings.ai_summaries_auto !== "false",
+    prepareBookOverview,
     cancel,
     titling,
     initializing,

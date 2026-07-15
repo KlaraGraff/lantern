@@ -48,6 +48,7 @@ export interface ReaderPageInfo {
 export interface ReaderNavigation {
   navigationId?: string;
   cfi?: string;
+  page?: number;
   openVocab?: boolean;
   openChat?: boolean;
   chatId?: string;

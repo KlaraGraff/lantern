@@ -4,17 +4,39 @@ import { ChevronDown, ChevronRight, Loader2, Settings } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import Markdown from "react-markdown";
-import type { ChatMessage } from "../hooks/useAiChat";
+import type { ChatMessage, CitedSource } from "../hooks/useAiChat";
 import { aiErrorMessageKey, isAiErrorCode, isAiSettingsError } from "../utils/aiError";
+import {
+  citedSourcesInContent,
+  citationMarkerFromHref,
+  markdownWithCitationLinks,
+} from "./citation-markers";
 
 interface MessageBubbleProps {
   msg: ChatMessage;
   messages: ChatMessage[];
   streaming: boolean;
   onNavigateToCfi?: (cfi: string) => void;
+  onNavigateToSource?: (source: CitedSource) => void;
 }
 
-export default function MessageBubble({ msg, messages, streaming, onNavigateToCfi }: MessageBubbleProps) {
+function CitationChip({ source, onClick }: { source: CitedSource; onClick?: () => void }) {
+  const number = source.marker.replace(/^S/, "");
+  const tooltip = [source.sectionTitle, source.snippet].filter(Boolean).join("\n");
+  return (
+    <button
+      type="button"
+      title={tooltip}
+      aria-label={`Source ${number}`}
+      onClick={onClick}
+      className="mx-0.5 inline-flex h-5 min-w-5 translate-y-[-1px] items-center justify-center rounded border border-accent/35 bg-accent-bg px-1 text-[10px] font-semibold leading-none text-accent-text align-super hover:opacity-75"
+    >
+      {number}
+    </button>
+  );
+}
+
+export default function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateToSource }: MessageBubbleProps) {
   const { t } = useTranslation();
   const isLast = msg === messages[messages.length - 1];
   const [reasoningExpanded, setReasoningExpanded] = useState<boolean | null>(null);
@@ -47,6 +69,8 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
     const hasReasoning = Boolean(msg.reasoning?.trim());
     const reasoningInProgress = streaming && isLast && !msg.content;
     const reasoningOpen = reasoningExpanded ?? reasoningInProgress;
+    const sources = msg.sources ?? [];
+    const citedSources = citedSourcesInContent(msg.content, sources);
     return (
       <div className="bg-bg-surface border border-border rounded-lg px-[13px] py-[13px] max-w-[85%]">
         {hasReasoning && (
@@ -75,12 +99,32 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
           </span>
         ) : msg.content ? (
           <div className="prose prose-sm max-w-none text-[14px] text-text-primary leading-5 tracking-[-0.15px] [&_h1]:text-[16px] [&_h2]:text-[15px] [&_h3]:text-[14px] [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1 [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-1.5 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-text-muted [&_code]:bg-bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[13px] [&_pre]:bg-bg-muted [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_strong]:font-semibold [&_em]:italic [&_hr]:border-border [&_a]:text-accent [&_a]:underline">
-            <Markdown>{msg.content}</Markdown>
+            <Markdown
+              components={{
+                a: ({ href, children }) => {
+                  const marker = citationMarkerFromHref(href);
+                  const source = marker ? sources.find((candidate) => candidate.marker === marker) : undefined;
+                  return source
+                    ? <CitationChip source={source} onClick={() => onNavigateToSource?.(source)} />
+                    : <a href={href}>{children}</a>;
+                },
+              }}
+            >
+              {markdownWithCitationLinks(msg.content, sources)}
+            </Markdown>
             {streaming && msg.content && isLast && (
               <Loader2 size={14} className="inline-block ml-1 animate-spin text-text-muted" />
             )}
           </div>
         ) : null}
+        {citedSources.length > 0 && (
+          <div className="mt-2 flex items-center gap-1 border-t border-border pt-2">
+            <span className="mr-1 text-[11px] text-text-muted">{t("ai.sources")}</span>
+            {citedSources.map((source) => (
+              <CitationChip key={source.marker} source={source} onClick={() => onNavigateToSource?.(source)} />
+            ))}
+          </div>
+        )}
       </div>
     );
   }

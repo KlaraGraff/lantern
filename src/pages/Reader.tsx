@@ -28,6 +28,7 @@ import TranslationPopover from "../components/TranslationPopover";
 import TableOfContents from "../components/TableOfContents";
 import TextBookReader from "../components/TextBookReader";
 import { textLocation, type TextBookDocument } from "../components/text-book-location";
+import type { CitedSource } from "../hooks/useAiChat";
 import {
   classifySelection,
   normalizeInteractionText,
@@ -577,6 +578,24 @@ export default function Reader() {
     textReaderNavigateRef,
   });
 
+  const navigateToSource = useCallback(async (source: CitedSource) => {
+    if (isTextBook && source.charStart != null) {
+      await flashNavigationTarget(textLocation(source.charStart, source.charEnd ?? source.charStart));
+      return;
+    }
+    if (book?.format === "pdf" && viewRef.current) {
+      await viewRef.current.goTo(source.sectionIndex);
+      return;
+    }
+    // The vendored foliate-js submodule is not initialized in this checkout,
+    // so the search API cannot be feature-verified here. Landing at the spine
+    // item is the specified resilient fallback when a snippet search is not
+    // available or does not resolve across formatting boundaries.
+    if (source.sectionHref && viewRef.current) {
+      await viewRef.current.goTo(source.sectionHref);
+    }
+  }, [book?.format, flashNavigationTarget, isTextBook, viewRef]);
+
   // Load book metadata and default settings from DB
   useEffect(() => {
     if (!bookId) return;
@@ -790,16 +809,19 @@ export default function Reader() {
   // Handle source navigation and the optional vocabulary side panel.
   // Supports both location.state (main window) and URL search params (standalone window).
   useEffect(() => {
-    const state = location.state as { openVocab?: boolean; cfi?: string } | null;
+    const state = location.state as { openVocab?: boolean; cfi?: string; page?: number } | null;
     const searchParams = new URLSearchParams(window.location.search);
     const openVocab = state?.openVocab || searchParams.get("openVocab") === "true";
     const cfi = state?.cfi || searchParams.get("cfi") || undefined;
-    if (!bookReady || (!openVocab && !cfi)) return;
+    const rawPage = state?.page ?? Number(searchParams.get("page"));
+    const page = Number.isInteger(rawPage) && rawPage >= 0 ? rawPage : undefined;
+    if (!bookReady || (!openVocab && !cfi && page == null)) return;
     if (openVocab) setSidePanel("vocab");
     if (cfi && supportsCfiNavigation) flashNavigationTarget(cfi).catch(() => {});
+    if (page != null && book?.format === "pdf") viewRef.current?.goTo(page).catch(() => {});
     // Clear the state so it doesn't re-trigger
     if (!isStandaloneWindow) navigate(location.pathname, { replace: true });
-  }, [bookReady, flashNavigationTarget, location.state, location.pathname, navigate, supportsCfiNavigation]);
+  }, [book?.format, bookReady, flashNavigationTarget, location.state, location.pathname, navigate, supportsCfiNavigation, viewRef]);
 
   if (loading || (bookId !== undefined && book?.id !== bookId)) {
     return (
@@ -1241,6 +1263,9 @@ export default function Reader() {
               onContextConsumed={() => setAiContext(undefined)}
               onNavigateToCfi={(cfi) => {
                 flashNavigationTarget(cfi).catch(() => {});
+              }}
+              onNavigateToSource={(source) => {
+                navigateToSource(source).catch(() => {});
               }}
             />
           </div>

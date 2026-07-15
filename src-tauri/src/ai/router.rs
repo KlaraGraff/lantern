@@ -250,6 +250,14 @@ pub fn cancel_request(request_id: &str) -> bool {
         .is_some_and(|sender| sender.send(true).is_ok())
 }
 
+pub fn request_is_cancelled(request_id: &str) -> bool {
+    cancellation_registry()
+        .lock()
+        .ok()
+        .and_then(|registry| registry.get(request_id).cloned())
+        .is_some_and(|sender| *sender.borrow())
+}
+
 fn suffix(value: &str) -> String {
     value
         .chars()
@@ -1214,6 +1222,44 @@ pub fn list_credentials(db: &Db, profile_id: Option<&str>) -> AppResult<Vec<AiCr
 
 pub fn active_profile_view(db: &Db) -> AppResult<AiProfileView> {
     Ok(active_profile(db)?.view)
+}
+
+/// Return the active API-key profile as an OpenAI-compatible embedding source.
+/// Anthropic and OAuth/CLI routes do not provide a compatible embeddings API.
+pub(crate) fn embedding_source(
+    db: &Db,
+    secrets: &Secrets,
+) -> AppResult<Option<crate::ai::grounding::vector::EmbeddingSource>> {
+    let profile = match active_profile(db) {
+        Ok(profile) => profile,
+        Err(AppError::Other(code)) if code == "AI_NOT_CONFIGURED" => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    if profile.view.auth_mode != "api_key"
+        || !matches!(profile.view.provider.as_str(), "openai" | "custom")
+    {
+        return Ok(None);
+    }
+    let Some(credential) = credentials_for(db, &profile.view.id)?.into_iter().next() else {
+        return Ok(None);
+    };
+    let Some(api_key) = secrets.get(&credential.secret_ref)? else {
+        return Ok(None);
+    };
+    if api_key.trim().is_empty() {
+        return Ok(None);
+    }
+    let base_url = resolve_base_url(&profile.view)?.trim_end_matches('/');
+    let endpoint = if base_url.ends_with("/v1") {
+        format!("{base_url}/embeddings")
+    } else {
+        format!("{base_url}/v1/embeddings")
+    };
+    Ok(Some(crate::ai::grounding::vector::EmbeddingSource {
+        profile_id: profile.view.id,
+        endpoint,
+        api_key,
+    }))
 }
 
 pub fn list_profiles(db: &Db) -> AppResult<Vec<AiProfileView>> {

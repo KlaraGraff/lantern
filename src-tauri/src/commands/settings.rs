@@ -45,6 +45,36 @@ pub fn ai_api_key_configured(db: State<'_, Db>) -> bool {
 }
 
 #[tauri::command]
+pub fn ai_vector_retrieval_status(
+    db: State<'_, Db>,
+    secrets: State<'_, Secrets>,
+) -> AppResult<crate::ai::grounding::vector::VectorAvailability> {
+    crate::ai::grounding::vector::availability(&db, &secrets)
+}
+
+#[tauri::command]
+pub async fn set_ai_vector_retrieval(
+    enabled: bool,
+    db: State<'_, Db>,
+    secrets: State<'_, Secrets>,
+) -> AppResult<()> {
+    if enabled {
+        crate::ai::grounding::vector::enable(&db, &secrets).await
+    } else {
+        let conn = db
+            .conn
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('ai_vector_retrieval', 'false')
+             ON CONFLICT(key) DO UPDATE SET value = 'false'",
+            [],
+        )?;
+        Ok(())
+    }
+}
+
+#[tauri::command]
 pub fn vault_status(secrets: State<'_, Secrets>) -> AppResult<crate::secrets::VaultStatus> {
     secrets.status()
 }

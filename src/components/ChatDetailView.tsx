@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ArrowLeft, ArrowRight, Send, Loader2, Trash2, Sparkles } from "lucide-react";
 import { useAiChat } from "../hooks/useAiChat";
 import { openReaderWindow } from "../utils/openReaderWindow";
+import { textLocation } from "./text-book-location";
 import type { ChatSummary } from "../hooks/useChats";
 import Button from "./ui/Button";
 import MessageBubble from "./MessageBubble";
@@ -153,7 +154,23 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
         ) : (
           <div className="flex flex-col gap-3">
             {messages.map((msg) => (
-              <MessageBubble key={msg.id} msg={msg} messages={messages} streaming={streaming} />
+              <MessageBubble
+                key={msg.id}
+                msg={msg}
+                messages={messages}
+                streaming={streaming}
+                onNavigateToSource={(source) => {
+                  const cfi = source.charStart != null
+                    ? textLocation(source.charStart, source.charEnd ?? source.charStart)
+                    : source.sectionHref ?? null;
+                  void openReaderWindow(chat.book_id, {
+                    openChat: true,
+                    chatId: chat.id,
+                    cfi,
+                    page: source.sectionHref ? undefined : source.sectionIndex,
+                  });
+                }}
+              />
             ))}
             <div ref={messagesEndRef} />
           </div>

@@ -4,6 +4,7 @@ import { Sparkles, Send, Loader2, Plus, ChevronDown, ChevronUp, Trash2, X, Squar
 import { useAiChat } from "../hooks/useAiChat";
 import { timeAgo } from "../utils/timeAgo";
 import MessageBubble from "./MessageBubble";
+import type { CitedSource } from "../hooks/useAiChat";
 
 interface AiPanelProps {
   bookId?: string;
@@ -14,9 +15,10 @@ interface AiPanelProps {
   initialChatId?: string;
   onContextConsumed?: () => void;
   onNavigateToCfi?: (cfi: string) => void;
+  onNavigateToSource?: (source: CitedSource) => void;
 }
 
-export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, context, initialChatId, onContextConsumed, onNavigateToCfi }: AiPanelProps) {
+export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource }: AiPanelProps) {
   const { t } = useTranslation();
 
   const SUGGESTED_PROMPTS = [
@@ -26,7 +28,8 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
   ];
   const {
     messages, streaming, send, cancel, initialize,
-    chatId, chats, titling, initializing, loadChat, deleteChat, renameChat, reset,
+    chatId, chats, titling, initializing, groundingStatus, summaryProgress, bookAiState,
+    summariesAuto, prepareBookOverview, loadChat, deleteChat, renameChat, reset,
   } = useAiChat(bookId, { title: bookTitle, author: bookAuthor, chapter: currentChapter });
 
   const [input, setInput] = useState("");
@@ -276,11 +279,21 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
                 </button>
               ))}
             </div>
+            {bookAiState && !bookAiState.hasSummaries && !summariesAuto && (
+              <button
+                type="button"
+                onClick={() => void prepareBookOverview()}
+                disabled={bookAiState.indexStatus !== "ready" || summaryProgress?.phase === "sections" || summaryProgress?.phase === "book"}
+                className="mt-1 text-[12px] font-medium text-accent-text hover:opacity-75 disabled:cursor-default disabled:opacity-50"
+              >
+                {t("ai.prepareOverview")}
+              </button>
+            )}
           </div>
         ) : (
           <div className="flex flex-col gap-3">
             {messages.map((msg) => (
-              <MessageBubble key={msg.id} msg={msg} messages={messages} streaming={streaming} onNavigateToCfi={onNavigateToCfi} />
+              <MessageBubble key={msg.id} msg={msg} messages={messages} streaming={streaming} onNavigateToCfi={onNavigateToCfi} onNavigateToSource={onNavigateToSource} />
             ))}
             <div />
           </div>
@@ -289,6 +302,18 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
 
       {/* Input */}
       <div className="border-t border-border px-4 pt-[17px] pb-4 flex flex-col gap-2">
+        {groundingStatus === "building" && (
+          <p role="status" className="flex items-center gap-1.5 text-[12px] text-text-muted">
+            <Loader2 size={12} className="animate-spin" />
+            {t("ai.groundingPreparing")}
+          </p>
+        )}
+        {summaryProgress && (summaryProgress.phase === "sections" || summaryProgress.phase === "book") && (
+          <p role="status" className="flex items-center gap-1.5 text-[12px] text-text-muted">
+            <Loader2 size={12} className="animate-spin" />
+            {t("ai.overviewPreparing", { done: summaryProgress.done, total: summaryProgress.total })}
+          </p>
+        )}
         {/* Pending quote chip — passage to attach to the next message */}
         {pendingQuote && (
           <div className="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-[rgba(192,132,252,0.12)] border-l-2 border-[#c084fc]">

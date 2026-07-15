@@ -4,8 +4,8 @@ use crate::error::{AppError, AppResult};
 
 use super::events::{
     is_supported_event_schema_version, lookup_occurrence_mark_id, normalize_learning_term,
-    word_mark_exception_id, word_mark_rule_id, Event, EventBody, LookupOccurrenceMarkPayload,
-    NotePayload, WordMarkExceptionPayload, WordMarkPayload,
+    word_mark_exception_id, word_mark_rule_id, BookSummaryPayload, Event, EventBody,
+    LookupOccurrenceMarkPayload, NotePayload, WordMarkExceptionPayload, WordMarkPayload,
 };
 
 const BOOK_EXTENSIONS: &[&str] = &[
@@ -353,9 +353,33 @@ pub fn validate_event(event: &Event, expected_device: &str) -> AppResult<()> {
             validate_lookup_occurrence_mark_payload(payload)?;
             ensure_not_from_far_future(payload.created_at, "SYNC_LOOKUP_OCCURRENCE_MARK_INVALID")?;
         }
+        EventBody::BookSummaryUpsert(payload) => {
+            if event.v < 4 {
+                return Err(AppError::Other("SYNC_BOOK_SUMMARY_INVALID".to_string()));
+            }
+            validate_book_summary_payload(payload)?;
+        }
         _ => {}
     }
     Ok(())
+}
+
+fn validate_book_summary_payload(payload: &BookSummaryPayload) -> AppResult<()> {
+    validate_entity_id(&payload.id)?;
+    validate_entity_id(&payload.book_id)?;
+    if !matches!(payload.scope.as_str(), "book" | "section")
+        || (payload.scope == "book" && payload.section_index.is_some())
+        || (payload.scope == "section" && payload.section_index.is_none())
+        || payload.content.trim().is_empty()
+        || payload.content.len() > 200_000
+        || payload.language.is_empty()
+        || payload.language.len() > 32
+        || payload.source_sha256.is_empty()
+    {
+        return Err(AppError::Other("SYNC_BOOK_SUMMARY_INVALID".to_string()));
+    }
+    ensure_valid_sync_timestamp(payload.created_at, "SYNC_BOOK_SUMMARY_INVALID")?;
+    ensure_valid_sync_timestamp(payload.updated_at, "SYNC_BOOK_SUMMARY_INVALID")
 }
 
 pub fn ensure_not_from_far_future(timestamp_ms: i64, code: &str) -> AppResult<()> {

@@ -4,6 +4,10 @@ Detailed implementation plans for features and bug fixes. Numbers match the corr
 
 ## Plans
 
+- [1 — Grounded Book Chat: Overview](1-grounded-book-chat-overview.md)
+  - [Phase 1 — Indexing + Retrieval](1-grounded-book-chat-phase1-indexing-retrieval.md)
+  - [Phase 2 — Summaries + Citations](1-grounded-book-chat-phase2-summaries-citations.md)
+  - [Phase 3 — Enhancements](1-grounded-book-chat-phase3-enhancements.md)
 - [30 — MCP Server](30-mcp-server.md)
 - [123 — Standalone Chat View](123-standalone-chat-view.md)
 - [263 — Tools Settings + Ephemeral Translate](263-reading-tools-consolidation.md)

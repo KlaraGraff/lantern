@@ -8,6 +8,32 @@ use tauri::{AppHandle, Emitter};
 use crate::commands::ai::{AiStreamChunk, ChatMessage};
 use crate::error::{AppError, AppResult};
 
+fn request_body(model: &str, messages: &[ChatMessage]) -> serde_json::Value {
+    let instructions: String = messages
+        .iter()
+        .filter(|message| matches!(message.role.as_str(), "system" | "system_cache_variable"))
+        .map(|message| message.content.as_str())
+        .collect();
+    let input: Vec<serde_json::Value> = messages
+        .iter()
+        .filter(|message| !matches!(message.role.as_str(), "system" | "system_cache_variable"))
+        .map(|message| {
+            serde_json::json!({
+                "role": message.role,
+                "content": message.content,
+            })
+        })
+        .collect();
+
+    serde_json::json!({
+        "model": model,
+        "instructions": instructions,
+        "input": input,
+        "stream": true,
+        "store": false,
+    })
+}
+
 /// Stream chat using OpenAI's Responses API (`/responses`).
 /// When using OAuth tokens, requests go to `chatgpt.com/backend-api/codex`
 /// with the `chatgpt-account-id` header (same as Codex CLI).
@@ -31,31 +57,7 @@ pub async fn stream_chat(
 
     // Responses API uses top-level "instructions" for system messages,
     // and "input" for user/assistant messages only.
-    let instructions: String = messages
-        .iter()
-        .filter(|m| m.role == "system")
-        .map(|m| m.content.as_str())
-        .collect::<Vec<_>>()
-        .join("\n\n");
-
-    let input: Vec<serde_json::Value> = messages
-        .iter()
-        .filter(|m| m.role != "system")
-        .map(|m| {
-            serde_json::json!({
-                "role": m.role,
-                "content": m.content,
-            })
-        })
-        .collect();
-
-    let body = serde_json::json!({
-        "model": model,
-        "instructions": instructions,
-        "input": input,
-        "stream": true,
-        "store": false,
-    });
+    let body = request_body(model, messages);
 
     let mut request = client.post(&url).bearer_auth(api_key).json(&body);
     if let Some(acct) = account_id {
@@ -93,6 +95,37 @@ pub async fn stream_chat(
     }
 
     Err(AppError::Ai("AI_STREAM_INCOMPLETE".to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn separated_system_content_is_concatenated_into_instructions() {
+        let body = request_body(
+            "model",
+            &[
+                ChatMessage {
+                    role: "system".into(),
+                    content: "stable".into(),
+                },
+                ChatMessage {
+                    role: "system_cache_variable".into(),
+                    content: " variable".into(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: "Question".into(),
+                },
+            ],
+        );
+        assert_eq!(body["instructions"], "stable variable");
+        assert_eq!(
+            body["input"][0],
+            serde_json::json!({ "role": "user", "content": "Question" })
+        );
+    }
 }
 
 fn process_data(

@@ -170,7 +170,7 @@ pub(super) fn decode_txt(bytes: &[u8]) -> AppResult<String> {
     Ok(text.into_owned())
 }
 
-pub(super) fn source_sha256(path: &Path) -> AppResult<String> {
+pub(crate) fn source_sha256(path: &Path) -> AppResult<String> {
     let mut file = fs::File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];

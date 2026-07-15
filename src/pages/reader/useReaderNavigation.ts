@@ -53,6 +53,9 @@ export function useReaderNavigation({
         if (isTextBook) textReaderNavigateRef.current?.(target.cfi, true);
         else await viewRef.current?.goTo(target.cfi);
       }
+      if (Number.isInteger(target.page) && target.page! >= 0 && !isTextBook) {
+        await viewRef.current?.goTo(target.page!);
+      }
       if (target.openVocab && supportsCfiNavigation) setSidePanel("vocab");
       if (target.openChat) {
         setSidePanel("ai");

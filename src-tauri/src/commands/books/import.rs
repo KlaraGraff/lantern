@@ -439,6 +439,8 @@ fn import_user_selected_path(
     let mut book = do_import_from_path(file_path, db, sync)?;
     if book.render_format.as_deref() == Some("text") {
         schedule_text_book_preparation(app.clone(), book.id.clone());
+    } else {
+        crate::ai::grounding::index::schedule_index(app.clone(), book.id.clone());
     }
     resolve_book_paths(&mut book, db)?;
     Ok(book)

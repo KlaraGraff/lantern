@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { AlertCircle, Loader2, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Button from "../ui/Button";
+import Toggle from "../ui/Toggle";
 import AiServiceCard, {
   type AiConnectionTestResult,
   type AiCredential,
@@ -10,6 +11,7 @@ import AiServiceCard, {
 } from "./AiServiceCard";
 import type { SettingsProps } from "./types";
 import { invokeWithCredentialMigration } from "../../utils/vaultAccess";
+import { useSettings } from "../../hooks/useSettings";
 
 interface AiSettingsProps extends SettingsProps {
   onSaveRef?: (save: (() => void) | null) => void;
@@ -25,6 +27,11 @@ interface VaultStatus {
   encryptedSecretCount: number;
   legacyKeychainCandidateCount: number;
   pendingMigrationCount: number;
+}
+
+interface VectorAvailability {
+  available: boolean;
+  reason: string | null;
 }
 
 const PROFILE_CONFIG_KEYS = [
@@ -77,6 +84,7 @@ function updateOne<T extends { id: string }>(items: T[], id: string, patch: Part
 
 export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }: AiSettingsProps) {
   const { t } = useTranslation();
+  const { settings, save: saveSetting } = useSettings();
   const [profiles, setProfiles] = useState<AiProfile[]>([]);
   const [savedProfiles, setSavedProfiles] = useState<AiProfile[]>([]);
   const [credentials, setCredentials] = useState<Record<string, AiCredential[]>>({});
@@ -96,6 +104,10 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   const [oauthLoading, setOauthLoading] = useState(false);
   const [vaultStatus, setVaultStatus] = useState<VaultStatus | null>(null);
   const [migratingCredentials, setMigratingCredentials] = useState(false);
+  const [vectorAvailability, setVectorAvailability] = useState<VectorAvailability>({
+    available: false,
+    reason: "requires_compatible_provider",
+  });
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profilesRef = useRef<AiProfile[]>([]);
   const savedProfilesRef = useRef<AiProfile[]>([]);
@@ -150,6 +162,11 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     setVaultStatus(next);
   }, []);
 
+  const refreshVectorAvailability = useCallback(async () => {
+    const next = await invoke<VectorAvailability>("ai_vector_retrieval_status");
+    setVectorAvailability(next);
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -175,12 +192,17 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
       } catch {
         // The migration reminder is informational and must not block AI setup.
       }
+      try {
+        await refreshVectorAvailability();
+      } catch {
+        setVectorAvailability({ available: false, reason: "requires_compatible_provider" });
+      }
     } catch (nextError) {
       setError(errorText(nextError));
     } finally {
       setLoading(false);
     }
-  }, [refreshOAuthStatus, refreshVaultStatus, replaceProfiles, replaceSavedProfiles]);
+  }, [refreshOAuthStatus, refreshVaultStatus, refreshVectorAvailability, replaceProfiles, replaceSavedProfiles]);
 
   useEffect(() => {
     void load();
@@ -697,6 +719,18 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     }
   };
 
+  const toggleVectorRetrieval = async (enabled: boolean) => {
+    setError(null);
+    try {
+      await invoke("set_ai_vector_retrieval", { enabled });
+      await saveSetting("ai_vector_retrieval", enabled ? "true" : "false");
+      await refreshVectorAvailability();
+    } catch (nextError) {
+      setError(errorText(nextError));
+      await refreshVectorAvailability().catch(() => {});
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center gap-2 py-8 text-[13px] text-text-muted">
@@ -708,6 +742,44 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
 
   return (
     <div className="pb-6 pt-2">
+      <div className="mb-4 flex min-h-[73px] items-center justify-between gap-4 border-b border-border py-3">
+        <div className="min-w-0">
+          <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.grounding")}</h4>
+          <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">{t("settings.ai.groundingHint")}</p>
+        </div>
+        <Toggle
+          checked={settings.ai_grounding_enabled !== "false"}
+          onChange={(enabled) => void saveSetting("ai_grounding_enabled", enabled ? "true" : "false")}
+          label={t("settings.ai.grounding")}
+        />
+      </div>
+      <div className="mb-4 flex min-h-[73px] items-center justify-between gap-4 border-b border-border py-3">
+        <div className="min-w-0">
+          <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.vectorRetrieval")}</h4>
+          <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">
+            {vectorAvailability.available
+              ? t("settings.ai.vectorRetrievalHint")
+              : t("settings.ai.vectorRetrievalUnavailable")}
+          </p>
+        </div>
+        <Toggle
+          checked={settings.ai_vector_retrieval === "true"}
+          onChange={(enabled) => void toggleVectorRetrieval(enabled)}
+          disabled={!vectorAvailability.available}
+          label={t("settings.ai.vectorRetrieval")}
+        />
+      </div>
+      <div className="mb-4 flex min-h-[73px] items-center justify-between gap-4 border-b border-border py-3">
+        <div className="min-w-0">
+          <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.summariesAuto")}</h4>
+          <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">{t("settings.ai.summariesAutoHint")}</p>
+        </div>
+        <Toggle
+          checked={settings.ai_summaries_auto !== "false"}
+          onChange={(enabled) => void saveSetting("ai_summaries_auto", enabled ? "true" : "false")}
+          label={t("settings.ai.summariesAuto")}
+        />
+      </div>
       <div className="mb-3 flex items-start justify-between gap-4">
         <div className="min-w-0">
           <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.services")}</h4>

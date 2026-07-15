@@ -150,6 +150,21 @@ fn write_then_read_roundtrip() {
             updated_by_device: "dev-A".into(),
         },
     );
+    state.book_summaries.insert(
+        "summary-1".into(),
+        BookSummaryRow {
+            book_id: "b1".into(),
+            scope: "book".into(),
+            section_index: None,
+            section_title: None,
+            content: "Overview".into(),
+            language: "en".into(),
+            model: Some("model".into()),
+            source_sha256: "hash".into(),
+            created_at: 1_714_770_000_000,
+            updated_at: 1_714_770_000_000,
+        },
+    );
     let marker_id = word_mark_rule_id("b1", "term", "exact");
     state.word_mark_rules.insert(
         marker_id.clone(),

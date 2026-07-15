@@ -117,6 +117,11 @@ impl Snapshot {
                 "SYNC_SNAPSHOT_WORD_MARK_EXCEPTION_INVALID".to_string(),
             ));
         }
+        if self.v < 4 && !self.state.book_summaries.is_empty() {
+            return Err(AppError::Other(
+                "SYNC_SNAPSHOT_BOOK_SUMMARY_INVALID".to_string(),
+            ));
+        }
         let snapshot_id = self
             .id
             .parse::<Ulid>()
@@ -334,6 +339,12 @@ impl Snapshot {
                 continue;
             }
             upsert_lookup_occurrence_mark(tx, id, row)?;
+        }
+        for (id, row) in &self.state.book_summaries {
+            if merge::is_tombstoned(tx, merge::entity::BOOK, &row.book_id)? {
+                continue;
+            }
+            upsert_book_summary(tx, id, row)?;
         }
         for (id, row) in &self.state.collections {
             if merge::is_tombstoned(tx, merge::entity::COLLECTION, id)? {
@@ -786,6 +797,34 @@ fn upsert_collection_book(tx: &Transaction, r: &CollectionBookRow) -> AppResult<
     Ok(())
 }
 
+fn upsert_book_summary(tx: &Transaction, id: &str, r: &BookSummaryRow) -> AppResult<()> {
+    tx.execute(
+        "INSERT INTO book_summaries
+         (id, book_id, scope, section_index, section_title, content, language, model,
+          source_sha256, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+         ON CONFLICT(book_id, scope, COALESCE(section_index, -1)) DO UPDATE SET
+           id=excluded.id, section_title=excluded.section_title, content=excluded.content,
+           language=excluded.language, model=excluded.model, source_sha256=excluded.source_sha256,
+           updated_at=excluded.updated_at
+         WHERE book_summaries.updated_at < excluded.updated_at",
+        params![
+            id,
+            r.book_id,
+            r.scope,
+            r.section_index,
+            r.section_title,
+            r.content,
+            r.language,
+            r.model,
+            r.source_sha256,
+            r.created_at,
+            r.updated_at,
+        ],
+    )?;
+    Ok(())
+}
+
 fn upsert_chat(tx: &Transaction, id: &str, r: &ChatRow) -> AppResult<()> {
     tx.execute(
         "INSERT INTO chats
@@ -1096,6 +1135,35 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     for row in rows {
         let (id, mark) = row?;
         state.lookup_occurrence_marks.insert(id, mark);
+    }
+    drop(stmt);
+
+    // Synced summaries. Device-local chunks/index state are intentionally not
+    // enumerated here; see docs/impls/1-grounded-book-chat-overview.md D2.
+    let mut stmt = conn.prepare(
+        "SELECT id, book_id, scope, section_index, section_title, content, language, model,
+                source_sha256, created_at, updated_at FROM book_summaries",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            BookSummaryRow {
+                book_id: r.get(1)?,
+                scope: r.get(2)?,
+                section_index: r.get(3)?,
+                section_title: r.get(4)?,
+                content: r.get(5)?,
+                language: r.get(6)?,
+                model: r.get(7)?,
+                source_sha256: r.get(8)?,
+                created_at: r.get(9)?,
+                updated_at: r.get(10)?,
+            },
+        ))
+    })?;
+    for row in rows {
+        let (id, summary) = row?;
+        state.book_summaries.insert(id, summary);
     }
     drop(stmt);
 

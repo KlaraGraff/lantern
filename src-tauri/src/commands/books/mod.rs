@@ -40,6 +40,7 @@ pub use import::__cmd__import_book_from_dialog;
 pub use import::import_book_from_dialog;
 // Preserve the historical commands::books::* crate API while implementations
 // live in focused child modules.
+pub(crate) use format::source_sha256;
 #[allow(unused_imports)]
 pub(crate) use import::{
     do_import_epub, do_import_from_path, do_import_pdf, do_import_text, import_external_paths,
@@ -62,6 +63,7 @@ pub use query::{
 pub use query::{check_book_available, get_book, get_book_counts, list_books};
 #[allow(unused_imports)]
 pub(crate) use query::{query_book, query_books, query_books_lite};
+pub(crate) use text_prepare::load_prepared_document_for_grounding;
 #[doc(hidden)]
 pub use text_prepare::{__cmd__get_text_book_document, __cmd__retry_text_book_preparation};
 pub use text_prepare::{

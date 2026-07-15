@@ -8,6 +8,45 @@ use tauri::{AppHandle, Emitter};
 use crate::commands::ai::{AiStreamChunk, ChatMessage};
 use crate::error::{AppError, AppResult};
 
+fn request_body(
+    model: &str,
+    temperature: f64,
+    messages: &[ChatMessage],
+    keep_alive: Option<&str>,
+    max_tokens_override: Option<u32>,
+) -> serde_json::Value {
+    // Grounded chat internally separates cacheable and variable system text.
+    // OpenAI-compatible APIs receive the original single combined message.
+    let system = messages
+        .iter()
+        .filter(|message| matches!(message.role.as_str(), "system" | "system_cache_variable"))
+        .map(|message| message.content.as_str())
+        .collect::<String>();
+    let mut api_messages = Vec::new();
+    if !system.is_empty() {
+        api_messages.push(serde_json::json!({ "role": "system", "content": system }));
+    }
+    api_messages.extend(
+        messages
+            .iter()
+            .filter(|message| !matches!(message.role.as_str(), "system" | "system_cache_variable"))
+            .map(|message| serde_json::json!({ "role": message.role, "content": message.content })),
+    );
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": api_messages,
+        "temperature": temperature,
+        "stream": true,
+    });
+    if let Some(keep_alive) = keep_alive {
+        body["keep_alive"] = serde_json::json!(keep_alive);
+    }
+    if let Some(max_tokens) = max_tokens_override {
+        body["max_tokens"] = serde_json::json!(max_tokens);
+    }
+    body
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn stream_chat(
     app: &AppHandle,
@@ -29,21 +68,13 @@ pub async fn stream_chat(
         format!("{base}/v1/chat/completions")
     };
 
-    let mut body = serde_json::json!({
-        "model": model,
-        "messages": messages.iter().map(|m| serde_json::json!({
-            "role": m.role,
-            "content": m.content,
-        })).collect::<Vec<_>>(),
-        "temperature": temperature,
-        "stream": true,
-    });
-    if let Some(ka) = keep_alive {
-        body["keep_alive"] = serde_json::json!(ka);
-    }
-    if let Some(mt) = max_tokens_override {
-        body["max_tokens"] = serde_json::json!(mt);
-    }
+    let body = request_body(
+        model,
+        temperature,
+        messages,
+        keep_alive,
+        max_tokens_override,
+    );
 
     let mut request = client.post(&url).json(&body);
     if !api_key.is_empty() {
@@ -81,6 +112,43 @@ pub async fn stream_chat(
     }
 
     Err(AppError::Ai("AI_STREAM_INCOMPLETE".to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn separated_system_content_is_sent_as_one_byte_identical_message() {
+        let body = request_body(
+            "model",
+            0.2,
+            &[
+                ChatMessage {
+                    role: "system".into(),
+                    content: "stable".into(),
+                },
+                ChatMessage {
+                    role: "system_cache_variable".into(),
+                    content: " variable".into(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: "Question".into(),
+                },
+            ],
+            None,
+            None,
+        );
+        assert_eq!(
+            body["messages"][0],
+            serde_json::json!({ "role": "system", "content": "stable variable" })
+        );
+        assert_eq!(
+            body["messages"][1],
+            serde_json::json!({ "role": "user", "content": "Question" })
+        );
+    }
 }
 
 fn process_data(

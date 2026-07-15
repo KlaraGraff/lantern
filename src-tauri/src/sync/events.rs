@@ -17,10 +17,11 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 /// Schema version written by this client. Version 2 introduces learning notes
-/// and whole-book word-marker rules; version 3 adds per-location exceptions.
+/// and whole-book word-marker rules; version 3 adds per-location exceptions;
+/// version 4 adds synced book summaries.
 /// Readers retain old-version support while older clients reject newer
 /// envelopes instead of advancing their watermark past data they cannot apply.
-pub const EVENT_SCHEMA_VERSION: u32 = 3;
+pub const EVENT_SCHEMA_VERSION: u32 = 4;
 pub const MIN_SUPPORTED_EVENT_SCHEMA_VERSION: u32 = 1;
 
 pub fn is_supported_event_schema_version(version: u32) -> bool {
@@ -164,6 +165,9 @@ pub enum EventBody {
     WordMarkExceptionSet(WordMarkExceptionPayload),
     #[serde(rename = "lookup_occurrence_mark.set")]
     LookupOccurrenceMarkSet(LookupOccurrenceMarkPayload),
+
+    #[serde(rename = "book_summary.upsert")]
+    BookSummaryUpsert(BookSummaryPayload),
 
     // Legacy no-op: saved translations were removed in #263. Keep these
     // variants so old peer logs deserialize and replay harmlessly.
@@ -344,6 +348,21 @@ pub struct TranslationPayload {
     pub translated_text: String,
     pub target_language: String,
     pub cfi: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct BookSummaryPayload {
+    pub id: String,
+    pub book_id: String,
+    pub scope: String,
+    pub section_index: Option<i64>,
+    pub section_title: Option<String>,
+    pub content: String,
+    pub language: String,
+    pub model: Option<String>,
+    pub source_sha256: String,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -588,6 +607,23 @@ mod tests {
             cfi: None,
         })));
         roundtrip(&mk(EventBody::TranslationDelete { id: "t1".into() }));
+    }
+
+    #[test]
+    fn roundtrip_book_summary_events() {
+        roundtrip(&mk(EventBody::BookSummaryUpsert(BookSummaryPayload {
+            id: "summary-1".into(),
+            book_id: "b1".into(),
+            scope: "book".into(),
+            section_index: None,
+            section_title: None,
+            content: "A concise overview.".into(),
+            language: "en".into(),
+            model: Some("model".into()),
+            source_sha256: "hash".into(),
+            created_at: 1,
+            updated_at: 2,
+        })));
     }
 
     #[test]

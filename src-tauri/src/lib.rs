@@ -671,9 +671,12 @@ pub fn run() {
             commands::books::update_book_metadata,
             commands::books::get_text_book_document,
             commands::books::retry_text_book_preparation,
+            commands::ai::ai_reindex_book,
             // Settings
             commands::settings::get_all_settings,
             commands::settings::ai_api_key_configured,
+            commands::settings::ai_vector_retrieval_status,
+            commands::settings::set_ai_vector_retrieval,
             commands::settings::vault_status,
             commands::settings::vault_authorize,
             commands::settings::vault_deny,
@@ -751,6 +754,8 @@ pub fn run() {
             commands::collections::list_books_in_collection,
             // AI
             commands::ai::ai_chat,
+            commands::ai::ai_prepare_book,
+            commands::ai::get_book_ai_state,
             commands::ai::ai_learning_card,
             commands::ai::ai_lookup,
             commands::ai::ai_explain,

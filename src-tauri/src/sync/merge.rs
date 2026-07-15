@@ -30,9 +30,9 @@ use serde_json::Value;
 use crate::error::{AppError, AppResult};
 
 use super::events::{
-    word_mark_exception_id, BookImportPayload, BookmarkPayload, ChatMessagePayload, Event,
-    EventBody, HighlightPayload, LookupOccurrenceMarkPayload, NotePayload, VocabPayload,
-    WordMarkExceptionPayload, WordMarkPayload,
+    word_mark_exception_id, BookImportPayload, BookSummaryPayload, BookmarkPayload,
+    ChatMessagePayload, Event, EventBody, HighlightPayload, LookupOccurrenceMarkPayload,
+    NotePayload, VocabPayload, WordMarkExceptionPayload, WordMarkPayload,
 };
 
 /// Fold `event` into `tx`. Idempotent — applying the same event twice is a
@@ -102,6 +102,7 @@ pub fn apply_event(tx: &Transaction, event: &Event) -> AppResult<()> {
         EventBody::LookupOccurrenceMarkSet(payload) => {
             apply_lookup_occurrence_mark_set(tx, event, payload)
         }
+        EventBody::BookSummaryUpsert(payload) => apply_book_summary_upsert(tx, event, payload),
 
         EventBody::TranslationAdd(_) | EventBody::TranslationDelete { .. } => Ok(()),
 
@@ -293,6 +294,35 @@ fn cascade_delete_book(tx: &Transaction, id: &str, ts: i64) -> AppResult<()> {
     // book is gone. The tombstone ts must be the parent-delete event ts
     // (not wall-clock) — `_tombstones` rows ride along in snapshots and
     // need to be byte-identical across replay runs.
+    // Grounding chunks and their FTS index are local-only derived data (see
+    // docs/impls/1-grounded-book-chat-overview.md D2), so they must never be
+    // emitted as sync events or snapshots. They still need local cleanup here
+    // because this is shared by direct deletes and replayed book deletes.
+    tx.execute(
+        "DELETE FROM book_chunks_fts WHERE book_id = ?1",
+        params![id],
+    )?;
+    let vector_table_exists: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'book_chunk_vectors')",
+        [],
+        |row| row.get(0),
+    )?;
+    if vector_table_exists {
+        tx.execute(
+            "DELETE FROM book_chunk_vectors WHERE book_id = ?1",
+            params![id],
+        )?;
+    }
+    tx.execute(
+        "DELETE FROM book_chunk_embeddings WHERE book_id = ?1",
+        params![id],
+    )?;
+    tx.execute("DELETE FROM book_chunks WHERE book_id = ?1", params![id])?;
+    tx.execute(
+        "DELETE FROM book_index_state WHERE book_id = ?1",
+        params![id],
+    )?;
+    tx.execute("DELETE FROM book_summaries WHERE book_id = ?1", params![id])?;
     tx.execute("DELETE FROM bookmarks WHERE book_id = ?1", params![id])?;
     tx.execute("DELETE FROM highlights WHERE book_id = ?1", params![id])?;
     tx.execute("DELETE FROM vocab_words WHERE book_id = ?1", params![id])?;
@@ -1100,6 +1130,41 @@ fn apply_lookup_occurrence_mark_set(
     Ok(())
 }
 
+fn apply_book_summary_upsert(
+    tx: &Transaction,
+    _event: &Event,
+    payload: &BookSummaryPayload,
+) -> AppResult<()> {
+    if is_tombstoned(tx, entity::BOOK, &payload.book_id)? {
+        return Ok(());
+    }
+    tx.execute(
+        "INSERT INTO book_summaries
+         (id, book_id, scope, section_index, section_title, content, language, model,
+          source_sha256, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+         ON CONFLICT(book_id, scope, COALESCE(section_index, -1)) DO UPDATE SET
+           id=excluded.id, section_title=excluded.section_title, content=excluded.content,
+           language=excluded.language, model=excluded.model, source_sha256=excluded.source_sha256,
+           updated_at=excluded.updated_at
+         WHERE book_summaries.updated_at < excluded.updated_at",
+        params![
+            payload.id,
+            payload.book_id,
+            payload.scope,
+            payload.section_index,
+            payload.section_title,
+            payload.content,
+            payload.language,
+            payload.model,
+            payload.source_sha256,
+            payload.created_at,
+            payload.updated_at,
+        ],
+    )?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // collections + collection_books
 // ---------------------------------------------------------------------------
@@ -1344,6 +1409,44 @@ mod tests {
             genre: None,
             pages: Some(100),
         })
+    }
+
+    fn book_summary(content: &str, updated_at: i64) -> EventBody {
+        EventBody::BookSummaryUpsert(BookSummaryPayload {
+            id: format!("summary-{updated_at}"),
+            book_id: "b1".into(),
+            scope: "book".into(),
+            section_index: None,
+            section_title: None,
+            content: content.into(),
+            language: "en".into(),
+            model: None,
+            source_sha256: "hash".into(),
+            created_at: updated_at,
+            updated_at,
+        })
+    }
+
+    #[test]
+    fn book_summary_upsert_is_idempotent_and_latest_timestamp_wins() {
+        let mut conn = open_db();
+        apply_all(
+            &mut conn,
+            &[
+                ev(1, "dev-a", import_book("b1")),
+                ev(20, "dev-a", book_summary("new", 20)),
+                ev(10, "dev-b", book_summary("old", 10)),
+                ev(20, "dev-a", book_summary("new", 20)),
+            ],
+        );
+        let summary: String = conn
+            .query_row(
+                "SELECT content FROM book_summaries WHERE book_id = 'b1' AND scope = 'book'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(summary, "new");
     }
 
     fn add_highlight(id: &str, book: &str, color: &str) -> EventBody {

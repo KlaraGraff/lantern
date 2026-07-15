@@ -41,7 +41,7 @@ pub(super) fn prepare_text_document(
     })
 }
 
-pub(super) fn prepared_document_path(local_dir: &Path, book_id: &str) -> PathBuf {
+pub(crate) fn prepared_document_path(local_dir: &Path, book_id: &str) -> PathBuf {
     local_dir
         .join("prepared")
         .join(format!("{book_id}.v{TEXT_DOCUMENT_VERSION}.json"))
@@ -85,7 +85,7 @@ pub(super) fn prepared_document_temporary_path(path: &Path) -> AppResult<PathBuf
     prepared_document_sidecar_path(path, "tmp")
 }
 
-pub(super) fn read_prepared_document(
+pub(crate) fn read_prepared_document(
     path: &Path,
     expected_source_sha256: Option<&str>,
 ) -> Option<TextBookDocument> {
@@ -96,6 +96,22 @@ pub(super) fn read_prepared_document(
         && expected_source_sha256
             .is_none_or(|expected| document.source_sha256.as_deref() == Some(expected)))
     .then_some(document)
+}
+
+/// Grounding must consume the reader's prepared document rather than parsing
+/// TXT/Markdown/HTML a second time. The cache stays local even for iCloud
+/// libraries, hence `Db::local_data_dir` rather than the blob data directory.
+pub(crate) fn load_prepared_document_for_grounding(
+    db: &Db,
+    book_id: &str,
+    expected_source_sha256: Option<&str>,
+) -> AppResult<TextBookDocument> {
+    let root = db.local_data_dir()?;
+    read_prepared_document(
+        &prepared_document_path(&root, book_id),
+        expected_source_sha256,
+    )
+    .ok_or_else(|| AppError::Other("TEXT_PREPARATION_PENDING".to_string()))
 }
 
 pub(super) fn load_prepared_document(
@@ -408,6 +424,7 @@ pub(super) fn run_text_preparation(app: &AppHandle, book_id: &str) -> AppResult<
     if recover_current_text_preparation_job(&db, book_id, &source, &prepared_path)? {
         cleanup_obsolete_prepared_documents(&local_dir.0, book_id);
         emit_text_preparation_changed(app, book_id, "ready");
+        crate::ai::grounding::index::schedule_index(app.clone(), book_id.to_string());
         return Ok(());
     }
     let Some(source_file_path) = source.file_path.as_deref() else {
@@ -486,6 +503,7 @@ pub(super) fn run_text_preparation(app: &AppHandle, book_id: &str) -> AppResult<
         Ok(true) => {
             cleanup_obsolete_prepared_documents(&local_dir.0, book_id);
             emit_text_preparation_changed(app, book_id, "ready");
+            crate::ai::grounding::index::schedule_index(app.clone(), book_id.to_string());
         }
         Ok(false) => {
             log::debug!("discarded stale text preparation task for {book_id}");

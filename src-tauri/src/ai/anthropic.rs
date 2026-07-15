@@ -8,6 +8,52 @@ use tauri::{AppHandle, Emitter};
 use crate::commands::ai::{AiStreamChunk, ChatMessage};
 use crate::error::{AppError, AppResult};
 
+const MIN_CACHEABLE_STABLE_TOKENS: usize = 1_024;
+
+fn request_body(
+    model: &str,
+    temperature: f64,
+    messages: &[ChatMessage],
+    max_tokens: Option<u32>,
+) -> serde_json::Value {
+    let stable = messages
+        .iter()
+        .filter(|message| message.role == "system")
+        .map(|message| message.content.as_str())
+        .collect::<String>();
+    let variable = messages
+        .iter()
+        .filter(|message| message.role == "system_cache_variable")
+        .map(|message| message.content.as_str())
+        .collect::<String>();
+    let system = if crate::ai::grounding::chunk::estimate_tokens(&stable)
+        >= MIN_CACHEABLE_STABLE_TOKENS
+    {
+        let mut blocks = vec![
+            serde_json::json!({ "type": "text", "text": stable, "cache_control": { "type": "ephemeral" } }),
+        ];
+        if !variable.is_empty() {
+            blocks.push(serde_json::json!({ "type": "text", "text": variable }));
+        }
+        serde_json::Value::Array(blocks)
+    } else {
+        serde_json::json!(format!("{stable}{variable}"))
+    };
+    let api_messages: Vec<serde_json::Value> = messages
+        .iter()
+        .filter(|message| !matches!(message.role.as_str(), "system" | "system_cache_variable"))
+        .map(|message| serde_json::json!({ "role": message.role, "content": message.content }))
+        .collect();
+    serde_json::json!({
+        "model": model,
+        "max_tokens": max_tokens.unwrap_or(4096),
+        "system": system,
+        "messages": api_messages,
+        "temperature": temperature,
+        "stream": true,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn stream_chat(
     app: &AppHandle,
@@ -29,33 +75,7 @@ pub async fn stream_chat(
         format!("{base}/v1/messages")
     };
 
-    // Anthropic uses a separate system parameter
-    let system_msg = messages
-        .iter()
-        .filter(|m| m.role == "system")
-        .map(|m| m.content.clone())
-        .collect::<Vec<_>>()
-        .join("\n\n");
-
-    let api_messages: Vec<serde_json::Value> = messages
-        .iter()
-        .filter(|m| m.role != "system")
-        .map(|m| {
-            serde_json::json!({
-                "role": m.role,
-                "content": m.content,
-            })
-        })
-        .collect();
-
-    let body = serde_json::json!({
-        "model": model,
-        "max_tokens": max_tokens_override.unwrap_or(4096),
-        "system": system_msg,
-        "messages": api_messages,
-        "temperature": temperature,
-        "stream": true,
-    });
+    let body = request_body(model, temperature, messages, max_tokens_override);
 
     let mut request = client
         .post(url)
@@ -99,6 +119,60 @@ pub async fn stream_chat(
     }
 
     Err(AppError::Ai("AI_STREAM_INCOMPLETE".to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn system(content: String, role: &str) -> ChatMessage {
+        ChatMessage {
+            role: role.to_string(),
+            content,
+        }
+    }
+
+    #[test]
+    fn cache_control_is_emitted_for_large_stable_prefixes() {
+        let stable = "token ".repeat(1_100);
+        let body = request_body(
+            "model",
+            0.2,
+            &[
+                system(stable, "system"),
+                system(" excerpts".into(), "system_cache_variable"),
+            ],
+            None,
+        );
+        assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
+        assert_eq!(body["system"][1]["text"], " excerpts");
+    }
+
+    #[test]
+    fn small_prefix_keeps_one_uncached_system_string() {
+        let body = request_body(
+            "model",
+            0.2,
+            &[
+                system("stable".into(), "system"),
+                system(" variable".into(), "system_cache_variable"),
+            ],
+            None,
+        );
+        assert_eq!(body["system"], "stable variable");
+    }
+
+    #[test]
+    fn full_text_stable_prefix_is_cacheable_without_a_variable_suffix() {
+        let body = request_body(
+            "model",
+            0.2,
+            &[system("token ".repeat(1_100), "system")],
+            None,
+        );
+        assert_eq!(body["system"].as_array().unwrap().len(), 1);
+        assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
+    }
 }
 
 fn process_data(

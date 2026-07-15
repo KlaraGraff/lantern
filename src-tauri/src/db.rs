@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
 
 use crate::error::{AppError, AppResult};
 use crate::sync::events::word_mark_rule_id;
@@ -53,7 +53,27 @@ const MIGRATIONS: &[(i64, &str)] = &[
         22,
         include_str!("../migrations/022_marker_styles_and_fonts.sql"),
     ),
+    (23, include_str!("../migrations/023_ai_grounding.sql")),
+    (
+        24,
+        include_str!("../migrations/024_ai_vector_retrieval.sql"),
+    ),
 ];
+
+fn register_sqlite_vec() {
+    type SqliteExtensionInit = unsafe extern "C" fn(
+        *mut rusqlite::ffi::sqlite3,
+        *mut *const i8,
+        *const rusqlite::ffi::sqlite3_api_routines,
+    ) -> i32;
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| unsafe {
+        let init = std::mem::transmute::<*const (), SqliteExtensionInit>(
+            sqlite_vec::sqlite3_vec_init as *const (),
+        );
+        rusqlite::ffi::sqlite3_auto_extension(Some(init));
+    });
+}
 
 /// SQLite handle for the local materialized view.
 ///
@@ -73,6 +93,9 @@ pub struct Db {
     /// Read-only connection — used by frontend query commands.
     pub read_conn: Arc<Mutex<Connection>>,
     pub data_dir: Arc<Mutex<PathBuf>>,
+    /// Local cache root. Unlike `data_dir`, this never moves to iCloud and is
+    /// where derived reader/index artifacts belong.
+    pub local_dir: Arc<Mutex<PathBuf>>,
 }
 
 /// Escape user text for a literal SQLite `LIKE '%…%'` search. Callers must
@@ -92,6 +115,7 @@ impl Clone for Db {
             conn: Arc::clone(&self.conn),
             read_conn: Arc::clone(&self.read_conn),
             data_dir: Arc::clone(&self.data_dir),
+            local_dir: Arc::clone(&self.local_dir),
         }
     }
 }
@@ -131,6 +155,7 @@ impl Db {
     /// tool needs binary blob resolution, this needs revisiting.
     pub fn open_readonly(db_path: &Path) -> AppResult<Self> {
         use rusqlite::OpenFlags;
+        register_sqlite_vec();
         let conn = Connection::open_with_flags(
             db_path,
             OpenFlags::SQLITE_OPEN_READ_ONLY
@@ -146,6 +171,12 @@ impl Db {
             read_conn: conn.clone(),
             conn,
             data_dir: Arc::new(Mutex::new(dummy_data_dir)),
+            local_dir: Arc::new(Mutex::new(
+                db_path
+                    .parent()
+                    .unwrap_or_else(|| Path::new(""))
+                    .to_path_buf(),
+            )),
         })
     }
 
@@ -155,6 +186,7 @@ impl Db {
     /// constructor just opens the existing file with write permission.
     pub fn open_readwrite(db_path: &Path) -> AppResult<Self> {
         use rusqlite::OpenFlags;
+        register_sqlite_vec();
         let conn = Connection::open_with_flags(
             db_path,
             OpenFlags::SQLITE_OPEN_READ_WRITE
@@ -171,6 +203,12 @@ impl Db {
             read_conn: conn.clone(),
             conn,
             data_dir: Arc::new(Mutex::new(data_dir)),
+            local_dir: Arc::new(Mutex::new(
+                db_path
+                    .parent()
+                    .unwrap_or_else(|| Path::new(""))
+                    .to_path_buf(),
+            )),
         })
     }
 
@@ -193,6 +231,7 @@ impl Db {
         fs::create_dir_all(data_dir.join("covers"))?;
         fs::create_dir_all(data_dir.join("sources"))?;
 
+        register_sqlite_vec();
         let db_path = db_dir.join("quill.db");
         let conn = Connection::open(&db_path)?;
 
@@ -206,6 +245,7 @@ impl Db {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=OFF;")?;
 
         Self::run_migrations(&conn)?;
+        crate::ai::grounding::vector::ensure_vector_table(&conn)?;
 
         // One-time migration: convert absolute paths to relative
         Self::migrate_to_relative_paths(&conn, data_dir)?;
@@ -234,6 +274,7 @@ impl Db {
                 conn: Arc::new(Mutex::new(conn)),
                 read_conn: Arc::new(Mutex::new(read_conn)),
                 data_dir: Arc::new(Mutex::new(data_dir.to_path_buf())),
+                local_dir: Arc::new(Mutex::new(db_dir.to_path_buf())),
             },
             needs_cover_backfill,
         ))
@@ -385,6 +426,16 @@ impl Db {
             .lock()
             .map_err(|error| AppError::Other(error.to_string()))?;
         crate::sync::validation::resolve_blob_path(&data_dir, relative)
+    }
+
+    /// Return the app-local cache root. Text preparation and grounding both
+    /// use it so a sync-enabled library never tries to write derived data into
+    /// the shared blob directory.
+    pub fn local_data_dir(&self) -> AppResult<PathBuf> {
+        self.local_dir
+            .lock()
+            .map(|path| path.clone())
+            .map_err(|error| AppError::Other(error.to_string()))
     }
 
     /// Run migrations on an already-open connection. Public so the sync

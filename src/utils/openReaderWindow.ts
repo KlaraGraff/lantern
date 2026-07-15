@@ -6,6 +6,7 @@ interface ReaderWindowOptions {
   openChat?: boolean;
   chatId?: string;
   cfi?: string | null;
+  page?: number;
 }
 
 const DEFAULT_WIDTH = 1440;
@@ -47,6 +48,7 @@ export async function openReaderWindow(
     await emitTo(label, "reader:navigate", {
       navigationId,
       cfi: options?.cfi ?? undefined,
+      page: options?.page,
       openVocab: options?.openVocab ?? false,
       openChat: options?.openChat ?? false,
       chatId: options?.chatId ?? undefined,
@@ -68,6 +70,7 @@ export async function openReaderWindow(
     if (options.openChat) params.set("openChat", "true");
     if (options.chatId) params.set("chatId", options.chatId);
     if (options.cfi) params.set("cfi", options.cfi);
+    if (Number.isInteger(options.page) && options.page! >= 0) params.set("page", String(options.page));
     const qs = params.toString();
     if (qs) url += `?${qs}`;
   }

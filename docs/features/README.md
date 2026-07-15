@@ -4,6 +4,7 @@ Specs for features that are in progress or planned. Shipped, dropped, or superse
 
 ## In progress / Planned
 
+- [1 — Grounded Book Chat](1-grounded-book-chat.md)
 - [14 — Notes (AI-Assisted)](14-notes.md)
 - [25 — Collection Folders](25-collection-folders.md)
 - [27 — Reading Stats](27-reading-stats.md)

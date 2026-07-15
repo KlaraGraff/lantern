@@ -37,6 +37,8 @@ pub struct SnapshotState {
     #[serde(default)]
     pub lookup_occurrence_marks: BTreeMap<String, LookupOccurrenceMarkRow>,
     #[serde(default)]
+    pub book_summaries: BTreeMap<String, BookSummaryRow>,
+    #[serde(default)]
     pub collections: BTreeMap<String, CollectionRow>,
     /// Keyed by `"<collection_id>:<book_id>"` — the same composite key the
     /// merge engine uses for tombstones.
@@ -181,6 +183,20 @@ pub struct LookupOccurrenceMarkRow {
     pub created_at: i64,
     pub updated_at: i64,
     pub updated_by_device: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookSummaryRow {
+    pub book_id: String,
+    pub scope: String,
+    pub section_index: Option<i64>,
+    pub section_title: Option<String>,
+    pub content: String,
+    pub language: String,
+    pub model: Option<String>,
+    pub source_sha256: String,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 fn default_fsrs_version() -> i64 {
