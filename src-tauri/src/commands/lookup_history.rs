@@ -196,13 +196,12 @@ pub fn list_lookup_records(book_id: String, db: State<'_, Db>) -> AppResult<Vec<
     Ok(records)
 }
 
-#[tauri::command]
-pub fn list_all_lookup_records(
+pub(crate) fn query_all_lookup_records(
     search: Option<String>,
     book_id: Option<String>,
     cursor: Option<String>,
     limit: Option<usize>,
-    db: State<'_, Db>,
+    db: &Db,
 ) -> AppResult<LookupRecordPage> {
     let conn = db.reader();
     let page_size = limit.unwrap_or(50).clamp(1, 200);
@@ -300,6 +299,17 @@ pub fn list_all_lookup_records(
         total,
         books,
     })
+}
+
+#[tauri::command]
+pub fn list_all_lookup_records(
+    search: Option<String>,
+    book_id: Option<String>,
+    cursor: Option<String>,
+    limit: Option<usize>,
+    db: State<'_, Db>,
+) -> AppResult<LookupRecordPage> {
+    query_all_lookup_records(search, book_id, cursor, limit, &db)
 }
 
 #[tauri::command]

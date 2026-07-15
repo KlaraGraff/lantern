@@ -44,7 +44,7 @@ pub struct GetBookArgs {
 /// MCP JSON responses — MCP clients that need covers should fetch
 /// them via a dedicated tool in the future).
 #[derive(Debug, Serialize)]
-struct McpBook {
+pub(crate) struct McpBook {
     id: String,
     title: String,
     author: String,
@@ -96,9 +96,14 @@ impl QuillMcpHandler {
         &self,
         Parameters(ListBooksArgs { filter, search }): Parameters<ListBooksArgs>,
     ) -> Result<CallToolResult, ErrorData> {
-        let raw =
-            books::query_books_lite(&self.state.db, filter.as_deref(), search.as_deref(), 1000)
-                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let raw = books::query_books_lite(
+            &self.state.db,
+            filter.as_deref(),
+            search.as_deref(),
+            None,
+            1000,
+        )
+        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         let books: Vec<McpBook> = raw.into_iter().map(McpBook::from).collect();
         Ok(CallToolResult::success(vec![Content::json(&books)?]))
     }
@@ -205,17 +210,22 @@ pub(crate) fn require_sync(
 #[tool_router(router = library_write_router, vis = "pub(crate)")]
 impl QuillMcpHandler {
     #[tool(
-        description = "Import a supported local ebook file into the library. Supported formats include EPUB, PDF, TXT, Markdown, HTML, MOBI/AZW/AZW3, FB2/FBZ, and CBZ."
+        description = "Deprecated: use `import_books`. Import one supported local ebook file into the library."
     )]
     pub async fn add_book(
         &self,
         Parameters(AddBookArgs { file_path }): Parameters<AddBookArgs>,
     ) -> Result<CallToolResult, ErrorData> {
-        let sync = require_sync(self)?;
-        let book = books::do_import_from_path(&file_path, &self.state.db, sync)
-            .map_err(|e| ErrorData::invalid_params(e.to_string(), None))?;
-        self.state.notify("books", "created", &book.id);
-        let mcp_book: McpBook = book.into();
+        let response = self.run_import_books(vec![file_path])?;
+        let mcp_book = response.imported.into_iter().next().ok_or_else(|| {
+            let result = response.results.into_iter().next();
+            ErrorData::invalid_params(
+                result
+                    .and_then(|item| item.message)
+                    .unwrap_or_else(|| "Book import failed".to_string()),
+                None,
+            )
+        })?;
         Ok(CallToolResult::success(vec![Content::json(&mcp_book)?]))
     }
 
@@ -249,16 +259,25 @@ impl QuillMcpHandler {
     }
 
     #[tool(
-        description = "Permanently delete a book and all its associated data (highlights, bookmarks, chats, vocab). Also removes the book file and cover image from disk."
+        description = "Deprecated: use `delete_books`. Permanently delete one book and its associated data and files."
     )]
     pub async fn delete_book(
         &self,
         Parameters(DeleteBookArgs { book_id }): Parameters<DeleteBookArgs>,
     ) -> Result<CallToolResult, ErrorData> {
-        let sync = require_sync(self)?;
-        books::do_delete_book(&book_id, &self.state.db, sync)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        self.state.notify("books", "deleted", &book_id);
+        let response = self.run_delete_books(vec![book_id.clone()])?;
+        let result =
+            response.results.into_iter().next().ok_or_else(|| {
+                ErrorData::internal_error("Batch delete returned no result", None)
+            })?;
+        if !matches!(result.status.as_str(), "ok" | "noop") {
+            return Err(ErrorData::invalid_params(
+                result
+                    .message
+                    .unwrap_or_else(|| format!("Book {book_id} was not deleted")),
+                None,
+            ));
+        }
         Ok(CallToolResult::success(vec![Content::text(format!(
             "Book {book_id} deleted."
         ))]))

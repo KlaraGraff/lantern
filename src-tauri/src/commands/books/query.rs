@@ -261,11 +261,20 @@ pub(crate) fn query_books_lite(
     db: &Db,
     filter: Option<&str>,
     search: Option<&str>,
+    collection_id: Option<&str>,
     limit: usize,
 ) -> AppResult<Vec<Book>> {
     let conn = db.reader();
     let mut conditions: Vec<String> = Vec::new();
     let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+    if let Some(collection_id) = collection_id {
+        conditions.push(
+            "EXISTS (SELECT 1 FROM collection_books cb WHERE cb.book_id = books.id AND cb.collection_id = ?)"
+                .to_string(),
+        );
+        param_values.push(Box::new(collection_id.to_string()));
+    }
 
     if let Some(f) = filter {
         match f {
@@ -340,6 +349,16 @@ pub(crate) fn query_books_lite(
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(books)
+}
+
+pub(crate) fn query_book_exists(db: &Db, id: &str) -> AppResult<bool> {
+    let conn = db.reader();
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM books WHERE id = ?1)",
+        params![id],
+        |row| row.get(0),
+    )
+    .map_err(Into::into)
 }
 
 const DEFAULT_PAGE_SIZE: usize = 20;

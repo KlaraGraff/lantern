@@ -132,6 +132,16 @@ pub(crate) fn lexical_ranks(
     query_text: &str,
     cutoff: Option<SpoilerCutoff>,
 ) -> AppResult<Vec<(String, f64)>> {
+    lexical_ranks_with_limit(conn, book_id, query_text, RETRIEVAL_TOP_K, cutoff)
+}
+
+fn lexical_ranks_with_limit(
+    conn: &Connection,
+    book_id: &str,
+    query_text: &str,
+    top_k: usize,
+    cutoff: Option<SpoilerCutoff>,
+) -> AppResult<Vec<(String, f64)>> {
     let query = fts_query(query_text);
     if query.is_empty() {
         return Ok(Vec::new());
@@ -150,13 +160,7 @@ pub(crate) fn lexical_ranks(
              ORDER BY score LIMIT ?5",
         )?
         .query_map(
-            params![
-                query,
-                book_id,
-                cutoff_kind,
-                cutoff_value,
-                RETRIEVAL_TOP_K as i64
-            ],
+            params![query, book_id, cutoff_kind, cutoff_value, top_k as i64],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?)),
         )?
         .collect::<Result<Vec<_>, _>>()?;
@@ -309,6 +313,18 @@ pub fn retrieve(
     cutoff: Option<SpoilerCutoff>,
 ) -> AppResult<Vec<RetrievedChunk>> {
     let hits = lexical_ranks(conn, book_id, query_text, cutoff)?;
+    retrieve_ranked(conn, book_id, &hits, budget_tokens, cutoff)
+}
+
+pub fn retrieve_with_limit(
+    conn: &Connection,
+    book_id: &str,
+    query_text: &str,
+    top_k: usize,
+    budget_tokens: usize,
+    cutoff: Option<SpoilerCutoff>,
+) -> AppResult<Vec<RetrievedChunk>> {
+    let hits = lexical_ranks_with_limit(conn, book_id, query_text, top_k, cutoff)?;
     retrieve_ranked(conn, book_id, &hits, budget_tokens, cutoff)
 }
 

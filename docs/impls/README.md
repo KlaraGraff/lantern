@@ -9,6 +9,7 @@ Detailed implementation plans for features and bug fixes. Numbers match the corr
   - [Phase 2 — Summaries + Citations](1-grounded-book-chat-phase2-summaries-citations.md)
   - [Phase 3 — Enhancements](1-grounded-book-chat-phase3-enhancements.md)
 - [30 — MCP Server](30-mcp-server.md)
+- [MCP Surface Refresh](mcp-surface-refresh.md)
 - [123 — Standalone Chat View](123-standalone-chat-view.md)
 - [263 — Tools Settings + Ephemeral Translate](263-reading-tools-consolidation.md)
 - [286 — Explicit Lookup Language](286-explicit-lookup-language.md)

@@ -33,7 +33,7 @@ struct ChatWithMessages {
 #[tool_router(router = chats_router, vis = "pub(crate)")]
 impl QuillMcpHandler {
     #[tool(
-        description = "Fetch chat history for a book. Returns an array of chats; each chat carries its full ordered message list. Optionally narrow to one chat by `chat_id`."
+        description = "Fetch chat history for a book. Returns an array of chats with ordered messages; assistant message metadata may contain grounding citations JSON. Optionally narrow to one chat by `chat_id`."
     )]
     pub async fn get_chat_history(
         &self,

@@ -21,6 +21,15 @@ pub enum IndexStatus {
     Missing,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct IndexDetails {
+    pub status: IndexStatus,
+    pub chunk_count: i64,
+    pub index_version: Option<i64>,
+    pub indexed_at: Option<i64>,
+    pub error: Option<String>,
+}
+
 impl IndexStatus {
     fn from_db(value: &str) -> Self {
         match value {
@@ -65,6 +74,32 @@ pub fn index_status(db: &Db, book_id: &str) -> AppResult<IndexStatus> {
         .as_deref()
         .map(IndexStatus::from_db)
         .unwrap_or(IndexStatus::Missing))
+}
+
+pub fn index_details(db: &Db, book_id: &str) -> AppResult<IndexDetails> {
+    let conn = db.reader();
+    let state = conn
+        .query_row(
+            "SELECT status, chunk_count, index_version, indexed_at, error FROM book_index_state WHERE book_id = ?1",
+            params![book_id],
+            |row| {
+                Ok(IndexDetails {
+                    status: IndexStatus::from_db(&row.get::<_, String>(0)?),
+                    chunk_count: row.get(1)?,
+                    index_version: row.get(2)?,
+                    indexed_at: row.get(3)?,
+                    error: row.get(4)?,
+                })
+            },
+        )
+        .optional()?;
+    Ok(state.unwrap_or(IndexDetails {
+        status: IndexStatus::Missing,
+        chunk_count: 0,
+        index_version: None,
+        indexed_at: None,
+        error: None,
+    }))
 }
 
 fn record_state(

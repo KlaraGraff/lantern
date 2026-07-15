@@ -520,8 +520,7 @@ pub fn remove_word_mark(
     Ok(())
 }
 
-#[tauri::command]
-pub fn list_word_marks(book_id: String, db: State<'_, Db>) -> AppResult<Vec<WordMarkRule>> {
+pub(crate) fn query_word_marks(db: &Db, book_id: &str) -> AppResult<Vec<WordMarkRule>> {
     let conn = db.reader();
     let mut statement = conn.prepare(
         "SELECT id, book_id, normalized_word, display_word, match_mode, color, enabled, created_at, updated_at
@@ -532,6 +531,11 @@ pub fn list_word_marks(book_id: String, db: State<'_, Db>) -> AppResult<Vec<Word
         .collect::<Result<Vec<_>, _>>()
         .map_err(AppError::from)?;
     Ok(rules)
+}
+
+#[tauri::command]
+pub fn list_word_marks(book_id: String, db: State<'_, Db>) -> AppResult<Vec<WordMarkRule>> {
+    query_word_marks(&db, &book_id)
 }
 
 fn set_word_mark_exception_inner(
@@ -627,12 +631,11 @@ pub fn set_word_mark_exception(
     set_word_mark_exception_inner(&book_id, &word, &location, excluded, &db, &sync)
 }
 
-#[tauri::command]
-pub fn list_word_mark_exceptions(
-    book_id: String,
-    db: State<'_, Db>,
+pub(crate) fn query_word_mark_exceptions(
+    db: &Db,
+    book_id: &str,
 ) -> AppResult<Vec<WordMarkException>> {
-    validate_entity_id(&book_id)?;
+    validate_entity_id(book_id)?;
     let conn = db.reader();
     let mut statement = conn.prepare(
         "SELECT id, rule_id, book_id, normalized_word, location, excluded,
@@ -658,6 +661,14 @@ pub fn list_word_mark_exceptions(
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(exceptions)
+}
+
+#[tauri::command]
+pub fn list_word_mark_exceptions(
+    book_id: String,
+    db: State<'_, Db>,
+) -> AppResult<Vec<WordMarkException>> {
+    query_word_mark_exceptions(&db, &book_id)
 }
 
 fn set_lookup_occurrence_mark_inner(

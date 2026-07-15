@@ -161,18 +161,21 @@ pub fn delete_note(id: String, db: State<'_, Db>, sync: State<'_, SyncWriter>) -
     delete_note_inner(&id, &db, &sync)
 }
 
-#[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub fn list_notes(
-    book_id: Option<String>,
-    anchor_kind: Option<String>,
-    search: Option<String>,
+pub(crate) fn query_notes(
+    db: &Db,
+    book_id: Option<&str>,
+    anchor_kind: Option<&str>,
+    word: Option<&str>,
+    search: Option<&str>,
     updated_after: Option<i64>,
     updated_before: Option<i64>,
-    cursor: Option<String>,
-    limit: Option<usize>,
-    db: State<'_, Db>,
+    cursor: Option<&str>,
+    limit: usize,
 ) -> AppResult<NotePage> {
+    let normalized_word = word
+        .map(normalize_learning_term)
+        .filter(|value| !value.is_empty());
     let search = search.filter(|value| !value.trim().is_empty());
     let pattern = search
         .as_ref()
@@ -183,22 +186,31 @@ pub fn list_notes(
          WHERE (?1 IS NULL OR n.book_id = ?1)
            AND (?2 IS NULL OR n.anchor_kind = ?2)
            AND (?3 IS NULL OR LOWER(n.content) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(n.selected_text, '')) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(n.normalized_word, '')) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(b.title, '')) LIKE ?3 ESCAPE '\\')
-           AND (?4 IS NULL OR n.updated_at >= ?4)
-           AND (?5 IS NULL OR n.updated_at <= ?5)",
-        params![book_id, anchor_kind, pattern, updated_after, updated_before],
+           AND (?4 IS NULL OR n.normalized_word = ?4)
+           AND (?5 IS NULL OR n.updated_at >= ?5)
+           AND (?6 IS NULL OR n.updated_at <= ?6)",
+        params![
+            book_id,
+            anchor_kind,
+            pattern,
+            normalized_word,
+            updated_after,
+            updated_before
+        ],
         |row| row.get(0),
     )?;
-    let page_limit = limit.unwrap_or(100).clamp(1, 500);
+    let page_limit = limit.clamp(1, 500);
     let fetch_limit = page_limit + 1;
     let mut statement = conn.prepare(&format!(
         "SELECT {NOTE_COLUMNS} FROM notes n LEFT JOIN books b ON b.id = n.book_id
          WHERE (?1 IS NULL OR n.book_id = ?1)
            AND (?2 IS NULL OR n.anchor_kind = ?2)
            AND (?3 IS NULL OR LOWER(n.content) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(n.selected_text, '')) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(n.normalized_word, '')) LIKE ?3 ESCAPE '\\' OR LOWER(COALESCE(b.title, '')) LIKE ?3 ESCAPE '\\')
-           AND (?4 IS NULL OR n.updated_at >= ?4)
-           AND (?5 IS NULL OR n.updated_at <= ?5)
-           AND (?6 IS NULL OR printf('%020lld:%s', n.updated_at, n.id) < ?6)
-         ORDER BY n.updated_at DESC, n.id DESC LIMIT ?7"
+           AND (?4 IS NULL OR n.normalized_word = ?4)
+           AND (?5 IS NULL OR n.updated_at >= ?5)
+           AND (?6 IS NULL OR n.updated_at <= ?6)
+           AND (?7 IS NULL OR printf('%020lld:%s', n.updated_at, n.id) < ?7)
+         ORDER BY n.updated_at DESC, n.id DESC LIMIT ?8"
     ))?;
     let mut notes = statement
         .query_map(
@@ -206,6 +218,7 @@ pub fn list_notes(
                 book_id,
                 anchor_kind,
                 pattern,
+                normalized_word,
                 updated_after,
                 updated_before,
                 cursor,
@@ -226,6 +239,31 @@ pub fn list_notes(
         next_cursor,
         total,
     })
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn list_notes(
+    book_id: Option<String>,
+    anchor_kind: Option<String>,
+    search: Option<String>,
+    updated_after: Option<i64>,
+    updated_before: Option<i64>,
+    cursor: Option<String>,
+    limit: Option<usize>,
+    db: State<'_, Db>,
+) -> AppResult<NotePage> {
+    query_notes(
+        &db,
+        book_id.as_deref(),
+        anchor_kind.as_deref(),
+        None,
+        search.as_deref(),
+        updated_after,
+        updated_before,
+        cursor.as_deref(),
+        limit.unwrap_or(100),
+    )
 }
 
 #[tauri::command]

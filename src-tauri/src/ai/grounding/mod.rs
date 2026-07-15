@@ -5,6 +5,7 @@ pub mod extract;
 pub mod index;
 pub mod retrieve;
 pub mod segment;
+pub mod spoiler;
 pub mod summarize;
 pub mod vector;
 
@@ -18,4 +19,4 @@ pub const SNIPPET_MAX_CHARS: usize = 120;
 
 pub use extract::{BlockText, SectionText};
 pub use index::{index_status, IndexStatus};
-pub use retrieve::{retrieve, CitedSource, RetrievedChunk, SpoilerCutoff};
+pub use retrieve::{retrieve, CitedSource, RetrievedChunk};

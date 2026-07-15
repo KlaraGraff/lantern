@@ -300,7 +300,7 @@ fn enrich_assessment(stored: StoredLanguageAssessment) -> AppResult<LanguageAsse
     })
 }
 
-fn load_language_assessments(db: &Db) -> AppResult<Vec<LanguageAssessment>> {
+pub(crate) fn load_language_assessments(db: &Db) -> AppResult<Vec<LanguageAssessment>> {
     let conn = db.reader();
     let mut statement = conn.prepare(
         "SELECT id, exam_type, overall_score, reading_score, exam_date, mapping_version,
@@ -313,7 +313,9 @@ fn load_language_assessments(db: &Db) -> AppResult<Vec<LanguageAssessment>> {
     stored.into_iter().map(enrich_assessment).collect()
 }
 
-fn summarize_assessments(assessments: &[LanguageAssessment]) -> Option<LanguageAssessmentSummary> {
+pub(crate) fn summarize_assessments(
+    assessments: &[LanguageAssessment],
+) -> Option<LanguageAssessmentSummary> {
     if assessments.is_empty() {
         return None;
     }

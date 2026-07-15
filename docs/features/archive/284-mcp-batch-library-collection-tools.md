@@ -1,5 +1,7 @@
 # 284 - MCP Batch Library and Collection Tools
 
+> Status: Shipped as part of the MCP Surface Refresh on 2026-07-15.
+
 GitHub issue: https://github.com/yicheng47/quill/issues/284
 
 ## Motivation
@@ -40,8 +42,8 @@ If we want to avoid a breaking MCP change, keep the existing single-item tools a
 1. Define schemas and response DTOs for all batch tools.
    - `import_books`: `{ file_paths: string[] }` returns `{ imported: McpBook[], results: BatchItemResult[] }`.
    - `delete_books`: `{ book_ids: string[] }` returns `{ deleted: string[], results: BatchItemResult[] }`.
-   - `add_books_to_collection` / `remove_books_from_collection`: `{ collection_id: string, book_ids: string[] }` returns `{ collection_id, changed: string[], results: BatchItemResult[] }`.
-   - `get_collection_books`: `{ collection_id: string, filter?, search? }` returns `McpBook[]`.
+   - `add_books_to_collection` / `remove_books_from_collection`: `{ collection_id, book_ids: string[] }` returns `{ collection_id, changed: string[], results: BatchItemResult[] }`.
+   - `get_collection_books`: `{ collection_id, filter?, search? }` returns `McpBook[]`.
 
 2. Implement batch library import/delete on top of existing helpers.
    - Reuse `books::do_import_epub`, `books::do_import_pdf`, and `books::do_delete_book`.

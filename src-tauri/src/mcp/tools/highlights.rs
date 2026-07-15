@@ -18,7 +18,7 @@ pub struct GetHighlightsArgs {
 #[tool_router(router = highlights_router, vis = "pub(crate)")]
 impl QuillMcpHandler {
     #[tool(
-        description = "List all highlights for a book, including the highlighted text content, color, and any attached note."
+        description = "List all highlights for a book, including text, color, and the legacy attached-note snapshot. First-class and migrated highlight notes are available from `get_notes`, so note content may overlap."
     )]
     pub async fn get_highlights(
         &self,

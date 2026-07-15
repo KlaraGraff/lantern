@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::ai::grounding::{
-    self, CitedSource, IndexStatus, RetrievedChunk, SpoilerCutoff, OVERVIEW_BUDGET_TOKENS,
-    RETRIEVAL_BUDGET_TOKENS,
+    self, CitedSource, IndexStatus, RetrievedChunk, OVERVIEW_BUDGET_TOKENS, RETRIEVAL_BUDGET_TOKENS,
 };
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
@@ -1370,32 +1369,6 @@ pub struct AiChatResult {
     pub spoiler_guard: SpoilerGuardMetadata,
 }
 
-fn parse_text_offset(value: &str) -> Option<i64> {
-    if let Some(rest) = value.strip_prefix("textloc:v2:") {
-        return rest.split(':').next()?.parse::<i64>().ok();
-    }
-    value.strip_prefix("textloc:")?.parse::<i64>().ok()
-}
-
-fn parse_spine_section(value: &str) -> Option<i64> {
-    let prefix = value.strip_prefix("epubcfi(/6/")?;
-    let number = prefix
-        .split(|character: char| !character.is_ascii_digit())
-        .next()?
-        .parse::<i64>()
-        .ok()?;
-    (number >= 2 && number % 2 == 0).then_some(number / 2 - 1)
-}
-
-fn spoiler_cutoff(render_format: &str, current_cfi: Option<&str>) -> SpoilerCutoff {
-    let current_cfi = current_cfi.unwrap_or_default();
-    if render_format == "text" {
-        SpoilerCutoff::Character(parse_text_offset(current_cfi).unwrap_or(0).max(0))
-    } else {
-        SpoilerCutoff::Section(parse_spine_section(current_cfi).unwrap_or(0).max(0))
-    }
-}
-
 fn has_whole_book_intent(value: &str) -> bool {
     let lower = value.to_lowercase();
     let compact = lower
@@ -1498,13 +1471,7 @@ pub async fn ai_chat(
         .map(|message| message.content.as_str())
         .unwrap_or_default();
     let whole_book_intent = has_whole_book_intent(latest_question);
-    let (
-        language,
-        grounding_enabled,
-        full_text_threshold,
-        vector_retrieval_enabled,
-        global_spoiler_guard,
-    ) = {
+    let (language, grounding_enabled, full_text_threshold, vector_retrieval_enabled) = {
         let conn = db.reader();
         let get = |key: &str| -> Option<String> {
             conn.query_row(
@@ -1525,54 +1492,20 @@ pub async fn ai_chat(
             get("ai_vector_retrieval")
                 .map(|value| value == "true")
                 .unwrap_or(false),
-            get("ai_spoiler_guard")
-                .map(|value| value != "false")
-                .unwrap_or(true),
         )
     };
 
-    let (spoiler_guard_active, spoiler_cutoff, reading_progress) = if let Some(book_id) =
-        book_id.as_deref()
-    {
-        let conn = db.reader();
-        let book = conn
-            .query_row(
-                "SELECT COALESCE(render_format, format), current_cfi, progress FROM books WHERE id = ?1",
-                rusqlite::params![book_id],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, Option<String>>(1)?,
-                        row.get::<_, i32>(2)?,
-                    ))
-                },
-            )
-            .optional()?;
-        let book_override_key = format!("book_spoiler_guard_{book_id}");
-        let book_override = conn
-            .query_row(
-                "SELECT value FROM settings WHERE key = ?1",
-                rusqlite::params![book_override_key],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?;
-        let enabled = match book_override.as_deref() {
-            Some("on") => true,
-            Some("off") => false,
-            _ => global_spoiler_guard,
-        } && !spoiler_override.unwrap_or(false);
-        match book {
-            Some((render_format, current_cfi, progress)) if enabled => (
-                true,
-                Some(spoiler_cutoff(&render_format, current_cfi.as_deref())),
-                progress.clamp(0, 100),
-            ),
-            Some((_, _, progress)) => (false, None, progress.clamp(0, 100)),
-            None => (false, None, 0),
-        }
-    } else {
-        (false, None, 0)
-    };
+    let (spoiler_guard_active, spoiler_cutoff, reading_progress) =
+        if let Some(book_id) = book_id.as_deref() {
+            let resolution = grounding::spoiler::resolve_cutoff(&db, book_id)?;
+            if spoiler_override.unwrap_or(false) {
+                (false, None, resolution.progress)
+            } else {
+                (resolution.active, resolution.cutoff, resolution.progress)
+            }
+        } else {
+            (false, None, 0)
+        };
 
     let mut excerpts = Vec::new();
     let mut overview = None;
@@ -2369,23 +2302,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["S1", "S2"]
         );
-    }
-
-    #[test]
-    fn spoiler_cutoff_parses_text_epub_and_pdf_locations() {
-        assert_eq!(
-            spoiler_cutoff("text", Some("textloc:v2:12345:12350")),
-            SpoilerCutoff::Character(12345)
-        );
-        assert_eq!(
-            spoiler_cutoff("epub", Some("epubcfi(/6/8!/4/2:9)")),
-            SpoilerCutoff::Section(3)
-        );
-        assert_eq!(
-            spoiler_cutoff("pdf", Some("epubcfi(/6/12)")),
-            SpoilerCutoff::Section(5)
-        );
-        assert_eq!(spoiler_cutoff("epub", None), SpoilerCutoff::Section(0));
     }
 
     #[test]

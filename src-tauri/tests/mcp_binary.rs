@@ -162,6 +162,19 @@ fn quill_mcp_initialize_lists_tools_and_calls_get_collections() {
         "delete_collection",
         "add_book_to_collection",
         "remove_book_from_collection",
+        "import_books",
+        "delete_books",
+        "add_books_to_collection",
+        "remove_books_from_collection",
+        "get_collection_books",
+        "search_book_content",
+        "get_book_summaries",
+        "get_book_index_status",
+        "request_book_index",
+        "get_notes",
+        "get_lookup_history",
+        "get_word_marks",
+        "get_language_profile",
     ]
     .iter()
     .copied()

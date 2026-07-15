@@ -82,7 +82,9 @@ impl QuillMcpHandler {
         ))]))
     }
 
-    #[tool(description = "Add a book to a collection.")]
+    #[tool(
+        description = "Deprecated: use `add_books_to_collection`. Add one book to a collection."
+    )]
     pub async fn add_book_to_collection(
         &self,
         Parameters(CollectionBookArgs {
@@ -90,16 +92,27 @@ impl QuillMcpHandler {
             book_id,
         }): Parameters<CollectionBookArgs>,
     ) -> Result<CallToolResult, ErrorData> {
-        let sync = require_sync(self)?;
-        collections::do_add_book_to_collection(&collection_id, &book_id, &self.state.db, sync)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        self.state.notify("collections", "updated", &collection_id);
+        let response =
+            self.run_collection_membership(collection_id.clone(), vec![book_id.clone()], true)?;
+        let result = response.results.into_iter().next().ok_or_else(|| {
+            ErrorData::internal_error("Batch collection update returned no result", None)
+        })?;
+        if !matches!(result.status.as_str(), "ok" | "noop") {
+            return Err(ErrorData::invalid_params(
+                result.message.unwrap_or_else(|| {
+                    format!("Book {book_id} was not added to collection {collection_id}")
+                }),
+                None,
+            ));
+        }
         Ok(CallToolResult::success(vec![Content::text(format!(
             "Book {book_id} added to collection {collection_id}."
         ))]))
     }
 
-    #[tool(description = "Remove a book from a collection. The book itself is NOT deleted.")]
+    #[tool(
+        description = "Deprecated: use `remove_books_from_collection`. Remove one book from a collection without deleting it."
+    )]
     pub async fn remove_book_from_collection(
         &self,
         Parameters(CollectionBookArgs {
@@ -107,10 +120,19 @@ impl QuillMcpHandler {
             book_id,
         }): Parameters<CollectionBookArgs>,
     ) -> Result<CallToolResult, ErrorData> {
-        let sync = require_sync(self)?;
-        collections::do_remove_book_from_collection(&collection_id, &book_id, &self.state.db, sync)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        self.state.notify("collections", "updated", &collection_id);
+        let response =
+            self.run_collection_membership(collection_id.clone(), vec![book_id.clone()], false)?;
+        let result = response.results.into_iter().next().ok_or_else(|| {
+            ErrorData::internal_error("Batch collection update returned no result", None)
+        })?;
+        if !matches!(result.status.as_str(), "ok" | "noop") {
+            return Err(ErrorData::invalid_params(
+                result.message.unwrap_or_else(|| {
+                    format!("Book {book_id} was not removed from collection {collection_id}")
+                }),
+                None,
+            ));
+        }
         Ok(CallToolResult::success(vec![Content::text(format!(
             "Book {book_id} removed from collection {collection_id}."
         ))]))

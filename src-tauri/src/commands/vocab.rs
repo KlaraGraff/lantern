@@ -494,8 +494,7 @@ pub fn check_vocab_exists(
     Ok(id)
 }
 
-#[tauri::command]
-pub fn list_all_vocab_words(db: State<'_, Db>) -> AppResult<Vec<VocabWord>> {
+pub(crate) fn query_all_vocab_words(db: &Db) -> AppResult<Vec<VocabWord>> {
     let conn = db.reader();
     let mut stmt = conn.prepare(
         "SELECT v.id, v.book_id, v.word, v.definition, v.context_sentence, v.cfi, v.mastery, v.review_count, v.next_review_at, v.created_at, v.updated_at, v.context_explanation, v.review_interval_days, v.last_reviewed_at, v.last_review_rating, v.fsrs_stability, v.fsrs_difficulty, v.fsrs_version, b.title FROM vocab_words v LEFT JOIN books b ON v.book_id = b.id ORDER BY v.created_at DESC"
@@ -504,6 +503,11 @@ pub fn list_all_vocab_words(db: State<'_, Db>) -> AppResult<Vec<VocabWord>> {
         .query_map([], row_to_vocab_with_book)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(words)
+}
+
+#[tauri::command]
+pub fn list_all_vocab_words(db: State<'_, Db>) -> AppResult<Vec<VocabWord>> {
+    query_all_vocab_words(&db)
 }
 
 #[tauri::command]

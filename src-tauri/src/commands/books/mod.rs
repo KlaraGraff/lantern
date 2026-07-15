@@ -63,7 +63,7 @@ pub use query::{
 };
 pub use query::{check_book_available, get_book, get_book_counts, list_books};
 #[allow(unused_imports)]
-pub(crate) use query::{query_book, query_books, query_books_lite};
+pub(crate) use query::{query_book, query_book_exists, query_books, query_books_lite};
 pub(crate) use text_prepare::load_prepared_document_for_grounding;
 #[doc(hidden)]
 pub use text_prepare::{__cmd__get_text_book_document, __cmd__retry_text_book_preparation};
