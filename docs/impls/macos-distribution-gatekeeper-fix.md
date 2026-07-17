@@ -1,0 +1,86 @@
+# macOS 分发修复:GitHub 产物"已损坏"问题(签名与公证)
+
+> **这是一份"活文档"。** 记录计划与进度,接手者先读本文件再动手。每完成一项更新勾选框与变更日志。
+
+- **发起:** Claude Code 会话(2026-07-17)
+- **状态:** 🟡 方案已定,待用户决策(方案 A 需 Apple Developer 账号)
+- **关联:** [`format-normalization-pipeline.md`](format-normalization-pipeline.md)(昨日 CSP 阅读器修复,与本问题**无关但曾被混淆**,见 §2)
+
+## 1. 症状
+
+- 从 GitHub Release 下载 `Lantern_2.0.0_aarch64.dmg`(浏览器下载)→ 打开/首次启动时 macOS 提示 **"Lantern.app 已损坏,无法打开"**,只给"移到废纸篓"选项。
+- 同一台机器上 `npm run package` 本地构建的 `.app` 一切正常。
+
+## 2. 根因(已实证,非猜测)
+
+**因果链:**
+
+1. **CI 没有配置 Apple 签名证书。** `release.yml` 的 "Determine macOS signing mode" 步骤检测 `APPLE_CERTIFICATE`/`APPLE_CERTIFICATE_PASSWORD` secrets——从未设置过,所以走 **ad-hoc 签名分支**(`Signature=adhoc`,`TeamIdentifier=not set`,hardened runtime 开启)。历史上所有 release 产物都是 ad-hoc 的。
+2. **浏览器下载给 dmg/app 打上 `com.apple.quarantine` 隔离属性**(本次实测:Edge 下载,xattr 可见)。
+3. **macOS 26 的 Gatekeeper 对"ad-hoc 签名 + quarantine"的组合直接报"已损坏"**(不是文件真损坏;这是新版系统对无有效开发者签名应用的标准话术,且新系统已移除右键打开的旁路)。实测 `spctl -a` 裁决为 `rejected`。
+4. **本地构建从不触发**:本机构建产物没有 quarantine 属性,LaunchServices 不做 Gatekeeper 评估 → 直接运行。
+
+**证据(2026-07-17 实测):**
+- 下载 dmg 完整性核验通过,内含二进制与 CI 产物哈希一致(`c35ed1af…` = run 29562517912 产物)→ 排除"真损坏/下载截断"。
+- 该二进制嵌入的 CSP 已无 `frame-ancestors`(阳性对照 `asset.localhost` 命中)→ **昨日的 CSP 阅读器修复在 CI 产物里是完好的**,"GitHub 包不行"与阅读器 bug 无关。
+- SDK(26.5)、entitlements(`disable-library-validation`)与本地构建一致 → 产物内容层面无差异。
+- 移除 quarantine 后同一 app 正常启动 → 唯一变量就是隔离属性。
+
+**推论:** 当前 release 上的产物(以及未来任何 ad-hoc 产物)对**所有下载用户**都会"已损坏"。这不是某次构建的事故,是分发链路的结构性问题。
+
+## 3. 立即缓解(已做/可复用)
+
+- [x] 本机已安装的 app 解锁:`xattr -dr com.apple.quarantine /Applications/Lantern.app`(2026-07-17 已执行,app 可正常运行)。
+- [ ] **临时安装说明**:在 Release Notes 顶部加一段"macOS 安装说明":
+  ```
+  下载后若提示"已损坏":打开终端执行
+  xattr -d com.apple.quarantine ~/Downloads/Lantern_2.0.0_aarch64.dmg
+  再打开 dmg 拖入 Applications;或对已拖入的 app 执行
+  xattr -dr com.apple.quarantine /Applications/Lantern.app
+  ```
+  (手动编辑当前 release 即可;方案 B 会把它自动化。)
+
+## 4. 方案 A(正式修复,推荐):启用 CI 签名 + 公证
+
+`release.yml` **已经内建完整的签名/公证/校验流水线**(签名身份导入 keychain、tauri-action 签名与 notarize、pdfium 重签同 Team ID、`Verify macOS app signature` 步骤断言 Team ID 一致且 Developer ID 构建不含 `disable-library-validation`、`pdfium-smoke` 冒烟)。**不需要改任何工作流代码,只需要配 secrets。**
+
+### 前置条件(用户侧,无法代劳)
+- [ ] Apple Developer Program 账号(个人 $99/年)。
+- [ ] 在 developer.apple.com 创建 **Developer ID Application** 证书,导入本机钥匙串后连私钥导出为 `.p12`(设导出密码)。
+- [ ] 为 Apple ID 创建 **App 专用密码**(appleid.apple.com → 登录与安全 → App 专用密码),供公证用。
+
+### 实施步骤
+- [ ] 证书转 base64:`base64 -i DeveloperID.p12 | pbcopy`
+- [ ] 配置仓库 secrets(在 `KlaraGraff/lantern`):
+  ```
+  gh secret set APPLE_CERTIFICATE          # p12 的 base64
+  gh secret set APPLE_CERTIFICATE_PASSWORD # p12 导出密码
+  gh secret set APPLE_ID                   # Apple ID 邮箱
+  gh secret set APPLE_PASSWORD             # App 专用密码
+  gh secret set APPLE_TEAM_ID              # 开发者 Team ID(10 位)
+  ```
+- [ ] 触发一次构建验证:`gh workflow run release.yml`(workflow_dispatch,不动 tag),确认走 signed 分支且 `Verify macOS app signature` 通过。
+- [ ] 重新发布:删除并重打当前 tag(或发新版本号,见 §6),让签名产物替换 release 上的 ad-hoc 产物。
+
+### 验收标准
+1. `codesign -dv` 显示 Developer ID 签名 + 有效 Team ID;`stapler validate` 通过(公证票据已钉入)。
+2. 从 GitHub 下载 dmg,**不做任何 xattr 操作**,双击安装、双击启动,无"已损坏"提示。
+3. 打开 EPUB 正常(带出昨日 CSP 修复的回归确认);PDF 元数据/封面正常(pdfium 重签路径)。
+4. Dock/Finder 显示新图标(图标已在 `6dd1a26` 换为 XL_Translator 品牌图,当前产物已含)。
+
+## 5. 方案 B(无开发者账号时的过渡):自动附带安装说明
+
+- [ ] `release.yml` 的 ad-hoc 分支(`build-adhoc` 步骤)把 `releaseBody` 改为包含 §3 的 xattr 安装说明,让每个 ad-hoc release 自带提示。
+- [ ] 可选:ad-hoc 构建产物文件名加 `-unsigned` 后缀,消除歧义。
+- 局限:用户体验差(需要终端操作),仅作为拿到证书前的过渡。**方案 B 不能替代方案 A。**
+
+## 6. 伴随事项与教训(本次排查顺带确认)
+
+- [ ] **版本号复用的代价(记录在案):** 今天同名 `Lantern_2.0.0_aarch64.dmg` 先后存在**三个不同内容**的版本(7/15 原始坏包 18.71MB → run1 修复包 18.75MB → run2 修复+新图标 22.5MB),叠加浏览器缓存/重复下载极易测错对象,本次排查即为此多花了整轮比对。**建议惯例:已发布过的版本号不再复用**;真要覆盖,至少让产物可区分(见下条)。
+- [ ] **构建指纹可见化:** `release.yml` 已注入 `QUILL_BUILD_COMMIT`/`QUILL_BUILD_DATE` 环境变量,但前端没有任何展示入口。在设置页"关于"区块显示 commit 短 sha + 构建时间,一眼确认在跑哪个构建(工作量:后端一个 command 读编译期 env,前端一行展示)。
+- [x] **vendored foliate-js 完整性:** `624a759` 把 submodule 改为 vendor 后,`paginator.js` 仍含 Layer B(`IFRAME_LOAD_TIMEOUT`)与防搁浅加固(`IFRAME_DOCUMENT_INACCESSIBLE`),与 fork `112eb27` 一致,下个 tag 不会回归。
+- [x] **CSP 修复在 CI 产物中确认存在**(见 §2 证据)——阅读器问题与分发问题解耦,各自闭环。
+
+## 7. 变更日志
+
+- **2026-07-17** — 创建文档。实证根因(ad-hoc + quarantine → Gatekeeper "已损坏"),本机已用 xattr 解锁并验证 app 可运行。方案 A(签名+公证)依赖用户提供 Developer ID 证书;方案 B(自动附安装说明)可先行。
