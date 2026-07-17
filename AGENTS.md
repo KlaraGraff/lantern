@@ -90,6 +90,12 @@ Prefer the smallest check that covers the change. For frontend changes, run type
 - Keep PR descriptions current when scope changes.
 - Do not add tool-specific co-author trailers unless the user explicitly asks.
 
+## Release Conventions
+
+- **Never reuse a published version number.** Once a tag's artifacts have been downloadable, that version is burned — even when replacing a broken release, bump the patch version instead. Reused numbers produce identically named artifacts with different contents: on 2026-07-17 three different `Lantern_2.0.0_aarch64.dmg` binaries existed within hours, and telling them apart cost a full debugging round.
+- **Identify builds by commit, not by filename.** Settings → About shows the running build's commit, build time, and channel (`app_build_info` command), with one-click diagnostics copy. Any bug report, acceptance run, or "which build am I on?" question starts by recording that commit.
+- **Verify the released artifact, not just the CI status.** After publishing, download the actual asset from the release page and check it: expected size, About-page commit matches the tag, and on macOS whether Gatekeeper accepts it (`spctl -a -vv`). A green CI run only proves the build ran. Note: ad-hoc-signed artifacts (the current default — no signing secrets configured) are reported as "damaged" by macOS Gatekeeper on quarantined downloads; see `docs/impls/macos-distribution-gatekeeper-fix.md` for the distribution plan and the `xattr` workaround that unsigned releases must document in their notes.
+
 ## Notes For Agent Runtimes
 
 This repository is intentionally agent-agnostic. Claude Code, Codex, or any other assistant should read `AGENTS.md` as the shared guide. Portable workflow skills live under `.agents/skills`. Tool-specific instruction/config files may exist only as compatibility entrypoints and should point back here when they contain shared guidance.

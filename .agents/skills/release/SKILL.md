@@ -10,6 +10,7 @@ Create a new versioned release for Quill.
 ## Steps
 
 1. Ask the user for the version number (e.g. `0.3.0`) if not provided as an argument.
+   - **Version-reuse guard:** the version must be brand new. If the tag `v{version}` already exists (`git tag -l`), or that version was ever published on GitHub Releases (even if since deleted), refuse it and propose the next patch version instead. Never reissue a published version number — identically named artifacts with different contents have caused full debugging rounds (see `AGENTS.md` → Release Conventions).
 
 2. Bump version in all three files. **IMPORTANT: Do NOT use `sed` for version bumps.** Instead:
    - Confirm you're on `main` and the working tree is clean (`git status`). If not, stop and report.
@@ -33,6 +34,9 @@ Create a new versioned release for Quill.
 8. Categorize changes into sections: **What's New**, **Improvements**, **Bug Fixes** (omit empty sections).
 
 9. Publish the release: `gh release edit v{version} --draft=false --notes "..."`. Include a **Download** section at the bottom with the `.dmg` filenames for Apple Silicon and Intel.
+   - While signing secrets are not configured (ad-hoc builds), the notes MUST include the macOS install instructions for Gatekeeper's "damaged" rejection (`xattr -d com.apple.quarantine <dmg>`); see `docs/impls/macos-distribution-gatekeeper-fix.md`.
+
+10. **Verify the released artifact** (not just CI status): `gh release download v{version} --pattern '*aarch64.dmg'`, mount it, and confirm the app's `Info.plist` version and binary provenance match the tag (compare `shasum` against a rebuilt or expected binary when in doubt). Record the Settings → About commit when doing any on-device check.
 
 If any step fails, stop and report the error — do not continue.
 
