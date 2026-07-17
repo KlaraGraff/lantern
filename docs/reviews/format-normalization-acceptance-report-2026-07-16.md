@@ -4,7 +4,7 @@
 - **被测提交：** `2d26acd5d684efbe6a318c0ca35ae50cdf715cb5`
 - **提交说明：** `feat(books): MOBI/AZW3 → EPUB conversion pipeline (Phase 1 + Calibre route A)`
 - **验收依据：** [`docs/guide/format-normalization-testing.md`](../guide/format-normalization-testing.md)
-- **结论：** **未完成发布验收。** 静态基线、无 Calibre 的导入降级元数据、以及 TXT 预处理与阅读通过；Calibre 转换及双设备场景因环境前置条件缺失而未执行。隔离打包环境中，AZW3、MOBI 与 EPUB 阅读器都出现 `READER_INIT_TIMEOUT`。该现象尚未在正常安装的生产应用中复测，不能据此确认是生产回归。
+- **结论：** **未通过运行时验收。** 后续在未改签名的当前 release `.app`、正常用户目录和正常 iCloud 数据配置下复测，EPUB、PDF，以及 Calibre 成功转换后的 AZW3/MOBI 都稳定出现 `READER_INIT_TIMEOUT`；仅 TXT 读取成功。因此这已不是隔离运行的环境噪音，而是当前构建的真实阅读器故障。Calibre 转换本身通过。
 
 ## 1. 版本与构建确认
 
@@ -43,6 +43,17 @@ origin/main = 2d26acd5d684efbe6a318c0ca35ae50cdf715cb5
 
 > **隔离打包环境中的待复测阅读器初始化失败，尚非已确认的生产缺陷。**
 
+### 2.2 正常用户目录复测（本报告最终结论的依据）
+
+在隔离结果之后，已改用下列方式复测：
+
+- 直接启动本提交构建的、**未改签名**的 `src-tauri/target/release/bundle/macos/Lantern.app`；
+- 使用实际用户 `HOME`、现有 iCloud 同步配置和活动数据目录；
+- 安装 Homebrew cask `calibre` 9.11.0，`ebook-convert` 位于 `/opt/homebrew/bin/ebook-convert`；
+- 使用相同的五份真实测试文件。
+
+该环境没有临时 bundle ID、临时应用路径或隔离 `HOME`。因此本节的结果取代“隔离环境待复测”的临时判断：所有 Foliate iframe 路径都复现 `READER_INIT_TIMEOUT`，而不使用 iframe 的 TXT 阅读器正常。
+
 ## 3. 静态与构建基线
 
 | 检查 | 结果 | 备注 |
@@ -57,12 +68,23 @@ origin/main = 2d26acd5d684efbe6a318c0ca35ae50cdf715cb5
 
 ### 4.1 T1、T2：有 Calibre 的 AZW3/MOBI 转 EPUB
 
-**状态：未执行。** 缺少 Calibre/`ebook-convert`，不能进入转换分支，也不能验证：
+**状态：转换通过；阅读失败。** 已安装 Calibre 9.11 并用两个真实样本完成实际转换：
 
-- 导入后 `render_format='epub'`；
-- `.tmp.epub` 临时产物与原子发布；
-- 转换后的选中、AI、标注、进度和 CFI；
-- `prepared/{book_id}.converted.v1.epub` 本地产物。
+| 样本 | 书籍 ID | `source_format` | `render_format` | `preparation_state` | 本地产物 |
+|---|---|---|---|---|---|
+| `西学三书…azw3`（KF8/HUFF-CDIC） | `b7745729-2b26-4130-80ca-34cd6e2d72f9` | `azw3` | `epub` | `ready` | `7.1 MB` `.converted.v1.epub` |
+| `重读20世纪中国小说…mobi`（MOBI6） | `ec9ae603-b577-4140-ad31-a2760ee00b01` | `mobi` | `epub` | `ready` | `2.7 MB` `.converted.v1.epub` |
+
+两份 EPUB 都可被 Calibre 的 `ebook-meta` 重新解析，并读出正确书名和作者，证明转换器、临时发布和本地重定向产物正常。
+
+但打开两书都会先显示“正在准备书籍...”，约 45 秒后进入错误页：
+
+```
+无法打开这本书
+READER_INIT_TIMEOUT
+```
+
+MOBI6 点击“重试”后完整等待一个超时窗口，仍得到相同错误。因此转换后的选中、AI、标注、进度和 CFI 不能验收通过：失败发生在这些能力之前的首屏阅读器初始化。
 
 ### 4.2 T3：无 Calibre 优雅降级
 
@@ -86,7 +108,7 @@ AZW3 点击一次“Retry”后仍在约 48 秒内失败；MOBI6 也复现同一
 
 ### 4.3 T4、T5、T6：转换失败、崩溃恢复与 Reader 重试分派
 
-**状态：未执行。** 三项均要求先创建转换书的 pending/failed 状态，而当前环境缺少 Calibre，无法构造或重试转换任务。
+**状态：未执行。** Calibre 已安装，但由于所有 Foliate 阅读器均已在基本打开用例失败，未继续人为构造转换失败、强杀进程或 Reader 重试分派场景。
 
 ### 4.4 T7：双设备 iCloud 同步
 
@@ -94,7 +116,7 @@ AZW3 点击一次“Retry”后仍在约 48 秒内失败；MOBI6 也复现同一
 
 ### 4.5 T8：ready 产物丢失后的自愈
 
-**状态：未执行。** 该项需要一册已经由 Calibre 转换成功的书；当前没有 `.converted.v1.epub` 产物可删除。
+**状态：未执行。** 已具备转换产物，但尚未删除活动书库中的产物来验证自愈；应在修复基础阅读器故障后进行，避免把多个失败原因混在一起。
 
 ### 4.6 T9：格式回归
 
@@ -118,9 +140,9 @@ TXT 在导入后 8 秒内从准备状态收敛为 `ready`，并在本地 `prepar
 
 #### 阅读器
 
-- **TXT：通过。** 打开后立即显示第一章 `PART ONE`，证明 text-preparation 与自绘文本阅读器链路可用。
-- **EPUB：失败（隔离环境）。** 打开后复现 `READER_INIT_TIMEOUT`。这是与 AZW3/MOBI 相同的 Foliate 初始化症状。
-- **PDF：未单独打开。** 已完成导入和数据库验证；在 EPUB、MOBI、AZW3 都出现 Foliate 初始化超时后，没有把 PDF 的同一路径推断为已失败。PDF 渲染仍需在正常安装环境中实测。
+- **TXT：通过。** 在正常用户目录运行的当前构建中，打开后立即显示第一章 `PART ONE`，证明 text-preparation 与自绘文本阅读器链路可用。
+- **EPUB：失败。** 正常用户目录复测后出现 `READER_INIT_TIMEOUT`。
+- **PDF：失败。** 正常用户目录复测后出现 `READER_INIT_TIMEOUT`。
 - **FB2 / FBZ / CBZ、已有原生 MOBI/AZW3：未执行。**
 
 ### 4.7 T10：失效 saved CFI 的超时自愈
@@ -143,23 +165,24 @@ TXT 在导入后 8 秒内从准备状态收敛为 `ready`，并在本地 `prepar
 
 ## 6. 验收结论
 
-本次不能签发格式规整管线的完整运行时验收。可以确认的部分是：
+本次不能签发格式规整管线的运行时验收。可以确认的部分是：
 
 1. 当前测试的是 `origin/main` 的最新提交和该提交的新鲜打包产物，不存在以旧代码替代修复后代码的情况。
 2. 无 Calibre 时，AZW3/MOBI 导入不会误进转换管线；格式列、准备状态和产物目录均符合降级设计。
-3. EPUB/PDF/TXT 导入正常，TXT 的准备和阅读正常。
-4. Calibre 转换、失败重试、崩溃恢复、iCloud 同步、产物丢失自愈以及 CFI 自愈均未覆盖，不能视为通过。
-5. 隔离打包环境里的 Foliate 阅读器初始化超时需要在常规安装环境复测，不能直接作为生产回归结论。
+3. 安装 Calibre 后，KF8 AZW3 与 MOBI6 均成功转换为有效 EPUB；状态机、产物发布和读取层重定向均通过。
+4. TXT 导入、预处理和阅读通过。
+5. EPUB、PDF 及两本转换后的 EPUB 均在正常用户目录中复现 `READER_INIT_TIMEOUT`，所以这些格式当前**不能正常阅读**。这是真实的当前构建故障，不是临时隔离环境造成的假象。
+6. 转换失败、崩溃恢复、双设备 iCloud、产物丢失自愈和失效 CFI 自愈尚未覆盖，不能视为通过。
 
 ## 7. 后续验收建议
 
-1. 在当前提交构建或安装的 `/Applications/Lantern.app` 中，使用正常用户目录重测 EPUB、AZW3 与 MOBI 的打开行为，先确认 `READER_INIT_TIMEOUT` 是否可复现。
-2. 安装 Calibre 后，按 T1、T2 验证 KF8 AZW3 和 MOBI6 的真实转换；同时检查数据库列、`prepared/` 的临时文件/成品发布和转换后交互能力。
+1. 先修复或定位 Foliate `view.init()` 的 `READER_INIT_TIMEOUT`；在此之前，任何 EPUB/PDF/MOBI/AZW3 的“可阅读”验收都无法通过。
+2. 修复后，重新打开两份已转换 EPUB，验证正文显示、选中、AI、手动标注、进度和 CFI。
 3. 再依次执行 T4、T5、T6、T8 的失败/恢复闭环，以及两设备条件下的 T7。
 4. 准备一个故意失效的 EPUB saved CFI，补做 T10。
 
 ## 8. 清理与变更
 
-- 临时测试应用进程已停止。
-- 测试数据保留在 `/tmp/lantern-format-qa-release/`，不位于生产应用数据目录。
-- 本次未修改产品源码、测试实现或配置；本报告是唯一的仓库内容变更。
+- 隔离测试应用进程已停止；后续复测使用当前构建的未改签名 release `.app` 和正常用户目录。
+- AZW3、MOBI 及其本地转换产物已导入活动 Lantern 库；这是为执行真实 Calibre 验收所做的测试数据写入。
+- 本次未修改产品源码、测试实现或配置；本报告记录了测试结论的更新。

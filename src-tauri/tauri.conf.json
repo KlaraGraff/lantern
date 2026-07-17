@@ -21,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' asset: http://asset.localhost data: blob:; font-src 'self' asset: http://asset.localhost data: blob:; connect-src 'self' asset: http://asset.localhost ipc: http://ipc.localhost http://localhost:1430 ws://localhost:1430; media-src 'self' asset: http://asset.localhost data: blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-src 'self' blob:; frame-ancestors 'none'",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' asset: http://asset.localhost data: blob:; font-src 'self' asset: http://asset.localhost data: blob:; connect-src 'self' asset: http://asset.localhost ipc: http://ipc.localhost http://localhost:1430 ws://localhost:1430; media-src 'self' asset: http://asset.localhost data: blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'; frame-src 'self' blob:",
       "assetProtocol": {
         "enable": true,
         "scope": ["$APPDATA/**"]
