@@ -4,7 +4,7 @@
 >
 > 基线：`yicheng47/quill` `v1.2.10` (`b28668f`)
 >
-> Fork：`KlaraGraff/quill`
+> Fork：`KlaraGraff/lantern`
 >
 > 制定日期：2026-07-12
 
@@ -98,7 +98,7 @@
 
 ### 5.2 上游友好
 
-- `origin` 指向 `KlaraGraff/quill`，`upstream` 保持指向 `yicheng47/quill`。
+- `origin` 指向 `KlaraGraff/lantern`，`upstream` 保持指向 `yicheng47/quill`。
 - `main` 尽量保持可追踪上游；个性化功能使用独立、聚焦的功能分支。
 - 每个阶段开始前先检查上游变更，避免在已被上游实现的功能上重复开发。
 - 不直接修改 `foliate-js`，除非公开 API 无法满足需求；确需修改时使用独立 fork 并记录补丁边界。

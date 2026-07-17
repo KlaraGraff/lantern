@@ -5,7 +5,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { Github, BookText, Scale, ExternalLink, GitFork, Bug, Check, Copy } from "lucide-react";
 import LanternLogo from "../LanternLogo";
 
-const CURRENT_REPOSITORY_URL = "https://github.com/KlaraGraff/quill";
+const CURRENT_REPOSITORY_URL = "https://github.com/KlaraGraff/lantern";
 const CURRENT_RELEASES_URL = `${CURRENT_REPOSITORY_URL}/releases`;
 const CURRENT_ISSUES_URL = `${CURRENT_REPOSITORY_URL}/issues`;
 const CURRENT_DOCS_URL = `${CURRENT_REPOSITORY_URL}#readme`;

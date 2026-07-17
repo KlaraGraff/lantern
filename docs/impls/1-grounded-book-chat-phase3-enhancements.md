@@ -1,6 +1,6 @@
 # 1 — Grounded Book Chat, Phase 3: Enhancements
 
-Issue: https://github.com/KlaraGraff/quill/issues/1
+Issue: https://github.com/KlaraGraff/lantern/issues/1
 Read first: [architecture overview](1-grounded-book-chat-overview.md).
 Requires: phases 1–2 shipped.
 

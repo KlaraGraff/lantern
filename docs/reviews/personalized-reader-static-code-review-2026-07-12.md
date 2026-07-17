@@ -1,7 +1,7 @@
 # 个性化英语阅读器静态代码审查与后续改进方案
 
 > 审查日期：2026-07-12  
-> 仓库：`KlaraGraff/quill`  
+> 仓库：`KlaraGraff/lantern`
 > 分支：`feat/personalized-reader`  
 > 当前提交：`5595d37`  
 > 对比基线：`b28668f`（上游 `v1.2.10`）  
@@ -756,7 +756,7 @@ Quill Personal
 macOS · arm64
 
 当前版本
-GitHub 仓库              KlaraGraff/quill
+GitHub 仓库              KlaraGraff/lantern
 版本发布与更新            Releases
 问题反馈                  Issues
 当前版本文档              README
@@ -776,10 +776,10 @@ GitHub 仓库              KlaraGraff/quill
 
 | 页面项目 | 推荐目标 |
 |---|---|
-| 当前版本 GitHub | `https://github.com/KlaraGraff/quill` |
-| 当前版本 Releases | `https://github.com/KlaraGraff/quill/releases` |
-| 当前版本问题反馈 | `https://github.com/KlaraGraff/quill/issues` |
-| 当前版本文档 | `https://github.com/KlaraGraff/quill#readme`，以后有独立文档站再替换 |
+| 当前版本 GitHub | `https://github.com/KlaraGraff/lantern` |
+| 当前版本 Releases | `https://github.com/KlaraGraff/lantern/releases` |
+| 当前版本问题反馈 | `https://github.com/KlaraGraff/lantern/issues` |
+| 当前版本文档 | `https://github.com/KlaraGraff/lantern#readme`，以后有独立文档站再替换 |
 | 原始项目 | `https://github.com/yicheng47/quill` |
 | 原项目许可证 | 当前仓库内的 `LICENSE`，并保留原版权声明 |
 

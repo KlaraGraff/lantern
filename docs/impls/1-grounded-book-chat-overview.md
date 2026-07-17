@@ -1,6 +1,6 @@
 # 1 — Grounded Book Chat: Architecture Overview
 
-Issue: https://github.com/KlaraGraff/quill/issues/1
+Issue: https://github.com/KlaraGraff/lantern/issues/1
 Feature spec: [`docs/features/1-grounded-book-chat.md`](../features/1-grounded-book-chat.md)
 
 This document fixes the cross-phase architecture: data model, shared algorithms, message

@@ -1,6 +1,6 @@
 # 1 — Grounded Book Chat, Phase 1: Indexing + Retrieval
 
-Issue: https://github.com/KlaraGraff/quill/issues/1
+Issue: https://github.com/KlaraGraff/lantern/issues/1
 Read first: [architecture overview](1-grounded-book-chat-overview.md) — data model,
 segmentation/chunking/retrieval algorithms, constants, and decisions D1–D10 are defined
 there and not repeated.

@@ -117,15 +117,15 @@ macOS 是主要平台。基于用户选择的 iCloud Drive 文件夹的多设备
 
 ## 下载
 
-当前构建和发行说明发布在 [KlaraGraff/quill Releases](https://github.com/KlaraGraff/quill/releases)。macOS 构建目前使用有效的临时签名，因此 Gatekeeper 仍会在首次运行时要求确认。签名和公证计划请参见 [macOS 分发](docs/guide/macos-distribution.md)。在此分支拥有自己的签名发行渠道前，自动更新保持禁用。
+当前构建和发行说明发布在 [KlaraGraff/lantern Releases](https://github.com/KlaraGraff/lantern/releases)。macOS 构建目前使用有效的临时签名，因此 Gatekeeper 仍会在首次运行时要求确认。签名和公证计划请参见 [macOS 分发](docs/guide/macos-distribution.md)。在此分支拥有自己的签名发行渠道前，自动更新保持禁用。
 
 ## 开发
 
 要求：Node.js 22、npm、Rust，以及目标平台所需的 Tauri 前置依赖。克隆仓库时请一并获取阅读器引擎子模块：
 
 ```bash
-git clone --recurse-submodules https://github.com/KlaraGraff/quill.git
-cd quill
+git clone --recurse-submodules https://github.com/KlaraGraff/lantern.git
+cd lantern
 npm ci
 npm run tauri dev
 ```

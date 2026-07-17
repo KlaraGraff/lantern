@@ -1,6 +1,6 @@
 # 1 — Grounded Book Chat
 
-GitHub issue: https://github.com/KlaraGraff/quill/issues/1
+GitHub issue: https://github.com/KlaraGraff/lantern/issues/1
 
 Implementation plans:
 - [Overview & architecture](../impls/1-grounded-book-chat-overview.md)

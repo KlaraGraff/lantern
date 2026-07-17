@@ -1,7 +1,7 @@
 # 个性化阅读器实施结果静态复审
 
 > 复审日期：2026-07-12  
-> 仓库：`KlaraGraff/quill`  
+> 仓库：`KlaraGraff/lantern`
 > 分支：`feat/personalized-reader`  
 > 审查对象：`HEAD 5595d37` 加当前未提交工作区改动  
 > 对照文档：`docs/reviews/personalized-reader-static-code-review-2026-07-12.md`  

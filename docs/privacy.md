@@ -30,4 +30,4 @@ You can delete imported books, highlights, bookmarks, vocabulary, chats, and loc
 
 ## Contact
 
-For Lantern support, open an issue at [KlaraGraff/quill](https://github.com/KlaraGraff/quill/issues). The original Quill maintainers do not provide support for Lantern.
+For Lantern support, open an issue at [KlaraGraff/lantern](https://github.com/KlaraGraff/lantern/issues). The original Quill maintainers do not provide support for Lantern.

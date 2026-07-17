@@ -117,15 +117,15 @@ This edition does not use the original Quill iCloud container. It does not claim
 
 ## Download
 
-Current builds and release notes are published at [KlaraGraff/quill Releases](https://github.com/KlaraGraff/quill/releases). macOS builds currently use a valid ad-hoc signature, so Gatekeeper will still require a first-run confirmation. The signing and notarization roadmap is documented in [macOS distribution](docs/guide/macos-distribution.md). Automatic updates are disabled until this fork has its own signed release channel.
+Current builds and release notes are published at [KlaraGraff/lantern Releases](https://github.com/KlaraGraff/lantern/releases). macOS builds currently use a valid ad-hoc signature, so Gatekeeper will still require a first-run confirmation. The signing and notarization roadmap is documented in [macOS distribution](docs/guide/macos-distribution.md). Automatic updates are disabled until this fork has its own signed release channel.
 
 ## Development
 
 Requirements: Node.js 22, npm, Rust, and the Tauri prerequisites for the target platform. Clone with the reader engine submodule:
 
 ```bash
-git clone --recurse-submodules https://github.com/KlaraGraff/quill.git
-cd quill
+git clone --recurse-submodules https://github.com/KlaraGraff/lantern.git
+cd lantern
 npm ci
 npm run tauri dev
 ```

@@ -1,6 +1,6 @@
 # 1 — Grounded Book Chat, Phase 2: Summaries + Citations
 
-Issue: https://github.com/KlaraGraff/quill/issues/1
+Issue: https://github.com/KlaraGraff/lantern/issues/1
 Read first: [architecture overview](1-grounded-book-chat-overview.md).
 Requires: phase 1 shipped (index, retrieval, `CitedSource` return, sources stored in
 message metadata).

@@ -8,7 +8,7 @@
 
 ## 〇、执行状态总览
 
-**第一批(已修复)** — 分支 `fix/audit-2026-07-15`,提交 `bfaf346`,[PR #8](https://github.com/KlaraGraff/quill/pull/8)。后端 455 测试通过、clippy 零警告;前端 tsc/eslint 干净、21 单测通过。
+**第一批(已修复)** — 分支 `fix/audit-2026-07-15`,提交 `bfaf346`,[PR #8](https://github.com/KlaraGraff/lantern/pull/8)。后端 455 测试通过、clippy 零警告;前端 tsc/eslint 干净、21 单测通过。
 
 | 编号 | 项 | 状态 |
 |---|---|---|
@@ -193,7 +193,7 @@ v1.4 的 AES-GCM + Keychain 加密 vault 已被有意迁移为**明文 SQLite**(
 
 ## 八、修复优先级建议(历史,已被第〇节取代)
 
-第一批 11 项已在 [PR #8](https://github.com/KlaraGraff/quill/pull/8) 落地。剩余项的排期与方案见第〇节总览表与第九节详细方案。
+第一批 11 项已在 [PR #8](https://github.com/KlaraGraff/lantern/pull/8) 落地。剩余项的排期与方案见第〇节总览表与第九节详细方案。
 
 ---
 
@@ -429,4 +429,4 @@ impl StreamSink<'_> {
 
 ---
 
-*报告基于静态审读与既有测试运行,未执行动态渗透或压力测试。第一批修复已合入 [PR #8](https://github.com/KlaraGraff/quill/pull/8);行号对应 `main@4dfe61a` + 该 PR。第二批方案面向后续执行 agent,动手前请以最新 `main` 为准复核符号是否仍存在。*
+*报告基于静态审读与既有测试运行,未执行动态渗透或压力测试。第一批修复已合入 [PR #8](https://github.com/KlaraGraff/lantern/pull/8);行号对应 `main@4dfe61a` + 该 PR。第二批方案面向后续执行 agent,动手前请以最新 `main` 为准复核符号是否仍存在。*
