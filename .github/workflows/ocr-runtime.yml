@@ -147,7 +147,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#ocr-runtime-v}"
           echo "OCR_RUNTIME_VERSION=$version" >> "$GITHUB_ENV"
-          python3 scripts/ocr-runtime/validate_artifacts.py dist/ocr-runtime --expected-platforms macos/arm64 windows/x86_64
+          python3 scripts/ocr-runtime/validate_artifacts.py dist/ocr-runtime --expected-platforms macos/arm64 windows/x64
 
       - name: Publish immutable release assets
         env:

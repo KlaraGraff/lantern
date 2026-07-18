@@ -1,21 +1,23 @@
-#define PY_SSIZE_T_CLEAN
-#include <Python.h>
 #include <locale.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <wchar.h>
 
 #ifdef _WIN32
+#include <process.h>
 #include <windows.h>
 #define PATH_SEP L'\\'
 #else
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
 #include <limits.h>
 #include <libgen.h>
 #include <mach-o/dyld.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #define PATH_SEP '/'
 #endif
-
-#include <stdio.h>
 
 static int append_path(wchar_t *destination, size_t capacity, const wchar_t *part) {
     size_t length = wcslen(destination);
@@ -79,6 +81,30 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+#ifdef _WIN32
+    if (!append_path(home, 4096, L"python.exe")) {
+        fputs("lantern-ocr: runtime path is too long\n", stderr);
+        return 1;
+    }
+    const wchar_t **child_argv = calloc((size_t)argc + 5, sizeof(wchar_t *));
+    if (!child_argv) {
+        fputs("lantern-ocr: out of memory\n", stderr);
+        return 1;
+    }
+    child_argv[0] = home;
+    child_argv[1] = L"-I";
+    child_argv[2] = L"-X";
+    child_argv[3] = L"utf8";
+    child_argv[4] = script;
+    for (int index = 1; index < argc; ++index) child_argv[index + 4] = argv[index];
+    intptr_t result = _wspawnv(_P_WAIT, home, child_argv);
+    free(child_argv);
+    if (result == -1) {
+        fputs("lantern-ocr: cannot start bundled Python\n", stderr);
+        return 1;
+    }
+    return (int)result;
+#else
     PyConfig config;
     PyConfig_InitPythonConfig(&config);
     config.isolated = 1;
@@ -154,4 +180,5 @@ int main(int argc, char **argv) {
 fail:
     PyConfig_Clear(&config);
     Py_ExitStatusException(status);
+#endif
 }

@@ -88,7 +88,7 @@ def platform_settings(platform: str) -> dict[str, str]:
         }
     return {
         "platform": "windows",
-        "arch": "x86_64",
+        "arch": "x64",
         "minimum_os_version": "10.0.17763",
         "python": "python/python.exe",
         "launcher": "bin/lantern-ocr.exe",
@@ -200,8 +200,6 @@ def compile_launcher(root: Path, settings: dict[str, str]) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     source = SCRIPT_DIR / "launcher" / "lantern_ocr.c"
     if os.name == "nt":
-        include = python_root / "include"
-        libs = python_root / "libs"
         run(
             [
                 "cl.exe",
@@ -209,18 +207,11 @@ def compile_launcher(root: Path, settings: dict[str, str]) -> None:
                 "/O2",
                 "/MT",
                 "/utf-8",
-                f"/I{include}",
                 str(source),
                 f"/link",
-                f"/LIBPATH:{libs}",
-                "python312.lib",
                 f"/OUT:{destination}",
             ]
         )
-        python_dll = python_root / "python312.dll"
-        if not python_dll.is_file():
-            raise RuntimeError(f"missing embedded Python DLL: {python_dll}")
-        shutil.copy2(python_dll, destination.parent / python_dll.name)
     else:
         run(
             [
