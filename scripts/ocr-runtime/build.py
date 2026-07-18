@@ -376,7 +376,11 @@ def installed_size(root: Path) -> int:
 def archive_runtime(root: Path, output: Path) -> None:
     tar_path = output.with_suffix("")
     with tarfile.open(tar_path, "w", format=tarfile.PAX_FORMAT) as bundle:
+        bundle.dereference = True
         bundle.add(root, arcname=PACKAGE_ROOT_NAME, recursive=True)
+    with tarfile.open(tar_path, "r:") as bundle:
+        if any(member.issym() or member.islnk() for member in bundle):
+            raise RuntimeError("runtime archive must not contain links")
     run(["zstd", "-19", "--threads=0", "--force", tar_path, "-o", output])
     tar_path.unlink()
 

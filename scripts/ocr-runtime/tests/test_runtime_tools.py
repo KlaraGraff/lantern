@@ -27,6 +27,30 @@ validate = load_module("ocr_runtime_validate", ROOT / "validate_artifacts.py")
 
 
 class RuntimeBuildTests(unittest.TestCase):
+    def test_archive_runtime_dereferences_links(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runtime = root / "runtime"
+            runtime.mkdir()
+            (runtime / "python3.12").write_bytes(b"python")
+            try:
+                (runtime / "python3").symlink_to("python3.12")
+            except OSError as error:
+                self.skipTest(f"symlinks unavailable: {error}")
+            output = root / "runtime.tar.zst"
+
+            def inspect_tar(command, **_kwargs):
+                tar_path = Path(command[-3])
+                with tarfile.open(tar_path, "r:") as bundle:
+                    members = {member.name: member for member in bundle}
+                    alias = members["lantern-ocr-runtime/python3"]
+                    self.assertTrue(alias.isfile())
+                    self.assertEqual(bundle.extractfile(alias).read(), b"python")
+                output.write_bytes(b"compressed")
+
+            with mock.patch.object(build, "run", side_effect=inspect_tar):
+                build.archive_runtime(runtime, output)
+
     def test_safe_extract_rejects_parent_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

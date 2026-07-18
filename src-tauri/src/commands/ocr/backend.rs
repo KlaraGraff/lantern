@@ -227,6 +227,9 @@ impl OcrBackend for OcrmypdfBackend {
             .env("PATH", runtime_path(&self.runtime_root))
             .env("TESSDATA_PREFIX", tessdata_dir(&self.runtime_root))
             .env("OMP_THREAD_LIMIT", "1")
+            .env("TMPDIR", request.staging_root())
+            .env("TMP", request.staging_root())
+            .env("TEMP", request.staging_root())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
