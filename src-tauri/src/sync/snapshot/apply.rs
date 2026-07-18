@@ -133,6 +133,11 @@ impl Snapshot {
                 "SYNC_SNAPSHOT_BOOK_SUMMARY_INVALID".to_string(),
             ));
         }
+        if self.v < 7 && !self.state.book_assets.is_empty() {
+            return Err(AppError::Other(
+                "SYNC_SNAPSHOT_BOOK_ASSET_INVALID".to_string(),
+            ));
+        }
         let snapshot_id = self
             .id
             .parse::<Ulid>()
@@ -155,6 +160,27 @@ impl Snapshot {
             if let Some(path) = book.source_file_path.as_deref() {
                 validation::validate_book_file_path(path)?;
             }
+        }
+        for (id, asset) in &self.state.book_assets {
+            validation::validate_book_asset_payload(&super::super::events::BookAssetPayload {
+                id: id.clone(),
+                book_id: asset.book_id.clone(),
+                role: asset.role.clone(),
+                format: asset.format.clone(),
+                relative_path: asset.relative_path.clone(),
+                content_sha256: asset.content_sha256.clone(),
+                byte_size: asset.byte_size,
+                source_sha256: asset.source_sha256.clone(),
+                pipeline: asset.pipeline.clone(),
+                pipeline_version: asset.pipeline_version.clone(),
+                language_profile: asset.language_profile.clone(),
+                quality_profile: asset.quality_profile.clone(),
+                page_count: asset.page_count,
+                supersedes_asset_id: asset.supersedes_asset_id.clone(),
+                created_at: asset.created_at,
+                updated_at: asset.updated_at,
+                updated_by_device: asset.updated_by_device.clone(),
+            })?;
         }
         for (id, note) in &self.state.notes {
             validation::validate_note_fields(
@@ -298,6 +324,14 @@ impl Snapshot {
                 continue;
             }
             upsert_book(tx, id, row)?;
+        }
+        for (id, row) in &self.state.book_assets {
+            if merge::is_tombstoned(tx, merge::entity::BOOK_ASSET, id)?
+                || merge::is_tombstoned(tx, merge::entity::BOOK, &row.book_id)?
+            {
+                continue;
+            }
+            insert_book_asset(tx, id, row)?;
         }
         for (id, row) in &self.state.highlights {
             if merge::is_tombstoned(tx, merge::entity::HIGHLIGHT, id)?
@@ -481,6 +515,48 @@ pub(super) fn upsert_book(tx: &Transaction, id: &str, r: &BookRow) -> AppResult<
             r.status, r.progress, r.current_cfi, r.created_at, r.updated_at, r.updated_by_device,
         ],
     )?;
+    Ok(())
+}
+
+fn insert_book_asset(tx: &Transaction, id: &str, row: &BookAssetRow) -> AppResult<()> {
+    let inserted = tx.execute(
+        "INSERT OR IGNORE INTO book_assets (
+             id, book_id, role, format, relative_path, content_sha256,
+             byte_size, source_sha256, pipeline, pipeline_version,
+             language_profile, quality_profile, page_count,
+             supersedes_asset_id, created_at, updated_at, updated_by_device
+         ) VALUES (
+             ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+             ?11, ?12, ?13, ?14, ?15, ?16, ?17
+         )",
+        params![
+            id,
+            row.book_id,
+            row.role,
+            row.format,
+            row.relative_path,
+            row.content_sha256,
+            row.byte_size,
+            row.source_sha256,
+            row.pipeline,
+            row.pipeline_version,
+            row.language_profile,
+            row.quality_profile,
+            row.page_count,
+            row.supersedes_asset_id,
+            row.created_at,
+            row.updated_at,
+            row.updated_by_device,
+        ],
+    )?;
+    if inserted > 0 {
+        tx.execute(
+            "INSERT INTO book_asset_local_state (
+                 asset_id, availability, verified_at, error_code, updated_at
+             ) VALUES (?1, 'remote_only', NULL, NULL, ?2)",
+            params![id, row.updated_at],
+        )?;
+    }
     Ok(())
 }
 
@@ -972,6 +1048,44 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     for row in rows {
         let (id, b) = row?;
         state.books.insert(id, b);
+    }
+    drop(stmt);
+
+    // Immutable OCR-derived assets are synced; their per-device availability
+    // is deliberately excluded and reconstructed as remote_only on apply.
+    let mut stmt = conn.prepare(
+        "SELECT id, book_id, role, format, relative_path, content_sha256,
+                byte_size, source_sha256, pipeline, pipeline_version,
+                language_profile, quality_profile, page_count,
+                supersedes_asset_id, created_at, updated_at, updated_by_device
+         FROM book_assets",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            BookAssetRow {
+                book_id: r.get(1)?,
+                role: r.get(2)?,
+                format: r.get(3)?,
+                relative_path: r.get(4)?,
+                content_sha256: r.get(5)?,
+                byte_size: r.get(6)?,
+                source_sha256: r.get(7)?,
+                pipeline: r.get(8)?,
+                pipeline_version: r.get(9)?,
+                language_profile: r.get(10)?,
+                quality_profile: r.get(11)?,
+                page_count: r.get(12)?,
+                supersedes_asset_id: r.get(13)?,
+                created_at: r.get(14)?,
+                updated_at: r.get(15)?,
+                updated_by_device: r.get(16)?,
+            },
+        ))
+    })?;
+    for row in rows {
+        let (id, asset) = row?;
+        state.book_assets.insert(id, asset);
     }
     drop(stmt);
 

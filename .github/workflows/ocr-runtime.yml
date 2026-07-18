@@ -108,6 +108,10 @@ jobs:
         shell: pwsh
         run: zstd --version
 
+      - name: Check Windows OCR process control
+        shell: pwsh
+        run: cargo check --manifest-path src-tauri/Cargo.toml --features ocr-pipeline
+
       - name: Build, relocate, and self-test
         shell: pwsh
         run: |

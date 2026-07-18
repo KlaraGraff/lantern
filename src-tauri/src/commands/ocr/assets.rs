@@ -228,19 +228,6 @@ pub(crate) fn set_local_state(
     get_local_state(conn, asset_id)?.ok_or_else(|| asset_error("OCR_ASSET_LOCAL_STATE_NOT_FOUND"))
 }
 
-pub(crate) fn delete_local_asset(conn: &mut Connection, asset_id: &str) -> AppResult<()> {
-    let tx = conn.transaction()?;
-    tx.execute(
-        "DELETE FROM book_asset_local_state WHERE asset_id = ?1",
-        params![asset_id],
-    )?;
-    if tx.execute("DELETE FROM book_assets WHERE id = ?1", params![asset_id])? == 0 {
-        return Err(asset_error("OCR_ASSET_NOT_FOUND"));
-    }
-    tx.commit()?;
-    Ok(())
-}
-
 pub(crate) fn absolute_asset_path(data_dir: &Path, asset: &BookAsset) -> AppResult<PathBuf> {
     crate::sync::validation::validate_book_file_path(&asset.relative_path)?;
     Ok(data_dir.join(&asset.relative_path))

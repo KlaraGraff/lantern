@@ -45,6 +45,28 @@ fn import(id: &str) -> EventBody {
     })
 }
 
+fn book_asset(id: &str, book_id: &str) -> BookAssetPayload {
+    BookAssetPayload {
+        id: id.into(),
+        book_id: book_id.into(),
+        role: "ocr_pdf".into(),
+        format: "pdf".into(),
+        relative_path: format!("books/{book_id}.ocr.{id}.pdf"),
+        content_sha256: "aa".repeat(32),
+        byte_size: 4,
+        source_sha256: "bb".repeat(32),
+        pipeline: "ocrmypdf".into(),
+        pipeline_version: Some("17.8.1".into()),
+        language_profile: "chi_sim+eng".into(),
+        quality_profile: "fast".into(),
+        page_count: 1,
+        supersedes_asset_id: None,
+        created_at: 1_714_770_000_000,
+        updated_at: 1_714_770_000_000,
+        updated_by_device: "dev-A".into(),
+    }
+}
+
 fn apply_to(conn: &mut Connection, events: &[Event]) {
     let tx = conn.transaction().unwrap();
     for e in events {
@@ -473,6 +495,77 @@ fn from_legacy_db_then_apply_peer_round_trips() {
 }
 
 #[test]
+fn book_assets_round_trip_without_syncing_local_availability() {
+    let mut source = open_db();
+    apply_to(
+        &mut source,
+        &[
+            ev(1_714_770_000_000, "dev-A", import("b1")),
+            ev(
+                1_714_770_000_001,
+                "dev-A",
+                EventBody::BookAssetPublish(book_asset("asset-1", "b1")),
+            ),
+        ],
+    );
+    source
+        .execute(
+            "UPDATE book_asset_local_state
+             SET availability = 'available_verified', verified_at = 1714770000002
+             WHERE asset_id = 'asset-1'",
+            [],
+        )
+        .unwrap();
+
+    let snapshot = Snapshot::from_legacy_db(&source, "dev-A").unwrap();
+    assert!(snapshot.state.book_assets.contains_key("asset-1"));
+    let encoded = serde_json::to_string(&snapshot).unwrap();
+    assert!(!encoded.contains("available_verified"));
+
+    let mut destination = open_db();
+    let tx = destination.transaction().unwrap();
+    snapshot.apply_peer(&tx, "dev-A").unwrap();
+    tx.commit().unwrap();
+    let availability: String = destination
+        .query_row(
+            "SELECT availability FROM book_asset_local_state WHERE asset_id = 'asset-1'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(availability, "remote_only");
+}
+
+#[test]
+fn book_asset_delete_tombstone_survives_snapshot_compaction() {
+    let snapshot = Snapshot::from_events(
+        "dev-A",
+        &[
+            ev(1_714_770_000_000, "dev-A", import("b1")),
+            ev(
+                1_714_770_000_001,
+                "dev-A",
+                EventBody::BookAssetPublish(book_asset("asset-1", "b1")),
+            ),
+            ev(
+                1_714_770_000_002,
+                "dev-A",
+                EventBody::BookAssetDelete {
+                    id: "asset-1".into(),
+                },
+            ),
+        ],
+    )
+    .unwrap();
+    assert!(snapshot.state.book_assets.is_empty());
+    assert!(snapshot
+        .state
+        .tombstones
+        .get("book_asset")
+        .is_some_and(|rows| rows.iter().any(|row| row.id == "asset-1")));
+}
+
+#[test]
 fn from_events_captures_db_state() {
     let events = vec![
         ev(1000, "dev-A", import("b1")),
@@ -856,7 +949,10 @@ fn apply_peer_accepts_native_and_text_import_book_paths() {
 
     let mut local = open_db();
     let tx = local.transaction().unwrap();
-    assert_eq!(snap.apply_peer(&tx, "dev-A").unwrap(), ApplyOutcome::Applied);
+    assert_eq!(
+        snap.apply_peer(&tx, "dev-A").unwrap(),
+        ApplyOutcome::Applied
+    );
     tx.commit().unwrap();
 
     let n_books: i64 = local

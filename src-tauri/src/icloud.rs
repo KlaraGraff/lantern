@@ -76,6 +76,37 @@ pub fn trigger_download_file(path: &Path) {
 #[cfg(not(target_os = "macos"))]
 pub fn trigger_download_file(_path: &Path) {}
 
+/// Release the local bytes of an iCloud-backed file without deleting the
+/// shared item. Returns `false` when the path is not an evictable ubiquitous
+/// item or the platform does not support iCloud Drive.
+#[cfg(target_os = "macos")]
+pub fn is_ubiquitous_file(path: &Path) -> bool {
+    use objc2_foundation::NSURL;
+    let fm = NSFileManager::defaultManager();
+    let path_str = NSString::from_str(&path.to_string_lossy());
+    let url = NSURL::fileURLWithPath(&path_str);
+    fm.isUbiquitousItemAtURL(&url)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn is_ubiquitous_file(_path: &Path) -> bool {
+    false
+}
+
+#[cfg(target_os = "macos")]
+pub fn evict_downloaded_file(path: &Path) -> bool {
+    use objc2_foundation::NSURL;
+    let fm = NSFileManager::defaultManager();
+    let path_str = NSString::from_str(&path.to_string_lossy());
+    let url = NSURL::fileURLWithPath(&path_str);
+    fm.evictUbiquitousItemAtURL_error(&url).is_ok()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn evict_downloaded_file(_path: &Path) -> bool {
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

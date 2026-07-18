@@ -52,7 +52,10 @@ export default function OcrSettings() {
   const assets = useOcrAssetsOverview();
   const downloadButtonRef = useRef<HTMLButtonElement>(null);
   const [copied, setCopied] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<OcrAssetItem | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    item: OcrAssetItem;
+    allDevices: boolean;
+  } | null>(null);
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const packageError = packageState.status?.errorCode ?? packageState.errorCode;
   const progress = useMemo(() => {
@@ -214,7 +217,7 @@ export default function OcrSettings() {
                 title={t("ocr.storage.deleteLocal")}
                 aria-label={t("ocr.storage.deleteLocalBook", { title: item.title })}
                 disabled={assets.deletingAssetId === item.assetId}
-                onClick={() => setPendingDelete(item)}
+                onClick={() => setPendingDelete({ item, allDevices: false })}
                 className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-danger-text disabled:opacity-50"
               >
                 {assets.deletingAssetId === item.assetId
@@ -223,10 +226,11 @@ export default function OcrSettings() {
               </button>
               <button
                 type="button"
-                title={t("ocr.storage.deleteAllUnavailable")}
-                aria-label={t("ocr.storage.deleteAll")}
-                disabled
-                className="flex size-8 items-center justify-center rounded-md text-text-muted opacity-35"
+                title={t("ocr.storage.deleteAll")}
+                aria-label={t("ocr.storage.deleteAllBook", { title: item.title })}
+                disabled={assets.deletingAssetId === item.assetId}
+                onClick={() => setPendingDelete({ item, allDevices: true })}
+                className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-danger-text disabled:opacity-50"
               >
                 <HardDrive size={14} />
               </button>
@@ -243,13 +247,18 @@ export default function OcrSettings() {
 
       {pendingDelete && (
         <ConfirmDialog
-          title={t("ocr.storage.deleteLocalTitle")}
-          description={t("ocr.storage.deleteLocalDescription", { title: pendingDelete.title })}
-          primaryLabel={t("ocr.storage.deleteLocal")}
+          title={t(pendingDelete.allDevices ? "ocr.storage.deleteAllTitle" : "ocr.storage.deleteLocalTitle")}
+          description={t(
+            pendingDelete.allDevices
+              ? "ocr.storage.deleteAllDescription"
+              : "ocr.storage.deleteLocalDescription",
+            { title: pendingDelete.item.title },
+          )}
+          primaryLabel={t(pendingDelete.allDevices ? "ocr.storage.deleteAll" : "ocr.storage.deleteLocal")}
           onPrimary={() => {
-            const item = pendingDelete;
+            const { item, allDevices } = pendingDelete;
             setPendingDelete(null);
-            void assets.deleteAsset(item.assetId, false).catch(() => {});
+            void assets.deleteAsset(item.assetId, allDevices).catch(() => {});
           }}
           secondaryLabel={t("common.cancel")}
           onSecondary={() => setPendingDelete(null)}

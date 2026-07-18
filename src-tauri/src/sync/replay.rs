@@ -30,11 +30,13 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use rusqlite::{params, Connection};
+use sha2::{Digest, Sha256};
 use tauri::Emitter;
 
 use crate::db::Db;
@@ -266,10 +268,21 @@ impl ReplayEngine {
             }
         }
 
-        if events_applied > 0 || snapshots_applied > 0 || outbox_flushed > 0 || covers_ingested > 0
+        let assets_updated = reconcile_book_assets(&self.shared_dir, db);
+        if assets_updated > 0 {
+            if let Some(handle) = &self.app_handle {
+                let _ = handle.emit("book-assets-changed", assets_updated);
+            }
+        }
+
+        if events_applied > 0
+            || snapshots_applied > 0
+            || outbox_flushed > 0
+            || covers_ingested > 0
+            || assets_updated > 0
         {
             ::log::info!(
-                "sync: batch applied events={events_applied} snapshots={snapshots_applied} outbox_flushed={outbox_flushed} elapsed_ms={}",
+                "sync: batch applied events={events_applied} snapshots={snapshots_applied} outbox_flushed={outbox_flushed} assets_updated={assets_updated} elapsed_ms={}",
                 started.elapsed().as_millis(),
             );
         }
@@ -855,6 +868,159 @@ fn ingest_peer_covers(shared_dir: &Path, db: &Db) -> usize {
     ingested
 }
 
+#[derive(Debug)]
+struct AssetCandidate {
+    id: String,
+    relative_path: String,
+    content_sha256: String,
+    byte_size: u64,
+    availability: Option<String>,
+    verified_at: Option<i64>,
+    error_code: Option<String>,
+}
+
+fn reconcile_book_assets(shared_dir: &Path, db: &Db) -> usize {
+    let candidates = {
+        let Ok(conn) = db.read_conn.lock() else {
+            return 0;
+        };
+        let mut statement = match conn.prepare(
+            "SELECT a.id, a.relative_path, a.content_sha256, a.byte_size,
+                    s.availability, s.verified_at, s.error_code
+             FROM book_assets a
+             LEFT JOIN book_asset_local_state s ON s.asset_id = a.id",
+        ) {
+            Ok(statement) => statement,
+            Err(_) => return 0,
+        };
+        let rows = match statement.query_map([], |row| {
+            let byte_size = row.get::<_, i64>(3)?;
+            Ok(AssetCandidate {
+                id: row.get(0)?,
+                relative_path: row.get(1)?,
+                content_sha256: row.get(2)?,
+                byte_size: u64::try_from(byte_size).unwrap_or(u64::MAX),
+                availability: row.get(4)?,
+                verified_at: row.get(5)?,
+                error_code: row.get(6)?,
+            })
+        }) {
+            Ok(rows) => rows,
+            Err(_) => return 0,
+        };
+        match rows.collect::<Result<Vec<_>, _>>() {
+            Ok(rows) => rows,
+            Err(_) => return 0,
+        }
+    };
+
+    let mut changes = Vec::new();
+    for asset in candidates {
+        if asset.error_code.as_deref() == Some("OCR_ASSET_LOCAL_RELEASED") {
+            continue;
+        }
+        let Ok(path) = super::validation::resolve_blob_path(shared_dir, &asset.relative_path)
+        else {
+            continue;
+        };
+        let desired = match crate::icloud::file_availability(&path) {
+            crate::icloud::FileAvailability::ICloudPlaceholder => {
+                crate::icloud::trigger_download_file(&path);
+                ("downloading", None, None)
+            }
+            crate::icloud::FileAvailability::Missing => ("remote_only", None, None),
+            crate::icloud::FileAvailability::Available => {
+                let metadata = match fs::symlink_metadata(&path) {
+                    Ok(metadata) if !metadata.file_type().is_symlink() && metadata.is_file() => {
+                        metadata
+                    }
+                    _ => {
+                        changes.push((
+                            asset.id,
+                            "corrupt",
+                            None,
+                            Some("SYNC_BOOK_ASSET_BLOB_INVALID"),
+                        ));
+                        continue;
+                    }
+                };
+                if metadata.len() != asset.byte_size {
+                    ("corrupt", None, Some("SYNC_BOOK_ASSET_SIZE_MISMATCH"))
+                } else if asset.availability.as_deref() == Some("available_verified")
+                    && asset.verified_at.is_some()
+                {
+                    continue;
+                } else {
+                    match file_sha256(&path) {
+                        Ok(actual) if actual.eq_ignore_ascii_case(&asset.content_sha256) => (
+                            "available_verified",
+                            Some(chrono::Utc::now().timestamp_millis()),
+                            None,
+                        ),
+                        Ok(_) => ("corrupt", None, Some("SYNC_BOOK_ASSET_HASH_MISMATCH")),
+                        Err(_) => ("corrupt", None, Some("SYNC_BOOK_ASSET_READ_FAILED")),
+                    }
+                }
+            }
+        };
+        if asset.availability.as_deref() == Some(desired.0)
+            && asset.verified_at == desired.1
+            && asset.error_code.as_deref() == desired.2
+        {
+            continue;
+        }
+        changes.push((asset.id, desired.0, desired.1, desired.2));
+    }
+
+    if changes.is_empty() {
+        return 0;
+    }
+    let Ok(mut conn) = db.conn.lock() else {
+        return 0;
+    };
+    let Ok(tx) = conn.transaction() else {
+        return 0;
+    };
+    let now = chrono::Utc::now().timestamp_millis();
+    let mut updated = 0;
+    for (id, availability, verified_at, error_code) in changes {
+        if tx
+            .execute(
+                "INSERT INTO book_asset_local_state (
+                     asset_id, availability, verified_at, error_code, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(asset_id) DO UPDATE SET
+                     availability = excluded.availability,
+                     verified_at = excluded.verified_at,
+                     error_code = excluded.error_code,
+                     updated_at = excluded.updated_at",
+                params![id, availability, verified_at, error_code, now],
+            )
+            .is_ok()
+        {
+            updated += 1;
+        }
+    }
+    if tx.commit().is_err() {
+        return 0;
+    }
+    updated
+}
+
+fn file_sha256(path: &Path) -> std::io::Result<String> {
+    let mut file = fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 128 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -950,6 +1116,39 @@ mod tests {
             genre: None,
             pages: Some(100),
         })
+    }
+
+    fn asset_payload(book_id: &str, asset_id: &str, bytes: &[u8]) -> BookAssetPayload {
+        BookAssetPayload {
+            id: asset_id.into(),
+            book_id: book_id.into(),
+            role: "ocr_pdf".into(),
+            format: "pdf".into(),
+            relative_path: format!("books/{book_id}.ocr.{asset_id}.pdf"),
+            content_sha256: format!("{:x}", Sha256::digest(bytes)),
+            byte_size: bytes.len() as i64,
+            source_sha256: "cd".repeat(32),
+            pipeline: "ocrmypdf".into(),
+            pipeline_version: Some("17.8.1".into()),
+            language_profile: "chi_sim+eng".into(),
+            quality_profile: "fast".into(),
+            page_count: 1,
+            supersedes_asset_id: None,
+            created_at: 1_714_770_000_000,
+            updated_at: 1_714_770_000_000,
+            updated_by_device: "peer-A".into(),
+        }
+    }
+
+    fn asset_state(env: &Env, asset_id: &str) -> (String, Option<String>) {
+        env.conn()
+            .query_row(
+                "SELECT availability, error_code
+                 FROM book_asset_local_state WHERE asset_id = ?1",
+                params![asset_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap()
     }
 
     // -----------------------------------------------------------------------
@@ -1701,6 +1900,143 @@ mod tests {
         assert!(
             blob.is_none(),
             "no bytes should be written from a placeholder"
+        );
+    }
+
+    #[test]
+    fn asset_event_before_blob_stays_remote_until_hash_verified() {
+        let env = setup("self");
+        let bytes = b"searchable pdf";
+        let payload = asset_payload("b1", "asset-1", bytes);
+        write_peer_log(
+            &env.shared,
+            "peer-A",
+            &[
+                ev(1_714_770_000_000, "peer-A", import("b1")),
+                ev(
+                    1_714_770_000_001,
+                    "peer-A",
+                    EventBody::BookAssetPublish(payload.clone()),
+                ),
+            ],
+        );
+
+        env.engine.tick(&env.db).unwrap();
+        assert_eq!(asset_state(&env, "asset-1"), ("remote_only".into(), None));
+
+        let path = env.shared.join(&payload.relative_path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+        env.engine.tick(&env.db).unwrap();
+        assert_eq!(
+            asset_state(&env, "asset-1"),
+            ("available_verified".into(), None)
+        );
+    }
+
+    #[test]
+    fn asset_blob_before_event_is_verified_when_metadata_arrives() {
+        let env = setup("self");
+        let bytes = b"searchable pdf";
+        let payload = asset_payload("b1", "asset-1", bytes);
+        let path = env.shared.join(&payload.relative_path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+        write_peer_log(
+            &env.shared,
+            "peer-A",
+            &[
+                ev(1_714_770_000_000, "peer-A", import("b1")),
+                ev(
+                    1_714_770_000_001,
+                    "peer-A",
+                    EventBody::BookAssetPublish(payload),
+                ),
+            ],
+        );
+
+        env.engine.tick(&env.db).unwrap();
+        assert_eq!(
+            asset_state(&env, "asset-1"),
+            ("available_verified".into(), None)
+        );
+    }
+
+    #[test]
+    fn asset_placeholder_downloads_and_bad_hash_never_activates() {
+        let env = setup("self");
+        let bytes = b"expected bytes";
+        let payload = asset_payload("b1", "asset-1", bytes);
+        let path = env.shared.join(&payload.relative_path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let placeholder = crate::icloud::icloud_placeholder_path(&path).unwrap();
+        fs::write(&placeholder, b"placeholder").unwrap();
+        write_peer_log(
+            &env.shared,
+            "peer-A",
+            &[
+                ev(1_714_770_000_000, "peer-A", import("b1")),
+                ev(
+                    1_714_770_000_001,
+                    "peer-A",
+                    EventBody::BookAssetPublish(payload),
+                ),
+            ],
+        );
+
+        env.engine.tick(&env.db).unwrap();
+        assert_eq!(asset_state(&env, "asset-1"), ("downloading".into(), None));
+
+        fs::remove_file(placeholder).unwrap();
+        fs::write(path, b"unexpected!!!!").unwrap();
+        env.engine.tick(&env.db).unwrap();
+        assert_eq!(
+            asset_state(&env, "asset-1"),
+            (
+                "corrupt".into(),
+                Some("SYNC_BOOK_ASSET_HASH_MISMATCH".into())
+            )
+        );
+    }
+
+    #[test]
+    fn locally_released_asset_is_not_immediately_downloaded_again() {
+        let env = setup("self");
+        let bytes = b"searchable pdf";
+        let payload = asset_payload("b1", "asset-1", bytes);
+        let path = env.shared.join(&payload.relative_path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let placeholder = crate::icloud::icloud_placeholder_path(&path).unwrap();
+        fs::write(&placeholder, b"placeholder").unwrap();
+        write_peer_log(
+            &env.shared,
+            "peer-A",
+            &[
+                ev(1_714_770_000_000, "peer-A", import("b1")),
+                ev(
+                    1_714_770_000_001,
+                    "peer-A",
+                    EventBody::BookAssetPublish(payload),
+                ),
+            ],
+        );
+        env.engine.tick(&env.db).unwrap();
+        env.conn()
+            .execute(
+                "UPDATE book_asset_local_state
+                 SET availability = 'remote_only', error_code = 'OCR_ASSET_LOCAL_RELEASED'
+                 WHERE asset_id = 'asset-1'",
+                [],
+            )
+            .unwrap();
+
+        env.engine.tick(&env.db).unwrap();
+        assert_eq!(
+            asset_state(&env, "asset-1"),
+            (
+                "remote_only".into(),
+                Some("OCR_ASSET_LOCAL_RELEASED".into())
+            )
         );
     }
 }

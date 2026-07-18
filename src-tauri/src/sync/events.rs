@@ -19,10 +19,11 @@ use sha2::{Digest, Sha256};
 /// Schema version written by this client. Version 2 introduces learning notes
 /// and whole-book word-marker rules; version 3 adds per-location exceptions;
 /// version 4 adds synced book summaries; version 5 preserves summary edits;
-/// version 6 adds LWW replacement of an existing assistant message.
+/// version 6 adds LWW replacement of an existing assistant message; version 7
+/// adds immutable OCR-derived book assets and their tombstones.
 /// Readers retain old-version support while older clients reject newer
 /// envelopes instead of advancing their watermark past data they cannot apply.
-pub const EVENT_SCHEMA_VERSION: u32 = 6;
+pub const EVENT_SCHEMA_VERSION: u32 = 7;
 pub const MIN_SUPPORTED_EVENT_SCHEMA_VERSION: u32 = 1;
 
 pub fn is_supported_event_schema_version(version: u32) -> bool {
@@ -96,6 +97,10 @@ pub enum EventBody {
     BookImport(BookImportPayload),
     #[serde(rename = "book.delete")]
     BookDelete { id: String },
+    #[serde(rename = "book.asset.publish")]
+    BookAssetPublish(BookAssetPayload),
+    #[serde(rename = "book.asset.delete")]
+    BookAssetDelete { id: String },
     #[serde(rename = "book.progress.set")]
     BookProgressSet {
         book: String,
@@ -236,6 +241,27 @@ pub struct BookImportPayload {
     pub conversion_version: i32,
     pub genre: Option<String>,
     pub pages: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookAssetPayload {
+    pub id: String,
+    pub book_id: String,
+    pub role: String,
+    pub format: String,
+    pub relative_path: String,
+    pub content_sha256: String,
+    pub byte_size: i64,
+    pub source_sha256: String,
+    pub pipeline: String,
+    pub pipeline_version: Option<String>,
+    pub language_profile: String,
+    pub quality_profile: String,
+    pub page_count: i32,
+    pub supersedes_asset_id: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub updated_by_device: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -421,6 +447,28 @@ mod tests {
             pages: Some(1225),
         })));
         roundtrip(&mk(EventBody::BookDelete { id: "b1".into() }));
+        roundtrip(&mk(EventBody::BookAssetPublish(BookAssetPayload {
+            id: "asset-1".into(),
+            book_id: "b1".into(),
+            role: "ocr_pdf".into(),
+            format: "pdf".into(),
+            relative_path: "books/b1.ocr.asset-1.pdf".into(),
+            content_sha256: "ab".repeat(32),
+            byte_size: 42,
+            source_sha256: "cd".repeat(32),
+            pipeline: "ocrmypdf".into(),
+            pipeline_version: Some("17.8.1".into()),
+            language_profile: "chi_sim+eng".into(),
+            quality_profile: "fast".into(),
+            page_count: 3,
+            supersedes_asset_id: None,
+            created_at: 1_714_770_000_000,
+            updated_at: 1_714_770_000_000,
+            updated_by_device: "11111111-2222-3333-4444-555555555555".into(),
+        })));
+        roundtrip(&mk(EventBody::BookAssetDelete {
+            id: "asset-1".into(),
+        }));
         roundtrip(&mk(EventBody::BookProgressSet {
             book: "b1".into(),
             progress: 42,

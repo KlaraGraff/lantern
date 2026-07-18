@@ -30,9 +30,10 @@ use serde_json::Value;
 use crate::error::{AppError, AppResult};
 
 use super::events::{
-    word_mark_exception_id, BookImportPayload, BookSummaryPayload, BookmarkPayload,
-    ChatMessagePayload, Event, EventBody, HighlightPayload, LookupOccurrenceMarkPayload,
-    NotePayload, VocabPayload, WordMarkExceptionPayload, WordMarkPayload,
+    word_mark_exception_id, BookAssetPayload, BookImportPayload, BookSummaryPayload,
+    BookmarkPayload, ChatMessagePayload, Event, EventBody, HighlightPayload,
+    LookupOccurrenceMarkPayload, NotePayload, VocabPayload, WordMarkExceptionPayload,
+    WordMarkPayload,
 };
 
 /// Fold `event` into `tx`. Idempotent — applying the same event twice is a
@@ -42,6 +43,8 @@ pub fn apply_event(tx: &Transaction, event: &Event) -> AppResult<()> {
     match &event.body {
         EventBody::BookImport(p) => apply_book_import(tx, event, p),
         EventBody::BookDelete { id } => apply_book_delete(tx, event, id),
+        EventBody::BookAssetPublish(p) => apply_book_asset_publish(tx, event, p),
+        EventBody::BookAssetDelete { id } => apply_book_asset_delete(tx, event, id),
         EventBody::BookProgressSet {
             book,
             progress,
@@ -144,6 +147,7 @@ pub fn apply_event(tx: &Transaction, event: &Event) -> AppResult<()> {
 /// `_tombstones.entity` and inside snapshots, so don't rename casually.
 pub mod entity {
     pub const BOOK: &str = "book";
+    pub const BOOK_ASSET: &str = "book_asset";
     pub const HIGHLIGHT: &str = "highlight";
     pub const BOOKMARK: &str = "bookmark";
     pub const VOCAB: &str = "vocab";
@@ -225,6 +229,7 @@ fn parent_tombstoned(tx: &Transaction, parents: &[(&str, &str)]) -> AppResult<bo
 pub fn cascade_delete(tx: &Transaction, entity: &str, id: &str, ts: i64) -> AppResult<()> {
     match entity {
         entity::BOOK => cascade_delete_book(tx, id, ts),
+        entity::BOOK_ASSET => cascade_delete_book_asset(tx, id),
         entity::COLLECTION => cascade_delete_collection(tx, id),
         entity::CHAT => cascade_delete_chat(tx, id),
         entity::COLLECTION_BOOK => cascade_delete_collection_book(tx, id),
@@ -299,6 +304,23 @@ fn cascade_delete_book(tx: &Transaction, id: &str, ts: i64) -> AppResult<()> {
     // docs/impls/1-grounded-book-chat-overview.md D2), so they must never be
     // emitted as sync events or snapshots. They still need local cleanup here
     // because this is shared by direct deletes and replayed book deletes.
+    let asset_ids: Vec<String> = {
+        let mut statement = tx.prepare("SELECT id FROM book_assets WHERE book_id = ?1")?;
+        let ids = statement
+            .query_map(params![id], |row| row.get::<_, String>(0))?
+            .collect::<Result<_, _>>()?;
+        ids
+    };
+    for asset_id in &asset_ids {
+        insert_tombstone(tx, entity::BOOK_ASSET, asset_id, ts)?;
+    }
+    tx.execute(
+        "DELETE FROM book_asset_local_state
+         WHERE asset_id IN (SELECT id FROM book_assets WHERE book_id = ?1)",
+        params![id],
+    )?;
+    tx.execute("DELETE FROM book_assets WHERE book_id = ?1", params![id])?;
+    tx.execute("DELETE FROM ocr_jobs WHERE book_id = ?1", params![id])?;
     tx.execute(
         "DELETE FROM book_chunks_fts WHERE book_id = ?1",
         params![id],
@@ -373,6 +395,15 @@ fn cascade_delete_book(tx: &Transaction, id: &str, ts: i64) -> AppResult<()> {
     }
     tx.execute("DELETE FROM chats WHERE book_id = ?1", params![id])?;
     tx.execute("DELETE FROM books WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+fn cascade_delete_book_asset(tx: &Transaction, id: &str) -> AppResult<()> {
+    tx.execute(
+        "DELETE FROM book_asset_local_state WHERE asset_id = ?1",
+        params![id],
+    )?;
+    tx.execute("DELETE FROM book_assets WHERE id = ?1", params![id])?;
     Ok(())
 }
 
@@ -452,6 +483,62 @@ fn apply_book_delete(tx: &Transaction, event: &Event, id: &str) -> AppResult<()>
     cascade_delete(tx, entity::BOOK, id, event.ts)?;
     insert_tombstone(tx, entity::BOOK, id, event.ts)?;
     Ok(())
+}
+
+fn apply_book_asset_publish(
+    tx: &Transaction,
+    event: &Event,
+    payload: &BookAssetPayload,
+) -> AppResult<()> {
+    if is_tombstoned(tx, entity::BOOK_ASSET, &payload.id)?
+        || parent_tombstoned(tx, &[(entity::BOOK, &payload.book_id)])?
+    {
+        return Ok(());
+    }
+    let inserted = tx.execute(
+        "INSERT OR IGNORE INTO book_assets (
+             id, book_id, role, format, relative_path, content_sha256,
+             byte_size, source_sha256, pipeline, pipeline_version,
+             language_profile, quality_profile, page_count,
+             supersedes_asset_id, created_at, updated_at, updated_by_device
+         ) VALUES (
+             ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
+             ?11, ?12, ?13, ?14, ?15, ?16, ?17
+         )",
+        params![
+            payload.id,
+            payload.book_id,
+            payload.role,
+            payload.format,
+            payload.relative_path,
+            payload.content_sha256,
+            payload.byte_size,
+            payload.source_sha256,
+            payload.pipeline,
+            payload.pipeline_version,
+            payload.language_profile,
+            payload.quality_profile,
+            payload.page_count,
+            payload.supersedes_asset_id,
+            payload.created_at,
+            payload.updated_at,
+            payload.updated_by_device,
+        ],
+    )?;
+    if inserted > 0 {
+        tx.execute(
+            "INSERT INTO book_asset_local_state (
+                 asset_id, availability, verified_at, error_code, updated_at
+             ) VALUES (?1, 'remote_only', NULL, NULL, ?2)",
+            params![payload.id, event.ts],
+        )?;
+    }
+    Ok(())
+}
+
+fn apply_book_asset_delete(tx: &Transaction, event: &Event, id: &str) -> AppResult<()> {
+    cascade_delete(tx, entity::BOOK_ASSET, id, event.ts)?;
+    insert_tombstone(tx, entity::BOOK_ASSET, id, event.ts)
 }
 
 fn apply_book_progress(
@@ -1465,6 +1552,28 @@ mod tests {
         conn.execute_batch(
             "INSERT INTO books (id, title, author, file_path, status, progress, created_at, updated_at)
                  VALUES ('b1','T','A','books/test.epub','reading',42,1700000000000,1700000000000);
+             INSERT INTO book_assets (
+                 id, book_id, role, format, relative_path, content_sha256,
+                 byte_size, source_sha256, pipeline, language_profile,
+                 quality_profile, page_count, created_at, updated_at,
+                 updated_by_device
+             ) VALUES (
+                 'asset-1','b1','ocr_pdf','pdf','books/b1.ocr.asset-1.pdf',
+                 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',4,
+                 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                 'ocrmypdf','chi_sim+eng','fast',1,1700000000000,1700000000000,'dev-A'
+             );
+             INSERT INTO book_asset_local_state
+                 (asset_id, availability, verified_at, error_code, updated_at)
+                 VALUES ('asset-1','available_verified',1700000000000,NULL,1700000000000);
+             INSERT INTO ocr_jobs (
+                 id, book_id, source_sha256, state, conversion_version,
+                 result_asset_id, created_at, updated_at
+             ) VALUES (
+                 'job-1','b1',
+                 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                 'ready',1,'asset-1',1700000000000,1700000000000
+             );
              INSERT INTO collections (id, name, sort_order, created_at, updated_at)
                  VALUES ('c1','Fav',0,1700000000000,1700000000000);
              INSERT INTO collection_books (collection_id, book_id, created_at, updated_at)
@@ -1510,9 +1619,22 @@ mod tests {
         }
 
         let books: i64 = conn
-            .query_row("SELECT COUNT(*) FROM books WHERE id = 'b1'", [], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM books WHERE id = 'b1'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(books, 0, "the book row itself must be deleted");
+        let asset_tombstone: bool = conn
+            .query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM _tombstones
+                     WHERE entity = 'book_asset' AND id = 'asset-1'
+                 )",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(asset_tombstone, "book delete must tombstone derived assets");
 
         let tables: Vec<String> = {
             let mut stmt = conn
@@ -1530,7 +1652,9 @@ mod tests {
             }
             let has_book_id: i64 = conn
                 .query_row(
-                    &format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = 'book_id'"),
+                    &format!(
+                        "SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = 'book_id'"
+                    ),
                     [],
                     |r| r.get(0),
                 )
@@ -1574,6 +1698,139 @@ mod tests {
             genre: None,
             pages: Some(100),
         })
+    }
+
+    fn book_asset(id: &str, book_id: &str) -> BookAssetPayload {
+        BookAssetPayload {
+            id: id.into(),
+            book_id: book_id.into(),
+            role: "ocr_pdf".into(),
+            format: "pdf".into(),
+            relative_path: format!("books/{book_id}.ocr.{id}.pdf"),
+            content_sha256: "aa".repeat(32),
+            byte_size: 4,
+            source_sha256: "bb".repeat(32),
+            pipeline: "ocrmypdf".into(),
+            pipeline_version: Some("17.8.1".into()),
+            language_profile: "chi_sim+eng".into(),
+            quality_profile: "fast".into(),
+            page_count: 1,
+            supersedes_asset_id: None,
+            created_at: 1_714_770_000_000,
+            updated_at: 1_714_770_000_000,
+            updated_by_device: "dev-A".into(),
+        }
+    }
+
+    #[test]
+    fn book_asset_publish_delete_and_tombstone_are_idempotent() {
+        let mut conn = open_db();
+        let publish = ev(
+            1_714_770_000_001,
+            "dev-A",
+            EventBody::BookAssetPublish(book_asset("asset-1", "b1")),
+        );
+        apply_all(
+            &mut conn,
+            &[
+                ev(1_714_770_000_000, "dev-A", import_book("b1")),
+                publish.clone(),
+                publish.clone(),
+            ],
+        );
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM book_assets", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(rows, 1);
+        let availability: String = conn
+            .query_row(
+                "SELECT availability FROM book_asset_local_state WHERE asset_id = 'asset-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(availability, "remote_only");
+
+        apply_all(
+            &mut conn,
+            &[
+                ev(
+                    1_714_770_000_002,
+                    "dev-A",
+                    EventBody::BookAssetDelete {
+                        id: "asset-1".into(),
+                    },
+                ),
+                publish,
+            ],
+        );
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM book_assets", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(rows, 0, "a delayed publish must not revive a deleted asset");
+        let tombstoned: bool = conn
+            .query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM _tombstones
+                     WHERE entity = 'book_asset' AND id = 'asset-1'
+                 )",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(tombstoned);
+    }
+
+    #[test]
+    fn book_delete_blocks_delayed_asset_publish() {
+        let mut conn = open_db();
+        apply_all(
+            &mut conn,
+            &[
+                ev(1_714_770_000_000, "dev-A", import_book("b1")),
+                ev(
+                    1_714_770_000_001,
+                    "dev-A",
+                    EventBody::BookDelete { id: "b1".into() },
+                ),
+                ev(
+                    1_714_770_000_002,
+                    "dev-A",
+                    EventBody::BookAssetPublish(book_asset("asset-late", "b1")),
+                ),
+            ],
+        );
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM book_assets", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(rows, 0);
+    }
+
+    #[test]
+    fn two_devices_can_publish_distinct_assets_for_the_same_book() {
+        let mut conn = open_db();
+        let mut peer_asset = book_asset("asset-b", "b1");
+        peer_asset.updated_by_device = "dev-B".into();
+        apply_all(
+            &mut conn,
+            &[
+                ev(1_714_770_000_000, "dev-A", import_book("b1")),
+                ev(
+                    1_714_770_000_001,
+                    "dev-A",
+                    EventBody::BookAssetPublish(book_asset("asset-a", "b1")),
+                ),
+                ev(
+                    1_714_770_000_002,
+                    "dev-B",
+                    EventBody::BookAssetPublish(peer_asset),
+                ),
+            ],
+        );
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM book_assets", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(rows, 2);
     }
 
     fn book_summary(content: &str, updated_at: i64) -> EventBody {

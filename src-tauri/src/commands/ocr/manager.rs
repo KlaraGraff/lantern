@@ -12,6 +12,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::ai::grounding::index::schedule_index;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
+use crate::sync::events::EventBody;
+use crate::sync::merge::{self, entity};
 use crate::sync::writer::SyncWriter;
 
 use super::backend::{
@@ -259,8 +261,10 @@ impl OcrJobManager {
         emit_job_changed(app, &publishing);
 
         let now = chrono::Utc::now().timestamp_millis();
+        let sync = app.state::<SyncWriter>();
         let asset_id = publish_verified_output(
             &db,
+            &sync,
             NewAssetRow {
                 book_id: job.book_id.clone(),
                 source_sha256: job.source_sha256.clone(),
@@ -268,7 +272,7 @@ impl OcrJobManager {
                 supersedes_asset_id: None,
                 verified: verified.clone(),
                 created_at: now,
-                updated_by_device: app.state::<SyncWriter>().self_device().to_string(),
+                updated_by_device: sync.self_device().to_string(),
             },
         )?;
         let ready = {
@@ -575,7 +579,11 @@ pub(crate) fn ocr_assets_overview(db: State<'_, Db>) -> AppResult<OcrAssetsOverv
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    let total_bytes = items.iter().map(|item| item.byte_size).sum();
+    let total_bytes = items
+        .iter()
+        .filter(|item| item.availability == "available_verified")
+        .map(|item| item.byte_size)
+        .sum();
     Ok(OcrAssetsOverview { total_bytes, items })
 }
 
@@ -585,29 +593,74 @@ pub(crate) fn ocr_asset_delete(
     all_devices: bool,
     app: AppHandle,
     db: State<'_, Db>,
+    sync: State<'_, SyncWriter>,
 ) -> AppResult<()> {
     crate::sync::validation::validate_entity_id(&asset_id)?;
-    if all_devices {
-        return Err(ocr_error("OCR_ASSET_DELETE_ALL_UNAVAILABLE"));
-    }
-    let asset = delete_local_asset(&db, &asset_id)?;
+    let asset = if all_devices {
+        delete_asset_all_devices(&db, &sync, &asset_id)?
+    } else {
+        delete_local_asset(&db, &sync, &asset_id)?
+    };
     let _ = app.emit("book-assets-changed", asset.book_id);
     Ok(())
 }
 
-fn delete_local_asset(db: &Db, asset_id: &str) -> AppResult<super::assets::BookAsset> {
+fn delete_local_asset(
+    db: &Db,
+    sync: &SyncWriter,
+    asset_id: &str,
+) -> AppResult<super::assets::BookAsset> {
+    let _mutation = sync.mutation_guard()?;
     let asset = {
         let conn = db.reader();
         super::assets::get_asset(&conn, asset_id)?
             .ok_or_else(|| ocr_error("OCR_ASSET_NOT_FOUND"))?
     };
-    {
-        let mut conn = db
-            .conn
-            .lock()
-            .map_err(|error| AppError::Other(error.to_string()))?;
-        super::assets::delete_local_asset(&mut conn, asset_id)?;
+    if let Ok(path) = db.resolve_path(&asset.relative_path) {
+        if crate::icloud::is_ubiquitous_file(&path) {
+            if !crate::icloud::evict_downloaded_file(&path) {
+                return Err(ocr_error("OCR_ASSET_LOCAL_RELEASE_FAILED"));
+            }
+        } else if let Err(error) = fs::remove_file(path) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                return Err(error.into());
+            }
+        }
     }
+    let conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
+    super::assets::set_local_state(
+        &conn,
+        asset_id,
+        "remote_only",
+        None,
+        Some("OCR_ASSET_LOCAL_RELEASED"),
+        chrono::Utc::now().timestamp_millis(),
+    )?;
+    Ok(asset)
+}
+
+fn delete_asset_all_devices(
+    db: &Db,
+    sync: &SyncWriter,
+    asset_id: &str,
+) -> AppResult<super::assets::BookAsset> {
+    let asset = {
+        let conn = db.reader();
+        super::assets::get_asset(&conn, asset_id)?
+            .ok_or_else(|| ocr_error("OCR_ASSET_NOT_FOUND"))?
+    };
+    let now = chrono::Utc::now().timestamp_millis();
+    sync.with_tx(db, now, |tx, events| {
+        merge::cascade_delete(tx, entity::BOOK_ASSET, asset_id, now)?;
+        merge::insert_tombstone(tx, entity::BOOK_ASSET, asset_id, now)?;
+        events.push(EventBody::BookAssetDelete {
+            id: asset_id.to_string(),
+        });
+        Ok(())
+    })?;
     if let Ok(path) = db.resolve_path(&asset.relative_path) {
         let _ = fs::remove_file(path);
     }
@@ -716,11 +769,67 @@ mod tests {
         assert_eq!(overview.items.len(), 1);
         assert_eq!(overview.items[0].availability, "available_verified");
 
-        delete_local_asset(&app.state::<Db>(), "asset-1").unwrap();
+        let sync = SyncWriter::new("dev-a".into());
+        delete_local_asset(&app.state::<Db>(), &sync, "asset-1").unwrap();
         assert_eq!(
             ocr_assets_overview(app.state::<Db>()).unwrap().total_bytes,
             0
         );
+        let overview = ocr_assets_overview(app.state::<Db>()).unwrap();
+        assert_eq!(overview.items.len(), 1);
+        assert_eq!(overview.items[0].availability, "remote_only");
         assert!(!dir.path().join("books/book-1.ocr.asset-1.pdf").exists());
+
+        let db = app.state::<Db>();
+        let relative = super::super::assets::expected_relative_path("book-1", "asset-2");
+        {
+            let conn = db.conn.lock().unwrap();
+            super::super::assets::insert_asset(
+                &conn,
+                super::super::assets::NewBookAsset {
+                    id: "asset-2",
+                    book_id: "book-1",
+                    relative_path: &relative,
+                    content_sha256: "asset-hash-2",
+                    byte_size: 4,
+                    source_sha256: "source-hash",
+                    pipeline_version: Some("test"),
+                    language_profile: "chi_sim+eng",
+                    quality_profile: "fast",
+                    page_count: 1,
+                    supersedes_asset_id: None,
+                    created_at: 4,
+                    updated_at: 4,
+                    updated_by_device: "dev-a",
+                },
+            )
+            .unwrap();
+        }
+        fs::write(dir.path().join(&relative), b"data").unwrap();
+        let sync_all = SyncWriter::new("dev-a".into());
+        sync_all.set_should_queue(true);
+        delete_asset_all_devices(&db, &sync_all, "asset-2").unwrap();
+        let conn = db.reader();
+        let tombstoned: bool = conn
+            .query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM _tombstones
+                     WHERE entity = 'book_asset' AND id = 'asset-2'
+                 )",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(tombstoned);
+        let body_json: String = conn
+            .query_row("SELECT body_json FROM _pending_publish", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert!(matches!(
+            serde_json::from_str::<EventBody>(&body_json).unwrap(),
+            EventBody::BookAssetDelete { id } if id == "asset-2"
+        ));
+        assert!(!dir.path().join(relative).exists());
     }
 }

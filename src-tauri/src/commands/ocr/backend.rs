@@ -235,6 +235,14 @@ impl OcrBackend for OcrmypdfBackend {
             .spawn()
             .map_err(|_| ocr_error("OCR_RUNTIME_EXEC_FAILED"))?;
         let process_id = child.id();
+        let process_tree = match ProcessTree::attach(&child) {
+            Ok(process_tree) => process_tree,
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error);
+            }
+        };
         let stdout = child
             .stdout
             .take()
@@ -298,7 +306,7 @@ impl OcrBackend for OcrmypdfBackend {
                 }
             }
             if cancel.is_cancelled() {
-                terminate_process_tree(process_id, &mut child);
+                process_tree.terminate(process_id, &mut child);
                 let _ = stdout_reader.join();
                 let _ = stderr_reader.join();
                 return Err(ocr_error("OCR_JOB_CANCELLED"));
@@ -428,26 +436,99 @@ fn configure_process_group(command: &mut Command) {
 }
 
 #[cfg(unix)]
-fn terminate_process_tree(process_id: u32, child: &mut std::process::Child) {
-    unsafe {
-        libc::kill(-(process_id as i32), libc::SIGTERM);
+struct ProcessTree;
+
+#[cfg(unix)]
+impl ProcessTree {
+    fn attach(_child: &std::process::Child) -> AppResult<Self> {
+        Ok(Self)
     }
-    for _ in 0..20 {
-        if child.try_wait().ok().flatten().is_some() {
-            return;
+
+    fn terminate(&self, process_id: u32, child: &mut std::process::Child) {
+        unsafe {
+            libc::kill(-(process_id as i32), libc::SIGTERM);
         }
-        thread::sleep(Duration::from_millis(50));
+        for _ in 0..20 {
+            if child.try_wait().ok().flatten().is_some() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        unsafe {
+            libc::kill(-(process_id as i32), libc::SIGKILL);
+        }
+        let _ = child.wait();
     }
-    unsafe {
-        libc::kill(-(process_id as i32), libc::SIGKILL);
-    }
-    let _ = child.wait();
 }
 
 #[cfg(windows)]
-fn terminate_process_tree(_process_id: u32, child: &mut std::process::Child) {
-    let _ = child.kill();
-    let _ = child.wait();
+struct ProcessTree {
+    job: windows_sys::Win32::Foundation::HANDLE,
+}
+
+#[cfg(windows)]
+impl ProcessTree {
+    fn attach(child: &std::process::Child) -> AppResult<Self> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::JobObjects::{
+            AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+            SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        };
+
+        let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        if job.is_null() {
+            return Err(ocr_error("OCR_RUNTIME_PROCESS_CONTROL_FAILED"));
+        }
+        let mut information = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        information.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        let configured = unsafe {
+            SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                std::ptr::addr_of!(information).cast(),
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        };
+        let assigned = configured != 0
+            && unsafe { AssignProcessToJobObject(job, child.as_raw_handle().cast()) } != 0;
+        if !assigned {
+            unsafe {
+                CloseHandle(job);
+            }
+            return Err(ocr_error("OCR_RUNTIME_PROCESS_CONTROL_FAILED"));
+        }
+        Ok(Self { job })
+    }
+
+    fn terminate(&self, process_id: u32, child: &mut std::process::Child) {
+        use windows_sys::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_BREAK_EVENT};
+        use windows_sys::Win32::System::JobObjects::TerminateJobObject;
+
+        unsafe {
+            GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, process_id);
+        }
+        for _ in 0..20 {
+            if child.try_wait().ok().flatten().is_some() {
+                return;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        unsafe {
+            TerminateJobObject(self.job, 1);
+        }
+        let _ = child.wait();
+    }
+}
+
+#[cfg(windows)]
+impl Drop for ProcessTree {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::Foundation::CloseHandle(self.job);
+        }
+    }
 }
 
 pub(crate) fn recognize_pdf(

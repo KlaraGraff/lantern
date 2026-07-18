@@ -80,14 +80,14 @@ impl Drop for WatcherHandle {
     }
 }
 
-/// Spawn the watcher. Watches `shared_dir/logs/` (own log + peer logs +
-/// snapshots) and `shared_dir/covers/` (synced cover images), both
-/// non-recursively — each dir is flat. Covers are watched because peer
+/// Spawn the watcher. Watches the flat `logs/`, `covers/`, and `books/`
+/// directories. Covers are watched because peer
 /// cover files (and their iCloud placeholders) materialize independently
 /// of any `logs/` event: a cover that lands after its book's log event
 /// would otherwise never trigger the tick that ingests it, leaving a
 /// blank card until some unrelated `logs/` change, a manual sync, or a
-/// relaunch.
+/// relaunch. The same ordering applies to synced OCR PDF assets under
+/// `books/`, whose bytes must be size/hash verified before activation.
 ///
 /// The closure inside the dedicated thread holds `Arc<Db>` and
 /// `Arc<ReplayEngine>`. It locks `db.conn` only for the duration of one
@@ -102,6 +102,8 @@ pub fn spawn(shared_dir: PathBuf, db: Db, engine: Arc<ReplayEngine>) -> AppResul
     std::fs::create_dir_all(&logs_dir)?;
     let covers_dir = shared_dir.join("covers");
     std::fs::create_dir_all(&covers_dir)?;
+    let books_dir = shared_dir.join("books");
+    std::fs::create_dir_all(&books_dir)?;
 
     let (tx, rx) = mpsc::channel();
     let mut watcher = recommended_watcher(move |res: notify::Result<notify::Event>| {
@@ -119,6 +121,9 @@ pub fn spawn(shared_dir: PathBuf, db: Db, engine: Arc<ReplayEngine>) -> AppResul
     watcher
         .watch(&covers_dir, RecursiveMode::NonRecursive)
         .map_err(|e| AppError::Other(format!("notify watch {covers_dir:?}: {e}")))?;
+    watcher
+        .watch(&books_dir, RecursiveMode::NonRecursive)
+        .map_err(|e| AppError::Other(format!("notify watch {books_dir:?}: {e}")))?;
 
     let stop = Arc::new(AtomicBool::new(false));
     let stop_thread = Arc::clone(&stop);
@@ -197,7 +202,8 @@ fn run_loop(
 ///   - `.jsonl` / `.snapshot.json` — peer event logs and snapshots
 ///   - `.img` — a cover file materialized, so `ingest_peer_covers` can
 ///     read it into the `cover_data` BLOB
-///   - `.icloud` — a placeholder appeared (log or cover); ticking lets
+///   - `.pdf` — an OCR asset materialized under `books/`
+///   - `.icloud` — a placeholder appeared; ticking lets
 ///     the engine trigger its download so the real file follows
 fn is_relevant_event(ev: &notify::Event) -> bool {
     ev.paths.iter().any(|p| {
@@ -207,6 +213,7 @@ fn is_relevant_event(ev: &notify::Event) -> bool {
                 ext.eq_ignore_ascii_case("jsonl")
                     || ext.eq_ignore_ascii_case("json")
                     || ext.eq_ignore_ascii_case("img")
+                    || ext.eq_ignore_ascii_case("pdf")
                     || ext.eq_ignore_ascii_case("icloud")
             })
             .unwrap_or(false)
@@ -389,6 +396,8 @@ mod tests {
         // Cover files and placeholders under covers/ must wake the engine.
         assert!(relevant("/shared/covers/b1.img"));
         assert!(relevant("/shared/covers/.b1.img.icloud"));
+        assert!(relevant("/shared/books/b1.ocr.asset-1.pdf"));
+        assert!(relevant("/shared/books/.b1.ocr.asset-1.pdf.icloud"));
         // A log placeholder materializing also counts.
         assert!(relevant("/shared/logs/.peer.jsonl.icloud"));
     }

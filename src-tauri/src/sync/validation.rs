@@ -4,8 +4,9 @@ use crate::error::{AppError, AppResult};
 
 use super::events::{
     is_supported_event_schema_version, lookup_occurrence_mark_id, normalize_learning_term,
-    word_mark_exception_id, word_mark_rule_id, BookSummaryPayload, ChatMessagePayload, Event,
-    EventBody, LookupOccurrenceMarkPayload, NotePayload, WordMarkExceptionPayload, WordMarkPayload,
+    word_mark_exception_id, word_mark_rule_id, BookAssetPayload, BookSummaryPayload,
+    ChatMessagePayload, Event, EventBody, LookupOccurrenceMarkPayload, NotePayload,
+    WordMarkExceptionPayload, WordMarkPayload,
 };
 
 const BOOK_EXTENSIONS: &[&str] = &[
@@ -53,6 +54,7 @@ pub fn validate_tombstone_entity(entity: &str) -> AppResult<()> {
             | "chat"
             | "chat_message"
             | "translation"
+            | "book_asset"
     ) {
         return Ok(());
     }
@@ -295,6 +297,21 @@ pub fn validate_event(event: &Event, expected_device: &str) -> AppResult<()> {
             }
         }
         EventBody::BookDelete { id } => validate_entity_id(id)?,
+        EventBody::BookAssetPublish(payload) => {
+            if event.v < 7 {
+                return Err(AppError::Other("SYNC_BOOK_ASSET_INVALID".to_string()));
+            }
+            validate_book_asset_payload(payload)?;
+            if payload.updated_by_device != event.device {
+                return Err(AppError::Other("SYNC_BOOK_ASSET_INVALID".to_string()));
+            }
+        }
+        EventBody::BookAssetDelete { id } => {
+            if event.v < 7 {
+                return Err(AppError::Other("SYNC_BOOK_ASSET_INVALID".to_string()));
+            }
+            validate_entity_id(id)?;
+        }
         EventBody::BookMetadataSet { book, field, value } => {
             validate_entity_id(book)?;
             if field == "file_path" {
@@ -375,6 +392,38 @@ pub fn validate_event(event: &Event, expected_device: &str) -> AppResult<()> {
         _ => {}
     }
     Ok(())
+}
+
+pub(crate) fn validate_book_asset_payload(payload: &BookAssetPayload) -> AppResult<()> {
+    validate_entity_id(&payload.id)?;
+    validate_entity_id(&payload.book_id)?;
+    validate_book_asset_path(&payload.relative_path, &payload.book_id, &payload.id)?;
+    if payload.role != "ocr_pdf"
+        || payload.format != "pdf"
+        || !is_sha256(&payload.content_sha256)
+        || !is_sha256(&payload.source_sha256)
+        || payload.byte_size < 0
+        || payload.pipeline != "ocrmypdf"
+        || payload.language_profile != "chi_sim+eng"
+        || payload.quality_profile != "fast"
+        || payload.page_count < 1
+        || payload.updated_at < payload.created_at
+    {
+        return Err(AppError::Other("SYNC_BOOK_ASSET_INVALID".to_string()));
+    }
+    if let Some(supersedes) = payload.supersedes_asset_id.as_deref() {
+        validate_entity_id(supersedes)?;
+        if supersedes == payload.id {
+            return Err(AppError::Other("SYNC_BOOK_ASSET_INVALID".to_string()));
+        }
+    }
+    validate_peer_device(&payload.updated_by_device)?;
+    ensure_valid_sync_timestamp(payload.created_at, "SYNC_BOOK_ASSET_INVALID")?;
+    ensure_valid_sync_timestamp(payload.updated_at, "SYNC_BOOK_ASSET_INVALID")
+}
+
+fn is_sha256(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn validate_chat_message_replace_payload(payload: &ChatMessagePayload) -> AppResult<()> {
@@ -465,6 +514,15 @@ pub fn validate_book_path(path: &str) -> AppResult<()> {
     validate_relative_blob_path(path, "books", BOOK_EXTENSIONS)
 }
 
+pub fn validate_book_asset_path(path: &str, book_id: &str, asset_id: &str) -> AppResult<()> {
+    validate_book_path(path)?;
+    let expected = format!("books/{book_id}.ocr.{asset_id}.pdf");
+    if path != expected {
+        return Err(AppError::Other("SYNC_BLOB_PATH_INVALID".to_string()));
+    }
+    Ok(())
+}
+
 pub fn validate_cover_path(path: &str) -> AppResult<()> {
     if path == "none" {
         return Ok(());
@@ -518,13 +576,84 @@ pub fn resolve_blob_path(data_dir: &Path, path: &str) -> AppResult<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sync::events::{BookImportPayload, EVENT_SCHEMA_VERSION};
+    use crate::sync::events::{BookAssetPayload, BookImportPayload, EVENT_SCHEMA_VERSION};
     use serde_json::Map;
 
     #[test]
     fn accepts_expected_blob_paths() {
         assert!(validate_book_path("books/example.epub").is_ok());
         assert!(validate_cover_path("covers/id.img").is_ok());
+    }
+
+    #[test]
+    fn book_asset_path_is_bound_to_book_and_asset_ids() {
+        assert!(
+            validate_book_asset_path("books/book-1.ocr.asset-1.pdf", "book-1", "asset-1").is_ok()
+        );
+        for path in [
+            "books/book-2.ocr.asset-1.pdf",
+            "books/book-1.ocr.asset-2.pdf",
+            "books/book-1.ocr.asset-1.epub",
+            "books/../books/book-1.ocr.asset-1.pdf",
+        ] {
+            assert!(
+                validate_book_asset_path(path, "book-1", "asset-1").is_err(),
+                "accepted {path}"
+            );
+        }
+    }
+
+    fn asset_event() -> Event {
+        Event {
+            id: "01HYZX0000000000000000EVT4".into(),
+            ts: 1_714_770_000_000,
+            device: "dev-A".into(),
+            v: EVENT_SCHEMA_VERSION,
+            body: EventBody::BookAssetPublish(BookAssetPayload {
+                id: "asset-1".into(),
+                book_id: "book-1".into(),
+                role: "ocr_pdf".into(),
+                format: "pdf".into(),
+                relative_path: "books/book-1.ocr.asset-1.pdf".into(),
+                content_sha256: "ab".repeat(32),
+                byte_size: 42,
+                source_sha256: "cd".repeat(32),
+                pipeline: "ocrmypdf".into(),
+                pipeline_version: Some("17.8.1".into()),
+                language_profile: "chi_sim+eng".into(),
+                quality_profile: "fast".into(),
+                page_count: 3,
+                supersedes_asset_id: None,
+                created_at: 1_714_770_000_000,
+                updated_at: 1_714_770_000_000,
+                updated_by_device: "dev-A".into(),
+            }),
+            extra: Map::new(),
+        }
+    }
+
+    #[test]
+    fn validates_v7_book_asset_publish() {
+        let event = asset_event();
+        assert!(validate_event(&event, "dev-A").is_ok());
+
+        let mut old = event.clone();
+        old.v = 6;
+        assert!(validate_event(&old, "dev-A").is_err());
+
+        let mut wrong_path = event.clone();
+        let EventBody::BookAssetPublish(payload) = &mut wrong_path.body else {
+            unreachable!()
+        };
+        payload.relative_path = "books/book-1.ocr.other.pdf".into();
+        assert!(validate_event(&wrong_path, "dev-A").is_err());
+
+        let mut bad_hash = event;
+        let EventBody::BookAssetPublish(payload) = &mut bad_hash.body else {
+            unreachable!()
+        };
+        payload.content_sha256 = "not-a-hash".into();
+        assert!(validate_event(&bad_hash, "dev-A").is_err());
     }
 
     #[test]

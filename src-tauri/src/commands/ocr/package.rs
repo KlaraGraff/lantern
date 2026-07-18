@@ -819,12 +819,13 @@ fn install_verified_archive(
     fs::create_dir(&candidate).map_err(|_| package_error("OCR_PACKAGE_STORAGE_FAILED"))?;
     let candidate_cleanup = DirectoryCleanup::new(candidate.clone());
     safe_extract_tar_zst(archive, &candidate, manifest.installed_size)?;
-    check_required_runtime_files(&candidate)?;
+    let runtime_candidate = extracted_runtime_root(&candidate)?;
+    check_required_runtime_files(&runtime_candidate)?;
     check_cancelled(cancel)?;
 
     let result = activate_candidate(
         package_root,
-        &candidate,
+        &runtime_candidate,
         manifest,
         cancel,
         |root, cancel| {
@@ -837,6 +838,28 @@ fn install_verified_archive(
     // happen before the rename.
     drop(candidate_cleanup);
     result
+}
+
+fn extracted_runtime_root(extraction_root: &Path) -> AppResult<PathBuf> {
+    let expected = extraction_root.join(PACKAGE_ID);
+    let metadata = fs::symlink_metadata(&expected)
+        .map_err(|_| package_error("OCR_PACKAGE_INSTALL_INVALID"))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(package_error("OCR_PACKAGE_INSTALL_INVALID"));
+    }
+
+    let mut entries =
+        fs::read_dir(extraction_root).map_err(|_| package_error("OCR_PACKAGE_INSTALL_INVALID"))?;
+    let only_entry = entries
+        .next()
+        .transpose()
+        .map_err(|_| package_error("OCR_PACKAGE_INSTALL_INVALID"))?
+        .ok_or_else(|| package_error("OCR_PACKAGE_INSTALL_INVALID"))?;
+    if only_entry.path() != expected || entries.next().is_some() {
+        return Err(package_error("OCR_PACKAGE_INSTALL_INVALID"));
+    }
+
+    Ok(expected)
 }
 
 fn activate_candidate<F>(
@@ -1700,6 +1723,22 @@ mod tests {
         uninstall_runtime_at(&runtime).unwrap();
         assert!(!runtime.exists());
         assert_eq!(fs::read(asset).unwrap(), b"asset");
+    }
+
+    #[test]
+    fn archive_payload_requires_the_single_expected_runtime_root() {
+        let dir = TempDir::new().unwrap();
+        let extraction_root = dir.path().join("extracted");
+        let runtime_root = extraction_root.join(PACKAGE_ID);
+        seed_runtime_payload(&runtime_root);
+
+        assert_eq!(
+            extracted_runtime_root(&extraction_root).unwrap(),
+            runtime_root
+        );
+
+        fs::write(extraction_root.join("unexpected.txt"), b"unexpected").unwrap();
+        assert!(extracted_runtime_root(&extraction_root).is_err());
     }
 
     #[test]

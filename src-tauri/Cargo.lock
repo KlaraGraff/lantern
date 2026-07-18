@@ -3925,6 +3925,7 @@ dependencies = [
  "ttf-parser",
  "ulid",
  "uuid",
+ "windows-sys 0.61.2",
  "wuff",
  "zeroize",
  "zip 2.4.2",

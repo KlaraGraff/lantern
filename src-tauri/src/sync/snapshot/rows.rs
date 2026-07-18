@@ -23,6 +23,8 @@ pub struct SnapshotState {
     #[serde(default)]
     pub books: BTreeMap<String, BookRow>,
     #[serde(default)]
+    pub book_assets: BTreeMap<String, BookAssetRow>,
+    #[serde(default)]
     pub highlights: BTreeMap<String, HighlightRow>,
     #[serde(default)]
     pub bookmarks: BTreeMap<String, BookmarkRow>,
@@ -81,6 +83,26 @@ pub struct BookRow {
     pub updated_by_device: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover_data: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BookAssetRow {
+    pub book_id: String,
+    pub role: String,
+    pub format: String,
+    pub relative_path: String,
+    pub content_sha256: String,
+    pub byte_size: i64,
+    pub source_sha256: String,
+    pub pipeline: String,
+    pub pipeline_version: Option<String>,
+    pub language_profile: String,
+    pub quality_profile: String,
+    pub page_count: i32,
+    pub supersedes_asset_id: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub updated_by_device: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
