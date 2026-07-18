@@ -116,10 +116,32 @@ fn insert_asset_in_transaction(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::sync::Arc;
 
     use sha2::{Digest, Sha256};
 
     use super::*;
+    use crate::commands::ocr::resolver::resolve_active_asset;
+    use crate::sync::log::EventLog;
+    use crate::sync::replay::ReplayEngine;
+
+    fn seed_scanned_book(db: &Db, source_sha256: &str) {
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO books (
+                     id, title, author, file_path, format, source_format,
+                     source_file_path, source_sha256, status, progress,
+                     created_at, updated_at
+                 ) VALUES (
+                     'book-1', 'Scanned', 'Author', 'books/source.pdf', 'pdf',
+                     'pdf', 'books/source.pdf', ?1, 'unread', 0, ?2, ?2
+                 )",
+                params![source_sha256, 1_714_770_000_000_i64],
+            )
+            .unwrap();
+    }
 
     #[test]
     fn publish_failure_leaves_no_final_asset() {
@@ -165,21 +187,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db = Db::init(dir.path()).unwrap();
         let source_sha256 = "bb".repeat(32);
-        db.conn
-            .lock()
-            .unwrap()
-            .execute(
-                "INSERT INTO books (
-                     id, title, author, file_path, format, source_format,
-                     source_file_path, source_sha256, status, progress,
-                     created_at, updated_at
-                 ) VALUES (
-                     'book-1', 'Scanned', 'Author', 'books/source.pdf', 'pdf',
-                     'pdf', 'books/source.pdf', ?1, 'unread', 0, ?2, ?2
-                 )",
-                params![source_sha256, 1_714_770_000_000_i64],
-            )
-            .unwrap();
+        seed_scanned_book(&db, &source_sha256);
         let staging = dir.path().join("result.pdf");
         let bytes = b"pdf";
         fs::write(&staging, bytes).unwrap();
@@ -230,5 +238,66 @@ mod tests {
         );
         drop(conn);
         assert!(db.resolve_path(&payload.relative_path).unwrap().is_file());
+    }
+
+    #[test]
+    fn published_asset_materializes_and_resolves_on_second_data_dir() {
+        let root = tempfile::tempdir().unwrap();
+        let shared = root.path().join("shared");
+        let local_a = root.path().join("device-a");
+        let local_b = root.path().join("device-b");
+        let (db_a, _) = Db::init_split(&local_a, &shared).unwrap();
+        let (db_b, _) = Db::init_split(&local_b, &shared).unwrap();
+        let source_sha256 = "bb".repeat(32);
+        seed_scanned_book(&db_a, &source_sha256);
+        seed_scanned_book(&db_b, &source_sha256);
+        fs::write(shared.join("books/source.pdf"), b"source pdf").unwrap();
+
+        let log_a =
+            Arc::new(EventLog::open(&shared.join("logs/dev-a.jsonl"), "dev-a", false).unwrap());
+        let sync_a = SyncWriter::new("dev-a".to_string());
+        sync_a.set_should_queue(true);
+        sync_a.set_log(Some(Arc::clone(&log_a)));
+        sync_a.set_flush_inline_for_tests(true);
+
+        let bytes = b"searchable pdf";
+        let staging = local_a.join("result.pdf");
+        fs::write(&staging, bytes).unwrap();
+        let asset_id = publish_verified_output(
+            &db_a,
+            &sync_a,
+            NewAssetRow {
+                book_id: "book-1".to_string(),
+                source_sha256,
+                pipeline_version: Some("17.8.1".to_string()),
+                supersedes_asset_id: None,
+                verified: VerifiedOutput {
+                    path: staging,
+                    content_sha256: format!("{:x}", Sha256::digest(bytes)),
+                    byte_size: bytes.len() as i64,
+                    page_count: 1,
+                    recognized_pages: 1,
+                    skipped_pages: 0,
+                    timed_out_pages: 0,
+                    failed_pages: 0,
+                },
+                created_at: 1_714_770_000_001,
+                updated_by_device: "dev-a".to_string(),
+            },
+        )
+        .unwrap();
+
+        let log_b =
+            Arc::new(EventLog::open(&shared.join("logs/dev-b.jsonl"), "dev-b", false).unwrap());
+        let replay_b = ReplayEngine::new(shared.clone(), "dev-b".to_string(), log_b);
+        let report = replay_b.tick(&db_b).unwrap();
+        assert_eq!(report.events_applied, 1);
+
+        let resolved = resolve_active_asset(&db_b.reader(), &shared, "book-1").unwrap();
+        let asset = resolved.asset.expect("peer should activate the OCR asset");
+        assert_eq!(asset.id, asset_id);
+        assert_eq!(resolved.selection_reason, "latest_verified_ocr");
+        assert_eq!(fs::read(&resolved.absolute_path).unwrap(), bytes);
+        assert!(!local_b.join("ocr-runtime").exists());
     }
 }
