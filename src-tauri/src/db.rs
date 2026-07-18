@@ -61,6 +61,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (25, include_str!("../migrations/025_index_management.sql")),
     (26, include_str!("../migrations/026_ai_spoiler_guard.sql")),
     (27, include_str!("../migrations/027_word_forms.sql")),
+    (28, include_str!("../migrations/028_book_assets.sql")),
 ];
 
 fn register_sqlite_vec() {
@@ -677,6 +678,9 @@ mod tests {
         assert!(tables.contains(&"_pending_publish".to_string()));
         assert!(tables.contains(&"word_mark_exceptions".to_string()));
         assert!(tables.contains(&"custom_fonts".to_string()));
+        assert!(tables.contains(&"book_assets".to_string()));
+        assert!(tables.contains(&"book_asset_local_state".to_string()));
+        assert!(tables.contains(&"ocr_jobs".to_string()));
     }
 
     #[test]

@@ -14,6 +14,13 @@ edition = "2021"
 name = "quill_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = []
+# Phase D compiles the local OCR data/job pipeline behind an opt-in flag. The
+# default release remains fail-closed until the backend and Reader integration
+# pass the Phase C gates.
+ocr-pipeline = []
+
 [build-dependencies]
 tauri-build = { version = "=2.5.6", features = [] }
 
