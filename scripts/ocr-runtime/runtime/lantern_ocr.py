@@ -39,11 +39,14 @@ def _configure_environment() -> None:
 
 def _run_ocrmypdf(arguments: list[str]) -> int:
     from ocrmypdf.__main__ import run
-    from lantern_progress import _write_json, complete_payload, reset_stats
 
-    reset_stats()
     exit_code = int(run(["--plugin", str(PLUGIN), *arguments]))
     if exit_code == 0:
+        # OCRmyPDF loads file plugins after argument parsing and replaces the
+        # module in sys.modules. Import after run() so completion reads the
+        # same statistics instance that the plugin hooks updated.
+        from lantern_progress import _write_json, complete_payload
+
         _write_json(complete_payload())
     return exit_code
 
@@ -96,8 +99,12 @@ def _self_test() -> int:
             events = [json.loads(line) for line in smoke.stdout.splitlines()]
         except json.JSONDecodeError as error:
             raise RuntimeError("fixture OCR emitted non-JSON stdout") from error
-        if not events or events[-1].get("type") != "complete" or not any(
-            event.get("type") == "progress" for event in events
+        complete = events[-1] if events else {}
+        if (
+            complete.get("type") != "complete"
+            or complete.get("pages") != 1
+            or complete.get("ocr_pages") != 1
+            or not any(event.get("type") == "progress" for event in events)
         ):
             raise RuntimeError("fixture OCR did not emit a complete JSONL event")
 
