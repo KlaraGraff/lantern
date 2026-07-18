@@ -39,6 +39,7 @@ import type {
   ReaderPageInfo,
   TocChapter,
 } from "./foliate-types";
+import { toReaderOpenError, type ReaderOpenError } from "./reader-open-error";
 
 function getPdfStartCfi(
   progress: number,
@@ -110,7 +111,7 @@ interface UseFoliateViewOptions {
   cancelPendingSelectionMenu(): void;
   openLearningInteraction(interaction: ReaderInteraction): void;
   setBookReady: Dispatch<SetStateAction<boolean>>;
-  setReaderError: Dispatch<SetStateAction<string | null>>;
+  setReaderError: Dispatch<SetStateAction<ReaderOpenError | null>>;
   setPdfTextLayerNotice: Dispatch<SetStateAction<boolean>>;
   setCanGoBack: Dispatch<SetStateAction<boolean>>;
   setChapters: Dispatch<SetStateAction<TocChapter[]>>;
@@ -544,7 +545,7 @@ export function useFoliateView({
       activeView?.close();
       activeView?.remove();
       if (viewRef.current === activeView) viewRef.current = null;
-      setReaderError(error instanceof Error ? error.message : "READER_INIT_FAILED");
+      setReaderError(toReaderOpenError(error, book.render_format || book.format));
       setBookReady(false);
     });
 

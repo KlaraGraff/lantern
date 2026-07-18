@@ -14,6 +14,7 @@ import {
   Loader2,
   Minus,
   Plus,
+  FileWarning,
 } from "lucide-react";
 import Button from "../components/ui/Button";
 import Toast from "../components/ui/Toast";
@@ -101,6 +102,7 @@ import type {
 } from "./reader/foliate-types";
 import { useFoliateView } from "./reader/useFoliateView";
 import { useReaderNavigation } from "./reader/useReaderNavigation";
+import { toReaderOpenError, type ReaderOpenError } from "./reader/reader-open-error";
 
 type SidePanel = "ai" | "bookmarks" | "vocab" | null;
 
@@ -174,7 +176,7 @@ export default function Reader() {
   const [progressWriter] = useState(() => new ReadingProgressWriter());
   const [bookReady, setBookReady] = useState(false);
   const [canGoBack, setCanGoBack] = useState(false);
-  const [readerError, setReaderError] = useState<string | null>(null);
+  const [readerError, setReaderError] = useState<ReaderOpenError | null>(null);
   const [readerRetry, setReaderRetry] = useState(0);
   const [pdfTextLayerNotice, setPdfTextLayerNotice] = useState(false);
   const [textInitialLocation, setTextInitialLocation] = useState<string | null>(null);
@@ -502,7 +504,7 @@ export default function Reader() {
   }, [bookId, supportsManualAnnotations, supportsWordMarkers]);
 
   const handleTextBookError = useCallback((error: string) => {
-    setReaderError(error);
+    setReaderError(toReaderOpenError(error, "text"));
     setBookReady(false);
   }, []);
 
@@ -1044,32 +1046,58 @@ export default function Reader() {
   };
 
   if (readerError) {
+    const invalidPdf = readerError.kind === "invalid-pdf";
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4 px-6 text-center">
-        <p className="text-text-primary text-[16px] font-medium">{t("reader.initializationFailed")}</p>
-        <p className="text-text-muted text-[13px] max-w-[520px] break-words">{readerError}</p>
+      <div role="alert" className="flex h-screen flex-col items-center justify-center gap-4 px-6 text-center">
+        {invalidPdf && (
+          <div className="flex size-10 items-center justify-center rounded-md bg-danger-bg text-danger-text">
+            <FileWarning size={21} aria-hidden="true" />
+          </div>
+        )}
+        <div className="max-w-[560px]">
+          <p className="text-text-primary text-[16px] font-medium">
+            {t(invalidPdf ? "reader.pdfInvalidTitle" : "reader.initializationFailed")}
+          </p>
+          <p className="mt-2 text-[13px] leading-5 text-text-muted break-words">
+            {invalidPdf ? t("reader.pdfInvalidDescription") : readerError.detail}
+          </p>
+          {invalidPdf && readerError.detail && (
+            <details className="mx-auto mt-3 max-w-[520px] text-left">
+              <summary className="cursor-pointer text-center text-[12px] text-text-secondary">
+                {t("reader.errorDetails")}
+              </summary>
+              <p className="mt-2 rounded-md bg-bg-input px-3 py-2 font-mono text-[11px] leading-5 text-text-muted break-words">
+                {readerError.detail}
+              </p>
+            </details>
+          )}
+        </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              if (needsPreparation(book) && bookId) {
-                retryPreparation(book)
-                  .then(() => getBook(bookId))
-                  .then((updated) => {
-                    setBook(updated);
-                    setReaderError(null);
-                    setReaderRetry((value) => value + 1);
-                  })
-                  .catch((error) => setReaderError(error instanceof Error ? error.message : String(error)));
-                return;
-              }
-              setReaderError(null);
-              setReaderRetry((value) => value + 1);
-            }}
-          >
-            {t("reader.retry")}
-          </Button>
+          {!invalidPdf && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                if (needsPreparation(book) && bookId) {
+                  retryPreparation(book)
+                    .then(() => getBook(bookId))
+                    .then((updated) => {
+                      setBook(updated);
+                      setReaderError(null);
+                      setReaderRetry((value) => value + 1);
+                    })
+                    .catch((error) => setReaderError(
+                      toReaderOpenError(error, book.render_format || book.format),
+                    ));
+                  return;
+                }
+                setReaderError(null);
+                setReaderRetry((value) => value + 1);
+              }}
+            >
+              {t("reader.retry")}
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={returnToLibrary}>
             <ArrowLeft size={14} />
             {t("reader.returnToLibrary")}
