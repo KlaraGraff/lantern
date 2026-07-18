@@ -13,13 +13,13 @@ ocrmypdf==17.8.1
 packaging==26.2
 pdfminer.six==20260107
 pi_heif==1.4.0
-pikepdf==10.10.0
+pikepdf==10.10.0; sys_platform == "win32"
 pillow==12.3.0
 pluggy==1.6.0
 pycparser==3.0
 pydantic==2.13.4
 pydantic_core==2.46.4
-pypdfium2==5.12.1
+pypdfium2==5.11.0
 Pygments==2.20.0
 rich==15.0.0
 typing-inspection==0.4.2

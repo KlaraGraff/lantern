@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -15,6 +16,10 @@ PLUGIN = Path(__file__).with_name("lantern_progress.py")
 FIXTURE = ROOT / "share" / "fixtures" / "scan-fixture.pdf"
 TESSDATA = ROOT / "share" / "tessdata"
 sys.path.insert(0, str(ROOT / "lib"))
+MODEL_SHA256 = {
+    "eng": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2",
+    "chi_sim": "a5fcb6f0db1e1d6d8522f39db4e848f05984669172e584e8d76b6b3141e1f730",
+}
 PRODUCTION_FLAGS = (
     "--mode",
     "skip",
@@ -59,9 +64,16 @@ def _normal_ocr(arguments: list[str]) -> int:
 
 
 def _self_test() -> int:
-    for language in ("eng", "chi_sim"):
-        if not (TESSDATA / f"{language}.traineddata").is_file():
+    for language, expected_sha256 in MODEL_SHA256.items():
+        model = TESSDATA / f"{language}.traineddata"
+        if not model.is_file():
             raise RuntimeError(f"missing language model: {language}")
+        digest = hashlib.sha256()
+        with model.open("rb") as source:
+            for block in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(block)
+        if digest.hexdigest() != expected_sha256:
+            raise RuntimeError(f"language model failed integrity check: {language}")
     if not FIXTURE.is_file():
         raise RuntimeError("missing OCR fixture")
 

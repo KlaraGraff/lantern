@@ -27,6 +27,70 @@ validate = load_module("ocr_runtime_validate", ROOT / "validate_artifacts.py")
 
 
 class RuntimeBuildTests(unittest.TestCase):
+    def test_macos_pikepdf_replaces_wheel_with_source_build(self) -> None:
+        calls = []
+
+        def record(command, **kwargs):
+            calls.append((command, kwargs))
+            output = "10.10.0\n" if command[-1] == "import pikepdf; print(pikepdf.__version__)" else ""
+            return mock.Mock(stdout=output)
+
+        with mock.patch.object(build, "run", side_effect=record):
+            build.build_macos_pikepdf(Path("/runtime/python"), Path("/vcpkg"), "arm64-osx-lantern")
+
+        commands = [list(map(str, command)) for command, _kwargs in calls]
+        self.assertIn(
+            ["/runtime/python", "-m", "pip", "uninstall", "--yes", "pikepdf"],
+            commands,
+        )
+        source_command, source_kwargs = next(
+            (command, kwargs)
+            for command, kwargs in calls
+            if "--no-binary" in command
+        )
+        self.assertIn("--force-reinstall", source_command)
+        self.assertIn("--no-deps", source_command)
+        self.assertEqual(
+            source_kwargs["env"]["QPDF_BUILD_LIBDIR"],
+            "/vcpkg/installed/arm64-osx-lantern/lib",
+        )
+
+    def test_macos_minimum_os_accepts_12_0_0(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binary = root / "bin" / "lantern-ocr"
+            binary.parent.mkdir()
+            binary.write_bytes(b"binary")
+            completed = mock.Mock(returncode=0, stdout="minos 12.0.0\n", stderr="")
+            with mock.patch.object(build.subprocess, "run", return_value=completed):
+                build.verify_macos_minimum_os(root)
+
+    def test_macos_minimum_os_rejects_13(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binary = root / "bin" / "lantern-ocr"
+            binary.parent.mkdir()
+            binary.write_bytes(b"binary")
+            completed = mock.Mock(returncode=0, stdout="minos 13.0\n", stderr="")
+            with mock.patch.object(build.subprocess, "run", return_value=completed):
+                with self.assertRaisesRegex(RuntimeError, "newer binaries"):
+                    build.verify_macos_minimum_os(root)
+
+    def test_macos_dependencies_reject_build_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binary = root / "bin" / "lantern-ocr"
+            binary.parent.mkdir()
+            binary.write_bytes(b"binary")
+            dependencies = mock.Mock(
+                returncode=0,
+                stdout=f"{binary}:\n\t/private/tmp/vcpkg/libqpdf.dylib (compatibility version 1.0.0)\n",
+                stderr="",
+            )
+            with mock.patch.object(build.subprocess, "run", return_value=dependencies):
+                with self.assertRaisesRegex(RuntimeError, "not relocatable"):
+                    build.verify_macos_dependencies(root)
+
     def test_archive_runtime_dereferences_links(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -49,7 +113,7 @@ class RuntimeBuildTests(unittest.TestCase):
                 output.write_bytes(b"compressed")
 
             with mock.patch.object(build, "run", side_effect=inspect_tar):
-                build.archive_runtime(runtime, output)
+                self.assertEqual(build.archive_runtime(runtime, output), 12)
 
     def test_safe_extract_rejects_parent_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -115,6 +115,111 @@ def install_python_packages(python: Path, root: Path) -> list[dict[str, Any]]:
     return python_components(python)
 
 
+def build_macos_pikepdf(python: Path, vcpkg_root: Path, triplet: str) -> None:
+    installed = vcpkg_root / "installed" / triplet
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "MACOSX_DEPLOYMENT_TARGET": "12.0",
+            "CMAKE_ARGS": "-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0",
+            "QPDF_SOURCE_TREE": str(installed),
+            "QPDF_BUILD_LIBDIR": str(installed / "lib"),
+        }
+    )
+    run(
+        [
+            python,
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "scikit-build-core==1.0.3",
+            "nanobind==2.13.0",
+        ]
+    )
+    run([python, "-m", "pip", "uninstall", "--yes", "pikepdf"])
+    run(
+        [
+            python,
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-compile",
+            "--no-build-isolation",
+            "--no-deps",
+            "--no-binary",
+            "pikepdf",
+            "--force-reinstall",
+            "pikepdf==10.10.0",
+        ],
+        env=environment,
+    )
+    result = run(
+        [python, "-c", "import pikepdf; print(pikepdf.__version__)"],
+        stdout=subprocess.PIPE,
+    )
+    if result.stdout.strip() != "10.10.0":
+        raise RuntimeError("macOS pikepdf source build has the wrong version")
+
+
+def bundle_macos_libraries(root: Path, vcpkg_root: Path, triplet: str) -> None:
+    installed = vcpkg_root / "installed" / triplet
+    destination = root / "native-libs"
+    destination.mkdir(parents=True, exist_ok=True)
+    for library in sorted((installed / "lib").glob("*.dylib")):
+        shutil.copy2(library.resolve(), destination / library.name)
+    tesseract = root / "bin" / "tesseract"
+    pikepdf_cores = list(
+        root.glob("python/lib/python3.12/site-packages/pikepdf/_core*.so")
+    )
+    if len(pikepdf_cores) != 1:
+        raise RuntimeError("macOS pikepdf source build did not produce one extension module")
+    pikepdf_core = pikepdf_cores[0]
+    if not any(destination.iterdir()):
+        raise RuntimeError("vcpkg did not produce macOS dynamic libraries")
+    binaries = [tesseract, pikepdf_core, *destination.glob("*.dylib")]
+    desired_rpaths = {
+        tesseract: "@executable_path/../native-libs",
+        pikepdf_core: "@loader_path/../../../../../native-libs",
+        **{library: "@loader_path" for library in destination.glob("*.dylib")},
+    }
+    for binary in binaries:
+        existing_rpaths = macos_rpaths(binary)
+        for rpath in existing_rpaths:
+            if rpath.startswith(str(installed)):
+                run(["install_name_tool", "-delete_rpath", rpath, binary])
+        desired_rpath = desired_rpaths[binary]
+        if desired_rpath not in existing_rpaths:
+            run(["install_name_tool", "-add_rpath", desired_rpath, binary])
+        dependencies = run(["otool", "-L", binary], stdout=subprocess.PIPE).stdout.splitlines()[1:]
+        if binary.suffix == ".dylib" and dependencies:
+            dependencies = dependencies[1:]
+        for dependency in dependencies:
+            source = dependency.strip().split(" ", 1)[0]
+            if not source.startswith(str(installed)):
+                continue
+            source_path = Path(source)
+            target = destination / source_path.name
+            if not target.exists():
+                resolved_target = destination / source_path.resolve().name
+                if not resolved_target.exists():
+                    raise RuntimeError(f"missing bundled dependency {target.name}")
+                target = resolved_target
+            run(["install_name_tool", "-change", source, f"@rpath/{target.name}", binary])
+        if binary.suffix == ".dylib":
+            run(["install_name_tool", "-id", f"@rpath/{binary.name}", binary])
+
+
+def macos_rpaths(binary: Path) -> list[str]:
+    output = run(["otool", "-l", binary], stdout=subprocess.PIPE).stdout
+    return [
+        line.strip().split(" ", 2)[1]
+        for line in output.splitlines()
+        if line.strip().startswith("path ")
+    ]
+
+
 def python_components(python: Path) -> list[dict[str, Any]]:
     script = """
 import json
@@ -136,7 +241,10 @@ def build_tesseract(root: Path, settings: dict[str, str], vcpkg_root: Path) -> l
     overlay = vcpkg_root / "triplets" / "community" / triplet_file.name
     shutil.copy2(triplet_file, overlay)
     vcpkg = vcpkg_root / ("vcpkg.exe" if os.name == "nt" else "vcpkg")
-    run([vcpkg, "install", f"tesseract:{triplet}", "--clean-after-build"])
+    packages = [f"tesseract:{triplet}"]
+    if settings["platform"] == "macos":
+        packages.append(f"qpdf:{triplet}")
+    run([vcpkg, "install", *packages, "--clean-after-build"])
 
     installed = vcpkg_root / "installed" / triplet
     tool = installed / "tools" / "tesseract" / settings["tesseract"]
@@ -361,7 +469,7 @@ print(json.dumps(sorted(result,key=lambda item:item['name'].lower())))
             "  License file: tessdata-fast-Apache-2.0.txt",
             "- CPython 3.12.13: Python-2.0",
             "  License text is bundled in the python distribution.",
-            "- Tesseract and its statically linked vcpkg dependencies: see SBOM.cdx.json",
+            "- Tesseract, qpdf, and their bundled vcpkg dependencies: see SBOM.cdx.json",
             "  and https://github.com/microsoft/vcpkg/tree/52c9e08cdf8580d2d9762f547d22b96fd81e82f2/ports.",
             "",
         ]
@@ -369,20 +477,19 @@ print(json.dumps(sorted(result,key=lambda item:item['name'].lower())))
     (root / "THIRD_PARTY_NOTICES.txt").write_text("\n".join(lines), encoding="utf-8")
 
 
-def installed_size(root: Path) -> int:
-    return sum(path.stat().st_size for path in root.rglob("*") if path.is_file())
-
-
-def archive_runtime(root: Path, output: Path) -> None:
+def archive_runtime(root: Path, output: Path) -> int:
     tar_path = output.with_suffix("")
     with tarfile.open(tar_path, "w", format=tarfile.PAX_FORMAT) as bundle:
         bundle.dereference = True
         bundle.add(root, arcname=PACKAGE_ROOT_NAME, recursive=True)
     with tarfile.open(tar_path, "r:") as bundle:
-        if any(member.issym() or member.islnk() for member in bundle):
+        members = bundle.getmembers()
+        if any(member.issym() or member.islnk() for member in members):
             raise RuntimeError("runtime archive must not contain links")
+        extracted_size = sum(member.size for member in members if member.isfile())
     run(["zstd", "-19", "--threads=0", "--force", tar_path, "-o", output])
     tar_path.unlink()
+    return extracted_size
 
 
 def verify_relocated(root: Path, settings: dict[str, str]) -> None:
@@ -425,6 +532,126 @@ def write_manifest(output_dir: Path, archive: Path, settings: dict[str, str], si
     return path
 
 
+def macos_native_files(root: Path) -> list[Path]:
+    patterns = (
+        "bin/*",
+        "native-libs/*.dylib",
+        "python/bin/*",
+        "python/lib/*.dylib",
+        "python/lib/python3.12/lib-dynload/*.so",
+        "python/lib/python3.12/site-packages/**/*.so",
+        "python/lib/python3.12/site-packages/**/*.dylib",
+    )
+    return sorted(
+        {
+            path
+            for pattern in patterns
+            for path in root.glob(pattern)
+            if path.is_file()
+        }
+    )
+
+
+def verify_macos_minimum_os(root: Path) -> None:
+    offenders: list[str] = []
+    for binary in macos_native_files(root):
+        result = subprocess.run(
+            ["vtool", "-show-build", str(binary)],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode != 0:
+            continue
+        output = result.stdout
+        minimum_versions = [
+            line.split()[1]
+            for line in output.splitlines()
+            if line.strip().startswith("minos ")
+        ]
+        parsed_versions = [
+            tuple((int(part) for part in version.split(".")))
+            for version in minimum_versions
+        ]
+        normalized_versions = [
+            version + (0,) * (3 - len(version)) for version in parsed_versions
+        ]
+        if any(version > (12, 0, 0) for version in normalized_versions):
+            offenders.append(f"{binary.relative_to(root)}: {minimum_versions}")
+    if offenders:
+        raise RuntimeError("macOS 12 runtime contains newer binaries: " + ", ".join(offenders))
+
+
+def verify_macos_dependencies(root: Path) -> None:
+    allowed_absolute_prefixes = (
+        "/usr/lib/",
+        "/System/Library/",
+        "/Library/Apple/System/Library/",
+    )
+    offenders: list[str] = []
+    binaries = [
+        root / "bin" / "lantern-ocr",
+        root / "bin" / "tesseract",
+        *root.glob("native-libs/*.dylib"),
+        *root.glob("python/lib/python3.12/site-packages/pikepdf/_core*.so"),
+    ]
+    for binary in binaries:
+        if not binary.is_file():
+            continue
+        dependencies = subprocess.run(
+            ["otool", "-L", str(binary)],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if dependencies.returncode != 0:
+            continue
+        install_names: set[str] = set()
+        if binary.suffix == ".dylib":
+            ids = subprocess.run(
+                ["otool", "-D", str(binary)],
+                check=True,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            install_names = {
+                line.strip()
+                for line in ids.stdout.splitlines()
+                if line.strip().startswith(("/", "@"))
+                and " (architecture " not in line
+            }
+        for line in dependencies.stdout.splitlines():
+            if not line[:1].isspace():
+                continue
+            dependency = line.strip().split(" ", 1)[0]
+            if dependency in install_names:
+                continue
+            if dependency.startswith("@") or dependency.startswith(allowed_absolute_prefixes):
+                continue
+            if dependency.startswith("/"):
+                offenders.append(f"{binary.relative_to(root)}: {dependency}")
+
+        load_commands = subprocess.run(
+            ["otool", "-l", str(binary)],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        for line in load_commands.stdout.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("path /"):
+                continue
+            rpath = stripped.split(" ", 2)[1]
+            if not rpath.startswith(allowed_absolute_prefixes):
+                offenders.append(f"{binary.relative_to(root)} rpath: {rpath}")
+    if offenders:
+        raise RuntimeError("macOS runtime is not relocatable: " + ", ".join(offenders))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--platform", choices=("macos-arm64", "windows-x86_64"), required=True)
@@ -457,16 +684,34 @@ def main() -> int:
         ]
         components.extend(install_python_packages(python, root))
         components.extend(build_tesseract(root, settings, arguments.vcpkg_root.resolve()))
+        if settings["platform"] == "macos":
+            build_macos_pikepdf(python, arguments.vcpkg_root.resolve(), settings["triplet"])
+            bundle_macos_libraries(root, arguments.vcpkg_root.resolve(), settings["triplet"])
+            components = [
+                component
+                for component in components
+                if component.get("name", "").casefold() != "pikepdf"
+            ]
+            known_components = {
+                component.get("name", "").casefold() for component in components
+            }
+            for component in python_components(python):
+                name = component.get("name", "").casefold()
+                if name not in known_components:
+                    components.append(component)
+                    known_components.add(name)
         components.extend(install_tessdata(root, lock["tessdata_fast"], cache))
         create_fixture(root, python)
         compile_launcher(root, settings)
         write_runtime_metadata(root, settings, lock, components)
         write_notices(root, python, components, cache / "tessdata-fast-LICENSE")
+        if settings["platform"] == "macos":
+            verify_macos_minimum_os(root)
+            verify_macos_dependencies(root)
         verify_relocated(root, settings)
         package_name = f"{PACKAGE_ID}-{PACKAGE_VERSION}-{settings['platform']}-{settings['arch']}.tar.zst"
         archive = output_dir / package_name
-        size = installed_size(root)
-        archive_runtime(root, archive)
+        size = archive_runtime(root, archive)
         manifest = write_manifest(output_dir, archive, settings, size)
         shutil.copy2(root / "SBOM.cdx.json", output_dir / f"{package_name}.sbom.cdx.json")
         shutil.copy2(root / "THIRD_PARTY_NOTICES.txt", output_dir / f"{package_name}.THIRD_PARTY_NOTICES.txt")
