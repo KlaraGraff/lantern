@@ -1626,6 +1626,39 @@ mod tests {
         assert!(error.contains("OCR_PACKAGE_HASH_MISMATCH"));
     }
 
+    #[test]
+    #[ignore = "requires LANTERN_OCR_ARTIFACT_DIR from a completed runtime workflow"]
+    fn downloaded_runtime_artifact_installs() {
+        let artifact_dir = PathBuf::from(
+            std::env::var("LANTERN_OCR_ARTIFACT_DIR")
+                .expect("set LANTERN_OCR_ARTIFACT_DIR to the downloaded artifact directory"),
+        );
+        let manifest: RuntimeManifest = serde_json::from_slice(
+            &fs::read(artifact_dir.join("manifest-macos-arm64.json")).unwrap(),
+        )
+        .unwrap();
+        manifest.validate(false).unwrap();
+        let archive_url = Url::parse(&manifest.url).unwrap();
+        let archive_name = archive_url.path_segments().unwrap().next_back().unwrap();
+        let archive = artifact_dir.join(archive_name);
+        verify_file_hash(&archive, manifest.download_size, &manifest.sha256).unwrap();
+
+        let package_root = TempDir::new().unwrap();
+        let cancel = AtomicBool::new(false);
+        let runtime =
+            install_verified_archive(package_root.path(), &archive, &manifest, &cancel).unwrap();
+        assert_eq!(runtime.version, manifest.version);
+        assert_eq!(
+            installed_runtime_at(package_root.path())
+                .unwrap()
+                .unwrap()
+                .root
+                .canonicalize()
+                .unwrap(),
+            runtime.root.canonicalize().unwrap()
+        );
+    }
+
     #[tokio::test]
     async fn interrupted_download_retries_from_a_clean_partial() {
         let body = b"complete runtime archive".to_vec();
