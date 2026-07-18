@@ -180,7 +180,9 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
     <aside style={{ width: sidebarWidth }} className="shrink-0 bg-bg-muted border-r border-border h-full flex flex-col gap-6 px-4 relative select-none overflow-hidden">
       <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-11" />
       <div className="flex items-center gap-2.5 pb-2 pt-11">
-        <LanternLogo size={28} />
+        <div className="size-[26px] shrink-0 overflow-hidden rounded-[7px] border border-border">
+          <LanternLogo size={26} className="block object-cover" />
+        </div>
         <span className="text-[18px] font-semibold tracking-[0.5px] text-text-primary">
           Lantern
         </span>
