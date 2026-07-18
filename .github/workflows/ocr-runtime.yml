@@ -22,6 +22,7 @@ concurrency:
 env:
   OCR_RUNTIME_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.runtime_version || github.ref_name }}
   VCPKG_REF: 52c9e08cdf8580d2d9762f547d22b96fd81e82f2
+  VCPKG_DISABLE_METRICS: "1"
 
 jobs:
   build-macos:
@@ -103,9 +104,9 @@ jobs:
         with:
           arch: x64
 
-      - name: Install zstd
+      - name: Verify preinstalled zstd
         shell: pwsh
-        run: choco install zstandard --version=1.5.7 -y --no-progress
+        run: zstd --version
 
       - name: Build, relocate, and self-test
         shell: pwsh
