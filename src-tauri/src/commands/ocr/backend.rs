@@ -169,6 +169,26 @@ enum JsonlEvent {
     },
 }
 
+fn progress_update(event: &JsonlEvent) -> Option<OcrProgress> {
+    match event {
+        JsonlEvent::Phase { phase } => Some(OcrProgress {
+            phase: phase.clone(),
+            pages_done: None,
+            pages_total: None,
+        }),
+        JsonlEvent::Progress {
+            phase,
+            completed,
+            total,
+        } if phase == "ocr" && *completed >= 0 && *total >= *completed => Some(OcrProgress {
+            phase: phase.clone(),
+            pages_done: Some(*completed),
+            pages_total: Some(*total),
+        }),
+        _ => None,
+    }
+}
+
 impl OcrBackend for OcrmypdfBackend {
     fn probe(&self) -> AppResult<BackendCapabilities> {
         let executable = runtime_executable(&self.runtime_root)?;
@@ -272,21 +292,11 @@ impl OcrBackend for OcrmypdfBackend {
         let mut complete = None;
         let status = loop {
             while let Ok(event) = event_rx.try_recv() {
+                if let Some(update) = progress_update(&event) {
+                    progress(update);
+                    continue;
+                }
                 match event {
-                    JsonlEvent::Phase { phase } => progress(OcrProgress {
-                        phase,
-                        pages_done: None,
-                        pages_total: None,
-                    }),
-                    JsonlEvent::Progress {
-                        phase,
-                        completed,
-                        total,
-                    } if completed >= 0 && total >= completed => progress(OcrProgress {
-                        phase,
-                        pages_done: Some(completed),
-                        pages_total: Some(total),
-                    }),
                     JsonlEvent::Warning { code, page } => {
                         let _ = (code, page);
                     }
@@ -305,7 +315,7 @@ impl OcrBackend for OcrmypdfBackend {
                             failed_pages,
                         ))
                     }
-                    JsonlEvent::Progress { .. } => {}
+                    JsonlEvent::Phase { .. } | JsonlEvent::Progress { .. } => {}
                 }
             }
             if cancel.is_cancelled() {
@@ -992,6 +1002,29 @@ mod tests {
             &mut |_| {},
             &CancellationToken::default(),
         )
+    }
+
+    #[test]
+    fn only_ocr_phase_updates_page_progress() {
+        assert!(progress_update(&JsonlEvent::Progress {
+            phase: "analyzing".to_string(),
+            completed: 561,
+            total: 561,
+        })
+        .is_none());
+
+        assert_eq!(
+            progress_update(&JsonlEvent::Progress {
+                phase: "ocr".to_string(),
+                completed: 106,
+                total: 561,
+            }),
+            Some(OcrProgress {
+                phase: "ocr".to_string(),
+                pages_done: Some(106),
+                pages_total: Some(561),
+            })
+        );
     }
 
     #[test]
