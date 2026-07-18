@@ -44,6 +44,8 @@
 4. 对端 replay 对日志中每条事件执行 `validate_event`；`source_file_path` 走 `validate_source_path`，只接受 `sources/` 前缀（`validation.rs:293-295,475-477`）→ 事件无效 → **整份 peer 日志被拒**（`replay.rs:448`）。
 5. 后果：任何设备导入一本原生书之后，该设备日志中**此后全部事件**（阅读进度、高亮、词汇、笔记——所有）对其他设备不可见，只能靠周期性 snapshot 粗粒度兜底。事件级同步实质失效。
 
+实施修复时（2026-07-18）发现缺陷还有评审稿未覆盖的另一半：`do_import_text`（txt/markdown/html 导入）把 **`file_path` 本身**也写在 `sources/`（`import.rs:200`），而事件与 snapshot 验证对 `file_path` 只接受 `books/`。因此文本书不但事件被拒，**含文本书的 snapshot 也整份不可应用**（`snapshot/apply.rs:151`，replay 每 tick 跳过重试）——对文本书而言事件与快照两条兜底通道同时失效。
+
 因此该修复不应放在 OCR Phase 3 的第一项（评审稿位置），而是**立即独立修复、随最近一个 patch 发布**（本文 Phase A，§2）。
 
 ### 0.3 相对评审稿的修正与裁剪
@@ -76,22 +78,22 @@
 - 目标/非目标沿用评审稿 §5，外加本文裁剪：v1 无 `book_asset_positions`、无 OSD、无 EPUB 派生。
 - 发布门槛沿用评审稿 §1.3，其中「路径契约修复」「旧客户端兼容」由 Phase A/B 提前满足。
 
-## 2. Phase A — 修复 `source_file_path` 路径契约（立即，独立于 OCR）
+## 2. Phase A — 修复书籍路径契约（已实施，commit `75139ff`）
 
-**交付物：一个 `fix(sync)` commit，随下一个 patch 版本发布。**
+**状态：已实施并合入 `main`（2026-07-18），待随下一个 patch 版本发布。**
 
-设计：统一「源资产可位于 `books/` 或 `sources/`」的角色规则。
+统一「`file_path` 与 `source_file_path` 按角色命名、不绑定目录」的契约，两字段均接受 `books/` 或 `sources/` 根：
 
-1. `validation.rs` 新增 `validate_source_file_path()`：接受 `books/` **或** `sources/` 前缀（复用 `validate_relative_blob_path` 的两次调用或提取公共实现），`BookImport` 验证（`validation.rs:293-295`）改用它。
-2. `snapshot/apply.rs` 对 `source_file_path` 应用同一验证（当前完全缺失），保持 event 与 snapshot 白名单一致。
-3. `resolve_blob_path`（`validation.rs:492-503`）已同时接受两种前缀，无需改动——确认后补注释说明角色契约。
-4. 历史数据自愈确认：被拒日志未推进 watermark；对端升级后下个 tick 重新解析整份日志即可全量补齐，无需迁移或重写日志。用测试固化这一行为。
+1. `validation.rs` 新增 `validate_book_file_path()`：按前缀分派到既有的 `books/`/`sources/` 验证器（保留穿越/扩展名检查）。
+2. `BookImport` 的 `file_path` 与 `source_file_path`、`BookMetadataSet` 的 `file_path` 字段、snapshot 书籍行的两个字段全部改用它（snapshot 侧此前对 `source_file_path` 完全没有验证）。
+3. `resolve_blob_path` 本就接受两种前缀，未改动。
+4. 历史数据自愈：被拒日志未推进 watermark，对端升级后下个 tick 重新解析整份日志即可全量补齐；被跳过的 snapshot 每 tick 重试。无需迁移或重写日志。
 
-测试：
+已落地的回归测试（全部通过，Rust 套件 471 项全绿 + clippy 干净）：
 
-- 原生 EPUB/PDF 导入 → `BookImport` 事件 roundtrip → `validate_event` 通过（今天会失败的用例）。
-- 双设备 replay 回归：设备 A 导入原生书 + 后续进度事件，设备 B 全量应用成功。
-- snapshot 含 `books/...` 的 `source_file_path` 应用成功；含 `../` 等逃逸路径拒绝。
+- `validation.rs`：`validate_book_file_path` 双根接受/逃逸拒绝；原生 EPUB 形态与文本形态的 `BookImport` 事件通过 `validate_event`，逃逸路径拒绝。
+- `replay.rs`：原生 + 文本导入形态的 peer 日志端到端应用（此前整份被拒的场景），后续进度事件不丢。
+- `snapshot/tests.rs`：含两种形态书籍的 snapshot `apply_peer` 成功；`source_file_path` 逃逸的 snapshot 拒绝。
 
 ## 3. Phase B — 同步能力通告（早发布，小改动）
 
