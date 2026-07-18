@@ -35,6 +35,34 @@ static int parent_directory(wchar_t *path) {
     return 1;
 }
 
+#ifdef _WIN32
+static wchar_t *quote_windows_argument(const wchar_t *value) {
+    size_t length = wcslen(value);
+    wchar_t *quoted = calloc(length * 2 + 3, sizeof(wchar_t));
+    if (!quoted) return NULL;
+    size_t output = 0;
+    size_t backslashes = 0;
+    quoted[output++] = L'"';
+    for (size_t index = 0;; ++index) {
+        wchar_t current = value[index];
+        if (current == L'\\') {
+            ++backslashes;
+            continue;
+        }
+        size_t copies = backslashes;
+        if (current == L'"') copies = backslashes * 2 + 1;
+        if (current == L'\0') copies = backslashes * 2;
+        for (size_t slash = 0; slash < copies; ++slash) quoted[output++] = L'\\';
+        backslashes = 0;
+        if (current == L'\0') break;
+        quoted[output++] = current;
+    }
+    quoted[output++] = L'"';
+    quoted[output] = L'\0';
+    return quoted;
+}
+#endif
+
 static int executable_path(wchar_t *destination, size_t capacity) {
 #ifdef _WIN32
     DWORD written = GetModuleFileNameW(NULL, destination, (DWORD)capacity);
@@ -91,13 +119,30 @@ int main(int argc, char **argv) {
         fputs("lantern-ocr: out of memory\n", stderr);
         return 1;
     }
-    child_argv[0] = home;
+    child_argv[0] = quote_windows_argument(home);
     child_argv[1] = L"-I";
     child_argv[2] = L"-X";
     child_argv[3] = L"utf8";
-    child_argv[4] = script;
-    for (int index = 1; index < argc; ++index) child_argv[index + 4] = argv[index];
+    child_argv[4] = quote_windows_argument(script);
+    for (int index = 1; index < argc; ++index) {
+        child_argv[index + 4] = quote_windows_argument(argv[index]);
+    }
+    int allocation_failed = !child_argv[0] || !child_argv[4];
+    for (int index = 1; index < argc; ++index) {
+        if (!child_argv[index + 4]) allocation_failed = 1;
+    }
+    if (allocation_failed) {
+        free((void *)child_argv[0]);
+        free((void *)child_argv[4]);
+        for (int index = 1; index < argc; ++index) free((void *)child_argv[index + 4]);
+        free(child_argv);
+        fputs("lantern-ocr: out of memory\n", stderr);
+        return 1;
+    }
     intptr_t result = _wspawnv(_P_WAIT, home, child_argv);
+    free((void *)child_argv[0]);
+    free((void *)child_argv[4]);
+    for (int index = 1; index < argc; ++index) free((void *)child_argv[index + 4]);
     free(child_argv);
     if (result == -1) {
         fputs("lantern-ocr: cannot start bundled Python\n", stderr);
