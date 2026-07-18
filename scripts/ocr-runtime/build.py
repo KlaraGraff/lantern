@@ -250,13 +250,13 @@ def build_tesseract(root: Path, settings: dict[str, str], vcpkg_root: Path) -> l
     tool = installed / "tools" / "tesseract" / settings["tesseract"]
     if not tool.is_file():
         raise RuntimeError(f"vcpkg did not produce {tool}")
+    versions = run([tool, "--version"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.splitlines()
     destination = root / "bin" / settings["tesseract"]
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(tool, destination)
     if os.name != "nt":
         destination.chmod(destination.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-    versions = run([destination, "--version"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout.splitlines()
     components = vcpkg_components(installed, root)
     for component in components:
         if component["name"] == "tesseract":
