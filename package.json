@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && npm run build:reader-assets && npm run check:reader-compat",
+    "build:reader-assets": "node scripts/build-reader-assets.mjs",
+    "check:reader-compat": "node scripts/check-reader-compat.mjs",
     "test:unit": "node --experimental-strip-types --test tests/*.test.ts",
     "preview": "vite preview",
     "tauri": "tauri",
@@ -37,9 +39,11 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "esbuild": "0.28.1",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "postcss": "8.5.19",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.56.1",
     "vite": "^7.0.4"

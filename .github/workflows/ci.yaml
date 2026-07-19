@@ -25,7 +25,13 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run lint
       - run: npm run test:unit
-      - run: npm run build
+      - name: Build and check Reader Safari 15 compatibility
+        run: npm run build
+      - name: Upload Reader compatibility size report
+        uses: actions/upload-artifact@v4
+        with:
+          name: reader-compat-size-report
+          path: dist/reader-compat-size-report.json
 
   dependency-security:
     name: Dependency Security
