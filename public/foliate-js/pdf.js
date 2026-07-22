@@ -275,6 +275,26 @@ export const makePDF = async file => {
     // construct itself (pdf.mjs `PDFWorker.destroy`).
     const worker = new Worker(workerUrl, { type: 'module' })
 
+    // The PDF Worker runs in its own global scope: an unsupported runtime API
+    // (e.g. missing structuredClone on Safari 15.1) throws there with no
+    // main-thread try/catch in reach, and getDocument() below can then hang
+    // instead of rejecting. Forward Worker faults to the app's diagnostic sink
+    // so a stuck "Preparing book…" leaves an on-disk trace.
+    const reportPdfDiag = (scope, message) => {
+        try {
+            globalThis.dispatchEvent(new CustomEvent('lantern-reader-diagnostic', {
+                detail: { scope, message },
+            }))
+        } catch {}
+    }
+    worker.addEventListener('error', event => {
+        const where = event.filename
+            ? ` @ ${event.filename}:${event.lineno}:${event.colno}` : ''
+        reportPdfDiag('pdf.worker.error', `${event.message || 'worker error'}${where}`)
+    })
+    worker.addEventListener('messageerror', () =>
+        reportPdfDiag('pdf.worker.messageerror', 'structured-clone/message deserialization failed'))
+
     // Until `return book`, no caller has a handle to terminate the Worker:
     // `view.open()` doesn't assign `this.book = book` until `makePDF()`
     // resolves, so a throw from any await below (`getDocument`,
@@ -283,12 +303,14 @@ export const makePDF = async file => {
     let pdf
     try {
         pdfjsLib.GlobalWorkerOptions.workerPort = worker
+        reportPdfDiag('pdf.getdocument-start', '')
         pdf = await pdfjsLib.getDocument({
             range: transport,
             cMapUrl: pdfjsPath('cmaps/'),
             standardFontDataUrl: pdfjsPath('standard_fonts/'),
             isEvalSupported: false,
         }).promise
+        reportPdfDiag('pdf.getdocument-done', '')
 
         const book = { rendition: { layout: 'pre-paginated' } }
 

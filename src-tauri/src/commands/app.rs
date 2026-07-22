@@ -5,7 +5,9 @@ use crate::error::{AppError, AppResult};
 use crate::resolve_log_dir;
 
 const MAX_WEBVIEW_LOG_SCOPE_CHARS: usize = 96;
-const MAX_WEBVIEW_LOG_MESSAGE_CHARS: usize = 1_024;
+// Wide enough for a reader diagnostic line to carry a JS stack or the runtime
+// capability snapshot without being clipped.
+const MAX_WEBVIEW_LOG_MESSAGE_CHARS: usize = 4_096;
 
 #[derive(Debug, serde::Serialize)]
 pub struct BuildInfo {

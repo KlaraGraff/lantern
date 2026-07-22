@@ -164,8 +164,23 @@ export const createPdfJsLoader = ({
         }
     }
 
+    const reportDiag = (scope, message) => {
+        try {
+            globalObject.dispatchEvent(new CustomEvent('lantern-reader-diagnostic', {
+                detail: { scope, message },
+            }))
+        } catch {}
+    }
+
     const loadSelectedVariant = async () => {
-        selectedVariant ??= selectPdfJsVariant(getCapabilities())
+        if (!selectedVariant) {
+            const caps = getCapabilities()
+            selectedVariant = selectPdfJsVariant(caps)
+            const missing = Object.keys(caps).filter(key => caps[key] === false)
+            reportDiag('pdf.variant',
+                `variant=${selectedVariant}`
+                + (missing.length ? ` missing=[${missing.join(', ')}]` : ''))
+        }
         if (selectedVariant === 'legacy') return loadVariant('legacy')
 
         try {

@@ -414,19 +414,39 @@ function reliableFallbackHeadings(doc: Document): Element[] {
   ));
 }
 
-async function resolveTocEntries(book: FoliateChapterBook): Promise<ResolvedTocEntry[]> {
+/** Reports chapter-resolve progress. `done` stalling below `total` on Safari
+ * 15.1 is the signal that a section resolve hung (foliate swallows the error),
+ * which is what wedges the reader on "Preparing book…". Kept as an injected
+ * callback so this module stays free of the Tauri diagnostics import. */
+export type ChapterResolveProgress = (done: number, total: number) => void;
+
+async function resolveTocEntries(
+  book: FoliateChapterBook,
+  onProgress?: ChapterResolveProgress,
+): Promise<ResolvedTocEntry[]> {
   if (!Array.isArray(book.toc) || typeof book.resolveHref !== "function") return [];
   const entries = flattenToc(book.toc);
-  const resolved = await Promise.all(entries.map(async (entry) => {
-    const href = hrefForItem(entry.item);
-    if (!href) return null;
+  const withHref = entries
+    .map((entry) => ({ entry, href: hrefForItem(entry.item) }))
+    .filter((item): item is { entry: TocEntry; href: string } => Boolean(item.href));
+  const total = withHref.length;
+
+  let done = 0;
+  onProgress?.(0, total);
+
+  const resolved = await Promise.all(withHref.map(async ({ entry, href }) => {
     try {
       const target = asResolvedTarget(await book.resolveHref?.(href));
+      done += 1;
+      onProgress?.(done, total);
       return target ? { ...entry, href, target } : null;
     } catch {
+      done += 1;
+      onProgress?.(done, total);
       return null;
     }
   }));
+
   return resolved.filter((entry): entry is ResolvedTocEntry => entry !== null);
 }
 
@@ -436,8 +456,9 @@ async function resolveTocEntries(book: FoliateChapterBook): Promise<ResolvedTocE
  */
 export async function createChapterPaginationMarker(
   book: FoliateChapterBook,
+  onProgress?: ChapterResolveProgress,
 ): Promise<(doc: Document, index: number) => number> {
-  const resolvedEntries = await resolveTocEntries(book);
+  const resolvedEntries = await resolveTocEntries(book, onProgress);
   const validItems = new Set(resolvedEntries.map(({ item }) => item));
   const selectedItems = new Set(selectChapterLevelItems(book.toc ?? [], validItems));
   const targetsByIndex = new Map<number, unknown[]>();

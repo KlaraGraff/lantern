@@ -22,6 +22,11 @@ import { expandWordForms } from "../../components/word-forms";
 import type { Highlight } from "../../hooks/useBookmarks";
 import type { Book } from "../../hooks/useBooks";
 import { logIgnoredError } from "../../utils/logIgnoredError";
+import {
+  logReaderDiagnostic,
+  readerEnvironmentSnapshot,
+  setDiagnosticContext,
+} from "../../utils/readerDiagnostics";
 import { createChapterPaginationMarker } from "./chapter-pagination";
 import {
   applyPdfLayout,
@@ -209,8 +214,14 @@ export function useFoliateView({
     setReaderError(null);
     let cancelled = false;
     let activeView: FoliateView | null = null;
+    let firstSectionLogged = false;
 
     const initFoliate = async () => {
+      logReaderDiagnostic(
+        "reader.open.start",
+        `format=${book.format} render=${book.render_format ?? "-"}`,
+      );
+      logReaderDiagnostic("reader.env", JSON.stringify(readerEnvironmentSnapshot()));
       if (capabilities.supportsWordMarkers && bookId) {
         const [rules, exceptions] = await Promise.all([
           invoke<WordMarkRule[]>("list_word_marks", { bookId }).catch((error) => {
@@ -238,6 +249,7 @@ export function useFoliateView({
       }
 
       if (!customElements.get("foliate-view")) {
+        logReaderDiagnostic("reader.open.script-load-start");
         await withTimeout(new Promise<void>((resolve, reject) => {
           const script = document.createElement("script");
           script.type = "module";
@@ -251,6 +263,7 @@ export function useFoliateView({
           15_000,
           "READER_ELEMENT_TIMEOUT",
         );
+        logReaderDiagnostic("reader.open.script-loaded");
       }
       if (cancelled) return;
 
@@ -265,11 +278,13 @@ export function useFoliateView({
       container.appendChild(view);
       viewRef.current = view;
 
+      logReaderDiagnostic("reader.open.fetch-start");
       const response = await withTimeout(
         fetch(convertFileSrc(book.file_path)),
         30_000,
         "READER_FILE_TIMEOUT",
       );
+      logReaderDiagnostic("reader.open.fetch-done", `status=${response.status}`);
       if (!response.ok) throw new Error(`READER_FILE_${response.status}`);
       const extension = (book.render_format || book.format || "epub").toLowerCase();
       const mime = {
@@ -287,10 +302,34 @@ export function useFoliateView({
         `book.${extension}`,
         { type: mime },
       );
+      logReaderDiagnostic("reader.open.view-open-start", `bytes=${file.size} mime=${mime}`);
       await withTimeout(view.open(file), 45_000, "READER_OPEN_TIMEOUT");
       if (cancelled) return;
+      logReaderDiagnostic("reader.open.view-open-done");
 
-      const markChapterStarts = await createChapterPaginationMarker(view.book);
+      // This was the one await in the open flow with no timeout: it eagerly
+      // resolves every TOC href, and on Safari 15.1 a section resolve can hang
+      // forever (foliate swallows the underlying error), wedging the reader on
+      // "Preparing book…" with no error surfaced. Guard it, and degrade to no
+      // chapter-start markers rather than failing the whole open — reading
+      // works without them, and the timeout gives us a diagnostic anchor.
+      logReaderDiagnostic("reader.open.chapter-marker-start");
+      let markChapterStarts: (doc: Document, index: number) => number;
+      try {
+        markChapterStarts = await withTimeout(
+          createChapterPaginationMarker(view.book, (done, total) => {
+            // Frozen at the hang point, `done/total` says how many chapters
+            // resolved before a section wedged — the key "Preparing" signal.
+            setDiagnosticContext("chapter.resolve", `${done}/${total}`);
+          }),
+          20_000,
+          "READER_CHAPTER_MARKER_TIMEOUT",
+        );
+        logReaderDiagnostic("reader.open.chapter-marker-done");
+      } catch (error) {
+        logReaderDiagnostic("reader.open.chapter-marker-timeout", error);
+        markChapterStarts = () => 0;
+      }
       if (cancelled) return;
       if (capabilities.supportsReflowSettings) {
         applyReflowLayout(view, readerSettings, container.clientWidth, container.clientHeight);
@@ -390,6 +429,10 @@ export function useFoliateView({
 
       view.addEventListener("load", ((event: CustomEvent) => {
         const { doc, index } = event.detail as { doc: Document; index: number };
+        if (!firstSectionLogged) {
+          firstSectionLogged = true;
+          logReaderDiagnostic("reader.open.first-section-loaded", `index=${index}`);
+        }
         markChapterStarts(doc, index);
         installCustomFontFacesInDocument(doc);
         if (loadedInteractionDocumentsRef.current.has(doc)) return;
@@ -504,6 +547,7 @@ export function useFoliateView({
           view.book?.sections?.length ?? book.pages,
         );
       }
+      logReaderDiagnostic("reader.open.init-start", `startLocation=${startLocation ?? "-"}`);
       try {
         await withTimeout(
           view.init({ lastLocation: startLocation, showTextStart: !startLocation }),
@@ -529,15 +573,18 @@ export function useFoliateView({
         );
       }
       if (cancelled) return;
+      logReaderDiagnostic("reader.open.init-done");
       if (viewerRef.current) {
         viewerRef.current.style.filter = `brightness(${readerSettings.brightness / 100})`;
       }
       setBookReady(true);
+      logReaderDiagnostic("reader.open.ready");
     };
 
     initFoliate().catch((error) => {
       if (cancelled) return;
       console.error("Failed to initialize foliate-js:", error);
+      logReaderDiagnostic("reader.open.failed", error);
       activeView?.close();
       activeView?.remove();
       if (viewRef.current === activeView) viewRef.current = null;

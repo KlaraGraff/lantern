@@ -3,6 +3,12 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import "./i18n";
+import { installReaderDiagnostics } from "./utils/readerDiagnostics";
+
+// Install global fault sinks before anything else runs. On macOS 12 / Safari
+// 15.1 a missing runtime API can throw at module top-level or inside the PDF
+// Worker, where no local try/catch sees it; this routes those to the app log.
+installReaderDiagnostics();
 
 // Polyfill Map.getOrInsertComputed for PDF.js v5.5+ (Stage 3 proposal, not yet in WebKit)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

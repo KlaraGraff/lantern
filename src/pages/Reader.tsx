@@ -107,6 +107,7 @@ import type {
 import { useFoliateView } from "./reader/useFoliateView";
 import { useReaderNavigation } from "./reader/useReaderNavigation";
 import { toReaderOpenError, type ReaderOpenError } from "./reader/reader-open-error";
+import ReaderDiagnosticsPanel from "../components/ReaderDiagnosticsPanel";
 
 type SidePanel = "ai" | "bookmarks" | "vocab" | null;
 
@@ -201,6 +202,8 @@ export default function Reader() {
   const [learningCardConfig, setLearningCardConfig] = useState<CardDesignConfigV1>(DEFAULT_CARD_DESIGN_CONFIG);
   const [learningInteraction, setLearningInteraction] = useState<ReaderInteraction | null>(null);
   const [readerToast, setReaderToast] = useState<string | null>(null);
+  const [diagnosticsPanelOpen, setDiagnosticsPanelOpen] = useState(false);
+  const [showStuckHint, setShowStuckHint] = useState(false);
   const [readerRect, setReaderRect] = useState<SerializableRect | null>(null);
   const [aiContext, setAiContext] = useState<{ text: string; cfi?: string; analysis?: string } | undefined>();
   const [initialChatId, setInitialChatId] = useState<string | undefined>();
@@ -385,6 +388,26 @@ export default function Reader() {
     const timer = window.setTimeout(() => setReaderToast(null), 3500);
     return () => window.clearTimeout(timer);
   }, [readerToast]);
+
+  // Surface a diagnostics escape hatch when a book sits on "Preparing book…"
+  // for too long — the hang case that never reaches the error screen.
+  useEffect(() => {
+    setShowStuckHint(false);
+    if (bookReady || !bookId) return;
+    const timer = window.setTimeout(() => setShowStuckHint(true), 8000);
+    return () => window.clearTimeout(timer);
+  }, [bookReady, bookId]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && (event.key === "D" || event.key === "d")) {
+        event.preventDefault();
+        setDiagnosticsPanelOpen((value) => !value);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const onMissingPdfTextIntent = useCallback((pageIndex: number) => {
     if (!book || book.format !== "pdf") return;
@@ -1144,6 +1167,7 @@ export default function Reader() {
   if (readerError) {
     const invalidPdf = readerError.kind === "invalid-pdf";
     return (
+      <>
       <div role="alert" className="flex h-screen flex-col items-center justify-center gap-4 px-6 text-center">
         {invalidPdf && (
           <div className="flex size-10 items-center justify-center rounded-md bg-danger-bg text-danger-text">
@@ -1198,8 +1222,18 @@ export default function Reader() {
             <ArrowLeft size={14} />
             {t("reader.returnToLibrary")}
           </Button>
+          {!invalidPdf && (
+            <Button variant="ghost" size="sm" onClick={() => setDiagnosticsPanelOpen(true)}>
+              {t("reader.diagnosticDetails")}
+            </Button>
+          )}
         </div>
       </div>
+      <ReaderDiagnosticsPanel
+        open={diagnosticsPanelOpen}
+        onClose={() => setDiagnosticsPanelOpen(false)}
+      />
+      </>
     );
   }
 
@@ -1504,6 +1538,15 @@ export default function Reader() {
                 <div className="flex flex-col items-center gap-3">
                   <Loader2 size={24} className="animate-spin text-text-muted" />
                   <span className="text-[14px] text-text-muted">{t("reader.preparingBook")}</span>
+                  {showStuckHint && (
+                    <button
+                      type="button"
+                      className="mt-1 cursor-pointer text-[12px] text-accent-text underline-offset-2 hover:underline"
+                      onClick={() => setDiagnosticsPanelOpen(true)}
+                    >
+                      {t("reader.diagnostics.stuckHint")}
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -1865,6 +1908,10 @@ export default function Reader() {
       )}
 
       {readerToast && <Toast>{readerToast}</Toast>}
+      <ReaderDiagnosticsPanel
+        open={diagnosticsPanelOpen}
+        onClose={() => setDiagnosticsPanelOpen(false)}
+      />
 
     </div>
   );
