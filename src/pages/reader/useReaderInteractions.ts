@@ -12,6 +12,7 @@ import {
   rangeFromSelectionSnapshotAtPoint,
   replaceDocumentSelection,
   selectedRange,
+  snapshotContainsRange,
   snapshotSelectionRange,
   viewportRectForRange,
   wordRangeAtPoint,
@@ -208,11 +209,15 @@ export function useReaderInteractions({
         : null;
       if (expanded) {
         selectionNormalizationUntil = Date.now() + 80;
+        // A non-drag word selection here is the browser's native double-click
+        // word pick. When it lands inside a broader sentence/phrase snapshot,
+        // keep that snapshot so the dblclick quick-lookup targets the whole
+        // selection instead of collapsing onto the single word.
+        if (!completedDrag && snapshotContainsRange(selectionSnapshot, expanded)) return;
         replaceDocumentSelection(doc, expanded);
         selectionSnapshot = snapshotSelectionRange(expanded);
-      }
-      if (expanded) scheduleSelectionMenu(30, true);
-      else {
+        scheduleSelectionMenu(30, true);
+      } else {
         cancelPendingSelectionMenu();
         if (completedDrag) showMissingPdfTextIntent();
       }

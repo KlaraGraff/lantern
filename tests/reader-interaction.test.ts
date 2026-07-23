@@ -7,7 +7,18 @@ import {
   readerMenuActivationIndex,
   readerMenuFocusIndex,
   segmentInteractionWords,
+  snapshotContainsRange,
 } from "../src/components/reader-interaction.ts";
+
+// Minimal Range stand-in: boundary points as flat offsets in one document.
+const rangeAt = (start: number, end: number, ownerDocument: unknown = {}) => ({
+  startContainer: { ownerDocument },
+  compareBoundaryPoints: (mode: number, other: { start: number; end: number }) => (
+    Math.sign((mode === 0 ? start - other.start : end - other.end))
+  ),
+  start,
+  end,
+}) as unknown as Range & { start: number; end: number };
 
 const words = (value: string, locale = "en") => (
   segmentInteractionWords(value, locale).map(({ segment }) => segment)
@@ -48,6 +59,20 @@ test("reuses a snapshotted passage when a click lands inside its selection", () 
   rects = [{ left: 10, top: 120, right: 110, bottom: 140 }];
   assert.equal(rangeFromSelectionSnapshotAtPoint(snapshot, 50, 50), null);
   assert.equal(rangeFromSelectionSnapshotAtPoint(snapshot, 50, 130), clonedRange);
+});
+
+test("keeps a broader selection snapshot when a double-click word lands inside it", () => {
+  const doc = {};
+  const sentence = { range: rangeAt(0, 40, doc) };
+  // Native double-click word selection nested inside the sentence: preserve it.
+  assert.equal(snapshotContainsRange(sentence, rangeAt(12, 17, doc)), true);
+  // Exact same range still counts as contained.
+  assert.equal(snapshotContainsRange(sentence, rangeAt(0, 40, doc)), true);
+  // A deliberate wider re-selection is not contained, so the snapshot updates.
+  assert.equal(snapshotContainsRange(sentence, rangeAt(12, 60, doc)), false);
+  // No prior snapshot and cross-document ranges never preserve.
+  assert.equal(snapshotContainsRange(null, rangeAt(12, 17, doc)), false);
+  assert.equal(snapshotContainsRange(sentence, rangeAt(12, 17, {})), false);
 });
 
 test("moves keyboard focus into an unfocused selection menu without stealing it on open", () => {

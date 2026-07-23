@@ -20,6 +20,7 @@ import {
   rangeFromSelectionSnapshotAtPoint,
   replaceDocumentSelection,
   selectedRange,
+  snapshotContainsRange,
   snapshotSelectionRange,
   viewportRectForRange,
   wordRangeAtPoint,
@@ -565,6 +566,8 @@ function TextBookReader({
   const selectionMenuTimerRef = useRef<number | null>(null);
   const activePointerIdRef = useRef<number | null>(null);
   const pointerCaptureTargetRef = useRef<HTMLElement | null>(null);
+  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const pointerMovedRef = useRef(false);
   const selectionNormalizationUntilRef = useRef(0);
   const forceClickSuppressedUntilRef = useRef(0);
   const doubleClickSelectionRef = useRef<ReaderSelectionSnapshot | null>(null);
@@ -1292,6 +1295,9 @@ function TextBookReader({
     activePointerIdRef.current = null;
     const captureTarget = pointerCaptureTargetRef.current;
     pointerCaptureTargetRef.current = null;
+    const completedDrag = pointerMovedRef.current;
+    pointerStartRef.current = null;
+    pointerMovedRef.current = false;
     try {
       if (captureTarget?.hasPointerCapture(activePointerId)) {
         captureTarget.releasePointerCapture(activePointerId);
@@ -1309,17 +1315,23 @@ function TextBookReader({
       : null;
     if (expanded) {
       selectionNormalizationUntilRef.current = Date.now() + 80;
+      // A non-drag word selection here is the browser's native double-click
+      // word pick. When it lands inside a broader sentence/phrase snapshot,
+      // keep that snapshot so the dblclick quick-lookup targets the whole
+      // selection instead of collapsing onto the single word.
+      if (!completedDrag && snapshotContainsRange(doubleClickSelectionRef.current, expanded)) return;
       replaceDocumentSelection(window.document, expanded);
       doubleClickSelectionRef.current = snapshotSelectionRange(expanded);
-    }
-    if (expanded) scheduleSelectionMenu(30, true);
-    else cancelSelectionMenu();
+      scheduleSelectionMenu(30, true);
+    } else cancelSelectionMenu();
   }, [cancelSelectionMenu, scheduleSelectionMenu]);
 
   const handleSelectionPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     activePointerIdRef.current = event.pointerId;
     pointerCaptureTargetRef.current = event.currentTarget;
+    pointerStartRef.current = { x: event.clientX, y: event.clientY };
+    pointerMovedRef.current = false;
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
@@ -1327,6 +1339,14 @@ function TextBookReader({
     }
     cancelSelectionMenu();
   }, [cancelSelectionMenu]);
+
+  const handleSelectionPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const start = pointerStartRef.current;
+    if (event.pointerId !== activePointerIdRef.current || !start) return;
+    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) >= 5) {
+      pointerMovedRef.current = true;
+    }
+  }, []);
 
   const handleSelectionPointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     finalizePointerSelection(event.pointerId);
@@ -1444,6 +1464,7 @@ function TextBookReader({
       }}
       onContextMenu={handleTextContextMenu}
       onPointerDown={handleSelectionPointerDown}
+      onPointerMove={handleSelectionPointerMove}
       onPointerUp={handleSelectionPointerUp}
       onPointerCancel={handleSelectionPointerCancel}
       onLostPointerCapture={handleLostPointerCapture}
