@@ -901,6 +901,8 @@
   "settings.reading.subtitle": "自定义你的阅读体验",
   "settings.reading.autoSave": "自动保存进度",
   "settings.reading.autoSaveSub": "自动保存你的阅读位置",
+  "settings.reading.skipFrontMatter": "跳过卷首内容",
+  "settings.reading.skipFrontMatterHint": "首次打开书籍时直接跳到正文,跳过封面、目录、序言等前置内容。",
 
   "settings.librarySync.folder": "iCloud 云盘同步文件夹",
   "settings.librarySync.folderNotSelected": "尚未选择文件夹",

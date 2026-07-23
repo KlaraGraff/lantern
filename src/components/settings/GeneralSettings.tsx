@@ -121,6 +121,7 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
   const [displayName, setDisplayName] = useState("Reader");
   const [language, setLanguage] = useState("en");
   const [autoSave, setAutoSave] = useState(true);
+  const [skipFrontMatter, setSkipFrontMatter] = useState(true);
   const [lookupHistoryRetention, setLookupHistoryRetention] = useState("0");
   const [cefrLevel, setCefrLevel] = useState("B1");
   const [cefrSource, setCefrSource] = useState("manual");
@@ -148,6 +149,7 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
     if (settings.user_name) setDisplayName(settings.user_name);
     if (settings.language) setLanguage(settings.language);
     if (settings.auto_save) setAutoSave(settings.auto_save === "true");
+    if (settings.skip_front_matter) setSkipFrontMatter(settings.skip_front_matter === "true");
     if (settings.lookup_history_retention_days) {
       setLookupHistoryRetention(settings.lookup_history_retention_days);
     }
@@ -750,6 +752,23 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
           onChange={(v) => {
             setAutoSave(v);
             save("auto_save", String(v));
+            showSavedToast();
+          }}
+        />
+      </div>
+
+      {/* Skip front matter on first open */}
+      <div className="flex items-center justify-between h-[73px]">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.reading.skipFrontMatter")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.reading.skipFrontMatterHint")}</p>
+        </div>
+        <Toggle
+          label={t("settings.reading.skipFrontMatter")}
+          checked={skipFrontMatter}
+          onChange={(v) => {
+            setSkipFrontMatter(v);
+            save("skip_front_matter", String(v));
             showSavedToast();
           }}
         />

@@ -547,10 +547,22 @@ export function useFoliateView({
           view.book?.sections?.length ?? book.pages,
         );
       }
+      // On a first open (no saved position), foliate's `showTextStart` jumps to
+      // the EPUB `bodymatter`/`text` landmark, skipping front matter (cover,
+      // contents, acclaim, foreword…). Most e-readers do this, so it stays the
+      // default; users who want to start at the very first section can turn it
+      // off via the `skip_front_matter` setting. Read at open time so the
+      // choice takes effect on the next book open. Only matters when there is
+      // no saved location, so skip the read on the common resume path.
+      const skipFrontMatter = startLocation
+        ? true
+        : await invoke<string | null>("get_setting", { key: "skip_front_matter" })
+          .then((value) => value !== "false")
+          .catch(() => true);
       logReaderDiagnostic("reader.open.init-start", `startLocation=${startLocation ?? "-"}`);
       try {
         await withTimeout(
-          view.init({ lastLocation: startLocation, showTextStart: !startLocation }),
+          view.init({ lastLocation: startLocation, showTextStart: !startLocation && skipFrontMatter }),
           45_000,
           "READER_INIT_TIMEOUT",
         );
@@ -559,15 +571,15 @@ export function useFoliateView({
         // different device or an earlier format) can make foliate's `goTo`
         // hang on the restore navigation, which surfaces as READER_INIT_TIMEOUT
         // and leaves the book permanently unopenable. When we started from a
-        // saved location, fall back once to opening at the text start so the
-        // book still opens; the reader then relocates and overwrites the bad
-        // CFI on the next progress save.
+        // saved location, fall back once to opening without it so the book
+        // still opens; the reader then relocates and overwrites the bad CFI on
+        // the next progress save.
         const isTimeout = error instanceof Error && error.message === "READER_INIT_TIMEOUT";
         if (cancelled || !isTimeout || !startLocation) throw error;
         logIgnoredError("reader.init-timeout-retry", error);
         currentCfiRef.current = null;
         await withTimeout(
-          view.init({ lastLocation: undefined, showTextStart: true }),
+          view.init({ lastLocation: undefined, showTextStart: skipFrontMatter }),
           45_000,
           "READER_INIT_TIMEOUT",
         );

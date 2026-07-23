@@ -899,6 +899,8 @@
 
   "settings.reading.autoSave": "Auto-save Progress",
   "settings.reading.autoSaveSub": "Automatically save your reading position",
+  "settings.reading.skipFrontMatter": "Skip front matter",
+  "settings.reading.skipFrontMatterHint": "When first opening a book, jump to the main text and skip the cover, contents, foreword, and other front matter.",
 
   "settings.librarySync.folder": "iCloud Drive sync folder",
   "settings.librarySync.folderNotSelected": "No folder selected",
