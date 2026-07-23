@@ -156,6 +156,12 @@ export function useReaderInteractions({
 
     let activePointerId: number | null = null;
     let selectionSnapshot: ReaderSelectionSnapshot | null = null;
+    // The selection as it stood when the current click sequence started. The
+    // browser's native double-click word pick lands mid-sequence, and depending
+    // on the input device it can overwrite `selectionSnapshot` either before or
+    // after pointerup — this one is only ever written on the opening click, so
+    // the dblclick handler can recover the original sentence/phrase either way.
+    let multiClickSnapshot: ReaderSelectionSnapshot | null = null;
     let pointerCaptureTarget: Element | null = null;
     let pointerStart: { x: number; y: number } | null = null;
     let pointerMoved = false;
@@ -336,6 +342,9 @@ export function useReaderInteractions({
     });
     doc.addEventListener("mousedown", (event: MouseEvent) => {
       const range = selectedRange(doc);
+      // Capture phase runs before the browser applies its own selection, so on
+      // the opening click (detail <= 1) this still sees the untouched selection.
+      if (event.detail <= 1) multiClickSnapshot = snapshotSelectionRange(range);
       if (range) selectionSnapshot = snapshotSelectionRange(range);
       handlePageTurnMouseDown(event);
     }, true);
@@ -408,6 +417,10 @@ export function useReaderInteractions({
         return;
       }
       const range = rangeFromSelectionSnapshotAtPoint(
+        multiClickSnapshot,
+        event.clientX,
+        event.clientY,
+      ) ?? rangeFromSelectionSnapshotAtPoint(
         selectionSnapshot,
         event.clientX,
         event.clientY,

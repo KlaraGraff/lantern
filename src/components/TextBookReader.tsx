@@ -571,6 +571,9 @@ function TextBookReader({
   const selectionNormalizationUntilRef = useRef(0);
   const forceClickSuppressedUntilRef = useRef(0);
   const doubleClickSelectionRef = useRef<ReaderSelectionSnapshot | null>(null);
+  // Selection as it stood when the current click sequence started; see the
+  // matching note in useReaderInteractions.
+  const multiClickSelectionRef = useRef<ReaderSelectionSnapshot | null>(null);
   const [flashOffset, setFlashOffset] = useState<number | null>(null);
   const isPaginated = settings.readingMode === "paginated";
   const [effectivePageColumns, setEffectivePageColumns] = useState<PageColumns>(() => (
@@ -1197,6 +1200,10 @@ function TextBookReader({
     cancelSelectionMenu();
     if (event.button !== 0 || isInteractiveReaderTarget(event.target)) return;
     const range = rangeFromSelectionSnapshotAtPoint(
+      multiClickSelectionRef.current,
+      event.clientX,
+      event.clientY,
+    ) ?? rangeFromSelectionSnapshotAtPoint(
       doubleClickSelectionRef.current,
       event.clientX,
       event.clientY,
@@ -1458,8 +1465,9 @@ function TextBookReader({
       style={typography}
       onClick={handleTextClick}
       onDoubleClick={handleTextDoubleClick}
-      onMouseDownCapture={() => {
+      onMouseDownCapture={(event) => {
         const range = selectedRange(window.document);
+        if (event.detail <= 1) multiClickSelectionRef.current = snapshotSelectionRange(range);
         if (range) doubleClickSelectionRef.current = snapshotSelectionRange(range);
       }}
       onContextMenu={handleTextContextMenu}
