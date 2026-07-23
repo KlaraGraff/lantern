@@ -312,30 +312,6 @@ export function rangeFromSelectionSnapshotAtPoint(
   return containsPoint ? snapshot?.range.cloneRange() ?? null : null;
 }
 
-// Standardized Range.compareBoundaryPoints modes, spelled out so this stays
-// callable outside a DOM (unit tests) where the global `Range` is absent.
-const RANGE_START_TO_START = 0;
-const RANGE_END_TO_END = 2;
-
-// True when `outer` fully encloses `inner`. Used to tell a native double-click
-// word selection (which lands inside an existing sentence/phrase selection)
-// apart from a deliberate re-selection, so the broader snapshot survives.
-export function snapshotContainsRange(
-  snapshot: ReaderSelectionSnapshot | null,
-  inner: Range,
-): boolean {
-  const outer = snapshot?.range;
-  if (!outer || outer.startContainer.ownerDocument !== inner.startContainer.ownerDocument) {
-    return false;
-  }
-  try {
-    return outer.compareBoundaryPoints(RANGE_START_TO_START, inner) <= 0
-      && outer.compareBoundaryPoints(RANGE_END_TO_END, inner) >= 0;
-  } catch {
-    return false;
-  }
-}
-
 export function readerMenuActivationIndex(
   key: string,
   currentIndex: number,

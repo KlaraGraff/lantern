@@ -12,7 +12,6 @@ import {
   rangeFromSelectionSnapshotAtPoint,
   replaceDocumentSelection,
   selectedRange,
-  snapshotContainsRange,
   snapshotSelectionRange,
   viewportRectForRange,
   wordRangeAtPoint,
@@ -156,12 +155,6 @@ export function useReaderInteractions({
 
     let activePointerId: number | null = null;
     let selectionSnapshot: ReaderSelectionSnapshot | null = null;
-    // The selection as it stood when the current click sequence started. The
-    // browser's native double-click word pick lands mid-sequence, and depending
-    // on the input device it can overwrite `selectionSnapshot` either before or
-    // after pointerup — this one is only ever written on the opening click, so
-    // the dblclick handler can recover the original sentence/phrase either way.
-    let multiClickSnapshot: ReaderSelectionSnapshot | null = null;
     let pointerCaptureTarget: Element | null = null;
     let pointerStart: { x: number; y: number } | null = null;
     let pointerMoved = false;
@@ -215,11 +208,6 @@ export function useReaderInteractions({
         : null;
       if (expanded) {
         selectionNormalizationUntil = Date.now() + 80;
-        // A non-drag word selection here is the browser's native double-click
-        // word pick. When it lands inside a broader sentence/phrase snapshot,
-        // keep that snapshot so the dblclick quick-lookup targets the whole
-        // selection instead of collapsing onto the single word.
-        if (!completedDrag && snapshotContainsRange(selectionSnapshot, expanded)) return;
         replaceDocumentSelection(doc, expanded);
         selectionSnapshot = snapshotSelectionRange(expanded);
         scheduleSelectionMenu(30, true);
@@ -342,9 +330,6 @@ export function useReaderInteractions({
     });
     doc.addEventListener("mousedown", (event: MouseEvent) => {
       const range = selectedRange(doc);
-      // Capture phase runs before the browser applies its own selection, so on
-      // the opening click (detail <= 1) this still sees the untouched selection.
-      if (event.detail <= 1) multiClickSnapshot = snapshotSelectionRange(range);
       if (range) selectionSnapshot = snapshotSelectionRange(range);
       handlePageTurnMouseDown(event);
     }, true);
@@ -416,15 +401,11 @@ export function useReaderInteractions({
         event.preventDefault();
         return;
       }
-      const range = rangeFromSelectionSnapshotAtPoint(
-        multiClickSnapshot,
-        event.clientX,
-        event.clientY,
-      ) ?? rangeFromSelectionSnapshotAtPoint(
-        selectionSnapshot,
-        event.clientX,
-        event.clientY,
-      ) ?? wordRangeAtPoint(
+      // Quick lookup always targets the word under the cursor. Looking up a
+      // whole sentence/phrase is the selection menu's job, so a double-click
+      // never consults the selection snapshot — that kept the result dependent
+      // on when the browser's native word pick happened to land.
+      const range = wordRangeAtPoint(
         doc,
         event.clientX,
         event.clientY,
