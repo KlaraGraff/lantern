@@ -158,11 +158,28 @@ export function getReaderCSS(settings: ReaderSettingsState): string {
       line-height: ${settings.lineSpacing} !important;
       letter-spacing: ${letterSpacing} !important;
       word-spacing: ${wordSpacing} !important;
+      /* Better line breaking. Inherited by all text; not !important so a book
+         that deliberately opts out (e.g. its own hyphens:none) still wins.
+         Both properties degrade gracefully on older WebKit that lacks them. */
+      text-wrap: pretty;
+      -webkit-hyphens: auto;
+      hyphens: auto;
     }
     p, span, div, li, td, th, h1, h2, h3, h4, h5, h6 {
       color: ${themeColors.text} !important;
       font-family: ${fontFamily} !important;
       line-height: ${settings.lineSpacing} !important;
+    }
+    /* Headings read better balanced and should never be hyphenated. */
+    h1, h2, h3, h4, h5, h6 {
+      text-wrap: balance;
+      -webkit-hyphens: none;
+      hyphens: none;
+    }
+    /* Code and preformatted text must not be hyphenated. */
+    pre, code, kbd, samp, tt {
+      -webkit-hyphens: none;
+      hyphens: none;
     }
     ::selection {
       background: ${readerSelectionColor(settings.theme)} !important;

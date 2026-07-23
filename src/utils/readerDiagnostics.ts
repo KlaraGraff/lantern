@@ -78,6 +78,36 @@ export function setDiagnosticContext(key: string, value: string): void {
   context[key] = value;
 }
 
+let reflowCount = 0;
+let reflowMaxMs = 0;
+let reflowTotalMs = 0;
+
+/**
+ * Record how long one reflow (Foliate re-columnizing the current chapter) took.
+ * Foliate's `render()`/`expand()` runs synchronously inside the `setAttribute`
+ * that triggers it, so the caller's `performance.now()` delta captures the real
+ * layout cost. Kept as an overwrite-per-key context snapshot (never appended to
+ * the on-disk log) so dragging the panel boundary — which fires this often —
+ * does not spam the trail. Read it from the diagnostics panel as
+ * `reflow: last=..ms max=..ms avg=..ms n=..`. Never throws.
+ */
+export function recordReflowTiming(ms: number): void {
+  if (!Number.isFinite(ms) || ms < 0) return;
+  reflowCount += 1;
+  reflowTotalMs += ms;
+  if (ms > reflowMaxMs) reflowMaxMs = ms;
+  const avg = reflowTotalMs / reflowCount;
+  setDiagnosticContext(
+    "reflow",
+    `last=${Math.round(ms)}ms max=${Math.round(reflowMaxMs)}ms avg=${Math.round(avg)}ms n=${reflowCount}`,
+  );
+  if (import.meta.env.DEV) {
+    console.info(
+      `Lantern reflow ${Math.round(ms)}ms (max ${Math.round(reflowMaxMs)}ms, n=${reflowCount})`,
+    );
+  }
+}
+
 /**
  * Probe the runtime APIs whose absence on Safari 15.1 is the suspected cause of
  * the reader hang. Uses `typeof` property reads only — never calls the API —

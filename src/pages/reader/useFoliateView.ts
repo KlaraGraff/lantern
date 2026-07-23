@@ -25,6 +25,7 @@ import { logIgnoredError } from "../../utils/logIgnoredError";
 import {
   logReaderDiagnostic,
   readerEnvironmentSnapshot,
+  recordReflowTiming,
   setDiagnosticContext,
 } from "../../utils/readerDiagnostics";
 import { createChapterPaginationMarker } from "./chapter-pagination";
@@ -658,55 +659,61 @@ export function useFoliateView({
   useEffect(() => {
     if (!bookReady || !capabilities.supportsReflowSettings || !viewerRef.current) return;
     let frame = 0;
-    let trailingTimer: number | null = null;
     const viewer = viewerRef.current;
     const applyCurrentLayout = () => {
       const view = viewRef.current;
       if (view?.renderer) {
+        // Foliate re-columnizes synchronously inside these setAttribute calls,
+        // so this delta is the real cost of the reflow the user feels on drag.
+        const started = performance.now();
         applyReflowLayout(
           view,
           readerSettingsRef.current,
           viewer.clientWidth,
           viewer.clientHeight,
         );
+        recordReflowTiming(performance.now() - started);
       }
     };
-    const applyTrailingLayout = () => {
-      trailingTimer = null;
-      if (viewRef.current?.renderer?.hasAttribute("resize-dragging")) {
-        trailingTimer = window.setTimeout(applyTrailingLayout, 200);
-        return;
-      }
-      applyCurrentLayout();
-    };
-    const resize = () => {
-      if (viewRef.current?.renderer?.hasAttribute("resize-dragging")) {
-        if (frame) {
-          cancelAnimationFrame(frame);
-          frame = 0;
-        }
-        if (trailingTimer !== null) window.clearTimeout(trailingTimer);
-        trailingTimer = window.setTimeout(applyTrailingLayout, 200);
-        return;
-      }
-      if (trailingTimer !== null) {
-        window.clearTimeout(trailingTimer);
-        trailingTimer = null;
-      }
+    const scheduleLayout = () => {
       if (frame) cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         frame = 0;
         applyCurrentLayout();
       });
     };
+    const resize = () => {
+      // While the side panel is dragged the viewer resizes every frame. Skip
+      // those intermediate reflows — dragObserver relayouts once when the drag
+      // ends (see below), so we never pay for the expensive columnize mid-drag.
+      if (viewRef.current?.renderer?.hasAttribute("resize-dragging")) return;
+      scheduleLayout();
+    };
     const observer = new ResizeObserver(resize);
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     observer.observe(viewer);
     reducedMotion.addEventListener("change", resize);
+
+    // Relayout the instant the drag ends. Foliate's paginator already
+    // re-renders synchronously when `resize-dragging` is removed, but it uses
+    // the pre-drag column width; scheduling our own reflow in the same frame
+    // overwrites that stale render before it paints — no flash, no 200ms lag.
+    const renderer = viewRef.current?.renderer as Element | undefined;
+    let dragObserver: MutationObserver | undefined;
+    if (renderer) {
+      dragObserver = new MutationObserver(() => {
+        if (!renderer.hasAttribute("resize-dragging")) scheduleLayout();
+      });
+      dragObserver.observe(renderer, {
+        attributes: true,
+        attributeFilter: ["resize-dragging"],
+      });
+    }
+
     return () => {
       if (frame) cancelAnimationFrame(frame);
-      if (trailingTimer !== null) window.clearTimeout(trailingTimer);
       observer.disconnect();
+      dragObserver?.disconnect();
       reducedMotion.removeEventListener("change", resize);
     };
   }, [bookReady, capabilities.supportsReflowSettings, readerSettingsRef, viewRef, viewerRef]);
