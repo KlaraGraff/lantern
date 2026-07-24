@@ -98,6 +98,7 @@ jobs:
           prerelease: false
           args: >-
             --target aarch64-apple-darwin
+            --features ocr-pipeline
             --config '{"bundle":{"macOS":{"signingIdentity":"${{ steps.certificate.outputs.identity }}","entitlements":null}}}'
 
       - name: Build ad-hoc signed Tauri app
@@ -118,7 +119,7 @@ jobs:
           releaseBody: "See the [commits](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}) for details."
           releaseDraft: true
           prerelease: false
-          args: --target aarch64-apple-darwin
+          args: --target aarch64-apple-darwin --features ocr-pipeline
 
       - name: Verify macOS app signature
         if: >-
@@ -196,3 +197,4 @@ jobs:
           releaseBody: "See the [commits](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}) for details."
           releaseDraft: true
           prerelease: false
+          args: --features ocr-pipeline
