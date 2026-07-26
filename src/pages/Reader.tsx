@@ -39,6 +39,7 @@ import type { CitedSource } from "../hooks/useAiChat";
 import {
   classifySelection,
   normalizeInteractionText,
+  selectedRange,
   serializableRect,
   type ReaderInteraction,
   type SerializableRect,
@@ -349,6 +350,25 @@ export default function Reader() {
     } catch {
       return undefined;
     }
+  }, []);
+  // The reader's live selection, for the AI composer to attach on its own.
+  // Without this a selected sentence reached the model only if the reader
+  // explicitly quoted it; a plain selection fell through to the whole viewport,
+  // and the answer could not tell which sentence was being asked about.
+  const getSelectionQuote = useCallback((): { text: string; cfi?: string } | undefined => {
+    try {
+      const view = viewRef.current;
+      for (const content of view?.renderer?.getContents?.() ?? []) {
+        const doc = content?.doc as Document | undefined;
+        const range = doc ? selectedRange(doc) : null;
+        const text = range?.toString().trim();
+        if (!range || !text) continue;
+        return { text, cfi: view?.getCFI(content.index, range) || undefined };
+      }
+    } catch {
+      // A torn-down frame simply yields no selection.
+    }
+    return undefined;
   }, []);
   const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef);
   const zoomRef = useRef<number | "fit">(zoom);
@@ -1741,6 +1761,7 @@ export default function Reader() {
               currentScopeEndIndex={currentScope.end}
               currentScopeAmbiguous={currentScope.ambiguous}
               getViewportText={getViewportText}
+              getSelectionQuote={getSelectionQuote}
               context={aiContext}
               initialChatId={initialChatId}
               onContextConsumed={() => setAiContext(undefined)}

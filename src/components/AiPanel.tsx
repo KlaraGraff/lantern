@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { BookOpen, Database, Sparkles, Send, Loader2, Plus, ChevronDown, ChevronUp, Trash2, X, Square } from "lucide-react";
 import { useAiChat } from "../hooks/useAiChat";
@@ -17,6 +17,8 @@ interface AiPanelProps {
   currentScopeEndIndex?: number;
   currentScopeAmbiguous?: boolean;
   getViewportText?: () => string | undefined;
+  /** The reader's live selection, read when the composer is used. */
+  getSelectionQuote?: () => { text: string; cfi?: string } | undefined;
   context?: { text: string; cfi?: string; analysis?: string };
   initialChatId?: string;
   onContextConsumed?: () => void;
@@ -26,7 +28,13 @@ interface AiPanelProps {
 
 const SCOPE_OPTIONS: AiChatScope[] = ["auto", "selection", "section", "book"];
 
-export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSectionIndex, currentScopeStartIndex, currentScopeEndIndex, currentScopeAmbiguous, getViewportText, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource }: AiPanelProps) {
+interface ComposerQuote {
+  text: string;
+  cfi?: string;
+  analysis?: string;
+}
+
+export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSectionIndex, currentScopeStartIndex, currentScopeEndIndex, currentScopeAmbiguous, getViewportText, getSelectionQuote, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource }: AiPanelProps) {
   const { t } = useTranslation();
 
   const SUGGESTED_PROMPTS = [
@@ -57,7 +65,12 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
   useEffect(() => {
     setScope("auto");
   }, [bookId]);
-  const [pendingQuote, setPendingQuote] = useState<{ text: string; cfi?: string; analysis?: string } | undefined>();
+  const [pendingQuote, setPendingQuote] = useState<ComposerQuote | undefined>();
+  // A passage selected in the reader, picked up when the composer is used. Kept
+  // apart from pendingQuote (an explicit Quote action) so dismissing one never
+  // swallows the other, and so a dismissal can be remembered per passage.
+  const [autoQuote, setAutoQuote] = useState<ComposerQuote | undefined>();
+  const dismissedSelectionRef = useRef<string | undefined>(undefined);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -123,11 +136,48 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
     }
   }, [editingTitle]);
 
+  const readSelection = useCallback((): ComposerQuote | undefined => {
+    const found = getSelectionQuote?.();
+    if (!found || found.text === dismissedSelectionRef.current) return undefined;
+    return found;
+  }, [getSelectionQuote]);
+
+  // Focusing the composer is the moment the reader turns a selection into a
+  // question, so that is when the chip appears. Re-reading on every focus also
+  // clears a chip whose selection has since gone away.
+  const syncSelectionChip = useCallback(() => {
+    setAutoQuote(readSelection());
+  }, [readSelection]);
+
+  // Explicit quotes win; otherwise fall back to the selection, re-reading it in
+  // case the send skipped the composer (a suggested prompt).
+  const takeQuote = (): ComposerQuote | undefined => pendingQuote ?? autoQuote ?? readSelection();
+
+  const clearQuotes = () => {
+    setPendingQuote(undefined);
+    setAutoQuote(undefined);
+    dismissedSelectionRef.current = undefined;
+  };
+
+  const dismissQuote = () => {
+    if (pendingQuote) {
+      setPendingQuote(undefined);
+      return;
+    }
+    // Remember which passage was waved off so refocusing does not resurrect it,
+    // while a different selection still gets its own chip.
+    dismissedSelectionRef.current = autoQuote?.text;
+    setAutoQuote(undefined);
+  };
+
+  const quoteChip = pendingQuote ?? autoQuote;
+
   const handleSend = () => {
     if (!input.trim() || streaming || initializing) return;
     followMessagesRef.current = true;
-    send(input.trim(), pendingQuote?.text, pendingQuote?.cfi, pendingQuote?.analysis, { scope });
-    setPendingQuote(undefined);
+    const quote = takeQuote();
+    send(input.trim(), quote?.text, quote?.cfi, quote?.analysis, { scope });
+    clearQuotes();
     setInput("");
   };
 
@@ -135,9 +185,9 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
-    } else if (e.key === "Escape" && pendingQuote) {
+    } else if (e.key === "Escape" && quoteChip) {
       e.preventDefault();
-      setPendingQuote(undefined);
+      dismissQuote();
     }
   };
 
@@ -317,8 +367,9 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
                   onClick={() => {
                     if (initializing) return;
                     followMessagesRef.current = true;
-                    send(prompt, pendingQuote?.text, pendingQuote?.cfi, pendingQuote?.analysis, { scope });
-                    setPendingQuote(undefined);
+                    const quote = takeQuote();
+                    send(prompt, quote?.text, quote?.cfi, quote?.analysis, { scope });
+                    clearQuotes();
                   }}
                   disabled={initializing}
                   className="px-3 py-1.5 rounded-full text-[12px] font-medium text-accent-text bg-accent-bg border border-accent/30 hover:opacity-80 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-default"
@@ -362,14 +413,15 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
             {t("ai.overviewPreparing", { done: summaryProgress.done, total: summaryProgress.total })}
           </p>
         )}
-        {/* Pending quote chip — passage to attach to the next message */}
-        {pendingQuote && (
+        {/* Quote chip — passage to attach to the next message, from an explicit
+            Quote action or from whatever is selected in the reader */}
+        {quoteChip && (
           <div className="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-[rgba(192,132,252,0.12)] border-l-2 border-[#c084fc]">
             <p className="flex-1 text-[12px] italic text-text-muted line-clamp-2 tracking-[-0.08px]">
-              {pendingQuote.text}
+              {quoteChip.text}
             </p>
             <button
-              onClick={() => setPendingQuote(undefined)}
+              onClick={dismissQuote}
               title={t("aiPanel.quoteChip.dismiss")}
               aria-label={t("aiPanel.quoteChip.dismiss")}
               className="shrink-0 size-[18px] flex items-center justify-center rounded hover:bg-bg-input cursor-pointer"
@@ -403,6 +455,7 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onFocus={syncSelectionChip}
             placeholder={t("ai.placeholder")}
             spellCheck={false}
             autoCorrect="off"
