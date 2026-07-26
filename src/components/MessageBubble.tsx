@@ -212,8 +212,11 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
             )}
           </div>
         ) : null}
+        {/* Wraps: a vocabulary answer can cite thirty-odd sources, and one
+            unwrapped row of chips overflows the bubble and gives the whole
+            message list a horizontal scrollbar. */}
         {citedSources.length > 0 && (
-          <div className="mt-2 flex items-center gap-1 border-t border-border pt-2">
+          <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-border pt-2">
             <span className="mr-1 text-[11px] text-text-muted">{t("ai.sources")}</span>
             {citedSources.map((source) => (
               <CitationChip key={source.marker} source={source} onClick={() => onNavigateToSource?.(source)} />
