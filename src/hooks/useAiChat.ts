@@ -810,7 +810,10 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
             context: context || null,
             metadata: meta,
           });
-          userMessage.dbId = saved.id;
+          const savedId = saved.id;
+          updateMessages((prev) => prev.map((message) => (
+            message.id === userMessage.id ? { ...message, dbId: savedId } : message
+          )));
         } catch (err) {
           console.error("Failed to save user message:", err);
         }

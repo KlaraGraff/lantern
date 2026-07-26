@@ -160,7 +160,7 @@ export async function invokeWithCredentialMigration<T>(
     // Never turn one click into a chain of authorization prompts. A fresh
     // confirmation requirement can be handled only by a later user action.
     if (confirmationFromError(error)) {
-      throw new Error("VAULT_ACCESS_RETRY_REQUIRED");
+      throw new Error("VAULT_ACCESS_RETRY_REQUIRED", { cause: error });
     }
     throw error;
   }
