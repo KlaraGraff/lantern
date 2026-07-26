@@ -426,6 +426,45 @@ fn classify_chat_route(
     ChatRoute::Generic
 }
 
+/// Decide which scope, if any, a vague follow-up inherits from the previous
+/// turn. Section and book scopes are index-backed, so they only survive while
+/// the index snapshot still matches (`scope_snapshot_matches`). Selection
+/// scopes are exempt from that gate: their evidence is the quoted text inside
+/// the message itself, which an index rebuild or an index-less book (e.g. a
+/// scanned PDF) does not invalidate.
+fn resolve_inherited_route(
+    previous_route: Option<&str>,
+    scope_snapshot_matches: bool,
+    messages: &[ChatMessage],
+    latest_user_index: Option<usize>,
+    current_scope_start_index: Option<i64>,
+) -> (Option<ChatRoute>, Option<ChatRoute>) {
+    let survives_snapshot_gate = |route: &ChatRoute| {
+        scope_snapshot_matches
+            || matches!(
+                route,
+                ChatRoute::SelectedContext | ChatRoute::SelectedContextVocabulary
+            )
+    };
+    let structured_previous_route = previous_route
+        .and_then(parse_route_name)
+        .filter(survives_snapshot_gate)
+        .filter(|route| {
+            !matches!(
+                route,
+                ChatRoute::WholeBook
+                    | ChatRoute::WholeBookUnavailable
+                    | ChatRoute::WholeBookVocabulary
+                    | ChatRoute::WholeBookVocabularyUnavailable
+            )
+        });
+    let inherited_route = structured_previous_route.or_else(|| {
+        inherited_route_from_previous_user(messages, latest_user_index, current_scope_start_index)
+            .filter(survives_snapshot_gate)
+    });
+    (structured_previous_route, inherited_route)
+}
+
 fn inherited_route_from_previous_user(
     messages: &[ChatMessage],
     latest_user_index: Option<usize>,
@@ -2072,24 +2111,13 @@ fn bounded_scoped_chat_history(
                 message.content =
                     "[Prior assistant response omitted; use only the supplied source text.]"
                         .to_string();
-            } else if message.role == "user"
-                && (Some(index) != latest_user_index
-                    || matches!(
-                        route,
-                        ChatRoute::CurrentSection
-                            | ChatRoute::CurrentSectionVocabulary
-                            | ChatRoute::CurrentSectionUnavailable
-                            | ChatRoute::WholeBookUnavailable
-                            | ChatRoute::WholeBook
-                            | ChatRoute::WholeBookVocabulary
-                            | ChatRoute::WholeBookVocabularyUnavailable
-                    ))
-            {
+            } else if message.role == "user" && Some(index) != latest_user_index {
                 // A previous user turn can contain a quoted selection or a
                 // learning-card answer. It belongs to conversation history,
                 // not to the new scope's evidence bundle. The latest user
-                // evidence is also redacted when an explicit chapter/book
-                // scope overrides an attached selection.
+                // turn keeps its evidence even under an explicit chapter or
+                // book scope: a question like "how does this quote relate to
+                // the chapter" needs both the quote and the scope source.
                 let instruction = routing_instruction(&message.content);
                 if instruction.trim() != message.content.trim() {
                     message.content = format!(
@@ -2611,25 +2639,13 @@ pub async fn ai_chat(
         .filter(|value| *value >= 0)
         .filter(|value| current_scope_start_index.is_some_and(|start| *value >= start));
     let current_scope_ambiguous = current_scope_ambiguous.unwrap_or(false);
-    let structured_previous_route = previous_route
-        .as_deref()
-        .and_then(parse_route_name)
-        .filter(|_| scope_snapshot_matches)
-        .filter(|route| {
-            !matches!(
-                route,
-                ChatRoute::WholeBook
-                    | ChatRoute::WholeBookUnavailable
-                    | ChatRoute::WholeBookVocabulary
-                    | ChatRoute::WholeBookVocabularyUnavailable
-            )
-        });
-    let inherited_route = structured_previous_route.or_else(|| {
-        if !scope_snapshot_matches {
-            return None;
-        }
-        inherited_route_from_previous_user(&messages, latest_user_index, current_scope_start_index)
-    });
+    let (structured_previous_route, inherited_route) = resolve_inherited_route(
+        previous_route.as_deref(),
+        scope_snapshot_matches,
+        &messages,
+        latest_user_index,
+        current_scope_start_index,
+    );
     let inherited_section_index = structured_previous_route
         .filter(|route| {
             matches!(
@@ -3830,20 +3846,23 @@ mod tests {
     }
 
     #[test]
-    fn explicit_section_scope_redacts_an_attached_selection_from_latest_user_turn() {
+    fn explicit_section_scope_keeps_the_latest_attached_selection() {
+        // "How does this quote relate to the chapter?" needs both the quote
+        // and the section source; only OLDER turns lose their evidence.
         let messages = vec![ChatMessage {
             role: "user".into(),
-            content: "[Selected passage]\nquoted words\n[/Selected passage]\n本章有哪些难词？"
+            content: "[Selected passage]\nquoted words\n[/Selected passage]\n这段引文和本章有什么关系？"
                 .into(),
         }];
         let bounded = bounded_scoped_chat_history(
             messages,
             SCOPED_CHAT_MAX_TOTAL_BYTES,
-            ChatRoute::CurrentSectionVocabulary,
+            ChatRoute::CurrentSection,
         );
         assert_eq!(bounded.len(), 1);
-        assert!(bounded[0].content.contains("本章有哪些难词"));
-        assert!(!bounded[0].content.contains("quoted words"));
+        assert!(bounded[0].content.contains("这段引文和本章有什么关系"));
+        assert!(bounded[0].content.contains("quoted words"));
+        assert!(!bounded[0].content.contains("Prior source evidence omitted"));
     }
 
     #[test]
@@ -4216,6 +4235,63 @@ mod tests {
             )),
             "current_section_vocabulary"
         );
+    }
+
+    #[test]
+    fn selection_scope_inheritance_survives_an_index_snapshot_mismatch() {
+        let messages = vec![
+            ChatMessage {
+                role: "user".into(),
+                content: "[Selected passage]\nquoted prose\n[/Selected passage]\n解释这段".into(),
+            },
+            ChatMessage {
+                role: "assistant".into(),
+                content: "一段解释".into(),
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: "再展开说说".into(),
+            },
+        ];
+        // Structured previous route: selection scope is exempt from the gate.
+        let (structured, inherited) =
+            resolve_inherited_route(Some("selected_context"), false, &messages, Some(2), Some(3));
+        assert_eq!(structured, Some(ChatRoute::SelectedContext));
+        assert_eq!(inherited, Some(ChatRoute::SelectedContext));
+        // Message-text fallback finds the quoted selection without the index.
+        let (structured, inherited) = resolve_inherited_route(None, false, &messages, Some(2), None);
+        assert_eq!(structured, None);
+        assert_eq!(inherited, Some(ChatRoute::SelectedContext));
+    }
+
+    #[test]
+    fn index_backed_scope_inheritance_still_requires_a_matching_snapshot() {
+        let messages = vec![
+            ChatMessage {
+                role: "user".into(),
+                content: "总结一下本章".into(),
+            },
+            ChatMessage {
+                role: "assistant".into(),
+                content: "本章讲了……".into(),
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: "再展开说说".into(),
+            },
+        ];
+        let (structured, inherited) =
+            resolve_inherited_route(Some("current_section"), false, &messages, Some(2), Some(3));
+        assert_eq!(structured, None);
+        assert_eq!(inherited, None);
+        let (structured, inherited) =
+            resolve_inherited_route(Some("current_section"), true, &messages, Some(2), Some(3));
+        assert_eq!(structured, Some(ChatRoute::CurrentSection));
+        assert_eq!(inherited, Some(ChatRoute::CurrentSection));
+        // Whole-book scope is never inherited implicitly, even when it matches.
+        let (structured, _) =
+            resolve_inherited_route(Some("whole_book"), true, &messages, Some(2), Some(3));
+        assert_eq!(structured, None);
     }
 
     #[test]

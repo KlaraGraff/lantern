@@ -241,8 +241,8 @@ function parseAiChatResult(value: unknown): AiChatResult {
     spoilerGuard: parseSpoilerGuard(result.spoilerGuard)
       ?? { active: false, wholeBookIntent: false, progress: 0 },
     route: parseAiChatRoute(result.route),
-    sectionIndex: typeof result.sectionIndex === "number" ? result.sectionIndex : undefined,
-    sectionEndIndex: typeof result.sectionEndIndex === "number" ? result.sectionEndIndex : undefined,
+    sectionIndex: parseNonNegativeInteger(result.sectionIndex),
+    sectionEndIndex: parseNonNegativeInteger(result.sectionEndIndex),
     sectionContext: parseSectionContext(result.sectionContext),
     sourceHash: typeof result.sourceHash === "string" ? result.sourceHash : undefined,
   };
@@ -653,10 +653,10 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           updateMessages([]);
         }
       } finally {
+        // A matching generation means no newer initialize() has started, so
+        // the in-flight promise in the ref is still ours to clear.
         if (initializationGenerationRef.current === generation) {
           setInitializingSynced(false);
-        }
-        if (initializationPromiseRef.current === run) {
           initializationPromiseRef.current = null;
         }
       }
