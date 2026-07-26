@@ -8,6 +8,7 @@ pub mod segment;
 pub mod spoiler;
 pub mod summarize;
 pub mod vector;
+pub mod vocabulary;
 
 pub const INDEX_VERSION: i64 = 1;
 pub const RETRIEVAL_TOP_K: usize = 12;
@@ -18,5 +19,5 @@ pub const CHUNK_MAX_TOKENS: usize = 500;
 pub const SNIPPET_MAX_CHARS: usize = 120;
 
 pub use extract::{BlockText, SectionText};
-pub use index::{index_status, IndexStatus};
+pub use index::IndexStatus;
 pub use retrieve::{retrieve, CitedSource, RetrievedChunk};

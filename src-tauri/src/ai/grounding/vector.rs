@@ -529,7 +529,7 @@ fn vector_ranks(
     let cutoff = cutoff.expect("cutoff checked");
     let mut allowed = Vec::with_capacity(RETRIEVAL_TOP_K);
     let mut statement = conn.prepare(
-        "SELECT section_index, char_start FROM book_chunks WHERE id = ?1 AND book_id = ?2",
+        "SELECT section_index, char_end FROM book_chunks WHERE id = ?1 AND book_id = ?2",
     )?;
     for chunk_id in rows {
         let position = statement
@@ -537,7 +537,7 @@ fn vector_ranks(
                 Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?))
             })
             .optional()?;
-        if position.is_some_and(|(section, start)| cutoff.allows(section, start)) {
+        if position.is_some_and(|(section, end)| cutoff.allows_complete_chunk(section, end)) {
             allowed.push(chunk_id);
             if allowed.len() == RETRIEVAL_TOP_K {
                 break;

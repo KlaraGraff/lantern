@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronRight, Loader2, Settings } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Loader2, Settings } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import Markdown, { defaultUrlTransform } from "react-markdown";
-import type { ChatMessage, CitedSource } from "../hooks/useAiChat";
+import type { AiChatRoute, ChatMessage, CitedSource, SectionContextMetadata } from "../hooks/useAiChat";
 import { aiErrorMessageKey, isAiErrorCode, isAiSettingsError } from "../utils/aiError";
 import {
   citedSourcesInContent,
@@ -34,6 +34,86 @@ function CitationChip({ source, onClick }: { source: CitedSource; onClick?: () =
     >
       {number}
     </button>
+  );
+}
+
+function isSectionRoute(route?: AiChatRoute): boolean {
+  return route === "current_section"
+    || route === "current_section_vocabulary"
+    || route === "current_section_unavailable";
+}
+
+function isUnavailableRoute(route?: AiChatRoute): boolean {
+  return route === "current_section_unavailable"
+    || route === "whole_book_unavailable"
+    || route === "whole_book_vocabulary_unavailable";
+}
+
+function SectionContextNotice({
+  route,
+  context,
+}: {
+  route?: AiChatRoute;
+  context?: SectionContextMetadata;
+}) {
+  const { t } = useTranslation();
+  if (!isSectionRoute(route) && !isUnavailableRoute(route)) return null;
+  if (!isUnavailableRoute(route) && !context) return null;
+  const unavailableNotice = (
+    <div
+      role="status"
+      className="mt-2 flex items-start gap-1.5 border-t border-border pt-2 text-[11px] text-text-muted"
+    >
+      <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+      <span>{t(route === "whole_book_vocabulary_unavailable"
+        ? "ai.sectionContext.wholeBookVocabularyUnavailable"
+        : route === "whole_book_unavailable"
+          ? "ai.sectionContext.wholeBookUnavailable"
+          : "ai.sectionContext.unavailable")}</span>
+    </div>
+  );
+  if (isUnavailableRoute(route)) {
+    return unavailableNotice;
+  }
+  if (!context) return null;
+  if (context.totalChunks === 0 || context.visibleChunks === 0) {
+    return unavailableNotice;
+  }
+
+  if (!context.truncated && !context.spoilerLimited) {
+    return (
+      <span className="mt-2 inline-flex rounded border border-border px-1.5 py-0.5 text-[10px] text-text-muted">
+        {t("ai.sectionContext.source")}
+      </span>
+    );
+  }
+
+  const details: string[] = [];
+  if (context.spoilerLimited) {
+    details.push(t("ai.sectionContext.spoilerLimited", {
+      visible: context.visibleChunks,
+      total: context.totalChunks,
+    }));
+  }
+  if (context.truncated) {
+    details.push(t("ai.sectionContext.truncated", {
+      selected: context.selectedChunks,
+      visible: context.visibleChunks,
+    }));
+  }
+  return (
+    <div
+      role="status"
+      title={t("ai.sectionContext.details", {
+        selectedTokens: context.selectedTokens,
+        visibleTokens: context.visibleTokens,
+        totalTokens: context.totalTokens,
+      })}
+      className="mt-2 flex items-start gap-1.5 border-t border-border pt-2 text-[11px] text-text-muted"
+    >
+      <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+      <span>{details.join(" ")}</span>
+    </div>
   );
 }
 
@@ -128,6 +208,9 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
               <CitationChip key={source.marker} source={source} onClick={() => onNavigateToSource?.(source)} />
             ))}
           </div>
+        )}
+        {!(streaming && isLast) && (
+          <SectionContextNotice route={msg.route} context={msg.sectionContext} />
         )}
         {msg.spoilerGuard?.active && !(streaming && isLast) && (
           msg.spoilerGuard.wholeBookIntent ? (

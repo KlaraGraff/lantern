@@ -27,7 +27,7 @@ interface ResolvedTocEntry extends TocEntry {
   target: FoliateResolvedTarget;
 }
 
-type TocUnitKind = "structural" | "chapter" | "section" | "unknown";
+export type TocUnitKind = "structural" | "chapter" | "section" | "unknown";
 
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
@@ -126,14 +126,14 @@ function tocLabel(item: FoliateTocItem): string {
   return typeof item.label === "string" ? item.label.trim() : "";
 }
 
-function tocUnitKind(item: FoliateTocItem): TocUnitKind {
-  const label = tocLabel(item)
-    .normalize("NFKC")
-    .replace(/[\s.:–—-]+/gu, " ")
-    .trim();
+export function tocUnitKind(item: FoliateTocItem): TocUnitKind {
+  const rawLabel = tocLabel(item).normalize("NFKC");
+  const label = rawLabel.replace(/[\s:–—-]+/gu, " ").trim();
   if (!label) return "unknown";
 
-  if (/^(?:section|subsection)\b/iu.test(label) || /^第[\d零〇一二三四五六七八九十百千万两壹贰叁肆伍陆柒捌玖拾佰仟]+节/u.test(label)) {
+  if (/^(?:section|subsection)\b/iu.test(label)
+    || /^(?:\d+(?:\.\d+)+)\b/u.test(rawLabel.trim())
+    || /^第[\d零〇一二三四五六七八九十百千万两壹贰叁肆伍陆柒捌玖拾佰仟]+节/u.test(label)) {
     return "section";
   }
   if (/^(?:volume|book|part|division|act)\b/iu.test(label) || /^第[\d零〇一二三四五六七八九十百千万两壹贰叁肆伍陆柒捌玖拾佰仟]+[卷部篇集]/u.test(label)) {

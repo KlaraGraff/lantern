@@ -12,6 +12,10 @@ interface AiPanelProps {
   bookTitle?: string;
   bookAuthor?: string;
   currentChapter?: string;
+  currentSectionIndex?: number;
+  currentScopeStartIndex?: number;
+  currentScopeEndIndex?: number;
+  currentScopeAmbiguous?: boolean;
   context?: { text: string; cfi?: string; analysis?: string };
   initialChatId?: string;
   onContextConsumed?: () => void;
@@ -19,7 +23,7 @@ interface AiPanelProps {
   onNavigateToSource?: (source: CitedSource) => void;
 }
 
-export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource }: AiPanelProps) {
+export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSectionIndex, currentScopeStartIndex, currentScopeEndIndex, currentScopeAmbiguous, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource }: AiPanelProps) {
   const { t } = useTranslation();
 
   const SUGGESTED_PROMPTS = [
@@ -31,7 +35,15 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
     messages, streaming, send, retryWithWholeBook, cancel, initialize,
     chatId, chats, titling, initializing, groundingStatus, summaryProgress, bookAiState,
     summariesAuto, spoilerGuardEnabled, setSpoilerGuardEnabled, prepareBookOverview, loadChat, deleteChat, renameChat, reset,
-  } = useAiChat(bookId, { title: bookTitle, author: bookAuthor, chapter: currentChapter });
+  } = useAiChat(bookId, {
+    title: bookTitle,
+    author: bookAuthor,
+    chapter: currentChapter,
+    sectionIndex: currentSectionIndex,
+    scopeStartIndex: currentScopeStartIndex,
+    scopeEndIndex: currentScopeEndIndex,
+    scopeAmbiguous: currentScopeAmbiguous,
+  });
 
   const [input, setInput] = useState("");
   const [pendingQuote, setPendingQuote] = useState<{ text: string; cfi?: string; analysis?: string } | undefined>();

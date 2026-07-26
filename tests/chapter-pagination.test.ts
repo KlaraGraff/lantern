@@ -3,8 +3,16 @@ import test from "node:test";
 
 import {
   selectChapterLevelItems,
+  tocUnitKind,
   type FoliateTocItem,
 } from "../src/pages/reader/chapter-pagination.ts";
+
+test("classifies common nested TOC labels consistently", () => {
+  assert.equal(tocUnitKind({ label: "1.1 Background" }), "section");
+  assert.equal(tocUnitKind({ label: "Scene 1" }), "chapter");
+  assert.equal(tocUnitKind({ label: "Part A" }), "structural");
+  assert.equal(tocUnitKind({ label: "Introduction" }), "unknown");
+});
 
 test("uses multiple top-level TOC items as chapter starts", () => {
   const toc: FoliateTocItem[] = [{ href: "one" }, { href: "two" }];

@@ -120,6 +120,7 @@ interface UseFoliateViewOptions {
   setCanGoBack: Dispatch<SetStateAction<boolean>>;
   setChapters: Dispatch<SetStateAction<TocChapter[]>>;
   setCurrentChapterIndex: Dispatch<SetStateAction<number>>;
+  setCurrentSectionIndex: Dispatch<SetStateAction<number>>;
   setProgress: Dispatch<SetStateAction<number>>;
   setChapterProgress: Dispatch<SetStateAction<number>>;
   setPageInfo: Dispatch<SetStateAction<ReaderPageInfo | null>>;
@@ -158,6 +159,28 @@ function flattenToc(items: unknown[], depth = 0): TocChapter[] {
   });
 }
 
+async function resolveTocSectionIndex(
+  book: { resolveHref?: (href: string) => unknown | Promise<unknown> },
+  href?: string,
+): Promise<number | undefined> {
+  if (!href || typeof book.resolveHref !== "function") return undefined;
+  try {
+    const target = await withTimeout(
+      Promise.resolve(book.resolveHref(href)),
+      1_500,
+      "READER_TOC_RANGE_TIMEOUT",
+    );
+    const index = target && typeof target === "object"
+      ? (target as { index?: unknown }).index
+      : undefined;
+    return typeof index === "number" && Number.isInteger(index) && index >= 0
+      ? index
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function useFoliateView({
   book,
   bookId,
@@ -193,6 +216,7 @@ export function useFoliateView({
   setCanGoBack,
   setChapters,
   setCurrentChapterIndex,
+  setCurrentSectionIndex,
   setProgress,
   setChapterProgress,
   setPageInfo,
@@ -212,6 +236,9 @@ export function useFoliateView({
     container.innerHTML = "";
     loadedInteractionDocumentsRef.current = new WeakSet<Document>();
     setBookReady(false);
+    // A retry recreates Foliate without changing the book id. Clear the
+    // previous section until the new view emits its first relocate event.
+    setCurrentSectionIndex(-1);
     setReaderError(null);
     let cancelled = false;
     let activeView: FoliateView | null = null;
@@ -360,6 +387,21 @@ export function useFoliateView({
         const chapters = flattenToc(view.book.toc);
         chaptersRef.current = chapters;
         setChapters(chapters);
+        // Keep the UI's flattened TOC, but enrich it with raw section starts
+        // so the AI planner can expand a logical reading unit beyond the
+        // single XHTML/page currently visible in Foliate.
+        void Promise.all(chapters.map(async (chapter) => ({
+          ...chapter,
+          sectionIndex: await resolveTocSectionIndex(
+            view.book,
+            chapter.targetHref ?? chapter.href,
+          ),
+          sectionFragment: (chapter.targetHref ?? chapter.href)?.split("#")[1] || undefined,
+        }))).then((resolved) => {
+          if (cancelled) return;
+          chaptersRef.current = resolved;
+          setChapters(resolved);
+        });
       }
 
       view.addEventListener("relocate", ((event: CustomEvent) => {
@@ -367,6 +409,7 @@ export function useFoliateView({
         const nextProgress = Math.round((fraction ?? 0) * 100);
         setProgress(nextProgress);
         const sectionIndex = typeof section?.current === "number" ? section.current : -1;
+        if (sectionIndex >= 0) setCurrentSectionIndex(sectionIndex);
         const sectionFractions = view.getSectionFractions?.() ?? [];
         const sectionStart = sectionFractions[sectionIndex];
         const sectionEnd = sectionFractions[sectionIndex + 1];

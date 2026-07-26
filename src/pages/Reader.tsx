@@ -105,11 +105,33 @@ import type {
   TocChapter,
 } from "./reader/foliate-types";
 import { useFoliateView } from "./reader/useFoliateView";
+import { tocUnitKind } from "./reader/chapter-pagination";
 import { useReaderNavigation } from "./reader/useReaderNavigation";
 import { toReaderOpenError, type ReaderOpenError } from "./reader/reader-open-error";
 import ReaderDiagnosticsPanel from "../components/ReaderDiagnosticsPanel";
 
 type SidePanel = "ai" | "bookmarks" | "vocab" | null;
+
+function tocKind(chapter: TocChapter) {
+  return tocUnitKind({ label: chapter.title });
+}
+
+/** Map a nested TOC section back to its nearest non-section reading unit. */
+function logicalScopeAnchor(chapters: readonly TocChapter[], index: number): number {
+  const current = chapters[index];
+  if (!current) return index;
+  const currentKind = tocKind(current);
+  if (currentKind !== "section" && currentKind !== "unknown") return index;
+  for (let candidate = index - 1; candidate >= 0; candidate -= 1) {
+    const item = chapters[candidate];
+    if (item.depth >= current.depth) continue;
+    const kind = tocKind(item);
+    if (kind === "structural" || kind === "chapter" || (currentKind === "section" && kind !== "section")) {
+      return candidate;
+    }
+  }
+  return index;
+}
 
 const readerMenuActionMap: Record<string, ReaderMenuAction> = {
   define: "primary",
@@ -174,6 +196,7 @@ export default function Reader() {
   const [tocOpen, setTocOpen] = useState(false);
   const [chapters, setChapters] = useState<TocChapter[]>([]);
   const [currentChapterIndex, setCurrentChapterIndex] = useState(-1);
+  const [currentSectionIndex, setCurrentSectionIndex] = useState(-1);
   const [progress, setProgress] = useState(0);
   const [chapterProgress, setChapterProgress] = useState(0);
   const [pageInfo, setPageInfo] = useState<ReaderPageInfo | null>(null);
@@ -314,7 +337,7 @@ export default function Reader() {
   const viewerRef = useRef<HTMLDivElement>(null);
   const readerViewportRef = useRef<HTMLElement>(null);
   const viewRef = useRef<FoliateView | null>(null);
-  const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef);
+  const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef);
   const zoomRef = useRef<number | "fit">(zoom);
   const fitPctRef = useRef(100);
   const textReaderNavigateRef = useRef<((location: string, flash?: boolean) => void) | null>(null);
@@ -329,11 +352,12 @@ export default function Reader() {
   const contextMenuRequestRef = useRef(0);
 
   const handleTextBookReady = useCallback((document: TextBookDocument) => {
-    const textChapters = document.toc.map((entry) => ({
+    const textChapters = document.toc.map((entry, sectionIndex) => ({
       title: entry.title,
       href: textLocation(entry.source_offset),
       targetHref: textLocation(entry.source_offset),
       depth: entry.depth,
+      sectionIndex,
     }));
     chaptersRef.current = textChapters;
     setChapters(textChapters);
@@ -366,6 +390,7 @@ export default function Reader() {
     setPageInfo(details?.page ?? null);
     currentCfiRef.current = textLocationValue;
     setCurrentChapterIndex(chapterIndex);
+    setCurrentSectionIndex(chapterIndex);
     if (bookId) queueReadingProgress(bookId, nextProgress, textLocationValue);
   }, [bookId, queueReadingProgress]);
 
@@ -738,6 +763,64 @@ export default function Reader() {
     };
   }, [chapters, currentChapterIndex]);
 
+  const currentScope = useMemo(() => {
+    const anchorIndex = currentChapterIndex >= 0
+      ? logicalScopeAnchor(chapters, currentChapterIndex)
+      : -1;
+    const current = anchorIndex >= 0 ? chapters[anchorIndex] : undefined;
+    const fallback = currentSectionIndex >= 0 ? currentSectionIndex : undefined;
+    const start = current?.sectionIndex ?? fallback;
+    if (start === undefined || !current) {
+      return { start, end: start, ambiguous: false };
+    }
+    // If the TOC target could not be resolved, the live Foliate section is the
+    // only trustworthy scope. Do not interpret an unknown boundary as "to the
+    // end of the book"; that fallback is reserved for a resolved last unit.
+    if (current.sectionIndex === undefined) {
+      return { start, end: start, ambiguous: false };
+    }
+    // Foliate's raw section index identifies an XHTML spine item, not a
+    // fragment within it. If this reading unit shares that index with another
+    // distinct TOC fragment, an integer range cannot isolate the requested
+    // chapter safely; let the backend ask for a selection instead of sending
+    // the entire XHTML file as if it were one chapter.
+    const currentTarget = current.targetHref ?? current.href;
+    const ambiguous = Boolean(currentTarget && chapters.some((chapter, index) => {
+      if (index === anchorIndex || chapter.sectionIndex !== start) return false;
+      const target = chapter.targetHref ?? chapter.href;
+      // A nested fragment belongs to the same logical chapter. A distinct
+      // fragment at the same or shallower TOC depth means one raw XHTML item
+      // contains multiple peer reading units and cannot be isolated by an
+      // integer section range.
+      return Boolean(target)
+        && target !== currentTarget
+        && tocKind(chapter) !== "section"
+        && chapter.depth <= current.depth;
+    }));
+    const unresolvedBoundary = chapters
+      .slice(anchorIndex + 1)
+      .some((chapter) => (
+        chapter.depth <= current.depth
+        && Boolean(chapter.targetHref ?? chapter.href)
+        && chapter.sectionIndex === undefined
+      ));
+    // A TOC item owns the range up to the next item at the same or shallower
+    // depth. Nested entries therefore stay inside their parent chapter. A
+    // resolved final item has no end and therefore extends to the end of the
+    // indexed book; unresolved targets were handled by the conservative
+    // single-section fallback above.
+    const next = chapters.slice(anchorIndex + 1).find((chapter) => (
+      chapter.sectionIndex !== undefined
+      && chapter.sectionIndex > start
+      && chapter.depth <= current.depth
+    ));
+    return {
+      start,
+      end: next?.sectionIndex !== undefined ? next.sectionIndex - 1 : undefined,
+      ambiguous: ambiguous || unresolvedBoundary,
+    };
+  }, [chapters, currentChapterIndex, currentSectionIndex]);
+
   const {
     applyAnnotations,
     applyFoliateMarkerStyles,
@@ -820,6 +903,7 @@ export default function Reader() {
     chaptersRef.current = [];
     setChapters([]);
     setCurrentChapterIndex(-1);
+    setCurrentSectionIndex(-1);
     setProgress(0);
     setChapterProgress(0);
     setPageInfo(null);
@@ -1052,6 +1136,7 @@ export default function Reader() {
     setCanGoBack,
     setChapters,
     setCurrentChapterIndex,
+    setCurrentSectionIndex,
     setProgress,
     setChapterProgress,
     setPageInfo,
@@ -1204,6 +1289,7 @@ export default function Reader() {
                     .then((updated) => {
                       setBook(updated);
                       setReaderError(null);
+                      setCurrentSectionIndex(-1);
                       setReaderRetry((value) => value + 1);
                     })
                     .catch((error) => setReaderError(
@@ -1212,6 +1298,7 @@ export default function Reader() {
                   return;
                 }
                 setReaderError(null);
+                setCurrentSectionIndex(-1);
                 setReaderRetry((value) => value + 1);
               }}
             >
@@ -1640,6 +1727,10 @@ export default function Reader() {
               bookTitle={book.title}
               bookAuthor={book.author}
               currentChapter={currentChapterIndex >= 0 && currentChapterIndex < chapters.length ? chapters[currentChapterIndex].title : undefined}
+              currentSectionIndex={currentSectionIndex >= 0 ? currentSectionIndex : undefined}
+              currentScopeStartIndex={currentScope.start}
+              currentScopeEndIndex={currentScope.end}
+              currentScopeAmbiguous={currentScope.ambiguous}
               context={aiContext}
               initialChatId={initialChatId}
               onContextConsumed={() => setAiContext(undefined)}

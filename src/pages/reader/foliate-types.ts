@@ -45,6 +45,10 @@ export interface TocChapter {
   href?: string;
   targetHref?: string;
   depth: number;
+  /** Raw Foliate section where this TOC target begins, when resolvable. */
+  sectionIndex?: number;
+  /** True when this target shares a raw section with another TOC fragment. */
+  sectionFragment?: string;
 }
 
 export interface ReaderPageInfo {

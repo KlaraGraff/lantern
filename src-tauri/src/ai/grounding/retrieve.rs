@@ -15,14 +15,7 @@ pub enum SpoilerCutoff {
 }
 
 impl SpoilerCutoff {
-    pub fn allows(self, section_index: i64, char_start: Option<i64>) -> bool {
-        match self {
-            Self::Character(offset) => char_start.is_some_and(|start| start <= offset),
-            Self::Section(section) => section_index <= section,
-        }
-    }
-
-    pub fn allows_section_summary(self, section_index: i64, char_end: Option<i64>) -> bool {
+    pub fn allows_complete_chunk(self, section_index: i64, char_end: Option<i64>) -> bool {
         match self {
             Self::Character(offset) => char_end.is_some_and(|end| end <= offset),
             Self::Section(section) => section_index <= section,
@@ -155,7 +148,7 @@ fn lexical_ranks_with_limit(
                AND book_chunks.book_id = book_chunks_fts.book_id
              WHERE book_chunks_fts MATCH ?1 AND book_chunks_fts.book_id = ?2
                AND (?3 = 0
-                 OR (?3 = 1 AND book_chunks.char_start <= ?4)
+                 OR (?3 = 1 AND book_chunks.char_end <= ?4)
                  OR (?3 = 2 AND book_chunks.section_index <= ?4))
              ORDER BY score LIMIT ?5",
         )?
@@ -194,7 +187,9 @@ pub(crate) fn retrieve_ranked(
             let Some(chunk) = chunk else {
                 continue;
             };
-            if cutoff.is_some_and(|value| !value.allows(chunk.section_index, chunk.char_start)) {
+            if cutoff.is_some_and(|value| {
+                !value.allows_complete_chunk(chunk.section_index, chunk.char_end)
+            }) {
                 continue;
             }
             chunks_by_id.insert(id.clone(), chunk);
@@ -230,7 +225,9 @@ pub(crate) fn retrieve_ranked(
         let Some(mut chunk) = maybe_chunk else {
             continue;
         };
-        if cutoff.is_some_and(|value| !value.allows(chunk.section_index, chunk.char_start)) {
+        if cutoff
+            .is_some_and(|value| !value.allows_complete_chunk(chunk.section_index, chunk.char_end))
+        {
             continue;
         }
         if let Some(score) = hit_scores.get(&chunk.chunk_id) {
@@ -354,9 +351,132 @@ pub fn retrieve_all(
     Ok(chunks
         .into_iter()
         .filter(|chunk| {
-            cutoff.is_none_or(|value| value.allows(chunk.section_index, chunk.char_start))
+            cutoff.is_none_or(|value| {
+                value.allows_complete_chunk(chunk.section_index, chunk.char_end)
+            })
         })
         .collect())
+}
+
+/// The result of loading one reading section under an input-token budget.
+///
+/// `total_*` counts every indexed chunk in the section, `visible_*` counts
+/// chunks remaining after the spoiler cutoff, and `selected_*` describes the
+/// chunks returned under the input-token budget. `truncated` is a budget
+/// truncation flag; `spoiler_limited` is kept separate so a caller never
+/// mistakes a protected prefix for a complete chapter.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SectionRetrieval {
+    pub chunks: Vec<RetrievedChunk>,
+    pub total_chunks: usize,
+    pub total_tokens: usize,
+    pub visible_chunks: usize,
+    pub visible_tokens: usize,
+    pub selected_chunks: usize,
+    pub selected_tokens: usize,
+    pub truncated: bool,
+    pub spoiler_limited: bool,
+}
+
+#[cfg(test)]
+pub fn retrieve_section_with_budget(
+    conn: &Connection,
+    book_id: &str,
+    section_index: i64,
+    budget_tokens: usize,
+    cutoff: Option<SpoilerCutoff>,
+) -> AppResult<SectionRetrieval> {
+    retrieve_section_range_with_budget(
+        conn,
+        book_id,
+        section_index,
+        Some(section_index),
+        budget_tokens,
+        cutoff,
+    )
+}
+
+/// Load a logical reading unit spanning one or more raw spine/page sections.
+/// The caller supplies the boundary resolved from the reader TOC; a missing
+/// end means that the unit continues to the end of the indexed book. Callers
+/// that only know one raw section should pass `Some(section_start)`.
+pub fn retrieve_section_range_with_budget(
+    conn: &Connection,
+    book_id: &str,
+    section_start: i64,
+    section_end: Option<i64>,
+    budget_tokens: usize,
+    cutoff: Option<SpoilerCutoff>,
+) -> AppResult<SectionRetrieval> {
+    let section_end = match section_end {
+        Some(value) if value >= section_start => Some(value),
+        Some(_) => Some(section_start),
+        None => None,
+    };
+    let mut statement = conn.prepare(
+        "SELECT id, chunk_index, section_index, section_href, section_title, char_start, char_end,
+                text, snippet, token_estimate
+         FROM book_chunks
+         WHERE book_id = ?1 AND section_index >= ?2
+           AND (?3 IS NULL OR section_index <= ?3)
+         ORDER BY chunk_index",
+    )?;
+    let all_chunks = statement
+        .query_map(params![book_id, section_start, section_end], |row| {
+            row_to_chunk(row, 0.0)
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let total_chunks = all_chunks.len();
+    let total_tokens = all_chunks.iter().fold(0usize, |total, chunk| {
+        total.saturating_add(chunk.token_estimate)
+    });
+    let chunks = all_chunks
+        .into_iter()
+        // Character cutoffs require a complete chunk. Passing a chunk that
+        // crosses the cursor would expose unread text from its tail.
+        .filter(|chunk| {
+            cutoff.is_none_or(|value| {
+                value.allows_complete_chunk(chunk.section_index, chunk.char_end)
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let visible_chunks = chunks.len();
+    let visible_tokens = chunks.iter().fold(0usize, |total, chunk| {
+        total.saturating_add(chunk.token_estimate)
+    });
+    let mut selected = Vec::new();
+    let mut total = 0usize;
+    for mut chunk in chunks {
+        if total.saturating_add(chunk.token_estimate) <= budget_tokens {
+            total = total.saturating_add(chunk.token_estimate);
+            selected.push(chunk);
+            continue;
+        }
+        if selected.is_empty() && budget_tokens > 0 {
+            chunk.text = truncate_to_budget(&chunk.text, budget_tokens);
+            chunk.snippet = truncate_to_budget(&chunk.snippet, budget_tokens);
+            chunk.token_estimate = estimate_tokens(&chunk.text);
+            selected.push(chunk);
+        }
+        break;
+    }
+    let selected_chunks = selected.len();
+    let selected_tokens = selected.iter().fold(0usize, |total, chunk| {
+        total.saturating_add(chunk.token_estimate)
+    });
+    Ok(SectionRetrieval {
+        chunks: selected,
+        total_chunks,
+        total_tokens,
+        visible_chunks,
+        visible_tokens,
+        selected_chunks,
+        selected_tokens,
+        truncated: selected_chunks < visible_chunks || selected_tokens < visible_tokens,
+        spoiler_limited: visible_chunks < total_chunks || visible_tokens < total_tokens,
+    })
 }
 
 #[cfg(test)]
@@ -458,6 +578,29 @@ mod tests {
     }
 
     #[test]
+    fn character_cutoff_rejects_chunks_crossing_the_read_cursor() {
+        let conn = setup();
+        conn.execute(
+            "UPDATE book_chunks SET char_start = CASE WHEN chunk_index = 1 THEN 0 ELSE char_start END,
+             char_end = CASE WHEN chunk_index = 1 THEN 10 ELSE char_end END",
+            [],
+        )
+        .unwrap();
+
+        let all = retrieve_all(&conn, "book", Some(SpoilerCutoff::Character(5))).unwrap();
+        assert!(!all.iter().any(|chunk| chunk.chunk_id == "c1"));
+        let searched = retrieve(
+            &conn,
+            "book",
+            "rare signal",
+            500,
+            Some(SpoilerCutoff::Character(5)),
+        )
+        .unwrap();
+        assert!(searched.is_empty());
+    }
+
+    #[test]
     fn section_cutoff_filters_hits_neighbors_and_full_text() {
         let conn = setup();
         conn.execute("UPDATE book_chunks SET section_index = chunk_index", [])
@@ -481,5 +624,140 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["c0", "c1"]
         );
+    }
+
+    #[test]
+    fn retrieve_section_isolated_and_character_cutoff_safe() {
+        let conn = setup();
+        conn.execute(
+            "UPDATE book_chunks SET section_index = CASE WHEN chunk_index < 2 THEN 0 ELSE 1 END,
+             char_start = CASE WHEN chunk_index = 3 THEN 10 ELSE chunk_index END,
+             char_end = CASE WHEN chunk_index = 3 THEN 30 ELSE chunk_index + 1 END",
+            [],
+        )
+        .unwrap();
+
+        let section = retrieve_section_with_budget(&conn, "book", 0, 500, None)
+            .unwrap()
+            .chunks;
+        assert_eq!(
+            section
+                .iter()
+                .map(|chunk| chunk.chunk_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["c0", "c1"]
+        );
+
+        let protected =
+            retrieve_section_with_budget(&conn, "book", 1, 500, Some(SpoilerCutoff::Character(5)))
+                .unwrap()
+                .chunks;
+        assert_eq!(
+            protected
+                .iter()
+                .map(|chunk| chunk.chunk_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["c2", "c4"]
+        );
+    }
+
+    #[test]
+    fn retrieve_section_range_merges_adjacent_raw_sections_in_reading_order() {
+        let conn = setup();
+        conn.execute(
+            "UPDATE book_chunks SET section_index = CASE WHEN chunk_index < 2 THEN 3 ELSE 4 END",
+            [],
+        )
+        .unwrap();
+        let result =
+            retrieve_section_range_with_budget(&conn, "book", 3, Some(4), 500, None).unwrap();
+        assert_eq!(
+            result
+                .chunks
+                .iter()
+                .map(|chunk| chunk.chunk_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["c0", "c1", "c2", "c3", "c4"]
+        );
+        let to_end = retrieve_section_range_with_budget(&conn, "book", 3, None, 500, None).unwrap();
+        assert_eq!(to_end.chunks.len(), 5);
+    }
+
+    #[test]
+    fn retrieve_section_preserves_order_and_truncates_an_oversized_first_chunk() {
+        let conn = setup();
+        conn.execute(
+            "UPDATE book_chunks SET section_index = CASE WHEN chunk_index < 2 THEN 0 ELSE 1 END,
+             token_estimate = CASE WHEN chunk_index = 0 THEN 20 ELSE 2 END",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE book_chunks SET text = ?1, snippet = ?1 WHERE chunk_index = 0",
+            params!["one two three four five six seven eight nine ten"],
+        )
+        .unwrap();
+
+        let result = retrieve_section_with_budget(&conn, "book", 0, 5, None)
+            .unwrap()
+            .chunks;
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].chunk_id, "c0");
+        assert!(result[0].token_estimate <= 5);
+        assert!(result[0].text.split_whitespace().count() < 10);
+    }
+
+    #[test]
+    fn section_retrieval_reports_when_the_budget_drops_the_tail() {
+        let conn = setup();
+        conn.execute(
+            "UPDATE book_chunks SET section_index = CASE WHEN chunk_index < 2 THEN 0 ELSE 1 END,
+             token_estimate = CASE WHEN chunk_index < 2 THEN 20 ELSE 2 END",
+            [],
+        )
+        .unwrap();
+
+        let result = retrieve_section_with_budget(&conn, "book", 0, 25, None).unwrap();
+        assert_eq!(result.total_chunks, 2);
+        assert_eq!(result.total_tokens, 40);
+        assert_eq!(result.visible_chunks, 2);
+        assert_eq!(result.visible_tokens, 40);
+        assert_eq!(result.selected_chunks, 1);
+        assert_eq!(result.selected_tokens, 20);
+        assert!(result.truncated);
+        assert!(!result.spoiler_limited);
+        assert_eq!(result.chunks[0].chunk_id, "c0");
+    }
+
+    #[test]
+    fn section_retrieval_reports_cutoff_limited_visible_scope() {
+        let conn = setup();
+        let result =
+            retrieve_section_with_budget(&conn, "book", 0, 100, Some(SpoilerCutoff::Character(0)))
+                .unwrap();
+        assert_eq!(result.total_chunks, 5);
+        assert_eq!(result.total_tokens, 100);
+        assert_eq!(result.visible_chunks, 1);
+        assert_eq!(result.visible_tokens, 20);
+        assert_eq!(result.selected_chunks, 1);
+        assert_eq!(result.selected_tokens, 20);
+        assert!(!result.truncated);
+        assert!(result.spoiler_limited);
+        assert_eq!(result.chunks[0].chunk_id, "c0");
+    }
+
+    #[test]
+    fn section_retrieval_reports_empty_scope_without_false_flags() {
+        let conn = setup();
+        let result = retrieve_section_with_budget(&conn, "book", 99, 100, None).unwrap();
+        assert_eq!(result.total_chunks, 0);
+        assert_eq!(result.total_tokens, 0);
+        assert_eq!(result.visible_chunks, 0);
+        assert_eq!(result.visible_tokens, 0);
+        assert_eq!(result.selected_chunks, 0);
+        assert_eq!(result.selected_tokens, 0);
+        assert!(!result.truncated);
+        assert!(!result.spoiler_limited);
+        assert!(result.chunks.is_empty());
     }
 }

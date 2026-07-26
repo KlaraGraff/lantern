@@ -605,7 +605,7 @@ fn filter_section_overviews(
         .into_iter()
         .filter_map(|(section, char_end)| {
             cutoff
-                .allows_section_summary(section.section_index, char_end)
+                .allows_complete_chunk(section.section_index, char_end)
                 .then_some(section)
         })
         .collect()

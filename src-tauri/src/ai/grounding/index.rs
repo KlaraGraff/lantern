@@ -102,6 +102,91 @@ pub fn index_details(db: &Db, book_id: &str) -> AppResult<IndexDetails> {
     }))
 }
 
+/// Return the source snapshot that the grounding index should represent.
+///
+/// PDF books may be transparently served from a verified OCR asset. In that
+/// case the asset content hash, rather than the original PDF hash, is the
+/// snapshot that protects citations and follow-up scope inheritance.
+pub fn current_source_sha256(db: &Db, book_id: &str) -> AppResult<Option<String>> {
+    let source = {
+        let conn = db.reader();
+        conn.query_row(
+            "SELECT file_path, source_file_path, COALESCE(source_format, format), source_sha256
+             FROM books WHERE id = ?1",
+            params![book_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            },
+        )
+        .optional()?
+    };
+    let Some((file_path, source_file_path, source_format, stored_sha256)) = source else {
+        return Ok(None);
+    };
+
+    if source_format.eq_ignore_ascii_case("pdf") {
+        let data_dir = db
+            .data_dir
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?
+            .clone();
+        let conn = db.reader();
+        let resolved =
+            crate::commands::ocr::resolver::resolve_active_asset(&conn, &data_dir, book_id)?;
+        if let Some(hash) = resolved
+            .content_sha256
+            .filter(|hash| !hash.trim().is_empty())
+        {
+            return Ok(Some(hash));
+        }
+        if let Ok(hash) = source_sha256(&resolved.absolute_path) {
+            if !hash.trim().is_empty() {
+                return Ok(Some(hash));
+            }
+        }
+        return Ok(stored_sha256.filter(|hash| !hash.trim().is_empty()));
+    }
+
+    if let Some(hash) = stored_sha256.filter(|hash| !hash.trim().is_empty()) {
+        return Ok(Some(hash));
+    }
+    let path = db.resolve_path(source_file_path.as_deref().unwrap_or(&file_path))?;
+    Ok(source_sha256(&path)
+        .ok()
+        .filter(|hash| !hash.trim().is_empty()))
+}
+
+/// Return the hash only when the stored index is ready for the current source.
+/// A stale ready row is treated as unavailable until the normal index
+/// scheduler rebuilds it.
+pub fn ready_source_sha256(db: &Db, book_id: &str) -> AppResult<Option<String>> {
+    let current = current_source_sha256(db, book_id)?;
+    let state = {
+        let conn = db.reader();
+        conn.query_row(
+            "SELECT source_sha256, status FROM book_index_state WHERE book_id = ?1",
+            params![book_id],
+            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?
+    };
+    let Some((indexed, status)) = state else {
+        return Ok(None);
+    };
+    if status != IndexStatus::Ready.as_db() {
+        return Ok(None);
+    }
+    let Some(indexed) = indexed.filter(|hash| !hash.trim().is_empty()) else {
+        return Ok(None);
+    };
+    Ok((current.as_deref() == Some(indexed.as_str())).then_some(indexed))
+}
+
 fn record_state(
     db: &Db,
     book_id: &str,
@@ -346,7 +431,10 @@ pub fn schedule_index(app: AppHandle, book_id: String) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::ai::grounding::retrieve::retrieve;
+    use crate::db::Db;
+    use rusqlite::params;
 
     #[test]
     fn fts5_is_available_in_the_bundled_sqlite() {
@@ -373,5 +461,43 @@ mod tests {
         assert!(retrieve(&conn, "missing", "question", 100, None)
             .unwrap()
             .is_empty());
+    }
+
+    #[test]
+    fn ready_source_hash_rejects_a_stale_index_snapshot() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let conn = db.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO books (
+                 id, title, author, file_path, source_format, render_format,
+                 source_file_path, source_sha256, status, progress, created_at, updated_at
+             ) VALUES ('book', 'Book', 'Author', 'books/book.epub', 'epub', 'epub',
+                       'books/book.epub', 'source-a', 'unread', 0, 1, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO book_index_state
+             (book_id, source_sha256, index_version, chunk_count, status, indexed_at)
+             VALUES ('book', 'source-a', ?1, 1, 'ready', 1)",
+            params![INDEX_VERSION],
+        )
+        .unwrap();
+        drop(conn);
+
+        assert_eq!(
+            ready_source_sha256(&db, "book").unwrap().as_deref(),
+            Some("source-a")
+        );
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE books SET source_sha256 = 'source-b' WHERE id = 'book'",
+                [],
+            )
+            .unwrap();
+        assert_eq!(ready_source_sha256(&db, "book").unwrap(), None);
     }
 }

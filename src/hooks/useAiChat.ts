@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getAiErrorCode } from "../utils/aiError";
 import { createUuid } from "../utils/randomUuid";
 import { useSettings } from "./useSettings";
+import { previousAssistantBeforeLatestUser } from "./aiChatRouting";
 
 export interface ChatMessage {
   id: string;
@@ -15,6 +16,11 @@ export interface ChatMessage {
   reasoning?: string;
   sources?: CitedSource[];
   spoilerGuard?: SpoilerGuardMetadata;
+  route?: AiChatRoute;
+  sectionIndex?: number;
+  sectionEndIndex?: number;
+  sectionContext?: SectionContextMetadata;
+  sourceHash?: string;
   dbId?: string;
 }
 
@@ -24,9 +30,38 @@ export interface SpoilerGuardMetadata {
   progress: number;
 }
 
+export type AiChatRoute =
+  | "selected_context"
+  | "selected_context_vocabulary"
+  | "current_section_vocabulary"
+  | "current_section"
+  | "current_section_unavailable"
+  | "whole_book_unavailable"
+  | "whole_book_vocabulary_unavailable"
+  | "whole_book_vocabulary"
+  | "whole_book"
+  | "generic_retrieval";
+
+export interface SectionContextMetadata {
+  totalChunks: number;
+  totalTokens: number;
+  visibleChunks: number;
+  visibleTokens: number;
+  selectedChunks: number;
+  selectedTokens: number;
+  truncated: boolean;
+  spoilerLimited: boolean;
+  coverage: "complete" | "partial_budget" | "partial_reading_protection" | "partial_budget_and_reading_protection" | "unavailable";
+}
+
 interface AiChatResult {
   sources: CitedSource[];
   spoilerGuard: SpoilerGuardMetadata;
+  route?: AiChatRoute;
+  sectionIndex?: number;
+  sectionEndIndex?: number;
+  sectionContext?: SectionContextMetadata;
+  sourceHash?: string;
 }
 
 export interface CitedSource {
@@ -91,6 +126,84 @@ interface ChatMessageMetadata {
   reasoning?: string;
   sources?: CitedSource[];
   spoilerGuard?: SpoilerGuardMetadata;
+  route?: AiChatRoute;
+  sectionIndex?: number;
+  sectionEndIndex?: number;
+  sectionContext?: SectionContextMetadata;
+  sourceHash?: string;
+}
+
+function parseAiChatRoute(value: unknown): AiChatRoute | undefined {
+  if (typeof value !== "string") return undefined;
+  switch (value) {
+    case "selected_context":
+    case "selected_context_vocabulary":
+    case "current_section_vocabulary":
+    case "current_section":
+    case "current_section_unavailable":
+    case "whole_book_unavailable":
+    case "whole_book_vocabulary_unavailable":
+    case "whole_book_vocabulary":
+    case "whole_book":
+    case "generic_retrieval":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
+function parseNonNegativeInteger(value: unknown): number | undefined {
+  return typeof value === "number"
+    && Number.isSafeInteger(value)
+    && value >= 0
+    ? value
+    : undefined;
+}
+
+function parseSectionContext(value: unknown): SectionContextMetadata | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const context = value as Record<string, unknown>;
+  const totalChunks = parseNonNegativeInteger(context.totalChunks);
+  const totalTokens = parseNonNegativeInteger(context.totalTokens);
+  const visibleChunks = parseNonNegativeInteger(context.visibleChunks);
+  const visibleTokens = parseNonNegativeInteger(context.visibleTokens);
+  const selectedChunks = parseNonNegativeInteger(context.selectedChunks);
+  const selectedTokens = parseNonNegativeInteger(context.selectedTokens);
+  if (totalChunks === undefined
+    || totalTokens === undefined
+    || visibleChunks === undefined
+    || visibleTokens === undefined
+    || selectedChunks === undefined
+    || selectedTokens === undefined
+    || typeof context.truncated !== "boolean"
+    || typeof context.spoilerLimited !== "boolean") {
+    return undefined;
+  }
+  const coverage = context.coverage;
+  const parsedCoverage = coverage === "complete"
+    || coverage === "partial_budget"
+    || coverage === "partial_reading_protection"
+    || coverage === "partial_budget_and_reading_protection"
+    || coverage === "unavailable"
+    ? coverage
+    : (context.truncated && context.spoilerLimited
+      ? "partial_budget_and_reading_protection"
+      : context.truncated
+        ? "partial_budget"
+        : context.spoilerLimited
+          ? "partial_reading_protection"
+          : "complete");
+  return {
+    totalChunks,
+    totalTokens,
+    visibleChunks,
+    visibleTokens,
+    selectedChunks,
+    selectedTokens,
+    truncated: context.truncated,
+    spoilerLimited: context.spoilerLimited,
+    coverage: parsedCoverage,
+  };
 }
 
 function parseSpoilerGuard(value: unknown): SpoilerGuardMetadata | undefined {
@@ -125,6 +238,11 @@ function parseAiChatResult(value: unknown): AiChatResult {
     sources: parseCitedSources(result.sources) ?? [],
     spoilerGuard: parseSpoilerGuard(result.spoilerGuard)
       ?? { active: false, wholeBookIntent: false, progress: 0 },
+    route: parseAiChatRoute(result.route),
+    sectionIndex: typeof result.sectionIndex === "number" ? result.sectionIndex : undefined,
+    sectionEndIndex: typeof result.sectionEndIndex === "number" ? result.sectionEndIndex : undefined,
+    sectionContext: parseSectionContext(result.sectionContext),
+    sourceHash: typeof result.sourceHash === "string" ? result.sourceHash : undefined,
   };
 }
 
@@ -153,6 +271,11 @@ function parseMessageMetadata(metadata: string | null): ChatMessageMetadata {
       reasoning: typeof value.reasoning === "string" ? value.reasoning : undefined,
       sources: parseCitedSources(value.sources),
       spoilerGuard: parseSpoilerGuard(value.spoilerGuard),
+      route: parseAiChatRoute(value.route),
+      sectionIndex: parseNonNegativeInteger(value.sectionIndex),
+      sectionEndIndex: parseNonNegativeInteger(value.sectionEndIndex),
+      sectionContext: parseSectionContext(value.sectionContext),
+      sourceHash: typeof value.sourceHash === "string" ? value.sourceHash : undefined,
     };
   } catch {
     return {};
@@ -166,6 +289,11 @@ function serializeMessageMetadata(metadata: ChatMessageMetadata): string | null 
   if (metadata.reasoning) compact.reasoning = metadata.reasoning;
   if (metadata.sources?.length) compact.sources = metadata.sources;
   if (metadata.spoilerGuard) compact.spoilerGuard = metadata.spoilerGuard;
+  if (metadata.route) compact.route = metadata.route;
+  if (metadata.sectionIndex !== undefined) compact.sectionIndex = metadata.sectionIndex;
+  if (metadata.sectionEndIndex !== undefined) compact.sectionEndIndex = metadata.sectionEndIndex;
+  if (metadata.sectionContext) compact.sectionContext = metadata.sectionContext;
+  if (metadata.sourceHash) compact.sourceHash = metadata.sourceHash;
   return Object.keys(compact).length > 0 ? JSON.stringify(compact) : null;
 }
 
@@ -180,7 +308,9 @@ function messageContentForApi(message: ChatMessage): string {
     );
   }
   return context.length > 0
-    ? `${context.join("\n\n")}\n\n${message.content}`
+    // Keep the actual question first so a bounded history window never drops
+    // the instruction just because an attached quote is long.
+    ? `${message.content}\n\n${context.join("\n\n")}`
     : message.content;
 }
 
@@ -253,6 +383,10 @@ interface BookContext {
   title?: string;
   author?: string;
   chapter?: string;
+  sectionIndex?: number;
+  scopeStartIndex?: number;
+  scopeEndIndex?: number;
+  scopeAmbiguous?: boolean;
 }
 
 export function useAiChat(bookId?: string, bookContext?: BookContext) {
@@ -448,6 +582,11 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           reasoning: metadata.reasoning,
           sources: metadata.sources,
           spoilerGuard: metadata.spoilerGuard,
+          route: metadata.route,
+          sectionIndex: metadata.sectionIndex,
+          sectionEndIndex: metadata.sectionEndIndex,
+          sectionContext: metadata.sectionContext,
+          sourceHash: metadata.sourceHash,
           dbId: m.id,
         };
       });
@@ -603,6 +742,8 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         context,
         contextCfi,
         contextAnalysis,
+        sectionIndex: bookContext?.scopeStartIndex ?? bookContext?.sectionIndex,
+        sectionEndIndex: bookContext?.scopeEndIndex,
       };
 
       const assistantId = replacingAssistant?.id ?? nextMsgId();
@@ -624,7 +765,12 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       // Persist user message
       if (!replacingAssistant) {
         try {
-          const meta = serializeMessageMetadata({ cfi: contextCfi, analysis: contextAnalysis });
+          const meta = serializeMessageMetadata({
+            cfi: contextCfi,
+            analysis: contextAnalysis,
+            sectionIndex: userMessage.sectionIndex,
+            sectionEndIndex: userMessage.sectionEndIndex,
+          });
           const saved = await invoke<ChatMsgRecord>("save_chat_message", {
             chatId: currentChatId,
             role: "user",
@@ -644,6 +790,11 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       let fullReasoning = "";
       let citedSources: CitedSource[] = [];
       let spoilerGuard: SpoilerGuardMetadata | undefined;
+      let route: AiChatRoute | undefined;
+      let sectionIndex: number | undefined;
+      let sectionEndIndex: number | undefined;
+      let sectionContext: SectionContextMetadata | undefined;
+      let sourceHash: string | undefined;
       let chatResultPromise: Promise<AiChatResult> | null = null;
       let pendingContent = "";
       let pendingReasoning = "";
@@ -761,9 +912,14 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
                 if (!isRequestActive()) return;
                 citedSources = result.sources;
                 spoilerGuard = result.spoilerGuard;
+                route = result.route;
+                sectionIndex = result.sectionIndex;
+                sectionEndIndex = result.sectionEndIndex;
+                sectionContext = result.sectionContext;
+                sourceHash = result.sourceHash;
                 updateMessages((previous) => previous.map((message) => (
                   message.id === assistantId
-                    ? { ...message, sources: citedSources, spoilerGuard }
+                    ? { ...message, sources: citedSources, spoilerGuard, route, sectionIndex, sectionEndIndex, sectionContext, sourceHash }
                     : message
                 )));
               } catch (err) {
@@ -789,6 +945,11 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
                     reasoning: fullReasoning,
                     sources: citedSources,
                     spoilerGuard,
+                    route,
+                    sectionIndex,
+                    sectionEndIndex,
+                    sectionContext,
+                    sourceHash,
                   });
                   if (replacingAssistant?.dbId) {
                     await invoke("replace_chat_message", {
@@ -855,6 +1016,13 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           role: m.role,
           content: messageContentForApi(m),
         }));
+      // Scope metadata belongs to the immediately preceding turn. During a
+      // replacement retry, keep the answer being replaced as the source of
+      // continuity; otherwise never skip a metadata-less answer and inherit
+      // an older section accidentally.
+      const previousAssistant = replacingAssistant !== undefined
+        ? replacingAssistant
+        : previousAssistantBeforeLatestUser(apiHistory);
 
       try {
         if (!isRequestActive()) return;
@@ -864,16 +1032,29 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           bookTitle: bookContext?.title ?? null,
           bookAuthor: bookContext?.author ?? null,
           currentChapter: bookContext?.chapter ?? null,
+          currentSectionIndex: bookContext?.sectionIndex ?? null,
+          currentScopeStartIndex: bookContext?.scopeStartIndex ?? null,
+          currentScopeEndIndex: bookContext?.scopeEndIndex ?? null,
+          currentScopeAmbiguous: bookContext?.scopeAmbiguous ?? false,
+          previousRoute: previousAssistant?.route ?? null,
+          previousSectionIndex: previousAssistant?.sectionIndex ?? null,
+          previousSectionEndIndex: previousAssistant?.sectionEndIndex ?? null,
+          previousSourceHash: previousAssistant?.sourceHash ?? null,
           requestId,
           spoilerOverride: options?.spoilerOverride ?? null,
         }).then(parseAiChatResult);
         const result = await chatResultPromise;
         citedSources = result.sources;
         spoilerGuard = result.spoilerGuard;
+        route = result.route;
+        sectionIndex = result.sectionIndex;
+        sectionEndIndex = result.sectionEndIndex;
+        sectionContext = result.sectionContext;
+        sourceHash = result.sourceHash;
         if (isRequestActive()) {
           updateMessages((previous) => previous.map((message) => (
             message.id === assistantId
-              ? { ...message, sources: citedSources, spoilerGuard }
+              ? { ...message, sources: citedSources, spoilerGuard, route, sectionIndex, sectionEndIndex, sectionContext, sourceHash }
               : message
           )));
         }
@@ -892,7 +1073,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         finishRequest();
       }
     },
-    [bookId, bookContext?.title, bookContext?.author, bookContext?.chapter, createChat, prepareBookOverview, refreshChats, settings.ai_summaries_auto, stopActiveStream]
+    [bookId, bookContext?.title, bookContext?.author, bookContext?.chapter, bookContext?.sectionIndex, bookContext?.scopeStartIndex, bookContext?.scopeEndIndex, bookContext?.scopeAmbiguous, createChat, prepareBookOverview, refreshChats, settings.ai_summaries_auto, stopActiveStream]
   );
 
   const retryWithWholeBook = useCallback((assistantId: string) => {
