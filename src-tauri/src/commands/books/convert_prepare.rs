@@ -135,9 +135,8 @@ fn detect_ebook_convert() -> Option<PathBuf> {
         "/Applications/calibre.app/Contents/MacOS/ebook-convert",
     ));
     if let Ok(home) = std::env::var("HOME") {
-        candidates.push(
-            Path::new(&home).join("Applications/calibre.app/Contents/MacOS/ebook-convert"),
-        );
+        candidates
+            .push(Path::new(&home).join("Applications/calibre.app/Contents/MacOS/ebook-convert"));
     }
     candidates.into_iter().find(|path| {
         path.is_file()
@@ -422,11 +421,7 @@ fn publish_current_conversion_job(
 }
 
 /// Core job body, parameterized on the converter so tests can inject a fake.
-fn run_conversion_with(
-    app: &AppHandle,
-    book_id: &str,
-    converter: &dyn Converter,
-) -> AppResult<()> {
+fn run_conversion_with(app: &AppHandle, book_id: &str, converter: &dyn Converter) -> AppResult<()> {
     crate::sync::validation::validate_entity_id(book_id)?;
     let db = app.state::<Db>();
     let local_dir = app.state::<LocalDir>();
@@ -670,11 +665,7 @@ pub fn get_converted_book_path(
 }
 
 #[tauri::command]
-pub fn retry_book_conversion(
-    book_id: String,
-    db: State<'_, Db>,
-    app: AppHandle,
-) -> AppResult<()> {
+pub fn retry_book_conversion(book_id: String, db: State<'_, Db>, app: AppHandle) -> AppResult<()> {
     crate::sync::validation::validate_entity_id(&book_id)?;
     if transition_conversion_state(&db, &book_id, "failed", "pending", None)? {
         emit_conversion_changed(&app, &book_id, "pending");
@@ -716,7 +707,14 @@ mod tests {
               preparation_error, status, progress, created_at, updated_at)
              VALUES (?1, 'Book', 'Author', ?2, 'mobi', 'mobi', 'epub', ?2, ?3, ?4, ?5,
                      'existing error', 'reading', 0, ?6, ?6)",
-            params![id, format!("books/{id}.azw3"), sha, CONVERSION_VERSION, state, now],
+            params![
+                id,
+                format!("books/{id}.azw3"),
+                sha,
+                CONVERSION_VERSION,
+                state,
+                now
+            ],
         )
         .unwrap();
     }
@@ -841,9 +839,11 @@ mod tests {
     fn fake_converter_writes_output() {
         let dir = TempDir::new().unwrap();
         let dest = dir.path().join("out.epub");
-        FakeConverter { bytes: b"PK\x03\x04epub".to_vec() }
-            .convert(Path::new("/src"), &dest, "mobi")
-            .unwrap();
+        FakeConverter {
+            bytes: b"PK\x03\x04epub".to_vec(),
+        }
+        .convert(Path::new("/src"), &dest, "mobi")
+        .unwrap();
         assert_eq!(fs::read(&dest).unwrap(), b"PK\x03\x04epub");
     }
 }

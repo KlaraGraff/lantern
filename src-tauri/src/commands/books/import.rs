@@ -280,7 +280,11 @@ fn do_import_native(
         }),
         source_file_path: Some(format!("books/{filename}")),
         source_sha256: Some(source_sha256),
-        conversion_version: if convert_to_epub { CONVERSION_VERSION } else { 0 },
+        conversion_version: if convert_to_epub {
+            CONVERSION_VERSION
+        } else {
+            0
+        },
         preparation_state: if convert_to_epub {
             "pending".to_string()
         } else {

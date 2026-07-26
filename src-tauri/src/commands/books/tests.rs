@@ -1170,7 +1170,10 @@ fn resolve_paths_redirects_ready_converted_book_to_local_artifact() {
     super::query::resolve_book_paths(&mut book, &db, None).unwrap();
 
     assert_eq!(book.file_path, artifact.to_string_lossy());
-    assert!(book.available, "local converted artifact is always available");
+    assert!(
+        book.available,
+        "local converted artifact is always available"
+    );
 }
 
 #[test]
@@ -1240,8 +1243,7 @@ fn resolve_paths_redirects_pdf_to_latest_verified_ocr_asset() {
             [],
         )
         .unwrap();
-        let relative =
-            crate::commands::ocr::assets::expected_relative_path("pdf-ocr", "asset-1");
+        let relative = crate::commands::ocr::assets::expected_relative_path("pdf-ocr", "asset-1");
         crate::commands::ocr::assets::insert_asset(
             &conn,
             crate::commands::ocr::assets::NewBookAsset {

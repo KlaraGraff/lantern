@@ -41,6 +41,15 @@ pub use import::__cmd__import_book_from_dialog;
 pub use import::import_book_from_dialog;
 // Preserve the historical commands::books::* crate API while implementations
 // live in focused child modules.
+#[doc(hidden)]
+pub use convert_prepare::{__cmd__get_converted_book_path, __cmd__retry_book_conversion};
+pub(crate) use convert_prepare::{
+    conversion_backend_available, is_conversion_book, schedule_book_conversion,
+};
+pub use convert_prepare::{
+    get_converted_book_path, resume_interrupted_book_conversions, retry_book_conversion,
+    schedule_pending_book_conversions,
+};
 pub(crate) use format::source_sha256;
 #[allow(unused_imports)]
 pub(crate) use import::{
@@ -71,15 +80,6 @@ pub use text_prepare::{__cmd__get_text_book_document, __cmd__retry_text_book_pre
 pub use text_prepare::{
     get_text_book_document, resume_interrupted_text_book_preparations, retry_text_book_preparation,
     schedule_pending_text_book_preparations, schedule_text_book_preparation,
-};
-#[doc(hidden)]
-pub use convert_prepare::{__cmd__get_converted_book_path, __cmd__retry_book_conversion};
-pub(crate) use convert_prepare::{
-    conversion_backend_available, is_conversion_book, schedule_book_conversion,
-};
-pub use convert_prepare::{
-    get_converted_book_path, resume_interrupted_book_conversions, retry_book_conversion,
-    schedule_pending_book_conversions,
 };
 
 pub(super) const TEXT_DOCUMENT_VERSION: i32 = 3;

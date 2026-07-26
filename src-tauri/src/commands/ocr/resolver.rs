@@ -164,9 +164,6 @@ mod tests {
         let resolved = resolve_active_asset(&conn, dir.path(), "book-1").unwrap();
         assert!(resolved.asset.is_none());
         assert_eq!(resolved.selection_reason, "source");
-        assert_eq!(
-            resolved.content_sha256.as_deref(),
-            Some("replacement-hash")
-        );
+        assert_eq!(resolved.content_sha256.as_deref(), Some("replacement-hash"));
     }
 }
