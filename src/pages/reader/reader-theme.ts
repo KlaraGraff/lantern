@@ -13,6 +13,7 @@ interface LayoutView {
     setAttribute(name: string, value: string): void;
     getAttribute(name: string): string | null;
     toggleAttribute(name: string, force?: boolean): boolean;
+    render?(): void;
   };
 }
 
@@ -212,11 +213,44 @@ export function applyReflowLayout(
   const isPaginated = settings.readingMode === "paginated";
   const width = Math.max(1, viewportWidth);
   const effectiveColumns = getEffectivePageColumns(settings, width, viewportHeight);
-  const columnWidth = width / effectiveColumns;
-  view.renderer.setAttribute("flow", isPaginated ? "paginated" : "scrolled");
-  view.renderer.setAttribute("gap", `${settings.margins}%`);
-  view.renderer.setAttribute("max-column-count", String(effectiveColumns));
-  view.renderer.setAttribute("max-inline-size", `${columnWidth}px`);
+  // Foliate lays the page out on a grid whose content track is
+  // `max-inline-size * columns - gap`, flanked by `gap`-derived margin tracks
+  // (see the #top grid-template in foliate-js/paginator.js). Sizing a column to
+  // the full viewport share leaves no room for those margins: the grid's
+  // minimum tracks then exceed the viewport, the content track gets squeezed by
+  // an extra gap, and the visible margin drifts off the configured percentage.
+  // Worse, the squeezed container feeds `ceil(size / maxInlineSize)` in
+  // #beforeRender, which flips the column count near the 1↔2 boundary and
+  // leaves the page anchored mid-column (text clipped at the left edge).
+  // Reserving the gap up front keeps the grid exactly fitting, so the margin is
+  // precisely `settings.margins` on each side and the column count is stable.
+  const marginFraction = Math.min(Math.max(settings.margins, 0), 100) / 100;
+  const columnWidth = (width * (1 - marginFraction)) / effectiveColumns;
+  // Foliate re-renders synchronously from attributeChangedCallback, but only
+  // for `flow` and `max-inline-size` — `gap` and `max-column-count` merely
+  // write CSS variables. Setting `flow` first therefore rendered once with the
+  // OLD gap/column values against the NEW container size, and that bad render
+  // also ran #scrollToAnchor, which can leave the page anchored mid-column
+  // (text clipped at the left edge). Write the non-rendering inputs first and
+  // the rendering ones last, and skip attributes whose value did not change
+  // (setAttribute fires the callback even for an identical value), so one
+  // reflow costs exactly one render — always with fully updated values.
+  const renderer = view.renderer;
+  const setAttr = (name: string, value: string): boolean => {
+    if (renderer.getAttribute(name) === value) return false;
+    renderer.setAttribute(name, value);
+    return true;
+  };
+  const sizingChanged = [
+    setAttr("gap", `${settings.margins}%`),
+    setAttr("max-column-count", String(effectiveColumns)),
+  ].some(Boolean);
+  const flowRendered = setAttr("flow", isPaginated ? "paginated" : "scrolled");
+  const inlineSizeRendered = setAttr("max-inline-size", `${columnWidth}px`);
+  if (sizingChanged && !flowRendered && !inlineSizeRendered) {
+    // Only the non-rendering inputs changed, so nothing re-rendered above.
+    renderer.render?.();
+  }
   // Reflowable books retain Foliate's native slide so direct trackpad gestures
   // animate too. The shared transition layer detects this paginator and does
   // not add a second animation; fixed-layout PDF uses the container fallback.

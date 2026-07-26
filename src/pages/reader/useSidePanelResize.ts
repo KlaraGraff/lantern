@@ -15,7 +15,10 @@ interface ShadowHost {
   shadowRoot: ShadowRoot | null;
 }
 
-export function useSidePanelResize<T extends ShadowHost>(viewRef: RefObject<T | null>) {
+export function useSidePanelResize<T extends ShadowHost>(
+  viewRef: RefObject<T | null>,
+  viewerRef: RefObject<HTMLElement | null>,
+) {
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
   const panelWidthRef = useRef(panelWidth);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -40,6 +43,16 @@ export function useSidePanelResize<T extends ShadowHost>(viewRef: RefObject<T | 
     const renderer = viewRef.current?.shadowRoot
       ?.querySelector("foliate-paginator, foliate-fxl, foliate-pdf-scroll");
     renderer?.setAttribute("resize-dragging", "");
+
+    // Freeze the reader viewport at its current pixel width for the duration of
+    // the drag. Reflow is suppressed while dragging, so if we let the viewer
+    // shrink live with the flex layout, Foliate's frozen columnization no longer
+    // matches the container and the current page renders horizontally clipped
+    // until release. Pinning the width keeps the columnization valid; the
+    // growing panel simply covers the viewer's right edge (main is
+    // overflow-hidden). Restored in cleanup, just before the drag-end reflow.
+    const viewer = viewerRef.current;
+    if (viewer) viewer.style.width = `${viewer.clientWidth}px`;
 
     const widthFromClientX = (clientX: number) => {
       const delta = startX - clientX;
@@ -73,6 +86,10 @@ export function useSidePanelResize<T extends ShadowHost>(viewRef: RefObject<T | 
       } catch { /* pointer capture can already be gone */ }
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      // Release the frozen width first so the viewer flexes to its final size,
+      // then drop `resize-dragging` — the drag-end reflow that fires on removal
+      // reads the correct final width in one shot.
+      if (viewer) viewer.style.width = "";
       renderer?.removeAttribute("resize-dragging");
     };
 
@@ -122,7 +139,7 @@ export function useSidePanelResize<T extends ShadowHost>(viewRef: RefObject<T | 
     window.addEventListener("pointercancel", handlePointerCancel);
     window.addEventListener("blur", handleWindowBlur);
     handle.addEventListener("lostpointercapture", handleLostPointerCapture);
-  }, [viewRef]);
+  }, [viewRef, viewerRef]);
 
   return { handlePanelResizePointerDown, panelRef, panelWidth };
 }
