@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useLayoutEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { getAiErrorCode } from "../utils/aiError";
+import { getAiErrorCode, isAiErrorCode } from "../utils/aiError";
 import { createUuid } from "../utils/randomUuid";
 import { useSettings } from "./useSettings";
 import { previousAssistantBeforeLatestUser } from "./aiChatRouting";
@@ -425,6 +425,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
   const streamGenerationRef = useRef(0);
   const streamFrameCleanupRef = useRef<(() => void) | null>(null);
   const initializationGenerationRef = useRef(0);
+  const initializationPromiseRef = useRef<Promise<void> | null>(null);
   const titleGenerationRef = useRef(0);
   const bookIdRef = useRef(bookId);
   const mountedRef = useRef(false);
@@ -618,33 +619,50 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
   const initialize = useCallback(async (bid?: string) => {
     const targetBook = bid || bookId;
     if (!targetBook) { setInitializingSynced(false); return; }
-    if (initializedBookRef.current === targetBook) { setInitializingSynced(false); return; }
+    if (initializedBookRef.current === targetBook) {
+      // A concurrent initialize for this book may still be loading its chat.
+      // Wait for it before clearing the gate — otherwise send() could run
+      // before the existing chat loads and lazily create a duplicate chat.
+      const generation = initializationGenerationRef.current;
+      try { await initializationPromiseRef.current; } catch { /* ignore */ }
+      if (initializationGenerationRef.current === generation) {
+        setInitializingSynced(false);
+      }
+      return;
+    }
     const generation = initializationGenerationRef.current + 1;
     initializationGenerationRef.current = generation;
     initializedBookRef.current = targetBook;
     setInitializingSynced(true);
 
-    try {
-      const chatList = await refreshChats(targetBook);
-      if (
-        !mountedRef.current
-        || initializationGenerationRef.current !== generation
-        || bookIdRef.current !== targetBook
-      ) return;
-      if (chatList.length > 0) {
-        await loadChat(chatList[0].id);
-      } else {
-        // No chats yet — show empty state without creating a DB record.
-        // A chat will be created lazily on first send.
-        setChatId(null);
-        chatIdRef.current = null;
-        updateMessages([]);
+    const run = (async () => {
+      try {
+        const chatList = await refreshChats(targetBook);
+        if (
+          !mountedRef.current
+          || initializationGenerationRef.current !== generation
+          || bookIdRef.current !== targetBook
+        ) return;
+        if (chatList.length > 0) {
+          await loadChat(chatList[0].id);
+        } else {
+          // No chats yet — show empty state without creating a DB record.
+          // A chat will be created lazily on first send.
+          setChatId(null);
+          chatIdRef.current = null;
+          updateMessages([]);
+        }
+      } finally {
+        if (initializationGenerationRef.current === generation) {
+          setInitializingSynced(false);
+        }
+        if (initializationPromiseRef.current === run) {
+          initializationPromiseRef.current = null;
+        }
       }
-    } finally {
-      if (initializationGenerationRef.current === generation) {
-        setInitializingSynced(false);
-      }
-    }
+    })();
+    initializationPromiseRef.current = run;
+    await run;
   }, [bookId, refreshChats, loadChat]);
 
   const send = useCallback(
@@ -1025,7 +1043,12 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         .filter((message) => message.role === "user" || message.content.trim().length > 0)
         .map((m) => ({
           role: m.role,
-          content: messageContentForApi(m),
+          // A failed stream leaves a raw error code as the bubble content
+          // (rendered localized by the UI). Never send that code to the
+          // provider as if it were an actual reply.
+          content: m.role === "assistant" && isAiErrorCode(m.content)
+            ? "[The previous response failed to generate.]"
+            : messageContentForApi(m),
         }));
       // Scope metadata belongs to the immediately preceding turn. During a
       // replacement retry, keep the answer being replaced as the source of

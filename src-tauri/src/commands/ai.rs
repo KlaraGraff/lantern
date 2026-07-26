@@ -140,8 +140,44 @@ enum ChatRoute {
     Generic,
 }
 
+/// Detect a lookup of one specific word ("这个单词是什么意思", "what does the
+/// word X mean"). Such questions mention vocabulary keywords but must not
+/// trigger a list-style vocabulary scan of the section or book.
+fn is_single_word_lookup(lower: &str) -> bool {
+    let list_intent = [
+        "哪些", "列出", "都有什么", "list", "which words", "what words",
+    ]
+    .iter()
+    .any(|pattern| lower.contains(pattern));
+    if list_intent {
+        return false;
+    }
+    if ["这个单词", "这个词", "那个单词", "那个词", "该词", "此词"]
+        .iter()
+        .any(|pattern| lower.contains(pattern))
+    {
+        return true;
+    }
+    // English singular references: "the word", "this word", "that word" —
+    // but "the words"/plural forms keep list semantics.
+    ["this word", "that word", "the word"].iter().any(|pattern| {
+        let mut search_start = 0;
+        while let Some(position) = lower[search_start..].find(pattern) {
+            let after = search_start + position + pattern.len();
+            if !lower[after..].starts_with('s') {
+                return true;
+            }
+            search_start = after;
+        }
+        false
+    })
+}
+
 fn is_vocabulary_request(value: &str) -> bool {
     let lower = value.to_lowercase();
+    if is_single_word_lookup(&lower) {
+        return false;
+    }
     let vocabulary_negated = [
         "不要列难词",
         "不要列出难词",
@@ -2363,10 +2399,10 @@ fn has_whole_book_intent(value: &str) -> bool {
     ]
     .iter()
     .any(|pattern| lower.contains(pattern));
-    let explicit_chinese_scope = ["全书", "整本书", "整部", "全篇", "整篇", "全文"]
-        .iter()
-        .any(|pattern| compact.contains(pattern));
-    let explicit_english_scope = [
+    // Unambiguous whole-book phrasing. These also defeat a local-scope
+    // reading ("总结全书前半部分" mentioning a chapter as comparison).
+    const EXPLICIT_CHINESE_SCOPE: [&str; 6] = ["全书", "整本书", "整部", "全篇", "整篇", "全文"];
+    const EXPLICIT_ENGLISH_SCOPE: [&str; 7] = [
         "whole book",
         "entire book",
         "book as a whole",
@@ -2374,9 +2410,17 @@ fn has_whole_book_intent(value: &str) -> bool {
         "all chapters",
         "entire text",
         "whole story",
-    ]
-    .iter()
-    .any(|pattern| lower.contains(pattern));
+    ];
+    // Looser phrases that imply whole-book scope only when no local scope is
+    // in play — "full text" alone means the book, but "full text of this
+    // chapter" must stay local, so these never defeat a local-scope reading.
+    const LOOSE_ENGLISH_SCOPE: [&str; 2] = ["full text", "finale"];
+    let explicit_chinese_scope = EXPLICIT_CHINESE_SCOPE
+        .iter()
+        .any(|pattern| compact.contains(pattern));
+    let explicit_english_scope = EXPLICIT_ENGLISH_SCOPE
+        .iter()
+        .any(|pattern| lower.contains(pattern));
     let local_scope = is_current_section_request(value) || is_current_passage_request(value);
     let local_override = [
         "不要总结全书",
@@ -2436,19 +2480,10 @@ fn has_whole_book_intent(value: &str) -> bool {
                     .contains(['章', '局'])
                     && !avoids_spoilers
             })
-        || [
-            "whole book",
-            "entire book",
-            "book as a whole",
-            "throughout the book",
-            "all chapters",
-            "entire text",
-            "full text",
-            "whole story",
-            "finale",
-        ]
-        .iter()
-        .any(|pattern| lower.contains(pattern))
+        || explicit_english_scope
+        || LOOSE_ENGLISH_SCOPE
+            .iter()
+            .any(|pattern| lower.contains(pattern))
         || (ending_request && !avoids_spoilers)
         || ([
             "spoil it",
@@ -4129,6 +4164,57 @@ mod tests {
                 Some(ChatRoute::CurrentSectionVocabulary),
             )),
             "current_section"
+        );
+    }
+
+    #[test]
+    fn single_word_lookups_do_not_trigger_vocabulary_scans() {
+        // One specific word: answer the question, don't scan the section.
+        assert_eq!(
+            route_name(classify_chat_route(
+                "resilience 这个单词是什么意思？",
+                Some(3),
+                None
+            )),
+            "generic_retrieval"
+        );
+        assert_eq!(
+            route_name(classify_chat_route("这个词在这里怎么理解？", Some(3), None)),
+            "generic_retrieval"
+        );
+        assert_eq!(
+            route_name(classify_chat_route(
+                "What does the word 'serfdom' mean here?",
+                Some(3),
+                None
+            )),
+            "generic_retrieval"
+        );
+        // A selected passage keeps its scope for a single-word lookup.
+        assert_eq!(
+            route_name(classify_chat_route(
+                "[Selected passage]\nQuoted prose.\n[/Selected passage]\nWhat does this word mean?",
+                Some(3),
+                None
+            )),
+            "selected_context"
+        );
+        // Plural/list phrasing still routes to a vocabulary scan.
+        assert_eq!(
+            route_name(classify_chat_route(
+                "Which words in this chapter are difficult?",
+                Some(3),
+                None
+            )),
+            "current_section_vocabulary"
+        );
+        assert_eq!(
+            route_name(classify_chat_route(
+                "把这个单词和本章其他难词都列出来",
+                Some(3),
+                None
+            )),
+            "current_section_vocabulary"
         );
     }
 
