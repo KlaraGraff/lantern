@@ -23,3 +23,8 @@ test("identifies cited sources and internal citation hrefs", () => {
   assert.equal(citationMarkerFromHref("quill-citation:S1"), "S1");
   assert.equal(citationMarkerFromHref("https://example.com"), undefined);
 });
+
+test("supports candidate-level source markers above two digits", () => {
+  const source100 = { ...source, marker: "S100" };
+  assert.equal(markdownWithCitationLinks("Fact [S100]", [source100]), "Fact [S100](quill-citation:S100)");
+});

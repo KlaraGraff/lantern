@@ -34,6 +34,7 @@ import ExplainPopover from "../components/ExplainPopover";
 import TableOfContents from "../components/TableOfContents";
 import TextBookReader from "../components/TextBookReader";
 import { textLocation, type TextBookDocument } from "../components/text-book-location";
+import { citationSearchProbes } from "./reader/citationNavigation";
 import type { CitedSource } from "../hooks/useAiChat";
 import {
   classifySelection,
@@ -860,29 +861,25 @@ export default function Reader() {
     }
     const view = viewRef.current;
     if (!view) return;
-    const probe = source.snippet
-      ?.split("\n")[0]
-      ?.trim()
-      .slice(0, 80)
-      .replace(/\s+\S*$/, "")
-      .trim();
-    if (probe && probe.length >= 8 && Number.isInteger(source.sectionIndex)) {
-      try {
-        let cfi: string | undefined;
-        for await (const result of view.search({ query: probe, index: source.sectionIndex })) {
-          if (result === "done") break;
-          if (result.cfi) {
-            cfi = result.cfi;
-            break;
+    if (Number.isInteger(source.sectionIndex)) {
+      for (const probe of citationSearchProbes(source)) {
+        try {
+          let cfi: string | undefined;
+          for await (const result of view.search({ query: probe, index: source.sectionIndex })) {
+            if (result === "done") break;
+            if (result.cfi) {
+              cfi = result.cfi;
+              break;
+            }
           }
+          view.clearSearch();
+          if (cfi) {
+            await flashNavigationTarget(cfi);
+            return;
+          }
+        } catch {
+          view.clearSearch();
         }
-        view.clearSearch();
-        if (cfi) {
-          await flashNavigationTarget(cfi);
-          return;
-        }
-      } catch {
-        view.clearSearch();
       }
     }
     if (source.sectionHref) {

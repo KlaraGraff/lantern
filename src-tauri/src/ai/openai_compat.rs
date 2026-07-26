@@ -126,6 +126,7 @@ fn process_data(
             AiStreamChunk {
                 delta: String::new(),
                 reasoning_delta: None,
+                sources: None,
                 done: true,
                 error: None,
             },
@@ -156,6 +157,7 @@ fn process_data(
             AiStreamChunk {
                 delta: String::new(),
                 reasoning_delta: Some(reasoning.to_string()),
+                sources: None,
                 done: false,
                 error: None,
             },
@@ -174,6 +176,7 @@ fn process_data(
             AiStreamChunk {
                 delta: delta.to_string(),
                 reasoning_delta: None,
+                sources: None,
                 done: false,
                 error: None,
             },

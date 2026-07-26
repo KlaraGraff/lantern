@@ -119,6 +119,8 @@ pub struct AiStreamChunk {
     pub delta: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_delta: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sources: Option<Vec<CitedSource>>,
     pub done: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -489,6 +491,7 @@ pub(crate) fn emit_stream_failure(app: &AppHandle, event_name: &str, error: &App
         AiStreamChunk {
             delta: String::new(),
             reasoning_delta: None,
+            sources: None,
             done: true,
             error: Some(public_stream_error_code(error).to_string()),
         },
@@ -533,6 +536,7 @@ fn spawn_local_stream(app: AppHandle, event_name: String, request_id: String, co
                 AiStreamChunk {
                     delta: content,
                     reasoning_delta: None,
+                    sources: None,
                     done: false,
                     error: None,
                 },
@@ -543,6 +547,7 @@ fn spawn_local_stream(app: AppHandle, event_name: String, request_id: String, co
                     AiStreamChunk {
                         delta: String::new(),
                         reasoning_delta: None,
+                        sources: None,
                         done: true,
                         error: None,
                     },
@@ -563,12 +568,54 @@ struct VocabularyScanPlan {
     partial: bool,
 }
 
-fn vocabulary_source_list(chunks: &[RetrievedChunk]) -> Vec<CitedSource> {
-    chunks
+fn vocabulary_quote_sentence(text: &str, quote: &str) -> Option<String> {
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let quote = quote.split_whitespace().collect::<Vec<_>>().join(" ");
+    let quote_start = text.find(&quote)?;
+    let before = &text[..quote_start];
+    let after = &text[quote_start + quote.len()..];
+    let start = before
+        .char_indices()
+        .rev()
+        .find(|(_, character)| matches!(character, '.' | '!' | '?' | '。' | '！' | '？'))
+        .map_or(0, |(index, character)| index + character.len_utf8());
+    let end = after
+        .char_indices()
+        .find(|(_, character)| matches!(character, '.' | '!' | '?' | '。' | '！' | '？'))
+        .map_or(text.len(), |(index, character)| {
+            quote_start + quote.len() + index + character.len_utf8()
+        });
+    let sentence = text[start..end].trim();
+    (!sentence.is_empty() && sentence != quote).then(|| sentence.to_string())
+}
+
+fn vocabulary_source_list(
+    candidates: &[grounding::vocabulary::VocabularyCandidate],
+    chunks: &[RetrievedChunk],
+) -> Vec<CitedSource> {
+    candidates
         .iter()
         .take(VOCABULARY_SOURCE_METADATA_LIMIT)
         .enumerate()
-        .map(|(index, chunk)| chunk.cited_source(format!("S{}", index + 1)))
+        .filter_map(|(index, candidate)| {
+            let chunk = chunks
+                .iter()
+                .find(|chunk| chunk.chunk_id == candidate.chunk_id)?;
+            Some(CitedSource {
+                marker: format!("S{}", index + 1),
+                chunk_id: chunk.chunk_id.clone(),
+                section_index: chunk.section_index,
+                section_href: chunk.section_href.clone(),
+                section_title: candidate
+                    .section_title
+                    .clone()
+                    .or_else(|| chunk.section_title.clone()),
+                snippet: candidate.quote.clone(),
+                fallback_snippet: vocabulary_quote_sentence(&chunk.text, &candidate.quote),
+                char_start: candidate.char_start,
+                char_end: candidate.char_end,
+            })
+        })
         .collect()
 }
 
@@ -635,20 +682,8 @@ fn vocabulary_map_messages(
     ]
 }
 
-fn vocabulary_candidate_marker(
-    candidate: &grounding::vocabulary::VocabularyCandidate,
-    source_chunks: &[RetrievedChunk],
-) -> Option<String> {
-    source_chunks
-        .iter()
-        .take(VOCABULARY_SOURCE_METADATA_LIMIT)
-        .position(|chunk| chunk.chunk_id == candidate.chunk_id)
-        .map(|index| format!("S{}", index + 1))
-}
-
 fn render_vocabulary_candidates(
     candidates: &[grounding::vocabulary::VocabularyCandidate],
-    source_chunks: &[RetrievedChunk],
     language: &str,
     partial: bool,
     processed_batches: usize,
@@ -681,7 +716,7 @@ fn render_vocabulary_candidates(
     }
 
     for (index, candidate) in candidates.iter().enumerate() {
-        let marker = vocabulary_candidate_marker(candidate, source_chunks);
+        let marker = (index < VOCABULARY_SOURCE_METADATA_LIMIT).then(|| format!("S{}", index + 1));
         let term = candidate.term.replace('\n', " ");
         let quote = candidate.quote.replace('\n', " ");
         let meaning = candidate
@@ -784,6 +819,11 @@ fn vocabulary_context_metadata(
     }
 }
 
+struct VocabularyScanResult {
+    content: String,
+    sources: Vec<CitedSource>,
+}
+
 async fn run_vocabulary_scan(
     app: &AppHandle,
     db: &Db,
@@ -792,7 +832,7 @@ async fn run_vocabulary_scan(
     language: &str,
     question: &str,
     request_id: &str,
-) -> AppResult<String> {
+) -> AppResult<VocabularyScanResult> {
     let mut candidates = Vec::new();
     let mut failed_batches = 0usize;
     for batch in &plan.batches {
@@ -829,14 +869,15 @@ async fn run_vocabulary_scan(
         return Err(AppError::Ai("AI_REQUEST_CANCELLED".to_string()));
     }
     let candidates = grounding::vocabulary::merge_candidates(candidates);
-    Ok(render_vocabulary_candidates(
+    let sources = vocabulary_source_list(&candidates, &plan.source_chunks);
+    let content = render_vocabulary_candidates(
         &candidates,
-        &plan.source_chunks,
         language,
         plan.partial || failed_batches > 0,
         plan.batches.len().saturating_sub(failed_batches),
         plan.total_batches,
-    ))
+    );
+    Ok(VocabularyScanResult { content, sources })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -863,13 +904,14 @@ fn spawn_vocabulary_scan_stream(
         )
         .await;
         match result {
-            Ok(content) => {
+            Ok(result) => {
                 if !crate::ai::router::request_is_cancelled(&request_id) {
                     let _ = app.emit(
                         &event_name,
                         AiStreamChunk {
-                            delta: content,
+                            delta: result.content,
                             reasoning_delta: None,
+                            sources: Some(result.sources),
                             done: false,
                             error: None,
                         },
@@ -880,6 +922,7 @@ fn spawn_vocabulary_scan_stream(
                             AiStreamChunk {
                                 delta: String::new(),
                                 reasoning_delta: None,
+                                sources: None,
                                 done: true,
                                 error: None,
                             },
@@ -2971,8 +3014,8 @@ pub async fn ai_chat(
         (full_text && spoiler_cutoff.is_none()) || scoped_text,
         spoiler_guard_active,
     );
-    if let Some(plan) = vocabulary_scan_plan.as_ref() {
-        sources = vocabulary_source_list(&plan.source_chunks);
+    if vocabulary_scan_plan.is_some() {
+        sources.clear();
     }
     append_chat_route_instructions(&mut system_content, route, section_context.as_ref());
 
@@ -3471,10 +3514,66 @@ mod tests {
             char_end: chunk.char_end,
             chunk_index: chunk.chunk_index,
         };
-        let rendered = render_vocabulary_candidates(&[candidate], &[chunk], "zh", true, 2, 3);
+        let sources = vocabulary_source_list(
+            std::slice::from_ref(&candidate),
+            std::slice::from_ref(&chunk),
+        );
+        let rendered = render_vocabulary_candidates(&[candidate], "zh", true, 2, 3);
         assert!(rendered.contains("2/3"));
         assert!(rendered.contains("### 1. resilient"));
         assert!(rendered.contains("[S1]"));
+        assert_eq!(sources[0].snippet, "A resilient person.");
+    }
+
+    #[test]
+    fn vocabulary_sources_are_unique_per_candidate_with_sentence_fallbacks() {
+        let chunk = RetrievedChunk {
+            chunk_id: "chapter-1".into(),
+            chunk_index: 4,
+            section_index: 2,
+            section_href: Some("chapter.xhtml".into()),
+            section_title: Some("Chapter".into()),
+            char_start: None,
+            char_end: None,
+            snippet: "When I was nineteen years old".into(),
+            text: "When I was nineteen years old, I spoke at a conference on logotherapy. The meaning-centered approach stayed with me.".into(),
+            token_estimate: 20,
+            score: 0.0,
+        };
+        let candidate = |term: &str, quote: &str| grounding::vocabulary::VocabularyCandidate {
+            term: term.into(),
+            lemma: None,
+            part_of_speech: None,
+            pronunciation: None,
+            meaning: None,
+            context: None,
+            quote: quote.into(),
+            chunk_id: chunk.chunk_id.clone(),
+            section_title: chunk.section_title.clone(),
+            char_start: None,
+            char_end: None,
+            chunk_index: chunk.chunk_index,
+        };
+        let candidates = vec![
+            candidate("logotherapy", "a conference on logotherapy"),
+            candidate("meaning-centered", "The meaning-centered approach"),
+        ];
+
+        let sources = vocabulary_source_list(&candidates, &[chunk]);
+
+        assert_eq!(
+            sources
+                .iter()
+                .map(|source| source.marker.as_str())
+                .collect::<Vec<_>>(),
+            vec!["S1", "S2"]
+        );
+        assert_eq!(sources[0].snippet, "a conference on logotherapy");
+        assert_eq!(
+            sources[0].fallback_snippet.as_deref(),
+            Some("When I was nineteen years old, I spoke at a conference on logotherapy.")
+        );
+        assert_eq!(sources[1].snippet, "The meaning-centered approach");
     }
 
     #[test]

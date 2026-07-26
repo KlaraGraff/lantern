@@ -58,6 +58,8 @@ pub struct CitedSource {
     pub section_href: Option<String>,
     pub section_title: Option<String>,
     pub snippet: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fallback_snippet: Option<String>,
     pub char_start: Option<i64>,
     pub char_end: Option<i64>,
 }
@@ -71,6 +73,7 @@ impl RetrievedChunk {
             section_href: self.section_href.clone(),
             section_title: self.section_title.clone(),
             snippet: self.snippet.clone(),
+            fallback_snippet: None,
             char_start: self.char_start,
             char_end: self.char_end,
         }

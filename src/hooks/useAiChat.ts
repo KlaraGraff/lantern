@@ -71,6 +71,7 @@ export interface CitedSource {
   sectionHref?: string;
   sectionTitle?: string;
   snippet: string;
+  fallbackSnippet?: string;
   charStart?: number;
   charEnd?: number;
 }
@@ -100,6 +101,7 @@ interface ChatMsgRecord {
 interface AiStreamChunk {
   delta: string;
   reasoning_delta?: string;
+  sources?: CitedSource[];
   done: boolean;
   error?: string;
 }
@@ -889,6 +891,15 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           `ai-stream-chunk-${requestId}`,
           async (event) => {
             if (!isRequestActive()) return;
+            const streamedSources = parseCitedSources(event.payload.sources);
+            if (streamedSources) {
+              citedSources = streamedSources;
+              updateMessages((previous) => previous.map((message) => (
+                message.id === assistantId
+                  ? { ...message, sources: citedSources }
+                  : message
+              )));
+            }
             if (event.payload.done) {
               flushStreamUpdate();
 
@@ -910,7 +921,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
                 const result = await chatResultPromise;
                 if (!result) throw new Error("AI_CHAT_RESULT_MISSING");
                 if (!isRequestActive()) return;
-                citedSources = result.sources;
+                if (citedSources.length === 0) citedSources = result.sources;
                 spoilerGuard = result.spoilerGuard;
                 route = result.route;
                 sectionIndex = result.sectionIndex;
