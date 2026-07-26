@@ -49,6 +49,10 @@ function isUnavailableRoute(route?: AiChatRoute): boolean {
     || route === "whole_book_vocabulary_unavailable";
 }
 
+function isViewportRoute(route?: AiChatRoute): boolean {
+  return route === "viewport_context" || route === "viewport_context_vocabulary";
+}
+
 function SectionContextNotice({
   route,
   context,
@@ -57,6 +61,13 @@ function SectionContextNotice({
   context?: SectionContextMetadata;
 }) {
   const { t } = useTranslation();
+  if (isViewportRoute(route)) {
+    return (
+      <span className="mt-2 inline-flex rounded border border-border px-1.5 py-0.5 text-[10px] text-text-muted">
+        {t("ai.sectionContext.viewport")}
+      </span>
+    );
+  }
   if (!isSectionRoute(route) && !isUnavailableRoute(route)) return null;
   if (!isUnavailableRoute(route) && !context) return null;
   const unavailableNotice = (

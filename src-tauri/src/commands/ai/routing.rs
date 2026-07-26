@@ -8,6 +8,8 @@ use super::{bounded_chat_history_with_limit, ChatMessage};
 pub(super) enum ChatRoute {
     SelectedContext,
     SelectedContextVocabulary,
+    ViewportContext,
+    ViewportContextVocabulary,
     CurrentSectionVocabulary,
     CurrentSection,
     CurrentSectionUnavailable,
@@ -16,6 +18,69 @@ pub(super) enum ChatRoute {
     WholeBookVocabulary,
     WholeBook,
     Generic,
+}
+
+/// A manual scope chip in the composer. Bypasses keyword classification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ScopeOverride {
+    Selection,
+    Section,
+    Book,
+}
+
+pub(super) fn parse_scope_override(value: &str) -> Option<ScopeOverride> {
+    match value {
+        "selection" => Some(ScopeOverride::Selection),
+        "section" => Some(ScopeOverride::Section),
+        "book" => Some(ScopeOverride::Book),
+        _ => None,
+    }
+}
+
+/// Map a manual scope chip to a route. Returns `None` when the override
+/// cannot be satisfied (selection chip with neither an attached quote nor
+/// viewport text), in which case the caller falls back to automatic routing.
+pub(super) fn route_for_override(
+    scope: ScopeOverride,
+    question: &str,
+    current_section_index: Option<i64>,
+    has_viewport: bool,
+) -> Option<ChatRoute> {
+    let instruction = routing_instruction(question);
+    let vocabulary = is_vocabulary_request(&instruction);
+    match scope {
+        ScopeOverride::Selection => {
+            if is_selected_context(question) {
+                Some(if vocabulary {
+                    ChatRoute::SelectedContextVocabulary
+                } else {
+                    ChatRoute::SelectedContext
+                })
+            } else if has_viewport {
+                Some(if vocabulary {
+                    ChatRoute::ViewportContextVocabulary
+                } else {
+                    ChatRoute::ViewportContext
+                })
+            } else {
+                None
+            }
+        }
+        ScopeOverride::Section => Some(if current_section_index.is_some() {
+            if vocabulary {
+                ChatRoute::CurrentSectionVocabulary
+            } else {
+                ChatRoute::CurrentSection
+            }
+        } else {
+            ChatRoute::CurrentSectionUnavailable
+        }),
+        ScopeOverride::Book => Some(if vocabulary {
+            ChatRoute::WholeBookVocabulary
+        } else {
+            ChatRoute::WholeBook
+        }),
+    }
 }
 
 /// Detect a lookup of one specific word ("这个单词是什么意思", "what does the
@@ -220,6 +285,7 @@ pub(super) fn classify_chat_route(
     question: &str,
     current_section_index: Option<i64>,
     inherited_route: Option<ChatRoute>,
+    has_viewport: bool,
 ) -> ChatRoute {
     let instruction = routing_instruction(question);
     if has_whole_book_intent(&instruction) {
@@ -295,15 +361,37 @@ pub(super) fn classify_chat_route(
                     ChatRoute::CurrentSection
                 }
             }
+            // A viewport follow-up re-resolves against what is on screen NOW
+            // (the reader may have scrolled); without viewport text there is
+            // nothing to point at, so fall back to retrieval.
+            (ChatRoute::ViewportContext | ChatRoute::ViewportContextVocabulary, _) => {
+                if !has_viewport {
+                    ChatRoute::Generic
+                } else if is_vocabulary_request(&instruction) {
+                    ChatRoute::ViewportContextVocabulary
+                } else {
+                    ChatRoute::ViewportContext
+                }
+            }
             _ => route,
         };
     }
     if is_current_passage_request(&instruction) {
-        return ChatRoute::CurrentSectionUnavailable;
+        // "Explain this passage" with nothing selected: the visible reading
+        // area IS the passage the user means.
+        return if !has_viewport {
+            ChatRoute::CurrentSectionUnavailable
+        } else if is_vocabulary_request(&instruction) {
+            ChatRoute::ViewportContextVocabulary
+        } else {
+            ChatRoute::ViewportContext
+        };
     }
     if is_vocabulary_request(&instruction) {
         return if current_section_index.is_some() {
             ChatRoute::CurrentSectionVocabulary
+        } else if has_viewport {
+            ChatRoute::ViewportContextVocabulary
         } else {
             ChatRoute::CurrentSectionUnavailable
         };
@@ -328,7 +416,10 @@ pub(super) fn resolve_inherited_route(
         scope_snapshot_matches
             || matches!(
                 route,
-                ChatRoute::SelectedContext | ChatRoute::SelectedContextVocabulary
+                ChatRoute::SelectedContext
+                    | ChatRoute::SelectedContextVocabulary
+                    | ChatRoute::ViewportContext
+                    | ChatRoute::ViewportContextVocabulary
             )
     };
     let structured_previous_route = previous_route
@@ -390,6 +481,8 @@ pub(super) fn route_name(route: ChatRoute) -> &'static str {
     match route {
         ChatRoute::SelectedContext => "selected_context",
         ChatRoute::SelectedContextVocabulary => "selected_context_vocabulary",
+        ChatRoute::ViewportContext => "viewport_context",
+        ChatRoute::ViewportContextVocabulary => "viewport_context_vocabulary",
         ChatRoute::CurrentSectionVocabulary => "current_section_vocabulary",
         ChatRoute::CurrentSection => "current_section",
         ChatRoute::CurrentSectionUnavailable => "current_section_unavailable",
@@ -405,6 +498,8 @@ pub(super) fn parse_route_name(value: &str) -> Option<ChatRoute> {
     match value {
         "selected_context" => Some(ChatRoute::SelectedContext),
         "selected_context_vocabulary" => Some(ChatRoute::SelectedContextVocabulary),
+        "viewport_context" => Some(ChatRoute::ViewportContext),
+        "viewport_context_vocabulary" => Some(ChatRoute::ViewportContextVocabulary),
         "current_section_vocabulary" => Some(ChatRoute::CurrentSectionVocabulary),
         "current_section" => Some(ChatRoute::CurrentSection),
         "current_section_unavailable" => Some(ChatRoute::CurrentSectionUnavailable),
@@ -563,6 +658,8 @@ pub(super) fn bounded_scoped_chat_history(
         route,
         ChatRoute::SelectedContext
             | ChatRoute::SelectedContextVocabulary
+            | ChatRoute::ViewportContext
+            | ChatRoute::ViewportContextVocabulary
             | ChatRoute::CurrentSection
             | ChatRoute::CurrentSectionVocabulary
             | ChatRoute::CurrentSectionUnavailable
@@ -607,6 +704,17 @@ pub(super) fn bounded_scoped_chat_history(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// Most routing tests predate viewport capture; classify with none.
+    fn classify_without_viewport(
+        question: &str,
+        current_section_index: Option<i64>,
+        inherited_route: Option<ChatRoute>,
+    ) -> ChatRoute {
+        classify_chat_route(question, current_section_index, inherited_route, false)
+    }
+
     use super::super::SCOPED_CHAT_MAX_TOTAL_BYTES;
     use super::*;
 
@@ -709,7 +817,7 @@ mod tests {
             assert!(has_whole_book_intent(value), "{value}");
         }
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "不要列出难词，改为总结本章",
                 Some(3),
                 None
@@ -720,19 +828,19 @@ mod tests {
     #[test]
     fn chapter_requests_route_only_when_a_current_section_is_known() {
         assert_eq!(
-            route_name(classify_chat_route("本章有哪些难词？", Some(3), None)),
+            route_name(classify_without_viewport("本章有哪些难词？", Some(3), None)),
             "current_section_vocabulary"
         );
         assert_eq!(
-            route_name(classify_chat_route("本章有哪些难词？", None, None)),
+            route_name(classify_without_viewport("本章有哪些难词？", None, None)),
             "current_section_unavailable"
         );
         assert_eq!(
-            route_name(classify_chat_route("请总结本章内容", Some(3), None)),
+            route_name(classify_without_viewport("请总结本章内容", Some(3), None)),
             "current_section"
         );
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "Explain difficult English words in this chapter",
                 Some(3),
                 None,
@@ -740,20 +848,20 @@ mod tests {
             "current_section_vocabulary"
         );
         assert_eq!(
-            route_name(classify_chat_route("总结全书", Some(3), None)),
+            route_name(classify_without_viewport("总结全书", Some(3), None)),
             "whole_book"
         );
         assert_eq!(
-            route_name(classify_chat_route("全书有哪些难词？", Some(3), None)),
+            route_name(classify_without_viewport("全书有哪些难词？", Some(3), None)),
             "whole_book_vocabulary"
         );
         assert_eq!(
-            route_name(classify_chat_route("这本书有哪些难词？", Some(3), None)),
+            route_name(classify_without_viewport("这本书有哪些难词？", Some(3), None)),
             "whole_book_vocabulary"
         );
         // An explicit chapter scope is narrower than a generic book mention.
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "这本书的本章有哪些难词？",
                 Some(3),
                 None
@@ -761,7 +869,7 @@ mod tests {
             "current_section_vocabulary"
         );
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "[Selected passage]\nExplain this\n[/Selected passage]",
                 Some(3),
                 Some(ChatRoute::SelectedContext)
@@ -769,7 +877,7 @@ mod tests {
             "selected_context"
         );
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "What are the difficult words in this chapter?",
                 Some(3),
                 None
@@ -777,7 +885,7 @@ mod tests {
             "current_section_vocabulary"
         );
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "[Selected passage]\nQuoted chapter text.\n[/Selected passage]\nWhat are the difficult words in this chapter?",
                 Some(3),
                 Some(ChatRoute::SelectedContext)
@@ -785,7 +893,7 @@ mod tests {
             "current_section_vocabulary"
         );
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "[Selected passage]\nQuoted prose.\n[/Selected passage]\nWhat are the difficult words here?",
                 Some(3),
                 None,
@@ -793,7 +901,7 @@ mod tests {
             "selected_context_vocabulary"
         );
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "[Selected passage]\nThe book's ending.\n[/Selected passage]\nWhat does this passage in the book mean?",
                 Some(3),
                 None,
@@ -801,12 +909,12 @@ mod tests {
             "selected_context"
         );
         assert_eq!(
-            route_name(classify_chat_route("请解释这段", Some(3), None)),
+            route_name(classify_without_viewport("请解释这段", Some(3), None)),
             "current_section_unavailable"
         );
         // An inherited selected passage is used only for a vague follow-up.
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "请总结本章内容",
                 Some(3),
                 Some(ChatRoute::SelectedContext),
@@ -814,7 +922,7 @@ mod tests {
             "current_section"
         );
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "这是什么意思？",
                 Some(3),
                 Some(ChatRoute::SelectedContext),
@@ -823,7 +931,7 @@ mod tests {
         );
         // An explicit whole-book request remains the highest-priority scope.
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "[Selected passage]\nQuoted ending text.\n[/Selected passage]\n请总结全书",
                 Some(3),
                 Some(ChatRoute::SelectedContext)
@@ -831,7 +939,7 @@ mod tests {
             "whole_book"
         );
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "What is the ending of the whole book?",
                 Some(3),
                 None
@@ -839,7 +947,7 @@ mod tests {
             "whole_book"
         );
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "继续解释",
                 Some(3),
                 Some(ChatRoute::CurrentSection),
@@ -847,7 +955,7 @@ mod tests {
             "current_section"
         );
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "继续列出难词",
                 Some(3),
                 Some(ChatRoute::CurrentSectionVocabulary),
@@ -855,7 +963,7 @@ mod tests {
             "current_section_vocabulary"
         );
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "继续列出难词",
                 Some(3),
                 Some(ChatRoute::CurrentSection),
@@ -863,7 +971,7 @@ mod tests {
             "current_section_vocabulary"
         );
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "继续解释这段",
                 Some(3),
                 Some(ChatRoute::CurrentSectionVocabulary),
@@ -875,7 +983,7 @@ mod tests {
     fn single_word_lookups_do_not_trigger_vocabulary_scans() {
         // One specific word: answer the question, don't scan the section.
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "resilience 这个单词是什么意思？",
                 Some(3),
                 None
@@ -883,11 +991,11 @@ mod tests {
             "generic_retrieval"
         );
         assert_eq!(
-            route_name(classify_chat_route("这个词在这里怎么理解？", Some(3), None)),
+            route_name(classify_without_viewport("这个词在这里怎么理解？", Some(3), None)),
             "generic_retrieval"
         );
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "What does the word 'serfdom' mean here?",
                 Some(3),
                 None
@@ -896,7 +1004,7 @@ mod tests {
         );
         // A selected passage keeps its scope for a single-word lookup.
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "[Selected passage]\nQuoted prose.\n[/Selected passage]\nWhat does this word mean?",
                 Some(3),
                 None
@@ -905,7 +1013,7 @@ mod tests {
         );
         // Plural/list phrasing still routes to a vocabulary scan.
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "Which words in this chapter are difficult?",
                 Some(3),
                 None
@@ -913,7 +1021,7 @@ mod tests {
             "current_section_vocabulary"
         );
         assert_eq!(
-            route_name(classify_chat_route(
+            route_name(classify_without_viewport(
                 "把这个单词和本章其他难词都列出来",
                 Some(3),
                 None
@@ -981,20 +1089,20 @@ mod tests {
     fn routing_ignores_embedded_evidence_when_classifying_intent() {
         let selected = "[Selected passage]\nThis chapter discusses the whole book's ending.\n[/Selected passage]\n请解释这段";
         assert_eq!(
-            route_name(classify_chat_route(selected, Some(3), None)),
+            route_name(classify_without_viewport(selected, Some(3), None)),
             "selected_context"
         );
         assert!(!has_whole_book_intent(&routing_instruction(selected)));
 
         let analysis = "[Existing learning-card analysis]\nSummarize this chapter.\n[/Existing learning-card analysis]\n这是什么意思？";
         assert_eq!(
-            route_name(classify_chat_route(analysis, Some(3), None)),
+            route_name(classify_without_viewport(analysis, Some(3), None)),
             "generic_retrieval"
         );
 
         let unclosed = "[Selected passage]\nThe ending of the whole book appears here.\n请解释这段";
         assert_eq!(
-            route_name(classify_chat_route(unclosed, Some(3), None)),
+            route_name(classify_without_viewport(unclosed, Some(3), None)),
             "selected_context"
         );
         assert_eq!(routing_instruction(unclosed).trim(), "");
@@ -1028,5 +1136,150 @@ mod tests {
             inherited_route_from_previous_user(&messages, Some(latest), Some(2)),
             Some(ChatRoute::CurrentSection)
         );
+    }
+
+    #[test]
+    fn passage_requests_use_the_viewport_when_nothing_is_selected() {
+        assert_eq!(
+            classify_chat_route("请解释这段", Some(3), None, true),
+            ChatRoute::ViewportContext
+        );
+        assert_eq!(
+            classify_chat_route("Explain this passage", Some(3), None, true),
+            ChatRoute::ViewportContext
+        );
+        // Without viewport text the route stays ungrounded.
+        assert_eq!(
+            classify_chat_route("请解释这段", Some(3), None, false),
+            ChatRoute::CurrentSectionUnavailable
+        );
+        // An attached selection still wins over the viewport.
+        assert_eq!(
+            classify_chat_route(
+                "[Selected passage]\nquoted\n[/Selected passage]\n请解释这段",
+                Some(3),
+                None,
+                true
+            ),
+            ChatRoute::SelectedContext
+        );
+        // Vocabulary without a section index falls back to the viewport too.
+        assert_eq!(
+            classify_chat_route("有哪些难词？", None, None, true),
+            ChatRoute::ViewportContextVocabulary
+        );
+        // An explicit section request is about the section, not the screen.
+        assert_eq!(
+            classify_chat_route("总结一下本章", Some(3), None, true),
+            ChatRoute::CurrentSection
+        );
+    }
+
+    #[test]
+    fn viewport_follow_ups_re_resolve_against_the_current_viewport() {
+        let inherited = Some(ChatRoute::ViewportContext);
+        assert_eq!(
+            classify_chat_route("再展开说说", Some(3), inherited, true),
+            ChatRoute::ViewportContext
+        );
+        assert_eq!(
+            classify_chat_route("这里面有哪些难词？", Some(3), inherited, true),
+            ChatRoute::ViewportContextVocabulary
+        );
+        // The reader closed or the viewport is empty: nothing to point at.
+        assert_eq!(
+            classify_chat_route("再展开说说", Some(3), inherited, false),
+            ChatRoute::Generic
+        );
+    }
+
+    #[test]
+    fn viewport_scope_inheritance_survives_an_index_snapshot_mismatch() {
+        let messages = vec![
+            ChatMessage {
+                role: "user".into(),
+                content: "解释这段".into(),
+            },
+            ChatMessage {
+                role: "assistant".into(),
+                content: "an answer".into(),
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: "再展开说说".into(),
+            },
+        ];
+        let (structured, inherited) =
+            resolve_inherited_route(Some("viewport_context"), false, &messages, Some(2), Some(3));
+        assert_eq!(structured, Some(ChatRoute::ViewportContext));
+        assert_eq!(inherited, Some(ChatRoute::ViewportContext));
+    }
+
+    #[test]
+    fn manual_scope_overrides_map_to_routes() {
+        // Selection chip: attached quote wins, viewport is the fallback, and
+        // with neither the override abstains so Auto takes over.
+        assert_eq!(
+            route_for_override(
+                ScopeOverride::Selection,
+                "[Selected passage]\nquoted\n[/Selected passage]\n什么意思？",
+                Some(3),
+                true
+            ),
+            Some(ChatRoute::SelectedContext)
+        );
+        assert_eq!(
+            route_for_override(ScopeOverride::Selection, "什么意思？", Some(3), true),
+            Some(ChatRoute::ViewportContext)
+        );
+        assert_eq!(
+            route_for_override(ScopeOverride::Selection, "什么意思？", Some(3), false),
+            None
+        );
+        // Section chip follows section availability.
+        assert_eq!(
+            route_for_override(ScopeOverride::Section, "总结一下", Some(3), false),
+            Some(ChatRoute::CurrentSection)
+        );
+        assert_eq!(
+            route_for_override(ScopeOverride::Section, "有哪些难词？", Some(3), false),
+            Some(ChatRoute::CurrentSectionVocabulary)
+        );
+        assert_eq!(
+            route_for_override(ScopeOverride::Section, "总结一下", None, true),
+            Some(ChatRoute::CurrentSectionUnavailable)
+        );
+        // Book chip is unconditional.
+        assert_eq!(
+            route_for_override(ScopeOverride::Book, "讲了什么？", None, false),
+            Some(ChatRoute::WholeBook)
+        );
+        assert_eq!(
+            route_for_override(ScopeOverride::Book, "有哪些难词？", None, false),
+            Some(ChatRoute::WholeBookVocabulary)
+        );
+    }
+
+    #[test]
+    fn scoped_history_sanitizes_viewport_routes_like_selection_routes() {
+        let messages = vec![
+            ChatMessage {
+                role: "user".into(),
+                content: "[Selected passage]\nold quote\n[/Selected passage]\n解释这段".into(),
+            },
+            ChatMessage {
+                role: "assistant".into(),
+                content: "old answer".into(),
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: "屏幕上这段怎么理解？".into(),
+            },
+        ];
+        let bounded = bounded_scoped_chat_history(messages, 32_000, ChatRoute::ViewportContext);
+        assert_eq!(bounded.len(), 3);
+        assert!(bounded[0].content.contains("Prior source evidence omitted"));
+        assert!(!bounded[0].content.contains("old quote"));
+        assert!(bounded[1].content.contains("omitted"));
     }
 }

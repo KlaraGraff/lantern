@@ -4,7 +4,7 @@ import { BookOpen, Database, Sparkles, Send, Loader2, Plus, ChevronDown, Chevron
 import { useAiChat } from "../hooks/useAiChat";
 import { timeAgo } from "../utils/timeAgo";
 import MessageBubble from "./MessageBubble";
-import type { CitedSource } from "../hooks/useAiChat";
+import type { AiChatScope, CitedSource } from "../hooks/useAiChat";
 import IndexManagerModal from "./IndexManagerModal";
 
 interface AiPanelProps {
@@ -16,6 +16,7 @@ interface AiPanelProps {
   currentScopeStartIndex?: number;
   currentScopeEndIndex?: number;
   currentScopeAmbiguous?: boolean;
+  getViewportText?: () => string | undefined;
   context?: { text: string; cfi?: string; analysis?: string };
   initialChatId?: string;
   onContextConsumed?: () => void;
@@ -23,7 +24,9 @@ interface AiPanelProps {
   onNavigateToSource?: (source: CitedSource) => void;
 }
 
-export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSectionIndex, currentScopeStartIndex, currentScopeEndIndex, currentScopeAmbiguous, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource }: AiPanelProps) {
+const SCOPE_OPTIONS: AiChatScope[] = ["auto", "selection", "section", "book"];
+
+export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSectionIndex, currentScopeStartIndex, currentScopeEndIndex, currentScopeAmbiguous, getViewportText, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource }: AiPanelProps) {
   const { t } = useTranslation();
 
   const SUGGESTED_PROMPTS = [
@@ -43,9 +46,17 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
     scopeStartIndex: currentScopeStartIndex,
     scopeEndIndex: currentScopeEndIndex,
     scopeAmbiguous: currentScopeAmbiguous,
+    getViewportText,
   });
 
   const [input, setInput] = useState("");
+  // Manual scope chip. Sticky within this panel; switching books resets it
+  // (chat switches reset it in their handlers — lazy chat creation on first
+  // send must not clear a deliberate pick).
+  const [scope, setScope] = useState<AiChatScope>("auto");
+  useEffect(() => {
+    setScope("auto");
+  }, [bookId]);
   const [pendingQuote, setPendingQuote] = useState<{ text: string; cfi?: string; analysis?: string } | undefined>();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -115,7 +126,7 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
   const handleSend = () => {
     if (!input.trim() || streaming || initializing) return;
     followMessagesRef.current = true;
-    send(input.trim(), pendingQuote?.text, pendingQuote?.cfi, pendingQuote?.analysis);
+    send(input.trim(), pendingQuote?.text, pendingQuote?.cfi, pendingQuote?.analysis, { scope });
     setPendingQuote(undefined);
     setInput("");
   };
@@ -142,6 +153,7 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
       reset(); // Clears state; DB record created lazily on first send
       setPickerOpen(false);
       setInput("");
+      setScope("auto");
       setNewChatFlash(true);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => setNewChatFlash(false));
@@ -152,6 +164,7 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
   const handleSelectChat = (id: string) => {
     loadChat(id);
     setPickerOpen(false);
+    setScope("auto");
   };
 
   return (
@@ -304,7 +317,7 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
                   onClick={() => {
                     if (initializing) return;
                     followMessagesRef.current = true;
-                    send(prompt, pendingQuote?.text, pendingQuote?.cfi, pendingQuote?.analysis);
+                    send(prompt, pendingQuote?.text, pendingQuote?.cfi, pendingQuote?.analysis, { scope });
                     setPendingQuote(undefined);
                   }}
                   disabled={initializing}
@@ -365,6 +378,26 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
             </button>
           </div>
         )}
+        {/* Scope chips — Auto lets smart routing decide; a manual pick pins
+            the scope and skips guessing. Quiet by design: a power feature. */}
+        <div className="flex items-center gap-1.5" role="radiogroup" aria-label={t("ai.scope.label")}>
+          {SCOPE_OPTIONS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={scope === option}
+              onClick={() => setScope(option)}
+              className={`px-2.5 py-[3px] rounded-full text-[11px] font-medium cursor-pointer transition-colors border ${
+                scope === option
+                  ? "bg-accent-bg text-accent-text border-accent/40"
+                  : "text-text-muted border-border hover:bg-bg-input"
+              }`}
+            >
+              {t(`ai.scope.${option}`)}
+            </button>
+          ))}
+        </div>
         <div className="flex gap-2 items-start">
           <textarea
             value={input}

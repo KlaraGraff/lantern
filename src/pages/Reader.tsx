@@ -338,6 +338,18 @@ export default function Reader() {
   const viewerRef = useRef<HTMLDivElement>(null);
   const readerViewportRef = useRef<HTMLElement>(null);
   const viewRef = useRef<FoliateView | null>(null);
+  // Text currently visible in the reader: foliate reports the visible Range
+  // with every relocate. Captured lazily at AI send time; PDFs and unloaded
+  // views simply yield nothing.
+  const getViewportText = useCallback((): string | undefined => {
+    try {
+      const range = viewRef.current?.lastLocation?.range as Range | undefined;
+      const text = range?.toString().trim();
+      return text || undefined;
+    } catch {
+      return undefined;
+    }
+  }, []);
   const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef);
   const zoomRef = useRef<number | "fit">(zoom);
   const fitPctRef = useRef(100);
@@ -1728,6 +1740,7 @@ export default function Reader() {
               currentScopeStartIndex={currentScope.start}
               currentScopeEndIndex={currentScope.end}
               currentScopeAmbiguous={currentScope.ambiguous}
+              getViewportText={getViewportText}
               context={aiContext}
               initialChatId={initialChatId}
               onContextConsumed={() => setAiContext(undefined)}

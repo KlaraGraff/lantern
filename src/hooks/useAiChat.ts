@@ -33,6 +33,8 @@ export interface SpoilerGuardMetadata {
 export type AiChatRoute =
   | "selected_context"
   | "selected_context_vocabulary"
+  | "viewport_context"
+  | "viewport_context_vocabulary"
   | "current_section_vocabulary"
   | "current_section"
   | "current_section_unavailable"
@@ -140,6 +142,8 @@ function parseAiChatRoute(value: unknown): AiChatRoute | undefined {
   switch (value) {
     case "selected_context":
     case "selected_context_vocabulary":
+    case "viewport_context":
+    case "viewport_context_vocabulary":
     case "current_section_vocabulary":
     case "current_section":
     case "current_section_unavailable":
@@ -381,6 +385,11 @@ function nextMsgId() {
   return `local-${Date.now()}-${++msgIdCounter}`;
 }
 
+/** Manual scope selection from the composer chips. "auto" = smart routing. */
+export type AiChatScope = "auto" | "selection" | "section" | "book";
+
+const VIEWPORT_TEXT_MAX_CHARS = 6_000;
+
 interface BookContext {
   title?: string;
   author?: string;
@@ -389,6 +398,8 @@ interface BookContext {
   scopeStartIndex?: number;
   scopeEndIndex?: number;
   scopeAmbiguous?: boolean;
+  /** Text currently visible in the reader, captured at send time. */
+  getViewportText?: () => string | undefined;
 }
 
 export function useAiChat(bookId?: string, bookContext?: BookContext) {
@@ -405,6 +416,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
   const [summaryProgress, setSummaryProgress] = useState<SummaryProgressEvent | null>(null);
   const [bookAiState, setBookAiState] = useState<BookAiState | null>(null);
   const { settings, save: saveSetting } = useSettings();
+  const getViewportText = bookContext?.getViewportText;
   const spoilerSettingKey = bookId ? `book_spoiler_guard_${bookId}` : null;
   const spoilerGuardEnabled = spoilerSettingKey
     ? settings[spoilerSettingKey] === "on"
@@ -671,7 +683,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       context?: string,
       contextCfi?: string,
       contextAnalysis?: string,
-      options?: { spoilerOverride?: boolean; replaceAssistantId?: string },
+      options?: { spoilerOverride?: boolean; replaceAssistantId?: string; scope?: AiChatScope },
     ) => {
       // Refuse while the session chat is still loading — otherwise the lazy
       // chat-creation path below would spawn a *new* chat and miss the
@@ -1058,6 +1070,11 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         ? replacingAssistant
         : previousAssistantBeforeLatestUser(apiHistory);
 
+      // Captured at send time so it reflects what the user is looking at
+      // right now. Sent per request, never persisted with the message.
+      const viewportText = getViewportText?.()?.trim().slice(0, VIEWPORT_TEXT_MAX_CHARS) || null;
+      const scopeOverride = options?.scope && options.scope !== "auto" ? options.scope : null;
+
       try {
         if (!isRequestActive()) return;
         chatResultPromise = invoke<unknown>("ai_chat", {
@@ -1076,6 +1093,8 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           previousSourceHash: previousAssistant?.sourceHash ?? null,
           requestId,
           spoilerOverride: options?.spoilerOverride ?? null,
+          scopeOverride,
+          viewportText,
         }).then(parseAiChatResult);
         const result = await chatResultPromise;
         citedSources = result.sources;
@@ -1107,7 +1126,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         finishRequest();
       }
     },
-    [bookId, bookContext?.title, bookContext?.author, bookContext?.chapter, bookContext?.sectionIndex, bookContext?.scopeStartIndex, bookContext?.scopeEndIndex, bookContext?.scopeAmbiguous, createChat, prepareBookOverview, refreshChats, settings.ai_summaries_auto, stopActiveStream]
+    [bookId, bookContext?.title, bookContext?.author, bookContext?.chapter, bookContext?.sectionIndex, bookContext?.scopeStartIndex, bookContext?.scopeEndIndex, bookContext?.scopeAmbiguous, getViewportText, createChat, prepareBookOverview, refreshChats, settings.ai_summaries_auto, stopActiveStream]
   );
 
   const retryWithWholeBook = useCallback((assistantId: string) => {
