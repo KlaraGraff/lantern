@@ -4,20 +4,14 @@ export interface WheelPageTurnOptions {
   turn(direction: WheelTurnDirection): void;
   /** Return false to leave the event untouched, such as in scrolling mode. */
   isEnabled?(): boolean;
-  /** Frames buffered per direction is stability * 2; halves are compared. */
-  stability?: number;
-  /** The newer half's average must clear this (px) to count as a push. */
-  sensitivity?: number;
+  /** Travel a gesture must cover before it turns, so jitter never pages. */
+  triggerDistance?: number;
   /**
-   * Cushion on the decay test. Above 1 steady scrolling still reads as a push
-   * (Lethargy's default); below 1 only genuine acceleration does, which keeps a
-   * sustained drag closer to a single page.
+   * Silence that ends a gesture. Momentum events arrive at the display refresh
+   * rate — 8ms apart on ProMotion, 16ms at 60Hz — and hold that cadence until
+   * the tail stops, so a gap this long means the wheel genuinely went quiet.
    */
-  tolerance?: number;
-  /** Repeated identical deltas inside this window are treated as inertia. */
-  delayMs?: number;
-  /** Lock after a turn, mirroring fullPage.js's transition lock. */
-  cooldownMs?: number;
+  quietMs?: number;
   now?(): number;
 }
 
@@ -38,63 +32,37 @@ function normalizedDelta(event: WheelEvent): number {
   return dominant;
 }
 
-function average(values: number[]): number {
-  return values.reduce((total, value) => total + value, 0) / values.length;
-}
-
 /**
- * Page turning driven by Lethargy's inertia detector plus fullPage.js's
- * post-turn lock.
+ * One page per wheel gesture, where a gesture ends only when the event stream
+ * falls silent.
  *
- * Rather than guessing where one gesture ends, Lethargy buffers the recent
- * deltas and compares the average of the older half against the newer half.
- * Momentum can only decelerate, so a newer half that is not smaller means the
- * reader is actively pushing; a shrinking one is the inertia tail and is
- * ignored. A magnitude floor drops the tail's last few near-zero frames.
+ * Reading the delta curve to tell a push apart from its momentum tail does not
+ * work: macOS momentum decays far too slowly to separate from a steady hand
+ * over any short window, so a decay test tuned to accept real scrolling also
+ * accepts most of the tail, and one flick cascades into several pages. Silence
+ * is the one signal that is not a judgement call — momentum keeps firing at the
+ * display refresh rate right up until it stops, so it can never manufacture a
+ * quiet gap, and it can never reverse either.
  *
- * Each direction keeps its own history, so reversing is never mistaken for the
- * previous direction decaying. After a turn the handler locks for cooldownMs,
- * which is what stops one sustained push from cascading into many pages.
+ * So the latch is absolute: after a turn nothing else in the same gesture can
+ * page, whatever the deltas do. The cost is that a second flick launched before
+ * the previous tail dies is swallowed rather than risking a double turn.
  */
 export function createWheelPageTurnHandler({
   turn,
   isEnabled,
-  stability = 4,
-  sensitivity = 5,
-  tolerance = 1.1,
-  delayMs = 150,
-  cooldownMs = 250,
+  triggerDistance = 50,
+  quietMs = 80,
   now = () => Date.now(),
 }: WheelPageTurnOptions): WheelPageTurnHandler {
-  const size = stability * 2;
-  const nextDeltas: (number | null)[] = new Array(size).fill(null);
-  const previousDeltas: (number | null)[] = new Array(size).fill(null);
-  const timestamps: number[] = new Array(size).fill(0);
-  let lockedUntil = Number.NEGATIVE_INFINITY;
+  let lastEventAt = Number.NEGATIVE_INFINITY;
+  let accumulated = 0;
+  let fired = false;
 
   const reset = () => {
-    nextDeltas.fill(null);
-    previousDeltas.fill(null);
-    timestamps.fill(0);
-    lockedUntil = Number.NEGATIVE_INFINITY;
-  };
-
-  const isDeliberate = (history: (number | null)[], timestamp: number): boolean => {
-    // Warm-up bypass: until the window fills there is nothing to compare, so
-    // Lethargy treats the event as deliberate. The post-turn cooldown keeps
-    // that from cascading across the opening frames of the first swipe.
-    if (history[0] === null) return true;
-    // An unbroken run of identical deltas is synthetic rather than a real hand.
-    if (
-      timestamps[size - 2] + delayMs > timestamp
-      && history[0] === history[size - 1]
-    ) return false;
-    const older = average(history.slice(0, stability) as number[]);
-    const newer = average(history.slice(stability) as number[]);
-    // Momentum can only decelerate: reject when the newer half is not larger
-    // (the tail) or too small (its dying, near-zero frames).
-    return Math.abs(older) < Math.abs(newer * tolerance)
-      && Math.abs(newer) > sensitivity;
+    lastEventAt = Number.NEGATIVE_INFINITY;
+    accumulated = 0;
+    fired = false;
   };
 
   const handleWheel = (event: WheelEvent) => {
@@ -104,18 +72,27 @@ export function createWheelPageTurnHandler({
 
     const delta = normalizedDelta(event);
     if (delta === 0) return;
-    const timestamp = now();
 
-    timestamps.push(timestamp);
-    timestamps.shift();
-    const history = delta > 0 ? nextDeltas : previousDeltas;
-    history.push(delta);
-    history.shift();
+    // The event's own timestamp rather than the clock now: rendering the page
+    // turn can block the main thread past quietMs, and reading the clock here
+    // would score that stall as silence and unlatch the gesture mid-tail.
+    const timestamp = Number.isFinite(event.timeStamp) ? event.timeStamp : now();
+    const idle = timestamp - lastEventAt > quietMs;
+    lastEventAt = timestamp;
+    if (idle) {
+      accumulated = 0;
+      fired = false;
+    }
+    if (fired) return;
 
-    if (timestamp < lockedUntil) return;
-    if (!isDeliberate(history, timestamp)) return;
-    lockedUntil = timestamp + cooldownMs;
-    turn(delta > 0 ? "next" : "previous");
+    // Within a live gesture a sign flip is the hand changing its mind before
+    // the page turned, not a new gesture — momentum cannot reverse.
+    if (accumulated !== 0 && Math.sign(delta) !== Math.sign(accumulated)) accumulated = 0;
+    accumulated += delta;
+    if (Math.abs(accumulated) < triggerDistance) return;
+
+    fired = true;
+    turn(accumulated > 0 ? "next" : "previous");
   };
 
   return { handleWheel, reset };

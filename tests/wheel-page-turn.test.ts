@@ -12,6 +12,7 @@ interface FakeWheelEventInit {
   deltaX?: number;
   deltaMode?: number;
   ctrlKey?: boolean;
+  timeStamp?: number;
 }
 
 function wheelEvent(init: FakeWheelEventInit): WheelEvent {
@@ -20,13 +21,15 @@ function wheelEvent(init: FakeWheelEventInit): WheelEvent {
     deltaY: init.deltaY ?? 0,
     deltaMode: init.deltaMode ?? 0,
     ctrlKey: init.ctrlKey ?? false,
+    timeStamp: init.timeStamp,
     preventDefault() {},
   } as unknown as WheelEvent;
 }
 
 function harness(options: Partial<WheelPageTurnOptions> = {}) {
   const turns: WheelTurnDirection[] = [];
-  let clock = 0;
+  let clock = 0; // wall clock the handler would read via now()
+  let eventClock = 0; // when the browser created the event
   const handler = createWheelPageTurnHandler({
     turn: (direction) => turns.push(direction),
     now: () => clock,
@@ -36,92 +39,105 @@ function harness(options: Partial<WheelPageTurnOptions> = {}) {
     turns,
     send(deltaY: number, advanceMs = 16, init: FakeWheelEventInit = {}) {
       clock += advanceMs;
-      handler.handleWheel(wheelEvent({ deltaY, ...init }));
+      eventClock += advanceMs;
+      handler.handleWheel(wheelEvent({ deltaY, timeStamp: eventClock, ...init }));
+    },
+    /** Main thread blocked: the wall clock jumps, queued events keep their times. */
+    stall(ms: number) {
+      clock += ms;
     },
   };
 }
 
-test("the first deliberate scroll turns a page immediately", () => {
+test("a flick with a long, slowly decaying momentum tail turns exactly one page", () => {
   const { turns, send } = harness();
-  send(40, 16);
+  for (const delta of [8, 18, 30, 38, 42]) send(delta, 16); // finger
+  // The tail that made the decay-test build flip three or four pages.
+  for (let delta = 40; delta >= 2; delta -= 2) send(delta, 16);
   assert.deepEqual(turns, ["next"]);
 });
 
-test("the post-turn cooldown swallows the momentum tail", () => {
+test("a sustained drag turns exactly one page", () => {
+  // Regression: the previous handler turned a page per cooldown window here.
   const { turns, send } = harness();
-  send(40, 16); // turns, then locks for cooldownMs
-  for (const delta of [30, 22, 14, 8, 4, 2, 1]) send(delta, 20); // tail, all locked out
+  for (let i = 0; i < 60; i += 1) send(i % 2 === 0 ? 28 : 32, 20); // 1.2s
   assert.deepEqual(turns, ["next"]);
 });
 
-test("a fresh scroll after the cooldown turns again", () => {
-  const { turns, send } = harness({ cooldownMs: 100 });
+test("jitter below the trigger distance never turns", () => {
+  const { turns, send } = harness();
+  for (let i = 0; i < 4; i += 1) send(6, 16);
+  assert.deepEqual(turns, []);
+});
+
+test("two flicks separated by real silence each turn once", () => {
+  const { turns, send } = harness();
+  for (const delta of [20, 40, 20, 8, 3]) send(delta, 16);
+  send(20, 400);
   send(40, 16);
-  for (const delta of [30, 22, 14]) send(delta, 20);
-  send(40, 200); // past cooldownMs since the turn
   assert.deepEqual(turns, ["next", "next"]);
 });
 
-test("upward scrolls turn to the previous page", () => {
+test("a second flick during the momentum tail is swallowed", () => {
+  // The accepted cost of the hard latch: without a phase flag a fresh push and
+  // the tail it lands in are indistinguishable, so the re-flick waits.
   const { turns, send } = harness();
-  send(-40, 16);
-  assert.deepEqual(turns, ["previous"]);
-});
-
-test("each direction keeps its own history, so reversing turns the other way", () => {
-  const { turns, send } = harness({ cooldownMs: 100 });
-  send(40, 16);
-  send(-40, 200); // past the cooldown, opposite direction
-  assert.deepEqual(turns, ["next", "previous"]);
-});
-
-test("a single flick with an inertia tail turns exactly one page", () => {
-  const { turns, send } = harness();
-  // Accelerate, then decay: the cooldown after the first turn absorbs the rest.
-  for (const delta of [20, 40, 55, 45, 30, 18, 10, 5, 2]) send(delta, 16);
+  for (const delta of [20, 40, 30, 26, 20, 15]) send(delta, 16);
+  for (const delta of [45, 60, 55]) send(delta, 16);
   assert.deepEqual(turns, ["next"]);
 });
 
-test("a decaying inertia tail is rejected once the window is full", () => {
-  // cooldownMs 0 isolates the Lethargy decision from the fullPage.js lock.
-  const { turns, send } = harness({ cooldownMs: 0 });
-  // A monotonic decay from the first frame: warm-up turns while the window
-  // fills, then the newer half always averages below the older half.
-  for (const delta of [70, 62, 54, 46, 38, 30, 22, 14]) send(delta, 30);
-  const afterFill = turns.length;
-  for (const delta of [10, 6, 4, 2]) send(delta, 30);
-  assert.equal(turns.length, afterFill);
+test("a main-thread stall does not unlatch the gesture mid-tail", () => {
+  const { turns, send, stall } = harness();
+  for (const delta of [20, 40]) send(delta, 16);
+  stall(300); // rendering the page turn blocks past quietMs
+  for (const delta of [36, 30, 24]) send(delta, 16);
+  assert.deepEqual(turns, ["next"]);
 });
 
-test("a sustained accelerating push keeps reading as deliberate", () => {
-  const { turns, send } = harness({ cooldownMs: 0 });
-  for (const delta of [10, 14, 18, 22, 26, 30, 34, 38]) send(delta, 30);
-  const afterFill = turns.length;
-  // Still speeding up past a full window, so it keeps turning.
-  for (const delta of [42, 46, 50, 54]) send(delta, 30);
-  assert.ok(turns.length > afterFill);
+test("upward flicks turn to the previous page", () => {
+  const { turns, send } = harness();
+  for (const delta of [-20, -40]) send(delta, 16);
+  assert.deepEqual(turns, ["previous"]);
 });
 
-test("a long non-uniform drag turns a page per cooldown window", () => {
-  // The documented Lethargy trade-off: a continuous deliberate drag reads as
-  // deliberate the whole way (its speed never decays), so only the cooldown
-  // rate-limits it. Deltas wobble so the stuck-value guard stays clear.
-  const { turns, send } = harness({ cooldownMs: 250 });
-  for (let i = 0; i < 60; i += 1) send(i % 2 === 0 ? 28 : 32, 20); // 1200ms
-  assert.ok(turns.length > 1);
+test("a reversal after silence turns the other way", () => {
+  const { turns, send } = harness();
+  for (const delta of [20, 40]) send(delta, 16);
+  send(-20, 400);
+  send(-40, 16);
+  assert.deepEqual(turns, ["next", "previous"]);
 });
 
-test("near-zero jitter never turns once the window is full", () => {
-  const { turns, send } = harness({ cooldownMs: 0 });
-  for (const delta of [70, 62, 54, 46, 38, 30, 22, 14]) send(delta, 30);
-  const afterFill = turns.length;
-  for (let i = 0; i < 8; i += 1) send(2, 30); // below sensitivity
-  assert.equal(turns.length, afterFill);
+test("a sign flip before the trigger distance retargets the same gesture", () => {
+  const { turns, send } = harness();
+  send(30, 16);
+  for (const delta of [-30, -30]) send(delta, 16);
+  assert.deepEqual(turns, ["previous"]);
+});
+
+test("reset drops the latch so the next event starts a fresh gesture", () => {
+  const turns: WheelTurnDirection[] = [];
+  let clock = 0;
+  const handler = createWheelPageTurnHandler({
+    turn: (direction) => turns.push(direction),
+    now: () => clock,
+  });
+  const send = (deltaY: number) => {
+    clock += 16;
+    handler.handleWheel(wheelEvent({ deltaY, timeStamp: clock }));
+  };
+  send(60);
+  send(60);
+  assert.deepEqual(turns, ["next"]);
+  handler.reset();
+  send(60);
+  assert.deepEqual(turns, ["next", "next"]);
 });
 
 test("dominant horizontal deltas are used and line mode is scaled", () => {
   const { turns, send } = harness();
-  send(0, 16, { deltaX: 4, deltaMode: 1 });
+  send(0, 16, { deltaX: 4, deltaMode: 1 }); // 4 lines * 16px
   assert.deepEqual(turns, ["next"]);
 });
 
