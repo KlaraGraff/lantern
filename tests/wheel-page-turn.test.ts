@@ -28,8 +28,7 @@ function wheelEvent(init: FakeWheelEventInit): WheelEvent {
 
 function harness(options: Partial<WheelPageTurnOptions> = {}) {
   const turns: WheelTurnDirection[] = [];
-  let clock = 0; // wall clock the handler would read via now()
-  let eventClock = 0; // when the browser created the event
+  let clock = 0;
   const handler = createWheelPageTurnHandler({
     turn: (direction) => turns.push(direction),
     now: () => clock,
@@ -39,12 +38,7 @@ function harness(options: Partial<WheelPageTurnOptions> = {}) {
     turns,
     send(deltaY: number, advanceMs = 16, init: FakeWheelEventInit = {}) {
       clock += advanceMs;
-      eventClock += advanceMs;
-      handler.handleWheel(wheelEvent({ deltaY, timeStamp: eventClock, ...init }));
-    },
-    /** Main thread blocked: the wall clock jumps, queued events keep their times. */
-    stall(ms: number) {
-      clock += ms;
+      handler.handleWheel(wheelEvent({ deltaY, ...init }));
     },
   };
 }
@@ -87,12 +81,35 @@ test("a second flick during the momentum tail is swallowed", () => {
   assert.deepEqual(turns, ["next"]);
 });
 
-test("a main-thread stall does not unlatch the gesture mid-tail", () => {
-  const { turns, send, stall } = harness();
-  for (const delta of [20, 40]) send(delta, 16);
-  stall(300); // rendering the page turn blocks past quietMs
-  for (const delta of [36, 30, 24]) send(delta, 16);
+test("event.timeStamp is ignored, so two documents cannot fake a quiet gap", () => {
+  // Regression: the handler is fed by listeners on the reader viewport and on
+  // foliate's iframe, whose time origins differ by however long the app had
+  // been running. Reading event.timeStamp compared those two zero points and
+  // scored the difference as silence, unlatching mid-tail.
+  const { turns, send } = harness();
+  for (const delta of [20, 40]) send(delta, 16); // turns
+  // Same steady 16ms stream, but timestamps jumping as if from another realm.
+  send(36, 16, { timeStamp: 900_000 });
+  send(30, 16, { timeStamp: 12 });
+  send(24, 16, { timeStamp: 900_016 });
   assert.deepEqual(turns, ["next"]);
+});
+
+test("a misread gap costs one page, not a cascade", () => {
+  // Even if something fakes silence on every single event, the floor between
+  // turns bounds the result — this is what stops three or four pages per flick.
+  const { turns, send } = harness({ quietMs: 0, minTurnGapMs: 350 });
+  for (let i = 0; i < 40; i += 1) send(60, 16); // 640ms, every event "idle"
+  assert.equal(turns.length, 2); // one at t=16, one past the 350ms floor
+});
+
+test("the floor does not delay a genuine flick after the tail dies", () => {
+  const { turns, send } = harness();
+  for (const delta of [20, 40]) send(delta, 16);
+  for (let delta = 38; delta >= 2; delta -= 2) send(delta, 16); // ~300ms tail
+  send(20, 200); // silence, and past the floor
+  send(40, 16);
+  assert.deepEqual(turns, ["next", "next"]);
 });
 
 test("upward flicks turn to the previous page", () => {

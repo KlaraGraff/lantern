@@ -12,6 +12,16 @@ export interface WheelPageTurnOptions {
    * the tail stops, so a gap this long means the wheel genuinely went quiet.
    */
   quietMs?: number;
+  /**
+   * Floor on the interval between two turns. Silence is inferred from a clock,
+   * and any clock can be misread; this bounds the damage when it is, so a
+   * misread gap costs one extra page rather than a cascade of them.
+   */
+  minTurnGapMs?: number;
+  /**
+   * Clock for gap measurement. Must be one clock for every event the handler
+   * sees — see the note on event.timeStamp in handleWheel.
+   */
   now?(): number;
 }
 
@@ -53,14 +63,17 @@ export function createWheelPageTurnHandler({
   isEnabled,
   triggerDistance = 50,
   quietMs = 80,
-  now = () => Date.now(),
+  minTurnGapMs = 350,
+  now = () => performance.now(),
 }: WheelPageTurnOptions): WheelPageTurnHandler {
   let lastEventAt = Number.NEGATIVE_INFINITY;
+  let lastTurnAt = Number.NEGATIVE_INFINITY;
   let accumulated = 0;
   let fired = false;
 
   const reset = () => {
     lastEventAt = Number.NEGATIVE_INFINITY;
+    lastTurnAt = Number.NEGATIVE_INFINITY;
     accumulated = 0;
     fired = false;
   };
@@ -73,10 +86,13 @@ export function createWheelPageTurnHandler({
     const delta = normalizedDelta(event);
     if (delta === 0) return;
 
-    // The event's own timestamp rather than the clock now: rendering the page
-    // turn can block the main thread past quietMs, and reading the clock here
-    // would score that stall as silence and unlatch the gesture mid-tail.
-    const timestamp = Number.isFinite(event.timeStamp) ? event.timeStamp : now();
+    // One clock for every event, never event.timeStamp. That timestamp is
+    // relative to the time origin of the window the event was created in, and
+    // this handler is fed by two listeners on two documents — the reader
+    // viewport and foliate's iframe, which gets a fresh origin on every section
+    // load. Subtracting across them compares two different zero points, which
+    // reads as a multi-second gap one way and a negative one the other.
+    const timestamp = now();
     const idle = timestamp - lastEventAt > quietMs;
     lastEventAt = timestamp;
     if (idle) {
@@ -91,7 +107,11 @@ export function createWheelPageTurnHandler({
     accumulated += delta;
     if (Math.abs(accumulated) < triggerDistance) return;
 
+    // Latch either way: a gesture that reached the trigger distance is spent,
+    // whether or not it was allowed to turn.
     fired = true;
+    if (timestamp - lastTurnAt < minTurnGapMs) return;
+    lastTurnAt = timestamp;
     turn(accumulated > 0 ? "next" : "previous");
   };
 
