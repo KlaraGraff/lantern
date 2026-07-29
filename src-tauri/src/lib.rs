@@ -521,6 +521,21 @@ pub fn run() {
                 log::warn!("migration: failed to adopt legacy application data: {error}");
             }
             std::fs::create_dir_all(&local_dir).expect("failed to create app data dir");
+            // The `$APPDATA/**` scopes in tauri.conf.json and the default
+            // capability are resolved from the bundle identifier, which never
+            // carries the `-dev` suffix the debug data dir above uses. Without
+            // widening them here, every book the reader opens in a dev build
+            // fails the asset protocol with a 403. Release builds already agree.
+            #[cfg(debug_assertions)]
+            {
+                use tauri_plugin_fs::FsExt;
+                if let Err(error) = app.asset_protocol_scope().allow_directory(&local_dir, true) {
+                    log::warn!("dev: failed to widen the asset protocol scope: {error}");
+                }
+                if let Err(error) = app.fs_scope().allow_directory(&local_dir, true) {
+                    log::warn!("dev: failed to widen the fs scope: {error}");
+                }
+            }
             std::fs::create_dir_all(local_dir.join("prepared"))
                 .expect("failed to create text preparation cache");
             let imported_font_dir = local_dir.join("imported-fonts");
