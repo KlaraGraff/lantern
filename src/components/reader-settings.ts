@@ -1,6 +1,6 @@
 // Explicit extension: the unit tests import this module through Node's ESM
 // loader, which does not do extensionless relative resolution the way Vite does.
-import { builtinFonts } from "./builtin-fonts.ts";
+import { builtinFonts, CJK_SANS, CJK_SERIF } from "./builtin-fonts.ts";
 import type { PageColumns, ReaderSettingsState } from "./ReaderSettings";
 
 export const FONT_SIZE_MIN = 12;
@@ -15,14 +15,17 @@ export interface ReaderFontOption {
 }
 
 export const fonts: ReaderFontOption[] = [
-  { id: "system", label: "System", family: "system-ui, -apple-system, 'PingFang SC', sans-serif", group: "system" },
-  { id: "georgia", label: "Georgia", family: "Georgia, serif", group: "system" },
-  { id: "palatino", label: "Palatino", family: "Palatino, serif", group: "system" },
-  { id: "times", label: "Times New Roman", family: "'Times New Roman', serif", group: "system" },
+  // These are Latin-only faces too, so they name the same CJK fallbacks as the
+  // bundled ones. Without that, which font Chinese lands in depends on the
+  // platform: Songti under macOS, SimSun under Windows.
+  { id: "system", label: "System", family: `system-ui, -apple-system, ${CJK_SANS}, sans-serif`, group: "system" },
+  { id: "georgia", label: "Georgia", family: `Georgia, ${CJK_SERIF}, serif`, group: "system" },
+  { id: "palatino", label: "Palatino", family: `Palatino, ${CJK_SERIF}, serif`, group: "system" },
+  { id: "times", label: "Times New Roman", family: `"Times New Roman", ${CJK_SERIF}, serif`, group: "system" },
   // Grouped with the system faces, not the built-ins: no Inter file ships with
   // the app, so this renders as Inter only where the machine already has it and
   // falls through to the system sans everywhere else.
-  { id: "inter", label: "Inter", family: '"Inter", system-ui, sans-serif', group: "system" },
+  { id: "inter", label: "Inter", family: `"Inter", system-ui, ${CJK_SANS}, sans-serif`, group: "system" },
   ...builtinFonts.map((font): ReaderFontOption => ({
     id: font.id,
     label: font.label,

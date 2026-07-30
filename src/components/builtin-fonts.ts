@@ -52,8 +52,12 @@ export interface BuiltinFont {
  * Naming them keeps the result predictable on both platforms, and pairs a serif
  * CJK face with the serif Latin ones and a gothic with the sans ones.
  */
-const SERIF_FALLBACK = 'Georgia, "Songti SC", "SimSun", serif';
-const SANS_FALLBACK = 'system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
+/** Shared with the system-font entries in reader-settings, so every reader font agrees. */
+export const CJK_SERIF = '"Songti SC", "SimSun"';
+export const CJK_SANS = '"PingFang SC", "Microsoft YaHei"';
+
+const SERIF_FALLBACK = `Georgia, ${CJK_SERIF}, serif`;
+const SANS_FALLBACK = `system-ui, ${CJK_SANS}, sans-serif`;
 
 export const builtinFonts: BuiltinFont[] = [
   { id: "literata", label: "Literata", slug: "literata", variable: true, italic: true, fallback: SERIF_FALLBACK },

@@ -90,10 +90,13 @@ test("built-in fonts reach the reader picker with a quoted family and a fallback
 });
 
 test("every chain names a CJK face instead of leaving Chinese to the generic keyword", () => {
-  // None of these families has a CJK glyph, so Chinese always falls through.
+  // No face the picker offers has a CJK glyph — not the bundled ones, and not
+  // Georgia, Palatino or Times either — so Chinese always falls through.
   // Unnamed, that lands on SimSun under Windows, which goes soft at reading
   // sizes. Serif families get a serif CJK face, sans families a gothic one.
-  for (const font of builtinFonts) {
+  const offered = fonts.filter((font) => font.group !== "custom");
+  assert.ok(offered.length > builtinFonts.length, "expected system faces alongside the bundled ones");
+  for (const font of offered) {
     const stack = getFontFamily(font.id);
     const expected = stack.includes("serif") && !stack.includes("sans-serif")
       ? ["Songti SC", "SimSun"]
