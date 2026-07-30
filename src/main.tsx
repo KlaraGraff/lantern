@@ -4,6 +4,7 @@ import App from "./App";
 import "./index.css";
 import "./i18n";
 import { installReaderDiagnostics } from "./utils/readerDiagnostics";
+import { installBuiltinFontFaces } from "./components/builtin-fonts";
 
 // Install global fault sinks before anything else runs. On macOS 12 / Safari
 // 15.1 a missing runtime API can throw at module top-level or inside the PDF
@@ -21,6 +22,10 @@ if (!(Map.prototype as any).getOrInsertComputed) {
     return value;
   };
 }
+
+// Declare the bundled reading fonts before React mounts, so the first paint of
+// the reader and the settings preview already has the faces available.
+installBuiltinFontFaces();
 
 // Apply cached theme synchronously before React mounts so the window doesn't
 // flash light-mode on cold start. Reconciled with the DB in App.tsx.

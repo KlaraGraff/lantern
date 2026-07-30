@@ -18,6 +18,7 @@ import {
   type ReaderInteraction,
 } from "../../components/reader-interaction";
 import { installCustomFontFacesInDocument } from "../../components/custom-fonts";
+import { installBuiltinFontFacesInDocument } from "../../components/builtin-fonts";
 import { expandWordForms } from "../../components/word-forms";
 import type { Highlight } from "../../hooks/useBookmarks";
 import type { Book } from "../../hooks/useBooks";
@@ -478,6 +479,7 @@ export function useFoliateView({
           logReaderDiagnostic("reader.open.first-section-loaded", `index=${index}`);
         }
         markChapterStarts(doc, index);
+        installBuiltinFontFacesInDocument(doc);
         installCustomFontFacesInDocument(doc);
         if (loadedInteractionDocumentsRef.current.has(doc)) return;
         loadedInteractionDocumentsRef.current.add(doc);

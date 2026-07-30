@@ -1,3 +1,6 @@
+// Explicit extension: the unit tests import this module through Node's ESM
+// loader, which does not do extensionless relative resolution the way Vite does.
+import { builtinFonts } from "./builtin-fonts.ts";
 import type { PageColumns, ReaderSettingsState } from "./ReaderSettings";
 
 export const FONT_SIZE_MIN = 12;
@@ -17,6 +20,12 @@ export const fonts: ReaderFontOption[] = [
   { id: "palatino", label: "Palatino", family: "Palatino, serif", group: "system" },
   { id: "times", label: "Times New Roman", family: "'Times New Roman', serif", group: "system" },
   { id: "inter", label: "Inter", family: "Inter, sans-serif", group: "built-in" },
+  ...builtinFonts.map((font): ReaderFontOption => ({
+    id: font.id,
+    label: font.label,
+    family: `"${font.label}", ${font.fallback}`,
+    group: "built-in",
+  })),
 ];
 
 const themes = [
