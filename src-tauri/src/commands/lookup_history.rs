@@ -1,4 +1,4 @@
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -181,6 +181,61 @@ pub fn save_lookup_record(
         row_to_lookup,
     )
     .map_err(Into::into)
+}
+
+/// Cached answers are scoped to one occurrence: the same word in the same
+/// position, or failing that the same word in the same sentence. A card
+/// explains the word *here*, so a different context has to be asked again.
+fn find_cached_lookup(
+    conn: &rusqlite::Connection,
+    book_id: &str,
+    normalized_text: &str,
+    cfi: Option<&str>,
+    context_sentence: Option<&str>,
+) -> rusqlite::Result<Option<LookupRecord>> {
+    if let Some(cfi) = cfi.filter(|value| !value.is_empty()) {
+        let record = conn
+            .query_row(
+                &format!("SELECT {SELECT_COLS} FROM lookup_records WHERE book_id = ?1 AND cfi = ?2 AND normalized_text = ?3 AND result_json IS NOT NULL LIMIT 1"),
+                params![book_id, cfi, normalized_text],
+                row_to_lookup,
+            )
+            .optional()?;
+        if record.is_some() {
+            return Ok(record);
+        }
+    }
+    let Some(context) = context_sentence.filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    conn.query_row(
+        &format!("SELECT {SELECT_COLS} FROM lookup_records WHERE book_id = ?1 AND normalized_text = ?2 AND context_sentence = ?3 AND result_json IS NOT NULL ORDER BY last_looked_up_at DESC LIMIT 1"),
+        params![book_id, normalized_text, context],
+        row_to_lookup,
+    )
+    .optional()
+}
+
+#[tauri::command]
+pub fn get_cached_lookup(
+    book_id: String,
+    lookup_text: String,
+    cfi: Option<String>,
+    context_sentence: Option<String>,
+    db: State<'_, Db>,
+) -> AppResult<Option<LookupRecord>> {
+    let normalized_text = normalize(&lookup_text);
+    if normalized_text.is_empty() {
+        return Ok(None);
+    }
+    let conn = db.reader();
+    Ok(find_cached_lookup(
+        &conn,
+        &book_id,
+        &normalized_text,
+        cfi.as_deref(),
+        context_sentence.as_deref(),
+    )?)
 }
 
 #[tauri::command]
@@ -388,6 +443,85 @@ mod tests {
             .unwrap();
         assert_eq!(count, 2);
         assert_eq!(definition, "second");
+    }
+
+    fn insert_record(
+        conn: &rusqlite::Connection,
+        id: &str,
+        cfi: Option<&str>,
+        context: Option<&str>,
+        result_json: Option<&str>,
+        looked_up_at: i64,
+    ) {
+        conn.execute(
+            "INSERT INTO lookup_records (id, book_id, lookup_text, normalized_text, context_sentence, cfi, definition, result_json, created_at, last_looked_up_at, lookup_count) VALUES (?1, 'book', 'Wonder', 'wonder', ?2, ?3, 'first', ?4, 1, ?5, 1)",
+            params![id, context, cfi, result_json, looked_up_at],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn cached_lookup_prefers_the_same_position_then_the_same_sentence() {
+        let db = setup();
+        let conn = db.conn.lock().unwrap();
+        insert_record(
+            &conn,
+            "here",
+            Some("epubcfi(/6/2)"),
+            Some("A sentence."),
+            Some("{\"here\":true}"),
+            1,
+        );
+        insert_record(
+            &conn,
+            "elsewhere",
+            Some("epubcfi(/6/8)"),
+            Some("A sentence."),
+            Some("{\"elsewhere\":true}"),
+            2,
+        );
+
+        let at_position =
+            find_cached_lookup(&conn, "book", "wonder", Some("epubcfi(/6/2)"), None).unwrap();
+        assert_eq!(at_position.unwrap().id, "here");
+
+        let same_sentence = find_cached_lookup(
+            &conn,
+            "book",
+            "wonder",
+            Some("epubcfi(/6/4)"),
+            Some("A sentence."),
+        )
+        .unwrap();
+        assert_eq!(same_sentence.unwrap().id, "elsewhere");
+
+        let other_sentence = find_cached_lookup(
+            &conn,
+            "book",
+            "wonder",
+            Some("epubcfi(/6/4)"),
+            Some("Another sentence."),
+        )
+        .unwrap();
+        assert!(other_sentence.is_none());
+    }
+
+    #[test]
+    fn cached_lookup_ignores_records_without_a_stored_card() {
+        let db = setup();
+        let conn = db.conn.lock().unwrap();
+        insert_record(&conn, "bare", Some("epubcfi(/6/2)"), Some("A sentence."), None, 1);
+        assert!(
+            find_cached_lookup(
+                &conn,
+                "book",
+                "wonder",
+                Some("epubcfi(/6/2)"),
+                Some("A sentence."),
+            )
+            .unwrap()
+            .is_none()
+        );
     }
 
     #[test]

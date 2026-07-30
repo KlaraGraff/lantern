@@ -860,6 +860,7 @@ pub fn run() {
             commands::vocab::bulk_update_vocab_mastery,
             // Local lookup history
             commands::lookup_history::save_lookup_record,
+            commands::lookup_history::get_cached_lookup,
             commands::lookup_history::list_lookup_records,
             commands::lookup_history::list_all_lookup_records,
             commands::lookup_history::delete_lookup_record,

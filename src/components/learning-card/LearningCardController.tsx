@@ -4,6 +4,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createUuid } from "../../utils/randomUuid";
 import type { ReaderInteraction, SerializableRect } from "../reader-interaction";
+import {
+  cachedLearningCardResult,
+  learningCardCacheEnvelope,
+  learningCardCacheSignature,
+} from "./cache";
 import { getResponsiveLearningCardWidth } from "./config";
 import type {
   CardDesignConfigV1,
@@ -38,7 +43,10 @@ interface LearningCardControllerProps {
   chapter?: string;
   config: CardDesignConfigV1;
   readerRect?: SerializableRect | DOMRect | null;
+  stackIndex?: number;
+  elevated?: boolean;
   onClose: () => void;
+  onFocus?: () => void;
   onAskAi: (quote: string, location?: string, analysis?: string) => void;
   onViewAllNotes?: () => void;
   onLookupSuccess?: (interaction: ReaderInteraction) => void;
@@ -76,10 +84,16 @@ function projection(result: LearningCardResult) {
   };
 }
 
+// Cards already open keep their place, so each new one is nudged down-right to
+// leave the earlier headers reachable when two words sit on the same line.
+const STACK_STEP = 22;
+const STACK_STEP_LIMIT = 3;
+
 function cardPosition(
   interaction: ReaderInteraction,
   readerRect: SerializableRect | DOMRect | null | undefined,
   width: number,
+  stackIndex = 0,
 ) {
   const reader = readerRect ?? {
     left: 0,
@@ -107,7 +121,12 @@ function cardPosition(
   const top = below >= Math.min(360, maxHeight) || below >= above
     ? Math.min(interaction.anchorRect.bottom + 8, reader.bottom - maxHeight - margin)
     : Math.max(reader.top + margin, interaction.anchorRect.top - maxHeight - 8);
-  return { left, top: Math.max(reader.top + margin, top), maxHeight };
+  const cascade = Math.min(stackIndex, STACK_STEP_LIMIT) * STACK_STEP;
+  return {
+    left: left + cascade,
+    top: Math.max(reader.top + margin, top) + cascade,
+    maxHeight,
+  };
 }
 
 function clampCardPoint(
@@ -141,7 +160,10 @@ export default function LearningCardController({
   chapter,
   config,
   readerRect,
+  stackIndex = 0,
+  elevated = false,
   onClose,
+  onFocus,
   onAskAi,
   onViewAllNotes,
   onLookupSuccess,
@@ -156,6 +178,7 @@ export default function LearningCardController({
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [fromCache, setFromCache] = useState(false);
   const [notes, setNotes] = useState<LearningCardNote[]>([]);
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
@@ -183,9 +206,12 @@ export default function LearningCardController({
     setResult({ version: 1, kind: interaction.kind, sourceText: interaction.text, modules: {} });
     setLoading(true);
     setError(null);
+    setFromCache(false);
     const requestId = createUuid();
+    const card = config.cards[interaction.kind];
+    const cacheSignature = learningCardCacheSignature(card);
     const allowedModuleIds = new Set(
-      config.cards[interaction.kind].modules
+      card.modules
         .filter((module) => module.enabled)
         .map((module) => module.id),
     );
@@ -195,6 +221,28 @@ export default function LearningCardController({
 
     const run = async () => {
       try {
+        if (retry === 0) {
+          const cached = await invoke<{ result_json?: string | null } | null>("get_cached_lookup", {
+            bookId,
+            lookupText: interaction.text,
+            cfi: interaction.location || null,
+            contextSentence: interaction.context || null,
+          }).catch(() => null);
+          const reusable = cachedLearningCardResult(
+            cached?.result_json,
+            interaction.kind,
+            cacheSignature,
+          );
+          if (!active) return;
+          if (reusable) {
+            setResult(reusable);
+            setLoading(false);
+            setFromCache(true);
+            if (interaction.kind === "word") onLookupSuccess?.(interaction);
+            return;
+          }
+        }
+
         unlisten = await listen<LearningCardStreamChunk>(
           `ai-learning-card-chunk-${requestId}`,
           (event) => {
@@ -236,7 +284,7 @@ export default function LearningCardController({
           cfi: interaction.location || null,
           definition: projected.definition,
           contextExplanation: projected.contextExplanation,
-          resultJson: JSON.stringify(response),
+          resultJson: learningCardCacheEnvelope(response, cacheSignature),
           providerProfileId: response.provenance?.profileId || null,
           model: response.provenance?.model || null,
         }).then(() => {
@@ -307,7 +355,7 @@ export default function LearningCardController({
     config.cards[interaction.kind],
     availableWidth,
   );
-  const initialPosition = cardPosition(interaction, bounds, width);
+  const initialPosition = cardPosition(interaction, bounds, width, stackIndex);
   const [position, setPosition] = useState<CardPoint>(() => ({
     left: initialPosition.left,
     top: initialPosition.top,
@@ -445,8 +493,9 @@ export default function LearningCardController({
   return (
     <div
       ref={wrapperRef}
-      className="fixed z-[60]"
+      className={elevated ? "fixed z-[61]" : "fixed z-[60]"}
       style={{ left: position.left, top: position.top }}
+      onPointerDown={onFocus}
     >
       <LearningCardView
         result={result}
@@ -468,6 +517,7 @@ export default function LearningCardController({
         onDragPointerMove={onDragPointerMove}
         onDragPointerEnd={onDragPointerEnd}
         onRetry={() => setRetry((value) => value + 1)}
+        onRefresh={fromCache ? () => setRetry((value) => value + 1) : undefined}
         onNoteDraftChange={setNoteDraft}
         onNoteSave={saveNote}
         onNoteCancel={() => { setNoteEditorOpen(false); setNoteDraft(""); setNoteId(null); }}

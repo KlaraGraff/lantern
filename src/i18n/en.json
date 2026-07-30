@@ -1014,6 +1014,7 @@
   "common.bookmark": "Bookmark",
 
   "learningCard.allModulesDisabled": "All display modules are turned off. Enable at least one to look things up.",
+  "learningCard.cachedRefresh": "Cached result · Look up again",
   "learningCard.title.word": "Word Definition",
   "learningCard.title.phrase": "Phrase Definition",
   "learningCard.title.passage": "Passage Interpretation",

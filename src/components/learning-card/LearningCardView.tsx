@@ -36,6 +36,7 @@ interface LearningCardViewProps {
   onDragPointerMove?: (event: ReactPointerEvent<HTMLElement>) => void;
   onDragPointerEnd?: (event: ReactPointerEvent<HTMLElement>) => void;
   onRetry?: () => void;
+  onRefresh?: () => void;
   onNoteDraftChange?: (value: string) => void;
   onNoteSave?: () => void;
   onNoteCancel?: () => void;
@@ -67,6 +68,7 @@ export default function LearningCardView({
   onDragPointerMove,
   onDragPointerEnd,
   onRetry,
+  onRefresh,
   onNoteDraftChange,
   onNoteSave,
   onNoteCancel,
@@ -113,6 +115,17 @@ export default function LearningCardView({
           {title}
         </h2>
         {loading && <Loader2 size={14} className="shrink-0 animate-spin text-accent-text" aria-hidden="true" />}
+        {onRefresh && !loading && !error && (
+          <button
+            type="button"
+            onClick={onRefresh}
+            title={t("learningCard.cachedRefresh")}
+            aria-label={t("learningCard.cachedRefresh")}
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-surface/70"
+          >
+            <RotateCw size={13} />
+          </button>
+        )}
         {onDragPointerDown && (
           <GripHorizontal size={15} className="shrink-0 text-text-muted" aria-hidden="true" />
         )}

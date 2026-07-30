@@ -152,6 +152,9 @@ function readerMenuAction(id: string): ReaderMenuAction {
 const appWindow = getCurrentWebviewWindow();
 const isStandaloneWindow = appWindow.label.startsWith("reader-");
 
+// Cards stay open until dismissed; past this many the oldest one gives way.
+const MAX_LEARNING_CARDS = 5;
+
 // One-time migration of `reader-zoom-${bookId}` keys written by PR #199.
 // That PR saved "100" on every default open, so every pre-upgrade book has
 // it even when the user never touched zoom. Under the new scheme, the
@@ -225,7 +228,8 @@ export default function Reader() {
   const [contextBookWordMarkExcluded, setContextBookWordMarkExcluded] = useState(false);
   const [contextMarkStateLoading, setContextMarkStateLoading] = useState(false);
   const [learningCardConfig, setLearningCardConfig] = useState<CardDesignConfigV1>(DEFAULT_CARD_DESIGN_CONFIG);
-  const [learningInteraction, setLearningInteraction] = useState<ReaderInteraction | null>(null);
+  const [learningCards, setLearningCards] = useState<Array<{ id: string; interaction: ReaderInteraction }>>([]);
+  const [topLearningCardId, setTopLearningCardId] = useState<string | null>(null);
   const [readerToast, setReaderToast] = useState<string | null>(null);
   const [diagnosticsPanelOpen, setDiagnosticsPanelOpen] = useState(false);
   const [showStuckHint, setShowStuckHint] = useState(false);
@@ -564,7 +568,16 @@ export default function Reader() {
       setReaderToast(t("learningCard.allModulesDisabled"));
       return;
     }
-    setLearningInteraction(interaction);
+    // Cards stay put once opened, so raising happens by stacking order rather
+    // than by reordering them — moving a card's node would drop the pointer
+    // capture that a drag starting on that same click depends on.
+    const id = `${interaction.kind}:${interaction.location}:${interaction.text}`;
+    setLearningCards((current) => (
+      current.some((card) => card.id === id)
+        ? current
+        : [...current, { id, interaction }].slice(-MAX_LEARNING_CARDS)
+    ));
+    setTopLearningCardId(id);
   }, [learningCardConfig, t]);
 
   const getHighlightMutationPlan = useCallback(async (
@@ -770,7 +783,7 @@ export default function Reader() {
     settingsRef: readerSettingsRef,
     readerViewportRef,
     panelRef,
-    overlayOpen: Boolean(settingsOpen || contextMenu || learningInteraction || translation || customAction),
+    overlayOpen: Boolean(settingsOpen || contextMenu || learningCards.length || translation || customAction),
     sidePanelOpen: Boolean(sidePanel),
     turnPage: turnReaderPage,
     onPdfZoom: handleZoom,
@@ -1043,7 +1056,7 @@ export default function Reader() {
     }
     const actionId = binding.actionId;
     if (actionId === "lookup" || actionId === "explain") {
-      setLearningInteraction({ ...interaction, trigger: "word-quick-lookup" });
+      openLearningCard({ ...interaction, trigger: "word-quick-lookup" });
     } else if (actionId === "translate") {
       setTranslation({
         x: interaction.anchorRect.right,
@@ -1104,6 +1117,7 @@ export default function Reader() {
     bookId,
     getHighlightMutationPlan,
     learningCardConfig.selectionMenus,
+    openLearningCard,
     readerActionLabel,
     refreshAnnotations,
     supportsWordMarkers,
@@ -1970,10 +1984,10 @@ export default function Reader() {
         />
       )}
 
-      {learningInteraction && bookId && (
+      {bookId && learningCards.map((card, index) => (
         <LearningCardController
-          key={`${learningInteraction.kind}:${learningInteraction.location}:${learningInteraction.text}`}
-          interaction={learningInteraction}
+          key={card.id}
+          interaction={card.interaction}
           bookId={bookId}
           bookTitle={book?.title}
           bookAuthor={book?.author}
@@ -1982,7 +1996,10 @@ export default function Reader() {
             : undefined}
           config={learningCardConfig}
           readerRect={readerRect}
-          onClose={() => setLearningInteraction(null)}
+          stackIndex={index}
+          elevated={card.id === topLearningCardId}
+          onClose={() => setLearningCards((current) => current.filter((item) => item.id !== card.id))}
+          onFocus={() => setTopLearningCardId(card.id)}
           onAskAi={(quote, cfi, analysis) => {
             setAiContext({ text: quote, cfi, analysis });
             setSidePanel("ai");
@@ -1992,7 +2009,7 @@ export default function Reader() {
           }}
           onLookupSuccess={handleLookupSuccess}
         />
-      )}
+      ))}
 
       {customAction && bookId && (
         <ExplainPopover

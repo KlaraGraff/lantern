@@ -1016,6 +1016,7 @@
   "common.bookmark": "书签",
 
   "learningCard.allModulesDisabled": "当前已关闭所有展示项，如需查询请开启至少 1 项。",
+  "learningCard.cachedRefresh": "缓存结果 · 重新查询",
   "learningCard.title.word": "单词释义",
   "learningCard.title.phrase": "短语释义",
   "learningCard.title.passage": "句子解读",
