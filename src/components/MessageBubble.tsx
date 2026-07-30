@@ -245,6 +245,13 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
         {!(streaming && isLast) && (
           <SectionContextNotice route={msg.route} context={msg.sectionContext} />
         )}
+        {/* A conversation that quietly loses its opening reads as the
+            assistant forgetting; if the budget had to drop turns, say so. */}
+        {(msg.contextBudget?.historyOmitted ?? 0) > 0 && !(streaming && isLast) && (
+          <div className="mt-2 border-t border-border pt-2 text-[11px] text-text-muted">
+            {t("ai.contextBudget.historyOmitted", { messages: msg.contextBudget?.historyOmitted })}
+          </div>
+        )}
         {msg.spoilerGuard?.active && !(streaming && isLast) && (
           msg.spoilerGuard.wholeBookIntent ? (
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2 text-[11px] text-text-muted">

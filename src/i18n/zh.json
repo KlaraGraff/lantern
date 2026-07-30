@@ -137,6 +137,7 @@
   "ai.sectionContext.spoilerLimited": "受阅读保护影响，仅分析了当前阅读范围已读部分（{{visible}}/{{total}} 个文本片段）。",
   "ai.sectionContext.truncated": "受上下文容量限制，仅分析了 {{selected}}/{{visible}} 个文本片段，回答可能不完整。",
   "ai.sectionContext.details": "约分析了 {{selectedTokens}}/{{visibleTokens}} 个已读 token（索引总量 {{totalTokens}}）。",
+  "ai.contextBudget.historyOmitted": "对话过长，本次回答未包含最早的 {{messages}} 条消息。",
   "ai.spoilerGuard.badge": "阅读思考保护已启用",
   "ai.spoilerGuard.badgeHint": "回答仅使用当前阅读位置之前的原文与章节摘要。",
   "ai.spoilerGuard.notice": "已按你的阅读进度回答（前 {{progress}}%）。",

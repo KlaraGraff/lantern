@@ -254,7 +254,7 @@ pub(super) fn is_broad_book_scope_request(value: &str) -> bool {
 }
 
 pub(super) fn is_selected_context(value: &str) -> bool {
-    value.contains("[Selected passage]")
+    value.contains(SELECTED_PASSAGE_OPEN)
 }
 
 /// A quote the reader took from the assistant's own earlier answer. It is not
@@ -266,12 +266,28 @@ pub(super) fn has_quoted_reply(value: &str) -> bool {
 pub(super) const QUOTED_REPLY_OPEN: &str = "[Quoted from your earlier reply]";
 const QUOTED_REPLY_CLOSE: &str = "[/Quoted from your earlier reply]";
 
+/// The passage attached to the turn being answered right now. This is the only
+/// marker that means "source text for this request".
+pub(super) const SELECTED_PASSAGE_OPEN: &str = "[Selected passage]";
+pub(super) const SELECTED_PASSAGE_CLOSE: &str = "[/Selected passage]";
+/// A passage the reader attached to an *earlier* turn and has since moved on
+/// from. It stays in the conversation so references like "this word" still
+/// resolve, but it is history, not this turn's evidence.
+pub(super) const EARLIER_PASSAGE_OPEN: &str = "[Earlier passage]";
+pub(super) const EARLIER_PASSAGE_CLOSE: &str = "[/Earlier passage]";
+/// An earlier passage that is still in effect because the reader asked a
+/// follow-up without attaching a new selection. It is this turn's source.
+pub(super) const CARRIED_PASSAGE_OPEN: &str = "[Carried passage]";
+pub(super) const CARRIED_PASSAGE_CLOSE: &str = "[/Carried passage]";
+
 /// Chat history carries selected text and learning-card output inside the
 /// user message so the provider receives one coherent turn. Those blocks are
 /// evidence, not instructions, and must not influence scope or task routing.
 pub(super) fn routing_instruction(value: &str) -> String {
-    const BLOCKS: [(&str, &str); 3] = [
-        ("[Selected passage]", "[/Selected passage]"),
+    const BLOCKS: [(&str, &str); 5] = [
+        (SELECTED_PASSAGE_OPEN, SELECTED_PASSAGE_CLOSE),
+        (EARLIER_PASSAGE_OPEN, EARLIER_PASSAGE_CLOSE),
+        (CARRIED_PASSAGE_OPEN, CARRIED_PASSAGE_CLOSE),
         (
             "[Existing learning-card analysis]",
             "[/Existing learning-card analysis]",
@@ -659,55 +675,63 @@ pub(super) fn has_whole_book_intent(value: &str) -> bool {
             .is_some_and(|tail| tail.contains(" end") && !avoids_spoilers)
 }
 
-pub(super) fn bounded_scoped_chat_history(
+/// Whether a turn before the one being answered attached a passage. A
+/// follow-up that attaches nothing can then keep that passage in effect
+/// instead of being told to answer from a selection that is not there.
+pub(super) fn has_earlier_selection(
+    messages: &[ChatMessage],
+    latest_user_index: Option<usize>,
+) -> bool {
+    let end = latest_user_index.unwrap_or(messages.len());
+    messages[..end]
+        .iter()
+        .any(|message| message.role == "user" && is_selected_context(&message.content))
+}
+
+/// Label the conversation rather than censor it.
+///
+/// Earlier turns used to be replaced with placeholders so that a stale passage
+/// — or the assistant's own wording — could never be mistaken for this turn's
+/// source text. That also deleted everything a follow-up depends on: "this
+/// word" no longer resolved to anything, and the assistant could not see what
+/// it had just said, which turned every multi-turn exchange into a series of
+/// unrelated single turns.
+///
+/// The request already carries turn structure: one message per turn, with the
+/// role saying who spoke. So the only thing worth marking in the text is which
+/// passage counts as evidence *now*. Everything else stays verbatim, and
+/// `append_chat_route_instructions` states what history may and may not be
+/// used for. Returns the labeled window and how many messages the byte budget
+/// dropped, so the UI can say so instead of the loss being invisible.
+pub(super) fn labeled_chat_history(
     mut messages: Vec<ChatMessage>,
     max_total_bytes: usize,
-    route: ChatRoute,
-) -> Vec<ChatMessage> {
-    let scoped = matches!(
-        route,
-        ChatRoute::SelectedContext
-            | ChatRoute::SelectedContextVocabulary
-            | ChatRoute::ViewportContext
-            | ChatRoute::ViewportContextVocabulary
-            | ChatRoute::CurrentSection
-            | ChatRoute::CurrentSectionVocabulary
-            | ChatRoute::CurrentSectionUnavailable
-            | ChatRoute::WholeBook
-            | ChatRoute::WholeBookUnavailable
-            | ChatRoute::WholeBookVocabulary
-            | ChatRoute::WholeBookVocabularyUnavailable
-    );
-    if scoped {
-        // Sanitize before applying the per-message byte cap. Otherwise a long
-        // selected passage can lose its closing delimiter and make the
-        // trailing user question disappear from the routed request.
-        let latest_user_index = messages.iter().rposition(|message| message.role == "user");
-        // Previous assistant text is conversational context, never source
-        // evidence. Replacing it rather than deleting it preserves the
-        // user/assistant alternation expected by strict providers and prevents
-        // an old unsupported answer from becoming the vocabulary source.
-        for (index, message) in messages.iter_mut().enumerate() {
-            if message.role == "assistant" {
-                message.content =
-                    "[Prior assistant response omitted; use only the supplied source text.]"
-                        .to_string();
-            } else if message.role == "user" && Some(index) != latest_user_index {
-                // A previous user turn can contain a quoted selection or a
-                // learning-card answer. It belongs to conversation history,
-                // not to the new scope's evidence bundle. The latest user
-                // turn keeps its evidence even under an explicit chapter or
-                // book scope: a question like "how does this quote relate to
-                // the chapter" needs both the quote and the scope source.
-                let instruction = routing_instruction(&message.content);
-                if instruction.trim() != message.content.trim() {
-                    message.content = format!(
-                        "[Prior source evidence omitted; use only the current scope source.]\n{}",
-                        instruction.trim()
-                    );
-                }
-            }
+    carry_selection: bool,
+) -> (Vec<ChatMessage>, usize) {
+    let latest_user_index = messages.iter().rposition(|message| message.role == "user");
+    // Only the newest earlier passage carries; anything older is plain history.
+    let carried_index = if carry_selection {
+        messages[..latest_user_index.unwrap_or(messages.len())]
+            .iter()
+            .rposition(|message| message.role == "user" && is_selected_context(&message.content))
+    } else {
+        None
+    };
+    // Relabel before the per-message byte cap runs. Otherwise a long passage
+    // can lose its closing delimiter and swallow the question after it.
+    for (index, message) in messages.iter_mut().enumerate() {
+        if message.role != "user" || Some(index) == latest_user_index {
+            continue;
         }
+        let (open, close) = if Some(index) == carried_index {
+            (CARRIED_PASSAGE_OPEN, CARRIED_PASSAGE_CLOSE)
+        } else {
+            (EARLIER_PASSAGE_OPEN, EARLIER_PASSAGE_CLOSE)
+        };
+        message.content = message
+            .content
+            .replace(SELECTED_PASSAGE_CLOSE, close)
+            .replace(SELECTED_PASSAGE_OPEN, open);
     }
     bounded_chat_history_with_limit(messages, max_total_bytes)
 }
@@ -725,11 +749,12 @@ mod tests {
         classify_chat_route(question, current_section_index, inherited_route, false)
     }
 
-    use super::super::SCOPED_CHAT_MAX_TOTAL_BYTES;
-    use super::*;
+    use super::super::CHAT_MAX_TOTAL_BYTES;
 
     #[test]
-    fn scoped_history_does_not_reuse_old_assistant_evidence() {
+    fn earlier_assistant_replies_survive_verbatim() {
+        // The assistant has to be able to see what it just said; "explain your
+        // second point" is not answerable from a placeholder.
         let messages = vec![
             ChatMessage {
                 role: "user".into(),
@@ -744,17 +769,14 @@ mod tests {
                 content: "继续列出难词".into(),
             },
         ];
-        let bounded = bounded_scoped_chat_history(
-            messages,
-            SCOPED_CHAT_MAX_TOTAL_BYTES,
-            ChatRoute::CurrentSectionVocabulary,
-        );
-        assert_eq!(bounded.len(), 3);
-        assert!(bounded[1].content.contains("omitted"));
-        assert!(!bounded[1].content.contains("奥斯维辛"));
+        let (history, omitted) = labeled_chat_history(messages, CHAT_MAX_TOTAL_BYTES, false);
+        assert_eq!(history.len(), 3);
+        assert_eq!(omitted, 0);
+        assert_eq!(history[1].content, "奥斯维辛、希望、仁爱");
     }
+
     #[test]
-    fn scoped_history_redacts_previous_user_evidence_but_keeps_their_question() {
+    fn a_superseded_passage_is_relabeled_rather_than_deleted() {
         let messages = vec![
             ChatMessage {
                 role: "user".into(),
@@ -769,35 +791,98 @@ mod tests {
                 content: "本章有哪些难词？".into(),
             },
         ];
-        let bounded = bounded_scoped_chat_history(
-            messages,
-            SCOPED_CHAT_MAX_TOTAL_BYTES,
-            ChatRoute::CurrentSectionVocabulary,
-        );
-        assert_eq!(bounded.len(), 3);
-        assert!(bounded[0].content.contains("解释这段"));
-        assert!(!bounded[0].content.contains("old source"));
-        assert!(bounded[0].content.contains("Prior source evidence omitted"));
+        let (history, _) = labeled_chat_history(messages, CHAT_MAX_TOTAL_BYTES, false);
+        assert_eq!(history.len(), 3);
+        assert!(history[0].content.contains("解释这段"));
+        // Still readable, so a later reference resolves — but no longer
+        // wearing the marker that means "source text for this turn".
+        assert!(history[0].content.contains("old source"));
+        assert!(history[0].content.contains(EARLIER_PASSAGE_OPEN));
+        assert!(history[0].content.contains(EARLIER_PASSAGE_CLOSE));
+        assert!(!history[0].content.contains(SELECTED_PASSAGE_OPEN));
     }
+
+    #[test]
+    fn a_follow_up_without_a_new_selection_carries_the_previous_one() {
+        // The `penchant` case: quote a word, ask about it, then ask again with
+        // nothing attached. The passage stays in effect for this turn.
+        let messages = vec![
+            ChatMessage {
+                role: "user".into(),
+                content: "[Selected passage]\npenchant\n[/Selected passage]\nWhat's the difference between this word and \"preference\"?".into(),
+            },
+            ChatMessage {
+                role: "assistant".into(),
+                content: "penchant 更强……".into(),
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: "Introduce the difference with more details.".into(),
+            },
+        ];
+        let (history, _) = labeled_chat_history(messages, CHAT_MAX_TOTAL_BYTES, true);
+        assert!(history[0].content.contains(CARRIED_PASSAGE_OPEN));
+        assert!(history[0].content.contains("penchant"));
+        assert!(!history[0].content.contains(EARLIER_PASSAGE_OPEN));
+    }
+
+    #[test]
+    fn only_the_newest_earlier_passage_carries() {
+        let messages = vec![
+            ChatMessage {
+                role: "user".into(),
+                content: "[Selected passage]\nfirst pick\n[/Selected passage]\n这是什么".into(),
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: "[Selected passage]\nsecond pick\n[/Selected passage]\n那这个呢".into(),
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: "再详细一点".into(),
+            },
+        ];
+        let (history, _) = labeled_chat_history(messages, CHAT_MAX_TOTAL_BYTES, true);
+        assert!(history[0].content.contains(EARLIER_PASSAGE_OPEN));
+        assert!(history[1].content.contains(CARRIED_PASSAGE_OPEN));
+    }
+
     #[test]
     fn explicit_section_scope_keeps_the_latest_attached_selection() {
         // "How does this quote relate to the chapter?" needs both the quote
-        // and the section source; only OLDER turns lose their evidence.
+        // and the section source; only OLDER turns get relabeled.
         let messages = vec![ChatMessage {
             role: "user".into(),
             content:
                 "[Selected passage]\nquoted words\n[/Selected passage]\n这段引文和本章有什么关系？"
                     .into(),
         }];
-        let bounded = bounded_scoped_chat_history(
-            messages,
-            SCOPED_CHAT_MAX_TOTAL_BYTES,
-            ChatRoute::CurrentSection,
-        );
-        assert_eq!(bounded.len(), 1);
-        assert!(bounded[0].content.contains("这段引文和本章有什么关系"));
-        assert!(bounded[0].content.contains("quoted words"));
-        assert!(!bounded[0].content.contains("Prior source evidence omitted"));
+        let (history, _) = labeled_chat_history(messages, CHAT_MAX_TOTAL_BYTES, false);
+        assert_eq!(history.len(), 1);
+        assert!(history[0].content.contains("这段引文和本章有什么关系"));
+        assert!(history[0].content.contains(SELECTED_PASSAGE_OPEN));
+        assert!(history[0].content.contains("quoted words"));
+    }
+
+    #[test]
+    fn dropping_history_for_the_budget_is_reported_not_silent() {
+        let messages = vec![
+            ChatMessage {
+                role: "user".into(),
+                content: "x".repeat(400),
+            },
+            ChatMessage {
+                role: "assistant".into(),
+                content: "y".repeat(400),
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: "最后一问".into(),
+            },
+        ];
+        let (history, omitted) = labeled_chat_history(messages, 500, false);
+        assert_eq!(history.len(), 2);
+        assert_eq!(omitted, 1);
     }
     #[test]
     fn whole_book_intent_never_implies_silent_unlock() {
@@ -1271,7 +1356,9 @@ mod tests {
     }
 
     #[test]
-    fn scoped_history_sanitizes_viewport_routes_like_selection_routes() {
+    fn moving_to_a_viewport_question_demotes_the_old_quote_without_erasing_it() {
+        // Asking about what is on screen means the old selection is no longer
+        // the source — but "解释这段" upthread still has to make sense.
         let messages = vec![
             ChatMessage {
                 role: "user".into(),
@@ -1286,11 +1373,12 @@ mod tests {
                 content: "屏幕上这段怎么理解？".into(),
             },
         ];
-        let bounded = bounded_scoped_chat_history(messages, 32_000, ChatRoute::ViewportContext);
-        assert_eq!(bounded.len(), 3);
-        assert!(bounded[0].content.contains("Prior source evidence omitted"));
-        assert!(!bounded[0].content.contains("old quote"));
-        assert!(bounded[1].content.contains("omitted"));
+        let (history, omitted) = labeled_chat_history(messages, 32_000, false);
+        assert_eq!(history.len(), 3);
+        assert_eq!(omitted, 0);
+        assert!(history[0].content.contains(EARLIER_PASSAGE_OPEN));
+        assert!(history[0].content.contains("old quote"));
+        assert_eq!(history[1].content, "old answer");
     }
 
     #[test]

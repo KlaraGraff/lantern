@@ -137,6 +137,7 @@
   "ai.sectionContext.spoilerLimited": "Only the read portion of this section was analyzed ({{visible}}/{{total}} text segments).",
   "ai.sectionContext.truncated": "Only {{selected}}/{{visible}} text segments fit the context limit; the answer may be incomplete.",
   "ai.sectionContext.details": "Analyzed about {{selectedTokens}} of {{visibleTokens}} visible tokens ({{totalTokens}} indexed in total).",
+  "ai.contextBudget.historyOmitted": "This conversation is long — the {{messages}} oldest messages were left out of this answer's context.",
   "ai.spoilerGuard.badge": "Reading thought protection active",
   "ai.spoilerGuard.badgeHint": "This answer only used book text and section summaries up to your reading position.",
   "ai.spoilerGuard.notice": "Answered up to your reading progress ({{progress}}%).",

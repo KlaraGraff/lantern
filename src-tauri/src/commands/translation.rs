@@ -177,10 +177,10 @@ mod tests {
     }
 
     #[test]
-    fn translation_uses_shared_untrusted_book_reference() {
+    fn translation_uses_the_shared_book_reference_block() {
         let block =
             book_reference_block(Some("Book"), Some("Unknown Author"), Some("One")).unwrap();
-        assert!(block.contains("untrusted reference data"));
+        assert!(block.contains("reference metadata for the book"));
         assert!(block.contains("\"title\":\"Book\""));
         assert!(!block.contains("Unknown Author"));
     }

@@ -24,6 +24,7 @@ export interface ChatMessage {
   sectionEndIndex?: number;
   sectionContext?: SectionContextMetadata;
   sourceHash?: string;
+  contextBudget?: ContextBudgetMetadata;
   dbId?: string;
 }
 
@@ -49,6 +50,13 @@ export type AiChatRoute =
   | "whole_book"
   | "generic_retrieval";
 
+/** What the request budget had to leave out. Surfaced in the UI: a silently
+ *  shortened conversation reads as the assistant losing the thread. */
+export interface ContextBudgetMetadata {
+  historyOmitted: number;
+  excerptsOmitted: number;
+}
+
 export interface SectionContextMetadata {
   totalChunks: number;
   totalTokens: number;
@@ -69,6 +77,7 @@ interface AiChatResult {
   sectionEndIndex?: number;
   sectionContext?: SectionContextMetadata;
   sourceHash?: string;
+  contextBudget?: ContextBudgetMetadata;
 }
 
 export interface CitedSource {
@@ -141,6 +150,7 @@ interface ChatMessageMetadata {
   sectionEndIndex?: number;
   sectionContext?: SectionContextMetadata;
   sourceHash?: string;
+  contextBudget?: ContextBudgetMetadata;
 }
 
 function parseAiChatRoute(value: unknown): AiChatRoute | undefined {
@@ -231,6 +241,17 @@ function parseSpoilerGuard(value: unknown): SpoilerGuardMetadata | undefined {
   };
 }
 
+/** Only a shortfall is worth carrying: zeroes would write noise into every
+ *  stored message row. */
+function parseContextBudget(value: unknown): ContextBudgetMetadata | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const budget = value as Record<string, unknown>;
+  const historyOmitted = parseNonNegativeInteger(budget.historyOmitted) ?? 0;
+  const excerptsOmitted = parseNonNegativeInteger(budget.excerptsOmitted) ?? 0;
+  if (historyOmitted === 0 && excerptsOmitted === 0) return undefined;
+  return { historyOmitted, excerptsOmitted };
+}
+
 function parseAiChatResult(value: unknown): AiChatResult {
   // Compatibility with v1.5 development builds that returned sources directly.
   if (Array.isArray(value)) {
@@ -255,6 +276,7 @@ function parseAiChatResult(value: unknown): AiChatResult {
     sectionEndIndex: parseNonNegativeInteger(result.sectionEndIndex),
     sectionContext: parseSectionContext(result.sectionContext),
     sourceHash: typeof result.sourceHash === "string" ? result.sourceHash : undefined,
+    contextBudget: parseContextBudget(result.contextBudget),
   };
 }
 
@@ -289,6 +311,7 @@ function parseMessageMetadata(metadata: string | null): ChatMessageMetadata {
       sectionEndIndex: parseNonNegativeInteger(value.sectionEndIndex),
       sectionContext: parseSectionContext(value.sectionContext),
       sourceHash: typeof value.sourceHash === "string" ? value.sourceHash : undefined,
+      contextBudget: parseContextBudget(value.contextBudget),
     };
   } catch {
     return {};
@@ -309,6 +332,7 @@ function serializeMessageMetadata(metadata: ChatMessageMetadata): string | null 
   if (metadata.sectionEndIndex !== undefined) compact.sectionEndIndex = metadata.sectionEndIndex;
   if (metadata.sectionContext) compact.sectionContext = metadata.sectionContext;
   if (metadata.sourceHash) compact.sourceHash = metadata.sourceHash;
+  if (metadata.contextBudget) compact.contextBudget = metadata.contextBudget;
   return Object.keys(compact).length > 0 ? JSON.stringify(compact) : null;
 }
 
@@ -619,6 +643,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           sectionEndIndex: metadata.sectionEndIndex,
           sectionContext: metadata.sectionContext,
           sourceHash: metadata.sourceHash,
+          contextBudget: metadata.contextBudget,
           dbId: m.id,
         };
       });
@@ -854,6 +879,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       let sectionEndIndex: number | undefined;
       let sectionContext: SectionContextMetadata | undefined;
       let sourceHash: string | undefined;
+      let contextBudget: ContextBudgetMetadata | undefined;
       let chatResultPromise: Promise<AiChatResult> | null = null;
       let pendingContent = "";
       let pendingReasoning = "";
@@ -985,9 +1011,10 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
                 sectionEndIndex = result.sectionEndIndex;
                 sectionContext = result.sectionContext;
                 sourceHash = result.sourceHash;
+        contextBudget = result.contextBudget;
                 updateMessages((previous) => previous.map((message) => (
                   message.id === assistantId
-                    ? { ...message, sources: citedSources, spoilerGuard, route, sectionIndex, sectionEndIndex, sectionContext, sourceHash }
+                    ? { ...message, sources: citedSources, spoilerGuard, route, sectionIndex, sectionEndIndex, sectionContext, sourceHash, contextBudget }
                     : message
                 )));
               } catch (err) {
@@ -1018,6 +1045,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
                     sectionEndIndex,
                     sectionContext,
                     sourceHash,
+                    contextBudget,
                   });
                   if (replacingAssistant?.dbId) {
                     await invoke("replace_chat_message", {
