@@ -7,9 +7,10 @@ export interface WheelPageTurnOptions {
   /** Travel a gesture must cover before it turns, so jitter never pages. */
   triggerDistance?: number;
   /**
-   * Silence that ends a gesture. Momentum events arrive at the display refresh
-   * rate — 8ms apart on ProMotion, 16ms at 60Hz — and hold that cadence until
-   * the tail stops, so a gap this long means the wheel genuinely went quiet.
+   * Silence that ends a gesture. Measured on a 120Hz trackpad: events inside a
+   * gesture arrive 8–9ms apart and never gapped past 20ms even when a frame was
+   * dropped, while putting fingers back down cancels the momentum and leaves a
+   * 43–79ms hole before the new push. The threshold sits between those two.
    */
   quietMs?: number;
   /**
@@ -62,8 +63,8 @@ export function createWheelPageTurnHandler({
   turn,
   isEnabled,
   triggerDistance = 50,
-  quietMs = 80,
-  minTurnGapMs = 350,
+  quietMs = 35,
+  minTurnGapMs = 300,
   now = () => performance.now(),
 }: WheelPageTurnOptions): WheelPageTurnHandler {
   let lastEventAt = Number.NEGATIVE_INFINITY;

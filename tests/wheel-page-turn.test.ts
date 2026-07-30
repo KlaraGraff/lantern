@@ -72,13 +72,35 @@ test("two flicks separated by real silence each turn once", () => {
   assert.deepEqual(turns, ["next", "next"]);
 });
 
-test("a second flick during the momentum tail is swallowed", () => {
-  // The accepted cost of the hard latch: without a phase flag a fresh push and
-  // the tail it lands in are indistinguishable, so the re-flick waits.
+test("a re-flick that leaves no gap at all is still swallowed", () => {
+  // Only reachable if momentum were never cancelled; measurement says putting
+  // fingers down always leaves a hole. Kept as the boundary of the rule.
   const { turns, send } = harness();
-  for (const delta of [20, 40, 30, 26, 20, 15]) send(delta, 16);
-  for (const delta of [45, 60, 55]) send(delta, 16);
+  for (const delta of [20, 40, 30, 26, 20, 15]) send(delta, 8);
+  for (const delta of [45, 60, 55]) send(delta, 8);
   assert.deepEqual(turns, ["next"]);
+});
+
+test("measured trackpad stream: three flicks turn three pages", () => {
+  // Gaps and deltas taken from a 120Hz trackpad probe. Across 309 intra-gesture
+  // gaps the largest was 20ms, while cancelling momentum to re-flick left
+  // 43-79ms. quietMs sits between those two populations.
+  const { turns, send } = harness();
+  const flick = [1, 2, 3, 5, 6, 10, 7, 4, 31, 37, 25, 15, 29, 33, 36, 38, 37];
+  const tail = [34, 28, 26, 48, 23, 22, 43, 20, 19, 36, 17, 15, 13, 11, 10, 8, 7, 6];
+  const gestureGaps = [9, 9, 7, 10, 7, 6, 9, 8, 8, 9, 8, 8, 20, 5, 12, 5, 12];
+
+  const sweep = (leadGap: number) => {
+    flick.forEach((delta, index) => send(delta, index === 0 ? leadGap : gestureGaps[index] ?? 8));
+    // The tail, including the 17-20ms dropped frames whose coalesced deltas
+    // spike upward — the false "re-acceleration" that sank the old heuristic.
+    tail.forEach((delta) => send(delta, delta === 48 || delta === 43 ? 17 : 8));
+  };
+
+  sweep(0);
+  sweep(79); // fingers back down: momentum cancelled, real boundary
+  sweep(43); // the tightest boundary actually measured
+  assert.deepEqual(turns, ["next", "next", "next"]);
 });
 
 test("event.timeStamp is ignored, so two documents cannot fake a quiet gap", () => {
