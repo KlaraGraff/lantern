@@ -89,6 +89,27 @@ test("built-in fonts reach the reader picker with a quoted family and a fallback
   }
 });
 
+test("every chain names a CJK face instead of leaving Chinese to the generic keyword", () => {
+  // None of these families has a CJK glyph, so Chinese always falls through.
+  // Unnamed, that lands on SimSun under Windows, which goes soft at reading
+  // sizes. Serif families get a serif CJK face, sans families a gothic one.
+  for (const font of builtinFonts) {
+    const stack = getFontFamily(font.id);
+    const expected = stack.includes("serif") && !stack.includes("sans-serif")
+      ? ["Songti SC", "SimSun"]
+      : ["PingFang SC", "Microsoft YaHei"];
+    for (const face of expected) {
+      assert.ok(stack.includes(face), `${font.label} chain is missing ${face}: ${stack}`);
+    }
+    // The named faces have to precede the generic keyword, or it never gets there.
+    const generic = stack.includes("sans-serif") ? "sans-serif" : "serif";
+    assert.ok(
+      stack.indexOf(expected[0]) < stack.lastIndexOf(generic),
+      `${font.label} names a CJK face after the generic keyword: ${stack}`,
+    );
+  }
+});
+
 test("nothing claims to be built-in without shipping a file", () => {
   // "Inter" sat in the built-in group for a long time while no Inter file was
   // ever bundled, so it silently rendered as the system sans. Anything labelled

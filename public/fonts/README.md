@@ -27,8 +27,14 @@ range (`400-700`) or a static instance (`400`, `700`).
 `latin` + `latin-ext` covers English plus the accented characters that turn up
 in names, loanwords and European-language quotations. Greek, Cyrillic and
 Vietnamese subsets are deliberately excluded — they would roughly double the
-payload for text these fonts are not being chosen to render. CJK falls through
-to the fallback chain in `src/components/builtin-fonts.ts`.
+payload for text these fonts are not being chosen to render.
+
+None of these families has a CJK glyph, so Chinese in a book always falls
+through. The chains in `src/components/builtin-fonts.ts` name the CJK face
+rather than leaving it to the generic `serif` / `sans-serif` keyword, which
+resolves to Songti on macOS but SimSun on Windows. Bundling a CJK face was
+rejected: even subset to common characters it runs to megabytes per weight,
+several times this entire Latin payload.
 
 ## Refetching
 

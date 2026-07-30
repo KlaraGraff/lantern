@@ -41,8 +41,19 @@ export interface BuiltinFont {
   italic: boolean;
 }
 
-const SERIF_FALLBACK = "Georgia, serif";
-const SANS_FALLBACK = "system-ui, sans-serif";
+/**
+ * Font matching runs per character, so these chains decide what Chinese text
+ * gets when an English reading font is selected: none of the bundled families
+ * contains a single CJK glyph, and neither does Georgia.
+ *
+ * The CJK faces are named rather than left to the generic `serif` / `sans-serif`
+ * keyword. Left to the system, macOS resolves to Songti and Windows to SimSun,
+ * a face hinted for 90s low-resolution screens that goes soft at reading sizes.
+ * Naming them keeps the result predictable on both platforms, and pairs a serif
+ * CJK face with the serif Latin ones and a gothic with the sans ones.
+ */
+const SERIF_FALLBACK = 'Georgia, "Songti SC", "SimSun", serif';
+const SANS_FALLBACK = 'system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
 
 export const builtinFonts: BuiltinFont[] = [
   { id: "literata", label: "Literata", slug: "literata", variable: true, italic: true, fallback: SERIF_FALLBACK },
