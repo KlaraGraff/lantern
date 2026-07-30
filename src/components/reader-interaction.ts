@@ -271,16 +271,19 @@ export function wordRangeAtPoint(
   ));
   if (direct) {
     const range = rangeForFlatSegment(run, direct);
-    if (offset !== direct.index || pointIntersectsRange(range, x, y)) return range;
+    if (pointIntersectsRange(range, x, y)) return range;
+    // Caret APIs snap to the nearest insertion point, so blank space beside or
+    // below a line resolves to a word the pointer never touched. Only accept a
+    // word the pointer is geometrically inside.
+    if (offset !== direct.index) return null;
     const previous = segments.find(({ segment, index }) => index + segment.length === offset);
     if (!previous) return null;
     const previousRange = rangeForFlatSegment(run, previous);
     return pointIntersectsRange(previousRange, x, y) ? previousRange : null;
   }
 
-  // Caret APIs return insertion positions. Clicking the right half of the
-  // final glyph can therefore land exactly at the word end; accept that word
-  // only when the pointer is still geometrically inside its rendered range.
+  // Clicking the right half of the final glyph lands exactly at the word end;
+  // accept that word only when the pointer is still inside its rendered range.
   const previous = segments.find(({ segment, index }) => index + segment.length === offset);
   if (!previous) return null;
   const previousRange = rangeForFlatSegment(run, previous);

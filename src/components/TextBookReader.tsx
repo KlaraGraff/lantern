@@ -1173,7 +1173,9 @@ function TextBookReader({
     );
     const range = selectionRange ?? wordRangeAtPoint(window.document, event.clientX, event.clientY);
     if (!range || !containerRef.current?.contains(range.startContainer)) {
+      // A click on blank space is a dismissal, not a near-miss on a word.
       doubleClickSelectionRef.current = null;
+      window.getSelection()?.removeAllRanges();
       return;
     }
     replaceDocumentSelection(window.document, range);

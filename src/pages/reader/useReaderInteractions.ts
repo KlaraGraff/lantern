@@ -365,7 +365,10 @@ export function useReaderInteractions({
         doc.documentElement.lang || undefined,
       );
       if (!range) {
+        // A click on blank space is a dismissal: drop the selection instead of
+        // reaching for whichever word happens to be nearest.
         selectionSnapshot = null;
+        doc.getSelection?.()?.removeAllRanges();
         return;
       }
       replaceDocumentSelection(doc, range);
