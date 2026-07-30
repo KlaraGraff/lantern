@@ -6,7 +6,7 @@ interface CachedLearningCard extends LearningCardResult {
 
 // Bump when the learning-card prompt changes, so cards written by the old
 // prompt stop being reused.
-const CACHE_REVISION = 1;
+const CACHE_REVISION = 2;
 
 /**
  * Everything that changes what the model is asked for. A stored card is only

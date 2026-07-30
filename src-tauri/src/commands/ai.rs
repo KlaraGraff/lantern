@@ -886,21 +886,39 @@ fn normalized_cefr_level(cefr: &str) -> &str {
     }
 }
 
+/// The level picks the words, never the substance. Without this, a low level
+/// reads as permission to cover less, and dropping to an easier level thins the
+/// card out instead of simplifying it.
+const LEVEL_GOVERNS_LANGUAGE_ONLY: &str = " The level sets the language of the explanation, not how much is explained: depth, coverage, and how many senses to treat come from the requested density and counts. Never drop, merge, or thin a point because the level is low — say the same thing in simpler words.";
+
+/// The escape hatch that makes a level survivable: an accurate word the reader
+/// may not know is kept and glossed on the spot, rather than swapped for a
+/// vaguer one or left to be looked up separately.
+fn above_level_gloss_rule(level: &str, chinese_gloss_allowed: bool) -> String {
+    let gloss = if chinese_gloss_allowed {
+        "a few simpler English words, or a short Chinese (Simplified) gloss in parentheses"
+    } else {
+        "a few simpler English words in parentheses"
+    };
+    format!(" When an explanation needs a word above CEFR {level}, keep the accurate word and gloss it inline right where it appears — {gloss}. Never leave an above-level word unglossed, and never replace it with a vaguer one.")
+}
+
 fn explanation_strategy(mode: &str, cefr: &str) -> String {
     let level = normalized_cefr_level(cefr);
+    // Wording only: sentence length, register, and vocabulary range. Anything
+    // that would limit what gets covered belongs to the density settings.
     let english_constraint = match level {
-        "A1" => "Use very short English sentences and basic words. Explain one core meaning at a time.",
-        "A2" => "Use common everyday English and only simple linking words. Avoid abstract terminology.",
-        "B1" => "Use clear, natural everyday English. Define any difficult word immediately.",
-        "B2" => "You may explain abstract meaning and tone, but keep sentence length controlled.",
+        "A1" => "Use very short English sentences and basic words.",
+        "A2" => "Use common everyday English and only simple linking words; name abstract ideas in plain words rather than technical ones.",
+        "B1" => "Use clear, natural everyday English.",
+        "B2" => "You may word abstract meaning and tone directly, but keep sentence length controlled.",
         "C1" => "Use precise terminology and moderately complex sentences while staying clear.",
-        "C2" => "You may analyze metaphor, style, and highly abstract meaning with native-level precision.",
+        "C2" => "Use native-level precision and the full range of English, including the vocabulary of style and rhetoric.",
         _ => unreachable!(),
     };
-    match normalized_explanation_mode(Some(mode)) {
-        "english_by_level" => format!(
-            "Write explanations in English at CEFR {level}. {english_constraint} If an advanced word is unavoidable, immediately explain it in simpler English."
-        ),
+    let mode = normalized_explanation_mode(Some(mode));
+    let strategy = match mode {
+        "english_by_level" => format!("Write explanations in English at CEFR {level}. {english_constraint}"),
         "chinese" => (
             "Write explanations in clear Chinese (Simplified). English source words, quotations, pronunciation, and examples may remain in English, but explanatory prose must be Chinese."
         ).to_string(),
@@ -916,7 +934,18 @@ fn explanation_strategy(mode: &str, cefr: &str) -> String {
         _ => format!(
             "Use English as the explanation language at CEFR {level}, with precise wording appropriate to that level. {english_constraint} Put Chinese only in the requested target_translation module; do not add a separate Chinese gloss to explanation modules."
         ),
+    };
+    // Chinese explanations have no English level to fall short of.
+    if mode == "chinese" {
+        return strategy;
     }
+    // An English-only mode stays English-only: its gloss is simpler English.
+    let chinese_gloss_allowed =
+        mode == "adaptive_bilingual" && matches!(level, "A1" | "A2" | "B1");
+    format!(
+        "{strategy}{LEVEL_GOVERNS_LANGUAGE_ONLY}{}",
+        above_level_gloss_rule(level, chinese_gloss_allowed),
+    )
 }
 
 fn learning_kind_instructions(kind: &str) -> &'static str {
@@ -3953,6 +3982,48 @@ mod tests {
                 "kind={kind}"
             );
         }
+    }
+
+    #[test]
+    fn a_level_constrains_wording_without_thinning_the_card() {
+        for mode in ["english_by_level", "adaptive_bilingual"] {
+            for level in ["A1", "A2", "B1", "B2", "C1", "C2"] {
+                let strategy = explanation_strategy(mode, level);
+                assert!(
+                    strategy.contains("not how much is explained"),
+                    "{mode}/{level}"
+                );
+                assert!(
+                    strategy.contains(&format!("above CEFR {level}")),
+                    "{mode}/{level}"
+                );
+            }
+        }
+        // The old level lines doubled as coverage limits, which is what made a
+        // lower level read as a thinner card rather than an easier one.
+        let beginner = explanation_strategy("english_by_level", "A1");
+        assert!(!beginner.contains("one core meaning at a time"));
+        assert!(!explanation_strategy("english_by_level", "A2").contains("Avoid abstract terminology"));
+    }
+
+    #[test]
+    fn the_hard_word_gloss_respects_an_english_only_mode() {
+        let bilingual = explanation_strategy("adaptive_bilingual", "B1");
+        assert!(bilingual.contains("short Chinese (Simplified) gloss in parentheses"));
+        for (mode, level) in [
+            ("english_by_level", "B1"),
+            ("adaptive_bilingual", "B2"),
+            ("adaptive_bilingual", "C1"),
+        ] {
+            let strategy = explanation_strategy(mode, level);
+            assert!(strategy.contains("simpler English words"), "{mode}/{level}");
+            assert!(
+                !strategy.contains("Chinese (Simplified) gloss in parentheses"),
+                "{mode}/{level}"
+            );
+        }
+        // Chinese prose has no English level to fall short of.
+        assert!(!explanation_strategy("chinese", "B1").contains("above CEFR"));
     }
 
     #[test]
