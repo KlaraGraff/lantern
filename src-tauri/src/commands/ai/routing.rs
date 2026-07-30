@@ -257,16 +257,26 @@ pub(super) fn is_selected_context(value: &str) -> bool {
     value.contains("[Selected passage]")
 }
 
+/// A quote the reader took from the assistant's own earlier answer. It is not
+/// book text: it must not select the passage scope, and it is never a source.
+pub(super) fn has_quoted_reply(value: &str) -> bool {
+    value.contains(QUOTED_REPLY_OPEN)
+}
+
+pub(super) const QUOTED_REPLY_OPEN: &str = "[Quoted from your earlier reply]";
+const QUOTED_REPLY_CLOSE: &str = "[/Quoted from your earlier reply]";
+
 /// Chat history carries selected text and learning-card output inside the
 /// user message so the provider receives one coherent turn. Those blocks are
 /// evidence, not instructions, and must not influence scope or task routing.
 pub(super) fn routing_instruction(value: &str) -> String {
-    const BLOCKS: [(&str, &str); 2] = [
+    const BLOCKS: [(&str, &str); 3] = [
         ("[Selected passage]", "[/Selected passage]"),
         (
             "[Existing learning-card analysis]",
             "[/Existing learning-card analysis]",
         ),
+        (QUOTED_REPLY_OPEN, QUOTED_REPLY_CLOSE),
     ];
     let mut result = value.to_string();
     for (open, close) in BLOCKS {
@@ -1281,5 +1291,25 @@ mod tests {
         assert!(bounded[0].content.contains("Prior source evidence omitted"));
         assert!(!bounded[0].content.contains("old quote"));
         assert!(bounded[1].content.contains("omitted"));
+    }
+
+    #[test]
+    fn quoting_a_reply_is_not_a_selected_passage() {
+        let question = "为什么这么说？\n\n[Quoted from your earlier reply]\n生活所能提供的\n[/Quoted from your earlier reply]";
+        // The failure this guards is silent: matching here would route to the
+        // passage scope, whose prompt calls the quote the book's source text.
+        assert!(!is_selected_context(question));
+        assert!(has_quoted_reply(question));
+        // Routing keywords must come from the reader's own words, not the quote.
+        let instruction = routing_instruction(question);
+        assert!(!instruction.contains("生活所能提供的"));
+        assert!(instruction.contains("为什么这么说"));
+    }
+
+    #[test]
+    fn a_quoted_passage_still_selects_the_passage_scope() {
+        let question = "这句什么意思？\n\n[Selected passage]\nfinding joy\n[/Selected passage]";
+        assert!(is_selected_context(question));
+        assert!(!has_quoted_reply(question));
     }
 }

@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AlertTriangle, ChevronDown, ChevronRight, Loader2, Settings } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Loader2, Quote, Settings } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import Markdown, { defaultUrlTransform } from "react-markdown";
@@ -19,6 +19,7 @@ interface MessageBubbleProps {
   onNavigateToCfi?: (cfi: string) => void;
   onNavigateToSource?: (source: CitedSource) => void;
   onRetryWithWholeBook?: (assistantId: string) => void;
+  onQuoteReply?: (text: string) => void;
 }
 
 function CitationChip({ source, onClick }: { source: CitedSource; onClick?: () => void }) {
@@ -128,10 +129,11 @@ function SectionContextNotice({
   );
 }
 
-export default function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateToSource, onRetryWithWholeBook }: MessageBubbleProps) {
+export default function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateToSource, onRetryWithWholeBook, onQuoteReply }: MessageBubbleProps) {
   const { t } = useTranslation();
   const isLast = msg === messages[messages.length - 1];
   const [reasoningExpanded, setReasoningExpanded] = useState<boolean | null>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
 
   if (msg.role === "assistant") {
     const errorCode = isAiErrorCode(msg.content) ? msg.content : null;
@@ -163,8 +165,25 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
     const reasoningOpen = reasoningExpanded ?? reasoningInProgress;
     const sources = msg.sources ?? [];
     const citedSources = citedSourcesInContent(msg.content, sources);
+    const settled = !(streaming && isLast) && Boolean(msg.content);
+
+    // Quote what the reader highlighted inside this answer, or the whole answer
+    // when nothing is highlighted. The range has to be tested against this
+    // bubble: a selection left over in another message would otherwise be
+    // quoted as if it came from this one.
+    const handleQuote = () => {
+      const selection = window.getSelection();
+      const selected = selection?.toString().trim();
+      const insideThisBubble = Boolean(
+        selected
+        && selection?.rangeCount
+        && bubbleRef.current?.contains(selection.getRangeAt(0).commonAncestorContainer),
+      );
+      onQuoteReply?.(insideThisBubble ? (selected as string) : msg.content);
+    };
+
     return (
-      <div className="bg-bg-surface border border-border rounded-lg px-[13px] py-[13px] max-w-[85%]">
+      <div ref={bubbleRef} className="group bg-bg-surface border border-border rounded-lg px-[13px] py-[13px] max-w-[85%]">
         {hasReasoning && (
           <div className={msg.content ? "mb-2 border-b border-border pb-2" : ""}>
             <button
@@ -249,6 +268,19 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
             </span>
           )
         )}
+        {settled && onQuoteReply && (
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={handleQuote}
+              title={t("ai.quoteReply.hint")}
+              className="flex items-center gap-1 rounded px-1 py-0.5 text-[11px] text-text-muted opacity-0 transition-opacity hover:text-text-primary focus-visible:opacity-100 group-hover:opacity-100 cursor-pointer"
+            >
+              <Quote size={11} />
+              {t("ai.quoteReply.action")}
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -263,6 +295,13 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
               msg.contextCfi && onNavigateToCfi ? "cursor-pointer hover:opacity-70" : "cursor-default"
             }`}
           >
+            {/* Without the label a quoted answer reads as book text, which is
+                exactly the confusion the separate context kind exists to avoid. */}
+            {msg.contextKind === "reply" && (
+              <p className="text-[11px] font-medium text-text-muted">
+                {t("aiPanel.quoteChip.replyLabel")}
+              </p>
+            )}
             <p className="text-[12px] italic text-text-muted line-clamp-2">
               {msg.context}
             </p>

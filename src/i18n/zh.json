@@ -126,6 +126,8 @@
   "ai.groundingUnavailable": "书籍内容暂时无法用于问答。",
   "ai.overviewPreparing": "正在生成书籍概览 {{done}}/{{total}}...",
   "ai.prepareOverview": "生成书籍概览",
+  "ai.quoteReply.action": "引用",
+  "ai.quoteReply.hint": "引用选中的文字；未选中则引用整条回答",
   "ai.sources": "来源",
   "ai.sectionContext.source": "当前阅读范围原文",
   "ai.sectionContext.viewport": "基于当前屏幕可见内容",
@@ -265,6 +267,7 @@
   "explain.copied": "已复制",
 
   "aiPanel.quoteChip.dismiss": "移除引用",
+  "aiPanel.quoteChip.replyLabel": "引用 AI 的回答",
 
   "contextMenu.lookUp": "查词",
   "contextMenu.explain": "解释",

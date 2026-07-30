@@ -1828,7 +1828,13 @@ fn append_chat_route_instructions(
     section_context: Option<&SectionContextMetadata>,
     viewport_text: Option<&str>,
     live_scope_ambiguous: bool,
+    quoted_reply: bool,
 ) {
+    if quoted_reply {
+        system_content.stable.push_str(
+            "\n\nThe user has quoted something you said earlier. That quote is your own wording, not book text and not evidence: never cite it as a source, and never treat it as a claim you now have to defend. Answer what they are asking about it — and if the quoted wording was wrong or overstated, say so.",
+        );
+    }
     if matches!(
         route,
         ChatRoute::CurrentSection | ChatRoute::CurrentSectionVocabulary
@@ -2570,6 +2576,7 @@ pub async fn ai_chat(
         section_context.as_ref(),
         viewport_text.as_deref(),
         live_scope_ambiguous,
+        has_quoted_reply(latest_question),
     );
 
     let mut api_messages = Vec::new();
@@ -3327,6 +3334,7 @@ mod tests {
             None,
             None,
             false,
+            false,
         );
 
         assert!(content
@@ -3468,6 +3476,7 @@ mod tests {
             None,
             None,
             false,
+            false,
         );
         assert!(content.stable.contains("literally appear"));
         assert!(content.stable.contains("primary language"));
@@ -3488,6 +3497,7 @@ mod tests {
             None,
             None,
             false,
+            false,
         );
         assert!(selected
             .stable
@@ -3503,6 +3513,7 @@ mod tests {
             ChatRoute::CurrentSectionUnavailable,
             None,
             None,
+            false,
             false,
         );
         assert!(unavailable
@@ -3534,6 +3545,7 @@ mod tests {
             ChatRoute::CurrentSection,
             Some(&metadata),
             None,
+            false,
             false,
         );
         assert!(content.stable.contains("only 4 of 12 indexed chunks"));

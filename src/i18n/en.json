@@ -126,6 +126,8 @@
   "ai.groundingUnavailable": "Book grounding is unavailable.",
   "ai.overviewPreparing": "Preparing book overview {{done}}/{{total}}...",
   "ai.prepareOverview": "Prepare book overview",
+  "ai.quoteReply.action": "Quote",
+  "ai.quoteReply.hint": "Quote the highlighted text, or the whole reply if nothing is highlighted",
   "ai.sources": "Sources",
   "ai.sectionContext.source": "Current reading range source",
   "ai.sectionContext.viewport": "Based on the visible reading area",
@@ -265,6 +267,7 @@
   "explain.copied": "Copied",
 
   "aiPanel.quoteChip.dismiss": "Remove quote",
+  "aiPanel.quoteChip.replyLabel": "Quoting the assistant's reply",
 
   "contextMenu.lookUp": "Look Up",
   "contextMenu.explain": "Explain",

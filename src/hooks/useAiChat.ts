@@ -11,6 +11,9 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   context?: string;
+  /** What `context` quotes. Absent means a book passage, so rows written
+   *  before quoting a reply existed keep their meaning. */
+  contextKind?: ContextKind;
   contextCfi?: string;
   contextAnalysis?: string;
   reasoning?: string;
@@ -23,6 +26,8 @@ export interface ChatMessage {
   sourceHash?: string;
   dbId?: string;
 }
+
+export type ContextKind = "passage" | "reply";
 
 export interface SpoilerGuardMetadata {
   active: boolean;
@@ -126,6 +131,7 @@ interface BookAiState {
 
 interface ChatMessageMetadata {
   cfi?: string;
+  contextKind?: ContextKind;
   analysis?: string;
   reasoning?: string;
   sources?: CitedSource[];
@@ -273,6 +279,7 @@ function parseMessageMetadata(metadata: string | null): ChatMessageMetadata {
     const value = parsed as Record<string, unknown>;
     return {
       cfi: typeof value.cfi === "string" ? value.cfi : undefined,
+      contextKind: value.contextKind === "reply" ? "reply" : undefined,
       analysis: typeof value.analysis === "string" ? value.analysis : undefined,
       reasoning: typeof value.reasoning === "string" ? value.reasoning : undefined,
       sources: parseCitedSources(value.sources),
@@ -291,6 +298,8 @@ function parseMessageMetadata(metadata: string | null): ChatMessageMetadata {
 function serializeMessageMetadata(metadata: ChatMessageMetadata): string | null {
   const compact: ChatMessageMetadata = {};
   if (metadata.cfi) compact.cfi = metadata.cfi;
+  // Only the non-default kind is written, so passage rows stay byte-identical.
+  if (metadata.contextKind === "reply") compact.contextKind = "reply";
   if (metadata.analysis) compact.analysis = metadata.analysis;
   if (metadata.reasoning) compact.reasoning = metadata.reasoning;
   if (metadata.sources?.length) compact.sources = metadata.sources;
@@ -306,7 +315,14 @@ function serializeMessageMetadata(metadata: ChatMessageMetadata): string | null 
 function messageContentForApi(message: ChatMessage): string {
   const context: string[] = [];
   if (message.context) {
-    context.push(`[Selected passage]\n${message.context}\n[/Selected passage]`);
+    // A quoted reply must not carry the passage marker: the backend routes on
+    // that literal string, and the selected-context route would present the
+    // assistant's own earlier words as the book's source text for this turn.
+    context.push(
+      message.contextKind === "reply"
+        ? `[Quoted from your earlier reply]\n${message.context}\n[/Quoted from your earlier reply]`
+        : `[Selected passage]\n${message.context}\n[/Selected passage]`,
+    );
   }
   if (message.contextAnalysis) {
     context.push(
@@ -592,6 +608,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           role: m.role as "user" | "assistant",
           content: m.content,
           context: m.context ?? undefined,
+          contextKind: metadata.contextKind,
           contextCfi: metadata.cfi,
           contextAnalysis: metadata.analysis,
           reasoning: metadata.reasoning,
@@ -683,7 +700,12 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       context?: string,
       contextCfi?: string,
       contextAnalysis?: string,
-      options?: { spoilerOverride?: boolean; replaceAssistantId?: string; scope?: AiChatScope },
+      options?: {
+        spoilerOverride?: boolean;
+        replaceAssistantId?: string;
+        scope?: AiChatScope;
+        contextKind?: ContextKind;
+      },
     ) => {
       // Refuse while the session chat is still loading — otherwise the lazy
       // chat-creation path below would spawn a *new* chat and miss the
@@ -772,6 +794,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         role: "user",
         content,
         context,
+        contextKind: options?.contextKind,
         contextCfi,
         contextAnalysis,
         sectionIndex: bookContext?.scopeStartIndex ?? bookContext?.sectionIndex,
@@ -799,6 +822,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         try {
           const meta = serializeMessageMetadata({
             cfi: contextCfi,
+            contextKind: userMessage.contextKind,
             analysis: contextAnalysis,
             sectionIndex: userMessage.sectionIndex,
             sectionEndIndex: userMessage.sectionEndIndex,
@@ -1141,7 +1165,11 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       userMessage.context,
       userMessage.contextCfi,
       userMessage.contextAnalysis,
-      { spoilerOverride: true, replaceAssistantId: assistantId },
+      {
+        spoilerOverride: true,
+        replaceAssistantId: assistantId,
+        contextKind: userMessage.contextKind,
+      },
     );
   }, [send]);
 

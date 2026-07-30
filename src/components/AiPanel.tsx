@@ -4,7 +4,7 @@ import { BookOpen, Database, Sparkles, Send, Loader2, Plus, ChevronDown, Chevron
 import { useAiChat } from "../hooks/useAiChat";
 import { timeAgo } from "../utils/timeAgo";
 import MessageBubble from "./MessageBubble";
-import type { AiChatScope, CitedSource } from "../hooks/useAiChat";
+import type { AiChatScope, CitedSource, ContextKind } from "../hooks/useAiChat";
 import IndexManagerModal from "./IndexManagerModal";
 
 interface AiPanelProps {
@@ -30,6 +30,8 @@ const SCOPE_OPTIONS: AiChatScope[] = ["auto", "selection", "section", "book"];
 
 interface ComposerQuote {
   text: string;
+  /** Absent means a book passage; "reply" quotes the assistant's own words. */
+  kind?: ContextKind;
   cfi?: string;
   analysis?: string;
 }
@@ -71,6 +73,7 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
   // swallows the other, and so a dismissal can be remembered per passage.
   const [autoQuote, setAutoQuote] = useState<ComposerQuote | undefined>();
   const dismissedSelectionRef = useRef<string | undefined>(undefined);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -170,13 +173,24 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
     setAutoQuote(undefined);
   };
 
+  // Quoting an answer is the start of a follow-up, so the composer takes focus.
+  // `pendingQuote` outranks `autoQuote`, so the focus handler re-reading the
+  // reader selection cannot displace the reply the user just picked.
+  const quoteReply = useCallback((text: string) => {
+    setPendingQuote({ text, kind: "reply" });
+    composerRef.current?.focus();
+  }, []);
+
   const quoteChip = pendingQuote ?? autoQuote;
 
   const handleSend = () => {
     if (!input.trim() || streaming || initializing) return;
     followMessagesRef.current = true;
     const quote = takeQuote();
-    send(input.trim(), quote?.text, quote?.cfi, quote?.analysis, { scope });
+    send(input.trim(), quote?.text, quote?.cfi, quote?.analysis, {
+      scope,
+      contextKind: quote?.kind,
+    });
     clearQuotes();
     setInput("");
   };
@@ -392,7 +406,7 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
         ) : (
           <div className="flex flex-col gap-3">
             {messages.map((msg) => (
-              <MessageBubble key={msg.id} msg={msg} messages={messages} streaming={streaming} onNavigateToCfi={onNavigateToCfi} onNavigateToSource={onNavigateToSource} onRetryWithWholeBook={retryWithWholeBook} />
+              <MessageBubble key={msg.id} msg={msg} messages={messages} streaming={streaming} onNavigateToCfi={onNavigateToCfi} onNavigateToSource={onNavigateToSource} onRetryWithWholeBook={retryWithWholeBook} onQuoteReply={quoteReply} />
             ))}
             <div />
           </div>
@@ -417,9 +431,16 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
             Quote action or from whatever is selected in the reader */}
         {quoteChip && (
           <div className="flex items-start gap-2 px-2.5 py-2 rounded-lg bg-[rgba(192,132,252,0.12)] border-l-2 border-[#c084fc]">
-            <p className="flex-1 text-[12px] italic text-text-muted line-clamp-2 tracking-[-0.08px]">
-              {quoteChip.text}
-            </p>
+            <div className="flex-1 min-w-0">
+              {quoteChip.kind === "reply" && (
+                <p className="text-[11px] font-medium text-text-muted tracking-[-0.08px]">
+                  {t("aiPanel.quoteChip.replyLabel")}
+                </p>
+              )}
+              <p className="text-[12px] italic text-text-muted line-clamp-2 tracking-[-0.08px]">
+                {quoteChip.text}
+              </p>
+            </div>
             <button
               onClick={dismissQuote}
               title={t("aiPanel.quoteChip.dismiss")}
@@ -452,6 +473,7 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
         </div>
         <div className="flex gap-2 items-start">
           <textarea
+            ref={composerRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
