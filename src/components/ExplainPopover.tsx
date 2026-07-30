@@ -213,7 +213,7 @@ export default function ExplainPopover({
     <div className="fixed inset-0 z-40" onClick={onClose} />
     <div
       ref={popoverRef}
-      className="fixed z-50 w-[440px] bg-bg-surface border border-border/80 rounded-xl shadow-context"
+      className="fixed z-[62] w-[440px] bg-bg-surface border border-border/80 rounded-xl shadow-context"
       style={{ left: pos.left, top: pos.top }}
     >
       {/* Header */}

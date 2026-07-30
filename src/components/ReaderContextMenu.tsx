@@ -198,7 +198,7 @@ export default function ReaderContextMenu({
       ref={menuRef}
       role="menu"
       aria-label={text}
-      className="fixed z-50 w-[220px] rounded-md border border-border bg-bg-surface py-1 shadow-context"
+      className="fixed z-[62] w-[220px] rounded-md border border-border bg-bg-surface py-1 shadow-context"
       style={{ left: anchorRect.right, top: anchorRect.bottom + 8 }}
     >
       {actions.map((action) => {

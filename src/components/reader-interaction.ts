@@ -290,6 +290,36 @@ export function wordRangeAtPoint(
   return pointIntersectsRange(previousRange, x, y) ? previousRange : null;
 }
 
+/**
+ * A lookup started inside app chrome — a learning card, an AI answer — rather
+ * than in the book. There is no CFI to anchor it to, so it carries an empty
+ * location: the card still reads its own surrounding sentence as context, but
+ * position-bound actions (marking the page, occurrence highlights) stay off.
+ */
+export function detachedInteraction(
+  range: Range | null,
+  root: Node | null,
+  trigger: ReaderInteraction["trigger"],
+  locale?: string,
+): ReaderInteraction | null {
+  if (!range || !root || !root.contains(range.commonAncestorContainer)) return null;
+  const text = range.toString().trim();
+  const normalizedText = normalizeInteractionText(text);
+  if (!text || !normalizedText) return null;
+  return {
+    trigger,
+    kind: classifySelection(text, locale),
+    text,
+    normalizedText,
+    context: contextForRange(range, text),
+    location: "",
+    anchorRect: viewportRectForRange(range),
+    source: "text",
+    format: "text",
+    locale,
+  };
+}
+
 export function selectedRange(doc: Document): Range | null {
   const selection = doc.getSelection?.();
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;

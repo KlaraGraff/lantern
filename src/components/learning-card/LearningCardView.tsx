@@ -1,5 +1,5 @@
 import { useId } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { AlertCircle, GripHorizontal, Loader2, RotateCw, Sparkles, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -37,6 +37,8 @@ interface LearningCardViewProps {
   onDragPointerEnd?: (event: ReactPointerEvent<HTMLElement>) => void;
   onRetry?: () => void;
   onRefresh?: () => void;
+  onLookupWord?: (event: ReactMouseEvent<HTMLElement>) => void;
+  onSelectText?: (event: ReactMouseEvent<HTMLElement>) => void;
   onNoteDraftChange?: (value: string) => void;
   onNoteSave?: () => void;
   onNoteCancel?: () => void;
@@ -69,6 +71,8 @@ export default function LearningCardView({
   onDragPointerEnd,
   onRetry,
   onRefresh,
+  onLookupWord,
+  onSelectText,
   onNoteDraftChange,
   onNoteSave,
   onNoteCancel,
@@ -142,7 +146,12 @@ export default function LearningCardView({
         )}
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto" data-card-scroll>
+      <div
+        className="min-h-0 flex-1 overflow-y-auto"
+        data-card-scroll
+        onDoubleClick={onLookupWord}
+        onMouseUp={onSelectText}
+      >
         {error ? (
           <div className="flex min-h-32 flex-col items-center justify-center gap-2 px-5 py-6 text-center" role="alert">
             <AlertCircle size={18} className="text-danger-text" />

@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { useParams, useNavigate, useLocation } from "react-router";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
@@ -38,9 +39,12 @@ import { citationSearchProbes } from "./reader/citationNavigation";
 import type { CitedSource } from "../hooks/useAiChat";
 import {
   classifySelection,
+  detachedInteraction,
+  isInteractiveReaderTarget,
   normalizeInteractionText,
   selectedRange,
   serializableRect,
+  wordRangeAtPoint,
   type ReaderInteraction,
   type SerializableRect,
 } from "../components/reader-interaction";
@@ -580,6 +584,41 @@ export default function Reader() {
     setTopLearningCardId(id);
   }, [learningCardConfig, t]);
 
+  // Cards and AI answers are lookup surfaces of their own: the same
+  // double-click and selection gestures work inside them, one level deeper.
+  const lookupWordInPanel = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    cancelPendingSelectionMenu();
+    if (isInteractiveReaderTarget(event.target)) return;
+    const interaction = detachedInteraction(
+      wordRangeAtPoint(document, event.clientX, event.clientY),
+      event.currentTarget,
+      "word-quick-lookup",
+    );
+    if (!interaction) return;
+    event.preventDefault();
+    setContextMenu(null);
+    openLearningCard(interaction);
+  }, [cancelPendingSelectionMenu, openLearningCard]);
+
+  const openPanelSelectionMenu = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    const root = event.currentTarget;
+    cancelPendingSelectionMenu();
+    pendingSelectionMenuRef.current = window.setTimeout(() => {
+      pendingSelectionMenuRef.current = null;
+      const interaction = detachedInteraction(selectedRange(document), root, "selection-menu");
+      if (!interaction) return;
+      contextMenuRequestRef.current += 1;
+      setContextMenu(interaction);
+      setContextMarkStateLoading(false);
+      setContextSelectionFullyMarked(false);
+      setContextManualSelectionFullyMarked(false);
+      setContextHasManualSelectionMark(false);
+      setContextHasLookupOccurrenceMark(false);
+      setContextHasBookWordMark(false);
+      setContextBookWordMarkExcluded(false);
+    }, 220);
+  }, [cancelPendingSelectionMenu]);
+
   const getHighlightMutationPlan = useCallback(async (
     interaction: ReaderInteraction,
     highlights: Highlight[],
@@ -783,7 +822,8 @@ export default function Reader() {
     settingsRef: readerSettingsRef,
     readerViewportRef,
     panelRef,
-    overlayOpen: Boolean(settingsOpen || contextMenu || learningCards.length || translation || customAction),
+    // Cards are meant to stay open while reading, so they do not block paging.
+    overlayOpen: Boolean(settingsOpen || contextMenu || translation || customAction),
     sidePanelOpen: Boolean(sidePanel),
     turnPage: turnReaderPage,
     onPdfZoom: handleZoom,
@@ -1785,6 +1825,8 @@ export default function Reader() {
               onNavigateToSource={(source) => {
                 navigateToSource(source).catch(() => {});
               }}
+              onLookupWord={lookupWordInPanel}
+              onSelectText={openPanelSelectionMenu}
             />
           </div>
           {supportsCfiNavigation && sidePanel === "bookmarks" && bookId && (
@@ -1856,7 +1898,7 @@ export default function Reader() {
           onQuote={() => {
             setAiContext({
               text: contextMenu.text,
-              cfi: contextMenu.location,
+              cfi: contextMenu.location || undefined,
             });
             setSidePanel("ai");
             setContextMenu(null);
@@ -1871,7 +1913,7 @@ export default function Reader() {
               y: contextMenu.anchorRect.top,
               text: contextMenu.text,
               context: contextMenu.context,
-              cfi: contextMenu.location,
+              cfi: contextMenu.location || undefined,
             });
             setContextMenu(null);
           }}
@@ -1889,7 +1931,7 @@ export default function Reader() {
             }).catch((error) => console.error("Failed to save selection:", error));
             setContextMenu(null);
           }}
-          onToggleMark={supportsManualAnnotations ? (() => {
+          onToggleMark={supportsManualAnnotations && contextMenu.location ? (() => {
             const interaction = contextMenu;
             const manualFullyMarked = contextManualSelectionFullyMarked;
             const hasManualSelectionMark = contextHasManualSelectionMark;
@@ -1998,6 +2040,8 @@ export default function Reader() {
           readerRect={readerRect}
           stackIndex={index}
           elevated={card.id === topLearningCardId}
+          onLookupWord={lookupWordInPanel}
+          onSelectText={openPanelSelectionMenu}
           onClose={() => setLearningCards((current) => current.filter((item) => item.id !== card.id))}
           onFocus={() => setTopLearningCardId(card.id)}
           onAskAi={(quote, cfi, analysis) => {

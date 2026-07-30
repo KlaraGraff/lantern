@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { BookOpen, Database, Sparkles, Send, Loader2, Plus, ChevronDown, ChevronUp, Trash2, X, Square } from "lucide-react";
 import { useAiChat } from "../hooks/useAiChat";
@@ -24,6 +25,9 @@ interface AiPanelProps {
   onContextConsumed?: () => void;
   onNavigateToCfi?: (cfi: string) => void;
   onNavigateToSource?: (source: CitedSource) => void;
+  /** Answers are lookup surfaces too: double-click a word, or select a phrase. */
+  onLookupWord?: (event: ReactMouseEvent<HTMLElement>) => void;
+  onSelectText?: (event: ReactMouseEvent<HTMLElement>) => void;
 }
 
 const SCOPE_OPTIONS: AiChatScope[] = ["auto", "selection", "section", "book"];
@@ -36,7 +40,7 @@ interface ComposerQuote {
   analysis?: string;
 }
 
-export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSectionIndex, currentScopeStartIndex, currentScopeEndIndex, currentScopeAmbiguous, getViewportText, getSelectionQuote, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource }: AiPanelProps) {
+export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSectionIndex, currentScopeStartIndex, currentScopeEndIndex, currentScopeAmbiguous, getViewportText, getSelectionQuote, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource, onLookupWord, onSelectText }: AiPanelProps) {
   const { t } = useTranslation();
 
   const SUGGESTED_PROMPTS = [
@@ -361,6 +365,8 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
           followMessagesRef.current = element.scrollHeight - element.scrollTop - element.clientHeight <= 72;
         }}
         onClick={() => pickerOpen && setPickerOpen(false)}
+        onDoubleClick={onLookupWord}
+        onMouseUp={onSelectText}
       >
         {messages.length === 0 ? (
           /* Empty state */

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createUuid } from "../../utils/randomUuid";
@@ -47,6 +47,8 @@ interface LearningCardControllerProps {
   elevated?: boolean;
   onClose: () => void;
   onFocus?: () => void;
+  onLookupWord?: (event: ReactMouseEvent<HTMLElement>) => void;
+  onSelectText?: (event: ReactMouseEvent<HTMLElement>) => void;
   onAskAi: (quote: string, location?: string, analysis?: string) => void;
   onViewAllNotes?: () => void;
   onLookupSuccess?: (interaction: ReaderInteraction) => void;
@@ -164,6 +166,8 @@ export default function LearningCardController({
   elevated = false,
   onClose,
   onFocus,
+  onLookupWord,
+  onSelectText,
   onAskAi,
   onViewAllNotes,
   onLookupSuccess,
@@ -518,6 +522,8 @@ export default function LearningCardController({
         onDragPointerEnd={onDragPointerEnd}
         onRetry={() => setRetry((value) => value + 1)}
         onRefresh={fromCache ? () => setRetry((value) => value + 1) : undefined}
+        onLookupWord={onLookupWord}
+        onSelectText={onSelectText}
         onNoteDraftChange={setNoteDraft}
         onNoteSave={saveNote}
         onNoteCancel={() => { setNoteEditorOpen(false); setNoteDraft(""); setNoteId(null); }}
