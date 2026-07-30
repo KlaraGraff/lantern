@@ -89,6 +89,19 @@ test("built-in fonts reach the reader picker with a quoted family and a fallback
   }
 });
 
+test("nothing claims to be built-in without shipping a file", () => {
+  // "Inter" sat in the built-in group for a long time while no Inter file was
+  // ever bundled, so it silently rendered as the system sans. Anything labelled
+  // built-in has to be backed by files the tests above verify are on disk.
+  const shipped = new Set(builtinFonts.map((font) => font.id));
+  const unbacked = fonts.filter((font) => font.group === "built-in" && !shipped.has(font.id));
+  assert.deepEqual(
+    unbacked.map((font) => font.label),
+    [],
+    "listed as built-in but nothing ships for it",
+  );
+});
+
 test("unknown font ids still fall back instead of yielding an empty family", () => {
   assert.equal(getFontFamily("no-such-font"), "Inter, system-ui, sans-serif");
 });

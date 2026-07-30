@@ -19,7 +19,10 @@ export const fonts: ReaderFontOption[] = [
   { id: "georgia", label: "Georgia", family: "Georgia, serif", group: "system" },
   { id: "palatino", label: "Palatino", family: "Palatino, serif", group: "system" },
   { id: "times", label: "Times New Roman", family: "'Times New Roman', serif", group: "system" },
-  { id: "inter", label: "Inter", family: "Inter, sans-serif", group: "built-in" },
+  // Grouped with the system faces, not the built-ins: no Inter file ships with
+  // the app, so this renders as Inter only where the machine already has it and
+  // falls through to the system sans everywhere else.
+  { id: "inter", label: "Inter", family: '"Inter", system-ui, sans-serif', group: "system" },
   ...builtinFonts.map((font): ReaderFontOption => ({
     id: font.id,
     label: font.label,
