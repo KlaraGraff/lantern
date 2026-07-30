@@ -134,6 +134,12 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
   const isLast = msg === messages[messages.length - 1];
   const [reasoningExpanded, setReasoningExpanded] = useState<boolean | null>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
+  // One quote lives in the message's own columns; stacked quotes in metadata.
+  const quotes = msg.contexts?.length
+    ? msg.contexts
+    : msg.context
+      ? [{ text: msg.context, kind: msg.contextKind, cfi: msg.contextCfi }]
+      : [];
 
   if (msg.role === "assistant") {
     const errorCode = isAiErrorCode(msg.content) ? msg.content : null;
@@ -295,25 +301,26 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
   return (
     <div className="flex justify-end">
       <div className="max-w-[85%] flex flex-col gap-1.5">
-        {msg.context && (
+        {quotes.map((quote) => (
           <button
-            onClick={() => msg.contextCfi && onNavigateToCfi?.(msg.contextCfi)}
+            key={`${quote.kind ?? "passage"}:${quote.text}`}
+            onClick={() => quote.cfi && onNavigateToCfi?.(quote.cfi)}
             className={`border-l-2 border-[#c084fc] pl-3 pt-0.5 text-left ${
-              msg.contextCfi && onNavigateToCfi ? "cursor-pointer hover:opacity-70" : "cursor-default"
+              quote.cfi && onNavigateToCfi ? "cursor-pointer hover:opacity-70" : "cursor-default"
             }`}
           >
             {/* Without the label a quoted answer reads as book text, which is
                 exactly the confusion the separate context kind exists to avoid. */}
-            {msg.contextKind === "reply" && (
+            {quote.kind === "reply" && (
               <p className="text-[11px] font-medium text-text-muted">
                 {t("aiPanel.quoteChip.replyLabel")}
               </p>
             )}
             <p className="text-[12px] italic text-text-muted line-clamp-2">
-              {msg.context}
+              {quote.text}
             </p>
           </button>
-        )}
+        ))}
         <div className="bg-[rgba(192,132,252,0.15)] rounded-lg px-[13px] py-[13px]">
           <p className="text-[14px] text-text-primary leading-5 tracking-[-0.15px]">
             {msg.content}

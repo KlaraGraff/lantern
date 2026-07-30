@@ -15,6 +15,11 @@ export interface ChatMessage {
    *  before quoting a reply existed keep their meaning. */
   contextKind?: ContextKind;
   contextCfi?: string;
+  /** Every quote attached to this turn, when the reader stacked more than
+   *  one. `context` stays the first of them so a single quote reads the same
+   *  everywhere. Each keeps its own kind: a quoted reply must never reach the
+   *  provider labelled as book text. */
+  contexts?: QuotedContext[];
   contextAnalysis?: string;
   reasoning?: string;
   sources?: CitedSource[];
@@ -29,6 +34,12 @@ export interface ChatMessage {
 }
 
 export type ContextKind = "passage" | "reply";
+
+export interface QuotedContext {
+  text: string;
+  kind?: ContextKind;
+  cfi?: string;
+}
 
 export interface SpoilerGuardMetadata {
   active: boolean;
@@ -141,6 +152,7 @@ interface BookAiState {
 interface ChatMessageMetadata {
   cfi?: string;
   contextKind?: ContextKind;
+  contexts?: QuotedContext[];
   analysis?: string;
   reasoning?: string;
   sources?: CitedSource[];
@@ -293,6 +305,21 @@ function parseCitedSources(value: unknown): CitedSource[] | undefined {
   return sources.length > 0 ? sources : undefined;
 }
 
+function parseQuotedContexts(value: unknown): QuotedContext[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const quotes = value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const quote = item as Record<string, unknown>;
+    if (typeof quote.text !== "string" || !quote.text) return [];
+    return [{
+      text: quote.text,
+      kind: quote.kind === "reply" ? "reply" as const : undefined,
+      cfi: typeof quote.cfi === "string" ? quote.cfi : undefined,
+    }];
+  });
+  return quotes.length > 0 ? quotes : undefined;
+}
+
 function parseMessageMetadata(metadata: string | null): ChatMessageMetadata {
   if (!metadata) return {};
   try {
@@ -302,6 +329,7 @@ function parseMessageMetadata(metadata: string | null): ChatMessageMetadata {
     return {
       cfi: typeof value.cfi === "string" ? value.cfi : undefined,
       contextKind: value.contextKind === "reply" ? "reply" : undefined,
+      contexts: parseQuotedContexts(value.contexts),
       analysis: typeof value.analysis === "string" ? value.analysis : undefined,
       reasoning: typeof value.reasoning === "string" ? value.reasoning : undefined,
       sources: parseCitedSources(value.sources),
@@ -323,6 +351,8 @@ function serializeMessageMetadata(metadata: ChatMessageMetadata): string | null 
   if (metadata.cfi) compact.cfi = metadata.cfi;
   // Only the non-default kind is written, so passage rows stay byte-identical.
   if (metadata.contextKind === "reply") compact.contextKind = "reply";
+  // A lone quote is fully described by context/contextKind/cfi already.
+  if ((metadata.contexts?.length ?? 0) > 1) compact.contexts = metadata.contexts;
   if (metadata.analysis) compact.analysis = metadata.analysis;
   if (metadata.reasoning) compact.reasoning = metadata.reasoning;
   if (metadata.sources?.length) compact.sources = metadata.sources;
@@ -336,18 +366,24 @@ function serializeMessageMetadata(metadata: ChatMessageMetadata): string | null 
   return Object.keys(compact).length > 0 ? JSON.stringify(compact) : null;
 }
 
+// A quoted reply must not carry the passage marker: the backend routes on
+// that literal string, and the selected-context route would present the
+// assistant's own earlier words as the book's source text for this turn.
+function quotedContextBlock(quote: QuotedContext): string {
+  return quote.kind === "reply"
+    ? `[Quoted from your earlier reply]\n${quote.text}\n[/Quoted from your earlier reply]`
+    : `[Selected passage]\n${quote.text}\n[/Selected passage]`;
+}
+
+function messageQuotes(message: ChatMessage): QuotedContext[] {
+  if (message.contexts?.length) return message.contexts;
+  return message.context
+    ? [{ text: message.context, kind: message.contextKind, cfi: message.contextCfi }]
+    : [];
+}
+
 function messageContentForApi(message: ChatMessage): string {
-  const context: string[] = [];
-  if (message.context) {
-    // A quoted reply must not carry the passage marker: the backend routes on
-    // that literal string, and the selected-context route would present the
-    // assistant's own earlier words as the book's source text for this turn.
-    context.push(
-      message.contextKind === "reply"
-        ? `[Quoted from your earlier reply]\n${message.context}\n[/Quoted from your earlier reply]`
-        : `[Selected passage]\n${message.context}\n[/Selected passage]`,
-    );
-  }
+  const context: string[] = messageQuotes(message).map(quotedContextBlock);
   if (message.contextAnalysis) {
     context.push(
       `[Existing learning-card analysis]\n${message.contextAnalysis}\n[/Existing learning-card analysis]`,
@@ -634,6 +670,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           context: m.context ?? undefined,
           contextKind: metadata.contextKind,
           contextCfi: metadata.cfi,
+          contexts: metadata.contexts,
           contextAnalysis: metadata.analysis,
           reasoning: metadata.reasoning,
           sources: metadata.sources,
@@ -730,6 +767,8 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         replaceAssistantId?: string;
         scope?: AiChatScope;
         contextKind?: ContextKind;
+        /** Every quote attached to this turn, first one first. */
+        contexts?: QuotedContext[];
       },
     ) => {
       // Refuse while the session chat is still loading — otherwise the lazy
@@ -821,6 +860,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         context,
         contextKind: options?.contextKind,
         contextCfi,
+        contexts: (options?.contexts?.length ?? 0) > 1 ? options?.contexts : undefined,
         contextAnalysis,
         sectionIndex: bookContext?.scopeStartIndex ?? bookContext?.sectionIndex,
         sectionEndIndex: bookContext?.scopeEndIndex,
@@ -848,6 +888,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           const meta = serializeMessageMetadata({
             cfi: contextCfi,
             contextKind: userMessage.contextKind,
+            contexts: userMessage.contexts,
             analysis: contextAnalysis,
             sectionIndex: userMessage.sectionIndex,
             sectionEndIndex: userMessage.sectionEndIndex,
@@ -1197,6 +1238,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         spoilerOverride: true,
         replaceAssistantId: assistantId,
         contextKind: userMessage.contextKind,
+        contexts: userMessage.contexts,
       },
     );
   }, [send]);

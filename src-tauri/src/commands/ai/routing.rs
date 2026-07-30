@@ -1400,4 +1400,18 @@ mod tests {
         assert!(is_selected_context(question));
         assert!(!has_quoted_reply(question));
     }
+
+    #[test]
+    fn one_turn_can_stack_several_quotes_of_mixed_kinds() {
+        let question = "这两处怎么对应？\n\n[Quoted from your earlier reply]\n我先前说的\n[/Quoted from your earlier reply]\n\n[Selected passage]\nfirst pick\n[/Selected passage]\n\n[Selected passage]\nsecond pick\n[/Selected passage]";
+        // Both markers are true at once: the turn really does carry book text
+        // and the assistant's own words, and each keeps its own meaning.
+        assert!(has_quoted_reply(question));
+        assert!(is_selected_context(question));
+        let instruction = routing_instruction(question);
+        for quoted in ["我先前说的", "first pick", "second pick"] {
+            assert!(!instruction.contains(quoted), "leaked {quoted}");
+        }
+        assert!(instruction.contains("这两处怎么对应"));
+    }
 }
