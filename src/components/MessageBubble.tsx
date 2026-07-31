@@ -12,6 +12,53 @@ import {
   markdownWithCitationLinks,
 } from "./citation-markers";
 
+// Answers fill the column they are given — a percentage cap only strands
+// whitespace in the reader's side panel, which is already narrow. The ch cap
+// keeps the line measure readable in the full-width chats page instead.
+const ANSWER_WIDTH = "w-full max-w-[68ch]";
+
+/** Marks a paragraph the model meant as a section heading. */
+const ANSWER_LEAD_CLASS = "answer-lead";
+
+/** True for `**Heading**` on a line of its own — one bold child, nothing else. */
+function isLeadParagraph(node: unknown): boolean {
+  const children = (node as { children?: { type?: string; tagName?: string }[] } | undefined)?.children;
+  return children?.length === 1
+    && children[0]?.type === "element"
+    && children[0]?.tagName === "strong";
+}
+
+// Answer prose. A wall of same-weight, same-colour 14px text is what makes a
+// long vocabulary breakdown tiring to read, so the body sits a shade lighter
+// than the terms, lines breathe, and lists get their markers back (Tailwind's
+// preflight strips them, which is why bullets rendered as flat lines).
+const ANSWER_PROSE = [
+  "max-w-none text-[14px] text-text-secondary leading-[1.7] tracking-[-0.15px]",
+  "[&_h1]:text-[15px] [&_h2]:text-[14px] [&_h3]:text-[14px]",
+  "[&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold",
+  "[&_h1]:text-text-primary [&_h2]:text-text-primary [&_h3]:text-text-primary",
+  "[&_h1]:mt-4 [&_h1]:mb-1.5 [&_h2]:mt-4 [&_h2]:mb-1.5 [&_h3]:mt-3 [&_h3]:mb-1",
+  "[&_p]:my-2",
+  // Models write section headings as a lone bold line; space it like a heading.
+  // The marker class is applied by the paragraph renderer rather than matched
+  // with `:has()`, which the reader's Safari 15 baseline does not support. Two
+  // class selectors beat the plain `[&_p]` rule above, so ordering is not load
+  // bearing here.
+  //
+  // Spelled out rather than interpolated from ANSWER_LEAD_CLASS: Tailwind scans
+  // source text literally, so a template hole yields no rule at all and the
+  // spacing silently does nothing. Keep the two in step.
+  "[&_p.answer-lead]:mt-4 [&_p.answer-lead]:mb-1",
+  "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-[1.2em] [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-[1.5em]",
+  "[&_li]:my-1 [&_li]:pl-0.5 [&_li::marker]:text-text-muted",
+  "[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-text-muted",
+  "[&_code]:bg-bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[13px]",
+  "[&_pre]:bg-bg-muted [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:overflow-x-auto",
+  "[&_strong]:font-semibold [&_strong]:text-text-primary [&_em]:italic",
+  "[&_hr]:border-border [&_hr]:my-3 [&_a]:text-accent [&_a]:underline",
+  "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+].join(" ");
+
 interface MessageBubbleProps {
   msg: ChatMessage;
   messages: ChatMessage[];
@@ -146,14 +193,14 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
     if (errorCode) {
       const needsSettings = isAiSettingsError(errorCode);
       return (
-        <div className="bg-bg-surface border border-border rounded-lg px-[13px] py-[13px] max-w-[85%]">
+        <div className={`bg-bg-surface border border-border rounded-lg px-[13px] py-[13px] ${ANSWER_WIDTH}`}>
           <p className={`text-[14px] text-text-muted ${needsSettings ? "mb-2" : ""}`}>
             {t(aiErrorMessageKey(errorCode))}
           </p>
           {needsSettings && (
             <button
               onClick={async () => {
-                await invoke("open_settings_on_main", { section: "ai" });
+                await invoke("open_settings_on_main", { section: "services" });
                 const main = await WebviewWindow.getByLabel("main");
                 await main?.setFocus();
               }}
@@ -189,7 +236,7 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
     };
 
     return (
-      <div ref={bubbleRef} className="group bg-bg-surface border border-border rounded-lg px-[13px] py-[13px] max-w-[85%]">
+      <div ref={bubbleRef} className={`group bg-bg-surface border border-border rounded-lg px-[13px] py-[13px] ${ANSWER_WIDTH}`}>
         {hasReasoning && (
           <div className={msg.content ? "mb-2 border-b border-border pb-2" : ""}>
             <button
@@ -215,12 +262,15 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
             {t("ai.thinking")}
           </span>
         ) : msg.content ? (
-          <div className="prose prose-sm max-w-none text-[14px] text-text-primary leading-5 tracking-[-0.15px] [&_h1]:text-[16px] [&_h2]:text-[15px] [&_h3]:text-[14px] [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1 [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:my-1.5 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-text-muted [&_code]:bg-bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[13px] [&_pre]:bg-bg-muted [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_strong]:font-semibold [&_em]:italic [&_hr]:border-border [&_a]:text-accent [&_a]:underline">
+          <div className={ANSWER_PROSE}>
             <Markdown
               urlTransform={(url) => (
                 url.startsWith("quill-citation:") ? url : defaultUrlTransform(url)
               )}
               components={{
+                p: ({ node, children }) => (
+                  <p className={isLeadParagraph(node) ? ANSWER_LEAD_CLASS : undefined}>{children}</p>
+                ),
                 a: ({ href, children }) => {
                   const marker = citationMarkerFromHref(href);
                   const source = marker ? sources.find((candidate) => candidate.marker === marker) : undefined;
