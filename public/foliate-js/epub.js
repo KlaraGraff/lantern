@@ -723,7 +723,7 @@ class Resources {
         }
         const idref = $itemref?.getAttribute('idref')
         const index = this.spine.findIndex(item => item.idref === idref)
-        const anchor = doc => CFI.toRange(doc, parts)
+        const anchor = doc => CFI.toRange(doc, parts, CFI.skipTransparent)
         return { index, anchor }
     }
 }

@@ -9,7 +9,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import type { ReaderSettingsState } from "../../components/ReaderSettings";
 import {
-  applyWordMarkHighlights,
+  applyWordMarks,
 } from "../../components/reader-interaction";
 import { fontBoxHeight, glyphInset } from "../../components/glyph-metrics";
 import type { Highlight } from "../../hooks/useBookmarks";
@@ -78,6 +78,13 @@ function drawMarkerRects(
 ) {
   const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
   group.setAttribute("fill", style.color);
+  // Text split by a word marker or an inline tag reports one rect per fragment.
+  // Grouping the fills under a single opacity keeps their rounded edges from
+  // overlapping into a darker seam.
+  const fills = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  fills.setAttribute("opacity", String(style.opacity / 100));
+  const lines = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  group.append(fills, lines);
   for (const { left, top, height, width } of rects) {
     // getClientRects reports the line box, so a wide line height would paint a
     // slab around the word. Sit the marker on the glyphs instead.
@@ -92,8 +99,7 @@ function drawMarkerRects(
       background.setAttribute("height", String(markHeight + pad * 2));
       background.setAttribute("width", String(Math.ceil(width)));
       background.setAttribute("rx", isPdf ? "1" : "0");
-      background.setAttribute("opacity", String(style.opacity / 100));
-      group.append(background);
+      fills.append(background);
     }
     if (style.underline) {
       const underline = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -102,7 +108,7 @@ function drawMarkerRects(
       underline.setAttribute("height", "1.5");
       underline.setAttribute("width", String(width));
       underline.setAttribute("rx", "0.75");
-      group.append(underline);
+      lines.append(underline);
     }
   }
   return group;
@@ -287,7 +293,7 @@ export function useFoliateAnnotations({
     for (const { doc, index } of view.renderer?.getContents?.() ?? []) {
       if (!doc || typeof index !== "number") continue;
       installCustomFontFacesInDocument(doc);
-      applyWordMarkHighlights(
+      applyWordMarks(
         doc,
         readerSettingsRef.current.showLookupMarkers ? wordMarkWordsRef.current : [],
         "quill-word-marks",

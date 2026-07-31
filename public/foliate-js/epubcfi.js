@@ -285,6 +285,18 @@ const nodeToParts = (node, offset, filter) => {
         .filter(x => x.index !== -1)
 }
 
+// Lantern: elements the reader injects into book content — word markers — must
+// not move CFIs. Skipping them indexes their children as if they were the
+// parent's own, and the adjacent text they split is merged back into one chunk
+// by indexChildNodes, so a CFI means the same thing whether or not the markers
+// happen to be in the document. Pass this to every fromRange/toRange call.
+export const TRANSPARENT_ATTRIBUTE = 'data-cfi-transparent'
+
+export const skipTransparent = node =>
+    node.nodeType === 1 && node.hasAttribute?.(TRANSPARENT_ATTRIBUTE)
+        ? NodeFilter.FILTER_SKIP
+        : NodeFilter.FILTER_ACCEPT
+
 export const fromRange = (range, filter) => {
     const { startContainer, startOffset, endContainer, endOffset } = range
     const start = nodeToParts(startContainer, startOffset, filter)

@@ -452,7 +452,7 @@ export class View extends HTMLElement {
     getCFI(index, range) {
         const baseCFI = this.book.sections[index].cfi ?? CFI.fake.fromIndex(index)
         if (!range) return baseCFI
-        return CFI.joinIndir(baseCFI, CFI.fromRange(range))
+        return CFI.joinIndir(baseCFI, CFI.fromRange(range, CFI.skipTransparent))
     }
     resolveCFI(cfi) {
         if (this.book.resolveCFI)
@@ -460,7 +460,7 @@ export class View extends HTMLElement {
         else {
             const parts = CFI.parse(cfi)
             const index = CFI.fake.toIndex((parts.parent ?? parts).shift())
-            const anchor = doc => CFI.toRange(doc, parts)
+            const anchor = doc => CFI.toRange(doc, parts, CFI.skipTransparent)
             return { index, anchor }
         }
     }

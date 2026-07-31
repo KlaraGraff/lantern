@@ -492,32 +492,66 @@ export function isInteractiveReaderTarget(target: EventTarget | null): boolean {
   return Boolean(element?.closest("a,button,input,textarea,select,option,[contenteditable='true'],[role='button']"));
 }
 
-type HighlightRegistry = {
-  set(name: string, highlight: unknown): void;
-  delete(name: string): boolean;
-};
+/**
+ * Word markers are wrapped around the text rather than painted over it, so the
+ * marker is exactly as tall as the word: an inline background covers the font
+ * box, while anything painted over a range — a highlight overlay, an SVG rect —
+ * is sized by the line box and grows with the line height.
+ *
+ * The wrapper carries `data-cfi-transparent`, which the reader engine's CFI
+ * walker skips (see `skipTransparent` in `epubcfi.js`). Its children then index
+ * as if they were the parent's own and the text it splits merges back into one
+ * chunk, so stored highlights, bookmarks, and reading positions keep resolving
+ * to the same place whether or not markers happen to be in the document.
+ *
+ * Nothing here may affect layout — no padding, no font change — or pages would
+ * reflow as words get looked up.
+ */
+export const WORD_MARK_TAG = "quill-mark";
+const CFI_TRANSPARENT_ATTRIBUTE = "data-cfi-transparent";
+const MAX_WORD_MARKS = 20_000;
 
-export function applyWordMarkHighlights(
+function wordMarkStyleElement(doc: Document, name: string): HTMLStyleElement {
+  const styleId = `quill-word-mark-style-${name}`;
+  const existing = doc.getElementById(styleId) as HTMLStyleElement | null;
+  if (existing) return existing;
+  const style = doc.createElement("style");
+  style.id = styleId;
+  (doc.head ?? doc.documentElement).appendChild(style);
+  return style;
+}
+
+function clearWordMarks(doc: Document, name: string): void {
+  const marks = doc.querySelectorAll(`${WORD_MARK_TAG}[data-quill-mark="${name}"]`);
+  for (const mark of Array.from(marks)) {
+    const parent = mark.parentNode;
+    if (!parent) continue;
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+    parent.removeChild(mark);
+    // Merge the text back so later walks see one node again.
+    parent.normalize();
+  }
+}
+
+export function applyWordMarks(
   doc: Document,
   normalizedWords: Iterable<string>,
   name: string,
   root: Node | undefined,
   includeRange: ((word: string, range: Range) => boolean) | undefined,
   css: string,
-): boolean {
-  const words = new Set(Array.from(normalizedWords, (word) => normalizeInteractionText(word)).filter(Boolean));
-  const view = doc.defaultView as (Window & typeof globalThis & {
-    CSS?: typeof CSS & { highlights?: HighlightRegistry };
-    Highlight?: new (...ranges: Range[]) => unknown;
-  }) | null;
-  const registry = view?.CSS?.highlights;
-  if (!registry || !view?.Highlight) return false;
-  if (words.size === 0) {
-    registry.delete(name);
-    return true;
-  }
+): void {
+  clearWordMarks(doc, name);
+  wordMarkStyleElement(doc, name).textContent =
+    `${WORD_MARK_TAG}[data-quill-mark="${name}"] { display: inline; ${css} }`;
+  const words = new Set(
+    Array.from(normalizedWords, (word) => normalizeInteractionText(word)).filter(Boolean),
+  );
+  if (words.size === 0) return;
 
-  const ranges: Range[] = [];
+  // The walk finishes before anything is wrapped: mutating the tree underneath
+  // a live TreeWalker is how this kind of code usually goes wrong.
+  const targets: Text[] = [];
   const walker = doc.createTreeWalker(root ?? doc.body ?? doc.documentElement, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       const parent = node.parentElement;
@@ -527,30 +561,33 @@ export function applyWordMarkHighlights(
       return NodeFilter.FILTER_ACCEPT;
     },
   });
-  let node = walker.nextNode();
-  while (node && ranges.length < 20_000) {
-    const text = node.textContent ?? "";
-    for (const segment of segmentInteractionWords(text, doc.documentElement.lang || undefined)) {
-      if (!words.has(normalizeInteractionText(segment.segment))) continue;
-      const range = doc.createRange();
-      range.setStart(node, segment.index);
-      range.setEnd(node, segment.index + segment.segment.length);
-      const normalized = normalizeInteractionText(segment.segment);
-      if (includeRange && !includeRange(normalized, range)) continue;
-      ranges.push(range);
-      if (ranges.length >= 20_000) break;
-    }
-    node = walker.nextNode();
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    targets.push(node as Text);
   }
 
-  registry.set(name, new view.Highlight(...ranges));
-  const styleId = `quill-word-mark-style-${name}`;
-  let style = doc.getElementById(styleId) as HTMLStyleElement | null;
-  if (!style) {
-    style = doc.createElement("style");
-    style.id = styleId;
-    (doc.head ?? doc.documentElement).appendChild(style);
+  const locale = doc.documentElement.lang || undefined;
+  let marked = 0;
+  for (const text of targets) {
+    if (marked >= MAX_WORD_MARKS) break;
+    const matches = segmentInteractionWords(text.data, locale)
+      .filter((segment) => words.has(normalizeInteractionText(segment.segment)));
+    // Right to left: wrapping splits the node, and every match still to come
+    // sits in the untouched part before the split.
+    for (let index = matches.length - 1; index >= 0 && marked < MAX_WORD_MARKS; index -= 1) {
+      const segment = matches[index];
+      const range = doc.createRange();
+      range.setStart(text, segment.index);
+      range.setEnd(text, segment.index + segment.segment.length);
+      if (includeRange && !includeRange(normalizeInteractionText(segment.segment), range)) continue;
+      const mark = doc.createElement(WORD_MARK_TAG);
+      mark.setAttribute("data-quill-mark", name);
+      mark.setAttribute(CFI_TRANSPARENT_ATTRIBUTE, "");
+      try {
+        range.surroundContents(mark);
+        marked += 1;
+      } catch {
+        // A range the engine refuses to wrap is skipped rather than retried.
+      }
+    }
   }
-  style.textContent = `::highlight(${name}) { ${css} }`;
-  return true;
 }

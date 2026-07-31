@@ -128,32 +128,26 @@ export function markerStyleCss(style: MarkerVisualStyleV1, fontFamily?: string) 
   } as const;
 }
 
-// A highlight overlay's `background-color` is painted over the whole line box,
-// which no property can size down — a generous line height turns a marked word
-// into a tall slab. A thick underline is placed from the font's own metrics
-// instead, and is painted beneath the glyphs, so it reads as a background that
-// hugs the word. Both values are ems, so they scale with the reading size.
-const HIGHLIGHT_BAND_THICKNESS = "1.06em";
-const HIGHLIGHT_BAND_OFFSET = "-0.82em";
-
+// Styling for a marker wrapped around book text. An inline background covers
+// the font box, so the marker is as tall as the word and no taller. Only
+// properties that cannot move a glyph belong here: padding, weight, or family
+// would reflow the page as words are looked up, which is why
+// `markerOverlayStyle` strips the layout-affecting treatments first.
 export function markerHighlightCss(style: MarkerVisualStyleV1, fontFamily?: string) {
   const alpha = Math.round((style.opacity / 100) * 255).toString(16).padStart(2, "0");
-  const decoration = style.background
-    ? `text-decoration: underline; text-decoration-color: ${style.color}${alpha}; text-decoration-thickness: ${HIGHLIGHT_BAND_THICKNESS}; text-underline-offset: ${HIGHLIGHT_BAND_OFFSET}; text-decoration-skip-ink: none;`
-    : style.underline
-      ? `text-decoration: underline; text-decoration-color: ${style.color}; text-decoration-thickness: 1.5px; text-underline-offset: 0.14em;`
-      : "text-decoration: none;";
   return [
-    "background-color: transparent;",
-    decoration,
+    style.background ? `background-color: ${style.color}${alpha}; border-radius: 0.15em;` : "",
+    style.underline
+      ? `text-decoration: underline; text-decoration-color: ${style.color}; text-decoration-thickness: 1.5px; text-underline-offset: 0.14em;`
+      : "",
     style.bold ? "font-weight: 700;" : "",
     fontFamily ? `font-family: ${fontFamily};` : "",
   ].filter(Boolean).join(" ");
 }
 
-// Foliate renders stored CFI annotations in an SVG overlay. Background and
-// underline are reliable there; font and weight are only supported by the
-// direct DOM text reader and CSS Highlight-based whole-word markers.
+// Drops the treatments that would move text. An SVG overlay cannot render them
+// at all, and inside book content they would reflow the page every time a word
+// is marked, so only the direct DOM text reader offers font and weight.
 export function markerOverlayStyle(style: MarkerVisualStyleV1): MarkerVisualStyleV1 {
   return { ...style, bold: false, font: "inherit" };
 }
