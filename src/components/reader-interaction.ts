@@ -320,6 +320,26 @@ export function detachedInteraction(
   };
 }
 
+/**
+ * A lookup started inside a card that is itself about a book passage. When that
+ * passage contains the word, it — not the card's own wording, which is often a
+ * label or a fragment — is the context the answer should be about.
+ *
+ * The position is deliberately not inherited: it addresses the word the parent
+ * card was opened on, not this one, so carrying it over would mark the wrong
+ * occurrence and file the lookup at the wrong place in the book.
+ */
+export function withInheritedContext(
+  interaction: ReaderInteraction,
+  origin: ReaderInteraction | undefined,
+): ReaderInteraction {
+  const passage = origin?.context?.trim();
+  if (!passage) return interaction;
+  return passage.toLocaleLowerCase().includes(interaction.text.toLocaleLowerCase())
+    ? { ...interaction, context: passage }
+    : interaction;
+}
+
 export function selectedRange(doc: Document): Range | null {
   const selection = doc.getSelection?.();
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;

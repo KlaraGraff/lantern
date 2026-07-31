@@ -7,6 +7,8 @@ import {
   readerMenuActivationIndex,
   readerMenuFocusIndex,
   segmentInteractionWords,
+  withInheritedContext,
+  type ReaderInteraction,
 } from "../src/components/reader-interaction.ts";
 
 const words = (value: string, locale = "en") => (
@@ -66,4 +68,41 @@ test("moves keyboard focus into an unfocused selection menu without stealing it 
   assert.equal(readerMenuActivationIndex(" ", -1, 4), 0);
   assert.equal(readerMenuActivationIndex("Enter", 0, 4), null);
   assert.equal(readerMenuActivationIndex("Enter", -1, 4, true), null);
+});
+
+const interaction = (text: string, context: string, location = ""): ReaderInteraction => ({
+  trigger: "word-quick-lookup",
+  kind: "word",
+  text,
+  normalizedText: normalizeInteractionText(text),
+  context,
+  location,
+  anchorRect: { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 },
+  source: "text",
+  format: "text",
+});
+
+const PASSAGE = "He had a penchant for Spoiling his grandchildren with trips to the fairground.";
+
+test("a lookup inside a card reads the book passage the card is about", () => {
+  const nested = interaction("spoiling", "spoil the mood");
+  const origin = interaction("penchant", PASSAGE, "epubcfi(/6/14!/4/2)");
+  const inherited = withInheritedContext(nested, origin);
+
+  assert.equal(inherited.context, PASSAGE);
+  // The parent's position addresses "penchant", so carrying it over would mark
+  // the wrong occurrence and file the lookup at the wrong place in the book.
+  assert.equal(inherited.location, "");
+});
+
+test("a word the passage does not contain keeps the context around it", () => {
+  const nested = interaction("Contextual", "Contextual meaning");
+  const inherited = withInheritedContext(nested, interaction("penchant", PASSAGE));
+  assert.equal(inherited.context, "Contextual meaning");
+});
+
+test("a lookup with no card behind it is left alone", () => {
+  const nested = interaction("spoiling", "spoil the mood");
+  assert.equal(withInheritedContext(nested, undefined), nested);
+  assert.equal(withInheritedContext(nested, interaction("penchant", "   ")), nested);
 });

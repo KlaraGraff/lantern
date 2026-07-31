@@ -44,6 +44,7 @@ import {
   normalizeInteractionText,
   selectedRange,
   serializableRect,
+  withInheritedContext,
   wordRangeAtPoint,
   type ReaderInteraction,
   type SerializableRect,
@@ -586,7 +587,10 @@ export default function Reader() {
 
   // Cards and AI answers are lookup surfaces of their own: the same
   // double-click and selection gestures work inside them, one level deeper.
-  const lookupWordInPanel = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+  const lookupWordInPanel = useCallback((
+    event: ReactMouseEvent<HTMLElement>,
+    origin?: ReaderInteraction,
+  ) => {
     cancelPendingSelectionMenu();
     if (isInteractiveReaderTarget(event.target)) return;
     const interaction = detachedInteraction(
@@ -597,16 +601,20 @@ export default function Reader() {
     if (!interaction) return;
     event.preventDefault();
     setContextMenu(null);
-    openLearningCard(interaction);
+    openLearningCard(withInheritedContext(interaction, origin));
   }, [cancelPendingSelectionMenu, openLearningCard]);
 
-  const openPanelSelectionMenu = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+  const openPanelSelectionMenu = useCallback((
+    event: ReactMouseEvent<HTMLElement>,
+    origin?: ReaderInteraction,
+  ) => {
     const root = event.currentTarget;
     cancelPendingSelectionMenu();
     pendingSelectionMenuRef.current = window.setTimeout(() => {
       pendingSelectionMenuRef.current = null;
-      const interaction = detachedInteraction(selectedRange(document), root, "selection-menu");
-      if (!interaction) return;
+      const found = detachedInteraction(selectedRange(document), root, "selection-menu");
+      if (!found) return;
+      const interaction = withInheritedContext(found, origin);
       contextMenuRequestRef.current += 1;
       setContextMenu(interaction);
       setContextMarkStateLoading(false);
@@ -2040,8 +2048,8 @@ export default function Reader() {
           readerRect={readerRect}
           stackIndex={index}
           elevated={card.id === topLearningCardId}
-          onLookupWord={lookupWordInPanel}
-          onSelectText={openPanelSelectionMenu}
+          onLookupWord={(event) => lookupWordInPanel(event, card.interaction)}
+          onSelectText={(event) => openPanelSelectionMenu(event, card.interaction)}
           onClose={() => setLearningCards((current) => current.filter((item) => item.id !== card.id))}
           onFocus={() => setTopLearningCardId(card.id)}
           onAskAi={(quote, cfi, analysis) => {
