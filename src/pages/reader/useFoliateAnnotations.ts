@@ -11,6 +11,7 @@ import type { ReaderSettingsState } from "../../components/ReaderSettings";
 import {
   applyWordMarkHighlights,
 } from "../../components/reader-interaction";
+import { fontBoxHeight, glyphInset } from "../../components/glyph-metrics";
 import type { Highlight } from "../../hooks/useBookmarks";
 import {
   MARKER_STYLE_SETTING_KEY,
@@ -73,16 +74,22 @@ function drawMarkerRects(
   rects: DOMRectList,
   style: MarkerVisualStyleV1,
   isPdf: boolean,
+  boxHeight: number | null,
 ) {
   const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
   group.setAttribute("fill", style.color);
-  for (const { left, top, bottom, height, width } of rects) {
+  for (const { left, top, height, width } of rects) {
+    // getClientRects reports the line box, so a wide line height would paint a
+    // slab around the word. Sit the marker on the glyphs instead.
+    const inset = glyphInset(height, boxHeight);
+    const markHeight = height - inset * 2;
+    const markTop = top + inset;
     if (style.background) {
       const background = document.createElementNS("http://www.w3.org/2000/svg", "rect");
       const pad = isPdf ? 1 : 0;
       background.setAttribute("x", String(Math.floor(left)));
-      background.setAttribute("y", String(top - pad));
-      background.setAttribute("height", String(height + pad * 2));
+      background.setAttribute("y", String(markTop - pad));
+      background.setAttribute("height", String(markHeight + pad * 2));
       background.setAttribute("width", String(Math.ceil(width)));
       background.setAttribute("rx", isPdf ? "1" : "0");
       background.setAttribute("opacity", String(style.opacity / 100));
@@ -91,7 +98,7 @@ function drawMarkerRects(
     if (style.underline) {
       const underline = document.createElementNS("http://www.w3.org/2000/svg", "rect");
       underline.setAttribute("x", String(left));
-      underline.setAttribute("y", String(bottom - 1.5));
+      underline.setAttribute("y", String(markTop + markHeight - 1.5));
       underline.setAttribute("height", "1.5");
       underline.setAttribute("width", String(width));
       underline.setAttribute("rx", "0.75");
@@ -104,18 +111,20 @@ function drawMarkerRects(
 interface DrawAnnotationDetail {
   draw(renderer: (rects: DOMRectList) => SVGGElement): void;
   annotation: { color: string; styleKind?: AnnotationStyleKind };
+  range?: Range;
 }
 
 export function drawFoliateAnnotation(
-  { draw, annotation }: DrawAnnotationDetail,
+  { draw, annotation, range }: DrawAnnotationDetail,
   markerStyle: MarkerStyleConfigV1,
   isPdf: boolean,
 ) {
+  const boxHeight = fontBoxHeight(range?.startContainer ?? null);
   if (annotation.styleKind === "manual" || annotation.styleKind === "automatic") {
     const style = annotation.styleKind === "manual"
       ? markerStyle.manual
       : effectiveAutomaticMarkerStyle(markerStyle);
-    draw((rects) => drawMarkerRects(rects, markerOverlayStyle(style), isPdf));
+    draw((rects) => drawMarkerRects(rects, markerOverlayStyle(style), isPdf, boxHeight));
     return;
   }
   if (Object.values(wordMarkerColor).includes(annotation.color as typeof wordMarkerColor[keyof typeof wordMarkerColor])) {
@@ -136,7 +145,7 @@ export function drawFoliateAnnotation(
       for (const { left, top, height, width } of rects) {
         const line = document.createElementNS("http://www.w3.org/2000/svg", "rect");
         line.setAttribute("x", String(left));
-        line.setAttribute("y", String(top + height - 1.5));
+        line.setAttribute("y", String(top + height - glyphInset(height, boxHeight) - 1.5));
         line.setAttribute("height", "1.5");
         line.setAttribute("width", String(width));
         line.setAttribute("rx", "0.75");
@@ -155,9 +164,10 @@ export function drawFoliateAnnotation(
     for (const { left, top, height, width } of rects) {
       const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
       const pad = isPdf ? 1 : 0;
+      const inset = glyphInset(height, boxHeight);
       rect.setAttribute("x", String(Math.floor(left)));
-      rect.setAttribute("y", String(top - pad));
-      rect.setAttribute("height", String(height + pad * 2));
+      rect.setAttribute("y", String(top + inset - pad));
+      rect.setAttribute("height", String(height - inset * 2 + pad * 2));
       rect.setAttribute("width", String(Math.ceil(width)));
       rect.setAttribute("rx", isPdf ? "1" : "0");
       group.append(rect);

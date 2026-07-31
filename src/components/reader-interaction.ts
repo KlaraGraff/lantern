@@ -500,10 +500,10 @@ type HighlightRegistry = {
 export function applyWordMarkHighlights(
   doc: Document,
   normalizedWords: Iterable<string>,
-  name = "quill-word-marks",
-  root?: Node,
-  includeRange?: (word: string, range: Range) => boolean,
-  css?: string,
+  name: string,
+  root: Node | undefined,
+  includeRange: ((word: string, range: Range) => boolean) | undefined,
+  css: string,
 ): boolean {
   const words = new Set(Array.from(normalizedWords, (word) => normalizeInteractionText(word)).filter(Boolean));
   const view = doc.defaultView as (Window & typeof globalThis & {
@@ -551,6 +551,6 @@ export function applyWordMarkHighlights(
     style.id = styleId;
     (doc.head ?? doc.documentElement).appendChild(style);
   }
-  style.textContent = `::highlight(${name}) { ${css ?? "background: rgba(163, 106, 49, 0.12); text-decoration: underline; text-decoration-color: rgba(141, 124, 101, 0.85); text-decoration-thickness: 1.5px; text-underline-offset: 0.14em;"} }`;
+  style.textContent = `::highlight(${name}) { ${css} }`;
   return true;
 }

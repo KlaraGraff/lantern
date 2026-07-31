@@ -128,13 +128,24 @@ export function markerStyleCss(style: MarkerVisualStyleV1, fontFamily?: string) 
   } as const;
 }
 
+// A highlight overlay's `background-color` is painted over the whole line box,
+// which no property can size down — a generous line height turns a marked word
+// into a tall slab. A thick underline is placed from the font's own metrics
+// instead, and is painted beneath the glyphs, so it reads as a background that
+// hugs the word. Both values are ems, so they scale with the reading size.
+const HIGHLIGHT_BAND_THICKNESS = "1.06em";
+const HIGHLIGHT_BAND_OFFSET = "-0.82em";
+
 export function markerHighlightCss(style: MarkerVisualStyleV1, fontFamily?: string) {
   const alpha = Math.round((style.opacity / 100) * 255).toString(16).padStart(2, "0");
-  return [
-    style.background ? `background-color: ${style.color}${alpha};` : "background-color: transparent;",
-    style.underline
+  const decoration = style.background
+    ? `text-decoration: underline; text-decoration-color: ${style.color}${alpha}; text-decoration-thickness: ${HIGHLIGHT_BAND_THICKNESS}; text-underline-offset: ${HIGHLIGHT_BAND_OFFSET}; text-decoration-skip-ink: none;`
+    : style.underline
       ? `text-decoration: underline; text-decoration-color: ${style.color}; text-decoration-thickness: 1.5px; text-underline-offset: 0.14em;`
-      : "text-decoration: none;",
+      : "text-decoration: none;";
+  return [
+    "background-color: transparent;",
+    decoration,
     style.bold ? "font-weight: 700;" : "",
     fontFamily ? `font-family: ${fontFamily};` : "",
   ].filter(Boolean).join(" ");
