@@ -33,8 +33,8 @@ Create a new versioned release for Quill.
 
 8. Categorize changes into sections: **What's New**, **Improvements**, **Bug Fixes** (omit empty sections).
 
-9. Publish the release: `gh release edit v{version} --draft=false --notes "..."`. Include a **Download** section at the bottom with the `.dmg` filenames for Apple Silicon and Intel.
-   - While signing secrets are not configured (ad-hoc builds), the notes MUST include the macOS install instructions for Gatekeeper's "damaged" rejection (`xattr -d com.apple.quarantine <dmg>`); see `docs/impls/macos-distribution-gatekeeper-fix.md`.
+9. Publish the release: `gh release edit v{version} --draft=false --notes "..."`. Release notes MUST include complete Simplified Chinese and English sections, with a `[简体中文](#chinese) · [English](#english)` link row at the top and matching `<a id="chinese"></a>` / `<a id="english"></a>` anchors. Keep both sections semantically equivalent. Include a **Download** section at the bottom of each language section with the `.dmg` filenames for Apple Silicon and Intel.
+   - While signing secrets are not configured (ad-hoc builds), both language sections MUST include the macOS install instructions for Gatekeeper's "damaged" rejection (`xattr -d com.apple.quarantine <dmg>`); see `docs/impls/macos-distribution-gatekeeper-fix.md`.
 
 10. **Verify the released artifact** (not just CI status): `gh release download v{version} --pattern '*aarch64.dmg'`, mount it, and confirm the app's `Info.plist` version and binary provenance match the tag (compare `shasum` against a rebuilt or expected binary when in doubt). Record the Settings → About commit when doing any on-device check.
 
