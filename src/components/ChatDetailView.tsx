@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, ArrowRight, Send, Loader2, Trash2, Sparkles } from "lucide-react";
 import { useAiChat } from "../hooks/useAiChat";
+import { usePinnedQuestionScroll } from "../hooks/usePinnedQuestionScroll";
 import { openReaderWindow } from "../utils/openReaderWindow";
 import { textLocation } from "./text-book-location";
 import type { ChatSummary } from "../hooks/useChats";
@@ -25,18 +26,16 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const {
+    scrollerRef, listRef, questionAnchorRef, tailSpacerRef, lastQuestionIndex, pinLatestQuestion,
+  } = usePinnedQuestionScroll(chatId, messages);
 
   useEffect(() => { initialize(); }, [initialize]);
 
   useEffect(() => {
     if (chat.id && chats.length > 0) loadChat(chat.id);
   }, [chat.id, chats.length, loadChat]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   useEffect(() => {
     if (editingTitle) {
@@ -47,6 +46,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
 
   const handleSend = () => {
     if (!input.trim() || streaming || initializing) return;
+    pinLatestQuestion();
     send(input.trim());
     setInput("");
   };
@@ -138,7 +138,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-auto px-6 py-4">
+      <div ref={scrollerRef} className="flex-1 overflow-auto px-6 py-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3">
             <div className="size-14 rounded-full bg-bg-input flex items-center justify-center">
@@ -152,28 +152,32 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            {messages.map((msg) => (
-              <MessageBubble
-                key={msg.id}
-                msg={msg}
-                messages={messages}
-                streaming={streaming}
-                onNavigateToSource={(source) => {
-                  const cfi = source.charStart != null
-                    ? textLocation(source.charStart, source.charEnd ?? source.charStart)
-                    : source.sectionHref ?? null;
-                  void openReaderWindow(chat.book_id, {
-                    openChat: true,
-                    chatId: chat.id,
-                    cfi,
-                    page: source.sectionHref ? undefined : source.sectionIndex,
-                  });
-                }}
-              />
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
+          <>
+            <div ref={listRef} className="flex flex-col gap-3">
+              {messages.map((msg, index) => (
+                <div key={msg.id} ref={index === lastQuestionIndex ? questionAnchorRef : undefined}>
+                  <MessageBubble
+                    msg={msg}
+                    messages={messages}
+                    streaming={streaming}
+                    onNavigateToSource={(source) => {
+                      const cfi = source.charStart != null
+                        ? textLocation(source.charStart, source.charEnd ?? source.charStart)
+                        : source.sectionHref ?? null;
+                      void openReaderWindow(chat.book_id, {
+                        openChat: true,
+                        chatId: chat.id,
+                        cfi,
+                        page: source.sectionHref ? undefined : source.sectionIndex,
+                      });
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+            {/* Room for the answer to stream into without pushing the view. */}
+            <div ref={tailSpacerRef} aria-hidden="true" />
+          </>
         )}
       </div>
 

@@ -3,6 +3,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { BookOpen, Database, Sparkles, Send, Loader2, Plus, ChevronDown, ChevronUp, Trash2, X, Square } from "lucide-react";
 import { useAiChat } from "../hooks/useAiChat";
+import { usePinnedQuestionScroll } from "../hooks/usePinnedQuestionScroll";
 import { timeAgo } from "../utils/timeAgo";
 import MessageBubble from "./MessageBubble";
 import type { AiChatScope, CitedSource, ContextKind } from "../hooks/useAiChat";
@@ -85,10 +86,11 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
   const [titleDraft, setTitleDraft] = useState("");
   const [newChatFlash, setNewChatFlash] = useState(false);
   const [indexOpen, setIndexOpen] = useState(false);
-  const messagesScrollRef = useRef<HTMLDivElement>(null);
-  const followMessagesRef = useRef(true);
-  const scrollFrameRef = useRef<number | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const {
+    scrollerRef: messagesScrollRef, listRef: messageListRef, questionAnchorRef,
+    tailSpacerRef, lastQuestionIndex, pinLatestQuestion,
+  } = usePinnedQuestionScroll(chatId, messages);
 
   const currentChat = chats.find((c) => c.id === chatId);
 
@@ -105,27 +107,6 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
       loadChat(initialChatId);
     }
   }, [initialChatId, chats.length, loadChat]);
-
-  // A direct, frame-coalesced scroll avoids starting a smooth-scroll animation
-  // for every streamed token. Stop following as soon as the reader scrolls up.
-  useEffect(() => {
-    followMessagesRef.current = true;
-  }, [chatId]);
-
-  useEffect(() => {
-    if (!followMessagesRef.current || scrollFrameRef.current !== null) return;
-    scrollFrameRef.current = requestAnimationFrame(() => {
-      scrollFrameRef.current = null;
-      const element = messagesScrollRef.current;
-      if (element && followMessagesRef.current) {
-        element.scrollTop = element.scrollHeight;
-      }
-    });
-  }, [messages, chatId]);
-
-  useEffect(() => () => {
-    if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
-  }, []);
 
   // Focus title input when editing
   useEffect(() => {
@@ -202,7 +183,7 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
 
   const handleSend = () => {
     if (!input.trim() || streaming || initializing) return;
-    followMessagesRef.current = true;
+    pinLatestQuestion();
     const quotes = takeQuotes();
     send(input.trim(), quotes[0]?.text, quotes[0]?.cfi, quotes[0]?.analysis, {
       scope,
@@ -373,11 +354,7 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
       {/* Messages */}
       <div
         ref={messagesScrollRef}
-        className="flex-1 overflow-auto px-4 py-4"
-        onScroll={(event) => {
-          const element = event.currentTarget;
-          followMessagesRef.current = element.scrollHeight - element.scrollTop - element.clientHeight <= 72;
-        }}
+        className="flex-1 overflow-auto px-3 py-4"
         onClick={() => pickerOpen && setPickerOpen(false)}
         onDoubleClick={onLookupWord}
         onMouseUp={onSelectText}
@@ -400,7 +377,7 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
                   key={prompt}
                   onClick={() => {
                     if (initializing) return;
-                    followMessagesRef.current = true;
+                    pinLatestQuestion();
                     const quotes = takeQuotes();
                     send(prompt, quotes[0]?.text, quotes[0]?.cfi, quotes[0]?.analysis, {
                       scope,
@@ -428,12 +405,17 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
             )}
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            {messages.map((msg) => (
-              <MessageBubble key={msg.id} msg={msg} messages={messages} streaming={streaming} onNavigateToCfi={onNavigateToCfi} onNavigateToSource={onNavigateToSource} onRetryWithWholeBook={retryWithWholeBook} onQuoteReply={quoteReply} />
-            ))}
-            <div />
-          </div>
+          <>
+            <div ref={messageListRef} className="flex flex-col gap-3">
+              {messages.map((msg, index) => (
+                <div key={msg.id} ref={index === lastQuestionIndex ? questionAnchorRef : undefined}>
+                  <MessageBubble msg={msg} messages={messages} streaming={streaming} onNavigateToCfi={onNavigateToCfi} onNavigateToSource={onNavigateToSource} onRetryWithWholeBook={retryWithWholeBook} onQuoteReply={quoteReply} />
+                </div>
+              ))}
+            </div>
+            {/* Room for the answer to stream into without pushing the view. */}
+            <div ref={tailSpacerRef} aria-hidden="true" />
+          </>
         )}
       </div>
 
@@ -528,9 +510,6 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
             )}
           </button>
         </div>
-        <p className="text-[12px] text-text-muted">
-          {t("ai.sendHint")}
-        </p>
       </div>
     </div>
   );
