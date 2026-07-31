@@ -194,8 +194,21 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
         </div>
       </SettingsRow>
 
-      {settings.source === "custom" && (
-        <div className="border-t border-border-light pt-1">
+      {/* Always shown, never gated on the source being active: you have to be
+          able to set a provider up *before* switching to it, or the switch
+          leaves playback broken until you finish typing. */}
+      <div className="border-t border-border-light pt-1">
+        <div className="px-1 pt-2 pb-1">
+          <p className="text-[12px] font-semibold text-text-primary">
+            {t("settings.speech.custom.section")}
+          </p>
+          <p className="mt-0.5 text-[11px] leading-[17px] text-text-placeholder">
+            {settings.source === "custom"
+              ? t("settings.speech.custom.sectionActive")
+              : t("settings.speech.custom.sectionInactive")}
+          </p>
+        </div>
+        <div>
           <TextSettingRow
             title={t("settings.speech.custom.baseUrl")}
             subtitle={t("settings.speech.custom.baseUrlHint")}
@@ -270,7 +283,7 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
             {t("settings.speech.custom.meteredNote")}
           </p>
         </div>
-      )}
+      </div>
 
       <div className="border-t border-border-light px-1 py-4">
         <Slider

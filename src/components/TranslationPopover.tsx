@@ -304,7 +304,7 @@ export default function TranslationPopover({
             <button
               onClick={async () => {
                 onClose();
-                await invoke("open_settings_on_main", { section: languageNotConfigured ? "tools" : "ai" });
+                await invoke("open_settings_on_main", { section: languageNotConfigured ? "tools" : "services" });
                 const main = await WebviewWindow.getByLabel("main");
                 await main?.setFocus();
               }}

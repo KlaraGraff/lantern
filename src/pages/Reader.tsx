@@ -492,7 +492,7 @@ export default function Reader() {
 
   const openOcrSettings = useCallback(async () => {
     try {
-      await invoke("open_settings_on_main", { section: "tools", view: "ocr" });
+      await invoke("open_settings_on_main", { section: "services", view: "ocr" });
     } catch {
       await invoke("open_settings_on_main", { section: "tools" }).catch(() => {});
     }

@@ -245,7 +245,7 @@ export default function ExplainPopover({
             <button
               onClick={async () => {
                 onClose();
-                await invoke("open_settings_on_main", { section: "ai" });
+                await invoke("open_settings_on_main", { section: "services" });
                 const main = await WebviewWindow.getByLabel("main");
                 await main?.setFocus();
               }}

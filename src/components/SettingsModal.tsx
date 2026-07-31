@@ -4,7 +4,7 @@ import { Globe, BookOpen, Bot, GraduationCap, Cloud, Info, Terminal, X, ChevronR
 import GeneralSettings from "./settings/GeneralSettings";
 import AppearanceSettings from "./settings/AppearanceSettings";
 import ReadingSettings from "./settings/ReadingSettings";
-import AiSettings from "./settings/AiSettings";
+import ServicesSettings from "./settings/ServicesSettings";
 import ToolsSettings, { type ToolsPreviewState } from "./settings/ToolsSettings";
 import CardPreview from "./settings/CardPreview";
 import LibrarySyncSettings from "./settings/LibrarySyncSettings";
@@ -175,7 +175,7 @@ export default function SettingsModal({ open, onClose, initialSection = "general
     { id: "general", label: t("settings.general.title"), subtitle: t("settings.general.subtitle"), icon: Globe },
     { id: "appearance", label: t("settings.appearance.title"), subtitle: t("settings.appearance.subtitle"), icon: Palette },
     { id: "reading", label: t("settings.reading.title"), subtitle: t("settings.reading.subtitle"), icon: BookOpen },
-    { id: "ai", label: t("settings.ai.shortTitle"), subtitle: t("settings.ai.shortSubtitle"), icon: Bot },
+    { id: "services", label: t("settings.services.shortTitle"), subtitle: t("settings.services.shortSubtitle"), icon: Bot },
     { id: "tools", label: t("settings.tools.title"), subtitle: t("settings.tools.subtitle"), paneSubtitle: t("settings.tools.paneSubtitle"), icon: GraduationCap },
     { id: "librarySync", label: t("settings.librarySync.title"), subtitle: t("settings.librarySync.subtitle"), icon: Cloud },
     { id: "mcp", label: t("settings.mcp.title"), subtitle: t("settings.mcp.subtitle"), icon: Terminal },
@@ -191,13 +191,19 @@ export default function SettingsModal({ open, onClose, initialSection = "general
       case "general": return <GeneralSettings {...settingsProps} />;
       case "appearance": return <AppearanceSettings {...settingsProps} />;
       case "reading": return <ReadingSettings {...settingsProps} />;
-      case "ai": return <AiSettings {...settingsProps} onDirtyChange={setAiDirty} onSaveRef={(fn) => { aiSaveRef.current = fn; }} />;
+      case "services": return (
+        <ServicesSettings
+          {...settingsProps}
+          onDirtyChange={setAiDirty}
+          onSaveRef={(fn) => { aiSaveRef.current = fn; }}
+          initialView={initialView}
+        />
+      );
       case "tools": return (
         <ToolsSettings
           {...settingsProps}
           onPreviewChange={setToolsPreview}
           onNavigationGuardChange={setToolsNavigationGuard}
-          initialView={initialView === "ocr" ? "ocr" : undefined}
         />
       );
       case "librarySync": return <LibrarySyncSettings {...settingsProps} />;
@@ -284,7 +290,7 @@ export default function SettingsModal({ open, onClose, initialSection = "general
           <div className="flex min-w-0 flex-1 flex-col">
             {/* Header actions */}
             <div className="flex items-center justify-end gap-2 pr-3 pt-3">
-              {activeSection === "ai" && (
+              {activeSection === "services" && (
                 <button
                   onClick={() => aiSaveRef.current?.()}
                   disabled={!aiDirty}

@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Activity, AlertCircle, Loader2, Plus } from "lucide-react";
+import { AlertCircle, Loader2, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Button from "../ui/Button";
-import Input from "../ui/Input";
 import Select from "../ui/Select";
 import Toggle from "../ui/Toggle";
 import SortableList from "../ui/SortableList";
@@ -30,20 +29,6 @@ interface VaultStatus {
   encryptedSecretCount: number;
   legacyKeychainCandidateCount: number;
   pendingMigrationCount: number;
-}
-
-interface VectorAvailability {
-  available: boolean;
-  reason: string | null;
-  dimensions?: number | null;
-  model?: string | null;
-}
-
-interface EmbeddingProbeResult {
-  ok: boolean;
-  dimensions: number;
-  latencyMs: number;
-  error?: string | null;
 }
 
 const PROFILE_CONFIG_KEYS = [
@@ -114,15 +99,6 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   const [oauthLoading, setOauthLoading] = useState(false);
   const [vaultStatus, setVaultStatus] = useState<VaultStatus | null>(null);
   const [migratingCredentials, setMigratingCredentials] = useState(false);
-  const [vectorAvailability, setVectorAvailability] = useState<VectorAvailability>({
-    available: false,
-    reason: "requires_compatible_provider",
-  });
-  const [embeddingEndpoint, setEmbeddingEndpoint] = useState("");
-  const [embeddingModel, setEmbeddingModel] = useState("");
-  const [embeddingKey, setEmbeddingKey] = useState("");
-  const [embeddingTesting, setEmbeddingTesting] = useState(false);
-  const [embeddingProbe, setEmbeddingProbe] = useState<EmbeddingProbeResult | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profilesRef = useRef<AiProfile[]>([]);
   const savedProfilesRef = useRef<AiProfile[]>([]);
@@ -177,11 +153,6 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     setVaultStatus(next);
   }, []);
 
-  const refreshVectorAvailability = useCallback(async () => {
-    const next = await invoke<VectorAvailability>("ai_vector_retrieval_status");
-    setVectorAvailability(next);
-  }, []);
-
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -195,8 +166,6 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
       );
       replaceProfiles(nextProfiles);
       replaceSavedProfiles(nextProfiles);
-      setEmbeddingEndpoint(settings.ai_embedding_endpoint || "http://localhost:11434/v1/embeddings");
-      setEmbeddingModel(settings.ai_embedding_model || "text-embedding-3-small");
       setCredentials(Object.fromEntries(credentialEntries));
       setExpandedId((current) => current && nextProfiles.some((profile) => profile.id === current) ? current : null);
       try {
@@ -209,17 +178,12 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
       } catch {
         // The migration reminder is informational and must not block AI setup.
       }
-      try {
-        await refreshVectorAvailability();
-      } catch {
-        setVectorAvailability({ available: false, reason: "requires_compatible_provider" });
-      }
     } catch (nextError) {
       setError(errorText(nextError));
     } finally {
       setLoading(false);
     }
-  }, [refreshOAuthStatus, refreshVaultStatus, refreshVectorAvailability, replaceProfiles, replaceSavedProfiles, settings.ai_embedding_endpoint, settings.ai_embedding_model]);
+  }, [refreshOAuthStatus, refreshVaultStatus, replaceProfiles, replaceSavedProfiles]);
 
   useEffect(() => {
     void load();
@@ -722,40 +686,6 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     }
   };
 
-  const toggleVectorRetrieval = async (enabled: boolean) => {
-    setError(null);
-    try {
-      await invoke("set_ai_vector_retrieval", { enabled });
-      await saveSetting("ai_vector_retrieval", enabled ? "true" : "false");
-      await refreshVectorAvailability();
-    } catch (nextError) {
-      setError(errorText(nextError));
-      await refreshVectorAvailability().catch(() => {});
-    }
-  };
-
-  const testEmbedding = async () => {
-    setEmbeddingTesting(true);
-    setError(null);
-    try {
-      const result = await invoke<EmbeddingProbeResult>("ai_embedding_probe", {
-        endpoint: embeddingEndpoint,
-        model: embeddingModel,
-        apiKey: embeddingKey || null,
-      });
-      setEmbeddingProbe(result);
-      if (result.ok) {
-        setEmbeddingKey("");
-        await refreshVectorAvailability();
-      }
-    } catch (nextError) {
-      setEmbeddingProbe(null);
-      setError(errorText(nextError));
-    } finally {
-      setEmbeddingTesting(false);
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex items-center gap-2 py-8 text-[13px] text-text-muted">
@@ -771,32 +701,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
         <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.chatModels")}</h4>
         <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">{t("settings.ai.chatModelsHint")}</p>
       </div>
-      <div className="mb-4 border-y border-border py-4">
-        <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.embeddingTitle")}</h4>
-        <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">{t("settings.ai.embeddingHint")}</p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <Input value={embeddingEndpoint} onChange={(event) => setEmbeddingEndpoint(event.target.value)} placeholder="http://localhost:11434/v1/embeddings" />
-          <Input value={embeddingModel} onChange={(event) => setEmbeddingModel(event.target.value)} placeholder="text-embedding-3-small" />
-        </div>
-        <div className="mt-2 flex items-center gap-2">
-          <Input className="min-w-0 flex-1" type="password" value={embeddingKey} onChange={(event) => setEmbeddingKey(event.target.value)} placeholder={t("settings.ai.embeddingKeyPlaceholder")} />
-          <Button variant="secondary" size="sm" onClick={() => void testEmbedding()} disabled={embeddingTesting || !embeddingEndpoint.trim() || !embeddingModel.trim()}>
-            {embeddingTesting ? <Loader2 size={14} className="animate-spin" /> : <Activity size={14} />}
-            {t("settings.ai.embeddingTest")}
-          </Button>
-        </div>
-        {(embeddingProbe || vectorAvailability.available) && (
-          <p className={`mt-2 text-[11px] ${embeddingProbe?.ok === false ? "text-danger-text" : "text-success-text"}`}>
-            {embeddingProbe?.ok === false
-              ? t("settings.ai.embeddingFailed")
-              : t("settings.ai.embeddingAvailable", {
-                  dimensions: embeddingProbe?.dimensions ?? vectorAvailability.dimensions,
-                  latency: embeddingProbe?.latencyMs ?? "-",
-                })}
-          </p>
-        )}
-      </div>
-      <div className="mb-4 flex min-h-[73px] items-center justify-between gap-4 border-b border-border py-3">
+      <div className="mb-4 flex min-h-[73px] items-center justify-between gap-4 border-y border-border py-3">
         <div className="min-w-0">
           <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.grounding")}</h4>
           <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">{t("settings.ai.groundingHint")}</p>
@@ -829,22 +734,6 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
             { value: "", label: t("settings.ai.summaryProfileFollow") },
             ...profiles.filter((profile) => profile.enabled).map((profile) => ({ value: profile.id, label: profile.label })),
           ]}
-        />
-      </div>
-      <div className="mb-4 flex min-h-[73px] items-center justify-between gap-4 border-b border-border py-3">
-        <div className="min-w-0">
-          <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.vectorRetrieval")}</h4>
-          <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">
-            {vectorAvailability.available
-              ? t("settings.ai.vectorRetrievalHint")
-              : t("settings.ai.vectorRetrievalUnavailable")}
-          </p>
-        </div>
-        <Toggle
-          checked={settings.ai_vector_retrieval === "true"}
-          onChange={(enabled) => void toggleVectorRetrieval(enabled)}
-          disabled={!vectorAvailability.available}
-          label={t("settings.ai.vectorRetrieval")}
         />
       </div>
       <div className="mb-4 flex min-h-[73px] items-center justify-between gap-4 border-b border-border py-3">
