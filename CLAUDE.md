@@ -10,7 +10,7 @@
 
 - **Backend:** Rust, Tauri 2, SQLite (rusqlite), WAL mode
 - **Frontend:** React 19, TypeScript, Tailwind CSS 4, Vite, React Router
-- **EPUB rendering:** foliate-js (git submodule in `/public/foliate-js/`)
+- **EPUB rendering:** foliate-js (vendored in `/public/foliate-js/` — edit in place, see its `LANTERN.md`)
 - **i18n:** i18next + react-i18next (`src/i18n/en.json`, `src/i18n/zh.json`)
 - **Icons:** lucide-react
 - **CI:** GitHub Actions — `ci.yaml` (runs on pushes to `main` and on PRs), `release.yml` (tag-triggered builds)
