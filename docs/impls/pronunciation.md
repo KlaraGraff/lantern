@@ -247,6 +247,15 @@ Settings → Learning Tools → Action Menu; no migration is written for this.
 - **Step 3** *(shipped)* — selection-menu `speak` row, vocabulary detail and review integration,
   bindable `speak` reader action.
 
+## Parked
+
+**A play button on every row of the 词汇 list.** Both layouts in `DictionaryContent.tsx` (the
+list view around the 160px word column, and the card view) wrap each row in a single `<button>`
+that opens the detail modal, so a nested control would be invalid HTML and needs the row split
+into a non-button container with its own click target. Deliberately deferred on 2026-07-31 —
+the detail modal and the review card, where you actually stop and study a word, carry the
+control instead. Revisit if row-by-row playback turns out to matter during review.
+
 ## Figma design prompt
 
 > Design a compact inline pronunciation control for a desktop reading app's dictionary card,
