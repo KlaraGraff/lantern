@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Highlighter, LayoutPanelTop, MousePointer2, MousePointerClick, PanelRightOpen, ScanText } from "lucide-react";
+import { Highlighter, LayoutPanelTop, MousePointer2, MousePointerClick, PanelRightOpen, ScanText, Volume2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   LEARNING_CARD_CONFIG_SETTING_KEY,
@@ -20,6 +20,7 @@ import MarkerStyleSettings from "./MarkerStyleSettings";
 import ReaderBindingsSettings from "./ReaderBindingsSettings";
 import ConfirmDialog from "./ConfirmDialog";
 import OcrSettings from "./OcrSettings";
+import SpeechSettings from "./SpeechSettings";
 import type { SettingsProps } from "./types";
 import {
   MARKER_STYLE_SETTING_KEY,
@@ -31,7 +32,7 @@ import {
 import { notifyReadingAssistanceSettingsChanged } from "../reading-assistance-events";
 import { parseReaderBindings, READER_BINDINGS_SETTING_KEY, type ReaderActionBinding } from "../reader-bindings";
 
-type ToolsView = "interaction" | "cards" | "menu" | "markers" | "ocr";
+type ToolsView = "interaction" | "cards" | "menu" | "markers" | "speech" | "ocr";
 
 export interface ToolsPreviewState {
   kind: LearningCardKind;
@@ -324,6 +325,7 @@ export default function ToolsSettings({
       icon: Highlighter,
       label: t("settings.tools.views.markers", { defaultValue: "正文标记" }),
     },
+    { id: "speech", icon: Volume2, label: t("settings.speech.tab") },
     { id: "ocr", icon: ScanText, label: t("ocr.settings.tab") },
   ];
 
@@ -386,6 +388,8 @@ export default function ToolsSettings({
           />
         </div>
       )}
+
+      {view === "speech" && <SpeechSettings showSavedToast={showSavedToast} />}
 
       {view === "ocr" && <OcrSettings />}
 

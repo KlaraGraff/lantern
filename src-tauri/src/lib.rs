@@ -783,6 +783,10 @@ pub fn run() {
             commands::fonts::import_custom_fonts,
             commands::fonts::list_custom_fonts,
             commands::fonts::delete_custom_font,
+            // Dictionary pronunciation audio (cached on disk, never synced)
+            commands::speech::speech_dictionary_audio,
+            commands::speech::speech_cache_stats,
+            commands::speech::speech_cache_clear,
             // Learner profile and exam-to-CEFR estimates
             commands::language_assessments::estimate_cefr,
             commands::language_assessments::summarize_language_assessments,

@@ -9,6 +9,7 @@ import {
 import LearningCardActions from "./LearningCardActions";
 import LearningCardModules from "./LearningCardModules";
 import LearningCardNotes from "./LearningCardNotes";
+import PronounceButton from "../speech/PronounceButton";
 import type {
   CardDesignConfigV1,
   LearningCardActionId,
@@ -118,6 +119,7 @@ export default function LearningCardView({
         <h2 id={titleId} className="min-w-0 flex-1 break-words text-[13px] font-semibold leading-5 text-accent-text">
           {title}
         </h2>
+        <PronounceButton text={result.sourceText} kind={result.kind} />
         {loading && <Loader2 size={14} className="shrink-0 animate-spin text-accent-text" aria-hidden="true" />}
         {onRefresh && !loading && !error && (
           <button

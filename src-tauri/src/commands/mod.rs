@@ -12,6 +12,7 @@ pub mod notes;
 pub mod oauth;
 pub mod ocr;
 pub mod settings;
+pub mod speech;
 pub mod sync;
 pub mod translation;
 pub mod vocab;
