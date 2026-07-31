@@ -240,7 +240,7 @@ Settings → Learning Tools → Action Menu; no migration is written for this.
 
 ## Steps
 
-- **Step 1 (this doc's scope)** — dictionary + system sources, fallback chain, disk cache,
+- **Step 1** *(shipped)* — dictionary + system sources, fallback chain, disk cache,
   `PronounceButton`, learning-card integration, accent toggle, Speech settings tab.
 - **Step 2** *(shipped)* — OpenAI-compatible custom TTS, key in the secrets store, provider
   settings UI.
