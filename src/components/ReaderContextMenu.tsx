@@ -16,8 +16,9 @@ import {
   type InteractionKind,
   type SerializableRect,
 } from "./reader-interaction";
+import SpeakMenuRow from "./speech/SpeakMenuRow";
 
-export type ReaderMenuAction = "primary" | "ask-ai" | "save" | "highlight" | "translate" | "copy" | `custom_${string}`;
+export type ReaderMenuAction = "primary" | "speak" | "ask-ai" | "save" | "highlight" | "translate" | "copy" | `custom_${string}`;
 
 interface ReaderContextMenuProps {
   anchorRect: SerializableRect;
@@ -202,6 +203,9 @@ export default function ReaderContextMenu({
       style={{ left: anchorRect.right, top: anchorRect.bottom + 8 }}
     >
       {actions.map((action) => {
+        // Owns its own playback and accent toggle, so it needs no wiring from
+        // the reader and does not dismiss the menu when used.
+        if (action === "speak") return <SpeakMenuRow key={action} text={text} kind={kind} />;
         const definition = definitions[action];
         if (!definition) return null;
         const Icon = definition.icon;

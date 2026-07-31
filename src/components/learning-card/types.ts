@@ -28,6 +28,7 @@ export type SelectionMenuKind = "word" | "phrase" | "passage";
 export type BuiltInSelectionMenuActionId =
   | "define"
   | "explain"
+  | "speak"
   | "ask_ai"
   | "collect"
   | "highlight"

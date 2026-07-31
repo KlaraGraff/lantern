@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { Bookmark, Copy, Highlighter, Languages, Loader2, MessageSquareMore, RotateCcw, WandSparkles } from "lucide-react";
+import { Bookmark, Copy, Highlighter, Languages, Loader2, MessageSquareMore, RotateCcw, Volume2, WandSparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { createUuid } from "../../utils/randomUuid";
 import {
@@ -35,6 +35,7 @@ type PreviewMarkState = "unmarked" | "current" | "book";
 const actionIcons: Record<SelectionMenuActionId, typeof WandSparkles> = {
   define: WandSparkles,
   explain: WandSparkles,
+  speak: Volume2,
   ask_ai: MessageSquareMore,
   collect: Bookmark,
   highlight: Highlighter,

@@ -143,6 +143,7 @@ function logicalScopeAnchor(chapters: readonly TocChapter[], index: number): num
 const readerMenuActionMap: Record<string, ReaderMenuAction> = {
   define: "primary",
   explain: "primary",
+  speak: "speak",
   ask_ai: "ask-ai",
   collect: "save",
   highlight: "highlight",

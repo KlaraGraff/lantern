@@ -83,6 +83,7 @@ const menuAction = (id: SelectionMenuActionId, labelKey?: string): SelectionMenu
 export const MENU_ACTION_DEFINITIONS: Record<SelectionMenuKind, SelectionMenuActionDefinition[]> = {
   word: [
     menuAction("define", "settings.tools.menuActions.lookup"),
+    menuAction("speak"),
     menuAction("ask_ai"),
     menuAction("collect"),
     menuAction("highlight"),
@@ -91,6 +92,7 @@ export const MENU_ACTION_DEFINITIONS: Record<SelectionMenuKind, SelectionMenuAct
   ],
   phrase: [
     menuAction("define"),
+    menuAction("speak"),
     menuAction("ask_ai"),
     menuAction("collect"),
     menuAction("highlight"),
@@ -99,6 +101,7 @@ export const MENU_ACTION_DEFINITIONS: Record<SelectionMenuKind, SelectionMenuAct
   ],
   passage: [
     menuAction("explain"),
+    menuAction("speak"),
     menuAction("ask_ai"),
     menuAction("collect"),
     menuAction("highlight"),

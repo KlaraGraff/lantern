@@ -173,11 +173,22 @@ Only reachable when the source is `system`.
 | # | where | kind |
 |---|---|---|
 | 1 | `LearningCardView` header, beside the title | `word` / `phrase` / `passage` |
-| 2 | `ReaderContextMenu` `speak` action (Step 3) | selection |
+| 2 | `ReaderContextMenu` `speak` row | selection |
 | 3 | `VocabDetailModal`, `DictionaryContent` (Step 3) | word |
 
 The card header's drag handler already skips `button` elements, so the control can sit inside it
 without hijacking drags.
+
+The selection-menu row exists so that hearing a word does not require running an AI lookup
+first. It owns its playback through `usePronunciation` and needs no wiring from the reader, and
+it deliberately does not dismiss the menu — replaying and switching accent are exactly what is
+wanted right after a play. Because HTML forbids nested buttons, the row is a flex container
+holding two sibling `role="menuitem"` buttons, which also keeps both reachable by keyboard.
+
+`speak` is a configurable menu action like any other. `parseMenu` appends built-ins that a
+stored config predates, so it turns up enabled — but at the *end* of the menu for anyone who had
+already customized it, rather than in the second slot new installs get. Reordering is a drag in
+Settings → Learning Tools → Action Menu; no migration is written for this.
 
 ## Verification
 
@@ -195,7 +206,8 @@ without hijacking drags.
 - **Step 1 (this doc's scope)** — dictionary + system sources, fallback chain, disk cache,
   `PronounceButton`, learning-card integration, accent toggle, Speech settings tab.
 - **Step 2** — OpenAI-compatible custom TTS, key in `secrets.db`, provider settings UI.
-- **Step 3** — selection-menu `speak` action, vocabulary list integration, keyboard shortcut.
+- **Step 3** — ~~selection-menu `speak` action~~ (shipped), vocabulary list integration,
+  keyboard shortcut.
 
 ## Figma design prompt
 
