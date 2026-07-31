@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { ArrowRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
@@ -30,6 +32,21 @@ export default function VocabEntryDetails({
   const contextSentence = word.context_sentence?.trim() || null;
   const contextExplanation = word.context_explanation?.trim() || null;
   const source = bookTitle ?? word.book_title ?? t("vocab.detail.unknownBook");
+  const [dictionary, setDictionary] = useState<string | null>(null);
+
+  // Only mounted while expanded, so this is the lazy load. A miss is silent —
+  // the section simply does not appear.
+  useEffect(() => {
+    let cancelled = false;
+    invoke<{ explain: string }>("dictionary_gloss", { word: word.word })
+      .then((entry) => {
+        if (!cancelled) setDictionary(entry.explain.trim() || null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [word.word]);
 
   return (
     <div className="flex flex-col gap-3 border-t border-border-light px-3 pb-3 pt-2.5">
@@ -50,11 +67,20 @@ export default function VocabEntryDetails({
       {definition && (
         <section className="flex flex-col gap-1">
           <h3 className="text-[10px] font-semibold uppercase tracking-[0.4px] text-text-muted">
-            {t("vocab.detail.definition")}
+            {t("vocab.detail.contextualDefinition")}
           </h3>
           <div className={`${LOOKUP_PROSE} text-[13px] text-text-primary`}>
             <Markdown>{definition}</Markdown>
           </div>
+        </section>
+      )}
+
+      {dictionary && (
+        <section className="flex flex-col gap-1">
+          <h3 className="text-[10px] font-semibold uppercase tracking-[0.4px] text-text-muted">
+            {t("vocab.detail.dictionary")}
+          </h3>
+          <p className="text-[12px] leading-[1.55] text-text-secondary">{dictionary}</p>
         </section>
       )}
 

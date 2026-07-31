@@ -32,6 +32,17 @@ export async function collectWord({ bookId, word, contextSentence, cfi }: Collec
     // Saved without a gloss, same as before this existed.
   }
 
+  if (!definition.trim()) {
+    // No AI configured, or the call failed. A dictionary sense cannot know
+    // which meaning this sentence used, but it beats an empty row.
+    try {
+      const entry = await invoke<{ firstSense: string }>("dictionary_gloss", { word });
+      definition = entry.firstSense;
+    } catch {
+      // Saved bare.
+    }
+  }
+
   await invoke("add_vocab_word", {
     bookId,
     word,

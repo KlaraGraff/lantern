@@ -785,6 +785,7 @@ pub fn run() {
             commands::fonts::list_custom_fonts,
             commands::fonts::delete_custom_font,
             // Dictionary pronunciation audio (cached on disk, never synced)
+            commands::dictionary::dictionary_gloss,
             commands::speech::speech_dictionary_audio,
             commands::speech::speech_custom_audio,
             commands::speech::speech_custom_key_configured,
