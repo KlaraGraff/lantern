@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Loader2, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Button from "../ui/Button";
+import Input from "../ui/Input";
 import Select from "../ui/Select";
 import Slider from "../ui/Slider";
 import {
@@ -14,6 +15,10 @@ import {
 import { accentAvailability, subscribeToVoices } from "../speech/system-voices";
 import {
   SPEECH_ACCENT_SETTING_KEY,
+  SPEECH_CUSTOM_BASE_URL_KEY,
+  SPEECH_CUSTOM_MODEL_KEY,
+  SPEECH_CUSTOM_VOICE_UK_KEY,
+  SPEECH_CUSTOM_VOICE_US_KEY,
   SPEECH_RATE_RANGE,
   SPEECH_RATE_SETTING_KEY,
   SPEECH_SOURCE_SETTING_KEY,
@@ -55,10 +60,51 @@ function SettingsRow({
   );
 }
 
+/** Commits on blur or Enter, so a base URL is not saved one keystroke at a time. */
+function TextSettingRow({
+  title,
+  subtitle,
+  value,
+  placeholder,
+  type,
+  width = ROW_CONTROL_WIDTH,
+  onChange,
+  onCommit,
+}: {
+  title: string;
+  subtitle: string;
+  value: string;
+  placeholder?: string;
+  type?: string;
+  width?: string;
+  onChange: (value: string) => void;
+  onCommit: () => void;
+}) {
+  return (
+    <SettingsRow title={title} subtitle={subtitle}>
+      <div className={width}>
+        <Input
+          value={value}
+          type={type}
+          placeholder={placeholder}
+          onChange={(event) => onChange(event.target.value)}
+          onBlur={onCommit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
+        />
+      </div>
+    </SettingsRow>
+  );
+}
+
 export default function SpeechSettings({ showSavedToast }: { showSavedToast: (msg?: string) => void }) {
   const { t } = useTranslation();
   const [settings, setSettings] = useState(speechSettings);
   const [rate, setRate] = useState(() => speechSettings().rate);
+  const [custom, setCustom] = useState(() => speechSettings().custom);
+  const [keyDraft, setKeyDraft] = useState("");
+  const [keyConfigured, setKeyConfigured] = useState(false);
   const [voicesRevision, setVoicesRevision] = useState(0);
   const [cache, setCache] = useState<SpeechCacheStats | null>(null);
   const [clearing, setClearing] = useState(false);
@@ -68,8 +114,17 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
     return subscribeToSpeechSettings((value) => {
       setSettings(value);
       setRate(value.rate);
+      setCustom(value.custom);
     });
   }, []);
+
+  const refreshKeyState = useCallback(() => {
+    invoke<boolean>("speech_custom_key_configured")
+      .then(setKeyConfigured)
+      .catch((error) => console.error("Failed to read speech key state:", error));
+  }, []);
+
+  useEffect(refreshKeyState, [refreshKeyState]);
 
   useEffect(() => subscribeToVoices(() => setVoicesRevision((value) => value + 1)), []);
 
@@ -116,6 +171,7 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
             options={[
               { value: "dictionary", label: t("settings.speech.sourceOption.dictionary") },
               { value: "system", label: t("settings.speech.sourceOption.system") },
+              { value: "custom", label: t("settings.speech.sourceOption.custom") },
             ]}
           />
         </div>
@@ -137,6 +193,84 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
           />
         </div>
       </SettingsRow>
+
+      {settings.source === "custom" && (
+        <div className="border-t border-border-light pt-1">
+          <TextSettingRow
+            title={t("settings.speech.custom.baseUrl")}
+            subtitle={t("settings.speech.custom.baseUrlHint")}
+            value={custom.baseUrl}
+            placeholder="https://api.openai.com/v1"
+            width="w-[280px] shrink-0"
+            onChange={(value) => setCustom((current) => ({ ...current, baseUrl: value }))}
+            onCommit={() => persist({ [SPEECH_CUSTOM_BASE_URL_KEY]: custom.baseUrl.trim() })}
+          />
+          <TextSettingRow
+            title={t("settings.speech.custom.model")}
+            subtitle={t("settings.speech.custom.modelHint")}
+            value={custom.model}
+            placeholder="gpt-4o-mini-tts"
+            onChange={(value) => setCustom((current) => ({ ...current, model: value }))}
+            onCommit={() => persist({ [SPEECH_CUSTOM_MODEL_KEY]: custom.model.trim() })}
+          />
+          <TextSettingRow
+            title={t("settings.speech.custom.voiceUk")}
+            subtitle={t("settings.speech.custom.voiceUkHint")}
+            value={custom.voiceUk}
+            placeholder={custom.voiceUs || "alloy"}
+            onChange={(value) => setCustom((current) => ({ ...current, voiceUk: value }))}
+            onCommit={() => persist({ [SPEECH_CUSTOM_VOICE_UK_KEY]: custom.voiceUk.trim() })}
+          />
+          <TextSettingRow
+            title={t("settings.speech.custom.voiceUs")}
+            subtitle={t("settings.speech.custom.voiceUsHint")}
+            value={custom.voiceUs}
+            placeholder="nova"
+            onChange={(value) => setCustom((current) => ({ ...current, voiceUs: value }))}
+            onCommit={() => persist({ [SPEECH_CUSTOM_VOICE_US_KEY]: custom.voiceUs.trim() })}
+          />
+          <SettingsRow
+            title={t("settings.speech.custom.apiKey")}
+            subtitle={keyConfigured
+              ? t("settings.speech.custom.apiKeyConfigured")
+              : t("settings.speech.custom.apiKeyHint")}
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-[180px] shrink-0">
+                <Input
+                  type="password"
+                  value={keyDraft}
+                  autoComplete="off"
+                  placeholder={keyConfigured ? "••••••••••••" : "sk-…"}
+                  onChange={(event) => setKeyDraft(event.target.value)}
+                />
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={keyDraft.trim().length === 0 && !keyConfigured}
+                onClick={() => {
+                  // An empty draft on a configured key means "disconnect".
+                  invoke("set_speech_custom_key", { value: keyDraft })
+                    .then(() => {
+                      setKeyDraft("");
+                      refreshKeyState();
+                      showSavedToast(keyDraft.trim()
+                        ? t("settings.speech.custom.apiKeySaved")
+                        : t("settings.speech.custom.apiKeyCleared"));
+                    })
+                    .catch((error) => console.error("Failed to save speech key:", error));
+                }}
+              >
+                {keyDraft.trim() ? t("common.save") : t("settings.speech.custom.apiKeyClear")}
+              </Button>
+            </div>
+          </SettingsRow>
+          <p className="px-1 pb-2 text-[11px] leading-[17px] text-text-placeholder">
+            {t("settings.speech.custom.meteredNote")}
+          </p>
+        </div>
+      )}
 
       <div className="border-t border-border-light px-1 py-4">
         <Slider

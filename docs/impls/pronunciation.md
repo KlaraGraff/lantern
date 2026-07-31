@@ -73,9 +73,14 @@ pronunciation endpoint; in-app audio is internal. Not an option.
 User picks one preferred source; the app resolves per request:
 
 word/phrase → dictionary ──(500 / network error)──→ system voices
-sentence    → dictionary can't ────────────────────→ custom TTS (if set) → system voices
+passage     → dictionary can't ────────────────────→ system voices
 preferred = custom TTS → always custom ──(failure)──→ system voices
 ```
+
+**Every source falls back to system voices, and only to system voices.** An earlier sketch had
+the dictionary escalate to custom TTS for passages it cannot serve. That was dropped: the custom
+source is metered, and silently spending the user's money as a fallback is a nasty surprise. The
+selected source is the only paid path.
 
 Default source is **dictionary**. That also sidesteps the Windows missing-UK-voice problem on
 the default path — it only surfaces if the user explicitly picks system voices.
@@ -138,16 +143,36 @@ src/hooks/useSpeech.ts hook over player + settings + fallback chain
 
 | key | values | default |
 |---|---|---|
-| `speech_source` | `dictionary` \| `system` | `dictionary` |
+| `speech_source` | `dictionary` \| `system` \| `custom` | `dictionary` |
 | `speech_accent` | `uk` \| `us` | `us` |
 | `speech_rate` | `0.5`–`1.5` | `1` |
+| `tts_base_url` / `tts_model` / `tts_voice_uk` / `tts_voice_us` | provider settings | empty |
 
-Step 2 adds `custom` to `speech_source`. A new **发音 / Speech** tab in `ToolsSettings`
-(alongside interaction/cards/menu/markers/ocr).
+The API key is `tts_api_key` in the **secrets store**, added to `SENSITIVE_KEYS` so
+`get_all_settings` can never return it. `speech_custom_key_configured` is metadata-only, like
+`ai_api_key_configured` — opening settings never decrypts it. A new **发音 / Speech** tab in
+`ToolsSettings` (alongside interaction/cards/menu/markers/ocr).
 
 The controls read from a shared module store rather than `useSettings`, because every looked-up
 word renders a pronounce button and each `useSettings` mount is another `get_all_settings` round
 trip. The store loads once per window and rides the existing settings broadcast.
+
+### The custom source
+
+`POST {base_url}/audio/speech` with `{model, input, voice, response_format: "mp3"}` and a bearer
+key — the shape every OpenAI-compatible provider accepts.
+
+- The **cache identity folds in base URL, model and voice**, so changing any of them serves fresh
+  audio instead of the clip recorded under the old settings, and the two sources cannot collide
+  in the shared directory.
+- **Base URL is normalized**: trailing slash optional, and pasting the full `/audio/speech`
+  endpoint does not produce `/audio/speech/audio/speech`.
+- **British falls back to the American voice** when left blank, since single-voice providers are
+  normal.
+- **401/403 reports `SPEECH_CUSTOM_NOT_CONFIGURED`**, not a transport error, so the UI points at
+  settings instead of blaming the network.
+- Text limit is 2000 chars (vs 64 for the dictionary) — a real synthesizer reads passages, and
+  the cap bounds per-play cost. Timeout is 60s rather than 10s for the same reason.
 
 ### Voice selection
 
@@ -174,7 +199,13 @@ Only reachable when the source is `system`.
 |---|---|---|
 | 1 | `LearningCardView` header, beside the title | `word` / `phrase` / `passage` |
 | 2 | `ReaderContextMenu` `speak` row | selection |
-| 3 | `VocabDetailModal`, `DictionaryContent` (Step 3) | word |
+| 3 | `VocabDetailModal` header, and the review card in `DictionaryContent` | word |
+| 4 | `speak` reader binding (any key or mouse trigger) | selection |
+
+The dense vocabulary **list rows** were deliberately left out: each row is already one big
+`<button>` that opens the detail view, so a nested control would be invalid HTML and would need
+the row restructured, for a play button in a 160px column. The detail view and the review card —
+where you actually stop and study a word — carry it instead.
 
 The card header's drag handler already skips `button` elements, so the control can sit inside it
 without hijacking drags.
@@ -197,17 +228,24 @@ Settings → Learning Tools → Action Menu; no migration is written for this.
   with `cargo test --lib commands::speech -- --ignored` when changing the cache or request shape.
   They assert that audio is fetched then served from disk, that a non-entry is remembered as a
   miss, and — the point of the feature — that UK and US audio for `schedule` genuinely differ.
+- The custom source is pinned against a one-shot local HTTP server (no network, runs in CI): the
+  request line, bearer header and JSON body are asserted verbatim, plus 401 mapping to
+  misconfiguration. Getting that wire format wrong is invisible locally and near-impossible for
+  a user to diagnose against their own provider.
 - `tests/speech.test.ts` covers settings parsing/clamping, the magic-byte MIME sniff, and the
   voice inventory across installs: both accents present, US-only (the common Windows case),
   underscore language tags, no English voices, and no `speechSynthesis` at all.
+- `tests/selection-menu-config.test.ts` pins that `speak` reaches menus configured before it
+  existed, enabled and without disturbing the user's ordering.
 
 ## Steps
 
 - **Step 1 (this doc's scope)** — dictionary + system sources, fallback chain, disk cache,
   `PronounceButton`, learning-card integration, accent toggle, Speech settings tab.
-- **Step 2** — OpenAI-compatible custom TTS, key in `secrets.db`, provider settings UI.
-- **Step 3** — ~~selection-menu `speak` action~~ (shipped), vocabulary list integration,
-  keyboard shortcut.
+- **Step 2** *(shipped)* — OpenAI-compatible custom TTS, key in the secrets store, provider
+  settings UI.
+- **Step 3** *(shipped)* — selection-menu `speak` row, vocabulary detail and review integration,
+  bindable `speak` reader action.
 
 ## Figma design prompt
 

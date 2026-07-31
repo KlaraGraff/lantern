@@ -785,6 +785,9 @@ pub fn run() {
             commands::fonts::delete_custom_font,
             // Dictionary pronunciation audio (cached on disk, never synced)
             commands::speech::speech_dictionary_audio,
+            commands::speech::speech_custom_audio,
+            commands::speech::speech_custom_key_configured,
+            commands::speech::set_speech_custom_key,
             commands::speech::speech_cache_stats,
             commands::speech::speech_cache_clear,
             // Learner profile and exam-to-CEFR estimates

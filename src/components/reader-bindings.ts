@@ -2,7 +2,7 @@ export const DEFAULT_PREVIOUS_PAGE_BINDING = "key:ArrowLeft";
 export const DEFAULT_NEXT_PAGE_BINDING = "key:ArrowRight";
 export const READER_BINDINGS_SETTING_KEY = "reader_bindings";
 
-export type BuiltInReaderActionId = "lookup" | "translate" | "collect" | "highlight" | "copy" | "ask_ai" | "explain";
+export type BuiltInReaderActionId = "lookup" | "speak" | "translate" | "collect" | "highlight" | "copy" | "ask_ai" | "explain";
 export type ReaderActionId = BuiltInReaderActionId | `custom_${string}`;
 export interface ReaderActionBinding { actionId: ReaderActionId; trigger: string }
 export interface ReaderBindingsConfig { version: 1; bindings: ReaderActionBinding[] }

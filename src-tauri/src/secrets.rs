@@ -30,6 +30,7 @@ const AAD_PREFIX: &[u8] = b"quill-secret-v1\0";
 
 const SENSITIVE_KEYS: &[&str] = &[
     "ai_api_key",
+    "tts_api_key",
     "oauth_access_token",
     "oauth_refresh_token",
     "oauth_expires_at",

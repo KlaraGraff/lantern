@@ -5,6 +5,7 @@ import Markdown from "react-markdown";
 import type { DictionaryWord } from "../hooks/useDictionary";
 import { openReaderWindow } from "../utils/openReaderWindow";
 import { LOOKUP_PROSE } from "./lookup-prose";
+import PronounceButton from "./speech/PronounceButton";
 
 interface VocabDetailModalProps {
   word: DictionaryWord | null;
@@ -145,9 +146,12 @@ export default function VocabDetailModal({
         {/* Header */}
         <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-border-light shrink-0">
           <div className="flex flex-col gap-1 min-w-0">
-            <h2 className="text-[24px] font-bold text-text-primary tracking-[-0.3px] leading-tight truncate">
-              {word.word}
-            </h2>
+            <div className="flex items-center gap-2 min-w-0">
+              <h2 className="text-[24px] font-bold text-text-primary tracking-[-0.3px] leading-tight truncate">
+                {word.word}
+              </h2>
+              <PronounceButton text={word.word} size="md" />
+            </div>
             {subtitleParts && (
               <span className="text-[13px] text-text-muted">{subtitleParts}</span>
             )}

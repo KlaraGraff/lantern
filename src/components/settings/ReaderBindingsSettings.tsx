@@ -35,7 +35,7 @@ export default function ReaderBindingsSettings({
   const [draftAction, setDraftAction] = useState<ReaderActionId>("translate");
   const actions = useMemo(() => {
     const builtIns: Array<{ value: ReaderActionId; label: string }> = [
-      "lookup", "translate", "collect", "highlight", "copy", "ask_ai", "explain",
+      "lookup", "speak", "translate", "collect", "highlight", "copy", "ask_ai", "explain",
     ].map((id) => ({ value: id as ReaderActionId, label: t(`settings.tools.bindings.actions.${id}`) }));
     const custom = Object.values(config.selectionMenus)
       .flat()

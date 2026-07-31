@@ -92,6 +92,7 @@ import { ReadingProgressWriter } from "./reader/reading-progress-writer";
 import { useBookAvailability } from "./reader/useBookAvailability";
 import { usePageTurnInput } from "./reader/usePageTurnInput";
 import { useReaderInteractions } from "./reader/useReaderInteractions";
+import { useSpeech } from "../hooks/useSpeech";
 import { useOcrPackage } from "../hooks/useOcrPackage";
 import { useOcrJob } from "../hooks/useOcrJob";
 import {
@@ -1076,6 +1077,9 @@ export default function Reader() {
 
   useWindowSizePersistence(bookId, isStandaloneWindow);
   const { availabilityState, retryAvailability } = useBookAvailability(book, setBook);
+  // Bound key/mouse triggers speak without opening any card, so the reader owns
+  // its own playback slot alongside the cards and the selection menu.
+  const { speak: speakSelection } = useSpeech();
   const readerActionLabel = useCallback((actionId: ReaderActionId) => {
     if (actionId.startsWith("custom_")) {
       const item = Object.values(learningCardConfig.selectionMenus)
@@ -1114,6 +1118,8 @@ export default function Reader() {
         context: interaction.context,
         cfi: interaction.location,
       });
+    } else if (actionId === "speak") {
+      speakSelection(interaction.text, interaction.kind);
     } else if (actionId === "copy") {
       void navigator.clipboard.writeText(interaction.text);
     } else if (actionId === "ask_ai") {
@@ -1169,6 +1175,7 @@ export default function Reader() {
     openLearningCard,
     readerActionLabel,
     refreshAnnotations,
+    speakSelection,
     supportsWordMarkers,
     t,
   ]);

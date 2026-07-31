@@ -13,7 +13,7 @@ import {
   speechSynthesisSupported,
   voiceForAccent,
 } from "../src/components/speech/system-voices.ts";
-import { audioMimeType } from "../src/components/speech/dictionary-source.ts";
+import { audioMimeType } from "../src/components/speech/remote-audio.ts";
 
 function voice(lang: string, name = lang, isDefault = false): SpeechSynthesisVoice {
   return { lang, name, default: isDefault, localService: true, voiceURI: name } as SpeechSynthesisVoice;
@@ -46,8 +46,35 @@ test("speech settings fall back to the documented defaults", () => {
 test("speech settings round-trip valid values", () => {
   assert.deepEqual(
     parseSpeechSettings({ speech_source: "system", speech_accent: "uk", speech_rate: "1.2" }),
-    { source: "system", accent: "uk", rate: 1.2 },
+    { source: "system", accent: "uk", rate: 1.2, custom: DEFAULT_SPEECH_SETTINGS.custom },
   );
+});
+
+test("the custom source and its provider settings round-trip", () => {
+  const parsed = parseSpeechSettings({
+    speech_source: "custom",
+    tts_base_url: "  https://api.openai.com/v1  ",
+    tts_model: "gpt-4o-mini-tts",
+    tts_voice_uk: "alloy",
+    tts_voice_us: "nova",
+  });
+  assert.equal(parsed.source, "custom");
+  // Trimmed, or a stray space would end up in the request URL.
+  assert.deepEqual(parsed.custom, {
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4o-mini-tts",
+    voiceUk: "alloy",
+    voiceUs: "nova",
+  });
+});
+
+test("provider settings default to empty rather than undefined", () => {
+  assert.deepEqual(parseSpeechSettings({}).custom, {
+    baseUrl: "",
+    model: "",
+    voiceUk: "",
+    voiceUs: "",
+  });
 });
 
 test("speech rate is clamped to the supported range", () => {

@@ -30,6 +30,7 @@ import Button from "./ui/Button";
 import { useAllDictionary, useAllLookupHistory, type DictionaryWord, type LookupRecord, type LookupRecordPage } from "../hooks/useDictionary";
 import { timeAgo } from "../utils/timeAgo";
 import VocabDetailModal from "./VocabDetailModal";
+import PronounceButton from "./speech/PronounceButton";
 import { openReaderWindow } from "../utils/openReaderWindow";
 import {
   LearningCardModules,
@@ -1016,7 +1017,10 @@ export default function DictionaryContent() {
               <RotateCcw size={17} className="text-accent" />
               <h2 className="text-[16px] font-semibold">{t("vocab.review")}</h2>
             </div>
-            <p className="mt-4 text-[20px] font-semibold text-text-primary">{reviewing.word}</p>
+            <div className="mt-4 flex items-center gap-2">
+              <p className="text-[20px] font-semibold text-text-primary">{reviewing.word}</p>
+              <PronounceButton text={reviewing.word} size="md" />
+            </div>
             <p className="mt-2 text-[14px] leading-6 text-text-secondary whitespace-pre-line">{reviewing.definition}</p>
             {reviewing.context_sentence && <p className="mt-3 text-[13px] italic text-text-muted">&ldquo;{reviewing.context_sentence}&rdquo;</p>}
             <div className="mt-5 grid grid-cols-4 gap-2">

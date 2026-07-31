@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { fetchDictionaryAudio } from "../components/speech/dictionary-source";
+import { fetchCustomAudio, fetchDictionaryAudio } from "../components/speech/remote-audio";
 import {
   cancelSpeech,
   playerState,
@@ -40,15 +40,25 @@ function systemPlayback(text: string, settings: SpeechSettings): Playback {
  * while a 17-character idiom succeeds — so a miss is routine and falls through
  * to system voices rather than surfacing an error. Whole passages skip the
  * dictionary entirely; it has never had audio for them.
+ *
+ * Every source falls back to system voices, and only to system voices: the
+ * custom provider is metered, so the dictionary never escalates to it. Spending
+ * the user's money as a silent fallback would be a nasty surprise.
  */
 async function resolvePlayback(
   text: string,
   kind: SpeechKind,
   settings: SpeechSettings,
 ): Promise<Playback> {
-  if (settings.source === "dictionary" && kind !== "passage") {
+  const remote = settings.source === "custom"
+    ? fetchCustomAudio
+    : settings.source === "dictionary" && kind !== "passage"
+      ? fetchDictionaryAudio
+      : null;
+
+  if (remote) {
     try {
-      return { kind: "audio", blob: await fetchDictionaryAudio(text, settings.accent) };
+      return { kind: "audio", blob: await remote(text, settings.accent) };
     } catch {
       // Falls through to system voices.
     }
