@@ -26,6 +26,14 @@ export interface ReaderInteraction {
   locale?: string;
 }
 
+// EPUB content documents are parsed as XML (`application/xhtml+xml`), where
+// `tagName` keeps the source casing — `"p"`, not `"P"` as in an HTML document.
+// Comparing without normalising made every block-level lookup fail in a book,
+// which is the only place these are used.
+function isBlockElement(element: Element): boolean {
+  return BLOCK_TAGS.has(element.tagName.toUpperCase());
+}
+
 const BLOCK_TAGS = new Set([
   "P", "DIV", "LI", "BLOCKQUOTE", "TD", "TH", "H1", "H2", "H3", "H4",
   "H5", "H6", "SECTION", "ARTICLE", "ASIDE", "FIGCAPTION", "DT", "DD",
@@ -113,7 +121,7 @@ function closestTextRunRoot(node: Node): Element | null {
   let element = node.nodeType === Node.ELEMENT_NODE
     ? node as Element
     : node.parentElement;
-  while (element && !BLOCK_TAGS.has(element.tagName)) element = element.parentElement;
+  while (element && !isBlockElement(element)) element = element.parentElement;
   return element ?? node.ownerDocument?.body ?? node.ownerDocument?.documentElement ?? null;
 }
 
@@ -128,7 +136,7 @@ function flattenTextRun(root: Element): FlatTextRun {
   while (current) {
     if (
       current.nodeType === Node.ELEMENT_NODE
-      && (current as Element).tagName === "BR"
+      && (current as Element).tagName.toUpperCase() === "BR"
       && closestTextRunRoot(current) === root
       && !(current as Element).closest(INTERACTION_EXCLUSION_SELECTOR)
     ) {
@@ -460,7 +468,7 @@ export function expandRangeToWordBoundaries(range: Range, locale?: string): Rang
 export function contextForRange(range: Range, fallback: string): string {
   let node: Node | null = range.commonAncestorContainer;
   if (node.nodeType !== Node.ELEMENT_NODE) node = node.parentElement;
-  while (node && node.nodeType === Node.ELEMENT_NODE && !BLOCK_TAGS.has((node as Element).tagName)) {
+  while (node && node.nodeType === Node.ELEMENT_NODE && !isBlockElement(node as Element)) {
     node = node.parentNode;
   }
   const context = (node as Element | null)?.textContent?.trim() || fallback.trim();
