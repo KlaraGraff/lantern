@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { BookOpen, Database, Sparkles, Send, Loader2, Plus, ChevronDown, ChevronUp, Trash2, X, Square } from "lucide-react";
+import { BookOpen, Check, Database, Sparkles, Send, Loader2, Plus, ChevronDown, ChevronUp, Trash2, X, Square } from "lucide-react";
 import { useAiChat } from "../hooks/useAiChat";
 import { usePinnedQuestionScroll } from "../hooks/usePinnedQuestionScroll";
 import { timeAgo } from "../utils/timeAgo";
@@ -32,6 +32,99 @@ interface AiPanelProps {
 }
 
 const SCOPE_OPTIONS: AiChatScope[] = ["auto", "selection", "section", "book"];
+
+/**
+ * Answer-scope picker. Auto lets smart routing decide; a manual pick pins the
+ * scope and skips guessing — a power feature that, as a bare row of chips, read
+ * as four unlabelled mystery buttons. Collapsed to one control it says what it
+ * sets, spells out each option, and gives the composer back a row.
+ */
+function ScopePicker({ scope, onChange }: { scope: AiChatScope; onChange: (scope: AiChatScope) => void }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePress = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", closeOnOutsidePress);
+    return () => document.removeEventListener("mousedown", closeOnOutsidePress);
+  }, [open]);
+
+  const dismiss = () => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  return (
+    <div
+      ref={rootRef}
+      className="relative shrink-0"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && open) {
+          event.stopPropagation();
+          dismiss();
+        }
+      }}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className={`flex items-center gap-0.5 rounded-full border py-[3px] pl-2.5 pr-1.5 text-[11px] font-medium cursor-pointer transition-colors ${
+          // A pinned scope changes every answer, so it never looks like the default.
+          scope === "auto"
+            ? "border-border text-text-muted hover:bg-bg-input"
+            : "border-accent/40 bg-accent-bg text-accent-text"
+        }`}
+      >
+        {t("ai.scope.trigger", { scope: t(`ai.scope.${scope}`) })}
+        <ChevronDown size={12} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          aria-label={t("ai.scope.label")}
+          className="absolute bottom-full right-0 z-50 mb-1.5 w-[250px] overflow-hidden rounded-[10px] border border-border bg-bg-surface shadow-popover"
+        >
+          {SCOPE_OPTIONS.map((option) => {
+            const isActive = scope === option;
+            return (
+              <button
+                key={option}
+                type="button"
+                role="menuitemradio"
+                aria-checked={isActive}
+                onClick={() => {
+                  onChange(option);
+                  dismiss();
+                }}
+                className={`flex w-full items-start gap-2 px-3 py-2 text-left cursor-pointer ${
+                  isActive ? "bg-accent-bg" : "hover:bg-bg-input"
+                }`}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className={`block text-[12px] font-medium ${isActive ? "text-accent-text" : "text-text-primary"}`}>
+                    {t(`ai.scope.${option}`)}
+                  </span>
+                  <span className="block text-[11px] leading-[1.5] text-text-muted">
+                    {t(`ai.scope.hint.${option}`)}
+                  </span>
+                </span>
+                {isActive && <Check size={13} className="mt-0.5 shrink-0 text-accent-text" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface ComposerQuote {
   text: string;
@@ -460,26 +553,6 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
             </button>
           </div>
         ))}
-        {/* Scope chips — Auto lets smart routing decide; a manual pick pins
-            the scope and skips guessing. Quiet by design: a power feature. */}
-        <div className="flex items-center gap-1.5" role="radiogroup" aria-label={t("ai.scope.label")}>
-          {SCOPE_OPTIONS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              role="radio"
-              aria-checked={scope === option}
-              onClick={() => setScope(option)}
-              className={`px-2.5 py-[3px] rounded-full text-[11px] font-medium cursor-pointer transition-colors border ${
-                scope === option
-                  ? "bg-accent-bg text-accent-text border-accent/40"
-                  : "text-text-muted border-border hover:bg-bg-input"
-              }`}
-            >
-              {t(`ai.scope.${option}`)}
-            </button>
-          ))}
-        </div>
         <div className="flex gap-2 items-start">
           <textarea
             ref={composerRef}
@@ -509,6 +582,12 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
               <Send size={16} />
             )}
           </button>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[12px] text-text-muted truncate">
+            {t("ai.sendHint")}
+          </p>
+          <ScopePicker scope={scope} onChange={setScope} />
         </div>
       </div>
     </div>
