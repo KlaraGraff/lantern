@@ -179,6 +179,18 @@ export default function MarkerStyleSettings({ value, onChange }: MarkerStyleSett
 
       {value.wordMatchScope === "forms" && wordFormsOpen && <WordFormsManager />}
 
+      <div className="flex min-h-[52px] items-center justify-between gap-4 border-b border-border-light pb-3">
+        <div>
+          <p className="text-[13px] font-medium text-text-primary">{t("settings.tools.markers.layoutAffecting")}</p>
+          <p className="text-[11px] leading-[17px] text-text-muted">{t("settings.tools.markers.layoutAffectingHint")}</p>
+        </div>
+        <Toggle
+          label={t("settings.tools.markers.layoutAffecting")}
+          checked={value.layoutAffectingMarkers}
+          onChange={(layoutAffectingMarkers) => onChange({ ...value, layoutAffectingMarkers })}
+        />
+      </div>
+
       <StyleEditor title={t("settings.tools.markers.manualStyle")} value={value.manual} onChange={(manual) => onChange({ ...value, manual })} />
 
       <div className="flex min-h-[52px] items-center justify-between gap-4 border-t border-border-light py-3">

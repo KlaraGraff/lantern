@@ -19,6 +19,12 @@ export interface MarkerStyleConfigV1 {
   manual: MarkerVisualStyleV1;
   automaticFollowsManual: boolean;
   automatic: MarkerVisualStyleV1;
+  /**
+   * Whether whole-word markers in a paginated book may carry weight and font.
+   * Off by default: those treatments change how wide the text is, so marking a
+   * word reflows the page it is on. Colour, background, and underline never do.
+   */
+  layoutAffectingMarkers: boolean;
 }
 
 export const MARKER_COLOR_PRESETS = [
@@ -54,6 +60,7 @@ export function createDefaultMarkerStyleConfig(): MarkerStyleConfigV1 {
     manual: { ...DEFAULT_MANUAL },
     automaticFollowsManual: true,
     automatic: { ...DEFAULT_AUTOMATIC },
+    layoutAffectingMarkers: false,
   };
 }
 
@@ -98,6 +105,7 @@ export function parseMarkerStyleConfig(value: unknown): MarkerStyleConfigV1 {
     manual: normalizeVisualStyle(parsed.manual, defaults.manual),
     automaticFollowsManual: parsed.automaticFollowsManual ?? defaults.automaticFollowsManual,
     automatic: normalizeVisualStyle(parsed.automatic, defaults.automatic),
+    layoutAffectingMarkers: parsed.layoutAffectingMarkers === true,
   };
 }
 
@@ -146,8 +154,19 @@ export function markerHighlightCss(style: MarkerVisualStyleV1, fontFamily?: stri
 }
 
 // Drops the treatments that would move text. An SVG overlay cannot render them
-// at all, and inside book content they would reflow the page every time a word
-// is marked, so only the direct DOM text reader offers font and weight.
+// at all, and inside a paginated book they reflow the page every time a word is
+// marked — which whole-word markers may do once the reader opts in.
 export function markerOverlayStyle(style: MarkerVisualStyleV1): MarkerVisualStyleV1 {
   return { ...style, bold: false, font: "inherit" };
+}
+
+/** The style a wrapped whole-word marker renders with, honouring the opt-in. */
+export function wordMarkerCss(
+  config: MarkerStyleConfigV1,
+  style: MarkerVisualStyleV1,
+  readerFontFamily?: string,
+): string {
+  return config.layoutAffectingMarkers
+    ? markerHighlightCss(style, markerFontFamily(style.font, readerFontFamily))
+    : markerHighlightCss(markerOverlayStyle(style));
 }

@@ -615,6 +615,8 @@
   "settings.tools.markers.background": "高亮",
   "settings.tools.markers.underline": "下划线",
   "settings.tools.markers.bold": "加粗",
+  "settings.tools.markers.layoutAffecting": "允许标记改变字重和字体",
+  "settings.tools.markers.layoutAffectingHint": "仅对整词标记生效。加粗和换字体会让文字变宽，标记出现时这一页会重新排版——换行位置和页边界都会变。颜色、背景、下划线不会移动文字。",
   "settings.tools.markers.font": "标记字体",
   "settings.tools.markers.fontHint": "默认保持书籍原文的字体。",
   "settings.tools.markers.followOriginal": "跟随原文",

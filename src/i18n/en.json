@@ -615,6 +615,8 @@
   "settings.tools.markers.background": "Highlight",
   "settings.tools.markers.underline": "Underline",
   "settings.tools.markers.bold": "Bold",
+  "settings.tools.markers.layoutAffecting": "Markers may change weight and font",
+  "settings.tools.markers.layoutAffectingHint": "Whole-word markers only. Bold and a different face make the text wider, so marking a word reflows the page \u2014 line breaks and page boundaries shift as you look words up. Colour, background, and underline never move the text.",
   "settings.tools.markers.font": "Marker font",
   "settings.tools.markers.fontHint": "The default keeps the original book typography.",
   "settings.tools.markers.followOriginal": "Follow original text",

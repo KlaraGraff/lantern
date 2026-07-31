@@ -16,9 +16,9 @@ import type { Highlight } from "../../hooks/useBookmarks";
 import {
   MARKER_STYLE_SETTING_KEY,
   effectiveAutomaticMarkerStyle,
-  markerHighlightCss,
   markerOverlayStyle,
   parseMarkerStyleConfig,
+  wordMarkerCss,
   type MarkerStyleConfigV1,
   type MarkerVisualStyleV1,
 } from "../../components/marker-style";
@@ -26,6 +26,7 @@ import {
   installCustomFontFacesInDocument,
   type CustomFontRecord,
 } from "../../components/custom-fonts";
+import { getFontFamily } from "../../components/reader-settings";
 import { getReaderCSS } from "./reader-theme";
 import { expandWordForms } from "../../components/word-forms";
 import type { AnnotationStyleKind, FoliateView } from "./foliate-types";
@@ -289,7 +290,13 @@ export function useFoliateAnnotations({
   const applyFoliateMarkerStyles = useCallback(() => {
     const view = viewRef.current;
     if (!view || !supportsReflowSettings) return;
-    const automaticStyle = effectiveAutomaticMarkerStyle(markerStyleRef.current);
+    const markerStyle = markerStyleRef.current;
+    const automaticStyle = effectiveAutomaticMarkerStyle(markerStyle);
+    const css = wordMarkerCss(
+      markerStyle,
+      automaticStyle,
+      getFontFamily(readerSettingsRef.current.font),
+    );
     for (const { doc, index } of view.renderer?.getContents?.() ?? []) {
       if (!doc || typeof index !== "number") continue;
       installCustomFontFacesInDocument(doc);
@@ -302,7 +309,7 @@ export function useFoliateAnnotations({
           const location = view.getCFI(index, range);
           return !wordMarkExceptionsRef.current.has(`${word}\0${location}`);
         },
-        markerHighlightCss(markerOverlayStyle(automaticStyle)),
+        css,
       );
     }
   }, [markerStyleRef, readerSettingsRef, supportsReflowSettings, viewRef]);
