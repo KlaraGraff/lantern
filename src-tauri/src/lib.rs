@@ -736,6 +736,7 @@ pub fn run() {
             commands::ocr::manager::ocr_job_status,
             commands::ocr::manager::ocr_assets_overview,
             commands::ocr::manager::ocr_asset_delete,
+            commands::ai::ai_vocab_gloss,
             commands::ai::ai_reindex_book,
             commands::ai::ai_update_book_index,
             commands::ai::ai_index_details,

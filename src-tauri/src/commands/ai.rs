@@ -1394,6 +1394,106 @@ pub async fn ai_word_forms(
         .collect())
 }
 
+/// Trims a model reply down to something that fits one line of a word list.
+/// Models like to answer "**recount** (verb): to tell" when asked for a gloss.
+fn sanitize_gloss(raw: &str) -> String {
+    let first_line = raw
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or_default();
+    let stripped = first_line
+        .trim_start_matches(['-', '*', '>', '#', ' '])
+        .trim()
+        .trim_matches(|c| c == '"' || c == '\'' || c == '“' || c == '”')
+        .replace("**", "")
+        .replace('`', "");
+    let cleaned = stripped.trim().trim_end_matches(['.', '。']).trim();
+    // A runaway answer is worse than none: the row shows one line either way.
+    if cleaned.chars().count() > MAX_GLOSS_CHARS {
+        return cleaned.chars().take(MAX_GLOSS_CHARS).collect::<String>().trim_end().to_string();
+    }
+    cleaned.to_string()
+}
+
+const MAX_GLOSS_CHARS: usize = 60;
+
+/// A few words of meaning, stored at collect time.
+///
+/// Saving from the selection menu had no definition to store, so the vocabulary
+/// list was a column of bare words. This fills that in before the row is
+/// created — `VocabAdd` already carries `definition`, so no new sync event is
+/// needed, and a later backfill would have required one.
+#[tauri::command]
+pub async fn ai_vocab_gloss(
+    word: String,
+    context: Option<String>,
+    request_id: String,
+    app: AppHandle,
+    db: State<'_, Db>,
+    secrets: State<'_, Secrets>,
+) -> AppResult<String> {
+    let word = word.trim().to_string();
+    if word.is_empty() || word.chars().count() > 128 || request_id.trim().is_empty() {
+        return Err(AppError::Other("VOCAB_GLOSS_REQUEST_INVALID".to_string()));
+    }
+
+    let target_language = {
+        let conn = db.reader();
+        let get = |key: &str| -> Option<String> {
+            conn.query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                rusqlite::params![key],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+        };
+        get("translation_language")
+            .or_else(|| get("lookup_translation_language"))
+            .or_else(|| get("language"))
+            .unwrap_or_else(|| "en".to_string())
+    };
+
+    let context = context
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty() && value.chars().count() <= 1_000);
+
+    let messages = vec![
+        ChatMessage {
+            role: "system".to_string(),
+            content: format!(
+                "Give the meaning of the supplied word or phrase in {}, as it is used in the \
+                 sentence provided. Reply with the gloss only: at most a few words, no more than \
+                 {MAX_GLOSS_CHARS} characters, on a single line. No part of speech, no phonetics, \
+                 no the original word, no quotes, no Markdown, no explanation.",
+                crate::commands::translation::lang_display_name(&target_language),
+            ),
+        },
+        ChatMessage {
+            role: "user".to_string(),
+            content: match &context {
+                Some(sentence) => format!("Word: {word}\nSentence: {sentence}"),
+                None => format!("Word: {word}"),
+            },
+        },
+    ];
+
+    ensure_stream_credentials_ready(&db, &secrets)?;
+    let completion = crate::ai::router::complete_with_failover(
+        &app,
+        &db,
+        &secrets,
+        &messages,
+        Some(128),
+        Some(&request_id),
+        None,
+    )
+    .await?;
+    Ok(sanitize_gloss(&completion.text))
+}
+
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn ai_lookup(
@@ -3169,6 +3269,42 @@ pub async fn ai_regenerate_book_summaries(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The gloss lands in a single-line table cell, so anything the model adds
+    // around it has to come off before it is stored.
+    #[test]
+    fn gloss_keeps_only_the_first_line() {
+        assert_eq!(sanitize_gloss("讲述、叙述\n\n更多解释在这里"), "讲述、叙述");
+        assert_eq!(sanitize_gloss("\n\n  讲述  \n"), "讲述");
+    }
+
+    #[test]
+    fn gloss_strips_markdown_and_quoting() {
+        assert_eq!(sanitize_gloss("- **讲述、叙述**"), "讲述、叙述");
+        assert_eq!(sanitize_gloss("\"to tell\""), "to tell");
+        assert_eq!(sanitize_gloss("“讲述”"), "讲述");
+        assert_eq!(sanitize_gloss("`recount`"), "recount");
+        assert_eq!(sanitize_gloss("> 讲述"), "讲述");
+    }
+
+    #[test]
+    fn gloss_drops_a_trailing_full_stop() {
+        assert_eq!(sanitize_gloss("to tell a story."), "to tell a story");
+        assert_eq!(sanitize_gloss("讲述、叙述。"), "讲述、叙述");
+    }
+
+    #[test]
+    fn gloss_is_capped_so_a_runaway_answer_cannot_fill_the_row() {
+        let long = "很长的解释".repeat(40);
+        let result = sanitize_gloss(&long);
+        assert_eq!(result.chars().count(), MAX_GLOSS_CHARS);
+    }
+
+    #[test]
+    fn gloss_of_an_empty_reply_is_empty() {
+        assert_eq!(sanitize_gloss(""), "");
+        assert_eq!(sanitize_gloss("   \n  "), "");
+    }
 
     #[test]
     fn vocabulary_map_response_requires_the_expected_json_shape() {

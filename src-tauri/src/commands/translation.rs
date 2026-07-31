@@ -5,7 +5,7 @@ use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::secrets::Secrets;
 
-fn lang_display_name(code: &str) -> &str {
+pub(crate) fn lang_display_name(code: &str) -> &str {
     match code {
         "en" => "English",
         "zh" => "Chinese (Simplified)",

@@ -93,6 +93,7 @@ import { useBookAvailability } from "./reader/useBookAvailability";
 import { usePageTurnInput } from "./reader/usePageTurnInput";
 import { useReaderInteractions } from "./reader/useReaderInteractions";
 import { useSpeech } from "../hooks/useSpeech";
+import { collectWord } from "../components/vocab/collect";
 import { useOcrPackage } from "../hooks/useOcrPackage";
 import { useOcrJob } from "../hooks/useOcrJob";
 import {
@@ -1126,13 +1127,11 @@ export default function Reader() {
       setAiContext({ text: interaction.text, cfi: interaction.location });
       setSidePanel("ai");
     } else if (actionId === "collect" && bookId) {
-      void invoke("add_vocab_word", {
+      void collectWord({
         bookId,
         word: interaction.text,
-        definition: "",
-        contextSentence: interaction.context || null,
-        contextExplanation: null,
-        cfi: interaction.location || null,
+        contextSentence: interaction.context,
+        cfi: interaction.location,
       }).then(() => {
         window.dispatchEvent(new CustomEvent("vocab-changed", { detail: { bookId, cfi: interaction.location } }));
       });
@@ -1934,13 +1933,11 @@ export default function Reader() {
           }}
           onSave={() => {
             if (!bookId) return;
-            invoke("add_vocab_word", {
+            collectWord({
               bookId,
               word: contextMenu.text,
-              definition: "",
-              contextSentence: contextMenu.context || null,
-              contextExplanation: null,
-              cfi: contextMenu.location || null,
+              contextSentence: contextMenu.context,
+              cfi: contextMenu.location,
             }).then(() => {
               window.dispatchEvent(new CustomEvent("vocab-changed", { detail: { bookId, cfi: contextMenu.location } }));
             }).catch((error) => console.error("Failed to save selection:", error));
