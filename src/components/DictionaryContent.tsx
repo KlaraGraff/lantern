@@ -7,7 +7,6 @@ import {
   Languages,
   Search,
   BookOpen,
-  Clock,
   FileText,
   Trash2,
   LayoutGrid,
@@ -29,8 +28,9 @@ import {
 import Button from "./ui/Button";
 import { useAllDictionary, useAllLookupHistory, type DictionaryWord, type LookupRecord, type LookupRecordPage } from "../hooks/useDictionary";
 import { timeAgo } from "../utils/timeAgo";
-import VocabDetailModal from "./VocabDetailModal";
 import PronounceButton from "./speech/PronounceButton";
+import VocabEntryDetails from "./vocab/VocabEntryDetails";
+import { glossOf, parseDefinition } from "./vocab/entry-text";
 import { openReaderWindow } from "../utils/openReaderWindow";
 import {
   LearningCardModules,
@@ -120,7 +120,7 @@ export default function DictionaryContent() {
   const [view, setView] = useState<ViewMode>("list");
   const [search, setSearch] = useState("");
   const [bookFilter, setBookFilter] = useState<string | null>(null);
-  const [activeWord, setActiveWord] = useState<DictionaryWord | null>(null);
+  const [expandedWordId, setExpandedWordId] = useState<string | null>(null);
   const [reviewOnly, setReviewOnly] = useState(false);
   const [contentTab, setContentTab] = useState<ContentTab>("vocab");
   const [now, setNow] = useState(0);
@@ -775,13 +775,12 @@ export default function DictionaryContent() {
                   <span className="text-[11px] text-text-muted">{letterWords.length}</span>
                 </div>
                 {letterWords.map((word) => {
-                  const parts = word.definition.split("\n\n");
-                  const defText = parts[0] || "";
-                  const ctxText = parts.length > 1 ? parts.slice(1).join(" ") : null;
+                  const gloss = glossOf(parseDefinition(word.definition).definition);
+                  const expanded = expandedWordId === word.id;
                   return (
+                    <div key={word.id} className="rounded-[10px] hover:bg-bg-input group">
                     <div
-                      key={word.id}
-                      className="flex items-start gap-4 px-3 pt-3 pb-3 rounded-[10px] hover:bg-bg-input group w-full text-left cursor-pointer"
+                      className="flex items-start gap-4 px-3 pt-3 pb-3 w-full text-left cursor-pointer"
                     >
                       <button
                         type="button"
@@ -793,7 +792,8 @@ export default function DictionaryContent() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setActiveWord(word)}
+                        aria-expanded={expanded}
+                        onClick={() => setExpandedWordId(expanded ? null : word.id)}
                         className="flex min-w-0 flex-1 items-start gap-4 text-left"
                       >
                         <div className="w-[160px] shrink-0">
@@ -811,12 +811,7 @@ export default function DictionaryContent() {
                         )}
                       </div>
                         <div className="flex-1 min-w-0">
-                        <p className="text-[13px] text-text-secondary leading-5 truncate">{defText}</p>
-                        {ctxText && (
-                          <p className="text-[11px] italic text-text-muted leading-4 truncate mt-0.5">
-                            "{ctxText}"
-                          </p>
-                        )}
+                        <p className="text-[13px] text-text-secondary leading-5 truncate">{gloss}</p>
                         </div>
                       </button>
                       <div className="flex items-center gap-2 shrink-0">
@@ -862,6 +857,16 @@ export default function DictionaryContent() {
                         </button>
                       </div>
                     </div>
+                    {expanded && (
+                      <VocabEntryDetails
+                        word={word}
+                        onOpenInReader={() => openReaderWindow(word.book_id, {
+                          openVocab: true,
+                          cfi: word.cfi ?? undefined,
+                        })}
+                      />
+                    )}
+                    </div>
                   );
                 })}
               </div>
@@ -880,9 +885,8 @@ export default function DictionaryContent() {
                 </div>
                 <div className="space-y-3">
                   {group.words.map((word) => {
-                    const parts = word.definition.split("\n\n");
-                    const defText = parts[0] || "";
-                    const ctxText = parts.length > 1 ? parts.slice(1).join(" ") : null;
+                    const gloss = glossOf(parseDefinition(word.definition).definition);
+                    const expanded = expandedWordId === word.id;
                   return (
                     <div
                       key={word.id}
@@ -905,27 +909,28 @@ export default function DictionaryContent() {
                         >
                           <Trash2 size={15} className="text-text-muted" />
                         </button>
-                        <button type="button" onClick={() => setActiveWord(word)} className="flex flex-col items-start gap-2 pl-6 text-left">
+                        <button
+                          type="button"
+                          aria-expanded={expanded}
+                          onClick={() => setExpandedWordId(expanded ? null : word.id)}
+                          className="flex flex-col items-start gap-2 pl-6 text-left"
+                        >
                           <span className="text-[15px] font-semibold text-text-primary leading-[22.5px] tracking-[-0.23px]">
                             {word.word}
                           </span>
                           <p className="text-[13px] text-text-secondary leading-[20.15px] tracking-[-0.08px] line-clamp-3 w-[460px] max-w-full">
-                            {defText}
+                            {gloss}
                           </p>
-                          {ctxText && (
-                            <div className="border-l-2 border-accent/30 pl-2 overflow-hidden">
-                              <p className="text-[11px] italic text-text-muted leading-[16.5px] tracking-[0.06px] line-clamp-2">
-                                {ctxText}
-                              </p>
-                            </div>
-                          )}
-                          <div className="flex items-center gap-3">
-                            <span className="flex items-center gap-1 text-[11px] text-text-muted tracking-[0.06px]">
-                              <Clock size={12} />
-                              {timeAgo(word.created_at)}
-                            </span>
-                          </div>
                         </button>
+                        {expanded && (
+                          <VocabEntryDetails
+                            word={word}
+                            onOpenInReader={() => openReaderWindow(word.book_id, {
+                              openVocab: true,
+                              cfi: word.cfi ?? undefined,
+                            })}
+                          />
+                        )}
                       </div>
                     );
                   })}
@@ -936,14 +941,6 @@ export default function DictionaryContent() {
         )}
       </div>
 
-      <VocabDetailModal
-        word={activeWord}
-        onClose={() => setActiveWord(null)}
-        onDelete={async (id) => {
-          await remove(id);
-          setActiveWord(null);
-        }}
-      />
       {importPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay px-4" onClick={resetImport}>
           <div className="w-[480px] max-w-full rounded-lg border border-border bg-bg-surface shadow-popover p-5" onClick={(event) => event.stopPropagation()}>

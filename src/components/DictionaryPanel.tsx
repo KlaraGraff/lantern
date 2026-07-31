@@ -1,30 +1,32 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { BookOpen, Search, Trash2, Clock, FileText } from "lucide-react";
-import { useDictionary, type DictionaryWord } from "../hooks/useDictionary";
-import { timeAgo } from "../utils/timeAgo";
-import VocabDetailModal from "./VocabDetailModal";
+import { BookOpen, Search } from "lucide-react";
+import { useDictionary } from "../hooks/useDictionary";
+import VocabEntry from "./vocab/VocabEntry";
 
 interface DictionaryPanelProps {
   bookId: string;
   bookTitle?: string;
   onNavigate?: (cfi: string) => void;
-  getPageFromCfi?: (cfi: string) => number | null;
   initialWordCfi?: string | null;
   onWordDetailClosed?: () => void;
 }
 
-export default function DictionaryPanel({ bookId, bookTitle, onNavigate, getPageFromCfi, initialWordCfi, onWordDetailClosed }: DictionaryPanelProps) {
+export default function DictionaryPanel({ bookId, bookTitle, onNavigate, initialWordCfi, onWordDetailClosed }: DictionaryPanelProps) {
   const { t } = useTranslation();
   const [dictSearch, setDictSearch] = useState("");
-  const [activeWord, setActiveWord] = useState<DictionaryWord | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const { words, remove: removeWord } = useDictionary(bookId);
 
+  // Arriving from a marker in the text opens that word straight away.
   useEffect(() => {
     if (!initialWordCfi) return;
     const word = words.find((item) => item.cfi === initialWordCfi);
-    if (word) setActiveWord(word);
-  }, [initialWordCfi, words]);
+    if (word) {
+      setExpandedId(word.id);
+      onWordDetailClosed?.();
+    }
+  }, [initialWordCfi, words, onWordDetailClosed]);
 
   const filteredWords = words.filter((w) => {
     if (!dictSearch) return true;
@@ -78,61 +80,18 @@ export default function DictionaryPanel({ bookId, bookTitle, onNavigate, getPage
             )}
           </div>
         ) : (
-          filteredWords.map((word) => {
-            const page = getPageFromCfi && word.cfi ? getPageFromCfi(word.cfi) : null;
-            const parts = word.definition.split("\n\n");
-            const defText = parts[0] || "";
-            const ctxText = parts.length > 1 ? parts.slice(1).join(" ") : null;
-            return (
-              <div
-                key={word.id}
-                className="group relative border-l-[3px] border-accent bg-bg-surface mx-3 mb-2 rounded-r-lg w-[calc(100%-1.5rem)] transition-colors hover:bg-bg-input"
-              >
-                <button
-                  type="button"
-                  aria-label={t("vocab.detail.delete")}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeWord(word.id);
-                  }}
-                  className="absolute top-3 right-3 p-1 rounded hover:bg-bg-input cursor-pointer"
-                >
-                  <Trash2 size={15} className="text-text-muted" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveWord(word)}
-                  className="block w-full px-4 pt-3 pb-3 pr-10 text-left cursor-pointer"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-[16px] font-bold text-text-primary leading-5">
-                      {word.word}
-                    </span>
-                  </div>
-                  <p className="text-[14px] text-text-primary leading-[1.5] mt-2 line-clamp-3">
-                    {defText}
-                  </p>
-                  {ctxText && (
-                    <p className="text-[13px] italic text-text-muted leading-[1.45] mt-1 line-clamp-2">
-                      {ctxText}
-                    </p>
-                  )}
-                  <div className="flex items-center gap-3 mt-2.5">
-                    {page != null && (
-                      <span className="flex items-center gap-1 text-[11px] text-text-muted tracking-[0.06px]">
-                        <FileText size={12} />
-                        p. {page}
-                      </span>
-                    )}
-                    <span className="flex items-center gap-1 text-[11px] text-text-muted tracking-[0.06px]">
-                      <Clock size={12} />
-                      {timeAgo(word.created_at)}
-                    </span>
-                  </div>
-                </button>
-              </div>
-            );
-          })
+          filteredWords.map((word) => (
+            <VocabEntry
+              key={word.id}
+              word={word}
+              bookTitle={bookTitle}
+              className="mx-3 mb-2 w-[calc(100%-1.5rem)]"
+              expanded={expandedId === word.id}
+              onToggle={() => setExpandedId((current) => (current === word.id ? null : word.id))}
+              onDelete={() => removeWord(word.id)}
+              onOpenInReader={word.cfi ? () => onNavigate?.(word.cfi!) : undefined}
+            />
+          ))
         )}
       </div>
 
@@ -142,21 +101,6 @@ export default function DictionaryPanel({ bookId, bookTitle, onNavigate, getPage
           {t("vocab.wordCount", { count: filteredWords.length })}
         </p>
       </div>
-
-      <VocabDetailModal
-        word={activeWord}
-        bookTitle={bookTitle}
-        onClose={() => {
-          setActiveWord(null);
-          onWordDetailClosed?.();
-        }}
-        onDelete={async (id) => {
-          await removeWord(id);
-          setActiveWord(null);
-        }}
-        navigateMode="inline"
-        onNavigateInline={(cfi) => onNavigate?.(cfi)}
-      />
     </div>
   );
 }

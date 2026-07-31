@@ -1870,7 +1870,6 @@ export default function Reader() {
               onNavigate={(cfi) => {
                 flashNavigationTarget(cfi).catch(() => {});
               }}
-              getPageFromCfi={() => pageInfo?.current ?? null}
               initialWordCfi={activeVocabCfi}
               onWordDetailClosed={() => setActiveVocabCfi(null)}
             />
