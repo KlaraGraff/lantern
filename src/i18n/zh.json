@@ -462,8 +462,6 @@
   "settings.learner.confidence.official_band_approximation": "官方分数段对照",
   "settings.learner.confidence.approximate": "近似对照",
   "settings.learner.confidence.low": "非官方近似，可信度较低",
-  "settings.appearance.title": "外观",
-  "settings.appearance.subtitle": "主题",
   "settings.updates.title": "更新",
   "settings.updates.autoCheck": "自动检查更新",
   "settings.updates.autoCheckHint": "启动时检查",
@@ -473,8 +471,6 @@
   "settings.language.subtitle": "界面语言",
   "settings.languageSub": "选择你的首选语言",
 
-  "settings.reading.title": "阅读",
-  "settings.reading.subtitle": "字体、间距与排版",
   "settings.reading.fontHint": "默认阅读字体",
   "settings.reading.autoSaveHint": "自动保存阅读进度",
 

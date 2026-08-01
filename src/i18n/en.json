@@ -462,8 +462,6 @@
   "settings.learner.confidence.official_band_approximation": "official score-band mapping",
   "settings.learner.confidence.approximate": "approximate mapping",
   "settings.learner.confidence.low": "non-official, low confidence",
-  "settings.appearance.title": "Appearance",
-  "settings.appearance.subtitle": "Theme",
   "settings.updates.title": "Updates",
   "settings.updates.autoCheck": "Check for updates automatically",
   "settings.updates.autoCheckHint": "Check on app launch",
