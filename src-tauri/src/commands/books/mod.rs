@@ -36,13 +36,20 @@ mod query;
 mod text_headings;
 mod text_prepare;
 
+// Each `#[tauri::command]` expands to two hidden `macro_rules!` items beside the
+// function: `__cmd__<name>`, and — since Tauri 2.11 — `__tauri_command_name_<name>`,
+// which `generate_handler!` uses to match the externally invoked name. Both have to
+// be re-exported here, or the handler cannot resolve `commands::books::<name>`.
 #[doc(hidden)]
-pub use import::__cmd__import_book_from_dialog;
+pub use import::{__cmd__import_book_from_dialog, __tauri_command_name_import_book_from_dialog};
 pub use import::import_book_from_dialog;
 // Preserve the historical commands::books::* crate API while implementations
 // live in focused child modules.
 #[doc(hidden)]
-pub use convert_prepare::{__cmd__get_converted_book_path, __cmd__retry_book_conversion};
+pub use convert_prepare::{
+    __cmd__get_converted_book_path, __cmd__retry_book_conversion,
+    __tauri_command_name_get_converted_book_path, __tauri_command_name_retry_book_conversion,
+};
 pub(crate) use convert_prepare::{
     conversion_backend_available, is_conversion_book, schedule_book_conversion,
 };
@@ -59,7 +66,10 @@ pub(crate) use import::{
 pub use mutate::{
     __cmd__delete_book, __cmd__mark_finished, __cmd__update_book_cover,
     __cmd__update_book_metadata, __cmd__update_book_pages, __cmd__update_book_status,
-    __cmd__update_reading_progress,
+    __cmd__update_reading_progress, __tauri_command_name_delete_book,
+    __tauri_command_name_mark_finished, __tauri_command_name_update_book_cover,
+    __tauri_command_name_update_book_metadata, __tauri_command_name_update_book_pages,
+    __tauri_command_name_update_book_status, __tauri_command_name_update_reading_progress,
 };
 pub use mutate::{
     delete_book, mark_finished, update_book_cover, update_book_metadata, update_book_pages,
@@ -70,13 +80,19 @@ pub(crate) use mutate::{do_delete_book, do_delete_book_with_note_policy, do_upda
 #[doc(hidden)]
 pub use query::{
     __cmd__check_book_available, __cmd__get_book, __cmd__get_book_counts, __cmd__list_books,
+    __tauri_command_name_check_book_available, __tauri_command_name_get_book,
+    __tauri_command_name_get_book_counts, __tauri_command_name_list_books,
 };
 pub use query::{check_book_available, get_book, get_book_counts, list_books};
 #[allow(unused_imports)]
 pub(crate) use query::{query_book, query_book_exists, query_books, query_books_lite};
 pub(crate) use text_prepare::load_prepared_document_for_grounding;
 #[doc(hidden)]
-pub use text_prepare::{__cmd__get_text_book_document, __cmd__retry_text_book_preparation};
+pub use text_prepare::{
+    __cmd__get_text_book_document, __cmd__retry_text_book_preparation,
+    __tauri_command_name_get_text_book_document,
+    __tauri_command_name_retry_text_book_preparation,
+};
 pub use text_prepare::{
     get_text_book_document, resume_interrupted_text_book_preparations, retry_text_book_preparation,
     schedule_pending_text_book_preparations, schedule_text_book_preparation,

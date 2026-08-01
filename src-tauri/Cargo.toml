@@ -22,10 +22,15 @@ default = []
 ocr-pipeline = []
 
 [build-dependencies]
-tauri-build = { version = "=2.5.6", features = [] }
+tauri-build = { version = "=2.6.3", features = [] }
 
 [dependencies]
-tauri = { version = "=2.10.3", features = ["protocol-asset"] }
+# 2.11 is the floor for mobile: in 2.10.3 the webview commands the frontend
+# relies on (`create_webview_window`, `get_all_webviews`) sit inside a
+# `#[cfg(desktop)] mod desktop_commands`, so the capability ACL — which is
+# resolved at compile time against the target's command set — cannot be
+# satisfied for an android/ios target. 2.11.0 hoisted them out.
+tauri = { version = "=2.11.5", features = ["protocol-asset"] }
 tauri-plugin-opener = "=2.5.4"
 tauri-plugin-dialog = "=2.6.0"
 tauri-plugin-fs = "=2.4.5"
@@ -106,4 +111,4 @@ keyring = { version = "3", features = ["linux-native-sync-persistent", "crypto-r
 [dev-dependencies]
 tempfile = "3"
 lopdf = "0.42.0"
-tauri = { version = "=2.10.3", features = ["test"] }
+tauri = { version = "=2.11.5", features = ["test"] }
