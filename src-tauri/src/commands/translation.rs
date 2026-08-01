@@ -126,6 +126,9 @@ pub async fn ai_translate_passage(
             &messages,
             &event_name,
             None,
+            // Inline translation is a short utility request, so it only carries
+            // the reasoning effort when the profile opts every feature in.
+            crate::ai::router::AiRequestPurpose::Utility,
             Some(&request_id),
         )
         .await

@@ -80,6 +80,7 @@ pub(super) async fn classify_ambiguous_intent(
             secrets,
             &messages,
             Some(INTENT_MAX_TOKENS),
+            crate::ai::router::AiRequestPurpose::Utility,
             None,
             None,
         ),
@@ -105,7 +106,10 @@ mod tests {
     #[test]
     fn intent_labels_parse_leniently() {
         assert_eq!(parse_intent_label("passage"), Some(IntentScope::Passage));
-        assert_eq!(parse_intent_label(" Section.\n"), Some(IntentScope::Section));
+        assert_eq!(
+            parse_intent_label(" Section.\n"),
+            Some(IntentScope::Section)
+        );
         assert_eq!(parse_intent_label("\"book\""), Some(IntentScope::Book));
         assert_eq!(parse_intent_label("generic"), Some(IntentScope::Generic));
         assert_eq!(parse_intent_label("bookish nonsense"), None);

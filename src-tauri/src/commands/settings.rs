@@ -207,6 +207,8 @@ pub fn ai_create_profile(
     base_url: Option<String>,
     model: String,
     temperature: f64,
+    reasoning_effort: Option<String>,
+    reasoning_effort_all_features: Option<bool>,
     keep_alive: Option<String>,
     enabled: Option<bool>,
     db: State<'_, Db>,
@@ -219,6 +221,8 @@ pub fn ai_create_profile(
         base_url,
         model,
         temperature,
+        reasoning_effort,
+        reasoning_effort_all_features.unwrap_or(false),
         keep_alive,
         enabled.unwrap_or(true),
     )
@@ -243,6 +247,8 @@ pub fn ai_save_profile(
     base_url: Option<String>,
     model: String,
     temperature: f64,
+    reasoning_effort: Option<String>,
+    reasoning_effort_all_features: Option<bool>,
     keep_alive: Option<String>,
     db: State<'_, Db>,
 ) -> AppResult<AiProfileView> {
@@ -255,6 +261,8 @@ pub fn ai_save_profile(
         base_url,
         model,
         temperature,
+        reasoning_effort,
+        reasoning_effort_all_features.unwrap_or(false),
         keep_alive,
     )
 }
@@ -269,6 +277,8 @@ pub fn ai_update_profile(
     base_url: Option<String>,
     model: String,
     temperature: f64,
+    reasoning_effort: Option<String>,
+    reasoning_effort_all_features: Option<bool>,
     keep_alive: Option<String>,
     db: State<'_, Db>,
 ) -> AppResult<AiProfileView> {
@@ -281,6 +291,8 @@ pub fn ai_update_profile(
         base_url,
         model,
         temperature,
+        reasoning_effort,
+        reasoning_effort_all_features.unwrap_or(false),
         keep_alive,
     )
 }
@@ -325,6 +337,7 @@ pub async fn ai_test_profile(
     base_url: Option<String>,
     model: String,
     temperature: f64,
+    reasoning_effort: Option<String>,
     keep_alive: Option<String>,
     app: AppHandle,
     db: State<'_, Db>,
@@ -340,9 +353,32 @@ pub async fn ai_test_profile(
         base_url,
         model,
         temperature,
+        reasoning_effort,
         keep_alive,
     )
     .await
+}
+
+/// Effort levels this endpoint told us it accepts, learned from a rejected
+/// request. Empty until a rejection actually spelled them out.
+#[tauri::command]
+pub fn ai_reasoning_effort_options(
+    provider: String,
+    base_url: Option<String>,
+    model: String,
+    db: State<'_, Db>,
+) -> AppResult<router::EffortHints> {
+    router::reasoning_effort_options(&db, &provider, base_url.as_deref(), &model)
+}
+
+#[tauri::command]
+pub fn ai_forget_reasoning_effort_options(
+    provider: String,
+    base_url: Option<String>,
+    model: String,
+    db: State<'_, Db>,
+) -> AppResult<()> {
+    router::forget_reasoning_effort_options(&db, &provider, base_url.as_deref(), &model)
 }
 
 #[tauri::command]

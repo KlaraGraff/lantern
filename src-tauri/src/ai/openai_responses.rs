@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter};
 use crate::commands::ai::{AiStreamChunk, ChatMessage};
 use crate::error::{AppError, AppResult};
 
-fn request_body(model: &str, messages: &[ChatMessage]) -> serde_json::Value {
+fn request_body(model: &str, messages: &[ChatMessage], effort: Option<&str>) -> serde_json::Value {
     let instructions: String = messages
         .iter()
         .filter(|message| matches!(message.role.as_str(), "system" | "system_cache_variable"))
@@ -25,13 +25,19 @@ fn request_body(model: &str, messages: &[ChatMessage]) -> serde_json::Value {
         })
         .collect();
 
-    serde_json::json!({
+    let mut body = serde_json::json!({
         "model": model,
         "instructions": instructions,
         "input": input,
         "stream": true,
         "store": false,
-    })
+    });
+    // The Responses API nests the level under `reasoning`, unlike the
+    // chat-completions shape's top-level `reasoning_effort`.
+    if let Some(effort) = effort {
+        body["reasoning"] = serde_json::json!({ "effort": effort });
+    }
+    body
 }
 
 /// Stream chat using OpenAI's Responses API (`/responses`).
@@ -50,6 +56,7 @@ pub async fn stream_chat(
     messages: &[ChatMessage],
     account_id: Option<&str>,
     event_name: &str,
+    effort: Option<&str>,
     emitted: Arc<AtomicBool>,
 ) -> AppResult<()> {
     let client = crate::ai::http_client();
@@ -57,7 +64,7 @@ pub async fn stream_chat(
 
     // Responses API uses top-level "instructions" for system messages,
     // and "input" for user/assistant messages only.
-    let body = request_body(model, messages);
+    let body = request_body(model, messages, effort);
 
     let mut request = client.post(&url).bearer_auth(api_key).json(&body);
     if let Some(acct) = account_id {
@@ -190,6 +197,7 @@ mod tests {
                     content: "Question".into(),
                 },
             ],
+            None,
         );
         assert_eq!(body["instructions"], "stable variable");
         assert_eq!(

@@ -6,6 +6,7 @@ import { listen } from "@tauri-apps/api/event";
 import Home from "./pages/Home";
 import Reader from "./pages/Reader";
 import VaultAccessDialog from "./components/VaultAccessDialog";
+import ReasoningEffortNotice from "./components/ReasoningEffortNotice";
 import { reconcileLanguage } from "./i18n";
 import {
   installCustomFontFaces,
@@ -79,6 +80,7 @@ export default function App() {
         <Route path="/reader/:bookId" element={<Reader />} />
       </Routes>
       <VaultAccessDialog />
+      <ReasoningEffortNotice />
     </>
   );
 

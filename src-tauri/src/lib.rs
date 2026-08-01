@@ -765,6 +765,8 @@ pub fn run() {
             commands::settings::ai_reorder_profiles,
             commands::settings::ai_delete_profile,
             commands::settings::ai_list_models,
+            commands::settings::ai_reasoning_effort_options,
+            commands::settings::ai_forget_reasoning_effort_options,
             commands::settings::ai_test_profile,
             commands::settings::ai_list_credentials,
             commands::settings::ai_add_credential,

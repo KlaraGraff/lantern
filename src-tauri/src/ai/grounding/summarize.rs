@@ -178,7 +178,17 @@ async fn complete_summary(
         )
         .await?
     } else {
-        complete_with_failover(app, db, secrets, messages, None, Some(request_id), None).await?
+        complete_with_failover(
+            app,
+            db,
+            secrets,
+            messages,
+            None,
+            crate::ai::router::AiRequestPurpose::Utility,
+            Some(request_id),
+            None,
+        )
+        .await?
     };
     Ok((completion.text.trim().to_string(), completion.model))
 }

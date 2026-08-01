@@ -32,6 +32,12 @@ pub struct AiProfileView {
     pub base_url: Option<String>,
     pub model: String,
     pub temperature: f64,
+    /// `None` means "send no reasoning parameter", which is not the same as the
+    /// literal value `none` (an explicit "do not think" some providers accept).
+    pub reasoning_effort: Option<String>,
+    /// Off keeps the effort on the chat path only; on extends it to the short
+    /// utility completions that share this profile.
+    pub reasoning_effort_all_features: bool,
     pub keep_alive: Option<String>,
     pub enabled: bool,
     pub priority: i64,
@@ -444,7 +450,7 @@ pub fn migrate_legacy_config(db: &Db, secrets: &Secrets) -> AppResult<()> {
 }
 
 const PROFILE_COLUMNS: &str =
-    "id, label, provider, auth_mode, base_url, model, temperature, keep_alive, enabled, priority, state, cooldown_until, last_error_kind, last_used_at, last_latency_ms";
+    "id, label, provider, auth_mode, base_url, model, temperature, keep_alive, enabled, priority, state, cooldown_until, last_error_kind, last_used_at, last_latency_ms, reasoning_effort, reasoning_effort_all_features";
 
 fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<AiProfile> {
     Ok(AiProfile {
@@ -464,8 +470,225 @@ fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<AiProfile> {
             last_error_kind: row.get(12)?,
             last_used_at: row.get(13)?,
             last_latency_ms: row.get(14)?,
+            reasoning_effort: row.get(15)?,
+            reasoning_effort_all_features: row.get::<_, i64>(16)? != 0,
         },
     })
+}
+
+/// What the routed request is for. Reasoning effort is a chat-level setting: a
+/// vocabulary card or an inline translation should not pay for deep thinking
+/// unless the profile explicitly opts every feature in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiRequestPurpose {
+    Chat,
+    Utility,
+}
+
+fn effort_for(profile: &AiProfileView, purpose: AiRequestPurpose) -> Option<&str> {
+    if purpose == AiRequestPurpose::Chat || profile.reasoning_effort_all_features {
+        profile.reasoning_effort.as_deref()
+    } else {
+        None
+    }
+}
+
+fn normalize_reasoning_effort(value: Option<String>) -> AppResult<Option<String>> {
+    let value = value
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty());
+    if let Some(value) = value.as_deref() {
+        let shaped = value.chars().count() <= 32
+            && value
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        if !shaped {
+            return Err(AppError::Other("AI_REASONING_EFFORT_INVALID".to_string()));
+        }
+    }
+    Ok(value)
+}
+
+/// The endpoint a hint belongs to. Keyed by model as well as URL because one
+/// gateway serves many models and they rarely accept the same effort levels.
+///
+/// Takes the parts rather than a profile so the settings UI can look hints up
+/// for a draft it has not saved yet.
+pub fn effort_hint_key(provider: &str, base_url: Option<&str>, model: &str) -> (String, String) {
+    let resolved = base_url
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| provider_default_base_url(provider).map(str::to_string))
+        .unwrap_or_else(|| provider.to_string());
+    (
+        resolved.trim_end_matches('/').to_string(),
+        model.trim().to_string(),
+    )
+}
+
+/// Values named by a rejection body, e.g.
+/// `Supported values are: 'low', 'medium', 'high'`. Returns empty when the
+/// provider did not spell them out — learning is opportunistic.
+///
+/// Shared with the speech settings, which learn the voices an endpoint accepts
+/// from the identically worded rejection of a bad `voice`.
+pub(crate) fn parse_supported_values(message: &str) -> Vec<String> {
+    const MARKERS: [&str; 4] = [
+        "supported values are",
+        "allowed values are",
+        "must be one of",
+        "expected one of",
+    ];
+    const NOISE: [&str; 6] = ["or", "and", "the", "is", "are", "one"];
+    let lowered = message.to_ascii_lowercase();
+    let Some(start) = MARKERS
+        .iter()
+        .find_map(|marker| lowered.find(marker).map(|index| index + marker.len()))
+    else {
+        return Vec::new();
+    };
+    let tail: String = lowered[start..].chars().take(200).collect();
+    let mut options: Vec<String> = Vec::new();
+    for token in tail.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')) {
+        if token.is_empty() || token.len() > 32 || NOISE.contains(&token) {
+            continue;
+        }
+        if !options.iter().any(|existing| existing == token) {
+            options.push(token.to_string());
+        }
+        if options.len() >= 12 {
+            break;
+        }
+    }
+    options
+}
+
+fn store_effort_hints(db: &Db, base_url: &str, model: &str, options: &[String]) {
+    let Ok(payload) = serde_json::to_string(options) else {
+        return;
+    };
+    let Ok(conn) = db.conn.lock() else {
+        return;
+    };
+    let _ = conn.execute(
+        "INSERT INTO ai_reasoning_effort_hints (base_url, model, options, updated_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(base_url, model) DO UPDATE SET options = ?3, updated_at = ?4",
+        params![base_url, model, payload, now()],
+    );
+}
+
+/// What a rejection taught us about one endpoint, and when. The timestamp is
+/// half the answer to "where did these come from?", so it travels with them.
+#[derive(Debug, Default, Clone, serde::Serialize)]
+pub struct EffortHints {
+    pub options: Vec<String>,
+    pub updated_at: Option<i64>,
+}
+
+pub fn reasoning_effort_options(
+    db: &Db,
+    provider: &str,
+    base_url: Option<&str>,
+    model: &str,
+) -> AppResult<EffortHints> {
+    let (base_url, model) = effort_hint_key(provider, base_url, model);
+    let stored: Option<(String, i64)> = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?
+        .query_row(
+            "SELECT options, updated_at FROM ai_reasoning_effort_hints WHERE base_url = ?1 AND model = ?2",
+            params![base_url, model],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((payload, updated_at)) = stored else {
+        return Ok(EffortHints::default());
+    };
+    Ok(EffortHints {
+        options: serde_json::from_str::<Vec<String>>(&payload).unwrap_or_default(),
+        updated_at: Some(updated_at),
+    })
+}
+
+/// Forgets what one endpoint reported. A gateway can start serving a different
+/// model behind the same name, which makes the stored levels a lie the user has
+/// no other way to correct.
+pub fn forget_reasoning_effort_options(
+    db: &Db,
+    provider: &str,
+    base_url: Option<&str>,
+    model: &str,
+) -> AppResult<()> {
+    let (base_url, model) = effort_hint_key(provider, base_url, model);
+    db.conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?
+        .execute(
+            "DELETE FROM ai_reasoning_effort_hints WHERE base_url = ?1 AND model = ?2",
+            params![base_url, model],
+        )?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+struct AiReasoningEffortCleared {
+    profile_id: String,
+    profile_label: String,
+    effort: String,
+    options: Vec<String>,
+}
+
+/// Decide whether a failed attempt should be retried without the reasoning
+/// effort, and record what the failure taught us.
+///
+/// The check is deliberately wide: any request-shaped rejection (400/422) while
+/// an effort was set retries once without it. Gateways word this rejection every
+/// way imaginable, and the cost of being wrong is one extra failed request,
+/// while the cost of being narrow is an answer the user never gets.
+fn handle_effort_rejection(
+    app: &AppHandle,
+    db: &Db,
+    profile: &AiProfile,
+    effort: &str,
+    error: &AppError,
+    persist_clear: bool,
+) -> bool {
+    if !matches!(classify_error(error), AiErrorKind::Request) {
+        return false;
+    }
+    let (base_url, model) = effort_hint_key(
+        &profile.view.provider,
+        profile.view.base_url.as_deref(),
+        &profile.view.model,
+    );
+    let options = parse_supported_values(&error.to_string());
+    if !options.is_empty() {
+        store_effort_hints(db, &base_url, &model, &options);
+    }
+    if persist_clear {
+        if let Ok(conn) = db.conn.lock() {
+            let _ = conn.execute(
+                "UPDATE ai_profiles SET reasoning_effort = NULL, updated_at = ?1 WHERE id = ?2",
+                params![now(), profile.view.id],
+            );
+        }
+    }
+    log::warn!(
+        "ai router: profile={} rejected reasoning effort '{}', retrying without it",
+        profile.view.id,
+        effort
+    );
+    let _ = app.emit(
+        "ai-reasoning-effort-cleared",
+        AiReasoningEffortCleared {
+            profile_id: profile.view.id.clone(),
+            profile_label: profile.view.label.clone(),
+            effort: effort.to_string(),
+            options,
+        },
+    );
+    true
 }
 
 fn profile_by_id(db: &Db, id: &str) -> AppResult<AiProfile> {
@@ -697,6 +920,7 @@ async fn stream_once(
     messages: &[ChatMessage],
     event_name: &str,
     max_tokens: Option<u32>,
+    effort: Option<&str>,
     emitted: Arc<AtomicBool>,
     cancel: &mut watch::Receiver<bool>,
 ) -> AppResult<()> {
@@ -716,6 +940,7 @@ async fn stream_once(
                 false,
                 event_name,
                 max_tokens,
+                effort,
                 emitted,
             )),
             _ if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" => {
@@ -727,6 +952,7 @@ async fn stream_once(
                     messages,
                     oauth_account_id,
                     event_name,
+                    effort,
                     emitted,
                 ))
             }
@@ -742,6 +968,7 @@ async fn stream_once(
                     .flatten(),
                 event_name,
                 max_tokens,
+                effort,
                 emitted,
             )),
         };
@@ -753,6 +980,63 @@ async fn stream_once(
     }
 }
 
+/// `stream_once`, plus the one-shot retry that drops an unsupported reasoning
+/// effort. The retry is only safe before any token reached the frontend, so it
+/// is gated on `emitted` exactly like credential failover is.
+#[allow(clippy::too_many_arguments)]
+async fn stream_once_with_effort_fallback(
+    app: &AppHandle,
+    db: &Db,
+    profile: &AiProfile,
+    api_key: &str,
+    oauth_account_id: Option<&str>,
+    messages: &[ChatMessage],
+    event_name: &str,
+    max_tokens: Option<u32>,
+    effort: Option<&str>,
+    persist_clear: bool,
+    emitted: Arc<AtomicBool>,
+    cancel: &mut watch::Receiver<bool>,
+) -> AppResult<()> {
+    let result = stream_once(
+        app,
+        profile,
+        api_key,
+        oauth_account_id,
+        messages,
+        event_name,
+        max_tokens,
+        effort,
+        Arc::clone(&emitted),
+        cancel,
+    )
+    .await;
+    let Some(effort) = effort else {
+        return result;
+    };
+    let Err(error) = &result else {
+        return result;
+    };
+    if emitted.load(Ordering::Relaxed)
+        || !handle_effort_rejection(app, db, profile, effort, error, persist_clear)
+    {
+        return result;
+    }
+    stream_once(
+        app,
+        profile,
+        api_key,
+        oauth_account_id,
+        messages,
+        event_name,
+        max_tokens,
+        None,
+        emitted,
+        cancel,
+    )
+    .await
+}
+
 fn resolve_base_url(profile: &AiProfileView) -> AppResult<&str> {
     if let Some(configured) = profile
         .base_url
@@ -762,12 +1046,21 @@ fn resolve_base_url(profile: &AiProfileView) -> AppResult<&str> {
     {
         return Ok(configured);
     }
-    match profile.provider.as_str() {
-        "openai" => Ok("https://api.openai.com"),
-        "anthropic" => Ok("https://api.anthropic.com"),
-        "ollama" => Ok("http://localhost:11434"),
-        "custom" => Err(AppError::Other("AI_CUSTOM_BASE_URL_REQUIRED".to_string())),
-        _ => Err(AppError::Other("AI_PROVIDER_UNSUPPORTED".to_string())),
+    match provider_default_base_url(&profile.provider) {
+        Some(base_url) => Ok(base_url),
+        None if profile.provider == "custom" => {
+            Err(AppError::Other("AI_CUSTOM_BASE_URL_REQUIRED".to_string()))
+        }
+        None => Err(AppError::Other("AI_PROVIDER_UNSUPPORTED".to_string())),
+    }
+}
+
+fn provider_default_base_url(provider: &str) -> Option<&'static str> {
+    match provider {
+        "openai" => Some("https://api.openai.com"),
+        "anthropic" => Some("https://api.anthropic.com"),
+        "ollama" => Some("http://localhost:11434"),
+        _ => None,
     }
 }
 
@@ -943,6 +1236,7 @@ pub async fn list_models(
     Err(last_error.unwrap_or_else(|| AppError::Other("AI_NO_USABLE_KEYS".to_string())))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn stream_with_failover(
     app: &AppHandle,
     db: &Db,
@@ -950,6 +1244,7 @@ pub async fn stream_with_failover(
     messages: &[ChatMessage],
     event_name: &str,
     max_tokens: Option<u32>,
+    purpose: AiRequestPurpose,
     request_id: Option<&str>,
 ) -> AppResult<()> {
     let mut cancel = request_id
@@ -971,6 +1266,7 @@ pub async fn stream_with_failover(
         messages,
         event_name,
         max_tokens,
+        purpose,
         &mut cancel,
     )
     .await;
@@ -984,12 +1280,14 @@ pub async fn stream_with_failover(
 /// frontend. Existing provider adapters emit through `AppHandle`, so a private
 /// per-request listener collects those deltas until the adapters can be moved
 /// to a provider-neutral sink.
+#[allow(clippy::too_many_arguments)]
 pub async fn complete_with_failover(
     app: &AppHandle,
     db: &Db,
     secrets: &Secrets,
     messages: &[ChatMessage],
     max_tokens: Option<u32>,
+    purpose: AiRequestPurpose,
     request_id: Option<&str>,
     forward_event_name: Option<&str>,
 ) -> AppResult<AiCompletion> {
@@ -1039,6 +1337,7 @@ pub async fn complete_with_failover(
         messages,
         &event_name,
         max_tokens,
+        purpose,
         &mut cancel,
     )
     .await;
@@ -1081,16 +1380,23 @@ async fn stream_with_profile_inner(
     if !profile.view.enabled {
         return Err(AppError::Other("AI_PROFILE_DISABLED".to_string()));
     }
+    // Every caller of this path is background work against one pinned profile
+    // (grounding summaries, intent routing), so the effort only rides along
+    // when the profile opted every feature in.
+    let effort = effort_for(&profile.view, AiRequestPurpose::Utility);
     if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" {
         let (token, account_id) = crate::ai::oauth::get_valid_token(secrets).await?;
-        stream_once(
+        stream_once_with_effort_fallback(
             app,
+            db,
             &profile,
             &token,
             account_id.as_deref(),
             messages,
             event_name,
             max_tokens,
+            effort,
+            true,
             Arc::new(AtomicBool::new(false)),
             cancel,
         )
@@ -1098,14 +1404,17 @@ async fn stream_with_profile_inner(
         return Ok(profile.view);
     }
     if profile.view.provider == "ollama" {
-        stream_once(
+        stream_once_with_effort_fallback(
             app,
+            db,
             &profile,
             "",
             None,
             messages,
             event_name,
             max_tokens,
+            effort,
+            true,
             Arc::new(AtomicBool::new(false)),
             cancel,
         )
@@ -1120,14 +1429,17 @@ async fn stream_with_profile_inner(
         else {
             continue;
         };
-        match stream_once(
+        match stream_once_with_effort_fallback(
             app,
+            db,
             &profile,
             &key,
             None,
             messages,
             event_name,
             max_tokens,
+            effort,
+            true,
             Arc::new(AtomicBool::new(false)),
             cancel,
         )
@@ -1215,6 +1527,7 @@ fn connection_test_token_limit(profile: &AiProfile) -> Option<u32> {
     (profile.view.provider == "anthropic").then_some(64)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn stream_with_failover_inner(
     app: &AppHandle,
     db: &Db,
@@ -1222,6 +1535,7 @@ async fn stream_with_failover_inner(
     messages: &[ChatMessage],
     event_name: &str,
     max_tokens: Option<u32>,
+    purpose: AiRequestPurpose,
     cancel: &mut watch::Receiver<bool>,
 ) -> AppResult<AiProfileView> {
     let enabled_profiles = profiles(db, true)?;
@@ -1265,14 +1579,17 @@ async fn stream_with_failover_inner(
                 }
             };
             let started = Instant::now();
-            let result = stream_once(
+            let result = stream_once_with_effort_fallback(
                 app,
+                db,
                 &profile,
                 &token,
                 account_id.as_deref(),
                 messages,
                 event_name,
                 max_tokens,
+                effort_for(&profile.view, purpose),
+                true,
                 Arc::clone(&emitted),
                 cancel,
             )
@@ -1312,14 +1629,17 @@ async fn stream_with_failover_inner(
         if profile.view.provider == "ollama" {
             let emitted = Arc::new(AtomicBool::new(false));
             let started = Instant::now();
-            let result = stream_once(
+            let result = stream_once_with_effort_fallback(
                 app,
+                db,
                 &profile,
                 "",
                 None,
                 messages,
                 event_name,
                 max_tokens,
+                effort_for(&profile.view, purpose),
+                true,
                 Arc::clone(&emitted),
                 cancel,
             )
@@ -1377,14 +1697,17 @@ async fn stream_with_failover_inner(
                 continue;
             };
             let emitted = Arc::new(AtomicBool::new(false));
-            match stream_once(
+            match stream_once_with_effort_fallback(
                 app,
+                db,
                 &profile,
                 &key,
                 None,
                 messages,
                 event_name,
                 max_tokens,
+                effort_for(&profile.view, purpose),
+                true,
                 Arc::clone(&emitted),
                 cancel,
             )
@@ -1676,6 +1999,8 @@ pub fn create_profile(
     base_url: Option<String>,
     model: String,
     temperature: f64,
+    reasoning_effort: Option<String>,
+    reasoning_effort_all_features: bool,
     keep_alive: Option<String>,
     enabled: bool,
 ) -> AppResult<AiProfileView> {
@@ -1689,6 +2014,7 @@ pub fn create_profile(
             temperature,
             keep_alive,
         )?;
+    let reasoning_effort = normalize_reasoning_effort(reasoning_effort)?;
     let id = uuid::Uuid::new_v4().to_string();
     let timestamp = now();
     let mut conn = db
@@ -1702,8 +2028,8 @@ pub fn create_profile(
         |row| row.get(0),
     )?;
     tx.execute(
-        "INSERT INTO ai_profiles (id, label, provider, auth_mode, base_url, model, temperature, keep_alive, enabled, priority, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
-        params![id, label, provider, auth_mode, base_url, model, temperature, keep_alive, enabled as i64, priority, timestamp],
+        "INSERT INTO ai_profiles (id, label, provider, auth_mode, base_url, model, temperature, reasoning_effort, reasoning_effort_all_features, keep_alive, enabled, priority, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
+        params![id, label, provider, auth_mode, base_url, model, temperature, reasoning_effort, reasoning_effort_all_features as i64, keep_alive, enabled as i64, priority, timestamp],
     )?;
     tx.commit()?;
     drop(conn);
@@ -1720,6 +2046,8 @@ pub fn duplicate_profile(db: &Db, id: &str, label: Option<String>) -> AppResult<
         source.base_url,
         source.model,
         source.temperature,
+        source.reasoning_effort,
+        source.reasoning_effort_all_features,
         source.keep_alive,
         false,
     )
@@ -1735,6 +2063,8 @@ pub fn save_profile(
     base_url: Option<String>,
     model: String,
     temperature: f64,
+    reasoning_effort: Option<String>,
+    reasoning_effort_all_features: bool,
     keep_alive: Option<String>,
 ) -> AppResult<AiProfileView> {
     let existing = profile_by_id(db, &id)?.view;
@@ -1748,19 +2078,21 @@ pub fn save_profile(
             temperature,
             keep_alive,
         )?;
+    let reasoning_effort = normalize_reasoning_effort(reasoning_effort)?;
     let credential_health_stale = existing.provider != provider
         || existing.auth_mode != auth_mode
         || existing.base_url != base_url;
     let profile_health_stale = credential_health_stale
         || existing.model != model
         || existing.temperature != temperature
+        || existing.reasoning_effort != reasoning_effort
         || existing.keep_alive != keep_alive;
     let timestamp = now();
     let mut conn = db.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
     let tx = conn.transaction()?;
     let changed = tx.execute(
-        "UPDATE ai_profiles SET label = ?1, provider = ?2, auth_mode = ?3, base_url = ?4, model = ?5, temperature = ?6, keep_alive = ?7, state = CASE WHEN ?8 = 1 THEN 'active' ELSE state END, cooldown_until = CASE WHEN ?8 = 1 THEN NULL ELSE cooldown_until END, last_error_kind = CASE WHEN ?8 = 1 THEN NULL ELSE last_error_kind END, last_used_at = CASE WHEN ?8 = 1 THEN NULL ELSE last_used_at END, last_latency_ms = CASE WHEN ?8 = 1 THEN NULL ELSE last_latency_ms END, updated_at = ?9 WHERE id = ?10",
-        params![label, provider, auth_mode, base_url, model, temperature, keep_alive, profile_health_stale as i64, timestamp, id],
+        "UPDATE ai_profiles SET label = ?1, provider = ?2, auth_mode = ?3, base_url = ?4, model = ?5, temperature = ?6, keep_alive = ?7, reasoning_effort = ?11, reasoning_effort_all_features = ?12, state = CASE WHEN ?8 = 1 THEN 'active' ELSE state END, cooldown_until = CASE WHEN ?8 = 1 THEN NULL ELSE cooldown_until END, last_error_kind = CASE WHEN ?8 = 1 THEN NULL ELSE last_error_kind END, last_used_at = CASE WHEN ?8 = 1 THEN NULL ELSE last_used_at END, last_latency_ms = CASE WHEN ?8 = 1 THEN NULL ELSE last_latency_ms END, updated_at = ?9 WHERE id = ?10",
+        params![label, provider, auth_mode, base_url, model, temperature, keep_alive, profile_health_stale as i64, timestamp, id, reasoning_effort, reasoning_effort_all_features as i64],
     )?;
     if changed != 1 {
         return Err(AppError::Other("AI_PROFILE_NOT_FOUND".to_string()));
@@ -2075,24 +2407,32 @@ pub fn delete_credential(db: &Db, secrets: &Secrets, id: &str) -> AppResult<()> 
 #[allow(clippy::too_many_arguments)]
 async fn timed_stream_once(
     app: &AppHandle,
+    db: &Db,
     profile: &AiProfile,
     api_key: &str,
     oauth_account_id: Option<&str>,
     messages: &[ChatMessage],
     event_name: &str,
     max_tokens: Option<u32>,
+    persist_effort_clear: bool,
 ) -> (AppResult<()>, Option<u64>, u64) {
     let started = Instant::now();
     let emitted = Arc::new(AtomicBool::new(false));
     let (_cancel_guard, mut cancel) = watch::channel(false);
-    let mut stream = Box::pin(stream_once(
+    // A connection test is the best place to learn which effort levels an
+    // endpoint accepts: the user is sitting in settings, so the cleared value
+    // and the freshly discovered options land in front of them immediately.
+    let mut stream = Box::pin(stream_once_with_effort_fallback(
         app,
+        db,
         profile,
         api_key,
         oauth_account_id,
         messages,
         event_name,
         max_tokens,
+        profile.view.reasoning_effort.as_deref(),
+        persist_effort_clear,
         Arc::clone(&emitted),
         &mut cancel,
     ));
@@ -2167,6 +2507,7 @@ fn profile_for_connection_test(
     base_url: Option<String>,
     model: String,
     temperature: f64,
+    reasoning_effort: Option<String>,
     keep_alive: Option<String>,
 ) -> AppResult<(AiProfile, bool)> {
     let mut profile = profile_by_id(db, profile_id)?;
@@ -2180,17 +2521,20 @@ fn profile_for_connection_test(
             temperature,
             keep_alive,
         )?;
+    let reasoning_effort = normalize_reasoning_effort(reasoning_effort)?;
     let uses_saved_config = profile.view.provider == provider
         && profile.view.auth_mode == auth_mode
         && profile.view.base_url == base_url
         && profile.view.model == model
         && profile.view.temperature == temperature
+        && profile.view.reasoning_effort == reasoning_effort
         && profile.view.keep_alive == keep_alive;
     profile.view.provider = provider;
     profile.view.auth_mode = auth_mode;
     profile.view.base_url = base_url;
     profile.view.model = model;
     profile.view.temperature = temperature;
+    profile.view.reasoning_effort = reasoning_effort;
     profile.view.keep_alive = keep_alive;
     Ok((profile, uses_saved_config))
 }
@@ -2206,6 +2550,7 @@ pub async fn test_profile(
     base_url: Option<String>,
     model: String,
     temperature: f64,
+    reasoning_effort: Option<String>,
     keep_alive: Option<String>,
 ) -> AppResult<AiConnectionTestResult> {
     let (profile, record_health) = profile_for_connection_test(
@@ -2216,6 +2561,7 @@ pub async fn test_profile(
         base_url,
         model,
         temperature,
+        reasoning_effort,
         keep_alive,
     )?;
     let messages = [ChatMessage {
@@ -2254,12 +2600,14 @@ pub async fn test_profile(
         let event_name = format!("ai-profile-test-{}", uuid::Uuid::new_v4());
         let (result, first_response_ms, _) = timed_stream_once(
             app,
+            db,
             &profile,
             &token,
             account_id.as_deref(),
             &messages,
             &event_name,
             connection_test_token_limit(&profile),
+            record_health,
         )
         .await;
         let total_ms = overall_started.elapsed().as_millis() as u64;
@@ -2296,12 +2644,14 @@ pub async fn test_profile(
         let event_name = format!("ai-profile-test-{}", uuid::Uuid::new_v4());
         let (result, first_response_ms, _) = timed_stream_once(
             app,
+            db,
             &profile,
             "",
             None,
             &messages,
             &event_name,
             connection_test_token_limit(&profile),
+            record_health,
         )
         .await;
         let total_ms = overall_started.elapsed().as_millis() as u64;
@@ -2387,12 +2737,14 @@ pub async fn test_profile(
         let event_name = format!("ai-profile-test-{}", uuid::Uuid::new_v4());
         let (result, first_response_ms, attempt_ms) = timed_stream_once(
             app,
+            db,
             &profile,
             &key,
             None,
             &messages,
             &event_name,
             connection_test_token_limit(&profile),
+            record_health,
         )
         .await;
         last_first_response_ms = first_response_ms;
@@ -2534,12 +2886,14 @@ pub async fn test_credential(
     let event_name = format!("ai-credential-test-{}", uuid::Uuid::new_v4());
     let (result, _, total_ms) = timed_stream_once(
         app,
+        db,
         &profile,
         &key,
         None,
         &messages,
         &event_name,
         connection_test_token_limit(&profile),
+        true,
     )
     .await;
     update_credential_health(
@@ -2583,6 +2937,122 @@ mod tests {
         tokio::time::timeout(Duration::from_millis(20), wait_cancelled(&mut receiver))
             .await
             .expect("cancellation should wake the request");
+    }
+
+    #[test]
+    fn effort_rides_the_chat_path_and_only_spreads_when_opted_in() {
+        let mut view = AiProfileView {
+            id: "p".into(),
+            label: "p".into(),
+            provider: "custom".into(),
+            auth_mode: "api_key".into(),
+            base_url: Some("https://gateway.example".into()),
+            model: "m".into(),
+            temperature: 0.3,
+            reasoning_effort: Some("high".into()),
+            reasoning_effort_all_features: false,
+            keep_alive: None,
+            enabled: true,
+            priority: 0,
+            state: "active".into(),
+            cooldown_until: None,
+            last_error_kind: None,
+            last_used_at: None,
+            last_latency_ms: None,
+        };
+
+        assert_eq!(effort_for(&view, AiRequestPurpose::Chat), Some("high"));
+        // A vocabulary card or an inline translation should not pay for deep
+        // thinking just because the chat profile asked for it.
+        assert_eq!(effort_for(&view, AiRequestPurpose::Utility), None);
+
+        view.reasoning_effort_all_features = true;
+        assert_eq!(effort_for(&view, AiRequestPurpose::Utility), Some("high"));
+    }
+
+    #[test]
+    fn reasoning_effort_normalizes_case_and_rejects_junk() {
+        assert_eq!(
+            normalize_reasoning_effort(Some("  X-High ".into())).unwrap(),
+            Some("x-high".to_string())
+        );
+        // Blank is "send nothing", which is not the same as the literal `none`.
+        assert_eq!(
+            normalize_reasoning_effort(Some("   ".into())).unwrap(),
+            None
+        );
+        assert_eq!(
+            normalize_reasoning_effort(Some("none".into())).unwrap(),
+            Some("none".to_string())
+        );
+        assert!(normalize_reasoning_effort(Some("high\"; drop".into())).is_err());
+        assert!(normalize_reasoning_effort(Some("x".repeat(33))).is_err());
+    }
+
+    #[test]
+    fn supported_efforts_are_learned_from_the_rejection_body() {
+        assert_eq!(
+            parse_supported_values(
+                "status=400 message=Invalid value: 'x-high'. Supported values are: 'low', 'medium', and 'high'."
+            ),
+            vec!["low", "medium", "high"]
+        );
+        assert_eq!(
+            parse_supported_values("status=400 message=must be one of low, medium, high"),
+            vec!["low", "medium", "high"]
+        );
+        // Most gateways say nothing useful; learning stays opportunistic.
+        assert!(parse_supported_values("status=400 message=bad request").is_empty());
+    }
+
+    #[test]
+    fn effort_hints_are_scoped_to_a_model_not_just_a_gateway() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db = Db::init(dir.path()).unwrap();
+
+        let (base_url, model) =
+            effort_hint_key("custom", Some("https://gateway.example/v1/"), "model-a");
+        store_effort_hints(&db, &base_url, &model, &["low".into(), "high".into()]);
+
+        let hints =
+            reasoning_effort_options(&db, "custom", Some("https://gateway.example/v1"), "model-a")
+                .unwrap();
+        assert_eq!(hints.options, vec!["low".to_string(), "high".to_string()]);
+        // The UI dates the hint, so a stored row always carries a timestamp.
+        assert!(hints.updated_at.is_some());
+        // A sibling model on the same gateway must not inherit them.
+        assert!(reasoning_effort_options(
+            &db,
+            "custom",
+            Some("https://gateway.example/v1"),
+            "model-b"
+        )
+        .unwrap()
+        .options
+        .is_empty());
+
+        forget_reasoning_effort_options(&db, "custom", Some("https://gateway.example/v1"), "model-a")
+            .unwrap();
+        assert!(reasoning_effort_options(
+            &db,
+            "custom",
+            Some("https://gateway.example/v1"),
+            "model-a"
+        )
+        .unwrap()
+        .options
+        .is_empty());
+    }
+
+    #[test]
+    fn hint_key_falls_back_to_the_provider_default_endpoint() {
+        assert_eq!(
+            effort_hint_key("openai", None, "gpt-4o-mini"),
+            (
+                "https://api.openai.com".to_string(),
+                "gpt-4o-mini".to_string()
+            )
+        );
     }
 
     #[test]
@@ -2673,6 +3143,8 @@ mod tests {
             "placeholder".to_string(),
             0.2,
             None,
+            false,
+            None,
             true,
         )
         .unwrap()
@@ -2687,6 +3159,8 @@ mod tests {
             base_url: base_url.map(str::to_string),
             model: "model".to_string(),
             temperature: 0.2,
+            reasoning_effort: None,
+            reasoning_effort_all_features: false,
             keep_alive: None,
             enabled: true,
             priority: 0,
@@ -2769,6 +3243,8 @@ mod tests {
             "model".to_string(),
             0.2,
             None,
+            false,
+            None,
             true,
         )
         .unwrap();
@@ -2801,6 +3277,8 @@ mod tests {
             Some("https://api.example/v1".to_string()),
             "model".to_string(),
             0.2,
+            None,
+            false,
             None,
             true,
         )
@@ -2845,6 +3323,8 @@ mod tests {
             "model".to_string(),
             0.2,
             None,
+            false,
+            None,
             true,
         )
         .unwrap();
@@ -2887,6 +3367,8 @@ mod tests {
             Some("https://api.example/v1".to_string()),
             "model".to_string(),
             0.2,
+            None,
+            false,
             None,
             true,
         )
@@ -2933,6 +3415,8 @@ mod tests {
             "model".to_string(),
             0.2,
             None,
+            false,
+            None,
             true,
         )
         .unwrap();
@@ -2962,6 +3446,8 @@ mod tests {
             Some("https://api.example/v1".to_string()),
             "model".to_string(),
             0.2,
+            None,
+            false,
             None,
             true,
         )

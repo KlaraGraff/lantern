@@ -10,11 +10,20 @@ use crate::error::{AppError, AppResult};
 
 const MIN_CACHEABLE_STABLE_TOKENS: usize = 1_024;
 
+/// Anthropic spells the levels without a separator (`xhigh`), while the
+/// OpenAI-compatible world uses `x-high`. Lantern stores whatever the user
+/// typed, so translate at the wire boundary instead of forcing one spelling on
+/// the settings UI.
+fn anthropic_effort(effort: &str) -> String {
+    effort.replace('-', "")
+}
+
 fn request_body(
     model: &str,
     temperature: f64,
     messages: &[ChatMessage],
     max_tokens: Option<u32>,
+    effort: Option<&str>,
 ) -> serde_json::Value {
     let stable = messages
         .iter()
@@ -44,14 +53,26 @@ fn request_body(
         .filter(|message| !matches!(message.role.as_str(), "system" | "system_cache_variable"))
         .map(|message| serde_json::json!({ "role": message.role, "content": message.content }))
         .collect();
-    serde_json::json!({
+    let mut body = serde_json::json!({
         "model": model,
         "max_tokens": max_tokens.unwrap_or(4096),
         "system": system,
         "messages": api_messages,
         "temperature": temperature,
         "stream": true,
-    })
+    });
+    match effort {
+        // Anthropic has no `none` effort level; the way to ask for no thinking
+        // is to disable it outright.
+        Some("none") => {
+            body["thinking"] = serde_json::json!({ "type": "disabled" });
+        }
+        Some(effort) => {
+            body["output_config"] = serde_json::json!({ "effort": anthropic_effort(effort) });
+        }
+        None => {}
+    }
+    body
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -65,6 +86,7 @@ pub async fn stream_chat(
     use_bearer_auth: bool,
     event_name: &str,
     max_tokens_override: Option<u32>,
+    effort: Option<&str>,
     emitted: Arc<AtomicBool>,
 ) -> AppResult<()> {
     let client = crate::ai::http_client();
@@ -75,7 +97,7 @@ pub async fn stream_chat(
         format!("{base}/v1/messages")
     };
 
-    let body = request_body(model, temperature, messages, max_tokens_override);
+    let body = request_body(model, temperature, messages, max_tokens_override, effort);
 
     let mut request = client
         .post(url)
@@ -210,6 +232,7 @@ mod tests {
                 system(" excerpts".into(), "system_cache_variable"),
             ],
             None,
+            None,
         );
         assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
         assert_eq!(body["system"][1]["text"], " excerpts");
@@ -225,6 +248,7 @@ mod tests {
                 system(" variable".into(), "system_cache_variable"),
             ],
             None,
+            None,
         );
         assert_eq!(body["system"], "stable variable");
     }
@@ -236,9 +260,38 @@ mod tests {
             0.2,
             &[system("token ".repeat(1_100), "system")],
             None,
+            None,
         );
         assert_eq!(body["system"].as_array().unwrap().len(), 1);
         assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
+    }
+
+    #[test]
+    fn reasoning_effort_uses_the_anthropic_spelling() {
+        let body = request_body(
+            "model",
+            0.2,
+            &[system("stable".into(), "system")],
+            None,
+            Some("x-high"),
+        );
+        assert_eq!(body["output_config"]["effort"], "xhigh");
+        assert!(body["thinking"].is_null());
+    }
+
+    #[test]
+    fn none_effort_disables_thinking_instead_of_sending_a_level() {
+        // Anthropic rejects `effort: "none"`; the equivalent request is one
+        // that turns thinking off.
+        let body = request_body(
+            "model",
+            0.2,
+            &[system("stable".into(), "system")],
+            None,
+            Some("none"),
+        );
+        assert_eq!(body["thinking"]["type"], "disabled");
+        assert!(body["output_config"].is_null());
     }
 
     #[test]

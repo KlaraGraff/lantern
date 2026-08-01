@@ -14,6 +14,7 @@ fn request_body(
     messages: &[ChatMessage],
     keep_alive: Option<&str>,
     max_tokens_override: Option<u32>,
+    effort: Option<&str>,
 ) -> serde_json::Value {
     // Grounded chat internally separates cacheable and variable system text.
     // OpenAI-compatible APIs receive the original single combined message.
@@ -44,6 +45,9 @@ fn request_body(
     if let Some(max_tokens) = max_tokens_override {
         body["max_tokens"] = serde_json::json!(max_tokens);
     }
+    if let Some(effort) = effort {
+        body["reasoning_effort"] = serde_json::json!(effort);
+    }
     body
 }
 
@@ -58,6 +62,7 @@ pub async fn stream_chat(
     keep_alive: Option<&str>,
     event_name: &str,
     max_tokens_override: Option<u32>,
+    effort: Option<&str>,
     emitted: Arc<AtomicBool>,
 ) -> AppResult<()> {
     let client = crate::ai::http_client();
@@ -74,6 +79,7 @@ pub async fn stream_chat(
         messages,
         keep_alive,
         max_tokens_override,
+        effort,
     );
 
     let mut request = client.post(&url).json(&body);
@@ -208,6 +214,7 @@ mod tests {
                     content: "Question".into(),
                 },
             ],
+            None,
             None,
             None,
         );

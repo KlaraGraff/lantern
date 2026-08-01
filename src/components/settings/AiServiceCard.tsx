@@ -17,10 +17,12 @@ import {
 } from "lucide-react";
 import {
   useEffect,
+  useMemo,
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
 import Button from "../ui/Button";
+import ComboField from "../ui/ComboField";
 import Input from "../ui/Input";
 import Select from "../ui/Select";
 import Slider from "../ui/Slider";
@@ -35,6 +37,9 @@ export interface AiProfile {
   base_url: string | null;
   model: string;
   temperature: number;
+  /** `null` means "send no reasoning parameter", unlike the literal `none`. */
+  reasoning_effort: string | null;
+  reasoning_effort_all_features: boolean;
   keep_alive: string | null;
   enabled: boolean;
   priority: number;
@@ -86,6 +91,21 @@ interface OAuthStatus {
   account_id: string | null;
 }
 
+const BUILT_IN_EFFORTS = ["none", "low", "medium", "high", "x-high", "max"];
+
+/** Levels an endpoint named when it rejected one, plus when it told us. */
+export interface AiEffortHints {
+  options: string[];
+  /** Epoch milliseconds; `null` only when nothing was ever learned. */
+  updated_at: number | null;
+}
+
+/** Date only — the hour a request happened to fail says nothing useful. */
+function formatHintDate(updatedAt: number | null): string {
+  if (!updatedAt) return "";
+  return new Date(updatedAt).toLocaleDateString();
+}
+
 interface AiServiceCardProps {
   profile: AiProfile;
   credentials: AiCredential[];
@@ -95,6 +115,8 @@ interface AiServiceCardProps {
   testing: boolean;
   loadingModels: boolean;
   modelOptions: string[];
+  /** Levels this endpoint named when it rejected one, if it ever did. */
+  learnedEfforts: AiEffortHints;
   testResult?: AiConnectionTestResult;
   healthStale: boolean;
   oauthStatus: OAuthStatus;
@@ -104,6 +126,7 @@ interface AiServiceCardProps {
   onToggleEnabled: (enabled: boolean) => Promise<void>;
   onTest: () => Promise<void>;
   onFetchModels: () => Promise<void>;
+  onForgetEffortOptions: () => Promise<void>;
   onDuplicate: () => Promise<void>;
   onDelete: () => Promise<void>;
   onMove: (direction: -1 | 1) => Promise<void>;
@@ -241,6 +264,7 @@ export default function AiServiceCard({
   testing,
   loadingModels,
   modelOptions,
+  learnedEfforts,
   testResult,
   healthStale,
   oauthStatus,
@@ -250,6 +274,7 @@ export default function AiServiceCard({
   onToggleEnabled,
   onTest,
   onFetchModels,
+  onForgetEffortOptions,
   onDuplicate,
   onDelete,
   onAddCredential,
@@ -268,6 +293,21 @@ export default function AiServiceCard({
   const [credentialBusyId, setCredentialBusyId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const profileBusy = busy || credentialBusyId != null;
+  // Kept as separate groups rather than merged into one list: which levels this
+  // endpoint actually reported is the useful half of the information, and a
+  // merged list loses it.
+  const effortGroups = useMemo(() => {
+    const learned = learnedEfforts.options;
+    return [
+      ...(learned.length > 0
+        ? [{ label: t("settings.ai.reasoningEffortGroupReported"), options: learned }]
+        : []),
+      {
+        label: t("settings.ai.reasoningEffortGroupBuiltIn"),
+        options: BUILT_IN_EFFORTS.filter((level) => !learned.includes(level)),
+      },
+    ];
+  }, [learnedEfforts.options, t]);
 
   useEffect(() => {
     if (expanded) return;
@@ -526,40 +566,82 @@ export default function AiServiceCard({
 
           <div className="border-t border-border-light py-3">
             <span className="mb-1.5 block text-[12px] font-medium text-text-primary">{t("settings.ai.model")}</span>
-            <div className="flex gap-2">
-              <Input
-                disabled={profileBusy}
-                className="min-w-0 flex-1"
-                value={profile.model}
-                maxLength={200}
-                onChange={(event) => onChange({ model: event.target.value })}
-                placeholder={t("settings.ai.modelPlaceholder")}
-              />
-              <button
-                type="button"
-                disabled={profileBusy || loadingModels || profile.auth_mode === "oauth"}
-                onClick={() => void onFetchModels()}
-                title={profile.auth_mode === "oauth" ? t("settings.ai.modelsUnavailableOAuth") : t("settings.ai.fetchModels")}
-                aria-label={profile.auth_mode === "oauth" ? t("settings.ai.modelsUnavailableOAuth") : t("settings.ai.fetchModels")}
-                className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border text-text-muted hover:bg-bg-input hover:text-accent-text disabled:opacity-40"
-              >
-                <RefreshCw size={15} className={loadingModels ? "animate-spin" : ""} />
-              </button>
-            </div>
-            {modelOptions.length > 0 && (
-              <Select
-                className="mt-2 w-full"
-                value={modelOptions.includes(profile.model) ? profile.model : ""}
-                placeholder={t("settings.ai.chooseFetchedModel")}
-                onChange={(model) => onChange({ model })}
-                options={modelOptions.map((model) => ({ value: model, label: model }))}
-              />
-            )}
+            <ComboField
+              label={t("settings.ai.model")}
+              value={profile.model}
+              disabled={profileBusy}
+              maxLength={200}
+              placeholder={t("settings.ai.modelPlaceholder")}
+              groups={
+                modelOptions.length > 0
+                  ? [{ label: t("settings.ai.modelGroupFetched"), options: modelOptions }]
+                  : []
+              }
+              onChange={(model) => onChange({ model })}
+              onRefresh={() => void onFetchModels()}
+              refreshing={loadingModels}
+              refreshDisabled={profile.auth_mode === "oauth"}
+              refreshLabel={
+                profile.auth_mode === "oauth"
+                  ? t("settings.ai.modelsUnavailableOAuth")
+                  : t("settings.ai.fetchModels")
+              }
+            />
             <span className="mt-1 block text-[10px] leading-4 text-text-muted">
               {modelOptions.length > 0
                 ? t("settings.ai.modelsFound", { count: modelOptions.length })
                 : t("settings.ai.modelHint")}
             </span>
+          </div>
+
+          <div className="border-t border-border-light py-3">
+            <span className="mb-1.5 block text-[12px] font-medium text-text-primary">
+              {t("settings.ai.reasoningEffort")}
+            </span>
+            <ComboField
+              label={t("settings.ai.reasoningEffort")}
+              value={profile.reasoning_effort ?? ""}
+              disabled={profileBusy}
+              maxLength={32}
+              placeholder={t("settings.ai.reasoningEffortDefault")}
+              emptyLabel={t("settings.ai.reasoningEffortDefaultOption")}
+              groups={effortGroups}
+              onChange={(value) => onChange({ reasoning_effort: value.trim() || null })}
+            />
+            <span className="mt-1 block text-[10px] leading-4 text-text-muted">
+              {t("settings.ai.reasoningEffortHint")}
+            </span>
+            {learnedEfforts.options.length > 0 && (
+              <span className="mt-1 flex flex-wrap items-baseline gap-x-1.5 text-[10px] leading-4 text-text-muted">
+                {t("settings.ai.reasoningEffortSource", {
+                  count: learnedEfforts.options.length,
+                  model: profile.model,
+                  date: formatHintDate(learnedEfforts.updated_at),
+                })}
+                <button
+                  type="button"
+                  className="cursor-pointer text-accent-text hover:underline"
+                  onClick={() => void onForgetEffortOptions()}
+                >
+                  {t("settings.ai.reasoningEffortForget")}
+                </button>
+              </span>
+            )}
+            <label className="mt-3 flex items-center justify-between gap-3">
+              <span className="min-w-0">
+                <span className="block text-[12px] font-medium text-text-primary">
+                  {t("settings.ai.reasoningEffortAllFeatures")}
+                </span>
+                <span className="mt-0.5 block text-[10px] leading-4 text-text-muted">
+                  {t("settings.ai.reasoningEffortAllFeaturesHint")}
+                </span>
+              </span>
+              <Toggle
+                label={t("settings.ai.reasoningEffortAllFeatures")}
+                checked={profile.reasoning_effort_all_features}
+                onChange={(checked) => onChange({ reasoning_effort_all_features: checked })}
+              />
+            </label>
           </div>
 
           <div className="border-t border-border-light py-3">

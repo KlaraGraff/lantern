@@ -194,6 +194,7 @@ fn spawn_routed_stream(
             &messages,
             &event_name,
             max_tokens,
+            crate::ai::router::AiRequestPurpose::Chat,
             Some(&request_id),
         )
         .await
@@ -497,6 +498,7 @@ async fn run_vocabulary_scan(
             secrets,
             &vocabulary_map_messages(language, question, batch),
             Some(VOCABULARY_MAP_MAX_TOKENS),
+            crate::ai::router::AiRequestPurpose::Utility,
             Some(request_id),
             None,
         )
@@ -940,8 +942,7 @@ fn explanation_strategy(mode: &str, cefr: &str) -> String {
         return strategy;
     }
     // An English-only mode stays English-only: its gloss is simpler English.
-    let chinese_gloss_allowed =
-        mode == "adaptive_bilingual" && matches!(level, "A1" | "A2" | "B1");
+    let chinese_gloss_allowed = mode == "adaptive_bilingual" && matches!(level, "A1" | "A2" | "B1");
     format!(
         "{strategy}{LEVEL_GOVERNS_LANGUAGE_ONLY}{}",
         above_level_gloss_rule(level, chinese_gloss_allowed),
@@ -1178,6 +1179,7 @@ pub async fn ai_learning_card(
         &secrets,
         &messages,
         Some(max_tokens),
+        crate::ai::router::AiRequestPurpose::Utility,
         Some(&request_id),
         Some(&stream_event_name),
     )
@@ -1228,6 +1230,7 @@ pub async fn ai_optimize_prompt(
         &secrets,
         &messages,
         Some(1_024),
+        crate::ai::router::AiRequestPurpose::Utility,
         Some(&request_id),
         None,
     )
@@ -1368,6 +1371,7 @@ pub async fn ai_word_forms(
         &secrets,
         &messages,
         Some(1_024),
+        crate::ai::router::AiRequestPurpose::Utility,
         Some(&request_id),
         None,
     )
@@ -1411,7 +1415,12 @@ fn sanitize_gloss(raw: &str) -> String {
     let cleaned = stripped.trim().trim_end_matches(['.', '。']).trim();
     // A runaway answer is worse than none: the row shows one line either way.
     if cleaned.chars().count() > MAX_GLOSS_CHARS {
-        return cleaned.chars().take(MAX_GLOSS_CHARS).collect::<String>().trim_end().to_string();
+        return cleaned
+            .chars()
+            .take(MAX_GLOSS_CHARS)
+            .collect::<String>()
+            .trim_end()
+            .to_string();
     }
     cleaned.to_string()
 }
@@ -1487,6 +1496,7 @@ pub async fn ai_vocab_gloss(
         &secrets,
         &messages,
         Some(128),
+        crate::ai::router::AiRequestPurpose::Utility,
         Some(&request_id),
         None,
     )
@@ -2387,7 +2397,12 @@ pub async fn ai_chat(
         current_scope_ambiguous && (latest_has_explicit_scope || inherited_section_index.is_none());
     let mut route = manual_scope
         .and_then(|scope| {
-            route_for_override(scope, latest_question, effective_section_index, has_viewport)
+            route_for_override(
+                scope,
+                latest_question,
+                effective_section_index,
+                has_viewport,
+            )
         })
         .unwrap_or_else(|| {
             classify_chat_route(
@@ -2820,10 +2835,8 @@ pub async fn ai_chat(
         CHAT_MAX_TOTAL_BYTES,
         selection == SelectionState::Carried,
     );
-    let excerpts_omitted = trim_excerpts_to_budget(
-        &mut excerpts,
-        chat_source_budget_bytes(full_text_threshold),
-    );
+    let excerpts_omitted =
+        trim_excerpts_to_budget(&mut excerpts, chat_source_budget_bytes(full_text_threshold));
     if excerpts_omitted > 0 {
         if let Some(context) = section_context.as_mut() {
             context.selected_chunks = context.selected_chunks.saturating_sub(excerpts_omitted);
@@ -3905,7 +3918,9 @@ mod tests {
             .stable
             .contains("could not supply reliable section source text"));
         assert!(unavailable.stable.contains("disclosing"));
-        assert!(!unavailable.stable.contains("The application will provide a local explanation"));
+        assert!(!unavailable
+            .stable
+            .contains("The application will provide a local explanation"));
     }
 
     #[test]
@@ -4106,7 +4121,8 @@ mod tests {
                 learning_card_system_prompt(kind, &request, "adaptive_bilingual", "B1", "zh")
                     .unwrap();
             assert!(
-                prompt.contains("Anchor the whole card to the sense the selection actually carries"),
+                prompt
+                    .contains("Anchor the whole card to the sense the selection actually carries"),
                 "kind={kind}"
             );
             assert!(
@@ -4139,7 +4155,9 @@ mod tests {
         // lower level read as a thinner card rather than an easier one.
         let beginner = explanation_strategy("english_by_level", "A1");
         assert!(!beginner.contains("one core meaning at a time"));
-        assert!(!explanation_strategy("english_by_level", "A2").contains("Avoid abstract terminology"));
+        assert!(
+            !explanation_strategy("english_by_level", "A2").contains("Avoid abstract terminology")
+        );
     }
 
     #[test]

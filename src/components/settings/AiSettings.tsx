@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { AlertCircle, Loader2, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Button from "../ui/Button";
@@ -9,6 +10,7 @@ import SortableList from "../ui/SortableList";
 import AiServiceCard, {
   type AiConnectionTestResult,
   type AiCredential,
+  type AiEffortHints,
   type AiProfile,
 } from "./AiServiceCard";
 import type { SettingsProps } from "./types";
@@ -31,6 +33,9 @@ interface VaultStatus {
   pendingMigrationCount: number;
 }
 
+/** Shared so an unopened card does not remount its field on every render. */
+const NO_EFFORT_HINTS: AiEffortHints = { options: [], updated_at: null };
+
 const PROFILE_CONFIG_KEYS = [
   "label",
   "provider",
@@ -38,6 +43,8 @@ const PROFILE_CONFIG_KEYS = [
   "base_url",
   "model",
   "temperature",
+  "reasoning_effort",
+  "reasoning_effort_all_features",
   "keep_alive",
 ] as const;
 
@@ -86,9 +93,11 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   const [savedProfiles, setSavedProfiles] = useState<AiProfile[]>([]);
   const [credentials, setCredentials] = useState<Record<string, AiCredential[]>>({});
   const [modelOptions, setModelOptions] = useState<Record<string, string[]>>({});
+  const [effortHints, setEffortHints] = useState<Record<string, AiEffortHints>>({});
   const [testResults, setTestResults] = useState<Record<string, AiConnectionTestResult>>({});
   const [staleHealthIds, setStaleHealthIds] = useState<Set<string>>(() => new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [effortRevision, setEffortRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -130,6 +139,13 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     const saved = new Map(savedProfiles.map((profile) => [profile.id, profile]));
     return new Set(profiles.filter((profile) => !sameProfileConfig(profile, saved.get(profile.id))).map((profile) => profile.id));
   }, [profiles, savedProfiles]);
+
+  // The cleared-effort listener is registered once, so it needs the current
+  // dirty set rather than the one captured when it subscribed.
+  const dirtyIdsRef = useRef(dirtyIds);
+  useEffect(() => {
+    dirtyIdsRef.current = dirtyIds;
+  }, [dirtyIds]);
 
   const validDirtyIds = useMemo(() => new Set(
     profiles
@@ -193,10 +209,64 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     onDirtyChange?.(dirtyIds.size > 0);
   }, [dirtyIds, onDirtyChange]);
 
+  // A request that hit an unsupported level clears it server-side and may have
+  // just learned the real ones, so pull both back in.
+  useEffect(() => {
+    const unlisten = listen("ai-reasoning-effort-cleared", () => {
+      setEffortRevision((value) => value + 1);
+      // Refreshing would discard in-progress edits, so leave a dirty form alone;
+      // the cleared value lands the next time settings are opened.
+      if (dirtyIdsRef.current.size === 0) void load();
+    });
+    return () => {
+      unlisten.then((stop) => stop()).catch(() => {});
+    };
+  }, [load]);
+
+  // Effort levels are learned from a rejection, so they only exist for
+  // endpoints the user already tried. Load them for the open card, and reload
+  // when a request teaches us new ones.
+  const openProfile = profiles.find((profile) => profile.id === expandedId);
+  const openProfileKey = openProfile
+    ? `${openProfile.provider}|${openProfile.base_url ?? ""}|${openProfile.model}`
+    : "";
+  useEffect(() => {
+    if (!openProfile) return;
+    let active = true;
+    invoke<AiEffortHints>("ai_reasoning_effort_options", {
+      provider: openProfile.provider,
+      baseUrl: openProfile.base_url?.trim() || null,
+      model: openProfile.model,
+    })
+      .then((hints) => {
+        if (active) setEffortHints((current) => ({ ...current, [openProfile.id]: hints }));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the endpoint identity, not the profile object
+  }, [openProfile?.id, openProfileKey, effortRevision]);
+
+  /** Drops what a rejection taught us about this endpoint, e.g. after the
+   *  gateway starts serving a different model behind the same name. */
+  const forgetEffortOptions = async (profile: AiProfile) => {
+    try {
+      await invoke("ai_forget_reasoning_effort_options", {
+        provider: profile.provider,
+        baseUrl: profile.base_url?.trim() || null,
+        model: profile.model,
+      });
+      setEffortHints((current) => ({ ...current, [profile.id]: NO_EFFORT_HINTS }));
+    } catch (error) {
+      console.error("Failed to forget reasoning effort options:", error);
+    }
+  };
+
   const updateProfile = useCallback((id: string, patch: Partial<AiProfile>) => {
     const nextProfiles = updateOne(profilesRef.current, id, patch);
     replaceProfiles(nextProfiles);
-    if (["provider", "auth_mode", "base_url", "model", "temperature", "keep_alive"].some((key) => key in patch)) {
+    if (["provider", "auth_mode", "base_url", "model", "temperature", "reasoning_effort", "keep_alive"].some((key) => key in patch)) {
       setStaleHealthIds((current) => new Set(current).add(id));
       setTestResults((current) => {
         const next = { ...current };
@@ -232,6 +302,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
       baseUrl: profile.base_url?.trim() || null,
       model: profile.model,
       temperature: profile.temperature,
+      reasoningEffort: profile.reasoning_effort?.trim() || null,
+      reasoningEffortAllFeatures: profile.reasoning_effort_all_features,
       keepAlive: profile.keep_alive?.trim() || null,
     });
     const nextSavedProfiles = updateOne(savedProfilesRef.current, saved.id, saved);
@@ -331,6 +403,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
         baseUrl: "https://api.openai.com",
         model: "gpt-4o-mini",
         temperature: 0.3,
+        reasoningEffort: null,
+        reasoningEffortAllFeatures: false,
         keepAlive: null,
         enabled: true,
       });
@@ -364,6 +438,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
         baseUrl: profile.base_url?.trim() || null,
         model: profile.model,
         temperature: profile.temperature,
+        reasoningEffort: profile.reasoning_effort?.trim() || null,
+        reasoningEffortAllFeatures: profile.reasoning_effort_all_features,
         keepAlive: profile.keep_alive?.trim() || null,
       });
       replaceProfiles([...profilesRef.current, configured]);
@@ -490,6 +566,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
         baseUrl: testedProfile.base_url?.trim() || null,
         model: testedProfile.model,
         temperature: testedProfile.temperature,
+        reasoningEffort: testedProfile.reasoning_effort?.trim() || null,
         keepAlive: testedProfile.keep_alive?.trim() || null,
       });
       setTestResults((current) => ({ ...current, [profile.id]: result }));
@@ -806,6 +883,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
               testing={testingId === profile.id}
               loadingModels={modelsLoadingId === profile.id}
               modelOptions={modelOptions[profile.id] ?? []}
+              learnedEfforts={effortHints[profile.id] ?? NO_EFFORT_HINTS}
               testResult={testResults[profile.id]}
               healthStale={staleHealthIds.has(profile.id)}
               oauthStatus={oauthStatus}
@@ -815,6 +893,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
               onToggleEnabled={(enabled) => toggleProfile(profile.id, enabled)}
               onTest={() => testProfile(profile)}
               onFetchModels={() => fetchModels(profile)}
+              onForgetEffortOptions={() => forgetEffortOptions(profile)}
               onDuplicate={() => duplicateProfile(profile)}
               onDelete={() => deleteProfile(profile.id)}
               onMove={(direction) => moveProfile(profile.id, direction)}
