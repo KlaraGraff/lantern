@@ -1,3 +1,9 @@
+// Spelled with the extension, unlike the rest of the codebase, because the unit
+// tests run this module through Node's type stripping, which resolves specifiers
+// literally. `allowImportingTsExtensions` is already on, so tsc and Vite are
+// happy either way; Node is not.
+import { segmentSentences, type SentenceSpan } from "./speech/routing.ts";
+
 export type InteractionKind = "word" | "phrase" | "passage";
 
 export interface SerializableRect {
@@ -296,6 +302,142 @@ export function wordRangeAtPoint(
   if (!previous) return null;
   const previousRange = rangeForFlatSegment(run, previous);
   return pointIntersectsRange(previousRange, x, y) ? previousRange : null;
+}
+
+/** Trailing whitespace belongs to the gap between sentences, not the selection. */
+function trimmedSpanLength(text: string, span: SentenceSpan): number {
+  return text.slice(span.start, span.end).trimEnd().length;
+}
+
+/**
+ * Sentences inside `text[from..to)`, in `text`'s own coordinates and with
+ * trailing whitespace dropped.
+ *
+ * Split out from the DOM walk because this is the part that can be subtly wrong:
+ * the segmenter works on the slice, so every offset it reports has to be shifted
+ * back, and a sentence that is only whitespace has to disappear rather than
+ * become an empty range.
+ */
+export function sentenceSpansInSlice(
+  text: string,
+  from: number,
+  to: number,
+  locale?: string,
+): SentenceSpan[] {
+  const start = Math.max(0, Math.min(from, text.length));
+  const end = Math.max(start, Math.min(to, text.length));
+  const spans: SentenceSpan[] = [];
+  for (const span of segmentSentences(text.slice(start, end), locale)) {
+    const spanStart = start + span.start;
+    const length = trimmedSpanLength(text, { ...span, start: spanStart, end: start + span.end });
+    if (length === 0) continue;
+    spans.push({
+      text: text.slice(spanStart, spanStart + length),
+      start: spanStart,
+      end: spanStart + length,
+    });
+  }
+  return spans;
+}
+
+/**
+ * The sentence under the pointer, for triple-click.
+ *
+ * Replaces the browser's select-the-paragraph default because picking out one
+ * sentence is the common intent while reading. It also crosses pages for free:
+ * pagination is CSS columns over one continuous document, so the block element
+ * this walks is whole regardless of where the page break falls, and the second
+ * half of a sentence the user cannot drag onto is still reachable.
+ */
+export function sentenceRangeAtPoint(
+  doc: Document,
+  x: number,
+  y: number,
+  locale?: string,
+): Range | null {
+  const caret = caretRangeAtPoint(doc, x, y);
+  if (!caret || caret.startContainer.nodeType !== Node.TEXT_NODE) return null;
+  const root = closestTextRunRoot(caret.startContainer);
+  if (!root) return null;
+  const run = flattenTextRun(root);
+  const offset = domPointToFlatOffset(run, caret.startContainer, caret.startOffset);
+  if (offset === null) return null;
+
+  const spans = segmentSentences(run.text, locale);
+  const span = spans.find((candidate) => offset >= candidate.start && offset < candidate.end)
+    // Safari 15 has no `Array.prototype.at`.
+    ?? (spans.length > 0 ? spans[spans.length - 1] : undefined);
+  if (!span) return null;
+
+  const length = trimmedSpanLength(run.text, span);
+  if (length === 0) return null;
+  return rangeForFlatSegment(run, {
+    segment: run.text.slice(span.start, span.start + length),
+    index: span.start,
+  });
+}
+
+/** A sentence inside a selection, and where it sits in the document. */
+export interface SentenceRange {
+  text: string;
+  range: Range;
+}
+
+/** Block elements the range touches, in document order and without repeats. */
+function textRunRootsInRange(range: Range): Element[] {
+  const doc = range.startContainer.ownerDocument;
+  const container = range.commonAncestorContainer;
+  if (!doc) return [];
+  if (container.nodeType === Node.TEXT_NODE) {
+    const root = closestTextRunRoot(container);
+    return root ? [root] : [];
+  }
+
+  const roots: Element[] = [];
+  const walker = doc.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    if ((node as Text).data.trim() && range.intersectsNode(node)) {
+      const root = closestTextRunRoot(node);
+      if (root && !roots.includes(root)) roots.push(root);
+    }
+    node = walker.nextNode();
+  }
+  return roots;
+}
+
+/**
+ * The sentences a selection covers, each with its own range.
+ *
+ * This is what lets the reading highlight keep pace with the audio: the caller
+ * cuts the sentences out of the DOM once, and both the synthesis chunks and the
+ * highlight refer to that same list by index. Segmenting the audio text
+ * separately would risk a different count and a highlight pointing at the wrong
+ * sentence.
+ *
+ * A selection may span several paragraphs, so each block is flattened on its own
+ * and clipped to the part of it the selection actually covers.
+ */
+export function sentenceRangesInRange(range: Range, locale?: string): SentenceRange[] {
+  const sentences: SentenceRange[] = [];
+
+  for (const root of textRunRootsInRange(range)) {
+    const run = flattenTextRun(root);
+    const from = root.contains(range.startContainer) || root === range.startContainer
+      ? domPointToFlatOffset(run, range.startContainer, range.startOffset) ?? 0
+      : 0;
+    const to = root.contains(range.endContainer) || root === range.endContainer
+      ? domPointToFlatOffset(run, range.endContainer, range.endOffset) ?? run.text.length
+      : run.text.length;
+    for (const span of sentenceSpansInSlice(run.text, from, to, locale)) {
+      sentences.push({
+        text: span.text,
+        range: rangeForFlatSegment(run, { segment: span.text, index: span.start }),
+      });
+    }
+  }
+
+  return sentences;
 }
 
 /**

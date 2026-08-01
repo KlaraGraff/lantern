@@ -1,5 +1,5 @@
 export type SpeechAccent = "uk" | "us";
-export type SpeechSourceId = "dictionary" | "system" | "edge" | "custom";
+export type SpeechSourceId = "auto" | "dictionary" | "system" | "edge" | "custom";
 export type SpeechKind = "word" | "phrase" | "passage";
 export type SpeechStatus = "idle" | "loading" | "playing" | "error";
 
@@ -11,6 +11,7 @@ export const SPEECH_CUSTOM_MODEL_KEY = "tts_model";
 export const SPEECH_CUSTOM_VOICE_UK_KEY = "tts_voice_uk";
 export const SPEECH_CUSTOM_VOICE_US_KEY = "tts_voice_us";
 export const SPEECH_CUSTOM_SPEED_KEY = "tts_speed";
+export const SPEECH_CUSTOM_CACHE_PASSAGES_KEY = "tts_cache_passages";
 
 export const SPEECH_SETTING_KEYS = [
   SPEECH_SOURCE_SETTING_KEY,
@@ -21,6 +22,7 @@ export const SPEECH_SETTING_KEYS = [
   SPEECH_CUSTOM_VOICE_UK_KEY,
   SPEECH_CUSTOM_VOICE_US_KEY,
   SPEECH_CUSTOM_SPEED_KEY,
+  SPEECH_CUSTOM_CACHE_PASSAGES_KEY,
 ] as const;
 
 /** Provider settings for the OpenAI-compatible source. The key is never here. */
@@ -31,6 +33,12 @@ export interface CustomSpeechConfig {
   voiceUs: string;
   /** Sent to the provider, which bakes it into the audio it returns. */
   speed: number;
+  /**
+   * Whether passage-length audio from this provider is kept on disk. Defaults to
+   * on: disk has a ceiling, eviction and a clear button, while re-synthesizing a
+   * passage bills the user a second time for text they already paid for.
+   */
+  cachePassages: boolean;
 }
 
 export interface SpeechSettings {
@@ -41,15 +49,23 @@ export interface SpeechSettings {
 }
 
 /**
- * Dictionary audio is the default because it is the only source with genuinely
- * distinct British and American recordings, and because it sidesteps Windows
- * installs that ship no `en-GB` voice at all.
+ * Automatic is the default because no single source is right for everything: a
+ * word wants the dictionary's human recording, a passage wants a synthesizer the
+ * dictionary has no audio for, and every failure wants system voices. Making the
+ * user pick one up front means picking wrong for half of what they play.
  */
 export const DEFAULT_SPEECH_SETTINGS: SpeechSettings = {
-  source: "dictionary",
+  source: "auto",
   accent: "us",
   rate: 1,
-  custom: { baseUrl: "", model: "", voiceUk: "", voiceUs: "", speed: 1 },
+  custom: {
+    baseUrl: "",
+    model: "",
+    voiceUk: "",
+    voiceUs: "",
+    speed: 1,
+    cachePassages: true,
+  },
 };
 
 /**
@@ -67,7 +83,13 @@ function clampCustomSpeed(value: number): number {
   return Math.min(SPEECH_CUSTOM_SPEED_RANGE.max, Math.max(SPEECH_CUSTOM_SPEED_RANGE.min, value));
 }
 
-const SPEECH_SOURCE_IDS: readonly SpeechSourceId[] = ["dictionary", "system", "edge", "custom"];
+const SPEECH_SOURCE_IDS: readonly SpeechSourceId[] = [
+  "auto",
+  "dictionary",
+  "system",
+  "edge",
+  "custom",
+];
 
 function parseSource(value: string | undefined): SpeechSourceId {
   return SPEECH_SOURCE_IDS.find((id) => id === value) ?? DEFAULT_SPEECH_SETTINGS.source;
@@ -91,6 +113,9 @@ export function parseSpeechSettings(values: Record<string, string | undefined>):
       voiceUk: text(SPEECH_CUSTOM_VOICE_UK_KEY),
       voiceUs: text(SPEECH_CUSTOM_VOICE_US_KEY),
       speed: clampCustomSpeed(Number.parseFloat(values[SPEECH_CUSTOM_SPEED_KEY] ?? "")),
+      // Only an explicit "false" turns it off, so an unset key keeps the safe
+      // default rather than reading as disabled.
+      cachePassages: values[SPEECH_CUSTOM_CACHE_PASSAGES_KEY] !== "false",
     },
   };
 }

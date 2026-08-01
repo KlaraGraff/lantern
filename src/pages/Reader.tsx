@@ -108,6 +108,8 @@ import {
   type WordMarkException,
   type WordMarkRule,
 } from "./reader/useFoliateAnnotations";
+import { useReadingHighlight } from "./reader/useReadingHighlight";
+import ReadingPlaybackBar from "../components/speech/ReadingPlaybackBar";
 import type {
   FoliateView,
   ReaderPageInfo,
@@ -922,9 +924,11 @@ export default function Reader() {
     applyAnnotations,
     applyFoliateMarkerStyles,
     autoMarkersRef,
+    clearReadingHighlight,
     flashNavigationTarget,
     refreshAnnotations,
     resetAnnotationState,
+    showReadingHighlight,
     wordMarkExceptionsRef,
     wordMarkWordsRef,
   } = useFoliateAnnotations({
@@ -945,6 +949,8 @@ export default function Reader() {
     setReaderSettings,
     textReaderNavigateRef,
   });
+
+  useReadingHighlight({ viewRef, showReadingHighlight, clearReadingHighlight });
 
   const navigateToSource = useCallback(async (source: CitedSource) => {
     if (isTextBook && source.charStart != null) {
@@ -1744,6 +1750,7 @@ export default function Reader() {
                 <span className="text-[13px] font-medium">{t("reader.back")}</span>
               </button>
             )}
+            <ReadingPlaybackBar />
           </main>
 
           {/* Bottom progress bar */}

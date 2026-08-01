@@ -12,6 +12,7 @@ import {
   rangeFromSelectionSnapshotAtPoint,
   replaceDocumentSelection,
   selectedRange,
+  sentenceRangeAtPoint,
   snapshotSelectionRange,
   viewportRectForRange,
   wordRangeAtPoint,
@@ -20,8 +21,19 @@ import {
 } from "../../components/reader-interaction";
 import { bindingFromKeyboardEvent } from "../../components/reader-bindings";
 
+/**
+ * How close to the edge a drag has to get before the page turns. Wide enough to
+ * be reachable without precision, narrow enough that selecting the last word on
+ * a line does not trigger it.
+ */
+const EDGE_TURN_MARGIN_PX = 24;
+/** Minimum spacing between page turns while the pointer is held at the edge. */
+const EDGE_TURN_INTERVAL_MS = 600;
+
 interface InteractionView {
   getCFI(index: number, range: Range): string;
+  next(): Promise<void>;
+  prev(): Promise<void>;
   history: {
     back(): void;
     forward(): void;
@@ -441,6 +453,28 @@ export function useReaderInteractions({
       openLearningInteraction(interaction);
     });
 
+    // Triple-click. The browser would select the whole paragraph, but while
+    // reading the useful unit is one sentence — and because the paragraph is a
+    // single DOM node spanning however many columns, the sentence this picks can
+    // cross a page the pointer could never have been dragged across.
+    doc.addEventListener("click", (event: MouseEvent) => {
+      if (event.detail !== 3) return;
+      if (!supportsSelection || isInteractiveReaderTarget(event.target)) return;
+      cancelPendingWordClick();
+      const range = sentenceRangeAtPoint(
+        doc,
+        event.clientX,
+        event.clientY,
+        doc.documentElement.lang || undefined,
+      );
+      // Leave the browser's own selection alone rather than clearing it: an
+      // unresolvable point should do nothing, not undo what was already there.
+      if (!range || !range.toString().trim()) return;
+      event.preventDefault();
+      replaceDocumentSelection(doc, range);
+      selectionSnapshot = snapshotSelectionRange(range);
+    });
+
     doc.addEventListener("mousedown", () => {
       const contents = view.renderer?.getContents?.() ?? [];
       for (const { doc: otherDoc } of contents) {
@@ -448,6 +482,43 @@ export function useReaderInteractions({
           otherDoc.defaultView?.getSelection()?.removeAllRanges();
         }
       }
+    });
+
+    // Dragging a selection to the edge of the page turns it and keeps going.
+    //
+    // Paginated columns hide everything but the current one, so a sentence
+    // running across a page break has a second half the pointer can never reach.
+    // The selection itself was never the limitation — the section is one
+    // document, and a range across a column boundary is ordinary — so this only
+    // has to bring the rest of it into view.
+    let turning = false;
+    let turnedAt = 0;
+    doc.addEventListener("mousemove", (event: MouseEvent) => {
+      // Only while dragging with the primary button, which is what separates
+      // extending a selection from moving the pointer past the edge.
+      if ((event.buttons & 1) === 0 || !supportsSelection) return;
+      const selection = doc.defaultView?.getSelection();
+      if (!selection || selection.isCollapsed) return;
+
+      const width = doc.documentElement.clientWidth;
+      const direction = event.clientX >= width - EDGE_TURN_MARGIN_PX
+        ? "next"
+        : event.clientX <= EDGE_TURN_MARGIN_PX
+          ? "previous"
+          : null;
+      if (!direction) return;
+
+      // Rate-limited rather than continuous: a page per frame would fly past
+      // whatever the reader was trying to reach.
+      const now = performance.now();
+      if (turning || now - turnedAt < EDGE_TURN_INTERVAL_MS) return;
+      turning = true;
+      turnedAt = now;
+      void (direction === "next" ? view.next() : view.prev())
+        .catch(() => {})
+        .finally(() => {
+          turning = false;
+        });
     });
   }, [
     annotationClickDocumentRef,

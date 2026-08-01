@@ -7,6 +7,7 @@ import {
   readerMenuActivationIndex,
   readerMenuFocusIndex,
   segmentInteractionWords,
+  sentenceSpansInSlice,
   withInheritedContext,
   type ReaderInteraction,
 } from "../src/components/reader-interaction.ts";
@@ -105,4 +106,59 @@ test("a lookup with no card behind it is left alone", () => {
   const nested = interaction("spoiling", "spoil the mood");
   assert.equal(withInheritedContext(nested, undefined), nested);
   assert.equal(withInheritedContext(nested, interaction("penchant", "   ")), nested);
+});
+
+// A selection is clipped to part of a paragraph, but the ranges it produces have
+// to address the paragraph. Getting the shift wrong points the reading highlight
+// at the wrong words, which looks like the audio is out of sync.
+const PARAGRAPH = "First one here. Second one here. Third one here.";
+
+test("sentence spans are reported in the paragraph's own coordinates", () => {
+  const spans = sentenceSpansInSlice(PARAGRAPH, 0, PARAGRAPH.length);
+  assert.deepEqual(spans.map((span) => span.text), [
+    "First one here.",
+    "Second one here.",
+    "Third one here.",
+  ]);
+  for (const span of spans) {
+    assert.equal(PARAGRAPH.slice(span.start, span.end), span.text);
+  }
+});
+
+test("a clipped slice still addresses the whole paragraph", () => {
+  const from = PARAGRAPH.indexOf("Second");
+  const spans = sentenceSpansInSlice(PARAGRAPH, from, PARAGRAPH.length);
+  assert.equal(spans[0].text, "Second one here.");
+  assert.equal(spans[0].start, from, "offsets must be shifted back, not left relative to the slice");
+  for (const span of spans) {
+    assert.equal(PARAGRAPH.slice(span.start, span.end), span.text);
+  }
+});
+
+// The separator between two sentences belongs to neither, or the highlight
+// stretches past the words being spoken.
+test("trailing whitespace is left out of a span", () => {
+  for (const span of sentenceSpansInSlice(PARAGRAPH, 0, PARAGRAPH.length)) {
+    assert.equal(span.text, span.text.trimEnd());
+  }
+});
+
+test("a slice of only whitespace yields nothing rather than an empty span", () => {
+  const text = "One.   Two.";
+  const spans = sentenceSpansInSlice(text, text.indexOf(".") + 1, text.indexOf("Two"));
+  assert.deepEqual(spans, []);
+});
+
+test("slice bounds outside the text are clamped instead of throwing", () => {
+  assert.deepEqual(sentenceSpansInSlice(PARAGRAPH, -50, 5_000).length, 3);
+  assert.deepEqual(sentenceSpansInSlice(PARAGRAPH, 40, 5), []);
+  assert.deepEqual(sentenceSpansInSlice("", 0, 0), []);
+});
+
+test("a partial sentence at the edge of a selection is still a span", () => {
+  const spans = sentenceSpansInSlice(PARAGRAPH, PARAGRAPH.indexOf("one here. Second"), 30);
+  assert.ok(spans.length > 0);
+  for (const span of spans) {
+    assert.equal(PARAGRAPH.slice(span.start, span.end), span.text);
+  }
 });

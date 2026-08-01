@@ -7,6 +7,7 @@ import ComboField from "../ui/ComboField";
 import Input from "../ui/Input";
 import Select from "../ui/Select";
 import Slider from "../ui/Slider";
+import Toggle from "../ui/Toggle";
 import {
   ensureSpeechSettings,
   speechSettings,
@@ -17,6 +18,7 @@ import { accentAvailability, subscribeToVoices } from "../speech/system-voices";
 import {
   SPEECH_ACCENT_SETTING_KEY,
   SPEECH_CUSTOM_BASE_URL_KEY,
+  SPEECH_CUSTOM_CACHE_PASSAGES_KEY,
   SPEECH_CUSTOM_MODEL_KEY,
   SPEECH_CUSTOM_VOICE_UK_KEY,
   SPEECH_CUSTOM_SPEED_KEY,
@@ -272,6 +274,7 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
             value={settings.source}
             onChange={(value) => persist({ [SPEECH_SOURCE_SETTING_KEY]: value as SpeechSourceId })}
             options={[
+              { value: "auto", label: t("settings.speech.sourceOption.auto") },
               { value: "dictionary", label: t("settings.speech.sourceOption.dictionary") },
               { value: "system", label: t("settings.speech.sourceOption.system") },
               { value: "edge", label: t("settings.speech.sourceOption.edge") },
@@ -417,6 +420,19 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
               </button>
             </p>
           )}
+          <SettingsRow
+            title={t("settings.speech.custom.cachePassages")}
+            subtitle={t("settings.speech.custom.cachePassagesHint")}
+          >
+            <Toggle
+              checked={custom.cachePassages}
+              label={t("settings.speech.custom.cachePassages")}
+              onChange={(checked) => {
+                setCustom((current) => ({ ...current, cachePassages: checked }));
+                persist({ [SPEECH_CUSTOM_CACHE_PASSAGES_KEY]: String(checked) });
+              }}
+            />
+          </SettingsRow>
           <SettingsRow
             title={t("settings.speech.custom.apiKey")}
             subtitle={keyConfigured

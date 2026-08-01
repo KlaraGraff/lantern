@@ -55,6 +55,18 @@ const MAX_DICTIONARY_TEXT_CHARS: usize = 64;
 /// A real synthesizer can read a passage. Well under the 4096 most
 /// OpenAI-compatible endpoints accept, and it bounds the per-play cost.
 const MAX_SYNTHESIZER_TEXT_CHARS: usize = 2000;
+/// Longest text worth keeping on disk from a free synthesizer.
+///
+/// A word clip is 15–30 KB; a 2000-character passage is roughly 800 KB, so one
+/// passage costs what twenty-five vocabulary words do while being far less
+/// likely to be played again. Vocabulary-sized clips are the ones replayed for
+/// review and the ones that have to work offline, so they are what the cache is
+/// for.
+///
+/// Deliberately its own constant rather than reusing `MAX_DICTIONARY_TEXT_CHARS`:
+/// that one answers "what will Youdao accept", this one answers "is this
+/// vocabulary-sized", and the two may want to diverge.
+const MAX_CACHEABLE_TEXT_CHARS: usize = 64;
 const MAX_AUDIO_BYTES: usize = 4 * 1024 * 1024;
 /// How much of an untrusted error body is scanned for the voice list. Providers
 /// name their voices in the first line; anything past this is not a list.
@@ -85,6 +97,7 @@ const CUSTOM_MODEL_SETTING: &str = "tts_model";
 const CUSTOM_VOICE_UK_SETTING: &str = "tts_voice_uk";
 const CUSTOM_VOICE_US_SETTING: &str = "tts_voice_us";
 const CUSTOM_SPEED_SETTING: &str = "tts_speed";
+const CUSTOM_CACHE_PASSAGES_SETTING: &str = "tts_cache_passages";
 /// The range OpenAI-compatible speech endpoints accept for `speed`.
 const CUSTOM_SPEED_RANGE: (f64, f64) = (0.25, 4.0);
 
@@ -319,6 +332,11 @@ struct CustomConfig {
     voice_us: String,
     speed: f64,
     api_key: String,
+    /// Whether passage-length audio from this provider is kept on disk.
+    /// Deliberately absent from `SourceIdentity`: it decides whether a clip is
+    /// written, not how it sounds, so flipping it must not orphan what is
+    /// already cached.
+    cache_passages: bool,
 }
 
 impl CustomConfig {
@@ -424,6 +442,11 @@ fn load_custom_config(db: &Db, secrets: &Secrets) -> AppResult<CustomConfig> {
         .filter(|value| value.is_finite())
         .map(|value| value.clamp(CUSTOM_SPEED_RANGE.0, CUSTOM_SPEED_RANGE.1))
         .unwrap_or(1.0);
+    // Only an explicit "false" opts out, so an unwritten key keeps the default
+    // rather than reading as disabled.
+    let cache_passages = read(CUSTOM_CACHE_PASSAGES_SETTING)
+        .map(|value| value != "false")
+        .unwrap_or(true);
     let api_key = secrets
         .get(CUSTOM_KEY_SECRET)?
         .map(|value| value.trim().to_string())
@@ -438,6 +461,7 @@ fn load_custom_config(db: &Db, secrets: &Secrets) -> AppResult<CustomConfig> {
                 voice_us,
                 speed,
                 api_key,
+                cache_passages,
             })
         }
         _ => Err(AppError::Other(ERR_CUSTOM_NOT_CONFIGURED.to_string())),
@@ -517,6 +541,36 @@ fn escape_ssml(text: &str) -> String {
     escaped
 }
 
+/// When each word is spoken, so the reader can follow the audio sentence by
+/// sentence. Milliseconds rather than the service's 100-nanosecond ticks: the
+/// only consumer compares them against an audio element's `currentTime`.
+#[derive(Debug, Serialize, serde::Deserialize, PartialEq)]
+struct WordTiming {
+    text: String,
+    #[serde(rename = "offsetMs")]
+    offset_ms: u64,
+    #[serde(rename = "durationMs")]
+    duration_ms: u64,
+}
+
+/// The service reports offsets in 100-nanosecond ticks.
+const TICKS_PER_MS: u64 = 10_000;
+
+/// Packs timings and audio into the one byte string the command returns: a
+/// four-byte big-endian header length, that many bytes of JSON, then the audio.
+///
+/// One payload rather than two fields because audio has to cross the IPC
+/// boundary as raw bytes — a `Vec<u8>` serialized into a JSON number array costs
+/// roughly four times as much — and raw bytes cannot be a field of an object.
+fn frame_audio(timings: &[WordTiming], audio: &[u8]) -> AppResult<Vec<u8>> {
+    let header = serde_json::to_vec(timings).unwrap_or_else(|_| b"[]".to_vec());
+    let mut framed = Vec::with_capacity(4 + header.len() + audio.len());
+    framed.extend_from_slice(&(header.len() as u32).to_be_bytes());
+    framed.extend_from_slice(&header);
+    framed.extend_from_slice(audio);
+    Ok(framed)
+}
+
 /// One connection per clip. Pooling would save a handshake, but a cached clip
 /// never reaches this function at all, so the connection would sit idle far more
 /// often than it would be reused.
@@ -549,7 +603,21 @@ async fn fetch_edge(text: &str, accent: Accent) -> AppResult<Vec<u8>> {
     if audio.audio_bytes.is_empty() || audio.audio_bytes.len() > MAX_AUDIO_BYTES {
         return Err(AppError::Other(ERR_SOURCE_UNAVAILABLE.to_string()));
     }
-    Ok(audio.audio_bytes)
+
+    // The service sends one entry per word; anything without text is not one.
+    let timings: Vec<WordTiming> = audio
+        .audio_metadata
+        .iter()
+        .filter_map(|entry| {
+            entry.text.as_ref().map(|text| WordTiming {
+                text: text.clone(),
+                offset_ms: entry.offset / TICKS_PER_MS,
+                duration_ms: entry.duration / TICKS_PER_MS,
+            })
+        })
+        .collect();
+
+    frame_audio(&timings, &audio.audio_bytes)
 }
 
 async fn fetch_remote(text: &str, accent: Accent) -> AppResult<Vec<u8>> {
@@ -590,6 +658,7 @@ async fn cached_audio<Fut>(
     dir: &Path,
     identity: &SourceIdentity,
     text: &str,
+    store: bool,
     fetch: impl FnOnce() -> Fut,
 ) -> AppResult<(Vec<u8>, bool)>
 where
@@ -632,6 +701,10 @@ where
         }
     };
 
+    if !store {
+        return Ok((audio, false));
+    }
+
     fs::create_dir_all(dir)?;
     // A partial write would poison the cache, so land it under a temporary name.
     let staging = dir.join(format!("{stem}.partial"));
@@ -642,18 +715,31 @@ where
     Ok((audio, false))
 }
 
+/// Whether this text is the sort the cache exists for: a word or phrase, the
+/// kind that gets replayed during review and has to work offline.
+fn is_vocabulary_sized(text: &str) -> bool {
+    text.chars().count() <= MAX_CACHEABLE_TEXT_CHARS
+}
+
 async fn dictionary_audio_cached(
     dir: &Path,
     text: &str,
     accent: Accent,
 ) -> AppResult<(Vec<u8>, bool)> {
     let identity = SourceIdentity::dictionary(accent);
-    cached_audio(dir, &identity, text, || fetch_remote(text, accent)).await
+    // Its input is capped below the cacheable size, so this is always true; it
+    // is spelled out rather than passed as `true` so the rule reads the same at
+    // all three call sites.
+    let store = is_vocabulary_sized(text);
+    cached_audio(dir, &identity, text, store, || fetch_remote(text, accent)).await
 }
 
 async fn edge_audio_cached(dir: &Path, text: &str, accent: Accent) -> AppResult<(Vec<u8>, bool)> {
     let identity = SourceIdentity::edge(accent);
-    cached_audio(dir, &identity, text, || fetch_edge(text, accent)).await
+    cached_audio(dir, &identity, text, is_vocabulary_sized(text), || {
+        fetch_edge(text, accent)
+    })
+    .await
 }
 
 async fn custom_audio_cached(
@@ -664,7 +750,12 @@ async fn custom_audio_cached(
     db: &Db,
 ) -> AppResult<(Vec<u8>, bool)> {
     let identity = SourceIdentity::custom(config, accent);
-    cached_audio(dir, &identity, text, || {
+    // The paid provider keeps passages by default: disk has a ceiling, eviction
+    // and a clear button, while re-synthesizing bills the user a second time for
+    // text they already paid for. Only an explicit opt-out narrows it to the
+    // same vocabulary-sized rule the free sources follow.
+    let store = config.cache_passages || is_vocabulary_sized(text);
+    cached_audio(dir, &identity, text, store, || {
         fetch_custom(text, accent, config, db)
     })
     .await
@@ -892,7 +983,144 @@ mod tests {
             voice_us: voice_us.to_string(),
             speed: 1.0,
             api_key: "sk-test".to_string(),
+            cache_passages: true,
         }
+    }
+
+    /// Text over the cacheable cap, without relying on a literal length.
+    fn passage() -> String {
+        "word ".repeat(MAX_CACHEABLE_TEXT_CHARS)
+    }
+
+    fn cached_files(dir: &Path) -> Vec<String> {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return Vec::new();
+        };
+        let mut names: Vec<String> = entries
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn framing_round_trips_timings_and_audio() {
+        let timings = vec![
+            WordTiming {
+                text: "The".into(),
+                offset_ms: 100,
+                duration_ms: 175,
+            },
+            WordTiming {
+                text: "lantern".into(),
+                offset_ms: 288,
+                duration_ms: 475,
+            },
+        ];
+        let audio = b"\xff\xf3\x64\xc4payload";
+        let framed = frame_audio(&timings, audio).unwrap();
+
+        let header_len = u32::from_be_bytes(framed[..4].try_into().unwrap()) as usize;
+        let decoded: Vec<WordTiming> = serde_json::from_slice(&framed[4..4 + header_len]).unwrap();
+        assert_eq!(decoded, timings);
+        assert_eq!(&framed[4 + header_len..], audio);
+    }
+
+    #[test]
+    fn framing_survives_a_source_that_reported_no_timings() {
+        let audio = b"\xff\xf3";
+        let framed = frame_audio(&[], audio).unwrap();
+        let header_len = u32::from_be_bytes(framed[..4].try_into().unwrap()) as usize;
+        assert_eq!(&framed[4..4 + header_len], b"[]");
+        assert_eq!(&framed[4 + header_len..], audio);
+    }
+
+    #[test]
+    fn only_vocabulary_sized_text_is_worth_keeping() {
+        assert!(is_vocabulary_sized("schedule"));
+        assert!(is_vocabulary_sized(&"a".repeat(MAX_CACHEABLE_TEXT_CHARS)));
+        assert!(!is_vocabulary_sized(
+            &"a".repeat(MAX_CACHEABLE_TEXT_CHARS + 1)
+        ));
+        // Counted in characters, not bytes, or a Chinese phrase would be
+        // rejected at a third of the intended length.
+        assert!(is_vocabulary_sized(&"字".repeat(MAX_CACHEABLE_TEXT_CHARS)));
+    }
+
+    /// A word clip is 15–30 KB and gets replayed during review; a passage is
+    /// roughly 800 KB and rarely gets played twice.
+    #[tokio::test]
+    async fn declining_to_store_writes_nothing_at_all() {
+        let dir = tempfile::tempdir().unwrap();
+        let identity = SourceIdentity::edge(Accent::Us);
+
+        let (audio, cached) = cached_audio(dir.path(), &identity, "schedule", true, || async {
+            Ok(b"ID3\x04word".to_vec())
+        })
+        .await
+        .unwrap();
+        assert!(!cached);
+        assert_eq!(cached_files(dir.path()).len(), 1, "the word should be kept");
+
+        let (_, cached) = cached_audio(dir.path(), &identity, "schedule", true, || async {
+            panic!("must not re-fetch")
+        })
+        .await
+        .unwrap();
+        assert!(cached, "the second play must come from disk");
+
+        let (passage_audio, cached) =
+            cached_audio(dir.path(), &identity, &passage(), false, || async {
+                Ok(b"ID3\x04passage".to_vec())
+            })
+            .await
+            .unwrap();
+        assert!(!cached);
+        assert_eq!(passage_audio, b"ID3\x04passage", "the audio still plays");
+        assert_eq!(
+            cached_files(dir.path()).len(),
+            1,
+            "a passage must leave nothing behind, not even a .partial: {:?}",
+            cached_files(dir.path()),
+        );
+        assert_ne!(audio, passage_audio);
+    }
+
+    /// Only writes are governed. Turning the switch off must not orphan audio
+    /// that is already on disk.
+    #[tokio::test]
+    async fn a_cached_entry_is_served_whatever_the_current_policy_says() {
+        let dir = tempfile::tempdir().unwrap();
+        let identity = SourceIdentity::edge(Accent::Us);
+        let long = passage();
+
+        let (written, _) = cached_audio(dir.path(), &identity, &long, true, || async {
+            Ok(b"ID3\x04cached".to_vec())
+        })
+        .await
+        .unwrap();
+
+        let (served, cached) = cached_audio(dir.path(), &identity, &long, false, || async {
+            panic!("must not re-fetch what is already on disk")
+        })
+        .await
+        .unwrap();
+        assert!(cached);
+        assert_eq!(written, served);
+    }
+
+    #[test]
+    fn the_paid_provider_keeps_passages_unless_told_otherwise() {
+        let mut config = custom_config("https://api.openai.com/v1", "tts-1", "alloy", "nova");
+        let long = passage();
+
+        assert!(config.cache_passages || is_vocabulary_sized(&long));
+        config.cache_passages = false;
+        // Opting out narrows it to the same rule the free sources follow, rather
+        // than turning the cache off entirely.
+        assert!(!(config.cache_passages || is_vocabulary_sized(&long)));
+        assert!(config.cache_passages || is_vocabulary_sized("schedule"));
     }
 
     #[test]
@@ -1224,7 +1452,7 @@ mod tests {
     /// failure here is the signal to check `msedge-tts` for a newer release.
     #[tokio::test]
     #[ignore = "requires network"]
-    async fn live_edge_synthesizes_a_passage_then_serves_it_from_disk() {
+    async fn live_edge_synthesizes_a_passage() {
         let dir = tempfile::tempdir().unwrap();
         // Long enough to prove this is a synthesizer, not a dictionary lookup.
         let passage = "The lantern threw its light across the water, and the boat came about.";
@@ -1234,11 +1462,51 @@ mod tests {
         assert!(!cached, "first call must go to the network");
         assert!(fetched.len() > 1024, "got {} bytes", fetched.len());
 
+        // Deliberately not served from disk on a second play: see
+        // `live_edge_keeps_a_word_and_discards_a_passage`. A passage is roughly
+        // 800 KB and rarely replayed, so it is synthesized again instead.
         let (replayed, cached) = edge_audio_cached(dir.path(), passage, Accent::Us)
             .await
             .unwrap();
-        assert!(cached, "second call must be served from disk");
-        assert_eq!(fetched, replayed);
+        assert!(!cached, "a passage must not be cached");
+        assert!(replayed.len() > 1024);
+    }
+
+    /// The end-to-end version of `declining_to_store_writes_nothing_at_all`,
+    /// against the real service: it is the only thing that proves
+    /// `edge_audio_cached` passes the right decision through, and that a live
+    /// synthesis really does carry timings.
+    #[tokio::test]
+    #[ignore = "requires network"]
+    async fn live_edge_keeps_a_word_and_discards_a_passage() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let (framed, _) = edge_audio_cached(dir.path(), "schedule", Accent::Us)
+            .await
+            .unwrap();
+        assert_eq!(cached_files(dir.path()).len(), 1, "the word should be kept");
+
+        let header_len = u32::from_be_bytes(framed[..4].try_into().unwrap()) as usize;
+        let timings: Vec<WordTiming> = serde_json::from_slice(&framed[4..4 + header_len]).unwrap();
+        assert!(!timings.is_empty(), "a synthesis must report word timings");
+        assert!(
+            timings
+                .windows(2)
+                .all(|pair| pair[0].offset_ms <= pair[1].offset_ms),
+            "timings must arrive in spoken order",
+        );
+
+        let long = "The lantern threw its light across the water. ".repeat(3);
+        assert!(!is_vocabulary_sized(&long));
+        edge_audio_cached(dir.path(), &long, Accent::Us)
+            .await
+            .unwrap();
+        assert_eq!(
+            cached_files(dir.path()).len(),
+            1,
+            "a passage must not be written: {:?}",
+            cached_files(dir.path()),
+        );
     }
 
     /// Text the dictionary source would have to escape past — proof the SSML

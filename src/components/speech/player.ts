@@ -1,13 +1,34 @@
 import { SpeechError, type SpeechStatus } from "./types";
+import type { WordTiming } from "./routing";
 
 export type Playback =
-  | { kind: "audio"; blob: Blob }
+  | { kind: "audio"; text: string; blob: Blob; timings?: WordTiming[] }
   | { kind: "voice"; text: string; voice: SpeechSynthesisVoice | null; rate: number };
+
+/**
+ * One unit of playback, produced only when it is nearly due. A long selection is
+ * a list of these, so the audio for a later chunk is not fetched — or paid for,
+ * on a metered provider — until playback is actually heading there.
+ */
+export type PlaybackStep = () => Promise<Playback>;
 
 export interface SpeechPlayerState {
   status: SpeechStatus;
   /** Which control started the current playback; others render as idle. */
   ownerId: string | null;
+}
+
+/**
+ * Where playback has reached. `elapsedMs` is within the current step, not the
+ * whole queue, because that is what the step's own word timings are relative to.
+ */
+export interface PlaybackProgress {
+  ownerId: string;
+  stepIndex: number;
+  elapsedMs: number;
+  /** The text of this step, so a follower can locate it without re-chunking. */
+  text: string;
+  timings: WordTiming[] | null;
 }
 
 const ERROR_RESET_MS = 4000;
@@ -19,6 +40,7 @@ const ERROR_RESET_MS = 4000;
  */
 let state: SpeechPlayerState = { status: "idle", ownerId: null };
 const listeners = new Set<(value: SpeechPlayerState) => void>();
+const progressListeners = new Set<(value: PlaybackProgress | null) => void>();
 /** Bumped on every new request so stale async work can detect it lost the race. */
 let generation = 0;
 let element: HTMLAudioElement | null = null;
@@ -39,6 +61,23 @@ export function subscribeToPlayer(listener: (value: SpeechPlayerState) => void):
   return () => {
     listeners.delete(listener);
   };
+}
+
+/**
+ * Playback position, for anything that has to keep pace with the audio. `null`
+ * means nothing is playing and whatever was following it should be cleared.
+ */
+export function subscribeToProgress(
+  listener: (value: PlaybackProgress | null) => void,
+): () => void {
+  progressListeners.add(listener);
+  return () => {
+    progressListeners.delete(listener);
+  };
+}
+
+function publishProgress(value: PlaybackProgress | null) {
+  for (const listener of progressListeners) listener(value);
 }
 
 function releaseObjectUrl() {
@@ -68,10 +107,11 @@ function teardown() {
 export function cancelSpeech() {
   generation += 1;
   teardown();
+  publishProgress(null);
   publish({ status: "idle", ownerId: null });
 }
 
-function playBlob(blob: Blob): Promise<void> {
+function playBlob(blob: Blob, onTime?: (elapsedMs: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob);
     objectUrl = url;
@@ -84,6 +124,9 @@ function playBlob(blob: Blob): Promise<void> {
       }
       done();
     };
+    // `timeupdate` fires roughly four times a second, which is why following at
+    // sentence granularity needs no animation loop.
+    if (onTime) audio.ontimeupdate = () => onTime(audio.currentTime * 1000);
     audio.onended = () => settle(resolve);
     audio.onerror = () => settle(() => reject(new SpeechError("unavailable")));
     audio.play().catch(() => settle(() => reject(new SpeechError("unavailable"))));
@@ -113,12 +156,24 @@ function playVoice(text: string, voice: SpeechSynthesisVoice | null, rate: numbe
   });
 }
 
+/** Abandoned prefetches must not surface as unhandled rejections. */
+function disown(pending: Promise<unknown> | null) {
+  pending?.catch(() => {});
+}
+
 /**
- * `resolve` picks a source and may take a network round trip; it runs while the
- * control shows a loading state. Rejecting means every source in the chain
- * failed.
+ * `plan` picks the sources and splits long text; it may take a network round
+ * trip, and runs while the control shows a loading state. An empty plan or a
+ * rejection means every source in the chain failed.
+ *
+ * Steps are played in order with exactly one fetched ahead: without that, every
+ * chunk boundary would be a synthesis round trip of silence, which reads as a
+ * fault rather than as a pause.
  */
-export async function speak(ownerId: string, resolve: () => Promise<Playback>): Promise<void> {
+export async function speak(
+  ownerId: string,
+  plan: () => Promise<PlaybackStep[]>,
+): Promise<void> {
   generation += 1;
   teardown();
   const token = generation;
@@ -128,29 +183,63 @@ export async function speak(ownerId: string, resolve: () => Promise<Playback>): 
 
   const failed = () => {
     if (isStale()) return;
+    publishProgress(null);
     publish({ status: "error", ownerId });
     errorTimer = setTimeout(() => {
       if (!isStale()) publish({ status: "idle", ownerId: null });
     }, ERROR_RESET_MS);
   };
 
-  let playback: Playback;
+  let steps: PlaybackStep[];
   try {
-    playback = await resolve();
+    steps = await plan();
   } catch {
     failed();
     return;
   }
   if (isStale()) return;
-
-  publish({ status: "playing", ownerId });
-  try {
-    await (playback.kind === "audio"
-      ? playBlob(playback.blob)
-      : playVoice(playback.text, playback.voice, playback.rate));
-  } catch {
+  if (steps.length === 0) {
     failed();
     return;
   }
-  if (!isStale()) publish({ status: "idle", ownerId: null });
+
+  let pending: Promise<Playback> | null = steps[0]();
+  for (let index = 0; index < steps.length; index += 1) {
+    let playback: Playback;
+    try {
+      playback = await pending!;
+    } catch {
+      failed();
+      return;
+    }
+    if (isStale()) return;
+
+    // Start the next fetch before playing this one, not after.
+    pending = index + 1 < steps.length ? steps[index + 1]() : null;
+
+    publish({ status: "playing", ownerId });
+    const timings = playback.kind === "audio" ? playback.timings ?? null : null;
+    const { text } = playback;
+    publishProgress({ ownerId, stepIndex: index, elapsedMs: 0, text, timings });
+    try {
+      await (playback.kind === "audio"
+        ? playBlob(playback.blob, (elapsedMs) => {
+            if (!isStale()) {
+              publishProgress({ ownerId, stepIndex: index, elapsedMs, text, timings });
+            }
+          })
+        : playVoice(playback.text, playback.voice, playback.rate));
+    } catch {
+      disown(pending);
+      failed();
+      return;
+    }
+    if (isStale()) {
+      disown(pending);
+      return;
+    }
+  }
+
+  publishProgress(null);
+  publish({ status: "idle", ownerId: null });
 }

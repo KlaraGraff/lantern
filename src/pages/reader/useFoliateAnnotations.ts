@@ -56,6 +56,13 @@ type MarkerKind = "lookup" | "vocab";
 export type FoliateMarker = { color: string; kind: MarkerKind };
 type AppliedAnnotation = { color: string; styleKind: AnnotationStyleKind };
 
+/**
+ * Distinct from every saved highlight colour on purpose: a reading highlight and
+ * a user's own can be on screen together, and only one of them survives the
+ * playback.
+ */
+export const READING_HIGHLIGHT_COLOR = "#7dd3fc";
+
 export const wordMarkerColor = {
   lookup: "__lookup__",
   vocabNew: "__vocab_new__",
@@ -356,9 +363,40 @@ export function useFoliateAnnotations({
     }, 3000);
   }, [isTextBook, supportsCfiNavigation, textReaderNavigateRef, viewRef]);
 
+  /**
+   * The sentence being read aloud. Temporary, but drawn with the same mechanism
+   * as a saved highlight, so removing it has to put back whatever it covered —
+   * the sequence `flashNavigationTarget` already performs, minus the timer,
+   * because this one ends when the audio does.
+   */
+  const readingHighlightRef = useRef<string | null>(null);
+
+  const clearReadingHighlight = useCallback(async () => {
+    const cfi = readingHighlightRef.current;
+    if (!cfi) return;
+    // Cleared before awaiting anything, so a stop arriving mid-removal cannot
+    // start a second removal of the same annotation.
+    readingHighlightRef.current = null;
+    const view = viewRef.current;
+    if (!view) return;
+    await view.deleteAnnotation({ value: cfi }).catch(() => {});
+    const annotation = appliedAnnotationsRef.current.get(cfi);
+    if (annotation) await view.addAnnotation({ value: cfi, ...annotation }).catch(() => {});
+  }, [viewRef]);
+
+  const showReadingHighlight = useCallback(async (cfi: string) => {
+    if (readingHighlightRef.current === cfi) return;
+    await clearReadingHighlight();
+    const view = viewRef.current;
+    if (!view || !supportsCfiNavigation) return;
+    readingHighlightRef.current = cfi;
+    await view.addAnnotation({ value: cfi, color: READING_HIGHLIGHT_COLOR }).catch(() => {});
+  }, [clearReadingHighlight, supportsCfiNavigation, viewRef]);
+
   const resetAnnotationState = useCallback(() => {
     autoMarkersRef.current.clear();
     appliedAnnotationsRef.current.clear();
+    readingHighlightRef.current = null;
     navigationFlashRef.current.clear();
     markerSnapshotRef.current = null;
     wordMarkWordsRef.current = [];
@@ -491,9 +529,11 @@ export function useFoliateAnnotations({
     applyAnnotations,
     applyFoliateMarkerStyles,
     autoMarkersRef,
+    clearReadingHighlight,
     flashNavigationTarget,
     refreshAnnotations,
     resetAnnotationState,
+    showReadingHighlight,
     wordMarkExceptionsRef,
     wordMarkWordsRef,
   };

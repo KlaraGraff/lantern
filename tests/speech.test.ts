@@ -69,6 +69,7 @@ test("the custom source and its provider settings round-trip", () => {
     voiceUk: "alloy",
     voiceUs: "nova",
     speed: 1.25,
+    cachePassages: true,
   });
 });
 
@@ -79,7 +80,25 @@ test("provider settings default to empty rather than undefined", () => {
     voiceUk: "",
     voiceUs: "",
     speed: 1,
+    cachePassages: true,
   });
+});
+
+// Caching passages is on unless it was deliberately turned off: disk has a
+// ceiling, eviction and a clear button, while re-synthesizing bills the user
+// again for text they already paid for.
+test("passage caching is only off when explicitly set to false", () => {
+  assert.equal(parseSpeechSettings({}).custom.cachePassages, true);
+  assert.equal(parseSpeechSettings({ tts_cache_passages: "false" }).custom.cachePassages, false);
+  assert.equal(parseSpeechSettings({ tts_cache_passages: "true" }).custom.cachePassages, true);
+  // A value nobody wrote on purpose must not read as "off".
+  assert.equal(parseSpeechSettings({ tts_cache_passages: "" }).custom.cachePassages, true);
+  assert.equal(parseSpeechSettings({ tts_cache_passages: "nonsense" }).custom.cachePassages, true);
+});
+
+test("automatic is the default source", () => {
+  assert.equal(parseSpeechSettings({}).source, "auto");
+  assert.equal(parseSpeechSettings({ speech_source: "auto" }).source, "auto");
 });
 
 test("the custom TTS speed is clamped to what speech endpoints accept", () => {
