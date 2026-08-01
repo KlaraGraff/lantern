@@ -6,10 +6,10 @@ through iCloud sync. Desktop stays the place where books get in and get processe
 Out of scope for this milestone: **Android** ([D-002](#d-002--ios-first-android-deferred)) and
 **Windows sync** ([D-007](#d-007--windows-sync-is-out-of-scope)). Sync means iOS ↔ macOS.
 
-**Status:** P0 in progress — the Rust core is cfg-clean for an iOS target and the rustup
-toolchain now carries both iOS targets, but nothing has been compiled *for* iOS yet: Xcode is
-not installed, so there is no iOS SDK
-([P0 prerequisites](#toolchain-prerequisites-blocking-step-7)).
+**Status:** P0 all but done — the Rust core **compiles for `aarch64-apple-ios-sim`** as of
+2026-08-02, with the host build and all 618 backend tests still green. The toolchain
+(rustup + both iOS targets, Xcode 26.6, iPhoneSimulator26.5.sdk) is fully set up. Only
+booting the app in the Simulator remains, which waits on the runtime download.
 **Estimated effort:** 78–84 engineer-days across 7 phases.
 
 ---
@@ -76,9 +76,25 @@ executes it as a child process. That is impossible on iOS (no `fork`/`exec` for 
 apps) and violates App Store guideline 2.5.2. Re-implementing over Vision.framework would
 cost 10–15 days for a feature that belongs on the machine with the scanner anyway.
 
-**Implementation:** `#[cfg(not(target_os = "ios"))]` on the whole `commands::ocr` module,
-drop its entries from the mobile `invoke_handler`, hide the OCR settings section behind
-`hasOcr: false`.
+**Implementation:** gate the *pipeline*, not the module. `commands::ocr` splits in two:
+
+| Half | Modules | Lines | Ships on iOS |
+|---|---|---|---|
+| Read — which file is this book's active asset? | `assets`, `resolver` | 526 | Yes |
+| Write — fetch runtime, exec it, manage jobs | `backend`, `jobs`, `manager`, `package`, `publish`, `validate` | ~5000 | No |
+
+Then drop the ten pipeline commands from the mobile `invoke_handler` and hide the OCR
+settings section behind `hasOcr: false`.
+
+Gating the whole module is wrong and the compiler does not catch it on desktop.
+`resolver::resolve_active_asset` is called from three places outside `commands::ocr`
+(`ai/grounding/index.rs:140`, `:263`, `commands/books/query.rs:78`); it answers "open the
+verified OCR output, or fall back to the original scan?" Without it on iOS, a book OCR'd on
+the desktop and synced to the phone opens as the **original un-OCR'd scan** — no selectable
+text, no lookup, nothing for the AI to ground on — and it fails silently, since falling back
+to the source path is a legitimate outcome. That is the exact benefit D-003 promises, lost.
+The two read modules are plain SQLite reads over the assets table with no platform-specific
+code, so the split costs nothing. See [F-010](#f-010).
 
 **Related desktop bug found while auditing:** `ocr_package_download` is registered in the
 default build (`src-tauri/src/lib.rs:729`) with no `pipeline_enabled()` guard — only
@@ -312,6 +328,24 @@ Two consequences of switching to routing, both silent failures:
    Home is unmounted while reading, so the reader's five "open settings" affordances become
    dead buttons.
 
+### F-010 — Only a real iOS compile finds the cfg holes
+
+Verified 2026-08-02 with `cargo check --target aarch64-apple-ios-sim` (Xcode 26.6,
+iPhoneSimulator26.5.sdk). Both targets now pass: `ios=0 mac=0`.
+
+The first run failed with three `E0433`s, all from gating `commands::ocr` wholesale
+(see [D-003](#d-003--ocr-stays-on-desktop)). Nothing about that mistake was visible on
+macOS — the module was present there, so every call site resolved.
+
+The general lesson for the phases below: **`cargo check` on the host does not validate
+`#[cfg]` work.** Excluding a module compiles fine on the platform that still has it, and
+the callers you forgot only surface when the module is actually absent. Every phase that
+touches a `cfg` must run the iOS check before it is called done. This costs nothing now
+that the toolchain is set up — an incremental iOS check is ~5s.
+
+Corollary worth stating: the iOS *SDK* ships inside `Xcode.app`, so cross-compilation
+never needed the 8.5 GB Simulator *runtime* download. Only actually booting the app does.
+
 ---
 
 ## 4. Open questions
@@ -378,15 +412,23 @@ Smallest possible reality check: does the Rust core survive the port at all.
    `rustls-tls-webpki-roots` — a bundled root store that ignores the OS trust store — so the
    swap would break any user behind a corporate proxy with a custom CA. Revisit alongside
    Android, and use `rustls-tls-native-roots` when it happens.
-6. ~~cfg out `commands::ocr`~~ — done, `84ebd26`, module and `invoke_handler` entries both.
-7. `tauri ios init`, then `tauri ios dev` — **blocked, see below.**
+6. ~~cfg out `commands::ocr`~~ — done, but **the first attempt was wrong and shipped for a
+   day.** `84ebd26` gated the whole module; the iOS compile then failed with three `E0433`s
+   from call sites outside it. Re-cut along the read/write seam described in
+   [D-003](#d-003--ocr-stays-on-desktop) — the resolver ships on iOS, the pipeline does not.
+7. ~~Verify the port actually compiles for iOS~~ — done. `cargo check --target
+   aarch64-apple-ios-sim` and the host check both pass (`ios=0 mac=0`), 618 backend tests
+   green. See [F-010](#f-010--only-a-real-ios-compile-finds-the-cfg-holes) — the host check
+   proves nothing about `cfg` work, so this step is not optional in later phases either.
+8. `tauri ios init`, then `tauri ios dev` — waiting on the iOS 26.5 Simulator runtime download
+   (8.5 GB, in progress). Compilation never needed it; booting does.
 
 **Exit criterion:** the app launches in the iOS Simulator, the library screen renders, and a
 book opens — however badly it is laid out. Answer [Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) here.
 
 **If this fails**, stop and reassess. Nothing after this point is worth doing.
 
-#### Toolchain prerequisites (blocking step 7)
+#### Toolchain prerequisites (resolved 2026-08-02)
 
 **Rust: done.** Homebrew's rust (1.96.1, `aarch64-apple-darwin` only, no `rustup`) was replaced
 with a rustup toolchain — stable 1.97.1 with `aarch64-apple-ios` and `aarch64-apple-ios-sim`
@@ -396,22 +438,15 @@ make `rustc`/`cargo` resolve unambiguously to rustup. Verified after the swap: `
 C-dependency (`sqlite-vec`) succeeds — the C toolchain is Apple clang from Command Line Tools,
 so `brew uninstall rust` autoremoving llvm did not affect it.
 
-**Xcode: still required, and it is the only thing left.** `xcode-select -p` points at
-`/Library/Developer/CommandLineTools`, so there is no iOS SDK. `cargo check --target
-aarch64-apple-ios-sim` now fails with exactly one error —
-`xcrun: error: SDK "iphonesimulator" cannot be located` — which confirms everything upstream of
-the SDK is wired correctly.
+**Xcode: done.** Xcode 26.6 (build 17F113) is installed and `xcode-select -p` points at
+`/Applications/Xcode.app/Contents/Developer`. Steps 1–3 below needed a human: the App Store
+install needs the GUI and an Apple ID, and `sudo` cannot be driven from a tool call.
 
-Steps, none of which can be automated (App Store install needs the GUI and an Apple ID; the
-rest need an interactive `sudo`):
-
-1. Install Xcode from the App Store (~15 GB)
-2. `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`
-3. `sudo xcodebuild -license accept`
-4. `xcrun simctl list runtimes` — if empty, `xcodebuild -downloadPlatform iOS`
-
-Until Xcode is present, iOS correctness is unverified: everything in P0 was checked by compiling
-for macOS and by reading the cfg arms, which cannot catch an iOS-only type error.
+1. ~~Install Xcode from the App Store (~15 GB)~~
+2. ~~`sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`~~
+3. ~~`sudo xcodebuild -license accept`~~
+4. `xcrun simctl list runtimes` — the iOS 26.5 runtime (8.5 GB) is downloading. Needed only to
+   *run* the app; `iPhoneSimulator26.5.sdk` inside `Xcode.app` already covers compiling.
 
 ### P1 — Capability layer and single-window navigation (11 days)
 
@@ -498,7 +533,7 @@ TestFlight, review round-trips. Add an iOS job to `release.yml`.
 
 | Phase | Status | Notes |
 |---|---|---|
-| P0 — Compile and boot | Steps 1-4, 6 done | Step 7 blocked on Xcode alone; rustup + iOS targets installed |
+| P0 — Compile and boot | Compiles for iOS | Steps 1-7 done; toolchain ready. Step 8 (boot) waits on the Simulator runtime download |
 | P1 — Capability layer + routing | Not started | |
 | P2 — Mobile UI | Not started | |
 | P3 — Touch interaction | Not started | |

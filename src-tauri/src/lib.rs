@@ -769,7 +769,8 @@ pub fn run() {
             commands::books::get_converted_book_path,
             commands::books::retry_book_conversion,
             // Optional local scanned-PDF OCR runtime and job pipeline.
-            // Desktop-only — see the cfg on `commands::ocr` for why.
+            // Desktop-only — see the cfgs in `commands::ocr` for why. Only the
+            // pipeline is gated; the asset resolver behind it ships everywhere.
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             commands::ocr::package::ocr_package_status,
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
