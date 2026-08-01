@@ -358,13 +358,27 @@ export default function Home() {
             )}
           </div>
 
-          <button
-            onClick={handleImport}
-            className="shrink-0 mx-page mb-page rounded-lg border border-dashed border-text-muted/40 py-4 flex items-center justify-center gap-2 text-[14px] text-text-secondary hover:border-accent hover:text-accent transition-colors cursor-pointer"
-          >
-            <Upload size={16} />
-            {t("home.dropHint")}
-          </button>
+          <div className="shrink-0 mx-page mb-page flex flex-col items-center gap-1.5">
+            <button
+              onClick={handleImport}
+              className="w-full rounded-lg border border-dashed border-text-muted/40 py-4 flex items-center justify-center gap-2 text-[14px] text-text-secondary hover:border-accent hover:text-accent transition-colors cursor-pointer"
+            >
+              <Upload size={16} />
+              {t("home.dropHint")}
+            </button>
+            {/* The moment someone wants a book is the moment they have none —
+                so the list of places to find one belongs here, not only in a
+                settings tab they have no reason to open. */}
+            <button
+              onClick={() => {
+                setSettingsDestination("bookSources");
+                setSettingsOpen(true);
+              }}
+              className="text-[12px] text-text-muted hover:text-accent transition-colors"
+            >
+              {t("home.findBooks")}
+            </button>
+          </div>
         </main>
       )}
 

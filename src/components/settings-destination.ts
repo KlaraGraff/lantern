@@ -5,6 +5,7 @@ export type SettingsSection =
   | "services"
   | "tools"
   | "librarySync"
+  | "bookSources"
   | "mcp"
   | "about";
 
@@ -22,6 +23,7 @@ const SECTIONS = new Set<SettingsSection>([
   "services",
   "tools",
   "librarySync",
+  "bookSources",
   "mcp",
   "about",
 ]);

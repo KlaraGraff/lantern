@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Globe, BookOpen, Bot, GraduationCap, Cloud, Info, Terminal, X, ChevronRight, Palette } from "lucide-react";
+import { Globe, BookOpen, Bot, GraduationCap, Cloud, Compass, Info, Terminal, X, ChevronRight, Palette } from "lucide-react";
 import GeneralSettings from "./settings/GeneralSettings";
 import AppearanceSettings from "./settings/AppearanceSettings";
 import ReadingSettings from "./settings/ReadingSettings";
@@ -8,6 +8,7 @@ import ServicesSettings from "./settings/ServicesSettings";
 import ToolsSettings, { type ToolsPreviewState } from "./settings/ToolsSettings";
 import CardPreview from "./settings/CardPreview";
 import LibrarySyncSettings from "./settings/LibrarySyncSettings";
+import BookSourcesSettings from "./settings/BookSourcesSettings";
 import McpSettings from "./settings/McpSettings";
 import AboutSettings from "./settings/AboutSettings";
 import Toast from "./ui/Toast";
@@ -178,6 +179,7 @@ export default function SettingsModal({ open, onClose, initialSection = "general
     { id: "services", label: t("settings.services.shortTitle"), subtitle: t("settings.services.shortSubtitle"), icon: Bot },
     { id: "tools", label: t("settings.tools.title"), subtitle: t("settings.tools.subtitle"), paneSubtitle: t("settings.tools.paneSubtitle"), icon: GraduationCap },
     { id: "librarySync", label: t("settings.librarySync.title"), subtitle: t("settings.librarySync.subtitle"), icon: Cloud },
+    { id: "bookSources", label: t("settings.bookSources.title"), subtitle: t("settings.bookSources.subtitle"), icon: Compass },
     { id: "mcp", label: t("settings.mcp.title"), subtitle: t("settings.mcp.subtitle"), icon: Terminal },
     { id: "about", label: t("settings.about.title"), subtitle: t("settings.about.subtitle"), icon: Info },
   ];
@@ -207,6 +209,7 @@ export default function SettingsModal({ open, onClose, initialSection = "general
         />
       );
       case "librarySync": return <LibrarySyncSettings {...settingsProps} />;
+      case "bookSources": return <BookSourcesSettings {...settingsProps} />;
       case "mcp": return <McpSettings {...settingsProps} />;
       case "about": return <AboutSettings />;
     }
