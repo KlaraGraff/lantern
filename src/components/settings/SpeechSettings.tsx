@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Loader2, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Button from "../ui/Button";
+import ComboField from "../ui/ComboField";
 import Input from "../ui/Input";
 import Select from "../ui/Select";
 import Slider from "../ui/Slider";
@@ -18,6 +19,8 @@ import {
   SPEECH_CUSTOM_BASE_URL_KEY,
   SPEECH_CUSTOM_MODEL_KEY,
   SPEECH_CUSTOM_VOICE_UK_KEY,
+  SPEECH_CUSTOM_SPEED_KEY,
+  SPEECH_CUSTOM_SPEED_RANGE,
   SPEECH_CUSTOM_VOICE_US_KEY,
   SPEECH_RATE_PRESETS,
   SPEECH_RATE_RANGE,
@@ -33,6 +36,30 @@ interface SpeechCacheStats {
   entries: number;
   limitBytes: number;
 }
+
+/** Voice names this endpoint reported when it rejected one, and when. */
+interface SpeechVoiceHints {
+  options: string[];
+  updated_at: number | null;
+}
+
+const NO_VOICE_HINTS: SpeechVoiceHints = { options: [], updated_at: null };
+
+/** OpenAI's own voices — the only names that are right by default, since the
+ *  custom source is an OpenAI-compatible endpoint before it is anything else. */
+const OPENAI_VOICES = [
+  "alloy",
+  "ash",
+  "ballad",
+  "coral",
+  "echo",
+  "fable",
+  "nova",
+  "onyx",
+  "sage",
+  "shimmer",
+  "verse",
+];
 
 /** `1x`, `1.25x` — trailing zeros read as false precision on a speed chip. */
 function formatRate(rate: number): string {
@@ -115,6 +142,11 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
   const [cache, setCache] = useState<SpeechCacheStats | null>(null);
   const [clearing, setClearing] = useState(false);
   const [rateDraft, setRateDraft] = useState("");
+  const [speedDraft, setSpeedDraft] = useState(() => String(speechSettings().custom.speed));
+  const [models, setModels] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelError, setModelError] = useState<string | null>(null);
+  const [voiceHints, setVoiceHints] = useState<SpeechVoiceHints>(NO_VOICE_HINTS);
 
   useEffect(() => {
     ensureSpeechSettings();
@@ -122,6 +154,7 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
       setSettings(value);
       setRate(value.rate);
       setCustom(value.custom);
+      setSpeedDraft(String(value.custom.speed));
     });
   }, []);
 
@@ -134,6 +167,22 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
   useEffect(refreshKeyState, [refreshKeyState]);
 
   useEffect(() => subscribeToVoices(() => setVoicesRevision((value) => value + 1)), []);
+
+  // Learned during playback, not here, so the endpoint the fields point at is
+  // the only thing worth re-reading them for.
+  useEffect(() => {
+    let active = true;
+    invoke<SpeechVoiceHints>("speech_voice_options")
+      .then((hints) => {
+        if (active) setVoiceHints(hints);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+    // Keyed on the saved endpoint, not the draft: the lookup is by what is
+    // actually stored, and a draft changes on every keystroke.
+  }, [settings.custom.baseUrl, settings.custom.model]);
 
   const refreshCache = useCallback(() => {
     invoke<SpeechCacheStats>("speech_cache_stats")
@@ -156,6 +205,45 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
     setRate(value);
     persist({ [SPEECH_RATE_SETTING_KEY]: String(value) });
   };
+
+  const fetchModels = async () => {
+    setLoadingModels(true);
+    setModelError(null);
+    try {
+      // Unfiltered on purpose: a self-hosted gateway can name its speech model
+      // anything, so hiding rows by keyword would hide valid choices.
+      setModels(await invoke<string[]>("speech_list_models"));
+    } catch (error) {
+      setModels([]);
+      setModelError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLoadingModels(false);
+    }
+  };
+
+  const forgetVoiceOptions = async () => {
+    try {
+      await invoke("speech_forget_voice_options");
+      setVoiceHints(NO_VOICE_HINTS);
+    } catch (error) {
+      console.error("Failed to forget speech voice options:", error);
+    }
+  };
+
+  // Kept apart from the built-in names rather than merged: which voices this
+  // endpoint actually reported is the useful half of the information.
+  const voiceGroups = useMemo(
+    () => [
+      ...(voiceHints.options.length > 0
+        ? [{ label: t("settings.speech.custom.voiceGroupReported"), options: voiceHints.options }]
+        : []),
+      {
+        label: t("settings.speech.custom.voiceGroupBuiltIn"),
+        options: OPENAI_VOICES.filter((voice) => !voiceHints.options.includes(voice)),
+      },
+    ],
+    [t, voiceHints.options],
+  );
 
   const availability = useMemo(
     () => accentAvailability(),
@@ -233,30 +321,101 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
             onChange={(value) => setCustom((current) => ({ ...current, baseUrl: value }))}
             onCommit={() => persist({ [SPEECH_CUSTOM_BASE_URL_KEY]: custom.baseUrl.trim() })}
           />
-          <TextSettingRow
+          <SettingsRow
             title={t("settings.speech.custom.model")}
-            subtitle={t("settings.speech.custom.modelHint")}
-            value={custom.model}
-            placeholder="gpt-4o-mini-tts"
-            onChange={(value) => setCustom((current) => ({ ...current, model: value }))}
-            onCommit={() => persist({ [SPEECH_CUSTOM_MODEL_KEY]: custom.model.trim() })}
-          />
-          <TextSettingRow
+            subtitle={modelError ?? t("settings.speech.custom.modelHint")}
+          >
+            <div className="w-[224px] shrink-0">
+              <ComboField
+                label={t("settings.speech.custom.model")}
+                value={custom.model}
+                placeholder="gpt-4o-mini-tts"
+                groups={
+                  models.length > 0
+                    ? [{ label: t("settings.speech.custom.modelGroupFetched"), options: models }]
+                    : []
+                }
+                onChange={(model) => setCustom((current) => ({ ...current, model }))}
+                onCommit={(model) => persist({ [SPEECH_CUSTOM_MODEL_KEY]: model.trim() })}
+                onRefresh={() => void fetchModels()}
+                refreshing={loadingModels}
+                refreshLabel={t("settings.speech.custom.fetchModels")}
+              />
+            </div>
+          </SettingsRow>
+          <SettingsRow
+            title={t("settings.speech.custom.speed")}
+            subtitle={t("settings.speech.custom.speedHint")}
+          >
+            <div className={ROW_CONTROL_WIDTH}>
+              <Input
+                value={speedDraft}
+                inputMode="decimal"
+                placeholder="1.0"
+                onChange={(event) => setSpeedDraft(event.target.value)}
+                onBlur={() => {
+                  const parsed = Number.parseFloat(speedDraft);
+                  const next = Number.isFinite(parsed)
+                    ? Math.min(
+                        SPEECH_CUSTOM_SPEED_RANGE.max,
+                        Math.max(SPEECH_CUSTOM_SPEED_RANGE.min, parsed),
+                      )
+                    : custom.speed;
+                  setSpeedDraft(String(next));
+                  if (next !== custom.speed) persist({ [SPEECH_CUSTOM_SPEED_KEY]: String(next) });
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
+              />
+            </div>
+          </SettingsRow>
+          <SettingsRow
             title={t("settings.speech.custom.voiceUk")}
             subtitle={t("settings.speech.custom.voiceUkHint")}
-            value={custom.voiceUk}
-            placeholder={custom.voiceUs || "alloy"}
-            onChange={(value) => setCustom((current) => ({ ...current, voiceUk: value }))}
-            onCommit={() => persist({ [SPEECH_CUSTOM_VOICE_UK_KEY]: custom.voiceUk.trim() })}
-          />
-          <TextSettingRow
+          >
+            <div className={ROW_CONTROL_WIDTH}>
+              <ComboField
+                label={t("settings.speech.custom.voiceUk")}
+                value={custom.voiceUk}
+                placeholder={custom.voiceUs || "alloy"}
+                groups={voiceGroups}
+                onChange={(value) => setCustom((current) => ({ ...current, voiceUk: value }))}
+                onCommit={(value) => persist({ [SPEECH_CUSTOM_VOICE_UK_KEY]: value.trim() })}
+              />
+            </div>
+          </SettingsRow>
+          <SettingsRow
             title={t("settings.speech.custom.voiceUs")}
             subtitle={t("settings.speech.custom.voiceUsHint")}
-            value={custom.voiceUs}
-            placeholder="nova"
-            onChange={(value) => setCustom((current) => ({ ...current, voiceUs: value }))}
-            onCommit={() => persist({ [SPEECH_CUSTOM_VOICE_US_KEY]: custom.voiceUs.trim() })}
-          />
+          >
+            <div className={ROW_CONTROL_WIDTH}>
+              <ComboField
+                label={t("settings.speech.custom.voiceUs")}
+                value={custom.voiceUs}
+                placeholder="nova"
+                groups={voiceGroups}
+                onChange={(value) => setCustom((current) => ({ ...current, voiceUs: value }))}
+                onCommit={(value) => persist({ [SPEECH_CUSTOM_VOICE_US_KEY]: value.trim() })}
+              />
+            </div>
+          </SettingsRow>
+          {voiceHints.options.length > 0 && (
+            <p className="flex flex-wrap items-baseline gap-x-1.5 px-1 pb-1 text-[11px] leading-[17px] text-text-placeholder">
+              {t("settings.speech.custom.voiceSource", {
+                count: voiceHints.options.length,
+                model: custom.model,
+                date: new Date(voiceHints.updated_at ?? 0).toLocaleDateString(),
+              })}
+              <button
+                type="button"
+                className="cursor-pointer text-accent-text hover:underline"
+                onClick={() => void forgetVoiceOptions()}
+              >
+                {t("settings.speech.custom.voiceForget")}
+              </button>
+            </p>
+          )}
           <SettingsRow
             title={t("settings.speech.custom.apiKey")}
             subtitle={keyConfigured

@@ -10,6 +10,7 @@ export const SPEECH_CUSTOM_BASE_URL_KEY = "tts_base_url";
 export const SPEECH_CUSTOM_MODEL_KEY = "tts_model";
 export const SPEECH_CUSTOM_VOICE_UK_KEY = "tts_voice_uk";
 export const SPEECH_CUSTOM_VOICE_US_KEY = "tts_voice_us";
+export const SPEECH_CUSTOM_SPEED_KEY = "tts_speed";
 
 export const SPEECH_SETTING_KEYS = [
   SPEECH_SOURCE_SETTING_KEY,
@@ -19,6 +20,7 @@ export const SPEECH_SETTING_KEYS = [
   SPEECH_CUSTOM_MODEL_KEY,
   SPEECH_CUSTOM_VOICE_UK_KEY,
   SPEECH_CUSTOM_VOICE_US_KEY,
+  SPEECH_CUSTOM_SPEED_KEY,
 ] as const;
 
 /** Provider settings for the OpenAI-compatible source. The key is never here. */
@@ -27,6 +29,8 @@ export interface CustomSpeechConfig {
   model: string;
   voiceUk: string;
   voiceUs: string;
+  /** Sent to the provider, which bakes it into the audio it returns. */
+  speed: number;
 }
 
 export interface SpeechSettings {
@@ -45,7 +49,7 @@ export const DEFAULT_SPEECH_SETTINGS: SpeechSettings = {
   source: "dictionary",
   accent: "us",
   rate: 1,
-  custom: { baseUrl: "", model: "", voiceUk: "", voiceUs: "" },
+  custom: { baseUrl: "", model: "", voiceUk: "", voiceUs: "", speed: 1 },
 };
 
 /**
@@ -53,8 +57,15 @@ export const DEFAULT_SPEECH_SETTINGS: SpeechSettings = {
  * not a speed — it is silence — and the ceiling matches the fastest preset.
  */
 export const SPEECH_RATE_RANGE = { min: 0.5, max: 2, step: 0.05 } as const;
+/** What OpenAI-compatible speech endpoints accept for `speed`. */
+export const SPEECH_CUSTOM_SPEED_RANGE = { min: 0.25, max: 4 } as const;
 /** Playback speeds worth one tap, in the order a media player lists them. */
 export const SPEECH_RATE_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
+
+function clampCustomSpeed(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_SPEECH_SETTINGS.custom.speed;
+  return Math.min(SPEECH_CUSTOM_SPEED_RANGE.max, Math.max(SPEECH_CUSTOM_SPEED_RANGE.min, value));
+}
 
 export function parseSpeechSettings(values: Record<string, string | undefined>): SpeechSettings {
   const source = values[SPEECH_SOURCE_SETTING_KEY];
@@ -75,6 +86,7 @@ export function parseSpeechSettings(values: Record<string, string | undefined>):
       model: text(SPEECH_CUSTOM_MODEL_KEY),
       voiceUk: text(SPEECH_CUSTOM_VOICE_UK_KEY),
       voiceUs: text(SPEECH_CUSTOM_VOICE_US_KEY),
+      speed: clampCustomSpeed(Number.parseFloat(values[SPEECH_CUSTOM_SPEED_KEY] ?? "")),
     },
   };
 }

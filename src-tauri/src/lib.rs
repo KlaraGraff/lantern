@@ -794,6 +794,9 @@ pub fn run() {
             commands::speech::set_speech_custom_key,
             commands::speech::speech_cache_stats,
             commands::speech::speech_cache_clear,
+            commands::speech::speech_list_models,
+            commands::speech::speech_voice_options,
+            commands::speech::speech_forget_voice_options,
             // Learner profile and exam-to-CEFR estimates
             commands::language_assessments::estimate_cefr,
             commands::language_assessments::summarize_language_assessments,

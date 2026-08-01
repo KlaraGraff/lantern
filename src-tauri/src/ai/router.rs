@@ -1137,6 +1137,34 @@ fn parse_model_ids(provider: &str, value: &serde_json::Value) -> AppResult<Vec<S
     Ok(models.into_iter().collect())
 }
 
+/// Model discovery for an OpenAI-shaped endpoint that is not an AI profile —
+/// today the custom TTS service. Shares the profile path's byte cap, timeouts
+/// and response parsing rather than growing a second implementation.
+pub async fn list_openai_models(base_url: &str, api_key: &str) -> AppResult<Vec<String>> {
+    let base = base_url.trim().trim_end_matches('/');
+    if base.is_empty() {
+        return Err(AppError::Other("AI_CUSTOM_BASE_URL_REQUIRED".to_string()));
+    }
+    let endpoint = if base.ends_with("/v1") {
+        format!("{base}/models")
+    } else {
+        format!("{base}/v1/models")
+    };
+    let mut request = crate::ai::http_client().get(&endpoint);
+    if !api_key.trim().is_empty() {
+        request = request.bearer_auth(api_key.trim());
+    }
+    let response = tokio::time::timeout(crate::ai::FIRST_BYTE_TIMEOUT, request.send())
+        .await
+        .map_err(|_| AppError::Ai("AI_FIRST_BYTE_TIMEOUT".to_string()))?
+        .map_err(|error| AppError::Ai(error.to_string()))?;
+    if !response.status().is_success() {
+        return Err(crate::ai::http_status_error("model-list", response).await);
+    }
+    let value = read_json_limited(response).await?;
+    parse_model_ids("openai", &value)
+}
+
 async fn list_models_once(
     profile: &AiProfile,
     endpoint: &str,

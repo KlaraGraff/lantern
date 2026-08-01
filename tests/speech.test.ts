@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   DEFAULT_SPEECH_SETTINGS,
   parseSpeechSettings,
+  SPEECH_CUSTOM_SPEED_RANGE,
   SPEECH_RATE_PRESETS,
   SPEECH_RATE_RANGE,
 } from "../src/components/speech/types.ts";
@@ -58,6 +59,7 @@ test("the custom source and its provider settings round-trip", () => {
     tts_model: "gpt-4o-mini-tts",
     tts_voice_uk: "alloy",
     tts_voice_us: "nova",
+    tts_speed: "1.25",
   });
   assert.equal(parsed.source, "custom");
   // Trimmed, or a stray space would end up in the request URL.
@@ -66,6 +68,7 @@ test("the custom source and its provider settings round-trip", () => {
     model: "gpt-4o-mini-tts",
     voiceUk: "alloy",
     voiceUs: "nova",
+    speed: 1.25,
   });
 });
 
@@ -75,7 +78,14 @@ test("provider settings default to empty rather than undefined", () => {
     model: "",
     voiceUk: "",
     voiceUs: "",
+    speed: 1,
   });
+});
+
+test("the custom TTS speed is clamped to what speech endpoints accept", () => {
+  assert.equal(parseSpeechSettings({ tts_speed: "9" }).custom.speed, SPEECH_CUSTOM_SPEED_RANGE.max);
+  assert.equal(parseSpeechSettings({ tts_speed: "0" }).custom.speed, SPEECH_CUSTOM_SPEED_RANGE.min);
+  assert.equal(parseSpeechSettings({ tts_speed: "nonsense" }).custom.speed, 1);
 });
 
 test("speech rate is clamped to the supported range", () => {
