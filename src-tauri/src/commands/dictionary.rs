@@ -73,7 +73,7 @@ pub(crate) fn first_sense(explain: &str) -> String {
         let group = group.trim();
         // Strip a leading part-of-speech marker; `v．` uses a fullwidth stop.
         let without_pos = group
-            .split_once(|c| c == '.' || c == '．')
+            .split_once(['.', '．'])
             .map(|(head, rest)| {
                 if head.chars().count() <= 4 && head.chars().all(|c| c.is_ascii_alphabetic() || c.is_ascii_digit()) {
                     rest
