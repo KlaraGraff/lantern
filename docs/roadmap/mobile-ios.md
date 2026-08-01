@@ -6,8 +6,9 @@ through iCloud sync. Desktop stays the place where books get in and get processe
 Out of scope for this milestone: **Android** ([D-002](#d-002--ios-first-android-deferred)) and
 **Windows sync** ([D-007](#d-007--windows-sync-is-out-of-scope)). Sync means iOS ↔ macOS.
 
-**Status:** P0 in progress — the Rust core is cfg-clean for an iOS target, but nothing has been
-compiled *for* iOS yet; the machine has neither Xcode nor a rustup toolchain
+**Status:** P0 in progress — the Rust core is cfg-clean for an iOS target and the rustup
+toolchain now carries both iOS targets, but nothing has been compiled *for* iOS yet: Xcode is
+not installed, so there is no iOS SDK
 ([P0 prerequisites](#toolchain-prerequisites-blocking-step-7)).
 **Estimated effort:** 78–84 engineer-days across 7 phases.
 
