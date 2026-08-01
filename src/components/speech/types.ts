@@ -1,5 +1,5 @@
 export type SpeechAccent = "uk" | "us";
-export type SpeechSourceId = "dictionary" | "system" | "custom";
+export type SpeechSourceId = "dictionary" | "system" | "edge" | "custom";
 export type SpeechKind = "word" | "phrase" | "passage";
 export type SpeechStatus = "idle" | "loading" | "playing" | "error";
 
@@ -67,6 +67,12 @@ function clampCustomSpeed(value: number): number {
   return Math.min(SPEECH_CUSTOM_SPEED_RANGE.max, Math.max(SPEECH_CUSTOM_SPEED_RANGE.min, value));
 }
 
+const SPEECH_SOURCE_IDS: readonly SpeechSourceId[] = ["dictionary", "system", "edge", "custom"];
+
+function parseSource(value: string | undefined): SpeechSourceId {
+  return SPEECH_SOURCE_IDS.find((id) => id === value) ?? DEFAULT_SPEECH_SETTINGS.source;
+}
+
 export function parseSpeechSettings(values: Record<string, string | undefined>): SpeechSettings {
   const source = values[SPEECH_SOURCE_SETTING_KEY];
   const accent = values[SPEECH_ACCENT_SETTING_KEY];
@@ -74,9 +80,7 @@ export function parseSpeechSettings(values: Record<string, string | undefined>):
   const text = (key: string) => (values[key] ?? "").trim();
 
   return {
-    source: source === "system" || source === "dictionary" || source === "custom"
-      ? source
-      : DEFAULT_SPEECH_SETTINGS.source,
+    source: parseSource(source),
     accent: accent === "uk" || accent === "us" ? accent : DEFAULT_SPEECH_SETTINGS.accent,
     rate: Number.isFinite(rate)
       ? Math.min(SPEECH_RATE_RANGE.max, Math.max(SPEECH_RATE_RANGE.min, rate))

@@ -69,6 +69,9 @@ csv = "1"
 fs2 = "0.4"
 ttf-parser = "0.25"
 wuff = "0.2.7"
+# Edge Read aloud speech. Default features would pull a second blocking HTTP
+# stack (`ureq`) we have no use for, so only the tokio runtime is enabled.
+msedge-tts = { version = "0.4.0", default-features = false, features = ["tokio-runtime"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -81,6 +84,13 @@ objc2-foundation = { version = "0.3", features = ["NSFileManager", "NSFileCoordi
 block2 = "0.6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
+# Not used directly. It arrives through msedge-tts, which enables reqwest's
+# default TLS, and on Windows x86-64 it refuses to build unless NASM is on the
+# machine — which neither the release runner nor a contributor's checkout can be
+# counted on to have. The feature makes it use its own pregenerated objects
+# instead. Keep the version in step with whatever Cargo.lock resolves, or the
+# graph ends up with two copies.
+aws-lc-sys = { version = "0.43", features = ["prebuilt-nasm"] }
 keyring = { version = "3", features = ["windows-native"] }
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",

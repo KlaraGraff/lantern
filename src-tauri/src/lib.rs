@@ -789,6 +789,7 @@ pub fn run() {
             // Dictionary pronunciation audio (cached on disk, never synced)
             commands::dictionary::dictionary_gloss,
             commands::speech::speech_dictionary_audio,
+            commands::speech::speech_edge_audio,
             commands::speech::speech_custom_audio,
             commands::speech::speech_custom_key_configured,
             commands::speech::set_speech_custom_key,

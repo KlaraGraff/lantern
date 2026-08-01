@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { fetchCustomAudio, fetchDictionaryAudio } from "../components/speech/remote-audio";
+import {
+  fetchCustomAudio,
+  fetchDictionaryAudio,
+  fetchEdgeAudio,
+} from "../components/speech/remote-audio";
 import {
   cancelSpeech,
   playerState,
@@ -43,7 +47,9 @@ function systemPlayback(text: string, settings: SpeechSettings): Playback {
  *
  * Every source falls back to system voices, and only to system voices: the
  * custom provider is metered, so the dictionary never escalates to it. Spending
- * the user's money as a silent fallback would be a nasty surprise.
+ * the user's money as a silent fallback would be a nasty surprise. The Edge
+ * source is free but unofficial, and that same fallback is what makes it safe to
+ * offer — when Microsoft breaks it, playback gets worse rather than stopping.
  */
 async function resolvePlayback(
   text: string,
@@ -52,9 +58,11 @@ async function resolvePlayback(
 ): Promise<Playback> {
   const remote = settings.source === "custom"
     ? fetchCustomAudio
-    : settings.source === "dictionary" && kind !== "passage"
-      ? fetchDictionaryAudio
-      : null;
+    : settings.source === "edge"
+      ? fetchEdgeAudio
+      : settings.source === "dictionary" && kind !== "passage"
+        ? fetchDictionaryAudio
+        : null;
 
   if (remote) {
     try {

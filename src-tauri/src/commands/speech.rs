@@ -1,4 +1,4 @@
-//! Pronunciation audio from two network sources, sharing one on-disk cache.
+//! Pronunciation audio from three network sources, sharing one on-disk cache.
 //!
 //! Youdao's `dictvoice` is a dictionary-entry lookup, not a synthesizer: entries
 //! return recorded (or, for rare words, synthesized) audio, and anything else
@@ -10,6 +10,13 @@
 //! The custom source posts to any OpenAI-compatible `/audio/speech` endpoint. It
 //! is metered, so it is only ever used when the user has explicitly selected it;
 //! the dictionary never escalates to it as a fallback.
+//!
+//! The Edge source drives the same neural voices Edge's Read aloud uses, over
+//! Microsoft's unofficial WebSocket protocol. It is free and needs no setup, but
+//! it is not a supported API: the endpoint can change or start refusing requests
+//! without notice. That is survivable only because it is opt-in and every
+//! failure falls back to system voices, so the worst outcome is a robotic voice
+//! rather than an error.
 
 use std::collections::HashSet;
 use std::fs;
@@ -47,7 +54,7 @@ const CACHE_TARGET_BYTES: u64 = CACHE_LIMIT_BYTES / 10 * 9;
 const MAX_DICTIONARY_TEXT_CHARS: usize = 64;
 /// A real synthesizer can read a passage. Well under the 4096 most
 /// OpenAI-compatible endpoints accept, and it bounds the per-play cost.
-const MAX_CUSTOM_TEXT_CHARS: usize = 2000;
+const MAX_SYNTHESIZER_TEXT_CHARS: usize = 2000;
 const MAX_AUDIO_BYTES: usize = 4 * 1024 * 1024;
 /// How much of an untrusted error body is scanned for the voice list. Providers
 /// name their voices in the first line; anything past this is not a list.
@@ -55,8 +62,22 @@ const MAX_ERROR_BODY_CHARS: usize = 4096;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// Synthesizing a passage legitimately takes longer than fetching a clip.
 const CUSTOM_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+/// `synthesize` reads until the service says the turn ended, with no deadline of
+/// its own, so a stalled socket would hang the request forever. Shorter than the
+/// custom timeout because this is a live stream, not a request that may queue.
+const EDGE_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// A miss is usually permanent, but the corpus does grow, so they expire.
 const MISS_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+
+/// Neural voices for the two accents Lantern offers. Fixed rather than
+/// configurable: the source's whole appeal is that it works with no setup, and
+/// these are the voices Edge itself defaults to for en-GB and en-US.
+const EDGE_VOICE_UK: &str = "en-GB-SoniaNeural";
+const EDGE_VOICE_US: &str = "en-US-AriaNeural";
+/// MP3, which the frontend sniffs from the magic bytes. The service also offers
+/// higher bit rates, but 48 kbit/s mono is what Read aloud itself requests and
+/// it is transparent for speech.
+const EDGE_AUDIO_FORMAT: &str = "audio-24khz-48kbitrate-mono-mp3";
 
 const CUSTOM_KEY_SECRET: &str = "tts_api_key";
 const CUSTOM_BASE_URL_SETTING: &str = "tts_base_url";
@@ -105,6 +126,13 @@ impl Accent {
             Self::Us => "us",
         }
     }
+
+    fn edge_voice(self) -> &'static str {
+        match self {
+            Self::Uk => EDGE_VOICE_UK,
+            Self::Us => EDGE_VOICE_US,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -137,6 +165,12 @@ struct SourceIdentity(String);
 impl SourceIdentity {
     fn dictionary(accent: Accent) -> Self {
         Self(format!("{SOURCE_ID}|{}", accent.as_str()))
+    }
+
+    /// Keyed by the voice rather than the accent, so changing which voice an
+    /// accent maps to serves fresh audio instead of the previous voice's clips.
+    fn edge(accent: Accent) -> Self {
+        Self(format!("edge|{}", accent.edge_voice()))
     }
 
     fn custom(config: &CustomConfig, accent: Accent) -> Self {
@@ -212,7 +246,13 @@ fn pinned_stems(db: &Db, custom: Option<&CustomConfig>) -> HashSet<String> {
     let identities: Vec<SourceIdentity> = [Accent::Uk, Accent::Us]
         .into_iter()
         .flat_map(|accent| {
-            let mut entries = vec![SourceIdentity::dictionary(accent)];
+            // The keyless sources are always pinned: they cost nothing to name,
+            // and which one is selected today says nothing about which clips are
+            // worth keeping.
+            let mut entries = vec![
+                SourceIdentity::dictionary(accent),
+                SourceIdentity::edge(accent),
+            ];
             if let Some(config) = custom {
                 entries.push(SourceIdentity::custom(config, accent));
             }
@@ -460,6 +500,58 @@ async fn fetch_custom(
     Ok(bytes.to_vec())
 }
 
+/// The Edge protocol carries the text inside an SSML document that the client
+/// crate builds by interpolation, so an unescaped `&` or `<` — ordinary in book
+/// text — would produce a malformed document the service rejects, or let the
+/// text close the `<prosody>` element and inject markup of its own.
+fn escape_ssml(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for character in text.chars() {
+        match character {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            _ => escaped.push(character),
+        }
+    }
+    escaped
+}
+
+/// One connection per clip. Pooling would save a handshake, but a cached clip
+/// never reaches this function at all, so the connection would sit idle far more
+/// often than it would be reused.
+async fn fetch_edge(text: &str, accent: Accent) -> AppResult<Vec<u8>> {
+    use msedge_tts::tts::{client::tokio_runtime::connect_async, SpeechConfig};
+
+    let config = SpeechConfig {
+        voice_name: accent.edge_voice().to_string(),
+        audio_format: EDGE_AUDIO_FORMAT.to_string(),
+        // The rate slider drives system voices only, as with the dictionary's
+        // recordings; baking a speed into cached audio would make every slider
+        // nudge a separate cache entry.
+        pitch: 0,
+        rate: 0,
+        volume: 0,
+    };
+    let ssml_text = escape_ssml(text);
+
+    let audio = tokio::time::timeout(EDGE_REQUEST_TIMEOUT, async {
+        let mut client = connect_async().await?;
+        client.synthesize(&ssml_text, &config).await
+    })
+    .await
+    // A refused handshake is how this source dies for good — either a protocol
+    // change or a region block — and it is indistinguishable here from the
+    // network being down. Both mean the same thing to the caller: fall back.
+    .map_err(|_| AppError::Other(ERR_SOURCE_UNAVAILABLE.to_string()))?
+    .map_err(|_| AppError::Other(ERR_SOURCE_UNAVAILABLE.to_string()))?;
+
+    if audio.audio_bytes.is_empty() || audio.audio_bytes.len() > MAX_AUDIO_BYTES {
+        return Err(AppError::Other(ERR_SOURCE_UNAVAILABLE.to_string()));
+    }
+    Ok(audio.audio_bytes)
+}
+
 async fn fetch_remote(text: &str, accent: Accent) -> AppResult<Vec<u8>> {
     let response = crate::ai::http_client()
         .get(DICTIONARY_ENDPOINT)
@@ -559,6 +651,11 @@ async fn dictionary_audio_cached(
     cached_audio(dir, &identity, text, || fetch_remote(text, accent)).await
 }
 
+async fn edge_audio_cached(dir: &Path, text: &str, accent: Accent) -> AppResult<(Vec<u8>, bool)> {
+    let identity = SourceIdentity::edge(accent);
+    cached_audio(dir, &identity, text, || fetch_edge(text, accent)).await
+}
+
 async fn custom_audio_cached(
     dir: &Path,
     text: &str,
@@ -611,6 +708,22 @@ pub async fn speech_dictionary_audio(
 }
 
 #[tauri::command]
+pub async fn speech_edge_audio(
+    text: String,
+    accent: String,
+    db: State<'_, Db>,
+) -> AppResult<Response> {
+    let accent = Accent::parse(&accent)?;
+    let text = normalize_text(&text, MAX_SYNTHESIZER_TEXT_CHARS)?;
+    let dir = cache_dir();
+    let (audio, cached) = edge_audio_cached(&dir, &text, accent).await?;
+    if !cached {
+        note_cache_growth(&db, None, audio.len());
+    }
+    Ok(Response::new(audio))
+}
+
+#[tauri::command]
 pub async fn speech_custom_audio(
     text: String,
     accent: String,
@@ -618,7 +731,7 @@ pub async fn speech_custom_audio(
     secrets: State<'_, Secrets>,
 ) -> AppResult<Response> {
     let accent = Accent::parse(&accent)?;
-    let text = normalize_text(&text, MAX_CUSTOM_TEXT_CHARS)?;
+    let text = normalize_text(&text, MAX_SYNTHESIZER_TEXT_CHARS)?;
     let config = load_custom_config(&db, &secrets)?;
     let dir = cache_dir();
     let (audio, cached) = custom_audio_cached(&dir, &text, accent, &config, &db).await?;
@@ -801,7 +914,30 @@ mod tests {
         )
         .is_ok());
         // A synthesizer can read a passage the dictionary would refuse.
-        assert!(normalize_text(&over, MAX_CUSTOM_TEXT_CHARS).is_ok());
+        assert!(normalize_text(&over, MAX_SYNTHESIZER_TEXT_CHARS).is_ok());
+    }
+
+    /// The client crate pastes the text straight into an SSML document, so
+    /// anything unescaped either breaks the document or becomes markup.
+    #[test]
+    fn ssml_escaping_covers_the_characters_that_would_close_an_element() {
+        assert_eq!(escape_ssml("Tom & Jerry"), "Tom &amp; Jerry");
+        assert_eq!(escape_ssml("a < b > c"), "a &lt; b &gt; c");
+        assert_eq!(
+            escape_ssml("</prosody></voice><voice name='x'>"),
+            "&lt;/prosody&gt;&lt;/voice&gt;&lt;voice name='x'&gt;",
+        );
+        // `&` must be rewritten first, or the escapes escape each other.
+        assert_eq!(escape_ssml("&lt;"), "&amp;lt;");
+        // Ordinary text, including non-ASCII, passes through untouched.
+        assert_eq!(escape_ssml("a piece of cake 你好"), "a piece of cake 你好");
+    }
+
+    #[test]
+    fn edge_voices_differ_by_accent() {
+        assert_eq!(Accent::Uk.edge_voice(), EDGE_VOICE_UK);
+        assert_eq!(Accent::Us.edge_voice(), EDGE_VOICE_US);
+        assert_ne!(Accent::Uk.edge_voice(), Accent::Us.edge_voice());
     }
 
     #[test]
@@ -828,11 +964,19 @@ mod tests {
     }
 
     #[test]
-    fn the_two_sources_never_share_a_cache_entry() {
+    fn no_two_sources_share_a_cache_entry() {
         let config = custom_config("https://api.openai.com/v1", "tts-1", "alloy", "nova");
-        assert_ne!(
+        let stems = [
             cache_stem(&SourceIdentity::dictionary(Accent::Us), "schedule"),
+            cache_stem(&SourceIdentity::edge(Accent::Us), "schedule"),
             cache_stem(&SourceIdentity::custom(&config, Accent::Us), "schedule"),
+        ];
+        let distinct: HashSet<&String> = stems.iter().collect();
+        assert_eq!(distinct.len(), stems.len(), "sources collided: {stems:?}");
+        // And the accent still separates them within a source.
+        assert_ne!(
+            cache_stem(&SourceIdentity::edge(Accent::Uk), "schedule"),
+            cache_stem(&SourceIdentity::edge(Accent::Us), "schedule"),
         );
     }
 
@@ -1073,6 +1217,54 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(error.to_string(), ERR_NOT_IN_DICTIONARY);
+    }
+
+    /// The Edge protocol is unofficial and Microsoft has broken it before, so
+    /// this is the test that says whether the source still works at all. A
+    /// failure here is the signal to check `msedge-tts` for a newer release.
+    #[tokio::test]
+    #[ignore = "requires network"]
+    async fn live_edge_synthesizes_a_passage_then_serves_it_from_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        // Long enough to prove this is a synthesizer, not a dictionary lookup.
+        let passage = "The lantern threw its light across the water, and the boat came about.";
+        let (fetched, cached) = edge_audio_cached(dir.path(), passage, Accent::Us)
+            .await
+            .unwrap();
+        assert!(!cached, "first call must go to the network");
+        assert!(fetched.len() > 1024, "got {} bytes", fetched.len());
+
+        let (replayed, cached) = edge_audio_cached(dir.path(), passage, Accent::Us)
+            .await
+            .unwrap();
+        assert!(cached, "second call must be served from disk");
+        assert_eq!(fetched, replayed);
+    }
+
+    /// Text the dictionary source would have to escape past — proof the SSML
+    /// document survives the round trip rather than being rejected.
+    #[tokio::test]
+    #[ignore = "requires network"]
+    async fn live_edge_reads_text_containing_markup_characters() {
+        let dir = tempfile::tempdir().unwrap();
+        let (audio, _) = edge_audio_cached(dir.path(), "Tom & Jerry < 5 > 3", Accent::Us)
+            .await
+            .unwrap();
+        assert!(audio.len() > 1024, "got {} bytes", audio.len());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires network"]
+    async fn live_edge_uk_and_us_voices_differ() {
+        let dir = tempfile::tempdir().unwrap();
+        let (uk, _) = edge_audio_cached(dir.path(), "schedule", Accent::Uk)
+            .await
+            .unwrap();
+        let (us, _) = edge_audio_cached(dir.path(), "schedule", Accent::Us)
+            .await
+            .unwrap();
+        assert!(!uk.is_empty() && !us.is_empty());
+        assert_ne!(uk, us);
     }
 
     /// The point of the whole feature: the accent toggle must produce genuinely

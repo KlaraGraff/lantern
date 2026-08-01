@@ -274,6 +274,7 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
             options={[
               { value: "dictionary", label: t("settings.speech.sourceOption.dictionary") },
               { value: "system", label: t("settings.speech.sourceOption.system") },
+              { value: "edge", label: t("settings.speech.sourceOption.edge") },
               { value: "custom", label: t("settings.speech.sourceOption.custom") },
             ]}
           />

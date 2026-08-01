@@ -30,6 +30,15 @@ export function fetchDictionaryAudio(text: string, accent: SpeechAccent): Promis
 }
 
 /**
+ * Edge's Read aloud voices. Free and needs no setup, but it rides an unofficial
+ * protocol, so `SPEECH_SOURCE_UNAVAILABLE` covers both an ordinary network
+ * failure and Microsoft having changed or blocked the endpoint outright.
+ */
+export function fetchEdgeAudio(text: string, accent: SpeechAccent): Promise<Blob> {
+  return fetchAudio("speech_edge_audio", text, accent);
+}
+
+/**
  * The metered path. Rejects with `SPEECH_CUSTOM_NOT_CONFIGURED` when the
  * provider settings or key are missing or rejected.
  */
