@@ -1036,7 +1036,12 @@ impl Secrets {
         }
     }
 
-    #[cfg(target_os = "macos")]
+    // Apple-wide, not macOS-only: iOS routes keyring through the same
+    // Security.framework backend and returns the same OSStatus codes, so
+    // narrowing this to macOS would silently drop denial classification
+    // (`is_denied_os_status`) on iOS and report every Keychain refusal as
+    // VAULT_ACCESS_UNAVAILABLE.
+    #[cfg(target_vendor = "apple")]
     fn keychain_os_status(error: &keyring::Error) -> Option<i32> {
         let platform_error = match error {
             keyring::Error::PlatformFailure(error) | keyring::Error::NoStorageAccess(error) => {
@@ -1049,7 +1054,7 @@ impl Secrets {
             .map(|error| error.code())
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(target_vendor = "apple"))]
     fn keychain_os_status(_error: &keyring::Error) -> Option<i32> {
         None
     }

@@ -132,31 +132,50 @@ fn copy_dir_missing(source: &Path, target: &Path) -> error::AppResult<()> {
 ///
 /// Platform layout matches `tauri-plugin-log::TargetKind::LogDir`'s
 /// documented defaults, with the identifier dev-suffixed in debug.
+///
+/// The first arm is keyed on the vendor, not the OS. iOS is `target_os = "ios"`
+/// and would otherwise fall into the `unix` arm written for desktop Linux,
+/// producing a hidden `$HOME/.local/share/...` directory inside the app
+/// container — writable, so it fails silently rather than loudly. On iOS `$HOME`
+/// is the sandbox container root, so `$HOME/Library/Logs/<id>` is the correct
+/// container-relative path.
 pub(crate) fn resolve_log_dir() -> PathBuf {
     let identifier = bundle_identifier_for_build();
 
-    #[cfg(target_os = "macos")]
+    #[cfg(target_vendor = "apple")]
     {
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .expect("HOME env var");
-        home.join("Library/Logs").join(identifier)
+        env_dir("HOME").join("Library/Logs").join(identifier)
     }
     #[cfg(target_os = "windows")]
     {
-        let base = std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .expect("LOCALAPPDATA env var");
-        base.join(identifier).join("logs")
+        env_dir("LOCALAPPDATA").join(identifier).join("logs")
     }
-    #[cfg(all(unix, not(target_os = "macos")))]
+    #[cfg(all(unix, not(target_vendor = "apple")))]
     {
-        let base = std::env::var_os("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
-            .expect("HOME or XDG_DATA_HOME env var");
-        base.join(identifier).join("logs")
+        xdg_data_home().join(identifier).join("logs")
     }
+}
+
+/// Read a directory path from the environment, falling back to a writable temp
+/// location instead of panicking.
+///
+/// These helpers run during plugin registration — before the log file target
+/// exists — so a panic here produces a launch crash with no window and no log
+/// entry explaining it. A wrong-but-writable directory is recoverable and
+/// visible (data does not persist across runs); an unexplained abort is not.
+#[cfg(any(target_vendor = "apple", target_os = "windows"))]
+fn env_dir(key: &str) -> PathBuf {
+    std::env::var_os(key)
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+}
+
+#[cfg(all(unix, not(target_vendor = "apple")))]
+fn xdg_data_home() -> PathBuf {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
+        .unwrap_or_else(std::env::temp_dir)
 }
 
 /// Resolve the OS-conventional **app-data** directory for this build.
@@ -166,33 +185,34 @@ pub(crate) fn resolve_log_dir() -> PathBuf {
 /// and has no `AppHandle` to ask.
 ///
 /// Platform layout:
-/// - macOS:   `$HOME/Library/Application Support/<identifier>`
-/// - Windows: `%APPDATA%\<identifier>` (Roaming)
-/// - Linux:   `$XDG_DATA_HOME/<identifier>` or `$HOME/.local/share/<identifier>`
+/// - macOS/iOS: `$HOME/Library/Application Support/<identifier>`
+/// - Windows:   `%APPDATA%\<identifier>` (Roaming)
+/// - Linux:     `$XDG_DATA_HOME/<identifier>` or `$HOME/.local/share/<identifier>`
+///
+/// The Apple arm covers iOS deliberately, and matching `app_data_dir()` there is
+/// load-bearing rather than incidental: `dirs` (which Tauri's path resolver uses)
+/// gates its `mac` module on `any(target_os = "macos", target_os = "ios")` and
+/// resolves `data_dir()` to `$HOME/Library/Application Support` on both. Since
+/// `$HOME` is the sandbox container root on iOS, this function and
+/// `app.path().app_data_dir()` agree by construction. Letting iOS fall into the
+/// `unix` arm instead would split app data across two roots — one of them outside
+/// the `$APPDATA/**` asset-protocol scope.
 pub(crate) fn resolve_app_data_dir() -> PathBuf {
     let identifier = bundle_identifier_for_build();
 
-    #[cfg(target_os = "macos")]
+    #[cfg(target_vendor = "apple")]
     {
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .expect("HOME env var");
-        home.join("Library/Application Support").join(identifier)
+        env_dir("HOME")
+            .join("Library/Application Support")
+            .join(identifier)
     }
     #[cfg(target_os = "windows")]
     {
-        let base = std::env::var_os("APPDATA")
-            .map(PathBuf::from)
-            .expect("APPDATA env var");
-        base.join(identifier)
+        env_dir("APPDATA").join(identifier)
     }
-    #[cfg(all(unix, not(target_os = "macos")))]
+    #[cfg(all(unix, not(target_vendor = "apple")))]
     {
-        let base = std::env::var_os("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
-            .expect("HOME or XDG_DATA_HOME env var");
-        base.join(identifier)
+        xdg_data_home().join(identifier)
     }
 }
 
@@ -384,51 +404,15 @@ fn boot_sync_engine(
     Ok(())
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    // First line on purpose: the file target initializes lazily on the first
-    // `log::` call, so a panic during plugin init still lands in the log.
-    panic_hook::install();
-
-    let default_level = if cfg!(debug_assertions) {
-        log::LevelFilter::Debug
-    } else {
-        log::LevelFilter::Info
-    };
-    let level = resolve_log_level(default_level);
-
-    // Debug-only smoke trigger for the panic-hook pipeline. Reproduces
-    // spec smoke #5: `QUILL_PANIC_TEST=1 cargo run` arms a panicking
-    // thread 5s after launch so we can verify the hook chained, the
-    // backtrace landed in the log file, and the OS CrashReporter still
-    // fired. Gated on debug builds so it can't ship to users.
-    #[cfg(debug_assertions)]
-    if std::env::var("QUILL_PANIC_TEST").is_ok() {
-        std::thread::spawn(|| {
-            std::thread::sleep(std::time::Duration::from_secs(5));
-            panic!("QUILL_PANIC_TEST: intentional panic for smoke testing the panic hook");
-        });
-    }
-
-    let app = tauri::Builder::default()
-        .plugin(
-            tauri_plugin_log::Builder::new()
-                .targets([
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
-                        path: resolve_log_dir(),
-                        file_name: Some("quill".into()),
-                    }),
-                    #[cfg(debug_assertions)]
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                ])
-                .level(level)
-                .max_file_size(10 * 1024 * 1024)
-                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(3))
-                .build(),
-        )
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
+/// Attach the application menu bar and its event handler.
+///
+/// `Builder::menu` and `Builder::on_menu_event` are `#[cfg(desktop)]` in Tauri,
+/// so calling them unconditionally is a compile error for an ios/android target.
+/// A phone has no menu bar and no Finder/Explorer to reveal logs in, so the
+/// mobile arm is the identity function rather than a reduced menu.
+#[cfg(desktop)]
+fn install_menu(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    builder
         .menu(|handle| {
             // Start from the per-platform default menu so the standard
             // App / Edit / View / Window entries stay intact. Only the
@@ -471,6 +455,60 @@ pub fn run() {
                 }
             }
         })
+}
+
+#[cfg(mobile)]
+fn install_menu(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    builder
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    // First line on purpose: the file target initializes lazily on the first
+    // `log::` call, so a panic during plugin init still lands in the log.
+    panic_hook::install();
+
+    let default_level = if cfg!(debug_assertions) {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    };
+    let level = resolve_log_level(default_level);
+
+    // Debug-only smoke trigger for the panic-hook pipeline. Reproduces
+    // spec smoke #5: `QUILL_PANIC_TEST=1 cargo run` arms a panicking
+    // thread 5s after launch so we can verify the hook chained, the
+    // backtrace landed in the log file, and the OS CrashReporter still
+    // fired. Gated on debug builds so it can't ship to users.
+    #[cfg(debug_assertions)]
+    if std::env::var("QUILL_PANIC_TEST").is_ok() {
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            panic!("QUILL_PANIC_TEST: intentional panic for smoke testing the panic hook");
+        });
+    }
+
+    let builder = tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
+                        path: resolve_log_dir(),
+                        file_name: Some("quill".into()),
+                    }),
+                    #[cfg(debug_assertions)]
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                ])
+                .level(level)
+                .max_file_size(10 * 1024 * 1024)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(3))
+                .build(),
+        )
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init());
+
+    let app = install_menu(builder)
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
                 commands::books::import_external_paths(
@@ -635,16 +673,21 @@ pub fn run() {
             let app_handle = app.handle().clone();
             mcp::notify::spawn_watcher(mcp_notify_path, app_handle);
 
-            let ocr_manager = commands::ocr::manager::OcrJobManager::default();
-            if let Err(error) = ocr_manager.recover_interrupted(&db) {
-                log::warn!("ocr: failed to recover interrupted jobs: {error}");
-            }
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            let ocr_manager = {
+                let manager = commands::ocr::manager::OcrJobManager::default();
+                if let Err(error) = manager.recover_interrupted(&db) {
+                    log::warn!("ocr: failed to recover interrupted jobs: {error}");
+                }
+                manager
+            };
             app.manage(LocalDir(local_dir.clone()));
             app.manage(db);
             app.manage(secrets);
             app.manage(device);
             app.manage(sync_writer);
             app.manage(SyncState::new(None, None));
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             app.manage(ocr_manager);
 
             // TXT, Markdown, and HTML books keep their source files in the
@@ -725,16 +768,27 @@ pub fn run() {
             commands::books::retry_text_book_preparation,
             commands::books::get_converted_book_path,
             commands::books::retry_book_conversion,
-            // Optional local scanned-PDF OCR runtime and job pipeline
+            // Optional local scanned-PDF OCR runtime and job pipeline.
+            // Desktop-only — see the cfg on `commands::ocr` for why.
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             commands::ocr::package::ocr_package_status,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             commands::ocr::package::ocr_package_download,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             commands::ocr::package::ocr_package_cancel,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             commands::ocr::package::ocr_package_uninstall,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             commands::ocr::manager::ocr_start,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             commands::ocr::manager::ocr_cancel,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             commands::ocr::manager::ocr_retry,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             commands::ocr::manager::ocr_job_status,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             commands::ocr::manager::ocr_assets_overview,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             commands::ocr::manager::ocr_asset_delete,
             commands::ai::ai_vocab_gloss,
             commands::ai::ai_reindex_book,

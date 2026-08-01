@@ -81,9 +81,22 @@ msedge-tts = { version = "0.4.0", default-features = false, features = ["tokio-r
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
-[target.'cfg(target_os = "macos")'.dependencies]
+# Keyed on the vendor, not the OS: iOS is `target_os = "ios"`, so a macOS-only
+# table leaves `use keyring::Entry` in secrets.rs with no crate to resolve and
+# the iOS build fails at E0432. keyring's `apple-native` backend covers both
+# Apple OSes (keyring-3.6.3 declares security-framework under
+# `cfg(target_os = "ios")` and tests aarch64-apple-ios in CI), and
+# security-framework itself is what `keychain_os_status` downcasts to, so both
+# belong to every Apple target rather than to macOS alone.
+[target.'cfg(target_vendor = "apple")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
 security-framework = "3"
+
+# Still macOS-only: these back the iCloud Drive integration in icloud.rs, whose
+# `cfg(target_os = "macos")` gates are widened in P5 (see
+# docs/roadmap/mobile-ios.md). Declaring them for iOS before that lands would
+# only lengthen the build.
+[target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSFileManager", "NSFileCoordinator", "NSString", "NSURL", "NSError", "block2"] }
 block2 = "0.6"
