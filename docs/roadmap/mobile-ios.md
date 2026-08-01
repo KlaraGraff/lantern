@@ -357,20 +357,49 @@ Each phase ends in something checkable. Do not start the next until the exit cri
 
 Smallest possible reality check: does the Rust core survive the port at all.
 
-1. Bump `tauri` to `=2.11.x` and `tauri-build` to `=2.6.x`; bump `@tauri-apps/api` and
-   `@tauri-apps/cli` to `^2.11`; run `cargo check` to resync `Cargo.lock`
-2. `#[cfg(desktop)]` the menu wiring at `src-tauri/src/lib.rs:432,467`
-3. cfg out the legacy keychain path in `secrets.rs`; set `use_keychain: false` on mobile
-4. Add explicit iOS arms to `resolve_log_dir()` / `resolve_app_data_dir()`; replace every
-   `.expect()` with a fallback; drop the `-dev` suffix on mobile
-5. Switch `reqwest` to `rustls-tls`; re-run the desktop CI matrix
-6. cfg out `commands::ocr` on iOS and drop its `invoke_handler` entries
-7. `tauri ios init`, then `tauri ios dev`
+1. ~~Bump `tauri` to `=2.11.5` and `tauri-build` to `=2.6.3`, `@tauri-apps/api` to `2.11.1`~~ —
+   done, `ff0d5d0`. 2.11 also emits a second hidden macro per command
+   (`__tauri_command_name_<name>`); `commands::books` re-exported only the `__cmd__` half, so
+   sixteen commands failed to resolve until both were exported together.
+2. ~~Gate the menu wiring behind `#[cfg(desktop)]`~~ — done, `84ebd26`, via `install_menu()`.
+3. ~~Keychain~~ — done, `84ebd26`. Resolved better than planned: keyring 3.6.3 has a real iOS
+   backend (`Cargo.toml:159` declares security-framework under `cfg(target_os = "ios")`;
+   `aarch64-apple-ios` is in its CI matrix), so rather than disabling the path, the Apple
+   dependency tables moved to `cfg(target_vendor = "apple")` and the Keychain works on iOS.
+4. ~~Path resolution~~ — done, `84ebd26`. Both helpers now key on `target_vendor`; `.expect()`
+   calls became fallbacks.
+5. ~~Switch `reqwest` to `rustls-tls`~~ — **dropped from P0.** This was planned while Android was
+   in scope. It buys iOS nothing: `native-tls` gates OpenSSL on
+   `cfg(not(any(windows, target_vendor = "apple")))`, so iOS routes to Security.framework and
+   `openssl-sys` never enters the iOS tree. Meanwhile `rustls-tls` resolves to
+   `rustls-tls-webpki-roots` — a bundled root store that ignores the OS trust store — so the
+   swap would break any user behind a corporate proxy with a custom CA. Revisit alongside
+   Android, and use `rustls-tls-native-roots` when it happens.
+6. ~~cfg out `commands::ocr`~~ — done, `84ebd26`, module and `invoke_handler` entries both.
+7. `tauri ios init`, then `tauri ios dev` — **blocked, see below.**
 
 **Exit criterion:** the app launches in the iOS Simulator, the library screen renders, and a
 book opens — however badly it is laid out. Answer [Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) here.
 
 **If this fails**, stop and reassess. Nothing after this point is worth doing.
+
+#### Toolchain prerequisites (blocking step 7)
+
+Neither is a code problem; both need a human at the keyboard.
+
+- **Xcode is not installed.** `xcode-select -p` points at
+  `/Library/Developer/CommandLineTools`, so there is no `xcodebuild`, no iOS SDK, and no
+  Simulator. Install Xcode from the App Store (~15 GB), then
+  `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` and accept the licence.
+- **Rust has no iOS targets and there is no `rustup`.** The toolchain is Homebrew's
+  (`rustc 1.96.1 (Homebrew)`), and `<sysroot>/lib/rustlib/` contains only
+  `aarch64-apple-darwin`. Cross-compilation needs rustup:
+  `rustup target add aarch64-apple-ios aarch64-apple-ios-sim`. Note that installing rustup
+  alongside Homebrew's rust makes `rustc` resolution PATH-dependent — decide deliberately
+  which one wins, or the desktop build silently changes compiler.
+
+Until both are in place, iOS correctness is unverifiable: everything above was checked by
+compiling for macOS and by reading the cfg arms, which cannot catch an iOS-only type error.
 
 ### P1 — Capability layer and single-window navigation (11 days)
 
@@ -457,7 +486,7 @@ TestFlight, review round-trips. Add an iOS job to `release.yml`.
 
 | Phase | Status | Notes |
 |---|---|---|
-| P0 — Compile and boot | Not started | |
+| P0 — Compile and boot | Steps 1-4, 6 done | Step 7 blocked on Xcode + rustup iOS targets |
 | P1 — Capability layer + routing | Not started | |
 | P2 — Mobile UI | Not started | |
 | P3 — Touch interaction | Not started | |
