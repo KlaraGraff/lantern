@@ -387,21 +387,30 @@ book opens — however badly it is laid out. Answer [Q-002](#q-002--does-the-rea
 
 #### Toolchain prerequisites (blocking step 7)
 
-Neither is a code problem; both need a human at the keyboard.
+**Rust: done.** Homebrew's rust (1.96.1, `aarch64-apple-darwin` only, no `rustup`) was replaced
+with a rustup toolchain — stable 1.97.1 with `aarch64-apple-ios` and `aarch64-apple-ios-sim`
+installed. `~/.cargo/bin` was already on `PATH`, so removing the Homebrew formula was enough to
+make `rustc`/`cargo` resolve unambiguously to rustup. Verified after the swap: `cargo check
+--all-targets` clean, backend tests pass, frontend build passes, and a forced rebuild of a
+C-dependency (`sqlite-vec`) succeeds — the C toolchain is Apple clang from Command Line Tools,
+so `brew uninstall rust` autoremoving llvm did not affect it.
 
-- **Xcode is not installed.** `xcode-select -p` points at
-  `/Library/Developer/CommandLineTools`, so there is no `xcodebuild`, no iOS SDK, and no
-  Simulator. Install Xcode from the App Store (~15 GB), then
-  `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` and accept the licence.
-- **Rust has no iOS targets and there is no `rustup`.** The toolchain is Homebrew's
-  (`rustc 1.96.1 (Homebrew)`), and `<sysroot>/lib/rustlib/` contains only
-  `aarch64-apple-darwin`. Cross-compilation needs rustup:
-  `rustup target add aarch64-apple-ios aarch64-apple-ios-sim`. Note that installing rustup
-  alongside Homebrew's rust makes `rustc` resolution PATH-dependent — decide deliberately
-  which one wins, or the desktop build silently changes compiler.
+**Xcode: still required, and it is the only thing left.** `xcode-select -p` points at
+`/Library/Developer/CommandLineTools`, so there is no iOS SDK. `cargo check --target
+aarch64-apple-ios-sim` now fails with exactly one error —
+`xcrun: error: SDK "iphonesimulator" cannot be located` — which confirms everything upstream of
+the SDK is wired correctly.
 
-Until both are in place, iOS correctness is unverifiable: everything above was checked by
-compiling for macOS and by reading the cfg arms, which cannot catch an iOS-only type error.
+Steps, none of which can be automated (App Store install needs the GUI and an Apple ID; the
+rest need an interactive `sudo`):
+
+1. Install Xcode from the App Store (~15 GB)
+2. `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`
+3. `sudo xcodebuild -license accept`
+4. `xcrun simctl list runtimes` — if empty, `xcodebuild -downloadPlatform iOS`
+
+Until Xcode is present, iOS correctness is unverified: everything in P0 was checked by compiling
+for macOS and by reading the cfg arms, which cannot catch an iOS-only type error.
 
 ### P1 — Capability layer and single-window navigation (11 days)
 
@@ -488,7 +497,7 @@ TestFlight, review round-trips. Add an iOS job to `release.yml`.
 
 | Phase | Status | Notes |
 |---|---|---|
-| P0 — Compile and boot | Steps 1-4, 6 done | Step 7 blocked on Xcode + rustup iOS targets |
+| P0 — Compile and boot | Steps 1-4, 6 done | Step 7 blocked on Xcode alone; rustup + iOS targets installed |
 | P1 — Capability layer + routing | Not started | |
 | P2 — Mobile UI | Not started | |
 | P3 — Touch interaction | Not started | |
