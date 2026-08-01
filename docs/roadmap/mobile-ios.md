@@ -6,10 +6,11 @@ through iCloud sync. Desktop stays the place where books get in and get processe
 Out of scope for this milestone: **Android** ([D-002](#d-002--ios-first-android-deferred)) and
 **Windows sync** ([D-007](#d-007--windows-sync-is-out-of-scope)). Sync means iOS ↔ macOS.
 
-**Status:** P0 all but done — the Rust core **compiles for `aarch64-apple-ios-sim`** as of
-2026-08-02, with the host build and all 618 backend tests still green. The toolchain
-(rustup + both iOS targets, Xcode 26.6, iPhoneSimulator26.5.sdk) is fully set up. Only
-booting the app in the Simulator remains, which waits on the runtime download.
+**Status:** **P0 done, 2026-08-02.** Lantern runs on the iOS Simulator: the shelf renders, a
+15 MB EPUB imports through the system file picker, and it opens with CJK text paginating
+correctly in WKWebView. The host build and all 618 backend tests are still green. What is
+wrong is layout and touch, not the port — see
+[F-011](#f-011--first-run-what-the-app-actually-does-on-a-phone). Next is P1.
 **Estimated effort:** 78–84 engineer-days across 7 phases.
 
 ---
@@ -263,6 +264,11 @@ runs correctly as a single-device reader; only the settings folder button is dea
 
 ### F-006 — iOS book import works with zero code changes
 
+**Confirmed by running it, 2026-08-02.** A 15.1 MB Chinese EPUB seeded into the Simulator's
+"On My iPhone" imported end to end on the first try: picker filtered to `.epub`, sandbox copy,
+EPUB parse, cover extraction, CJK metadata, SQLite write, shelf count 0 → 1. No code changed.
+The reasoning below is what predicted it; the run is what settles it.
+
 `src-tauri/src/commands/books/import.rs:482-488` calls `blocking_pick_file()` then
 `.into_path()`. On iOS the dialog plugin uses
 `UIDocumentPickerViewController(forOpeningContentTypes:asCopy:)`
@@ -346,6 +352,32 @@ that the toolchain is set up — an incremental iOS check is ~5s.
 Corollary worth stating: the iOS *SDK* ships inside `Xcode.app`, so cross-compilation
 never needed the 8.5 GB Simulator *runtime* download. Only actually booting the app does.
 
+### F-011 — First run: what the app actually does on a phone
+
+Observed 2026-08-02 on iPhone 17 Pro Simulator (iOS 26.5), debug build via `tauri ios dev`.
+It launches, the shelf renders, a book imports, and the book opens. Nothing crashed and the
+runtime log has no panics. Everything below is a *layout and interaction* defect, which is
+what P1–P3 exist to fix — none of it invalidates the port.
+
+| Observed | Owned by |
+|---|---|
+| Sidebar is a fixed desktop width and eats ~55% of a 402 pt screen | P2 |
+| Shelf and reader body overflow the right edge; the page scrolls horizontally | P2 |
+| Reader toolbar collides — "Chapter 3 of 20" overlaps the font-size control | P2 |
+| No safe-area insets anywhere; content runs under the status bar region | P2 |
+| "Drop files or click to import more books" is shown — drag-drop does not exist here | P1, `hasDragDrop: false` |
+| A horizontal swipe scrolls the text vertically instead of turning the page | P3 |
+
+The last one is the most substantive: the reader responds to touch, but the page-turn gesture
+is not wired to a swipe, so the current touch handling reaches the webview as a plain scroll.
+Sizing P3 should start from that rather than from the assumption that pagination works.
+
+**Memory:** 377 MB RSS with the 15 MB book open. This does **not** answer
+[Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) — it is a debug
+build, on a Simulator process with no jetsam limit, serving assets over HTTP from the Vite dev
+server. Treat it as an order of magnitude, and measure a release build on hardware before
+drawing any conclusion.
+
 ---
 
 ## 4. Open questions
@@ -420,13 +452,17 @@ Smallest possible reality check: does the Rust core survive the port at all.
    aarch64-apple-ios-sim` and the host check both pass (`ios=0 mac=0`), 618 backend tests
    green. See [F-010](#f-010--only-a-real-ios-compile-finds-the-cfg-holes) — the host check
    proves nothing about `cfg` work, so this step is not optional in later phases either.
-8. `tauri ios init`, then `tauri ios dev` — waiting on the iOS 26.5 Simulator runtime download
-   (8.5 GB, in progress). Compilation never needed it; booting does.
+8. ~~`tauri ios init`, then `tauri ios dev`~~ — done. `gen/apple/` is committed; the generated
+   project builds `Lantern.app` for `com.klaragraff.lantern` at deployment target iOS 14.0.
 
-**Exit criterion:** the app launches in the iOS Simulator, the library screen renders, and a
-book opens — however badly it is laid out. Answer [Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) here.
+**Exit criterion: met, 2026-08-02.** The app launches on the iPhone 17 Pro Simulator (iOS
+26.5), the library renders, a 15 MB EPUB imports through the system picker, and it opens with
+foliate-js paginating CJK text correctly in WKWebView. Badly laid out, exactly as allowed for.
+See [F-011](#f-011--first-run-what-the-app-actually-does-on-a-phone) for what was observed and
+which later phase owns each defect.
 
-**If this fails**, stop and reassess. Nothing after this point is worth doing.
+[Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) is **not** answered
+here and cannot be from a Simulator; it moves to P6, against a release build on hardware.
 
 #### Toolchain prerequisites (resolved 2026-08-02)
 
@@ -445,8 +481,29 @@ install needs the GUI and an Apple ID, and `sudo` cannot be driven from a tool c
 1. ~~Install Xcode from the App Store (~15 GB)~~
 2. ~~`sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`~~
 3. ~~`sudo xcodebuild -license accept`~~
-4. `xcrun simctl list runtimes` — the iOS 26.5 runtime (8.5 GB) is downloading. Needed only to
-   *run* the app; `iPhoneSimulator26.5.sdk` inside `Xcode.app` already covers compiling.
+4. ~~`xcrun simctl list runtimes`~~ — iOS 26.5 (23F77) installed. The 8.5 GB runtime is needed
+   only to *run* the app; `iPhoneSimulator26.5.sdk` inside `Xcode.app` already covers compiling.
+
+**`tauri ios init` needs three more things, and it installs only two of them.** It shells out
+to Homebrew for `xcodegen` and `libimobiledevice` on its own, but for CocoaPods it tries
+`gem install`, which needs `sudo` and therefore fails unattended:
+
+```
+Info Installing `cocoapods` with gem...
+`sudo` is required to install cocoapods using gem
+Error failed to run command pod install
+```
+
+Use `brew install cocoapods` instead — same result, no password, and it brings its own Ruby
+(1.17.0 here) rather than touching the system one. The init rolls back cleanly on this
+failure: `gen/apple/` is not left half-written, so re-running after the fix is safe.
+
+CocoaPods also warns unless the shell is UTF-8; export `LANG`/`LC_ALL=en_US.UTF-8` around
+`tauri ios` commands.
+
+**Keep the CLI and the runtime on the same minor.** `@tauri-apps/cli` is ranged `^2` and had
+resolved to 2.10.1 while the Rust crate is pinned `=2.11.5`. The CLI is what generates the
+Xcode project, so a stale one templates against the wrong runtime; bumped to 2.11.4.
 
 ### P1 — Capability layer and single-window navigation (11 days)
 
@@ -533,7 +590,7 @@ TestFlight, review round-trips. Add an iOS job to `release.yml`.
 
 | Phase | Status | Notes |
 |---|---|---|
-| P0 — Compile and boot | Compiles for iOS | Steps 1-7 done; toolchain ready. Step 8 (boot) waits on the Simulator runtime download |
+| P0 — Compile and boot | **Done** | Runs on the Simulator; shelf renders, import works, book opens. [F-011](#f-011--first-run-what-the-app-actually-does-on-a-phone) |
 | P1 — Capability layer + routing | Not started | |
 | P2 — Mobile UI | Not started | |
 | P3 — Touch interaction | Not started | |
