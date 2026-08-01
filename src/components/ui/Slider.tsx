@@ -1,6 +1,11 @@
 interface SliderProps {
   min: number;
   max: number;
+  /**
+   * Defaults to the HTML default of 1, which silently reduces a fractional
+   * range to its two endpoints — always set it for non-integer sliders.
+   */
+  step?: number;
   value: number;
   onChange: (value: number) => void;
   onChangeEnd?: (value: number) => void;
@@ -12,6 +17,7 @@ interface SliderProps {
 export default function Slider({
   min,
   max,
+  step,
   value,
   onChange,
   onChangeEnd,
@@ -29,6 +35,7 @@ export default function Slider({
         type="range"
         min={min}
         max={max}
+        step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         onMouseUp={(e) => onChangeEnd?.(Number((e.target as HTMLInputElement).value))}

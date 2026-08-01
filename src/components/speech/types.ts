@@ -48,7 +48,13 @@ export const DEFAULT_SPEECH_SETTINGS: SpeechSettings = {
   custom: { baseUrl: "", model: "", voiceUk: "", voiceUs: "" },
 };
 
-export const SPEECH_RATE_RANGE = { min: 0.5, max: 1.5 } as const;
+/**
+ * The rate the local synthesizer is driven at. The floor is 0.5 because 0 is
+ * not a speed — it is silence — and the ceiling matches the fastest preset.
+ */
+export const SPEECH_RATE_RANGE = { min: 0.5, max: 2, step: 0.05 } as const;
+/** Playback speeds worth one tap, in the order a media player lists them. */
+export const SPEECH_RATE_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 
 export function parseSpeechSettings(values: Record<string, string | undefined>): SpeechSettings {
   const source = values[SPEECH_SOURCE_SETTING_KEY];

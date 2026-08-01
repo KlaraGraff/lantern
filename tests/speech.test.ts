@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   DEFAULT_SPEECH_SETTINGS,
   parseSpeechSettings,
+  SPEECH_RATE_PRESETS,
   SPEECH_RATE_RANGE,
 } from "../src/components/speech/types.ts";
 import {
@@ -80,6 +81,16 @@ test("provider settings default to empty rather than undefined", () => {
 test("speech rate is clamped to the supported range", () => {
   assert.equal(parseSpeechSettings({ speech_rate: "9" }).rate, SPEECH_RATE_RANGE.max);
   assert.equal(parseSpeechSettings({ speech_rate: "0.1" }).rate, SPEECH_RATE_RANGE.min);
+});
+
+// The slider had no step, so a 0.5–1.5 range collapsed to its two endpoints.
+// Every preset must be reachable by stepping from the minimum.
+test("every rate preset lands on a step of the slider", () => {
+  for (const preset of SPEECH_RATE_PRESETS) {
+    assert.ok(preset >= SPEECH_RATE_RANGE.min && preset <= SPEECH_RATE_RANGE.max, `${preset} in range`);
+    const steps = (preset - SPEECH_RATE_RANGE.min) / SPEECH_RATE_RANGE.step;
+    assert.ok(Math.abs(steps - Math.round(steps)) < 1e-9, `${preset} on a step`);
+  }
 });
 
 test("both accents are available when the system ships both voices", () => {

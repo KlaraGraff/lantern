@@ -19,6 +19,7 @@ import {
   SPEECH_CUSTOM_MODEL_KEY,
   SPEECH_CUSTOM_VOICE_UK_KEY,
   SPEECH_CUSTOM_VOICE_US_KEY,
+  SPEECH_RATE_PRESETS,
   SPEECH_RATE_RANGE,
   SPEECH_RATE_SETTING_KEY,
   SPEECH_SOURCE_SETTING_KEY,
@@ -31,6 +32,11 @@ interface SpeechCacheStats {
   bytes: number;
   entries: number;
   limitBytes: number;
+}
+
+/** `1x`, `1.25x` — trailing zeros read as false precision on a speed chip. */
+function formatRate(rate: number): string {
+  return String(Number(rate.toFixed(2)));
 }
 
 function formatBytes(bytes: number): string {
@@ -108,6 +114,7 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
   const [voicesRevision, setVoicesRevision] = useState(0);
   const [cache, setCache] = useState<SpeechCacheStats | null>(null);
   const [clearing, setClearing] = useState(false);
+  const [rateDraft, setRateDraft] = useState("");
 
   useEffect(() => {
     ensureSpeechSettings();
@@ -140,6 +147,14 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
     updateSpeechSettings(values)
       .then(() => showSavedToast())
       .catch((error) => console.error("Failed to save speech settings:", error));
+  };
+
+  const clampRate = (value: number) =>
+    Math.min(SPEECH_RATE_RANGE.max, Math.max(SPEECH_RATE_RANGE.min, value));
+
+  const commitRate = (value: number) => {
+    setRate(value);
+    persist({ [SPEECH_RATE_SETTING_KEY]: String(value) });
   };
 
   const availability = useMemo(
@@ -286,14 +301,47 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
       </div>
 
       <div className="border-t border-border-light px-1 py-4">
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          {SPEECH_RATE_PRESETS.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              aria-pressed={rate === preset}
+              onClick={() => commitRate(preset)}
+              className={`rounded-lg border px-2.5 py-1 text-[12px] tabular-nums transition-colors ${
+                rate === preset
+                  ? "border-transparent bg-accent-bg text-accent-text"
+                  : "border-border text-text-secondary hover:bg-bg-input"
+              }`}
+            >
+              {formatRate(preset)}x
+            </button>
+          ))}
+          <Input
+            className="ml-1 w-[72px]"
+            value={rateDraft}
+            inputMode="decimal"
+            placeholder={t("settings.speech.rateCustom")}
+            onChange={(event) => setRateDraft(event.target.value)}
+            onBlur={() => {
+              const parsed = Number.parseFloat(rateDraft);
+              if (Number.isFinite(parsed)) commitRate(clampRate(parsed));
+              setRateDraft("");
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+            }}
+          />
+        </div>
         <Slider
           min={SPEECH_RATE_RANGE.min}
           max={SPEECH_RATE_RANGE.max}
+          step={SPEECH_RATE_RANGE.step}
           value={rate}
           onChange={setRate}
           onChangeEnd={(value) => persist({ [SPEECH_RATE_SETTING_KEY]: String(value) })}
           label={t("settings.speech.rate")}
-          displayValue={`${rate.toFixed(1)}x`}
+          displayValue={`${formatRate(rate)}x`}
           hint={t("settings.speech.rateHint")}
         />
       </div>
