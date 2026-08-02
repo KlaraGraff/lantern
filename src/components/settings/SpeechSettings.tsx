@@ -270,7 +270,6 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
       >
         <div className={ROW_CONTROL_WIDTH}>
           <Select
-            label={t("settings.speech.source")}
             value={settings.source}
             onChange={(value) => persist({ [SPEECH_SOURCE_SETTING_KEY]: value as SpeechSourceId })}
             options={[
@@ -290,7 +289,6 @@ export default function SpeechSettings({ showSavedToast }: { showSavedToast: (ms
       >
         <div className={ROW_CONTROL_WIDTH}>
           <Select
-            label={t("settings.speech.accent")}
             value={settings.accent}
             onChange={(value) => persist({ [SPEECH_ACCENT_SETTING_KEY]: value as SpeechAccent })}
             options={[
