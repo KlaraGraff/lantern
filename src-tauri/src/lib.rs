@@ -476,15 +476,15 @@ pub fn run() {
     let level = resolve_log_level(default_level);
 
     // Debug-only smoke trigger for the panic-hook pipeline. Reproduces
-    // spec smoke #5: `QUILL_PANIC_TEST=1 cargo run` arms a panicking
+    // spec smoke #5: `LANTERN_PANIC_TEST=1 cargo run` arms a panicking
     // thread 5s after launch so we can verify the hook chained, the
     // backtrace landed in the log file, and the OS CrashReporter still
     // fired. Gated on debug builds so it can't ship to users.
     #[cfg(debug_assertions)]
-    if std::env::var("QUILL_PANIC_TEST").is_ok() {
+    if std::env::var("LANTERN_PANIC_TEST").is_ok() {
         std::thread::spawn(|| {
             std::thread::sleep(std::time::Duration::from_secs(5));
-            panic!("QUILL_PANIC_TEST: intentional panic for smoke testing the panic hook");
+            panic!("LANTERN_PANIC_TEST: intentional panic for smoke testing the panic hook");
         });
     }
 

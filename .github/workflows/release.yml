@@ -78,10 +78,10 @@ jobs:
         if: steps.signing.outputs.enabled == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
-          QUILL_BUILD_COMMIT: ${{ github.sha }}
-          QUILL_BUILD_DATE: ${{ github.event.head_commit.timestamp }}
-          QUILL_BUILD_CHANNEL: stable
-          QUILL_UPSTREAM_BASELINE: "1.2.10"
+          LANTERN_BUILD_COMMIT: ${{ github.sha }}
+          LANTERN_BUILD_DATE: ${{ github.event.head_commit.timestamp }}
+          LANTERN_BUILD_CHANNEL: stable
+          LANTERN_UPSTREAM_BASELINE: "1.2.10"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -129,10 +129,10 @@ jobs:
         if: steps.signing.outputs.enabled != 'true'
         uses: tauri-apps/tauri-action@v0
         env:
-          QUILL_BUILD_COMMIT: ${{ github.sha }}
-          QUILL_BUILD_DATE: ${{ github.event.head_commit.timestamp }}
-          QUILL_BUILD_CHANNEL: stable
-          QUILL_UPSTREAM_BASELINE: "1.2.10"
+          LANTERN_BUILD_COMMIT: ${{ github.sha }}
+          LANTERN_BUILD_DATE: ${{ github.event.head_commit.timestamp }}
+          LANTERN_BUILD_CHANNEL: stable
+          LANTERN_UPSTREAM_BASELINE: "1.2.10"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -230,10 +230,10 @@ jobs:
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
-          QUILL_BUILD_COMMIT: ${{ github.sha }}
-          QUILL_BUILD_DATE: ${{ github.event.head_commit.timestamp }}
-          QUILL_BUILD_CHANNEL: stable
-          QUILL_UPSTREAM_BASELINE: "1.2.10"
+          LANTERN_BUILD_COMMIT: ${{ github.sha }}
+          LANTERN_BUILD_DATE: ${{ github.event.head_commit.timestamp }}
+          LANTERN_BUILD_CHANNEL: stable
+          LANTERN_UPSTREAM_BASELINE: "1.2.10"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}

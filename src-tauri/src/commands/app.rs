@@ -25,10 +25,10 @@ pub struct BuildInfo {
 pub fn app_build_info() -> BuildInfo {
     BuildInfo {
         version: env!("CARGO_PKG_VERSION").to_string(),
-        upstream_baseline: env!("QUILL_UPSTREAM_BASELINE").to_string(),
-        commit: env!("QUILL_BUILD_COMMIT").to_string(),
-        built_at: env!("QUILL_BUILD_DATE").to_string(),
-        channel: env!("QUILL_BUILD_CHANNEL").to_string(),
+        upstream_baseline: env!("LANTERN_UPSTREAM_BASELINE").to_string(),
+        commit: env!("LANTERN_BUILD_COMMIT").to_string(),
+        built_at: env!("LANTERN_BUILD_DATE").to_string(),
+        channel: env!("LANTERN_BUILD_CHANNEL").to_string(),
         bundle_identifier: "com.klaragraff.lantern".to_string(),
         repository: "https://github.com/KlaraGraff/lantern".to_string(),
         upstream_repository: "https://github.com/yicheng47/quill".to_string(),

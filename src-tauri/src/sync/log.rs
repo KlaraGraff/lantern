@@ -714,7 +714,7 @@ mod tests {
     #[test]
     #[ignore = "manual smoke test against a user-selected iCloud Drive folder"]
     fn coordinated_append_smoke_on_selected_icloud_path() {
-        let Some(local_dir) = std::env::var_os("QUILL_SYNC_SMOKE_LOCAL_DIR").map(PathBuf::from)
+        let Some(local_dir) = std::env::var_os("LANTERN_SYNC_SMOKE_LOCAL_DIR").map(PathBuf::from)
         else {
             return;
         };

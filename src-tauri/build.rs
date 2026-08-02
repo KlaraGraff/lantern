@@ -22,31 +22,31 @@ fn main() {
 
 fn emit_build_metadata() {
     for key in [
-        "QUILL_BUILD_COMMIT",
-        "QUILL_BUILD_DATE",
-        "QUILL_BUILD_CHANNEL",
-        "QUILL_UPSTREAM_BASELINE",
+        "LANTERN_BUILD_COMMIT",
+        "LANTERN_BUILD_DATE",
+        "LANTERN_BUILD_CHANNEL",
+        "LANTERN_UPSTREAM_BASELINE",
     ] {
         println!("cargo:rerun-if-env-changed={key}");
     }
 
-    let commit = env::var("QUILL_BUILD_COMMIT")
+    let commit = env::var("LANTERN_BUILD_COMMIT")
         .ok()
         .filter(|value| !value.trim().is_empty())
         .or_else(|| git_value(["rev-parse", "--short=12", "HEAD"]))
         .unwrap_or_else(|| "local".to_string());
-    let date = env::var("QUILL_BUILD_DATE")
+    let date = env::var("LANTERN_BUILD_DATE")
         .ok()
         .filter(|value| !value.trim().is_empty())
         .or_else(|| git_value(["show", "-s", "--format=%cI", "HEAD"]))
         .unwrap_or_else(|| "local".to_string());
-    let channel = env::var("QUILL_BUILD_CHANNEL").unwrap_or_else(|_| "development".to_string());
-    let upstream = env::var("QUILL_UPSTREAM_BASELINE").unwrap_or_else(|_| "1.2.10".to_string());
+    let channel = env::var("LANTERN_BUILD_CHANNEL").unwrap_or_else(|_| "development".to_string());
+    let upstream = env::var("LANTERN_UPSTREAM_BASELINE").unwrap_or_else(|_| "1.2.10".to_string());
 
-    println!("cargo:rustc-env=QUILL_BUILD_COMMIT={commit}");
-    println!("cargo:rustc-env=QUILL_BUILD_DATE={date}");
-    println!("cargo:rustc-env=QUILL_BUILD_CHANNEL={channel}");
-    println!("cargo:rustc-env=QUILL_UPSTREAM_BASELINE={upstream}");
+    println!("cargo:rustc-env=LANTERN_BUILD_COMMIT={commit}");
+    println!("cargo:rustc-env=LANTERN_BUILD_DATE={date}");
+    println!("cargo:rustc-env=LANTERN_BUILD_CHANNEL={channel}");
+    println!("cargo:rustc-env=LANTERN_UPSTREAM_BASELINE={upstream}");
 }
 
 fn git_value<const N: usize>(args: [&str; N]) -> Option<String> {
