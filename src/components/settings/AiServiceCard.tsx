@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   CopyPlus,
+  ExternalLink,
   GripVertical,
   KeyRound,
   Loader2,
@@ -21,6 +22,8 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { ZHIPU_API_KEY_PAGE, ZHIPU_BASE_URL, ZHIPU_DEFAULT_MODEL } from "./aiPresets";
 import Button from "../ui/Button";
 import ComboField from "../ui/ComboField";
 import Input from "../ui/Input";
@@ -145,9 +148,33 @@ const PROVIDER_LABELS: Record<string, string> = {
   ollama: "Ollama",
 };
 
-function providerLabel(provider: string, customLabel: string): string {
-  return PROVIDER_LABELS[provider] ?? customLabel;
+function providerLabel(
+  provider: string,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  // Zhipu is the only provider whose name is written differently per language,
+  // so it comes from i18n rather than the fixed table.
+  if (provider === "zhipu") return t("settings.ai.zhipuName");
+  return PROVIDER_LABELS[provider] ?? t("settings.ai.customCompatible");
 }
+
+/**
+ * How a provider bills, shown as a chip next to the service name. The cost of a
+ * `custom` endpoint is unknowable from here, so it carries no chip at all
+ * rather than a guess.
+ */
+function costTier(provider: string): "free" | "local" | "metered" | null {
+  if (provider === "zhipu") return "free";
+  if (provider === "ollama") return "local";
+  if (provider === "openai" || provider === "anthropic") return "metered";
+  return null;
+}
+
+const COST_TIER_CLASSES: Record<string, string> = {
+  free: "bg-success/10 text-success-text",
+  local: "bg-bg-input text-text-secondary",
+  metered: "bg-accent-bg text-accent-text",
+};
 
 function profileHealth(
   profile: AiProfile,
@@ -317,13 +344,20 @@ export default function AiServiceCard({
     setConfirmDelete(false);
   }, [expanded]);
 
-  const providerName = providerLabel(profile.provider, t("settings.ai.customCompatible"));
+  const providerName = providerLabel(profile.provider, t);
+  const cost = costTier(profile.provider);
   const health = profileHealth(profile, testResult, healthStale, t);
   const latency = healthStale ? null : (testResult?.total_ms ?? profile.last_latency_ms);
   const usesApiKeys = profile.auth_mode === "api_key" && profile.provider !== "ollama";
 
   const setProvider = (provider: string) => {
     const defaults: Record<string, Pick<AiProfile, "auth_mode" | "base_url" | "model" | "keep_alive">> = {
+      zhipu: {
+        auth_mode: "api_key",
+        base_url: ZHIPU_BASE_URL,
+        model: ZHIPU_DEFAULT_MODEL,
+        keep_alive: null,
+      },
       openai: {
         auth_mode: "api_key",
         base_url: "https://api.openai.com",
@@ -418,6 +452,13 @@ export default function AiServiceCard({
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
               <span className="truncate text-[13px] font-semibold text-text-primary">{profile.label}</span>
+              {cost && (
+                <span
+                  className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${COST_TIER_CLASSES[cost]}`}
+                >
+                  {t(`settings.ai.cost.${cost}`)}
+                </span>
+              )}
               {dirty && (
                 <span
                   className="size-1.5 shrink-0 rounded-full bg-accent"
@@ -482,6 +523,7 @@ export default function AiServiceCard({
                   if (!profileBusy) setProvider(provider);
                 }}
                 options={[
+                  { value: "zhipu", label: t("settings.ai.zhipuName") },
                   { value: "openai", label: "OpenAI" },
                   { value: "anthropic", label: "Anthropic" },
                   { value: "ollama", label: "Ollama (Local)" },
@@ -680,6 +722,30 @@ export default function AiServiceCard({
                   {t("settings.ai.enabledKeyCount", { count: credentials.filter((item) => item.enabled).length })}
                 </span>
               </div>
+
+              {profile.provider === "zhipu" && credentials.length === 0 && (
+                <div className="mb-3 rounded-md bg-bg-page px-3 py-2.5">
+                  <p className="text-[11px] font-medium text-text-primary">{t("settings.ai.zhipuConnectTitle")}</p>
+                  <ol className="mt-1.5 list-decimal space-y-0.5 pl-4 text-[10px] leading-4 text-text-muted">
+                    <li>{t("settings.ai.zhipuStepRegister")}</li>
+                    <li>{t("settings.ai.zhipuStepCreate")}</li>
+                    <li>{t("settings.ai.zhipuStepCopy")}</li>
+                    <li>{t("settings.ai.zhipuStepPaste")}</li>
+                  </ol>
+                  <div className="mt-2 flex justify-start">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        openUrl(ZHIPU_API_KEY_PAGE).catch(() => {});
+                      }}
+                    >
+                      <ExternalLink size={13} />
+                      {t("settings.ai.zhipuGetKey")}
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {credentials.length > 0 && (
                 <SortableList

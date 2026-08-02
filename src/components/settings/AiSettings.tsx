@@ -13,6 +13,7 @@ import AiServiceCard, {
   type AiEffortHints,
   type AiProfile,
 } from "./AiServiceCard";
+import { ZHIPU_BASE_URL, ZHIPU_DEFAULT_MODEL } from "./aiPresets";
 import type { SettingsProps } from "./types";
 import { useSettings } from "../../hooks/useSettings";
 
@@ -60,7 +61,7 @@ function isProfileConfigValid(profile: AiProfile): boolean {
   if (!label || Array.from(label).length > 100) return false;
   if (!model || Array.from(model).length > 200) return false;
   if (!Number.isFinite(profile.temperature) || profile.temperature < 0 || profile.temperature > 2) return false;
-  if (!(["openai", "anthropic", "ollama", "custom"] as string[]).includes(profile.provider)) return false;
+  if (!(["zhipu", "openai", "anthropic", "ollama", "custom"] as string[]).includes(profile.provider)) return false;
   if (profile.auth_mode === "oauth" && profile.provider !== "openai") return false;
   const baseUrl = profile.base_url?.trim();
   if (profile.provider === "custom" && !baseUrl) return false;
@@ -377,12 +378,15 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     setBusyId("new");
     setError(null);
     try {
+      // New services start from the recommended preset rather than OpenAI: it
+      // is the one a first-time user can actually sign up for, and the provider
+      // dropdown changes it in one click for everyone else.
       const created = await invoke<AiProfile>("ai_create_profile", {
-        label: t("settings.ai.newServiceName"),
-        provider: "openai",
+        label: t("settings.ai.zhipuServiceName"),
+        provider: "zhipu",
         authMode: "api_key",
-        baseUrl: "https://api.openai.com",
-        model: "gpt-4o-mini",
+        baseUrl: ZHIPU_BASE_URL,
+        model: ZHIPU_DEFAULT_MODEL,
         temperature: 0.3,
         reasoningEffort: null,
         reasoningEffortAllFeatures: false,
