@@ -82,7 +82,7 @@ export const AI_PRESETS: AiPreset[] = [
   {
     provider: "anthropic",
     baseUrl: "https://api.anthropic.com",
-    model: "claude-opus-5",
+    model: "claude-sonnet-5",
     keepAlive: null,
     cost: "metered",
     keyPage: "https://console.anthropic.com/settings/keys",

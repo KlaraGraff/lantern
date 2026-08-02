@@ -387,7 +387,7 @@ https://open.bigmodel.cn/api/paas/v4/chat/completions
 ## 13. 官方依据（核对日期：2026-08-02）
 
 - DeepSeek API 与端点：<https://api-docs.deepseek.com/>——基址 `https://api.deepseek.com` 不含版本段；当前模型为 `deepseek-v4-flash` 和 `deepseek-v4-pro`（官方推荐的通用对话模型），已不再提供 `deepseek-chat`。
-- Anthropic 模型 ID：<https://docs.anthropic.com/en/docs/about-claude/models/overview>——预设原先写的 `claude-sonnet-4-20250514` 已废弃，改为当前的 `claude-opus-5`。模型 ID 不带日期后缀。
+- Anthropic 模型 ID：<https://docs.anthropic.com/en/docs/about-claude/models/overview>——预设原先写的 `claude-sonnet-4-20250514` 已废弃，改为当前的 `claude-sonnet-5`。模型 ID 不带日期后缀。选 Sonnet 而不是 Opus，是为了和目录里其余各行保持一致：预填各家的经济型号，想要更强的用户在高级设置里自己改。
 - 以下智谱/Z.ai 链接仅作历史记录保留，目录里已无对应预设：
   - 智谱 GLM-4.7-Flash：<https://docs.bigmodel.cn/cn/guide/models/free/glm-4.7-flash>
   - 智谱快速开始与国内 API Key 流程：<https://docs.bigmodel.cn/cn/guide/start/quick-start>
