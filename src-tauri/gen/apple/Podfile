@@ -1,13 +1,13 @@
 # Uncomment the next line to define a global platform for your project
 
-target 'quill_iOS' do
+target 'lantern_iOS' do
 platform :ios, '14.0'
-  # Pods for quill_iOS
+  # Pods for lantern_iOS
 end
 
-target 'quill_macOS' do
+target 'lantern_macOS' do
 platform :osx, '11.0'
-  # Pods for quill_macOS
+  # Pods for lantern_macOS
 end
 
 # Delete the deployment target for iOS and macOS, causing it to be inherited from the Podfile

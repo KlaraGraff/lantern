@@ -15,10 +15,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "9838A938FE376CE802FE08B9"
-               BuildableName = "quill_iOS.app"
-               BlueprintName = "quill_iOS"
-               ReferencedContainer = "container:quill.xcodeproj">
+               BlueprintIdentifier = "1622902DFE9F4A80A9C74553"
+               BuildableName = "lantern_iOS.app"
+               BlueprintName = "lantern_iOS"
+               ReferencedContainer = "container:lantern.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -32,10 +32,10 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "9838A938FE376CE802FE08B9"
-            BuildableName = "quill_iOS.app"
-            BlueprintName = "quill_iOS"
-            ReferencedContainer = "container:quill.xcodeproj">
+            BlueprintIdentifier = "1622902DFE9F4A80A9C74553"
+            BuildableName = "lantern_iOS.app"
+            BlueprintName = "lantern_iOS"
+            ReferencedContainer = "container:lantern.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
@@ -69,10 +69,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "9838A938FE376CE802FE08B9"
-            BuildableName = "quill_iOS.app"
-            BlueprintName = "quill_iOS"
-            ReferencedContainer = "container:quill.xcodeproj">
+            BlueprintIdentifier = "1622902DFE9F4A80A9C74553"
+            BuildableName = "lantern_iOS.app"
+            BlueprintName = "lantern_iOS"
+            ReferencedContainer = "container:lantern.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <CommandLineArguments>
@@ -100,10 +100,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "9838A938FE376CE802FE08B9"
-            BuildableName = "quill_iOS.app"
-            BlueprintName = "quill_iOS"
-            ReferencedContainer = "container:quill.xcodeproj">
+            BlueprintIdentifier = "1622902DFE9F4A80A9C74553"
+            BuildableName = "lantern_iOS.app"
+            BlueprintName = "lantern_iOS"
+            ReferencedContainer = "container:lantern.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <CommandLineArguments>

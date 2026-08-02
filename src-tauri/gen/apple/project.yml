@@ -1,4 +1,4 @@
-name: quill
+name: lantern
 options:
   bundleIdPrefix: com.klaragraff.lantern
   deploymentTarget:
@@ -24,20 +24,20 @@ targetTemplates:
     settings:
       groups: [app]
 targets:
-  quill_iOS:
+  lantern_iOS:
     type: application
     platform: iOS
     sources:
       - path: Sources
       - path: Assets.xcassets
       - path: Externals
-      - path: quill_iOS
+      - path: lantern_iOS
       - path: assets
         buildPhase: resources
         type: folder
       - path: LaunchScreen.storyboard
     info:
-      path: quill_iOS/Info.plist
+      path: lantern_iOS/Info.plist
       properties:
         LSRequiresIPhoneOS: true
         UILaunchStoryboardName: LaunchScreen
@@ -54,7 +54,7 @@ targets:
         CFBundleShortVersionString: 2.4.1
         CFBundleVersion: "2.4.1"
     entitlements:
-      path: quill_iOS/quill_iOS.entitlements
+      path: lantern_iOS/lantern_iOS.entitlements
     scheme:
       environmentVariables:
         RUST_BACKTRACE: full
