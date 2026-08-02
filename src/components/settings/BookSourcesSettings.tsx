@@ -112,21 +112,31 @@ export default function BookSourcesSettings({ settings, loading, saveBulk, showS
           if (event.key === "Enter" && draftValid) commitDraft();
         }}
       />
-      <div className="flex items-center gap-2">
-        <Select
-          className="flex-1"
-          label={t("settings.bookSources.kind")}
-          value={draft?.kind ?? "library"}
-          onChange={(kind) =>
-            setDraft((current) => (current ? { ...current, kind: kind as BookSourceKind } : current))}
-          options={KINDS.map((kind) => ({ value: kind, label: t(`settings.bookSources.kindLabel.${kind}`) }))}
-        />
-        <Button variant="primary" size="sm" disabled={!draftValid} onClick={commitDraft}>
-          {t("common.save")}
-        </Button>
-        <Button variant="secondary" size="sm" onClick={cancelEdit}>
-          <X size={13} />
-        </Button>
+      <div>
+        <span className="mb-1.5 block text-[12px] font-medium text-text-primary">
+          {t("settings.bookSources.kind")}
+        </span>
+        <div className="flex items-center gap-2">
+          <Select
+            className="min-w-0 flex-1"
+            value={draft?.kind ?? "library"}
+            onChange={(kind) =>
+              setDraft((current) => (current ? { ...current, kind: kind as BookSourceKind } : current))}
+            options={KINDS.map((kind) => ({ value: kind, label: t(`settings.bookSources.kindLabel.${kind}`) }))}
+          />
+          <Button variant="primary" size="md" disabled={!draftValid} onClick={commitDraft}>
+            {t("common.save")}
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            aria-label={t("common.cancel")}
+            title={t("common.cancel")}
+            onClick={cancelEdit}
+          >
+            <X size={14} />
+          </Button>
+        </div>
       </div>
     </div>
   );
