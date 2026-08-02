@@ -95,10 +95,18 @@ const SELECT_COLS: &str = "id, book_id, word, definition, context_sentence, cfi,
 
 #[cfg(test)]
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
-const VOCAB_BACKUP_SCHEMA: &str = "quill-vocabulary";
+const VOCAB_BACKUP_SCHEMA: &str = "lantern-vocabulary";
+/// Backups written before the Quill→Lantern rename carry the old identity.
+/// Import still accepts them so an existing backup file stays restorable;
+/// export only ever writes the current name.
+const LEGACY_VOCAB_BACKUP_SCHEMA: &str = "quill-vocabulary";
 const VOCAB_BACKUP_VERSION: u32 = 1;
 const MAX_VOCAB_IMPORT_BYTES: usize = 10 * 1024 * 1024;
 const MAX_VOCAB_IMPORT_WORDS: usize = 50_000;
+
+fn is_known_vocab_backup_schema(schema: &str) -> bool {
+    schema == VOCAB_BACKUP_SCHEMA || schema == LEGACY_VOCAB_BACKUP_SCHEMA
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VocabBackup {
@@ -728,7 +736,9 @@ fn parse_vocab_import(
         VocabImportFormat::Json => {
             let backup: VocabBackup = serde_json::from_str(data)
                 .map_err(|_| import_error("VOCAB_IMPORT_JSON_INVALID"))?;
-            if backup.schema != VOCAB_BACKUP_SCHEMA || backup.version != VOCAB_BACKUP_VERSION {
+            if !is_known_vocab_backup_schema(&backup.schema)
+                || backup.version != VOCAB_BACKUP_VERSION
+            {
                 return Err(import_error("VOCAB_IMPORT_VERSION_UNSUPPORTED"));
             }
             if backup.words.len() > MAX_VOCAB_IMPORT_WORDS {
@@ -746,7 +756,7 @@ fn parse_vocab_import(
             for row in reader.deserialize::<VocabCsvRow>() {
                 match row {
                     Ok(row)
-                        if row.backup_schema == VOCAB_BACKUP_SCHEMA
+                        if is_known_vocab_backup_schema(&row.backup_schema)
                             && row.backup_version == VOCAB_BACKUP_VERSION =>
                     {
                         words.push(row.into());
@@ -1182,14 +1192,18 @@ mod tests {
         assert_eq!(payload.created_at, Some(stored.created_at));
     }
 
-    #[test]
-    fn vocab_import_csv_accepts_a_valid_backup_row() {
+    fn backup_csv(schema: &str) -> String {
+        format!(
+            "backup_schema,backup_version,id,book_id,word,definition,context_sentence,context_explanation,cfi,mastery,review_count,next_review_at,review_interval_days,last_reviewed_at,last_review_rating,fsrs_stability,fsrs_difficulty,fsrs_version,created_at,updated_at\n{schema},1,backup-1,book-1,ephemeral,Short-lived,A useful sentence.,Useful context.,epubcfi(/6/2!/4/2),learning,4,1800000000000,9,1700000000000,good,12.5,4.3,1,1600000000000,1700000000000\n"
+        )
+    }
+
+    fn import_one_csv_row(schema: &str) -> usize {
         let (_dir, db, writer) = setup_import_db();
         insert_import_book(&db, "book-1");
-        let csv = "backup_schema,backup_version,id,book_id,word,definition,context_sentence,context_explanation,cfi,mastery,review_count,next_review_at,review_interval_days,last_reviewed_at,last_review_rating,fsrs_stability,fsrs_difficulty,fsrs_version,created_at,updated_at\nquill-vocabulary,1,backup-1,book-1,ephemeral,Short-lived,A useful sentence.,Useful context.,epubcfi(/6/2!/4/2),learning,4,1800000000000,9,1700000000000,good,12.5,4.3,1,1600000000000,1700000000000\n";
 
         let result = do_import_vocab_backup(
-            csv,
+            &backup_csv(schema),
             VocabImportFormat::Csv,
             VocabImportConflictPolicy::Skip,
             false,
@@ -1198,17 +1212,48 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(result.imported, 1);
         assert_eq!(
             query_vocab_words(&db, "book-1").unwrap()[0].word,
             "ephemeral"
         );
+        result.imported
+    }
+
+    #[test]
+    fn vocab_import_csv_accepts_a_valid_backup_row() {
+        assert_eq!(import_one_csv_row(VOCAB_BACKUP_SCHEMA), 1);
+    }
+
+    #[test]
+    fn vocab_import_csv_still_accepts_the_pre_rename_schema() {
+        assert_eq!(import_one_csv_row(LEGACY_VOCAB_BACKUP_SCHEMA), 1);
+    }
+
+    #[test]
+    fn vocab_import_json_still_accepts_the_pre_rename_schema() {
+        let (_dir, db, writer) = setup_import_db();
+        insert_import_book(&db, "book-1");
+        let legacy = format!(
+            r#"{{"schema":"{LEGACY_VOCAB_BACKUP_SCHEMA}","version":1,"exported_at":0,"words":[]}}"#
+        );
+
+        let result = do_import_vocab_backup(
+            &legacy,
+            VocabImportFormat::Json,
+            VocabImportConflictPolicy::Skip,
+            false,
+            &db,
+            &writer,
+        )
+        .unwrap();
+
+        assert_eq!(result.imported, 0);
     }
 
     #[test]
     fn vocab_import_rejects_unsupported_json_schema_version() {
         let (_dir, db, writer) = setup_import_db();
-        let invalid = r#"{"schema":"quill-vocabulary","version":99,"exported_at":0,"words":[]}"#;
+        let invalid = r#"{"schema":"lantern-vocabulary","version":99,"exported_at":0,"words":[]}"#;
 
         let error = do_import_vocab_backup(
             invalid,

@@ -66,7 +66,7 @@ interface VocabBackupWord {
 }
 
 interface VocabBackup {
-  schema: "quill-vocabulary";
+  schema: "lantern-vocabulary";
   version: number;
   exported_at: number;
   words: VocabBackupWord[];
@@ -265,12 +265,12 @@ export default function DictionaryContent() {
         const href = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }));
         const link = document.createElement("a");
         link.href = href;
-        link.download = "quill-vocabulary.json";
+        link.download = "lantern-vocabulary.json";
         link.click();
         window.setTimeout(() => URL.revokeObjectURL(href), 0);
       } else {
         downloadCsv(
-          "quill-vocabulary.csv",
+          "lantern-vocabulary.csv",
           VOCAB_BACKUP_CSV_HEADERS,
           backup.words.map((word) => [
             backup.schema, backup.version, word.id, word.book_id, word.word, word.definition,
@@ -304,7 +304,7 @@ export default function DictionaryContent() {
         cursor = page.next_cursor;
       } while (cursor !== null);
       downloadCsv(
-        "quill-lookup-history.csv",
+        "lantern-lookup-history.csv",
         ["lookup", "definition", "context_explanation", "context", "chapter", "book", "first_looked_up_at", "last_looked_up_at", "lookup_count"],
         allRecords.map((record) => [
           record.lookup_text,

@@ -133,7 +133,7 @@ export default function NotesContent() {
     const href = URL.createObjectURL(new Blob([`\uFEFF${rows.map((row) => row.map(escape).join(",")).join("\n")}`], { type: "text/csv;charset=utf-8" }));
     const link = document.createElement("a");
     link.href = href;
-    link.download = "quill-notes.csv";
+    link.download = "lantern-notes.csv";
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(href), 0);
   };
