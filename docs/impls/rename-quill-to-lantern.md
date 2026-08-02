@@ -25,7 +25,15 @@ Lantern 早期是 fork 自 [yicheng47/quill](https://github.com/yicheng47/quill)
 
 ## 任务
 
-按下面的分档推进。**默认只做第 1、2 档**；第 3 档要先和用户确认，第 4 档不要动。
+**范围已经定了，不需要再问：第 1、2、3 档全部改掉，第 4 档原样保留。**
+
+分档保留在这里，是因为它们的**做法**不同（有的能直接 sed，有的必须带迁移），
+不是因为要不要做还没定。定这个范围时用户给的两条前提：
+
+- 第 2 档的一次性迁移成本可以接受 —— 这是私人自用的应用，不必为兼容性设计长期回退路径。
+- 第 3 档的 MCP 目前没有任何人在用，所以对外身份可以放心改。
+
+第 4 档是硬约束，见那一节。
 
 ---
 
@@ -61,6 +69,10 @@ Lantern 早期是 fork 自 [yicheng47/quill](https://github.com/yicheng47/quill)
 
 ### 第 2 档 — 要带一次数据迁移
 
+这一档改的都是**已经落在磁盘上**的名字，所以不能直接改字符串了事。
+但因为是私人自用，迁移写成**一次性的**就够了：认一次旧名字、搬过去、以后不再看它。
+不需要长期双读，也不需要考虑跨版本回退。
+
 **a) `localStorage` 键名**
 
 | 现值 | 位置 |
@@ -92,7 +104,7 @@ WAL 模式下漏掉 `-wal`/`-shm` 会丢掉最后一批未 checkpoint 的写入�
 
 ---
 
-### 第 3 档 — 会波及 app 之外，动手前先问用户
+### 第 3 档 — 会波及 app 之外（已确认要改）
 
 **a) Cargo 包名 / 二进制名**
 
@@ -109,10 +121,16 @@ Lantern 的 MCP server 以 `quill mcp` 的形式跑在 stdio 上，对外身份�
 `~/.claude.json` 的 `mcpServers.quill`，和 `~/.codex/config.toml` 的 `[mcp_servers.quill]`
 （见 [commands/mcp.rs](../../src-tauri/src/commands/mcp.rs)）。
 
-改名意味着：老用户的 MCP 配置全部失效，要么他们手动重连，要么 Lantern 去改写别人的配置文件。
-**为了内部整洁去动用户机器上的第三方配置，收益和风险不成比例。**
-建议的默认答案是**保持 `quill` 不动**，或者只在全新安装时写 `lantern`、旧的 `quill` 条目继续认。
-这个由用户拍板。
+一般来说这是要慎重的地方 —— 改名会让已有的 MCP 配置失效，而那些文件不在 app 的管辖范围内。
+**但用户已经确认：这个 MCP 目前没有任何人在用。** 所以直接改干净，不要为兼容性留双读逻辑：
+
+- `Implementation::new("quill", …)` → `"lantern"`（[server.rs:64](../../src-tauri/src/mcp/server.rs)，
+  连带 `server.rs:354` 的断言）
+- `mcpServers.quill` / `[mcp_servers.quill]` 的键名 → `lantern`
+  （[commands/mcp.rs](../../src-tauri/src/commands/mcp.rs) 的 96、135、139、168 行及注释）
+
+改完之后，用户如果自己在 `~/.claude.json` 或 `~/.codex/config.toml` 里连过旧的 `quill`，
+需要去设置里重新连一次 —— 旧条目不会被自动清理，记得在收尾时提醒一句。
 
 **c) iOS 工程** — `src-tauri/gen/apple/quill.xcodeproj`、`quill_iOS.xcscheme`、`project.yml`、`Podfile`
 
@@ -120,7 +138,7 @@ Lantern 的 MCP server 以 `quill mcp` 的形式跑在 stdio 上，对外身份�
 
 ---
 
-### 第 4 档 — 不要动
+### 第 4 档 — 不要动（用户明确强调过两次）
 
 **a) 上游署名（MIT 协议要求）**
 
