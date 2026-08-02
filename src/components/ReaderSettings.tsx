@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Sun, Check, ScrollText, BookOpen, File, Files, Keyboard, Loader2, MousePointer2, Trash2 } from "lucide-react";
+import { Check, ScrollText, BookOpen, File, Files, Keyboard, Loader2, MousePointer2, Trash2 } from "lucide-react";
 import Toggle from "./ui/Toggle";
 import Select from "./ui/Select";
 import {
@@ -32,7 +32,6 @@ export interface ReaderSettingsState {
   font: ReaderFont;
   fontSize: number; // px
   narrowFontShrink: boolean; // shrink the rendered size when the column is too narrow
-  brightness: number; // 0-100
   readingMode: ReadingMode;
   pageColumns: PageColumns; // 1 = single page, 2 = two pages side by side
   pageTurnAnimation: PageTurnAnimation;
@@ -236,20 +235,6 @@ export default function ReaderSettings({
           <span className="text-[20px] font-medium tracking-[-0.45px]">A+</span>
         </button>
       </div>)}
-
-      {/* Brightness slider */}
-      <div className="flex items-center gap-3 h-[42px] px-4 border-b border-border-light">
-        <Sun size={14} className="text-text-muted shrink-0" />
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={settings.brightness}
-          onChange={(e) => update({ brightness: Number(e.target.value) })}
-          className={`flex-1 ${sliderClass}`}
-        />
-        <Sun size={18} className="text-text-muted shrink-0" />
-      </div>
 
       {/* Theme selector */}
       <div className={`flex items-center justify-center gap-5 h-[78px] ${capabilities.supportsReflowSettings ? "border-b border-border-light" : ""}`}>

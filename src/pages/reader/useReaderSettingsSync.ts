@@ -109,7 +109,6 @@ function createDefaultReaderSettings(): ReaderSettingsState {
     font: "palatino",
     fontSize: 26,
     narrowFontShrink: true,
-    brightness: 100,
     readingMode: "scrolling",
     pageColumns: 2,
     pageTurnAnimation: "slide",
@@ -147,9 +146,8 @@ export function mergeStoredReaderSettings(
     theme: bookSettings.theme
       || (globalSettings.reader_theme as ReaderSettingsState["theme"])
       || previous.theme,
+    // Global-only: the reader panel edits it straight into the global setting.
     customTheme: parseReaderCustomTheme(globalSettings.reader_custom_theme ?? bookSettings.customTheme),
-    brightness: bookSettings.brightness
-      ?? (globalSettings.brightness ? parseInt(globalSettings.brightness) : previous.brightness),
     pageColumns: bookSettings.pageColumns
       ?? pageColumnsSetting(globalSettings.page_columns, previous.pageColumns),
     font: isReaderFontAvailable(requestedFont) ? requestedFont : "system",

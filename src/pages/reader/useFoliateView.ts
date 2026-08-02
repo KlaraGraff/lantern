@@ -650,9 +650,6 @@ export function useFoliateView({
       }
       if (cancelled) return;
       logReaderDiagnostic("reader.open.init-done");
-      if (viewerRef.current) {
-        viewerRef.current.style.filter = `brightness(${readerSettings.brightness / 100})`;
-      }
       setBookReady(true);
       logReaderDiagnostic("reader.open.ready");
     };
@@ -717,9 +714,6 @@ export function useFoliateView({
       } else {
         view.renderer.setAttribute("max-column-count", String(readerSettings.pageColumns));
       }
-    }
-    if (viewerRef.current) {
-      viewerRef.current.style.filter = `brightness(${readerSettings.brightness / 100})`;
     }
   }, [book?.format, bookReady, capabilities, readerSettings, viewRef, viewerRef]);
 

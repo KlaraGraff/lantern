@@ -1385,7 +1385,6 @@ function TextBookReader({
     lineHeight: settings.lineSpacing,
     letterSpacing: settings.charSpacing === 0 ? undefined : `${settings.charSpacing * 0.01}em`,
     wordSpacing: settings.wordSpacing === 0 ? undefined : `${settings.wordSpacing * 0.01}em`,
-    filter: `brightness(${settings.brightness / 100})`,
   }), [measure.fontSize, settings]);
 
   const renderedDocument = useMemo(() => document?.chunks.map((chunk, chunkIndex) => (
