@@ -5,6 +5,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
 import Home from "./pages/Home";
 import Reader from "./pages/Reader";
+import AiRouteFallbackNotice from "./components/AiRouteFallbackNotice";
 import ReasoningEffortNotice from "./components/ReasoningEffortNotice";
 import SettingsHost from "./components/SettingsHost";
 import { reconcileLanguage } from "./i18n";
@@ -80,6 +81,7 @@ export default function App() {
         <Route path="/reader/:bookId" element={<Reader />} />
       </Routes>
       <ReasoningEffortNotice />
+      <AiRouteFallbackNotice />
       {/* Settings belong to the window that owns the library, not to a page.
           A desktop reader window forwards to this one by label instead of
           mounting a second modal of its own. */}

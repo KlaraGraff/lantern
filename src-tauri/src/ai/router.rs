@@ -626,6 +626,27 @@ pub fn forget_reasoning_effort_options(
     Ok(())
 }
 
+/// A request that ran on a model other than the one at the head of the route.
+///
+/// Whether the switch is worth telling the user about is a question about
+/// money, and money is a property of the catalog, which lives in the frontend.
+/// So this reports the plain facts — which model was expected, which one
+/// answered, when the expected one comes back — and lets the caller decide.
+#[derive(Debug, Clone, serde::Serialize)]
+struct AiRouteFallback {
+    from_profile_id: String,
+    from_label: String,
+    from_provider: String,
+    from_model: String,
+    to_profile_id: String,
+    to_label: String,
+    to_provider: String,
+    to_model: String,
+    /// Epoch milliseconds, or `None` when the failure needs the user to act and
+    /// so has no deadline at all. Never a guess.
+    recovers_at: Option<i64>,
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 struct AiReasoningEffortCleared {
     profile_id: String,
@@ -684,6 +705,47 @@ fn handle_effort_rejection(
         },
     );
     true
+}
+
+/// Announce a model switch the user did not ask for, once the request has
+/// actually landed somewhere else.
+///
+/// Silent when the request ran on the model at the head of the route, which is
+/// the overwhelmingly common case — and silent on a later request inside the
+/// same cooldown window too, because by then the failed model is filtered out
+/// before the traversal starts and there is no switch left to announce. That
+/// falls out of the routing rather than being counted, which is why there is no
+/// bookkeeping here.
+fn emit_route_fallback(
+    app: &AppHandle,
+    db: &Db,
+    expected: Option<&AiProfileView>,
+    used: &AiProfileView,
+) {
+    let Some(expected) = expected else { return };
+    if expected.id == used.id {
+        return;
+    }
+    // Read back rather than trusting the copy this request started with: the
+    // deadline worth reporting is the one the failure just wrote.
+    let recovers_at = profile_by_id(db, &expected.id)
+        .ok()
+        .and_then(|profile| profile.view.cooldown_until)
+        .filter(|deadline| *deadline > now());
+    let _ = app.emit(
+        "ai-route-fallback",
+        AiRouteFallback {
+            from_profile_id: expected.id.clone(),
+            from_label: expected.label.clone(),
+            from_provider: expected.provider.clone(),
+            from_model: expected.model.clone(),
+            to_profile_id: used.id.clone(),
+            to_label: used.label.clone(),
+            to_provider: used.provider.clone(),
+            to_model: used.model.clone(),
+            recovers_at,
+        },
+    );
 }
 
 fn profile_by_id(db: &Db, id: &str) -> AppResult<AiProfile> {
@@ -1586,6 +1648,9 @@ async fn stream_with_failover_inner(
 
     let mut last_error = None;
     let mut configured_credentials = Vec::new();
+    // The model the user expected to answer: whatever the route puts first
+    // among the models still in play. Anything else that answers is a switch.
+    let expected = profiles.first().map(|profile| profile.view.clone());
 
     for profile in profiles {
         if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" {
@@ -1626,6 +1691,7 @@ async fn stream_with_failover_inner(
             match result {
                 Ok(()) => {
                     update_profile_health(db, &profile, None, None, Some(latency));
+                    emit_route_fallback(app, db, expected.as_ref(), &profile.view);
                     return Ok(profile.view.clone());
                 }
                 Err(error) => {
@@ -1676,6 +1742,7 @@ async fn stream_with_failover_inner(
             match result {
                 Ok(()) => {
                     update_profile_health(db, &profile, None, None, Some(latency));
+                    emit_route_fallback(app, db, expected.as_ref(), &profile.view);
                     return Ok(profile.view.clone());
                 }
                 Err(error) => {
@@ -1750,6 +1817,7 @@ async fn stream_with_failover_inner(
                         None,
                         Some(profile_started.elapsed().as_millis() as u64),
                     );
+                    emit_route_fallback(app, db, expected.as_ref(), &profile.view);
                     return Ok(profile.view.clone());
                 }
                 Err(error) => {

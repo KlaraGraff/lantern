@@ -23,6 +23,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { formatDuration } from "./aiDuration";
 import { AI_PRESETS, COST_TIER_CLASSES, presetFor } from "./aiPresets";
 import Button from "../ui/Button";
 import ComboField from "../ui/ComboField";
@@ -176,21 +177,6 @@ function useCountdown(until: number | null): number | null {
 }
 
 /**
- * Coarse on purpose. The exact second only carries information below a minute;
- * above that, rounding up keeps the number from ever promising too little.
- */
-function formatRemaining(
-  ms: number,
-  t: (key: string, options?: Record<string, unknown>) => string,
-): string {
-  const seconds = Math.ceil(ms / 1000);
-  if (seconds < 60) return t("settings.ai.health.inSeconds", { count: seconds });
-  const minutes = Math.ceil(seconds / 60);
-  if (minutes < 60) return t("settings.ai.health.inMinutes", { count: minutes });
-  return t("settings.ai.health.inHours", { count: Math.ceil(minutes / 60) });
-}
-
-/**
  * The single word shown for a model. Every word maps to exactly one condition,
  * and in particular a spent quota (about an hour) never shares a word with a
  * network blip (thirty seconds): the user's move differs — wait, or reorder the
@@ -210,7 +196,9 @@ function profileHealth(
   t: (key: string, options?: Record<string, unknown>) => string,
 ): { label: string; className: string } {
   const countdown =
-    remaining != null && remaining > 0 ? ` · ${formatRemaining(remaining, t)}` : "";
+    remaining != null && remaining > 0
+      ? ` · ${t("settings.ai.health.remaining", { duration: formatDuration(remaining, t) })}`
+      : "";
   if (testing) {
     return {
       label: t("settings.ai.health.verifying"),
