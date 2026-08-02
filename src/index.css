@@ -72,6 +72,14 @@
   --spacing-page: 24px;
   --spacing-section: max(24px, 1.5%);
   --spacing-header-h: 56px;
+  /* The strip that reserves room for the macOS traffic lights. The system
+     draws them at a fixed size and window zoom does not touch them, so the
+     reserve divides the zoom factor back out and stays the same number of
+     screen pixels at every scale. `--app-zoom` is set on the root element by
+     `app-zoom-window.ts`. The reader's header runs a slimmer strip than the
+     library's. */
+  --spacing-titlebar: calc(44px / var(--app-zoom, 1));
+  --spacing-titlebar-slim: calc(32px / var(--app-zoom, 1));
 }
 
 .dark {

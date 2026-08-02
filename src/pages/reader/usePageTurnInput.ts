@@ -10,6 +10,7 @@ import {
   keyboardEventMatchesBinding,
   mouseEventMatchesBinding,
 } from "../../components/page-turn-bindings";
+import { appZoomCommandFor } from "../../services/app-zoom";
 import { createWheelPageTurnHandler } from "../../components/wheel-page-turn";
 import type { WheelPageTurnHandler } from "../../components/wheel-page-turn";
 
@@ -24,6 +25,7 @@ interface PageTurnInputOptions {
   sidePanelOpen: boolean;
   turnPage(direction: PageDirection): void;
   onPdfZoom(delta: number): void;
+  onPdfZoomFit(): void;
 }
 
 function isEditableEventTarget(target: EventTarget | null): boolean {
@@ -40,6 +42,7 @@ export function usePageTurnInput({
   sidePanelOpen,
   turnPage,
   onPdfZoom,
+  onPdfZoomFit,
 }: PageTurnInputOptions) {
   const suppressContextMenuUntilRef = useRef(0);
   const keyboardBlockedRef = useRef(false);
@@ -66,14 +69,15 @@ export function usePageTurnInput({
       || keyboardBlockedRef.current
       || isEditableEventTarget(target)
     ) return;
-    if (
-      bookFormat === "pdf"
-      && (event.metaKey || event.ctrlKey)
-      && (event.key === "=" || event.key === "+" || event.key === "-")
-    ) {
+    // A PDF answers the zoom shortcuts with its own page scale; every other
+    // book leaves them to `useAppZoom`, which has already seen this event on
+    // the capture phase and marked it handled.
+    const zoomCommand = bookFormat === "pdf" ? appZoomCommandFor(event) : null;
+    if (zoomCommand) {
       event.preventDefault();
       event.stopPropagation();
-      onPdfZoom(event.key === "-" ? -10 : 10);
+      if (zoomCommand === "reset") onPdfZoomFit();
+      else onPdfZoom(zoomCommand === "in" ? 10 : -10);
       return;
     }
     if (target?.closest?.("button, a, [role='button'], [data-reader-settings]")) return;
@@ -92,7 +96,7 @@ export function usePageTurnInput({
     event.stopPropagation();
     if (event.repeat) return;
     turnPage(direction);
-  }, [bookFormat, onPdfZoom, panelRef, settingsRef, turnPage]);
+  }, [bookFormat, onPdfZoom, onPdfZoomFit, panelRef, settingsRef, turnPage]);
 
   const handlePageTurnMouseDown = useCallback((event: MouseEvent) => {
     keyboardBlockedRef.current = false;

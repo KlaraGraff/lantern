@@ -76,7 +76,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-bg-muted">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 pt-11 pb-3 bg-bg-surface border-b border-border shrink-0">
+      <div className="flex items-center justify-between px-6 pt-titlebar pb-3 bg-bg-surface border-b border-border shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={onBack}

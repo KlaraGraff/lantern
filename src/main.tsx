@@ -5,6 +5,7 @@ import "./index.css";
 import "./i18n";
 import { installReaderDiagnostics } from "./utils/readerDiagnostics";
 import { installBuiltinFontFaces } from "./components/builtin-fonts";
+import { applyAppZoom, readAppZoom } from "./services/app-zoom-window";
 
 // Install global fault sinks before anything else runs. On macOS 12 / Safari
 // 15.1 a missing runtime API can throw at module top-level or inside the PDF
@@ -35,6 +36,10 @@ const prefersDark =
   (cachedTheme === "system" &&
     window.matchMedia("(prefers-color-scheme: dark)").matches);
 if (prefersDark) document.documentElement.classList.add("dark");
+
+// Same reason, for the window zoom: waiting for React would show one frame at
+// 100% before the app jumped to the size the user actually chose.
+applyAppZoom(readAppZoom());
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

@@ -9,6 +9,7 @@ import AiRouteFallbackNotice from "./components/AiRouteFallbackNotice";
 import ReasoningEffortNotice from "./components/ReasoningEffortNotice";
 import SettingsHost from "./components/SettingsHost";
 import { reconcileLanguage } from "./i18n";
+import { useAppZoom } from "./hooks/useAppZoom";
 import {
   installCustomFontFaces,
   isCustomFontRecordList,
@@ -31,6 +32,8 @@ function applyTheme(theme: string) {
 }
 
 export default function App() {
+  useAppZoom();
+
   useEffect(() => {
     // The main window starts hidden. Reveal it before any potentially slow
     // backend initialization so a blocked settings query cannot leave the

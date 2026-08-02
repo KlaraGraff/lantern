@@ -27,6 +27,13 @@ const MODIFIER_KEYS = new Set(["Alt", "Control", "Meta", "Shift"]);
 const RESERVED_BINDINGS = new Set([
   "key:Meta+C", "key:Meta+V", "key:Meta+X", "key:Meta+A", "key:Meta+W", "key:Meta+Q",
   "key:Control+C", "key:Control+V", "key:Control+X", "key:Control+A",
+  // Zoom, answered app-wide before a binding gets to see the key. `+` and `_`
+  // are the shifted faces of `=` and `-` on most layouts, and the zoom rule
+  // accepts them, so a binding must not be able to claim those either.
+  "key:Meta+=", "key:Meta+-", "key:Meta+0",
+  "key:Meta+Shift++", "key:Meta+Shift+_",
+  "key:Control+=", "key:Control+-", "key:Control+0",
+  "key:Control+Shift++", "key:Control+Shift+_",
 ]);
 
 function normalizedKey(key: string): string {

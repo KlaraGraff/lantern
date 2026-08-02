@@ -21,6 +21,8 @@ import {
   type TripleClickScope,
 } from "../../components/reader-interaction";
 import { bindingFromKeyboardEvent } from "../../components/reader-bindings";
+import { appZoomCommandFor, nextAppZoom } from "../../services/app-zoom";
+import { persistAppZoom, readAppZoom } from "../../services/app-zoom-window";
 
 /**
  * How long an action waits to see whether another click is coming. One click
@@ -74,6 +76,7 @@ interface ReaderInteractionsOptions {
   setContextMenu(value: ReaderInteraction | null): void;
   onMissingPdfTextIntent(pageIndex: number): void;
   handleZoom(delta: number): void;
+  handleZoomFit(): void;
   handlePageTurnKeyDown(event: KeyboardEvent): void;
   handlePageTurnMouseDown(event: MouseEvent): void;
   handlePageTurnContextMenu(event: MouseEvent): void;
@@ -120,6 +123,7 @@ export function useReaderInteractions({
   setContextMenu,
   onMissingPdfTextIntent,
   handleZoom,
+  handleZoomFit,
   handlePageTurnKeyDown,
   handlePageTurnMouseDown,
   handlePageTurnContextMenu,
@@ -337,18 +341,24 @@ export function useReaderInteractions({
           return;
         }
       }
+      const zoomCommand = appZoomCommandFor(event);
       if ((event.metaKey || event.ctrlKey) && event.key === "[") {
         event.preventDefault();
         view.history.back();
       } else if ((event.metaKey || event.ctrlKey) && event.key === "]") {
         event.preventDefault();
         view.history.forward();
-      } else if ((event.metaKey || event.ctrlKey) && (event.key === "=" || event.key === "+")) {
+      } else if (zoomCommand) {
+        // The book is its own document, and nothing pressed inside it reaches
+        // the window listener that answers these keys everywhere else — so the
+        // same two rules are applied here rather than forwarded.
         event.preventDefault();
-        if (bookFormat === "pdf") handleZoom(10);
-      } else if ((event.metaKey || event.ctrlKey) && event.key === "-") {
-        event.preventDefault();
-        if (bookFormat === "pdf") handleZoom(-10);
+        if (bookFormat === "pdf") {
+          if (zoomCommand === "reset") handleZoomFit();
+          else handleZoom(zoomCommand === "in" ? 10 : -10);
+        } else {
+          persistAppZoom(nextAppZoom(readAppZoom(), zoomCommand));
+        }
       } else handlePageTurnKeyDown(event);
     });
     doc.addEventListener("mousedown", (event: MouseEvent) => {
@@ -596,6 +606,7 @@ export function useReaderInteractions({
     handlePageTurnMouseDown,
     handlePageTurnWheel,
     handleZoom,
+    handleZoomFit,
     openLearningInteraction,
     pendingSelectionMenuRef,
     pendingWordClickRef,

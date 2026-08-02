@@ -130,6 +130,7 @@ import {
 import { useReaderFileDiagnosis } from "./reader/useReaderFileDiagnosis";
 import ReaderDiagnosticsPanel from "../components/ReaderDiagnosticsPanel";
 import { platform } from "../services/platform";
+import { claimZoomShortcuts } from "../services/app-zoom";
 
 type SidePanel = "ai" | "bookmarks" | "vocab" | null;
 
@@ -831,6 +832,20 @@ export default function Reader() {
     setZoom(next);
   }, [applyZoom]);
 
+  const handleZoomFit = useCallback(() => {
+    applyZoom("fit");
+    setZoom("fit");
+  }, [applyZoom]);
+
+  // ⌘= / ⌘- / ⌘0 scale the whole window everywhere else in the app. On a PDF
+  // they mean the page scale instead, which is the more useful answer for a
+  // fixed-layout book — so the reader takes the shortcuts for as long as one
+  // is open, and `useAppZoom` stands aside.
+  useEffect(() => {
+    if (book?.format !== "pdf") return;
+    return claimZoomShortcuts();
+  }, [book?.format]);
+
   const turnReaderPage = useCallback((direction: "previous" | "next") => {
     setContextMenu(null);
     const performTurn = async () => {
@@ -867,6 +882,7 @@ export default function Reader() {
     sidePanelOpen: Boolean(sidePanel),
     turnPage: turnReaderPage,
     onPdfZoom: handleZoom,
+    onPdfZoomFit: handleZoomFit,
   });
 
   const tocChapters = useMemo(() => chapters.map((chapter, i) => ({
@@ -1233,6 +1249,7 @@ export default function Reader() {
     setContextMenu,
     onMissingPdfTextIntent,
     handleZoom,
+    handleZoomFit,
     handlePageTurnKeyDown,
     handlePageTurnMouseDown,
     handlePageTurnContextMenu,
@@ -1542,14 +1559,14 @@ export default function Reader() {
       )}
       {/* Header */}
       <header
-        className={`flex items-center justify-between px-section pt-8 pb-2 shrink-0 relative select-none ${isStandaloneWindow ? "" : "bg-bg-surface border-b border-border"}`}
+        className={`flex items-center justify-between px-section pt-titlebar-slim pb-2 shrink-0 relative select-none ${isStandaloneWindow ? "" : "bg-bg-surface border-b border-border"}`}
         style={isStandaloneWindow ? {
           backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body,
           color: getThemeStyles(readerSettings.theme, readerSettings.customTheme).text,
           borderBottom: `1px solid ${getThemeStyles(readerSettings.theme, readerSettings.customTheme).text}1a`,
         } : undefined}
       >
-        <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-8" />
+        <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar-slim" />
 
         {/* Left section */}
         <div className="flex items-center gap-3">
@@ -1859,7 +1876,7 @@ export default function Reader() {
                     </Button>
                     <button
                       type="button"
-                      onClick={() => { applyZoom("fit"); setZoom("fit"); }}
+                      onClick={handleZoomFit}
                       title={t("reader.zoom.fitTooltip")}
                       className={`text-[12px] font-medium min-w-[36px] px-1 text-center tabular-nums hover:opacity-100 ${isStandaloneWindow ? "opacity-60" : "text-text-muted"} ${zoom === "fit" ? "" : "cursor-pointer"}`}
                     >
