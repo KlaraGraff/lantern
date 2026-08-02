@@ -9,8 +9,8 @@ import {
   type MarkerStyleConfig,
   type MarkerVisualStyle,
 } from "../marker-style";
-import { systemMark, type SystemMark, type SystemMarkId, markCollisions } from "../mark-palette";
-import { fonts, getThemeStyles } from "../reader-settings";
+import { markBlendMode, systemMark, type SystemMark, type SystemMarkId, markCollisions } from "../mark-palette";
+import { fonts, getDefaultReaderTheme, getThemeStyles } from "../reader-settings";
 import { installCustomFontFaces, type CustomFontRecord } from "../custom-fonts";
 import Select from "../ui/Select";
 import Toggle from "../ui/Toggle";
@@ -37,18 +37,19 @@ function withAlpha(color: string, opacity: number) {
 }
 
 /**
- * A system mark as CSS. The book draws these as SVG over the text, which a
- * sample paragraph cannot do, so this is the closest CSS equivalent — same
- * colour, same strength, same shape. Near enough to judge a colour against.
+ * A system mark as CSS, on the page it is being shown against. The book draws
+ * these as SVG over the text, which a sample paragraph cannot do, so this is
+ * the closest CSS equivalent — same colour, same strength, same shape, same
+ * blend. Near enough to judge a colour against.
  */
-function systemMarkCss(mark: SystemMark): CSSProperties {
+function systemMarkCss(mark: SystemMark, backdrop: string): CSSProperties {
   if (mark.shape === "wash") {
     return {
       backgroundColor: withAlpha(mark.color, mark.opacity),
-      // Multiplied in the book so the words stay readable underneath, which is
-      // also why this one all but disappears on a dark page. That is the truth
-      // about it, and the sample is the right place to find it out.
-      mixBlendMode: mark.multiply ? "multiply" : undefined,
+      // Blended into the page in the book so the words stay readable underneath,
+      // and blended the same way here — which is what makes the two panes worth
+      // showing side by side, since the direction differs between them.
+      mixBlendMode: markBlendMode(mark, backdrop),
       borderRadius: "0.15em",
     };
   }
@@ -100,13 +101,14 @@ function TreatmentToggle({
  */
 function SamplePane({
   theme,
-  styles,
+  buildStyles,
 }: {
   theme: "paper" | "dark";
-  styles: Record<string, CSSProperties | undefined>;
+  buildStyles: (backdrop: string) => Record<string, CSSProperties | undefined>;
 }) {
   const { t } = useTranslation();
   const { body, text } = getThemeStyles(theme);
+  const styles = buildStyles(body);
   // Odd positions are placeholder names, even ones the prose between them.
   const parts = t("settings.tools.markers.sampleText").split(/\{\{(\w+)\}\}/);
 
@@ -140,6 +142,9 @@ function StyleControls({
     onChange(candidate);
   };
   const collisions = markCollisions(value);
+  // These chips sit on the settings panel rather than on a page, so the nearest
+  // truth about what they will blend into is which way the app itself is lit.
+  const chipBackdrop = getThemeStyles(getDefaultReaderTheme()).body;
   const fontOptions = [
     { value: "inherit", label: t("settings.tools.markers.followOriginal") },
     { value: "reader", label: t("settings.tools.markers.followReaderFont") },
@@ -166,7 +171,7 @@ function StyleControls({
             <p className="text-[11px] leading-[17px] text-text-secondary">{t("settings.tools.markers.collision")}</p>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-text-primary">
               {collisions.map((id) => (
-                <span key={id} style={systemMarkCss(systemMark[id])}>{t(MARK_LABEL_KEY[id])}</span>
+                <span key={id} style={systemMarkCss(systemMark[id], chipBackdrop)}>{t(MARK_LABEL_KEY[id])}</span>
               ))}
             </div>
           </div>
@@ -221,14 +226,16 @@ export default function MarkerStyleSettings({ value, onChange }: MarkerStyleSett
     editing === "manual" ? { ...value, manual: style } : { ...value, automatic: style },
   );
 
-  const sampleStyles: Record<string, CSSProperties | undefined> = {
+  // Per pane, not once: a wash blends into the page it lands on, so the two
+  // samples do not draw the read-aloud mark the same way.
+  const sampleStyles = (backdrop: string): Record<string, CSSProperties | undefined> => ({
     manual: markerStyleCss(value.manual, fontFamilyForMarker(value.manual.font)),
     automatic: markerStyleCss(automatic, fontFamilyForMarker(automatic.font)),
-    reading: systemMarkCss(systemMark.reading),
-    vocabNew: systemMarkCss(systemMark.vocabNew),
-    learning: systemMarkCss(systemMark.learning),
-    mastered: systemMarkCss(systemMark.mastered),
-  };
+    reading: systemMarkCss(systemMark.reading, backdrop),
+    vocabNew: systemMarkCss(systemMark.vocabNew, backdrop),
+    learning: systemMarkCss(systemMark.learning, backdrop),
+    mastered: systemMarkCss(systemMark.mastered, backdrop),
+  });
 
   return (
     <div className="mx-auto w-full max-w-[620px]">
@@ -263,8 +270,8 @@ export default function MarkerStyleSettings({ value, onChange }: MarkerStyleSett
         </div>
 
         <div className="grid gap-2 rounded-md border border-border-light p-2 sm:grid-cols-2">
-          <SamplePane theme="paper" styles={sampleStyles} />
-          <SamplePane theme="dark" styles={sampleStyles} />
+          <SamplePane theme="paper" buildStyles={sampleStyles} />
+          <SamplePane theme="dark" buildStyles={sampleStyles} />
         </div>
       </div>
 

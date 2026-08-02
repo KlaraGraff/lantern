@@ -39,8 +39,12 @@ export interface SystemMark {
   /** A wash covers a range; an underline sits under a word. */
   shape: "wash" | "underline";
   dashed?: boolean;
-  /** Highlights are multiplied into the page so the text stays legible under them. */
-  multiply?: boolean;
+  /**
+   * Blended into the page rather than laid flat over it, so the words underneath
+   * keep their contrast: darkened into light paper, lightened into a dark one.
+   * See `washBlendMode` for why the direction has to follow the page.
+   */
+  blendIntoPage?: boolean;
 }
 
 /**
@@ -53,7 +57,7 @@ export interface SystemMark {
  * property of the text — it marks where the voice currently is.
  */
 export const SYSTEM_MARKS: readonly SystemMark[] = [
-  { id: "reading", color: "#7DD3FC", opacity: 0.42, shape: "wash", multiply: true },
+  { id: "reading", color: "#7DD3FC", opacity: 0.42, shape: "wash", blendIntoPage: true },
   { id: "vocabNew", color: "#D97706", opacity: 0.85, shape: "underline" },
   { id: "learning", color: "#2F9E8F", opacity: 0.85, shape: "underline" },
   { id: "mastered", color: "#94A3B8", opacity: 0.9, shape: "underline", dashed: true },
@@ -97,6 +101,9 @@ function toHex(channel: number) {
   return Math.round(Math.min(255, Math.max(0, channel))).toString(16).padStart(2, "0");
 }
 
+/** The blend modes a mark can be drawn with — the CSS names, as passed straight to `mix-blend-mode`. */
+export type BlendMode = "normal" | "multiply" | "screen";
+
 /**
  * What a colour actually looks like once it is on the page: the hex the reader
  * picked, thinned to its opacity over the paper it sits on.
@@ -106,14 +113,40 @@ function toHex(channel: number) {
  * still land within a few points of each other once both are washes — which is
  * the only form either of them is ever seen in.
  */
-export function blendOver(color: string, opacity: number, backdrop: string, multiply = false) {
+export function blendOver(color: string, opacity: number, backdrop: string, blend: BlendMode = "normal") {
   const source = channels(color);
   const base = channels(backdrop);
   const mixed = source.map((channel, index) => {
-    const over = multiply ? (channel * base[index]) / 255 : channel;
+    const over = blend === "multiply"
+      ? (channel * base[index]) / 255
+      : blend === "screen"
+        ? 255 - ((255 - channel) * (255 - base[index])) / 255
+        : channel;
     return over * opacity + base[index] * (1 - opacity);
   });
   return `#${mixed.map(toHex).join("")}`.toUpperCase();
+}
+
+/**
+ * Which way a wash has to be blended into this page to be seen at all.
+ *
+ * Multiply can only take light away and screen can only add it, so the choice
+ * has to follow the paper. Multiplied into the dark theme's #1b1b1f the
+ * read-aloud sky landed 10 away from the page — there was no light in the page
+ * left to take, and the sentence being read aloud was simply not marked.
+ * Screened into it, the same wash lands 232 away; multiplied into #FAF7F0 it
+ * keeps the 98 it always had. Either way the words underneath move with the
+ * page rather than against it, which is the point of blending at all.
+ */
+export function washBlendMode(backdrop: string): BlendMode {
+  const [r, g, b] = channels(backdrop);
+  // Rec. 709 luma — green carries most of the light, as the eye reads it.
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b >= 128 ? "multiply" : "screen";
+}
+
+/** How a system mark is drawn on this page. Only a wash blends into it. */
+export function markBlendMode(mark: SystemMark, backdrop: string): BlendMode {
+  return mark.blendIntoPage ? washBlendMode(backdrop) : "normal";
 }
 
 /**
@@ -157,7 +190,7 @@ export function markCollisions(style: MarkerVisualStyle): SystemMarkId[] {
     const opacity = mark.shape === "wash" ? style.opacity / 100 : 1;
     return BACKDROPS.some((backdrop) => {
       const drawn = blendOver(style.color, opacity, backdrop);
-      const against = blendOver(mark.color, mark.opacity, backdrop, mark.multiply);
+      const against = blendOver(mark.color, mark.opacity, backdrop, markBlendMode(mark, backdrop));
       // A mark this close to the paper is barely there. Nothing you can hardly
       // see can be mistaken for something else, and the faintest settings are
       // deliberate — the automatic mark is meant to be read straight past — so

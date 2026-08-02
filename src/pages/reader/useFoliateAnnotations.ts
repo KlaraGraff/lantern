@@ -27,6 +27,7 @@ import {
   READING_HIGHLIGHT_OPACITY,
   SAVED_HIGHLIGHT_OPACITY,
   savedHighlightColor,
+  washBlendMode,
   wordMarkerColor,
   wordMarkerStyle,
 } from "../../components/mark-palette";
@@ -118,6 +119,11 @@ export function drawFoliateAnnotation(
   { draw, annotation, range }: DrawAnnotationDetail,
   markerStyle: MarkerStyleConfig,
   isPdf: boolean,
+  // Asked for rather than passed: foliate keeps this callback and re-runs it on
+  // every relayout, including the one a theme change causes. A backdrop read
+  // here would be the one the mark was first drawn against, and a highlight
+  // would keep blending for the old page until the reader turned to the next.
+  pageBackdrop: () => string,
 ) {
   const boxHeight = fontBoxHeight(range?.startContainer ?? null);
   if (annotation.styleKind === "manual" || annotation.styleKind === "automatic") {
@@ -173,7 +179,10 @@ export function drawFoliateAnnotation(
     const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
     group.setAttribute("fill", color);
     group.setAttribute("opacity", String(reading ? READING_HIGHLIGHT_OPACITY : SAVED_HIGHLIGHT_OPACITY));
-    group.style.mixBlendMode = "multiply";
+    // Blended into the page so the words keep their contrast under it — but
+    // which way depends on the page. Multiplying into the dark theme was
+    // subtracting light that was not there, and the read-aloud wash vanished.
+    group.style.mixBlendMode = washBlendMode(pageBackdrop());
     for (const { left, top, height, width } of rects) {
       const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
       const pad = isPdf ? 1 : 0;

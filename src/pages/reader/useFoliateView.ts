@@ -9,6 +9,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type { ReaderSettingsState } from "../../components/ReaderSettings";
 import {
   getEffectivePageColumns,
+  getThemeStyles,
   type ReaderCapabilities,
 } from "../../components/reader-settings";
 import {
@@ -499,7 +500,15 @@ export function useFoliateView({
         }
       }) as EventListener);
       view.addEventListener("draw-annotation", ((event: CustomEvent) => {
-        drawFoliateAnnotation(event.detail, markerStyleRef.current, book.format === "pdf");
+        drawFoliateAnnotation(
+          event.detail,
+          markerStyleRef.current,
+          book.format === "pdf",
+          () => {
+            const { theme, customTheme } = readerSettingsRef.current;
+            return getThemeStyles(theme, customTheme).body;
+          },
+        );
       }) as EventListener);
       view.addEventListener("show-annotation", ((event: CustomEvent) => {
         cancelPendingWordClick();

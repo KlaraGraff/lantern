@@ -6,8 +6,10 @@ import {
   SYSTEM_MARKS,
   blendOver,
   colorDistance,
+  markBlendMode,
   markCollisions,
   systemMark,
+  washBlendMode,
 } from "../src/components/mark-palette.ts";
 import {
   MARKER_COLOR_PRESETS,
@@ -16,9 +18,17 @@ import {
 import type { MarkerVisualStyle } from "../src/components/marker-style.ts";
 
 const PAPER = "#FAF7F0";
+const DARK = "#1b1b1f";
+/** Every page a mark has to survive — the same pair `markCollisions` measures against. */
+const PAGES = [PAPER, DARK];
 
 function wash(color: string, opacity = 34): MarkerVisualStyle {
   return { color, opacity, background: true, underline: false, bold: false, font: "inherit" };
+}
+
+/** A system mark as the book draws it on this page. */
+function asDrawn(mark: (typeof SYSTEM_MARKS)[number], page: string) {
+  return blendOver(mark.color, mark.opacity, page, markBlendMode(mark, page));
 }
 
 test("a wash is measured as the colour it lands on the page as, not the hex behind it", () => {
@@ -32,22 +42,55 @@ test("a wash is measured as the colour it lands on the page as, not the hex behi
 
 test("multiply darkens where plain alpha does not", () => {
   const plain = blendOver("#7DD3FC", 0.42, PAPER);
-  const multiplied = blendOver("#7DD3FC", 0.42, PAPER, true);
+  const multiplied = blendOver("#7DD3FC", 0.42, PAPER, "multiply");
   // Same sky, same strength — but multiplied it can only ever subtract light,
   // which is what keeps text legible under the read-aloud wash.
   assert.notEqual(plain, multiplied);
   assert.ok(colorDistance(multiplied, PAPER) > colorDistance(plain, PAPER));
 });
 
+test("a wash blends the way the page it lands on can take", () => {
+  assert.equal(washBlendMode(PAPER), "multiply");
+  assert.equal(washBlendMode(DARK), "screen");
+  // Only a wash blends into the page; the underlines are laid flat over it.
+  assert.equal(markBlendMode(systemMark.reading, DARK), "screen");
+  assert.equal(markBlendMode(systemMark.learning, DARK), "normal");
+  // Screen adds light where multiply takes it, so on a dark page the two go
+  // opposite ways from the same colour — which is the whole fix.
+  assert.ok(
+    colorDistance(blendOver("#7DD3FC", 0.42, DARK, "screen"), DARK)
+      > colorDistance(blendOver("#7DD3FC", 0.42, DARK, "multiply"), DARK),
+  );
+});
+
+test("the read-aloud wash is visible on every page, not just the light one", () => {
+  for (const page of PAGES) {
+    const distance = colorDistance(asDrawn(systemMark.reading, page), page);
+    assert.ok(
+      distance >= MARK_COLLISION_THRESHOLD,
+      `the reading wash lands only ${Math.round(distance)} from ${page}`,
+    );
+  }
+  // What it used to be: multiplied into the dark theme there was no light in
+  // the page left to subtract, so the sentence being read aloud was unmarked.
+  const wasInvisible = colorDistance(blendOver(
+    systemMark.reading.color,
+    systemMark.reading.opacity,
+    DARK,
+    "multiply",
+  ), DARK);
+  assert.ok(wasInvisible < MARK_COLLISION_THRESHOLD, `multiplied it was ${Math.round(wasInvisible)} away`);
+});
+
 test("the reason the check blends first: two colours can pass on hex and fail on the page", () => {
   // The blue that shipped as a preset against the read-aloud sky.
   const raw = colorDistance("#5B8FD9", systemMark.reading.color);
-  const asDrawn = colorDistance(
+  const onThePage = colorDistance(
     blendOver("#5B8FD9", 0.34, PAPER),
-    blendOver(systemMark.reading.color, systemMark.reading.opacity, PAPER, true),
+    asDrawn(systemMark.reading, PAPER),
   );
   assert.ok(raw > MARK_COLLISION_THRESHOLD, `raw hex distance was only ${Math.round(raw)}`);
-  assert.ok(asDrawn < MARK_COLLISION_THRESHOLD, `blended distance was ${Math.round(asDrawn)}`);
+  assert.ok(onThePage < MARK_COLLISION_THRESHOLD, `blended distance was ${Math.round(onThePage)}`);
 });
 
 test("shape is checked before colour — a wash and an underline do not compete", () => {
@@ -96,19 +139,19 @@ test("a mark too faint to see is not reported as looking like anything", () => {
 });
 
 test("no two system marks of the same shape are within the threshold of each other", () => {
-  // The rule the reader is held to, applied to the app's own palette. If this
-  // fails, the presets are not the problem — the marks themselves are.
-  for (const a of SYSTEM_MARKS) {
-    for (const b of SYSTEM_MARKS) {
-      if (a.id === b.id || a.shape !== b.shape) continue;
-      const distance = colorDistance(
-        blendOver(a.color, a.opacity, PAPER, a.multiply),
-        blendOver(b.color, b.opacity, PAPER, b.multiply),
-      );
-      assert.ok(
-        distance >= MARK_COLLISION_THRESHOLD,
-        `${a.id} and ${b.id} are only ${Math.round(distance)} apart`,
-      );
+  // The rule the reader is held to, applied to the app's own palette, on both
+  // pages the reader can be on. If this fails, the presets are not the problem
+  // — the marks themselves are.
+  for (const page of PAGES) {
+    for (const a of SYSTEM_MARKS) {
+      for (const b of SYSTEM_MARKS) {
+        if (a.id === b.id || a.shape !== b.shape) continue;
+        const distance = colorDistance(asDrawn(a, page), asDrawn(b, page));
+        assert.ok(
+          distance >= MARK_COLLISION_THRESHOLD,
+          `${a.id} and ${b.id} are only ${Math.round(distance)} apart on ${page}`,
+        );
+      }
     }
   }
 });
