@@ -13,10 +13,6 @@ use crate::error::{AppError, AppResult};
 
 const SYNC_SETTINGS_FILE: &str = ".sync_setting";
 const DEFAULT_SYNC_FOLDER_NAME: &str = "lantern";
-/// The default folder's name before the Quill→Lantern rename. Kept because
-/// `.sync_setting` files written by older builds still point at it, and we
-/// need to recognise it as *ours* rather than as a folder the user picked.
-const LEGACY_SYNC_FOLDER_NAME: &str = "quill";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncSettings {
@@ -106,13 +102,7 @@ pub fn is_lantern_default_dir(dir: &Path) -> bool {
 }
 
 fn is_default_dir_in(root: &Path, dir: &Path) -> bool {
-    dir.parent() == Some(root)
-        && dir
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| {
-                name == DEFAULT_SYNC_FOLDER_NAME || name == LEGACY_SYNC_FOLDER_NAME
-            })
+    dir.parent() == Some(root) && dir.file_name() == Some(DEFAULT_SYNC_FOLDER_NAME.as_ref())
 }
 
 pub fn is_icloud_drive_dir(path: &Path) -> bool {
@@ -253,8 +243,6 @@ mod tests {
     fn only_folders_lantern_named_itself_count_as_the_default() {
         let root = Path::new("/Users/someone/Library/Mobile Documents/com~apple~CloudDocs");
         assert!(is_default_dir_in(root, &root.join("lantern")));
-        // Written by builds from before the rename, and still ours.
-        assert!(is_default_dir_in(root, &root.join("quill")));
 
         // A folder the user picked, even one that merely contains the name.
         assert!(!is_default_dir_in(root, &root.join("my books")));
