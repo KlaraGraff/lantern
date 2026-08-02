@@ -90,12 +90,7 @@ pub async fn stream_chat(
     emitted: Arc<AtomicBool>,
 ) -> AppResult<()> {
     let client = crate::ai::http_client();
-    let base = base_url.trim_end_matches('/');
-    let url = if base.ends_with("/v1") {
-        format!("{base}/messages")
-    } else {
-        format!("{base}/v1/messages")
-    };
+    let url = crate::ai::compat_endpoint(base_url, "messages");
 
     let body = request_body(model, temperature, messages, max_tokens_override, effort);
 

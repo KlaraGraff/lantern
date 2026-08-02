@@ -28,6 +28,40 @@ pub(crate) const FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
 const MAX_PROVIDER_ERROR_BYTES: usize = 64 * 1024;
 
+/// Join a provider base URL with a path such as `chat/completions`.
+///
+/// Providers publish the base URL either with the version segment already in it
+/// (`https://open.bigmodel.cn/api/paas/v4`) or without one
+/// (`https://api.openai.com`). Appending `/v1` unconditionally turned the former
+/// into `/api/paas/v4/v1/chat/completions`, so any base whose path already ends
+/// in a version segment is taken as complete. Matching `v<digits>` rather than
+/// the literal `/v1` keeps `/v4` and any future version working without a
+/// per-provider special case.
+///
+/// Every OpenAI-shaped request — chat, model list, embeddings, connection test —
+/// goes through here so the rule cannot drift between them.
+pub(crate) fn compat_endpoint(base_url: &str, path: &str) -> String {
+    let base = base_url.trim().trim_end_matches('/');
+    if ends_with_version_segment(base) {
+        format!("{base}/{path}")
+    } else {
+        format!("{base}/v1/{path}")
+    }
+}
+
+fn ends_with_version_segment(base: &str) -> bool {
+    // Only the path counts: a host such as `v4.example.com` is not a version.
+    let after_scheme = base.split_once("://").map_or(base, |(_, rest)| rest);
+    let Some((_, path)) = after_scheme.split_once('/') else {
+        return false;
+    };
+    path.rsplit('/').next().is_some_and(|segment| {
+        segment
+            .strip_prefix('v')
+            .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+    })
+}
+
 fn retry_after_seconds(value: &str) -> Option<i64> {
     if let Ok(seconds) = value.trim().parse::<i64>() {
         return Some(seconds.clamp(1, 86_400));
@@ -122,4 +156,94 @@ fn sanitized_error_field(value: Option<&serde_json::Value>) -> Option<String> {
         .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
         .collect();
     (!sanitized.is_empty()).then_some(sanitized)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compat_endpoint;
+
+    #[test]
+    fn appends_v1_when_base_has_no_version() {
+        assert_eq!(
+            compat_endpoint("https://api.openai.com", "chat/completions"),
+            "https://api.openai.com/v1/chat/completions"
+        );
+        assert_eq!(
+            compat_endpoint("https://api.anthropic.com", "messages"),
+            "https://api.anthropic.com/v1/messages"
+        );
+    }
+
+    #[test]
+    fn keeps_an_existing_version_segment() {
+        assert_eq!(
+            compat_endpoint("https://host.example/v1", "chat/completions"),
+            "https://host.example/v1/chat/completions"
+        );
+        // Zhipu: the bug this function exists to prevent.
+        assert_eq!(
+            compat_endpoint("https://open.bigmodel.cn/api/paas/v4", "chat/completions"),
+            "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+        );
+        assert_eq!(
+            compat_endpoint("https://gateway.example/v3", "chat/completions"),
+            "https://gateway.example/v3/chat/completions"
+        );
+    }
+
+    #[test]
+    fn covers_every_path_the_callers_use() {
+        for path in ["chat/completions", "models", "embeddings", "messages"] {
+            assert_eq!(
+                compat_endpoint("https://open.bigmodel.cn/api/paas/v4", path),
+                format!("https://open.bigmodel.cn/api/paas/v4/{path}")
+            );
+            assert_eq!(
+                compat_endpoint("https://api.openai.com", path),
+                format!("https://api.openai.com/v1/{path}")
+            );
+        }
+    }
+
+    #[test]
+    fn ignores_trailing_slashes_and_surrounding_space() {
+        for base in [
+            "https://open.bigmodel.cn/api/paas/v4/",
+            "  https://open.bigmodel.cn/api/paas/v4  ",
+            "https://open.bigmodel.cn/api/paas/v4///",
+        ] {
+            assert_eq!(
+                compat_endpoint(base, "embeddings"),
+                "https://open.bigmodel.cn/api/paas/v4/embeddings"
+            );
+        }
+    }
+
+    #[test]
+    fn a_version_shaped_host_is_not_a_version_segment() {
+        assert_eq!(
+            compat_endpoint("https://v4.example.com", "models"),
+            "https://v4.example.com/v1/models"
+        );
+        assert_eq!(
+            compat_endpoint("http://localhost:11434", "models"),
+            "http://localhost:11434/v1/models"
+        );
+    }
+
+    #[test]
+    fn a_segment_that_merely_starts_with_v_is_not_a_version() {
+        assert_eq!(
+            compat_endpoint("https://host.example/vision", "models"),
+            "https://host.example/vision/v1/models"
+        );
+        assert_eq!(
+            compat_endpoint("https://host.example/v", "models"),
+            "https://host.example/v/v1/models"
+        );
+        assert_eq!(
+            compat_endpoint("https://host.example/v1beta", "models"),
+            "https://host.example/v1beta/v1/models"
+        );
+    }
 }

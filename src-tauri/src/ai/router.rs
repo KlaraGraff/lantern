@@ -1067,11 +1067,7 @@ fn models_endpoint(profile: &AiProfileView) -> AppResult<String> {
         } else {
             format!("{base}/api/tags")
         }),
-        "openai" | "anthropic" | "custom" => Ok(if base.ends_with("/v1") {
-            format!("{base}/models")
-        } else {
-            format!("{base}/v1/models")
-        }),
+        "openai" | "anthropic" | "custom" => Ok(crate::ai::compat_endpoint(base, "models")),
         _ => Err(AppError::Other("AI_PROVIDER_UNSUPPORTED".to_string())),
     }
 }
@@ -1140,11 +1136,7 @@ pub async fn list_openai_models(base_url: &str, api_key: &str) -> AppResult<Vec<
     if base.is_empty() {
         return Err(AppError::Other("AI_CUSTOM_BASE_URL_REQUIRED".to_string()));
     }
-    let endpoint = if base.ends_with("/v1") {
-        format!("{base}/models")
-    } else {
-        format!("{base}/v1/models")
-    };
+    let endpoint = crate::ai::compat_endpoint(base, "models");
     let mut request = crate::ai::http_client().get(&endpoint);
     if !api_key.trim().is_empty() {
         request = request.bearer_auth(api_key.trim());
@@ -1879,12 +1871,7 @@ pub(crate) fn embedding_source(
     if api_key.trim().is_empty() {
         return Ok(None);
     }
-    let base_url = resolve_base_url(&profile.view)?.trim_end_matches('/');
-    let endpoint = if base_url.ends_with("/v1") {
-        format!("{base_url}/embeddings")
-    } else {
-        format!("{base_url}/v1/embeddings")
-    };
+    let endpoint = crate::ai::compat_endpoint(resolve_base_url(&profile.view)?, "embeddings");
     Ok(Some(crate::ai::grounding::vector::EmbeddingSource {
         profile_id: profile.view.id.clone(),
         endpoint,

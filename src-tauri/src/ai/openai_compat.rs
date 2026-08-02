@@ -66,12 +66,7 @@ pub async fn stream_chat(
     emitted: Arc<AtomicBool>,
 ) -> AppResult<()> {
     let client = crate::ai::http_client();
-    let base = base_url.trim_end_matches('/');
-    let url = if base.ends_with("/v1") {
-        format!("{base}/chat/completions")
-    } else {
-        format!("{base}/v1/chat/completions")
-    };
+    let url = crate::ai::compat_endpoint(base_url, "chat/completions");
 
     let body = request_body(
         model,
