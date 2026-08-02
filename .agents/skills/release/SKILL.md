@@ -5,7 +5,7 @@ description: Tag a new release, push, and publish on GitHub
 
 # Release
 
-Create a new versioned release for Quill.
+Create a new versioned release for Lantern.
 
 ## Steps
 

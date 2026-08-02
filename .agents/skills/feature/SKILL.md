@@ -5,7 +5,7 @@ description: Create, list, or manage feature specs and GitHub issues
 
 # Feature Management
 
-Manage Quill's feature pipeline: specs live in `docs/features/`, tracking lives in GitHub Issues with the `feature` label.
+Manage Lantern's feature pipeline: specs live in `docs/features/`, tracking lives in GitHub Issues with the `feature` label.
 
 ## Usage
 

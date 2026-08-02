@@ -5,7 +5,7 @@ description: Report, list, or manage bug reports as GitHub issues
 
 # Bug Reporting
 
-Report and manage bugs for Quill via GitHub Issues with the `bug` label.
+Report and manage bugs for Lantern via GitHub Issues with the `bug` label.
 
 ## Usage
 

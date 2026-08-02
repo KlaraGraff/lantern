@@ -6,7 +6,7 @@ README 和后续推广共用同一批截图。这份文档是拍摄规范和镜�
 
 ## 现状
 
-`assets/home.png` 和 `assets/reader.png` 是旧图：侧栏还写着 "Quill"，用的是旧的紫色配色，和当前版本（v2.5.0）对不上。这批新图拍好后，README 的占位路径就能生效，旧图可以删掉。
+`assets/home.png` 和 `assets/reader.png` 是旧图：侧栏还写着 "Quill"，用的是旧的紫色配色，和当前版本（v2.6.0）对不上。这批新图拍好后，README 的占位路径就能生效，旧图可以删掉。
 
 ## 环境准备
 

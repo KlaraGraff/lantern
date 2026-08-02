@@ -10,7 +10,7 @@ The database uses SQLite `secure_delete=ON` with `journal_mode=DELETE`, avoiding
 
 Lantern no longer talks to the operating-system credential store at all — not at startup, not
 during AI use, and not through any user-visible action. Two inherited import paths were removed
-in v2.5.0: the v1.4 AES-GCM vault, whose master key lived in the Keychain under the pre-fork
+in v2.6.0: the v1.4 AES-GCM vault, whose master key lived in the Keychain under the pre-fork
 service id `com.ryoyamada.quill`, and a still older layout that kept one Keychain item per
 credential. With them went the `aes-gcm`, `zeroize`, `keyring`, and `security-framework`
 dependencies.

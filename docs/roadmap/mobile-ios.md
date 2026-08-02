@@ -88,7 +88,7 @@ shipped iOS app**, split by milestone because the two halves behave very differe
 
 - **It compiles: about a day.** One thing stops the Android compiler — the `reqwest` TLS line.
   The `keyring` call sites this entry used to budget for no longer exist: deleting the v1.4
-  vault in v2.5.0 took `keyring` and `security-framework` out of `Cargo.toml` entirely, so
+  vault in v2.6.0 took `keyring` and `security-framework` out of `Cargo.toml` entirely, so
   `secrets.rs` is now plain SQLite on every platform. `HOME` and `content://` are runtime
   failures, not compile failures.
 - **It is usable: 18–30 days**, dominated by `content://` import (3–5), a real Android secrets
@@ -317,7 +317,7 @@ buildbot for the same reason. This is not theoretical here:
 
 So split [D-002](#d-002--ios-first-android-deferred)'s estimate in two. *Compiles* is now
 the very small half — just the `reqwest` TLS line. The `keyring` gating this paragraph used to
-budget for went away with the v1.4 vault in v2.5.0; `secrets.rs` no longer imports `keyring` on
+budget for went away with the v1.4 vault in v2.6.0; `secrets.rs` no longer imports `keyring` on
 any platform. *Usable* is the rest. Buy "compiles" early and put a nightly
 `cargo check --target aarch64-linux-android` behind it, and Android cannot rot while iOS is
 being built. Note the 18 existing `target_os = "android"` cfgs are all
@@ -420,7 +420,7 @@ what was read.
 
 ### F-002 — Four compile-time blockers, all verified against vendored source
 
-> **Item 2 no longer exists (2026-08-02, v2.5.0).** Deleting the v1.4 vault removed the only
+> **Item 2 no longer exists (2026-08-02, v2.6.0).** Deleting the v1.4 vault removed the only
 > `keyring` call sites, and `keyring` / `security-framework` are out of `Cargo.toml`. Kept
 > below as the audit record of what P0 actually had to deal with.
 

@@ -135,7 +135,7 @@ store is preserved.
 **`keyring` is gone — this row is now half a row.** This entry used to describe an `E0432` on
 Android, because keyring 3.x has no Android backend at all (docs.rs for 3.6.3 lists Linux,
 FreeBSD, OpenBSD, Windows, macOS, iOS — Android absent). That compile blocker no longer
-exists: deleting the v1.4 vault in v2.5.0 removed the only two `Entry::` call sites, and with
+exists: deleting the v1.4 vault in v2.6.0 removed the only two `Entry::` call sites, and with
 them `keyring`, `security-framework`, `aes-gcm`, and `zeroize` from `Cargo.toml`. `secrets.rs`
 is now one SQLite table on every platform, so an Android build has nothing to gate.
 
