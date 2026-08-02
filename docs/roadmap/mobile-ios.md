@@ -61,9 +61,24 @@ paginated reading, or App Review rejects the architecture.
 helpers do not panic; `keyring` has an Apple backend; `reqwest`'s default TLS resolves to
 Security.framework instead of OpenSSL; WKWebView implements `speechSynthesis` and Android
 System WebView does not; the file picker returns a real path instead of a `content://` URI.
-Android needs roughly 25–35 extra days of platform work that iOS does not.
 
 **Cost of this choice:** Android users get nothing from this milestone. Accepted.
+
+**Re-scored 2026-08-02** against Readest, which ships all three from one codebase — see
+[`readest-comparison.md`](readest-comparison.md) §2. The original "25–35 extra days" was too
+pessimistic and one of its premises is retired:
+
+- Android builds on a **Linux** runner (Readest's `release.yml`), not a Mac. In CI-minute
+  terms it is the cheap platform, not the expensive one.
+- `pdfium` is a *runtime* dylib load with a documented no-cover fallback, so it never blocks
+  the Android compile — it degrades.
+- The TLS problem is one line (`default-features = false` + `rustls-tls-native-roots`) and
+  should be fixed now regardless of when Android happens, because switching root-cert stores
+  deserves its own commit rather than being debugged alongside NDK linker errors.
+
+Realistic total is **16–24 days on top of a shipped iOS app**, dominated by the `content://`
+import path (3–5), an Android secrets store to replace `keyring` (2–4), and store review.
+The ordering decision is unchanged: iOS first, one vendor and one WebView.
 
 **Revisit after:** iOS ships and the capability layer ([D-005](#d-005--capability-flags-not-platform-checks))
 has proven itself. Android then reuses phases P1–P3 wholesale.
@@ -142,6 +157,11 @@ concretely, a set of `false` values on this object. Adapted from Readest's `AppS
 interface (`apps/readest-app/src/types/system.ts`).
 
 **Build this before the single-window work** — that work consumes `hasWindow`.
+
+**Additions from the Readest read** ([`readest-comparison.md`](readest-comparison.md) §4):
+declare defaults as `false` on a base class so a new capability is absent everywhere until a
+platform opts in; add `hasUpdater` (Apple forbids self-update) and `distChannel`, since an App
+Store build and a sideload of the same OS differ on what they may touch on disk.
 
 ### D-006 — Sync ships in v1
 
@@ -540,6 +560,11 @@ no horizontal scroll.
 1. Page-turn: tap zones, swipe, chrome toggle
 2. Word lookup via long-press; disambiguate from selection
 3. Resolve the iOS selection callout conflict ([Q-003](#q-003--does-ios-text-selection-fight-the-lookup-popover))
+
+Read [`readest-comparison.md`](readest-comparison.md) §5 first. This is a gesture *arena* —
+a priority registry plus a claim/lock decision — not a swipe handler, which is what the
+10-day estimate is actually for. Their tuned constants (edge zone 0.18, fast-claim 6px,
+vertical lock 8px, horizontal dominance 1.5×) are the expensive part and are free to copy.
 
 **Exit criterion:** a full chapter can be read and three words looked up without a keyboard.
 
