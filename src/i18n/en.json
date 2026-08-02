@@ -860,6 +860,8 @@
   "settings.ai.summariesAutoHint": "Uses your configured AI once per book to create a reusable overview.",
   "settings.ai.addModel": "Add model",
   "settings.ai.catalogHint": "Pick one from the built-in catalog. You still add your own API key afterwards.",
+  "settings.ai.advanced": "Advanced",
+  "settings.ai.advancedHint": "Endpoint, model ID, temperature",
   "settings.ai.presetName.zhipu": "Zhipu",
   "settings.ai.presetName.deepseek": "DeepSeek",
   "settings.ai.presetName.openai": "OpenAI",

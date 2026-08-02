@@ -858,6 +858,8 @@
   "settings.ai.summariesAutoHint": "每本书会使用已配置的 AI 生成一次可复用概览。",
   "settings.ai.addModel": "添加模型",
   "settings.ai.catalogHint": "从内置目录中选一个。添加后你还需要填入自己的 API Key。",
+  "settings.ai.advanced": "高级设置",
+  "settings.ai.advancedHint": "端点、模型 ID、温度",
   "settings.ai.presetName.zhipu": "智谱",
   "settings.ai.presetName.deepseek": "DeepSeek",
   "settings.ai.presetName.openai": "OpenAI",

@@ -293,6 +293,12 @@ export default function AiServiceCard({
   const [replaceValue, setReplaceValue] = useState("");
   const [credentialBusyId, setCredentialBusyId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Connecting a preset needs none of the endpoint fields. They start open only
+  // where nothing else can supply them: a custom endpoint, or a model ID the
+  // preset never filled in.
+  const [advancedOpen, setAdvancedOpen] = useState(
+    () => profile.provider === "custom" || !profile.model,
+  );
   const profileBusy = busy || credentialBusyId != null;
   // Kept as separate groups rather than merged into one list: which levels this
   // endpoint actually reported is the useful half of the information, and a
@@ -329,6 +335,9 @@ export default function AiServiceCard({
   const setProvider = (provider: string) => {
     const next = presetFor(provider);
     if (!next) return;
+    // A custom endpoint leaves the URL blank on purpose, so the fields that
+    // would otherwise stay hidden are exactly the ones now required.
+    if (provider === "custom") setAdvancedOpen(true);
     onChange({
       provider,
       auth_mode: "api_key",
@@ -520,7 +529,7 @@ export default function AiServiceCard({
             </div>
           )}
 
-          {profile.auth_mode === "oauth" && profile.provider === "openai" ? (
+          {profile.auth_mode === "oauth" && profile.provider === "openai" && (
             <div className="border-t border-border-light py-3">
               <p className="text-[11px] leading-5 text-text-muted">{t("settings.ai.oauthUsesAccount")}</p>
               <div className="mt-2 flex items-center justify-between gap-3">
@@ -542,122 +551,145 @@ export default function AiServiceCard({
                 )}
               </div>
             </div>
-          ) : (
-            <label className="block border-t border-border-light py-3">
-              <span className="mb-1.5 block text-[12px] font-medium text-text-primary">{t("settings.ai.baseUrl")}</span>
-              <Input
-                disabled={profileBusy}
-                value={profile.base_url ?? ""}
-                onChange={(event) => onChange({ base_url: event.target.value })}
-                placeholder="https://api.example.com"
-              />
-              <span className="mt-1 block text-[10px] leading-4 text-text-muted">{t("settings.ai.baseUrlHint")}</span>
-            </label>
           )}
 
-          <div className="border-t border-border-light py-3">
-            <span className="mb-1.5 block text-[12px] font-medium text-text-primary">{t("settings.ai.model")}</span>
-            <ComboField
-              label={t("settings.ai.model")}
-              value={profile.model}
-              disabled={profileBusy}
-              maxLength={200}
-              placeholder={t("settings.ai.modelPlaceholder")}
-              groups={
-                modelOptions.length > 0
-                  ? [{ label: t("settings.ai.modelGroupFetched"), options: modelOptions }]
-                  : []
-              }
-              onChange={(model) => onChange({ model })}
-              onRefresh={() => void onFetchModels()}
-              refreshing={loadingModels}
-              refreshDisabled={profile.auth_mode === "oauth"}
-              refreshLabel={
-                profile.auth_mode === "oauth"
-                  ? t("settings.ai.modelsUnavailableOAuth")
-                  : t("settings.ai.fetchModels")
-              }
-            />
-            <span className="mt-1 block text-[10px] leading-4 text-text-muted">
-              {modelOptions.length > 0
-                ? t("settings.ai.modelsFound", { count: modelOptions.length })
-                : t("settings.ai.modelHint")}
-            </span>
+          <div className="border-t border-border-light">
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen((open) => !open)}
+              aria-expanded={advancedOpen}
+              className="flex w-full items-center gap-1.5 py-3 text-left"
+            >
+              {advancedOpen ? (
+                <ChevronDown size={14} className="shrink-0 text-text-muted" />
+              ) : (
+                <ChevronRight size={14} className="shrink-0 text-text-muted" />
+              )}
+              <span className="text-[12px] font-medium text-text-primary">{t("settings.ai.advanced")}</span>
+              <span className="min-w-0 truncate text-[10px] text-text-muted">{t("settings.ai.advancedHint")}</span>
+            </button>
           </div>
 
-          <div className="border-t border-border-light py-3">
-            <span className="mb-1.5 block text-[12px] font-medium text-text-primary">
-              {t("settings.ai.reasoningEffort")}
-            </span>
-            <ComboField
-              label={t("settings.ai.reasoningEffort")}
-              value={profile.reasoning_effort ?? ""}
-              disabled={profileBusy}
-              maxLength={32}
-              placeholder={t("settings.ai.reasoningEffortDefault")}
-              emptyLabel={t("settings.ai.reasoningEffortDefaultOption")}
-              groups={effortGroups}
-              onChange={(value) => onChange({ reasoning_effort: value.trim() || null })}
-            />
-            <span className="mt-1 block text-[10px] leading-4 text-text-muted">
-              {t("settings.ai.reasoningEffortHint")}
-            </span>
-            {learnedEfforts.options.length > 0 && (
-              <span className="mt-1 flex flex-wrap items-baseline gap-x-1.5 text-[10px] leading-4 text-text-muted">
-                {t("settings.ai.reasoningEffortSource", {
-                  count: learnedEfforts.options.length,
-                  model: profile.model,
-                  date: formatHintDate(learnedEfforts.updated_at),
-                })}
-                <button
-                  type="button"
-                  className="cursor-pointer text-accent-text hover:underline"
-                  onClick={() => void onForgetEffortOptions()}
-                >
-                  {t("settings.ai.reasoningEffortForget")}
-                </button>
-              </span>
-            )}
-            <label className="mt-3 flex items-center justify-between gap-3">
-              <span className="min-w-0">
-                <span className="block text-[12px] font-medium text-text-primary">
-                  {t("settings.ai.reasoningEffortAllFeatures")}
+          {advancedOpen && (
+            <>
+              {!(profile.auth_mode === "oauth" && profile.provider === "openai") && (
+                <label className="block border-t border-border-light py-3">
+                  <span className="mb-1.5 block text-[12px] font-medium text-text-primary">{t("settings.ai.baseUrl")}</span>
+                  <Input
+                    disabled={profileBusy}
+                    value={profile.base_url ?? ""}
+                    onChange={(event) => onChange({ base_url: event.target.value })}
+                    placeholder="https://api.example.com"
+                  />
+                  <span className="mt-1 block text-[10px] leading-4 text-text-muted">{t("settings.ai.baseUrlHint")}</span>
+                </label>
+              )}
+
+              <div className="border-t border-border-light py-3">
+                <span className="mb-1.5 block text-[12px] font-medium text-text-primary">{t("settings.ai.model")}</span>
+                <ComboField
+                  label={t("settings.ai.model")}
+                  value={profile.model}
+                  disabled={profileBusy}
+                  maxLength={200}
+                  placeholder={t("settings.ai.modelPlaceholder")}
+                  groups={
+                    modelOptions.length > 0
+                      ? [{ label: t("settings.ai.modelGroupFetched"), options: modelOptions }]
+                      : []
+                  }
+                  onChange={(model) => onChange({ model })}
+                  onRefresh={() => void onFetchModels()}
+                  refreshing={loadingModels}
+                  refreshDisabled={profile.auth_mode === "oauth"}
+                  refreshLabel={
+                    profile.auth_mode === "oauth"
+                      ? t("settings.ai.modelsUnavailableOAuth")
+                      : t("settings.ai.fetchModels")
+                  }
+                />
+                <span className="mt-1 block text-[10px] leading-4 text-text-muted">
+                  {modelOptions.length > 0
+                    ? t("settings.ai.modelsFound", { count: modelOptions.length })
+                    : t("settings.ai.modelHint")}
                 </span>
-                <span className="mt-0.5 block text-[10px] leading-4 text-text-muted">
-                  {t("settings.ai.reasoningEffortAllFeaturesHint")}
+              </div>
+
+              <div className="border-t border-border-light py-3">
+                <span className="mb-1.5 block text-[12px] font-medium text-text-primary">
+                  {t("settings.ai.reasoningEffort")}
                 </span>
-              </span>
-              <Toggle
-                label={t("settings.ai.reasoningEffortAllFeatures")}
-                checked={profile.reasoning_effort_all_features}
-                onChange={(checked) => onChange({ reasoning_effort_all_features: checked })}
-              />
-            </label>
-          </div>
+                <ComboField
+                  label={t("settings.ai.reasoningEffort")}
+                  value={profile.reasoning_effort ?? ""}
+                  disabled={profileBusy}
+                  maxLength={32}
+                  placeholder={t("settings.ai.reasoningEffortDefault")}
+                  emptyLabel={t("settings.ai.reasoningEffortDefaultOption")}
+                  groups={effortGroups}
+                  onChange={(value) => onChange({ reasoning_effort: value.trim() || null })}
+                />
+                <span className="mt-1 block text-[10px] leading-4 text-text-muted">
+                  {t("settings.ai.reasoningEffortHint")}
+                </span>
+                {learnedEfforts.options.length > 0 && (
+                  <span className="mt-1 flex flex-wrap items-baseline gap-x-1.5 text-[10px] leading-4 text-text-muted">
+                    {t("settings.ai.reasoningEffortSource", {
+                      count: learnedEfforts.options.length,
+                      model: profile.model,
+                      date: formatHintDate(learnedEfforts.updated_at),
+                    })}
+                    <button
+                      type="button"
+                      className="cursor-pointer text-accent-text hover:underline"
+                      onClick={() => void onForgetEffortOptions()}
+                    >
+                      {t("settings.ai.reasoningEffortForget")}
+                    </button>
+                  </span>
+                )}
+                <label className="mt-3 flex items-center justify-between gap-3">
+                  <span className="min-w-0">
+                    <span className="block text-[12px] font-medium text-text-primary">
+                      {t("settings.ai.reasoningEffortAllFeatures")}
+                    </span>
+                    <span className="mt-0.5 block text-[10px] leading-4 text-text-muted">
+                      {t("settings.ai.reasoningEffortAllFeaturesHint")}
+                    </span>
+                  </span>
+                  <Toggle
+                    label={t("settings.ai.reasoningEffortAllFeatures")}
+                    checked={profile.reasoning_effort_all_features}
+                    onChange={(checked) => onChange({ reasoning_effort_all_features: checked })}
+                  />
+                </label>
+              </div>
 
-          <div className="border-t border-border-light py-3">
-            <Slider
-              label={t("settings.ai.temperature")}
-              min={0}
-              max={200}
-              value={Math.round(profile.temperature * 100)}
-              onChange={(value) => onChange({ temperature: value / 100 })}
-              displayValue={profile.temperature.toFixed(1)}
-              hint={t("settings.ai.temperatureHint")}
-            />
-          </div>
+              <div className="border-t border-border-light py-3">
+                <Slider
+                  label={t("settings.ai.temperature")}
+                  min={0}
+                  max={200}
+                  value={Math.round(profile.temperature * 100)}
+                  onChange={(value) => onChange({ temperature: value / 100 })}
+                  displayValue={profile.temperature.toFixed(1)}
+                  hint={t("settings.ai.temperatureHint")}
+                />
+              </div>
 
-          {profile.provider === "ollama" && (
-            <label className="block border-t border-border-light py-3">
-              <span className="mb-1.5 block text-[12px] font-medium text-text-primary">{t("settings.ai.keepAlive")}</span>
-              <Input
-                disabled={profileBusy}
-                value={profile.keep_alive ?? ""}
-                onChange={(event) => onChange({ keep_alive: event.target.value })}
-                placeholder="30m"
-              />
-              <span className="mt-1 block text-[10px] leading-4 text-text-muted">{t("settings.ai.keepAliveHint")}</span>
-            </label>
+              {profile.provider === "ollama" && (
+                <label className="block border-t border-border-light py-3">
+                  <span className="mb-1.5 block text-[12px] font-medium text-text-primary">{t("settings.ai.keepAlive")}</span>
+                  <Input
+                    disabled={profileBusy}
+                    value={profile.keep_alive ?? ""}
+                    onChange={(event) => onChange({ keep_alive: event.target.value })}
+                    placeholder="30m"
+                  />
+                  <span className="mt-1 block text-[10px] leading-4 text-text-muted">{t("settings.ai.keepAliveHint")}</span>
+                </label>
+              )}
+            </>
           )}
 
           {usesApiKeys && (
