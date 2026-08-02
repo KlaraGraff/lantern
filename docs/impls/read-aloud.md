@@ -362,6 +362,71 @@ Steps 1–3 alone already fix the silent-degradation and routing problems and ar
 shippable on their own; 4–6 are the reading highlight; 7–8 are the remaining
 interaction gaps.
 
+## Follow-up: pause, and what the gesture selects
+
+Three things came out of using the shipped version.
+
+### The highlight had to be captured earlier
+
+The follower captured the selection on the first progress event, which only
+arrives after the synthesis round trip. Clicking anywhere during that wait
+cleared the selection, so `capture()` found nothing and the passage played with
+no highlight at all — while a click *after* audio started was harmless.
+
+Capture moved to the `loading` publish inside `speak()`, which runs in the same
+frame as the click that started it. The selection is necessarily still there. It
+is only *cleared* on the first progress event, so the two things the old code did
+at once — read the ranges, drop the selection — now happen at the two moments
+each actually belongs to.
+
+The follower also became owner-aware: it serves detached playback only, ignores
+progress from any other `ownerId`, and keeps its highlight while its passage is
+parked. Without that, a word played over a paused passage would drag the
+passage's highlight along with it.
+
+### Pause is a parked run, not a flag
+
+`Run` records everything needed to restart a queue where it stopped: the step
+index, the offset into that step, and the clips already fetched — so resuming
+costs no round trip and no second charge on a metered provider. `park()` is the
+per-clip stop, and the two clip kinds park differently:
+
+- **Audio** resolves its promise with `"parked"`; the loop returns and a resume
+  re-enters `runQueue` from the seed. The element is discarded, the blob kept.
+- **A voice** is *held*: `speechSynthesis.pause()` leaves the utterance inside
+  the engine and the loop suspended in its `await`. Resuming restores
+  `generation = run.token`, which revives exactly that loop — tokens are unique,
+  so nothing else can be woken by mistake.
+
+`speechSynthesis` is one global engine, which forces two rules. Cancelling a
+paused engine leaves it paused, so every cancel resumes first. And anything else
+that needs the engine must evict the hold, degrading that run from "resume in
+place" to "re-speak this step" — which is why a parked run records a step index
+and not only an offset.
+
+`paused` is a separate field on the player state rather than a `status` value,
+because the two genuinely disagree: a word playing over a parked passage owns the
+foreground while the passage still has to be resumable from the bar.
+
+The covering case — click a word mid-passage, hear it, carry on — falls out of
+this: a non-detached playback started while a detached one is *making sound*
+parks it instead of killing it. While the passage is still fetching there is no
+position worth keeping, so the word simply wins.
+
+### Triple-click selects; what it selects is a setting
+
+Triple-click stays a selection gesture rather than becoming a second lookup —
+a card that opens itself on a whole sentence is harder to undo than one the
+reader asked for. What it grabs is configurable: sentence (default) or paragraph.
+
+Paragraph goes through `paragraphRangeAtPoint` rather than deferring to the
+browser's native triple-click, so the boundaries land on real characters instead
+of the newline and indentation an EPUB has between tags, and the selection menu
+sees the same snapshot either way.
+
+Turning the gesture off frees `mouse:triple` as a bindable trigger, with the same
+two-way conflict guard `mouse:double` already has.
+
 ## Parked
 
 - **Continuous reading past the selection** — whole chapter, auto page turn,
@@ -372,8 +437,6 @@ interaction gaps.
   word by word is plausibly more tiring than the block it replaces, and it would
   need an animation-frame loop instead of `timeupdate`. Revisit only if sentence
   following turns out to feel coarse.
-- **Pause versus stop.** Stop is enough for a selection; pause matters once
-  chapter-length reading exists.
 - **Reading position memory across sessions.**
 
 ## Figma design prompt

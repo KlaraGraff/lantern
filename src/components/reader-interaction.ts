@@ -377,6 +377,56 @@ export function sentenceRangeAtPoint(
   });
 }
 
+/**
+ * The whole block the point sits in — the paragraph, minus its surrounding
+ * whitespace.
+ *
+ * The browser's own triple-click selects the same block, but it takes the raw
+ * node contents: the newline and indentation an EPUB's source has between tags
+ * come along with it, and a selection that ends in whitespace draws a trailing
+ * bar past the end of the text. Going through the flattened run keeps the
+ * boundaries on real characters, and keeps the result the same shape as what
+ * `sentenceRangeAtPoint` returns.
+ */
+export function paragraphRangeAtPoint(doc: Document, x: number, y: number): Range | null {
+  const caret = caretRangeAtPoint(doc, x, y);
+  if (!caret || caret.startContainer.nodeType !== Node.TEXT_NODE) return null;
+  const root = closestTextRunRoot(caret.startContainer);
+  if (!root) return null;
+  const run = flattenTextRun(root);
+  const start = run.text.search(/\S/);
+  if (start < 0) return null;
+  const end = run.text.replace(/\s+$/u, "").length;
+  return rangeForFlatSegment(run, { segment: run.text.slice(start, end), index: start });
+}
+
+/**
+ * How much of the text a triple-click grabs.
+ *
+ * A sentence is the default because it is the unit a reader looks up, listens
+ * to or translates. Whole paragraphs are the browser's own answer, and worth
+ * keeping for anyone reading in longer strides.
+ */
+export type TripleClickScope = "sentence" | "paragraph";
+
+export const TRIPLE_CLICK_SCOPES: readonly TripleClickScope[] = ["sentence", "paragraph"];
+
+export function parseTripleClickScope(value: string | undefined): TripleClickScope {
+  return value === "paragraph" ? "paragraph" : "sentence";
+}
+
+export function tripleClickRangeAtPoint(
+  doc: Document,
+  x: number,
+  y: number,
+  scope: TripleClickScope,
+  locale?: string,
+): Range | null {
+  return scope === "paragraph"
+    ? paragraphRangeAtPoint(doc, x, y)
+    : sentenceRangeAtPoint(doc, x, y, locale);
+}
+
 /** A sentence inside a selection, and where it sits in the document. */
 export interface SentenceRange {
   text: string;

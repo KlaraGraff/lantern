@@ -42,12 +42,14 @@ import {
   detachedInteraction,
   isInteractiveReaderTarget,
   normalizeInteractionText,
+  parseTripleClickScope,
   selectedRange,
   serializableRect,
   withInheritedContext,
   wordRangeAtPoint,
   type ReaderInteraction,
   type SerializableRect,
+  type TripleClickScope,
 } from "../components/reader-interaction";
 import {
   planCfiHighlightRemoval,
@@ -110,6 +112,7 @@ import {
 } from "./reader/useFoliateAnnotations";
 import { useReadingHighlight } from "./reader/useReadingHighlight";
 import ReadingPlaybackBar from "../components/speech/ReadingPlaybackBar";
+import { cancelSpeech } from "../components/speech/player";
 import type {
   FoliateView,
   ReaderPageInfo,
@@ -271,6 +274,8 @@ export default function Reader() {
   const markMatchingWordsRef = useRef(markerStyle.wordMatchScope !== "current");
   const doubleClickQuickLookupRef = useRef(true);
   const [doubleClickQuickLookup, setDoubleClickQuickLookup] = useState(true);
+  const tripleClickQuickSelectRef = useRef(true);
+  const tripleClickScopeRef = useRef<TripleClickScope>("sentence");
   const readerBindingsRef = useRef<ReaderActionBinding[]>([]);
   const [bindingHud, setBindingHud] = useState<string | null>(null);
   const bindingHudTimerRef = useRef<number | null>(null);
@@ -283,6 +288,8 @@ export default function Reader() {
     const doubleClick = settings.double_click_quick_lookup !== "false";
     const nextMarkerStyle = parseMarkerStyleConfig(settings[MARKER_STYLE_SETTING_KEY]);
     doubleClickQuickLookupRef.current = doubleClick;
+    tripleClickQuickSelectRef.current = settings.triple_click_quick_select !== "false";
+    tripleClickScopeRef.current = parseTripleClickScope(settings.triple_click_scope);
     autoHighlightLookupsRef.current = settings.auto_highlight_lookup_words !== "false";
     markerStyleRef.current = nextMarkerStyle;
     markMatchingWordsRef.current = nextMarkerStyle.wordMatchScope !== "current";
@@ -952,6 +959,11 @@ export default function Reader() {
 
   useReadingHighlight({ viewRef, showReadingHighlight, clearReadingHighlight });
 
+  // Reading aloud is anchored to this book's text — it paints a highlight into
+  // the page and follows the audio through it — so leaving the reader ends it.
+  // Nothing else does now that a dismissed card no longer cancels playback.
+  useEffect(() => () => cancelSpeech(), []);
+
   const navigateToSource = useCallback(async (source: CitedSource) => {
     if (isTextBook && source.charStart != null) {
       await flashNavigationTarget(textLocation(source.charStart, source.charEnd ?? source.charStart));
@@ -1192,6 +1204,8 @@ export default function Reader() {
     forceClickSuppressedUntilRef,
     annotationClickDocumentRef,
     doubleClickQuickLookupRef,
+    tripleClickQuickSelectRef,
+    tripleClickScopeRef,
     cancelPendingSelectionMenu,
     cancelPendingWordClick,
     openLearningInteraction,

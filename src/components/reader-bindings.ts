@@ -48,6 +48,7 @@ export function isReservedReaderBinding(binding: string) {
 
 export function formatReaderBinding(binding: string, locale = "en"): string {
   if (binding === "mouse:double") return locale.startsWith("zh") ? "双击" : "Double click";
+  if (binding === "mouse:triple") return locale.startsWith("zh") ? "三击" : "Triple click";
   if (binding.startsWith("mouse:")) {
     const button = Number(binding.slice("mouse:".length));
     const labels: Record<number, string> = locale.startsWith("zh")
@@ -82,7 +83,7 @@ export function parseReaderBindings(value: unknown): ReaderBindingsConfig {
     const actionId = (item as ReaderActionBinding).actionId;
     const trigger = (item as ReaderActionBinding).trigger;
     if (typeof actionId !== "string" || typeof trigger !== "string"
-      || (!trigger.startsWith("key:") && trigger !== "mouse:double")
+      || (!trigger.startsWith("key:") && trigger !== "mouse:double" && trigger !== "mouse:triple")
       || seenActions.has(actionId) || seenTriggers.has(trigger)) return [];
     seenActions.add(actionId);
     seenTriggers.add(trigger);

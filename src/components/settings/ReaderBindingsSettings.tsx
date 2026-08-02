@@ -16,6 +16,7 @@ interface ReaderBindingsSettingsProps {
   value: ReaderActionBinding[];
   config: CardDesignConfigV1;
   doubleClickEnabled: boolean;
+  tripleClickEnabled: boolean;
   previousPageBinding: string;
   nextPageBinding: string;
   onChange: (value: ReaderActionBinding[]) => void;
@@ -25,6 +26,7 @@ export default function ReaderBindingsSettings({
   value,
   config,
   doubleClickEnabled,
+  tripleClickEnabled,
   previousPageBinding,
   nextPageBinding,
   onChange,
@@ -80,17 +82,25 @@ export default function ReaderBindingsSettings({
     return () => window.removeEventListener("keydown", handler, true);
   }, [nextPageBinding, onChange, previousPageBinding, recording, t, value]);
 
-  const setDoubleClick = (index: number) => {
-    const conflict = doubleClickEnabled
-      ? t("settings.tools.bindings.doubleClickConflict")
-      : value.some((item, itemIndex) => itemIndex !== index && item.trigger === "mouse:double")
+  // Both click gestures have a built-in meaning that has to be turned off before
+  // they can carry an action, so the button, the guard and the error read the
+  // same for each — only which setting owns it differs.
+  const clickTriggers = [
+    { trigger: "mouse:double", label: "doubleClick", takenByBuiltIn: doubleClickEnabled },
+    { trigger: "mouse:triple", label: "tripleClick", takenByBuiltIn: tripleClickEnabled },
+  ] as const;
+
+  const setClickTrigger = (index: number, { trigger, label, takenByBuiltIn }: typeof clickTriggers[number]) => {
+    const conflict = takenByBuiltIn
+      ? t(`settings.tools.bindings.${label}Conflict`)
+      : value.some((item, itemIndex) => itemIndex !== index && item.trigger === trigger)
         ? t("settings.tools.bindings.duplicate")
         : null;
     if (conflict) {
       setErrors((current) => ({ ...current, [index]: conflict }));
       return;
     }
-    onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, trigger: "mouse:double" } : item));
+    onChange(value.map((item, itemIndex) => itemIndex === index ? { ...item, trigger } : item));
   };
   const nextTrigger = Array.from({ length: 23 }, (_, index) => `key:F${index + 2}`)
     .find((trigger) => trigger !== previousPageBinding
@@ -119,11 +129,14 @@ export default function ReaderBindingsSettings({
                 <Keyboard size={13} />
                 {recording === index ? t("settings.tools.bindings.recording") : formatReaderBinding(binding.trigger, i18n.language)}
               </button>
-              <button
-                type="button"
-                onClick={() => setDoubleClick(index)}
-                className="h-8 rounded-md border border-border px-2 text-[11px] text-text-secondary hover:bg-bg-input"
-              >{t("settings.tools.bindings.doubleClick")}</button>
+              {clickTriggers.map((click) => (
+                <button
+                  key={click.trigger}
+                  type="button"
+                  onClick={() => setClickTrigger(index, click)}
+                  className="h-8 shrink-0 rounded-md border border-border px-2 text-[11px] text-text-secondary hover:bg-bg-input"
+                >{t(`settings.tools.bindings.${click.label}`)}</button>
+              ))}
               <button
                 type="button"
                 title={t("common.delete")}

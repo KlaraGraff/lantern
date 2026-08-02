@@ -12,14 +12,21 @@ import {
   rangeFromSelectionSnapshotAtPoint,
   replaceDocumentSelection,
   selectedRange,
-  sentenceRangeAtPoint,
   snapshotSelectionRange,
+  tripleClickRangeAtPoint,
   viewportRectForRange,
   wordRangeAtPoint,
   type ReaderInteraction,
   type ReaderSelectionSnapshot,
+  type TripleClickScope,
 } from "../../components/reader-interaction";
 import { bindingFromKeyboardEvent } from "../../components/reader-bindings";
+
+/**
+ * How long an action waits to see whether another click is coming. One click
+ * yields to two, and two yield to three, so each count has to outlive the next.
+ */
+const CLICK_COUNT_GRACE_MS = 240;
 
 /**
  * How close to the edge a drag has to get before the page turns. Wide enough to
@@ -59,6 +66,8 @@ interface ReaderInteractionsOptions {
   forceClickSuppressedUntilRef: MutableRefObject<number>;
   annotationClickDocumentRef: MutableRefObject<Document | null>;
   doubleClickQuickLookupRef: MutableRefObject<boolean>;
+  tripleClickQuickSelectRef: MutableRefObject<boolean>;
+  tripleClickScopeRef: MutableRefObject<TripleClickScope>;
   cancelPendingSelectionMenu(): void;
   cancelPendingWordClick(): void;
   openLearningInteraction(interaction: ReaderInteraction): void;
@@ -103,6 +112,8 @@ export function useReaderInteractions({
   forceClickSuppressedUntilRef,
   annotationClickDocumentRef,
   doubleClickQuickLookupRef,
+  tripleClickQuickSelectRef,
+  tripleClickScopeRef,
   cancelPendingSelectionMenu,
   cancelPendingWordClick,
   openLearningInteraction,
@@ -406,7 +417,7 @@ export function useReaderInteractions({
       pendingWordClickRef.current = window.setTimeout(() => {
         pendingWordClickRef.current = null;
         openLearningInteraction(interaction);
-      }, 240);
+      }, CLICK_COUNT_GRACE_MS);
     });
     doc.addEventListener("dblclick", (event: MouseEvent) => {
       cancelPendingWordClick();
@@ -450,26 +461,67 @@ export function useReaderInteractions({
       event.preventDefault();
       replaceDocumentSelection(doc, range);
       selectionSnapshot = snapshotSelectionRange(range);
-      openLearningInteraction(interaction);
+      // Deferred, not immediate: a triple-click arrives as a double-click
+      // followed by a third click, so looking the word up here would fire on the
+      // way to selecting a sentence — the card would open over a selection the
+      // reader never asked about. The third click cancels this the same way a
+      // double-click cancels the single-click lookup.
+      pendingWordClickRef.current = window.setTimeout(() => {
+        pendingWordClickRef.current = null;
+        openLearningInteraction(interaction);
+      }, CLICK_COUNT_GRACE_MS);
     });
 
     // Triple-click. The browser would select the whole paragraph, but while
-    // reading the useful unit is one sentence — and because the paragraph is a
-    // single DOM node spanning however many columns, the sentence this picks can
-    // cross a page the pointer could never have been dragged across.
+    // reading the useful unit is usually one sentence — and because the
+    // paragraph is a single DOM node spanning however many columns, the sentence
+    // this picks can cross a page the pointer could never have been dragged
+    // across. Which of the two it takes is a setting; the paragraph scope goes
+    // through the same code rather than deferring to the browser, so the
+    // selection lands on real characters and the menu sees the same snapshot.
     doc.addEventListener("click", (event: MouseEvent) => {
       if (event.detail !== 3) return;
-      if (!supportsSelection || isInteractiveReaderTarget(event.target)) return;
+      // Before any other guard: the second click of this gesture queued a word
+      // lookup, and it has to be called off even when this click resolves to no
+      // sentence. Otherwise the card still opens and the gesture half-works.
       cancelPendingWordClick();
-      const range = sentenceRangeAtPoint(
+      cancelPendingSelectionMenu();
+      if (!supportsSelection || isInteractiveReaderTarget(event.target)) return;
+      const locale = doc.documentElement.lang || undefined;
+      const range = tripleClickRangeAtPoint(
         doc,
         event.clientX,
         event.clientY,
-        doc.documentElement.lang || undefined,
+        tripleClickScopeRef.current,
+        locale,
       );
       // Leave the browser's own selection alone rather than clearing it: an
       // unresolvable point should do nothing, not undo what was already there.
       if (!range || !range.toString().trim()) return;
+
+      if (!tripleClickQuickSelectRef.current) {
+        // Turned off, the gesture is free to carry a bound action instead. The
+        // range still says what that action applies to, even though the reader
+        // never sees it selected.
+        const text = range.toString().trim();
+        const normalizedText = normalizeInteractionText(text);
+        const location = view.getCFI(index, range);
+        const interaction: ReaderInteraction | null = normalizedText && location ? {
+          trigger: "selection-menu",
+          kind: classifySelection(text, locale),
+          text,
+          normalizedText,
+          context: contextForRange(range, text),
+          location,
+          anchorRect: viewportRectForRange(range),
+          source: "foliate",
+          format: bookFormat === "pdf" ? "pdf" : "epub",
+          locale,
+        } : null;
+        if (handleReaderBinding("mouse:triple", interaction)) event.preventDefault();
+        return;
+      }
+
       event.preventDefault();
       replaceDocumentSelection(doc, range);
       selectionSnapshot = snapshotSelectionRange(range);
@@ -525,6 +577,8 @@ export function useReaderInteractions({
     cancelPendingSelectionMenu,
     cancelPendingWordClick,
     doubleClickQuickLookupRef,
+    tripleClickQuickSelectRef,
+    tripleClickScopeRef,
     forceClickSuppressedUntilRef,
     handlePageTurnContextMenu,
     handleReaderBinding,

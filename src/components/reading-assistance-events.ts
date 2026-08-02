@@ -8,6 +8,8 @@ export interface ReadingAssistanceSettingsChangedPayload {
 
 export const READING_ASSISTANCE_SETTING_KEYS = [
   "double_click_quick_lookup",
+  "triple_click_quick_select",
+  "triple_click_scope",
   "auto_highlight_lookup_words",
   "marker_style_config",
   "learning_card_config",

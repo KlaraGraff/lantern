@@ -13,6 +13,7 @@ import {
 } from "../learning-card";
 import type { CustomImportSource, UnsavedEditorController } from "./CustomActionEditor";
 import Toggle from "../ui/Toggle";
+import Select from "../ui/Select";
 import CardDesignSettings from "./CardDesignSettings";
 import DensityHelpDialog from "./DensityHelpDialog";
 import SelectionMenuSettings from "./SelectionMenuSettings";
@@ -29,6 +30,11 @@ import {
 } from "../marker-style";
 import { notifyReadingAssistanceSettingsChanged } from "../reading-assistance-events";
 import { parseReaderBindings, READER_BINDINGS_SETTING_KEY, type ReaderActionBinding } from "../reader-bindings";
+import {
+  TRIPLE_CLICK_SCOPES,
+  parseTripleClickScope,
+  type TripleClickScope,
+} from "../reader-interaction";
 
 type ToolsView = "interaction" | "cards" | "menu" | "markers";
 
@@ -130,6 +136,8 @@ export default function ToolsSettings({
   const [autoHighlightLookupWords, setAutoHighlightLookupWords] = useState(true);
   const [markerStyle, setMarkerStyle] = useState<MarkerStyleConfigV1>(createDefaultMarkerStyleConfig);
   const [doubleClickQuickLookup, setDoubleClickQuickLookup] = useState(true);
+  const [tripleClickQuickSelect, setTripleClickQuickSelect] = useState(true);
+  const [tripleClickScope, setTripleClickScope] = useState<TripleClickScope>("sentence");
   const [readerBindings, setReaderBindings] = useState<ReaderActionBinding[]>([]);
   const [lastTouched, setLastTouched] = useState<{ id: string; nonce: number } | null>(null);
   const [testPreview, setTestPreview] = useState<{ config: CardDesignConfigV1; text: string; id: string; nonce: number } | null>(null);
@@ -182,6 +190,8 @@ export default function ToolsSettings({
     setAutoHighlightLookupWords(settings.auto_highlight_lookup_words !== "false");
     setMarkerStyle(parseMarkerStyleConfig(settings[MARKER_STYLE_SETTING_KEY]));
     setDoubleClickQuickLookup(settings.double_click_quick_lookup !== "false");
+    setTripleClickQuickSelect(settings.triple_click_quick_select !== "false");
+    setTripleClickScope(parseTripleClickScope(settings.triple_click_scope));
     setReaderBindings(parseReaderBindings(settings[READER_BINDINGS_SETTING_KEY]).bindings);
     hydratedRef.current = true;
   }, [settings, loading]);
@@ -359,10 +369,44 @@ export default function ToolsSettings({
               }}
             />
           </SettingsRow>
+          <SettingsRow
+            title={t("settings.tools.interaction.tripleClick")}
+            subtitle={t("settings.tools.interaction.tripleClickHint")}
+          >
+            <div className="flex items-center gap-3">
+              {tripleClickQuickSelect && (
+                <Select
+                  className="w-[104px]"
+                  value={tripleClickScope}
+                  onChange={(scope) => {
+                    setTripleClickScope(parseTripleClickScope(scope));
+                    persistLegacy("triple_click_scope", scope);
+                  }}
+                  options={TRIPLE_CLICK_SCOPES.map((scope) => ({
+                    value: scope,
+                    label: t(`settings.tools.interaction.tripleClickScope.${scope}`),
+                  }))}
+                />
+              )}
+              <Toggle
+                label={t("settings.tools.interaction.tripleClick")}
+                checked={tripleClickQuickSelect}
+                onChange={(enabled) => {
+                  if (enabled && readerBindings.some((binding) => binding.trigger === "mouse:triple")) {
+                    showSavedToast(t("settings.tools.bindings.tripleClickConflictReverse"));
+                    return;
+                  }
+                  setTripleClickQuickSelect(enabled);
+                  persistLegacy("triple_click_quick_select", String(enabled));
+                }}
+              />
+            </div>
+          </SettingsRow>
           <ReaderBindingsSettings
             value={readerBindings}
             config={config}
             doubleClickEnabled={doubleClickQuickLookup}
+            tripleClickEnabled={tripleClickQuickSelect}
             previousPageBinding={settings.previous_page_binding || "key:ArrowLeft"}
             nextPageBinding={settings.next_page_binding || "key:ArrowRight"}
             onChange={(bindings) => {
