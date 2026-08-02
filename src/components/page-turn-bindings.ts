@@ -8,4 +8,4 @@ export {
   keyboardEventMatchesBinding,
   mouseEventMatchesBinding,
   formatPageTurnBinding,
-} from "./reader-bindings";
+} from "./reader-bindings.ts";

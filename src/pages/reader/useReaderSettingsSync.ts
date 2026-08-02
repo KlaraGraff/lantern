@@ -8,25 +8,28 @@ import {
   type SetStateAction,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  type PageColumns,
-  type PageTurnAnimation,
-  type ReaderSettingsState,
-  type ReadingMode,
+// Explicit extensions and type-only imports: the unit tests load this module
+// through Node's ESM loader, which neither resolves extensionless relative
+// paths nor drops an import whose only bindings are types.
+import type {
+  PageColumns,
+  PageTurnAnimation,
+  ReaderSettingsState,
+  ReadingMode,
 } from "../../components/ReaderSettings";
 import {
   getDefaultReaderTheme,
   isReaderFontAvailable,
   parseReaderCustomTheme,
-} from "../../components/reader-settings";
+} from "../../components/reader-settings.ts";
 import {
   DEFAULT_NEXT_PAGE_BINDING,
   DEFAULT_PREVIOUS_PAGE_BINDING,
-} from "../../components/page-turn-bindings";
+} from "../../components/page-turn-bindings.ts";
 import {
   listenForSettingsChanged,
   notifySettingsChanged,
-} from "../../components/settings-events";
+} from "../../components/settings-events.ts";
 
 const readerPreferenceSettingKeys = {
   theme: "reader_theme",
@@ -43,30 +46,33 @@ const readerPreferenceSettingKeys = {
   narrowFontShrink: "narrow_font_shrink",
 } as const;
 
-// Typography that the Settings page owns globally *and* the reader panel can
-// override for one book. Writing these unconditionally froze every book that had
-// ever been opened at the values of its first open: `bookSettings.fontSize ??
+// Settings the Settings page owns globally *and* the reader panel can override
+// for one book. Writing these unconditionally froze every book that had ever
+// been opened at the values of its first open: `bookSettings.fontSize ??
 // global.font_size` then never fell through again. They are now stored only once
 // the user changes them in the reader, and `typographyOverrides` records that
 // intent explicitly — a blob without it is a snapshot from the old behaviour and
 // carries no overrides, so those books follow the Settings page again.
-// `theme` is deliberately not in this list. It has the same problem, but which
-// way it should resolve is a separate open decision.
-const perBookTypographyKeys = ["font", "fontSize", "lineSpacing", "wordSpacing"] as const;
-type PerBookTypographyKey = (typeof perBookTypographyKeys)[number];
+// `theme` had the same freeze and now resolves the same way: a book follows the
+// global theme until the user picks one in the reader panel. `customTheme` does
+// not belong here — it is global-only (see the merge below), so there is nothing
+// per-book to record. The stored field keeps its original name so overrides
+// saved before `theme` joined the list survive.
+const perBookOverrideKeys = ["theme", "font", "fontSize", "lineSpacing", "wordSpacing"] as const;
+type PerBookOverrideKey = (typeof perBookOverrideKeys)[number];
 
 export interface StoredReaderSettings extends Partial<ReaderSettingsState> {
-  typographyOverrides?: PerBookTypographyKey[];
+  typographyOverrides?: PerBookOverrideKey[];
 }
 
-function readStoredOverrides(bookId: string | undefined): Set<PerBookTypographyKey> {
+function readStoredOverrides(bookId: string | undefined): Set<PerBookOverrideKey> {
   if (!bookId) return new Set();
   const saved = localStorage.getItem(`reader-settings-${bookId}`);
   if (!saved) return new Set();
   try {
     const parsed = JSON.parse(saved) as StoredReaderSettings;
     return new Set((parsed.typographyOverrides ?? []).filter(
-      (key): key is PerBookTypographyKey => perBookTypographyKeys.includes(key),
+      (key): key is PerBookOverrideKey => perBookOverrideKeys.includes(key),
     ));
   } catch {
     // A corrupt blob simply means no overrides; Reader.tsx clears the key.
@@ -135,7 +141,7 @@ export function mergeStoredReaderSettings(
 ): ReaderSettingsState {
   const overrides = new Set(storedSettings.typographyOverrides ?? []);
   const bookSettings: Partial<ReaderSettingsState> = { ...storedSettings };
-  for (const key of perBookTypographyKeys) {
+  for (const key of perBookOverrideKeys) {
     if (!overrides.has(key)) delete bookSettings[key];
   }
   const requestedFont = bookSettings.font
@@ -200,7 +206,7 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
   const settingsLoadedBookRef = useRef<string | null>(null);
   const saveTimerRef = useRef<number | null>(null);
   const pendingPreferencesRef = useRef<Record<string, string>>({});
-  const typographyOverridesRef = useRef<Set<PerBookTypographyKey>>(new Set());
+  const typographyOverridesRef = useRef<Set<PerBookOverrideKey>>(new Set());
 
   // Seed from whatever the book already has. Runs before the first write, which
   // is gated on the async settings load finishing, so nothing is lost.
@@ -251,7 +257,7 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
     setReaderSettings(next);
     // This callback only runs for edits made in the reader's own settings panel,
     // so a differing value here is exactly the per-book override signal.
-    for (const key of perBookTypographyKeys) {
+    for (const key of perBookOverrideKeys) {
       if (previous[key] !== next[key]) typographyOverridesRef.current.add(key);
     }
     const changed: Record<string, string> = {};
@@ -335,7 +341,7 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
     if (settingsLoadedBookRef.current !== bookId) return;
     const overrides = typographyOverridesRef.current;
     const stored: StoredReaderSettings = { ...readerSettings };
-    for (const key of perBookTypographyKeys) {
+    for (const key of perBookOverrideKeys) {
       if (!overrides.has(key)) delete stored[key];
     }
     // Never a per-book value: it is a global preference with no reader control.
