@@ -1,9 +1,11 @@
-import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
+
+import ColorSwatches from "./ColorSwatches";
 
 interface ColorControlProps {
   color: string;
   opacity: number;
+  /** Pass none to drop the quick picks — a panel showing them elsewhere does. */
   presets: readonly string[];
   colorLabel: string;
   pickerLabel: string;
@@ -46,19 +48,7 @@ export default function ColorControl({
       <div>
         <p className="mb-2 text-[11px] text-text-muted">{colorLabel}</p>
         <div className="flex flex-wrap items-center gap-2">
-          {presets.map((preset) => (
-            <button
-              key={preset}
-              type="button"
-              aria-label={preset}
-              title={preset}
-              onClick={() => updateColor(preset)}
-              className={`flex size-7 items-center justify-center rounded-full border border-black/10 ${color === preset ? "ring-2 ring-accent ring-offset-2 ring-offset-bg-surface" : ""}`}
-              style={{ backgroundColor: preset }}
-            >
-              {color === preset && <Check size={13} className="text-white drop-shadow" />}
-            </button>
-          ))}
+          {presets.length > 0 && <ColorSwatches color={color} presets={presets} onSelect={updateColor} />}
           <label className="relative size-7 shrink-0 overflow-hidden rounded-full border border-border" title={pickerLabel}>
             <input
               type="color"

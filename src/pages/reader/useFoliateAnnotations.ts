@@ -23,6 +23,14 @@ import {
   type MarkerVisualStyle,
 } from "../../components/marker-style";
 import {
+  READING_HIGHLIGHT_COLOR,
+  READING_HIGHLIGHT_OPACITY,
+  SAVED_HIGHLIGHT_OPACITY,
+  savedHighlightColor,
+  wordMarkerColor,
+  wordMarkerStyle,
+} from "../../components/mark-palette";
+import {
   installCustomFontFacesInDocument,
   type CustomFontRecord,
 } from "../../components/custom-fonts";
@@ -55,48 +63,6 @@ export interface LookupOccurrenceMark {
 type MarkerKind = "lookup" | "vocab";
 export type FoliateMarker = { color: string; kind: MarkerKind };
 type AppliedAnnotation = { color: string; styleKind: AnnotationStyleKind };
-
-/**
- * Distinct from every saved highlight colour on purpose: a reading highlight and
- * a user's own can be on screen together, and only one of them survives the
- * playback. It is also the only cold wash on the page — a marked range is warm,
- * a range being read aloud is not.
- */
-export const READING_HIGHLIGHT_COLOR = "#7DD3FC";
-const READING_HIGHLIGHT_OPACITY = 0.42;
-
-export const wordMarkerColor = {
-  lookup: "__lookup__",
-  vocabNew: "__vocab_new__",
-  learning: "__learning__",
-  mastered: "__mastered__",
-} as const;
-
-const highlightColorMap: Record<string, string> = {
-  yellow: "#FBBF24",
-  green: "#34D399",
-  blue: "#60A5FA",
-  pink: "#F472B6",
-  purple: "#A78BFA",
-};
-
-/**
- * The vocabulary underlines, as one progression rather than four unrelated
- * colours. A new word is the warmest and most solid; each step towards mastered
- * drains the hue out of it, and mastered is a grey dash you can read straight
- * past without it ever having claimed your attention.
- *
- * They are all underlines, and a manual or automatic mark is a wash across a
- * range. That is what keeps the two families apart — hue cannot, since the
- * marker colour is the reader's to choose and the presets cover most of the
- * wheel. A manual style with `underline` switched on gives that separation up.
- */
-const wordMarkerStyle: Record<string, { color: string; opacity: number; dashed?: boolean }> = {
-  [wordMarkerColor.vocabNew]: { color: "#D97706", opacity: 0.85 },
-  [wordMarkerColor.learning]: { color: "#2F9E8F", opacity: 0.85 },
-  [wordMarkerColor.mastered]: { color: "#94A3B8", opacity: 0.9, dashed: true },
-  [wordMarkerColor.lookup]: { color: "#8D7C65", opacity: 0.45 },
-};
 
 function drawMarkerRects(
   rects: DOMRectList,
@@ -201,12 +167,12 @@ export function drawFoliateAnnotation(
   // repainting it, so a constant chosen to be unmistakable never once reached
   // the screen — the sentence being read aloud looked like a yellow highlight.
   const reading = annotation.color === READING_HIGHLIGHT_COLOR;
-  const color = highlightColorMap[annotation.color]
-    ?? (/^#[0-9a-f]{6}$/i.test(annotation.color) ? annotation.color : highlightColorMap.yellow);
+  const color = savedHighlightColor[annotation.color]
+    ?? (/^#[0-9a-f]{6}$/i.test(annotation.color) ? annotation.color : savedHighlightColor.yellow);
   draw((rects) => {
     const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
     group.setAttribute("fill", color);
-    group.setAttribute("opacity", String(reading ? READING_HIGHLIGHT_OPACITY : 0.35));
+    group.setAttribute("opacity", String(reading ? READING_HIGHLIGHT_OPACITY : SAVED_HIGHLIGHT_OPACITY));
     group.style.mixBlendMode = "multiply";
     for (const { left, top, height, width } of rects) {
       const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");

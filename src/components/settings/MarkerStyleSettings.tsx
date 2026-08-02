@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   MARKER_COLOR_PRESETS,
@@ -9,11 +9,13 @@ import {
   type MarkerStyleConfig,
   type MarkerVisualStyle,
 } from "../marker-style";
-import { fonts } from "../reader-settings";
+import { systemMark, type SystemMark, type SystemMarkId, markCollisions } from "../mark-palette";
+import { fonts, getThemeStyles } from "../reader-settings";
 import { installCustomFontFaces, type CustomFontRecord } from "../custom-fonts";
 import Select from "../ui/Select";
 import Toggle from "../ui/Toggle";
 import ColorControl from "../ui/ColorControl";
+import ColorSwatches from "../ui/ColorSwatches";
 import { ROW_CONTROL_WIDTH } from "./types";
 import WordFormsManager from "./WordFormsManager";
 
@@ -22,10 +24,49 @@ interface MarkerStyleSettingsProps {
   onChange: (value: MarkerStyleConfig) => void;
 }
 
+/** Which of the two styles the controls below the sample are editing. */
+type EditTarget = "manual" | "automatic";
+
 function fontFamilyForMarker(font: string) {
   if (font === "inherit" || font === "reader") return undefined;
   return fonts.find((item) => item.id === font)?.family;
 }
+
+function withAlpha(color: string, opacity: number) {
+  return `${color}${Math.round(opacity * 255).toString(16).padStart(2, "0")}`;
+}
+
+/**
+ * A system mark as CSS. The book draws these as SVG over the text, which a
+ * sample paragraph cannot do, so this is the closest CSS equivalent — same
+ * colour, same strength, same shape. Near enough to judge a colour against.
+ */
+function systemMarkCss(mark: SystemMark): CSSProperties {
+  if (mark.shape === "wash") {
+    return {
+      backgroundColor: withAlpha(mark.color, mark.opacity),
+      // Multiplied in the book so the words stay readable underneath, which is
+      // also why this one all but disappears on a dark page. That is the truth
+      // about it, and the sample is the right place to find it out.
+      mixBlendMode: mark.multiply ? "multiply" : undefined,
+      borderRadius: "0.15em",
+    };
+  }
+  return {
+    textDecoration: "underline",
+    textDecorationColor: withAlpha(mark.color, mark.opacity),
+    textDecorationStyle: mark.dashed ? "dashed" : "solid",
+    textDecorationThickness: "1.5px",
+    textUnderlineOffset: "0.14em",
+  };
+}
+
+const MARK_LABEL_KEY: Record<SystemMarkId, string> = {
+  reading: "settings.tools.markers.markReading",
+  vocabNew: "vocab.mastery.new",
+  learning: "vocab.mastery.learning",
+  mastered: "vocab.mastery.mastered",
+};
 
 function TreatmentToggle({
   active,
@@ -52,12 +93,43 @@ function TreatmentToggle({
   );
 }
 
-function StyleEditor({
-  title,
+/**
+ * The sample paragraph, carrying one of every mark a page can show. The two
+ * styles the reader is editing are drawn from the live config, so a colour
+ * change lands here before it lands in a book.
+ */
+function SamplePane({
+  theme,
+  styles,
+}: {
+  theme: "paper" | "dark";
+  styles: Record<string, CSSProperties | undefined>;
+}) {
+  const { t } = useTranslation();
+  const { body, text } = getThemeStyles(theme);
+  // Odd positions are placeholder names, even ones the prose between them.
+  const parts = t("settings.tools.markers.sampleText").split(/\{\{(\w+)\}\}/);
+
+  return (
+    <div
+      className="min-w-0 rounded-md px-3 py-2.5 text-[12px] leading-[21px]"
+      style={{ backgroundColor: body, color: text }}
+    >
+      {parts.map((part, index) => (index % 2 === 0
+        ? <span key={index}>{part}</span>
+        : (
+          <span key={index} style={styles[part]}>
+            {t(`settings.tools.markers.sample${part[0].toUpperCase()}${part.slice(1)}`)}
+          </span>
+        )))}
+    </div>
+  );
+}
+
+function StyleControls({
   value,
   onChange,
 }: {
-  title: string;
   value: MarkerVisualStyle;
   onChange: (value: MarkerVisualStyle) => void;
 }) {
@@ -67,6 +139,7 @@ function StyleEditor({
     if (!candidate.background && !candidate.underline && !candidate.bold) return;
     onChange(candidate);
   };
+  const collisions = markCollisions(value);
   const fontOptions = [
     { value: "inherit", label: t("settings.tools.markers.followOriginal") },
     { value: "reader", label: t("settings.tools.markers.followReaderFont") },
@@ -74,44 +147,55 @@ function StyleEditor({
   ];
 
   return (
-    <section className="border-t border-border-light py-4 first:border-t-0 first:pt-0">
-      <h4 className="mb-3 text-[12px] font-semibold text-text-primary">{title}</h4>
-      <div className="space-y-3">
-        <ColorControl
-          color={value.color}
-          opacity={value.opacity}
-          presets={MARKER_COLOR_PRESETS}
-          colorLabel={t("settings.tools.markers.color")}
-          pickerLabel={t("settings.tools.markers.colorPicker")}
-          hexLabel={t("settings.tools.markers.hexColor")}
-          opacityLabel={t("settings.tools.markers.opacity")}
-          onChange={(next) => onChange({ ...value, ...next })}
-        />
+    <div className="space-y-3 pb-4">
+      <ColorControl
+        color={value.color}
+        opacity={value.opacity}
+        presets={[]}
+        colorLabel={t("settings.tools.markers.color")}
+        pickerLabel={t("settings.tools.markers.colorPicker")}
+        hexLabel={t("settings.tools.markers.hexColor")}
+        opacityLabel={t("settings.tools.markers.opacity")}
+        onChange={(next) => onChange({ ...value, ...next })}
+      />
 
-        <div>
-          <p className="mb-2 text-[11px] text-text-muted">{t("settings.tools.markers.treatments")}</p>
-          <div className="flex flex-wrap gap-2">
-            <TreatmentToggle active={value.background} onClick={() => update("background", !value.background)}>
-              {t("settings.tools.markers.background")}
-            </TreatmentToggle>
-            <TreatmentToggle active={value.underline} onClick={() => update("underline", !value.underline)}>
-              {t("settings.tools.markers.underline")}
-            </TreatmentToggle>
-            <TreatmentToggle active={value.bold} onClick={() => update("bold", !value.bold)}>
-              {t("settings.tools.markers.bold")}
-            </TreatmentToggle>
+      {collisions.length > 0 && (
+        <div role="status" className="flex items-start gap-2 rounded-md border border-accent/25 bg-accent-bg px-3 py-2.5">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-accent-text" />
+          <div className="min-w-0 space-y-1.5">
+            <p className="text-[11px] leading-[17px] text-text-secondary">{t("settings.tools.markers.collision")}</p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-text-primary">
+              {collisions.map((id) => (
+                <span key={id} style={systemMarkCss(systemMark[id])}>{t(MARK_LABEL_KEY[id])}</span>
+              ))}
+            </div>
           </div>
         </div>
+      )}
 
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-[11px] font-medium text-text-primary">{t("settings.tools.markers.font")}</p>
-            <p className="text-[10px] leading-4 text-text-muted">{t("settings.tools.markers.fontHint")}</p>
-          </div>
-          <Select className={ROW_CONTROL_WIDTH} value={value.font} onChange={(font) => update("font", font)} options={fontOptions} />
+      <div>
+        <p className="mb-2 text-[11px] text-text-muted">{t("settings.tools.markers.treatments")}</p>
+        <div className="flex flex-wrap gap-2">
+          <TreatmentToggle active={value.background} onClick={() => update("background", !value.background)}>
+            {t("settings.tools.markers.background")}
+          </TreatmentToggle>
+          <TreatmentToggle active={value.underline} onClick={() => update("underline", !value.underline)}>
+            {t("settings.tools.markers.underline")}
+          </TreatmentToggle>
+          <TreatmentToggle active={value.bold} onClick={() => update("bold", !value.bold)}>
+            {t("settings.tools.markers.bold")}
+          </TreatmentToggle>
         </div>
       </div>
-    </section>
+
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-medium text-text-primary">{t("settings.tools.markers.font")}</p>
+          <p className="text-[10px] leading-4 text-text-muted">{t("settings.tools.markers.fontHint")}</p>
+        </div>
+        <Select className={ROW_CONTROL_WIDTH} value={value.font} onChange={(font) => update("font", font)} options={fontOptions} />
+      </div>
+    </div>
   );
 }
 
@@ -119,6 +203,7 @@ export default function MarkerStyleSettings({ value, onChange }: MarkerStyleSett
   const { t } = useTranslation();
   const [customFonts, setCustomFonts] = useState<CustomFontRecord[]>([]);
   const [wordFormsOpen, setWordFormsOpen] = useState(true);
+  const [editing, setEditing] = useState<EditTarget>("manual");
 
   useEffect(() => {
     invoke<CustomFontRecord[]>("list_custom_fonts").then((records) => {
@@ -127,25 +212,79 @@ export default function MarkerStyleSettings({ value, onChange }: MarkerStyleSett
     }).catch(() => {});
   }, []);
 
-  const manualCss = markerStyleCss(value.manual, fontFamilyForMarker(value.manual.font));
   const automatic = effectiveAutomaticMarkerStyle(value);
-  const automaticCss = markerStyleCss(automatic, fontFamilyForMarker(automatic.font));
+  // The automatic style has nothing of its own to edit while it is copying the
+  // manual one, so the controls step aside for the toggle that says so.
+  const editable = editing === "manual" || !value.automaticFollowsManual;
+  const edited = editing === "manual" ? value.manual : value.automatic;
+  const applyEdit = (style: MarkerVisualStyle) => onChange(
+    editing === "manual" ? { ...value, manual: style } : { ...value, automatic: style },
+  );
+
+  const sampleStyles: Record<string, CSSProperties | undefined> = {
+    manual: markerStyleCss(value.manual, fontFamilyForMarker(value.manual.font)),
+    automatic: markerStyleCss(automatic, fontFamilyForMarker(automatic.font)),
+    reading: systemMarkCss(systemMark.reading),
+    vocabNew: systemMarkCss(systemMark.vocabNew),
+    learning: systemMarkCss(systemMark.learning),
+    mastered: systemMarkCss(systemMark.mastered),
+  };
 
   return (
     <div className="mx-auto w-full max-w-[620px]">
-      <div className="mb-4 grid grid-cols-2 gap-2 rounded-md border border-border-light p-3">
-        {["light", "dark"].map((theme) => (
-          <div key={theme} className={`min-w-0 rounded-md px-3 py-3 text-[13px] leading-6 ${theme === "dark" ? "bg-[#1B1B1F] text-[#E7E7EA]" : "bg-[#FAF7F0] text-[#29251E]"}`}>
-            <span>{t("settings.tools.markers.previewBefore")} </span>
-            <span style={manualCss}>{t("settings.tools.markers.previewManual")}</span>
-            <span> {t("settings.tools.markers.previewMiddle")} </span>
-            <span style={automaticCss}>{t("settings.tools.markers.previewAutomatic")}</span>
-            <span> {t("settings.tools.markers.previewAfter")}</span>
+      {/* Stays put while the controls scroll under it, so a colour never has to
+          be chosen from memory. The negative margin reaches into the modal's
+          own padding — without it the page shows through either side. */}
+      <div className="sticky top-0 z-10 -mx-6 bg-white px-6 pb-3 dark:bg-bg-surface">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-2.5">
+          <div role="tablist" aria-label={t("settings.tools.markers.editing")} className="inline-flex rounded-md border border-border bg-bg-input p-0.5">
+            {(["manual", "automatic"] as EditTarget[]).map((target) => (
+              <button
+                key={target}
+                type="button"
+                role="tab"
+                aria-selected={editing === target}
+                onClick={() => setEditing(target)}
+                className={`h-7 rounded-[5px] px-3 text-[11px] font-medium transition-colors ${
+                  editing === target ? "bg-bg-surface text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"
+                }`}
+              >
+                {t(`settings.tools.markers.edit${target[0].toUpperCase()}${target.slice(1)}`)}
+              </button>
+            ))}
           </div>
-        ))}
+          {editable && (
+            <ColorSwatches
+              color={edited.color}
+              presets={MARKER_COLOR_PRESETS}
+              onSelect={(color) => applyEdit({ ...edited, color })}
+            />
+          )}
+        </div>
+
+        <div className="grid gap-2 rounded-md border border-border-light p-2 sm:grid-cols-2">
+          <SamplePane theme="paper" styles={sampleStyles} />
+          <SamplePane theme="dark" styles={sampleStyles} />
+        </div>
       </div>
 
-      <div className="mb-4 flex min-h-[52px] items-center justify-between gap-4 border-b border-border-light pb-3">
+      {editing === "automatic" && (
+        <div className="flex min-h-[52px] items-center justify-between gap-4 border-b border-border-light py-3">
+          <div>
+            <p className="text-[13px] font-medium text-text-primary">{t("settings.tools.markers.automaticFollowsManual")}</p>
+            <p className="text-[11px] leading-[17px] text-text-muted">{t("settings.tools.markers.automaticFollowsManualHint")}</p>
+          </div>
+          <Toggle
+            label={t("settings.tools.markers.automaticFollowsManual")}
+            checked={value.automaticFollowsManual}
+            onChange={(automaticFollowsManual) => onChange({ ...value, automaticFollowsManual })}
+          />
+        </div>
+      )}
+
+      {editable && <StyleControls value={edited} onChange={applyEdit} />}
+
+      <div className="flex min-h-[52px] items-center justify-between gap-4 border-t border-border-light py-3">
         <div className="flex min-w-0 items-start gap-1.5">
           {value.wordMatchScope === "forms" && (
             <button
@@ -158,8 +297,8 @@ export default function MarkerStyleSettings({ value, onChange }: MarkerStyleSett
             </button>
           )}
           <div>
-          <p className="text-[13px] font-medium text-text-primary">{t("settings.tools.markers.wordScope")}</p>
-          <p className="text-[11px] leading-[17px] text-text-muted">{t("settings.tools.markers.wordScopeHint")}</p>
+            <p className="text-[13px] font-medium text-text-primary">{t("settings.tools.markers.wordScope")}</p>
+            <p className="text-[11px] leading-[17px] text-text-muted">{t("settings.tools.markers.wordScopeHint")}</p>
           </div>
         </div>
         <Select
@@ -179,7 +318,7 @@ export default function MarkerStyleSettings({ value, onChange }: MarkerStyleSett
 
       {value.wordMatchScope === "forms" && wordFormsOpen && <WordFormsManager />}
 
-      <div className="flex min-h-[52px] items-center justify-between gap-4 border-b border-border-light pb-3">
+      <div className="flex min-h-[52px] items-center justify-between gap-4 border-t border-border-light py-3">
         <div>
           <p className="text-[13px] font-medium text-text-primary">{t("settings.tools.markers.layoutAffecting")}</p>
           <p className="text-[11px] leading-[17px] text-text-muted">{t("settings.tools.markers.layoutAffectingHint")}</p>
@@ -190,24 +329,6 @@ export default function MarkerStyleSettings({ value, onChange }: MarkerStyleSett
           onChange={(layoutAffectingMarkers) => onChange({ ...value, layoutAffectingMarkers })}
         />
       </div>
-
-      <StyleEditor title={t("settings.tools.markers.manualStyle")} value={value.manual} onChange={(manual) => onChange({ ...value, manual })} />
-
-      <div className="flex min-h-[52px] items-center justify-between gap-4 border-t border-border-light py-3">
-        <div>
-          <p className="text-[13px] font-medium text-text-primary">{t("settings.tools.markers.automaticFollowsManual")}</p>
-          <p className="text-[11px] leading-[17px] text-text-muted">{t("settings.tools.markers.automaticFollowsManualHint")}</p>
-        </div>
-        <Toggle
-          label={t("settings.tools.markers.automaticFollowsManual")}
-          checked={value.automaticFollowsManual}
-          onChange={(automaticFollowsManual) => onChange({ ...value, automaticFollowsManual })}
-        />
-      </div>
-
-      {!value.automaticFollowsManual && (
-        <StyleEditor title={t("settings.tools.markers.automaticStyle")} value={value.automatic} onChange={(automatic) => onChange({ ...value, automatic })} />
-      )}
 
       {customFonts.length === 0 && (
         <p className="border-t border-border-light py-3 text-[10px] leading-4 text-text-muted">

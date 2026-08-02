@@ -27,12 +27,23 @@ export interface MarkerStyleConfig {
   layoutAffectingMarkers: boolean;
 }
 
+/**
+ * Chosen to stay clear of every colour the app marks with on its own — see
+ * `markCollisions`. Three of the five that shipped before did not: a teal
+ * within 22 of the "learning" underline, a grey within 29 of "mastered", and a
+ * blue that measured far from the read-aloud sky at full strength but blended
+ * to within 36 of it once both were washes, which is the only form either is
+ * ever seen in.
+ *
+ * Presets only lower the odds — the hex field and the colour wheel still accept
+ * anything — so the warning under the swatches is what actually holds the line.
+ */
 export const MARKER_COLOR_PRESETS = [
   "#E9B949",
-  "#4FAE91",
-  "#5B8FD9",
+  "#4E9B4A",
+  "#3D5A9E",
+  "#8B5CC4",
   "#CF6F8A",
-  "#8A8F98",
 ] as const;
 
 /** A range the reader marked themselves: the warmest, most solid thing on the page. */
