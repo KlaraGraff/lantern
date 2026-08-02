@@ -37,12 +37,23 @@ pub fn normalize_learning_term(value: &str) -> String {
         .to_lowercase()
 }
 
+/// Domain-separation tags for the deterministic ids below. These are wire
+/// format, not branding: `validation.rs` recomputes every incoming id and
+/// rejects a peer's *entire* log on the first mismatch, so the bytes have to
+/// match what every event already sitting in the sync folder was hashed with.
+/// They survived the Quill→Lantern rename for that reason. The tag never
+/// reaches disk — only the hex digest does — so nothing user-visible carries
+/// the old name. Bump the `-v1` suffix if the id derivation ever changes.
+const RULE_ID_TAG: &[u8] = b"quill-word-mark-rule-v1\0";
+const EXCEPTION_ID_TAG: &[u8] = b"quill-word-mark-exception-v1\0";
+const LOOKUP_OCCURRENCE_ID_TAG: &[u8] = b"quill-lookup-occurrence-mark-v1\0";
+
 /// A word-marker rule is one logical entity across every device. Deriving its
 /// id from the natural key prevents concurrent first-lookups from minting two
 /// UUIDs for the same `(book, word, match_mode)` row.
 pub fn word_mark_rule_id(book_id: &str, normalized_word: &str, match_mode: &str) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(b"quill-word-mark-rule-v1\0");
+    hasher.update(RULE_ID_TAG);
     hasher.update(book_id.as_bytes());
     hasher.update(b"\0");
     hasher.update(normalized_word.as_bytes());
@@ -56,7 +67,7 @@ pub fn word_mark_rule_id(book_id: &str, normalized_word: &str, match_mode: &str)
 /// converge to one LWW row instead of creating duplicates on different Macs.
 pub fn word_mark_exception_id(rule_id: &str, location: &str) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(b"quill-word-mark-exception-v1\0");
+    hasher.update(EXCEPTION_ID_TAG);
     hasher.update(rule_id.as_bytes());
     hasher.update(b"\0");
     hasher.update(location.as_bytes());
@@ -66,7 +77,7 @@ pub fn word_mark_exception_id(rule_id: &str, location: &str) -> String {
 /// Stable identity for one automatic lookup mark at a concrete location.
 pub fn lookup_occurrence_mark_id(book_id: &str, location: &str) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(b"quill-lookup-occurrence-mark-v1\0");
+    hasher.update(LOOKUP_OCCURRENCE_ID_TAG);
     hasher.update(book_id.as_bytes());
     hasher.update(b"\0");
     hasher.update(location.as_bytes());

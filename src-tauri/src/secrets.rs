@@ -26,7 +26,12 @@ const LEGACY_KEYCHAIN_SERVICES: &[&str] = &[
 ];
 const VAULT_ALGORITHM: i64 = 1;
 const VAULT_KEY_VERSION: i64 = 1;
-const AAD_PREFIX: &[u8] = b"quill-secret-v1\0";
+/// AAD tag on v1.4 vault ciphertext. Frozen at the Quill→Lantern rename, and
+/// deliberately: nothing in the app encrypts with it any more (the only writer
+/// left is the test helper below), so it is not Lantern's identity — it is a
+/// record of what Quill wrote. Renaming it would rename nothing and would only
+/// make an unmigrated vault undecryptable.
+const LEGACY_VAULT_AAD_PREFIX: &[u8] = b"quill-secret-v1\0";
 
 const SENSITIVE_KEYS: &[&str] = &[
     "ai_api_key",
@@ -980,8 +985,8 @@ impl Secrets {
     }
 
     fn aad_for(key: &str) -> Vec<u8> {
-        let mut aad = Vec::with_capacity(AAD_PREFIX.len() + key.len());
-        aad.extend_from_slice(AAD_PREFIX);
+        let mut aad = Vec::with_capacity(LEGACY_VAULT_AAD_PREFIX.len() + key.len());
+        aad.extend_from_slice(LEGACY_VAULT_AAD_PREFIX);
         aad.extend_from_slice(key.as_bytes());
         aad
     }
