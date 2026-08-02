@@ -923,6 +923,16 @@ struct ArchiveEntryMetadata {
 }
 
 fn safe_extract_tar_zst(archive: &Path, destination: &Path, expected_size: u64) -> AppResult<()> {
+    // The system tar on both platforms is a libarchive build without zstd
+    // linked in: it decodes `.zst` by shelling out to a `zstd` binary. A GUI
+    // app inherits launchd's PATH (`/usr/bin:/bin:/usr/sbin:/sbin`), which has
+    // no zstd, so every tar call failed with a generic archive error. Decode
+    // the frame in-process and hand tar a plain `.tar` it can always read.
+    let plain_tar = archive.with_file_name(format!(".untar-{}.tar", uuid::Uuid::new_v4()));
+    let plain_tar_cleanup = FileCleanup::new(plain_tar.clone());
+    decompress_zstd(archive, &plain_tar)?;
+    let archive = plain_tar.as_path();
+
     let names_output = run_tar(archive, &["-tf"])?;
     let verbose_output = run_tar(archive, &["-tvf"])?;
     if names_output.len() > MAX_ARCHIVE_LISTING_BYTES
@@ -953,21 +963,64 @@ fn safe_extract_tar_zst(archive: &Path, destination: &Path, expected_size: u64) 
         return Err(package_error("OCR_PACKAGE_INSTALLED_SIZE_MISMATCH"));
     }
 
-    let status = Command::new(tar_program())
+    let output = Command::new(tar_program())
+        .env("LC_ALL", "C")
+        .env("PATH", system_command_path())
         .arg("-xf")
         .arg(archive)
         .arg("-C")
         .arg(destination)
-        .status()
+        .output()
         .map_err(|_| package_error("OCR_PACKAGE_EXTRACT_FAILED"))?;
-    if !status.success() {
+    if !output.status.success() {
+        log::error!(
+            "ocr package tar -xf failed: {} {}",
+            output.status,
+            command_stderr(&output.stderr)
+        );
         return Err(package_error("OCR_PACKAGE_EXTRACT_FAILED"));
     }
     let actual_size = validate_extracted_tree(destination)?;
     if actual_size != expected_size {
         return Err(package_error("OCR_PACKAGE_INSTALLED_SIZE_MISMATCH"));
     }
+    drop(plain_tar_cleanup);
     Ok(())
+}
+
+/// Decodes a zstd frame without depending on a `zstd` binary being on PATH.
+fn decompress_zstd(source: &Path, destination: &Path) -> AppResult<()> {
+    let input = File::open(source).map_err(|_| package_error("OCR_PACKAGE_ARCHIVE_INVALID"))?;
+    let mut decoder = zstd::stream::read::Decoder::new(input).map_err(|error| {
+        log::error!("ocr package zstd frame rejected: {error}");
+        package_error("OCR_PACKAGE_ARCHIVE_DECOMPRESS_FAILED")
+    })?;
+    let mut output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(destination)
+        .map_err(|_| package_error("OCR_PACKAGE_STORAGE_FAILED"))?;
+    let mut buffer = [0_u8; 128 * 1024];
+    let mut written = 0_u64;
+    loop {
+        let read = decoder.read(&mut buffer).map_err(|error| {
+            log::error!("ocr package zstd decode failed: {error}");
+            package_error("OCR_PACKAGE_ARCHIVE_DECOMPRESS_FAILED")
+        })?;
+        if read == 0 {
+            break;
+        }
+        written = written.saturating_add(read as u64);
+        if written > MAX_INSTALLED_BYTES {
+            return Err(package_error("OCR_PACKAGE_INSTALLED_SIZE_MISMATCH"));
+        }
+        output
+            .write_all(&buffer[..read])
+            .map_err(|_| package_error("OCR_PACKAGE_STORAGE_FAILED"))?;
+    }
+    output
+        .sync_all()
+        .map_err(|_| package_error("OCR_PACKAGE_STORAGE_FAILED"))
 }
 
 fn run_tar(archive: &Path, operation: &[&str]) -> AppResult<Vec<u8>> {
@@ -977,13 +1030,42 @@ fn run_tar(archive: &Path, operation: &[&str]) -> AppResult<Vec<u8>> {
     }
     let output = command
         .env("LC_ALL", "C")
+        .env("PATH", system_command_path())
         .arg(archive)
         .output()
         .map_err(|_| package_error("OCR_PACKAGE_ARCHIVE_UNSUPPORTED"))?;
     if !output.status.success() {
+        log::error!(
+            "ocr package tar {} failed: {} {}",
+            operation.join(" "),
+            output.status,
+            command_stderr(&output.stderr)
+        );
         return Err(package_error("OCR_PACKAGE_ARCHIVE_INVALID"));
     }
     Ok(output.stdout)
+}
+
+fn command_stderr(stderr: &[u8]) -> String {
+    let limit = stderr.len().min(512);
+    String::from_utf8_lossy(&stderr[..limit]).trim().to_string()
+}
+
+/// tar must resolve only against the system directories. A packaged app runs
+/// with launchd's PATH, so anything found through a developer shell's PATH
+/// would work in `tauri dev` and be missing for users.
+fn system_command_path() -> OsString {
+    #[cfg(target_os = "windows")]
+    {
+        let system32 = std::env::var_os("SystemRoot")
+            .map(|root| PathBuf::from(root).join("System32"))
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32"));
+        system32.into_os_string()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        OsString::from("/usr/bin:/bin")
+    }
 }
 
 fn tar_program() -> PathBuf {
@@ -1613,6 +1695,58 @@ mod tests {
             ),
         ];
         assert!(validate_archive_entries(safe.iter().map(|(p, k)| (p, *k))).is_ok());
+    }
+
+    /// The runtime archive must install with only the system directories on
+    /// PATH: macOS and Windows both ship a tar that cannot decode zstd itself,
+    /// and a packaged app has no `zstd` binary to lend it.
+    #[test]
+    fn archive_extracts_without_an_external_zstd_binary() {
+        let dir = TempDir::new().unwrap();
+        let payload = dir.path().join("payload");
+        fs::create_dir_all(payload.join(PACKAGE_ID).join("bin")).unwrap();
+        fs::write(payload.join(PACKAGE_ID).join("bin/lantern-ocr"), b"binary").unwrap();
+
+        let plain_tar = dir.path().join("runtime.tar");
+        let status = Command::new(tar_program())
+            .arg("-cf")
+            .arg(&plain_tar)
+            .arg("-C")
+            .arg(&payload)
+            .arg(PACKAGE_ID)
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let archive = dir.path().join("runtime.tar.zst");
+        zstd::stream::copy_encode(
+            File::open(&plain_tar).unwrap(),
+            File::create(&archive).unwrap(),
+            3,
+        )
+        .unwrap();
+
+        let destination = dir.path().join("extracted");
+        fs::create_dir(&destination).unwrap();
+        safe_extract_tar_zst(&archive, &destination, 6).unwrap();
+        assert_eq!(
+            fs::read(destination.join(PACKAGE_ID).join("bin/lantern-ocr")).unwrap(),
+            b"binary"
+        );
+        assert!(extracted_runtime_root(&destination).is_ok());
+    }
+
+    #[test]
+    fn corrupt_archive_reports_a_decompression_failure() {
+        let dir = TempDir::new().unwrap();
+        let archive = dir.path().join("runtime.tar.zst");
+        fs::write(&archive, b"not a zstd frame").unwrap();
+        let destination = dir.path().join("extracted");
+        fs::create_dir(&destination).unwrap();
+        let error = safe_extract_tar_zst(&archive, &destination, 1)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("OCR_PACKAGE_ARCHIVE_DECOMPRESS_FAILED"));
     }
 
     #[test]
