@@ -36,8 +36,6 @@ Four things follow from that:
 3. **What it says, and how, is yours to write** — when a preset module does not fit, write the prompt yourself.
 4. **It does not even have to be this AI** — hand your library and vocabulary to Claude Code or Codex over MCP and read with whichever AI you already use.
 
-> This is an independently maintained personal edition based on the open-source [Quill](https://github.com/yicheng47/quill) project. It is not an official release of the original project.
-
 ---
 
 ## 1 · It knows far more than a chat window does
@@ -316,5 +314,5 @@ Stack: Tauri 2 + Rust + SQLite on the backend, React 19 + TypeScript + Tailwind 
 
 ## Attribution and license
 
-Lantern is based on [Quill](https://github.com/yicheng47/quill) by yicheng47. Copyright in the original Quill remains with its author; this repository keeps the original [MIT License](LICENSE), including its copyright notice.
+Lantern is based on [Quill](https://github.com/yicheng47/quill) by yicheng47. It is an independently maintained personal edition, not an official release of the original project. Copyright in the original Quill remains with its author; this repository keeps the original [MIT License](LICENSE), including its copyright notice.
 </content>

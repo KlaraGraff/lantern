@@ -36,8 +36,6 @@
 3. **它说什么、怎么说，由你写**——预设模块不合用，自己写提示词造一个。
 4. **它甚至可以不是它**——通过 MCP 把书库和生词本交给 Claude Code、Codex，换成你自己惯用的 AI 来读。
 
-> 这是基于开源项目 [Quill](https://github.com/yicheng47/quill) 独立维护的个人版本，并非原项目的官方发行版。
-
 ---
 
 ## 一 · 它知道的，比一个聊天窗口多得多
@@ -316,5 +314,5 @@ cd src-tauri && cargo check
 
 ## 致谢与许可证
 
-Lantern 基于 yicheng47 开发的 [Quill](https://github.com/yicheng47/quill)。原版 Quill 的版权仍归其作者所有；本仓库保留原始 [MIT License](LICENSE)，包括其中的版权声明。
+Lantern 基于 yicheng47 开发的 [Quill](https://github.com/yicheng47/quill)，是独立维护的个人版本，并非原项目的官方发行版。原版 Quill 的版权仍归其作者所有；本仓库保留原始 [MIT License](LICENSE)，包括其中的版权声明。
 </content>
