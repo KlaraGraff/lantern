@@ -7,6 +7,8 @@ export interface ComboGroup {
   /** Heading shown above these options — this is where the values came from. */
   label: string;
   options: string[];
+  /** Optional one-line meaning per option, keyed by option value. */
+  descriptions?: Record<string, string>;
 }
 
 interface ComboFieldProps {
@@ -19,6 +21,8 @@ interface ComboFieldProps {
   onCommit?: (value: string) => void;
   /** Pinned first row, meaning "clear this field". Omitted when undefined. */
   emptyLabel?: string;
+  /** Second line under `emptyLabel`, saying what clearing the field does. */
+  emptyDescription?: string;
   placeholder?: string;
   disabled?: boolean;
   maxLength?: number;
@@ -46,6 +50,7 @@ export default function ComboField({
   onChange,
   onCommit,
   emptyLabel,
+  emptyDescription,
   placeholder,
   disabled,
   maxLength,
@@ -60,9 +65,14 @@ export default function ComboField({
   const close = useCallback(() => setOpen(false), []);
 
   const items: OptionMenuItem[] = [
-    ...(emptyLabel ? [{ value: "", label: emptyLabel }] : []),
+    ...(emptyLabel ? [{ value: "", label: emptyLabel, description: emptyDescription }] : []),
     ...groups.flatMap((group) =>
-      group.options.map((option) => ({ value: option, label: option, group: group.label })),
+      group.options.map((option) => ({
+        value: option,
+        label: option,
+        group: group.label,
+        description: group.descriptions?.[option],
+      })),
     ),
   ];
   const commit = () => onCommit?.(value);

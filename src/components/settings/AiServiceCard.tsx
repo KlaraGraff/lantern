@@ -32,6 +32,7 @@ import Select from "../ui/Select";
 import Slider from "../ui/Slider";
 import SortableList from "../ui/SortableList";
 import Toggle from "../ui/Toggle";
+import { ROW_CONTROL_WIDTH } from "./types";
 
 export interface AiProfile {
   id: string;
@@ -373,6 +374,11 @@ export default function AiServiceCard({
       {
         label: t("settings.ai.reasoningEffortGroupBuiltIn"),
         options: BUILT_IN_EFFORTS.filter((level) => !learned.includes(level)),
+        // Only the built-in levels have a fixed meaning. What the endpoint
+        // reported is just a string it accepts, so it gets no description.
+        descriptions: Object.fromEntries(
+          BUILT_IN_EFFORTS.map((level) => [level, t(`settings.ai.reasoningEffortDesc.${level}`)]),
+        ),
       },
     ];
   }, [learnedEfforts.options, t]);
@@ -701,9 +707,39 @@ export default function AiServiceCard({
                   maxLength={32}
                   placeholder={t("settings.ai.reasoningEffortDefault")}
                   emptyLabel={t("settings.ai.reasoningEffortDefaultOption")}
+                  emptyDescription={t("settings.ai.reasoningEffortDesc.default")}
                   groups={effortGroups}
                   onChange={(value) => onChange({ reasoning_effort: value.trim() || null })}
                 />
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <span className="min-w-0 text-[12px] text-text-primary">
+                    {t("settings.ai.reasoningEffortScope")}
+                  </span>
+                  <div
+                    role="group"
+                    aria-label={t("settings.ai.reasoningEffortScope")}
+                    className={`flex rounded-md bg-bg-input p-0.5 ${ROW_CONTROL_WIDTH}`}
+                  >
+                    {[
+                      { all: false, label: t("settings.ai.reasoningEffortScopeChat") },
+                      { all: true, label: t("settings.ai.reasoningEffortScopeAll") },
+                    ].map((option) => (
+                      <button
+                        key={String(option.all)}
+                        type="button"
+                        aria-pressed={profile.reasoning_effort_all_features === option.all}
+                        onClick={() => onChange({ reasoning_effort_all_features: option.all })}
+                        className={`h-7 flex-1 cursor-pointer whitespace-nowrap px-1 text-[11px] font-medium ${
+                          profile.reasoning_effort_all_features === option.all
+                            ? "rounded-sm bg-bg-surface text-accent-text shadow-sm"
+                            : "text-text-muted"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <span className="mt-1 block text-[10px] leading-4 text-text-muted">
                   {t("settings.ai.reasoningEffortHint")}
                 </span>
@@ -723,21 +759,6 @@ export default function AiServiceCard({
                     </button>
                   </span>
                 )}
-                <label className="mt-3 flex items-center justify-between gap-3">
-                  <span className="min-w-0">
-                    <span className="block text-[12px] font-medium text-text-primary">
-                      {t("settings.ai.reasoningEffortAllFeatures")}
-                    </span>
-                    <span className="mt-0.5 block text-[10px] leading-4 text-text-muted">
-                      {t("settings.ai.reasoningEffortAllFeaturesHint")}
-                    </span>
-                  </span>
-                  <Toggle
-                    label={t("settings.ai.reasoningEffortAllFeatures")}
-                    checked={profile.reasoning_effort_all_features}
-                    onChange={(checked) => onChange({ reasoning_effort_all_features: checked })}
-                  />
-                </label>
               </div>
 
               <div className="border-t border-border-light py-3">

@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from "react";
 import { createPortal } from "react-dom";
 import { Check } from "lucide-react";
 
@@ -7,6 +16,8 @@ export interface OptionMenuItem {
   label: string;
   /** Rendered as a heading above the first item carrying it. */
   group?: string;
+  /** Second, muted line under the label. Makes the row taller — see OPTION_HEIGHT_DESCRIBED. */
+  description?: string;
 }
 
 interface OptionMenuProps {
@@ -20,6 +31,10 @@ interface OptionMenuProps {
 
 const MENU_GAP = 4;
 const OPTION_HEIGHT = 40;
+// A described row carries a second line, so it is measured — and rendered —
+// taller. Both heights are fixed on the element itself, which keeps the
+// pre-render placement math exact without a measuring pass.
+const OPTION_HEIGHT_DESCRIBED = 56;
 const GROUP_HEIGHT = 24;
 const VIEWPORT_MARGIN = 8;
 const PORTALED_THEME_VARS = [
@@ -57,6 +72,16 @@ export default function OptionMenu({ anchorRef, items, value, onSelect, onClose 
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuStyle, setMenuStyle] = useState<CSSProperties>();
   const groupCount = new Set(items.map((item) => item.group).filter(Boolean)).size;
+  // Summed per item rather than multiplied by one constant: rows are not all the
+  // same height once any of them carries a description.
+  const itemsHeight = useMemo(
+    () =>
+      items.reduce(
+        (total, item) => total + (item.description ? OPTION_HEIGHT_DESCRIBED : OPTION_HEIGHT),
+        0,
+      ),
+    [items],
+  );
 
   const handleClickOutside = useCallback(
     (event: MouseEvent) => {
@@ -86,7 +111,7 @@ export default function OptionMenu({ anchorRef, items, value, onSelect, onClose 
     const anchor = anchorRef.current;
     if (!anchor) return;
     const rect = anchor.getBoundingClientRect();
-    const menuHeight = items.length * OPTION_HEIGHT + groupCount * GROUP_HEIGHT + 2;
+    const menuHeight = itemsHeight + groupCount * GROUP_HEIGHT + 2;
     const spaceBelow = window.innerHeight - rect.bottom - MENU_GAP - VIEWPORT_MARGIN;
     const spaceAbove = rect.top - MENU_GAP - VIEWPORT_MARGIN;
     const openUp = menuHeight > spaceBelow && spaceAbove > spaceBelow;
@@ -99,7 +124,7 @@ export default function OptionMenu({ anchorRef, items, value, onSelect, onClose 
         ? { bottom: window.innerHeight - rect.top + MENU_GAP }
         : { top: rect.bottom + MENU_GAP }),
     });
-  }, [anchorRef, groupCount, items.length]);
+  }, [anchorRef, groupCount, itemsHeight]);
 
   if (!menuStyle) return null;
 
@@ -129,11 +154,23 @@ export default function OptionMenu({ anchorRef, items, value, onSelect, onClose 
                 onSelect(item.value);
                 onClose();
               }}
-              className={`flex h-10 w-full cursor-pointer items-center justify-between gap-3 px-4 text-[14px] transition-colors ${
+              style={{ height: item.description ? OPTION_HEIGHT_DESCRIBED : OPTION_HEIGHT }}
+              className={`flex w-full cursor-pointer items-center justify-between gap-3 px-4 text-[14px] transition-colors ${
                 isActive ? "bg-accent-bg text-accent-text" : "text-text-primary hover:bg-bg-input"
               }`}
             >
-              <span className="min-w-0 truncate text-left">{item.label}</span>
+              <span className="min-w-0 flex-1 text-left">
+                <span className="block truncate">{item.label}</span>
+                {item.description && (
+                  <span
+                    className={`mt-0.5 block truncate text-[10px] leading-4 ${
+                      isActive ? "text-accent-text opacity-75" : "text-text-muted"
+                    }`}
+                  >
+                    {item.description}
+                  </span>
+                )}
+              </span>
               {isActive && <Check size={16} className="shrink-0 text-accent-text" />}
             </button>
           </div>
