@@ -41,6 +41,12 @@ interface Notice {
  * It never blocks: streaming continues underneath, and the toast lets itself
  * out. Interrupting a reader mid-sentence to confirm a fallback would cost more
  * than the fallback does.
+ *
+ * Dormant as of the DeepSeek-led catalog: no preset carries `cost: "free"` any
+ * more (Ollama is `local`), so nothing can trigger it. Kept deliberately — it
+ * costs nothing at runtime and revives on its own the day a free preset earns
+ * its place back. Do not widen the condition to announce every switch; that is
+ * a product decision, not cleanup.
  */
 export default function AiRouteFallbackNotice() {
   const { t } = useTranslation();

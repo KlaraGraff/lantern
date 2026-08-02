@@ -1181,17 +1181,14 @@ fn provider_default_base_url(provider: &str) -> Option<&'static str> {
         "openai" => Some("https://api.openai.com"),
         "anthropic" => Some("https://api.anthropic.com"),
         "ollama" => Some("http://localhost:11434"),
-        // Zhipu and DeepSeek speak the OpenAI chat shape, so only the base URL
-        // and the default model differ from `custom`. They exist as their own
-        // providers so each preset keeps a stable identity after the user
-        // renames the profile, which a label-only match would lose.
-        "zhipu" => Some(ZHIPU_BASE_URL),
+        // DeepSeek speaks the OpenAI chat shape, so only the base URL and the
+        // default model differ from `custom`. It exists as its own provider so
+        // the preset keeps a stable identity after the user renames the
+        // profile, which a label-only match would lose.
         "deepseek" => Some(DEEPSEEK_BASE_URL),
         _ => None,
     }
 }
-
-pub(crate) const ZHIPU_BASE_URL: &str = "https://open.bigmodel.cn/api/paas/v4";
 
 /// Published without a version segment, so `compat_endpoint` appends `/v1`.
 pub(crate) const DEEPSEEK_BASE_URL: &str = "https://api.deepseek.com";
@@ -1204,7 +1201,7 @@ fn models_endpoint(profile: &AiProfileView) -> AppResult<String> {
         } else {
             format!("{base}/api/tags")
         }),
-        "openai" | "anthropic" | "custom" | "zhipu" | "deepseek" => {
+        "openai" | "anthropic" | "custom" | "deepseek" => {
             Ok(crate::ai::compat_endpoint(base, "models"))
         }
         _ => Err(AppError::Other("AI_PROVIDER_UNSUPPORTED".to_string())),
@@ -2105,7 +2102,7 @@ fn normalize_profile_config(
     }
     if !matches!(
         provider.as_str(),
-        "openai" | "anthropic" | "ollama" | "custom" | "zhipu" | "deepseek"
+        "openai" | "anthropic" | "ollama" | "custom" | "deepseek"
     ) {
         return Err(AppError::Other("AI_PROVIDER_UNSUPPORTED".to_string()));
     }
@@ -3566,28 +3563,9 @@ mod tests {
     }
 
     #[test]
-    fn zhipu_falls_back_to_its_own_versioned_endpoint() {
-        // No base URL configured: the preset default has to supply the /v4 host
-        // and must not gain a second version segment on the way out.
-        assert_eq!(
-            models_endpoint(&profile("zhipu", None)).unwrap(),
-            "https://open.bigmodel.cn/api/paas/v4/models"
-        );
-        assert_eq!(
-            resolve_base_url(&profile("zhipu", None)).unwrap(),
-            ZHIPU_BASE_URL
-        );
-        // An explicitly configured base still wins over the preset default.
-        assert_eq!(
-            models_endpoint(&profile("zhipu", Some("https://proxy.example/v4"))).unwrap(),
-            "https://proxy.example/v4/models"
-        );
-    }
-
-    #[test]
     fn deepseek_uses_its_unversioned_base_and_gains_v1() {
-        // The mirror image of Zhipu: DeepSeek publishes no version segment, so
-        // the same helper has to add one rather than leave the path bare.
+        // DeepSeek publishes no version segment, so the helper has to add one
+        // rather than leave the path bare.
         assert_eq!(
             models_endpoint(&profile("deepseek", None)).unwrap(),
             "https://api.deepseek.com/v1/models"
@@ -3596,26 +3574,17 @@ mod tests {
             resolve_base_url(&profile("deepseek", None)).unwrap(),
             DEEPSEEK_BASE_URL
         );
+        // An explicitly configured base still wins over the preset default, and
+        // one that already carries a version segment keeps it.
+        assert_eq!(
+            models_endpoint(&profile("deepseek", Some("https://proxy.example/v4"))).unwrap(),
+            "https://proxy.example/v4/models"
+        );
     }
 
     #[test]
-    fn zhipu_is_an_accepted_provider_and_needs_no_base_url() {
+    fn deepseek_is_an_accepted_provider_and_needs_no_base_url() {
         let normalized = normalize_profile_config(
-            "智谱 GLM-4.7-Flash".to_string(),
-            "zhipu".to_string(),
-            "api_key".to_string(),
-            None,
-            "glm-4.7-flash".to_string(),
-            0.3,
-            None,
-        )
-        .expect("zhipu is a supported provider");
-        assert_eq!(normalized.1, "zhipu");
-        // Unlike `custom`, an empty base URL is not an error: the preset knows
-        // where Zhipu lives.
-        assert_eq!(normalized.3, None);
-
-        assert!(normalize_profile_config(
             "DeepSeek".to_string(),
             "deepseek".to_string(),
             "api_key".to_string(),
@@ -3624,15 +3593,19 @@ mod tests {
             0.3,
             None,
         )
-        .is_ok());
+        .expect("deepseek is a supported provider");
+        assert_eq!(normalized.1, "deepseek");
+        // Unlike `custom`, an empty base URL is not an error: the preset knows
+        // where DeepSeek lives.
+        assert_eq!(normalized.3, None);
 
         // OAuth stays OpenAI-only.
         assert!(normalize_profile_config(
-            "智谱".to_string(),
-            "zhipu".to_string(),
+            "DeepSeek".to_string(),
+            "deepseek".to_string(),
             "oauth".to_string(),
             None,
-            "glm-4.7-flash".to_string(),
+            "deepseek-v4-flash".to_string(),
             0.3,
             None,
         )

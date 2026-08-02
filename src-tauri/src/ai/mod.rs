@@ -31,7 +31,7 @@ const MAX_PROVIDER_ERROR_BYTES: usize = 64 * 1024;
 /// Join a provider base URL with a path such as `chat/completions`.
 ///
 /// Providers publish the base URL either with the version segment already in it
-/// (`https://open.bigmodel.cn/api/paas/v4`) or without one
+/// (`https://host.example/api/paas/v4`) or without one
 /// (`https://api.openai.com`). Appending `/v1` unconditionally turned the former
 /// into `/api/paas/v4/v1/chat/completions`, so any base whose path already ends
 /// in a version segment is taken as complete. Matching `v<digits>` rather than
@@ -180,10 +180,11 @@ mod tests {
             compat_endpoint("https://host.example/v1", "chat/completions"),
             "https://host.example/v1/chat/completions"
         );
-        // Zhipu: the bug this function exists to prevent.
+        // A version segment below the root, and not `/v1`: the shape that used
+        // to come back as `/api/paas/v4/v1/chat/completions`.
         assert_eq!(
-            compat_endpoint("https://open.bigmodel.cn/api/paas/v4", "chat/completions"),
-            "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+            compat_endpoint("https://host.example/api/paas/v4", "chat/completions"),
+            "https://host.example/api/paas/v4/chat/completions"
         );
         assert_eq!(
             compat_endpoint("https://gateway.example/v3", "chat/completions"),
@@ -195,8 +196,8 @@ mod tests {
     fn covers_every_path_the_callers_use() {
         for path in ["chat/completions", "models", "embeddings", "messages"] {
             assert_eq!(
-                compat_endpoint("https://open.bigmodel.cn/api/paas/v4", path),
-                format!("https://open.bigmodel.cn/api/paas/v4/{path}")
+                compat_endpoint("https://host.example/api/paas/v4", path),
+                format!("https://host.example/api/paas/v4/{path}")
             );
             assert_eq!(
                 compat_endpoint("https://api.openai.com", path),
@@ -208,13 +209,13 @@ mod tests {
     #[test]
     fn ignores_trailing_slashes_and_surrounding_space() {
         for base in [
-            "https://open.bigmodel.cn/api/paas/v4/",
-            "  https://open.bigmodel.cn/api/paas/v4  ",
-            "https://open.bigmodel.cn/api/paas/v4///",
+            "https://host.example/api/paas/v4/",
+            "  https://host.example/api/paas/v4  ",
+            "https://host.example/api/paas/v4///",
         ] {
             assert_eq!(
                 compat_endpoint(base, "embeddings"),
-                "https://open.bigmodel.cn/api/paas/v4/embeddings"
+                "https://host.example/api/paas/v4/embeddings"
             );
         }
     }

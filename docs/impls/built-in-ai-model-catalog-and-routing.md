@@ -2,22 +2,26 @@
 
 已与用户对齐（2026-08-02）。本文是实现交接，不对应 GitHub Issue。
 
+> **2026-08-02 修订：撤掉内置免费模型，改为主推 DeepSeek。**
+> 用真实 Key 实测下来，智谱 GLM-4.7-Flash 的参数量不足以支撑本产品的核心用途——语法拆解和词义辨析会给出看起来像样、实际错误的输出，直接误导正在学英语的读者。一个会说错话的免费默认模型比没有默认模型更糟。
+> 受影响的是 §1、§1.1、§2.2、§6.1、Phase 1 和 §11，均已按新目录改写。**§3、§5、§8 保持原样**：它们记录的是连接流程和路由行为的推导过程，其中的路由语义已由 Phase 3 的测试锁住，与本次目录改动无关；§3 与 §8.2 里的智谱字样此后只作历史记录读。
+
 ## 1. 结论
 
 Lantern 不内置共享 API Key，也不把不受控的第三方免费接口仓库作为运行时配置源。产品提供一个由 Lantern 维护的**内置模型目录**，普通用户从中选择模型、按引导连接自己的服务商账号，然后把已连接模型加入一个可排序的**调用路由**。
 
-首版默认推荐且仅内置一个智谱地域版本：
+首版默认推荐 DeepSeek，且不内置任何免费模型：
 
 | 项目 | 值 |
 | --- | --- |
-| 用户可见名称 | 智谱 GLM-4.7-Flash / `Zhipu GLM-4.7-Flash` |
-| 服务商 | 智谱开放平台（中国大陆） |
-| 默认模型 | `glm-4.7-flash` |
-| API Base URL | `https://open.bigmodel.cn/api/paas/v4` |
-| API Key 页面 | `https://bigmodel.cn/usercenter/proj-mgmt/apikeys` |
-| 费用标记 | 独立的“免费”标签，不写进名称；具体限额和价格以服务商为准 |
+| 用户可见名称 | DeepSeek |
+| 服务商 | DeepSeek 开放平台 |
+| 默认模型 | `deepseek-v4-flash`（可在界面里改成 `deepseek-v4-pro` 或任意模型 ID） |
+| API Base URL | `https://api.deepseek.com`（不含版本段，由公共端点函数补 `/v1`） |
+| API Key 页面 | `https://platform.deepseek.com/api_keys` |
+| 费用标记 | 独立的“按量付费”标签，不写进名称；具体价格以服务商为准 |
 
-名称按“服务商 · 模型”构成，不把价格写进名称。用户添加预设后名称会存进他自己的 Profile，而目录更新不允许改写已安装的 Profile（见 §4）；一旦服务商调整免费政策，写死在名称里的“免费”既改不掉又不再属实。费用信息只以独立标签存在，它属于目录元数据，可以随版本更新。
+名称按“服务商 · 模型”构成，不把价格写进名称。用户添加预设后名称会存进他自己的 Profile，而目录更新不允许改写已安装的 Profile（见 §4）；一旦服务商调整定价，写死在名称里的费用字样既改不掉又不再属实。费用信息只以独立标签存在，它属于目录元数据，可以随版本更新。
 
 不单独展示 Z.ai 国际版。需要国际端点的资深用户继续使用“自定义兼容服务”；Lantern 不跨地域自动切换端点，也不假设国内和国际凭据可以互用。英文界面也不引入 Z.ai 这个名字。
 
@@ -25,9 +29,9 @@ Lantern 不内置共享 API Key，也不把不受控的第三方免费接口仓�
 
 首版用户群假设为中国大陆用户。英文界面服务的是想要沉浸式英文环境的中文用户，不代表海外发行，因此：
 
-- 默认突出显示智谱预设，不随界面语言变化。
-- 不需要为“注册智谱需要中国大陆手机号和实名认证”准备海外替代路径。
-- “获取免费 API Key”打开的是中文官网，界面不额外提示“此站点为中文”，那会破坏英文沉浸感。
+- 默认突出显示 DeepSeek 预设，不随界面语言变化。
+- 不需要为“注册 DeepSeek 需要中国大陆手机号”准备海外替代路径。
+- “获取 API Key”打开的是中文官网，界面不额外提示“此站点为中文”，那会破坏英文沉浸感。
 - 界面自身的文案、状态词和步骤图标题仍须完整提供中英文两版。
 
 ## 2. 产品模型
@@ -51,9 +55,9 @@ Lantern 不内置共享 API Key，也不把不受控的第三方免费接口仓�
 模型配置
 
 调用顺序
-1. 智谱 · GLM-4.7-Flash           可用       免费
-2. 其他免费模型                   需要连接   免费
-3. DeepSeek · deepseek-chat       可用       按量付费
+1. DeepSeek · deepseek-v4-flash   可用       按量付费
+2. OpenAI · gpt-4o-mini           需要连接   按量付费
+3. Ollama · qwen3.5               可用       本地
 
 ＋ 添加模型
 ```
@@ -180,11 +184,13 @@ Lantern 必须做到：
 
 ### 6.1 首版目录
 
-首版至少包含：
+首版至少包含，顺序即目录顺序：
 
-- 智谱 GLM-4.7-Flash：默认推荐，`glm-4.7-flash`，免费标签，用户自己的 API Key。
-- DeepSeek：按量付费的备用预设，用户自己的 API Key。端点 `https://api.deepseek.com`（不含版本段，由公共端点函数补 `/v1`），默认模型 `deepseek-v4-flash`——官方已不再提供 `deepseek-chat`，实现时按官方文档核对过。
-- OpenAI、Anthropic、Ollama、自定义兼容服务：保留现有能力。
+- DeepSeek：默认推荐，排在第一位。端点 `https://api.deepseek.com`（不含版本段，由公共端点函数补 `/v1`），默认模型 `deepseek-v4-flash`——官方已不再提供 `deepseek-chat`，实现时按官方文档核对过。想要更强能力的用户可在高级设置里改成 `deepseek-v4-pro`，字段一律保持可编辑。
+- OpenAI、Anthropic、Ollama、自定义兼容服务：保留现有能力。自定义排在最后，它是逃生口而不是推荐项。
+- 目录列表下方固定一句提示：讲解和语法分析依赖模型的理解能力，参数量很小的模型（包括大多数本地模型）会给出看似合理、实际错误的解释，建议选主流中大型模型。提示放在挑选模型的那一刻，不做成弹窗，也不在每次添加时拦截。
+
+**首版经实测决定不内置任何免费模型。** 原因不是找不到免费接口，而是能免费拿到的小参数模型输出质量不达标：它们在语法拆解和词义辨析上会自信地说错话，而这正是本产品最核心的用途。免费模型的准入条件保留在下面，将来若有免费模型在**质量**上过关仍可加入——门槛是质量，不是价格。
 
 其他免费模型只有在以下信息均能从服务商官方资料确认后才能加入：
 
@@ -193,6 +199,7 @@ Lantern 必须做到：
 - 用户能够自行注册并获得凭据。
 - 免费范围、速率限制和地域限制能够准确描述。
 - 有可维护的服务商官网、文档、Key 页面和隐私政策链接。
+- **输出质量经真实 Key 实测达标**：至少在语法拆解和词义辨析上不出现自信的错误。这一条是 2026-08-02 补上的，也是撤掉智谱预设的直接原因。
 
 ### 6.2 后续更新机制
 
@@ -307,14 +314,14 @@ https://open.bigmodel.cn/api/paas/v4/chat/completions
 
 ## 10. 实施阶段
 
-### Phase 1：智谱预设可用
+### Phase 1：DeepSeek 预设可用
 
 1. 抽出公共端点函数，修复并测试 `/v1`、`/v4`、embeddings 的构造。
-2. 增加智谱 Provider/preset 及中英文文案。
-3. 实现“获取免费 API Key”外链、粘贴 Key、连接测试。
-4. 增加不含敏感信息、可本地离线显示的连接步骤图及无图降级文案。
-5. 新用户无 Profile 时在目录中突出显示智谱预设（不播种 Profile）。
-6. 用真实智谱测试 Key 验证流式聊天、查词、翻译、embeddings 和连接测试。
+2. 增加 DeepSeek Provider/preset 及中英文文案。
+3. 实现“获取 API Key”外链、粘贴 Key、连接测试。
+4. ~~增加不含敏感信息、可本地离线显示的连接步骤图及无图降级文案。~~ **已划掉。** 四步文字说明本来就是 provider 无关的（用 `{{name}}` 插值），配图部分不再做：截图会随服务商官网改版过期，而过期的截图比没有图更容易把人指到错误的位置。
+5. 新用户无 Profile 时在目录中突出显示 DeepSeek 预设（不播种 Profile）。
+6. 用真实 DeepSeek 测试 Key 验证流式聊天、查词、翻译、embeddings 和连接测试。
 
 ### Phase 2：模型目录与简化配置
 
@@ -338,27 +345,28 @@ https://open.bigmodel.cn/api/paas/v4/chat/completions
 
 ## 11. 验收标准
 
-已勾选的是被自动化测试锁住的路由行为；其余需要真实智谱 Key 或人工过一遍界面才能勾。
+已勾选的是被自动化测试锁住的路由行为；其余需要真实 DeepSeek Key 或人工过一遍界面才能勾。
 
-- [ ] 新用户能在不了解 Base URL 和模型 ID 的情况下找到智谱预设；界面语言为英文时同样突出显示它。
+- [ ] 新用户能在不了解 Base URL 和模型 ID 的情况下找到 DeepSeek 预设；界面语言为英文时同样突出显示它。
 - [ ] 全新安装且未连接任何 Key 时，没有任何被预置的 Profile，应用各处都不认为 AI 已配置。
-- [ ] 未连接时显示“需要连接”，并能一键打开国内官方 API Key 页面。
+- [ ] 未连接时显示“需要连接”，并能一键打开官方 API Key 页面。
 - [ ] 仅登录官网但没有粘贴 Key 时，Lantern 不声称连接成功。
-- [ ] 连接步骤图不包含真实凭据；图片缺失时文字流程仍然完整可用。
-- [ ] 粘贴有效 Key 后连接测试成功，`glm-4.7-flash` 可以流式回答。
-- [ ] 输入、输出均走用户自己的智谱凭据，没有 Lantern 共享 Key。
-- [ ] 用户能从目录添加多个免费或付费模型，并拖动调整调用顺序。
-- [ ] 付费模型放在末尾时，前面的免费模型正常可用就不会调用付费模型。
-- [x] 免费模型出现 `429`、超时或 `5xx` 且未输出正文时，自动切换到下一项。
+- [ ] 四步连接说明是 provider 无关的，缺图也完整可用（配图已从范围内划掉，见 Phase 1 第 4 条）。
+- [ ] 粘贴有效 Key 后连接测试成功，`deepseek-v4-flash` 可以流式回答。
+- [ ] 预填的端点和模型 ID 都可编辑：能把 `deepseek-v4-flash` 改成 `deepseek-v4-pro`，也能换成自己的中转端点，两个输入框都没有 `disabled` / `readOnly`。
+- [ ] 目录列表下方能看到“不建议添加小参数模型”的提示，中英文都在。
+- [ ] 输入、输出均走用户自己的 DeepSeek 凭据，没有 Lantern 共享 Key。
+- [ ] 用户能从目录添加多个模型，并拖动调整调用顺序。
+- [x] 排在前面的模型出现 `429`、超时或 `5xx` 且未输出正文时，自动切换到下一项。
 - [x] 冷却窗口内的**后续新请求**同样直接走到下一模型，不重复尝试已知失败的模型。
-- [ ] 首次发生免费→付费降级时出现一次非阻断提示，写明切换前后的模型、费用类型和恢复时间；同一冷却窗口内不重复出现。
+- [ ] ~~首次发生免费→付费降级时出现一次非阻断提示~~ **本版不可验收**：目录里已无免费预设，`AiRouteFallbackNotice` 处于休眠状态（保留不删，等目录里再出现免费预设时自动恢复）。
 - [ ] 回答正文区域没有模型标注。
-- [ ] 免费额度耗尽时显示“额度已用完”并给出倒计时，不与 30 秒的网络故障共用同一句文案。
+- [ ] 额度耗尽时显示“额度已用完”并给出倒计时，不与 30 秒的网络故障共用同一句文案。
 - [x] 手动点击重试时忽略冷却，重新尝试排在最前面的模型。
 - [ ] 当前模型 Key 失效时标记“需要重新连接”，并继续尝试下一模型；其余 Profile 仍会被继续遍历。
 - [x] 模型思考内容已经流出后再失败，不切换模型，显示中断和重试。
 - [x] 用户取消请求时不切换；已经输出正文后失败时不混入另一模型回答。
-- [ ] 智谱的聊天、连接测试、模型列表和 embeddings 四类请求都拼出正确的 `/v4/...` 地址。
+- [x] DeepSeek 的聊天、连接测试、模型列表和 embeddings 四类请求都拼出正确的 `/v1/...` 地址；自带版本段的自定义端点不会被追加第二个版本段。
 - [x] 禁用或删除付费模型后，任何自动路由都不会调用它。
 - [ ] 已有用户的 Profile、顺序、端点和凭据不被播种或目录更新覆盖。
 - [ ] 中英文文案同步；键盘用户可以添加、展开、排序、禁用和删除模型。
@@ -378,12 +386,14 @@ https://open.bigmodel.cn/api/paas/v4/chat/completions
 
 ## 13. 官方依据（核对日期：2026-08-02）
 
-- 智谱 GLM-4.7-Flash：<https://docs.bigmodel.cn/cn/guide/models/free/glm-4.7-flash>
-- 智谱快速开始与国内 API Key 流程：<https://docs.bigmodel.cn/cn/guide/start/quick-start>
-- 智谱国内 API Key 管理：<https://bigmodel.cn/usercenter/proj-mgmt/apikeys>
-- Z.ai API 鉴权和国际端点：<https://docs.z.ai/guides/develop/http/introduction>
-- Z.ai 价格表：<https://docs.z.ai/guides/overview/pricing>
-- DeepSeek API 与端点：<https://api-docs.deepseek.com/>
+- DeepSeek API 与端点：<https://api-docs.deepseek.com/>——基址 `https://api.deepseek.com` 不含版本段；当前模型为 `deepseek-v4-flash` 和 `deepseek-v4-pro`（官方推荐的通用对话模型），已不再提供 `deepseek-chat`。
+- Anthropic 模型 ID：<https://docs.anthropic.com/en/docs/about-claude/models/overview>——预设原先写的 `claude-sonnet-4-20250514` 已废弃，改为当前的 `claude-opus-5`。模型 ID 不带日期后缀。
+- 以下智谱/Z.ai 链接仅作历史记录保留，目录里已无对应预设：
+  - 智谱 GLM-4.7-Flash：<https://docs.bigmodel.cn/cn/guide/models/free/glm-4.7-flash>
+  - 智谱快速开始与国内 API Key 流程：<https://docs.bigmodel.cn/cn/guide/start/quick-start>
+  - 智谱国内 API Key 管理：<https://bigmodel.cn/usercenter/proj-mgmt/apikeys>
+  - Z.ai API 鉴权和国际端点：<https://docs.z.ai/guides/develop/http/introduction>
+  - Z.ai 价格表：<https://docs.z.ai/guides/overview/pricing>
 - DeepSeek 价格表：<https://api-docs.deepseek.com/quick_start/pricing>
 - DeepSeek API Key 管理：<https://platform.deepseek.com/api_keys>
 
