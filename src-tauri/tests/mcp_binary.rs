@@ -132,7 +132,7 @@ fn lantern_mcp_initialize_lists_tools_and_calls_get_collections() {
     let init_resp: serde_json::Value =
         serde_json::from_str(&init_line).expect("parse initialize response");
     assert_eq!(init_resp["id"], serde_json::json!(1));
-    assert_eq!(init_resp["result"]["serverInfo"]["name"], "quill");
+    assert_eq!(init_resp["result"]["serverInfo"]["name"], "lantern");
     assert!(init_resp["result"]["capabilities"]["tools"].is_object());
 
     let list_line = read_line_with_timeout(&mut reader, timeout);

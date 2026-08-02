@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::{language_assessments, lookup_history, notes, word_marks};
-use crate::mcp::server::QuillMcpHandler;
+use crate::mcp::server::LanternMcpHandler;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetNotesArgs {
@@ -159,7 +159,7 @@ struct LanguageProfileResponse {
 }
 
 #[tool_router(router = learning_router, vis = "pub(crate)")]
-impl QuillMcpHandler {
+impl LanternMcpHandler {
     #[tool(
         description = "List first-class notes across the library or for a book/word, including word, selection, and book anchors. Legacy highlight notes were migrated as selection notes and may overlap with `get_highlights`."
     )]

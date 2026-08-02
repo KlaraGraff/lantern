@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::chats;
-use crate::mcp::server::QuillMcpHandler;
+use crate::mcp::server::LanternMcpHandler;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetChatHistoryArgs {
@@ -31,7 +31,7 @@ struct ChatWithMessages {
 }
 
 #[tool_router(router = chats_router, vis = "pub(crate)")]
-impl QuillMcpHandler {
+impl LanternMcpHandler {
     #[tool(
         description = "Fetch chat history for a book. Returns an array of chats with ordered messages; assistant message metadata may contain grounding citations JSON. Optionally narrow to one chat by `chat_id`."
     )]

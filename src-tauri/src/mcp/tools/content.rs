@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::ai::grounding;
 use crate::commands::books;
-use crate::mcp::server::QuillMcpHandler;
+use crate::mcp::server::LanternMcpHandler;
 use crate::mcp::tools::library::require_sync;
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -103,7 +103,7 @@ struct GetBookSummariesResponse {
     sections: Vec<McpSectionSummary>,
 }
 
-fn require_book(handler: &QuillMcpHandler, book_id: &str) -> Result<(), ErrorData> {
+fn require_book(handler: &LanternMcpHandler, book_id: &str) -> Result<(), ErrorData> {
     let exists = books::query_book_exists(&handler.state.db, book_id)
         .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
     if !exists {
@@ -116,7 +116,7 @@ fn require_book(handler: &QuillMcpHandler, book_id: &str) -> Result<(), ErrorDat
 }
 
 #[tool_router(router = content_router, vis = "pub(crate)")]
-impl QuillMcpHandler {
+impl LanternMcpHandler {
     #[tool(
         description = "Search a book's local full-text FTS index and return citation-ready chunks. Respects Lantern's global and per-book spoiler guard and never uses embeddings or AI calls. If the index is not ready, returns its status and no results."
     )]

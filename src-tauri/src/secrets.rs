@@ -1397,7 +1397,7 @@ mod tests {
     fn file_store_is_created_with_owner_only_permissions() {
         use std::os::unix::fs::PermissionsExt;
 
-        let dir = std::env::temp_dir().join(format!("quill-secrets-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("lantern-secrets-{}", uuid::Uuid::new_v4()));
         let secrets = Secrets::init(&dir).unwrap();
         let journal_mode = secrets
             .conn

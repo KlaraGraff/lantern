@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::commands::bookmarks;
-use crate::mcp::server::QuillMcpHandler;
+use crate::mcp::server::LanternMcpHandler;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetBookmarksArgs {
@@ -16,7 +16,7 @@ pub struct GetBookmarksArgs {
 }
 
 #[tool_router(router = bookmarks_router, vis = "pub(crate)")]
-impl QuillMcpHandler {
+impl LanternMcpHandler {
     #[tool(description = "List all bookmarks for a book, ordered by creation time (newest first).")]
     pub async fn get_bookmarks(
         &self,

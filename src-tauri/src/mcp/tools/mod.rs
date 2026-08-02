@@ -1,7 +1,7 @@
 //! MCP tool registry. Each submodule adds one or more
-//! `#[tool_router]`-decorated `impl QuillMcpHandler` blocks; the macro
+//! `#[tool_router]`-decorated `impl LanternMcpHandler` blocks; the macro
 //! generates per-file `<name>_router()` associated functions that
-//! `QuillMcpHandler::tool_router()` (in `mcp/server.rs`) merges into a
+//! `LanternMcpHandler::tool_router()` (in `mcp/server.rs`) merges into a
 //! single `ToolRouter`.
 //!
 //! ## Forbidden surfaces — DO NOT ADD TOOLS THAT TOUCH:
@@ -26,7 +26,7 @@
 //!   `_pending_publish` (migrations 010/011).
 //! - Device identity, sync logs.
 //!
-//! Every new tool MUST be added to `QuillMcpHandler::tool_router()`'s
+//! Every new tool MUST be added to `LanternMcpHandler::tool_router()`'s
 //! merge list, the registry tests, and this audit. Current routers are
 //! `library_router`, `library_write_router`, `library_batch_router`,
 //! `content_router`, `learning_router`, `highlights_router`,

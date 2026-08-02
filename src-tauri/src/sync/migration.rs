@@ -72,7 +72,7 @@ pub fn is_icloud_drive_dir(path: &Path) -> bool {
 
 pub fn is_writable_dir(path: &Path) -> bool {
     let probe = path.join(format!(
-        ".quill-personal-write-probe-{}",
+        ".lantern-write-probe-{}",
         uuid::Uuid::new_v4()
     ));
     match fs::write(&probe, []) {

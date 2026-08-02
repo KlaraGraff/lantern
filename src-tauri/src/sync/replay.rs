@@ -1726,7 +1726,7 @@ mod tests {
 
     #[test]
     fn stall_tracking_marks_and_clears() {
-        let path = PathBuf::from("/tmp/quill-test-stall-tracking.jsonl");
+        let path = PathBuf::from("/tmp/lantern-test-stall-tracking.jsonl");
         assert!(!is_stalled(&path));
         mark_stalled(&path);
         assert!(is_stalled(&path));
@@ -1736,7 +1736,7 @@ mod tests {
 
     #[test]
     fn in_flight_tracking_marks_and_clears() {
-        let path = PathBuf::from("/tmp/quill-test-in-flight-tracking.jsonl");
+        let path = PathBuf::from("/tmp/lantern-test-in-flight-tracking.jsonl");
         assert!(!is_in_flight(&path));
         mark_in_flight(&path);
         assert!(is_in_flight(&path));

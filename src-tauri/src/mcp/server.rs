@@ -1,7 +1,7 @@
 //! MCP server handler + stdio entry point.
 //!
 //! This file owns:
-//!   - `QuillMcpHandler` — the per-process MCP service. Carries
+//!   - `LanternMcpHandler` — the per-process MCP service. Carries
 //!     `McpState` so tool methods (defined across `mcp/tools/*.rs` via
 //!     `#[tool_router]` impl blocks) can read the DB.
 //!   - `tool_router()` — aggregator merging every per-file router.
@@ -9,7 +9,7 @@
 //!     auto-generates `call_tool` / `list_tools` against the merged
 //!     router.
 //!   - `serve_stdio()` — drives the handler over `(stdin, stdout)` for
-//!     the `quill mcp` subcommand. The Tauri app does NOT run an MCP
+//!     the `lantern mcp` subcommand. The Tauri app does NOT run an MCP
 //!     server in-process; AI clients (Claude Code, Codex) launch this
 //!     subprocess themselves.
 
@@ -22,11 +22,11 @@ use rmcp::{tool_handler, ServiceExt};
 use super::state::McpState;
 
 #[derive(Clone)]
-pub(crate) struct QuillMcpHandler {
+pub(crate) struct LanternMcpHandler {
     pub(crate) state: McpState,
 }
 
-impl QuillMcpHandler {
+impl LanternMcpHandler {
     pub(crate) fn new(state: McpState) -> Self {
         Self { state }
     }
@@ -56,12 +56,12 @@ impl QuillMcpHandler {
 }
 
 #[tool_handler]
-impl ServerHandler for QuillMcpHandler {
+impl ServerHandler for LanternMcpHandler {
     fn get_info(&self) -> ServerInfo {
         // `ServerInfo` and `Implementation` are both `#[non_exhaustive]`.
         // Use the public constructors / builder methods rather than
         // struct literals.
-        let implementation = Implementation::new("quill", env!("CARGO_PKG_VERSION"));
+        let implementation = Implementation::new("lantern", env!("CARGO_PKG_VERSION"));
         let capabilities = ServerCapabilities::builder().enable_tools().build();
         ServerInfo::new(capabilities)
             .with_protocol_version(ProtocolVersion::LATEST)
@@ -85,7 +85,7 @@ impl ServerHandler for QuillMcpHandler {
 /// Called from `mcp_stdio_main()` in `lib.rs`; not used by the Tauri
 /// app side.
 pub(crate) async fn serve_stdio(state: McpState) -> Result<(), Box<dyn std::error::Error>> {
-    let handler = QuillMcpHandler::new(state);
+    let handler = LanternMcpHandler::new(state);
     let server = handler.serve(stdio()).await?;
     // `waiting` resolves when the peer disconnects or sends shutdown.
     let _quit_reason = server.waiting().await?;
@@ -94,7 +94,7 @@ pub(crate) async fn serve_stdio(state: McpState) -> Result<(), Box<dyn std::erro
 
 #[cfg(test)]
 mod tests {
-    //! Unit tests for the `QuillMcpHandler` surface. We exercise tool
+    //! Unit tests for the `LanternMcpHandler` surface. We exercise tool
     //! methods directly against a seeded in-memory-on-disk SQLite via
     //! `Db::init` on a `TempDir`, asserting on the JSON payload each
     //! tool returns. The transport itself (stdin/stdout, rmcp's
@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn tool_router_registers_all_tools() {
-        let router = QuillMcpHandler::tool_router();
+        let router = LanternMcpHandler::tool_router();
         let names: std::collections::BTreeSet<_> = router
             .list_all()
             .into_iter()
@@ -345,19 +345,19 @@ mod tests {
     #[tokio::test]
     async fn get_info_advertises_tools_capability() {
         let (_dir, state) = seeded();
-        let handler = QuillMcpHandler::new(state);
+        let handler = LanternMcpHandler::new(state);
         let info = handler.get_info();
         assert!(
             info.capabilities.tools.is_some(),
             "tools capability missing"
         );
-        assert_eq!(info.server_info.name, "quill");
+        assert_eq!(info.server_info.name, "lantern");
     }
 
     #[tokio::test]
     async fn list_books_returns_seeded_book_without_available_field() {
         let (_dir, state) = seeded();
-        let handler = QuillMcpHandler::new(state);
+        let handler = LanternMcpHandler::new(state);
         let args = crate::mcp::tools::library::ListBooksArgs {
             filter: None,
             search: None,
@@ -377,7 +377,7 @@ mod tests {
     #[tokio::test]
     async fn get_book_returns_relative_paths_only() {
         let (_dir, state) = seeded();
-        let handler = QuillMcpHandler::new(state);
+        let handler = LanternMcpHandler::new(state);
         let args = crate::mcp::tools::library::GetBookArgs {
             book_id: "b1".to_string(),
         };
@@ -393,7 +393,7 @@ mod tests {
     #[tokio::test]
     async fn get_collections_returns_book_count() {
         let (_dir, state) = seeded();
-        let handler = QuillMcpHandler::new(state);
+        let handler = LanternMcpHandler::new(state);
         let body = text_of(handler.get_collections().await.unwrap());
         let arr: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(arr[0]["name"], serde_json::json!("Favorites"));
@@ -403,7 +403,7 @@ mod tests {
     #[tokio::test]
     async fn get_highlights_includes_text_content() {
         let (_dir, state) = seeded();
-        let handler = QuillMcpHandler::new(state);
+        let handler = LanternMcpHandler::new(state);
         let args = crate::mcp::tools::highlights::GetHighlightsArgs {
             book_id: "b1".to_string(),
         };
@@ -416,7 +416,7 @@ mod tests {
     #[tokio::test]
     async fn get_bookmarks_returns_label() {
         let (_dir, state) = seeded();
-        let handler = QuillMcpHandler::new(state);
+        let handler = LanternMcpHandler::new(state);
         let args = crate::mcp::tools::bookmarks::GetBookmarksArgs {
             book_id: "b1".to_string(),
         };
@@ -428,7 +428,7 @@ mod tests {
     #[tokio::test]
     async fn get_vocab_words_and_stats_align() {
         let (_dir, state) = seeded();
-        let handler = QuillMcpHandler::new(state);
+        let handler = LanternMcpHandler::new(state);
         let words_body = text_of(
             handler
                 .get_vocab_words(Parameters(crate::mcp::tools::vocab::GetVocabWordsArgs {
@@ -451,7 +451,7 @@ mod tests {
     #[tokio::test]
     async fn get_chat_history_bundles_messages() {
         let (_dir, state) = seeded();
-        let handler = QuillMcpHandler::new(state);
+        let handler = LanternMcpHandler::new(state);
         let args = crate::mcp::tools::chats::GetChatHistoryArgs {
             book_id: "b1".to_string(),
             chat_id: None,
@@ -465,7 +465,7 @@ mod tests {
     #[tokio::test]
     async fn get_collection_books_returns_full_book_projection() {
         let (_dir, state) = seeded();
-        let handler = QuillMcpHandler::new(state);
+        let handler = LanternMcpHandler::new(state);
         let body = text_of(
             handler
                 .get_collection_books(Parameters(
@@ -487,7 +487,7 @@ mod tests {
     #[tokio::test]
     async fn content_tools_apply_spoiler_cutoff_and_report_index_details() {
         let (_dir, state) = seeded();
-        let handler = QuillMcpHandler::new(state);
+        let handler = LanternMcpHandler::new(state);
 
         let safe_body = text_of(
             handler
@@ -581,7 +581,7 @@ mod tests {
     #[tokio::test]
     async fn learning_tools_return_safe_projections() {
         let (_dir, state) = seeded();
-        let handler = QuillMcpHandler::new(state);
+        let handler = LanternMcpHandler::new(state);
 
         let notes_body = text_of(
             handler
@@ -651,7 +651,7 @@ mod tests {
     #[tokio::test]
     async fn batch_collection_membership_reports_noop_success_and_missing() {
         let (_dir, state) = seeded_writable();
-        let handler = QuillMcpHandler::new(state);
+        let handler = LanternMcpHandler::new(state);
         let body = text_of(
             handler
                 .add_books_to_collection(Parameters(
@@ -673,7 +673,7 @@ mod tests {
     #[tokio::test]
     async fn batch_import_continues_after_unsupported_and_missing_inputs() {
         let (dir, state) = seeded_writable();
-        let handler = QuillMcpHandler::new(state);
+        let handler = LanternMcpHandler::new(state);
         let valid = dir.path().join("sample.txt");
         let unsupported = dir.path().join("sample.bin");
         let missing = dir.path().join("missing.txt");
@@ -704,7 +704,7 @@ mod tests {
     #[tokio::test]
     async fn write_tools_keep_existing_gate() {
         let (_dir, state) = seeded();
-        let handler = QuillMcpHandler::new(state);
+        let handler = LanternMcpHandler::new(state);
         let batch_error = handler
             .delete_books(Parameters(
                 crate::mcp::tools::library_batch::DeleteBooksArgs {

@@ -53,7 +53,7 @@ impl Snapshot {
         })
     }
 
-    /// Build a snapshot directly from an open quill.db (legacy file-sync
+    /// Build a snapshot directly from an open lantern.db (legacy file-sync
     /// or freshly-migrated local DB). Skips the merge-engine roundtrip
     /// because the DB already holds the materialized state — we just dump
     /// every synced table.

@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::commands::vocab;
-use crate::mcp::server::QuillMcpHandler;
+use crate::mcp::server::LanternMcpHandler;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetVocabWordsArgs {
@@ -20,7 +20,7 @@ pub struct GetVocabWordsArgs {
 }
 
 #[tool_router(router = vocab_router, vis = "pub(crate)")]
-impl QuillMcpHandler {
+impl LanternMcpHandler {
     #[tool(
         description = "List vocabulary words for one book or the full library, optionally limited to words due for review. Includes FSRS stability, difficulty, interval, and last-review fields."
     )]

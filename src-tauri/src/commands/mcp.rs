@@ -1,6 +1,6 @@
 //! MCP client integration commands.
 //!
-//! Lantern's MCP server runs as `quill mcp` over stdio (see
+//! Lantern's MCP server runs as `lantern mcp` over stdio (see
 //! `src-tauri/src/mcp/server.rs`). For an AI client to use it, the
 //! client needs an entry in its config file pointing at the Lantern
 //! binary. These commands write/remove that entry on the user's
@@ -9,12 +9,12 @@
 //!
 //! Supported clients:
 //!   - Claude Code CLI — `~/.claude.json` (JSON, top-level
-//!     `mcpServers.quill`).
+//!     `mcpServers.lantern`).
 //!   - Codex CLI — `~/.codex/config.toml` (TOML, top-level
-//!     `[mcp_servers.quill]`).
+//!     `[mcp_servers.lantern]`).
 //!
 //! Writes are non-destructive: we read the file, mutate just our
-//! `quill` entry, and write it back. Other clients in the same file
+//! `lantern` entry, and write it back. Other clients in the same file
 //! (or other top-level config) are preserved. If a file is malformed,
 //! the command errors out rather than overwriting it.
 //!
@@ -32,6 +32,11 @@ use tauri::State;
 
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
+
+/// The key our entry lives under in every client's config file. Both
+/// supported clients happen to key servers by a bare name, so one
+/// constant covers both.
+const SERVER_KEY: &str = "lantern";
 
 /// Snapshot returned to the settings UI. `binary_path` is the absolute
 /// path of *this* Lantern binary — `current_exe()` at runtime — so the
@@ -81,7 +86,7 @@ fn claude_code_path() -> AppResult<PathBuf> {
 }
 
 /// Inner: takes the explicit config path. Returns `true` iff
-/// `mcpServers.quill` exists.
+/// `mcpServers.lantern` exists.
 pub(crate) fn claude_code_is_enabled_at(path: &Path) -> AppResult<bool> {
     if !path.exists() {
         return Ok(false);
@@ -93,7 +98,10 @@ pub(crate) fn claude_code_is_enabled_at(path: &Path) -> AppResult<bool> {
     }
     let val: serde_json::Value = serde_json::from_str(&raw)
         .map_err(|e| AppError::Other(format!("parse {}: {e}", path.display())))?;
-    Ok(val.get("mcpServers").and_then(|m| m.get("quill")).is_some())
+    Ok(val
+        .get("mcpServers")
+        .and_then(|m| m.get(SERVER_KEY))
+        .is_some())
 }
 
 /// Inner: takes the explicit config path. Sibling entries under
@@ -132,11 +140,11 @@ pub(crate) fn claude_code_write_at(path: &Path, enabled: bool, binary_path: &str
 
     if enabled {
         servers.insert(
-            "quill".to_string(),
+            SERVER_KEY.to_string(),
             json!({ "command": binary_path, "args": ["mcp"] }),
         );
     } else {
-        servers.remove("quill");
+        servers.remove(SERVER_KEY);
     }
 
     let mut out = serde_json::to_string_pretty(&val)
@@ -165,7 +173,7 @@ pub(crate) fn codex_is_enabled_at(path: &Path) -> AppResult<bool> {
     Ok(doc
         .get("mcp_servers")
         .and_then(|v| v.as_table())
-        .and_then(|t| t.get("quill"))
+        .and_then(|t| t.get(SERVER_KEY))
         .is_some())
 }
 
@@ -197,9 +205,9 @@ pub(crate) fn codex_write_at(path: &Path, enabled: bool, binary_path: &str) -> A
         let mut args = toml_edit::Array::new();
         args.push("mcp");
         entry["args"] = toml_edit::value(args);
-        servers["quill"] = toml_edit::Item::Table(entry);
+        servers[SERVER_KEY] = toml_edit::Item::Table(entry);
     } else if let Some(servers) = doc.get_mut("mcp_servers").and_then(|v| v.as_table_mut()) {
-        servers.remove("quill");
+        servers.remove(SERVER_KEY);
         // Leave an empty `[mcp_servers]` table behind rather than
         // deleting it — preserves the user's section ordering if they
         // re-enable later.
@@ -263,7 +271,7 @@ pub fn mcp_config_snippet() -> AppResult<String> {
     let bin = current_binary_path()?.to_string_lossy().into_owned();
     let snippet = json!({
         "mcpServers": {
-            "quill": { "command": bin, "args": ["mcp"] }
+            "lantern": { "command": bin, "args": ["mcp"] }
         }
     });
     serde_json::to_string_pretty(&snippet)
@@ -293,15 +301,15 @@ mod tests {
     }
 
     #[test]
-    fn claude_code_write_creates_file_with_just_quill_entry() {
+    fn claude_code_write_creates_file_with_just_our_entry() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join(".claude.json");
-        claude_code_write_at(&path, true, "/test/quill").unwrap();
+        claude_code_write_at(&path, true, "/test/lantern").unwrap();
 
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(v["mcpServers"]["quill"]["command"], json!("/test/quill"));
-        assert_eq!(v["mcpServers"]["quill"]["args"], json!(["mcp"]));
+        assert_eq!(v["mcpServers"]["lantern"]["command"], json!("/test/lantern"));
+        assert_eq!(v["mcpServers"]["lantern"]["args"], json!(["mcp"]));
         assert!(claude_code_is_enabled_at(&path).unwrap());
     }
 
@@ -315,12 +323,12 @@ mod tests {
         )
         .unwrap();
 
-        claude_code_write_at(&path, true, "/test/quill").unwrap();
+        claude_code_write_at(&path, true, "/test/lantern").unwrap();
         let after_enable: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(
-            after_enable["mcpServers"]["quill"]["command"],
-            json!("/test/quill")
+            after_enable["mcpServers"]["lantern"]["command"],
+            json!("/test/lantern")
         );
         assert_eq!(
             after_enable["mcpServers"]["github"]["command"],
@@ -328,10 +336,10 @@ mod tests {
         );
         assert_eq!(after_enable["theme"], json!("dark"));
 
-        claude_code_write_at(&path, false, "/test/quill").unwrap();
+        claude_code_write_at(&path, false, "/test/lantern").unwrap();
         let after_disable: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert!(after_disable["mcpServers"].get("quill").is_none());
+        assert!(after_disable["mcpServers"].get("lantern").is_none());
         assert_eq!(
             after_disable["mcpServers"]["github"]["command"],
             json!("gh-mcp")
@@ -346,7 +354,7 @@ mod tests {
         let path = dir.path().join(".claude.json");
         std::fs::write(&path, "{ not valid json").unwrap();
 
-        let err = claude_code_write_at(&path, true, "/test/quill").unwrap_err();
+        let err = claude_code_write_at(&path, true, "/test/lantern").unwrap_err();
         assert!(err.to_string().contains("parse"));
         // File untouched.
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{ not valid json");
@@ -365,13 +373,13 @@ mod tests {
     fn codex_write_creates_dir_and_file_when_absent() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join(".codex").join("config.toml");
-        codex_write_at(&path, true, "/test/quill").unwrap();
+        codex_write_at(&path, true, "/test/lantern").unwrap();
 
         assert!(path.exists());
         let doc: toml_edit::DocumentMut = std::fs::read_to_string(&path).unwrap().parse().unwrap();
         assert_eq!(
-            doc["mcp_servers"]["quill"]["command"].as_str(),
-            Some("/test/quill")
+            doc["mcp_servers"]["lantern"]["command"].as_str(),
+            Some("/test/lantern")
         );
         assert!(codex_is_enabled_at(&path).unwrap());
     }
@@ -386,7 +394,7 @@ mod tests {
         )
         .unwrap();
 
-        codex_write_at(&path, true, "/test/quill").unwrap();
+        codex_write_at(&path, true, "/test/lantern").unwrap();
         let after: toml_edit::DocumentMut =
             std::fs::read_to_string(&path).unwrap().parse().unwrap();
         assert_eq!(after["model"].as_str(), Some("gpt-5"));
@@ -395,14 +403,14 @@ mod tests {
             Some("gh-mcp")
         );
         assert_eq!(
-            after["mcp_servers"]["quill"]["command"].as_str(),
-            Some("/test/quill")
+            after["mcp_servers"]["lantern"]["command"].as_str(),
+            Some("/test/lantern")
         );
 
-        codex_write_at(&path, false, "/test/quill").unwrap();
+        codex_write_at(&path, false, "/test/lantern").unwrap();
         let after2: toml_edit::DocumentMut =
             std::fs::read_to_string(&path).unwrap().parse().unwrap();
-        assert!(after2["mcp_servers"].get("quill").is_none());
+        assert!(after2["mcp_servers"].get("lantern").is_none());
         assert_eq!(
             after2["mcp_servers"]["github"]["command"].as_str(),
             Some("gh-mcp")
@@ -416,7 +424,7 @@ mod tests {
         let path = dir.path().join("config.toml");
         std::fs::write(&path, "[unclosed-table").unwrap();
 
-        let err = codex_write_at(&path, true, "/test/quill").unwrap_err();
+        let err = codex_write_at(&path, true, "/test/lantern").unwrap_err();
         assert!(err.to_string().contains("parse"));
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "[unclosed-table");
     }

@@ -404,7 +404,7 @@ fn snapshot_rejects_word_mark_with_noncanonical_id() {
     assert!(snapshot.apply_peer(&tx, "dev-A").is_err());
 }
 
-/// `from_legacy_db` reads a fully-migrated quill.db (v11 schema) and
+/// `from_legacy_db` reads a fully-migrated lantern.db (v11 schema) and
 /// produces a snapshot byte-equivalent to one built from the events
 /// that would have produced the same DB state. This is the
 /// migration-snapshot bootstrap path: the legacy DB is the source of

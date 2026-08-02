@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::commands::{books, collections};
-use crate::mcp::server::QuillMcpHandler;
+use crate::mcp::server::LanternMcpHandler;
 use crate::mcp::tools::library::{require_sync, McpBook};
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -101,7 +101,7 @@ fn failed_item(input: String, error: impl ToString) -> BatchItemResult {
     BatchItemResult::new(input, status, Some(message), None)
 }
 
-impl QuillMcpHandler {
+impl LanternMcpHandler {
     pub(crate) fn run_import_books(
         &self,
         file_paths: Vec<String>,
@@ -241,7 +241,7 @@ impl QuillMcpHandler {
 }
 
 #[tool_router(router = library_batch_router, vis = "pub(crate)")]
-impl QuillMcpHandler {
+impl LanternMcpHandler {
     #[tool(
         description = "Import multiple local ebook files. Continues after per-file failures and reports ok, unsupported, or error for each input."
     )]

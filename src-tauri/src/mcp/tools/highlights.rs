@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::commands::bookmarks;
-use crate::mcp::server::QuillMcpHandler;
+use crate::mcp::server::LanternMcpHandler;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetHighlightsArgs {
@@ -16,7 +16,7 @@ pub struct GetHighlightsArgs {
 }
 
 #[tool_router(router = highlights_router, vis = "pub(crate)")]
-impl QuillMcpHandler {
+impl LanternMcpHandler {
     #[tool(
         description = "List all highlights for a book, including text, color, and the legacy attached-note snapshot. First-class and migrated highlight notes are available from `get_notes`, so note content may overlap."
     )]

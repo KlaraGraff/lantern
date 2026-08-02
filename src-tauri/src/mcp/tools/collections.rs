@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::commands::collections;
-use crate::mcp::server::QuillMcpHandler;
+use crate::mcp::server::LanternMcpHandler;
 use crate::mcp::tools::library::require_sync;
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -39,7 +39,7 @@ pub struct CollectionBookArgs {
 }
 
 #[tool_router(router = collections_write_router, vis = "pub(crate)")]
-impl QuillMcpHandler {
+impl LanternMcpHandler {
     #[tool(description = "Create a new collection.")]
     pub async fn create_collection(
         &self,

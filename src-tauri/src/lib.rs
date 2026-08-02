@@ -181,7 +181,7 @@ fn xdg_data_home() -> PathBuf {
 /// Resolve the OS-conventional **app-data** directory for this build.
 /// Mirrors what `tauri::path::app_data_dir()` would return for the
 /// active bundle identifier (dev-suffixed in debug). Used by the
-/// `quill mcp` stdio subcommand which runs outside the Tauri runtime
+/// `lantern mcp` stdio subcommand which runs outside the Tauri runtime
 /// and has no `AppHandle` to ask.
 ///
 /// Platform layout:
@@ -216,7 +216,7 @@ pub(crate) fn resolve_app_data_dir() -> PathBuf {
     }
 }
 
-/// Entry point for the `quill mcp` subcommand. Opens the SQLite
+/// Entry point for the `lantern mcp` subcommand. Opens the SQLite
 /// materialized view and serves the MCP protocol over stdin/stdout
 /// until the client disconnects.
 ///
@@ -236,7 +236,7 @@ pub fn mcp_stdio_main() {
 
     if !db_path.exists() {
         eprintln!(
-            "quill mcp: no library found at {} — launch the Lantern app at least once to initialize it.",
+            "lantern mcp: no library found at {} — launch the Lantern app at least once to initialize it.",
             db_path.display()
         );
         std::process::exit(1);
@@ -260,7 +260,7 @@ pub fn mcp_stdio_main() {
                 db
             }
             Err(e) => {
-                eprintln!("quill mcp: failed to open (rw) {}: {e}", db_path.display());
+                eprintln!("lantern mcp: failed to open (rw) {}: {e}", db_path.display());
                 std::process::exit(1);
             }
         };
@@ -282,7 +282,7 @@ pub fn mcp_stdio_main() {
                 db
             }
             Err(e) => {
-                eprintln!("quill mcp: failed to open {}: {e}", db_path.display());
+                eprintln!("lantern mcp: failed to open {}: {e}", db_path.display());
                 std::process::exit(1);
             }
         };
@@ -297,7 +297,7 @@ pub fn mcp_stdio_main() {
         .expect("tokio runtime");
 
     if let Err(e) = runtime.block_on(mcp::server::serve_stdio(state)) {
-        eprintln!("quill mcp: serve error: {e}");
+        eprintln!("lantern mcp: serve error: {e}");
         std::process::exit(1);
     }
 }
@@ -497,7 +497,7 @@ pub fn run() {
                 .targets([
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
                         path: resolve_log_dir(),
-                        file_name: Some("quill".into()),
+                        file_name: Some("lantern".into()),
                     }),
                     #[cfg(debug_assertions)]
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
@@ -636,7 +636,7 @@ pub fn run() {
             }
 
             log::info!(
-                "quill start v{version} os={os} arch={arch} data_dir={data_dir} schema_v={schema}",
+                "lantern start v{version} os={os} arch={arch} data_dir={data_dir} schema_v={schema}",
                 version = env!("CARGO_PKG_VERSION"),
                 os = std::env::consts::OS,
                 arch = std::env::consts::ARCH,

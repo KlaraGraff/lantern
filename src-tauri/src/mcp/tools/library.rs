@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::commands::books;
 use crate::commands::collections;
-use crate::mcp::server::QuillMcpHandler;
+use crate::mcp::server::LanternMcpHandler;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ListBooksArgs {
@@ -88,7 +88,7 @@ impl From<books::Book> for McpBook {
 }
 
 #[tool_router(router = library_router, vis = "pub(crate)")]
-impl QuillMcpHandler {
+impl LanternMcpHandler {
     #[tool(
         description = "List books in the local library. Optionally filter by status or genre and search title/author. Returns relative file paths (under the app data directory). Covers are stored as BLOBs in the DB — use `has_cover` to check availability."
     )]
@@ -161,7 +161,7 @@ pub struct DeleteBookArgs {
 }
 
 pub(crate) fn require_sync(
-    handler: &QuillMcpHandler,
+    handler: &LanternMcpHandler,
 ) -> Result<&crate::sync::writer::SyncWriter, ErrorData> {
     let sync = handler
         .state
@@ -208,7 +208,7 @@ pub(crate) fn require_sync(
 }
 
 #[tool_router(router = library_write_router, vis = "pub(crate)")]
-impl QuillMcpHandler {
+impl LanternMcpHandler {
     #[tool(
         description = "Deprecated: use `import_books`. Import one supported local ebook file into the library."
     )]
