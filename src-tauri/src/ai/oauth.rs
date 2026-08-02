@@ -80,6 +80,12 @@ pub fn generate_state() -> String {
 }
 
 /// Build the OpenAI authorization URL with PKCE challenge and state.
+///
+/// `originator` is the only parameter here that names *us* rather than the
+/// protocol; OpenAI takes it as a free-form client label (Codex sends
+/// `codex_cli_rs`). Nothing on our side reads it back, so the rename costs
+/// nothing — but it is a value a third party sees, so if a ChatGPT login
+/// ever starts failing right after this change, look here first.
 pub fn build_auth_url(challenge: &str, state: &str) -> String {
     let mut url = reqwest::Url::parse(AUTH_URL).unwrap();
     url.query_pairs_mut()
@@ -92,7 +98,7 @@ pub fn build_auth_url(challenge: &str, state: &str) -> String {
         .append_pair("code_challenge_method", "S256")
         .append_pair("id_token_add_organizations", "true")
         .append_pair("codex_cli_simplified_flow", "true")
-        .append_pair("originator", "quill");
+        .append_pair("originator", "lantern");
     url.to_string()
 }
 
@@ -452,7 +458,7 @@ mod tests {
         assert_eq!(params.get("state").unwrap(), "test_state");
         assert_eq!(params.get("code_challenge").unwrap(), "test_challenge");
         assert_eq!(params.get("code_challenge_method").unwrap(), "S256");
-        assert_eq!(params.get("originator").unwrap(), "quill");
+        assert_eq!(params.get("originator").unwrap(), "lantern");
     }
 
     #[test]
