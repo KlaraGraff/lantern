@@ -1,10 +1,10 @@
-import { getFontFamily } from "./reader-settings";
+import { getFontFamily } from "./reader-settings.ts";
 
 export const MARKER_STYLE_SETTING_KEY = "marker_style_config";
 
 export type MarkerFontChoice = "inherit" | "reader" | string;
 
-export interface MarkerVisualStyleV1 {
+export interface MarkerVisualStyle {
   color: string;
   opacity: number;
   background: boolean;
@@ -13,12 +13,12 @@ export interface MarkerVisualStyleV1 {
   font: MarkerFontChoice;
 }
 
-export interface MarkerStyleConfigV1 {
-  version: 1;
+export interface MarkerStyleConfig {
+  version: number;
   wordMatchScope: "current" | "book" | "forms";
-  manual: MarkerVisualStyleV1;
+  manual: MarkerVisualStyle;
   automaticFollowsManual: boolean;
-  automatic: MarkerVisualStyleV1;
+  automatic: MarkerVisualStyle;
   /**
    * Whether whole-word markers in a paginated book may carry weight and font.
    * Off by default: those treatments change how wide the text is, so marking a
@@ -35,30 +35,38 @@ export const MARKER_COLOR_PRESETS = [
   "#8A8F98",
 ] as const;
 
-const DEFAULT_MANUAL: MarkerVisualStyleV1 = {
+/** A range the reader marked themselves: the warmest, most solid thing on the page. */
+const DEFAULT_MANUAL: MarkerVisualStyle = {
   color: "#E9B949",
-  opacity: 32,
+  opacity: 34,
   background: true,
   underline: false,
   bold: false,
   font: "inherit",
 };
 
-const DEFAULT_AUTOMATIC: MarkerVisualStyleV1 = {
+/**
+ * A range the app marked on the reader's behalf, after a lookup. Faint enough
+ * to read straight past, and carrying an underline the manual style does not,
+ * so the two never have to be told apart by colour alone.
+ */
+const DEFAULT_AUTOMATIC: MarkerVisualStyle = {
   color: "#8D7C65",
-  opacity: 18,
+  opacity: 16,
   background: true,
   underline: true,
   bold: false,
   font: "inherit",
 };
 
-export function createDefaultMarkerStyleConfig(): MarkerStyleConfigV1 {
+export const MARKER_STYLE_VERSION = 2;
+
+export function createDefaultMarkerStyleConfig(): MarkerStyleConfig {
   return {
-    version: 1,
+    version: MARKER_STYLE_VERSION,
     wordMatchScope: "book",
     manual: { ...DEFAULT_MANUAL },
-    automaticFollowsManual: true,
+    automaticFollowsManual: false,
     automatic: { ...DEFAULT_AUTOMATIC },
     layoutAffectingMarkers: false,
   };
@@ -68,8 +76,8 @@ function normalizeColor(value: unknown, fallback: string) {
   return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value.toUpperCase() : fallback;
 }
 
-function normalizeVisualStyle(value: unknown, fallback: MarkerVisualStyleV1): MarkerVisualStyleV1 {
-  const source = value && typeof value === "object" ? value as Partial<MarkerVisualStyleV1> : {};
+function normalizeVisualStyle(value: unknown, fallback: MarkerVisualStyle): MarkerVisualStyle {
+  const source = value && typeof value === "object" ? value as Partial<MarkerVisualStyle> : {};
   const background = source.background ?? fallback.background;
   const underline = source.underline ?? fallback.underline;
   const bold = source.bold ?? fallback.bold;
@@ -86,7 +94,7 @@ function normalizeVisualStyle(value: unknown, fallback: MarkerVisualStyleV1): Ma
   };
 }
 
-export function parseMarkerStyleConfig(value: unknown): MarkerStyleConfigV1 {
+export function parseMarkerStyleConfig(value: unknown): MarkerStyleConfig {
   let source: unknown = value;
   if (typeof value === "string") {
     try {
@@ -95,25 +103,38 @@ export function parseMarkerStyleConfig(value: unknown): MarkerStyleConfigV1 {
       source = null;
     }
   }
-  const parsed = source && typeof source === "object" ? source as Partial<MarkerStyleConfigV1> & { markMatchingWords?: boolean } : {};
+  const parsed = source && typeof source === "object" ? source as Partial<MarkerStyleConfig> & { markMatchingWords?: boolean } : {};
   const defaults = createDefaultMarkerStyleConfig();
+  // v1 shipped `automaticFollowsManual: true`, which made an automatic mark
+  // render identically to a manual one — the two kinds of mark were the same
+  // colour because the setting said to copy it. Every v1 config carries that
+  // `true` whether or not anyone chose it, so the stored value cannot say which
+  // it was, and it is read here as the default it almost always was.
+  //
+  // Only that one field is migrated. A v1 config that turned the toggle *off*
+  // is unambiguous — nothing but a deliberate choice produces it — so it, and
+  // the `automatic` style it makes visible, survive untouched.
+  const stored = typeof parsed.version === "number" ? parsed.version : 1;
+  const inheritedFollowsManual = stored < MARKER_STYLE_VERSION && parsed.automaticFollowsManual !== false;
   return {
-    version: 1,
+    version: MARKER_STYLE_VERSION,
     wordMatchScope: parsed.wordMatchScope === "current" || parsed.wordMatchScope === "book" || parsed.wordMatchScope === "forms"
       ? parsed.wordMatchScope
       : parsed.markMatchingWords === false ? "current" : "book",
     manual: normalizeVisualStyle(parsed.manual, defaults.manual),
-    automaticFollowsManual: parsed.automaticFollowsManual ?? defaults.automaticFollowsManual,
+    automaticFollowsManual: inheritedFollowsManual
+      ? defaults.automaticFollowsManual
+      : parsed.automaticFollowsManual ?? defaults.automaticFollowsManual,
     automatic: normalizeVisualStyle(parsed.automatic, defaults.automatic),
     layoutAffectingMarkers: parsed.layoutAffectingMarkers === true,
   };
 }
 
-export function serializeMarkerStyleConfig(config: MarkerStyleConfigV1) {
+export function serializeMarkerStyleConfig(config: MarkerStyleConfig) {
   return JSON.stringify(parseMarkerStyleConfig(config));
 }
 
-export function effectiveAutomaticMarkerStyle(config: MarkerStyleConfigV1) {
+export function effectiveAutomaticMarkerStyle(config: MarkerStyleConfig) {
   return config.automaticFollowsManual ? config.manual : config.automatic;
 }
 
@@ -123,7 +144,7 @@ export function markerFontFamily(font: MarkerFontChoice, readerFont?: string) {
   return getFontFamily(font);
 }
 
-export function markerStyleCss(style: MarkerVisualStyleV1, fontFamily?: string) {
+export function markerStyleCss(style: MarkerVisualStyle, fontFamily?: string) {
   const alpha = Math.round((style.opacity / 100) * 255).toString(16).padStart(2, "0");
   return {
     backgroundColor: style.background ? `${style.color}${alpha}` : "transparent",
@@ -141,7 +162,7 @@ export function markerStyleCss(style: MarkerVisualStyleV1, fontFamily?: string) 
 // properties that cannot move a glyph belong here: padding, weight, or family
 // would reflow the page as words are looked up, which is why
 // `markerOverlayStyle` strips the layout-affecting treatments first.
-export function markerHighlightCss(style: MarkerVisualStyleV1, fontFamily?: string) {
+export function markerHighlightCss(style: MarkerVisualStyle, fontFamily?: string) {
   const alpha = Math.round((style.opacity / 100) * 255).toString(16).padStart(2, "0");
   return [
     style.background ? `background-color: ${style.color}${alpha}; border-radius: 0.15em;` : "",
@@ -156,14 +177,14 @@ export function markerHighlightCss(style: MarkerVisualStyleV1, fontFamily?: stri
 // Drops the treatments that would move text. An SVG overlay cannot render them
 // at all, and inside a paginated book they reflow the page every time a word is
 // marked — which whole-word markers may do once the reader opts in.
-export function markerOverlayStyle(style: MarkerVisualStyleV1): MarkerVisualStyleV1 {
+export function markerOverlayStyle(style: MarkerVisualStyle): MarkerVisualStyle {
   return { ...style, bold: false, font: "inherit" };
 }
 
 /** The style a wrapped whole-word marker renders with, honouring the opt-in. */
 export function wordMarkerCss(
-  config: MarkerStyleConfigV1,
-  style: MarkerVisualStyleV1,
+  config: MarkerStyleConfig,
+  style: MarkerVisualStyle,
   readerFontFamily?: string,
 ): string {
   return config.layoutAffectingMarkers

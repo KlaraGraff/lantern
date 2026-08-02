@@ -26,7 +26,7 @@ import {
   createDefaultMarkerStyleConfig,
   parseMarkerStyleConfig,
   serializeMarkerStyleConfig,
-  type MarkerStyleConfigV1,
+  type MarkerStyleConfig,
 } from "../marker-style";
 import { notifyReadingAssistanceSettingsChanged } from "../reading-assistance-events";
 import {
@@ -139,7 +139,7 @@ export default function ToolsSettings({
   const [densityHelpOpen, setDensityHelpOpen] = useState(false);
   const [config, setConfig] = useState<CardDesignConfigV1>(createDefaultCardDesignConfig);
   const [autoHighlightLookupWords, setAutoHighlightLookupWords] = useState(true);
-  const [markerStyle, setMarkerStyle] = useState<MarkerStyleConfigV1>(createDefaultMarkerStyleConfig);
+  const [markerStyle, setMarkerStyle] = useState<MarkerStyleConfig>(createDefaultMarkerStyleConfig);
   const [doubleClickQuickLookup, setDoubleClickQuickLookup] = useState(true);
   const [tripleClickQuickSelect, setTripleClickQuickSelect] = useState(true);
   const [tripleClickScope, setTripleClickScope] = useState<TripleClickScope>("sentence");
@@ -289,7 +289,7 @@ export default function ToolsSettings({
         console.error(`Failed to save ${key}:`, error);
       });
   };
-  const persistMarkerStyle = (next: MarkerStyleConfigV1) => {
+  const persistMarkerStyle = (next: MarkerStyleConfig) => {
     const normalized = parseMarkerStyleConfig(next);
     setMarkerStyle(normalized);
     const serialized = serializeMarkerStyleConfig(normalized);

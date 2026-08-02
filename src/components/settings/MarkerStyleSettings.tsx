@@ -6,8 +6,8 @@ import {
   MARKER_COLOR_PRESETS,
   effectiveAutomaticMarkerStyle,
   markerStyleCss,
-  type MarkerStyleConfigV1,
-  type MarkerVisualStyleV1,
+  type MarkerStyleConfig,
+  type MarkerVisualStyle,
 } from "../marker-style";
 import { fonts } from "../reader-settings";
 import { installCustomFontFaces, type CustomFontRecord } from "../custom-fonts";
@@ -18,8 +18,8 @@ import { ROW_CONTROL_WIDTH } from "./types";
 import WordFormsManager from "./WordFormsManager";
 
 interface MarkerStyleSettingsProps {
-  value: MarkerStyleConfigV1;
-  onChange: (value: MarkerStyleConfigV1) => void;
+  value: MarkerStyleConfig;
+  onChange: (value: MarkerStyleConfig) => void;
 }
 
 function fontFamilyForMarker(font: string) {
@@ -58,11 +58,11 @@ function StyleEditor({
   onChange,
 }: {
   title: string;
-  value: MarkerVisualStyleV1;
-  onChange: (value: MarkerVisualStyleV1) => void;
+  value: MarkerVisualStyle;
+  onChange: (value: MarkerVisualStyle) => void;
 }) {
   const { t } = useTranslation();
-  const update = <K extends keyof MarkerVisualStyleV1>(key: K, next: MarkerVisualStyleV1[K]) => {
+  const update = <K extends keyof MarkerVisualStyle>(key: K, next: MarkerVisualStyle[K]) => {
     const candidate = { ...value, [key]: next };
     if (!candidate.background && !candidate.underline && !candidate.bold) return;
     onChange(candidate);
@@ -167,7 +167,7 @@ export default function MarkerStyleSettings({ value, onChange }: MarkerStyleSett
           value={value.wordMatchScope}
           onChange={(scope) => {
             if (scope === "forms") setWordFormsOpen(true);
-            onChange({ ...value, wordMatchScope: scope as MarkerStyleConfigV1["wordMatchScope"] });
+            onChange({ ...value, wordMatchScope: scope as MarkerStyleConfig["wordMatchScope"] });
           }}
           options={[
             { value: "current", label: t("settings.tools.markers.currentOnly") },

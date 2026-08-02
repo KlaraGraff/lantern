@@ -19,8 +19,8 @@ import {
   markerOverlayStyle,
   parseMarkerStyleConfig,
   wordMarkerCss,
-  type MarkerStyleConfigV1,
-  type MarkerVisualStyleV1,
+  type MarkerStyleConfig,
+  type MarkerVisualStyle,
 } from "../../components/marker-style";
 import {
   installCustomFontFacesInDocument,
@@ -59,9 +59,11 @@ type AppliedAnnotation = { color: string; styleKind: AnnotationStyleKind };
 /**
  * Distinct from every saved highlight colour on purpose: a reading highlight and
  * a user's own can be on screen together, and only one of them survives the
- * playback.
+ * playback. It is also the only cold wash on the page — a marked range is warm,
+ * a range being read aloud is not.
  */
-export const READING_HIGHLIGHT_COLOR = "#7dd3fc";
+export const READING_HIGHLIGHT_COLOR = "#7DD3FC";
+const READING_HIGHLIGHT_OPACITY = 0.42;
 
 export const wordMarkerColor = {
   lookup: "__lookup__",
@@ -78,9 +80,27 @@ const highlightColorMap: Record<string, string> = {
   purple: "#A78BFA",
 };
 
+/**
+ * The vocabulary underlines, as one progression rather than four unrelated
+ * colours. A new word is the warmest and most solid; each step towards mastered
+ * drains the hue out of it, and mastered is a grey dash you can read straight
+ * past without it ever having claimed your attention.
+ *
+ * They are all underlines, and a manual or automatic mark is a wash across a
+ * range. That is what keeps the two families apart — hue cannot, since the
+ * marker colour is the reader's to choose and the presets cover most of the
+ * wheel. A manual style with `underline` switched on gives that separation up.
+ */
+const wordMarkerStyle: Record<string, { color: string; opacity: number; dashed?: boolean }> = {
+  [wordMarkerColor.vocabNew]: { color: "#D97706", opacity: 0.85 },
+  [wordMarkerColor.learning]: { color: "#2F9E8F", opacity: 0.85 },
+  [wordMarkerColor.mastered]: { color: "#94A3B8", opacity: 0.9, dashed: true },
+  [wordMarkerColor.lookup]: { color: "#8D7C65", opacity: 0.45 },
+};
+
 function drawMarkerRects(
   rects: DOMRectList,
-  style: MarkerVisualStyleV1,
+  style: MarkerVisualStyle,
   isPdf: boolean,
   boxHeight: number | null,
 ) {
@@ -130,7 +150,7 @@ interface DrawAnnotationDetail {
 
 export function drawFoliateAnnotation(
   { draw, annotation, range }: DrawAnnotationDetail,
-  markerStyle: MarkerStyleConfigV1,
+  markerStyle: MarkerStyleConfig,
   isPdf: boolean,
 ) {
   const boxHeight = fontBoxHeight(range?.startContainer ?? null);
@@ -141,25 +161,32 @@ export function drawFoliateAnnotation(
     draw((rects) => drawMarkerRects(rects, markerOverlayStyle(style), isPdf, boxHeight));
     return;
   }
-  if (Object.values(wordMarkerColor).includes(annotation.color as typeof wordMarkerColor[keyof typeof wordMarkerColor])) {
-    const color = annotation.color === wordMarkerColor.learning
-      ? "#68A68A"
-      : annotation.color === wordMarkerColor.vocabNew
-        ? "#B78538"
-        : annotation.color === wordMarkerColor.mastered ? "#789B8D" : "#8D7C65";
+  const marker = wordMarkerStyle[annotation.color];
+  if (marker) {
     draw((rects) => {
       const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-      group.setAttribute("fill", color);
-      group.setAttribute(
-        "opacity",
-        annotation.color === wordMarkerColor.lookup
-          ? "0.55"
-          : annotation.color === wordMarkerColor.mastered ? "0.45" : "0.72",
-      );
+      group.setAttribute("fill", marker.color);
+      group.setAttribute("opacity", String(marker.opacity));
       for (const { left, top, height, width } of rects) {
+        const baseline = top + height - glyphInset(height, boxHeight);
+        if (marker.dashed) {
+          // A rect cannot dash, and emitting one rect per dash would round its
+          // corners into dots. A stroked line at zero height can, and sits in
+          // the same 1.5px band once it is centred rather than topped.
+          const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          line.setAttribute("x1", String(left));
+          line.setAttribute("x2", String(left + width));
+          line.setAttribute("y1", String(baseline - 0.75));
+          line.setAttribute("y2", String(baseline - 0.75));
+          line.setAttribute("stroke", marker.color);
+          line.setAttribute("stroke-width", "1.5");
+          line.setAttribute("stroke-dasharray", "3 2.5");
+          group.append(line);
+          continue;
+        }
         const line = document.createElementNS("http://www.w3.org/2000/svg", "rect");
         line.setAttribute("x", String(left));
-        line.setAttribute("y", String(top + height - glyphInset(height, boxHeight) - 1.5));
+        line.setAttribute("y", String(baseline - 1.5));
         line.setAttribute("height", "1.5");
         line.setAttribute("width", String(width));
         line.setAttribute("rx", "0.75");
@@ -169,11 +196,17 @@ export function drawFoliateAnnotation(
     });
     return;
   }
-  const color = highlightColorMap[annotation.color] || highlightColorMap.yellow;
+  // Saved highlights name their colour ("yellow"); the reading highlight passes
+  // a hex value. Falling back to yellow for anything unnamed had been quietly
+  // repainting it, so a constant chosen to be unmistakable never once reached
+  // the screen — the sentence being read aloud looked like a yellow highlight.
+  const reading = annotation.color === READING_HIGHLIGHT_COLOR;
+  const color = highlightColorMap[annotation.color]
+    ?? (/^#[0-9a-f]{6}$/i.test(annotation.color) ? annotation.color : highlightColorMap.yellow);
   draw((rects) => {
     const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
     group.setAttribute("fill", color);
-    group.setAttribute("opacity", "0.35");
+    group.setAttribute("opacity", String(reading ? READING_HIGHLIGHT_OPACITY : 0.35));
     group.style.mixBlendMode = "multiply";
     for (const { left, top, height, width } of rects) {
       const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -201,10 +234,10 @@ interface UseFoliateAnnotationsOptions {
   readerSettings: ReaderSettingsState;
   readerSettingsRef: MutableRefObject<ReaderSettingsState>;
   viewRef: MutableRefObject<FoliateView | null>;
-  markerStyle: MarkerStyleConfigV1;
-  markerStyleRef: MutableRefObject<MarkerStyleConfigV1>;
+  markerStyle: MarkerStyleConfig;
+  markerStyleRef: MutableRefObject<MarkerStyleConfig>;
   markMatchingWordsRef: MutableRefObject<boolean>;
-  setMarkerStyle: Dispatch<SetStateAction<MarkerStyleConfigV1>>;
+  setMarkerStyle: Dispatch<SetStateAction<MarkerStyleConfig>>;
   setReaderSettings: Dispatch<SetStateAction<ReaderSettingsState>>;
   textReaderNavigateRef: MutableRefObject<((location: string, flash?: boolean) => void) | null>;
 }

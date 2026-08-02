@@ -6,7 +6,7 @@ import {
   effectiveAutomaticMarkerStyle,
   markerFontFamily,
   markerStyleCss,
-  type MarkerStyleConfigV1,
+  type MarkerStyleConfig,
 } from "./marker-style";
 import type { PageColumns, ReaderSettingsState } from "./ReaderSettings";
 import { prefersReducedMotion } from "./page-turn-transition";
@@ -52,7 +52,7 @@ interface TextBookReaderProps {
   onRegisterPageNavigation?: (navigation: TextBookPageNavigation) => void;
   onHighlightClick: (highlight: Highlight, rect: DOMRect, fallbackText?: string) => void;
   doubleClickQuickLookup?: boolean;
-  markerStyle: MarkerStyleConfigV1;
+  markerStyle: MarkerStyleConfig;
   onReaderBinding?: (trigger: string, interaction: ReaderInteraction | null) => boolean;
 }
 
@@ -290,7 +290,7 @@ function renderHighlightedBlock(
   document: TextBookDocument,
   highlights: Highlight[],
   onHighlightClick: (highlight: Highlight, rect: DOMRect, fallbackText?: string) => void,
-  markerStyle: MarkerStyleConfigV1,
+  markerStyle: MarkerStyleConfig,
   readerFontFamily: string,
   automaticWords: Set<string>,
   automaticExceptions: Set<string>,

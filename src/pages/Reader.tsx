@@ -71,7 +71,7 @@ import {
   MARKER_STYLE_SETTING_KEY,
   createDefaultMarkerStyleConfig,
   parseMarkerStyleConfig,
-  type MarkerStyleConfigV1,
+  type MarkerStyleConfig,
 } from "../components/marker-style";
 import { loadCustomFonts } from "../components/custom-fonts";
 import {
@@ -270,7 +270,7 @@ export default function Reader() {
     handleReaderSettingsChange,
   } = useReaderSettingsSync(bookId);
   const autoHighlightLookupsRef = useRef(true);
-  const [markerStyle, setMarkerStyle] = useState<MarkerStyleConfigV1>(createDefaultMarkerStyleConfig);
+  const [markerStyle, setMarkerStyle] = useState<MarkerStyleConfig>(createDefaultMarkerStyleConfig);
   const markerStyleRef = useRef(markerStyle);
   const markMatchingWordsRef = useRef(markerStyle.wordMatchScope !== "current");
   const doubleClickQuickLookupRef = useRef(true);
