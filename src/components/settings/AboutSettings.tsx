@@ -88,7 +88,9 @@ export default function AboutSettings() {
           <span className="text-[20px] font-semibold text-text-primary tracking-[0.5px]">
             Lantern
           </span>
-          <span className="text-[12px] text-text-muted">{t("settings.about.description")}</span>
+          <span className="max-w-[280px] text-balance text-center text-[12px] leading-[1.6] text-text-muted">
+            {t("settings.about.description")}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <span className="bg-bg-page dark:bg-bg-input text-text-secondary text-[12px] font-mono px-2 py-0.5 rounded-lg">
@@ -193,11 +195,6 @@ export default function AboutSettings() {
           <span className="text-[14px] text-text-primary tracking-[-0.15px]">{t("settings.about.license")}</span>
         </div>
         <span className="text-[12px] text-text-muted">MIT · yicheng47/quill</span>
-      </div>
-
-      <div className="flex-1" />
-      <div className="flex items-center justify-center text-[11px] text-text-muted">
-        {t("settings.about.basedOn")}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 [package]
 name = "lantern"
-version = "2.6.0"
+version = "2.6.1"
 description = "A personalized English learning ebook reader"
 authors = ["KlaraGraff"]
 edition = "2021"
@@ -83,6 +83,16 @@ msedge-tts = { version = "0.4.0", default-features = false, features = ["tokio-r
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# The OCR runtime ships as `.tar.zst`. The system tar on macOS and Windows is a
+# libarchive build without zstd linked in, and decodes `.zst` only by running a
+# `zstd` binary that a packaged app's PATH does not have — so the archive is
+# both decoded and unpacked in-process (commands/ocr/package.rs), with no
+# external binary in the path. Desktop-only: the OCR write half is not compiled
+# for mobile.
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+zstd = "0.13"
+tar = "0.4"
 
 # Still macOS-only: these back the iCloud Drive integration in icloud.rs, whose
 # `cfg(target_os = "macos")` gates are widened in P5 (see

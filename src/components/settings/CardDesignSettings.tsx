@@ -21,7 +21,7 @@ import CustomActionEditor, {
   type CustomImportSource,
   type UnsavedEditorController,
 } from "./CustomActionEditor";
-import { ROW_CONTROL_WIDTH, ROW_CONTROL_WIDTH_COMPACT } from "./types";
+import { ROW_CONTROL_WIDTH_CARD } from "./types";
 
 interface CardDesignSettingsProps {
   kind: LearningCardKind;
@@ -94,14 +94,14 @@ export default function CardDesignSettings({
           </div>
           <p className="text-[10px] text-text-muted">{t(`settings.tools.densitySummary.${value.defaultDensity}`)}</p>
         </div>
-        <div className="flex shrink-0 rounded-md bg-bg-input p-0.5">
+        <div className={`flex rounded-md bg-bg-input p-0.5 ${ROW_CONTROL_WIDTH_CARD}`}>
           {(["compact", "standard", "detailed"] as ContentDensity[]).map((density) => (
             <button
               key={density}
               type="button"
               aria-pressed={value.defaultDensity === density}
               onClick={() => onChange({ ...value, defaultDensity: density })}
-              className={`h-7 px-2 text-[11px] font-medium ${value.defaultDensity === density ? "rounded-sm bg-bg-surface text-accent-text shadow-sm" : "text-text-muted"}`}
+              className={`h-7 flex-1 whitespace-nowrap px-1 text-[11px] font-medium ${value.defaultDensity === density ? "rounded-sm bg-bg-surface text-accent-text shadow-sm" : "text-text-muted"}`}
             >
               {t(`settings.tools.density.${density}`)}
             </button>
@@ -115,7 +115,7 @@ export default function CardDesignSettings({
           <p className="text-[10px] text-text-muted">{t("settings.tools.cardWidthHint")}</p>
         </div>
         <Select
-          className={ROW_CONTROL_WIDTH}
+          className={ROW_CONTROL_WIDTH_CARD}
           value={value.widthMode}
           onChange={(widthMode) => onChange({ ...value, widthMode: widthMode as CardWidthMode })}
           options={[
@@ -132,7 +132,7 @@ export default function CardDesignSettings({
           <p className="text-[10px] text-text-muted">{t("settings.tools.exampleCountHint")}</p>
         </div>
         <Select
-          className={ROW_CONTROL_WIDTH_COMPACT}
+          className={ROW_CONTROL_WIDTH_CARD}
           value={String(value.exampleCount)}
           onChange={(count) => onChange({ ...value, exampleCount: Number(count) })}
           options={[0, 1, 2, 3].map((count) => ({ value: String(count), label: String(count) }))}
@@ -146,7 +146,7 @@ export default function CardDesignSettings({
             <p className="text-[10px] text-text-muted">{t("settings.tools.keyTermCountHint")}</p>
           </div>
           <Select
-            className={ROW_CONTROL_WIDTH_COMPACT}
+            className={ROW_CONTROL_WIDTH_CARD}
             value={String(value.keyTermCount)}
             onChange={(count) => onChange({ ...value, keyTermCount: Number(count) })}
             options={Array.from({ length: 8 }, (_, index) => index + 1).map((count) => ({ value: String(count), label: String(count) }))}
