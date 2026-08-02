@@ -479,6 +479,7 @@
 
   "settings.services.shortTitle": "服务配置",
   "settings.services.shortSubtitle": "模型、语音与 OCR",
+  "settings.services.shortSubtitleNoOcr": "模型与语音",
   "settings.services.views.models": "对话模型",
   "settings.services.views.embedding": "检索模型",
   "settings.services.views.speech": "语音",

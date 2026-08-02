@@ -190,7 +190,9 @@ export default function SettingsModal({ open, onClose, initialSection = "general
     { id: "general", label: t("settings.general.title"), subtitle: t("settings.general.subtitle"), icon: Globe },
     { id: "appearance", label: t("settings.appearance.title"), subtitle: t("settings.appearance.subtitle"), icon: Palette },
     { id: "reading", label: t("settings.reading.title"), subtitle: t("settings.reading.subtitle"), icon: BookOpen },
-    { id: "services", label: t("settings.services.shortTitle"), subtitle: t("settings.services.shortSubtitle"), icon: Bot },
+    // The subtitle lists what the tab holds, and OCR is not in it where the
+    // platform cannot run OCR — the tab would be advertising a missing view.
+    { id: "services", label: t("settings.services.shortTitle"), subtitle: t(platform.hasOcr ? "settings.services.shortSubtitle" : "settings.services.shortSubtitleNoOcr"), icon: Bot },
     { id: "tools", label: t("settings.tools.title"), subtitle: t("settings.tools.subtitle"), paneSubtitle: t("settings.tools.paneSubtitle"), icon: GraduationCap },
     { id: "librarySync", label: t("settings.librarySync.title"), subtitle: t("settings.librarySync.subtitle"), icon: Cloud },
     { id: "bookSources", label: t("settings.bookSources.title"), subtitle: t("settings.bookSources.subtitle"), icon: Compass },

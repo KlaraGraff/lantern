@@ -481,6 +481,7 @@
 
   "settings.services.shortTitle": "Services",
   "settings.services.shortSubtitle": "Models, speech and OCR",
+  "settings.services.shortSubtitleNoOcr": "Models and speech",
   "settings.services.views.models": "Chat Models",
   "settings.services.views.embedding": "Retrieval",
   "settings.services.views.speech": "Speech",
