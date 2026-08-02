@@ -505,7 +505,7 @@ EPUB, PDF, TXT, Markdown, HTML.
 
 ### F-009 — Relocating the sync directory is already a solved operation
 
-Data is split. `quill.db` — notes, vocabulary, reading progress, highlights — always lives in
+Data is split. `lantern.db` — notes, vocabulary, reading progress, highlights — always lives in
 the local app-data dir and never enters the sync folder (`src-tauri/src/db.rs:239-247`
 `init_split`, and the test at `db.rs:630` asserts exactly this). The sync folder holds only
 `books/`, `covers/`, `sources/` and the event log.

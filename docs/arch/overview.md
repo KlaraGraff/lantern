@@ -35,7 +35,7 @@ Lantern is a local-first AI-powered ebook reader. It reads EPUBs and PDFs, provi
 │           │                       │                          │                │
 │           ▼                       ▼                          ▼                │
 │  ┌─────────────────┐  ┌─────────────────────┐  ┌──────────────────────────┐  │
-│  │ quill.db         │  │ AI provider API     │  │ iCloud ubiquity          │  │
+│  │ lantern.db         │  │ AI provider API     │  │ iCloud ubiquity          │  │
 │  │ (SQLite WAL,     │  │ (OpenAI, Anthropic, │  │ container                │  │
 │  │  dual-conn)      │  │  Ollama, custom)    │  │                          │  │
 │  ├─────────────────┤  └─────────────────────┘  │  books/   (EPUB/PDF)     │  │
@@ -48,7 +48,7 @@ Lantern is a local-first AI-powered ebook reader. It reads EPUBs and PDFs, provi
 
 Separate process (no Tauri runtime):
 ┌──────────────────────────┐
-│ quill mcp                │  stdio binary, shares WAL SQLite
+│ lantern mcp                │  stdio binary, shares WAL SQLite
 │  (MCP server for Claude  │  with the desktop app.
 │   Code, Codex, etc.)     │  .mcp-notify sentinel for
 └──────────────────────────┘  write-back coordination.
@@ -58,9 +58,9 @@ Separate process (no Tauri runtime):
 
 **What's not in the picture.** The webview knows nothing about sync. It calls `invoke("import_book")` or `invoke("save_bookmark")` like any local app. The SyncWriter intercepts those mutations at the Rust layer, transparently enqueuing events. The frontend never constructs, reads, or acknowledges sync events directly.
 
-**The invariant this picture encodes.** `quill.db` is the single source of truth for the running app. The JSONL event logs are a replication transport, not a primary store. If you deleted every `.jsonl` file and every peer snapshot, the app would still work — it just wouldn't sync. This is the opposite of Runner's architecture (where the NDJSON *is* the primary store). The difference is intentional: a reading app needs fast indexed queries over 300+ books; an event log is the wrong shape for that.
+**The invariant this picture encodes.** `lantern.db` is the single source of truth for the running app. The JSONL event logs are a replication transport, not a primary store. If you deleted every `.jsonl` file and every peer snapshot, the app would still work — it just wouldn't sync. This is the opposite of Runner's architecture (where the NDJSON *is* the primary store). The difference is intentional: a reading app needs fast indexed queries over 300+ books; an event log is the wrong shape for that.
 
-The binary name, MCP registration key, database filename, and storage schemas retain the internal `quill` identifier for compatibility. They are implementation identifiers, not the product display name.
+Lantern started as a fork of [Quill](https://github.com/yicheng47/quill), and for a long time only the user-visible layer carried the new name — the binary, the MCP registration key, the database filename and the sync hash tags all still said `quill` internally. That is no longer true: as of v2.5.0 the internal identifiers match the product name. The only `quill` strings left in the code are upstream attribution and a handful of frozen byte literals that name what the *old* app wrote (the v1.4 vault AAD tag, the legacy Keychain service, the pre-rename bundle ids and database filename read by the one-time migrations).
 
 ## 2. Tech stack
 
@@ -157,8 +157,8 @@ Sensitive settings (API keys, OAuth tokens) live in `secrets.db`, not the main s
 
 ```
 ~/Library/Application Support/com.klaragraff.lantern/  (local_dir — always local, never synced)
-├── quill.db                             materialized view of all app state
-├── quill.db-wal                         WAL journal
+├── lantern.db                             materialized view of all app state
+├── lantern.db-wal                         WAL journal
 ├── secrets.db                           API keys, OAuth tokens
 ├── .device-identity                     this device's UUID + name
 ├── .icloud_setting                      marker: sync is enabled (contains data_dir path)
@@ -179,7 +179,7 @@ When sync is ENABLED, blobs move to the user-selected iCloud Drive folder:
 └── manifest.jsonl                       peer metadata (name, platform, version)
 ```
 
-**Why two directories.** `quill.db` must never be synced via iCloud file sync — SQLite and file-level sync are incompatible (WAL corruption, partial writes, lock conflicts). The solution: keep the database local, sync the event logs, and let each device build its own materialized view from the shared logs.
+**Why two directories.** `lantern.db` must never be synced via iCloud file sync — SQLite and file-level sync are incompatible (WAL corruption, partial writes, lock conflicts). The solution: keep the database local, sync the event logs, and let each device build its own materialized view from the shared logs.
 
 ### 4.2 Dual-connection SQLite
 
@@ -187,7 +187,7 @@ When sync is ENABLED, blobs move to the user-selected iCloud Drive folder:
 - **Write connection** — used by all mutation commands. One at a time (SQLite's built-in serialization).
 - **Read-only connection** — used by queries that don't need the latest write. WAL mode lets reads proceed concurrently with writes without blocking.
 
-The `Db::init_split(local_dir, data_dir)` constructor separates the database location (always `local_dir/quill.db`) from the blob storage location (`data_dir`, which may be iCloud). This split is the key architectural decision that makes sync possible.
+The `Db::init_split(local_dir, data_dir)` constructor separates the database location (always `local_dir/lantern.db`) from the blob storage location (`data_dir`, which may be iCloud). This split is the key architectural decision that makes sync possible.
 
 ### 4.3 Secrets store
 
@@ -314,10 +314,10 @@ main.rs
 run()
   1. Install panic hook (before logger, so early panics still get captured)
   2. Init tauri-plugin-log (file + stdout in debug)
-  3. Build Tauri app with plugins: opener, dialog, fs, updater, process
+  3. Build Tauri app with plugins: log, opener, dialog, fs, os
   4. setup() callback:
-     a. Resolve local_dir (~/.app-data/com.wycstudios.quill[-dev]/)
-     b. Self-heal: if quill.db missing but .icloud_setting exists, clear stale marker
+     a. Resolve local_dir (~/Library/Application Support/com.klaragraff.lantern[-dev]/)
+     b. Self-heal: if lantern.db missing but .icloud_setting exists, clear stale marker
      c. Resolve ubiquity_dir (iCloud container) if sync enabled
      d. Load or create DeviceIdentity
      e. Resolve data_dir (iCloud if sync, else local)
@@ -337,11 +337,11 @@ run()
 
 **Why async boot.** The sync engine touches iCloud — network I/O that can take seconds. If this ran on the setup thread, the user would see a white screen. Instead, setup installs state and returns immediately; the sync engine boots in the background. The frontend shows the library from local SQLite while sync catches up.
 
-**Self-healing.** The stale-marker check (step 4b) handles the edge case where a user deletes `quill.db` via Finder but leaves `.icloud_setting` intact. Without this, the app would try to boot sync without a database.
+**Self-healing.** The stale-marker check (step 4b) handles the edge case where a user deletes `lantern.db` via Finder but leaves `.icloud_setting` intact. Without this, the app would try to boot sync without a database.
 
 ## 7. MCP server — *AI coding assistant integration*
 
-`quill mcp` is a separate process that serves the Model Context Protocol over stdin/stdout. It gives AI coding assistants (Claude Code, Codex) read (and optionally write) access to the user's library.
+`lantern mcp` is a separate process that serves the Model Context Protocol over stdin/stdout. It gives AI coding assistants (Claude Code, Codex) read (and optionally write) access to the user's library.
 
 **Why a separate process.** MCP clients expect a stdio binary they can spawn. Running inside the Tauri process would require exposing a socket, complicating the security model. A separate process shares the WAL-mode SQLite safely — concurrent readers are free, and the single-writer constraint is already handled by SQLite's locking.
 
@@ -438,7 +438,7 @@ Reader windows are independent Tauri windows. Closing the main window hides it o
 4. CI builds artifacts, verifies macOS app signatures, and uploads to a draft release. When Apple Developer ID credentials are configured, it additionally signs and notarizes macOS builds.
 5. Edit release notes, publish.
 
-The auto-updater polls `https://github.com/yicheng47/quill/releases/latest/download/latest.json` on each launch. Updates are minisign-verified before install.
+There is no auto-updater. `createUpdaterArtifacts` is `false` and `tauri-plugin-updater` is not a dependency; updating means downloading the new build from the release page. (An earlier version of this document described an updater polling the *upstream* Quill releases — that was never Lantern's behaviour.)
 
 ### 10.3 Dev/prod isolation
 

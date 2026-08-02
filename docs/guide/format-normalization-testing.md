@@ -61,7 +61,7 @@ cd .. && npx tsc --noEmit && npm run lint
 1. 设备 A（有 Calibre）导入 azw3，等 ready，确认可读。
 2. 等 iCloud 同步到设备 B。**预期（B 有 Calibre）：** 书到达时状态为 **pending**（不是 ready——`preparation_state` 是本地推导列），B 自行转换后可读；A、B 的产物各自独立生成。
 3. **预期（B 无 Calibre）：** B 上该书 pending → 转换失败 `CALIBRE_MISSING` → 显示失败+可重试；**不 crash**。装上 Calibre 后点击重试即可读。
-4. **产物不进 iCloud：** 检查 iCloud 目录（`~/Library/Mobile Documents/.../quill/books|covers`）**不存在**任何 `*.converted*.epub`；只有源 `.azw3` 同步。
+4. **产物不进 iCloud：** 检查 iCloud 目录（`~/Library/Mobile Documents/.../<同步文件夹>/books|covers`）**不存在**任何 `*.converted*.epub`；只有源 `.azw3` 同步。
 
 ### T8 · ready 但产物丢失：自愈
 1. 一本 ready 的转换书，退出 app，手动删除 `prepared/{id}.converted.v1.epub`。

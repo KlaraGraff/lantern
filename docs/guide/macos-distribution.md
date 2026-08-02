@@ -22,7 +22,7 @@
 
 实施步骤：
 
-1. 加入 Apple Developer Program，并为 `com.klaragraff.quill` 创建 Developer ID Application 证书。
+1. 加入 Apple Developer Program，并为 `com.klaragraff.lantern` 创建 Developer ID Application 证书。
 2. 导出含私钥的 `.p12`，Base64 编码后写入 `APPLE_CERTIFICATE`，并配置证书密码。
 3. 为用于公证的 Apple Account 创建 app-specific password，并配置剩余三个 Secrets。
 4. 发布一个预发布标签，确认 Apple Silicon macOS 构建日志出现 Developer ID 身份与公证成功信息。

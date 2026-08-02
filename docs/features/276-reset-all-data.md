@@ -14,7 +14,7 @@ In scope:
 
 - A destructive **Reset all data** action in Settings (General section), styled as a danger row clearly separated from regular settings.
 - Reset clears everything local:
-  - `quill.db` — books, collections, highlights, bookmarks, vocabulary, chat history, reading progress, and settings (including its `-wal`/`-shm` sidecars).
+  - `lantern.db` — books, collections, highlights, bookmarks, vocabulary, chat history, reading progress, and settings (including its `-wal`/`-shm` sidecars).
   - `secrets.db` — API keys and OAuth tokens.
   - `books/` and `covers/` blob directories.
 - **Double confirmation** before anything runs:
@@ -32,7 +32,7 @@ Out of scope:
 ## Implementation Phases
 
 1. Backend `reset_app_data` command.
-   - Tear down open database handles, delete `quill.db` (+ sidecars), `secrets.db`, and the `books/` and `covers/` directories under the app data dir.
+   - Tear down open database handles, delete `lantern.db` (+ sidecars), `secrets.db`, and the `books/` and `covers/` directories under the app data dir.
    - Disable Library Sync state before deleting, so a relaunch does not immediately re-pull from iCloud.
    - Recreate empty directories and a fresh database so the app can re-initialize cleanly.
    - Unit tests: command removes all data files, succeeds when directories are partially missing, leaves the data dir in a fresh-install state.
@@ -53,6 +53,6 @@ Out of scope:
 
 - Reset row appears in General settings with destructive styling; activating it never deletes anything without completing both confirmation steps.
 - Cancelling at either step leaves all data intact.
-- Completing both steps removes `quill.db`, `secrets.db`, `books/`, and `covers/`, and the app relaunches with an empty library, default settings, and no stored API keys.
+- Completing both steps removes `lantern.db`, `secrets.db`, `books/`, and `covers/`, and the app relaunches with an empty library, default settings, and no stored API keys.
 - With Library Sync enabled, the warning mentions the iCloud copy, and reset disables sync before clearing local data.
 - All dialog and row strings are localized in English and Chinese.

@@ -99,7 +99,7 @@ split by whether it stops the compiler or only degrades at runtime.
 ### 2.1 Compile blockers — must be fixed before an APK exists
 
 **`reqwest` pulls OpenSSL.** Verified: `cargo tree -i native-tls` shows the chain is
-`quill → reqwest → native-tls`, from our own manifest line, not a transitive. On Apple targets
+`lantern → reqwest → native-tls`, from our own manifest line, not a transitive. On Apple targets
 `native-tls` binds Security.framework and everything is fine — which is exactly why P0 dropped
 this. On Android there is no system OpenSSL, so `openssl-sys` has to cross-compile OpenSSL for
 four ABIs against the NDK. This is the classic Tauri-Android wall.

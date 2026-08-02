@@ -21,7 +21,7 @@ This issue originally proposed a *new Updates settings pane* + top-center toast 
 - **After download → auto-relaunch.** No manual "Restart" step.
 - **About becomes a formal identity card**, modeled on Runner's About pane: centered icon + name + tagline, version/platform pills, link rows (GitHub, Documentation, License), © footer. No update UI.
 
-Design reference: the `Update Toast` frame in `design/quill-desktop.pen`.
+Design reference: the `Update Toast` frame in `design/lantern-desktop.pen`.
 
 ## Fix
 

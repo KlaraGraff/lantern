@@ -57,7 +57,7 @@ docs/
 ## Conventions
 
 - Settings are stored as key-value pairs in SQLite (`settings` table). Use `useSettings` hook on frontend, `commands/settings.rs` on backend.
-- Sensitive data (API keys, OAuth tokens) goes in `secrets.db` (local-only, never syncs), not `quill.db`.
+- Sensitive data (API keys, OAuth tokens) goes in `secrets.db` (local-only, never syncs), not `lantern.db`.
 - All user-facing strings must use i18n keys — never hardcode English text in components.
 - Settings modal sections follow the row pattern in `GeneralSettings.tsx`: 73px-tall rows, flex justify-between, 1px `black/10` dividers.
 - AI streaming uses per-request event channels via Tauri event emitter.

@@ -21,7 +21,7 @@ The data needed for all of this is cheap to capture — we already have `books`,
 - **Highlight & note stats** — total highlights across library, per-book counts, breakdown by color, count of highlights with notes.
 - **Stats page** — new top-level page (alongside Home / Reader) with the above, charts included.
 - **Settings → Stats tab** — minimal subset (totals + reset/export controls), tucked under Settings for users who want a quieter surface.
-- **Local-only storage** — all stats live in `quill.db`. Future cloud sync (#16) will pick this up alongside the rest of the data.
+- **Local-only storage** — all stats live in `lantern.db`. Future cloud sync (#16) will pick this up alongside the rest of the data.
 
 ### Out of scope
 
