@@ -807,6 +807,24 @@ fn profiles(db: &Db, enabled_only: bool) -> AppResult<Vec<AiProfile>> {
     Ok(profiles)
 }
 
+/// The models still in play for one request, in route order.
+///
+/// A cooling-down model is not skipped part-way through the traversal — it is
+/// gone before the traversal starts. That is what makes a second request inside
+/// the same cooldown window silent: the failed model is no longer at the head of
+/// the route, so there is no switch left to announce.
+fn routable_profiles(enabled: Vec<AiProfile>, cutoff: i64) -> Vec<AiProfile> {
+    enabled
+        .into_iter()
+        .filter(|profile| {
+            profile
+                .view
+                .cooldown_until
+                .is_none_or(|deadline| deadline <= cutoff)
+        })
+        .collect()
+}
+
 fn active_profile(db: &Db) -> AppResult<AiProfile> {
     profiles(db, true)?
         .into_iter()
@@ -1520,9 +1538,9 @@ async fn stream_with_profile_inner(
     if !profile.view.enabled {
         return Err(AppError::Other("AI_PROFILE_DISABLED".to_string()));
     }
-    // Every caller of this path is background work against one pinned profile
-    // (grounding summaries, intent routing), so the effort only rides along
-    // when the profile opted every feature in.
+    // This path is background work against a model the user pinned by hand
+    // (currently only book summaries), so the effort only rides along when the
+    // profile opted every feature in.
     let effort = effort_for(&profile.view, AiRequestPurpose::Utility);
     if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" {
         let (token, account_id) = crate::ai::oauth::get_valid_token(secrets).await?;
@@ -1684,15 +1702,7 @@ async fn stream_with_failover_inner(
         return Err(AppError::Other("AI_NOT_CONFIGURED".to_string()));
     }
     let timestamp = cooldown_cutoff(retry);
-    let profiles: Vec<_> = enabled_profiles
-        .into_iter()
-        .filter(|profile| {
-            profile
-                .view
-                .cooldown_until
-                .is_none_or(|deadline| deadline <= timestamp)
-        })
-        .collect();
+    let profiles = routable_profiles(enabled_profiles, timestamp);
     if profiles.is_empty() {
         return Err(AppError::Other("AI_KEYS_COOLING_DOWN".to_string()));
     }
@@ -3346,6 +3356,100 @@ mod tests {
         assert_eq!(retry_mode(Some(true)), AiRetryMode::Manual);
         assert_eq!(retry_mode(Some(false)), AiRetryMode::Automatic);
         assert_eq!(retry_mode(None), AiRetryMode::Automatic);
+    }
+
+    /// Locks the §11 acceptance case end to end, against a real database: a
+    /// free model sits ahead of a paid one, spends its quota, and the paid model
+    /// takes over — then every later request inside the same hour goes straight
+    /// to the paid model without retrying the spent one.
+    #[test]
+    fn a_spent_free_model_leaves_the_route_until_its_window_ends() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let profile = |label: &str, model: &str| {
+            create_profile(
+                &db,
+                label.to_string(),
+                "custom".to_string(),
+                "api_key".to_string(),
+                Some("https://gateway.example/v1".to_string()),
+                model.to_string(),
+                0.2,
+                None,
+                false,
+                None,
+                true,
+            )
+            .unwrap()
+        };
+        let route = |cutoff: i64| {
+            routable_profiles(profiles(&db, true).unwrap(), cutoff)
+                .into_iter()
+                .map(|profile| profile.view.id)
+                .collect::<Vec<_>>()
+        };
+        // Order of creation is route order, so the free model answers first.
+        let free = profile("Free", "free-model");
+        let paid = profile("Paid", "paid-model");
+
+        let before = route(cooldown_cutoff(AiRetryMode::Automatic));
+        assert_eq!(before, vec![free.id.clone(), paid.id.clone()]);
+
+        // The free model spends its quota. This is the request the reader sees
+        // the hand-off toast for: it expected `before[0]` and got the paid one.
+        update_profile_health(
+            &db,
+            &profile_by_id(&db, &free.id).unwrap(),
+            Some(AiErrorKind::Quota),
+            None,
+            None,
+        );
+        let spent = profile_by_id(&db, &free.id).unwrap().view;
+        assert_eq!(spent.state, "quota");
+        let deadline = spent.cooldown_until.expect("quota records a deadline");
+
+        // Every later request inside the window: the paid model is now the head
+        // of the route, so nothing is switched away from and nothing is
+        // announced. The spent model is not called again to find that out.
+        let during = route(cooldown_cutoff(AiRetryMode::Automatic));
+        assert_eq!(during, vec![paid.id.clone()]);
+        assert_ne!(before.first(), during.first());
+
+        // Two exits from the window. The user asking again outranks our own
+        // deadline, and the deadline itself eventually passes.
+        assert_eq!(
+            route(cooldown_cutoff(AiRetryMode::Manual)),
+            vec![free.id.clone(), paid.id.clone()]
+        );
+        assert_eq!(route(deadline), vec![free.id.clone(), paid.id.clone()]);
+        assert_eq!(route(deadline - 1), vec![paid.id.clone()]);
+    }
+
+    /// A model the user turned off is not part of the route at all, however
+    /// healthy it looks — otherwise the switch toast could name a model the
+    /// user had already dismissed.
+    #[test]
+    fn a_disabled_model_is_not_a_fallback() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let backup = create_profile(
+            &db,
+            "Backup".to_string(),
+            "custom".to_string(),
+            "api_key".to_string(),
+            Some("https://gateway.example/v1".to_string()),
+            "backup-model".to_string(),
+            0.2,
+            None,
+            false,
+            None,
+            false,
+        )
+        .unwrap();
+
+        assert!(!backup.enabled);
+        assert!(profiles(&db, true).unwrap().is_empty());
+        assert_eq!(profiles(&db, false).unwrap().len(), 1);
     }
 
     #[test]
