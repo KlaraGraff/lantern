@@ -3,9 +3,12 @@ import test from "node:test";
 
 import {
   bindingActionsForMenuAction,
+  bindingFromKeyboardEvent,
   formatReaderBinding,
+  isReservedReaderBinding,
   menuShortcut,
   parseReaderBindings,
+  reservedCopyShortcut,
 } from "../src/components/reader-bindings.ts";
 import { parseTripleClickScope } from "../src/components/reader-interaction.ts";
 
@@ -80,9 +83,9 @@ test("menu rows name their own action, and unbound rows print nothing", () => {
   assert.deepEqual(bindingActionsForMenuAction("custom_a1b2", "word"), ["custom_a1b2"]);
 
   const bindings = [{ actionId: "collect", trigger: "key:Meta+Shift+S" }] as const;
-  assert.equal(menuShortcut([...bindings], "save", "word"), "Cmd+Shift+S");
-  assert.equal(menuShortcut([...bindings], "copy", "word"), null);
-  assert.equal(menuShortcut([], "save", "word"), null);
+  assert.equal(menuShortcut([...bindings], "save", "word", "en", true), "⇧⌘S");
+  assert.equal(menuShortcut([...bindings], "copy", "word", "en", true), null);
+  assert.equal(menuShortcut([], "save", "word", "en", true), null);
 });
 
 test("a gesture binding is not printed as a menu shortcut", () => {
@@ -98,8 +101,42 @@ test("a gesture binding is not printed as a menu shortcut", () => {
 
 test("the shortcut is printed in the reader's own language", () => {
   const bindings = [{ actionId: "speak", trigger: "key:Alt+Space" }] as const;
-  assert.equal(menuShortcut([...bindings], "speak", "word", "en"), "Alt+Space");
-  assert.equal(menuShortcut([...bindings], "speak", "word", "zh-CN"), "Option+空格");
+  assert.equal(menuShortcut([...bindings], "speak", "word", "en", true), "⌥Space");
+  assert.equal(menuShortcut([...bindings], "speak", "word", "zh-CN", true), "⌥空格");
+  assert.equal(menuShortcut([...bindings], "speak", "word", "en", false), "Alt+Space");
+});
+
+test("modifiers are glyphs on a Mac and words everywhere else", () => {
+  // The glyphs are the reason a shortcut fits on a 220px menu row at all:
+  // "Ctrl+Shift+ArrowRight" is wider than most of the labels it sits beside.
+  assert.equal(formatReaderBinding("key:Meta+Shift+S", "en", true), "⇧⌘S");
+  assert.equal(formatReaderBinding("key:Meta+Shift+S", "en", false), "Win+Shift+S");
+  assert.equal(formatReaderBinding("key:Control+Alt+Shift+K", "en", true), "⌃⌥⇧K");
+  assert.equal(formatReaderBinding("key:Control+Alt+Shift+K", "en", false), "Ctrl+Alt+Shift+K");
+});
+
+test("modifiers print in each platform's own order, not the recorded one", () => {
+  // `bindingFromKeyboardEvent` records Meta first; macOS prints it last.
+  assert.equal(bindingFromKeyboardEvent({
+    key: "k", metaKey: true, ctrlKey: false, altKey: true, shiftKey: true,
+  } as KeyboardEvent), "key:Meta+Alt+Shift+K");
+  assert.equal(formatReaderBinding("key:Meta+Alt+Shift+K", "en", true), "⌥⇧⌘K");
+});
+
+test("arrows are glyphs everywhere; Apple-only glyphs stay words elsewhere", () => {
+  assert.equal(formatReaderBinding("key:ArrowRight", "en", true), "→");
+  assert.equal(formatReaderBinding("key:ArrowRight", "en", false), "→");
+  assert.equal(formatReaderBinding("key:Escape", "en", true), "⎋");
+  assert.equal(formatReaderBinding("key:Escape", "en", false), "Esc");
+  assert.equal(formatReaderBinding("key:Meta+Enter", "en", false), "Win+Enter");
+});
+
+test("the copy row falls back to the key the platform already gave it", () => {
+  assert.equal(reservedCopyShortcut("en", true), "⌘C");
+  assert.equal(reservedCopyShortcut("en", false), "Ctrl+C");
+  // And that fallback is a binding nothing else can claim.
+  assert.ok(isReservedReaderBinding("key:Meta+C"));
+  assert.ok(isReservedReaderBinding("key:Control+C"));
 });
 
 test("triple-click scope falls back to a sentence for anything unrecognised", () => {

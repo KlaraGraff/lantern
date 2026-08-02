@@ -80,6 +80,7 @@ import {
 } from "../components/reading-assistance-events";
 import {
   parseReaderBindings,
+  SHOW_MENU_SHORTCUTS_SETTING_KEY,
   type ReaderActionBinding,
   type ReaderActionId,
 } from "../components/reader-bindings";
@@ -281,6 +282,7 @@ export default function Reader() {
   // the newest value without re-subscribing. The menu prints them while
   // rendering, which a ref cannot drive — so the same list is also state.
   const [readerBindings, setReaderBindings] = useState<ReaderActionBinding[]>([]);
+  const [showMenuShortcuts, setShowMenuShortcuts] = useState(true);
   const [bindingHud, setBindingHud] = useState<string | null>(null);
   const bindingHudTimerRef = useRef<number | null>(null);
   const lastBindingHudRef = useRef({ message: "", shownAt: 0 });
@@ -301,6 +303,7 @@ export default function Reader() {
     const nextBindings = parseReaderBindings(settings.reader_bindings).bindings;
     readerBindingsRef.current = nextBindings;
     setReaderBindings(nextBindings);
+    setShowMenuShortcuts(settings[SHOW_MENU_SHORTCUTS_SETTING_KEY] !== "false");
     setMarkerStyle(nextMarkerStyle);
     setLearningCardConfig(parseCardDesignConfig(settings.learning_card_config));
   }, []);
@@ -1913,6 +1916,7 @@ export default function Reader() {
           hasBookWordMark={contextHasBookWordMark}
           markStateLoading={contextMarkStateLoading}
           bindings={readerBindings}
+          showShortcuts={showMenuShortcuts}
           order={learningCardConfig.selectionMenus[contextMenu.kind]
             .filter((item) => item.enabled)
             .map((item) => readerMenuAction(item.id))}

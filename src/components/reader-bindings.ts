@@ -3,6 +3,7 @@ import type { InteractionKind } from "./reader-interaction.ts";
 export const DEFAULT_PREVIOUS_PAGE_BINDING = "key:ArrowLeft";
 export const DEFAULT_NEXT_PAGE_BINDING = "key:ArrowRight";
 export const READER_BINDINGS_SETTING_KEY = "reader_bindings";
+export const SHOW_MENU_SHORTCUTS_SETTING_KEY = "show_menu_shortcuts";
 
 export type BuiltInReaderActionId = "lookup" | "speak" | "translate" | "collect" | "highlight" | "copy" | "ask_ai" | "explain";
 export type ReaderActionId = BuiltInReaderActionId | `custom_${string}`;
@@ -60,7 +61,63 @@ export function isReservedReaderBinding(binding: string) {
   return RESERVED_BINDINGS.has(binding);
 }
 
-export function formatReaderBinding(binding: string, locale = "en"): string {
+/**
+ * Whether to print ⌘⇧S rather than Ctrl+Shift+S.
+ *
+ * Split out so it can be forced in a test, where there is no `navigator` with a
+ * platform to read. `navigator.platform` is deprecated but it is the only thing
+ * a webview reliably answers, and being wrong here costs a wrong glyph, not a
+ * wrong binding.
+ */
+export function isApplePlatform(): boolean {
+  const platform = typeof navigator === "undefined" ? "" : (navigator.platform ?? "");
+  return /Mac|iPhone|iPad|iPod/.test(platform);
+}
+
+// ⌃⌥⇧⌘ is the order macOS prints them in, and Ctrl+Alt+Shift the order
+// everywhere else. Not the order `bindingFromKeyboardEvent` records them in,
+// which only has to be stable.
+const MODIFIER_SYMBOLS: Record<string, { apple: string; other: string }> = {
+  Control: { apple: "⌃", other: "Ctrl" },
+  Alt: { apple: "⌥", other: "Alt" },
+  Shift: { apple: "⇧", other: "Shift" },
+  Meta: { apple: "⌘", other: "Win" },
+};
+const APPLE_MODIFIER_ORDER = ["Control", "Alt", "Shift", "Meta"];
+const OTHER_MODIFIER_ORDER = ["Meta", "Control", "Alt", "Shift"];
+
+// Arrows read the same on every keyboard. The rest are Apple's glyphs, so
+// elsewhere they stay words — ⎋ on a PC keyboard is a symbol nobody was taught.
+const UNIVERSAL_KEY_SYMBOLS: Record<string, string> = {
+  ArrowLeft: "←", ArrowRight: "→", ArrowUp: "↑", ArrowDown: "↓",
+};
+const APPLE_KEY_SYMBOLS: Record<string, string> = {
+  Enter: "↩", Escape: "⎋", Tab: "⇥", Backspace: "⌫", Delete: "⌦",
+  PageUp: "⇞", PageDown: "⇟", Home: "↖", End: "↘",
+};
+
+function formatKeyName(key: string, locale: string, apple: boolean): string {
+  if (key === "Space") return locale.startsWith("zh") ? "空格" : "Space";
+  return UNIVERSAL_KEY_SYMBOLS[key]
+    ?? (apple ? APPLE_KEY_SYMBOLS[key] : undefined)
+    ?? (key === "Escape" ? "Esc" : key);
+}
+
+/**
+ * How a trigger is printed anywhere it is shown to a reader.
+ *
+ * One rendering, not one per surface: a binding recorded in settings and the
+ * same binding printed in the selection menu have to be recognisable as the same
+ * thing, and a reader should not have to translate "Option+空格" into "⌥空格".
+ *
+ * Gestures stay words. There is no symbol for a triple click, and the places a
+ * gesture is shown have room for the phrase.
+ */
+export function formatReaderBinding(
+  binding: string,
+  locale = "en",
+  apple = isApplePlatform(),
+): string {
   if (binding === "mouse:double") return locale.startsWith("zh") ? "双击" : "Double click";
   if (binding === "mouse:triple") return locale.startsWith("zh") ? "三击" : "Triple click";
   if (binding.startsWith("mouse:")) {
@@ -71,15 +128,27 @@ export function formatReaderBinding(binding: string, locale = "en"): string {
     return labels[button] ?? (locale.startsWith("zh") ? `鼠标键 ${button + 1}` : `Mouse ${button + 1}`);
   }
   const value = binding.startsWith("key:") ? binding.slice("key:".length) : binding;
-  return value
-    .replace(/Meta/g, "Cmd")
-    .replace(/Control/g, "Ctrl")
-    .replace(/Alt/g, locale.startsWith("zh") ? "Option" : "Alt")
-    .replace(/ArrowLeft/g, "Left")
-    .replace(/ArrowRight/g, "Right")
-    .replace(/ArrowUp/g, "Up")
-    .replace(/ArrowDown/g, "Down")
-    .replace(/Space/g, locale.startsWith("zh") ? "空格" : "Space");
+  const parts = value.split("+");
+  const key = parts[parts.length - 1];
+  const held = new Set(parts.slice(0, -1));
+  const order = apple ? APPLE_MODIFIER_ORDER : OTHER_MODIFIER_ORDER;
+  const modifiers = order
+    .filter((name) => held.has(name))
+    .map((name) => MODIFIER_SYMBOLS[name][apple ? "apple" : "other"]);
+  const printed = [...modifiers, formatKeyName(key, locale, apple)];
+  // Apple runs them together; a "+" between glyphs would be the widest thing on
+  // the row, which is the whole reason the glyphs are there.
+  return printed.join(apple ? "" : "+");
+}
+
+/**
+ * What the copy row prints when nothing is bound to it.
+ *
+ * Copy is the one action the reader never had to bind — the platform gave it
+ * one, and `RESERVED_BINDINGS` keeps it from being claimed by anything else.
+ */
+export function reservedCopyShortcut(locale = "en", apple = isApplePlatform()): string {
+  return formatReaderBinding(apple ? "key:Meta+C" : "key:Control+C", locale, apple);
 }
 
 export const formatPageTurnBinding = formatReaderBinding;
@@ -144,12 +213,13 @@ export function menuShortcut(
   action: ReaderMenuAction,
   kind: InteractionKind,
   locale = "en",
+  apple = isApplePlatform(),
 ): string | null {
   for (const actionId of bindingActionsForMenuAction(action, kind)) {
     const binding = bindings.find(
       (item) => item.actionId === actionId && item.trigger.startsWith("key:"),
     );
-    if (binding) return formatReaderBinding(binding.trigger, locale);
+    if (binding) return formatReaderBinding(binding.trigger, locale, apple);
   }
   return null;
 }

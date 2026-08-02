@@ -18,7 +18,12 @@ import {
 } from "./reader-interaction";
 import SpeakMenuRow from "./speech/SpeakMenuRow";
 import { playbackDetaches } from "./speech/routing";
-import { menuShortcut, type ReaderActionBinding, type ReaderMenuAction } from "./reader-bindings";
+import {
+  menuShortcut,
+  reservedCopyShortcut,
+  type ReaderActionBinding,
+  type ReaderMenuAction,
+} from "./reader-bindings";
 
 export type { ReaderMenuAction };
 
@@ -33,6 +38,8 @@ interface ReaderContextMenuProps {
   order?: ReaderMenuAction[];
   /** Read to print each row's shortcut. Empty means no row shows one. */
   bindings?: ReaderActionBinding[];
+  /** Off hides every hint, including the ⌘C the copy row never had to earn. */
+  showShortcuts?: boolean;
   onClose: () => void;
   onCopy: () => void;
   onExplain: () => void;
@@ -56,6 +63,7 @@ export default function ReaderContextMenu({
   showTranslate = false,
   order = ["primary", "ask-ai", "save", "highlight", "copy"],
   bindings = [],
+  showShortcuts = true,
   onClose,
   onCopy,
   onExplain,
@@ -208,7 +216,7 @@ export default function ReaderContextMenu({
       style={{ left: anchorRect.right, top: anchorRect.bottom + 8 }}
     >
       {actions.map((action) => {
-        const shortcut = menuShortcut(bindings, action, kind, i18n.language);
+        const shortcut = showShortcuts ? menuShortcut(bindings, action, kind, i18n.language) : null;
         // Owns its own playback and accent toggle, so it needs no wiring from
         // the reader and does not dismiss the menu when used.
         if (action === "speak") {
@@ -232,7 +240,7 @@ export default function ReaderContextMenu({
         // chose is the more useful of the two to print — and ⌘C is reserved, so
         // it can never turn out to belong to some other row.
         const hint = shortcut
-          ?? (action === "copy" ? (navigator.platform.includes("Mac") ? "⌘C" : "Ctrl+C") : null);
+          ?? (showShortcuts && action === "copy" ? reservedCopyShortcut(i18n.language) : null);
         const showRemoveBookWordMark = action === "highlight"
           && kind === "word"
           && marked

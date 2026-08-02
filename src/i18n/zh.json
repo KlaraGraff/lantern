@@ -589,6 +589,8 @@
   "settings.tools.interaction.tripleClickHint": "三击选中一整句，可以直接朗读、翻译或收藏。关掉之后，三击可以绑定成你自己的动作。",
   "settings.tools.interaction.tripleClickScope.sentence": "句子",
   "settings.tools.interaction.tripleClickScope.paragraph": "段落",
+  "settings.tools.interaction.menuShortcuts": "在选择菜单中显示快捷键",
+  "settings.tools.interaction.menuShortcutsHint": "在每一行右侧标出对应的快捷键，包括复制的 ⌘C。关掉之后菜单更窄也更安静。",
   "settings.tools.cardKind.word": "单词",
   "settings.tools.cardKind.phrase": "短语",
   "settings.tools.cardKind.passage": "句子/段落",

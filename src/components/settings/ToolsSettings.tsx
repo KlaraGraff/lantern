@@ -29,7 +29,12 @@ import {
   type MarkerStyleConfigV1,
 } from "../marker-style";
 import { notifyReadingAssistanceSettingsChanged } from "../reading-assistance-events";
-import { parseReaderBindings, READER_BINDINGS_SETTING_KEY, type ReaderActionBinding } from "../reader-bindings";
+import {
+  parseReaderBindings,
+  READER_BINDINGS_SETTING_KEY,
+  SHOW_MENU_SHORTCUTS_SETTING_KEY,
+  type ReaderActionBinding,
+} from "../reader-bindings";
 import {
   TRIPLE_CLICK_SCOPES,
   parseTripleClickScope,
@@ -138,6 +143,7 @@ export default function ToolsSettings({
   const [doubleClickQuickLookup, setDoubleClickQuickLookup] = useState(true);
   const [tripleClickQuickSelect, setTripleClickQuickSelect] = useState(true);
   const [tripleClickScope, setTripleClickScope] = useState<TripleClickScope>("sentence");
+  const [showMenuShortcuts, setShowMenuShortcuts] = useState(true);
   const [readerBindings, setReaderBindings] = useState<ReaderActionBinding[]>([]);
   const [lastTouched, setLastTouched] = useState<{ id: string; nonce: number } | null>(null);
   const [testPreview, setTestPreview] = useState<{ config: CardDesignConfigV1; text: string; id: string; nonce: number } | null>(null);
@@ -192,6 +198,7 @@ export default function ToolsSettings({
     setDoubleClickQuickLookup(settings.double_click_quick_lookup !== "false");
     setTripleClickQuickSelect(settings.triple_click_quick_select !== "false");
     setTripleClickScope(parseTripleClickScope(settings.triple_click_scope));
+    setShowMenuShortcuts(settings[SHOW_MENU_SHORTCUTS_SETTING_KEY] !== "false");
     setReaderBindings(parseReaderBindings(settings[READER_BINDINGS_SETTING_KEY]).bindings);
     hydratedRef.current = true;
   }, [settings, loading]);
@@ -401,6 +408,19 @@ export default function ToolsSettings({
                 }}
               />
             </div>
+          </SettingsRow>
+          <SettingsRow
+            title={t("settings.tools.interaction.menuShortcuts")}
+            subtitle={t("settings.tools.interaction.menuShortcutsHint")}
+          >
+            <Toggle
+              label={t("settings.tools.interaction.menuShortcuts")}
+              checked={showMenuShortcuts}
+              onChange={(enabled) => {
+                setShowMenuShortcuts(enabled);
+                persistLegacy(SHOW_MENU_SHORTCUTS_SETTING_KEY, String(enabled));
+              }}
+            />
           </SettingsRow>
           <ReaderBindingsSettings
             value={readerBindings}

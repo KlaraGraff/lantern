@@ -591,6 +591,8 @@
   "settings.tools.interaction.tripleClickHint": "Triple-click selects a whole sentence, ready to read aloud, translate or save. Turn it off to bind triple-click to an action of your own.",
   "settings.tools.interaction.tripleClickScope.sentence": "Sentence",
   "settings.tools.interaction.tripleClickScope.paragraph": "Paragraph",
+  "settings.tools.interaction.menuShortcuts": "Show shortcuts in the selection menu",
+  "settings.tools.interaction.menuShortcutsHint": "Print each row's shortcut at its right edge, including ⌘C on copy. Turn it off for a narrower, quieter menu.",
   "settings.tools.cardKind.word": "Word",
   "settings.tools.cardKind.phrase": "Phrase",
   "settings.tools.cardKind.passage": "Sentence / Passage",
