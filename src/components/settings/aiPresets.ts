@@ -39,35 +39,26 @@ export interface AiPreset {
   keyButtonKey?: string;
 }
 
-/** Zhipu's mainland endpoint. Already carries its `/v4` version segment. */
-export const ZHIPU_BASE_URL = "https://open.bigmodel.cn/api/paas/v4";
-export const ZHIPU_DEFAULT_MODEL = "glm-4.7-flash";
-
 /** DeepSeek publishes no version segment; the backend appends `/v1`. */
 export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 export const DEEPSEEK_DEFAULT_MODEL = "deepseek-v4-flash";
 
 /**
- * Catalog order, which is also the order of the provider dropdown. The free
- * model a first-time user can actually sign up for comes first; `custom` is
- * last because it is the escape hatch, not a recommendation.
+ * Catalog order, which is also the order of the provider dropdown. DeepSeek
+ * comes first: it is the cheapest endpoint here that still answers grammar and
+ * word-sense questions correctly, and it takes a key without an overseas card.
+ * `custom` is last because it is the escape hatch, not a recommendation.
+ *
+ * There is deliberately no free preset. The one we shipped a free tier against
+ * was small enough to produce confident, wrong explanations, which is worse for
+ * a reader learning the language than having to add a key. A free model can
+ * come back here once one passes on quality, not on price.
  *
  * Endpoints and model IDs verified against the providers' own docs on
  * 2026-08-02. A provider can change these at any time; when that happens,
  * update the catalog — never silently rewrite a route the user already saved.
  */
 export const AI_PRESETS: AiPreset[] = [
-  {
-    provider: "zhipu",
-    baseUrl: ZHIPU_BASE_URL,
-    model: ZHIPU_DEFAULT_MODEL,
-    keepAlive: null,
-    cost: "free",
-    keyPage: "https://bigmodel.cn/usercenter/proj-mgmt/apikeys",
-    nameKey: "settings.ai.presetName.zhipu",
-    descriptionKey: "settings.ai.presetDesc.zhipu",
-    keyButtonKey: "settings.ai.connectGetKeyFree",
-  },
   {
     provider: "deepseek",
     baseUrl: DEEPSEEK_BASE_URL,
@@ -91,7 +82,7 @@ export const AI_PRESETS: AiPreset[] = [
   {
     provider: "anthropic",
     baseUrl: "https://api.anthropic.com",
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-5",
     keepAlive: null,
     cost: "metered",
     keyPage: "https://console.anthropic.com/settings/keys",

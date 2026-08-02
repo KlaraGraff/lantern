@@ -115,6 +115,26 @@ pub async fn stream_chat(
     Err(AppError::Ai("AI_STREAM_INCOMPLETE".to_string()))
 }
 
+/// The parts of one SSE delta the reader can actually see, as
+/// `(reasoning, content)`.
+///
+/// Empty strings are dropped rather than returned: some gateways send a leading
+/// empty chunk before erroring, and treating that as output would freeze the
+/// route on a model that never said anything. A non-empty reasoning delta is
+/// output — the reader is watching it arrive — so it does stop the switch, even
+/// though no answer has started.
+fn visible_output(choice_delta: &serde_json::Value) -> (Option<&str>, Option<&str>) {
+    let reasoning = choice_delta["reasoning_content"]
+        .as_str()
+        .or_else(|| choice_delta["reasoning"].as_str())
+        .or_else(|| choice_delta["thinking"].as_str())
+        .filter(|value| !value.is_empty());
+    let content = choice_delta["content"]
+        .as_str()
+        .filter(|value| !value.is_empty());
+    (reasoning, content)
+}
+
 fn process_data(
     app: &AppHandle,
     event_name: &str,
@@ -146,12 +166,8 @@ fn process_data(
             &parsed["error"],
         ));
     }
-    let choice_delta = &parsed["choices"][0]["delta"];
-    let reasoning = choice_delta["reasoning_content"]
-        .as_str()
-        .or_else(|| choice_delta["reasoning"].as_str())
-        .or_else(|| choice_delta["thinking"].as_str());
-    if let Some(reasoning) = reasoning.filter(|value| !value.is_empty()) {
+    let (reasoning, content) = visible_output(&parsed["choices"][0]["delta"]);
+    if let Some(reasoning) = reasoning {
         emitted.store(true, Ordering::Relaxed);
         let _ = app.emit(
             event_name,
@@ -164,13 +180,7 @@ fn process_data(
             },
         );
     }
-    // Only a non-empty content delta counts as "emitted": a leading empty
-    // chunk (some gateways send one before erroring) must not block failover
-    // to another credential.
-    if let Some(delta) = choice_delta["content"]
-        .as_str()
-        .filter(|value| !value.is_empty())
-    {
+    if let Some(delta) = content {
         emitted.store(true, Ordering::Relaxed);
         let _ = app.emit(
             event_name,
@@ -221,6 +231,37 @@ mod tests {
             body["messages"][1],
             serde_json::json!({ "role": "user", "content": "Question" })
         );
+    }
+
+    #[test]
+    fn empty_deltas_are_not_output_and_never_block_a_model_switch() {
+        // Some gateways open with an empty chunk and then error. Counting that
+        // as output would strand the request on a model that said nothing.
+        let delta = serde_json::json!({
+            "role": "assistant", "content": "", "reasoning_content": ""
+        });
+        let (reasoning, content) = visible_output(&delta);
+        assert_eq!(reasoning, None);
+        assert_eq!(content, None);
+
+        // Protocol metadata alone is not output either.
+        let delta = serde_json::json!({ "role": "assistant" });
+        let (reasoning, content) = visible_output(&delta);
+        assert_eq!(reasoning, None);
+        assert_eq!(content, None);
+    }
+
+    /// Locks §5.3: a non-empty reasoning delta counts as output. The reader is
+    /// already watching it, and a second model's thinking spliced onto the
+    /// first would read as two unrelated trains of thought.
+    #[test]
+    fn non_empty_reasoning_counts_as_output_under_every_spelling() {
+        for field in ["reasoning_content", "reasoning", "thinking"] {
+            let delta = serde_json::json!({ field: "weighing the options" });
+            let (reasoning, content) = visible_output(&delta);
+            assert_eq!(reasoning, Some("weighing the options"), "{field}");
+            assert_eq!(content, None, "{field}");
+        }
     }
 
     #[test]

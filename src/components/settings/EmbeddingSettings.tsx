@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Activity, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Button from "../ui/Button";
+import DetailedHint from "../ui/DetailedHint";
 import Input from "../ui/Input";
 import Toggle from "../ui/Toggle";
 import { useSettings } from "../../hooks/useSettings";
@@ -99,7 +100,11 @@ export default function EmbeddingSettings() {
     <div className="mx-auto w-full max-w-[620px] pb-6 pt-2">
       <div className="mb-4 border-b border-border pb-4">
         <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.embeddingTitle")}</h4>
-        <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">{t("settings.ai.embeddingHint")}</p>
+        <DetailedHint
+          className="mt-0.5"
+          hint={t("settings.ai.embeddingHint")}
+          detail={t("settings.ai.embeddingDetail")}
+        />
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <Input
             value={endpoint}
@@ -145,11 +150,15 @@ export default function EmbeddingSettings() {
       <div className="flex min-h-[73px] items-center justify-between gap-4 border-b border-border py-3">
         <div className="min-w-0">
           <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.vectorRetrieval")}</h4>
-          <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">
-            {availability.available
-              ? t("settings.ai.vectorRetrievalHint")
-              : t("settings.ai.vectorRetrievalUnavailable")}
-          </p>
+          <DetailedHint
+            className="mt-0.5"
+            hint={
+              availability.available
+                ? t("settings.ai.vectorRetrievalHint")
+                : t("settings.ai.vectorRetrievalUnavailable")
+            }
+            detail={t("settings.ai.vectorRetrievalDetail")}
+          />
         </div>
         <Toggle
           checked={settings.ai_vector_retrieval === "true"}

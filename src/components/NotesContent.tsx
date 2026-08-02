@@ -171,8 +171,8 @@ export default function NotesContent() {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col bg-bg-surface">
-      <header className="relative shrink-0 border-b border-border px-page pb-5 pt-11">
-        <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-11" />
+      <header className="relative shrink-0 border-b border-border px-page pb-5 pt-titlebar">
+        <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-titlebar" />
         <div className="mb-4 flex items-end justify-between gap-4">
           <div>
             <h1 className="text-[24px] font-semibold text-text-primary">{t("notes.title")}</h1>

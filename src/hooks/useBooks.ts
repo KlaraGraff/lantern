@@ -27,7 +27,13 @@ export interface Book {
   cover_data: string | null;
 }
 
-export type BookAvailabilityStatus = "available" | "icloud_placeholder" | "missing";
+export type BookAvailabilityStatus =
+  | "available"
+  | "icloud_placeholder"
+  | "missing"
+  // Only `diagnoseBookFile` can return this: the file is where it should be and
+  // still cannot be read. `checkBookAvailable` never looks that closely.
+  | "unreadable";
 
 export interface BookAvailability {
   status: BookAvailabilityStatus;
@@ -145,6 +151,15 @@ export async function updateBookCover(id: string, imagePath: string): Promise<vo
 
 export async function checkBookAvailable(id: string): Promise<BookAvailability> {
   return invoke<BookAvailability>("check_book_available", { id });
+}
+
+/**
+ * The deep probe, for use once at a failure point — it reads from the file
+ * rather than asking the filesystem whether the name resolves. Never put this
+ * on a poll; `checkBookAvailable` is the one built for that.
+ */
+export async function diagnoseBookFile(id: string): Promise<BookAvailability> {
+  return invoke<BookAvailability>("diagnose_book_file", { id });
 }
 
 export async function retryTextBookPreparation(id: string): Promise<void> {

@@ -807,6 +807,24 @@ fn profiles(db: &Db, enabled_only: bool) -> AppResult<Vec<AiProfile>> {
     Ok(profiles)
 }
 
+/// The models still in play for one request, in route order.
+///
+/// A cooling-down model is not skipped part-way through the traversal — it is
+/// gone before the traversal starts. That is what makes a second request inside
+/// the same cooldown window silent: the failed model is no longer at the head of
+/// the route, so there is no switch left to announce.
+fn routable_profiles(enabled: Vec<AiProfile>, cutoff: i64) -> Vec<AiProfile> {
+    enabled
+        .into_iter()
+        .filter(|profile| {
+            profile
+                .view
+                .cooldown_until
+                .is_none_or(|deadline| deadline <= cutoff)
+        })
+        .collect()
+}
+
 fn active_profile(db: &Db) -> AppResult<AiProfile> {
     profiles(db, true)?
         .into_iter()
@@ -968,6 +986,18 @@ fn update_profile_health(
         "UPDATE ai_profiles SET state = ?1, cooldown_until = ?2, last_error_kind = ?3, last_used_at = ?4, last_latency_ms = COALESCE(?5, last_latency_ms), updated_at = ?4 WHERE id = ?6",
         params![state, cooldown, error.map(AiErrorKind::as_str), timestamp, latency, profile.view.id],
     );
+}
+
+/// Whether the traversal may move on to the next credential or model.
+///
+/// Two independent reasons to stop. One is the failure itself: a malformed
+/// request will be malformed for every model, so trying them all just wastes
+/// the user's time and money. The other is that the answer has already started
+/// arriving — switching now would splice two models' output together, or repeat
+/// a sentence the reader has read. A non-empty reasoning delta counts as
+/// started, because the reader can see it.
+fn may_continue_after(kind: AiErrorKind, emitted: bool) -> bool {
+    !emitted && kind.retryable()
 }
 
 fn profile_health_state(
@@ -1151,17 +1181,14 @@ fn provider_default_base_url(provider: &str) -> Option<&'static str> {
         "openai" => Some("https://api.openai.com"),
         "anthropic" => Some("https://api.anthropic.com"),
         "ollama" => Some("http://localhost:11434"),
-        // Zhipu and DeepSeek speak the OpenAI chat shape, so only the base URL
-        // and the default model differ from `custom`. They exist as their own
-        // providers so each preset keeps a stable identity after the user
-        // renames the profile, which a label-only match would lose.
-        "zhipu" => Some(ZHIPU_BASE_URL),
+        // DeepSeek speaks the OpenAI chat shape, so only the base URL and the
+        // default model differ from `custom`. It exists as its own provider so
+        // the preset keeps a stable identity after the user renames the
+        // profile, which a label-only match would lose.
         "deepseek" => Some(DEEPSEEK_BASE_URL),
         _ => None,
     }
 }
-
-pub(crate) const ZHIPU_BASE_URL: &str = "https://open.bigmodel.cn/api/paas/v4";
 
 /// Published without a version segment, so `compat_endpoint` appends `/v1`.
 pub(crate) const DEEPSEEK_BASE_URL: &str = "https://api.deepseek.com";
@@ -1174,7 +1201,7 @@ fn models_endpoint(profile: &AiProfileView) -> AppResult<String> {
         } else {
             format!("{base}/api/tags")
         }),
-        "openai" | "anthropic" | "custom" | "zhipu" | "deepseek" => {
+        "openai" | "anthropic" | "custom" | "deepseek" => {
             Ok(crate::ai::compat_endpoint(base, "models"))
         }
         _ => Err(AppError::Other("AI_PROVIDER_UNSUPPORTED".to_string())),
@@ -1508,9 +1535,9 @@ async fn stream_with_profile_inner(
     if !profile.view.enabled {
         return Err(AppError::Other("AI_PROFILE_DISABLED".to_string()));
     }
-    // Every caller of this path is background work against one pinned profile
-    // (grounding summaries, intent routing), so the effort only rides along
-    // when the profile opted every feature in.
+    // This path is background work against a model the user pinned by hand
+    // (currently only book summaries), so the effort only rides along when the
+    // profile opted every feature in.
     let effort = effort_for(&profile.view, AiRequestPurpose::Utility);
     if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" {
         let (token, account_id) = crate::ai::oauth::get_valid_token(secrets).await?;
@@ -1672,15 +1699,7 @@ async fn stream_with_failover_inner(
         return Err(AppError::Other("AI_NOT_CONFIGURED".to_string()));
     }
     let timestamp = cooldown_cutoff(retry);
-    let profiles: Vec<_> = enabled_profiles
-        .into_iter()
-        .filter(|profile| {
-            profile
-                .view
-                .cooldown_until
-                .is_none_or(|deadline| deadline <= timestamp)
-        })
-        .collect();
+    let profiles = routable_profiles(enabled_profiles, timestamp);
     if profiles.is_empty() {
         return Err(AppError::Other("AI_KEYS_COOLING_DOWN".to_string()));
     }
@@ -1745,7 +1764,7 @@ async fn stream_with_failover_inner(
                         retry_after_ms(&error),
                         Some(latency),
                     );
-                    if emitted.load(Ordering::Relaxed) || !kind.retryable() {
+                    if !may_continue_after(kind, emitted.load(Ordering::Relaxed)) {
                         return Err(error);
                     }
                     log::warn!(
@@ -1796,7 +1815,7 @@ async fn stream_with_failover_inner(
                         retry_after_ms(&error),
                         Some(latency),
                     );
-                    if emitted.load(Ordering::Relaxed) || !kind.retryable() {
+                    if !may_continue_after(kind, emitted.load(Ordering::Relaxed)) {
                         return Err(error);
                     }
                     log::warn!(
@@ -1867,7 +1886,7 @@ async fn stream_with_failover_inner(
                     let retry_after = retry_after_ms(&error);
                     update_credential_health(db, &credential, Some(kind), retry_after);
                     profile_failure = Some((kind, retry_after));
-                    if emitted.load(Ordering::Relaxed) || !kind.retryable() {
+                    if !may_continue_after(kind, emitted.load(Ordering::Relaxed)) {
                         update_profile_health(
                             db,
                             &profile,
@@ -2083,7 +2102,7 @@ fn normalize_profile_config(
     }
     if !matches!(
         provider.as_str(),
-        "openai" | "anthropic" | "ollama" | "custom" | "zhipu" | "deepseek"
+        "openai" | "anthropic" | "ollama" | "custom" | "deepseek"
     ) {
         return Err(AppError::Other("AI_PROVIDER_UNSUPPORTED".to_string()));
     }
@@ -3209,6 +3228,227 @@ mod tests {
         );
     }
 
+    /// Locks §8.3: an authentication failure is not retryable on the key that
+    /// produced it, but the call route as a whole can still recover. The
+    /// traversal has to reach the next credential, and then the next model.
+    #[test]
+    fn auth_failures_do_not_end_the_traversal() {
+        for kind in [
+            AiErrorKind::CredentialInvalid,
+            AiErrorKind::Auth,
+            AiErrorKind::Permission,
+        ] {
+            assert!(
+                may_continue_after(kind, false),
+                "{} should let the route continue",
+                kind.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn rate_limits_and_outages_continue_but_malformed_requests_do_not() {
+        for kind in [
+            AiErrorKind::RateLimit,
+            AiErrorKind::Quota,
+            AiErrorKind::Network,
+            AiErrorKind::Provider5xx,
+            AiErrorKind::Protocol,
+        ] {
+            assert!(may_continue_after(kind, false), "{}", kind.as_str());
+        }
+        // A rejected request shape is rejected everywhere, and a cancelled one
+        // was cancelled on purpose. Neither is worth another model.
+        for kind in [
+            AiErrorKind::Request,
+            AiErrorKind::NotConfigured,
+            AiErrorKind::Cancelled,
+        ] {
+            assert!(!may_continue_after(kind, false), "{}", kind.as_str());
+        }
+    }
+
+    /// Locks §5.3: once the reader can see output — body text or a non-empty
+    /// reasoning delta — no failure switches models, however recoverable.
+    #[test]
+    fn nothing_switches_models_once_output_has_reached_the_reader() {
+        for kind in [
+            AiErrorKind::RateLimit,
+            AiErrorKind::Network,
+            AiErrorKind::Provider5xx,
+            AiErrorKind::Auth,
+        ] {
+            assert!(
+                !may_continue_after(kind, true),
+                "{} must not switch after output",
+                kind.as_str()
+            );
+        }
+    }
+
+    /// Locks §3: a spent quota lasts about an hour and a rate limit about a
+    /// minute. Collapsing them into one state would make the settings page
+    /// unable to tell the user which one they are waiting out.
+    #[test]
+    fn quota_is_its_own_state_and_outlasts_a_rate_limit() {
+        let now = 1_000;
+        assert_eq!(
+            profile_health_state(Some(AiErrorKind::Quota), None, now),
+            Some(("quota", Some(now + 60 * 60 * 1000)))
+        );
+        assert_eq!(
+            profile_health_state(Some(AiErrorKind::RateLimit), None, now),
+            Some(("cooldown", Some(now + 60 * 1000)))
+        );
+    }
+
+    /// Locks §8.3: when the provider says how long to wait, that beats our own
+    /// default — it is the only recovery time anyone actually knows.
+    #[test]
+    fn retry_after_overrides_the_default_rate_limit_cooldown() {
+        let now = 1_000;
+        assert_eq!(
+            profile_health_state(Some(AiErrorKind::RateLimit), Some(5_000), now),
+            Some(("cooldown", Some(now + 5_000)))
+        );
+    }
+
+    #[test]
+    fn transport_failures_cool_down_briefly() {
+        let now = 1_000;
+        for kind in [
+            AiErrorKind::Network,
+            AiErrorKind::Provider5xx,
+            AiErrorKind::Protocol,
+        ] {
+            assert_eq!(
+                profile_health_state(Some(kind), None, now),
+                Some(("cooldown", Some(now + 30 * 1000))),
+                "{}",
+                kind.as_str()
+            );
+        }
+    }
+
+    /// Locks §8.3: stopping a request is the user's own doing, and must leave
+    /// no trace on a model's health — otherwise a habit of hitting Stop would
+    /// slowly cool down a route that never failed.
+    #[test]
+    fn cancelling_writes_no_health_at_all() {
+        assert_eq!(
+            profile_health_state(Some(AiErrorKind::Cancelled), None, 1_000),
+            None
+        );
+        // Same for a credential: `update_credential_health` reads the same
+        // decision, so a `None` here is a write that never happens.
+        assert!(!may_continue_after(AiErrorKind::Cancelled, false));
+    }
+
+    /// Locks §5.4: a retry the user asked for outranks a cooldown Lantern
+    /// recorded on its own, so every deadline has already passed.
+    #[test]
+    fn a_manual_retry_outlasts_every_cooldown() {
+        assert_eq!(cooldown_cutoff(AiRetryMode::Manual), i64::MAX);
+        assert!(cooldown_cutoff(AiRetryMode::Automatic) < i64::MAX);
+        assert_eq!(retry_mode(Some(true)), AiRetryMode::Manual);
+        assert_eq!(retry_mode(Some(false)), AiRetryMode::Automatic);
+        assert_eq!(retry_mode(None), AiRetryMode::Automatic);
+    }
+
+    /// Locks the §11 acceptance case end to end, against a real database: a
+    /// free model sits ahead of a paid one, spends its quota, and the paid model
+    /// takes over — then every later request inside the same hour goes straight
+    /// to the paid model without retrying the spent one.
+    #[test]
+    fn a_spent_free_model_leaves_the_route_until_its_window_ends() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let profile = |label: &str, model: &str| {
+            create_profile(
+                &db,
+                label.to_string(),
+                "custom".to_string(),
+                "api_key".to_string(),
+                Some("https://gateway.example/v1".to_string()),
+                model.to_string(),
+                0.2,
+                None,
+                false,
+                None,
+                true,
+            )
+            .unwrap()
+        };
+        let route = |cutoff: i64| {
+            routable_profiles(profiles(&db, true).unwrap(), cutoff)
+                .into_iter()
+                .map(|profile| profile.view.id)
+                .collect::<Vec<_>>()
+        };
+        // Order of creation is route order, so the free model answers first.
+        let free = profile("Free", "free-model");
+        let paid = profile("Paid", "paid-model");
+
+        let before = route(cooldown_cutoff(AiRetryMode::Automatic));
+        assert_eq!(before, vec![free.id.clone(), paid.id.clone()]);
+
+        // The free model spends its quota. This is the request the reader sees
+        // the hand-off toast for: it expected `before[0]` and got the paid one.
+        update_profile_health(
+            &db,
+            &profile_by_id(&db, &free.id).unwrap(),
+            Some(AiErrorKind::Quota),
+            None,
+            None,
+        );
+        let spent = profile_by_id(&db, &free.id).unwrap().view;
+        assert_eq!(spent.state, "quota");
+        let deadline = spent.cooldown_until.expect("quota records a deadline");
+
+        // Every later request inside the window: the paid model is now the head
+        // of the route, so nothing is switched away from and nothing is
+        // announced. The spent model is not called again to find that out.
+        let during = route(cooldown_cutoff(AiRetryMode::Automatic));
+        assert_eq!(during, vec![paid.id.clone()]);
+        assert_ne!(before.first(), during.first());
+
+        // Two exits from the window. The user asking again outranks our own
+        // deadline, and the deadline itself eventually passes.
+        assert_eq!(
+            route(cooldown_cutoff(AiRetryMode::Manual)),
+            vec![free.id.clone(), paid.id.clone()]
+        );
+        assert_eq!(route(deadline), vec![free.id.clone(), paid.id.clone()]);
+        assert_eq!(route(deadline - 1), vec![paid.id.clone()]);
+    }
+
+    /// A model the user turned off is not part of the route at all, however
+    /// healthy it looks — otherwise the switch toast could name a model the
+    /// user had already dismissed.
+    #[test]
+    fn a_disabled_model_is_not_a_fallback() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let backup = create_profile(
+            &db,
+            "Backup".to_string(),
+            "custom".to_string(),
+            "api_key".to_string(),
+            Some("https://gateway.example/v1".to_string()),
+            "backup-model".to_string(),
+            0.2,
+            None,
+            false,
+            None,
+            false,
+        )
+        .unwrap();
+
+        assert!(!backup.enabled);
+        assert!(profiles(&db, true).unwrap().is_empty());
+        assert_eq!(profiles(&db, false).unwrap().len(), 1);
+    }
+
     #[test]
     fn connection_attempt_serialization_is_diagnostic_and_redacted() {
         let error = AppError::Other(format!(
@@ -3323,28 +3563,9 @@ mod tests {
     }
 
     #[test]
-    fn zhipu_falls_back_to_its_own_versioned_endpoint() {
-        // No base URL configured: the preset default has to supply the /v4 host
-        // and must not gain a second version segment on the way out.
-        assert_eq!(
-            models_endpoint(&profile("zhipu", None)).unwrap(),
-            "https://open.bigmodel.cn/api/paas/v4/models"
-        );
-        assert_eq!(
-            resolve_base_url(&profile("zhipu", None)).unwrap(),
-            ZHIPU_BASE_URL
-        );
-        // An explicitly configured base still wins over the preset default.
-        assert_eq!(
-            models_endpoint(&profile("zhipu", Some("https://proxy.example/v4"))).unwrap(),
-            "https://proxy.example/v4/models"
-        );
-    }
-
-    #[test]
     fn deepseek_uses_its_unversioned_base_and_gains_v1() {
-        // The mirror image of Zhipu: DeepSeek publishes no version segment, so
-        // the same helper has to add one rather than leave the path bare.
+        // DeepSeek publishes no version segment, so the helper has to add one
+        // rather than leave the path bare.
         assert_eq!(
             models_endpoint(&profile("deepseek", None)).unwrap(),
             "https://api.deepseek.com/v1/models"
@@ -3353,26 +3574,17 @@ mod tests {
             resolve_base_url(&profile("deepseek", None)).unwrap(),
             DEEPSEEK_BASE_URL
         );
+        // An explicitly configured base still wins over the preset default, and
+        // one that already carries a version segment keeps it.
+        assert_eq!(
+            models_endpoint(&profile("deepseek", Some("https://proxy.example/v4"))).unwrap(),
+            "https://proxy.example/v4/models"
+        );
     }
 
     #[test]
-    fn zhipu_is_an_accepted_provider_and_needs_no_base_url() {
+    fn deepseek_is_an_accepted_provider_and_needs_no_base_url() {
         let normalized = normalize_profile_config(
-            "智谱 GLM-4.7-Flash".to_string(),
-            "zhipu".to_string(),
-            "api_key".to_string(),
-            None,
-            "glm-4.7-flash".to_string(),
-            0.3,
-            None,
-        )
-        .expect("zhipu is a supported provider");
-        assert_eq!(normalized.1, "zhipu");
-        // Unlike `custom`, an empty base URL is not an error: the preset knows
-        // where Zhipu lives.
-        assert_eq!(normalized.3, None);
-
-        assert!(normalize_profile_config(
             "DeepSeek".to_string(),
             "deepseek".to_string(),
             "api_key".to_string(),
@@ -3381,15 +3593,19 @@ mod tests {
             0.3,
             None,
         )
-        .is_ok());
+        .expect("deepseek is a supported provider");
+        assert_eq!(normalized.1, "deepseek");
+        // Unlike `custom`, an empty base URL is not an error: the preset knows
+        // where DeepSeek lives.
+        assert_eq!(normalized.3, None);
 
         // OAuth stays OpenAI-only.
         assert!(normalize_profile_config(
-            "智谱".to_string(),
-            "zhipu".to_string(),
+            "DeepSeek".to_string(),
+            "deepseek".to_string(),
             "oauth".to_string(),
             None,
-            "glm-4.7-flash".to_string(),
+            "deepseek-v4-flash".to_string(),
             0.3,
             None,
         )

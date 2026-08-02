@@ -498,7 +498,9 @@ fn run_conversion_with(app: &AppHandle, book_id: &str, converter: &dyn Converter
             }
             return Ok(());
         }
-        icloud::FileAvailability::Missing => {
+        // `file_availability` never reports `Unreadable`; grouped here so an
+        // unusable source fails the job rather than being read as present.
+        icloud::FileAvailability::Missing | icloud::FileAvailability::Unreadable => {
             if update_current_conversion_job(
                 &db,
                 book_id,

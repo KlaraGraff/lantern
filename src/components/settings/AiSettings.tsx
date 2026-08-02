@@ -828,6 +828,9 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
               </li>
             ))}
           </ul>
+          <p className="border-t border-border-light px-2 pb-1.5 pt-2 text-[10px] leading-4 text-text-muted">
+            {t("settings.ai.smallModelWarning")}
+          </p>
         </div>
       )}
 
