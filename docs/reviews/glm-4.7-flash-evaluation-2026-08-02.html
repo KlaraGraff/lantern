@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GLM-4.7-Flash Reading Evaluation</title>
+    <style>
+      :root {
+        color: #17201b;
+        background: #f5f4ef;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      body { margin: 0; }
+
+      main {
+        width: min(1180px, calc(100% - 48px));
+        margin: 48px auto 72px;
+      }
+
+      .eyebrow {
+        margin: 0 0 10px;
+        color: #6b786d;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 32px;
+        font-weight: 650;
+        letter-spacing: 0;
+      }
+
+      .lead {
+        max-width: 760px;
+        margin: 14px 0 0;
+        color: #48534b;
+        font-size: 16px;
+        line-height: 1.65;
+      }
+
+      .callout {
+        margin: 28px 0;
+        padding: 17px 20px;
+        border-left: 4px solid #197b58;
+        background: #e6f1e9;
+        font-size: 15px;
+        line-height: 1.6;
+      }
+
+      .prompt {
+        padding: 18px 20px;
+        border: 1px solid #d4d9d1;
+        border-radius: 6px;
+        background: #fffefa;
+      }
+
+      .section-label {
+        margin: 0 0 9px;
+        color: #68736b;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .prompt p { margin: 0; line-height: 1.7; }
+
+      .compare {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 20px;
+      }
+
+      article {
+        display: flex;
+        min-height: 520px;
+        flex-direction: column;
+        border: 1px solid #d4d9d1;
+        border-radius: 7px;
+        background: #fffefa;
+        overflow: hidden;
+      }
+
+      article header {
+        padding: 19px 20px 16px;
+        border-bottom: 1px solid #e1e4de;
+      }
+
+      h2 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 650;
+        letter-spacing: 0;
+      }
+
+      .mode { margin: 6px 0 0; color: #68736b; font-size: 13px; line-height: 1.45; }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        padding: 15px 20px 0;
+      }
+
+      .metric {
+        padding: 10px;
+        border-radius: 5px;
+        background: #f2f3ee;
+      }
+
+      .metric strong { display: block; font-size: 17px; font-weight: 650; }
+      .metric span { display: block; margin-top: 3px; color: #68736b; font-size: 11px; }
+
+      .answer {
+        flex: 1;
+        margin: 15px 20px 20px;
+        padding: 16px;
+        border-radius: 5px;
+        background: #f7f8f3;
+        color: #26312a;
+        font-size: 14px;
+        line-height: 1.72;
+        white-space: pre-line;
+      }
+
+      .note {
+        margin: 0 20px 20px;
+        color: #68736b;
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .verdict {
+        display: grid;
+        grid-template-columns: 190px 1fr;
+        gap: 16px;
+        margin-top: 30px;
+        padding: 22px 0;
+        border-top: 1px solid #ccd3cb;
+        border-bottom: 1px solid #ccd3cb;
+      }
+
+      .verdict h2 { font-size: 16px; }
+      .verdict p { margin: 0; color: #48534b; line-height: 1.65; }
+      .verdict p + p { margin-top: 10px; }
+
+      .footnote { margin: 20px 0 0; color: #68736b; font-size: 12px; line-height: 1.6; }
+
+      @media (max-width: 860px) {
+        main { width: min(100% - 28px, 640px); margin-top: 28px; }
+        h1 { font-size: 26px; }
+        .compare { grid-template-columns: 1fr; }
+        article { min-height: auto; }
+        .verdict { grid-template-columns: 1fr; gap: 8px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Lantern / Provider evaluation / 2026-08-02</p>
+      <h1>GLM-4.7-Flash: 放开 thinking 会更准确吗？</h1>
+      <p class="lead">本页优先检查答案是否准确、是否抓住语境、是否遵从阅读界面的输出要求。耗时仅作为可复现的附带数据，不用于推断质量。</p>
+
+      <div class="callout"><strong>当前结论：</strong>没有证据表明放开 token 上限或打开 thinking 能提高 GLM-4.7-Flash 的阅读回答质量。相反，同一道“语法可能性”题中，两个 thinking 结果给出了冲突结论；关闭 thinking 的答案更接近 Lantern 所要求的“先区分结构可能性，再说明自然读法”。</div>
+
+      <section class="prompt">
+        <p class="section-label">同一测试问题</p>
+        <p><strong>原文</strong> He did not so much forgive her as discover that resentment had become inconvenient.</p>
+        <p><strong>读者提问</strong> “我能不能理解为：他只是稍微原谅了她？如果不能，为什么？这里的 as 到底起什么作用？”</p>
+      </section>
+
+      <section class="compare" aria-label="Model response comparison">
+        <article>
+          <header>
+            <h2>默认 thinking，无上限</h2>
+            <p class="mode">模型自行分配推理与正文 token</p>
+          </header>
+          <div class="metrics">
+            <div class="metric"><strong>3 / 4</strong><span>质量判断</span></div>
+            <div class="metric"><strong>1,576</strong><span>reasoning tokens</span></div>
+          </div>
+          <div class="answer">这种理解在语法上是可能的。但根据 not so much A as B 这个固定句型的含义，它表示“与其说是 A，不如说是 B”，强调 B 才是主要动作。在这里，作者强调他发现了怨恨的后果，而不是他原谅了她。as 在这里起连词作用，连接两个动词短语。</div>
+          <p class="note">优点：保留了“语法上可能”与“实际含义”的区别。问题：把完整的比较结构拆开解释，且远超“简洁回答”的要求。</p>
+        </article>
+
+        <article>
+          <header>
+            <h2>显式 thinking，2048 token</h2>
+            <p class="mode">仍允许模型先进行长推理</p>
+          </header>
+          <div class="metrics">
+            <div class="metric"><strong>2 / 4</strong><span>质量判断</span></div>
+            <div class="metric"><strong>897</strong><span>reasoning tokens</span></div>
+          </div>
+          <div class="answer">这种理解是不正确的。
+
+这里的 as 连接了两个动词短语，构成固定搭配 not so much... as...，意思是“与其说是……不如说是……”。整句话强调的重点在于后半部分，即他主要是意识到怨恨变得不方便了，而不是单纯地原谅了她。</div>
+          <p class="note">问题：第一句直接否定语法可能性，与左侧结果冲突，也没有遵从“先区分可能性与自然读法”的指令。长推理没有换来更可靠的结论。</p>
+        </article>
+
+        <article>
+          <header>
+            <h2>thinking 关闭，512 token</h2>
+            <p class="mode">推荐的阅读工具默认策略</p>
+          </header>
+          <div class="metrics">
+            <div class="metric"><strong>3 / 4</strong><span>质量判断</span></div>
+            <div class="metric"><strong>0</strong><span>reasoning tokens</span></div>
+          </div>
+          <div class="answer">这种理解在语法上是可能的，但在语境和语义上不成立。
+
+正确的理解是：他与其说是原谅了她，不如说是发现怨恨变得不方便了。as 引出这个对比结构，重点落在后一个动作上。</div>
+          <p class="note">优点：完整回答了“语法上可行，但语境不成立”的关键边界。问题：仍有不必要的标题和展开，说明格式遵从不是完全可靠。</p>
+        </article>
+      </section>
+
+      <section class="verdict">
+        <h2>产品设计建议</h2>
+        <div>
+          <p><strong>划词翻译、查词、解读、学习卡：</strong>固定发送 <code>thinking: { type: "disabled" }</code>。现有样本中，它没有比 thinking 模式差，且不会因短输出预算耗尽而返回空正文。</p>
+          <p><strong>书籍聊天：</strong>默认仍关闭。只有在后续盲测证明特定深度分析题质量提升时，才开放“深度分析”选项；不能仅因模型输出了更多 reasoning 就把它当成质量提升。</p>
+        </div>
+      </section>
+
+      <p class="footnote">已验证样本：翻译、词义语境、文学语气解释、学习卡 JSON、语法歧义。扩展质量套件的后续样本被服务商 429 限流中断，尚未计分。模型输出具有随机性；本页报告实际结果，不将其伪装成基准跑分。页面不包含 API Key。</p>
+    </main>
+  </body>
+</html>
