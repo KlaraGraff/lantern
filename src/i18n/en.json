@@ -127,6 +127,7 @@
   "ai.noUsableKeys": "No API key is currently available. Check your key settings.",
   "ai.requestFailed": "This AI request could not be completed. Please try again.",
   "ai.openSettings": "Open AI Settings",
+  "ai.retry": "Try again",
   "ai.groundingPreparing": "Preparing book index...",
   "ai.groundingUnavailable": "Book grounding is unavailable.",
   "ai.overviewPreparing": "Preparing book overview {{done}}/{{total}}...",

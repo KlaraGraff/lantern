@@ -30,6 +30,20 @@ export function isAiSettingsError(code: AiErrorCode | null): boolean {
   return code !== null && AI_SETTINGS_ERROR_CODES.has(code);
 }
 
+/**
+ * Failures worth offering a retry for: the route was there and something went
+ * wrong anyway. The rest need a settings change first, and a retry button on
+ * those would only invite the user to press it until they give up.
+ */
+const AI_RETRYABLE_ERROR_CODES = new Set<AiErrorCode>([
+  "AI_KEYS_COOLING_DOWN",
+  "AI_STREAM_FAILED",
+]);
+
+export function isAiRetryableError(code: AiErrorCode | null): boolean {
+  return code !== null && AI_RETRYABLE_ERROR_CODES.has(code);
+}
+
 export function aiErrorMessageKey(code: AiErrorCode): string {
   switch (code) {
     case "AI_NOT_CONFIGURED":

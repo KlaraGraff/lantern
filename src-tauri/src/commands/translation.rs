@@ -48,6 +48,9 @@ pub async fn ai_translate_passage(
     chapter: Option<String>,
     target_language: Option<String>,
     request_id: String,
+    // `true` only when the user asked again after a failure, so the router may
+    // look past a cooldown it recorded itself.
+    retry: Option<bool>,
     app: AppHandle,
     db: State<'_, Db>,
     secrets: State<'_, Secrets>,
@@ -129,6 +132,7 @@ pub async fn ai_translate_passage(
             // Inline translation is a short utility request, so it only carries
             // the reasoning effort when the profile opts every feature in.
             crate::ai::router::AiRequestPurpose::Utility,
+            crate::ai::router::retry_mode(retry),
             Some(&request_id),
         )
         .await

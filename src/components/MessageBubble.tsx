@@ -5,7 +5,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import type { AiChatRoute, ChatMessage, CitedSource, SectionContextMetadata } from "../hooks/useAiChat";
-import { aiErrorMessageKey, isAiErrorCode, isAiSettingsError } from "../utils/aiError";
+import { aiErrorMessageKey, isAiErrorCode, isAiRetryableError, isAiSettingsError } from "../utils/aiError";
+import AiRetryButton from "./AiRetryButton";
 import {
   citedSourcesInContent,
   citationMarkerFromHref,
@@ -66,6 +67,8 @@ interface MessageBubbleProps {
   onNavigateToCfi?: (cfi: string) => void;
   onNavigateToSource?: (source: CitedSource) => void;
   onRetryWithWholeBook?: (assistantId: string) => void;
+  /** Ask the same question again, looking past any cooldown. */
+  onRetry?: (assistantId: string) => void;
   onQuoteReply?: (text: string) => void;
 }
 
@@ -176,7 +179,7 @@ function SectionContextNotice({
   );
 }
 
-export default function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateToSource, onRetryWithWholeBook, onQuoteReply }: MessageBubbleProps) {
+export default function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateToSource, onRetryWithWholeBook, onRetry, onQuoteReply }: MessageBubbleProps) {
   const { t } = useTranslation();
   const isLast = msg === messages[messages.length - 1];
   const [reasoningExpanded, setReasoningExpanded] = useState<boolean | null>(null);
@@ -192,24 +195,31 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
     const errorCode = isAiErrorCode(msg.content) ? msg.content : null;
     if (errorCode) {
       const needsSettings = isAiSettingsError(errorCode);
+      // Offered even while the route is cooling: a cooldown is Lantern's own
+      // guess at when the model recovers, and the user pressing this is a
+      // better signal than the guess.
+      const canRetry = onRetry != null && isAiRetryableError(errorCode);
       return (
         <div className={`bg-bg-surface border border-border rounded-lg px-[13px] py-[13px] ${ANSWER_WIDTH}`}>
-          <p className={`text-[14px] text-text-muted ${needsSettings ? "mb-2" : ""}`}>
+          <p className={`text-[14px] text-text-muted ${needsSettings || canRetry ? "mb-2" : ""}`}>
             {t(aiErrorMessageKey(errorCode))}
           </p>
-          {needsSettings && (
-            <button
-              onClick={async () => {
-                await invoke("open_settings_on_main", { section: "services" });
-                const main = await WebviewWindow.getByLabel("main");
-                await main?.setFocus();
-              }}
-              className="flex items-center gap-1.5 text-[13px] font-medium text-accent-text hover:opacity-70 cursor-pointer"
-            >
-              <Settings size={14} />
-              {t("ai.openSettings")}
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-3">
+            {canRetry && <AiRetryButton onClick={() => onRetry(msg.id)} />}
+            {needsSettings && (
+              <button
+                onClick={async () => {
+                  await invoke("open_settings_on_main", { section: "services" });
+                  const main = await WebviewWindow.getByLabel("main");
+                  await main?.setFocus();
+                }}
+                className="flex items-center gap-1.5 text-[13px] font-medium text-accent-text hover:opacity-70 cursor-pointer"
+              >
+                <Settings size={14} />
+                {t("ai.openSettings")}
+              </button>
+            )}
+          </div>
         </div>
       );
     }

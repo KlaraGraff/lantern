@@ -6,7 +6,8 @@ import { X, Loader2, WandSparkles, Check, Copy, Settings } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
 import { LOOKUP_PROSE } from "./lookup-prose";
-import { aiErrorMessageKey, getAiErrorCode, isAiSettingsError, type AiErrorCode } from "../utils/aiError";
+import { aiErrorMessageKey, getAiErrorCode, isAiRetryableError, isAiSettingsError, type AiErrorCode } from "../utils/aiError";
+import AiRetryButton from "./AiRetryButton";
 import { createUuid } from "../utils/randomUuid";
 
 interface ExplainPopoverProps {
@@ -42,6 +43,10 @@ function useExplainStream(
   const [streaming, setStreaming] = useState(true);
   const [aiError, setAiError] = useState<AiErrorCode | null>(null);
   const [streamError, setStreamError] = useState(false);
+  // Bumped by the retry button. Re-running the effect is the retry: the
+  // listener, request id and cleanup all have to be set up again anyway.
+  const [attempt, setAttempt] = useState(0);
+
   const unlistenRef = useRef<UnlistenFn | null>(null);
   const requestIdRef = useRef<string | null>(null);
 
@@ -87,6 +92,7 @@ function useExplainStream(
           bookTitle: bookTitle || null,
           chapter: chapter || null,
           requestId,
+          retry: attempt > 0,
         } : {
           passage,
           surrounding: surrounding || null,
@@ -94,6 +100,7 @@ function useExplainStream(
           bookAuthor: bookAuthor || null,
           chapter: chapter || null,
           requestId,
+          retry: attempt > 0,
         });
       } catch (err) {
         if (!cancelled) {
@@ -123,9 +130,16 @@ function useExplainStream(
       unlistenRef.current?.();
       unlistenRef.current = null;
     };
-  }, [passage, surrounding, bookAuthor, bookTitle, chapter, customAction]);
+  }, [passage, surrounding, bookAuthor, bookTitle, chapter, customAction, attempt]);
 
-  return { content, contentRef, streaming, aiError, streamError };
+  return {
+    content,
+    contentRef,
+    streaming,
+    aiError,
+    streamError,
+    retry: () => setAttempt((count) => count + 1),
+  };
 }
 
 export default function ExplainPopover({
@@ -143,7 +157,7 @@ export default function ExplainPopover({
   const [copied, setCopied] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  const { content, contentRef, streaming, aiError, streamError } = useExplainStream(
+  const { content, contentRef, streaming, aiError, streamError, retry } = useExplainStream(
     text,
     sentence,
     bookTitle,
@@ -254,6 +268,7 @@ export default function ExplainPopover({
               <Settings size={14} />
               {t("ai.openSettings")}
             </button>
+            {isAiRetryableError(aiError) && <AiRetryButton onClick={retry} />}
           </div>
         ) : streaming && !content ? (
           <div className="flex items-center gap-1.5 py-3">
@@ -261,7 +276,10 @@ export default function ExplainPopover({
             <span className="text-[13px] text-text-muted">{t("explain.thinking")}</span>
           </div>
         ) : streamError ? (
-          <p className="py-3 text-[13px] text-text-muted">{t("ai.requestFailed")}</p>
+          <div className="flex flex-col items-center gap-2 py-3 text-center">
+            <p className="text-[13px] text-text-muted">{t("ai.requestFailed")}</p>
+            <AiRetryButton onClick={retry} />
+          </div>
         ) : (
           <div className={`${LOOKUP_PROSE} text-[13px] text-text-primary pt-2.5`}>
             <Markdown>{content}</Markdown>

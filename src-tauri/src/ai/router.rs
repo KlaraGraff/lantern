@@ -480,6 +480,37 @@ pub enum AiRequestPurpose {
     Utility,
 }
 
+/// Whether the caller is asking again on purpose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AiRetryMode {
+    /// Honour cooldowns: a model that just failed is skipped entirely.
+    Automatic,
+    /// The user asked again. A cooldown is only Lantern's guess about when a
+    /// model will work — the provider rarely says — and a deliberate retry
+    /// outranks a guess. Invalid credentials stay excluded either way, because
+    /// retrying a key that was rejected is not a guess, it is a known answer.
+    Manual,
+}
+
+/// A retry the user asked for outranks a cooldown Lantern recorded on its own.
+/// Absent or `false` means the app started this request, not the reader.
+pub fn retry_mode(retry: Option<bool>) -> AiRetryMode {
+    if retry.unwrap_or(false) {
+        AiRetryMode::Manual
+    } else {
+        AiRetryMode::Automatic
+    }
+}
+
+/// The instant a cooldown is measured against. A manual retry compares against
+/// the end of time, so every deadline has already passed.
+fn cooldown_cutoff(retry: AiRetryMode) -> i64 {
+    match retry {
+        AiRetryMode::Automatic => now(),
+        AiRetryMode::Manual => i64::MAX,
+    }
+}
+
 fn effort_for(profile: &AiProfileView, purpose: AiRequestPurpose) -> Option<&str> {
     if purpose == AiRequestPurpose::Chat || profile.reasoning_effort_all_features {
         profile.reasoning_effort.as_deref()
@@ -783,9 +814,12 @@ fn active_profile(db: &Db) -> AppResult<AiProfile> {
         .ok_or_else(|| AppError::Other("AI_NOT_CONFIGURED".to_string()))
 }
 
-fn credentials_for(db: &Db, profile_id: &str) -> AppResult<Vec<AiCredential>> {
+/// Usable credentials for a profile, in route order. `cutoff` is the instant
+/// cooldowns are measured against, so a manual retry can pass one that has
+/// already outlasted every deadline.
+fn credentials_for(db: &Db, profile_id: &str, cutoff: i64) -> AppResult<Vec<AiCredential>> {
     let conn = db.reader();
-    let timestamp = now();
+    let timestamp = cutoff;
     let mut statement = conn.prepare(
         "SELECT id, profile_id, label, secret_ref, masked_suffix, enabled, priority, state, cooldown_until, last_error_kind, last_used_at FROM ai_credentials WHERE profile_id = ?1 AND enabled = 1 AND state != 'invalid' AND (cooldown_until IS NULL OR cooldown_until <= ?2) ORDER BY priority ASC, created_at ASC"
     )?;
@@ -1335,6 +1369,7 @@ pub async fn stream_with_failover(
     event_name: &str,
     max_tokens: Option<u32>,
     purpose: AiRequestPurpose,
+    retry: AiRetryMode,
     request_id: Option<&str>,
 ) -> AppResult<()> {
     let mut cancel = request_id
@@ -1357,6 +1392,7 @@ pub async fn stream_with_failover(
         event_name,
         max_tokens,
         purpose,
+        retry,
         &mut cancel,
     )
     .await;
@@ -1378,6 +1414,7 @@ pub async fn complete_with_failover(
     messages: &[ChatMessage],
     max_tokens: Option<u32>,
     purpose: AiRequestPurpose,
+    retry: AiRetryMode,
     request_id: Option<&str>,
     forward_event_name: Option<&str>,
 ) -> AppResult<AiCompletion> {
@@ -1428,6 +1465,7 @@ pub async fn complete_with_failover(
         &event_name,
         max_tokens,
         purpose,
+        retry,
         &mut cancel,
     )
     .await;
@@ -1512,7 +1550,7 @@ async fn stream_with_profile_inner(
         return Ok(profile.view);
     }
     let mut last_error = None;
-    for credential in credentials_for(db, profile_id)? {
+    for credential in credentials_for(db, profile_id, now())? {
         let Some(key) = secrets
             .get(&credential.secret_ref)?
             .filter(|value| !value.trim().is_empty())
@@ -1626,13 +1664,14 @@ async fn stream_with_failover_inner(
     event_name: &str,
     max_tokens: Option<u32>,
     purpose: AiRequestPurpose,
+    retry: AiRetryMode,
     cancel: &mut watch::Receiver<bool>,
 ) -> AppResult<AiProfileView> {
     let enabled_profiles = profiles(db, true)?;
     if enabled_profiles.is_empty() {
         return Err(AppError::Other("AI_NOT_CONFIGURED".to_string()));
     }
-    let timestamp = now();
+    let timestamp = cooldown_cutoff(retry);
     let profiles: Vec<_> = enabled_profiles
         .into_iter()
         .filter(|profile| {
@@ -1773,7 +1812,7 @@ async fn stream_with_failover_inner(
 
         let all = all_credentials_for(db, &profile.view.id)?;
         configured_credentials.extend(all.clone());
-        let candidates = credentials_for(db, &profile.view.id)?;
+        let candidates = credentials_for(db, &profile.view.id, timestamp)?;
         let profile_started = Instant::now();
         let mut profile_failure = None;
         for credential in candidates {
@@ -1943,7 +1982,7 @@ pub(crate) fn embedding_source(
     {
         return Ok(None);
     }
-    let Some(credential) = credentials_for(db, &profile.view.id)?.into_iter().next() else {
+    let Some(credential) = credentials_for(db, &profile.view.id, now())?.into_iter().next() else {
         return Ok(None);
     };
     let Some(api_key) = secrets.get(&credential.secret_ref)? else {
@@ -1989,7 +2028,7 @@ pub fn migrate_embedding_source(db: &Db, secrets: &Secrets) -> AppResult<()> {
     let Some(source) = embedding_source(db, secrets)? else {
         return Ok(());
     };
-    if let Some(credential) = credentials_for(db, &source.profile_id)?.into_iter().next() {
+    if let Some(credential) = credentials_for(db, &source.profile_id, now())?.into_iter().next() {
         let _ = secrets.copy_local(
             &credential.secret_ref,
             crate::ai::grounding::vector::EMBEDDING_SECRET_REF,
@@ -2946,7 +2985,7 @@ pub fn ensure_stream_credentials_accessible(db: &Db, secrets: &Secrets) -> AppRe
             }
             continue;
         }
-        for credential in credentials_for(db, &profile.view.id)? {
+        for credential in credentials_for(db, &profile.view.id, now())? {
             if secrets
                 .get(&credential.secret_ref)?
                 .is_some_and(|value| !value.trim().is_empty())

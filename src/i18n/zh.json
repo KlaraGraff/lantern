@@ -127,6 +127,7 @@
   "ai.noUsableKeys": "当前没有可用的 API 密钥，请检查密钥设置。",
   "ai.requestFailed": "此 AI 请求未能完成，请重试。",
   "ai.openSettings": "打开 AI 设置",
+  "ai.retry": "重试",
   "ai.groundingPreparing": "正在准备书籍索引...",
   "ai.groundingUnavailable": "书籍内容暂时无法用于问答。",
   "ai.overviewPreparing": "正在生成书籍概览 {{done}}/{{total}}...",

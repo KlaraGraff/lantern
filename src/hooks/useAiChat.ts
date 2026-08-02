@@ -769,6 +769,12 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         contextKind?: ContextKind;
         /** Every quote attached to this turn, first one first. */
         contexts?: QuotedContext[];
+        /**
+         * The user asked again after a failure. Lets the router look past a
+         * cooldown it recorded itself, so the model they put first gets
+         * another chance instead of the request going straight to a fallback.
+         */
+        retry?: boolean;
       },
     ) => {
       // Refuse while the session chat is still loading — otherwise the lazy
@@ -1189,6 +1195,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           previousSourceHash: previousAssistant?.sourceHash ?? null,
           requestId,
           spoilerOverride: options?.spoilerOverride ?? null,
+          retry: options?.retry ?? false,
           scopeOverride,
           viewportText,
         }).then(parseAiChatResult);
@@ -1239,6 +1246,30 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         replaceAssistantId: assistantId,
         contextKind: userMessage.contextKind,
         contexts: userMessage.contexts,
+      },
+    );
+  }, [send]);
+
+  /**
+   * Ask the same question again after a failure, replacing the error in place.
+   * Marked as a retry so the router reconsiders a model it is cooling — the
+   * user pressing this is a better signal than Lantern's own guess at when the
+   * model recovers.
+   */
+  const retryFailed = useCallback((assistantId: string) => {
+    const assistantIndex = messagesRef.current.findIndex((message) => message.id === assistantId);
+    const userMessage = assistantIndex > 0 ? messagesRef.current[assistantIndex - 1] : undefined;
+    if (!userMessage || userMessage.role !== "user") return;
+    void send(
+      userMessage.content,
+      userMessage.context,
+      userMessage.contextCfi,
+      userMessage.contextAnalysis,
+      {
+        replaceAssistantId: assistantId,
+        contextKind: userMessage.contextKind,
+        contexts: userMessage.contexts,
+        retry: true,
       },
     );
   }, [send]);
@@ -1332,6 +1363,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
     initializing,
     send,
     retryWithWholeBook,
+    retryFailed,
     reset,
     initialize,
     chatId,

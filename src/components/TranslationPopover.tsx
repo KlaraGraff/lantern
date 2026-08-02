@@ -13,7 +13,8 @@ import {
   Settings,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { aiErrorMessageKey, getAiErrorCode, isAiSettingsError, type AiErrorCode } from "../utils/aiError";
+import { aiErrorMessageKey, getAiErrorCode, isAiRetryableError, isAiSettingsError, type AiErrorCode } from "../utils/aiError";
+import AiRetryButton from "./AiRetryButton";
 import { createUuid } from "../utils/randomUuid";
 
 interface TranslationPopoverProps {
@@ -65,6 +66,10 @@ function useStreamingTranslation(
   const [languageNotConfigured, setLanguageNotConfigured] = useState(false);
   const [targetLang, setTargetLang] = useState("");
   const [streamError, setStreamError] = useState(false);
+  // Bumped by the retry button. Re-running the effect is the retry: the
+  // listener, request id and cleanup all have to be set up again anyway.
+  const [attempt, setAttempt] = useState(0);
+
   const unlistenRef = useRef<UnlistenFn | null>(null);
   const requestIdRef = useRef<string | null>(null);
 
@@ -120,6 +125,7 @@ function useStreamingTranslation(
           chapter: chapter || null,
           targetLanguage: null,
           requestId,
+          retry: attempt > 0,
         });
       } catch (err) {
         if (!cancelled) {
@@ -151,9 +157,18 @@ function useStreamingTranslation(
       unlistenRef.current?.();
       unlistenRef.current = null;
     };
-  }, [text, context, bookAuthor, bookId, bookTitle, cfi, chapter]);
+  }, [text, context, bookAuthor, bookId, bookTitle, cfi, chapter, attempt]);
 
-  return { content, contentRef, streaming, aiError, languageNotConfigured, targetLang, streamError };
+  return {
+    content,
+    contentRef,
+    streaming,
+    aiError,
+    languageNotConfigured,
+    targetLang,
+    streamError,
+    retry: () => setAttempt((count) => count + 1),
+  };
 }
 
 export default function TranslationPopover({
@@ -173,7 +188,7 @@ export default function TranslationPopover({
   const [expanded, setExpanded] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
-  const { content, contentRef, streaming, aiError, languageNotConfigured, targetLang, streamError } =
+  const { content, contentRef, streaming, aiError, languageNotConfigured, targetLang, streamError, retry } =
     useStreamingTranslation(text, context, bookId, bookTitle, bookAuthor, chapter, cfi);
 
   const allDone = !streaming;
@@ -313,6 +328,7 @@ export default function TranslationPopover({
               <Settings size={14} />
               {languageNotConfigured ? t("translation.openSettings") : t("ai.openSettings")}
             </button>
+            {isAiRetryableError(aiError) && <AiRetryButton onClick={retry} />}
           </div>
         ) : null}
 
@@ -337,7 +353,10 @@ export default function TranslationPopover({
             </p>
           ))}
         {!hasConfigurationError && streamError && (
-          <p className="py-3 text-[13px] text-text-muted">{t("ai.requestFailed")}</p>
+          <div className="flex flex-col items-center gap-2 py-3 text-center">
+            <p className="text-[13px] text-text-muted">{t("ai.requestFailed")}</p>
+            <AiRetryButton onClick={retry} />
+          </div>
         )}
       </div>
 

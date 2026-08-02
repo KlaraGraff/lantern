@@ -143,7 +143,7 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
     t("ai.prompt.characters"),
   ];
   const {
-    messages, streaming, send, retryWithWholeBook, cancel, initialize,
+    messages, streaming, send, retryWithWholeBook, retryFailed, cancel, initialize,
     chatId, chats, titling, initializing, groundingStatus, summaryProgress, bookAiState,
     summariesAuto, spoilerGuardEnabled, setSpoilerGuardEnabled, prepareBookOverview, loadChat, deleteChat, renameChat, reset,
   } = useAiChat(bookId, {
@@ -502,7 +502,7 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
             <div ref={messageListRef} className="flex flex-col gap-3">
               {messages.map((msg, index) => (
                 <div key={msg.id} ref={index === lastQuestionIndex ? questionAnchorRef : undefined}>
-                  <MessageBubble msg={msg} messages={messages} streaming={streaming} onNavigateToCfi={onNavigateToCfi} onNavigateToSource={onNavigateToSource} onRetryWithWholeBook={retryWithWholeBook} onQuoteReply={quoteReply} />
+                  <MessageBubble msg={msg} messages={messages} streaming={streaming} onNavigateToCfi={onNavigateToCfi} onNavigateToSource={onNavigateToSource} onRetryWithWholeBook={retryWithWholeBook} onRetry={retryFailed} onQuoteReply={quoteReply} />
                 </div>
               ))}
             </div>

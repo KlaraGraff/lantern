@@ -174,6 +174,7 @@ pub(crate) fn emit_stream_failure(app: &AppHandle, event_name: &str, error: &App
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_routed_stream(
     app: AppHandle,
     db: Db,
@@ -181,6 +182,7 @@ fn spawn_routed_stream(
     messages: Vec<ChatMessage>,
     event_name: String,
     max_tokens: Option<u32>,
+    retry: crate::ai::router::AiRetryMode,
     request_id: String,
 ) {
     // Register before spawning so an immediate Stop click can never race the
@@ -195,6 +197,7 @@ fn spawn_routed_stream(
             &event_name,
             max_tokens,
             crate::ai::router::AiRequestPurpose::Chat,
+            retry,
             Some(&request_id),
         )
         .await
@@ -499,6 +502,7 @@ async fn run_vocabulary_scan(
             &vocabulary_map_messages(language, question, batch),
             Some(VOCABULARY_MAP_MAX_TOKENS),
             crate::ai::router::AiRequestPurpose::Utility,
+            crate::ai::router::AiRetryMode::Automatic,
             Some(request_id),
             None,
         )
@@ -1180,6 +1184,7 @@ pub async fn ai_learning_card(
         &messages,
         Some(max_tokens),
         crate::ai::router::AiRequestPurpose::Utility,
+        crate::ai::router::AiRetryMode::Automatic,
         Some(&request_id),
         Some(&stream_event_name),
     )
@@ -1231,6 +1236,7 @@ pub async fn ai_optimize_prompt(
         &messages,
         Some(1_024),
         crate::ai::router::AiRequestPurpose::Utility,
+        crate::ai::router::AiRetryMode::Automatic,
         Some(&request_id),
         None,
     )
@@ -1250,6 +1256,9 @@ pub async fn ai_custom_action(
     book_title: Option<String>,
     chapter: Option<String>,
     request_id: String,
+    // `true` only when the user asked again after a failure, so the router may
+    // look past a cooldown it recorded itself.
+    retry: Option<bool>,
     app: AppHandle,
     db: State<'_, Db>,
     secrets: State<'_, Secrets>,
@@ -1324,6 +1333,7 @@ pub async fn ai_custom_action(
         messages,
         format!("ai-custom-action-chunk-{request_id}"),
         Some(3_072),
+        crate::ai::router::retry_mode(retry),
         request_id,
     );
     Ok(())
@@ -1372,6 +1382,7 @@ pub async fn ai_word_forms(
         &messages,
         Some(1_024),
         crate::ai::router::AiRequestPurpose::Utility,
+        crate::ai::router::AiRetryMode::Automatic,
         Some(&request_id),
         None,
     )
@@ -1497,6 +1508,7 @@ pub async fn ai_vocab_gloss(
         &messages,
         Some(128),
         crate::ai::router::AiRequestPurpose::Utility,
+        crate::ai::router::AiRetryMode::Automatic,
         Some(&request_id),
         None,
     )
@@ -1514,6 +1526,9 @@ pub async fn ai_lookup(
     chapter: Option<String>,
     request_id: String,
     kind: Option<String>,
+    // `true` only when the user asked again after a failure, so the router may
+    // look past a cooldown it recorded itself.
+    retry: Option<bool>,
     app: AppHandle,
     db: State<'_, Db>,
     secrets: State<'_, Secrets>,
@@ -1591,6 +1606,7 @@ pub async fn ai_lookup(
         messages,
         event_name,
         max_tokens,
+        crate::ai::router::retry_mode(retry),
         request_id,
     );
 
@@ -1620,6 +1636,9 @@ pub async fn ai_explain(
     book_author: Option<String>,
     chapter: Option<String>,
     request_id: String,
+    // `true` only when the user asked again after a failure, so the router may
+    // look past a cooldown it recorded itself.
+    retry: Option<bool>,
     app: AppHandle,
     db: State<'_, Db>,
     secrets: State<'_, Secrets>,
@@ -1682,6 +1701,7 @@ pub async fn ai_explain(
         messages,
         event_name,
         None,
+        crate::ai::router::retry_mode(retry),
         request_id,
     );
 
@@ -1739,6 +1759,7 @@ pub async fn ai_generate_title(
         messages,
         event_name,
         Some(32),
+        crate::ai::router::AiRetryMode::Automatic,
         request_id,
     );
 
@@ -2297,6 +2318,9 @@ pub async fn ai_chat(
     previous_source_hash: Option<String>,
     request_id: String,
     spoiler_override: Option<bool>,
+    // `true` only when the user asked again after a failure, so the router may
+    // look past a cooldown it recorded itself.
+    retry: Option<bool>,
     scope_override: Option<String>,
     viewport_text: Option<String>,
     app: AppHandle,
@@ -2911,6 +2935,7 @@ pub async fn ai_chat(
             api_messages,
             event_name,
             None,
+            crate::ai::router::retry_mode(retry),
             request_id,
         );
     }

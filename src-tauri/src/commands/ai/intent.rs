@@ -81,6 +81,7 @@ pub(super) async fn classify_ambiguous_intent(
             &messages,
             Some(INTENT_MAX_TOKENS),
             crate::ai::router::AiRequestPurpose::Utility,
+            crate::ai::router::AiRetryMode::Automatic,
             None,
             None,
         ),
