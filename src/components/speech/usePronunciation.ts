@@ -14,7 +14,7 @@ const NOTICE_MS = 5000;
  */
 export function usePronunciation(text: string, kind: SpeechKind) {
   const { t } = useTranslation();
-  const { status, accent, accentAvailable, dependsOnSystemVoices, speak, setAccent, stop } = useSpeech();
+  const { status, accent, accentAvailable, dependsOnSystemVoices, speak, setAccent, stop, resume } = useSpeech();
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -30,6 +30,9 @@ export function usePronunciation(text: string, kind: SpeechKind) {
 
   const play = () => {
     if (status === "playing") stop();
+    // Paused only happens to a passage, and only because the reader asked for
+    // it. Starting over would throw away the position they paused at.
+    else if (status === "paused") resume();
     else speak(trimmed, kind);
   };
 
@@ -56,7 +59,11 @@ export function usePronunciation(text: string, kind: SpeechKind) {
       : status === "playing" ? "animate-pulse" : "",
     accentLabel: t(`speech.accent.${accent}`),
     switchAccentLabel: t(`speech.switchTo.${other}`),
-    playLabel: status === "error" ? t("speech.unavailable") : t("speech.play"),
+    playLabel: status === "error"
+      ? t("speech.unavailable")
+      : status === "paused"
+        ? t("speech.playback.resume")
+        : t("speech.play"),
     play,
     toggleAccent,
   };

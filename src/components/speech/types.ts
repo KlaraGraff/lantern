@@ -1,7 +1,7 @@
 export type SpeechAccent = "uk" | "us";
 export type SpeechSourceId = "auto" | "dictionary" | "system" | "edge" | "custom";
 export type SpeechKind = "word" | "phrase" | "passage";
-export type SpeechStatus = "idle" | "loading" | "playing" | "error";
+export type SpeechStatus = "idle" | "loading" | "playing" | "paused" | "error";
 
 export const SPEECH_SOURCE_SETTING_KEY = "speech_source";
 export const SPEECH_ACCENT_SETTING_KEY = "speech_accent";

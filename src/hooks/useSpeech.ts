@@ -6,7 +6,9 @@ import {
 } from "../components/speech/remote-audio";
 import {
   cancelSpeech,
+  pauseSpeech,
   playerState,
+  resumeSpeech,
   speak as playerSpeak,
   subscribeToPlayer,
   type Playback,
@@ -15,6 +17,7 @@ import {
 import {
   chunkForSynthesis,
   planSources,
+  playbackDetaches,
   type SpeechRoute,
 } from "../components/speech/routing";
 import {
@@ -153,6 +156,9 @@ export interface UseSpeech {
   speak: (text: string, kind?: SpeechKind) => void;
   setAccent: (accent: SpeechAccent) => Promise<void>;
   stop: () => void;
+  /** Only ever does anything for a passage; see `pauseSpeech`. */
+  pause: () => void;
+  resume: () => void;
 }
 
 export function useSpeech(): UseSpeech {
@@ -170,9 +176,18 @@ export function useSpeech(): UseSpeech {
 
   useEffect(() => subscribeToVoices(() => setVoicesRevision((value) => value + 1)), []);
 
-  // Stop playback when the card that started it goes away.
+  // A card going away stops what it started — unless playback was detached,
+  // which is how a passage survives the selection menu closing on the very next
+  // click. That menu has to close: it blocks paging while open, and the floating
+  // control is what offers the stop from then on.
+  //
+  // A paused passage is detached too, but its state has moved to `paused`, so it
+  // has to be recognised separately or dismissing the card that started it would
+  // throw away the position it is waiting at.
   useEffect(() => () => {
-    if (playerState().ownerId === ownerId) cancelSpeech();
+    const { ownerId: current, detached, paused } = playerState();
+    if (paused?.ownerId === ownerId) return;
+    if (current === ownerId && !detached) cancelSpeech();
   }, [ownerId]);
 
   const accentAvailable = useMemo(
@@ -184,7 +199,11 @@ export function useSpeech(): UseSpeech {
   const speak = useCallback((text: string, kind: SpeechKind = "word") => {
     const trimmed = text.trim();
     if (!trimmed) return;
-    void playerSpeak(ownerId, async () => planPlayback(trimmed, kind, speechSettings()));
+    void playerSpeak(
+      ownerId,
+      async () => planPlayback(trimmed, kind, speechSettings()),
+      { detached: playbackDetaches(kind) },
+    );
   }, [ownerId]);
 
   const setAccent = useCallback(async (accent: SpeechAccent) => {
@@ -199,5 +218,7 @@ export function useSpeech(): UseSpeech {
     speak,
     setAccent,
     stop: cancelSpeech,
+    pause: pauseSpeech,
+    resume: resumeSpeech,
   };
 }
