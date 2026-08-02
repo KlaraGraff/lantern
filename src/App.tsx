@@ -8,6 +8,7 @@ import Reader from "./pages/Reader";
 import AiRouteFallbackNotice from "./components/AiRouteFallbackNotice";
 import ReasoningEffortNotice from "./components/ReasoningEffortNotice";
 import SettingsHost from "./components/SettingsHost";
+import McpApprovalDialog from "./components/McpApprovalDialog";
 import { reconcileLanguage } from "./i18n";
 import { useAppZoom } from "./hooks/useAppZoom";
 import {
@@ -89,6 +90,7 @@ export default function App() {
           A desktop reader window forwards to this one by label instead of
           mounting a second modal of its own. */}
       {isMainWindow && <SettingsHost />}
+      {isMainWindow && <McpApprovalDialog />}
     </>
   );
 

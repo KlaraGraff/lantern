@@ -47,13 +47,23 @@ pub fn add_bookmark(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<Bookmark> {
+    add_bookmark_inner(&book_id, &cfi, label, &db, &sync)
+}
+
+pub(crate) fn add_bookmark_inner(
+    book_id: &str,
+    cfi: &str,
+    label: Option<String>,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<Bookmark> {
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
 
     let bookmark = Bookmark {
         id: id.clone(),
-        book_id: book_id.clone(),
-        cfi: cfi.clone(),
+        book_id: book_id.to_string(),
+        cfi: cfi.to_string(),
         label: label.clone(),
         created_at: now,
         updated_at: now,
@@ -66,8 +76,8 @@ pub fn add_bookmark(
         )?;
         events.push(EventBody::BookmarkAdd(BookmarkPayload {
             id: id.clone(),
-            book_id: book_id.clone(),
-            cfi: cfi.clone(),
+            book_id: book_id.to_string(),
+            cfi: cfi.to_string(),
             label: label.clone(),
         }));
         Ok(())
@@ -82,11 +92,26 @@ pub fn remove_bookmark(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<()> {
-    let now = chrono::Utc::now().timestamp_millis();
-    sync.with_tx(&db, now, |tx, events| {
-        tx.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])?;
-        events.push(EventBody::BookmarkDelete { id: id.clone() });
-        Ok(())
+    delete_bookmarks_inner(&[id], &db, &sync).map(|_| ())
+}
+
+pub(crate) fn delete_bookmarks_inner(
+    ids: &[String],
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<usize> {
+    let timestamp = sync.next_logical_timestamp();
+    sync.with_tx(db, timestamp, |tx, events| {
+        let mut deleted = 0;
+        for id in ids {
+            crate::sync::validation::validate_entity_id(id)?;
+            if tx.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])? > 0 {
+                insert_tombstone(tx, entity::BOOKMARK, id, timestamp)?;
+                events.push(EventBody::BookmarkDelete { id: id.clone() });
+                deleted += 1;
+            }
+        }
+        Ok(deleted)
     })
 }
 
@@ -128,6 +153,18 @@ pub fn add_highlight(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<Highlight> {
+    add_highlight_inner(&book_id, &cfi_range, color, note, text_content, &db, &sync)
+}
+
+pub(crate) fn add_highlight_inner(
+    book_id: &str,
+    cfi_range: &str,
+    color: Option<String>,
+    note: Option<String>,
+    text_content: Option<String>,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<Highlight> {
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
     let color = color.unwrap_or_else(|| "yellow".to_string());
@@ -136,8 +173,8 @@ pub fn add_highlight(
 
     let highlight = Highlight {
         id: id.clone(),
-        book_id: book_id.clone(),
-        cfi_range: cfi_range.clone(),
+        book_id: book_id.to_string(),
+        cfi_range: cfi_range.to_string(),
         color: color.clone(),
         note: note.clone(),
         text_content: text_content.clone(),
@@ -154,8 +191,8 @@ pub fn add_highlight(
         )?;
         events.push(EventBody::HighlightAdd(HighlightPayload {
             id: id.clone(),
-            book_id: book_id.clone(),
-            cfi_range: cfi_range.clone(),
+            book_id: book_id.to_string(),
+            cfi_range: cfi_range.to_string(),
             color: color.clone(),
             note: note.clone(),
             text_content: text_content.clone(),
@@ -172,11 +209,26 @@ pub fn remove_highlight(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<()> {
-    let now = chrono::Utc::now().timestamp_millis();
-    sync.with_tx(&db, now, |tx, events| {
-        tx.execute("DELETE FROM highlights WHERE id = ?1", params![id])?;
-        events.push(EventBody::HighlightDelete { id: id.clone() });
-        Ok(())
+    delete_highlights_inner(&[id], &db, &sync).map(|_| ())
+}
+
+pub(crate) fn delete_highlights_inner(
+    ids: &[String],
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<usize> {
+    let timestamp = sync.next_logical_timestamp();
+    sync.with_tx(db, timestamp, |tx, events| {
+        let mut deleted = 0;
+        for id in ids {
+            crate::sync::validation::validate_entity_id(id)?;
+            if tx.execute("DELETE FROM highlights WHERE id = ?1", params![id])? > 0 {
+                insert_tombstone(tx, entity::HIGHLIGHT, id, timestamp)?;
+                events.push(EventBody::HighlightDelete { id: id.clone() });
+                deleted += 1;
+            }
+        }
+        Ok(deleted)
     })
 }
 
@@ -327,19 +379,7 @@ pub fn update_highlight_note(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<()> {
-    let now = chrono::Utc::now().timestamp_millis();
-    let device = sync.self_device().to_string();
-    sync.with_tx(&db, now, |tx, events| {
-        tx.execute(
-            "UPDATE highlights SET note = ?1, updated_at = ?2, updated_by_device = ?3 WHERE id = ?4",
-            params![note, now, device, id],
-        )?;
-        events.push(EventBody::HighlightNoteSet {
-            id: id.clone(),
-            note: Some(note.clone()),
-        });
-        Ok(())
-    })
+    update_highlight_inner(&id, Some(&note), None, &db, &sync).map(|_| ())
 }
 
 #[tauri::command]
@@ -349,18 +389,69 @@ pub fn update_highlight_color(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<()> {
-    let now = chrono::Utc::now().timestamp_millis();
+    update_highlight_inner(&id, None, Some(&color), &db, &sync).map(|_| ())
+}
+
+pub(crate) fn update_highlight_inner(
+    id: &str,
+    note: Option<&str>,
+    color: Option<&str>,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<Highlight> {
+    crate::sync::validation::validate_entity_id(id)?;
+    if note.is_none() && color.is_none() {
+        return Err(AppError::Other("HIGHLIGHT_UPDATE_EMPTY".to_string()));
+    }
+    let timestamp = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();
-    sync.with_tx(&db, now, |tx, events| {
+    sync.with_tx(db, timestamp, |tx, events| {
+        let mut highlight = tx
+            .query_row(
+                "SELECT id, book_id, cfi_range, color, note, text_content, created_at, updated_at
+                 FROM highlights WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok(Highlight {
+                        id: row.get(0)?,
+                        book_id: row.get(1)?,
+                        cfi_range: row.get(2)?,
+                        color: row.get(3)?,
+                        note: row.get(4)?,
+                        text_content: row.get(5)?,
+                        created_at: row.get(6)?,
+                        updated_at: row.get(7)?,
+                    })
+                },
+            )
+            .map_err(|_| AppError::Other("HIGHLIGHT_NOT_FOUND".to_string()))?;
+        if let Some(note) = note {
+            highlight.note = Some(note.to_string());
+            events.push(EventBody::HighlightNoteSet {
+                id: id.to_string(),
+                note: highlight.note.clone(),
+            });
+        }
+        if let Some(color) = color {
+            highlight.color = color.to_string();
+            events.push(EventBody::HighlightColorSet {
+                id: id.to_string(),
+                color: color.to_string(),
+            });
+        }
         tx.execute(
-            "UPDATE highlights SET color = ?1, updated_at = ?2, updated_by_device = ?3 WHERE id = ?4",
-            params![color, now, device, id],
+            "UPDATE highlights SET note = ?1, color = ?2, updated_at = ?3,
+                                   updated_by_device = ?4 WHERE id = ?5",
+            params![
+                highlight.note.as_deref(),
+                &highlight.color,
+                timestamp,
+                device,
+                id
+            ],
         )?;
-        events.push(EventBody::HighlightColorSet {
-            id: id.clone(),
-            color: color.clone(),
-        });
-        Ok(())
+        highlight.updated_at = timestamp;
+        Ok(highlight)
     })
 }
 

@@ -1,5 +1,5 @@
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::tool;
 use rmcp::tool_router;
 use rmcp::ErrorData;
@@ -39,7 +39,7 @@ impl LanternMcpHandler {
                 words.retain(|word| word.book_id == book_id);
             }
         }
-        Ok(CallToolResult::success(vec![Content::json(&words)?]))
+        Ok(CallToolResult::success(vec![ContentBlock::json(&words)?]))
     }
 
     #[tool(
@@ -48,6 +48,6 @@ impl LanternMcpHandler {
     pub async fn get_vocab_stats(&self) -> Result<CallToolResult, ErrorData> {
         let stats = vocab::query_vocab_stats(&self.state.db)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::json(&stats)?]))
+        Ok(CallToolResult::success(vec![ContentBlock::json(&stats)?]))
     }
 }

@@ -1,12 +1,14 @@
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::{tool, tool_router, ErrorData};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use crate::commands::{books, collections};
 use crate::mcp::server::LanternMcpHandler;
 use crate::mcp::tools::library::{require_sync, McpBook};
+use crate::sync::events::EventBody;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ImportBooksArgs {
@@ -26,6 +28,15 @@ pub struct CollectionBooksArgs {
     pub collection_id: String,
     /// Book IDs returned by `list_books`.
     pub book_ids: Vec<String>,
+    /// Whether the supplied books are added to or removed from the collection.
+    pub operation: CollectionMembershipOperation,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CollectionMembershipOperation {
+    Add,
+    Remove,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -38,6 +49,12 @@ pub struct GetCollectionBooksArgs {
     /// Optional case-insensitive title/author search.
     #[serde(default)]
     pub search: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ReorderCollectionsArgs {
+    /// Every collection ID, exactly once, in the desired order.
+    pub collection_ids: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -115,7 +132,9 @@ impl LanternMcpHandler {
             match books::do_import_from_path(&file_path, &self.state.db, sync) {
                 Ok(book) => {
                     let book_id = book.id.clone();
-                    imported.push(book.into());
+                    let projected = McpBook::project(book, &self.state.db)
+                        .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+                    imported.push(projected);
                     results.push(BatchItemResult::new(file_path, "ok", None, Some(book_id)));
                 }
                 Err(error) => results.push(failed_item(file_path, error)),
@@ -243,57 +262,71 @@ impl LanternMcpHandler {
 #[tool_router(router = library_batch_router, vis = "pub(crate)")]
 impl LanternMcpHandler {
     #[tool(
-        description = "Import multiple local ebook files. Continues after per-file failures and reports ok, unsupported, or error for each input."
+        description = "Import one or more local ebook files. Continues after per-file failures and reports ok, unsupported, or error for each input.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            open_world_hint = true
+        )
     )]
     pub async fn import_books(
         &self,
         Parameters(ImportBooksArgs { file_paths }): Parameters<ImportBooksArgs>,
     ) -> Result<CallToolResult, ErrorData> {
         let response = self.run_import_books(file_paths)?;
-        Ok(CallToolResult::success(vec![Content::json(&response)?]))
+        Ok(CallToolResult::success(vec![ContentBlock::json(
+            &response,
+        )?]))
     }
 
     #[tool(
-        description = "Permanently delete multiple books and their associated data and files. Missing IDs are reported per item."
+        description = "Permanently delete one or more books and their associated data and files. Missing IDs are reported per item.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            open_world_hint = false
+        )
     )]
     pub async fn delete_books(
         &self,
         Parameters(DeleteBooksArgs { book_ids }): Parameters<DeleteBooksArgs>,
     ) -> Result<CallToolResult, ErrorData> {
         let response = self.run_delete_books(book_ids)?;
-        Ok(CallToolResult::success(vec![Content::json(&response)?]))
+        Ok(CallToolResult::success(vec![ContentBlock::json(
+            &response,
+        )?]))
     }
 
     #[tool(
-        description = "Add multiple books to a collection. Existing memberships are reported as no-op and missing books per item."
+        description = "Add or remove one or more books from a collection without deleting any books. Existing target state is reported as no-op and missing books per item.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            open_world_hint = false
+        )
     )]
-    pub async fn add_books_to_collection(
+    pub async fn update_collection_membership(
         &self,
         Parameters(CollectionBooksArgs {
             collection_id,
             book_ids,
+            operation,
         }): Parameters<CollectionBooksArgs>,
     ) -> Result<CallToolResult, ErrorData> {
-        let response = self.run_collection_membership(collection_id, book_ids, true)?;
-        Ok(CallToolResult::success(vec![Content::json(&response)?]))
+        let add = matches!(operation, CollectionMembershipOperation::Add);
+        let response = self.run_collection_membership(collection_id, book_ids, add)?;
+        Ok(CallToolResult::success(vec![ContentBlock::json(
+            &response,
+        )?]))
     }
 
     #[tool(
-        description = "Remove multiple books from a collection without deleting them. Missing memberships are reported as no-op."
-    )]
-    pub async fn remove_books_from_collection(
-        &self,
-        Parameters(CollectionBooksArgs {
-            collection_id,
-            book_ids,
-        }): Parameters<CollectionBooksArgs>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let response = self.run_collection_membership(collection_id, book_ids, false)?;
-        Ok(CallToolResult::success(vec![Content::json(&response)?]))
-    }
-
-    #[tool(
-        description = "List full MCP book records for one collection, optionally filtering by status/genre and searching title/author."
+        description = "List full MCP book records for one collection, optionally filtering by status/genre and searching title/author.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            open_world_hint = false
+        )
     )]
     pub async fn get_collection_books(
         &self,
@@ -319,7 +352,68 @@ impl LanternMcpHandler {
             1000,
         )
         .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
-        let books: Vec<McpBook> = raw.into_iter().map(McpBook::from).collect();
-        Ok(CallToolResult::success(vec![Content::json(&books)?]))
+        let books: Vec<McpBook> = raw
+            .into_iter()
+            .map(|book| McpBook::project(book, &self.state.db))
+            .collect::<crate::error::AppResult<_>>()
+            .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+        Ok(CallToolResult::success(vec![ContentBlock::json(&books)?]))
+    }
+
+    #[tool(
+        description = "Set collection order. `collection_ids` must contain every current collection exactly once. Returns the reordered collections.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            open_world_hint = false
+        )
+    )]
+    pub async fn reorder_collections(
+        &self,
+        Parameters(ReorderCollectionsArgs { collection_ids }): Parameters<ReorderCollectionsArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let sync = require_sync(self)?;
+        let current = collections::query_collections(&self.state.db)
+            .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+        let current_ids = current
+            .iter()
+            .map(|collection| collection.id.as_str())
+            .collect::<HashSet<_>>();
+        let requested_ids = collection_ids
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
+        if collection_ids.len() != current.len()
+            || requested_ids.len() != collection_ids.len()
+            || requested_ids != current_ids
+        {
+            return Err(ErrorData::invalid_params(
+                "`collection_ids` must contain every current collection exactly once",
+                None,
+            ));
+        }
+        let now = chrono::Utc::now().timestamp_millis();
+        let device = sync.self_device().to_string();
+        sync.with_tx(&self.state.db, now, |tx, events| {
+            for (sort_order, id) in collection_ids.iter().enumerate() {
+                tx.execute(
+                    "UPDATE collections SET sort_order = ?1, updated_at = ?2,
+                                            updated_by_device = ?3 WHERE id = ?4",
+                    rusqlite::params![sort_order as i32, now, device, id],
+                )?;
+                events.push(EventBody::CollectionReorder {
+                    id: id.clone(),
+                    sort_order: sort_order as i32,
+                });
+            }
+            Ok(())
+        })
+        .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+        self.state.notify("collections", "reordered", "all");
+        let reordered = collections::query_collections(&self.state.db)
+            .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+        Ok(CallToolResult::success(vec![ContentBlock::json(
+            &reordered,
+        )?]))
     }
 }

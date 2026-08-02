@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::db::Db;
 use crate::error::AppResult;
 use crate::sync::events::{ChatMessagePayload, EventBody};
+use crate::sync::merge::{entity, insert_tombstone};
 use crate::sync::writer::SyncWriter;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -91,6 +92,16 @@ pub fn create_chat(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<Chat> {
+    create_chat_inner(&book_id, title, model, &db, &sync)
+}
+
+pub(crate) fn create_chat_inner(
+    book_id: &str,
+    title: Option<String>,
+    model: Option<String>,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<Chat> {
     let id = Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
     let title = title.unwrap_or_else(|| "New chat".to_string());
@@ -98,7 +109,7 @@ pub fn create_chat(
 
     let chat = Chat {
         id: id.clone(),
-        book_id: book_id.clone(),
+        book_id: book_id.to_string(),
         title: title.clone(),
         model: model.clone(),
         pinned: false,
@@ -118,7 +129,7 @@ pub fn create_chat(
         )?;
         events.push(EventBody::ChatCreate {
             id: id.clone(),
-            book: book_id.clone(),
+            book: book_id.to_string(),
             title: title.clone(),
             model: model.clone(),
         });
@@ -181,17 +192,32 @@ pub fn delete_chat(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<()> {
-    let now = chrono::Utc::now().timestamp_millis();
-    sync.with_tx(&db, now, |tx, events| {
-        tx.execute(
-            "DELETE FROM chat_messages WHERE chat_id = ?1",
-            params![chat_id],
-        )?;
-        tx.execute("DELETE FROM chats WHERE id = ?1", params![chat_id])?;
-        events.push(EventBody::ChatDelete {
-            id: chat_id.clone(),
-        });
-        Ok(())
+    delete_chats_inner(&[chat_id], &db, &sync).map(|_| ())
+}
+
+pub(crate) fn delete_chats_inner(ids: &[String], db: &Db, sync: &SyncWriter) -> AppResult<usize> {
+    let timestamp = sync.next_logical_timestamp();
+    sync.with_tx(db, timestamp, |tx, events| {
+        let mut deleted = 0;
+        for id in ids {
+            crate::sync::validation::validate_entity_id(id)?;
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM chats WHERE id = ?1)",
+                params![id],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                continue;
+            }
+            tx.execute("DELETE FROM chat_messages WHERE chat_id = ?1", params![id])?;
+            let changed = tx.execute("DELETE FROM chats WHERE id = ?1", params![id])?;
+            if changed > 0 {
+                insert_tombstone(tx, entity::CHAT, id, timestamp)?;
+                events.push(EventBody::ChatDelete { id: id.clone() });
+                deleted += 1;
+            }
+        }
+        Ok(deleted)
     })
 }
 
@@ -202,6 +228,15 @@ pub fn rename_chat(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<()> {
+    rename_chat_inner(&chat_id, &title, &db, &sync)
+}
+
+pub(crate) fn rename_chat_inner(
+    chat_id: &str,
+    title: &str,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<()> {
     let now = chrono::Utc::now().timestamp_millis();
     let device = sync.self_device().to_string();
     sync.with_tx(&db, now, |tx, events| {
@@ -210,8 +245,8 @@ pub fn rename_chat(
             params![title, now, device, chat_id],
         )?;
         events.push(EventBody::ChatRename {
-            id: chat_id.clone(),
-            title: title.clone(),
+            id: chat_id.to_string(),
+            title: title.to_string(),
         });
         Ok(())
     })
@@ -245,15 +280,27 @@ pub fn save_chat_message(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<ChatMsg> {
+    save_chat_message_inner(&chat_id, &role, &content, context, metadata, &db, &sync)
+}
+
+pub(crate) fn save_chat_message_inner(
+    chat_id: &str,
+    role: &str,
+    content: &str,
+    context: Option<String>,
+    metadata: Option<String>,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<ChatMsg> {
     let id = Uuid::new_v4().to_string();
     let now = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();
 
     let msg = ChatMsg {
         id: id.clone(),
-        chat_id: chat_id.clone(),
-        role: role.clone(),
-        content: content.clone(),
+        chat_id: chat_id.to_string(),
+        role: role.to_string(),
+        content: content.to_string(),
         context: context.clone(),
         metadata: metadata.clone(),
         created_at: now,
@@ -278,9 +325,9 @@ pub fn save_chat_message(
         )?;
         events.push(EventBody::ChatMessageAdd(ChatMessagePayload {
             id: id.clone(),
-            chat_id: chat_id.clone(),
-            role: role.clone(),
-            content: content.clone(),
+            chat_id: chat_id.to_string(),
+            role: role.to_string(),
+            content: content.to_string(),
             context: context.clone(),
             metadata: metadata.clone(),
         }));
@@ -298,7 +345,17 @@ pub fn replace_chat_message(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<ChatMsg> {
-    crate::sync::validation::validate_entity_id(&message_id)?;
+    replace_chat_message_inner(&message_id, &content, metadata, &db, &sync)
+}
+
+pub(crate) fn replace_chat_message_inner(
+    message_id: &str,
+    content: &str,
+    metadata: Option<String>,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<ChatMsg> {
+    crate::sync::validation::validate_entity_id(message_id)?;
     let now = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();
     let message = sync.with_tx(&db, now, |tx, events| {
@@ -323,7 +380,7 @@ pub fn replace_chat_message(
             "UPDATE chats SET updated_at = ?1, updated_by_device = ?2 WHERE id = ?3",
             params![now, device, message.chat_id],
         )?;
-        message.content = content.clone();
+        message.content = content.to_string();
         message.metadata = metadata.clone();
         message.updated_at = now;
         events.push(EventBody::ChatMessageReplace(ChatMessagePayload {

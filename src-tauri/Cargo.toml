@@ -52,7 +52,7 @@ thiserror = "1"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 tokio = { version = "1", features = ["sync", "macros", "rt-multi-thread", "net", "io-util", "time"] }
 futures = "0.3"
-rmcp = { version = "1.7", features = ["server", "transport-io"] }
+rmcp = { version = "3.1", features = ["server", "transport-io", "elicitation"] }
 schemars = "1"
 # Codex MCP config lives in ~/.codex/config.toml; toml_edit preserves
 # user-authored comments + formatting on round-trip writes (unlike the

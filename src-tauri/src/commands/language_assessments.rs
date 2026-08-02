@@ -412,7 +412,7 @@ pub(crate) fn summarize_assessments(
     })
 }
 
-fn save_language_assessment_in(
+pub(crate) fn save_language_assessment_in(
     db: &Db,
     exam_type: String,
     overall_score: f64,
@@ -459,20 +459,27 @@ fn save_language_assessment_in(
     enrich_assessment(stored)
 }
 
-fn delete_language_assessment_in(db: &Db, id: &str) -> AppResult<()> {
+pub(crate) fn delete_language_assessments_in(db: &Db, ids: &[String]) -> AppResult<usize> {
     let mut conn = db
         .conn
         .lock()
         .map_err(|error| AppError::Other(error.to_string()))?;
     let transaction = conn.transaction()?;
-    let deleted = transaction.execute(
-        "DELETE FROM language_assessments WHERE id = ?1",
-        params![id],
-    )?;
-    if deleted == 0 {
-        return Err(AppError::Other("LANGUAGE_ASSESSMENT_NOT_FOUND".to_string()));
+    let mut deleted = 0;
+    for id in ids {
+        deleted += transaction.execute(
+            "DELETE FROM language_assessments WHERE id = ?1",
+            params![id],
+        )?;
     }
     transaction.commit()?;
+    Ok(deleted)
+}
+
+fn delete_language_assessment_in(db: &Db, id: &str) -> AppResult<()> {
+    if delete_language_assessments_in(db, &[id.to_string()])? == 0 {
+        return Err(AppError::Other("LANGUAGE_ASSESSMENT_NOT_FOUND".to_string()));
+    }
     Ok(())
 }
 

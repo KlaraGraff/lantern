@@ -32,6 +32,8 @@ use tauri::State;
 
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
+use crate::mcp::approval::{ApprovalRequest, ApprovalStore};
+use crate::LocalDir;
 
 /// The key our entry lives under in every client's config file. Both
 /// supported clients happen to key servers by a bare name, so one
@@ -222,6 +224,10 @@ pub(crate) fn codex_write_at(path: &Path, enabled: bool, binary_path: &str) -> A
 
 #[tauri::command]
 pub fn mcp_integration_status(db: State<'_, Db>) -> AppResult<McpIntegrationStatus> {
+    mcp_integration_status_inner(&db)
+}
+
+pub(crate) fn mcp_integration_status_inner(db: &Db) -> AppResult<McpIntegrationStatus> {
     let claude_code = claude_code_path()
         .and_then(|p| claude_code_is_enabled_at(&p))
         .unwrap_or(false);
@@ -248,8 +254,12 @@ pub fn mcp_integration_status(db: State<'_, Db>) -> AppResult<McpIntegrationStat
 
 #[tauri::command]
 pub fn mcp_set_integration(client: String, enabled: bool) -> AppResult<()> {
+    mcp_set_integration_inner(&client, enabled)
+}
+
+pub(crate) fn mcp_set_integration_inner(client: &str, enabled: bool) -> AppResult<()> {
     let bin = current_binary_path()?.to_string_lossy().into_owned();
-    match Client::parse(&client)? {
+    match Client::parse(client)? {
         Client::ClaudeCode => claude_code_write_at(&claude_code_path()?, enabled, &bin),
         Client::Codex => codex_write_at(&codex_path()?, enabled, &bin),
     }
@@ -257,6 +267,10 @@ pub fn mcp_set_integration(client: String, enabled: bool) -> AppResult<()> {
 
 #[tauri::command]
 pub fn mcp_set_write_access(enabled: bool, db: State<'_, Db>) -> AppResult<()> {
+    mcp_set_write_access_inner(enabled, &db)
+}
+
+pub(crate) fn mcp_set_write_access_inner(enabled: bool, db: &Db) -> AppResult<()> {
     let conn = db.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
     conn.execute(
         "INSERT INTO settings (key, value) VALUES ('mcp_write_enabled', ?1)
@@ -276,6 +290,31 @@ pub fn mcp_config_snippet() -> AppResult<String> {
     });
     serde_json::to_string_pretty(&snippet)
         .map_err(|e| AppError::Other(format!("serialize snippet: {e}")))
+}
+
+#[tauri::command]
+pub fn mcp_list_pending_approvals(
+    local_dir: State<'_, LocalDir>,
+) -> AppResult<Vec<ApprovalRequest>> {
+    ApprovalStore::new(&local_dir.0).list_pending()
+}
+
+#[tauri::command]
+pub fn mcp_get_approval(id: String, local_dir: State<'_, LocalDir>) -> AppResult<ApprovalRequest> {
+    ApprovalStore::new(&local_dir.0).get(&id)
+}
+
+#[tauri::command]
+pub fn mcp_approve_action(
+    id: String,
+    local_dir: State<'_, LocalDir>,
+) -> AppResult<ApprovalRequest> {
+    ApprovalStore::new(&local_dir.0).approve(&id)
+}
+
+#[tauri::command]
+pub fn mcp_reject_action(id: String, local_dir: State<'_, LocalDir>) -> AppResult<ApprovalRequest> {
+    ApprovalStore::new(&local_dir.0).reject(&id)
 }
 
 #[cfg(test)]
@@ -308,7 +347,10 @@ mod tests {
 
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(v["mcpServers"]["lantern"]["command"], json!("/test/lantern"));
+        assert_eq!(
+            v["mcpServers"]["lantern"]["command"],
+            json!("/test/lantern")
+        );
         assert_eq!(v["mcpServers"]["lantern"]["args"], json!(["mcp"]));
         assert!(claude_code_is_enabled_at(&path).unwrap());
     }
