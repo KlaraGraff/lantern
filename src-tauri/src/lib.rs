@@ -70,10 +70,10 @@ fn bundle_identifier_for_build() -> &'static str {
 /// Copy data from an earlier build's data directory: the pre-rename
 /// `com.klaragraff.quill` id, the original app, or the first Personal build
 /// whose bundle identifier contained a typo. This runs only before a new data
-/// directory gains `quill.db`, so it never overwrites data already owned by
+/// directory gains a library, so it never overwrites data already owned by
 /// this build.
 fn migrate_legacy_app_data(target: &Path) -> error::AppResult<()> {
-    if target.join("quill.db").exists() {
+    if db::library_exists_in(target) {
         return Ok(());
     }
     let legacy_ids: &[&str] = if cfg!(debug_assertions) {

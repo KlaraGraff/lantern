@@ -6,6 +6,47 @@ use std::sync::{Arc, Mutex, Once};
 use crate::error::{AppError, AppResult};
 use crate::sync::events::word_mark_rule_id;
 
+/// Filename of the SQLite materialized view inside the app data directory.
+pub const DB_FILE_NAME: &str = "lantern.db";
+/// The same file's name before the Quill→Lantern rename.
+const LEGACY_DB_FILE_NAME: &str = "quill.db";
+
+/// True when `dir` already holds a library, under either filename. Callers
+/// use this to decide whether a data directory is occupied, which must stay
+/// true for directories written before the rename.
+pub fn library_exists_in(dir: &Path) -> bool {
+    dir.join(DB_FILE_NAME).is_file() || dir.join(LEGACY_DB_FILE_NAME).is_file()
+}
+
+/// One-time rename of the SQLite file inherited from the Quill fork.
+///
+/// The `-wal` and `-shm` companions move with it, and they move *first*.
+/// Under WAL the newest committed transactions can still live only in
+/// `-wal`, so a crash between the two renames must never leave the main
+/// file under its new name with its log stranded under the old one — that
+/// would silently drop those writes and the guard below would then skip
+/// the migration forever. Moving the companions first makes the window
+/// harmless: the next start still sees the legacy main file and finishes
+/// the job.
+fn rename_legacy_db_file(db_dir: &Path) -> AppResult<()> {
+    let current = db_dir.join(DB_FILE_NAME);
+    let legacy = db_dir.join(LEGACY_DB_FILE_NAME);
+    if current.exists() || !legacy.is_file() {
+        return Ok(());
+    }
+
+    for suffix in ["-wal", "-shm"] {
+        let from = db_dir.join(format!("{LEGACY_DB_FILE_NAME}{suffix}"));
+        if from.is_file() {
+            fs::rename(&from, db_dir.join(format!("{DB_FILE_NAME}{suffix}")))?;
+        }
+    }
+    fs::rename(&legacy, &current)?;
+
+    log::info!("migration: renamed {LEGACY_DB_FILE_NAME} to {DB_FILE_NAME}");
+    Ok(())
+}
+
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, include_str!("../migrations/001_init.sql")),
     (2, include_str!("../migrations/002_vocab.sql")),
@@ -224,7 +265,7 @@ impl Db {
         })
     }
 
-    /// Open the DB with the SQLite file at `db_dir/quill.db` and binary
+    /// Open the DB with the SQLite file at `db_dir/lantern.db` and binary
     /// blobs (`books/`, `covers/`) under `data_dir`.
     ///
     /// Sync-migrated callers pass `db_dir = local_app_data` and
@@ -244,10 +285,11 @@ impl Db {
         fs::create_dir_all(data_dir.join("sources"))?;
 
         register_sqlite_vec();
-        let db_path = db_dir.join("quill.db");
+        rename_legacy_db_file(db_dir)?;
+        let db_path = db_dir.join(DB_FILE_NAME);
         let conn = Connection::open(&db_path)?;
 
-        // WAL is safe here because quill.db lives in the OS app-data dir
+        // WAL is safe here because the DB lives in the OS app-data dir
         // (local-only), not iCloud. Pre-Chunk-6 we ran DELETE so iCloud
         // file-sync wouldn't see torn `-wal`/`-shm` companion files.
         // Post-Chunk-6 the only iCloud-resident state is binary blobs +
@@ -633,8 +675,8 @@ mod tests {
         let (db, _) = Db::init_split(db_dir.path(), data_dir.path()).unwrap();
 
         // SQLite file landed in db_dir (NOT data_dir).
-        assert!(db_dir.path().join("quill.db").exists());
-        assert!(!data_dir.path().join("quill.db").exists());
+        assert!(db_dir.path().join(DB_FILE_NAME).exists());
+        assert!(!data_dir.path().join(DB_FILE_NAME).exists());
 
         // books/ subdir was created in data_dir (NOT db_dir).
         assert!(data_dir.path().join("books").exists());
@@ -748,7 +790,7 @@ mod tests {
     }
 
     fn seed_v8(dir: &TempDir) -> Connection {
-        let conn = Connection::open(dir.path().join("quill.db")).unwrap();
+        let conn = Connection::open(dir.path().join(DB_FILE_NAME)).unwrap();
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
             .unwrap();
         Db::run_migrations_up_to(&conn, 8).unwrap();
@@ -1082,7 +1124,7 @@ mod tests {
     #[test]
     fn test_migration_011_backfills_updated_by_device_and_creates_outbox() {
         let dir = TempDir::new().unwrap();
-        let conn = Connection::open(dir.path().join("quill.db")).unwrap();
+        let conn = Connection::open(dir.path().join(DB_FILE_NAME)).unwrap();
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
             .unwrap();
         Db::run_migrations_up_to(&conn, 10).unwrap();
@@ -1214,7 +1256,7 @@ mod tests {
     #[test]
     fn test_migration_020_rebuilds_legacy_text_books_from_source() {
         let dir = TempDir::new().unwrap();
-        let conn = Connection::open(dir.path().join("quill.db")).unwrap();
+        let conn = Connection::open(dir.path().join(DB_FILE_NAME)).unwrap();
         Db::run_migrations_up_to(&conn, 19).unwrap();
         let now = chrono::Utc::now().timestamp_millis();
         conn.execute(
