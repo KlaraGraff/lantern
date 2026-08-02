@@ -1,6 +1,6 @@
 //! Process-wide PDFium binding.
 //!
-//! Both the Tauri app and the `quill mcp` stdio subprocess share the
+//! Both the Tauri app and the `lantern mcp` stdio subprocess share the
 //! same executable layout, so the same path-resolution logic works in
 //! both contexts. The dylib is loaded lazily on first call to `pdfium()`
 //! and reused for the lifetime of the process.
@@ -38,7 +38,7 @@ fn locate_pdfium_lib() -> Option<PathBuf> {
             if candidate.exists() {
                 return Some(candidate);
             }
-            // 2. macOS .app bundle: Contents/MacOS/quill → Contents/Resources/<lib>
+            // 2. macOS .app bundle: Contents/MacOS/lantern → Contents/Resources/<lib>
             let bundle_resources = exe_dir.join("..").join("Resources").join(&lib_name);
             if bundle_resources.exists() {
                 return Some(bundle_resources);

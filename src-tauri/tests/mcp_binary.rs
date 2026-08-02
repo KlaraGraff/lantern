@@ -1,17 +1,17 @@
-//! End-to-end integration test for the `quill mcp` subcommand.
+//! End-to-end integration test for the `lantern mcp` subcommand.
 //!
 //! Spawns the actual built binary as a subprocess, drives the MCP
 //! handshake + a couple of tool calls over stdin/stdout, and asserts
 //! the responses. Verifies the wire-level pieces the in-process
 //! handler unit tests (`mcp/server.rs::tests`) can't cover:
 //!
-//!   - `main.rs` argv dispatch (`quill mcp` → `mcp_stdio_main`)
+//!   - `main.rs` argv dispatch (`lantern mcp` → `mcp_stdio_main`)
 //!   - `resolve_app_data_dir()` actually finds the DB on disk
 //!   - `Db::open_readonly` works against a WAL DB the test seeded
 //!   - rmcp's stdio framing produces line-delimited JSON-RPC
 //!
 //! Runs only in debug builds because the binary path resolution
-//! assumes `target/debug/quill` — and only on macOS, since
+//! assumes `target/debug/lantern` — and only on macOS, since
 //! `resolve_app_data_dir` uses platform-specific layout that's
 //! tedious to fake in CI for the other targets.
 
@@ -25,17 +25,17 @@ use std::time::Duration;
 use rusqlite::params;
 use tempfile::TempDir;
 
-/// Locate `target/debug/quill`. `current_exe()` for a `cargo test`
+/// Locate `target/debug/lantern`. `current_exe()` for a `cargo test`
 /// integration test points at the test binary under
 /// `target/debug/deps/`; we walk up to `target/debug/` and append the
 /// binary name.
-fn quill_binary() -> PathBuf {
+fn lantern_binary() -> PathBuf {
     let exe = std::env::current_exe().expect("current_exe");
     let mut dir = exe.parent().expect("deps dir").to_path_buf();
     if dir.ends_with("deps") {
         dir.pop();
     }
-    dir.join("quill")
+    dir.join("lantern")
 }
 
 /// Seed a fully-migrated DB at the path `mcp_stdio_main` expects,
@@ -47,12 +47,12 @@ fn seed_db(home: &std::path::Path) -> rusqlite::Connection {
     std::fs::create_dir_all(&app_data).expect("mkdir app_data");
 
     // Db::init runs all migrations + sets WAL mode + creates the file.
-    let _db = quill_lib::db::Db::init(&app_data).expect("init db");
+    let _db = lantern_lib::db::Db::init(&app_data).expect("init db");
 
     // Reopen with a plain rusqlite connection to seed a row the test
     // can assert on. Reusing Db here would force public exposure of
     // its conn field; a fresh connection is simpler.
-    let conn = rusqlite::Connection::open(app_data.join("quill.db")).expect("reopen");
+    let conn = rusqlite::Connection::open(app_data.join(lantern_lib::db::DB_FILE_NAME)).expect("reopen");
     let now: i64 = 1_700_000_000_000;
     conn.execute(
         "INSERT INTO collections (id, name, sort_order, created_at, updated_at)
@@ -80,14 +80,14 @@ fn read_line_with_timeout(
 }
 
 #[test]
-fn quill_mcp_initialize_lists_tools_and_calls_get_collections() {
+fn lantern_mcp_initialize_lists_tools_and_calls_get_collections() {
     let home = TempDir::new().unwrap();
     let _seeded = seed_db(home.path());
 
-    let binary = quill_binary();
+    let binary = lantern_binary();
     assert!(
         binary.exists(),
-        "quill binary not built at {} — `cargo build` first",
+        "lantern binary not built at {} — `cargo build` first",
         binary.display()
     );
 
@@ -98,7 +98,7 @@ fn quill_mcp_initialize_lists_tools_and_calls_get_collections() {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("spawn quill mcp");
+        .expect("spawn lantern mcp");
 
     let mut stdin = child.stdin.take().expect("stdin");
     let mut reader = BufReader::new(child.stdout.take().expect("stdout"));
@@ -192,18 +192,18 @@ fn quill_mcp_initialize_lists_tools_and_calls_get_collections() {
     assert_eq!(payload[0]["name"], "Integration Test Collection");
 
     let status = child.wait().expect("wait child");
-    assert!(status.success(), "quill mcp exited with {status:?}");
+    assert!(status.success(), "lantern mcp exited with {status:?}");
 }
 
 #[test]
-fn quill_mcp_errors_clearly_when_db_missing() {
+fn lantern_mcp_errors_clearly_when_db_missing() {
     let home = TempDir::new().unwrap();
-    // No seed — quill.db absent under fake $HOME.
+    // No seed — the SQLite file is absent under fake $HOME.
 
-    let binary = quill_binary();
+    let binary = lantern_binary();
     assert!(
         binary.exists(),
-        "quill binary not built at {}",
+        "lantern binary not built at {}",
         binary.display()
     );
 
@@ -214,7 +214,7 @@ fn quill_mcp_errors_clearly_when_db_missing() {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
-        .expect("run quill mcp");
+        .expect("run lantern mcp");
 
     assert!(
         !out.status.success(),

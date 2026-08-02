@@ -1,7 +1,7 @@
 //! Model Context Protocol server for Lantern.
 //!
 //! Driven over **stdio**: AI clients (Claude Code, Codex) spawn
-//! `quill mcp` as a subprocess and exchange MCP messages on
+//! `lantern mcp` as a subprocess and exchange MCP messages on
 //! stdin/stdout. The Tauri app does NOT host an MCP server in-process.
 //! Both the app and the stdio subprocess open the same SQLite file
 //! concurrently — safe because the DB runs in WAL mode and the stdio

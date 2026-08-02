@@ -10,18 +10,18 @@ fn main() {
     let _exe = args.next();
     match args.next().as_deref() {
         Some("mcp") => {
-            quill_lib::mcp_stdio_main();
+            lantern_lib::mcp_stdio_main();
             return;
         }
         Some("pdfium-smoke") => {
-            if let Err(error) = quill_lib::pdfium_smoke_test() {
-                eprintln!("quill pdfium-smoke: {error}");
+            if let Err(error) = lantern_lib::pdfium_smoke_test() {
+                eprintln!("lantern pdfium-smoke: {error}");
                 std::process::exit(1);
             }
-            println!("quill pdfium-smoke: ok");
+            println!("lantern pdfium-smoke: ok");
             return;
         }
         _ => {}
     }
-    quill_lib::run()
+    lantern_lib::run()
 }

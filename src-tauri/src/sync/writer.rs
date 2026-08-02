@@ -107,7 +107,7 @@ pub struct MutationGuard<'a> {
     gate: &'a TransitionGate,
     outermost: bool,
     // Keep the file descriptor alive for the full operation. Its shared
-    // advisory lock coordinates this process with `quill mcp` subprocesses.
+    // advisory lock coordinates this process with `lantern mcp` subprocesses.
     _process_lock: Option<File>,
 }
 

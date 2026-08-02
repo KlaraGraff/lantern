@@ -197,7 +197,7 @@ impl Db {
     }
 
     /// Open the SQLite file read-only without running migrations. Used
-    /// by the `quill mcp` stdio subcommand — it's a second process
+    /// by the `lantern mcp` stdio subcommand — it's a second process
     /// reading the DB the Tauri app already owns; we must NOT attempt
     /// to write or migrate. WAL mode (set by `init_split`) lets this
     /// reader coexist with the writer in the main app.
@@ -234,7 +234,7 @@ impl Db {
     }
 
     /// Open the DB read-write without running migrations. Used by the
-    /// `quill mcp` subprocess when write tools are enabled. Like
+    /// `lantern mcp` subprocess when write tools are enabled. Like
     /// `open_readonly`, the Tauri app owns schema evolution — this
     /// constructor just opens the existing file with write permission.
     pub fn open_readwrite(db_path: &Path) -> AppResult<Self> {
