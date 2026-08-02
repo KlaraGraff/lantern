@@ -1038,6 +1038,7 @@
   "settings.librarySync.changeFolder": "更换文件夹",
   "settings.librarySync.changeFolderDisabled": "请先关闭同步，再更换文件夹",
   "settings.librarySync.chooseFolderHint": "请先选择一个 iCloud 云盘文件夹以启用同步",
+  "settings.librarySync.defaultFolderHint": "开启后会在 iCloud 云盘中自动创建 Lantern 文件夹",
   "settings.librarySync.toggle": "同步此书库",
   "settings.librarySync.toggleSub": "将书库和阅读进度保存到所选文件夹",
   "settings.librarySync.paused": "已暂停 — 所选文件夹当前不可用，稍后将自动恢复",

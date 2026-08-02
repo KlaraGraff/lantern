@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{AppError, AppResult};
 
 const SYNC_SETTINGS_FILE: &str = ".sync_setting";
+const DEFAULT_SYNC_FOLDER_NAME: &str = "lantern";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncSettings {
@@ -52,6 +53,24 @@ pub fn recorded_usable_icloud_dir(local_dir: &Path) -> Option<PathBuf> {
 
 pub fn is_usable_icloud_dir(path: &Path) -> bool {
     is_icloud_drive_dir(path) && is_writable_dir(path)
+}
+
+/// Creates Lantern's default iCloud Drive folder when the previous selection
+/// is absent. Users can still select any existing iCloud Drive folder instead.
+pub fn create_default_icloud_dir() -> AppResult<PathBuf> {
+    let home = std::env::var_os("HOME")
+        .ok_or_else(|| AppError::Other("SYNC_FOLDER_NOT_CONFIGURED".to_string()))?;
+    let root = PathBuf::from(home).join("Library/Mobile Documents/com~apple~CloudDocs");
+    if !root.is_dir() {
+        return Err(AppError::Other("SYNC_FOLDER_NOT_FOUND".to_string()));
+    }
+    let dir = root.join(DEFAULT_SYNC_FOLDER_NAME);
+
+    fs::create_dir_all(&dir)?;
+    if !is_usable_icloud_dir(&dir) {
+        return Err(AppError::Other("SYNC_FOLDER_NOT_WRITABLE".to_string()));
+    }
+    Ok(dir)
 }
 
 pub fn is_icloud_drive_dir(path: &Path) -> bool {

@@ -333,7 +333,7 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
                 </p>
                 <p className="text-[12px] text-text-muted mt-0.5">
                   {!available
-                    ? t("settings.librarySync.chooseFolderHint")
+                    ? t("settings.librarySync.defaultFolderHint")
                     : syncOn && !engineRunning
                       ? t("settings.librarySync.paused")
                       : t("settings.librarySync.toggleSub")}
@@ -343,7 +343,7 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
                 label={t("settings.librarySync.toggle")}
                 checked={syncOn}
                 onChange={onToggleClick}
-                disabled={!available && !syncOn}
+                disabled={busy || initialStatusLoading}
               />
             </>
           )}

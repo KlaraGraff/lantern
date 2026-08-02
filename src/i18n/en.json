@@ -1038,6 +1038,7 @@
   "settings.librarySync.changeFolder": "Change folder",
   "settings.librarySync.changeFolderDisabled": "Turn off sync before changing folders",
   "settings.librarySync.chooseFolderHint": "Choose an iCloud Drive folder to enable sync",
+  "settings.librarySync.defaultFolderHint": "A Lantern folder will be created automatically in iCloud Drive",
   "settings.librarySync.toggle": "Sync this library",
   "settings.librarySync.toggleSub": "Keep your library and reading progress in the selected folder",
   "settings.librarySync.paused": "Paused — the selected folder is unreachable right now, will resume automatically",

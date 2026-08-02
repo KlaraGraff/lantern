@@ -278,11 +278,13 @@ pub fn sync_enable(
     // step below this line fails, the durable state is still "sync
     // off" and the user can retry with a clean slate.
 
-    let icloud_dir = sync::migration::recorded_data_dir(&local.0)
-        .ok_or_else(|| AppError::Other("SYNC_FOLDER_NOT_CONFIGURED".to_string()))?;
-    if !icloud_dir.is_dir() {
-        return Err(AppError::Other("SYNC_FOLDER_NOT_FOUND".to_string()));
-    }
+    let (icloud_dir, record_default_dir) = match sync::migration::recorded_data_dir(&local.0) {
+        Some(dir) if dir.is_dir() => (dir, false),
+        // A deleted or never-configured folder should not force users through
+        // Finder just to resume syncing. Create Lantern's default iCloud
+        // Drive folder; an existing custom folder remains untouched above.
+        Some(_) | None => (sync::migration::create_default_icloud_dir()?, true),
+    };
     if !sync::migration::is_icloud_drive_dir(&icloud_dir) {
         return Err(AppError::Other(
             "SYNC_FOLDER_NOT_IN_ICLOUD_DRIVE".to_string(),
@@ -356,6 +358,9 @@ pub fn sync_enable(
         chrono::Utc::now().timestamp_millis(),
     )?;
 
+    if record_default_dir {
+        sync::migration::set_shared_dir(&local.0, &icloud_dir)?;
+    }
     sync::migration::set_sync_enabled(&local.0, true)?;
 
     {
