@@ -3,8 +3,9 @@
 Ship Lantern as an iOS app: a **reading-focused subset** of the desktop app, kept in step
 through iCloud sync. Desktop stays the place where books get in and get processed.
 
-Out of scope for this milestone: **Android** ([D-002](#d-002--ios-first-android-deferred)) and
-**Windows sync** ([D-007](#d-007--windows-sync-is-out-of-scope)). Sync means iOS ↔ macOS.
+Out of scope for this milestone: **Android** ([D-002](#d-002--ios-first-android-deferred) for
+the cost, [D-010](#d-010--android-is-deferred-not-abandoned) for whether it ever comes back)
+and **Windows sync** ([D-007](#d-007--windows-sync-is-out-of-scope)). Sync means iOS ↔ macOS.
 
 **Status:** **P0 done, 2026-08-02.** Lantern runs on the iOS Simulator: the shelf renders, a
 15 MB EPUB imports through the system file picker, and it opens with CJK text paginating
@@ -68,23 +69,50 @@ System WebView does not; the file picker returns a real path instead of a `conte
 [`readest-comparison.md`](readest-comparison.md) §2. The original "25–35 extra days" was too
 pessimistic and one of its premises is retired:
 
-- Android builds on a **Linux** runner (Readest's `release.yml`), not a Mac. In CI-minute
-  terms it is the cheap platform, not the expensive one.
+- Android builds on a **Linux** runner (Readest's `release.yml`), not a Mac. CI cost is a
+  non-issue in either direction: this repo is public, so GitHub-hosted runners are free on
+  every OS and the 1×/10× multiplier table does not apply. What is *not* free is wall-clock —
+  a real 4-ABI Android release build in Readest's CI takes **54m32s**, the longest leg in
+  their matrix (macOS universal 29m38s, Windows ~37m).
 - `pdfium` is a *runtime* dylib load with a documented no-cover fallback, so it never blocks
   the Android compile — it degrades.
-- The TLS problem is one line (`default-features = false` + `rustls-tls-native-roots`) and
-  should be fixed now regardless of when Android happens, because switching root-cert stores
-  deserves its own commit rather than being debugged alongside NDK linker errors.
+- The TLS problem is one line (`default-features = false` + `rustls-tls-native-roots`).
+  **An earlier version of this bullet said to fix it now regardless of Android. That was
+  wrong** — it contradicted P0's own log (item 5), which had already dropped the change
+  because `rustls-tls` ignores the OS trust store and breaks corporate-proxy users. Lantern
+  ships no Linux build, so `openssl-sys` never reaches a user; it only ever touched the CI
+  runner, which already handles it. This is Android work and it waits for Android.
 
-Realistic total is **16–24 days on top of a shipped iOS app**, dominated by the `content://`
-import path (3–5), an Android secrets store to replace `keyring` (2–4), and store review.
+**Re-scored again 2026-08-02**, and this time upward. The figure is **18–30 days on top of a
+shipped iOS app**, split by milestone because the two halves behave very differently:
+
+- **It compiles: under 2 days.** Only two things stop the Android compiler — the `reqwest` TLS
+  line, and two `keyring` call sites. `keyring` turned out to be far smaller than this entry
+  previously implied: `get()` and `set()` (`secrets.rs:341`, `:355`) are plain SQLite, and the
+  only `Entry::` uses (`:283`, `:518`) sit inside the one-time v1.4-vault migration path under
+  the pre-Quill service id `com.ryoyamada.quill`, a no-op on a fresh Android install. Gating
+  them is mechanical. `HOME` and `content://` are runtime failures, not compile failures.
+- **It is usable: 18–30 days**, dominated by `content://` import (3–5), a real Android secrets
+  store (2–4), the read-aloud system-voice tier (3–5), store review (4–6) — **plus an Android
+  sync transport, which has no line item because none has been chosen.**
+
+Two rows were missing from the earlier 16–24. The **read-aloud** one is now measured rather
+than guessed: system voices are the mandatory last tier of every routing plan
+(`src/components/speech/routing.ts:76-77`, `:83-91`), and that tier is `window.speechSynthesis`,
+which Android System WebView does not implement — so it needs Readest's Kotlin plugin or an
+equivalent. The **sync** one follows from [D-007](#d-007--windows-sync-is-out-of-scope):
+with Windows sync out of scope, sync is Apple-ecosystem-only, so Android needs a second
+transport chosen from scratch. The engine underneath is genuinely transport-agnostic — the six
+largest sync files contain zero `target_os`/`icloud` references — so the interface to replace
+is ~195 lines, but everything behind it is new.
+
 The ordering decision is unchanged: iOS first, one vendor and one WebView.
 
 **Revisit after:** iOS ships and the capability layer ([D-005](#d-005--capability-flags-not-platform-checks))
 has proven itself. Android then reuses phases P1–P3 wholesale.
 
-**Where Android lives** — in this repo, always — and how the cost is actually lowered:
-[D-009](#d-009--android-stays-in-this-repo-only-the-guarantee-is-lowered).
+**Where Android lives** — in this repo, always: [D-009](#d-009--android-stays-in-this-repo-only-the-guarantee-is-lowered).
+**Whether it is coming back at all:** [D-010](#d-010--android-is-deferred-not-abandoned).
 
 ### D-003 — OCR stays on desktop
 
@@ -113,7 +141,7 @@ the desktop and synced to the phone opens as the **original un-OCR'd scan** — 
 text, no lookup, nothing for the AI to ground on — and it fails silently, since falling back
 to the source path is a legitimate outcome. That is the exact benefit D-003 promises, lost.
 The two read modules are plain SQLite reads over the assets table with no platform-specific
-code, so the split costs nothing. See [F-010](#f-010).
+code, so the split costs nothing. See [F-010](#f-010--only-a-real-ios-compile-finds-the-cfg-holes).
 
 **Related desktop bug found while auditing:** `ocr_package_download` is registered in the
 default build (`src-tauri/src/lib.rs:729`) with no `pipeline_enabled()` guard — only
@@ -227,10 +255,17 @@ prices. Forking buys the expensive one to get the cheap ones:
 | Axis | Price | Verdict |
 |---|---|---|
 | Store submission cadence | ~0 — a manual local script, off CI | **Take it.** Readest already runs exactly this |
-| Release blocking | one line, `fail-fast: false` on the build matrix | **Take it** |
+| Release blocking | **already free here** — see the correction below | **Take it** |
 | PR blocking | one line — Android CI job is nightly + label-triggered, not required | **Take it** |
 | Support promise | ~0 — a written tier policy with an exit clause | **Take it** |
 | Codebase location | re-absorbing ~33 shared commits/week, forever | **Reject** |
+
+**Correction (2026-08-02):** an earlier version of this row said release-blocking costs "one
+line, `fail-fast: false` on the build matrix". That is how Readest does it, but it does not
+apply to this repo — `release.yml` has **no matrix at all**. It is two independent jobs,
+`build-macos` (`:13`) and `build-windows` (`:205`), and `grep -n 'strategy:'` returns nothing.
+`fail-fast` is a matrix-only setting. Independent jobs already fail independently, so a third
+`build-android` job would be non-blocking by default, at a price of zero lines.
 
 The first four are what "至少有一个可用的安卓包" actually means, and none of them requires a
 fork. The fork only buys the fifth, and the fifth is where all the cost is:
@@ -240,9 +275,9 @@ fork. The fork only buys the fifth, and the fifth is where all the cost is:
 - **94.8% of code-bearing commits in the last 90 days touch the shared layer** (239 of 252;
   96.8% by churn), arriving at ~35/week over the last 30 days and accelerating. A fork
   re-absorbs essentially every commit the main line produces.
-- **Cadence saves none of the 16–24 days** in [D-002](#d-002--ios-first-android-deferred).
-  That figure is one-time port cost — OpenSSL, `keyring`, `HOME`, `content://` — paid in full
-  before the first APK exists, whether it ships weekly or yearly.
+- **Cadence saves none of the 18–30 days** in [D-002](#d-002--ios-first-android-deferred).
+  That figure is one-time port cost — OpenSSL, `keyring`, `HOME`, `content://`, read-aloud,
+  sync transport — paid in full before the first APK exists, weekly or yearly.
 - **Low cadence is what makes the APK hard to produce, not what makes it cheap.** Three months
   of main at the measured rate is ~230 backend commits and ~120 new crates landing in one
   merge, with no green-to-red transition anywhere to bisect. Fowler's point about big merges
@@ -278,7 +313,7 @@ buildbot for the same reason. This is not theoretical here:
   working keyring backend, and `HOME` set, which is exactly where Android diverges.
 - Rot reproduced live on 2026-08-02: `cargo clippy --target aarch64-apple-ios-sim -- -D warnings`
   fails with two `never used` errors on `src/icloud.rs:92` and `:106` while the identical host
-  command passes. Cause: `dcc90e9`, the [F-010](#f-010) fix itself, committed **less than 24
+  command passes. Cause: `dcc90e9`, the [F-010](#f-010--only-a-real-ios-compile-finds-the-cfg-holes) fix itself, committed **less than 24
   hours earlier**. One gating decision, one new breakage, next day.
 
 So split [D-002](#d-002--ios-first-android-deferred)'s estimate in two. *Compiles* is the
@@ -306,6 +341,67 @@ platform for cost reasons — Tauri 2 mobile is too young for postmortems — an
 a fork-vs-flag figure in engineer-days. The one quantitative source (Krüger & Berger,
 ESEC/FSE 2020: clone-and-own is "initially cheap" but "does not scale with the frequency of
 reuse") measures product variants at n>2 and overstates the case at n=2 platforms.
+
+### D-010 — Android is deferred, not abandoned
+
+Android is not being built, and the topic is closed until the revival condition below fires.
+It is **not** written off: the option is kept, on the strict condition that keeping it never
+costs anything.
+
+**The question this answers:** given the cost, is this "not now" or "never"?
+
+**Why not "never".** The two options are indistinguishable today and nearly indistinguishable
+later, so "never" buys almost nothing while discarding something with real value:
+
+- **Both cost zero lines today.** An exhaustive sweep found nothing in this repo that exists
+  solely for Android — not in Rust (the 18 `target_os = "android"` sites are all the
+  `not(any(ios, android))` desktop-exclusion arm the iOS port created), not in `Cargo.toml`
+  (the only "android" string is a comment at `:32`), not in `src/` (zero matches, i18n
+  included), not in `package.json`, the four `tauri.*.conf.json`, `.gitignore` or any
+  workflow, and there is no `gen/android`. There is nothing to delete, so "never" is not a
+  cleanup — it is only a permission slip.
+- **Keeping the door open has no ongoing price.** P1–P6 were read in full looking for one-way
+  doors and none was found. The plan is already Android-safe *for reasons that have nothing to
+  do with Android*: [D-005](#d-005--capability-flags-not-platform-checks) asks
+  `hasWindow`, not `isIOS`, because that is what survives a desktop-vs-iOS split too; the sync
+  engine is transport-agnostic in code, not just in prose; P3's gesture arena is generic DOM
+  touch; P2 is standard responsive CSS; P4 widens `cfg` arms rather than narrowing them. So
+  there is no discipline to maintain and therefore no "someday" tax to pay.
+- **"Never" buys back essentially nothing.** Of D-005's 13 planned capability flags, **zero**
+  exist only to distinguish Android. `check:reader-compat` is unaffected — it targets Safari
+  15 and never mentions Chromium, because WKWebView was always the stricter WebView, not a
+  shared minimum. The one genuine saving is the read-aloud Kotlin plugin (see
+  [D-002](#d-002--ios-first-android-deferred)) — and that is money not spent until Android is
+  actually built, so declaring "never" today saves nothing today.
+
+**Why not "yes, soon" either.** The price went *up* on re-scoring: 18–30 days plus an
+unestimated sync transport. There is no demand signal — `gh issue list --search android
+--state all` returns `[]` against a two-issue tracker. And the strongest argument for keeping
+Android compiling turns out not to hold here: since all 18 Android `cfg` sites are the same
+arm iOS already exercises, an Android compile gate would catch **no** rot that an iOS gate
+does not. (The iOS gate is the one actually worth adding — see [D-009](#d-009--android-stays-in-this-repo-only-the-guarantee-is-lowered).)
+
+**The two rules that keep this from rotting into an open-ended obligation:**
+
+1. **Free-only.** Preserve Android's viability only where preserving it costs nothing. The
+   moment a choice requires a detour to stay Android-compatible, take the iOS-optimal path and
+   let that door close, without compensating for it. Android takes what falls out of good
+   design; it never gets a budget.
+2. **A written revival condition.** Android is reconsidered when **iOS has shipped**, **a real
+   demand signal exists** (an issue, a user asking), **and** the release cadence has settled
+   from its current ~1.5 days per tag. Until all three hold, this is decided and does not get
+   re-litigated. "When there's time" is not a condition — it never fires.
+
+**What is deliberately not done:** no Android CI job, no `gen/android`, no toolchain, no
+speculative sync-transport abstraction (building one before a second transport exists to
+validate its shape against would be guessing, and [D-007](#d-007--windows-sync-is-out-of-scope)
+already names this as future work). No Android-motivated change gets made early — including
+the `reqwest` TLS switch, which is Android work and was wrongly recommended as standalone
+hygiene in `readest-comparison.md` §6 until corrected on 2026-08-02.
+
+**Revisit if:** the three-part condition above is met; or someone else takes ownership of
+Android, which changes the calculus entirely (see [D-009](#d-009--android-stays-in-this-repo-only-the-guarantee-is-lowered)
+on why a fork is a coordination tool, not a cost tool).
 
 ---
 
@@ -339,8 +435,11 @@ what was read.
    time against the target's command set, so 2.11 is the floor.
 4. **`reqwest` default features** (`src-tauri/Cargo.toml:42`) pull `native-tls`. Android-only
    problem — `native-tls` gates OpenSSL on `cfg(not(any(windows, target_vendor = "apple")))`,
-   so iOS routes to Security.framework. Switching to `rustls-tls` is still worth doing (it
-   removes a duplicate TLS stack; `rustls 0.23` is already in the graph via `msedge-tts`).
+   so iOS routes to Security.framework. This entry used to add that switching to `rustls-tls`
+   is "still worth doing" for the duplicate TLS stack (`rustls 0.23` is already in the graph
+   via `msedge-tts`). **Retracted 2026-08-02:** deduplicating the stack is not worth swapping
+   every platform's root-certificate store for a bundled one. Android-only work, and it waits
+   for Android — see P0 item 5 and [D-002](#d-002--ios-first-android-deferred).
 
 ### F-003 — Path resolution is wrong on iOS, silently
 
@@ -679,7 +778,7 @@ Instruments shows no runaway memory.
 ### P5 — iCloud sync (12–18 days)
 
 iOS ↔ macOS only ([D-007](#d-007--windows-sync-is-out-of-scope)). Size
-[Q-004](#q-004--how-do-existing-macos-users-migrate-to-the-app-container) before starting —
+[Q-004](#q-004--macos-relocation-to-the-app-container-largely-answered) before starting —
 it is not in the estimate below.
 
 1. Widen `cfg(target_os = "macos")` → `cfg(target_vendor = "apple")` in `src/icloud.rs`
@@ -717,7 +816,7 @@ TestFlight, review round-trips. Add an iOS job to `release.yml`.
 | P2 — Mobile UI | Not started | |
 | P3 — Touch interaction | Not started | |
 | P4 — iOS adaptation | Not started | |
-| P5 — iCloud sync | Not started | iOS ↔ macOS only; size [Q-004](#q-004--how-do-existing-macos-users-migrate-to-the-app-container) first |
+| P5 — iCloud sync | Not started | iOS ↔ macOS only; size [Q-004](#q-004--macos-relocation-to-the-app-container-largely-answered) first |
 | P6 — Ship | Not started | |
 
 ---

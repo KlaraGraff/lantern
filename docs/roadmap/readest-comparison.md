@@ -114,18 +114,44 @@ Readest sidesteps it slightly differently — `default-features = false` with no
 all, then `sentry`'s `["reqwest", "rustls"]` features unify rustls back in. Ours should be
 explicit rather than accidental.
 
-**Cost: half a day, and it is cheaper now than later.** Changing the TLS backend changes which
-root-certificate store is used on every platform, so it wants its own commit with its own
-verification pass on macOS and Windows. Doing it while simultaneously debugging NDK linker
-errors means two unfamiliar failure modes at once.
+**Cost: half a day. Do it *with* Android, not before.** An earlier version of this page said
+"cheaper now than later" and told you to make the change immediately. **That was wrong**, and
+it contradicted [P0's own log](mobile-ios.md#p0--compile-and-boot-6-days) (item 5), which had
+already dropped the change with the correct reasoning: `rustls-tls` resolves to
+`rustls-tls-webpki-roots`, a bundled root store that ignores the OS trust store, so the swap
+breaks anyone behind a corporate proxy with a custom CA. Two further facts settle it:
+
+- **Lantern ships no Linux build.** `release.yml` produces only `aarch64-apple-darwin`
+  (dmg/app) and Windows (nsis); `tauri.conf.json`'s `bundle.targets` is `["dmg","app","nsis"]`.
+  So `openssl-sys` never reaches a user — it only ever touched the ubuntu CI runner.
+- **The CI runner already satisfies it** without any explicit install step (`ci.yaml`'s
+  `backend` job installs only the webkit/gtk/appindicator/rsvg set, yet `cargo check` links
+  `reqwest → native-tls → openssl-sys` fine).
+
+Net: outside Android this change has **zero** benefit and one known regression. Make it in the
+same commit as the rest of the Android work, and use `rustls-tls-native-roots` so the OS trust
+store is preserved.
 
 **`keyring` has no Android backend.** `Cargo.toml` has target tables for `apple`, `windows`
 and `linux`. An Android build hits `use keyring::Entry` with no crate to resolve — the same
-`E0432` class of failure that P0 found on iOS. keyring 3.x has no Android backend at all, so
+`E0432` class of failure that P0 found on iOS. keyring 3.x has no Android backend at all
+(docs.rs for 3.6.3 lists Linux, FreeBSD, OpenBSD, Windows, macOS, iOS — Android absent), so
 this is not a feature flag, it is "pick something else": Android Keystore through a small
-plugin, or an encrypted file (`aes-gcm` and `sha2` are already in the tree). **Cost: 2–4
-days**, and it cannot be paid early — it needs a real design decision about where Android
-secrets live.
+plugin, or an encrypted file (`aes-gcm` and `sha2` are already in the tree).
+
+**Split this cost in two — an earlier version of this page conflated them.** keyring is *not*
+load-bearing in current secret storage. `get()` (`secrets.rs:341`) and `set()` (`:355`) are
+plain SQLite reads and writes. The only two `Entry::` call sites — `authorize()` at `:283`
+and `migrate_to_local()` at `:518` — both sit inside the one-time v1.4-vault migration path,
+under `VAULT_KEYCHAIN_SERVICE = "com.ryoyamada.quill"`, a pre-Quill bundle id. On a fresh
+Android install that path is a no-op. So:
+
+| | Cost |
+|---|---|
+| **Compiles** — cfg-gate two call sites plus two error helpers (`:1017-1058`) | **under a day** |
+| **Works** — a real Android secrets store, a genuine design decision | **2–4 days** |
+
+Only the first is a compile blocker. The second is a runtime requirement and belongs in §2.2.
 
 **`HOME` is not set on Android.** Path helpers that assume it will panic at startup. This is a
 known Tauri-Android property and the fix is mechanical, but it has to be found, and it is
@@ -151,10 +177,39 @@ Rust.
 
 **Read-aloud.** Android System WebView has no `speechSynthesis`, which is why Readest wrote
 `tauri-plugin-native-tts` (Kotlin, ~a MediaBrowserService plus a foreground-service permission
-plus a media-button receiver). Lantern's read-aloud goes through `msedge-tts` in Rust — a
-network TTS, not a WebView API — so **this may cost us nothing where it cost Readest a
-plugin.** Flagged rather than asserted: the speech work is still landing in a parallel
-session and has not been read.
+plus a media-button receiver).
+
+**Re-checked 2026-08-02, now that the speech work has landed — and the earlier optimism was
+misplaced.** It is true that Lantern's *primary* path is `msedge-tts` in Rust, a network TTS
+rather than a WebView API. But system voices are the **mandatory last tier of every routing
+plan**: `src/components/speech/routing.ts:76-77` describes them as the only source that cannot
+fail for a reason worth escalating, and `planSources` (`:83-91`) ends every route array in
+`"system"`. That tier is `window.speechSynthesis` (`player.ts:176-357`, feature-detected in
+`system-voices.ts:8-13`, reached via `kind: "voice"` in `useSpeech.ts:48`). On Android it
+collapses, and with it the guarantee that read-aloud always has something to fall back to —
+including offline, where the network TTS cannot help. **Cost: Readest's plugin, or an
+equivalent. Not free.** This is the single largest piece of Android work that
+[D-010](mobile-ios.md#d-010--android-is-deferred-not-abandoned) permanently retires.
+
+**Android secrets store.** Carried over from §2.1: keyring compiles away in under a day, but
+somewhere to actually keep API keys and OAuth tokens on Android does not. Android Keystore via
+a small plugin, or an encrypted file using the `aes-gcm`/`sha2` already in the tree.
+**Cost: 2–4 days.**
+
+**Sync has no Android transport at all.** Not a gap in the engine — the engine is genuinely
+transport-agnostic, and this was verified rather than assumed: `merge.rs` (3,430 lines),
+`replay.rs` (2,042), `events.rs` (792), `writer.rs` (1,200), `peers.rs` (745) and
+`validation.rs` (930) contain **zero** occurrences of `target_os`, `target_vendor` or
+`icloud`. Apple-specific code is `icloud.rs` (190 lines) plus five lines in `log.rs`
+(`:234`, `:239`, and macOS `cfg` arms at `:356`, `:362`, `:388`). `migration.rs` stores the
+sync location as a plain `Option<String>` with one Apple predicate (`is_icloud_drive_dir`,
+`:55-67`).
+
+So the *interface* to replace is ~195 lines. What is missing is everything behind it: with
+[D-007](mobile-ios.md#d-007--windows-sync-is-out-of-scope) putting Windows sync out of scope,
+sync is Apple-ecosystem-only, so Android needs a second transport chosen from scratch —
+a consumer cloud drive or a relay — with its own auth, quota and conflict story.
+**Cost: unestimated, and larger than any single row in §2.3.**
 
 **MCP server.** `rmcp` with `transport-io` is a stdio subprocess model. It compiles, but the
 concept does not exist on a phone. Gate it behind `hasMcpIntegration` — which
@@ -162,24 +217,48 @@ concept does not exist on a phone. Gate it behind `hasMcpIntegration` — which
 
 ### 2.3 The honest total
 
+Split by milestone, because the two halves have very different prices and the earlier version
+of this table blurred them.
+
+**Milestone A — it compiles.** Nothing here needs a design decision:
+
 | Bucket | Days |
 |---|---|
-| Compile blockers (TLS, keyring, HOME) | 4–6 |
+| `reqwest` → `rustls-tls-native-roots` | 0.5 |
+| cfg-gate the two legacy-vault `keyring` call sites | <1 |
+
+**Under two days.** That is the whole compile-blocker set: `HOME` and `content://` are runtime
+failures, not compile failures, and pdfium is a runtime `dlopen` with a no-cover fallback.
+
+**Milestone B — it is a product people can use:**
+
+| Bucket | Days |
+|---|---|
+| `HOME` unset — find and fix the path assumptions | 1 |
 | `content://` import path | 3–5 |
-| pdfium `.so` bundling (optional) | 2–3 |
+| Android secrets store | 2–4 |
+| Read-aloud system-voice tier (Kotlin plugin) | 3–5 |
+| pdfium `.so` per ABI (optional) | 2–3 |
 | Gradle/manifest/permissions/signing/CI | 3–4 |
 | Play Store listing, policy, first review | 4–6 |
+| **Android sync transport** | **unestimated** |
 | Device-specific debugging (Android's tax) | ? |
 
-**Roughly 16–24 days on top of a shipped iOS app**, not 25–35 — because P1–P3 (capability
-layer, mobile UI, touch interaction) are shared and get paid once for iOS. The estimate
-assumes the iOS work lands first and is reused wholesale. It excludes the last row, which is
-genuinely unbounded and is the real reason to do iOS first: one vendor, one WebView, four
-screen sizes.
+**Roughly 18–30 days on top of a shipped iOS app** — up from this page's earlier 16–24,
+because two rows were missing: read-aloud (§2.2, re-checked once the speech work landed) and
+the secrets store (previously folded into the compile bucket). Both of the unpriced rows are
+genuine: sync is unestimated because no second transport has been chosen, and device debugging
+is unbounded, which is the real reason to do iOS first — one vendor, one WebView, four screen
+sizes.
 
-**What this means for D-002:** the decision to defer Android was right, but the *reason*
-"Android needs 25–35 extra days" is now too pessimistic and one of its premises should be
-retired — TLS is a one-line fix that we should make now regardless.
+It is still far below the original 25–35, because P1–P3 (capability layer, mobile UI, touch
+interaction) are shared and get paid once for iOS. The estimate assumes the iOS work lands
+first and is reused wholesale.
+
+**What this means for D-002:** the decision to defer Android was right, and it stays deferred
+rather than abandoned — see [D-010](mobile-ios.md#d-010--android-is-deferred-not-abandoned).
+The premise that should be retired is "25–35 extra days"; the premise that should **not** have
+been retired is that the TLS change is Android-only work. See §2.1.
 
 ---
 
@@ -259,11 +338,14 @@ takes days to tune and are free to copy.
 
 ## 6. What to change now, before P1
 
-Two items, both cheap, both cheaper now than later:
+One item:
 
-1. **`reqwest` → rustls** (§2.1). One line, own commit, verify on macOS and Windows. Removes
-   the single hardest Android blocker and retires a stale premise in D-002.
-2. **Stop tracking generated `gen/apple` files** (§1.1). Move to Readest's ignore-everything +
+1. **Stop tracking generated `gen/apple` files** (§1.1). Move to Readest's ignore-everything +
    force-add-the-edited-files pattern before the next CLI bump.
+
+**Removed from this list 2026-08-02:** `reqwest` → rustls. It was listed here as "cheap and
+cheaper now than later", justified by Android. Both halves were wrong — it has no non-Android
+benefit (Lantern ships no Linux build), and it carries a real regression for corporate-proxy
+users. See §2.1. It belongs in the Android work, not before P1.
 
 Everything else on this page is P2/P3 input or post-iOS Android work.
