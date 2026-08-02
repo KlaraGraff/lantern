@@ -148,18 +148,20 @@ export function createDefaultCardDesignConfig(): CardDesignConfigV1 {
       word: defaultCard(
         "word",
         ["context_meaning", "common_senses", "collocations", "synonyms"],
-        ["common_senses", "collocations", "synonyms"],
-        { defaultDensity: "compact", densities: { context_meaning: "detailed" } },
+        [],
+        {
+          defaultDensity: "compact",
+          densities: { context_meaning: "detailed", synonyms: "standard" },
+        },
       ),
       phrase: defaultCard(
         "phrase",
-        ["context_meaning", "target_translation", "common_senses", "collocations", "grammar_analysis", "idioms"],
-        ["grammar_analysis", "idioms"],
+        ["context_meaning", "target_translation", "common_senses"],
       ),
       passage: defaultCard(
         "passage",
-        ["context_meaning", "target_translation", "grammar_analysis", "key_terms", "idioms", "references"],
-        ["grammar_analysis", "key_terms", "idioms", "references"],
+        ["context_meaning", "target_translation", "idioms"],
+        ["idioms"],
       ),
     },
     selectionMenus: {
