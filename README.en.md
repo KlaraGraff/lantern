@@ -101,13 +101,15 @@ How it works:
 - **Answers are retrieved from the book**, not recalled from the model. Every book gets a full-text index, and if you configure an embedding service, a semantic layer on top — so obscure books, new books and your own documents work just as well.
 - **And it inherits the constraints from the section above.** Citations never come from pages you have not reached, and the retrieval scope is yours to set — which is what makes "list the vocabulary before I read" work at all: it scans the chapter you are about to read, not the whole book.
 
-### Come back days later and the conversation is still attached to the book
+### Come back days later and everything you saved is still attached to the book
 
-History in a chat app is one ever-growing stream. That sentence you asked about three days ago sits between an expense policy and a recipe; you cannot find it, and if you do, you no longer remember where in the book you were.
+History in a chat app is one ever-growing stream. That sentence you asked about three days ago sits between an expense policy and a recipe; you cannot find it, and if you do, you no longer remember where in the book you were. A word list has the same flaw — the word lies there on its own, cut off from the sentence it came from, and all that is left is to memorise it cold.
 
-In Lantern every conversation is filed under its book, searchable, showing how long ago you asked and how many messages it ran to. Find the one you want and click **Open in reader** — the book opens, **the conversation comes back into the panel beside it**, and you pick the thread up where you dropped it. The citation markers inside that old conversation are still live: click one and it still lands on the sentence.
+Nothing you save in Lantern lets go of the book. Vocabulary, notes and conversations are each filed under their book and searchable, stamped with how long ago you saved them, and every one of them carries an **Open in reader** link that lands you not at the front of the book but on the sentence you were on. A saved word also keeps the passage it appeared in, and what it meant **in that sentence** — not the first entry in a dictionary.
 
-So it is not only that every line clicks back into the book. **The whole conversation grows out of the book.**
+Conversations go one step further: the book opens and **the conversation comes back into the panel beside it**, so you pick the thread up where you dropped it, the citation markers inside it still live.
+
+So it is not only that every line it writes clicks back into the book. **Everything you accumulate in Lantern grows out of the book.**
 
 <!-- Screenshot placeholder: an AI answer with citation markers, and the passage it jumps to
      Once shot, drop it into assets/screenshots/ and delete this comment’s first and last lines to show it.
