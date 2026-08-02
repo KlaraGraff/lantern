@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { openReaderWindow } from "../utils/openReaderWindow";
+import { useOpenBook } from "../hooks/useOpenBook";
 import { AlertCircle, Check, CloudDownload, Loader2 } from "lucide-react";
 import type { Book } from "../hooks/useBooks";
 import { deleteBook, markFinished, isPendingPreparation, needsPreparation, retryPreparation, updateBookStatus } from "../hooks/useBooks";
@@ -39,6 +39,7 @@ interface BookListProps {
 
 export default function BookList({ books, hasMore, loadMore, loadingMore, activeCollectionId, onBooksChanged }: BookListProps) {
   const { t } = useTranslation();
+  const openInReader = useOpenBook();
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -60,7 +61,7 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
       onBooksChanged?.();
       return;
     }
-    if (!isPendingPreparation(book)) openReaderWindow(book.id);
+    if (!isPendingPreparation(book)) openInReader(book.id);
   };
 
   return (

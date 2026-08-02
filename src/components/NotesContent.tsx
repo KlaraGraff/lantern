@@ -4,7 +4,7 @@ import { BookOpen, Check, Download, FileText, Loader2, Pencil, Search, Trash2, X
 import { useTranslation } from "react-i18next";
 import Input from "./ui/Input";
 import Select from "./ui/Select";
-import { openReaderWindow } from "../utils/openReaderWindow";
+import { useOpenBook } from "../hooks/useOpenBook";
 
 interface Note {
   id: string;
@@ -30,6 +30,7 @@ const PAGE_SIZE = 100;
 
 export default function NotesContent() {
   const { t, i18n } = useTranslation();
+  const openInReader = useOpenBook();
   const [notes, setNotes] = useState<Note[]>([]);
   const [bookCatalog, setBookCatalog] = useState<Map<string, string>>(new Map());
   const [search, setSearch] = useState("");
@@ -250,7 +251,7 @@ export default function NotesContent() {
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     {note.book_id && note.location ? (
-                      <button type="button" onClick={() => openReaderWindow(note.book_id!, { cfi: note.location })} title={t("notes.locate")} aria-label={t("notes.locate")} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text">
+                      <button type="button" onClick={() => openInReader(note.book_id!, { cfi: note.location })} title={t("notes.locate")} aria-label={t("notes.locate")} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text">
                         <BookOpen size={14} />
                       </button>
                     ) : null}

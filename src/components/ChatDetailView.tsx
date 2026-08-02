@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ArrowLeft, ArrowRight, Send, Loader2, Trash2, Sparkles } from "lucide-react";
 import { useAiChat } from "../hooks/useAiChat";
 import { usePinnedQuestionScroll } from "../hooks/usePinnedQuestionScroll";
-import { openReaderWindow } from "../utils/openReaderWindow";
+import { useOpenBook } from "../hooks/useOpenBook";
 import { textLocation } from "./text-book-location";
 import type { ChatSummary } from "../hooks/useChats";
 import Button from "./ui/Button";
@@ -17,6 +17,7 @@ interface ChatDetailViewProps {
 
 export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDetailViewProps) {
   const { t } = useTranslation();
+  const openInReader = useOpenBook();
   const {
     messages, streaming, send, initialize,
     chatId, chats, titling, initializing, loadChat, deleteChat, renameChat,
@@ -122,7 +123,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
         </div>
         <div className="flex items-center gap-2.5 shrink-0">
           <button
-            onClick={() => openReaderWindow(chat.book_id, { openChat: true, chatId: chat.id })}
+            onClick={() => openInReader(chat.book_id, { openChat: true, chatId: chat.id })}
             className="flex items-center gap-1 h-7 px-3 rounded-[10px] bg-accent-bg text-[12px] font-medium text-accent-text tracking-[0.06px] cursor-pointer hover:opacity-70"
           >
             {t("chats.openInReader")}
@@ -164,7 +165,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
                       const cfi = source.charStart != null
                         ? textLocation(source.charStart, source.charEnd ?? source.charStart)
                         : source.sectionHref ?? null;
-                      void openReaderWindow(chat.book_id, {
+                      openInReader(chat.book_id, {
                         openChat: true,
                         chatId: chat.id,
                         cfi,

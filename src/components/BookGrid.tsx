@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import type { Book } from "../hooks/useBooks";
-import { openReaderWindow } from "../utils/openReaderWindow";
+import { useOpenBook } from "../hooks/useOpenBook";
 import { deleteBook, markFinished, isPendingPreparation, needsPreparation, retryPreparation, updateBookStatus } from "../hooks/useBooks";
 import BookContextMenu from "./BookContextMenu";
 import EditMetadataModal from "./EditMetadataModal";
@@ -40,6 +40,7 @@ interface BookGridProps {
 
 export default function BookGrid({ books, hasMore, loadMore, loadingMore, activeCollectionId, onBooksChanged }: BookGridProps) {
   const { t } = useTranslation();
+  const openInReader = useOpenBook();
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -61,7 +62,7 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
       onBooksChanged?.();
       return;
     }
-    if (!isPendingPreparation(book)) openReaderWindow(book.id);
+    if (!isPendingPreparation(book)) openInReader(book.id);
   };
 
   return (

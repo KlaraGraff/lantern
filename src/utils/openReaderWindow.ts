@@ -2,12 +2,29 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { createUuid } from "./randomUuid";
 
-interface ReaderWindowOptions {
+/** Where in a book to land, and which panel to land with open. */
+export interface ReaderTarget {
   openVocab?: boolean;
   openChat?: boolean;
   chatId?: string;
   cfi?: string | null;
   page?: number;
+}
+
+/**
+ * The reader's address. The same string serves both ways of getting there — a
+ * new window loads it, and a single-window platform navigates to it — so the
+ * two paths cannot drift on what a target means.
+ */
+export function readerUrl(bookId: string, target?: ReaderTarget): string {
+  const params = new URLSearchParams();
+  if (target?.openVocab) params.set("openVocab", "true");
+  if (target?.openChat) params.set("openChat", "true");
+  if (target?.chatId) params.set("chatId", target.chatId);
+  if (target?.cfi) params.set("cfi", target.cfi);
+  if (Number.isInteger(target?.page) && target!.page! >= 0) params.set("page", String(target!.page));
+  const query = params.toString();
+  return query ? `/reader/${bookId}?${query}` : `/reader/${bookId}`;
 }
 
 const DEFAULT_WIDTH = 1440;
@@ -31,9 +48,14 @@ function loadSavedSize(bookId: string): { width: number; height: number } {
   }
 }
 
+/**
+ * Open a book in its own OS window, or focus and re-aim the window already
+ * showing it. Only reachable where windows exist — `useOpenBook` picks between
+ * this and an in-window navigation.
+ */
 export async function openReaderWindow(
   bookId: string,
-  options?: ReaderWindowOptions
+  options?: ReaderTarget
 ): Promise<void> {
   const label = `reader-${bookId}`;
 
@@ -63,23 +85,10 @@ export async function openReaderWindow(
     return;
   }
 
-  // Build URL with optional query params
-  let url = `/reader/${bookId}`;
-  if (options) {
-    const params = new URLSearchParams();
-    if (options.openVocab) params.set("openVocab", "true");
-    if (options.openChat) params.set("openChat", "true");
-    if (options.chatId) params.set("chatId", options.chatId);
-    if (options.cfi) params.set("cfi", options.cfi);
-    if (Number.isInteger(options.page) && options.page! >= 0) params.set("page", String(options.page));
-    const qs = params.toString();
-    if (qs) url += `?${qs}`;
-  }
-
   const { width, height } = loadSavedSize(bookId);
 
   new WebviewWindow(label, {
-    url,
+    url: readerUrl(bookId, options),
     title: "Lantern",
     width,
     height,

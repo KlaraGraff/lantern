@@ -31,7 +31,7 @@ import { timeAgo } from "../utils/timeAgo";
 import PronounceButton from "./speech/PronounceButton";
 import VocabEntryDetails from "./vocab/VocabEntryDetails";
 import { glossOf, parseDefinition } from "./vocab/entry-text";
-import { openReaderWindow } from "../utils/openReaderWindow";
+import { useOpenBook } from "../hooks/useOpenBook";
 import {
   LearningCardModules,
   parseCardDesignConfig,
@@ -114,6 +114,7 @@ const VOCAB_BACKUP_CSV_HEADERS = [
 
 export default function DictionaryContent() {
   const { t } = useTranslation();
+  const openInReader = useOpenBook();
   const { words, remove, updateMastery, recordReview, refresh: refreshWords } = useAllDictionary();
   const { records, total: historyTotal, books: historyBooks, hasMore: historyHasMore, loadingMore: historyLoadingMore, refresh: refreshHistory, loadMore: loadMoreHistory, remove: removeHistoryRecord, clear: clearHistory } = useAllLookupHistory();
   const [sort, setSort] = useState<SortMode>("newest");
@@ -713,7 +714,7 @@ export default function DictionaryContent() {
                     {record.cfi && (
                       <button
                         type="button"
-                        onClick={() => openReaderWindow(record.book_id, { openVocab: true, cfi: record.cfi })}
+                        onClick={() => openInReader(record.book_id, { openVocab: true, cfi: record.cfi })}
                         className="ml-auto flex items-center gap-1 text-accent-text hover:opacity-70 cursor-pointer"
                       >
                         {t("vocab.openInReader")} <FileText size={12} />
@@ -860,7 +861,7 @@ export default function DictionaryContent() {
                     {expanded && (
                       <VocabEntryDetails
                         word={word}
-                        onOpenInReader={() => openReaderWindow(word.book_id, {
+                        onOpenInReader={() => openInReader(word.book_id, {
                           openVocab: true,
                           cfi: word.cfi ?? undefined,
                         })}
@@ -925,7 +926,7 @@ export default function DictionaryContent() {
                         {expanded && (
                           <VocabEntryDetails
                             word={word}
-                            onOpenInReader={() => openReaderWindow(word.book_id, {
+                            onOpenInReader={() => openInReader(word.book_id, {
                               openVocab: true,
                               cfi: word.cfi ?? undefined,
                             })}
