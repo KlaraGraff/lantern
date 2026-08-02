@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Check, Download, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import Select from "../ui/Select";
+import Toggle from "../ui/Toggle";
 import ColorControl from "../ui/ColorControl";
 import {
   customFontFamily,
@@ -94,6 +95,7 @@ export default function ReadingSettings({ settings, loading, refresh, save, save
   const [customTheme, setCustomTheme] = useState<ReaderCustomTheme>(() => parseReaderCustomTheme(null));
   const [fontFamily, setFontFamily] = useState("georgia");
   const [fontSize, setFontSize] = useState(26);
+  const [narrowFontShrink, setNarrowFontShrink] = useState(true);
   const [lineSpacing, setLineSpacing] = useState(1.8);
   const [wordSpacing, setWordSpacing] = useState(0);
   const [margins, setMargins] = useState(0);
@@ -113,6 +115,7 @@ export default function ReadingSettings({ settings, loading, refresh, save, save
     setCustomTheme(parseReaderCustomTheme(settings.reader_custom_theme));
     if (settings.font_family) setFontFamily(settings.font_family);
     if (settings.font_size) setFontSize(parseInt(settings.font_size));
+    setNarrowFontShrink(settings.narrow_font_shrink !== "false");
     if (settings.line_spacing) setLineSpacing(parseFloat(settings.line_spacing));
     if (settings.word_spacing) setWordSpacing(parseInt(settings.word_spacing));
     if (settings.margins) setMargins(parseInt(settings.margins));
@@ -301,6 +304,22 @@ export default function ReadingSettings({ settings, loading, refresh, save, save
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.fontSizeHint")}</p>
         </div>
         <NumberInput value={fontSize} onChange={setFontSize} onBlur={() => save("font_size", String(fontSize))} suffix="px" min={FONT_SIZE_MIN} max={FONT_SIZE_MAX} />
+      </div>
+      {/* Shrink the font on narrow windows */}
+      <div className="flex items-center justify-between h-[73px]">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.narrowFontShrink")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.narrowFontShrinkHint")}</p>
+        </div>
+        <Toggle
+          label={t("settings.layout.narrowFontShrink")}
+          checked={narrowFontShrink}
+          onChange={(v) => {
+            setNarrowFontShrink(v);
+            save("narrow_font_shrink", String(v));
+            showSavedToast();
+          }}
+        />
       </div>
       {/* Line Spacing */}
       <div className="flex items-center justify-between h-[73px]">

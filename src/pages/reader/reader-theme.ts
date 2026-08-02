@@ -2,8 +2,10 @@ import type { CSSProperties } from "react";
 import type { ReaderSettingsState } from "../../components/ReaderSettings";
 import {
   type ReaderCustomTheme,
+  type ReaderMeasure,
   getEffectivePageColumns,
   getFontFamily,
+  getReaderMeasure,
   getThemeStyles,
 } from "../../components/reader-settings";
 import { prefersReducedMotion } from "../../components/page-turn-transition";
@@ -139,7 +141,13 @@ export function getReaderThemeVars(theme: string, customTheme?: ReaderCustomThem
   }
 }
 
-export function getReaderCSS(settings: ReaderSettingsState): string {
+// `fontSize` is passed separately because the rendered size can be smaller than
+// the stored one on a narrow viewport (see getReaderMeasure). Callers that know
+// the viewport pass the resolved size; the rest fall back to the stored one.
+export function getReaderCSS(
+  settings: ReaderSettingsState,
+  fontSize: number = settings.fontSize,
+): string {
   const themeColors = getThemeStyles(settings.theme, settings.customTheme);
   const fontFamily = getFontFamily(settings.font);
   const letterSpacing = settings.charSpacing === 0 ? "normal" : `${settings.charSpacing * 0.01}em`;
@@ -155,7 +163,7 @@ export function getReaderCSS(settings: ReaderSettingsState): string {
       background-color: ${themeColors.body} !important;
       color: ${themeColors.text} !important;
       font-family: ${fontFamily} !important;
-      font-size: ${settings.fontSize}px !important;
+      font-size: ${fontSize}px !important;
       line-height: ${settings.lineSpacing} !important;
       letter-spacing: ${letterSpacing} !important;
       word-spacing: ${wordSpacing} !important;
@@ -209,10 +217,10 @@ export function applyReflowLayout(
   settings: ReaderSettingsState,
   viewportWidth: number,
   viewportHeight: number,
-): void {
+): ReaderMeasure {
   const isPaginated = settings.readingMode === "paginated";
-  const width = Math.max(1, viewportWidth);
-  const effectiveColumns = getEffectivePageColumns(settings, width, viewportHeight);
+  const measure = getReaderMeasure(settings, viewportWidth, viewportHeight);
+  const effectiveColumns = measure.columns;
   // Foliate lays the page out on a grid whose content track is
   // `max-inline-size * columns - gap`, flanked by `gap`-derived margin tracks
   // (see the #top grid-template in foliate-js/paginator.js). Sizing a column to
@@ -224,8 +232,15 @@ export function applyReflowLayout(
   // leaves the page anchored mid-column (text clipped at the left edge).
   // Reserving the gap up front keeps the grid exactly fitting, so the margin is
   // precisely `settings.margins` on each side and the column count is stable.
-  const marginFraction = Math.min(Math.max(settings.margins, 0), 100) / 100;
-  const columnWidth = (width * (1 - marginFraction)) / effectiveColumns;
+  //
+  // The width is additionally capped at MEASURE_EM_CAP ems (getReaderMeasure),
+  // because a full-width column on a large display runs to ~190 characters per
+  // line — far past the 45-75 that reads comfortably. Foliate's own 720px cap
+  // used to do this job; sizing the column here removed it. The surplus width
+  // is absorbed by the outer `minmax(half-gap, 1fr)` tracks of the same grid,
+  // which are equal, so the capped column stays centred. `settings.margins` is
+  // therefore a minimum margin, not an exact one.
+  const columnWidth = measure.columnWidth;
   // Foliate re-renders synchronously from attributeChangedCallback, but only
   // for `flow` and `max-inline-size` — `gap` and `max-column-count` merely
   // write CSS variables. Setting `flow` first therefore rendered once with the
@@ -260,6 +275,7 @@ export function applyReflowLayout(
       && settings.pageTurnAnimation === "slide"
       && !prefersReducedMotion(),
   );
+  return measure;
 }
 
 export function applyPdfLayout(

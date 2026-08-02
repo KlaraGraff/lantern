@@ -1,7 +1,12 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getEffectivePageColumns, getFontFamily, getThemeStyles } from "./reader-settings";
+import {
+  getEffectivePageColumns,
+  getFontFamily,
+  getTextReaderMeasure,
+  getThemeStyles,
+} from "./reader-settings";
 import {
   effectiveAutomaticMarkerStyle,
   markerFontFamily,
@@ -573,6 +578,12 @@ function TextBookReader({
   const [effectivePageColumns, setEffectivePageColumns] = useState<PageColumns>(() => (
     isPaginated ? settings.pageColumns : 1
   ));
+  const [containerWidth, setContainerWidth] = useState(0);
+  const measureSettings = useMemo(() => ({
+    margins: settings.margins,
+    fontSize: settings.fontSize,
+    narrowFontShrink: settings.narrowFontShrink,
+  }), [settings.fontSize, settings.margins, settings.narrowFontShrink]);
   const pageTurnAnimation = settings.pageTurnAnimation;
   const documentBlocks = useMemo(
     () => document?.chunks.flatMap((chunk) => chunk.blocks) ?? [],
@@ -611,6 +622,7 @@ function TextBookReader({
       container.clientHeight,
     );
     setEffectivePageColumns((current) => current === next ? current : next);
+    setContainerWidth((current) => current === container.clientWidth ? current : container.clientWidth);
   }, [settings.pageColumns, settings.readingMode]);
 
   useLayoutEffect(() => {
@@ -741,15 +753,17 @@ function TextBookReader({
     const article = articleRef.current;
     if (!container || !article) return;
 
-    const marginPercent = Math.min(30, Math.max(0, settings.margins));
     if (isPaginated) {
       if (container.scrollTop !== 0) container.scrollTop = 0;
-      const pageSlotWidth = container.clientWidth / effectivePageColumns;
-      const pageMargin = Math.max(12, pageSlotWidth * marginPercent / 100);
       // The live reader viewport is the hard upper bound. A fixed minimum here
       // would make narrow two-page layouts wider than their allocated slot.
-      const columnWidth = Math.max(1, pageSlotWidth - pageMargin * 2);
-      const columnGap = pageMargin * 2;
+      const measure = getTextReaderMeasure(
+        measureSettings,
+        container.clientWidth,
+        effectivePageColumns,
+      );
+      const columnWidth = Math.max(1, measure.columnWidth);
+      const columnGap = measure.padding * 2;
       const widthValue = `${columnWidth}px`;
       const gapValue = `${columnGap}px`;
       if (article.style.columnWidth !== widthValue) article.style.columnWidth = widthValue;
@@ -782,7 +796,7 @@ function TextBookReader({
     });
     renderedElementsByStartRef.current = byStart;
     renderedBlocksRef.current = entries;
-  }, [documentBlocksByStart, effectivePageColumns, isPaginated, settings.margins]);
+  }, [documentBlocksByStart, effectivePageColumns, isPaginated, measureSettings]);
 
   const scheduleRenderedBlockCacheUpdate = useCallback(() => {
     if (layoutFrameRef.current !== null) return;
@@ -1355,16 +1369,24 @@ function TextBookReader({
     };
   }, [finalizePointerSelection]);
 
+  // Same measure rules as the EPUB reader: the column never runs wider than
+  // MEASURE_EM_CAP ems, and on a viewport too narrow for a comfortable line the
+  // rendered size shrinks. Render-time only — `settings` keeps the user's number.
+  const measure = useMemo(
+    () => getTextReaderMeasure(measureSettings, containerWidth, effectivePageColumns),
+    [containerWidth, effectivePageColumns, measureSettings],
+  );
+
   const typography = useMemo(() => ({
     backgroundColor: getThemeStyles(settings.theme, settings.customTheme).body,
     color: getThemeStyles(settings.theme, settings.customTheme).text,
     fontFamily: getFontFamily(settings.font),
-    fontSize: `${settings.fontSize}px`,
+    fontSize: `${measure.fontSize}px`,
     lineHeight: settings.lineSpacing,
     letterSpacing: settings.charSpacing === 0 ? undefined : `${settings.charSpacing * 0.01}em`,
     wordSpacing: settings.wordSpacing === 0 ? undefined : `${settings.wordSpacing * 0.01}em`,
     filter: `brightness(${settings.brightness / 100})`,
-  }), [settings]);
+  }), [measure.fontSize, settings]);
 
   const renderedDocument = useMemo(() => document?.chunks.map((chunk, chunkIndex) => (
     <section key={chunkIndex}>
@@ -1452,8 +1474,8 @@ function TextBookReader({
           ref={articleRef}
           className={`w-full py-12 ${isPaginated ? "h-full" : "min-h-full"}`}
           style={{
-            paddingLeft: `max(12px, ${isPaginated ? settings.margins / effectivePageColumns : settings.margins}%)`,
-            paddingRight: `max(12px, ${isPaginated ? settings.margins / effectivePageColumns : settings.margins}%)`,
+            paddingLeft: `${measure.padding}px`,
+            paddingRight: `${measure.padding}px`,
             columnFill: isPaginated ? "auto" : undefined,
           }}
         >

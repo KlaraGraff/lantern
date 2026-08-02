@@ -31,6 +31,7 @@ export interface ReaderSettingsState {
   customTheme: ReaderCustomTheme;
   font: ReaderFont;
   fontSize: number; // px
+  narrowFontShrink: boolean; // shrink the rendered size when the column is too narrow
   brightness: number; // 0-100
   readingMode: ReadingMode;
   pageColumns: PageColumns; // 1 = single page, 2 = two pages side by side

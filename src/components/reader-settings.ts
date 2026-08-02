@@ -6,6 +6,36 @@ import type { PageColumns, ReaderSettingsState } from "./ReaderSettings";
 export const FONT_SIZE_MIN = 12;
 export const FONT_SIZE_MAX = 48;
 
+// Comfortable reading is 45-75 characters per line, and that range converts to
+// almost the same em width in both scripts we care about: 66 Latin characters
+// at ~0.5em average advance is ~33em, and ~35 CJK characters at 1em is ~35em.
+// So one cap serves both. Fixed on purpose — this is a typographic constant,
+// not a taste knob, and exposing it as a setting only invites bad values.
+export const MEASURE_EM_CAP = 34;
+// The other end of the same range: 22em is ~45 Latin characters. Below this a
+// width cap cannot help, because there is no surplus width to give away — only
+// a smaller font can bring the line back into range.
+export const MEASURE_EM_MIN = 22;
+
+/** Clamp a reading column to the maximum comfortable line length. */
+export function capMeasureWidth(availableWidth: number, fontSize: number): number {
+  return Math.min(availableWidth, MEASURE_EM_CAP * fontSize);
+}
+
+/**
+ * Font size to render at, given how much width one column actually gets.
+ * Only ever shrinks: a size the user chose on a wide screen must never be
+ * forced up on a narrow one. Render-time only — never written back to settings.
+ */
+export function getEffectiveFontSize(
+  settings: Pick<ReaderSettingsState, "fontSize" | "narrowFontShrink">,
+  availableWidth: number,
+): number {
+  if (!settings.narrowFontShrink) return settings.fontSize;
+  const fitted = Math.floor(Math.max(1, availableWidth) / MEASURE_EM_MIN);
+  return Math.min(settings.fontSize, Math.max(FONT_SIZE_MIN, fitted));
+}
+
 export interface ReaderFontOption {
   id: string;
   label: string;
@@ -67,6 +97,56 @@ export function getEffectivePageColumns(
 ): PageColumns {
   if (settings.readingMode !== "paginated" || settings.pageColumns !== 2) return 1;
   return Math.max(1, viewportWidth) > Math.max(1, viewportHeight) ? 2 : 1;
+}
+
+export interface ReaderMeasure {
+  columns: PageColumns;
+  /** Size to render at; equals the user's size unless the column is too narrow. */
+  fontSize: number;
+  /** Width of one text column, capped at the comfortable line length. */
+  columnWidth: number;
+}
+
+/**
+ * Resolve the geometry of one reflowable page: how many columns, how wide each
+ * one may be, and at what size to set the text. `settings.margins` is the
+ * minimum margin — when the cap binds, the surplus widens the margin further.
+ */
+export function getReaderMeasure(
+  settings: Pick<ReaderSettingsState,
+    "readingMode" | "pageColumns" | "margins" | "fontSize" | "narrowFontShrink">,
+  viewportWidth: number,
+  viewportHeight: number,
+): ReaderMeasure {
+  const width = Math.max(1, viewportWidth);
+  const columns = getEffectivePageColumns(settings, width, viewportHeight);
+  const marginFraction = Math.min(Math.max(settings.margins, 0), 100) / 100;
+  const available = (width * (1 - marginFraction)) / columns;
+  const fontSize = getEffectiveFontSize(settings, available);
+  return { columns, fontSize, columnWidth: capMeasureWidth(available, fontSize) };
+}
+
+/** Smallest gutter the plain-text reader keeps, whatever the margin setting. */
+export const TEXT_READER_MIN_PADDING = 12;
+
+/**
+ * The same measure rules for the plain-text reader, which lays itself out with
+ * CSS columns instead of foliate. `padding` is the gutter on each side of a page
+ * slot; it grows past the margin setting when the width cap frees up space, so
+ * the column stays centred in its slot exactly as foliate's grid centres its own.
+ */
+export function getTextReaderMeasure(
+  settings: Pick<ReaderSettingsState, "margins" | "fontSize" | "narrowFontShrink">,
+  containerWidth: number,
+  columns: number,
+): { fontSize: number; columnWidth: number; padding: number } {
+  const slot = Math.max(1, containerWidth) / Math.max(1, columns);
+  const marginPercent = Math.min(30, Math.max(0, settings.margins));
+  const minPadding = Math.max(TEXT_READER_MIN_PADDING, slot * marginPercent / 100);
+  const available = Math.max(1, slot - minPadding * 2);
+  const fontSize = getEffectiveFontSize(settings, available);
+  const columnWidth = capMeasureWidth(available, fontSize);
+  return { fontSize, columnWidth, padding: minPadding + (available - columnWidth) / 2 };
 }
 
 export function getReaderCapabilities(format?: string): ReaderCapabilities {

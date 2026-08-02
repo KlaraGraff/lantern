@@ -9,6 +9,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type { ReaderSettingsState } from "../../components/ReaderSettings";
 import {
   getEffectivePageColumns,
+  getReaderMeasure,
   getThemeStyles,
   type ReaderCapabilities,
 } from "../../components/reader-settings";
@@ -228,6 +229,9 @@ export function useFoliateView({
 }: UseFoliateViewOptions) {
   const backButtonTimerRef = useRef<number | null>(null);
   const loadedInteractionDocumentsRef = useRef(new WeakSet<Document>());
+  // Size the reader stylesheet was last written with. Tracked because the
+  // narrow-viewport shrink can change it on resize alone.
+  const appliedFontSizeRef = useRef(readerSettings.fontSize);
   const pdfReadingMode = book?.format === "pdf" ? readerSettings.readingMode : null;
 
   useEffect(() => {
@@ -362,7 +366,12 @@ export function useFoliateView({
       }
       if (cancelled) return;
       if (capabilities.supportsReflowSettings) {
-        applyReflowLayout(view, readerSettings, container.clientWidth, container.clientHeight);
+        appliedFontSizeRef.current = applyReflowLayout(
+          view,
+          readerSettings,
+          container.clientWidth,
+          container.clientHeight,
+        ).fontSize;
       } else if (capabilities.supportsSpread) {
         if (book.format === "pdf") {
           applyPdfLayout(view, readerSettings, container.clientWidth, container.clientHeight);
@@ -382,7 +391,7 @@ export function useFoliateView({
         view.renderer.setAttribute("zoom", zoomAttr);
       }
       if (capabilities.supportsReflowSettings) {
-        view.renderer.setStyles?.(getReaderCSS(readerSettings));
+        view.renderer.setStyles?.(getReaderCSS(readerSettings, appliedFontSizeRef.current));
       }
 
       if (Array.isArray(view.book.toc)) {
@@ -694,8 +703,12 @@ export function useFoliateView({
     const view = viewRef.current;
     if (!view?.renderer) return;
     if (capabilities.supportsReflowSettings) {
-      view.renderer.setStyles?.(getReaderCSS(readerSettings));
       const viewport = viewerRef.current ?? view;
+      // Styles first, layout second: the columnize pass inside applyReflowLayout
+      // has to measure the document at its final font size.
+      const measure = getReaderMeasure(readerSettings, viewport.clientWidth, viewport.clientHeight);
+      appliedFontSizeRef.current = measure.fontSize;
+      view.renderer.setStyles?.(getReaderCSS(readerSettings, measure.fontSize));
       applyReflowLayout(view, readerSettings, viewport.clientWidth, viewport.clientHeight);
     } else if (capabilities.supportsSpread) {
       if (book?.format === "pdf") {
@@ -720,6 +733,19 @@ export function useFoliateView({
         // Foliate re-columnizes synchronously inside these setAttribute calls,
         // so this delta is the real cost of the reflow the user feels on drag.
         const started = performance.now();
+        // A resize can cross the narrow-viewport threshold, which changes the
+        // size the text renders at. Rewriting the stylesheet costs a reflow, so
+        // only do it when that resolved size actually moved — and do it before
+        // the columnize pass, which has to measure the final size.
+        const measure = getReaderMeasure(
+          readerSettingsRef.current,
+          viewer.clientWidth,
+          viewer.clientHeight,
+        );
+        if (measure.fontSize !== appliedFontSizeRef.current) {
+          appliedFontSizeRef.current = measure.fontSize;
+          view.renderer.setStyles?.(getReaderCSS(readerSettingsRef.current, measure.fontSize));
+        }
         applyReflowLayout(
           view,
           readerSettingsRef.current,

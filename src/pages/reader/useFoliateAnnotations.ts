@@ -35,7 +35,7 @@ import {
   installCustomFontFacesInDocument,
   type CustomFontRecord,
 } from "../../components/custom-fonts";
-import { getFontFamily } from "../../components/reader-settings";
+import { getFontFamily, getReaderMeasure } from "../../components/reader-settings";
 import { getReaderCSS } from "./reader-theme";
 import { expandWordForms } from "../../components/word-forms";
 import type { AnnotationStyleKind, FoliateView } from "./foliate-types";
@@ -419,7 +419,8 @@ export function useFoliateAnnotations({
         if (!current.font.startsWith("custom-") || available.has(current.font)) return current;
         const next = { ...current, font: "system" };
         readerSettingsRef.current = next;
-        if (bookId) localStorage.setItem(`reader-settings-${bookId}`, JSON.stringify(next));
+        // Persistence is left to useReaderSettingsSync: writing the whole state
+        // here would re-freeze the typography fields that follow global settings.
         return next;
       });
       const storedMarkerStyle = await invoke<string | null>("get_setting", {
@@ -434,14 +435,20 @@ export function useFoliateAnnotations({
       for (const { doc } of view.renderer?.getContents?.() ?? []) {
         if (doc) installCustomFontFacesInDocument(doc);
       }
-      if (supportsReflowSettings) view.renderer?.setStyles?.(getReaderCSS(readerSettingsRef.current));
+      if (supportsReflowSettings && view.renderer) {
+        const measure = getReaderMeasure(
+          readerSettingsRef.current,
+          view.renderer.clientWidth,
+          view.renderer.clientHeight,
+        );
+        view.renderer.setStyles?.(getReaderCSS(readerSettingsRef.current, measure.fontSize));
+      }
       applyFoliateMarkerStyles();
     };
     window.addEventListener("custom-font-faces-loaded", refreshFonts);
     return () => window.removeEventListener("custom-font-faces-loaded", refreshFonts);
   }, [
     applyFoliateMarkerStyles,
-    bookId,
     markMatchingWordsRef,
     markerStyleRef,
     readerSettingsRef,

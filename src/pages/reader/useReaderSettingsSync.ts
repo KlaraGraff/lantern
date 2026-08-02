@@ -40,7 +40,39 @@ const readerPreferenceSettingKeys = {
   showPageNumbers: "show_page_numbers",
   previousPageBinding: "previous_page_binding",
   nextPageBinding: "next_page_binding",
+  narrowFontShrink: "narrow_font_shrink",
 } as const;
+
+// Typography that the Settings page owns globally *and* the reader panel can
+// override for one book. Writing these unconditionally froze every book that had
+// ever been opened at the values of its first open: `bookSettings.fontSize ??
+// global.font_size` then never fell through again. They are now stored only once
+// the user changes them in the reader, and `typographyOverrides` records that
+// intent explicitly — a blob without it is a snapshot from the old behaviour and
+// carries no overrides, so those books follow the Settings page again.
+// `theme` is deliberately not in this list. It has the same problem, but which
+// way it should resolve is a separate open decision.
+const perBookTypographyKeys = ["font", "fontSize", "lineSpacing", "wordSpacing"] as const;
+type PerBookTypographyKey = (typeof perBookTypographyKeys)[number];
+
+export interface StoredReaderSettings extends Partial<ReaderSettingsState> {
+  typographyOverrides?: PerBookTypographyKey[];
+}
+
+function readStoredOverrides(bookId: string | undefined): Set<PerBookTypographyKey> {
+  if (!bookId) return new Set();
+  const saved = localStorage.getItem(`reader-settings-${bookId}`);
+  if (!saved) return new Set();
+  try {
+    const parsed = JSON.parse(saved) as StoredReaderSettings;
+    return new Set((parsed.typographyOverrides ?? []).filter(
+      (key): key is PerBookTypographyKey => perBookTypographyKeys.includes(key),
+    ));
+  } catch {
+    // A corrupt blob simply means no overrides; Reader.tsx clears the key.
+    return new Set();
+  }
+}
 
 function booleanSetting(value: string | undefined, fallback: boolean): boolean {
   if (value === "true") return true;
@@ -76,6 +108,7 @@ function createDefaultReaderSettings(): ReaderSettingsState {
     customTheme: parseReaderCustomTheme(null),
     font: "palatino",
     fontSize: 26,
+    narrowFontShrink: true,
     brightness: 100,
     readingMode: "scrolling",
     pageColumns: 2,
@@ -98,9 +131,14 @@ function createDefaultReaderSettings(): ReaderSettingsState {
 
 export function mergeStoredReaderSettings(
   previous: ReaderSettingsState,
-  bookSettings: Partial<ReaderSettingsState>,
+  storedSettings: StoredReaderSettings,
   globalSettings: Record<string, string>,
 ): ReaderSettingsState {
+  const overrides = new Set(storedSettings.typographyOverrides ?? []);
+  const bookSettings: Partial<ReaderSettingsState> = { ...storedSettings };
+  for (const key of perBookTypographyKeys) {
+    if (!overrides.has(key)) delete bookSettings[key];
+  }
   const requestedFont = bookSettings.font
     || (globalSettings.font_family as ReaderSettingsState["font"])
     || previous.font;
@@ -117,6 +155,8 @@ export function mergeStoredReaderSettings(
     font: isReaderFontAvailable(requestedFont) ? requestedFont : "system",
     fontSize: bookSettings.fontSize
       ?? (globalSettings.font_size ? parseInt(globalSettings.font_size) : previous.fontSize),
+    // Global-only: the reader panel has no per-book control for it.
+    narrowFontShrink: booleanSetting(globalSettings.narrow_font_shrink, previous.narrowFontShrink),
     readingMode: bookSettings.readingMode
       || readingModeSetting(globalSettings.reading_mode, previous.readingMode),
     pageTurnAnimation: bookSettings.pageTurnAnimation
@@ -162,6 +202,13 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
   const settingsLoadedBookRef = useRef<string | null>(null);
   const saveTimerRef = useRef<number | null>(null);
   const pendingPreferencesRef = useRef<Record<string, string>>({});
+  const typographyOverridesRef = useRef<Set<PerBookTypographyKey>>(new Set());
+
+  // Seed from whatever the book already has. Runs before the first write, which
+  // is gated on the async settings load finishing, so nothing is lost.
+  useEffect(() => {
+    typographyOverridesRef.current = readStoredOverrides(bookId);
+  }, [bookId]);
 
   useEffect(() => {
     readerSettingsRef.current = readerSettings;
@@ -204,6 +251,11 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
     const previous = readerSettingsRef.current;
     readerSettingsRef.current = next;
     setReaderSettings(next);
+    // This callback only runs for edits made in the reader's own settings panel,
+    // so a differing value here is exactly the per-book override signal.
+    for (const key of perBookTypographyKeys) {
+      if (previous[key] !== next[key]) typographyOverridesRef.current.add(key);
+    }
     const changed: Record<string, string> = {};
     if (previous.theme !== next.theme) changed[readerPreferenceSettingKeys.theme] = next.theme;
     if (previous.customTheme.color !== next.customTheme.color
@@ -263,6 +315,10 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
             || current.previousPageBinding,
           nextPageBinding: values[readerPreferenceSettingKeys.nextPageBinding]
             || current.nextPageBinding,
+          narrowFontShrink: booleanSetting(
+            values[readerPreferenceSettingKeys.narrowFontShrink],
+            current.narrowFontShrink,
+          ),
         };
         readerSettingsRef.current = next;
         return next;
@@ -279,7 +335,15 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
 
   useEffect(() => {
     if (settingsLoadedBookRef.current !== bookId) return;
-    localStorage.setItem(`reader-settings-${bookId}`, JSON.stringify(readerSettings));
+    const overrides = typographyOverridesRef.current;
+    const stored: StoredReaderSettings = { ...readerSettings };
+    for (const key of perBookTypographyKeys) {
+      if (!overrides.has(key)) delete stored[key];
+    }
+    // Never a per-book value: it is a global preference with no reader control.
+    delete stored.narrowFontShrink;
+    if (overrides.size > 0) stored.typographyOverrides = [...overrides];
+    localStorage.setItem(`reader-settings-${bookId}`, JSON.stringify(stored));
   }, [bookId, readerSettings]);
 
   return {
