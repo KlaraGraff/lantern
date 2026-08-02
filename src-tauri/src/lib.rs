@@ -260,7 +260,10 @@ pub fn mcp_stdio_main() {
                 db
             }
             Err(e) => {
-                eprintln!("lantern mcp: failed to open (rw) {}: {e}", db_path.display());
+                eprintln!(
+                    "lantern mcp: failed to open (rw) {}: {e}",
+                    db_path.display()
+                );
                 std::process::exit(1);
             }
         };
@@ -949,6 +952,10 @@ pub fn run() {
             commands::mcp::mcp_set_integration,
             commands::mcp::mcp_config_snippet,
             commands::mcp::mcp_set_write_access,
+            commands::mcp::mcp_list_pending_approvals,
+            commands::mcp::mcp_get_approval,
+            commands::mcp::mcp_approve_action,
+            commands::mcp::mcp_reject_action,
             // Sync
             commands::sync::sync_status,
             commands::sync::sync_set_shared_dir,

@@ -1,5 +1,5 @@
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::tool;
 use rmcp::tool_router;
 use rmcp::ErrorData;
@@ -30,17 +30,16 @@ pub struct DeleteCollectionArgs {
     pub id: String,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct CollectionBookArgs {
-    /// Collection ID (UUID).
-    pub collection_id: String,
-    /// Book ID (UUID).
-    pub book_id: String,
-}
-
 #[tool_router(router = collections_write_router, vis = "pub(crate)")]
 impl LanternMcpHandler {
-    #[tool(description = "Create a new collection.")]
+    #[tool(
+        description = "Create a new collection.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            open_world_hint = false
+        )
+    )]
     pub async fn create_collection(
         &self,
         Parameters(CreateCollectionArgs { name }): Parameters<CreateCollectionArgs>,
@@ -49,10 +48,19 @@ impl LanternMcpHandler {
         let collection = collections::do_create_collection(&name, &self.state.db, sync)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         self.state.notify("collections", "created", &collection.id);
-        Ok(CallToolResult::success(vec![Content::json(&collection)?]))
+        Ok(CallToolResult::success(vec![ContentBlock::json(
+            &collection,
+        )?]))
     }
 
-    #[tool(description = "Rename an existing collection.")]
+    #[tool(
+        description = "Rename an existing collection.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            open_world_hint = false
+        )
+    )]
     pub async fn rename_collection(
         &self,
         Parameters(RenameCollectionArgs { id, name }): Parameters<RenameCollectionArgs>,
@@ -61,13 +69,18 @@ impl LanternMcpHandler {
         collections::do_rename_collection(&id, &name, &self.state.db, sync)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         self.state.notify("collections", "updated", &id);
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "Collection {id} renamed to \"{name}\"."
         ))]))
     }
 
     #[tool(
-        description = "Delete a collection. Books in the collection are NOT deleted — only the collection grouping is removed."
+        description = "Delete a collection. Books in the collection are NOT deleted — only the collection grouping is removed.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            open_world_hint = false
+        )
     )]
     pub async fn delete_collection(
         &self,
@@ -77,64 +90,8 @@ impl LanternMcpHandler {
         collections::do_delete_collection(&id, &self.state.db, sync)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
         self.state.notify("collections", "deleted", &id);
-        Ok(CallToolResult::success(vec![Content::text(format!(
+        Ok(CallToolResult::success(vec![ContentBlock::text(format!(
             "Collection {id} deleted."
-        ))]))
-    }
-
-    #[tool(
-        description = "Deprecated: use `add_books_to_collection`. Add one book to a collection."
-    )]
-    pub async fn add_book_to_collection(
-        &self,
-        Parameters(CollectionBookArgs {
-            collection_id,
-            book_id,
-        }): Parameters<CollectionBookArgs>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let response =
-            self.run_collection_membership(collection_id.clone(), vec![book_id.clone()], true)?;
-        let result = response.results.into_iter().next().ok_or_else(|| {
-            ErrorData::internal_error("Batch collection update returned no result", None)
-        })?;
-        if !matches!(result.status.as_str(), "ok" | "noop") {
-            return Err(ErrorData::invalid_params(
-                result.message.unwrap_or_else(|| {
-                    format!("Book {book_id} was not added to collection {collection_id}")
-                }),
-                None,
-            ));
-        }
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "Book {book_id} added to collection {collection_id}."
-        ))]))
-    }
-
-    #[tool(
-        description = "Deprecated: use `remove_books_from_collection`. Remove one book from a collection without deleting it."
-    )]
-    pub async fn remove_book_from_collection(
-        &self,
-        Parameters(CollectionBookArgs {
-            collection_id,
-            book_id,
-        }): Parameters<CollectionBookArgs>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let response =
-            self.run_collection_membership(collection_id.clone(), vec![book_id.clone()], false)?;
-        let result = response.results.into_iter().next().ok_or_else(|| {
-            ErrorData::internal_error("Batch collection update returned no result", None)
-        })?;
-        if !matches!(result.status.as_str(), "ok" | "noop") {
-            return Err(ErrorData::invalid_params(
-                result.message.unwrap_or_else(|| {
-                    format!("Book {book_id} was not removed from collection {collection_id}")
-                }),
-                None,
-            ));
-        }
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "Book {book_id} removed from collection {collection_id}."
         ))]))
     }
 }

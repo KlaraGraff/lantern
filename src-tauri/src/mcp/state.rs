@@ -4,6 +4,9 @@ use std::sync::Arc;
 use crate::db::Db;
 use crate::sync::writer::SyncWriter;
 
+use super::approval::ApprovalStore;
+use super::notify;
+
 /// Shared state handed to every MCP request handler.
 ///
 /// `Db` is already cheaply `Clone` (its inner `Connection` and
@@ -18,6 +21,7 @@ use crate::sync::writer::SyncWriter;
 pub struct McpState {
     pub db: Db,
     pub sync: Option<Arc<SyncWriter>>,
+    pub approvals: Option<ApprovalStore>,
     notify_path: Option<PathBuf>,
 }
 
@@ -27,12 +31,11 @@ impl McpState {
     /// sentinel were placed under the iCloud dir (which `db.data_dir`
     /// points to after migration), the watcher would never fire.
     pub fn new(db: Db, sync: Option<SyncWriter>, notify_dir: Option<&Path>) -> Self {
-        let notify_path = sync
-            .as_ref()
-            .and_then(|_| notify_dir.map(|d| d.join(".mcp-notify")));
+        let notify_path = notify_dir.map(|d| d.join(".mcp-notify"));
         Self {
             db,
             sync: sync.map(Arc::new),
+            approvals: notify_dir.map(ApprovalStore::new),
             notify_path,
         }
     }
@@ -44,11 +47,6 @@ impl McpState {
         let Some(path) = &self.notify_path else {
             return;
         };
-        let ts = chrono::Utc::now().timestamp_millis();
-        let payload =
-            format!(r#"{{"domain":"{domain}","action":"{action}","id":"{id}","ts":{ts}}}"#);
-        if let Err(e) = std::fs::write(path, payload.as_bytes()) {
-            eprintln!("mcp: failed to write notify sentinel: {e}");
-        }
+        notify::write_sentinel(path, domain, action, id);
     }
 }

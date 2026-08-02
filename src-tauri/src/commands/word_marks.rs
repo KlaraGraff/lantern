@@ -112,6 +112,15 @@ pub fn set_word_forms(
     source: Option<String>,
     db: State<'_, Db>,
 ) -> AppResult<Vec<String>> {
+    set_word_forms_inner(&word, forms, source, &db)
+}
+
+pub(crate) fn set_word_forms_inner(
+    word: &str,
+    forms: Vec<String>,
+    source: Option<String>,
+    db: &Db,
+) -> AppResult<Vec<String>> {
     let normalized_word = normalize_learning_term(&word);
     if normalized_word.is_empty() || normalized_word.chars().count() > 256 {
         return Err(AppError::Other("WORD_FORMS_WORD_INVALID".to_string()));
@@ -137,6 +146,30 @@ pub fn set_word_forms(
         params![normalized_word, forms_json, source, timestamp],
     )?;
     Ok(forms)
+}
+
+pub(crate) fn delete_word_forms_inner(words: &[String], db: &Db) -> AppResult<usize> {
+    let normalized = words
+        .iter()
+        .map(|word| normalize_learning_term(word))
+        .collect::<Vec<_>>();
+    if normalized.iter().any(|word| word.is_empty()) {
+        return Err(AppError::Other("WORD_FORMS_WORD_INVALID".to_string()));
+    }
+    let mut conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
+    let transaction = conn.transaction()?;
+    let mut deleted = 0;
+    for word in normalized {
+        deleted += transaction.execute(
+            "DELETE FROM word_forms WHERE normalized_word = ?1",
+            params![word],
+        )?;
+    }
+    transaction.commit()?;
+    Ok(deleted)
 }
 
 #[tauri::command]
@@ -217,7 +250,7 @@ fn prepare_rule(
     Ok((id, normalized_word, display_word, match_mode, color))
 }
 
-fn ensure_word_mark_rule_inner(
+pub(crate) fn ensure_word_mark_rule_inner(
     book_id: &str,
     word: &str,
     color: Option<&str>,
@@ -330,7 +363,7 @@ fn ensure_word_mark_rule_inner(
     })
 }
 
-fn set_word_mark_rule_enabled_inner(
+pub(crate) fn set_word_mark_rule_enabled_inner(
     book_id: &str,
     word: &str,
     enabled: bool,
@@ -538,7 +571,7 @@ pub fn list_word_marks(book_id: String, db: State<'_, Db>) -> AppResult<Vec<Word
     query_word_marks(&db, &book_id)
 }
 
-fn set_word_mark_exception_inner(
+pub(crate) fn set_word_mark_exception_inner(
     book_id: &str,
     word: &str,
     location: &str,
@@ -671,7 +704,7 @@ pub fn list_word_mark_exceptions(
     query_word_mark_exceptions(&db, &book_id)
 }
 
-fn set_lookup_occurrence_mark_inner(
+pub(crate) fn set_lookup_occurrence_mark_inner(
     book_id: &str,
     word: &str,
     location: &str,
@@ -843,7 +876,11 @@ pub fn list_lookup_occurrence_marks(
     Ok(rows)
 }
 
-fn clear_lookup_marks_for_book_inner(book_id: &str, db: &Db, sync: &SyncWriter) -> AppResult<()> {
+pub(crate) fn clear_lookup_marks_for_book_inner(
+    book_id: &str,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<()> {
     validate_entity_id(book_id)?;
     let timestamp = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();

@@ -1,5 +1,5 @@
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::tool;
 use rmcp::tool_router;
 use rmcp::ErrorData;
@@ -24,6 +24,8 @@ impl LanternMcpHandler {
     ) -> Result<CallToolResult, ErrorData> {
         let bookmarks = bookmarks::query_bookmarks(&self.state.db, &book_id)
             .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::json(&bookmarks)?]))
+        Ok(CallToolResult::success(vec![ContentBlock::json(
+            &bookmarks,
+        )?]))
     }
 }

@@ -1,5 +1,5 @@
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::tool;
 use rmcp::tool_router;
 use rmcp::ErrorData;
@@ -53,6 +53,6 @@ impl LanternMcpHandler {
             out.push(ChatWithMessages { chat, messages });
         }
 
-        Ok(CallToolResult::success(vec![Content::json(&out)?]))
+        Ok(CallToolResult::success(vec![ContentBlock::json(&out)?]))
     }
 }

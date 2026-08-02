@@ -5,21 +5,35 @@
 //!     `McpState` so tool methods (defined across `mcp/tools/*.rs` via
 //!     `#[tool_router]` impl blocks) can read the DB.
 //!   - `tool_router()` — aggregator merging every per-file router.
-//!   - `ServerHandler` impl (annotated `#[tool_handler]`) which
-//!     auto-generates `call_tool` / `list_tools` against the merged
-//!     router.
+//!   - `ServerHandler` impl: `call_tool` applies the high-risk approval
+//!     gate before routing, while `#[tool_handler]` generates the catalog
+//!     methods against the merged router.
 //!   - `serve_stdio()` — drives the handler over `(stdin, stdout)` for
 //!     the `lantern mcp` subcommand. The Tauri app does NOT run an MCP
 //!     server in-process; AI clients (Claude Code, Codex) launch this
 //!     subprocess themselves.
 
 use rmcp::handler::server::router::tool::ToolRouter;
+use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::handler::server::ServerHandler;
-use rmcp::model::{Implementation, ProtocolVersion, ServerCapabilities, ServerInfo};
+use rmcp::model::{
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ElicitRequest,
+    ElicitRequestParams, ElicitResult, ElicitationAction, ElicitationSchema, Implementation,
+    InputRequest, InputRequests, InputRequiredResult, JsonObject, ProtocolVersion,
+    ServerCapabilities, ServerInfo,
+};
+use rmcp::service::RequestContext;
 use rmcp::transport::io::stdio;
-use rmcp::{tool_handler, ServiceExt};
+use rmcp::{tool_handler, ErrorData, RoleServer, ServiceExt};
+use serde_json::{json, Value};
 
+use super::approval::{
+    ApiCostDisclosure, ApprovalConfirmation, ApprovalGateOutcome, ApprovalRequest,
+    ApprovalRequestInput,
+};
 use super::state::McpState;
+
+const MRTR_APPROVAL_INPUT_ID: &str = "lantern_high_risk_confirmation";
 
 #[derive(Clone)]
 pub(crate) struct LanternMcpHandler {
@@ -51,12 +65,389 @@ impl LanternMcpHandler {
         r.merge(Self::vocab_router());
         r.merge(Self::chats_router());
         r.merge(Self::collections_write_router());
+        r.merge(Self::annotations_write_router());
+        r.merge(Self::vocab_write_router());
+        r.merge(Self::chats_write_router());
+        r.merge(Self::assessments_write_router());
+        r.merge(Self::configuration_router());
+        r.merge(Self::app_info_router());
+        r.merge(Self::integration_router());
         r
+    }
+
+    async fn dispatch_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        let tcc = ToolCallContext::new(self, request, context);
+        Self::tool_router().call(tcc).await
+    }
+}
+
+fn approval_input_for_tool(
+    name: &str,
+    arguments: &JsonObject,
+) -> Result<Option<ApprovalRequestInput>, ErrorData> {
+    let confirmation = match name {
+        "delete_books" => {
+            let book_ids = required_string_array(arguments, "book_ids")?;
+            if book_ids.is_empty() {
+                return Err(ErrorData::invalid_params(
+                    "`book_ids` must contain at least one item",
+                    None,
+                ));
+            }
+            ApprovalConfirmation::IrreversibleData {
+                effect:
+                    "Permanently delete the selected book files and their associated reading data."
+                        .to_string(),
+                scope: format!("{} book(s): {}.", book_ids.len(), book_ids.join(", ")),
+            }
+        }
+        "delete_collection" => {
+            let collection_id = required_string(arguments, "id")?;
+            ApprovalConfirmation::IrreversibleData {
+                effect: "Permanently delete the collection and its saved membership grouping. Books are not deleted."
+                    .to_string(),
+                scope: format!("Collection {collection_id}."),
+            }
+        }
+        "delete_bookmarks" => irreversible_ids_confirmation(
+            arguments,
+            "Permanently delete the selected bookmarks.",
+            "bookmark",
+        )?,
+        "delete_highlights" => irreversible_ids_confirmation(
+            arguments,
+            "Permanently delete the selected highlights and their attached legacy note text.",
+            "highlight",
+        )?,
+        "delete_notes" => irreversible_ids_confirmation(
+            arguments,
+            "Permanently delete the selected first-class notes.",
+            "note",
+        )?,
+        "delete_chats" => irreversible_ids_confirmation(
+            arguments,
+            "Permanently delete the selected chats and all messages they contain.",
+            "chat",
+        )?,
+        "delete_vocab_words" => irreversible_ids_confirmation(
+            arguments,
+            "Permanently delete the selected vocabulary entries and their review state.",
+            "vocabulary entry",
+        )?,
+        "delete_language_assessments" => irreversible_ids_confirmation(
+            arguments,
+            "Permanently delete the selected language assessment records.",
+            "language assessment",
+        )?,
+        "delete_lookup_records" => irreversible_ids_confirmation(
+            arguments,
+            "Permanently delete the selected dictionary lookup-history records.",
+            "lookup-history record",
+        )?,
+        "delete_word_forms" => {
+            let words = required_non_empty_string_array(arguments, "words")?;
+            ApprovalConfirmation::IrreversibleData {
+                effect: "Permanently delete the saved word-form sets for the selected words."
+                    .to_string(),
+                scope: format!("{} word(s): {}.", words.len(), words.join(", ")),
+            }
+        }
+        "clear_word_marks" => {
+            let book_id = required_string(arguments, "book_id")?;
+            ApprovalConfirmation::IrreversibleData {
+                effect: "Permanently clear all whole-book word marks, occurrence marks, and exclusions for the book."
+                    .to_string(),
+                scope: format!("Book {book_id}."),
+            }
+        }
+        "clear_lookup_history" => {
+            let scope = match arguments.get("book_id") {
+                Some(Value::String(book_id)) if !book_id.trim().is_empty() => {
+                    format!("All lookup history for book {book_id}.")
+                }
+                Some(Value::Null) | None => "All lookup history in the library.".to_string(),
+                _ => {
+                    return Err(ErrorData::invalid_params(
+                        "`book_id` must be a non-empty string or null",
+                        None,
+                    ));
+                }
+            };
+            ApprovalConfirmation::IrreversibleData {
+                effect: "Permanently clear dictionary lookup history.".to_string(),
+                scope,
+            }
+        }
+        "import_vocabulary"
+            if arguments.get("conflict_policy").and_then(Value::as_str) == Some("overwrite") =>
+        {
+            let data_size = required_string(arguments, "data")?.len();
+            let format = required_string(arguments, "format")?;
+            ApprovalConfirmation::IrreversibleData {
+                effect:
+                    "Import vocabulary data and permanently replace conflicting existing entries."
+                        .to_string(),
+                scope: format!("One {format} import containing {data_size} bytes."),
+            }
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(ApprovalRequestInput {
+        action: name.to_string(),
+        confirmation,
+        arguments: Value::Object(arguments.clone()),
+    }))
+}
+
+fn required_string<'a>(arguments: &'a JsonObject, name: &str) -> Result<&'a str, ErrorData> {
+    arguments
+        .get(name)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            ErrorData::invalid_params(format!("`{name}` must be a non-empty string"), None)
+        })
+}
+
+fn required_string_array(arguments: &JsonObject, name: &str) -> Result<Vec<String>, ErrorData> {
+    let values = arguments
+        .get(name)
+        .and_then(Value::as_array)
+        .ok_or_else(|| ErrorData::invalid_params(format!("`{name}` must be an array"), None))?;
+    values
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|value| !value.trim().is_empty())
+                .map(str::to_string)
+                .ok_or_else(|| {
+                    ErrorData::invalid_params(
+                        format!("`{name}` must contain only non-empty strings"),
+                        None,
+                    )
+                })
+        })
+        .collect()
+}
+
+fn required_non_empty_string_array(
+    arguments: &JsonObject,
+    name: &str,
+) -> Result<Vec<String>, ErrorData> {
+    let values = required_string_array(arguments, name)?;
+    if values.is_empty() {
+        return Err(ErrorData::invalid_params(
+            format!("`{name}` must contain at least one item"),
+            None,
+        ));
+    }
+    Ok(values)
+}
+
+fn irreversible_ids_confirmation(
+    arguments: &JsonObject,
+    effect: &str,
+    item_name: &str,
+) -> Result<ApprovalConfirmation, ErrorData> {
+    let ids = required_non_empty_string_array(arguments, "ids")?;
+    Ok(ApprovalConfirmation::IrreversibleData {
+        effect: effect.to_string(),
+        scope: format!("{} {item_name}(s): {}.", ids.len(), ids.join(", ")),
+    })
+}
+
+fn supports_mrtr_confirmation(context: &RequestContext<RoleServer>) -> bool {
+    let supports_protocol = context
+        .protocol_version()
+        .is_some_and(|version| version.as_str() >= ProtocolVersion::V_2026_07_28.as_str());
+    let supports_form = context.client_capabilities().is_some_and(|capabilities| {
+        capabilities
+            .elicitation
+            .is_some_and(|elicitation| elicitation.form.is_some())
+    });
+    supports_protocol && supports_form
+}
+
+fn confirmation_message(confirmation: &ApprovalConfirmation) -> String {
+    match confirmation {
+        ApprovalConfirmation::IrreversibleData { effect, scope } => {
+            format!("{effect} Scope: {scope} This action cannot be undone.")
+        }
+        ApprovalConfirmation::PaidApi {
+            effect,
+            scope,
+            service,
+            model,
+            maximum_requests,
+            cost,
+        } => {
+            let cost = match cost {
+                ApiCostDisclosure::Estimated { amount } => {
+                    format!("Estimated cost: {amount}.")
+                }
+                ApiCostDisclosure::UpperBound { amount } => {
+                    format!("Maximum cost: {amount}.")
+                }
+                ApiCostDisclosure::ProviderMayCharge => {
+                    "The provider may charge for usage.".to_string()
+                }
+            };
+            format!(
+                "{effect} Scope: {scope} Service: {service}. Model: {model}. Maximum billable requests: {maximum_requests}. {cost}"
+            )
+        }
+    }
+}
+
+fn mrtr_confirmation(request: &ApprovalRequest) -> Result<CallToolResponse, ErrorData> {
+    let requested_schema = ElicitationSchema::builder()
+        .title("Confirm high-risk operation")
+        .description(confirmation_message(&request.confirmation))
+        .required_bool_property("confirmed", |schema| {
+            schema
+                .title("Confirm")
+                .description("Approve this exact operation.")
+                .with_default(false)
+        })
+        .build()
+        .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+    let elicitation = InputRequest::Elicitation(ElicitRequest::new(
+        ElicitRequestParams::FormElicitationParams {
+            meta: None,
+            message: confirmation_message(&request.confirmation),
+            requested_schema,
+        },
+    ));
+    let mut inputs = InputRequests::new();
+    inputs.insert(MRTR_APPROVAL_INPUT_ID.to_string(), elicitation);
+    Ok(InputRequiredResult::new(Some(inputs), Some(request.id.clone())).into())
+}
+
+fn parse_mrtr_acceptance(request: &CallToolRequestParams) -> Result<bool, ErrorData> {
+    let responses = request
+        .input_responses
+        .as_ref()
+        .ok_or_else(|| ErrorData::invalid_params("confirmation response is missing", None))?;
+    if responses.len() != 1 {
+        return Err(ErrorData::invalid_params(
+            "confirmation response does not match the request",
+            None,
+        ));
+    }
+    let response: ElicitResult =
+        serde_json::from_value(responses.get(MRTR_APPROVAL_INPUT_ID).cloned().ok_or_else(
+            || ErrorData::invalid_params("confirmation response does not match the request", None),
+        )?)
+        .map_err(|error| ErrorData::invalid_params(error.to_string(), None))?;
+    match response.action {
+        ElicitationAction::Accept => Ok(response
+            .content
+            .as_ref()
+            .and_then(|content| content.get("confirmed"))
+            .and_then(Value::as_bool)
+            == Some(true)),
+        ElicitationAction::Decline | ElicitationAction::Cancel => Ok(false),
+        _ => Ok(false),
+    }
+}
+
+fn approval_status_result(status: &str, request: &ApprovalRequest) -> CallToolResponse {
+    CallToolResult::success(vec![ContentBlock::json(&json!({
+        "status": status,
+        "approval_id": request.id,
+        "confirmation": request.confirmation,
+    }))
+    .expect("approval status JSON must serialize")])
+    .into()
+}
+
+fn approval_error(error: crate::error::AppError) -> ErrorData {
+    let message = error.to_string();
+    if message.contains("MCP_APPROVAL_INVALID_")
+        || message.contains("MCP_APPROVAL_NOT_FOUND")
+        || message.contains("MCP_APPROVAL_BINDING_MISMATCH")
+        || message.contains("MCP_APPROVAL_ALREADY_CONSUMED")
+    {
+        ErrorData::invalid_params(message, None)
+    } else {
+        ErrorData::internal_error(message, None)
     }
 }
 
 #[tool_handler]
 impl ServerHandler for LanternMcpHandler {
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResponse, ErrorData> {
+        let arguments = request.arguments.clone().unwrap_or_default();
+        let Some(approval_input) = approval_input_for_tool(request.name.as_ref(), &arguments)?
+        else {
+            return self.dispatch_tool(request, context).await;
+        };
+        if matches!(
+            &approval_input.confirmation,
+            ApprovalConfirmation::IrreversibleData { .. }
+        ) {
+            crate::mcp::tools::library::require_sync(self)?;
+        }
+        let approvals = self.state.approvals.as_ref().ok_or_else(|| {
+            ErrorData::internal_error("MCP approval storage is unavailable", None)
+        })?;
+        let uses_mrtr = supports_mrtr_confirmation(&context);
+
+        if request.request_state.is_some() || request.input_responses.is_some() {
+            if !uses_mrtr {
+                return Err(ErrorData::invalid_params(
+                    "interactive confirmation requires MCP 2026-07-28 and form elicitation",
+                    None,
+                ));
+            }
+            let approval_id = request.request_state.as_deref().ok_or_else(|| {
+                ErrorData::invalid_params("confirmation request state is missing", None)
+            })?;
+            let accepted = parse_mrtr_acceptance(&request)?;
+            return match approvals
+                .complete_interactive(
+                    approval_id,
+                    request.name.as_ref(),
+                    &approval_input.arguments,
+                    accepted,
+                )
+                .map_err(approval_error)?
+            {
+                ApprovalGateOutcome::Execute(_) => self.dispatch_tool(request, context).await,
+                ApprovalGateOutcome::Rejected(request) => {
+                    Ok(approval_status_result("rejected", &request))
+                }
+                ApprovalGateOutcome::Pending(_) => unreachable!("MRTR resolution is final"),
+            };
+        }
+
+        let outcome = if uses_mrtr {
+            approvals.claim_mrtr(approval_input)
+        } else {
+            approvals.claim_application(approval_input)
+        }
+        .map_err(approval_error)?;
+        match outcome {
+            ApprovalGateOutcome::Execute(_) => self.dispatch_tool(request, context).await,
+            ApprovalGateOutcome::Rejected(request) => {
+                Ok(approval_status_result("rejected", &request))
+            }
+            ApprovalGateOutcome::Pending(request) if uses_mrtr => mrtr_confirmation(&request),
+            ApprovalGateOutcome::Pending(request) => {
+                Ok(approval_status_result("approval_required", &request))
+            }
+        }
+    }
+
     fn get_info(&self) -> ServerInfo {
         // `ServerInfo` and `Implementation` are both `#[non_exhaustive]`.
         // Use the public constructors / builder methods rather than
@@ -64,16 +455,13 @@ impl ServerHandler for LanternMcpHandler {
         let implementation = Implementation::new("lantern", env!("CARGO_PKG_VERSION"));
         let capabilities = ServerCapabilities::builder().enable_tools().build();
         ServerInfo::new(capabilities)
-            .with_protocol_version(ProtocolVersion::LATEST)
+            .with_protocol_version(ProtocolVersion::V_2026_07_28)
             .with_server_info(implementation)
             .with_instructions(
-                "Lantern MCP server. Read the local library, collections, full-text book \
-                 search with citations, existing book summaries, highlights, bookmarks, \
-                 notes, vocabulary with FSRS state, lookup history, word marks, the user's \
-                 CEFR language profile, and chat history. Full-text search and summaries \
-                 respect Lantern's spoiler guard and never invoke embedding or AI services. \
-                 Batch library/collection writes and local index builds are available only \
-                 when write access is enabled in Lantern settings.",
+                "Lantern MCP server. Inspect and control Lantern through the tools exposed \
+                 by this server. Tool descriptions state their effects and whether they use \
+                 local processing. Operations that may use a paid API or irreversibly destroy \
+                 data require approval before execution. Other writes require MCP write access.",
             )
     }
 }
@@ -104,8 +492,17 @@ mod tests {
     use crate::db::Db;
     use crate::sync::writer::SyncWriter;
     use rmcp::handler::server::wrapper::Parameters;
+    use rmcp::model::{
+        ClientCapabilities, ClientInfo, ElicitationCapability, FormElicitationCapability,
+        InputResponses, RequestId,
+    };
     use rusqlite::params;
     use tempfile::TempDir;
+
+    #[derive(Clone, Default)]
+    struct ContextPeer;
+
+    impl ServerHandler for ContextPeer {}
 
     fn seeded() -> (TempDir, McpState) {
         let dir = TempDir::new().unwrap();
@@ -279,9 +676,51 @@ mod tests {
         let writable = McpState::new(
             state.db.clone(),
             Some(SyncWriter::new("mcp-test".to_string())),
-            None,
+            Some(dir.path()),
         );
         (dir, writable)
+    }
+
+    fn request_context(
+        protocol: ProtocolVersion,
+        form_elicitation: bool,
+    ) -> RequestContext<RoleServer> {
+        let mut capabilities = ClientCapabilities::default();
+        if form_elicitation {
+            capabilities.elicitation =
+                Some(ElicitationCapability::new().with_form(FormElicitationCapability::new()));
+        }
+        let client_info = ClientInfo::new(
+            capabilities.clone(),
+            Implementation::new("lantern-test-client", "0.0.0"),
+        )
+        .with_protocol_version(protocol.clone());
+        let (server_transport, _client_transport) = tokio::io::duplex(64);
+        let running = rmcp::service::serve_directly::<RoleServer, _, _, _, _>(
+            ContextPeer,
+            server_transport,
+            Some(client_info),
+        );
+        let mut context = RequestContext::new(RequestId::Number(1), running.peer().clone());
+        context.meta.set_protocol_version(protocol);
+        context.meta.set_client_capabilities(capabilities);
+        context
+    }
+
+    fn call(name: &'static str, arguments: Value) -> CallToolRequestParams {
+        CallToolRequestParams::new(name).with_arguments(arguments.as_object().unwrap().clone())
+    }
+
+    fn book_exists(state: &McpState, id: &str) -> bool {
+        state
+            .db
+            .reader()
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM books WHERE id = ?1)",
+                params![id],
+                |row| row.get(0),
+            )
+            .unwrap()
     }
 
     fn text_of(result: rmcp::model::CallToolResult) -> String {
@@ -291,8 +730,8 @@ mod tests {
             .into_iter()
             .next()
             .expect("tool returned no content");
-        match first.raw {
-            rmcp::model::RawContent::Text(t) => t.text,
+        match first {
+            ContentBlock::Text(t) => t.text,
             other => panic!("expected text content, got {other:?}"),
         }
     }
@@ -314,32 +753,127 @@ mod tests {
             "get_vocab_words",
             "get_vocab_stats",
             "get_chat_history",
-            "add_book",
             "update_book",
-            "delete_book",
             "create_collection",
             "rename_collection",
             "delete_collection",
-            "add_book_to_collection",
-            "remove_book_from_collection",
             "import_books",
             "delete_books",
-            "add_books_to_collection",
-            "remove_books_from_collection",
+            "update_collection_membership",
             "get_collection_books",
             "search_book_content",
             "get_book_summaries",
-            "get_book_index_status",
             "request_book_index",
             "get_notes",
             "get_lookup_history",
             "get_word_marks",
             "get_language_profile",
+            "set_reading_state",
+            "reorder_collections",
+            "list_book_sections",
+            "get_book_content",
+            "create_bookmark",
+            "create_highlight",
+            "update_highlight",
+            "save_note",
+            "delete_bookmarks",
+            "delete_highlights",
+            "delete_notes",
+            "save_lookup_record",
+            "create_vocab_word",
+            "record_vocab_review",
+            "set_vocab_mastery",
+            "set_word_forms",
+            "set_word_mark_rule",
+            "set_word_mark_exception",
+            "set_lookup_occurrence_mark",
+            "delete_vocab_words",
+            "export_vocabulary",
+            "preview_vocabulary_import",
+            "import_vocabulary",
+            "delete_word_forms",
+            "clear_word_marks",
+            "delete_lookup_records",
+            "clear_lookup_history",
+            "create_chat",
+            "rename_chat",
+            "save_chat_message",
+            "replace_chat_message",
+            "delete_chats",
+            "save_language_assessment",
+            "delete_language_assessments",
+            "get_settings",
+            "update_settings",
+            "get_app_info",
+            "get_diagnostics",
+            "get_mcp_status",
+            "update_mcp_settings",
         ]
         .iter()
         .map(|s| s.to_string())
         .collect();
         assert_eq!(names, expected, "tool registry diverged from spec");
+    }
+
+    #[test]
+    fn irreversible_catalog_covers_every_current_permanent_data_operation() {
+        for (name, arguments) in [
+            ("delete_books", json!({ "book_ids": ["b1"] })),
+            ("delete_collection", json!({ "id": "c1" })),
+            ("delete_bookmarks", json!({ "ids": ["bm1"] })),
+            ("delete_highlights", json!({ "ids": ["h1"] })),
+            ("delete_notes", json!({ "ids": ["n1"] })),
+            ("delete_chats", json!({ "ids": ["ch1"] })),
+            ("delete_vocab_words", json!({ "ids": ["v1"] })),
+            ("delete_language_assessments", json!({ "ids": ["la1"] })),
+            ("delete_lookup_records", json!({ "ids": ["l1"] })),
+            ("delete_word_forms", json!({ "words": ["word"] })),
+            ("clear_word_marks", json!({ "book_id": "b1" })),
+            ("clear_lookup_history", json!({ "book_id": null })),
+            (
+                "import_vocabulary",
+                json!({
+                    "data": "{}",
+                    "format": "json",
+                    "conflict_policy": "overwrite"
+                }),
+            ),
+        ] {
+            let input = approval_input_for_tool(name, arguments.as_object().unwrap())
+                .unwrap()
+                .unwrap_or_else(|| panic!("{name} must require confirmation"));
+            assert!(matches!(
+                input.confirmation,
+                ApprovalConfirmation::IrreversibleData { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn ordinary_operations_and_non_overwriting_import_do_not_require_confirmation() {
+        for (name, arguments) in [
+            ("create_collection", json!({ "name": "Direct" })),
+            ("save_note", json!({ "content": "ordinary edit" })),
+            (
+                "remove_books_from_collection",
+                json!({ "collection_id": "c1", "book_ids": ["b1"] }),
+            ),
+            (
+                "import_vocabulary",
+                json!({
+                    "data": "{}",
+                    "format": "json",
+                    "conflict_policy": "skip"
+                }),
+            ),
+        ] {
+            assert!(
+                approval_input_for_tool(name, arguments.as_object().unwrap())
+                    .unwrap()
+                    .is_none(),
+                "{name} must execute without high-risk confirmation"
+            );
+        }
     }
 
     #[tokio::test]
@@ -352,6 +886,169 @@ mod tests {
             "tools capability missing"
         );
         assert_eq!(info.server_info.name, "lantern");
+        assert_eq!(info.protocol_version, ProtocolVersion::V_2026_07_28);
+    }
+
+    #[tokio::test]
+    async fn legacy_client_approval_executes_once_and_cannot_be_replayed() {
+        let (_dir, state) = seeded_writable();
+        let handler = LanternMcpHandler::new(state.clone());
+        let arguments = json!({ "book_ids": ["b2"] });
+
+        let first = ServerHandler::call_tool(
+            &handler,
+            call("delete_books", arguments.clone()),
+            request_context(ProtocolVersion::V_2025_11_25, false),
+        )
+        .await
+        .unwrap();
+        let CallToolResponse::Complete(first) = first else {
+            panic!("legacy client must receive a complete fallback result");
+        };
+        let first: Value = serde_json::from_str(&text_of(first)).unwrap();
+        assert_eq!(first["status"], "approval_required");
+        assert!(book_exists(&state, "b2"));
+
+        let approval_id = first["approval_id"].as_str().unwrap();
+        state
+            .approvals
+            .as_ref()
+            .unwrap()
+            .approve(approval_id)
+            .unwrap();
+        let second = ServerHandler::call_tool(
+            &handler,
+            call("delete_books", arguments.clone()),
+            request_context(ProtocolVersion::V_2025_11_25, false),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(second, CallToolResponse::Complete(_)));
+        assert!(!book_exists(&state, "b2"));
+
+        let third = ServerHandler::call_tool(
+            &handler,
+            call("delete_books", arguments),
+            request_context(ProtocolVersion::V_2025_11_25, false),
+        )
+        .await
+        .unwrap();
+        let CallToolResponse::Complete(third) = third else {
+            panic!("legacy replay must return a new fallback request");
+        };
+        let third: Value = serde_json::from_str(&text_of(third)).unwrap();
+        assert_eq!(third["status"], "approval_required");
+        assert_ne!(third["approval_id"], first["approval_id"]);
+    }
+
+    #[tokio::test]
+    async fn mrtr_confirmation_binds_arguments_and_rejects_replay() {
+        let (_dir, state) = seeded_writable();
+        let handler = LanternMcpHandler::new(state.clone());
+        let arguments = json!({ "book_ids": ["b2"] });
+
+        let first = ServerHandler::call_tool(
+            &handler,
+            call("delete_books", arguments.clone()),
+            request_context(ProtocolVersion::V_2026_07_28, true),
+        )
+        .await
+        .unwrap();
+        let CallToolResponse::InputRequired(first) = first else {
+            panic!("2026 client must receive MRTR input_required");
+        };
+        assert!(first
+            .input_requests
+            .as_ref()
+            .unwrap()
+            .contains_key(MRTR_APPROVAL_INPUT_ID));
+        let approval_id = first.request_state.unwrap();
+        assert!(book_exists(&state, "b2"));
+        assert!(
+            state
+                .approvals
+                .as_ref()
+                .unwrap()
+                .list_pending()
+                .unwrap()
+                .is_empty(),
+            "native MCP confirmation must not also appear in the Lantern approval queue"
+        );
+
+        let mut responses = InputResponses::new();
+        responses.insert(
+            MRTR_APPROVAL_INPUT_ID.to_string(),
+            json!({ "action": "accept", "content": { "confirmed": true } }),
+        );
+        let tampered = call("delete_books", json!({ "book_ids": ["b1"] }))
+            .with_request_state(approval_id.clone())
+            .with_input_responses(responses.clone());
+        let error = ServerHandler::call_tool(
+            &handler,
+            tampered,
+            request_context(ProtocolVersion::V_2026_07_28, true),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.message.contains("MCP_APPROVAL_BINDING_MISMATCH"));
+        assert!(book_exists(&state, "b1"));
+        assert!(book_exists(&state, "b2"));
+
+        let approved = call("delete_books", arguments.clone())
+            .with_request_state(approval_id.clone())
+            .with_input_responses(responses.clone());
+        let result = ServerHandler::call_tool(
+            &handler,
+            approved,
+            request_context(ProtocolVersion::V_2026_07_28, true),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(result, CallToolResponse::Complete(_)));
+        assert!(!book_exists(&state, "b2"));
+
+        let replay = call("delete_books", arguments)
+            .with_request_state(approval_id)
+            .with_input_responses(responses);
+        let error = ServerHandler::call_tool(
+            &handler,
+            replay,
+            request_context(ProtocolVersion::V_2026_07_28, true),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.message.contains("MCP_APPROVAL_ALREADY_CONSUMED"));
+    }
+
+    #[tokio::test]
+    async fn ordinary_write_executes_without_confirmation_for_2026_client() {
+        let (_dir, state) = seeded_writable();
+        let handler = LanternMcpHandler::new(state.clone());
+        let result = ServerHandler::call_tool(
+            &handler,
+            call("create_collection", json!({ "name": "Direct" })),
+            request_context(ProtocolVersion::V_2026_07_28, true),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(result, CallToolResponse::Complete(_)));
+        assert!(state
+            .approvals
+            .as_ref()
+            .unwrap()
+            .list_pending()
+            .unwrap()
+            .is_empty());
+        let count: i64 = state
+            .db
+            .reader()
+            .query_row(
+                "SELECT COUNT(*) FROM collections WHERE name = 'Direct'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
     }
 
     #[tokio::test]
@@ -540,15 +1237,15 @@ mod tests {
 
         let status_body = text_of(
             handler
-                .get_book_index_status(Parameters(crate::mcp::tools::content::BookIdArgs {
+                .get_book(Parameters(crate::mcp::tools::library::GetBookArgs {
                     book_id: "b1".to_string(),
                 }))
                 .await
                 .unwrap(),
         );
         let status: serde_json::Value = serde_json::from_str(&status_body).unwrap();
-        assert_eq!(status["chunk_count"], 3);
-        assert_eq!(status["index_version"], 1);
+        assert_eq!(status["index"]["chunk_count"], 3);
+        assert_eq!(status["index"]["index_version"], 1);
 
         handler
             .state
@@ -654,10 +1351,12 @@ mod tests {
         let handler = LanternMcpHandler::new(state);
         let body = text_of(
             handler
-                .add_books_to_collection(Parameters(
+                .update_collection_membership(Parameters(
                     crate::mcp::tools::library_batch::CollectionBooksArgs {
                         collection_id: "c1".to_string(),
                         book_ids: vec!["b1".to_string(), "b2".to_string(), "missing".to_string()],
+                        operation:
+                            crate::mcp::tools::library_batch::CollectionMembershipOperation::Add,
                     },
                 ))
                 .await

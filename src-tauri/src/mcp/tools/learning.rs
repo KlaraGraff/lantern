@@ -1,5 +1,5 @@
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, ContentBlock};
 use rmcp::{tool, tool_router, ErrorData};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -184,7 +184,7 @@ impl LanternMcpHandler {
             limit.unwrap_or(50).clamp(1, 200),
         )
         .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::json(&page)?]))
+        Ok(CallToolResult::success(vec![ContentBlock::json(&page)?]))
     }
 
     #[tool(
@@ -215,7 +215,9 @@ impl LanternMcpHandler {
             next_cursor: page.next_cursor,
             total: page.total,
         };
-        Ok(CallToolResult::success(vec![Content::json(&response)?]))
+        Ok(CallToolResult::success(vec![ContentBlock::json(
+            &response,
+        )?]))
     }
 
     #[tool(
@@ -236,7 +238,9 @@ impl LanternMcpHandler {
             .map(McpWordMarkException::from)
             .collect();
         let response = McpWordMarksResponse { rules, exceptions };
-        Ok(CallToolResult::success(vec![Content::json(&response)?]))
+        Ok(CallToolResult::success(vec![ContentBlock::json(
+            &response,
+        )?]))
     }
 
     #[tool(
@@ -249,6 +253,8 @@ impl LanternMcpHandler {
             summary: language_assessments::summarize_assessments(&assessments),
             assessments,
         };
-        Ok(CallToolResult::success(vec![Content::json(&response)?]))
+        Ok(CallToolResult::success(vec![ContentBlock::json(
+            &response,
+        )?]))
     }
 }

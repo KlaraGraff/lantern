@@ -8,6 +8,7 @@ use tauri::State;
 use crate::db::Db;
 use crate::error::AppResult;
 use crate::sync::events::{EventBody, VocabPayload};
+use crate::sync::merge::{entity, insert_tombstone};
 use crate::sync::writer::SyncWriter;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -374,6 +375,29 @@ pub fn add_vocab_word(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<VocabWord> {
+    add_vocab_word_inner(
+        &book_id,
+        &word,
+        &definition,
+        context_sentence,
+        context_explanation,
+        cfi,
+        &db,
+        &sync,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn add_vocab_word_inner(
+    book_id: &str,
+    word: &str,
+    definition: &str,
+    context_sentence: Option<String>,
+    context_explanation: Option<String>,
+    cfi: Option<String>,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<VocabWord> {
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
     let device = sync.self_device().to_string();
@@ -411,9 +435,9 @@ pub fn add_vocab_word(
         )?;
         events.push(EventBody::VocabAdd(VocabPayload {
             id: id.clone(),
-            book_id: book_id.clone(),
-            word: word.clone(),
-            definition: definition.clone(),
+            book_id: book_id.to_string(),
+            word: word.to_string(),
+            definition: definition.to_string(),
             context_sentence: context_sentence.clone(),
             context_explanation: context_explanation.clone(),
             cfi: cfi.clone(),
@@ -430,9 +454,9 @@ pub fn add_vocab_word(
         }));
         Ok(VocabWord {
             id: id.clone(),
-            book_id: book_id.clone(),
-            word: word.clone(),
-            definition: definition.clone(),
+            book_id: book_id.to_string(),
+            word: word.to_string(),
+            definition: definition.to_string(),
             context_sentence: context_sentence.clone(),
             context_explanation: context_explanation.clone(),
             cfi: cfi.clone(),
@@ -525,6 +549,15 @@ pub fn record_vocab_review(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<VocabWord> {
+    record_vocab_review_inner(&id, rating, &db, &sync)
+}
+
+pub(crate) fn record_vocab_review_inner(
+    id: &str,
+    rating: VocabReviewRating,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<VocabWord> {
     let now = chrono::Utc::now().timestamp_millis();
     let device = sync.self_device().to_string();
     sync.with_tx(&db, now, |tx, events| {
@@ -566,7 +599,7 @@ pub fn record_vocab_review(
             ],
         )?;
         events.push(EventBody::VocabMasterySet {
-            id: id.clone(),
+            id: id.to_string(),
             mastery,
             next_review_at: Some(next_review_at),
             review_count,
@@ -594,7 +627,17 @@ pub fn update_vocab_mastery(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<()> {
-    validate_mastery(&mastery)?;
+    update_vocab_mastery_inner(&id, &mastery, next_review_at, &db, &sync)
+}
+
+pub(crate) fn update_vocab_mastery_inner(
+    id: &str,
+    mastery: &str,
+    next_review_at: Option<i64>,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<()> {
+    validate_mastery(mastery)?;
     let now = chrono::Utc::now().timestamp_millis();
     let device = sync.self_device().to_string();
     sync.with_tx(&db, now, |tx, events| {
@@ -618,8 +661,8 @@ pub fn update_vocab_mastery(
             )
             .map_err(crate::error::AppError::from)?;
         events.push(EventBody::VocabMasterySet {
-            id: id.clone(),
-            mastery: mastery.clone(),
+            id: id.to_string(),
+            mastery: mastery.to_string(),
             next_review_at,
             review_count: review.review_count,
             review_interval_days: review.review_interval_days,
@@ -707,9 +750,8 @@ fn vocab_backup_word(word: VocabWord) -> VocabBackupWord {
     }
 }
 
-#[tauri::command]
-pub fn export_vocab_backup(db: State<'_, Db>) -> AppResult<VocabBackup> {
-    let words = list_all_vocab_words(db)?
+pub(crate) fn export_vocab_backup_inner(db: &Db) -> AppResult<VocabBackup> {
+    let words = query_all_vocab_words(db)?
         .into_iter()
         .map(vocab_backup_word)
         .collect();
@@ -719,6 +761,11 @@ pub fn export_vocab_backup(db: State<'_, Db>) -> AppResult<VocabBackup> {
         exported_at: Utc::now().timestamp_millis(),
         words,
     })
+}
+
+#[tauri::command]
+pub fn export_vocab_backup(db: State<'_, Db>) -> AppResult<VocabBackup> {
+    export_vocab_backup_inner(&db)
 }
 
 fn import_error(code: &str) -> crate::error::AppError {
@@ -860,8 +907,16 @@ pub fn preview_vocab_import(
     format: VocabImportFormat,
     db: State<'_, Db>,
 ) -> AppResult<VocabImportPreview> {
+    preview_vocab_import_inner(&data, format, &db)
+}
+
+pub(crate) fn preview_vocab_import_inner(
+    data: &str,
+    format: VocabImportFormat,
+    db: &Db,
+) -> AppResult<VocabImportPreview> {
     let (words, invalid_rows) = parse_vocab_import(&data, format)?;
-    preview_vocab_import_words(&words, invalid_rows, &db).map(|(preview, _)| preview)
+    preview_vocab_import_words(&words, invalid_rows, db).map(|(preview, _)| preview)
 }
 
 pub(crate) fn do_import_vocab_backup(
@@ -994,18 +1049,26 @@ pub fn bulk_delete_vocab_words(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<usize> {
-    let ids: Vec<String> = ids
-        .into_iter()
-        .filter(|id| crate::sync::validation::validate_entity_id(id).is_ok())
-        .collect();
+    delete_vocab_words_inner(&ids, &db, &sync)
+}
+
+pub(crate) fn delete_vocab_words_inner(
+    ids: &[String],
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<usize> {
+    for id in ids {
+        crate::sync::validation::validate_entity_id(id)?;
+    }
     if ids.is_empty() {
         return Ok(0);
     }
-    let timestamp = Utc::now().timestamp_millis();
-    sync.with_tx(&db, timestamp, |tx, events| {
+    let timestamp = sync.next_logical_timestamp();
+    sync.with_tx(db, timestamp, |tx, events| {
         let mut deleted = 0;
-        for id in &ids {
+        for id in ids {
             if tx.execute("DELETE FROM vocab_words WHERE id = ?1", params![id])? > 0 {
+                insert_tombstone(tx, entity::VOCAB, id, timestamp)?;
                 events.push(EventBody::VocabDelete { id: id.clone() });
                 deleted += 1;
             }
@@ -1022,19 +1085,28 @@ pub fn bulk_update_vocab_mastery(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<usize> {
-    validate_mastery(&mastery)?;
-    let ids: Vec<String> = ids
-        .into_iter()
-        .filter(|id| crate::sync::validation::validate_entity_id(id).is_ok())
-        .collect();
+    bulk_update_vocab_mastery_inner(&ids, &mastery, next_review_at, &db, &sync)
+}
+
+pub(crate) fn bulk_update_vocab_mastery_inner(
+    ids: &[String],
+    mastery: &str,
+    next_review_at: Option<i64>,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<usize> {
+    validate_mastery(mastery)?;
+    for id in ids {
+        crate::sync::validation::validate_entity_id(id)?;
+    }
     if ids.is_empty() {
         return Ok(0);
     }
-    let timestamp = Utc::now().timestamp_millis();
+    let timestamp = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();
-    sync.with_tx(&db, timestamp, |tx, events| {
+    sync.with_tx(db, timestamp, |tx, events| {
         let mut changed = 0;
-        for id in &ids {
+        for id in ids {
             let review = tx
                 .query_row(
                     "SELECT review_count, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version FROM vocab_words WHERE id = ?1",
@@ -1051,7 +1123,7 @@ pub fn bulk_update_vocab_mastery(
             )?;
             events.push(EventBody::VocabMasterySet {
                 id: id.clone(),
-                mastery: mastery.clone(),
+                mastery: mastery.to_string(),
                 next_review_at,
                 review_count: review.review_count,
                 review_interval_days: review.review_interval_days,

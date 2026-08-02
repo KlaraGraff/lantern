@@ -65,6 +65,33 @@ pub fn save_note(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<Note> {
+    save_note_inner(
+        id,
+        book_id,
+        &anchor_kind,
+        word,
+        &scope,
+        location,
+        selected_text,
+        &content,
+        &db,
+        &sync,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn save_note_inner(
+    id: Option<String>,
+    book_id: Option<String>,
+    anchor_kind: &str,
+    word: Option<String>,
+    scope: &str,
+    location: Option<String>,
+    selected_text: Option<String>,
+    content: &str,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<Note> {
     let normalized_word = word
         .as_deref()
         .map(normalize_learning_term)
@@ -75,12 +102,12 @@ pub fn save_note(
     validate_note_fields(
         &id,
         book_id.as_deref(),
-        &anchor_kind,
+        anchor_kind,
         normalized_word.as_deref(),
-        &scope,
+        scope,
         location.as_deref(),
         selected_text.as_deref(),
-        &content,
+        content,
         &content_format,
     )?;
     let timestamp = sync.next_logical_timestamp();
@@ -124,12 +151,12 @@ pub fn save_note(
         events.push(EventBody::NoteUpsert(NotePayload {
             id: id.clone(),
             book_id: effective_book_id.map(str::to_string),
-            anchor_kind: anchor_kind.clone(),
+            anchor_kind: anchor_kind.to_string(),
             normalized_word: normalized_word.clone(),
-            scope: scope.clone(),
+            scope: scope.to_string(),
             location: location.clone(),
             selected_text: selected_text.clone(),
-            content: content.clone(),
+            content: content.to_string(),
             content_format: content_format.clone(),
             created_at,
         }));
@@ -145,15 +172,24 @@ pub fn save_note(
     .map_err(Into::into)
 }
 
-fn delete_note_inner(id: &str, db: &Db, sync: &SyncWriter) -> AppResult<()> {
-    validate_entity_id(id)?;
+pub(crate) fn delete_notes_inner(ids: &[String], db: &Db, sync: &SyncWriter) -> AppResult<usize> {
     let timestamp = sync.next_logical_timestamp();
     sync.with_tx(db, timestamp, |tx, events| {
-        tx.execute("DELETE FROM notes WHERE id = ?1", params![id])?;
-        merge::insert_tombstone(tx, entity::NOTE, id, timestamp)?;
-        events.push(EventBody::NoteDelete { id: id.to_string() });
-        Ok(())
+        let mut deleted = 0;
+        for id in ids {
+            validate_entity_id(id)?;
+            if tx.execute("DELETE FROM notes WHERE id = ?1", params![id])? > 0 {
+                merge::insert_tombstone(tx, entity::NOTE, id, timestamp)?;
+                events.push(EventBody::NoteDelete { id: id.clone() });
+                deleted += 1;
+            }
+        }
+        Ok(deleted)
     })
+}
+
+fn delete_note_inner(id: &str, db: &Db, sync: &SyncWriter) -> AppResult<()> {
+    delete_notes_inner(&[id.to_string()], db, sync).map(|_| ())
 }
 
 #[tauri::command]
