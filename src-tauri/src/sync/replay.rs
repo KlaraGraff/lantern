@@ -928,7 +928,10 @@ fn reconcile_book_assets(shared_dir: &Path, db: &Db) -> usize {
                 crate::icloud::trigger_download_file(&path);
                 ("downloading", None, None)
             }
-            crate::icloud::FileAvailability::Missing => ("remote_only", None, None),
+            // `file_availability` never reports `Unreadable`; an asset that
+            // cannot be read is not present locally either way.
+            crate::icloud::FileAvailability::Missing
+            | crate::icloud::FileAvailability::Unreadable => ("remote_only", None, None),
             crate::icloud::FileAvailability::Available => {
                 let metadata = match fs::symlink_metadata(&path) {
                     Ok(metadata) if !metadata.file_type().is_symlink() && metadata.is_file() => {

@@ -122,7 +122,12 @@ import type {
 import { useFoliateView } from "./reader/useFoliateView";
 import { tocUnitKind } from "./reader/chapter-pagination";
 import { useReaderNavigation } from "./reader/useReaderNavigation";
-import { toReaderOpenError, type ReaderOpenError } from "./reader/reader-open-error";
+import {
+  fileStatusExplainsFailure,
+  toReaderOpenError,
+  type ReaderOpenError,
+} from "./reader/reader-open-error";
+import { useReaderFileDiagnosis } from "./reader/useReaderFileDiagnosis";
 import ReaderDiagnosticsPanel from "../components/ReaderDiagnosticsPanel";
 import { platform } from "../services/platform";
 
@@ -1111,6 +1116,7 @@ export default function Reader() {
 
   useWindowSizePersistence(bookId, isStandaloneWindow);
   const { availabilityState, retryAvailability } = useBookAvailability(book, setBook);
+  useReaderFileDiagnosis(bookId, readerError, setReaderError);
   // Bound key/mouse triggers speak without opening any card, so the reader owns
   // its own playback slot alongside the cards and the selection menu.
   const { speak: speakSelection } = useSpeech();
@@ -1383,11 +1389,25 @@ export default function Reader() {
   };
 
   if (readerError) {
-    const invalidPdf = readerError.kind === "invalid-pdf";
+    // A parser error describes what the reader could not make of the bytes; if
+    // the bytes were never there, that description is a red herring, so the
+    // file's own verdict outranks it — including "damaged PDF", which is what
+    // an unreadable file looks like from inside the parser.
+    const fileProblem = fileStatusExplainsFailure(readerError.fileStatus);
+    const invalidPdf = readerError.kind === "invalid-pdf" && !fileProblem;
+    const fileMessage = readerError.fileStatus === "missing"
+      ? t("reader.fileUnavailable")
+      : readerError.fileStatus === "icloud_placeholder"
+        ? t("reader.downloadingFromICloud")
+        : t("reader.fileUnreadable");
+    // Retry is worth offering whenever the file might be different next time —
+    // an iCloud download finishing, a volume coming back — but not for a PDF
+    // whose structure is broken, where it would fail identically.
+    const showRetry = !invalidPdf;
     return (
       <>
       <div role="alert" className="flex h-screen flex-col items-center justify-center gap-4 px-6 text-center">
-        {invalidPdf && (
+        {(invalidPdf || fileProblem) && (
           <div className="flex size-10 items-center justify-center rounded-md bg-danger-bg text-danger-text">
             <FileWarning size={21} aria-hidden="true" />
           </div>
@@ -1397,19 +1417,24 @@ export default function Reader() {
             {t(invalidPdf ? "reader.pdfInvalidTitle" : "reader.initializationFailed")}
           </p>
           <p className="mt-2 text-[13px] leading-5 text-text-muted break-words">
-            {invalidPdf ? t("reader.pdfInvalidDescription") : readerError.detail}
+            {fileProblem ? fileMessage : invalidPdf ? t("reader.pdfInvalidDescription") : readerError.detail}
           </p>
           {/* The structure names above the raw parser message: enough to act on
               (repair and re-export rebuilds them) without putting three PDF
-              internals in front of someone who only wanted to read a book. */}
-          {invalidPdf && (
+              internals in front of someone who only wanted to read a book.
+              A file problem gets the same disclosure, but only the raw message
+              — the structure explanation is about a PDF's insides, and the file
+              never got far enough to have any. */}
+          {(invalidPdf || (fileProblem && readerError.detail)) && (
             <details className="mx-auto mt-3 max-w-[520px] text-left">
               <summary className="cursor-pointer text-center text-[12px] text-text-secondary">
                 {t("reader.errorDetails")}
               </summary>
-              <p className="mt-2 text-[12px] leading-5 text-text-muted">
-                {t("reader.pdfInvalidTechnical")}
-              </p>
+              {invalidPdf && (
+                <p className="mt-2 text-[12px] leading-5 text-text-muted">
+                  {t("reader.pdfInvalidTechnical")}
+                </p>
+              )}
               {readerError.detail && (
                 <p className="mt-2 rounded-md bg-bg-input px-3 py-2 font-mono text-[11px] leading-5 text-text-muted break-words">
                   {readerError.detail}
@@ -1419,7 +1444,7 @@ export default function Reader() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {!invalidPdf && (
+          {showRetry && (
             <Button
               variant="secondary"
               size="sm"
@@ -1450,7 +1475,7 @@ export default function Reader() {
             <ArrowLeft size={14} />
             {t("reader.returnToLibrary")}
           </Button>
-          {!invalidPdf && (
+          {showRetry && (
             <Button variant="ghost" size="sm" onClick={() => setDiagnosticsPanelOpen(true)}>
               {t("reader.diagnosticDetails")}
             </Button>

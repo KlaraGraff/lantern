@@ -88,6 +88,7 @@
   "reader.diagnostics.stuckHint": "打开时间过长？查看诊断",
   "reader.fileUnavailable": "书籍文件已不可用，请重新导入或选择其他副本。",
   "reader.fileCheckFailed": "无法检查书籍文件，请重试。",
+  "reader.fileUnreadable": "书籍文件还在原处，但读不出内容。如果它放在外置硬盘或网络驱动器上，请确认驱动器仍然连着。",
   "reader.retry": "重试",
   "reader.returnToLibrary": "返回书架",
   "reader.closeWindow": "关闭",

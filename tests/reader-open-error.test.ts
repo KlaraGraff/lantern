@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { toReaderOpenError } from "../src/pages/reader/reader-open-error.ts";
+import {
+  fileStatusExplainsFailure,
+  toReaderOpenError,
+} from "../src/pages/reader/reader-open-error.ts";
 
 test("classifies PDF.js structural failures as invalid PDFs", () => {
   const error = new Error("Invalid PDF structure.");
@@ -32,4 +35,18 @@ test("keeps timeouts as generic reader failures", () => {
     kind: "generic",
     detail: "READER_OPEN_TIMEOUT",
   });
+});
+
+test("an unreachable file outranks whatever the parser made of it", () => {
+  // These three are the reason the open failed; the parser message describes a
+  // symptom of them, so the error screen leads with the file instead.
+  assert.equal(fileStatusExplainsFailure("missing"), true);
+  assert.equal(fileStatusExplainsFailure("icloud_placeholder"), true);
+  assert.equal(fileStatusExplainsFailure("unreadable"), true);
+});
+
+test("a readable file explains nothing, so the parser error stands", () => {
+  assert.equal(fileStatusExplainsFailure("available"), false);
+  // Undiagnosed: the probe has not answered, or failed. Same treatment.
+  assert.equal(fileStatusExplainsFailure(undefined), false);
 });

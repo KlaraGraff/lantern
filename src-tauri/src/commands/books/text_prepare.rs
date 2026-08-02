@@ -466,7 +466,9 @@ pub(super) fn run_text_preparation(app: &AppHandle, book_id: &str) -> AppResult<
             }
             return Ok(());
         }
-        icloud::FileAvailability::Missing => {
+        // `file_availability` never reports `Unreadable`; grouped here so an
+        // unusable source fails the job rather than being read as present.
+        icloud::FileAvailability::Missing | icloud::FileAvailability::Unreadable => {
             if update_current_text_preparation_job(
                 &db,
                 book_id,

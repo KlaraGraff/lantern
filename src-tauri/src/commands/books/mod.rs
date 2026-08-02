@@ -79,11 +79,14 @@ pub use mutate::{
 pub(crate) use mutate::{do_delete_book, do_delete_book_with_note_policy, do_update_book};
 #[doc(hidden)]
 pub use query::{
-    __cmd__check_book_available, __cmd__get_book, __cmd__get_book_counts, __cmd__list_books,
-    __tauri_command_name_check_book_available, __tauri_command_name_get_book,
+    __cmd__check_book_available, __cmd__diagnose_book_file, __cmd__get_book,
+    __cmd__get_book_counts, __cmd__list_books, __tauri_command_name_check_book_available,
+    __tauri_command_name_diagnose_book_file, __tauri_command_name_get_book,
     __tauri_command_name_get_book_counts, __tauri_command_name_list_books,
 };
-pub use query::{check_book_available, get_book, get_book_counts, list_books};
+pub use query::{
+    check_book_available, diagnose_book_file, get_book, get_book_counts, list_books,
+};
 #[allow(unused_imports)]
 pub(crate) use query::{query_book, query_book_exists, query_books, query_books_lite};
 pub(crate) use text_prepare::load_prepared_document_for_grounding;

@@ -88,6 +88,7 @@
   "reader.diagnostics.stuckHint": "Taking too long? View diagnostics",
   "reader.fileUnavailable": "The book file is no longer available. Re-import it or choose another copy.",
   "reader.fileCheckFailed": "The book file could not be checked. Please retry.",
+  "reader.fileUnreadable": "The book file is where it should be, but its contents could not be read. If it lives on an external or network drive, check that the drive is still connected.",
   "reader.retry": "Retry",
   "reader.returnToLibrary": "Return to library",
   "reader.closeWindow": "Close",

@@ -497,19 +497,46 @@ pub fn check_book_available(
     db: State<'_, Db>,
     app: AppHandle,
 ) -> AppResult<BookAvailability> {
-    probe_book_availability(&db, &id, Some(&app))
+    probe_book_availability(&db, &id, Some(&app), Probe::Stat)
+}
+
+/// Diagnose a book whose file failed to open, once, at the point of failure.
+///
+/// Deliberately a separate command from `check_book_available`: that one runs
+/// in a two-second poll and must stay a `stat`, while this one does real I/O.
+/// Running the deep probe on a schedule is what makes it expensive; running it
+/// after something has already gone wrong costs one probe per real failure.
+#[tauri::command]
+pub fn diagnose_book_file(
+    id: String,
+    db: State<'_, Db>,
+    app: AppHandle,
+) -> AppResult<BookAvailability> {
+    probe_book_availability(&db, &id, Some(&app), Probe::Read)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Probe {
+    /// Ask the filesystem whether the name resolves. Cheap enough to poll.
+    Stat,
+    /// Ask whether the bytes can actually be read. Only at a failure point.
+    Read,
 }
 
 pub(super) fn probe_book_availability(
     db: &Db,
     id: &str,
     app: Option<&AppHandle>,
+    probe: Probe,
 ) -> AppResult<BookAvailability> {
     let mut book = query_book(db, id)?;
     resolve_book_paths(&mut book, db, app)?;
 
     let abs_path = std::path::PathBuf::from(&book.file_path);
-    let availability = icloud::file_availability(&abs_path);
+    let availability = match probe {
+        Probe::Stat => icloud::file_availability(&abs_path),
+        Probe::Read => icloud::file_readability(&abs_path),
+    };
     if availability == icloud::FileAvailability::ICloudPlaceholder {
         icloud::trigger_download_file(&abs_path);
     }

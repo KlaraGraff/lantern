@@ -1289,7 +1289,9 @@ fn resolve_paths_redirects_pdf_to_latest_verified_ocr_asset() {
     super::query::resolve_book_paths(&mut reresolved, &db, None).unwrap();
     assert!(reresolved.available, "asset still resolves the book open");
 
-    let probe = super::query::probe_book_availability(&db, "pdf-ocr", None).unwrap();
+    let probe =
+        super::query::probe_book_availability(&db, "pdf-ocr", None, super::query::Probe::Stat)
+            .unwrap();
     assert!(probe.available);
     assert_eq!(probe.status, "available");
 }
