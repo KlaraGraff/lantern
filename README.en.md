@@ -80,11 +80,15 @@ For example, you could build:
 
 ---
 
-## 3 · Wherever a preference is possible, you get a recommendation — not a rule
+## 3 · All of it is yours to change — and the defaults already did the thinking
 
-The same idea sits under both of the above: at every point where the app has an opinion about how something should work, what you get is **a default that was thought about**, not a rule. If it does not suit you, change it. Marks in the text are where this is densest.
+The first two sections are really two instances of one thing: **almost nothing in Lantern is fixed.** Colours, styles, modules, shortcuts, read-aloud voices, what a card shows, what pops up when you select text — if it can be adjusted, it can be adjusted.
 
-### Marks: two styles, six dimensions, and one guardrail
+But "everything is adjustable" turns into homework if it means you have to adjust everything before you can start. So every setting has a default, and the defaults were thought about: install it and start reading. You only go looking for a setting once something feels wrong.
+
+Marks in the text are where both halves of that show up most densely.
+
+### Marks: two styles, six dimensions
 
 **Manual marks** and **automatic post-lookup marks** are two entirely separate styles, each with its own colour, opacity, highlight / underline / bold, and font. If you want them to look alike, there is a "follow the manual style" switch.
 
@@ -92,7 +96,7 @@ The defaults were not picked at random. A manual mark is a warm, solid yellow �
 
 - **Bold and font changes are off by default.** They change how wide the text is, so in paginated mode a mark appearing reflows the page it is on — line breaks and page boundaries shift with it. Colour, background, and underline never move a single character. Turn it on if you want it, but know what it costs.
 - **The app draws on the page too**: the range being read aloud is a cool blue wash, and New / Learning / Mastered are three underlines that run from warm orange through teal to a grey dash — one gradient of attention being withdrawn, not four unrelated colours.
-- **So there is a guardrail on colour.** If the colour you pick sits too close to any of those, settings warns you on the spot and names which one it collides with. That test blends both colours **over the actual paper colour first** and then measures the distance — not a comparison of hex values, because a wash and an underline can be far apart on a colour wheel and indistinguishable once they are on the page. The presets were chosen to sit as far from the system marks as possible, but presets only lower the odds: the hex field and the colour wheel still accept anything.
+- **So picking a colour stops you if it has to.** If the colour you choose sits too close to any of those, settings warns you on the spot and names which one it collides with. That test blends both colours **over the actual paper colour first** and then measures the distance — not a comparison of hex values, because a wash and an underline can be far apart on a colour wheel and indistinguishable once they are on the page. The presets were chosen to sit as far from the system marks as possible, but presets only lower the odds: the hex field and the colour wheel still accept anything.
 
 ### Word-form marks: you are marking a word, not a string
 
