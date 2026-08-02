@@ -34,5 +34,6 @@ pub mod integration;
 pub mod learning;
 pub mod library;
 pub mod library_batch;
+pub mod local_catalog;
 pub mod vocab;
 pub mod vocab_write;

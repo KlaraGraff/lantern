@@ -74,8 +74,7 @@ fn normalized_forms(word: &str, forms: Vec<String>) -> Vec<String> {
     values
 }
 
-#[tauri::command]
-pub fn list_word_forms(db: State<'_, Db>) -> AppResult<Vec<WordFormsEntry>> {
+pub(crate) fn query_word_forms(db: &Db) -> AppResult<Vec<WordFormsEntry>> {
     let conn = db.reader();
     let mut statement = conn.prepare(
         "SELECT r.normalized_word, MAX(r.display_word), f.forms, f.source,
@@ -103,6 +102,11 @@ pub fn list_word_forms(db: State<'_, Db>) -> AppResult<Vec<WordFormsEntry>> {
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(values)
+}
+
+#[tauri::command]
+pub fn list_word_forms(db: State<'_, Db>) -> AppResult<Vec<WordFormsEntry>> {
+    query_word_forms(&db)
 }
 
 #[tauri::command]
@@ -172,8 +176,7 @@ pub(crate) fn delete_word_forms_inner(words: &[String], db: &Db) -> AppResult<us
     Ok(deleted)
 }
 
-#[tauri::command]
-pub fn get_word_forms(words: Vec<String>, db: State<'_, Db>) -> AppResult<Vec<WordFormsEntry>> {
+pub(crate) fn query_word_forms_for(db: &Db, words: Vec<String>) -> AppResult<Vec<WordFormsEntry>> {
     let conn = db.reader();
     let mut result = Vec::new();
     for word in words.into_iter().map(|word| normalize_learning_term(&word)) {
@@ -198,6 +201,11 @@ pub fn get_word_forms(words: Vec<String>, db: State<'_, Db>) -> AppResult<Vec<Wo
         }
     }
     Ok(result)
+}
+
+#[tauri::command]
+pub fn get_word_forms(words: Vec<String>, db: State<'_, Db>) -> AppResult<Vec<WordFormsEntry>> {
+    query_word_forms_for(&db, words)
 }
 
 fn row_to_rule(row: &rusqlite::Row<'_>) -> rusqlite::Result<WordMarkRule> {
