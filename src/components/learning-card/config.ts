@@ -161,7 +161,6 @@ export function createDefaultCardDesignConfig(): CardDesignConfigV1 {
       passage: defaultCard(
         "passage",
         ["context_meaning", "target_translation", "idioms"],
-        ["idioms"],
       ),
     },
     selectionMenus: {
