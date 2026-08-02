@@ -497,8 +497,16 @@ pub fn check_book_available(
     db: State<'_, Db>,
     app: AppHandle,
 ) -> AppResult<BookAvailability> {
-    let mut book = query_book(&db, &id)?;
-    resolve_book_paths(&mut book, &db, Some(&app))?;
+    probe_book_availability(&db, &id, Some(&app))
+}
+
+pub(super) fn probe_book_availability(
+    db: &Db,
+    id: &str,
+    app: Option<&AppHandle>,
+) -> AppResult<BookAvailability> {
+    let mut book = query_book(db, id)?;
+    resolve_book_paths(&mut book, db, app)?;
 
     let abs_path = std::path::PathBuf::from(&book.file_path);
     let availability = icloud::file_availability(&abs_path);

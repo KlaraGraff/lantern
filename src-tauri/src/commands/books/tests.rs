@@ -1280,6 +1280,18 @@ fn resolve_paths_redirects_pdf_to_latest_verified_ocr_asset() {
     super::query::resolve_book_paths(&mut book, &db, None).unwrap();
     assert!(book.file_path.ends_with("pdf-ocr.ocr.asset-1.pdf"));
     assert!(book.available);
+
+    // The availability probe must agree with the resolver. Here the source PDF
+    // is gone but the verified OCR asset is on disk, so the book opens fine —
+    // probing the row's raw `file_path` would report a missing file instead.
+    std::fs::remove_file(&source).unwrap();
+    let mut reresolved = super::query::query_book(&db, "pdf-ocr").unwrap();
+    super::query::resolve_book_paths(&mut reresolved, &db, None).unwrap();
+    assert!(reresolved.available, "asset still resolves the book open");
+
+    let probe = super::query::probe_book_availability(&db, "pdf-ocr", None).unwrap();
+    assert!(probe.available);
+    assert_eq!(probe.status, "available");
 }
 
 // -----------------------------------------------------------------------
