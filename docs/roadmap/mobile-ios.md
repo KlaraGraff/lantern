@@ -86,12 +86,11 @@ pessimistic and one of its premises is retired:
 **Re-scored again 2026-08-02**, and this time upward. The figure is **18–30 days on top of a
 shipped iOS app**, split by milestone because the two halves behave very differently:
 
-- **It compiles: under 2 days.** Only two things stop the Android compiler — the `reqwest` TLS
-  line, and two `keyring` call sites. `keyring` turned out to be far smaller than this entry
-  previously implied: `get()` and `set()` (`secrets.rs:341`, `:355`) are plain SQLite, and the
-  only `Entry::` uses (`:283`, `:518`) sit inside the one-time v1.4-vault migration path under
-  the pre-Quill service id `com.ryoyamada.quill`, a no-op on a fresh Android install. Gating
-  them is mechanical. `HOME` and `content://` are runtime failures, not compile failures.
+- **It compiles: about a day.** One thing stops the Android compiler — the `reqwest` TLS line.
+  The `keyring` call sites this entry used to budget for no longer exist: deleting the v1.4
+  vault in v2.5.0 took `keyring` and `security-framework` out of `Cargo.toml` entirely, so
+  `secrets.rs` is now plain SQLite on every platform. `HOME` and `content://` are runtime
+  failures, not compile failures.
 - **It is usable: 18–30 days**, dominated by `content://` import (3–5), a real Android secrets
   store (2–4), the read-aloud system-voice tier (3–5), store review (4–6) — **plus an Android
   sync transport, which has no line item because none has been chosen.**

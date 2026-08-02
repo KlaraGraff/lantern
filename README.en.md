@@ -23,10 +23,11 @@
 
 You open an English novel. You can follow it — but every few lines you stop. You look a word up, and a dictionary hands you a list of unrelated senses to choose between. You ask an AI instead, and it answers in English that is harder than the sentence you started with: one unfamiliar word, traded for a whole paragraph you cannot read. By the time you get back to the page, you have forgotten what the passage was about.
 
-**That loop is what Lantern is for.** It is a local-first desktop reader for macOS and Windows that runs on your own AI services. Two things set it apart from other "AI readers":
+**That loop is what Lantern is for.** It is a local-first desktop reader for macOS and Windows that runs on your own AI services. Three things set it apart from other "AI readers":
 
 1. **Explanations are pitched at your English level**, instead of always answering like a native speaker.
 2. **You define what the AI says, how it says it, and how much** — when the presets do not fit, you write your own.
+3. **Every line the AI writes clicks back into the book** — you get an answer that takes you to the sentence it came from, not an answer that stands alone.
 
 > This is an independently maintained personal edition based on the open-source [Quill](https://github.com/yicheng47/quill) project. It is not an official release of the original project.
 
@@ -80,9 +81,30 @@ For example, you could build:
 
 ---
 
-## 3 · All of it is yours to change — and the defaults already did the thinking
+## 3 · Every line the AI writes clicks back into the book
 
-The first two sections are really two instances of one thing: **almost nothing in Lantern is fixed.** Colours, styles, modules, shortcuts, read-aloud voices, what a card shows, what pops up when you select text — if it can be adjusted, it can be adjusted.
+Before you start a chapter, you can ask it to list every word and phrase in that chapter you might not know. What comes back is a long list — and every entry on it carries a citation marker. **Click one and the book turns to the sentence that word appears in.**
+
+The same holds when you stop mid-chapter to ask about the plot. It does not hand you an answer and leave. It hands you the evidence too, and every piece of evidence is clickable.
+
+This is not "an answer with a reference list underneath." The product that does this best is NotebookLM — but its citations can only take you to a snippet in a side panel. **Lantern *is* the reader, so a citation takes you to the real page, the real sentence**, and flashes the spot so you know where to look.
+
+How it works:
+
+- **Citations are inline.** Markers sit in the body of the answer and repeat as a row underneath it; both are clickable. A vocabulary list citing thirty-odd places stays readable.
+- **It finds the position in the text, not a guessed page number.** For EPUB it searches the original snippet inside the known section for a precise location, falls back to a second snippet, then to the section start; PDF jumps to the page; plain text seeks by character offset.
+- **Answers are retrieved from the book**, not recalled from the model. Every book gets a full-text index, and if you configure an embedding service, a semantic layer on top — so obscure books, new books and your own documents work just as well.
+- **You choose what it reads**: automatic, the selection only, this chapter only, or the whole book.
+- **No spoilers by default.** The reading guard restricts answers to what you have already read and labels them accordingly ("answered up to your reading position — first X%"). One click re-runs the question against the whole book. The setting is per-book.
+
+<!-- Screenshot placeholder: an AI answer with citation markers, and the passage it jumps to -->
+![Clickable citations](assets/screenshots/citations.png)
+
+---
+
+## 4 · All of it is yours to change — and the defaults already did the thinking
+
+Graded explanations and custom modules are really two instances of one thing: **almost nothing in Lantern is fixed.** Colours, styles, modules, shortcuts, read-aloud voices, what a card shows, what pops up when you select text — if it can be adjusted, it can be adjusted.
 
 But "everything is adjustable" turns into homework if it means you have to adjust everything before you can start. So every setting has a default, and the defaults were thought about: install it and start reading. You only go looking for a setting once something feels wrong.
 
@@ -138,7 +160,7 @@ To make it yours: set your English level under Settings → Profile, and pick th
 <table>
 <tr><td width="180"><b>AI comprehension</b></td><td>
 
-Contextual lookup · phrase glosses · passage explanations · translation · persistent per-book chat (carries the word, the source sentence, the existing explanation, and your reading position into the conversation) · semantic retrieval via embeddings on top of exact text matching · every request shows exactly which passage it quotes, and you can remove it
+Contextual lookup · phrase glosses · passage explanations · translation · persistent per-book chat (carries the word, the source sentence, the existing explanation, and your reading position into the conversation) · **every answer carries clickable citations that jump back to the sentence in the book** · full-text retrieval, with a semantic layer on top once you configure embeddings · scope the answer to automatic / selection / chapter / whole book · **a reading guard** that answers only from what you have already read, with one click to re-run against the whole book · every request shows exactly which passage it quotes, and you can remove it
 
 </td></tr>
 <tr><td><b>The learning loop</b></td><td>

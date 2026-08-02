@@ -652,10 +652,6 @@ pub fn run() {
                 .expect("failed to migrate AI profile configuration");
             ai::router::migrate_embedding_source(&db, &secrets)
                 .expect("failed to migrate embedding configuration");
-            secrets
-                .register_legacy_candidates(&db)
-                .expect("failed to register legacy secret metadata");
-
             let sync_writer = SyncWriter::new(device.device_uuid.clone());
             sync_writer.set_process_lock_path(local_dir.join(".sync-transition.lock"));
             if sync_enabled {
@@ -809,10 +805,6 @@ pub fn run() {
             commands::settings::ai_vector_retrieval_status,
             commands::settings::ai_embedding_probe,
             commands::settings::set_ai_vector_retrieval,
-            commands::settings::vault_status,
-            commands::settings::vault_authorize,
-            commands::settings::vault_deny,
-            commands::settings::vault_migrate_to_local,
             commands::settings::set_ai_api_key,
             commands::settings::ai_active_profile,
             commands::settings::ai_list_profiles,

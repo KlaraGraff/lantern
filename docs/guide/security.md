@@ -6,11 +6,21 @@ Lantern stores API keys and OAuth tokens in the local-only `secrets.db`. Routine
 
 The database uses SQLite `secure_delete=ON` with `journal_mode=DELETE`, avoiding a long-lived WAL history of replaced credentials. On Unix platforms, `secrets.db` and its transient SQLite journal are restricted to the current user (`0600`). `secure_delete` applies to SQLite-managed pages; it cannot erase Time Machine copies, filesystem snapshots, storage-device history, or data already copied by another process. This is intentionally local plaintext storage: another process already running as the same operating-system user may be able to read it. The tradeoff avoids repeated Keychain authorization prompts, similar to common local developer credential files. Disk encryption and a protected user account remain important.
 
-### Upgrading From The v1.4 Vault
+### The Retired v1.4 Vault
 
-Versions using the v1.4 encrypted vault may leave rows in `encrypted_secrets`, protected by the historical `com.ryoyamada.quill` Keychain master key. Lantern does not request that key during startup or ordinary AI use. AI settings instead show a metadata-only migration notice. Only after the user clicks **Import locally** and accepts the explanatory dialog does Lantern read old Keychain items. Every readable value is written to local storage in one transaction and only its successfully recovered encrypted row is removed. A newer local value always wins over an older encrypted copy. If one row is corrupt or the v1.4 master key is missing, that row remains untouched while independent older per-item credentials can still be recovered; the command reports a partial migration and keeps the reminder visible. Canceling or denying a system prompt stops the migration before committing the current batch.
+Lantern no longer talks to the operating-system credential store at all — not at startup, not
+during AI use, and not through any user-visible action. Two inherited import paths were removed
+in v2.5.0: the v1.4 AES-GCM vault, whose master key lived in the Keychain under the pre-fork
+service id `com.ryoyamada.quill`, and a still older layout that kept one Keychain item per
+credential. With them went the `aes-gcm`, `zeroize`, `keyring`, and `security-framework`
+dependencies.
 
-The historical master-key item is not deleted automatically because deletion can trigger another operating-system prompt. Once all encrypted rows have migrated, Lantern no longer reads that item. Credentials saved in still older per-item Keychain namespaces are offered through the same explicit migration action.
+Opening `secrets.db` now drops the three tables those paths used (`encrypted_secrets`,
+`legacy_secret_candidates`, `secret_migration_tombstones`) rather than leaving rows behind that
+nothing can read. Nothing is deleted from the Keychain: a credential that only ever lived there
+is still there, and Lantern simply stops looking. If a very old install still had an unimported
+credential, the fix is to re-enter the API key in AI settings, the same as setting one up for
+the first time.
 
 Credential sync is not implemented. In particular, credentials are not placed in the iCloud event log or snapshot. Encrypted credential sync requires a stable signed application identity and a formally provisioned iCloud Keychain access group; the current ad-hoc distribution cannot safely provide that identity.
 

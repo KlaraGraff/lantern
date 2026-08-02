@@ -59,10 +59,8 @@ schemars = "1"
 # plain `toml` crate).
 toml_edit = "0.22"
 sha2 = "0.10"
-aes-gcm = "0.10"
 base64 = "0.22"
 rand = "0.8"
-zeroize = "1"
 ulid = { version = "1", features = ["serde"] }
 notify = "6"
 gethostname = "0.5"
@@ -86,17 +84,6 @@ msedge-tts = { version = "0.4.0", default-features = false, features = ["tokio-r
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
-# Keyed on the vendor, not the OS: iOS is `target_os = "ios"`, so a macOS-only
-# table leaves `use keyring::Entry` in secrets.rs with no crate to resolve and
-# the iOS build fails at E0432. keyring's `apple-native` backend covers both
-# Apple OSes (keyring-3.6.3 declares security-framework under
-# `cfg(target_os = "ios")` and tests aarch64-apple-ios in CI), and
-# security-framework itself is what `keychain_os_status` downcasts to, so both
-# belong to every Apple target rather than to macOS alone.
-[target.'cfg(target_vendor = "apple")'.dependencies]
-keyring = { version = "3", features = ["apple-native"] }
-security-framework = "3"
-
 # Still macOS-only: these back the iCloud Drive integration in icloud.rs, whose
 # `cfg(target_os = "macos")` gates are widened in P5 (see
 # docs/roadmap/mobile-ios.md). Declaring them for iOS before that lands would
@@ -114,7 +101,6 @@ block2 = "0.6"
 # instead. Keep the version in step with whatever Cargo.lock resolves, or the
 # graph ends up with two copies.
 aws-lc-sys = { version = "0.43", features = ["prebuilt-nasm"] }
-keyring = { version = "3", features = ["windows-native"] }
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",
@@ -122,9 +108,6 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_JobObjects",
     "Win32_System_Threading",
 ] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-keyring = { version = "3", features = ["linux-native-sync-persistent", "crypto-rust"] }
 
 [dev-dependencies]
 tempfile = "3"

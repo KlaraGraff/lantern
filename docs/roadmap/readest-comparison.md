@@ -132,26 +132,16 @@ Net: outside Android this change has **zero** benefit and one known regression. 
 same commit as the rest of the Android work, and use `rustls-tls-native-roots` so the OS trust
 store is preserved.
 
-**`keyring` has no Android backend.** `Cargo.toml` has target tables for `apple`, `windows`
-and `linux`. An Android build hits `use keyring::Entry` with no crate to resolve — the same
-`E0432` class of failure that P0 found on iOS. keyring 3.x has no Android backend at all
-(docs.rs for 3.6.3 lists Linux, FreeBSD, OpenBSD, Windows, macOS, iOS — Android absent), so
-this is not a feature flag, it is "pick something else": Android Keystore through a small
-plugin, or an encrypted file (`aes-gcm` and `sha2` are already in the tree).
+**`keyring` is gone — this row is now half a row.** This entry used to describe an `E0432` on
+Android, because keyring 3.x has no Android backend at all (docs.rs for 3.6.3 lists Linux,
+FreeBSD, OpenBSD, Windows, macOS, iOS — Android absent). That compile blocker no longer
+exists: deleting the v1.4 vault in v2.5.0 removed the only two `Entry::` call sites, and with
+them `keyring`, `security-framework`, `aes-gcm`, and `zeroize` from `Cargo.toml`. `secrets.rs`
+is now one SQLite table on every platform, so an Android build has nothing to gate.
 
-**Split this cost in two — an earlier version of this page conflated them.** keyring is *not*
-load-bearing in current secret storage. `get()` (`secrets.rs:341`) and `set()` (`:355`) are
-plain SQLite reads and writes. The only two `Entry::` call sites — `authorize()` at `:283`
-and `migrate_to_local()` at `:518` — both sit inside the one-time v1.4-vault migration path,
-under `VAULT_KEYCHAIN_SERVICE = "com.ryoyamada.quill"`, a pre-Quill bundle id. On a fresh
-Android install that path is a no-op. So:
-
-| | Cost |
-|---|---|
-| **Compiles** — cfg-gate two call sites plus two error helpers (`:1017-1058`) | **under a day** |
-| **Works** — a real Android secrets store, a genuine design decision | **2–4 days** |
-
-Only the first is a compile blocker. The second is a runtime requirement and belongs in §2.2.
+What survives is the runtime half, unchanged: local plaintext in `secrets.db` is a deliberate
+desktop tradeoff, and an Android port would want Android Keystore through a small plugin or an
+encrypted file — a genuine design decision, **2–4 days**, and it belongs in §2.2, not here.
 
 **`HOME` is not set on Android.** Path helpers that assume it will panic at startup. This is a
 known Tauri-Android property and the fix is mechanical, but it has to be found, and it is
@@ -225,9 +215,9 @@ of this table blurred them.
 | Bucket | Days |
 |---|---|
 | `reqwest` → `rustls-tls-native-roots` | 0.5 |
-| cfg-gate the two legacy-vault `keyring` call sites | <1 |
 
-**Under two days.** That is the whole compile-blocker set: `HOME` and `content://` are runtime
+**Half a day** — the `keyring` row that used to sit here was paid off for free when the v1.4
+vault was deleted. That is the whole compile-blocker set: `HOME` and `content://` are runtime
 failures, not compile failures, and pdfium is a runtime `dlopen` with a no-cover fallback.
 
 **Milestone B — it is a product people can use:**

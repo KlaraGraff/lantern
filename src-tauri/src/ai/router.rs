@@ -441,11 +441,6 @@ pub fn migrate_legacy_config(db: &Db, secrets: &Secrets) -> AppResult<()> {
     })();
     drop(conn);
     result?;
-    if credential.is_some() {
-        // This is a durable metadata hint only. The old Keychain namespace is
-        // not probed until the user confirms the later import explanation.
-        secrets.register_legacy_candidate("ai_api_key")?;
-    }
     Ok(())
 }
 
@@ -3456,7 +3451,6 @@ mod tests {
             "secret".to_string(),
         )
         .unwrap();
-        secrets.lock_for_test().unwrap();
 
         assert!(ensure_stream_credentials_accessible(&db, &secrets).is_ok());
     }

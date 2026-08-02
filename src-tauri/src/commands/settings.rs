@@ -86,34 +86,6 @@ pub async fn ai_embedding_probe(
 }
 
 #[tauri::command]
-pub fn vault_status(secrets: State<'_, Secrets>) -> AppResult<crate::secrets::VaultStatus> {
-    secrets.status()
-}
-
-#[tauri::command]
-pub fn vault_authorize(
-    reason: String,
-    request_id: Option<String>,
-    secrets: State<'_, Secrets>,
-) -> AppResult<()> {
-    secrets.authorize(&reason, request_id.as_deref())
-}
-
-#[tauri::command]
-pub fn vault_deny(
-    reason: String,
-    request_id: Option<String>,
-    secrets: State<'_, Secrets>,
-) -> AppResult<()> {
-    secrets.deny(&reason, request_id.as_deref())
-}
-
-#[tauri::command]
-pub fn vault_migrate_to_local(secrets: State<'_, Secrets>) -> AppResult<i64> {
-    secrets.migrate_to_local()
-}
-
-#[tauri::command]
 pub fn get_setting(key: String, db: State<'_, Db>) -> AppResult<Option<String>> {
     if Secrets::is_sensitive_key(&key) {
         return Err(AppError::Other("SECRET_READ_FORBIDDEN".to_string()));
