@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import Select from "../ui/Select";
 import Toggle from "../ui/Toggle";
 import type { CardModuleConfig, LearningModuleDefinition, ModuleDensity } from "../learning-card";
-import { ROW_CONTROL_WIDTH } from "./types";
+import { ROW_CONTROL_WIDTH_CARD } from "./types";
 
 interface CardModuleRowProps {
   definition: LearningModuleDefinition;
@@ -103,7 +103,7 @@ export default function CardModuleRow({
           <div className="flex min-h-9 items-center justify-between gap-3">
             <span className="text-[12px] text-text-secondary">{t("settings.tools.moduleDensity")}</span>
             <Select
-              className={ROW_CONTROL_WIDTH}
+              className={ROW_CONTROL_WIDTH_CARD}
               value={value.density}
               onChange={(density) => onChange({ ...value, density: density as ModuleDensity })}
               options={[
