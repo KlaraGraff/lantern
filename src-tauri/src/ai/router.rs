@@ -3425,7 +3425,7 @@ mod tests {
     }
 
     #[test]
-    fn stream_preflight_reads_local_credentials_without_vault_state() {
+    fn stream_preflight_reads_credentials_from_the_local_table() {
         let directory = tempfile::TempDir::new().unwrap();
         let db = Db::init(directory.path()).unwrap();
         let secrets = Secrets::init_in_memory().unwrap();

@@ -181,9 +181,10 @@ including offline, where the network TTS cannot help. **Cost: Readest's plugin, 
 equivalent. Not free.** This is the single largest piece of Android work that
 [D-010](mobile-ios.md#d-010--android-is-deferred-not-abandoned) permanently retires.
 
-**Android secrets store.** Carried over from §2.1: keyring compiles away in under a day, but
-somewhere to actually keep API keys and OAuth tokens on Android does not. Android Keystore via
-a small plugin, or an encrypted file using the `aes-gcm`/`sha2` already in the tree.
+**Android secrets store.** Carried over from §2.1: the compile side is now free, but somewhere
+to actually keep API keys and OAuth tokens on Android is not. Android Keystore via a small
+plugin, or an encrypted file — note that `aes-gcm` left the tree with the v1.4 vault, so an
+encrypted file means adding a crypto dependency back, not reusing one.
 **Cost: 2–4 days.**
 
 **Sync has no Android transport at all.** Not a gap in the engine — the engine is genuinely

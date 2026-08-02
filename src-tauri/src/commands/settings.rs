@@ -31,8 +31,9 @@ pub fn get_all_settings(
         result
     };
 
-    // This status is deliberately metadata-only. Opening the app, settings,
-    // or a reader window never reads the historical Keychain vault.
+    // This status is deliberately metadata-only: whether a service is
+    // configured, never the value. Credentials are read only when a request
+    // actually needs one.
     let configured = router::has_configured_service(&db);
     settings.insert("ai_api_key_configured".to_string(), configured.to_string());
 

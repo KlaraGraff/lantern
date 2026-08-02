@@ -59,7 +59,7 @@ paginated reading, or App Review rejects the architecture.
 ### D-002 — iOS first, Android deferred
 
 **Why:** every Android-specific blocker is absent on iOS. `HOME` is set on iOS so the path
-helpers do not panic; `keyring` has an Apple backend; `reqwest`'s default TLS resolves to
+helpers do not panic; `reqwest`'s default TLS resolves to
 Security.framework instead of OpenSSL; WKWebView implements `speechSynthesis` and Android
 System WebView does not; the file picker returns a real path instead of a `content://` URI.
 
@@ -275,7 +275,7 @@ fork. The fork only buys the fifth, and the fifth is where all the cost is:
   96.8% by churn), arriving at ~35/week over the last 30 days and accelerating. A fork
   re-absorbs essentially every commit the main line produces.
 - **Cadence saves none of the 18–30 days** in [D-002](#d-002--ios-first-android-deferred).
-  That figure is one-time port cost — OpenSSL, `keyring`, `HOME`, `content://`, read-aloud,
+  That figure is one-time port cost — OpenSSL, `HOME`, `content://`, read-aloud,
   sync transport — paid in full before the first APK exists, weekly or yearly.
 - **Low cadence is what makes the APK hard to produce, not what makes it cheap.** Three months
   of main at the measured rate is ~230 backend commits and ~120 new crates landing in one
@@ -315,10 +315,10 @@ buildbot for the same reason. This is not theoretical here:
   command passes. Cause: `dcc90e9`, the [F-010](#f-010--only-a-real-ios-compile-finds-the-cfg-holes) fix itself, committed **less than 24
   hours earlier**. One gating decision, one new breakage, next day.
 
-So split [D-002](#d-002--ios-first-android-deferred)'s estimate in two. *Compiles* is the
-small half — the `reqwest` TLS line plus gating `use keyring::Entry` (`src/secrets.rs:6` is
-ungated and there is no `[target.'cfg(target_os = "android")']` table, so Android fails at
-E0432 today). *Usable* is the rest. Buy "compiles" early and put a nightly
+So split [D-002](#d-002--ios-first-android-deferred)'s estimate in two. *Compiles* is now
+the very small half — just the `reqwest` TLS line. The `keyring` gating this paragraph used to
+budget for went away with the v1.4 vault in v2.5.0; `secrets.rs` no longer imports `keyring` on
+any platform. *Usable* is the rest. Buy "compiles" early and put a nightly
 `cargo check --target aarch64-linux-android` behind it, and Android cannot rot while iOS is
 being built. Note the 18 existing `target_os = "android"` cfgs are all
 `cfg(not(any(ios, android)))` exclusions the iOS port created for free — a fork would not
@@ -420,9 +420,14 @@ what was read.
 
 ### F-002 — Four compile-time blockers, all verified against vendored source
 
+> **Item 2 no longer exists (2026-08-02, v2.5.0).** Deleting the v1.4 vault removed the only
+> `keyring` call sites, and `keyring` / `security-framework` are out of `Cargo.toml`. Kept
+> below as the audit record of what P0 actually had to deal with.
+
 1. **`Builder::menu` / `on_menu_event`** at `src-tauri/src/lib.rs:432,467` are unguarded.
    Confirmed `#[cfg(desktop)]` at `tauri-2.10.3/src/app.rs:1827,1850`. Hard compile error.
-2. **`keyring`** — `src-tauri/src/secrets.rs:6` imports it unconditionally, but
+2. **`keyring`** *(since removed — see the note above)* — `src-tauri/src/secrets.rs:6`
+   imported it unconditionally, but
    `src-tauri/Cargo.toml:80,94,104` declares it only for macos/windows/linux. iOS is
    `target_os = "ios"`, so no target table matches and the crate is absent from the graph
    (`E0432`). Note the near-miss: `linux-native` does not cover Android either.

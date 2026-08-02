@@ -562,7 +562,7 @@
   "settings.speech.custom.voiceSource": "这 {{count}} 个音色来自 {{model}} 上次合成被拒时服务端回报的支持列表（{{date}}）。",
   "settings.speech.custom.voiceForget": "清除",
   "settings.speech.custom.apiKey": "API 密钥",
-  "settings.speech.custom.apiKeyHint": "保存在本地密钥库，不参与同步。",
+  "settings.speech.custom.apiKeyHint": "保存在本地凭据数据库，不参与同步。",
   "settings.speech.custom.apiKeyConfigured": "已保存密钥。输入新密钥可替换，清空则断开连接。",
   "settings.speech.custom.apiKeySaved": "已保存 API 密钥",
   "settings.speech.custom.apiKeyCleared": "已清除 API 密钥",

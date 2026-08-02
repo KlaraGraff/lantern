@@ -564,7 +564,7 @@
   "settings.speech.custom.voiceSource": "These {{count}} voices come from what the endpoint reported when it rejected a voice for {{model}} ({{date}}).",
   "settings.speech.custom.voiceForget": "Forget them",
   "settings.speech.custom.apiKey": "API key",
-  "settings.speech.custom.apiKeyHint": "Stored in the local secrets vault and never synced.",
+  "settings.speech.custom.apiKeyHint": "Stored in the local credential database and never synced.",
   "settings.speech.custom.apiKeyConfigured": "A key is stored. Enter a new one to replace it, or clear it to disconnect.",
   "settings.speech.custom.apiKeySaved": "API key saved",
   "settings.speech.custom.apiKeyCleared": "API key cleared",
