@@ -31,7 +31,6 @@
   "sidebar.renameCollection": "重命名",
   "sidebar.deleteCollection": "删除",
   "sidebar.icloudSyncing": "正在与 iCloud 同步…",
-
   "home.title.all": "全部书籍",
   "home.title.reading": "正在阅读",
   "home.title.finished": "已读完",
@@ -54,7 +53,6 @@
   "home.importError": "无法导入书籍",
   "book.preparing": "正在准备阅读内容",
   "book.preparationFailed": "准备失败，点击重试。",
-
   "reader.pageOf": "第 {{current}} 页，共 {{total}} 页",
   "reader.pageRangeOf": "第 {{current}}–{{end}} 页，共 {{total}} 页",
   "reader.chapterOf": "第 {{current}} 章，共 {{total}} 章",
@@ -97,7 +95,6 @@
   "reader.pdfNoTextLayer": "此页没有可提取的文字层，可能是扫描图片，因此无法查词或选择文本。带文字层的 PDF 页面仍可正常使用。",
   "reader.zoom.fit": "适应",
   "reader.zoom.fitTooltip": "适应宽度",
-
   "ai.newChat": "新对话",
   "ai.generatingTitle": "正在生成标题...",
   "ai.startChat": "开始新对话",
@@ -152,8 +149,6 @@
   "ai.spoilerGuard.retryWholeBook": "结合全书重新回答",
   "ai.spoilerGuard.bookOn": "本书阅读思考保护已启用",
   "ai.spoilerGuard.bookOff": "本书阅读思考保护已停用",
-
-
   "chats.title": "对话",
   "chats.search": "搜索对话...",
   "chats.allBooks": "全部书籍",
@@ -169,7 +164,6 @@
   "chats.deleteMsg": "\"{{title}}\" 及其所有消息将被永久删除，此操作无法撤销。",
   "chats.newest": "最新",
   "chats.oldest": "最早",
-
   "vocab.title": "词汇",
   "vocab.history": "查询历史",
   "vocab.review": "复习",
@@ -244,7 +238,6 @@
   "vocab.clearHistory": "清空查询历史",
   "vocab.clearHistoryConfirm": "再次点击确认清空",
   "vocab.loadMore": "加载更多",
-
   "bookmarks.tab.bookmarks": "书签",
   "bookmarks.tab.highlights": "高亮",
   "bookmarks.saved": "已保存",
@@ -257,7 +250,6 @@
   "bookmarks.highlightsAll": "全部",
   "bookmarks.highlightCount_one": "{{count}} 处高亮",
   "bookmarks.highlightCount_other": "{{count}} 处高亮",
-
   "lookup.title": "查词",
   "lookup.lookingUp": "查询中...",
   "lookup.analyzing": "分析中...",
@@ -269,15 +261,12 @@
   "lookup.askFollowUp": "继续追问",
   "lookup.translationLanguageNotConfigured": "请先在设置中选择查词翻译语言",
   "lookup.openSettings": "打开阅读辅助设置",
-
   "explain.title": "解释",
   "explain.thinking": "正在解释...",
   "explain.copy": "复制",
   "explain.copied": "已复制",
-
   "aiPanel.quoteChip.dismiss": "移除引用",
   "aiPanel.quoteChip.replyLabel": "引用 AI 的回答",
-
   "contextMenu.lookUp": "查词",
   "contextMenu.explain": "解释",
   "contextMenu.quote": "引用",
@@ -294,7 +283,6 @@
   "contextMenu.interpretPassage": "解读",
   "contextMenu.translateOnly": "仅翻译",
   "contextMenu.copy": "复制",
-
   "bookMenu.currentlyReading": "正在阅读",
   "bookMenu.finished": "已读完",
   "bookMenu.notStarted": "未开始",
@@ -316,9 +304,7 @@
   "bookMenu.editInfo": "编辑信息",
   "bookMenu.aiIndex": "AI 索引…",
   "bookMenu.collectionPlaceholder": "书单名称",
-
   "bookGrid.finished": "已读完",
-
   "editInfo.title": "编辑信息",
   "editInfo.bookTitle": "标题",
   "editInfo.bookAuthor": "作者",
@@ -328,7 +314,6 @@
   "editInfo.saveFailed": "保存失败，请检查图片格式后重试",
   "editInfo.cancel": "取消",
   "editInfo.save": "保存",
-
   "readerSettings.font": "字体",
   "readerSettings.readingMode": "阅读模式",
   "readerSettings.scrolling": "滚动",
@@ -369,11 +354,9 @@
   "readerSettings.newVocabMarkers": "收藏新词",
   "readerSettings.learningMarkers": "学习中",
   "readerSettings.masteredMarkers": "已掌握",
-
   "settings.title": "设置",
   "settings.subtitle": "管理你的阅读偏好和 AI 配置",
   "settings.saved": "设置已保存",
-
   "settings.general.title": "通用",
   "settings.general.subtitle": "个人资料与语言",
   "settings.general.displayName": "显示名称",
@@ -387,7 +370,6 @@
   "settings.general.lookupHistory30Days": "30 天",
   "settings.general.lookupHistory90Days": "90 天",
   "settings.general.lookupHistory1Year": "1 年",
-
   "settings.learner.title": "英语学习资料",
   "settings.learner.cefr": "学习者等级",
   "settings.learner.cefrHint": "控制英文解释使用的词汇和句式难度",
@@ -464,15 +446,12 @@
   "settings.updates.title": "更新",
   "settings.updates.autoCheck": "自动检查更新",
   "settings.updates.autoCheckHint": "启动时检查",
-
   "settings.language": "语言",
   "settings.languageUnset": "选择",
   "settings.language.subtitle": "界面语言",
   "settings.languageSub": "选择你的首选语言",
-
   "settings.reading.fontHint": "默认阅读字体",
   "settings.reading.autoSaveHint": "自动保存阅读进度",
-
   "settings.services.shortTitle": "服务配置",
   "settings.services.shortSubtitle": "模型、语音与 OCR",
   "settings.services.shortSubtitleNoOcr": "模型与语音",
@@ -480,7 +459,6 @@
   "settings.services.views.embedding": "检索模型",
   "settings.services.views.speech": "语音",
   "settings.services.views.ocr": "扫描件 OCR",
-
   "settings.tools.title": "阅读辅助",
   "settings.tools.subtitle": "查词与学习卡片",
   "settings.tools.paneSubtitle": "配置查词、解读、学习卡片、操作菜单与正文标记。",
@@ -756,7 +734,6 @@
   "settings.tools.densityHelp.examples.tone.compact": "给出核心语气标签",
   "settings.tools.densityHelp.examples.tone.standard": "用一句话解释表达效果",
   "settings.tools.densityHelp.examples.tone.detailed": "结合上下文解释作者意图和细微差别",
-
   "settings.librarySync.title": "书库同步",
   "settings.librarySync.subtitle": "iCloud 云盘同步",
   "settings.bookSources.title": "书籍来源",
@@ -773,7 +750,6 @@
   "settings.bookSources.restore": "恢复默认",
   "settings.bookSources.restoreHint": "把内置站点补回来并撤销对它们的修改，你自己添加的条目不受影响。",
   "settings.bookSources.note": "Lantern 只负责打开这些链接，不进行搜索、下载或托管。",
-
   "settings.mcp.title": "MCP",
   "settings.mcp.subtitle": "AI 客户端集成",
   "settings.mcp.claudeCode": "Claude Code CLI",
@@ -788,7 +764,6 @@
   "settings.mcp.writeAccess": "允许写入权限",
   "settings.mcp.writeAccessSub": "允许 MCP 客户端批量导入或删除书籍、管理书单、修改元数据，并按需建立本地书籍索引。",
   "settings.mcp.caveat": "Lantern MCP 以本地子进程运行。本机上以你的账户运行的任何 AI 客户端都能启动它并读取你的书库。",
-
   "settings.about.title": "关于",
   "settings.about.subtitle": "版本与链接",
   "settings.about.version": "版本",
@@ -816,7 +791,6 @@
   "update.toast.upToDate": "已是最新版本",
   "update.toast.error": "检查更新失败",
   "update.toast.retry": "重试",
-
   "settings.lookup.title": "查词",
   "settings.lookup.sub": "自定义查词显示方式",
   "settings.lookup.shortSub": "翻译与词典",
@@ -826,12 +800,10 @@
   "settings.lookup.showTranslationHint": "在查词结果中显示所选目标语言的简短翻译",
   "settings.lookup.translationLanguage": "翻译为",
   "settings.lookup.translationLanguageHint": "查词翻译的目标语言",
-
   "settings.translation.title": "翻译",
   "settings.translation.subtitle": "语言与设置",
   "settings.translation.language": "翻译语言",
   "settings.translation.languageHint": "翻译的目标语言",
-
   "settings.ai.title": "AI 助手配置",
   "settings.ai.subtitle": "配置阅读助手的 AI 服务商和模型偏好",
   "settings.ai.services": "调用顺序",
@@ -925,12 +897,17 @@
   "settings.ai.testError.notConfigured": "尚未配置已启用的 API 密钥",
   "settings.ai.testError.cancelled": "连接测试已取消",
   "settings.ai.health.untested": "未测试",
+  "settings.ai.health.needsConnection": "需要连接",
+  "settings.ai.health.verifying": "正在验证",
+  "settings.ai.health.quota": "额度已用完",
+  "settings.ai.health.inSeconds": "剩 {{count}} 秒",
+  "settings.ai.health.inMinutes": "剩 {{count}} 分钟",
+  "settings.ai.health.inHours": "剩 {{count}} 小时",
   "settings.ai.health.available": "可用",
-  "settings.ai.health.cooldown": "暂时冷却",
+  "settings.ai.health.cooldown": "暂时不可用",
   "settings.ai.health.retest": "需重新测试",
-  "settings.ai.health.unavailable": "不可用",
-  "settings.ai.health.invalid": "密钥无效",
-  "settings.ai.health.notConfigured": "未配置密钥",
+  "settings.ai.health.unavailable": "配置不可用",
+  "settings.ai.health.invalid": "需要重新连接",
   "settings.ai.provider": "AI 服务商",
   "settings.ai.providerHint": "选择你偏好的 AI 服务商",
   "settings.ai.customCompatible": "自定义兼容 API",
@@ -1010,7 +987,6 @@
   "settings.ai.keepAliveHint": "模型在内存中保持加载的时间（如 \"30m\"、\"1h\"、\"-1\" 表示永不卸载）",
   "settings.ai.save": "保存 AI 配置",
   "settings.ai.savedToast": "AI 配置已保存",
-
   "settings.layout.title": "默认排版",
   "settings.layout.subtitle": "设置打开书籍时的默认主题、字体和间距",
   "settings.layout.theme": "主题",
@@ -1047,14 +1023,12 @@
   "settings.layout.previousPageBinding": "上一页按键",
   "settings.layout.nextPageBinding": "下一页按键",
   "settings.layout.systemDefault": "系统默认",
-
   "settings.reading.title": "阅读偏好",
   "settings.reading.subtitle": "自定义你的阅读体验",
   "settings.reading.autoSave": "自动保存进度",
   "settings.reading.autoSaveSub": "自动保存你的阅读位置",
   "settings.reading.skipFrontMatter": "跳过卷首内容",
   "settings.reading.skipFrontMatterHint": "首次打开书籍时直接跳到正文,跳过封面、目录、序言等前置内容。",
-
   "settings.librarySync.folder": "iCloud 云盘同步文件夹",
   "settings.librarySync.folderNotSelected": "尚未选择文件夹",
   "settings.librarySync.chooseFolder": "选择文件夹",
@@ -1100,13 +1074,11 @@
   "settings.librarySync.error.SYNC_FOLDER_NOT_WRITABLE": "Lantern 无法写入所选的 iCloud 云盘文件夹。",
   "settings.librarySync.error.SYNC_FOLDER_CHANGE_REQUIRES_DISABLE": "请先关闭同步，再选择其他文件夹。",
   "settings.librarySync.error.unknown": "同步未能完成。请检查所选 iCloud 云盘文件夹后重试。",
-
   "settings.diagnostics.title": "诊断",
   "settings.diagnostics.revealLogs": "查看日志",
   "settings.diagnostics.revealLogsHint": "在文件管理器中打开 Lantern 日志目录",
   "settings.diagnostics.revealLogsButton": "打开",
   "menu.help.revealLogs": "在 Finder 中显示日志",
-
   "settings.appearance.title": "外观",
   "settings.appearance.subtitle": "自定义应用的外观和风格",
   "settings.appearance.theme": "主题",
@@ -1114,7 +1086,6 @@
   "settings.appearance.system": "跟随系统",
   "settings.appearance.light": "浅色",
   "settings.appearance.dark": "深色",
-
   "common.cancel": "取消",
   "common.confirm": "确认",
   "common.delete": "删除",
@@ -1150,7 +1121,6 @@
   "common.search": "搜索...",
   "common.unknownBook": "未知书籍",
   "common.bookmark": "书签",
-
   "learningCard.allModulesDisabled": "当前已关闭所有展示项，如需查询请开启至少 1 项。",
   "learningCard.cachedRefresh": "缓存结果 · 重新查询",
   "learningCard.title.word": "单词释义",
@@ -1170,7 +1140,6 @@
   "learningCard.notes.scope.global": "所有书籍",
   "learningCard.notes.scope.detached": "独立资料",
   "learningCard.notes.scopeLabel": "笔记范围",
-
   "translation.title": "翻译",
   "translation.original": "原文",
   "translation.translating": "翻译中...",
@@ -1178,13 +1147,11 @@
   "translation.openSettings": "打开阅读辅助设置",
   "translation.copy": "复制",
   "translation.copied": "已复制",
-
   "readerSettings.themeCustom": "自定义",
   "settings.layout.customThemeColor": "页面背景色",
   "settings.layout.customThemePicker": "选择页面背景色",
   "settings.layout.customThemeHex": "背景色 HEX 值",
   "settings.layout.customThemeOpacity": "色调浓度",
-
   "settings.tools.custom.name": "名称",
   "settings.tools.custom.prompt": "提示词",
   "settings.tools.custom.optimize": "优化提示词",
@@ -1211,7 +1178,6 @@
   "settings.tools.custom.continueEditing": "继续编辑",
   "settings.tools.custom.addModule": "添加自定义模块",
   "settings.tools.custom.addAction": "添加自定义动作",
-
   "settings.tools.bindings.title": "自定义交互",
   "settings.tools.bindings.hint": "快捷键在阅读器内生效，作用于当前选中的文本；未选中内容时会出现提示而不执行。",
   "settings.tools.bindings.recording": "请按快捷键",
@@ -1236,7 +1202,6 @@
   "settings.tools.bindings.actions.explain": "解读",
   "settings.tools.bindings.actions.custom": "自定义动作",
   "reader.bindingNeedsSelection": "「{{action}}」快捷键作用于选中的文本，请先选中内容",
-
   "settings.tools.markers.sameWordForms": "同单词各词形",
   "settings.tools.wordForms.search": "搜索已标记单词",
   "settings.tools.wordForms.fetchAll": "批量获取所有缺失词形",
@@ -1244,7 +1209,6 @@
   "settings.tools.wordForms.unset": "未设置，用逗号分隔",
   "settings.tools.wordForms.refetch": "重新获取此单词的词形",
   "settings.tools.wordForms.empty": "没有已标记的单词",
-
   "ocr.actions.cancel": "取消",
   "ocr.actions.cancelDownload": "取消下载",
   "ocr.actions.copyError": "复制错误详情",
@@ -1314,7 +1278,6 @@
   "ocr.reader.publishing": "识别完成，正在准备可阅读版本。",
   "ocr.reader.failed": "文字识别失败，原始 PDF 不受影响。",
   "ocr.reader.completedToast": "文字识别完成，现在可以选词和使用 AI 功能。",
-
   "time.justNow": "刚刚",
   "time.minutesAgo": "{{count}}分钟前",
   "time.hoursAgo": "{{count}}小时前",

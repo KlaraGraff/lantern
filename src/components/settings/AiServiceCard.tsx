@@ -150,12 +150,79 @@ function providerLabel(
   return t(preset?.nameKey ?? "settings.ai.customCompatible");
 }
 
+/**
+ * Re-render once a second while `until` is still ahead, so a model that is
+ * cooling counts down instead of sitting on a static word. Nothing is scheduled
+ * when there is no deadline, and the timer stops itself once it runs out.
+ */
+function useCountdown(until: number | null): number | null {
+  const [remaining, setRemaining] = useState(() =>
+    until == null ? null : Math.max(0, until - Date.now()),
+  );
+  useEffect(() => {
+    if (until == null) {
+      setRemaining(null);
+      return;
+    }
+    setRemaining(Math.max(0, until - Date.now()));
+    const timer = window.setInterval(() => {
+      const left = Math.max(0, until - Date.now());
+      setRemaining(left);
+      if (left === 0) window.clearInterval(timer);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [until]);
+  return remaining;
+}
+
+/**
+ * Coarse on purpose. The exact second only carries information below a minute;
+ * above that, rounding up keeps the number from ever promising too little.
+ */
+function formatRemaining(
+  ms: number,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  const seconds = Math.ceil(ms / 1000);
+  if (seconds < 60) return t("settings.ai.health.inSeconds", { count: seconds });
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return t("settings.ai.health.inMinutes", { count: minutes });
+  return t("settings.ai.health.inHours", { count: Math.ceil(minutes / 60) });
+}
+
+/**
+ * The single word shown for a model. Every word maps to exactly one condition,
+ * and in particular a spent quota (about an hour) never shares a word with a
+ * network blip (thirty seconds): the user's move differs — wait, or reorder the
+ * route — and one word for both hides which it is.
+ *
+ * `connected` is whatever counts as having credentials for this profile's auth
+ * mode; a model with nothing to authenticate with is not "unavailable", it has
+ * simply never been connected, and says so.
+ */
 function profileHealth(
   profile: AiProfile,
+  connected: boolean,
+  testing: boolean,
   result: AiConnectionTestResult | undefined,
   healthStale: boolean,
+  remaining: number | null,
   t: (key: string, options?: Record<string, unknown>) => string,
 ): { label: string; className: string } {
+  const countdown =
+    remaining != null && remaining > 0 ? ` · ${formatRemaining(remaining, t)}` : "";
+  if (testing) {
+    return {
+      label: t("settings.ai.health.verifying"),
+      className: "bg-bg-input text-text-muted",
+    };
+  }
+  if (!connected) {
+    return {
+      label: t("settings.ai.health.needsConnection"),
+      className: "bg-accent-bg text-accent-text",
+    };
+  }
   if (healthStale) {
     return {
       label: t("settings.ai.health.retest"),
@@ -177,8 +244,8 @@ function profileHealth(
     }
     if (result.error_kind === "not_configured") {
       return {
-        label: t("settings.ai.health.notConfigured"),
-        className: "bg-danger-bg text-danger-text",
+        label: t("settings.ai.health.needsConnection"),
+        className: "bg-accent-bg text-accent-text",
       };
     }
     return {
@@ -206,13 +273,19 @@ function profileHealth(
   }
   if (profile.last_error_kind === "not_configured") {
     return {
-      label: t("settings.ai.health.notConfigured"),
-      className: "bg-danger-bg text-danger-text",
+      label: t("settings.ai.health.needsConnection"),
+      className: "bg-accent-bg text-accent-text",
     };
   }
-  if (profile.state === "cooldown" || profile.state === "quota") {
+  if (profile.state === "quota") {
     return {
-      label: t("settings.ai.health.cooldown"),
+      label: `${t("settings.ai.health.quota")}${countdown}`,
+      className: "bg-accent-bg text-accent-text",
+    };
+  }
+  if (profile.state === "cooldown") {
+    return {
+      label: `${t("settings.ai.health.cooldown")}${countdown}`,
       className: "bg-accent-bg text-accent-text",
     };
   }
@@ -328,9 +401,23 @@ export default function AiServiceCard({
   const providerName = providerLabel(profile.provider, t);
   const cost = preset?.cost ?? null;
   const keyPage = preset?.keyPage ?? null;
-  const health = profileHealth(profile, testResult, healthStale, t);
   const latency = healthStale ? null : (testResult?.total_ms ?? profile.last_latency_ms);
   const usesApiKeys = profile.auth_mode === "api_key" && profile.provider !== "ollama";
+  // Ollama authenticates with nothing, OAuth with an account, everything else
+  // with a key — so "has something to authenticate with" is per auth mode.
+  const connected = !usesApiKeys
+    ? profile.auth_mode !== "oauth" || oauthStatus.connected
+    : credentials.length > 0;
+  const remaining = useCountdown(profile.cooldown_until);
+  const health = profileHealth(
+    profile,
+    connected,
+    testing,
+    testResult,
+    healthStale,
+    remaining,
+    t,
+  );
 
   const setProvider = (provider: string) => {
     const next = presetFor(provider);

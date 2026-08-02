@@ -31,7 +31,6 @@
   "sidebar.renameCollection": "Rename",
   "sidebar.deleteCollection": "Delete",
   "sidebar.icloudSyncing": "Syncing with iCloud…",
-
   "home.title.all": "All Books",
   "home.title.reading": "Currently Reading",
   "home.title.finished": "Finished",
@@ -54,7 +53,6 @@
   "home.importError": "Couldn't import book",
   "book.preparing": "Preparing for reading",
   "book.preparationFailed": "Preparation failed. Click to retry.",
-
   "reader.pageOf": "Page {{current}} of {{total}}",
   "reader.pageRangeOf": "Pages {{current}}–{{end}} of {{total}}",
   "reader.chapterOf": "Chapter {{current}} of {{total}}",
@@ -97,7 +95,6 @@
   "reader.pdfNoTextLayer": "This page has no extractable text layer and may be a scan, so lookup and text selection are unavailable. PDF pages with a text layer remain supported.",
   "reader.zoom.fit": "Fit",
   "reader.zoom.fitTooltip": "Fit to width",
-
   "ai.newChat": "New Chat",
   "ai.generatingTitle": "Generating title...",
   "ai.startChat": "Start a new chat",
@@ -139,9 +136,9 @@
   "ai.sources": "Sources",
   "ai.sectionContext.source": "Current reading range source",
   "ai.sectionContext.viewport": "Based on the visible reading area",
-  "ai.sectionContext.unavailable": "Not grounded in the book's text \u2014 answered from the AI's own knowledge.",
-  "ai.sectionContext.wholeBookVocabularyUnavailable": "Not a scan of the book \u2014 a full-text scan was unavailable; any examples come from the AI's own knowledge.",
-  "ai.sectionContext.wholeBookUnavailable": "Not grounded in the book's text \u2014 the whole-book source was unavailable, so this comes from the AI's own knowledge.",
+  "ai.sectionContext.unavailable": "Not grounded in the book's text — answered from the AI's own knowledge.",
+  "ai.sectionContext.wholeBookVocabularyUnavailable": "Not a scan of the book — a full-text scan was unavailable; any examples come from the AI's own knowledge.",
+  "ai.sectionContext.wholeBookUnavailable": "Not grounded in the book's text — the whole-book source was unavailable, so this comes from the AI's own knowledge.",
   "ai.sectionContext.spoilerLimited": "Only the read portion of this section was analyzed ({{visible}}/{{total}} text segments).",
   "ai.sectionContext.truncated": "Only {{selected}}/{{visible}} text segments fit the context limit; the answer may be incomplete.",
   "ai.sectionContext.details": "Analyzed about {{selectedTokens}} of {{visibleTokens}} visible tokens ({{totalTokens}} indexed in total).",
@@ -152,8 +149,6 @@
   "ai.spoilerGuard.retryWholeBook": "Answer again using the whole book",
   "ai.spoilerGuard.bookOn": "Reading thought protection is on for this book",
   "ai.spoilerGuard.bookOff": "Reading thought protection is off for this book",
-
-
   "chats.title": "Chats",
   "chats.search": "Search chats...",
   "chats.allBooks": "All Books",
@@ -169,7 +164,6 @@
   "chats.deleteMsg": "\"{{title}}\" and all its messages will be permanently deleted. This action cannot be undone.",
   "chats.newest": "Newest",
   "chats.oldest": "Oldest",
-
   "vocab.title": "Vocab",
   "vocab.history": "Lookup History",
   "vocab.review": "Review",
@@ -244,7 +238,6 @@
   "vocab.clearHistory": "Clear lookup history",
   "vocab.clearHistoryConfirm": "Click again to clear",
   "vocab.loadMore": "Load more",
-
   "bookmarks.tab.bookmarks": "Bookmarks",
   "bookmarks.tab.highlights": "Highlights",
   "bookmarks.saved": "Saved",
@@ -257,7 +250,6 @@
   "bookmarks.highlightsAll": "All",
   "bookmarks.highlightCount_one": "{{count}} highlight",
   "bookmarks.highlightCount_other": "{{count}} highlights",
-
   "lookup.title": "Look Up",
   "lookup.lookingUp": "Looking up...",
   "lookup.analyzing": "Analyzing...",
@@ -269,15 +261,12 @@
   "lookup.askFollowUp": "Ask AI",
   "lookup.translationLanguageNotConfigured": "Set a lookup translation language in Settings first",
   "lookup.openSettings": "Open Reading Assistance Settings",
-
   "explain.title": "Explain",
   "explain.thinking": "Explaining...",
   "explain.copy": "Copy",
   "explain.copied": "Copied",
-
   "aiPanel.quoteChip.dismiss": "Remove quote",
   "aiPanel.quoteChip.replyLabel": "Quoting the assistant's reply",
-
   "contextMenu.lookUp": "Look Up",
   "contextMenu.explain": "Explain",
   "contextMenu.quote": "Quote",
@@ -294,7 +283,6 @@
   "contextMenu.interpretPassage": "Interpret",
   "contextMenu.translateOnly": "Translate Only",
   "contextMenu.copy": "Copy",
-
   "bookMenu.currentlyReading": "Currently Reading",
   "bookMenu.finished": "Finished",
   "bookMenu.notStarted": "Not Started",
@@ -316,9 +304,7 @@
   "bookMenu.editInfo": "Edit Info",
   "bookMenu.aiIndex": "AI Index…",
   "bookMenu.collectionPlaceholder": "Collection name",
-
   "bookGrid.finished": "Finished",
-
   "editInfo.title": "Edit Info",
   "editInfo.bookTitle": "Title",
   "editInfo.bookAuthor": "Author",
@@ -328,7 +314,6 @@
   "editInfo.saveFailed": "Could not save. Check the image format and try again.",
   "editInfo.cancel": "Cancel",
   "editInfo.save": "Save",
-
   "readerSettings.font": "Font",
   "readerSettings.readingMode": "Reading Mode",
   "readerSettings.scrolling": "Scrolling",
@@ -369,11 +354,9 @@
   "readerSettings.newVocabMarkers": "Saved vocabulary",
   "readerSettings.learningMarkers": "Learning",
   "readerSettings.masteredMarkers": "Mastered",
-
   "settings.title": "Settings",
   "settings.subtitle": "Manage your reading preferences and AI configuration",
   "settings.saved": "Settings saved",
-
   "settings.general.title": "General",
   "settings.general.subtitle": "Profile & language",
   "settings.general.displayName": "Display Name",
@@ -387,7 +370,6 @@
   "settings.general.lookupHistory30Days": "30 days",
   "settings.general.lookupHistory90Days": "90 days",
   "settings.general.lookupHistory1Year": "1 year",
-
   "settings.learner.title": "English Learning Profile",
   "settings.learner.cefr": "Learner Level",
   "settings.learner.cefrHint": "Controls the vocabulary and sentence complexity used in English explanations",
@@ -464,17 +446,14 @@
   "settings.updates.title": "Updates",
   "settings.updates.autoCheck": "Check for updates automatically",
   "settings.updates.autoCheckHint": "Check on app launch",
-
   "settings.language": "Language",
   "settings.languageUnset": "Choose",
   "settings.language.subtitle": "Interface language",
   "settings.languageSub": "Choose your preferred language",
-
   "settings.reading.title": "Reading",
   "settings.reading.subtitle": "Font, spacing & layout",
   "settings.reading.fontHint": "Default font for reading",
   "settings.reading.autoSaveHint": "Automatically save your reading position",
-
   "settings.services.shortTitle": "Services",
   "settings.services.shortSubtitle": "Models, speech and OCR",
   "settings.services.shortSubtitleNoOcr": "Models and speech",
@@ -482,7 +461,6 @@
   "settings.services.views.embedding": "Retrieval",
   "settings.services.views.speech": "Speech",
   "settings.services.views.ocr": "Scanned PDF OCR",
-
   "settings.tools.title": "Reading Assistance",
   "settings.tools.subtitle": "Lookup and learning cards",
   "settings.tools.paneSubtitle": "Configure lookup, interpretation, learning cards, action menus, and text markers.",
@@ -703,7 +681,7 @@
   "settings.tools.markers.underline": "Underline",
   "settings.tools.markers.bold": "Bold",
   "settings.tools.markers.layoutAffecting": "Markers may change weight and font",
-  "settings.tools.markers.layoutAffectingHint": "Whole-word markers only. Bold and a different face make the text wider, so marking a word reflows the page \u2014 line breaks and page boundaries shift as you look words up. Colour, background, and underline never move the text.",
+  "settings.tools.markers.layoutAffectingHint": "Whole-word markers only. Bold and a different face make the text wider, so marking a word reflows the page — line breaks and page boundaries shift as you look words up. Colour, background, and underline never move the text.",
   "settings.tools.markers.font": "Marker font",
   "settings.tools.markers.fontHint": "The default keeps the original book typography.",
   "settings.tools.markers.followOriginal": "Follow original text",
@@ -758,7 +736,6 @@
   "settings.tools.densityHelp.examples.tone.compact": "Gives the central tone label",
   "settings.tools.densityHelp.examples.tone.standard": "Explains the effect in one sentence",
   "settings.tools.densityHelp.examples.tone.detailed": "Connects context, authorial intent, and subtle distinctions",
-
   "settings.librarySync.title": "Library Sync",
   "settings.librarySync.subtitle": "iCloud Drive folder sync",
   "settings.bookSources.title": "Where to find books",
@@ -775,7 +752,6 @@
   "settings.bookSources.restore": "Restore defaults",
   "settings.bookSources.restoreHint": "Brings back the built-in sites and undoes edits to them. Sites you added are left alone.",
   "settings.bookSources.note": "Lantern only opens these links — it does not search, download, or host anything.",
-
   "settings.mcp.title": "MCP",
   "settings.mcp.subtitle": "AI client integrations",
   "settings.mcp.claudeCode": "Claude Code CLI",
@@ -790,7 +766,6 @@
   "settings.mcp.writeAccess": "Allow write access",
   "settings.mcp.writeAccessSub": "Let MCP clients batch import or delete books, manage collections, update metadata, and build local book indexes on demand.",
   "settings.mcp.caveat": "Lantern MCP runs as a local subprocess. Any AI client on this Mac under your account can launch it and read your library.",
-
   "settings.about.title": "About",
   "settings.about.subtitle": "Version & links",
   "settings.about.version": "Version",
@@ -818,7 +793,6 @@
   "update.toast.upToDate": "You're up to date",
   "update.toast.error": "Update check failed",
   "update.toast.retry": "Retry",
-
   "settings.lookup.title": "Lookup",
   "settings.lookup.sub": "Customize how word lookups appear",
   "settings.lookup.shortSub": "Translation & dictionary",
@@ -828,12 +802,10 @@
   "settings.lookup.showTranslationHint": "Include a brief translation in the selected target language",
   "settings.lookup.translationLanguage": "Translate To",
   "settings.lookup.translationLanguageHint": "Target language for lookup translations",
-
   "settings.translation.title": "Translation",
   "settings.translation.subtitle": "Language & settings",
   "settings.translation.language": "Translation Language",
   "settings.translation.languageHint": "Target language for translations",
-
   "settings.ai.title": "AI Assistant Configuration",
   "settings.ai.subtitle": "Configure your AI provider and model preferences for the reading assistant",
   "settings.ai.services": "Call order",
@@ -927,12 +899,17 @@
   "settings.ai.testError.notConfigured": "No enabled API key is configured",
   "settings.ai.testError.cancelled": "The connection test was cancelled",
   "settings.ai.health.untested": "Not tested",
+  "settings.ai.health.needsConnection": "Needs connecting",
+  "settings.ai.health.verifying": "Verifying",
+  "settings.ai.health.quota": "Out of quota",
+  "settings.ai.health.inSeconds": "{{count}}s left",
+  "settings.ai.health.inMinutes": "{{count}}m left",
+  "settings.ai.health.inHours": "{{count}}h left",
   "settings.ai.health.available": "Available",
-  "settings.ai.health.cooldown": "Cooling down",
+  "settings.ai.health.cooldown": "Temporarily unavailable",
   "settings.ai.health.retest": "Retest needed",
-  "settings.ai.health.unavailable": "Unavailable",
-  "settings.ai.health.invalid": "Invalid key",
-  "settings.ai.health.notConfigured": "No API key",
+  "settings.ai.health.unavailable": "Unusable setup",
+  "settings.ai.health.invalid": "Reconnect needed",
   "settings.ai.provider": "AI Provider",
   "settings.ai.providerHint": "Choose your preferred AI service provider",
   "settings.ai.customCompatible": "Custom Compatible API",
@@ -1012,7 +989,6 @@
   "settings.ai.keepAliveHint": "How long to keep the model loaded in memory (e.g. \"30m\", \"1h\", \"-1\" for never unload)",
   "settings.ai.save": "Save AI Configuration",
   "settings.ai.savedToast": "AI configuration saved",
-
   "settings.layout.title": "Default Layout",
   "settings.layout.subtitle": "Set default theme, font, and spacing applied when opening books",
   "settings.layout.theme": "Theme",
@@ -1049,12 +1025,10 @@
   "settings.layout.previousPageBinding": "Previous-page control",
   "settings.layout.nextPageBinding": "Next-page control",
   "settings.layout.systemDefault": "System Default",
-
   "settings.reading.autoSave": "Auto-save Progress",
   "settings.reading.autoSaveSub": "Automatically save your reading position",
   "settings.reading.skipFrontMatter": "Skip front matter",
   "settings.reading.skipFrontMatterHint": "When first opening a book, jump to the main text and skip the cover, contents, foreword, and other front matter.",
-
   "settings.librarySync.folder": "iCloud Drive sync folder",
   "settings.librarySync.folderNotSelected": "No folder selected",
   "settings.librarySync.chooseFolder": "Choose folder",
@@ -1100,13 +1074,11 @@
   "settings.librarySync.error.SYNC_FOLDER_NOT_WRITABLE": "Lantern cannot write to the selected iCloud Drive folder.",
   "settings.librarySync.error.SYNC_FOLDER_CHANGE_REQUIRES_DISABLE": "Turn off sync before choosing a different folder.",
   "settings.librarySync.error.unknown": "Sync could not complete. Check the selected iCloud Drive folder and try again.",
-
   "settings.diagnostics.title": "Diagnostics",
   "settings.diagnostics.revealLogs": "Reveal Logs",
   "settings.diagnostics.revealLogsHint": "Open the Lantern log directory in your file manager",
   "settings.diagnostics.revealLogsButton": "Open",
   "menu.help.revealLogs": "Reveal Logs in Finder",
-
   "settings.appearance.title": "Appearance",
   "settings.appearance.subtitle": "Customize the look and feel of the app",
   "settings.appearance.theme": "Theme",
@@ -1114,7 +1086,6 @@
   "settings.appearance.system": "System",
   "settings.appearance.light": "Light",
   "settings.appearance.dark": "Dark",
-
   "common.cancel": "Cancel",
   "common.confirm": "Confirm",
   "common.delete": "Delete",
@@ -1150,7 +1121,6 @@
   "common.search": "Search...",
   "common.unknownBook": "Unknown Book",
   "common.bookmark": "Bookmark",
-
   "learningCard.allModulesDisabled": "All display modules are turned off. Enable at least one to look things up.",
   "learningCard.cachedRefresh": "Cached result · Look up again",
   "learningCard.title.word": "Word Definition",
@@ -1170,7 +1140,6 @@
   "learningCard.notes.scope.global": "All Books",
   "learningCard.notes.scope.detached": "Independent",
   "learningCard.notes.scopeLabel": "Note scope",
-
   "translation.title": "Translation",
   "translation.original": "Original",
   "translation.translating": "Translating...",
@@ -1178,13 +1147,11 @@
   "translation.openSettings": "Open Reading Assistance Settings",
   "translation.copy": "Copy",
   "translation.copied": "Copied",
-
   "readerSettings.themeCustom": "Custom",
   "settings.layout.customThemeColor": "Page background",
   "settings.layout.customThemePicker": "Choose page background color",
   "settings.layout.customThemeHex": "Background HEX value",
   "settings.layout.customThemeOpacity": "Tint strength",
-
   "settings.tools.custom.name": "Name",
   "settings.tools.custom.prompt": "Prompt",
   "settings.tools.custom.optimize": "Optimize prompt",
@@ -1211,7 +1178,6 @@
   "settings.tools.custom.continueEditing": "Continue editing",
   "settings.tools.custom.addModule": "Add custom module",
   "settings.tools.custom.addAction": "Add custom action",
-
   "settings.tools.bindings.title": "Custom interactions",
   "settings.tools.bindings.hint": "Shortcuts work in the reader on the currently selected text. When nothing is selected, a prompt appears and no action runs.",
   "settings.tools.bindings.recording": "Press shortcut",
@@ -1236,7 +1202,6 @@
   "settings.tools.bindings.actions.explain": "Explain",
   "settings.tools.bindings.actions.custom": "Custom action",
   "reader.bindingNeedsSelection": "“{{action}}” works on selected text. Select some text first.",
-
   "settings.tools.markers.sameWordForms": "All forms of the word",
   "settings.tools.wordForms.search": "Search marked words",
   "settings.tools.wordForms.fetchAll": "Fetch all missing word forms",
@@ -1244,7 +1209,6 @@
   "settings.tools.wordForms.unset": "Not set; separate forms with commas",
   "settings.tools.wordForms.refetch": "Fetch this word again",
   "settings.tools.wordForms.empty": "No marked words",
-
   "ocr.actions.cancel": "Cancel",
   "ocr.actions.cancelDownload": "Cancel download",
   "ocr.actions.copyError": "Copy error details",
@@ -1314,7 +1278,6 @@
   "ocr.reader.publishing": "Recognition finished. Preparing the readable version.",
   "ocr.reader.failed": "Text recognition failed. The original PDF is unchanged.",
   "ocr.reader.completedToast": "Text recognition is complete. You can now select text and use AI features.",
-
   "time.justNow": "Just now",
   "time.minutesAgo": "{{count}}m ago",
   "time.hoursAgo": "{{count}}h ago",
