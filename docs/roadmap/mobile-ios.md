@@ -83,6 +83,9 @@ The ordering decision is unchanged: iOS first, one vendor and one WebView.
 **Revisit after:** iOS ships and the capability layer ([D-005](#d-005--capability-flags-not-platform-checks))
 has proven itself. Android then reuses phases P1–P3 wholesale.
 
+**Where Android lives** — in this repo, always — and how the cost is actually lowered:
+[D-009](#d-009--android-stays-in-this-repo-only-the-guarantee-is-lowered).
+
 ### D-003 — OCR stays on desktop
 
 The phone never runs OCR. It reads OCR output that the desktop produced and synced.
@@ -209,6 +212,100 @@ real obligation and should be budgeted as one.
 **Note:** this decision does not apply to the sync relocation — see
 [F-009](#f-009--relocating-the-sync-directory-is-already-a-solved-operation), where no
 migration code is needed at all.
+
+### D-009 — Android stays in this repo; only the *guarantee* is lowered
+
+Android is never forked into a separate repo, branch, or release train. What gets decoupled
+is the promise: Android may break, and its breakage never blocks a desktop or iOS release.
+
+**The question this answers:** if Android compatibility is expensive, split it out and
+maintain it at a lower cadence — guaranteeing only that one usable APK exists?
+
+**Why not fork.** Five things can be decoupled independently, and they have wildly different
+prices. Forking buys the expensive one to get the cheap ones:
+
+| Axis | Price | Verdict |
+|---|---|---|
+| Store submission cadence | ~0 — a manual local script, off CI | **Take it.** Readest already runs exactly this |
+| Release blocking | one line, `fail-fast: false` on the build matrix | **Take it** |
+| PR blocking | one line — Android CI job is nightly + label-triggered, not required | **Take it** |
+| Support promise | ~0 — a written tier policy with an exit clause | **Take it** |
+| Codebase location | re-absorbing ~33 shared commits/week, forever | **Reject** |
+
+The first four are what "至少有一个可用的安卓包" actually means, and none of them requires a
+fork. The fork only buys the fifth, and the fifth is where all the cost is:
+
+- **The Android-owned surface is ~0.2% of the code.** ~8 files / ~250 lines against 335
+  shared files / 106,577 shared lines. You do not fork a repo to own 250 lines.
+- **94.8% of code-bearing commits in the last 90 days touch the shared layer** (239 of 252;
+  96.8% by churn), arriving at ~35/week over the last 30 days and accelerating. A fork
+  re-absorbs essentially every commit the main line produces.
+- **Cadence saves none of the 16–24 days** in [D-002](#d-002--ios-first-android-deferred).
+  That figure is one-time port cost — OpenSSL, `keyring`, `HOME`, `content://` — paid in full
+  before the first APK exists, whether it ships weekly or yearly.
+- **Low cadence is what makes the APK hard to produce, not what makes it cheap.** Three months
+  of main at the measured rate is ~230 backend commits and ~120 new crates landing in one
+  merge, with no green-to-red transition anywhere to bisect. Fowler's point about big merges
+  applies with force at this size: the cost is dominated by variance, and the realistic
+  failure is a *semantic* conflict — the rebase is green and the APK is subtly wrong.
+- **Environment drift does not care whether you edit Android code.** NDK, Gradle, AGP, the
+  Play target-API floor and the runner images all move on their own. This repo has already run
+  the experiment on its release path: `release.yml` sat untouched for 3.5 months and then
+  needed **six corrective commits in 72 minutes** (2026-07-13, `e105256`…`e3798ad`) before it
+  produced an artifact — and the trigger was environment drift, not code rot.
+- **Release cadence makes "every few months" unprecedented here.** 96 version tags between
+  2026-03-08 and 2026-08-01 — one release every 1.5 days, longest gap ever 14 days. A
+  quarterly Android build is ~6× the longest gap this project has tolerated on any path.
+
+**Prior art is uniform.** Every project that formalised a best-effort platform kept it
+in-tree and lowered the guarantee: CPython PEP 11 Tier 3 ("failures do not block a release" —
+and `aarch64-linux-android` is literally a CPython Tier 3 target), Rust's target tier policy,
+and Readest itself, which weaves 83 `isAndroid` branches through a frontend 9× the size of
+Lantern's and still runs one branch, one package, one release train. The counter-examples run
+the other way: react-native-macos — a funded Microsoft team — is ~5 minor versions and ~11
+months behind upstream and skips most releases; Syncthing-Android shipped at low cadence,
+bit-rotted, and was discontinued with the maintainer naming lack of development first and the
+store problem second.
+
+**What to buy instead — a compile gate.** Rust's own postmortem on why in-tree low-tier
+targets rot names the cause as absence of CI, not absence of a fork; PEP 11 requires a
+buildbot for the same reason. This is not theoretical here:
+
+- CI compiles exactly **one** Rust target (Linux host). **39 of 85** platform cfg arms are
+  never compiled on any push or PR.
+- Linux CI is a booby trap for Android specifically: it compiles **15 of the 16** cfg arms an
+  Android build selects, so coverage *looks* complete — while Linux has system OpenSSL, a
+  working keyring backend, and `HOME` set, which is exactly where Android diverges.
+- Rot reproduced live on 2026-08-02: `cargo clippy --target aarch64-apple-ios-sim -- -D warnings`
+  fails with two `never used` errors on `src/icloud.rs:92` and `:106` while the identical host
+  command passes. Cause: `dcc90e9`, the [F-010](#f-010) fix itself, committed **less than 24
+  hours earlier**. One gating decision, one new breakage, next day.
+
+So split [D-002](#d-002--ios-first-android-deferred)'s estimate in two. *Compiles* is the
+small half — the `reqwest` TLS line plus gating `use keyring::Entry` (`src/secrets.rs:6` is
+ungated and there is no `[target.'cfg(target_os = "android")']` table, so Android fails at
+E0432 today). *Usable* is the rest. Buy "compiles" early and put a nightly
+`cargo check --target aarch64-linux-android` behind it, and Android cannot rot while iOS is
+being built. Note the 18 existing `target_os = "android"` cfgs are all
+`cfg(not(any(ios, android)))` exclusions the iOS port created for free — a fork would not
+delete a single one of them, because they are iOS's code.
+
+**Also adopt, verbatim, from the tier policies:** the containment rule — *Android breakage
+must never break desktop or iOS, and Android work must never impose cost on them* — and a
+written removal clause. PEP 11 removes a platform by making the build fail loudly, so someone
+has a chance to step forward. That is what makes a low guarantee honest instead of a slow lie.
+
+**Revisit if:** a second person owns Android (a fork is a coordination boundary, and that is
+the one thing it is actually for); or Android needs a genuinely different UI shell rather than
+responsive breakpoints — though even then the answer is a platform-specific component tree
+in-tree, not a fork; or the shared-code drift rate falls toward zero, at which point a fork
+costs nothing because there is nothing to re-absorb.
+
+**Honest limits of this evidence:** no Tauri or Electron project has publicly forked a
+platform for cost reasons — Tauri 2 mobile is too young for postmortems — and nobody publishes
+a fork-vs-flag figure in engineer-days. The one quantitative source (Krüger & Berger,
+ESEC/FSE 2020: clone-and-own is "initially cheap" but "does not scale with the frequency of
+reuse") measures product variants at n>2 and overstates the case at n=2 platforms.
 
 ---
 
