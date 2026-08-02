@@ -45,8 +45,8 @@ const actionIcons: Record<SelectionMenuActionId, typeof WandSparkles> = {
 
 const TARGET_TRANSLATION_PREVIEWS: Record<LearningCardKind, Record<string, string>> = {
   word: {
-    en: "interface; point where systems meet",
-    zh: "界面；交界处；接口",
+    en: "express again in another form",
+    zh: "呈现；表达；给予；使成为",
   },
   phrase: {
     en: "It turned out to be a hidden benefit.",
@@ -63,8 +63,8 @@ const ADAPTIVE_EXPLANATION_PREVIEWS: Record<
   { beginnerEnglish: string; intermediateChinese: string }
 > = {
   word: {
-    beginnerEnglish: "Simple English: Here, interface means a place where two things meet and work together.",
-    intermediateChinese: "中文补充：这里强调两个领域发生互动的交界处，而不只是静态边界。",
+    beginnerEnglish: "Simple English: Here, render means to say the same thing again in a new form.",
+    intermediateChinese: "中文补充：中文常译成“译出／传达”，但 render 的落点是重新表现，翻译只是其中一种形式。",
   },
   phrase: {
     beginnerEnglish: "Simple English: It looked bad at first, but it brought something good later.",

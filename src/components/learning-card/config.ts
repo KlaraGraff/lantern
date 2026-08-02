@@ -121,16 +121,25 @@ const defaultCard = (
   kind: LearningCardKind,
   enabled: LearningModuleId[],
   collapsed: LearningModuleId[] = [],
-): CardKindConfig => ({
-  defaultDensity: "standard",
-  widthMode: "auto",
-  exampleCount: 1,
-  keyTermCount: kind === "passage" ? 3 : 3,
-  modules: MODULE_DEFINITIONS[kind].map(({ id }) =>
-    moduleConfig(id, enabled.includes(id), !collapsed.includes(id)),
-  ),
-  customModules: {},
-});
+  options: {
+    defaultDensity?: ContentDensity;
+    densities?: Partial<Record<LearningModuleId, ModuleDensity>>;
+  } = {},
+): CardKindConfig => {
+  const rest = MODULE_DEFINITIONS[kind]
+    .map(({ id }) => id)
+    .filter((id) => !enabled.includes(id));
+  return {
+    defaultDensity: options.defaultDensity ?? "standard",
+    widthMode: "auto",
+    exampleCount: 1,
+    keyTermCount: 3,
+    modules: [...enabled, ...rest].map((id) =>
+      moduleConfig(id, enabled.includes(id), !collapsed.includes(id), options.densities?.[id] ?? "inherit"),
+    ),
+    customModules: {},
+  };
+};
 
 export function createDefaultCardDesignConfig(): CardDesignConfigV1 {
   return {
@@ -138,8 +147,9 @@ export function createDefaultCardDesignConfig(): CardDesignConfigV1 {
     cards: {
       word: defaultCard(
         "word",
-        ["context_meaning", "word_info", "target_translation", "common_senses", "collocations", "morphology", "grammar_role"],
-        ["morphology", "grammar_role"],
+        ["context_meaning", "common_senses", "collocations", "synonyms"],
+        ["common_senses", "collocations", "synonyms"],
+        { defaultDensity: "compact", densities: { context_meaning: "detailed" } },
       ),
       phrase: defaultCard(
         "phrase",
