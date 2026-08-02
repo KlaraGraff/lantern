@@ -1071,6 +1071,7 @@
   "settings.librarySync.removeDeviceBody": "iCloud 中该设备的日志、快照和清单文件将被删除。已同步到此设备的书籍会被保留。如果该设备再次打开 Lantern 并重新注册，它会再次出现在这里。",
   "settings.librarySync.remove": "移除",
   "settings.librarySync.error.SYNC_FOLDER_NOT_CONFIGURED": "请先选择一个 iCloud 云盘文件夹，再开启同步。",
+  "settings.librarySync.error.ICLOUD_DRIVE_UNAVAILABLE": "这台 Mac 上的 iCloud 云盘不可用。请先在「系统设置」中启用 iCloud 云盘，然后重试。",
   "settings.librarySync.error.SYNC_FOLDER_NOT_FOUND": "所选同步文件夹已不可用，请重新选择该文件夹。",
   "settings.librarySync.error.SYNC_FOLDER_NOT_IN_ICLOUD_DRIVE": "请选择 iCloud 云盘内的文件夹；本地文件夹无法在多台 Mac 之间同步。",
   "settings.librarySync.error.SYNC_FOLDER_NOT_WRITABLE": "Lantern 无法写入所选的 iCloud 云盘文件夹。",

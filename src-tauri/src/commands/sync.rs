@@ -280,9 +280,16 @@ pub fn sync_enable(
 
     let (icloud_dir, record_default_dir) = match sync::migration::recorded_data_dir(&local.0) {
         Some(dir) if dir.is_dir() => (dir, false),
-        // A deleted or never-configured folder should not force users through
-        // Finder just to resume syncing. Create Lantern's default iCloud
-        // Drive folder; an existing custom folder remains untouched above.
+        // A folder the user picked by hand is a decision. If it has gone
+        // missing, say so and let them resolve it — silently substituting the
+        // default would overwrite that choice, republish the library into a
+        // new folder, and strand any other device on the old one.
+        Some(dir) if !sync::migration::is_lantern_default_dir(&dir) => {
+            return Err(AppError::Other("SYNC_FOLDER_NOT_FOUND".to_string()));
+        }
+        // Nothing recorded, or a folder Lantern named for itself that has
+        // since been deleted. Neither should force the user through Finder
+        // just to start or resume syncing, so create the default.
         Some(_) | None => (sync::migration::create_default_icloud_dir()?, true),
     };
     if !sync::migration::is_icloud_drive_dir(&icloud_dir) {

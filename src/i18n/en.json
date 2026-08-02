@@ -1071,6 +1071,7 @@
   "settings.librarySync.removeDeviceBody": "This device's log, snapshot, and manifest in iCloud will be deleted. Any books already synced to this device are kept. The other device will reappear here if it opens Lantern again and re-registers.",
   "settings.librarySync.remove": "Remove",
   "settings.librarySync.error.SYNC_FOLDER_NOT_CONFIGURED": "Choose an iCloud Drive folder before turning on sync.",
+  "settings.librarySync.error.ICLOUD_DRIVE_UNAVAILABLE": "iCloud Drive is not available on this Mac. Turn it on in System Settings, then try again.",
   "settings.librarySync.error.SYNC_FOLDER_NOT_FOUND": "The selected sync folder is no longer available. Choose the folder again.",
   "settings.librarySync.error.SYNC_FOLDER_NOT_IN_ICLOUD_DRIVE": "Choose a folder inside iCloud Drive. Local folders cannot sync across Macs.",
   "settings.librarySync.error.SYNC_FOLDER_NOT_WRITABLE": "Lantern cannot write to the selected iCloud Drive folder.",

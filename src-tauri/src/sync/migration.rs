@@ -13,6 +13,10 @@ use crate::error::{AppError, AppResult};
 
 const SYNC_SETTINGS_FILE: &str = ".sync_setting";
 const DEFAULT_SYNC_FOLDER_NAME: &str = "lantern";
+/// The default folder's name before the Quill→Lantern rename. Kept because
+/// `.sync_setting` files written by older builds still point at it, and we
+/// need to recognise it as *ours* rather than as a folder the user picked.
+const LEGACY_SYNC_FOLDER_NAME: &str = "quill";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncSettings {
@@ -55,22 +59,60 @@ pub fn is_usable_icloud_dir(path: &Path) -> bool {
     is_icloud_drive_dir(path) && is_writable_dir(path)
 }
 
+/// Where iCloud Drive puts a user's own files. Built from `HOME` rather than
+/// probed, so it answers for a path that does not exist yet.
+fn icloud_drive_root() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .map(|home| PathBuf::from(home).join("Library/Mobile Documents/com~apple~CloudDocs"))
+}
+
 /// Creates Lantern's default iCloud Drive folder when the previous selection
 /// is absent. Users can still select any existing iCloud Drive folder instead.
+///
+/// The returned path is not checked for being inside iCloud Drive here —
+/// `sync_enable` checks that unconditionally on whatever folder it ends up
+/// with, so repeating it would only make this function untestable.
 pub fn create_default_icloud_dir() -> AppResult<PathBuf> {
-    let home = std::env::var_os("HOME")
-        .ok_or_else(|| AppError::Other("SYNC_FOLDER_NOT_CONFIGURED".to_string()))?;
-    let root = PathBuf::from(home).join("Library/Mobile Documents/com~apple~CloudDocs");
+    let root = icloud_drive_root()
+        .ok_or_else(|| AppError::Other("ICLOUD_DRIVE_UNAVAILABLE".to_string()))?;
+    create_default_dir_in(&root)
+}
+
+fn create_default_dir_in(root: &Path) -> AppResult<PathBuf> {
+    // No iCloud Drive root means the feature is off on this Mac, which is a
+    // different problem from "the folder you chose is missing" and must not
+    // borrow that error's advice to go pick the folder again.
     if !root.is_dir() {
-        return Err(AppError::Other("SYNC_FOLDER_NOT_FOUND".to_string()));
+        return Err(AppError::Other("ICLOUD_DRIVE_UNAVAILABLE".to_string()));
     }
     let dir = root.join(DEFAULT_SYNC_FOLDER_NAME);
 
     fs::create_dir_all(&dir)?;
-    if !is_usable_icloud_dir(&dir) {
+    if !is_writable_dir(&dir) {
         return Err(AppError::Other("SYNC_FOLDER_NOT_WRITABLE".to_string()));
     }
     Ok(dir)
+}
+
+/// True when `dir` is a folder Lantern named for itself, rather than one the
+/// user picked in Finder.
+///
+/// Only the former is safe to silently re-create after it goes missing. A
+/// hand-picked folder is a decision — replacing it with the default would
+/// discard that decision, republish the whole library somewhere else, and
+/// leave the other device syncing to a folder this one has forgotten.
+pub fn is_lantern_default_dir(dir: &Path) -> bool {
+    icloud_drive_root().is_some_and(|root| is_default_dir_in(&root, dir))
+}
+
+fn is_default_dir_in(root: &Path, dir: &Path) -> bool {
+    dir.parent() == Some(root)
+        && dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| {
+                name == DEFAULT_SYNC_FOLDER_NAME || name == LEGACY_SYNC_FOLDER_NAME
+            })
 }
 
 pub fn is_icloud_drive_dir(path: &Path) -> bool {
@@ -173,6 +215,53 @@ mod tests {
         assert!(is_sync_enabled(local.path()));
         remove_sync_settings(local.path()).unwrap();
         assert!(!is_sync_enabled(local.path()));
+    }
+
+    #[test]
+    fn the_default_folder_is_created_under_the_icloud_root() {
+        let root = TempDir::new().unwrap();
+        let dir = create_default_dir_in(root.path()).unwrap();
+        assert_eq!(dir, root.path().join("lantern"));
+        assert!(dir.is_dir());
+    }
+
+    #[test]
+    fn creating_the_default_folder_twice_is_not_an_error() {
+        let root = TempDir::new().unwrap();
+        let first = create_default_dir_in(root.path()).unwrap();
+        fs::write(first.join("keep-me"), b"x").unwrap();
+
+        let second = create_default_dir_in(root.path()).unwrap();
+        assert_eq!(first, second);
+        assert!(second.join("keep-me").is_file(), "existing contents survive");
+    }
+
+    /// iCloud Drive being off is not the same problem as a chosen folder
+    /// having gone missing, and must not reuse that error — its advice is to
+    /// pick the folder again, which cannot help here.
+    #[test]
+    fn no_icloud_root_reports_icloud_drive_unavailable() {
+        let missing = TempDir::new().unwrap().path().join("gone");
+        let error = create_default_dir_in(&missing).unwrap_err().to_string();
+        assert!(
+            error.contains("ICLOUD_DRIVE_UNAVAILABLE"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn only_folders_lantern_named_itself_count_as_the_default() {
+        let root = Path::new("/Users/someone/Library/Mobile Documents/com~apple~CloudDocs");
+        assert!(is_default_dir_in(root, &root.join("lantern")));
+        // Written by builds from before the rename, and still ours.
+        assert!(is_default_dir_in(root, &root.join("quill")));
+
+        // A folder the user picked, even one that merely contains the name.
+        assert!(!is_default_dir_in(root, &root.join("my books")));
+        assert!(!is_default_dir_in(root, &root.join("lantern-backup")));
+        // Same name, but somewhere the user had to navigate to on purpose.
+        assert!(!is_default_dir_in(root, &root.join("Documents/lantern")));
+        assert!(!is_default_dir_in(root, Path::new("/tmp/lantern")));
     }
 
     #[test]

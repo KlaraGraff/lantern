@@ -78,6 +78,7 @@ function syncErrorMessage(error: unknown, t: (key: string) => string): string {
   const code = Object.keys({
     SYNC_FOLDER_NOT_CONFIGURED: true,
     SYNC_FOLDER_NOT_FOUND: true,
+    ICLOUD_DRIVE_UNAVAILABLE: true,
     SYNC_FOLDER_NOT_IN_ICLOUD_DRIVE: true,
     SYNC_FOLDER_NOT_WRITABLE: true,
     SYNC_FOLDER_CHANGE_REQUIRES_DISABLE: true,
@@ -85,8 +86,15 @@ function syncErrorMessage(error: unknown, t: (key: string) => string): string {
   return code ? t(`settings.librarySync.error.${code}`) : t("settings.librarySync.error.unknown");
 }
 
+/// Errors the user can clear outside Lantern — turn iCloud Drive on, restore
+/// the folder, fix its permissions — and then get somewhere by trying again.
 function isRetryableSyncError(error: string | null): boolean {
-  return error?.includes("SYNC_FOLDER_NOT_FOUND") || error?.includes("SYNC_FOLDER_NOT_WRITABLE") || false;
+  return (
+    error?.includes("SYNC_FOLDER_NOT_FOUND") ||
+    error?.includes("SYNC_FOLDER_NOT_WRITABLE") ||
+    error?.includes("ICLOUD_DRIVE_UNAVAILABLE") ||
+    false
+  );
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
