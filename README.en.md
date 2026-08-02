@@ -79,6 +79,11 @@ So **reading thought protection** keeps answers inside what you have already rea
 
 How wide it reads is yours to set too: automatic, the selection only, this chapter only, or the whole book.
 
+<!-- Screenshot placeholder: the context controls in the AI panel — scope selector, reading thought protection toggle, and the progress notice plus source disclosure under an answer
+     Once shot, drop it into assets/screenshots/ and delete this comment’s first and last lines to show it.
+![It knows how far you have read](assets/screenshots/context.png)
+-->
+
 ---
 
 ## 2 · Every line it writes clicks back into the book
@@ -148,6 +153,11 @@ Lantern ships an **MCP server**. Switch it on and AI clients like Claude Code or
 29 tools in all. Read-only by default; **write access — importing books, deleting them, creating collections — is a separate switch that ships off**, because handing over your data and handing over control are two different decisions and should not be bundled.
 
 So you can ask, from a terminal: "pick three books from my library I could actually finish at my English level," or "turn everything I marked *learning* this month into a list with example sentences." It reads your real reading record, not a version of it you described from memory.
+
+<!-- Screenshot placeholder: MCP settings beside a Claude Code terminal answering from the real library
+     Once shot, drop it into assets/screenshots/ and delete this comment’s first and last lines to show it.
+![Hand your library to Claude Code](assets/screenshots/mcp.png)
+-->
 
 ---
 
