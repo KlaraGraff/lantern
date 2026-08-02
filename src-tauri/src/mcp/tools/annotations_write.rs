@@ -7,6 +7,9 @@ use std::collections::HashSet;
 
 use crate::commands::{bookmarks, notes};
 use crate::mcp::server::LanternMcpHandler;
+use crate::mcp::tools::bookmarks::GetBookmarksArgs;
+use crate::mcp::tools::highlights::GetHighlightsArgs;
+use crate::mcp::tools::learning::GetNotesArgs;
 use crate::mcp::tools::library::require_sync;
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -77,6 +80,96 @@ pub struct SaveNoteArgs {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeleteIdsArgs {
     /// IDs to permanently delete. Accepts one or many IDs.
+    pub ids: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum QueryAnnotationsKind {
+    Bookmarks {
+        book_id: String,
+    },
+    Highlights {
+        book_id: String,
+    },
+    Notes {
+        #[serde(default)]
+        book_id: Option<String>,
+        #[serde(default)]
+        word: Option<String>,
+        #[serde(default)]
+        cursor: Option<String>,
+        #[serde(default)]
+        limit: Option<usize>,
+    },
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct QueryAnnotationsArgs {
+    #[serde(flatten)]
+    pub query: QueryAnnotationsKind,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AnnotationKind {
+    Bookmark,
+    Highlight,
+    Note,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum SaveAnnotationsAction {
+    CreateBookmark {
+        book_id: String,
+        cfi: String,
+        #[serde(default)]
+        label: Option<String>,
+    },
+    CreateHighlight {
+        book_id: String,
+        cfi_range: String,
+        #[serde(default)]
+        color: Option<String>,
+        #[serde(default)]
+        note: Option<String>,
+        #[serde(default)]
+        text_content: Option<String>,
+    },
+    UpdateHighlight {
+        id: String,
+        #[serde(default)]
+        note: Option<String>,
+        #[serde(default)]
+        color: Option<String>,
+    },
+    SaveNote {
+        #[serde(default)]
+        id: Option<String>,
+        #[serde(default)]
+        book_id: Option<String>,
+        anchor_kind: String,
+        #[serde(default)]
+        word: Option<String>,
+        scope: String,
+        #[serde(default)]
+        location: Option<String>,
+        #[serde(default)]
+        selected_text: Option<String>,
+        content: String,
+    },
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SaveAnnotationsArgs {
+    #[serde(flatten)]
+    pub action: SaveAnnotationsAction,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DeleteAnnotationsArgs {
+    pub kind: AnnotationKind,
     pub ids: Vec<String>,
 }
 
@@ -265,6 +358,148 @@ impl LanternMcpHandler {
         Ok(CallToolResult::success(vec![ContentBlock::json(
             &serde_json::json!({ "requested": ids.len(), "deleted": deleted }),
         )?]))
+    }
+}
+
+#[tool_router(router = annotations_catalog_router, vis = "pub(crate)")]
+impl LanternMcpHandler {
+    #[tool(
+        description = "List bookmarks, highlights, or first-class notes using an explicit annotation kind and its supported filters.",
+        annotations(
+            title = "Query Lantern annotations",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    pub async fn query_annotations(
+        &self,
+        Parameters(QueryAnnotationsArgs { query }): Parameters<QueryAnnotationsArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        match query {
+            QueryAnnotationsKind::Bookmarks { book_id } => {
+                self.get_bookmarks(Parameters(GetBookmarksArgs { book_id }))
+                    .await
+            }
+            QueryAnnotationsKind::Highlights { book_id } => {
+                self.get_highlights(Parameters(GetHighlightsArgs { book_id }))
+                    .await
+            }
+            QueryAnnotationsKind::Notes {
+                book_id,
+                word,
+                cursor,
+                limit,
+            } => {
+                self.get_notes(Parameters(GetNotesArgs {
+                    book_id,
+                    word,
+                    cursor,
+                    limit,
+                }))
+                .await
+            }
+        }
+    }
+
+    #[tool(
+        description = "Create bookmarks, or create and update highlights and first-class notes.",
+        annotations(
+            title = "Save Lantern annotations",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    pub async fn save_annotations(
+        &self,
+        Parameters(SaveAnnotationsArgs { action }): Parameters<SaveAnnotationsArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        match action {
+            SaveAnnotationsAction::CreateBookmark {
+                book_id,
+                cfi,
+                label,
+            } => {
+                self.create_bookmark(Parameters(CreateBookmarkArgs {
+                    book_id,
+                    cfi,
+                    label,
+                }))
+                .await
+            }
+            SaveAnnotationsAction::CreateHighlight {
+                book_id,
+                cfi_range,
+                color,
+                note,
+                text_content,
+            } => {
+                self.create_highlight(Parameters(CreateHighlightArgs {
+                    book_id,
+                    cfi_range,
+                    color,
+                    note,
+                    text_content,
+                }))
+                .await
+            }
+            SaveAnnotationsAction::UpdateHighlight { id, note, color } => {
+                self.update_highlight(Parameters(UpdateHighlightArgs { id, note, color }))
+                    .await
+            }
+            SaveAnnotationsAction::SaveNote {
+                id,
+                book_id,
+                anchor_kind,
+                word,
+                scope,
+                location,
+                selected_text,
+                content,
+            } => {
+                self.save_note(Parameters(SaveNoteArgs {
+                    id,
+                    book_id,
+                    anchor_kind,
+                    word,
+                    scope,
+                    location,
+                    selected_text,
+                    content,
+                }))
+                .await
+            }
+        }
+    }
+
+    #[tool(
+        description = "Permanently delete one or more bookmarks, highlights, or first-class notes.",
+        annotations(
+            title = "Delete Lantern annotations",
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    pub async fn delete_annotations(
+        &self,
+        Parameters(DeleteAnnotationsArgs { kind, ids }): Parameters<DeleteAnnotationsArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        match kind {
+            AnnotationKind::Bookmark => {
+                self.delete_bookmarks(Parameters(DeleteIdsArgs { ids }))
+                    .await
+            }
+            AnnotationKind::Highlight => {
+                self.delete_highlights(Parameters(DeleteIdsArgs { ids }))
+                    .await
+            }
+            AnnotationKind::Note => self.delete_notes(Parameters(DeleteIdsArgs { ids })).await,
+        }
     }
 }
 
