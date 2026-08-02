@@ -523,8 +523,18 @@ export function useReaderInteractions({
       }
 
       event.preventDefault();
+      // Same window `finalizePointerSelection` uses, restated rather than
+      // inherited from this gesture's pointerup: the selection about to be
+      // replaced fires a `selectionchange`, and letting that reschedule the menu
+      // would drop back to the word-suppressing default.
+      selectionNormalizationUntil = Date.now() + 80;
       replaceDocumentSelection(doc, range);
       selectionSnapshot = snapshotSelectionRange(range);
+      // Nothing else opens it: this handler called off the menu the second click
+      // queued, and the replacement `selectionchange` is inside the window above.
+      // includeWord, because a one-word sentence ("Yes.") is still the sentence
+      // the reader asked for.
+      scheduleSelectionMenu(30, true);
     });
 
     doc.addEventListener("mousedown", () => {
