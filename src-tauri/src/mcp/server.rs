@@ -99,6 +99,28 @@ impl LanternMcpHandler {
             "rename_chat",
             "save_chat_message",
             "replace_chat_message",
+            "list_books",
+            "get_book",
+            "update_book",
+            "set_reading_state",
+            "list_book_sections",
+            "get_book_content",
+            "search_book_content",
+            "get_vocab_words",
+            "get_vocab_stats",
+            "create_vocab_word",
+            "record_vocab_review",
+            "set_vocab_mastery",
+            "delete_vocab_words",
+            "get_lookup_history",
+            "save_lookup_record",
+            "delete_lookup_records",
+            "clear_lookup_history",
+            "set_word_forms",
+            "get_word_marks",
+            "set_word_mark_rule",
+            "set_word_mark_exception",
+            "set_lookup_occurrence_mark",
         ] {
             r.remove_route(name);
         }
@@ -107,6 +129,7 @@ impl LanternMcpHandler {
         r.merge(Self::integration_catalog_router());
         r.merge(Self::annotations_catalog_router());
         r.merge(Self::chats_catalog_router());
+        r.merge(Self::local_catalog_router());
         r
     }
 
@@ -174,7 +197,7 @@ fn approval_input_for_tool(
             "Permanently delete the selected chats and all messages they contain.",
             "chat",
         )?,
-        "delete_vocab_words" => irreversible_ids_confirmation(
+        "delete_vocabulary" => irreversible_ids_confirmation(
             arguments,
             "Permanently delete the selected vocabulary entries and their review state.",
             "vocabulary entry",
@@ -184,11 +207,15 @@ fn approval_input_for_tool(
             "Permanently delete the selected language assessment records.",
             "language assessment",
         )?,
-        "delete_lookup_records" => irreversible_ids_confirmation(
-            arguments,
-            "Permanently delete the selected dictionary lookup-history records.",
-            "lookup-history record",
-        )?,
+        "delete_lookup_history"
+            if arguments.get("action").and_then(Value::as_str) == Some("records") =>
+        {
+            irreversible_ids_confirmation(
+                arguments,
+                "Permanently delete the selected dictionary lookup-history records.",
+                "lookup-history record",
+            )?
+        }
         "delete_word_forms" => {
             let words = required_non_empty_string_array(arguments, "words")?;
             ApprovalConfirmation::IrreversibleData {
@@ -205,7 +232,9 @@ fn approval_input_for_tool(
                 scope: format!("Book {book_id}."),
             }
         }
-        "clear_lookup_history" => {
+        "delete_lookup_history"
+            if arguments.get("action").and_then(Value::as_str) == Some("clear") =>
+        {
             let scope = match arguments.get("book_id") {
                 Some(Value::String(book_id)) if !book_id.trim().is_empty() => {
                     format!("All lookup history for book {book_id}.")
@@ -786,45 +815,35 @@ mod tests {
             .map(|t| t.name.to_string())
             .collect();
         let expected: std::collections::BTreeSet<_> = [
-            "list_books",
-            "get_book",
+            "query_books",
             "query_collections",
             "update_collections",
             "delete_collections",
             "query_annotations",
-            "get_vocab_words",
-            "get_vocab_stats",
+            "query_vocabulary",
             "query_chats",
-            "update_book",
+            "update_books",
             "import_books",
             "delete_books",
-            "search_book_content",
+            "query_book_content",
             "get_book_summaries",
             "request_book_index",
-            "get_lookup_history",
-            "get_word_marks",
+            "query_lookup_history",
+            "query_word_forms",
+            "query_word_marks",
             "get_language_profile",
-            "set_reading_state",
-            "list_book_sections",
-            "get_book_content",
             "save_annotations",
             "delete_annotations",
-            "save_lookup_record",
-            "create_vocab_word",
-            "record_vocab_review",
-            "set_vocab_mastery",
-            "set_word_forms",
-            "set_word_mark_rule",
-            "set_word_mark_exception",
-            "set_lookup_occurrence_mark",
-            "delete_vocab_words",
+            "save_vocabulary",
+            "delete_vocabulary",
+            "save_word_forms",
+            "update_word_marks",
             "export_vocabulary",
             "preview_vocabulary_import",
             "import_vocabulary",
             "delete_word_forms",
             "clear_word_marks",
-            "delete_lookup_records",
-            "clear_lookup_history",
+            "delete_lookup_history",
             "save_chats",
             "delete_chats",
             "save_language_assessment",
@@ -859,12 +878,18 @@ mod tests {
                 json!({ "kind": "note", "ids": ["n1"] }),
             ),
             ("delete_chats", json!({ "ids": ["ch1"] })),
-            ("delete_vocab_words", json!({ "ids": ["v1"] })),
+            ("delete_vocabulary", json!({ "ids": ["v1"] })),
             ("delete_language_assessments", json!({ "ids": ["la1"] })),
-            ("delete_lookup_records", json!({ "ids": ["l1"] })),
+            (
+                "delete_lookup_history",
+                json!({ "action": "records", "ids": ["l1"] }),
+            ),
             ("delete_word_forms", json!({ "words": ["word"] })),
             ("clear_word_marks", json!({ "book_id": "b1" })),
-            ("clear_lookup_history", json!({ "book_id": null })),
+            (
+                "delete_lookup_history",
+                json!({ "action": "clear", "book_id": null }),
+            ),
             (
                 "import_vocabulary",
                 json!({
