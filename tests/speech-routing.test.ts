@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   chunkForSynthesis,
   planSources,
+  playbackDetaches,
   segmentSentences,
   sentenceIndexAt,
   timeSentences,
@@ -195,4 +196,13 @@ test("time before the first sentence highlights the first sentence", () => {
 
 test("an empty timeline is safe to query", () => {
   assert.equal(sentenceIndexAt([], 1234), 0);
+});
+
+// A passage keeps playing after the menu that started it closes, and something
+// else has to offer the stop. A word does not: its own row is still on screen
+// with a spinner and a replay, and a second control would flash past.
+test("only a passage detaches from the control that started it", () => {
+  assert.equal(playbackDetaches("passage"), true);
+  assert.equal(playbackDetaches("word"), false);
+  assert.equal(playbackDetaches("phrase"), false);
 });

@@ -9,7 +9,20 @@ const FOCUS_RING = "focus-visible:outline-none focus-visible:ring-2 focus-visibl
  * not require running an AI lookup first. Deliberately does not close the menu:
  * replaying and switching accent are the two things wanted right after a play.
  */
-export default function SpeakMenuRow({ text, kind }: { text: string; kind: SpeechKind }) {
+export default function SpeakMenuRow({
+  text,
+  kind,
+  onHandOff,
+}: {
+  text: string;
+  kind: SpeechKind;
+  /**
+   * Called once playback has been started, for selections long enough that the
+   * menu should get out of the way. Playback outlives this row: stopping is the
+   * floating control's job from here on.
+   */
+  onHandOff?: () => void;
+}) {
   const { t } = useTranslation();
   const {
     empty,
@@ -32,7 +45,12 @@ export default function SpeakMenuRow({ text, kind }: { text: string; kind: Speec
         <button
           type="button"
           role="menuitem"
-          onClick={play}
+          onClick={() => {
+            // Stopping must not also dismiss the menu — only starting hands over.
+            const starting = status !== "playing";
+            play();
+            if (starting) onHandOff?.();
+          }}
           title={playLabel}
           className={`flex h-9 min-w-0 flex-1 items-center gap-3 rounded-sm px-3 text-left text-[13px] font-medium text-text-primary ${FOCUS_RING}`}
         >

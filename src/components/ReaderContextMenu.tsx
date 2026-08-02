@@ -17,6 +17,7 @@ import {
   type SerializableRect,
 } from "./reader-interaction";
 import SpeakMenuRow from "./speech/SpeakMenuRow";
+import { playbackDetaches } from "./speech/routing";
 
 export type ReaderMenuAction = "primary" | "speak" | "ask-ai" | "save" | "highlight" | "translate" | "copy" | `custom_${string}`;
 
@@ -205,7 +206,19 @@ export default function ReaderContextMenu({
       {actions.map((action) => {
         // Owns its own playback and accent toggle, so it needs no wiring from
         // the reader and does not dismiss the menu when used.
-        if (action === "speak") return <SpeakMenuRow key={action} text={text} kind={kind} />;
+        if (action === "speak") {
+          return (
+            <SpeakMenuRow
+              key={action}
+              text={text}
+              kind={kind}
+              // Same rule the player uses to decide whether this row may still
+              // cancel the audio, so the menu never closes on a playback that
+              // dies with it.
+              onHandOff={playbackDetaches(kind) ? onClose : undefined}
+            />
+          );
+        }
         const definition = definitions[action];
         if (!definition) return null;
         const Icon = definition.icon;

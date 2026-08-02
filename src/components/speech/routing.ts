@@ -102,6 +102,21 @@ export function planSources(kind: SpeechKind, settings: SpeechSettings): SpeechR
 }
 
 /**
+ * Whether playback of this kind outlives the control that started it.
+ *
+ * A passage runs for minutes, so the menu it was started from hands over to the
+ * floating control and closes — leaving it open would block paging. A word is
+ * over in about a second, and its own row keeps the spinner and the replay, so
+ * detaching it would only add a control that flashes past.
+ *
+ * One definition rather than two: the menu decides whether to close by this, and
+ * the player decides whether the row may still cancel it by the same answer.
+ */
+export function playbackDetaches(kind: SpeechKind): boolean {
+  return kind === "passage";
+}
+
+/**
  * Splits text into sentences, keeping each one's offsets so a span can later be
  * turned back into a DOM range.
  *
