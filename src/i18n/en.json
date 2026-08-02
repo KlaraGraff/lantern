@@ -207,6 +207,7 @@
   "vocab.detail.unknownBook": "Unknown book",
   "vocab.entry.copy": "Copy full entry",
   "vocab.entry.savedIn": "Saved in {{source}}",
+  "vocab.showStructuredResult": "Show full learning card",
   "vocab.reviewDue": "Review due",
   "vocab.startLearning": "Start learning",
   "vocab.markMastered": "Mark mastered",

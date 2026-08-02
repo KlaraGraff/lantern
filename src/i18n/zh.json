@@ -207,6 +207,7 @@
   "vocab.detail.unknownBook": "未知书籍",
   "vocab.entry.copy": "复制全部内容",
   "vocab.entry.savedIn": "收藏于 {{source}}",
+  "vocab.showStructuredResult": "查看完整学习卡片",
   "vocab.reviewDue": "到期复习",
   "vocab.startLearning": "开始学习",
   "vocab.markMastered": "标为掌握",

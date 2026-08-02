@@ -690,7 +690,7 @@ export default function DictionaryContent() {
                           )}
                           <details className="mt-2">
                             <summary className="cursor-pointer text-[11px] font-medium text-accent-text">
-                              {t("vocab.showStructuredResult", { defaultValue: "查看完整学习卡片" })}
+                              {t("vocab.showStructuredResult")}
                             </summary>
                             <div className="mt-2 divide-y divide-border-light border-y border-border-light">
                               <LearningCardModules
