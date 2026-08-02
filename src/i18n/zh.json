@@ -318,6 +318,7 @@
   "editInfo.cancel": "取消",
   "editInfo.save": "保存",
   "readerSettings.font": "字体",
+  "readerSettings.fontUnavailable": "字体不可用",
   "readerSettings.readingMode": "阅读模式",
   "readerSettings.scrolling": "滚动",
   "readerSettings.pageTurning": "翻页",

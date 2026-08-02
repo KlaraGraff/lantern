@@ -11,7 +11,7 @@ import {
 import {
   FONT_SIZE_MAX,
   FONT_SIZE_MIN,
-  fonts,
+  getReaderFontOptions,
   getReaderThemes,
   type ReaderCapabilities,
   type ReaderFont,
@@ -271,7 +271,7 @@ export default function ReaderSettings({
         <Select
           value={settings.font}
           onChange={(v) => update({ font: v as ReaderFont })}
-          options={fonts.map((f) => ({ value: f.id, label: f.label }))}
+          options={getReaderFontOptions(settings.font, t("readerSettings.fontUnavailable"))}
         />
       </div>
       )}

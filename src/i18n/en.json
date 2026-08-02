@@ -318,6 +318,7 @@
   "editInfo.cancel": "Cancel",
   "editInfo.save": "Save",
   "readerSettings.font": "Font",
+  "readerSettings.fontUnavailable": "Unavailable font",
   "readerSettings.readingMode": "Reading Mode",
   "readerSettings.scrolling": "Scrolling",
   "readerSettings.pageTurning": "Page Turning",

@@ -237,6 +237,22 @@ export function isReaderFontAvailable(fontId: ReaderFont): boolean {
   return fonts.some((font) => font.id === fontId);
 }
 
+/**
+ * Options for a reader font picker. A font id that is not registered still gets
+ * an entry: a deleted custom font would otherwise leave the control blank, with
+ * nothing to say that the book is no longer rendering in the font it names.
+ */
+export function getReaderFontOptions(
+  selectedFontId: ReaderFont,
+  unavailableLabel: string,
+): Array<{ value: string; label: string }> {
+  const options = fonts.map((font) => ({ value: font.id, label: font.label }));
+  if (!isReaderFontAvailable(selectedFontId)) {
+    options.push({ value: selectedFontId, label: unavailableLabel });
+  }
+  return options;
+}
+
 export function customFontFamily(id: string) {
   return `"LanternCustom-${id.replace(/[^a-zA-Z0-9_-]/g, "")}"`;
 }
