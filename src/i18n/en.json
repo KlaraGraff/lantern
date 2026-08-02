@@ -689,7 +689,7 @@
   "settings.tools.menuActions.translate": "Translate Only",
   "settings.tools.menuActions.copy": "Copy",
   "settings.tools.markers.wordScope": "When marking a word",
-  "settings.tools.markers.wordScopeHint": "Choose whether a word marker applies here or to matching words throughout this book.",
+  "settings.tools.markers.wordScopeHint": "Choose whether a word marker applies here, to matching words throughout this book, or to every form of that word.",
   "settings.tools.markers.currentOnly": "Current occurrence only",
   "settings.tools.markers.sameWordsInBook": "Matching words in this book",
   "settings.tools.autoHighlightLookupWords": "Mark words after lookup",

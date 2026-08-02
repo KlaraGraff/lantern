@@ -687,7 +687,7 @@
   "settings.tools.menuActions.translate": "仅翻译",
   "settings.tools.menuActions.copy": "复制",
   "settings.tools.markers.wordScope": "标记单词时",
-  "settings.tools.markers.wordScopeHint": "选择只标记当前位置，或同时标记本书中相同的单词。",
+  "settings.tools.markers.wordScopeHint": "选择只标记当前位置，或标记本书中相同的单词，也可以连同该单词的各种词形一起标记。",
   "settings.tools.markers.currentOnly": "仅标记当前位置",
   "settings.tools.markers.sameWordsInBook": "标记本书中的相同单词",
   "settings.tools.autoHighlightLookupWords": "查词后自动标记",
