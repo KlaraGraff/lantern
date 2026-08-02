@@ -5,9 +5,23 @@ import AiSettings from "./AiSettings";
 import EmbeddingSettings from "./EmbeddingSettings";
 import OcrSettings from "./OcrSettings";
 import SpeechSettings from "./SpeechSettings";
+import { platform } from "../../services/platform";
 import type { SettingsProps } from "./types";
 
 export type ServicesView = "models" | "embedding" | "speech" | "ocr";
+
+/**
+ * OCR downloads and spawns a runtime, which a phone cannot do (D-003). The
+ * reader deep-links straight to this pane, so the fallback matters as much as
+ * dropping the tab.
+ */
+function isViewAvailable(id: ServicesView): boolean {
+  return id !== "ocr" || platform.hasOcr;
+}
+
+function availableView(id: ServicesView | undefined): ServicesView {
+  return id && isViewAvailable(id) ? id : "models";
+}
 
 interface ServicesSettingsProps extends SettingsProps {
   onSaveRef?: (save: (() => void) | null) => void;
@@ -27,10 +41,10 @@ export default function ServicesSettings({
   ...settingsProps
 }: ServicesSettingsProps) {
   const { t } = useTranslation();
-  const [view, setView] = useState<ServicesView>(initialView ?? "models");
+  const [view, setView] = useState<ServicesView>(availableView(initialView));
 
   useEffect(() => {
-    if (initialView) setView(initialView);
+    if (initialView) setView(availableView(initialView));
   }, [initialView]);
 
   // Only the chat-model pane has a dirty/save cycle, and it unregisters its
@@ -40,12 +54,13 @@ export default function ServicesSettings({
     if (view !== "models") onDirtyChange?.(false);
   }, [onDirtyChange, view]);
 
-  const views: { id: ServicesView; icon: typeof Bot; label: string }[] = [
+  const allViews: { id: ServicesView; icon: typeof Bot; label: string }[] = [
     { id: "models", icon: Bot, label: t("settings.services.views.models") },
     { id: "embedding", icon: Radar, label: t("settings.services.views.embedding") },
     { id: "speech", icon: Volume2, label: t("settings.services.views.speech") },
     { id: "ocr", icon: ScanText, label: t("settings.services.views.ocr") },
   ];
+  const views = allViews.filter((item) => isViewAvailable(item.id));
 
   return (
     <div className="w-full min-w-0 pb-10">

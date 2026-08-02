@@ -35,9 +35,24 @@ interface SettingsModalProps {
   initialView?: SettingsView;
 }
 
+/**
+ * Whether this platform has the thing a section configures. Consulted in three
+ * places — the nav list, the initial section, and the reopen effect — so that a
+ * section the platform lacks cannot be reached by a deep link either.
+ */
+function isSectionAvailable(id: SettingsSection): boolean {
+  if (id === "librarySync") return platform.hasFolderSync;
+  if (id === "mcp") return platform.hasMcpIntegration;
+  return true;
+}
+
+function availableSection(id: SettingsSection): SettingsSection {
+  return isSectionAvailable(id) ? id : "general";
+}
+
 export default function SettingsModal({ open, onClose, initialSection = "general", initialView }: SettingsModalProps) {
   const { t } = useTranslation();
-  const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection);
+  const [activeSection, setActiveSection] = useState<SettingsSection>(availableSection(initialSection));
   const [toolsPreview, setToolsPreview] = useState<ToolsPreviewState | null>(null);
   const { settings, loading, refresh, save, saveBulk } = useSettings();
   const modalRef = useRef<HTMLDivElement>(null);
@@ -84,7 +99,7 @@ export default function SettingsModal({ open, onClose, initialSection = "general
   };
 
   useEffect(() => {
-    if (open) setActiveSection(initialSection);
+    if (open) setActiveSection(availableSection(initialSection));
   }, [open, initialSection]);
 
   useEffect(() => {
@@ -183,7 +198,7 @@ export default function SettingsModal({ open, onClose, initialSection = "general
     { id: "about", label: t("settings.about.title"), subtitle: t("settings.about.subtitle"), icon: Info },
   ];
 
-  const sections = allSections.filter((s) => s.id !== "librarySync" || platform.hasFolderSync);
+  const sections = allSections.filter((s) => isSectionAvailable(s.id));
 
   const settingsProps = { settings, loading, refresh, save, saveBulk, showSavedToast };
 

@@ -124,6 +124,7 @@ import { tocUnitKind } from "./reader/chapter-pagination";
 import { useReaderNavigation } from "./reader/useReaderNavigation";
 import { toReaderOpenError, type ReaderOpenError } from "./reader/reader-open-error";
 import ReaderDiagnosticsPanel from "../components/ReaderDiagnosticsPanel";
+import { platform } from "../services/platform";
 
 type SidePanel = "ai" | "bookmarks" | "vocab" | null;
 
@@ -230,8 +231,12 @@ export default function Reader() {
   const ocrIntentShownAtRef = useRef(0);
   const locallyRequestedOcrRef = useRef(false);
   const pendingOcrReloadRef = useRef<{ page: number; total: number; sourcePath: string } | null>(null);
-  const ocrPackage = useOcrPackage(book?.format === "pdf");
-  const ocrJob = useOcrJob(bookId, book?.format === "pdf");
+  // OCR downloads a package and spawns a subprocess, neither of which a
+  // sandboxed mobile app may do (D-003). Disabling the hooks stops the status
+  // polling; the HUD that would report it is gated below.
+  const ocrAvailable = platform.hasOcr && book?.format === "pdf";
+  const ocrPackage = useOcrPackage(ocrAvailable);
+  const ocrJob = useOcrJob(bookId, ocrAvailable);
   const [textInitialLocation, setTextInitialLocation] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ReaderInteraction | null>(null);
   const [contextSelectionFullyMarked, setContextSelectionFullyMarked] = useState(false);
@@ -498,6 +503,7 @@ export default function Reader() {
   }, []);
 
   const onMissingPdfTextIntent = useCallback((pageIndex: number) => {
+    if (!platform.hasOcr) return;
     if (!book || book.format !== "pdf") return;
     const sourceHash = book.source_sha256 ?? book.file_path;
     const key = `${book.id}:${pageIndex}:${sourceHash}`;
@@ -532,7 +538,7 @@ export default function Reader() {
 
   const refreshOcrJob = ocrJob.refresh;
   useEffect(() => {
-    if (!bookId || book?.format !== "pdf") return;
+    if (!bookId || !ocrAvailable) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
     void listen("book-assets-changed", async () => {
@@ -560,7 +566,7 @@ export default function Reader() {
       disposed = true;
       unlisten?.();
     };
-  }, [book, bookId, pageInfo, refreshOcrJob]);
+  }, [book, bookId, ocrAvailable, pageInfo, refreshOcrJob]);
 
   useEffect(() => {
     if (!bookReady || !book) return;
@@ -1722,9 +1728,9 @@ export default function Reader() {
                 />
               ));
             })()}
-            {(book.format === "pdf" && ocrHudOpen) || bindingHud ? (
+            {(ocrAvailable && ocrHudOpen) || bindingHud ? (
               <div className="pointer-events-none absolute bottom-5 left-1/2 z-40 flex w-full -translate-x-1/2 justify-center px-3">
-                {book.format === "pdf" && ocrHudOpen ? (
+                {ocrAvailable && ocrHudOpen ? (
                   <OcrReaderHud
                     packageStatus={ocrPackage.status}
                     packageError={ocrPackage.errorCode}

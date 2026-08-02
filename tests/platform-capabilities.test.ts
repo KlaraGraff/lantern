@@ -57,7 +57,6 @@ test("iOS has no window management and none of the subprocess-backed features", 
   assert.equal(ios.hasDragDrop, false);
   assert.equal(ios.hasFileReveal, false);
   assert.equal(ios.hasFontImport, false);
-  assert.equal(ios.hasKeyboard, false);
 });
 
 test("Android is mobile but is not iOS", () => {

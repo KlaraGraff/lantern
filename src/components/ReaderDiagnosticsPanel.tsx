@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { X, Copy, Check, FolderOpen, RefreshCw } from "lucide-react";
 import { getReaderDiagnosticReport } from "../utils/readerDiagnostics";
+import { platform } from "../services/platform";
 
 interface ReaderDiagnosticsPanelProps {
   open: boolean;
@@ -85,16 +86,18 @@ export default function ReaderDiagnosticsPanel({ open, onClose }: ReaderDiagnost
             <RefreshCw size={14} />
             {t("reader.diagnostics.refresh")}
           </button>
-          <button
-            type="button"
-            className="flex h-8 items-center gap-1.5 rounded-[10px] border border-border px-3 text-[13px] font-medium text-text-secondary hover:border-accent"
-            onClick={() => {
-              invoke("reveal_logs").catch(() => {});
-            }}
-          >
-            <FolderOpen size={14} />
-            {t("reader.diagnostics.reveal")}
-          </button>
+          {platform.hasFileReveal && (
+            <button
+              type="button"
+              className="flex h-8 items-center gap-1.5 rounded-[10px] border border-border px-3 text-[13px] font-medium text-text-secondary hover:border-accent"
+              onClick={() => {
+                invoke("reveal_logs").catch(() => {});
+              }}
+            >
+              <FolderOpen size={14} />
+              {t("reader.diagnostics.reveal")}
+            </button>
+          )}
           <button
             type="button"
             className="flex h-8 items-center gap-1.5 rounded-[10px] bg-accent-bg px-3 text-[13px] font-medium text-accent-text hover:opacity-80"

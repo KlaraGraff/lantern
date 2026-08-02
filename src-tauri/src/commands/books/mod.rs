@@ -105,9 +105,18 @@ pub(super) const TEXT_DOCUMENT_VERSION: i32 = 3;
 pub(super) const CONVERSION_VERSION: i32 = 1;
 pub(super) const MAX_TEXT_IMPORT_BYTES: u64 = 25 * 1024 * 1024;
 pub(super) const TXT_CHAPTER_TARGET_CHARS: usize = 24_000;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub(super) const IMPORTABLE_BOOK_EXTENSIONS: &[&str] = &[
     "epub", "pdf", "txt", "md", "markdown", "html", "htm", "mobi", "azw", "azw3", "fb2", "fbz",
     "cbz",
+];
+/// Mobile drops the MOBI family. Those formats only become readable after
+/// Calibre's `ebook-convert` normalises them to EPUB, and no subprocess can run
+/// here — offering them would import a book that never finishes preparing.
+/// Everything else on the list is parsed in-process by foliate-js.
+#[cfg(any(target_os = "ios", target_os = "android"))]
+pub(super) const IMPORTABLE_BOOK_EXTENSIONS: &[&str] = &[
+    "epub", "pdf", "txt", "md", "markdown", "html", "htm", "fb2", "fbz", "cbz",
 ];
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]

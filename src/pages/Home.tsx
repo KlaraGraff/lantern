@@ -21,6 +21,7 @@ import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import { useBooks, importBookDialog } from "../hooks/useBooks";
 import { useCollections } from "../hooks/useCollections";
+import { platform } from "../services/platform";
 
 function formatError(err: unknown): string {
   if (typeof err === "string") return err;
@@ -218,6 +219,7 @@ export default function Home() {
   // receives an arbitrary absolute path. This listener only owns the visual
   // drop state.
   useEffect(() => {
+    if (!platform.hasDragDrop) return;
     const unlisten = getCurrentWebview().onDragDropEvent((event) => {
       if (event.payload.type === "over" || event.payload.type === "enter") {
         setIsDragging(true);
@@ -342,7 +344,7 @@ export default function Home() {
                       ? t("home.noCollectionBooks")
                       : activeFilter !== "all"
                         ? t("home.noFilteredBooks", { filter: activeFilter })
-                        : t("home.empty")}
+                        : t(platform.hasFormatConvert ? "home.empty" : "home.emptyNoConvert")}
                 </p>
                 {activeFilter === "all" && !searchQuery && (
                   <Button variant="primary" size="md" onClick={handleImport}>
@@ -364,7 +366,9 @@ export default function Home() {
               className="w-full rounded-lg border border-dashed border-text-muted/40 py-4 flex items-center justify-center gap-2 text-[14px] text-text-secondary hover:border-accent hover:text-accent transition-colors cursor-pointer"
             >
               <Upload size={16} />
-              {t("home.dropHint")}
+              {/* Same button either way — only the invitation to drop is a lie
+                  on a platform that cannot receive a drop. */}
+              {platform.hasDragDrop ? t("home.dropHint") : t("home.importHint")}
             </button>
             {/* The moment someone wants a book is the moment they have none —
                 so the list of places to find one belongs here, not only in a

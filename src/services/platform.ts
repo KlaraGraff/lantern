@@ -66,7 +66,11 @@ export interface PlatformCapabilities {
   readonly hasOcr: boolean;
   /** The MCP tab: writes local CLI config and serves a localhost endpoint. */
   readonly hasMcpIntegration: boolean;
-  /** Non-EPUB books can be converted — shells out to Calibre's `ebook-convert`. */
+  /**
+   * MOBI-family books can be normalised to EPUB, which shells out to Calibre's
+   * `ebook-convert`. True means the platform permits it, not that Calibre is
+   * installed — the backend probes for that separately at runtime.
+   */
   readonly hasFormatConvert: boolean;
   /** A sync folder can be picked and watched. See D-006, D-007. */
   readonly hasFolderSync: boolean;
@@ -79,12 +83,15 @@ export interface PlatformCapabilities {
   readonly hasFileReveal: boolean;
   /** Font files can be imported through a native picker. */
   readonly hasFontImport: boolean;
-  /**
-   * A physical keyboard is assumed present, so keyboard-only affordances (the
-   * reader shortcut recorder) are worth showing.
-   */
-  readonly hasKeyboard: boolean;
 }
+
+/*
+ * Deliberately not a capability: whether a keyboard is attached. It looks like
+ * one — the reader's shortcut recorder and the menu-shortcut hints are useless
+ * without keys — but an iPad with a Magic Keyboard is an ordinary setup, so
+ * gating those on the platform would take the feature away from the people who
+ * can use it. Keyboard-dependence is not platform-dependence here.
+ */
 
 type Capability = Omit<PlatformCapabilities, "id" | "distChannel">;
 
@@ -104,7 +111,6 @@ const ABSENT: Capability = {
   hasUpdater: false,
   hasFileReveal: false,
   hasFontImport: false,
-  hasKeyboard: false,
 };
 
 const DESKTOP: Capability = {
@@ -118,7 +124,6 @@ const DESKTOP: Capability = {
   hasUpdater: true,
   hasFileReveal: true,
   hasFontImport: true,
-  hasKeyboard: true,
 };
 
 /**

@@ -18,6 +18,7 @@ import {
 import { loadCustomFonts, type CustomFontRecord } from "../custom-fonts";
 import { notifyReadingAssistanceSettingsChanged } from "../reading-assistance-events";
 import { ROW_CONTROL_WIDTH, type SettingsProps } from "./types";
+import { platform } from "../../services/platform";
 
 const READER_THEME_OPTIONS: {
   value: ReaderTheme;
@@ -200,93 +201,99 @@ export default function ReadingSettings({ settings, loading, refresh, save, save
           options={fontOptions}
         />
       </div>
-      <div className="border-t border-border-light py-3">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-[13px] font-medium text-text-primary">{t("settings.layout.customFonts")}</p>
-            <p className="mt-0.5 text-[11px] leading-[17px] text-text-muted">{t("settings.layout.customFontsHint")}</p>
+      {/* Importing needs a native file picker. Without one there is no way to
+          put a font here, so the whole group goes rather than leaving a list
+          that can only ever be empty. Fonts already chosen stay selectable in
+          the Font Family list above either way. */}
+      {platform.hasFontImport && (
+        <div className="border-t border-border-light py-3">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-[13px] font-medium text-text-primary">{t("settings.layout.customFonts")}</p>
+              <p className="mt-0.5 text-[11px] leading-[17px] text-text-muted">{t("settings.layout.customFontsHint")}</p>
+            </div>
+            <button
+              type="button"
+              disabled={fontBusy}
+              onClick={async () => {
+                setFontBusy(true);
+                setFontError(null);
+                try {
+                  await invoke<CustomFontRecord[]>("import_custom_fonts");
+                  await refreshCustomFonts();
+                  showSavedToast();
+                } catch (error) {
+                  console.error("Failed to import fonts:", error);
+                  setFontError(t("settings.layout.fontImportFailed"));
+                } finally {
+                  setFontBusy(false);
+                }
+              }}
+              className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium text-text-secondary hover:bg-bg-input disabled:opacity-50"
+            >
+              <Download size={13} />
+              {t("settings.layout.importFonts")}
+            </button>
           </div>
-          <button
-            type="button"
-            disabled={fontBusy}
-            onClick={async () => {
-              setFontBusy(true);
-              setFontError(null);
-              try {
-                await invoke<CustomFontRecord[]>("import_custom_fonts");
-                await refreshCustomFonts();
-                showSavedToast();
-              } catch (error) {
-                console.error("Failed to import fonts:", error);
-                setFontError(t("settings.layout.fontImportFailed"));
-              } finally {
-                setFontBusy(false);
-              }
-            }}
-            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium text-text-secondary hover:bg-bg-input disabled:opacity-50"
-          >
-            <Download size={13} />
-            {t("settings.layout.importFonts")}
-          </button>
-        </div>
-        {customFonts.length > 0 && (
-          <div className="mt-3 space-y-1.5">
-            {customFonts.map((font) => (
-              <div key={font.id} className="flex min-h-9 items-center justify-between gap-3 rounded-md bg-bg-input px-3">
-                <span className="min-w-0 truncate text-[12px] text-text-primary" style={{ fontFamily: customFontFamily(font.id) }}>
-                  {font.family_name}
-                </span>
-                <button
-                  type="button"
-                  title={t("settings.layout.deleteFont")}
-                  aria-label={t("settings.layout.deleteFont")}
-                  disabled={fontBusy}
-                  onClick={async () => {
-                    setFontBusy(true);
-                    setFontError(null);
-                    try {
-                      await invoke("delete_custom_font", { id: font.id });
-                      const records = await refreshCustomFonts();
-                      if (selectedCustomFontIsMissing(records)) setFontFamily("system");
-                      await refresh();
-                      await notifyReadingAssistanceSettingsChanged([
-                        "font_family",
-                        "marker_style_config",
-                      ]);
-                      showSavedToast();
-                    } catch (error) {
-                      console.error("Failed to delete font:", error);
-                      // Re-read the backend after any failure. This also heals
-                      // the UI when an older backend reports an error after
-                      // already deleting its database row.
-                      const records = await refreshCustomFonts().catch(() => null);
-                      await refresh().catch(() => {});
-                      if (records && selectedCustomFontIsMissing(records)) {
-                        setFontFamily("system");
+          {customFonts.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {customFonts.map((font) => (
+                <div key={font.id} className="flex min-h-9 items-center justify-between gap-3 rounded-md bg-bg-input px-3">
+                  <span className="min-w-0 truncate text-[12px] text-text-primary" style={{ fontFamily: customFontFamily(font.id) }}>
+                    {font.family_name}
+                  </span>
+                  <button
+                    type="button"
+                    title={t("settings.layout.deleteFont")}
+                    aria-label={t("settings.layout.deleteFont")}
+                    disabled={fontBusy}
+                    onClick={async () => {
+                      setFontBusy(true);
+                      setFontError(null);
+                      try {
+                        await invoke("delete_custom_font", { id: font.id });
+                        const records = await refreshCustomFonts();
+                        if (selectedCustomFontIsMissing(records)) setFontFamily("system");
+                        await refresh();
                         await notifyReadingAssistanceSettingsChanged([
                           "font_family",
                           "marker_style_config",
-                        ]).catch(() => {});
+                        ]);
+                        showSavedToast();
+                      } catch (error) {
+                        console.error("Failed to delete font:", error);
+                        // Re-read the backend after any failure. This also heals
+                        // the UI when an older backend reports an error after
+                        // already deleting its database row.
+                        const records = await refreshCustomFonts().catch(() => null);
+                        await refresh().catch(() => {});
+                        if (records && selectedCustomFontIsMissing(records)) {
+                          setFontFamily("system");
+                          await notifyReadingAssistanceSettingsChanged([
+                            "font_family",
+                            "marker_style_config",
+                          ]).catch(() => {});
+                        }
+                        setFontError(t("settings.layout.fontDeleteFailed"));
+                      } finally {
+                        setFontBusy(false);
                       }
-                      setFontError(t("settings.layout.fontDeleteFailed"));
-                    } finally {
-                      setFontBusy(false);
-                    }
-                  }}
-                  className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-surface hover:text-danger-text disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        {fontError && (
-          <p role="alert" className="mt-2 text-[11px] leading-4 text-danger-text">
-            {fontError}
-          </p>
-        )}
-      </div>
+                    }}
+                    className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-surface hover:text-danger-text disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {fontError && (
+            <p role="alert" className="mt-2 text-[11px] leading-4 text-danger-text">
+              {fontError}
+            </p>
+          )}
+        </div>
+      )}
       {/* Font Size */}
       <div className="flex items-center justify-between h-[73px]">
         <div>
