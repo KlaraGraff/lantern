@@ -95,7 +95,7 @@ How it works:
 - **It finds the position in the text, not a guessed page number.** For EPUB it searches the original snippet inside the known section for a precise location, falls back to a second snippet, then to the section start; PDF jumps to the page; plain text seeks by character offset.
 - **Answers are retrieved from the book**, not recalled from the model. Every book gets a full-text index, and if you configure an embedding service, a semantic layer on top — so obscure books, new books and your own documents work just as well.
 - **You choose what it reads**: automatic, the selection only, this chapter only, or the whole book.
-- **No spoilers by default.** The reading guard restricts answers to what you have already read and labels them accordingly ("answered up to your reading position — first X%"). One click re-runs the question against the whole book. The setting is per-book.
+- **By default it will not answer from pages you have not reached yet.** Once you know what happens later, your thinking quietly bends toward it — and whatever you would have worked out on your own never gets the chance to surface. So **reading thought protection** keeps answers inside what you have already read, and says so: *answered up to your reading progress (X%)*. When you do want the full picture, one click answers again using the whole book. The setting is per-book.
 
 <!-- Screenshot placeholder: an AI answer with citation markers, and the passage it jumps to -->
 ![Clickable citations](assets/screenshots/citations.png)
@@ -160,7 +160,7 @@ To make it yours: set your English level under Settings → Profile, and pick th
 <table>
 <tr><td width="180"><b>AI comprehension</b></td><td>
 
-Contextual lookup · phrase glosses · passage explanations · translation · persistent per-book chat (carries the word, the source sentence, the existing explanation, and your reading position into the conversation) · **every answer carries clickable citations that jump back to the sentence in the book** · full-text retrieval, with a semantic layer on top once you configure embeddings · scope the answer to automatic / selection / chapter / whole book · **a reading guard** that answers only from what you have already read, with one click to re-run against the whole book · every request shows exactly which passage it quotes, and you can remove it
+Contextual lookup · phrase glosses · passage explanations · translation · persistent per-book chat (carries the word, the source sentence, the existing explanation, and your reading position into the conversation) · **every answer carries clickable citations that jump back to the sentence in the book** · full-text retrieval, with a semantic layer on top once you configure embeddings · scope the answer to automatic / selection / chapter / whole book · **reading thought protection** — answers drawn only from what you have already read, leaving the rest for you to work out, with one click to answer again using the whole book · every request shows exactly which passage it quotes, and you can remove it
 
 </td></tr>
 <tr><td><b>The learning loop</b></td><td>
