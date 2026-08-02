@@ -11,6 +11,7 @@
     "core:window:allow-set-title",
     "core:webview:allow-create-webview-window",
     "opener:default",
+    "os:default",
     "dialog:default",
     "fs:default",
     "fs:allow-read-file",

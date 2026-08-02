@@ -2,8 +2,10 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { arch } from "@tauri-apps/plugin-os";
 import { Github, BookText, Scale, ExternalLink, GitFork, Bug, Check, Copy } from "lucide-react";
 import LanternLogo from "../LanternLogo";
+import { platform, type PlatformId } from "../../services/platform";
 
 const CURRENT_REPOSITORY_URL = "https://github.com/KlaraGraff/lantern";
 const CURRENT_RELEASES_URL = `${CURRENT_REPOSITORY_URL}/releases`;
@@ -22,24 +24,25 @@ interface BuildInfo {
   upstream_repository: string;
 }
 
-// Informational platform label derived from the UA string (no os plugin).
+const OS_NAMES: Partial<Record<PlatformId, string>> = {
+  macos: "macOS",
+  windows: "Windows",
+  linux: "Linux",
+  ios: "iOS",
+  android: "Android",
+};
+
+// Informational only. Read from the OS plugin rather than the UA string, which
+// says "Macintosh" on iPadOS and carries no architecture at all in a webview.
 function platformLabel(): string {
-  if (typeof navigator === "undefined") return "";
-  const ua = navigator.userAgent.toLowerCase();
-  const arch = ua.includes("arm64") || ua.includes("aarch64")
-    ? "arm64"
-    : ua.includes("x86_64") || ua.includes("x64")
-      ? "x86_64"
-      : "";
-  const os = ua.includes("mac")
-    ? "macOS"
-    : ua.includes("win")
-      ? "Windows"
-      : ua.includes("linux")
-        ? "Linux"
-        : "";
+  const os = OS_NAMES[platform.id];
   if (!os) return "";
-  return arch ? `${os} · ${arch}` : os;
+  try {
+    return `${os} · ${arch()}`;
+  } catch {
+    // Not under Tauri; the OS name came from the UA fallback.
+    return os;
+  }
 }
 
 export default function AboutSettings() {

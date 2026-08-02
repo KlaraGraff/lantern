@@ -1,4 +1,5 @@
 import type { InteractionKind } from "./reader-interaction.ts";
+import { platform } from "../services/platform.ts";
 
 export const DEFAULT_PREVIOUS_PAGE_BINDING = "key:ArrowLeft";
 export const DEFAULT_NEXT_PAGE_BINDING = "key:ArrowRight";
@@ -64,14 +65,13 @@ export function isReservedReaderBinding(binding: string) {
 /**
  * Whether to print ⌘⇧S rather than Ctrl+Shift+S.
  *
- * Split out so it can be forced in a test, where there is no `navigator` with a
- * platform to read. `navigator.platform` is deprecated but it is the only thing
- * a webview reliably answers, and being wrong here costs a wrong glyph, not a
- * wrong binding.
+ * Split out so it can be forced in a test. Which glyphs to print is not a
+ * capability, so it reads the platform identity rather than a flag — but it
+ * reads it from the same place everything else does, instead of sniffing the
+ * deprecated `navigator.platform`.
  */
 export function isApplePlatform(): boolean {
-  const platform = typeof navigator === "undefined" ? "" : (navigator.platform ?? "");
-  return /Mac|iPhone|iPad|iPod/.test(platform);
+  return platform.id === "macos" || platform.id === "ios";
 }
 
 // ⌃⌥⇧⌘ is the order macOS prints them in, and Ctrl+Alt+Shift the order

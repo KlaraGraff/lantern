@@ -13,6 +13,7 @@ import McpSettings from "./settings/McpSettings";
 import AboutSettings from "./settings/AboutSettings";
 import Toast from "./ui/Toast";
 import { useSettings } from "../hooks/useSettings";
+import { platform } from "../services/platform";
 import type { SettingsSection, SettingsView } from "./settings-destination";
 
 export type { SettingsSection } from "./settings-destination";
@@ -170,8 +171,6 @@ export default function SettingsModal({ open, onClose, initialSection = "general
 
   if (!open) return null;
 
-  const isMacos = navigator.userAgent.includes("Macintosh");
-
   const allSections: { id: SettingsSection; label: string; subtitle: string; paneSubtitle?: string; icon: typeof Globe }[] = [
     { id: "general", label: t("settings.general.title"), subtitle: t("settings.general.subtitle"), icon: Globe },
     { id: "appearance", label: t("settings.appearance.title"), subtitle: t("settings.appearance.subtitle"), icon: Palette },
@@ -184,7 +183,7 @@ export default function SettingsModal({ open, onClose, initialSection = "general
     { id: "about", label: t("settings.about.title"), subtitle: t("settings.about.subtitle"), icon: Info },
   ];
 
-  const sections = isMacos ? allSections : allSections.filter((s) => s.id !== "librarySync");
+  const sections = allSections.filter((s) => s.id !== "librarySync" || platform.hasFolderSync);
 
   const settingsProps = { settings, loading, refresh, save, saveBulk, showSavedToast };
 

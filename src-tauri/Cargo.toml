@@ -34,6 +34,11 @@ tauri = { version = "=2.11.5", features = ["protocol-asset"] }
 tauri-plugin-opener = "=2.5.4"
 tauri-plugin-dialog = "=2.6.0"
 tauri-plugin-fs = "=2.4.5"
+# The frontend capability layer (`src/services/platform.ts`) reads the target
+# triple through this plugin rather than sniffing the user agent, because
+# iPadOS reports "Macintosh" in its webview UA and would otherwise be served
+# the desktop capability set.
+tauri-plugin-os = "=2.3.2"
 tauri-plugin-log = "2"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
