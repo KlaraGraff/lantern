@@ -10,13 +10,8 @@ import BookList from "../components/BookList";
 import DictionaryContent from "../components/DictionaryContent";
 import ChatsContent from "../components/ChatsContent";
 import NotesContent from "../components/NotesContent";
-import SettingsModal from "../components/SettingsModal";
-import {
-  normalizeSettingsDestination,
-  settingsDestinationSection,
-  settingsDestinationView,
-  type SettingsDestination,
-} from "../components/settings-destination";
+import { openSettings } from "../components/settings-open";
+import { listenForSettingsChanged } from "../components/settings-events";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import { useBooks, importBookDialog } from "../hooks/useBooks";
@@ -44,36 +39,20 @@ export default function Home() {
   const [importSlow, setImportSlow] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<{ applied: number; total: number } | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsDestination, setSettingsDestination] = useState<SettingsDestination>("general");
   const [userName, setUserName] = useState("");
   const collections = useCollections();
 
-  // Load user name
+  // The name greets the reader in the sidebar. Tracking the save rather than
+  // the settings modal closing keeps it correct wherever the edit came from —
+  // the modal itself is mounted above this page now and never reports back.
   useEffect(() => {
     invoke<Record<string, string>>("get_all_settings")
       .then((s) => setUserName(s.user_name ?? ""))
       .catch(() => {});
-  }, []);
-
-  // Listen for open-settings events (DOM from same window, storage from reader windows)
-  useEffect(() => {
-    const handler = (e: Event) => {
-      setSettingsDestination(normalizeSettingsDestination((e as CustomEvent).detail));
-      setSettingsOpen(true);
-    };
-    window.addEventListener("open-settings", handler);
-
-    // Cross-window: reader uses emitTo("main", ...) — must use webview-specific listener
-    const unlisten = getCurrentWebview().listen<unknown>("open-settings", (event) => {
-      setSettingsDestination(normalizeSettingsDestination(event.payload));
-      setSettingsOpen(true);
+    const unlisten = listenForSettingsChanged((values) => {
+      if ("user_name" in values) setUserName(values.user_name ?? "");
     });
-
-    return () => {
-      window.removeEventListener("open-settings", handler);
-      unlisten.then((fn) => fn());
-    };
+    return () => { unlisten.then((stop) => stop()).catch(() => {}); };
   }, []);
 
   useEffect(() => {
@@ -81,18 +60,6 @@ export default function Home() {
       setActiveFilter(event.payload || "all");
     });
     return () => { unlisten.then((fn) => fn()); };
-  }, []);
-
-  // Cmd+, to open settings
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
-        e.preventDefault();
-        setSettingsOpen(true);
-      }
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
   }, []);
 
   const isCollectionFilter = activeFilter.startsWith("collection:");
@@ -285,7 +252,7 @@ export default function Home() {
         bookCounts={bookCounts}
         collections={collections}
         userName={userName}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => openSettings()}
         syncProgress={syncProgress}
       />
 
@@ -374,10 +341,7 @@ export default function Home() {
                 so the list of places to find one belongs here, not only in a
                 settings tab they have no reason to open. */}
             <button
-              onClick={() => {
-                setSettingsDestination("bookSources");
-                setSettingsOpen(true);
-              }}
+              onClick={() => openSettings("bookSources")}
               className="text-[12px] text-text-muted hover:text-accent transition-colors"
             >
               {t("home.findBooks")}
@@ -435,20 +399,6 @@ export default function Home() {
           </button>
         </div>
       )}
-
-      <SettingsModal
-        open={settingsOpen}
-        onClose={() => {
-          setSettingsOpen(false);
-          setSettingsDestination("general");
-          // Reload user name in case it changed
-          invoke<Record<string, string>>("get_all_settings")
-            .then((s) => setUserName(s.user_name ?? ""))
-            .catch(() => {});
-        }}
-        initialSection={settingsDestinationSection(settingsDestination)}
-        initialView={settingsDestinationView(settingsDestination)}
-      />
     </div>
   );
 }

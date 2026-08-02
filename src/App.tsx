@@ -7,6 +7,7 @@ import Home from "./pages/Home";
 import Reader from "./pages/Reader";
 import VaultAccessDialog from "./components/VaultAccessDialog";
 import ReasoningEffortNotice from "./components/ReasoningEffortNotice";
+import SettingsHost from "./components/SettingsHost";
 import { reconcileLanguage } from "./i18n";
 import {
   installCustomFontFaces,
@@ -81,6 +82,10 @@ export default function App() {
       </Routes>
       <VaultAccessDialog />
       <ReasoningEffortNotice />
+      {/* Settings belong to the window that owns the library, not to a page.
+          A desktop reader window forwards to this one by label instead of
+          mounting a second modal of its own. */}
+      {isMainWindow && <SettingsHost />}
     </>
   );
 
