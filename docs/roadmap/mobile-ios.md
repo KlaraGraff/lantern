@@ -581,8 +581,13 @@ what P1–P3 exist to fix — none of it invalidates the port.
 | Shelf and reader body overflow the right edge; the page scrolls horizontally | P2 |
 | Reader toolbar collides — "Chapter 3 of 20" overlaps the font-size control | P2 |
 | No safe-area insets anywhere; content runs under the status bar region | P2 |
-| "Drop files or click to import more books" is shown — drag-drop does not exist here | P1, `hasDragDrop: false` |
+| "Drop files or click to import more books" is shown — drag-drop does not exist here | P1, `hasDragDrop: false` — **fixed**, `e67b019` |
 | A horizontal swipe scrolls the text vertically instead of turning the page | P3 |
+
+One more, seen during P1's verification pass on the same device rather than on first run:
+**settings panes do not scroll**, so anything below the fold — the reveal-logs button, the
+custom-font importer — cannot be reached at all. P2, and it is the reason those two gates were
+confirmed by reading rather than by tapping.
 
 The last one is the most substantive: the reader responds to touch, but the page-turn gesture
 is not wired to a swipe, so the current touch handling reaches the webview as a plain scroll.
@@ -723,18 +728,84 @@ Xcode project, so a stale one templates against the wrong runtime; bumped to 2.1
 
 ### P1 — Capability layer and single-window navigation (11 days)
 
-1. Build `src/services/platform.ts` per [D-005](#d-005--capability-flags-not-platform-checks);
-   migrate existing scattered platform checks into it
-2. Route `openReaderWindow()` through `hasWindow` — `navigate()` on iOS. Nine call sites need
-   router access
-3. Replace the three cross-window `emitTo` fan-outs with a single-window-aware helper
-4. Hoist `<SettingsModal>` from `Home` into `App.tsx`
-5. Hide desktop-only surfaces behind capability flags: MCP tab, OCR section, format
-   conversion, reveal-logs, drag-drop CTA, sync folder picker, font import
-6. No-op `useWindowSizePersistence` on mobile
+1. ~~Build `src/services/platform.ts` per [D-005](#d-005--capability-flags-not-platform-checks);
+   migrate existing scattered platform checks into it~~ — done, `2291403`. Only three real
+   platform checks existed to migrate: a `navigator.userAgent.includes("Macintosh")` sniff
+   hiding the Library Sync tab, a UA-derived OS label in About, and a `navigator.platform`
+   test choosing ⌘ vs Ctrl glyphs. The capability set is read through `@tauri-apps/plugin-os`
+   rather than the UA — not a preference: **iPadOS reports `Macintosh` in its webview UA**, so
+   the sniff being replaced would have handed an iPad the full desktop capability set.
 
-**Exit criterion:** on iOS, tapping a book navigates in-window and back works; no dead
-buttons anywhere; desktop behaviour is unchanged (verify the desktop build explicitly).
+   **`hasKeyboard` was drafted and withdrawn.** It looks like a capability — the shortcut
+   recorder and the menu-shortcut hints are useless without keys — but an iPad with a Magic
+   Keyboard is an ordinary setup, so gating them on the platform would take the feature away
+   from the people who can use it. Keyboard-dependence is not platform-dependence.
+
+   Four flags have **no consumer yet** and each says so in its own doc comment:
+   `hasTitleBarInset` and `hasSafeAreaInset` (P2 reads them), `hasUpdater` (Lantern ships no
+   updater at all), and `distChannel` (every current build is direct; an App Store build would
+   have to bake the value in, as it cannot be recovered at runtime).
+2. ~~Route `openReaderWindow()` through `hasWindow` — `navigate()` on iOS~~ — done, `7a447d8`.
+   **Eight call sites, not nine.** The address is now built once by `readerUrl()` and used both
+   ways — a new window loads it, a single-window platform navigates to it — so the two paths
+   cannot drift on what a target means. `useOpenBook` picks between them and has to be a hook:
+   the app uses `<BrowserRouter>`, not a data router, so `navigate` is only reachable from
+   inside a component.
+3. ~~Replace the three cross-window `emitTo` fan-outs with a single-window-aware helper~~ —
+   done, `6ba5d4f`. **They were not one shape, so this is two functions.** `notifyReaders`
+   addresses the windows showing one book; `notifyAllReaders` addresses every reader, for the
+   lookup-retention setting, which is library-wide and carries an empty detail. Collapsing them
+   would have made "no book id" silently mean "everyone", which is not what the old code did.
+4. ~~Hoist `<SettingsModal>` from `Home` into `App.tsx`~~ — done, `62d0b4f`. `Home` lost its
+   settings state entirely, including the refetch it did when the modal closed. The reader's
+   display name now refreshes off the `settings-changed` stream `useSettings.save()` already
+   emits — narrower and faster than a refetch, and correct wherever the edit came from. A
+   desktop reader window still forwards by label rather than mounting a second modal.
+5. ~~Hide desktop-only surfaces behind capability flags~~ — done, `e67b019`. **Format
+   conversion had no frontend surface at all.** The real surface is
+   `IMPORTABLE_BOOK_EXTENSIONS` in Rust — it feeds both the import dialog's filter and the
+   drag-drop validator — so the gate is a `cfg` split, not a React condition. Mobile drops
+   exactly the MOBI family (`mobi`/`azw`/`azw3`), which is what needs Calibre's
+   `ebook-convert`; FB2 and CBZ stay, because foliate-js parses them in-process. Offering the
+   MOBI family would import a book that never finishes preparing.
+6. ~~No-op `useWindowSizePersistence` on mobile~~ — done, `7a447d8`. **No functional change was
+   needed.** The window label on iOS is `main`, so `isStandaloneWindow` is already false and
+   the caller's `enabled` argument already no-ops the hook. The `hasWindow` guard was added
+   anyway, to say why the `onResized` listener has nothing to do here.
+
+**Exit criterion: met, 2026-08-02.** Verified on the iPhone 17 Pro Simulator (iOS 26.5),
+debug build: tapping a book navigates in-window to the reader, the back arrow returns to the
+library, the settings modal opens from its new home above the router, the Library Sync and MCP
+tabs are absent, and Services shows three sub-tabs with OCR gone. About reports `iOS · aarch64`
+from the OS plugin. Desktop: everything CI runs passes locally, plus `cargo build` links the
+binary and `cargo check --target aarch64-apple-ios-sim` covers both sides of the new `cfg`.
+
+The live pass turned up two things the gates alone did not. Fixed in `e4bde4d`: the Services
+tab still advertised "Models, speech and OCR" under a tab with no OCR view — the gate on the
+view was right, the sentence naming it was not.
+
+Noted, not fixed: the settings panes do not scroll on iOS, so anything below the fold is
+unreachable. That is a layout defect and belongs to P2; it is why *reveal-logs* and *font
+import* were confirmed by reading the gate rather than by tapping.
+
+#### What P1 deliberately did not fix
+
+- **`isStandaloneWindow` still drives twenty branches in `Reader.tsx`.** On iOS it is false,
+  which happens to select the right in-window header, back arrow and progress bar — the
+  desktop main-window branch is already the single-window branch. It reads as a window check
+  where P2 will want a size check, but rewriting it before the mobile layout exists would be
+  guessing.
+- **A pre-existing desktop bug, found while gating OCR.** `open_settings_on_main`
+  (`commands/settings.rs`) accepts a `view` only when `section == "tools"`, but `Reader.tsx`
+  invokes it with `{ section: "services", view: "ocr" }`. That always fails validation, the
+  frontend catch falls back to `{ section: "tools" }`, and the OCR HUD's settings button lands
+  on Reading Assistance instead of Services → OCR. Left alone because P1 must not change
+  desktop behaviour.
+- **Backend commands with no `cfg` gate.** `reveal_logs`, the four `commands::mcp::*`,
+  `sync_set_shared_dir` and `import_custom_fonts` are registered unconditionally, unlike the
+  OCR pipeline. Nothing panics — they return typed `AppResult` errors — so this is a
+  dead-button risk that the frontend flags now cover, not a crash risk. Worth closing when
+  something else takes that file apart.
 
 ### P2 — Mobile UI (18.5 days)
 
@@ -812,7 +883,7 @@ TestFlight, review round-trips. Add an iOS job to `release.yml`.
 | Phase | Status | Notes |
 |---|---|---|
 | P0 — Compile and boot | **Done** | Runs on the Simulator; shelf renders, import works, book opens. [F-011](#f-011--first-run-what-the-app-actually-does-on-a-phone) |
-| P1 — Capability layer + routing | Not started | |
+| P1 — Capability layer + routing | **Done** | Tapping a book opens it in-window; desktop-only surfaces are gated by [D-005](#d-005--capability-flags-not-platform-checks) flags |
 | P2 — Mobile UI | Not started | |
 | P3 — Touch interaction | Not started | |
 | P4 — iOS adaptation | Not started | |
