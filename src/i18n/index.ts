@@ -5,7 +5,7 @@ import en from "./en.json";
 import zh from "./zh.json";
 
 const SUPPORTED_LANGUAGES = ["en", "zh"];
-const CACHE_KEY = "quill-language";
+const CACHE_KEY = "lantern-language";
 
 /**
  * Detect the system language from the browser locale.

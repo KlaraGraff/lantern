@@ -29,7 +29,7 @@ installBuiltinFontFaces();
 
 // Apply cached theme synchronously before React mounts so the window doesn't
 // flash light-mode on cold start. Reconciled with the DB in App.tsx.
-const cachedTheme = localStorage.getItem("quill-theme") ?? "system";
+const cachedTheme = localStorage.getItem("lantern-theme") ?? "system";
 const prefersDark =
   cachedTheme === "dark" ||
   (cachedTheme === "system" &&

@@ -43,7 +43,7 @@ export default function App() {
       .then((settings) => {
         const theme = settings.theme ?? "system";
         applyTheme(theme);
-        localStorage.setItem("quill-theme", theme);
+        localStorage.setItem("lantern-theme", theme);
       })
       .catch(() => applyTheme("system"));
 

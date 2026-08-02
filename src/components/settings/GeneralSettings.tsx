@@ -732,7 +732,7 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
           onChange={(lang) => {
             setLanguage(lang);
             save("language", lang);
-            localStorage.setItem("quill-language", lang);
+            localStorage.setItem("lantern-language", lang);
             i18n.changeLanguage(lang);
             showSavedToast();
           }}

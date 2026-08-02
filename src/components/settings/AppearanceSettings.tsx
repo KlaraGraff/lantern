@@ -36,7 +36,7 @@ export default function AppearanceSettings({ settings, loading, save, showSavedT
           onChange={(value) => {
             setTheme(value);
             save("theme", value);
-            localStorage.setItem("quill-theme", value);
+            localStorage.setItem("lantern-theme", value);
             applyTheme(value);
             showSavedToast();
           }}
