@@ -183,7 +183,7 @@ Lantern 必须做到：
 首版至少包含：
 
 - 智谱 GLM-4.7-Flash：默认推荐，`glm-4.7-flash`，免费标签，用户自己的 API Key。
-- DeepSeek：按量付费的备用预设，用户自己的 API Key；具体默认模型和端点在实现时按官方当前文档确认。
+- DeepSeek：按量付费的备用预设，用户自己的 API Key。端点 `https://api.deepseek.com`（不含版本段，由公共端点函数补 `/v1`），默认模型 `deepseek-v4-flash`——官方已不再提供 `deepseek-chat`，实现时按官方文档核对过。
 - OpenAI、Anthropic、Ollama、自定义兼容服务：保留现有能力。
 
 其他免费模型只有在以下信息均能从服务商官方资料确认后才能加入：
@@ -381,5 +381,8 @@ https://open.bigmodel.cn/api/paas/v4/chat/completions
 - 智谱国内 API Key 管理：<https://bigmodel.cn/usercenter/proj-mgmt/apikeys>
 - Z.ai API 鉴权和国际端点：<https://docs.z.ai/guides/develop/http/introduction>
 - Z.ai 价格表：<https://docs.z.ai/guides/overview/pricing>
+- DeepSeek API 与端点：<https://api-docs.deepseek.com/>
+- DeepSeek 价格表：<https://api-docs.deepseek.com/quick_start/pricing>
+- DeepSeek API Key 管理：<https://platform.deepseek.com/api_keys>
 
 服务商可能调整免费模型、限额、模型 ID 和页面 URL。实现和发布前应重新核对官方文档，但这种变化只能更新目录元数据，不能静默改写用户已经保存的调用路由。
