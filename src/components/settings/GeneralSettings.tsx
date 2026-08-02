@@ -1,8 +1,6 @@
 import { useCallback, useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { emitTo } from "@tauri-apps/api/event";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { AlertTriangle, ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import i18n from "../../i18n";
 import Select from "../ui/Select";
@@ -10,6 +8,7 @@ import Toggle from "../ui/Toggle";
 import { ROW_CONTROL_WIDTH, type SettingsProps } from "./types";
 import { LANGUAGE_OPTIONS } from "./languageOptions";
 import { platform } from "../../services/platform";
+import { notifyAllReaders } from "../../utils/notifyReaders";
 
 interface CefrEstimate {
   estimated_cefr: string;
@@ -787,11 +786,9 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
             setLookupHistoryRetention(days);
             await save("lookup_history_retention_days", days);
             await invoke("prune_lookup_records", { retentionDays: Number(days) || null });
-            window.dispatchEvent(new CustomEvent("lookup-record-changed", { detail: {} }));
-            const windows = await WebviewWindow.getAll();
-            await Promise.all(windows
-              .filter((window) => window.label.startsWith("reader-"))
-              .map((window) => emitTo(window.label, "lookup-record-changed", {})));
+            // Retention is library-wide, so this one is not about a book and
+            // every open reader has to redraw.
+            notifyAllReaders("lookup-record-changed");
             showSavedToast();
           }}
           options={[

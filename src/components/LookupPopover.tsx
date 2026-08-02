@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { emitTo, listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { X, Loader2, Sparkles, BookmarkPlus, Check, Copy, Settings, MessageSquareMore } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -8,17 +8,9 @@ import Markdown from "react-markdown";
 import { LOOKUP_PROSE } from "./lookup-prose";
 import { aiErrorMessageKey, getAiErrorCode, isAiSettingsError, type AiErrorCode } from "../utils/aiError";
 import { createUuid } from "../utils/randomUuid";
+import { notifyReaders } from "../utils/notifyReaders";
 
 const TRANSLATION_MARKER = "[[QUILL_TRANSLATION]]";
-
-async function notifyReaderWindows(event: "lookup-record-changed" | "vocab-changed", detail: { bookId: string; cfi?: string }) {
-  const windows = await WebviewWindow.getAll();
-  await Promise.all(
-    windows
-      .filter((window) => window.label === `reader-${detail.bookId}`)
-      .map((window) => emitTo(window.label, event, detail)),
-  );
-}
 
 interface AiStreamChunk {
   delta: string;
@@ -213,8 +205,7 @@ export default function LookupPopover({
       definition: displayedDefinitionContent(definition.contentRef.current),
       contextExplanation: context.contentRef.current || null,
     }).then(() => {
-      window.dispatchEvent(new CustomEvent("lookup-record-changed", { detail: { bookId, cfi } }));
-      notifyReaderWindows("lookup-record-changed", { bookId, cfi: cfi || undefined }).catch(() => {});
+      notifyReaders("lookup-record-changed", { bookId, cfi: cfi || undefined });
     }).catch((err) => console.error("Failed to save lookup history:", err));
   }, [allDone, bookId, cfi, chapter, context.contentRef, definition.contentRef, hasConfigurationError, hasContent, sentence, streamError, word]);
 
@@ -260,8 +251,7 @@ export default function LookupPopover({
         cfi: cfi || null,
       });
       setSaved(true);
-      window.dispatchEvent(new CustomEvent("vocab-changed", { detail: { bookId, cfi } }));
-      notifyReaderWindows("vocab-changed", { bookId, cfi: cfi || undefined }).catch(() => {});
+      notifyReaders("vocab-changed", { bookId, cfi: cfi || undefined });
     } catch (err) {
       console.error("Failed to save vocab word:", err);
     }

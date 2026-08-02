@@ -1,21 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { emitTo } from "@tauri-apps/api/event";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-
-function notifyReaderWindows(
-  detail: { bookId?: string; cfi?: string | null },
-  event = "vocab-changed",
-) {
-  if (!detail.bookId) return Promise.resolve([]);
-  return WebviewWindow.getAll().then((windows) =>
-    Promise.all(
-      windows
-        .filter((window) => window.label === `reader-${detail.bookId}`)
-        .map((window) => emitTo(window.label, event, detail)),
-    ),
-  );
-}
+import { notifyReaders } from "../utils/notifyReaders";
 
 export interface DictionaryWord {
   id: string;
@@ -102,8 +87,7 @@ export function useDictionary(bookId: string) {
         cfi: cfi || null,
       });
       setWords((prev) => [dictionaryWord, ...prev]);
-      window.dispatchEvent(new CustomEvent("vocab-changed", { detail: { bookId, cfi } }));
-      notifyReaderWindows({ bookId, cfi }).catch(() => {});
+      notifyReaders("vocab-changed", { bookId, cfi });
       return dictionaryWord;
     },
     [bookId]
@@ -113,8 +97,7 @@ export function useDictionary(bookId: string) {
     const word = words.find((item) => item.id === id);
     await invoke("remove_vocab_word", { id });
     setWords((prev) => prev.filter((w) => w.id !== id));
-    window.dispatchEvent(new CustomEvent("vocab-changed", { detail: { bookId: word?.book_id, cfi: word?.cfi } }));
-    notifyReaderWindows({ bookId: word?.book_id, cfi: word?.cfi }).catch(() => {});
+    notifyReaders("vocab-changed", { bookId: word?.book_id, cfi: word?.cfi });
   }, [words]);
 
   const checkExists = useCallback(
@@ -147,8 +130,7 @@ export function useAllDictionary() {
     const word = words.find((item) => item.id === id);
     await invoke("remove_vocab_word", { id });
     setWords((prev) => prev.filter((w) => w.id !== id));
-    window.dispatchEvent(new CustomEvent("vocab-changed", { detail: { bookId: word?.book_id, cfi: word?.cfi } }));
-    notifyReaderWindows({ bookId: word?.book_id, cfi: word?.cfi }).catch(() => {});
+    notifyReaders("vocab-changed", { bookId: word?.book_id, cfi: word?.cfi });
   }, [words]);
 
   const updateMastery = useCallback(async (id: string, mastery: "new" | "learning" | "mastered", nextReviewAt: number | null) => {
@@ -157,15 +139,13 @@ export function useAllDictionary() {
     setWords((prev) => prev.map((word) => word.id === id
       ? { ...word, mastery, next_review_at: nextReviewAt, updated_at: Date.now() }
       : word));
-    window.dispatchEvent(new CustomEvent("vocab-changed", { detail: { bookId: changed?.book_id, cfi: changed?.cfi } }));
-    notifyReaderWindows({ bookId: changed?.book_id, cfi: changed?.cfi }).catch(() => {});
+    notifyReaders("vocab-changed", { bookId: changed?.book_id, cfi: changed?.cfi });
   }, [words]);
 
   const recordReview = useCallback(async (id: string, rating: "again" | "hard" | "good" | "easy") => {
     const reviewed = await invoke<DictionaryWord>("record_vocab_review", { id, rating });
     setWords((prev) => prev.map((word) => word.id === id ? { ...word, ...reviewed } : word));
-    window.dispatchEvent(new CustomEvent("vocab-changed", { detail: { bookId: reviewed.book_id, cfi: reviewed.cfi } }));
-    notifyReaderWindows({ bookId: reviewed.book_id, cfi: reviewed.cfi }).catch(() => {});
+    notifyReaders("vocab-changed", { bookId: reviewed.book_id, cfi: reviewed.cfi });
     return reviewed;
   }, []);
 
@@ -227,8 +207,7 @@ export function useAllLookupHistory() {
     await invoke("delete_lookup_record", { id });
     setRecords((previous) => previous.filter((item) => item.id !== id));
     setTotal((previous) => Math.max(0, previous - 1));
-    window.dispatchEvent(new CustomEvent("lookup-record-changed", { detail: { bookId: record?.book_id, cfi: record?.cfi } }));
-    notifyReaderWindows({ bookId: record?.book_id, cfi: record?.cfi }, "lookup-record-changed").catch(() => {});
+    notifyReaders("lookup-record-changed", { bookId: record?.book_id, cfi: record?.cfi });
   }, [records]);
 
   const clear = useCallback(async (bookId?: string) => {
@@ -236,8 +215,7 @@ export function useAllLookupHistory() {
     setRecords([]);
     setTotal(0);
     setCursor(null);
-    window.dispatchEvent(new CustomEvent("lookup-record-changed", { detail: { bookId } }));
-    notifyReaderWindows({ bookId }, "lookup-record-changed").catch(() => {});
+    notifyReaders("lookup-record-changed", { bookId });
   }, []);
 
   useEffect(() => {
