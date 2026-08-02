@@ -101,6 +101,16 @@ How it works:
 - **Answers are retrieved from the book**, not recalled from the model. Every book gets a full-text index, and if you configure an embedding service, a semantic layer on top — so obscure books, new books and your own documents work just as well.
 - **And it inherits the constraints from the section above.** Citations never come from pages you have not reached, and the retrieval scope is yours to set — which is what makes "list the vocabulary before I read" work at all: it scans the chapter you are about to read, not the whole book.
 
+### Come back days later and everything you saved is still attached to the book
+
+History in a chat app is one ever-growing stream. That sentence you asked about three days ago sits between an expense policy and a recipe; you cannot find it, and if you do, you no longer remember where in the book you were. A word list has the same flaw — the word lies there on its own, cut off from the sentence it came from, and all that is left is to memorise it cold.
+
+Nothing you save in Lantern lets go of the book. Vocabulary, notes and conversations are each filed under their book and searchable, stamped with how long ago you saved them, and every one of them carries an **Open in reader** link that lands you not at the front of the book but on the sentence you were on. A saved word also keeps the passage it appeared in, and what it meant **in that sentence** — not the first entry in a dictionary.
+
+Conversations go one step further: the book opens and **the conversation comes back into the panel beside it**, so you pick the thread up where you dropped it, the citation markers inside it still live.
+
+So it is not only that every line it writes clicks back into the book. **Everything you accumulate in Lantern grows out of the book.**
+
 <!-- Screenshot placeholder: an AI answer with citation markers, and the passage it jumps to
      Once shot, drop it into assets/screenshots/ and delete this comment’s first and last lines to show it.
 ![Clickable citations](assets/screenshots/citations.png)
@@ -219,7 +229,7 @@ To make it yours: set your English level under Settings → Profile, and pick th
 <table>
 <tr><td width="180"><b>AI comprehension</b></td><td>
 
-Contextual lookup · phrase glosses · passage explanations · translation · persistent per-book chat (carries the word, the source sentence, the existing explanation, and your reading position into the conversation) · **every answer carries clickable citations that jump back to the sentence in the book** · full-text retrieval, with a semantic layer on top once you configure embeddings · scope the answer to automatic / selection / chapter / whole book · **reading thought protection** — answers drawn only from what you have already read, leaving the rest for you to work out, with one click to answer again using the whole book · every request shows exactly which passage it quotes, and you can remove it
+Contextual lookup · phrase glosses · passage explanations · translation · persistent per-book chat (carries the word, the source sentence, the existing explanation, and your reading position into the conversation) · **every answer carries clickable citations that jump back to the sentence in the book** · full-text retrieval, with a semantic layer on top once you configure embeddings · scope the answer to automatic / selection / chapter / whole book · **reading thought protection** — answers drawn only from what you have already read, leaving the rest for you to work out, with one click to answer again using the whole book · every request shows exactly which passage it quotes, and you can remove it · **conversations are filed under their book and searchable**, and one click reopens the reader with that conversation back beside it
 
 </td></tr>
 <tr><td><b>The learning loop</b></td><td>
