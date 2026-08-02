@@ -970,6 +970,18 @@ fn update_profile_health(
     );
 }
 
+/// Whether the traversal may move on to the next credential or model.
+///
+/// Two independent reasons to stop. One is the failure itself: a malformed
+/// request will be malformed for every model, so trying them all just wastes
+/// the user's time and money. The other is that the answer has already started
+/// arriving — switching now would splice two models' output together, or repeat
+/// a sentence the reader has read. A non-empty reasoning delta counts as
+/// started, because the reader can see it.
+fn may_continue_after(kind: AiErrorKind, emitted: bool) -> bool {
+    !emitted && kind.retryable()
+}
+
 fn profile_health_state(
     error: Option<AiErrorKind>,
     retry_after: Option<i64>,
@@ -1745,7 +1757,7 @@ async fn stream_with_failover_inner(
                         retry_after_ms(&error),
                         Some(latency),
                     );
-                    if emitted.load(Ordering::Relaxed) || !kind.retryable() {
+                    if !may_continue_after(kind, emitted.load(Ordering::Relaxed)) {
                         return Err(error);
                     }
                     log::warn!(
@@ -1796,7 +1808,7 @@ async fn stream_with_failover_inner(
                         retry_after_ms(&error),
                         Some(latency),
                     );
-                    if emitted.load(Ordering::Relaxed) || !kind.retryable() {
+                    if !may_continue_after(kind, emitted.load(Ordering::Relaxed)) {
                         return Err(error);
                     }
                     log::warn!(
@@ -1867,7 +1879,7 @@ async fn stream_with_failover_inner(
                     let retry_after = retry_after_ms(&error);
                     update_credential_health(db, &credential, Some(kind), retry_after);
                     profile_failure = Some((kind, retry_after));
-                    if emitted.load(Ordering::Relaxed) || !kind.retryable() {
+                    if !may_continue_after(kind, emitted.load(Ordering::Relaxed)) {
                         update_profile_health(
                             db,
                             &profile,
@@ -3207,6 +3219,133 @@ mod tests {
             profile_health_state(Some(AiErrorKind::Cancelled), None, 1_000),
             None
         );
+    }
+
+    /// Locks §8.3: an authentication failure is not retryable on the key that
+    /// produced it, but the call route as a whole can still recover. The
+    /// traversal has to reach the next credential, and then the next model.
+    #[test]
+    fn auth_failures_do_not_end_the_traversal() {
+        for kind in [
+            AiErrorKind::CredentialInvalid,
+            AiErrorKind::Auth,
+            AiErrorKind::Permission,
+        ] {
+            assert!(
+                may_continue_after(kind, false),
+                "{} should let the route continue",
+                kind.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn rate_limits_and_outages_continue_but_malformed_requests_do_not() {
+        for kind in [
+            AiErrorKind::RateLimit,
+            AiErrorKind::Quota,
+            AiErrorKind::Network,
+            AiErrorKind::Provider5xx,
+            AiErrorKind::Protocol,
+        ] {
+            assert!(may_continue_after(kind, false), "{}", kind.as_str());
+        }
+        // A rejected request shape is rejected everywhere, and a cancelled one
+        // was cancelled on purpose. Neither is worth another model.
+        for kind in [
+            AiErrorKind::Request,
+            AiErrorKind::NotConfigured,
+            AiErrorKind::Cancelled,
+        ] {
+            assert!(!may_continue_after(kind, false), "{}", kind.as_str());
+        }
+    }
+
+    /// Locks §5.3: once the reader can see output — body text or a non-empty
+    /// reasoning delta — no failure switches models, however recoverable.
+    #[test]
+    fn nothing_switches_models_once_output_has_reached_the_reader() {
+        for kind in [
+            AiErrorKind::RateLimit,
+            AiErrorKind::Network,
+            AiErrorKind::Provider5xx,
+            AiErrorKind::Auth,
+        ] {
+            assert!(
+                !may_continue_after(kind, true),
+                "{} must not switch after output",
+                kind.as_str()
+            );
+        }
+    }
+
+    /// Locks §3: a spent quota lasts about an hour and a rate limit about a
+    /// minute. Collapsing them into one state would make the settings page
+    /// unable to tell the user which one they are waiting out.
+    #[test]
+    fn quota_is_its_own_state_and_outlasts_a_rate_limit() {
+        let now = 1_000;
+        assert_eq!(
+            profile_health_state(Some(AiErrorKind::Quota), None, now),
+            Some(("quota", Some(now + 60 * 60 * 1000)))
+        );
+        assert_eq!(
+            profile_health_state(Some(AiErrorKind::RateLimit), None, now),
+            Some(("cooldown", Some(now + 60 * 1000)))
+        );
+    }
+
+    /// Locks §8.3: when the provider says how long to wait, that beats our own
+    /// default — it is the only recovery time anyone actually knows.
+    #[test]
+    fn retry_after_overrides_the_default_rate_limit_cooldown() {
+        let now = 1_000;
+        assert_eq!(
+            profile_health_state(Some(AiErrorKind::RateLimit), Some(5_000), now),
+            Some(("cooldown", Some(now + 5_000)))
+        );
+    }
+
+    #[test]
+    fn transport_failures_cool_down_briefly() {
+        let now = 1_000;
+        for kind in [
+            AiErrorKind::Network,
+            AiErrorKind::Provider5xx,
+            AiErrorKind::Protocol,
+        ] {
+            assert_eq!(
+                profile_health_state(Some(kind), None, now),
+                Some(("cooldown", Some(now + 30 * 1000))),
+                "{}",
+                kind.as_str()
+            );
+        }
+    }
+
+    /// Locks §8.3: stopping a request is the user's own doing, and must leave
+    /// no trace on a model's health — otherwise a habit of hitting Stop would
+    /// slowly cool down a route that never failed.
+    #[test]
+    fn cancelling_writes_no_health_at_all() {
+        assert_eq!(
+            profile_health_state(Some(AiErrorKind::Cancelled), None, 1_000),
+            None
+        );
+        // Same for a credential: `update_credential_health` reads the same
+        // decision, so a `None` here is a write that never happens.
+        assert!(!may_continue_after(AiErrorKind::Cancelled, false));
+    }
+
+    /// Locks §5.4: a retry the user asked for outranks a cooldown Lantern
+    /// recorded on its own, so every deadline has already passed.
+    #[test]
+    fn a_manual_retry_outlasts_every_cooldown() {
+        assert_eq!(cooldown_cutoff(AiRetryMode::Manual), i64::MAX);
+        assert!(cooldown_cutoff(AiRetryMode::Automatic) < i64::MAX);
+        assert_eq!(retry_mode(Some(true)), AiRetryMode::Manual);
+        assert_eq!(retry_mode(Some(false)), AiRetryMode::Automatic);
+        assert_eq!(retry_mode(None), AiRetryMode::Automatic);
     }
 
     #[test]
