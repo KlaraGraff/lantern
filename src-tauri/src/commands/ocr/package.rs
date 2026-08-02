@@ -26,7 +26,6 @@ const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 const MAX_DOWNLOAD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_INSTALLED_BYTES: u64 = 6 * 1024 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 200_000;
-const MAX_ARCHIVE_LISTING_BYTES: usize = 32 * 1024 * 1024;
 const DOWNLOAD_ATTEMPTS: usize = 3;
 const SELF_TEST_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -926,182 +925,140 @@ fn safe_extract_tar_zst(archive: &Path, destination: &Path, expected_size: u64) 
     // The system tar on both platforms is a libarchive build without zstd
     // linked in: it decodes `.zst` by shelling out to a `zstd` binary. A GUI
     // app inherits launchd's PATH (`/usr/bin:/bin:/usr/sbin:/sbin`), which has
-    // no zstd, so every tar call failed with a generic archive error. Decode
-    // the frame in-process and hand tar a plain `.tar` it can always read.
-    let plain_tar = archive.with_file_name(format!(".untar-{}.tar", uuid::Uuid::new_v4()));
-    let plain_tar_cleanup = FileCleanup::new(plain_tar.clone());
-    decompress_zstd(archive, &plain_tar)?;
-    let archive = plain_tar.as_path();
-
-    let names_output = run_tar(archive, &["-tf"])?;
-    let verbose_output = run_tar(archive, &["-tvf"])?;
-    if names_output.len() > MAX_ARCHIVE_LISTING_BYTES
-        || verbose_output.len() > MAX_ARCHIVE_LISTING_BYTES
-    {
-        return Err(package_error("OCR_PACKAGE_ARCHIVE_INVALID"));
-    }
-    let names = String::from_utf8(names_output)
-        .map_err(|_| package_error("OCR_PACKAGE_ARCHIVE_INVALID"))?
-        .lines()
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    let metadata = String::from_utf8(verbose_output)
-        .map_err(|_| package_error("OCR_PACKAGE_ARCHIVE_INVALID"))?
-        .lines()
-        .map(parse_verbose_archive_entry)
-        .collect::<AppResult<Vec<_>>>()?;
-    if names.is_empty() || names.len() != metadata.len() || names.len() > MAX_ARCHIVE_ENTRIES {
-        return Err(package_error("OCR_PACKAGE_ARCHIVE_INVALID"));
-    }
-    validate_archive_entries(names.iter().zip(metadata.iter().copied()))?;
-    let listed_size = metadata.iter().try_fold(0_u64, |total, entry| {
-        total
-            .checked_add(entry.size)
-            .ok_or_else(|| package_error("OCR_PACKAGE_INSTALLED_SIZE_MISMATCH"))
+    // no zstd, so every tar call failed with a generic archive error. Decoder
+    // and unpacker both run in-process now, so no external binary is consulted
+    // and the decompressed archive never lands on disk.
+    let file = File::open(archive).map_err(|_| package_error("OCR_PACKAGE_ARCHIVE_INVALID"))?;
+    let decoder = zstd::stream::read::Decoder::new(file).map_err(|error| {
+        log::error!("ocr package zstd frame rejected: {error}");
+        package_error("OCR_PACKAGE_ARCHIVE_DECOMPRESS_FAILED")
     })?;
+    let decode_failed = Arc::new(AtomicBool::new(false));
+    let mut tar = tar::Archive::new(DecodeProbe {
+        inner: decoder,
+        failed: decode_failed.clone(),
+    });
+    // The runtime ships executables; conda-unpack and the OCR launcher are
+    // unrunnable if the exec bit is dropped. The mask keeps setuid/setgid/sticky
+    // off, matching what an unprivileged system tar would have restored.
+    tar.set_preserve_permissions(true);
+    tar.set_mask(0o7000);
+    tar.set_unpack_xattrs(false);
+
+    // Every entry is validated before it is written, and the guard removes the
+    // whole tree on any failure, so a rejected archive leaves nothing behind.
+    let mut extraction_cleanup = DirectoryCleanup::new(destination.to_path_buf());
+    let mut seen = HashSet::new();
+    let mut count = 0_usize;
+    let mut listed_size = 0_u64;
+    let entries = tar
+        .entries()
+        .map_err(|error| archive_error(&decode_failed, "OCR_PACKAGE_ARCHIVE_INVALID", &error))?;
+    for entry in entries {
+        let mut entry = entry.map_err(|error| {
+            archive_error(&decode_failed, "OCR_PACKAGE_ARCHIVE_INVALID", &error)
+        })?;
+        let kind = match entry.header().entry_type() {
+            tar::EntryType::Regular | tar::EntryType::Continuous | tar::EntryType::GNUSparse => {
+                ArchiveEntryKind::File
+            }
+            tar::EntryType::Directory => ArchiveEntryKind::Directory,
+            // Metadata-only members that write nothing. The per-member variants
+            // are folded into the entry they describe before it is yielded; a
+            // global header is handed to us and is simply skipped.
+            tar::EntryType::XGlobalHeader | tar::EntryType::XHeader => continue,
+            _ => ArchiveEntryKind::LinkOrSpecial,
+        };
+        count += 1;
+        if count > MAX_ARCHIVE_ENTRIES {
+            return Err(package_error("OCR_PACKAGE_ARCHIVE_INVALID"));
+        }
+        let raw_name = entry.path_bytes();
+        let name = std::str::from_utf8(&raw_name)
+            .map_err(|_| package_error("OCR_PACKAGE_ARCHIVE_INVALID"))?;
+        let metadata = ArchiveEntryMetadata {
+            kind,
+            size: entry.size(),
+        };
+        validate_archive_entry(&mut seen, name, metadata)?;
+        listed_size = listed_size
+            .checked_add(metadata.size)
+            .ok_or_else(|| package_error("OCR_PACKAGE_INSTALLED_SIZE_MISMATCH"))?;
+        // Both caps are checked off the header, so an oversized member is
+        // refused before a single byte of it is written.
+        if listed_size > expected_size || listed_size > MAX_INSTALLED_BYTES {
+            return Err(package_error("OCR_PACKAGE_INSTALLED_SIZE_MISMATCH"));
+        }
+        let unpacked = entry.unpack_in(destination).map_err(|error| {
+            log::error!("ocr package entry unpack failed: {error}");
+            archive_error(&decode_failed, "OCR_PACKAGE_EXTRACT_FAILED", &error)
+        })?;
+        if !unpacked {
+            return Err(package_error("OCR_PACKAGE_ARCHIVE_ESCAPE"));
+        }
+    }
+    if count == 0 {
+        return Err(package_error("OCR_PACKAGE_ARCHIVE_INVALID"));
+    }
     if listed_size != expected_size {
         return Err(package_error("OCR_PACKAGE_INSTALLED_SIZE_MISMATCH"));
     }
 
-    let output = Command::new(tar_program())
-        .env("LC_ALL", "C")
-        .env("PATH", system_command_path())
-        .arg("-xf")
-        .arg(archive)
-        .arg("-C")
-        .arg(destination)
-        .output()
-        .map_err(|_| package_error("OCR_PACKAGE_EXTRACT_FAILED"))?;
-    if !output.status.success() {
-        log::error!(
-            "ocr package tar -xf failed: {} {}",
-            output.status,
-            command_stderr(&output.stderr)
-        );
-        return Err(package_error("OCR_PACKAGE_EXTRACT_FAILED"));
-    }
     let actual_size = validate_extracted_tree(destination)?;
     if actual_size != expected_size {
         return Err(package_error("OCR_PACKAGE_INSTALLED_SIZE_MISMATCH"));
     }
-    drop(plain_tar_cleanup);
+    extraction_cleanup.disarm();
     Ok(())
 }
 
-/// Decodes a zstd frame without depending on a `zstd` binary being on PATH.
-fn decompress_zstd(source: &Path, destination: &Path) -> AppResult<()> {
-    let input = File::open(source).map_err(|_| package_error("OCR_PACKAGE_ARCHIVE_INVALID"))?;
-    let mut decoder = zstd::stream::read::Decoder::new(input).map_err(|error| {
-        log::error!("ocr package zstd frame rejected: {error}");
+/// A corrupt zstd frame and a malformed tar now surface as the same
+/// `io::Error` from one reader, and they mean different things to the user: a
+/// bad frame is a broken download, a bad tar is a broken payload. The probe
+/// records which side produced the error so both codes keep their meaning.
+struct DecodeProbe<R> {
+    inner: R,
+    failed: Arc<AtomicBool>,
+}
+
+impl<R: Read> Read for DecodeProbe<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buffer).inspect_err(|_| {
+            self.failed.store(true, Ordering::Release);
+        })
+    }
+}
+
+fn archive_error(
+    decode_failed: &AtomicBool,
+    fallback: &'static str,
+    error: &std::io::Error,
+) -> AppError {
+    if decode_failed.load(Ordering::Acquire) {
+        log::error!("ocr package zstd decode failed: {error}");
         package_error("OCR_PACKAGE_ARCHIVE_DECOMPRESS_FAILED")
-    })?;
-    let mut output = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(destination)
-        .map_err(|_| package_error("OCR_PACKAGE_STORAGE_FAILED"))?;
-    let mut buffer = [0_u8; 128 * 1024];
-    let mut written = 0_u64;
-    loop {
-        let read = decoder.read(&mut buffer).map_err(|error| {
-            log::error!("ocr package zstd decode failed: {error}");
-            package_error("OCR_PACKAGE_ARCHIVE_DECOMPRESS_FAILED")
-        })?;
-        if read == 0 {
-            break;
-        }
-        written = written.saturating_add(read as u64);
-        if written > MAX_INSTALLED_BYTES {
-            return Err(package_error("OCR_PACKAGE_INSTALLED_SIZE_MISMATCH"));
-        }
-        output
-            .write_all(&buffer[..read])
-            .map_err(|_| package_error("OCR_PACKAGE_STORAGE_FAILED"))?;
-    }
-    output
-        .sync_all()
-        .map_err(|_| package_error("OCR_PACKAGE_STORAGE_FAILED"))
-}
-
-fn run_tar(archive: &Path, operation: &[&str]) -> AppResult<Vec<u8>> {
-    let mut command = Command::new(tar_program());
-    for argument in operation {
-        command.arg(argument);
-    }
-    let output = command
-        .env("LC_ALL", "C")
-        .env("PATH", system_command_path())
-        .arg(archive)
-        .output()
-        .map_err(|_| package_error("OCR_PACKAGE_ARCHIVE_UNSUPPORTED"))?;
-    if !output.status.success() {
-        log::error!(
-            "ocr package tar {} failed: {} {}",
-            operation.join(" "),
-            output.status,
-            command_stderr(&output.stderr)
-        );
-        return Err(package_error("OCR_PACKAGE_ARCHIVE_INVALID"));
-    }
-    Ok(output.stdout)
-}
-
-fn command_stderr(stderr: &[u8]) -> String {
-    let limit = stderr.len().min(512);
-    String::from_utf8_lossy(&stderr[..limit]).trim().to_string()
-}
-
-/// tar must resolve only against the system directories. A packaged app runs
-/// with launchd's PATH, so anything found through a developer shell's PATH
-/// would work in `tauri dev` and be missing for users.
-fn system_command_path() -> OsString {
-    #[cfg(target_os = "windows")]
-    {
-        let system32 = std::env::var_os("SystemRoot")
-            .map(|root| PathBuf::from(root).join("System32"))
-            .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32"));
-        system32.into_os_string()
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        OsString::from("/usr/bin:/bin")
+    } else {
+        package_error(fallback)
     }
 }
 
-fn tar_program() -> PathBuf {
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(root) = std::env::var_os("SystemRoot") {
-            return PathBuf::from(root).join("System32").join("tar.exe");
-        }
-        PathBuf::from("tar.exe")
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        PathBuf::from("/usr/bin/tar")
-    }
-}
-
-fn validate_archive_entries<'a>(
-    entries: impl IntoIterator<Item = (&'a String, ArchiveEntryMetadata)>,
+fn validate_archive_entry(
+    seen: &mut HashSet<String>,
+    name: &str,
+    metadata: ArchiveEntryMetadata,
 ) -> AppResult<()> {
-    let mut seen = HashSet::new();
-    for (name, metadata) in entries {
-        if metadata.kind == ArchiveEntryKind::LinkOrSpecial {
-            return Err(package_error("OCR_PACKAGE_ARCHIVE_ESCAPE"));
+    if metadata.kind == ArchiveEntryKind::LinkOrSpecial {
+        return Err(package_error("OCR_PACKAGE_ARCHIVE_ESCAPE"));
+    }
+    let normalized = match normalize_archive_path(name) {
+        Some(path) => path,
+        None if metadata.kind == ArchiveEntryKind::Directory && matches!(name, "." | "./") => {
+            return Ok(());
         }
-        let normalized = match normalize_archive_path(name) {
-            Some(path) => path,
-            None if metadata.kind == ArchiveEntryKind::Directory
-                && matches!(name.as_str(), "." | "./") =>
-            {
-                continue;
-            }
-            None => return Err(package_error("OCR_PACKAGE_ARCHIVE_ESCAPE")),
-        };
-        if !seen.insert(normalized.to_string()) {
-            return Err(package_error("OCR_PACKAGE_ARCHIVE_INVALID"));
-        }
+        None => return Err(package_error("OCR_PACKAGE_ARCHIVE_ESCAPE")),
+    };
+    if !seen.insert(normalized.to_string()) {
+        return Err(package_error("OCR_PACKAGE_ARCHIVE_INVALID"));
     }
     Ok(())
 }
@@ -1130,23 +1087,6 @@ fn normalize_archive_path(value: &str) -> Option<&str> {
         .components()
         .all(|component| matches!(component, Component::Normal(_)))
         .then_some(value)
-}
-
-fn parse_verbose_archive_entry(line: &str) -> AppResult<ArchiveEntryMetadata> {
-    let kind = match line.as_bytes().first().copied() {
-        Some(b'-') => ArchiveEntryKind::File,
-        Some(b'd') => ArchiveEntryKind::Directory,
-        _ => ArchiveEntryKind::LinkOrSpecial,
-    };
-    // macOS and Windows both ship bsdtar. Its stable verbose prefix is:
-    // mode, link-count, owner, group, byte-size. Names and dates may contain
-    // spaces, so only the prefix is parsed.
-    let size = line
-        .split_whitespace()
-        .nth(4)
-        .and_then(|value| value.parse::<u64>().ok())
-        .ok_or_else(|| package_error("OCR_PACKAGE_ARCHIVE_INVALID"))?;
-    Ok(ArchiveEntryMetadata { kind, size })
 }
 
 fn validate_extracted_tree(root: &Path) -> AppResult<u64> {
@@ -1653,87 +1593,90 @@ mod tests {
             "safe/../../escape",
             "safe\\..\\escape",
         ] {
-            let entries = [(
-                path.to_string(),
-                ArchiveEntryMetadata {
-                    kind: ArchiveEntryKind::File,
-                    size: 1,
-                },
-            )];
-            assert!(validate_archive_entries(entries.iter().map(|(p, k)| (p, *k))).is_err());
+            let metadata = ArchiveEntryMetadata {
+                kind: ArchiveEntryKind::File,
+                size: 1,
+            };
+            assert!(validate_archive_entry(&mut HashSet::new(), path, metadata).is_err());
         }
-        let link = [(
-            "safe/link".to_string(),
-            ArchiveEntryMetadata {
-                kind: ArchiveEntryKind::LinkOrSpecial,
-                size: 0,
-            },
-        )];
-        assert!(validate_archive_entries(link.iter().map(|(p, k)| (p, *k))).is_err());
+        let link = ArchiveEntryMetadata {
+            kind: ArchiveEntryKind::LinkOrSpecial,
+            size: 0,
+        };
+        assert!(validate_archive_entry(&mut HashSet::new(), "safe/link", link).is_err());
 
         let safe = [
             (
-                "bin/lantern-ocr".to_string(),
+                "bin/lantern-ocr",
                 ArchiveEntryMetadata {
                     kind: ArchiveEntryKind::File,
                     size: 1,
                 },
             ),
             (
-                "share/tessdata/".to_string(),
+                "share/tessdata/",
                 ArchiveEntryMetadata {
                     kind: ArchiveEntryKind::Directory,
                     size: 0,
                 },
             ),
             (
-                "./share/lantern-ocr/runner.py".to_string(),
+                "./share/lantern-ocr/runner.py",
                 ArchiveEntryMetadata {
                     kind: ArchiveEntryKind::File,
                     size: 1,
                 },
             ),
         ];
-        assert!(validate_archive_entries(safe.iter().map(|(p, k)| (p, *k))).is_ok());
+        let mut seen = HashSet::new();
+        for (name, metadata) in safe {
+            validate_archive_entry(&mut seen, name, metadata).unwrap();
+        }
+        // The same member twice would let a later entry overwrite an earlier one.
+        let duplicate = ArchiveEntryMetadata {
+            kind: ArchiveEntryKind::File,
+            size: 1,
+        };
+        assert!(validate_archive_entry(&mut seen, "bin/lantern-ocr", duplicate).is_err());
     }
 
     /// The runtime archive must install with only the system directories on
     /// PATH: macOS and Windows both ship a tar that cannot decode zstd itself,
-    /// and a packaged app has no `zstd` binary to lend it.
+    /// and a packaged app has no `zstd` binary to lend it. Nothing here may
+    /// shell out, so the test builds its fixture with the same crates.
     #[test]
     fn archive_extracts_without_an_external_zstd_binary() {
         let dir = TempDir::new().unwrap();
         let payload = dir.path().join("payload");
         fs::create_dir_all(payload.join(PACKAGE_ID).join("bin")).unwrap();
-        fs::write(payload.join(PACKAGE_ID).join("bin/lantern-ocr"), b"binary").unwrap();
+        let launcher = payload.join(PACKAGE_ID).join("bin/lantern-ocr");
+        fs::write(&launcher, b"binary").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&launcher, fs::Permissions::from_mode(0o755)).unwrap();
+        }
 
-        let plain_tar = dir.path().join("runtime.tar");
-        let status = Command::new(tar_program())
-            .arg("-cf")
-            .arg(&plain_tar)
-            .arg("-C")
-            .arg(&payload)
-            .arg(PACKAGE_ID)
-            .status()
+        let mut builder = tar::Builder::new(Vec::new());
+        builder
+            .append_dir_all(PACKAGE_ID, payload.join(PACKAGE_ID))
             .unwrap();
-        assert!(status.success());
-
         let archive = dir.path().join("runtime.tar.zst");
-        zstd::stream::copy_encode(
-            File::open(&plain_tar).unwrap(),
-            File::create(&archive).unwrap(),
-            3,
-        )
-        .unwrap();
+        write_zstd_archive(&archive, &builder.into_inner().unwrap());
 
         let destination = dir.path().join("extracted");
         fs::create_dir(&destination).unwrap();
         safe_extract_tar_zst(&archive, &destination, 6).unwrap();
-        assert_eq!(
-            fs::read(destination.join(PACKAGE_ID).join("bin/lantern-ocr")).unwrap(),
-            b"binary"
-        );
+        let extracted = destination.join(PACKAGE_ID).join("bin/lantern-ocr");
+        assert_eq!(fs::read(&extracted).unwrap(), b"binary");
         assert!(extracted_runtime_root(&destination).is_ok());
+        // conda-unpack and the OCR launcher are unrunnable without the exec bit.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&extracted).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o755);
+        }
     }
 
     #[test]
@@ -1747,6 +1690,78 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("OCR_PACKAGE_ARCHIVE_DECOMPRESS_FAILED"));
+    }
+
+    /// The three checks the Rust unpacker now owns outright: a member may not
+    /// climb out of the destination, may not be absolute, and may not claim
+    /// more bytes than the installed-size ceiling. Each archive opens with one
+    /// legitimate member, so the assertions also cover the promise that a
+    /// rejection anywhere in the stream takes the partial install with it.
+    #[test]
+    fn archive_entries_that_escape_or_overflow_are_refused() {
+        let good = format!("{PACKAGE_ID}/bin/lantern-ocr");
+        for (name, size, code) in [
+            ("../escape", 6_u64, "OCR_PACKAGE_ARCHIVE_ESCAPE"),
+            (
+                &format!("{PACKAGE_ID}/../../escape")[..],
+                6,
+                "OCR_PACKAGE_ARCHIVE_ESCAPE",
+            ),
+            ("/absolute/escape", 6, "OCR_PACKAGE_ARCHIVE_ESCAPE"),
+            (
+                &format!("{PACKAGE_ID}/huge")[..],
+                MAX_INSTALLED_BYTES + 1,
+                "OCR_PACKAGE_INSTALLED_SIZE_MISMATCH",
+            ),
+        ] {
+            let dir = TempDir::new().unwrap();
+            let archive = dir.path().join("runtime.tar.zst");
+            // The oversized member is described by its header alone: refusing
+            // it must not depend on having read its (never written) payload.
+            let body: &[u8] = if size > MAX_INSTALLED_BYTES {
+                &[]
+            } else {
+                b"binary"
+            };
+            write_zstd_archive(
+                &archive,
+                &tar_stream(&[(&good, 6, b"binary"), (name, size, body)]),
+            );
+
+            let destination = dir.path().join("extracted");
+            fs::create_dir(&destination).unwrap();
+            let error = safe_extract_tar_zst(&archive, &destination, size.max(6))
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(code), "{name}: {error}");
+            assert!(
+                !destination.exists(),
+                "{name} left a partial install behind"
+            );
+        }
+    }
+
+    /// Builds a tar stream from raw headers, which lets a test describe members
+    /// the `Builder` would refuse to write — an escaping path, or a payload
+    /// larger than any fixture could actually carry.
+    fn tar_stream(members: &[(&str, u64, &[u8])]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for (name, size, body) in members {
+            let mut header = tar::Header::new_gnu();
+            header.set_entry_type(tar::EntryType::Regular);
+            header.set_mode(0o644);
+            header.set_size(*size);
+            header.as_gnu_mut().unwrap().name[..name.len()].copy_from_slice(name.as_bytes());
+            header.set_cksum();
+            bytes.extend_from_slice(header.as_bytes());
+            bytes.extend_from_slice(body);
+            bytes.resize(bytes.len().div_ceil(512) * 512, 0);
+        }
+        bytes
+    }
+
+    fn write_zstd_archive(path: &Path, tar_bytes: &[u8]) {
+        zstd::stream::copy_encode(tar_bytes, File::create(path).unwrap(), 3).unwrap();
     }
 
     #[test]
