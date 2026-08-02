@@ -687,6 +687,81 @@ mod tests {
         assert_eq!(resolved, data_dir.path().join("books/foo.epub"));
     }
 
+    /// A library created before the Quill→Lantern rename must survive the
+    /// first start on the renamed build — the whole point of the migration.
+    #[test]
+    fn init_adopts_a_pre_rename_database_with_its_rows_intact() {
+        let dir = TempDir::new().unwrap();
+        let now_ms = chrono::Utc::now().timestamp_millis();
+        {
+            let db = Db::init(dir.path()).unwrap();
+            db.conn
+                .lock()
+                .unwrap()
+                .execute(
+                    "INSERT INTO books (id, title, author, file_path, status, progress, created_at, updated_at)
+                     VALUES ('b1', 'Inherited', 'Author', 'books/test.epub', 'reading', 0, ?1, ?1)",
+                    params![now_ms],
+                )
+                .unwrap();
+        }
+        fs::rename(
+            dir.path().join(DB_FILE_NAME),
+            dir.path().join(LEGACY_DB_FILE_NAME),
+        )
+        .unwrap();
+
+        let db = Db::init(dir.path()).unwrap();
+
+        let title: String = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT title FROM books WHERE id = 'b1'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(title, "Inherited");
+        assert!(!dir.path().join(LEGACY_DB_FILE_NAME).exists());
+    }
+
+    /// The `-wal` companion carries committed-but-uncheckpointed writes, so
+    /// leaving it behind loses data. `-shm` follows for the same reason.
+    #[test]
+    fn rename_legacy_db_file_moves_the_wal_and_shm_companions() {
+        let dir = TempDir::new().unwrap();
+        for suffix in ["", "-wal", "-shm"] {
+            fs::write(
+                dir.path().join(format!("{LEGACY_DB_FILE_NAME}{suffix}")),
+                b"x",
+            )
+            .unwrap();
+        }
+
+        rename_legacy_db_file(dir.path()).unwrap();
+
+        for suffix in ["", "-wal", "-shm"] {
+            assert!(!dir
+                .path()
+                .join(format!("{LEGACY_DB_FILE_NAME}{suffix}"))
+                .exists());
+            assert!(dir.path().join(format!("{DB_FILE_NAME}{suffix}")).exists());
+        }
+    }
+
+    /// An already-renamed directory must be left alone, even if a stale
+    /// legacy file is sitting next to it — adopting it would silently swap
+    /// the live library for an older one.
+    #[test]
+    fn rename_legacy_db_file_never_overwrites_an_existing_database() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(DB_FILE_NAME), b"current").unwrap();
+        fs::write(dir.path().join(LEGACY_DB_FILE_NAME), b"stale").unwrap();
+
+        rename_legacy_db_file(dir.path()).unwrap();
+
+        assert_eq!(fs::read(dir.path().join(DB_FILE_NAME)).unwrap(), b"current");
+        assert!(dir.path().join(LEGACY_DB_FILE_NAME).exists());
+    }
+
     fn setup() -> (TempDir, Db) {
         let dir = TempDir::new().unwrap();
         let db = Db::init(dir.path()).unwrap();

@@ -91,7 +91,7 @@ fn migrate_legacy_app_data(target: &Path) -> error::AppResult<()> {
     };
     for id in legacy_ids {
         let source = target.with_file_name(id);
-        if !source.join("quill.db").is_file() {
+        if !db::library_exists_in(&source) {
             continue;
         }
         log::info!(
@@ -229,7 +229,10 @@ pub(crate) fn resolve_app_data_dir() -> PathBuf {
 /// doesn't pollute the MCP wire on stdout.
 pub fn mcp_stdio_main() {
     let local_dir = resolve_app_data_dir();
-    let db_path = local_dir.join("quill.db");
+    // Deliberately does not accept the pre-rename filename: the rename runs
+    // in the app's own startup path, and a second process racing it on the
+    // same directory is exactly what must not happen.
+    let db_path = local_dir.join(db::DB_FILE_NAME);
 
     if !db_path.exists() {
         eprintln!(
@@ -584,15 +587,15 @@ pub fn run() {
                 .allow_directory(&imported_font_dir, true)
                 .expect("failed to allow imported fonts in asset scope");
 
-            // Self-heal: if .sync_setting survived but quill.db
+            // Self-heal: if .sync_setting survived but the SQLite file
             // was deleted (e.g. user cleared app data via Finder, which
             // skips hidden dot-files), remove the stale marker so the
             // app starts fresh.
-            if !local_dir.join("quill.db").exists() && sync::migration::is_sync_enabled(&local_dir)
-            {
+            if !db::library_exists_in(&local_dir) && sync::migration::is_sync_enabled(&local_dir) {
                 log::warn!(
-                    "sync: quill.db missing but .sync_setting survived — \
-                     clearing stale marker to start fresh"
+                    "sync: {} missing but .sync_setting survived — \
+                     clearing stale marker to start fresh",
+                    db::DB_FILE_NAME
                 );
                 let _ = std::fs::remove_file(local_dir.join(".sync_setting"));
             }
