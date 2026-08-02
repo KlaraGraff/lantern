@@ -18,8 +18,9 @@ import {
 } from "./reader-interaction";
 import SpeakMenuRow from "./speech/SpeakMenuRow";
 import { playbackDetaches } from "./speech/routing";
+import { menuShortcut, type ReaderActionBinding, type ReaderMenuAction } from "./reader-bindings";
 
-export type ReaderMenuAction = "primary" | "speak" | "ask-ai" | "save" | "highlight" | "translate" | "copy" | `custom_${string}`;
+export type { ReaderMenuAction };
 
 interface ReaderContextMenuProps {
   anchorRect: SerializableRect;
@@ -30,6 +31,8 @@ interface ReaderContextMenuProps {
   markStateLoading?: boolean;
   showTranslate?: boolean;
   order?: ReaderMenuAction[];
+  /** Read to print each row's shortcut. Empty means no row shows one. */
+  bindings?: ReaderActionBinding[];
   onClose: () => void;
   onCopy: () => void;
   onExplain: () => void;
@@ -52,6 +55,7 @@ export default function ReaderContextMenu({
   markStateLoading = false,
   showTranslate = false,
   order = ["primary", "ask-ai", "save", "highlight", "copy"],
+  bindings = [],
   onClose,
   onCopy,
   onExplain,
@@ -64,7 +68,7 @@ export default function ReaderContextMenu({
   customActions = [],
   onCustomAction,
 }: ReaderContextMenuProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const actions = useMemo(() => {
     const values = [...order];
@@ -204,6 +208,7 @@ export default function ReaderContextMenu({
       style={{ left: anchorRect.right, top: anchorRect.bottom + 8 }}
     >
       {actions.map((action) => {
+        const shortcut = menuShortcut(bindings, action, kind, i18n.language);
         // Owns its own playback and accent toggle, so it needs no wiring from
         // the reader and does not dismiss the menu when used.
         if (action === "speak") {
@@ -212,6 +217,7 @@ export default function ReaderContextMenu({
               key={action}
               text={text}
               kind={kind}
+              shortcut={shortcut}
               // Same rule the player uses to decide whether this row may still
               // cancel the audio, so the menu never closes on a playback that
               // dies with it.
@@ -222,6 +228,11 @@ export default function ReaderContextMenu({
         const definition = definitions[action];
         if (!definition) return null;
         const Icon = definition.icon;
+        // A binding wins over ⌘C. Both really do copy, but the one the reader
+        // chose is the more useful of the two to print — and ⌘C is reserved, so
+        // it can never turn out to belong to some other row.
+        const hint = shortcut
+          ?? (action === "copy" ? (navigator.platform.includes("Mac") ? "⌘C" : "Ctrl+C") : null);
         const showRemoveBookWordMark = action === "highlight"
           && kind === "word"
           && marked
@@ -239,9 +250,7 @@ export default function ReaderContextMenu({
             >
               <Icon size={16} className="shrink-0 text-text-muted" />
               <span className="min-w-0 flex-1 truncate">{definition.label}</span>
-              {action === "copy" ? (
-                <span className="text-[11px] text-text-muted">{navigator.platform.includes("Mac") ? "⌘C" : "Ctrl+C"}</span>
-              ) : null}
+              {hint ? <span className="shrink-0 text-[11px] text-text-muted">{hint}</span> : null}
             </button>
             {showRemoveBookWordMark && (
               <button

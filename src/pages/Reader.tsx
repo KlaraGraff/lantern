@@ -277,6 +277,10 @@ export default function Reader() {
   const tripleClickQuickSelectRef = useRef(true);
   const tripleClickScopeRef = useRef<TripleClickScope>("sentence");
   const readerBindingsRef = useRef<ReaderActionBinding[]>([]);
+  // The ref is for the interaction handlers, which live outside React and want
+  // the newest value without re-subscribing. The menu prints them while
+  // rendering, which a ref cannot drive — so the same list is also state.
+  const [readerBindings, setReaderBindings] = useState<ReaderActionBinding[]>([]);
   const [bindingHud, setBindingHud] = useState<string | null>(null);
   const bindingHudTimerRef = useRef<number | null>(null);
   const lastBindingHudRef = useRef({ message: "", shownAt: 0 });
@@ -294,7 +298,9 @@ export default function Reader() {
     markerStyleRef.current = nextMarkerStyle;
     markMatchingWordsRef.current = nextMarkerStyle.wordMatchScope !== "current";
     setDoubleClickQuickLookup(doubleClick);
-    readerBindingsRef.current = parseReaderBindings(settings.reader_bindings).bindings;
+    const nextBindings = parseReaderBindings(settings.reader_bindings).bindings;
+    readerBindingsRef.current = nextBindings;
+    setReaderBindings(nextBindings);
     setMarkerStyle(nextMarkerStyle);
     setLearningCardConfig(parseCardDesignConfig(settings.learning_card_config));
   }, []);
@@ -1906,6 +1912,7 @@ export default function Reader() {
           marked={contextSelectionFullyMarked}
           hasBookWordMark={contextHasBookWordMark}
           markStateLoading={contextMarkStateLoading}
+          bindings={readerBindings}
           order={learningCardConfig.selectionMenus[contextMenu.kind]
             .filter((item) => item.enabled)
             .map((item) => readerMenuAction(item.id))}

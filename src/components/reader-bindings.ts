@@ -1,9 +1,23 @@
+import type { InteractionKind } from "./reader-interaction.ts";
+
 export const DEFAULT_PREVIOUS_PAGE_BINDING = "key:ArrowLeft";
 export const DEFAULT_NEXT_PAGE_BINDING = "key:ArrowRight";
 export const READER_BINDINGS_SETTING_KEY = "reader_bindings";
 
 export type BuiltInReaderActionId = "lookup" | "speak" | "translate" | "collect" | "highlight" | "copy" | "ask_ai" | "explain";
 export type ReaderActionId = BuiltInReaderActionId | `custom_${string}`;
+
+/**
+ * How the selection menu names its rows.
+ *
+ * Deliberately not the same names as `ReaderActionId`: the menu names a row by
+ * the place it occupies — "primary" is whatever the top row does for this kind
+ * of selection — while a binding names what it runs. Both vocabularies are
+ * real, so they get a translation rather than one being bent into the other.
+ */
+export type ReaderMenuAction =
+  | "primary" | "speak" | "ask-ai" | "save" | "highlight" | "translate" | "copy"
+  | `custom_${string}`;
 export interface ReaderActionBinding { actionId: ReaderActionId; trigger: string }
 export interface ReaderBindingsConfig { version: 1; bindings: ReaderActionBinding[] }
 
@@ -90,4 +104,52 @@ export function parseReaderBindings(value: unknown): ReaderBindingsConfig {
     return [{ actionId, trigger } as ReaderActionBinding];
   }) : [];
   return { version: 1, bindings };
+}
+
+/**
+ * The actions a menu row could be running, best match first.
+ *
+ * Only "primary" has more than one. It is the top row, and what it says there
+ * depends on the selection — 查词 on a word, 解读 on a passage — but both run
+ * the same card, so a binding on either one is that row's shortcut. Order puts
+ * the reading that matches this selection first, so binding both separately
+ * still prints the right one.
+ */
+export function bindingActionsForMenuAction(
+  action: ReaderMenuAction,
+  kind: InteractionKind,
+): ReaderActionId[] {
+  switch (action) {
+    case "primary": return kind === "passage" ? ["explain", "lookup"] : ["lookup", "explain"];
+    case "ask-ai": return ["ask_ai"];
+    case "save": return ["collect"];
+    case "speak": return ["speak"];
+    case "highlight": return ["highlight"];
+    case "translate": return ["translate"];
+    case "copy": return ["copy"];
+    default: return action.startsWith("custom_") ? [action] : [];
+  }
+}
+
+/**
+ * What to print at the right edge of a menu row, or nothing.
+ *
+ * Keyboard triggers only. A gesture binding is just as real, but printing
+ * "三击" beside a row of a menu the reader already has open would be advice
+ * they cannot take: the gesture is how you skip the menu, not something you
+ * can do from inside it.
+ */
+export function menuShortcut(
+  bindings: ReaderActionBinding[],
+  action: ReaderMenuAction,
+  kind: InteractionKind,
+  locale = "en",
+): string | null {
+  for (const actionId of bindingActionsForMenuAction(action, kind)) {
+    const binding = bindings.find(
+      (item) => item.actionId === actionId && item.trigger.startsWith("key:"),
+    );
+    if (binding) return formatReaderBinding(binding.trigger, locale);
+  }
+  return null;
 }

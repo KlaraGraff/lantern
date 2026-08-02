@@ -12,10 +12,16 @@ const FOCUS_RING = "focus-visible:outline-none focus-visible:ring-2 focus-visibl
 export default function SpeakMenuRow({
   text,
   kind,
+  shortcut,
   onHandOff,
 }: {
   text: string;
   kind: SpeechKind;
+  /**
+   * Printed left of the accent badge, which is the one thing on this row that
+   * is not a shortcut. Null for no binding.
+   */
+  shortcut?: string | null;
   /**
    * Called once playback has been started, for selections long enough that the
    * menu should get out of the way. Playback outlives this row: stopping is the
@@ -59,6 +65,7 @@ export default function SpeakMenuRow({
             className={`shrink-0 ${status === "playing" ? "text-accent-text" : "text-text-muted"} ${iconClassName}`}
           />
           <span className="min-w-0 flex-1 truncate">{t("contextMenu.speak")}</span>
+          {shortcut ? <span className="shrink-0 text-[11px] font-normal text-text-muted">{shortcut}</span> : null}
         </button>
         <button
           type="button"
