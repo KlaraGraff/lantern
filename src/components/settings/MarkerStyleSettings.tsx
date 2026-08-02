@@ -22,6 +22,12 @@ import WordFormsManager from "./WordFormsManager";
 interface MarkerStyleSettingsProps {
   value: MarkerStyleConfig;
   onChange: (value: MarkerStyleConfig) => void;
+  /**
+   * The lookup-marking toggle, owned by the tools panel but shown here with the
+   * other marker switches — above the word-form list, which is long enough to
+   * bury anything placed after it.
+   */
+  lookupRow?: React.ReactNode;
 }
 
 /** Which of the two styles the controls below the sample are editing. */
@@ -204,7 +210,7 @@ function StyleControls({
   );
 }
 
-export default function MarkerStyleSettings({ value, onChange }: MarkerStyleSettingsProps) {
+export default function MarkerStyleSettings({ value, onChange, lookupRow }: MarkerStyleSettingsProps) {
   const { t } = useTranslation();
   const [customFonts, setCustomFonts] = useState<CustomFontRecord[]>([]);
   const [wordFormsOpen, setWordFormsOpen] = useState(true);
@@ -291,6 +297,34 @@ export default function MarkerStyleSettings({ value, onChange }: MarkerStyleSett
 
       {editable && <StyleControls value={edited} onChange={applyEdit} />}
 
+      {customFonts.length === 0 && (
+        <p className="border-t border-border-light py-3 text-[10px] leading-4 text-text-muted">
+          {t("settings.tools.markers.customFontHint")}
+        </p>
+      )}
+
+      <div className="flex min-h-[52px] items-center justify-between gap-4 border-t border-border-light py-3">
+        <div>
+          <p className="text-[13px] font-medium text-text-primary">{t("settings.tools.markers.layoutAffecting")}</p>
+          <p className="text-[11px] leading-[17px] text-text-muted">{t("settings.tools.markers.layoutAffectingHint")}</p>
+        </div>
+        <Toggle
+          label={t("settings.tools.markers.layoutAffecting")}
+          checked={value.layoutAffectingMarkers}
+          onChange={(layoutAffectingMarkers) => onChange({ ...value, layoutAffectingMarkers })}
+        />
+      </div>
+
+      {/* The tools panel's rows carry their own 4px gutter; the marker rows do
+          not, so it is pulled back to keep one edge down the group. */}
+      {lookupRow && (
+        <div className="border-t border-border-light py-1.5">
+          <div className="-mx-1">{lookupRow}</div>
+        </div>
+      )}
+
+      {/* Last: the word-form list can run long and scrolls on its own, so
+          nothing that needs finding sits below it. */}
       <div className="flex min-h-[52px] items-center justify-between gap-4 border-t border-border-light py-3">
         <div className="flex min-w-0 items-start gap-1.5">
           {value.wordMatchScope === "forms" && (
@@ -324,24 +358,6 @@ export default function MarkerStyleSettings({ value, onChange }: MarkerStyleSett
       </div>
 
       {value.wordMatchScope === "forms" && wordFormsOpen && <WordFormsManager />}
-
-      <div className="flex min-h-[52px] items-center justify-between gap-4 border-t border-border-light py-3">
-        <div>
-          <p className="text-[13px] font-medium text-text-primary">{t("settings.tools.markers.layoutAffecting")}</p>
-          <p className="text-[11px] leading-[17px] text-text-muted">{t("settings.tools.markers.layoutAffectingHint")}</p>
-        </div>
-        <Toggle
-          label={t("settings.tools.markers.layoutAffecting")}
-          checked={value.layoutAffectingMarkers}
-          onChange={(layoutAffectingMarkers) => onChange({ ...value, layoutAffectingMarkers })}
-        />
-      </div>
-
-      {customFonts.length === 0 && (
-        <p className="border-t border-border-light py-3 text-[10px] leading-4 text-text-muted">
-          {t("settings.tools.markers.customFontHint")}
-        </p>
-      )}
     </div>
   );
 }

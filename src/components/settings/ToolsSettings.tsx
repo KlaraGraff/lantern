@@ -551,24 +551,27 @@ export default function ToolsSettings({
 
       {view === "markers" && (
         <div>
-          <MarkerStyleSettings value={markerStyle} onChange={persistMarkerStyle} />
-          <div className="mx-auto mt-4 w-full max-w-[620px] border-t border-border-light pt-2">
-            <SettingsRow
-              title={t("settings.tools.autoHighlightLookupWords", { defaultValue: "查词后自动标记" })}
-              subtitle={t("settings.tools.autoHighlightLookupWordsHint", {
-                defaultValue: "查词成功后创建单词标记；手动标记始终保持独立。",
-              })}
-            >
-              <Toggle
-                label={t("settings.tools.autoHighlightLookupWords", { defaultValue: "查词后自动标记" })}
-                checked={autoHighlightLookupWords}
-                onChange={(enabled) => {
-                  setAutoHighlightLookupWords(enabled);
-                  persistLegacy("auto_highlight_lookup_words", String(enabled));
-                }}
-              />
-            </SettingsRow>
-          </div>
+          <MarkerStyleSettings
+            value={markerStyle}
+            onChange={persistMarkerStyle}
+            lookupRow={(
+              <SettingsRow
+                title={t("settings.tools.autoHighlightLookupWords", { defaultValue: "查词后自动标记" })}
+                subtitle={t("settings.tools.autoHighlightLookupWordsHint", {
+                  defaultValue: "查词成功后创建单词标记；手动标记始终保持独立。",
+                })}
+              >
+                <Toggle
+                  label={t("settings.tools.autoHighlightLookupWords", { defaultValue: "查词后自动标记" })}
+                  checked={autoHighlightLookupWords}
+                  onChange={(enabled) => {
+                    setAutoHighlightLookupWords(enabled);
+                    persistLegacy("auto_highlight_lookup_words", String(enabled));
+                  }}
+                />
+              </SettingsRow>
+            )}
+          />
         </div>
       )}
 
