@@ -1399,14 +1399,22 @@ export default function Reader() {
           <p className="mt-2 text-[13px] leading-5 text-text-muted break-words">
             {invalidPdf ? t("reader.pdfInvalidDescription") : readerError.detail}
           </p>
-          {invalidPdf && readerError.detail && (
+          {/* The structure names above the raw parser message: enough to act on
+              (repair and re-export rebuilds them) without putting three PDF
+              internals in front of someone who only wanted to read a book. */}
+          {invalidPdf && (
             <details className="mx-auto mt-3 max-w-[520px] text-left">
               <summary className="cursor-pointer text-center text-[12px] text-text-secondary">
                 {t("reader.errorDetails")}
               </summary>
-              <p className="mt-2 rounded-md bg-bg-input px-3 py-2 font-mono text-[11px] leading-5 text-text-muted break-words">
-                {readerError.detail}
+              <p className="mt-2 text-[12px] leading-5 text-text-muted">
+                {t("reader.pdfInvalidTechnical")}
               </p>
+              {readerError.detail && (
+                <p className="mt-2 rounded-md bg-bg-input px-3 py-2 font-mono text-[11px] leading-5 text-text-muted break-words">
+                  {readerError.detail}
+                </p>
+              )}
             </details>
           )}
         </div>
