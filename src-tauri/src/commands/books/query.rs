@@ -485,16 +485,22 @@ pub fn get_book(id: String, db: State<'_, Db>, app: AppHandle) -> AppResult<Book
 
 /// Check a book's local file state and trigger iCloud download only for an
 /// actual evicted placeholder. A missing local file is not an iCloud retry.
+///
+/// The probe runs against the path the reader will actually open — a converted
+/// book reads its local artifact and a PDF reads its active OCR asset — so this
+/// stays in agreement with the `available` flag `resolve_book_paths` computes.
+/// Probing the row's raw `file_path` would diagnose a different file than the
+/// one that failed to open.
 #[tauri::command]
-pub fn check_book_available(id: String, db: State<'_, Db>) -> AppResult<BookAvailability> {
-    let conn = db.reader();
-    let file_path: String = conn.query_row(
-        "SELECT file_path FROM books WHERE id = ?1",
-        params![id],
-        |row| row.get(0),
-    )?;
+pub fn check_book_available(
+    id: String,
+    db: State<'_, Db>,
+    app: AppHandle,
+) -> AppResult<BookAvailability> {
+    let mut book = query_book(&db, &id)?;
+    resolve_book_paths(&mut book, &db, Some(&app))?;
 
-    let abs_path = db.resolve_path(&file_path)?;
+    let abs_path = std::path::PathBuf::from(&book.file_path);
     let availability = icloud::file_availability(&abs_path);
     if availability == icloud::FileAvailability::ICloudPlaceholder {
         icloud::trigger_download_file(&abs_path);

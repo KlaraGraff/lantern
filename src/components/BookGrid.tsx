@@ -55,8 +55,9 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
     setContextMenu({ x: e.clientX, y: e.clientY, book });
   };
 
+  // An unavailable book still opens: the reader owns the iCloud download and
+  // shows the waiting screen. Refusing the click here left evicted books dead.
   const openBook = async (book: Book) => {
-    if (book.available === false) return;
     if (needsPreparation(book) && book.preparation_state === "failed") {
       await retryPreparation(book);
       onBooksChanged?.();

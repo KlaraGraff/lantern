@@ -38,15 +38,18 @@ pub fn normalize_learning_term(value: &str) -> String {
 }
 
 /// Domain-separation tags for the deterministic ids below. These are wire
-/// format, not branding: `validation.rs` recomputes every incoming id and
-/// rejects a peer's *entire* log on the first mismatch, so the bytes have to
-/// match what every event already sitting in the sync folder was hashed with.
-/// They survived the Quill→Lantern rename for that reason. The tag never
-/// reaches disk — only the hex digest does — so nothing user-visible carries
-/// the old name. Bump the `-v1` suffix if the id derivation ever changes.
-const RULE_ID_TAG: &[u8] = b"quill-word-mark-rule-v1\0";
-const EXCEPTION_ID_TAG: &[u8] = b"quill-word-mark-exception-v1\0";
-const LOOKUP_OCCURRENCE_ID_TAG: &[u8] = b"quill-lookup-occurrence-mark-v1\0";
+/// format: `validation.rs` recomputes every incoming id from these bytes and
+/// rejects the peer's *entire* log — or an entire snapshot — on the first
+/// mismatch. Any event already written with a different tag is unreadable to
+/// a peer running this build, so changing them is a breaking format change,
+/// not a rename. Done once, deliberately, at the Quill→Lantern cut.
+///
+/// Local rows carrying an older tag's id are repaired on startup by
+/// `Db::repair_noncanonical_marker_ids`. Peer logs are not repairable —
+/// they are somebody else's append-only file.
+const RULE_ID_TAG: &[u8] = b"lantern-word-mark-rule-v1\0";
+const EXCEPTION_ID_TAG: &[u8] = b"lantern-word-mark-exception-v1\0";
+const LOOKUP_OCCURRENCE_ID_TAG: &[u8] = b"lantern-lookup-occurrence-mark-v1\0";
 
 /// A word-marker rule is one logical entity across every device. Deriving its
 /// id from the natural key prevents concurrent first-lookups from minting two
