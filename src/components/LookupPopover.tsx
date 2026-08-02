@@ -10,7 +10,7 @@ import { aiErrorMessageKey, getAiErrorCode, isAiSettingsError, type AiErrorCode 
 import { createUuid } from "../utils/randomUuid";
 import { notifyReaders } from "../utils/notifyReaders";
 
-const TRANSLATION_MARKER = "[[QUILL_TRANSLATION]]";
+const TRANSLATION_MARKER = "[[LANTERN_TRANSLATION]]";
 
 interface AiStreamChunk {
   delta: string;

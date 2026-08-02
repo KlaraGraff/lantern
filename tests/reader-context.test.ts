@@ -66,7 +66,7 @@ test("a lookup in an EPUB reads the paragraph, whose tag name is lower case", ()
 test("an HTML document still reads the same paragraph", () => {
   assert.equal(contextForRange(rangeIn(nest(["HTML", "BODY", "P"])), "spoiling"), PASSAGE);
   assert.equal(
-    contextForRange(rangeIn(nest(["HTML", "BODY", "DIV", "P", "QUILL-MARK"])), "spoiling"),
+    contextForRange(rangeIn(nest(["HTML", "BODY", "DIV", "P", "LANTERN-MARK"])), "spoiling"),
     PASSAGE,
   );
 });

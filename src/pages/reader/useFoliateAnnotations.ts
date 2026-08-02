@@ -318,7 +318,7 @@ export function useFoliateAnnotations({
       applyWordMarks(
         doc,
         readerSettingsRef.current.showLookupMarkers ? wordMarkWordsRef.current : [],
-        "quill-word-marks",
+        "lantern-word-marks",
         undefined,
         (word, range) => {
           const location = view.getCFI(index, range);

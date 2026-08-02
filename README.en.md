@@ -1,127 +1,183 @@
+<div align="center">
+
+<img src="assets/icon.png" width="112" alt="Lantern">
+
 # Lantern
 
-[简体中文](README.md) · [English](README.en.md)
+**Read English books, and let AI explain them in words you can actually follow.**
 
-> You should not have to adapt to a fixed AI reading workflow.
->
-> Lantern lets AI explain books in language you can understand, then lets you reshape the reading tools around your own goals.
+[![Release](https://img.shields.io/github/v/release/KlaraGraff/lantern?style=flat-square&color=1f6feb&label=release)](https://github.com/KlaraGraff/lantern/releases)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%C2%B7%20Windows-555?style=flat-square)](#supported-platforms)
+[![License](https://img.shields.io/badge/License-MIT-555?style=flat-square)](LICENSE)
 
-Lantern is a desktop app for learning English through long-form reading, with macOS as its primary platform. It does more than add an “Ask AI” button to a reader: you decide how AI explains, how deeply it goes, what a learning card shows, and what happens when you select text.
+[简体中文](README.md) · [English](README.en.md) · [Download](https://github.com/KlaraGraff/lantern/releases)
 
-From lightweight double-click lookups to AI workflows for complex sentences, literary analysis, exam preparation, or professional reading, Lantern can gradually become a reader that fits you.
+</div>
 
-This is an independently maintained personal edition based on the open-source [Quill](https://github.com/yicheng47/quill) project. It is not an official release of the original project.
+<!-- Screenshot placeholder: full reader view (text + lookup card + AI panel). Shot list in docs/guide/screenshots.md -->
+![The Lantern reader](assets/screenshots/hero.png)
 
-## English explanations should match your level
+---
 
-Many reading tools offer an “English explanation” option but answer with near-native vocabulary and complex sentences. One unfamiliar word becomes a new paragraph that is even harder to understand.
+## The story is never what stops you
 
-Lantern uses your English proficiency as part of every explanation, rather than treating it as a display preference. Set your current CEFR level (A1–C2) in your learner profile, or record results for IELTS, TOEFL, TOEIC, Cambridge English, DET, CET-4, or CET-6 to estimate a learning level.
+You open an English novel. You can follow it — but every few lines you stop. You look a word up, and a dictionary hands you a list of unrelated senses to choose between. You ask an AI instead, and it answers in English that is harder than the sentence you started with: one unfamiliar word, traded for a whole paragraph you cannot read. By the time you get back to the page, you have forgotten what the passage was about.
 
-For each word lookup, phrase explanation, and passage interpretation, AI considers your level alongside the explanation language, translation target, and content density:
+**That loop is what Lantern is for.** It is a local-first desktop reader for macOS and Windows that runs on your own AI services. Two things set it apart from other "AI readers":
 
-- **A1–A2:** Accurate Chinese meaning establishes the foundation, with concise English that fits your current level—rather than using harder English to explain simple English.
-- **B1:** English explanations take priority, with essential Chinese support for abstract or easily misunderstood points.
-- **B2–C2:** More natural and in-depth English explanations, with target-language translation available when wanted.
-- Choosing “English-first” does not mean accepting explanations written for native speakers. AI deliberately controls vocabulary and sentence complexity so the explanation itself remains comprehensible input.
+1. **Explanations are pitched at your English level**, instead of always answering like a native speaker.
+2. **You define what the AI says, how it says it, and how much** — when the presets do not fit, you write your own.
 
-Start by understanding the text, then gradually move toward understanding English through English—without being interrupted by another explanation you cannot read.
+> This is an independently maintained personal edition based on the open-source [Quill](https://github.com/yicheng47/quill) project. It is not an official release of the original project.
 
-## Built-in modules are a starting point—build your own when they are not enough
+---
 
-Lantern includes learning modules for contextual meaning, word information, common meanings, collocations, grammar, references, tone, writing patterns, memory aids, and more. Configure their visibility, order, default expansion state, and content density separately for words, phrases, and sentences/passages.
+## 1 · Explanations that match your level
 
-But presets should not limit your learning method.
+In most reading tools, "explain in English" is a switch: turn it on, get near-native English back. For a B1 reader, that explanation is a new obstacle in itself.
 
-When the included modules do not meet your needs, create your own AI modules:
+Lantern treats your English level as **a condition on every request**, not as a display preference. Set your CEFR level (A1–C2) directly in your learner profile, or enter IELTS, TOEFL, TOEIC, Cambridge English, DET, or CET-4/6 results and let the app estimate a level from them.
 
-- Name each module and write a prompt that is entirely yours.
-- Generate content from the selected text, its context, and book information.
-- Add it to word, phrase, or passage cards, where it can be shown, hidden, reordered, and expanded alongside built-in modules.
-- Test and optimize prompts until the result fits your way of learning.
-- Create custom selection actions, then bind them to a shortcut or double-click action for one-step access to your method.
+From then on, every lookup, phrase gloss, and passage explanation takes your level, explanation language, target translation language, and content density into account together:
 
-For example, you can build modules for:
-
-- complex-sentence breakdowns for IELTS or other exam preparation;
-- rhetoric, narrative point of view, and tone in literary works;
-- terminology, prerequisite knowledge, and real-world use in professional books;
-- reusable expressions and rewriting suggestions for writing practice;
-- minimal lookups that preserve immersion by showing only essential information.
-
-## Decide what AI tells you—and when it tells you
-
-- Design different learning cards for words, phrases, sentences, and passages.
-- Show, hide, and reorder built-in or custom modules freely.
-- Choose compact, standard, or detailed content density, and set example and key-term counts.
-- Configure lookup language, explanation language, translation target, and whether to show a short gloss.
-- Customize selection-menu actions and their order: look up, explain, translate, save, mark, copy, ask AI, or a custom action.
-- Single-click to open the menu, double-click for a quick lookup, and assign shortcuts to selection actions.
-- Preview cards instantly in Settings; when needed, call the active AI service to view a live result.
-
-## Choose your own AI services
-
-- Supports OpenAI-compatible APIs, Anthropic, Ollama, and optional OpenAI OAuth.
-- Add multiple AI services, each with its own name, base URL, model, and priority.
-- Use a custom compatible API, such as a self-hosted gateway or another OpenAI-compatible provider.
-- Save multiple API keys for each service; before output begins, Lantern tries usable keys and services in priority order.
-- Test connections and discover available models.
-- API keys and OAuth tokens stay in a local-only credential database on the current device. They are never returned to the webview or included in sync.
-
-## From reading to a learning loop
-
-- Understand the current text with AI word lookup, phrase explanation, passage interpretation, and translation.
-- Continue a conversation within the same book by carrying a word, source sentence, explanation, and context into the AI panel.
-- Save vocabulary, lookup history, learning states, and notes, then return to the source location.
-- Manage words as new, learning, or mastered, and review words when they are due.
-- Export and import CSV or JSON vocabulary backups.
-- Mark words automatically after lookup, either at the current occurrence or throughout the book.
-- Customize the color, opacity, highlight, underline, bold treatment, and font of manual and automatic markers.
-
-## Customize the reading experience too
-
-- Import custom fonts and adjust typeface, spacing, margins, and reading layout.
-- Choose a theme or set a custom page background and tint.
-- Switch between scrolling and paginated reading; PDFs support zoom, single/two-page layouts, and scrolling/paginated modes.
-- Use bookmarks, highlights, notes, the table of contents, and reading progress.
-- Add lightweight learning marks without changing the source book.
-
-## System requirements
-
-| Platform | Supported range |
+| Your level | How the AI explains |
 | --- | --- |
-| macOS | **macOS 11 Big Sur or later**, on **Apple Silicon (M-series)** Macs only |
-| Windows | **Windows 11 x64** installer available |
-| Intel Mac | No Intel macOS installer is currently provided |
-| Linux | No release build is currently provided |
+| **A1–A2** | An accurate meaning in your first language, plus concise English pitched at your current level. Never harder English to explain easier English. |
+| **B1** | Mostly English; first-language support kept where the point is abstract or easy to misread. |
+| **B2–C2** | More natural, more thorough explanations in English, with a target-language translation on demand. |
 
-macOS is the primary platform. Multi-device sync through a user-selected iCloud Drive folder is available only on macOS. The Windows build supports local reading and AI features but does not include this iCloud sync capability.
+Choosing "English first" does not mean accepting native-level prose you cannot parse — the AI deliberately caps its vocabulary and sentence complexity so the explanation is itself **comprehensible input**. You can start from "just help me understand this" and move toward understanding English in English, without being interrupted a second time by the explanation.
 
-## Format capabilities
+<!-- Screenshot placeholder: learner-level settings, plus the same word explained at A2 and at C1 -->
+![Explanations tuned to your level](assets/screenshots/level.png)
 
-| Source format | Import behavior | Reading controls | Selection and manual highlights | Automatic vocabulary markers |
+---
+
+## 2 · Built-in modules are a starting point — build your own
+
+What belongs on a lookup card? Contextual meaning, part of speech, common senses, collocations, morphology, grammatical role, synonyms, usage, memory aids, the source sentence. Lantern ships all of these — 11 modules for words, 8 for phrases, 9 for passages — and each one can be toggled, reordered, set to open or collapsed, and given its own content density.
+
+**But a preset should not decide how you study.**
+
+When the built-ins are not enough, build your own AI module:
+
+- Name it, and write **a prompt that is entirely your own** (up to 2,000 characters).
+- Have it work from the current selection, the surrounding context, and the book.
+- Add it to the word, phrase, or passage card, and show, hide, reorder, and expand it alongside the built-ins.
+- Preview the card structure live in settings; call a real AI only when you want to see actual output.
+- Up to 8 custom modules per card kind, plus 6 custom selection actions you can bind to a shortcut or a double-click.
+
+For example, you could build:
+
+- A **long-sentence breakdown** module for IELTS or graduate-entrance prep;
+- A **rhetoric, narrative perspective, and tone** module for literary fiction;
+- A **terminology, prerequisites, and applications** module for technical books;
+- A **reusable phrasing and rewrite suggestions** module for your own writing;
+- A **minimal lookup** module that shows the least possible and keeps you in the book.
+
+<!-- Screenshot placeholder: custom module editor (prompt field) + module ordering in card design settings -->
+![Custom AI modules](assets/screenshots/modules.png)
+
+---
+
+## Getting started
+
+1. **Install** — grab the build for your platform from [Releases](https://github.com/KlaraGraff/lantern/releases). On macOS, Gatekeeper asks for confirmation the first time (see [Download](#download) for why).
+2. **Add an AI service** — open Settings → AI Services, enter an OpenAI-compatible API, Anthropic, Ollama, or your own gateway, and test the connection. Keys never leave this device.
+3. **Drop in a book** — drag an EPUB / PDF / TXT into the library, open it, and **double-click any word**.
+
+To make it yours: set your English level under Settings → Profile, and pick the modules you want under Settings → Card Design.
+
+---
+
+## Everything it does
+
+<table>
+<tr><td width="180"><b>AI comprehension</b></td><td>
+
+Contextual lookup · phrase glosses · passage explanations · translation · persistent per-book chat (carries the word, the source sentence, the existing explanation, and your reading position into the conversation) · semantic retrieval via embeddings on top of exact text matching · every request shows exactly which passage it quotes, and you can remove it
+
+</td></tr>
+<tr><td><b>The learning loop</b></td><td>
+
+Vocabulary list · lookup history · New / Learning / Mastered status · FSRS spaced repetition · a notes centre for notes attached to words and passages, searchable · CSV / JSON vocabulary import and export · jump back to the exact place in the book
+
+</td></tr>
+<tr><td><b>Marks in the text</b></td><td>
+
+Automatic marking after a lookup · mark just this occurrence or every occurrence in the book · manual highlights · custom colour, opacity, highlight / underline / bold styles and fonts · the original book file is never modified
+
+</td></tr>
+<tr><td><b>Reading</b></td><td>
+
+Warm paper themes and custom page colours · import your own fonts · size, line height, margins, layout · scrolled or paginated · bookmarks · table-of-contents panel · reading progress · multiple windows for multiple books · collection folders for the library
+
+</td></tr>
+<tr><td><b>Read aloud</b></td><td>
+
+Four audio sources: human dictionary recordings / system voices / Edge neural voices / any OpenAI-compatible TTS endpoint · picks a source automatically based on what you selected · sentence-by-sentence highlight following · pause and resume where you stopped
+
+</td></tr>
+<tr><td><b>AI services</b></td><td>
+
+OpenAI-compatible APIs · Anthropic · Ollama · optional OpenAI OAuth · add several services and rank them · store several keys per service, tried in priority order before output starts · connection testing and model discovery
+
+</td></tr>
+<tr><td><b>Integrations</b></td><td>
+
+An MCP server that exposes your library, vocabulary, and notes to Claude Code, Codex, and other AI clients — with write access off by default · OCR for scanned PDFs · an editable list of book-source sites · book metadata editing
+
+</td></tr>
+</table>
+
+---
+
+## Supported platforms
+
+| Platform | Support |
+| --- | --- |
+| **macOS** | macOS 12 Monterey or later, **Apple Silicon only**. The primary platform, with the full feature set. |
+| **Windows** | Windows 11 x64 installer. Full local reading and AI features, **without iCloud folder sync**. |
+| Intel Mac | No build currently provided. |
+| Linux | No release currently provided. |
+| iOS | In development, not yet released. See the [roadmap](docs/roadmap/mobile-ios.md). |
+
+---
+
+## Format support
+
+| Format | How it opens | Reading controls | Selection & manual highlights | Automatic vocabulary marks |
 | --- | --- | --- | --- | --- |
-| EPUB | Reads natively | Font, spacing, margins, scroll/paginated flow | Supported | Supported |
-| TXT, Markdown, HTML | Original source is retained and converted to a stable internal EPUB | Same as EPUB | Supported | Supported |
-| PDF | Reads natively | Theme, zoom, single/two-page layout, scroll/paginated flow | Supported when the PDF has a usable text layer | Not included in the first release |
-| MOBI, AZW, AZW3, FB2, FBZ | Reads through Foliate's native parser | Reflow controls when the renderer supports them | Not currently exposed | Not supported |
-| CBZ | Reads natively | Theme only | Not supported | Not supported |
+| **EPUB** | Native | Font, line height, margins, scrolled / paginated | ✅ | ✅ |
+| **TXT · Markdown · HTML** | Original kept, converted to a stable internal EPUB | Same as EPUB | ✅ | ✅ |
+| **PDF** | Native | Theme, zoom, single / dual page, scrolled / paginated | ✅ where a usable text layer exists | ❌ |
+| **MOBI · AZW · AZW3 · FB2 · FBZ** | Foliate's native parsers | Flow controls where the renderer supports them | ❌ | ❌ |
+| **CBZ** | Native | Theme only | ❌ | ❌ |
 
-Format support describes the current local import and reader integration. It does not imply DRM support or perfect rendering for every publisher-specific variant.
+This describes current local import and reader integration. It does not imply DRM support, and it does not guarantee perfect rendering of every publisher-specific variant.
 
-## Local-first data and sync
+---
 
-Library data stays local first. To sync across devices, choose a folder in your own iCloud Drive from Settings, then select the same folder on every Mac. The app stores its event log, books, and covers there.
+## Where your data lives
 
-This edition does not use the original Quill iCloud container. It does not claim compatibility with the original Quill iOS app or its private iCloud data.
+- **The library is local first.** Books, reading progress, vocabulary, and notes stay on this device.
+- **API keys and OAuth tokens live only in a local credential database.** They are never returned to the webview and never take part in sync.
+- **For multiple devices**, pick a folder inside your own iCloud Drive in settings and choose the same folder on every Mac. The app keeps its event log, books, and covers there. This version does not use the original Quill iCloud container, and makes no claim of compatibility with the original Quill iOS app or its private iCloud data.
+- **AI requests send only the context the current task needs** — never the whole book automatically.
+
+---
 
 ## Download
 
-Current builds and release notes are published at [KlaraGraff/lantern Releases](https://github.com/KlaraGraff/lantern/releases). macOS builds currently use a valid ad-hoc signature, so Gatekeeper will still require a first-run confirmation. The signing and notarization roadmap is documented in [macOS distribution](docs/guide/macos-distribution.md). Automatic updates are disabled until this fork has its own signed release channel.
+Builds and release notes are published on [Releases](https://github.com/KlaraGraff/lantern/releases).
+
+macOS builds are currently ad-hoc signed, so Gatekeeper asks for confirmation on first run. See [macOS distribution](docs/guide/macos-distribution.md) for the signing and notarization plan. Auto-update stays disabled until this fork has its own signed release channel.
+
+---
 
 ## Development
 
-Requirements: Node.js 22, npm, Rust, and the Tauri prerequisites for the target platform. The reader engine source is committed with the repository:
+Requires Node.js 22, npm, Rust, and the Tauri prerequisites for your platform. The reader engine (foliate-js) is committed alongside the repository.
 
 ```bash
 git clone https://github.com/KlaraGraff/lantern.git
@@ -130,7 +186,7 @@ npm ci
 npm run tauri dev
 ```
 
-Useful static checks:
+Static checks:
 
 ```bash
 npm exec tsc --noEmit
@@ -138,8 +194,11 @@ npm run lint
 cd src-tauri && cargo check
 ```
 
-Repository conventions are in [AGENTS.md](AGENTS.md).
+Stack: Tauri 2 + Rust + SQLite on the backend, React 19 + TypeScript + Tailwind 4 on the frontend, foliate-js for EPUB rendering. Repository conventions live in [AGENTS.md](AGENTS.md).
+
+---
 
 ## Attribution and license
 
-Lantern is based on Quill by yicheng47. Original Quill copyright remains with its authors. This repository retains the original [MIT License](LICENSE), including its copyright notice.
+Lantern is based on [Quill](https://github.com/yicheng47/quill) by yicheng47. Copyright in the original Quill remains with its author; this repository keeps the original [MIT License](LICENSE), including its copyright notice.
+</content>

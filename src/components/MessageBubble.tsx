@@ -265,7 +265,7 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
           <div className={ANSWER_PROSE}>
             <Markdown
               urlTransform={(url) => (
-                url.startsWith("quill-citation:") ? url : defaultUrlTransform(url)
+                url.startsWith("lantern-citation:") ? url : defaultUrlTransform(url)
               )}
               components={{
                 p: ({ node, children }) => (

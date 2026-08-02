@@ -145,7 +145,7 @@ export function getReaderCSS(settings: ReaderSettingsState): string {
   const letterSpacing = settings.charSpacing === 0 ? "normal" : `${settings.charSpacing * 0.01}em`;
   const wordSpacing = settings.wordSpacing === 0 ? "normal" : `${settings.wordSpacing * 0.01}em`;
   const chapterBreakCss = settings.readingMode === "paginated" ? `
-    [data-quill-chapter-start] {
+    [data-lantern-chapter-start] {
       break-before: column !important;
       page-break-before: always !important;
     }

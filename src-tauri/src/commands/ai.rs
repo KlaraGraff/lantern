@@ -592,7 +592,7 @@ pub fn ai_cancel(request_id: String) -> bool {
     crate::ai::router::cancel_request(&request_id)
 }
 
-const LOOKUP_TRANSLATION_MARKER: &str = "[[QUILL_TRANSLATION]]";
+const LOOKUP_TRANSLATION_MARKER: &str = "[[LANTERN_TRANSLATION]]";
 
 fn language_name(code: &str) -> String {
     match code {

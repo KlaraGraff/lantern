@@ -15,16 +15,16 @@ const source = {
 };
 
 test("replaces only known citation markers with internal markdown links", () => {
-  assert.equal(markdownWithCitationLinks("Fact [S1], unknown [S2]", [source]), "Fact [S1](quill-citation:S1), unknown [S2]");
+  assert.equal(markdownWithCitationLinks("Fact [S1], unknown [S2]", [source]), "Fact [S1](lantern-citation:S1), unknown [S2]");
 });
 
 test("identifies cited sources and internal citation hrefs", () => {
   assert.deepEqual(citedSourcesInContent("Fact [S1]", [source]), [source]);
-  assert.equal(citationMarkerFromHref("quill-citation:S1"), "S1");
+  assert.equal(citationMarkerFromHref("lantern-citation:S1"), "S1");
   assert.equal(citationMarkerFromHref("https://example.com"), undefined);
 });
 
 test("supports candidate-level source markers above two digits", () => {
   const source100 = { ...source, marker: "S100" };
-  assert.equal(markdownWithCitationLinks("Fact [S100]", [source100]), "Fact [S100](quill-citation:S100)");
+  assert.equal(markdownWithCitationLinks("Fact [S100]", [source100]), "Fact [S100](lantern-citation:S100)");
 });

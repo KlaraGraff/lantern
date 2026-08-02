@@ -20,7 +20,7 @@ export function customFontFaceCss(records: CustomFontRecord[] = loadedCustomFont
 
 /** Install local font faces into a Foliate chapter document. */
 export function installCustomFontFacesInDocument(doc: Document, records: CustomFontRecord[] = loadedCustomFonts) {
-  const styleId = "quill-custom-font-faces";
+  const styleId = "lantern-custom-font-faces";
   let style = doc.getElementById(styleId) as HTMLStyleElement | null;
   if (!style) {
     style = doc.createElement("style");
@@ -33,7 +33,7 @@ export function installCustomFontFacesInDocument(doc: Document, records: CustomF
 export function installCustomFontFaces(records: CustomFontRecord[]) {
   loadedCustomFonts = records;
   setCustomReaderFonts(records);
-  const styleId = "quill-custom-font-faces";
+  const styleId = "lantern-custom-font-faces";
   let style = document.getElementById(styleId) as HTMLStyleElement | null;
   if (!style) {
     style = document.createElement("style");

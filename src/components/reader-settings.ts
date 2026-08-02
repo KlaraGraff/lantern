@@ -158,7 +158,7 @@ export function isReaderFontAvailable(fontId: ReaderFont): boolean {
 }
 
 export function customFontFamily(id: string) {
-  return `"QuillCustom-${id.replace(/[^a-zA-Z0-9_-]/g, "")}"`;
+  return `"LanternCustom-${id.replace(/[^a-zA-Z0-9_-]/g, "")}"`;
 }
 
 export function setCustomReaderFonts(customFonts: Array<{ id: string; family_name: string; file_path: string }>) {

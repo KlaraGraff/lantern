@@ -111,7 +111,7 @@ export function builtinFontFaceCss(fontList: BuiltinFont[] = builtinFonts): stri
   return rules.join("\n");
 }
 
-const STYLE_ID = "quill-builtin-font-faces";
+const STYLE_ID = "lantern-builtin-font-faces";
 
 /** Install the bundled font faces into a document (the app shell or a Foliate chapter). */
 export function installBuiltinFontFacesInDocument(doc: Document) {

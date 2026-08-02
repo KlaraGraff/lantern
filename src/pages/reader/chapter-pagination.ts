@@ -1,4 +1,4 @@
-export const CHAPTER_START_ATTRIBUTE = "data-quill-chapter-start";
+export const CHAPTER_START_ATTRIBUTE = "data-lantern-chapter-start";
 
 export interface FoliateTocItem {
   label?: unknown;

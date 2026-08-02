@@ -592,7 +592,7 @@ export function readerMenuFocusIndex(
   return (currentIndex + (key === "ArrowDown" ? 1 : -1) + itemCount) % itemCount;
 }
 
-export const READER_CONTEXT_MENU_KEY_EVENT = "quill-reader-context-menu-key";
+export const READER_CONTEXT_MENU_KEY_EVENT = "lantern-reader-context-menu-key";
 
 export interface ReaderContextMenuKeyDetail {
   key: string;
@@ -727,12 +727,12 @@ export function isInteractiveReaderTarget(target: EventTarget | null): boolean {
  * Nothing here may affect layout — no padding, no font change — or pages would
  * reflow as words get looked up.
  */
-export const WORD_MARK_TAG = "quill-mark";
+export const WORD_MARK_TAG = "lantern-mark";
 const CFI_TRANSPARENT_ATTRIBUTE = "data-cfi-transparent";
 const MAX_WORD_MARKS = 20_000;
 
 function wordMarkStyleElement(doc: Document, name: string): HTMLStyleElement {
-  const styleId = `quill-word-mark-style-${name}`;
+  const styleId = `lantern-word-mark-style-${name}`;
   const existing = doc.getElementById(styleId) as HTMLStyleElement | null;
   if (existing) return existing;
   const style = doc.createElement("style");
@@ -742,7 +742,7 @@ function wordMarkStyleElement(doc: Document, name: string): HTMLStyleElement {
 }
 
 function clearWordMarks(doc: Document, name: string): void {
-  const marks = doc.querySelectorAll(`${WORD_MARK_TAG}[data-quill-mark="${name}"]`);
+  const marks = doc.querySelectorAll(`${WORD_MARK_TAG}[data-lantern-mark="${name}"]`);
   for (const mark of Array.from(marks)) {
     const parent = mark.parentNode;
     if (!parent) continue;
@@ -763,7 +763,7 @@ export function applyWordMarks(
 ): void {
   clearWordMarks(doc, name);
   wordMarkStyleElement(doc, name).textContent =
-    `${WORD_MARK_TAG}[data-quill-mark="${name}"] { display: inline; ${css} }`;
+    `${WORD_MARK_TAG}[data-lantern-mark="${name}"] { display: inline; ${css} }`;
   const words = new Set(
     Array.from(normalizedWords, (word) => normalizeInteractionText(word)).filter(Boolean),
   );
@@ -800,7 +800,7 @@ export function applyWordMarks(
       range.setEnd(text, segment.index + segment.segment.length);
       if (includeRange && !includeRange(normalizeInteractionText(segment.segment), range)) continue;
       const mark = doc.createElement(WORD_MARK_TAG);
-      mark.setAttribute("data-quill-mark", name);
+      mark.setAttribute("data-lantern-mark", name);
       mark.setAttribute(CFI_TRANSPARENT_ATTRIBUTE, "");
       try {
         range.surroundContents(mark);

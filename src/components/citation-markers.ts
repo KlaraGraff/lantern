@@ -10,11 +10,11 @@ export function markdownWithCitationLinks(content: string, sources: CitedSource[
   return content.replace(/\[S(\d+)\]/g, (marker, number: string) => {
     const sourceMarker = `S${number}`;
     return sourceMarkers.has(sourceMarker)
-      ? `[${sourceMarker}](quill-citation:${sourceMarker})`
+      ? `[${sourceMarker}](lantern-citation:${sourceMarker})`
       : marker;
   });
 }
 
 export function citationMarkerFromHref(href: string | undefined): string | undefined {
-  return href?.startsWith("quill-citation:") ? href.slice("quill-citation:".length) : undefined;
+  return href?.startsWith("lantern-citation:") ? href.slice("lantern-citation:".length) : undefined;
 }
