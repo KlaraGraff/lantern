@@ -23,7 +23,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ZHIPU_API_KEY_PAGE, ZHIPU_BASE_URL, ZHIPU_DEFAULT_MODEL } from "./aiPresets";
+import { AI_PRESETS, COST_TIER_CLASSES, presetFor } from "./aiPresets";
 import Button from "../ui/Button";
 import ComboField from "../ui/ComboField";
 import Input from "../ui/Input";
@@ -142,39 +142,13 @@ interface AiServiceCardProps {
   onOAuthLogout: () => Promise<void>;
 }
 
-const PROVIDER_LABELS: Record<string, string> = {
-  openai: "OpenAI",
-  anthropic: "Anthropic",
-  ollama: "Ollama",
-};
-
 function providerLabel(
   provider: string,
   t: (key: string, options?: Record<string, unknown>) => string,
 ): string {
-  // Zhipu is the only provider whose name is written differently per language,
-  // so it comes from i18n rather than the fixed table.
-  if (provider === "zhipu") return t("settings.ai.zhipuName");
-  return PROVIDER_LABELS[provider] ?? t("settings.ai.customCompatible");
+  const preset = presetFor(provider);
+  return t(preset?.nameKey ?? "settings.ai.customCompatible");
 }
-
-/**
- * How a provider bills, shown as a chip next to the service name. The cost of a
- * `custom` endpoint is unknowable from here, so it carries no chip at all
- * rather than a guess.
- */
-function costTier(provider: string): "free" | "local" | "metered" | null {
-  if (provider === "zhipu") return "free";
-  if (provider === "ollama") return "local";
-  if (provider === "openai" || provider === "anthropic") return "metered";
-  return null;
-}
-
-const COST_TIER_CLASSES: Record<string, string> = {
-  free: "bg-success/10 text-success-text",
-  local: "bg-bg-input text-text-secondary",
-  metered: "bg-accent-bg text-accent-text",
-};
 
 function profileHealth(
   profile: AiProfile,
@@ -344,46 +318,24 @@ export default function AiServiceCard({
     setConfirmDelete(false);
   }, [expanded]);
 
+  const preset = presetFor(profile.provider);
   const providerName = providerLabel(profile.provider, t);
-  const cost = costTier(profile.provider);
+  const cost = preset?.cost ?? null;
+  const keyPage = preset?.keyPage ?? null;
   const health = profileHealth(profile, testResult, healthStale, t);
   const latency = healthStale ? null : (testResult?.total_ms ?? profile.last_latency_ms);
   const usesApiKeys = profile.auth_mode === "api_key" && profile.provider !== "ollama";
 
   const setProvider = (provider: string) => {
-    const defaults: Record<string, Pick<AiProfile, "auth_mode" | "base_url" | "model" | "keep_alive">> = {
-      zhipu: {
-        auth_mode: "api_key",
-        base_url: ZHIPU_BASE_URL,
-        model: ZHIPU_DEFAULT_MODEL,
-        keep_alive: null,
-      },
-      openai: {
-        auth_mode: "api_key",
-        base_url: "https://api.openai.com",
-        model: "gpt-4o-mini",
-        keep_alive: null,
-      },
-      anthropic: {
-        auth_mode: "api_key",
-        base_url: "https://api.anthropic.com",
-        model: "claude-sonnet-4-20250514",
-        keep_alive: null,
-      },
-      ollama: {
-        auth_mode: "api_key",
-        base_url: "http://localhost:11434",
-        model: "qwen3.5",
-        keep_alive: "30m",
-      },
-      custom: {
-        auth_mode: "api_key",
-        base_url: "",
-        model: "",
-        keep_alive: null,
-      },
-    };
-    onChange({ provider, ...defaults[provider] });
+    const next = presetFor(provider);
+    if (!next) return;
+    onChange({
+      provider,
+      auth_mode: "api_key",
+      base_url: next.baseUrl,
+      model: next.model,
+      keep_alive: next.keepAlive,
+    });
   };
 
   const runCredential = async (id: string, action: () => Promise<void>) => {
@@ -522,13 +474,10 @@ export default function AiServiceCard({
                 onChange={(provider) => {
                   if (!profileBusy) setProvider(provider);
                 }}
-                options={[
-                  { value: "zhipu", label: t("settings.ai.zhipuName") },
-                  { value: "openai", label: "OpenAI" },
-                  { value: "anthropic", label: "Anthropic" },
-                  { value: "ollama", label: "Ollama (Local)" },
-                  { value: "custom", label: t("settings.ai.customCompatible") },
-                ]}
+                options={AI_PRESETS.map((option) => ({
+                  value: option.provider,
+                  label: t(option.nameKey),
+                }))}
               />
             </div>
           </div>
@@ -723,25 +672,29 @@ export default function AiServiceCard({
                 </span>
               </div>
 
-              {profile.provider === "zhipu" && credentials.length === 0 && (
+              {keyPage && credentials.length === 0 && (
                 <div className="mb-3 rounded-md bg-bg-page px-3 py-2.5">
-                  <p className="text-[11px] font-medium text-text-primary">{t("settings.ai.zhipuConnectTitle")}</p>
+                  <p className="text-[11px] font-medium text-text-primary">
+                    {t("settings.ai.connectTitle", { name: providerName })}
+                  </p>
                   <ol className="mt-1.5 list-decimal space-y-0.5 pl-4 text-[10px] leading-4 text-text-muted">
-                    <li>{t("settings.ai.zhipuStepRegister")}</li>
-                    <li>{t("settings.ai.zhipuStepCreate")}</li>
-                    <li>{t("settings.ai.zhipuStepCopy")}</li>
-                    <li>{t("settings.ai.zhipuStepPaste")}</li>
+                    <li>{t("settings.ai.connectStepRegister", { name: providerName })}</li>
+                    <li>{t("settings.ai.connectStepCreate")}</li>
+                    <li>{t("settings.ai.connectStepCopy")}</li>
+                    <li>{t("settings.ai.connectStepPaste")}</li>
                   </ol>
                   <div className="mt-2 flex justify-start">
                     <Button
                       variant="secondary"
                       size="sm"
                       onClick={() => {
-                        openUrl(ZHIPU_API_KEY_PAGE).catch(() => {});
+                        // Fixed official HTTPS pages only — never a URL that
+                        // arrived from a provider response or a remote catalog.
+                        openUrl(keyPage).catch(() => {});
                       }}
                     >
                       <ExternalLink size={13} />
-                      {t("settings.ai.zhipuGetKey")}
+                      {t(preset?.keyButtonKey ?? "settings.ai.connectGetKey")}
                     </Button>
                   </div>
                 </div>

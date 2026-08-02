@@ -13,7 +13,7 @@ import AiServiceCard, {
   type AiEffortHints,
   type AiProfile,
 } from "./AiServiceCard";
-import { ZHIPU_BASE_URL, ZHIPU_DEFAULT_MODEL } from "./aiPresets";
+import { AI_PRESETS, COST_TIER_CLASSES, presetFor } from "./aiPresets";
 import type { SettingsProps } from "./types";
 import { useSettings } from "../../hooks/useSettings";
 
@@ -61,7 +61,7 @@ function isProfileConfigValid(profile: AiProfile): boolean {
   if (!label || Array.from(label).length > 100) return false;
   if (!model || Array.from(model).length > 200) return false;
   if (!Number.isFinite(profile.temperature) || profile.temperature < 0 || profile.temperature > 2) return false;
-  if (!(["zhipu", "openai", "anthropic", "ollama", "custom"] as string[]).includes(profile.provider)) return false;
+  if (!AI_PRESETS.some((preset) => preset.provider === profile.provider)) return false;
   if (profile.auth_mode === "oauth" && profile.provider !== "openai") return false;
   const baseUrl = profile.base_url?.trim();
   if (profile.provider === "custom" && !baseUrl) return false;
@@ -91,6 +91,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   const [testResults, setTestResults] = useState<Record<string, AiConnectionTestResult>>({});
   const [staleHealthIds, setStaleHealthIds] = useState<Set<string>>(() => new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [catalogOpen, setCatalogOpen] = useState(false);
   const [effortRevision, setEffortRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -374,23 +375,28 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     };
   }, [loading, saveProfiles, saving, validDirtyIds]);
 
-  const createProfile = async () => {
+  /**
+   * Add one model from the catalog. Nothing is added until the user picks a
+   * preset here, so browsing the catalog never counts as authorizing a paid
+   * provider — only the model that lands in the route does.
+   */
+  const createProfile = async (provider: string) => {
+    const preset = presetFor(provider);
+    if (!preset) return;
     setBusyId("new");
     setError(null);
+    setCatalogOpen(false);
     try {
-      // New services start from the recommended preset rather than OpenAI: it
-      // is the one a first-time user can actually sign up for, and the provider
-      // dropdown changes it in one click for everyone else.
       const created = await invoke<AiProfile>("ai_create_profile", {
-        label: t("settings.ai.zhipuServiceName"),
-        provider: "zhipu",
+        label: t(preset.nameKey),
+        provider: preset.provider,
         authMode: "api_key",
-        baseUrl: ZHIPU_BASE_URL,
-        model: ZHIPU_DEFAULT_MODEL,
+        baseUrl: preset.baseUrl,
+        model: preset.model,
         temperature: 0.3,
         reasoningEffort: null,
         reasoningEffortAllFeatures: false,
-        keepAlive: null,
+        keepAlive: preset.keepAlive,
         enabled: true,
       });
       replaceProfiles([...profilesRef.current, created]);
@@ -781,11 +787,49 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
           <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.services")}</h4>
           <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">{t("settings.ai.servicesHint")}</p>
         </div>
-        <Button variant="secondary" size="sm" onClick={() => void createProfile()} disabled={busyId != null || saving}>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setCatalogOpen((open) => !open)}
+          disabled={busyId != null || saving}
+          aria-expanded={catalogOpen}
+        >
           {busyId === "new" ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-          {t("settings.ai.addService")}
+          {t("settings.ai.addModel")}
         </Button>
       </div>
+
+      {catalogOpen && (
+        <div className="mb-3 rounded-lg border border-border p-1">
+          <p className="px-2 pb-1 pt-1.5 text-[10px] leading-4 text-text-muted">{t("settings.ai.catalogHint")}</p>
+          <ul>
+            {AI_PRESETS.map((preset) => (
+              <li key={preset.provider}>
+                <button
+                  type="button"
+                  disabled={busyId != null || saving}
+                  onClick={() => void createProfile(preset.provider)}
+                  className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-bg-input disabled:opacity-50"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-[12px] font-medium text-text-primary">{t(preset.nameKey)}</span>
+                      {preset.cost && (
+                        <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${COST_TIER_CLASSES[preset.cost]}`}>
+                          {t(`settings.ai.cost.${preset.cost}`)}
+                        </span>
+                      )}
+                    </span>
+                    <span className="mt-0.5 block text-[10px] leading-4 text-text-muted">
+                      {t(preset.descriptionKey)}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {error && (
         <div role="alert" className="mb-3 flex items-start gap-2 rounded-md bg-danger-bg px-3 py-2 text-[11px] leading-5 text-danger-text">
