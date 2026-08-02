@@ -3,13 +3,15 @@ import { useTranslation } from "react-i18next";
 import { AlertTriangle, ChevronDown, ChevronRight, Loader2, Quote, Settings } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import Markdown, { defaultUrlTransform } from "react-markdown";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { AiChatRoute, ChatMessage, CitedSource, SectionContextMetadata } from "../hooks/useAiChat";
 import { aiErrorMessageKey, isAiErrorCode, isAiRetryableError, isAiSettingsError } from "../utils/aiError";
 import AiRetryButton from "./AiRetryButton";
 import {
   citedSourcesInContent,
   citationMarkerFromHref,
+  citationUrlTransform,
   markdownWithCitationLinks,
 } from "./citation-markers";
 
@@ -57,6 +59,21 @@ const ANSWER_PROSE = [
   "[&_pre]:bg-bg-muted [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:overflow-x-auto",
   "[&_strong]:font-semibold [&_strong]:text-text-primary [&_em]:italic",
   "[&_hr]:border-border [&_hr]:my-3 [&_a]:text-accent [&_a]:underline",
+  // GFM tables. Preflight strips every default table border, so without these
+  // a comparison table renders as cells jammed together — worse to read than
+  // the raw pipes it replaced. The header sits on the muted fill rather than a
+  // heavier rule so a three-column table does not outweigh the prose above it.
+  // Vertical margin lives on the scroll wrapper below, not here, so the
+  // first/last-child reset at the end of this list can still reach it.
+  "[&_table]:w-full [&_table]:border-collapse [&_table]:text-[13px]",
+  "[&_th]:border [&_th]:border-border [&_th]:bg-bg-muted [&_th]:px-2.5 [&_th]:py-1.5",
+  "[&_th]:text-left [&_th]:font-semibold [&_th]:text-text-primary",
+  "[&_td]:border [&_td]:border-border [&_td]:px-2.5 [&_td]:py-1.5 [&_td]:align-top",
+  // Task lists: the checkbox replaces the marker, so the bullet would double
+  // up. Matched on the `task-list-item` class mdast-util-to-hast puts there,
+  // not with `:has()`, which the Safari 15 baseline does not support.
+  "[&_li.task-list-item]:list-none [&_li.task-list-item]:pl-0",
+  "[&_li_input[type=checkbox]]:mr-1.5 [&_li_input[type=checkbox]]:align-[-1px]",
   "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
 ].join(" ");
 
@@ -274,10 +291,17 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
         ) : msg.content ? (
           <div className={ANSWER_PROSE}>
             <Markdown
-              urlTransform={(url) => (
-                url.startsWith("lantern-citation:") ? url : defaultUrlTransform(url)
-              )}
+              remarkPlugins={[remarkGfm]}
+              urlTransform={citationUrlTransform}
               components={{
+                // The bubble is capped at 68ch and table cells will not shrink
+                // below their content, so a wide table has to scroll on its own
+                // rather than widen the whole message list.
+                table: ({ children }) => (
+                  <div className="my-3 overflow-x-auto">
+                    <table>{children}</table>
+                  </div>
+                ),
                 p: ({ node, children }) => (
                   <p className={isLeadParagraph(node) ? ANSWER_LEAD_CLASS : undefined}>{children}</p>
                 ),
