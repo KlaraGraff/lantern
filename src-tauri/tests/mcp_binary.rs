@@ -81,7 +81,7 @@ fn read_line_with_timeout(
 }
 
 #[test]
-fn lantern_mcp_initialize_lists_tools_and_calls_get_collections() {
+fn lantern_mcp_initialize_lists_tools_and_calls_query_collections() {
     let home = TempDir::new().unwrap();
     let _seeded = seed_db(home.path());
 
@@ -122,7 +122,7 @@ fn lantern_mcp_initialize_lists_tools_and_calls_get_collections() {
     .unwrap();
     writeln!(
         stdin,
-        r#"{{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{{"name":"get_collections","arguments":{{}}}}}}"#
+        r#"{{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{{"name":"query_collections","arguments":{{"query":"list"}}}}}}"#
     )
     .unwrap();
     drop(stdin); // EOF — let serve_stdio's `waiting()` resolve.
@@ -149,38 +149,27 @@ fn lantern_mcp_initialize_lists_tools_and_calls_get_collections() {
     let expected: std::collections::BTreeSet<&str> = [
         "list_books",
         "get_book",
-        "get_collections",
-        "get_highlights",
-        "get_bookmarks",
+        "query_collections",
+        "update_collections",
+        "delete_collections",
+        "query_annotations",
         "get_vocab_words",
         "get_vocab_stats",
-        "get_chat_history",
+        "query_chats",
         "update_book",
-        "create_collection",
-        "rename_collection",
-        "delete_collection",
         "import_books",
         "delete_books",
-        "update_collection_membership",
-        "get_collection_books",
         "search_book_content",
         "get_book_summaries",
         "request_book_index",
-        "get_notes",
         "get_lookup_history",
         "get_word_marks",
         "get_language_profile",
         "set_reading_state",
-        "reorder_collections",
         "list_book_sections",
         "get_book_content",
-        "create_bookmark",
-        "create_highlight",
-        "update_highlight",
-        "save_note",
-        "delete_bookmarks",
-        "delete_highlights",
-        "delete_notes",
+        "save_annotations",
+        "delete_annotations",
         "save_lookup_record",
         "create_vocab_word",
         "record_vocab_review",
@@ -197,19 +186,15 @@ fn lantern_mcp_initialize_lists_tools_and_calls_get_collections() {
         "clear_word_marks",
         "delete_lookup_records",
         "clear_lookup_history",
-        "create_chat",
-        "rename_chat",
-        "save_chat_message",
-        "replace_chat_message",
+        "save_chats",
         "delete_chats",
         "save_language_assessment",
         "delete_language_assessments",
         "get_settings",
         "update_settings",
         "get_app_info",
-        "get_diagnostics",
-        "get_mcp_status",
-        "update_mcp_settings",
+        "get_mcp_integration",
+        "update_mcp_integration",
     ]
     .iter()
     .copied()

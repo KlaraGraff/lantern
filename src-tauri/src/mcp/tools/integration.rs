@@ -86,3 +86,39 @@ impl LanternMcpHandler {
         Ok(CallToolResult::success(vec![ContentBlock::json(&status)?]))
     }
 }
+
+#[tool_router(router = integration_catalog_router, vis = "pub(crate)")]
+impl LanternMcpHandler {
+    #[tool(
+        name = "get_mcp_integration",
+        description = "Return Lantern MCP client registration, write-access, active binary, and configuration-snippet status.",
+        annotations(
+            title = "Get Lantern MCP integration",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    pub async fn get_mcp_integration_catalog(&self) -> Result<CallToolResult, ErrorData> {
+        self.get_mcp_status().await
+    }
+
+    #[tool(
+        name = "update_mcp_integration",
+        description = "Update Lantern MCP client registrations or write access. Omitted fields remain unchanged.",
+        annotations(
+            title = "Update Lantern MCP integration",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true
+        )
+    )]
+    pub async fn update_mcp_integration_catalog(
+        &self,
+        args: Parameters<UpdateMcpSettingsArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.update_mcp_settings(args).await
+    }
+}

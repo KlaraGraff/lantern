@@ -72,6 +72,41 @@ impl LanternMcpHandler {
         r.merge(Self::configuration_router());
         r.merge(Self::app_info_router());
         r.merge(Self::integration_router());
+        for name in [
+            "get_collections",
+            "create_collection",
+            "rename_collection",
+            "delete_collection",
+            "reorder_collections",
+            "get_collection_books",
+            "update_collection_membership",
+            "get_app_info",
+            "get_diagnostics",
+            "get_mcp_status",
+            "update_mcp_settings",
+            "get_bookmarks",
+            "get_highlights",
+            "get_notes",
+            "create_bookmark",
+            "create_highlight",
+            "update_highlight",
+            "save_note",
+            "delete_bookmarks",
+            "delete_highlights",
+            "delete_notes",
+            "get_chat_history",
+            "create_chat",
+            "rename_chat",
+            "save_chat_message",
+            "replace_chat_message",
+        ] {
+            r.remove_route(name);
+        }
+        r.merge(Self::collections_catalog_router());
+        r.merge(Self::app_info_catalog_router());
+        r.merge(Self::integration_catalog_router());
+        r.merge(Self::annotations_catalog_router());
+        r.merge(Self::chats_catalog_router());
         r
     }
 
@@ -105,29 +140,35 @@ fn approval_input_for_tool(
                 scope: format!("{} book(s): {}.", book_ids.len(), book_ids.join(", ")),
             }
         }
-        "delete_collection" => {
-            let collection_id = required_string(arguments, "id")?;
+        "delete_collections" => {
+            let collection_ids = required_non_empty_string_array(arguments, "ids")?;
             ApprovalConfirmation::IrreversibleData {
                 effect: "Permanently delete the collection and its saved membership grouping. Books are not deleted."
                     .to_string(),
-                scope: format!("Collection {collection_id}."),
+                scope: format!(
+                    "{} collection(s): {}.",
+                    collection_ids.len(),
+                    collection_ids.join(", ")
+                ),
             }
         }
-        "delete_bookmarks" => irreversible_ids_confirmation(
-            arguments,
-            "Permanently delete the selected bookmarks.",
-            "bookmark",
-        )?,
-        "delete_highlights" => irreversible_ids_confirmation(
-            arguments,
-            "Permanently delete the selected highlights and their attached legacy note text.",
-            "highlight",
-        )?,
-        "delete_notes" => irreversible_ids_confirmation(
-            arguments,
-            "Permanently delete the selected first-class notes.",
-            "note",
-        )?,
+        "delete_annotations" => {
+            let (effect, label) = match arguments.get("kind").and_then(Value::as_str) {
+                Some("bookmark") => ("Permanently delete the selected bookmarks.", "bookmark"),
+                Some("highlight") => (
+                    "Permanently delete the selected highlights and their attached legacy note text.",
+                    "highlight",
+                ),
+                Some("note") => ("Permanently delete the selected first-class notes.", "note"),
+                _ => {
+                    return Err(ErrorData::invalid_params(
+                        "`kind` must be bookmark, highlight, or note",
+                        None,
+                    ));
+                }
+            };
+            irreversible_ids_confirmation(arguments, effect, label)?
+        }
         "delete_chats" => irreversible_ids_confirmation(
             arguments,
             "Permanently delete the selected chats and all messages they contain.",
@@ -747,38 +788,27 @@ mod tests {
         let expected: std::collections::BTreeSet<_> = [
             "list_books",
             "get_book",
-            "get_collections",
-            "get_highlights",
-            "get_bookmarks",
+            "query_collections",
+            "update_collections",
+            "delete_collections",
+            "query_annotations",
             "get_vocab_words",
             "get_vocab_stats",
-            "get_chat_history",
+            "query_chats",
             "update_book",
-            "create_collection",
-            "rename_collection",
-            "delete_collection",
             "import_books",
             "delete_books",
-            "update_collection_membership",
-            "get_collection_books",
             "search_book_content",
             "get_book_summaries",
             "request_book_index",
-            "get_notes",
             "get_lookup_history",
             "get_word_marks",
             "get_language_profile",
             "set_reading_state",
-            "reorder_collections",
             "list_book_sections",
             "get_book_content",
-            "create_bookmark",
-            "create_highlight",
-            "update_highlight",
-            "save_note",
-            "delete_bookmarks",
-            "delete_highlights",
-            "delete_notes",
+            "save_annotations",
+            "delete_annotations",
             "save_lookup_record",
             "create_vocab_word",
             "record_vocab_review",
@@ -795,19 +825,15 @@ mod tests {
             "clear_word_marks",
             "delete_lookup_records",
             "clear_lookup_history",
-            "create_chat",
-            "rename_chat",
-            "save_chat_message",
-            "replace_chat_message",
+            "save_chats",
             "delete_chats",
             "save_language_assessment",
             "delete_language_assessments",
             "get_settings",
             "update_settings",
             "get_app_info",
-            "get_diagnostics",
-            "get_mcp_status",
-            "update_mcp_settings",
+            "get_mcp_integration",
+            "update_mcp_integration",
         ]
         .iter()
         .map(|s| s.to_string())
@@ -819,10 +845,19 @@ mod tests {
     fn irreversible_catalog_covers_every_current_permanent_data_operation() {
         for (name, arguments) in [
             ("delete_books", json!({ "book_ids": ["b1"] })),
-            ("delete_collection", json!({ "id": "c1" })),
-            ("delete_bookmarks", json!({ "ids": ["bm1"] })),
-            ("delete_highlights", json!({ "ids": ["h1"] })),
-            ("delete_notes", json!({ "ids": ["n1"] })),
+            ("delete_collections", json!({ "ids": ["c1"] })),
+            (
+                "delete_annotations",
+                json!({ "kind": "bookmark", "ids": ["bm1"] }),
+            ),
+            (
+                "delete_annotations",
+                json!({ "kind": "highlight", "ids": ["h1"] }),
+            ),
+            (
+                "delete_annotations",
+                json!({ "kind": "note", "ids": ["n1"] }),
+            ),
             ("delete_chats", json!({ "ids": ["ch1"] })),
             ("delete_vocab_words", json!({ "ids": ["v1"] })),
             ("delete_language_assessments", json!({ "ids": ["la1"] })),
@@ -852,11 +887,27 @@ mod tests {
     #[test]
     fn ordinary_operations_and_non_overwriting_import_do_not_require_confirmation() {
         for (name, arguments) in [
-            ("create_collection", json!({ "name": "Direct" })),
-            ("save_note", json!({ "content": "ordinary edit" })),
             (
-                "remove_books_from_collection",
-                json!({ "collection_id": "c1", "book_ids": ["b1"] }),
+                "update_collections",
+                json!({ "action": "create", "name": "Direct" }),
+            ),
+            (
+                "save_annotations",
+                json!({
+                    "action": "save_note",
+                    "anchor_kind": "selection",
+                    "scope": "book",
+                    "content": "ordinary edit"
+                }),
+            ),
+            (
+                "update_collections",
+                json!({
+                    "action": "update_membership",
+                    "collection_id": "c1",
+                    "book_ids": ["b1"],
+                    "operation": "remove"
+                }),
             ),
             (
                 "import_vocabulary",
@@ -1026,7 +1077,10 @@ mod tests {
         let handler = LanternMcpHandler::new(state.clone());
         let result = ServerHandler::call_tool(
             &handler,
-            call("create_collection", json!({ "name": "Direct" })),
+            call(
+                "update_collections",
+                json!({ "action": "create", "name": "Direct" }),
+            ),
             request_context(ProtocolVersion::V_2026_07_28, true),
         )
         .await

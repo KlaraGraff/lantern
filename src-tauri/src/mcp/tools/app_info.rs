@@ -21,6 +21,22 @@ pub struct GetDiagnosticsArgs {
     pub lines: Option<usize>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(tag = "query", rename_all = "snake_case")]
+pub enum GetAppInfoQuery {
+    Build,
+    Diagnostics {
+        #[serde(default)]
+        lines: Option<usize>,
+    },
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetAppInfoArgs {
+    #[serde(flatten)]
+    pub query: GetAppInfoQuery,
+}
+
 #[derive(Debug, Serialize)]
 struct DiagnosticLogFile {
     name: String,
@@ -137,5 +153,32 @@ impl LanternMcpHandler {
         Ok(CallToolResult::success(vec![ContentBlock::json(
             &diagnostic_logs(lines)?,
         )?]))
+    }
+}
+
+#[tool_router(router = app_info_catalog_router, vis = "pub(crate)")]
+impl LanternMcpHandler {
+    #[tool(
+        name = "get_app_info",
+        description = "Return Lantern build information or the same bounded diagnostics and log information visible in the app.",
+        annotations(
+            title = "Get Lantern app information",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    pub async fn get_app_info_catalog(
+        &self,
+        Parameters(GetAppInfoArgs { query }): Parameters<GetAppInfoArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        match query {
+            GetAppInfoQuery::Build => self.get_app_info().await,
+            GetAppInfoQuery::Diagnostics { lines } => {
+                self.get_diagnostics(Parameters(GetDiagnosticsArgs { lines }))
+                    .await
+            }
+        }
     }
 }
