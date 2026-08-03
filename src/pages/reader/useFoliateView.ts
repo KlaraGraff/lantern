@@ -35,8 +35,15 @@ import { createChapterPaginationMarker } from "./chapter-pagination";
 import {
   applyPdfLayout,
   applyReflowLayout,
+  getFootnoteCSS,
   getReaderCSS,
 } from "./reader-theme";
+import {
+  FOOTNOTE_CONTENT_WIDTH,
+  FOOTNOTE_POPOVER_MAX_HEIGHT,
+  FOOTNOTE_POPOVER_MIN_HEIGHT,
+  type FootnotePopoverData,
+} from "../../components/FootnotePopover";
 import {
   drawFoliateAnnotation,
   type FoliateMarker,
@@ -77,6 +84,63 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, code: string): P
       },
     );
   });
+}
+
+interface FootnoteLinkEventDetail {
+  a: HTMLAnchorElement;
+  href: string;
+}
+
+interface FootnoteRenderEventDetail {
+  view: FoliateView;
+  href: string;
+  type: string | null;
+  hidden: boolean;
+  target: Element | null;
+}
+
+interface FootnoteHandlerLike extends EventTarget {
+  detectFootnotes: boolean;
+  // Returns undefined when `a` isn't a footnote reference (default link
+  // navigation proceeds as usual). Otherwise it has already called
+  // event.preventDefault() and returns a promise that resolves once the
+  // nested view's 'render' event has fired.
+  handle(
+    book: unknown,
+    event: CustomEvent<FootnoteLinkEventDetail>,
+  ): Promise<void> | undefined;
+}
+
+let footnoteHandlerCtorPromise: Promise<new () => FootnoteHandlerLike> | null = null;
+
+// footnotes.js ships alongside view.js in public/foliate-js (see its
+// LANTERN.md) and is loaded the same way — a runtime URL outside the Vite
+// module graph, transpiled into dist/foliate-js by build-reader-assets.mjs.
+// The specifier is held in a variable, not a string literal, so `tsc` infers
+// `Promise<any>` for the dynamic import instead of trying to resolve
+// "/foliate-js/footnotes.js" as a TS module; `@vite-ignore` stops Vite's
+// bundler from warning that it can't statically analyze the same import.
+function loadFootnoteHandlerCtor(): Promise<new () => FootnoteHandlerLike> {
+  if (!footnoteHandlerCtorPromise) {
+    const footnotesModuleUrl = "/foliate-js/footnotes.js";
+    footnoteHandlerCtorPromise = import(/* @vite-ignore */ footnotesModuleUrl)
+      .then((module) => (module as { FootnoteHandler: new () => FootnoteHandlerLike }).FootnoteHandler);
+  }
+  return footnoteHandlerCtorPromise;
+}
+
+// Tracks the click that is currently waiting on the FootnoteHandler's
+// 'before-render'/'render' events, which fire on a single shared handler
+// instance rather than per-request. `token` lets a stale pair — from a click
+// the user has already superseded by clicking another reference — recognize
+// itself and discard its nested view instead of popping up late.
+interface PendingFootnote {
+  token: number;
+  x: number;
+  y: number;
+  marker: string;
+  href: string;
+  nestedView: FoliateView | null;
 }
 
 interface InstallDocumentInteractionsOptions {
@@ -131,6 +195,7 @@ interface UseFoliateViewOptions {
   setActiveVocabCfi: Dispatch<SetStateAction<string | null>>;
   setSidePanel: Dispatch<SetStateAction<SidePanel>>;
   setContextMenu: Dispatch<SetStateAction<ReaderInteraction | null>>;
+  setFootnote: Dispatch<SetStateAction<FootnotePopoverData | null>>;
 }
 
 function flattenToc(items: unknown[], depth = 0): TocChapter[] {
@@ -250,9 +315,11 @@ export function useFoliateView({
   setActiveVocabCfi,
   setSidePanel,
   setContextMenu,
+  setFootnote,
 }: UseFoliateViewOptions) {
   const backButtonTimerRef = useRef<number | null>(null);
   const loadedInteractionDocumentsRef = useRef(new WeakSet<Document>());
+  const footnoteRequestRef = useRef(0);
   // Size the reader stylesheet was last written with. Tracked because the
   // narrow-viewport shrink can change it on resize alone.
   const appliedFontSizeRef = useRef(readerSettings.fontSize);
@@ -273,6 +340,7 @@ export function useFoliateView({
     let cancelled = false;
     let activeView: FoliateView | null = null;
     let firstSectionLogged = false;
+    let footnoteStagingHost: HTMLDivElement | null = null;
 
     const initFoliate = async () => {
       logReaderDiagnostic(
@@ -324,6 +392,78 @@ export function useFoliateView({
         logReaderDiagnostic("reader.open.script-loaded");
       }
       if (cancelled) return;
+
+      const FootnoteHandlerCtor = await loadFootnoteHandlerCtor();
+      if (cancelled) return;
+      const footnoteHandler: FootnoteHandlerLike = new FootnoteHandlerCtor();
+      // Kept permanently off-screen (not just unmounted) rather than created
+      // per-click: FootnoteHandler renders into it before React ever sees the
+      // click, and Foliate's paginator needs a connected element with real
+      // dimensions to lay out against at that point. FootnotePopover moves
+      // the finished nested view out of here and into the visible bubble.
+      footnoteStagingHost = document.createElement("div");
+      footnoteStagingHost.style.cssText = "position:fixed; top:0; left:-99999px; "
+        + `width:${FOOTNOTE_CONTENT_WIDTH}px; height:${FOOTNOTE_POPOVER_MAX_HEIGHT}px; `
+        + "overflow:hidden; visibility:hidden; pointer-events:none;";
+      document.body.appendChild(footnoteStagingHost);
+      const stagingHost = footnoteStagingHost;
+
+      let pendingFootnote: PendingFootnote | null = null;
+
+      footnoteHandler.addEventListener("before-render", ((event: CustomEvent<{ view: FoliateView }>) => {
+        if (cancelled || !pendingFootnote) return;
+        const nestedView = event.detail.view;
+        pendingFootnote.nestedView = nestedView;
+        nestedView.style.display = "block";
+        nestedView.style.width = `${FOOTNOTE_CONTENT_WIDTH}px`;
+        nestedView.style.height = `${FOOTNOTE_POPOVER_MAX_HEIGHT}px`;
+        stagingHost.appendChild(nestedView);
+        // `view.open(book)` (awaited inside FootnoteHandler just before this
+        // event) has already resolved, so the renderer exists and is fully
+        // opened — safe to configure before goTo() loads the fragment into it.
+        // Non-rendering attributes first, `flow` last, so only one reflow
+        // happens (mirrors applyReflowLayout's ordering, see reader-theme.ts).
+        nestedView.renderer?.setAttribute("gap", "0%");
+        nestedView.renderer?.setAttribute("margin", "0%");
+        nestedView.renderer?.setStyles?.(getFootnoteCSS(readerSettingsRef.current));
+        nestedView.renderer?.setAttribute("flow", "scrolled");
+      }) as EventListener);
+
+      footnoteHandler.addEventListener("render", ((event: CustomEvent<FootnoteRenderEventDetail>) => {
+        const { view: nestedView, hidden, target } = event.detail;
+        if (!pendingFootnote || pendingFootnote.nestedView !== nestedView) return;
+        const current = pendingFootnote;
+        pendingFootnote = null;
+        if (cancelled) {
+          nestedView.remove();
+          return;
+        }
+        // Publishers commonly author footnote asides with an HTML `hidden`
+        // attribute so they render only as a popup and never inline — Foliate
+        // flags that case here but doesn't clear it, so nothing would show.
+        if (hidden) (target as HTMLElement | null)?.removeAttribute?.("hidden");
+        const contents = (nestedView.renderer?.getContents?.() ?? []) as Array<{ doc?: Document }>;
+        const doc = contents[0]?.doc;
+        const measured = doc ? Math.ceil(doc.documentElement.getBoundingClientRect().height) : 0;
+        const height = Math.min(
+          FOOTNOTE_POPOVER_MAX_HEIGHT,
+          Math.max(FOOTNOTE_POPOVER_MIN_HEIGHT, measured || FOOTNOTE_POPOVER_MIN_HEIGHT),
+        );
+        nestedView.style.height = `${height}px`;
+        if (footnoteRequestRef.current !== current.token) {
+          // Superseded by a later click before this one finished rendering.
+          nestedView.remove();
+          return;
+        }
+        setFootnote({
+          x: current.x,
+          y: current.y,
+          marker: current.marker,
+          href: current.href,
+          contentHost: nestedView,
+          contentHeight: height,
+        });
+      }) as EventListener);
 
       const view = document.createElement("foliate-view") as FoliateView;
       activeView = view;
@@ -488,6 +628,36 @@ export function useFoliateView({
         const chapterIndex = findCurrentChapterIndex(chaptersRef.current, tocItem);
         if (chapterIndex !== -1) setCurrentChapterIndex(chapterIndex);
         if (bookId && cfi) queueReadingProgress(bookId, nextProgress, cfi);
+      }) as EventListener);
+
+      // FootnoteHandler.handle() calls event.preventDefault() itself, and
+      // only when it recognizes `a` as a footnote/biblioref/glossref
+      // reference (by epub:type, role, or the "superscript near a backlink"
+      // heuristic) — every other internal link is untouched and falls
+      // through to Foliate's own default #handleLinks jump, exactly as today.
+      view.addEventListener("link", ((event: CustomEvent<FootnoteLinkEventDetail>) => {
+        const handled = footnoteHandler.handle(view.book, event);
+        if (!handled) return;
+        const { a, href } = event.detail;
+        const rect = a.getBoundingClientRect();
+        const frame = a.ownerDocument?.defaultView?.frameElement as HTMLElement | null;
+        const frameRect = frame?.getBoundingClientRect();
+        const token = ++footnoteRequestRef.current;
+        pendingFootnote = {
+          token,
+          x: rect.left + (frameRect?.left ?? 0),
+          y: rect.bottom + (frameRect?.top ?? 0) + 6,
+          marker: a.textContent?.trim() ?? "",
+          href,
+          nestedView: null,
+        };
+        setFootnote(null);
+        handled.catch((error) => {
+          logIgnoredError("reader.footnote-render-failed", error);
+          if (cancelled || footnoteRequestRef.current !== token) return;
+          pendingFootnote = null;
+          view.goTo(href).catch(() => {});
+        });
       }) as EventListener);
 
       view.history.addEventListener("index-change", () => {
@@ -704,6 +874,11 @@ export function useFoliateView({
         viewRef.current.remove();
         viewRef.current = null;
       }
+      // Only `.remove()`, never `.close()` — the staging host's nested view(s)
+      // share the main view's `book` instance, and closing one closes it for
+      // both (see View.close() in view.js).
+      footnoteStagingHost?.remove();
+      setFootnote(null);
     };
     // PDFs select their renderer from `pdf-mode` during open; EPUBs relayout live.
     // eslint-disable-next-line react-hooks/exhaustive-deps

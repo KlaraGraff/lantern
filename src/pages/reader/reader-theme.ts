@@ -212,6 +212,32 @@ export function getReaderCSS(
   `;
 }
 
+// Styles for the footnote popover's nested foliate-view. It has no font-size
+// control of its own, so this fixes a compact size/line-height instead of
+// following `getReaderCSS`'s reader-configured ones.
+export function getFootnoteCSS(settings: ReaderSettingsState): string {
+  const themeColors = getThemeStyles(settings.theme, settings.customTheme);
+  const fontFamily = getFontFamily(settings.font);
+  return `
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      background: transparent !important;
+    }
+    body {
+      color: ${themeColors.text} !important;
+      font-family: ${fontFamily} !important;
+      font-size: 13.5px !important;
+      line-height: 1.6 !important;
+    }
+    a { color: ${themeColors.text}; }
+    img, svg, video {
+      max-width: 100% !important;
+      height: auto !important;
+    }
+  `;
+}
+
 export function applyReflowLayout(
   view: LayoutView,
   settings: ReaderSettingsState,

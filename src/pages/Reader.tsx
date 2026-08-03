@@ -33,6 +33,7 @@ import OcrReaderHud from "../components/OcrReaderHud";
 import DictionaryPanel from "../components/DictionaryPanel";
 import TranslationPopover from "../components/TranslationPopover";
 import ExplainPopover from "../components/ExplainPopover";
+import FootnotePopover, { type FootnotePopoverData } from "../components/FootnotePopover";
 import TableOfContents from "../components/TableOfContents";
 import { parseTocSavedState, type TocSavedState } from "../components/toc-state";
 import TextBookReader from "../components/TextBookReader";
@@ -280,6 +281,7 @@ export default function Reader() {
     interaction: ReaderInteraction;
     action: { name: string; prompt: string };
   } | null>(null);
+  const [footnote, setFootnote] = useState<FootnotePopoverData | null>(null);
   const {
     readerSettings,
     setReaderSettings,
@@ -1349,6 +1351,7 @@ export default function Reader() {
     setActiveVocabCfi,
     setSidePanel,
     setContextMenu,
+    setFootnote,
   });
 
   useReaderNavigation({
@@ -2244,6 +2247,22 @@ export default function Reader() {
             : undefined}
           cfi={translation.cfi}
           onClose={() => setTranslation(null)}
+        />
+      )}
+
+      {footnote && (
+        <FootnotePopover
+          x={footnote.x}
+          y={footnote.y}
+          marker={footnote.marker}
+          href={footnote.href}
+          contentHost={footnote.contentHost}
+          contentHeight={footnote.contentHeight}
+          onClose={() => setFootnote(null)}
+          onJumpToSource={() => {
+            viewRef.current?.goTo(footnote.href).catch(() => {});
+            setFootnote(null);
+          }}
         />
       )}
 
