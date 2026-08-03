@@ -1251,9 +1251,16 @@ mod tests {
         let rule =
             set_word_mark_rule_enabled_inner("book", "Running", true, Some("lookup"), &db, &sync)
                 .unwrap();
-        let exception =
-            set_word_mark_exception_inner("book", "Running", "textloc:v2:10:17", true, false, &db, &sync)
-                .unwrap();
+        let exception = set_word_mark_exception_inner(
+            "book",
+            "Running",
+            "textloc:v2:10:17",
+            true,
+            false,
+            &db,
+            &sync,
+        )
+        .unwrap();
         {
             let conn = db.conn.lock().unwrap();
             conn.execute(
@@ -1265,7 +1272,8 @@ mod tests {
         sync.set_should_queue(true);
 
         let canonical =
-            ensure_word_mark_rule_inner("book", "Running", Some("lookup"), false, &db, &sync).unwrap();
+            ensure_word_mark_rule_inner("book", "Running", Some("lookup"), false, &db, &sync)
+                .unwrap();
 
         let conn = db.reader();
         let stored: (String, String, i64) = conn
@@ -1298,12 +1306,26 @@ mod tests {
         set_word_mark_rule_enabled_inner("book", "Running", true, Some("lookup"), &db, &sync)
             .unwrap();
 
-        let excluded =
-            set_word_mark_exception_inner("book", "Running", "epubcfi(/6/4!)", true, false, &db, &sync)
-                .unwrap();
-        let restored =
-            set_word_mark_exception_inner("book", "Running", "epubcfi(/6/4!)", false, false, &db, &sync)
-                .unwrap();
+        let excluded = set_word_mark_exception_inner(
+            "book",
+            "Running",
+            "epubcfi(/6/4!)",
+            true,
+            false,
+            &db,
+            &sync,
+        )
+        .unwrap();
+        let restored = set_word_mark_exception_inner(
+            "book",
+            "Running",
+            "epubcfi(/6/4!)",
+            false,
+            false,
+            &db,
+            &sync,
+        )
+        .unwrap();
 
         assert!(excluded.excluded);
         assert!(!restored.excluded);
@@ -1352,8 +1374,16 @@ mod tests {
         let (_dir, db, sync) = setup();
         set_word_mark_rule_enabled_inner("book", "Running", true, Some("lookup"), &db, &sync)
             .unwrap();
-        set_word_mark_exception_inner("book", "Running", "textloc:v2:10:17", true, false, &db, &sync)
-            .unwrap();
+        set_word_mark_exception_inner(
+            "book",
+            "Running",
+            "textloc:v2:10:17",
+            true,
+            false,
+            &db,
+            &sync,
+        )
+        .unwrap();
         set_lookup_occurrence_mark_inner("book", "Elsewhere", "textloc:v2:30:39", true, &db, &sync)
             .unwrap();
         sync.set_should_queue(true);

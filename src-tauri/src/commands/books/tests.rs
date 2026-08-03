@@ -1681,7 +1681,10 @@ fn delete_book_returns_its_pages_to_the_file() {
     let pages_after: i64 = conn
         .query_row("PRAGMA page_count", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(free_pages, 0, "delete left {free_pages} free pages stranded");
+    assert_eq!(
+        free_pages, 0,
+        "delete left {free_pages} free pages stranded"
+    );
     assert!(
         pages_after < pages_with_book,
         "file did not shrink: {pages_with_book} pages before delete, {pages_after} after"

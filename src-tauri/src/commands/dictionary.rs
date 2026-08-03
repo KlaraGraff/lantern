@@ -75,7 +75,11 @@ pub(crate) fn first_sense(explain: &str) -> String {
         let without_pos = group
             .split_once(['.', '．'])
             .map(|(head, rest)| {
-                if head.chars().count() <= 4 && head.chars().all(|c| c.is_ascii_alphabetic() || c.is_ascii_digit()) {
+                if head.chars().count() <= 4
+                    && head
+                        .chars()
+                        .all(|c| c.is_ascii_alphabetic() || c.is_ascii_digit())
+                {
                     rest
                 } else {
                     group
@@ -179,13 +183,18 @@ mod tests {
 
     #[test]
     fn first_sense_drops_the_part_of_speech_marker() {
-        assert_eq!(first_sense("n. 多伦多（加拿大城市）"), "多伦多（加拿大城市）");
+        assert_eq!(
+            first_sense("n. 多伦多（加拿大城市）"),
+            "多伦多（加拿大城市）"
+        );
     }
 
     #[test]
     fn first_sense_takes_the_leading_sense_of_the_first_group() {
         assert_eq!(
-            first_sense("v. 羡慕，忌妒；向往，渴望（别人的东西）; n. 妒忌，羡慕；令人羡慕的人（或事物）"),
+            first_sense(
+                "v. 羡慕，忌妒；向往，渴望（别人的东西）; n. 妒忌，羡慕；令人羡慕的人（或事物）"
+            ),
             "羡慕，忌妒",
         );
         assert_eq!(

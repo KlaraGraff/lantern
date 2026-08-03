@@ -336,7 +336,11 @@ pub fn delete_custom_font(
     };
     let path = font_dir.join(&file_name);
     let staged_path = if path.is_file() {
-        let staged = font_dir.join(format!(".delete-{}-{}.tmp", file_name, uuid::Uuid::new_v4()));
+        let staged = font_dir.join(format!(
+            ".delete-{}-{}.tmp",
+            file_name,
+            uuid::Uuid::new_v4()
+        ));
         fs::rename(&path, &staged)?;
         Some(staged)
     } else {
@@ -358,7 +362,12 @@ pub fn delete_custom_font(
             params![id, now, device],
         )?;
         clear_marker_style_font(tx, &id)?;
-        crate::sync::merge::insert_tombstone(tx, crate::sync::merge::entity::CUSTOM_FONT, &id, now)?;
+        crate::sync::merge::insert_tombstone(
+            tx,
+            crate::sync::merge::entity::CUSTOM_FONT,
+            &id,
+            now,
+        )?;
         events.push(EventBody::CustomFontDelete { id: id.clone() });
         Ok(())
     });

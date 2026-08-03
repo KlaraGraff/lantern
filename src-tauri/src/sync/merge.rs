@@ -3783,19 +3783,37 @@ mod tests {
         let mut conn = open_db();
         apply_all(
             &mut conn,
-            &[ev(2_000, "dev-a", setting_event(None, "font_family", FONT_ID))],
+            &[ev(
+                2_000,
+                "dev-a",
+                setting_event(None, "font_family", FONT_ID),
+            )],
         );
-        assert_eq!(setting_value(&conn, "font_family").as_deref(), Some(FONT_ID));
+        assert_eq!(
+            setting_value(&conn, "font_family").as_deref(),
+            Some(FONT_ID)
+        );
 
         apply_all(
             &mut conn,
-            &[ev(1_000, "dev-b", setting_event(None, "font_family", "system"))],
+            &[ev(
+                1_000,
+                "dev-b",
+                setting_event(None, "font_family", "system"),
+            )],
         );
-        assert_eq!(setting_value(&conn, "font_family").as_deref(), Some(FONT_ID));
+        assert_eq!(
+            setting_value(&conn, "font_family").as_deref(),
+            Some(FONT_ID)
+        );
 
         apply_all(
             &mut conn,
-            &[ev(3_000, "dev-b", setting_event(None, "font_family", "system"))],
+            &[ev(
+                3_000,
+                "dev-b",
+                setting_event(None, "font_family", "system"),
+            )],
         );
         assert_eq!(
             setting_value(&conn, "font_family").as_deref(),
@@ -3811,8 +3829,11 @@ mod tests {
     fn setting_set_skips_non_whitelisted_keys_without_erroring() {
         let mut conn = open_db();
         let tx = conn.transaction().unwrap();
-        apply_event(&tx, &ev(1_000, "dev-a", setting_event(None, "theme", "dark")))
-            .expect("non-whitelisted key must not error");
+        apply_event(
+            &tx,
+            &ev(1_000, "dev-a", setting_event(None, "theme", "dark")),
+        )
+        .expect("non-whitelisted key must not error");
         apply_event(
             &tx,
             &ev(1_000, "dev-a", setting_event(Some("b1"), "fontSize", "22")),
@@ -3837,7 +3858,11 @@ mod tests {
         }
         apply_all(
             &mut conn,
-            &[ev(2_000, "dev-a", setting_event(Some("gone"), "font", FONT_ID))],
+            &[ev(
+                2_000,
+                "dev-a",
+                setting_event(Some("gone"), "font", FONT_ID),
+            )],
         );
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM book_settings", [], |row| row.get(0))

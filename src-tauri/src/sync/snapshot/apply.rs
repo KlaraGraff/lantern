@@ -1568,11 +1568,7 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     })?;
     for row in rows {
         let row = row?;
-        let key = format!(
-            "{}:{}",
-            row.book_id.as_deref().unwrap_or_default(),
-            row.key
-        );
+        let key = format!("{}:{}", row.book_id.as_deref().unwrap_or_default(), row.key);
         state.book_settings.insert(key, row);
     }
     drop(stmt);
