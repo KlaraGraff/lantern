@@ -563,9 +563,11 @@ impl LanternMcpHandler {
         )?]))
     }
 
+    // Reading vocabulary out is a read: it returns the same rows
+    // `query_vocabulary` already returns, only in re-importable form. The write
+    // switch guards changes to the library, so it does not apply here.
     #[tool(description = "Return a complete Lantern vocabulary backup as structured JSON.")]
     pub async fn export_vocabulary(&self) -> Result<CallToolResult, ErrorData> {
-        require_sync(self)?;
         let backup = vocab::export_vocab_backup_inner(&self.state.db)
             .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
         Ok(CallToolResult::success(vec![ContentBlock::json(&backup)?]))

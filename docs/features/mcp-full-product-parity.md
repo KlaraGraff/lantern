@@ -22,7 +22,7 @@ MCP never returns API keys, OAuth tokens, or other plaintext credentials.
 The server lists its complete catalog in one `tools/list` response. There are
 exactly 29 tools.
 
-### Read context (11)
+### Read context (12)
 
 | Tool | Data returned |
 | --- | --- |
@@ -37,8 +37,11 @@ exactly 29 tools.
 | `query_word_marks` | Whole-book rules, enabled state, exceptions, and occurrence marks. |
 | `query_chats` | Chats, messages, scope, sources, citations, grounding, and failure state. |
 | `get_language_profile` | Manual level, combined profile, exam evidence, and history. |
+| `export_vocabulary` | The same vocabulary rows `query_vocabulary` returns, in re-importable backup form. |
 
 Reading progress is part of `query_books`; it is not a separate tool.
+`export_vocabulary` reads rows back out and changes nothing, so it sits with
+the reads rather than behind the write switch.
 
 ### Source action (1)
 
@@ -51,7 +54,7 @@ The app watcher uses the same reader-window path as saved notes and vocabulary.
 There is no MCP session, heartbeat, ownership, acknowledgement, or retry
 protocol. If Lantern is not running, the request remains unconfirmed.
 
-### Writes behind `mcp_write_enabled` (17)
+### Writes behind `mcp_write_enabled` (16)
 
 | Tool | Effect |
 | --- | --- |
@@ -64,7 +67,6 @@ protocol. If Lantern is not running, the request remains unconfirmed.
 | `delete_annotations` | Permanently deletes bookmarks, highlights, or notes. |
 | `save_vocabulary` | Creates or edits vocabulary, mastery, and FSRS review results. |
 | `delete_vocabulary` | Permanently deletes vocabulary and its review state. |
-| `export_vocabulary` | Returns vocabulary export content. |
 | `import_vocabulary` | Previews or imports bounded JSON/CSV data with `skip`, `merge`, or `overwrite` conflict handling. Merge preserves conflicting local entries and imports nonconflicting entries. |
 | `save_word_forms` | Creates or replaces explicitly supplied word-form sets. |
 | `delete_word_forms` | Permanently deletes word-form sets. |
@@ -104,7 +106,14 @@ task cancellation.
 
 ## Verification contract
 
-The server contract test asserts the exact 29 tool names. Focused tests cover
-every tool schema, write-switch rejection for every write, exact one-time
-approval binding for permanent deletion and destructive overwrite, and the
-unconfirmed `open_in_reader` result when no app-side notify path is available.
+The server contract test asserts the exact 29 tool names.
+`every_write_tool_checks_the_write_switch` calls all 16 writes by name with
+well-formed arguments and requires each to be rejected while the switch is off,
+and requires `export_vocabulary` to succeed while it is off. Further focused
+tests cover every tool schema, exact one-time approval binding for permanent
+deletion and destructive overwrite, and the unconfirmed `open_in_reader` result
+when no app-side notify path is available.
+
+`tests/mcp_binary.rs` runs the real `lantern mcp` subprocess and asserts a
+client pinned to protocol version 2024-11-05 still completes the handshake,
+which is what guards an rmcp upgrade against silently dropping older clients.

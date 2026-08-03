@@ -160,7 +160,7 @@ Lantern ships an **MCP server**. Switch it on and AI clients like Claude Code or
 | Your learning record | Vocabulary, mastery state, statistics, lookup history, word-form marks |
 | What you left behind | Highlights, bookmarks, notes, in-book chat history, whole-book and chapter summaries |
 
-29 tools in all: 11 read-only context queries, one **Open in reader** action, and 17 write tools. Read-only by default; **write access — importing books, deleting them, creating collections — is a separate switch that ships off**, because handing over your data and handing over control are two different decisions and should not be bundled. Deletion and destructive imports require confirmation for that exact operation, and MCP never asks Lantern to call a model on an AI client's behalf.
+29 tools in all: 12 read-only context queries, one **Open in reader** action, and 16 write tools. Read-only by default; **write access — importing books, deleting them, creating collections — is a separate switch that ships off**, because handing over your data and handing over control are two different decisions and should not be bundled. Deletion and destructive imports require confirmation for that exact operation, and MCP never asks Lantern to call a model on an AI client's behalf.
 
 So you can ask, from a terminal: "pick three books from my library I could actually finish at my English level," or "turn everything I marked *learning* this month into a list with example sentences." It reads your real reading record, not a version of it you described from memory.
 

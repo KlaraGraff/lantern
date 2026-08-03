@@ -133,6 +133,13 @@ fn lantern_mcp_initialize_lists_tools_and_calls_query_collections() {
     let init_resp: serde_json::Value =
         serde_json::from_str(&init_line).expect("parse initialize response");
     assert_eq!(init_resp["id"], serde_json::json!(1));
+    // The handshake above announces 2024-11-05. Real clients pin older protocol
+    // versions for a long time, so an rmcp upgrade that quietly drops one would
+    // break them; this is the guard that catches it here instead of in the wild.
+    assert_eq!(
+        init_resp["result"]["protocolVersion"], "2024-11-05",
+        "server no longer speaks the protocol version the client asked for"
+    );
     assert_eq!(init_resp["result"]["serverInfo"]["name"], "lantern");
     assert!(init_resp["result"]["capabilities"]["tools"].is_object());
 

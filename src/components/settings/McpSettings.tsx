@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
-import { Check, Copy, ShieldAlert, PenLine } from "lucide-react";
+import { Check, Copy, MessageSquareText, ShieldAlert, PenLine } from "lucide-react";
 import Toggle from "../ui/Toggle";
 import type { SettingsProps } from "./types";
 
@@ -21,7 +21,7 @@ export default function McpSettings(_props: SettingsProps) {
   const [busy, setBusy] = useState<ClientId | null>(null);
   const [writeBusy, setWriteBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"prompt" | "json" | null>(null);
   const [snippet, setSnippet] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -67,11 +67,19 @@ export default function McpSettings(_props: SettingsProps) {
     }
   };
 
-  const onCopy = () => {
+  const onCopy = (which: "prompt" | "json") => {
     if (!snippet) return;
-    navigator.clipboard.writeText(snippet).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+    // The prompt route hands the AI the same facts a human would have to find
+    // by hand — where the binary is, and the JSON shape its own client expects.
+    const text = which === "json"
+      ? snippet
+      : t("settings.mcp.setupPrompt", {
+          path: status?.binary_path ?? "",
+          json: snippet,
+        });
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(which);
+      setTimeout(() => setCopied(null), 1500);
     }).catch((err) => {
       setError(err instanceof Error ? err.message : String(err));
     });
@@ -144,23 +152,66 @@ export default function McpSettings(_props: SettingsProps) {
 
       <div className="h-px bg-border-light" />
 
-      {/* Custom MCP Server */}
-      <div className="flex items-center justify-between pt-4 pb-2">
+      {/* Other AI clients */}
+      <div className="pt-4">
         <p className="text-[13px] font-semibold text-text-primary">
-          {t("settings.mcp.customHeader")}
+          {t("settings.mcp.otherClients")}
         </p>
-        <button
-          type="button"
-          onClick={onCopy}
-          className="flex items-center gap-1.5 text-[12px] font-medium text-text-secondary border border-border rounded-md px-2.5 py-1 hover:bg-bg-input cursor-pointer transition-colors"
-        >
-          {copied ? <Check size={12} /> : <Copy size={12} />}
-          {copied ? t("settings.mcp.copied") : t("settings.mcp.copyConfig")}
-        </button>
+        <p className="text-[12px] text-text-muted leading-[1.5] mt-1">
+          {t("settings.mcp.otherClientsSub")}
+        </p>
       </div>
-      <p className="text-[12px] text-text-muted leading-[1.5]">
-        {t("settings.mcp.customSub")}
-      </p>
+
+      {/* Route 1 — hand the whole setup to the AI itself */}
+      <div className="border border-border rounded-lg px-3.5 py-3 mt-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[13px] font-medium text-text-primary">
+              {t("settings.mcp.promptTitle")}
+            </p>
+            <p className="text-[12px] text-text-muted leading-[1.5] mt-0.5">
+              {t("settings.mcp.promptHint")}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onCopy("prompt")}
+            disabled={!snippet}
+            className="flex items-center gap-1.5 shrink-0 text-[12px] font-medium text-white bg-accent rounded-md px-2.5 py-1.5 hover:opacity-90 disabled:opacity-50 cursor-pointer transition-opacity"
+          >
+            {copied === "prompt" ? <Check size={12} /> : <MessageSquareText size={12} />}
+            {copied === "prompt" ? t("settings.mcp.copied") : t("settings.mcp.copyPrompt")}
+          </button>
+        </div>
+      </div>
+
+      {/* Route 2 — the raw config, for clients that cannot edit their own files */}
+      <div className="border border-border rounded-lg px-3.5 py-3 mt-2">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[13px] font-medium text-text-primary">
+              {t("settings.mcp.manualTitle")}
+            </p>
+            <p className="text-[12px] text-text-muted leading-[1.5] mt-0.5">
+              {t("settings.mcp.manualHint")}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onCopy("json")}
+            disabled={!snippet}
+            className="flex items-center gap-1.5 shrink-0 text-[12px] font-medium text-text-secondary border border-border rounded-md px-2.5 py-1.5 hover:bg-bg-input disabled:opacity-50 cursor-pointer transition-colors"
+          >
+            {copied === "json" ? <Check size={12} /> : <Copy size={12} />}
+            {copied === "json" ? t("settings.mcp.copied") : t("settings.mcp.copyJson")}
+          </button>
+        </div>
+        {snippet && (
+          <pre className="text-[11px] leading-[1.6] font-mono text-text-secondary bg-bg-input rounded-md px-3 py-2.5 mt-2.5 overflow-x-auto">
+            {snippet}
+          </pre>
+        )}
+      </div>
 
       {/* Localhost-trust caveat */}
       <div className="flex items-start gap-2.5 bg-accent-bg/40 rounded-lg px-3 py-2.5 mt-4">

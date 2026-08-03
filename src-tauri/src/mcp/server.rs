@@ -32,6 +32,11 @@ use super::approval::{
 };
 use super::state::McpState;
 
+/// MRTR is the multi-round tool response added in MCP 2026-07-28: the server
+/// answers a `tools/call` with `input_required` instead of a result, the client
+/// renders the form, and the client calls the tool again carrying the answer.
+/// Lantern uses it to ask for deletion confirmation inside the AI client. A
+/// client that does not support it falls back to a dialog in the Lantern window.
 const MRTR_APPROVAL_INPUT_ID: &str = "lantern_high_risk_confirmation";
 
 #[derive(Clone)]
@@ -1422,22 +1427,75 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn write_tools_keep_existing_gate() {
+    async fn every_write_tool_checks_the_write_switch() {
         let (_dir, state) = seeded();
         let handler = LanternMcpHandler::new(state);
-        let batch_error = handler
-            .delete_books(Parameters(
-                crate::mcp::tools::library_batch::DeleteBooksArgs {
-                    book_ids: vec!["b1".to_string()],
-                    preserve_notes: false,
-                },
-            ))
+        // Every write tool, driven the way a client drives it: by name and raw
+        // arguments, through the same entry point that runs the approval gate.
+        // The arguments below are well-formed on purpose — a schema rejection
+        // would pass this test without ever reaching the switch.
+        let writes = [
+            ("import_books", json!({ "file_paths": ["/tmp/x.epub"] })),
+            (
+                "update_books",
+                json!({ "action": "metadata", "book_id": "b1", "title": "Renamed" }),
+            ),
+            ("delete_books", json!({ "book_ids": ["b1"] })),
+            (
+                "update_collections",
+                json!({ "action": "create", "name": "New collection" }),
+            ),
+            ("delete_collections", json!({ "ids": ["c1"] })),
+            (
+                "save_annotations",
+                json!({ "action": "create_bookmark", "book_id": "b1", "cfi": "epubcfi(/6/2)" }),
+            ),
+            (
+                "delete_annotations",
+                json!({ "kind": "bookmark", "ids": ["bm1"] }),
+            ),
+            (
+                "save_vocabulary",
+                json!({ "action": "create", "book_id": "b1", "word": "w", "definition": "d" }),
+            ),
+            ("delete_vocabulary", json!({ "ids": ["v1"] })),
+            (
+                "import_vocabulary",
+                json!({ "data": "[]", "format": "json", "mode": "preview" }),
+            ),
+            (
+                "save_word_forms",
+                json!({ "word": "run", "forms": ["ran", "running"] }),
+            ),
+            ("delete_word_forms", json!({ "words": ["run"] })),
+            (
+                "update_word_marks",
+                json!({ "action": "rule", "book_id": "b1", "word": "w", "enabled": true }),
+            ),
+            ("clear_word_marks", json!({ "book_id": "b1" })),
+            ("save_chats", json!({ "action": "create", "book_id": "b1" })),
+            ("delete_chats", json!({ "ids": ["ch1"] })),
+        ];
+        assert_eq!(writes.len(), 16, "every write tool must be covered here");
+
+        for (name, arguments) in writes {
+            let error = ServerHandler::call_tool(
+                &handler,
+                call(name, arguments),
+                request_context(ProtocolVersion::V_2026_07_28, false),
+            )
             .await
             .unwrap_err();
-        assert!(batch_error.message.contains("Write access"));
+            assert!(
+                error.message.contains("Write access"),
+                "{name} did not check the write switch: {}",
+                error.message
+            );
+        }
 
-        let export_error = handler.export_vocabulary().await.unwrap_err();
-        assert!(export_error.message.contains("Write access"));
+        // Exporting vocabulary only reads rows back out, so the switch must not
+        // stand in its way.
+        handler.export_vocabulary().await.unwrap();
     }
 
     #[tokio::test]
