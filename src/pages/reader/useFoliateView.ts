@@ -25,6 +25,7 @@ import { expandWordForms } from "../../components/word-forms";
 import type { Highlight } from "../../hooks/useBookmarks";
 import type { Book } from "../../hooks/useBooks";
 import { logIgnoredError } from "../../utils/logIgnoredError";
+import { loadFoliateModules } from "./foliate-modules";
 import {
   logReaderDiagnostic,
   readerEnvironmentSnapshot,
@@ -111,22 +112,12 @@ interface FootnoteHandlerLike extends EventTarget {
   ): Promise<void> | undefined;
 }
 
-let footnoteHandlerCtorPromise: Promise<new () => FootnoteHandlerLike> | null = null;
-
 // footnotes.js ships alongside view.js in public/foliate-js (see its
-// LANTERN.md) and is loaded the same way — a runtime URL outside the Vite
-// module graph, transpiled into dist/foliate-js by build-reader-assets.mjs.
-// The specifier is held in a variable, not a string literal, so `tsc` infers
-// `Promise<any>` for the dynamic import instead of trying to resolve
-// "/foliate-js/footnotes.js" as a TS module; `@vite-ignore` stops Vite's
-// bundler from warning that it can't statically analyze the same import.
+// LANTERN.md), so it comes in through the module bridge rather than a direct
+// dynamic import — see `loadFoliateModules`.
 function loadFootnoteHandlerCtor(): Promise<new () => FootnoteHandlerLike> {
-  if (!footnoteHandlerCtorPromise) {
-    const footnotesModuleUrl = "/foliate-js/footnotes.js";
-    footnoteHandlerCtorPromise = import(/* @vite-ignore */ footnotesModuleUrl)
-      .then((module) => (module as { FootnoteHandler: new () => FootnoteHandlerLike }).FootnoteHandler);
-  }
-  return footnoteHandlerCtorPromise;
+  return loadFoliateModules()
+    .then((modules) => modules.FootnoteHandler as new () => FootnoteHandlerLike);
 }
 
 // Tracks the click that is currently waiting on the FootnoteHandler's
@@ -397,9 +388,20 @@ export function useFoliateView({
       }
       if (cancelled) return;
 
-      const FootnoteHandlerCtor = await loadFootnoteHandlerCtor();
+      // A footnote handler that won't load costs the popover, not the book:
+      // link clicks fall through to the ordinary in-book jump below, which is
+      // what they did before footnote support existed.
+      let FootnoteHandlerCtor: (new () => FootnoteHandlerLike) | null = null;
+      try {
+        FootnoteHandlerCtor = await loadFootnoteHandlerCtor();
+      } catch (error) {
+        logReaderDiagnostic("reader.open.footnotes-unavailable");
+        logIgnoredError("reader.footnote-handler-load", error);
+      }
       if (cancelled) return;
-      const footnoteHandler: FootnoteHandlerLike = new FootnoteHandlerCtor();
+      const footnoteHandler: FootnoteHandlerLike | null = FootnoteHandlerCtor
+        ? new FootnoteHandlerCtor()
+        : null;
       // Kept permanently off-screen (not just unmounted) rather than created
       // per-click: FootnoteHandler renders into it before React ever sees the
       // click, and Foliate's paginator needs a connected element with real
@@ -414,7 +416,7 @@ export function useFoliateView({
 
       let pendingFootnote: PendingFootnote | null = null;
 
-      footnoteHandler.addEventListener("before-render", ((event: CustomEvent<{ view: FoliateView }>) => {
+      footnoteHandler?.addEventListener("before-render", ((event: CustomEvent<{ view: FoliateView }>) => {
         if (cancelled || !pendingFootnote) return;
         const nestedView = event.detail.view;
         pendingFootnote.nestedView = nestedView;
@@ -433,7 +435,7 @@ export function useFoliateView({
         nestedView.renderer?.setAttribute("flow", "scrolled");
       }) as EventListener);
 
-      footnoteHandler.addEventListener("render", ((event: CustomEvent<FootnoteRenderEventDetail>) => {
+      footnoteHandler?.addEventListener("render", ((event: CustomEvent<FootnoteRenderEventDetail>) => {
         const { view: nestedView, hidden, target } = event.detail;
         if (!pendingFootnote || pendingFootnote.nestedView !== nestedView) return;
         const current = pendingFootnote;
@@ -643,7 +645,7 @@ export function useFoliateView({
       // heuristic) — every other internal link is untouched and falls
       // through to Foliate's own default #handleLinks jump, exactly as today.
       view.addEventListener("link", ((event: CustomEvent<FootnoteLinkEventDetail>) => {
-        const handled = footnoteHandler.handle(view.book, event);
+        const handled = footnoteHandler?.handle(view.book, event);
         if (!handled) {
           // Not a footnote — an ordinary in-book cross-reference link, which
           // Foliate now sends on to its own default `goTo`. That's a real

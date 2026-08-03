@@ -14,6 +14,7 @@ import {
   type SearchChapterGroup,
 } from "../pages/reader/book-search";
 import type { FoliateView } from "../pages/reader/foliate-types";
+import { loadFoliateModules } from "../pages/reader/foliate-modules";
 
 interface BookSearchPanelProps {
   open: boolean;
@@ -27,8 +28,6 @@ interface BookSearchPanelProps {
 
 /** How long typing pauses before a query actually runs — searching a whole book is expensive. */
 const SEARCH_DEBOUNCE_MS = 400;
-
-const CFI_MODULE_URL = "/foliate-js/epubcfi.js";
 
 const SCOPES: BookSearchScope[] = ["book", "highlights", "vocab"];
 
@@ -82,14 +81,14 @@ export default function BookSearchPanel({
     setLastClickedCfi(null);
   }, [bookId]);
 
-  // epubcfi.js has no TS types and is loaded the way the reader already loads
-  // it elsewhere (highlight-ranges.ts) — a runtime dynamic import of the
-  // vendored module, not a static one Vite could resolve.
+  // epubcfi.js lives in /public, so it comes in through the module bridge the
+  // reader already uses elsewhere (highlight-ranges.ts) rather than a direct
+  // dynamic import, which Vite's dev server refuses to serve.
   useEffect(() => {
     let cancelled = false;
-    import(/* @vite-ignore */ CFI_MODULE_URL)
-      .then((mod) => {
-        if (!cancelled) setCfiModule(mod as unknown as CfiModule);
+    loadFoliateModules()
+      .then((modules) => {
+        if (!cancelled) setCfiModule(modules.epubcfi);
       })
       .catch((error: unknown) => logIgnoredError("reader.book-search-cfi", error));
     return () => {

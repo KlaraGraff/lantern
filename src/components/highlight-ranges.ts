@@ -1,17 +1,11 @@
 import { parseTextLocation, textLocation } from "./text-book-location";
+import { loadFoliateModules } from "../pages/reader/foliate-modules";
+import type { CfiModule } from "../pages/reader/foliate-modules";
 
-export interface CfiModule {
-  parse(cfi: string): unknown;
-  collapse(cfi: string | unknown, toEnd?: boolean): unknown;
-  compare(left: string | unknown, right: string | unknown): number;
-}
+export type { CfiModule };
 
-let cfiModulePromise: Promise<CfiModule> | null = null;
-const CFI_MODULE_URL = "/foliate-js/epubcfi.js";
-
-function loadCfiModule() {
-  cfiModulePromise ??= import(/* @vite-ignore */ CFI_MODULE_URL) as Promise<CfiModule>;
-  return cfiModulePromise;
+function loadCfiModule(): Promise<CfiModule> {
+  return loadFoliateModules().then((modules) => modules.epubcfi);
 }
 
 export interface StoredHighlightLocation {
