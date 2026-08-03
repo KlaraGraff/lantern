@@ -182,6 +182,7 @@ fn spawn_routed_stream(
     messages: Vec<ChatMessage>,
     event_name: String,
     max_tokens: Option<u32>,
+    purpose: crate::ai::router::AiRequestPurpose,
     retry: crate::ai::router::AiRetryMode,
     request_id: String,
 ) {
@@ -196,7 +197,7 @@ fn spawn_routed_stream(
             &messages,
             &event_name,
             max_tokens,
-            crate::ai::router::AiRequestPurpose::Chat,
+            purpose,
             retry,
             Some(&request_id),
         )
@@ -1339,6 +1340,9 @@ pub async fn ai_custom_action(
         messages,
         format!("ai-custom-action-chunk-{request_id}"),
         Some(3_072),
+        // The instruction is the reader's own, written by them in settings, so
+        // it answers to their reasoning setting exactly like the chat does.
+        crate::ai::router::AiRequestPurpose::Chat,
         crate::ai::router::retry_mode(retry),
         request_id,
     );
@@ -1617,6 +1621,7 @@ pub async fn ai_lookup(
         messages,
         event_name,
         max_tokens,
+        crate::ai::router::AiRequestPurpose::Utility,
         crate::ai::router::retry_mode(retry),
         request_id,
     );
@@ -1712,6 +1717,7 @@ pub async fn ai_explain(
         messages,
         event_name,
         None,
+        crate::ai::router::AiRequestPurpose::Utility,
         crate::ai::router::retry_mode(retry),
         request_id,
     );
@@ -1770,6 +1776,7 @@ pub async fn ai_generate_title(
         messages,
         event_name,
         Some(32),
+        crate::ai::router::AiRequestPurpose::Utility,
         crate::ai::router::AiRetryMode::Automatic,
         request_id,
     );
@@ -3046,6 +3053,7 @@ pub async fn ai_chat(
             api_messages,
             event_name,
             None,
+            crate::ai::router::AiRequestPurpose::Chat,
             crate::ai::router::retry_mode(retry),
             request_id,
         );

@@ -183,6 +183,7 @@ export default function LearningCardController({
     modules: {},
   });
   const [loading, setLoading] = useState(true);
+  const [thinking, setThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fromCache, setFromCache] = useState(false);
   const [notes, setNotes] = useState<LearningCardNote[]>([]);
@@ -211,6 +212,7 @@ export default function LearningCardController({
   useEffect(() => {
     setResult({ version: 1, kind: interaction.kind, sourceText: interaction.text, modules: {} });
     setLoading(true);
+    setThinking(false);
     setError(null);
     setFromCache(false);
     const requestId = createUuid();
@@ -252,7 +254,15 @@ export default function LearningCardController({
         unlisten = await listen<LearningCardStreamChunk>(
           `ai-learning-card-chunk-${requestId}`,
           (event) => {
-            if (!active || event.payload.done || !event.payload.delta) return;
+            if (!active || event.payload.done) return;
+            if (!event.payload.delta) {
+              // A model that reasons before it answers sends nothing but
+              // reasoning for as long as it thinks — up to a minute on some.
+              // Saying so beats a spinner that is indistinguishable from a hang.
+              if (event.payload.reasoning_delta) setThinking(true);
+              return;
+            }
+            setThinking(false);
             const streamedModules = parser.push(event.payload.delta);
             if (Object.keys(streamedModules).length === 0) return;
             setResult((current) => ({
@@ -280,6 +290,7 @@ export default function LearningCardController({
         if (!active) return;
         setResult(response);
         setLoading(false);
+        setThinking(false);
         if (interaction.kind === "word") onLookupSuccess?.(interaction);
         const projected = projection(response);
         invoke("save_lookup_record", {
@@ -302,6 +313,7 @@ export default function LearningCardController({
         const key = learningCardErrorKey(message);
         setError(key ? t(key) : message);
         setLoading(false);
+        setThinking(false);
       } finally {
         unlisten?.();
         unlisten = undefined;
@@ -511,6 +523,7 @@ export default function LearningCardController({
         availableWidth={availableWidth}
         maxHeight={initialPosition.maxHeight}
         loading={loading}
+        thinking={thinking}
         error={error}
         notes={notes}
         noteEditorOpen={noteEditorOpen}

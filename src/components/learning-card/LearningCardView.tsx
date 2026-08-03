@@ -24,6 +24,8 @@ interface LearningCardViewProps {
   availableWidth?: number;
   maxHeight?: string | number;
   loading?: boolean;
+  /** The model is reasoning and has not started its answer yet. */
+  thinking?: boolean;
   error?: string | null;
   presentationMode?: boolean;
   notes?: LearningCardNote[];
@@ -58,6 +60,7 @@ export default function LearningCardView({
   availableWidth,
   maxHeight = "75dvh",
   loading = false,
+  thinking = false,
   error = null,
   presentationMode = false,
   notes,
@@ -171,6 +174,12 @@ export default function LearningCardView({
           </div>
         ) : (
           <>
+            {thinking && (
+              <p className="flex items-center gap-1.5 border-b border-border/60 px-4 py-2 text-[11px] text-text-muted">
+                <Loader2 size={11} className="shrink-0 animate-spin" aria-hidden="true" />
+                {t("learningCard.thinking")}
+              </p>
+            )}
             <LearningCardModules
               card={card}
               kind={result.kind}

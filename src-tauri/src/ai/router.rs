@@ -476,9 +476,17 @@ fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<AiProfile> {
 /// unless the profile explicitly opts every feature in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AiRequestPurpose {
+    /// Words the reader wrote themselves — the chat sidebar, a custom action
+    /// they authored. What the model does with them is their business.
     Chat,
+    /// A prompt Lantern wrote and whose shape Lantern dictates: a lookup card,
+    /// a sentence explanation, a chat title, a vocabulary pass.
     Utility,
 }
+
+/// The level that asks a model not to think. OpenAI-compatible endpoints spell
+/// it this way; `anthropic` turns it into a disabled thinking block.
+const NO_REASONING: &str = "none";
 
 /// Whether the caller is asking again on purpose.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -511,12 +519,53 @@ fn cooldown_cutoff(retry: AiRetryMode) -> i64 {
     }
 }
 
+/// The reasoning level to ask for, before the endpoint gets a say.
+///
+/// Sending no field is not the same as asking for no thinking. Left to its own
+/// default a reasoning model thinks about a two-word lookup for the better part
+/// of a minute, and on an OpenAI-compatible endpoint that thinking is billed and
+/// timed like the answer. So a prompt Lantern wrote asks for `none` outright
+/// rather than staying quiet and hoping. (Measured on `deepseek-v4-flash`: one
+/// lookup card took 43.4s and 16.7k reasoning characters with the field unset,
+/// and 8.5s with none of it when the field said `none`.)
+///
+/// Opting every feature in hands those requests back to the reader's own level,
+/// including the case where they set no level at all.
 fn effort_for(profile: &AiProfileView, purpose: AiRequestPurpose) -> Option<&str> {
     if purpose == AiRequestPurpose::Chat || profile.reasoning_effort_all_features {
         profile.reasoning_effort.as_deref()
     } else {
-        None
+        Some(NO_REASONING)
     }
+}
+
+/// Whether an effort is the reader's own setting rather than Lantern's `none`.
+///
+/// What Lantern asked for on its own may be dropped or retried silently. What
+/// the reader chose may not: clearing it or announcing it behind their back
+/// would be reporting a decision they never made.
+fn is_reader_choice(profile: &AiProfile, effort: &str) -> bool {
+    profile.view.reasoning_effort.as_deref() == Some(effort)
+}
+
+/// Whether Lantern's `none` is worth sending to this endpoint.
+///
+/// The stored levels exist only because this endpoint once rejected an effort
+/// and spelled out what it takes instead. Sending a level it did not name would
+/// buy one rejection and one retry on every lookup from then on, so `none` is
+/// dropped and the model is left to its own default — slower, but it answers.
+fn endpoint_may_accept(db: &Db, profile: &AiProfile, effort: &str) -> bool {
+    if is_reader_choice(profile, effort) {
+        return true;
+    }
+    let known = reasoning_effort_options(
+        db,
+        &profile.view.provider,
+        profile.view.base_url.as_deref(),
+        &profile.view.model,
+    )
+    .unwrap_or_default();
+    known.options.is_empty() || known.options.iter().any(|option| option == effort)
 }
 
 fn normalize_reasoning_effort(value: Option<String>) -> AppResult<Option<String>> {
@@ -713,7 +762,11 @@ fn handle_effort_rejection(
     if !options.is_empty() {
         store_effort_hints(db, &base_url, &model, &options);
     }
-    if persist_clear {
+    // Lantern's own `none` was never the reader's decision, so an endpoint that
+    // refuses it costs them nothing beyond the silent retry below: no setting of
+    // theirs is cleared, and there is nothing to tell them about.
+    let reader_choice = is_reader_choice(profile, effort);
+    if persist_clear && reader_choice {
         if let Ok(conn) = db.conn.lock() {
             let _ = conn.execute(
                 "UPDATE ai_profiles SET reasoning_effort = NULL, updated_at = ?1 WHERE id = ?2",
@@ -726,15 +779,17 @@ fn handle_effort_rejection(
         profile.view.id,
         effort
     );
-    let _ = app.emit(
-        "ai-reasoning-effort-cleared",
-        AiReasoningEffortCleared {
-            profile_id: profile.view.id.clone(),
-            profile_label: profile.view.label.clone(),
-            effort: effort.to_string(),
-            options,
-        },
-    );
+    if reader_choice {
+        let _ = app.emit(
+            "ai-reasoning-effort-cleared",
+            AiReasoningEffortCleared {
+                profile_id: profile.view.id.clone(),
+                profile_label: profile.view.label.clone(),
+                effort: effort.to_string(),
+                options,
+            },
+        );
+    }
     true
 }
 
@@ -1120,6 +1175,7 @@ async fn stream_once_with_effort_fallback(
     emitted: Arc<AtomicBool>,
     cancel: &mut watch::Receiver<bool>,
 ) -> AppResult<()> {
+    let effort = effort.filter(|effort| endpoint_may_accept(db, profile, effort));
     let result = stream_once(
         app,
         profile,
@@ -3134,11 +3190,62 @@ mod tests {
 
         assert_eq!(effort_for(&view, AiRequestPurpose::Chat), Some("high"));
         // A vocabulary card or an inline translation should not pay for deep
-        // thinking just because the chat profile asked for it.
-        assert_eq!(effort_for(&view, AiRequestPurpose::Utility), None);
+        // thinking just because the chat profile asked for it — and staying
+        // quiet is not enough, because the model's own default is to think.
+        assert_eq!(
+            effort_for(&view, AiRequestPurpose::Utility),
+            Some(NO_REASONING)
+        );
 
         view.reasoning_effort_all_features = true;
         assert_eq!(effort_for(&view, AiRequestPurpose::Utility), Some("high"));
+    }
+
+    /// A profile with no level of its own still asks Lantern's own prompts not
+    /// to think. That case is the whole point: the reader never touched the
+    /// setting, and the model reasons for forty seconds over one word.
+    #[test]
+    fn an_unconfigured_profile_still_turns_reasoning_off_for_lanterns_own_prompts() {
+        let mut view = profile("deepseek", None);
+        view.reasoning_effort = None;
+        assert_eq!(effort_for(&view, AiRequestPurpose::Chat), None);
+        assert_eq!(
+            effort_for(&view, AiRequestPurpose::Utility),
+            Some(NO_REASONING)
+        );
+
+        // Opting every feature in hands the request back to the reader's
+        // setting, including their decision to set nothing.
+        view.reasoning_effort_all_features = true;
+        assert_eq!(effort_for(&view, AiRequestPurpose::Utility), None);
+    }
+
+    #[test]
+    fn a_gateway_that_listed_its_levels_is_not_asked_for_none_again() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db = Db::init(dir.path()).unwrap();
+        let mut view = profile("custom", Some("https://gateway.example/v1"));
+        view.model = "model-a".into();
+        view.reasoning_effort = None;
+        let profile = AiProfile { view };
+
+        // Nothing learned yet: worth one attempt.
+        assert!(endpoint_may_accept(&db, &profile, NO_REASONING));
+
+        let (base_url, model) =
+            effort_hint_key("custom", Some("https://gateway.example/v1"), "model-a");
+        store_effort_hints(&db, &base_url, &model, &["low".into(), "high".into()]);
+        // This gateway named its levels and `none` was not among them. Sending
+        // it anyway would cost a rejection and a retry on every single lookup.
+        assert!(!endpoint_may_accept(&db, &profile, NO_REASONING));
+        assert!(endpoint_may_accept(&db, &profile, "low"));
+
+        // A level the reader picked is always sent. Dropping it silently would
+        // make their setting a lie; a rejection at least tells them.
+        let mut view = profile.view.clone();
+        view.reasoning_effort = Some("x-high".into());
+        let chosen = AiProfile { view };
+        assert!(endpoint_may_accept(&db, &chosen, "x-high"));
     }
 
     #[test]
