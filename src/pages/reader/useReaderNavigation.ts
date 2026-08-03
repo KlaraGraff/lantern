@@ -20,6 +20,11 @@ interface UseReaderNavigationOptions {
   viewRef: MutableRefObject<FoliateView | null>;
   textReaderNavigateRef: MutableRefObject<((location: string, flash?: boolean) => void) | null>;
   refreshAnnotations(): Promise<void>;
+  /** Format-aware navigate-with-flash, already wired to push a jump-history entry (P1.3). */
+  flashNavigationTarget(cfi: string): Promise<void>;
+  pushJump(location: string | null | undefined, label: string): void;
+  getCurrentLabel(): string;
+  currentCfiRef: MutableRefObject<string | null>;
   setSidePanel: Dispatch<SetStateAction<SidePanel>>;
   setInitialChatId: Dispatch<SetStateAction<string | undefined>>;
 }
@@ -33,6 +38,10 @@ export function useReaderNavigation({
   viewRef,
   textReaderNavigateRef,
   refreshAnnotations,
+  flashNavigationTarget,
+  pushJump,
+  getCurrentLabel,
+  currentCfiRef,
   setSidePanel,
   setInitialChatId,
 }: UseReaderNavigationOptions) {
@@ -50,10 +59,11 @@ export function useReaderNavigation({
       }
       pendingNavigationRef.current = null;
       if (target.cfi && supportsCfiNavigation) {
-        if (isTextBook) textReaderNavigateRef.current?.(target.cfi, true);
-        else await viewRef.current?.goTo(target.cfi);
+        // Pushes a jump-history entry (P1.3) internally.
+        await flashNavigationTarget(target.cfi);
       }
       if (Number.isInteger(target.page) && target.page! >= 0 && !isTextBook) {
+        pushJump(currentCfiRef.current, getCurrentLabel());
         await viewRef.current?.goTo(target.page!);
       }
       if (target.openVocab && supportsCfiNavigation) setSidePanel("vocab");
@@ -90,7 +100,11 @@ export function useReaderNavigation({
   }, [
     bookId,
     bookReady,
+    currentCfiRef,
+    flashNavigationTarget,
+    getCurrentLabel,
     isTextBook,
+    pushJump,
     refreshAnnotations,
     setInitialChatId,
     setSidePanel,

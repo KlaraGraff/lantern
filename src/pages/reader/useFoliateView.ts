@@ -185,7 +185,10 @@ interface UseFoliateViewOptions {
   openLearningInteraction(interaction: ReaderInteraction): void;
   setBookReady: Dispatch<SetStateAction<boolean>>;
   setReaderError: Dispatch<SetStateAction<ReaderOpenError | null>>;
-  setCanGoBack: Dispatch<SetStateAction<boolean>>;
+  /** Jump-history push/fade hooks (P1.3) — see `useJumpHistory`. */
+  pushJump: (location: string | null | undefined, label: string) => void;
+  getCurrentLabel: () => string;
+  notifyLocationChanged: () => void;
   setChapters: Dispatch<SetStateAction<TocChapter[]>>;
   setCurrentChapterIndex: Dispatch<SetStateAction<number>>;
   setCurrentSectionIndex: Dispatch<SetStateAction<number>>;
@@ -305,7 +308,9 @@ export function useFoliateView({
   openLearningInteraction,
   setBookReady,
   setReaderError,
-  setCanGoBack,
+  pushJump,
+  getCurrentLabel,
+  notifyLocationChanged,
   setChapters,
   setCurrentChapterIndex,
   setCurrentSectionIndex,
@@ -317,7 +322,6 @@ export function useFoliateView({
   setContextMenu,
   setFootnote,
 }: UseFoliateViewOptions) {
-  const backButtonTimerRef = useRef<number | null>(null);
   const loadedInteractionDocumentsRef = useRef(new WeakSet<Document>());
   const footnoteRequestRef = useRef(0);
   // Size the reader stylesheet was last written with. Tracked because the
@@ -628,6 +632,9 @@ export function useFoliateView({
         const chapterIndex = findCurrentChapterIndex(chaptersRef.current, tocItem);
         if (chapterIndex !== -1) setCurrentChapterIndex(chapterIndex);
         if (bookId && cfi) queueReadingProgress(bookId, nextProgress, cfi);
+        // Fires for both jumps and ordinary page turns — the return pill's
+        // fade counter (P1.3) only needs to know a location changed, not why.
+        notifyLocationChanged();
       }) as EventListener);
 
       // FootnoteHandler.handle() calls event.preventDefault() itself, and
@@ -637,7 +644,13 @@ export function useFoliateView({
       // through to Foliate's own default #handleLinks jump, exactly as today.
       view.addEventListener("link", ((event: CustomEvent<FootnoteLinkEventDetail>) => {
         const handled = footnoteHandler.handle(view.book, event);
-        if (!handled) return;
+        if (!handled) {
+          // Not a footnote — an ordinary in-book cross-reference link, which
+          // Foliate now sends on to its own default `goTo`. That's a real
+          // jump away from here, so push before it lands (P1.3).
+          pushJump(currentCfiRef.current, getCurrentLabel());
+          return;
+        }
         const { a, href } = event.detail;
         const rect = a.getBoundingClientRect();
         const frame = a.ownerDocument?.defaultView?.frameElement as HTMLElement | null;
@@ -656,24 +669,13 @@ export function useFoliateView({
           logIgnoredError("reader.footnote-render-failed", error);
           if (cancelled || footnoteRequestRef.current !== token) return;
           pendingFootnote = null;
+          // The popover itself failed to render, so this falls back to an
+          // actual navigation (same as the popover's own "jump to source") —
+          // push before it, same as any other jump.
+          pushJump(currentCfiRef.current, getCurrentLabel());
           view.goTo(href).catch(() => {});
         });
       }) as EventListener);
-
-      view.history.addEventListener("index-change", () => {
-        const canGoBack = view.history.canGoBack;
-        setCanGoBack(canGoBack);
-        if (backButtonTimerRef.current !== null) {
-          window.clearTimeout(backButtonTimerRef.current);
-          backButtonTimerRef.current = null;
-        }
-        if (canGoBack) {
-          backButtonTimerRef.current = window.setTimeout(() => {
-            setCanGoBack(false);
-            backButtonTimerRef.current = null;
-          }, 10_000);
-        }
-      });
 
       view.addEventListener("load", ((event: CustomEvent) => {
         const { doc, index } = event.detail as { doc: Document; index: number };
@@ -864,11 +866,6 @@ export function useFoliateView({
       cancelPendingWordClick();
       cancelPendingSelectionMenu();
       annotationClickDocumentRef.current = null;
-      if (backButtonTimerRef.current !== null) {
-        window.clearTimeout(backButtonTimerRef.current);
-        backButtonTimerRef.current = null;
-      }
-      setCanGoBack(false);
       if (viewRef.current) {
         viewRef.current.close();
         viewRef.current.remove();

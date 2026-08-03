@@ -43,10 +43,6 @@ interface InteractionView {
   getCFI(index: number, range: Range): string;
   next(): Promise<void>;
   prev(): Promise<void>;
-  history: {
-    back(): void;
-    forward(): void;
-  };
   renderer?: {
     getContents?(): Array<{ doc?: Document }>;
   };
@@ -82,6 +78,14 @@ interface ReaderInteractionsOptions {
   handlePageTurnContextMenu(event: MouseEvent): void;
   handlePageTurnWheel(event: WheelEvent): void;
   handleReaderBinding(trigger: string, interaction: ReaderInteraction | null): boolean;
+  /**
+   * The unified jump-history return action (P1.3), bound to ⌘[ and Alt+←
+   * inside each chapter document (a separate document context from the main
+   * window, so a window-level listener alone cannot catch it here). Returns
+   * whether it actually navigated, so the keystroke is only swallowed when
+   * there was something to return to.
+   */
+  onReturnJump(): boolean;
 }
 
 function canvasHasVisibleContent(canvas: HTMLCanvasElement): boolean {
@@ -129,6 +133,7 @@ export function useReaderInteractions({
   handlePageTurnContextMenu,
   handlePageTurnWheel,
   handleReaderBinding,
+  onReturnJump,
 }: ReaderInteractionsOptions) {
   const installDocumentInteractions = useCallback(({
     doc,
@@ -342,12 +347,16 @@ export function useReaderInteractions({
         }
       }
       const zoomCommand = appZoomCommandFor(event);
-      if ((event.metaKey || event.ctrlKey) && event.key === "[") {
+      // ⌘[ / Ctrl+[ / Alt+← — the jump-history return (P1.3), matching the
+      // window-level shortcut below. Always swallowed on match, whether or
+      // not there was anything to return to (nothing else claims this combo).
+      const isReturnJumpShortcut = (
+        ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key === "[")
+        || (event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey && event.key === "ArrowLeft")
+      );
+      if (isReturnJumpShortcut) {
         event.preventDefault();
-        view.history.back();
-      } else if ((event.metaKey || event.ctrlKey) && event.key === "]") {
-        event.preventDefault();
-        view.history.forward();
+        onReturnJump();
       } else if (zoomCommand) {
         // The book is its own document, and nothing pressed inside it reaches
         // the window listener that answers these keys everywhere else — so the
@@ -607,6 +616,7 @@ export function useReaderInteractions({
     handlePageTurnWheel,
     handleZoom,
     handleZoomFit,
+    onReturnJump,
     openLearningInteraction,
     pendingSelectionMenuRef,
     pendingWordClickRef,

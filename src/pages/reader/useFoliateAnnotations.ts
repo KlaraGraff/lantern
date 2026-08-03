@@ -215,6 +215,10 @@ interface UseFoliateAnnotationsOptions {
   setMarkerStyle: Dispatch<SetStateAction<MarkerStyleConfig>>;
   setReaderSettings: Dispatch<SetStateAction<ReaderSettingsState>>;
   textReaderNavigateRef: MutableRefObject<((location: string, flash?: boolean) => void) | null>;
+  currentCfiRef: MutableRefObject<string | null>;
+  /** Jump-history push (P1.3) — see `useJumpHistory`. */
+  pushJump: (location: string | null | undefined, label: string) => void;
+  getCurrentLabel: () => string;
 }
 
 export function useFoliateAnnotations({
@@ -234,6 +238,9 @@ export function useFoliateAnnotations({
   setMarkerStyle,
   setReaderSettings,
   textReaderNavigateRef,
+  currentCfiRef,
+  pushJump,
+  getCurrentLabel,
 }: UseFoliateAnnotationsOptions) {
   const autoMarkersRef = useRef(new Map<string, FoliateMarker>());
   const appliedAnnotationsRef = useRef(new Map<string, AppliedAnnotation>());
@@ -352,6 +359,10 @@ export function useFoliateAnnotations({
   ]);
 
   const flashNavigationTarget = useCallback(async (cfi: string) => {
+    // Centralized here rather than at each caller: every AI/vocab/cross-window
+    // jump that lands on a specific spot goes through this one function, so
+    // pushing once here covers all of them (P1.3).
+    pushJump(currentCfiRef.current, getCurrentLabel());
     if (isTextBook) {
       textReaderNavigateRef.current?.(cfi, true);
       return;
@@ -369,7 +380,7 @@ export function useFoliateAnnotations({
       const annotation = appliedAnnotationsRef.current.get(cfi);
       if (annotation) await view.addAnnotation({ value: cfi, ...annotation }).catch(() => {});
     }, 3000);
-  }, [isTextBook, supportsCfiNavigation, textReaderNavigateRef, viewRef]);
+  }, [currentCfiRef, getCurrentLabel, isTextBook, pushJump, supportsCfiNavigation, textReaderNavigateRef, viewRef]);
 
   /**
    * The sentence being read aloud. Temporary, but drawn with the same mechanism

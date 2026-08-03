@@ -125,6 +125,7 @@ import type {
 import { useFoliateView } from "./reader/useFoliateView";
 import { tocUnitKind } from "./reader/chapter-pagination";
 import { useReaderNavigation } from "./reader/useReaderNavigation";
+import { useJumpHistory } from "./reader/useJumpHistory";
 import {
   fileStatusExplainsFailure,
   toReaderOpenError,
@@ -231,9 +232,15 @@ export default function Reader() {
   const [chapterProgress, setChapterProgress] = useState(0);
   const [pageInfo, setPageInfo] = useState<ReaderPageInfo | null>(null);
   const currentCfiRef = useRef<string | null>(null);
+  const {
+    pushJump,
+    popJump,
+    notifyLocationChanged,
+    visible: jumpHistoryVisible,
+    label: jumpHistoryLabel,
+  } = useJumpHistory(bookId);
   const [progressWriter] = useState(() => new ReadingProgressWriter());
   const [bookReady, setBookReady] = useState(false);
-  const [canGoBack, setCanGoBack] = useState(false);
   const [readerError, setReaderError] = useState<ReaderOpenError | null>(null);
   const [readerRetry, setReaderRetry] = useState(0);
   const [ocrHudOpen, setOcrHudOpen] = useState(false);
@@ -424,6 +431,55 @@ export default function Reader() {
   const zoomRef = useRef<number | "fit">(zoom);
   const fitPctRef = useRef(100);
   const textReaderNavigateRef = useRef<((location: string, flash?: boolean) => void) | null>(null);
+
+  // A short human-readable description of "here", for the jump-history entry
+  // (P1.3) a push records. Kept behind a stable-identity ref wrapper because
+  // it's called from long-lived closures (the foliate view's own event
+  // listeners) that must not be recreated every time the chapter changes.
+  const getCurrentJumpLabel = useCallback(
+    () => (
+      currentChapterIndex >= 0 && currentChapterIndex < chapters.length
+        ? chapters[currentChapterIndex].title
+        : t("reader.jumpHistory.here")
+    ),
+    [chapters, currentChapterIndex, t],
+  );
+  const getCurrentJumpLabelRef = useRef(getCurrentJumpLabel);
+  useEffect(() => {
+    getCurrentJumpLabelRef.current = getCurrentJumpLabel;
+  }, [getCurrentJumpLabel]);
+  const getCurrentLabel = useCallback(() => getCurrentJumpLabelRef.current(), []);
+
+  // The bare navigate, with no history push — used both by `navigateToCfi`/
+  // `navigateToChapter` below (which do push) and by the "return" action
+  // itself (which must not push a new entry for the pop it just performed).
+  const goToLocation = useCallback((location: string) => {
+    if (isTextBook) textReaderNavigateRef.current?.(location);
+    else viewRef.current?.goTo(location);
+  }, [isTextBook]);
+
+  const navigateToChapter = useCallback((href: string) => {
+    pushJump(currentCfiRef.current, getCurrentJumpLabel());
+    goToLocation(href);
+  }, [getCurrentJumpLabel, goToLocation, pushJump]);
+
+  const navigateToCfi = useCallback((cfi: string) => {
+    pushJump(currentCfiRef.current, getCurrentJumpLabel());
+    goToLocation(cfi);
+  }, [getCurrentJumpLabel, goToLocation, pushJump]);
+
+  /**
+   * The return pill / ⌘[ / Alt+← action: pop the last jump and land back on
+   * it. Returns whether there was anything to return to, so keyboard handlers
+   * know whether to swallow the keystroke (P1.3).
+   */
+  const handleJumpBack = useCallback((): boolean => {
+    const entry = popJump();
+    if (!entry) return false;
+    goToLocation(entry.location);
+    return true;
+  }, [goToLocation, popJump]);
+
   const textReaderPageNavigationRef = useRef<{ prev: () => void; next: () => void } | null>(null);
   const [textNavigationRegistration, setTextNavigationRegistration] = useState(0);
   const chaptersRef = useRef<TocChapter[]>([]);
@@ -475,7 +531,9 @@ export default function Reader() {
     setCurrentChapterIndex(chapterIndex);
     setCurrentSectionIndex(chapterIndex);
     if (bookId) queueReadingProgress(bookId, nextProgress, textLocationValue);
-  }, [bookId, queueReadingProgress]);
+    // The text-book equivalent of foliate's `relocate` — same fade-counter feed (P1.3).
+    notifyLocationChanged();
+  }, [bookId, notifyLocationChanged, queueReadingProgress]);
 
   const cancelPendingWordClick = useCallback(() => {
     if (pendingWordClickRef.current !== null) {
@@ -516,6 +574,27 @@ export default function Reader() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // ⌘[ / Ctrl+[ / Alt+← — the jump-history return (P1.3). Window-level so it
+  // also covers TextBookReader, which renders directly in the main document
+  // rather than an iframe; EPUB/PDF chapter documents get their own copy of
+  // this same combo in useReaderInteractions.ts, since a doc-level listener
+  // is the only way to catch it inside a foliate chapter's iframe.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const isReturnJumpShortcut = (
+        ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key === "[")
+        || (event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey && event.key === "ArrowLeft")
+      );
+      if (!isReturnJumpShortcut) return;
+      const target = event.target as Element | null;
+      if (target?.closest?.("input, textarea, select, [contenteditable='true'], [role='textbox']")) return;
+      event.preventDefault();
+      handleJumpBack();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleJumpBack]);
 
   const onMissingPdfTextIntent = useCallback((pageIndex: number) => {
     if (!platform.hasOcr) return;
@@ -1046,6 +1125,9 @@ export default function Reader() {
     setMarkerStyle,
     setReaderSettings,
     textReaderNavigateRef,
+    currentCfiRef,
+    pushJump,
+    getCurrentLabel,
   });
 
   useReadingHighlight({ viewRef, showReadingHighlight, clearReadingHighlight });
@@ -1061,6 +1143,7 @@ export default function Reader() {
       return;
     }
     if (book?.format === "pdf" && viewRef.current) {
+      pushJump(currentCfiRef.current, getCurrentJumpLabel());
       await viewRef.current.goTo(source.sectionIndex);
       return;
     }
@@ -1088,9 +1171,10 @@ export default function Reader() {
       }
     }
     if (source.sectionHref) {
+      pushJump(currentCfiRef.current, getCurrentJumpLabel());
       await view.goTo(source.sectionHref);
     }
-  }, [book?.format, flashNavigationTarget, isTextBook, viewRef]);
+  }, [book?.format, flashNavigationTarget, getCurrentJumpLabel, isTextBook, pushJump, viewRef]);
 
   // Load book metadata and default settings from DB
   useEffect(() => {
@@ -1307,6 +1391,7 @@ export default function Reader() {
     handlePageTurnContextMenu,
     handlePageTurnWheel,
     handleReaderBinding,
+    onReturnJump: handleJumpBack,
   });
 
   useFoliateView({
@@ -1341,7 +1426,9 @@ export default function Reader() {
     openLearningInteraction,
     setBookReady,
     setReaderError,
-    setCanGoBack,
+    pushJump,
+    getCurrentLabel,
+    notifyLocationChanged,
     setChapters,
     setCurrentChapterIndex,
     setCurrentSectionIndex,
@@ -1363,6 +1450,10 @@ export default function Reader() {
     viewRef,
     textReaderNavigateRef,
     refreshAnnotations,
+    flashNavigationTarget,
+    pushJump,
+    getCurrentLabel,
+    currentCfiRef,
     setSidePanel,
     setInitialChatId,
   });
@@ -1392,17 +1483,6 @@ export default function Reader() {
     setSidePanel((prev) => (prev === panel ? null : panel));
   };
 
-
-  const navigateToChapter = useCallback((href: string) => {
-    if (isTextBook) textReaderNavigateRef.current?.(href);
-    else viewRef.current?.goTo(href);
-  }, [isTextBook]);
-
-  const navigateToCfi = useCallback((cfi: string) => {
-    if (isTextBook) textReaderNavigateRef.current?.(cfi);
-    else viewRef.current?.goTo(cfi);
-  }, [isTextBook]);
-
   // Handle navigation state from ChatsPage ("Open in Reader")
   // Supports both location.state (main window) and URL search params (standalone window)
   useEffect(() => {
@@ -1428,10 +1508,24 @@ export default function Reader() {
     if (!bookReady || (!openVocab && !cfi && page == null)) return;
     if (openVocab) setSidePanel("vocab");
     if (cfi && supportsCfiNavigation) flashNavigationTarget(cfi).catch(() => {});
-    if (page != null && book?.format === "pdf") viewRef.current?.goTo(page).catch(() => {});
+    if (page != null && book?.format === "pdf") {
+      pushJump(currentCfiRef.current, getCurrentJumpLabel());
+      viewRef.current?.goTo(page).catch(() => {});
+    }
     // Clear the state so it doesn't re-trigger
     if (!isStandaloneWindow) navigate(location.pathname, { replace: true });
-  }, [book?.format, bookReady, flashNavigationTarget, location.state, location.pathname, navigate, supportsCfiNavigation, viewRef]);
+  }, [
+    book?.format,
+    bookReady,
+    flashNavigationTarget,
+    getCurrentJumpLabel,
+    location.state,
+    location.pathname,
+    navigate,
+    pushJump,
+    supportsCfiNavigation,
+    viewRef,
+  ]);
 
   if (loading || (bookId !== undefined && book?.id !== bookId)) {
     return (
@@ -1875,13 +1969,20 @@ export default function Reader() {
                 </div>
               </div>
             )}
-            {canGoBack && (
+            {jumpHistoryLabel && (
               <button
-                onClick={() => viewRef.current?.history.back()}
-                className="absolute bottom-4 left-6 z-20 flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-accent-bg text-accent-text shadow-sm cursor-pointer transition-opacity hover:opacity-80"
+                type="button"
+                onClick={handleJumpBack}
+                aria-hidden={!jumpHistoryVisible}
+                tabIndex={jumpHistoryVisible ? 0 : -1}
+                className={`absolute bottom-4 left-6 z-20 flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-accent-bg text-accent-text shadow-sm cursor-pointer transition-opacity duration-300 motion-reduce:transition-none hover:opacity-80 ${
+                  jumpHistoryVisible ? "opacity-100" : "pointer-events-none opacity-0"
+                }`}
               >
                 <ArrowLeft size={14} />
-                <span className="text-[13px] font-medium">{t("reader.back")}</span>
+                <span className="text-[13px] font-medium">
+                  {t("reader.jumpHistory.return", { label: jumpHistoryLabel })}
+                </span>
               </button>
             )}
             <ReadingPlaybackBar />
@@ -2268,6 +2369,9 @@ export default function Reader() {
           contentHeight={footnote.contentHeight}
           onClose={() => setFootnote(null)}
           onJumpToSource={() => {
+            // The popover itself never navigates and never pushes — only this
+            // explicit "jump to source" click is a real jump (P1.3).
+            pushJump(currentCfiRef.current, getCurrentJumpLabel());
             viewRef.current?.goTo(footnote.href).catch(() => {});
             setFootnote(null);
           }}
