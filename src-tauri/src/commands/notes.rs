@@ -112,7 +112,7 @@ pub(crate) fn save_note_inner(
     )?;
     let timestamp = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();
-    sync.with_tx(&db, timestamp, |tx, events| {
+    sync.with_tx(db, timestamp, |tx, events| {
         if merge::is_tombstoned(tx, entity::NOTE, &id)? {
             return Err(AppError::Other("NOTE_ALREADY_DELETED".to_string()));
         }

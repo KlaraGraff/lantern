@@ -69,7 +69,7 @@ pub(crate) fn add_bookmark_inner(
         updated_at: now,
     };
 
-    sync.with_tx(&db, now, |tx, events| {
+    sync.with_tx(db, now, |tx, events| {
         tx.execute(
             "INSERT INTO bookmarks (id, book_id, cfi, label, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
             params![id, book_id, cfi, label, now],
@@ -183,7 +183,7 @@ pub(crate) fn add_highlight_inner(
     };
 
     let device = sync.self_device().to_string();
-    sync.with_tx(&db, now, |tx, events| {
+    sync.with_tx(db, now, |tx, events| {
         tx.execute(
             "INSERT INTO highlights (id, book_id, cfi_range, color, note, text_content, created_at, updated_at, updated_by_device)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)",

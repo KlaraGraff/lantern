@@ -106,7 +106,7 @@ impl LanternMcpHandler {
             .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
         self.state.notify("chats", "updated", &chat_id);
         Ok(CallToolResult::success(vec![ContentBlock::json(
-            &serde_json::json!({ "id": chat_id, "title": title }),
+            serde_json::json!({ "id": chat_id, "title": title }),
         )?]))
     }
 
@@ -175,7 +175,7 @@ impl LanternMcpHandler {
             .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
         self.state.notify("chats", "deleted", &deleted.to_string());
         Ok(CallToolResult::success(vec![ContentBlock::json(
-            &serde_json::json!({ "requested": ids.len(), "deleted": deleted }),
+            serde_json::json!({ "requested": ids.len(), "deleted": deleted }),
         )?]))
     }
 }

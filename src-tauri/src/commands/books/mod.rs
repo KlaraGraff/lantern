@@ -77,7 +77,7 @@ pub use mutate::{
 };
 #[allow(unused_imports)]
 pub(crate) use mutate::{
-    do_delete_book, do_delete_book_with_note_policy, do_update_book, do_update_reading_progress,
+    do_delete_book_with_note_policy, do_update_book, do_update_reading_progress,
 };
 #[doc(hidden)]
 pub use query::{

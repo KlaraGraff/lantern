@@ -321,7 +321,7 @@ impl LanternMcpHandler {
         self.state
             .notify("bookmarks", "deleted", &deleted.to_string());
         Ok(CallToolResult::success(vec![ContentBlock::json(
-            &serde_json::json!({ "requested": ids.len(), "deleted": deleted }),
+            serde_json::json!({ "requested": ids.len(), "deleted": deleted }),
         )?]))
     }
 
@@ -339,7 +339,7 @@ impl LanternMcpHandler {
         self.state
             .notify("highlights", "deleted", &deleted.to_string());
         Ok(CallToolResult::success(vec![ContentBlock::json(
-            &serde_json::json!({ "requested": ids.len(), "deleted": deleted }),
+            serde_json::json!({ "requested": ids.len(), "deleted": deleted }),
         )?]))
     }
 
@@ -356,7 +356,7 @@ impl LanternMcpHandler {
             .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
         self.state.notify("notes", "deleted", &deleted.to_string());
         Ok(CallToolResult::success(vec![ContentBlock::json(
-            &serde_json::json!({ "requested": ids.len(), "deleted": deleted }),
+            serde_json::json!({ "requested": ids.len(), "deleted": deleted }),
         )?]))
     }
 }

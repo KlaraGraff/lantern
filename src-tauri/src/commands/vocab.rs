@@ -410,7 +410,7 @@ pub(crate) fn add_vocab_word_inner(
     // unique index on (book_id, word) — the conn mutex serializes the
     // whole tx, so the second writer's check sees the first writer's
     // committed row.
-    let vocab = sync.with_tx(&db, now, |tx, events| {
+    let vocab = sync.with_tx(db, now, |tx, events| {
         let existing: Option<VocabWord> = {
             let mut stmt = tx.prepare(&format!(
                 "SELECT {} FROM vocab_words WHERE book_id = ?1 AND word = ?2 COLLATE NOCASE LIMIT 1",
@@ -561,7 +561,7 @@ pub(crate) fn record_vocab_review_inner(
 ) -> AppResult<VocabWord> {
     let now = chrono::Utc::now().timestamp_millis();
     let device = sync.self_device().to_string();
-    sync.with_tx(&db, now, |tx, events| {
+    sync.with_tx(db, now, |tx, events| {
         let current = tx
             .query_row(
                 &format!("SELECT {SELECT_COLS} FROM vocab_words WHERE id = ?1"),
@@ -641,7 +641,7 @@ pub(crate) fn update_vocab_mastery_inner(
     validate_mastery(mastery)?;
     let now = chrono::Utc::now().timestamp_millis();
     let device = sync.self_device().to_string();
-    sync.with_tx(&db, now, |tx, events| {
+    sync.with_tx(db, now, |tx, events| {
         let changed = tx.execute(
             "UPDATE vocab_words SET mastery = ?1, next_review_at = ?2, updated_at = ?3, updated_by_device = ?4 WHERE id = ?5",
             params![mastery, next_review_at, now, device, id],
@@ -916,7 +916,7 @@ pub(crate) fn preview_vocab_import_inner(
     format: VocabImportFormat,
     db: &Db,
 ) -> AppResult<VocabImportPreview> {
-    let (words, invalid_rows) = parse_vocab_import(&data, format)?;
+    let (words, invalid_rows) = parse_vocab_import(data, format)?;
     preview_vocab_import_words(&words, invalid_rows, db).map(|(preview, _)| preview)
 }
 

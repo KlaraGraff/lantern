@@ -257,7 +257,7 @@ impl LanternMcpHandler {
             }
         }
         Ok(CallToolResult::success(vec![ContentBlock::json(
-            &serde_json::json!({ "results": results }),
+            serde_json::json!({ "results": results }),
         )?]))
     }
 }

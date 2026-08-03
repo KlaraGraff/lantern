@@ -1584,7 +1584,7 @@ fn delete_book_removes_book_notes_and_markers_but_detaches_global_notes() {
     }
 
     let sync = SyncWriter::new("dev-A".into());
-    do_delete_book("b1", &db, &sync).unwrap();
+    do_delete_book_with_note_policy("b1", false, &db, &sync).unwrap();
 
     let conn = db.conn.lock().unwrap();
     let notes: Vec<(String, Option<String>)> = conn
@@ -1655,7 +1655,7 @@ fn delete_book_returns_its_pages_to_the_file() {
         );
         // About a book's worth of index — enough pages that reclaiming them is
         // unambiguous rather than a rounding difference, and under the 1000-page
-        // cap `do_delete_book` passes so one call clears all of it.
+        // cap `do_delete_book_with_note_policy` passes so one call clears all of it.
         let filler = "x".repeat(4096);
         for index in 0..200 {
             conn.execute(
@@ -1672,7 +1672,7 @@ fn delete_book_returns_its_pages_to_the_file() {
     };
 
     let sync = SyncWriter::new("dev-A".into());
-    do_delete_book("b1", &db, &sync).unwrap();
+    do_delete_book_with_note_policy("b1", false, &db, &sync).unwrap();
 
     let conn = db.conn.lock().unwrap();
     let free_pages: i64 = conn
@@ -1778,7 +1778,7 @@ fn delete_book_command_persists_book_and_chat_tombstones() {
     }
 
     let sync = SyncWriter::new("dev-A".into());
-    do_delete_book("b1", &db, &sync).unwrap();
+    do_delete_book_with_note_policy("b1", false, &db, &sync).unwrap();
 
     let conn = db.conn.lock().unwrap();
     let tombstones: Vec<(String, String, i64)> = conn

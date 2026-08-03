@@ -23,10 +23,6 @@ fn validated_cover_bytes(path: &Path) -> AppResult<Vec<u8>> {
     Ok(bytes)
 }
 
-pub(crate) fn do_delete_book(id: &str, db: &Db, sync: &SyncWriter) -> AppResult<()> {
-    do_delete_book_with_note_policy(id, false, db, sync)
-}
-
 pub(crate) fn do_delete_book_with_note_policy(
     id: &str,
     preserve_book_notes: bool,

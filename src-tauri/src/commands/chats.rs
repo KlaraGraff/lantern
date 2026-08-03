@@ -121,7 +121,7 @@ pub(crate) fn create_chat_inner(
         last_message: None,
     };
 
-    sync.with_tx(&db, now, |tx, events| {
+    sync.with_tx(db, now, |tx, events| {
         tx.execute(
             "INSERT INTO chats (id, book_id, title, model, pinned, metadata, created_at, updated_at, updated_by_device)
              VALUES (?1, ?2, ?3, ?4, 0, NULL, ?5, ?5, ?6)",
@@ -239,7 +239,7 @@ pub(crate) fn rename_chat_inner(
 ) -> AppResult<()> {
     let now = chrono::Utc::now().timestamp_millis();
     let device = sync.self_device().to_string();
-    sync.with_tx(&db, now, |tx, events| {
+    sync.with_tx(db, now, |tx, events| {
         tx.execute(
             "UPDATE chats SET title = ?1, updated_at = ?2, updated_by_device = ?3 WHERE id = ?4",
             params![title, now, device, chat_id],
@@ -307,7 +307,7 @@ pub(crate) fn save_chat_message_inner(
         updated_at: now,
     };
 
-    sync.with_tx(&db, now, |tx, events| {
+    sync.with_tx(db, now, |tx, events| {
         tx.execute(
             "INSERT INTO chat_messages
              (id, chat_id, role, content, context, metadata, created_at, updated_at, updated_by_device)
@@ -358,7 +358,7 @@ pub(crate) fn replace_chat_message_inner(
     crate::sync::validation::validate_entity_id(message_id)?;
     let now = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();
-    let message = sync.with_tx(&db, now, |tx, events| {
+    let message = sync.with_tx(db, now, |tx, events| {
         let mut message = tx.query_row(
             "SELECT id, chat_id, role, content, context, metadata, created_at, updated_at
              FROM chat_messages WHERE id = ?1",

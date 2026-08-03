@@ -461,7 +461,7 @@ impl LanternMcpHandler {
         .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
         self.state.notify("word_forms", "updated", &word);
         Ok(CallToolResult::success(vec![ContentBlock::json(
-            &serde_json::json!({ "word": word, "forms": forms, "source": "user" }),
+            serde_json::json!({ "word": word, "forms": forms, "source": "user" }),
         )?]))
     }
 
@@ -559,7 +559,7 @@ impl LanternMcpHandler {
         self.state
             .notify("vocabulary", "deleted", &deleted.to_string());
         Ok(CallToolResult::success(vec![ContentBlock::json(
-            &serde_json::json!({ "requested": ids.len(), "deleted": deleted }),
+            serde_json::json!({ "requested": ids.len(), "deleted": deleted }),
         )?]))
     }
 
@@ -625,7 +625,7 @@ impl LanternMcpHandler {
         self.state
             .notify("word_forms", "deleted", &deleted.to_string());
         Ok(CallToolResult::success(vec![ContentBlock::json(
-            &serde_json::json!({ "requested": words.len(), "deleted": deleted }),
+            serde_json::json!({ "requested": words.len(), "deleted": deleted }),
         )?]))
     }
 
@@ -641,7 +641,7 @@ impl LanternMcpHandler {
             .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
         self.state.notify("word_marks", "cleared", &book_id);
         Ok(CallToolResult::success(vec![ContentBlock::json(
-            &serde_json::json!({ "book_id": book_id, "cleared": true }),
+            serde_json::json!({ "book_id": book_id, "cleared": true }),
         )?]))
     }
 
@@ -659,7 +659,7 @@ impl LanternMcpHandler {
         self.state
             .notify("lookup_history", "deleted", &deleted.to_string());
         Ok(CallToolResult::success(vec![ContentBlock::json(
-            &serde_json::json!({ "requested": ids.len(), "deleted": deleted }),
+            serde_json::json!({ "requested": ids.len(), "deleted": deleted }),
         )?]))
     }
 
@@ -682,7 +682,7 @@ impl LanternMcpHandler {
         self.state
             .notify("lookup_history", "cleared", &deleted.to_string());
         Ok(CallToolResult::success(vec![ContentBlock::json(
-            &serde_json::json!({ "book_id": book_id, "deleted": deleted }),
+            serde_json::json!({ "book_id": book_id, "deleted": deleted }),
         )?]))
     }
 }

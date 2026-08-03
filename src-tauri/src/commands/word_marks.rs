@@ -152,7 +152,7 @@ pub(crate) fn set_word_forms_inner(
     source: Option<String>,
     db: &Db,
 ) -> AppResult<Vec<String>> {
-    let normalized_word = normalize_learning_term(&word);
+    let normalized_word = normalize_learning_term(word);
     if normalized_word.is_empty() || normalized_word.chars().count() > 256 {
         return Err(AppError::Other("WORD_FORMS_WORD_INVALID".to_string()));
     }
