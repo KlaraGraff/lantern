@@ -28,6 +28,33 @@ pub struct WordMarkRule {
     pub updated_at: i64,
 }
 
+/// The rule now in force for the looked-up word, plus whether ensuring it
+/// wrote anything. `changed = false` means the word was already covered — by
+/// its own rule or, with form matching on, by another form's rule — so the
+/// caller can skip the repaint that a real change needs.
+#[derive(Debug, Clone, Serialize)]
+pub struct EnsuredWordMarkRule {
+    #[serde(flatten)]
+    pub rule: WordMarkRule,
+    pub changed: bool,
+}
+
+impl EnsuredWordMarkRule {
+    fn changed(rule: WordMarkRule) -> Self {
+        Self {
+            rule,
+            changed: true,
+        }
+    }
+
+    fn unchanged(rule: WordMarkRule) -> Self {
+        Self {
+            rule,
+            changed: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WordMarkException {
     pub id: String,
@@ -167,6 +194,80 @@ pub fn get_word_forms(words: Vec<String>, db: State<'_, Db>) -> AppResult<Vec<Wo
     Ok(result)
 }
 
+/// The enabled rule that marks `normalized_word` in this book, if any.
+///
+/// A rule covers a word when it is a rule on that exact word, or — only while
+/// the reader's word-match scope is set to forms — when the word is one of the
+/// stored forms of the rule's word. Forms come from the same `word_forms` rows
+/// `get_word_forms` reads, so backend and reader agree on what counts as the
+/// same word; they are filled in asynchronously after a lookup, which makes a
+/// miss here mean "not covered yet", never "not a form".
+///
+/// The exact rule wins when both could match, so the answer is stable no matter
+/// which rule was created first.
+fn find_covering_rule(
+    conn: &rusqlite::Connection,
+    book_id: &str,
+    normalized_word: &str,
+    match_forms: bool,
+) -> AppResult<Option<WordMarkRule>> {
+    let exact = conn
+        .query_row(
+            &format!(
+                "SELECT {RULE_COLUMNS} FROM word_mark_rules
+                 WHERE book_id = ?1 AND normalized_word = ?2
+                   AND match_mode = 'exact' AND enabled = 1"
+            ),
+            params![book_id, normalized_word],
+            row_to_rule,
+        )
+        .optional()?;
+    if exact.is_some() || !match_forms {
+        return Ok(exact);
+    }
+
+    let mut statement = conn.prepare(
+        "SELECT r.id, r.book_id, r.normalized_word, r.display_word, r.match_mode,
+                r.color, r.enabled, r.created_at, r.updated_at, f.forms
+         FROM word_mark_rules r
+         JOIN word_forms f ON f.normalized_word = r.normalized_word
+         WHERE r.book_id = ?1 AND r.match_mode = 'exact' AND r.enabled = 1
+         ORDER BY r.created_at ASC, r.id ASC",
+    )?;
+    let mut rows = statement.query(params![book_id])?;
+    while let Some(row) = rows.next()? {
+        let forms_json: String = row.get(9)?;
+        let forms: Vec<String> = serde_json::from_str(&forms_json).unwrap_or_default();
+        if forms
+            .iter()
+            .any(|form| normalize_learning_term(form) == normalized_word)
+        {
+            return Ok(Some(row_to_rule(row)?));
+        }
+    }
+    Ok(None)
+}
+
+/// Answers "is this word already marked in this book?" for the reader, which
+/// cannot resolve forms itself. `match_forms` comes from the frontend because
+/// the scope lives in `marker_style_config`, which the backend never sees.
+#[tauri::command]
+pub fn find_covering_word_mark_rule(
+    book_id: String,
+    word: String,
+    match_forms: bool,
+    db: State<'_, Db>,
+) -> AppResult<Option<WordMarkRule>> {
+    validate_entity_id(&book_id)?;
+    let conn = db.reader();
+    find_covering_rule(
+        &conn,
+        &book_id,
+        &normalize_learning_term(&word),
+        match_forms,
+    )
+}
+
 fn row_to_rule(row: &rusqlite::Row<'_>) -> rusqlite::Result<WordMarkRule> {
     Ok(WordMarkRule {
         id: row.get(0)?,
@@ -221,9 +322,10 @@ fn ensure_word_mark_rule_inner(
     book_id: &str,
     word: &str,
     color: Option<&str>,
+    match_forms: bool,
     db: &Db,
     sync: &SyncWriter,
-) -> AppResult<WordMarkRule> {
+) -> AppResult<EnsuredWordMarkRule> {
     let (id, normalized_word, display_word, match_mode, color) =
         prepare_rule(book_id, word, color)?;
     let timestamp = sync.next_logical_timestamp();
@@ -247,7 +349,7 @@ fn ensure_word_mark_rule_inner(
             // without changing the user's enabled choice; normal ensure calls
             // on an already-canonical row remain true no-ops.
             if existing.id == id {
-                return Ok(existing);
+                return Ok(EnsuredWordMarkRule::unchanged(existing));
             }
             tx.execute(
                 "UPDATE word_mark_rules SET id = ?1, updated_at = ?2, updated_by_device = ?3
@@ -287,7 +389,14 @@ fn ensure_word_mark_rule_inner(
                     .into_iter()
                     .map(EventBody::WordMarkExceptionSet),
             );
-            return Ok(canonical);
+            return Ok(EnsuredWordMarkRule::changed(canonical));
+        }
+
+        // A lookup of another form of an already-marked word must not mint a
+        // second, overlapping rule. The reader forgets which form it first
+        // looked up, so this is the ordinary path, not an edge case.
+        if let Some(covering) = find_covering_rule(tx, book_id, &normalized_word, match_forms)? {
+            return Ok(EnsuredWordMarkRule::unchanged(covering));
         }
 
         tx.execute(
@@ -316,7 +425,7 @@ fn ensure_word_mark_rule_inner(
             enabled: true,
             created_at: timestamp,
         }));
-        Ok(WordMarkRule {
+        Ok(EnsuredWordMarkRule::changed(WordMarkRule {
             id,
             book_id: book_id.to_string(),
             normalized_word,
@@ -326,7 +435,7 @@ fn ensure_word_mark_rule_inner(
             enabled: true,
             created_at: timestamp,
             updated_at: timestamp,
-        })
+        }))
     })
 }
 
@@ -477,10 +586,11 @@ pub fn ensure_word_mark_rule(
     book_id: String,
     word: String,
     color: Option<String>,
+    match_forms: bool,
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
-) -> AppResult<WordMarkRule> {
-    ensure_word_mark_rule_inner(&book_id, &word, color.as_deref(), &db, &sync)
+) -> AppResult<EnsuredWordMarkRule> {
+    ensure_word_mark_rule_inner(&book_id, &word, color.as_deref(), match_forms, &db, &sync)
 }
 
 #[tauri::command]
@@ -543,6 +653,7 @@ fn set_word_mark_exception_inner(
     word: &str,
     location: &str,
     excluded: bool,
+    match_forms: bool,
     db: &Db,
     sync: &SyncWriter,
 ) -> AppResult<WordMarkException> {
@@ -556,13 +667,11 @@ fn set_word_mark_exception_inner(
     let mut created_at = timestamp;
     sync.with_tx(db, timestamp, |tx, events| {
         require_book(tx, book_id)?;
-        let rule_enabled: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM word_mark_rules
-             WHERE id = ?1 AND book_id = ?2 AND normalized_word = ?3 AND enabled = 1)",
-            params![rule_id, book_id, normalized_word],
-            |row| row.get(0),
-        )?;
-        if !rule_enabled {
+        // The occurrence may be painted by another form's rule, so ask the
+        // covering rule rather than this word's own. The row itself stays keyed
+        // by the word on the page: that is what the reader matches an exclusion
+        // against when it decides whether to paint a given occurrence.
+        if find_covering_rule(tx, book_id, &normalized_word, match_forms)?.is_none() {
             return Err(AppError::Other("WORD_MARK_RULE_NOT_ACTIVE".to_string()));
         }
         created_at = tx
@@ -625,10 +734,19 @@ pub fn set_word_mark_exception(
     word: String,
     location: String,
     excluded: bool,
+    match_forms: bool,
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<WordMarkException> {
-    set_word_mark_exception_inner(&book_id, &word, &location, excluded, &db, &sync)
+    set_word_mark_exception_inner(
+        &book_id,
+        &word,
+        &location,
+        excluded,
+        match_forms,
+        &db,
+        &sync,
+    )
 }
 
 pub(crate) fn query_word_mark_exceptions(
@@ -642,11 +760,9 @@ pub(crate) fn query_word_mark_exceptions(
                 created_at, updated_at
          FROM word_mark_exceptions e
          WHERE e.book_id = ?1 AND e.excluded = 1
-           AND EXISTS(SELECT 1 FROM word_mark_rules r
-                      WHERE r.id = e.rule_id AND r.enabled = 1)
          ORDER BY created_at ASC, id ASC",
     )?;
-    let exceptions = statement
+    let candidates = statement
         .query_map(params![book_id], |row| {
             Ok(WordMarkException {
                 id: row.get(0)?,
@@ -660,6 +776,29 @@ pub(crate) fn query_word_mark_exceptions(
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    drop(statement);
+
+    // An exclusion is live while some enabled rule still marks its word. For a
+    // form-matched occurrence that rule is another form's, so the row's own
+    // `rule_id` names no stored rule — the schema allows exactly this orphan.
+    // Forms are always consulted here: with the scope set to exact matching a
+    // form-only exclusion is inert anyway, because nothing paints that word.
+    let mut covered: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
+    let mut exceptions = Vec::with_capacity(candidates.len());
+    for exception in candidates {
+        let live = match covered.get(&exception.normalized_word) {
+            Some(value) => *value,
+            None => {
+                let value =
+                    find_covering_rule(&conn, book_id, &exception.normalized_word, true)?.is_some();
+                covered.insert(exception.normalized_word.clone(), value);
+                value
+            }
+        };
+        if live {
+            exceptions.push(exception);
+        }
+    }
     Ok(exceptions)
 }
 
@@ -1068,7 +1207,7 @@ mod tests {
             set_word_mark_rule_enabled_inner("book", "Running", true, Some("lookup"), &db, &sync)
                 .unwrap();
         let exception =
-            set_word_mark_exception_inner("book", "Running", "textloc:v2:10:17", true, &db, &sync)
+            set_word_mark_exception_inner("book", "Running", "textloc:v2:10:17", true, false, &db, &sync)
                 .unwrap();
         {
             let conn = db.conn.lock().unwrap();
@@ -1081,7 +1220,7 @@ mod tests {
         sync.set_should_queue(true);
 
         let canonical =
-            ensure_word_mark_rule_inner("book", "Running", Some("lookup"), &db, &sync).unwrap();
+            ensure_word_mark_rule_inner("book", "Running", Some("lookup"), false, &db, &sync).unwrap();
 
         let conn = db.reader();
         let stored: (String, String, i64) = conn
@@ -1093,9 +1232,9 @@ mod tests {
             .unwrap();
         assert_eq!(
             stored.0,
-            word_mark_exception_id(&canonical.id, &exception.location)
+            word_mark_exception_id(&canonical.rule.id, &exception.location)
         );
-        assert_eq!(stored.1, canonical.id);
+        assert_eq!(stored.1, canonical.rule.id);
         assert_eq!(stored.2, 1, "identity repair must retain the exclusion");
         let pending: i64 = conn
             .query_row("SELECT COUNT(*) FROM _pending_publish", [], |row| {
@@ -1115,10 +1254,10 @@ mod tests {
             .unwrap();
 
         let excluded =
-            set_word_mark_exception_inner("book", "Running", "epubcfi(/6/4!)", true, &db, &sync)
+            set_word_mark_exception_inner("book", "Running", "epubcfi(/6/4!)", true, false, &db, &sync)
                 .unwrap();
         let restored =
-            set_word_mark_exception_inner("book", "Running", "epubcfi(/6/4!)", false, &db, &sync)
+            set_word_mark_exception_inner("book", "Running", "epubcfi(/6/4!)", false, false, &db, &sync)
                 .unwrap();
 
         assert!(excluded.excluded);
@@ -1168,7 +1307,7 @@ mod tests {
         let (_dir, db, sync) = setup();
         set_word_mark_rule_enabled_inner("book", "Running", true, Some("lookup"), &db, &sync)
             .unwrap();
-        set_word_mark_exception_inner("book", "Running", "textloc:v2:10:17", true, &db, &sync)
+        set_word_mark_exception_inner("book", "Running", "textloc:v2:10:17", true, false, &db, &sync)
             .unwrap();
         set_lookup_occurrence_mark_inner("book", "Elsewhere", "textloc:v2:30:39", true, &db, &sync)
             .unwrap();
@@ -1218,6 +1357,150 @@ mod tests {
             )
             .unwrap();
         assert_eq!(active_occurrences, 0);
+    }
+
+    fn store_forms(db: &Db, word: &str, forms: &[&str]) {
+        let forms = normalized_forms(word, forms.iter().map(|form| form.to_string()).collect());
+        let conn = db.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO word_forms(normalized_word, forms, source, updated_at)
+             VALUES (?1, ?2, 'model', 1)",
+            params![
+                normalize_learning_term(word),
+                serde_json::to_string(&forms).unwrap()
+            ],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn covering_rule_matches_the_exact_word_whatever_the_scope() {
+        let (_dir, db, sync) = setup();
+        let rule =
+            set_word_mark_rule_enabled_inner("book", "Engage", true, Some("lookup"), &db, &sync)
+                .unwrap();
+
+        {
+            let conn = db.reader();
+            for match_forms in [false, true] {
+                let covering = find_covering_rule(&conn, "book", "engage", match_forms)
+                    .unwrap()
+                    .expect("the word's own rule always covers it");
+                assert_eq!(covering.id, rule.id);
+            }
+        }
+        set_word_mark_rule_enabled_inner("book", "Engage", false, None, &db, &sync).unwrap();
+        assert!(
+            find_covering_rule(&db.reader(), "book", "engage", true)
+                .unwrap()
+                .is_none(),
+            "a disabled rule marks nothing, so it covers nothing"
+        );
+    }
+
+    #[test]
+    fn covering_rule_matches_a_form_only_when_form_matching_is_on() {
+        let (_dir, db, sync) = setup();
+        let rule =
+            set_word_mark_rule_enabled_inner("book", "Engage", true, Some("lookup"), &db, &sync)
+                .unwrap();
+        store_forms(&db, "engage", &["Engaging", "engaged", "engages"]);
+
+        let conn = db.reader();
+        let covering = find_covering_rule(&conn, "book", "engaging", true)
+            .unwrap()
+            .expect("a stored form is covered by its word's rule");
+        assert_eq!(covering.id, rule.id);
+        assert_eq!(covering.normalized_word, "engage");
+        assert!(
+            find_covering_rule(&conn, "book", "engaging", false)
+                .unwrap()
+                .is_none(),
+            "with form matching off nothing but the exact word may match"
+        );
+        assert!(find_covering_rule(&conn, "book", "engineer", true)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn ensuring_a_rule_for_a_known_form_reuses_the_covering_rule() {
+        let (_dir, db, sync) = setup();
+        let first = ensure_word_mark_rule_inner("book", "engage", Some("lookup"), true, &db, &sync)
+            .unwrap();
+        assert!(first.changed);
+        store_forms(&db, "engage", &["engaging", "engaged"]);
+
+        let again =
+            ensure_word_mark_rule_inner("book", "Engaging", Some("lookup"), true, &db, &sync)
+                .unwrap();
+        assert!(!again.changed, "a covered form must not write anything");
+        assert_eq!(again.rule.id, first.rule.id);
+        assert_eq!(again.rule.normalized_word, "engage");
+
+        let rules: i64 = db
+            .reader()
+            .query_row(
+                "SELECT COUNT(*) FROM word_mark_rules WHERE book_id = 'book'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(rules, 1, "one word, one rule");
+
+        // With form matching off the same lookup is a genuinely new rule.
+        let separate =
+            ensure_word_mark_rule_inner("book", "Engaging", Some("lookup"), false, &db, &sync)
+                .unwrap();
+        assert!(separate.changed);
+        assert_eq!(separate.rule.normalized_word, "engaging");
+    }
+
+    #[test]
+    fn excluding_one_occurrence_of_a_form_records_against_the_covering_rule() {
+        let (_dir, db, sync) = setup();
+        set_word_mark_rule_enabled_inner("book", "engage", true, Some("lookup"), &db, &sync)
+            .unwrap();
+        store_forms(&db, "engage", &["engaging"]);
+
+        assert!(
+            set_word_mark_exception_inner(
+                "book",
+                "Engaging",
+                "textloc:v2:10:18",
+                true,
+                false,
+                &db,
+                &sync,
+            )
+            .is_err(),
+            "with form matching off no rule marks this word"
+        );
+
+        let exception = set_word_mark_exception_inner(
+            "book",
+            "Engaging",
+            "textloc:v2:10:18",
+            true,
+            true,
+            &db,
+            &sync,
+        )
+        .unwrap();
+        // The row stays keyed by the word on the page: that is what the reader
+        // compares an occurrence against before painting it.
+        assert_eq!(exception.normalized_word, "engaging");
+        assert!(exception.excluded);
+
+        let listed = query_word_mark_exceptions(&db, "book").unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, exception.id);
+
+        set_word_mark_rule_enabled_inner("book", "engage", false, None, &db, &sync).unwrap();
+        assert!(
+            query_word_mark_exceptions(&db, "book").unwrap().is_empty(),
+            "no rule marks the word any more, so the exclusion is not live"
+        );
     }
 
     #[test]

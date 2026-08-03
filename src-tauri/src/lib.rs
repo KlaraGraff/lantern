@@ -877,6 +877,7 @@ pub fn run() {
             commands::notes::list_context_notes,
             commands::word_marks::upsert_word_mark,
             commands::word_marks::ensure_word_mark_rule,
+            commands::word_marks::find_covering_word_mark_rule,
             commands::word_marks::set_word_mark_rule_enabled,
             commands::word_marks::remove_word_mark,
             commands::word_marks::list_word_marks,

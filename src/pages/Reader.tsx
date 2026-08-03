@@ -22,7 +22,7 @@ import Button from "../components/ui/Button";
 import Toast from "../components/ui/Toast";
 import AiPanel from "../components/AiPanel";
 import BookmarksPanel from "../components/BookmarksPanel";
-import ReaderSettings, { type ReaderSettingsState } from "../components/ReaderSettings";
+import ReaderSettings from "../components/ReaderSettings";
 import {
   getThemeStyles,
   getReaderCapabilities,
@@ -102,6 +102,7 @@ import { useOcrJob } from "../hooks/useOcrJob";
 import {
   mergeStoredReaderSettings,
   useReaderSettingsSync,
+  type StoredReaderSettings,
 } from "./reader/useReaderSettingsSync";
 import { useWindowSizePersistence } from "./reader/useWindowSizePersistence";
 import { useSidePanelResize } from "./reader/useSidePanelResize";
@@ -250,6 +251,10 @@ export default function Reader() {
   const [contextHasManualSelectionMark, setContextHasManualSelectionMark] = useState(false);
   const [contextHasLookupOccurrenceMark, setContextHasLookupOccurrenceMark] = useState(false);
   const [contextHasBookWordMark, setContextHasBookWordMark] = useState(false);
+  // The rule that actually marks the clicked word. With form matching on it may
+  // be a rule on another form, and every whole-book action has to address that
+  // rule rather than the form the reader happened to click.
+  const [contextBookWordMarkWord, setContextBookWordMarkWord] = useState<string | null>(null);
   const [contextBookWordMarkExcluded, setContextBookWordMarkExcluded] = useState(false);
   const [contextMarkStateLoading, setContextMarkStateLoading] = useState(false);
   const [learningCardConfig, setLearningCardConfig] = useState<CardDesignConfigV1>(DEFAULT_CARD_DESIGN_CONFIG);
@@ -656,6 +661,7 @@ export default function Reader() {
       setContextHasManualSelectionMark(false);
       setContextHasLookupOccurrenceMark(false);
       setContextHasBookWordMark(false);
+      setContextBookWordMarkWord(null);
       setContextBookWordMarkExcluded(false);
     }, 220);
   }, [cancelPendingSelectionMenu]);
@@ -690,29 +696,35 @@ export default function Reader() {
       setContextHasManualSelectionMark(false);
       setContextHasLookupOccurrenceMark(false);
       setContextHasBookWordMark(false);
+      setContextBookWordMarkWord(null);
       setContextBookWordMarkExcluded(false);
       if (bookId) {
         Promise.all([
           invoke<Highlight[]>("list_highlights", { bookId }),
           interaction.kind === "word"
-            ? invoke<WordMarkRule[]>("list_word_marks", { bookId })
-            : Promise.resolve([]),
+            ? invoke<(WordMarkRule & { display_word: string }) | null>("find_covering_word_mark_rule", {
+              bookId,
+              word: interaction.text,
+              matchForms: markerStyleRef.current.wordMatchScope === "forms",
+            })
+            : Promise.resolve(null),
           interaction.kind === "word"
             ? invoke<WordMarkException[]>("list_word_mark_exceptions", { bookId })
             : Promise.resolve([]),
           interaction.kind === "word"
             ? invoke<LookupOccurrenceMark[]>("list_lookup_occurrence_marks", { bookId })
             : Promise.resolve([]),
-        ]).then(async ([highlights, wordMarks, exceptions, occurrences]) => {
+        ]).then(async ([highlights, coveringRule, exceptions, occurrences]) => {
           if (contextMenuRequestRef.current !== requestToken) return;
           const [plan, removalPlan] = await Promise.all([
             getHighlightMutationPlan(interaction, highlights),
             getHighlightRemovalPlan(interaction, highlights),
           ]);
           if (contextMenuRequestRef.current !== requestToken) return;
-          const hasBookRule = wordMarks.some((rule) => (
-            rule.enabled && rule.normalized_word === interaction.normalizedText
-          ));
+          const hasBookRule = Boolean(coveringRule);
+          // An exclusion is stored under the word on the page, not the rule's
+          // word, because that is the only key the marker painter can match an
+          // occurrence against.
           const isExcluded = hasBookRule && exceptions.some((exception) => (
             exception.excluded
             && exception.normalized_word === interaction.normalizedText
@@ -727,6 +739,7 @@ export default function Reader() {
           setContextHasManualSelectionMark(hasManualSelectionMark);
           setContextHasLookupOccurrenceMark(hasLookupOccurrence);
           setContextHasBookWordMark(hasBookRule);
+          setContextBookWordMarkWord(coveringRule?.display_word ?? null);
           setContextBookWordMarkExcluded(isExcluded);
           setContextSelectionFullyMarked(
             manualFullyMarked || hasLookupOccurrence || (hasBookRule && !isExcluded),
@@ -760,8 +773,20 @@ export default function Reader() {
       || !autoHighlightLookupsRef.current) return;
 
     if (markMatchingWordsRef.current && supportsWordMarkers) {
-      invoke("ensure_word_mark_rule", { bookId, word: interaction.text, color: "lookup" })
-        .then(() => window.dispatchEvent(new CustomEvent("word-mark-changed", { detail: { bookId } })))
+      // Looking a word up again — often another form of one already marked —
+      // must not add a second, overlapping rule. The backend answers with the
+      // rule now in force and whether it wrote anything; a no-op needs no
+      // repaint.
+      invoke<WordMarkRule & { changed: boolean }>("ensure_word_mark_rule", {
+        bookId,
+        word: interaction.text,
+        color: "lookup",
+        matchForms: markerStyleRef.current.wordMatchScope === "forms",
+      })
+        .then((result) => {
+          if (!result.changed) return;
+          window.dispatchEvent(new CustomEvent("word-mark-changed", { detail: { bookId } }));
+        })
         .catch(() => {});
       return;
     }
@@ -1080,10 +1105,10 @@ export default function Reader() {
       // gets set, and the persistence effect (gated on that ref) then never
       // overwrites the bad key — the book's settings break permanently.
       const saved = localStorage.getItem(`reader-settings-${bookId}`);
-      let bookSettings: Partial<ReaderSettingsState> = {};
+      let bookSettings: StoredReaderSettings = {};
       if (saved) {
         try {
-          bookSettings = JSON.parse(saved) as Partial<ReaderSettingsState>;
+          bookSettings = JSON.parse(saved) as StoredReaderSettings;
         } catch {
           localStorage.removeItem(`reader-settings-${bookId}`);
         }
@@ -2071,6 +2096,7 @@ export default function Reader() {
                     word: interaction.text,
                     location: interaction.location,
                     excluded: true,
+                    matchForms: markerStyleRef.current.wordMatchScope === "forms",
                   });
                   window.dispatchEvent(new CustomEvent("word-mark-changed", { detail: { bookId } }));
                 }
@@ -2081,6 +2107,7 @@ export default function Reader() {
                     word: interaction.text,
                     location: interaction.location,
                     excluded: false,
+                    matchForms: markerStyleRef.current.wordMatchScope === "forms",
                   });
                   window.dispatchEvent(new CustomEvent("word-mark-changed", { detail: { bookId } }));
                 } else {
@@ -2112,10 +2139,13 @@ export default function Reader() {
           }) : undefined}
           onRemoveBookWordMark={contextMenu.kind === "word" && contextHasBookWordMark ? (() => {
             const interaction = contextMenu;
+            // Remove the rule that is actually marking this occurrence, which
+            // under form matching may be a rule on another form of the word.
+            const ruleWord = contextBookWordMarkWord ?? interaction.text;
             contextMenuRequestRef.current += 1;
             setContextMenu(null);
             if (!bookId) return;
-            invoke("remove_word_mark", { bookId, word: interaction.text })
+            invoke("remove_word_mark", { bookId, word: ruleWord })
               .then(async () => {
                 window.dispatchEvent(new CustomEvent("word-mark-changed", { detail: { bookId } }));
                 window.dispatchEvent(new CustomEvent("lookup-mark-changed", { detail: { bookId } }));
