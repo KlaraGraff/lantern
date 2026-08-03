@@ -3,7 +3,7 @@
 > **这是一份"活文档"。** 记录计划与进度,接手者先读本文件再动手。每完成一项更新勾选框与变更日志。
 
 - **发起:** Claude Code 会话(2026-07-17)
-- **状态:** 🟡 方案已定,待用户决策(方案 A 需 Apple Developer 账号)
+- **状态:** 🟡 走方案 A,**申请已提交,等待 Apple 审核**(2026-08-03)。审核通过后按 §4「实施步骤」配 secrets 即可,工作流代码无需改动。在此期间 release 上的产物仍是 ad-hoc,下载用户仍会被 Gatekeeper 拦(缓解见 §3)。
 - **关联:** [`format-normalization-pipeline.md`](archive/format-normalization-pipeline.md)(昨日 CSP 阅读器修复,与本问题**无关但曾被混淆**,见 §2)
 
 ## 1. 症状
@@ -53,7 +53,8 @@
 `release.yml` **已经内建完整的签名/公证/校验流水线**(签名身份导入 keychain、tauri-action 签名与 notarize、pdfium 重签同 Team ID、`Verify macOS app signature` 步骤断言 Team ID 一致且 Developer ID 构建不含 `disable-library-validation`、`pdfium-smoke` 冒烟)。**不需要改任何工作流代码,只需要配 secrets。**
 
 ### 前置条件(用户侧,无法代劳)
-- [ ] Apple Developer Program 账号(个人 $99/年)。
+- [~] Apple Developer Program 账号(个人 $99/年)—— **申请已提交,Apple 审核中(2026-08-03)**。
+      下面两项要等账号下来才能做。
 - [ ] 在 developer.apple.com 创建 **Developer ID Application** 证书,导入本机钥匙串后连私钥导出为 `.p12`(设导出密码)。
 - [ ] 为 Apple ID 创建 **App 专用密码**(appleid.apple.com → 登录与安全 → App 专用密码),供公证用。
 
@@ -101,4 +102,5 @@
 
 - **2026-07-17** — 创建文档。实证根因(ad-hoc + quarantine → Gatekeeper "已损坏"),本机已用 xattr 解锁并验证 app 可运行。方案 A(签名+公证)依赖用户提供 Developer ID 证书;方案 B(自动附安装说明)可先行。
 - **2026-07-17(续)** — 评估两个替代方案(旧式手动授权、本地打包上传),分析记入 §5.5。惯例固化:`AGENTS.md` 新增 **Release Conventions**(禁止复用已发布版本号 / 以关于页 commit 识别构建 / 发布后验收实物产物);release skill 增加版本号防复用守卫与发布后产物验收步骤(第 10 步)。更正 §6:构建指纹展示早已存在于 设置→关于。
+- **2026-08-03** — 方案 A 正式启动:Apple Developer Program 申请已提交,等待审核。**没有其它前置工作可以并行做** —— 证书导出与 App 专用密码都要等账号下来,`release.yml` 的签名流水线本来就已写好。审核通过后的动作全部在 §4「实施步骤」里,四步走完即可。审核期间产物仍是 ad-hoc,§3 的临时安装说明是否补进当前 release notes 仍未决。
 - **2026-07-17(续2,重要更正)** — 用户质疑"旧版无证书也能'仍要打开'"。经历史产物实证(1.3.1 vs 2.0.0 签名状态相同、`gktool`/`spctl` 裁决逐字相同、下载均在同一 OS/XProtect 之后、去 quarantine 后 2.0.0 正常运行),**推翻先前"签名是变量/手动授权路径已失效"的错误断言**:签名不是变量,手动放行(§3 xattr)对 2.0.0 与 1.3.1 同样有效,方案 B 是可行方案而非降级 fallback。§2 加"重要更正"块、§5.5 相应订正。

@@ -2,6 +2,21 @@
 
 Issue: https://github.com/yicheng47/quill/issues/243
 
+> **状态（2026-08-03）：推迟，且开工前必须先重写前提。**
+>
+> 下面的「Problem」一节描述的是 **Quill 的代码，不是 Lantern 的**。Lantern 从未继承那套更新
+> 体验：仓库里没有 `tauri-plugin-updater`（`Cargo.toml` 和 `package.json` 都没有）、没有
+> `UpdateToast.tsx`、没有 `useUpdateChecker`，设置 → 关于里也没有任何更新控件。
+> `services/platform.ts` 的 `hasUpdater` 标志在自己的注释里写着 Lantern 根本不带更新器。
+>
+> 所以本文写的「扩展现有 toast」「把控件从 About 挪走」全部无的放矢 —— 真实工作量是**从零搭一套
+> 更新机制**（引入 updater 插件、配置更新源与签名密钥、写检查/下载/重启流程），再谈这里的界面
+> 编排。签名密钥这一环还和
+> [`macos-distribution-gatekeeper-fix.md`](macos-distribution-gatekeeper-fix.md) 绑在一起：
+> 没有 Developer ID 之前，自动更新推下去的包同样会被 Gatekeeper 拦。
+>
+> 下面的内容作为**界面设计参考**保留，不要当作实施步骤读。
+
 ## Problem
 
 The update experience is bundled into **Settings → About**: a "Software update" row (check/download/restart), a download progress bar, and an "Auto-check" toggle. Update availability is surfaced by a **top-center toast** (`UpdateToast`). Three things are off:

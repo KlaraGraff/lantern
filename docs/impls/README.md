@@ -1,8 +1,30 @@
 # Implementation Plans
 
-Detailed implementation plans for features and bug fixes. Numbers match the corresponding [feature spec](../features/) where one exists; standalone fixes use the next available number. A `q` prefix marks a number inherited from Quill, the upstream project this was renamed from — see [the note in `features/README.md`](../features/README.md). Shipped plans are moved to [`archive/`](archive/).
+Detailed implementation plans for features and bug fixes. Numbers match the corresponding [feature spec](../features/) where one exists; standalone fixes use the next available number. A `q` prefix marks a number inherited from Quill, the upstream project this was renamed from — see [the note in `features/README.md`](../features/README.md).
 
-## Plans
+**Shipped plans move to [`archive/`](archive/).** A plan stays in the active list below only while it still owes work — code, acceptance, or a decision. Every file in this directory belongs to exactly one of the two lists; a plan that is in neither is how this index drifted before.
+
+## Active — still owes work
+
+- [Built-in AI model catalog and automatic routing](built-in-ai-model-catalog-and-routing.md) —
+  Phases 1–3 shipped, and the DeepSeek connect path passed a manual run on 2026-08-03.
+  Seven acceptance items are still open because that run could not reach them (clean
+  install, exhausted quota, revoked key, English UI, logs and exports) — see §11.
+  Phase 4 (an online catalog) is deliberately deferred, not owed.
+- [macOS distribution: the Gatekeeper "damaged" problem](macos-distribution-gatekeeper-fix.md) —
+  a living document. Route A is chosen and the Apple Developer application is submitted;
+  waiting on Apple's review. Until it lands, every release artifact is ad-hoc signed and
+  every downloading user hits Gatekeeper.
+- [Deletable, restorable preset lists](deletable-preset-items.md) — parts of this landed in
+  `9159a9c` / `2e8127d` **after** the document declared itself unimplemented. Its status line
+  is under audit; trust the code, not the document, until that audit lands.
+- [q243 — Update Experience: Pill, App-Menu Check, Formal About](q243-update-experience.md) —
+  **deferred, and needs rebasing before anyone starts.** It was written against Quill, whose
+  update UI Lantern never inherited: there is no updater plugin, no `UpdateToast`, no
+  `useUpdateChecker` here. The plan reads as "extend what exists"; the real job is "build it
+  from nothing."
+
+## Archive
 
 - [1 — Grounded Book Chat: Overview](archive/1-grounded-book-chat-overview.md)
   - [Phase 1 — Indexing + Retrieval](archive/1-grounded-book-chat-phase1-indexing-retrieval.md)
@@ -18,5 +40,8 @@ Detailed implementation plans for features and bug fixes. Numbers match the corr
 - [Reader layout upgrades, settings UI fixes, and credential P1](archive/reader-layout-upgrades-and-settings-ui-fixes.md)
 - [11 — Vocabulary-aware lookup](archive/11-vocab-aware-lookup.md) — the in-app half of
   the context-equity goal the MCP rework was built against
-- [Built-in AI model catalog and automatic routing](built-in-ai-model-catalog-and-routing.md)
 - [macOS 12 Reader WebKit compatibility](archive/macos-12-reader-webkit-compatibility.md)
+- [Pronunciation — play button, UK/US toggle, pluggable speech sources](archive/pronunciation.md)
+- [Read Aloud — adaptive playback for any selection](archive/read-aloud.md)
+- [Reasoning effort, speech rate, TTS model list, free book sources](archive/reasoning-effort-speech-rate-book-sources.md)
+- [Syncable custom fonts](archive/syncable-custom-fonts.md)

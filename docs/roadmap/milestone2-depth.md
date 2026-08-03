@@ -12,9 +12,11 @@ Save and restore AI chats per book. Multiple chat threads per book, each message
 - **Status:** Complete
 
 ### Auto-update & migration
-In-app auto-update via Tauri updater plugin, plus a version-tracked DB migration system to ensure schema changes are safe across updates.
+This line bundled two jobs and was marked Complete on the strength of one of them. Split, as of 2026-08-03:
 
-- **Status:** Complete
+- **DB migration — Complete.** The version-tracked migration system is in `db.rs`, 31 migrations deep, and has carried schema changes across every release.
+- **In-app auto-update — Not started, deferred.** There is no `tauri-plugin-updater` in `Cargo.toml` or `package.json`, no `UpdateToast`, no update checker. The `hasUpdater` capability flag in `services/platform.ts` says as much in its own doc comment. Every update is a manual download today. [`impls/q243-update-experience.md`](../impls/q243-update-experience.md) is the plan, but it was written against Quill's existing update UI and has to be rebased onto "build it from nothing" before anyone starts.
+
 - **Issue:** [#45](https://github.com/yicheng47/quill/issues/45)
 
 ### Internationalization (i18n)
