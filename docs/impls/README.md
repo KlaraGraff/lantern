@@ -16,5 +16,7 @@ Detailed implementation plans for features and bug fixes. Numbers match the corr
 - [q263 — Tools Settings + Ephemeral Translate](archive/q263-reading-tools-consolidation.md)
 - [q286 — Explicit Lookup Language](archive/q286-explicit-lookup-language.md)
 - [Reader layout upgrades, settings UI fixes, and credential P1](archive/reader-layout-upgrades-and-settings-ui-fixes.md)
+- [11 — Vocabulary-aware lookup](11-vocab-aware-lookup.md) — the in-app half of
+  the context-equity goal the MCP rework was built against
 - [Built-in AI model catalog and automatic routing](built-in-ai-model-catalog-and-routing.md)
 - [macOS 12 Reader WebKit compatibility](archive/macos-12-reader-webkit-compatibility.md)
