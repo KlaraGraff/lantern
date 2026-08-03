@@ -183,11 +183,8 @@ export function resolveReaderSettings(
       ?? (globalSettings.word_spacing ? parseInt(globalSettings.word_spacing) : previous.wordSpacing),
     // Global-first keeps the Settings page and reader toolbar synchronized.
     margins: marginSetting(globalSettings.margins, previous.margins),
-    // Per-book with no global counterpart: a row or nothing. (`char_spacing` names
-    // a *global* key too, but nothing in the repo ever wrote it, so the old
-    // fallback to it could only ever be `undefined`.)
     charSpacing: numberSetting(perBookSettings[perBookSettingKeys.charSpacing])
-      ?? previous.charSpacing,
+      ?? (globalSettings.char_spacing ? parseInt(globalSettings.char_spacing) : previous.charSpacing),
     showLookupMarkers: booleanSetting(
       perBookSettings[perBookSettingKeys.showLookupMarkers],
       previous.showLookupMarkers,

@@ -60,9 +60,9 @@ interface ReaderSettingsProps {
   onClearLookupMarks?: () => Promise<void>;
 }
 
-type BindingDirection = "previous" | "next";
+export type BindingDirection = "previous" | "next";
 
-function PageTurnBindingButton({
+export function PageTurnBindingButton({
   direction,
   value,
   active,

@@ -20,6 +20,13 @@ import { loadCustomFonts, type CustomFontRecord } from "../custom-fonts";
 import { notifyReadingAssistanceSettingsChanged } from "../reading-assistance-events";
 import { ROW_CONTROL_WIDTH, type SettingsProps } from "./types";
 import { platform } from "../../services/platform";
+import {
+  PageTurnBindingButton,
+  type BindingDirection,
+  type PageTurnAnimation,
+  type ReadingMode,
+} from "../ReaderSettings";
+import { DEFAULT_NEXT_PAGE_BINDING, DEFAULT_PREVIOUS_PAGE_BINDING } from "../page-turn-bindings";
 
 const READER_THEME_OPTIONS: {
   value: ReaderTheme;
@@ -97,8 +104,18 @@ export default function ReadingSettings({ settings, loading, refresh, save, save
   const [fontSize, setFontSize] = useState(26);
   const [narrowFontShrink, setNarrowFontShrink] = useState(true);
   const [lineSpacing, setLineSpacing] = useState(1.8);
+  const [charSpacing, setCharSpacing] = useState(0);
   const [wordSpacing, setWordSpacing] = useState(0);
   const [margins, setMargins] = useState(0);
+  const [readingMode, setReadingMode] = useState<ReadingMode>("scrolling");
+  const [pageLayout, setPageLayout] = useState<"1" | "2">("2");
+  const [pageTurnAnimation, setPageTurnAnimation] = useState<PageTurnAnimation>("slide");
+  const [showChapterProgress, setShowChapterProgress] = useState(true);
+  const [showBookProgress, setShowBookProgress] = useState(false);
+  const [showPageNumbers, setShowPageNumbers] = useState(false);
+  const [previousPageBinding, setPreviousPageBinding] = useState(DEFAULT_PREVIOUS_PAGE_BINDING);
+  const [nextPageBinding, setNextPageBinding] = useState(DEFAULT_NEXT_PAGE_BINDING);
+  const [capturingBinding, setCapturingBinding] = useState<BindingDirection | null>(null);
   const [customFonts, setCustomFonts] = useState<CustomFontRecord[]>([]);
   const [fontBusy, setFontBusy] = useState(false);
   const [fontError, setFontError] = useState<string | null>(null);
@@ -117,8 +134,34 @@ export default function ReadingSettings({ settings, loading, refresh, save, save
     if (settings.font_size) setFontSize(parseInt(settings.font_size));
     setNarrowFontShrink(settings.narrow_font_shrink !== "false");
     if (settings.line_spacing) setLineSpacing(parseFloat(settings.line_spacing));
+    if (settings.char_spacing) setCharSpacing(parseInt(settings.char_spacing));
     if (settings.word_spacing) setWordSpacing(parseInt(settings.word_spacing));
     if (settings.margins) setMargins(parseInt(settings.margins));
+    if (settings.reading_mode === "paginated" || settings.reading_mode === "scrolling") {
+      setReadingMode(settings.reading_mode);
+    }
+    if (settings.page_columns === "1" || settings.page_columns === "2") {
+      setPageLayout(settings.page_columns);
+    }
+    if (
+      settings.page_turn_animation === "none"
+      || settings.page_turn_animation === "slide"
+      || settings.page_turn_animation === "fade"
+      || settings.page_turn_animation === "cover"
+    ) {
+      setPageTurnAnimation(settings.page_turn_animation);
+    }
+    if (settings.show_chapter_progress !== undefined) {
+      setShowChapterProgress(settings.show_chapter_progress !== "false");
+    }
+    if (settings.show_book_progress !== undefined) {
+      setShowBookProgress(settings.show_book_progress === "true");
+    }
+    if (settings.show_page_numbers !== undefined) {
+      setShowPageNumbers(settings.show_page_numbers === "true");
+    }
+    if (settings.previous_page_binding) setPreviousPageBinding(settings.previous_page_binding);
+    if (settings.next_page_binding) setNextPageBinding(settings.next_page_binding);
   }, [settings, loading]);
 
   const refreshCustomFonts = useCallback(async () => {
@@ -329,13 +372,21 @@ export default function ReadingSettings({ settings, loading, refresh, save, save
         </div>
         <NumberInput value={lineSpacing} onChange={setLineSpacing} onBlur={() => save("line_spacing", String(lineSpacing))} suffix="x" min={1} max={3} />
       </div>
+      {/* Character Spacing */}
+      <div className="flex items-center justify-between h-[73px]">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.charSpacing")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.charSpacingHint")}</p>
+        </div>
+        <NumberInput value={charSpacing} onChange={setCharSpacing} onBlur={() => save("char_spacing", String(charSpacing))} suffix="%" min={-5} max={20} />
+      </div>
       {/* Word Spacing */}
       <div className="flex items-center justify-between h-[73px]">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.wordSpacing")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.wordSpacingHint")}</p>
         </div>
-        <NumberInput value={wordSpacing} onChange={setWordSpacing} onBlur={() => save("word_spacing", String(wordSpacing))} suffix="px" min={-4} max={16} />
+        <NumberInput value={wordSpacing} onChange={setWordSpacing} onBlur={() => save("word_spacing", String(wordSpacing))} suffix="%" min={-10} max={50} />
       </div>
       {/* Margins */}
       <div className="flex items-center justify-between h-[73px]">
@@ -344,6 +395,163 @@ export default function ReadingSettings({ settings, loading, refresh, save, save
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.marginsHint")}</p>
         </div>
         <NumberInput value={margins} onChange={setMargins} onBlur={() => save("margins", String(margins))} suffix="%" min={0} max={30} />
+      </div>
+      {/* Default Page Flow */}
+      <div className="flex items-center justify-between h-[73px]">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.readingMode")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.readingModeHint")}</p>
+        </div>
+        <Select
+          className={ROW_CONTROL_WIDTH}
+          value={readingMode}
+          onChange={(value) => {
+            const next = value as ReadingMode;
+            setReadingMode(next);
+            save("reading_mode", next);
+            showSavedToast();
+          }}
+          options={[
+            { value: "scrolling", label: t("readerSettings.scrolling") },
+            { value: "paginated", label: t("readerSettings.pageTurning") },
+          ]}
+        />
+      </div>
+      {/* Default Page Layout */}
+      <div className="flex items-center justify-between h-[73px]">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.pageLayout")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.pageLayoutHint")}</p>
+        </div>
+        <Select
+          className={ROW_CONTROL_WIDTH}
+          value={pageLayout}
+          onChange={(value) => {
+            const next = value as "1" | "2";
+            setPageLayout(next);
+            save("page_columns", next);
+            showSavedToast();
+          }}
+          options={[
+            { value: "1", label: t("readerSettings.singlePage") },
+            { value: "2", label: t("readerSettings.twoPages") },
+          ]}
+        />
+      </div>
+      {/* Page-turn Animation */}
+      <div className="flex items-center justify-between h-[73px]">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.pageTurnAnimation")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.pageTurnAnimationHint")}</p>
+        </div>
+        <Select
+          className={ROW_CONTROL_WIDTH}
+          value={pageTurnAnimation}
+          onChange={(value) => {
+            const next = value as PageTurnAnimation;
+            setPageTurnAnimation(next);
+            save("page_turn_animation", next);
+            showSavedToast();
+          }}
+          options={[
+            { value: "slide", label: t("readerSettings.animationSlide") },
+            { value: "fade", label: t("readerSettings.animationFade") },
+            { value: "cover", label: t("readerSettings.animationCover") },
+            { value: "none", label: t("readerSettings.animationNone") },
+          ]}
+        />
+      </div>
+      {/* Progress Display */}
+      <div className="flex items-center justify-between min-h-[73px] py-3 gap-4">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.progressDisplay")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.progressDisplayHint")}</p>
+        </div>
+        <div className={`flex flex-col gap-2 ${ROW_CONTROL_WIDTH}`}>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[12px] text-text-secondary">{t("readerSettings.chapterProgressAlways")}</span>
+            <Toggle
+              label={t("readerSettings.chapterProgressAlways")}
+              checked={showChapterProgress}
+              onChange={(v) => {
+                setShowChapterProgress(v);
+                save("show_chapter_progress", String(v));
+                showSavedToast();
+              }}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[12px] text-text-secondary">{t("readerSettings.bookProgress")}</span>
+            <Toggle
+              label={t("readerSettings.bookProgress")}
+              checked={showBookProgress}
+              onChange={(v) => {
+                setShowBookProgress(v);
+                save("show_book_progress", String(v));
+                showSavedToast();
+              }}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[12px] text-text-secondary">{t("readerSettings.pageNumbers")}</span>
+            <Toggle
+              label={t("readerSettings.pageNumbers")}
+              checked={showPageNumbers}
+              onChange={(v) => {
+                setShowPageNumbers(v);
+                save("show_page_numbers", String(v));
+                showSavedToast();
+              }}
+            />
+          </div>
+        </div>
+      </div>
+      {/* Previous-page Control */}
+      <div className="flex items-center justify-between h-[73px]">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.previousPageBinding")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("readerSettings.pageTurnBindingsHint")}</p>
+        </div>
+        <PageTurnBindingButton
+          direction="previous"
+          value={previousPageBinding}
+          active={capturingBinding === "previous"}
+          onActivate={setCapturingBinding}
+          onChange={(value) => {
+            const swapsNext = value === nextPageBinding;
+            const previous = previousPageBinding;
+            setPreviousPageBinding(value);
+            if (swapsNext) setNextPageBinding(previous);
+            void saveBulk(
+              swapsNext
+                ? { previous_page_binding: value, next_page_binding: previous }
+                : { previous_page_binding: value },
+            ).then(() => showSavedToast());
+          }}
+        />
+      </div>
+      {/* Next-page Control */}
+      <div className="flex items-center justify-between h-[73px]">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.nextPageBinding")}</p>
+        </div>
+        <PageTurnBindingButton
+          direction="next"
+          value={nextPageBinding}
+          active={capturingBinding === "next"}
+          onActivate={setCapturingBinding}
+          onChange={(value) => {
+            const swapsPrevious = value === previousPageBinding;
+            const previous = nextPageBinding;
+            setNextPageBinding(value);
+            if (swapsPrevious) setPreviousPageBinding(previous);
+            void saveBulk(
+              swapsPrevious
+                ? { next_page_binding: value, previous_page_binding: previous }
+                : { next_page_binding: value },
+            ).then(() => showSavedToast());
+          }}
+        />
       </div>
     </div>
   );
