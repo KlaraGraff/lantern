@@ -184,6 +184,7 @@ export default function LearningCardController({
   });
   const [loading, setLoading] = useState(true);
   const [thinking, setThinking] = useState(false);
+  const [reasoning, setReasoning] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [fromCache, setFromCache] = useState(false);
   const [notes, setNotes] = useState<LearningCardNote[]>([]);
@@ -213,6 +214,7 @@ export default function LearningCardController({
     setResult({ version: 1, kind: interaction.kind, sourceText: interaction.text, modules: {} });
     setLoading(true);
     setThinking(false);
+    setReasoning("");
     setError(null);
     setFromCache(false);
     const requestId = createUuid();
@@ -226,6 +228,18 @@ export default function LearningCardController({
     const parser = new LearningCardStreamParser(allowedModuleIds);
     let active = true;
     let unlisten: UnlistenFn | undefined;
+    // Reasoning arrives token by token. Coalescing a frame's worth of it into
+    // one update keeps a model that thinks for a minute from re-rendering the
+    // card thousands of times, exactly as the chat stream does.
+    let pendingReasoning = "";
+    let reasoningFrame: number | null = null;
+    const flushReasoning = () => {
+      reasoningFrame = null;
+      if (!active || !pendingReasoning) return;
+      const delta = pendingReasoning;
+      pendingReasoning = "";
+      setReasoning((current) => current + delta);
+    };
 
     const run = async () => {
       try {
@@ -258,10 +272,17 @@ export default function LearningCardController({
             if (!event.payload.delta) {
               // A model that reasons before it answers sends nothing but
               // reasoning for as long as it thinks — up to a minute on some.
-              // Saying so beats a spinner that is indistinguishable from a hang.
-              if (event.payload.reasoning_delta) setThinking(true);
+              // Showing that beats a spinner indistinguishable from a hang.
+              if (event.payload.reasoning_delta) {
+                setThinking(true);
+                pendingReasoning += event.payload.reasoning_delta;
+                if (reasoningFrame === null) {
+                  reasoningFrame = requestAnimationFrame(flushReasoning);
+                }
+              }
               return;
             }
+            flushReasoning();
             setThinking(false);
             const streamedModules = parser.push(event.payload.delta);
             if (Object.keys(streamedModules).length === 0) return;
@@ -323,6 +344,7 @@ export default function LearningCardController({
     run();
     return () => {
       active = false;
+      if (reasoningFrame !== null) cancelAnimationFrame(reasoningFrame);
       unlisten?.();
       unlisten = undefined;
       invoke("ai_cancel", { requestId }).catch(() => {});
@@ -524,6 +546,7 @@ export default function LearningCardController({
         maxHeight={initialPosition.maxHeight}
         loading={loading}
         thinking={thinking}
+        reasoning={reasoning}
         error={error}
         notes={notes}
         noteEditorOpen={noteEditorOpen}

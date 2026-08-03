@@ -1,6 +1,6 @@
-import { useId } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { AlertCircle, GripHorizontal, Loader2, RotateCw, Sparkles, X } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronRight, GripHorizontal, Loader2, RotateCw, Sparkles, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   getLearningCardTargetWidth,
@@ -26,6 +26,8 @@ interface LearningCardViewProps {
   loading?: boolean;
   /** The model is reasoning and has not started its answer yet. */
   thinking?: boolean;
+  /** What the model has thought so far, streamed as it arrives. */
+  reasoning?: string;
   error?: string | null;
   presentationMode?: boolean;
   notes?: LearningCardNote[];
@@ -61,6 +63,7 @@ export default function LearningCardView({
   maxHeight = "75dvh",
   loading = false,
   thinking = false,
+  reasoning = "",
   error = null,
   presentationMode = false,
   notes,
@@ -90,6 +93,19 @@ export default function LearningCardView({
 }: LearningCardViewProps) {
   const { t } = useTranslation();
   const titleId = useId();
+  const reasoningRef = useRef<HTMLDivElement>(null);
+  // Open while the thinking is the only thing happening, closed once the answer
+  // takes over — until the reader says otherwise, and then it is their call.
+  const [reasoningExpanded, setReasoningExpanded] = useState<boolean | null>(null);
+  const reasoningOpen = reasoningExpanded ?? thinking;
+
+  // Thinking is worth watching only at the end where it is still being written.
+  useEffect(() => {
+    if (!thinking || !reasoningOpen) return;
+    const element = reasoningRef.current;
+    if (element) element.scrollTop = element.scrollHeight;
+  }, [reasoning, reasoningOpen, thinking]);
+
   const card = config.cards[result.kind];
   const width = availableWidth === undefined
     ? getLearningCardTargetWidth(result.kind, card)
@@ -174,11 +190,27 @@ export default function LearningCardView({
           </div>
         ) : (
           <>
-            {thinking && (
-              <p className="flex items-center gap-1.5 border-b border-border/60 px-4 py-2 text-[11px] text-text-muted">
-                <Loader2 size={11} className="shrink-0 animate-spin" aria-hidden="true" />
-                {t("learningCard.thinking")}
-              </p>
+            {reasoning && (
+              <div className="border-b border-border/60 px-4 py-2">
+                <button
+                  type="button"
+                  aria-expanded={reasoningOpen}
+                  onClick={() => setReasoningExpanded(!reasoningOpen)}
+                  className="flex w-full cursor-pointer items-center gap-1.5 text-left text-[11px] font-medium text-text-muted hover:text-text-primary"
+                >
+                  {reasoningOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  {thinking && <Loader2 size={11} className="shrink-0 animate-spin" aria-hidden="true" />}
+                  <span>{t(thinking ? "ai.reasoningStreaming" : "ai.reasoning")}</span>
+                </button>
+                {reasoningOpen && (
+                  <div
+                    ref={reasoningRef}
+                    className="mt-1.5 max-h-28 overflow-y-auto whitespace-pre-wrap text-[11px] leading-[17px] text-text-muted"
+                  >
+                    {reasoning}
+                  </div>
+                )}
+              </div>
             )}
             <LearningCardModules
               card={card}
