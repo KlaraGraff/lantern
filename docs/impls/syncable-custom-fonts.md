@@ -36,7 +36,7 @@ worry from first principles and flip the decision back. See §9 for the exact te
 | `custom_fonts` rows | local-only table, no LWW columns | synced entity, LWW on `(updated_at, updated_by_device)` |
 | font binaries | `<local app data>/imported-fonts/` via `resolve_app_data_dir()` | `<active data dir>/imported-fonts/`, i.e. the iCloud folder when sync is on |
 | `font_family` (global) | `settings` table, local-only | synced, key-whitelisted |
-| per-book `font` | **`localStorage`**, not `book_settings` | **unchanged — see §8** |
+| per-book `font` | **`localStorage`**, not `book_settings` | **unchanged by this plan — see §8; migrated later in `405e22f`** |
 
 Three facts drive the whole design:
 
@@ -253,18 +253,24 @@ reader of a setting then has to merge two sources and decide which wins. Worse t
 
 ### The problem with the per-book half
 
-**The per-book `font` override does not live in `book_settings`.** It lives in browser
-`localStorage`, under `reader-settings-<bookId>`, written by
+> **Resolved in `405e22f`.** Everything below describes the state this plan shipped into, and is
+> kept as the record of why the backend was built ahead of its caller. The migration it hands off
+> has since landed: the per-book overrides live in `book_settings`, `typographyOverrides` is gone,
+> and the per-book font does cross devices. See `docs/impls/handoff-per-book-font-sync.md`.
+
+**At the time of writing, the per-book `font` override did not live in `book_settings`.** It lived
+in browser `localStorage`, under `reader-settings-<bookId>`, written by
 `src/pages/reader/useReaderSettingsSync.ts:350` with a `typographyOverrides` array marking which
-keys the book overrides. The `book_settings` table has working backend commands
+keys the book overrode. The `book_settings` table had working backend commands
 (`get_book_settings` / `set_book_settings_bulk`, registered in `lib.rs:833-834`, with passing unit
-tests) and **not a single frontend caller** — verified by grep across `src/` and `tests/`. It is
+tests) and **not a single frontend caller** — verified by grep across `src/` and `tests/`. It was
 dead storage.
 
-So plumbing `book_settings.font` through sync would be sound machinery attached to nothing. Making
-the per-book font genuinely sync requires first migrating that override out of `localStorage` and
-into `book_settings`, which means editing `useReaderSettingsSync.ts` and `Reader.tsx` — **both on
-the do-not-touch list** (`src/pages/reader/**`, `src/pages/Reader.tsx`).
+So plumbing `book_settings.font` through sync would have been sound machinery attached to nothing.
+Making the per-book font genuinely sync required first migrating that override out of
+`localStorage` and into `book_settings`, which meant editing `useReaderSettingsSync.ts` and
+`Reader.tsx` — **both on this plan's do-not-touch list** (`src/pages/reader/**`,
+`src/pages/Reader.tsx`).
 
 **Decision:** implement `font_family` (global) now, which is the half that makes the feature work —
 the file arrives on device two and the reader picks it up. Build the `setting.set` event with the
@@ -272,6 +278,11 @@ the file arrives on device two and the reader picks it up. Build the `setting.se
 frontend migration as a hand-off rather than reaching into another agent's files. This is the
 "narrowest change" the brief asked for; the part that is out of reach is out of reach for ownership
 reasons, not design ones.
+
+That hand-off was picked up in `405e22f`, which also found a trap this plan did not anticipate:
+`typographyOverrides` could not survive the move. A font arriving from another device carries no
+override marker with it, so the merge would have discarded the very value sync had just delivered.
+One row per key makes row-existence the override, and the marker list becomes unnecessary.
 
 ---
 
