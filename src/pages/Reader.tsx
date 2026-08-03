@@ -530,7 +530,9 @@ export default function Reader() {
     try {
       await invoke("open_settings_on_main", { section: "services", view: "ocr" });
     } catch {
-      await invoke("open_settings_on_main", { section: "tools" }).catch(() => {});
+      // OCR lives under Services. Landing on the section is a near miss; the
+      // old fallback aimed at Reading Assistance, which OCR left long ago.
+      await invoke("open_settings_on_main", { section: "services" }).catch(() => {});
     }
     const main = await WebviewWindow.getByLabel("main").catch(() => null);
     await main?.show().catch(() => {});

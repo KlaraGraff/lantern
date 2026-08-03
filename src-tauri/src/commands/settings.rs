@@ -647,6 +647,63 @@ mod tests {
             "30"
         );
     }
+
+    #[test]
+    fn ocr_settings_address_survives_the_move_to_services() {
+        // The OCR HUD's settings button sends the current address; the reader
+        // used to send the pre-move one. Both must land on Services → OCR.
+        for section in ["services", "tools"] {
+            assert_eq!(
+                super::settings_destination_payload(section, Some("ocr")).unwrap(),
+                serde_json::json!({ "section": "services", "view": "ocr" }),
+                "{section} → OCR did not resolve",
+            );
+        }
+    }
+
+    #[test]
+    fn every_services_view_is_addressable() {
+        for view in super::SERVICES_VIEWS {
+            assert_eq!(
+                super::settings_destination_payload("services", Some(view)).unwrap(),
+                serde_json::json!({ "section": "services", "view": view }),
+            );
+        }
+    }
+
+    #[test]
+    fn a_section_without_a_view_addresses_the_section() {
+        assert_eq!(
+            super::settings_destination_payload("tools", None).unwrap(),
+            serde_json::Value::String("tools".to_string()),
+        );
+    }
+
+    #[test]
+    fn an_unknown_view_is_rejected_rather_than_guessed() {
+        assert!(super::settings_destination_payload("services", Some("nope")).is_err());
+        assert!(super::settings_destination_payload("tools", Some("models")).is_err());
+    }
+}
+
+/// Tabs inside the services section that other windows may deep-link to.
+/// Mirrors `SERVICES_VIEWS` in `src/components/settings-destination.ts`.
+const SERVICES_VIEWS: &[&str] = &["models", "embedding", "speech", "ocr"];
+
+/// Resolve an open-settings address into the payload the main window listens
+/// for, or reject it. OCR used to live under `tools`; the frontend normalizer
+/// still forwards that address to `services`, so it stays accepted here.
+fn settings_destination_payload(section: &str, view: Option<&str>) -> AppResult<serde_json::Value> {
+    match view {
+        Some("ocr") if section == "tools" => {
+            Ok(serde_json::json!({ "section": "services", "view": "ocr" }))
+        }
+        Some(view) if section == "services" && SERVICES_VIEWS.contains(&view) => {
+            Ok(serde_json::json!({ "section": "services", "view": view }))
+        }
+        Some(_) => Err(AppError::Other("SETTINGS_DESTINATION_INVALID".to_string())),
+        None => Ok(serde_json::Value::String(section.to_string())),
+    }
 }
 
 /// Emit an open-settings event to the main window from any window.
@@ -656,13 +713,7 @@ pub fn open_settings_on_main(
     view: Option<String>,
     app: AppHandle,
 ) -> AppResult<()> {
-    let payload = match view.as_deref() {
-        Some("ocr") if section == "tools" => {
-            serde_json::json!({ "section": "tools", "view": "ocr" })
-        }
-        Some(_) => return Err(AppError::Other("SETTINGS_DESTINATION_INVALID".to_string())),
-        None => serde_json::Value::String(section),
-    };
+    let payload = settings_destination_payload(&section, view.as_deref())?;
     app.emit_to("main", "open-settings", payload)
         .map_err(|e| AppError::Other(e.to_string()))?;
     if let Some(window) = app.get_webview_window("main") {
