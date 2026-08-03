@@ -9,6 +9,7 @@ import {
   BOOK_SOURCES_KEY,
   BOOK_SOURCES_SEEDED_KEY,
   BUILT_IN_BOOK_SOURCES,
+  bookSourceDeleteKind,
   isOpenableUrl,
   parseBookSources,
   restoreBuiltInBookSources,
@@ -69,7 +70,12 @@ export default function BookSourcesSettings({ settings, loading, saveBulk, showS
   const requestDelete = (source: BookSource) => {
     // "Last one" means the whole list, not the group: emptying 图书馆 while
     // 第三方资源站 still has entries leaves the reader with somewhere to go.
-    const confirmation = presetDeleteConfirm("builtin", sources.length <= 1, "sources", source.name);
+    const confirmation = presetDeleteConfirm(
+      bookSourceDeleteKind(source.id),
+      sources.length <= 1,
+      "sources",
+      source.name,
+    );
     if (!confirmation) {
       deleteSource(source.id);
       return;

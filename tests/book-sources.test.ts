@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { presetDeleteConfirm } from "../src/components/settings/presetDeletion.ts";
 import {
   BUILT_IN_BOOK_SOURCES,
+  bookSourceDeleteKind,
   isOpenableUrl,
   parseBookSources,
   restoreBuiltInBookSources,
@@ -47,4 +49,27 @@ test("only http(s) links are handed to the system browser", () => {
   assert.ok(!isOpenableUrl("file:///etc/passwd"));
   assert.ok(!isOpenableUrl("javascript:alert(1)"));
   assert.ok(!isOpenableUrl("example.com"));
+});
+
+test("a source the user typed cannot be deleted without a warning", () => {
+  // The bug this locks: the settings pane passed a literal "builtin" for every
+  // row, so a user's own entry deleted silently while the built-ins were still
+  // there — and "restore defaults" cannot bring it back.
+  assert.equal(bookSourceDeleteKind(userEntry.id), "custom");
+  assert.equal(bookSourceDeleteKind(BUILT_IN_BOOK_SOURCES[0].id), "builtin");
+
+  const listIsNotEmptied = false;
+  assert.ok(
+    presetDeleteConfirm(bookSourceDeleteKind(userEntry.id), listIsNotEmptied, "sources", userEntry.name),
+    "deleting a user entry among many must still confirm",
+  );
+  assert.equal(
+    presetDeleteConfirm(
+      bookSourceDeleteKind(BUILT_IN_BOOK_SOURCES[0].id),
+      listIsNotEmptied,
+      "sources",
+    ),
+    null,
+    "a built-in among many stays a one-click delete",
+  );
 });

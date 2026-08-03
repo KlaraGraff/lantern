@@ -75,6 +75,17 @@ export function isBuiltInBookSource(id: string): boolean {
   return id.startsWith("builtin:");
 }
 
+/**
+ * Which deletion rule a source falls under. Deleting a built-in is reversible —
+ * "restore defaults" hands it back — but `restoreBuiltInBookSources` can only
+ * keep user entries that are *still in the list*, so a URL the user typed is
+ * gone for good once removed. That difference is the whole reason the confirm
+ * dialog exists, and reading it off the id is the only way to get it right.
+ */
+export function bookSourceDeleteKind(id: string): "builtin" | "custom" {
+  return isBuiltInBookSource(id) ? "builtin" : "custom";
+}
+
 function isBookSource(value: unknown): value is BookSource {
   if (typeof value !== "object" || value === null) return false;
   const source = value as Partial<BookSource>;

@@ -15,9 +15,6 @@ Detailed implementation plans for features and bug fixes. Numbers match the corr
   a living document. Route A is chosen and the Apple Developer application is submitted;
   waiting on Apple's review. Until it lands, every release artifact is ad-hoc signed and
   every downloading user hits Gatekeeper.
-- [Deletable, restorable preset lists](deletable-preset-items.md) — parts of this landed in
-  `9159a9c` / `2e8127d` **after** the document declared itself unimplemented. Its status line
-  is under audit; trust the code, not the document, until that audit lands.
 - [q243 — Update Experience: Pill, App-Menu Check, Formal About](q243-update-experience.md) —
   **deferred, and needs rebasing before anyone starts.** It was written against Quill, whose
   update UI Lantern never inherited: there is no updater plugin, no `UpdateToast`, no
@@ -45,3 +42,6 @@ Detailed implementation plans for features and bug fixes. Numbers match the corr
 - [Read Aloud — adaptive playback for any selection](archive/read-aloud.md)
 - [Reasoning effort, speech rate, TTS model list, free book sources](archive/reasoning-effort-speech-rate-book-sources.md)
 - [Syncable custom fonts](archive/syncable-custom-fonts.md)
+- [Deletable, restorable preset lists](archive/deletable-preset-items.md) — its status line
+  said "not implemented" for a day after the code landed; the appendix records the audit that
+  settled it and the 12 checks that still need eyes on a screen
