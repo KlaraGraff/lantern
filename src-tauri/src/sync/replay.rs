@@ -162,6 +162,14 @@ pub struct ReplayEngine {
     /// Checked between events in Phase C so a `sync_disable` doesn't
     /// have to wait for a long replay to finish.
     cancelled: std::sync::atomic::AtomicBool,
+    /// Ids of imported fonts whose bytes were on disk as of the last tick.
+    /// Font availability is derived, non-durable state — a fact about this
+    /// device's disk right now, recomputable in a millisecond — so it lives
+    /// here rather than in a table. (`book_asset_local_state` is the heavier
+    /// precedent, but book assets carry error codes and verification results
+    /// worth persisting; a font is either present or it is not.) The engine
+    /// emits `custom-fonts-changed` when this set changes across a tick.
+    available_fonts: std::sync::Mutex<std::collections::BTreeSet<String>>,
 }
 
 impl ReplayEngine {
@@ -172,6 +180,7 @@ impl ReplayEngine {
             own_log,
             app_handle: None,
             cancelled: std::sync::atomic::AtomicBool::new(false),
+            available_fonts: std::sync::Mutex::new(std::collections::BTreeSet::new()),
         }
     }
 
@@ -190,6 +199,78 @@ impl ReplayEngine {
 
     fn is_cancelled(&self) -> bool {
         self.cancelled.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Pull down any imported-font file that is still an iCloud placeholder and
+    /// report whether the set of locally-available fonts changed.
+    ///
+    /// Only the catalog row travels through the event log; a font may be
+    /// several megabytes, well past the 256 KiB per-line cap. So a row can
+    /// legitimately exist here before its bytes do. That is a normal transient
+    /// state, and the UI is expected to keep such a font selected rather than
+    /// treat it as deleted.
+    ///
+    /// The file is verified by size only. Unlike a book asset there is no
+    /// recorded content hash to check against — but the *name* is the hash:
+    /// the importer writes `<sha256>.<ext>`, so a corrupt file would have to
+    /// collide with SHA-256 to be accepted under the right name.
+    fn reconcile_custom_fonts(&self, db: &Db) -> bool {
+        let Ok(font_dir) = db.data_dir().map(|dir| dir.join("imported-fonts")) else {
+            return false;
+        };
+        let catalog: Vec<(String, String, i64)> = {
+            let Ok(conn) = db.read_conn.lock() else {
+                return false;
+            };
+            let Ok(mut statement) =
+                conn.prepare("SELECT id, file_name, file_size FROM custom_fonts")
+            else {
+                return false;
+            };
+            let Ok(rows) = statement.query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get::<_, i64>(2)?))
+            }) else {
+                return false;
+            };
+            match rows.collect::<Result<Vec<_>, _>>() {
+                Ok(rows) => rows,
+                Err(_) => return false,
+            }
+        };
+
+        let mut available = std::collections::BTreeSet::new();
+        for (id, file_name, file_size) in catalog {
+            let path = font_dir.join(&file_name);
+            match crate::icloud::file_availability(&path) {
+                crate::icloud::FileAvailability::ICloudPlaceholder => {
+                    crate::icloud::trigger_download_file(&path);
+                }
+                crate::icloud::FileAvailability::Missing
+                | crate::icloud::FileAvailability::Unreadable => {}
+                crate::icloud::FileAvailability::Available => {
+                    // A partially-materialized download is worse than a missing
+                    // one: the browser would install a broken @font-face and
+                    // render garbage rather than falling back.
+                    let usable = fs::symlink_metadata(&path).is_ok_and(|metadata| {
+                        !metadata.file_type().is_symlink()
+                            && metadata.is_file()
+                            && metadata.len() == u64::try_from(file_size).unwrap_or(u64::MAX)
+                    });
+                    if usable {
+                        available.insert(id);
+                    }
+                }
+            }
+        }
+
+        let Ok(mut previous) = self.available_fonts.lock() else {
+            return false;
+        };
+        if *previous == available {
+            return false;
+        }
+        *previous = available;
+        true
     }
 
     /// Run a single replay pass.
@@ -272,6 +353,19 @@ impl ReplayEngine {
         if assets_updated > 0 {
             if let Some(handle) = &self.app_handle {
                 let _ = handle.emit("book-assets-changed", assets_updated);
+            }
+        }
+
+        if self.reconcile_custom_fonts(db) {
+            if let Some(handle) = &self.app_handle {
+                // Re-read the catalog so the payload carries fresh
+                // `file_available` flags. The frontend installs @font-face
+                // rules only for the available ones, but keeps the whole
+                // catalog as the "selectable" set — a font still in flight
+                // must not be downgraded to "system".
+                if let Ok(fonts) = crate::commands::fonts::read_custom_fonts(db) {
+                    let _ = handle.emit("custom-fonts-changed", fonts);
+                }
             }
         }
 

@@ -50,6 +50,17 @@ pub struct SnapshotState {
     pub chats: BTreeMap<String, ChatRow>,
     #[serde(default)]
     pub chat_messages: BTreeMap<String, ChatMessageRow>,
+    /// Imported-font catalog rows. The font bytes are not in here — they
+    /// replicate as plain files under `imported-fonts/`.
+    #[serde(default)]
+    pub custom_fonts: BTreeMap<String, CustomFontRow>,
+    /// The whitelisted subset of `settings`, keyed by setting key. The table as
+    /// a whole stays local-only; see `events::is_syncable_setting`.
+    #[serde(default)]
+    pub settings: BTreeMap<String, SettingRow>,
+    /// The whitelisted subset of `book_settings`, keyed `"<book_id>:<key>"`.
+    #[serde(default)]
+    pub book_settings: BTreeMap<String, SettingRow>,
     /// `entity` (the same string in `_tombstones.entity`) → list of ids.
     #[serde(default)]
     pub tombstones: BTreeMap<String, Vec<TombstoneRow>>,
@@ -101,6 +112,27 @@ pub struct BookAssetRow {
     pub page_count: i32,
     pub supersedes_asset_id: Option<String>,
     pub created_at: i64,
+    pub updated_at: i64,
+    pub updated_by_device: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CustomFontRow {
+    pub family_name: String,
+    pub file_name: String,
+    pub format: String,
+    pub file_size: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub updated_by_device: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SettingRow {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub book_id: Option<String>,
+    pub key: String,
+    pub value: String,
     pub updated_at: i64,
     pub updated_by_device: String,
 }

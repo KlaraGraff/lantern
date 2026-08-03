@@ -309,6 +309,9 @@ pub fn sync_enable(
     fs::create_dir_all(icloud_dir.join("books"))?;
     fs::create_dir_all(icloud_dir.join("covers"))?;
     fs::create_dir_all(icloud_dir.join("sources"))?;
+    // Imported fonts replicate as plain files like the other blobs; only the
+    // catalog row goes through the event log.
+    fs::create_dir_all(icloud_dir.join("imported-fonts"))?;
 
     // Open the EventLog. `EventLog::open` touches the log file with
     // `create(true).append(true)` — technically a mutation, but an
@@ -403,6 +406,10 @@ pub fn sync_enable(
     move_dir_contents(&local.0.join("books"), &icloud_dir.join("books"))?;
     move_dir_contents(&local.0.join("covers"), &icloud_dir.join("covers"))?;
     move_dir_contents(&local.0.join("sources"), &icloud_dir.join("sources"))?;
+    move_dir_contents(
+        &local.0.join("imported-fonts"),
+        &icloud_dir.join("imported-fonts"),
+    )?;
 
     // Move succeeded — wire the log so post-commit flushes drain to
     // peers, and store the engine + watcher in app state so the rest
@@ -504,6 +511,10 @@ pub async fn sync_disable(
         (ubiquity_dir.join("books"), local_dir.join("books")),
         (ubiquity_dir.join("covers"), local_dir.join("covers")),
         (ubiquity_dir.join("sources"), local_dir.join("sources")),
+        (
+            ubiquity_dir.join("imported-fonts"),
+            local_dir.join("imported-fonts"),
+        ),
     ];
     let copy_result =
         tokio::task::spawn_blocking(move || copy_disable_files_with_progress(&app, &jobs))
@@ -863,6 +874,10 @@ pub(crate) fn reconcile_local_blobs_to_ubiquity(
     move_dir_contents(&local_dir.join("books"), &shared_dir.join("books"))?;
     move_dir_contents(&local_dir.join("covers"), &shared_dir.join("covers"))?;
     move_dir_contents(&local_dir.join("sources"), &shared_dir.join("sources"))?;
+    move_dir_contents(
+        &local_dir.join("imported-fonts"),
+        &shared_dir.join("imported-fonts"),
+    )?;
     Ok(())
 }
 

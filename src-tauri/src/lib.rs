@@ -580,6 +580,10 @@ pub fn run() {
             }
             std::fs::create_dir_all(local_dir.join("prepared"))
                 .expect("failed to create text preparation cache");
+            // The local imported-font dir. When sync is on the fonts live in the
+            // shared directory instead, which is granted asset access further
+            // down alongside the other blobs — this grant covers the sync-off
+            // case and the pre-migration files still sitting here.
             let imported_font_dir = local_dir.join("imported-fonts");
             std::fs::create_dir_all(&imported_font_dir)
                 .expect("failed to create imported font directory");

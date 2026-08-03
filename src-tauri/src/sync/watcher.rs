@@ -80,14 +80,16 @@ impl Drop for WatcherHandle {
     }
 }
 
-/// Spawn the watcher. Watches the flat `logs/`, `covers/`, and `books/`
-/// directories. Covers are watched because peer
+/// Spawn the watcher. Watches the flat `logs/`, `covers/`, `books/`, and
+/// `imported-fonts/` directories. Covers are watched because peer
 /// cover files (and their iCloud placeholders) materialize independently
 /// of any `logs/` event: a cover that lands after its book's log event
 /// would otherwise never trigger the tick that ingests it, leaving a
 /// blank card until some unrelated `logs/` change, a manual sync, or a
 /// relaunch. The same ordering applies to synced OCR PDF assets under
-/// `books/`, whose bytes must be size/hash verified before activation.
+/// `books/`, whose bytes must be size/hash verified before activation, and to
+/// imported fonts: the catalog row arrives via `logs/` but the font file lands
+/// independently, and the reader must be told once it can actually be rendered.
 ///
 /// The closure inside the dedicated thread holds `Arc<Db>` and
 /// `Arc<ReplayEngine>`. It locks `db.conn` only for the duration of one
@@ -104,6 +106,8 @@ pub fn spawn(shared_dir: PathBuf, db: Db, engine: Arc<ReplayEngine>) -> AppResul
     std::fs::create_dir_all(&covers_dir)?;
     let books_dir = shared_dir.join("books");
     std::fs::create_dir_all(&books_dir)?;
+    let fonts_dir = shared_dir.join("imported-fonts");
+    std::fs::create_dir_all(&fonts_dir)?;
 
     let (tx, rx) = mpsc::channel();
     let mut watcher = recommended_watcher(move |res: notify::Result<notify::Event>| {
@@ -124,6 +128,9 @@ pub fn spawn(shared_dir: PathBuf, db: Db, engine: Arc<ReplayEngine>) -> AppResul
     watcher
         .watch(&books_dir, RecursiveMode::NonRecursive)
         .map_err(|e| AppError::Other(format!("notify watch {books_dir:?}: {e}")))?;
+    watcher
+        .watch(&fonts_dir, RecursiveMode::NonRecursive)
+        .map_err(|e| AppError::Other(format!("notify watch {fonts_dir:?}: {e}")))?;
 
     let stop = Arc::new(AtomicBool::new(false));
     let stop_thread = Arc::clone(&stop);
@@ -203,6 +210,8 @@ fn run_loop(
 ///   - `.img` — a cover file materialized, so `ingest_peer_covers` can
 ///     read it into the `cover_data` BLOB
 ///   - `.pdf` — an OCR asset materialized under `books/`
+///   - `.ttf` / `.otf` / `.woff` / `.woff2` — an imported font materialized,
+///     so the reader can stop falling back for it
 ///   - `.icloud` — a placeholder appeared; ticking lets
 ///     the engine trigger its download so the real file follows
 fn is_relevant_event(ev: &notify::Event) -> bool {
@@ -214,6 +223,10 @@ fn is_relevant_event(ev: &notify::Event) -> bool {
                     || ext.eq_ignore_ascii_case("json")
                     || ext.eq_ignore_ascii_case("img")
                     || ext.eq_ignore_ascii_case("pdf")
+                    || ext.eq_ignore_ascii_case("ttf")
+                    || ext.eq_ignore_ascii_case("otf")
+                    || ext.eq_ignore_ascii_case("woff")
+                    || ext.eq_ignore_ascii_case("woff2")
                     || ext.eq_ignore_ascii_case("icloud")
             })
             .unwrap_or(false)

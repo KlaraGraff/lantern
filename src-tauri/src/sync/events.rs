@@ -20,14 +20,32 @@ use sha2::{Digest, Sha256};
 /// and whole-book word-marker rules; version 3 adds per-location exceptions;
 /// version 4 adds synced book summaries; version 5 preserves summary edits;
 /// version 6 adds LWW replacement of an existing assistant message; version 7
-/// adds immutable OCR-derived book assets and their tombstones.
+/// adds immutable OCR-derived book assets and their tombstones; version 8 adds
+/// the imported-font catalog and a whitelisted subset of settings keys.
 /// Readers retain old-version support while older clients reject newer
 /// envelopes instead of advancing their watermark past data they cannot apply.
-pub const EVENT_SCHEMA_VERSION: u32 = 7;
+pub const EVENT_SCHEMA_VERSION: u32 = 8;
 pub const MIN_SUPPORTED_EVENT_SCHEMA_VERSION: u32 = 1;
 
 pub fn is_supported_event_schema_version(version: u32) -> bool {
     (MIN_SUPPORTED_EVENT_SCHEMA_VERSION..=EVENT_SCHEMA_VERSION).contains(&version)
+}
+
+/// The `settings` and `book_settings` tables stay local-only by design --
+/// `docs/impls/archive/sync/31-sync.md` calls them per-screen UI preferences,
+/// and that is right for theme, font size, and line height. Font *identity* is
+/// the exception: a font is something the user acquired and chose, so it is
+/// library-shaped rather than screen-shaped, and without it a synced font file
+/// arrives on the second device with nothing selecting it.
+///
+/// So the gate is a key whitelist, not a table. Both the writer (which decides
+/// whether to emit at all) and the reader (`apply_setting_set`) consult it.
+pub fn is_syncable_setting(per_book: bool, key: &str) -> bool {
+    if per_book {
+        key == "font"
+    } else {
+        key == "font_family"
+    }
 }
 
 /// Canonical form shared by commands, event validation, and stable marker IDs.
@@ -228,6 +246,39 @@ pub enum EventBody {
     ChatMessageAdd(ChatMessagePayload),
     #[serde(rename = "chat.message.replace")]
     ChatMessageReplace(ChatMessagePayload),
+
+    // Only the catalog row travels here. The font bytes replicate as a plain
+    // file under `imported-fonts/` in the shared directory, because a font
+    // routinely exceeds the 256 KiB log-line cap and can approach the 16 MiB
+    // per-file cap on its own.
+    #[serde(rename = "custom_font.upsert")]
+    CustomFontUpsert(CustomFontPayload),
+    #[serde(rename = "custom_font.delete")]
+    CustomFontDelete { id: String },
+
+    /// A single setting. Only a whitelist of keys is ever emitted or applied --
+    /// see `settings::is_syncable_setting`. `book` is `None` for a global
+    /// setting and the book id for a per-book override.
+    #[serde(rename = "setting.set")]
+    SettingSet(SettingPayload),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CustomFontPayload {
+    pub id: String,
+    pub family_name: String,
+    pub file_name: String,
+    pub format: String,
+    pub file_size: i64,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SettingPayload {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub book: Option<String>,
+    pub key: String,
+    pub value: String,
 }
 
 fn default_fsrs_version() -> i64 {

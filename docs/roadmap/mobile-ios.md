@@ -455,8 +455,14 @@ iOS does not panic (`HOME` is set to the sandbox container root) — it **succee
 wrong place**: `<container>/.local/share/com.klaragraff.lantern/`. That is a hidden dot
 directory outside `Library/`, so it lands in iCloud/iTunes backup with no
 `NSURLIsExcludedFromBackupKey`, and it diverges from `app.path().app_data_dir()`
-(`<container>/Library/Application Support/<id>`), leaving two disagreeing data roots. Three
-runtime callers use it: speech cache, imported fonts, OCR runtime.
+(`<container>/Library/Application Support/<id>`), leaving two disagreeing data roots. Two
+runtime callers use it: speech cache and OCR runtime.
+
+**Shrunk 2026-08-02:** imported fonts used to be the third. Making them syncable moved
+`imported-fonts/` under `Db.data_dir` — the shared iCloud folder when sync is on, otherwise the
+local app data dir, both derived from Tauri's `app.path().app_data_dir()`. `commands/fonts.rs`
+no longer calls `resolve_app_data_dir()` at all. This does not fix F-003; it removes one caller
+from it. See `docs/impls/syncable-custom-fonts.md`.
 
 ### F-004 — The reader engine is already WebKit-safe
 

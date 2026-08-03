@@ -1009,7 +1009,7 @@
   "settings.layout.fontFamily": "Font Family",
   "settings.layout.fontFamilyHint": "Choose your preferred reading font",
   "settings.layout.customFonts": "My Fonts",
-  "settings.layout.customFontsHint": "Import TTF, OTF, WOFF, or WOFF2 files. Imported files stay on this device and are not synced.",
+  "settings.layout.customFontsHint": "Import TTF, OTF, WOFF, or WOFF2 files. Imported fonts sync to your other devices, and may take a moment to arrive.",
   "settings.layout.importFonts": "Import fonts",
   "settings.layout.deleteFont": "Delete imported font",
   "settings.layout.fontImportFailed": "Font import failed. Check the file format and try again.",

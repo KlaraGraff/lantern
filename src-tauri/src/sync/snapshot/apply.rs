@@ -138,6 +138,19 @@ impl Snapshot {
                 "SYNC_SNAPSHOT_BOOK_ASSET_INVALID".to_string(),
             ));
         }
+        if self.v < 8
+            && (!self.state.custom_fonts.is_empty()
+                || !self.state.settings.is_empty()
+                || !self.state.book_settings.is_empty())
+        {
+            return Err(AppError::Other(
+                "SYNC_SNAPSHOT_CUSTOM_FONT_INVALID".to_string(),
+            ));
+        }
+        for (id, font) in &self.state.custom_fonts {
+            validation::validate_entity_id(id)?;
+            validation::validate_font_path(&format!("imported-fonts/{}", font.file_name))?;
+        }
         let snapshot_id = self
             .id
             .parse::<Ulid>()
@@ -431,6 +444,32 @@ impl Snapshot {
             }
             insert_chat_message(tx, id, row)?;
         }
+        for (id, row) in &self.state.custom_fonts {
+            if merge::is_tombstoned(tx, merge::entity::CUSTOM_FONT, id)? {
+                continue;
+            }
+            upsert_custom_font(tx, id, row)?;
+        }
+        // Non-whitelisted keys are skipped rather than rejected: a snapshot from
+        // a newer Lantern that syncs one more key must not wedge this peer's
+        // watermark, and the value is meaningless to us anyway.
+        for row in self.state.settings.values() {
+            if !super::super::events::is_syncable_setting(false, &row.key) {
+                continue;
+            }
+            upsert_setting(tx, None, row)?;
+        }
+        for row in self.state.book_settings.values() {
+            let Some(book_id) = row.book_id.as_deref() else {
+                continue;
+            };
+            if !super::super::events::is_syncable_setting(true, &row.key)
+                || merge::is_tombstoned(tx, merge::entity::BOOK, book_id)?
+            {
+                continue;
+            }
+            upsert_setting(tx, Some(book_id), row)?;
+        }
 
         // Watermarks: last_snapshot_id moves to this snapshot's id;
         // last_event_id is monotonic — never decrease.
@@ -515,6 +554,56 @@ pub(super) fn upsert_book(tx: &Transaction, id: &str, r: &BookRow) -> AppResult<
             r.status, r.progress, r.current_cfi, r.created_at, r.updated_at, r.updated_by_device,
         ],
     )?;
+    Ok(())
+}
+
+fn upsert_custom_font(tx: &Transaction, id: &str, r: &CustomFontRow) -> AppResult<()> {
+    tx.execute(
+        "INSERT INTO custom_fonts
+           (id, family_name, file_name, format, file_size, created_at, updated_at, updated_by_device)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT(id) DO UPDATE SET family_name=excluded.family_name,
+           file_name=excluded.file_name, format=excluded.format,
+           file_size=excluded.file_size,
+           created_at=MIN(custom_fonts.created_at, excluded.created_at),
+           updated_at=excluded.updated_at, updated_by_device=excluded.updated_by_device
+         WHERE (custom_fonts.updated_at, custom_fonts.updated_by_device)
+             < (excluded.updated_at, excluded.updated_by_device)",
+        params![
+            id,
+            r.family_name,
+            r.file_name,
+            r.format,
+            r.file_size,
+            r.created_at,
+            r.updated_at,
+            r.updated_by_device,
+        ],
+    )?;
+    Ok(())
+}
+
+fn upsert_setting(tx: &Transaction, book_id: Option<&str>, r: &SettingRow) -> AppResult<()> {
+    match book_id {
+        None => tx.execute(
+            "INSERT INTO settings (key, value, updated_at, updated_by_device)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(key) DO UPDATE SET value=excluded.value,
+               updated_at=excluded.updated_at, updated_by_device=excluded.updated_by_device
+             WHERE (settings.updated_at, settings.updated_by_device)
+                 < (excluded.updated_at, excluded.updated_by_device)",
+            params![r.key, r.value, r.updated_at, r.updated_by_device],
+        )?,
+        Some(book_id) => tx.execute(
+            "INSERT INTO book_settings (book_id, key, value, updated_at, updated_by_device)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(book_id, key) DO UPDATE SET value=excluded.value,
+               updated_at=excluded.updated_at, updated_by_device=excluded.updated_by_device
+             WHERE (book_settings.updated_at, book_settings.updated_by_device)
+                 < (excluded.updated_at, excluded.updated_by_device)",
+            params![book_id, r.key, r.value, r.updated_at, r.updated_by_device],
+        )?,
+    };
     Ok(())
 }
 
@@ -1414,6 +1503,77 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     for row in rows {
         let (id, m) = row?;
         state.chat_messages.insert(id, m);
+    }
+    drop(stmt);
+
+    // custom_fonts. Captured from the live table rather than replayed history,
+    // so a device whose fonts predate sync publishes them on its first snapshot
+    // without any backfill of synthetic events.
+    let mut stmt = conn.prepare(
+        "SELECT id, family_name, file_name, format, file_size, created_at, updated_at, updated_by_device
+         FROM custom_fonts",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            CustomFontRow {
+                family_name: r.get(1)?,
+                file_name: r.get(2)?,
+                format: r.get(3)?,
+                file_size: r.get(4)?,
+                created_at: r.get(5)?,
+                updated_at: r.get(6)?,
+                updated_by_device: r.get(7)?,
+            },
+        ))
+    })?;
+    for row in rows {
+        let (id, font) = row?;
+        state.custom_fonts.insert(id, font);
+    }
+    drop(stmt);
+
+    // settings / book_settings -- the whitelisted keys only. Everything else in
+    // these tables is a per-screen preference that stays on this device.
+    let mut stmt = conn.prepare(
+        "SELECT key, value, updated_at, updated_by_device FROM settings WHERE key = 'font_family'",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(SettingRow {
+            book_id: None,
+            key: r.get(0)?,
+            value: r.get(1)?,
+            updated_at: r.get(2)?,
+            updated_by_device: r.get(3)?,
+        })
+    })?;
+    for row in rows {
+        let row = row?;
+        state.settings.insert(row.key.clone(), row);
+    }
+    drop(stmt);
+
+    let mut stmt = conn.prepare(
+        "SELECT book_id, key, value, updated_at, updated_by_device
+         FROM book_settings WHERE key = 'font'",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(SettingRow {
+            book_id: Some(r.get::<_, String>(0)?),
+            key: r.get(1)?,
+            value: r.get(2)?,
+            updated_at: r.get(3)?,
+            updated_by_device: r.get(4)?,
+        })
+    })?;
+    for row in rows {
+        let row = row?;
+        let key = format!(
+            "{}:{}",
+            row.book_id.as_deref().unwrap_or_default(),
+            row.key
+        );
+        state.book_settings.insert(key, row);
     }
     drop(stmt);
 

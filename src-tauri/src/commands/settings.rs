@@ -6,6 +6,8 @@ use crate::ai::router::{self, AiCredentialView, AiProfileView};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::secrets::Secrets;
+use crate::sync::events::{is_syncable_setting, EventBody, SettingPayload};
+use crate::sync::writer::SyncWriter;
 
 #[tauri::command]
 pub fn get_all_settings(
@@ -106,43 +108,72 @@ pub fn get_setting(key: String, db: State<'_, Db>) -> AppResult<Option<String>> 
 }
 
 #[tauri::command]
-pub fn set_setting(key: String, value: String, db: State<'_, Db>) -> AppResult<()> {
-    if Secrets::is_sensitive_key(&key) {
-        return Err(AppError::Other(
-            "SECRET_WRITE_REQUIRES_DEDICATED_COMMAND".to_string(),
-        ));
-    }
-
-    let conn = db.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    conn.execute(
-        "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2",
-        params![key, value],
-    )?;
-    Ok(())
+pub fn set_setting(
+    key: String,
+    value: String,
+    db: State<'_, Db>,
+    sync: State<'_, SyncWriter>,
+) -> AppResult<()> {
+    let mut settings = HashMap::new();
+    settings.insert(key, value);
+    set_settings_bulk_inner(&settings, &db, &sync)
 }
 
 #[tauri::command]
-pub fn set_settings_bulk(settings: HashMap<String, String>, db: State<'_, Db>) -> AppResult<()> {
-    set_settings_bulk_inner(&settings, &db)
+pub fn set_settings_bulk(
+    settings: HashMap<String, String>,
+    db: State<'_, Db>,
+    sync: State<'_, SyncWriter>,
+) -> AppResult<()> {
+    set_settings_bulk_inner(&settings, &db, &sync)
 }
 
-fn set_settings_bulk_inner(settings: &HashMap<String, String>, db: &Db) -> AppResult<()> {
+/// Write global settings, publishing only the whitelisted keys.
+///
+/// The `settings` table stays local-only as a table -- theme and font size are
+/// per-screen preferences that have no business crossing devices. `font_family`
+/// is the exception, because a synced font file is useless if nothing on the
+/// second device selects it. Non-whitelisted keys never reach the log at all,
+/// so the event stream stays clean rather than being filtered on read.
+fn set_settings_bulk_inner(
+    settings: &HashMap<String, String>,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<()> {
     if settings.keys().any(|key| Secrets::is_sensitive_key(key)) {
         return Err(AppError::Other(
             "SECRET_WRITE_REQUIRES_DEDICATED_COMMAND".to_string(),
         ));
     }
 
-    let conn = db.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    let tx = conn.unchecked_transaction()?;
-    for (key, value) in settings {
-        tx.execute(
-            "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2",
-            params![key, value],
-        )?;
-    }
-    tx.commit()?;
-    Ok(())
+    let now = chrono::Utc::now().timestamp_millis();
+    let device = sync.self_device().to_string();
+    sync.with_tx(db, now, |tx, events| {
+        for (key, value) in settings {
+            let syncable = is_syncable_setting(false, key);
+            tx.execute(
+                "INSERT INTO settings (key, value, updated_at, updated_by_device)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                   updated_at = excluded.updated_at,
+                   updated_by_device = excluded.updated_by_device",
+                params![
+                    key,
+                    value,
+                    if syncable { now } else { 0 },
+                    if syncable { device.as_str() } else { "" }
+                ],
+            )?;
+            if syncable {
+                events.push(EventBody::SettingSet(SettingPayload {
+                    book: None,
+                    key: key.clone(),
+                    value: value.clone(),
+                }));
+            }
+        }
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -429,21 +460,60 @@ pub fn set_book_settings_bulk(
     book_id: String,
     settings: HashMap<String, String>,
     db: State<'_, Db>,
+    sync: State<'_, SyncWriter>,
 ) -> AppResult<()> {
-    let conn = db.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
-    for (key, value) in settings {
-        conn.execute(
-            "INSERT INTO book_settings (book_id, key, value) VALUES (?1, ?2, ?3) ON CONFLICT(book_id, key) DO UPDATE SET value = ?3",
-            params![book_id, key, value],
-        )?;
-    }
-    Ok(())
+    do_set_book_settings_bulk(&book_id, &settings, &db, &sync)
+}
+
+/// Same whitelist rule as the global writer: only `font` publishes.
+///
+/// NOTE: no frontend code calls this today. The reader's per-book overrides
+/// live in `localStorage` under `reader-settings-<bookId>`, not in this table.
+/// The sync path is wired here so the backend is ready, but the per-book font
+/// will not actually cross devices until that override is migrated out of
+/// `localStorage`. See docs/impls/syncable-custom-fonts.md section 8.
+pub(crate) fn do_set_book_settings_bulk(
+    book_id: &str,
+    settings: &HashMap<String, String>,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<()> {
+    let now = chrono::Utc::now().timestamp_millis();
+    let device = sync.self_device().to_string();
+    sync.with_tx(db, now, |tx, events| {
+        for (key, value) in settings {
+            let syncable = is_syncable_setting(true, key);
+            tx.execute(
+                "INSERT INTO book_settings (book_id, key, value, updated_at, updated_by_device)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(book_id, key) DO UPDATE SET value = excluded.value,
+                   updated_at = excluded.updated_at,
+                   updated_by_device = excluded.updated_by_device",
+                params![
+                    book_id,
+                    key,
+                    value,
+                    if syncable { now } else { 0 },
+                    if syncable { device.as_str() } else { "" }
+                ],
+            )?;
+            if syncable {
+                events.push(EventBody::SettingSet(SettingPayload {
+                    book: Some(book_id.to_string()),
+                    key: key.clone(),
+                    value: value.clone(),
+                }));
+            }
+        }
+        Ok(())
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::set_settings_bulk_inner;
+    use super::{do_set_book_settings_bulk, set_settings_bulk_inner};
     use crate::db::Db;
+    use crate::sync::writer::SyncWriter;
     use rusqlite::params;
     use std::collections::HashMap;
     use tempfile::TempDir;
@@ -480,13 +550,8 @@ mod tests {
     }
 
     fn set_book_settings_bulk(db: &Db, book_id: &str, settings: HashMap<String, String>) {
-        let conn = db.conn.lock().unwrap();
-        for (key, value) in settings {
-            conn.execute(
-                "INSERT INTO book_settings (book_id, key, value) VALUES (?1, ?2, ?3) ON CONFLICT(book_id, key) DO UPDATE SET value = ?3",
-                params![book_id, key, value],
-            ).unwrap();
-        }
+        let sync = SyncWriter::new("dev-A".into());
+        do_set_book_settings_bulk(book_id, &settings, db, &sync).unwrap();
     }
 
     #[test]
@@ -496,7 +561,8 @@ mod tests {
         settings.insert("reader_theme".to_string(), "night".to_string());
         settings.insert("ai_api_key".to_string(), "must-not-write".to_string());
 
-        let error = set_settings_bulk_inner(&settings, &db).unwrap_err();
+        let sync = SyncWriter::new("dev-A".into());
+        let error = set_settings_bulk_inner(&settings, &db, &sync).unwrap_err();
         assert_eq!(error.to_string(), "SECRET_WRITE_REQUIRES_DEDICATED_COMMAND");
 
         let conn = db.conn.lock().unwrap();

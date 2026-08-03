@@ -31,9 +31,9 @@ use crate::error::{AppError, AppResult};
 
 use super::events::{
     word_mark_exception_id, BookAssetPayload, BookImportPayload, BookSummaryPayload,
-    BookmarkPayload, ChatMessagePayload, Event, EventBody, HighlightPayload,
-    LookupOccurrenceMarkPayload, NotePayload, VocabPayload, WordMarkExceptionPayload,
-    WordMarkPayload,
+    BookmarkPayload, ChatMessagePayload, CustomFontPayload, Event, EventBody, HighlightPayload,
+    LookupOccurrenceMarkPayload, NotePayload, SettingPayload, VocabPayload,
+    WordMarkExceptionPayload, WordMarkPayload,
 };
 
 /// Fold `event` into `tx`. Idempotent — applying the same event twice is a
@@ -136,6 +136,10 @@ pub fn apply_event(tx: &Transaction, event: &Event) -> AppResult<()> {
         EventBody::ChatDelete { id } => apply_chat_delete(tx, event, id),
         EventBody::ChatMessageAdd(p) => apply_chat_message_add(tx, event, p),
         EventBody::ChatMessageReplace(p) => apply_chat_message_replace(tx, event, p),
+
+        EventBody::CustomFontUpsert(p) => apply_custom_font_upsert(tx, event, p),
+        EventBody::CustomFontDelete { id } => apply_custom_font_delete(tx, event, id),
+        EventBody::SettingSet(p) => apply_setting_set(tx, event, p),
     }
 }
 
@@ -161,6 +165,7 @@ pub mod entity {
     pub const COLLECTION_BOOK: &str = "collection_book";
     pub const CHAT: &str = "chat";
     pub const CHAT_MESSAGE: &str = "chat_message";
+    pub const CUSTOM_FONT: &str = "custom_font";
 }
 
 pub fn is_tombstoned(tx: &Transaction, entity: &str, id: &str) -> AppResult<bool> {
@@ -273,6 +278,7 @@ pub fn cascade_delete(tx: &Transaction, entity: &str, id: &str, ts: i64) -> AppR
             )?;
             Ok(())
         }
+        entity::CUSTOM_FONT => cascade_delete_custom_font(tx, id, ts),
         "translation" => Ok(()),
         entity::CHAT_MESSAGE => {
             tx.execute("DELETE FROM chat_messages WHERE id = ?1", params![id])?;
@@ -1494,6 +1500,145 @@ fn apply_chat_message_replace(
            AND (updated_at < ?1 OR (updated_at = ?1 AND updated_by_device < ?2))",
         params![event.ts, event.device, p.chat_id],
     )?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Imported fonts.
+//
+// Only the catalog row travels through the log. The bytes arrive separately
+// under `imported-fonts/` in the shared directory, so a row may legitimately
+// exist here for a while before its file does — see `reconcile_custom_fonts`
+// in replay.rs and the `file_available` flag it feeds to the UI.
+// ---------------------------------------------------------------------------
+
+fn apply_custom_font_upsert(
+    tx: &Transaction,
+    event: &Event,
+    payload: &CustomFontPayload,
+) -> AppResult<()> {
+    // A font id is `custom-<sha256 of the bytes>`, so it is stable forever and
+    // identical on every device. A permanent tombstone would therefore mean
+    // "delete this font once and no device may ever import that file again",
+    // which is a bug rather than a policy. Follow the word-mark precedent: the
+    // tombstone is timestamped, and a strictly newer upsert clears it.
+    if tombstone_timestamp(tx, entity::CUSTOM_FONT, &payload.id)?
+        .is_some_and(|deleted_at| deleted_at >= event.ts)
+    {
+        return Ok(());
+    }
+    tx.execute(
+        "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2",
+        params![entity::CUSTOM_FONT, payload.id],
+    )?;
+    tx.execute(
+        "INSERT INTO custom_fonts
+           (id, family_name, file_name, format, file_size, created_at, updated_at, updated_by_device)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT(id) DO UPDATE SET family_name = excluded.family_name,
+           file_name = excluded.file_name, format = excluded.format,
+           file_size = excluded.file_size, created_at = MIN(custom_fonts.created_at, excluded.created_at),
+           updated_at = excluded.updated_at, updated_by_device = excluded.updated_by_device
+         WHERE (custom_fonts.updated_at, custom_fonts.updated_by_device)
+             < (excluded.updated_at, excluded.updated_by_device)",
+        params![
+            payload.id,
+            payload.family_name,
+            payload.file_name,
+            payload.format,
+            payload.file_size,
+            payload.created_at,
+            event.ts,
+            event.device,
+        ],
+    )?;
+    Ok(())
+}
+
+fn apply_custom_font_delete(tx: &Transaction, event: &Event, id: &str) -> AppResult<()> {
+    let current: Option<(i64, String)> = tx
+        .query_row(
+            "SELECT updated_at, updated_by_device FROM custom_fonts WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    // A delete that is older than the row's current state loses: the user
+    // re-selected or re-imported this font on another device after the delete
+    // was issued, and that later intent wins.
+    if current
+        .as_ref()
+        .is_some_and(|(ts, device)| (*ts, device.as_str()) > (event.ts, event.device.as_str()))
+    {
+        return Ok(());
+    }
+    cascade_delete(tx, entity::CUSTOM_FONT, id, event.ts)?;
+    insert_tombstone(tx, entity::CUSTOM_FONT, id, event.ts)?;
+    Ok(())
+}
+
+/// Drop the catalog row and un-select the font everywhere it is referenced,
+/// mirroring what the local `delete_custom_font` command does. The file itself
+/// is deliberately left alone: a peer may still be mid-flight with an upsert
+/// that re-creates the row, and an orphaned content-addressed file is both
+/// small and harmlessly overwritten by a later import of the same bytes.
+fn cascade_delete_custom_font(tx: &Transaction, id: &str, ts: i64) -> AppResult<()> {
+    tx.execute("DELETE FROM custom_fonts WHERE id = ?1", params![id])?;
+    tx.execute(
+        "UPDATE settings SET value = 'system', updated_at = MAX(updated_at, ?2)
+         WHERE key = 'font_family' AND value = ?1",
+        params![id, ts],
+    )?;
+    tx.execute(
+        "UPDATE book_settings SET value = 'system', updated_at = MAX(updated_at, ?2)
+         WHERE key = 'font' AND value = ?1",
+        params![id, ts],
+    )?;
+    crate::commands::fonts::clear_marker_style_font(tx, id)?;
+    Ok(())
+}
+
+/// Apply one whitelisted setting. Unknown keys are **skipped, not rejected**:
+/// a validation error in `apply_in_tx` does not advance the peer's watermark
+/// past the offending event, so refusing a key added by a newer Lantern would
+/// wedge that peer's replay permanently.
+fn apply_setting_set(tx: &Transaction, event: &Event, payload: &SettingPayload) -> AppResult<()> {
+    if !super::events::is_syncable_setting(payload.book.is_some(), &payload.key) {
+        log::debug!(
+            "sync: skipping non-syncable setting key {:?}",
+            payload.key.as_str()
+        );
+        return Ok(());
+    }
+    match payload.book.as_deref() {
+        None => {
+            tx.execute(
+                "INSERT INTO settings (key, value, updated_at, updated_by_device)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                   updated_at = excluded.updated_at, updated_by_device = excluded.updated_by_device
+                 WHERE (settings.updated_at, settings.updated_by_device)
+                     < (excluded.updated_at, excluded.updated_by_device)",
+                params![payload.key, payload.value, event.ts, event.device],
+            )?;
+        }
+        Some(book_id) => {
+            // A per-book override for a deleted book is meaningless; the row
+            // would also outlive its FK target.
+            if parent_tombstoned(tx, &[(entity::BOOK, book_id)])? {
+                return Ok(());
+            }
+            tx.execute(
+                "INSERT INTO book_settings (book_id, key, value, updated_at, updated_by_device)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(book_id, key) DO UPDATE SET value = excluded.value,
+                   updated_at = excluded.updated_at, updated_by_device = excluded.updated_by_device
+                 WHERE (book_settings.updated_at, book_settings.updated_by_device)
+                     < (excluded.updated_at, excluded.updated_by_device)",
+                params![book_id, payload.key, payload.value, event.ts, event.device],
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -3426,5 +3571,277 @@ mod tests {
             )
             .unwrap();
         assert_eq!(before, after);
+    }
+
+    // -----------------------------------------------------------------------
+    // Imported fonts.
+    // -----------------------------------------------------------------------
+
+    /// Fonts are content-addressed, so this is the id every device derives for
+    /// the same file.
+    const FONT_ID: &str = "custom-aa00000000000000000000000000000000000000000000000000000000ff00";
+    const FONT_FILE: &str = "aa00000000000000000000000000000000000000000000000000000000ff00.ttf";
+
+    fn font_event(family: &str) -> EventBody {
+        EventBody::CustomFontUpsert(CustomFontPayload {
+            id: FONT_ID.to_string(),
+            family_name: family.to_string(),
+            file_name: FONT_FILE.to_string(),
+            format: "ttf".to_string(),
+            file_size: 4096,
+            created_at: 1_700_000_000_000,
+        })
+    }
+
+    fn font_family(conn: &Connection) -> Option<String> {
+        conn.query_row(
+            "SELECT family_name FROM custom_fonts WHERE id = ?1",
+            params![FONT_ID],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap()
+    }
+
+    #[test]
+    fn custom_font_upsert_applies_and_is_idempotent() {
+        let mut conn = open_db();
+        let event = ev(1_000, "dev-a", font_event("Iosevka"));
+        apply_all(&mut conn, std::slice::from_ref(&event));
+        assert_eq!(font_family(&conn).as_deref(), Some("Iosevka"));
+
+        // Replaying the same event must not change anything: the LWW compare is
+        // strictly-less-than, so an equal tuple short-circuits.
+        apply_all(&mut conn, &[event]);
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM custom_fonts", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn custom_font_lww_prefers_newer_and_ignores_older() {
+        let mut conn = open_db();
+        apply_all(&mut conn, &[ev(2_000, "dev-a", font_event("Newer"))]);
+        apply_all(&mut conn, &[ev(1_000, "dev-b", font_event("Older"))]);
+        assert_eq!(font_family(&conn).as_deref(), Some("Newer"));
+
+        apply_all(&mut conn, &[ev(3_000, "dev-b", font_event("Newest"))]);
+        assert_eq!(font_family(&conn).as_deref(), Some("Newest"));
+    }
+
+    #[test]
+    fn custom_font_lww_breaks_timestamp_ties_by_device() {
+        let mut conn = open_db();
+        apply_all(&mut conn, &[ev(2_000, "dev-a", font_event("From A"))]);
+        // Same logical timestamp: the higher device id wins, deterministically
+        // and identically on every peer.
+        apply_all(&mut conn, &[ev(2_000, "dev-b", font_event("From B"))]);
+        assert_eq!(font_family(&conn).as_deref(), Some("From B"));
+
+        apply_all(&mut conn, &[ev(2_000, "dev-a", font_event("From A again"))]);
+        assert_eq!(font_family(&conn).as_deref(), Some("From B"));
+    }
+
+    #[test]
+    fn custom_font_delete_downgrades_selections_and_tombstones() {
+        let mut conn = open_db();
+        conn.execute(
+            "INSERT INTO books (id, title, author, file_path, status, progress, created_at, updated_at)
+             VALUES ('b1','T','A','books/test.epub','reading',0,1,1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('font_family', ?1)",
+            params![FONT_ID],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO book_settings (book_id, key, value) VALUES ('b1', 'font', ?1)",
+            params![FONT_ID],
+        )
+        .unwrap();
+        apply_all(&mut conn, &[ev(1_000, "dev-a", font_event("Doomed"))]);
+        apply_all(
+            &mut conn,
+            &[ev(
+                2_000,
+                "dev-a",
+                EventBody::CustomFontDelete {
+                    id: FONT_ID.to_string(),
+                },
+            )],
+        );
+
+        assert!(font_family(&conn).is_none());
+        let global: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'font_family'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(global, "system");
+        let per_book: String = conn
+            .query_row(
+                "SELECT value FROM book_settings WHERE book_id = 'b1' AND key = 'font'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(per_book, "system");
+        let tombstoned: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM _tombstones WHERE entity = 'custom_font' AND id = ?1",
+                params![FONT_ID],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tombstoned, 1);
+    }
+
+    /// A font id is a hash of the file's bytes, so it is the only id that file
+    /// can ever have. A permanent tombstone would mean "delete once, never
+    /// import again" — the tombstone must therefore be clearable by a strictly
+    /// newer upsert, while still suppressing an older one.
+    #[test]
+    fn deleted_custom_font_can_be_reimported_but_not_resurrected_by_stale_event() {
+        let mut conn = open_db();
+        apply_all(&mut conn, &[ev(1_000, "dev-a", font_event("First"))]);
+        apply_all(
+            &mut conn,
+            &[ev(
+                2_000,
+                "dev-a",
+                EventBody::CustomFontDelete {
+                    id: FONT_ID.to_string(),
+                },
+            )],
+        );
+
+        // A peer's upsert issued before the delete must stay dead.
+        apply_all(&mut conn, &[ev(1_500, "dev-b", font_event("Stale"))]);
+        assert!(font_family(&conn).is_none());
+
+        // Re-importing the same file afterwards brings it back.
+        apply_all(&mut conn, &[ev(3_000, "dev-b", font_event("Reimported"))]);
+        assert_eq!(font_family(&conn).as_deref(), Some("Reimported"));
+        let tombstoned: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM _tombstones WHERE entity = 'custom_font' AND id = ?1",
+                params![FONT_ID],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tombstoned, 0);
+    }
+
+    /// A delete that lost the race against a newer local change is discarded,
+    /// so a re-selection on another device is not clobbered by a stale delete.
+    #[test]
+    fn stale_custom_font_delete_loses_to_newer_row() {
+        let mut conn = open_db();
+        apply_all(&mut conn, &[ev(5_000, "dev-a", font_event("Current"))]);
+        apply_all(
+            &mut conn,
+            &[ev(
+                1_000,
+                "dev-b",
+                EventBody::CustomFontDelete {
+                    id: FONT_ID.to_string(),
+                },
+            )],
+        );
+        assert_eq!(font_family(&conn).as_deref(), Some("Current"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Whitelisted settings.
+    // -----------------------------------------------------------------------
+
+    fn setting_event(book: Option<&str>, key: &str, value: &str) -> EventBody {
+        EventBody::SettingSet(SettingPayload {
+            book: book.map(str::to_string),
+            key: key.to_string(),
+            value: value.to_string(),
+        })
+    }
+
+    fn setting_value(conn: &Connection, key: &str) -> Option<String> {
+        conn.query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            params![key],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap()
+    }
+
+    #[test]
+    fn setting_set_applies_font_family_with_lww() {
+        let mut conn = open_db();
+        apply_all(
+            &mut conn,
+            &[ev(2_000, "dev-a", setting_event(None, "font_family", FONT_ID))],
+        );
+        assert_eq!(setting_value(&conn, "font_family").as_deref(), Some(FONT_ID));
+
+        apply_all(
+            &mut conn,
+            &[ev(1_000, "dev-b", setting_event(None, "font_family", "system"))],
+        );
+        assert_eq!(setting_value(&conn, "font_family").as_deref(), Some(FONT_ID));
+
+        apply_all(
+            &mut conn,
+            &[ev(3_000, "dev-b", setting_event(None, "font_family", "system"))],
+        );
+        assert_eq!(
+            setting_value(&conn, "font_family").as_deref(),
+            Some("system")
+        );
+    }
+
+    /// A key outside the whitelist is skipped, **not** rejected. A validation
+    /// error would leave the peer's watermark parked on the offending event
+    /// forever, so a newer Lantern that syncs one more key must not be able to
+    /// wedge an older peer's replay.
+    #[test]
+    fn setting_set_skips_non_whitelisted_keys_without_erroring() {
+        let mut conn = open_db();
+        let tx = conn.transaction().unwrap();
+        apply_event(&tx, &ev(1_000, "dev-a", setting_event(None, "theme", "dark")))
+            .expect("non-whitelisted key must not error");
+        apply_event(
+            &tx,
+            &ev(1_000, "dev-a", setting_event(Some("b1"), "fontSize", "22")),
+        )
+        .expect("non-whitelisted per-book key must not error");
+        tx.commit().unwrap();
+
+        assert!(setting_value(&conn, "theme").is_none());
+        let per_book: i64 = conn
+            .query_row("SELECT COUNT(*) FROM book_settings", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(per_book, 0);
+    }
+
+    #[test]
+    fn per_book_setting_is_skipped_for_a_tombstoned_book() {
+        let mut conn = open_db();
+        {
+            let tx = conn.transaction().unwrap();
+            insert_tombstone(&tx, entity::BOOK, "gone", 1_000).unwrap();
+            tx.commit().unwrap();
+        }
+        apply_all(
+            &mut conn,
+            &[ev(2_000, "dev-a", setting_event(Some("gone"), "font", FONT_ID))],
+        );
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM book_settings", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
     }
 }

@@ -40,9 +40,22 @@ CREATE TABLE lookup_occurrence_marks (
 CREATE INDEX idx_lookup_occurrence_marks_book
   ON lookup_occurrence_marks(book_id, enabled, updated_at DESC);
 
--- Imported font files are deliberately local-only. Font binaries may have
--- licenses that prohibit redistribution, so neither this catalog nor the
--- files under imported-fonts/ enter the iCloud event log or snapshots.
+-- Imported fonts sync (since migration 031). This reverses the original policy,
+-- recorded here so nobody re-derives it from first principles and flips it back:
+-- the table was created local-only on the reasoning that font binaries may carry
+-- licenses forbidding redistribution.
+--
+-- That does not describe what happens here. Lantern neither ships nor hosts font
+-- files. The user obtains the file themselves and puts it in their own private
+-- cloud storage, which replicates it between machines that are all theirs -- the
+-- same act as copying a file from one of their own laptops to another. No third
+-- party receives anything, so no redistribution occurs, and the license question
+-- is between the user and the foundry rather than something Lantern mediates.
+--
+-- Catalog rows sync through the event log; the binaries under imported-fonts/
+-- replicate as plain files in the shared directory, like books/ and covers/.
+-- The LWW columns live in migration 031, not here.
+-- See docs/impls/syncable-custom-fonts.md.
 CREATE TABLE custom_fonts (
   id TEXT PRIMARY KEY,
   family_name TEXT NOT NULL,

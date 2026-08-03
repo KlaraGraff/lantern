@@ -1007,7 +1007,7 @@
   "settings.layout.fontFamily": "字体",
   "settings.layout.fontFamilyHint": "选择你偏好的阅读字体",
   "settings.layout.customFonts": "我的字体",
-  "settings.layout.customFontsHint": "支持导入 TTF、OTF、WOFF 和 WOFF2；字体文件只保存在本机，不参与同步。",
+  "settings.layout.customFontsHint": "支持导入 TTF、OTF、WOFF 和 WOFF2；导入的字体会同步到你的其他设备，可能需要稍等片刻才会到达。",
   "settings.layout.importFonts": "导入字体",
   "settings.layout.deleteFont": "删除导入字体",
   "settings.layout.fontImportFailed": "字体导入失败，请检查文件格式后重试。",

@@ -14,6 +14,7 @@ const BOOK_EXTENSIONS: &[&str] = &[
     "cbz",
 ];
 const COVER_EXTENSIONS: &[&str] = &["img", "jpg", "jpeg", "png", "webp"];
+const FONT_EXTENSIONS: &[&str] = &["ttf", "otf", "woff", "woff2"];
 const MAX_FUTURE_CLOCK_SKEW_MS: i64 = 24 * 60 * 60 * 1_000;
 const MAX_NOTE_CONTENT_BYTES: usize = 100_000;
 const MAX_NOTE_SELECTED_TEXT_BYTES: usize = 100_000;
@@ -55,6 +56,7 @@ pub fn validate_tombstone_entity(entity: &str) -> AppResult<()> {
             | "chat_message"
             | "translation"
             | "book_asset"
+            | "custom_font"
     ) {
         return Ok(());
     }
@@ -534,6 +536,22 @@ pub fn validate_source_path(path: &str) -> AppResult<()> {
     validate_relative_blob_path(path, "sources", BOOK_EXTENSIONS)
 }
 
+/// Imported font blobs are content-addressed: the importer names every file
+/// `<sha256 of the bytes>.<ext>`, so a peer that sends anything else is either
+/// broken or hostile. Checking the shape here keeps a crafted `file_name` from
+/// steering a download outside `imported-fonts/`.
+pub fn validate_font_path(path: &str) -> AppResult<()> {
+    validate_relative_blob_path(path, "imported-fonts", FONT_EXTENSIONS)?;
+    let file_name = path.trim_start_matches("imported-fonts/");
+    let Some((stem, _)) = file_name.rsplit_once('.') else {
+        return Err(AppError::Other("SYNC_BLOB_PATH_INVALID".to_string()));
+    };
+    if stem.len() != 64 || !stem.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(AppError::Other("SYNC_BLOB_PATH_INVALID".to_string()));
+    }
+    Ok(())
+}
+
 /// `file_path` and `source_file_path` name a book's blobs by role, not by
 /// location: native imports keep one file under `books/` for both roles,
 /// while text/converted imports keep the canonical upload under `sources/`
@@ -568,6 +586,9 @@ pub fn resolve_blob_path(data_dir: &Path, path: &str) -> AppResult<PathBuf> {
     } else if path.starts_with("sources/") {
         validate_source_path(path)?;
         Ok(data_dir.join(path))
+    } else if path.starts_with("imported-fonts/") {
+        validate_font_path(path)?;
+        Ok(data_dir.join(path))
     } else {
         Err(AppError::Other("SYNC_BLOB_PATH_INVALID".to_string()))
     }
@@ -583,6 +604,45 @@ mod tests {
     fn accepts_expected_blob_paths() {
         assert!(validate_book_path("books/example.epub").is_ok());
         assert!(validate_cover_path("covers/id.img").is_ok());
+    }
+
+    #[test]
+    fn font_path_requires_a_content_addressed_name() {
+        let hash = "a".repeat(64);
+        for extension in ["ttf", "otf", "woff", "woff2"] {
+            assert!(validate_font_path(&format!("imported-fonts/{hash}.{extension}")).is_ok());
+        }
+        for path in [
+            // Traversal and separators must never survive the joiner.
+            "imported-fonts/../books/evil.epub",
+            &format!("imported-fonts/sub/{hash}.ttf"),
+            &format!("/imported-fonts/{hash}.ttf"),
+            // A non-hash stem means the name was not produced by our importer.
+            "imported-fonts/malware.ttf",
+            &format!("imported-fonts/{}.ttf", "a".repeat(63)),
+            &format!("imported-fonts/{}.ttf", "z".repeat(64)),
+            // Wrong or absent extension.
+            &format!("imported-fonts/{hash}.exe"),
+            &format!("imported-fonts/{hash}"),
+            // Wrong root.
+            &format!("covers/{hash}.ttf"),
+        ] {
+            assert!(
+                validate_font_path(path).is_err(),
+                "expected {path:?} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn font_paths_resolve_through_the_shared_blob_router() {
+        let hash = "b".repeat(64);
+        let dir = Path::new("/data");
+        assert_eq!(
+            resolve_blob_path(dir, &format!("imported-fonts/{hash}.woff2")).unwrap(),
+            dir.join(format!("imported-fonts/{hash}.woff2"))
+        );
+        assert!(resolve_blob_path(dir, "imported-fonts/evil.ttf").is_err());
     }
 
     #[test]
