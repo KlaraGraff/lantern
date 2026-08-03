@@ -23,7 +23,7 @@ Frontend: React 19, TypeScript, Tailwind CSS 4, Vite, React Router. Backend: Tau
 | `src/pages/` · `components/` · `hooks/` · `i18n/` | Screens; shared UI incl. `settings/` sections and `ui/` primitives; data hooks; translation JSON |
 | `src-tauri/src/commands/` · `sync/` · `mcp/` · `ai/` | Tauri commands; iCloud sync engine; MCP server; AI providers |
 | `design/lantern-desktop.pen` | Pencil design source — keep UI aligned with it when a node is referenced |
-| `docs/features/` · `impls/` · `guide/` · `roadmap/` · `arch/` | Specs, implementation plans, guides, milestones, architecture; shipped items move to each dir's `archive/` |
+| `docs/features/` · `impls/` · `guide/` · `roadmap/` · `arch/` | Specs, implementation plans, guides, milestones, architecture; shipped items move to each dir's `archive/`, then `npm run check:docs -- --fix` repoints the links the move broke |
 
 ## Working Copy
 

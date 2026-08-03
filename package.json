@@ -8,6 +8,7 @@
     "build": "tsc && vite build && npm run build:reader-assets && npm run check:reader-compat",
     "build:reader-assets": "node scripts/build-reader-assets.mjs",
     "check:reader-compat": "node scripts/check-reader-compat.mjs",
+    "check:docs": "node scripts/check-doc-links.mjs",
     "test:unit": "node --experimental-strip-types --test tests/*.test.ts",
     "preview": "vite preview",
     "tauri": "tauri",
