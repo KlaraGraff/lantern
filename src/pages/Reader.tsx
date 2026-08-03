@@ -148,6 +148,7 @@ import {
 } from "./reader/reading-pace";
 import {
   nextProgressReadoutMode,
+  defaultProgressReadoutMode,
   parseProgressReadoutMode,
   progressReadoutSettingKey,
   type ProgressReadoutMode,
@@ -257,6 +258,10 @@ export default function Reader() {
   // and text books, both keep their existing footer untouched).
   const supportsScrubber = (book?.render_format || book?.format) === "epub";
   const [progressReadoutMode, setProgressReadoutMode] = useState<ProgressReadoutMode>("page");
+  // Whether this book has a readout mode of its own yet. Until it does, the
+  // global "progress display" toggles decide the starting mode — see
+  // `defaultProgressReadoutMode`.
+  const [progressReadoutSaved, setProgressReadoutSaved] = useState(false);
   const paceSnapshotRef = useRef<PageTurnSnapshot | null>(null);
   const [paceWindow, setPaceWindow] = useState<PaceSample[]>([]);
   const {
@@ -513,17 +518,19 @@ export default function Reader() {
   // P1.5's click-cycle readout mode, persisted per book — same one-row-per-key
   // store as the TOC's saved UI state, written immediately since a single
   // click (unlike TOC scroll/expand state) needs no debounce.
-  const cycleProgressReadoutMode = useCallback(() => {
+  // Takes the mode being displayed rather than reading state, because until
+  // this book has a saved preference the displayed mode is the toggle-derived
+  // default, not `progressReadoutMode`.
+  const cycleProgressReadoutMode = useCallback((current: ProgressReadoutMode) => {
     if (!bookId) return;
-    setProgressReadoutMode((current) => {
-      const next = nextProgressReadoutMode(current);
-      invoke("set_book_settings_bulk", {
-        bookId,
-        settings: { [progressReadoutSettingKey]: next },
-      }).catch((error: unknown) => {
-        logIgnoredError("reader.progress-readout-mode-save", error);
-      });
-      return next;
+    const next = nextProgressReadoutMode(current);
+    setProgressReadoutMode(next);
+    setProgressReadoutSaved(true);
+    invoke("set_book_settings_bulk", {
+      bookId,
+      settings: { [progressReadoutSettingKey]: next },
+    }).catch((error: unknown) => {
+      logIgnoredError("reader.progress-readout-mode-save", error);
     });
   }, [bookId]);
 
@@ -1091,9 +1098,12 @@ export default function Reader() {
   // briefly stale (last book's) during the load transition. Computed in an
   // effect rather than a memo because it reads `viewRef.current` — a ref
   // read has to happen outside render.
+  // The bar itself still answers to the "current chapter progress" toggle —
+  // turning progress off has to keep turning it off, scrubber or not.
+  const showScrubber = supportsScrubber && readerSettings.showChapterProgress;
   const [scrubberTicks, setScrubberTicks] = useState<ScrubberTick[]>([]);
   useEffect(() => {
-    if (!supportsScrubber || !bookReady) {
+    if (!showScrubber || !bookReady) {
       setScrubberTicks([]);
       return;
     }
@@ -1102,7 +1112,7 @@ export default function Reader() {
     } catch {
       setScrubberTicks([]);
     }
-  }, [supportsScrubber, bookReady, chapters]);
+  }, [showScrubber, bookReady, chapters]);
 
   // P1.5's click-cycle readout text. `null` means "render nothing" (hidden
   // mode); every other mode always renders *something* — a number once there
@@ -1112,15 +1122,21 @@ export default function Reader() {
   // manual-memoization check, which otherwise flags the nested-conditional
   // `pageInfo` property reads below as narrower than the whole-object
   // dependency a hand-written deps array would declare.
+  // The global progress-display toggles keep authority over the click-cycle:
+  // with all three off, a book that has never had its readout clicked starts
+  // hidden instead of showing the page number.
+  const effectiveProgressReadoutMode = progressReadoutSaved
+    ? progressReadoutMode
+    : defaultProgressReadoutMode(readerSettings);
   const progressReadoutText = (() => {
-    if (progressReadoutMode === "hidden") return null;
-    if (progressReadoutMode === "page") {
+    if (effectiveProgressReadoutMode === "hidden") return null;
+    if (effectiveProgressReadoutMode === "page") {
       if (!pageInfo) return t("reader.bookProgress", { progress });
       return pageInfo.visibleEnd && pageInfo.visibleEnd > pageInfo.current
         ? t("reader.pageRangeOf", { current: pageInfo.current, end: pageInfo.visibleEnd, total: pageInfo.total })
         : t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total });
     }
-    if (progressReadoutMode === "chapterTime") {
+    if (effectiveProgressReadoutMode === "chapterTime") {
       if (!pageInfo) return t("reader.progressReadout.calculating");
       const secondsPerPage = averageSecondsPerPage(paceWindow);
       const pagesLeft = Math.max(0, pageInfo.total - pageInfo.current);
@@ -1348,7 +1364,9 @@ export default function Reader() {
         return next;
       });
       setTocSavedState(parseTocSavedState(perBookSettings));
-      setProgressReadoutMode(parseProgressReadoutMode(perBookSettings[progressReadoutSettingKey]));
+      const savedReadoutMode = perBookSettings[progressReadoutSettingKey];
+      setProgressReadoutSaved(savedReadoutMode !== undefined);
+      setProgressReadoutMode(parseProgressReadoutMode(savedReadoutMode));
       const savedZoom = localStorage.getItem(`reader-zoom-${bookId}`);
       if (savedZoom === "fit") {
         setZoom("fit");
@@ -2135,7 +2153,7 @@ export default function Reader() {
             } : undefined}
           >
             <div className="flex flex-col gap-2">
-              {supportsScrubber ? (
+              {showScrubber ? (
                 <ProgressScrubber
                   progress={progress}
                   ticks={scrubberTicks}
@@ -2161,7 +2179,7 @@ export default function Reader() {
                     // trade-off over letting the affordance vanish entirely.
                     <button
                       type="button"
-                      onClick={cycleProgressReadoutMode}
+                      onClick={() => cycleProgressReadoutMode(effectiveProgressReadoutMode)}
                       title={t("reader.progressReadout.toggleLabel")}
                       aria-label={progressReadoutText ? undefined : t("reader.progressReadout.toggleLabel")}
                       className={`cursor-pointer text-left hover:opacity-100 ${progressReadoutText ? "" : "min-w-[12px]"}`}
