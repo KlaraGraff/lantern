@@ -419,8 +419,9 @@ export function useFoliateAnnotations({
         if (!current.font.startsWith("custom-") || available.has(current.font)) return current;
         const next = { ...current, font: "system" };
         readerSettingsRef.current = next;
-        // Persistence is left to useReaderSettingsSync: writing the whole state
-        // here would re-freeze the typography fields that follow global settings.
+        // Nothing is persisted here: `delete_custom_font` already resets the
+        // book's `font` row to `system`, and writing the whole state would
+        // re-freeze the typography fields that follow global settings.
         return next;
       });
       const storedMarkerStyle = await invoke<string | null>("get_setting", {

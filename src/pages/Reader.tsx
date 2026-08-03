@@ -60,7 +60,7 @@ import {
   type HighlightMutationPlan,
 } from "../components/highlight-ranges";
 import { getBook, needsPreparation, retryPreparation, type Book } from "../hooks/useBooks";
-import { getAllSettings } from "../hooks/useSettings";
+import { getAllSettings, getBookSettings } from "../hooks/useSettings";
 import type { Highlight } from "../hooks/useBookmarks";
 import {
   DEFAULT_CARD_DESIGN_CONFIG,
@@ -1123,17 +1123,24 @@ export default function Reader() {
         if (!cancelled) setLoading(false);
       });
 
-    Promise.all([getAllSettings(), loadCustomFonts()]).then(([globalSettings]) => {
+    Promise.all([
+      getAllSettings(),
+      loadCustomFonts(),
+      // Per-book overrides — one row per key, the row's existence *is* the
+      // override. Failing to read them must not abort the load (see below), so
+      // a book with unreadable rows simply follows the global settings.
+      getBookSettings(bookId).catch(() => ({} as Record<string, string>)),
+    ]).then(([globalSettings, , perBookSettings]) => {
       if (cancelled) return;
       // A corrupted value must not abort the load: without the try/catch the
       // throw is swallowed by the outer .catch, `dbSettingsLoadedRef` never
       // gets set, and the persistence effect (gated on that ref) then never
       // overwrites the bad key — the book's settings break permanently.
       const saved = localStorage.getItem(`reader-settings-${bookId}`);
-      let bookSettings: StoredReaderSettings = {};
+      let storedSettings: StoredReaderSettings = {};
       if (saved) {
         try {
-          bookSettings = JSON.parse(saved) as StoredReaderSettings;
+          storedSettings = JSON.parse(saved) as StoredReaderSettings;
         } catch {
           localStorage.removeItem(`reader-settings-${bookId}`);
         }
@@ -1142,7 +1149,7 @@ export default function Reader() {
       readingAssistanceSettingsRef.current = g;
       applyReadingAssistanceSettings(g);
       setReaderSettings((prev) => {
-        const next = mergeStoredReaderSettings(prev, bookSettings, g);
+        const next = mergeStoredReaderSettings(prev, storedSettings, g, perBookSettings);
         readerSettingsRef.current = next;
         return next;
       });

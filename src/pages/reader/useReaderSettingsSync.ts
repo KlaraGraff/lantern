@@ -48,37 +48,28 @@ const readerPreferenceSettingKeys = {
 
 // Settings the Settings page owns globally *and* the reader panel can override
 // for one book. Writing these unconditionally froze every book that had ever
-// been opened at the values of its first open: `bookSettings.fontSize ??
-// global.font_size` then never fell through again. They are now stored only once
-// the user changes them in the reader, and `typographyOverrides` records that
-// intent explicitly — a blob without it is a snapshot from the old behaviour and
-// carries no overrides, so those books follow the Settings page again.
-// `theme` had the same freeze and now resolves the same way: a book follows the
-// global theme until the user picks one in the reader panel. `customTheme` does
-// not belong here — it is global-only (see the merge below), so there is nothing
-// per-book to record. The stored field keeps its original name so overrides
-// saved before `theme` joined the list survive.
-const perBookOverrideKeys = ["theme", "font", "fontSize", "lineSpacing", "wordSpacing"] as const;
-type PerBookOverrideKey = (typeof perBookOverrideKeys)[number];
+// been opened at the values of its first open: `storedSettings.fontSize ??
+// global.font_size` then never fell through again — and `theme` froze the same
+// way. They now live in `book_settings`, one row per key, written only when the
+// user changes them in the reader panel, so *the row existing is the override*
+// and a book with no row follows the Settings page. `customTheme` does not
+// belong here — it is global-only (see the merge below), so there is nothing
+// per-book to record.
+const perBookSettingKeys = {
+  theme: "theme",
+  font: "font",
+  fontSize: "font_size",
+  lineSpacing: "line_spacing",
+  wordSpacing: "word_spacing",
+} as const;
+type PerBookOverrideKey = keyof typeof perBookSettingKeys;
 
-export interface StoredReaderSettings extends Partial<ReaderSettingsState> {
-  typographyOverrides?: PerBookOverrideKey[];
-}
+const perBookOverrideKeys = Object.keys(perBookSettingKeys) as PerBookOverrideKey[];
 
-function readStoredOverrides(bookId: string | undefined): Set<PerBookOverrideKey> {
-  if (!bookId) return new Set();
-  const saved = localStorage.getItem(`reader-settings-${bookId}`);
-  if (!saved) return new Set();
-  try {
-    const parsed = JSON.parse(saved) as StoredReaderSettings;
-    return new Set((parsed.typographyOverrides ?? []).filter(
-      (key): key is PerBookOverrideKey => perBookOverrideKeys.includes(key),
-    ));
-  } catch {
-    // A corrupt blob simply means no overrides; Reader.tsx clears the key.
-    return new Set();
-  }
-}
+/** Per-book rows as `get_book_settings` returns them: raw key/value strings. */
+export type PerBookReaderSettings = Record<string, string>;
+
+export type StoredReaderSettings = Partial<ReaderSettingsState>;
 
 function booleanSetting(value: string | undefined, fallback: boolean): boolean {
   if (value === "true") return true;
@@ -101,6 +92,12 @@ function pageTurnAnimationSetting(
   return value === "none" || value === "slide" || value === "fade" || value === "cover"
     ? value
     : fallback;
+}
+
+function numberSetting(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function marginSetting(value: string | number | undefined, fallback: number): number {
@@ -138,57 +135,56 @@ export function mergeStoredReaderSettings(
   previous: ReaderSettingsState,
   storedSettings: StoredReaderSettings,
   globalSettings: Record<string, string>,
+  perBookSettings: PerBookReaderSettings = {},
 ): ReaderSettingsState {
-  const overrides = new Set(storedSettings.typographyOverrides ?? []);
-  const bookSettings: Partial<ReaderSettingsState> = { ...storedSettings };
-  for (const key of perBookOverrideKeys) {
-    if (!overrides.has(key)) delete bookSettings[key];
-  }
-  const requestedFont = bookSettings.font
+  // `storedSettings` is the legacy per-book blob and no longer contributes any
+  // of `perBookSettingKeys`: those come from `book_settings` rows only, so a
+  // blob written by an older build cannot resurrect the freeze it caused.
+  const requestedFont = (perBookSettings[perBookSettingKeys.font] as ReaderSettingsState["font"])
     || (globalSettings.font_family as ReaderSettingsState["font"])
     || previous.font;
   return {
     ...previous,
-    theme: bookSettings.theme
+    theme: (perBookSettings[perBookSettingKeys.theme] as ReaderSettingsState["theme"])
       || (globalSettings.reader_theme as ReaderSettingsState["theme"])
       || previous.theme,
     // Global-only: the reader panel edits it straight into the global setting.
-    customTheme: parseReaderCustomTheme(globalSettings.reader_custom_theme ?? bookSettings.customTheme),
-    pageColumns: bookSettings.pageColumns
+    customTheme: parseReaderCustomTheme(globalSettings.reader_custom_theme ?? storedSettings.customTheme),
+    pageColumns: storedSettings.pageColumns
       ?? pageColumnsSetting(globalSettings.page_columns, previous.pageColumns),
     font: isReaderFontAvailable(requestedFont) ? requestedFont : "system",
-    fontSize: bookSettings.fontSize
+    fontSize: numberSetting(perBookSettings[perBookSettingKeys.fontSize])
       ?? (globalSettings.font_size ? parseInt(globalSettings.font_size) : previous.fontSize),
     // Global-only: the reader panel has no per-book control for it.
     narrowFontShrink: booleanSetting(globalSettings.narrow_font_shrink, previous.narrowFontShrink),
-    readingMode: bookSettings.readingMode
+    readingMode: storedSettings.readingMode
       || readingModeSetting(globalSettings.reading_mode, previous.readingMode),
-    pageTurnAnimation: bookSettings.pageTurnAnimation
+    pageTurnAnimation: storedSettings.pageTurnAnimation
       ?? pageTurnAnimationSetting(globalSettings.page_turn_animation, previous.pageTurnAnimation),
-    showChapterProgress: bookSettings.showChapterProgress
+    showChapterProgress: storedSettings.showChapterProgress
       ?? booleanSetting(globalSettings.show_chapter_progress, previous.showChapterProgress),
-    showBookProgress: bookSettings.showBookProgress
+    showBookProgress: storedSettings.showBookProgress
       ?? booleanSetting(globalSettings.show_book_progress, previous.showBookProgress),
-    showPageNumbers: bookSettings.showPageNumbers
+    showPageNumbers: storedSettings.showPageNumbers
       ?? booleanSetting(globalSettings.show_page_numbers, previous.showPageNumbers),
-    previousPageBinding: bookSettings.previousPageBinding
+    previousPageBinding: storedSettings.previousPageBinding
       || globalSettings.previous_page_binding
       || previous.previousPageBinding,
-    nextPageBinding: bookSettings.nextPageBinding
+    nextPageBinding: storedSettings.nextPageBinding
       || globalSettings.next_page_binding
       || previous.nextPageBinding,
-    lineSpacing: bookSettings.lineSpacing
+    lineSpacing: numberSetting(perBookSettings[perBookSettingKeys.lineSpacing])
       ?? (globalSettings.line_spacing ? parseFloat(globalSettings.line_spacing) : previous.lineSpacing),
-    charSpacing: bookSettings.charSpacing
+    charSpacing: storedSettings.charSpacing
       ?? (globalSettings.char_spacing ? parseInt(globalSettings.char_spacing) : previous.charSpacing),
-    wordSpacing: bookSettings.wordSpacing
+    wordSpacing: numberSetting(perBookSettings[perBookSettingKeys.wordSpacing])
       ?? (globalSettings.word_spacing ? parseInt(globalSettings.word_spacing) : previous.wordSpacing),
     // Global-first keeps the Settings page and reader toolbar synchronized.
-    margins: marginSetting(globalSettings.margins ?? bookSettings.margins, previous.margins),
-    showLookupMarkers: bookSettings.showLookupMarkers ?? previous.showLookupMarkers,
-    showNewVocabMarkers: bookSettings.showNewVocabMarkers ?? previous.showNewVocabMarkers,
-    showLearningMarkers: bookSettings.showLearningMarkers ?? previous.showLearningMarkers,
-    showMasteredMarkers: bookSettings.showMasteredMarkers ?? previous.showMasteredMarkers,
+    margins: marginSetting(globalSettings.margins ?? storedSettings.margins, previous.margins),
+    showLookupMarkers: storedSettings.showLookupMarkers ?? previous.showLookupMarkers,
+    showNewVocabMarkers: storedSettings.showNewVocabMarkers ?? previous.showNewVocabMarkers,
+    showLearningMarkers: storedSettings.showLearningMarkers ?? previous.showLearningMarkers,
+    showMasteredMarkers: storedSettings.showMasteredMarkers ?? previous.showMasteredMarkers,
   };
 }
 
@@ -206,13 +202,10 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
   const settingsLoadedBookRef = useRef<string | null>(null);
   const saveTimerRef = useRef<number | null>(null);
   const pendingPreferencesRef = useRef<Record<string, string>>({});
-  const typographyOverridesRef = useRef<Set<PerBookOverrideKey>>(new Set());
-
-  // Seed from whatever the book already has. Runs before the first write, which
-  // is gated on the async settings load finishing, so nothing is lost.
-  useEffect(() => {
-    typographyOverridesRef.current = readStoredOverrides(bookId);
-  }, [bookId]);
+  const bookSaveTimerRef = useRef<number | null>(null);
+  // Keyed by book id: a batch outlives the book it belongs to only until the
+  // flush below, and must never be written against whatever book is open then.
+  const pendingBookSettingsRef = useRef<Record<string, Record<string, string>>>({});
 
   useEffect(() => {
     readerSettingsRef.current = readerSettings;
@@ -251,14 +244,61 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
     void flushReaderPreferences();
   }, [flushReaderPreferences]);
 
+  // One `set_book_settings_bulk` per settle: an override write is a database
+  // write *and*, for `font`, a sync event, so a dragged slider must not emit one
+  // per frame. Closing the book mid-debounce still lands the edit — the effect
+  // below flushes on every `bookId` change and on unmount, and each batch is
+  // written against the book it was queued under, not the one now open.
+  const flushBookSettings = useCallback(async () => {
+    bookSaveTimerRef.current = null;
+    const pending = pendingBookSettingsRef.current;
+    pendingBookSettingsRef.current = {};
+    for (const [book, values] of Object.entries(pending)) {
+      try {
+        await invoke("set_book_settings_bulk", { bookId: book, settings: values });
+      } catch {
+        // Keep the edit queued for the next settle, letting newer values win.
+        pendingBookSettingsRef.current[book] = {
+          ...values,
+          ...pendingBookSettingsRef.current[book],
+        };
+      }
+    }
+  }, []);
+
+  const scheduleBookSettingsSave = useCallback((book: string, values: Record<string, string>) => {
+    if (Object.keys(values).length === 0) return;
+    pendingBookSettingsRef.current[book] = {
+      ...pendingBookSettingsRef.current[book],
+      ...values,
+    };
+    if (bookSaveTimerRef.current !== null) window.clearTimeout(bookSaveTimerRef.current);
+    bookSaveTimerRef.current = window.setTimeout(() => {
+      void flushBookSettings();
+    }, 400);
+  }, [flushBookSettings]);
+
+  useEffect(() => () => {
+    if (bookSaveTimerRef.current !== null) window.clearTimeout(bookSaveTimerRef.current);
+    void flushBookSettings();
+  }, [bookId, flushBookSettings]);
+
   const handleReaderSettingsChange = useCallback((next: ReaderSettingsState) => {
     const previous = readerSettingsRef.current;
     readerSettingsRef.current = next;
     setReaderSettings(next);
     // This callback only runs for edits made in the reader's own settings panel,
-    // so a differing value here is exactly the per-book override signal.
-    for (const key of perBookOverrideKeys) {
-      if (previous[key] !== next[key]) typographyOverridesRef.current.add(key);
+    // so a differing value here is exactly the per-book override signal. Gated on
+    // the async load the same way the blob write is: before it finishes the merge
+    // has not run yet, and a row written now would be overwritten by it anyway.
+    if (bookId && settingsLoadedBookRef.current === bookId) {
+      const changedOverrides: Record<string, string> = {};
+      for (const key of perBookOverrideKeys) {
+        if (previous[key] !== next[key]) {
+          changedOverrides[perBookSettingKeys[key]] = String(next[key]);
+        }
+      }
+      scheduleBookSettingsSave(bookId, changedOverrides);
     }
     const changed: Record<string, string> = {};
     if (previous.theme !== next.theme) changed[readerPreferenceSettingKeys.theme] = next.theme;
@@ -276,7 +316,7 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
     if (previous.previousPageBinding !== next.previousPageBinding) changed[readerPreferenceSettingKeys.previousPageBinding] = next.previousPageBinding;
     if (previous.nextPageBinding !== next.nextPageBinding) changed[readerPreferenceSettingKeys.nextPageBinding] = next.nextPageBinding;
     scheduleReaderPreferenceSave(changed);
-  }, [scheduleReaderPreferenceSave]);
+  }, [bookId, scheduleBookSettingsSave, scheduleReaderPreferenceSave, settingsLoadedBookRef]);
 
   useEffect(() => {
     let disposed = false;
@@ -339,14 +379,12 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
 
   useEffect(() => {
     if (settingsLoadedBookRef.current !== bookId) return;
-    const overrides = typographyOverridesRef.current;
     const stored: StoredReaderSettings = { ...readerSettings };
-    for (const key of perBookOverrideKeys) {
-      if (!overrides.has(key)) delete stored[key];
-    }
+    // The override keys live in `book_settings` now; leaving a copy in the blob
+    // would only be a stale second source of truth.
+    for (const key of perBookOverrideKeys) delete stored[key];
     // Never a per-book value: it is a global preference with no reader control.
     delete stored.narrowFontShrink;
-    if (overrides.size > 0) stored.typographyOverrides = [...overrides];
     localStorage.setItem(`reader-settings-${bookId}`, JSON.stringify(stored));
   }, [bookId, readerSettings]);
 

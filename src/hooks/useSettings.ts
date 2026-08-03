@@ -55,3 +55,7 @@ export function useSettings() {
 export async function getAllSettings(): Promise<Record<string, string>> {
   return invoke<Record<string, string>>("get_all_settings");
 }
+
+export async function getBookSettings(bookId: string): Promise<Record<string, string>> {
+  return invoke<Record<string, string>>("get_book_settings", { bookId });
+}

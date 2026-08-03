@@ -467,11 +467,9 @@ pub fn set_book_settings_bulk(
 
 /// Same whitelist rule as the global writer: only `font` publishes.
 ///
-/// NOTE: no frontend code calls this today. The reader's per-book overrides
-/// live in `localStorage` under `reader-settings-<bookId>`, not in this table.
-/// The sync path is wired here so the backend is ready, but the per-book font
-/// will not actually cross devices until that override is migrated out of
-/// `localStorage`. See docs/impls/syncable-custom-fonts.md section 8.
+/// The reader panel is the caller: `useReaderSettingsSync` writes one debounced
+/// batch per settle, with the row's existence standing for "this book overrides
+/// the global setting". See docs/impls/handoff-per-book-font-sync.md.
 pub(crate) fn do_set_book_settings_bulk(
     book_id: &str,
     settings: &HashMap<String, String>,
