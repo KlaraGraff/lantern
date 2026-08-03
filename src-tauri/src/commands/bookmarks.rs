@@ -426,7 +426,12 @@ pub(crate) fn update_highlight_inner(
             )
             .map_err(|_| AppError::Other("HIGHLIGHT_NOT_FOUND".to_string()))?;
         if let Some(note) = note {
-            highlight.note = Some(note.to_string());
+            // An empty/whitespace note means "cleared" — store NULL, not "".
+            highlight.note = if note.trim().is_empty() {
+                None
+            } else {
+                Some(note.to_string())
+            };
             events.push(EventBody::HighlightNoteSet {
                 id: id.to_string(),
                 note: highlight.note.clone(),
@@ -535,5 +540,77 @@ mod tests {
             tombstone_ts, created[0].created_at,
             "replacement deletes and additions must share the command timestamp"
         );
+    }
+
+    #[test]
+    fn cleared_note_is_stored_as_null() {
+        let dir = TempDir::new().unwrap();
+        let db = Db::init(dir.path()).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO books
+                 (id, title, author, file_path, format, status, progress,
+                  created_at, updated_at)
+                 VALUES ('b1', 'Book', 'Author', 'books/b1.epub', 'epub',
+                         'reading', 0, 1, 1)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO highlights
+                 (id, book_id, cfi_range, color, note, created_at, updated_at,
+                  updated_by_device)
+                 VALUES ('h1', 'b1', 'range', 'yellow', 'a note', 1, 1, 'dev-A')",
+                [],
+            )
+            .unwrap();
+        }
+
+        let app = tauri::test::mock_app();
+        assert!(app.manage(db));
+        assert!(app.manage(SyncWriter::new("dev-A".into())));
+
+        let updated = update_highlight_inner(
+            "h1",
+            Some(""),
+            None,
+            &app.state::<Db>(),
+            &app.state::<SyncWriter>(),
+        )
+        .unwrap();
+        assert_eq!(updated.note, None);
+
+        let db = app.state::<Db>();
+        let conn = db.conn.lock().unwrap();
+        let stored: Option<String> = conn
+            .query_row(
+                "SELECT note FROM highlights WHERE id = 'h1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, None, "cleared note must read back as NULL");
+        drop(conn);
+
+        let updated = update_highlight_inner(
+            "h1",
+            Some("  \n\t "),
+            None,
+            &app.state::<Db>(),
+            &app.state::<SyncWriter>(),
+        )
+        .unwrap();
+        assert_eq!(updated.note, None, "whitespace-only note must clear too");
+
+        let updated = update_highlight_inner(
+            "h1",
+            Some("kept"),
+            None,
+            &app.state::<Db>(),
+            &app.state::<SyncWriter>(),
+        )
+        .unwrap();
+        assert_eq!(updated.note.as_deref(), Some("kept"));
     }
 }
