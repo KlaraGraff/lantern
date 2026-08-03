@@ -2,6 +2,8 @@
 
 GitHub issue: https://github.com/yicheng47/quill/issues/260
 
+> **Status: Shipped.** The TOC is a docked, collapsible left side panel (`src/components/TableOfContents.tsx`, integrated in `src/pages/Reader.tsx`) — implementation phases 1–2 below are done. Of the open design questions, persistence was left at "not remembered"; revisiting that is tracked as item P1.7 in [`docs/roadmap/reader-page-optimization.md`](../../roadmap/reader-page-optimization.md). Archived 2026-08.
+
 ## Motivation
 
 The Table of Contents is a fixed popover anchored to the TOC button (`src/components/TableOfContents.tsx`), capped at `w-[320px]` / `max-h-[300px]`. For books with long or deeply-nested TOCs this is cramped — lots of scrolling in a tiny box, and titles truncate.

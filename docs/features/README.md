@@ -12,7 +12,6 @@ A spec's number is its issue number here. A `q` prefix marks a number inherited 
 - [q27 — Reading Stats](q27-reading-stats.md)
 - [q32 — Library Backup](q32-library-backup.md)
 - [q257 — Persist Explain results + Explanations tools page](q257-persist-explanations.md)
-- [q260 — TOC as Collapsible Left Side Panel](q260-toc-side-panel.md)
 - [q261 - Disable Sync Copy-to-Local Progress](q261-disable-sync-copy-progress.md)
 - [q276 - Reset All App Data](q276-reset-all-data.md)
 - [q285 - Group Chats and Words under Memos](q285-group-chats-and-words-under-memos.md)
