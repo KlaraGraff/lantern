@@ -1,6 +1,6 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Pipette } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   MARKER_COLOR_PRESETS,
@@ -9,12 +9,18 @@ import {
   type MarkerStyleConfig,
   type MarkerVisualStyle,
 } from "../marker-style";
-import { markBlendMode, systemMark, type SystemMark, type SystemMarkId, markCollisions } from "../mark-palette";
-import { fonts, getDefaultReaderTheme, getThemeStyles } from "../reader-settings";
+import {
+  markBlendMode,
+  systemMark,
+  type SystemMark,
+  type SystemMarkId,
+  markCollisions,
+  markInvisibleOn,
+} from "../mark-palette";
+import { fonts, getDefaultReaderTheme, getThemeStyles, type ReaderTheme } from "../reader-settings";
 import { installCustomFontFaces, type CustomFontRecord } from "../custom-fonts";
 import Select from "../ui/Select";
 import Toggle from "../ui/Toggle";
-import ColorControl from "../ui/ColorControl";
 import ColorSwatches from "../ui/ColorSwatches";
 import { ROW_CONTROL_WIDTH } from "./types";
 import WordFormsManager from "./WordFormsManager";
@@ -74,6 +80,186 @@ const MARK_LABEL_KEY: Record<SystemMarkId, string> = {
   learning: "vocab.mastery.learning",
   mastered: "vocab.mastery.mastered",
 };
+
+/** Partial: only the themes `markInvisibleOn` can name are ever looked up here. */
+const BACKDROP_LABEL_KEY: Partial<Record<ReaderTheme, string>> = {
+  original: "readerSettings.themeOriginal",
+  paper: "readerSettings.themeSepia",
+  quiet: "readerSettings.themeGray",
+  dark: "readerSettings.themeDark",
+};
+
+function clampOpacity(value: number) {
+  return Math.min(100, Math.max(0, Math.round(value)));
+}
+
+/** Rec. 709 luma, 0 to 1 — enough to choose a legible icon to lay over a fill. */
+function relativeLuma(hex: string) {
+  const value = hex.replace("#", "");
+  const [r, g, b] = [0, 2, 4].map((offset) => parseInt(value.slice(offset, offset + 2), 16));
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+function normalizeHexColor(value: string, fallback: string) {
+  const trimmed = value.trim();
+  const normalized = (trimmed.startsWith("#") ? trimmed : `#${trimmed}`).toUpperCase();
+  return /^#[0-9A-F]{6}$/.test(normalized) ? normalized : fallback;
+}
+
+/**
+ * Opacity as a number rather than the slider it replaced: the row it now shares
+ * with the swatches has no width for a track. Arrow keys keep the sweep a slider
+ * gave, a percent at a time, so a value can still be found by eye off the sample.
+ */
+function OpacityField({
+  value,
+  label,
+  onChange,
+}: {
+  value: number;
+  label: string;
+  onChange: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => setDraft(String(value)), [value]);
+
+  const commit = (raw: string) => {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isNaN(parsed)) {
+      setDraft(String(value));
+      return;
+    }
+    onChange(clampOpacity(parsed));
+  };
+
+  return (
+    <div className="flex shrink-0 items-center gap-1.5">
+      <span className="text-[11px] text-text-muted">{label}</span>
+      <div className="relative">
+        <input
+          value={draft}
+          inputMode="numeric"
+          maxLength={3}
+          aria-label={label}
+          onChange={(event) => setDraft(event.target.value.replace(/\D/g, ""))}
+          onBlur={(event) => commit(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commit(event.currentTarget.value);
+              return;
+            }
+            const step = event.key === "ArrowUp" ? 1 : event.key === "ArrowDown" ? -1 : 0;
+            if (!step) return;
+            event.preventDefault();
+            // Stepped off what is on screen, not off the last committed value —
+            // otherwise an arrow press after typing jumps somewhere else.
+            const typed = Number.parseInt(draft, 10);
+            onChange(clampOpacity((Number.isNaN(typed) ? value : typed) + step));
+          }}
+          className="h-7 w-14 rounded-md border border-border bg-bg-input pl-2 pr-5 text-[11px] tabular-nums text-text-primary outline-none focus:border-accent"
+        />
+        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-text-muted">%</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The sixth swatch, and the only one that is not a preset — it opens the picker.
+ * So it wears the icon rather than a fill until a colour outside the presets is
+ * actually in use, at which point it becomes the swatch showing that colour.
+ */
+function CustomColorButton({
+  color,
+  onChange,
+}: {
+  color: string;
+  onChange: (color: string) => void;
+}) {
+  const { t } = useTranslation();
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [hexDraft, setHexDraft] = useState(color);
+  const isCustom = !MARKER_COLOR_PRESETS.some((preset) => preset === color);
+  const pickerLabel = t("settings.tools.markers.colorPicker");
+
+  useEffect(() => setHexDraft(color), [color]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (wrapperRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  const commitHex = () => {
+    const normalized = normalizeHexColor(hexDraft, color);
+    setHexDraft(normalized);
+    onChange(normalized);
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative shrink-0">
+      <button
+        type="button"
+        aria-label={pickerLabel}
+        aria-expanded={open}
+        title={pickerLabel}
+        onClick={() => setOpen((wasOpen) => !wasOpen)}
+        className={`flex size-7 items-center justify-center rounded-full border ${
+          isCustom
+            ? "border-black/10 ring-2 ring-accent ring-offset-2 ring-offset-bg-surface"
+            : "border-border bg-bg-surface hover:bg-bg-input"
+        }`}
+        style={isCustom ? { backgroundColor: color } : undefined}
+      >
+        <Pipette
+          size={13}
+          className={isCustom ? undefined : "text-text-muted"}
+          style={isCustom ? { color: relativeLuma(color) > 0.6 ? "#1B1B1F" : "#FFFFFF" } : undefined}
+        />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-2 flex items-center gap-2 rounded-lg border border-border bg-bg-surface p-2 shadow-popover">
+          <label className="relative size-7 shrink-0 overflow-hidden rounded-full border border-border" title={pickerLabel}>
+            <input
+              type="color"
+              value={color}
+              aria-label={pickerLabel}
+              onChange={(event) => onChange(event.target.value.toUpperCase())}
+              className="absolute -inset-2 size-12 cursor-pointer border-0 bg-transparent p-0"
+            />
+          </label>
+          <input
+            value={hexDraft}
+            maxLength={7}
+            aria-label={t("settings.tools.markers.hexColor")}
+            onChange={(event) => setHexDraft(event.target.value.toUpperCase())}
+            onBlur={commitHex}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              commitHex();
+            }}
+            className="h-7 w-[88px] rounded-md border border-border bg-bg-input px-2 font-mono text-[11px] uppercase text-text-primary outline-none focus:border-accent"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 function TreatmentToggle({
   active,
@@ -148,6 +334,7 @@ function StyleControls({
     onChange(candidate);
   };
   const collisions = markCollisions(value);
+  const invisibleOn = markInvisibleOn(value);
   // These chips sit on the settings panel rather than on a page, so the nearest
   // truth about what they will blend into is which way the app itself is lit.
   const chipBackdrop = getThemeStyles(getDefaultReaderTheme()).body;
@@ -159,17 +346,6 @@ function StyleControls({
 
   return (
     <div className="space-y-3 pb-4">
-      <ColorControl
-        color={value.color}
-        opacity={value.opacity}
-        presets={[]}
-        colorLabel={t("settings.tools.markers.color")}
-        pickerLabel={t("settings.tools.markers.colorPicker")}
-        hexLabel={t("settings.tools.markers.hexColor")}
-        opacityLabel={t("settings.tools.markers.opacity")}
-        onChange={(next) => onChange({ ...value, ...next })}
-      />
-
       {collisions.length > 0 && (
         <div role="status" className="flex items-start gap-2 rounded-md border border-accent/25 bg-accent-bg px-3 py-2.5">
           <AlertTriangle size={14} className="mt-0.5 shrink-0 text-accent-text" />
@@ -179,6 +355,31 @@ function StyleControls({
               {collisions.map((id) => (
                 <span key={id} style={systemMarkCss(systemMark[id], chipBackdrop)}>{t(MARK_LABEL_KEY[id])}</span>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {invisibleOn.length > 0 && (
+        <div role="status" className="flex items-start gap-2 rounded-md border border-accent/25 bg-accent-bg px-3 py-2.5">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-accent-text" />
+          <div className="min-w-0 space-y-1.5">
+            <p className="text-[11px] leading-[17px] text-text-secondary">{t("settings.tools.markers.invisible")}</p>
+            {/* Named on their own paper: the complaint is about a page colour, and
+                the page colour is the part a name alone does not convey. */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+              {invisibleOn.map((theme) => {
+                const { body, text } = getThemeStyles(theme);
+                return (
+                  <span
+                    key={theme}
+                    className="rounded border border-black/10 px-1.5 py-0.5"
+                    style={{ backgroundColor: body, color: text }}
+                  >
+                    {t(BACKDROP_LABEL_KEY[theme] ?? theme)}
+                  </span>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -267,11 +468,24 @@ export default function MarkerStyleSettings({ value, onChange, lookupRow }: Mark
             ))}
           </div>
           {editable && (
-            <ColorSwatches
-              color={edited.color}
-              presets={MARKER_COLOR_PRESETS}
-              onSelect={(color) => applyEdit({ ...edited, color })}
-            />
+            // `ml-auto` rather than the row's `justify-between` alone: once the
+            // row wraps, a lone item on the second line would sit left.
+            <div className="ml-auto flex items-center gap-2.5">
+              <OpacityField
+                value={edited.opacity}
+                label={t("settings.tools.markers.opacity")}
+                onChange={(opacity) => applyEdit({ ...edited, opacity })}
+              />
+              <span aria-hidden className="h-5 w-px shrink-0 bg-border" />
+              <div className="flex items-center gap-2">
+                <ColorSwatches
+                  color={edited.color}
+                  presets={MARKER_COLOR_PRESETS}
+                  onSelect={(color) => applyEdit({ ...edited, color })}
+                />
+                <CustomColorButton color={edited.color} onChange={(color) => applyEdit({ ...edited, color })} />
+              </div>
+            </div>
           )}
         </div>
 

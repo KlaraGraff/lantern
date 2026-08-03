@@ -674,7 +674,6 @@
   "settings.tools.markers.automaticStyle": "查词自动标记样式",
   "settings.tools.markers.automaticFollowsManual": "跟随手动标记样式",
   "settings.tools.markers.automaticFollowsManualHint": "让手动标记和自动单词标记使用一致的外观。",
-  "settings.tools.markers.color": "颜色",
   "settings.tools.markers.colorPicker": "选择自定义颜色",
   "settings.tools.markers.hexColor": "HEX 色号",
   "settings.tools.markers.opacity": "透明度",

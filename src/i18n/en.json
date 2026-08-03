@@ -676,7 +676,6 @@
   "settings.tools.markers.automaticStyle": "Automatic lookup marker style",
   "settings.tools.markers.automaticFollowsManual": "Follow manual marker style",
   "settings.tools.markers.automaticFollowsManualHint": "Use one consistent style for manual and automatic word markers.",
-  "settings.tools.markers.color": "Color",
   "settings.tools.markers.colorPicker": "Choose a custom color",
   "settings.tools.markers.hexColor": "HEX color",
   "settings.tools.markers.opacity": "Opacity",
