@@ -2,13 +2,14 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { X, Loader2, WandSparkles, Check, Copy, Settings } from "lucide-react";
+import { X, Loader2, WandSparkles, BookmarkPlus, Check, Copy, Settings, MessageSquareMore } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
 import { LOOKUP_PROSE } from "./lookup-prose";
 import { aiErrorMessageKey, getAiErrorCode, isAiRetryableError, isAiSettingsError, type AiErrorCode } from "../utils/aiError";
 import AiRetryButton from "./AiRetryButton";
 import { createUuid } from "../utils/randomUuid";
+import { notifyReaders } from "../utils/notifyReaders";
 
 interface ExplainPopoverProps {
   x: number;
@@ -22,6 +23,7 @@ interface ExplainPopoverProps {
   cfi?: string;
   onClose: () => void;
   customAction?: { name: string; prompt: string };
+  onAskFollowUp?: (quote: string, cfi?: string) => void;
 }
 
 interface AiStreamChunk {
@@ -150,11 +152,15 @@ export default function ExplainPopover({
   bookTitle,
   bookAuthor,
   chapter,
+  bookId,
+  cfi,
   onClose,
   customAction,
+  onAskFollowUp,
 }: ExplainPopoverProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const [saved, setSaved] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
   const { content, contentRef, streaming, aiError, streamError, retry } = useExplainStream(
@@ -189,6 +195,30 @@ export default function ExplainPopover({
     return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Check if this text is already saved to the vocab list
+  useEffect(() => {
+    invoke<string | null>("check_vocab_exists", { bookId, word: text }).then((id) => {
+      if (id) setSaved(true);
+    }).catch(() => {});
+  }, [bookId, text]);
+
+  const handleSave = async () => {
+    try {
+      await invoke("add_vocab_word", {
+        bookId,
+        word: text,
+        definition: contentRef.current,
+        contextSentence: sentence || null,
+        contextExplanation: null,
+        cfi: cfi || null,
+      });
+      setSaved(true);
+      notifyReaders("vocab-changed", { bookId, cfi: cfi || undefined });
+    } catch (err) {
+      console.error("Failed to save vocab word:", err);
+    }
+  };
 
   const handleCopy = () => {
     navigator.clipboard.writeText(contentRef.current);
@@ -290,9 +320,36 @@ export default function ExplainPopover({
         )}
       </div>
 
-      {/* Footer — Copy */}
+      {/* Footer — Save, Ask Follow Up, Copy */}
       {!streaming && content && !aiError && !streamError && (
-        <div className="flex items-center justify-end px-4 py-2.5 border-t border-border/40">
+        <div className="flex items-center justify-between px-4 py-2.5 border-t border-border/40">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSave}
+              disabled={saved}
+              className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-accent-text hover:opacity-70 disabled:opacity-50 disabled:cursor-default"
+            >
+              {saved ? <Check size={14} /> : <BookmarkPlus size={14} />}
+              {saved ? t("lookup.saved") : t("lookup.saveToDict")}
+            </button>
+            {onAskFollowUp && (
+              <button
+                onClick={() => {
+                  const quote = [
+                    `Text: ${text}`,
+                    sentence ? `Context: ${sentence}` : "",
+                    `Explanation: ${contentRef.current}`,
+                  ].filter(Boolean).join("\n\n");
+                  onAskFollowUp(quote, cfi);
+                  onClose();
+                }}
+                className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-text-secondary hover:text-accent-text"
+              >
+                <MessageSquareMore size={14} />
+                {t("lookup.askFollowUp")}
+              </button>
+            )}
+          </div>
           <button
             onClick={handleCopy}
             className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-text-muted hover:opacity-70"

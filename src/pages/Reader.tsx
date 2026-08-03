@@ -2230,6 +2230,10 @@ export default function Reader() {
           cfi={customAction.interaction.location}
           customAction={customAction.action}
           onClose={() => setCustomAction(null)}
+          onAskFollowUp={(quote, cfi) => {
+            setAiContext({ text: quote, cfi });
+            setSidePanel("ai");
+          }}
         />
       )}
 
@@ -2247,6 +2251,10 @@ export default function Reader() {
             : undefined}
           cfi={translation.cfi}
           onClose={() => setTranslation(null)}
+          onAskFollowUp={(quote, cfi) => {
+            setAiContext({ text: quote, cfi });
+            setSidePanel("ai");
+          }}
         />
       )}
 

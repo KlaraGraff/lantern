@@ -1,16 +1,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Bookmark, BookmarkPlus, Trash2, Clock, Search } from "lucide-react";
+import { Bookmark, BookmarkPlus, Trash2, Pencil, Clock, Search } from "lucide-react";
 import { useBookmarks, useHighlights } from "../hooks/useBookmarks";
 import { timeAgo } from "../utils/timeAgo";
-
-const HIGHLIGHT_COLORS = [
-  { name: "yellow", hex: "#FBBF24" },
-  { name: "green", hex: "#34D399" },
-  { name: "blue", hex: "#60A5FA" },
-  { name: "pink", hex: "#F472B6" },
-  { name: "purple", hex: "#A78BFA" },
-];
+import { savedHighlightColor } from "./mark-palette";
+import HighlightToolbar from "./HighlightToolbar";
 
 interface BookmarksPanelProps {
   bookId: string;
@@ -27,8 +21,12 @@ export default function BookmarksPanel({ bookId, onNavigate, getCurrentCfi, getC
   const [tab, setTab] = useState<Tab>("bookmarks");
   const [colorFilter, setColorFilter] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [editingHighlight, setEditingHighlight] = useState<{ id: string; x: number; y: number } | null>(null);
   const { bookmarks, add: addBookmark, remove: removeBookmark } = useBookmarks(bookId);
-  const { highlights, remove: removeHighlight } = useHighlights(bookId);
+  const { highlights, remove: removeHighlight, updateNote, updateColor } = useHighlights(bookId);
+  const editingTarget = editingHighlight
+    ? highlights.find((h) => h.id === editingHighlight.id) ?? null
+    : null;
 
   const handleAddBookmark = async () => {
     const cfi = getCurrentCfi?.();
@@ -151,14 +149,14 @@ export default function BookmarksPanel({ bookId, onNavigate, getCurrentCfi, getC
             >
               {t("bookmarks.highlightsAll")}
             </button>
-            {HIGHLIGHT_COLORS.map((c) => (
+            {Object.entries(savedHighlightColor).map(([name, hex]) => (
               <div
-                key={c.name}
-                onClick={() => setColorFilter(colorFilter === c.name ? null : c.name)}
+                key={name}
+                onClick={() => setColorFilter(colorFilter === name ? null : name)}
                 className={`w-[18px] h-[18px] rounded-full cursor-pointer transition-transform ${
-                  colorFilter === c.name ? "ring-2 ring-offset-1 ring-accent ring-offset-bg-muted scale-110" : "hover:scale-110"
+                  colorFilter === name ? "ring-2 ring-offset-1 ring-accent ring-offset-bg-muted scale-110" : "hover:scale-110"
                 }`}
-                style={{ backgroundColor: c.hex }}
+                style={{ backgroundColor: hex }}
               />
             ))}
             <div className="flex-1 flex items-center gap-1.5 ml-auto h-[28px] px-2 rounded-md bg-bg-input">
@@ -189,7 +187,7 @@ export default function BookmarksPanel({ bookId, onNavigate, getCurrentCfi, getC
                 >
                   <div
                     className="w-4 h-4 rounded-full shrink-0 mt-0.5"
-                    style={{ backgroundColor: HIGHLIGHT_COLORS.find((c) => c.name === highlight.color)?.hex || "#FBBF24" }}
+                    style={{ backgroundColor: savedHighlightColor[highlight.color] ?? savedHighlightColor.yellow }}
                   />
                   <div className="ml-3 min-w-0 flex-1">
                     {highlight.text_content && (
@@ -213,10 +211,17 @@ export default function BookmarksPanel({ bookId, onNavigate, getCurrentCfi, getC
                     </div>
                   </div>
                   <div
-                    onClick={(e) => { e.stopPropagation(); removeHighlight(highlight.id); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setEditingHighlight((current) => (
+                        current?.id === highlight.id ? null : { id: highlight.id, x: rect.left, y: rect.top }
+                      ));
+                    }}
+                    aria-label={t("bookmarks.highlightEditButton")}
                     className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-bg-surface transition-opacity"
                   >
-                    <Trash2 size={14} className="text-text-muted" />
+                    <Pencil size={14} className="text-text-muted" />
                   </div>
                 </button>
               ))
@@ -229,6 +234,21 @@ export default function BookmarksPanel({ bookId, onNavigate, getCurrentCfi, getC
             </p>
           </div>
         </>
+      )}
+
+      {editingTarget && editingHighlight && (
+        <HighlightToolbar
+          key={editingTarget.id}
+          x={editingHighlight.x}
+          y={editingHighlight.y}
+          color={editingTarget.color}
+          note={editingTarget.note}
+          onChangeColor={(color) => updateColor(editingTarget.id, color)}
+          onSaveNote={(note) => updateNote(editingTarget.id, note)}
+          onDeleteNote={() => { updateNote(editingTarget.id, ""); setEditingHighlight(null); }}
+          onDeleteHighlight={() => { removeHighlight(editingTarget.id); setEditingHighlight(null); }}
+          onClose={() => setEditingHighlight(null)}
+        />
       )}
     </div>
   );
