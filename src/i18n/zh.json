@@ -1182,6 +1182,8 @@
   "common.unknownBook": "未知书籍",
   "common.bookmark": "书签",
   "common.moreDetail": "详细说明",
+  "learningCard.modelSaidNothing": "模型没有返回任何内容。请重试，或在 AI 设置里换一个模型。",
+  "learningCard.modelOffFormat": "模型没有按卡片格式作答。请重试，或在 AI 设置里换一个模型。",
   "learningCard.allModulesDisabled": "这张卡片没有可展示的板块。可在设置中开启或恢复默认。",
   "learningCard.cachedRefresh": "缓存结果 · 重新查询",
   "learningCard.title.word": "单词释义",

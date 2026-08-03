@@ -1182,6 +1182,8 @@
   "common.unknownBook": "Unknown Book",
   "common.bookmark": "Bookmark",
   "common.moreDetail": "More detail",
+  "learningCard.modelSaidNothing": "The model returned nothing for this card. Try again, or switch to another model in AI settings.",
+  "learningCard.modelOffFormat": "The model did not answer in the card format. Try again, or switch to another model in AI settings.",
   "learningCard.allModulesDisabled": "This card has no sections to show. Turn one on, or restore the defaults, in settings.",
   "learningCard.cachedRefresh": "Cached result · Look up again",
   "learningCard.title.word": "Word Definition",

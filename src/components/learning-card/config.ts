@@ -496,9 +496,19 @@ export function getCardLayoutDensity(card: CardKindConfig): ContentDensity {
  * arriving from the other side.
  */
 export function learningCardErrorKey(message: string): string | null {
-  return message.includes("LEARNING_CARD_ALL_MODULES_DISABLED")
-    ? "learningCard.allModulesDisabled"
-    : null;
+  if (message.includes("LEARNING_CARD_ALL_MODULES_DISABLED")) {
+    return "learningCard.allModulesDisabled";
+  }
+  // The card asks for a JSON protocol the reader never sees, so naming that
+  // protocol tells the reader nothing they can act on. What they can act on is
+  // the model: retry it, or route the card somewhere else.
+  if (message.includes("LEARNING_CARD_PROTOCOL_EMPTY")) {
+    return "learningCard.modelSaidNothing";
+  }
+  if (message.includes("LEARNING_CARD_PROTOCOL_")) {
+    return "learningCard.modelOffFormat";
+  }
+  return null;
 }
 
 export function getLearningCardTargetWidth(

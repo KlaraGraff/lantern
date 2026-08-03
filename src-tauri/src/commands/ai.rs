@@ -1036,6 +1036,12 @@ fn parse_learning_card_response(
         return Err(AppError::Ai("LEARNING_CARD_PROTOCOL_TOO_LARGE".to_string()));
     }
     let payload = strip_single_json_fence(raw);
+    // A model that spends its entire token budget reasoning returns no answer at
+    // all. Blaming the JSON for that sends the reader hunting through a protocol
+    // that was never violated, so name what actually happened.
+    if payload.is_empty() {
+        return Err(AppError::Ai("LEARNING_CARD_PROTOCOL_EMPTY".to_string()));
+    }
     let mut response: LearningCardResponse = serde_json::from_str(payload)
         .map_err(|_| AppError::Ai("LEARNING_CARD_PROTOCOL_INVALID_JSON".to_string()))?;
     if response.version != LEARNING_CARD_SCHEMA_VERSION || response.kind != kind {
@@ -4466,6 +4472,21 @@ mod tests {
         let parsed = parse_learning_card_response(raw, "word", "Edge", &request).unwrap();
         assert_eq!(parsed.source_text, "Edge");
         assert!(parsed.provenance.is_none());
+    }
+
+    // A model that reasons past its budget answers with nothing. Reporting that
+    // as malformed JSON points at the wrong thing entirely.
+    #[test]
+    fn learning_protocol_names_a_silent_model_rather_than_the_json() {
+        let request = default_learning_request("word").unwrap();
+        for raw in ["", "   \n", "```json\n\n```"] {
+            let error = parse_learning_card_response(raw, "word", "x", &request)
+                .expect_err("an empty answer is not a card");
+            assert!(
+                error.to_string().contains("LEARNING_CARD_PROTOCOL_EMPTY"),
+                "{raw:?} reported as {error}"
+            );
+        }
     }
 
     #[test]

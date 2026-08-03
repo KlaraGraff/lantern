@@ -1048,6 +1048,7 @@ async fn stream_once(
     if *cancel.borrow() {
         return Err(AppError::Other("AI_REQUEST_CANCELLED".to_string()));
     }
+    let max_tokens = answer_token_limit(profile, max_tokens);
     let base_url = resolve_base_url(&profile.view)?;
     let stream: Pin<Box<dyn Future<Output = AppResult<()>> + Send + '_>> =
         match profile.view.provider.as_str() {
@@ -1674,12 +1675,27 @@ pub async fn complete_with_profile(
     })
 }
 
+/// The token cap that may actually be sent to a provider.
+///
+/// A cap bounds the answer only on Anthropic, which requires the field. On an
+/// OpenAI-compatible endpoint it bounds the reasoning too, so a reasoning model
+/// spends the whole budget thinking and returns `finish_reason: length` with an
+/// empty answer — the caller gets nothing at all rather than the short answer
+/// the cap asked for. (Measured against `deepseek-v4-flash`: a 1536-token cap
+/// produced 0 content characters and ~6.7k reasoning characters; unset, the same
+/// request answered in full.) Some gateways reject the field outright. Brevity
+/// there has to come from the prompt, which is what grounded chat, sentence
+/// explanation and the connection probe already rely on.
+fn answer_token_limit(profile: &AiProfile, requested: Option<u32>) -> Option<u32> {
+    (profile.view.provider == "anthropic")
+        .then_some(requested)
+        .flatten()
+}
+
 fn connection_test_token_limit(profile: &AiProfile) -> Option<u32> {
-    // OpenAI-compatible reasoning endpoints frequently reject `max_tokens`
-    // (some require `max_completion_tokens`, while others accept neither).
-    // The production request leaves the field unset, so the health probe does
-    // the same. Anthropic requires a limit and accepts this small value.
-    (profile.view.provider == "anthropic").then_some(64)
+    // Anthropic requires a limit and accepts this small value; everywhere else
+    // the probe sends no cap, for the reason above.
+    answer_token_limit(profile, Some(64))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3551,6 +3567,47 @@ mod tests {
             last_used_at: None,
             last_latency_ms: None,
         }
+    }
+
+    // A cap that a reasoning model can spend on thinking alone is not a cap on
+    // the answer — it is a way to get no answer at all. Only Anthropic, which
+    // requires the field, may see one.
+    #[test]
+    fn only_anthropic_is_sent_a_token_cap() {
+        let capped = |provider: &str| {
+            answer_token_limit(
+                &AiProfile {
+                    view: profile(provider, None),
+                },
+                Some(1536),
+            )
+        };
+        assert_eq!(capped("anthropic"), Some(1536));
+        assert_eq!(capped("deepseek"), None);
+        assert_eq!(capped("openai"), None);
+        assert_eq!(capped("custom"), None);
+        assert_eq!(capped("ollama"), None);
+        assert_eq!(
+            answer_token_limit(
+                &AiProfile {
+                    view: profile("anthropic", None)
+                },
+                None
+            ),
+            None
+        );
+        assert_eq!(
+            connection_test_token_limit(&AiProfile {
+                view: profile("anthropic", None)
+            }),
+            Some(64)
+        );
+        assert_eq!(
+            connection_test_token_limit(&AiProfile {
+                view: profile("deepseek", None)
+            }),
+            None
+        );
     }
 
     #[test]
