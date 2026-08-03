@@ -112,6 +112,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
         31,
         include_str!("../migrations/031_syncable_custom_fonts.sql"),
     ),
+    (
+        32,
+        include_str!("../migrations/032_normalize_empty_highlight_notes.sql"),
+    ),
 ];
 
 fn register_sqlite_vec() {
@@ -1585,5 +1589,73 @@ mod tests {
             )
             .unwrap();
         assert_eq!(epub_state, "ready");
+    }
+
+    #[test]
+    fn test_migration_032_collapses_blank_highlight_notes_to_null() {
+        let dir = TempDir::new().unwrap();
+        let conn = Connection::open(dir.path().join(DB_FILE_NAME)).unwrap();
+        Db::run_migrations_up_to(&conn, 31).unwrap();
+        let now = chrono::Utc::now().timestamp_millis();
+        conn.execute(
+            "INSERT INTO books
+             (id, title, author, file_path, format, status, progress, created_at, updated_at)
+             VALUES ('b1', 'Book', 'Author', 'books/b1.epub', 'epub', 'reading', 0, ?1, ?1)",
+            params![now],
+        )
+        .unwrap();
+        for (id, note) in [
+            ("empty", ""),
+            ("spaces", "   "),
+            ("newline", "\n\t\r "),
+            ("kept", "a real note"),
+            ("padded", "  padded  "),
+        ] {
+            conn.execute(
+                "INSERT INTO highlights
+                 (id, book_id, cfi_range, color, note, created_at, updated_at,
+                  updated_by_device)
+                 VALUES (?1, 'b1', 'range', 'yellow', ?2, ?3, ?3, 'dev-A')",
+                params![id, note, now],
+            )
+            .unwrap();
+        }
+
+        Db::run_migrations_up_to(&conn, 32).unwrap();
+
+        let note_of = |id: &str| -> Option<String> {
+            conn.query_row(
+                "SELECT note FROM highlights WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(note_of("empty"), None);
+        assert_eq!(note_of("spaces"), None);
+        assert_eq!(
+            note_of("newline"),
+            None,
+            "tabs and newlines count as blank, matching Rust's str::trim"
+        );
+        assert_eq!(note_of("kept"), Some("a real note".into()));
+        assert_eq!(
+            note_of("padded"),
+            Some("  padded  ".into()),
+            "notes with real text keep their surrounding whitespace"
+        );
+
+        let clock: (i64, String) = conn
+            .query_row(
+                "SELECT updated_at, updated_by_device FROM highlights WHERE id = 'empty'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            clock,
+            (now, "dev-A".into()),
+            "a representation fix must not bump the LWW clock against peers"
+        );
     }
 }

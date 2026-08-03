@@ -339,6 +339,15 @@ pub struct HighlightPayload {
     pub text_content: Option<String>,
 }
 
+/// A highlight note is either real text or absent — `Some("")` is not a third
+/// state. Callers apply this at every point where a note enters the local DB
+/// (local commands, peer events, peer snapshots) so `highlights.note` and the
+/// `Option<String>` it maps to never disagree. Interior text is left alone;
+/// only an entirely blank note collapses to `None`.
+pub fn normalized_note(note: Option<&str>) -> Option<&str> {
+    note.filter(|n| !n.trim().is_empty())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BookmarkPayload {
     pub id: String,

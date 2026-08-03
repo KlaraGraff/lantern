@@ -30,9 +30,9 @@ use serde_json::Value;
 use crate::error::{AppError, AppResult};
 
 use super::events::{
-    word_mark_exception_id, BookAssetPayload, BookImportPayload, BookSummaryPayload,
-    BookmarkPayload, ChatMessagePayload, CustomFontPayload, Event, EventBody, HighlightPayload,
-    LookupOccurrenceMarkPayload, NotePayload, SettingPayload, VocabPayload,
+    normalized_note, word_mark_exception_id, BookAssetPayload, BookImportPayload,
+    BookSummaryPayload, BookmarkPayload, ChatMessagePayload, CustomFontPayload, Event, EventBody,
+    HighlightPayload, LookupOccurrenceMarkPayload, NotePayload, SettingPayload, VocabPayload,
     WordMarkExceptionPayload, WordMarkPayload,
 };
 
@@ -654,7 +654,7 @@ fn apply_highlight_add(tx: &Transaction, event: &Event, p: &HighlightPayload) ->
             p.book_id,
             p.cfi_range,
             p.color,
-            p.note,
+            normalized_note(p.note.as_deref()),
             p.text_content,
             event.ts,
             event.device,
@@ -691,7 +691,7 @@ fn apply_highlight_note(
          SET note = ?1, updated_at = ?2, updated_by_device = ?3
          WHERE id = ?4
            AND (updated_at < ?2 OR (updated_at = ?2 AND updated_by_device < ?3))",
-        params![note, event.ts, event.device, id],
+        params![normalized_note(note), event.ts, event.device, id],
     )?;
     Ok(())
 }
@@ -2026,6 +2026,54 @@ mod tests {
             note: None,
             text_content: None,
         })
+    }
+
+    /// A peer running an older build can still emit `Some("")` for a cleared
+    /// note. Normalizing on apply — not only on the way out — is what keeps a
+    /// replay or a resync from reintroducing the empty string this device just
+    /// migrated away.
+    #[test]
+    fn blank_notes_from_peers_land_as_null() {
+        let mut conn = open_db();
+        apply_all(
+            &mut conn,
+            &[
+                ev(1, "dev-a", import_book("b1")),
+                ev(
+                    2,
+                    "dev-a",
+                    EventBody::HighlightAdd(HighlightPayload {
+                        id: "h1".into(),
+                        book_id: "b1".into(),
+                        cfi_range: "epubcfi(/6/4!/2,/1:0,/1:5)".into(),
+                        color: "yellow".into(),
+                        note: Some("  ".into()),
+                        text_content: None,
+                    }),
+                ),
+                ev(3, "dev-a", add_highlight("h2", "b1", "yellow")),
+                ev(
+                    4,
+                    "dev-a",
+                    EventBody::HighlightNoteSet {
+                        id: "h2".into(),
+                        note: Some("".into()),
+                    },
+                ),
+            ],
+        );
+
+        let blank: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM highlights WHERE note IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            blank, 0,
+            "peer events must not reintroduce empty-string notes"
+        );
     }
 
     fn note(id: &str, book: &str, scope: &str, content: &str, created_at: i64) -> EventBody {

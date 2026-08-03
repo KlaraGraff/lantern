@@ -4,7 +4,7 @@ use tauri::State;
 
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
-use crate::sync::events::{BookmarkPayload, EventBody, HighlightPayload};
+use crate::sync::events::{normalized_note, BookmarkPayload, EventBody, HighlightPayload};
 use crate::sync::merge::{entity, insert_tombstone};
 use crate::sync::writer::SyncWriter;
 
@@ -168,6 +168,7 @@ pub(crate) fn add_highlight_inner(
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
     let color = color.unwrap_or_else(|| "yellow".to_string());
+    let note = normalized_note(note.as_deref()).map(str::to_string);
 
     log::debug!("highlights: add_highlight book_id={book_id} color={color}");
 
@@ -306,6 +307,7 @@ pub fn replace_highlights(
             // both local fields keeps local SQL, peer replay, and snapshots
             // equivalent even when part of an older range is retained.
             let created_at = now;
+            let note = normalized_note(addition.note.as_deref()).map(str::to_string);
             tx.execute(
                 "INSERT INTO highlights (id, book_id, cfi_range, color, note, text_content, created_at, updated_at, updated_by_device)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)",
@@ -314,7 +316,7 @@ pub fn replace_highlights(
                     book_id,
                     addition.cfi_range,
                     addition.color,
-                    addition.note,
+                    note,
                     addition.text_content,
                     created_at,
                     device,
@@ -325,7 +327,7 @@ pub fn replace_highlights(
                 book_id: book_id.clone(),
                 cfi_range: addition.cfi_range.clone(),
                 color: addition.color.clone(),
-                note: addition.note.clone(),
+                note: note.clone(),
                 text_content: addition.text_content.clone(),
             }));
             created.push(Highlight {
@@ -333,7 +335,7 @@ pub fn replace_highlights(
                 book_id: book_id.clone(),
                 cfi_range: addition.cfi_range.clone(),
                 color: addition.color.clone(),
-                note: addition.note.clone(),
+                note,
                 text_content: addition.text_content.clone(),
                 created_at,
                 updated_at: now,
@@ -426,12 +428,7 @@ pub(crate) fn update_highlight_inner(
             )
             .map_err(|_| AppError::Other("HIGHLIGHT_NOT_FOUND".to_string()))?;
         if let Some(note) = note {
-            // An empty/whitespace note means "cleared" — store NULL, not "".
-            highlight.note = if note.trim().is_empty() {
-                None
-            } else {
-                Some(note.to_string())
-            };
+            highlight.note = normalized_note(Some(note)).map(str::to_string);
             events.push(EventBody::HighlightNoteSet {
                 id: id.to_string(),
                 note: highlight.note.clone(),
@@ -584,11 +581,9 @@ mod tests {
         let db = app.state::<Db>();
         let conn = db.conn.lock().unwrap();
         let stored: Option<String> = conn
-            .query_row(
-                "SELECT note FROM highlights WHERE id = 'h1'",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT note FROM highlights WHERE id = 'h1'", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(stored, None, "cleared note must read back as NULL");
         drop(conn);
@@ -612,5 +607,65 @@ mod tests {
         )
         .unwrap();
         assert_eq!(updated.note.as_deref(), Some("kept"));
+    }
+
+    #[test]
+    fn blank_notes_never_reach_sql_on_the_add_paths() {
+        let dir = TempDir::new().unwrap();
+        let db = Db::init(dir.path()).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO books
+                 (id, title, author, file_path, format, status, progress,
+                  created_at, updated_at)
+                 VALUES ('b1', 'Book', 'Author', 'books/b1.epub', 'epub',
+                         'reading', 0, 1, 1)",
+                [],
+            )
+            .unwrap();
+        }
+
+        let app = tauri::test::mock_app();
+        assert!(app.manage(db));
+        assert!(app.manage(SyncWriter::new("dev-A".into())));
+
+        let added = add_highlight_inner(
+            "b1",
+            "range-1",
+            None,
+            Some("   ".into()),
+            None,
+            &app.state::<Db>(),
+            &app.state::<SyncWriter>(),
+        )
+        .unwrap();
+        assert_eq!(added.note, None);
+
+        let created = replace_highlights(
+            "b1".into(),
+            vec![],
+            vec![HighlightReplacement {
+                cfi_range: "range-2".into(),
+                color: "blue".into(),
+                note: Some("".into()),
+                text_content: None,
+            }],
+            app.state::<Db>(),
+            app.state::<SyncWriter>(),
+        )
+        .unwrap();
+        assert_eq!(created[0].note, None);
+
+        let db = app.state::<Db>();
+        let conn = db.conn.lock().unwrap();
+        let blank: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM highlights WHERE note IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(blank, 0, "no add path may store an empty-string note");
     }
 }

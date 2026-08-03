@@ -8,7 +8,7 @@ use crate::sync::{merge, validation};
 use super::rows::*;
 use super::{MIN_SUPPORTED_SNAPSHOT_SCHEMA_VERSION, SNAPSHOT_SCHEMA_VERSION};
 
-use crate::sync::events::Event;
+use crate::sync::events::{normalized_note, Event};
 
 fn is_supported_snapshot_schema_version(version: u32) -> bool {
     (MIN_SUPPORTED_SNAPSHOT_SCHEMA_VERSION..=SNAPSHOT_SCHEMA_VERSION).contains(&version)
@@ -668,7 +668,7 @@ fn upsert_highlight(tx: &Transaction, id: &str, r: &HighlightRow) -> AppResult<(
             r.book_id,
             r.cfi_range,
             r.color,
-            r.note,
+            normalized_note(r.note.as_deref()),
             r.text_content,
             r.created_at,
             r.updated_at,
