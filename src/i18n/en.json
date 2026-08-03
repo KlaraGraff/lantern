@@ -695,6 +695,7 @@
   "settings.tools.markers.markReading": "Being read aloud",
   "settings.tools.markers.collision": "This color is close to the marks below — they may be hard to tell apart in the text:",
   "settings.tools.markers.invisible": "At this opacity the mark all but disappears on these page colors:",
+  "settings.tools.markers.pairCollision": "The manual and lookup marks look alike — they would be hard to tell apart while reading.",
   "settings.tools.markers.sampleText": "{{reading}} is being read aloud. It holds a {{vocabNew}}, {{learning}}, and {{mastered}}. {{manual}} you marked yourself; {{automatic}} the app marked after a lookup.",
   "settings.tools.markers.sampleReading": "This line",
   "settings.tools.markers.sampleVocabNew": "new word",

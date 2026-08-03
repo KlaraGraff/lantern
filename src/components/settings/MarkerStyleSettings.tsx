@@ -16,6 +16,7 @@ import {
   type SystemMarkId,
   markCollisions,
   markInvisibleOn,
+  configuredMarksLookAlike,
 } from "../mark-palette";
 import { fonts, getDefaultReaderTheme, getThemeStyles, type ReaderTheme } from "../reader-settings";
 import { installCustomFontFaces, type CustomFontRecord } from "../custom-fonts";
@@ -494,6 +495,16 @@ export default function MarkerStyleSettings({ value, onChange, lookupRow }: Mark
           <SamplePane theme="dark" buildStyles={sampleStyles} />
         </div>
       </div>
+
+      {/* Outside the tabs on purpose: the complaint is about the pair, so it
+          belongs to neither of the two styles being edited, and hiding it behind
+          a tab would hide it from whichever one the reader is not on. */}
+      {configuredMarksLookAlike(value) && (
+        <div role="status" className="mt-3 flex items-start gap-2 rounded-md border border-accent/25 bg-accent-bg px-3 py-2.5">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-accent-text" />
+          <p className="min-w-0 text-[11px] leading-[17px] text-text-secondary">{t("settings.tools.markers.pairCollision")}</p>
+        </div>
+      )}
 
       {editing === "automatic" && (
         <div className="flex min-h-[52px] items-center justify-between gap-4 border-b border-border-light py-3">

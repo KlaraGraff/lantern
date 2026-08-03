@@ -1,6 +1,6 @@
 import { getThemeStyles } from "./reader-settings.ts";
 import type { ReaderTheme } from "./reader-settings.ts";
-import type { MarkerVisualStyle } from "./marker-style.ts";
+import type { MarkerStyleConfig, MarkerVisualStyle } from "./marker-style.ts";
 
 /**
  * Every mark colour the reader does not get to choose — the vocabulary states,
@@ -241,6 +241,58 @@ export function markCollisions(style: MarkerVisualStyle): SystemMarkId[] {
       return colorDistance(drawn, against) < threshold;
     });
   }).map((mark) => mark.id);
+}
+
+/**
+ * Whether the reader's two own marks would be mistaken for each other.
+ *
+ * `markCollisions` only ever measures a style against the palette the app fixed,
+ * so the one pair it cannot see is the pair most likely to be confused: the
+ * manual mark and the automatic one share a page, and land on the same word as
+ * often as not. Nothing stops a reader from tuning one to within a shade of the
+ * other, and until now nothing said so.
+ *
+ * The reasoning is the one used against the system marks, because the eye does
+ * not keep a separate rule for the marks the app chose: shape first — a wash and
+ * an underline do not compete — then the colours as the page actually shows
+ * them, then a treatment only one side carries as a second channel that lowers
+ * the bar without lifting it. Weight is deliberately not counted as such a
+ * channel: `markerOverlayStyle` strips it from whole-word markers unless the
+ * reader opts into reflowing the page, so it is not there to be relied on.
+ */
+export function marksLookAlike(a: MarkerVisualStyle, b: MarkerVisualStyle): boolean {
+  return (["background", "underline"] as const).some((shape) => {
+    if (!a[shape] || !b[shape]) return false;
+    // A background is worn at the opacity the reader set; an underline is drawn
+    // at full strength whatever that slider says.
+    const strength = (style: MarkerVisualStyle) => (shape === "background" ? style.opacity / 100 : 1);
+    const cue = shape === "background" ? "underline" : "background";
+    const threshold = a[cue] === b[cue] ? MARK_COLLISION_THRESHOLD : MARK_CUED_COLLISION_THRESHOLD;
+    return BACKDROPS.some((backdrop) => {
+      const drawnA = blendOver(a.color, strength(a), backdrop);
+      const drawnB = blendOver(b.color, strength(b), backdrop);
+      // A mark you can hardly see cannot be mistaken for the other one — that is
+      // a question about visibility, and it is asked at the legibility bar.
+      if (colorDistance(drawnA, backdrop) < MARK_LEGIBILITY_THRESHOLD) return false;
+      if (colorDistance(drawnB, backdrop) < MARK_LEGIBILITY_THRESHOLD) return false;
+      return colorDistance(drawnA, drawnB) < threshold;
+    });
+  });
+}
+
+/**
+ * The same question asked of a saved config, where it has an answer the two
+ * styles alone do not.
+ *
+ * With `automaticFollowsManual` on, the automatic style *is* the manual one —
+ * `effectiveAutomaticMarkerStyle` hands back the very object. Comparing it with
+ * its source is comparing a colour with itself, and the warning would be lit for
+ * as long as the toggle was. That the two marks are identical is what the reader
+ * asked for; it is the setting working, not something to complain about.
+ */
+export function configuredMarksLookAlike(config: MarkerStyleConfig): boolean {
+  if (config.automaticFollowsManual) return false;
+  return marksLookAlike(config.manual, config.automatic);
 }
 
 /**

@@ -10,14 +10,17 @@ import {
   blendOver,
   colorDistance,
   markBlendMode,
+  configuredMarksLookAlike,
   markCollisions,
   markInvisibleOn,
+  marksLookAlike,
   systemMark,
   washBlendMode,
 } from "../src/components/mark-palette.ts";
 import {
   MARKER_COLOR_PRESETS,
   createDefaultMarkerStyleConfig,
+  effectiveAutomaticMarkerStyle,
 } from "../src/components/marker-style.ts";
 import { getThemeStyles } from "../src/components/reader-settings.ts";
 import type { MarkerVisualStyle } from "../src/components/marker-style.ts";
@@ -242,6 +245,71 @@ test("a mark too faint to see is not reported as looking like anything", () => {
   assert.deepEqual(markCollisions(invisible), []);
   // Turn it up and the same hue is the same mark.
   assert.deepEqual(markCollisions({ ...invisible, opacity: 45 }), ["reading"]);
+});
+
+test("the reader's two marks are measured against each other, not only against the palette", () => {
+  // Two washes a shade apart. Neither looks like anything the app draws, so
+  // `markCollisions` is silent about both — and they are still the pair that
+  // would be impossible to tell apart on the page.
+  const manual = wash("#E9B949");
+  const nearly = wash("#E7B84A");
+  assert.deepEqual(markCollisions(manual), []);
+  assert.deepEqual(markCollisions(nearly), []);
+  assert.equal(marksLookAlike(manual, nearly), true);
+});
+
+test("shape separates the reader's two marks as it separates them from the palette", () => {
+  // The same colour twice — the worst case there is — but one worn across a
+  // range and the other under a word. Nothing to confuse.
+  assert.equal(marksLookAlike(wash("#E9B949"), underline("#E9B949")), false);
+  // Both washes, and the same colour is now the same mark.
+  assert.equal(marksLookAlike(wash("#E9B949"), wash("#E9B949")), true);
+});
+
+test("a treatment only one of the two carries lowers the bar between them", () => {
+  const manual = wash("#E9B949");
+  // An olive that sits between the two bars against the manual wash on every
+  // page: near enough to be worth a word on its own, far enough that a second
+  // channel settles it.
+  const other = wash("#A49342");
+  const gaps = PAGES.map((page) => colorDistance(
+    blendOver(manual.color, manual.opacity / 100, page),
+    blendOver(other.color, other.opacity / 100, page),
+  ));
+  assert.ok(
+    Math.min(...gaps) > MARK_CUED_COLLISION_THRESHOLD && Math.max(...gaps) < MARK_COLLISION_THRESHOLD,
+    `the sample colour sits at ${gaps.map(Math.round).join("/")}, outside the band this test needs`,
+  );
+  assert.equal(marksLookAlike(manual, other), true);
+  assert.equal(marksLookAlike(manual, { ...other, underline: true }), false);
+});
+
+test("a mark too faint to see is not reported as looking like the other one", () => {
+  // The same hex on both sides, thinned until neither is more than a rumour of a
+  // mark. As close as two colours can get, and still nothing on the page to
+  // confuse.
+  const invisible = wash("#E9B949", 5);
+  assert.deepEqual(markInvisibleOn(invisible), MARK_BACKDROPS);
+  assert.equal(marksLookAlike(invisible, invisible), false);
+  // Turn one of them up and there is a mark to mistake again.
+  assert.equal(marksLookAlike({ ...invisible, opacity: MANUAL_OPACITY }, wash("#E9B949")), true);
+});
+
+test("the two marks being identical is what following the manual style means", () => {
+  const following = { ...defaults, automaticFollowsManual: true, automatic: { ...defaults.manual } };
+  // The trap this guard exists for: with the toggle on, the effective automatic
+  // style is the manual object itself, so the comparison is a colour against
+  // itself and the warning would never go out.
+  assert.equal(marksLookAlike(following.manual, effectiveAutomaticMarkerStyle(following)), true);
+  assert.equal(configuredMarksLookAlike(following), false);
+  // Switch the toggle off and the same two styles are two marks again, one of
+  // which the reader now has to be able to tell from the other.
+  assert.equal(configuredMarksLookAlike({ ...following, automaticFollowsManual: false }), true);
+});
+
+test("the defaults do not warn about each other either", () => {
+  assert.equal(configuredMarksLookAlike(defaults), false);
+  assert.equal(marksLookAlike(defaults.manual, defaults.automatic), false);
 });
 
 test("no two system marks of the same shape are within the threshold of each other", () => {
