@@ -103,7 +103,6 @@ import { useOcrJob } from "../hooks/useOcrJob";
 import {
   mergeStoredReaderSettings,
   useReaderSettingsSync,
-  type StoredReaderSettings,
 } from "./reader/useReaderSettingsSync";
 import { useWindowSizePersistence } from "./reader/useWindowSizePersistence";
 import { useSidePanelResize } from "./reader/useSidePanelResize";
@@ -1127,29 +1126,17 @@ export default function Reader() {
       getAllSettings(),
       loadCustomFonts(),
       // Per-book overrides — one row per key, the row's existence *is* the
-      // override. Failing to read them must not abort the load (see below), so
-      // a book with unreadable rows simply follows the global settings.
+      // override, and the only per-book store the reader has. Failing to read
+      // them must not abort the load, so a book with unreadable rows simply
+      // follows the global settings.
       getBookSettings(bookId).catch(() => ({} as Record<string, string>)),
     ]).then(([globalSettings, , perBookSettings]) => {
       if (cancelled) return;
-      // A corrupted value must not abort the load: without the try/catch the
-      // throw is swallowed by the outer .catch, `dbSettingsLoadedRef` never
-      // gets set, and the persistence effect (gated on that ref) then never
-      // overwrites the bad key — the book's settings break permanently.
-      const saved = localStorage.getItem(`reader-settings-${bookId}`);
-      let storedSettings: StoredReaderSettings = {};
-      if (saved) {
-        try {
-          storedSettings = JSON.parse(saved) as StoredReaderSettings;
-        } catch {
-          localStorage.removeItem(`reader-settings-${bookId}`);
-        }
-      }
       const g = globalSettings;
       readingAssistanceSettingsRef.current = g;
       applyReadingAssistanceSettings(g);
       setReaderSettings((prev) => {
-        const next = mergeStoredReaderSettings(prev, storedSettings, g, perBookSettings);
+        const next = mergeStoredReaderSettings(prev, g, perBookSettings);
         readerSettingsRef.current = next;
         return next;
       });
