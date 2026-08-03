@@ -951,7 +951,11 @@ mod tests {
             "whole_book_vocabulary"
         );
         assert_eq!(
-            route_name(classify_without_viewport("这本书有哪些难词？", Some(3), None)),
+            route_name(classify_without_viewport(
+                "这本书有哪些难词？",
+                Some(3),
+                None
+            )),
             "whole_book_vocabulary"
         );
         // An explicit chapter scope is narrower than a generic book mention.
@@ -1086,7 +1090,11 @@ mod tests {
             "generic_retrieval"
         );
         assert_eq!(
-            route_name(classify_without_viewport("这个词在这里怎么理解？", Some(3), None)),
+            route_name(classify_without_viewport(
+                "这个词在这里怎么理解？",
+                Some(3),
+                None
+            )),
             "generic_retrieval"
         );
         assert_eq!(

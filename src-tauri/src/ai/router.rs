@@ -2001,7 +2001,10 @@ pub(crate) fn embedding_source(
     {
         return Ok(None);
     }
-    let Some(credential) = credentials_for(db, &profile.view.id, now())?.into_iter().next() else {
+    let Some(credential) = credentials_for(db, &profile.view.id, now())?
+        .into_iter()
+        .next()
+    else {
         return Ok(None);
     };
     let Some(api_key) = secrets.get(&credential.secret_ref)? else {
@@ -2047,7 +2050,10 @@ pub fn migrate_embedding_source(db: &Db, secrets: &Secrets) -> AppResult<()> {
     let Some(source) = embedding_source(db, secrets)? else {
         return Ok(());
     };
-    if let Some(credential) = credentials_for(db, &source.profile_id, now())?.into_iter().next() {
+    if let Some(credential) = credentials_for(db, &source.profile_id, now())?
+        .into_iter()
+        .next()
+    {
         let _ = secrets.copy_local(
             &credential.secret_ref,
             crate::ai::grounding::vector::EMBEDDING_SECRET_REF,
@@ -3180,8 +3186,13 @@ mod tests {
         .options
         .is_empty());
 
-        forget_reasoning_effort_options(&db, "custom", Some("https://gateway.example/v1"), "model-a")
-            .unwrap();
+        forget_reasoning_effort_options(
+            &db,
+            "custom",
+            Some("https://gateway.example/v1"),
+            "model-a",
+        )
+        .unwrap();
         assert!(reasoning_effort_options(
             &db,
             "custom",

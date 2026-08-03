@@ -957,6 +957,13 @@ pub fn run() {
             commands::mcp::mcp_get_approval,
             commands::mcp::mcp_approve_action,
             commands::mcp::mcp_reject_action,
+            commands::mcp::mcp_runtime_register,
+            commands::mcp::mcp_runtime_heartbeat,
+            commands::mcp::mcp_runtime_unregister,
+            commands::mcp::mcp_list_control_requests,
+            commands::mcp::mcp_claim_control_request,
+            commands::mcp::mcp_complete_control_request,
+            commands::mcp::mcp_fail_control_request,
             // Sync
             commands::sync::sync_status,
             commands::sync::sync_set_shared_dir,

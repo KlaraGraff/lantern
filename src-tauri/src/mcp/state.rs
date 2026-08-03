@@ -5,6 +5,7 @@ use crate::db::Db;
 use crate::sync::writer::SyncWriter;
 
 use super::approval::ApprovalStore;
+use super::control::ControlStore;
 use super::notify;
 
 /// Shared state handed to every MCP request handler.
@@ -22,6 +23,7 @@ pub struct McpState {
     pub db: Db,
     pub sync: Option<Arc<SyncWriter>>,
     pub approvals: Option<ApprovalStore>,
+    pub control: Option<ControlStore>,
     notify_path: Option<PathBuf>,
 }
 
@@ -36,6 +38,7 @@ impl McpState {
             db,
             sync: sync.map(Arc::new),
             approvals: notify_dir.map(ApprovalStore::new),
+            control: notify_dir.map(ControlStore::new),
             notify_path,
         }
     }

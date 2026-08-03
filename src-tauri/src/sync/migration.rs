@@ -122,10 +122,7 @@ pub fn is_icloud_drive_dir(path: &Path) -> bool {
 }
 
 pub fn is_writable_dir(path: &Path) -> bool {
-    let probe = path.join(format!(
-        ".lantern-write-probe-{}",
-        uuid::Uuid::new_v4()
-    ));
+    let probe = path.join(format!(".lantern-write-probe-{}", uuid::Uuid::new_v4()));
     match fs::write(&probe, []) {
         Ok(()) => {
             let _ = fs::remove_file(probe);
@@ -223,7 +220,10 @@ mod tests {
 
         let second = create_default_dir_in(root.path()).unwrap();
         assert_eq!(first, second);
-        assert!(second.join("keep-me").is_file(), "existing contents survive");
+        assert!(
+            second.join("keep-me").is_file(),
+            "existing contents survive"
+        );
     }
 
     /// iCloud Drive being off is not the same problem as a chosen folder

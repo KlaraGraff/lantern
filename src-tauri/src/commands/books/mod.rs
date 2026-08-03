@@ -40,9 +40,9 @@ mod text_prepare;
 // function: `__cmd__<name>`, and — since Tauri 2.11 — `__tauri_command_name_<name>`,
 // which `generate_handler!` uses to match the externally invoked name. Both have to
 // be re-exported here, or the handler cannot resolve `commands::books::<name>`.
+pub use import::import_book_from_dialog;
 #[doc(hidden)]
 pub use import::{__cmd__import_book_from_dialog, __tauri_command_name_import_book_from_dialog};
-pub use import::import_book_from_dialog;
 // Preserve the historical commands::books::* crate API while implementations
 // live in focused child modules.
 #[doc(hidden)]
@@ -84,17 +84,14 @@ pub use query::{
     __tauri_command_name_diagnose_book_file, __tauri_command_name_get_book,
     __tauri_command_name_get_book_counts, __tauri_command_name_list_books,
 };
-pub use query::{
-    check_book_available, diagnose_book_file, get_book, get_book_counts, list_books,
-};
+pub use query::{check_book_available, diagnose_book_file, get_book, get_book_counts, list_books};
 #[allow(unused_imports)]
 pub(crate) use query::{query_book, query_book_exists, query_books, query_books_lite};
 pub(crate) use text_prepare::load_prepared_document_for_grounding;
 #[doc(hidden)]
 pub use text_prepare::{
     __cmd__get_text_book_document, __cmd__retry_text_book_preparation,
-    __tauri_command_name_get_text_book_document,
-    __tauri_command_name_retry_text_book_preparation,
+    __tauri_command_name_get_text_book_document, __tauri_command_name_retry_text_book_preparation,
 };
 pub use text_prepare::{
     get_text_book_document, resume_interrupted_text_book_preparations, retry_text_book_preparation,

@@ -8,6 +8,7 @@
 //! side opens read-only. See `docs/impls/30-mcp-server.md`.
 
 pub mod approval;
+pub mod control;
 pub mod notify;
 pub mod server;
 pub mod state;

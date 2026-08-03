@@ -510,18 +510,23 @@ mod tests {
     fn cached_lookup_ignores_records_without_a_stored_card() {
         let db = setup();
         let conn = db.conn.lock().unwrap();
-        insert_record(&conn, "bare", Some("epubcfi(/6/2)"), Some("A sentence."), None, 1);
-        assert!(
-            find_cached_lookup(
-                &conn,
-                "book",
-                "wonder",
-                Some("epubcfi(/6/2)"),
-                Some("A sentence."),
-            )
-            .unwrap()
-            .is_none()
+        insert_record(
+            &conn,
+            "bare",
+            Some("epubcfi(/6/2)"),
+            Some("A sentence."),
+            None,
+            1,
         );
+        assert!(find_cached_lookup(
+            &conn,
+            "book",
+            "wonder",
+            Some("epubcfi(/6/2)"),
+            Some("A sentence."),
+        )
+        .unwrap()
+        .is_none());
     }
 
     #[test]

@@ -33,6 +33,9 @@ use tauri::State;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::mcp::approval::{ApprovalRequest, ApprovalStore};
+use crate::mcp::control::{
+    ControlRequest, ControlStore, RuntimeRegistration, RuntimeSessionHandle,
+};
 use crate::LocalDir;
 
 /// The key our entry lives under in every client's config file. Both
@@ -315,6 +318,75 @@ pub fn mcp_approve_action(
 #[tauri::command]
 pub fn mcp_reject_action(id: String, local_dir: State<'_, LocalDir>) -> AppResult<ApprovalRequest> {
     ApprovalStore::new(&local_dir.0).reject(&id)
+}
+
+#[tauri::command]
+pub fn mcp_runtime_register(
+    registration: RuntimeRegistration,
+    local_dir: State<'_, LocalDir>,
+) -> AppResult<RuntimeSessionHandle> {
+    ControlStore::new(&local_dir.0).register(registration)
+}
+
+#[tauri::command]
+pub fn mcp_runtime_heartbeat(
+    session_id: String,
+    token: String,
+    book_id: Option<String>,
+    focused: bool,
+    local_dir: State<'_, LocalDir>,
+) -> AppResult<()> {
+    ControlStore::new(&local_dir.0).heartbeat(&session_id, &token, book_id.as_deref(), focused)
+}
+
+#[tauri::command]
+pub fn mcp_runtime_unregister(
+    session_id: String,
+    token: String,
+    local_dir: State<'_, LocalDir>,
+) -> AppResult<()> {
+    ControlStore::new(&local_dir.0).unregister(&session_id, &token)
+}
+
+#[tauri::command]
+pub fn mcp_list_control_requests(
+    session_id: String,
+    token: String,
+    local_dir: State<'_, LocalDir>,
+) -> AppResult<Vec<ControlRequest>> {
+    ControlStore::new(&local_dir.0).list_pending(&session_id, &token)
+}
+
+#[tauri::command]
+pub fn mcp_claim_control_request(
+    session_id: String,
+    token: String,
+    request_id: String,
+    local_dir: State<'_, LocalDir>,
+) -> AppResult<ControlRequest> {
+    ControlStore::new(&local_dir.0).claim(&session_id, &token, &request_id)
+}
+
+#[tauri::command]
+pub fn mcp_complete_control_request(
+    session_id: String,
+    token: String,
+    request_id: String,
+    result: serde_json::Value,
+    local_dir: State<'_, LocalDir>,
+) -> AppResult<ControlRequest> {
+    ControlStore::new(&local_dir.0).complete(&session_id, &token, &request_id, result)
+}
+
+#[tauri::command]
+pub fn mcp_fail_control_request(
+    session_id: String,
+    token: String,
+    request_id: String,
+    error: String,
+    local_dir: State<'_, LocalDir>,
+) -> AppResult<ControlRequest> {
+    ControlStore::new(&local_dir.0).fail(&session_id, &token, &request_id, &error)
 }
 
 #[cfg(test)]

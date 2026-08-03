@@ -68,6 +68,7 @@ fn emit_from_payload(handle: &AppHandle, payload: &str) {
         "chats" => "mcp:chats-changed",
         "language_assessments" => "mcp:language-assessments-changed",
         "approvals" => "mcp:approvals-changed",
+        "control" => "mcp:control-requested",
         _ => return,
     };
     let _ = handle.emit(event_name, payload);
