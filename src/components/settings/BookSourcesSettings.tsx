@@ -200,7 +200,7 @@ export default function BookSourcesSettings({ settings, loading, saveBulk, showS
                     type="button"
                     aria-label={t("common.edit")}
                     onClick={() => startEdit(source)}
-                    className="shrink-0 rounded p-1 text-text-muted opacity-0 transition-opacity hover:text-accent-text group-hover:opacity-100"
+                    className="shrink-0 rounded p-1 text-text-muted opacity-0 transition-opacity hover:text-accent-text focus-visible:opacity-100 group-hover:opacity-100"
                   >
                     <Pencil size={13} />
                   </button>
