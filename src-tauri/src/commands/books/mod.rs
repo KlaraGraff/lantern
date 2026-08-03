@@ -62,9 +62,6 @@ pub(crate) use format::source_sha256;
 pub(crate) use import::{
     do_import_epub, do_import_from_path, do_import_pdf, do_import_text, import_external_paths,
 };
-#[allow(unused_imports)]
-#[cfg(test)]
-pub(crate) use mutate::do_delete_book;
 #[doc(hidden)]
 pub use mutate::{
     __cmd__delete_book, __cmd__mark_finished, __cmd__update_book_cover,
