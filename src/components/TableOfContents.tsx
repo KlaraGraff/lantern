@@ -1,6 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { invoke } from "@tauri-apps/api/core";
 import { ChevronRight } from "lucide-react";
+import { logIgnoredError } from "../utils/logIgnoredError";
+import {
+  mergeExpandedPages,
+  serializeExpandedPages,
+  tocStateSettingKeys,
+  type TocSavedState,
+} from "./toc-state";
 
 interface Chapter {
   title: string;
@@ -14,6 +22,10 @@ interface TableOfContentsProps {
   chapters: Chapter[];
   currentPage: number;
   onNavigate: (page: number) => void;
+  /** When set, the expanded-node set and scroll position persist per book. */
+  bookId?: string;
+  /** Restored state for `bookId`, once its per-book settings have loaded. */
+  savedState?: TocSavedState;
 }
 
 interface TocRow extends Chapter {
@@ -21,14 +33,23 @@ interface TocRow extends Chapter {
   hasChildren: boolean;
 }
 
+interface PendingTocSave {
+  bookId: string;
+  expanded?: string;
+  scroll?: number;
+}
+
 export default function TableOfContents({
   open,
   chapters,
   currentPage,
   onNavigate,
+  bookId,
+  savedState,
 }: TableOfContentsProps) {
   const { t } = useTranslation();
   const activeRef = useRef<HTMLButtonElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [expandedPages, setExpandedPages] = useState<Set<number>>(() => new Set());
 
   const rows = useMemo(() => {
@@ -65,17 +86,37 @@ export default function TableOfContents({
 
   const shouldScrollActiveRef = useRef(false);
   const wasOpenRef = useRef(open);
+  // One-shot restore target, populated once `savedState` arrives and consumed
+  // the first time the panel opens for this book.
+  const pendingScrollRestoreRef = useRef<number | null>(null);
+  const pendingSaveRef = useRef<PendingTocSave | null>(null);
+  const saveTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (open && !wasOpenRef.current) shouldScrollActiveRef.current = true;
     wasOpenRef.current = open;
   }, [open]);
 
+  // A fresh book starts from a clean slate — the previous book's expanded rows
+  // and any pending scroll restore must not leak across a switch.
+  useEffect(() => {
+    setExpandedPages(new Set());
+    pendingScrollRestoreRef.current = null;
+  }, [bookId]);
+
+  // Layer the restored per-book state on top of whatever's already expanded
+  // (rather than replacing it), so this can arrive before or after the
+  // auto-expand effect below without either one clobbering the other.
+  useEffect(() => {
+    if (!savedState) return;
+    setExpandedPages((prev) => mergeExpandedPages(prev, savedState.expandedPages));
+    pendingScrollRestoreRef.current = savedState.scrollTop ?? null;
+  }, [savedState]);
+
   useEffect(() => {
     if (!open) return;
     setExpandedPages((prev) => {
-      const next = new Set(prev);
-      for (const page of activePathPages) next.add(page);
+      const next = mergeExpandedPages(prev, activePathPages);
       return next.size === prev.size ? prev : next;
     });
   }, [activePathPages, open]);
@@ -90,20 +131,74 @@ export default function TableOfContents({
   }), [expandedPages, rows, rowsByPage]);
 
   useEffect(() => {
-    if (!open || !activeRef.current || !shouldScrollActiveRef.current) return;
+    if (!open || !shouldScrollActiveRef.current) return;
+    const restoreScrollTop = pendingScrollRestoreRef.current;
+    if (restoreScrollTop !== null) {
+      shouldScrollActiveRef.current = false;
+      pendingScrollRestoreRef.current = null;
+      requestAnimationFrame(() => {
+        if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = restoreScrollTop;
+      });
+      return;
+    }
+    if (!activeRef.current) return;
     shouldScrollActiveRef.current = false;
     requestAnimationFrame(() => activeRef.current?.scrollIntoView({ block: "center" }));
   }, [open, visibleRows]);
 
+  // Debounced write-through to the per-book settings table: a dragged scroll or
+  // a burst of expand/collapse clicks must not fire one DB write per event.
+  const flushTocStateSave = useCallback(() => {
+    if (saveTimerRef.current !== null) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const pending = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    if (!pending) return;
+    const settings: Record<string, string> = {};
+    if (pending.expanded !== undefined) settings[tocStateSettingKeys.expanded] = pending.expanded;
+    if (pending.scroll !== undefined) settings[tocStateSettingKeys.scroll] = String(pending.scroll);
+    if (Object.keys(settings).length === 0) return;
+    invoke("set_book_settings_bulk", { bookId: pending.bookId, settings }).catch((error: unknown) => {
+      // Low-stakes UI state — a dropped write just means the next toggle/scroll
+      // retries with fresh values; not worth cross-book-safe retry plumbing.
+      logIgnoredError("reader.toc-state-save", error);
+    });
+  }, []);
+
+  const scheduleTocStateSave = useCallback((patch: { expanded?: string; scroll?: number }) => {
+    if (!bookId) return;
+    pendingSaveRef.current = {
+      bookId,
+      ...(pendingSaveRef.current?.bookId === bookId ? pendingSaveRef.current : {}),
+      ...patch,
+    };
+    if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = window.setTimeout(flushTocStateSave, 400);
+  }, [bookId, flushTocStateSave]);
+
+  // Flush on unmount and on every book switch — the pending write still targets
+  // the book it was queued under (captured in `pendingSaveRef`), not whichever
+  // book is open by the time the timer would otherwise have fired.
+  useEffect(() => () => {
+    flushTocStateSave();
+  }, [bookId, flushTocStateSave]);
+
   if (!open) return null;
 
   const toggleRow = (page: number) => {
-    setExpandedPages((prev) => {
-      const next = new Set(prev);
-      if (next.has(page)) next.delete(page);
-      else next.add(page);
-      return next;
-    });
+    const next = new Set(expandedPages);
+    if (next.has(page)) next.delete(page);
+    else next.add(page);
+    setExpandedPages(next);
+    scheduleTocStateSave({ expanded: serializeExpandedPages(next) });
+  };
+
+  const handleScroll = () => {
+    const scrollTop = scrollContainerRef.current?.scrollTop;
+    if (scrollTop === undefined) return;
+    scheduleTocStateSave({ scroll: scrollTop });
   };
 
   return (
@@ -119,7 +214,11 @@ export default function TableOfContents({
           {t("reader.tocCount", { count: readingUnitCount })}
         </p>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 min-h-0 overflow-y-auto px-3 py-3"
+      >
         <div className="flex flex-col gap-1">
           {visibleRows.map((chapter) => {
             const isActive = currentPage === chapter.page;

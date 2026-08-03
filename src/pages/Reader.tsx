@@ -34,6 +34,7 @@ import DictionaryPanel from "../components/DictionaryPanel";
 import TranslationPopover from "../components/TranslationPopover";
 import ExplainPopover from "../components/ExplainPopover";
 import TableOfContents from "../components/TableOfContents";
+import { parseTocSavedState, type TocSavedState } from "../components/toc-state";
 import TextBookReader from "../components/TextBookReader";
 import { textLocation, type TextBookDocument } from "../components/text-book-location";
 import { citationSearchProbes } from "./reader/citationNavigation";
@@ -221,6 +222,7 @@ export default function Reader() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [zoom, setZoom] = useState<number | "fit">("fit");
   const [tocOpen, setTocOpen] = useState(false);
+  const [tocSavedState, setTocSavedState] = useState<TocSavedState | undefined>(undefined);
   const [chapters, setChapters] = useState<TocChapter[]>([]);
   const [currentChapterIndex, setCurrentChapterIndex] = useState(-1);
   const [currentSectionIndex, setCurrentSectionIndex] = useState(-1);
@@ -1100,6 +1102,7 @@ export default function Reader() {
     currentCfiRef.current = null;
     chaptersRef.current = [];
     setChapters([]);
+    setTocSavedState(undefined);
     setCurrentChapterIndex(-1);
     setCurrentSectionIndex(-1);
     setProgress(0);
@@ -1142,6 +1145,7 @@ export default function Reader() {
         readerSettingsRef.current = next;
         return next;
       });
+      setTocSavedState(parseTocSavedState(perBookSettings));
       const savedZoom = localStorage.getItem(`reader-zoom-${bookId}`);
       if (savedZoom === "fit") {
         setZoom("fit");
@@ -1773,6 +1777,8 @@ export default function Reader() {
           chapters={tocChapters}
           currentPage={currentChapterIndex + 1}
           onNavigate={handleTocNavigate}
+          bookId={bookId}
+          savedState={tocSavedState}
         />
         <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body }}>
           <main

@@ -37,14 +37,31 @@ export interface FoliateView extends HTMLElement {
   }): Promise<any>;
   deleteAnnotation(annotation: { value: string }): Promise<void>;
   deselect(): void;
+  /**
+   * Resolves the raw TOC item covering `target` by re-parsing that section's
+   * document — more expensive than the `tocItem` already delivered on every
+   * `relocate` event, so prefer that event's payload for hot-path matching
+   * and reserve this for on-demand lookups.
+   */
+  getTOCItemOf(target: string | number): Promise<FoliateTocItem | undefined>;
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
+
+/** A raw `book.toc` entry, after foliate-js's `TOCProgress.assignIDs()` has stamped it with a stable `id`. */
+export interface FoliateTocItem {
+  id?: number;
+  href?: string;
+  label?: string;
+  subitems?: FoliateTocItem[];
+}
 
 export interface TocChapter {
   title: string;
   href?: string;
   targetHref?: string;
   depth: number;
+  /** Stable id assigned by foliate-js's `TOCProgress.assignIDs()`; used to match the engine's current-chapter reports. */
+  id?: number;
   /** Raw Foliate section where this TOC target begins, when resolvable. */
   sectionIndex?: number;
   /** True when this target shares a raw section with another TOC fragment. */

@@ -44,6 +44,7 @@ import {
   type WordMarkRule,
 } from "./useFoliateAnnotations";
 import type {
+  FoliateTocItem,
   FoliateView,
   ReaderPageInfo,
   TocChapter,
@@ -156,10 +157,33 @@ function flattenToc(items: unknown[], depth = 0): TocChapter[] {
         href: tocHref(item),
         targetHref: firstHref(item),
         depth,
+        // `TOCProgress.assignIDs()` (progress.js) stamps this onto `book.toc` during `view.open()`.
+        id: typeof item.id === "number" ? item.id : undefined,
       },
       ...(Array.isArray(item.subitems) ? flattenToc(item.subitems, depth + 1) : []),
     ];
   });
+}
+
+/**
+ * Matches the engine's reported current TOC item (from the `relocate` event,
+ * or `getTOCItemOf`) against the flattened chapter list. Prefers the stable
+ * `id` foliate-js assigns to every TOC node (`assignIDs()` in progress.js),
+ * falling back to href matching for formats or engine versions where no id
+ * is available.
+ */
+function findCurrentChapterIndex(
+  chapters: TocChapter[],
+  tocItem: FoliateTocItem | undefined,
+): number {
+  if (!tocItem) return -1;
+  if (typeof tocItem.id === "number") {
+    const byId = chapters.findIndex((chapter) => chapter.id === tocItem.id);
+    if (byId !== -1) return byId;
+  }
+  const byHref = chapters.findIndex((chapter) => chapter.href === tocItem.href);
+  if (byHref !== -1) return byHref;
+  return chapters.findIndex((chapter) => chapter.targetHref === tocItem.href);
 }
 
 async function resolveTocSectionIndex(
@@ -416,7 +440,8 @@ export function useFoliateView({
       }
 
       view.addEventListener("relocate", ((event: CustomEvent) => {
-        const { fraction, section, tocItem, cfi } = event.detail;
+        const { fraction, section, cfi } = event.detail;
+        const tocItem = event.detail.tocItem as FoliateTocItem | undefined;
         const nextProgress = Math.round((fraction ?? 0) * 100);
         setProgress(nextProgress);
         const sectionIndex = typeof section?.current === "number" ? section.current : -1;
@@ -457,13 +482,11 @@ export function useFoliateView({
         } else {
           setPageInfo(null);
         }
-        if (tocItem) {
-          const exactIndex = chaptersRef.current.findIndex((chapter) => chapter.href === tocItem.href);
-          const chapterIndex = exactIndex !== -1
-            ? exactIndex
-            : chaptersRef.current.findIndex((chapter) => chapter.targetHref === tocItem.href);
-          if (chapterIndex !== -1) setCurrentChapterIndex(chapterIndex);
-        }
+        // `tocItem` here is the same `TOCProgress.getProgress()` result `getTOCItemOf()` would
+        // return, delivered for free on every relocate — no need to call the engine method
+        // itself, which re-parses the section document.
+        const chapterIndex = findCurrentChapterIndex(chaptersRef.current, tocItem);
+        if (chapterIndex !== -1) setCurrentChapterIndex(chapterIndex);
         if (bookId && cfi) queueReadingProgress(bookId, nextProgress, cfi);
       }) as EventListener);
 
