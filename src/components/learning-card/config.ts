@@ -1,4 +1,6 @@
 import type {
+  BuiltInLearningModuleId,
+  BuiltInSelectionMenuActionId,
   CardDesignConfigV1,
   CardKindConfig,
   CardModuleConfig,
@@ -138,6 +140,7 @@ const defaultCard = (
       moduleConfig(id, enabled.includes(id), !collapsed.includes(id), options.densities?.[id] ?? "inherit"),
     ),
     customModules: {},
+    removedModules: [],
   };
 };
 
@@ -168,6 +171,7 @@ export function createDefaultCardDesignConfig(): CardDesignConfigV1 {
       phrase: MENU_ACTION_DEFINITIONS.phrase.map(({ id }) => ({ id, enabled: id !== "translate" })),
       passage: MENU_ACTION_DEFINITIONS.passage.map(({ id }) => ({ id, enabled: id !== "translate" })),
     },
+    removedMenuActions: { word: [], phrase: [], passage: [] },
   };
 }
 
@@ -190,11 +194,41 @@ const clampInteger = (value: unknown, fallback: number, min: number, max: number
   return Math.min(max, Math.max(min, Math.round(value)));
 };
 
+const BUILT_IN_MODULE_IDS: Record<LearningCardKind, Set<BuiltInLearningModuleId>> = {
+  word: new Set(MODULE_DEFINITIONS.word.map((item) => item.id as BuiltInLearningModuleId)),
+  phrase: new Set(MODULE_DEFINITIONS.phrase.map((item) => item.id as BuiltInLearningModuleId)),
+  passage: new Set(MODULE_DEFINITIONS.passage.map((item) => item.id as BuiltInLearningModuleId)),
+};
+
+const BUILT_IN_MENU_ACTION_IDS: Record<SelectionMenuKind, Set<BuiltInSelectionMenuActionId>> = {
+  word: new Set(MENU_ACTION_DEFINITIONS.word.map((item) => item.id as BuiltInSelectionMenuActionId)),
+  phrase: new Set(MENU_ACTION_DEFINITIONS.phrase.map((item) => item.id as BuiltInSelectionMenuActionId)),
+  passage: new Set(MENU_ACTION_DEFINITIONS.passage.map((item) => item.id as BuiltInSelectionMenuActionId)),
+};
+
+/**
+ * A tombstone only ever names built-ins of its own kind. Custom ids are never
+ * topped back up, so listing one would grow the list with nothing to clean it.
+ */
+function parseRemovedIds<T extends string>(value: unknown, allowed: Set<T>): T[] {
+  if (!Array.isArray(value)) return [];
+  const parsed: T[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string" || !allowed.has(item as T) || seen.has(item)) continue;
+    seen.add(item);
+    parsed.push(item as T);
+    if (parsed.length >= allowed.size) break;
+  }
+  return parsed;
+}
+
 function parseModules(
   kind: LearningCardKind,
   value: unknown,
   defaults: CardModuleConfig[],
   customModules: CardKindConfig["customModules"],
+  removed: BuiltInLearningModuleId[],
 ): CardModuleConfig[] {
   if (!Array.isArray(value)) return defaults.map((item) => ({ ...item }));
   const allowed = new Map(MODULE_DEFINITIONS[kind].map((item) => [item.id, item]));
@@ -221,8 +255,11 @@ function parseModules(
     });
   }
 
+  // Built-ins added by a later version must still reach someone whose config
+  // predates them — unless they deleted that one themselves.
+  const tombstoned = new Set<LearningModuleId>(removed);
   for (const fallback of defaults) {
-    if (!seen.has(fallback.id)) parsed.push({ ...fallback });
+    if (!seen.has(fallback.id) && !tombstoned.has(fallback.id)) parsed.push({ ...fallback });
   }
   return parsed;
 }
@@ -276,15 +313,24 @@ function parseCard(
   value: unknown,
   fallback: CardKindConfig,
 ): CardKindConfig {
-  if (!isObject(value)) return { ...fallback, modules: fallback.modules.map((item) => ({ ...item })), customModules: {} };
+  if (!isObject(value)) {
+    return {
+      ...fallback,
+      modules: fallback.modules.map((item) => ({ ...item })),
+      customModules: {},
+      removedModules: [],
+    };
+  }
   const customModules = parseCustomModules(value.customModules);
+  const removedModules = parseRemovedIds(value.removedModules, BUILT_IN_MODULE_IDS[kind]);
   return {
     defaultDensity: isDensity(value.defaultDensity) ? value.defaultDensity : fallback.defaultDensity,
     widthMode: isWidthMode(value.widthMode) ? value.widthMode : fallback.widthMode,
     exampleCount: clampInteger(value.exampleCount, fallback.exampleCount, 0, 3),
     keyTermCount: clampInteger(value.keyTermCount, fallback.keyTermCount, 1, 8),
-    modules: parseModules(kind, value.modules, fallback.modules, customModules),
+    modules: parseModules(kind, value.modules, fallback.modules, customModules, removedModules),
     customModules,
+    removedModules,
   };
 }
 
@@ -292,6 +338,7 @@ function parseMenu(
   kind: SelectionMenuKind,
   value: unknown,
   defaults: SelectionMenuItemConfig[],
+  removed: BuiltInSelectionMenuActionId[],
 ): SelectionMenuItemConfig[] {
   if (!Array.isArray(value)) return defaults.map((item) => ({ ...item }));
   const allowed = new Set(MENU_ACTION_DEFINITIONS[kind].map((item) => item.id));
@@ -313,8 +360,9 @@ function parseMenu(
       ...(custom ?? {}),
     });
   }
+  const tombstoned = new Set<SelectionMenuActionId>(removed);
   for (const fallback of defaults) {
-    if (!seen.has(fallback.id)) parsed.push({ ...fallback });
+    if (!seen.has(fallback.id) && !tombstoned.has(fallback.id)) parsed.push({ ...fallback });
   }
   return parsed;
 }
@@ -332,6 +380,14 @@ export function parseCardDesignConfig(value: unknown): CardDesignConfigV1 {
   if (!isObject(candidate) || (candidate.version !== 1 && candidate.version !== 2)) return defaults;
   const cards = isObject(candidate.cards) ? candidate.cards : {};
   const selectionMenus = isObject(candidate.selectionMenus) ? candidate.selectionMenus : {};
+  const removedMenus = isObject(candidate.removedMenuActions) ? candidate.removedMenuActions : {};
+  // Kept per kind: one shared list would make deleting the word menu's "copy"
+  // take the phrase menu's with it.
+  const removedMenuActions: Record<SelectionMenuKind, BuiltInSelectionMenuActionId[]> = {
+    word: parseRemovedIds(removedMenus.word, BUILT_IN_MENU_ACTION_IDS.word),
+    phrase: parseRemovedIds(removedMenus.phrase, BUILT_IN_MENU_ACTION_IDS.phrase),
+    passage: parseRemovedIds(removedMenus.passage, BUILT_IN_MENU_ACTION_IDS.passage),
+  };
   return {
     version: 2,
     cards: {
@@ -340,15 +396,79 @@ export function parseCardDesignConfig(value: unknown): CardDesignConfigV1 {
       passage: parseCard("passage", cards.passage, defaults.cards.passage),
     },
     selectionMenus: {
-      word: parseMenu("word", selectionMenus.word, defaults.selectionMenus.word),
-      phrase: parseMenu("phrase", selectionMenus.phrase, defaults.selectionMenus.phrase),
-      passage: parseMenu("passage", selectionMenus.passage, defaults.selectionMenus.passage),
+      word: parseMenu("word", selectionMenus.word, defaults.selectionMenus.word, removedMenuActions.word),
+      phrase: parseMenu("phrase", selectionMenus.phrase, defaults.selectionMenus.phrase, removedMenuActions.phrase),
+      passage: parseMenu("passage", selectionMenus.passage, defaults.selectionMenus.passage, removedMenuActions.passage),
     },
+    removedMenuActions,
   };
 }
 
 export function serializeCardDesignConfig(config: CardDesignConfigV1): string {
   return JSON.stringify(parseCardDesignConfig(config));
+}
+
+/**
+ * Deleting a built-in leaves a tombstone so parsing stops handing it back;
+ * deleting a custom one takes its definition with it, since nothing would ever
+ * hand that back.
+ */
+export function removeCardModule(card: CardKindConfig, id: LearningModuleId): CardKindConfig {
+  const modules = card.modules.filter((module) => module.id !== id);
+  if (isCustomId(id)) {
+    const customModules = { ...card.customModules };
+    delete customModules[id];
+    return { ...card, modules, customModules };
+  }
+  const removedModules = card.removedModules ?? [];
+  return {
+    ...card,
+    modules,
+    removedModules: removedModules.includes(id) ? removedModules : [...removedModules, id],
+  };
+}
+
+/**
+ * Built-ins come back exactly as they shipped — order, enabled, expanded,
+ * density — and the tombstone empties. Anything the user wrote is not a
+ * "default", so it survives, appended after them in its own order.
+ */
+export function restoreDefaultCardModules(
+  kind: LearningCardKind,
+  card: CardKindConfig,
+): CardKindConfig {
+  const factory = createDefaultCardDesignConfig().cards[kind].modules;
+  const custom = card.modules.filter((module) => isCustomId(module.id));
+  return {
+    ...card,
+    modules: [...factory, ...custom].map((module) => ({ ...module })),
+    removedModules: [],
+  };
+}
+
+export function removeMenuAction(
+  items: SelectionMenuItemConfig[],
+  removed: BuiltInSelectionMenuActionId[],
+  id: SelectionMenuActionId,
+): { items: SelectionMenuItemConfig[]; removed: BuiltInSelectionMenuActionId[] } {
+  const nextItems = items.filter((item) => item.id !== id);
+  if (isCustomId(id)) return { items: nextItems, removed };
+  return {
+    items: nextItems,
+    removed: removed.includes(id) ? removed : [...removed, id],
+  };
+}
+
+export function restoreDefaultMenuActions(
+  kind: SelectionMenuKind,
+  items: SelectionMenuItemConfig[],
+): { items: SelectionMenuItemConfig[]; removed: BuiltInSelectionMenuActionId[] } {
+  const factory = createDefaultCardDesignConfig().selectionMenus[kind];
+  const custom = items.filter((item) => isCustomId(item.id));
+  return {
+    items: [...factory, ...custom].map((item) => ({ ...item })),
+    removed: [],
+  };
 }
 
 export function getEffectiveDensity(
@@ -365,6 +485,20 @@ export function getCardLayoutDensity(card: CardKindConfig): ContentDensity {
     index = Math.max(index, DENSITY_ORDER.indexOf(getEffectiveDensity(module, card)));
   }
   return DENSITY_ORDER[Math.max(0, index)];
+}
+
+/**
+ * The i18n key that explains a backend error, or null to print it verbatim.
+ *
+ * The backend refuses a card with no modules by name rather than by sentence, so
+ * without this the reader is shown a bare `LEARNING_CARD_ALL_MODULES_DISABLED`.
+ * It is the same situation the reader already guards before calling out, just
+ * arriving from the other side.
+ */
+export function learningCardErrorKey(message: string): string | null {
+  return message.includes("LEARNING_CARD_ALL_MODULES_DISABLED")
+    ? "learningCard.allModulesDisabled"
+    : null;
 }
 
 export function getLearningCardTargetWidth(

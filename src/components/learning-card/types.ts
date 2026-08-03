@@ -65,6 +65,12 @@ export interface CardKindConfig {
   keyTermCount: number;
   modules: CardModuleConfig[];
   customModules: Partial<Record<CustomLearningId, CustomLearningDefinition>>;
+  /**
+   * Built-in modules the user deleted on purpose. Parsing stops topping these
+   * back up; "restore defaults" empties the list. Without it, "never configured"
+   * and "deleted every one of them" look identical in storage.
+   */
+  removedModules?: BuiltInLearningModuleId[];
 }
 
 export interface SelectionMenuItemConfig {
@@ -83,6 +89,11 @@ export interface CardDesignConfigV1 {
   version: 2;
   cards: Record<LearningCardKind, CardKindConfig>;
   selectionMenus: Record<SelectionMenuKind, SelectionMenuItemConfig[]>;
+  /**
+   * Same tombstone, per menu kind. `selectionMenus` holds arrays with nowhere to
+   * put it, so it lives alongside them instead of inside.
+   */
+  removedMenuActions?: Record<SelectionMenuKind, BuiltInSelectionMenuActionId[]>;
 }
 
 export interface LearningModuleDefinition {
