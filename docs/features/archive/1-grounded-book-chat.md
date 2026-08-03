@@ -3,10 +3,10 @@
 GitHub issue: https://github.com/KlaraGraff/lantern/issues/1
 
 Implementation plans:
-- [Overview & architecture](../impls/1-grounded-book-chat-overview.md)
-- [Phase 1 — Indexing + retrieval](../impls/1-grounded-book-chat-phase1-indexing-retrieval.md)
-- [Phase 2 — Summaries + citations](../impls/1-grounded-book-chat-phase2-summaries-citations.md)
-- [Phase 3 — Enhancements](../impls/1-grounded-book-chat-phase3-enhancements.md)
+- [Overview & architecture](../../impls/archive/1-grounded-book-chat-overview.md)
+- [Phase 1 — Indexing + retrieval](../../impls/archive/1-grounded-book-chat-phase1-indexing-retrieval.md)
+- [Phase 2 — Summaries + citations](../../impls/archive/1-grounded-book-chat-phase2-summaries-citations.md)
+- [Phase 3 — Enhancements](../../impls/archive/1-grounded-book-chat-phase3-enhancements.md)
 
 ## Motivation
 

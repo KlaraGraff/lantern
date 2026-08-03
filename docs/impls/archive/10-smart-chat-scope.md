@@ -1,6 +1,6 @@
 # Impl — Smart Chat Scope (#10)
 
-Feature spec: [10-smart-chat-scope.md](../features/10-smart-chat-scope.md)
+Feature spec: [10-smart-chat-scope.md](../../features/archive/10-smart-chat-scope.md)
 
 Four independent behaviors shipped together: scope chips, viewport fallback,
 ungrounded-answer policy, and an LLM intent tie-break. Backend first (unit-tested),

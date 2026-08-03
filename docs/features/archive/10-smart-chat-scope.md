@@ -2,7 +2,7 @@
 
 GitHub issue: https://github.com/KlaraGraff/lantern/issues/10
 
-Implementation plan: [Smart chat scope](../impls/10-smart-chat-scope.md)
+Implementation plan: [Smart chat scope](../../impls/archive/10-smart-chat-scope.md)
 
 ## Motivation
 

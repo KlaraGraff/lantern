@@ -33,6 +33,13 @@ jobs:
           name: reader-compat-size-report
           path: dist/reader-compat-size-report.json
 
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: node scripts/check-doc-links.mjs
+
   dependency-security:
     name: Dependency Security
     runs-on: ubuntu-latest

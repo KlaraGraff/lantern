@@ -1,10 +1,10 @@
 # Feature Specs
 
-Specs for features that are in progress or planned. Shipped, dropped, or superseded specs are moved to [`archive/`](archive/). Bug and feature tracking lives in [GitHub Issues](https://github.com/yicheng47/quill/issues).
+Specs for features that are in progress or planned. Shipped, dropped, or superseded specs are moved to [`archive/`](archive/). Bug and feature tracking lives in [GitHub Issues](https://github.com/KlaraGraff/lantern/issues).
 
 ## In progress / Planned
 
-- [1 — Grounded Book Chat](1-grounded-book-chat.md)
+- [12 - Reader Settings: Global Layer and Per-Book Overrides](12-reader-settings-layers.md)
 - [14 — Notes (AI-Assisted)](14-notes.md)
 - [25 — Collection Folders](25-collection-folders.md)
 - [27 — Reading Stats](27-reading-stats.md)
