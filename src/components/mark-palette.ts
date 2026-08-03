@@ -1,4 +1,5 @@
 import { getThemeStyles } from "./reader-settings.ts";
+import type { ReaderTheme } from "./reader-settings.ts";
 import type { MarkerVisualStyle } from "./marker-style.ts";
 
 /**
@@ -171,8 +172,41 @@ export function colorDistance(a: string, b: string) {
  */
 export const MARK_COLLISION_THRESHOLD = 62;
 
-/** The page colours a mark has to survive. A clash on either theme is a clash. */
-const BACKDROPS = [getThemeStyles("paper").body, getThemeStyles("dark").body];
+/**
+ * The bar two marks are held to when something other than colour already tells
+ * them apart — an underline under a wash, or a wash under an underline. A
+ * second channel does most of the work the colour would otherwise have to do on
+ * its own, so the colours only have to stay far enough apart to read as a
+ * different mark rather than a different shade of the same one.
+ *
+ * Deliberately still well above `MARK_LEGIBILITY_THRESHOLD`: below that the two
+ * would not be seen as different colours at all, and the cue would be carrying
+ * the whole distinction.
+ */
+export const MARK_CUED_COLLISION_THRESHOLD = 36;
+
+/**
+ * Below this, a mark is not on the page so much as a rumour of one.
+ *
+ * Redmean weights sum to about 9 near mid-grey, so 24 is roughly a shift of 8
+ * in every channel — the smallest step that still reads as a tint over the
+ * paper rather than as the paper. The automatic mark is the reason the bar is
+ * this low: it is meant to be read straight past, and warning about it would be
+ * warning about it working.
+ */
+export const MARK_LEGIBILITY_THRESHOLD = 24;
+
+/**
+ * The pages a mark has to survive. Every theme that ships a colour of its own is
+ * here, the Gray one included: it is the mid-tone the other three are not, and a
+ * wash that clears the paper and the dark theme can still vanish into it.
+ *
+ * Custom is absent because its colour is the reader's — there is nothing to
+ * check until they pick one.
+ */
+export const MARK_BACKDROPS = ["original", "paper", "quiet", "dark"] as const satisfies readonly ReaderTheme[];
+
+const BACKDROPS = MARK_BACKDROPS.map((theme) => getThemeStyles(theme).body);
 
 /**
  * Which system marks this style would be mistaken for.
@@ -188,17 +222,44 @@ export function markCollisions(style: MarkerVisualStyle): SystemMarkId[] {
     // A background carries the opacity the reader set; an underline is drawn at
     // full strength whatever that slider says.
     const opacity = mark.shape === "wash" ? style.opacity / 100 : 1;
+    // A treatment the system mark does not carry is a second channel, and the
+    // automatic style ships with exactly that: an underline no wash has. It
+    // lowers the bar rather than removing it — two marks that differ only in
+    // whether they are underlined still have to be different colours.
+    const threshold = (mark.shape === "wash" ? style.underline : style.background)
+      ? MARK_CUED_COLLISION_THRESHOLD
+      : MARK_COLLISION_THRESHOLD;
     return BACKDROPS.some((backdrop) => {
       const drawn = blendOver(style.color, opacity, backdrop);
       const against = blendOver(mark.color, mark.opacity, backdrop, markBlendMode(mark, backdrop));
-      // A mark this close to the paper is barely there. Nothing you can hardly
-      // see can be mistaken for something else, and the faintest settings are
-      // deliberate — the automatic mark is meant to be read straight past — so
-      // measuring it against another mark on this page would only ever nag.
-      // Same threshold, same question: are these two too close to tell apart.
-      if (colorDistance(drawn, backdrop) < MARK_COLLISION_THRESHOLD) return false;
-      if (colorDistance(against, backdrop) < MARK_COLLISION_THRESHOLD) return false;
-      return colorDistance(drawn, against) < MARK_COLLISION_THRESHOLD;
+      // A mark you can hardly see cannot be mistaken for something else. That is
+      // a question about visibility, not about confusion, so it is asked at the
+      // legibility bar — the collision bar is far higher, and asking it here
+      // once cost the Gray theme every comparison on it.
+      if (colorDistance(drawn, backdrop) < MARK_LEGIBILITY_THRESHOLD) return false;
+      if (colorDistance(against, backdrop) < MARK_LEGIBILITY_THRESHOLD) return false;
+      return colorDistance(drawn, against) < threshold;
     });
   }).map((mark) => mark.id);
+}
+
+/**
+ * The themes this style would be invisible on — a different failure from looking
+ * like another mark, and the one no amount of separation from the palette fixes.
+ *
+ * The Gray theme is what makes this worth checking: it sits between the light
+ * themes and the dark one, so a colour chosen to show up on paper can land
+ * within a few points of it. The automatic default used to.
+ */
+export function markInvisibleOn(style: MarkerVisualStyle): ReaderTheme[] {
+  // Weight is not a colour. A bold word carries on any page, so a style using it
+  // cannot be argued out of existence by a swatch.
+  if (style.bold) return [];
+  // Whichever treatment shows the colour most: an underline is drawn at full
+  // strength whatever the opacity slider says, only a background is thinned.
+  const strength = Math.max(style.underline ? 1 : 0, style.background ? style.opacity / 100 : 0);
+  return MARK_BACKDROPS.filter((theme) => {
+    const backdrop = getThemeStyles(theme).body;
+    return colorDistance(blendOver(style.color, strength, backdrop), backdrop) < MARK_LEGIBILITY_THRESHOLD;
+  });
 }

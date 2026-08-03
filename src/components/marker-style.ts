@@ -29,21 +29,23 @@ export interface MarkerStyleConfig {
 
 /**
  * Chosen to stay clear of every colour the app marks with on its own — see
- * `markCollisions`. Three of the five that shipped before did not: a teal
- * within 22 of the "learning" underline, a grey within 29 of "mastered", and a
- * blue that measured far from the read-aloud sky at full strength but blended
- * to within 36 of it once both were washes, which is the only form either is
- * ever seen in.
+ * `markCollisions` — at the opacity a mark is actually worn at, on every theme
+ * the reader can be on, the mid-grey one included.
+ *
+ * There is deliberately no blue. Between the "learning" teal and the read-aloud
+ * sky the hues from roughly 135° to 255° are already spoken for, and a blue
+ * that measures far from the sky at full strength blends to within 36 of it once
+ * both are washes — which is the only form either is ever seen in.
  *
  * Presets only lower the odds — the hex field and the colour wheel still accept
  * anything — so the warning under the swatches is what actually holds the line.
  */
 export const MARKER_COLOR_PRESETS = [
   "#E9B949",
-  "#4E9B4A",
-  "#3D5A9E",
-  "#8B5CC4",
-  "#CF6F8A",
+  "#63A83C",
+  "#8B4FC4",
+  "#C964B4",
+  "#C1504E",
 ] as const;
 
 /** A range the reader marked themselves: the warmest, most solid thing on the page. */
@@ -60,9 +62,20 @@ const DEFAULT_MANUAL: MarkerVisualStyle = {
  * A range the app marked on the reader's behalf, after a lookup. Faint enough
  * to read straight past, and carrying an underline the manual style does not,
  * so the two never have to be told apart by colour alone.
+ *
+ * A pale greige rather than the darker one that shipped before: at 16% a
+ * mid-tone colour disappears into the mid-grey theme, which is where #8D7C65
+ * landed 10 from the page. Light enough to show on grey and on the dark theme,
+ * warm and unsaturated enough to read as something the app did rather than
+ * something the reader chose.
+ *
+ * No colour can clear `MARK_COLLISION_THRESHOLD` against all five presets at
+ * 16% — the ceiling over every theme is 55, and belongs to a sky that then
+ * collides with the read-aloud wash. The underline is what carries the rest;
+ * see `MARK_CUED_COLLISION_THRESHOLD`.
  */
 const DEFAULT_AUTOMATIC: MarkerVisualStyle = {
-  color: "#8D7C65",
+  color: "#C0BA96",
   opacity: 16,
   background: true,
   underline: true,

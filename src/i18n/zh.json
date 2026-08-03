@@ -693,6 +693,7 @@
   "settings.tools.markers.editAutomatic": "查词自动标记",
   "settings.tools.markers.markReading": "朗读到的位置",
   "settings.tools.markers.collision": "这个颜色和下面的标记太接近，正文里可能分不清：",
+  "settings.tools.markers.invisible": "在这个不透明度下，标记在这些页面底色上几乎看不见：",
   "settings.tools.markers.sampleText": "{{reading}}正在朗读。里面有{{vocabNew}}、{{learning}}和{{mastered}}。{{manual}}是你自己标的，{{automatic}}是查词后自动标的。",
   "settings.tools.markers.sampleReading": "这一行",
   "settings.tools.markers.sampleVocabNew": "生词",
