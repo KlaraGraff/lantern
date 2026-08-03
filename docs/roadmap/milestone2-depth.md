@@ -34,7 +34,7 @@ Rich note-taking tied to books — capture thoughts, annotations, and reflection
 
 - **Status:** Planned
 - **Issue:** [#70](https://github.com/yicheng47/quill/issues/70)
-- **Spec:** [14 — Notes](../features/14-notes.md)
+- **Spec:** [q14 — Notes](../features/q14-notes.md)
 
 ### Onboarding
 Simple first-launch flow guiding new users to set up their AI provider in Settings.

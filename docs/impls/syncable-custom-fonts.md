@@ -221,7 +221,7 @@ content-addressed, so it is a no-op overwrite).
 
 ### Why these tables are local-only
 
-`docs/impls/archive/sync/31-sync.md` documents the decision (line 180 table row, and lines
+`docs/impls/archive/sync/q31-sync.md` documents the decision (line 180 table row, and lines
 380–381): `settings` is "general preferences (barely used; theme/language already live in
 `localStorage`)" and `book_settings` holds "UI preferences that differ per screen and belong on the
 device, not in the synced library."

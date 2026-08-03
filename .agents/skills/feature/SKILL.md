@@ -76,7 +76,8 @@ When in doubt between two levels, pick the lower-urgency one and say why; over-l
 
 ## Conventions
 
-- Spec files are numbered by their GitHub issue number: `276-reset-all-data.md` for issue `#276`. The heading must use the same number.
+- Spec files are numbered by their GitHub issue number in **this** repo: `12-reader-settings-layers.md` for issue `#12`. The heading must use the same number.
+- A `q` prefix means the number is a **Quill** issue number, from before the rename. Lantern's issue counter runs over the same range, so an unprefixed `q`-era number would eventually collide with a real issue here. Never create a new `q`-numbered spec; leave the existing ones alone so their `GitHub issue:` links keep pointing at the upstream issue they came from.
 - Slugs are lowercase kebab-case derived from the feature name.
 - Specs for shipped features move to `docs/features/archive/` — the implementation is the source of truth, but the spec stays as the "what we were going for" record.
 - The `docs/features/README.md` index only lists in-progress/planned specs.

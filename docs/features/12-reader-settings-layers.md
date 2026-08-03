@@ -31,7 +31,7 @@ In scope:
 Out of scope:
 
 - **Per-book page-turn controls.** Which key or gesture turns the page is muscle memory. Varying it per book means the reader mispresses without understanding why, and the value of the setting comes precisely from its being uniform. The same reasoning excludes page-turn animation, progress display, and narrow-window shrink: these describe how the reader should feel, not what a book should look like.
-- **Syncing the per-book keys.** `is_syncable_setting` whitelists per-book `font` and global `font_family`, and nothing else. The remaining per-book keys are per-screen preferences and stay local by design (`docs/impls/archive/sync/31-sync.md`). Whether per-book font size should sync is a separate decision, deferred until there is a second device to test the ping-pong on.
+- **Syncing the per-book keys.** `is_syncable_setting` whitelists per-book `font` and global `font_family`, and nothing else. The remaining per-book keys are per-screen preferences and stay local by design (`docs/impls/archive/sync/q31-sync.md`). Whether per-book font size should sync is a separate decision, deferred until there is a second device to test the ping-pong on.
 - **Migrating retired localStorage blobs.** `reader-settings-<bookId>` keys are left inert. No migration code, per the phase policy.
 - **Reworking the reader panel's layout.** Override marks and actions are added to the existing structure; a redesign is not part of this.
 
