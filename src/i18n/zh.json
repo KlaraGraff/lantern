@@ -774,7 +774,7 @@
   "settings.mcp.autoRegisterHint": "切换开关会立即在客户端配置文件中写入或移除 Lantern 的条目。",
   "settings.mcp.otherClients": "其他 AI 客户端",
   "settings.mcp.otherClientsSub": "Claude Code 和 Codex 用上面的开关。其他客户端（Cursor、Gemini CLI、Claude 桌面版等）用下面任一种方式接入。",
-  "settings.mcp.promptTitle": "一句话接入",
+  "settings.mcp.promptTitle": "交给 AI",
   "settings.mcp.promptHint": "复制这段话，粘贴到那个 AI 的对话框里发送，它会自己写好配置。",
   "settings.mcp.copyPrompt": "复制这段话",
   "settings.mcp.manualTitle": "自己填配置",

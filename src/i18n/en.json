@@ -776,7 +776,7 @@
   "settings.mcp.autoRegisterHint": "This adds or removes Lantern's entry in the client's config file straight away.",
   "settings.mcp.otherClients": "Other AI clients",
   "settings.mcp.otherClientsSub": "Claude Code and Codex use the switches above. For anything else — Cursor, Gemini CLI, the Claude desktop app — use either route below.",
-  "settings.mcp.promptTitle": "One message and done",
+  "settings.mcp.promptTitle": "Hand it to the AI",
   "settings.mcp.promptHint": "Copy this, paste it into that AI's chat box, and send. It writes the configuration itself.",
   "settings.mcp.copyPrompt": "Copy the message",
   "settings.mcp.manualTitle": "Fill it in yourself",
