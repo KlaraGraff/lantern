@@ -141,7 +141,7 @@ function createDefaultReaderSettings(): ReaderSettingsState {
   };
 }
 
-export function mergeStoredReaderSettings(
+export function resolveReaderSettings(
   previous: ReaderSettingsState,
   globalSettings: Record<string, string>,
   perBookSettings: PerBookReaderSettings = {},

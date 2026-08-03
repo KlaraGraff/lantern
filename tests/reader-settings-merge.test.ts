@@ -6,7 +6,7 @@ import {
   getReaderFontOptions,
   setCustomReaderFonts,
 } from "../src/components/reader-settings.ts";
-import { mergeStoredReaderSettings } from "../src/pages/reader/useReaderSettingsSync.ts";
+import { resolveReaderSettings } from "../src/pages/reader/useReaderSettingsSync.ts";
 
 const previous: ReaderSettingsState = {
   theme: "paper",
@@ -38,7 +38,7 @@ function merge(
   global: Record<string, string> = {},
   perBook: Record<string, string> = {},
 ) {
-  return mergeStoredReaderSettings(previous, global, perBook);
+  return resolveReaderSettings(previous, global, perBook);
 }
 
 // Every key that lives in `book_settings`, with a row value that differs from both

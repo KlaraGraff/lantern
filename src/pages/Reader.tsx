@@ -101,7 +101,7 @@ import { collectWord } from "../components/vocab/collect";
 import { useOcrPackage } from "../hooks/useOcrPackage";
 import { useOcrJob } from "../hooks/useOcrJob";
 import {
-  mergeStoredReaderSettings,
+  resolveReaderSettings,
   useReaderSettingsSync,
 } from "./reader/useReaderSettingsSync";
 import { useWindowSizePersistence } from "./reader/useWindowSizePersistence";
@@ -1136,7 +1136,7 @@ export default function Reader() {
       readingAssistanceSettingsRef.current = g;
       applyReadingAssistanceSettings(g);
       setReaderSettings((prev) => {
-        const next = mergeStoredReaderSettings(prev, g, perBookSettings);
+        const next = resolveReaderSettings(prev, g, perBookSettings);
         readerSettingsRef.current = next;
         return next;
       });
