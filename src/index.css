@@ -152,6 +152,22 @@ body {
   view-transition-name: reader-page;
 }
 
+/* The UA stylesheet defaults ::view-transition-old()/::view-transition-new()
+ * to mix-blend-mode: plus-lighter so the browser's built-in crossfade looks
+ * clean when two translucent snapshots overlap. We always supply our own
+ * opacity/transform keyframes below (never the UA default animation), so
+ * that additive blending only hurts us: while "cover"'s new page slides over
+ * the static old one, or while "slide"'s two pages briefly overlap mid-turn,
+ * the old page's content visibly ghosts/adds into the new one instead of
+ * being cleanly occluded, which made all three animations read as variants
+ * of the same hazy crossfade. Normal blending restores an opaque paint order
+ * (new drawn over old) so slide/fade/cover look distinct again.
+ */
+html::view-transition-old(reader-page),
+html::view-transition-new(reader-page) {
+  mix-blend-mode: normal;
+}
+
 .reader-page-fade-out {
   opacity: 0;
   transition: opacity 120ms ease-in;
