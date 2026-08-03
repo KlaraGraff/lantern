@@ -45,11 +45,11 @@ Lantern 早期是 fork 自 [yicheng47/quill](https://github.com/yicheng47/quill)
 
 | 现值 | 位置 |
 |---|---|
-| `data-quill-chapter-start` | [chapter-pagination.ts:1](../../src/pages/reader/chapter-pagination.ts)、[reader-theme.ts:148](../../src/pages/reader/reader-theme.ts) |
-| `"quill-word-marks"` | [useFoliateAnnotations.ts:313](../../src/pages/reader/useFoliateAnnotations.ts) |
-| `"quill-custom-font-faces"` | [custom-fonts.ts:23,36](../../src/components/custom-fonts.ts) |
-| `"quill-builtin-font-faces"` | [builtin-fonts.ts:114](../../src/components/builtin-fonts.ts) |
-| `QuillCustom-` 字体族前缀 | [reader-settings.ts:161](../../src/components/reader-settings.ts) |
+| `data-quill-chapter-start` | [chapter-pagination.ts:1](../../../src/pages/reader/chapter-pagination.ts)、[reader-theme.ts:148](../../../src/pages/reader/reader-theme.ts) |
+| `"quill-word-marks"` | [useFoliateAnnotations.ts:313](../../../src/pages/reader/useFoliateAnnotations.ts) |
+| `"quill-custom-font-faces"` | [custom-fonts.ts:23,36](../../../src/components/custom-fonts.ts) |
+| `"quill-builtin-font-faces"` | [builtin-fonts.ts:114](../../../src/components/builtin-fonts.ts) |
+| `QuillCustom-` 字体族前缀 | [reader-settings.ts:161](../../../src/components/reader-settings.ts) |
 
 ⚠️ **`QuillCustom-` 要确认一次**：如果自定义字体的 family 名被写进了设置或数据库，
 改前缀会让老用户已选的字体失效。先确认它是每次渲染时生成的再改。
@@ -77,19 +77,19 @@ Lantern 早期是 fork 自 [yicheng47/quill](https://github.com/yicheng47/quill)
 
 | 现值 | 位置 |
 |---|---|
-| `quill-theme` | [App.tsx:45](../../src/App.tsx)、[main.tsx:32](../../src/main.tsx) |
-| `quill-language` | [i18n/index.ts:8](../../src/i18n/index.ts) |
+| `quill-theme` | [App.tsx:45](../../../src/App.tsx)、[main.tsx:32](../../../src/main.tsx) |
+| `quill-language` | [i18n/index.ts:8](../../../src/i18n/index.ts) |
 
 直接改会让老用户的主题和语言设置丢失（回落到 system / 默认语言）。
 **做法**：读取时先查新键，查不到再查旧键并写回新键，旧键删掉。写一次就够，不需要长期保留。
 
-**b) 导出文件名 `quill-notes.csv`** — [NotesContent.tsx:135](../../src/components/NotesContent.tsx)
+**b) 导出文件名 `quill-notes.csv`** — [NotesContent.tsx:135](../../../src/components/NotesContent.tsx)
 
 这个其实**用户看得见**，属于改名漏网，直接改成 `lantern-notes.csv`，无迁移成本。
 
 **c) `quill.db` —— 这是要害**
 
-数据库文件名硬编码在 [db.rs:247](../../src-tauri/src/db.rs)（另有 `db.rs:227`、`250` 的注释，
+数据库文件名硬编码在 [db.rs:247](../../../src-tauri/src/db.rs)（另有 `db.rs:227`、`250` 的注释，
 以及 `636`、`637`、`751`、`1085`、`1217` 的测试断言）。
 
 **直接改文件名 = 每个老用户的书库、笔记、词汇、标记凭空消失。**
@@ -115,19 +115,19 @@ WAL 模式下漏掉 `-wal`/`-shm` 会丢掉最后一批未 checkpoint 的写入�
 **b) MCP 服务器身份 —— 风险在这里**
 
 Lantern 的 MCP server 以 `quill mcp` 的形式跑在 stdio 上，对外身份也叫 `quill`
-（[server.rs:64](../../src-tauri/src/mcp/server.rs) 的 `Implementation::new("quill", …)`）。
+（[server.rs:64](../../../src-tauri/src/mcp/server.rs) 的 `Implementation::new("quill", …)`）。
 
 关键是：这个名字被**写进用户自己机器上的配置文件**——
 `~/.claude.json` 的 `mcpServers.quill`，和 `~/.codex/config.toml` 的 `[mcp_servers.quill]`
-（见 [commands/mcp.rs](../../src-tauri/src/commands/mcp.rs)）。
+（见 [commands/mcp.rs](../../../src-tauri/src/commands/mcp.rs)）。
 
 一般来说这是要慎重的地方 —— 改名会让已有的 MCP 配置失效，而那些文件不在 app 的管辖范围内。
 **但用户已经确认：这个 MCP 目前没有任何人在用。** 所以直接改干净，不要为兼容性留双读逻辑：
 
-- `Implementation::new("quill", …)` → `"lantern"`（[server.rs:64](../../src-tauri/src/mcp/server.rs)，
+- `Implementation::new("quill", …)` → `"lantern"`（[server.rs:64](../../../src-tauri/src/mcp/server.rs)，
   连带 `server.rs:354` 的断言）
 - `mcpServers.quill` / `[mcp_servers.quill]` 的键名 → `lantern`
-  （[commands/mcp.rs](../../src-tauri/src/commands/mcp.rs) 的 96、135、139、168 行及注释）
+  （[commands/mcp.rs](../../../src-tauri/src/commands/mcp.rs) 的 96、135、139、168 行及注释）
 
 改完之后，用户如果自己在 `~/.claude.json` 或 `~/.codex/config.toml` 里连过旧的 `quill`，
 需要去设置里重新连一次 —— 旧条目不会被自动清理，记得在收尾时提醒一句。
@@ -144,7 +144,7 @@ Lantern 的 MCP server 以 `quill mcp` 的形式跑在 stdio 上，对外身份�
 
 - `settings.about.originalRepository` — "原始 Quill 仓库" / "Original Quill repository"
 - `settings.about.basedOn` — "基于 yicheng47 的 Quill · MIT 许可证"
-- `UPSTREAM_REPOSITORY_URL = "https://github.com/yicheng47/quill"` — [AboutSettings.tsx:12](../../src/components/settings/AboutSettings.tsx)
+- `UPSTREAM_REPOSITORY_URL = "https://github.com/yicheng47/quill"` — [AboutSettings.tsx:12](../../../src/components/settings/AboutSettings.tsx)
 
 删掉或改名是**违反 MIT 许可证**的。原样保留。
 

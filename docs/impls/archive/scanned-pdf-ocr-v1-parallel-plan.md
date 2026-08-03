@@ -3,7 +3,7 @@
 > 状态：**当前生效的实施方案**，2026-07-18 与维护者对齐后定稿
 >
 > 本文取代 [scanned-pdf-ocr-pipeline.md](scanned-pdf-ocr-pipeline.md) 的 Phase C–H 细节，以及
-> [评审交接稿](../reviews/scanned-pdf-ocr-review-handoff-2026-07-18.md) 中与 §1 冲突的「已确认」项。
+> [评审交接稿](../../reviews/scanned-pdf-ocr-review-handoff-2026-07-18.md) 中与 §1 冲突的「已确认」项。
 > 冲突之处一律以本文为准。
 >
 > 读者：执行本方案的 AI 代理。每个工作流（W1–W4）可以由一个独立代理承担；本文即是它的任务书，

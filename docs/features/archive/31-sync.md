@@ -3,7 +3,7 @@
 **Issue:** [#185](https://github.com/yicheng47/quill/issues/185)
 **Status:** Planned
 **Milestone:** Cross-Platform Sync
-**Supersedes:** [16 — Universal Cloud Sync](../archive/features/16-universal-cloud-sync.md), [28 — CloudKit Sync](../archive/features/28-cloudkit-sync.md)
+**Supersedes:** 16 — Universal Cloud Sync (spec deleted in `20868a5`), [28 — CloudKit Sync](28-cloudkit-sync.md)
 
 ## Motivation
 

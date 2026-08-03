@@ -4,7 +4,7 @@
 
 - **发起:** Claude Code 会话(2026-07-17)
 - **状态:** 🟡 方案已定,待用户决策(方案 A 需 Apple Developer 账号)
-- **关联:** [`format-normalization-pipeline.md`](format-normalization-pipeline.md)(昨日 CSP 阅读器修复,与本问题**无关但曾被混淆**,见 §2)
+- **关联:** [`format-normalization-pipeline.md`](archive/format-normalization-pipeline.md)(昨日 CSP 阅读器修复,与本问题**无关但曾被混淆**,见 §2)
 
 ## 1. 症状
 

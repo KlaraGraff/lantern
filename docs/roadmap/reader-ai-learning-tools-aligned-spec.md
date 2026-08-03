@@ -474,6 +474,6 @@
 - CEFR 提示约束及考试估算映射测试。
 - 键盘、屏幕阅读器、长文本、窄窗口和错误状态。
 
-对应实施计划见：[阅读器 AI 学习工具实施计划](../impls/reader-ai-learning-tools.md)。
+对应实施计划见：[阅读器 AI 学习工具实施计划](../impls/archive/reader-ai-learning-tools.md)。
 
 对应测试方案见：[v1.4.1 全量测试方案](../testing/reader-ai-learning-tools-v1.4.1-test-plan.md)。

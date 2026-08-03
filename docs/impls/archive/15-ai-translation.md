@@ -4,7 +4,7 @@
 
 Quill's AI features only support word-level lookup. For foreign-language books, users need to select a sentence/paragraph and get a full passage translation. Translations should be saveable and browsable — like dictionary words — not just throwaway cache entries.
 
-This implements Phase 1 of the [AI Translation spec](../features/15-ai-translation.md).
+This implements Phase 1 of the [AI Translation spec](../../features/archive/15-ai-translation.md).
 
 Issue: #73
 

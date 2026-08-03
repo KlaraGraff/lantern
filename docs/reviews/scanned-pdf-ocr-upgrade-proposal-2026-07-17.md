@@ -8,7 +8,7 @@
 >
 > 许可前提：Lantern 核心代码继续采用 MIT 许可证并保持开源
 >
-> 关联现有计划：[格式规整管线](../impls/format-normalization-pipeline.md)
+> 关联现有计划：[格式规整管线](../impls/archive/format-normalization-pipeline.md)
 
 ## 0. 文档用途与阅读约定
 
@@ -123,7 +123,7 @@ Lantern 已经支持带文字层 PDF 的浏览器原生选择。扫描件当前�
 - [转换状态机和 Converter seam](../../src-tauri/src/commands/books/convert_prepare.rs)
 - [书籍路径解析和本地产物重定向](../../src-tauri/src/commands/books/query.rs)
 - [书籍数据结构](../../src-tauri/src/commands/books/mod.rs)
-- [格式规整管线现有计划](../impls/format-normalization-pipeline.md)
+- [格式规整管线现有计划](../impls/archive/format-normalization-pipeline.md)
 
 但当前管线有一个与新要求直接冲突的既定假设：转换 EPUB 存在 `local_data_dir()/prepared/`，明确不进入 iCloud；远端设备收到书籍后自行重新转换。新方案要求 OCR 派生文件同步，以便手机或其他设备直接使用，所以不能只向现有 `Converter` 增加 OCR 命令，还必须改变派生资产和同步模型。
 
@@ -1279,7 +1279,7 @@ Lantern 仍需自行实现：
 
 ## 25. 与现有计划的冲突和迁移建议
 
-现有 [格式规整管线](../impls/format-normalization-pipeline.md) Phase 3 设想：
+现有 [格式规整管线](../impls/archive/format-normalization-pipeline.md) Phase 3 设想：
 
 - 扫描 PDF 使用 AI provider OCR；
 - 组装 EPUB；
@@ -1353,7 +1353,7 @@ Lantern 仍需自行实现：
 
 - [产品 README](../../README.md)
 - [架构概览](../arch/overview.md)
-- [格式规整管线](../impls/format-normalization-pipeline.md)
+- [格式规整管线](../impls/archive/format-normalization-pipeline.md)
 - [格式规整验收报告](./format-normalization-acceptance-report-2026-07-16.md)
 - [PDF 无文字层交互检测](../../src/pages/reader/useReaderInteractions.ts)
 - [Reader](../../src/pages/Reader.tsx)

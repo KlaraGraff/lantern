@@ -3,7 +3,7 @@
 **Issue:** [#178](https://github.com/yicheng47/quill/issues/178)
 **Status:** Planned
 **Milestone:** 4 — Cross-Platform Sync
-**Supersedes:** Partially replaces [16 — Universal Cloud Sync](16-universal-cloud-sync.md) for Apple platforms
+**Supersedes:** Partially replaces 16 — Universal Cloud Sync (spec deleted in `20868a5`) for Apple platforms
 
 ## Motivation
 

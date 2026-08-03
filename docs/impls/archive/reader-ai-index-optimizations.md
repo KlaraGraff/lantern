@@ -32,7 +32,7 @@
 
 ### A1. 引用跳转修复(需求 8)
 
-**根因(已确认)**:`markdownWithCitationLinks`([citation-markers.ts](../../src/components/citation-markers.ts))
+**根因(已确认)**:`markdownWithCitationLinks`([citation-markers.ts](../../../src/components/citation-markers.ts))
 把 `[S2]` 转成 `[S2](quill-citation:S2)`,但项目使用 react-markdown **v10**(package.json `^10.1.0`),
 其默认 `urlTransform`(`defaultUrlTransform`)会把非白名单协议(http/https/mailto 等之外)的 href
 **清成空字符串**。于是 `MessageBubble.tsx:105` 的 `citationMarkerFromHref(href)` 拿到 `""`、匹配失败,

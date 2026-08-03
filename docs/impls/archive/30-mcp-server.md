@@ -1,7 +1,7 @@
 # 30 — MCP Server
 
 **Issue:** [#184](https://github.com/yicheng47/quill/issues/184)
-**Spec:** [30 — MCP Server](../features/30-mcp-server.md)
+**Spec:** [30 — MCP Server](../../features/archive/30-mcp-server.md)
 
 ## Context
 

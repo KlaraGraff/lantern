@@ -1,6 +1,6 @@
 # Impl — 215: Split Ask AI into Explain (inline) and Quote (side panel)
 
-Feature spec: [`docs/features/215-explain-and-quote.md`](../features/215-explain-and-quote.md) · GitHub: [#215](https://github.com/yicheng47/quill/issues/215)
+Feature spec: [`docs/features/215-explain-and-quote.md`](../../features/archive/215-explain-and-quote.md) · GitHub: [#215](https://github.com/yicheng47/quill/issues/215)
 
 ## Summary
 

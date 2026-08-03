@@ -63,7 +63,7 @@
 
 ### B-1 【中】✅ 已修复 · 损坏的 localStorage 会永久静默破坏单本书的阅读设置
 
-**位置**:[src/pages/Reader.tsx:724](quill/src/pages/Reader.tsx#L724)
+**位置**:[src/pages/Reader.tsx:724](../../src/pages/Reader.tsx#L724)
 
 ```ts
 const saved = localStorage.getItem(`reader-settings-${bookId}`);
@@ -74,18 +74,18 @@ const bookSettings = saved ? JSON.parse(saved) as Partial<ReaderSettingsState> :
 1. 若 `reader-settings-${bookId}` 值损坏(写入中断、手工改动、历史版本格式问题),`JSON.parse` 抛异常;
 2. 异常被外层 `.catch(() => {})`(第 743 行)整体吞掉;
 3. 后续的 `setReaderSettings(...)` 和 `dbSettingsLoadedRef.current = bookId`(第 742 行)**全部不会执行**;
-4. 而设置持久化被 `settingsLoadedBookRef.current !== bookId` 门控([useReaderSettingsSync.ts:281](quill/src/pages/reader/useReaderSettingsSync.ts#L281)),损坏的键**永远不会被覆盖重写**;
+4. 而设置持久化被 `settingsLoadedBookRef.current !== bookId` 门控([useReaderSettingsSync.ts:281](../../src/pages/reader/useReaderSettingsSync.ts#L281)),损坏的键**永远不会被覆盖重写**;
 5. 结果:该书的阅读设置(字体、边距、翻页模式等)永久回退为默认值,且用户的任何调整都不再保存——直到手动清 localStorage。同文件第 733-741 行的 zoom 读取也一并失效。
 
-**修复建议**:把 `JSON.parse` 包进 try/catch,解析失败时 `localStorage.removeItem(key)` 并按空对象继续,保证 `dbSettingsLoadedRef` 总能置位。同样的防护 [openReaderWindow.ts](quill/src/utils/openReaderWindow.ts#L18) 和 [marker-style.ts](quill/src/components/marker-style.ts#L84) 都已正确做了,唯独这里漏了。
+**修复建议**:把 `JSON.parse` 包进 try/catch,解析失败时 `localStorage.removeItem(key)` 并按空对象继续,保证 `dbSettingsLoadedRef` 总能置位。同样的防护 [openReaderWindow.ts](../../src/utils/openReaderWindow.ts#L18) 和 [marker-style.ts](../../src/components/marker-style.ts#L84) 都已正确做了,唯独这里漏了。
 
 ### B-2 【中】✅ 已修复 · OAuth token 刷新无并发互斥,可能导致偶发认证失败 + 5 分钟冷却
 
-**位置**:[src-tauri/src/ai/oauth.rs:332-359](quill/src-tauri/src/ai/oauth.rs#L332)(`get_valid_token`)
+**位置**:[src-tauri/src/ai/oauth.rs:332-359](../../src-tauri/src/ai/oauth.rs#L332)(`get_valid_token`)
 
 **问题**:两个并发 AI 请求(完全常见:聊天流 + 标题生成并行,或多段摘要 + 查词)同时发现 token 过期时,会各自用**同一个 refresh_token** 调 `refresh_access_token`,之间没有任何互斥:
 
-- OpenAI 对 refresh token 做轮换(rotation)时,第二个请求用已消费的旧 token 刷新 → `Token refresh error 401` → 被 `classify_error` 归为 `Auth` → **该 profile 进入 5 分钟冷却**([router.rs:561](quill/src-tauri/src/ai/router.rs#L561)),期间所有 OAuth 请求失败;
+- OpenAI 对 refresh token 做轮换(rotation)时,第二个请求用已消费的旧 token 刷新 → `Token refresh error 401` → 被 `classify_error` 归为 `Auth` → **该 profile 进入 5 分钟冷却**([router.rs:561](../../src-tauri/src/ai/router.rs#L561)),期间所有 OAuth 请求失败;
 - 即使 provider 容忍重用,两次 `save_tokens` 的写入顺序不确定,后写的旧 refresh_token 可能覆盖新的,给**下一次**刷新埋雷,最坏需要用户重新登录。
 
 **修复建议**:给刷新路径加一个 `tokio::sync::Mutex`(模块级 `OnceLock<Mutex<()>>` 即可);拿到锁后先**重读** tokens 再判断是否仍需刷新(double-check),避免排队的请求重复刷新。
@@ -96,7 +96,7 @@ const bookSettings = saved ? JSON.parse(saved) as Partial<ReaderSettingsState> :
 
 ### R-1 【低】✅ 已修复 · 多段摘要生成的"段间取消丢失"窗口
 
-**位置**:[summarize.rs:145-184](quill/src-tauri/src/ai/grounding/summarize.rs#L145)(`complete_summary`)+ [router.rs:914-916](quill/src-tauri/src/ai/router.rs#L914)
+**位置**:[summarize.rs:145-184](../../src-tauri/src/ai/grounding/summarize.rs#L145)(`complete_summary`)+ [router.rs:914-916](../../src-tauri/src/ai/router.rs#L914)
 
 代码已经意识到 `complete_with_failover` 结束时会 `finish_request` 注销取消通道,并在每段前重新 `register_request`。但存在窗口:**上一段的 `finish_request` 执行后、下一段的 `register_request` 之前**,用户点 Stop → `cancel_request` 在注册表里找不到 id,返回 `false` 且取消信号被完全丢弃 → 剩余所有段落照常生成(长书可能是数分钟的多余 API 消耗)。
 
@@ -104,13 +104,13 @@ const bookSettings = saved ? JSON.parse(saved) as Partial<ReaderSettingsState> :
 
 ### R-2 【低】✅ 已修复 · `bounded_chat_history` 超预算时跳过而非截断,历史可能"挖洞"
 
-**位置**:[src-tauri/src/commands/ai.rs:1220-1240](quill/src-tauri/src/commands/ai.rs#L1220)
+**位置**:[src-tauri/src/commands/ai.rs:1220-1240](../../src-tauri/src/commands/ai.rs#L1220)
 
 从最新往旧遍历时,遇到会超出 `CHAT_MAX_TOTAL_BYTES` 的消息用的是 `continue` 而不是 `break`——该条被丢弃,但**更早**的消息若够小仍会被收录。结果发给模型的历史可能中间缺一条,破坏 user/assistant 交替(个别严格校验角色交替的 OpenAI-compat 端点会直接 4xx)。**建议**:超预算即 `break`,保持"最近的连续窗口"语义。
 
 ### R-3 【低】✅ 已修复 · 流式协议中的 error 事件被静默吞掉
 
-**位置**:[openai_compat.rs:154-205](quill/src-tauri/src/ai/openai_compat.rs#L154)、[anthropic.rs:178-231](quill/src-tauri/src/ai/anthropic.rs#L178)(`process_data`)
+**位置**:[openai_compat.rs:154-205](../../src-tauri/src/ai/openai_compat.rs#L154)、[anthropic.rs:178-231](../../src-tauri/src/ai/anthropic.rs#L178)(`process_data`)
 
 - OpenAI-compat 端点可能发 `data: {"error": {...}}`;Anthropic 可能发 `{"type":"error", ...}`(如 overloaded)。两者都会落进"无匹配分支",流最终以 `AI_STREAM_INCOMPLETE` 收场。
 - 兜底行为(归类为 `Protocol` → 可重试/切换凭据)方向正确,但**真实错误码丢失**——排障时日志里只有 INCOMPLETE,且 429/quota 类中途错误无法触发正确的冷却策略。
@@ -119,9 +119,9 @@ const bookSettings = saved ? JSON.parse(saved) as Partial<ReaderSettingsState> :
 
 ### R-4 【极低】✅ 已修复 · 空 delta 也会置 `emitted=true`,阻断凭据切换
 
-**位置**:[openai_compat.rs:192-193](quill/src-tauri/src/ai/openai_compat.rs#L192)
+**位置**:[openai_compat.rs:192-193](../../src-tauri/src/ai/openai_compat.rs#L192)
 
-`choice_delta["content"].as_str()` 对 `content: ""` 返回 `Some("")`,仍会 `emitted.store(true)`。failover 逻辑用 `emitted` 判断"已向前端吐字、不可再换凭据重试"([router.rs:1349](quill/src-tauri/src/ai/router.rs#L1349))——某些网关先发一个空 content chunk 再报错的场景下,本可以无损切换凭据的请求会直接失败。**建议**:`filter(|s| !s.is_empty())` 后再置位(reasoning 分支已经这么做了)。
+`choice_delta["content"].as_str()` 对 `content: ""` 返回 `Some("")`,仍会 `emitted.store(true)`。failover 逻辑用 `emitted` 判断"已向前端吐字、不可再换凭据重试"([router.rs:1349](../../src-tauri/src/ai/router.rs#L1349))——某些网关先发一个空 content chunk 再报错的场景下,本可以无损切换凭据的请求会直接失败。**建议**:`filter(|s| !s.is_empty())` 后再置位(reasoning 分支已经这么做了)。
 
 ---
 
@@ -129,13 +129,13 @@ const bookSettings = saved ? JSON.parse(saved) as Partial<ReaderSettingsState> :
 
 ### P-1 【中】⏳ 待办(方案见 §九) · `useSettings` 每实例全量拉取,无共享缓存
 
-**位置**:[src/hooks/useSettings.ts](quill/src/hooks/useSettings.ts)
+**位置**:[src/hooks/useSettings.ts](../../src/hooks/useSettings.ts)
 
 4 处组件各自实例化 `useSettings()`,每个实例挂载时都 `invoke("get_all_settings")` 一次(Reader 页还有独立的 `getAllSettings()` 调用)。设置变更靠 `settings-events` 广播保持一致,机制是对的,但初始加载是 N 次 IPC + N 份 state 拷贝,且各实例加载完成前后短暂不一致(如 `spoilerGuardEnabled` 在设置未加载时按默认值计算)。**建议**:提升为 Context/Provider 单例(或模块级缓存 + 订阅),一次拉取全局共享。
 
 ### P-2 【低】⏳ 待办(方案见 §九) · AI 流式每 token 一次全局事件广播
 
-**位置**:`process_data` 各实现 + [router.rs:941](quill/src-tauri/src/ai/router.rs#L941)(`complete_with_failover`)
+**位置**:`process_data` 各实现 + [router.rs:941](../../src-tauri/src/ai/router.rs#L941)(`complete_with_failover`)
 
 每个 SSE delta 都触发一次 `app.emit`(广播到所有 window,含 JSON 序列化)。前端已用 rAF 批处理渲染(useAiChat 做得很好),但 IPC 频次本身没有削减;`complete_with_failover` 甚至对**内部**完成也走一遍"emit → listen → 反序列化"总线(代码注释已承认是过渡方案)。**建议**:后端 ~16ms 微批合并 delta;内部完成路径改为直接回调/channel 收集,绕开事件总线。
 
@@ -145,7 +145,7 @@ const bookSettings = saved ? JSON.parse(saved) as Partial<ReaderSettingsState> :
 
 ### P-4 【低】✅ 已修复 · `read_json_limited` 无整体读取超时
 
-**位置**:[router.rs:734-752](quill/src-tauri/src/ai/router.rs#L734)
+**位置**:[router.rs:734-752](../../src-tauri/src/ai/router.rs#L734)
 
 首字节有 `FIRST_BYTE_TIMEOUT`,但 body 流式读取无 idle/总超时,恶意或故障端点可让"列出模型"请求长期挂起(UI 侧表现为设置页转圈)。**建议**:比照 `STREAM_IDLE_TIMEOUT` 给 `stream.next()` 包 `tokio::time::timeout`。
 
@@ -155,15 +155,15 @@ const bookSettings = saved ? JSON.parse(saved) as Partial<ReaderSettingsState> :
 
 ### S-1 ⏳ 待办(方案见 §九) · API key 明文存储于 `secrets.db`
 
-v1.4 的 AES-GCM + Keychain 加密 vault 已被有意迁移为**明文 SQLite**(避免每次读密钥弹 Keychain 授权框),缓解手段齐全:文件权限 0600、`journal_mode=DELETE` + `secure_delete=ON`、WAL/SHM 文件加固、local-only 不入同步([secrets.rs:113-158](quill/src-tauri/src/secrets.rs#L113))。这是合理的桌面应用取舍,但意味着**同一 macOS 用户下的任意进程可直接读走 API key**。建议:在 README/隐私文档中明示该取舍;如未来上架分发,可考虑重新引入"启动时解锁一次、内存驻留"的加密层。
+v1.4 的 AES-GCM + Keychain 加密 vault 已被有意迁移为**明文 SQLite**(避免每次读密钥弹 Keychain 授权框),缓解手段齐全:文件权限 0600、`journal_mode=DELETE` + `secure_delete=ON`、WAL/SHM 文件加固、local-only 不入同步([secrets.rs:113-158](../../src-tauri/src/secrets.rs#L113))。这是合理的桌面应用取舍,但意味着**同一 macOS 用户下的任意进程可直接读走 API key**。建议:在 README/隐私文档中明示该取舍;如未来上架分发,可考虑重新引入"启动时解锁一次、内存驻留"的加密层。
 
 ### S-2 ⏳ 待办(方案见 §九) · `set_setting` 无键白名单
 
-[settings.rs:136](quill/src-tauri/src/commands/settings.rs#L136) 允许前端写任意 key/value(敏感键已正确拦截)。本地单用户应用风险低,仅在 WebView 被 XSS 的假想场景下会扩大攻击面(如翻转 `mcp_write_enabled`)。可选加固:键名前缀白名单 + 长度上限。
+[settings.rs:136](../../src-tauri/src/commands/settings.rs#L136) 允许前端写任意 key/value(敏感键已正确拦截)。本地单用户应用风险低,仅在 WebView 被 XSS 的假想场景下会扩大攻击面(如翻转 `mcp_write_enabled`)。可选加固:键名前缀白名单 + 长度上限。
 
 ### S-3 ✅ 已修复(守卫测试) · 外键全局 `OFF`,完全依赖手动级联
 
-[db.rs:248](quill/src-tauri/src/db.rs#L248) 写连接 `PRAGMA foreign_keys=OFF`(同步重放需要乱序写入,合理)。已核实 [merge.rs](quill/src-tauri/src/sync/merge.rs#L290) 的书籍删除级联覆盖全部 15 张子表且含 chat 墓碑,质量很高。风险在**未来**:新增子表时漏加一行 DELETE 不会有任何报错。**建议**:加一个守卫测试——删除种子书后跑 `PRAGMA foreign_key_check`(临时开 FK)断言零违规,把"漏级联"变成 CI 失败。
+[db.rs:248](../../src-tauri/src/db.rs#L248) 写连接 `PRAGMA foreign_keys=OFF`(同步重放需要乱序写入,合理)。已核实 [merge.rs](../../src-tauri/src/sync/merge.rs#L290) 的书籍删除级联覆盖全部 15 张子表且含 chat 墓碑,质量很高。风险在**未来**:新增子表时漏加一行 DELETE 不会有任何报错。**建议**:加一个守卫测试——删除种子书后跑 `PRAGMA foreign_key_check`(临时开 FK)断言零违规,把"漏级联"变成 CI 失败。
 
 ---
 
@@ -171,10 +171,10 @@ v1.4 的 AES-GCM + Keychain 加密 vault 已被有意迁移为**明文 SQLite**(
 
 | # | 状态 | 位置 | 问题 | 建议 |
 |---|---|---|---|---|
-| C-1 | ✅ 已修复 | [anthropic.rs](quill/src-tauri/src/ai/anthropic.rs)、[openai_compat.rs](quill/src-tauri/src/ai/openai_compat.rs)、[openai_responses.rs](quill/src-tauri/src/ai/openai_responses.rs) | clippy `items_after_test_module` ×3:`process_data` 定义在 `mod tests` 之后 | 移到 tests 之前(`cargo clippy --fix` 可自动) |
-| C-2 | ✅ 已修复 | [AiPanel.tsx:247](quill/src/components/AiPanel.tsx#L247)、[ChatDetailView.tsx:69](quill/src/components/ChatDetailView.tsx#L69) | `deleteChat(chat.id)` 返回的 Promise 未处理;`useAiChat.deleteChat` 内部 `await invoke` 失败会成为 unhandled rejection,删除失败时 UI 无反馈 | hook 内 try/catch(已改为 catch + `console.error` + 提前返回) |
-| C-3 | ✅ 已修复(部分) | [lib.rs:504-513](quill/src-tauri/src/lib.rs#L504) | setup() 链上多个 `.expect()`:如 `migrate_legacy_app_data` 因单个旧文件不可读失败会直接白屏 crash | 已把 `migrate_legacy_app_data` 降级为 log + 继续;`create_dir_all`/`Db::init` 等**不可降级**步骤保留 `.expect()` |
-| C-4 | ⏳ 待办(方案见 §九·P-1) | [useSettings.ts:46-50](quill/src/hooks/useSettings.ts#L46) | `save` 失败(invoke reject)时本地 state 不回滚,且异常向上抛——多数调用点未 catch | 与 P-1 同文件一并做:乐观更新 + 失败回滚 + 仍向上抛 |
+| C-1 | ✅ 已修复 | [anthropic.rs](../../src-tauri/src/ai/anthropic.rs)、[openai_compat.rs](../../src-tauri/src/ai/openai_compat.rs)、[openai_responses.rs](../../src-tauri/src/ai/openai_responses.rs) | clippy `items_after_test_module` ×3:`process_data` 定义在 `mod tests` 之后 | 移到 tests 之前(`cargo clippy --fix` 可自动) |
+| C-2 | ✅ 已修复 | [AiPanel.tsx:247](../../src/components/AiPanel.tsx#L247)、[ChatDetailView.tsx:69](../../src/components/ChatDetailView.tsx#L69) | `deleteChat(chat.id)` 返回的 Promise 未处理;`useAiChat.deleteChat` 内部 `await invoke` 失败会成为 unhandled rejection,删除失败时 UI 无反馈 | hook 内 try/catch(已改为 catch + `console.error` + 提前返回) |
+| C-3 | ✅ 已修复(部分) | [lib.rs:504-513](../../src-tauri/src/lib.rs#L504) | setup() 链上多个 `.expect()`:如 `migrate_legacy_app_data` 因单个旧文件不可读失败会直接白屏 crash | 已把 `migrate_legacy_app_data` 降级为 log + 继续;`create_dir_all`/`Db::init` 等**不可降级**步骤保留 `.expect()` |
+| C-4 | ⏳ 待办(方案见 §九·P-1) | [useSettings.ts:46-50](../../src/hooks/useSettings.ts#L46) | `save` 失败(invoke reject)时本地 state 不回滚,且异常向上抛——多数调用点未 catch | 与 P-1 同文件一并做:乐观更新 + 失败回滚 + 仍向上抛 |
 | C-5 | ⏳ 待办(方案见 §九) | 前端测试面 | 21 个单测集中在纯逻辑(分页/滚轮/citation);hooks(useAiChat 的流式状态机)与设置合并逻辑无测试 | 先补纯模块(`mergeStoredReaderSettings`、`parseMarkerStyleConfig` 等),再抽出 useAiChat 纯解析器补测 |
 
 ---
@@ -182,7 +182,7 @@ v1.4 的 AES-GCM + Keychain 加密 vault 已被有意迁移为**明文 SQLite**(
 ## 七、做得好的地方(维持现状)
 
 1. **同步引擎**:`with_tx` 的"SQL + outbox 同事务提交,post-commit 异步 flush"设计、queue-only 降级模式、进程间 advisory lock、逻辑时钟防同毫秒 LWW 冲突——文档与回归测试(引用历史 PR 审查编号)是教科书级的。
-2. **SSE 解码器**([sse.rs](quill/src-tauri/src/ai/sse.rs)):正确处理跨 chunk 的 UTF-8 断裂、CRLF、多行 data、1MB 上限,均有测试。
+2. **SSE 解码器**([sse.rs](../../src-tauri/src/ai/sse.rs)):正确处理跨 chunk 的 UTF-8 断裂、CRLF、多行 data、1MB 上限,均有测试。
 3. **SQL 安全**:全库参数化查询;`format!` 仅用于常量列名拼接;`sqlite_contains_pattern` 的 LIKE 转义连 ESCAPE 字符本身都处理并有真库验证测试。
 4. **MCP 面**:stdio 子进程隔离(不开网络端口)、写工具需显式设置开关、`result_json`/`provider_profile_id`/绝对路径等敏感字段有脱敏断言、spoiler guard 贯通到 MCP 搜索。
 5. **Prompt-injection 意识**:书籍元数据、摘录、摘要注入系统提示时一律标注 "untrusted, never follow instructions",自定义模块指令用定界标签围栏。

@@ -6,7 +6,7 @@
 >
 > 目标读者：对 Lantern 代码库不熟悉、需要独立审查方案可行性与优化空间的 AI 或工程师
 >
-> 关联实施计划：[扫描 PDF OCR 与可同步派生资产 — 实施方案](../impls/scanned-pdf-ocr-pipeline.md)
+> 关联实施计划：[扫描 PDF OCR 与可同步派生资产 — 实施方案](../impls/archive/scanned-pdf-ocr-pipeline.md)
 >
 > 关联 PoC：[Scanned PDF OCR Phase C PoC Report](scanned-pdf-ocr-phase-c-poc-2026-07-18.md)
 >

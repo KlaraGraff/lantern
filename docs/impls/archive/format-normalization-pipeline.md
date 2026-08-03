@@ -4,12 +4,12 @@
 
 - **作者/发起:** Claude Code 会话（2026-07-16）
 - **状态:** 🟡 进行中（Phase 0/1 完成；Phase 2 路线 A 代码完成，待真机验收；Phase 3 未开始）
-- **关联审计:** [`docs/reviews/test-files-format-compatibility-audit-2026-07-16.md`](../reviews/test-files-format-compatibility-audit-2026-07-16.md)
-- **验收报告:** [`docs/reviews/format-normalization-acceptance-report-2026-07-16.md`](../reviews/format-normalization-acceptance-report-2026-07-16.md)（部分执行——静态基线/无 Calibre 降级/TXT 通过；Calibre 与双设备用例因环境缺失未执行；隔离打包环境出现待复测的 `READER_INIT_TIMEOUT`，代码侧分析见变更日志 2026-07-16（续3））
+- **关联审计:** [`docs/reviews/test-files-format-compatibility-audit-2026-07-16.md`](../../reviews/test-files-format-compatibility-audit-2026-07-16.md)
+- **验收报告:** [`docs/reviews/format-normalization-acceptance-report-2026-07-16.md`](../../reviews/format-normalization-acceptance-report-2026-07-16.md)（部分执行——静态基线/无 Calibre 降级/TXT 通过；Calibre 与双设备用例因环境缺失未执行；隔离打包环境出现待复测的 `READER_INIT_TIMEOUT`，代码侧分析见变更日志 2026-07-16（续3））
 
 ## 1. 背景与目标
 
-Lantern 的完整能力（划词选中、AI 查词/翻译/解释、手动标注、生词标记、CFI 书签/生词面板）只在 `render_format ∈ {epub, text}` 时可用（见 `getReaderCapabilities`，[`src/components/reader-settings.ts:57`](../../src/components/reader-settings.ts)）。
+Lantern 的完整能力（划词选中、AI 查词/翻译/解释、手动标注、生词标记、CFI 书签/生词面板）只在 `render_format ∈ {epub, text}` 时可用（见 `getReaderCapabilities`，[`src/components/reader-settings.ts:57`](../../../src/components/reader-settings.ts)）。
 
 当前短板：
 - **MOBI / AZW / AZW3**：走 `do_import_native`，原样交给 foliate 原生解析，`render_format` 记为 mobi/azw3 → 退化为"纯阅读"，selection 及其上的全部 AI 能力不可用。
@@ -23,15 +23,15 @@ Lantern 的完整能力（划词选中、AI 查词/翻译/解释、手动标注�
 
 | 关注点 | 位置 |
 |---|---|
-| 导入分派 | `do_import_from_path` → [`src-tauri/src/commands/books/import.rs:509`](../../src-tauri/src/commands/books/import.rs) |
+| 导入分派 | `do_import_from_path` → [`src-tauri/src/commands/books/import.rs:509`](../../../src-tauri/src/commands/books/import.rs) |
 | 原生格式导入 | `do_import_native` → `import.rs:224` |
-| TXT 管线（可复用的状态机范式） | [`src-tauri/src/commands/books/text_prepare.rs`](../../src-tauri/src/commands/books/text_prepare.rs) |
+| TXT 管线（可复用的状态机范式） | [`src-tauri/src/commands/books/text_prepare.rs`](../../../src-tauri/src/commands/books/text_prepare.rs) |
 | 导入后调度 | `import_user_selected_path` → `import.rs:440`（现仅对 `render_format=="text"` 调 `schedule_text_book_preparation`） |
-| 准备状态枚举 | 前端 `preparation_state: "pending"｜"preparing"｜"ready"｜"failed"`（[`src/hooks/useBooks.ts:16`](../../src/hooks/useBooks.ts)）；后端默认 `default_preparation_state()="ready"`（[`books/mod.rs:185`](../../src-tauri/src/commands/books/mod.rs)） |
+| 准备状态枚举 | 前端 `preparation_state: "pending"｜"preparing"｜"ready"｜"failed"`（[`src/hooks/useBooks.ts:16`](../../../src/hooks/useBooks.ts)）；后端默认 `default_preparation_state()="ready"`（[`books/mod.rs:185`](../../../src-tauri/src/commands/books/mod.rs)） |
 | 前端准备中/失败 UI | `BookGrid.tsx` / `BookList.tsx`（进度覆盖层 + 重试）|
 | 阅读器 init 超时 | `useFoliateView.ts:510` 的 `view.init` + `withTimeout(..., "READER_INIT_TIMEOUT")` |
 | vendored Foliate.js | `public/foliate-js`（源自 `yicheng47/foliate-js`）——可改 paginator |
-| AI provider（OCR 用） | [`src-tauri/src/ai/`](../../src-tauri/src/ai/) |
+| AI provider（OCR 用） | [`src-tauri/src/ai/`](../../../src-tauri/src/ai/) |
 | 派生物不应进 iCloud 同步 | 参考封面/索引的排除处理，`src-tauri/src/sync/` |
 
 **转换产物落盘约定（Phase 1 已定稿，与原提案有一处关键差异）：** 原文件仍存 `books/{slug}_{id}.{ext}`（同步列，跨设备稳定），转换出的 EPUB 存 **本地** `local_data_dir()/prepared/{id}.converted.v{CONVERSION_VERSION}.epub`。`render_format=epub`，`source_format` 保留原始（mobi/azw3），`source_file_path`/`file_path` **都指向源文件**——因为 `file_path` 是同步列，别的设备没有本设备的产物路径。阅读器改由 `resolve_book_paths`（`query.rs`）在 `preparation_state=ready` 时**本地重定向** `file_path` 到产物；产物为每设备独立再生（同 text 管线的 prepared JSON），永不进 iCloud。sync 侧 `merge.rs`/`snapshot/apply.rs` 的 `preparation_state` 推导已把"转换书"与 text 书同等对待：跨设备到达一律置 `pending`，由本机重新转换。
@@ -89,7 +89,7 @@ Lantern 的完整能力（划词选中、AI 查词/翻译/解释、手动标注�
 ## 6. 变更日志（Changelog）
 - **2026-07-16** — 创建文档。完成 Phase 0 Layer A（`useFoliateView.ts` init 超时清位置重试）。Layer B 及 Phase 1–3 未开始。记录关联 bug：pdfium 缺失、sync 损坏。
 - **2026-07-16（续）** — 完成 Phase 0 Layer B（`paginator.js` iframe load 超时 fallback）。因无 push 权限，fork `yicheng47/foliate-js` → `KlaraGraff/foliate-js`，submodule url 改指向 fork，指针 bump 到 `bd12e7b`。下一步：Phase 2 前先修 pdfium 缺失（Phase 3 依赖），再进 Phase 1 骨架。
-- **2026-07-16（续2）** — 修复 pdfium 加载失败（`tauri.conf.json` 接入 `Entitlements.adhoc.plist`）。完成 Phase 1 全部代码（`convert_prepare.rs` 状态机 + reader 重定向 + 前端 helpers/覆盖层/重试分派 + sync `preparation_state` 推导扩展到转换书）与 Phase 2 路线 A 代码（Calibre `ebook-convert` 探测/执行/超时/降级）。`cargo check`/`clippy`/`tsc`/`eslint` 全绿；**运行时验收未做**（本会话无 GUI），移交 [`docs/guide/format-normalization-testing.md`](../guide/format-normalization-testing.md)。
+- **2026-07-16（续2）** — 修复 pdfium 加载失败（`tauri.conf.json` 接入 `Entitlements.adhoc.plist`）。完成 Phase 1 全部代码（`convert_prepare.rs` 状态机 + reader 重定向 + 前端 helpers/覆盖层/重试分派 + sync `preparation_state` 推导扩展到转换书）与 Phase 2 路线 A 代码（Calibre `ebook-convert` 探测/执行/超时/降级）。`cargo check`/`clippy`/`tsc`/`eslint` 全绿；**运行时验收未做**（本会话无 GUI），移交 [`docs/guide/format-normalization-testing.md`](../../guide/format-normalization-testing.md)。
 - **2026-07-16（续3）** — 收到验收报告（见文首链接）：静态基线、无 Calibre 降级（DB 层）、TXT 全链路通过；T1/T2/T4–T8/T10 因缺 Calibre/第二设备未执行。**隔离打包环境（ad-hoc 重签 + 临时路径 + 隔离 HOME）中 EPUB/MOBI/AZW3 全部 `READER_INIT_TIMEOUT`，TXT 正常。代码侧分析：** 失败发生在 `view.init()`（45s 超时），而 `fetch`（`READER_FILE_*`）与 `view.open`（`READER_OPEN_TIMEOUT`）都有独立错误码且未出现 → 书已取到、容器解析成功，挂在首屏 iframe 渲染；Layer B 的 15s 兜底在 45s 窗口内未触发，其唯一不触发条件是 iframe 连 `<body>` 都未解析出 → **blob: iframe 在该环境整体不加载**，不是 Layer B 针对的"子资源卡住"，也与 Layer B 补丁本身无关（正常 load 路径原样保留）。三种 foliate 格式共用 blob-iframe 渲染、TXT 自绘不用 iframe，与失败分布吻合。**结论：大概率是隔离运行方式破坏了 WKWebView 的嵌套内容/blob 处理，属环境问题；待常规安装 `/Applications/Lantern.app` 复测确认。复测时抓 DevTools console：`Failed to initialize foliate-js` 前是否有 `reader.init-timeout-retry`、以及具体 `READER_*` 错误码。**
 - **2026-07-16（续4）** — 已安装 Calibre 9.11，并以当前提交构建的**未改签名** release `.app`、正常用户目录和正常 iCloud 数据配置完成复测。KF8 AZW3 与 MOBI6 均成功转为有效 EPUB（分别为 7.1 MB / 2.7 MB，`source_format` 保留原格式、`render_format='epub'`、`preparation_state='ready'`）。但 EPUB、PDF 及两份转换 EPUB 均稳定报 `READER_INIT_TIMEOUT`，MOBI 点击重试后仍失败；TXT 阅读正常。**因此续3 的“隔离环境噪音”假设已被否定：这是当前构建的真实 Foliate 阅读器故障，必须先修复，再继续 T4–T8/T10。** 详见验收报告的正常用户目录复测更新。
 - **2026-07-16（续5）** — **根因确诊并修复**（详见 Phase 0 下的"已确诊"块）：CSP 头部的 `frame-ancestors 'none'` 在新版 WebKit 下被继承进 blob: 章节 iframe 并强制执行，拒掉全部 foliate 首屏。修复两件套：① `tauri.conf.json` CSP 移除 `frame-ancestors`；② paginator `finish()` 防搁浅硬化（fork `112eb27`，指针随本仓库提交 bump）。诊断期间的全部探针（useFoliateView 面包屑、blob/srcdoc/data 探针矩阵、paginator 临时探针）已全部回滚，不进主干。待真机点开《谈美》确认后以替代的 v2.0.0 发布。

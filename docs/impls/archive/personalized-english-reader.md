@@ -1,6 +1,6 @@
 # 实施计划：个性化英语学习阅读器
 
-关联：[总执行方针](../roadmap/personalized-english-reader-master-plan.md)
+关联：[总执行方针](../../roadmap/personalized-english-reader-master-plan.md)
 
 ## 范围
 

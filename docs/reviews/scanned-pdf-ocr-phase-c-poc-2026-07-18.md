@@ -4,7 +4,7 @@
 >
 > Date: 2026-07-18
 >
-> Plan: [scanned PDF OCR pipeline](../impls/scanned-pdf-ocr-pipeline.md)
+> Plan: [scanned PDF OCR pipeline](../impls/archive/scanned-pdf-ocr-pipeline.md)
 
 ## 1. Scope and Limits
 

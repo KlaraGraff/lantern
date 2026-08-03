@@ -4,7 +4,7 @@
 >
 > 日期：2026-07-18
 >
-> 评审对象：[扫描 PDF OCR 升级方案（评审稿）](../reviews/scanned-pdf-ocr-upgrade-proposal-2026-07-17.md)
+> 评审对象：[扫描 PDF OCR 升级方案（评审稿）](../../reviews/scanned-pdf-ocr-upgrade-proposal-2026-07-17.md)
 >
 > 评审方式：逐条对照 Lantern 源码核实关键论断，外部依赖对照 OCRmyPDF 官方文档核查
 >
@@ -133,7 +133,7 @@
 
 **退出条件**：给出 go/no-go 报告、最终后端选型、固定参数与依赖清单。不通过则按评审稿 §8.2 次优先级评估 PDFium + native Tesseract + grafting，不转向实时覆盖层。
 
-Phase C 当前仍为 **IN PROGRESS**。完整证据和未通过的门槛见 [PoC 报告](../reviews/scanned-pdf-ocr-phase-c-poc-2026-07-18.md)；在合法样本、signed `.app`、Windows 和 Reader 交互验证前，不得把 Vision 路线标记为最终 go。
+Phase C 当前仍为 **IN PROGRESS**。完整证据和未通过的门槛见 [PoC 报告](../../reviews/scanned-pdf-ocr-phase-c-poc-2026-07-18.md)；在合法样本、signed `.app`、Windows 和 Reader 交互验证前，不得把 Vision 路线标记为最终 go。
 
 ## 5. 数据模型（migration `028_book_assets.sql`）
 

@@ -1,7 +1,7 @@
 # CloudKit Sync
 
 **Issue:** [#178](https://github.com/yicheng47/quill/issues/178)
-**Spec:** [28 — CloudKit Sync](../features/28-cloudkit-sync.md)
+**Spec:** [28 — CloudKit Sync](../../features/archive/28-cloudkit-sync.md)
 
 ## Context
 

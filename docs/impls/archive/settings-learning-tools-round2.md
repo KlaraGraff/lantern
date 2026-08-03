@@ -19,23 +19,23 @@
 
 ### 1.1 现状解读
 
-- 徽标文案由 [AiServiceCard.tsx:119](../../src/components/settings/AiServiceCard.tsx) `profileHealth` 根据持久化的 `profile.state` 生成;`1 ms` 是 `last_latency_ms`,**只有连接测试会写入这个值**([router.rs:2267](../../src-tauri/src/ai/router.rs) 传 `Some(total_ms)`;真实对话路径传 `None`)。1ms 完成意味着测试**未发出任何网络请求**。
+- 徽标文案由 [AiServiceCard.tsx:119](../../../src/components/settings/AiServiceCard.tsx) `profileHealth` 根据持久化的 `profile.state` 生成;`1 ms` 是 `last_latency_ms`,**只有连接测试会写入这个值**([router.rs:2267](../../../src-tauri/src/ai/router.rs) 传 `Some(total_ms)`;真实对话路径传 `None`)。1ms 完成意味着测试**未发出任何网络请求**。
 - 用户确认:真实查词链路正常(密钥可读、服务可用),唯独测试按钮必然失败 → 差异只能在测试独有的代码路径上。
 
 ### 1.2 根因(已核实,自 v1.4.0 b37845d 引入)
 
 **连接测试的取消通道一出生就是死的。**
 
-- 测试专用封装 `timed_stream_once`([router.rs:1971](../../src-tauri/src/ai/router.rs)):
+- 测试专用封装 `timed_stream_once`([router.rs:1971](../../../src-tauri/src/ai/router.rs)):
 
   ```rust
   let mut cancel = watch::channel(false).1;   // 只留接收端,发送端当场 drop
   ```
 
-- `stream_once` 内部用 `tokio::select!` 同时等待流结果与 `cancel.changed()`([router.rs:637](../../src-tauri/src/ai/router.rs))。tokio watch 通道的约定是:**发送端被 drop 后,`changed()` 立即返回 `Err`**。于是 select 立刻命中取消分支,请求在发出任何 HTTP 之前就返回 `AI_REQUEST_CANCELLED`(约 0–1ms)。
-- `classify_error` 没有"已取消"分类,`ai_request_cancelled` 匹配不到任何模式,**兜底归为 `Network`**([router.rs:214](../../src-tauri/src/ai/router.rs))→ 可重试 → 逐个密钥同样瞬间失败 → 总耗时 1ms,并把 profile 写成 `cooldown`(30 秒)——即 deqiyun 的「暂时冷却 · 1 ms」。DeepSeek 的「不可用」是同一 bug 之上的另一种 state 落点(以 §1.3.A 的逐次明细为准确认)。
-- 真实链路(`stream_with_failover`)的取消接收端来自 `cancellation_registry`(发送端存活于注册表,[router.rs:231](../../src-tauri/src/ai/router.rs)),所以完全正常。这正是"查词可用、测试必挂"的原因。
-- 同一坏模式的隐患点还有 3 处 fallback:`.unwrap_or_else(|| watch::channel(false).1)`([router.rs:849/917/1062](../../src-tauri/src/ai/router.rs)),仅在调用方不传 `request_id` 时触发,一并修复。
+- `stream_once` 内部用 `tokio::select!` 同时等待流结果与 `cancel.changed()`([router.rs:637](../../../src-tauri/src/ai/router.rs))。tokio watch 通道的约定是:**发送端被 drop 后,`changed()` 立即返回 `Err`**。于是 select 立刻命中取消分支,请求在发出任何 HTTP 之前就返回 `AI_REQUEST_CANCELLED`(约 0–1ms)。
+- `classify_error` 没有"已取消"分类,`ai_request_cancelled` 匹配不到任何模式,**兜底归为 `Network`**([router.rs:214](../../../src-tauri/src/ai/router.rs))→ 可重试 → 逐个密钥同样瞬间失败 → 总耗时 1ms,并把 profile 写成 `cooldown`(30 秒)——即 deqiyun 的「暂时冷却 · 1 ms」。DeepSeek 的「不可用」是同一 bug 之上的另一种 state 落点(以 §1.3.A 的逐次明细为准确认)。
+- 真实链路(`stream_with_failover`)的取消接收端来自 `cancellation_registry`(发送端存活于注册表,[router.rs:231](../../../src-tauri/src/ai/router.rs)),所以完全正常。这正是"查词可用、测试必挂"的原因。
+- 同一坏模式的隐患点还有 3 处 fallback:`.unwrap_or_else(|| watch::channel(false).1)`([router.rs:849/917/1062](../../../src-tauri/src/ai/router.rs)),仅在调用方不传 `request_id` 时触发,一并修复。
 - `ai_test_credential`(单密钥测试)同样经由 `timed_stream_once`,同样中招。
 
 ### 1.3 方案
@@ -97,10 +97,10 @@
 
 ### 2.1 根因
 
-1. **同一模块二次操作必不滚动**:滚动由 `lastTouchedId`(字符串)驱动([CardPreview.tsx:200](../../src/components/settings/CardPreview.tsx)),`ToolsSettings` 里 `setLastTouchedId(id)` 传相同 id 时 state 不变、effect 不重跑。典型场景正是图2:先关"句中语法作用"再开 → 第二次不滚动 → 模块停在卡片折叠视野外 → 看起来"没有展示"。开/关"默认展开"、连续点同一模块的上下移动同理。这就是"很不灵敏,有时候不滚动"。
+1. **同一模块二次操作必不滚动**:滚动由 `lastTouchedId`(字符串)驱动([CardPreview.tsx:200](../../../src/components/settings/CardPreview.tsx)),`ToolsSettings` 里 `setLastTouchedId(id)` 传相同 id 时 state 不变、effect 不重跑。典型场景正是图2:先关"句中语法作用"再开 → 第二次不滚动 → 模块停在卡片折叠视野外 → 看起来"没有展示"。开/关"默认展开"、连续点同一模块的上下移动同理。这就是"很不灵敏,有时候不滚动"。
 2. **固定 300ms 定时 + `scrollIntoView`**:目标未挂载/流式渲染未到位时直接落空;`scrollIntoView` 会滚动**所有可滚祖先**(包括 `overflow-hidden` 的预览外框和设置弹窗),产生画面被"推一下"的不流畅感;WKWebView 的 smooth 行为本身也不稳定。
 3. **关闭模块 = React 直接卸载**,无任何过渡。
-4. **同类问题排查结论**(Q2 相关):内置模块在本地样例里内容齐全,不会缺席;真正会"没有对应模块展示"的是 **自定义模块**——本地样例 `getLearningCardFixture` 没有它们的内容,`ModuleSection` 因 `hasContent=false` 直接返回 null([LearningCardModules.tsx:143](../../src/components/learning-card/LearningCardModules.tsx)),新增/启用自定义模块后右侧预览完全无反馈,只有点"测试/生成真实预览"才出现。操作菜单预览侧(`data-menu-id`)也共享根因 1。
+4. **同类问题排查结论**(Q2 相关):内置模块在本地样例里内容齐全,不会缺席;真正会"没有对应模块展示"的是 **自定义模块**——本地样例 `getLearningCardFixture` 没有它们的内容,`ModuleSection` 因 `hasContent=false` 直接返回 null([LearningCardModules.tsx:143](../../../src/components/learning-card/LearningCardModules.tsx)),新增/启用自定义模块后右侧预览完全无反馈,只有点"测试/生成真实预览"才出现。操作菜单预览侧(`data-menu-id`)也共享根因 1。
 
 ### 2.2 方案
 
@@ -110,7 +110,7 @@
 
 **B. 滚动重写:只滚卡片内部容器 + 自定义缓动**
 
-- `LearningCardView` 的滚动容器(`overflow-y-auto` div,[LearningCardView.tsx:130](../../src/components/learning-card/LearningCardView.tsx))加 `data-card-scroll` 标记。
+- `LearningCardView` 的滚动容器(`overflow-y-auto` div,[LearningCardView.tsx:130](../../../src/components/learning-card/LearningCardView.tsx))加 `data-card-scroll` 标记。
 - 新增 `scrollToModule(container, moduleEl)`:计算目标相对容器的居中偏移,rAF + easeInOutCubic(~350ms)动画容器 `scrollTop`;不再调用 `scrollIntoView`,祖先容器不会被牵动。
 - 目标查找由"一次 300ms 定时"改为 **rAF 轮询直至挂载(上限 ~1.2s)**,覆盖启用后重渲染、流式渲染、消失动画进行中等时序。
 - 新动画开始前取消上一个;用户在容器上滚轮/触摸时立即中止动画(避免抢方向盘)。
@@ -139,11 +139,11 @@
 
 ### 3.1 语义先答复(图3 中的疑问)
 
-"显示此模块"当前的真实语义就是**启用/停用**:关闭后该模块不会进入 AI 请求的模块声明集(`allowedIds` 只收 `enabled`,[CardPreview.tsx:234](../../src/components/settings/CardPreview.tsx);后端按请求声明集校验),不是"生成了但藏起来"。因此不存在"不显示但仍开启"的状态。开关外置后,行右侧 Toggle 即代表启用,不再需要"显示此模块/启用此模块"这行文案。
+"显示此模块"当前的真实语义就是**启用/停用**:关闭后该模块不会进入 AI 请求的模块声明集(`allowedIds` 只收 `enabled`,[CardPreview.tsx:234](../../../src/components/settings/CardPreview.tsx);后端按请求声明集校验),不是"生成了但藏起来"。因此不存在"不显示但仍开启"的状态。开关外置后,行右侧 Toggle 即代表启用,不再需要"显示此模块/启用此模块"这行文案。
 
 ### 3.2 方案
 
-- [CardModuleRow.tsx](../../src/components/settings/CardModuleRow.tsx) 行结构改为与 [SelectionMenuSettings.tsx:66](../../src/components/settings/SelectionMenuSettings.tsx) 一致:
+- [CardModuleRow.tsx](../../../src/components/settings/CardModuleRow.tsx) 行结构改为与 [SelectionMenuSettings.tsx:66](../../../src/components/settings/SelectionMenuSettings.tsx) 一致:
   `[拖拽柄] [chevron+名称(点击展开)] [↑] [↓] [Toggle(启用)]`
 - 展开区删除"显示此模块"行,保留:描述文案、默认展开、内容密度、(自定义模块的)编辑器。
 - 停用状态的行:名称与图标降透明度(仍可拖动排序、仍可展开调整密度,与操作菜单行为一致)。
@@ -158,7 +158,7 @@
 
 ### 4.1 现状
 
-"添加自定义模块"点击即落库(预填名称+默认提示词,折叠态,[CardDesignSettings.tsx:179](../../src/components/settings/CardDesignSettings.tsx));编辑已有模块时,`CustomActionEditor` 的草稿只存在组件内,折叠/切换即**静默丢弃**。
+"添加自定义模块"点击即落库(预填名称+默认提示词,折叠态,[CardDesignSettings.tsx:179](../../../src/components/settings/CardDesignSettings.tsx));编辑已有模块时,`CustomActionEditor` 的草稿只存在组件内,折叠/切换即**静默丢弃**。
 
 ### 4.2 方案
 
