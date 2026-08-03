@@ -92,6 +92,17 @@ pub(crate) fn do_delete_book_with_note_policy(
         Ok(())
     })?;
 
+    // A book is the largest thing that can be deleted here — its chunks and
+    // FTS index alone run to about a megabyte — so this is the one path where
+    // leaving the freed pages in the file is visible to the user. Post-commit
+    // because `incremental_vacuum` cannot run inside a transaction. 1000 pages
+    // caps one call at 4 MB; deleting a bigger book leaves the rest to the
+    // next delete. Best-effort: the book is already gone, and failing to
+    // shrink the file is not a reason to report the delete as failed.
+    if let Err(error) = db.reclaim_free_pages(1000) {
+        log::warn!("db: reclaiming pages after deleting book {id} failed: {error}");
+    }
+
     let abs_file = db.resolve_path(&file_path)?;
     let _ = fs::remove_file(&abs_file);
     if let Some(source_path) = source_file_path.filter(|path| path != &file_path) {

@@ -1636,6 +1636,58 @@ fn delete_book_can_preserve_book_notes_as_detached_material() {
     );
 }
 
+/// Deleting a book must hand its pages back to the file, not merely mark them
+/// reusable. In SQLite's default auto-vacuum mode the file only ever grows, so
+/// a user who imports a shelf of books and deletes most of them gets no space
+/// back and reads that as the delete having failed.
+#[test]
+fn delete_book_returns_its_pages_to_the_file() {
+    let (_dir, db) = setup();
+    insert_book(&db, "b1", "epub");
+
+    let pages_with_book: i64 = {
+        let conn = db.conn.lock().unwrap();
+        assert_eq!(
+            conn.query_row("PRAGMA auto_vacuum", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            2,
+            "opening the database should leave it in incremental auto-vacuum mode"
+        );
+        // About a book's worth of index — enough pages that reclaiming them is
+        // unambiguous rather than a rounding difference, and under the 1000-page
+        // cap `do_delete_book` passes so one call clears all of it.
+        let filler = "x".repeat(4096);
+        for index in 0..200 {
+            conn.execute(
+                "INSERT INTO book_chunks
+                 (id, book_id, chunk_index, section_index, section_href, section_title,
+                  char_start, char_end, text, snippet, token_estimate, created_at)
+                 VALUES (?1, 'b1', ?2, 0, 'c.xhtml', 'C', 0, 4096, ?3, ?3, 1024, 0)",
+                params![format!("chunk-{index}"), index, filler],
+            )
+            .unwrap();
+        }
+        conn.query_row("PRAGMA page_count", [], |row| row.get(0))
+            .unwrap()
+    };
+
+    let sync = SyncWriter::new("dev-A".into());
+    do_delete_book("b1", &db, &sync).unwrap();
+
+    let conn = db.conn.lock().unwrap();
+    let free_pages: i64 = conn
+        .query_row("PRAGMA freelist_count", [], |row| row.get(0))
+        .unwrap();
+    let pages_after: i64 = conn
+        .query_row("PRAGMA page_count", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(free_pages, 0, "delete left {free_pages} free pages stranded");
+    assert!(
+        pages_after < pages_with_book,
+        "file did not shrink: {pages_with_book} pages before delete, {pages_after} after"
+    );
+}
+
 #[test]
 fn delete_book_command_persists_book_and_chat_tombstones() {
     let (_dir, db) = setup();

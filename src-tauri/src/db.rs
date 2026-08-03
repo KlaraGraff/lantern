@@ -111,6 +111,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
         30,
         include_str!("../migrations/030_speech_voice_hints.sql"),
     ),
+    (
+        31,
+        include_str!("../migrations/031_syncable_custom_fonts.sql"),
+    ),
 ];
 
 fn register_sqlite_vec() {
@@ -283,6 +287,10 @@ impl Db {
         fs::create_dir_all(data_dir.join("books"))?;
         fs::create_dir_all(data_dir.join("covers"))?;
         fs::create_dir_all(data_dir.join("sources"))?;
+        // Imported fonts live beside the other blobs so they replicate through
+        // the shared directory rather than the event log, which caps a line well
+        // below a typical font. See docs/impls/syncable-custom-fonts.md.
+        fs::create_dir_all(data_dir.join("imported-fonts"))?;
 
         register_sqlite_vec();
         rename_legacy_db_file(db_dir)?;
@@ -300,6 +308,7 @@ impl Db {
 
         Self::run_migrations(&conn)?;
         crate::ai::grounding::vector::ensure_configured_vector_table(&conn)?;
+        Self::ensure_incremental_autovacuum(&conn)?;
 
         // One-time migration: convert absolute paths to relative
         Self::migrate_to_relative_paths(&conn, data_dir)?;
@@ -332,6 +341,39 @@ impl Db {
             },
             needs_cover_backfill,
         ))
+    }
+
+    /// Put the database in incremental auto-vacuum mode so deletes can hand
+    /// pages back to the OS.
+    ///
+    /// In the default mode SQLite marks a deleted page reusable but leaves it
+    /// where it sits, so the file only ever grows: a user who imports twenty
+    /// books and deletes eighteen sees no space come back, and reads that as
+    /// "the delete didn't work". Incremental mode instead migrates free pages
+    /// to the end of the file, where `PRAGMA incremental_vacuum` can truncate
+    /// them off in bounded, sub-millisecond batches — see `reclaim_free_pages`.
+    ///
+    /// The mode lives in the file header and can only be changed by a full
+    /// VACUUM, so this is a one-time rewrite on the first launch after the
+    /// upgrade. It is deliberately not a numbered migration: `apply_migration`
+    /// wraps every migration in a transaction, and VACUUM cannot run inside
+    /// one. The pragma read is a header fetch, so the steady-state cost of
+    /// getting here is one page.
+    ///
+    /// Runs after `ensure_configured_vector_table` on purpose. VACUUM walks
+    /// every table in the schema including `book_chunk_vectors`, so the
+    /// sqlite-vec module has to be registered — it is, by `init_split`'s
+    /// `register_sqlite_vec()` — and the vector table has to be in whatever
+    /// shape the current embedding config leaves it in.
+    fn ensure_incremental_autovacuum(conn: &Connection) -> AppResult<()> {
+        const INCREMENTAL: i64 = 2;
+        let mode: i64 = conn.query_row("PRAGMA auto_vacuum", [], |row| row.get(0))?;
+        if mode == INCREMENTAL {
+            return Ok(());
+        }
+        log::info!("db: converting to incremental auto-vacuum (one-time VACUUM)");
+        conn.execute_batch("PRAGMA auto_vacuum = INCREMENTAL; VACUUM;")?;
+        Ok(())
     }
 
     fn run_migrations(conn: &Connection) -> AppResult<()> {
@@ -508,6 +550,41 @@ impl Db {
         result
     }
 
+    /// Truncate up to `max_pages` free pages off the end of the file, giving
+    /// the space back to the OS. Call after a delete commits — the pragma
+    /// cannot run inside a transaction.
+    ///
+    /// The cap is what keeps this cheap enough to call inline: the work is
+    /// proportional to the pages actually moved, not to the size of the
+    /// database, so it stays sub-millisecond however large the library grows.
+    /// A delete that frees more than the cap simply leaves the remainder for
+    /// the next call — free pages are reused in the meantime, so nothing is
+    /// lost by deferring.
+    ///
+    /// Under WAL the truncation reaches the main file at the next checkpoint,
+    /// so the size on disk can lag the call by a few seconds. Forcing a
+    /// `wal_checkpoint(TRUNCATE)` here would block readers for the sake of
+    /// making the number in Finder update sooner, which is not a trade worth
+    /// making.
+    ///
+    /// A no-op on a database still in the default auto-vacuum mode, which is
+    /// every database that has not yet been through
+    /// `ensure_incremental_autovacuum`.
+    pub fn reclaim_free_pages(&self, max_pages: u32) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+        // This pragma releases one page per step, so it has to be driven to
+        // completion rather than executed. `execute_batch` steps a statement
+        // once, which would quietly reclaim a single page and report success —
+        // the failure mode is a delete that looks reclaimed and isn't.
+        let mut statement = conn.prepare(&format!("PRAGMA incremental_vacuum({max_pages})"))?;
+        let mut rows = statement.query([])?;
+        while rows.next()?.is_some() {}
+        Ok(())
+    }
+
     /// Current schema version, read from the migration runner state. Returns
     /// `0` if the version row hasn't been seeded yet (fresh DB before any
     /// migrations ran) or the read fails. Used by the startup banner so a
@@ -532,6 +609,17 @@ impl Db {
             .lock()
             .map_err(|error| AppError::Other(error.to_string()))?;
         crate::sync::validation::resolve_blob_path(&data_dir, relative)
+    }
+
+    /// Return the active data directory — the shared iCloud folder when sync is
+    /// on, the local app data dir otherwise. Blob directories that need to be
+    /// enumerated rather than resolved a file at a time (`imported-fonts/`)
+    /// hang off this.
+    pub fn data_dir(&self) -> AppResult<PathBuf> {
+        self.data_dir
+            .lock()
+            .map(|path| path.clone())
+            .map_err(|error| AppError::Other(error.to_string()))
     }
 
     /// Return the app-local cache root. Text preparation and grounding both
