@@ -1,6 +1,11 @@
 # 11 — 查词卡读得到生词本
 
-对应 issue [#11](https://github.com/KlaraGraff/lantern/issues/11)。上下文平权的**内侧半边**：[MCP 改造](archive/mcp-scope-goal.md)把阅读数据交给了外部客户端，但内置 AI 自己一直没拿到生词本和学习状态。29 工具版上线后，Claude Code 连上 MCP 能说「这个词你上周查过」，而应用内那个本该「最懂你」的 AI 在这条轴上比一个普通聊天窗口知道得还少。
+> **已实现。** 落地为 `lookup_memory_block`（`src-tauri/src/commands/ai.rs`）加
+> 9 条单测。与本文一处出入：注入文本里那两条关于 `previous_definition` 的规则
+> 改成了「当它存在时……」——生词本有行、查询历史没有时，该字段不出现，规则不该
+> 指着一个不在场的字段说话。
+
+对应 issue [#11](https://github.com/KlaraGraff/lantern/issues/11)。上下文平权的**内侧半边**：[MCP 改造](mcp-scope-goal.md)把阅读数据交给了外部客户端，但内置 AI 自己一直没拿到生词本和学习状态。29 工具版上线后，Claude Code 连上 MCP 能说「这个词你上周查过」，而应用内那个本该「最懂你」的 AI 在这条轴上比一个普通聊天窗口知道得还少。
 
 本计划只做**一刀**：查词时把**这个词自身的记录**注入 prompt。整章生词状态注入、设置开关不在范围内（理由见 issue 正文的「范围」一节）。
 

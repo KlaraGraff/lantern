@@ -43,6 +43,9 @@ function candidates(fileDir, target) {
   const archived = parent === "." ? `archive/${name}` : `${parent}/archive/${name}`;
   tries.push(archived);
   if (path.startsWith("../")) tries.push(`../${archived}`);
+  // The mirror case: the doc itself moved into `archive/`, so a link that
+  // reached for an already-archived sibling now points one level too deep.
+  if (parent === "archive") tries.push(name);
   // The repo was renamed, dropping the `quill/` root prefix these paths carry.
   if (path.startsWith("quill/")) {
     const up = "../".repeat(relative(ROOT, fileDir).split("/").length);
