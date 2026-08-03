@@ -12,9 +12,8 @@ use crate::mcp::tools::learning::{GetLookupHistoryArgs, GetWordMarksArgs};
 use crate::mcp::tools::library::{GetBookArgs, ListBooksArgs, SetReadingStateArgs, UpdateBookArgs};
 use crate::mcp::tools::vocab::GetVocabWordsArgs;
 use crate::mcp::tools::vocab_write::{
-    ClearLookupHistoryArgs, CreateVocabWordArgs, RecordVocabReviewArgs,
-    SetLookupOccurrenceMarkArgs, SetVocabMasteryArgs, SetWordFormsArgs, SetWordMarkExceptionArgs,
-    SetWordMarkRuleArgs,
+    CreateVocabWordArgs, RecordVocabReviewArgs, SetLookupOccurrenceMarkArgs, SetVocabMasteryArgs,
+    SetWordFormsArgs, SetWordMarkExceptionArgs, SetWordMarkRuleArgs,
 };
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -149,24 +148,6 @@ pub struct SaveVocabularyArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(tag = "action", rename_all = "snake_case")]
-pub enum DeleteLookupHistoryAction {
-    Records {
-        ids: Vec<String>,
-    },
-    Clear {
-        #[serde(default)]
-        book_id: Option<String>,
-    },
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct DeleteLookupHistoryArgs {
-    #[serde(flatten)]
-    pub action: DeleteLookupHistoryAction,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
 #[serde(tag = "query", rename_all = "snake_case")]
 pub enum QueryWordFormsKind {
     List,
@@ -194,6 +175,8 @@ pub enum UpdateWordMarksAction {
         word: String,
         location: String,
         excluded: bool,
+        #[serde(default)]
+        match_forms: bool,
     },
     Occurrence {
         book_id: String,
@@ -439,31 +422,6 @@ impl LanternMcpHandler {
     }
 
     #[tool(
-        description = "Permanently delete selected lookup-history records or clear a book or the full library history.",
-        annotations(
-            read_only_hint = false,
-            destructive_hint = true,
-            idempotent_hint = false,
-            open_world_hint = false
-        )
-    )]
-    pub async fn delete_lookup_history(
-        &self,
-        Parameters(DeleteLookupHistoryArgs { action }): Parameters<DeleteLookupHistoryArgs>,
-    ) -> Result<CallToolResult, ErrorData> {
-        match action {
-            DeleteLookupHistoryAction::Records { ids } => {
-                self.delete_lookup_records(Parameters(DeleteIdsArgs { ids }))
-                    .await
-            }
-            DeleteLookupHistoryAction::Clear { book_id } => {
-                self.clear_lookup_history(Parameters(ClearLookupHistoryArgs { book_id }))
-                    .await
-            }
-        }
-    }
-
-    #[tool(
         description = "List saved word-form sets or return sets for specific words.",
         annotations(
             read_only_hint = true,
@@ -553,12 +511,14 @@ impl LanternMcpHandler {
                 word,
                 location,
                 excluded,
+                match_forms,
             } => {
                 self.set_word_mark_exception(Parameters(SetWordMarkExceptionArgs {
                     book_id,
                     word,
                     location,
                     excluded,
+                    match_forms,
                 }))
                 .await
             }

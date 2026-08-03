@@ -71,28 +71,9 @@ impl ApprovalStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ApiCostDisclosure {
-    Estimated { amount: String },
-    UpperBound { amount: String },
-    ProviderMayCharge,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "risk", rename_all = "snake_case")]
 pub enum ApprovalConfirmation {
-    PaidApi {
-        effect: String,
-        scope: String,
-        service: String,
-        model: String,
-        maximum_requests: u32,
-        cost: ApiCostDisclosure,
-    },
-    IrreversibleData {
-        effect: String,
-        scope: String,
-    },
+    IrreversibleData { effect: String, scope: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -569,37 +550,9 @@ fn validate_input(input: &ApprovalRequestInput) -> AppResult<()> {
         )));
     }
 
-    match &input.confirmation {
-        ApprovalConfirmation::PaidApi {
-            effect,
-            scope,
-            service,
-            model,
-            maximum_requests,
-            cost,
-        } => {
-            validate_text("effect", effect, MAX_TEXT_LEN)?;
-            validate_text("scope", scope, MAX_TEXT_LEN)?;
-            validate_text("service", service, 256)?;
-            validate_text("model", model, 256)?;
-            if *maximum_requests == 0 {
-                return Err(AppError::Other(
-                    "MCP_APPROVAL_INVALID_MAXIMUM_REQUESTS: expected at least 1".to_string(),
-                ));
-            }
-            match cost {
-                ApiCostDisclosure::Estimated { amount }
-                | ApiCostDisclosure::UpperBound { amount } => {
-                    validate_text("cost amount", amount, 256)?;
-                }
-                ApiCostDisclosure::ProviderMayCharge => {}
-            }
-        }
-        ApprovalConfirmation::IrreversibleData { effect, scope } => {
-            validate_text("effect", effect, MAX_TEXT_LEN)?;
-            validate_text("scope", scope, MAX_TEXT_LEN)?;
-        }
-    }
+    let ApprovalConfirmation::IrreversibleData { effect, scope } = &input.confirmation;
+    validate_text("effect", effect, MAX_TEXT_LEN)?;
+    validate_text("scope", scope, MAX_TEXT_LEN)?;
     Ok(())
 }
 
@@ -660,30 +613,6 @@ mod tests {
         assert_eq!(sentinel["domain"], "approvals");
         assert_eq!(sentinel["action"], "requested");
         assert_eq!(sentinel["id"], request.id);
-    }
-
-    #[test]
-    fn paid_request_requires_a_bounded_nonzero_request_count() {
-        let dir = TempDir::new().unwrap();
-        let store = ApprovalStore::new(dir.path());
-        let error = store
-            .request(ApprovalRequestInput {
-                action: "ai.translate".to_string(),
-                confirmation: ApprovalConfirmation::PaidApi {
-                    effect: "Translate the selected passage.".to_string(),
-                    scope: "One selected passage.".to_string(),
-                    service: "Example Provider".to_string(),
-                    model: "example-model".to_string(),
-                    maximum_requests: 0,
-                    cost: ApiCostDisclosure::ProviderMayCharge,
-                },
-                arguments: json!({ "text": "hello" }),
-            })
-            .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("MCP_APPROVAL_INVALID_MAXIMUM_REQUESTS"));
-        assert!(store.list_pending().unwrap().is_empty());
     }
 
     #[test]

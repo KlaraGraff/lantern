@@ -81,6 +81,8 @@ pub struct SetWordMarkExceptionArgs {
     pub word: String,
     pub location: String,
     pub excluded: bool,
+    #[serde(default)]
+    pub match_forms: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -147,6 +149,7 @@ impl From<VocabImportFormatArg> for vocab::VocabImportFormat {
 #[serde(rename_all = "snake_case")]
 pub enum VocabImportConflictPolicyArg {
     Skip,
+    Merge,
     Overwrite,
 }
 
@@ -154,16 +157,18 @@ impl From<VocabImportConflictPolicyArg> for vocab::VocabImportConflictPolicy {
     fn from(value: VocabImportConflictPolicyArg) -> Self {
         match value {
             VocabImportConflictPolicyArg::Skip => Self::Skip,
+            VocabImportConflictPolicyArg::Merge => Self::Merge,
             VocabImportConflictPolicyArg::Overwrite => Self::Overwrite,
         }
     }
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct PreviewVocabImportArgs {
-    /// Complete Lantern vocabulary backup contents.
-    pub data: String,
-    pub format: VocabImportFormatArg,
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum VocabImportMode {
+    Preview,
+    #[default]
+    Execute,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -171,7 +176,14 @@ pub struct ImportVocabArgs {
     /// Complete Lantern vocabulary backup contents.
     pub data: String,
     pub format: VocabImportFormatArg,
+    #[serde(default)]
+    pub mode: VocabImportMode,
+    #[serde(default = "default_vocab_import_conflict_policy")]
     pub conflict_policy: VocabImportConflictPolicyArg,
+}
+
+fn default_vocab_import_conflict_policy() -> VocabImportConflictPolicyArg {
+    VocabImportConflictPolicyArg::Skip
 }
 
 fn delete_lookup_records_inner(
@@ -489,6 +501,7 @@ impl LanternMcpHandler {
             word,
             location,
             excluded,
+            match_forms,
         }): Parameters<SetWordMarkExceptionArgs>,
     ) -> Result<CallToolResult, ErrorData> {
         let sync = require_sync(self)?;
@@ -497,6 +510,7 @@ impl LanternMcpHandler {
             &word,
             &location,
             excluded,
+            match_forms,
             &self.state.db,
             sync,
         )
@@ -551,35 +565,30 @@ impl LanternMcpHandler {
 
     #[tool(description = "Return a complete Lantern vocabulary backup as structured JSON.")]
     pub async fn export_vocabulary(&self) -> Result<CallToolResult, ErrorData> {
+        require_sync(self)?;
         let backup = vocab::export_vocab_backup_inner(&self.state.db)
             .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
         Ok(CallToolResult::success(vec![ContentBlock::json(&backup)?]))
     }
 
     #[tool(
-        description = "Validate a Lantern vocabulary backup and report new words, conflicts, missing books, duplicates, and invalid rows without writing data."
-    )]
-    pub async fn preview_vocabulary_import(
-        &self,
-        Parameters(PreviewVocabImportArgs { data, format }): Parameters<PreviewVocabImportArgs>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let preview = vocab::preview_vocab_import_inner(&data, format.into(), &self.state.db)
-            .map_err(|error| ErrorData::invalid_params(error.to_string(), None))?;
-        Ok(CallToolResult::success(vec![ContentBlock::json(&preview)?]))
-    }
-
-    #[tool(
-        description = "Import a Lantern vocabulary backup. `skip` preserves existing entries; `overwrite` permanently replaces conflicting entries."
+        description = "Preview or import vocabulary JSON or CSV. Skip preserves conflicts, merge keeps existing conflicts while importing nonconflicting entries, and overwrite permanently replaces conflicts."
     )]
     pub async fn import_vocabulary(
         &self,
         Parameters(ImportVocabArgs {
             data,
             format,
+            mode,
             conflict_policy,
         }): Parameters<ImportVocabArgs>,
     ) -> Result<CallToolResult, ErrorData> {
         let sync = require_sync(self)?;
+        if matches!(mode, VocabImportMode::Preview) {
+            let preview = vocab::preview_vocab_import_inner(&data, format.into(), &self.state.db)
+                .map_err(|error| ErrorData::invalid_params(error.to_string(), None))?;
+            return Ok(CallToolResult::success(vec![ContentBlock::json(&preview)?]));
+        }
         let result = vocab::do_import_vocab_backup(
             &data,
             format.into(),

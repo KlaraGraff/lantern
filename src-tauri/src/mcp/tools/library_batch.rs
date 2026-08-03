@@ -20,6 +20,9 @@ pub struct ImportBooksArgs {
 pub struct DeleteBooksArgs {
     /// Book IDs returned by `list_books`.
     pub book_ids: Vec<String>,
+    /// Keep book-scoped notes as detached notes after deleting each book.
+    #[serde(default)]
+    pub preserve_notes: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -150,6 +153,7 @@ impl LanternMcpHandler {
     pub(crate) fn run_delete_books(
         &self,
         book_ids: Vec<String>,
+        preserve_notes: bool,
     ) -> Result<DeleteBooksResponse, ErrorData> {
         require_non_empty(&book_ids, "book_ids")?;
         let sync = require_sync(self)?;
@@ -159,7 +163,12 @@ impl LanternMcpHandler {
         for book_id in book_ids {
             match books::query_book_exists(&self.state.db, &book_id) {
                 Ok(false) => results.push(BatchItemResult::new(book_id, "not_found", None, None)),
-                Ok(true) => match books::do_delete_book(&book_id, &self.state.db, sync) {
+                Ok(true) => match books::do_delete_book_with_note_policy(
+                    &book_id,
+                    preserve_notes,
+                    &self.state.db,
+                    sync,
+                ) {
                     Ok(()) => {
                         deleted.push(book_id.clone());
                         results.push(BatchItemResult::new(
@@ -280,7 +289,7 @@ impl LanternMcpHandler {
     }
 
     #[tool(
-        description = "Permanently delete one or more books and their associated data and files. Missing IDs are reported per item.",
+        description = "Permanently delete one or more books and their associated data and files, optionally retaining book notes as detached notes. Missing IDs are reported per item.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,
@@ -289,9 +298,12 @@ impl LanternMcpHandler {
     )]
     pub async fn delete_books(
         &self,
-        Parameters(DeleteBooksArgs { book_ids }): Parameters<DeleteBooksArgs>,
+        Parameters(DeleteBooksArgs {
+            book_ids,
+            preserve_notes,
+        }): Parameters<DeleteBooksArgs>,
     ) -> Result<CallToolResult, ErrorData> {
-        let response = self.run_delete_books(book_ids)?;
+        let response = self.run_delete_books(book_ids, preserve_notes)?;
         Ok(CallToolResult::success(vec![ContentBlock::json(
             &response,
         )?]))

@@ -28,8 +28,7 @@ use rmcp::{tool_handler, ErrorData, RoleServer, ServiceExt};
 use serde_json::{json, Value};
 
 use super::approval::{
-    ApiCostDisclosure, ApprovalConfirmation, ApprovalGateOutcome, ApprovalRequest,
-    ApprovalRequestInput,
+    ApprovalConfirmation, ApprovalGateOutcome, ApprovalRequest, ApprovalRequestInput,
 };
 use super::state::McpState;
 
@@ -68,10 +67,6 @@ impl LanternMcpHandler {
         r.merge(Self::annotations_write_router());
         r.merge(Self::vocab_write_router());
         r.merge(Self::chats_write_router());
-        r.merge(Self::assessments_write_router());
-        r.merge(Self::configuration_router());
-        r.merge(Self::app_info_router());
-        r.merge(Self::integration_router());
         for name in [
             "get_collections",
             "create_collection",
@@ -80,10 +75,6 @@ impl LanternMcpHandler {
             "reorder_collections",
             "get_collection_books",
             "update_collection_membership",
-            "get_app_info",
-            "get_diagnostics",
-            "get_mcp_status",
-            "update_mcp_settings",
             "get_bookmarks",
             "get_highlights",
             "get_notes",
@@ -121,15 +112,17 @@ impl LanternMcpHandler {
             "set_word_mark_rule",
             "set_word_mark_exception",
             "set_lookup_occurrence_mark",
+            "request_book_index",
+            "preview_vocabulary_import",
+            "delete_lookup_history",
         ] {
             r.remove_route(name);
         }
         r.merge(Self::collections_catalog_router());
-        r.merge(Self::app_info_catalog_router());
-        r.merge(Self::integration_catalog_router());
         r.merge(Self::annotations_catalog_router());
         r.merge(Self::chats_catalog_router());
         r.merge(Self::local_catalog_router());
+        r.merge(Self::open_reader_router());
         r
     }
 
@@ -202,20 +195,6 @@ fn approval_input_for_tool(
             "Permanently delete the selected vocabulary entries and their review state.",
             "vocabulary entry",
         )?,
-        "delete_language_assessments" => irreversible_ids_confirmation(
-            arguments,
-            "Permanently delete the selected language assessment records.",
-            "language assessment",
-        )?,
-        "delete_lookup_history"
-            if arguments.get("action").and_then(Value::as_str) == Some("records") =>
-        {
-            irreversible_ids_confirmation(
-                arguments,
-                "Permanently delete the selected dictionary lookup-history records.",
-                "lookup-history record",
-            )?
-        }
         "delete_word_forms" => {
             let words = required_non_empty_string_array(arguments, "words")?;
             ApprovalConfirmation::IrreversibleData {
@@ -232,28 +211,10 @@ fn approval_input_for_tool(
                 scope: format!("Book {book_id}."),
             }
         }
-        "delete_lookup_history"
-            if arguments.get("action").and_then(Value::as_str) == Some("clear") =>
-        {
-            let scope = match arguments.get("book_id") {
-                Some(Value::String(book_id)) if !book_id.trim().is_empty() => {
-                    format!("All lookup history for book {book_id}.")
-                }
-                Some(Value::Null) | None => "All lookup history in the library.".to_string(),
-                _ => {
-                    return Err(ErrorData::invalid_params(
-                        "`book_id` must be a non-empty string or null",
-                        None,
-                    ));
-                }
-            };
-            ApprovalConfirmation::IrreversibleData {
-                effect: "Permanently clear dictionary lookup history.".to_string(),
-                scope,
-            }
-        }
         "import_vocabulary"
-            if arguments.get("conflict_policy").and_then(Value::as_str) == Some("overwrite") =>
+            if arguments.get("mode").and_then(Value::as_str) != Some("preview")
+                && arguments.get("conflict_policy").and_then(Value::as_str)
+                    == Some("overwrite") =>
         {
             let data_size = required_string(arguments, "data")?.len();
             let format = required_string(arguments, "format")?;
@@ -348,29 +309,6 @@ fn confirmation_message(confirmation: &ApprovalConfirmation) -> String {
         ApprovalConfirmation::IrreversibleData { effect, scope } => {
             format!("{effect} Scope: {scope} This action cannot be undone.")
         }
-        ApprovalConfirmation::PaidApi {
-            effect,
-            scope,
-            service,
-            model,
-            maximum_requests,
-            cost,
-        } => {
-            let cost = match cost {
-                ApiCostDisclosure::Estimated { amount } => {
-                    format!("Estimated cost: {amount}.")
-                }
-                ApiCostDisclosure::UpperBound { amount } => {
-                    format!("Maximum cost: {amount}.")
-                }
-                ApiCostDisclosure::ProviderMayCharge => {
-                    "The provider may charge for usage.".to_string()
-                }
-            };
-            format!(
-                "{effect} Scope: {scope} Service: {service}. Model: {model}. Maximum billable requests: {maximum_requests}. {cost}"
-            )
-        }
     }
 }
 
@@ -427,7 +365,7 @@ fn parse_mrtr_acceptance(request: &CallToolRequestParams) -> Result<bool, ErrorD
 }
 
 fn approval_status_result(status: &str, request: &ApprovalRequest) -> CallToolResponse {
-    CallToolResult::success(vec![ContentBlock::json(&json!({
+    CallToolResult::success(vec![ContentBlock::json(json!({
         "status": status,
         "approval_id": request.id,
         "confirmation": request.confirmation,
@@ -530,8 +468,8 @@ impl ServerHandler for LanternMcpHandler {
             .with_instructions(
                 "Lantern MCP server. Inspect and control Lantern through the tools exposed \
                  by this server. Tool descriptions state their effects and whether they use \
-                 local processing. Operations that may use a paid API or irreversibly destroy \
-                 data require approval before execution. Other writes require MCP write access.",
+                 local reading data. Permanent deletion and destructive overwrites require \
+                 approval before execution. Other writes require MCP write access.",
             )
     }
 }
@@ -826,8 +764,7 @@ mod tests {
             "import_books",
             "delete_books",
             "query_book_content",
-            "get_book_summaries",
-            "request_book_index",
+            "get_book_intelligence",
             "query_lookup_history",
             "query_word_forms",
             "query_word_marks",
@@ -839,25 +776,37 @@ mod tests {
             "save_word_forms",
             "update_word_marks",
             "export_vocabulary",
-            "preview_vocabulary_import",
             "import_vocabulary",
             "delete_word_forms",
             "clear_word_marks",
-            "delete_lookup_history",
             "save_chats",
             "delete_chats",
-            "save_language_assessment",
-            "delete_language_assessments",
-            "get_settings",
-            "update_settings",
-            "get_app_info",
-            "get_mcp_integration",
-            "update_mcp_integration",
+            "open_in_reader",
         ]
         .iter()
         .map(|s| s.to_string())
         .collect();
+        assert_eq!(expected.len(), 29, "the frozen MCP catalog has 29 tools");
         assert_eq!(names, expected, "tool registry diverged from spec");
+    }
+
+    #[test]
+    fn every_catalog_tool_has_an_object_schema_and_fact_description() {
+        for tool in LanternMcpHandler::tool_router().list_all() {
+            assert!(
+                tool.description
+                    .as_deref()
+                    .is_some_and(|description| !description.is_empty()),
+                "{} has no description",
+                tool.name
+            );
+            assert_eq!(
+                tool.input_schema.get("type").and_then(Value::as_str),
+                Some("object"),
+                "{} has no object input schema",
+                tool.name
+            );
+        }
     }
 
     #[test]
@@ -879,17 +828,8 @@ mod tests {
             ),
             ("delete_chats", json!({ "ids": ["ch1"] })),
             ("delete_vocabulary", json!({ "ids": ["v1"] })),
-            ("delete_language_assessments", json!({ "ids": ["la1"] })),
-            (
-                "delete_lookup_history",
-                json!({ "action": "records", "ids": ["l1"] }),
-            ),
             ("delete_word_forms", json!({ "words": ["word"] })),
             ("clear_word_marks", json!({ "book_id": "b1" })),
-            (
-                "delete_lookup_history",
-                json!({ "action": "clear", "book_id": null }),
-            ),
             (
                 "import_vocabulary",
                 json!({
@@ -1299,8 +1239,8 @@ mod tests {
 
         let summary_body = text_of(
             handler
-                .get_book_summaries(Parameters(
-                    crate::mcp::tools::content::GetBookSummariesArgs {
+                .get_book_intelligence(Parameters(
+                    crate::mcp::tools::content::GetBookIntelligenceArgs {
                         book_id: "b1".to_string(),
                         scope: None,
                         section_index: None,
@@ -1313,6 +1253,8 @@ mod tests {
         assert!(summaries["overview"].is_null());
         assert_eq!(summaries["sections"].as_array().unwrap().len(), 1);
         assert_eq!(summaries["sections"][0]["section_index"], 0);
+        assert_eq!(summaries["embeddings"]["indexed_chunks"], 3);
+        assert_eq!(summaries["embeddings"]["embedded_chunks"], 0);
 
         let status_body = text_of(
             handler
@@ -1487,18 +1429,34 @@ mod tests {
             .delete_books(Parameters(
                 crate::mcp::tools::library_batch::DeleteBooksArgs {
                     book_ids: vec!["b1".to_string()],
+                    preserve_notes: false,
                 },
             ))
             .await
             .unwrap_err();
         assert!(batch_error.message.contains("Write access"));
 
-        let index_error = handler
-            .request_book_index(Parameters(crate::mcp::tools::content::BookIdArgs {
-                book_id: "b1".to_string(),
-            }))
-            .await
-            .unwrap_err();
-        assert!(index_error.message.contains("Write access"));
+        let export_error = handler.export_vocabulary().await.unwrap_err();
+        assert!(export_error.message.contains("Write access"));
+    }
+
+    #[tokio::test]
+    async fn open_in_reader_reports_an_unconfirmed_request_without_an_app_watcher() {
+        let (_dir, state) = seeded();
+        let handler = LanternMcpHandler::new(state);
+        let body = text_of(
+            handler
+                .open_in_reader(Parameters(
+                    crate::mcp::tools::open_reader::OpenInReaderArgs {
+                        book_id: "b1".to_string(),
+                        cfi: Some("epubcfi(/6/2)".to_string()),
+                    },
+                ))
+                .await
+                .unwrap(),
+        );
+        let result: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(result["status"], "unavailable");
+        assert_eq!(result["delivery_confirmed"], false);
     }
 }

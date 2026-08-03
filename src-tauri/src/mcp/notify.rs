@@ -68,6 +68,7 @@ fn emit_from_payload(handle: &AppHandle, payload: &str) {
         "chats" => "mcp:chats-changed",
         "language_assessments" => "mcp:language-assessments-changed",
         "approvals" => "mcp:approvals-changed",
+        "open" => "mcp:open-reader",
         _ => return,
     };
     let _ = handle.emit(event_name, payload);
@@ -88,4 +89,14 @@ pub fn write_sentinel(path: &Path, domain: &str, action: &str, id: &str) {
         }
         Err(error) => eprintln!("mcp: failed to serialize notify sentinel: {error}"),
     }
+}
+
+pub fn write_open_sentinel(path: &Path, book_id: &str, cfi: Option<&str>) {
+    let payload = serde_json::json!({
+        "domain": "open",
+        "action": "reader",
+        "id": book_id,
+        "cfi": cfi,
+    });
+    let _ = std::fs::write(path, payload.to_string());
 }

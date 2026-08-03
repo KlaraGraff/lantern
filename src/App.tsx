@@ -11,6 +11,7 @@ import SettingsHost from "./components/SettingsHost";
 import McpApprovalDialog from "./components/McpApprovalDialog";
 import { reconcileLanguage } from "./i18n";
 import { useAppZoom } from "./hooks/useAppZoom";
+import { openReaderWindow } from "./utils/openReaderWindow";
 import {
   installCustomFontFaces,
   isCustomFontRecordList,
@@ -64,6 +65,12 @@ export default function App() {
       // acquired its font-list payload during development hot reloads.
       loadCustomFonts().catch((error) => console.error("Failed to refresh custom fonts:", error));
     });
+    const unlistenMcpOpen = isMainWindow
+      ? listen<{ id?: string; cfi?: string | null }>("mcp:open-reader", (event) => {
+        if (!event.payload.id) return;
+        void openReaderWindow(event.payload.id, { cfi: event.payload.cfi ?? undefined });
+      })
+      : undefined;
 
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = () => {
@@ -75,6 +82,7 @@ export default function App() {
     return () => {
       mq.removeEventListener("change", handler);
       unlistenFonts.then((stop) => stop()).catch(() => {});
+      unlistenMcpOpen?.then((stop) => stop()).catch(() => {});
     };
   }, []);
 

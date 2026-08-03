@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use crate::ai::grounding;
 use crate::commands::books;
 use crate::mcp::server::LanternMcpHandler;
-use crate::mcp::tools::library::require_sync;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SearchBookContentArgs {
@@ -27,7 +26,7 @@ pub struct BookIdArgs {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct GetBookSummariesArgs {
+pub struct GetBookIntelligenceArgs {
     /// Book ID returned by `list_books`.
     pub book_id: String,
     /// Optional scope: `book` or `sections`. Omit to return every safe summary.
@@ -148,12 +147,65 @@ impl From<grounding::summarize::SectionOverview> for McpSectionSummary {
 }
 
 #[derive(Debug, Serialize)]
-struct GetBookSummariesResponse {
+struct GetBookIntelligenceResponse {
     book_id: String,
     ai_state: grounding::summarize::BookAiState,
+    embeddings: McpEmbeddingState,
     spoiler_guard_active: bool,
     overview: Option<String>,
     sections: Vec<McpSectionSummary>,
+}
+
+#[derive(Debug, Serialize)]
+struct McpEmbeddingState {
+    configured: bool,
+    model: Option<String>,
+    indexed_chunks: i64,
+    embedded_chunks: i64,
+    complete: bool,
+}
+
+fn embedding_state(
+    handler: &LanternMcpHandler,
+    book_id: &str,
+) -> Result<McpEmbeddingState, ErrorData> {
+    let conn = handler.state.db.reader();
+    let configured = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'ai_embedding_configured'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .is_some_and(|value| value == "true");
+    let model = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'ai_embedding_model'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .ok();
+    let indexed_chunks = conn
+        .query_row(
+            "SELECT COUNT(*) FROM book_chunks WHERE book_id = ?1",
+            rusqlite::params![book_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+    let embedded_chunks = conn
+        .query_row(
+            "SELECT COUNT(*) FROM book_chunk_embeddings WHERE book_id = ?1",
+            rusqlite::params![book_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+    Ok(McpEmbeddingState {
+        configured,
+        model,
+        indexed_chunks,
+        embedded_chunks,
+        complete: configured && indexed_chunks > 0 && embedded_chunks == indexed_chunks,
+    })
 }
 
 fn require_book(handler: &LanternMcpHandler, book_id: &str) -> Result<(), ErrorData> {
@@ -390,7 +442,7 @@ impl LanternMcpHandler {
         };
         if details.status != grounding::IndexStatus::Ready {
             response.message = Some(format!(
-                "Book index is {}; call `request_book_index` to build it when appropriate.",
+                "Book index is {} and MCP does not build indexes.",
                 details.status.as_db()
             ));
             return Ok(CallToolResult::success(vec![ContentBlock::json(
@@ -418,20 +470,21 @@ impl LanternMcpHandler {
     }
 
     #[tool(
-        description = "Read existing generated book or section summaries without generating new ones. Respects Lantern's spoiler guard by withholding the whole-book overview and filtering unread sections.",
+        name = "get_book_intelligence",
+        description = "Return preprocessing, lexical-index, embedding, and saved overview and chapter-summary state without generating anything.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
             open_world_hint = false
         )
     )]
-    pub async fn get_book_summaries(
+    pub async fn get_book_intelligence(
         &self,
-        Parameters(GetBookSummariesArgs {
+        Parameters(GetBookIntelligenceArgs {
             book_id,
             scope,
             section_index,
-        }): Parameters<GetBookSummariesArgs>,
+        }): Parameters<GetBookIntelligenceArgs>,
     ) -> Result<CallToolResult, ErrorData> {
         require_book(self, &book_id)?;
         let scope = scope.as_deref().unwrap_or("all");
@@ -476,7 +529,8 @@ impl LanternMcpHandler {
             .filter(|section| section_index.is_none_or(|index| section.section_index == index))
             .map(McpSectionSummary::from)
             .collect();
-        let response = GetBookSummariesResponse {
+        let response = GetBookIntelligenceResponse {
+            embeddings: embedding_state(self, &book_id)?,
             book_id,
             ai_state,
             spoiler_guard_active: resolution.active,
@@ -486,27 +540,6 @@ impl LanternMcpHandler {
         Ok(CallToolResult::success(vec![ContentBlock::json(
             &response,
         )?]))
-    }
-
-    #[tool(
-        description = "Build a book's local full-text index. Requires MCP write access and may take a while for large books. Uses local CPU extraction only; it never calls AI or embedding services.",
-        annotations(
-            read_only_hint = false,
-            destructive_hint = false,
-            open_world_hint = false
-        )
-    )]
-    pub async fn request_book_index(
-        &self,
-        Parameters(BookIdArgs { book_id }): Parameters<BookIdArgs>,
-    ) -> Result<CallToolResult, ErrorData> {
-        require_book(self, &book_id)?;
-        let _sync = require_sync(self)?;
-        grounding::index::ensure_index(&self.state.db, &book_id)
-            .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
-        let details = grounding::index::index_details(&self.state.db, &book_id)
-            .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
-        Ok(CallToolResult::success(vec![ContentBlock::json(&details)?]))
     }
 }
 

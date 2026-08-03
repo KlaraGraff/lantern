@@ -49,4 +49,14 @@ impl McpState {
         };
         notify::write_sentinel(path, domain, action, id);
     }
+
+    /// Request a reader open through the app-side sentinel watcher. The MCP
+    /// subprocess cannot observe whether a running app receives the request.
+    pub fn request_reader_open(&self, book_id: &str, cfi: Option<&str>) -> bool {
+        let Some(path) = &self.notify_path else {
+            return false;
+        };
+        notify::write_open_sentinel(path, book_id, cfi);
+        true
+    }
 }

@@ -172,6 +172,7 @@ pub enum VocabImportFormat {
 #[serde(rename_all = "snake_case")]
 pub enum VocabImportConflictPolicy {
     Skip,
+    Merge,
     Overwrite,
 }
 
@@ -962,7 +963,10 @@ pub(crate) fn do_import_vocab_backup(
                 )
                 .ok();
             if let Some(existing_id) = existing {
-                if matches!(conflict_policy, VocabImportConflictPolicy::Skip) {
+                if matches!(
+                    conflict_policy,
+                    VocabImportConflictPolicy::Skip | VocabImportConflictPolicy::Merge
+                ) {
                     skipped += 1;
                     continue;
                 }
