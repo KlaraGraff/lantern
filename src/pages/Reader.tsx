@@ -135,6 +135,25 @@ import { useReaderFileDiagnosis } from "./reader/useReaderFileDiagnosis";
 import ReaderDiagnosticsPanel from "../components/ReaderDiagnosticsPanel";
 import { platform } from "../services/platform";
 import { claimZoomShortcuts } from "../services/app-zoom";
+import { logIgnoredError } from "../utils/logIgnoredError";
+import {
+  averageSecondsPerPage,
+  averageSecondsPerPercent,
+  derivePaceSample,
+  minutesLeftInBook,
+  minutesLeftInChapter,
+  pushPaceSample,
+  type PaceSample,
+  type PageTurnSnapshot,
+} from "./reader/reading-pace";
+import {
+  nextProgressReadoutMode,
+  parseProgressReadoutMode,
+  progressReadoutSettingKey,
+  type ProgressReadoutMode,
+} from "./reader/progress-readout";
+import { chaptersToTicks, type ScrubberTick } from "./reader/progress-scrubber-math";
+import ProgressScrubber from "../components/ProgressScrubber";
 
 type SidePanel = "ai" | "bookmarks" | "vocab" | null;
 
@@ -232,6 +251,14 @@ export default function Reader() {
   const [chapterProgress, setChapterProgress] = useState(0);
   const [pageInfo, setPageInfo] = useState<ReaderPageInfo | null>(null);
   const currentCfiRef = useRef<string | null>(null);
+  // P1.5/P1.6 (click-cycle readout + scrubber) are scoped to paginated EPUBs —
+  // the exact boundary `getReaderCapabilities` already draws between "genuine
+  // EPUB" and everything that must degrade (PDF's own page/zoom readout,
+  // and text books, both keep their existing footer untouched).
+  const supportsScrubber = (book?.render_format || book?.format) === "epub";
+  const [progressReadoutMode, setProgressReadoutMode] = useState<ProgressReadoutMode>("page");
+  const paceSnapshotRef = useRef<PageTurnSnapshot | null>(null);
+  const [paceWindow, setPaceWindow] = useState<PaceSample[]>([]);
   const {
     pushJump,
     popJump,
@@ -467,6 +494,38 @@ export default function Reader() {
     pushJump(currentCfiRef.current, getCurrentJumpLabel());
     goToLocation(cfi);
   }, [getCurrentJumpLabel, goToLocation, pushJump]);
+
+  /**
+   * The P1.6 scrubber's commit — fired once, on pointer release (or a
+   * discrete keyboard step), never while dragging. Pushes the jump-history
+   * entry first, exactly like every other jump entry point, then navigates by
+   * whole-book fraction (the unit the scrubber itself works in).
+   */
+  const handleScrubberCommit = useCallback((fraction: number) => {
+    const view = viewRef.current;
+    if (!view) return;
+    pushJump(currentCfiRef.current, getCurrentJumpLabel());
+    view.goToFraction(fraction).catch((error: unknown) => {
+      logIgnoredError("reader.scrubber-navigate", error);
+    });
+  }, [getCurrentJumpLabel, pushJump]);
+
+  // P1.5's click-cycle readout mode, persisted per book — same one-row-per-key
+  // store as the TOC's saved UI state, written immediately since a single
+  // click (unlike TOC scroll/expand state) needs no debounce.
+  const cycleProgressReadoutMode = useCallback(() => {
+    if (!bookId) return;
+    setProgressReadoutMode((current) => {
+      const next = nextProgressReadoutMode(current);
+      invoke("set_book_settings_bulk", {
+        bookId,
+        settings: { [progressReadoutSettingKey]: next },
+      }).catch((error: unknown) => {
+        logIgnoredError("reader.progress-readout-mode-save", error);
+      });
+      return next;
+    });
+  }, [bookId]);
 
   /**
    * The return pill / ⌘[ / Alt+← action: pop the last jump and land back on
@@ -1026,6 +1085,60 @@ export default function Reader() {
     disabled: !chapter.targetHref,
   })), [chapters]);
 
+  // P1.6's chapter tick marks: TOC chapters mapped onto whole-book fractions
+  // via the raw section start fractions foliate-js already tracks. Guarded to
+  // paginated EPUBs and to a book that's actually ready, since `chapters` is
+  // briefly stale (last book's) during the load transition. Computed in an
+  // effect rather than a memo because it reads `viewRef.current` — a ref
+  // read has to happen outside render.
+  const [scrubberTicks, setScrubberTicks] = useState<ScrubberTick[]>([]);
+  useEffect(() => {
+    if (!supportsScrubber || !bookReady) {
+      setScrubberTicks([]);
+      return;
+    }
+    try {
+      setScrubberTicks(chaptersToTicks(chapters, viewRef.current?.getSectionFractions?.() ?? []));
+    } catch {
+      setScrubberTicks([]);
+    }
+  }, [supportsScrubber, bookReady, chapters]);
+
+  // P1.5's click-cycle readout text. `null` means "render nothing" (hidden
+  // mode); every other mode always renders *something* — a number once there
+  // are enough pace samples, "calculating…" (`reader.progressReadout.calculating`)
+  // otherwise, never a wrong number. A plain computation (not `useMemo`) —
+  // cheap enough not to need it, and it sidesteps the React Compiler's
+  // manual-memoization check, which otherwise flags the nested-conditional
+  // `pageInfo` property reads below as narrower than the whole-object
+  // dependency a hand-written deps array would declare.
+  const progressReadoutText = (() => {
+    if (progressReadoutMode === "hidden") return null;
+    if (progressReadoutMode === "page") {
+      if (!pageInfo) return t("reader.bookProgress", { progress });
+      return pageInfo.visibleEnd && pageInfo.visibleEnd > pageInfo.current
+        ? t("reader.pageRangeOf", { current: pageInfo.current, end: pageInfo.visibleEnd, total: pageInfo.total })
+        : t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total });
+    }
+    if (progressReadoutMode === "chapterTime") {
+      if (!pageInfo) return t("reader.progressReadout.calculating");
+      const secondsPerPage = averageSecondsPerPage(paceWindow);
+      const pagesLeft = Math.max(0, pageInfo.total - pageInfo.current);
+      const minutes = minutesLeftInChapter(secondsPerPage, pagesLeft);
+      return minutes === null
+        ? t("reader.progressReadout.calculating")
+        : t("reader.progressReadout.minutesLeft", { minutes });
+    }
+    // bookTime — whole-book percentage plus estimated time left.
+    const secondsPerPercent = averageSecondsPerPercent(paceWindow);
+    const percentLeft = Math.max(0, 100 - progress);
+    const minutes = minutesLeftInBook(secondsPerPercent, percentLeft);
+    const percentText = t("reader.bookProgress", { progress });
+    return minutes === null
+      ? `${percentText} · ${t("reader.progressReadout.calculating")}`
+      : `${percentText} · ${t("reader.progressReadout.minutesLeft", { minutes })}`;
+  })();
+
   const chapterCounter = useMemo(() => {
     const readingUnits = chapters
       .map((chapter, index) => ({ chapter, index }))
@@ -1196,6 +1309,9 @@ export default function Reader() {
     setPageInfo(null);
     setBookReady(false);
     setTextInitialLocation(null);
+    setProgressReadoutMode("page");
+    paceSnapshotRef.current = null;
+    setPaceWindow([]);
     getBook(bookId)
       .then((b) => {
         if (cancelled) return;
@@ -1232,6 +1348,7 @@ export default function Reader() {
         return next;
       });
       setTocSavedState(parseTocSavedState(perBookSettings));
+      setProgressReadoutMode(parseProgressReadoutMode(perBookSettings[progressReadoutSettingKey]));
       const savedZoom = localStorage.getItem(`reader-zoom-${bookId}`);
       if (savedZoom === "fit") {
         setZoom("fit");
@@ -1265,6 +1382,27 @@ export default function Reader() {
     }, 500);
     return () => window.clearTimeout(handle);
   }, [zoom, bookId, book?.format, dbSettingsLoadedRef]);
+
+  // P1.5's local reading-speed sample: one snapshot per relocate, turned into
+  // a pace sample by `derivePaceSample`, which itself rejects anything that
+  // isn't an ordinary forward single/spread page turn (chapter changes,
+  // scrubber/TOC jumps, and idle gaps are all filtered out there — see
+  // `reading-pace.ts`). Scoped to paginated EPUBs, the same boundary as the
+  // scrubber itself; `pageInfo` is null for scrolled-mode EPUBs too, so this
+  // simply never accumulates samples there and the readout falls back to
+  // "calculating…" indefinitely, which is the intended degrade.
+  useEffect(() => {
+    if (!supportsScrubber || !bookReady || !pageInfo || currentSectionIndex < 0) return;
+    const next: PageTurnSnapshot = {
+      sectionIndex: currentSectionIndex,
+      page: pageInfo.current,
+      progress,
+      timestampMs: Date.now(),
+    };
+    const sample = derivePaceSample(paceSnapshotRef.current, next);
+    paceSnapshotRef.current = next;
+    if (sample) setPaceWindow((prev) => pushPaceSample(prev, sample));
+  }, [supportsScrubber, bookReady, pageInfo, currentSectionIndex, progress]);
 
   useWindowSizePersistence(bookId, isStandaloneWindow);
   const { availabilityState, retryAvailability } = useBookAvailability(book, setBook);
@@ -1997,32 +2135,59 @@ export default function Reader() {
             } : undefined}
           >
             <div className="flex flex-col gap-2">
-              <div className={`h-px w-full ${isStandaloneWindow ? "opacity-10" : "bg-border"}`} style={isStandaloneWindow ? { backgroundColor: "currentColor" } : undefined}>
-                {(book.format === "pdf" || readerSettings.showChapterProgress) && (
-                  <div
-                    className="h-full transition-all"
-                    style={{ width: `${book.format === "pdf" ? progress : chapterProgress}%`, backgroundColor: isStandaloneWindow ? "currentColor" : "#9f9fa9", opacity: isStandaloneWindow ? 0.4 : undefined }}
-                  />
-                )}
-              </div>
+              {supportsScrubber ? (
+                <ProgressScrubber
+                  progress={progress}
+                  ticks={scrubberTicks}
+                  isStandaloneWindow={isStandaloneWindow}
+                  onCommit={handleScrubberCommit}
+                />
+              ) : (
+                <div className={`h-px w-full ${isStandaloneWindow ? "opacity-10" : "bg-border"}`} style={isStandaloneWindow ? { backgroundColor: "currentColor" } : undefined}>
+                  {(book.format === "pdf" || readerSettings.showChapterProgress) && (
+                    <div
+                      className="h-full transition-all"
+                      style={{ width: `${book.format === "pdf" ? progress : chapterProgress}%`, backgroundColor: isStandaloneWindow ? "currentColor" : "#9f9fa9", opacity: isStandaloneWindow ? 0.4 : undefined }}
+                    />
+                  )}
+                </div>
+              )}
               <div className="flex items-center justify-between h-8">
                 <div className={`flex min-w-0 items-center gap-2 text-[12px] tabular-nums ${isStandaloneWindow ? "opacity-60" : "text-text-muted"}`}>
-                  {book.format === "pdf" && pageInfo ? (
-                    <span>{t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total })}</span>
-                  ) : readerSettings.showChapterProgress ? (
-                    <span>{t("reader.chapterProgress", { progress: chapterProgress })}</span>
-                  ) : null}
-                  {readerSettings.showBookProgress && book.format !== "pdf" && (
-                    <span className="border-l border-current/20 pl-2">
-                      {t("reader.bookProgress", { progress })}
-                    </span>
-                  )}
-                  {readerSettings.readingMode === "paginated" && readerSettings.showPageNumbers && pageInfo && book.format !== "pdf" && (
-                    <span className="border-l border-current/20 pl-2">
-                      {pageInfo.visibleEnd && pageInfo.visibleEnd > pageInfo.current
-                        ? t("reader.pageRangeOf", { current: pageInfo.current, end: pageInfo.visibleEnd, total: pageInfo.total })
-                        : t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total })}
-                    </span>
+                  {supportsScrubber ? (
+                    // P1.5's click-cycle readout. The button stays in the DOM
+                    // even in "hidden" mode (no visible text) so the same
+                    // click target can cycle back to "page" — a deliberate
+                    // trade-off over letting the affordance vanish entirely.
+                    <button
+                      type="button"
+                      onClick={cycleProgressReadoutMode}
+                      title={t("reader.progressReadout.toggleLabel")}
+                      aria-label={progressReadoutText ? undefined : t("reader.progressReadout.toggleLabel")}
+                      className={`cursor-pointer text-left hover:opacity-100 ${progressReadoutText ? "" : "min-w-[12px]"}`}
+                    >
+                      {progressReadoutText}
+                    </button>
+                  ) : (
+                    <>
+                      {book.format === "pdf" && pageInfo ? (
+                        <span>{t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total })}</span>
+                      ) : readerSettings.showChapterProgress ? (
+                        <span>{t("reader.chapterProgress", { progress: chapterProgress })}</span>
+                      ) : null}
+                      {readerSettings.showBookProgress && book.format !== "pdf" && (
+                        <span className="border-l border-current/20 pl-2">
+                          {t("reader.bookProgress", { progress })}
+                        </span>
+                      )}
+                      {readerSettings.readingMode === "paginated" && readerSettings.showPageNumbers && pageInfo && book.format !== "pdf" && (
+                        <span className="border-l border-current/20 pl-2">
+                          {pageInfo.visibleEnd && pageInfo.visibleEnd > pageInfo.current
+                            ? t("reader.pageRangeOf", { current: pageInfo.current, end: pageInfo.visibleEnd, total: pageInfo.total })
+                            : t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total })}
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
                 {book.format === "pdf" && (
