@@ -1,6 +1,8 @@
 # Reader P1 quick wins — implementation plan
 
-Source: [`docs/roadmap/reader-page-optimization.md`](../roadmap/reader-page-optimization.md) §P1.
+> **Shipped 2026-08-03.** All seven items landed on `main`: P1.1 `9e492ae`, P1.7 `e7c9aa4`, P1.4 `75ff07a`, P1.3 `91b62f0`, P1.5 + P1.6 `005ba19` (with follow-up `277090f` restoring the progress-display toggles' authority over the new readout), P1.2 `c0630ad`.
+
+Source: [`docs/roadmap/reader-page-optimization.md`](../../roadmap/reader-page-optimization.md) §P1.
 Design direction: paper-palette mockups reviewed and approved 2026-08-03 (footnote popover bubble; search panel; return pill; highlight popover with color dots + note field + split delete; click-cycle progress readout; chapter-tick scrubber; per-book TOC memory). All UI must use theme CSS variables from `reader-theme.ts` — never hardcoded palette hexes — and i18n keys in both `en.json` and `zh.json`.
 
 Execution is split into four waves so concurrent work never touches the same files. Each wave lands as its own commit(s) on `main` after review; acceptance for every item is `npx tsc --noEmit && npm run build && npm run test:unit` plus manual visual review.
