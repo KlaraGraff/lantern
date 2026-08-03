@@ -91,7 +91,10 @@ function setWordTranslationModule(config: CardDesignConfigV1, enabled: boolean):
 }
 
 function wordTranslationEnabled(config: CardDesignConfigV1) {
-  return config.cards.word.modules.find((module) => module.id === "target_translation")?.enabled ?? true;
+  // A deleted module is not a missing setting: `?? true` here would answer
+  // "yes, show translations" for the user who just removed that very row.
+  const module = config.cards.word.modules.find((item) => item.id === "target_translation");
+  return module ? module.enabled : false;
 }
 
 function resolveFollowingSources(config: CardDesignConfigV1): CardDesignConfigV1 {
@@ -532,9 +535,16 @@ export default function ToolsSettings({
               key={menuKind}
               kind={menuKind}
               value={config.selectionMenus[menuKind]}
-              onChange={(menu) => persistConfig({
+              removed={config.removedMenuActions?.[menuKind] ?? []}
+              onChange={(menu, removed) => persistConfig({
                 ...config,
                 selectionMenus: { ...config.selectionMenus, [menuKind]: menu },
+                ...(removed ? {
+                  removedMenuActions: {
+                    ...(config.removedMenuActions ?? { word: [], phrase: [], passage: [] }),
+                    [menuKind]: removed,
+                  },
+                } : {}),
               })}
               onTouched={touch}
               importSources={menuImportSources(menuKind)}

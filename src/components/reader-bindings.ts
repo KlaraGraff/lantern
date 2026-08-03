@@ -207,6 +207,41 @@ export function bindingActionsForMenuAction(
   }
 }
 
+const BUILT_IN_MENU_ROWS = new Set<string>([
+  "primary", "speak", "ask-ai", "save", "highlight", "translate", "copy",
+]);
+
+export interface ReaderMenuRowOptions {
+  showTranslate?: boolean;
+  /** Mirrors the menu's `onToggleMark`: without it, no highlight row is drawn. */
+  canToggleMark?: boolean;
+  /** Custom ids that have a name and a prompt. Anything else draws nothing. */
+  customActionIds?: readonly string[];
+}
+
+/**
+ * The rows the selection menu would actually draw for a configured order.
+ *
+ * The order alone does not answer it: translate gets injected, highlight gets
+ * dropped where marking is unavailable, and a custom id with no definition
+ * renders nothing. Anyone deciding whether opening the menu is worth it has to
+ * count what lands on screen, so the rule lives here once and the menu reads it
+ * too rather than keeping a second copy that can drift.
+ */
+export function readerMenuRows(
+  order: ReaderMenuAction[],
+  options: ReaderMenuRowOptions = {},
+): ReaderMenuAction[] {
+  const { showTranslate = false, canToggleMark = true, customActionIds = [] } = options;
+  const values = [...order];
+  if (showTranslate && !values.includes("translate")) values.splice(1, 0, "translate");
+  const custom = new Set(customActionIds);
+  return values.filter((action) => {
+    if (action === "highlight") return canToggleMark;
+    return BUILT_IN_MENU_ROWS.has(action) || custom.has(action);
+  });
+}
+
 /**
  * What to print at the right edge of a menu row, or nothing.
  *

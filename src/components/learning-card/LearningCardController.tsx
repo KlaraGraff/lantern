@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useTranslation } from "react-i18next";
 import { createUuid } from "../../utils/randomUuid";
 import type { ReaderInteraction, SerializableRect } from "../reader-interaction";
 import {
@@ -9,7 +10,7 @@ import {
   learningCardCacheEnvelope,
   learningCardCacheSignature,
 } from "./cache";
-import { getResponsiveLearningCardWidth } from "./config";
+import { getResponsiveLearningCardWidth, learningCardErrorKey } from "./config";
 import type {
   CardDesignConfigV1,
   LearningCardActionId,
@@ -173,6 +174,7 @@ export default function LearningCardController({
   onLookupSuccess,
 }: LearningCardControllerProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const { t } = useTranslation();
   const [retry, setRetry] = useState(0);
   const [result, setResult] = useState<LearningCardResponse>({
     version: 1,
@@ -296,7 +298,9 @@ export default function LearningCardController({
         }).catch(() => {});
       } catch (reason) {
         if (!active) return;
-        setError(reason instanceof Error ? reason.message : String(reason));
+        const message = reason instanceof Error ? reason.message : String(reason);
+        const key = learningCardErrorKey(message);
+        setError(key ? t(key) : message);
         setLoading(false);
       } finally {
         unlisten?.();
@@ -311,7 +315,7 @@ export default function LearningCardController({
       unlisten = undefined;
       invoke("ai_cancel", { requestId }).catch(() => {});
     };
-  }, [bookAuthor, bookId, bookTitle, chapter, config, interaction, onLookupSuccess, retry]);
+  }, [bookAuthor, bookId, bookTitle, chapter, config, interaction, onLookupSuccess, retry, t]);
 
   useEffect(() => {
     refreshNotes().catch(() => {});

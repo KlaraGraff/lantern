@@ -4101,6 +4101,34 @@ mod tests {
             .contains("LEARNING_CARD_ALL_MODULES_DISABLED"));
     }
 
+    // A card the user emptied on purpose and a config that never mentioned
+    // modules look alike from here, and they must not be answered alike: the
+    // first has to fail so the reader is told, the second has to fall back so a
+    // config written before this key existed still produces a card.
+    #[test]
+    fn learning_config_without_modules_key_falls_back_to_defaults() {
+        let config = serde_json::json!({
+            "version": 2,
+            "cards": {"word": {"defaultDensity": "detailed"}}
+        });
+        let request = learning_request_from_config("word", &config.to_string()).unwrap();
+        let defaults = default_learning_request("word").unwrap();
+        assert_eq!(request, defaults);
+        assert!(!request.modules.is_empty());
+    }
+
+    #[test]
+    fn learning_config_with_an_emptied_module_list_is_refused() {
+        let config = serde_json::json!({
+            "version": 2,
+            "cards": {"word": {"modules": [], "removedModules": ["context_meaning"]}}
+        });
+        let error = learning_request_from_config("word", &config.to_string()).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("LEARNING_CARD_ALL_MODULES_DISABLED"));
+    }
+
     #[test]
     fn unknown_or_damaged_learning_config_uses_safe_defaults() {
         let damaged = learning_request_from_config("passage", "not json").unwrap();

@@ -1148,7 +1148,7 @@
   "common.unknownBook": "Unknown Book",
   "common.bookmark": "Bookmark",
   "common.moreDetail": "More detail",
-  "learningCard.allModulesDisabled": "All display modules are turned off. Enable at least one to look things up.",
+  "learningCard.allModulesDisabled": "This card has no sections to show. Turn one on, or restore the defaults, in settings.",
   "learningCard.cachedRefresh": "Cached result · Look up again",
   "learningCard.title.word": "Word Definition",
   "learningCard.title.phrase": "Phrase Definition",

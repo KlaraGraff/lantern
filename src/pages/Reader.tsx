@@ -28,6 +28,7 @@ import {
   getReaderCapabilities,
 } from "../components/reader-settings";
 import ReaderContextMenu, { type ReaderMenuAction } from "../components/ReaderContextMenu";
+import { readerMenuRows } from "../components/reader-bindings";
 import OcrReaderHud from "../components/OcrReaderHud";
 import DictionaryPanel from "../components/DictionaryPanel";
 import TranslationPopover from "../components/TranslationPopover";
@@ -623,6 +624,22 @@ export default function Reader() {
     setTopLearningCardId(id);
   }, [learningCardConfig, t]);
 
+  // What the selection menu would actually draw for this interaction. An empty
+  // `order` is not the same question: the menu injects and drops rows of its own,
+  // so only the rendered count says whether opening it shows the reader anything.
+  const selectionMenuRowCount = useCallback((interaction: ReaderInteraction) => {
+    const enabled = learningCardConfig.selectionMenus[interaction.kind].filter((item) => item.enabled);
+    return readerMenuRows(
+      enabled.map((item) => readerMenuAction(item.id)),
+      {
+        canToggleMark: Boolean(supportsManualAnnotations && interaction.location),
+        customActionIds: enabled
+          .filter((item) => item.id.startsWith("custom_") && item.name && item.prompt)
+          .map((item) => item.id),
+      },
+    ).length;
+  }, [learningCardConfig.selectionMenus, supportsManualAnnotations]);
+
   // Cards and AI answers are lookup surfaces of their own: the same
   // double-click and selection gestures work inside them, one level deeper.
   const lookupWordInPanel = useCallback((
@@ -653,6 +670,9 @@ export default function Reader() {
       const found = detachedInteraction(selectedRange(document), root, "selection-menu");
       if (!found) return;
       const interaction = withInheritedContext(found, origin);
+      // Nothing to show beats an empty bordered box. Selecting text is a
+      // constant gesture, so this stays silent — no toast (see 5.3 of the spec).
+      if (selectionMenuRowCount(interaction) === 0) return;
       contextMenuRequestRef.current += 1;
       setContextMenu(interaction);
       setContextMarkStateLoading(false);
@@ -664,7 +684,7 @@ export default function Reader() {
       setContextBookWordMarkWord(null);
       setContextBookWordMarkExcluded(false);
     }, 220);
-  }, [cancelPendingSelectionMenu]);
+  }, [cancelPendingSelectionMenu, selectionMenuRowCount]);
 
   const getHighlightMutationPlan = useCallback(async (
     interaction: ReaderInteraction,
@@ -688,6 +708,10 @@ export default function Reader() {
     cancelPendingWordClick();
     cancelPendingSelectionMenu();
     if (interaction.trigger !== "word-quick-lookup") {
+      // Same silent skip as the panel menu: an emptied action list means no menu,
+      // not an empty one. Double-click lookup goes on working — it is the branch
+      // below, and it never asked the menu for permission.
+      if (selectionMenuRowCount(interaction) === 0) return;
       const requestToken = ++contextMenuRequestRef.current;
       setContextMenu(interaction);
       setContextMarkStateLoading(Boolean(bookId));
@@ -764,6 +788,7 @@ export default function Reader() {
     getHighlightMutationPlan,
     getHighlightRemovalPlan,
     openLearningCard,
+    selectionMenuRowCount,
   ]);
 
   const handleLookupSuccess = useCallback((interaction: ReaderInteraction) => {

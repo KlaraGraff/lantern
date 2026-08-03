@@ -24,6 +24,7 @@ import Select from "../ui/Select";
 import Toggle from "../ui/Toggle";
 import { createUuid } from "../../utils/randomUuid";
 import ConfirmDialog from "./ConfirmDialog";
+import { presetDeleteConfirm, type PresetSurface } from "./presetDeletion";
 
 export interface CustomImportSource {
   kind: LearningCardKind;
@@ -51,6 +52,9 @@ interface CustomActionEditorProps {
   onGuardChange?: (controller: UnsavedEditorController | null) => void;
   namePlaceholder?: string;
   promptPlaceholder?: string;
+  /** Which list this editor belongs to, so its delete warns like the row's does. */
+  deleteSurface?: PresetSurface;
+  deleteIsLast?: boolean;
 }
 
 function comparableDefinition(value: CustomLearningDefinition) {
@@ -74,9 +78,12 @@ export default function CustomActionEditor({
   onGuardChange,
   namePlaceholder,
   promptPlaceholder,
+  deleteSurface = "card",
+  deleteIsLast = false,
 }: CustomActionEditorProps) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState(value);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [testText, setTestText] = useState("");
   const [sourceKey, setSourceKey] = useState("");
   const [optimizing, setOptimizing] = useState(false);
@@ -192,6 +199,12 @@ export default function CustomActionEditor({
     }));
     setHistory(null);
   };
+
+  // A draft has nothing saved to lose: its delete is really "abandon the new
+  // one", and stopping to confirm that would only be in the way.
+  const deleteConfirmation = onDiscard
+    ? null
+    : presetDeleteConfirm("custom", deleteIsLast, deleteSurface, value.name);
 
   const source = draft.sourceRef
     ? importSources.find((item) => item.kind === draft.sourceRef?.kind && item.id === draft.sourceRef?.id)
@@ -332,7 +345,13 @@ export default function CustomActionEditor({
       <div className="flex items-center justify-between gap-2 border-t border-border-light pt-3">
         <button
           type="button"
-          onClick={onDelete}
+          onClick={() => {
+            if (deleteConfirmation) {
+              setDeleteConfirmOpen(true);
+              return;
+            }
+            onDelete();
+          }}
           className="flex h-8 items-center gap-1.5 rounded-md px-2 text-[11px] text-danger-text hover:bg-danger-bg"
         ><Trash2 size={13} />{t("common.delete")}</button>
         <div className="flex gap-2">
@@ -358,6 +377,19 @@ export default function CustomActionEditor({
           ><Save size={13} />{t("common.save")}</Button>
         </div>
       </div>
+      {deleteConfirmOpen && deleteConfirmation && (
+        <ConfirmDialog
+          title={t(deleteConfirmation.titleKey, { name: deleteConfirmation.nameParam })}
+          description={deleteConfirmation.descriptionKeys.map((key) => t(key)).join(" ")}
+          primaryLabel={t("common.delete")}
+          onPrimary={() => {
+            setDeleteConfirmOpen(false);
+            onDelete();
+          }}
+          secondaryLabel={t("common.cancel")}
+          onSecondary={() => setDeleteConfirmOpen(false)}
+        />
+      )}
       {overwriteSource && (
         <ConfirmDialog
           title={t("settings.tools.custom.overwriteTitle", { name: overwriteSource.name })}

@@ -1,22 +1,28 @@
-import { CircleHelp, Plus } from "lucide-react";
+import { CircleHelp, Plus, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createUuid } from "../../utils/randomUuid";
+import Button from "../ui/Button";
 import Select from "../ui/Select";
 import SortableList from "../ui/SortableList";
 import {
   MODULE_DEFINITIONS,
   MAX_CUSTOM_CARD_MODULES,
+  removeCardModule,
   reorderArray,
+  restoreDefaultCardModules,
   type CardKindConfig,
   type CardModuleConfig,
   type CardWidthMode,
   type ContentDensity,
   type LearningCardKind,
+  type LearningModuleId,
   type CustomLearningDefinition,
   type CustomLearningId,
 } from "../learning-card";
 import CardModuleRow from "./CardModuleRow";
+import ConfirmDialog from "./ConfirmDialog";
+import { presetDeleteConfirm, type PresetDeleteConfirmation } from "./presetDeletion";
 import CustomActionEditor, {
   type CustomImportSource,
   type UnsavedEditorController,
@@ -54,7 +60,32 @@ export default function CardDesignSettings({
   const { t } = useTranslation();
   const [openId, setOpenId] = useState<string | null>(null);
   const [newModule, setNewModule] = useState<NewModuleDraft | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<
+    { id: LearningModuleId; confirmation: PresetDeleteConfirmation } | null
+  >(null);
   const definitions = new Map(MODULE_DEFINITIONS[kind].map((item) => [item.id, item]));
+
+  const deleteModule = (id: LearningModuleId) => {
+    setPendingDelete(null);
+    if (openId === id) setOpenId(null);
+    onChange(removeCardModule(value, id));
+  };
+  const requestDelete = (id: LearningModuleId, label: string) => {
+    const confirmation = presetDeleteConfirm(
+      id.startsWith("custom_") ? "custom" : "builtin",
+      value.modules.length <= 1,
+      "card",
+      label,
+    );
+    if (!confirmation) {
+      deleteModule(id);
+      return;
+    }
+    setPendingDelete({ id, confirmation });
+  };
+  const restoreDefaults = () => {
+    onChange(restoreDefaultCardModules(kind, value));
+  };
 
   const updateModule = (index: number, module: CardModuleConfig) => {
     const modules = value.modules.map((item, itemIndex) => itemIndex === index ? module : item);
@@ -159,6 +190,13 @@ export default function CardDesignSettings({
           <h4 className="text-[11px] font-semibold uppercase tracking-[0.3px] text-text-muted">{t("settings.tools.modulesTitle")}</h4>
           <span className="text-[10px] text-text-muted">{t("settings.tools.modulesCount", { count: value.modules.filter((module) => module.enabled).length })}</span>
         </div>
+        {value.modules.length === 0 && !newModule ? (
+          // A collapsed SortableList would read as an empty bordered box; the
+          // empty state has to look like a row that is deliberately not there.
+          <p className="flex min-h-12 items-center py-2 text-[11px] leading-[1.5] text-text-muted">
+            {t("settings.presets.emptyCard")}
+          </p>
+        ) : (
         <SortableList
           items={value.modules}
           getId={(module) => module.id}
@@ -190,6 +228,7 @@ export default function CardDesignSettings({
                 onMove={move}
                 open={openId === module.id}
                 onToggleOpen={() => toggleOpen(module.id)}
+                onDelete={() => requestDelete(module.id, custom ? custom.name : t(definition.labelKey))}
                 editor={custom ? (
                   <CustomActionEditor
                     value={custom}
@@ -199,11 +238,9 @@ export default function CardDesignSettings({
                       ...value,
                       customModules: { ...value.customModules, [module.id as CustomLearningId]: draft },
                     })}
-                    onDelete={() => {
-                      const customModules = { ...value.customModules };
-                      delete customModules[module.id as CustomLearningId];
-                      onChange({ ...value, modules: value.modules.filter((item) => item.id !== module.id), customModules });
-                    }}
+                    deleteSurface="card"
+                    deleteIsLast={value.modules.length <= 1}
+                    onDelete={() => deleteModule(module.id)}
                     onTest={(text, draft) => onTest(text, module.id as CustomLearningId, draft, value)}
                     onGuardChange={onEditorGuardChange}
                   />
@@ -212,6 +249,7 @@ export default function CardDesignSettings({
             );
           }}
         />
+        )}
         {newModule && (
           <CardModuleRow
             definition={{
@@ -269,24 +307,45 @@ export default function CardDesignSettings({
             )}
           />
         )}
-        {!newModule && Object.keys(value.customModules).length < MAX_CUSTOM_CARD_MODULES && (
-          <button
-            type="button"
-            onClick={() => {
-              const id = `custom_${createUuid().replace(/-/g, "")}` as CustomLearningId;
-              const now = Date.now();
-              requestNavigation(() => {
-                setNewModule({
-                  module: { id, enabled: true, defaultExpanded: true, density: "inherit" },
-                  definition: { name: "", prompt: "", createdAt: now, updatedAt: now },
+        <div className="mt-2 flex items-center justify-between gap-2">
+          {!newModule && Object.keys(value.customModules).length < MAX_CUSTOM_CARD_MODULES ? (
+            <button
+              type="button"
+              onClick={() => {
+                const id = `custom_${createUuid().replace(/-/g, "")}` as CustomLearningId;
+                const now = Date.now();
+                requestNavigation(() => {
+                  setNewModule({
+                    module: { id, enabled: true, defaultExpanded: true, density: "inherit" },
+                    definition: { name: "", prompt: "", createdAt: now, updatedAt: now },
+                  });
+                  setOpenId(id);
                 });
-                setOpenId(id);
-              });
-            }}
-            className="mt-2 flex h-8 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-accent-text hover:bg-accent-bg"
-          ><Plus size={13} />{t("settings.tools.custom.addModule")}</button>
-        )}
+              }}
+              className="flex h-8 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-accent-text hover:bg-accent-bg"
+            ><Plus size={13} />{t("settings.tools.custom.addModule")}</button>
+          ) : <span />}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={restoreDefaults}
+            title={t("settings.presets.restoreHint")}
+          >
+            <RotateCcw size={13} />
+            {t("settings.presets.restore")}
+          </Button>
+        </div>
       </div>
+      {pendingDelete && (
+        <ConfirmDialog
+          title={t(pendingDelete.confirmation.titleKey, { name: pendingDelete.confirmation.nameParam })}
+          description={pendingDelete.confirmation.descriptionKeys.map((key) => t(key)).join(" ")}
+          primaryLabel={t("common.delete")}
+          onPrimary={() => deleteModule(pendingDelete.id)}
+          secondaryLabel={t("common.cancel")}
+          onSecondary={() => setPendingDelete(null)}
+        />
+      )}
     </div>
   );
 }

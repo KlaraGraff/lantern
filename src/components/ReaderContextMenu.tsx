@@ -20,6 +20,7 @@ import SpeakMenuRow from "./speech/SpeakMenuRow";
 import { playbackDetaches } from "./speech/routing";
 import {
   menuShortcut,
+  readerMenuRows,
   reservedCopyShortcut,
   type ReaderActionBinding,
   type ReaderMenuAction,
@@ -78,11 +79,16 @@ export default function ReaderContextMenu({
 }: ReaderContextMenuProps) {
   const { t, i18n } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
-  const actions = useMemo(() => {
-    const values = [...order];
-    if (showTranslate && !values.includes("translate")) values.splice(1, 0, "translate");
-    return values.filter((action) => action !== "highlight" || onToggleMark);
-  }, [onToggleMark, order, showTranslate]);
+  const customActionIds = customActions.map((action) => action.id);
+  const customActionKey = customActionIds.join(",");
+  const actions = useMemo(
+    () => readerMenuRows(order, {
+      showTranslate,
+      canToggleMark: Boolean(onToggleMark),
+      customActionIds: customActionKey ? customActionKey.split(",") : [],
+    }),
+    [customActionKey, onToggleMark, order, showTranslate],
+  );
 
   useEffect(() => {
     // Moving focus on mount hides WebKit's native reader selection.

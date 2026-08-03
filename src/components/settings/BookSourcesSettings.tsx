@@ -17,6 +17,8 @@ import {
   type BookSourceKind,
 } from "../book-sources";
 import { createUuid } from "../../utils/randomUuid";
+import ConfirmDialog from "./ConfirmDialog";
+import { presetDeleteConfirm, type PresetDeleteConfirmation } from "./presetDeletion";
 import type { SettingsProps } from "./types";
 
 const KINDS: BookSourceKind[] = ["library", "thirdParty"];
@@ -31,6 +33,9 @@ export default function BookSourcesSettings({ settings, loading, saveBulk, showS
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<BookSource | null>(null);
   const [adding, setAdding] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<
+    { id: string; confirmation: PresetDeleteConfirmation } | null
+  >(null);
 
   useEffect(() => {
     setSources(parseBookSources(settings[BOOK_SOURCES_KEY]));
@@ -55,6 +60,21 @@ export default function BookSourcesSettings({ settings, loading, saveBulk, showS
     saveBulk({ [BOOK_SOURCES_KEY]: serializeBookSources(next) })
       .then(() => showSavedToast())
       .catch((error) => console.error("Failed to save book sources:", error));
+  };
+
+  const deleteSource = (id: string) => {
+    setPendingDelete(null);
+    persist(sources.filter((item) => item.id !== id));
+  };
+  const requestDelete = (source: BookSource) => {
+    // "Last one" means the whole list, not the group: emptying 图书馆 while
+    // 第三方资源站 still has entries leaves the reader with somewhere to go.
+    const confirmation = presetDeleteConfirm("builtin", sources.length <= 1, "sources", source.name);
+    if (!confirmation) {
+      deleteSource(source.id);
+      return;
+    }
+    setPendingDelete({ id: source.id, confirmation });
   };
 
   const grouped = useMemo(
@@ -187,8 +207,8 @@ export default function BookSourcesSettings({ settings, loading, saveBulk, showS
                   <button
                     type="button"
                     aria-label={t("common.delete")}
-                    onClick={() => persist(sources.filter((item) => item.id !== source.id))}
-                    className="shrink-0 rounded p-1 text-text-muted opacity-0 transition-opacity hover:text-danger-text group-hover:opacity-100"
+                    onClick={() => requestDelete(source)}
+                    className="shrink-0 rounded p-1 text-text-muted opacity-0 transition-opacity hover:text-danger-text focus-visible:opacity-100 group-hover:opacity-100"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -220,6 +240,17 @@ export default function BookSourcesSettings({ settings, loading, saveBulk, showS
       <p className="px-1 pt-3 text-[11px] leading-[17px] text-text-placeholder">
         {t("settings.bookSources.note")}
       </p>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title={t(pendingDelete.confirmation.titleKey, { name: pendingDelete.confirmation.nameParam })}
+          description={pendingDelete.confirmation.descriptionKeys.map((key) => t(key)).join(" ")}
+          primaryLabel={t("common.delete")}
+          onPrimary={() => deleteSource(pendingDelete.id)}
+          secondaryLabel={t("common.cancel")}
+          onSecondary={() => setPendingDelete(null)}
+        />
+      )}
     </div>
   );
 }

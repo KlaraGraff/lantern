@@ -8,6 +8,7 @@ import {
   getLearningCardFixture,
   LearningCardView,
   LearningCardStreamParser,
+  learningCardErrorKey,
   MENU_ACTION_DEFINITIONS,
   type CardDesignConfigV1,
   type LearningCardResult,
@@ -372,7 +373,9 @@ export default function CardPreview({
       if (previewRequestRef.current === requestId) setRealResult(response);
     } catch (error) {
       if (previewRequestRef.current === requestId) {
-        setRealError(error instanceof Error ? error.message : String(error));
+        const message = error instanceof Error ? error.message : String(error);
+        const key = learningCardErrorKey(message);
+        setRealError(key ? t(key) : message);
       }
     } finally {
       unlisten?.();
@@ -496,6 +499,13 @@ export default function CardPreview({
                 ))}
               </div>
             </div>
+            {menuItems.length === 0 ? (
+              // The reader gets no menu at all in this state, so the preview
+              // says why rather than drawing the empty box it would replace.
+              <p className="rounded-md border border-dashed border-border px-3 py-2 text-[11px] text-text-muted">
+                {t("settings.presets.emptyMenu")}
+              </p>
+            ) : (
             <div role="toolbar" aria-label={t("settings.tools.menu.previewLabel")} className="flex max-w-full flex-wrap items-center justify-center gap-1 rounded-md border border-border bg-bg-surface p-1 shadow-popover">
               {menuItems.map((item) => {
                 const definition = definitions.get(item.id);
@@ -535,6 +545,7 @@ export default function CardPreview({
                 );
               })}
             </div>
+            )}
           </div>
         )}
         {showMenu && customActionTest && (
@@ -548,15 +559,23 @@ export default function CardPreview({
             </p>
           </div>
         )}
-        <LearningCardView
-          result={result}
-          config={config}
-          availableWidth={availableWidth}
-          maxHeight={Math.max(360, availableHeight - 24 - (showMenu ? menuHeight + 12 : 0))}
-          presentationMode
-          highlightedModuleId={highlightedId}
-          animateModuleChanges
-        />
+        {config.cards[kind].modules.some((module) => module.enabled) ? (
+          <LearningCardView
+            result={result}
+            config={config}
+            availableWidth={availableWidth}
+            maxHeight={Math.max(360, availableHeight - 24 - (showMenu ? menuHeight + 12 : 0))}
+            presentationMode
+            highlightedModuleId={highlightedId}
+            animateModuleChanges
+          />
+        ) : (
+          // Reading refuses to open a card with nothing in it; an empty shell
+          // here would preview a card the reader can never actually get.
+          <p className="max-w-[320px] text-center text-[12px] leading-[1.6] text-text-muted">
+            {t("learningCard.allModulesDisabled")}
+          </p>
+        )}
       </div>
     </div>
   );

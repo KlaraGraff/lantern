@@ -8,6 +8,7 @@ import {
   isReservedReaderBinding,
   menuShortcut,
   parseReaderBindings,
+  readerMenuRows,
   reservedCopyShortcut,
 } from "../src/components/reader-bindings.ts";
 import { parseTripleClickScope } from "../src/components/reader-interaction.ts";
@@ -144,4 +145,36 @@ test("triple-click scope falls back to a sentence for anything unrecognised", ()
   assert.equal(parseTripleClickScope("sentence"), "sentence");
   assert.equal(parseTripleClickScope(undefined), "sentence");
   assert.equal(parseTripleClickScope("page"), "sentence");
+});
+
+// The reader decides whether to open the selection menu by counting these rows.
+// An empty configured order is not the same as an empty menu — translate is
+// injected on top of it — so the two questions must not be confused.
+test("an empty order still draws a row when translate is injected", () => {
+  assert.deepEqual(readerMenuRows([]), []);
+  assert.deepEqual(readerMenuRows([], { showTranslate: true }), ["translate"]);
+});
+
+test("rows nothing would render for are not counted", () => {
+  // Highlight needs somewhere to put the mark.
+  assert.deepEqual(readerMenuRows(["highlight"], { canToggleMark: false }), []);
+  assert.deepEqual(readerMenuRows(["highlight"], { canToggleMark: true }), ["highlight"]);
+
+  // A custom id with no definition behind it renders nothing.
+  assert.deepEqual(readerMenuRows(["custom_gone"]), []);
+  assert.deepEqual(
+    readerMenuRows(["custom_gone"], { customActionIds: ["custom_gone"] }),
+    ["custom_gone"],
+  );
+});
+
+test("a menu down to its last built-in row still opens", () => {
+  assert.deepEqual(readerMenuRows(["speak"]), ["speak"]);
+});
+
+test("translate is not injected twice when the order already has it", () => {
+  assert.deepEqual(
+    readerMenuRows(["primary", "translate"], { showTranslate: true }),
+    ["primary", "translate"],
+  );
 });

@@ -1148,7 +1148,7 @@
   "common.unknownBook": "未知书籍",
   "common.bookmark": "书签",
   "common.moreDetail": "详细说明",
-  "learningCard.allModulesDisabled": "当前已关闭所有展示项，如需查询请开启至少 1 项。",
+  "learningCard.allModulesDisabled": "这张卡片没有可展示的板块。可在设置中开启或恢复默认。",
   "learningCard.cachedRefresh": "缓存结果 · 重新查询",
   "learningCard.title.word": "单词释义",
   "learningCard.title.phrase": "短语释义",

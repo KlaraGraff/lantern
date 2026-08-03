@@ -1,18 +1,25 @@
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, GripVertical, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, GripVertical, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createUuid } from "../../utils/randomUuid";
+import Button from "../ui/Button";
 import Toggle from "../ui/Toggle";
 import SortableList from "../ui/SortableList";
 import {
   MENU_ACTION_DEFINITIONS,
   MAX_CUSTOM_MENU_ACTIONS,
+  removeMenuAction,
   reorderArray,
+  restoreDefaultMenuActions,
+  type BuiltInSelectionMenuActionId,
+  type SelectionMenuActionId,
   type SelectionMenuItemConfig,
   type SelectionMenuKind,
   type CustomLearningDefinition,
   type CustomLearningId,
 } from "../learning-card";
+import ConfirmDialog from "./ConfirmDialog";
+import { presetDeleteConfirm, type PresetDeleteConfirmation } from "./presetDeletion";
 import CustomActionEditor, {
   type CustomImportSource,
   type UnsavedEditorController,
@@ -21,7 +28,8 @@ import CustomActionEditor, {
 interface SelectionMenuSettingsProps {
   kind: SelectionMenuKind;
   value: SelectionMenuItemConfig[];
-  onChange: (value: SelectionMenuItemConfig[]) => void;
+  removed: BuiltInSelectionMenuActionId[];
+  onChange: (value: SelectionMenuItemConfig[], removed?: BuiltInSelectionMenuActionId[]) => void;
   onTouched?: (id: string) => void;
   importSources: CustomImportSource[];
   onTest: (text: string, draft: CustomLearningDefinition, id: CustomLearningId) => void;
@@ -37,6 +45,7 @@ interface NewActionDraft {
 export default function SelectionMenuSettings({
   kind,
   value,
+  removed,
   onChange,
   onTouched,
   importSources,
@@ -47,7 +56,33 @@ export default function SelectionMenuSettings({
   const { t } = useTranslation();
   const [openId, setOpenId] = useState<string | null>(null);
   const [newAction, setNewAction] = useState<NewActionDraft | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<
+    { id: SelectionMenuActionId; confirmation: PresetDeleteConfirmation } | null
+  >(null);
   const definitions = new Map(MENU_ACTION_DEFINITIONS[kind].map((item) => [item.id, item]));
+  const deleteAction = (id: SelectionMenuActionId) => {
+    setPendingDelete(null);
+    if (openId === id) setOpenId(null);
+    const next = removeMenuAction(value, removed, id);
+    onChange(next.items, next.removed);
+  };
+  const requestDelete = (id: SelectionMenuActionId, label: string) => {
+    const confirmation = presetDeleteConfirm(
+      id.startsWith("custom_") ? "custom" : "builtin",
+      value.length <= 1,
+      "menu",
+      label,
+    );
+    if (!confirmation) {
+      deleteAction(id);
+      return;
+    }
+    setPendingDelete({ id, confirmation });
+  };
+  const restoreDefaults = () => {
+    const next = restoreDefaultMenuActions(kind, value);
+    onChange(next.items, next.removed);
+  };
   const move = (from: number, to: number) => {
     const next = reorderArray(value, from, to);
     if (next !== value) onChange(next);
@@ -86,7 +121,7 @@ export default function SelectionMenuSettings({
     const total = value.length + (newAction ? 1 : 0);
     return (
       <div className="border-t border-border-light first:border-t-0">
-        <div className="flex min-h-12 items-center gap-1 py-1">
+        <div className="group flex min-h-12 items-center gap-1 py-1">
           <span
             title={t("settings.tools.reorder")}
             aria-label={t("settings.tools.reorderMenuAction", { name: label })}
@@ -146,6 +181,19 @@ export default function SelectionMenuSettings({
               }
             }}
           />
+          {!isDraft && (
+            <button
+              type="button"
+              aria-label={t("common.delete")}
+              title={t("common.delete")}
+              onClick={() => requestDelete(item.id, label)}
+              // focus-visible keeps the button from being a target the keyboard
+              // can reach but nobody can see.
+              className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted opacity-0 transition-opacity hover:bg-danger-bg hover:text-danger-text focus-visible:opacity-100 group-hover:opacity-100"
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
         </div>
         {custom && openId === item.id && (
           <div className="pb-3 pl-9">
@@ -167,12 +215,14 @@ export default function SelectionMenuSettings({
                   onChange(value.map((current) => current.id === item.id ? { ...current, ...saved } : current));
                 }
               }}
+              deleteSurface="menu"
+              deleteIsLast={value.length <= 1}
               onDelete={() => {
                 if (isDraft) {
                   setNewAction(null);
                   setOpenId(null);
                 } else {
-                  onChange(value.filter((current) => current.id !== item.id));
+                  deleteAction(item.id);
                 }
               }}
               onDiscard={isDraft ? () => {
@@ -194,34 +244,63 @@ export default function SelectionMenuSettings({
         <h4 className="text-[12px] font-medium text-text-primary">{t(`settings.tools.menu.${kind}`)}</h4>
         <p className="text-[10px] leading-[1.5] text-text-muted">{t("settings.tools.menu.hint")}</p>
       </div>
-      <SortableList
-        items={value}
-        getId={(item) => item.id}
-        onReorder={(items) => {
-          const moved = items.find((item, index) => value[index]?.id !== item.id);
-          onChange(items);
-          if (moved) onTouched?.(moved.id);
-        }}
-        className="border-y border-border-light"
-        renderItem={(item, index) => renderAction(item, index)}
-      />
-      {newAction && renderAction(newAction.item, value.length, newAction.definition)}
-      {!newAction && value.filter((item) => item.id.startsWith("custom_")).length < MAX_CUSTOM_MENU_ACTIONS && (
-        <button
-          type="button"
-          onClick={() => {
-            const id = `custom_${createUuid().replace(/-/g, "")}` as CustomLearningId;
-            const timestamp = Date.now();
-            requestNavigation(() => {
-              setNewAction({
-                item: { id, enabled: true, createdAt: timestamp, updatedAt: timestamp },
-                definition: { name: "", prompt: "", createdAt: timestamp, updatedAt: timestamp },
-              });
-              setOpenId(id);
-            });
+      {value.length === 0 && !newAction ? (
+        // A collapsed SortableList would read as two stacked borders; the empty
+        // state has to look like a row that is deliberately not there.
+        <p className="flex min-h-12 items-center border-y border-border-light py-2 text-[11px] leading-[1.5] text-text-muted">
+          {t("settings.presets.emptyMenu")}
+        </p>
+      ) : (
+        <SortableList
+          items={value}
+          getId={(item) => item.id}
+          onReorder={(items) => {
+            const moved = items.find((item, index) => value[index]?.id !== item.id);
+            onChange(items);
+            if (moved) onTouched?.(moved.id);
           }}
-          className="mt-2 flex h-8 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-accent-text hover:bg-accent-bg"
-        ><Plus size={13} />{t("settings.tools.custom.addAction")}</button>
+          className="border-y border-border-light"
+          renderItem={(item, index) => renderAction(item, index)}
+        />
+      )}
+      {newAction && renderAction(newAction.item, value.length, newAction.definition)}
+      <div className="mt-2 flex items-center justify-between gap-2">
+        {!newAction && value.filter((item) => item.id.startsWith("custom_")).length < MAX_CUSTOM_MENU_ACTIONS ? (
+          <button
+            type="button"
+            onClick={() => {
+              const id = `custom_${createUuid().replace(/-/g, "")}` as CustomLearningId;
+              const timestamp = Date.now();
+              requestNavigation(() => {
+                setNewAction({
+                  item: { id, enabled: true, createdAt: timestamp, updatedAt: timestamp },
+                  definition: { name: "", prompt: "", createdAt: timestamp, updatedAt: timestamp },
+                });
+                setOpenId(id);
+              });
+            }}
+            className="flex h-8 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-accent-text hover:bg-accent-bg"
+          ><Plus size={13} />{t("settings.tools.custom.addAction")}</button>
+        ) : <span />}
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={restoreDefaults}
+          title={t("settings.presets.restoreHint")}
+        >
+          <RotateCcw size={13} />
+          {t("settings.presets.restore")}
+        </Button>
+      </div>
+      {pendingDelete && (
+        <ConfirmDialog
+          title={t(pendingDelete.confirmation.titleKey, { name: pendingDelete.confirmation.nameParam })}
+          description={pendingDelete.confirmation.descriptionKeys.map((key) => t(key)).join(" ")}
+          primaryLabel={t("common.delete")}
+          onPrimary={() => deleteAction(pendingDelete.id)}
+          secondaryLabel={t("common.cancel")}
+          onSecondary={() => setPendingDelete(null)}
+        />
       )}
     </div>
   );

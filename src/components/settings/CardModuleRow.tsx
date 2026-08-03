@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, GripVertical } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, GripVertical, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Select from "../ui/Select";
 import Toggle from "../ui/Toggle";
@@ -15,6 +15,7 @@ interface CardModuleRowProps {
   onMove: (from: number, to: number) => void;
   open: boolean;
   onToggleOpen: () => void;
+  onDelete?: () => void;
   unsaved?: boolean;
   editor?: ReactNode;
 }
@@ -28,6 +29,7 @@ export default function CardModuleRow({
   onMove,
   open,
   onToggleOpen,
+  onDelete,
   unsaved = false,
   editor,
 }: CardModuleRowProps) {
@@ -36,7 +38,7 @@ export default function CardModuleRow({
 
   return (
     <div className="border-t border-border-light first:border-t-0">
-      <div className="flex min-h-12 items-center gap-1 py-1.5">
+      <div className="group flex min-h-12 items-center gap-1 py-1.5">
         <span
           title={t("settings.tools.reorder")}
           aria-label={t("settings.tools.reorderModule", { name: label })}
@@ -87,6 +89,19 @@ export default function CardModuleRow({
           label={t("settings.tools.toggleModule", { name: label })}
           onChange={(enabled) => onChange({ ...value, enabled })}
         />
+        {onDelete && !unsaved && (
+          <button
+            type="button"
+            aria-label={t("common.delete")}
+            title={t("common.delete")}
+            onClick={onDelete}
+            // focus-visible keeps the button from being a target the keyboard
+            // can reach but nobody can see.
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted opacity-0 transition-opacity hover:bg-danger-bg hover:text-danger-text focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
       </div>
 
       {open && (
