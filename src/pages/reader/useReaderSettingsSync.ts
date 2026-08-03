@@ -66,6 +66,24 @@ type PerBookOverrideKey = keyof typeof perBookSettingKeys;
 
 const perBookOverrideKeys = Object.keys(perBookSettingKeys) as PerBookOverrideKey[];
 
+// Settings the reader panel edits straight into the *global* setting: every key
+// here is a `readerPreferenceSettingKeys` member that `handleReaderSettingsChange`
+// writes globally, so there is no per-book intent to record. Keeping a copy in the
+// blob made it a stale duplicate that then won the merge (`blob ?? global`) and
+// froze every already-opened book at its last-seen value — the same freeze the
+// typography keys were rescued from. The blob never carries them again.
+const globalOnlySettingKeys = [
+  "readingMode",
+  "pageColumns",
+  "pageTurnAnimation",
+  "showChapterProgress",
+  "showBookProgress",
+  "showPageNumbers",
+  "previousPageBinding",
+  "nextPageBinding",
+  "narrowFontShrink",
+] as const;
+
 /** Per-book rows as `get_book_settings` returns them: raw key/value strings. */
 export type PerBookReaderSettings = Record<string, string>;
 
@@ -137,9 +155,11 @@ export function mergeStoredReaderSettings(
   globalSettings: Record<string, string>,
   perBookSettings: PerBookReaderSettings = {},
 ): ReaderSettingsState {
-  // `storedSettings` is the legacy per-book blob and no longer contributes any
-  // of `perBookSettingKeys`: those come from `book_settings` rows only, so a
-  // blob written by an older build cannot resurrect the freeze it caused.
+  // `storedSettings` is the legacy per-book blob. It no longer contributes any of
+  // `perBookSettingKeys` (those come from `book_settings` rows) nor any of
+  // `globalOnlySettingKeys` (those come from the global settings), so a blob
+  // written by an older build cannot resurrect either freeze. All it still
+  // supplies is state with no other home: `charSpacing` and the marker toggles.
   const requestedFont = (perBookSettings[perBookSettingKeys.font] as ReaderSettingsState["font"])
     || (globalSettings.font_family as ReaderSettingsState["font"])
     || previous.font;
@@ -150,33 +170,28 @@ export function mergeStoredReaderSettings(
       || previous.theme,
     // Global-only: the reader panel edits it straight into the global setting.
     customTheme: parseReaderCustomTheme(globalSettings.reader_custom_theme ?? storedSettings.customTheme),
-    pageColumns: storedSettings.pageColumns
-      ?? pageColumnsSetting(globalSettings.page_columns, previous.pageColumns),
+    pageColumns: pageColumnsSetting(globalSettings.page_columns, previous.pageColumns),
     font: isReaderFontAvailable(requestedFont) ? requestedFont : "system",
     fontSize: numberSetting(perBookSettings[perBookSettingKeys.fontSize])
       ?? (globalSettings.font_size ? parseInt(globalSettings.font_size) : previous.fontSize),
     // Global-only: the reader panel has no per-book control for it.
     narrowFontShrink: booleanSetting(globalSettings.narrow_font_shrink, previous.narrowFontShrink),
-    readingMode: storedSettings.readingMode
-      || readingModeSetting(globalSettings.reading_mode, previous.readingMode),
-    pageTurnAnimation: storedSettings.pageTurnAnimation
-      ?? pageTurnAnimationSetting(globalSettings.page_turn_animation, previous.pageTurnAnimation),
-    showChapterProgress: storedSettings.showChapterProgress
-      ?? booleanSetting(globalSettings.show_chapter_progress, previous.showChapterProgress),
-    showBookProgress: storedSettings.showBookProgress
-      ?? booleanSetting(globalSettings.show_book_progress, previous.showBookProgress),
-    showPageNumbers: storedSettings.showPageNumbers
-      ?? booleanSetting(globalSettings.show_page_numbers, previous.showPageNumbers),
-    previousPageBinding: storedSettings.previousPageBinding
-      || globalSettings.previous_page_binding
-      || previous.previousPageBinding,
-    nextPageBinding: storedSettings.nextPageBinding
-      || globalSettings.next_page_binding
-      || previous.nextPageBinding,
+    // Global-only, all of them: see `globalOnlySettingKeys`. Reading the blob here
+    // is what froze a reopened book at its last-seen layout.
+    readingMode: readingModeSetting(globalSettings.reading_mode, previous.readingMode),
+    pageTurnAnimation: pageTurnAnimationSetting(globalSettings.page_turn_animation, previous.pageTurnAnimation),
+    showChapterProgress: booleanSetting(globalSettings.show_chapter_progress, previous.showChapterProgress),
+    showBookProgress: booleanSetting(globalSettings.show_book_progress, previous.showBookProgress),
+    showPageNumbers: booleanSetting(globalSettings.show_page_numbers, previous.showPageNumbers),
+    previousPageBinding: globalSettings.previous_page_binding || previous.previousPageBinding,
+    nextPageBinding: globalSettings.next_page_binding || previous.nextPageBinding,
     lineSpacing: numberSetting(perBookSettings[perBookSettingKeys.lineSpacing])
       ?? (globalSettings.line_spacing ? parseFloat(globalSettings.line_spacing) : previous.lineSpacing),
-    charSpacing: storedSettings.charSpacing
-      ?? (globalSettings.char_spacing ? parseInt(globalSettings.char_spacing) : previous.charSpacing),
+    // Genuinely per-book: the reader panel is its only control and there is no
+    // global counterpart, so the blob is its only storage. (There was a
+    // `globalSettings.char_spacing` fallback here; nothing in the repo ever wrote
+    // that key, so it could only ever be `undefined`.)
+    charSpacing: storedSettings.charSpacing ?? previous.charSpacing,
     wordSpacing: numberSetting(perBookSettings[perBookSettingKeys.wordSpacing])
       ?? (globalSettings.word_spacing ? parseInt(globalSettings.word_spacing) : previous.wordSpacing),
     // Global-first keeps the Settings page and reader toolbar synchronized.
@@ -380,11 +395,13 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
   useEffect(() => {
     if (settingsLoadedBookRef.current !== bookId) return;
     const stored: StoredReaderSettings = { ...readerSettings };
-    // The override keys live in `book_settings` now; leaving a copy in the blob
-    // would only be a stale second source of truth.
+    // The override keys live in `book_settings` now, and the global-only keys live
+    // in the `settings` table; a copy of either in the blob is only a stale second
+    // source of truth. What is left is the per-book state with nowhere else to go:
+    // `charSpacing` and the four marker toggles (plus `margins` / `customTheme`,
+    // whose blob copies are already merged global-first).
     for (const key of perBookOverrideKeys) delete stored[key];
-    // Never a per-book value: it is a global preference with no reader control.
-    delete stored.narrowFontShrink;
+    for (const key of globalOnlySettingKeys) delete stored[key];
     localStorage.setItem(`reader-settings-${bookId}`, JSON.stringify(stored));
   }, [bookId, readerSettings]);
 

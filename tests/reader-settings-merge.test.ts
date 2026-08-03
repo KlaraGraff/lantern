@@ -101,6 +101,92 @@ test("each per-book row overrides its global counterpart on its own", () => {
   assert.equal(merged.wordSpacing, 9);
 });
 
+test("a stale blob no longer freezes the layout keys at their last-seen value", () => {
+  // Everything `handleReaderSettingsChange` writes to a global setting used to be
+  // snapshotted into the blob too, and the blob then won the merge forever.
+  const snapshot: StoredReaderSettings = {
+    pageColumns: 1,
+    readingMode: "paginated",
+    pageTurnAnimation: "none",
+  };
+  const merged = merge(snapshot, {
+    page_columns: "2",
+    reading_mode: "scrolling",
+    page_turn_animation: "fade",
+  });
+  assert.equal(merged.pageColumns, 2);
+  assert.equal(merged.readingMode, "scrolling");
+  assert.equal(merged.pageTurnAnimation, "fade");
+});
+
+test("a stale blob no longer freezes the progress toggles", () => {
+  const snapshot: StoredReaderSettings = {
+    showChapterProgress: true,
+    showBookProgress: false,
+    showPageNumbers: true,
+  };
+  const merged = merge(snapshot, {
+    show_chapter_progress: "false",
+    show_book_progress: "true",
+    show_page_numbers: "false",
+  });
+  assert.equal(merged.showChapterProgress, false);
+  assert.equal(merged.showBookProgress, true);
+  assert.equal(merged.showPageNumbers, false);
+});
+
+test("a stale blob no longer freezes the page-turn bindings", () => {
+  const snapshot: StoredReaderSettings = {
+    previousPageBinding: "key:PageUp",
+    nextPageBinding: "key:PageDown",
+  };
+  const merged = merge(snapshot, {
+    previous_page_binding: "mouse:left",
+    next_page_binding: "mouse:right",
+  });
+  assert.equal(merged.previousPageBinding, "mouse:left");
+  assert.equal(merged.nextPageBinding, "mouse:right");
+});
+
+test("the global-only keys fall back to the previous state, never to the blob", () => {
+  const snapshot: StoredReaderSettings = {
+    pageColumns: 1,
+    readingMode: "paginated",
+    pageTurnAnimation: "none",
+    showChapterProgress: false,
+    showBookProgress: true,
+    showPageNumbers: true,
+    previousPageBinding: "key:PageUp",
+    nextPageBinding: "key:PageDown",
+  };
+  const merged = merge(snapshot);
+  assert.equal(merged.pageColumns, previous.pageColumns);
+  assert.equal(merged.readingMode, previous.readingMode);
+  assert.equal(merged.pageTurnAnimation, previous.pageTurnAnimation);
+  assert.equal(merged.showChapterProgress, previous.showChapterProgress);
+  assert.equal(merged.showBookProgress, previous.showBookProgress);
+  assert.equal(merged.showPageNumbers, previous.showPageNumbers);
+  assert.equal(merged.previousPageBinding, previous.previousPageBinding);
+  assert.equal(merged.nextPageBinding, previous.nextPageBinding);
+});
+
+test("char spacing and the marker toggles still come from the blob", () => {
+  // The only reader state with no global counterpart: the blob is its storage.
+  const snapshot: StoredReaderSettings = {
+    charSpacing: 7,
+    showLookupMarkers: false,
+    showNewVocabMarkers: false,
+    showLearningMarkers: false,
+    showMasteredMarkers: true,
+  };
+  const merged = merge(snapshot, { page_columns: "1" });
+  assert.equal(merged.charSpacing, 7);
+  assert.equal(merged.showLookupMarkers, false);
+  assert.equal(merged.showNewVocabMarkers, false);
+  assert.equal(merged.showLearningMarkers, false);
+  assert.equal(merged.showMasteredMarkers, true);
+});
+
 test("customTheme is global-first, so it needs no per-book override", () => {
   const stored: StoredReaderSettings = { customTheme: { color: "#112233", opacity: 10 } };
   const merged = merge(
