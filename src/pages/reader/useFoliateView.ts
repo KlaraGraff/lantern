@@ -26,6 +26,7 @@ import type { Highlight } from "../../hooks/useBookmarks";
 import type { Book } from "../../hooks/useBooks";
 import { logIgnoredError } from "../../utils/logIgnoredError";
 import { loadFoliateModules } from "./foliate-modules";
+import { disposeFoliateViewAfterInitialization } from "./foliate-view-lifecycle";
 import {
   logReaderDiagnostic,
   readerEnvironmentSnapshot,
@@ -851,12 +852,19 @@ export function useFoliateView({
       logReaderDiagnostic("reader.open.ready");
     };
 
-    initFoliate().catch((error) => {
+    const initialization = initFoliate();
+    initialization.catch((error) => {
       if (cancelled) return;
       console.error("Failed to initialize foliate-js:", error);
       logReaderDiagnostic("reader.open.failed", error);
-      activeView?.close();
-      activeView?.remove();
+      if (activeView) {
+        activeView.remove();
+        try {
+          activeView.close();
+        } catch (closeError) {
+          logIgnoredError("reader.close-after-open-failure", closeError);
+        }
+      }
       if (viewRef.current === activeView) viewRef.current = null;
       setReaderError(toReaderOpenError(error, book.render_format || book.format));
       setBookReady(false);
@@ -868,10 +876,13 @@ export function useFoliateView({
       cancelPendingWordClick();
       cancelPendingSelectionMenu();
       annotationClickDocumentRef.current = null;
-      if (viewRef.current) {
-        viewRef.current.close();
-        viewRef.current.remove();
-        viewRef.current = null;
+      if (activeView) {
+        disposeFoliateViewAfterInitialization(
+          activeView,
+          initialization,
+          (error) => logIgnoredError("reader.close-after-cancel", error),
+        );
+        if (viewRef.current === activeView) viewRef.current = null;
       }
       // Only `.remove()`, never `.close()` — the staging host's nested view(s)
       // share the main view's `book` instance, and closing one closes it for
