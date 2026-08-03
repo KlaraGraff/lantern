@@ -17,6 +17,7 @@ import {
   Minus,
   Plus,
   FileWarning,
+  Search,
 } from "lucide-react";
 import Button from "../components/ui/Button";
 import Toast from "../components/ui/Toast";
@@ -35,6 +36,7 @@ import TranslationPopover from "../components/TranslationPopover";
 import ExplainPopover from "../components/ExplainPopover";
 import FootnotePopover, { type FootnotePopoverData } from "../components/FootnotePopover";
 import TableOfContents from "../components/TableOfContents";
+import BookSearchPanel from "../components/BookSearchPanel";
 import { parseTocSavedState, type TocSavedState } from "../components/toc-state";
 import TextBookReader from "../components/TextBookReader";
 import { textLocation, type TextBookDocument } from "../components/text-book-location";
@@ -244,6 +246,9 @@ export default function Reader() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [zoom, setZoom] = useState<number | "fit">("fit");
   const [tocOpen, setTocOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  // Bumped on every ⌘F, even while the panel is already open, so it re-focuses/re-selects the input.
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [tocSavedState, setTocSavedState] = useState<TocSavedState | undefined>(undefined);
   const [chapters, setChapters] = useState<TocChapter[]>([]);
   const [currentChapterIndex, setCurrentChapterIndex] = useState(-1);
@@ -257,6 +262,11 @@ export default function Reader() {
   // EPUB" and everything that must degrade (PDF's own page/zoom readout,
   // and text books, both keep their existing footer untouched).
   const supportsScrubber = (book?.render_format || book?.format) === "epub";
+  // P1.2 search runs on `view.search()`, which only exists for the foliate
+  // view — text books bypass it entirely (isTextBook), and PDF sections have
+  // no `createDocument` for it to walk, so whole-book search would silently
+  // find nothing there. Scoped to EPUB only, same boundary as the scrubber.
+  const supportsSearch = (book?.render_format || book?.format) === "epub";
   const [progressReadoutMode, setProgressReadoutMode] = useState<ProgressReadoutMode>("page");
   // Whether this book has a readout mode of its own yet. Until it does, the
   // global "progress display" toggles decide the starting mode — see
@@ -661,6 +671,31 @@ export default function Reader() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [handleJumpBack]);
+
+  // ⌘F / Ctrl+F — opens the book search panel (P1.2) and focuses its input.
+  // Window-level so it also covers TextBookReader; EPUB/PDF chapter documents
+  // get their own copy of this same combo in useReaderInteractions.ts, since a
+  // doc-level listener is the only way to catch it inside a foliate chapter's
+  // iframe.
+  useEffect(() => {
+    if (!supportsSearch) return;
+    const onKey = (event: KeyboardEvent) => {
+      const isSearchShortcut = (
+        (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey
+        && (event.key === "f" || event.key === "F")
+      );
+      if (!isSearchShortcut) return;
+      const target = event.target as Element | null;
+      if (target?.closest?.("input, textarea, select, [contenteditable='true'], [role='textbox']")) return;
+      event.preventDefault();
+      setSearchOpen(true);
+      setTocOpen(false);
+      setSettingsOpen(false);
+      setSearchFocusToken((token) => token + 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [supportsSearch]);
 
   const onMissingPdfTextIntent = useCallback((pageIndex: number) => {
     if (!platform.hasOcr) return;
@@ -1548,6 +1583,13 @@ export default function Reader() {
     handlePageTurnWheel,
     handleReaderBinding,
     onReturnJump: handleJumpBack,
+    onOpenSearch: () => {
+      if (!supportsSearch) return;
+      setSearchOpen(true);
+      setTocOpen(false);
+      setSettingsOpen(false);
+      setSearchFocusToken((token) => token + 1);
+    },
   });
 
   useFoliateView({
@@ -1844,6 +1886,14 @@ export default function Reader() {
   const toggleTocPanel = () => {
     setTocOpen((open) => !open);
     setSettingsOpen(false);
+    setSearchOpen(false);
+  };
+
+  const toggleSearchPanel = () => {
+    setSearchOpen((open) => !open);
+    setSettingsOpen(false);
+    setTocOpen(false);
+    setSearchFocusToken((token) => token + 1);
   };
 
   const handleTocNavigate = (page: number) => {
@@ -1902,6 +1952,20 @@ export default function Reader() {
               >
                 <List size={16} />
               </Button>
+              {supportsSearch && (
+                <Button
+                  variant="icon"
+                  size="md"
+                  active={searchOpen}
+                  className={searchOpen ? "bg-accent-bg" : ""}
+                  aria-label={t(searchOpen ? "reader.search.close" : "reader.search.open")}
+                  aria-expanded={searchOpen}
+                  title={t(searchOpen ? "reader.search.close" : "reader.search.open")}
+                  onClick={toggleSearchPanel}
+                >
+                  <Search size={16} />
+                </Button>
+              )}
             </>
           ) : (
             <>
@@ -1954,6 +2018,20 @@ export default function Reader() {
               >
                 <List size={16} />
               </Button>
+              {supportsSearch && (
+                <Button
+                  variant="icon"
+                  size="md"
+                  active={searchOpen}
+                  className={searchOpen ? "bg-accent-bg" : ""}
+                  aria-label={t(searchOpen ? "reader.search.close" : "reader.search.open")}
+                  aria-expanded={searchOpen}
+                  title={t(searchOpen ? "reader.search.close" : "reader.search.open")}
+                  onClick={toggleSearchPanel}
+                >
+                  <Search size={16} />
+                </Button>
+              )}
             </>
           )}
 
@@ -1962,6 +2040,7 @@ export default function Reader() {
             onClick={() => {
               setSettingsOpen((open) => !open);
               setTocOpen(false);
+              setSearchOpen(false);
             }}
             className={`flex items-center justify-center gap-1 size-9 rounded-lg cursor-pointer transition-colors ${
               settingsOpen ? "text-accent-text" : isStandaloneWindow ? "opacity-60 hover:opacity-100" : "text-text-muted hover:bg-bg-input"
@@ -2033,6 +2112,18 @@ export default function Reader() {
           bookId={bookId}
           savedState={tocSavedState}
         />
+        {supportsSearch && bookId && (
+          <BookSearchPanel
+            open={searchOpen}
+            onClose={() => setSearchOpen(false)}
+            bookId={bookId}
+            viewRef={viewRef}
+            focusToken={searchFocusToken}
+            onNavigateToCfi={(cfi) => {
+              flashNavigationTarget(cfi).catch(() => {});
+            }}
+          />
+        )}
         <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body }}>
           <main
             ref={readerViewportRef}

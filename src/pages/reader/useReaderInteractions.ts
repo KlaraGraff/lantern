@@ -86,6 +86,12 @@ interface ReaderInteractionsOptions {
    * there was something to return to.
    */
   onReturnJump(): boolean;
+  /**
+   * ⌘F / Ctrl+F — opens the P1.2 book search panel, bound inside each chapter
+   * document for the same reason `onReturnJump` is: a window-level listener
+   * alone cannot catch it inside a foliate chapter's iframe.
+   */
+  onOpenSearch(): void;
 }
 
 function canvasHasVisibleContent(canvas: HTMLCanvasElement): boolean {
@@ -134,6 +140,7 @@ export function useReaderInteractions({
   handlePageTurnWheel,
   handleReaderBinding,
   onReturnJump,
+  onOpenSearch,
 }: ReaderInteractionsOptions) {
   const installDocumentInteractions = useCallback(({
     doc,
@@ -354,9 +361,18 @@ export function useReaderInteractions({
         ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key === "[")
         || (event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey && event.key === "ArrowLeft")
       );
+      // ⌘F / Ctrl+F — opens the book search panel (P1.2), matching the
+      // window-level shortcut in Reader.tsx. Always swallowed on match.
+      const isSearchShortcut = (
+        (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey
+        && (event.key === "f" || event.key === "F")
+      );
       if (isReturnJumpShortcut) {
         event.preventDefault();
         onReturnJump();
+      } else if (isSearchShortcut) {
+        event.preventDefault();
+        onOpenSearch();
       } else if (zoomCommand) {
         // The book is its own document, and nothing pressed inside it reaches
         // the window listener that answers these keys everywhere else — so the
@@ -617,6 +633,7 @@ export function useReaderInteractions({
     handleZoom,
     handleZoomFit,
     onReturnJump,
+    onOpenSearch,
     openLearningInteraction,
     pendingSelectionMenuRef,
     pendingWordClickRef,
