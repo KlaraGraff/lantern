@@ -1826,3 +1826,128 @@ fn delete_book_command_persists_book_and_chat_tombstones() {
         "deleting a book must not delete its collection"
     );
 }
+
+// -----------------------------------------------------------------------
+// Reading promotes a book onto the "reading" shelf
+// -----------------------------------------------------------------------
+
+/// Every `EventBody` the writer queued, in insertion order, as
+/// `(type, payload)` pairs.
+fn queued_events(db: &Db) -> Vec<(String, serde_json::Value)> {
+    let conn = db.reader();
+    let mut statement = conn
+        .prepare("SELECT body_json FROM _pending_publish ORDER BY created_at, id")
+        .unwrap();
+    let rows: Vec<String> = statement
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    rows.into_iter()
+        .map(|body| {
+            let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+            (
+                value["type"].as_str().unwrap().to_string(),
+                value["payload"].clone(),
+            )
+        })
+        .collect()
+}
+
+fn stored_status(db: &Db, id: &str) -> String {
+    db.reader()
+        .query_row("SELECT status FROM books WHERE id = ?1", params![id], |r| {
+            r.get(0)
+        })
+        .unwrap()
+}
+
+/// The shelf a book sits on should follow from reading it, not from the
+/// user right-clicking to say so. First progress write promotes `unread`.
+#[test]
+fn reading_progress_promotes_an_unread_book_to_reading() {
+    let (_dir, db) = setup();
+    insert_book_with_ts(&db, "b1", "unread", 1000);
+    let sync = SyncWriter::new("dev-A".into());
+    sync.set_should_queue(true);
+
+    do_update_reading_progress("b1", 3, Some("epubcfi(/6/4!)"), &db, &sync).unwrap();
+
+    assert_eq!(stored_status(&db, "b1"), "reading");
+    let events = queued_events(&db);
+    let status_events: Vec<_> = events
+        .iter()
+        .filter(|(kind, _)| kind == "book.status.set")
+        .collect();
+    assert_eq!(
+        status_events.len(),
+        1,
+        "the promotion owes peers exactly one status event, got {events:?}"
+    );
+    assert_eq!(status_events[0].1["status"], "reading");
+    assert_eq!(status_events[0].1["book"], "b1");
+}
+
+/// The promotion happens once. Later page turns in the same book find it
+/// already `reading` and must not republish the transition.
+#[test]
+fn further_progress_does_not_republish_the_promotion() {
+    let (_dir, db) = setup();
+    insert_book_with_ts(&db, "b1", "unread", 1000);
+    let sync = SyncWriter::new("dev-A".into());
+    sync.set_should_queue(true);
+
+    do_update_reading_progress("b1", 3, Some("epubcfi(/6/4!)"), &db, &sync).unwrap();
+    do_update_reading_progress("b1", 4, Some("epubcfi(/6/6!)"), &db, &sync).unwrap();
+
+    assert_eq!(stored_status(&db, "b1"), "reading");
+    let promotions = queued_events(&db)
+        .into_iter()
+        .filter(|(kind, _)| kind == "book.status.set")
+        .count();
+    assert_eq!(promotions, 1);
+}
+
+/// "Finished" is a conclusion the user drew by hand. Reopening the book to
+/// look something up must not quietly undo it.
+#[test]
+fn reading_progress_does_not_demote_a_finished_book() {
+    let (_dir, db) = setup();
+    insert_book_with_ts(&db, "b1", "finished", 1000);
+    let sync = SyncWriter::new("dev-A".into());
+    sync.set_should_queue(true);
+
+    do_update_reading_progress("b1", 12, Some("epubcfi(/6/4!)"), &db, &sync).unwrap();
+
+    assert_eq!(stored_status(&db, "b1"), "finished");
+    let promotions = queued_events(&db)
+        .into_iter()
+        .filter(|(kind, _)| kind == "book.status.set")
+        .count();
+    assert_eq!(promotions, 0, "a finished book must stay finished");
+}
+
+/// The 2 s per-book throttle exists to coalesce noisy page turns. The
+/// promotion happens once in a book's life — swallowing it would strand
+/// every peer on `unread` forever, so it must ignore the throttle.
+#[test]
+fn promotion_is_published_even_when_the_progress_event_is_throttled() {
+    let (_dir, db) = setup();
+    insert_book_with_ts(&db, "b1", "unread", 1000);
+    let sync = SyncWriter::new("dev-A".into());
+    sync.set_should_queue(true);
+    // Consume this book's throttle window, so the progress event inside the
+    // call below is suppressed while the status transition still owes an event.
+    assert!(sync.should_emit_progress("b1"));
+
+    do_update_reading_progress("b1", 3, Some("epubcfi(/6/4!)"), &db, &sync).unwrap();
+
+    let events = queued_events(&db);
+    let kinds: Vec<&str> = events.iter().map(|(kind, _)| kind.as_str()).collect();
+    assert_eq!(
+        kinds,
+        vec!["book.status.set"],
+        "the progress event is throttled away; the promotion is not"
+    );
+    assert_eq!(stored_status(&db, "b1"), "reading");
+}

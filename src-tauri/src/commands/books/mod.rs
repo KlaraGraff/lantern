@@ -76,7 +76,9 @@ pub use mutate::{
     update_book_status, update_reading_progress,
 };
 #[allow(unused_imports)]
-pub(crate) use mutate::{do_delete_book, do_delete_book_with_note_policy, do_update_book};
+pub(crate) use mutate::{
+    do_delete_book, do_delete_book_with_note_policy, do_update_book, do_update_reading_progress,
+};
 #[doc(hidden)]
 pub use query::{
     __cmd__check_book_available, __cmd__diagnose_book_file, __cmd__get_book,

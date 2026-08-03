@@ -144,6 +144,16 @@ pub fn update_reading_progress(
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<()> {
+    do_update_reading_progress(&id, progress, cfi.as_deref(), &db, &sync)
+}
+
+pub(crate) fn do_update_reading_progress(
+    id: &str,
+    progress: i32,
+    cfi: Option<&str>,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<()> {
     let now = chrono::Utc::now().timestamp_millis();
     let device = sync.self_device().to_string();
     // Page-turn rate is dominated by this command; gate the event push on
@@ -151,17 +161,40 @@ pub fn update_reading_progress(
     // The SQL write always lands so the local UI stays current — only the
     // event publication is coalesced. Semantic transitions like
     // `mark_finished` deliberately do NOT consult the throttle.
-    let emit = sync.should_emit_progress(&id);
-    sync.with_tx(&db, now, |tx, events| {
+    let emit = sync.should_emit_progress(id);
+    sync.with_tx(db, now, |tx, events| {
+        // Reading a book is what puts it on the "reading" shelf — the user
+        // shouldn't have to say so by hand. Read the status BEFORE the UPDATE
+        // so we know whether the promotion actually happened and an event is
+        // owed. Only `unread` is promoted: a finished book that gets reopened
+        // keeps the conclusion its owner drew about it.
+        let was_unread = tx
+            .query_row("SELECT status FROM books WHERE id = ?1", params![id], |r| {
+                r.get::<_, String>(0)
+            })
+            .map(|status| status == "unread")
+            .unwrap_or(false);
         tx.execute(
-            "UPDATE books SET progress = ?1, current_cfi = ?2, updated_at = ?3, updated_by_device = ?4 WHERE id = ?5",
+            "UPDATE books SET progress = ?1, current_cfi = ?2,
+                    status = CASE WHEN status = 'unread' THEN 'reading' ELSE status END,
+                    updated_at = ?3, updated_by_device = ?4
+             WHERE id = ?5",
             params![progress, cfi, now, device, id],
         )?;
+        if was_unread {
+            // Published unconditionally — the throttle below coalesces noisy
+            // page turns, but this transition happens once in a book's life
+            // and dropping it would strand peers on `unread` forever.
+            events.push(EventBody::BookStatusSet {
+                book: id.to_string(),
+                status: "reading".into(),
+            });
+        }
         if emit {
             events.push(EventBody::BookProgressSet {
-                book: id.clone(),
+                book: id.to_string(),
                 progress,
-                cfi: cfi.clone(),
+                cfi: cfi.map(str::to_string),
             });
         }
         Ok(())
