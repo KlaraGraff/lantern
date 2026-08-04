@@ -2800,7 +2800,7 @@ dependencies = [
 
 [[package]]
 name = "lantern"
-version = "2.8.0"
+version = "2.8.1"
 dependencies = [
  "ammonia",
  "aws-lc-sys",
