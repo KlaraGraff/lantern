@@ -5,6 +5,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
 import Home from "./pages/Home";
 import Reader from "./pages/Reader";
+import ReadingStatsRoute from "./pages/ReadingStatsRoute";
 import AiRouteFallbackNotice from "./components/AiRouteFallbackNotice";
 import ReasoningEffortNotice from "./components/ReasoningEffortNotice";
 import SettingsHost from "./components/SettingsHost";
@@ -18,6 +19,7 @@ import {
   loadCustomFonts,
   type CustomFontRecord,
 } from "./components/custom-fonts";
+import { loadEnhancedFontFace } from "./components/enhanced-fonts";
 
 const isMainWindow = getCurrentWebviewWindow().label === "main";
 
@@ -56,6 +58,7 @@ export default function App() {
     // the persisted DB value (and persist to the DB on first launch).
     reconcileLanguage();
     loadCustomFonts().catch((error) => console.error("Failed to load custom fonts:", error));
+    loadEnhancedFontFace().catch(() => {});
     const unlistenFonts = listen<CustomFontRecord[]>("custom-fonts-changed", (event) => {
       if (isCustomFontRecordList(event.payload)) {
         installCustomFontFaces(event.payload);
@@ -91,6 +94,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/reader/:bookId" element={<Reader />} />
+        <Route path="/reading-stats" element={<ReadingStatsRoute />} />
       </Routes>
       <ReasoningEffortNotice />
       <AiRouteFallbackNotice />

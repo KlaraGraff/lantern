@@ -1,8 +1,34 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Lantern UI Latin";
+  src: local("Inter");
+  font-display: swap;
+  unicode-range: U+0000-024F;
+}
+@font-face {
+  font-family: "Lantern UI CJK";
+  src: local("PingFang SC"), local("Microsoft YaHei");
+  font-display: swap;
+  unicode-range: U+2E80-9FFF, U+F900-FAFF;
+}
+@font-face {
+  font-family: "Lantern Review Latin";
+  src: local("Georgia"), url("/fonts/libre-baskerville-normal-400-700-latin.woff2") format("woff2");
+  font-display: swap;
+  unicode-range: U+0000-024F;
+}
+@font-face {
+  font-family: "Lantern Review CJK";
+  src: local("Songti SC");
+  font-display: swap;
+  unicode-range: U+2E80-9FFF, U+F900-FAFF;
+}
+
 @theme {
-  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+  --font-sans: "Lantern UI Latin", "Lantern UI CJK", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-serif: "Lantern Review Latin", "Lantern Review CJK", Georgia, "Libre Baskerville", "Songti SC", "Lantern Enhanced Chinese Serif", serif;
 
   /* ── Colors ── */
   --color-bg-page: #f4f4f5;

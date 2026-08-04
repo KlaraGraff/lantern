@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Lantern · 增强字体显示设置样张</title>
+  <style>
+    :root {
+      --page:#dddde2;--surface:#fff;--sidebar:#fafafa;--input:#f4f4f5;
+      --text:#18181b;--secondary:#52525b;--muted:#8b8b95;--border:#e4e4e7;
+      --accent:#7c3aed;--accent-text:#6d28d9;--accent-bg:#f3e8ff;
+      --green:#39735a;--green-bg:#edf7f1;--amber:#8a6200;--amber-bg:#fff8e5;
+      --red:#c33b3b;--red-bg:#fff0f0;--shadow:0 25px 60px rgba(24,24,27,.2);
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-width:1100px;min-height:820px;background:var(--page);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased}
+    button{font:inherit;color:inherit;cursor:pointer}
+    button:focus-visible{outline:2px solid rgba(124,58,237,.42);outline-offset:2px}
+    .stage{min-height:100vh;padding:64px 28px 30px;display:grid;place-items:center}
+    .modal{position:relative;width:780px;height:760px;display:grid;grid-template-columns:220px minmax(0,1fr);overflow:hidden;border:1px solid #d4d4d8;border-radius:13px;background:var(--surface);box-shadow:var(--shadow)}
+    .traffic{position:absolute;z-index:5;top:15px;left:15px;display:flex;gap:7px}.traffic i{display:block;width:10px;height:10px;border-radius:50%;background:#ff5f57}.traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}
+    .sidebar{padding:42px 8px 12px;border-right:1px solid var(--border);background:var(--sidebar);overflow:hidden}.sidebar-title{margin:0;padding:0 8px 8px;font-size:13px;font-weight:650}.side-nav{display:flex;flex-direction:column;gap:2px}.side-item{width:100%;height:56px;padding:0 12px;border:0;border-radius:8px;background:transparent;display:grid;grid-template-columns:18px 1fr 14px;align-items:center;gap:10px;text-align:left}.side-item:hover{background:var(--input)}.side-item.active{background:var(--accent-bg);color:var(--accent-text)}.side-icon{width:18px;height:18px;display:grid;place-items:center;color:var(--muted);font-size:15px}.active .side-icon{color:var(--accent)}.side-copy b{display:block;font-size:14px;font-weight:550;line-height:20px}.side-copy small{display:block;overflow:hidden;margin-top:1px;color:var(--muted);font-size:10.5px;line-height:14px;white-space:nowrap;text-overflow:ellipsis}.active .side-copy small{color:rgba(109,40,217,.58)}.chevron{color:#c4c4ca;font-size:16px}.active .chevron{color:#b89be4}
+    .pane{min-width:0;display:flex;flex-direction:column;background:#fff}.pane-actions{height:47px;padding:11px 12px 0;display:flex;justify-content:flex-end}.close{width:29px;height:29px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:18px;line-height:1}.close:hover{background:var(--input)}
+    .scroller{flex:1;overflow:auto;padding:0 24px 34px;scrollbar-gutter:stable}.pane-head{padding:0 0 17px;border-bottom:1px solid var(--border)}.pane-head h1{margin:0;font-size:20px;line-height:28px;letter-spacing:-.25px}.pane-head p{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:18px}
+    .theme-row{height:73px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}.row-copy b{display:block;font-size:14px;font-weight:550}.row-copy span{display:block;margin-top:3px;color:var(--muted);font-size:12px}.select{width:192px;height:36px;padding:0 12px;border:1px solid var(--border);border-radius:9px;background:#fff;display:flex;align-items:center;justify-content:space-between;color:var(--secondary);font-size:12px}.section-head{padding:25px 0 11px}.section-head h2{margin:0;font-size:15px;letter-spacing:-.1px}.section-head p{margin:5px 0 0;color:var(--muted);font-size:11px;line-height:17px}
+    .feature{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#fff}.master{min-height:78px;padding:14px 15px;display:grid;grid-template-columns:36px 1fr auto;align-items:center;gap:12px}.font-icon{width:36px;height:36px;border-radius:10px;background:var(--accent-bg);color:var(--accent-text);display:grid;place-items:center;font:650 15px Georgia,"Songti SC",serif}.master-copy b{display:block;font-size:13px;font-weight:600}.master-copy span{display:block;margin-top:4px;color:var(--muted);font-size:10.5px;line-height:15px}.toggle{position:relative;width:40px;height:23px;padding:0;border:0;border-radius:999px;background:#c9c9ce;transition:.15s}.toggle:after{content:"";position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.22);transition:.15s}.toggle.on{background:var(--accent)}.toggle.on:after{left:20px}.feature-body{padding:14px 15px 15px;border-top:1px solid var(--border);background:#fcfcfd}
+    .pack-head{display:flex;align-items:center;gap:8px}.pack-head b{font-size:11.5px}.status{margin-left:auto;padding:4px 7px;border-radius:999px;background:var(--input);color:var(--muted);font-size:9px;font-weight:650}.status.green{background:var(--green-bg);color:var(--green)}.status.amber{background:var(--amber-bg);color:var(--amber)}.status.red{background:var(--red-bg);color:var(--red)}.pack-copy{margin:8px 0 0;color:var(--secondary);font-size:10.5px;line-height:1.55}.device-note{margin:11px 0 0;padding:9px 10px;border-radius:8px;background:#f4f1f8;color:#665d70;font-size:9.5px;line-height:1.55}.device-note b{color:#4d4458}.placeholder{margin:10px 0 0;padding:8px 10px;border:1px solid #ead7a0;border-radius:8px;background:var(--amber-bg);color:#795b12;font-size:9px;line-height:1.5}.placeholder code{font:600 9px ui-monospace,SFMono-Regular,Menlo,monospace;color:#654a08}.actions{margin-top:12px;display:flex;align-items:center;gap:8px}.btn{height:32px;padding:0 11px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--secondary);font-size:10.5px;font-weight:550}.btn:hover{background:var(--input)}.btn.primary{border-color:var(--accent);background:var(--accent);color:#fff}.btn.danger{border-color:#efb9b9;color:var(--red);background:#fff}.btn.link{height:auto;padding:0;border:0;background:transparent;color:var(--accent-text)}.meta{margin-left:auto;color:var(--muted);font-size:9px}.progress-line{height:5px;margin-top:12px;overflow:hidden;border-radius:99px;background:#e9e7ec}.progress-line i{display:block;width:47%;height:100%;border-radius:inherit;background:var(--accent)}.progress-meta{margin-top:6px;display:flex;justify-content:space-between;color:var(--muted);font-size:9px}.error{margin-top:10px;padding:9px 10px;border-radius:8px;background:var(--red-bg);color:#8f3434;font-size:9.5px;line-height:1.5}
+    .font-preview{margin-top:15px;padding:13px 15px;border:1px solid var(--border);border-radius:11px;background:#fff}.font-preview-head{display:flex;align-items:center;justify-content:space-between}.font-preview-head b{font-size:10.5px}.font-preview-head span{color:var(--muted);font-size:9px}.sample{margin:12px 0 2px;color:#383238;font:16px/1.85 Georgia,"Songti SC",serif}.sample.dim{color:#77717a}.legend{display:flex;gap:12px;margin-top:8px;color:var(--muted);font-size:8.5px}.legend i{display:inline-block;width:6px;height:6px;margin-right:4px;border-radius:50%;background:var(--accent)}.legend span:last-child i{background:#c8c8ce}
+    .state-nav{position:fixed;z-index:50;top:12px;left:50%;transform:translateX(-50%);padding:4px;display:flex;gap:3px;border:1px solid #d2d2d7;border-radius:11px;background:rgba(255,255,255,.96);box-shadow:0 8px 24px rgba(24,24,27,.14);backdrop-filter:blur(10px);white-space:nowrap}.state-nav button{height:30px;padding:0 10px;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:10px}.state-nav button.active{background:var(--accent-bg);color:var(--accent-text);font-weight:650}
+    .state-panel{display:none}.state-panel.active{display:block}
+    .scrim{display:none;position:absolute;z-index:20;inset:0;background:rgba(24,24,27,.3);backdrop-filter:blur(1px)}.scrim.show{display:block}.confirm{display:none;position:absolute;z-index:21;top:50%;left:50%;width:356px;transform:translate(-50%,-50%);padding:20px;border:1px solid var(--border);border-radius:13px;background:#fff;box-shadow:0 24px 60px rgba(24,24,27,.24)}.confirm.show{display:block}.confirm-mark{width:35px;height:35px;border-radius:10px;background:var(--red-bg);color:var(--red);display:grid;place-items:center;font-size:17px}.confirm h3{margin:13px 0 0;font-size:15px}.confirm p{margin:7px 0 0;color:var(--muted);font-size:10.5px;line-height:1.6}.confirm .actions{justify-content:flex-end;margin-top:18px}.caption{position:fixed;left:18px;bottom:16px;width:280px;padding:11px 13px;border-radius:10px;background:rgba(28,26,31,.92);color:#e4e1e7;font-size:9px;line-height:1.55}.caption b{display:block;margin-bottom:3px;color:#fff;font-size:10px}
+    @media(max-height:870px){.modal{height:700px}.stage{padding-top:58px}.caption{display:none}}
+  </style>
+</head>
+<body>
+  <nav class="state-nav" aria-label="样张状态">
+    <button class="active" data-state="uninstalled">未下载</button>
+    <button data-state="downloading">下载中</button>
+    <button data-state="enabled">已启用</button>
+    <button data-state="retained">关闭后保留</button>
+    <button data-state="failed">下载失败</button>
+    <button data-state="confirm">移除确认</button>
+  </nav>
+  <div class="stage">
+    <section class="modal" aria-label="Lantern 设置样张">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <aside class="sidebar">
+        <p class="sidebar-title">设置</p>
+        <nav class="side-nav">
+          <button class="side-item"><span class="side-icon">◎</span><span class="side-copy"><b>通用</b><small>语言、主题和偏好</small></span><span class="chevron">›</span></button>
+          <button class="side-item active"><span class="side-icon">◉</span><span class="side-copy"><b>外观</b><small>主题、字体与排版</small></span><span class="chevron">›</span></button>
+          <button class="side-item"><span class="side-icon">▤</span><span class="side-copy"><b>阅读</b><small>阅读器布局与操作</small></span><span class="chevron">›</span></button>
+          <button class="side-item"><span class="side-icon">✦</span><span class="side-copy"><b>AI 服务</b><small>模型、查词与 OCR</small></span><span class="chevron">›</span></button>
+          <button class="side-item"><span class="side-icon">♧</span><span class="side-copy"><b>学习工具</b><small>词汇、标记与卡片</small></span><span class="chevron">›</span></button>
+          <button class="side-item"><span class="side-icon">☁</span><span class="side-copy"><b>书库同步</b><small>同步位置与状态</small></span><span class="chevron">›</span></button>
+          <button class="side-item"><span class="side-icon">ⓘ</span><span class="side-copy"><b>关于</b><small>版本与构建信息</small></span><span class="chevron">›</span></button>
+        </nav>
+      </aside>
+      <main class="pane">
+        <div class="pane-actions"><button class="close" aria-label="关闭">×</button></div>
+        <div class="scroller">
+          <header class="pane-head"><h1>外观</h1><p>调整 Lantern 的主题、字体与文字显示。</p></header>
+          <div class="theme-row"><div class="row-copy"><b>主题</b><span>跟随系统、浅色或深色</span></div><button class="select">跟随系统 <span>⌄</span></button></div>
+          <section class="section-head"><h2>字体与排版</h2><p>优先使用本机字体；可选字体包只改善需要衬线风格的中文显示。</p></section>
+          <section class="feature">
+            <div class="master">
+              <div class="font-icon">Aa</div>
+              <div class="master-copy"><b>增强字体显示</b><span id="master-description">未启用；继续使用本机和系统字体</span></div>
+              <button class="toggle" id="master-toggle" aria-label="增强字体显示"></button>
+            </div>
+            <div class="feature-body">
+              <section class="state-panel active" data-panel="uninstalled">
+                <div class="pack-head"><b>中文衬线字体包</b><span class="status">未下载</span></div>
+                <p class="pack-copy">首次开启会先下载 <b>［FONT_PACK_SIZE 构建时注入］</b>，下载完成后自动启用。下载期间仍使用系统字体。</p>
+                <div class="device-note"><b>只保存在这台设备</b><br>字体包不会随 iCloud 或 Lantern 设置同步到其他设备。</div>
+                <div class="placeholder">样张占位：仓库目前没有最终中文衬线字体包，无法给出真实体积。上线前必须由构建流程把 <code>FONT_PACK_SIZE</code> 替换为字体包的精确下载体积；未替换时禁止发布。</div>
+              </section>
+
+              <section class="state-panel" data-panel="downloading">
+                <div class="pack-head"><b>中文衬线字体包</b><span class="status amber">正在下载</span></div>
+                <p class="pack-copy">下载完成并通过完整性校验后自动启用；在此之前继续使用系统字体。</p>
+                <div class="progress-line" aria-label="下载进度 47%"><i></i></div>
+                <div class="progress-meta"><span>47%</span><span>［已下载体积 / FONT_PACK_SIZE］</span></div>
+                <div class="actions"><button class="btn" id="cancel-download">取消下载</button><span class="meta">中断不会留下可用中的半成品文件</span></div>
+              </section>
+
+              <section class="state-panel" data-panel="enabled">
+                <div class="pack-head"><b>中文衬线字体包</b><span class="status green">已下载并启用</span></div>
+                <p class="pack-copy">特色中文与数字区域会优先显示增强衬线字体；普通界面中文继续使用系统黑体。</p>
+                <div class="device-note"><b>本机文件已校验</b><br>占用空间：［FONT_PACK_SIZE 构建时注入］ · 不跨设备同步。</div>
+              </section>
+
+              <section class="state-panel" data-panel="retained">
+                <div class="pack-head"><b>中文衬线字体包</b><span class="status">已停用 · 文件保留</span></div>
+                <p class="pack-copy">当前使用系统字体。再次开启可立即使用，无需重复下载。</p>
+                <div class="actions"><button class="btn danger" id="remove-pack">移除字体包…</button><span class="meta">释放本机 ［FONT_PACK_SIZE］ 空间</span></div>
+              </section>
+
+              <section class="state-panel" data-panel="failed">
+                <div class="pack-head"><b>中文衬线字体包</b><span class="status red">下载失败</span></div>
+                <div class="error"><b>未能完成下载。</b> 已继续使用系统字体，不影响阅读和其他功能。请检查网络后重试。</div>
+                <div class="actions"><button class="btn primary" id="retry-download">重试下载</button><span class="meta">未完成文件不会被启用</span></div>
+              </section>
+            </div>
+          </section>
+          <section class="font-preview">
+            <div class="font-preview-head"><b>显示预览</b><span id="preview-label">系统字体</span></div>
+            <p class="sample dim" id="sample">本周读了 3 小时 42 分钟，最长连续阅读 58 分钟。</p>
+            <div class="legend"><span><i></i>特色英文与数字：Georgia → Libre Baskerville</span><span><i></i>普通中文：系统黑体</span></div>
+          </section>
+        </div>
+      </main>
+      <div class="scrim" id="scrim"></div>
+      <section class="confirm" id="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div class="confirm-mark">⌫</div>
+        <h3 id="confirm-title">移除中文衬线字体包？</h3>
+        <p>将从这台设备移除字体包并释放 ［FONT_PACK_SIZE 构建时注入］ 空间。以后再次开启“增强字体显示”时需要重新下载。</p>
+        <div class="actions"><button class="btn" id="keep-pack">取消</button><button class="btn danger" id="confirm-remove">移除字体包</button></div>
+      </section>
+    </section>
+  </div>
+  <aside class="caption"><b>入口：设置 → 外观 → 字体与排版</b>顶层开关负责启停；关闭不删除本机文件，删除动作单独确认。顶部可切换六个关键状态。</aside>
+  <script>
+    const buttons = [...document.querySelectorAll('[data-state]')];
+    const panels = [...document.querySelectorAll('[data-panel]')];
+    const toggle = document.querySelector('#master-toggle');
+    const description = document.querySelector('#master-description');
+    const previewLabel = document.querySelector('#preview-label');
+    const sample = document.querySelector('#sample');
+    const scrim = document.querySelector('#scrim');
+    const dialog = document.querySelector('#confirm-dialog');
+    let state = 'uninstalled';
+
+    const stateCopy = {
+      uninstalled:'未启用；继续使用本机和系统字体',
+      downloading:'正在下载；完成后自动启用',
+      enabled:'已启用；优先显示增强中文衬线字体',
+      retained:'已关闭；字体包仍保存在这台设备',
+      failed:'下载失败；已继续使用系统字体',
+      confirm:'已关闭；字体包仍保存在这台设备'
+    };
+
+    function render(next) {
+      state = next;
+      const base = next === 'confirm' ? 'retained' : next;
+      panels.forEach(panel => panel.classList.toggle('active', panel.dataset.panel === base));
+      buttons.forEach(button => button.classList.toggle('active', button.dataset.state === next));
+      const on = next === 'downloading' || next === 'enabled';
+      toggle.classList.toggle('on', on);
+      toggle.setAttribute('aria-checked', String(on));
+      description.textContent = stateCopy[next];
+      const enhanced = next === 'enabled';
+      previewLabel.textContent = enhanced ? '增强字体已启用' : '系统字体';
+      sample.classList.toggle('dim', !enhanced);
+      scrim.classList.toggle('show', next === 'confirm');
+      dialog.classList.toggle('show', next === 'confirm');
+    }
+
+    buttons.forEach(button => button.addEventListener('click', () => render(button.dataset.state)));
+    toggle.addEventListener('click', () => {
+      if (state === 'enabled') render('retained');
+      else if (state === 'retained') render('enabled');
+      else if (state === 'downloading') render('uninstalled');
+      else render('downloading');
+    });
+    document.querySelector('#cancel-download').addEventListener('click', () => render('uninstalled'));
+    document.querySelector('#retry-download').addEventListener('click', () => render('downloading'));
+    document.querySelector('#remove-pack').addEventListener('click', () => render('confirm'));
+    document.querySelector('#keep-pack').addEventListener('click', () => render('retained'));
+    document.querySelector('#confirm-remove').addEventListener('click', () => render('uninstalled'));
+    const requestedState = new URLSearchParams(location.search).get('state');
+    render(Object.hasOwn(stateCopy, requestedState) ? requestedState : 'uninstalled');
+  </script>
+</body>
+</html>

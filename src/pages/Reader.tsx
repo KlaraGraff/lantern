@@ -107,6 +107,7 @@ import { useBookAvailability } from "./reader/useBookAvailability";
 import { usePageTurnInput } from "./reader/usePageTurnInput";
 import { useReaderInteractions } from "./reader/useReaderInteractions";
 import { useSpeech } from "../hooks/useSpeech";
+import { READING_ACTIVITY_EVENT, useReadingSessionTracker } from "../hooks/useReadingSessionTracker";
 import { collectWord } from "../components/vocab/collect";
 import { useOcrPackage } from "../hooks/useOcrPackage";
 import { useOcrJob } from "../hooks/useOcrJob";
@@ -1377,6 +1378,27 @@ export default function Reader() {
   const continuousReadAloudActive = continuousReadAloud.state.status === "loading"
     || continuousReadAloud.state.status === "playing"
     || continuousReadAloud.state.status === "paused";
+
+  const recordReadingSession = useCallback(async (input: {
+    bookId: string;
+    startedAt: number;
+    endedAt: number;
+    activeSeconds: number;
+  }) => {
+    await invoke("record_reading_session", {
+      input,
+    });
+  }, []);
+  useReadingSessionTracker({
+    bookId: bookId ?? null,
+    enabled: true,
+    readerReady: bookReady,
+    record: recordReadingSession,
+  });
+  useEffect(() => {
+    if (!bookReady) return;
+    window.dispatchEvent(new Event(READING_ACTIVITY_EVENT));
+  }, [bookReady, currentSectionIndex, pageInfo, progress]);
 
   useReadingHighlight({ viewRef, showReadingHighlight, clearReadingHighlight });
 

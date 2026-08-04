@@ -29,6 +29,7 @@ import {
 } from "../ReaderSettings";
 import { DEFAULT_NEXT_PAGE_BINDING, DEFAULT_PREVIOUS_PAGE_BINDING } from "../page-turn-bindings";
 import PassiveVocabSettings from "./PassiveVocabSettings";
+import EnhancedFontSettings from "./EnhancedFontSettings";
 
 const READER_THEME_OPTIONS: {
   value: ReaderTheme;
@@ -257,6 +258,7 @@ export default function ReadingSettings({ settings, loading, refresh, save, save
           options={fontOptions}
         />
       </div>
+      <EnhancedFontSettings />
       {/* Importing needs a native file picker. Without one there is no way to
           put a font here, so the whole group goes rather than leaving a list
           that can only ever be empty. Fonts already chosen stay selectable in

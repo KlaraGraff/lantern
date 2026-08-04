@@ -776,6 +776,12 @@ pub fn run() {
             commands::books::retry_text_book_preparation,
             commands::books::get_converted_book_path,
             commands::books::retry_book_conversion,
+            // Local reading history and optional AI prose (never synced)
+            commands::reading_stats::record_reading_session,
+            commands::reading_stats::checkpoint_reading_session,
+            commands::reading_stats::get_reading_stats_dashboard,
+            commands::reading_stats::generate_reading_review,
+            commands::reading_stats::save_reading_review,
             // Optional local scanned-PDF OCR runtime and job pipeline.
             // Desktop-only — see the cfgs in `commands::ocr` for why. Only the
             // pipeline is gated; the asset resolver behind it ships everywhere.
@@ -848,6 +854,10 @@ pub fn run() {
             commands::fonts::import_custom_fonts,
             commands::fonts::list_custom_fonts,
             commands::fonts::delete_custom_font,
+            commands::enhanced_fonts::enhanced_font_status,
+            commands::enhanced_fonts::enhanced_font_download,
+            commands::enhanced_fonts::enhanced_font_set_enabled,
+            commands::enhanced_fonts::enhanced_font_remove,
             // Dictionary pronunciation audio (cached on disk, never synced)
             commands::dictionary::dictionary_gloss,
             commands::speech::speech_dictionary_audio,

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
-import { Library, BookOpen, CheckCircle2, FolderClosed, BookA, Plus, MessageSquare, Pencil, Trash2, GripVertical, RefreshCw, StickyNote } from "lucide-react";
+import { Library, BookOpen, CheckCircle2, FolderClosed, BookA, Plus, MessageSquare, Pencil, Trash2, GripVertical, RefreshCw, StickyNote, BarChart3 } from "lucide-react";
 import Button from "./ui/Button";
 import LanternLogo from "./LanternLogo";
 import type { Collection } from "../hooks/useCollections";
@@ -43,6 +44,7 @@ function getStoredWidth(): number {
 
 export default function Sidebar({ activeFilter, onFilterChange, bookCounts, collections: collectionsHook, userName, onOpenSettings, syncProgress }: SidebarProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [sidebarWidth, setSidebarWidth] = useState(getStoredWidth);
   const resizingRef = useRef(false);
 
@@ -234,6 +236,14 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
             );
           })}
         </div>
+        <button
+          type="button"
+          onClick={() => navigate("/reading-stats")}
+          className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left hover:bg-bg-input"
+        >
+          <BarChart3 size={16} className="text-text-muted" />
+          <span className="text-[14px] font-medium text-text-secondary">{t("sidebar.readingStats")}</span>
+        </button>
       </div>
 
       <div className="flex flex-col gap-3">
