@@ -288,6 +288,11 @@ export default function Reader() {
     setXrayOpen(false);
     setXrayInteraction(null);
   }, [bookId]);
+  useEffect(() => {
+    if (sidePanel === null || !xrayOpen) return;
+    setXrayOpen(false);
+    setXrayInteraction(null);
+  }, [sidePanel, xrayOpen]);
   // Bumped on every ⌘F, even while the panel is already open, so it re-focuses/re-selects the input.
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [tocSavedState, setTocSavedState] = useState<TocSavedState | undefined>(undefined);
@@ -1407,8 +1412,19 @@ export default function Reader() {
   // Nothing else does now that a dismissed card no longer cancels playback.
   useEffect(() => () => cancelSpeech(), []);
 
+  const navigateToCurrentXrayOccurrence = useCallback(async (location: string): Promise<boolean> => {
+    if (isTextBook) {
+      if (!textReaderNavigateRef.current) return false;
+    } else if (!viewRef.current || !supportsCfiNavigation) {
+      return false;
+    }
+    await flashNavigationTarget(location);
+    return true;
+  }, [flashNavigationTarget, isTextBook, supportsCfiNavigation, textReaderNavigateRef, viewRef]);
+
   const navigateToSource = useCallback(async (source: CitedSource): Promise<boolean> => {
     if (isTextBook && source.charStart != null) {
+      if (!textReaderNavigateRef.current) return false;
       await flashNavigationTarget(textLocation(source.charStart, source.charEnd ?? source.charStart));
       return true;
     }
@@ -2290,7 +2306,7 @@ export default function Reader() {
           <Button
             variant="icon"
             size="md"
-            active={xrayOpen}
+            active={xrayOpen && sidePanel === null}
             aria-label={t("readerXray.title")}
             title={t("readerXray.title")}
             onClick={() => {
@@ -2651,7 +2667,7 @@ export default function Reader() {
         resolveChapter={resolveExportChapter}
       />}
 
-      {xrayOpen && bookId && book && (
+      {xrayOpen && sidePanel === null && bookId && book && (
         <ReaderXrayCard
           bookId={bookId}
           interaction={xrayInteraction}
@@ -2660,11 +2676,7 @@ export default function Reader() {
           progress={progress}
           onClose={() => { setXrayOpen(false); setXrayInteraction(null); }}
           onNavigate={(source) => navigateToSource(source)}
-          onNavigateCurrent={(location) => {
-            if (!viewRef.current && !isTextBook) return false;
-            navigateToCfi(location);
-            return true;
-          }}
+          onNavigateCurrent={navigateToCurrentXrayOccurrence}
         />
       )}
 
