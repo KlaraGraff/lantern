@@ -142,23 +142,7 @@ import { useReaderFileDiagnosis } from "./reader/useReaderFileDiagnosis";
 import ReaderDiagnosticsPanel from "../components/ReaderDiagnosticsPanel";
 import { logIgnoredError } from "../utils/logIgnoredError";
 import { useReaderZoom } from "./reader/useReaderZoom";
-import {
-  averageSecondsPerPage,
-  averageSecondsPerPercent,
-  derivePaceSample,
-  minutesLeftInBook,
-  minutesLeftInChapter,
-  pushPaceSample,
-  type PaceSample,
-  type PageTurnSnapshot,
-} from "./reader/reading-pace";
-import {
-  nextProgressReadoutMode,
-  defaultProgressReadoutMode,
-  parseProgressReadoutMode,
-  progressReadoutSettingKey,
-  type ProgressReadoutMode,
-} from "./reader/progress-readout";
+import { useProgressReadout } from "./reader/useProgressReadout";
 import { chaptersToTicks, type ScrubberTick } from "./reader/progress-scrubber-math";
 import ProgressScrubber from "../components/ProgressScrubber";
 import ReaderExportDialog from "../components/ReaderExportDialog";
@@ -290,13 +274,6 @@ export default function Reader() {
   // no `createDocument` for it to walk, so whole-book search would silently
   // find nothing there. Scoped to EPUB only, same boundary as the scrubber.
   const supportsSearch = (book?.render_format || book?.format) === "epub";
-  const [progressReadoutMode, setProgressReadoutMode] = useState<ProgressReadoutMode>("page");
-  // Whether this book has a readout mode of its own yet. Until it does, the
-  // global "progress display" toggles decide the starting mode — see
-  // `defaultProgressReadoutMode`.
-  const [progressReadoutSaved, setProgressReadoutSaved] = useState(false);
-  const paceSnapshotRef = useRef<PageTurnSnapshot | null>(null);
-  const [paceWindow, setPaceWindow] = useState<PaceSample[]>([]);
   const {
     pushJump,
     popJump,
@@ -545,6 +522,22 @@ export default function Reader() {
     dismissBindingHud,
     onToast: setReaderToast,
   });
+
+  const {
+    effectiveProgressReadoutMode,
+    progressReadoutText,
+    cycleProgressReadoutMode,
+    resetProgressReadout,
+    restoreProgressReadout,
+  } = useProgressReadout({
+    bookId,
+    supportsScrubber,
+    bookReady,
+    pageInfo,
+    currentSectionIndex,
+    progress,
+    readerSettings,
+  });
   const textReaderNavigateRef = useRef<((location: string, flash?: boolean) => void) | null>(null);
 
   // A short human-readable description of "here", for the jump-history entry
@@ -597,25 +590,6 @@ export default function Reader() {
       logIgnoredError("reader.scrubber-navigate", error);
     });
   }, [getCurrentJumpLabel, pushJump]);
-
-  // P1.5's click-cycle readout mode, persisted per book — same one-row-per-key
-  // store as the TOC's saved UI state, written immediately since a single
-  // click (unlike TOC scroll/expand state) needs no debounce.
-  // Takes the mode being displayed rather than reading state, because until
-  // this book has a saved preference the displayed mode is the toggle-derived
-  // default, not `progressReadoutMode`.
-  const cycleProgressReadoutMode = useCallback((current: ProgressReadoutMode) => {
-    if (!bookId) return;
-    const next = nextProgressReadoutMode(current);
-    setProgressReadoutMode(next);
-    setProgressReadoutSaved(true);
-    invoke("set_book_settings_bulk", {
-      bookId,
-      settings: { [progressReadoutSettingKey]: next },
-    }).catch((error: unknown) => {
-      logIgnoredError("reader.progress-readout-mode-save", error);
-    });
-  }, [bookId]);
 
   /**
    * The return pill / ⌘[ / Alt+← action: pop the last jump and land back on
@@ -1098,47 +1072,6 @@ export default function Reader() {
     }
   }, [showScrubber, bookReady, chapters]);
 
-  // P1.5's click-cycle readout text. `null` means "render nothing" (hidden
-  // mode); every other mode always renders *something* — a number once there
-  // are enough pace samples, "calculating…" (`reader.progressReadout.calculating`)
-  // otherwise, never a wrong number. A plain computation (not `useMemo`) —
-  // cheap enough not to need it, and it sidesteps the React Compiler's
-  // manual-memoization check, which otherwise flags the nested-conditional
-  // `pageInfo` property reads below as narrower than the whole-object
-  // dependency a hand-written deps array would declare.
-  // The global progress-display toggles keep authority over the click-cycle:
-  // with all three off, a book that has never had its readout clicked starts
-  // hidden instead of showing the page number.
-  const effectiveProgressReadoutMode = progressReadoutSaved
-    ? progressReadoutMode
-    : defaultProgressReadoutMode(readerSettings);
-  const progressReadoutText = (() => {
-    if (effectiveProgressReadoutMode === "hidden") return null;
-    if (effectiveProgressReadoutMode === "page") {
-      if (!pageInfo) return t("reader.bookProgress", { progress });
-      return pageInfo.visibleEnd && pageInfo.visibleEnd > pageInfo.current
-        ? t("reader.pageRangeOf", { current: pageInfo.current, end: pageInfo.visibleEnd, total: pageInfo.total })
-        : t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total });
-    }
-    if (effectiveProgressReadoutMode === "chapterTime") {
-      if (!pageInfo) return t("reader.progressReadout.calculating");
-      const secondsPerPage = averageSecondsPerPage(paceWindow);
-      const pagesLeft = Math.max(0, pageInfo.total - pageInfo.current);
-      const minutes = minutesLeftInChapter(secondsPerPage, pagesLeft);
-      return minutes === null
-        ? t("reader.progressReadout.calculating")
-        : t("reader.progressReadout.minutesLeft", { minutes });
-    }
-    // bookTime — whole-book percentage plus estimated time left.
-    const secondsPerPercent = averageSecondsPerPercent(paceWindow);
-    const percentLeft = Math.max(0, 100 - progress);
-    const minutes = minutesLeftInBook(secondsPerPercent, percentLeft);
-    const percentText = t("reader.bookProgress", { progress });
-    return minutes === null
-      ? `${percentText} · ${t("reader.progressReadout.calculating")}`
-      : `${percentText} · ${t("reader.progressReadout.minutesLeft", { minutes })}`;
-  })();
-
   const chapterCounter = useMemo(() => {
     const readingUnits = chapters
       .map((chapter, index) => ({ chapter, index }))
@@ -1359,9 +1292,7 @@ export default function Reader() {
     setPageInfo(null);
     setBookReady(false);
     setTextInitialLocation(null);
-    setProgressReadoutMode("page");
-    paceSnapshotRef.current = null;
-    setPaceWindow([]);
+    resetProgressReadout();
     getBook(bookId)
       .then((b) => {
         if (cancelled) return;
@@ -1394,9 +1325,7 @@ export default function Reader() {
       applyReadingAssistanceSettings(g);
       loadReaderSettingsSources(g, perBookSettings);
       setTocSavedState(parseTocSavedState(perBookSettings));
-      const savedReadoutMode = perBookSettings[progressReadoutSettingKey];
-      setProgressReadoutSaved(savedReadoutMode !== undefined);
-      setProgressReadoutMode(parseProgressReadoutMode(savedReadoutMode));
+      restoreProgressReadout(perBookSettings);
       restoreSavedZoom();
       dbSettingsLoadedRef.current = bookId;
     }).catch(() => {});
@@ -1410,30 +1339,11 @@ export default function Reader() {
     loadReaderSettingsSources,
     readerSettingsRef,
     resetAnnotationState,
+    resetProgressReadout,
+    restoreProgressReadout,
     restoreSavedZoom,
     setReaderSettings,
   ]);
-
-  // P1.5's local reading-speed sample: one snapshot per relocate, turned into
-  // a pace sample by `derivePaceSample`, which itself rejects anything that
-  // isn't an ordinary forward single/spread page turn (chapter changes,
-  // scrubber/TOC jumps, and idle gaps are all filtered out there — see
-  // `reading-pace.ts`). Scoped to paginated EPUBs, the same boundary as the
-  // scrubber itself; `pageInfo` is null for scrolled-mode EPUBs too, so this
-  // simply never accumulates samples there and the readout falls back to
-  // "calculating…" indefinitely, which is the intended degrade.
-  useEffect(() => {
-    if (!supportsScrubber || !bookReady || !pageInfo || currentSectionIndex < 0) return;
-    const next: PageTurnSnapshot = {
-      sectionIndex: currentSectionIndex,
-      page: pageInfo.current,
-      progress,
-      timestampMs: Date.now(),
-    };
-    const sample = derivePaceSample(paceSnapshotRef.current, next);
-    paceSnapshotRef.current = next;
-    if (sample) setPaceWindow((prev) => pushPaceSample(prev, sample));
-  }, [supportsScrubber, bookReady, pageInfo, currentSectionIndex, progress]);
 
   useWindowSizePersistence(bookId, isStandaloneWindow);
   const { availabilityState, retryAvailability } = useBookAvailability(book, setBook);
