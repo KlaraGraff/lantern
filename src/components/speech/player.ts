@@ -4,8 +4,8 @@ import { SpeechError, type SpeechStatus } from "./types.ts";
 import type { WordTiming } from "./routing";
 
 export type Playback =
-  | { kind: "audio"; text: string; blob: Blob; timings?: WordTiming[] }
-  | { kind: "voice"; text: string; voice: SpeechSynthesisVoice | null; rate: number };
+  | { kind: "audio"; text: string; blob: Blob; timings?: WordTiming[]; rate?: number }
+  | { kind: "voice"; text: string; voice: SpeechSynthesisVoice | null; language?: string; rate: number };
 
 /**
  * One unit of playback, produced only when it is nearly due. A long selection is
@@ -302,6 +302,7 @@ function playBlob(
     const url = URL.createObjectURL(playback.blob);
     objectUrl = url;
     const audio = new Audio(url);
+    audio.playbackRate = playback.rate ?? 1;
     element = audio;
     const settle = (done: () => void) => {
       if (element === audio) discardElement();
@@ -339,6 +340,8 @@ function playVoice(
     if (playback.voice) {
       utterance.voice = playback.voice;
       utterance.lang = playback.voice.lang;
+    } else if (playback.language) {
+      utterance.lang = playback.language;
     }
     utterance.rate = playback.rate;
     run.park = () => {

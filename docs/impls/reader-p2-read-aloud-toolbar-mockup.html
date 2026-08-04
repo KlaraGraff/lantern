@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lantern P2.5 · 顶部工具栏展开式播放器</title>
+  <style>
+    :root{--paper:#f6f0e5;--page:#fbf7ef;--surface:#fbfaf8;--elevated:#fff;--text:#312d29;--muted:#746e67;--quiet:#99928b;--border:#dfdad3;--input:#f1eee9;--accent:#7c3aed;--accent-bg:#f2ebfd;--accent-soft:#decdfa;--shadow:rgba(48,42,36,.12)}
+    *{box-sizing:border-box}
+    html,body{margin:0;min-width:1080px;min-height:720px;background:#d8d6d2;color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    button{font:inherit;color:inherit;cursor:pointer}
+    .stage{min-height:100vh;padding:28px;display:grid;place-items:center}
+    .window{position:relative;width:min(1440px,calc(100vw - 56px));height:min(900px,calc(100vh - 56px));min-height:664px;overflow:hidden;border:1px solid #c8c5c0;border-radius:16px;background:var(--surface);box-shadow:0 24px 70px rgba(38,34,30,.17)}
+    .traffic{position:absolute;z-index:10;top:19px;left:18px;display:flex;gap:8px}.traffic i{width:12px;height:12px;border-radius:50%;display:block}.traffic i:nth-child(1){background:#ff5f57}.traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}
+    .app{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) 38px}
+    .top{position:relative;z-index:5;background:rgba(251,250,248,.98);border-bottom:1px solid var(--border)}
+    .toolbar{height:62px;padding:0 18px 0 72px;display:grid;grid-template-columns:1fr minmax(320px,auto) 1fr;align-items:center}
+    .book b{display:block;font:600 13px Georgia,"Songti SC",serif}.book span{display:block;margin-top:2px;color:var(--quiet);font-size:10px}
+    .center{justify-self:center;min-width:0;text-align:center}.chapter{display:block;color:var(--muted);font-size:11px;font-weight:600}.chapter-sub{display:block;margin-top:2px;color:var(--quiet);font-size:9px}
+    .tools{justify-self:end;display:flex;align-items:center;gap:4px}.tool{height:34px;min-width:34px;padding:0 9px;border:0;border-radius:9px;background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:6px}.tool:hover,.tool.active{background:var(--input);color:var(--text)}.tool.active{color:var(--accent);background:var(--accent-bg)}.tool svg,.icon svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.tool .label{font-size:10px;font-weight:650}
+    .live-chip{display:none;height:32px;padding:0 10px;border:1px solid #dfd2f4;border-radius:999px;background:#faf7ff;color:#6e518f;align-items:center;gap:7px}.live-chip.show{display:flex}.live-chip:hover{background:var(--accent-bg)}.bars{height:12px;display:flex;align-items:center;gap:2px}.bars i{width:2px;border-radius:2px;background:var(--accent);animation:bars .75s ease-in-out infinite alternate}.bars i:nth-child(1){height:5px}.bars i:nth-child(2){height:11px;animation-delay:.22s}.bars i:nth-child(3){height:7px;animation-delay:.4s}@keyframes bars{to{height:3px}}.is-paused .bars i{animation:none;height:3px;background:var(--quiet)}.live-chip span{font-size:9.5px;font-weight:650}.live-chip small{padding-left:6px;border-left:1px solid #d9c9f0;color:var(--quiet);font-size:8.5px}.chev{font-size:13px;color:var(--quiet);transition:transform .2s}.live-chip.show.expanded .chev{transform:rotate(180deg)}
+    .player{height:0;overflow:hidden;background:rgba(255,255,255,.96);transition:height .22s ease;box-shadow:0 10px 24px rgba(55,48,42,0)}.player.open{height:92px;box-shadow:0 10px 24px rgba(55,48,42,.055)}
+    .player-inner{height:92px;padding:0 max(24px,calc((100% - 1120px)/2));display:grid;grid-template-columns:minmax(260px,1fr) auto minmax(260px,1fr);align-items:center;gap:28px}
+    .now{min-width:0}.eyebrow{display:flex;align-items:center;gap:7px;color:var(--accent);font-size:9px;font-weight:700;letter-spacing:.04em}.dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px #efe7fc}.status-loading .dot{background:transparent;border:1.5px solid #bca3e8;border-top-color:var(--accent);box-shadow:none;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.is-paused .dot{background:#aaa39b;box-shadow:none}.now-line{margin-top:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font:12px/1.4 Georgia,"Songti SC",serif}.now-line em{font-style:normal;color:var(--text);background:linear-gradient(transparent 62%,var(--accent-soft) 62%)}.loading-copy{display:none}.status-loading .reading-copy{display:none}.status-loading .loading-copy{display:block;color:var(--muted);font-family:inherit;font-size:11px}.progress-line{margin-top:8px;height:2px;overflow:hidden;border-radius:999px;background:#eeeae5}.progress-line i{display:block;width:38%;height:100%;background:var(--accent);transition:width .35s}.status-loading .progress-line i{width:16%;animation:prepare 1.2s ease-in-out infinite alternate}@keyframes prepare{to{width:56%}}
+    .transport{display:flex;align-items:center;gap:8px}.round{width:34px;height:34px;border:0;border-radius:50%;background:transparent;color:var(--muted);display:grid;place-items:center}.round:hover{background:var(--input);color:var(--text)}.round.primary{width:42px;height:42px;background:var(--accent);color:#fff;box-shadow:0 4px 13px rgba(124,58,237,.24)}.round svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.round.primary svg{fill:currentColor;stroke:none}.round[disabled]{cursor:default;opacity:.3}.round .pause-icon{display:block}.round .play-icon{display:none}.is-paused .round .pause-icon{display:none}.is-paused .round .play-icon{display:block}.status-loading .round.primary{background:var(--input);color:var(--quiet);box-shadow:none}.status-loading .round.primary svg{display:none}.mini-spinner{display:none;width:17px;height:17px;border:2px solid #d9d3cc;border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}.status-loading .mini-spinner{display:block}
+    .options{justify-self:end;display:flex;align-items:center;gap:9px}.lang{height:28px;padding:0 9px;display:flex;align-items:center;gap:6px;border-radius:999px;background:var(--accent-bg);color:#6c5687;font-size:8.5px;white-space:nowrap}.lang b{font-weight:700}.lang i{width:4px;height:4px;border-radius:50%;background:var(--accent)}.speed-wrap{position:relative}.speed{height:30px;min-width:48px;padding:0 9px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--muted);font-size:9.5px;font-weight:650}.speed:hover,.speed.open{border-color:#c5adea;color:var(--accent)}.speed-menu{display:none;position:absolute;z-index:20;top:38px;right:0;width:154px;padding:9px;border:1px solid var(--border);border-radius:11px;background:#fff;box-shadow:0 13px 32px var(--shadow)}.speed-menu.open{display:block}.speed-menu strong{display:block;padding:3px 3px 8px;font-size:9.5px}.speed-presets{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}.speed-presets button{height:27px;border:0;border-radius:6px;background:var(--input);font-size:8.5px}.speed-presets button.active{background:var(--accent);color:#fff}.speed-tip{margin:8px 3px 1px;color:var(--quiet);font-size:8px;line-height:1.45}.stop{width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:var(--quiet);display:grid;place-items:center}.stop:hover{background:#f4ecea;color:#9a554a}.collapse{height:30px;padding:0 8px;border:0;border-radius:7px;background:transparent;color:var(--quiet);font-size:9px}.collapse:hover{background:var(--input);color:var(--muted)}
+    .reader{position:relative;min-height:0;overflow:hidden;background:var(--paper);display:grid;place-items:center;padding:28px 48px;transition:padding .22s}.page{position:relative;width:min(760px,84%);height:100%;overflow:hidden;padding:37px 64px 48px;background:var(--page);box-shadow:0 5px 30px rgba(80,67,50,.08);font:17px/1.84 Georgia,"Songti SC",serif}.page .kicker{margin:0 0 8px;text-align:center;color:#978c80;font:9px Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase}.page h1{margin:0 0 27px;text-align:center;font-size:25px;font-weight:600}.page p{margin:0 0 .74em;text-align:justify;text-indent:1.5em}.page p.no-indent{text-indent:0}.sentence{border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone}.sentence.active{padding:2px 1px;background:linear-gradient(transparent 61%,var(--accent-soft) 61%);color:#271f32}.is-paused .sentence.active{background:linear-gradient(transparent 61%,#ded9d1 61%);color:#655f59}.page-turn{display:none;position:absolute;top:18px;left:50%;z-index:8;transform:translateX(-50%);padding:7px 11px;border:1px solid #d9cbed;border-radius:999px;background:rgba(255,255,255,.95);color:#6c5687;box-shadow:0 8px 20px rgba(55,48,42,.09);font-size:9px}.page-turn.show{display:block;animation:toast 2.8s both}@keyframes toast{0%{opacity:0;transform:translate(-50%,-6px)}12%,82%{opacity:1;transform:translate(-50%,0)}100%{opacity:0}}.page-number{position:absolute;right:26px;bottom:18px;color:#aaa198;font:9px Inter,sans-serif}.footer{padding:0 28px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--border);background:var(--surface);color:var(--quiet);font-size:9px}.footer i{width:120px;height:1px;background:#d9d4ce}.footer i:before{content:"";display:block;width:48%;height:1px;background:#938b84}
+    .complete{display:none;position:absolute;z-index:30;inset:0;background:rgba(246,240,229,.92);backdrop-filter:blur(4px);place-items:center}.complete.show{display:grid}.complete-card{width:390px;padding:34px;text-align:center;border:1px solid var(--border);border-radius:18px;background:#fff;box-shadow:0 18px 50px rgba(55,48,42,.12)}.complete-mark{width:52px;height:52px;margin:0 auto 16px;border-radius:50%;background:var(--accent-bg);color:var(--accent);display:grid;place-items:center;font-size:23px}.complete h2{margin:0;font:600 21px Georgia,"Songti SC",serif}.complete p{margin:9px 0 21px;color:var(--muted);font-size:10.5px;line-height:1.6}.complete-actions{display:flex;justify-content:center;gap:8px}.complete-actions button{height:34px;padding:0 15px;border:1px solid var(--border);border-radius:8px;background:#fff;font-size:9.5px}.complete-actions .primary{border-color:var(--accent);background:var(--accent);color:white}
+    .state-nav{position:fixed;z-index:80;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:4px;padding:4px;border:1px solid #d1d1d6;border-radius:10px;background:rgba(255,255,255,.96);box-shadow:0 8px 24px rgba(0,0,0,.12)}.state-nav button{height:28px;padding:0 10px;border:0;border-radius:7px;background:transparent;color:var(--quiet);font-size:10px}.state-nav button.active{background:var(--accent-bg);color:var(--accent);font-weight:650}
+    .annotation{position:fixed;z-index:70;left:22px;bottom:18px;width:245px;padding:12px 14px;border:1px solid rgba(255,255,255,.7);border-radius:11px;background:rgba(47,43,39,.9);color:#f3f0ec;box-shadow:0 10px 28px rgba(0,0,0,.13);font-size:9.5px;line-height:1.55}.annotation b{display:block;margin-bottom:3px;color:white;font-size:10px}.annotation span{color:#c8c2bb}
+    @media(max-width:1180px){.toolbar{grid-template-columns:1fr auto}.center{display:none}.player-inner{grid-template-columns:minmax(210px,1fr) auto minmax(210px,1fr);gap:12px}.annotation{display:none}}
+  </style>
+</head>
+<body>
+  <nav class="state-nav" aria-label="样张状态">
+    <button class="active" data-state="idle">入口</button><button data-state="loading">准备音频</button><button data-state="playing">朗读中</button><button data-state="paused">暂停</button><button data-state="collapsed">收起</button><button data-state="autopage">自动翻页</button><button data-state="complete">整书完成</button>
+  </nav>
+  <div class="stage"><section class="window" id="window">
+    <div class="traffic"><i></i><i></i><i></i></div>
+    <div class="app">
+      <div class="top">
+        <header class="toolbar">
+          <div class="book"><b>The Left Hand of Darkness</b><span>Ursula K. Le Guin</span></div>
+          <div class="center"><span class="chapter">Chapter 8 · Another Way into Orgoreyn</span><span class="chapter-sub">184 / 382</span></div>
+          <div class="tools">
+            <button class="live-chip" id="live-chip" aria-label="展开朗读控制"><span class="bars"><i></i><i></i><i></i></span><span id="chip-label">朗读中</span><small id="chip-speed">1.0×</small><span class="chev">⌄</span></button>
+            <button class="tool" id="read-button" aria-label="从本页开始朗读" title="从本页开始朗读">
+              <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9.5c1.3 1.4 1.3 3.6 0 5"/><path d="M18.5 7c2.6 2.8 2.6 7.2 0 10"/></svg><span class="label">朗读</span>
+            </button>
+            <button class="tool" aria-label="目录"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
+            <button class="tool" aria-label="搜索"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg></button>
+            <button class="tool" aria-label="阅读设置"><span style="font-size:15px;font-weight:650">A</span><span style="font-size:10px;font-weight:650">A</span></button>
+          </div>
+        </header>
+        <section class="player" id="player" aria-label="整书朗读控制">
+          <div class="player-inner">
+            <div class="now">
+              <div class="eyebrow"><i class="dot"></i><span id="state-label">整书朗读 · 英语</span></div>
+              <div class="now-line reading-copy" id="now-line">It is a durable, <em>quietly mysterious</em> kind of loyalty.</div>
+              <div class="now-line loading-copy">正在准备本章音频… 首句准备好后会自动开始</div>
+              <div class="progress-line"><i id="progress"></i></div>
+            </div>
+            <div class="transport">
+              <button class="round" id="previous" aria-label="上一句" title="上一句"><svg viewBox="0 0 24 24"><path d="M7 6v12M18 7l-8 5 8 5z"/></svg></button>
+              <button class="round primary" id="play-pause" aria-label="暂停">
+                <svg class="pause-icon" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM14 5h4v14h-4z"/></svg>
+                <svg class="play-icon" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></svg><i class="mini-spinner"></i>
+              </button>
+              <button class="round" id="next" aria-label="下一句" title="下一句"><svg viewBox="0 0 24 24"><path d="M17 6v12M6 7l8 5-8 5z"/></svg></button>
+            </div>
+            <div class="options">
+              <span class="lang" title="按句子自动选择系统语音"><i></i><span>语言自动</span><b id="language">EN</b></span>
+              <div class="speed-wrap"><button class="speed" id="speed">1.0×</button><div class="speed-menu" id="speed-menu"><strong>朗读速度</strong><div class="speed-presets"><button data-speed="0.8">0.8×</button><button class="active" data-speed="1.0">1.0×</button><button data-speed="1.2">1.2×</button><button data-speed="1.5">1.5×</button><button data-speed="1.8">1.8×</button><button data-speed="2.0">2.0×</button></div><p class="speed-tip">切换句子时应用，不会打断当前一句。</p></div></div>
+              <button class="stop icon" id="stop" title="停止朗读" aria-label="停止朗读"><svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1"/></svg></button>
+              <button class="collapse" id="collapse">收起 ↑</button>
+            </div>
+          </div>
+        </section>
+      </div>
+      <main class="reader">
+        <div class="page-turn" id="page-turn">已自动翻至下一页 · 185 / 382</div>
+        <article class="page" id="page" lang="en">
+          <p class="kicker">Chapter Eight</p><h1>Another Way into Orgoreyn</h1>
+          <p class="no-indent"><span class="sentence active" data-sentence="0">It is a durable, quietly mysterious kind of loyalty.</span> It has survived cold, distance, and everything neither of us has known how to say.</p>
+          <p><span class="sentence" data-sentence="1">我后来才明白，沉默有时并不意味着疏远。</span> The long crossing had made us economical with words, but not with attention.</p>
+          <p><span class="sentence" data-sentence="2">Across the ice the light was changing, slowly and without warmth.</span> The horizon appeared close enough to touch and far enough to contain another country.</p>
+          <p><span class="sentence" data-sentence="3">He turned toward me, waiting for a question I had not yet learned to ask.</span> We walked on.</p>
+          <span class="page-number">184</span>
+        </article>
+        <section class="complete" id="complete">
+          <div class="complete-card"><div class="complete-mark">✓</div><h2>这本书朗读完了</h2><p>已连续朗读至全书结尾。阅读位置停在最后一页，下次打开仍从这里继续。</p><div class="complete-actions"><button id="complete-close">留在结尾</button><button class="primary" id="restart">从头再听</button></div></div>
+        </section>
+      </main>
+      <footer class="footer"><span>48%</span><i></i><span>184 / 382</span></footer>
+    </div>
+  </section></div>
+  <aside class="annotation"><b>顶部展开式方案</b><span>展开层参与布局，正文始终完整可见；收起后标题栏只保留朗读状态、语速和重新展开入口。</span></aside>
+  <script>
+    const appWindow=document.querySelector('#window'),player=document.querySelector('#player'),readButton=document.querySelector('#read-button'),liveChip=document.querySelector('#live-chip'),chipLabel=document.querySelector('#chip-label'),chipSpeed=document.querySelector('#chip-speed'),stateLabel=document.querySelector('#state-label'),language=document.querySelector('#language'),nowLine=document.querySelector('#now-line'),progress=document.querySelector('#progress'),pageTurn=document.querySelector('#page-turn'),page=document.querySelector('#page'),complete=document.querySelector('#complete'),speedButton=document.querySelector('#speed'),speedMenu=document.querySelector('#speed-menu'),nav=[...document.querySelectorAll('[data-state]')],sentences=[...document.querySelectorAll('[data-sentence]')];
+    let sentence=0,currentState='idle';
+    const copy=[
+      'It is a durable, <em>quietly mysterious</em> kind of loyalty.',
+      '<em>我后来才明白</em>，沉默有时并不意味着疏远。',
+      'Across the ice the light was changing, <em>slowly and without warmth</em>.',
+      'He turned toward me, waiting for a question <em>I had not yet learned to ask</em>.'
+    ];
+    function highlight(index){sentence=(index+sentences.length)%sentences.length;sentences.forEach((s,i)=>s.classList.toggle('active',i===sentence));nowLine.innerHTML=copy[sentence];language.textContent=sentence===1?'中文':'EN';stateLabel.textContent='整书朗读 · '+(sentence===1?'中文（自动切换）':'英语');progress.style.width=(38+sentence*12)+'%'}
+    function setState(state){
+      currentState=state;nav.forEach(b=>b.classList.toggle('active',b.dataset.state===state));appWindow.classList.remove('status-loading','is-paused');player.classList.remove('open');liveChip.classList.remove('show','expanded');readButton.style.display='none';complete.classList.remove('show');pageTurn.classList.remove('show');document.querySelector('#previous').disabled=false;document.querySelector('#next').disabled=false;
+      if(state==='idle'){readButton.style.display='flex';highlight(0);return}
+      if(state==='complete'){complete.classList.add('show');readButton.style.display='flex';return}
+      liveChip.classList.add('show');chipLabel.textContent=state==='paused'?'已暂停':'朗读中';
+      if(state==='loading'){appWindow.classList.add('status-loading');chipLabel.textContent='准备中';player.classList.add('open');liveChip.classList.add('expanded');stateLabel.textContent='整书朗读 · 准备音频';document.querySelector('#previous').disabled=true;document.querySelector('#next').disabled=true;return}
+      if(state==='paused')appWindow.classList.add('is-paused');
+      if(state!=='collapsed'){player.classList.add('open');liveChip.classList.add('expanded')}
+      if(state==='autopage'){highlight(2);pageTurn.classList.add('show');page.querySelector('.page-number').textContent='185'}
+      else if(state==='playing'||state==='paused'||state==='collapsed')highlight(sentence);
+    }
+    nav.forEach(b=>b.addEventListener('click',()=>setState(b.dataset.state)));
+    readButton.addEventListener('click',()=>setState('loading'));
+    liveChip.addEventListener('click',()=>setState(player.classList.contains('open')?'collapsed':(appWindow.classList.contains('is-paused')?'paused':'playing')));
+    document.querySelector('#collapse').addEventListener('click',()=>setState('collapsed'));
+    document.querySelector('#play-pause').addEventListener('click',()=>{if(currentState==='loading')return;setState(appWindow.classList.contains('is-paused')?'playing':'paused')});
+    document.querySelector('#previous').addEventListener('click',()=>{highlight(sentence-1);setState('playing')});
+    document.querySelector('#next').addEventListener('click',()=>{highlight(sentence+1);setState(sentence===0?'autopage':'playing')});
+    document.querySelector('#stop').addEventListener('click',()=>setState('idle'));
+    speedButton.addEventListener('click',e=>{e.stopPropagation();speedMenu.classList.toggle('open');speedButton.classList.toggle('open')});
+    document.querySelectorAll('[data-speed]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-speed]').forEach(b=>b.classList.remove('active'));button.classList.add('active');speedButton.textContent=button.dataset.speed+'×';chipSpeed.textContent=button.dataset.speed+'×';speedMenu.classList.remove('open');speedButton.classList.remove('open')}));
+    document.addEventListener('click',e=>{if(!e.target.closest('.speed-wrap')){speedMenu.classList.remove('open');speedButton.classList.remove('open')}});
+    document.querySelector('#complete-close').addEventListener('click',()=>setState('idle'));document.querySelector('#restart').addEventListener('click',()=>{highlight(0);setState('loading')});
+    setState('idle');
+  </script>
+</body>
+</html>

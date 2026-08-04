@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Continuous read aloud DOM QA</title>
+<pre id="result">running</pre>
+<script type="module">
+  import { createFoliateContinuousSource } from "/src/pages/reader/foliate-continuous-source.ts";
+
+  const doc = new DOMParser().parseFromString(`<!doctype html><html lang="en"><body>
+    <p>Earlier sentence.</p>
+    <p id="visible">First visible sentence.<br>Second visible sentence.</p>
+    <p>Following paragraph.</p>
+  </body></html>`, "text/html");
+  const ranges = new Map();
+  const visibleText = doc.querySelector("#visible").firstChild;
+  const viewport = doc.createRange();
+  viewport.setStart(visibleText, 6);
+  viewport.setEnd(doc.querySelector("#visible").lastChild, 8);
+  ranges.set("viewport", viewport);
+
+  let id = 0;
+  const view = {
+    book: { sections: [{ createDocument: async () => doc }] },
+    lastLocation: { cfi: "viewport" },
+    getCFI(_index, range) {
+      const key = `sentence-${id++}`;
+      ranges.set(key, range);
+      return key;
+    },
+    resolveCFI(key) {
+      return { index: 0, anchor: () => ranges.get(key) };
+    },
+  };
+  const source = createFoliateContinuousSource({ current: view }, { current: "viewport" });
+  const first = await source.first();
+  const second = first ? await source.next(first) : null;
+  const third = second ? await source.next(second) : null;
+  const actual = [first?.text, second?.text, third?.text];
+  const expected = ["First visible sentence.", "Second visible sentence.", "Following paragraph."];
+  const passed = JSON.stringify(actual) === JSON.stringify(expected);
+  const result = document.querySelector("#result");
+  result.dataset.status = passed ? "passed" : "failed";
+  result.textContent = JSON.stringify({ passed, actual, expected }, null, 2);
+  if (!passed) throw new Error(`Unexpected sentence stream: ${JSON.stringify(actual)}`);
+</script>

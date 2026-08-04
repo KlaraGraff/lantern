@@ -19,6 +19,7 @@ import {
   Plus,
   FileWarning,
   Search,
+  Volume2,
 } from "lucide-react";
 import Button from "../components/ui/Button";
 import Toast from "../components/ui/Toast";
@@ -162,6 +163,9 @@ import { chaptersToTicks, type ScrubberTick } from "./reader/progress-scrubber-m
 import ProgressScrubber from "../components/ProgressScrubber";
 import ReaderExportDialog from "../components/ReaderExportDialog";
 import ReaderNotesRail, { type ReaderNoteAnchor } from "../components/ReaderNotesRail";
+import ContinuousReadAloudToolbar from "../components/ContinuousReadAloudToolbar";
+import { useContinuousReadAloud } from "../hooks/useContinuousReadAloud";
+import { supportsContinuousReadAloud } from "../components/continuous-read-aloud";
 
 type SidePanel = "ai" | "bookmarks" | "vocab" | "notes" | null;
 
@@ -263,6 +267,10 @@ export default function Reader() {
   const passiveVocabAvailable = readerFormat?.toLowerCase() === "epub"
     && capabilities.supportsReflowSettings
     && supportsWordMarkers;
+  const continuousReadAloudAvailable = supportsContinuousReadAloud(
+    readerFormat,
+    capabilities.supportsReflowSettings,
+  );
   const supportsCfiNavigation = capabilities.supportsCfiNavigation;
   const [loading, setLoading] = useState(true);
   const [sidePanel, setSidePanel] = useState<SidePanel>(null);
@@ -472,6 +480,23 @@ export default function Reader() {
   const viewerRef = useRef<HTMLDivElement>(null);
   const readerViewportRef = useRef<HTMLElement>(null);
   const viewRef = useRef<FoliateView | null>(null);
+  const continuousReadAloudLabels = useMemo(() => ({
+    reading: t("reader.continuousReadAloud.reading"),
+    paused: t("reader.continuousReadAloud.paused"),
+    finished: t("reader.continuousReadAloud.finished"),
+    failed: t("reader.continuousReadAloud.failed"),
+    retry: t("reader.continuousReadAloud.retry"),
+    restart: t("reader.continuousReadAloud.restart"),
+    leaveAtEnd: t("reader.continuousReadAloud.leaveAtEnd"),
+    previous: t("reader.continuousReadAloud.previous"),
+    next: t("reader.continuousReadAloud.next"),
+    pause: t("reader.continuousReadAloud.pause"),
+    resume: t("reader.continuousReadAloud.resume"),
+    stop: t("reader.continuousReadAloud.stop"),
+    collapse: t("reader.continuousReadAloud.collapse"),
+    expand: t("reader.continuousReadAloud.expand"),
+    speed: (rate: number) => t("reader.continuousReadAloud.speed", { rate }),
+  }), [t]);
   const resolveExportChapter = useCallback(async (cfi: string) => (await viewRef.current?.getTOCItemOf(cfi))?.label, []);
   // Text currently visible in the reader: foliate reports the visible Range
   // with every relocate. Captured lazily at AI send time; PDFs and unloaded
@@ -1301,10 +1326,12 @@ export default function Reader() {
     applyPassiveVocabAnnotations,
     applyFoliateMarkerStyles,
     autoMarkersRef,
+    clearContinuousReadingHighlight,
     clearReadingHighlight,
     flashNavigationTarget,
     refreshAnnotations,
     resetAnnotationState,
+    showContinuousReadingHighlight,
     showReadingHighlight,
     wordMarkExceptionsRef,
     wordMarkWordsRef,
@@ -1330,6 +1357,18 @@ export default function Reader() {
     pushJump,
     getCurrentLabel,
   });
+
+  const continuousReadAloud = useContinuousReadAloud({
+    bookId: continuousReadAloudAvailable ? bookId : undefined,
+    viewRef,
+    currentCfiRef,
+    showHighlight: showContinuousReadingHighlight,
+    clearHighlight: clearContinuousReadingHighlight,
+    clearLegacyHighlight: clearReadingHighlight,
+  });
+  const continuousReadAloudActive = continuousReadAloud.state.status === "loading"
+    || continuousReadAloud.state.status === "playing"
+    || continuousReadAloud.state.status === "paused";
 
   useReadingHighlight({ viewRef, showReadingHighlight, clearReadingHighlight });
 
@@ -2092,6 +2131,38 @@ export default function Reader() {
             </>
           )}
 
+          {continuousReadAloudAvailable && (
+            continuousReadAloud.state.collapsed && continuousReadAloud.state.status !== "idle" ? (
+              <ContinuousReadAloudToolbar
+                state={continuousReadAloud.state}
+                labels={continuousReadAloudLabels}
+                onStart={() => { void continuousReadAloud.start(continuousReadAloud.state.status === "finished"); }}
+                onPause={continuousReadAloud.pause}
+                onResume={continuousReadAloud.resume}
+                onStop={continuousReadAloud.stop}
+                onPrevious={() => { void continuousReadAloud.previous(); }}
+                onNext={() => { void continuousReadAloud.next(); }}
+                onRateChange={continuousReadAloud.setRate}
+                onCollapsedChange={continuousReadAloud.setCollapsed}
+              />
+            ) : (
+              <Button
+                variant="icon"
+                size="md"
+                active={continuousReadAloud.state.status !== "idle"}
+                disabled={!bookReady}
+                aria-label={t("reader.continuousReadAloud.start")}
+                title={t("reader.continuousReadAloud.start")}
+                onClick={() => {
+                  if (continuousReadAloud.state.status === "idle") void continuousReadAloud.start();
+                  else continuousReadAloud.setCollapsed(true);
+                }}
+              >
+                <Volume2 size={16} />
+              </Button>
+            )
+          )}
+
           <button
             ref={settingsAnchorRef}
             onClick={() => {
@@ -2191,6 +2262,23 @@ export default function Reader() {
           </Button>
         </div>
       </header>
+
+      {continuousReadAloudAvailable
+        && continuousReadAloud.state.status !== "idle"
+        && !continuousReadAloud.state.collapsed && (
+          <ContinuousReadAloudToolbar
+            state={continuousReadAloud.state}
+            labels={continuousReadAloudLabels}
+            onStart={() => { void continuousReadAloud.start(continuousReadAloud.state.status === "finished"); }}
+            onPause={continuousReadAloud.pause}
+            onResume={continuousReadAloud.resume}
+            onStop={continuousReadAloud.stop}
+            onPrevious={() => { void continuousReadAloud.previous(); }}
+            onNext={() => { void continuousReadAloud.next(); }}
+            onRateChange={continuousReadAloud.setRate}
+            onCollapsedChange={continuousReadAloud.setCollapsed}
+          />
+        )}
 
       {/* Body */}
       <div
@@ -2325,7 +2413,7 @@ export default function Reader() {
                 </span>
               </button>
             )}
-            <ReadingPlaybackBar />
+            {!continuousReadAloudActive && <ReadingPlaybackBar />}
           </main>
 
           {/* Bottom progress bar */}

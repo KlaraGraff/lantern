@@ -134,6 +134,28 @@ export function drawFoliateAnnotation(
   pageBackdrop: () => string,
 ) {
   const boxHeight = fontBoxHeight(range?.startContainer ?? null);
+  if (annotation.styleKind === "continuous") {
+    draw((rects) => {
+      const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      group.setAttribute("fill", annotation.color);
+      group.setAttribute("opacity", "0.42");
+      group.style.mixBlendMode = washBlendMode(pageBackdrop());
+      for (const { left, top, height, width } of rects) {
+        const inset = glyphInset(height, boxHeight);
+        const glyphTop = top + inset;
+        const glyphHeight = height - inset * 2;
+        const marker = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        marker.setAttribute("x", String(left));
+        marker.setAttribute("y", String(glyphTop + glyphHeight * 0.61));
+        marker.setAttribute("height", String(Math.max(2, glyphHeight * 0.39)));
+        marker.setAttribute("width", String(width));
+        marker.setAttribute("rx", "1");
+        group.append(marker);
+      }
+      return group;
+    });
+    return;
+  }
   if (annotation.styleKind === "manual" || annotation.styleKind === "automatic") {
     const style = annotation.styleKind === "manual"
       ? markerStyle.manual
@@ -457,6 +479,45 @@ export function useFoliateAnnotations({
     await view.addAnnotation({ value: cfi, color: READING_HIGHLIGHT_COLOR }).catch(() => {});
   }, [clearReadingHighlight, supportsCfiNavigation, viewRef]);
 
+  type ContinuousHighlight = { cfi: string; paused: boolean };
+  const continuousHighlightDesiredRef = useRef<ContinuousHighlight | null>(null);
+  const continuousHighlightRenderedRef = useRef<ContinuousHighlight | null>(null);
+  const continuousHighlightQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  const updateContinuousReadingHighlight = useCallback((next: ContinuousHighlight | null) => {
+    continuousHighlightDesiredRef.current = next;
+    const sync = async () => {
+      const target = continuousHighlightDesiredRef.current;
+      const rendered = continuousHighlightRenderedRef.current;
+      if (rendered?.cfi === target?.cfi && rendered?.paused === target?.paused) return;
+      const view = viewRef.current;
+      if (rendered && view) {
+        await view.deleteAnnotation({ value: rendered.cfi }).catch(() => {});
+        const annotation = appliedAnnotationsRef.current.get(rendered.cfi);
+        if (annotation) await view.addAnnotation({ value: rendered.cfi, ...annotation }).catch(() => {});
+      }
+      continuousHighlightRenderedRef.current = null;
+      if (!target || target !== continuousHighlightDesiredRef.current || !view || !supportsCfiNavigation) return;
+      await view.addAnnotation({
+        value: target.cfi,
+        color: target.paused ? "#B4AEA6" : "#B99BE5",
+        styleKind: "continuous",
+      }).catch(() => {});
+      continuousHighlightRenderedRef.current = target;
+    };
+    continuousHighlightQueueRef.current = continuousHighlightQueueRef.current.then(sync, sync);
+    return continuousHighlightQueueRef.current;
+  }, [supportsCfiNavigation, viewRef]);
+
+  const showContinuousReadingHighlight = useCallback(
+    (cfi: string, paused: boolean) => updateContinuousReadingHighlight({ cfi, paused }),
+    [updateContinuousReadingHighlight],
+  );
+  const clearContinuousReadingHighlight = useCallback(
+    () => updateContinuousReadingHighlight(null),
+    [updateContinuousReadingHighlight],
+  );
+
   const resetAnnotationState = useCallback(() => {
     const view = viewRef.current;
     for (const { doc } of view?.renderer?.getContents?.() ?? []) {
@@ -465,6 +526,8 @@ export function useFoliateAnnotations({
     autoMarkersRef.current.clear();
     appliedAnnotationsRef.current.clear();
     readingHighlightRef.current = null;
+    continuousHighlightDesiredRef.current = null;
+    continuousHighlightRenderedRef.current = null;
     navigationFlashRef.current.clear();
     markerSnapshotRef.current = null;
     wordMarkWordsRef.current = [];
@@ -607,10 +670,12 @@ export function useFoliateAnnotations({
     applyPassiveVocabAnnotations,
     applyFoliateMarkerStyles,
     autoMarkersRef,
+    clearContinuousReadingHighlight,
     clearReadingHighlight,
     flashNavigationTarget,
     refreshAnnotations,
     resetAnnotationState,
+    showContinuousReadingHighlight,
     showReadingHighlight,
     wordMarkExceptionsRef,
     wordMarkWordsRef,

@@ -14,8 +14,11 @@ import {
   fallbackVoice,
   speechSynthesisSupported,
   voiceForAccent,
+  voiceForLanguage,
 } from "../src/components/speech/system-voices.ts";
 import { audioMimeType } from "../src/components/speech/remote-audio.ts";
+import { speechLanguage } from "../src/components/speech/language.ts";
+import { systemPlayback } from "../src/components/speech/system-playback.ts";
 
 function voice(lang: string, name = lang, isDefault = false): SpeechSynthesisVoice {
   return { lang, name, default: isDefault, localService: true, voiceURI: name } as SpeechSynthesisVoice;
@@ -171,6 +174,33 @@ test("non-English voices are ignored", () => {
     assert.deepEqual(englishVoices(), []);
     assert.deepEqual(accentAvailability(), { uk: false, us: false });
     assert.equal(fallbackVoice(), null);
+  });
+});
+
+test("continuous speech selects the matching installed language voice", () => {
+  withVoices([voice("en-US", "Samantha"), voice("zh-CN", "Tingting", true)], () => {
+    assert.equal(voiceForLanguage("zh-Hans")?.name, "Tingting");
+    assert.equal(voiceForLanguage("fr-FR"), null);
+  });
+});
+
+test("sentence script corrects a root-level en/zh EPUB language", () => {
+  assert.equal(speechLanguage("en", "这是一个中文句子。"), "zh");
+  assert.equal(speechLanguage("zh", "This is an English sentence."), "en");
+  assert.equal(speechLanguage("fr", "Bonjour tout le monde."), "fr");
+});
+
+test("an empty WKWebView voice list still uses the platform default voice", () => {
+  withVoices([], () => {
+    const playback = systemPlayback("A sentence.", {
+      ...DEFAULT_SPEECH_SETTINGS,
+      source: "system",
+    });
+    assert.equal(playback.kind, "voice");
+    if (playback.kind === "voice") {
+      assert.equal(playback.voice, null);
+      assert.equal(playback.language, "en");
+    }
   });
 });
 

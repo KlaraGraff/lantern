@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- foliate-js has no TS definitions */
-export type AnnotationStyleKind = "manual" | "automatic" | "vocab";
+export type AnnotationStyleKind = "manual" | "automatic" | "vocab" | "continuous";
 
 export interface FoliateView extends HTMLElement {
   open(file: string | File | Blob): Promise<void>;
   init(opts: { lastLocation?: string; showTextStart?: boolean }): Promise<void>;
-  goTo(target: string | number): Promise<any>;
+  goTo(target: string | number, options?: { history?: boolean }): Promise<any>;
   /** Navigates by whole-book fraction (0-1) — used by the P1.6 scrubber, which
    * only knows "how far across the book" rather than a CFI or section index. */
   goToFraction(fraction: number): Promise<any>;

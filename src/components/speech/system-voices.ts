@@ -48,6 +48,17 @@ export function fallbackVoice(): SpeechSynthesisVoice | null {
   return englishVoices()[0] ?? null;
 }
 
+/** Best installed voice for a BCP-47 language, preferring the OS default. */
+export function voiceForLanguage(language: string): SpeechSynthesisVoice | null {
+  const target = normalizeLang(language);
+  const base = target.split("-")[0];
+  const voices = synthesis()?.getVoices() ?? [];
+  const exact = voices.filter((voice) => normalizeLang(voice.lang).startsWith(target));
+  const sameLanguage = voices.filter((voice) => normalizeLang(voice.lang).split("-")[0] === base);
+  const pool = exact.length > 0 ? exact : sameLanguage;
+  return pool.find((voice) => voice.default) ?? pool[0] ?? null;
+}
+
 /**
  * WKWebView returns an empty list until the speech engine finishes loading, so
  * the voice inventory must be re-read after `voiceschanged` rather than trusted

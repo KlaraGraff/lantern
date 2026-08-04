@@ -478,11 +478,11 @@ export class View extends HTMLElement {
             console.error(`Could not resolve target ${target}`)
         }
     }
-    async goTo(target) {
+    async goTo(target, options = {}) {
         const resolved = this.resolveNavigation(target)
         try {
             await this.renderer.goTo(resolved)
-            this.history.pushState(target)
+            if (options.history !== false) this.history.pushState(target)
             return resolved
         } catch(e) {
             console.error(e)

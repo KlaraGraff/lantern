@@ -1505,5 +1505,21 @@
   "readerExport.ankiSuccessDetail": "在 Anki 中导入 CSV，并按顺序映射字段：Front、Back、Source、Tags。",
   "readerExport.failed": "导出失败",
   "readerExport.failureDetail": "文件未写入，Lantern 数据未改变。{{error}}",
-  "readerExport.tryAgain": "选择其他位置"
+  "readerExport.tryAgain": "选择其他位置",
+  "reader.continuousReadAloud.start": "连续朗读",
+  "reader.continuousReadAloud.reading": "正在连续朗读",
+  "reader.continuousReadAloud.paused": "朗读已暂停",
+  "reader.continuousReadAloud.finished": "已读到全书末尾",
+  "reader.continuousReadAloud.failed": "连续朗读意外停止",
+  "reader.continuousReadAloud.retry": "重新尝试连续朗读",
+  "reader.continuousReadAloud.restart": "从头再听",
+  "reader.continuousReadAloud.leaveAtEnd": "留在结尾",
+  "reader.continuousReadAloud.previous": "上一句",
+  "reader.continuousReadAloud.next": "下一句",
+  "reader.continuousReadAloud.pause": "暂停",
+  "reader.continuousReadAloud.resume": "继续",
+  "reader.continuousReadAloud.stop": "停止连续朗读",
+  "reader.continuousReadAloud.collapse": "收起播放器",
+  "reader.continuousReadAloud.expand": "展开播放器",
+  "reader.continuousReadAloud.speed": "{{rate}}×"
 }

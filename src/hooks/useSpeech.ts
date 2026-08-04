@@ -28,25 +28,17 @@ import {
 } from "../components/speech/settings-store";
 import {
   accentAvailability,
-  fallbackVoice,
-  speechSynthesisSupported,
   subscribeToVoices,
-  voiceForAccent,
 } from "../components/speech/system-voices";
 import {
   SPEECH_ACCENT_SETTING_KEY,
-  SpeechError,
   type SpeechAccent,
   type SpeechKind,
   type SpeechSettings,
   type SpeechStatus,
 } from "../components/speech/types";
-
-function systemPlayback(text: string, settings: SpeechSettings): Playback {
-  if (!speechSynthesisSupported()) throw new SpeechError("unsupported");
-  const voice = voiceForAccent(settings.accent) ?? fallbackVoice();
-  return { kind: "voice", text, voice, rate: settings.rate };
-}
+import { speechLanguage } from "../components/speech/language";
+import { systemPlayback } from "../components/speech/system-playback";
 
 /**
  * What the synthesizer commands accept in one request, mirroring
@@ -103,29 +95,31 @@ async function playbackForChunk(
   text: string,
   plan: SpeechRoute[],
   settings: SpeechSettings,
+  language?: string,
+  rate = settings.rate,
 ): Promise<Playback> {
   for (const [index, route] of plan.entries()) {
-    if (route === "system") return systemPlayback(text, settings);
+    if (route === "system") return systemPlayback(text, settings, language, rate);
     const isLast = index === plan.length - 1;
     try {
       switch (route) {
         case "dictionary": {
           const pending = fetchDictionaryAudio(text, settings.accent);
           const blob = isLast ? await pending : await withDeadline(pending, OPTIONAL_DICTIONARY_MS);
-          return { kind: "audio", text, blob };
+          return { kind: "audio", text, blob, rate };
         }
         case "edge": {
           const { blob, timings } = await fetchEdgeAudio(text, settings.accent);
-          return { kind: "audio", text, blob, timings };
+          return { kind: "audio", text, blob, timings, rate };
         }
         case "custom":
-          return { kind: "audio", text, blob: await fetchCustomAudio(text, settings.accent) };
+          return { kind: "audio", text, blob: await fetchCustomAudio(text, settings.accent), rate };
       }
     } catch {
       // Try the next source in the plan.
     }
   }
-  return systemPlayback(text, settings);
+  return systemPlayback(text, settings, language, rate);
 }
 
 /**
@@ -133,17 +127,19 @@ async function playbackForChunk(
  * request cap is several, and the player fetches one ahead so the seams between
  * them are inaudible.
  */
-function planPlayback(
+export function planSpeechPlayback(
   text: string,
   kind: SpeechKind,
   settings: SpeechSettings,
+  options: { language?: string; rate?: number } = {},
 ): PlaybackStep[] {
-  const plan = planSources(kind, settings);
+  const language = speechLanguage(options.language, text);
+  const plan = language === "en" ? planSources(kind, settings) : ["system" as const];
   // System voices read any length, so splitting would only insert pauses.
   const chunks = plan.every((route) => route === "system")
     ? [text]
     : chunkForSynthesis(text, MAX_SYNTHESIS_CHARS);
-  return chunks.map((chunk) => () => playbackForChunk(chunk, plan, settings));
+  return chunks.map((chunk) => () => playbackForChunk(chunk, plan, settings, language, options.rate));
 }
 
 export interface UseSpeech {
@@ -201,7 +197,7 @@ export function useSpeech(): UseSpeech {
     if (!trimmed) return;
     void playerSpeak(
       ownerId,
-      async () => planPlayback(trimmed, kind, speechSettings()),
+      async () => planSpeechPlayback(trimmed, kind, speechSettings()),
       { detached: playbackDetaches(kind) },
     );
   }, [ownerId]);

@@ -1505,5 +1505,21 @@
   "readerExport.ankiSuccessDetail": "Import the CSV into Anki and map the columns in order: Front, Back, Source, Tags.",
   "readerExport.failed": "Export failed",
   "readerExport.failureDetail": "The file was not written; Lantern data is unchanged. {{error}}",
-  "readerExport.tryAgain": "Choose another location"
+  "readerExport.tryAgain": "Choose another location",
+  "reader.continuousReadAloud.start": "Read continuously",
+  "reader.continuousReadAloud.reading": "Continuous reading",
+  "reader.continuousReadAloud.paused": "Reading paused",
+  "reader.continuousReadAloud.finished": "End of book",
+  "reader.continuousReadAloud.failed": "Continuous reading stopped unexpectedly",
+  "reader.continuousReadAloud.retry": "Try continuous reading again",
+  "reader.continuousReadAloud.restart": "Read again from the beginning",
+  "reader.continuousReadAloud.leaveAtEnd": "Stay at the end",
+  "reader.continuousReadAloud.previous": "Previous sentence",
+  "reader.continuousReadAloud.next": "Next sentence",
+  "reader.continuousReadAloud.pause": "Pause",
+  "reader.continuousReadAloud.resume": "Resume",
+  "reader.continuousReadAloud.stop": "Stop continuous reading",
+  "reader.continuousReadAloud.collapse": "Collapse player",
+  "reader.continuousReadAloud.expand": "Expand player",
+  "reader.continuousReadAloud.speed": "{{rate}}×"
 }
