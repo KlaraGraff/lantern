@@ -5,6 +5,11 @@ name: Notary Check
 
 on:
   workflow_dispatch:
+    inputs:
+      wait:
+        description: "Block until Apple finishes processing (50 min). Off = report current status and exit."
+        type: boolean
+        default: true
 
 jobs:
   notary-check:
@@ -17,6 +22,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WAIT_FOR_RESULT: ${{ inputs.wait }}
         run: |
           set -o pipefail
           echo "=== notarytool history ==="
@@ -53,7 +59,7 @@ jobs:
             --team-id "$APPLE_TEAM_ID" || true
 
           STATUS=$(python3 -c "import json;d=json.load(open('history.json'));print(d['history'][0]['status'])")
-          if [ "$STATUS" = "In Progress" ]; then
+          if [ "$STATUS" = "In Progress" ] && [ "$WAIT_FOR_RESULT" = "true" ]; then
             echo "=== waiting for Apple to finish processing (up to 50 min) ==="
             xcrun notarytool wait "$LATEST" \
               --apple-id "$APPLE_ID" \
