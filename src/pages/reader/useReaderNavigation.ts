@@ -9,7 +9,7 @@ import { emit } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { FoliateView, ReaderNavigation } from "./foliate-types";
 
-type SidePanel = "ai" | "bookmarks" | "vocab" | null;
+type SidePanel = "ai" | "bookmarks" | "vocab" | "notes" | null;
 
 interface UseReaderNavigationOptions {
   bookId?: string;

@@ -145,7 +145,7 @@ interface InstallDocumentInteractionsOptions {
   interactionGeneration: number;
 }
 
-type SidePanel = "ai" | "bookmarks" | "vocab" | null;
+type SidePanel = "ai" | "bookmarks" | "vocab" | "notes" | null;
 
 interface UseFoliateViewOptions {
   book: Book | null;

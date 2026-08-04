@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lantern P3.2 · 页边笔记轨 / 阅读工作区</title>
+  <style>
+    :root{
+      --chrome:#fbfaf8;--paper:#f6f0e5;--page:#fffdf8;--surface:#fff;--text:#302c28;
+      --secondary:#5d5751;--muted:#817a73;--quiet:#a39b93;--border:#ddd7cf;--line:#ece6de;
+      --input:#f3f0eb;--accent:#7c3aed;--accent-bg:#f1eafd;--accent-soft:#dfcff8;
+      --danger:#a94f46;--danger-bg:#f9eae7;--warn:#a46025;--warn-bg:#fff4e5;
+      --shadow:0 16px 45px rgba(54,45,37,.12)
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-width:980px;min-height:720px;background:#d9d7d3;color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    button,input,textarea{font:inherit;color:inherit}button{cursor:pointer}
+    svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+    .stage{min-height:100vh;padding:26px;display:grid;place-items:center}
+    .window{position:relative;width:min(1460px,calc(100vw - 52px));height:min(910px,calc(100vh - 52px));min-height:668px;overflow:hidden;border:1px solid #c9c5bf;border-radius:16px;background:var(--chrome);box-shadow:0 26px 75px rgba(42,37,32,.18);transition:width .28s ease}
+    .traffic{position:absolute;z-index:20;top:19px;left:18px;display:flex;gap:8px}.traffic i{width:12px;height:12px;border-radius:50%;display:block}.traffic i:nth-child(1){background:#ff5f57}.traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}
+    .app{height:100%;display:grid;grid-template-rows:62px minmax(0,1fr) 39px}
+    .toolbar{position:relative;z-index:10;padding:0 18px 0 72px;border-bottom:1px solid var(--border);background:rgba(251,250,248,.98);display:grid;grid-template-columns:1fr auto 1fr;align-items:center}
+    .book b{display:block;font:600 13px Georgia,"Songti SC",serif}.book span{display:block;margin-top:3px;color:var(--quiet);font-size:9.5px}.chapter{text-align:center}.chapter b{display:block;color:var(--secondary);font-size:10.5px}.chapter span{display:block;margin-top:3px;color:var(--quiet);font-size:9px}
+    .tools{justify-self:end;display:flex;align-items:center;gap:3px}.tool{height:34px;min-width:34px;padding:0 8px;border:0;border-radius:9px;background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:6px}.tool:hover{background:var(--input);color:var(--text)}.tool.active{background:var(--accent-bg);color:var(--accent)}.tool .count{min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:var(--accent);color:white;font-size:8px;line-height:16px}.divider{width:1px;height:21px;margin:0 3px;background:var(--border)}
+    .body{min-height:0;overflow:hidden;background:var(--paper)}
+    .workspace{height:100%;padding:28px 42px 20px;display:grid;grid-template-columns:minmax(520px,720px) 326px;justify-content:center;gap:42px;transition:all .25s ease}
+    .window.entry .workspace{grid-template-columns:minmax(560px,780px);gap:0}
+    .page-wrap{position:relative;min-width:0;height:100%;transition:all .25s ease}
+    .page{position:relative;width:100%;height:100%;overflow:hidden;padding:41px 70px 48px;background:var(--page);box-shadow:0 6px 28px rgba(76,62,48,.075);font:16.5px/1.83 Georgia,"Songti SC",serif;transition:padding .25s ease}
+    .page .kicker{margin:0 0 7px;text-align:center;color:#988f85;font:9px Inter,sans-serif;letter-spacing:.15em;text-transform:uppercase}.page h1{margin:0 0 25px;text-align:center;font-size:25px;font-weight:600}.page p{position:relative;margin:0 0 .78em;text-align:justify;text-indent:1.55em}.page p.no-indent{text-indent:0}.page em{font-style:italic}.chapter-rule{width:46px;height:1px;margin:0 auto 25px;background:#cfc7bd}
+    .anchor{border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;background:linear-gradient(transparent 65%,#eadff8 65%)}
+    .anchor.two{background:linear-gradient(transparent 65%,#ead9a8 65%)}.anchor.flash{animation:quote-flash 1.25s ease}@keyframes quote-flash{0%,100%{background-color:transparent}22%,72%{background-color:#d8c0f7}}
+    .anchor-dot{position:absolute;right:-55px;top:.5em;width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px #eee4fb;opacity:0;transition:opacity .18s}.show-anchors .anchor-dot{opacity:1}
+    .page-number{position:absolute;right:27px;bottom:18px;color:#aaa198;font:9px Inter,sans-serif}
+    .selection-action{display:none;position:absolute;z-index:8;right:42px;top:169px;transform:translateY(-100%);padding:4px;border:1px solid var(--border);border-radius:9px;background:white;box-shadow:0 9px 24px rgba(49,41,34,.15)}.selection-action.show{display:flex}.selection-action button{height:29px;padding:0 9px;border:0;border-radius:6px;background:transparent;color:var(--secondary);display:flex;align-items:center;gap:6px;font-size:9.5px}.selection-action button:hover,.selection-action button.active{background:var(--accent-bg);color:var(--accent)}
+    .rail{position:relative;min-width:0;height:100%;overflow:hidden}.window.entry .rail{display:none}
+    .rail-top{height:44px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(126,113,101,.22)}.rail-title{display:flex;align-items:center;gap:8px}.rail-title b{font-size:11px}.rail-title span{color:var(--quiet);font-size:9px}.rail-actions{display:flex;align-items:center;gap:3px}.rail-actions button{height:28px;padding:0 7px;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:9px}.rail-actions button:hover{background:rgba(255,255,255,.62);color:var(--text)}
+    .rail-view{display:none;position:absolute;inset:45px 0 0}.rail-view.active{display:block}
+    .note-card{position:absolute;left:0;right:0;padding:12px 13px 11px;border:1px solid rgba(197,186,176,.8);border-radius:11px;background:rgba(255,254,251,.94);box-shadow:0 7px 22px rgba(73,60,48,.07);font-size:10px;line-height:1.58;transition:box-shadow .15s,border-color .15s}.note-card:hover{border-color:#c5b4dc;box-shadow:0 9px 25px rgba(73,60,48,.10)}.note-card:before{content:"";position:absolute;right:100%;top:19px;width:43px;border-top:1px solid #c8b2e5}.note-card:after{content:"";position:absolute;right:calc(100% + 40px);top:15px;width:7px;height:7px;border-radius:50%;background:var(--accent)}
+    .note-card.one{top:170px}.note-card.two{top:320px}.note-card.three{top:471px}.note-card.warn{border-color:#e2a871;background:#fffaf2}
+    .note-head{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:8.5px}.note-head b{color:var(--secondary);font-size:9px}.note-head time{margin-left:auto}.note-head .status{color:#6e8d62}.quote{margin:8px 0;padding-left:9px;border-left:2px solid var(--accent-soft);color:var(--muted);font:italic 9.5px/1.55 Georgia,"Songti SC",serif}.note-text{margin:6px 0 0;color:var(--text);font-size:10.5px;line-height:1.65}.note-foot{margin-top:8px;display:flex;align-items:center;gap:8px;color:var(--quiet);font-size:8.5px}.note-foot button{margin-left:auto;padding:0;border:0;background:none;color:var(--accent);font-size:8.5px}.tag{padding:2px 6px;border-radius:9px;background:var(--input);color:var(--muted);font-size:8px}
+    .editor-card{position:absolute;inset:90px 0 auto;padding:14px;border:1px solid #c8b1e6;border-radius:12px;background:white;box-shadow:0 14px 34px rgba(65,47,83,.13)}.editor-card:before{content:"";position:absolute;right:100%;top:112px;width:43px;border-top:1px solid #bca0e0}.editor-card:after{content:"";position:absolute;right:calc(100% + 40px);top:108px;width:7px;height:7px;border-radius:50%;background:var(--accent)}
+    .editor-top{display:flex;align-items:center;gap:7px}.editor-top b{font-size:10.5px}.save-state{margin-left:auto;color:#6f8c65;font-size:8.5px;display:flex;align-items:center;gap:4px}.save-state.failed{color:var(--danger)}.save-state i{width:5px;height:5px;border-radius:50%;background:currentColor}.editor-quote{margin:10px 0 11px;padding:9px 10px;border-radius:8px;background:var(--input);color:var(--muted);font:italic 9.5px/1.55 Georgia,"Songti SC",serif}.formatbar{height:30px;padding:0 5px;border:1px solid var(--border);border-bottom:0;border-radius:8px 8px 0 0;background:#fbfaf8;display:flex;align-items:center;gap:1px}.formatbar button{width:27px;height:24px;border:0;border-radius:5px;background:transparent;color:var(--muted);font:600 10px Georgia,serif}.formatbar button:hover{background:var(--input);color:var(--text)}.formatbar i{width:1px;height:14px;margin:0 3px;background:var(--border)}
+    .editor{width:100%;height:136px;resize:none;padding:11px 12px;border:1px solid var(--border);border-radius:0 0 8px 8px;background:white;outline:none;color:var(--text);font-size:10.5px;line-height:1.65}.editor:focus{border-color:#b99bdc}.editor::placeholder{color:var(--quiet)}.editor-bottom{margin-top:9px;display:flex;align-items:center;gap:8px}.editor-bottom span{color:var(--quiet);font-size:8.5px}.editor-bottom .spacer{flex:1}.ghost,.primary,.danger{height:29px;padding:0 10px;border-radius:7px;font-size:9px}.ghost{border:0;background:transparent;color:var(--muted)}.primary{border:0;background:var(--accent);color:white}.danger{border:0;background:var(--danger);color:white}
+    .free-note{position:absolute;top:472px;left:0;width:100%;height:34px;border:1px dashed #c9b9dc;border-radius:9px;background:rgba(255,255,255,.42);color:#735895;font-size:9.5px}.free-note:hover{background:var(--accent-bg)}
+    .failure{margin-bottom:10px;padding:9px 10px;border-radius:8px;background:var(--danger-bg);color:var(--danger);display:flex;align-items:flex-start;gap:7px;font-size:8.5px;line-height:1.45}.failure button{margin-left:auto;padding:0;border:0;background:none;color:inherit;font-weight:650;font-size:8.5px}
+    .delete-confirm{margin-top:10px;padding:10px;border:1px solid #e7c0bb;border-radius:8px;background:var(--danger-bg)}.delete-confirm b{display:block;color:#78433e;font-size:9.5px}.delete-confirm p{margin:4px 0 9px;color:#93625c;font-size:8.5px;line-height:1.5}.confirm-actions{display:flex;justify-content:flex-end;gap:6px}
+    .index-head{padding:15px 0 10px}.search{height:34px;padding:0 10px;border:1px solid var(--border);border-radius:9px;background:rgba(255,255,255,.8);display:flex;align-items:center;gap:7px;color:var(--quiet)}.search input{width:100%;border:0;outline:0;background:transparent;font-size:9.5px}.index-meta{padding:2px 2px 9px;color:var(--quiet);display:flex;justify-content:space-between;font-size:8.5px}.index-list{height:calc(100% - 85px);overflow:auto;padding-right:3px}.index-item{width:100%;padding:11px 9px;border:0;border-top:1px solid rgba(129,116,104,.16);background:transparent;text-align:left}.index-item:hover,.index-item.active{border-radius:8px;background:rgba(255,255,255,.62)}.index-item strong{display:block;color:var(--text);font-size:9.5px;line-height:1.45}.index-item p{margin:5px 0 0;color:var(--secondary);font-size:9px;line-height:1.55}.index-item span{display:block;margin-top:6px;color:var(--quiet);font-size:8px}.index-hit{background:#e6d7fa;color:#553476}
+    .empty-state{height:100%;display:grid;place-items:center;text-align:center}.empty-state div{max-width:240px}.empty-icon{width:47px;height:47px;margin:0 auto 12px;border-radius:14px;background:rgba(255,255,255,.7);color:#9a84b4;display:grid;place-items:center}.empty-icon svg{width:22px;height:22px}.empty-state h3{margin:0;font:600 15px Georgia,"Songti SC",serif}.empty-state p{margin:8px 0 14px;color:var(--muted);font-size:9px;line-height:1.65}
+    .footer{padding:0 28px;border-top:1px solid var(--border);background:var(--chrome);display:flex;align-items:center;justify-content:space-between;color:var(--quiet);font-size:9px}.progress{width:155px;height:1px;background:#d8d2ca}.progress i{display:block;width:47%;height:100%;background:#8d857d}.keyboard{opacity:.8}
+    .state-nav{position:fixed;z-index:100;top:9px;left:50%;transform:translateX(-50%);display:flex;gap:3px;padding:4px;border:1px solid #d1d1d6;border-radius:11px;background:rgba(255,255,255,.97);box-shadow:0 8px 24px rgba(0,0,0,.13)}.state-nav button{height:29px;padding:0 9px;border:0;border-radius:7px;background:transparent;color:#89827c;font-size:9px;white-space:nowrap}.state-nav button.active{background:var(--accent-bg);color:var(--accent);font-weight:650}
+    .caption{position:fixed;z-index:90;left:18px;bottom:15px;width:276px;padding:12px 14px;border-radius:11px;background:rgba(39,35,32,.92);color:#d8d2cc;box-shadow:0 10px 28px rgba(0,0,0,.16);font-size:9.3px;line-height:1.55}.caption b{display:block;margin-bottom:3px;color:#fff;font-size:10px}.caption span{color:#bab2aa}
+    .index-item .index-hit{display:inline;margin:0;background:#e6d7fa;color:#553476;font-size:inherit}
+    .window.narrow{width:930px}.window.narrow .toolbar{grid-template-columns:1fr 1fr}.window.narrow .chapter{display:none}.window.narrow .workspace{padding:18px 36px 14px;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(290px,1fr) 238px;gap:14px}.window.narrow .page{padding:30px 88px;height:100%}.window.narrow .page p:nth-of-type(n+4){display:none}.window.narrow .anchor-dot{right:-72px}.window.narrow .rail{border-top:1px solid rgba(126,113,101,.25);overflow:visible}.window.narrow .rail-top{height:39px}.window.narrow .rail-view{inset:40px 0 0}.window.narrow .editor-card{inset:9px 0 auto;padding:11px 13px;display:grid;grid-template-columns:220px 1fr;gap:9px 14px}.window.narrow .editor-card:before,.window.narrow .editor-card:after{display:none}.window.narrow .editor-top{grid-column:1/-1}.window.narrow .editor-quote{margin:0}.window.narrow .editor-box{grid-column:2}.window.narrow .formatbar{display:none}.window.narrow .editor{height:81px;border-radius:8px}.window.narrow .editor-bottom{grid-column:1/-1;margin-top:0}.window.narrow .free-note{display:none}.window.narrow .caption{display:none}
+    @media(max-width:1190px){.caption{display:none}.workspace{padding-left:24px;padding-right:24px;gap:28px;grid-template-columns:minmax(500px,680px) 300px}.page{padding-left:54px;padding-right:54px}.note-card:before,.editor-card:before{width:29px}.note-card:after,.editor-card:after{right:calc(100% + 26px)}}
+  </style>
+</head>
+<body>
+  <nav class="state-nav" aria-label="样张状态">
+    <button data-state="entry">入口</button><button class="active" data-state="rail">页边笔记</button><button data-state="new">选择后新建</button><button data-state="edit">编辑 / 自动保存</button><button data-state="index">列表 / 搜索</button><button data-state="empty">空态</button><button data-state="fail">保存失败</button><button data-state="delete">删除确认</button><button data-state="narrow">窄窗</button>
+  </nav>
+
+  <div class="stage"><section class="window show-anchors" id="window">
+    <div class="traffic"><i></i><i></i><i></i></div>
+    <div class="app">
+      <header class="toolbar">
+        <div class="book"><b>The Left Hand of Darkness</b><span>Ursula K. Le Guin</span></div>
+        <div class="chapter"><b>Chapter 8 · Another Way into Orgoreyn</b><span>184 / 382</span></div>
+        <div class="tools">
+          <button class="tool" title="目录"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
+          <button class="tool" title="搜索"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg></button>
+          <button class="tool" title="阅读设置"><b style="font-size:14px">A</b><b style="font-size:9px">A</b></button>
+          <button class="tool" title="书签和高亮"><svg viewBox="0 0 24 24"><path d="M6 4h12v17l-6-4-6 4z"/></svg></button>
+          <button class="tool active" id="notes-tool" title="页边笔记"><svg viewBox="0 0 24 24"><path d="M5 4h14v13H9l-4 4zM9 8h6M9 12h4"/></svg><span class="count">3</span></button>
+          <div class="divider"></div>
+          <button class="tool" title="AI 助手"><svg viewBox="0 0 24 24"><rect x="5" y="7" width="14" height="11" rx="3"/><path d="M9 12h.01M15 12h.01M12 7V4M9 18v2M15 18v2"/></svg></button>
+        </div>
+      </header>
+
+      <div class="body"><div class="workspace">
+        <div class="page-wrap">
+          <article class="page">
+            <p class="kicker">Chapter Eight</p><h1>Another Way into Orgoreyn</h1><div class="chapter-rule"></div>
+            <p class="no-indent">It is a durable, quietly mysterious kind of loyalty. We crossed the border in darkness, with no witness but the snow and the small blue lamps of the sledge.</p>
+            <p>The first hours were passed in silence. Estraven had said that <span class="anchor" id="anchor-one">fear was useful only when it made the senses exact</span>; all other fear was borrowed from tomorrow.<i class="anchor-dot"></i></p>
+            <p>By noon the mountains behind us had become a pale wall. I could no longer tell whether I was leaving Karhide or carrying it with me. <span class="anchor two">A border persists most stubbornly in the mind of the person who has crossed it.</span></p>
+            <p>He spoke then, not looking at me. “<span class="anchor">Patriotism is not love. It is the fear of the other.</span> I have tried to learn the difference.”<i class="anchor-dot" style="top:1.9em"></i></p>
+            <p>Nothing in his tone asked agreement. The statement lay between us like another item of equipment: light enough to carry, dangerous to forget.</p>
+            <p>I wrote it down that evening. The act seemed absurdly formal, but I understood that memory changes an argument into a mood, and a mood is much harder to examine.</p>
+            <p>The road curved north. In the failing light the ice fields appeared not empty but complete, a country whose language we had not yet earned.</p>
+            <span class="page-number">184</span>
+          </article>
+          <div class="selection-action" id="selection-action"><button>复制</button><button>高亮</button><button class="active"><svg viewBox="0 0 24 24"><path d="M5 4h14v13H9l-4 4zM9 8h6"/></svg>记笔记</button></div>
+        </div>
+
+        <aside class="rail" aria-label="页边笔记工作区">
+          <div class="rail-top"><div class="rail-title"><b>页边笔记</b><span id="rail-count">本章 3 条</span></div><div class="rail-actions"><button data-jump="rail">页边</button><button data-jump="index">全部笔记</button><button title="在当前位置写笔记">＋ 新建</button></div></div>
+
+          <section class="rail-view active" data-view="rail">
+            <article class="note-card one"><div class="note-head"><span class="tag">第 184 页</span><b>我的想法</b><time>刚刚</time></div><div class="quote">“fear was useful only when it made the senses exact”</div><p class="note-text">恐惧本身不是敌人；失去边界的恐惧才会替未来做决定。这里像是在为后面的冰原旅程定下判断方式。</p><div class="note-foot"><span>已保存</span><button data-jump="edit">编辑</button></div></article>
+            <article class="note-card two"><div class="note-head"><span class="tag">第 184 页</span><b>边界与身份</b><time>昨天</time></div><div class="quote">“A border persists most stubbornly in the mind…”</div><p class="note-text">跨越地理边界之后，人的旧身份仍然继续工作。这可能也是 Genly 理解格森人的真正障碍。</p><div class="note-foot"><span>已保存</span><button>定位引用</button></div></article>
+            <article class="note-card three"><div class="note-head"><span class="tag">第 184 页</span><b>待继续想</b><time>7 月 28 日</time></div><div class="quote">“Patriotism is not love.”</div><p class="note-text">Estraven 把“爱自己的共同体”和“害怕他者”拆开了。回头对照他被放逐时的选择。</p><div class="note-foot"><span>已保存</span><button>定位引用</button></div></article>
+          </section>
+
+          <section class="rail-view" data-view="new">
+            <div class="editor-card"><div class="editor-top"><b>给这段原文写笔记</b><span class="save-state"><i></i>草稿仅在本机</span></div><div class="editor-quote">“fear was useful only when it made the senses exact”</div><div class="editor-box"><div class="formatbar"><button>B</button><button style="font-style:italic">I</button><i></i><button>•</button><button>1.</button><i></i><button>H</button></div><textarea class="editor" autofocus placeholder="写下你的理解、疑问或联想…"></textarea></div><div class="editor-bottom"><span>⌘ Enter 保存</span><span class="spacer"></span><button class="ghost">取消</button><button class="primary" data-jump="edit">保存笔记</button></div></div>
+            <button class="free-note">＋ 不引用原文，在当前页写一条独立笔记</button>
+          </section>
+
+          <section class="rail-view" data-view="edit">
+            <div class="editor-card"><div class="editor-top"><b>编辑笔记</b><span class="save-state"><i></i>已自动保存 · 刚刚</span></div><div class="editor-quote">“fear was useful only when it made the senses exact”</div><div class="editor-box"><div class="formatbar"><button>B</button><button style="font-style:italic">I</button><i></i><button>•</button><button>1.</button><i></i><button>H</button></div><textarea class="editor">恐惧本身不是敌人；失去边界的恐惧才会替未来做决定。这里像是在为后面的冰原旅程定下判断方式。</textarea></div><div class="editor-bottom"><span>离开输入框后自动保存</span><span class="spacer"></span><button class="ghost" data-jump="delete">删除</button><button class="primary" data-jump="rail">完成</button></div></div>
+            <button class="free-note">＋ 不引用原文，在当前页写一条独立笔记</button>
+          </section>
+
+          <section class="rail-view" data-view="index">
+            <div class="index-head"><label class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg><input id="search-input" value="边界" placeholder="搜索本书笔记与引用"/><span>⌘F</span></label></div><div class="index-meta"><span id="result-count">找到 2 条</span><span>按阅读位置</span></div>
+            <div class="index-list" id="index-list">
+              <button class="index-item active" data-text="恐惧 未来 fear senses"><strong>恐惧本身不是敌人；失去边界的恐惧才会替未来做决定。</strong><p>“fear was useful only when it made the senses exact”</p><span>第 184 页 · 当前章节 · 点击定位引用</span></button>
+              <button class="index-item" data-text="边界 身份 border mind"><strong>跨越地理<span class="index-hit">边界</span>之后，人的旧身份仍然继续工作。</strong><p>“A <span class="index-hit">border</span> persists most stubbornly in the mind…”</p><span>第 184 页 · 当前章节</span></button>
+              <button class="index-item" data-text="共同体 他者 patriotism love"><strong>把“爱自己的共同体”和“害怕他者”拆开。</strong><p>“Patriotism is not love.”</p><span>第 184 页 · 当前章节</span></button>
+              <button class="index-item" data-text="边界 国王 预言"><strong>前面国王谈“预言”时也出现过类似的<span class="index-hit">边界</span>。</strong><p>“To oppose something is to maintain it.”</p><span>第 72 页 · 第三章</span></button>
+              <button class="index-item" data-text="冬天 信任"><strong>信任不是同意，而是愿意一起承担未知。</strong><p>“We shall have to trust each other.”</p><span>第 201 页 · 第九章</span></button>
+            </div>
+          </section>
+
+          <section class="rail-view" data-view="empty"><div class="empty-state"><div><span class="empty-icon"><svg viewBox="0 0 24 24"><path d="M5 4h14v13H9l-4 4zM9 8h6M9 12h4"/></svg></span><h3>这一页还没有笔记</h3><p>选择一段原文后点“记笔记”，卡片会沿着原文出现在页边；也可以在当前位置写一条不引用原文的笔记。</p><button class="primary" data-jump="new">在当前位置写笔记</button></div></div></section>
+
+          <section class="rail-view" data-view="fail">
+            <div class="editor-card"><div class="failure"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 17h.01"/></svg><span><b>暂时无法保存</b><br>内容仍保留在本机草稿中。</span><button>重试</button></div><div class="editor-top"><b>编辑笔记</b><span class="save-state failed"><i></i>未同步</span></div><div class="editor-quote">“fear was useful only when it made the senses exact”</div><div class="editor-box"><div class="formatbar"><button>B</button><button style="font-style:italic">I</button><i></i><button>•</button><button>1.</button></div><textarea class="editor">恐惧本身不是敌人；失去边界的恐惧才会替未来做决定。这段还要继续补充。</textarea></div><div class="editor-bottom"><span>关闭阅读器也不会丢失这份草稿</span><span class="spacer"></span><button class="primary">重试保存</button></div></div>
+          </section>
+
+          <section class="rail-view" data-view="delete">
+            <article class="note-card one" style="top:28px"><div class="note-head"><span class="tag">第 184 页</span><b>我的想法</b><time>刚刚</time></div><div class="quote">“fear was useful only when it made the senses exact”</div><p class="note-text">恐惧本身不是敌人；失去边界的恐惧才会替未来做决定。</p><div class="delete-confirm"><b>永久删除这条笔记？</b><p>原文不会改变；这条笔记删除后无法恢复。</p><div class="confirm-actions"><button class="ghost" data-jump="rail">取消</button><button class="danger">删除笔记</button></div></div></article>
+          </section>
+        </aside>
+      </div></div>
+
+      <footer class="footer"><span>184 / 382 · 全书 47%</span><span class="keyboard">页边笔记展开时，正文自动重排，不会被覆盖</span><span class="progress"><i></i></span></footer>
+    </div>
+  </section></div>
+
+  <aside class="caption"><b>推荐：页边笔记轨</b><span>笔记卡跟随引用原文出现，读与写保持空间对应；“全部笔记”只是同一工作区的索引模式，不再与 AI、书签、生词争抢普通右侧面板。</span></aside>
+
+  <script>
+    const win=document.querySelector('#window'),buttons=[...document.querySelectorAll('[data-state]')],views=[...document.querySelectorAll('.rail-view')],tool=document.querySelector('#notes-tool'),selection=document.querySelector('#selection-action'),count=document.querySelector('#rail-count');
+    function show(state){
+      const view=state==='narrow'?'edit':state;
+      buttons.forEach(b=>b.classList.toggle('active',b.dataset.state===state));
+      views.forEach(v=>v.classList.toggle('active',v.dataset.view===view));
+      win.classList.toggle('entry',state==='entry');win.classList.toggle('narrow',state==='narrow');win.classList.toggle('show-anchors',!['entry','empty'].includes(state));
+      tool.classList.toggle('active',state!=='entry');selection.classList.toggle('show',state==='new');
+      count.textContent=state==='index'?'本书 12 条':state==='empty'?'本章 0 条':'本章 3 条';
+    }
+    buttons.forEach(b=>b.addEventListener('click',()=>show(b.dataset.state)));
+    document.querySelectorAll('[data-jump]').forEach(b=>b.addEventListener('click',()=>show(b.dataset.jump)));
+    tool.addEventListener('click',()=>show(win.classList.contains('entry')?'rail':'entry'));
+    const search=document.querySelector('#search-input'),items=[...document.querySelectorAll('.index-item')],result=document.querySelector('#result-count');
+    function filterNotes(){const q=search.value.trim().toLowerCase();let n=0;items.forEach(item=>{const visible=!q||item.dataset.text.toLowerCase().includes(q);item.style.display=visible?'block':'none';if(visible)n++});result.textContent=q?`找到 ${n} 条`:`共 ${items.length} 条`}
+    search.addEventListener('input',filterNotes);
+    function flashQuote(){const anchor=document.querySelector('#anchor-one');anchor.classList.remove('flash');requestAnimationFrame(()=>anchor.classList.add('flash'))}
+    document.querySelectorAll('.index-item').forEach(item=>item.addEventListener('click',()=>{document.querySelectorAll('.index-item').forEach(i=>i.classList.remove('active'));item.classList.add('active');flashQuote()}));
+    document.querySelectorAll('.note-foot button').forEach(button=>{if(button.textContent.includes('定位'))button.addEventListener('click',flashQuote)});
+    filterNotes();show(new URLSearchParams(location.search).get('state')||'rail');
+  </script>
+</body>
+</html>

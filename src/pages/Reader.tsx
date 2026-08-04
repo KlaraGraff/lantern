@@ -12,6 +12,7 @@ import {
   List,
   Bookmark,
   Bot,
+  MessageSquareMore,
   Languages,
   Loader2,
   Minus,
@@ -157,8 +158,9 @@ import {
 import { chaptersToTicks, type ScrubberTick } from "./reader/progress-scrubber-math";
 import ProgressScrubber from "../components/ProgressScrubber";
 import ReaderExportDialog from "../components/ReaderExportDialog";
+import ReaderNotesRail, { type ReaderNoteAnchor } from "../components/ReaderNotesRail";
 
-type SidePanel = "ai" | "bookmarks" | "vocab" | null;
+type SidePanel = "ai" | "bookmarks" | "vocab" | "notes" | null;
 
 function tocKind(chapter: TocChapter) {
   return tocUnitKind({ label: chapter.title });
@@ -314,6 +316,7 @@ export default function Reader() {
   const ocrJob = useOcrJob(bookId, ocrAvailable);
   const [textInitialLocation, setTextInitialLocation] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ReaderInteraction | null>(null);
+  const [selectedNoteAnchor, setSelectedNoteAnchor] = useState<ReaderNoteAnchor | null>(null);
   const [contextSelectionFullyMarked, setContextSelectionFullyMarked] = useState(false);
   const [contextManualSelectionFullyMarked, setContextManualSelectionFullyMarked] = useState(false);
   const [contextHasManualSelectionMark, setContextHasManualSelectionMark] = useState(false);
@@ -1699,9 +1702,29 @@ export default function Reader() {
     };
   }, []);
 
-  const togglePanel = (panel: "ai" | "bookmarks" | "vocab") => {
+  const togglePanel = (panel: "ai" | "bookmarks" | "vocab" | "notes") => {
     setSidePanel((prev) => (prev === panel ? null : panel));
   };
+
+  const resolveNoteAnchorPosition = useCallback((cfi: string) => {
+    const view = viewRef.current;
+    const viewport = readerViewportRef.current;
+    if (!view || !viewport) return undefined;
+    try {
+      const { index, anchor } = view.resolveCFI(cfi);
+      const content = view.renderer?.getContents?.()
+        ?.find((candidate: { index?: number }) => candidate.index === index) as { doc?: Document } | undefined;
+      if (!content?.doc) return undefined;
+      const range = anchor(content.doc);
+      const rect = range.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return undefined;
+      const frame = content.doc.defaultView?.frameElement as HTMLElement | null;
+      const frameRect = frame?.getBoundingClientRect();
+      return (frameRect?.top ?? 0) + rect.top - viewport.getBoundingClientRect().top;
+    } catch {
+      return undefined;
+    }
+  }, [readerViewportRef, viewRef]);
 
   // Handle navigation state from ChatsPage ("Open in Reader")
   // Supports both location.state (main window) and URL search params (standalone window)
@@ -2110,6 +2133,17 @@ export default function Reader() {
             >
               <Languages size={16} />
             </Button>
+
+            <Button
+              variant="icon"
+              size="md"
+              active={sidePanel === "notes"}
+              aria-label={t("readerNotes.title")}
+              title={t("readerNotes.title")}
+              onClick={() => togglePanel("notes")}
+            >
+              <MessageSquareMore size={16} />
+            </Button>
           </>}
 
           <div className="w-px h-6 bg-border mx-1" />
@@ -2129,7 +2163,7 @@ export default function Reader() {
 
       {/* Body */}
       <div
-        className="flex flex-1 overflow-hidden"
+        className={`flex flex-1 overflow-hidden ${sidePanel === "notes" ? "max-[1100px]:flex-col" : ""}`}
         style={{ backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body }}
       >
         <TableOfContents
@@ -2354,12 +2388,12 @@ export default function Reader() {
         {sidePanel && (
           <div
             onPointerDown={handlePanelResizePointerDown}
-            className="w-1 h-full shrink-0 cursor-col-resize touch-none hover:bg-accent/30 transition-colors z-10"
+            className={`w-1 h-full shrink-0 cursor-col-resize touch-none hover:bg-accent/30 transition-colors z-10 ${sidePanel === "notes" ? "max-[1100px]:hidden" : ""}`}
           />
         )}
         <div
           ref={panelRef}
-          className={sidePanel ? "shrink-0 h-full" : "hidden"}
+          className={sidePanel ? `shrink-0 h-full ${sidePanel === "notes" ? "max-[1100px]:!h-[38%] max-[1100px]:!w-full" : ""}` : "hidden"}
           style={{ width: panelWidth }}
           onPointerDownCapture={blockPageTurnKeyboard}
         >
@@ -2417,6 +2451,20 @@ export default function Reader() {
               initialWordCfi={activeVocabCfi}
               onWordDetailClosed={() => setActiveVocabCfi(null)}
               onExport={() => setExportOpen(true)}
+            />
+          )}
+          {supportsCfiNavigation && sidePanel === "notes" && bookId && (
+            <ReaderNotesRail
+              bookId={bookId}
+              currentCfi={() => currentCfiRef.current}
+              onNavigate={navigateToCfi}
+              selectedAnchor={selectedNoteAnchor}
+              onSelectedAnchorHandled={() => {
+                setSelectedNoteAnchor(null);
+                viewRef.current?.deselect();
+              }}
+              resolveAnchorPosition={resolveNoteAnchorPosition}
+              layoutKey={`${currentSectionIndex}:${progress}:${pageInfo?.current ?? ""}`}
             />
           )}
         </div>
@@ -2477,6 +2525,16 @@ export default function Reader() {
             openLearningCard({ ...contextMenu, trigger: "word-quick-lookup" });
             setContextMenu(null);
           }}
+          onNote={contextMenu.location ? (() => {
+            setSelectedNoteAnchor({
+              anchorKind: "selection",
+              scope: "book",
+              location: contextMenu.location,
+              selectedText: contextMenu.text,
+            });
+            setSidePanel("notes");
+            setContextMenu(null);
+          }) : undefined}
           onTranslate={() => {
             setTranslation({
               x: contextMenu.anchorRect.right,

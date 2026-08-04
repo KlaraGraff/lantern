@@ -46,6 +46,7 @@ interface ReaderContextMenuProps {
   onExplain: () => void;
   onQuote: () => void;
   onLookup: () => void;
+  onNote?: () => void;
   onTranslate: () => void;
   onSave: () => void;
   onToggleMark?: () => void;
@@ -70,6 +71,7 @@ export default function ReaderContextMenu({
   onExplain,
   onQuote,
   onLookup,
+  onNote,
   onTranslate,
   onSave,
   onToggleMark,
@@ -221,6 +223,17 @@ export default function ReaderContextMenu({
       className="fixed z-[62] w-[220px] rounded-md border border-border bg-bg-surface py-1 shadow-context"
       style={{ left: anchorRect.right, top: anchorRect.bottom + 8 }}
     >
+      {onNote ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={onNote}
+          className="mx-1 flex h-9 w-[calc(100%-8px)] items-center gap-3 rounded-sm px-3 text-left text-[13px] font-medium text-text-primary hover:bg-accent-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <MessageSquareMore size={16} className="shrink-0 text-text-muted" />
+          <span className="min-w-0 flex-1 truncate">{t("readerNotes.menuAction")}</span>
+        </button>
+      ) : null}
       {actions.map((action) => {
         const shortcut = showShortcuts ? menuShortcut(bindings, action, kind, i18n.language) : null;
         // Owns its own playback and accent toggle, so it needs no wiring from
