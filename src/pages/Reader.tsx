@@ -31,8 +31,7 @@ import {
   getThemeStyles,
   getReaderCapabilities,
 } from "../components/reader-settings";
-import ReaderContextMenu, { type ReaderMenuAction } from "../components/ReaderContextMenu";
-import { readerMenuRows } from "../components/reader-bindings";
+import ReaderContextMenu from "../components/ReaderContextMenu";
 import OcrReaderHud from "../components/OcrReaderHud";
 import DictionaryPanel from "../components/DictionaryPanel";
 import TranslationPopover from "../components/TranslationPopover";
@@ -61,6 +60,8 @@ import { type HighlightMutationPlan } from "../components/highlight-ranges";
 import { useReadingAssistanceSettings } from "./reader/useReadingAssistanceSettings";
 import { useContextMarkState } from "./reader/useContextMarkState";
 import { highlightMutationPlan, highlightRemovalPlan } from "./reader/highlight-plans";
+import { useLearningCards } from "./reader/useLearningCards";
+import { readerMenuAction } from "./reader/menu-actions";
 import { getBook, needsPreparation, retryPreparation, type Book } from "../hooks/useBooks";
 import { getAllSettings, getBookSettings } from "../hooks/useSettings";
 import type { Highlight } from "../hooks/useBookmarks";
@@ -146,26 +147,8 @@ function logicalScopeAnchor(chapters: readonly TocChapter[], index: number): num
   return index;
 }
 
-const readerMenuActionMap: Record<string, ReaderMenuAction> = {
-  define: "primary",
-  explain: "primary",
-  speak: "speak",
-  ask_ai: "ask-ai",
-  collect: "save",
-  highlight: "highlight",
-  translate: "translate",
-  copy: "copy",
-};
-
-function readerMenuAction(id: string): ReaderMenuAction {
-  return readerMenuActionMap[id] ?? id as `custom_${string}`;
-}
-
 const appWindow = getCurrentWebviewWindow();
 const isStandaloneWindow = appWindow.label.startsWith("reader-");
-
-// Cards stay open until dismissed; past this many the oldest one gives way.
-const MAX_LEARNING_CARDS = 5;
 
 interface TextReaderProgressDetails {
   chapterProgress: number;
@@ -261,8 +244,6 @@ export default function Reader() {
   const [contextMenu, setContextMenu] = useState<ReaderInteraction | null>(null);
   const [selectedNoteAnchor, setSelectedNoteAnchor] = useState<ReaderNoteAnchor | null>(null);
   const passiveVocabToggleRevisionRef = useRef(0);
-  const [learningCards, setLearningCards] = useState<Array<{ id: string; interaction: ReaderInteraction }>>([]);
-  const [topLearningCardId, setTopLearningCardId] = useState<string | null>(null);
   const [readerToast, setReaderToast] = useState<string | null>(null);
   const [diagnosticsPanelOpen, setDiagnosticsPanelOpen] = useState(false);
   const [showStuckHint, setShowStuckHint] = useState(false);
@@ -313,6 +294,14 @@ export default function Reader() {
     tripleClickQuickSelectRef,
     tripleClickScopeRef,
   } = useReadingAssistanceSettings();
+  const {
+    learningCards,
+    topLearningCardId,
+    setTopLearningCardId,
+    openLearningCard,
+    closeLearningCard,
+    selectionMenuRowCount,
+  } = useLearningCards({ learningCardConfig, supportsManualAnnotations, onToast: setReaderToast });
   const [bindingHud, setBindingHud] = useState<string | null>(null);
   const dismissBindingHud = useCallback(() => setBindingHud(null), []);
   const bindingHudTimerRef = useRef<number | null>(null);
@@ -658,41 +647,6 @@ export default function Reader() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [supportsSearch]);
-
-  const openLearningCard = useCallback((interaction: ReaderInteraction) => {
-    const hasEnabledModule = learningCardConfig.cards[interaction.kind].modules
-      .some((module) => module.enabled);
-    if (!hasEnabledModule) {
-      setReaderToast(t("learningCard.allModulesDisabled"));
-      return;
-    }
-    // Cards stay put once opened, so raising happens by stacking order rather
-    // than by reordering them — moving a card's node would drop the pointer
-    // capture that a drag starting on that same click depends on.
-    const id = `${interaction.kind}:${interaction.location}:${interaction.text}`;
-    setLearningCards((current) => (
-      current.some((card) => card.id === id)
-        ? current
-        : [...current, { id, interaction }].slice(-MAX_LEARNING_CARDS)
-    ));
-    setTopLearningCardId(id);
-  }, [learningCardConfig, t]);
-
-  // What the selection menu would actually draw for this interaction. An empty
-  // `order` is not the same question: the menu injects and drops rows of its own,
-  // so only the rendered count says whether opening it shows the reader anything.
-  const selectionMenuRowCount = useCallback((interaction: ReaderInteraction) => {
-    const enabled = learningCardConfig.selectionMenus[interaction.kind].filter((item) => item.enabled);
-    return readerMenuRows(
-      enabled.map((item) => readerMenuAction(item.id)),
-      {
-        canToggleMark: Boolean(supportsManualAnnotations && interaction.location),
-        customActionIds: enabled
-          .filter((item) => item.id.startsWith("custom_") && item.name && item.prompt)
-          .map((item) => item.id),
-      },
-    ).length;
-  }, [learningCardConfig.selectionMenus, supportsManualAnnotations]);
 
   // Cards and AI answers are lookup surfaces of their own: the same
   // double-click and selection gestures work inside them, one level deeper.
@@ -2472,7 +2426,7 @@ export default function Reader() {
           elevated={card.id === topLearningCardId}
           onLookupWord={(event) => lookupWordInPanel(event, card.interaction)}
           onSelectText={(event) => openPanelSelectionMenu(event, card.interaction)}
-          onClose={() => setLearningCards((current) => current.filter((item) => item.id !== card.id))}
+          onClose={() => closeLearningCard(card.id)}
           onFocus={() => setTopLearningCardId(card.id)}
           onAskAi={(quote, cfi, analysis) => {
             setAiContext({ text: quote, cfi, analysis });
