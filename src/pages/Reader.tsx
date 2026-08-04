@@ -157,6 +157,7 @@ import {
 } from "./reader/progress-readout";
 import { chaptersToTicks, type ScrubberTick } from "./reader/progress-scrubber-math";
 import ProgressScrubber from "../components/ProgressScrubber";
+import ReaderExportDialog from "../components/ReaderExportDialog";
 
 type SidePanel = "ai" | "bookmarks" | "vocab" | null;
 
@@ -247,6 +248,7 @@ export default function Reader() {
   const [zoom, setZoom] = useState<number | "fit">("fit");
   const [tocOpen, setTocOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   // Bumped on every ⌘F, even while the panel is already open, so it re-focuses/re-selects the input.
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [tocSavedState, setTocSavedState] = useState<TocSavedState | undefined>(undefined);
@@ -438,6 +440,7 @@ export default function Reader() {
   const viewerRef = useRef<HTMLDivElement>(null);
   const readerViewportRef = useRef<HTMLElement>(null);
   const viewRef = useRef<FoliateView | null>(null);
+  const resolveExportChapter = useCallback(async (cfi: string) => (await viewRef.current?.getTOCItemOf(cfi))?.label, []);
   // Text currently visible in the reader: foliate reports the visible Range
   // with every relocate. Captured lazily at AI send time; PDFs and unloaded
   // views simply yield nothing.
@@ -2376,6 +2379,7 @@ export default function Reader() {
                 // Return page info from current state if available
                 return pageInfo?.current ?? null;
               }}
+              onExport={() => setExportOpen(true)}
             />
           )}
           {supportsCfiNavigation && sidePanel === "vocab" && bookId && (
@@ -2387,10 +2391,19 @@ export default function Reader() {
               }}
               initialWordCfi={activeVocabCfi}
               onWordDetailClosed={() => setActiveVocabCfi(null)}
+              onExport={() => setExportOpen(true)}
             />
           )}
         </div>
       </div>
+
+      {bookId && book && <ReaderExportDialog
+        open={exportOpen}
+        bookId={bookId}
+        bookTitle={book.title}
+        onClose={() => setExportOpen(false)}
+        resolveChapter={resolveExportChapter}
+      />}
 
       {/* Context Menu */}
       {contextMenu && (

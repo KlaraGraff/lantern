@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { BookOpen, Search } from "lucide-react";
+import { BookOpen, Search, Download } from "lucide-react";
 import { useDictionary } from "../hooks/useDictionary";
 import VocabEntry from "./vocab/VocabEntry";
 
@@ -10,9 +10,10 @@ interface DictionaryPanelProps {
   onNavigate?: (cfi: string) => void;
   initialWordCfi?: string | null;
   onWordDetailClosed?: () => void;
+  onExport?: () => void;
 }
 
-export default function DictionaryPanel({ bookId, bookTitle, onNavigate, initialWordCfi, onWordDetailClosed }: DictionaryPanelProps) {
+export default function DictionaryPanel({ bookId, bookTitle, onNavigate, initialWordCfi, onWordDetailClosed, onExport }: DictionaryPanelProps) {
   const { t } = useTranslation();
   const [dictSearch, setDictSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -42,6 +43,9 @@ export default function DictionaryPanel({ bookId, bookTitle, onNavigate, initial
         <h2 className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">
           {t("vocab.title")}
         </h2>
+        <button onClick={onExport} title={t("readerExport.open")} aria-label={t("readerExport.open")} className="ml-auto grid size-8 place-items-center rounded-lg text-text-muted hover:bg-bg-input hover:text-text-primary">
+          <Download size={16} />
+        </button>
       </div>
 
       {/* Search */}

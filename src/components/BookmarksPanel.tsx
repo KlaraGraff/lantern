@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Bookmark, BookmarkPlus, Trash2, Pencil, Clock, Search } from "lucide-react";
+import { Bookmark, BookmarkPlus, Trash2, Pencil, Clock, Search, Download } from "lucide-react";
 import { useBookmarks, useHighlights } from "../hooks/useBookmarks";
 import { timeAgo } from "../utils/timeAgo";
 import { savedHighlightColor } from "./mark-palette";
@@ -12,11 +12,12 @@ interface BookmarksPanelProps {
   getCurrentCfi?: () => string | null;
   getCurrentLabel?: () => string;
   getPageFromCfi?: (cfi: string) => number | null;
+  onExport?: () => void;
 }
 
 type Tab = "bookmarks" | "highlights";
 
-export default function BookmarksPanel({ bookId, onNavigate, getCurrentCfi, getCurrentLabel, getPageFromCfi }: BookmarksPanelProps) {
+export default function BookmarksPanel({ bookId, onNavigate, getCurrentCfi, getCurrentLabel, getPageFromCfi, onExport }: BookmarksPanelProps) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>("bookmarks");
   const [colorFilter, setColorFilter] = useState<string | null>(null);
@@ -169,6 +170,9 @@ export default function BookmarksPanel({ bookId, onNavigate, getCurrentCfi, getC
                 className="flex-1 text-[12px] text-text-primary bg-transparent outline-none placeholder:text-text-placeholder"
               />
             </div>
+            <button onClick={onExport} title={t("readerExport.open")} aria-label={t("readerExport.open")} className="grid size-8 shrink-0 place-items-center rounded-lg text-text-muted hover:bg-bg-input hover:text-text-primary">
+              <Download size={16} />
+            </button>
           </div>
 
           <div className="flex-1 overflow-auto">
