@@ -57,14 +57,10 @@ import {
   type ReaderInteraction,
   type SerializableRect,
 } from "../components/reader-interaction";
-import {
-  planCfiHighlightRemoval,
-  planCfiHighlightMutation,
-  planTextHighlightRemoval,
-  planTextHighlightMutation,
-  type HighlightMutationPlan,
-} from "../components/highlight-ranges";
+import { type HighlightMutationPlan } from "../components/highlight-ranges";
 import { useReadingAssistanceSettings } from "./reader/useReadingAssistanceSettings";
+import { useContextMarkState } from "./reader/useContextMarkState";
+import { highlightMutationPlan, highlightRemovalPlan } from "./reader/highlight-plans";
 import { getBook, needsPreparation, retryPreparation, type Book } from "../hooks/useBooks";
 import { getAllSettings, getBookSettings } from "../hooks/useSettings";
 import type { Highlight } from "../hooks/useBookmarks";
@@ -94,8 +90,6 @@ import { useWindowSizePersistence } from "./reader/useWindowSizePersistence";
 import { useSidePanelResize } from "./reader/useSidePanelResize";
 import {
   useFoliateAnnotations,
-  type LookupOccurrenceMark,
-  type WordMarkException,
   type WordMarkRule,
 } from "./reader/useFoliateAnnotations";
 import { useReadingHighlight } from "./reader/useReadingHighlight";
@@ -266,17 +260,6 @@ export default function Reader() {
   const [textInitialLocation, setTextInitialLocation] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ReaderInteraction | null>(null);
   const [selectedNoteAnchor, setSelectedNoteAnchor] = useState<ReaderNoteAnchor | null>(null);
-  const [contextSelectionFullyMarked, setContextSelectionFullyMarked] = useState(false);
-  const [contextManualSelectionFullyMarked, setContextManualSelectionFullyMarked] = useState(false);
-  const [contextHasManualSelectionMark, setContextHasManualSelectionMark] = useState(false);
-  const [contextHasLookupOccurrenceMark, setContextHasLookupOccurrenceMark] = useState(false);
-  const [contextHasBookWordMark, setContextHasBookWordMark] = useState(false);
-  // The rule that actually marks the clicked word. With form matching on it may
-  // be a rule on another form, and every whole-book action has to address that
-  // rule rather than the form the reader happened to click.
-  const [contextBookWordMarkWord, setContextBookWordMarkWord] = useState<string | null>(null);
-  const [contextBookWordMarkExcluded, setContextBookWordMarkExcluded] = useState(false);
-  const [contextMarkStateLoading, setContextMarkStateLoading] = useState(false);
   const passiveVocabToggleRevisionRef = useRef(0);
   const [learningCards, setLearningCards] = useState<Array<{ id: string; interaction: ReaderInteraction }>>([]);
   const [topLearningCardId, setTopLearningCardId] = useState<string | null>(null);
@@ -536,7 +519,14 @@ export default function Reader() {
   const readerInteractionGenerationRef = useRef(0);
   const forceClickSuppressedUntilRef = useRef(0);
   const annotationClickDocumentRef = useRef<Document | null>(null);
-  const contextMenuRequestRef = useRef(0);
+  const {
+    markState,
+    contextMenuRequestRef,
+    bumpContextMenuRequest,
+    resetMarkState,
+    dismissMarkState,
+    loadMarkState,
+  } = useContextMarkState(bookId, markerStyleRef);
 
   const handleTextBookReady = useCallback((document: TextBookDocument) => {
     const textChapters = document.toc.map((entry, sectionIndex) => ({
@@ -737,36 +727,10 @@ export default function Reader() {
       // Nothing to show beats an empty bordered box. Selecting text is a
       // constant gesture, so this stays silent — no toast (see 5.3 of the spec).
       if (selectionMenuRowCount(interaction) === 0) return;
-      contextMenuRequestRef.current += 1;
+      resetMarkState();
       setContextMenu(interaction);
-      setContextMarkStateLoading(false);
-      setContextSelectionFullyMarked(false);
-      setContextManualSelectionFullyMarked(false);
-      setContextHasManualSelectionMark(false);
-      setContextHasLookupOccurrenceMark(false);
-      setContextHasBookWordMark(false);
-      setContextBookWordMarkWord(null);
-      setContextBookWordMarkExcluded(false);
     }, 220);
-  }, [cancelPendingSelectionMenu, selectionMenuRowCount]);
-
-  const getHighlightMutationPlan = useCallback(async (
-    interaction: ReaderInteraction,
-    highlights: Highlight[],
-  ): Promise<HighlightMutationPlan | null> => (
-    interaction.source === "text"
-      ? planTextHighlightMutation(interaction.location, highlights, "yellow", interaction.text)
-      : planCfiHighlightMutation(interaction.location, highlights, "yellow", interaction.text)
-  ), []);
-
-  const getHighlightRemovalPlan = useCallback(async (
-    interaction: ReaderInteraction,
-    highlights: Highlight[],
-  ): Promise<HighlightMutationPlan | null> => (
-    interaction.source === "text"
-      ? planTextHighlightRemoval(interaction.location, highlights)
-      : planCfiHighlightRemoval(interaction.location, highlights)
-  ), []);
+  }, [cancelPendingSelectionMenu, resetMarkState, selectionMenuRowCount]);
 
   const openLearningInteraction = useCallback((interaction: ReaderInteraction) => {
     cancelPendingWordClick();
@@ -776,82 +740,18 @@ export default function Reader() {
       // not an empty one. Double-click lookup goes on working — it is the branch
       // below, and it never asked the menu for permission.
       if (selectionMenuRowCount(interaction) === 0) return;
-      const requestToken = ++contextMenuRequestRef.current;
+      loadMarkState(interaction);
       setContextMenu(interaction);
-      setContextMarkStateLoading(Boolean(bookId));
-      setContextSelectionFullyMarked(false);
-      setContextManualSelectionFullyMarked(false);
-      setContextHasManualSelectionMark(false);
-      setContextHasLookupOccurrenceMark(false);
-      setContextHasBookWordMark(false);
-      setContextBookWordMarkWord(null);
-      setContextBookWordMarkExcluded(false);
-      if (bookId) {
-        Promise.all([
-          invoke<Highlight[]>("list_highlights", { bookId }),
-          interaction.kind === "word"
-            ? invoke<(WordMarkRule & { display_word: string }) | null>("find_covering_word_mark_rule", {
-              bookId,
-              word: interaction.text,
-              matchForms: markerStyleRef.current.wordMatchScope === "forms",
-            })
-            : Promise.resolve(null),
-          interaction.kind === "word"
-            ? invoke<WordMarkException[]>("list_word_mark_exceptions", { bookId })
-            : Promise.resolve([]),
-          interaction.kind === "word"
-            ? invoke<LookupOccurrenceMark[]>("list_lookup_occurrence_marks", { bookId })
-            : Promise.resolve([]),
-        ]).then(async ([highlights, coveringRule, exceptions, occurrences]) => {
-          if (contextMenuRequestRef.current !== requestToken) return;
-          const [plan, removalPlan] = await Promise.all([
-            getHighlightMutationPlan(interaction, highlights),
-            getHighlightRemovalPlan(interaction, highlights),
-          ]);
-          if (contextMenuRequestRef.current !== requestToken) return;
-          const hasBookRule = Boolean(coveringRule);
-          // An exclusion is stored under the word on the page, not the rule's
-          // word, because that is the only key the marker painter can match an
-          // occurrence against.
-          const isExcluded = hasBookRule && exceptions.some((exception) => (
-            exception.excluded
-            && exception.normalized_word === interaction.normalizedText
-            && exception.location === interaction.location
-          ));
-          const manualFullyMarked = Boolean(plan?.fullyHighlighted);
-          const hasManualSelectionMark = Boolean(removalPlan?.removeIds.length);
-          const hasLookupOccurrence = occurrences.some((mark) => (
-            mark.enabled && mark.location === interaction.location
-          ));
-          setContextManualSelectionFullyMarked(manualFullyMarked);
-          setContextHasManualSelectionMark(hasManualSelectionMark);
-          setContextHasLookupOccurrenceMark(hasLookupOccurrence);
-          setContextHasBookWordMark(hasBookRule);
-          setContextBookWordMarkWord(coveringRule?.display_word ?? null);
-          setContextBookWordMarkExcluded(isExcluded);
-          setContextSelectionFullyMarked(
-            manualFullyMarked || hasLookupOccurrence || (hasBookRule && !isExcluded),
-          );
-          setContextMarkStateLoading(false);
-        }).catch(() => {
-          if (contextMenuRequestRef.current === requestToken) setContextMarkStateLoading(false);
-        });
-      } else {
-        setContextMarkStateLoading(false);
-      }
       return;
     }
-    contextMenuRequestRef.current += 1;
+    dismissMarkState();
     setContextMenu(null);
-    setContextMarkStateLoading(false);
     openLearningCard(interaction);
   }, [
-    bookId,
     cancelPendingSelectionMenu,
     cancelPendingWordClick,
-    getHighlightMutationPlan,
-    getHighlightRemovalPlan,
-    markerStyleRef,
+    dismissMarkState,
+    loadMarkState,
     openLearningCard,
     selectionMenuRowCount,
   ]);
@@ -1344,7 +1244,7 @@ export default function Reader() {
           window.dispatchEvent(new CustomEvent("word-mark-changed", { detail: { bookId } }));
         } else {
           const highlights = await invoke<Highlight[]>("list_highlights", { bookId });
-          const plan = await getHighlightMutationPlan(interaction, highlights);
+          const plan = await highlightMutationPlan(interaction, highlights);
           if (plan) await invoke("replace_highlights", {
             bookId,
             removeIds: plan.removeIds,
@@ -1366,7 +1266,6 @@ export default function Reader() {
     return true;
   }, [
     bookId,
-    getHighlightMutationPlan,
     learningCardConfig.selectionMenus,
     markMatchingWordsRef,
     openLearningCard,
@@ -2383,9 +2282,9 @@ export default function Reader() {
           anchorRect={contextMenu.anchorRect}
           text={contextMenu.text}
           kind={contextMenu.kind}
-          marked={contextSelectionFullyMarked}
-          hasBookWordMark={contextHasBookWordMark}
-          markStateLoading={contextMarkStateLoading}
+          marked={markState.selectionFullyMarked}
+          hasBookWordMark={markState.hasBookWordMark}
+          markStateLoading={markState.loading}
           bindings={readerBindings}
           showShortcuts={showMenuShortcuts}
           order={learningCardConfig.selectionMenus[contextMenu.kind]
@@ -2401,7 +2300,7 @@ export default function Reader() {
             setContextMenu(null);
           }}
           onClose={() => {
-            contextMenuRequestRef.current += 1;
+            bumpContextMenuRequest();
             setContextMenu(null);
           }}
           onCopy={() => {
@@ -2459,12 +2358,12 @@ export default function Reader() {
           }}
           onToggleMark={supportsManualAnnotations && contextMenu.location ? (() => {
             const interaction = contextMenu;
-            const manualFullyMarked = contextManualSelectionFullyMarked;
-            const hasManualSelectionMark = contextHasManualSelectionMark;
-            const hasLookupOccurrence = contextHasLookupOccurrenceMark;
-            const hasBookRule = contextHasBookWordMark;
-            const bookRuleExcluded = contextBookWordMarkExcluded;
-            contextMenuRequestRef.current += 1;
+            const manualFullyMarked = markState.manualSelectionFullyMarked;
+            const hasManualSelectionMark = markState.hasManualSelectionMark;
+            const hasLookupOccurrence = markState.hasLookupOccurrenceMark;
+            const hasBookRule = markState.hasBookWordMark;
+            const bookRuleExcluded = markState.bookWordMarkExcluded;
+            bumpContextMenuRequest();
             setContextMenu(null);
             if (!interaction.location || !bookId) return;
             const replaceManualMarks = async (plan: HighlightMutationPlan | null) => {
@@ -2478,7 +2377,7 @@ export default function Reader() {
             };
             (async () => {
               const highlights = await invoke<Highlight[]>("list_highlights", { bookId });
-              if (interaction.kind === "word" && contextSelectionFullyMarked) {
+              if (interaction.kind === "word" && markState.selectionFullyMarked) {
                 if (hasLookupOccurrence) {
                   await invoke("set_lookup_occurrence_mark_enabled", {
                     bookId,
@@ -2489,7 +2388,7 @@ export default function Reader() {
                   window.dispatchEvent(new CustomEvent("lookup-mark-changed", { detail: { bookId } }));
                 }
                 if (hasManualSelectionMark) {
-                  await replaceManualMarks(await getHighlightRemovalPlan(interaction, highlights));
+                  await replaceManualMarks(await highlightRemovalPlan(interaction, highlights));
                 }
                 if (hasBookRule && !bookRuleExcluded) {
                   await invoke("set_word_mark_exception", {
@@ -2528,22 +2427,22 @@ export default function Reader() {
                 });
                 window.dispatchEvent(new CustomEvent("word-mark-changed", { detail: { bookId } }));
               } else if (interaction.kind === "word") {
-                await replaceManualMarks(await getHighlightMutationPlan(interaction, highlights));
+                await replaceManualMarks(await highlightMutationPlan(interaction, highlights));
               } else {
                 const plan = manualFullyMarked
-                  ? await getHighlightRemovalPlan(interaction, highlights)
-                  : await getHighlightMutationPlan(interaction, highlights);
+                  ? await highlightRemovalPlan(interaction, highlights)
+                  : await highlightMutationPlan(interaction, highlights);
                 await replaceManualMarks(plan);
               }
               await refreshAnnotations();
             })().catch((err) => console.error("Failed to toggle mark:", err));
           }) : undefined}
-          onRemoveBookWordMark={contextMenu.kind === "word" && contextHasBookWordMark ? (() => {
+          onRemoveBookWordMark={contextMenu.kind === "word" && markState.hasBookWordMark ? (() => {
             const interaction = contextMenu;
             // Remove the rule that is actually marking this occurrence, which
             // under form matching may be a rule on another form of the word.
-            const ruleWord = contextBookWordMarkWord ?? interaction.text;
-            contextMenuRequestRef.current += 1;
+            const ruleWord = markState.bookWordMarkWord ?? interaction.text;
+            bumpContextMenuRequest();
             setContextMenu(null);
             if (!bookId) return;
             invoke("remove_word_mark", { bookId, word: ruleWord })
