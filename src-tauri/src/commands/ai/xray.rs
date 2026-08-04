@@ -2,7 +2,9 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
-use super::{ensure_stream_credentials_ready, language_name, strip_single_json_fence, ChatMessage};
+use super::prompt::{language_name, strip_single_json_fence};
+use super::stream::ensure_stream_credentials_ready;
+use super::ChatMessage;
 use crate::ai::grounding::{self, CitedSource, IndexStatus};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
