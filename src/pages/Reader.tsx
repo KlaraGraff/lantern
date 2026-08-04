@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   ArrowLeft,
   BookOpen,
@@ -109,8 +108,7 @@ import { useReaderInteractions } from "./reader/useReaderInteractions";
 import { useSpeech } from "../hooks/useSpeech";
 import { READING_ACTIVITY_EVENT, useReadingSessionTracker } from "../hooks/useReadingSessionTracker";
 import { collectWord } from "../components/vocab/collect";
-import { useOcrPackage } from "../hooks/useOcrPackage";
-import { useOcrJob } from "../hooks/useOcrJob";
+import { useReaderOcr } from "./reader/useReaderOcr";
 import {
   useReaderSettingsSync,
 } from "./reader/useReaderSettingsSync";
@@ -142,7 +140,6 @@ import {
 } from "./reader/reader-open-error";
 import { useReaderFileDiagnosis } from "./reader/useReaderFileDiagnosis";
 import ReaderDiagnosticsPanel from "../components/ReaderDiagnosticsPanel";
-import { platform } from "../services/platform";
 import { logIgnoredError } from "../utils/logIgnoredError";
 import { useReaderZoom } from "./reader/useReaderZoom";
 import {
@@ -311,17 +308,6 @@ export default function Reader() {
   const [bookReady, setBookReady] = useState(false);
   const [readerError, setReaderError] = useState<ReaderOpenError | null>(null);
   const [readerRetry, setReaderRetry] = useState(0);
-  const [ocrHudOpen, setOcrHudOpen] = useState(false);
-  const ocrIntentKeyRef = useRef("");
-  const ocrIntentShownAtRef = useRef(0);
-  const locallyRequestedOcrRef = useRef(false);
-  const pendingOcrReloadRef = useRef<{ page: number; total: number; sourcePath: string } | null>(null);
-  // OCR downloads a package and spawns a subprocess, neither of which a
-  // sandboxed mobile app may do (D-003). Disabling the hooks stops the status
-  // polling; the HUD that would report it is gated below.
-  const ocrAvailable = platform.hasOcr && book?.format === "pdf";
-  const ocrPackage = useOcrPackage(ocrAvailable);
-  const ocrJob = useOcrJob(bookId, ocrAvailable);
   const [textInitialLocation, setTextInitialLocation] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ReaderInteraction | null>(null);
   const [selectedNoteAnchor, setSelectedNoteAnchor] = useState<ReaderNoteAnchor | null>(null);
@@ -388,6 +374,7 @@ export default function Reader() {
   const [readerBindings, setReaderBindings] = useState<ReaderActionBinding[]>([]);
   const [showMenuShortcuts, setShowMenuShortcuts] = useState(true);
   const [bindingHud, setBindingHud] = useState<string | null>(null);
+  const dismissBindingHud = useCallback(() => setBindingHud(null), []);
   const bindingHudTimerRef = useRef<number | null>(null);
   const lastBindingHudRef = useRef({ message: "", shownAt: 0 });
   useEffect(() => () => {
@@ -536,6 +523,27 @@ export default function Reader() {
     bookFormat: book?.format,
     viewRef,
     settingsLoadedBookRef: dbSettingsLoadedRef,
+  });
+  const {
+    ocrAvailable,
+    ocrHudOpen,
+    setOcrHudOpen,
+    ocrPackage,
+    ocrJob,
+    onMissingPdfTextIntent,
+    openOcrSettings,
+    startOcr,
+    retryOcr,
+  } = useReaderOcr({
+    book,
+    bookId,
+    bookReady,
+    pageInfo,
+    setBook,
+    currentCfiRef,
+    viewRef,
+    dismissBindingHud,
+    onToast: setReaderToast,
   });
   const textReaderNavigateRef = useRef<((location: string, flash?: boolean) => void) | null>(null);
 
@@ -761,99 +769,6 @@ export default function Reader() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [supportsSearch]);
-
-  const onMissingPdfTextIntent = useCallback((pageIndex: number) => {
-    if (!platform.hasOcr) return;
-    if (!book || book.format !== "pdf") return;
-    const sourceHash = book.source_sha256 ?? book.file_path;
-    const key = `${book.id}:${pageIndex}:${sourceHash}`;
-    const now = Date.now();
-    if (ocrIntentKeyRef.current === key && now - ocrIntentShownAtRef.current < 1_000) return;
-    ocrIntentKeyRef.current = key;
-    ocrIntentShownAtRef.current = now;
-    setBindingHud(null);
-    setOcrHudOpen(true);
-  }, [book]);
-
-  const openOcrSettings = useCallback(async () => {
-    try {
-      await invoke("open_settings_on_main", { section: "services", view: "ocr" });
-    } catch {
-      // OCR lives under Services. Landing on the section is a near miss; the
-      // old fallback aimed at Reading Assistance, which OCR left long ago.
-      await invoke("open_settings_on_main", { section: "services" }).catch(() => {});
-    }
-    const main = await WebviewWindow.getByLabel("main").catch(() => null);
-    await main?.show().catch(() => {});
-    await main?.setFocus().catch(() => {});
-  }, []);
-
-  const startOcr = useCallback(() => {
-    locallyRequestedOcrRef.current = true;
-    void ocrJob.start().catch(() => {});
-  }, [ocrJob]);
-
-  const retryOcr = useCallback(() => {
-    locallyRequestedOcrRef.current = true;
-    void ocrJob.retry().catch(() => {});
-  }, [ocrJob]);
-
-  const refreshOcrJob = ocrJob.refresh;
-  useEffect(() => {
-    if (!bookId || !ocrAvailable) return;
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void listen("book-assets-changed", async () => {
-      await refreshOcrJob();
-      if (disposed || !locallyRequestedOcrRef.current || !book || !pageInfo) return;
-      const updated = await getBook(bookId).catch(() => null);
-      if (disposed || !updated || updated.file_path === book.file_path) return;
-      if (updated.pages && pageInfo.total && updated.pages !== pageInfo.total) {
-        setOcrHudOpen(true);
-        return;
-      }
-      pendingOcrReloadRef.current = {
-        page: Math.max(0, pageInfo.current - 1),
-        total: pageInfo.total,
-        sourcePath: book.file_path,
-      };
-      currentCfiRef.current = `epubcfi(/6/${Math.max(2, pageInfo.current * 2)})`;
-      setBook(updated);
-      setOcrHudOpen(false);
-    }).then((cleanup) => {
-      if (disposed) cleanup();
-      else unlisten = cleanup;
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [book, bookId, ocrAvailable, pageInfo, refreshOcrJob]);
-
-  useEffect(() => {
-    if (!bookReady || !book) return;
-    let timer: number | null = null;
-    const deadline = Date.now() + 5_000;
-    const showWhenTextLayerReady = () => {
-      const pending = pendingOcrReloadRef.current;
-      if (!pending || book.file_path === pending.sourcePath) return;
-      const contents = viewRef.current?.renderer?.getContents?.() ?? [];
-      const target = contents.find((content: { index?: number; doc?: Document }) => content.index === pending.page)
-        ?? contents[0];
-      const textLayer = target?.doc?.querySelector?.(".textLayer") as HTMLElement | null;
-      if (textLayer?.querySelector(".endOfContent") && textLayer.textContent?.trim()) {
-        pendingOcrReloadRef.current = null;
-        locallyRequestedOcrRef.current = false;
-        setReaderToast(t("ocr.reader.completedToast"));
-      } else if (Date.now() < deadline) {
-        timer = window.setTimeout(showWhenTextLayerReady, 100);
-      }
-    };
-    showWhenTextLayerReady();
-    return () => {
-      if (timer !== null) window.clearTimeout(timer);
-    };
-  }, [book, bookReady, pageInfo, t]);
 
   const openLearningCard = useCallback((interaction: ReaderInteraction) => {
     const hasEnabledModule = learningCardConfig.cards[interaction.kind].modules
