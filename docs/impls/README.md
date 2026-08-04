@@ -6,6 +6,8 @@ Detailed implementation plans for features and bug fixes. Numbers match the corr
 
 ## Active — still owes work
 
+- [Reader P2.1 — structured highlights and vocabulary export](reader-p2-structured-export.md) —
+  approved reader-side export UI; implementation and acceptance are pending.
 - [Built-in AI model catalog and automatic routing](built-in-ai-model-catalog-and-routing.md) —
   Phases 1–3 shipped, and the DeepSeek connect path passed a manual run on 2026-08-03.
   Seven acceptance items are still open because that run could not reach them (clean

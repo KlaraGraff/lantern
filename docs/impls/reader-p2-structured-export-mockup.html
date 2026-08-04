@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lantern P2.1 · 标注与生词结构化导出样张</title>
+  <style>
+    :root {
+      --bg: #f4f4f5;
+      --surface: #fff;
+      --muted: #fafafa;
+      --input: #f3f3f5;
+      --text: #18181b;
+      --secondary: #52525c;
+      --quiet: #71717b;
+      --border: #e4e4e7;
+      --accent: #7c3aed;
+      --accent-bg: #f3e8ff;
+      --danger: #dc2626;
+      --success: #16803b;
+      --paper: #faf7f0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 1120px;
+      min-height: 760px;
+      background: #dcdce1;
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    .stage { min-height: 100vh; padding: 28px; display: grid; place-items: center; }
+    .window {
+      width: min(1440px, calc(100vw - 56px));
+      height: min(900px, calc(100vh - 56px));
+      min-height: 704px;
+      overflow: hidden;
+      position: relative;
+      display: grid;
+      grid-template-columns: 64px minmax(560px, 1fr) 360px;
+      border: 1px solid #cfcfd5;
+      border-radius: 16px;
+      background: var(--surface);
+      box-shadow: 0 24px 70px rgba(24, 24, 27, .18);
+    }
+    .rail { background: #f7f7f8; border-right: 1px solid var(--border); padding: 52px 12px 16px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .traffic { position: absolute; top: 18px; left: 18px; display: flex; gap: 8px; z-index: 5; }
+    .traffic i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+    .traffic i:nth-child(1) { background: #ff5f57; }
+    .traffic i:nth-child(2) { background: #febc2e; }
+    .traffic i:nth-child(3) { background: #28c840; }
+    .rail-button { width: 38px; height: 38px; border: 0; border-radius: 10px; background: transparent; color: var(--quiet); display: grid; place-items: center; font-size: 17px; }
+    .rail-button.active { color: var(--accent); background: var(--accent-bg); }
+    .rail-spacer { flex: 1; }
+    .reader { position: relative; overflow: hidden; background: var(--paper); }
+    .reader-head { height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 14px 30px; border-bottom: 1px solid rgba(120, 104, 82, .12); color: #766e63; font-size: 12px; }
+    .book-page { max-width: 660px; margin: 0 auto; padding: 54px 58px 90px; color: #342f29; }
+    .book-page .eyebrow { color: #9a8e7e; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+    .book-page h1 { margin: 10px 0 34px; font-family: Georgia, "Songti SC", serif; font-size: 30px; font-weight: 500; }
+    .book-page p { margin: 0 0 22px; font-family: Georgia, "Songti SC", serif; font-size: 16px; line-height: 1.95; text-align: justify; }
+    mark { background: linear-gradient(transparent 30%, rgba(250, 204, 21, .32) 30%, rgba(250, 204, 21, .32) 88%, transparent 88%); color: inherit; }
+    .reader-foot { position: absolute; inset: auto 28px 18px; display: flex; align-items: center; justify-content: space-between; color: #8b8173; font-size: 11px; }
+    .side { background: var(--muted); border-left: 1px solid var(--border); display: flex; flex-direction: column; min-width: 0; }
+    .side-tabs { height: 50px; display: flex; border-bottom: 1px solid var(--border); background: var(--surface); }
+    .side-tab { flex: 1; border: 0; background: transparent; font-size: 13px; color: var(--quiet); position: relative; }
+    .side-tab.active { color: var(--text); font-weight: 600; }
+    .side-tab.active::after { content: ""; position: absolute; left: 24px; right: 24px; bottom: 0; height: 2px; background: var(--accent); border-radius: 2px 2px 0 0; }
+    .side-tools { height: 48px; padding: 8px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+    .filter { height: 26px; padding: 0 10px; border: 0; border-radius: 999px; background: var(--accent); color: white; font-size: 11px; }
+    .dot { width: 16px; height: 16px; border-radius: 50%; border: 0; }
+    .side-tools .push { flex: 1; }
+    .icon-button { width: 30px; height: 30px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--quiet); display: grid; place-items: center; }
+    .icon-button.export-entry { background: transparent; border-color: transparent; color: var(--quiet); }
+    .icon-button.export-entry:hover { background: var(--input); color: var(--text); }
+    .icon-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .item { border-bottom: 1px solid #eeeeef; padding: 15px 16px; }
+    .quote { font-size: 12px; line-height: 1.6; color: var(--secondary); }
+    .item-meta { display: flex; gap: 10px; margin-top: 8px; color: #9a9aa4; font-size: 10px; }
+    .item-note { margin-top: 8px; padding-left: 9px; border-left: 2px solid #d8b4fe; color: var(--quiet); font-size: 11px; line-height: 1.5; }
+    .scrim { position: absolute; inset: 0; background: rgba(24, 24, 27, .35); backdrop-filter: blur(1.5px); z-index: 20; }
+    .dialog {
+      position: absolute;
+      z-index: 30;
+      top: 50%; left: calc(50% + 30px);
+      transform: translate(-50%, -50%);
+      width: 760px;
+      max-height: calc(100% - 64px);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--surface);
+      box-shadow: 0 28px 80px rgba(24, 24, 27, .25);
+      display: flex;
+      flex-direction: column;
+    }
+    .dialog-head { padding: 20px 22px 16px; display: flex; align-items: flex-start; gap: 16px; border-bottom: 1px solid var(--border); }
+    .dialog-head h2 { margin: 0; font-size: 18px; letter-spacing: -.01em; }
+    .dialog-head p { margin: 5px 0 0; color: var(--quiet); font-size: 12px; }
+    .dialog-head .close { margin-left: auto; border: 0; background: transparent; color: var(--quiet); font-size: 19px; }
+    .dialog-body { min-height: 0; display: grid; grid-template-columns: 390px 1fr; overflow: auto; }
+    .form { padding: 18px 22px 20px; border-right: 1px solid var(--border); }
+    .preview { padding: 18px; background: var(--muted); }
+    .label { display: block; margin: 0 0 8px; color: var(--secondary); font-size: 11px; font-weight: 600; }
+    .section + .section { margin-top: 18px; }
+    .segmented { padding: 3px; background: var(--input); border-radius: 9px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; }
+    .segmented button { height: 30px; border: 0; border-radius: 7px; background: transparent; color: var(--quiet); font-size: 11px; }
+    .segmented button.active { background: white; color: var(--text); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    .content-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .choice { min-height: 70px; padding: 10px; text-align: left; border: 1px solid var(--border); border-radius: 10px; background: white; }
+    .choice.active { border-color: #c4a2fb; box-shadow: inset 0 0 0 1px #c4a2fb; background: #fdfbff; }
+    .choice strong { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+    .check { width: 15px; height: 15px; border-radius: 5px; border: 1px solid #b8b8c0; display: inline-grid; place-items: center; color: white; font-size: 10px; }
+    .active .check { background: var(--accent); border-color: var(--accent); }
+    .choice small { display: block; margin: 6px 0 0 22px; color: var(--quiet); font-size: 10px; line-height: 1.4; }
+    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+    .field { display: flex; align-items: center; gap: 7px; color: var(--secondary); font-size: 11px; }
+    .field .box { width: 14px; height: 14px; display: grid; place-items: center; border-radius: 4px; background: var(--accent); color: white; font-size: 9px; }
+    .privacy { margin-top: 16px; padding: 9px 10px; border-radius: 8px; background: #f6f6f7; color: var(--quiet); font-size: 10px; line-height: 1.5; }
+    .preview-title { margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; color: var(--secondary); font-size: 11px; font-weight: 600; }
+    .preview-title span:last-child { color: var(--quiet); font-weight: 400; }
+    .paper { height: 340px; overflow: hidden; padding: 17px; border: 1px solid var(--border); border-radius: 10px; background: white; color: #3f3f46; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9.5px; line-height: 1.62; white-space: pre-wrap; }
+    .paper b { color: #5b21b6; }
+    .filename { height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: white; color: var(--secondary); font-size: 11px; display: flex; align-items: center; margin-top: 10px; }
+    .dialog-foot { min-height: 64px; padding: 14px 22px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+    .summary { color: var(--quiet); font-size: 11px; }
+    .dialog-foot .spacer { flex: 1; }
+    .button { height: 34px; padding: 0 14px; border: 1px solid var(--border); border-radius: 8px; background: white; font-size: 12px; font-weight: 600; }
+    .button.primary { border-color: var(--accent); background: var(--accent); color: white; }
+    .state-nav { position: fixed; z-index: 80; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; padding: 4px; border: 1px solid #d1d1d6; border-radius: 10px; background: rgba(255,255,255,.94); box-shadow: 0 8px 24px rgba(0,0,0,.12); backdrop-filter: blur(10px); }
+    .state-nav button { height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--quiet); font-size: 11px; }
+    .state-nav button.active { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+    .state-layer { display: none; }
+    .state-layer.active { display: contents; }
+    .empty-card { grid-column: 1 / -1; min-height: 460px; display: grid; place-items: center; padding: 40px; text-align: center; }
+    .empty-icon { width: 58px; height: 58px; margin: 0 auto 14px; display: grid; place-items: center; border-radius: 50%; background: var(--input); color: var(--quiet); font-size: 24px; }
+    .empty-card h3 { margin: 0; font-size: 15px; }
+    .empty-card p { max-width: 320px; margin: 8px auto 0; color: var(--quiet); font-size: 12px; line-height: 1.6; }
+    .overlay-state { position: absolute; z-index: 45; inset: 0; display: grid; place-items: center; background: rgba(255,255,255,.72); backdrop-filter: blur(2px); }
+    .progress-card { width: 320px; padding: 24px; border: 1px solid var(--border); border-radius: 13px; background: white; box-shadow: 0 18px 55px rgba(0,0,0,.16); text-align: center; }
+    .spinner { width: 28px; height: 28px; margin: 0 auto 14px; border: 3px solid #e6d9fb; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .progress-card h3 { margin: 0; font-size: 14px; }
+    .progress-card p { margin: 7px 0 0; color: var(--quiet); font-size: 11px; }
+    .bar { height: 5px; margin-top: 16px; border-radius: 999px; background: var(--input); overflow: hidden; }
+    .bar i { display: block; width: 68%; height: 100%; background: var(--accent); }
+    .result-card .result-icon { width: 42px; height: 42px; margin: 0 auto 12px; display: grid; place-items: center; border-radius: 50%; font-size: 20px; }
+    .result-card.success .result-icon { color: var(--success); background: #eaf8ef; }
+    .result-card.error .result-icon { color: var(--danger); background: #fef2f2; }
+    .result-card .button { margin-top: 16px; }
+    .anki-map { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: stretch; }
+    .anki-side { padding: 10px; border: 1px solid var(--border); border-radius: 9px; background: #fff; }
+    .anki-side b { display: block; margin-bottom: 6px; font-size: 11px; }
+    .anki-side p { margin: 0; color: var(--quiet); font-size: 10px; line-height: 1.5; }
+    .arrow { align-self: center; color: #aaaab2; }
+    @media (max-height: 800px) {
+      .dialog { top: 51%; transform: translate(-50%, -50%) scale(.92); }
+    }
+  </style>
+</head>
+<body>
+  <nav class="state-nav" aria-label="样张状态">
+    <button class="active" data-state="default">Markdown</button>
+    <button data-state="anki">Anki</button>
+    <button data-state="empty">空态</button>
+    <button data-state="loading">导出中</button>
+    <button data-state="success">完成</button>
+    <button data-state="error">失败</button>
+  </nav>
+
+  <div class="stage">
+    <div class="window">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <aside class="rail">
+        <button class="rail-button">⌂</button>
+        <button class="rail-button active">▤</button>
+        <button class="rail-button">⌕</button>
+        <div class="rail-spacer"></div>
+        <button class="rail-button">⚙</button>
+      </aside>
+
+      <main class="reader">
+        <div class="reader-head"><span>被讨厌的勇气</span><span>第三夜 · 课题分离</span></div>
+        <article class="book-page">
+          <div class="eyebrow">第三夜</div>
+          <h1>让干涉你生活的人见鬼去</h1>
+          <p>我们需要思考的是：<mark>这是谁的课题？</mark>然后把自己的课题和别人的课题分离开来。别人如何评价你的选择，那是别人的课题。</p>
+          <p>真正的自由，是拥有被别人讨厌的勇气。不是故意惹人厌烦，而是不再为了满足他人的期待而活。</p>
+          <p>当一个人能够分清什么是自己能够改变的，什么属于别人，他便不再被所有人的目光牵着走。</p>
+        </article>
+        <div class="reader-foot"><span>第 126 / 278 页</span><span>45%</span></div>
+      </main>
+
+      <aside class="side">
+        <div class="side-tabs"><button class="side-tab">书签</button><button class="side-tab active">高亮</button></div>
+        <div class="side-tools">
+          <button class="filter">全部 18</button>
+          <button class="dot" style="background:#facc15"></button>
+          <button class="dot" style="background:#86efac"></button>
+          <button class="dot" style="background:#93c5fd"></button>
+          <span class="push"></span>
+          <button class="icon-button export-entry" title="导出本书学习资料" aria-label="导出本书学习资料">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+          </button>
+        </div>
+        <div class="item"><div class="quote">“这是谁的课题？然后把自己的课题和别人的课题分离开来。”</div><div class="item-meta"><span>第 126 页</span><span>今天</span></div><div class="item-note">关键不是判断谁对谁错，而是先确定承担结果的人。</div></div>
+        <div class="item"><div class="quote">“真正的自由，是拥有被别人讨厌的勇气。”</div><div class="item-meta"><span>第 129 页</span><span>昨天</span></div></div>
+        <div class="item"><div class="quote">“不再为了满足他人的期待而活。”</div><div class="item-meta"><span>第 130 页</span><span>3 天前</span></div><div class="item-note">和课题分离一起复习。</div></div>
+      </aside>
+
+      <div class="scrim"></div>
+
+      <section class="state-layer active" data-panel="default">
+        <div class="dialog">
+          <header class="dialog-head"><div><h2>导出本书的学习资料</h2><p>选择内容和格式，导出前先预览实际结构。</p></div><button class="close">×</button></header>
+          <div class="dialog-body">
+            <div class="form">
+              <div class="section"><span class="label">导出内容</span><div class="content-choice"><button class="choice active"><strong><span class="check">✓</span>高亮与备注</strong><small>18 条高亮 · 其中 12 条有备注</small></button><button class="choice active"><strong><span class="check">✓</span>生词</strong><small>43 个词 · 包含书中例句</small></button></div></div>
+              <div class="section"><span class="label">文件格式</span><div class="segmented"><button class="active">Markdown</button><button>CSV</button><button>Anki CSV</button></div></div>
+              <div class="section"><span class="label">包含字段</span><div class="field-grid"><div class="field"><span class="box">✓</span>原文 / 单词</div><div class="field"><span class="box">✓</span>书中上下文</div><div class="field"><span class="box">✓</span>章节名称</div><div class="field"><span class="box">✓</span>位置 CFI</div><div class="field"><span class="box">✓</span>AI 释义</div><div class="field"><span class="box">✓</span>创建时间</div></div></div>
+              <div class="privacy">所有内容均从本地数据库生成，不会上传。AI 释义仅导出已经保存在本机的结果。</div>
+            </div>
+            <div class="preview"><div class="preview-title"><span>内容预览</span><span>前 2 条</span></div><div class="paper"><b># 被讨厌的勇气 · 学习资料</b>
+
+## 高亮
+### 第三夜 · 课题分离
+> 这是谁的课题？然后把自己的课题和别人的课题分离开来。
+
+**备注**：关键不是判断谁对谁错，而是先确定承担结果的人。
+`epubcfi(/6/18!/4/2/8)` · 2026-08-04
+
+## 生词
+### courage
+**语境**：真正的自由，是拥有被别人讨厌的 courage。
+**释义**：勇气；面对困难仍采取行动的能力。</div><div class="filename">被讨厌的勇气-学习资料.md</div></div>
+          </div>
+          <footer class="dialog-foot"><span class="summary">将导出 18 条高亮和 43 个生词</span><span class="spacer"></span><button class="button">取消</button><button class="button primary">选择保存位置</button></footer>
+        </div>
+      </section>
+
+      <section class="state-layer" data-panel="anki">
+        <div class="dialog">
+          <header class="dialog-head"><div><h2>导出生词到 Anki</h2><p>生成可直接导入 Anki 的 UTF-8 CSV 文件。</p></div><button class="close">×</button></header>
+          <div class="dialog-body">
+            <div class="form">
+              <div class="section"><span class="label">导出内容</span><div class="content-choice"><button class="choice"><strong><span class="check"></span>高亮与备注</strong><small>Anki 格式不包含高亮</small></button><button class="choice active"><strong><span class="check">✓</span>生词</strong><small>43 个词 · 7 个待复习</small></button></div></div>
+              <div class="section"><span class="label">文件格式</span><div class="segmented"><button>Markdown</button><button>CSV</button><button class="active">Anki CSV</button></div></div>
+              <div class="section"><span class="label">卡片映射</span><div class="anki-map"><div class="anki-side"><b>正面</b><p>原句挖空目标词<br>书名 · 章节</p></div><div class="arrow">→</div><div class="anki-side"><b>背面</b><p>单词 · 释义<br>AI 解释 · 原句</p></div></div></div>
+              <div class="section"><span class="label">Anki 字段</span><div class="field-grid"><div class="field"><span class="box">✓</span>Front</div><div class="field"><span class="box">✓</span>Back</div><div class="field"><span class="box">✓</span>Source</div><div class="field"><span class="box">✓</span>Tags</div></div></div>
+              <div class="privacy">标签自动加入 `lantern`、书名和掌握状态；同时生成一份简短导入说明。</div>
+            </div>
+            <div class="preview"><div class="preview-title"><span>卡片预览</span><span>1 / 43</span></div><div class="paper"><b>正面</b>
+
+真正的自由，是拥有被别人讨厌的 ______。
+
+《被讨厌的勇气》
+第三夜 · 课题分离
+
+——————————
+<b>背面</b>
+
+courage
+勇气；面对困难仍采取行动的能力。
+
+原句：真正的自由，是拥有被别人讨厌的 courage。</div><div class="filename">被讨厌的勇气-Anki.csv</div></div>
+          </div>
+          <footer class="dialog-foot"><span class="summary">将生成 43 张卡片和导入说明</span><span class="spacer"></span><button class="button">取消</button><button class="button primary">选择保存位置</button></footer>
+        </div>
+      </section>
+
+      <section class="state-layer" data-panel="empty">
+        <div class="dialog">
+          <header class="dialog-head"><div><h2>导出本书的学习资料</h2><p>当前书籍还没有可导出的内容。</p></div><button class="close">×</button></header>
+          <div class="dialog-body"><div class="empty-card"><div><div class="empty-icon">⇩</div><h3>还没有高亮或生词</h3><p>阅读时添加高亮、备注或收藏生词后，就可以在这里导出为 Markdown、CSV 或 Anki 卡片。</p><button class="button" style="margin-top:18px">返回阅读</button></div></div></div>
+          <footer class="dialog-foot"><span class="summary">0 条可导出内容</span><span class="spacer"></span><button class="button primary" disabled style="opacity:.45">选择保存位置</button></footer>
+        </div>
+      </section>
+
+      <section class="state-layer" data-panel="loading">
+        <div class="dialog" style="filter:saturate(.7)">
+          <header class="dialog-head"><div><h2>导出本书的学习资料</h2><p>正在整理 Markdown 内容。</p></div></header>
+          <div class="dialog-body" style="min-height:460px"></div>
+          <div class="overlay-state"><div class="progress-card"><div class="spinner"></div><h3>正在生成导出文件…</h3><p>已处理 42 / 61 条，请不要关闭阅读窗口。</p><div class="bar"><i></i></div></div></div>
+        </div>
+      </section>
+
+      <section class="state-layer" data-panel="success">
+        <div class="dialog" style="filter:saturate(.7)">
+          <header class="dialog-head"><div><h2>导出本书的学习资料</h2><p>文件已经写入所选位置。</p></div></header>
+          <div class="dialog-body" style="min-height:460px"></div>
+          <div class="overlay-state"><div class="progress-card result-card success"><div class="result-icon">✓</div><h3>导出完成</h3><p>被讨厌的勇气-学习资料.md<br>18 条高亮 · 43 个生词</p><button class="button primary">在访达中显示</button></div></div>
+        </div>
+      </section>
+
+      <section class="state-layer" data-panel="error">
+        <div class="dialog" style="filter:saturate(.7)">
+          <header class="dialog-head"><div><h2>导出本书的学习资料</h2><p>文件没有写入，应用内数据不受影响。</p></div></header>
+          <div class="dialog-body" style="min-height:460px"></div>
+          <div class="overlay-state"><div class="progress-card result-card error"><div class="result-icon">!</div><h3>无法保存文件</h3><p>所选文件夹没有写入权限。请重新选择一个位置。</p><button class="button primary">重新选择位置</button><br><button class="button" style="margin-top:8px">取消</button></div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const buttons = [...document.querySelectorAll('[data-state]')];
+    const panels = [...document.querySelectorAll('[data-panel]')];
+    buttons.forEach(button => button.addEventListener('click', () => {
+      buttons.forEach(item => item.classList.toggle('active', item === button));
+      panels.forEach(panel => panel.classList.toggle('active', panel.dataset.panel === button.dataset.state));
+    }));
+  </script>
+</body>
+</html>
