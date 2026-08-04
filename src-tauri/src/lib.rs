@@ -839,6 +839,9 @@ pub fn run() {
             commands::settings::set_settings_bulk,
             commands::settings::get_book_settings,
             commands::settings::set_book_settings_bulk,
+            commands::settings::delete_book_settings,
+            commands::settings::list_reader_setting_conflicts,
+            commands::settings::promote_book_settings_to_global,
             commands::settings::open_settings_on_main,
             commands::settings::open_library_on_main,
             // Local reading fonts (font binaries are never synced)

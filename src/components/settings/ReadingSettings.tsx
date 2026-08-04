@@ -24,6 +24,7 @@ import {
   PageTurnBindingButton,
   type BindingDirection,
   type PageTurnAnimation,
+  type ParagraphSpacing,
   type ReadingMode,
 } from "../ReaderSettings";
 import { DEFAULT_NEXT_PAGE_BINDING, DEFAULT_PREVIOUS_PAGE_BINDING } from "../page-turn-bindings";
@@ -106,6 +107,9 @@ export default function ReadingSettings({ settings, loading, refresh, save, save
   const [lineSpacing, setLineSpacing] = useState(1.8);
   const [charSpacing, setCharSpacing] = useState(0);
   const [wordSpacing, setWordSpacing] = useState(0);
+  const [textJustification, setTextJustification] = useState(false);
+  const [paragraphSpacing, setParagraphSpacing] = useState<ParagraphSpacing>("original");
+  const [firstLineIndent, setFirstLineIndent] = useState(false);
   const [margins, setMargins] = useState(0);
   const [readingMode, setReadingMode] = useState<ReadingMode>("scrolling");
   const [pageLayout, setPageLayout] = useState<"1" | "2">("2");
@@ -136,6 +140,11 @@ export default function ReadingSettings({ settings, loading, refresh, save, save
     if (settings.line_spacing) setLineSpacing(parseFloat(settings.line_spacing));
     if (settings.char_spacing) setCharSpacing(parseInt(settings.char_spacing));
     if (settings.word_spacing) setWordSpacing(parseInt(settings.word_spacing));
+    setTextJustification(settings.text_justification === "true");
+    if (["original", "none", "compact", "comfortable", "loose"].includes(settings.paragraph_spacing)) {
+      setParagraphSpacing(settings.paragraph_spacing as ParagraphSpacing);
+    }
+    setFirstLineIndent(settings.first_line_indent === "true");
     if (settings.margins) setMargins(parseInt(settings.margins));
     if (settings.reading_mode === "paginated" || settings.reading_mode === "scrolling") {
       setReadingMode(settings.reading_mode);
@@ -389,6 +398,40 @@ export default function ReadingSettings({ settings, loading, refresh, save, save
         <NumberInput value={wordSpacing} onChange={setWordSpacing} onBlur={() => save("word_spacing", String(wordSpacing))} suffix="%" min={-10} max={50} />
       </div>
       {/* Margins */}
+      <div className="border-y border-border-light py-4">
+        <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.paragraph")}</p>
+        <div className="mt-3 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[14px] font-medium text-text-primary">{t("settings.layout.justify")}</p>
+            <p className="mt-0.5 text-[12px] text-text-muted">{t("settings.layout.justifyHint")}</p>
+          </div>
+          <Toggle label={t("settings.layout.justify")} checked={textJustification} onChange={(value) => {
+            setTextJustification(value); save("text_justification", String(value)); showSavedToast();
+          }} />
+        </div>
+        <div className="mt-3">
+          <p className="text-[14px] font-medium text-text-primary">{t("settings.layout.paragraphSpacing")}</p>
+          <div className="mt-2 grid grid-cols-4 gap-1 rounded-lg bg-bg-input p-1" role="group" aria-label={t("settings.layout.paragraphSpacing")}>
+            {(["none", "compact", "comfortable", "loose"] as const).map((value) => (
+              <button key={value} type="button" aria-pressed={paragraphSpacing === value} onClick={() => {
+                setParagraphSpacing(value); save("paragraph_spacing", value); showSavedToast();
+              }} className={`h-8 rounded-md text-[12px] ${paragraphSpacing === value ? "bg-bg-surface font-medium text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"}`}>
+                {t(`readerSettings.paragraphSpacing.${value}`)}
+              </button>
+            ))}
+          </div>
+          {paragraphSpacing === "original" && <p className="mt-1.5 text-[12px] text-text-muted">{t("settings.layout.publisherDefault")}</p>}
+        </div>
+        <div className="mt-3 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[14px] font-medium text-text-primary">{t("settings.layout.firstLineIndent")}</p>
+            <p className="mt-0.5 text-[12px] text-text-muted">{t("settings.layout.firstLineIndentHint")}</p>
+          </div>
+          <Toggle label={t("settings.layout.firstLineIndent")} checked={firstLineIndent} onChange={(value) => {
+            setFirstLineIndent(value); save("first_line_indent", String(value)); showSavedToast();
+          }} />
+        </div>
+      </div>
       <div className="flex items-center justify-between h-[73px]">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.margins")}</p>

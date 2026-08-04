@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { ReaderSettingsState } from "../src/components/ReaderSettings";
 import {
+  getReaderCapabilities,
   getReaderFontOptions,
   setCustomReaderFonts,
 } from "../src/components/reader-settings.ts";
@@ -25,6 +26,9 @@ const previous: ReaderSettingsState = {
   lineSpacing: 1.8,
   charSpacing: 0,
   wordSpacing: 0,
+  textJustification: false,
+  paragraphSpacing: "original",
+  firstLineIndent: false,
   margins: 0,
   showLookupMarkers: true,
   showNewVocabMarkers: true,
@@ -50,6 +54,12 @@ const perBookRows = {
   line_spacing: "2.4",
   word_spacing: "9",
   char_spacing: "7",
+  text_justification: "true",
+  paragraph_spacing: "comfortable",
+  first_line_indent: "true",
+  reading_mode: "paginated",
+  page_columns: "1",
+  margins: "24",
   show_lookup_markers: "false",
   show_new_vocab_markers: "false",
   show_learning_markers: "false",
@@ -63,6 +73,12 @@ const perBookExpectations: Record<keyof typeof perBookRows, unknown> = {
   line_spacing: 2.4,
   word_spacing: 9,
   char_spacing: 7,
+  text_justification: true,
+  paragraph_spacing: "comfortable",
+  first_line_indent: true,
+  reading_mode: "paginated",
+  page_columns: 1,
+  margins: 24,
   show_lookup_markers: false,
   show_new_vocab_markers: false,
   show_learning_markers: false,
@@ -76,13 +92,19 @@ const perBookStateFields: Record<keyof typeof perBookRows, keyof ReaderSettingsS
   line_spacing: "lineSpacing",
   word_spacing: "wordSpacing",
   char_spacing: "charSpacing",
+  text_justification: "textJustification",
+  paragraph_spacing: "paragraphSpacing",
+  first_line_indent: "firstLineIndent",
+  reading_mode: "readingMode",
+  page_columns: "pageColumns",
+  margins: "margins",
   show_lookup_markers: "showLookupMarkers",
   show_new_vocab_markers: "showNewVocabMarkers",
   show_learning_markers: "showLearningMarkers",
   show_mastered_markers: "showMasteredMarkers",
 };
 
-// The global values the rows above must beat. The last five keys have no global
+// The global values the rows above must beat. The last four keys have no global
 // counterpart at all, which is exactly why they moved into `book_settings`.
 const globalCounterparts = {
   reader_theme: "dark",
@@ -90,6 +112,13 @@ const globalCounterparts = {
   font_size: "18",
   line_spacing: "1.5",
   word_spacing: "3",
+  char_spacing: "2",
+  text_justification: "false",
+  paragraph_spacing: "compact",
+  first_line_indent: "false",
+  reading_mode: "scrolling",
+  page_columns: "2",
+  margins: "6",
 };
 
 test("a book without a recorded theme override follows the global theme", () => {
@@ -117,6 +146,9 @@ test("a book with no rows at all follows every global typography setting", () =>
   assert.equal(merged.fontSize, 18);
   assert.equal(merged.lineSpacing, 1.5);
   assert.equal(merged.wordSpacing, 3);
+  assert.equal(merged.textJustification, false);
+  assert.equal(merged.paragraphSpacing, "compact");
+  assert.equal(merged.firstLineIndent, false);
 });
 
 test("each per-book row overrides its global counterpart on its own", () => {
@@ -129,16 +161,15 @@ test("each per-book row overrides its global counterpart on its own", () => {
   assert.equal(merged.wordSpacing, 9);
 });
 
-// The three tests below guard the fix in f84c116: these keys are written to the
-// *global* settings table by the reader panel, so nothing per-book may win over a
-// global value — a stray `book_settings` row must be ignored, not honoured.
-test("a per-book row cannot freeze the layout keys at a stale value", () => {
+// P2.4 deliberately makes reading mode and page layout overridable while page
+// turn animation stays global muscle-memory behavior.
+test("book layout rows override global layout without capturing page-turn animation", () => {
   const merged = merge(
     { page_columns: "2", reading_mode: "scrolling", page_turn_animation: "fade" },
     { page_columns: "1", reading_mode: "paginated", page_turn_animation: "none" },
   );
-  assert.equal(merged.pageColumns, 2);
-  assert.equal(merged.readingMode, "scrolling");
+  assert.equal(merged.pageColumns, 1);
+  assert.equal(merged.readingMode, "paginated");
   assert.equal(merged.pageTurnAnimation, "fade");
 });
 
@@ -169,7 +200,7 @@ test("a per-book row cannot freeze the page-turn bindings", () => {
   assert.equal(merged.nextPageBinding, "mouse:right");
 });
 
-test("the global-only keys fall back to the previous state, never to a per-book row", () => {
+test("new layout overrides work while global-only behavior ignores stray rows", () => {
   const merged = merge({}, {
     page_columns: "1",
     reading_mode: "paginated",
@@ -181,15 +212,15 @@ test("the global-only keys fall back to the previous state, never to a per-book 
     next_page_binding: "key:PageDown",
     margins: "24",
   });
-  assert.equal(merged.pageColumns, previous.pageColumns);
-  assert.equal(merged.readingMode, previous.readingMode);
+  assert.equal(merged.pageColumns, 1);
+  assert.equal(merged.readingMode, "paginated");
   assert.equal(merged.pageTurnAnimation, previous.pageTurnAnimation);
   assert.equal(merged.showChapterProgress, previous.showChapterProgress);
   assert.equal(merged.showBookProgress, previous.showBookProgress);
   assert.equal(merged.showPageNumbers, previous.showPageNumbers);
   assert.equal(merged.previousPageBinding, previous.previousPageBinding);
   assert.equal(merged.nextPageBinding, previous.nextPageBinding);
-  assert.equal(merged.margins, previous.margins);
+  assert.equal(merged.margins, 24);
 });
 
 test("char spacing and the marker toggles come from per-book rows", () => {
@@ -207,6 +238,21 @@ test("char spacing and the marker toggles come from per-book rows", () => {
   assert.equal(merged.showNewVocabMarkers, false);
   assert.equal(merged.showLearningMarkers, false);
   assert.equal(merged.showMasteredMarkers, true);
+});
+
+test("marker settings without rows return to canonical defaults instead of leaking from another book", () => {
+  const pollutedPrevious = {
+    ...previous,
+    showLookupMarkers: false,
+    showNewVocabMarkers: false,
+    showLearningMarkers: false,
+    showMasteredMarkers: true,
+  };
+  const merged = resolveReaderSettings(pollutedPrevious, {}, {});
+  assert.equal(merged.showLookupMarkers, true);
+  assert.equal(merged.showNewVocabMarkers, true);
+  assert.equal(merged.showLearningMarkers, true);
+  assert.equal(merged.showMasteredMarkers, false);
 });
 
 // The per-book guarantee, one key at a time: book A's row must not reach book B,
@@ -271,4 +317,19 @@ test("the font picker leaves a registered selection alone", (t) => {
     options.filter((option) => option.value === "custom-abc"),
     [{ value: "custom-abc", label: "My Face" }],
   );
+});
+
+test("fixed-layout EPUB hides controls that cannot affect its renderer", () => {
+  const capabilities = getReaderCapabilities("epub", "pre-paginated");
+  assert.equal(capabilities.supportsReflowSettings, false);
+  assert.equal(capabilities.supportsContinuousScroll, false);
+  assert.equal(capabilities.supportsSpread, false);
+  assert.equal(capabilities.supportsSelection, true);
+});
+
+test("rendition layout does not downgrade PDF, text, or reflowable EPUB", () => {
+  assert.equal(getReaderCapabilities("pdf", "pre-paginated").supportsZoom, true);
+  assert.equal(getReaderCapabilities("text", "pre-paginated").supportsReflowSettings, true);
+  assert.equal(getReaderCapabilities("epub", "reflowable").supportsReflowSettings, true);
+  assert.equal(getReaderCapabilities("epub").supportsReflowSettings, true);
 });

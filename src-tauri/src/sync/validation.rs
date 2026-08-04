@@ -57,6 +57,7 @@ pub fn validate_tombstone_entity(entity: &str) -> AppResult<()> {
             | "translation"
             | "book_asset"
             | "custom_font"
+            | "book_setting"
     ) {
         return Ok(());
     }
@@ -67,21 +68,26 @@ pub fn validate_tombstone_entity(entity: &str) -> AppResult<()> {
 
 pub fn validate_tombstone_id(entity: &str, id: &str) -> AppResult<()> {
     validate_tombstone_entity(entity)?;
-    if entity == "collection_book" {
-        let Some((collection_id, book_id)) = id.split_once(':') else {
+    if entity == "collection_book" || entity == "book_setting" {
+        let Some((left, right)) = id.split_once(':') else {
             return Err(AppError::Other(
                 "SYNC_SNAPSHOT_TOMBSTONE_INVALID".to_string(),
             ));
         };
-        if book_id.contains(':') {
+        if right.contains(':') {
             return Err(AppError::Other(
                 "SYNC_SNAPSHOT_TOMBSTONE_INVALID".to_string(),
             ));
         }
-        validate_entity_id(collection_id)
+        validate_entity_id(left)
             .map_err(|_| AppError::Other("SYNC_SNAPSHOT_TOMBSTONE_INVALID".to_string()))?;
-        validate_entity_id(book_id)
+        validate_entity_id(right)
             .map_err(|_| AppError::Other("SYNC_SNAPSHOT_TOMBSTONE_INVALID".to_string()))?;
+        if entity == "book_setting" && !super::events::is_syncable_setting(true, right) {
+            return Err(AppError::Other(
+                "SYNC_SNAPSHOT_TOMBSTONE_INVALID".to_string(),
+            ));
+        }
         return Ok(());
     }
     validate_entity_id(id)

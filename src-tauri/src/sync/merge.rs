@@ -166,6 +166,9 @@ pub mod entity {
     pub const CHAT: &str = "chat";
     pub const CHAT_MESSAGE: &str = "chat_message";
     pub const CUSTOM_FONT: &str = "custom_font";
+    /// Re-creatable tombstone for one synced per-book setting. Id format:
+    /// `"<book_id>:<key>"`.
+    pub const BOOK_SETTING: &str = "book_setting";
 }
 
 pub fn is_tombstoned(tx: &Transaction, entity: &str, id: &str) -> AppResult<bool> {
@@ -279,6 +282,16 @@ pub fn cascade_delete(tx: &Transaction, entity: &str, id: &str, ts: i64) -> AppR
             Ok(())
         }
         entity::CUSTOM_FONT => cascade_delete_custom_font(tx, id, ts),
+        entity::BOOK_SETTING => {
+            let Some((book_id, key)) = id.split_once(':') else {
+                return Ok(());
+            };
+            tx.execute(
+                "DELETE FROM book_settings WHERE book_id = ?1 AND key = ?2 AND updated_at <= ?3",
+                params![book_id, key, ts],
+            )?;
+            Ok(())
+        }
         "translation" => Ok(()),
         entity::CHAT_MESSAGE => {
             tx.execute("DELETE FROM chat_messages WHERE id = ?1", params![id])?;
@@ -1610,8 +1623,8 @@ fn apply_setting_set(tx: &Transaction, event: &Event, payload: &SettingPayload) 
         );
         return Ok(());
     }
-    match payload.book.as_deref() {
-        None => {
+    match (payload.book.as_deref(), payload.value.as_deref()) {
+        (None, Some(value)) => {
             tx.execute(
                 "INSERT INTO settings (key, value, updated_at, updated_by_device)
                  VALUES (?1, ?2, ?3, ?4)
@@ -1619,15 +1632,25 @@ fn apply_setting_set(tx: &Transaction, event: &Event, payload: &SettingPayload) 
                    updated_at = excluded.updated_at, updated_by_device = excluded.updated_by_device
                  WHERE (settings.updated_at, settings.updated_by_device)
                      < (excluded.updated_at, excluded.updated_by_device)",
-                params![payload.key, payload.value, event.ts, event.device],
+                params![payload.key, value, event.ts, event.device],
             )?;
         }
-        Some(book_id) => {
+        (Some(book_id), Some(value)) => {
             // A per-book override for a deleted book is meaningless; the row
             // would also outlive its FK target.
             if parent_tombstoned(tx, &[(entity::BOOK, book_id)])? {
                 return Ok(());
             }
+            let tombstone_id = format!("{book_id}:{}", payload.key);
+            if tombstone_timestamp(tx, entity::BOOK_SETTING, &tombstone_id)?
+                .is_some_and(|timestamp| timestamp >= event.ts)
+            {
+                return Ok(());
+            }
+            tx.execute(
+                "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2",
+                params![entity::BOOK_SETTING, tombstone_id],
+            )?;
             tx.execute(
                 "INSERT INTO book_settings (book_id, key, value, updated_at, updated_by_device)
                  VALUES (?1, ?2, ?3, ?4, ?5)
@@ -1635,9 +1658,25 @@ fn apply_setting_set(tx: &Transaction, event: &Event, payload: &SettingPayload) 
                    updated_at = excluded.updated_at, updated_by_device = excluded.updated_by_device
                  WHERE (book_settings.updated_at, book_settings.updated_by_device)
                      < (excluded.updated_at, excluded.updated_by_device)",
-                params![book_id, payload.key, payload.value, event.ts, event.device],
+                params![book_id, payload.key, value, event.ts, event.device],
             )?;
         }
+        (Some(book_id), None) => {
+            if parent_tombstoned(tx, &[(entity::BOOK, book_id)])? {
+                return Ok(());
+            }
+            let tombstone_id = format!("{book_id}:{}", payload.key);
+            insert_tombstone(tx, entity::BOOK_SETTING, &tombstone_id, event.ts)?;
+            tx.execute(
+                "DELETE FROM book_settings
+                 WHERE book_id = ?1 AND key = ?2
+                   AND updated_at <= ?3",
+                params![book_id, payload.key, event.ts],
+            )?;
+        }
+        // There is currently no global-setting delete command. Accepting a
+        // future event as a no-op keeps replay forward-compatible.
+        (None, None) => {}
     }
     Ok(())
 }
@@ -3812,7 +3851,15 @@ mod tests {
         EventBody::SettingSet(SettingPayload {
             book: book.map(str::to_string),
             key: key.to_string(),
-            value: value.to_string(),
+            value: Some(value.to_string()),
+        })
+    }
+
+    fn setting_delete_event(book: &str, key: &str) -> EventBody {
+        EventBody::SettingSet(SettingPayload {
+            book: Some(book.to_string()),
+            key: key.to_string(),
+            value: None,
         })
     }
 
@@ -3867,6 +3914,62 @@ mod tests {
             setting_value(&conn, "font_family").as_deref(),
             Some("system")
         );
+    }
+
+    #[test]
+    fn per_book_setting_delete_blocks_stale_recreation_but_allows_newer_choice() {
+        let mut conn = open_db();
+        apply_all(
+            &mut conn,
+            &[ev(
+                1_000,
+                "dev-a",
+                setting_event(Some("b1"), "font", "literata"),
+            )],
+        );
+        apply_all(
+            &mut conn,
+            &[ev(2_000, "dev-b", setting_delete_event("b1", "font"))],
+        );
+
+        let count = |conn: &Connection| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM book_settings WHERE book_id = 'b1' AND key = 'font'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(count(&conn), 0);
+
+        apply_all(
+            &mut conn,
+            &[ev(
+                1_500,
+                "dev-c",
+                setting_event(Some("b1"), "font", "stale"),
+            )],
+        );
+        assert_eq!(count(&conn), 0);
+
+        apply_all(
+            &mut conn,
+            &[ev(
+                3_000,
+                "dev-c",
+                setting_event(Some("b1"), "font", "newer"),
+            )],
+        );
+        assert_eq!(count(&conn), 1);
+        let tombstones: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM _tombstones
+                 WHERE entity = 'book_setting' AND id = 'b1:font'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tombstones, 0);
     }
 
     /// A key outside the whitelist is skipped, **not** rejected. A validation

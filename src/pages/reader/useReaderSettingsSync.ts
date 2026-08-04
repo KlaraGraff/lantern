@@ -30,6 +30,12 @@ import {
   listenForSettingsChanged,
   notifySettingsChanged,
 } from "../../components/settings-events.ts";
+import {
+  encodeReaderSetting,
+  perBookOverrideKeys,
+  perBookSettingKeys,
+  type PerBookReaderSettings,
+} from "./reader-settings-scope.ts";
 
 const readerPreferenceSettingKeys = {
   theme: "reader_theme",
@@ -44,43 +50,28 @@ const readerPreferenceSettingKeys = {
   previousPageBinding: "previous_page_binding",
   nextPageBinding: "next_page_binding",
   narrowFontShrink: "narrow_font_shrink",
+  textJustification: "text_justification",
+  paragraphSpacing: "paragraph_spacing",
+  firstLineIndent: "first_line_indent",
 } as const;
 
 // Every setting the reader panel can hold per book, as `book_settings` rows: one
 // row per key, and *the row existing is the override*.
 //
-// The first five are also owned globally by the Settings page. Writing them
+// Most are also owned globally by the Settings page. Writing them
 // unconditionally froze every book that had ever been opened at the values of its
 // first open — `blob.fontSize ?? global.font_size` never fell through again — so a
 // row is written only when the user changes the value in the reader panel, and a
 // book with no row follows the Settings page.
 //
-// The last five have no global counterpart at all: the reader panel is their only
+// The four marker toggles have no global counterpart: the reader panel is their only
 // control, so a row is the only place the choice can live. They used to sit in the
 // `reader-settings-<bookId>` localStorage blob, which is why that blob existed;
 // with them here it is gone entirely.
 //
-// `customTheme` and `margins` are absent on purpose: both are global-only (see the
-// merge below), so there is nothing per-book to record.
-const perBookSettingKeys = {
-  theme: "theme",
-  font: "font",
-  fontSize: "font_size",
-  lineSpacing: "line_spacing",
-  wordSpacing: "word_spacing",
-  charSpacing: "char_spacing",
-  showLookupMarkers: "show_lookup_markers",
-  showNewVocabMarkers: "show_new_vocab_markers",
-  showLearningMarkers: "show_learning_markers",
-  showMasteredMarkers: "show_mastered_markers",
-} as const;
-type PerBookOverrideKey = keyof typeof perBookSettingKeys;
-
-const perBookOverrideKeys = Object.keys(perBookSettingKeys) as PerBookOverrideKey[];
-
-/** Per-book rows as `get_book_settings` returns them: raw key/value strings. */
-export type PerBookReaderSettings = Record<string, string>;
-
+// `customTheme` remains global-only. P2.4 deliberately adds reading mode, page
+// columns and margins to the override set; animation, progress and bindings stay
+// global muscle-memory behavior.
 function booleanSetting(value: string | undefined, fallback: boolean): boolean {
   if (value === "true") return true;
   if (value === "false") return false;
@@ -110,10 +101,25 @@ function numberSetting(value: string | undefined): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function paragraphSpacingSetting(
+  value: string | undefined,
+  fallback: ReaderSettingsState["paragraphSpacing"],
+): ReaderSettingsState["paragraphSpacing"] {
+  return value === "original" || value === "none" || value === "compact"
+    || value === "comfortable" || value === "loose" ? value : fallback;
+}
+
 function marginSetting(value: string | number | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.min(30, Math.max(0, parsed)) : fallback;
 }
+
+const DEFAULT_MARKER_VISIBILITY = {
+  showLookupMarkers: true,
+  showNewVocabMarkers: true,
+  showLearningMarkers: true,
+  showMasteredMarkers: false,
+} as const;
 
 function createDefaultReaderSettings(): ReaderSettingsState {
   return {
@@ -133,11 +139,11 @@ function createDefaultReaderSettings(): ReaderSettingsState {
     lineSpacing: 1.8,
     charSpacing: 0,
     wordSpacing: 0,
+    textJustification: false,
+    paragraphSpacing: "original",
+    firstLineIndent: false,
     margins: 0,
-    showLookupMarkers: true,
-    showNewVocabMarkers: true,
-    showLearningMarkers: true,
-    showMasteredMarkers: false,
+    ...DEFAULT_MARKER_VISIBILITY,
   };
 }
 
@@ -160,17 +166,21 @@ export function resolveReaderSettings(
       || previous.theme,
     // Global-only: the reader panel edits it straight into the global setting.
     customTheme: parseReaderCustomTheme(globalSettings.reader_custom_theme),
-    pageColumns: pageColumnsSetting(globalSettings.page_columns, previous.pageColumns),
+    pageColumns: pageColumnsSetting(
+      perBookSettings[perBookSettingKeys.pageColumns],
+      pageColumnsSetting(globalSettings.page_columns, previous.pageColumns),
+    ),
     font: isReaderFontAvailable(requestedFont) ? requestedFont : "system",
     fontSize: numberSetting(perBookSettings[perBookSettingKeys.fontSize])
       ?? (globalSettings.font_size ? parseInt(globalSettings.font_size) : previous.fontSize),
     // Global-only: the reader panel has no per-book control for it.
     narrowFontShrink: booleanSetting(globalSettings.narrow_font_shrink, previous.narrowFontShrink),
-    // Global-only, all of them: each is a `readerPreferenceSettingKeys` member the
-    // reader panel writes globally, so there is no per-book intent to record.
-    // Preferring a per-book copy here is what froze a reopened book at its
-    // last-seen layout (f84c116).
-    readingMode: readingModeSetting(globalSettings.reading_mode, previous.readingMode),
+    // Reading mode is book-shaped; animation and the following controls remain
+    // global behavior that must not vary between books.
+    readingMode: readingModeSetting(
+      perBookSettings[perBookSettingKeys.readingMode],
+      readingModeSetting(globalSettings.reading_mode, previous.readingMode),
+    ),
     pageTurnAnimation: pageTurnAnimationSetting(globalSettings.page_turn_animation, previous.pageTurnAnimation),
     showChapterProgress: booleanSetting(globalSettings.show_chapter_progress, previous.showChapterProgress),
     showBookProgress: booleanSetting(globalSettings.show_book_progress, previous.showBookProgress),
@@ -181,39 +191,66 @@ export function resolveReaderSettings(
       ?? (globalSettings.line_spacing ? parseFloat(globalSettings.line_spacing) : previous.lineSpacing),
     wordSpacing: numberSetting(perBookSettings[perBookSettingKeys.wordSpacing])
       ?? (globalSettings.word_spacing ? parseInt(globalSettings.word_spacing) : previous.wordSpacing),
-    // Global-first keeps the Settings page and reader toolbar synchronized.
-    margins: marginSetting(globalSettings.margins, previous.margins),
+    textJustification: booleanSetting(
+      perBookSettings[perBookSettingKeys.textJustification],
+      booleanSetting(globalSettings.text_justification, previous.textJustification),
+    ),
+    paragraphSpacing: paragraphSpacingSetting(
+      perBookSettings[perBookSettingKeys.paragraphSpacing],
+      paragraphSpacingSetting(globalSettings.paragraph_spacing, previous.paragraphSpacing),
+    ),
+    firstLineIndent: booleanSetting(
+      perBookSettings[perBookSettingKeys.firstLineIndent],
+      booleanSetting(globalSettings.first_line_indent, previous.firstLineIndent),
+    ),
+    margins: marginSetting(
+      perBookSettings[perBookSettingKeys.margins],
+      marginSetting(globalSettings.margins, previous.margins),
+    ),
     charSpacing: numberSetting(perBookSettings[perBookSettingKeys.charSpacing])
       ?? (globalSettings.char_spacing ? parseInt(globalSettings.char_spacing) : previous.charSpacing),
     showLookupMarkers: booleanSetting(
       perBookSettings[perBookSettingKeys.showLookupMarkers],
-      previous.showLookupMarkers,
+      DEFAULT_MARKER_VISIBILITY.showLookupMarkers,
     ),
     showNewVocabMarkers: booleanSetting(
       perBookSettings[perBookSettingKeys.showNewVocabMarkers],
-      previous.showNewVocabMarkers,
+      DEFAULT_MARKER_VISIBILITY.showNewVocabMarkers,
     ),
     showLearningMarkers: booleanSetting(
       perBookSettings[perBookSettingKeys.showLearningMarkers],
-      previous.showLearningMarkers,
+      DEFAULT_MARKER_VISIBILITY.showLearningMarkers,
     ),
     showMasteredMarkers: booleanSetting(
       perBookSettings[perBookSettingKeys.showMasteredMarkers],
-      previous.showMasteredMarkers,
+      DEFAULT_MARKER_VISIBILITY.showMasteredMarkers,
     ),
   };
 }
 
 interface ReaderSettingsController {
   readerSettings: ReaderSettingsState;
+  globalReaderSettings: ReaderSettingsState;
   setReaderSettings: Dispatch<SetStateAction<ReaderSettingsState>>;
   readerSettingsRef: MutableRefObject<ReaderSettingsState>;
   settingsLoadedBookRef: MutableRefObject<string | null>;
+  bookOverrides: PerBookReaderSettings;
+  loadReaderSettingsSources(
+    globalSettings: Record<string, string>,
+    perBookSettings: PerBookReaderSettings,
+  ): void;
   handleReaderSettingsChange(next: ReaderSettingsState): void;
+  restoreBookOverrides(keys: string[]): Promise<Record<string, string>>;
+  undoRestoreBookOverrides(values: Record<string, string>): Promise<void>;
+  promoteBookOverrides(selectedBookIds: string[]): Promise<Record<string, string>>;
 }
 
 export function useReaderSettingsSync(bookId: string | undefined): ReaderSettingsController {
   const [readerSettings, setReaderSettings] = useState<ReaderSettingsState>(createDefaultReaderSettings);
+  const [globalReaderSettings, setGlobalReaderSettings] = useState<ReaderSettingsState>(createDefaultReaderSettings);
+  const [bookOverrides, setBookOverrides] = useState<PerBookReaderSettings>({});
+  const bookOverridesRef = useRef<PerBookReaderSettings>({});
+  const globalSettingsRef = useRef<Record<string, string>>({});
   const readerSettingsRef = useRef(readerSettings);
   const settingsLoadedBookRef = useRef<string | null>(null);
   const saveTimerRef = useRef<number | null>(null);
@@ -226,6 +263,10 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
   useEffect(() => {
     readerSettingsRef.current = readerSettings;
   }, [readerSettings]);
+
+  useEffect(() => {
+    bookOverridesRef.current = bookOverrides;
+  }, [bookOverrides]);
 
   const flushReaderPreferences = useCallback(async () => {
     saveTimerRef.current = null;
@@ -265,14 +306,16 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
   // per frame. Closing the book mid-debounce still lands the edit — the effect
   // below flushes on every `bookId` change and on unmount, and each batch is
   // written against the book it was queued under, not the one now open.
-  const flushBookSettings = useCallback(async () => {
+  const flushBookSettings = useCallback(async (throwOnError = false) => {
     bookSaveTimerRef.current = null;
     const pending = pendingBookSettingsRef.current;
     pendingBookSettingsRef.current = {};
+    let failed = false;
     for (const [book, values] of Object.entries(pending)) {
       try {
         await invoke("set_book_settings_bulk", { bookId: book, settings: values });
       } catch {
+        failed = true;
         // Keep the edit queued for the next settle, letting newer values win.
         pendingBookSettingsRef.current[book] = {
           ...values,
@@ -280,6 +323,7 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
         };
       }
     }
+    if (failed && throwOnError) throw new Error("BOOK_SETTINGS_SAVE_FAILED");
   }, []);
 
   const scheduleBookSettingsSave = useCallback((book: string, values: Record<string, string>) => {
@@ -293,6 +337,21 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
       void flushBookSettings();
     }, 400);
   }, [flushBookSettings]);
+
+  const loadReaderSettingsSources = useCallback((
+    globalSettings: Record<string, string>,
+    perBookSettings: PerBookReaderSettings,
+  ) => {
+    globalSettingsRef.current = globalSettings;
+    setGlobalReaderSettings(resolveReaderSettings(createDefaultReaderSettings(), globalSettings));
+    bookOverridesRef.current = perBookSettings;
+    setBookOverrides(perBookSettings);
+    setReaderSettings((previous) => {
+      const next = resolveReaderSettings(previous, globalSettings, perBookSettings);
+      readerSettingsRef.current = next;
+      return next;
+    });
+  }, []);
 
   useEffect(() => () => {
     if (bookSaveTimerRef.current !== null) window.clearTimeout(bookSaveTimerRef.current);
@@ -311,20 +370,23 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
       const changedOverrides: Record<string, string> = {};
       for (const key of perBookOverrideKeys) {
         if (previous[key] !== next[key]) {
-          changedOverrides[perBookSettingKeys[key]] = String(next[key]);
+          changedOverrides[perBookSettingKeys[key]] = encodeReaderSetting(key, next);
         }
+      }
+      if (Object.keys(changedOverrides).length > 0) {
+        setBookOverrides((current) => {
+          const updated = { ...current, ...changedOverrides };
+          bookOverridesRef.current = updated;
+          return updated;
+        });
       }
       scheduleBookSettingsSave(bookId, changedOverrides);
     }
     const changed: Record<string, string> = {};
-    if (previous.theme !== next.theme) changed[readerPreferenceSettingKeys.theme] = next.theme;
     if (previous.customTheme.color !== next.customTheme.color
       || previous.customTheme.opacity !== next.customTheme.opacity) {
       changed[readerPreferenceSettingKeys.customTheme] = JSON.stringify(next.customTheme);
     }
-    if (previous.margins !== next.margins) changed[readerPreferenceSettingKeys.margins] = String(next.margins);
-    if (previous.readingMode !== next.readingMode) changed[readerPreferenceSettingKeys.readingMode] = next.readingMode;
-    if (previous.pageColumns !== next.pageColumns) changed[readerPreferenceSettingKeys.pageColumns] = String(next.pageColumns);
     if (previous.pageTurnAnimation !== next.pageTurnAnimation) changed[readerPreferenceSettingKeys.pageTurnAnimation] = next.pageTurnAnimation;
     if (previous.showChapterProgress !== next.showChapterProgress) changed[readerPreferenceSettingKeys.showChapterProgress] = String(next.showChapterProgress);
     if (previous.showBookProgress !== next.showBookProgress) changed[readerPreferenceSettingKeys.showBookProgress] = String(next.showBookProgress);
@@ -334,52 +396,82 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
     scheduleReaderPreferenceSave(changed);
   }, [bookId, scheduleBookSettingsSave, scheduleReaderPreferenceSave, settingsLoadedBookRef]);
 
+  const applySources = useCallback((
+    globals: Record<string, string>,
+    overrides: PerBookReaderSettings,
+  ) => {
+    globalSettingsRef.current = globals;
+    setGlobalReaderSettings(resolveReaderSettings(createDefaultReaderSettings(), globals));
+    bookOverridesRef.current = overrides;
+    setBookOverrides(overrides);
+    setReaderSettings((previous) => {
+      const next = resolveReaderSettings(previous, globals, overrides);
+      readerSettingsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const restoreBookOverrides = useCallback(async (keys: string[]) => {
+    if (!bookId || keys.length === 0) return {};
+    const pending = pendingBookSettingsRef.current[bookId];
+    const pendingDeleted: Record<string, string> = {};
+    if (pending) {
+      for (const key of keys) {
+        if (pending[key] !== undefined) pendingDeleted[key] = pending[key];
+        delete pending[key];
+      }
+      if (Object.keys(pending).length === 0) delete pendingBookSettingsRef.current[bookId];
+    }
+    let deleted: Record<string, string>;
+    try {
+      deleted = await invoke<Record<string, string>>("delete_book_settings", { bookId, keys });
+    } catch (error) {
+      scheduleBookSettingsSave(bookId, pendingDeleted);
+      throw error;
+    }
+    const remaining = { ...bookOverrides };
+    for (const key of keys) delete remaining[key];
+    applySources(globalSettingsRef.current, remaining);
+    return { ...deleted, ...pendingDeleted };
+  }, [applySources, bookId, bookOverrides, scheduleBookSettingsSave]);
+
+  const undoRestoreBookOverrides = useCallback(async (values: Record<string, string>) => {
+    if (!bookId || Object.keys(values).length === 0) return;
+    await invoke("set_book_settings_bulk", { bookId, settings: values });
+    applySources(globalSettingsRef.current, { ...bookOverrides, ...values });
+  }, [applySources, bookId, bookOverrides]);
+
+  const promoteBookOverrides = useCallback(async (selectedBookIds: string[]) => {
+    if (!bookId) return {};
+    await flushBookSettings(true);
+    const result = await invoke<{ settings: Record<string, string>; promoted_keys: string[] }>(
+      "promote_book_settings_to_global",
+      { sourceBookId: bookId, selectedBookIds },
+    );
+    const remaining = { ...bookOverrides };
+    for (const key of result.promoted_keys) delete remaining[key];
+    const globals = { ...globalSettingsRef.current, ...result.settings };
+    applySources(globals, remaining);
+    await notifySettingsChanged(result.settings).catch(() => {});
+    return result.settings;
+  }, [applySources, bookId, bookOverrides, flushBookSettings]);
+
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
     listenForSettingsChanged((values) => {
       if (disposed) return;
+      globalSettingsRef.current = { ...globalSettingsRef.current, ...values };
+      setGlobalReaderSettings(resolveReaderSettings(
+        createDefaultReaderSettings(),
+        globalSettingsRef.current,
+      ));
       setReaderSettings((current) => {
-        const next = {
-          ...current,
-          theme: (values[readerPreferenceSettingKeys.theme] as ReaderSettingsState["theme"]) || current.theme,
-          customTheme: values[readerPreferenceSettingKeys.customTheme]
-            ? parseReaderCustomTheme(values[readerPreferenceSettingKeys.customTheme])
-            : current.customTheme,
-          margins: marginSetting(values[readerPreferenceSettingKeys.margins], current.margins),
-          readingMode: readingModeSetting(
-            values[readerPreferenceSettingKeys.readingMode],
-            current.readingMode,
-          ),
-          pageColumns: pageColumnsSetting(
-            values[readerPreferenceSettingKeys.pageColumns],
-            current.pageColumns,
-          ),
-          pageTurnAnimation: pageTurnAnimationSetting(
-            values[readerPreferenceSettingKeys.pageTurnAnimation],
-            current.pageTurnAnimation,
-          ),
-          showChapterProgress: booleanSetting(
-            values[readerPreferenceSettingKeys.showChapterProgress],
-            current.showChapterProgress,
-          ),
-          showBookProgress: booleanSetting(
-            values[readerPreferenceSettingKeys.showBookProgress],
-            current.showBookProgress,
-          ),
-          showPageNumbers: booleanSetting(
-            values[readerPreferenceSettingKeys.showPageNumbers],
-            current.showPageNumbers,
-          ),
-          previousPageBinding: values[readerPreferenceSettingKeys.previousPageBinding]
-            || current.previousPageBinding,
-          nextPageBinding: values[readerPreferenceSettingKeys.nextPageBinding]
-            || current.nextPageBinding,
-          narrowFontShrink: booleanSetting(
-            values[readerPreferenceSettingKeys.narrowFontShrink],
-            current.narrowFontShrink,
-          ),
-        };
+        const next = resolveReaderSettings(
+          current,
+          globalSettingsRef.current,
+          bookOverridesRef.current,
+        );
         readerSettingsRef.current = next;
         return next;
       });
@@ -395,9 +487,15 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
 
   return {
     readerSettings,
+    globalReaderSettings,
     setReaderSettings,
     readerSettingsRef,
     settingsLoadedBookRef,
+    bookOverrides,
+    loadReaderSettingsSources,
     handleReaderSettingsChange,
+    restoreBookOverrides,
+    undoRestoreBookOverrides,
+    promoteBookOverrides,
   };
 }

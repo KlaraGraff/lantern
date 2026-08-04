@@ -105,7 +105,6 @@ import { collectWord } from "../components/vocab/collect";
 import { useOcrPackage } from "../hooks/useOcrPackage";
 import { useOcrJob } from "../hooks/useOcrJob";
 import {
-  resolveReaderSettings,
   useReaderSettingsSync,
 } from "./reader/useReaderSettingsSync";
 import { useWindowSizePersistence } from "./reader/useWindowSizePersistence";
@@ -234,10 +233,25 @@ export default function Reader() {
   const { t } = useTranslation();
   const [book, setBook] = useState<Book | null>(null);
   const isTextBook = book?.render_format === "text";
-  const capabilities = useMemo(
-    () => getReaderCapabilities(book?.render_format || book?.format),
-    [book?.format, book?.render_format],
+  const readerFormat = book?.render_format || book?.format;
+  const initialCapabilities = useMemo(
+    () => getReaderCapabilities(readerFormat),
+    [readerFormat],
   );
+  const [openedRendition, setOpenedRendition] = useState<{
+    bookId?: string;
+    layout?: string;
+  }>({});
+  const capabilities = useMemo(
+    () => getReaderCapabilities(
+      readerFormat,
+      openedRendition.bookId === bookId ? openedRendition.layout : undefined,
+    ),
+    [bookId, openedRendition, readerFormat],
+  );
+  const handleRenditionLayout = useCallback((layout: string | undefined) => {
+    setOpenedRendition({ bookId, layout });
+  }, [bookId]);
   const supportsSelection = capabilities.supportsSelection;
   const supportsManualAnnotations = capabilities.supportsManualAnnotations;
   const supportsWordMarkers = capabilities.supportsWordMarkers;
@@ -335,10 +349,16 @@ export default function Reader() {
   const [footnote, setFootnote] = useState<FootnotePopoverData | null>(null);
   const {
     readerSettings,
+    globalReaderSettings,
     setReaderSettings,
     readerSettingsRef,
     settingsLoadedBookRef: dbSettingsLoadedRef,
+    bookOverrides,
+    loadReaderSettingsSources,
     handleReaderSettingsChange,
+    restoreBookOverrides,
+    undoRestoreBookOverrides,
+    promoteBookOverrides,
   } = useReaderSettingsSync(bookId);
   const autoHighlightLookupsRef = useRef(true);
   const [markerStyle, setMarkerStyle] = useState<MarkerStyleConfig>(createDefaultMarkerStyleConfig);
@@ -1396,11 +1416,7 @@ export default function Reader() {
       const g = globalSettings;
       readingAssistanceSettingsRef.current = g;
       applyReadingAssistanceSettings(g);
-      setReaderSettings((prev) => {
-        const next = resolveReaderSettings(prev, g, perBookSettings);
-        readerSettingsRef.current = next;
-        return next;
-      });
+      loadReaderSettingsSources(g, perBookSettings);
       setTocSavedState(parseTocSavedState(perBookSettings));
       const savedReadoutMode = perBookSettings[progressReadoutSettingKey];
       setProgressReadoutSaved(savedReadoutMode !== undefined);
@@ -1423,6 +1439,7 @@ export default function Reader() {
     applyReadingAssistanceSettings,
     bookId,
     dbSettingsLoadedRef,
+    loadReaderSettingsSources,
     readerSettingsRef,
     resetAnnotationState,
     setReaderSettings,
@@ -1603,7 +1620,9 @@ export default function Reader() {
     readerRetry,
     readerSettings,
     readerSettingsRef,
+    initialCapabilities,
     capabilities,
+    onRenditionLayout: handleRenditionLayout,
     viewRef,
     viewerRef,
     currentCfiRef,
@@ -2057,8 +2076,14 @@ export default function Reader() {
             onClose={() => setSettingsOpen(false)}
             anchorRef={settingsAnchorRef}
             settings={readerSettings}
+            globalSettings={globalReaderSettings}
             onSettingsChange={handleReaderSettingsChange}
             capabilities={capabilities}
+            bookId={bookId}
+            bookOverrides={bookOverrides}
+            onRestoreBookOverrides={restoreBookOverrides}
+            onUndoRestoreBookOverrides={undoRestoreBookOverrides}
+            onPromoteBookOverrides={promoteBookOverrides}
             onClearLookupMarks={bookId ? async () => {
               await invoke("clear_lookup_marks_for_book", { bookId });
               window.dispatchEvent(new CustomEvent("word-mark-changed", { detail: { bookId } }));

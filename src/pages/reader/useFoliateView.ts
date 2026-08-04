@@ -9,6 +9,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type { ReaderSettingsState } from "../../components/ReaderSettings";
 import {
   getEffectivePageColumns,
+  getReaderCapabilities,
   getReaderMeasure,
   getThemeStyles,
   type ReaderCapabilities,
@@ -59,6 +60,7 @@ import type {
   TocChapter,
 } from "./foliate-types";
 import { toReaderOpenError, type ReaderOpenError } from "./reader-open-error";
+import { markTypographyMediaParagraphs } from "./reader-typography";
 
 function getPdfStartCfi(
   progress: number,
@@ -153,7 +155,9 @@ interface UseFoliateViewOptions {
   readerRetry: number;
   readerSettings: ReaderSettingsState;
   readerSettingsRef: MutableRefObject<ReaderSettingsState>;
+  initialCapabilities: ReaderCapabilities;
   capabilities: ReaderCapabilities;
+  onRenditionLayout(layout: string | undefined): void;
   viewRef: MutableRefObject<FoliateView | null>;
   viewerRef: MutableRefObject<HTMLDivElement | null>;
   currentCfiRef: MutableRefObject<string | null>;
@@ -276,7 +280,9 @@ export function useFoliateView({
   readerRetry,
   readerSettings,
   readerSettingsRef,
+  initialCapabilities,
   capabilities,
+  onRenditionLayout,
   viewRef,
   viewerRef,
   currentCfiRef,
@@ -316,6 +322,10 @@ export function useFoliateView({
 }: UseFoliateViewOptions) {
   const loadedInteractionDocumentsRef = useRef(new WeakSet<Document>());
   const footnoteRequestRef = useRef(0);
+  const applyFoliateMarkerStylesRef = useRef(applyFoliateMarkerStyles);
+  useEffect(() => {
+    applyFoliateMarkerStylesRef.current = applyFoliateMarkerStyles;
+  }, [applyFoliateMarkerStyles]);
   // Size the reader stylesheet was last written with. Tracked because the
   // narrow-viewport shrink can change it on resize alone.
   const appliedFontSizeRef = useRef(readerSettings.fontSize);
@@ -337,6 +347,7 @@ export function useFoliateView({
     let activeView: FoliateView | null = null;
     let firstSectionLogged = false;
     let footnoteStagingHost: HTMLDivElement | null = null;
+    let openedCapabilities = initialCapabilities;
 
     const initFoliate = async () => {
       logReaderDiagnostic(
@@ -344,7 +355,7 @@ export function useFoliateView({
         `format=${book.format} render=${book.render_format ?? "-"}`,
       );
       logReaderDiagnostic("reader.env", JSON.stringify(readerEnvironmentSnapshot()));
-      if (capabilities.supportsWordMarkers && bookId) {
+      if (openedCapabilities.supportsWordMarkers && bookId) {
         const [rules, exceptions] = await Promise.all([
           invoke<WordMarkRule[]>("list_word_marks", { bookId }).catch((error) => {
             logIgnoredError("reader.load-word-marks", error);
@@ -511,6 +522,11 @@ export function useFoliateView({
       await withTimeout(view.open(file), 45_000, "READER_OPEN_TIMEOUT");
       if (cancelled) return;
       logReaderDiagnostic("reader.open.view-open-done");
+      const renditionLayout = typeof view.book?.rendition?.layout === "string"
+        ? view.book.rendition.layout
+        : undefined;
+      openedCapabilities = getReaderCapabilities(extension, renditionLayout);
+      onRenditionLayout(renditionLayout);
 
       // This was the one await in the open flow with no timeout: it eagerly
       // resolves every TOC href, and on Safari 15.1 a section resolve can hang
@@ -536,21 +552,21 @@ export function useFoliateView({
         markChapterStarts = () => 0;
       }
       if (cancelled) return;
-      if (capabilities.supportsReflowSettings) {
+      if (openedCapabilities.supportsReflowSettings) {
         appliedFontSizeRef.current = applyReflowLayout(
           view,
           readerSettings,
           container.clientWidth,
           container.clientHeight,
         ).fontSize;
-      } else if (capabilities.supportsSpread) {
+      } else if (openedCapabilities.supportsSpread) {
         if (book.format === "pdf") {
           applyPdfLayout(view, readerSettings, container.clientWidth, container.clientHeight);
         } else {
           view.renderer.setAttribute("max-column-count", String(readerSettings.pageColumns));
         }
       }
-      if (capabilities.supportsZoom && book.format === "pdf") {
+      if (openedCapabilities.supportsZoom && book.format === "pdf") {
         const savedZoom = localStorage.getItem(`reader-zoom-${bookId}`);
         let zoomAttr = "fit-width";
         if (savedZoom && savedZoom !== "fit") {
@@ -561,7 +577,7 @@ export function useFoliateView({
         }
         view.renderer.setAttribute("zoom", zoomAttr);
       }
-      if (capabilities.supportsReflowSettings) {
+      if (openedCapabilities.supportsReflowSettings) {
         view.renderer.setStyles?.(getReaderCSS(readerSettings, appliedFontSizeRef.current));
       }
 
@@ -605,7 +621,7 @@ export function useFoliateView({
         currentCfiRef.current = cfi;
 
         const activeSettings = readerSettingsRef.current;
-        if (capabilities.supportsReflowSettings && activeSettings.readingMode === "paginated") {
+        if (openedCapabilities.supportsReflowSettings && activeSettings.readingMode === "paginated") {
           const current = Number(view.renderer?.page);
           const total = Math.max(1, Number(view.renderer?.pages) - 2);
           setPageInfo(Number.isFinite(current) && Number.isFinite(total) ? {
@@ -687,11 +703,12 @@ export function useFoliateView({
           logReaderDiagnostic("reader.open.first-section-loaded", `index=${index}`);
         }
         markChapterStarts(doc, index);
+        markTypographyMediaParagraphs(doc);
         installBuiltinFontFacesInDocument(doc);
         installCustomFontFacesInDocument(doc);
         if (loadedInteractionDocumentsRef.current.has(doc)) return;
         loadedInteractionDocumentsRef.current.add(doc);
-        window.requestAnimationFrame(applyFoliateMarkerStyles);
+        window.requestAnimationFrame(() => applyFoliateMarkerStylesRef.current());
         installDocumentInteractions({
           doc,
           index,
@@ -702,7 +719,7 @@ export function useFoliateView({
       }) as EventListener);
 
       view.addEventListener("create-overlay", (() => {
-        if (bookId && capabilities.supportsManualAnnotations) {
+        if (bookId && openedCapabilities.supportsManualAnnotations) {
           applyAnnotations(true).catch(() => {});
         }
       }) as EventListener);
@@ -896,12 +913,12 @@ export function useFoliateView({
     book,
     pdfReadingMode,
     applyAnnotations,
-    applyFoliateMarkerStyles,
-    capabilities,
+    initialCapabilities,
     installDocumentInteractions,
     isTextBook,
     queueReadingProgress,
     readerRetry,
+    onRenditionLayout,
   ]);
 
   useEffect(() => {

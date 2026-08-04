@@ -149,8 +149,26 @@ export function getTextReaderMeasure(
   return { fontSize, columnWidth, padding: minPadding + (available - columnWidth) / 2 };
 }
 
-export function getReaderCapabilities(format?: string): ReaderCapabilities {
-  switch ((format || "epub").toLowerCase()) {
+export function getReaderCapabilities(
+  format?: string,
+  renditionLayout?: string,
+): ReaderCapabilities {
+  const normalizedFormat = (format || "epub").toLowerCase();
+  if (normalizedFormat === "epub" && renditionLayout === "pre-paginated") {
+    return {
+      supportsSelection: true,
+      supportsManualAnnotations: true,
+      supportsWordMarkers: true,
+      supportsCfiNavigation: true,
+      supportsReflowSettings: false,
+      // Foliate's fixed-layout renderer uses a different `spread` API than the
+      // reflowable max-column-count control. Hide the ineffective control.
+      supportsSpread: false,
+      supportsContinuousScroll: false,
+      supportsZoom: false,
+    };
+  }
+  switch (normalizedFormat) {
     case "epub":
       return {
         supportsSelection: true,

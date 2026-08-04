@@ -1387,6 +1387,24 @@ function TextBookReader({
     wordSpacing: settings.wordSpacing === 0 ? undefined : `${settings.wordSpacing * 0.01}em`,
   }), [measure.fontSize, settings]);
 
+  const paragraphStyle = useMemo<React.CSSProperties>(() => {
+    const paragraphGap = settings.paragraphSpacing === "original" ? undefined : {
+      none: "0",
+      compact: "0.45em",
+      comfortable: "0.85em",
+      loose: "1.25em",
+    }[settings.paragraphSpacing];
+    const sample = document?.chunks.flatMap((chunk) => chunk.blocks).find((block) => block.kind === "paragraph")?.text || "";
+    const isCjk = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(sample);
+    return {
+      textAlign: settings.textJustification ? "justify" : undefined,
+      hyphens: settings.textJustification && !isCjk ? "auto" : undefined,
+      WebkitHyphens: settings.textJustification && !isCjk ? "auto" : undefined,
+      marginBottom: paragraphGap,
+      textIndent: settings.firstLineIndent ? (isCjk ? "2em" : "1.5em") : undefined,
+    };
+  }, [document, settings.firstLineIndent, settings.paragraphSpacing, settings.textJustification]);
+
   const renderedDocument = useMemo(() => document?.chunks.map((chunk, chunkIndex) => (
     <section key={chunkIndex}>
       {chunk.blocks.map((block) => {
@@ -1428,7 +1446,7 @@ function TextBookReader({
           );
         }
         return (
-          <p {...attributes} className={`mb-5 whitespace-pre-wrap ${className}`}>
+          <p {...attributes} style={paragraphStyle} className={`mb-5 whitespace-pre-wrap ${className}`}>
             {content}
           </p>
         );
@@ -1444,6 +1462,7 @@ function TextBookReader({
     isPaginated,
     markerStyle,
     onHighlightClick,
+    paragraphStyle,
     readerFontFamily,
     visibleLookupOccurrenceMarks,
   ]);

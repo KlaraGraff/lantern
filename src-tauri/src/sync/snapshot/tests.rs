@@ -566,6 +566,68 @@ fn book_asset_delete_tombstone_survives_snapshot_compaction() {
 }
 
 #[test]
+fn book_setting_delete_tombstone_survives_snapshot_and_blocks_stale_row() {
+    let snapshot = Snapshot::from_events(
+        "dev-A",
+        &[
+            ev(1_000, "dev-A", import("b1")),
+            ev(
+                1_100,
+                "dev-A",
+                EventBody::SettingSet(SettingPayload {
+                    book: Some("b1".into()),
+                    key: "font".into(),
+                    value: Some("literata".into()),
+                }),
+            ),
+            ev(
+                1_200,
+                "dev-A",
+                EventBody::SettingSet(SettingPayload {
+                    book: Some("b1".into()),
+                    key: "font".into(),
+                    value: None,
+                }),
+            ),
+        ],
+    )
+    .unwrap();
+
+    assert!(snapshot.state.book_settings.is_empty());
+    assert!(snapshot
+        .state
+        .tombstones
+        .get(merge::entity::BOOK_SETTING)
+        .is_some_and(|rows| rows
+            .iter()
+            .any(|row| row.id == "b1:font" && row.ts == 1_200)));
+
+    let mut local = open_db();
+    apply_to(&mut local, &[ev(1_000, "dev-local", import("b1"))]);
+    local
+        .execute(
+            "INSERT INTO book_settings
+             (book_id, key, value, updated_at, updated_by_device)
+             VALUES ('b1', 'font', 'stale', 1150, 'dev-local')",
+            [],
+        )
+        .unwrap();
+    {
+        let tx = local.transaction().unwrap();
+        snapshot.apply_peer(&tx, "dev-A").unwrap();
+        tx.commit().unwrap();
+    }
+    let remaining: i64 = local
+        .query_row(
+            "SELECT COUNT(*) FROM book_settings WHERE book_id = 'b1' AND key = 'font'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(remaining, 0);
+}
+
+#[test]
 fn from_events_captures_db_state() {
     let events = vec![
         ev(1000, "dev-A", import("b1")),

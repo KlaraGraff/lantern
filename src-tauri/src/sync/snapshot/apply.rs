@@ -327,6 +327,22 @@ impl Snapshot {
                         continue;
                     }
                 }
+                if entity == merge::entity::BOOK_SETTING {
+                    let Some((book_id, key)) = t.id.split_once(':') else {
+                        continue;
+                    };
+                    let newer_setting_exists: bool = tx.query_row(
+                        "SELECT EXISTS(
+                           SELECT 1 FROM book_settings
+                           WHERE book_id = ?1 AND key = ?2 AND updated_at > ?3
+                         )",
+                        params![book_id, key, t.ts],
+                        |row| row.get(0),
+                    )?;
+                    if newer_setting_exists {
+                        continue;
+                    }
+                }
                 merge::cascade_delete(tx, entity, &t.id, t.ts)?;
                 merge::insert_tombstone(tx, entity, &t.id, t.ts)?;
             }
@@ -468,6 +484,16 @@ impl Snapshot {
             {
                 continue;
             }
+            let tombstone_id = format!("{book_id}:{}", row.key);
+            if merge::tombstone_timestamp(tx, merge::entity::BOOK_SETTING, &tombstone_id)?
+                .is_some_and(|timestamp| timestamp >= row.updated_at)
+            {
+                continue;
+            }
+            tx.execute(
+                "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2",
+                params![merge::entity::BOOK_SETTING, tombstone_id],
+            )?;
             upsert_setting(tx, Some(book_id), row)?;
         }
 

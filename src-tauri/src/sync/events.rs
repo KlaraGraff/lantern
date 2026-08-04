@@ -21,10 +21,11 @@ use sha2::{Digest, Sha256};
 /// version 4 adds synced book summaries; version 5 preserves summary edits;
 /// version 6 adds LWW replacement of an existing assistant message; version 7
 /// adds immutable OCR-derived book assets and their tombstones; version 8 adds
-/// the imported-font catalog and a whitelisted subset of settings keys.
+/// the imported-font catalog and a whitelisted subset of settings keys; version
+/// 9 lets `setting.set` carry `null` to delete an override.
 /// Readers retain old-version support while older clients reject newer
 /// envelopes instead of advancing their watermark past data they cannot apply.
-pub const EVENT_SCHEMA_VERSION: u32 = 8;
+pub const EVENT_SCHEMA_VERSION: u32 = 9;
 pub const MIN_SUPPORTED_EVENT_SCHEMA_VERSION: u32 = 1;
 
 pub fn is_supported_event_schema_version(version: u32) -> bool {
@@ -278,7 +279,9 @@ pub struct SettingPayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub book: Option<String>,
     pub key: String,
-    pub value: String,
+    /// `Some` upserts the setting; `None` deletes it. Keeping both operations
+    /// under `setting.set` preserves one LWW stream for the same natural key.
+    pub value: Option<String>,
 }
 
 fn default_fsrs_version() -> i64 {

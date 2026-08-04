@@ -1,5 +1,6 @@
-use rusqlite::params;
-use std::collections::HashMap;
+use rusqlite::{params, OptionalExtension};
+use serde::Serialize;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::ai::router::{self, AiCredentialView, AiProfileView};
@@ -8,6 +9,57 @@ use crate::error::{AppError, AppResult};
 use crate::secrets::Secrets;
 use crate::sync::events::{is_syncable_setting, EventBody, SettingPayload};
 use crate::sync::writer::SyncWriter;
+
+const READER_BOOK_SETTING_KEYS: &[&str] = &[
+    "theme",
+    "font",
+    "font_size",
+    "line_spacing",
+    "word_spacing",
+    "char_spacing",
+    "text_justification",
+    "paragraph_spacing",
+    "first_line_indent",
+    "reading_mode",
+    "page_columns",
+    "margins",
+    "show_lookup_markers",
+    "show_new_vocab_markers",
+    "show_learning_markers",
+    "show_mastered_markers",
+];
+
+fn reader_global_key(book_key: &str) -> Option<&'static str> {
+    match book_key {
+        "theme" => Some("reader_theme"),
+        "font" => Some("font_family"),
+        "font_size" => Some("font_size"),
+        "line_spacing" => Some("line_spacing"),
+        "word_spacing" => Some("word_spacing"),
+        "char_spacing" => Some("char_spacing"),
+        "text_justification" => Some("text_justification"),
+        "paragraph_spacing" => Some("paragraph_spacing"),
+        "first_line_indent" => Some("first_line_indent"),
+        "reading_mode" => Some("reading_mode"),
+        "page_columns" => Some("page_columns"),
+        "margins" => Some("margins"),
+        _ => None,
+    }
+}
+
+fn validate_reader_book_keys(keys: &[String]) -> AppResult<()> {
+    if keys
+        .iter()
+        .any(|key| !READER_BOOK_SETTING_KEYS.contains(&key.as_str()))
+    {
+        return Err(AppError::Other("READER_SETTING_KEY_INVALID".to_string()));
+    }
+    Ok(())
+}
+
+fn setting_tombstone_id(book_id: &str, key: &str) -> String {
+    format!("{book_id}:{key}")
+}
 
 #[tauri::command]
 pub fn get_all_settings(
@@ -168,7 +220,7 @@ fn set_settings_bulk_inner(
                 events.push(EventBody::SettingSet(SettingPayload {
                     book: None,
                     key: key.clone(),
-                    value: value.clone(),
+                    value: Some(value.clone()),
                 }));
             }
         }
@@ -455,6 +507,215 @@ pub fn get_book_settings(book_id: String, db: State<'_, Db>) -> AppResult<HashMa
     Ok(settings)
 }
 
+#[derive(Debug, Serialize)]
+pub struct ReaderSettingConflict {
+    pub id: String,
+    pub title: String,
+    pub author: String,
+    pub conflicting_keys: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReaderSettingsPromotion {
+    pub settings: HashMap<String, String>,
+    pub promoted_keys: Vec<String>,
+}
+
+#[tauri::command]
+pub fn delete_book_settings(
+    book_id: String,
+    keys: Vec<String>,
+    db: State<'_, Db>,
+    sync: State<'_, SyncWriter>,
+) -> AppResult<HashMap<String, String>> {
+    do_delete_book_settings(&book_id, &keys, &db, &sync)
+}
+
+fn delete_book_setting_in_tx(
+    tx: &rusqlite::Transaction<'_>,
+    events: &mut Vec<EventBody>,
+    book_id: &str,
+    key: &str,
+    now: i64,
+) -> AppResult<Option<String>> {
+    let value = tx
+        .query_row(
+            "SELECT value FROM book_settings WHERE book_id = ?1 AND key = ?2",
+            params![book_id, key],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    if value.is_none() {
+        return Ok(None);
+    }
+    tx.execute(
+        "DELETE FROM book_settings WHERE book_id = ?1 AND key = ?2",
+        params![book_id, key],
+    )?;
+    if is_syncable_setting(true, key) {
+        crate::sync::merge::insert_tombstone(
+            tx,
+            crate::sync::merge::entity::BOOK_SETTING,
+            &setting_tombstone_id(book_id, key),
+            now,
+        )?;
+        events.push(EventBody::SettingSet(SettingPayload {
+            book: Some(book_id.to_string()),
+            key: key.to_string(),
+            value: None,
+        }));
+    }
+    Ok(value)
+}
+
+pub(crate) fn do_delete_book_settings(
+    book_id: &str,
+    keys: &[String],
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<HashMap<String, String>> {
+    validate_reader_book_keys(keys)?;
+    let now = sync.next_logical_timestamp();
+    sync.with_tx(db, now, |tx, events| {
+        let mut deleted = HashMap::new();
+        for key in keys {
+            if let Some(value) = delete_book_setting_in_tx(tx, events, book_id, key, now)? {
+                deleted.insert(key.clone(), value);
+            }
+        }
+        Ok(deleted)
+    })
+}
+
+#[tauri::command]
+pub fn list_reader_setting_conflicts(
+    source_book_id: String,
+    keys: Vec<String>,
+    db: State<'_, Db>,
+) -> AppResult<Vec<ReaderSettingConflict>> {
+    validate_reader_book_keys(&keys)?;
+    if keys.iter().any(|key| reader_global_key(key).is_none()) {
+        return Err(AppError::Other("READER_SETTING_NOT_PROMOTABLE".to_string()));
+    }
+    let wanted = keys.into_iter().collect::<HashSet<_>>();
+    let conn = db.reader();
+    let mut stmt = conn.prepare(
+        "SELECT b.id, b.title, COALESCE(b.author, ''), bs.key
+         FROM books b
+         JOIN book_settings bs ON bs.book_id = b.id
+         WHERE b.id <> ?1
+         ORDER BY lower(b.title), b.id, bs.key",
+    )?;
+    let rows = stmt.query_map(params![source_book_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+        ))
+    })?;
+    let mut conflicts: BTreeMap<String, ReaderSettingConflict> = BTreeMap::new();
+    for row in rows {
+        let (id, title, author, key) = row?;
+        if !wanted.contains(&key) {
+            continue;
+        }
+        conflicts
+            .entry(id.clone())
+            .or_insert_with(|| ReaderSettingConflict {
+                id,
+                title,
+                author,
+                conflicting_keys: Vec::new(),
+            })
+            .conflicting_keys
+            .push(key);
+    }
+    Ok(conflicts.into_values().collect())
+}
+
+#[tauri::command]
+pub fn promote_book_settings_to_global(
+    source_book_id: String,
+    selected_book_ids: Vec<String>,
+    db: State<'_, Db>,
+    sync: State<'_, SyncWriter>,
+) -> AppResult<ReaderSettingsPromotion> {
+    do_promote_book_settings_to_global(&source_book_id, &selected_book_ids, &db, &sync)
+}
+
+pub(crate) fn do_promote_book_settings_to_global(
+    source_book_id: &str,
+    selected_book_ids: &[String],
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<ReaderSettingsPromotion> {
+    let now = sync.next_logical_timestamp();
+    let device = sync.self_device().to_string();
+    sync.with_tx(db, now, |tx, events| {
+        let mut stmt =
+            tx.prepare("SELECT key, value FROM book_settings WHERE book_id = ?1 ORDER BY key")?;
+        let rows = stmt
+            .query_map(params![source_book_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+
+        let promoted = rows
+            .into_iter()
+            .filter_map(|(book_key, value)| {
+                reader_global_key(&book_key).map(|global_key| (book_key, global_key, value))
+            })
+            .collect::<Vec<_>>();
+        if promoted.is_empty() {
+            return Err(AppError::Other(
+                "READER_SETTINGS_NOTHING_TO_PROMOTE".to_string(),
+            ));
+        }
+
+        let mut changed_settings = HashMap::new();
+        for (_, global_key, value) in &promoted {
+            let syncable = is_syncable_setting(false, global_key);
+            tx.execute(
+                "INSERT INTO settings (key, value, updated_at, updated_by_device)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                   updated_at = excluded.updated_at,
+                   updated_by_device = excluded.updated_by_device",
+                params![
+                    global_key,
+                    value,
+                    if syncable { now } else { 0 },
+                    if syncable { device.as_str() } else { "" }
+                ],
+            )?;
+            changed_settings.insert((*global_key).to_string(), value.clone());
+            if syncable {
+                events.push(EventBody::SettingSet(SettingPayload {
+                    book: None,
+                    key: (*global_key).to_string(),
+                    value: Some(value.clone()),
+                }));
+            }
+        }
+
+        let mut targets = selected_book_ids.iter().cloned().collect::<HashSet<_>>();
+        targets.remove(source_book_id);
+        targets.insert(source_book_id.to_string());
+        for target in targets {
+            for (book_key, _, _) in &promoted {
+                delete_book_setting_in_tx(tx, events, &target, book_key, now)?;
+            }
+        }
+
+        Ok(ReaderSettingsPromotion {
+            settings: changed_settings,
+            promoted_keys: promoted.into_iter().map(|(key, _, _)| key).collect(),
+        })
+    })
+}
+
 #[tauri::command]
 pub fn set_book_settings_bulk(
     book_id: String,
@@ -476,11 +737,21 @@ pub(crate) fn do_set_book_settings_bulk(
     db: &Db,
     sync: &SyncWriter,
 ) -> AppResult<()> {
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();
     sync.with_tx(db, now, |tx, events| {
         for (key, value) in settings {
             let syncable = is_syncable_setting(true, key);
+            if syncable {
+                tx.execute(
+                    "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2 AND ts < ?3",
+                    params![
+                        crate::sync::merge::entity::BOOK_SETTING,
+                        setting_tombstone_id(book_id, key),
+                        now
+                    ],
+                )?;
+            }
             tx.execute(
                 "INSERT INTO book_settings (book_id, key, value, updated_at, updated_by_device)
                  VALUES (?1, ?2, ?3, ?4, ?5)
@@ -499,7 +770,7 @@ pub(crate) fn do_set_book_settings_bulk(
                 events.push(EventBody::SettingSet(SettingPayload {
                     book: Some(book_id.to_string()),
                     key: key.clone(),
-                    value: value.clone(),
+                    value: Some(value.clone()),
                 }));
             }
         }
@@ -509,7 +780,10 @@ pub(crate) fn do_set_book_settings_bulk(
 
 #[cfg(test)]
 mod tests {
-    use super::{do_set_book_settings_bulk, set_settings_bulk_inner};
+    use super::{
+        do_delete_book_settings, do_promote_book_settings_to_global, do_set_book_settings_bulk,
+        set_settings_bulk_inner,
+    };
     use crate::db::Db;
     use crate::sync::writer::SyncWriter;
     use rusqlite::params;
@@ -645,6 +919,126 @@ mod tests {
         assert_eq!(
             get_book_settings(&db, "book1").get("font_size").unwrap(),
             "30"
+        );
+    }
+
+    #[test]
+    fn deleting_reader_overrides_preserves_unrelated_rows_and_tombstones_font() {
+        let (_dir, db) = setup();
+        let sync = SyncWriter::new("dev-A".into());
+        let settings = HashMap::from([
+            ("font".to_string(), "literata".to_string()),
+            ("font_size".to_string(), "24".to_string()),
+            ("toc_expanded".to_string(), "[]".to_string()),
+        ]);
+        do_set_book_settings_bulk("book1", &settings, &db, &sync).unwrap();
+
+        let deleted = do_delete_book_settings(
+            "book1",
+            &["font".to_string(), "font_size".to_string()],
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        assert_eq!(deleted.get("font").map(String::as_str), Some("literata"));
+        assert_eq!(deleted.get("font_size").map(String::as_str), Some("24"));
+        assert_eq!(
+            get_book_settings(&db, "book1")
+                .get("toc_expanded")
+                .map(String::as_str),
+            Some("[]")
+        );
+        let conn = db.conn.lock().unwrap();
+        let tombstone: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM _tombstones
+                 WHERE entity = 'book_setting' AND id = 'book1:font'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tombstone, 1);
+    }
+
+    #[test]
+    fn promotion_is_atomic_and_only_clears_overlapping_promoted_keys() {
+        let (_dir, db) = setup();
+        let sync = SyncWriter::new("dev-A".into());
+        do_set_book_settings_bulk(
+            "book1",
+            &HashMap::from([
+                ("font".to_string(), "literata".to_string()),
+                ("font_size".to_string(), "24".to_string()),
+                ("show_lookup_markers".to_string(), "false".to_string()),
+            ]),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        do_set_book_settings_bulk(
+            "book2",
+            &HashMap::from([
+                ("font_size".to_string(), "19".to_string()),
+                ("line_spacing".to_string(), "2.1".to_string()),
+            ]),
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        let result =
+            do_promote_book_settings_to_global("book1", &["book2".to_string()], &db, &sync)
+                .unwrap();
+        assert_eq!(
+            result.settings.get("font_family").map(String::as_str),
+            Some("literata")
+        );
+        assert_eq!(
+            result.settings.get("font_size").map(String::as_str),
+            Some("24")
+        );
+
+        let source = get_book_settings(&db, "book1");
+        assert_eq!(
+            source.get("show_lookup_markers").map(String::as_str),
+            Some("false")
+        );
+        assert!(!source.contains_key("font"));
+        assert!(!source.contains_key("font_size"));
+
+        let selected = get_book_settings(&db, "book2");
+        assert!(!selected.contains_key("font_size"));
+        assert_eq!(
+            selected.get("line_spacing").map(String::as_str),
+            Some("2.1")
+        );
+    }
+
+    #[test]
+    fn invalid_delete_key_fails_before_changing_any_row() {
+        let (_dir, db) = setup();
+        let sync = SyncWriter::new("dev-A".into());
+        do_set_book_settings_bulk(
+            "book1",
+            &HashMap::from([("font_size".to_string(), "24".to_string())]),
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        assert!(do_delete_book_settings(
+            "book1",
+            &["font_size".to_string(), "page_turn_animation".to_string()],
+            &db,
+            &sync,
+        )
+        .is_err());
+        assert_eq!(
+            get_book_settings(&db, "book1")
+                .get("font_size")
+                .map(String::as_str),
+            Some("24")
         );
     }
 
