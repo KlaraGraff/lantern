@@ -1607,6 +1607,7 @@
   "readerXray.scopeSafe": "安全范围至 {{progress}}%",
   "readerXray.scopeWholeBook": "整书视图",
   "readerXray.scopeAction": "查看整书",
+  "readerXray.viewWholeBook": "查看整书",
   "readerXray.spoilerTitle": "查看整本书？",
   "readerXray.spoilerHint": "这可能会透露当前阅读位置之后的情节。",
   "readerXray.sessionOnly": "仅本次会话",

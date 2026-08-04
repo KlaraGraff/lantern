@@ -1607,6 +1607,7 @@
   "readerXray.scopeSafe": "Safe through {{progress}}%",
   "readerXray.scopeWholeBook": "Whole-book view",
   "readerXray.scopeAction": "Show whole book",
+  "readerXray.viewWholeBook": "View whole book",
   "readerXray.spoilerTitle": "Show the whole book?",
   "readerXray.spoilerHint": "This may reveal events beyond your current reading position.",
   "readerXray.sessionOnly": "Only this session",
