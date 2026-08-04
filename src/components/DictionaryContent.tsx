@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
@@ -31,6 +31,7 @@ import { timeAgo } from "../utils/timeAgo";
 import PronounceButton from "./speech/PronounceButton";
 import VocabEntryDetails from "./vocab/VocabEntryDetails";
 import { glossOf, parseDefinition } from "./vocab/entry-text";
+import { contextualReviewAnswer, contextualReviewCloze, contextualSentenceMeaning } from "./vocab/contextual-review";
 import { useOpenBook } from "../hooks/useOpenBook";
 import {
   LearningCardModules,
@@ -125,7 +126,13 @@ export default function DictionaryContent() {
   const [reviewOnly, setReviewOnly] = useState(false);
   const [contentTab, setContentTab] = useState<ContentTab>("vocab");
   const [now, setNow] = useState(0);
-  const [reviewing, setReviewing] = useState<DictionaryWord | null>(null);
+  const [reviewQueue, setReviewQueue] = useState<DictionaryWord[]>([]);
+  const [reviewIndex, setReviewIndex] = useState(0);
+  const [reviewAnswerVisible, setReviewAnswerVisible] = useState(false);
+  const [reviewMeaningVisible, setReviewMeaningVisible] = useState(false);
+  const [reviewComplete, setReviewComplete] = useState(false);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState(false);
   const [historyClearConfirming, setHistoryClearConfirming] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [backupMenuOpen, setBackupMenuOpen] = useState(false);
@@ -141,6 +148,10 @@ export default function DictionaryContent() {
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [learningCardConfig, setLearningCardConfig] = useState(() => parseCardDesignConfig(undefined));
   const clearConfirmationTimer = useRef<number | null>(null);
+  const reviewDialogRef = useRef<HTMLDivElement | null>(null);
+  const reviewOpenerRef = useRef<HTMLElement | null>(null);
+  const reviewRevealRef = useRef<HTMLButtonElement | null>(null);
+  const reviewSubmittingRef = useRef(false);
 
   useEffect(() => {
     invoke<Record<string, string>>("get_all_settings")
@@ -170,6 +181,11 @@ export default function DictionaryContent() {
   }, []);
 
   const dueWords = useMemo(() => words.filter((word) => word.next_review_at !== null && word.next_review_at <= now), [now, words]);
+  const reviewing = reviewQueue[reviewIndex] ?? null;
+  const reviewCloze = useMemo(() => reviewing ? contextualReviewCloze(reviewing.context_sentence, reviewing.word) : null, [reviewing]);
+  const reviewAnswer = useMemo(() => reviewing ? contextualReviewAnswer(reviewing.context_sentence, reviewing.word) : null, [reviewing]);
+  const reviewMeaning = useMemo(() => reviewing ? contextualSentenceMeaning(reviewing.context_explanation) : null, [reviewing]);
+  const reviewPosition = reviewing ? reviewIndex + 1 : reviewQueue.length;
 
   const filtered = useMemo(() => {
     let result = words;
@@ -242,11 +258,93 @@ export default function DictionaryContent() {
 
   const scheduleLearning = (word: DictionaryWord) => updateMastery(word.id, "learning", now + 24 * 60 * 60 * 1000);
   const markMastered = (word: DictionaryWord) => updateMastery(word.id, "mastered", null);
-  const completeReview = async (rating: "again" | "hard" | "good" | "easy") => {
-    if (!reviewing) return;
-    await recordReview(reviewing.id, rating);
-    setReviewing(null);
+  const closeReview = useCallback(() => {
+    if (reviewSubmittingRef.current) return;
+    setReviewQueue([]);
+    setReviewIndex(0);
+    setReviewComplete(false);
+    setReviewError(false);
+    reviewSubmittingRef.current = false;
+    setReviewSubmitting(false);
+    window.requestAnimationFrame(() => reviewOpenerRef.current?.focus());
+  }, []);
+  const openReview = (word: DictionaryWord) => {
+    reviewOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setReviewQueue([word, ...dueWords.filter((candidate) => candidate.id !== word.id)]);
+    setReviewIndex(0);
+    setReviewComplete(false);
+    setReviewError(false);
   };
+  const completeReview = useCallback(async (rating: "again" | "hard" | "good" | "easy") => {
+    if (!reviewing || reviewSubmittingRef.current) return;
+    reviewSubmittingRef.current = true;
+    setReviewSubmitting(true);
+    setReviewError(false);
+    try {
+      await recordReview(reviewing.id, rating);
+      const nextIndex = reviewIndex + 1;
+      if (nextIndex < reviewQueue.length) setReviewIndex(nextIndex);
+      else {
+        setReviewQueue([]);
+        setReviewIndex(0);
+        setReviewComplete(true);
+      }
+    } catch {
+      setReviewError(true);
+    } finally {
+      reviewSubmittingRef.current = false;
+      setReviewSubmitting(false);
+    }
+  }, [recordReview, reviewIndex, reviewQueue.length, reviewing]);
+
+  useEffect(() => {
+    setReviewAnswerVisible(false);
+    setReviewMeaningVisible(false);
+    setReviewError(false);
+    const frame = window.requestAnimationFrame(() => reviewing ? reviewRevealRef.current?.focus() : reviewDialogRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [reviewComplete, reviewing]);
+
+  useEffect(() => {
+    if (!reviewing && !reviewComplete) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeReview();
+        return;
+      }
+      if (event.key === "Tab") {
+        const focusable = Array.from(reviewDialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? []);
+        if (focusable.length) {
+          const first = focusable[0]; const last = focusable[focusable.length - 1];
+          if (!reviewDialogRef.current?.contains(document.activeElement)) { event.preventDefault(); (event.shiftKey ? last : first).focus(); }
+          else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        }
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("button, input, select, textarea, [contenteditable='true']")) return;
+      if (reviewing && !reviewAnswerVisible && event.code === "Space") {
+        event.preventDefault();
+        setReviewAnswerVisible(true);
+        return;
+      }
+      if (reviewing && reviewAnswerVisible && !reviewSubmitting && /^[1-4]$/.test(event.key)) {
+        const ratings = ["again", "hard", "good", "easy"] as const;
+        event.preventDefault();
+        void completeReview(ratings[Number(event.key) - 1]);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [reviewing, reviewComplete, reviewAnswerVisible, reviewSubmitting, closeReview, completeReview]);
+
+  useEffect(() => {
+    if (!reviewing || !reviewAnswerVisible) return;
+    const frame = window.requestAnimationFrame(() => reviewDialogRef.current?.querySelector<HTMLButtonElement>('[data-review-rating]')?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [reviewAnswerVisible, reviewing]);
   const downloadCsv = (filename: string, headers: string[], rows: Array<Array<string | number | null | undefined>>) => {
     const escape = (value: string | number | null | undefined) => `"${String(value ?? "").replace(/"/g, '""')}"`;
     const lines = [headers.map(escape).join(","), ...rows.map((row) => row.map(escape).join(","))];
@@ -819,7 +917,7 @@ export default function DictionaryContent() {
                         {word.next_review_at !== null && word.next_review_at <= now && (
                           <button
                             type="button"
-                            onClick={(event) => { event.stopPropagation(); setReviewing(word); }}
+                            onClick={(event) => { event.stopPropagation(); openReview(word); }}
                             title={t("vocab.review")}
                             className="size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-surface hover:text-accent-text cursor-pointer"
                           >
@@ -1008,31 +1106,71 @@ export default function DictionaryContent() {
           </div>
         </div>
       )}
-      {reviewing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm" onClick={() => setReviewing(null)}>
-          <div className="w-[440px] max-w-[calc(100vw-32px)] bg-bg-surface border border-border rounded-lg shadow-popover p-5" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-center gap-2 text-text-primary">
-              <RotateCcw size={17} className="text-accent" />
-              <h2 className="text-[16px] font-semibold">{t("vocab.review")}</h2>
-            </div>
-            <div className="mt-4 flex items-center gap-2">
-              <p className="text-[20px] font-semibold text-text-primary">{reviewing.word}</p>
-              <PronounceButton text={reviewing.word} size="md" />
-            </div>
-            <p className="mt-2 text-[14px] leading-6 text-text-secondary whitespace-pre-line">{reviewing.definition}</p>
-            {reviewing.context_sentence && <p className="mt-3 text-[13px] italic text-text-muted">&ldquo;{reviewing.context_sentence}&rdquo;</p>}
-            <div className="mt-5 grid grid-cols-4 gap-2">
-              {(["again", "hard", "good", "easy"] as const).map((rating) => (
-                <button
-                  key={rating}
-                  type="button"
-                  onClick={() => completeReview(rating)}
-                  className="h-9 rounded-md border border-border bg-bg-surface text-[12px] font-medium text-text-secondary hover:border-accent hover:bg-accent-bg hover:text-accent-text cursor-pointer"
-                >
-                  {t(`vocab.rating.${rating}`)}
-                </button>
-              ))}
-            </div>
+      {(reviewing || reviewComplete) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm" onClick={closeReview}>
+          <div ref={reviewDialogRef} role="dialog" aria-modal="true" aria-labelledby="vocab-review-title" tabIndex={-1} className="w-[520px] max-w-[calc(100vw-32px)] bg-bg-surface border border-border rounded-lg shadow-popover p-5 outline-none" onClick={(event) => event.stopPropagation()}>
+            {reviewComplete ? (
+              <div className="py-10 text-center">
+                <CheckCircle2 size={34} className="mx-auto text-accent" />
+                <h2 id="vocab-review-title" className="mt-3 text-[16px] font-semibold text-text-primary">{t("vocab.reviewComplete")}</h2>
+                <p className="mt-2 text-[13px] text-text-secondary">{t("vocab.reviewCompleteSub")}</p>
+                <Button className="mt-6" variant="primary" size="md" onClick={closeReview}>{t("common.close")}</Button>
+              </div>
+            ) : reviewing && (
+              <>
+                <div className="flex items-center gap-2 text-text-primary">
+                  <RotateCcw size={17} className="text-accent" />
+                  <h2 id="vocab-review-title" className="text-[16px] font-semibold">{reviewCloze ? t("vocab.contextReview") : t("vocab.review")}</h2>
+                  <span className="ml-auto text-[12px] text-text-muted">{reviewPosition} / {reviewQueue.length}</span>
+                  <button type="button" disabled={reviewSubmitting} aria-label={t("common.close")} onClick={closeReview} className="size-7 rounded-md text-text-muted hover:bg-bg-input hover:text-text-primary disabled:cursor-wait disabled:opacity-40"><X size={16} /></button>
+                </div>
+                {!reviewAnswerVisible ? (
+                  <div className="flex min-h-[300px] flex-col text-center">
+                    <p className="mt-6 text-[12px] text-text-muted">{reviewing.book_title || t("common.unknownBook")}</p>
+                    {reviewCloze ? <>
+                      <p className="mt-4 text-[12px] text-text-muted">{t("vocab.contextReviewPrompt")}</p>
+                      <p className="mt-3 font-serif text-[20px] leading-9 text-text-primary">
+                        {reviewCloze.before}<span aria-label={t("vocab.hiddenWord")} className="mx-1 inline-block w-28 border-b-2 border-accent align-baseline" />{reviewCloze.after}
+                      </p>
+                      <div className="mt-5 flex justify-center gap-2">
+                        <PronounceButton text={reviewing.word} size="md" />
+                        {reviewMeaning && <button type="button" onClick={() => setReviewMeaningVisible((visible) => !visible)} className="h-7 rounded-md border border-border px-2 text-[12px] text-text-secondary hover:border-accent hover:bg-accent-bg hover:text-accent-text">{t(reviewMeaningVisible ? "vocab.hideSentenceMeaning" : "vocab.showSentenceMeaning")}</button>}
+                      </div>
+                      {reviewMeaningVisible && <p className="mx-auto mt-3 max-w-md rounded-md bg-accent-bg px-3 py-2 text-[13px] leading-5 text-text-secondary">{reviewMeaning}</p>}
+                    </> : <>
+                      <div className="mt-12 flex items-center justify-center gap-2">
+                        <p className="text-[24px] font-semibold text-text-primary">{reviewing.word}</p>
+                        <PronounceButton text={reviewing.word} size="md" />
+                      </div>
+                      <p className="mt-3 text-[12px] text-text-muted">{t("vocab.reviewNoContext")}</p>
+                    </>}
+                    <p className="mt-auto pt-6 text-[11px] text-text-muted">{t("vocab.reviewSpaceHint")}</p>
+                    <Button ref={reviewRevealRef} className="mx-auto mt-3" variant="primary" size="md" onClick={() => setReviewAnswerVisible(true)}>{t("vocab.showAnswer")}</Button>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="mt-5 flex items-center justify-center gap-2">
+                      <p className="text-[22px] font-semibold text-text-primary">{reviewing.word}</p>
+                      <PronounceButton text={reviewing.word} size="md" />
+                    </div>
+                    {!reviewCloze && <p className="mt-3 rounded-md bg-bg-muted px-3 py-2 text-center text-[12px] text-text-muted">{t("vocab.reviewNoContext")}</p>}
+                    {reviewAnswer && <p className="mt-4 text-center font-serif text-[17px] leading-7 text-text-secondary">{reviewAnswer.before}<mark className="rounded bg-accent-bg px-0.5 font-semibold text-accent-text">{reviewAnswer.answer}</mark>{reviewAnswer.after}</p>}
+                    <div className="mt-4 rounded-md bg-bg-muted p-3">
+                      <p className="text-[14px] leading-6 text-text-secondary whitespace-pre-line">{reviewing.definition}</p>
+                      {reviewMeaning && <p className="mt-3 border-t border-border pt-3 text-[13px] leading-5 text-text-muted">{reviewMeaning}</p>}
+                    </div>
+                    {reviewError && <p role="alert" className="mt-4 text-center text-[12px] text-danger-text">{t("vocab.reviewSaveFailed")}</p>}
+                    <div className="mt-5 grid grid-cols-4 gap-2" aria-busy={reviewSubmitting}>
+                      {(["again", "hard", "good", "easy"] as const).map((rating, index) => (
+                        <button key={rating} data-review-rating type="button" disabled={reviewSubmitting} onClick={() => void completeReview(rating)} className="h-10 rounded-md border border-border bg-bg-surface text-[12px] font-medium text-text-secondary hover:border-accent hover:bg-accent-bg hover:text-accent-text disabled:cursor-wait disabled:opacity-50 cursor-pointer">
+                          {t(`vocab.rating.${rating}`)} <span className="text-text-muted">{index + 1}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       )}
