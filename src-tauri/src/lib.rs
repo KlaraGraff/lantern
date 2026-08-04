@@ -912,6 +912,7 @@ pub fn run() {
             commands::ai::ai_learning_card,
             commands::ai::ai_optimize_prompt,
             commands::ai::ai_custom_action,
+            commands::ai::ai_xray,
             commands::ai::ai_word_forms,
             commands::ai::ai_lookup,
             commands::ai::ai_explain,

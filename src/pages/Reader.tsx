@@ -20,6 +20,7 @@ import {
   FileWarning,
   Search,
   Volume2,
+  CircleHelp,
 } from "lucide-react";
 import Button from "../components/ui/Button";
 import Toast from "../components/ui/Toast";
@@ -122,6 +123,7 @@ import {
 } from "./reader/useFoliateAnnotations";
 import { useReadingHighlight } from "./reader/useReadingHighlight";
 import ReadingPlaybackBar from "../components/speech/ReadingPlaybackBar";
+import ReaderXrayCard from "../components/ReaderXrayCard";
 import { cancelSpeech } from "../components/speech/player";
 import type {
   FoliateView,
@@ -279,6 +281,12 @@ export default function Reader() {
   const [tocOpen, setTocOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [xrayInteraction, setXrayInteraction] = useState<ReaderInteraction | null>(null);
+  const [xrayOpen, setXrayOpen] = useState(false);
+  useEffect(() => {
+    setXrayOpen(false);
+    setXrayInteraction(null);
+  }, [bookId]);
   // Bumped on every ⌘F, even while the panel is already open, so it re-focuses/re-selects the input.
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [tocSavedState, setTocSavedState] = useState<TocSavedState | undefined>(undefined);
@@ -1377,18 +1385,18 @@ export default function Reader() {
   // Nothing else does now that a dismissed card no longer cancels playback.
   useEffect(() => () => cancelSpeech(), []);
 
-  const navigateToSource = useCallback(async (source: CitedSource) => {
+  const navigateToSource = useCallback(async (source: CitedSource): Promise<boolean> => {
     if (isTextBook && source.charStart != null) {
       await flashNavigationTarget(textLocation(source.charStart, source.charEnd ?? source.charStart));
-      return;
+      return true;
     }
     if (book?.format === "pdf" && viewRef.current) {
       pushJump(currentCfiRef.current, getCurrentJumpLabel());
       await viewRef.current.goTo(source.sectionIndex);
-      return;
+      return true;
     }
     const view = viewRef.current;
-    if (!view) return;
+    if (!view) return false;
     if (Number.isInteger(source.sectionIndex)) {
       for (const probe of citationSearchProbes(source)) {
         try {
@@ -1403,7 +1411,7 @@ export default function Reader() {
           view.clearSearch();
           if (cfi) {
             await flashNavigationTarget(cfi);
-            return;
+            return true;
           }
         } catch {
           view.clearSearch();
@@ -1413,7 +1421,9 @@ export default function Reader() {
     if (source.sectionHref) {
       pushJump(currentCfiRef.current, getCurrentJumpLabel());
       await view.goTo(source.sectionHref);
+      return true;
     }
+    return false;
   }, [book?.format, flashNavigationTarget, getCurrentJumpLabel, isTextBook, pushJump, viewRef]);
 
   // Load book metadata and default settings from DB
@@ -1992,6 +2002,13 @@ export default function Reader() {
     setSearchFocusToken((token) => token + 1);
   };
 
+  const openXray = (interaction: ReaderInteraction) => {
+    setContextMenu(null);
+    setXrayInteraction(interaction);
+    setXrayOpen(true);
+    setSidePanel(null);
+  };
+
   const handleTocNavigate = (page: number) => {
     const chapter = chapters[page - 1];
     if (chapter?.targetHref) navigateToChapter(chapter.targetHref);
@@ -2247,6 +2264,21 @@ export default function Reader() {
               <MessageSquareMore size={16} />
             </Button>
           </>}
+
+          <Button
+            variant="icon"
+            size="md"
+            active={xrayOpen}
+            aria-label={t("readerXray.title")}
+            title={t("readerXray.title")}
+            onClick={() => {
+              setXrayInteraction(null);
+              setXrayOpen((open) => !open);
+              setSidePanel(null);
+            }}
+          >
+            <CircleHelp size={16} />
+          </Button>
 
           <div className="w-px h-6 bg-border mx-1" />
 
@@ -2597,6 +2629,23 @@ export default function Reader() {
         resolveChapter={resolveExportChapter}
       />}
 
+      {xrayOpen && bookId && book && (
+        <ReaderXrayCard
+          bookId={bookId}
+          interaction={xrayInteraction}
+          getCurrentLocation={() => currentCfiRef.current}
+          currentChapter={currentChapterIndex >= 0 ? chapters[currentChapterIndex]?.title : undefined}
+          progress={progress}
+          onClose={() => { setXrayOpen(false); setXrayInteraction(null); }}
+          onNavigate={(source) => navigateToSource(source)}
+          onNavigateCurrent={(location) => {
+            if (!viewRef.current && !isTextBook) return false;
+            navigateToCfi(location);
+            return true;
+          }}
+        />
+      )}
+
       {/* Context Menu */}
       {contextMenu && (
         <ReaderContextMenu
@@ -2640,6 +2689,7 @@ export default function Reader() {
             setSidePanel("ai");
             setContextMenu(null);
           }}
+          onXray={contextMenu.location ? () => openXray(contextMenu) : undefined}
           onLookup={() => {
             openLearningCard({ ...contextMenu, trigger: "word-quick-lookup" });
             setContextMenu(null);

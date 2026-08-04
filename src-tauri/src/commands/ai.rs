@@ -141,7 +141,40 @@ pub struct AiStreamChunk {
 
 mod intent;
 mod routing;
+mod xray;
 use routing::*;
+
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn ai_xray(
+    book_id: String,
+    entity: String,
+    visible_context: Option<String>,
+    current_location: Option<String>,
+    current_chapter: Option<String>,
+    progress: i32,
+    spoiler_override: bool,
+    request_id: String,
+    app: AppHandle,
+    db: State<'_, Db>,
+    secrets: State<'_, Secrets>,
+) -> AppResult<xray::XrayCardResponse> {
+    xray::run_xray(
+        book_id,
+        entity,
+        visible_context,
+        current_location,
+        current_chapter,
+        progress,
+        spoiler_override,
+        request_id,
+        app,
+        db,
+        secrets,
+    )
+    .await
+}
+
 fn public_stream_error_code(error: &AppError) -> &'static str {
     const CONFIGURATION_ERRORS: [&str; 5] = [
         "AI_NOT_CONFIGURED",

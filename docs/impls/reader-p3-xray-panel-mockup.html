@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lantern P3.4 · X-Ray 人物与术语索引</title>
+  <style>
+    :root{
+      --canvas:#dcdbd9;--surface:#fff;--muted-surface:#fafafa;--input:#f3f3f5;
+      --reader:#f5efe4;--paper:#fbf7ef;--text:#282529;--secondary:#5f5a61;
+      --muted:#7d7881;--quiet:#a29ca5;--border:#e4e1e4;--border-soft:#efedef;
+      --accent:#7c3aed;--accent-bg:#f3e8ff;--accent-soft:#e7d7fb;
+      --danger:#b54a4a;--danger-bg:#fff5f4;--warning:#9a642b;--warning-bg:#fff8ea;
+      --success:#39775a;--success-bg:#eef8f2;--shadow:0 24px 70px rgba(42,36,31,.17)
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:720px;background:var(--canvas);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    button,input{font:inherit}button{cursor:pointer}.icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+    .stage{height:100vh;padding:40px 28px 24px;display:grid;place-items:center}
+    .window{position:relative;width:min(1430px,calc(100vw - 56px));height:min(860px,calc(100vh - 64px));min-height:656px;overflow:hidden;border:1px solid #cbc8c5;border-radius:14px;background:var(--surface);box-shadow:var(--shadow)}
+    .traffic{position:absolute;z-index:40;top:13px;left:17px;display:flex;gap:8px}.traffic i{width:11px;height:11px;border-radius:50%;background:#ff5f57}.traffic i:nth-child(2){background:#ffbd2e}.traffic i:nth-child(3){background:#28c840}
+    .app{height:100%;display:grid;grid-template-rows:71px minmax(0,1fr)}
+    .toolbar{padding:25px 18px 8px 20px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.97);display:flex;align-items:center;justify-content:space-between;user-select:none}
+    .book-meta{display:flex;align-items:center;gap:11px}.book-icon{width:34px;height:34px;border-radius:9px;background:var(--accent);color:#fff;display:grid;place-items:center}.book-icon .icon{width:17px}.book-meta h1{margin:0 0 2px;font-size:13px;font-weight:650;letter-spacing:-.1px}.book-meta p{margin:0;color:var(--muted);font-size:10px}
+    .tools{display:flex;align-items:center;gap:2px}.tool{position:relative;width:34px;height:34px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--muted);display:grid;place-items:center}.tool:hover{background:var(--input);color:var(--text)}.tool.active{background:var(--accent-bg);color:var(--accent)}.tool .badge{position:absolute;right:4px;top:4px;width:5px;height:5px;border:1px solid #fff;border-radius:50%;background:var(--accent)}.divider{width:1px;height:22px;margin:0 5px;background:var(--border)}
+    .workspace{min-height:0;display:flex;background:var(--reader)}
+    .reader-shell{min-width:0;flex:1;display:grid;grid-template-rows:minmax(0,1fr) 44px}
+    .reader{position:relative;min-width:0;overflow:hidden;padding:31px 42px;display:grid;place-items:center;background:var(--reader)}
+    .page{position:relative;width:min(700px,92%);height:100%;padding:38px 58px 48px;overflow:hidden;background:var(--paper);box-shadow:0 5px 28px rgba(77,63,49,.07);font:16px/1.86 Georgia,"Songti SC",serif}
+    .page .kicker{margin:0 0 7px;text-align:center;color:#968e86;font:9px Inter,sans-serif;letter-spacing:.15em;text-transform:uppercase}.page h2{margin:0 0 27px;text-align:center;font-size:24px;font-weight:600}.page p{margin:0 0 .88em;text-align:justify;text-indent:1.5em}.page p.first{text-indent:0}.page .selected{padding:1px 2px;border-radius:2px;background:rgba(124,58,237,.17);box-shadow:0 0 0 1px rgba(124,58,237,.1)}.page .jump-mark{padding:2px 0;background:linear-gradient(transparent 61%,rgba(124,58,237,.25) 61%);box-decoration-break:clone;-webkit-box-decoration-break:clone}.page-number{position:absolute;right:28px;bottom:16px;color:#a49c93;font:9px Inter,sans-serif}
+    .selection-menu{display:none;position:absolute;z-index:15;left:50%;top:47%;width:214px;padding:4px;border:1px solid var(--border);border-radius:8px;background:#fff;box-shadow:0 12px 34px rgba(39,31,44,.18);font:12px/1.2 Inter,sans-serif}.selection-menu button{width:100%;height:34px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--text);display:flex;align-items:center;gap:10px;text-align:left;font-size:11px}.selection-menu button:hover,.selection-menu button.primary{background:var(--accent-bg);color:var(--accent)}.selection-menu .icon{width:14px}.shortcut{margin-left:auto;color:var(--quiet);font-size:8px}
+    .return-pill{display:none;position:absolute;z-index:14;left:24px;bottom:23px;height:34px;padding:0 13px;border:1px solid #d8c5ef;border-radius:999px;background:rgba(255,255,255,.97);color:#72528f;box-shadow:0 8px 22px rgba(55,45,65,.12);align-items:center;gap:6px;font-size:10px}.return-pill .icon{width:13px}
+    .reader-footer{padding:0 23px;border-top:1px solid #e3ddd5;background:#fbfaf8;color:#938d87;display:flex;align-items:center;justify-content:space-between;font-size:9px}.reader-footer i{width:122px;height:1px;background:#d8d2ca}.reader-footer i:before{content:"";display:block;width:38%;height:1px;background:#948b84}
+    .resize{width:4px;flex:0 0 4px;border-left:1px solid var(--border);background:#f7f6f6;cursor:col-resize}.resize:hover{background:var(--accent-soft)}
+    .panel{width:430px;flex:0 0 430px;min-width:0;overflow:hidden;background:var(--muted-surface);display:flex;flex-direction:column}.app.panel-closed .panel,.app.panel-closed .resize{display:none}.app.panel-closed .reader{padding-left:90px;padding-right:90px}
+    .panel-head{height:48px;padding:0 14px 0 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:var(--muted-surface);flex:none}.panel-head h2{margin:0;font-size:13px;font-weight:650}.panel-head .subtle{color:var(--quiet);font-size:8.5px}.close{width:28px;height:28px;margin-left:auto;border:0;border-radius:7px;background:transparent;color:var(--muted);display:grid;place-items:center}.close:hover{background:var(--input)}.scope{height:25px;padding:0 8px;border:1px solid #d7c6ec;border-radius:999px;background:#faf6ff;color:#755592;display:flex;align-items:center;gap:4px;font-size:8.5px}.scope .icon{width:10px}.scope:hover{background:var(--accent-bg)}
+    .screen{display:none;min-height:0;flex:1;overflow:auto}.panel[data-view="overview"] .screen.overview,.panel[data-view="person"] .screen.person,.panel[data-view="term"] .screen.term,.panel[data-view="loading"] .screen.loading,.panel[data-view="empty"] .screen.empty,.panel[data-view="update"] .screen.update,.panel[data-view="spoiler"] .screen.spoiler,.panel[data-view="error"] .screen.error{display:block}
+    .overview-top{position:sticky;z-index:4;top:0;padding:10px 14px 9px;border-bottom:1px solid var(--border-soft);background:rgba(250,250,250,.98)}.searchbox{height:30px;display:flex;align-items:center;gap:7px;padding:0 9px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--muted)}.searchbox .icon{width:12px}.searchbox input{min-width:0;width:100%;border:0;outline:0;background:transparent;color:var(--text);font-size:9.5px}.searchbox input::placeholder{color:var(--quiet)}.tabs{margin-top:9px;padding:3px;display:grid;grid-template-columns:1fr 1fr;gap:3px;border-radius:8px;background:var(--input)}.tabs button{height:27px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:9px}.tabs button.active{background:#fff;color:var(--accent);font-weight:650;box-shadow:0 1px 4px rgba(50,45,40,.11)}
+    .index-meta{padding:10px 16px 5px;color:var(--quiet);display:flex;align-items:center;justify-content:space-between;font-size:8.5px}.index-meta span:last-child{display:flex;align-items:center;gap:4px;color:#7c6a8e}.index-meta .icon{width:10px}.index-list{padding-bottom:12px}.index-item{width:calc(100% - 24px);margin:4px 12px;padding:11px 12px;border:1px solid transparent;border-radius:9px;background:transparent;display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:10px;text-align:left}.index-item:hover{border-color:var(--border);background:#fff}.avatar{width:34px;height:34px;border-radius:50%;background:#ece5f4;color:#765e91;display:grid;place-items:center;font:600 12px Georgia,serif}.avatar.term-avatar{border-radius:9px;background:#f0ece4;color:#786b59}.index-copy{min-width:0}.index-name{display:flex;align-items:baseline;gap:6px}.index-name b{font-size:10.5px}.index-name small{color:var(--quiet);font-size:7.8px}.index-copy p{margin:4px 0 0;color:var(--muted);font-size:8.8px;line-height:1.48}.hit-count{align-self:center;color:var(--quiet);font-size:8px;white-space:nowrap}.hit-count b{display:block;margin-bottom:2px;color:#76667f;font-size:9px}
+    .detail{padding-bottom:14px}.back{height:32px;margin:7px 10px 1px;padding:0 5px;border:0;background:transparent;color:var(--muted);display:flex;align-items:center;gap:4px;font-size:9px}.back:hover{color:var(--text)}.back .icon{width:12px}.identity{padding:5px 16px 14px;border-bottom:1px solid var(--border-soft)}.identity-top{display:flex;align-items:center;gap:11px}.identity .avatar{width:44px;height:44px;font-size:15px}.identity h3{margin:0 0 3px;font:600 18px Georgia,"Songti SC",serif}.identity .aliases{color:var(--quiet);font-size:8.5px}.safe-label{margin-left:auto;align-self:flex-start;padding:4px 7px;border-radius:999px;background:var(--success-bg);color:var(--success);display:flex;align-items:center;gap:4px;font-size:7.8px}.safe-label .icon{width:9px}.summary{margin:12px 0 0;color:var(--secondary);font:10px/1.7 Georgia,"Songti SC",serif}.summary strong{color:var(--text)}
+    .section{padding:13px 16px 2px}.section-title{margin:0 0 9px;color:var(--quiet);font-size:8.5px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center}.section-title span{margin-left:auto;color:#8e7ca0;font-weight:500;letter-spacing:0;text-transform:none}.relation-list{display:grid;gap:6px}.relation{padding:9px 10px;border:1px solid var(--border-soft);border-radius:8px;background:#fff;display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:8px;align-items:center}.relation .avatar{width:28px;height:28px;font-size:9px}.relation b{display:block;font-size:9px}.relation p{margin:3px 0 0;color:var(--muted);font-size:8.2px}.relation-tag{padding:3px 6px;border-radius:999px;background:var(--accent-bg);color:#785898;font-size:7.5px}
+    .occurrences{display:grid;gap:5px}.occurrence{width:100%;padding:9px 10px;border:1px solid transparent;border-radius:8px;background:transparent;text-align:left}.occurrence:hover,.occurrence.active{border-color:#ddceeF;background:#fff}.occurrence-top{display:flex;align-items:center;gap:6px}.dot{width:5px;height:5px;border-radius:50%;background:#ad91cb}.occurrence b{font-size:8.8px}.occurrence time{margin-left:auto;color:var(--quiet);font-size:7.6px}.occurrence p{margin:5px 0 0;color:var(--muted);font:8.7px/1.55 Georgia,"Songti SC",serif}.more{width:100%;height:29px;margin-top:5px;border:0;border-radius:7px;background:transparent;color:#7a5b98;font-size:8.5px}.more:hover{background:var(--accent-bg)}
+    .term-mark{width:44px;height:44px;border-radius:11px;background:#f0ece4;color:#736752;display:grid;place-items:center}.term-mark .icon{width:20px}.meaning{margin:11px 0 0;padding:10px 11px;border-left:2px solid #b89bd6;border-radius:0 8px 8px 0;background:#f7f2fb;color:#695e71;font:9.5px/1.65 Georgia,"Songti SC",serif}.motif-row{display:flex;flex-wrap:wrap;gap:5px}.motif-row span{padding:5px 8px;border:1px solid var(--border);border-radius:999px;background:#fff;color:var(--muted);font-size:8px}
+    .update-banner{margin:10px 12px 2px;padding:10px 11px;border:1px solid #eed9b7;border-radius:9px;background:var(--warning-bg);color:#815a2e}.update-banner b{display:block;font-size:9px}.update-banner p{margin:4px 0 8px;font-size:8.2px;line-height:1.5}.update-banner button{height:28px;padding:0 9px;border:0;border-radius:6px;background:#9a6a32;color:#fff;font-size:8.3px}.stale{opacity:.72}
+    .center-state{height:100%;min-height:460px;padding:44px 34px;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center}.state-mark{width:52px;height:52px;border-radius:50%;background:var(--accent-bg);color:#8d6caf;display:grid;place-items:center}.state-mark .icon{width:22px}.center-state h3{margin:14px 0 6px;font-size:12px}.center-state p{max-width:286px;margin:0;color:var(--muted);font-size:9px;line-height:1.65}.center-state .safe-note{margin-top:11px;padding:7px 9px;border-radius:7px;background:var(--success-bg);color:var(--success);display:flex;align-items:center;gap:5px;font-size:8.2px}.safe-note .icon{width:10px}.progress{width:240px;height:4px;margin-top:17px;overflow:hidden;border-radius:999px;background:#ebe8ec}.progress i{display:block;width:42%;height:100%;border-radius:999px;background:var(--accent)}.progress-copy{width:240px;margin-top:7px;display:flex;justify-content:space-between;color:var(--quiet);font-size:7.8px}.primary-action{height:30px;margin-top:15px;padding:0 11px;border:0;border-radius:7px;background:var(--accent);color:#fff;font-size:8.8px}.secondary-action{height:30px;margin-top:7px;padding:0 10px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--muted);font-size:8.8px}.error .state-mark{background:var(--danger-bg);color:var(--danger)}
+    .spoiler-wrap{padding:23px 21px}.spoiler-icon{width:46px;height:46px;border-radius:12px;background:var(--warning-bg);color:var(--warning);display:grid;place-items:center}.spoiler-icon .icon{width:21px}.spoiler-wrap h3{margin:15px 0 6px;font-size:13px}.spoiler-wrap>p{margin:0;color:var(--muted);font-size:9.5px;line-height:1.65}.boundary{margin-top:14px;padding:11px;border:1px solid #eadabc;border-radius:8px;background:#fffaf0}.boundary b{display:block;color:#7e582d;font-size:9px}.boundary p{margin:4px 0 0;color:#8c765d;font-size:8.4px;line-height:1.5}.confirm-check{margin-top:14px;padding:10px;border:1px solid var(--border);border-radius:8px;background:#fff;display:flex;align-items:flex-start;gap:8px;color:var(--secondary);font-size:8.7px;line-height:1.45;cursor:pointer}.confirm-check input{margin:1px 0 0;accent-color:var(--danger)}.spoiler-actions{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:7px}.spoiler-actions button{height:32px;border-radius:7px;font-size:8.7px}.spoiler-actions .cancel{border:1px solid var(--border);background:#fff;color:var(--muted)}.spoiler-actions .confirm{border:0;background:var(--danger);color:#fff}.spoiler-actions .confirm:disabled{opacity:.35;cursor:not-allowed}.spoiler-foot{margin-top:13px;color:var(--quiet);display:flex;gap:5px;font-size:7.8px;line-height:1.5}.spoiler-foot .icon{width:10px;flex:none}
+    .state-nav{position:fixed;z-index:100;top:7px;left:50%;max-width:calc(100vw - 30px);transform:translateX(-50%);padding:4px;display:flex;gap:2px;border:1px solid #d0ced1;border-radius:10px;background:rgba(255,255,255,.97);box-shadow:0 8px 24px rgba(0,0,0,.12);white-space:nowrap}.state-nav button{height:26px;padding:0 7px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:8.5px}.state-nav button.active{background:var(--accent-bg);color:var(--accent);font-weight:650}
+    .annotation{position:fixed;z-index:90;left:20px;bottom:15px;width:273px;padding:10px 12px;border:1px solid rgba(255,255,255,.7);border-radius:10px;background:rgba(43,40,44,.91);color:#eeeaf0;box-shadow:0 10px 28px rgba(0,0,0,.13);font-size:8.6px;line-height:1.5}.annotation b{display:block;margin-bottom:3px;color:#fff;font-size:9.5px}.annotation span{color:#cbc5ce}
+    /* 窄窗时索引从右栏退为底部抽屉，正文不再被侧栏压缩。 */
+    .app.narrow-demo .resize{display:none}.app.narrow-demo .workspace{position:relative}.app.narrow-demo .reader{padding:26px 30px 38px}.app.narrow-demo .panel{position:absolute;z-index:20;right:14px;bottom:14px;left:14px;width:auto;height:min(355px,58%);border:1px solid #d9c9e9;border-radius:12px;box-shadow:0 18px 44px rgba(43,32,51,.2)}.app.narrow-demo .panel-head{border-radius:12px 12px 0 0}.app.narrow-demo .page{width:min(700px,96%)}.app.narrow-demo .reader-footer{padding-bottom:0}.app.narrow-demo .selection-menu{display:none!important}
+    @media(max-width:1260px){.panel{width:400px;flex-basis:400px}.page{padding-left:45px;padding-right:45px}.annotation{display:none}.state-nav button{padding:0 5px;font-size:8px}}
+    @media(max-width:760px){html,body{min-height:640px}.stage{height:100svh;padding:38px 10px 10px}.window{width:calc(100vw - 20px);height:calc(100svh - 48px);min-height:590px;border-radius:10px}.app{grid-template-rows:62px minmax(0,1fr)}.toolbar{padding:18px 11px 6px 13px}.book-meta p,.tools .tool:not(#xray-entry){display:none}.tools .divider{display:none}.reader{padding:18px 12px 36px}.page{width:100%;padding:28px 27px 42px;font-size:14px}.page h2{font-size:20px}.reader-footer{padding:0 14px}.reader-footer i{width:90px}.resize{display:none}.workspace{position:relative}.panel{position:absolute;z-index:20;right:8px;bottom:8px;left:8px;width:auto;height:min(350px,58%);border:1px solid #d9c9e9;border-radius:12px;box-shadow:0 18px 44px rgba(43,32,51,.2)}.panel-head{border-radius:12px 12px 0 0}.app.panel-closed .reader{padding-left:12px;padding-right:12px}.state-nav{left:8px;right:8px;max-width:none;transform:none;overflow-x:auto;justify-content:flex-start}.state-nav button{flex:none}.annotation{display:none}}
+  </style>
+</head>
+<body>
+  <nav class="state-nav" aria-label="样张状态">
+    <button data-state="entry">入口</button>
+    <button data-state="overview">索引总览</button>
+    <button class="active" data-state="person">人物详情</button>
+    <button data-state="term">术语详情</button>
+    <button data-state="jump">跳转与返回</button>
+    <button data-state="loading">首次生成</button>
+    <button data-state="empty">无结果</button>
+    <button data-state="update">更新到当前位置</button>
+    <button data-state="spoiler">整书范围确认</button>
+    <button data-state="error">失败</button>
+    <button data-state="narrow">窄窗抽屉</button>
+  </nav>
+
+  <div class="stage">
+    <section class="window">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <div class="app" id="app">
+        <header class="toolbar">
+          <div class="book-meta">
+            <div class="book-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+            <div><h1>了不起的盖茨比</h1><p>第七章 · 132 / 218</p></div>
+          </div>
+          <div class="tools">
+            <button class="tool" title="目录"><svg class="icon" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
+            <button class="tool" title="搜索"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></button>
+            <button class="tool" title="阅读设置"><span style="font-size:14px;font-weight:650">A</span><span style="font-size:9px;font-weight:650;margin-left:-4px;margin-top:4px">A</span></button>
+            <button class="tool" title="书签与高亮"><svg class="icon" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg></button>
+            <button class="tool" title="生词"><svg class="icon" viewBox="0 0 24 24"><path d="m5 8 6 6M4 14l6-6 2-3M2 5h12M12 19l4-9 4 9M13.5 16h5"/></svg></button>
+            <button class="tool active" id="xray-entry" title="人物与术语"><svg class="icon" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 18c.7-3.1 2.5-4.7 5.5-4.7 1.7 0 3 .5 4 1.5"/><circle cx="16.5" cy="15.5" r="3.5"/><path d="m19 18 2.5 2.5"/></svg><span class="badge"></span></button>
+            <div class="divider"></div>
+            <button class="tool" title="AI 助手"><svg class="icon" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="13" rx="3"/><path d="M9 10h.01M15 10h.01M9 15h6M12 2v4"/></svg></button>
+          </div>
+        </header>
+
+        <div class="workspace">
+          <section class="reader-shell">
+            <main class="reader">
+              <article class="page" id="page">
+                <p class="kicker">Chapter Seven</p><h2>第七章</h2>
+                <p class="first">这是最热的一天。我们坐在客厅里，窗帘被送进来的热风吹得微微鼓起，又懒洋洋地落下。</p>
+                <p>“我们要拿自己怎么办呢？”<span class="selected">黛西</span>绝望地叫道，“今天下午，还有以后的一天又一天？”</p>
+                <p>汤姆忽然站起来，目光从盖茨比移到她身上。房间里的每个人都听见了话语背后那种不肯说破的意味。</p>
+                <p id="jump-text">许久以前，盖茨比第一次见到黛西时，曾觉得她的声音里装满了金钱；此刻那声音依然近在咫尺。</p>
+                <p>尼克望向窗外。海湾对面那一点绿色的光，在白昼里看不见，却仍像一个未说完的愿望留在那里。</p>
+                <p>汽车在午后的尘土里向城里驶去。没有人再提天气，但炎热始终压在每一句话之间。</p>
+                <span class="page-number" id="page-number">132</span>
+              </article>
+              <div class="selection-menu" id="selection-menu" role="menu">
+                <button><svg class="icon" viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h12"/></svg>查词</button>
+                <button class="primary" id="selection-xray"><svg class="icon" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 18c.7-3.1 2.5-4.7 5.5-4.7"/><circle cx="16.5" cy="15.5" r="3.5"/><path d="m19 18 2.5 2.5"/></svg>查看人物 / 术语<span class="shortcut">⌘⇧X</span></button>
+                <button><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>问 AI</button>
+                <button><svg class="icon" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>收藏</button>
+              </div>
+              <button class="return-pill" id="return-pill"><svg class="icon" viewBox="0 0 24 24"><path d="m9 14-4-4 4-4"/><path d="M5 10h9a5 5 0 0 1 5 5v3"/></svg>返回刚才位置 · 第七章 132 页</button>
+            </main>
+            <footer class="reader-footer"><span>38%</span><i></i><span>132 / 218</span></footer>
+          </section>
+
+          <div class="resize" title="拖动调整面板宽度"></div>
+          <aside class="panel" id="panel" data-view="person" aria-label="人物与术语">
+            <header class="panel-head">
+              <h2>人物与术语</h2><span class="subtle">X-Ray</span>
+              <button class="scope" id="scope-trigger" title="切换索引范围"><svg class="icon" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>截至第七章<svg class="icon" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></button>
+              <button class="close" id="close-panel" title="关闭面板"><svg class="icon" viewBox="0 0 24 24"><path d="m18 6-12 12M6 6l12 12"/></svg></button>
+            </header>
+
+            <section class="screen overview">
+              <div class="overview-top">
+                <label class="searchbox"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="index-search" placeholder="搜索人物、别名或术语" /></label>
+                <div class="tabs"><button class="active" data-tab="people">人物 · 12</button><button data-tab="terms">术语 · 7</button></div>
+              </div>
+              <div class="index-meta"><span>按最近出场排序</span><span><svg class="icon" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 2"/></svg>生成于当前阅读位置</span></div>
+              <div class="index-list people-list">
+                <button class="index-item" data-open="person"><span class="avatar">黛</span><span class="index-copy"><span class="index-name"><b>黛西·布坎南</b><small>Daisy Buchanan</small></span><p>尼克的表妹；汤姆的妻子，与盖茨比有一段旧日关系。</p></span><span class="hit-count"><b>18 次</b>最近 132 页</span></button>
+                <button class="index-item"><span class="avatar">盖</span><span class="index-copy"><span class="index-name"><b>杰伊·盖茨比</b><small>Jay Gatsby</small></span><p>尼克神秘的邻居；举办盛大宴会，等待与黛西重逢。</p></span><span class="hit-count"><b>27 次</b>最近 131 页</span></button>
+                <button class="index-item"><span class="avatar">汤</span><span class="index-copy"><span class="index-name"><b>汤姆·布坎南</b><small>Tom Buchanan</small></span><p>黛西的丈夫；出身富裕，正怀疑盖茨比的过去。</p></span><span class="hit-count"><b>21 次</b>最近 132 页</span></button>
+                <button class="index-item"><span class="avatar">尼</span><span class="index-copy"><span class="index-name"><b>尼克·卡拉韦</b><small>Nick Carraway</small></span><p>叙述者；黛西的表哥，也是盖茨比的邻居与朋友。</p></span><span class="hit-count"><b>36 次</b>本章出现</span></button>
+                <button class="index-item"><span class="avatar">乔</span><span class="index-copy"><span class="index-name"><b>乔丹·贝克</b><small>Jordan Baker</small></span><p>黛西的朋友；职业高尔夫球手，与尼克逐渐熟识。</p></span><span class="hit-count"><b>14 次</b>最近 129 页</span></button>
+              </div>
+              <div class="index-list terms-list" hidden>
+                <button class="index-item" data-open="term"><span class="avatar term-avatar">灯</span><span class="index-copy"><span class="index-name"><b>绿灯</b><small>green light</small></span><p>海湾对岸的微光，与盖茨比的渴望反复相连。</p></span><span class="hit-count"><b>5 次</b>最近 132 页</span></button>
+                <button class="index-item"><span class="avatar term-avatar">谷</span><span class="index-copy"><span class="index-name"><b>灰烬谷</b><small>valley of ashes</small></span><p>纽约与西卵之间荒凉的工业地带。</p></span><span class="hit-count"><b>8 次</b>最近 115 页</span></button>
+                <button class="index-item"><span class="avatar term-avatar">眼</span><span class="index-copy"><span class="index-name"><b>埃克尔堡医生的眼睛</b></span><p>灰烬谷里褪色的广告牌，被人物赋予注视的意味。</p></span><span class="hit-count"><b>4 次</b>最近 116 页</span></button>
+              </div>
+            </section>
+
+            <section class="screen person detail">
+              <button class="back" data-back><svg class="icon" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>返回索引</button>
+              <div class="identity">
+                <div class="identity-top"><span class="avatar">黛</span><div><h3>黛西·布坎南</h3><div class="aliases">Daisy Buchanan · 黛西</div></div><span class="safe-label"><svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>无剧透</span></div>
+                <p class="summary"><strong>截至第七章：</strong>尼克的表妹、汤姆的妻子。她与盖茨比多年前相识，最近重新见面；两人的感情正在动摇她与汤姆的婚姻。这里不推断尚未发生的选择。</p>
+              </div>
+              <div class="section">
+                <h4 class="section-title">已知关系 <span>3 人</span></h4>
+                <div class="relation-list">
+                  <div class="relation"><span class="avatar">盖</span><div><b>杰伊·盖茨比</b><p>旧日恋人 · 最近重逢</p></div><span class="relation-tag">牵挂</span></div>
+                  <div class="relation"><span class="avatar">汤</span><div><b>汤姆·布坎南</b><p>丈夫 · 关系日渐紧张</p></div><span class="relation-tag">婚姻</span></div>
+                  <div class="relation"><span class="avatar">尼</span><div><b>尼克·卡拉韦</b><p>表哥 · 叙述者</p></div><span class="relation-tag">亲属</span></div>
+                </div>
+              </div>
+              <div class="section">
+                <h4 class="section-title">出场位置 <span>截至当前位置 18 处</span></h4>
+                <div class="occurrences">
+                  <button class="occurrence" data-jump><span class="occurrence-top"><i class="dot"></i><b>第七章 · 132 页</b><time>当前位置附近</time></span><p>“我们要拿自己怎么办呢？”黛西绝望地叫道……</p></button>
+                  <button class="occurrence" data-jump><span class="occurrence-top"><i class="dot"></i><b>第五章 · 88 页</b><time>44 页前</time></span><p>黛西的脸贴近盖茨比的，他低声对她说着什么……</p></button>
+                  <button class="occurrence" data-jump><span class="occurrence-top"><i class="dot"></i><b>第一章 · 17 页</b><time>首次出现</time></span><p>黛西坐在长沙发的一端，白色衣裙像被风吹起。</p></button>
+                </div>
+                <button class="more">查看其余 15 处出场</button>
+              </div>
+            </section>
+
+            <section class="screen term detail">
+              <button class="back" data-back><svg class="icon" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>返回术语索引</button>
+              <div class="identity">
+                <div class="identity-top"><span class="term-mark"><svg class="icon" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4"/><path d="M8.5 14.5A7 7 0 1 1 15.5 14.5c-1 1-1.5 1.7-1.5 3.5h-4c0-1.8-.5-2.5-1.5-3.5z"/></svg></span><div><h3>绿灯</h3><div class="aliases">green light · 意象</div></div><span class="safe-label"><svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>无剧透</span></div>
+                <div class="meaning"><strong>截至第七章：</strong>黛西家码头尽头的一点绿光。盖茨比曾在夜里向它伸手；在已读内容中，它反复与距离、等待和对理想生活的渴望相连。</div>
+              </div>
+              <div class="section"><h4 class="section-title">关联主题</h4><div class="motif-row"><span>渴望</span><span>距离</span><span>过去</span><span>美国梦</span></div></div>
+              <div class="section">
+                <h4 class="section-title">出现位置 <span>截至当前位置 5 处</span></h4>
+                <div class="occurrences">
+                  <button class="occurrence" data-jump><span class="occurrence-top"><i class="dot"></i><b>第七章 · 132 页</b><time>当前位置附近</time></span><p>海湾对面那一点绿色的光，在白昼里看不见……</p></button>
+                  <button class="occurrence" data-jump><span class="occurrence-top"><i class="dot"></i><b>第五章 · 94 页</b><time>38 页前</time></span><p>那道绿光不再具有从前那样巨大的意义。</p></button>
+                  <button class="occurrence" data-jump><span class="occurrence-top"><i class="dot"></i><b>第一章 · 28 页</b><time>首次出现</time></span><p>在很远的地方，也许是码头尽头，亮着一点绿光。</p></button>
+                </div>
+              </div>
+            </section>
+
+            <section class="screen loading">
+              <div class="center-state"><div class="state-mark"><svg class="icon" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 2"/></svg></div><h3>正在建立人物与术语索引</h3><p>全文检索正在聚合已读章节中的上下文，再由 AI 合并别名、关系与重复出现的位置。你可以继续阅读。</p><div class="safe-note"><svg class="icon" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>只读取到当前位置 · 第七章 38%</div><div class="progress"><i></i></div><div class="progress-copy"><span>正在整理人物别名</span><b>42%</b></div></div>
+            </section>
+
+            <section class="screen empty">
+              <div class="center-state"><div class="state-mark"><svg class="icon" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 18c.7-3.1 2.5-4.7 5.5-4.7"/><circle cx="16.5" cy="15.5" r="3.5"/><path d="m19 18 2.5 2.5"/></svg></div><h3>没有找到“三点钟的汽笛”</h3><p>它暂时未被识别为人物或重复术语。换一个更完整的名字，或回到索引中搜索。</p><button class="primary-action" data-back>返回人物与术语索引</button><button class="secondary-action" id="explain-selection">让 AI 解释这段文字</button></div>
+            </section>
+
+            <section class="screen update">
+              <div class="update-banner"><b>索引停在第五章，阅读已到第七章</b><p>更新只会补充这两章的新出场和关系，不会读取后续章节。</p><button id="update-now">更新到当前位置</button></div>
+              <div class="stale"><button class="back" data-back><svg class="icon" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>返回索引</button><div class="identity"><div class="identity-top"><span class="avatar">黛</span><div><h3>黛西·布坎南</h3><div class="aliases">索引范围 · 第一至五章</div></div><span class="safe-label"><svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>无剧透</span></div><p class="summary">尼克的表妹、汤姆的妻子。她与盖茨比多年前相识，最近在尼克家重新见面。</p></div><div class="section"><h4 class="section-title">已知关系</h4><div class="relation-list"><div class="relation"><span class="avatar">盖</span><div><b>杰伊·盖茨比</b><p>旧日相识 · 最近重逢</p></div><span class="relation-tag">过去</span></div><div class="relation"><span class="avatar">汤</span><div><b>汤姆·布坎南</b><p>丈夫</p></div><span class="relation-tag">婚姻</span></div></div></div></div>
+            </section>
+
+            <section class="screen spoiler">
+              <div class="spoiler-wrap"><div class="spoiler-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.4 2.3 17a2 2 0 0 0 1.7 3h16a2 2 0 0 0 1.7-3l-8-13.6a2 2 0 0 0-3.4 0z"/></svg></div><h3>整书范围会包含未读情节</h3><p>人物身份、关系变化和术语含义可能直接揭示后续内容。Lantern 默认始终只分析你读到的位置。</p><div class="boundary"><b>你现在读到：第七章 · 38%</b><p>整书还有 2 章未读。切换后，本面板中的摘要和全部出场位置都会包含这些章节。</p></div><label class="confirm-check"><input id="spoiler-check" type="checkbox" />我知道这会展示未来章节的内容，并希望在本次查看中解锁整书范围。</label><div class="spoiler-actions"><button class="cancel" data-back>保持无剧透</button><button class="confirm" id="spoiler-confirm" disabled>确认查看整书</button></div><div class="spoiler-foot"><svg class="icon" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>整书范围不会成为新默认；关闭本书后自动恢复“截至当前位置”。</span></div></div>
+            </section>
+
+            <section class="screen error">
+              <div class="center-state"><div class="state-mark"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 17h.01"/></svg></div><h3>这次没有生成成功</h3><p>网络连接中断，已完成的全文匹配仍保留在本地。阅读位置和正文没有受到影响。</p><button class="primary-action" id="retry">重试生成</button><button class="secondary-action" data-back>稍后再说</button></div>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <aside class="annotation"><b>推荐：可深链的右侧 X-Ray 索引面板</b><span>工具栏负责总览，选中文本负责直达详情；所有结果默认锁在当前位置。跳转复用阅读器统一返回历史，剧透确认也在面板内完成，不遮挡正文。</span></aside>
+
+  <script>
+    const app=document.querySelector('#app'),panel=document.querySelector('#panel'),nav=[...document.querySelectorAll('[data-state]')],selection=document.querySelector('#selection-menu'),returnPill=document.querySelector('#return-pill'),page=document.querySelector('#page'),pageNumber=document.querySelector('#page-number'),jumpText=document.querySelector('#jump-text');
+    function setState(name){
+      nav.forEach(b=>b.classList.toggle('active',b.dataset.state===name));
+      app.classList.toggle('panel-closed',name==='entry');
+      app.classList.toggle('narrow-demo',name==='narrow');
+      selection.style.display=name==='entry'?'block':'none';
+      returnPill.style.display=name==='jump'?'flex':'none';
+      jumpText.classList.toggle('jump-mark',name==='jump');
+      pageNumber.textContent=name==='jump'?'88':'132';
+      if(name==='entry') return;
+      panel.dataset.view=name==='jump'||name==='narrow'?'person':name;
+      if(name==='jump') document.querySelector('.person .occurrence:nth-child(2)').classList.add('active');
+      else document.querySelectorAll('.occurrence').forEach(x=>x.classList.remove('active'));
+    }
+    nav.forEach(b=>b.addEventListener('click',()=>setState(b.dataset.state)));
+    document.querySelector('#selection-xray').addEventListener('click',()=>setState('person'));
+    document.querySelector('#xray-entry').addEventListener('click',()=>setState(app.classList.contains('panel-closed')?'overview':'entry'));
+    document.querySelector('#close-panel').addEventListener('click',()=>setState('entry'));
+    document.querySelectorAll('[data-back]').forEach(b=>b.addEventListener('click',()=>setState('overview')));
+    document.querySelectorAll('[data-open]').forEach(b=>b.addEventListener('click',()=>setState(b.dataset.open)));
+    document.querySelectorAll('[data-jump]').forEach(b=>b.addEventListener('click',()=>setState('jump')));
+    returnPill.addEventListener('click',()=>setState('person'));
+    document.querySelector('#scope-trigger').addEventListener('click',()=>setState('spoiler'));
+    const check=document.querySelector('#spoiler-check'),confirm=document.querySelector('#spoiler-confirm');check.addEventListener('change',()=>confirm.disabled=!check.checked);confirm.addEventListener('click',()=>{document.querySelector('#scope-trigger').childNodes[1].nodeValue='整书范围';setState('overview')});
+    document.querySelector('#retry').addEventListener('click',()=>setState('loading'));
+    document.querySelector('#update-now').addEventListener('click',()=>setState('loading'));
+    document.querySelector('#explain-selection').addEventListener('click',()=>setState('loading'));
+    const tabButtons=[...document.querySelectorAll('[data-tab]')];tabButtons.forEach(b=>b.addEventListener('click',()=>{tabButtons.forEach(x=>x.classList.toggle('active',x===b));document.querySelector('.people-list').hidden=b.dataset.tab!=='people';document.querySelector('.terms-list').hidden=b.dataset.tab!=='terms'}));
+    document.querySelector('#index-search').addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase();document.querySelectorAll('.index-list:not([hidden]) .index-item').forEach(x=>x.style.display=!q||x.textContent.toLowerCase().includes(q)?'grid':'none')});
+  </script>
+</body>
+</html>

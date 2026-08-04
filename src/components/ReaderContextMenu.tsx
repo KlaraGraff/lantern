@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
   BookmarkPlus,
+  CircleHelp,
   Copy,
   Highlighter,
   Languages,
@@ -47,6 +48,7 @@ interface ReaderContextMenuProps {
   onQuote: () => void;
   onLookup: () => void;
   onNote?: () => void;
+  onXray?: () => void;
   onTranslate: () => void;
   onSave: () => void;
   onToggleMark?: () => void;
@@ -72,6 +74,7 @@ export default function ReaderContextMenu({
   onQuote,
   onLookup,
   onNote,
+  onXray,
   onTranslate,
   onSave,
   onToggleMark,
@@ -232,6 +235,17 @@ export default function ReaderContextMenu({
         >
           <MessageSquareMore size={16} className="shrink-0 text-text-muted" />
           <span className="min-w-0 flex-1 truncate">{t("readerNotes.menuAction")}</span>
+        </button>
+      ) : null}
+      {onXray ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={onXray}
+          className="mx-1 flex h-9 w-[calc(100%-8px)] items-center gap-3 rounded-sm px-3 text-left text-[13px] font-medium text-text-primary hover:bg-accent-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <CircleHelp size={16} className="shrink-0 text-text-muted" />
+          <span className="min-w-0 flex-1 truncate">{t("readerXray.menuAction")}</span>
         </button>
       ) : null}
       {actions.map((action) => {
