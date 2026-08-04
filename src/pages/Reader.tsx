@@ -27,7 +27,6 @@ import AiPanel from "../components/AiPanel";
 import BookmarksPanel from "../components/BookmarksPanel";
 import ReaderSettings from "../components/ReaderSettings";
 import { openSettings } from "../components/settings-open";
-import { parsePassiveVocabSettings, type PassiveVocabSettings } from "../components/passive-vocab";
 import {
   getThemeStyles,
   getReaderCapabilities,
@@ -51,14 +50,12 @@ import {
   detachedInteraction,
   isInteractiveReaderTarget,
   normalizeInteractionText,
-  parseTripleClickScope,
   selectedRange,
   serializableRect,
   withInheritedContext,
   wordRangeAtPoint,
   type ReaderInteraction,
   type SerializableRect,
-  type TripleClickScope,
 } from "../components/reader-interaction";
 import {
   planCfiHighlightRemoval,
@@ -67,33 +64,14 @@ import {
   planTextHighlightMutation,
   type HighlightMutationPlan,
 } from "../components/highlight-ranges";
+import { useReadingAssistanceSettings } from "./reader/useReadingAssistanceSettings";
 import { getBook, needsPreparation, retryPreparation, type Book } from "../hooks/useBooks";
 import { getAllSettings, getBookSettings } from "../hooks/useSettings";
 import type { Highlight } from "../hooks/useBookmarks";
-import {
-  DEFAULT_CARD_DESIGN_CONFIG,
-  LearningCardController,
-  parseCardDesignConfig,
-  type CardDesignConfigV1,
-} from "../components/learning-card";
-import {
-  MARKER_STYLE_SETTING_KEY,
-  createDefaultMarkerStyleConfig,
-  parseMarkerStyleConfig,
-  type MarkerStyleConfig,
-} from "../components/marker-style";
+import { LearningCardController } from "../components/learning-card";
 import { loadCustomFonts } from "../components/custom-fonts";
-import {
-  listenForReadingAssistanceSettingsChanged,
-  notifyReadingAssistanceSettingsChanged,
-  readingAssistanceSettingsChanged,
-} from "../components/reading-assistance-events";
-import {
-  parseReaderBindings,
-  SHOW_MENU_SHORTCUTS_SETTING_KEY,
-  type ReaderActionBinding,
-  type ReaderActionId,
-} from "../components/reader-bindings";
+import { notifyReadingAssistanceSettingsChanged } from "../components/reading-assistance-events";
+import { type ReaderActionId } from "../components/reader-bindings";
 import {
   runPageTurnTransition,
 } from "../components/page-turn-transition";
@@ -299,8 +277,6 @@ export default function Reader() {
   const [contextBookWordMarkWord, setContextBookWordMarkWord] = useState<string | null>(null);
   const [contextBookWordMarkExcluded, setContextBookWordMarkExcluded] = useState(false);
   const [contextMarkStateLoading, setContextMarkStateLoading] = useState(false);
-  const [learningCardConfig, setLearningCardConfig] = useState<CardDesignConfigV1>(DEFAULT_CARD_DESIGN_CONFIG);
-  const [passiveVocab, setPassiveVocab] = useState<PassiveVocabSettings>({ enabled: false, style: "ruby", density: "medium" });
   const passiveVocabToggleRevisionRef = useRef(0);
   const [learningCards, setLearningCards] = useState<Array<{ id: string; interaction: ReaderInteraction }>>([]);
   const [topLearningCardId, setTopLearningCardId] = useState<string | null>(null);
@@ -336,20 +312,24 @@ export default function Reader() {
     undoRestoreBookOverrides,
     promoteBookOverrides,
   } = useReaderSettingsSync(bookId);
-  const autoHighlightLookupsRef = useRef(true);
-  const [markerStyle, setMarkerStyle] = useState<MarkerStyleConfig>(createDefaultMarkerStyleConfig);
-  const markerStyleRef = useRef(markerStyle);
-  const markMatchingWordsRef = useRef(markerStyle.wordMatchScope !== "current");
-  const doubleClickQuickLookupRef = useRef(true);
-  const [doubleClickQuickLookup, setDoubleClickQuickLookup] = useState(true);
-  const tripleClickQuickSelectRef = useRef(true);
-  const tripleClickScopeRef = useRef<TripleClickScope>("sentence");
-  const readerBindingsRef = useRef<ReaderActionBinding[]>([]);
-  // The ref is for the interaction handlers, which live outside React and want
-  // the newest value without re-subscribing. The menu prints them while
-  // rendering, which a ref cannot drive — so the same list is also state.
-  const [readerBindings, setReaderBindings] = useState<ReaderActionBinding[]>([]);
-  const [showMenuShortcuts, setShowMenuShortcuts] = useState(true);
+  const {
+    adoptReadingAssistanceSettings,
+    autoHighlightLookupsRef,
+    doubleClickQuickLookup,
+    doubleClickQuickLookupRef,
+    learningCardConfig,
+    markMatchingWordsRef,
+    markerStyle,
+    markerStyleRef,
+    passiveVocab,
+    readerBindings,
+    readerBindingsRef,
+    setMarkerStyle,
+    setPassiveVocab,
+    showMenuShortcuts,
+    tripleClickQuickSelectRef,
+    tripleClickScopeRef,
+  } = useReadingAssistanceSettings();
   const [bindingHud, setBindingHud] = useState<string | null>(null);
   const dismissBindingHud = useCallback(() => setBindingHud(null), []);
   const bindingHudTimerRef = useRef<number | null>(null);
@@ -357,27 +337,6 @@ export default function Reader() {
   useEffect(() => () => {
     if (bindingHudTimerRef.current !== null) window.clearTimeout(bindingHudTimerRef.current);
   }, []);
-
-  const applyReadingAssistanceSettings = useCallback((settings: Record<string, string>) => {
-    const doubleClick = settings.double_click_quick_lookup !== "false";
-    const nextMarkerStyle = parseMarkerStyleConfig(settings[MARKER_STYLE_SETTING_KEY]);
-    doubleClickQuickLookupRef.current = doubleClick;
-    tripleClickQuickSelectRef.current = settings.triple_click_quick_select !== "false";
-    tripleClickScopeRef.current = parseTripleClickScope(settings.triple_click_scope);
-    autoHighlightLookupsRef.current = settings.auto_highlight_lookup_words !== "false";
-    markerStyleRef.current = nextMarkerStyle;
-    markMatchingWordsRef.current = nextMarkerStyle.wordMatchScope !== "current";
-    setDoubleClickQuickLookup(doubleClick);
-    const nextBindings = parseReaderBindings(settings.reader_bindings).bindings;
-    readerBindingsRef.current = nextBindings;
-    setReaderBindings(nextBindings);
-    setShowMenuShortcuts(settings[SHOW_MENU_SHORTCUTS_SETTING_KEY] !== "false");
-    setMarkerStyle(nextMarkerStyle);
-    setLearningCardConfig(parseCardDesignConfig(settings.learning_card_config));
-    setPassiveVocab(parsePassiveVocabSettings(settings));
-  }, []);
-
-  const readingAssistanceSettingsRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     let disposed = false;
@@ -399,40 +358,6 @@ export default function Reader() {
       unlisten?.();
     };
   }, [bookId]);
-
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    const refresh = async () => {
-      const settings = await getAllSettings().catch(() => null);
-      if (!disposed && settings) {
-        readingAssistanceSettingsRef.current = settings;
-        applyReadingAssistanceSettings(settings);
-      }
-    };
-    listenForReadingAssistanceSettingsChanged(refresh).then((stop) => {
-      if (disposed) stop();
-      else unlisten = stop;
-    }).catch(() => {});
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [applyReadingAssistanceSettings]);
-
-  useEffect(() => {
-    const refreshOnFocus = async () => {
-      const settings = await getAllSettings().catch(() => null);
-      if (!settings || !readingAssistanceSettingsChanged(
-        settings,
-        readingAssistanceSettingsRef.current,
-      )) return;
-      readingAssistanceSettingsRef.current = settings;
-      applyReadingAssistanceSettings(settings);
-    };
-    window.addEventListener("focus", refreshOnFocus);
-    return () => window.removeEventListener("focus", refreshOnFocus);
-  }, [applyReadingAssistanceSettings]);
 
   const settingsAnchorRef = useRef<HTMLButtonElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -926,6 +851,7 @@ export default function Reader() {
     cancelPendingWordClick,
     getHighlightMutationPlan,
     getHighlightRemovalPlan,
+    markerStyleRef,
     openLearningCard,
     selectionMenuRowCount,
   ]);
@@ -963,7 +889,14 @@ export default function Reader() {
     }).then(() => {
       window.dispatchEvent(new CustomEvent("lookup-mark-changed", { detail: { bookId } }));
     }).catch(() => {});
-  }, [bookId, supportsManualAnnotations, supportsWordMarkers]);
+  }, [
+    autoHighlightLookupsRef,
+    bookId,
+    markMatchingWordsRef,
+    markerStyleRef,
+    supportsManualAnnotations,
+    supportsWordMarkers,
+  ]);
 
   const handleTextBookError = useCallback((error: string) => {
     setReaderError(toReaderOpenError(error, "text"));
@@ -998,11 +931,6 @@ export default function Reader() {
       });
     }, 240);
   }, [cancelPendingWordClick, openLearningInteraction]);
-
-  useEffect(() => {
-    markerStyleRef.current = markerStyle;
-    markMatchingWordsRef.current = markerStyle.wordMatchScope !== "current";
-  }, [markerStyle]);
 
   const turnReaderPage = useCallback((direction: "previous" | "next") => {
     setContextMenu(null);
@@ -1321,8 +1249,7 @@ export default function Reader() {
     ]).then(([globalSettings, , perBookSettings]) => {
       if (cancelled) return;
       const g = globalSettings;
-      readingAssistanceSettingsRef.current = g;
-      applyReadingAssistanceSettings(g);
+      adoptReadingAssistanceSettings(g);
       loadReaderSettingsSources(g, perBookSettings);
       setTocSavedState(parseTocSavedState(perBookSettings));
       restoreProgressReadout(perBookSettings);
@@ -1333,7 +1260,7 @@ export default function Reader() {
       cancelled = true;
     };
   }, [
-    applyReadingAssistanceSettings,
+    adoptReadingAssistanceSettings,
     bookId,
     dbSettingsLoadedRef,
     loadReaderSettingsSources,
@@ -1441,8 +1368,10 @@ export default function Reader() {
     bookId,
     getHighlightMutationPlan,
     learningCardConfig.selectionMenus,
+    markMatchingWordsRef,
     openLearningCard,
     readerActionLabel,
+    readerBindingsRef,
     refreshAnnotations,
     speakSelection,
     supportsWordMarkers,
