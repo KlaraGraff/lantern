@@ -1681,6 +1681,13 @@ export default function Reader() {
     supportsWordMarkers,
     t,
   ]);
+  const handleOpenSearch = useCallback(() => {
+    if (!supportsSearch) return;
+    setSearchOpen(true);
+    setTocOpen(false);
+    setSettingsOpen(false);
+    setSearchFocusToken((token) => token + 1);
+  }, [supportsSearch]);
   const installDocumentInteractions = useReaderInteractions({
     supportsSelection,
     pendingSelectionMenuRef,
@@ -1704,13 +1711,7 @@ export default function Reader() {
     handlePageTurnWheel,
     handleReaderBinding,
     onReturnJump: handleJumpBack,
-    onOpenSearch: () => {
-      if (!supportsSearch) return;
-      setSearchOpen(true);
-      setTocOpen(false);
-      setSettingsOpen(false);
-      setSearchFocusToken((token) => token + 1);
-    },
+    onOpenSearch: handleOpenSearch,
   });
 
   useFoliateView({
