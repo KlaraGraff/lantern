@@ -1,0 +1,52 @@
+name: Notary Check
+
+# Diagnostic-only: asks Apple's notary service about the account's submission
+# history. Run this when a release build hangs in the Notarizing step.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  notary-check:
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Query notarization history
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -o pipefail
+          echo "=== notarytool history ==="
+          if ! xcrun notarytool history \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --output-format json > history.json; then
+            echo "notarytool history FAILED — credentials, team membership, or a pending Apple agreement" >&2
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json
+          data = json.load(open("history.json"))
+          entries = data.get("history", [])
+          print(f"submissions returned: {len(entries)}")
+          for e in entries[:10]:
+              print(f"  {e.get('createdDate')}  {e.get('status'):<12}  {e.get('id')}  {e.get('name')}")
+          with open("latest.txt", "w") as fh:
+              fh.write(entries[0]["id"] if entries else "")
+          PY
+
+          LATEST=$(cat latest.txt)
+          if [ -n "$LATEST" ]; then
+            echo "=== notarytool info (latest submission) ==="
+            xcrun notarytool info "$LATEST" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" || true
+          else
+            echo "no submissions on record — the hung notarytool never reached Apple"
+          fi
