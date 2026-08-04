@@ -9,7 +9,7 @@ on:
 jobs:
   notary-check:
     runs-on: macos-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
 
     steps:
       - name: Query notarization history
@@ -41,12 +41,29 @@ jobs:
           PY
 
           LATEST=$(cat latest.txt)
-          if [ -n "$LATEST" ]; then
-            echo "=== notarytool info (latest submission) ==="
-            xcrun notarytool info "$LATEST" \
+          if [ -z "$LATEST" ]; then
+            echo "no submissions on record — the hung notarytool never reached Apple"
+            exit 0
+          fi
+
+          echo "=== notarytool info (latest submission) ==="
+          xcrun notarytool info "$LATEST" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" || true
+
+          STATUS=$(python3 -c "import json;d=json.load(open('history.json'));print(d['history'][0]['status'])")
+          if [ "$STATUS" = "In Progress" ]; then
+            echo "=== waiting for Apple to finish processing (up to 50 min) ==="
+            xcrun notarytool wait "$LATEST" \
               --apple-id "$APPLE_ID" \
               --password "$APPLE_PASSWORD" \
-              --team-id "$APPLE_TEAM_ID" || true
-          else
-            echo "no submissions on record — the hung notarytool never reached Apple"
+              --team-id "$APPLE_TEAM_ID" \
+              --timeout 3000s || true
           fi
+
+          echo "=== notarytool log (reasons, if any) ==="
+          xcrun notarytool log "$LATEST" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" || echo "no log available yet"
