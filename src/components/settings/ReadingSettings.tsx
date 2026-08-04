@@ -28,6 +28,7 @@ import {
   type ReadingMode,
 } from "../ReaderSettings";
 import { DEFAULT_NEXT_PAGE_BINDING, DEFAULT_PREVIOUS_PAGE_BINDING } from "../page-turn-bindings";
+import PassiveVocabSettings from "./PassiveVocabSettings";
 
 const READER_THEME_OPTIONS: {
   value: ReaderTheme;
@@ -596,6 +597,14 @@ export default function ReadingSettings({ settings, loading, refresh, save, save
           }}
         />
       </div>
+      <PassiveVocabSettings
+        settings={settings}
+        loading={loading}
+        refresh={refresh}
+        save={save}
+        saveBulk={saveBulk}
+        showSavedToast={showSavedToast}
+      />
     </div>
   );
 }

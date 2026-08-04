@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { Check, ChevronLeft, ChevronRight, ScrollText, BookOpen, File, Files, Keyboard, Loader2, MousePointer2, Search, Trash2 } from "lucide-react";
 import Toggle from "./ui/Toggle";
+import type { PassiveVocabSettings } from "./passive-vocab";
 import Select from "./ui/Select";
 import {
   bindingFromKeyboardEvent,
@@ -79,6 +80,10 @@ interface ReaderSettingsProps {
   onRestoreBookOverrides?: (keys: string[]) => Promise<Record<string, string>>;
   onUndoRestoreBookOverrides?: (values: Record<string, string>) => Promise<void>;
   onPromoteBookOverrides?: (selectedBookIds: string[]) => Promise<Record<string, string>>;
+  passiveVocab?: PassiveVocabSettings;
+  passiveVocabAvailable?: boolean;
+  onPassiveVocabChange?: (enabled: boolean) => void;
+  onOpenPassiveVocabSettings?: () => void;
 }
 
 export type BindingDirection = "previous" | "next";
@@ -173,6 +178,10 @@ export default function ReaderSettings({
   onRestoreBookOverrides,
   onUndoRestoreBookOverrides,
   onPromoteBookOverrides,
+  passiveVocab,
+  passiveVocabAvailable = false,
+  onPassiveVocabChange,
+  onOpenPassiveVocabSettings,
 }: ReaderSettingsProps) {
   const { t } = useTranslation();
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -905,6 +914,28 @@ export default function ReaderSettings({
           ))}
         </div>
       )}
+
+      <div className="px-4 py-3 border-t border-border-light">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[13px] font-medium text-text-primary">{t("readerSettings.passiveVocab")}</p>
+            <p className="mt-0.5 text-[11px] leading-4 text-text-muted">
+              {passiveVocabAvailable ? t("readerSettings.passiveVocabHint") : t("readerSettings.passiveVocabUnavailable")}
+            </p>
+          </div>
+          <Toggle
+            label={t("readerSettings.passiveVocab")}
+            checked={passiveVocab?.enabled ?? false}
+            disabled={!passiveVocabAvailable}
+            onChange={onPassiveVocabChange ?? (() => {})}
+          />
+        </div>
+        {passiveVocabAvailable && onOpenPassiveVocabSettings && (
+          <button type="button" onClick={onOpenPassiveVocabSettings} className="mt-2 -ml-2 h-7 px-2 rounded-md text-[12px] text-accent-text hover:bg-accent-bg">
+            {t("readerSettings.passiveVocabSettings")}
+          </button>
+        )}
+      </div>
 
       {onClearLookupMarks && (
         <div className="px-4 py-3 border-t border-border-light">

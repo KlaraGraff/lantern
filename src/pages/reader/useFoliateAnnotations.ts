@@ -39,10 +39,18 @@ import { getFontFamily, getReaderMeasure } from "../../components/reader-setting
 import { getReaderCSS } from "./reader-theme";
 import { expandWordForms } from "../../components/word-forms";
 import type { AnnotationStyleKind, FoliateView } from "./foliate-types";
+import {
+  cleanupPassiveVocabAnnotations,
+  installPassiveVocabAnnotations,
+  passiveVocabLabel,
+  selectPassiveVocab,
+  type PassiveVocabSettings,
+} from "../../components/passive-vocab";
 
 export interface VocabMarker {
   cfi: string | null;
   mastery: string;
+  definition?: string | null;
 }
 
 export interface WordMarkRule {
@@ -207,6 +215,7 @@ interface UseFoliateAnnotationsOptions {
   supportsCfiNavigation: boolean;
   supportsReflowSettings: boolean;
   readerSettings: ReaderSettingsState;
+  passiveVocab: PassiveVocabSettings;
   readerSettingsRef: MutableRefObject<ReaderSettingsState>;
   viewRef: MutableRefObject<FoliateView | null>;
   markerStyle: MarkerStyleConfig;
@@ -230,6 +239,7 @@ export function useFoliateAnnotations({
   supportsCfiNavigation,
   supportsReflowSettings,
   readerSettings,
+  passiveVocab,
   readerSettingsRef,
   viewRef,
   markerStyle,
@@ -309,6 +319,39 @@ export function useFoliateAnnotations({
     appliedAnnotationsRef.current = desired;
   }, [readerSettingsRef, supportsManualAnnotations, supportsWordMarkers, viewRef]);
 
+  const applyPassiveVocabAnnotations = useCallback((loaded?: { doc: Document; index: number }) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const contents = loaded ? [loaded] : (view.renderer?.getContents?.() ?? []);
+    const vocab = markerSnapshotRef.current?.vocab ?? [];
+    const selected = selectPassiveVocab(vocab.filter((word): word is VocabMarker & { cfi: string } => Boolean(word.cfi)), passiveVocab.density);
+    const annotations = vocab.flatMap((word) => {
+      if (!word.cfi || !selected.has(word.cfi)) return [];
+      const label = passiveVocabLabel(word.definition);
+      return label ? [{ cfi: word.cfi, label }] : [];
+    });
+    for (const { doc, index } of contents as Array<{ doc?: Document; index?: number }>) {
+      if (!doc || typeof index !== "number") continue;
+      cleanupPassiveVocabAnnotations(doc);
+      if (!passiveVocab.enabled || !supportsWordMarkers || !supportsReflowSettings) continue;
+      installPassiveVocabAnnotations({
+        doc,
+        annotations,
+        resolveRange: (cfi) => {
+          try {
+            const resolved = view.resolveCFI(cfi);
+            return resolved.index === index ? resolved.anchor(doc) : null;
+          } catch {
+            return null;
+          }
+        },
+        style: passiveVocab.style,
+        narrowViewport: window.innerWidth < 760,
+        spread: Number(view.renderer?.getAttribute?.("max-column-count")) > 1,
+      });
+    }
+  }, [passiveVocab, supportsReflowSettings, supportsWordMarkers, viewRef]);
+
   const applyFoliateMarkerStyles = useCallback(() => {
     const view = viewRef.current;
     if (!view || !supportsReflowSettings) return;
@@ -348,9 +391,11 @@ export function useFoliateAnnotations({
     markerSnapshotRef.current = { highlights, vocab, lookupOccurrences };
     await applyAnnotations(reapplyVisible);
     applyFoliateMarkerStyles();
+    applyPassiveVocabAnnotations();
   }, [
     applyAnnotations,
     applyFoliateMarkerStyles,
+    applyPassiveVocabAnnotations,
     bookId,
     isTextBook,
     supportsManualAnnotations,
@@ -413,6 +458,10 @@ export function useFoliateAnnotations({
   }, [clearReadingHighlight, supportsCfiNavigation, viewRef]);
 
   const resetAnnotationState = useCallback(() => {
+    const view = viewRef.current;
+    for (const { doc } of view?.renderer?.getContents?.() ?? []) {
+      if (doc) cleanupPassiveVocabAnnotations(doc);
+    }
     autoMarkersRef.current.clear();
     appliedAnnotationsRef.current.clear();
     readingHighlightRef.current = null;
@@ -420,7 +469,7 @@ export function useFoliateAnnotations({
     markerSnapshotRef.current = null;
     wordMarkWordsRef.current = [];
     wordMarkExceptionsRef.current.clear();
-  }, []);
+  }, [viewRef]);
 
   useEffect(() => {
     const refreshFonts = async (event: Event) => {
@@ -476,9 +525,10 @@ export function useFoliateAnnotations({
     readerSettings.showLearningMarkers,
     readerSettings.showMasteredMarkers,
   ].join(":");
+  const passiveVocabSignature = `${passiveVocab.enabled}:${passiveVocab.style}:${passiveVocab.density}`;
   useEffect(() => {
-    refreshAnnotations().catch(() => {});
-  }, [bookReady, markerVisibility, markerStyle, refreshAnnotations]);
+    refreshAnnotations(true).catch(() => {});
+  }, [bookReady, markerVisibility, markerStyle, passiveVocabSignature, refreshAnnotations]);
 
   useEffect(() => {
     if (!bookId || !supportsWordMarkers || isTextBook) return;
@@ -554,6 +604,7 @@ export function useFoliateAnnotations({
 
   return {
     applyAnnotations,
+    applyPassiveVocabAnnotations,
     applyFoliateMarkerStyles,
     autoMarkersRef,
     clearReadingHighlight,

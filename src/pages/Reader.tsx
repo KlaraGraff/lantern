@@ -25,6 +25,8 @@ import Toast from "../components/ui/Toast";
 import AiPanel from "../components/AiPanel";
 import BookmarksPanel from "../components/BookmarksPanel";
 import ReaderSettings from "../components/ReaderSettings";
+import { openSettings } from "../components/settings-open";
+import { parsePassiveVocabSettings, type PassiveVocabSettings } from "../components/passive-vocab";
 import {
   getThemeStyles,
   getReaderCapabilities,
@@ -82,6 +84,7 @@ import {
 import { loadCustomFonts } from "../components/custom-fonts";
 import {
   listenForReadingAssistanceSettingsChanged,
+  notifyReadingAssistanceSettingsChanged,
   readingAssistanceSettingsChanged,
 } from "../components/reading-assistance-events";
 import {
@@ -257,6 +260,9 @@ export default function Reader() {
   const supportsSelection = capabilities.supportsSelection;
   const supportsManualAnnotations = capabilities.supportsManualAnnotations;
   const supportsWordMarkers = capabilities.supportsWordMarkers;
+  const passiveVocabAvailable = readerFormat?.toLowerCase() === "epub"
+    && capabilities.supportsReflowSettings
+    && supportsWordMarkers;
   const supportsCfiNavigation = capabilities.supportsCfiNavigation;
   const [loading, setLoading] = useState(true);
   const [sidePanel, setSidePanel] = useState<SidePanel>(null);
@@ -329,6 +335,8 @@ export default function Reader() {
   const [contextBookWordMarkExcluded, setContextBookWordMarkExcluded] = useState(false);
   const [contextMarkStateLoading, setContextMarkStateLoading] = useState(false);
   const [learningCardConfig, setLearningCardConfig] = useState<CardDesignConfigV1>(DEFAULT_CARD_DESIGN_CONFIG);
+  const [passiveVocab, setPassiveVocab] = useState<PassiveVocabSettings>({ enabled: false, style: "ruby", density: "medium" });
+  const passiveVocabToggleRevisionRef = useRef(0);
   const [learningCards, setLearningCards] = useState<Array<{ id: string; interaction: ReaderInteraction }>>([]);
   const [topLearningCardId, setTopLearningCardId] = useState<string | null>(null);
   const [readerToast, setReaderToast] = useState<string | null>(null);
@@ -400,6 +408,7 @@ export default function Reader() {
     setShowMenuShortcuts(settings[SHOW_MENU_SHORTCUTS_SETTING_KEY] !== "false");
     setMarkerStyle(nextMarkerStyle);
     setLearningCardConfig(parseCardDesignConfig(settings.learning_card_config));
+    setPassiveVocab(parsePassiveVocabSettings(settings));
   }, []);
 
   const readingAssistanceSettingsRef = useRef<Record<string, string>>({});
@@ -1289,6 +1298,7 @@ export default function Reader() {
 
   const {
     applyAnnotations,
+    applyPassiveVocabAnnotations,
     applyFoliateMarkerStyles,
     autoMarkersRef,
     clearReadingHighlight,
@@ -1307,6 +1317,7 @@ export default function Reader() {
     supportsCfiNavigation,
     supportsReflowSettings: capabilities.supportsReflowSettings,
     readerSettings,
+    passiveVocab,
     readerSettingsRef,
     viewRef,
     markerStyle,
@@ -1641,6 +1652,7 @@ export default function Reader() {
     wordMarkExceptionsRef,
     autoMarkersRef,
     applyAnnotations,
+    applyPassiveVocabAnnotations,
     applyFoliateMarkerStyles,
     installDocumentInteractions,
     queueReadingProgress,
@@ -2102,6 +2114,25 @@ export default function Reader() {
             globalSettings={globalReaderSettings}
             onSettingsChange={handleReaderSettingsChange}
             capabilities={capabilities}
+            passiveVocab={passiveVocab}
+            passiveVocabAvailable={passiveVocabAvailable}
+            onPassiveVocabChange={(enabled) => {
+              const previous = passiveVocab;
+              const request = ++passiveVocabToggleRevisionRef.current;
+              setPassiveVocab({ ...previous, enabled });
+              void invoke("set_setting", { key: "passive_vocab_enabled", value: String(enabled) })
+                .then(() => {
+                  void notifyReadingAssistanceSettingsChanged(["passive_vocab_enabled"]).catch((error) => {
+                    console.error("Failed to notify passive vocabulary settings change:", error);
+                  });
+                })
+                .catch(() => {
+                  if (passiveVocabToggleRevisionRef.current !== request) return;
+                  setPassiveVocab((current) => current.enabled === enabled ? previous : current);
+                  setReaderToast(t("readerSettings.passiveVocabSaveFailed"));
+                });
+            }}
+            onOpenPassiveVocabSettings={() => openSettings("reading")}
             bookId={bookId}
             bookOverrides={bookOverrides}
             onRestoreBookOverrides={restoreBookOverrides}

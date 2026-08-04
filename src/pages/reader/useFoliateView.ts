@@ -173,6 +173,7 @@ interface UseFoliateViewOptions {
   wordMarkExceptionsRef: MutableRefObject<Set<string>>;
   autoMarkersRef: MutableRefObject<Map<string, FoliateMarker>>;
   applyAnnotations(reapplyVisible?: boolean): Promise<void>;
+  applyPassiveVocabAnnotations(loaded?: { doc: Document; index: number }): void;
   applyFoliateMarkerStyles(): void;
   installDocumentInteractions(options: InstallDocumentInteractionsOptions): void;
   queueReadingProgress(bookId: string, progress: number, cfi: string): void;
@@ -298,6 +299,7 @@ export function useFoliateView({
   wordMarkExceptionsRef,
   autoMarkersRef,
   applyAnnotations,
+  applyPassiveVocabAnnotations,
   applyFoliateMarkerStyles,
   installDocumentInteractions,
   queueReadingProgress,
@@ -323,9 +325,13 @@ export function useFoliateView({
   const loadedInteractionDocumentsRef = useRef(new WeakSet<Document>());
   const footnoteRequestRef = useRef(0);
   const applyFoliateMarkerStylesRef = useRef(applyFoliateMarkerStyles);
+  const applyPassiveVocabAnnotationsRef = useRef(applyPassiveVocabAnnotations);
   useEffect(() => {
     applyFoliateMarkerStylesRef.current = applyFoliateMarkerStyles;
   }, [applyFoliateMarkerStyles]);
+  useEffect(() => {
+    applyPassiveVocabAnnotationsRef.current = applyPassiveVocabAnnotations;
+  }, [applyPassiveVocabAnnotations]);
   // Size the reader stylesheet was last written with. Tracked because the
   // narrow-viewport shrink can change it on resize alone.
   const appliedFontSizeRef = useRef(readerSettings.fontSize);
@@ -708,7 +714,10 @@ export function useFoliateView({
         installCustomFontFacesInDocument(doc);
         if (loadedInteractionDocumentsRef.current.has(doc)) return;
         loadedInteractionDocumentsRef.current.add(doc);
-        window.requestAnimationFrame(() => applyFoliateMarkerStylesRef.current());
+        window.requestAnimationFrame(() => {
+          applyFoliateMarkerStylesRef.current();
+          applyPassiveVocabAnnotationsRef.current({ doc, index });
+        });
         installDocumentInteractions({
           doc,
           index,

@@ -13,6 +13,9 @@ export const READING_ASSISTANCE_SETTING_KEYS = [
   "auto_highlight_lookup_words",
   "marker_style_config",
   "learning_card_config",
+  "passive_vocab_enabled",
+  "passive_vocab_style",
+  "passive_vocab_density",
 ] as const;
 
 export async function notifyReadingAssistanceSettingsChanged(keys: string[]) {
