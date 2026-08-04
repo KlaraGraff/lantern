@@ -1,6 +1,6 @@
 # Reader P2.1 — Structured highlights and vocabulary export
 
-Status: approved mockup, implementation pending.
+Status: approved and implemented.
 
 Source: [`docs/roadmap/reader-page-optimization.md`](../roadmap/reader-page-optimization.md) §P2.1.
 Approved visual reference: [`reader-p2-structured-export-mockup.html`](reader-p2-structured-export-mockup.html).

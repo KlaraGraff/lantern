@@ -1,6 +1,6 @@
 # P2.2 — Contextual vocabulary review
 
-Status: approved mockup, implementation pending.
+Status: approved and implemented.
 
 Source: [`docs/roadmap/reader-page-optimization.md`](../roadmap/reader-page-optimization.md) §P2.2.
 Approved visual reference: [`vocab-contextual-review-mockup.html`](vocab-contextual-review-mockup.html).

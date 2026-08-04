@@ -1,5 +1,7 @@
 # Reader P3.4 · 人物 / 术语卡
 
+Status: approved and implemented.
+
 ## 产品裁决
 
 - `chosen`: 方案二——正文就地实体卡。

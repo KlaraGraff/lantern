@@ -1,5 +1,7 @@
 # Reader P2.4 — Per-book settings scope
 
+Status: approved and implemented.
+
 ## Product decisions
 
 - A row in `book_settings` is an explicit per-book override. The reader panel shows a scope summary and, below every overridden control, `Book-specific setting · Follow global`.

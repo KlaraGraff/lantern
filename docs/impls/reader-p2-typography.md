@@ -1,5 +1,7 @@
 # P2.3 阅读排版增强
 
+Status: approved and implemented.
+
 ## 已确认的产品规则
 
 - 仅可重排文字书籍（EPUB、TXT）提供三项控制：两端对齐、段落间距、首行缩进；PDF 和固定版式不显示。

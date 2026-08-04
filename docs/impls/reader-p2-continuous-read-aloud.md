@@ -1,5 +1,7 @@
 # P2.5 — 整书连续朗读
 
+Status: approved and implemented.
+
 ## 已确认产品形态
 
 - 采用顶部工具栏展开式播放器。
