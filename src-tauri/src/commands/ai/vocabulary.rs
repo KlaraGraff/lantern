@@ -4,9 +4,10 @@
 
 use tauri::{AppHandle, Emitter, State};
 
+use super::chat::{ready_index_source_hash, SectionContextMetadata};
 use super::prompt::language_name;
 use super::stream::{emit_stream_failure, ensure_stream_credentials_ready, AiStreamChunk};
-use super::{ready_index_source_hash, ChatMessage, SectionContextMetadata};
+use super::ChatMessage;
 use crate::ai::grounding::{self, CitedSource, RetrievedChunk};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};

@@ -2,7 +2,8 @@
 //! (selection, current section, whole book, retrieval) from the user's
 //! message, inherited conversation state, and index availability.
 
-use super::{bounded_chat_history_with_limit, ChatMessage};
+use super::chat::bounded_chat_history_with_limit;
+use super::ChatMessage;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ChatRoute {
@@ -749,7 +750,7 @@ mod tests {
         classify_chat_route(question, current_section_index, inherited_route, false)
     }
 
-    use super::super::CHAT_MAX_TOTAL_BYTES;
+    use super::super::chat::CHAT_MAX_TOTAL_BYTES;
 
     #[test]
     fn earlier_assistant_replies_survive_verbatim() {

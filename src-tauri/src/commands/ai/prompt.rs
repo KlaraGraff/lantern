@@ -27,7 +27,10 @@ fn normalized_explanation_mode(mode: Option<&str>) -> &'static str {
     }
 }
 
-pub(super) fn configured_explanation_mode(mode: Option<&str>, translation_language: &str) -> &'static str {
+pub(super) fn configured_explanation_mode(
+    mode: Option<&str>,
+    translation_language: &str,
+) -> &'static str {
     let is_chinese = matches!(translation_language.trim(), "zh" | "zh-CN" | "zh-Hans");
     if mode.map(str::trim) == Some("target_language") && !is_chinese {
         "adaptive_bilingual"
@@ -36,7 +39,11 @@ pub(super) fn configured_explanation_mode(mode: Option<&str>, translation_langua
     }
 }
 
-pub(super) fn explanation_matches_translation(mode: &str, cefr: &str, translation_language: &str) -> bool {
+pub(super) fn explanation_matches_translation(
+    mode: &str,
+    cefr: &str,
+    translation_language: &str,
+) -> bool {
     match normalized_explanation_mode(Some(mode)) {
         "chinese" => matches!(translation_language.trim(), "zh" | "zh-CN" | "zh-Hans"),
         "english_by_level" => matches!(translation_language.trim(), "en" | "en-US" | "en-GB"),
@@ -117,7 +124,11 @@ pub(super) fn explanation_strategy(mode: &str, cefr: &str) -> String {
     )
 }
 
-pub(super) fn learning_language_strategy(mode: &str, cefr: &str, translation_language: &str) -> String {
+pub(super) fn learning_language_strategy(
+    mode: &str,
+    cefr: &str,
+    translation_language: &str,
+) -> String {
     let level = normalized_cefr_level(cefr);
     let translation = language_name(translation_language);
     format!(
@@ -139,7 +150,11 @@ pub(super) fn strip_single_json_fence(value: &str) -> &str {
     trimmed
 }
 
-pub(super) fn checked_learning_text(value: &str, max_chars: usize, error_code: &str) -> AppResult<()> {
+pub(super) fn checked_learning_text(
+    value: &str,
+    max_chars: usize,
+    error_code: &str,
+) -> AppResult<()> {
     let count = value.chars().count();
     if value.trim().is_empty() || count > max_chars {
         return Err(AppError::Other(error_code.to_string()));
