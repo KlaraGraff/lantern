@@ -143,8 +143,8 @@ import {
 import { useReaderFileDiagnosis } from "./reader/useReaderFileDiagnosis";
 import ReaderDiagnosticsPanel from "../components/ReaderDiagnosticsPanel";
 import { platform } from "../services/platform";
-import { claimZoomShortcuts } from "../services/app-zoom";
 import { logIgnoredError } from "../utils/logIgnoredError";
+import { useReaderZoom } from "./reader/useReaderZoom";
 import {
   averageSecondsPerPage,
   averageSecondsPerPercent,
@@ -214,25 +214,6 @@ const isStandaloneWindow = appWindow.label.startsWith("reader-");
 // Cards stay open until dismissed; past this many the oldest one gives way.
 const MAX_LEARNING_CARDS = 5;
 
-// One-time migration of `reader-zoom-${bookId}` keys written by PR #199.
-// That PR saved "100" on every default open, so every pre-upgrade book has
-// it even when the user never touched zoom. Under the new scheme, the
-// default is "fit" and "100" should mean the user explicitly chose 100%.
-// Rewrite legacy "100" → "fit" once, guarded by a global marker so new
-// explicit 100% saves aren't clobbered on subsequent opens.
-(() => {
-  try {
-    if (localStorage.getItem("reader-zoom-v2")) return;
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const k = localStorage.key(i);
-      if (k?.startsWith("reader-zoom-") && localStorage.getItem(k) === "100") {
-        localStorage.setItem(k, "fit");
-      }
-    }
-    localStorage.setItem("reader-zoom-v2", "1");
-  } catch { /* private-mode storage failures are non-fatal */ }
-})();
-
 interface TextReaderProgressDetails {
   chapterProgress: number;
   page?: ReaderPageInfo;
@@ -278,7 +259,6 @@ export default function Reader() {
   const [loading, setLoading] = useState(true);
   const [sidePanel, setSidePanel] = useState<SidePanel>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [zoom, setZoom] = useState<number | "fit">("fit");
   const [tocOpen, setTocOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -544,8 +524,19 @@ export default function Reader() {
     return undefined;
   }, []);
   const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef);
-  const zoomRef = useRef<number | "fit">(zoom);
-  const fitPctRef = useRef(100);
+  const {
+    zoom,
+    zoomRef,
+    fitPctRef,
+    handleZoom,
+    handleZoomFit,
+    restoreSavedZoom,
+  } = useReaderZoom({
+    bookId,
+    bookFormat: book?.format,
+    viewRef,
+    settingsLoadedBookRef: dbSettingsLoadedRef,
+  });
   const textReaderNavigateRef = useRef<((location: string, flash?: boolean) => void) | null>(null);
 
   // A short human-readable description of "here", for the jump-history entry
@@ -1124,37 +1115,6 @@ export default function Reader() {
     markMatchingWordsRef.current = markerStyle.wordMatchScope !== "current";
   }, [markerStyle]);
 
-  useEffect(() => {
-    zoomRef.current = zoom;
-  }, [zoom]);
-
-  const applyZoom = useCallback((value: number | "fit") => {
-    const renderer = viewRef.current?.renderer;
-    if (!renderer) return;
-    renderer.setAttribute("zoom", value === "fit" ? "fit-width" : String(value / 100));
-  }, []);
-
-  const handleZoom = useCallback((delta: number) => {
-    const base = zoomRef.current === "fit" ? fitPctRef.current : zoomRef.current;
-    const next = Math.min(300, Math.max(50, Math.round((base + delta) / 10) * 10));
-    applyZoom(next);
-    setZoom(next);
-  }, [applyZoom]);
-
-  const handleZoomFit = useCallback(() => {
-    applyZoom("fit");
-    setZoom("fit");
-  }, [applyZoom]);
-
-  // ⌘= / ⌘- / ⌘0 scale the whole window everywhere else in the app. On a PDF
-  // they mean the page scale instead, which is the more useful answer for a
-  // fixed-layout book — so the reader takes the shortcuts for as long as one
-  // is open, and `useAppZoom` stands aside.
-  useEffect(() => {
-    if (book?.format !== "pdf") return;
-    return claimZoomShortcuts();
-  }, [book?.format]);
-
   const turnReaderPage = useCallback((direction: "previous" | "next") => {
     setContextMenu(null);
     const performTurn = async () => {
@@ -1522,15 +1482,7 @@ export default function Reader() {
       const savedReadoutMode = perBookSettings[progressReadoutSettingKey];
       setProgressReadoutSaved(savedReadoutMode !== undefined);
       setProgressReadoutMode(parseProgressReadoutMode(savedReadoutMode));
-      const savedZoom = localStorage.getItem(`reader-zoom-${bookId}`);
-      if (savedZoom === "fit") {
-        setZoom("fit");
-      } else {
-        const parsedZoom = savedZoom ? parseInt(savedZoom, 10) : NaN;
-        if (Number.isFinite(parsedZoom) && parsedZoom >= 50 && parsedZoom <= 300) {
-          setZoom(parsedZoom);
-        }
-      }
+      restoreSavedZoom();
       dbSettingsLoadedRef.current = bookId;
     }).catch(() => {});
     return () => {
@@ -1543,19 +1495,9 @@ export default function Reader() {
     loadReaderSettingsSources,
     readerSettingsRef,
     resetAnnotationState,
+    restoreSavedZoom,
     setReaderSettings,
   ]);
-
-  // Persist per-book PDF zoom after load. Debounce to avoid thrashing during
-  // rapid zoom-button clicks; only write once the user settles.
-  useEffect(() => {
-    if (dbSettingsLoadedRef.current !== bookId) return;
-    if (book?.format !== "pdf") return;
-    const handle = window.setTimeout(() => {
-      localStorage.setItem(`reader-zoom-${bookId}`, zoom === "fit" ? "fit" : String(zoom));
-    }, 500);
-    return () => window.clearTimeout(handle);
-  }, [zoom, bookId, book?.format, dbSettingsLoadedRef]);
 
   // P1.5's local reading-speed sample: one snapshot per relocate, turned into
   // a pace sample by `derivePaceSample`, which itself rejects anything that
