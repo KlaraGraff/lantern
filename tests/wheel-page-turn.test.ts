@@ -51,6 +51,29 @@ test("a flick with a long, slowly decaying momentum tail turns exactly one page"
   assert.deepEqual(turns, ["next"]);
 });
 
+test("Windows-style line-wheel notches each turn immediately", () => {
+  const { turns, send } = harness();
+  // Windows mouse wheels commonly report three DOM_DELTA_LINE units per
+  // notch. They are discrete commands, not one continuous touchpad gesture.
+  for (let index = 0; index < 6; index += 1) send(3, 80, { deltaMode: 1 });
+  assert.deepEqual(turns, ["next", "next", "next", "next", "next", "next"]);
+});
+
+test("Windows-style line-wheel notches are not held by the touchpad cooldown", () => {
+  const { turns, send } = harness();
+  send(-3, 16, { deltaMode: 1 });
+  send(-3, 16, { deltaMode: 1 });
+  assert.deepEqual(turns, ["previous", "previous"]);
+});
+
+test("Windows WebView2 pixel-mode wheel notches each turn immediately", () => {
+  const { turns, send } = harness();
+  // Chromium/WebView2 can normalize a physical Windows wheel notch to a
+  // 100px DOM_DELTA_PIXEL event instead of preserving DOM_DELTA_LINE.
+  for (let index = 0; index < 6; index += 1) send(100, 16, { deltaMode: 0 });
+  assert.deepEqual(turns, ["next", "next", "next", "next", "next", "next"]);
+});
+
 test("a sustained drag turns exactly one page", () => {
   // Regression: the previous handler turned a page per cooldown window here.
   const { turns, send } = harness();

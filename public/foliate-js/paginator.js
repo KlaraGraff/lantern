@@ -1,5 +1,29 @@
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 
+export const isTargetFrameDocument = (doc, src) =>
+    Boolean(doc) && doc.URL === src
+
+export class PageTurnQueue {
+    #tail
+    run(task) {
+        const previous = this.#tail
+        let current
+        if (previous) current = previous.catch(() => {}).then(task)
+        else try {
+            current = Promise.resolve(task())
+        } catch (error) {
+            current = Promise.reject(error)
+        }
+        this.#tail = current
+        current.then(() => {
+            if (this.#tail === current) this.#tail = null
+        }, () => {
+            if (this.#tail === current) this.#tail = null
+        })
+        return current
+    }
+}
+
 // Fallback for when an iframe's 'load' event never fires because a
 // sub-resource stalls. Generous enough not to pre-empt legitimately slow
 // first sections, well under any typical consumer-side init timeout.
@@ -303,8 +327,15 @@ class View {
                     reject(error)
                 }
             }
-            this.#iframe.addEventListener('load', () =>
-                finish(this.document), { once: true })
+            const onLoad = () => {
+                const doc = this.document
+                // A newly connected iframe can emit its initial about:blank
+                // load after this listener is installed. It is not the chapter.
+                if (!isTargetFrameDocument(doc, this.#iframe.src)) return
+                this.#iframe.removeEventListener('load', onLoad)
+                finish(doc)
+            }
+            this.#iframe.addEventListener('load', onLoad)
             // A stalled sub-resource (e.g. an image whose blob URL never
             // resolves) can keep the iframe 'load' event from ever firing,
             // which hangs view.init() until the consumer's outer timeout kills
@@ -316,7 +347,7 @@ class View {
             // the promise pending and let the consumer's timeout handle it.
             timer = setTimeout(() => {
                 const doc = this.document
-                if (doc?.body) finish(doc)
+                if (isTargetFrameDocument(doc, this.#iframe.src)) finish(doc)
             }, IFRAME_LOAD_TIMEOUT)
             this.#iframe.src = src
         })
@@ -495,6 +526,7 @@ export class Paginator extends HTMLElement {
     #anchor = 0 // anchor view to a fraction (0-1), Range, or Element
     #justAnchored = false
     #locked = false // while true, prevent any further navigation
+    #turnQueue = new PageTurnQueue()
     #styles
     #styleMap = new WeakMap()
     #mediaQuery = matchMedia('(prefers-color-scheme: dark)')
@@ -734,7 +766,6 @@ export class Paginator extends HTMLElement {
             container: this,
             onExpand: () => this.#scrollToAnchor(this.#anchor),
         })
-        this.#container.append(this.#view.element)
         return this.#view
     }
     #beforeRender({ vertical, rtl, background }) {
@@ -1032,7 +1063,6 @@ export class Paginator extends HTMLElement {
     }
     async #display(promise) {
         const { index, src, anchor, onLoad, select } = await promise
-        this.#index = index
         const hasFocus = this.#view?.document?.hasFocus()
         if (src) {
             const view = this.#createView()
@@ -1047,7 +1077,12 @@ export class Paginator extends HTMLElement {
                 onLoad?.({ doc, index })
             }
             const beforeRender = this.#beforeRender.bind(this)
-            await view.load(src, afterLoad, beforeRender)
+            // Install the target-document load listener and assign src before
+            // connecting the iframe. Chromium can otherwise deliver the
+            // iframe's initial about:blank load to the chapter listener.
+            const loading = view.load(src, afterLoad, beforeRender)
+            this.#container.append(view.element)
+            await loading
             this.dispatchEvent(new CustomEvent('create-overlayer', {
                 detail: {
                     doc: view.document, index,
@@ -1056,6 +1091,7 @@ export class Paginator extends HTMLElement {
             }))
             this.#view = view
         }
+        this.#index = index
         await this.scrollToAnchor((typeof anchor === 'function'
             ? anchor(this.#view.document) : anchor) ?? 0, select)
         if (hasFocus) this.focusView()
@@ -1072,13 +1108,8 @@ export class Paginator extends HTMLElement {
                 this.setStyles(this.#styles)
                 this.dispatchEvent(new CustomEvent('load', { detail }))
             }
-            await this.#display(Promise.resolve(this.sections[index].load())
-                .then(src => ({ index, src, anchor, onLoad, select }))
-                .catch(e => {
-                    console.warn(e)
-                    console.warn(new Error(`Failed to load section ${index}`))
-                    return {}
-                }))
+            const src = await this.sections[index].load()
+            await this.#display({ index, src, anchor, onLoad, select })
         }
     }
     async goTo(target) {
@@ -1120,16 +1151,21 @@ export class Paginator extends HTMLElement {
             if (this.sections[index]?.linear !== 'no') return index
     }
     async #turnPage(dir, distance) {
-        if (this.#locked) return
-        this.#locked = true
-        const prev = dir === -1
-        const shouldGo = await (prev ? this.#scrollPrev(distance) : this.#scrollNext(distance))
-        if (shouldGo) await this.#goTo({
-            index: this.#adjacentIndex(dir),
-            anchor: prev ? () => 1 : () => 0,
+        return this.#turnQueue.run(async () => {
+            this.#locked = true
+            try {
+                const prev = dir === -1
+                const shouldGo = await (prev
+                    ? this.#scrollPrev(distance) : this.#scrollNext(distance))
+                if (shouldGo) await this.#goTo({
+                    index: this.#adjacentIndex(dir),
+                    anchor: prev ? () => 1 : () => 0,
+                })
+                if (shouldGo || !this.hasAttribute('animated')) await wait(100)
+            } finally {
+                this.#locked = false
+            }
         })
-        if (shouldGo || !this.hasAttribute('animated')) await wait(100)
-        this.#locked = false
     }
     prev(distance) {
         return this.#turnPage(-1, distance)

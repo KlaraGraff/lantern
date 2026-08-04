@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   type MutableRefObject,
   type RefObject,
@@ -11,6 +12,10 @@ import {
   mouseEventMatchesBinding,
 } from "../../components/page-turn-bindings";
 import { appZoomCommandFor } from "../../services/app-zoom";
+import { createKeyboardPageTurnRepeater } from "../../components/keyboard-page-turn";
+import type { KeyboardPageTurnRepeater } from "../../components/keyboard-page-turn";
+import { createPageTurnDispatcher } from "../../components/page-turn-dispatcher";
+import type { PageTurnDispatcher } from "../../components/page-turn-dispatcher";
 import { createWheelPageTurnHandler } from "../../components/wheel-page-turn";
 import type { WheelPageTurnHandler } from "../../components/wheel-page-turn";
 
@@ -23,7 +28,7 @@ interface PageTurnInputOptions {
   panelRef: RefObject<HTMLElement | null>;
   overlayOpen: boolean;
   sidePanelOpen: boolean;
-  turnPage(direction: PageDirection): void;
+  turnPage(direction: PageDirection): void | Promise<void>;
   onPdfZoom(delta: number): void;
   onPdfZoomFit(): void;
 }
@@ -48,6 +53,14 @@ export function usePageTurnInput({
   const keyboardBlockedRef = useRef(false);
   const overlayOpenRef = useRef(false);
   const wheelGestureRef = useRef<WheelPageTurnHandler | null>(null);
+  const pageTurnDispatcher = useMemo<PageTurnDispatcher>(() => (
+    createPageTurnDispatcher({ turn: turnPage })
+  ), [turnPage]);
+  const keyboardRepeater = useMemo<KeyboardPageTurnRepeater>(() => (
+    createKeyboardPageTurnRepeater({ turn: (direction) => pageTurnDispatcher.dispatch(direction) })
+  ), [pageTurnDispatcher]);
+
+  useEffect(() => () => pageTurnDispatcher.cancelPending(), [pageTurnDispatcher]);
 
   useEffect(() => {
     overlayOpenRef.current = overlayOpen;
@@ -94,9 +107,8 @@ export function usePageTurnInput({
     if (!direction) return;
     event.preventDefault();
     event.stopPropagation();
-    if (event.repeat) return;
-    turnPage(direction);
-  }, [bookFormat, onPdfZoom, onPdfZoomFit, panelRef, settingsRef, turnPage]);
+    keyboardRepeater.handle(direction, event.repeat);
+  }, [bookFormat, keyboardRepeater, onPdfZoom, onPdfZoomFit, panelRef, settingsRef]);
 
   const handlePageTurnMouseDown = useCallback((event: MouseEvent) => {
     keyboardBlockedRef.current = false;
@@ -109,8 +121,8 @@ export function usePageTurnInput({
     if (event.button === 2) suppressContextMenuUntilRef.current = Date.now() + 800;
     event.preventDefault();
     event.stopPropagation();
-    turnPage(direction);
-  }, [settingsRef, turnPage]);
+    pageTurnDispatcher.dispatch(direction);
+  }, [pageTurnDispatcher, settingsRef]);
 
   const handlePageTurnContextMenu = useCallback((event: MouseEvent) => {
     if (Date.now() > suppressContextMenuUntilRef.current) return;
@@ -121,7 +133,7 @@ export function usePageTurnInput({
 
   useEffect(() => {
     const gesture = createWheelPageTurnHandler({
-      turn: turnPage,
+      turn: (direction) => pageTurnDispatcher.dispatch(direction),
       isEnabled: () => (
         !overlayOpenRef.current
         && settingsRef.current.readingMode === "paginated"
@@ -132,7 +144,7 @@ export function usePageTurnInput({
       gesture.reset();
       if (wheelGestureRef.current === gesture) wheelGestureRef.current = null;
     };
-  }, [settingsRef, turnPage]);
+  }, [pageTurnDispatcher, settingsRef]);
 
   const handlePageTurnWheel = useCallback((event: WheelEvent) => {
     wheelGestureRef.current?.handleWheel(event);

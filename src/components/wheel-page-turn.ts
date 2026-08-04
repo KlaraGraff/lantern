@@ -43,6 +43,21 @@ function normalizedDelta(event: WheelEvent): number {
   return dominant;
 }
 
+function isDiscreteWheelEvent(event: WheelEvent, delta: number): boolean {
+  // Touchpads report pixel travel so their momentum arrives as a continuous
+  // stream. Line and page deltas represent physical wheel notches instead.
+  if (event.deltaMode === 1 || event.deltaMode === 2) return true;
+
+  // Chromium-based Windows webviews may normalize a physical wheel notch to
+  // DOM_DELTA_PIXEL. Its 100/120px-sized, integer steps remain distinct from
+  // the small pixel deltas emitted by a continuous touchpad stream.
+  const magnitude = Math.abs(delta);
+  return event.deltaMode === 0
+    && Number.isInteger(delta)
+    && magnitude >= 100
+    && magnitude % 20 === 0;
+}
+
 /**
  * One page per wheel gesture, where a gesture ends only when the event stream
  * falls silent.
@@ -86,6 +101,15 @@ export function createWheelPageTurnHandler({
 
     const delta = normalizedDelta(event);
     if (delta === 0) return;
+
+    if (isDiscreteWheelEvent(event, delta)) {
+      // A wheel notch is already a complete page-turn command. Do not feed it
+      // through the touchpad latch: Windows commonly sends several notches
+      // inside its 300ms cooldown window.
+      reset();
+      turn(delta > 0 ? "next" : "previous");
+      return;
+    }
 
     // One clock for every event, never event.timeStamp. That timestamp is
     // relative to the time origin of the window the event was created in, and

@@ -1093,7 +1093,7 @@ export default function Reader() {
       await (direction === "previous" ? view.prev() : view.next());
     };
     const settings = readerSettingsRef.current;
-    void runPageTurnTransition({
+    return runPageTurnTransition({
       animation: settings.readingMode === "paginated" ? settings.pageTurnAnimation : "none",
       direction,
       viewport: readerViewportRef.current,
