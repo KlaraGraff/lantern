@@ -117,7 +117,7 @@ Responsibilities:
 - maintain selected record kinds, format, and included fields;
 - request chapter labels through a callback supplied by `Reader`;
 - show normal, empty, preparing, saving, success, and failure states;
-- call the system save dialog with `fileAccessMode: "scoped"`;
+- call the system save dialog and write only to the user-approved returned path (the current `SaveDialogOptions` API does not expose `fileAccessMode`);
 - write the serialized text through `@tauri-apps/plugin-fs`;
 - revoke/reset state on close and when the active book changes.
 

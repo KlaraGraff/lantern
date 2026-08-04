@@ -6,6 +6,8 @@ Detailed implementation plans for features and bug fixes. Numbers match the corr
 
 ## Active — still owes work
 
+- [P2.2 — contextual vocabulary review](vocab-contextual-review.md) —
+  approved progressive audio/meaning hints and context-first review; implementation is pending.
 - [Reader P2.1 — structured highlights and vocabulary export](reader-p2-structured-export.md) —
   approved reader-side export UI; implementation and acceptance are pending.
 - [Built-in AI model catalog and automatic routing](built-in-ai-model-catalog-and-routing.md) —
