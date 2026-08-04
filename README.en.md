@@ -79,6 +79,10 @@ So **reading thought protection** keeps answers inside what you have already rea
 
 How wide it reads is yours to set too: automatic, the selection only, this chapter only, or the whole book.
 
+That boundary now extends to people and terms. When a name has slipped your mind, or an image keeps returning without explaining itself, open a lightweight card straight from the text. It gathers identity, aliases, known relationships and earlier appearances, or explains what a term means inside this particular book. **The card stops at your current reading position by default**, so looking up a name does not casually tell you what happens later.
+
+When you really do need the whole-book view, Lantern says plainly that unread events will be included and asks you to confirm. Whole-book scope lasts for that one viewing only; close the card and the next one starts spoiler-safe again.
+
 <!-- Screenshot placeholder: the context controls in the AI panel — scope selector, reading thought protection toggle, and the progress notice plus source disclosure under an answer
      Once shot, drop it into assets/screenshots/ and delete this comment’s first and last lines to show it.
 ![It knows how far you have read](assets/screenshots/context.png)
@@ -106,6 +110,10 @@ How it works:
 History in a chat app is one ever-growing stream. That sentence you asked about three days ago sits between an expense policy and a recipe; you cannot find it, and if you do, you no longer remember where in the book you were. A word list has the same flaw — the word lies there on its own, cut off from the sentence it came from, and all that is left is to memorise it cold.
 
 Nothing you save in Lantern lets go of the book. Vocabulary, notes and conversations are each filed under their book and searchable, stamped with how long ago you saved them, and every one of them carries an **Open in reader** link that lands you not at the front of the book but on the sentence you were on. A saved word also keeps the passage it appeared in, and what it meant **in that sentence** — not the first entry in a dictionary.
+
+Notes do not have to leave the page either. A margin note rail places each note beside the passage it cites; the text makes room for it instead of being covered by a floating panel. Select a note and its source stays in the same field of view.
+
+The source sentence survives review too. Lantern blanks the saved word out of that sentence, offers pronunciation first, the saved Chinese meaning of the sentence second, and only then reveals the answer — no letter count or first-letter giveaway. When a book needs to leave Lantern, its highlights, notes and vocabulary can be assembled locally as Markdown, CSV, or Anki CSV for the tools you already use.
 
 Conversations go one step further: the book opens and **the conversation comes back into the panel beside it**, so you pick the thread up where you dropped it, the citation markers inside it still live.
 
@@ -179,6 +187,12 @@ But "everything is adjustable" turns into homework if it means you have to adjus
 
 Marks in the text are where both halves of that show up most densely.
 
+### One book can be different without staying different forever
+
+Typography begins with a global default, while any book can keep its own exception. The same settings panel says clearly when you are using **settings for this book**, and lets you restore the global defaults, promote this book's result into the new global default, or apply it to a few other books. It does not stack another dialog on top just to manage scope, and a restored override does not reappear after sync.
+
+There is more to tune than font size and line height. EPUB can justify both edges and hyphenate by language; paragraph spacing has four levels; first-line indents adapt to language and paragraph kind. Publisher typography remains untouched by default, and fixed-layout formats such as PDF do not show controls they cannot honour.
+
 ### Marks: two styles, six dimensions
 
 **Manual marks** and **automatic post-lookup marks** are two entirely separate styles, each with its own colour, opacity, highlight / underline / bold, and font. If you want them to look alike, there is a "follow the manual style" switch.
@@ -207,10 +221,24 @@ You can still edit the result. If the AI missed a form or added one that does no
 
 ### The same holds elsewhere
 
-- **Read-aloud source** defaults to automatic: a human dictionary recording for a single word, neural voices for a passage, system voices if either fails. All four remain selectable by hand.
+- **Read-aloud source** defaults to automatic: a human dictionary recording for a single word, neural voices for a passage, system voices if either fails. All four remain selectable by hand. Start continuous reading and a top player gives you previous / next sentence, pause, stop and speed, continuing across paragraphs, pages and chapters; collapse it to a small capsule when you do not need the controls.
+- **Vocabulary assistance** can put short saved meanings back into the page, either as small text above the word or as margin glosses, at the density you choose. The reader shortcut and main setting control the same global state, and turning it on makes no new AI call.
+- **Enhanced font display** is an optional, device-local font pack: download and enable it when you need it, disable it while keeping the files, or remove it explicitly to free space. Ordinary UI text still prefers system fonts instead of swelling the base installer.
 - **Book-source sites** are a list you can add to and delete from, not a fixed roster.
 - **What a triple-click selects**, how shortcuts are bound, whether the selection menu prints them at all — all settings.
 - **Content density** has an explainer dialog that goes module by module, so you can see what Compact / Standard / Detailed actually add before choosing.
+
+---
+
+## 6 · Statistics are not supervision — they give your reading time back
+
+Reading statistics often turn into another kind of attendance sheet: a streak to protect, minutes still owed today, somebody else reading more. Lantern records reading for a different reason — so when you look back, you can see which books actually received your time.
+
+One entry holds two views. **Reading history** starts with the books: what you read, how far you got, and how long you stayed. **Reading calendar** starts with a date and finds the books and valid sessions inside it. They share scope, book filters and overview totals, without rankings, streaks or penalties. Five continuous minutes without reading activity pauses the clock, and fragments under 30 seconds are discarded — opening a book to find one line does not become a reading session.
+
+More human reflections — when you tend to read, or which book stayed with you longest — can ask AI to shape the language. But **Lantern calculates the facts deterministically on device first; AI narrates them and is not allowed to recalculate or invent them.** You choose when to generate or refresh a reflection, and previous results remain cached locally.
+
+Before the first generation, the interface names the current provider, the data that will be sent, and any quota or cost implications. The default payload is a reproducible set of facts such as total duration, session count, book count and reading days — **not book text, highlight text, note bodies, an exact session timeline, or unread content**.
 
 ---
 
@@ -229,27 +257,32 @@ To make it yours: set your English level under Settings → Profile, and pick th
 <table>
 <tr><td width="180"><b>AI comprehension</b></td><td>
 
-Contextual lookup · phrase glosses · passage explanations · translation · persistent per-book chat (carries the word, the source sentence, the existing explanation, and your reading position into the conversation) · **every answer carries clickable citations that jump back to the sentence in the book** · full-text retrieval, with a semantic layer on top once you configure embeddings · scope the answer to automatic / selection / chapter / whole book · **reading thought protection** — answers drawn only from what you have already read, leaving the rest for you to work out, with one click to answer again using the whole book · every request shows exactly which passage it quotes, and you can remove it · **conversations are filed under their book and searchable**, and one click reopens the reader with that conversation back beside it
+Contextual lookup · phrase glosses · passage explanations · translation · persistent per-book chat (carries the word, the source sentence, the existing explanation, and your reading position into the conversation) · **every answer carries clickable citations that jump back to the sentence in the book** · full-text retrieval, with a semantic layer on top once you configure embeddings · scope the answer to automatic / selection / chapter / whole book · **reading thought protection** — answers drawn only from what you have already read, leaving the rest for you to work out, with one click to answer again using the whole book · lightweight people / term cards collect identity, relationships, in-book meaning and earlier appearances under the same spoiler-safe boundary · every request shows exactly which passage it quotes, and you can remove it · **conversations are filed under their book and searchable**, and one click reopens the reader with that conversation back beside it
 
 </td></tr>
 <tr><td><b>The learning loop</b></td><td>
 
-Vocabulary list · lookup history · New / Learning / Mastered status · FSRS spaced repetition · a notes centre for notes attached to words and passages, searchable · CSV / JSON vocabulary import and export · jump back to the exact place in the book
+Vocabulary list · lookup history · New / Learning / Mastered status · FSRS spaced repetition · source-sentence cloze review with pronunciation → saved Chinese meaning of the sentence → answer hints · a notes centre plus a margin note rail in the reader · CSV / JSON vocabulary import and export · local current-book export of highlights, vocabulary and notes as Markdown / CSV / Anki CSV · jump back to the exact place in the book
 
 </td></tr>
 <tr><td><b>Marks in the text</b></td><td>
 
-Automatic marking after a lookup · three matching scopes: this occurrence / every exact match in the book / **every inflected form** (forms generated by AI in one click, editable by hand) · manual highlights · separate styles for manual and automatic marks, each with colour, opacity, highlight / underline / bold and font · a warning when a chosen colour collides with a system mark · the original book file is never modified
+Automatic marking after a lookup · three matching scopes: this occurrence / every exact match in the book / **every inflected form** (forms generated by AI in one click, editable by hand) · saved vocabulary shown as small text above the word or as margin glosses, with no new AI call · manual highlights · separate styles for manual and automatic marks, each with colour, opacity, highlight / underline / bold and font · a warning when a chosen colour collides with a system mark · the original book file is never modified
 
 </td></tr>
 <tr><td><b>Reading</b></td><td>
 
-Warm paper themes and custom page colours · import your own fonts · size, line height, margins, layout · scrolled or paginated · bookmarks · table-of-contents panel · reading progress · multiple windows for multiple books · collection folders for the library
+Warm paper themes and custom page colours · import your own fonts plus an optional device-local enhanced font pack · size, line height, margins, justification, language-aware hyphenation, paragraph spacing and first-line indents · global defaults with per-book exceptions that can be restored or promoted · scrolled or paginated · bookmarks · table-of-contents panel · reading progress · margin note rail · multiple windows for multiple books · collection folders for the library
 
 </td></tr>
 <tr><td><b>Read aloud</b></td><td>
 
-Four audio sources: human dictionary recordings / system voices / Edge neural voices / any OpenAI-compatible TTS endpoint · picks a source automatically based on what you selected · sentence-by-sentence highlight following · pause and resume where you stopped
+Four audio sources: human dictionary recordings / system voices / Edge neural voices / any OpenAI-compatible TTS endpoint · picks a source automatically for the content and language · top continuous-reading player · previous / next sentence / pause / stop / speed · continues across paragraphs, pages and chapters · sentence-by-sentence highlight following · pause and resume where you stopped
+
+</td></tr>
+<tr><td><b>Reading reflection</b></td><td>
+
+Reading history and reading calendar views · filter by scope and book · pause after 5 minutes idle and discard fragments under 30 seconds · locally reproducible duration, session, book and reading-day facts · optional AI reflection narrates structured facts only, is generated on demand, discloses its payload, and caches results locally
 
 </td></tr>
 <tr><td><b>AI services</b></td><td>
@@ -294,10 +327,10 @@ This describes current local import and reader integration. It does not imply DR
 
 ## Where your data lives
 
-- **The library is local first.** Books, reading progress, vocabulary, and notes stay on this device.
+- **The library is local first.** Books, reading progress, vocabulary, notes, and reading statistics stay on this device.
 - **API keys and OAuth tokens live only in a local credential database.** They are never returned to the webview and never take part in sync.
 - **For multiple devices**, pick a folder inside your own iCloud Drive in settings and choose the same folder on every Mac. The app keeps its event log, books, and covers there. This version does not use the original Quill iCloud container, and makes no claim of compatibility with the original Quill iOS app or its private iCloud data.
-- **AI requests send only the context the current task needs** — never the whole book automatically.
+- **AI requests send only the context the current task needs** — never the whole book automatically. An AI reading reflection sends the listed structured facts only when you choose to generate one; book text, note bodies and highlight text stay out by default.
 
 ---
 
