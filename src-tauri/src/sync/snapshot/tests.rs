@@ -5,7 +5,7 @@ use crate::error::AppResult;
 use crate::sync::events::*;
 use crate::sync::log::EventLog;
 use crate::sync::merge;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use tempfile::TempDir;
 
@@ -625,6 +625,115 @@ fn book_setting_delete_tombstone_survives_snapshot_and_blocks_stale_row() {
         )
         .unwrap();
     assert_eq!(remaining, 0);
+}
+
+/// End-to-end for the whole point of the change: both marker layers are dumped
+/// into a snapshot and land in a peer's tables. `dump_state` used to name the
+/// syncable keys in its SQL, so a key could be whitelisted everywhere else and
+/// still be missing here — which is why this asserts on the peer's rows rather
+/// than on the whitelist.
+#[test]
+fn marker_visibility_travels_through_a_snapshot_to_a_peer() {
+    let snapshot = Snapshot::from_events(
+        "dev-A",
+        &[
+            ev(1_000, "dev-A", import("b1")),
+            ev(
+                1_100,
+                "dev-A",
+                EventBody::SettingSet(SettingPayload {
+                    book: None,
+                    key: "show_mastered_markers".into(),
+                    value: Some("false".into()),
+                }),
+            ),
+            ev(
+                1_200,
+                "dev-A",
+                EventBody::SettingSet(SettingPayload {
+                    book: Some("b1".into()),
+                    key: "show_lookup_markers".into(),
+                    value: Some("false".into()),
+                }),
+            ),
+            // A local-only reader preference in the same tables, to prove the
+            // widened dump did not start shipping the whole `settings` table.
+            ev(
+                1_300,
+                "dev-A",
+                EventBody::SettingSet(SettingPayload {
+                    book: Some("b1".into()),
+                    key: "font_size".into(),
+                    value: Some("22".into()),
+                }),
+            ),
+        ],
+    )
+    .unwrap();
+
+    assert_eq!(
+        snapshot
+            .state
+            .settings
+            .get("show_mastered_markers")
+            .map(|row| row.value.as_str()),
+        Some("false")
+    );
+    assert_eq!(
+        snapshot
+            .state
+            .book_settings
+            .get("b1:show_lookup_markers")
+            .map(|row| row.value.as_str()),
+        Some("false")
+    );
+    assert!(
+        !snapshot.state.book_settings.contains_key("b1:font_size"),
+        "font_size is a per-screen preference and must stay on this device"
+    );
+
+    let mut local = open_db();
+    apply_to(&mut local, &[ev(1_000, "dev-local", import("b1"))]);
+    {
+        let tx = local.transaction().unwrap();
+        snapshot.apply_peer(&tx, "dev-A").unwrap();
+        tx.commit().unwrap();
+    }
+
+    let global: Option<String> = local
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'show_mastered_markers'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap();
+    assert_eq!(global.as_deref(), Some("false"));
+
+    let per_book: Option<String> = local
+        .query_row(
+            "SELECT value FROM book_settings
+             WHERE book_id = 'b1' AND key = 'show_lookup_markers'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap();
+    assert_eq!(per_book.as_deref(), Some("false"));
+}
+
+/// The reason marker visibility was held back: a `book_setting` tombstone whose
+/// key is not syncable fails validation, and that rejects the *entire* snapshot
+/// rather than the one row. Whitelisting the keys is what makes the tombstone
+/// legal, so this pins the rejection to keys that really are local-only.
+#[test]
+fn marker_tombstones_pass_snapshot_validation_and_local_only_keys_still_fail() {
+    crate::sync::validation::validate_tombstone_id("book_setting", "b1:show_learning_markers")
+        .unwrap();
+    assert!(
+        crate::sync::validation::validate_tombstone_id("book_setting", "b1:font_size").is_err(),
+        "a tombstone for a local-only key is still malformed"
+    );
 }
 
 #[test]

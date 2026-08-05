@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronRight, Download, RotateCcw, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -27,7 +27,7 @@ import {
   type ParagraphSpacing,
   type ReadingMode,
 } from "../ReaderSettings";
-import { DEFAULT_NEXT_PAGE_BINDING, DEFAULT_PREVIOUS_PAGE_BINDING } from "../page-turn-bindings";
+import { DEFAULT_NEXT_PAGE_BINDING, DEFAULT_PREVIOUS_PAGE_BINDING } from "../reader-bindings";
 import PassiveVocabSettings from "./PassiveVocabSettings";
 import type { PassiveVocabPreviewState } from "./PassiveVocabPreview";
 import { formatPassiveVocabSummary, parsePassiveVocabSettings } from "../passive-vocab";
@@ -37,6 +37,18 @@ import Button from "../ui/Button";
 import ConfirmDialog from "./ConfirmDialog";
 import { buildReadingDefaultSettings } from "./reading-defaults";
 import { createDefaultReaderSettings } from "../../pages/reader/useReaderSettingsSync";
+import {
+  addPendingWrites,
+  appliedSnapshot,
+  groupsToRehydrate,
+  rehydrationKeys,
+  removePendingWrites,
+} from "./settings-rehydration";
+import {
+  groupsHoldingUncommittedNumber,
+  READING_REHYDRATION_GROUPS,
+  READING_REHYDRATION_KEYS,
+} from "./reading-rehydration";
 
 const READER_THEME_OPTIONS: {
   value: ReaderTheme;
@@ -78,9 +90,14 @@ const READER_THEME_OPTIONS: {
 
 const CUSTOM_THEME_PRESETS = ["#F4E6C7", "#DDE8D8", "#DDE7F1", "#E7DDEC", "#D8D9DC"] as const;
 
-function NumberInput({ value, onChange, onBlur, suffix, min, max }: {
+// The input keeps no draft of its own: each keystroke goes straight into the
+// caller's state, and nothing is written until `onBlur` (Enter blurs too). That
+// is why the caller has to know when one of these has focus — see
+// `reading-rehydration.ts`.
+function NumberInput({ value, onChange, onFocus, onBlur, suffix, min, max }: {
   value: number;
   onChange: (v: number) => void;
+  onFocus: () => void;
   onBlur: () => void;
   suffix?: string;
   min?: number;
@@ -97,6 +114,7 @@ function NumberInput({ value, onChange, onBlur, suffix, min, max }: {
           if (max !== undefined && v > max) return;
           onChange(v);
         }}
+        onFocus={onFocus}
         onBlur={onBlur}
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
         className="w-[64px] h-8 bg-white dark:bg-bg-surface rounded-[10px] px-2 text-[13px] font-medium text-text-secondary text-center outline-none border border-border focus:border-accent transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -160,6 +178,19 @@ export default function ReadingSettings({
   const [restoreConfirm, setRestoreConfirm] = useState(false);
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  // What the rows on screen were built from, and which keys this pane is
+  // writing right now. Together they tell an outside change apart from the
+  // pane's own — only the first may replace a control the user can see.
+  const hydratedRef = useRef(false);
+  const appliedRef = useRef<Record<string, string | undefined>>({});
+  const pendingWritesRef = useRef(new Map<string, number>());
+  // The number row the caret is in, if any. Held as state, not a ref, because
+  // losing focus is one of the two events that let a held-back group through.
+  const [focusedNumberKey, setFocusedNumberKey] = useState<string | null>(null);
+  // The other one: a write of this pane's own settling. Nothing else would
+  // re-run the effect below afterwards, so a change that arrived from outside
+  // while the write was in flight would sit unread until the next one.
+  const [writesSettled, setWritesSettled] = useState(0);
 
   const fontOptions = [
     ...fonts.filter((font) => font.group === "system").map((font) => ({ value: font.id, label: font.label, group: t("settings.layout.fontGroupSystem") })),
@@ -167,70 +198,194 @@ export default function ReadingSettings({
     ...fonts.filter((font) => font.group === "custom").map((font) => ({ value: font.id, label: font.label, group: t("settings.layout.fontGroupMine") })),
   ];
 
-  useEffect(() => {
-    if (loading) return;
-    setReaderTheme((settings.reader_theme as ReaderTheme) || getDefaultReaderTheme());
-    setCustomTheme(parseReaderCustomTheme(settings.reader_custom_theme));
-    if (settings.font_family) setFontFamily(settings.font_family);
-    if (settings.font_size) setFontSize(parseInt(settings.font_size));
-    setNarrowFontShrink(settings.narrow_font_shrink !== "false");
-    if (settings.line_spacing) setLineSpacing(parseFloat(settings.line_spacing));
-    if (settings.char_spacing) setCharSpacing(parseInt(settings.char_spacing));
-    if (settings.word_spacing) setWordSpacing(parseInt(settings.word_spacing));
-    setTextJustification(settings.text_justification === "true");
-    if (["original", "none", "compact", "comfortable", "loose"].includes(settings.paragraph_spacing)) {
-      setParagraphSpacing(settings.paragraph_spacing as ParagraphSpacing);
+  /**
+   * One block of rows read out of the settings map. The first pass asks for
+   * every group; after that only the groups an outside change actually moved
+   * come through here, so a control the user is working in is left alone.
+   */
+  const applyGroups = useCallback((ids: readonly string[], values: Record<string, string>) => {
+    for (const id of ids) {
+      switch (id) {
+        case "theme":
+          setReaderTheme((values.reader_theme as ReaderTheme) || getDefaultReaderTheme());
+          setCustomTheme(parseReaderCustomTheme(values.reader_custom_theme));
+          break;
+        case "fontFamily":
+          if (values.font_family) setFontFamily(values.font_family);
+          break;
+        case "fontSize":
+          if (values.font_size) setFontSize(parseInt(values.font_size));
+          break;
+        case "narrowFontShrink":
+          setNarrowFontShrink(values.narrow_font_shrink !== "false");
+          break;
+        case "lineSpacing":
+          if (values.line_spacing) setLineSpacing(parseFloat(values.line_spacing));
+          break;
+        case "charSpacing":
+          if (values.char_spacing) setCharSpacing(parseInt(values.char_spacing));
+          break;
+        case "wordSpacing":
+          if (values.word_spacing) setWordSpacing(parseInt(values.word_spacing));
+          break;
+        case "paragraph":
+          setTextJustification(values.text_justification === "true");
+          if (["original", "none", "compact", "comfortable", "loose"].includes(values.paragraph_spacing)) {
+            setParagraphSpacing(values.paragraph_spacing as ParagraphSpacing);
+          }
+          setFirstLineIndent(values.first_line_indent === "true");
+          break;
+        case "margins":
+          if (values.margins) setMargins(parseInt(values.margins));
+          break;
+        case "pageFlow":
+          if (values.reading_mode === "paginated" || values.reading_mode === "scrolling") {
+            setReadingMode(values.reading_mode);
+          }
+          if (values.page_columns === "1" || values.page_columns === "2") {
+            setPageLayout(values.page_columns);
+          }
+          if (
+            values.page_turn_animation === "none"
+            || values.page_turn_animation === "slide"
+            || values.page_turn_animation === "fade"
+            || values.page_turn_animation === "cover"
+          ) {
+            setPageTurnAnimation(values.page_turn_animation);
+          }
+          break;
+        case "progress":
+          if (values.show_chapter_progress !== undefined) {
+            setShowChapterProgress(values.show_chapter_progress !== "false");
+          }
+          if (values.show_book_progress !== undefined) {
+            setShowBookProgress(values.show_book_progress === "true");
+          }
+          if (values.show_page_numbers !== undefined) {
+            setShowPageNumbers(values.show_page_numbers === "true");
+          }
+          break;
+        case "bindings":
+          if (values.previous_page_binding) setPreviousPageBinding(values.previous_page_binding);
+          if (values.next_page_binding) setNextPageBinding(values.next_page_binding);
+          break;
+      }
     }
-    setFirstLineIndent(settings.first_line_indent === "true");
-    if (settings.margins) setMargins(parseInt(settings.margins));
-    if (settings.reading_mode === "paginated" || settings.reading_mode === "scrolling") {
-      setReadingMode(settings.reading_mode);
-    }
-    if (settings.page_columns === "1" || settings.page_columns === "2") {
-      setPageLayout(settings.page_columns);
-    }
-    if (
-      settings.page_turn_animation === "none"
-      || settings.page_turn_animation === "slide"
-      || settings.page_turn_animation === "fade"
-      || settings.page_turn_animation === "cover"
-    ) {
-      setPageTurnAnimation(settings.page_turn_animation);
-    }
-    if (settings.show_chapter_progress !== undefined) {
-      setShowChapterProgress(settings.show_chapter_progress !== "false");
-    }
-    if (settings.show_book_progress !== undefined) {
-      setShowBookProgress(settings.show_book_progress === "true");
-    }
-    if (settings.show_page_numbers !== undefined) {
-      setShowPageNumbers(settings.show_page_numbers === "true");
-    }
-    if (settings.previous_page_binding) setPreviousPageBinding(settings.previous_page_binding);
-    if (settings.next_page_binding) setNextPageBinding(settings.next_page_binding);
-  }, [settings, loading]);
+  }, []);
 
-  // One write for all twenty rows: `saveBulk` also pushes the new values back
-  // into `settings`, so the sync effect above repaints every control at once
-  // instead of the section flickering key by key.
+  useEffect(() => {
+    if (loading || hydratedRef.current) return;
+    applyGroups(READING_REHYDRATION_GROUPS.map((group) => group.id), settings);
+    appliedRef.current = appliedSnapshot(READING_REHYDRATION_KEYS, settings);
+    hydratedRef.current = true;
+  }, [applyGroups, loading, settings]);
+
+  // Reading on from there: the modal outlives the values it is showing. On the
+  // desktop the reader is a window of its own, so anything it writes — 「设为
+  // 全局默认」 above all — arrives here as a settings change while this pane is
+  // open, and the rows have to follow it.
+  //
+  // What they must not follow is the pane's own echo, or a change that lands
+  // mid-keystroke. The first is handled by recording every write as applied at
+  // the moment it goes out; the second by holding back the one group whose
+  // number input currently holds digits nobody has committed.
+  useEffect(() => {
+    if (loading || !hydratedRef.current) return;
+    const stale = groupsToRehydrate({
+      groups: READING_REHYDRATION_GROUPS,
+      stored: settings,
+      applied: appliedRef.current,
+      pending: pendingWritesRef.current.keys(),
+      blocked: groupsHoldingUncommittedNumber({
+        focusedKey: focusedNumberKey,
+        values: {
+          font_size: String(fontSize),
+          line_spacing: String(lineSpacing),
+          char_spacing: String(charSpacing),
+          word_spacing: String(wordSpacing),
+          margins: String(margins),
+        },
+        applied: appliedRef.current,
+      }),
+    });
+    if (stale.length === 0) return;
+    applyGroups(stale, settings);
+    appliedRef.current = {
+      ...appliedRef.current,
+      ...appliedSnapshot(rehydrationKeys(READING_REHYDRATION_GROUPS, stale), settings),
+    };
+  }, [
+    applyGroups,
+    charSpacing,
+    focusedNumberKey,
+    fontSize,
+    lineSpacing,
+    loading,
+    margins,
+    settings,
+    wordSpacing,
+    writesSettled,
+  ]);
+
+  /**
+   * Every write this pane makes. The keys are claimed before the write starts
+   * and released once it has settled, so the echo coming back cannot be mistaken
+   * for someone else's change — and `writesSettled` gives the effect above the
+   * re-run it needs to pick up anything that did arrive meanwhile.
+   *
+   * `repaint` is for the write whose whole point is to move rows the user is not
+   * touching (restore defaults). Recording those as already applied would
+   * explain the echo away and leave every row showing its old value.
+   */
+  const persist = useCallback((entries: Record<string, string>, options?: { repaint?: boolean }) => {
+    const keys = Object.keys(entries);
+    addPendingWrites(pendingWritesRef.current, keys);
+    if (!options?.repaint) appliedRef.current = { ...appliedRef.current, ...entries };
+    return saveBulk(entries)
+      .then(() => true)
+      .catch((error) => {
+        console.error("Failed to save reading settings:", error);
+        return false;
+      })
+      .finally(() => {
+        removePendingWrites(pendingWritesRef.current, keys);
+        setWritesSettled((count) => count + 1);
+      });
+  }, [saveBulk]);
+
+  // One write for all twenty rows, and deliberately not recorded as applied:
+  // `saveBulk` pushes the new values back into `settings`, and the effect above
+  // repaints every group at once instead of the section flickering key by key.
   const restoreReadingDefaults = useCallback(async () => {
     setRestoreBusy(true);
     setRestoreError(null);
     try {
-      await saveBulk(buildReadingDefaultSettings(createDefaultReaderSettings()));
-      setRestoreConfirm(false);
-      showSavedToast();
-    } catch (error) {
-      console.error("Failed to restore reading defaults:", error);
-      // The dialog closes either way: the message belongs next to the row that
-      // still says 「恢复默认」, and a modal left open over the page hides the
+      const saved = await persist(
+        buildReadingDefaultSettings(createDefaultReaderSettings()),
+        { repaint: true },
+      );
+      // The dialog closes either way: a failure message belongs next to the row
+      // that still says 「恢复默认」, and a modal left open over the page hides the
       // very settings the user is being told did not change.
       setRestoreConfirm(false);
-      setRestoreError(t("settings.layout.restoreDefaultsFailed"));
+      if (saved) showSavedToast();
+      else setRestoreError(t("settings.layout.restoreDefaultsFailed"));
     } finally {
       setRestoreBusy(false);
     }
-  }, [saveBulk, showSavedToast, t]);
+  }, [persist, showSavedToast, t]);
+
+  // A number row commits on blur and only on blur (Enter blurs it), so blur is
+  // also where the hold on its group is lifted: by then the digits are on their
+  // way to the store and recorded as applied, and the same render that clears
+  // the focus re-runs the effect above.
+  const numberRow = (key: string, value: number) => ({
+    onFocus: () => setFocusedNumberKey(key),
+    onBlur: () => {
+      setFocusedNumberKey(null);
+      void persist({ [key]: String(value) });
+    },
+  });
 
   const refreshCustomFonts = useCallback(async () => {
     const records = await loadCustomFonts();
@@ -288,7 +443,7 @@ export default function ReadingSettings({
               type="button"
               onClick={() => {
                 setReaderTheme(theme.value);
-                save("reader_theme", theme.value);
+                void persist({ reader_theme: theme.value });
                 showSavedToast();
               }}
               className="w-[48px] flex flex-col items-center gap-1.5 cursor-pointer"
@@ -319,10 +474,10 @@ export default function ReadingSettings({
             opacityLabel={t("settings.layout.customThemeOpacity")}
             onChange={(next) => {
               setCustomTheme(next);
-              void saveBulk({
+              void persist({
                 reader_theme: "custom",
                 reader_custom_theme: JSON.stringify(next),
-              }).then(() => showSavedToast());
+              }).then((saved) => { if (saved) showSavedToast(); });
             }}
           />
         </div>
@@ -336,7 +491,7 @@ export default function ReadingSettings({
         <Select
           className={ROW_CONTROL_WIDTH}
           value={fontFamily}
-          onChange={(v) => { setFontFamily(v); save("font_family", v); showSavedToast(); }}
+          onChange={(v) => { setFontFamily(v); void persist({ font_family: v }); showSavedToast(); }}
           options={fontOptions}
         />
       </div>
@@ -440,7 +595,7 @@ export default function ReadingSettings({
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.fontSize")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.fontSizeHint")}</p>
         </div>
-        <NumberInput value={fontSize} onChange={setFontSize} onBlur={() => save("font_size", String(fontSize))} suffix="px" min={FONT_SIZE_MIN} max={FONT_SIZE_MAX} />
+        <NumberInput value={fontSize} onChange={setFontSize} {...numberRow("font_size", fontSize)} suffix="px" min={FONT_SIZE_MIN} max={FONT_SIZE_MAX} />
       </div>
       {/* Shrink the font on narrow windows */}
       <div className="flex items-center justify-between h-[73px]">
@@ -453,7 +608,7 @@ export default function ReadingSettings({
           checked={narrowFontShrink}
           onChange={(v) => {
             setNarrowFontShrink(v);
-            save("narrow_font_shrink", String(v));
+            void persist({ narrow_font_shrink: String(v) });
             showSavedToast();
           }}
         />
@@ -464,7 +619,7 @@ export default function ReadingSettings({
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.lineSpacing")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.lineSpacingHint")}</p>
         </div>
-        <NumberInput value={lineSpacing} onChange={setLineSpacing} onBlur={() => save("line_spacing", String(lineSpacing))} suffix="x" min={1} max={3} />
+        <NumberInput value={lineSpacing} onChange={setLineSpacing} {...numberRow("line_spacing", lineSpacing)} suffix="x" min={1} max={3} />
       </div>
       {/* Character Spacing */}
       <div className="flex items-center justify-between h-[73px]">
@@ -472,7 +627,7 @@ export default function ReadingSettings({
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.charSpacing")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.charSpacingHint")}</p>
         </div>
-        <NumberInput value={charSpacing} onChange={setCharSpacing} onBlur={() => save("char_spacing", String(charSpacing))} suffix="%" min={-5} max={20} />
+        <NumberInput value={charSpacing} onChange={setCharSpacing} {...numberRow("char_spacing", charSpacing)} suffix="%" min={-5} max={20} />
       </div>
       {/* Word Spacing */}
       <div className="flex items-center justify-between h-[73px]">
@@ -480,7 +635,7 @@ export default function ReadingSettings({
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.wordSpacing")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.wordSpacingHint")}</p>
         </div>
-        <NumberInput value={wordSpacing} onChange={setWordSpacing} onBlur={() => save("word_spacing", String(wordSpacing))} suffix="%" min={-10} max={50} />
+        <NumberInput value={wordSpacing} onChange={setWordSpacing} {...numberRow("word_spacing", wordSpacing)} suffix="%" min={-10} max={50} />
       </div>
       {/* Margins */}
       <div className="border-y border-border-light py-4">
@@ -491,7 +646,7 @@ export default function ReadingSettings({
             <p className="mt-0.5 text-[12px] text-text-muted">{t("settings.layout.justifyHint")}</p>
           </div>
           <Toggle label={t("settings.layout.justify")} checked={textJustification} onChange={(value) => {
-            setTextJustification(value); save("text_justification", String(value)); showSavedToast();
+            setTextJustification(value); void persist({ text_justification: String(value) }); showSavedToast();
           }} />
         </div>
         <div className="mt-3">
@@ -499,7 +654,7 @@ export default function ReadingSettings({
           <div className="mt-2 grid grid-cols-4 gap-1 rounded-lg bg-bg-input p-1" role="group" aria-label={t("settings.layout.paragraphSpacing")}>
             {(["none", "compact", "comfortable", "loose"] as const).map((value) => (
               <button key={value} type="button" aria-pressed={paragraphSpacing === value} onClick={() => {
-                setParagraphSpacing(value); save("paragraph_spacing", value); showSavedToast();
+                setParagraphSpacing(value); void persist({ paragraph_spacing: value }); showSavedToast();
               }} className={`h-8 rounded-md text-[12px] ${paragraphSpacing === value ? "bg-bg-surface font-medium text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"}`}>
                 {t(`readerSettings.paragraphSpacing.${value}`)}
               </button>
@@ -513,7 +668,7 @@ export default function ReadingSettings({
             <p className="mt-0.5 text-[12px] text-text-muted">{t("settings.layout.firstLineIndentHint")}</p>
           </div>
           <Toggle label={t("settings.layout.firstLineIndent")} checked={firstLineIndent} onChange={(value) => {
-            setFirstLineIndent(value); save("first_line_indent", String(value)); showSavedToast();
+            setFirstLineIndent(value); void persist({ first_line_indent: String(value) }); showSavedToast();
           }} />
         </div>
       </div>
@@ -522,7 +677,7 @@ export default function ReadingSettings({
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.margins")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.marginsHint")}</p>
         </div>
-        <NumberInput value={margins} onChange={setMargins} onBlur={() => save("margins", String(margins))} suffix="%" min={0} max={30} />
+        <NumberInput value={margins} onChange={setMargins} {...numberRow("margins", margins)} suffix="%" min={0} max={30} />
       </div>
       {/* Default Page Flow */}
       <div className="flex items-center justify-between h-[73px]">
@@ -536,7 +691,7 @@ export default function ReadingSettings({
           onChange={(value) => {
             const next = value as ReadingMode;
             setReadingMode(next);
-            save("reading_mode", next);
+            void persist({ reading_mode: next });
             showSavedToast();
           }}
           options={[
@@ -557,7 +712,7 @@ export default function ReadingSettings({
           onChange={(value) => {
             const next = value as "1" | "2";
             setPageLayout(next);
-            save("page_columns", next);
+            void persist({ page_columns: next });
             showSavedToast();
           }}
           options={[
@@ -578,7 +733,7 @@ export default function ReadingSettings({
           onChange={(value) => {
             const next = value as PageTurnAnimation;
             setPageTurnAnimation(next);
-            save("page_turn_animation", next);
+            void persist({ page_turn_animation: next });
             showSavedToast();
           }}
           options={[
@@ -603,7 +758,7 @@ export default function ReadingSettings({
               checked={showChapterProgress}
               onChange={(v) => {
                 setShowChapterProgress(v);
-                save("show_chapter_progress", String(v));
+                void persist({ show_chapter_progress: String(v) });
                 showSavedToast();
               }}
             />
@@ -615,7 +770,7 @@ export default function ReadingSettings({
               checked={showBookProgress}
               onChange={(v) => {
                 setShowBookProgress(v);
-                save("show_book_progress", String(v));
+                void persist({ show_book_progress: String(v) });
                 showSavedToast();
               }}
             />
@@ -627,7 +782,7 @@ export default function ReadingSettings({
               checked={showPageNumbers}
               onChange={(v) => {
                 setShowPageNumbers(v);
-                save("show_page_numbers", String(v));
+                void persist({ show_page_numbers: String(v) });
                 showSavedToast();
               }}
             />
@@ -650,11 +805,11 @@ export default function ReadingSettings({
             const previous = previousPageBinding;
             setPreviousPageBinding(value);
             if (swapsNext) setNextPageBinding(previous);
-            void saveBulk(
+            void persist(
               swapsNext
                 ? { previous_page_binding: value, next_page_binding: previous }
                 : { previous_page_binding: value },
-            ).then(() => showSavedToast());
+            ).then((saved) => { if (saved) showSavedToast(); });
           }}
         />
       </div>
@@ -673,11 +828,11 @@ export default function ReadingSettings({
             const previous = nextPageBinding;
             setNextPageBinding(value);
             if (swapsPrevious) setPreviousPageBinding(previous);
-            void saveBulk(
+            void persist(
               swapsPrevious
                 ? { next_page_binding: value, previous_page_binding: previous }
                 : { next_page_binding: value },
-            ).then(() => showSavedToast());
+            ).then((saved) => { if (saved) showSavedToast(); });
           }}
         />
       </div>

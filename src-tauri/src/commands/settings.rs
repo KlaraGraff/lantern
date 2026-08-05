@@ -203,9 +203,10 @@ pub fn set_settings_bulk(
 ///
 /// The `settings` table stays local-only as a table -- theme and font size are
 /// per-screen preferences that have no business crossing devices. `font_family`
-/// is the exception, because a synced font file is useless if nothing on the
-/// second device selects it. Non-whitelisted keys never reach the log at all,
-/// so the event stream stays clean rather than being filtered on read.
+/// and the four marker-visibility toggles are the exceptions; see
+/// `events::is_syncable_setting` for why each one earns it. Non-whitelisted keys
+/// never reach the log at all, so the event stream stays clean rather than being
+/// filtered on read.
 fn set_settings_bulk_inner(
     settings: &HashMap<String, String>,
     db: &Db,
@@ -820,8 +821,16 @@ pub(crate) fn do_undo_promote_book_settings(
                 //
                 // A syncable key deleted here stays deleted only on this
                 // device: the event stream has no global-setting delete (see
-                // `apply_setting_set`'s `(None, None)` arm). Only `font_family`
-                // is affected, and only when it had never been set at all.
+                // `apply_setting_set`'s `(None, None)` arm) and a snapshot
+                // states which global rows exist, never which ones stopped
+                // existing. The peer therefore keeps the promoted value, and
+                // its next snapshot pushes that value back here, because a
+                // local row that is simply gone loses to any row the peer has.
+                //
+                // Expressing this needs a `setting` tombstone entity — a wire
+                // addition, not a whitelist entry — so it is deliberately not
+                // done here. It now reaches `font_family` and the four marker
+                // toggles, and only when the key had no row before promotion.
                 tx.execute("DELETE FROM settings WHERE key = ?1", params![global_key])?;
                 continue;
             };
@@ -864,7 +873,8 @@ pub fn set_book_settings_bulk(
     do_set_book_settings_bulk(&book_id, &settings, &db, &sync)
 }
 
-/// Same whitelist rule as the global writer: only `font` publishes.
+/// Same whitelist rule as the global writer: `font` and the four
+/// marker-visibility toggles publish, everything else stays on this device.
 ///
 /// The reader panel is the caller: `useReaderSettingsSync` writes one debounced
 /// batch per settle, with the row's existence standing for "this book overrides
@@ -1302,6 +1312,105 @@ mod tests {
             )
             .unwrap();
         assert_eq!(tombstone, 0, "the restored row must not stay tombstoned");
+    }
+
+    /// The writer decides what leaves this device. Queue-only mode parks the
+    /// events in `_pending_publish` where a test can read them, so this checks
+    /// the outbox rather than the whitelist: both marker layers must publish,
+    /// and a neighbouring per-screen preference must not.
+    #[test]
+    fn marker_visibility_writes_reach_the_outbox_and_stamp_their_rows() {
+        let (_dir, db) = setup();
+        let sync = SyncWriter::new("dev-A".into());
+        sync.set_should_queue(true);
+
+        set_settings_bulk_inner(
+            &HashMap::from([
+                ("show_mastered_markers".to_string(), "false".to_string()),
+                ("reader_theme".to_string(), "night".to_string()),
+            ]),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        do_set_book_settings_bulk(
+            "book1",
+            &HashMap::from([
+                ("show_learning_markers".to_string(), "false".to_string()),
+                ("font_size".to_string(), "22".to_string()),
+            ]),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        do_delete_book_settings("book1", &["show_learning_markers".to_string()], &db, &sync)
+            .unwrap();
+
+        let conn = db.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT body_json FROM _pending_publish ORDER BY rowid")
+            .unwrap();
+        let published = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        drop(stmt);
+
+        let has = |needle: &str| published.iter().any(|body| body.contains(needle));
+        assert!(
+            has(r#""key":"show_mastered_markers""#),
+            "the global marker toggle must publish, got {published:?}"
+        );
+        assert!(
+            has(r#""key":"show_learning_markers""#),
+            "the per-book marker override must publish, got {published:?}"
+        );
+        assert!(
+            !has(r#""key":"reader_theme""#) && !has(r#""key":"font_size""#),
+            "per-screen preferences must stay on this device, got {published:?}"
+        );
+        // The removal is what says "this book follows the global again".
+        assert!(
+            published
+                .iter()
+                .any(|body| body.contains("show_learning_markers")
+                    && body.contains(r#""value":null"#)),
+            "removing a per-book marker override must publish a delete, got {published:?}"
+        );
+
+        // A syncable row carries the logical timestamp and the writing device;
+        // a local-only row keeps the (0, "") sentinel so it always loses LWW.
+        let stamp = |table: &str, clause: &str| -> (i64, String) {
+            conn.query_row(
+                &format!("SELECT updated_at, updated_by_device FROM {table} WHERE {clause}"),
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap()
+        };
+        let (marker_ts, marker_device) = stamp("settings", "key = 'show_mastered_markers'");
+        assert!(marker_ts > 0);
+        assert_eq!(marker_device, "dev-A");
+        assert_eq!(
+            stamp("settings", "key = 'reader_theme'"),
+            (0, String::new())
+        );
+        assert_eq!(
+            stamp("book_settings", "book_id = 'book1' AND key = 'font_size'"),
+            (0, String::new())
+        );
+
+        // The delete leaves a tombstone a peer can act on.
+        let tombstone: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM _tombstones
+                 WHERE entity = 'book_setting' AND id = 'book1:show_learning_markers'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tombstone, 1);
     }
 
     #[test]

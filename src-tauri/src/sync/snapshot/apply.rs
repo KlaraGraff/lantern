@@ -1558,9 +1558,13 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
 
     // settings / book_settings -- the whitelisted keys only. Everything else in
     // these tables is a per-screen preference that stays on this device.
-    let mut stmt = conn.prepare(
-        "SELECT key, value, updated_at, updated_by_device FROM settings WHERE key = 'font_family'",
-    )?;
+    //
+    // The filter is `is_syncable_setting`, not a key list spelled out in SQL: a
+    // second copy of the whitelist here would silently disagree with the writer
+    // and the reader the first time the list grows, and a row missing from the
+    // snapshot is invisible rather than loud.
+    let mut stmt =
+        conn.prepare("SELECT key, value, updated_at, updated_by_device FROM settings")?;
     let rows = stmt.query_map([], |r| {
         Ok(SettingRow {
             book_id: None,
@@ -1572,13 +1576,16 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     })?;
     for row in rows {
         let row = row?;
+        if !crate::sync::events::is_syncable_setting(false, &row.key) {
+            continue;
+        }
         state.settings.insert(row.key.clone(), row);
     }
     drop(stmt);
 
     let mut stmt = conn.prepare(
         "SELECT book_id, key, value, updated_at, updated_by_device
-         FROM book_settings WHERE key = 'font'",
+         FROM book_settings",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok(SettingRow {
@@ -1591,6 +1598,9 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     })?;
     for row in rows {
         let row = row?;
+        if !crate::sync::events::is_syncable_setting(true, &row.key) {
+            continue;
+        }
         let key = format!("{}:{}", row.book_id.as_deref().unwrap_or_default(), row.key);
         state.book_settings.insert(key, row);
     }

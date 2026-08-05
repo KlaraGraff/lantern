@@ -37,7 +37,13 @@ pub const COMPACT_LOG_BYTE_THRESHOLD: u64 = 2 * 1024 * 1024; // 2 MB
 pub const COMPACT_LOG_EVENT_THRESHOLD: usize = 5_000;
 pub const COMPACT_AGE_THRESHOLD_MS: i64 = 30 * 24 * 60 * 60 * 1_000; // 30 days
 
-pub const SNAPSHOT_SCHEMA_VERSION: u32 = 7;
+/// Bumped to 8 to match the `v < 8` guard in `Snapshot::apply_peer`, which
+/// rejects a snapshot carrying `custom_fonts`, `settings`, or `book_settings`.
+/// The guard shipped with those tables but this constant stayed at 7, so every
+/// snapshot this build wrote containing any of them was rejected by every peer
+/// — including a later build of itself. Nothing had noticed because those rows
+/// also travel as events, on the separate `EVENT_SCHEMA_VERSION` counter.
+pub const SNAPSHOT_SCHEMA_VERSION: u32 = 8;
 pub const MIN_SUPPORTED_SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 pub const MAX_SNAPSHOT_BYTES: u64 = 64 * 1024 * 1024;
 

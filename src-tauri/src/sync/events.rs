@@ -39,15 +39,36 @@ pub fn is_supported_event_schema_version(version: u32) -> bool {
 /// library-shaped rather than screen-shaped, and without it a synced font file
 /// arrives on the second device with nothing selecting it.
 ///
+/// Marker visibility is the second exception, for the same reason read the
+/// other way round. "Never mark words I have already mastered" is a statement
+/// about how someone wants to study, not about one Mac, so it follows the user.
+///
+/// Both layers publish. A global marker value that crossed while the per-book
+/// override stayed home would be worse than syncing nothing: the second device
+/// would draw markers on exactly the book where the user turned them off.
+///
 /// So the gate is a key whitelist, not a table. Both the writer (which decides
-/// whether to emit at all) and the reader (`apply_setting_set`) consult it.
+/// whether to emit at all) and the reader (`apply_setting_set`) consult it, as
+/// does `dump_state` when it selects the rows a snapshot carries.
 pub fn is_syncable_setting(per_book: bool, key: &str) -> bool {
+    if MARKER_VISIBILITY_KEYS.contains(&key) {
+        return true;
+    }
     if per_book {
         key == "font"
     } else {
         key == "font_family"
     }
 }
+
+/// The four marker toggles, spelled the same in `settings` and `book_settings`
+/// — global and per-book live in different tables, so one name serves both.
+const MARKER_VISIBILITY_KEYS: &[&str] = &[
+    "show_lookup_markers",
+    "show_new_vocab_markers",
+    "show_learning_markers",
+    "show_mastered_markers",
+];
 
 /// Canonical form shared by commands, event validation, and stable marker IDs.
 pub fn normalize_learning_term(value: &str) -> String {

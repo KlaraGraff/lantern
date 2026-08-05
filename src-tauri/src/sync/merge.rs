@@ -1656,8 +1656,12 @@ fn apply_setting_set(tx: &Transaction, event: &Event, payload: &SettingPayload) 
                 params![book_id, payload.key, event.ts],
             )?;
         }
-        // There is currently no global-setting delete command. Accepting a
-        // future event as a no-op keeps replay forward-compatible.
+        // A global-setting delete cannot be applied: unlike `book_settings`,
+        // `settings` has no tombstone entity, so nothing would stop the next
+        // peer snapshot — which lists the rows that exist, not the ones that
+        // went away — from reinstating the row. `undo_promote_book_settings`
+        // does delete such a row locally and deliberately emits nothing.
+        // Accepting the payload as a no-op keeps replay forward-compatible.
         (None, None) => {}
     }
     Ok(())
@@ -3895,6 +3899,104 @@ mod tests {
             setting_value(&conn, "font_family").as_deref(),
             Some("system")
         );
+    }
+
+    /// Marker visibility follows the user, so a peer's choice has to land in
+    /// this device's `settings` table — and lose to a later local one, since
+    /// the four toggles are ordinary LWW rows with no special ordering.
+    #[test]
+    fn marker_visibility_crosses_globally_and_obeys_lww() {
+        let mut conn = open_db();
+        apply_all(
+            &mut conn,
+            &[ev(
+                2_000,
+                "dev-a",
+                setting_event(None, "show_mastered_markers", "false"),
+            )],
+        );
+        assert_eq!(
+            setting_value(&conn, "show_mastered_markers").as_deref(),
+            Some("false"),
+            "a peer's global marker choice must be applied, not skipped"
+        );
+
+        apply_all(
+            &mut conn,
+            &[ev(
+                1_000,
+                "dev-b",
+                setting_event(None, "show_mastered_markers", "true"),
+            )],
+        );
+        assert_eq!(
+            setting_value(&conn, "show_mastered_markers").as_deref(),
+            Some("false"),
+            "an older write must not win"
+        );
+
+        apply_all(
+            &mut conn,
+            &[ev(
+                3_000,
+                "dev-b",
+                setting_event(None, "show_mastered_markers", "true"),
+            )],
+        );
+        assert_eq!(
+            setting_value(&conn, "show_mastered_markers").as_deref(),
+            Some("true")
+        );
+    }
+
+    /// The per-book layer has to travel with the global one. Both halves are
+    /// checked here: the override arriving, and its removal arriving — the
+    /// latter is the only way "this book follows the global again" can reach
+    /// another device, and unlike the global layer it *is* expressible.
+    #[test]
+    fn per_book_marker_override_and_its_removal_both_cross() {
+        let mut conn = open_db();
+        apply_all(
+            &mut conn,
+            &[ev(
+                1_000,
+                "dev-a",
+                setting_event(Some("b1"), "show_learning_markers", "false"),
+            )],
+        );
+        let override_value = |conn: &Connection| {
+            conn.query_row(
+                "SELECT value FROM book_settings
+                 WHERE book_id = 'b1' AND key = 'show_learning_markers'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .unwrap()
+        };
+        assert_eq!(override_value(&conn).as_deref(), Some("false"));
+
+        apply_all(
+            &mut conn,
+            &[ev(
+                2_000,
+                "dev-b",
+                setting_delete_event("b1", "show_learning_markers"),
+            )],
+        );
+        assert_eq!(override_value(&conn), None);
+
+        // The tombstone has to hold, or a peer snapshot still carrying the
+        // old row would silently re-hide the markers.
+        apply_all(
+            &mut conn,
+            &[ev(
+                1_500,
+                "dev-a",
+                setting_event(Some("b1"), "show_learning_markers", "false"),
+            )],
+        );
+        assert_eq!(override_value(&conn), None);
     }
 
     #[test]
