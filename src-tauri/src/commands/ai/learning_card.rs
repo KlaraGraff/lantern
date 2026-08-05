@@ -539,6 +539,8 @@ pub async fn ai_learning_card(
         crate::ai::router::AiRetryMode::Automatic,
         Some(&request_id),
         Some(&stream_event_name),
+        "user",
+        "learning_card",
     )
     .await?;
     let mut response = parse_learning_card_response(&completion.text, &kind, &text, &request)?;

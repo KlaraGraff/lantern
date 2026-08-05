@@ -1,7 +1,7 @@
 use futures::StreamExt;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use tauri::{AppHandle, Emitter, Runtime};
 
@@ -38,6 +38,13 @@ fn request_body(
         "messages": api_messages,
         "temperature": temperature,
         "stream": true,
+        // Ask for a final usage-bearing chunk. OpenAI and DeepSeek honor it;
+        // Ollama ignores it (ollama/ollama#4448). A stricter compatible
+        // server may instead reject the whole request for naming a parameter
+        // it does not know — `stream_chat` retries without this key when a
+        // 400 body names it, because losing usage stats is acceptable and
+        // losing the reader's AI entirely is not.
+        "stream_options": { "include_usage": true },
     });
     if let Some(keep_alive) = keep_alive {
         body["keep_alive"] = serde_json::json!(keep_alive);
@@ -64,32 +71,70 @@ pub async fn stream_chat<R: Runtime>(
     max_tokens_override: Option<u32>,
     effort: Option<&str>,
     emitted: Arc<AtomicBool>,
+    usage: Arc<Mutex<Option<serde_json::Value>>>,
 ) -> AppResult<()> {
     let client = crate::ai::http_client();
     let url = crate::ai::compat_endpoint(base_url, "chat/completions");
 
-    let body = request_body(
-        model,
-        temperature,
-        messages,
-        keep_alive,
-        max_tokens_override,
-        effort,
-    );
+    // "OpenAI-compatible" covers everything from OpenAI itself to a local
+    // llama.cpp build, and they disagree about unknown request keys: most
+    // ignore them, some reject the request outright. `stream_options` is the
+    // only key here that a server might not know, and it exists purely to get
+    // token counts back — so when a 400 body actually names it, one extra
+    // round trip without the key beats leaving the reader with an AI service
+    // that fails on every call.
+    //
+    // The check is on the body naming the key, not merely on the status:
+    // every other 400 is a request the provider refused on its shape (context
+    // too long, unsupported parameter, blocked content), and re-sending those
+    // bytes is a second billed call that gets refused identically. That is
+    // also why the router treats a 400 as the end of the route rather than a
+    // reason to tour the remaining credentials.
+    let mut ask_for_usage = true;
+    let response = loop {
+        let mut body = request_body(
+            model,
+            temperature,
+            messages,
+            keep_alive,
+            max_tokens_override,
+            effort,
+        );
+        if !ask_for_usage {
+            if let Some(object) = body.as_object_mut() {
+                object.remove("stream_options");
+            }
+        }
 
-    let mut request = client.post(&url).json(&body);
-    if !api_key.is_empty() {
-        request = request.bearer_auth(api_key);
-    }
+        let mut request = client.post(&url).json(&body);
+        if !api_key.is_empty() {
+            request = request.bearer_auth(api_key);
+        }
 
-    let response = tokio::time::timeout(crate::ai::FIRST_BYTE_TIMEOUT, request.send())
-        .await
-        .map_err(|_| AppError::Ai("AI_FIRST_BYTE_TIMEOUT".to_string()))?
-        .map_err(|e| AppError::Ai(e.to_string()))?;
+        let response = tokio::time::timeout(crate::ai::FIRST_BYTE_TIMEOUT, request.send())
+            .await
+            .map_err(|_| AppError::Ai("AI_FIRST_BYTE_TIMEOUT".to_string()))?
+            .map_err(|e| AppError::Ai(e.to_string()))?;
 
-    if !response.status().is_success() {
-        return Err(crate::ai::http_status_error("OpenAI-compatible", response).await);
-    }
+        if response.status().is_success() {
+            break response;
+        }
+
+        let (status, retry_after, error_body) = crate::ai::read_error_response(response).await;
+        if ask_for_usage
+            && status == reqwest::StatusCode::BAD_REQUEST
+            && String::from_utf8_lossy(&error_body).contains("stream_options")
+        {
+            ask_for_usage = false;
+            continue;
+        }
+        return Err(crate::ai::http_status_error_from_body(
+            "OpenAI-compatible",
+            status,
+            retry_after,
+            &error_body,
+        ));
+    };
 
     let mut stream = response.bytes_stream();
     let mut decoder = crate::ai::sse::SseDecoder::new();
@@ -100,14 +145,14 @@ pub async fn stream_chat<R: Runtime>(
     {
         let chunk = chunk.map_err(|e| AppError::Ai(e.to_string()))?;
         for data in decoder.push(&chunk)? {
-            if process_data(app, event_name, &data, &emitted)? {
+            if process_data(app, event_name, &data, &emitted, &usage)? {
                 return Ok(());
             }
         }
     }
 
     for data in decoder.finish()? {
-        if process_data(app, event_name, &data, &emitted)? {
+        if process_data(app, event_name, &data, &emitted, &usage)? {
             return Ok(());
         }
     }
@@ -140,6 +185,7 @@ fn process_data<R: Runtime>(
     event_name: &str,
     data: &str,
     emitted: &AtomicBool,
+    usage: &Mutex<Option<serde_json::Value>>,
 ) -> AppResult<bool> {
     if data == "[DONE]" {
         let _ = app.emit(
@@ -165,6 +211,12 @@ fn process_data<R: Runtime>(
             "OpenAI-compatible",
             &parsed["error"],
         ));
+    }
+    // The usage-bearing final chunk (from `stream_options.include_usage`)
+    // carries `usage` at the top level, typically alongside an empty
+    // `choices` array — indexing that below is null-safe either way.
+    if let Some(value) = parsed.get("usage").filter(|value| !value.is_null()) {
+        crate::ai::usage::merge_into(usage, value.clone());
     }
     let (reasoning, content) = visible_output(&parsed["choices"][0]["delta"]);
     if let Some(reasoning) = reasoning {

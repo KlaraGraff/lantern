@@ -95,6 +95,8 @@ pub async fn ai_explain(
         crate::ai::router::AiRequestPurpose::Utility,
         crate::ai::router::retry_mode(retry),
         request_id,
+        "user",
+        "explain",
     );
 
     Ok(())

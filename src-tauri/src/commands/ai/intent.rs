@@ -84,6 +84,8 @@ pub(super) async fn classify_ambiguous_intent(
             crate::ai::router::AiRetryMode::Automatic,
             None,
             None,
+            "user",
+            "intent",
         ),
     )
     .await;

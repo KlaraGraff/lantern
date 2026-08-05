@@ -289,6 +289,8 @@ pub async fn ai_xray(
         crate::ai::router::AiRetryMode::Automatic,
         Some(&request_id),
         None,
+        "user",
+        "xray",
     )
     .await?;
     let mut response: XrayCardResponse =

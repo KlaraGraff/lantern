@@ -58,6 +58,8 @@ pub async fn ai_word_forms(
         crate::ai::router::AiRetryMode::Automatic,
         Some(&request_id),
         None,
+        "user",
+        "word_forms",
     )
     .await?;
     let parsed: BTreeMap<String, Vec<String>> =

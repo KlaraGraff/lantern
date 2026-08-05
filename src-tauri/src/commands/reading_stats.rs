@@ -773,6 +773,8 @@ pub async fn generate_reading_review_inner(
         crate::ai::router::retry_mode(retry),
         request_id.as_deref(),
         None,
+        "user",
+        "reading_review",
     )
     .await
     .map_err(|error| AppError::Ai(reading_review_error_code(&error).to_string()))?;

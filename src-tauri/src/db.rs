@@ -92,6 +92,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
         35,
         include_str!("../migrations/035_retire_highlight_notes.sql"),
     ),
+    (36, include_str!("../migrations/036_ai_usage.sql")),
 ];
 
 fn register_sqlite_vec() {

@@ -175,6 +175,8 @@ async fn complete_summary(
             messages,
             None,
             Some(request_id),
+            "user",
+            "book_summary",
         )
         .await?
     } else {
@@ -188,6 +190,8 @@ async fn complete_summary(
             crate::ai::router::AiRetryMode::Automatic,
             Some(request_id),
             None,
+            "user",
+            "book_summary",
         )
         .await?
     };

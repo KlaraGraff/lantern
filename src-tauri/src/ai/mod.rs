@@ -5,6 +5,7 @@ pub mod openai_compat;
 pub mod openai_responses;
 pub mod router;
 mod sse;
+pub mod usage;
 
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -78,8 +79,22 @@ fn retry_after_seconds(value: &str) -> Option<i64> {
 /// provider response bodies or credentials to the WebView.
 pub(crate) async fn http_status_error(
     provider: &str,
-    mut response: reqwest::Response,
+    response: reqwest::Response,
 ) -> crate::error::AppError {
+    let (status, retry_after, body) = read_error_response(response).await;
+    http_status_error_from_body(provider, status, retry_after, &body)
+}
+
+/// Drain a failed response into the parts [`http_status_error_from_body`]
+/// needs, bounded by `MAX_PROVIDER_ERROR_BYTES`.
+///
+/// Split out for the one caller that has to read the provider's own error
+/// text before deciding what the failure means — `openai_compat`, working out
+/// whether a 400 is blaming the `stream_options` key it sent — and which then
+/// still has to be able to produce the identical error it would have.
+pub(crate) async fn read_error_response(
+    mut response: reqwest::Response,
+) -> (reqwest::StatusCode, Option<i64>, Vec<u8>) {
     let status = response.status();
     let retry_after = response
         .headers()
@@ -96,7 +111,19 @@ pub(crate) async fn http_status_error(
             Ok(None) | Err(_) => break,
         }
     }
-    let (error_type, error_code) = serde_json::from_slice::<serde_json::Value>(&body)
+    (status, retry_after, body)
+}
+
+/// The body-consuming half of [`http_status_error`]. Emits only the
+/// provider's `type`/`code` — never its free-text message, which can quote
+/// the prompt back.
+pub(crate) fn http_status_error_from_body(
+    provider: &str,
+    status: reqwest::StatusCode,
+    retry_after: Option<i64>,
+    body: &[u8],
+) -> crate::error::AppError {
+    let (error_type, error_code) = serde_json::from_slice::<serde_json::Value>(body)
         .ok()
         .map(|value| {
             let error = value.get("error").unwrap_or(&value);

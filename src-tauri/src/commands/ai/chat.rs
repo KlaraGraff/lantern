@@ -1160,6 +1160,8 @@ pub async fn ai_chat(
             crate::ai::router::AiRequestPurpose::Chat,
             crate::ai::router::retry_mode(retry),
             request_id,
+            "user",
+            "chat",
         );
     }
 

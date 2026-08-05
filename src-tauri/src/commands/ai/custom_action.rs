@@ -53,6 +53,8 @@ pub async fn ai_optimize_prompt(
         crate::ai::router::AiRetryMode::Automatic,
         Some(&request_id),
         None,
+        "user",
+        "optimize_prompt",
     )
     .await?;
     let optimized = strip_single_json_fence(&completion.text).trim();
@@ -149,6 +151,8 @@ pub async fn ai_custom_action(
         crate::ai::router::AiRequestPurpose::Chat,
         crate::ai::router::retry_mode(retry),
         request_id,
+        "user",
+        "custom_action",
     );
     Ok(())
 }

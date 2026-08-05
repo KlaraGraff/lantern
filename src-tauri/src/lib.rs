@@ -863,6 +863,7 @@ pub fn run() {
             commands::ai::ai_explain,
             commands::ai::ai_generate_title,
             commands::ai::ai_cancel,
+            commands::ai::ai_usage_summary,
             // OAuth
             commands::oauth::openai_oauth_login,
             commands::oauth::openai_oauth_status,

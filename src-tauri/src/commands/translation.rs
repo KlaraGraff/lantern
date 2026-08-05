@@ -134,6 +134,8 @@ pub async fn ai_translate_passage(
             crate::ai::router::AiRequestPurpose::Utility,
             crate::ai::router::retry_mode(retry),
             Some(&request_id),
+            "user",
+            "translate",
         )
         .await
         {

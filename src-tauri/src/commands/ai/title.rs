@@ -64,6 +64,8 @@ pub async fn ai_generate_title(
         crate::ai::router::AiRequestPurpose::Utility,
         crate::ai::router::AiRetryMode::Automatic,
         request_id,
+        "user",
+        "title",
     );
 
     Ok(())

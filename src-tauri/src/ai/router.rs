@@ -1193,6 +1193,7 @@ async fn wait_cancelled(cancel: &mut watch::Receiver<bool>) {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 async fn stream_once<R: Runtime>(
     app: &AppHandle<R>,
     profile: &AiProfile,
@@ -1203,6 +1204,7 @@ async fn stream_once<R: Runtime>(
     max_tokens: Option<u32>,
     effort: Option<&str>,
     emitted: Arc<AtomicBool>,
+    usage: Arc<Mutex<Option<serde_json::Value>>>,
     cancel: &mut watch::Receiver<bool>,
 ) -> AppResult<()> {
     if *cancel.borrow() {
@@ -1224,6 +1226,7 @@ async fn stream_once<R: Runtime>(
                 max_tokens,
                 effort,
                 emitted,
+                usage,
             )),
             _ if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" => {
                 Box::pin(crate::ai::openai_responses::stream_chat(
@@ -1236,6 +1239,7 @@ async fn stream_once<R: Runtime>(
                     event_name,
                     effort,
                     emitted,
+                    usage,
                 ))
             }
             _ => Box::pin(crate::ai::openai_compat::stream_chat(
@@ -1252,6 +1256,7 @@ async fn stream_once<R: Runtime>(
                 max_tokens,
                 effort,
                 emitted,
+                usage,
             )),
         };
     tokio::select! {
@@ -1278,6 +1283,7 @@ async fn stream_once_with_effort_fallback<R: Runtime>(
     effort: Option<&str>,
     persist_clear: bool,
     emitted: Arc<AtomicBool>,
+    usage: Arc<Mutex<Option<serde_json::Value>>>,
     cancel: &mut watch::Receiver<bool>,
 ) -> AppResult<()> {
     let effort = effort.filter(|effort| endpoint_may_accept(db, profile, effort));
@@ -1291,6 +1297,7 @@ async fn stream_once_with_effort_fallback<R: Runtime>(
         max_tokens,
         effort,
         Arc::clone(&emitted),
+        Arc::clone(&usage),
         cancel,
     )
     .await;
@@ -1315,6 +1322,7 @@ async fn stream_once_with_effort_fallback<R: Runtime>(
         max_tokens,
         None,
         emitted,
+        usage,
         cancel,
     )
     .await
@@ -1560,6 +1568,8 @@ pub async fn stream_with_failover<R: Runtime>(
     purpose: AiRequestPurpose,
     retry: AiRetryMode,
     request_id: Option<&str>,
+    origin: &str,
+    feature: &str,
 ) -> AppResult<()> {
     let mut cancel = request_id
         .and_then(|id| {
@@ -1582,6 +1592,8 @@ pub async fn stream_with_failover<R: Runtime>(
         max_tokens,
         purpose,
         retry,
+        origin,
+        feature,
         &mut cancel,
     )
     .await;
@@ -1606,6 +1618,8 @@ pub async fn complete_with_failover<R: Runtime>(
     retry: AiRetryMode,
     request_id: Option<&str>,
     forward_event_name: Option<&str>,
+    origin: &str,
+    feature: &str,
 ) -> AppResult<AiCompletion> {
     let event_name = format!("ai-internal-completion-{}", uuid::Uuid::new_v4());
     let output = Arc::new(Mutex::new(String::new()));
@@ -1655,6 +1669,8 @@ pub async fn complete_with_failover<R: Runtime>(
         max_tokens,
         purpose,
         retry,
+        origin,
+        feature,
         &mut cancel,
     )
     .await;
@@ -1691,6 +1707,8 @@ async fn stream_with_profile_inner<R: Runtime>(
     messages: &[ChatMessage],
     event_name: &str,
     max_tokens: Option<u32>,
+    origin: &str,
+    feature: &str,
     cancel: &mut watch::Receiver<bool>,
 ) -> AppResult<AiProfileView> {
     let profile = profile_by_id(db, profile_id)?;
@@ -1704,6 +1722,7 @@ async fn stream_with_profile_inner<R: Runtime>(
     if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" {
         let (token, account_id) = crate::ai::oauth::get_valid_token(secrets).await?;
         let started = Instant::now();
+        let usage = Arc::new(Mutex::new(None::<serde_json::Value>));
         let result = stream_once_with_effort_fallback(
             app,
             db,
@@ -1716,15 +1735,27 @@ async fn stream_with_profile_inner<R: Runtime>(
             effort,
             true,
             Arc::new(AtomicBool::new(false)),
+            Arc::clone(&usage),
             cancel,
         )
         .await;
         record_profile_attempt(db, &profile, &result, started.elapsed().as_millis() as u64);
+        if result.is_ok() {
+            crate::ai::usage::record(
+                db,
+                usage.lock().ok().and_then(|mut guard| guard.take()),
+                &profile.view.provider,
+                &profile.view.model,
+                origin,
+                feature,
+            );
+        }
         result?;
         return Ok(profile.view);
     }
     if profile.view.provider == "ollama" {
         let started = Instant::now();
+        let usage = Arc::new(Mutex::new(None::<serde_json::Value>));
         let result = stream_once_with_effort_fallback(
             app,
             db,
@@ -1737,10 +1768,21 @@ async fn stream_with_profile_inner<R: Runtime>(
             effort,
             true,
             Arc::new(AtomicBool::new(false)),
+            Arc::clone(&usage),
             cancel,
         )
         .await;
         record_profile_attempt(db, &profile, &result, started.elapsed().as_millis() as u64);
+        if result.is_ok() {
+            crate::ai::usage::record(
+                db,
+                usage.lock().ok().and_then(|mut guard| guard.take()),
+                &profile.view.provider,
+                &profile.view.model,
+                origin,
+                feature,
+            );
+        }
         result?;
         return Ok(profile.view);
     }
@@ -1755,6 +1797,7 @@ async fn stream_with_profile_inner<R: Runtime>(
             continue;
         };
         let emitted = Arc::new(AtomicBool::new(false));
+        let usage = Arc::new(Mutex::new(None::<serde_json::Value>));
         match stream_once_with_effort_fallback(
             app,
             db,
@@ -1767,6 +1810,7 @@ async fn stream_with_profile_inner<R: Runtime>(
             effort,
             true,
             Arc::clone(&emitted),
+            Arc::clone(&usage),
             cancel,
         )
         .await
@@ -1779,6 +1823,14 @@ async fn stream_with_profile_inner<R: Runtime>(
                     None,
                     None,
                     Some(profile_started.elapsed().as_millis() as u64),
+                );
+                crate::ai::usage::record(
+                    db,
+                    usage.lock().ok().and_then(|mut guard| guard.take()),
+                    &profile.view.provider,
+                    &profile.view.model,
+                    origin,
+                    feature,
                 );
                 return Ok(profile.view);
             }
@@ -1843,6 +1895,7 @@ fn record_profile_attempt(db: &Db, profile: &AiProfile, result: &AppResult<()>, 
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn complete_with_profile<R: Runtime>(
     app: &AppHandle<R>,
     db: &Db,
@@ -1851,6 +1904,8 @@ pub async fn complete_with_profile<R: Runtime>(
     messages: &[ChatMessage],
     max_tokens: Option<u32>,
     request_id: Option<&str>,
+    origin: &str,
+    feature: &str,
 ) -> AppResult<AiCompletion> {
     let event_name = format!("ai-internal-profile-completion-{}", uuid::Uuid::new_v4());
     let output = Arc::new(Mutex::new(String::new()));
@@ -1887,6 +1942,8 @@ pub async fn complete_with_profile<R: Runtime>(
         messages,
         &event_name,
         max_tokens,
+        origin,
+        feature,
         &mut cancel,
     )
     .await;
@@ -1956,6 +2013,8 @@ async fn stream_with_failover_inner<R: Runtime>(
     max_tokens: Option<u32>,
     purpose: AiRequestPurpose,
     retry: AiRetryMode,
+    origin: &str,
+    feature: &str,
     cancel: &mut watch::Receiver<bool>,
 ) -> AppResult<AiProfileView> {
     let enabled_profiles = profiles(db, true)?;
@@ -2047,6 +2106,7 @@ async fn stream_with_failover_inner<R: Runtime>(
                 }
             };
             let emitted = Arc::new(AtomicBool::new(false));
+            let usage = Arc::new(Mutex::new(None::<serde_json::Value>));
             let result = stream_once_with_effort_fallback(
                 app,
                 db,
@@ -2059,6 +2119,7 @@ async fn stream_with_failover_inner<R: Runtime>(
                 effort_for(&profile.view, purpose),
                 true,
                 Arc::clone(&emitted),
+                Arc::clone(&usage),
                 cancel,
             )
             .await;
@@ -2073,6 +2134,14 @@ async fn stream_with_failover_inner<R: Runtime>(
                     }
                     update_profile_health(db, &profile, None, None, Some(latency));
                     emit_route_fallback(app, db, expected.as_ref(), &profile.view);
+                    crate::ai::usage::record(
+                        db,
+                        usage.lock().ok().and_then(|mut guard| guard.take()),
+                        &profile.view.provider,
+                        &profile.view.model,
+                        origin,
+                        feature,
+                    );
                     return Ok(profile.view.clone());
                 }
                 Err(error) => {
@@ -2698,6 +2767,12 @@ async fn timed_stream_once<R: Runtime>(
     // A connection test is the best place to learn which effort levels an
     // endpoint accepts: the user is sitting in settings, so the cleared value
     // and the freshly discovered options land in front of them immediately.
+    //
+    // This probe's usage is deliberately not recorded: it validates a
+    // credential rather than answering a feature request, so there is no
+    // `feature` for it to belong to. The accumulator below is required by
+    // `stream_once_with_effort_fallback`'s signature and otherwise unused.
+    let usage = Arc::new(Mutex::new(None::<serde_json::Value>));
     let mut stream = Box::pin(stream_once_with_effort_fallback(
         app,
         db,
@@ -2710,6 +2785,7 @@ async fn timed_stream_once<R: Runtime>(
         profile.view.reasoning_effort.as_deref(),
         persist_effort_clear,
         Arc::clone(&emitted),
+        usage,
         &mut cancel,
     ));
     let mut ticker = tokio::time::interval(Duration::from_millis(2));
@@ -4616,6 +4692,8 @@ mod tests {
             None,
             AiRequestPurpose::Chat,
             AiRetryMode::Automatic,
+            "user",
+            "test",
             &mut cancel,
         )
         .await
@@ -4753,6 +4831,48 @@ mod tests {
                 assert_eq!(credential.state, "active", "{}", credential.label);
             }
         }
+    }
+
+    /// The one 400 that is worth paying for twice: a server rejecting the
+    /// `stream_options` key we add purely to collect token counts. That one is
+    /// re-sent without the key, on the same credential — the reader gets their
+    /// answer and we simply lose the usage stats. Every other 400 still stops
+    /// the route (see above); the difference is the body naming the key, not
+    /// the status.
+    #[tokio::test]
+    async fn a_400_blaming_stream_options_is_retried_without_it() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let (db, secrets, seen, base_url) = route_test_setup(
+            &directory,
+            vec![
+                (
+                    "400 Bad Request",
+                    r#"{"error":{"message":"Unrecognized request argument supplied: stream_options","type":"invalid_request_error"}}"#.to_string(),
+                ),
+                ("200 OK", sse_answer("answered")),
+            ],
+        )
+        .await;
+        let profile = model_list_test_profile(&db, base_url);
+        add_credential(
+            &db,
+            &secrets,
+            profile.id.clone(),
+            "Only".to_string(),
+            "only-key".to_string(),
+        )
+        .unwrap();
+
+        let app = tauri::test::mock_app();
+        let answered = route(&app, &db, &secrets).await.unwrap();
+
+        // One profile, one credential: the second request cannot be a
+        // failover, so it is the retry.
+        assert_eq!(answered.id, profile.id);
+        assert_eq!(seen.load(Ordering::Relaxed), 2);
+        assert_eq!(profile_by_id(&db, &profile.id).unwrap().view.state, "active");
+        let credentials = list_credentials(&db, Some(&profile.id)).unwrap();
+        assert_eq!(credentials[0].state, "active");
     }
 
     /// A key whose secret is gone is not a key. It is marked and skipped, and
@@ -4928,6 +5048,8 @@ mod tests {
             }],
             "ai-stream-test",
             None,
+            "user",
+            "test",
             &mut cancel,
         )
         .await

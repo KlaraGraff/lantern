@@ -1,7 +1,7 @@
 use futures::StreamExt;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use tauri::{AppHandle, Emitter, Runtime};
 
@@ -58,6 +58,7 @@ pub async fn stream_chat<R: Runtime>(
     event_name: &str,
     effort: Option<&str>,
     emitted: Arc<AtomicBool>,
+    usage: Arc<Mutex<Option<serde_json::Value>>>,
 ) -> AppResult<()> {
     let client = crate::ai::http_client();
     let url = format!("{}/responses", base_url.trim_end_matches('/'));
@@ -89,14 +90,14 @@ pub async fn stream_chat<R: Runtime>(
     {
         let chunk = chunk.map_err(|e| AppError::Ai(e.to_string()))?;
         for data in decoder.push(&chunk)? {
-            if process_data(app, event_name, &data, &emitted)? {
+            if process_data(app, event_name, &data, &emitted, &usage)? {
                 return Ok(());
             }
         }
     }
 
     for data in decoder.finish()? {
-        if process_data(app, event_name, &data, &emitted)? {
+        if process_data(app, event_name, &data, &emitted, &usage)? {
             return Ok(());
         }
     }
@@ -109,6 +110,7 @@ fn process_data<R: Runtime>(
     event_name: &str,
     data: &str,
     emitted: &AtomicBool,
+    usage: &Mutex<Option<serde_json::Value>>,
 ) -> AppResult<bool> {
     let parsed: serde_json::Value = serde_json::from_str(data)
         .map_err(|_| AppError::Ai("AI_STREAM_PROTOCOL_ERROR: invalid JSON event".to_string()))?;
@@ -158,6 +160,12 @@ fn process_data<R: Runtime>(
             ));
         }
         "response.completed" => {
+            // Unlike chat/completions, the Responses API includes usage on
+            // the completion event automatically — no `stream_options` opt-in
+            // needed.
+            if let Some(value) = parsed["response"].get("usage") {
+                crate::ai::usage::merge_into(usage, value.clone());
+            }
             let _ = app.emit(
                 event_name,
                 AiStreamChunk {

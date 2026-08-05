@@ -66,6 +66,8 @@ pub(super) fn spawn_routed_stream(
     purpose: crate::ai::router::AiRequestPurpose,
     retry: crate::ai::router::AiRetryMode,
     request_id: String,
+    origin: &'static str,
+    feature: &'static str,
 ) {
     // Register before spawning so an immediate Stop click can never race the
     // task's first poll of the cancellation registry.
@@ -81,6 +83,8 @@ pub(super) fn spawn_routed_stream(
             purpose,
             retry,
             Some(&request_id),
+            origin,
+            feature,
         )
         .await
         {

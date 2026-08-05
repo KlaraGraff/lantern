@@ -1,7 +1,7 @@
 use futures::StreamExt;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use tauri::{AppHandle, Emitter, Runtime};
 
@@ -88,6 +88,7 @@ pub async fn stream_chat<R: Runtime>(
     max_tokens_override: Option<u32>,
     effort: Option<&str>,
     emitted: Arc<AtomicBool>,
+    usage: Arc<Mutex<Option<serde_json::Value>>>,
 ) -> AppResult<()> {
     let client = crate::ai::http_client();
     let url = crate::ai::compat_endpoint(base_url, "messages");
@@ -123,14 +124,14 @@ pub async fn stream_chat<R: Runtime>(
     {
         let chunk = chunk.map_err(|e| AppError::Ai(e.to_string()))?;
         for data in decoder.push(&chunk)? {
-            if process_data(app, event_name, &data, &emitted)? {
+            if process_data(app, event_name, &data, &emitted, &usage)? {
                 return Ok(());
             }
         }
     }
 
     for data in decoder.finish()? {
-        if process_data(app, event_name, &data, &emitted)? {
+        if process_data(app, event_name, &data, &emitted, &usage)? {
             return Ok(());
         }
     }
@@ -143,10 +144,25 @@ fn process_data<R: Runtime>(
     event_name: &str,
     data: &str,
     emitted: &AtomicBool,
+    usage: &Mutex<Option<serde_json::Value>>,
 ) -> AppResult<bool> {
     let parsed: serde_json::Value = serde_json::from_str(data)
         .map_err(|_| AppError::Ai("AI_STREAM_PROTOCOL_ERROR: invalid JSON event".to_string()))?;
     match parsed["type"].as_str().unwrap_or("") {
+        // Anthropic splits usage across two events: `message_start` carries
+        // input tokens (and any cache accounting), `message_delta` carries
+        // the final output token count once generation stops. Both get
+        // merged into the same accumulator — see `usage::merge_into`.
+        "message_start" => {
+            if let Some(value) = parsed["message"].get("usage") {
+                crate::ai::usage::merge_into(usage, value.clone());
+            }
+        }
+        "message_delta" => {
+            if let Some(value) = parsed.get("usage") {
+                crate::ai::usage::merge_into(usage, value.clone());
+            }
+        }
         "content_block_delta" => {
             if let Some(thinking) = parsed["delta"]["thinking"]
                 .as_str()

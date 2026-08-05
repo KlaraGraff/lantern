@@ -314,6 +314,8 @@ async fn run_vocabulary_scan(
             crate::ai::router::AiRetryMode::Automatic,
             Some(request_id),
             None,
+            "user",
+            "vocabulary_scan",
         )
         .await?;
         if !vocabulary_json_is_well_formed(&completion.text) {
@@ -497,6 +499,8 @@ pub async fn ai_vocab_gloss(
         crate::ai::router::AiRetryMode::Automatic,
         Some(&request_id),
         None,
+        "user",
+        "vocab_gloss",
     )
     .await?;
     Ok(sanitize_gloss(&completion.text))
