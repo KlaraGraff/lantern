@@ -83,7 +83,7 @@ Lantern 早期是 fork 自 [yicheng47/quill](https://github.com/yicheng47/quill)
 直接改会让老用户的主题和语言设置丢失（回落到 system / 默认语言）。
 **做法**：读取时先查新键，查不到再查旧键并写回新键，旧键删掉。写一次就够，不需要长期保留。
 
-**b) 导出文件名 `quill-notes.csv`** — [NotesContent.tsx:135](../../../src/components/NotesContent.tsx)
+**b) 导出文件名 `quill-notes.csv`** — 当时在 `NotesContent.tsx:135`（该文件已在「笔记页改标注页」中由 [AnnotationsContent.tsx](../../../src/components/AnnotationsContent.tsx) 取代）
 
 这个其实**用户看得见**，属于改名漏网，直接改成 `lantern-notes.csv`，无迁移成本。
 
