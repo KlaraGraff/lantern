@@ -125,3 +125,34 @@ npx tsc --noEmit && npm run lint && npm run test:unit
 提交一个主题才定位得到是哪一项引起的。
 
 E 组放最后，因为前面每一批都可能改变孤儿词条的集合。
+
+---
+
+## 五、执行记录（2026-08-06 完成）
+
+分支 `chore/drop-compat-layers`，六个提交，全部通过 `cargo test --lib` / `clippy
+--all-targets`（零告警）/ `tsc` / `lint` / `test:unit`：
+
+| 提交 | 批次 |
+|---|---|
+| `97966bf` | A 组八项 + B 组两项 |
+| `8a4b1ab` | C 组（`explanation_mode` 旧值、`lookup_translation_language` 旧键） |
+| `b81cfea` | D1 Quill 认领 + D2 标记 id 修复 |
+| `2710ce4` | D4 `migrate_legacy_config` → `ensure_default_ai_profile` |
+| `0304943` | D3 纯文本书 V1 定位 |
+| `bb8b3b8` | E 组 i18n 孤儿词条 120 条 |
+
+三处与清单不同的判断，记在这里以免以后有人照着清单去「补删」：
+
+1. **`library_exists_in` 保留，只收窄。** 它在 `lib.rs` 里还有第二个调用方——同步的
+   自愈检查，与旧数据无关。删掉的只是函数体里认旧文件名的那一半。
+2. **D4 比清单删得多。** 清单说只删 `has_legacy_ai_config` 与 `legacy_key_exists`
+   的一个分支，但保留下来的那半段本身仍在读七个旧扁平键（读到的永远是 `None`）。
+   连同那段一起清掉，函数压成它实际在做的事并改名。新装引导有测试守着。
+3. **删除暴露出来的空壳一并清掉**：`configured_explanation_mode`（C 组）、
+   `resolveTextLocation`（D3）——旧分支一走，它们各自退化成另一个函数的同义词。
+
+E 组的孤儿名单是重算的，正文里那份 97 条已作废。重算口径：字面扫描出 400 个零引用
+词条，其中 280 个能被动态拼接的调用点产生（TS 联合类型、`as const` 数组、Rust 侧的
+错误码字符串、i18next 复数后缀），全部保留；真正删掉 120 个。`tests/i18n-keys.test.ts`
+本来就在守双语键集一致与字面引用可解析，所以这批的风险只在动态拼接那一侧。
