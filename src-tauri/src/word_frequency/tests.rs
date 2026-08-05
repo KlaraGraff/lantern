@@ -104,6 +104,42 @@ fn word_forms_pointing_nowhere_still_yields_unknown() {
 }
 
 #[test]
+fn one_form_index_serves_a_whole_batch_of_words() {
+    let (_dir, db) = test_db();
+    // Two unrelated lexemes, one recorded in each direction, so a single
+    // index has to answer both.
+    insert_word_forms(&db, "run", &["running", "ran"]);
+    insert_word_forms(&db, "walking", &["walk", "walked"]);
+
+    let forms = FormIndex::new(&db);
+    let run = lookup(&db, "run").unwrap().unwrap();
+    let walk = lookup(&db, "walk").unwrap().unwrap();
+    assert_eq!(lookup_with(&forms, "running").unwrap(), Some(run));
+    assert_eq!(lookup_with(&forms, "walking").unwrap(), Some(walk));
+    assert_eq!(lookup_with(&forms, "the").unwrap().unwrap().band, 1);
+    assert!(lookup_with(&forms, "zzznonexistentword").unwrap().is_none());
+}
+
+/// The scan is deferred until a word actually misses the frequency table.
+/// Nothing observable distinguishes "did not scan" from "scanned" — except
+/// making the scan impossible and watching the hit succeed anyway.
+#[test]
+fn a_word_the_table_already_knows_never_reads_word_forms() {
+    let (_dir, db) = test_db();
+    let forms = FormIndex::new(&db);
+    db.conn
+        .lock()
+        .unwrap()
+        .execute("DROP TABLE word_forms", [])
+        .unwrap();
+
+    assert_eq!(lookup_with(&forms, "the").unwrap().unwrap().band, 1);
+    // And the deferred scan is genuinely what was skipped: a miss still
+    // reaches for the table that is now gone.
+    assert!(lookup_with(&forms, "zzznonexistentword").is_err());
+}
+
+#[test]
 fn band_boundaries_match_documented_thresholds() {
     assert_eq!(band_for_rank(1), 1);
     assert_eq!(band_for_rank(BAND_1_MAX_RANK), 1);

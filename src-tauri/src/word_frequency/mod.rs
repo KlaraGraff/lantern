@@ -83,10 +83,9 @@
 
 #![allow(dead_code)]
 
+use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::OnceLock;
-
-use rusqlite::{params, OptionalExtension};
 
 use crate::db::Db;
 use crate::error::AppResult;
@@ -176,6 +175,14 @@ fn table() -> &'static HashMap<String, FrequencyEntry> {
 /// as "rare" would silently mislabel every gap in the data as the rarest
 /// possible word.
 pub fn lookup(db: &Db, word: &str) -> AppResult<Option<FrequencyEntry>> {
+    lookup_with(&FormIndex::new(db), word)
+}
+
+/// [`lookup`], reusing one [`FormIndex`] across a batch of words.
+///
+/// Prefer this whenever more than one word is scored against the same
+/// database state — see [`FormIndex`] for why the difference is not small.
+pub fn lookup_with(forms: &FormIndex<'_>, word: &str) -> AppResult<Option<FrequencyEntry>> {
     let normalized = normalize_learning_term(word);
     if normalized.is_empty() {
         return Ok(None);
@@ -183,57 +190,85 @@ pub fn lookup(db: &Db, word: &str) -> AppResult<Option<FrequencyEntry>> {
     if let Some(entry) = table().get(&normalized) {
         return Ok(Some(*entry));
     }
-    for candidate in related_forms(db, &normalized)? {
-        if let Some(entry) = table().get(&candidate) {
+    for candidate in forms.related(&normalized)? {
+        if let Some(entry) = table().get(candidate) {
             return Ok(Some(*entry));
         }
     }
     Ok(None)
 }
 
-/// Other spellings of `normalized`'s lexeme recorded in `word_forms`,
-/// gathered from both directions of the relationship:
+/// Every spelling `word_forms` links to every other, both directions, built
+/// from a single scan of the table:
 ///
-/// - `normalized` is itself a row's key ("run" -> ["running", "ran", ...]).
-/// - `normalized` appears in some other row's `forms` list ("running" was
-///   never looked up directly, but "run" was, and its forms list mentions
-///   "running").
+/// - a row's key links to each spelling in its `forms` list ("run" ->
+///   ["running", "ran", ...]);
+/// - and each of those spellings links back ("running" was never looked up
+///   directly, but "run" was, and its forms list mentions "running").
 ///
-/// Mirrors `find_covering_rule` in `commands::word_marks` — same table,
-/// same both-directions reasoning, same reason a full scan is fine (the
-/// table only grows to the size of "words this reader has looked up").
-fn related_forms(db: &Db, normalized: &str) -> AppResult<Vec<String>> {
-    let conn = db.reader();
-    let mut candidates = Vec::new();
+/// The reverse direction has no index and cannot get one: the forms live in
+/// one JSON column per row, so answering it for a single word means reading
+/// and parsing every row. That was fine while the only caller was a one-off
+/// lookup. Mastery scoring asks per word per screen — up to
+/// `MAX_WORDS_PER_SCREEN` of them — which would turn one screen into
+/// hundreds of full scans. Building the whole relationship once turns it
+/// back into one.
+///
+/// Scoped by borrow rather than cached process-wide, deliberately: the map
+/// is only true of the `word_forms` contents at build time, and
+/// `set_word_forms` / `delete_word_forms` can write mid-session. Tying its
+/// lifetime to one batch means there is no invalidation to get wrong.
+///
+/// The scan is deferred until the first word actually misses the frequency
+/// table, so a batch whose words are all in the table never touches the
+/// database at all.
+pub struct FormIndex<'a> {
+    db: &'a Db,
+    related: OnceCell<HashMap<String, Vec<String>>>,
+}
 
-    let direct_forms: Option<String> = conn
-        .query_row(
-            "SELECT forms FROM word_forms WHERE normalized_word = ?1",
-            params![normalized],
-            |row| row.get(0),
-        )
-        .optional()?;
-    if let Some(forms_json) = direct_forms {
-        if let Ok(forms) = serde_json::from_str::<Vec<String>>(&forms_json) {
-            candidates.extend(forms);
+impl<'a> FormIndex<'a> {
+    pub fn new(db: &'a Db) -> Self {
+        Self {
+            db,
+            related: OnceCell::new(),
         }
     }
 
+    /// Other spellings of `normalized`'s lexeme, or an empty slice.
+    ///
+    /// Mirrors `find_covering_rule` in `commands::word_marks` — same table,
+    /// same both-directions reasoning.
+    fn related(&self, normalized: &str) -> AppResult<&[String]> {
+        if self.related.get().is_none() {
+            // `OnceCell::get_or_init` cannot carry the error out, so build
+            // first and set after. A lost race would only mean one wasted
+            // scan, and there is no race here anyway: the cell is not shared.
+            let _ = self.related.set(build_form_index(self.db)?);
+        }
+        let map = self.related.get().expect("just built");
+        Ok(map.get(normalized).map_or(&[][..], Vec::as_slice))
+    }
+}
+
+fn build_form_index(db: &Db) -> AppResult<HashMap<String, Vec<String>>> {
+    let conn = db.reader();
     let mut statement = conn.prepare("SELECT normalized_word, forms FROM word_forms")?;
     let mut rows = statement.query([])?;
+    let mut index: HashMap<String, Vec<String>> = HashMap::new();
     while let Some(row) = rows.next()? {
         let key: String = row.get(0)?;
-        if key == normalized {
-            continue;
-        }
         let forms_json: String = row.get(1)?;
         let forms: Vec<String> = serde_json::from_str(&forms_json).unwrap_or_default();
-        if forms.iter().any(|form| form == normalized) {
-            candidates.push(key);
+        for form in forms {
+            if form == key {
+                continue;
+            }
+            index.entry(key.clone()).or_default().push(form.clone());
+            index.entry(form).or_default().push(key.clone());
         }
     }
-
-    Ok(candidates)
+    Ok(index)
 }
 
 #[cfg(test)]
