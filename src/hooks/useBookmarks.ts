@@ -24,6 +24,14 @@ function notifyHighlightChanged(bookId: string) {
   window.dispatchEvent(new CustomEvent("highlight-changed", { detail: { bookId } }));
 }
 
+// Reading-behavior collection (see src/pages/reader/reading-behavior.ts)
+// listens for this as one of the operations that resets a screen's
+// no-op idle timer — bookmarking is deliberate engagement with the
+// current page, same as annotating or looking a word up.
+function notifyBookmarkChanged(bookId: string) {
+  window.dispatchEvent(new CustomEvent("bookmark-changed", { detail: { bookId } }));
+}
+
 export function useBookmarks(bookId: string) {
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
 
@@ -50,6 +58,7 @@ export function useBookmarks(bookId: string) {
         label: label || null,
       });
       setBookmarks((prev) => [bookmark, ...prev]);
+      notifyBookmarkChanged(bookId);
       return bookmark;
     },
     [bookId]
@@ -58,7 +67,8 @@ export function useBookmarks(bookId: string) {
   const remove = useCallback(async (id: string) => {
     await invoke("remove_bookmark", { id });
     setBookmarks((prev) => prev.filter((b) => b.id !== id));
-  }, []);
+    notifyBookmarkChanged(bookId);
+  }, [bookId]);
 
   return { bookmarks, refresh, add, remove };
 }

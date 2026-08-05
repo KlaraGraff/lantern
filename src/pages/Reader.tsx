@@ -82,6 +82,8 @@ import { usePageTurnInput } from "./reader/usePageTurnInput";
 import { useReaderInteractions } from "./reader/useReaderInteractions";
 import { useSpeech } from "../hooks/useSpeech";
 import { READING_ACTIVITY_EVENT, useReadingSessionTracker } from "../hooks/useReadingSessionTracker";
+import { useReadingBehaviorTracking } from "./reader/useReadingBehaviorTracking";
+import type { FinalizedScreen } from "./reader/reading-behavior";
 import { collectWord } from "../components/vocab/collect";
 import { useReaderOcr } from "./reader/useReaderOcr";
 import {
@@ -337,6 +339,27 @@ export default function Reader() {
   const viewerRef = useRef<HTMLDivElement>(null);
   const readerViewportRef = useRef<HTMLElement>(null);
   const viewRef = useRef<FoliateView | null>(null);
+  // Raw dwell/exposure collection for the future mastery/review engine
+  // (docs/impls/reading-driven-mastery-and-review.md) — collection and
+  // persistence only, no scoring happens here. See
+  // src-tauri/migrations/037_reading_behavior.sql for the schema and
+  // src/pages/reader/reading-behavior.ts for the batching logic. Declared
+  // early, alongside viewRef, because openLearningInteraction/
+  // handleLookupSuccess below need recordReadingOperation.
+  const flushReadingBehavior = useCallback(async (screens: FinalizedScreen[]) => {
+    await invoke("record_reading_behavior_batch", { screens });
+  }, []);
+  const currentChapterTitle = currentChapterIndex >= 0 && currentChapterIndex < chapters.length
+    ? chapters[currentChapterIndex].title
+    : null;
+  const { recordOperation: recordReadingOperation } = useReadingBehaviorTracking({
+    bookId: bookId ?? null,
+    enabled: true,
+    readerReady: bookReady,
+    chapter: currentChapterTitle,
+    viewRef,
+    flush: flushReadingBehavior,
+  });
   const continuousReadAloudLabels = useMemo(() => ({
     reading: t("reader.continuousReadAloud.reading"),
     paused: t("reader.continuousReadAloud.paused"),
@@ -694,6 +717,9 @@ export default function Reader() {
   }, [cancelPendingSelectionMenu, resetMarkState, selectionMenuRowCount]);
 
   const openLearningInteraction = useCallback((interaction: ReaderInteraction) => {
+    // A word/phrase/passage selection is itself reading engagement, whether
+    // or not it goes on to open a menu or a lookup — see reading-behavior.ts.
+    recordReadingOperation("selection");
     cancelPendingWordClick();
     cancelPendingSelectionMenu();
     if (interaction.trigger !== "word-quick-lookup") {
@@ -714,10 +740,16 @@ export default function Reader() {
     dismissMarkState,
     loadMarkState,
     openLearningCard,
+    recordReadingOperation,
     selectionMenuRowCount,
   ]);
 
   const handleLookupSuccess = useCallback((interaction: ReaderInteraction) => {
+    // A completed lookup is the strongest engagement signal, and also the
+    // §2.1/§2.4 trigger that upweights the OTHER words on this screen — see
+    // reading-behavior.ts. Recorded unconditionally, ahead of the
+    // auto-highlight-only logic below.
+    recordReadingOperation("lookup", interaction.normalizedText || undefined);
     if (!bookId
       || interaction.kind !== "word"
       || !interaction.location
@@ -755,6 +787,7 @@ export default function Reader() {
     bookId,
     markMatchingWordsRef,
     markerStyleRef,
+    recordReadingOperation,
     supportsManualAnnotations,
     supportsWordMarkers,
   ]);
