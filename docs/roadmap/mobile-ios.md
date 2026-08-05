@@ -11,8 +11,19 @@ and **Windows sync** ([D-007](#d-007--windows-sync-is-out-of-scope)). Sync means
 15 MB EPUB imports through the system file picker, and it opens with CJK text paginating
 correctly in WKWebView. The host build and all 618 backend tests are still green. What is
 wrong is layout and touch, not the port — see
-[F-011](#f-011--first-run-what-the-app-actually-does-on-a-phone). Next is P1.
-**Estimated effort:** 78–84 engineer-days across 7 phases.
+[F-011](#f-011--first-run-what-the-app-actually-does-on-a-phone).
+
+**P1 done too, 2026-08-02.** Next in file order is P2, but P2 is **blocked on desktop work**
+([D-011](#d-011--p2-waits-for-the-desktop-mastery-line-to-finish)) — the Rust-side phases P4
+and P5 are what can move meanwhile. Four product decisions were settled 2026-08-06 and each
+changed scope: [D-011](#d-011--p2-waits-for-the-desktop-mastery-line-to-finish),
+[D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat),
+[D-013](#d-013--books-download-on-demand-not-eagerly),
+[D-014](#d-014--first-ios-release-is-testflight-not-the-app-store).
+
+**Estimated effort:** 78–84 engineer-days across 7 phases, as originally scored. The 2026-08-06
+decisions move work around rather than adding much net: P6 loses roughly 5 days (no App
+Review), P2 gains roughly the same (mobile AI settings, downloading state).
 
 ---
 
@@ -24,14 +35,16 @@ The guiding model is *companion, not clone* — the phone consumes what the desk
 |---|---|
 | Read EPUB / PDF / TXT / MD / HTML | Import via drag-and-drop |
 | Word lookup + lookup history | OCR (see [D-003](#d-003--ocr-stays-on-desktop)) |
+| AI contextual gloss, and the AI settings to configure it ([D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)) | AI chat panel |
 | Vocabulary list + FSRS review | MOBI / AZW3 / FB2 / CBZ conversion (needs Calibre) |
 | Reader settings (font size, theme, page-turn) | MCP server + client registration |
 | Import a book via the system file picker | Full settings surface |
-| Receive everything over iCloud sync | Font import, custom font management |
+| Receive everything over iCloud sync, books downloading on demand ([D-013](#d-013--books-download-on-demand-not-eagerly)) | Font import, custom font management |
 
 **Deferred to a second iOS release**, not cut permanently:
 
 - AI chat, note editing, collection management
+- A "keep this book on the phone" pin ([D-013](#d-013--books-download-on-demand-not-eagerly))
 - PDF cover thumbnails (needs pdfium on iOS — the reader itself works without it)
 - "Open in Lantern" from other apps (needs file-association / UTI work)
 
@@ -401,6 +414,85 @@ hygiene in `readest-comparison.md` §6 until corrected on 2026-08-02.
 **Revisit if:** the three-part condition above is met; or someone else takes ownership of
 Android, which changes the calculus entirely (see [D-009](#d-009--android-stays-in-this-repo-only-the-guarantee-is-lowered)
 on why a fork is a coordination tool, not a cost tool).
+
+### D-011 — P2 waits for the desktop mastery line to finish
+
+The mobile UI phase does not start until `docs/impls/reading-driven-mastery-and-review.md`
+is fully landed. P4/P5/P6 may run before then; P2 and P3 may not.
+
+**Why:** P2's own checklist — the Home sidebar becoming a drawer, the reduced settings pane,
+the lookup popovers becoming bottom sheets — names the exact files that line is rewriting
+(`Home.tsx`, the settings panes, `ExplainPopover.tsx`, and eventually `Reader.tsx`). Two
+tracks editing them at once spends on merge conflicts everything parallelism would have
+bought. The Rust-side phases have no such overlap: P5 lives in `icloud.rs` and `sync/`, and
+the six largest sync files contain no frontend coupling at all.
+
+**Cost of this choice:** iOS stays at "boots and reads, badly laid out" for longer. Accepted
+by the user on 2026-08-06, on the grounds that rework is the more expensive currency.
+
+**Revisit if:** the mastery line stalls or is descoped, or P2 turns out to need only files
+that line has already finished with.
+
+### D-012 — The phone gets AI contextual glosses, not AI chat
+
+Word lookup on iOS returns the same two layers as desktop: the AI gloss that reads the
+sentence the word came from, plus the Youdao standard gloss beside it.
+
+**Why:** the standard gloss cannot see context (`commands/dictionary.rs` says so in its own
+header — `bank` comes back as every sense at once), and the words a learner saves are
+precisely the polysemous ones. Shipping the phone with only the fallback layer would make
+the phone measurably worse at the one thing it exists to do.
+
+**What this costs, and it is not nothing:** the reduced mobile settings surface in
+[P2](#p2--mobile-ui-185-days) was scoped as font size, theme and page-turn. It now has to
+carry AI provider configuration too — key entry, model choice, connection test. Budget
+accordingly; this is new scope, not a clarification.
+
+**This does not contradict [§1](#1-goals-and-non-goals)**, which defers "AI chat" to a second
+iOS release. A gloss is a single bounded request against the selected sentence; chat is a
+conversation surface with history, streaming and a panel. The first ships, the second waits.
+
+**Privacy consequence:** selected book text leaves the device for a third-party model. That
+has to be declared, in the privacy manifest and to the user, whenever this build reaches
+anyone but the author.
+
+### D-013 — Books download on demand, not eagerly
+
+iCloud may evict a book from the phone. Tapping an evicted book downloads it then, with
+visible progress; the shelf always lists every book regardless of what is resident.
+
+**Why:** eager download makes first sync long and lets a real library fill a phone, to buy
+back only a few seconds on first open of each book. The shelf staying complete is what makes
+the tradeoff invisible most of the time.
+
+**What this obliges:** P5 item 4 is no longer optional polish. Without
+`NSURLUbiquitousItemDownloadingStatusKey`, an evicted book is never re-downloaded and simply
+never opens — under this decision that is the *common* path, not an edge case. The reader
+also needs a real downloading state, which is UI and therefore [P2](#p2--mobile-ui-185-days).
+
+**Revisit if:** on-demand download proves slow enough on cellular that opening a book feels
+broken. A "keep on this phone" pin was considered and deferred as a second-release affordance.
+
+### D-014 — First iOS release is TestFlight, not the App Store
+
+P6 ends at "installable from TestFlight", and stops there for now.
+
+**Why:** App Review, store screenshots, description and the rejection round-trips are most of
+P6's 10 days, and they buy nothing until the app is actually good on a phone — which is P2
+and P3's job, not P6's. TestFlight puts it on real hardware, which is the only way to answer
+[Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device).
+
+**What is still required, and is easy to under-budget:** an Apple Developer Program
+membership, signing and provisioning, and a privacy manifest — App Store Connect requires
+one to accept the upload at all, TestFlight or not. Internal testing (up to 100 members of
+the team) skips Beta App Review; external testing does not.
+
+**Blocked on something outside this repo:** the account's notarization has been stuck since
+2026-08-04 and needs a support ticket only the account holder can file — see
+`docs/impls/apple-signing-release-handoff-2026-08-04.md`. That is a macOS release blocker
+today and would become an iOS blocker too.
+
+**Revisit when:** P2 and P3 are done and the app is worth strangers' attention.
 
 ---
 
@@ -819,15 +911,24 @@ import* were confirmed by reading the gate rather than by tapping.
 
 ### P2 — Mobile UI (18.5 days)
 
-Scope is the reduced surface from [§1](#1-goals-and-non-goals).
+Scope is the reduced surface from [§1](#1-goals-and-non-goals). Items 4 and 8 grew on
+2026-08-06 and the 18.5 days predate them.
+
+**Do not start this phase until the desktop mastery line has landed — [D-011](#d-011--p2-waits-for-the-desktop-mastery-line-to-finish).**
+It rewrites the same files items 2, 4 and 5 below are about.
 
 1. Global: `viewport-fit=cover`, safe-area insets, `touch-action` defaults, breakpoint system
 2. Home: 224px sidebar → drawer or bottom nav
 3. Reader: three-column → phone layout (TOC as drawer, side panel as bottom sheet)
-4. Reduced settings: font size, theme, page-turn mode only
+4. Reduced settings: font size, theme, page-turn mode — **plus AI provider configuration**
+   (key entry, model choice, connection test), which [D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)
+   added and the original 18.5 days did not cover
 5. Lookup / translation popovers → bottom sheets
 6. The subset of the 25 wide hardcoded widths that the reduced surface touches
 7. `Info.plist` UTI declarations for the picker filter ([F-006](#f-006--ios-book-import-works-with-zero-code-changes))
+8. **A downloading state for a book that is not resident on the phone** — shelf badge plus
+   in-reader progress. Required by [D-013](#d-013--books-download-on-demand-not-eagerly), and
+   on the common path rather than an edge case. Also new scope.
 
 **Exit criterion:** every screen in scope is usable one-handed on an iPhone SE viewport with
 no horizontal scroll.
@@ -871,7 +972,10 @@ it is not in the estimate below.
    iCloud-initiated downloads
 4. Replace the macOS `.name.icloud` placeholder probe in `icloud.rs` with
    `NSURLUbiquitousItemDownloadingStatusKey`. Without this, a book evicted by iCloud is never
-   re-downloaded and simply never opens
+   re-downloaded and simply never opens. **[D-013](#d-013--books-download-on-demand-not-eagerly)
+   promotes this from a correctness fix to the mechanism the phone runs on** — on-demand
+   download *is* the shipping behaviour, so this item also has to report progress to the
+   frontend, not merely trigger a fetch
 5. iCloud Documents entitlement, container ID in the provisioning profile,
    `NSUbiquitousContainers` in `Info.plist`
 
@@ -881,8 +985,23 @@ concurrent appends from both devices do not corrupt the JSONL log.
 
 ### P6 — Ship (10 days)
 
-Apple Developer enrollment, signing and provisioning, privacy manifest, App Store assets,
-TestFlight, review round-trips. Add an iOS job to `release.yml`.
+Scoped down to roughly 4–5 by [D-014](#d-014--first-ios-release-is-testflight-not-the-app-store);
+the 10 days predate it.
+
+Apple Developer enrollment, signing and provisioning, privacy manifest, TestFlight. Add an
+iOS job to `release.yml`.
+
+**Store assets, listing copy and App Review are out of this phase** — the first release is
+TestFlight only. Most of the original 10 days was the review round-trip; what remains is the
+upload path, which App Store Connect gates on a privacy manifest whether or not a build ever
+reaches the store.
+
+The privacy manifest must declare that selected book text is sent to a third-party model
+([D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)).
+
+**Blocked outside this repo:** the Developer account's notarization has been stuck since
+2026-08-04 — see `docs/impls/apple-signing-release-handoff-2026-08-04.md`. The ticket is the
+account holder's to file, and this phase cannot close until the account is healthy.
 
 **Exit criterion:** installable from TestFlight on a device that has never had a dev build.
 
@@ -894,11 +1013,11 @@ TestFlight, review round-trips. Add an iOS job to `release.yml`.
 |---|---|---|
 | P0 — Compile and boot | **Done** | Runs on the Simulator; shelf renders, import works, book opens. [F-011](#f-011--first-run-what-the-app-actually-does-on-a-phone) |
 | P1 — Capability layer + routing | **Done** | Tapping a book opens it in-window; desktop-only surfaces are gated by [D-005](#d-005--capability-flags-not-platform-checks) flags |
-| P2 — Mobile UI | Not started | |
-| P3 — Touch interaction | Not started | |
-| P4 — iOS adaptation | Not started | |
-| P5 — iCloud sync | Not started | iOS ↔ macOS only; size [Q-004](#q-004--macos-relocation-to-the-app-container-largely-answered) first |
-| P6 — Ship | Not started | |
+| P2 — Mobile UI | **Blocked** | Waits on the desktop mastery line — [D-011](#d-011--p2-waits-for-the-desktop-mastery-line-to-finish). Two items added since the 18.5-day estimate: mobile AI settings ([D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)) and a book-downloading state ([D-013](#d-013--books-download-on-demand-not-eagerly)) |
+| P3 — Touch interaction | Not started | Same file collision as P2; follows it |
+| P4 — iOS adaptation | Not started | Rust-side, no frontend overlap — may run before P2 |
+| P5 — iCloud sync | Not started | iOS ↔ macOS only. [Q-004](#q-004--macos-relocation-to-the-app-container-largely-answered) is already sized at ~0.5 day and folded in, so nothing gates the start. Rust-side; may run before P2 |
+| P6 — Ship | Not started | TestFlight only ([D-014](#d-014--first-ios-release-is-testflight-not-the-app-store)). Account-level notarization blocker is outside this repo |
 
 ---
 
