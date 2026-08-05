@@ -67,59 +67,6 @@ fn bundle_identifier_for_build() -> &'static str {
     }
 }
 
-/// Copy data from an earlier build's data directory: the pre-rename
-/// `com.klaragraff.quill` id, the original app, or the first Personal build
-/// whose bundle identifier contained a typo. This runs only before a new data
-/// directory gains a library, so it never overwrites data already owned by
-/// this build.
-fn migrate_legacy_app_data(target: &Path) -> error::AppResult<()> {
-    if db::library_exists_in(target) {
-        return Ok(());
-    }
-    let legacy_ids: &[&str] = if cfg!(debug_assertions) {
-        &[
-            "com.klaragraff.quill-dev",
-            "com.klagragraff.quill-dev",
-            "com.wycstudios.quill-dev",
-        ]
-    } else {
-        &[
-            "com.klaragraff.quill",
-            "com.klagragraff.quill",
-            "com.wycstudios.quill",
-        ]
-    };
-    for id in legacy_ids {
-        let source = target.with_file_name(id);
-        if !db::library_exists_in(&source) {
-            continue;
-        }
-        log::info!(
-            "migration: adopting legacy application data from {}",
-            source.display()
-        );
-        copy_dir_missing(&source, target)?;
-        break;
-    }
-    Ok(())
-}
-
-fn copy_dir_missing(source: &Path, target: &Path) -> error::AppResult<()> {
-    std::fs::create_dir_all(target)?;
-    for entry in std::fs::read_dir(source)? {
-        let entry = entry?;
-        let source_path = entry.path();
-        let target_path = target.join(entry.file_name());
-        let metadata = entry.metadata()?;
-        if metadata.is_dir() {
-            copy_dir_missing(&source_path, &target_path)?;
-        } else if metadata.is_file() && !target_path.exists() {
-            std::fs::copy(&source_path, &target_path)?;
-        }
-    }
-    Ok(())
-}
-
 /// Resolve the OS-conventional log directory for *this* build.
 ///
 /// Single source of truth used by both plugin registration (the file
@@ -557,14 +504,6 @@ pub fn run() {
                     base
                 }
             };
-            // A failed legacy-data adoption must not white-screen the app: the
-            // worst case is starting without the old build's library (which the
-            // user can re-import), not a crash on launch. The steps below —
-            // creating the data dir and opening the DB — genuinely cannot be
-            // recovered from, so those stay fatal.
-            if let Err(error) = migrate_legacy_app_data(&local_dir) {
-                log::warn!("migration: failed to adopt legacy application data: {error}");
-            }
             std::fs::create_dir_all(&local_dir).expect("failed to create app data dir");
             // The `$APPDATA/**` scopes in tauri.conf.json and the default
             // capability are resolved from the bundle identifier, which never

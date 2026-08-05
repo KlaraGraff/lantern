@@ -4,47 +4,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Once};
 
 use crate::error::{AppError, AppResult};
-use crate::sync::events::{lookup_occurrence_mark_id, word_mark_rule_id};
 
 /// Filename of the SQLite materialized view inside the app data directory.
 pub const DB_FILE_NAME: &str = "lantern.db";
-/// The same file's name before the Quill→Lantern rename.
-const LEGACY_DB_FILE_NAME: &str = "quill.db";
 
-/// True when `dir` already holds a library, under either filename. Callers
-/// use this to decide whether a data directory is occupied, which must stay
-/// true for directories written before the rename.
+/// True when `dir` already holds a library. Callers use this to decide
+/// whether a data directory is occupied.
 pub fn library_exists_in(dir: &Path) -> bool {
-    dir.join(DB_FILE_NAME).is_file() || dir.join(LEGACY_DB_FILE_NAME).is_file()
-}
-
-/// One-time rename of the SQLite file inherited from the Quill fork.
-///
-/// The `-wal` and `-shm` companions move with it, and they move *first*.
-/// Under WAL the newest committed transactions can still live only in
-/// `-wal`, so a crash between the two renames must never leave the main
-/// file under its new name with its log stranded under the old one — that
-/// would silently drop those writes and the guard below would then skip
-/// the migration forever. Moving the companions first makes the window
-/// harmless: the next start still sees the legacy main file and finishes
-/// the job.
-fn rename_legacy_db_file(db_dir: &Path) -> AppResult<()> {
-    let current = db_dir.join(DB_FILE_NAME);
-    let legacy = db_dir.join(LEGACY_DB_FILE_NAME);
-    if current.exists() || !legacy.is_file() {
-        return Ok(());
-    }
-
-    for suffix in ["-wal", "-shm"] {
-        let from = db_dir.join(format!("{LEGACY_DB_FILE_NAME}{suffix}"));
-        if from.is_file() {
-            fs::rename(&from, db_dir.join(format!("{DB_FILE_NAME}{suffix}")))?;
-        }
-    }
-    fs::rename(&legacy, &current)?;
-
-    log::info!("migration: renamed {LEGACY_DB_FILE_NAME} to {DB_FILE_NAME}");
-    Ok(())
+    dir.join(DB_FILE_NAME).is_file()
 }
 
 const MIGRATIONS: &[(i64, &str)] = &[
@@ -303,7 +270,6 @@ impl Db {
         fs::create_dir_all(data_dir.join("imported-fonts"))?;
 
         register_sqlite_vec();
-        rename_legacy_db_file(db_dir)?;
         let db_path = db_dir.join(DB_FILE_NAME);
         let conn = Connection::open(&db_path)?;
 
@@ -407,121 +373,6 @@ impl Db {
             }
         }
 
-        if current >= 22 {
-            Self::repair_noncanonical_marker_ids(conn)?;
-        }
-
-        Ok(())
-    }
-
-    /// Marker ids are derived from their own columns, so a row whose id does
-    /// not match what the current derivation produces is unusable: sync
-    /// validation rejects the whole log or snapshot that carries it. Two
-    /// things have caused that drift — early learning-tools builds minting
-    /// random ids, and the Quill→Lantern change of the hash tags — and both
-    /// heal the same way, by recomputing from the columns that are still
-    /// correct. Runs on every start; a repaired database is a no-op.
-    fn repair_noncanonical_marker_ids(conn: &Connection) -> AppResult<()> {
-        Self::repair_noncanonical_word_mark_ids(conn)?;
-        Self::repair_noncanonical_lookup_occurrence_ids(conn)?;
-        Ok(())
-    }
-
-    /// Rules and their exceptions, repaired together: an exception's id is
-    /// derived from its rule's id, so moving a rule without carrying its
-    /// exceptions across would silently stop those exclusions working.
-    fn repair_noncanonical_word_mark_ids(conn: &Connection) -> AppResult<()> {
-        let rows = {
-            let mut statement = conn
-                .prepare("SELECT id, book_id, normalized_word, match_mode FROM word_mark_rules")?;
-            let rows = statement
-                .query_map([], |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, String>(3)?,
-                    ))
-                })?
-                .collect::<Result<Vec<_>, _>>()?;
-            rows
-        };
-        let repairs: Vec<_> = rows
-            .into_iter()
-            .filter_map(|(legacy_id, book_id, normalized_word, match_mode)| {
-                let canonical_id = word_mark_rule_id(&book_id, &normalized_word, &match_mode);
-                (legacy_id != canonical_id).then_some((
-                    legacy_id,
-                    canonical_id,
-                    book_id,
-                    normalized_word,
-                    match_mode,
-                ))
-            })
-            .collect();
-        if repairs.is_empty() {
-            return Ok(());
-        }
-
-        let tx = conn.unchecked_transaction()?;
-        for (legacy_id, canonical_id, book_id, normalized_word, match_mode) in repairs {
-            tx.execute(
-                "UPDATE word_mark_rules SET id = ?1
-                 WHERE book_id = ?2 AND normalized_word = ?3 AND match_mode = ?4",
-                params![canonical_id, book_id, normalized_word, match_mode],
-            )?;
-            crate::sync::merge::reconcile_legacy_word_mark_exceptions(
-                &tx,
-                &legacy_id,
-                &canonical_id,
-                &book_id,
-                &normalized_word,
-                i64::MIN,
-                "",
-                true,
-            )?;
-        }
-        tx.commit()?;
-        Ok(())
-    }
-
-    /// Automatic per-occurrence marks. Nothing references these ids, so the
-    /// repair is a plain rewrite keyed on the natural key the id comes from.
-    fn repair_noncanonical_lookup_occurrence_ids(conn: &Connection) -> AppResult<()> {
-        let rows = {
-            let mut statement =
-                conn.prepare("SELECT id, book_id, location FROM lookup_occurrence_marks")?;
-            let rows = statement
-                .query_map([], |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                    ))
-                })?
-                .collect::<Result<Vec<_>, _>>()?;
-            rows
-        };
-        let repairs: Vec<_> = rows
-            .into_iter()
-            .filter_map(|(stored_id, book_id, location)| {
-                let canonical_id = lookup_occurrence_mark_id(&book_id, &location);
-                (stored_id != canonical_id).then_some((canonical_id, book_id, location))
-            })
-            .collect();
-        if repairs.is_empty() {
-            return Ok(());
-        }
-
-        let tx = conn.unchecked_transaction()?;
-        for (canonical_id, book_id, location) in repairs {
-            tx.execute(
-                "UPDATE lookup_occurrence_marks SET id = ?1
-                 WHERE book_id = ?2 AND location = ?3",
-                params![canonical_id, book_id, location],
-            )?;
-        }
-        tx.commit()?;
         Ok(())
     }
 
@@ -835,158 +686,6 @@ mod tests {
         // resolve_path uses data_dir as the base.
         let resolved = db.resolve_path("books/foo.epub").unwrap();
         assert_eq!(resolved, data_dir.path().join("books/foo.epub"));
-    }
-
-    /// A library created before the Quill→Lantern rename must survive the
-    /// first start on the renamed build — the whole point of the migration.
-    #[test]
-    fn init_adopts_a_pre_rename_database_with_its_rows_intact() {
-        let dir = TempDir::new().unwrap();
-        let now_ms = chrono::Utc::now().timestamp_millis();
-        {
-            let db = Db::init(dir.path()).unwrap();
-            db.conn
-                .lock()
-                .unwrap()
-                .execute(
-                    "INSERT INTO books (id, title, author, file_path, status, progress, created_at, updated_at)
-                     VALUES ('b1', 'Inherited', 'Author', 'books/test.epub', 'reading', 0, ?1, ?1)",
-                    params![now_ms],
-                )
-                .unwrap();
-        }
-        fs::rename(
-            dir.path().join(DB_FILE_NAME),
-            dir.path().join(LEGACY_DB_FILE_NAME),
-        )
-        .unwrap();
-
-        let db = Db::init(dir.path()).unwrap();
-
-        let title: String = db
-            .conn
-            .lock()
-            .unwrap()
-            .query_row("SELECT title FROM books WHERE id = 'b1'", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(title, "Inherited");
-        assert!(!dir.path().join(LEGACY_DB_FILE_NAME).exists());
-    }
-
-    /// Marker rows written under an older hash tag carry an id the current
-    /// derivation no longer produces. Sync validation rejects a whole log or
-    /// snapshot over one such row, so the next start has to move them onto
-    /// the canonical id rather than leaving them to poison the next dump.
-    #[test]
-    fn init_moves_marker_rows_off_a_stale_hash_tag() {
-        let dir = TempDir::new().unwrap();
-        let now_ms = chrono::Utc::now().timestamp_millis();
-        {
-            let db = Db::init(dir.path()).unwrap();
-            let conn = db.conn.lock().unwrap();
-            conn.execute(
-                "INSERT INTO books (id, title, author, file_path, status, progress, created_at, updated_at)
-                 VALUES ('b1', 'Marked', 'Author', 'books/test.epub', 'reading', 0, ?1, ?1)",
-                params![now_ms],
-            )
-            .unwrap();
-            conn.execute(
-                "INSERT INTO word_mark_rules
-                     (id, book_id, normalized_word, display_word, match_mode, color,
-                      enabled, created_at, updated_at)
-                 VALUES ('word-mark-stale', 'b1', 'hurried', 'hurried', 'exact', 'lookup',
-                         1, ?1, ?1)",
-                params![now_ms],
-            )
-            .unwrap();
-            conn.execute(
-                "INSERT INTO word_mark_exceptions
-                     (id, rule_id, book_id, normalized_word, location, excluded,
-                      created_at, updated_at)
-                 VALUES ('word-mark-exception-stale', 'word-mark-stale', 'b1', 'hurried',
-                         'textloc:v2:1:8', 1, ?1, ?1)",
-                params![now_ms],
-            )
-            .unwrap();
-            conn.execute(
-                "INSERT INTO lookup_occurrence_marks
-                     (id, book_id, normalized_word, display_word, location, enabled,
-                      created_at, updated_at)
-                 VALUES ('lookup-occurrence-mark-stale', 'b1', 'hurried', 'hurried',
-                         'textloc:v2:1:8', 1, ?1, ?1)",
-                params![now_ms],
-            )
-            .unwrap();
-        }
-
-        let db = Db::init(dir.path()).unwrap();
-        let conn = db.conn.lock().unwrap();
-
-        let rule_id = word_mark_rule_id("b1", "hurried", "exact");
-        let stored_rule: String = conn
-            .query_row("SELECT id FROM word_mark_rules", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(stored_rule, rule_id);
-
-        // The exception has to follow its rule onto the new id, or the
-        // exclusion it records silently stops applying.
-        let (stored_exception, stored_rule_ref): (String, String) = conn
-            .query_row("SELECT id, rule_id FROM word_mark_exceptions", [], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })
-            .unwrap();
-        assert_eq!(
-            stored_exception,
-            crate::sync::events::word_mark_exception_id(&rule_id, "textloc:v2:1:8")
-        );
-        assert_eq!(stored_rule_ref, rule_id);
-
-        let stored_occurrence: String = conn
-            .query_row("SELECT id FROM lookup_occurrence_marks", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(
-            stored_occurrence,
-            lookup_occurrence_mark_id("b1", "textloc:v2:1:8")
-        );
-    }
-
-    /// The `-wal` companion carries committed-but-uncheckpointed writes, so
-    /// leaving it behind loses data. `-shm` follows for the same reason.
-    #[test]
-    fn rename_legacy_db_file_moves_the_wal_and_shm_companions() {
-        let dir = TempDir::new().unwrap();
-        for suffix in ["", "-wal", "-shm"] {
-            fs::write(
-                dir.path().join(format!("{LEGACY_DB_FILE_NAME}{suffix}")),
-                b"x",
-            )
-            .unwrap();
-        }
-
-        rename_legacy_db_file(dir.path()).unwrap();
-
-        for suffix in ["", "-wal", "-shm"] {
-            assert!(!dir
-                .path()
-                .join(format!("{LEGACY_DB_FILE_NAME}{suffix}"))
-                .exists());
-            assert!(dir.path().join(format!("{DB_FILE_NAME}{suffix}")).exists());
-        }
-    }
-
-    /// An already-renamed directory must be left alone, even if a stale
-    /// legacy file is sitting next to it — adopting it would silently swap
-    /// the live library for an older one.
-    #[test]
-    fn rename_legacy_db_file_never_overwrites_an_existing_database() {
-        let dir = TempDir::new().unwrap();
-        fs::write(dir.path().join(DB_FILE_NAME), b"current").unwrap();
-        fs::write(dir.path().join(LEGACY_DB_FILE_NAME), b"stale").unwrap();
-
-        rename_legacy_db_file(dir.path()).unwrap();
-
-        assert_eq!(fs::read(dir.path().join(DB_FILE_NAME)).unwrap(), b"current");
-        assert!(dir.path().join(LEGACY_DB_FILE_NAME).exists());
     }
 
     fn setup() -> (TempDir, Db) {
