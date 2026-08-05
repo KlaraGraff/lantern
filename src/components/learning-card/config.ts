@@ -1,3 +1,6 @@
+// Explicit extension: `config.ts` is loaded directly by the node test runner,
+// which does not resolve extensionless imports the way Vite does.
+import { aiErrorMessageKey, getAiErrorCode, type AiErrorCode } from "../../utils/aiError.ts";
 import type {
   BuiltInLearningModuleId,
   BuiltInSelectionMenuActionId,
@@ -509,6 +512,23 @@ export function learningCardErrorKey(message: string): string | null {
     return "learningCard.modelOffFormat";
   }
   return null;
+}
+
+/**
+ * What to show, and what the reader can do about it, for a failed card.
+ *
+ * The AI route is asked first on purpose. A card that never reached a model
+ * fails on the route, and telling that reader the model answered off-format
+ * would send them looking in the wrong place — the card protocol only has an
+ * opinion once a model actually replied.
+ */
+export function learningCardFailure(message: string): {
+  key: string | null;
+  aiCode: AiErrorCode | null;
+} {
+  const aiCode = getAiErrorCode(message);
+  if (aiCode) return { key: aiErrorMessageKey(aiCode), aiCode };
+  return { key: learningCardErrorKey(message), aiCode: null };
 }
 
 export function getLearningCardTargetWidth(

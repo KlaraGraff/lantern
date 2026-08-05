@@ -1,7 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { AlertCircle, ChevronDown, ChevronRight, GripHorizontal, History, Loader2, RotateCw, Sparkles, X } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { AlertCircle, ChevronDown, ChevronRight, GripHorizontal, History, Loader2, RotateCw, Settings, Sparkles, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { isAiRetryableError, isAiSettingsError, type AiErrorCode } from "../../utils/aiError";
 import {
   getLearningCardTargetWidth,
   getResponsiveLearningCardWidth,
@@ -30,6 +33,8 @@ interface LearningCardViewProps {
   /** What the model has thought so far, streamed as it arrives. */
   reasoning?: string;
   error?: string | null;
+  /** Present when `error` came from the AI route, so the card can route out of it. */
+  aiErrorCode?: AiErrorCode | null;
   presentationMode?: boolean;
   notes?: LearningCardNote[];
   noteEditorOpen?: boolean;
@@ -86,6 +91,7 @@ export default function LearningCardView({
   thinking = false,
   reasoning = "",
   error = null,
+  aiErrorCode = null,
   presentationMode = false,
   notes,
   noteEditorOpen,
@@ -207,7 +213,21 @@ export default function LearningCardView({
           <div className="flex min-h-32 flex-col items-center justify-center gap-2 px-5 py-6 text-center" role="alert">
             <AlertCircle size={18} className="text-danger-text" />
             <p className="max-w-full break-words text-[12px] text-text-secondary">{error}</p>
-            {onRetry && (
+            {isAiSettingsError(aiErrorCode) && (
+              <button
+                type="button"
+                onClick={async () => {
+                  await invoke("open_settings_on_main", { section: "services" });
+                  const main = await WebviewWindow.getByLabel("main");
+                  await main?.setFocus();
+                }}
+                className="mt-1 flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-border px-3 text-[12px] font-medium text-accent-text hover:bg-bg-input"
+              >
+                <Settings size={13} />
+                {t("ai.openSettings")}
+              </button>
+            )}
+            {onRetry && (aiErrorCode === null || isAiRetryableError(aiErrorCode)) && (
               <button
                 type="button"
                 onClick={onRetry}

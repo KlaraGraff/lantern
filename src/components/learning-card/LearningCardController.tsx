@@ -4,13 +4,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import { createUuid } from "../../utils/randomUuid";
+import type { AiErrorCode } from "../../utils/aiError";
 import type { ReaderInteraction, SerializableRect } from "../reader-interaction";
 import {
   cachedLearningCardResult,
   learningCardCacheEnvelope,
   learningCardCacheSignature,
 } from "./cache";
-import { getResponsiveLearningCardWidth, learningCardErrorKey } from "./config";
+import { getResponsiveLearningCardWidth, learningCardFailure } from "./config";
 import type {
   CardDesignConfigV1,
   LearningCardActionId,
@@ -187,6 +188,12 @@ export default function LearningCardController({
   const [thinking, setThinking] = useState(false);
   const [reasoning, setReasoning] = useState("");
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Set when the failure was the AI route itself rather than the card protocol.
+   * The view needs the code, not just the message, to decide whether the reader
+   * can act on it here (retry) or has to change a setting first.
+   */
+  const [aiErrorCode, setAiErrorCode] = useState<AiErrorCode | null>(null);
   const [fromCache, setFromCache] = useState(false);
   const [notes, setNotes] = useState<LearningCardNote[]>([]);
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
@@ -218,6 +225,7 @@ export default function LearningCardController({
     setThinking(false);
     setReasoning("");
     setError(null);
+    setAiErrorCode(null);
     setFromCache(false);
     const requestId = createUuid();
     const card = config.cards[interaction.kind];
@@ -333,7 +341,8 @@ export default function LearningCardController({
       } catch (reason) {
         if (!active) return;
         const message = reason instanceof Error ? reason.message : String(reason);
-        const key = learningCardErrorKey(message);
+        const { key, aiCode } = learningCardFailure(message);
+        setAiErrorCode(aiCode);
         setError(key ? t(key) : message);
         setLoading(false);
         setThinking(false);
@@ -555,6 +564,7 @@ export default function LearningCardController({
         thinking={thinking}
         reasoning={reasoning}
         error={error}
+        aiErrorCode={aiErrorCode}
         notes={notes}
         noteEditorOpen={noteEditorOpen}
         noteDraft={noteDraft}
