@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lantern · 词汇按词跨书合并 样张</title>
+  <style>
+    :root{--bg:#f4f4f5;--surface:#fff;--muted:#fafafa;--input:#f3f3f5;--text:#18181b;--secondary:#52525c;--quiet:#71717b;--faint:#9a9aa4;--border:#e4e4e7;--border-soft:#efeff2;--accent:#7c3aed;--accent-bg:#f3e8ff;--accent-soft:#e6d8fb;--paper:#faf7f0;--danger:#dc2626;--danger-bg:#fef2f2;--warn-bg:#fff8e6;--warn:#8a6508;--ok:#3e8060}
+    *{box-sizing:border-box}
+    body{margin:0;min-width:1120px;background:#dcdce1;color:var(--text);font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    button{font:inherit;color:inherit;cursor:pointer}
+    .icon{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+    .stage{min-height:100vh;padding:52px 28px 28px;display:grid;place-items:center}
+    .window{position:relative;width:min(1440px,calc(100vw - 56px));height:min(900px,calc(100vh - 96px));min-height:670px;overflow:hidden;display:grid;grid-template-columns:220px 1fr;border:1px solid #cfcfd5;border-radius:16px;background:var(--surface);box-shadow:0 24px 70px rgba(24,24,27,.18)}
+    .traffic{position:absolute;z-index:5;top:18px;left:18px;display:flex;gap:8px}.traffic i{width:12px;height:12px;border-radius:50%;background:#ff5f57}.traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}
+    .sidebar{padding:58px 14px 16px;background:#f7f7f8;border-right:1px solid var(--border)}
+    .brand{padding:0 10px 22px;font-size:15px;font-weight:650}
+    .nav{display:flex;align-items:center;gap:10px;height:40px;padding:0 11px;margin-bottom:4px;border-radius:9px;color:var(--quiet);font-size:12px}.nav.active{background:var(--accent-bg);color:var(--accent);font-weight:600}.nav span:first-child{width:18px;text-align:center;font-size:15px}
+    .main{display:flex;flex-direction:column;min-width:0;background:var(--surface)}
+    .header{padding:32px 28px 14px;display:flex;align-items:flex-end;justify-content:space-between}.header h1{margin:0;font-size:22px}.header p{margin:4px 0 0;color:var(--quiet);font-size:11px}.count{color:var(--quiet);font-size:11px}
+    .tabs{height:44px;padding:0 28px;display:flex;gap:6px;align-items:center}.tab{height:30px;padding:0 11px;border:0;border-radius:8px;background:transparent;color:var(--quiet);display:flex;align-items:center;gap:6px;font-size:12px}.tab.active{background:var(--input);color:var(--text);font-weight:600}.tab b{color:var(--faint);font-weight:400;font-size:11px}
+    .filters{padding:6px 28px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;overflow:hidden}
+    .pill{height:30px;padding:0 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--secondary);display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:500;flex:none}.pill b{color:var(--faint);font-weight:400;font-size:10.5px}.pill.on{border-color:var(--accent-soft);background:var(--accent-bg);color:var(--accent)}.pill.on b{color:var(--accent)}.pill .icon{width:12px;height:12px}
+    .view-toggle{margin-left:auto;flex:none;display:flex;padding:2px;border:1px solid var(--border);border-radius:8px;background:var(--input)}.view-toggle button{height:24px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--quiet);font-size:11px}.view-toggle button.on{background:var(--surface);color:var(--accent);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+    .sorts{flex:none;display:flex;gap:2px}.sorts button{height:26px;padding:0 9px;border:0;border-radius:7px;background:transparent;color:var(--faint);font-size:11px}.sorts button.on{color:var(--accent)}
+
+    .list-wrap{flex:1;min-height:0;overflow:auto;padding:16px 28px 60px}
+    .list{max-width:940px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+    .book-head{margin:16px 0 2px;display:flex;align-items:center;gap:8px;color:var(--quiet);font-size:11px;font-weight:600}.book-head:first-child{margin-top:0}.book-head i{flex:1;height:1px;background:var(--border-soft)}
+    .entry{border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:0 10px 10px 0;background:var(--surface)}
+    .entry-row{min-height:46px;padding:0 10px 0 14px;display:flex;align-items:center;gap:10px}
+    .chev{color:var(--faint);flex:none}
+    .word{font-size:14.5px;font-weight:650;flex:none}
+    .gloss{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--secondary);font-size:12px}
+    .chip{padding:2.5px 7px;border-radius:5px;background:var(--input);color:var(--quiet);font-size:10px;flex:none}
+    .chip.mastery-learning{background:var(--accent-bg);color:var(--accent)}
+    .chip.mastery-mastered{background:#e8f5ef;color:var(--ok)}
+    .chip.books{background:#fff;border:1px solid var(--accent-soft);color:var(--accent);display:inline-flex;align-items:center;gap:4px}
+    .chip.due{background:var(--warn-bg);color:var(--warn)}
+    .row-tools{display:flex;gap:1px;flex:none}.row-tools button{width:26px;height:26px;border:0;border-radius:6px;background:transparent;color:var(--faint);display:grid;place-items:center}.row-tools button:hover{background:var(--input);color:var(--accent)}.row-tools .trash:hover{background:var(--danger-bg);color:var(--danger)}
+
+    .body{padding:2px 16px 16px 14px;border-top:1px solid var(--border-soft);display:none}
+    .entry.open .body{display:block}
+    .sec{margin-top:14px}.sec-label{margin:0 0 7px;color:var(--faint);font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+    .definition{margin:0;color:var(--secondary);font-size:12.5px;line-height:1.7}
+    .alt{margin-top:8px;padding:9px 11px;border:1px dashed #ddd6ea;border-radius:8px;background:#fbfaff}
+    .alt summary{color:var(--accent);font-size:11px;cursor:pointer;list-style:none}.alt summary::-webkit-details-marker{display:none}.alt p{margin:8px 0 0;color:var(--secondary);font-size:12px;line-height:1.65}.alt small{display:block;margin-top:6px;color:var(--faint);font-size:10px}
+    .ctx{padding:10px 12px;border-radius:8px;background:var(--muted);border:1px solid var(--border-soft)}.ctx+.ctx{margin-top:7px}
+    .ctx-top{display:flex;align-items:center;gap:7px;color:var(--quiet);font-size:10.5px}.ctx-top .book{font-weight:600;color:var(--secondary)}.ctx-top .go{margin-left:auto;height:22px;padding:0 7px;border:0;border-radius:6px;background:transparent;color:var(--faint);display:flex;align-items:center;gap:4px;font-size:10px}.ctx-top .go:hover{background:var(--input);color:var(--accent)}
+    .ctx p{margin:7px 0 0;color:#3f3a33;font:12.5px/1.75 Georgia,"Songti SC",serif}.ctx mark{padding:1px 3px;border-radius:3px;background:var(--accent-bg);color:var(--accent);font-weight:600}
+    .note{padding:9px 11px;border-radius:8px;background:var(--muted);border:1px solid var(--border-soft)}.note+.note{margin-top:6px}.note p{margin:0;color:var(--secondary);font-size:12px;line-height:1.6}.note small{display:block;margin-top:5px;color:var(--faint);font-size:10px}
+    .mastery-row{margin-top:14px;padding-top:12px;border-top:1px solid var(--border-soft);display:flex;align-items:center;gap:8px}
+    .seg{display:flex;padding:2px;border:1px solid var(--border);border-radius:8px;background:var(--input)}.seg button{height:25px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:var(--quiet);font-size:11px}.seg button.on{background:var(--surface);color:var(--accent);font-weight:600}
+    .sync-hint{margin-left:auto;display:flex;align-items:center;gap:5px;color:var(--faint);font-size:10px}
+
+    .confirm{display:none;margin:12px 0 0;padding:11px 12px;border:1px solid #f3cccc;border-radius:9px;background:var(--danger-bg);align-items:flex-start;gap:10px}
+    .entry.confirming .confirm{display:flex}
+    .confirm .icon{color:var(--danger);margin-top:1px}
+    .confirm div{flex:1}.confirm b{display:block;color:#8d3d3d;font-size:12px}.confirm p{margin:4px 0 0;color:#a05a5a;font-size:10.5px;line-height:1.55}
+    .confirm .btns{flex:none;display:flex;gap:6px;align-self:center}.confirm .btns button{height:28px;padding:0 11px;border:1px solid #e6c0c0;border-radius:7px;background:#fff;color:#8d3d3d;font-size:11px}.confirm .btns .go{border-color:var(--danger);background:var(--danger);color:#fff}
+
+    .empty{height:100%;display:grid;place-items:center;text-align:center}
+    .empty-inner{max-width:360px}.empty-icon{width:60px;height:60px;margin:0 auto 14px;display:grid;place-items:center;border-radius:50%;background:var(--accent-bg);color:var(--accent);font-size:24px}.empty h3{margin:0;font-size:15px}.empty p{margin:8px 0 0;color:var(--quiet);font-size:11.5px;line-height:1.65}
+
+    .scrim{position:absolute;inset:0;z-index:20;background:rgba(24,24,27,.32);backdrop-filter:blur(1.5px);display:none}
+    .review{position:absolute;z-index:30;top:50%;left:calc(50% + 110px);transform:translate(-50%,-50%);width:620px;max-height:calc(100% - 70px);overflow:hidden;display:none;flex-direction:column;border:1px solid var(--border);border-radius:15px;background:#fff;box-shadow:0 28px 80px rgba(24,24,27,.24)}
+    .review-head{height:58px;padding:0 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}.review-head h2{margin:0;font-size:14px}.review-head .progress{margin-left:auto;color:var(--quiet);font-size:11px}.review-head .close{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:var(--quiet);font-size:17px}
+    .review-bar{height:3px;background:#eeeef1}.review-bar i{display:block;height:100%;width:28%;background:var(--accent)}
+    .merge-banner{padding:9px 20px;border-bottom:1px solid var(--border-soft);background:#faf7ff;color:#6b5a86;display:flex;align-items:center;gap:7px;font-size:10.5px}
+    .card{padding:26px 40px 20px;display:flex;flex-direction:column;align-items:center;text-align:center}
+    .src{display:flex;align-items:center;gap:7px;color:var(--quiet);font-size:11px}.src .swap{height:24px;padding:0 8px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--secondary);display:flex;align-items:center;gap:5px;font-size:10px}.src .swap:hover{border-color:var(--accent-soft);background:var(--accent-bg);color:var(--accent)}
+    .prompt{margin:20px 0 0;color:var(--quiet);font-size:11px;letter-spacing:.04em}
+    .sentence{max-width:480px;min-height:104px;margin:14px auto 0;display:flex;align-items:center;justify-content:center;color:#2f2a25;font:24px/1.65 Georgia,"Times New Roman","Songti SC",serif}
+    .blank{display:inline-flex;min-width:112px;height:30px;margin:0 5px;align-items:flex-end;justify-content:center;border-bottom:2px solid #8b5cf6}
+    .other-ctx{display:none;width:100%;margin-top:14px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--muted);text-align:left}
+    .other-ctx .sec-label{margin-bottom:8px}
+    .pick{width:100%;padding:9px 10px;border:1px solid transparent;border-radius:8px;background:#fff;color:#3f3a33;text-align:left;font:12px/1.65 Georgia,"Songti SC",serif}.pick+.pick{margin-top:6px}.pick:hover{border-color:var(--accent-soft);background:#fdfbff}.pick small{display:block;margin-bottom:4px;color:var(--quiet);font:10px Inter,sans-serif}.pick.on{border-color:var(--accent-soft);background:var(--accent-bg)}
+    .reveal{margin-top:22px;min-width:150px;height:40px;padding:0 20px;border:1px solid var(--accent);border-radius:9px;background:var(--accent);color:#fff;font-size:12px;font-weight:650}
+    .review-foot{min-height:60px;padding:12px 20px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;color:var(--quiet);font-size:10px}
+
+    body[data-state="expanded"] .e-courage,
+    body[data-state="conflict"] .e-courage,
+    body[data-state="delete"] .e-courage{}
+    .state-nav{position:fixed;z-index:80;top:10px;left:50%;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:3px;padding:4px;border:1px solid #d1d1d6;border-radius:10px;background:rgba(255,255,255,.95);box-shadow:0 8px 24px rgba(0,0,0,.12)}.state-nav button{height:27px;padding:0 10px;border:0;border-radius:7px;background:transparent;color:var(--quiet);font-size:11px}.state-nav button.active{background:var(--accent-bg);color:var(--accent);font-weight:600}
+    .caption{position:fixed;z-index:70;left:22px;bottom:18px;width:270px;padding:11px 13px;border-radius:10px;background:rgba(35,32,38,.92);color:#efecf1;font-size:10px;line-height:1.6}.caption b{display:block;margin-bottom:4px;color:#fff;font-size:11px}
+    @media(max-width:1260px){.caption{display:none}}
+  </style>
+</head>
+<body data-state="merged">
+  <nav class="state-nav" aria-label="样张状态">
+    <button class="active" data-state="merged">① 按词合并</button>
+    <button data-state="expanded">② 展开跨书语境</button>
+    <button data-state="conflict">③ 释义分歧</button>
+    <button data-state="single">④ 只在一本书</button>
+    <button data-state="bybook">⑤ 按书视图</button>
+    <button data-state="review">⑥ 复习（按词一条）</button>
+    <button data-state="review-swap">⑦ 换一处语境</button>
+    <button data-state="delete">⑧ 删除确认</button>
+    <button data-state="empty">⑨ 空态</button>
+  </nav>
+
+  <div class="stage"><div class="window">
+    <div class="traffic"><i></i><i></i><i></i></div>
+    <aside class="sidebar">
+      <div class="brand">Lantern</div>
+      <div class="nav"><span>⌂</span>书库</div>
+      <div class="nav"><span>✦</span>标注</div>
+      <div class="nav active"><span>译</span>词汇</div>
+      <div class="nav"><span>▣</span>统计</div>
+      <div class="nav"><span>⚙</span>设置</div>
+    </aside>
+
+    <main class="main">
+      <header class="header">
+        <div><h1>词汇</h1><p>从阅读语境中积累，并按记忆节奏复习。</p></div>
+        <div class="count" id="count">98 个词 · 来自 127 条记录 · 12 个待复习</div>
+      </header>
+
+      <div class="tabs">
+        <button class="tab active"><svg class="icon" viewBox="0 0 24 24"><path d="M5 8h14M9 4v4M11 16l-4-8-4 8M13 20l4-10 4 10M14.5 17h5"/></svg>已收藏</button>
+        <button class="tab"><svg class="icon" viewBox="0 0 24 24"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>历史 <b>314</b></button>
+      </div>
+
+      <div class="filters">
+        <button class="pill"><svg class="icon" viewBox="0 0 24 24"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>待复习 <b>12</b></button>
+        <button class="pill on"><svg class="icon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>全部书籍 <b>98</b></button>
+        <button class="pill"><svg class="icon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>局外人 <b>42</b></button>
+        <button class="pill"><svg class="icon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>小王子 <b>31</b></button>
+        <div class="view-toggle">
+          <button class="on" id="vw-word">按词</button>
+          <button id="vw-book">按书</button>
+        </div>
+        <div class="sorts"><button class="on">最新</button><button>最早</button><button>A–Z</button></div>
+      </div>
+
+      <div class="list-wrap" id="listWrap">
+        <!-- 按词合并 -->
+        <div class="list" id="listWord">
+          <div class="entry e-courage" id="eCourage">
+            <div class="entry-row">
+              <svg class="icon chev" id="chevCourage" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+              <span class="word">courage</span>
+              <span class="gloss">勇气；明知困难仍去做的那种力量。</span>
+              <span class="chip mastery-learning">学习中</span>
+              <span class="chip books" id="chipBooks"><svg class="icon" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>3 本书</span>
+              <span class="chip due">3 天后复习</span>
+              <div class="row-tools">
+                <button title="朗读"><svg class="icon" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg></button>
+                <button title="复制"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+                <button class="trash" title="删除"><svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+              </div>
+            </div>
+
+            <div class="body">
+              <div class="sec">
+                <p class="sec-label">释义</p>
+                <p class="definition">勇气：在明知会痛、会输、会被拒绝的情况下，仍然选择行动的能力。它不是不怕，而是怕着仍然往前。</p>
+                <details class="alt" id="altBox" style="display:none">
+                  <summary>另有 1 条释义 —— 来自《小王子》，与上面不同</summary>
+                  <p>勇气：把心里真正想说的话说出口，哪怕对方可能不接受。</p>
+                  <small>合并后保留最近一次生成的释义为主；旧释义折叠在这里，可一键设为主释义。</small>
+                </details>
+              </div>
+
+              <div class="sec">
+                <p class="sec-label">在 3 本书中遇到</p>
+                <div class="ctx">
+                  <div class="ctx-top"><span class="book">局外人</span><span>·</span><span>第二部 第一章</span><span>·</span><span>8 月 2 日</span>
+                    <button class="go"><svg class="icon" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>回到原文</button>
+                  </div>
+                  <p>It took a certain kind of <mark>courage</mark> to say nothing at all.</p>
+                </div>
+                <div class="ctx">
+                  <div class="ctx-top"><span class="book">小王子</span><span>·</span><span>第 21 章</span><span>·</span><span>7 月 19 日</span>
+                    <button class="go"><svg class="icon" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>回到原文</button>
+                  </div>
+                  <p>He gathered his <mark>courage</mark> and asked the fox to stay.</p>
+                </div>
+                <div class="ctx">
+                  <div class="ctx-top"><span class="book">动物农场</span><span>·</span><span>第 5 章</span><span>·</span><span>6 月 30 日</span>
+                    <button class="go"><svg class="icon" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>回到原文</button>
+                  </div>
+                  <p>Their <mark>courage</mark> did not survive the winter.</p>
+                </div>
+              </div>
+
+              <div class="sec">
+                <p class="sec-label">我的笔记</p>
+                <div class="note"><p>和 bravery 的差别：courage 更强调「明知代价还是做」。</p><small>写于《局外人》</small></div>
+                <div class="note"><p>作文里可以用 "take courage to do"。</p><small>全局笔记</small></div>
+              </div>
+
+              <div class="mastery-row">
+                <div class="seg"><button>陌生</button><button class="on">学习中</button><button>已掌握</button></div>
+                <span class="sync-hint"><svg class="icon" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/></svg>掌握度与复习进度按「词」保存，3 本书共用一份</span>
+              </div>
+
+              <div class="confirm">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+                <div>
+                  <b>删除 courage？</b>
+                  <p>它在《局外人》《小王子》《动物农场》各有一条记录，会一起删除。复习进度和 2 条笔记也会一起消失。</p>
+                </div>
+                <div class="btns"><button id="cancelDel">取消</button><button class="go">全部删除</button></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="entry">
+            <div class="entry-row">
+              <svg class="icon chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+              <span class="word">interfere</span>
+              <span class="gloss">干涉；插手别人的事。</span>
+              <span class="chip mastery-mastered">已掌握</span>
+              <span class="chip books"><svg class="icon" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>2 本书</span>
+              <div class="row-tools">
+                <button title="朗读"><svg class="icon" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg></button>
+                <button title="复制"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+                <button class="trash" title="删除"><svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 只在一本书出现：书名直接显示，不再是「1 本书」 -->
+          <div class="entry">
+            <div class="entry-row">
+              <svg class="icon chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+              <span class="word">separation</span>
+              <span class="gloss">分离；把原本连在一起的东西分开。</span>
+              <span class="chip">陌生</span>
+              <span class="chip books"><svg class="icon" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>局外人</span>
+              <div class="row-tools">
+                <button title="朗读"><svg class="icon" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg></button>
+                <button title="复制"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+                <button class="trash" title="删除"><svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="entry">
+            <div class="entry-row">
+              <svg class="icon chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
+              <span class="word">expectation</span>
+              <span class="gloss">期待；认为某件事应该发生。</span>
+              <span class="chip mastery-learning">学习中</span>
+              <span class="chip books"><svg class="icon" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>4 本书</span>
+              <span class="chip due">今天复习</span>
+              <div class="row-tools">
+                <button title="朗读"><svg class="icon" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg></button>
+                <button title="复制"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+                <button class="trash" title="删除"><svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 按书视图（今天的行为，保留为可选项） -->
+        <div class="list" id="listBook" style="display:none">
+          <div class="book-head">局外人 · 42<i></i></div>
+          <div class="entry"><div class="entry-row"><svg class="icon chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg><span class="word">courage</span><span class="gloss">勇气；明知困难仍去做的那种力量。</span><span class="chip mastery-learning">学习中</span><div class="row-tools"><button title="复制"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button><button class="trash" title="删除"><svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button></div></div></div>
+          <div class="entry"><div class="entry-row"><svg class="icon chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg><span class="word">separation</span><span class="gloss">分离；把原本连在一起的东西分开。</span><span class="chip">陌生</span><div class="row-tools"><button title="复制"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button><button class="trash" title="删除"><svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button></div></div></div>
+          <div class="book-head">小王子 · 31<i></i></div>
+          <div class="entry"><div class="entry-row"><svg class="icon chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg><span class="word">courage</span><span class="gloss">把心里真正想说的话说出口。</span><span class="chip mastery-learning">学习中</span><span class="chip">同一词，另一本书</span><div class="row-tools"><button title="复制"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button><button class="trash" title="删除"><svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button></div></div></div>
+          <div class="entry"><div class="entry-row"><svg class="icon chev" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg><span class="word">interfere</span><span class="gloss">干涉；插手别人的事。</span><span class="chip mastery-mastered">已掌握</span><div class="row-tools"><button title="复制"><svg class="icon" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button><button class="trash" title="删除"><svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button></div></div></div>
+        </div>
+
+        <!-- 空态 -->
+        <div class="empty" id="emptyState" style="display:none">
+          <div class="empty-inner">
+            <div class="empty-icon">译</div>
+            <h3>开始积累你的词汇</h3>
+            <p>阅读时选中一个词，用「查词」看释义，再点「存入词汇」。同一个词在不同书里再遇到，会自动并成一条，不会重复出现。</p>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <div class="scrim" id="scrim"></div>
+    <section class="review" id="review">
+      <div class="review-head">
+        <h2>复习</h2>
+        <span class="progress">3 / 12</span>
+        <button class="close">×</button>
+      </div>
+      <div class="review-bar"><i></i></div>
+      <div class="merge-banner">
+        <svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M18 8 22 12l-4 4"/><path d="M2 12h20"/><path d="M6 16 2 12l4-4"/></svg>
+        这个词在 3 本书里都收过，只复习一次；评分会同步到 3 条记录。
+      </div>
+      <div class="card">
+        <div class="src">
+          <span>语境来自</span><b>局外人</b><span>·</span><span>第二部 第一章</span>
+          <button class="swap" id="swapBtn"><svg class="icon" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/></svg>换一处</button>
+        </div>
+        <p class="prompt">填入合适的词</p>
+        <div class="sentence">It took a certain kind of<span class="blank"></span>to say nothing at all.</div>
+
+        <div class="other-ctx" id="otherCtx">
+          <p class="sec-label">这个词的另外 2 处语境</p>
+          <button class="pick on"><small>局外人 · 第二部 第一章</small>It took a certain kind of ____ to say nothing at all.</button>
+          <button class="pick"><small>小王子 · 第 21 章</small>He gathered his ____ and asked the fox to stay.</button>
+          <button class="pick"><small>动物农场 · 第 5 章</small>Their ____ did not survive the winter.</button>
+        </div>
+
+        <button class="reveal">显示答案</button>
+      </div>
+      <div class="review-foot"><span>空格 显示答案 · 1–4 评分</span><span>今日已复习 2 个</span></div>
+    </section>
+  </div></div>
+
+  <div class="caption" id="caption"><b>①　按词合并</b>同一个词不再按书重复出现。行尾的「3 本书」是唯一新增的信息，其余布局不变。</div>
+
+  <script>
+    const CAPTIONS = {
+      merged:["①　按词合并","同一个词不再按书重复出现。行尾的「3 本书」是唯一新增的信息，其余布局不变。只在一本书出现的词直接显示书名。"],
+      expanded:["②　展开跨书语境","展开后释义只有一份，下面按书列出每一处遇见，各自可回到原文。掌握度和复习进度也只有一份，三本书共用。"],
+      conflict:["③　释义分歧","两本书生成的释义不一样时，主释义取最近一次，旧的折叠在下面，不丢，也不吵。"],
+      single:["④　只在一本书","绝大多数词属于这种情况，行里直接显示书名，看不出「合并」这回事——这是合并该有的样子。"],
+      bybook:["⑤　按书视图","今天的行为保留成可选视图。同一个词会重复出现，用一个浅标签点明「同一词，另一本书」。"],
+      review:["⑥　复习按词一条","合并后 12 个待复习是 12 个词，不是 12 条记录。顶部一行说明评分会写回全部记录。"],
+      review_swap:["⑦　换一处语境","一个词有多处语境时，可以换一句来考。同一个词一天不会被问三遍。"],
+      delete:["⑧　删除确认","这是合并带来的唯一新风险：删一条等于删三条。所以确认框要把「哪几本书、连带什么」说清楚。"],
+      empty:["⑨　空态","空态里顺便说明合并规则，让人第一次收词时就知道不会重复。"]
+    };
+    const body = document.body, review = document.getElementById("review"), scrim = document.getElementById("scrim");
+    const listWord = document.getElementById("listWord"), listBook = document.getElementById("listBook"), emptyState = document.getElementById("emptyState");
+    const entry = document.getElementById("eCourage"), alt = document.getElementById("altBox"), other = document.getElementById("otherCtx");
+    const chev = document.getElementById("chevCourage"), caption = document.getElementById("caption");
+    const vwWord = document.getElementById("vw-word"), vwBook = document.getElementById("vw-book"), count = document.getElementById("count");
+
+    function apply(state){
+      body.dataset.state = state;
+      const open = state === "expanded" || state === "conflict" || state === "delete";
+      entry.classList.toggle("open", open);
+      entry.classList.toggle("confirming", state === "delete");
+      chev.innerHTML = open ? '<path d="M6 9l6 6 6-6"/>' : '<path d="M9 18l6-6-6-6"/>';
+      alt.style.display = state === "conflict" ? "block" : "none";
+      if (state === "conflict") alt.setAttribute("open","");
+      const showReview = state === "review" || state === "review-swap";
+      review.style.display = showReview ? "flex" : "none";
+      scrim.style.display = showReview ? "block" : "none";
+      other.style.display = state === "review-swap" ? "block" : "none";
+      const byBook = state === "bybook";
+      listBook.style.display = byBook ? "flex" : "none";
+      listWord.style.display = (byBook || state === "empty") ? "none" : "flex";
+      emptyState.style.display = state === "empty" ? "grid" : "none";
+      vwWord.classList.toggle("on", !byBook); vwBook.classList.toggle("on", byBook);
+      count.textContent = byBook ? "127 条记录 · 分布在 5 本书" : "98 个词 · 来自 127 条记录 · 12 个待复习";
+      if (state === "single") entry.scrollIntoView({block:"nearest"});
+      const c = CAPTIONS[state.replace("-","_")];
+      if (c) caption.innerHTML = "<b>"+c[0]+"</b>"+c[1];
+      document.querySelectorAll(".state-nav button").forEach(b => b.classList.toggle("active", b.dataset.state === state));
+    }
+    document.querySelectorAll(".state-nav button").forEach(b => b.onclick = () => apply(b.dataset.state));
+    document.getElementById("cancelDel").onclick = () => apply("expanded");
+    document.getElementById("swapBtn").onclick = () => apply("review-swap");
+    vwBook.onclick = () => apply("bybook"); vwWord.onclick = () => apply("merged");
+    apply("merged");
+  </script>
+</body>
+</html>

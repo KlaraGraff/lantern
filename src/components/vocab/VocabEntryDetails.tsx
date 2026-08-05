@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -23,6 +23,14 @@ export interface VocabEntryDetailsProps {
   bookTitle?: string;
   /** Omitted when there is nowhere to navigate to. */
   onOpenInReader?: () => void;
+  /** Slot under the definition — the folded sibling definitions of a merged entry. */
+  afterDefinition?: ReactNode;
+  /**
+   * Replaces the single saved sentence. A word merged across books has one
+   * context per book, and listing them here keeps the section in the place the
+   * reader already looks for it.
+   */
+  encounters?: ReactNode;
 }
 
 /**
@@ -34,6 +42,8 @@ export default function VocabEntryDetails({
   word,
   bookTitle,
   onOpenInReader,
+  afterDefinition,
+  encounters,
 }: VocabEntryDetailsProps) {
   const { t } = useTranslation();
   const { definition } = parseDefinition(word.definition);
@@ -108,6 +118,8 @@ export default function VocabEntryDetails({
         </section>
       )}
 
+      {afterDefinition}
+
       {dictionary && (
         <section className="flex flex-col gap-1">
           <h3 className="text-[10px] font-semibold uppercase tracking-[0.4px] text-text-muted">
@@ -117,7 +129,7 @@ export default function VocabEntryDetails({
         </section>
       )}
 
-      {contextSentence && (
+      {encounters ?? (contextSentence && (
         <section className="flex flex-col gap-1">
           <h3 className="text-[10px] font-semibold uppercase tracking-[0.4px] text-text-muted">
             {t("vocab.detail.fromBook")}
@@ -128,7 +140,7 @@ export default function VocabEntryDetails({
             </p>
           </blockquote>
         </section>
-      )}
+      ))}
 
       {contextExplanation && (
         <section className="flex flex-col gap-1">

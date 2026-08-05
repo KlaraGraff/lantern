@@ -214,15 +214,17 @@ struct VocabReviewState {
     fsrs_version: i64,
 }
 
-fn row_to_review_state(row: &rusqlite::Row) -> rusqlite::Result<VocabReviewState> {
+/// Reads the review columns starting at `offset`, so a query may select the
+/// word alongside them without a second round trip.
+fn row_to_review_state(row: &rusqlite::Row, offset: usize) -> rusqlite::Result<VocabReviewState> {
     Ok(VocabReviewState {
-        review_count: row.get(0)?,
-        review_interval_days: row.get(1)?,
-        last_reviewed_at: row.get(2)?,
-        last_review_rating: row.get(3)?,
-        fsrs_stability: row.get(4)?,
-        fsrs_difficulty: row.get(5)?,
-        fsrs_version: row.get(6)?,
+        review_count: row.get(offset)?,
+        review_interval_days: row.get(offset + 1)?,
+        last_reviewed_at: row.get(offset + 2)?,
+        last_review_rating: row.get(offset + 3)?,
+        fsrs_stability: row.get(offset + 4)?,
+        fsrs_difficulty: row.get(offset + 5)?,
+        fsrs_version: row.get(offset + 6)?,
     })
 }
 
@@ -360,6 +362,83 @@ fn schedule_review(
         state.stability,
         state.difficulty,
     ))
+}
+
+/// The state a review or a status change leaves behind, ready to be copied
+/// onto the sibling rows of the same word.
+#[derive(Debug, Clone)]
+struct VocabProgress {
+    mastery: String,
+    next_review_at: Option<i64>,
+    review_count: i64,
+    review_interval_days: i64,
+    last_reviewed_at: Option<i64>,
+    last_review_rating: Option<String>,
+    fsrs_stability: Option<f64>,
+    fsrs_difficulty: Option<f64>,
+    fsrs_version: i64,
+}
+
+/// Mastery and review progress belong to the word, not to the row: the same
+/// word saved from three books is one entry to the reader, with one schedule.
+/// Rather than change the schema, the row that was just updated writes its
+/// resulting state through to every other row spelling the same word. Only
+/// user-initiated paths call this — sync replay lands in `sync::merge`, which
+/// applies events directly, so a propagated event cannot bounce back here.
+fn propagate_progress_to_siblings(
+    tx: &rusqlite::Transaction,
+    events: &mut Vec<EventBody>,
+    id: &str,
+    word: &str,
+    progress: &VocabProgress,
+    now: i64,
+    device: &str,
+) -> AppResult<()> {
+    let siblings: Vec<String> = {
+        let mut stmt =
+            tx.prepare("SELECT id FROM vocab_words WHERE word = ?1 COLLATE NOCASE AND id <> ?2")?;
+        let ids = stmt
+            .query_map(params![word, id], |row| row.get(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        ids
+    };
+    for sibling in siblings {
+        tx.execute(
+            "UPDATE vocab_words
+             SET mastery = ?1, next_review_at = ?2, review_count = ?3,
+                 review_interval_days = ?4, last_reviewed_at = ?5, last_review_rating = ?6,
+                 fsrs_stability = ?7, fsrs_difficulty = ?8, fsrs_version = ?9,
+                 updated_at = ?10, updated_by_device = ?11
+             WHERE id = ?12",
+            params![
+                progress.mastery,
+                progress.next_review_at,
+                progress.review_count,
+                progress.review_interval_days,
+                progress.last_reviewed_at,
+                progress.last_review_rating,
+                progress.fsrs_stability,
+                progress.fsrs_difficulty,
+                progress.fsrs_version,
+                now,
+                device,
+                sibling,
+            ],
+        )?;
+        events.push(EventBody::VocabMasterySet {
+            id: sibling,
+            mastery: progress.mastery.clone(),
+            next_review_at: progress.next_review_at,
+            review_count: progress.review_count,
+            review_interval_days: progress.review_interval_days,
+            last_reviewed_at: progress.last_reviewed_at,
+            last_review_rating: progress.last_review_rating.clone(),
+            fsrs_stability: progress.fsrs_stability,
+            fsrs_difficulty: progress.fsrs_difficulty,
+            fsrs_version: progress.fsrs_version,
+        });
+    }
+    Ok(())
 }
 
 fn validate_mastery(mastery: &str) -> AppResult<()> {
@@ -622,8 +701,7 @@ pub(crate) fn record_vocab_review_inner(
                 id,
             ],
         )?;
-        events.push(EventBody::VocabMasterySet {
-            id: id.to_string(),
+        let progress = VocabProgress {
             mastery,
             next_review_at: Some(next_review_at),
             review_count,
@@ -633,7 +711,20 @@ pub(crate) fn record_vocab_review_inner(
             fsrs_stability: Some(stability),
             fsrs_difficulty: Some(difficulty),
             fsrs_version: 1,
+        };
+        events.push(EventBody::VocabMasterySet {
+            id: id.to_string(),
+            mastery: progress.mastery.clone(),
+            next_review_at: progress.next_review_at,
+            review_count: progress.review_count,
+            review_interval_days: progress.review_interval_days,
+            last_reviewed_at: progress.last_reviewed_at,
+            last_review_rating: progress.last_review_rating.clone(),
+            fsrs_stability: progress.fsrs_stability,
+            fsrs_difficulty: progress.fsrs_difficulty,
+            fsrs_version: progress.fsrs_version,
         });
+        propagate_progress_to_siblings(tx, events, id, &current.word, &progress, now, &device)?;
         tx.query_row(
             &format!("SELECT {SELECT_COLS} FROM vocab_words WHERE id = ?1"),
             params![id],
@@ -677,15 +768,14 @@ pub(crate) fn update_vocab_mastery_inner(
         // A status change (for example, "start learning") is not a review.
         // Keep the absolute count in the sync event so a future explicit SRS
         // review command can remain idempotent across replay.
-        let review = tx
+        let (word, review) = tx
             .query_row(
-                "SELECT review_count, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version FROM vocab_words WHERE id = ?1",
+                "SELECT word, review_count, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version FROM vocab_words WHERE id = ?1",
                 params![id],
-                row_to_review_state,
+                |row| Ok((row.get::<_, String>(0)?, row_to_review_state(row, 1)?)),
             )
             .map_err(crate::error::AppError::from)?;
-        events.push(EventBody::VocabMasterySet {
-            id: id.to_string(),
+        let progress = VocabProgress {
             mastery: mastery.to_string(),
             next_review_at,
             review_count: review.review_count,
@@ -695,7 +785,20 @@ pub(crate) fn update_vocab_mastery_inner(
             fsrs_stability: review.fsrs_stability,
             fsrs_difficulty: review.fsrs_difficulty,
             fsrs_version: review.fsrs_version,
+        };
+        events.push(EventBody::VocabMasterySet {
+            id: id.to_string(),
+            mastery: progress.mastery.clone(),
+            next_review_at: progress.next_review_at,
+            review_count: progress.review_count,
+            review_interval_days: progress.review_interval_days,
+            last_reviewed_at: progress.last_reviewed_at,
+            last_review_rating: progress.last_review_rating.clone(),
+            fsrs_stability: progress.fsrs_stability,
+            fsrs_difficulty: progress.fsrs_difficulty,
+            fsrs_version: progress.fsrs_version,
         });
+        propagate_progress_to_siblings(tx, events, id, &word, &progress, now, &device)?;
         Ok(())
     })
 }
@@ -1134,22 +1237,21 @@ pub(crate) fn bulk_update_vocab_mastery_inner(
     sync.with_tx(db, timestamp, |tx, events| {
         let mut changed = 0;
         for id in ids {
-            let review = tx
+            let found = tx
                 .query_row(
-                    "SELECT review_count, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version FROM vocab_words WHERE id = ?1",
+                    "SELECT word, review_count, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version FROM vocab_words WHERE id = ?1",
                     params![id],
-                    row_to_review_state,
+                    |row| Ok((row.get::<_, String>(0)?, row_to_review_state(row, 1)?)),
                 )
                 .ok();
-            let Some(review) = review else {
+            let Some((word, review)) = found else {
                 continue;
             };
             tx.execute(
                 "UPDATE vocab_words SET mastery = ?1, next_review_at = ?2, updated_at = ?3, updated_by_device = ?4 WHERE id = ?5",
                 params![mastery, next_review_at, timestamp, device, id],
             )?;
-            events.push(EventBody::VocabMasterySet {
-                id: id.clone(),
+            let progress = VocabProgress {
                 mastery: mastery.to_string(),
                 next_review_at,
                 review_count: review.review_count,
@@ -1159,7 +1261,22 @@ pub(crate) fn bulk_update_vocab_mastery_inner(
                 fsrs_stability: review.fsrs_stability,
                 fsrs_difficulty: review.fsrs_difficulty,
                 fsrs_version: review.fsrs_version,
+            };
+            events.push(EventBody::VocabMasterySet {
+                id: id.clone(),
+                mastery: progress.mastery.clone(),
+                next_review_at: progress.next_review_at,
+                review_count: progress.review_count,
+                review_interval_days: progress.review_interval_days,
+                last_reviewed_at: progress.last_reviewed_at,
+                last_review_rating: progress.last_review_rating.clone(),
+                fsrs_stability: progress.fsrs_stability,
+                fsrs_difficulty: progress.fsrs_difficulty,
+                fsrs_version: progress.fsrs_version,
             });
+            propagate_progress_to_siblings(
+                tx, events, id, &word, &progress, timestamp, &device,
+            )?;
             changed += 1;
         }
         Ok(changed)
@@ -1245,6 +1362,110 @@ mod tests {
         assert_eq!(courage.chapter.as_deref(), Some("Chapter Three"));
         // No lookup row, so the review surface must not draw a chapter at all.
         assert_eq!(solitude.chapter, None);
+    }
+
+    fn stored_word(db: &Db, id: &str) -> VocabWord {
+        db.reader()
+            .query_row(
+                &format!("SELECT {SELECT_COLS} FROM vocab_words WHERE id = ?1"),
+                params![id],
+                row_to_vocab,
+            )
+            .unwrap()
+    }
+
+    /// Two books, the same word in both plus an unrelated word in the second.
+    fn setup_sibling_db() -> (TempDir, Db, SyncWriter, String, String, String) {
+        let (dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-a");
+        insert_import_book(&db, "book-b");
+        let a = add_vocab_word_inner("book-a", "Courage", "def a", None, None, None, &db, &sync)
+            .unwrap();
+        let b = add_vocab_word_inner("book-b", "courage", "def b", None, None, None, &db, &sync)
+            .unwrap();
+        let other =
+            add_vocab_word_inner("book-b", "solitude", "def c", None, None, None, &db, &sync)
+                .unwrap();
+        (dir, db, sync, a.id, b.id, other.id)
+    }
+
+    #[test]
+    fn mastery_change_reaches_the_same_word_in_another_book() {
+        let (_dir, db, sync, a, b, other) = setup_sibling_db();
+
+        update_vocab_mastery_inner(&a, "learning", Some(1_800_000_000_000), &db, &sync).unwrap();
+
+        // Case differences are the same word, so the sibling follows along.
+        let sibling = stored_word(&db, &b);
+        assert_eq!(sibling.mastery, "learning");
+        assert_eq!(sibling.next_review_at, Some(1_800_000_000_000));
+        // A different word must never be dragged along.
+        let untouched = stored_word(&db, &other);
+        assert_eq!(untouched.mastery, "new");
+        assert_eq!(untouched.next_review_at, None);
+    }
+
+    #[test]
+    fn review_result_reaches_the_same_word_in_another_book() {
+        let (_dir, db, sync, a, b, other) = setup_sibling_db();
+
+        let reviewed = record_vocab_review_inner(&a, VocabReviewRating::Good, &db, &sync).unwrap();
+
+        let sibling = stored_word(&db, &b);
+        assert_eq!(sibling.mastery, reviewed.mastery);
+        assert_eq!(sibling.next_review_at, reviewed.next_review_at);
+        assert_eq!(sibling.review_count, reviewed.review_count);
+        assert_eq!(sibling.review_interval_days, reviewed.review_interval_days);
+        assert_eq!(sibling.last_reviewed_at, reviewed.last_reviewed_at);
+        assert_eq!(
+            sibling.last_review_rating.as_deref(),
+            reviewed.last_review_rating.as_deref()
+        );
+        assert_eq!(sibling.fsrs_stability, reviewed.fsrs_stability);
+        assert_eq!(sibling.fsrs_difficulty, reviewed.fsrs_difficulty);
+        assert_eq!(stored_word(&db, &other).review_count, 0);
+    }
+
+    #[test]
+    fn bulk_mastery_change_reaches_siblings_without_inflating_the_count() {
+        let (_dir, db, sync, a, b, other) = setup_sibling_db();
+
+        // Only one of the two sibling rows is selected.
+        let changed =
+            bulk_update_vocab_mastery_inner(std::slice::from_ref(&a), "mastered", None, &db, &sync)
+                .unwrap();
+
+        assert_eq!(changed, 1);
+        assert_eq!(stored_word(&db, &b).mastery, "mastered");
+        assert_eq!(stored_word(&db, &other).mastery, "new");
+    }
+
+    #[test]
+    fn a_word_saved_from_one_book_only_still_updates_itself() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-a");
+        let only = add_vocab_word_inner(
+            "book-a",
+            "solitude",
+            "being alone",
+            None,
+            None,
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        update_vocab_mastery_inner(&only.id, "mastered", None, &db, &sync).unwrap();
+
+        let stored = stored_word(&db, &only.id);
+        assert_eq!(stored.mastery, "mastered");
+        assert_eq!(stored.next_review_at, None);
+        let rows: i64 = db
+            .reader()
+            .query_row("SELECT COUNT(*) FROM vocab_words", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(rows, 1);
     }
 
     fn backup_word(id: &str, book_id: &str, word: &str, definition: &str) -> VocabBackupWord {

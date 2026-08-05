@@ -29,11 +29,20 @@ import {
   Loader2,
 } from "lucide-react";
 import Button from "./ui/Button";
-import { useAllDictionary, useAllLookupHistory, type DictionaryWord, type LookupRecord, type LookupRecordPage } from "../hooks/useDictionary";
+import { useAllDictionary, useAllLookupHistory, type LookupRecord, type LookupRecordPage } from "../hooks/useDictionary";
 import { timeAgo } from "../utils/timeAgo";
 import PronounceButton from "./speech/PronounceButton";
 import VocabEntryDetails from "./vocab/VocabEntryDetails";
+import MergedVocabDetails, { type MasteryLevel } from "./vocab/MergedVocabDetails";
 import { glossOf, parseDefinition } from "./vocab/entry-text";
+import {
+  bookCountsByWord,
+  dueMergedEntries,
+  daysUntilDue,
+  mergeVocabWords,
+  vocabMergeKey,
+  type MergedVocabEntry,
+} from "./vocab/merge";
 import {
   contextualReviewAnswer,
   contextualReviewCloze,
@@ -42,6 +51,7 @@ import {
   contextualSentenceMeaning,
 } from "./vocab/contextual-review";
 import { useOpenBook } from "../hooks/useOpenBook";
+import { useSettings } from "../hooks/useSettings";
 import {
   LearningCardModules,
   parseCardDesignConfig,
@@ -55,6 +65,8 @@ const REPEAT_LOOKUP_THRESHOLD = 3;
 
 type SortMode = "newest" | "oldest" | "az";
 type ViewMode = "list" | "card";
+/** How the saved tab is grouped: one row per word, or today's per-book listing. */
+type ListView = "word" | "book";
 type ContentTab = "vocab" | "history";
 type BackupFormat = "json" | "csv";
 type ImportConflictPolicy = "skip" | "overwrite";
@@ -127,6 +139,31 @@ const VOCAB_BACKUP_CSV_HEADERS = [
   "updated_at",
 ];
 
+/** A row of the saved list: one merged word, or one record in the by-book view. */
+interface VocabListEntry {
+  entryKey: string;
+  entry: MergedVocabEntry;
+  /** By-book view only: this same word is also saved from another book. */
+  sameWordOtherBook: boolean;
+}
+
+interface VocabListGroup {
+  id: string;
+  /** Null for the ungrouped card view. */
+  label: string | null;
+  kind: "letter" | "book" | null;
+  entries: VocabListEntry[];
+}
+
+/** Names the books a merged delete would empty, joined the way the locale does. */
+function formatBookList(titles: string[], locale: string): string {
+  try {
+    return new Intl.ListFormat(locale, { style: "long", type: "conjunction" }).format(titles);
+  } catch {
+    return titles.join(", ");
+  }
+}
+
 /** One key cap plus what it does, for the review card's shortcut footer. */
 function ReviewShortcut({ cap, label }: { cap: string; label: string }) {
   return (
@@ -138,7 +175,7 @@ function ReviewShortcut({ cap, label }: { cap: string; label: string }) {
 }
 
 export default function DictionaryContent() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const openInReader = useOpenBook();
   const { words, remove, updateMastery, recordReview, refresh: refreshWords } = useAllDictionary();
   const { records, total: historyTotal, books: historyBooks, hasMore: historyHasMore, loadingMore: historyLoadingMore, refresh: refreshHistory, loadMore: loadMoreHistory, remove: removeHistoryRecord, clear: clearHistory } = useAllLookupHistory();
@@ -150,7 +187,7 @@ export default function DictionaryContent() {
   const [reviewOnly, setReviewOnly] = useState(false);
   const [contentTab, setContentTab] = useState<ContentTab>("vocab");
   const [now, setNow] = useState(0);
-  const [reviewQueue, setReviewQueue] = useState<DictionaryWord[]>([]);
+  const [reviewQueue, setReviewQueue] = useState<MergedVocabEntry[]>([]);
   const [reviewIndex, setReviewIndex] = useState(0);
   const [reviewAnswerVisible, setReviewAnswerVisible] = useState(false);
   const [reviewMeaningVisible, setReviewMeaningVisible] = useState(false);
@@ -172,19 +209,48 @@ export default function DictionaryContent() {
   const [bulkMastery, setBulkMastery] = useState<"new" | "learning" | "mastered">("learning");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
-  const [learningCardConfig, setLearningCardConfig] = useState(() => parseCardDesignConfig(undefined));
+  const [deleteEntry, setDeleteEntry] = useState<MergedVocabEntry | null>(null);
+  const [reviewContextIndex, setReviewContextIndex] = useState(0);
+  const [reviewContextPickerOpen, setReviewContextPickerOpen] = useState(false);
+  const { settings, save: saveSetting } = useSettings();
   const clearConfirmationTimer = useRef<number | null>(null);
   const reviewDialogRef = useRef<HTMLDivElement | null>(null);
   const reviewOpenerRef = useRef<HTMLElement | null>(null);
   const reviewRevealRef = useRef<HTMLButtonElement | null>(null);
   const reviewPronounceRef = useRef<HTMLSpanElement | null>(null);
   const reviewSubmittingRef = useRef(false);
+  const reviewRatedRef = useRef(false);
 
-  useEffect(() => {
-    invoke<Record<string, string>>("get_all_settings")
-      .then((settings) => setLearningCardConfig(parseCardDesignConfig(settings.learning_card_config)))
-      .catch(() => {});
-  }, []);
+  const learningCardConfig = useMemo(
+    () => parseCardDesignConfig(settings.learning_card_config),
+    [settings.learning_card_config],
+  );
+
+  // Grouping the saved tab by word is the default; by book is the old view,
+  // kept because it is the only way to see what one book cost you.
+  const listView: ListView = settings.vocab_list_view === "book" ? "book" : "word";
+
+  // "Use as main definition" has to outlive the render, and it cannot be stored
+  // by touching `updated_at`: mastery write-through rewrites every sibling's
+  // timestamp, so the promotion would be erased by the next review.
+  const primaryOverrides = useMemo<Record<string, string>>(() => {
+    const raw = settings.vocab_primary_definition;
+    if (!raw) return {};
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+      return Object.fromEntries(
+        Object.entries(parsed as Record<string, unknown>)
+          .filter(([, value]) => typeof value === "string") as Array<[string, string]>,
+      );
+    } catch {
+      return {};
+    }
+  }, [settings.vocab_primary_definition]);
+
+  const setPrimaryRow = useCallback((key: string, rowId: string) => {
+    void saveSetting("vocab_primary_definition", JSON.stringify({ ...primaryOverrides, [key]: rowId }));
+  }, [primaryOverrides, saveSetting]);
 
   const historySearch = contentTab === "history" ? search.trim() : "";
   const historyBookFilter = contentTab === "history" ? bookFilter ?? undefined : undefined;
@@ -207,15 +273,25 @@ export default function DictionaryContent() {
     }
   }, []);
 
-  const dueWords = useMemo(() => words.filter((word) => word.next_review_at !== null && word.next_review_at <= now), [now, words]);
+  // The whole library, merged: what the counts and the review queue are about.
+  const allEntries = useMemo(() => mergeVocabWords(words, primaryOverrides), [words, primaryOverrides]);
+  const bookCounts = useMemo(() => bookCountsByWord(words), [words]);
+  const dueEntries = useMemo(() => dueMergedEntries(allEntries, now), [allEntries, now]);
+
   const reviewing = reviewQueue[reviewIndex] ?? null;
-  const reviewCloze = useMemo(() => reviewing ? contextualReviewCloze(reviewing.context_sentence, reviewing.word) : null, [reviewing]);
-  const reviewAnswer = useMemo(() => reviewing ? contextualReviewAnswer(reviewing.context_sentence, reviewing.word) : null, [reviewing]);
-  const reviewMeaning = useMemo(() => reviewing ? contextualSentenceMeaning(reviewing.context_explanation) : null, [reviewing]);
+  // Every context this word was saved with — the pool "use another" draws from.
+  const reviewContexts = useMemo(
+    () => reviewing ? reviewing.rows.filter((row) => (row.context_sentence?.trim() ?? "") !== "") : [],
+    [reviewing],
+  );
+  const reviewRow = reviewContexts[reviewContextIndex] ?? reviewing?.representative ?? null;
+  const reviewCloze = useMemo(() => reviewRow ? contextualReviewCloze(reviewRow.context_sentence, reviewRow.word) : null, [reviewRow]);
+  const reviewAnswer = useMemo(() => reviewRow ? contextualReviewAnswer(reviewRow.context_sentence, reviewRow.word) : null, [reviewRow]);
+  const reviewMeaning = useMemo(() => reviewRow ? contextualSentenceMeaning(reviewRow.context_explanation) : null, [reviewRow]);
   const reviewProgress = useMemo(() => contextualReviewProgress(reviewIndex, reviewQueue.length), [reviewIndex, reviewQueue.length]);
   const reviewSource = useMemo(
-    () => reviewing ? contextualReviewSource(reviewing.book_title, reviewing.chapter, t("common.unknownBook")) : null,
-    [reviewing, t],
+    () => reviewRow ? contextualReviewSource(reviewRow.book_title, reviewRow.chapter, t("common.unknownBook")) : null,
+    [reviewRow, t],
   );
 
   const filtered = useMemo(() => {
@@ -245,26 +321,46 @@ export default function DictionaryContent() {
     return copy;
   }, [filtered, sort]);
 
-  const groupedByBook = useMemo(() => {
-    const map = new Map<string, { title: string; words: DictionaryWord[] }>();
-    for (const w of sorted) {
-      if (!map.has(w.book_id)) {
-        map.set(w.book_id, { title: w.book_title || t("common.unknownBook"), words: [] });
+  /**
+   * What the saved tab actually renders. The word/book toggle decides how rows
+   * are grouped and whether they merge; the list/card toggle only decides how
+   * dense each row is, so both toggles keep meaning what they meant.
+   */
+  const listGroups = useMemo<VocabListGroup[]>(() => {
+    if (listView === "book") {
+      // One entry per record, exactly as before the merge — but a word that
+      // also lives elsewhere says so.
+      const map = new Map<string, VocabListGroup>();
+      for (const row of sorted) {
+        let group = map.get(row.book_id);
+        if (!group) {
+          group = { id: row.book_id, label: row.book_title || t("common.unknownBook"), kind: "book", entries: [] };
+          map.set(row.book_id, group);
+        }
+        group.entries.push({
+          entryKey: row.id,
+          entry: mergeVocabWords([row], primaryOverrides)[0],
+          sameWordOtherBook: (bookCounts.get(vocabMergeKey(row.word)) ?? 1) > 1,
+        });
       }
-      map.get(w.book_id)!.words.push(w);
+      return Array.from(map.values());
     }
-    return Array.from(map.entries()).map(([id, group]) => ({ id, ...group }));
-  }, [sorted, t]);
 
-  const groupedByLetter = useMemo(() => {
-    const map = new Map<string, DictionaryWord[]>();
-    for (const w of sorted) {
-      const letter = w.word[0]?.toUpperCase() || "#";
-      if (!map.has(letter)) map.set(letter, []);
-      map.get(letter)!.push(w);
+    const entries: VocabListEntry[] = mergeVocabWords(sorted, primaryOverrides)
+      .map((entry) => ({ entryKey: entry.key, entry, sameWordOtherBook: false }));
+    if (view === "card") return [{ id: "all", label: null, kind: null, entries }];
+
+    const byLetter = new Map<string, VocabListEntry[]>();
+    for (const item of entries) {
+      const letter = item.entry.word[0]?.toUpperCase() || "#";
+      const bucket = byLetter.get(letter);
+      if (bucket) bucket.push(item);
+      else byLetter.set(letter, [item]);
     }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [sorted]);
+    return Array.from(byLetter.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([letter, groupEntries]) => ({ id: letter, label: letter, kind: "letter" as const, entries: groupEntries }));
+  }, [bookCounts, listView, primaryOverrides, sorted, t, view]);
 
   const bookPills = useMemo(() => {
     const map = new Map<string, { title: string; count: number }>();
@@ -336,8 +432,12 @@ export default function DictionaryContent() {
     }));
   }, [historyBooks, t]);
 
-  const scheduleLearning = (word: DictionaryWord) => updateMastery(word.id, "learning", now + 24 * 60 * 60 * 1000);
-  const markMastered = (word: DictionaryWord) => updateMastery(word.id, "mastered", null);
+  // Mastery belongs to the word now: one call moves every record, so the list
+  // has to be re-read rather than patched row by row.
+  const setEntryMastery = useCallback(async (entry: MergedVocabEntry, mastery: MasteryLevel) => {
+    await updateMastery(entry.primary.id, mastery, mastery === "learning" ? now + 24 * 60 * 60 * 1000 : null);
+    if (entry.rows.length > 1) await refreshWords();
+  }, [now, refreshWords, updateMastery]);
   const closeReview = useCallback(() => {
     if (reviewSubmittingRef.current) return;
     setReviewQueue([]);
@@ -346,11 +446,15 @@ export default function DictionaryContent() {
     setReviewError(false);
     reviewSubmittingRef.current = false;
     setReviewSubmitting(false);
+    if (reviewRatedRef.current) {
+      reviewRatedRef.current = false;
+      void refreshWords();
+    }
     window.requestAnimationFrame(() => reviewOpenerRef.current?.focus());
-  }, []);
-  const openReview = (word: DictionaryWord) => {
+  }, [refreshWords]);
+  const openReview = (entry: MergedVocabEntry) => {
     reviewOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setReviewQueue([word, ...dueWords.filter((candidate) => candidate.id !== word.id)]);
+    setReviewQueue([entry, ...dueEntries.filter((candidate) => candidate.key !== entry.key)]);
     setReviewIndex(0);
     setReviewComplete(false);
     setReviewError(false);
@@ -361,13 +465,18 @@ export default function DictionaryContent() {
     setReviewSubmitting(true);
     setReviewError(false);
     try {
-      await recordReview(reviewing.id, rating);
+      // One rating for the word. The backend writes the resulting schedule
+      // through to the word's other records.
+      await recordReview(reviewing.representative.id, rating);
+      reviewRatedRef.current = true;
       const nextIndex = reviewIndex + 1;
       if (nextIndex < reviewQueue.length) setReviewIndex(nextIndex);
       else {
         setReviewQueue([]);
         setReviewIndex(0);
         setReviewComplete(true);
+        reviewRatedRef.current = false;
+        await refreshWords();
       }
     } catch {
       setReviewError(true);
@@ -375,7 +484,7 @@ export default function DictionaryContent() {
       reviewSubmittingRef.current = false;
       setReviewSubmitting(false);
     }
-  }, [recordReview, reviewIndex, reviewQueue.length, reviewing]);
+  }, [recordReview, refreshWords, reviewIndex, reviewQueue.length, reviewing]);
 
   // "获取提示" is one action with two possible carriers: the saved sentence
   // meaning when the row has one, otherwise the pronunciation, which every
@@ -398,6 +507,8 @@ export default function DictionaryContent() {
     setReviewAnswerVisible(false);
     setReviewMeaningVisible(false);
     setReviewError(false);
+    setReviewContextIndex(0);
+    setReviewContextPickerOpen(false);
     const frame = window.requestAnimationFrame(() => reviewing ? reviewRevealRef.current?.focus() : reviewDialogRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [reviewComplete, reviewing]);
@@ -588,14 +699,59 @@ export default function DictionaryContent() {
       setImporting(false);
     }
   };
-  const toggleWordSelection = (id: string) => {
+  // Selecting a merged row selects the records behind it — otherwise a bulk
+  // action would silently skip the copies the reader cannot see.
+  const entrySelected = (entry: MergedVocabEntry) => entry.rows.every((row) => selectedWordIds.has(row.id));
+  const toggleEntrySelection = (entry: MergedVocabEntry) => {
     setSelectedWordIds((previous) => {
       const next = new Set(previous);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      const selected = entry.rows.every((row) => next.has(row.id));
+      for (const row of entry.rows) {
+        if (selected) next.delete(row.id);
+        else next.add(row.id);
+      }
       return next;
     });
   };
+  const deleteMergedEntry = async (entry: MergedVocabEntry) => {
+    setBulkBusy(true);
+    try {
+      await invoke<number>("bulk_delete_vocab_words", { ids: entry.rows.map((row) => row.id) });
+      await refreshWords();
+      setSelectedWordIds((previous) => {
+        const next = new Set(previous);
+        for (const row of entry.rows) next.delete(row.id);
+        return next;
+      });
+      setDeleteEntry(null);
+    } catch (error) {
+      console.error("Failed to delete merged vocabulary entry:", error);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+  /** One record deletes as before; a merged word has to say what else goes. */
+  const requestDeleteEntry = (entry: MergedVocabEntry) => {
+    if (entry.rows.length === 1) void remove(entry.rows[0].id);
+    else setDeleteEntry(entry);
+  };
+  /** A word in one book expands exactly as it did before the merge. */
+  const entryDetails = (entry: MergedVocabEntry) => (entry.rows.length > 1 ? (
+    <MergedVocabDetails
+      entry={entry}
+      onOpenRow={(row) => openInReader(row.book_id, { openVocab: true, cfi: row.cfi ?? undefined })}
+      onSetPrimary={(rowId) => setPrimaryRow(entry.key, rowId)}
+      onSetMastery={(mastery) => { void setEntryMastery(entry, mastery); }}
+    />
+  ) : (
+    <VocabEntryDetails
+      word={entry.primary}
+      onOpenInReader={() => openInReader(entry.primary.book_id, {
+        openVocab: true,
+        cfi: entry.primary.cfi ?? undefined,
+      })}
+    />
+  ));
   const toggleSelectVisible = () => {
     setSelectedWordIds((previous) => {
       const visibleIds = sorted.map((word) => word.id);
@@ -663,9 +819,18 @@ export default function DictionaryContent() {
       <div className="px-page pb-2 relative select-none">
         <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar" />
         <div className="pt-titlebar flex items-center justify-between mb-6">
-          <h1 className="text-[24px] font-semibold text-text-primary tracking-[0.07px]">
-            {contentTab === "vocab" ? t("vocab.title") : t("vocab.history")}
-          </h1>
+          <div className="flex min-w-0 items-baseline gap-3">
+            <h1 className="text-[24px] font-semibold text-text-primary tracking-[0.07px]">
+              {contentTab === "vocab" ? t("vocab.title") : t("vocab.history")}
+            </h1>
+            {contentTab === "vocab" && !isEmpty && (
+              <span className="truncate text-[12px] text-text-muted">
+                {listView === "book"
+                  ? t("vocab.merged.summaryByBook", { records: words.length, books: bookPills.length })
+                  : t("vocab.merged.summary", { words: allEntries.length, records: words.length })}
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-0">
             {contentTab === "vocab" ? (
               <>
@@ -787,7 +952,7 @@ export default function DictionaryContent() {
           >
             <GraduationCap size={12} />
             {t("vocab.reviewDue")}
-            <span className="text-[11px]">{dueWords.length}</span>
+            <span className="text-[11px]">{dueEntries.length}</span>
           </button>}
           {contentTab === "history" && <button
             type="button"
@@ -811,7 +976,9 @@ export default function DictionaryContent() {
             <BookOpen size={12} className={bookFilter === null ? "text-accent-text" : ""} />
             {t("common.allBooks")}
             <span className={`text-[11px] ${bookFilter === null ? "text-accent-text" : "text-text-muted"}`}>
-              {contentTab === "vocab" ? words.length : historyBooks.reduce((sum, book) => sum + book.count, 0)}
+              {contentTab === "vocab"
+                ? (listView === "book" ? words.length : allEntries.length)
+                : historyBooks.reduce((sum, book) => sum + book.count, 0)}
             </span>
           </button>
           {(contentTab === "vocab" ? bookPills : historyBookPills).map((pill) => (
@@ -832,7 +999,27 @@ export default function DictionaryContent() {
             </button>
           ))}
 
-          {contentTab === "vocab" && <div className="ml-auto flex items-center gap-1 shrink-0">
+          {contentTab === "vocab" && (
+            <div className="ml-auto flex shrink-0 items-center gap-0.5 rounded-lg border border-border bg-bg-input p-0.5">
+              {(["word", "book"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={listView === mode}
+                  onClick={() => { void saveSetting("vocab_list_view", mode); }}
+                  className={`h-6 rounded-md px-2.5 text-[11px] cursor-pointer transition-colors ${
+                    listView === mode
+                      ? "bg-bg-surface font-semibold text-accent-text shadow-sm"
+                      : "text-text-muted hover:text-text-primary"
+                  }`}
+                >
+                  {t(mode === "word" ? "vocab.viewByWord" : "vocab.viewByBook")}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {contentTab === "vocab" && <div className="flex items-center gap-1 shrink-0">
             <button
               type="button"
               onClick={toggleSelectVisible}
@@ -1009,172 +1196,192 @@ export default function DictionaryContent() {
               {t("vocab.emptySub")}
             </p>
           </div>
-        ) : view === "list" ? (
-          <div key="list">
-            {groupedByLetter.map(([letter, letterWords]) => (
-              <div key={letter} className="mb-6">
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-[18px] font-bold text-accent">{letter}</span>
-                  <div className="flex-1 h-px bg-border-light" />
-                  <span className="text-[11px] text-text-muted">{letterWords.length}</span>
-                </div>
-                {letterWords.map((word) => {
-                  const gloss = glossOf(parseDefinition(word.definition).definition);
-                  const expanded = expandedWordId === word.id;
-                  return (
-                    <div key={word.id} className="rounded-[10px] hover:bg-bg-input group">
-                    <div
-                      className="flex items-start gap-4 px-3 pt-3 pb-3 w-full text-left cursor-pointer"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => toggleWordSelection(word.id)}
-                        aria-label={selectedWordIds.has(word.id) ? t("vocab.bulk.unselect") : t("vocab.bulk.select")}
-                        className="mt-1 size-5 shrink-0 flex items-center justify-center text-text-muted hover:text-accent-text cursor-pointer"
-                      >
-                        {selectedWordIds.has(word.id) ? <CheckSquare size={15} className="text-accent-text" /> : <Square size={15} />}
-                      </button>
-                      <button
-                        type="button"
-                        aria-expanded={expanded}
-                        onClick={() => setExpandedWordId(expanded ? null : word.id)}
-                        className="flex min-w-0 flex-1 items-start gap-4 text-left"
-                      >
-                        <div className="w-[160px] shrink-0">
-                        <span className="block text-[14px] font-semibold text-text-primary leading-5">
-                          {word.word}
-                        </span>
-                        <span className={`inline-flex mt-1 text-[10px] font-medium ${word.mastery === "mastered" ? "text-success-text" : word.mastery === "learning" ? "text-accent-text" : "text-text-muted"}`}>
-                          {t(`vocab.mastery.${word.mastery}`)}
-                        </span>
-                        {word.book_title && (
-                          <span className="flex items-center gap-1 text-[11px] text-text-muted mt-0.5">
-                            <BookOpen size={10} />
-                            <span className="truncate">{word.book_title}</span>
-                          </span>
-                        )}
-                      </div>
-                        <div className="flex-1 min-w-0">
-                        <p className="text-[13px] text-text-secondary leading-5 truncate">{gloss}</p>
-                        </div>
-                      </button>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {word.next_review_at !== null && word.next_review_at <= now && (
-                          <button
-                            type="button"
-                            onClick={(event) => { event.stopPropagation(); openReview(word); }}
-                            title={t("vocab.review")}
-                            className="size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-surface hover:text-accent-text cursor-pointer"
-                          >
-                            <RotateCcw size={14} />
-                          </button>
-                        )}
-                        {word.mastery !== "mastered" && (
-                          <button
-                            type="button"
-                            onClick={(event) => { event.stopPropagation(); markMastered(word); }}
-                            title={t("vocab.markMastered")}
-                            className="size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-surface hover:text-success-text cursor-pointer"
-                          >
-                            <CheckCircle2 size={14} />
-                          </button>
-                        )}
-                        {word.mastery !== "learning" && word.mastery !== "mastered" && (
-                          <button
-                            type="button"
-                            onClick={(event) => { event.stopPropagation(); scheduleLearning(word); }}
-                            title={t("vocab.startLearning")}
-                            className="size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-surface hover:text-accent-text cursor-pointer"
-                          >
-                            <GraduationCap size={14} />
-                          </button>
-                        )}
-                        <span className="text-[11px] text-text-muted">{timeAgo(word.created_at)}</span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            remove(word.id);
-                          }}
-                          className="p-1 rounded hover:bg-bg-surface/80 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <Trash2 size={14} className="text-text-muted" />
-                        </button>
-                      </div>
-                    </div>
-                    {expanded && (
-                      <VocabEntryDetails
-                        word={word}
-                        onOpenInReader={() => openInReader(word.book_id, {
-                          openVocab: true,
-                          cfi: word.cfi ?? undefined,
-                        })}
-                      />
-                    )}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
         ) : (
-          <div key="card" className="max-w-[525px] space-y-6">
-            {groupedByBook.map((group) => (
-              <div key={group.id}>
-                <div className="flex items-center gap-2 mb-3">
-                  <BookOpen size={14} className="text-text-muted" />
-                  <span className="text-[12px] font-semibold uppercase text-text-muted tracking-[0.3px]">
-                    {group.title}
-                  </span>
-                  <span className="text-[11px] text-text-muted">({group.words.length})</span>
-                </div>
-                <div className="space-y-3">
-                  {group.words.map((word) => {
-                    const gloss = glossOf(parseDefinition(word.definition).definition);
-                    const expanded = expandedWordId === word.id;
-                  return (
-                    <div
-                      key={word.id}
-                      className="group relative bg-bg-muted border border-border rounded-[14px] p-[17px] flex flex-col gap-2 w-full text-left cursor-pointer hover:bg-bg-input transition-colors"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => toggleWordSelection(word.id)}
-                        aria-label={selectedWordIds.has(word.id) ? t("vocab.bulk.unselect") : t("vocab.bulk.select")}
-                        className="absolute top-4 left-4 size-5 flex items-center justify-center text-text-muted hover:text-accent-text cursor-pointer"
-                      >
-                        {selectedWordIds.has(word.id) ? <CheckSquare size={15} className="text-accent-text" /> : <Square size={15} />}
-                      </button>
-                      <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            remove(word.id);
-                          }}
-                        className="absolute top-4 right-4 p-1 rounded hover:bg-bg-surface/80 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+          <div key={`${listView}-${view}`} className={view === "card" ? "max-w-[525px] space-y-6" : undefined}>
+            {listGroups.map((group) => (
+              <div key={group.id} className={view === "card" ? undefined : "mb-6"}>
+                {group.kind === "letter" && (
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="text-[18px] font-bold text-accent">{group.label}</span>
+                    <div className="flex-1 h-px bg-border-light" />
+                    <span className="text-[11px] text-text-muted">{group.entries.length}</span>
+                  </div>
+                )}
+                {group.kind === "book" && (
+                  <div className="flex items-center gap-2 mb-3">
+                    <BookOpen size={14} className="text-text-muted" />
+                    <span className="text-[12px] font-semibold uppercase text-text-muted tracking-[0.3px]">
+                      {group.label}
+                    </span>
+                    <span className="text-[11px] text-text-muted">({group.entries.length})</span>
+                  </div>
+                )}
+                <div className={view === "card" ? "space-y-3" : undefined}>
+                  {group.entries.map(({ entryKey, entry, sameWordOtherBook }) => {
+                    const gloss = glossOf(parseDefinition(entry.primary.definition).definition);
+                    const expanded = expandedWordId === entryKey;
+                    const due = entry.nextReviewAt !== null && entry.nextReviewAt <= now;
+                    // Scheduled but not yet due: say when, so a row that is
+                    // simply waiting reads differently from one with no plan.
+                    const daysAway = due ? null : daysUntilDue(entry.nextReviewAt, now);
+                    const selected = entrySelected(entry);
+                    const details = expanded && entryDetails(entry);
+                    if (view === "card") {
+                      return (
+                        <div
+                          key={entryKey}
+                          className="group relative bg-bg-muted border border-border rounded-[14px] p-[17px] flex flex-col gap-2 w-full text-left cursor-pointer hover:bg-bg-input transition-colors"
                         >
-                          <Trash2 size={15} className="text-text-muted" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-expanded={expanded}
-                          onClick={() => setExpandedWordId(expanded ? null : word.id)}
-                          className="flex flex-col items-start gap-2 pl-6 text-left"
-                        >
-                          <span className="text-[15px] font-semibold text-text-primary leading-[22.5px] tracking-[-0.23px]">
-                            {word.word}
-                          </span>
-                          <p className="text-[13px] text-text-secondary leading-[20.15px] tracking-[-0.08px] line-clamp-3 w-[460px] max-w-full">
-                            {gloss}
-                          </p>
-                        </button>
-                        {expanded && (
-                          <VocabEntryDetails
-                            word={word}
-                            onOpenInReader={() => openInReader(word.book_id, {
-                              openVocab: true,
-                              cfi: word.cfi ?? undefined,
-                            })}
-                          />
-                        )}
+                          <button
+                            type="button"
+                            onClick={() => toggleEntrySelection(entry)}
+                            aria-label={selected ? t("vocab.bulk.unselect") : t("vocab.bulk.select")}
+                            className="absolute top-4 left-4 size-5 flex items-center justify-center text-text-muted hover:text-accent-text cursor-pointer"
+                          >
+                            {selected ? <CheckSquare size={15} className="text-accent-text" /> : <Square size={15} />}
+                          </button>
+                          <button
+                            onClick={(event) => { event.stopPropagation(); requestDeleteEntry(entry); }}
+                            className="absolute top-4 right-4 p-1 rounded hover:bg-bg-surface/80 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Trash2 size={15} className="text-text-muted" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-expanded={expanded}
+                            onClick={() => setExpandedWordId(expanded ? null : entryKey)}
+                            className="flex flex-col items-start gap-2 pl-6 text-left"
+                          >
+                            <span className="flex flex-wrap items-center gap-2">
+                              <span className="text-[15px] font-semibold text-text-primary leading-[22.5px] tracking-[-0.23px]">
+                                {entry.word}
+                              </span>
+                              {entry.books.length > 1 && (
+                                <span className="flex items-center gap-1 rounded-full bg-bg-input px-1.5 py-0.5 text-[10px] text-text-muted">
+                                  <BookOpen size={10} />
+                                  {t("vocab.merged.bookCount", { count: entry.books.length })}
+                                </span>
+                              )}
+                              {sameWordOtherBook && (
+                                <span className="rounded-full bg-bg-input px-1.5 py-0.5 text-[10px] text-text-muted">
+                                  {t("vocab.merged.sameWordOtherBook")}
+                                </span>
+                              )}
+                              {due && (
+                                <span className="rounded-full bg-accent-bg px-1.5 py-0.5 text-[10px] font-medium text-accent-text">
+                                  {t("vocab.reviewDue")}
+                                </span>
+                              )}
+                              {daysAway !== null && (
+                                <span className="rounded-full bg-bg-input px-1.5 py-0.5 text-[10px] text-text-muted">
+                                  {t("vocab.due.inDays", { count: daysAway })}
+                                </span>
+                              )}
+                            </span>
+                            <p className="text-[13px] text-text-secondary leading-[20.15px] tracking-[-0.08px] line-clamp-3 w-[460px] max-w-full">
+                              {gloss}
+                            </p>
+                          </button>
+                          {details}
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={entryKey} className="rounded-[10px] hover:bg-bg-input group">
+                        <div className="flex items-start gap-4 px-3 pt-3 pb-3 w-full text-left cursor-pointer">
+                          <button
+                            type="button"
+                            onClick={() => toggleEntrySelection(entry)}
+                            aria-label={selected ? t("vocab.bulk.unselect") : t("vocab.bulk.select")}
+                            className="mt-1 size-5 shrink-0 flex items-center justify-center text-text-muted hover:text-accent-text cursor-pointer"
+                          >
+                            {selected ? <CheckSquare size={15} className="text-accent-text" /> : <Square size={15} />}
+                          </button>
+                          <button
+                            type="button"
+                            aria-expanded={expanded}
+                            onClick={() => setExpandedWordId(expanded ? null : entryKey)}
+                            className="flex min-w-0 flex-1 items-start gap-4 text-left"
+                          >
+                            <div className="w-[160px] shrink-0">
+                              <span className="block text-[14px] font-semibold text-text-primary leading-5">
+                                {entry.word}
+                              </span>
+                              <span className={`inline-flex mt-1 text-[10px] font-medium ${entry.primary.mastery === "mastered" ? "text-success-text" : entry.primary.mastery === "learning" ? "text-accent-text" : "text-text-muted"}`}>
+                                {t(`vocab.mastery.${entry.primary.mastery}`)}
+                              </span>
+                              {entry.books.length > 1 ? (
+                                <span className="flex items-center gap-1 text-[11px] text-text-muted mt-0.5">
+                                  <BookOpen size={10} />
+                                  <span className="truncate">{t("vocab.merged.bookCount", { count: entry.books.length })}</span>
+                                </span>
+                              ) : entry.primary.book_title && (
+                                <span className="flex items-center gap-1 text-[11px] text-text-muted mt-0.5">
+                                  <BookOpen size={10} />
+                                  <span className="truncate">{entry.primary.book_title}</span>
+                                </span>
+                              )}
+                              {sameWordOtherBook && (
+                                <span className="mt-1 inline-flex rounded-full bg-bg-input px-1.5 py-0.5 text-[10px] text-text-muted">
+                                  {t("vocab.merged.sameWordOtherBook")}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[13px] text-text-secondary leading-5 truncate">{gloss}</p>
+                            </div>
+                          </button>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {due && (
+                              <span className="rounded-full bg-accent-bg px-1.5 py-0.5 text-[10px] font-medium text-accent-text">
+                                {t("vocab.reviewDue")}
+                              </span>
+                            )}
+                            {daysAway !== null && (
+                              <span className="rounded-full bg-bg-input px-1.5 py-0.5 text-[10px] text-text-muted">
+                                {t("vocab.due.inDays", { count: daysAway })}
+                              </span>
+                            )}
+                            {due && (
+                              <button
+                                type="button"
+                                onClick={(event) => { event.stopPropagation(); openReview(entry); }}
+                                title={t("vocab.review")}
+                                className="size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-surface hover:text-accent-text cursor-pointer"
+                              >
+                                <RotateCcw size={14} />
+                              </button>
+                            )}
+                            {entry.primary.mastery !== "mastered" && (
+                              <button
+                                type="button"
+                                onClick={(event) => { event.stopPropagation(); void setEntryMastery(entry, "mastered"); }}
+                                title={t("vocab.markMastered")}
+                                className="size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-surface hover:text-success-text cursor-pointer"
+                              >
+                                <CheckCircle2 size={14} />
+                              </button>
+                            )}
+                            {entry.primary.mastery !== "learning" && entry.primary.mastery !== "mastered" && (
+                              <button
+                                type="button"
+                                onClick={(event) => { event.stopPropagation(); void setEntryMastery(entry, "learning"); }}
+                                title={t("vocab.startLearning")}
+                                className="size-7 rounded-md flex items-center justify-center text-text-muted hover:bg-bg-surface hover:text-accent-text cursor-pointer"
+                              >
+                                <GraduationCap size={14} />
+                              </button>
+                            )}
+                            <span className="text-[11px] text-text-muted">{timeAgo(entry.primary.created_at)}</span>
+                            <button
+                              onClick={(event) => { event.stopPropagation(); requestDeleteEntry(entry); }}
+                              className="p-1 rounded hover:bg-bg-surface/80 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <Trash2 size={14} className="text-text-muted" />
+                            </button>
+                          </div>
+                        </div>
+                        {details}
                       </div>
                     );
                   })}
@@ -1251,6 +1458,25 @@ export default function DictionaryContent() {
           </div>
         </div>
       )}
+      {deleteEntry && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay px-4" onClick={() => setDeleteEntry(null)}>
+          <div className="w-[400px] max-w-full rounded-lg border border-border bg-bg-surface shadow-popover p-5" onClick={(event) => event.stopPropagation()}>
+            <h2 className="text-[16px] font-semibold text-text-primary">{t("vocab.merged.deleteTitle", { word: deleteEntry.word })}</h2>
+            <p className="mt-2 text-[13px] leading-5 text-text-secondary">
+              {t("vocab.merged.deleteBody", {
+                books: formatBookList(
+                  deleteEntry.books.map((book) => book.title || t("common.unknownBook")),
+                  i18n.language,
+                ),
+              })}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="ghost" size="md" onClick={() => setDeleteEntry(null)}>{t("common.cancel")}</Button>
+              <button type="button" onClick={() => deleteMergedEntry(deleteEntry).catch(() => {})} disabled={bulkBusy} className="h-9 rounded-md bg-red-500 px-3 text-[13px] font-medium text-white hover:bg-red-600 disabled:opacity-50 cursor-pointer">{t("vocab.merged.deleteAll")}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {(reviewing || reviewComplete) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay backdrop-blur-sm" onClick={closeReview}>
           <div ref={reviewDialogRef} role="dialog" aria-modal="true" aria-labelledby="vocab-review-title" tabIndex={-1} className="w-[520px] max-w-[calc(100vw-32px)] bg-bg-surface border border-border rounded-lg shadow-popover p-5 outline-none" onClick={(event) => event.stopPropagation()}>
@@ -1279,16 +1505,62 @@ export default function DictionaryContent() {
                 >
                   <div className="h-full rounded-full bg-accent transition-[width] duration-200 motion-reduce:transition-none" style={{ width: `${reviewProgress.ratio * 100}%` }} />
                 </div>
+                {reviewing.books.length > 1 && (
+                  <p className="mt-3 flex items-start gap-1.5 rounded-md bg-accent-bg px-3 py-2 text-[11px] leading-4 text-accent-text">
+                    <RotateCcw size={12} className="mt-px shrink-0" />
+                    {t("vocab.review.mergedBanner", { count: reviewing.books.length })}
+                  </p>
+                )}
                 {!reviewAnswerVisible ? (
                   <div className="flex min-h-[300px] flex-col text-center">
                     <p className="mt-6 flex items-center justify-center gap-1.5 text-[12px] text-text-muted">
                       <BookOpen size={12} className="shrink-0" />
+                      {reviewContexts.length > 1 && <span className="shrink-0">{t("vocab.review.contextFrom")}</span>}
                       <span className="max-w-[220px] truncate">{reviewSource?.bookTitle}</span>
                       {reviewSource?.chapter && <>
                         <span aria-hidden="true" className="text-text-muted/60">·</span>
                         <span className="max-w-[180px] truncate">{reviewSource.chapter}</span>
                       </>}
+                      {reviewContexts.length > 1 && (
+                        <button
+                          type="button"
+                          aria-expanded={reviewContextPickerOpen}
+                          onClick={() => setReviewContextPickerOpen((open) => !open)}
+                          className="flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-[11px] text-text-secondary hover:border-accent hover:bg-accent-bg hover:text-accent-text cursor-pointer"
+                        >
+                          <RotateCcw size={11} />
+                          {t("vocab.review.swapContext")}
+                        </button>
+                      )}
                     </p>
+                    {reviewContextPickerOpen && reviewContexts.length > 1 && (
+                      <div className="mx-auto mt-3 flex w-full max-w-md flex-col gap-1.5 rounded-md border border-border-light bg-bg-muted p-2 text-left">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.4px] text-text-muted">
+                          {t("vocab.review.otherContexts", { count: reviewContexts.length - 1 })}
+                        </p>
+                        {reviewContexts.map((row, index) => (
+                          <button
+                            key={row.id}
+                            type="button"
+                            aria-pressed={index === reviewContextIndex}
+                            onClick={() => { setReviewContextIndex(index); setReviewContextPickerOpen(false); }}
+                            className={`rounded-md border px-2 py-1.5 text-left cursor-pointer ${
+                              index === reviewContextIndex
+                                ? "border-accent bg-accent-bg"
+                                : "border-border bg-bg-surface hover:border-accent"
+                            }`}
+                          >
+                            <span className="block text-[10px] text-text-muted">
+                              {row.book_title || t("common.unknownBook")}
+                              {row.chapter ? ` · ${row.chapter}` : ""}
+                            </span>
+                            <span className="mt-0.5 block font-serif text-[12px] leading-[1.6] text-text-secondary line-clamp-2">
+                              {row.context_sentence}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {reviewCloze ? <>
                       <p className="mt-4 text-[12px] text-text-muted">{t("vocab.contextReviewPrompt")}</p>
                       <p className="mt-3 font-serif text-[20px] leading-9 text-text-primary">
@@ -1319,7 +1591,7 @@ export default function DictionaryContent() {
                     {!reviewCloze && <p className="mt-3 rounded-md bg-bg-muted px-3 py-2 text-center text-[12px] text-text-muted">{t("vocab.reviewNoContext")}</p>}
                     {reviewAnswer && <p className="mt-4 text-center font-serif text-[17px] leading-7 text-text-secondary">{reviewAnswer.before}<mark className="rounded bg-accent-bg px-0.5 font-semibold text-accent-text">{reviewAnswer.answer}</mark>{reviewAnswer.after}</p>}
                     <div className="mt-4 rounded-md bg-bg-muted p-3">
-                      <p className="text-[14px] leading-6 text-text-secondary whitespace-pre-line">{reviewing.definition}</p>
+                      <p className="text-[14px] leading-6 text-text-secondary whitespace-pre-line">{reviewing.primary.definition}</p>
                       {reviewMeaning && <p className="mt-3 border-t border-border pt-3 text-[13px] leading-5 text-text-muted">{reviewMeaning}</p>}
                     </div>
                     {reviewError && <p role="alert" className="mt-4 text-center text-[12px] text-danger-text">{t("vocab.reviewSaveFailed")}</p>}
