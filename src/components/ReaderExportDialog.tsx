@@ -18,6 +18,11 @@ interface ReaderExportDialogProps {
 
 type Status = "ready" | "preparing" | "saving" | "success" | "error";
 
+interface SelectionNotePage {
+  notes: { location: string | null; content: string }[];
+  next_cursor: string | null;
+}
+
 async function resolveChapters(records: ExportRecord[], resolveChapter: ReaderExportDialogProps["resolveChapter"]) {
   const output = [...records];
   let index = 0;
@@ -33,9 +38,34 @@ async function resolveChapters(records: ExportRecord[], resolveChapter: ReaderEx
   return output;
 }
 
-function toExportRecords(highlights: Highlight[], words: DictionaryWord[], bookTitle: string): ExportRecord[] {
+/**
+ * A highlight carries no text of its own. What the reader wrote about the
+ * passage is a note anchored at the same range, so the export joins the two
+ * on `location == cfi_range` — the same opaque-string rule the Annotations
+ * page folds by. Notes arrive newest first, so the first one at an anchor
+ * wins, matching what that page shows.
+ */
+async function loadHighlightNotes(bookId: string): Promise<Map<string, string>> {
+  const byAnchor = new Map<string, string>();
+  let cursor: string | null = null;
+  do {
+    const page: SelectionNotePage = await invoke<SelectionNotePage>("list_notes", {
+      bookId,
+      anchorKind: "selection",
+      cursor,
+      limit: 200,
+    });
+    for (const note of page.notes) {
+      if (note.location && !byAnchor.has(note.location)) byAnchor.set(note.location, note.content);
+    }
+    cursor = page.next_cursor;
+  } while (cursor);
+  return byAnchor;
+}
+
+function toExportRecords(highlights: Highlight[], words: DictionaryWord[], bookTitle: string, notes: Map<string, string>): ExportRecord[] {
   return [
-    ...highlights.map((item) => ({ kind: "highlight" as const, bookTitle, sourceText: item.text_content || undefined, note: item.note || undefined, color: item.color, cfi: item.cfi_range, createdAt: new Date(item.created_at).toISOString() })),
+    ...highlights.map((item) => ({ kind: "highlight" as const, bookTitle, sourceText: item.text_content || undefined, note: notes.get(item.cfi_range) || undefined, color: item.color, cfi: item.cfi_range, createdAt: new Date(item.created_at).toISOString() })),
     ...words.map((item) => ({ kind: "vocabulary" as const, bookTitle: bookTitle || item.book_title || "", word: item.word, definition: item.definition, context: item.context_sentence || undefined, contextExplanation: item.context_explanation || undefined, mastery: item.mastery, cfi: item.cfi || undefined, createdAt: new Date(item.created_at).toISOString() })),
   ];
 }
@@ -74,11 +104,12 @@ export default function ReaderExportDialog({ open, bookId, bookTitle, onClose, r
     const generation = ++requestGenerationRef.current;
     setStatus("preparing"); setError(""); setRecords([]);
     try {
-      const [highlights, words] = await Promise.all([
+      const [highlights, words, notes] = await Promise.all([
         invoke<Highlight[]>("list_highlights", { bookId }),
         invoke<DictionaryWord[]>("list_vocab_words", { bookId }),
+        loadHighlightNotes(bookId),
       ]);
-      const resolved = await resolveChapters(toExportRecords(highlights, words, bookTitle), resolveChapter);
+      const resolved = await resolveChapters(toExportRecords(highlights, words, bookTitle, notes), resolveChapter);
       if (generation !== requestGenerationRef.current) return;
       setRecords(resolved); setStatus("ready");
     } catch (reason) {

@@ -177,7 +177,7 @@ fn approval_input_for_tool(
             let (effect, label) = match arguments.get("kind").and_then(Value::as_str) {
                 Some("bookmark") => ("Permanently delete the selected bookmarks.", "bookmark"),
                 Some("highlight") => (
-                    "Permanently delete the selected highlights and their attached legacy note text.",
+                    "Permanently delete the selected highlights. Notes anchored at the same range are not deleted.",
                     "highlight",
                 ),
                 Some("note") => ("Permanently delete the selected first-class notes.", "note"),
@@ -548,8 +548,8 @@ mod tests {
             )
             .unwrap();
             conn.execute(
-                "INSERT INTO highlights (id, book_id, cfi_range, color, note, text_content, created_at, updated_at)
-                 VALUES ('h1','b1','epubcfi(/6/4!/2,/4)','yellow','my note','quoted passage',?1,?1)",
+                "INSERT INTO highlights (id, book_id, cfi_range, color, text_content, created_at, updated_at)
+                 VALUES ('h1','b1','epubcfi(/6/4!/2,/4)','yellow','quoted passage',?1,?1)",
                 params![now],
             ).unwrap();
             conn.execute(
@@ -1131,7 +1131,11 @@ mod tests {
         let body = text_of(handler.get_highlights(Parameters(args)).await.unwrap());
         let arr: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(arr[0]["text_content"], serde_json::json!("quoted passage"));
-        assert_eq!(arr[0]["note"], serde_json::json!("my note"));
+        assert_eq!(
+            arr[0]["note"],
+            serde_json::Value::Null,
+            "a highlight carries no note of its own — `get_notes` holds the text"
+        );
     }
 
     #[tokio::test]

@@ -18,7 +18,7 @@ pub struct GetHighlightsArgs {
 #[tool_router(router = highlights_router, vis = "pub(crate)")]
 impl LanternMcpHandler {
     #[tool(
-        description = "List all highlights for a book, including text, color, and the legacy attached-note snapshot. First-class and migrated highlight notes are available from `get_notes`, so note content may overlap."
+        description = "List all highlights for a book, including the quoted text and color. A highlight carries no text of its own — notes written about a passage come from `get_notes`, anchored at the same range."
     )]
     pub async fn get_highlights(
         &self,

@@ -161,7 +161,7 @@ struct LanguageProfileResponse {
 #[tool_router(router = learning_router, vis = "pub(crate)")]
 impl LanternMcpHandler {
     #[tool(
-        description = "List first-class notes across the library or for a book/word, including word, selection, and book anchors. Legacy highlight notes were migrated as selection notes and may overlap with `get_highlights`."
+        description = "List notes across the library or for a book/word, including word, selection, and book anchors. This is the only source of note text; a note on a highlighted passage is a selection note whose `location` equals the highlight's `cfi_range`."
     )]
     pub async fn get_notes(
         &self,

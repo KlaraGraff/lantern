@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lantern · 笔记页扩成「标注」页 样张</title>
+  <style>
+    :root{--surface:#fff;--muted:#fafafa;--input:#f3f3f5;--text:#18181b;--secondary:#52525c;--quiet:#71717b;--faint:#9a9aa4;--placeholder:#b4b4bb;--border:#e4e4e7;--border-soft:#efeff2;--accent:#7c3aed;--accent-bg:#f3e8ff;--accent-soft:#e6d8fb;--mark:#fdf0b8;--mark-line:#e8c95a;--danger:#dc2626;--danger-bg:#fef2f2;--ok:#3e8060}
+    *{box-sizing:border-box}
+    body{margin:0;min-width:1120px;background:#dcdce1;color:var(--text);font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    button{font:inherit;color:inherit;cursor:pointer}
+    .icon{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+    .stage{min-height:100vh;padding:52px 28px 28px;display:grid;place-items:center}
+    .window{position:relative;width:min(1440px,calc(100vw - 56px));height:min(900px,calc(100vh - 96px));min-height:670px;overflow:hidden;display:grid;grid-template-columns:220px 1fr;border:1px solid #cfcfd5;border-radius:16px;background:var(--surface);box-shadow:0 24px 70px rgba(24,24,27,.18)}
+    .traffic{position:absolute;z-index:5;top:18px;left:18px;display:flex;gap:8px}.traffic i{width:12px;height:12px;border-radius:50%;background:#ff5f57}.traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}
+    .sidebar{padding:58px 14px 16px;background:#f7f7f8;border-right:1px solid var(--border)}
+    .brand{padding:0 10px 22px;font-size:15px;font-weight:650}
+    .nav{display:flex;align-items:center;gap:10px;height:40px;padding:0 11px;margin-bottom:4px;border-radius:9px;color:var(--quiet);font-size:12px}.nav.active{background:var(--accent-bg);color:var(--accent);font-weight:600}.nav span:first-child{width:18px;text-align:center;font-size:15px}
+    .main{display:flex;flex-direction:column;min-width:0;background:var(--surface)}
+    .header{padding:32px 28px 16px;border-bottom:1px solid var(--border)}
+    .head-top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:14px}
+    .head-top h1{margin:0;font-size:22px}.head-top p{margin:4px 0 0;color:var(--quiet);font-size:11.5px}
+    .head-right{display:flex;align-items:center;gap:8px;color:var(--quiet);font-size:11px}.head-right button{width:30px;height:30px;border:0;border-radius:7px;background:transparent;color:var(--faint);display:grid;place-items:center}.head-right button:hover{background:var(--input);color:var(--text)}
+    .controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+    .search{flex:1;min-width:260px;height:34px;padding:0 11px;display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:8px;background:var(--input);color:var(--placeholder);font-size:12px}
+    .select{height:34px;padding:0 10px;display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--secondary);font-size:12px}.select .icon{width:12px;height:12px;color:var(--faint)}
+    .date{height:34px;padding:0 9px;display:flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:8px;background:var(--input);color:var(--faint);font-size:11px}.date b{color:var(--secondary);font-weight:400;font-size:11.5px}
+    .typebar{padding:10px 28px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:7px}
+    .pill{height:29px;padding:0 12px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--secondary);display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:500}.pill b{color:var(--faint);font-weight:400;font-size:10.5px}.pill.on{border-color:var(--accent-soft);background:var(--accent-bg);color:var(--accent)}.pill.on b{color:var(--accent)}.pill .icon{width:12px;height:12px}
+    .typebar .hint{margin-left:auto;color:var(--faint);font-size:10.5px}
+
+    .list-wrap{flex:1;min-height:0;overflow:auto;padding:6px 28px 60px}
+    .list{max-width:920px;margin:0 auto}
+    .item{padding:18px 0;border-bottom:1px solid var(--border-soft)}
+    .item-top{display:flex;align-items:flex-start;gap:12px}
+    .item-main{min-width:0;flex:1}
+    .titles{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+    .chip{padding:2.5px 7px;border-radius:5px;background:var(--input);color:var(--quiet);font-size:10px;flex:none;display:inline-flex;align-items:center;gap:4px}
+    .chip.hl{background:var(--mark);color:#6d5613}
+    .chip.note{background:#eef4ff;color:#3f5f9e}
+    .chip.word{background:var(--accent-bg);color:var(--accent)}
+    .chip.global{background:var(--accent-bg);color:var(--accent)}
+    .title{margin:0;color:var(--text);font-size:13px;font-weight:650;word-break:break-word}
+    .meta{margin:5px 0 0;color:var(--faint);font-size:11px}
+    .tools{flex:none;display:flex;gap:2px}.tools button{width:30px;height:30px;border:0;border-radius:7px;background:transparent;color:var(--faint);display:grid;place-items:center}.tools button:hover{background:var(--input);color:var(--accent)}.tools .trash:hover{background:var(--danger-bg);color:var(--danger)}
+    .tools .add{width:auto;padding:0 10px;gap:6px;display:flex;align-items:center;border:1px solid var(--border);color:var(--secondary);font-size:11px}.tools .add:hover{border-color:var(--accent-soft);background:var(--accent-bg);color:var(--accent)}
+
+    .quote{margin:10px 0 0;padding:9px 0 9px 13px;border-left:3px solid var(--mark-line);color:#3f3a33;font:13px/1.75 Georgia,"Songti SC",serif}
+    .quote em{font-style:normal;background:linear-gradient(transparent 62%,var(--mark) 62%);padding:1px 0}
+    .content{margin:9px 0 0;color:var(--secondary);font-size:13px;line-height:1.7;white-space:pre-wrap}
+    .noteless{margin:9px 0 0;color:var(--placeholder);font-size:11.5px}
+    .crosslink{margin:10px 0 0;display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--secondary);font-size:11px}.crosslink:hover{border-color:var(--accent-soft);background:var(--accent-bg);color:var(--accent)}
+
+    .editor{display:none;margin-top:10px}
+    .item.editing .editor{display:block}
+    .item.editing .noteless{display:none}
+    .editor textarea{width:100%;min-height:88px;padding:10px 12px;border:1px solid var(--accent-soft);border-radius:9px;resize:vertical;outline:0;background:var(--surface);color:var(--text);font:13px/1.7 Inter,sans-serif;box-shadow:0 0 0 3px rgba(124,58,237,.06)}
+    .editor-foot{margin-top:8px;display:flex;align-items:center;gap:8px}
+    .editor-foot .scope{height:28px;padding:0 9px;display:flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--secondary);font-size:11px}
+    .editor-foot .spacer{flex:1}
+    .editor-foot .ghost{height:30px;padding:0 11px;border:0;border-radius:7px;background:transparent;color:var(--quiet);font-size:12px}
+    .editor-foot .save{height:30px;padding:0 13px;border:0;border-radius:7px;background:var(--accent);color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;gap:7px}
+    .editor-foot .save[disabled]{opacity:.45}
+    .spin{width:12px;height:12px;border:1.6px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+
+    .confirm{display:none;margin-top:11px;padding:11px 12px;border:1px solid #f3cccc;border-radius:9px;background:var(--danger-bg);align-items:flex-start;gap:10px}
+    .item.confirming .confirm{display:flex}
+    .confirm .icon{color:var(--danger);margin-top:1px}
+    .confirm div{flex:1}.confirm b{display:block;color:#8d3d3d;font-size:12px}.confirm p{margin:4px 0 0;color:#a05a5a;font-size:10.5px;line-height:1.55}
+    .confirm .btns{flex:none;align-self:center;display:flex;gap:6px}.confirm .btns button{height:28px;padding:0 11px;border:1px solid #e6c0c0;border-radius:7px;background:#fff;color:#8d3d3d;font-size:11px}.confirm .btns .go{border-color:var(--danger);background:var(--danger);color:#fff}
+
+    .more{display:flex;justify-content:center;padding:22px 0 0}.more button{height:34px;padding:0 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--quiet);display:flex;align-items:center;gap:8px;font-size:12px}
+    .empty{height:100%;display:grid;place-items:center;text-align:center}
+    .empty-inner{max-width:380px}.empty-icon{width:60px;height:60px;margin:0 auto 14px;display:grid;place-items:center;border-radius:50%;background:var(--accent-bg);color:var(--accent)}.empty-icon .icon{width:24px;height:24px}
+    .empty h3{margin:0;font-size:15px}.empty p{margin:9px 0 0;color:var(--quiet);font-size:11.5px;line-height:1.7}
+    .empty .reset{margin-top:16px;height:32px;padding:0 13px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--secondary);font-size:11.5px}
+
+    .state-nav{position:fixed;z-index:80;top:10px;left:50%;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;gap:3px;padding:4px;border:1px solid #d1d1d6;border-radius:10px;background:rgba(255,255,255,.95);box-shadow:0 8px 24px rgba(0,0,0,.12)}.state-nav button{height:27px;padding:0 10px;border:0;border-radius:7px;background:transparent;color:var(--quiet);font-size:11px}.state-nav button.active{background:var(--accent-bg);color:var(--accent);font-weight:600}
+    .caption{position:fixed;z-index:70;left:22px;bottom:18px;width:270px;padding:11px 13px;border-radius:10px;background:rgba(35,32,38,.92);color:#efecf1;font-size:10px;line-height:1.6}.caption b{display:block;margin-bottom:4px;color:#fff;font-size:11px}
+    @media(max-width:1260px){.caption{display:none}}
+  </style>
+</head>
+<body>
+  <nav class="state-nav" aria-label="样张状态">
+    <button class="active" data-state="all">① 全部标注</button>
+    <button data-state="highlights">② 只看高亮</button>
+    <button data-state="writing">③ 给高亮写笔记</button>
+    <button data-state="saving">④ 保存中</button>
+    <button data-state="words">⑤ 单词标注 · 跳词汇</button>
+    <button data-state="delete">⑥ 删除高亮</button>
+    <button data-state="noresult">⑦ 筛选无结果</button>
+    <button data-state="empty">⑧ 空态</button>
+  </nav>
+
+  <div class="stage"><div class="window">
+    <div class="traffic"><i></i><i></i><i></i></div>
+    <aside class="sidebar">
+      <div class="brand">Lantern</div>
+      <div class="nav"><span>⌂</span>书库</div>
+      <div class="nav active"><span>✦</span>标注</div>
+      <div class="nav"><span>译</span>词汇</div>
+      <div class="nav"><span>▣</span>统计</div>
+      <div class="nav"><span>⚙</span>设置</div>
+    </aside>
+
+    <main class="main">
+      <header class="header">
+        <div class="head-top">
+          <div>
+            <h1>标注</h1>
+            <p>你在书里留下的每一处痕迹：高亮、笔记、划过的词。</p>
+          </div>
+          <div class="head-right">
+            <span id="count">384 条 · 其中 210 条只高亮、没写笔记</span>
+            <button title="导出"><svg class="icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg></button>
+          </div>
+        </div>
+        <div class="controls">
+          <div class="search"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>搜索原文或笔记内容</div>
+          <div class="select">全部书籍<svg class="icon" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+          <div class="date">起始 <b>——</b></div>
+          <div class="date">截至 <b>——</b></div>
+        </div>
+      </header>
+
+      <div class="typebar">
+        <button class="pill on" data-filter="all">全部 <b>384</b></button>
+        <button class="pill" data-filter="highlights"><svg class="icon" viewBox="0 0 24 24"><path d="m9 11-6 6v3h3l6-6"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-3.2-3.2a2 2 0 0 1 0-2.8L16 6"/></svg>高亮 <b>274</b></button>
+        <button class="pill" data-filter="notes"><svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>有笔记 <b>174</b></button>
+        <button class="pill" data-filter="words">单词 <b>96</b></button>
+        <button class="pill" data-filter="selections">短语与句子 <b>78</b></button>
+        <span class="hint" id="typeHint">高亮和笔记原本分在两处，现在同一条时间线</span>
+      </div>
+
+      <div class="list-wrap">
+        <div class="list" id="list">
+
+          <!-- 纯高亮：没有笔记 -->
+          <article class="item" id="itemHl" data-kind="highlight">
+            <div class="item-top">
+              <div class="item-main">
+                <div class="titles">
+                  <span class="chip hl"><svg class="icon" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="m9 11-6 6v3h3l6-6"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-3.2-3.2a2 2 0 0 1 0-2.8L16 6"/></svg>高亮</span>
+                  <span class="chip">短语与句子</span>
+                </div>
+                <p class="meta">局外人 · 第二部 第一章 · 8 月 3 日</p>
+              </div>
+              <div class="tools">
+                <button class="add" id="addNoteBtn"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M12 5v14M5 12h14"/></svg>写笔记</button>
+                <button title="回到原文"><svg class="icon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></button>
+                <button class="trash" id="delHlBtn" title="删除"><svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+              </div>
+            </div>
+            <p class="quote"><em>I had only a little time left and I didn't want to waste it on God.</em></p>
+            <p class="noteless">还没写笔记。</p>
+            <div class="editor">
+              <textarea id="draft" placeholder="写点什么…">这句是全书的转折。他不是不信，是不肯把最后的时间交出去。</textarea>
+              <div class="editor-foot">
+                <div class="scope"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>只在《局外人》</div>
+                <div class="spacer"></div>
+                <button class="ghost" id="cancelEdit">取消</button>
+                <button class="save" id="saveBtn"><span class="spin" id="spin" style="display:none"></span><span id="saveLabel">保存</span></button>
+              </div>
+            </div>
+            <div class="confirm">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+              <div><b>删除这条高亮？</b><p>书里的黄色标记会一起消失。这条没有笔记，删掉就没有别的地方还留着它。</p></div>
+              <div class="btns"><button id="cancelDel">取消</button><button class="go">删除</button></div>
+            </div>
+          </article>
+
+          <!-- 高亮 + 笔记 -->
+          <article class="item" data-kind="highlight note selections">
+            <div class="item-top">
+              <div class="item-main">
+                <div class="titles">
+                  <span class="chip hl"><svg class="icon" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="m9 11-6 6v3h3l6-6"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-3.2-3.2a2 2 0 0 1 0-2.8L16 6"/></svg>高亮</span>
+                  <span class="chip note">有笔记</span>
+                  <span class="chip">短语与句子</span>
+                </div>
+                <p class="meta">小王子 · 第 21 章 · 7 月 28 日</p>
+              </div>
+              <div class="tools">
+                <button title="编辑"><svg class="icon" viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg></button>
+                <button title="回到原文"><svg class="icon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></button>
+                <button class="trash" title="删除"><svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+              </div>
+            </div>
+            <p class="quote"><em>You become responsible, forever, for what you have tamed.</em></p>
+            <p class="content">tame 这里不是「驯服」，更像「建立关系」。责任是关系的后果，不是关系的条件。</p>
+          </article>
+
+          <!-- 单词标注：连回词汇页 -->
+          <article class="item" data-kind="note words">
+            <div class="item-top">
+              <div class="item-main">
+                <div class="titles">
+                  <p class="title">courage</p>
+                  <span class="chip word">单词</span>
+                  <span class="chip note">有笔记</span>
+                  <span class="chip global">全局</span>
+                </div>
+                <p class="meta">写于《局外人》 · 8 月 1 日</p>
+              </div>
+              <div class="tools">
+                <button title="编辑"><svg class="icon" viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg></button>
+                <button title="回到原文"><svg class="icon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></button>
+                <button class="trash" title="删除"><svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+              </div>
+            </div>
+            <p class="content">和 bravery 的差别：courage 更强调「明知代价还是做」。</p>
+            <button class="crosslink"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M5 8h14M9 4v4M11 16l-4-8-4 8M13 20l4-10 4 10M14.5 17h5"/></svg>在词汇里查看 · 学习中 · 3 本书</button>
+          </article>
+
+          <!-- 纯高亮（第二条，用于「只看高亮」时列表不空） -->
+          <article class="item" data-kind="highlight selections">
+            <div class="item-top">
+              <div class="item-main">
+                <div class="titles">
+                  <span class="chip hl"><svg class="icon" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="m9 11-6 6v3h3l6-6"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-3.2-3.2a2 2 0 0 1 0-2.8L16 6"/></svg>高亮</span>
+                  <span class="chip">短语与句子</span>
+                </div>
+                <p class="meta">动物农场 · 第 10 章 · 7 月 12 日</p>
+              </div>
+              <div class="tools">
+                <button class="add"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M12 5v14M5 12h14"/></svg>写笔记</button>
+                <button title="回到原文"><svg class="icon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></button>
+                <button class="trash" title="删除"><svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+              </div>
+            </div>
+            <p class="quote">The creatures outside looked from pig to man, and from man to pig, and from pig to man again; but already it was impossible to say which was which.</p>
+            <p class="noteless">还没写笔记。</p>
+          </article>
+
+          <!-- 单词标注（第二条） -->
+          <article class="item" data-kind="note words">
+            <div class="item-top">
+              <div class="item-main">
+                <div class="titles">
+                  <p class="title">interfere</p>
+                  <span class="chip word">单词</span>
+                  <span class="chip note">有笔记</span>
+                </div>
+                <p class="meta">写于《小王子》 · 7 月 9 日</p>
+              </div>
+              <div class="tools">
+                <button title="编辑"><svg class="icon" viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg></button>
+                <button title="回到原文"><svg class="icon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></button>
+                <button class="trash" title="删除"><svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>
+              </div>
+            </div>
+            <p class="content">interfere with 后面接被打扰的那个东西，不是人。</p>
+            <button class="crosslink"><svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="M5 8h14M9 4v4M11 16l-4-8-4 8M13 20l4-10 4 10M14.5 17h5"/></svg>在词汇里查看 · 已掌握 · 2 本书</button>
+          </article>
+
+          <div class="more"><button><svg class="icon" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>加载更多</button></div>
+        </div>
+
+        <!-- 筛选无结果 -->
+        <div class="empty" id="noResult" style="display:none">
+          <div class="empty-inner">
+            <div class="empty-icon"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></div>
+            <h3>这些条件下没有标注</h3>
+            <p>《动物农场》在 7 月 1 日之后没有单词标注。放宽日期，或换个类型看看。</p>
+            <button class="reset">清除筛选</button>
+          </div>
+        </div>
+
+        <!-- 空态 -->
+        <div class="empty" id="emptyState" style="display:none">
+          <div class="empty-inner">
+            <div class="empty-icon"><svg class="icon" viewBox="0 0 24 24"><path d="m9 11-6 6v3h3l6-6"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-3.2-3.2a2 2 0 0 1 0-2.8L16 6"/></svg></div>
+            <h3>还没有标注</h3>
+            <p>阅读时选中一段话就能高亮，高亮之后随时可以补笔记。高亮和笔记都会出现在这里。</p>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div></div>
+
+  <div class="caption" id="caption"></div>
+
+  <script>
+    const CAPTIONS = {
+      all:["①　全部标注","「笔记」改名「标注」，纯高亮第一次有了归宿。同一条时间线里混排：只高亮的、高亮加笔记的、单词的，用左上角小标签区分。"],
+      highlights:["②　只看高亮","类型从下拉换成一排 pill，因为「只看高亮」会是最常按的一个。计数直接写在 pill 上。"],
+      writing:["③　给高亮写笔记","高亮条目的主操作是「写笔记」，就地展开，不跳页。这一步把 210 条死高亮接回了笔记系统。"],
+      saving:["④　保存中","保存态只锁按钮，正文不闪不跳。"],
+      words:["⑤　单词标注 · 跳词汇","单词类的标注多一个入口，直接连到词汇页那一条，并顺手报出掌握度——两个板块第一次互相知道对方存在。"],
+      delete:["⑥　删除高亮","删纯高亮要说清「没有别处留着它」，因为它不像笔记那样还有正文兜底。"],
+      noresult:["⑦　筛选无结果","和「一条都没有」不是一回事，文案要说是哪几个条件太窄，并给一键清除。"],
+      empty:["⑧　空态","空态直接讲清高亮和笔记的关系，省得人以为要先写笔记才能高亮。"]
+    };
+    const items = [...document.querySelectorAll(".item")];
+    const list = document.getElementById("list"), noResult = document.getElementById("noResult"), emptyState = document.getElementById("emptyState");
+    const itemHl = document.getElementById("itemHl"), caption = document.getElementById("caption");
+    const spin = document.getElementById("spin"), saveLabel = document.getElementById("saveLabel"), saveBtn = document.getElementById("saveBtn");
+    const count = document.getElementById("count"), typeHint = document.getElementById("typeHint");
+
+    function setPill(name){
+      document.querySelectorAll(".pill").forEach(p => p.classList.toggle("on", p.dataset.filter === name));
+    }
+    function apply(state){
+      items.forEach(i => { i.classList.remove("editing","confirming"); i.style.display = ""; });
+      list.style.display = "block"; noResult.style.display = "none"; emptyState.style.display = "none";
+      spin.style.display = "none"; saveLabel.textContent = "保存"; saveBtn.removeAttribute("disabled");
+      count.textContent = "384 条 · 其中 210 条只高亮、没写笔记";
+      typeHint.textContent = "高亮和笔记原本分在两处，现在同一条时间线";
+      setPill("all");
+
+      if (state === "highlights") {
+        setPill("highlights");
+        items.forEach(i => { if (!i.dataset.kind.includes("highlight")) i.style.display = "none"; });
+        count.textContent = "274 条高亮 · 其中 210 条还没写笔记";
+        typeHint.textContent = "只看高亮";
+      }
+      if (state === "words") {
+        setPill("words");
+        items.forEach(i => { if (!i.dataset.kind.includes("words")) i.style.display = "none"; });
+        count.textContent = "96 条单词标注";
+        typeHint.textContent = "只看单词";
+      }
+      if (state === "writing" || state === "saving") {
+        itemHl.classList.add("editing");
+        if (state === "saving") { spin.style.display = "block"; saveLabel.textContent = "保存中"; saveBtn.setAttribute("disabled",""); }
+      }
+      if (state === "delete") itemHl.classList.add("confirming");
+      if (state === "noresult") { list.style.display = "none"; noResult.style.display = "grid"; setPill("words"); }
+      if (state === "empty") { list.style.display = "none"; emptyState.style.display = "grid"; count.textContent = "0 条"; }
+
+      const c = CAPTIONS[state];
+      if (c) caption.innerHTML = "<b>"+c[0]+"</b>"+c[1];
+      document.querySelectorAll(".state-nav button").forEach(b => b.classList.toggle("active", b.dataset.state === state));
+    }
+    document.querySelectorAll(".state-nav button").forEach(b => b.onclick = () => apply(b.dataset.state));
+    document.getElementById("addNoteBtn").onclick = () => apply("writing");
+    document.getElementById("cancelEdit").onclick = () => apply("all");
+    document.getElementById("delHlBtn").onclick = () => apply("delete");
+    document.getElementById("cancelDel").onclick = () => apply("all");
+    saveBtn.onclick = () => apply("saving");
+    document.querySelectorAll(".pill").forEach(p => p.onclick = () => apply(p.dataset.filter === "notes" || p.dataset.filter === "selections" ? "all" : p.dataset.filter));
+    apply("all");
+  </script>
+</body>
+</html>

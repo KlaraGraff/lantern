@@ -8,7 +8,7 @@ use crate::sync::{merge, validation};
 use super::rows::*;
 use super::{MIN_SUPPORTED_SNAPSHOT_SCHEMA_VERSION, SNAPSHOT_SCHEMA_VERSION};
 
-use crate::sync::events::{normalized_note, Event};
+use crate::sync::events::Event;
 
 fn is_supported_snapshot_schema_version(version: u32) -> bool {
     (MIN_SUPPORTED_SNAPSHOT_SCHEMA_VERSION..=SNAPSHOT_SCHEMA_VERSION).contains(&version)
@@ -678,12 +678,11 @@ fn insert_book_asset(tx: &Transaction, id: &str, row: &BookAssetRow) -> AppResul
 fn upsert_highlight(tx: &Transaction, id: &str, r: &HighlightRow) -> AppResult<()> {
     tx.execute(
         "INSERT INTO highlights
-         (id, book_id, cfi_range, color, note, text_content,
+         (id, book_id, cfi_range, color, text_content,
           created_at, updated_at, updated_by_device)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT(id) DO UPDATE SET
            color=excluded.color,
-           note=excluded.note,
            text_content=excluded.text_content,
            updated_at=excluded.updated_at,
            updated_by_device=excluded.updated_by_device
@@ -694,7 +693,6 @@ fn upsert_highlight(tx: &Transaction, id: &str, r: &HighlightRow) -> AppResult<(
             r.book_id,
             r.cfi_range,
             r.color,
-            normalized_note(r.note.as_deref()),
             r.text_content,
             r.created_at,
             r.updated_at,
@@ -1206,7 +1204,7 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
 
     // highlights
     let mut stmt = conn.prepare(
-        "SELECT id, book_id, cfi_range, color, note, text_content,
+        "SELECT id, book_id, cfi_range, color, text_content,
                 created_at, updated_at, updated_by_device FROM highlights",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -1216,11 +1214,10 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
                 book_id: r.get(1)?,
                 cfi_range: r.get(2)?,
                 color: r.get(3)?,
-                note: r.get(4)?,
-                text_content: r.get(5)?,
-                created_at: r.get(6)?,
-                updated_at: r.get(7)?,
-                updated_by_device: r.get(8)?,
+                text_content: r.get(4)?,
+                created_at: r.get(5)?,
+                updated_at: r.get(6)?,
+                updated_by_device: r.get(7)?,
             },
         ))
     })?;

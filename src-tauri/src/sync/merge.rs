@@ -30,9 +30,9 @@ use serde_json::Value;
 use crate::error::{AppError, AppResult};
 
 use super::events::{
-    normalized_note, word_mark_exception_id, BookAssetPayload, BookImportPayload,
-    BookSummaryPayload, BookmarkPayload, ChatMessagePayload, CustomFontPayload, Event, EventBody,
-    HighlightPayload, LookupOccurrenceMarkPayload, NotePayload, SettingPayload, VocabPayload,
+    word_mark_exception_id, BookAssetPayload, BookImportPayload, BookSummaryPayload,
+    BookmarkPayload, ChatMessagePayload, CustomFontPayload, Event, EventBody, HighlightPayload,
+    LookupOccurrenceMarkPayload, NotePayload, SettingPayload, VocabPayload,
     WordMarkExceptionPayload, WordMarkPayload,
 };
 
@@ -58,9 +58,8 @@ pub fn apply_event(tx: &Transaction, event: &Event) -> AppResult<()> {
         EventBody::HighlightAdd(p) => apply_highlight_add(tx, event, p),
         EventBody::HighlightDelete { id } => apply_highlight_delete(tx, event, id),
         EventBody::HighlightColorSet { id, color } => apply_highlight_color(tx, event, id, color),
-        EventBody::HighlightNoteSet { id, note } => {
-            apply_highlight_note(tx, event, id, note.as_deref())
-        }
+        // Legacy no-op — see `EventBody::HighlightNoteSet`.
+        EventBody::HighlightNoteSet { .. } => Ok(()),
 
         EventBody::BookmarkAdd(p) => apply_bookmark_add(tx, event, p),
         EventBody::BookmarkDelete { id } => apply_bookmark_delete(tx, event, id),
@@ -659,15 +658,14 @@ fn apply_highlight_add(tx: &Transaction, event: &Event, p: &HighlightPayload) ->
     }
     tx.execute(
         "INSERT OR IGNORE INTO highlights
-         (id, book_id, cfi_range, color, note, text_content,
+         (id, book_id, cfi_range, color, text_content,
           created_at, updated_at, updated_by_device)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)",
         params![
             p.id,
             p.book_id,
             p.cfi_range,
             p.color,
-            normalized_note(p.note.as_deref()),
             p.text_content,
             event.ts,
             event.device,
@@ -689,22 +687,6 @@ fn apply_highlight_color(tx: &Transaction, event: &Event, id: &str, color: &str)
          WHERE id = ?4
            AND (updated_at < ?2 OR (updated_at = ?2 AND updated_by_device < ?3))",
         params![color, event.ts, event.device, id],
-    )?;
-    Ok(())
-}
-
-fn apply_highlight_note(
-    tx: &Transaction,
-    event: &Event,
-    id: &str,
-    note: Option<&str>,
-) -> AppResult<()> {
-    tx.execute(
-        "UPDATE highlights
-         SET note = ?1, updated_at = ?2, updated_by_device = ?3
-         WHERE id = ?4
-           AND (updated_at < ?2 OR (updated_at = ?2 AND updated_by_device < ?3))",
-        params![normalized_note(note), event.ts, event.device, id],
     )?;
     Ok(())
 }
@@ -1764,8 +1746,8 @@ mod tests {
                  VALUES ('c1','b1',1700000000000,1700000000000);
              INSERT INTO bookmarks (id, book_id, cfi, label, created_at, updated_at)
                  VALUES ('bm1','b1','epubcfi(/6/2!/4)','Ch1',1700000000000,1700000000000);
-             INSERT INTO highlights (id, book_id, cfi_range, color, note, text_content, created_at, updated_at)
-                 VALUES ('h1','b1','epubcfi(/6/4!/2,/4)','yellow','n','q',1700000000000,1700000000000);
+             INSERT INTO highlights (id, book_id, cfi_range, color, text_content, created_at, updated_at)
+                 VALUES ('h1','b1','epubcfi(/6/4!/2,/4)','yellow','q',1700000000000,1700000000000);
              INSERT INTO vocab_words (id, book_id, word, definition, context_sentence, cfi, mastery, review_count, next_review_at, created_at, updated_at)
                  VALUES ('v1','b1','w','d','s','epubcfi(/6/4!/8)','learning',0,NULL,1700000000000,1700000000000);
              INSERT INTO chats (id, book_id, title, model, pinned, metadata, created_at, updated_at)
@@ -2062,57 +2044,56 @@ mod tests {
             book_id: book.into(),
             cfi_range: "epubcfi(/6/4!/2,/1:0,/1:5)".into(),
             color: color.into(),
-            note: None,
             text_content: None,
         })
     }
 
-    /// A peer running an older build can still emit `Some("")` for a cleared
-    /// note. Normalizing on apply — not only on the way out — is what keeps a
-    /// replay or a resync from reintroducing the empty string this device just
-    /// migrated away.
+    /// A peer on an older build still has `highlight.note.set` in its log, and
+    /// its `highlight.add` payloads still carry a `note` field. Migration 035
+    /// moved that text into `notes`, so both must replay without erroring and
+    /// without resurrecting a column that no longer exists.
     #[test]
-    fn blank_notes_from_peers_land_as_null() {
+    fn legacy_highlight_note_events_replay_harmlessly() {
+        let add: Event = serde_json::from_value(serde_json::json!({
+            "id": "01HYZX00000000000000000002",
+            "ts": 2,
+            "device": "dev-a",
+            "v": EVENT_SCHEMA_VERSION,
+            "type": "highlight.add",
+            "payload": {
+                "id": "h1",
+                "book_id": "b1",
+                "cfi_range": "epubcfi(/6/4!/2,/1:0,/1:5)",
+                "color": "yellow",
+                "note": "written on an older build",
+                "text_content": "quoted",
+            },
+        }))
+        .expect("an old peer's highlight.add must still deserialize");
+
         let mut conn = open_db();
         apply_all(
             &mut conn,
             &[
                 ev(1, "dev-a", import_book("b1")),
+                add,
                 ev(
-                    2,
-                    "dev-a",
-                    EventBody::HighlightAdd(HighlightPayload {
-                        id: "h1".into(),
-                        book_id: "b1".into(),
-                        cfi_range: "epubcfi(/6/4!/2,/1:0,/1:5)".into(),
-                        color: "yellow".into(),
-                        note: Some("  ".into()),
-                        text_content: None,
-                    }),
-                ),
-                ev(3, "dev-a", add_highlight("h2", "b1", "yellow")),
-                ev(
-                    4,
+                    3,
                     "dev-a",
                     EventBody::HighlightNoteSet {
-                        id: "h2".into(),
-                        note: Some("".into()),
+                        id: "h1".into(),
+                        note: Some("still here".into()),
                     },
                 ),
             ],
         );
 
-        let blank: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM highlights WHERE note IS NOT NULL",
-                [],
-                |row| row.get(0),
-            )
+        let color: String = conn
+            .query_row("SELECT color FROM highlights WHERE id = 'h1'", [], |row| {
+                row.get(0)
+            })
             .unwrap();
-        assert_eq!(
-            blank, 0,
-            "peer events must not reintroduce empty-string notes"
-        );
+        assert_eq!(color, "yellow", "the highlight itself still lands");
     }
 
     fn note(id: &str, book: &str, scope: &str, content: &str, created_at: i64) -> EventBody {

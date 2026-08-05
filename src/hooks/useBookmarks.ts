@@ -15,7 +15,6 @@ export interface Highlight {
   book_id: string;
   cfi_range: string;
   color: string;
-  note: string | null;
   text_content: string | null;
   created_at: number;
   updated_at: number;
@@ -83,17 +82,11 @@ export function useHighlights(bookId: string) {
   }, [refresh]);
 
   const add = useCallback(
-    async (
-      cfiRange: string,
-      color?: string,
-      note?: string,
-      textContent?: string
-    ) => {
+    async (cfiRange: string, color?: string, textContent?: string) => {
       const highlight = await invoke<Highlight>("add_highlight", {
         bookId,
         cfiRange,
         color: color || null,
-        note: note || null,
         textContent: textContent || null,
       });
       setHighlights((prev) => [highlight, ...prev]);
@@ -109,14 +102,6 @@ export function useHighlights(bookId: string) {
     notifyHighlightChanged(bookId);
   }, [bookId]);
 
-  const updateNote = useCallback(async (id: string, note: string) => {
-    await invoke("update_highlight_note", { id, note });
-    setHighlights((prev) =>
-      prev.map((h) => (h.id === id ? { ...h, note } : h))
-    );
-    notifyHighlightChanged(bookId);
-  }, [bookId]);
-
   const updateColor = useCallback(async (id: string, color: string) => {
     await invoke("update_highlight_color", { id, color });
     setHighlights((prev) =>
@@ -125,5 +110,5 @@ export function useHighlights(bookId: string) {
     notifyHighlightChanged(bookId);
   }, [bookId]);
 
-  return { highlights, refresh, add, remove, updateNote, updateColor };
+  return { highlights, refresh, add, remove, updateColor };
 }

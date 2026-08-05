@@ -9,7 +9,7 @@ import BookGrid from "../components/BookGrid";
 import BookList from "../components/BookList";
 import DictionaryContent from "../components/DictionaryContent";
 import ChatsContent from "../components/ChatsContent";
-import NotesContent from "../components/NotesContent";
+import AnnotationsContent from "../components/AnnotationsContent";
 import { openSettings } from "../components/settings-open";
 import { listenForSettingsChanged } from "../components/settings-events";
 import Button from "../components/ui/Button";
@@ -60,6 +60,14 @@ export default function Home() {
       setActiveFilter(event.payload || "all");
     });
     return () => { unlisten.then((fn) => fn()); };
+  }, []);
+
+  // A word annotation links to the vocabulary tab. The tab switch is the whole
+  // contract today; the event carries the word for the vocabulary page to
+  // focus if it ever wants to, and is harmlessly unheard until then.
+  const openVocabWord = useCallback((word: string) => {
+    setActiveFilter("vocab");
+    window.dispatchEvent(new CustomEvent("vocab-open-word", { detail: { word } }));
   }, []);
 
   const isCollectionFilter = activeFilter.startsWith("collection:");
@@ -261,7 +269,7 @@ export default function Home() {
       ) : activeFilter === "chats" ? (
         <ChatsContent />
       ) : activeFilter === "notes" ? (
-        <NotesContent />
+        <AnnotationsContent onOpenVocab={openVocabWord} />
       ) : (
         <main className="flex-1 flex flex-col min-w-0">
           <div className="border-b border-border px-page pb-section relative select-none">

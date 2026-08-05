@@ -1366,7 +1366,6 @@ mod tests {
                     book_id: "b1".into(),
                     cfi_range: "cfi".into(),
                     color: "yellow".into(),
-                    note: None,
                     text_content: None,
                 }),
             ),
@@ -1499,7 +1498,6 @@ mod tests {
                 book_id: "b1".into(),
                 cfi_range: "cfi".into(),
                 color: "yellow".into(),
-                note: None,
                 text_content: None,
             }),
         )];

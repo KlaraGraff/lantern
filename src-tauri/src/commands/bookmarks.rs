@@ -4,7 +4,7 @@ use tauri::State;
 
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
-use crate::sync::events::{normalized_note, BookmarkPayload, EventBody, HighlightPayload};
+use crate::sync::events::{BookmarkPayload, EventBody, HighlightPayload};
 use crate::sync::merge::{entity, insert_tombstone};
 use crate::sync::writer::SyncWriter;
 
@@ -24,7 +24,6 @@ pub struct Highlight {
     pub book_id: String,
     pub cfi_range: String,
     pub color: String,
-    pub note: Option<String>,
     pub text_content: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
@@ -35,7 +34,6 @@ pub struct Highlight {
 pub struct HighlightReplacement {
     pub cfi_range: String,
     pub color: String,
-    pub note: Option<String>,
     pub text_content: Option<String>,
 }
 
@@ -148,19 +146,17 @@ pub fn add_highlight(
     book_id: String,
     cfi_range: String,
     color: Option<String>,
-    note: Option<String>,
     text_content: Option<String>,
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<Highlight> {
-    add_highlight_inner(&book_id, &cfi_range, color, note, text_content, &db, &sync)
+    add_highlight_inner(&book_id, &cfi_range, color, text_content, &db, &sync)
 }
 
 pub(crate) fn add_highlight_inner(
     book_id: &str,
     cfi_range: &str,
     color: Option<String>,
-    note: Option<String>,
     text_content: Option<String>,
     db: &Db,
     sync: &SyncWriter,
@@ -168,7 +164,6 @@ pub(crate) fn add_highlight_inner(
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
     let color = color.unwrap_or_else(|| "yellow".to_string());
-    let note = normalized_note(note.as_deref()).map(str::to_string);
 
     log::debug!("highlights: add_highlight book_id={book_id} color={color}");
 
@@ -177,7 +172,6 @@ pub(crate) fn add_highlight_inner(
         book_id: book_id.to_string(),
         cfi_range: cfi_range.to_string(),
         color: color.clone(),
-        note: note.clone(),
         text_content: text_content.clone(),
         created_at: now,
         updated_at: now,
@@ -186,16 +180,15 @@ pub(crate) fn add_highlight_inner(
     let device = sync.self_device().to_string();
     sync.with_tx(db, now, |tx, events| {
         tx.execute(
-            "INSERT INTO highlights (id, book_id, cfi_range, color, note, text_content, created_at, updated_at, updated_by_device)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)",
-            params![id, book_id, cfi_range, color, note, text_content, now, device],
+            "INSERT INTO highlights (id, book_id, cfi_range, color, text_content, created_at, updated_at, updated_by_device)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)",
+            params![id, book_id, cfi_range, color, text_content, now, device],
         )?;
         events.push(EventBody::HighlightAdd(HighlightPayload {
             id: id.clone(),
             book_id: book_id.to_string(),
             cfi_range: cfi_range.to_string(),
             color: color.clone(),
-            note: note.clone(),
             text_content: text_content.clone(),
         }));
         Ok(())
@@ -262,10 +255,6 @@ pub fn replace_highlights(
             || addition.color.trim().is_empty()
             || addition.color.len() > 64
             || addition
-                .note
-                .as_deref()
-                .is_some_and(|value| value.len() > 100_000)
-            || addition
                 .text_content
                 .as_deref()
                 .is_some_and(|value| value.len() > 1_000_000)
@@ -307,16 +296,14 @@ pub fn replace_highlights(
             // both local fields keeps local SQL, peer replay, and snapshots
             // equivalent even when part of an older range is retained.
             let created_at = now;
-            let note = normalized_note(addition.note.as_deref()).map(str::to_string);
             tx.execute(
-                "INSERT INTO highlights (id, book_id, cfi_range, color, note, text_content, created_at, updated_at, updated_by_device)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)",
+                "INSERT INTO highlights (id, book_id, cfi_range, color, text_content, created_at, updated_at, updated_by_device)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7)",
                 params![
                     id,
                     book_id,
                     addition.cfi_range,
                     addition.color,
-                    note,
                     addition.text_content,
                     created_at,
                     device,
@@ -327,7 +314,6 @@ pub fn replace_highlights(
                 book_id: book_id.clone(),
                 cfi_range: addition.cfi_range.clone(),
                 color: addition.color.clone(),
-                note: note.clone(),
                 text_content: addition.text_content.clone(),
             }));
             created.push(Highlight {
@@ -335,7 +321,6 @@ pub fn replace_highlights(
                 book_id: book_id.clone(),
                 cfi_range: addition.cfi_range.clone(),
                 color: addition.color.clone(),
-                note,
                 text_content: addition.text_content.clone(),
                 created_at,
                 updated_at: now,
@@ -350,7 +335,7 @@ pub fn replace_highlights(
 pub(crate) fn query_highlights(db: &Db, book_id: &str) -> AppResult<Vec<Highlight>> {
     let conn = db.reader();
     let mut stmt = conn.prepare(
-        "SELECT id, book_id, cfi_range, color, note, text_content, created_at, updated_at FROM highlights WHERE book_id = ?1 ORDER BY created_at DESC",
+        "SELECT id, book_id, cfi_range, color, text_content, created_at, updated_at FROM highlights WHERE book_id = ?1 ORDER BY created_at DESC",
     )?;
     let highlights = stmt
         .query_map(params![book_id], |row| {
@@ -359,10 +344,9 @@ pub(crate) fn query_highlights(db: &Db, book_id: &str) -> AppResult<Vec<Highligh
                 book_id: row.get(1)?,
                 cfi_range: row.get(2)?,
                 color: row.get(3)?,
-                note: row.get(4)?,
-                text_content: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
+                text_content: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -375,42 +359,30 @@ pub fn list_highlights(book_id: String, db: State<'_, Db>) -> AppResult<Vec<High
 }
 
 #[tauri::command]
-pub fn update_highlight_note(
-    id: String,
-    note: String,
-    db: State<'_, Db>,
-    sync: State<'_, SyncWriter>,
-) -> AppResult<()> {
-    update_highlight_inner(&id, Some(&note), None, &db, &sync).map(|_| ())
-}
-
-#[tauri::command]
 pub fn update_highlight_color(
     id: String,
     color: String,
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<()> {
-    update_highlight_inner(&id, None, Some(&color), &db, &sync).map(|_| ())
+    update_highlight_inner(&id, &color, &db, &sync).map(|_| ())
 }
 
+/// Colour is all a highlight carries now. Text written about a passage is a
+/// `notes` row anchored at the same range — see `commands::annotations`.
 pub(crate) fn update_highlight_inner(
     id: &str,
-    note: Option<&str>,
-    color: Option<&str>,
+    color: &str,
     db: &Db,
     sync: &SyncWriter,
 ) -> AppResult<Highlight> {
     crate::sync::validation::validate_entity_id(id)?;
-    if note.is_none() && color.is_none() {
-        return Err(AppError::Other("HIGHLIGHT_UPDATE_EMPTY".to_string()));
-    }
     let timestamp = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();
     sync.with_tx(db, timestamp, |tx, events| {
         let mut highlight = tx
             .query_row(
-                "SELECT id, book_id, cfi_range, color, note, text_content, created_at, updated_at
+                "SELECT id, book_id, cfi_range, color, text_content, created_at, updated_at
                  FROM highlights WHERE id = ?1",
                 params![id],
                 |row| {
@@ -419,38 +391,22 @@ pub(crate) fn update_highlight_inner(
                         book_id: row.get(1)?,
                         cfi_range: row.get(2)?,
                         color: row.get(3)?,
-                        note: row.get(4)?,
-                        text_content: row.get(5)?,
-                        created_at: row.get(6)?,
-                        updated_at: row.get(7)?,
+                        text_content: row.get(4)?,
+                        created_at: row.get(5)?,
+                        updated_at: row.get(6)?,
                     })
                 },
             )
             .map_err(|_| AppError::Other("HIGHLIGHT_NOT_FOUND".to_string()))?;
-        if let Some(note) = note {
-            highlight.note = normalized_note(Some(note)).map(str::to_string);
-            events.push(EventBody::HighlightNoteSet {
-                id: id.to_string(),
-                note: highlight.note.clone(),
-            });
-        }
-        if let Some(color) = color {
-            highlight.color = color.to_string();
-            events.push(EventBody::HighlightColorSet {
-                id: id.to_string(),
-                color: color.to_string(),
-            });
-        }
+        highlight.color = color.to_string();
+        events.push(EventBody::HighlightColorSet {
+            id: id.to_string(),
+            color: color.to_string(),
+        });
         tx.execute(
-            "UPDATE highlights SET note = ?1, color = ?2, updated_at = ?3,
-                                   updated_by_device = ?4 WHERE id = ?5",
-            params![
-                highlight.note.as_deref(),
-                &highlight.color,
-                timestamp,
-                device,
-                id
-            ],
+            "UPDATE highlights SET color = ?1, updated_at = ?2,
+                                   updated_by_device = ?3 WHERE id = ?4",
+            params![&highlight.color, timestamp, device, id],
         )?;
         highlight.updated_at = timestamp;
         Ok(highlight)
@@ -499,7 +455,6 @@ mod tests {
             vec![HighlightReplacement {
                 cfi_range: "new-range".into(),
                 color: "blue".into(),
-                note: Some("note".into()),
                 text_content: Some("text".into()),
             }],
             app.state::<Db>(),
@@ -540,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    fn cleared_note_is_stored_as_null() {
+    fn a_colour_change_moves_the_lww_clock_and_nothing_else() {
         let dir = TempDir::new().unwrap();
         let db = Db::init(dir.path()).unwrap();
         {
@@ -556,9 +511,9 @@ mod tests {
             .unwrap();
             conn.execute(
                 "INSERT INTO highlights
-                 (id, book_id, cfi_range, color, note, created_at, updated_at,
-                  updated_by_device)
-                 VALUES ('h1', 'b1', 'range', 'yellow', 'a note', 1, 1, 'dev-A')",
+                 (id, book_id, cfi_range, color, text_content, created_at,
+                  updated_at, updated_by_device)
+                 VALUES ('h1', 'b1', 'range', 'yellow', 'quoted', 1, 1, 'dev-A')",
                 [],
             )
             .unwrap();
@@ -566,106 +521,41 @@ mod tests {
 
         let app = tauri::test::mock_app();
         assert!(app.manage(db));
-        assert!(app.manage(SyncWriter::new("dev-A".into())));
+        assert!(app.manage(SyncWriter::new("dev-B".into())));
 
-        let updated = update_highlight_inner(
-            "h1",
-            Some(""),
-            None,
-            &app.state::<Db>(),
-            &app.state::<SyncWriter>(),
-        )
-        .unwrap();
-        assert_eq!(updated.note, None);
+        let updated =
+            update_highlight_inner("h1", "blue", &app.state::<Db>(), &app.state::<SyncWriter>())
+                .unwrap();
+        assert_eq!(updated.color, "blue");
+        assert_eq!(updated.text_content.as_deref(), Some("quoted"));
+        assert!(updated.updated_at > updated.created_at);
 
         let db = app.state::<Db>();
         let conn = db.conn.lock().unwrap();
-        let stored: Option<String> = conn
-            .query_row("SELECT note FROM highlights WHERE id = 'h1'", [], |row| {
-                row.get(0)
-            })
+        let stored: (String, String, i64) = conn
+            .query_row(
+                "SELECT color, updated_by_device, created_at FROM highlights WHERE id = 'h1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
             .unwrap();
-        assert_eq!(stored, None, "cleared note must read back as NULL");
-        drop(conn);
-
-        let updated = update_highlight_inner(
-            "h1",
-            Some("  \n\t "),
-            None,
-            &app.state::<Db>(),
-            &app.state::<SyncWriter>(),
-        )
-        .unwrap();
-        assert_eq!(updated.note, None, "whitespace-only note must clear too");
-
-        let updated = update_highlight_inner(
-            "h1",
-            Some("kept"),
-            None,
-            &app.state::<Db>(),
-            &app.state::<SyncWriter>(),
-        )
-        .unwrap();
-        assert_eq!(updated.note.as_deref(), Some("kept"));
+        assert_eq!(stored, ("blue".into(), "dev-B".into(), 1));
     }
 
+    /// The column is gone as of migration 035 — a highlight is a range and a
+    /// colour, and everything written about it lives in `notes`.
     #[test]
-    fn blank_notes_never_reach_sql_on_the_add_paths() {
+    fn highlights_no_longer_carry_a_note_column() {
         let dir = TempDir::new().unwrap();
         let db = Db::init(dir.path()).unwrap();
-        {
-            let conn = db.conn.lock().unwrap();
-            conn.execute(
-                "INSERT INTO books
-                 (id, title, author, file_path, format, status, progress,
-                  created_at, updated_at)
-                 VALUES ('b1', 'Book', 'Author', 'books/b1.epub', 'epub',
-                         'reading', 0, 1, 1)",
-                [],
-            )
-            .unwrap();
-        }
-
-        let app = tauri::test::mock_app();
-        assert!(app.manage(db));
-        assert!(app.manage(SyncWriter::new("dev-A".into())));
-
-        let added = add_highlight_inner(
-            "b1",
-            "range-1",
-            None,
-            Some("   ".into()),
-            None,
-            &app.state::<Db>(),
-            &app.state::<SyncWriter>(),
-        )
-        .unwrap();
-        assert_eq!(added.note, None);
-
-        let created = replace_highlights(
-            "b1".into(),
-            vec![],
-            vec![HighlightReplacement {
-                cfi_range: "range-2".into(),
-                color: "blue".into(),
-                note: Some("".into()),
-                text_content: None,
-            }],
-            app.state::<Db>(),
-            app.state::<SyncWriter>(),
-        )
-        .unwrap();
-        assert_eq!(created[0].note, None);
-
-        let db = app.state::<Db>();
         let conn = db.conn.lock().unwrap();
-        let blank: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM highlights WHERE note IS NOT NULL",
-                [],
-                |row| row.get(0),
-            )
+        let columns: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('highlights')")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
             .unwrap();
-        assert_eq!(blank, 0, "no add path may store an empty-string note");
+        assert!(!columns.iter().any(|name| name == "note"), "{columns:?}");
     }
 }

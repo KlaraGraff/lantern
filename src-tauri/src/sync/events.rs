@@ -155,6 +155,9 @@ pub enum EventBody {
     HighlightDelete { id: String },
     #[serde(rename = "highlight.color.set")]
     HighlightColorSet { id: String, color: String },
+    // Legacy no-op: `highlights.note` was retired in migration 035 — text
+    // written about a passage is a `notes` row anchored at the same range.
+    // Keep this variant so old peer logs deserialize and replay harmlessly.
     #[serde(rename = "highlight.note.set")]
     HighlightNoteSet { id: String, note: Option<String> },
 
@@ -338,17 +341,7 @@ pub struct HighlightPayload {
     pub book_id: String,
     pub cfi_range: String,
     pub color: String,
-    pub note: Option<String>,
     pub text_content: Option<String>,
-}
-
-/// A highlight note is either real text or absent — `Some("")` is not a third
-/// state. Callers apply this at every point where a note enters the local DB
-/// (local commands, peer events, peer snapshots) so `highlights.note` and the
-/// `Option<String>` it maps to never disagree. Interior text is left alone;
-/// only an entirely blank note collapses to `None`.
-pub fn normalized_note(note: Option<&str>) -> Option<&str> {
-    note.filter(|n| !n.trim().is_empty())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -569,7 +562,6 @@ mod tests {
             book_id: "b1".into(),
             cfi_range: "epubcfi(/6/4!/2,/1:10,/1:20)".into(),
             color: "yellow".into(),
-            note: Some("important".into()),
             text_content: Some("All happy families".into()),
         })));
         roundtrip(&mk(EventBody::HighlightDelete { id: "h1".into() }));

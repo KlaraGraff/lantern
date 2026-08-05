@@ -121,6 +121,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
         34,
         include_str!("../migrations/034_lookup_records_word_recency.sql"),
     ),
+    (
+        35,
+        include_str!("../migrations/035_retire_highlight_notes.sql"),
+    ),
 ];
 
 fn register_sqlite_vec() {

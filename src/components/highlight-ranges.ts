@@ -12,7 +12,6 @@ export interface StoredHighlightLocation {
   id: string;
   cfi_range: string;
   color: string;
-  note: string | null;
   text_content: string | null;
   created_at?: number;
 }
@@ -20,7 +19,6 @@ export interface StoredHighlightLocation {
 export interface HighlightAddition {
   cfiRange: string;
   color: string;
-  note: string | null;
   textContent: string | null;
 }
 
@@ -53,7 +51,6 @@ interface PlannedRange<Position> {
   start: Position;
   end: Position;
   color: string;
-  note: string | null;
   textContent: string | null;
 }
 
@@ -121,7 +118,6 @@ function planRanges<Position>(
           start: highlight.start,
           end: minimum(highlight.end, selection.start, compare),
           color: highlight.color,
-          note: highlight.note,
           textContent: null,
         });
       }
@@ -130,7 +126,6 @@ function planRanges<Position>(
           start: maximum(highlight.start, selection.end, compare),
           end: highlight.end,
           color: highlight.color,
-          note: highlight.note,
           textContent: null,
         });
       }
@@ -177,7 +172,6 @@ function planRanges<Position>(
         start: highlight.start,
         end: minimum(highlight.end, mergedStart, compare),
         color: highlight.color,
-        note: highlight.note,
         textContent: null,
       });
     }
@@ -186,7 +180,6 @@ function planRanges<Position>(
         start: maximum(highlight.start, mergedEnd, compare),
         end: highlight.end,
         color: highlight.color,
-        note: highlight.note,
         textContent: null,
       });
     }
@@ -196,7 +189,6 @@ function planRanges<Position>(
     start: mergedStart,
     end: mergedEnd,
     color: targetColor,
-    note: null,
     textContent: removeIds.size === 0 ? selectedText : null,
   });
   return { fullyHighlighted, removeIds: [...removeIds], additions };
@@ -219,7 +211,6 @@ function createLocationPlan<Position>(
       .map((addition) => ({
         cfiRange: serialize(addition.start, addition.end),
         color: addition.color,
-        note: addition.note,
         textContent: addition.textContent,
       })),
   };
@@ -242,7 +233,6 @@ function createRemovalPlan<Position>(
         additions.push({
           cfiRange: serialize(highlight.start, end),
           color: highlight.color,
-          note: highlight.note,
           textContent: null,
         });
       }
@@ -253,7 +243,6 @@ function createRemovalPlan<Position>(
         additions.push({
           cfiRange: serialize(start, highlight.end),
           color: highlight.color,
-          note: highlight.note,
           textContent: null,
         });
       }

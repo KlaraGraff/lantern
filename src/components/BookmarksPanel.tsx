@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { Bookmark, BookmarkPlus, Trash2, Pencil, Clock, Search, Download } from "lucide-react";
 import { useBookmarks, useHighlights } from "../hooks/useBookmarks";
@@ -17,6 +18,85 @@ interface BookmarksPanelProps {
 
 type Tab = "bookmarks" | "highlights";
 
+interface SelectionNote {
+  id: string;
+  location: string | null;
+  content: string;
+}
+
+interface SelectionNotePage {
+  notes: SelectionNote[];
+  next_cursor: string | null;
+}
+
+/**
+ * A highlight carries only a colour. Text written about the passage is a note
+ * anchored at the same range, joined on `location == cfi_range` as an opaque
+ * string — the same rule the Annotations page folds by. Notes come back newest
+ * first, so the first one at an anchor is the one this panel edits.
+ */
+function useHighlightNotes(bookId: string) {
+  const [notes, setNotes] = useState<Map<string, SelectionNote>>(new Map());
+
+  const refresh = useCallback(async () => {
+    const byAnchor = new Map<string, SelectionNote>();
+    let cursor: string | null = null;
+    try {
+      do {
+        const page: SelectionNotePage = await invoke<SelectionNotePage>("list_notes", {
+          bookId,
+          anchorKind: "selection",
+          cursor,
+          limit: 200,
+        });
+        for (const note of page.notes) {
+          if (note.location && !byAnchor.has(note.location)) byAnchor.set(note.location, note);
+        }
+        cursor = page.next_cursor;
+      } while (cursor);
+      setNotes(byAnchor);
+    } catch (err) {
+      console.error("Failed to load highlight notes:", err);
+    }
+  }, [bookId]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const notifyChanged = useCallback(() => {
+    window.dispatchEvent(new CustomEvent("note-changed", { detail: { bookId } }));
+  }, [bookId]);
+
+  const save = useCallback(async (cfiRange: string, selectedText: string | null, content: string) => {
+    const existing = notes.get(cfiRange);
+    const saved = await invoke<SelectionNote>("save_note", {
+      id: existing?.id ?? null,
+      bookId,
+      anchorKind: "selection",
+      word: null,
+      scope: "book",
+      location: cfiRange,
+      selectedText,
+      content,
+    });
+    setNotes((current) => new Map(current).set(cfiRange, saved));
+    notifyChanged();
+  }, [bookId, notes, notifyChanged]);
+
+  const remove = useCallback(async (cfiRange: string) => {
+    const existing = notes.get(cfiRange);
+    if (!existing) return;
+    await invoke("delete_note", { id: existing.id });
+    setNotes((current) => {
+      const next = new Map(current);
+      next.delete(cfiRange);
+      return next;
+    });
+    notifyChanged();
+  }, [notes, notifyChanged]);
+
+  return { notes, save, remove };
+}
+
 export default function BookmarksPanel({ bookId, onNavigate, getCurrentCfi, getCurrentLabel, getPageFromCfi, onExport }: BookmarksPanelProps) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>("bookmarks");
@@ -24,7 +104,8 @@ export default function BookmarksPanel({ bookId, onNavigate, getCurrentCfi, getC
   const [search, setSearch] = useState("");
   const [editingHighlight, setEditingHighlight] = useState<{ id: string; x: number; y: number } | null>(null);
   const { bookmarks, add: addBookmark, remove: removeBookmark } = useBookmarks(bookId);
-  const { highlights, remove: removeHighlight, updateNote, updateColor } = useHighlights(bookId);
+  const { highlights, remove: removeHighlight, updateColor } = useHighlights(bookId);
+  const { notes: highlightNotes, save: saveHighlightNote, remove: removeHighlightNote } = useHighlightNotes(bookId);
   const editingTarget = editingHighlight
     ? highlights.find((h) => h.id === editingHighlight.id) ?? null
     : null;
@@ -246,10 +327,15 @@ export default function BookmarksPanel({ bookId, onNavigate, getCurrentCfi, getC
           x={editingHighlight.x}
           y={editingHighlight.y}
           color={editingTarget.color}
-          note={editingTarget.note}
+          note={highlightNotes.get(editingTarget.cfi_range)?.content ?? null}
           onChangeColor={(color) => updateColor(editingTarget.id, color)}
-          onSaveNote={(note) => updateNote(editingTarget.id, note)}
-          onDeleteNote={() => { updateNote(editingTarget.id, ""); setEditingHighlight(null); }}
+          onSaveNote={(note) => {
+            const body = note.trim();
+            void (body
+              ? saveHighlightNote(editingTarget.cfi_range, editingTarget.text_content, body)
+              : removeHighlightNote(editingTarget.cfi_range));
+          }}
+          onDeleteNote={() => { void removeHighlightNote(editingTarget.cfi_range); setEditingHighlight(null); }}
           onDeleteHighlight={() => { removeHighlight(editingTarget.id); setEditingHighlight(null); }}
           onClose={() => setEditingHighlight(null)}
         />

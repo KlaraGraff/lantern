@@ -32,9 +32,6 @@ pub struct CreateHighlightArgs {
     /// Highlight color. Defaults to `yellow`.
     #[serde(default)]
     pub color: Option<String>,
-    /// Optional attached legacy highlight note.
-    #[serde(default)]
-    pub note: Option<String>,
     /// Optional selected passage text retained with the highlight.
     #[serde(default)]
     pub text_content: Option<String>,
@@ -44,12 +41,8 @@ pub struct CreateHighlightArgs {
 pub struct UpdateHighlightArgs {
     /// Highlight ID returned by `get_highlights`.
     pub id: String,
-    /// Replacement note text. Omit to leave unchanged.
-    #[serde(default)]
-    pub note: Option<String>,
-    /// Replacement color name or token. Omit to leave unchanged.
-    #[serde(default)]
-    pub color: Option<String>,
+    /// Replacement color name or token.
+    pub color: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -133,16 +126,11 @@ pub enum SaveAnnotationsAction {
         #[serde(default)]
         color: Option<String>,
         #[serde(default)]
-        note: Option<String>,
-        #[serde(default)]
         text_content: Option<String>,
     },
     UpdateHighlight {
         id: String,
-        #[serde(default)]
-        note: Option<String>,
-        #[serde(default)]
-        color: Option<String>,
+        color: String,
     },
     SaveNote {
         #[serde(default)]
@@ -224,7 +212,7 @@ impl LanternMcpHandler {
     }
 
     #[tool(
-        description = "Create a highlight for a selected book range. This does not delete or replace existing highlights."
+        description = "Create a highlight for a selected book range. A highlight carries only a color; to write text about the passage, call `save_note` with the same range. This does not delete or replace existing highlights."
     )]
     pub async fn create_highlight(
         &self,
@@ -232,7 +220,6 @@ impl LanternMcpHandler {
             book_id,
             cfi_range,
             color,
-            note,
             text_content,
         }): Parameters<CreateHighlightArgs>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -241,7 +228,6 @@ impl LanternMcpHandler {
             &book_id,
             &cfi_range,
             color,
-            note,
             text_content,
             &self.state.db,
             sync,
@@ -254,21 +240,15 @@ impl LanternMcpHandler {
     }
 
     #[tool(
-        description = "Update one highlight's note, color, or both. Omitted fields remain unchanged."
+        description = "Recolor one highlight. Color is all a highlight carries; text written about the passage is a note — use `save_note` anchored at the same range."
     )]
     pub async fn update_highlight(
         &self,
-        Parameters(UpdateHighlightArgs { id, note, color }): Parameters<UpdateHighlightArgs>,
+        Parameters(UpdateHighlightArgs { id, color }): Parameters<UpdateHighlightArgs>,
     ) -> Result<CallToolResult, ErrorData> {
         let sync = require_sync(self)?;
-        let highlight = bookmarks::update_highlight_inner(
-            &id,
-            note.as_deref(),
-            color.as_deref(),
-            &self.state.db,
-            sync,
-        )
-        .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+        let highlight = bookmarks::update_highlight_inner(&id, &color, &self.state.db, sync)
+            .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
         self.state.notify("highlights", "updated", &id);
         Ok(CallToolResult::success(vec![ContentBlock::json(
             &highlight,
@@ -326,7 +306,7 @@ impl LanternMcpHandler {
     }
 
     #[tool(
-        description = "Permanently delete one or more highlights and their attached legacy note text. This action cannot be undone."
+        description = "Permanently delete one or more highlights. Notes anchored at the same range are left alone — delete those with `delete_note`. This action cannot be undone."
     )]
     pub async fn delete_highlights(
         &self,
@@ -434,20 +414,18 @@ impl LanternMcpHandler {
                 book_id,
                 cfi_range,
                 color,
-                note,
                 text_content,
             } => {
                 self.create_highlight(Parameters(CreateHighlightArgs {
                     book_id,
                     cfi_range,
                     color,
-                    note,
                     text_content,
                 }))
                 .await
             }
-            SaveAnnotationsAction::UpdateHighlight { id, note, color } => {
-                self.update_highlight(Parameters(UpdateHighlightArgs { id, note, color }))
+            SaveAnnotationsAction::UpdateHighlight { id, color } => {
+                self.update_highlight(Parameters(UpdateHighlightArgs { id, color }))
                     .await
             }
             SaveAnnotationsAction::SaveNote {

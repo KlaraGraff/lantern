@@ -142,7 +142,6 @@ pub struct HighlightRow {
     pub book_id: String,
     pub cfi_range: String,
     pub color: String,
-    pub note: Option<String>,
     pub text_content: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
