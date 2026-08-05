@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
-import { Download, FileWarning, Loader2, X } from "lucide-react";
+import { ChevronRight, Download, FileWarning, Loader2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { Highlight } from "../hooks/useBookmarks";
 import type { DictionaryWord } from "../hooks/useDictionary";
-import { exportCounts, exportFilename, filterExportRecords, previewExport, serializeExport, type ExportFormat, type ExportRecord, type ExportSelection } from "../pages/reader/reader-export";
+import { countExportFields, defaultExportFields, effectiveExportFields, exportCounts, exportFieldBlock, exportFieldGroups, exportFilename, filterExportRecords, isCustomExportFields, previewExport, selectionForFormat, serializeExport, type ExportFieldKey, type ExportFields, type ExportFormat, type ExportRecord, type ExportSelection } from "../pages/reader/reader-export";
 
 interface ReaderExportDialogProps {
   open: boolean;
@@ -47,9 +47,13 @@ export default function ReaderExportDialog({ open, bookId, bookTitle, onClose, r
   const statusActionRef = useRef<HTMLButtonElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const requestGenerationRef = useRef(0);
+  /** The content selection Anki displaced, held so that leaving Anki restores it. */
+  const beforeAnkiRef = useRef<ExportSelection | null>(null);
   const [records, setRecords] = useState<ExportRecord[]>([]);
   const [selection, setSelection] = useState<ExportSelection>({ highlights: true, vocabulary: true });
   const [format, setFormat] = useState<ExportFormat>("markdown");
+  const [fields, setFields] = useState<ExportFields>(() => defaultExportFields("markdown"));
+  const [fieldsOpen, setFieldsOpen] = useState(false);
   const [status, setStatus] = useState<Status>("ready");
   const [error, setError] = useState("");
 
@@ -63,6 +67,7 @@ export default function ReaderExportDialog({ open, bookId, bookTitle, onClose, r
     if (open) return;
     requestGenerationRef.current += 1;
     setRecords([]); setStatus("ready"); setError(""); setFormat("markdown"); setSelection({ highlights: true, vocabulary: true });
+    setFields(defaultExportFields("markdown")); setFieldsOpen(false); beforeAnkiRef.current = null;
   }, [open]);
 
   const loadRecords = useCallback(async () => {
@@ -100,7 +105,11 @@ export default function ReaderExportDialog({ open, bookId, bookTitle, onClose, r
   const selected = filterExportRecords(records, activeSelection, format);
   const counts = exportCounts(selected);
   const chinese = i18n.language.startsWith("zh");
-  const preview = previewExport(selected, bookTitle, format, chinese);
+  // A field the current format or content selection rules out is never written,
+  // so the preview and the file both read from the same resolved set.
+  const activeFields = effectiveExportFields(fields, format, activeSelection);
+  const customFields = isCustomExportFields(fields, format);
+  const preview = previewExport(selected, bookTitle, format, chinese, activeFields);
   const empty = selected.length === 0;
 
   useEffect(() => {
@@ -109,17 +118,24 @@ export default function ReaderExportDialog({ open, bookId, bookTitle, onClose, r
     return () => window.cancelAnimationFrame(frame);
   }, [empty, open, status]);
 
+  // The field set resets on every format switch; the content selection only
+  // moves when Anki forces it (see selectionForFormat).
   const chooseFormat = (next: ExportFormat) => {
+    const resolved = selectionForFormat(next, format, selection, beforeAnkiRef.current);
+    beforeAnkiRef.current = resolved.remember;
+    setSelection(resolved.selection);
     setFormat(next);
-    if (next === "anki") setSelection({ highlights: false, vocabulary: true });
+    setFields(defaultExportFields(next));
+    setFieldsOpen(false);
   };
   const toggle = (kind: keyof ExportSelection) => setSelection((current) => ({ ...current, [kind]: !current[kind] }));
+  const toggleField = (key: ExportFieldKey) => setFields((current) => ({ ...current, [key]: !current[key] }));
   const exportFile = async () => {
     if (empty || status !== "ready") return;
     setError("");
     const generation = requestGenerationRef.current;
     try {
-      const content = serializeExport(selected, bookTitle, format, chinese);
+      const content = serializeExport(selected, bookTitle, format, chinese, activeFields);
       setStatus("saving");
       const path = await save({ defaultPath: exportFilename(bookTitle, format, chinese), filters: [{ name: format === "markdown" ? "Markdown" : "CSV", extensions: [format === "markdown" ? "md" : "csv"] }] });
       if (generation !== requestGenerationRef.current) return;
@@ -164,11 +180,41 @@ export default function ReaderExportDialog({ open, bookId, bookTitle, onClose, r
             {format === "anki" && <p className="mt-2 text-xs text-text-muted">{t("readerExport.highlightsDisabledAnki")}</p>}
             </fieldset>
             <fieldset><legend className="mb-2 text-sm font-medium">{t("readerExport.format")}</legend><div className="grid grid-cols-3 rounded-lg bg-bg-input p-1">{(["markdown", "csv", "anki"] as const).map((item) => <button key={item} onClick={() => chooseFormat(item)} className={`rounded-md py-2 text-xs ${format === item ? "bg-bg-surface font-semibold shadow-sm" : "text-text-muted"}`}>{t(`readerExport.format.${item}`)}</button>)}</div></fieldset>
+            <section className="border-y border-border">
+              {/* The whole row is the disclosure — one tab stop, one hit target
+                  — with "restore defaults" lifted above it so it stays its own
+                  control instead of also toggling the section. */}
+              <div className="group relative flex items-center gap-2 py-2.5">
+                <button type="button" onClick={() => setFieldsOpen((current) => !current)} aria-expanded={fieldsOpen} aria-controls="reader-export-fields" aria-label={t("readerExport.fields")} className="absolute inset-0 rounded-sm" />
+                <span className="pointer-events-none flex items-center gap-1.5 text-xs font-medium text-text-muted group-hover:text-text-primary"><ChevronRight size={12} className={`transition-transform motion-reduce:transition-none ${fieldsOpen ? "rotate-90" : ""}`} />{t("readerExport.fields")}</span>
+                <span className={`pointer-events-none ml-auto text-xs ${customFields ? "text-accent" : "text-text-muted"}`}>{t(customFields ? "readerExport.fieldsCustom" : "readerExport.fieldsDefault", { count: countExportFields(activeFields), formatName: t(`readerExport.format.${format}`) })}</span>
+                {customFields ? <button type="button" onClick={() => setFields(defaultExportFields(format))} className="relative text-xs text-accent underline decoration-accent underline-offset-2">{t("readerExport.fieldsRestore")}</button> : null}
+                <span className="pointer-events-none text-xs text-text-muted">{fieldsOpen ? t("readerExport.fieldsCollapse") : t("readerExport.fieldsExpand")}</span>
+              </div>
+              {fieldsOpen ? <div id="reader-export-fields" className="mb-3 rounded-lg border border-border bg-bg-muted px-3 pb-2">
+                {exportFieldGroups.map(({ group, keys }) => <div key={group} className="border-t border-border py-2.5 first:border-t-0">
+                  <p className="mb-1.5 text-[10px] font-semibold tracking-wider text-text-muted uppercase">{t(`readerExport.fieldGroup.${group}`)}</p>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                    {keys.map((key) => {
+                      const blocked = exportFieldBlock(key, format, activeSelection);
+                      return <label key={key} title={blocked ? t(`readerExport.fieldBlocked.${blocked}Hint`) : undefined} className={`flex min-w-0 items-center gap-1.5 text-xs ${blocked ? "cursor-not-allowed opacity-50" : "cursor-pointer text-text-muted hover:text-text-primary"}`}>
+                        <input type="checkbox" checked={activeFields[key]} disabled={!!blocked} onChange={() => toggleField(key)} className="accent-accent" />
+                        <span className="truncate">{t(`readerExport.field.${key}`)}</span>
+                        {blocked ? <span className="shrink-0 text-[10px] text-text-muted">{t(`readerExport.fieldBlocked.${blocked}`)}</span> : null}
+                      </label>;
+                    })}
+                  </div>
+                </div>)}
+                {format === "anki" ? <p className="border-t border-border pt-2 text-[10px] leading-relaxed text-text-muted">{t("readerExport.fieldsAnkiNote")}</p> : null}
+              </div> : null}
+            </section>
             <p className="rounded-lg bg-bg-input p-3 text-xs leading-5 text-text-muted">{t("readerExport.privacy")}</p>
           </div>
           <div className="bg-bg-muted p-6"><div className="mb-2 flex justify-between text-sm font-medium"><span>{t("readerExport.preview")}</span><span className="font-normal text-text-muted">{t("readerExport.firstTwo")}</span></div><pre className="min-h-60 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-bg-surface p-4 text-xs leading-5 text-text-body">{preview}</pre><div className="mt-2 rounded-md border border-border bg-bg-surface px-3 py-2 text-xs text-text-muted">{exportFilename(bookTitle, format, chinese)}</div></div>
         </div>
-        <footer className="flex items-center gap-3 border-t border-border px-6 py-4"><span className="text-xs text-text-muted">{t("readerExport.summary", counts)}</span><span className="flex-1" /><button disabled={status === "saving"} onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm disabled:cursor-wait disabled:opacity-40">{t("common.cancel")}</button><button disabled={status !== "ready"} onClick={exportFile} className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{status === "saving" ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : null}{status === "saving" ? t("readerExport.saving") : t("readerExport.chooseLocation")}</button><span className="sr-only" role="status" aria-live="polite">{status === "saving" ? t("readerExport.saving") : ""}</span></footer>
+        {/* Anki never carries a highlight, so quoting a highlight count of zero
+            is noise that reads like something went wrong. */}
+        <footer className="flex items-center gap-3 border-t border-border px-6 py-4"><span className="text-xs text-text-muted">{format === "anki" ? t("readerExport.ankiSummary", counts) : t("readerExport.summary", counts)}</span><span className="flex-1" /><button disabled={status === "saving"} onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm disabled:cursor-wait disabled:opacity-40">{t("common.cancel")}</button><button disabled={status !== "ready"} onClick={exportFile} className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{status === "saving" ? <Loader2 size={16} className="animate-spin motion-reduce:animate-none" /> : null}{status === "saving" ? t("readerExport.saving") : t("readerExport.chooseLocation")}</button><span className="sr-only" role="status" aria-live="polite">{status === "saving" ? t("readerExport.saving") : ""}</span></footer>
       </>}
     </section>
   </div>;
