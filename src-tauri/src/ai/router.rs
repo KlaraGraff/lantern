@@ -854,15 +854,56 @@ fn handle_effort_rejection<R: Runtime>(
     true
 }
 
+/// Switches already announced: the pair of models a request moved between,
+/// against the recovery deadline the reader was given for it.
+type AnnouncedFallbacks = HashMap<(String, String), Option<i64>>;
+
+/// The one table of those, for the life of the process. See `fallback_is_news`.
+fn announced_fallbacks() -> &'static Mutex<AnnouncedFallbacks> {
+    static ANNOUNCED: OnceLock<Mutex<AnnouncedFallbacks>> = OnceLock::new();
+    ANNOUNCED.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Whether this switch is something the reader has not already been told, and
+/// record it if so.
+///
+/// Routing filters a failed model out for the length of its cooldown, so a
+/// second request inside that window normally has no switch left to announce.
+/// Two cases slip past that, and both put the same notice on screen again:
+///
+/// - Requests already in flight when the failure landed. A chat in the sidebar
+///   and a chapter summary in the background both start before the cooldown is
+///   written, both fail, and both fall to the same model.
+/// - A model that fails without earning a cooldown at all. When every key it
+///   has is invalid, the profile is not filtered out and contributes nothing,
+///   so *every* request from then on falls off it — a notice per request until
+///   the reader fixes the key.
+///
+/// So a pair is news only when the reason changed: the deadline last reported
+/// has passed (a genuinely new outage), or there was no deadline before and
+/// there is one now. An unchanged nothing stays quiet after the first time.
+fn fallback_is_news(from_id: &str, to_id: &str, recovers_at: Option<i64>) -> bool {
+    let Ok(mut announced) = announced_fallbacks().lock() else {
+        // Never swallow the notice to save a lock.
+        return true;
+    };
+    let key = (from_id.to_string(), to_id.to_string());
+    match announced.get(&key) {
+        Some(&Some(deadline)) if deadline > now() => false,
+        Some(&None) if recovers_at.is_none() => false,
+        _ => {
+            announced.insert(key, recovers_at);
+            true
+        }
+    }
+}
+
 /// Announce a model switch the user did not ask for, once the request has
 /// actually landed somewhere else.
 ///
 /// Silent when the request ran on the model at the head of the route, which is
-/// the overwhelmingly common case — and silent on a later request inside the
-/// same cooldown window too, because by then the failed model is filtered out
-/// before the traversal starts and there is no switch left to announce. That
-/// falls out of the routing rather than being counted, which is why there is no
-/// bookkeeping here.
+/// the overwhelmingly common case, and silent on a repeat of a switch the
+/// reader has already been told about — see `fallback_is_news`.
 fn emit_route_fallback<R: Runtime>(
     app: &AppHandle<R>,
     db: &Db,
@@ -879,6 +920,9 @@ fn emit_route_fallback<R: Runtime>(
         .ok()
         .and_then(|profile| profile.view.cooldown_until)
         .filter(|deadline| *deadline > now());
+    if !fallback_is_news(&expected.id, &used.id, recovers_at) {
+        return;
+    }
     let _ = app.emit(
         "ai-route-fallback",
         AiRouteFallback {
@@ -4617,6 +4661,87 @@ mod tests {
         let credentials = list_credentials(&db, Some(&profile.id)).unwrap();
         assert_eq!(credentials[0].state, "invalid");
         assert_eq!(credentials[1].state, "active");
+    }
+
+    /// The rule the announcement bookkeeping follows, case by case. Keys are
+    /// unique to this test because the table outlives it.
+    #[test]
+    fn a_switch_is_news_only_when_its_reason_changed() {
+        let deadline = now() + 60_000;
+        // Two requests that failed together get one notice between them.
+        assert!(fallback_is_news("news-cooling", "to", Some(deadline)));
+        assert!(!fallback_is_news("news-cooling", "to", Some(deadline)));
+        // A different destination is a different piece of news.
+        assert!(fallback_is_news(
+            "news-cooling",
+            "elsewhere",
+            Some(deadline)
+        ));
+        // Once the deadline the reader was given has passed, a failure is a new
+        // outage rather than the tail of the old one.
+        assert!(fallback_is_news("news-expired", "to", Some(now() - 1)));
+        assert!(fallback_is_news("news-expired", "to", Some(deadline)));
+        // A model that fails without earning a cooldown loses every request
+        // from now on; saying so once is enough.
+        assert!(fallback_is_news("news-broken", "to", None));
+        assert!(!fallback_is_news("news-broken", "to", None));
+        // Until it does earn one, which the reader has not been told.
+        assert!(fallback_is_news("news-broken", "to", Some(deadline)));
+    }
+
+    /// A model whose every key is invalid earns no cooldown, so it is never
+    /// filtered out of the route and loses every later request too. Announcing
+    /// that per request is a notice that never stops; the reader hears it once.
+    #[tokio::test]
+    async fn a_model_that_keeps_losing_the_route_is_announced_only_once() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let (db, secrets, seen, base_url) = route_test_setup(
+            &directory,
+            vec![
+                ("200 OK", sse_answer("first")),
+                ("200 OK", sse_answer("second")),
+            ],
+        )
+        .await;
+        let first = model_list_test_profile(&db, base_url.clone());
+        let second = model_list_test_profile(&db, base_url);
+        let gone = add_credential(
+            &db,
+            &secrets,
+            first.id.clone(),
+            "Gone".to_string(),
+            "about-to-vanish".to_string(),
+        )
+        .unwrap();
+        add_credential(
+            &db,
+            &secrets,
+            second.id.clone(),
+            "Live".to_string(),
+            "live-key".to_string(),
+        )
+        .unwrap();
+        secrets.delete(&format!("ai_api_key/{}", gone.id)).unwrap();
+
+        let app = tauri::test::mock_app();
+        let announced = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = Arc::clone(&announced);
+        app.listen("ai-route-fallback", move |_| {
+            counter.fetch_add(1, Ordering::Relaxed);
+        });
+
+        for _ in 0..2 {
+            assert_eq!(route(&app, &db, &secrets).await.unwrap().id, second.id);
+        }
+
+        // The switch happened both times — only the notice is deduplicated.
+        assert_eq!(seen.load(Ordering::Relaxed), 2);
+        assert!(profile_by_id(&db, &first.id)
+            .unwrap()
+            .view
+            .cooldown_until
+            .is_none());
+        assert_eq!(announced.load(Ordering::Relaxed), 1);
     }
 
     fn sse_delta(text: &str) -> String {
