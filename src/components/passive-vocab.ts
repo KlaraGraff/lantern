@@ -133,6 +133,33 @@ export function updatePassiveVocabSettings(
   };
 }
 
+const SUMMARY_DENSITY_KEYS: Record<PassiveVocabDensity, string> = {
+  low: "settings.passiveVocab.summaryDensityLow",
+  medium: "settings.passiveVocab.summaryDensityMedium",
+  high: "settings.passiveVocab.summaryDensityHigh",
+};
+
+/**
+ * The one-line state summary shown under the master switch, as the i18n keys
+ * that make it up. Off is a single key on its own — a summary that still listed
+ * a style and a density would read as if the feature were running.
+ */
+export function passiveVocabSummaryKeys(value: PassiveVocabSettings): string[] {
+  if (!value.enabled) return ["settings.passiveVocab.summaryOff"];
+  return [
+    "settings.passiveVocab.summaryOn",
+    value.style === "margin" ? "settings.passiveVocab.styleMargin" : "settings.passiveVocab.styleRuby",
+    SUMMARY_DENSITY_KEYS[value.density],
+  ];
+}
+
+export function formatPassiveVocabSummary(
+  value: PassiveVocabSettings,
+  translate: (key: string) => string,
+) {
+  return passiveVocabSummaryKeys(value).map(translate).join(" · ");
+}
+
 export function rollbackPassiveVocabSettings(
   current: PassiveVocabSettings,
   mutation: PassiveVocabSettingsMutation,

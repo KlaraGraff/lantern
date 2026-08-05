@@ -6,9 +6,12 @@ import EmbeddingSettings from "./EmbeddingSettings";
 import OcrSettings from "./OcrSettings";
 import SpeechSettings from "./SpeechSettings";
 import { platform } from "../../services/platform";
+import type { SettingsView } from "../settings-destination";
 import type { SettingsProps } from "./types";
 
 export type ServicesView = "models" | "embedding" | "speech" | "ocr";
+
+const SERVICES_VIEWS: ServicesView[] = ["models", "embedding", "speech", "ocr"];
 
 /**
  * OCR downloads and spawns a runtime, which a phone cannot do (D-003). The
@@ -19,14 +22,16 @@ function isViewAvailable(id: ServicesView): boolean {
   return id !== "ocr" || platform.hasOcr;
 }
 
-function availableView(id: ServicesView | undefined): ServicesView {
-  return id && isViewAvailable(id) ? id : "models";
+/** Deep links address views section-wide, so a view from another section lands here too. */
+function availableView(id: SettingsView | undefined): ServicesView {
+  const view = SERVICES_VIEWS.find((candidate) => candidate === id);
+  return view && isViewAvailable(view) ? view : "models";
 }
 
 interface ServicesSettingsProps extends SettingsProps {
   onSaveRef?: (save: (() => void) | null) => void;
   onDirtyChange?: (dirty: boolean) => void;
-  initialView?: ServicesView;
+  initialView?: SettingsView;
 }
 
 /**

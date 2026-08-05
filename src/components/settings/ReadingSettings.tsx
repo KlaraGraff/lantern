@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, Download, Trash2 } from "lucide-react";
+import { Check, ChevronRight, Download, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import Select from "../ui/Select";
 import Toggle from "../ui/Toggle";
@@ -29,6 +29,9 @@ import {
 } from "../ReaderSettings";
 import { DEFAULT_NEXT_PAGE_BINDING, DEFAULT_PREVIOUS_PAGE_BINDING } from "../page-turn-bindings";
 import PassiveVocabSettings from "./PassiveVocabSettings";
+import type { PassiveVocabPreviewState } from "./PassiveVocabPreview";
+import { formatPassiveVocabSummary, parsePassiveVocabSettings } from "../passive-vocab";
+import type { SettingsView } from "../settings-destination";
 import EnhancedFontSettings from "./EnhancedFontSettings";
 
 const READER_THEME_OPTIONS: {
@@ -99,8 +102,33 @@ function NumberInput({ value, onChange, onBlur, suffix, min, max }: {
   );
 }
 
-export default function ReadingSettings({ settings, loading, refresh, save, saveBulk, showSavedToast }: SettingsProps) {
+/** The section shows either its own list or the vocabulary-assist sub-page. */
+type ReadingView = "list" | "passiveVocab";
+
+interface ReadingSettingsProps extends SettingsProps {
+  /** A deep link can land straight on the vocabulary-assist sub-page. */
+  initialView?: SettingsView;
+  onPassiveVocabPreviewChange?: (preview: PassiveVocabPreviewState | null) => void;
+  /**
+   * Reports the way out of a sub-page, so Escape can leave the sub-page before
+   * it closes the whole modal. Null while the section shows its own list.
+   */
+  onSubPageChange?: (back: (() => void) | null) => void;
+}
+
+export default function ReadingSettings({
+  settings,
+  loading,
+  refresh,
+  save,
+  saveBulk,
+  showSavedToast,
+  initialView,
+  onPassiveVocabPreviewChange,
+  onSubPageChange,
+}: ReadingSettingsProps) {
   const { t } = useTranslation();
+  const [view, setView] = useState<ReadingView>(initialView === "passiveVocab" ? "passiveVocab" : "list");
   const [readerTheme, setReaderTheme] = useState<ReaderTheme>(getDefaultReaderTheme());
   const [customTheme, setCustomTheme] = useState<ReaderCustomTheme>(() => parseReaderCustomTheme(null));
   const [fontFamily, setFontFamily] = useState("georgia");
@@ -190,6 +218,31 @@ export default function ReadingSettings({ settings, loading, refresh, save, save
     if (loading) return;
     refreshCustomFonts().catch((error) => console.error("Failed to load custom fonts:", error));
   }, [loading, refreshCustomFonts]);
+
+  useEffect(() => {
+    if (initialView === "passiveVocab") setView("passiveVocab");
+  }, [initialView]);
+
+  useEffect(() => {
+    onSubPageChange?.(view === "passiveVocab" ? () => setView("list") : null);
+  }, [onSubPageChange, view]);
+
+  useEffect(() => () => onSubPageChange?.(null), [onSubPageChange]);
+
+  if (view === "passiveVocab") {
+    return (
+      <PassiveVocabSettings
+        settings={settings}
+        loading={loading}
+        refresh={refresh}
+        save={save}
+        saveBulk={saveBulk}
+        showSavedToast={showSavedToast}
+        onBack={() => setView("list")}
+        onPreviewChange={onPassiveVocabPreviewChange}
+      />
+    );
+  }
 
   return (
     <div>
@@ -599,14 +652,21 @@ export default function ReadingSettings({ settings, loading, refresh, save, save
           }}
         />
       </div>
-      <PassiveVocabSettings
-        settings={settings}
-        loading={loading}
-        refresh={refresh}
-        save={save}
-        saveBulk={saveBulk}
-        showSavedToast={showSavedToast}
-      />
+      {/* Vocabulary assist has a sub-page of its own — style, density and a
+          live preview do not fit a single row. */}
+      <button
+        type="button"
+        onClick={() => setView("passiveVocab")}
+        className="group flex h-[73px] w-full items-center justify-between gap-4 border-t border-border-light text-left"
+      >
+        <span className="min-w-0">
+          <span className="block text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.passiveVocab.title")}</span>
+          <span className="mt-0.5 block truncate text-[12px] text-text-muted">
+            {formatPassiveVocabSummary(parsePassiveVocabSettings(settings), (key) => t(key))}
+          </span>
+        </span>
+        <ChevronRight size={16} className="shrink-0 text-text-muted group-hover:text-text-primary" />
+      </button>
     </div>
   );
 }

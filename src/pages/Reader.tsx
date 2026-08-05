@@ -1447,7 +1447,7 @@ export default function Reader() {
       });
   }, [passiveVocab, setPassiveVocab, t]);
 
-  const openPassiveVocabSettings = useCallback(() => openSettings("reading"), []);
+  const openPassiveVocabSettings = useCallback(() => openSettings({ section: "reading", view: "passiveVocab" }), []);
 
   // Only ever reached through the `bookId ? … : undefined` guard at the call
   // site; the check inside is what lets the callback itself stay stable.

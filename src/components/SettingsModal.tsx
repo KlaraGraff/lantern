@@ -7,6 +7,7 @@ import ReadingSettings from "./settings/ReadingSettings";
 import ServicesSettings from "./settings/ServicesSettings";
 import ToolsSettings, { type ToolsPreviewState } from "./settings/ToolsSettings";
 import CardPreview from "./settings/CardPreview";
+import PassiveVocabPreview, { type PassiveVocabPreviewState } from "./settings/PassiveVocabPreview";
 import LibrarySyncSettings from "./settings/LibrarySyncSettings";
 import BookSourcesSettings from "./settings/BookSourcesSettings";
 import McpSettings from "./settings/McpSettings";
@@ -54,18 +55,32 @@ export default function SettingsModal({ open, onClose, initialSection = "general
   const { t } = useTranslation();
   const [activeSection, setActiveSection] = useState<SettingsSection>(availableSection(initialSection));
   const [toolsPreview, setToolsPreview] = useState<ToolsPreviewState | null>(null);
+  const [passiveVocabPreview, setPassiveVocabPreview] = useState<PassiveVocabPreviewState | null>(null);
   const { settings, loading, refresh, save, saveBulk } = useSettings();
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const previewRef = useRef<HTMLElement>(null);
   const previewCloseRef = useRef<HTMLButtonElement>(null);
   const previewPreviousFocusRef = useRef<HTMLElement | null>(null);
-  const toolsPreviewRef = useRef<ToolsPreviewState | null>(null);
+  const previewDismissRef = useRef<(() => void) | null>(null);
   const overlayPreviewRef = useRef(false);
+  const subPageBackRef = useRef<(() => void) | null>(null);
   const toolsNavigationGuardRef = useRef<((action: () => void) => void) | null>(null);
   const onCloseRef = useRef(onClose);
   const [isXlViewport, setIsXlViewport] = useState(() => window.matchMedia(XL_PREVIEW_QUERY).matches);
-  const overlayPreviewOpen = toolsPreview !== null && !isXlViewport;
+  // One docked pane, whichever section raised it: a third column at xl, an
+  // overlay below that.
+  const previewOpen = toolsPreview !== null || passiveVocabPreview !== null;
+  const dismissPreview = toolsPreview?.onDismiss ?? passiveVocabPreview?.onDismiss ?? null;
+  const overlayPreviewOpen = previewOpen && !isXlViewport;
+  // Which preview, if any, Escape belongs to. Below xl the pane covers the page
+  // and is a genuine overlay, so it always goes first. Docked at xl it is page
+  // content: the card designer's preview is opt-in and still claims Escape, but
+  // a preview a sub-page opened by itself must not swallow the way out.
+  const escapePreviewDismiss = overlayPreviewOpen ? dismissPreview : toolsPreview?.onDismiss ?? null;
+  const setSubPageBack = useCallback((back: (() => void) | null) => {
+    subPageBackRef.current = back;
+  }, []);
   const setToolsNavigationGuard = useCallback((guard: ((action: () => void) => void) | null) => {
     toolsNavigationGuardRef.current = guard;
   }, []);
@@ -107,6 +122,10 @@ export default function SettingsModal({ open, onClose, initialSection = "general
   }, [activeSection, open]);
 
   useEffect(() => {
+    if (!open || activeSection !== "reading") setPassiveVocabPreview(null);
+  }, [activeSection, open]);
+
+  useEffect(() => {
     const query = window.matchMedia(XL_PREVIEW_QUERY);
     const handleChange = (event: MediaQueryListEvent) => setIsXlViewport(event.matches);
     setIsXlViewport(query.matches);
@@ -119,9 +138,9 @@ export default function SettingsModal({ open, onClose, initialSection = "general
   }, [onClose]);
 
   useEffect(() => {
-    toolsPreviewRef.current = toolsPreview;
+    previewDismissRef.current = escapePreviewDismiss;
     overlayPreviewRef.current = overlayPreviewOpen;
-  }, [overlayPreviewOpen, toolsPreview]);
+  }, [escapePreviewDismiss, overlayPreviewOpen]);
 
   useEffect(() => {
     if (!open) return;
@@ -133,9 +152,14 @@ export default function SettingsModal({ open, onClose, initialSection = "general
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        const preview = toolsPreviewRef.current;
-        if (preview) {
-          preview.onDismiss();
+        // Layered, outermost first: an overlay preview, then a settings
+        // sub-page, then the modal itself.
+        const dismiss = previewDismissRef.current;
+        const back = subPageBackRef.current;
+        if (dismiss) {
+          dismiss();
+        } else if (back) {
+          back();
         } else {
           requestClose();
         }
@@ -208,7 +232,14 @@ export default function SettingsModal({ open, onClose, initialSection = "general
     switch (activeSection) {
       case "general": return <GeneralSettings {...settingsProps} />;
       case "appearance": return <AppearanceSettings {...settingsProps} />;
-      case "reading": return <ReadingSettings {...settingsProps} />;
+      case "reading": return (
+        <ReadingSettings
+          {...settingsProps}
+          initialView={initialView}
+          onPassiveVocabPreviewChange={setPassiveVocabPreview}
+          onSubPageChange={setSubPageBack}
+        />
+      );
       case "services": return (
         <ServicesSettings
           {...settingsProps}
@@ -247,7 +278,7 @@ export default function SettingsModal({ open, onClose, initialSection = "general
         aria-label={t("settings.title")}
         tabIndex={-1}
         className={`relative flex max-h-[760px] overflow-hidden rounded-lg border border-border bg-white shadow-[0px_25px_50px_-12px_rgba(0,0,0,0.25)] dark:bg-bg-surface ${
-          toolsPreview
+          previewOpen
             ? "w-[min(780px,calc(100vw_-_32px))] xl:w-[min(1400px,calc(100vw_-_32px))]"
             : "w-[min(780px,calc(100vw_-_32px))]"
         }`}
@@ -357,12 +388,12 @@ export default function SettingsModal({ open, onClose, initialSection = "general
           </div>
         </div>
 
-        {toolsPreview && (
+        {previewOpen && (
           <aside
             ref={previewRef}
             role={overlayPreviewOpen ? "dialog" : undefined}
             aria-modal={overlayPreviewOpen ? true : undefined}
-            aria-label={t("settings.tools.preview")}
+            aria-label={toolsPreview ? t("settings.tools.preview") : t("settings.passiveVocab.preview")}
             tabIndex={overlayPreviewOpen ? -1 : undefined}
             className="absolute inset-y-0 left-0 right-0 z-20 flex min-h-0 flex-col overflow-hidden border-l border-border bg-bg-surface p-4 shadow-[-12px_0_30px_rgba(0,0,0,0.12)] md:left-auto md:w-[min(680px,calc(100vw_-_260px))] xl:static xl:z-auto xl:min-w-[420px] xl:flex-1 xl:shadow-none"
             style={{ scrollbarGutter: "stable" }}
@@ -371,7 +402,7 @@ export default function SettingsModal({ open, onClose, initialSection = "general
               <button
                 ref={previewCloseRef}
                 type="button"
-                onClick={toolsPreview.onDismiss}
+                onClick={() => dismissPreview?.()}
                 aria-label={t("common.close")}
                 title={t("common.close")}
                 className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input"
@@ -380,19 +411,23 @@ export default function SettingsModal({ open, onClose, initialSection = "general
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
-              <CardPreview
-                kind={toolsPreview.kind}
-                config={toolsPreview.config}
-                explanationLanguage={toolsPreview.explanationLanguage}
-                targetLanguage={toolsPreview.targetLanguage}
-                learnerLevel={toolsPreview.learnerLevel}
-                explanationMode={toolsPreview.explanationMode}
-                showMenu={toolsPreview.showMenu}
-                lastTouched={toolsPreview.lastTouched}
-                testText={toolsPreview.testText}
-                testNonce={toolsPreview.testNonce}
-                customActionTest={toolsPreview.customActionTest}
-              />
+              {toolsPreview ? (
+                <CardPreview
+                  kind={toolsPreview.kind}
+                  config={toolsPreview.config}
+                  explanationLanguage={toolsPreview.explanationLanguage}
+                  targetLanguage={toolsPreview.targetLanguage}
+                  learnerLevel={toolsPreview.learnerLevel}
+                  explanationMode={toolsPreview.explanationMode}
+                  showMenu={toolsPreview.showMenu}
+                  lastTouched={toolsPreview.lastTouched}
+                  testText={toolsPreview.testText}
+                  testNonce={toolsPreview.testNonce}
+                  customActionTest={toolsPreview.customActionTest}
+                />
+              ) : passiveVocabPreview ? (
+                <PassiveVocabPreview style={passiveVocabPreview.style} density={passiveVocabPreview.density} />
+              ) : null}
             </div>
           </aside>
         )}

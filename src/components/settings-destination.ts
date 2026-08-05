@@ -9,8 +9,8 @@ export type SettingsSection =
   | "mcp"
   | "about";
 
-/** Tabs inside the services section that other surfaces can deep-link to. */
-export type SettingsView = "models" | "embedding" | "speech" | "ocr";
+/** Views inside a section that other surfaces can deep-link to. */
+export type SettingsView = "models" | "embedding" | "speech" | "ocr" | "passiveVocab";
 
 export type SettingsDestination =
   | SettingsSection
@@ -29,6 +29,7 @@ const SECTIONS = new Set<SettingsSection>([
 ]);
 
 const SERVICES_VIEWS = new Set<SettingsView>(["models", "embedding", "speech", "ocr"]);
+const READING_VIEWS = new Set<SettingsView>(["passiveVocab"]);
 
 /** Names that addressed a section before it was renamed. */
 const SECTION_ALIASES: Record<string, SettingsSection> = {
@@ -56,6 +57,9 @@ export function normalizeSettingsDestination(value: unknown): SettingsDestinatio
     const section = resolveSection(candidate.section);
     if (section === "services" && SERVICES_VIEWS.has(candidate.view as SettingsView)) {
       return { section: "services", view: candidate.view as SettingsView };
+    }
+    if (section === "reading" && READING_VIEWS.has(candidate.view as SettingsView)) {
+      return { section: "reading", view: candidate.view as SettingsView };
     }
     if (section) return section;
   }

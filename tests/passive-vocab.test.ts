@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  formatPassiveVocabSummary,
   installPassiveVocabAnnotations,
   parsePassiveVocabSettings,
+  passiveVocabSummaryKeys,
   passiveVocabCount,
   passiveVocabLabel,
   rollbackPassiveVocabSettings,
@@ -214,4 +216,41 @@ test("margin notes clamp at the viewport bottom and surface the drop as a +N bad
   assert.ok(notes.length < annotations.length, "some notes must be dropped rather than overflowing the viewport");
   assert.equal(badges.length, 1);
   assert.equal(badges[0].textContent, `+${annotations.length - notes.length}`);
+});
+
+// The summary line under the master switch is the only place the three
+// settings are stated in one sentence, so its "off" form matters as much as
+// its "on" one: listing a style and a density while the feature is off would
+// read as if it were still annotating pages.
+test("the settings summary states style and density only while it is on", () => {
+  const translate = (key: string) => key.replace("settings.passiveVocab.", "");
+  assert.equal(
+    formatPassiveVocabSummary({ enabled: true, style: "ruby", density: "medium" }, translate),
+    "summaryOn · styleRuby · summaryDensityMedium",
+  );
+  assert.equal(
+    formatPassiveVocabSummary({ enabled: true, style: "margin", density: "high" }, translate),
+    "summaryOn · styleMargin · summaryDensityHigh",
+  );
+  assert.deepEqual(
+    passiveVocabSummaryKeys({ enabled: false, style: "margin", density: "low" }),
+    ["settings.passiveVocab.summaryOff"],
+  );
+  assert.equal(
+    formatPassiveVocabSummary({ enabled: false, style: "margin", density: "low" }, translate),
+    "summaryOff",
+  );
+});
+
+test("every summary key the formatter can emit is a distinct key", () => {
+  const emitted = new Set<string>();
+  for (const enabled of [true, false]) {
+    for (const style of ["ruby", "margin"] as const) {
+      for (const density of ["low", "medium", "high"] as const) {
+        for (const key of passiveVocabSummaryKeys({ enabled, style, density })) emitted.add(key);
+      }
+    }
+  }
+  // 1 off + 1 on + 2 styles + 3 densities.
+  assert.equal(emitted.size, 7);
 });
