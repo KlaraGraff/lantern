@@ -925,6 +925,7 @@ pub fn run() {
             commands::ai::ai_xray,
             commands::ai::ai_word_forms,
             commands::ai::ai_lookup,
+            commands::ai::word_memory_hint,
             commands::ai::ai_explain,
             commands::ai::ai_generate_title,
             commands::ai::ai_cancel,

@@ -52,22 +52,59 @@ fn lookup_system_prompt(
 /// from "different sense".
 const LOOKUP_MEMORY_DEFINITION_BYTES: usize = 200;
 
-/// What the user's own record says about this word, or `None` when they have
-/// never looked it up and never saved it.
+/// What the user's own record says about this word.
 ///
-/// Deliberately cross-book. `ai_lookup` never receives a book id, and asking
-/// for one would be wrong anyway: mastery is a property of the reader, not of
-/// the book they happened to meet the word in.
+/// One fetch behind three consumers — the prose lookup prompt, the learning
+/// card prompt, and the card's provenance marker — so the line the reader is
+/// shown can never claim something the model was not told.
+pub(crate) struct LookupMemory {
+    looked_up_times: Option<i64>,
+    days_since_last_lookup: Option<i64>,
+    previous_definition: Option<String>,
+    mastery: Option<String>,
+    reviews: Option<i64>,
+    /// The book whose saved row won the mastery ordering below. For the UI
+    /// only: the prompt tells the model to state neither counts nor dates, and
+    /// handing it a book title invites both.
+    mastery_book_title: Option<String>,
+}
+
+impl LookupMemory {
+    /// The prompt-facing projection. Field-for-field what both prompt blocks
+    /// serialise, so neither can drift from the other.
+    fn record_json(&self) -> String {
+        let mut record = serde_json::Map::new();
+        if let Some(times) = self.looked_up_times {
+            record.insert("looked_up_times".to_string(), times.into());
+        }
+        if let Some(days) = self.days_since_last_lookup {
+            record.insert("days_since_last_lookup".to_string(), days.into());
+        }
+        if let Some(definition) = self.previous_definition.as_deref() {
+            record.insert("previous_definition".to_string(), definition.into());
+        }
+        if let Some(mastery) = self.mastery.as_deref() {
+            record.insert("mastery".to_string(), mastery.into());
+        }
+        if let Some(reviews) = self.reviews {
+            record.insert("reviews".to_string(), reviews.into());
+        }
+        serde_json::to_string(&serde_json::Value::Object(record))
+            .expect("serializable lookup record")
+    }
+}
+
+/// The user's record for a word, or `None` when they have never looked it up
+/// and never saved it.
 ///
-/// The result is appended to the system prompt rather than prefixed to it.
-/// `lookup_system_prompt`'s translation prefix owns the first line — the
-/// frontend parses a marker there — so a prefix that opens with anything else
-/// would break the translation strip.
-pub(crate) fn lookup_memory_block(
+/// Deliberately cross-book. The lookup commands never receive a book id, and
+/// asking for one would be wrong anyway: mastery is a property of the reader,
+/// not of the book they happened to meet the word in.
+pub(crate) fn lookup_memory(
     conn: &rusqlite::Connection,
     word: &str,
     now_ms: i64,
-) -> Option<String> {
+) -> Option<LookupMemory> {
     let normalized = crate::sync::events::normalize_learning_term(word);
     if normalized.is_empty() {
         return None;
@@ -98,16 +135,17 @@ pub(crate) fn lookup_memory_block(
     // A word saved in two books can carry two different states — marked
     // mastered in one, auto-added as `new` by a lookup in the other. The
     // furthest-along row wins: the reader already proved they know it.
-    let vocabulary: Option<(String, i64)> = conn
+    let vocabulary: Option<(String, i64, Option<String>)> = conn
         .query_row(
-            "SELECT mastery, review_count
-             FROM vocab_words
-             WHERE word = ?1 COLLATE NOCASE
-             ORDER BY CASE mastery WHEN 'mastered' THEN 0 WHEN 'learning' THEN 1 ELSE 2 END,
-                      updated_at DESC
+            "SELECT v.mastery, v.review_count, b.title
+             FROM vocab_words v
+             LEFT JOIN books b ON b.id = v.book_id
+             WHERE v.word = ?1 COLLATE NOCASE
+             ORDER BY CASE v.mastery WHEN 'mastered' THEN 0 WHEN 'learning' THEN 1 ELSE 2 END,
+                      v.updated_at DESC
              LIMIT 1",
             rusqlite::params![normalized],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .ok();
 
@@ -115,36 +153,93 @@ pub(crate) fn lookup_memory_block(
         return None;
     }
 
-    let mut record = serde_json::Map::new();
+    let mut memory = LookupMemory {
+        looked_up_times: None,
+        days_since_last_lookup: None,
+        previous_definition: None,
+        mastery: None,
+        reviews: None,
+        mastery_book_title: None,
+    };
     if let Some((times, last_looked_up_at, definition)) = history {
-        record.insert("looked_up_times".to_string(), times.into());
-        record.insert(
-            "days_since_last_lookup".to_string(),
+        memory.looked_up_times = Some(times);
+        memory.days_since_last_lookup = Some(
             (now_ms.saturating_sub(last_looked_up_at) / 86_400_000)
-                .max(0)
-                .into(),
+                .max(0),
         );
-        if let Some(definition) = definition
+        memory.previous_definition = definition
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
-        {
-            record.insert(
-                "previous_definition".to_string(),
-                truncate_utf8(definition, LOOKUP_MEMORY_DEFINITION_BYTES).into(),
-            );
-        }
+            .map(|definition| {
+                truncate_utf8(definition, LOOKUP_MEMORY_DEFINITION_BYTES).to_string()
+            });
     }
-    if let Some((mastery, reviews)) = vocabulary {
-        record.insert("mastery".to_string(), mastery.into());
-        record.insert("reviews".to_string(), reviews.into());
+    if let Some((mastery, reviews, book_title)) = vocabulary {
+        memory.mastery = Some(mastery);
+        memory.reviews = Some(reviews);
+        memory.mastery_book_title = book_title;
     }
+    Some(memory)
+}
 
+/// The prose lookup card's block.
+///
+/// Appended to the system prompt rather than prefixed to it.
+/// `lookup_system_prompt`'s translation prefix owns the first line — the
+/// frontend parses a marker there — so a prefix that opens with anything else
+/// would break the translation strip.
+pub(crate) fn lookup_memory_block(
+    conn: &rusqlite::Connection,
+    word: &str,
+    now_ms: i64,
+) -> Option<String> {
     Some(format!(
         "The following is the user's own record for this word in Lantern:\n{}\n\nAnswer as a repeat encounter, not a first one — and keep the answer shorter, not longer:\n- When `previous_definition` is present, do not re-teach what it already covered. If this passage uses that same sense, confirm it in a few words and spend the rest on what this occurrence adds.\n- When it is present and this passage uses a different sense, lead with the contrast against it.\n- If `mastery` is \"mastered\", treat the word as known: skip the basic gloss even when the configured CEFR level would call for simpler language. The recorded state beats the level estimate.\n- Refer to the earlier lookup only when it carries information, such as a sense contrast. Never state counts or dates, never open with an acknowledgement, and never praise the user for reviewing.",
-        serde_json::to_string(&serde_json::Value::Object(record))
-            .expect("serializable lookup record"),
+        lookup_memory(conn, word, now_ms)?.record_json(),
     ))
+}
+
+/// The structured learning card's block.
+///
+/// Same facts as [`lookup_memory_block`], different closing instructions: the
+/// card's shape is fixed by the user's module configuration, so "answer
+/// shorter" has to become "fill the requested modules with what is new".
+pub(crate) fn learning_card_memory_block(
+    conn: &rusqlite::Connection,
+    word: &str,
+    now_ms: i64,
+) -> Option<String> {
+    Some(format!(
+        "The following is the user's own record for this word in Lantern:\n{}\n\nThis is a repeat encounter, not a first one. Fill the requested modules with what this encounter adds:\n- When `previous_definition` is present, do not re-state what it already covered. If this passage carries that same sense, keep those modules brief and spend the space on what is new here.\n- When it is present and this passage carries a different sense, make the contrast against it explicit in the sense-bearing modules.\n- If `mastery` is \"mastered\", treat the word as known: skip the beginner gloss even when the configured CEFR level would call for simpler language. The recorded state beats the level estimate.\n- Never state counts or dates, never acknowledge the repeat, and never praise the user for reviewing. Never add a module that was not requested.",
+        lookup_memory(conn, word, now_ms)?.record_json(),
+    ))
+}
+
+/// What the reader is shown about their own record for a word, next to the
+/// answer that record shaped. Without it the personalisation is invisible: the
+/// card simply gets shorter and the reader reads that as the model slacking.
+#[derive(Debug, serde::Serialize)]
+pub struct WordMemoryHint {
+    pub looked_up_times: i64,
+    pub mastery: Option<String>,
+    pub reviews: i64,
+    pub mastery_book_title: Option<String>,
+}
+
+#[tauri::command]
+pub fn word_memory_hint(word: String, db: State<'_, Db>) -> AppResult<Option<WordMemoryHint>> {
+    let conn = db.reader();
+    Ok(
+        lookup_memory(&conn, &word, chrono::Utc::now().timestamp_millis()).map(|memory| {
+            WordMemoryHint {
+                looked_up_times: memory.looked_up_times.unwrap_or(0),
+                mastery: memory.mastery,
+                reviews: memory.reviews.unwrap_or(0),
+                mastery_book_title: memory.mastery_book_title,
+            }
+        }),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -436,6 +531,67 @@ mod tests {
 
         let block = lookup_memory_block(&conn, "resign", NOW_MS).unwrap();
         assert!(block.contains("\"mastery\":\"mastered\""), "{block}");
+    }
+
+    // The card's marker names a book, so the mastery row and the title shown
+    // beside it have to come from the same row — not from whichever book the
+    // reader happens to be holding.
+    #[test]
+    fn lookup_memory_names_the_book_the_mastery_came_from() {
+        let conn = library_with_books(&["b1", "b2"]);
+        conn.execute("UPDATE books SET title = 'Dubliners' WHERE id = 'b2'", [])
+            .unwrap();
+        save_word(&conn, "v1", "b1", "resign", "new");
+        save_word(&conn, "v2", "b2", "resign", "mastered");
+
+        let memory = lookup_memory(&conn, "resign", NOW_MS).unwrap();
+        assert_eq!(memory.mastery.as_deref(), Some("mastered"));
+        assert_eq!(memory.mastery_book_title.as_deref(), Some("Dubliners"));
+    }
+
+    // The title is the one fact the prompt must not receive: the block forbids
+    // stating counts and dates, and a book title is an invitation to do both.
+    #[test]
+    fn neither_prompt_block_leaks_the_book_title() {
+        let conn = library_with_books(&["b1"]);
+        conn.execute("UPDATE books SET title = 'Dubliners' WHERE id = 'b1'", [])
+            .unwrap();
+        save_word(&conn, "v1", "b1", "resign", "mastered");
+
+        let prose = lookup_memory_block(&conn, "resign", NOW_MS).unwrap();
+        let card = learning_card_memory_block(&conn, "resign", NOW_MS).unwrap();
+        assert!(!prose.contains("Dubliners"), "{prose}");
+        assert!(!card.contains("Dubliners"), "{card}");
+    }
+
+    // Both cards are shaped by the same record; only the closing instructions
+    // differ, because one writes prose and the other fills fixed modules.
+    #[test]
+    fn the_card_block_carries_the_same_record_as_the_prose_block() {
+        let conn = library_with_books(&["b1"]);
+        record_lookup(
+            &conn,
+            "b1",
+            "cfi/1",
+            "resign",
+            "to give up",
+            NOW_MS - DAY_MS,
+            2,
+        );
+        save_word(&conn, "v1", "b1", "resign", "mastered");
+
+        let card = learning_card_memory_block(&conn, "resign", NOW_MS).unwrap();
+        assert!(card.contains("\"looked_up_times\":2"), "{card}");
+        assert!(card.contains("\"previous_definition\":\"to give up\""), "{card}");
+        assert!(card.contains("\"mastery\":\"mastered\""), "{card}");
+        assert!(card.contains("requested modules"), "{card}");
+        assert!(!card.contains("keep the answer shorter"), "{card}");
+    }
+
+    #[test]
+    fn the_card_block_stays_absent_for_a_word_with_no_record() {
+        let conn = library_with_books(&["b1"]);
+        assert_eq!(learning_card_memory_block(&conn, "resign", NOW_MS), None);
     }
 
     #[test]

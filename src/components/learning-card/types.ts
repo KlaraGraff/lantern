@@ -143,6 +143,18 @@ export interface LearningCardNote {
   scope?: "book" | "global";
 }
 
+/**
+ * The reader's own record for the looked-up word, as `word_memory_hint`
+ * returns it. The card shows it so that a deliberately shorter answer reads as
+ * "it remembers me" rather than as the model cutting corners.
+ */
+export interface WordMemoryHint {
+  looked_up_times: number;
+  mastery: string | null;
+  reviews: number;
+  mastery_book_title: string | null;
+}
+
 export type LearningCardActionId = "collect" | "ask_ai" | "note" | "copy";
 
 export interface LearningCardActionState {

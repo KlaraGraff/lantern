@@ -11,6 +11,7 @@ use super::prompt::{
     book_reference_block, checked_learning_text, configured_explanation_mode,
     explanation_matches_translation, learning_language_strategy, strip_single_json_fence,
 };
+use super::lookup::learning_card_memory_block;
 use super::stream::ensure_stream_credentials_ready;
 use super::ChatMessage;
 use crate::db::Db;
@@ -450,7 +451,7 @@ pub async fn ai_learning_card(
         return Err(AppError::Other("AI_REQUEST_ID_INVALID".to_string()));
     }
     let mut request = learning_request_from_config(&kind, &card_config)?;
-    let (cefr, explanation_mode, translation_language) = {
+    let (cefr, explanation_mode, translation_language, memory) = {
         let conn = db.reader();
         let get = |key: &str| -> Option<String> {
             conn.query_row(
@@ -464,11 +465,19 @@ pub async fn ai_learning_card(
             .or_else(|| get("lookup_translation_language"))
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| "zh".to_string());
+        // Word cards only. A phrase or a passage is almost never looked up at
+        // the same normalized text twice, and it never carries a mastery row.
+        let memory = (kind == "word")
+            .then(|| {
+                learning_card_memory_block(&conn, &text, chrono::Utc::now().timestamp_millis())
+            })
+            .flatten();
         (
             get("cefr_level").unwrap_or_else(|| "B1".to_string()),
             configured_explanation_mode(get("explanation_mode").as_deref(), &translation_language)
                 .to_string(),
             translation_language,
+            memory,
         )
     };
     if explanation_matches_translation(&explanation_mode, &cefr, &translation_language) {
@@ -488,6 +497,10 @@ pub async fn ai_learning_card(
     ) {
         system_prompt.push_str("\n\n");
         system_prompt.push_str(&reference);
+    }
+    if let Some(memory) = memory {
+        system_prompt.push_str("\n\n");
+        system_prompt.push_str(&memory);
     }
     let user_payload = serde_json::json!({
         "selectedText": text,

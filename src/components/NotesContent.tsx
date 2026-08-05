@@ -55,6 +55,7 @@ export default function NotesContent() {
   const queryPage = useCallback((cursor: string | null, limit = PAGE_SIZE) => invoke<NotePage>("list_notes", {
     bookId: bookId || null,
     anchorKind: anchorKind || null,
+    word: null,
     search: search.trim() || null,
     updatedAfter: dateBoundary(updatedAfter),
     updatedBefore: dateBoundary(updatedBefore, true),
@@ -83,7 +84,7 @@ export default function NotesContent() {
 
   useEffect(() => {
     invoke<NotePage>("list_notes", {
-      bookId: null, anchorKind: null, search: null, updatedAfter: null,
+      bookId: null, anchorKind: null, word: null, search: null, updatedAfter: null,
       updatedBefore: null, cursor: null, limit: 500,
     })
       .then((page) => {

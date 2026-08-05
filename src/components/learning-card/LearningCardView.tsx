@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { AlertCircle, ChevronDown, ChevronRight, GripHorizontal, Loader2, RotateCw, Sparkles, X } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronRight, GripHorizontal, History, Loader2, RotateCw, Sparkles, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   getLearningCardTargetWidth,
@@ -16,6 +16,7 @@ import type {
   LearningCardActionState,
   LearningCardNote,
   LearningCardResult,
+  WordMemoryHint,
 } from "./types";
 
 interface LearningCardViewProps {
@@ -54,6 +55,26 @@ interface LearningCardViewProps {
   highlightedModuleId?: string | null;
   animateModuleChanges?: boolean;
   onNoteScopeChange?: (scope: "book" | "global") => void;
+  /** The reader's own record for this word, when it shaped the answer below. */
+  memoryHint?: WordMemoryHint | null;
+}
+
+/**
+ * One line, or nothing. Only states the card can actually back up: the prompt
+ * carries the record's mastery and its earlier definition, so those are what
+ * the reader is told about — never a bare visit count with nothing behind it.
+ */
+function memoryHintKey(hint: WordMemoryHint | null | undefined) {
+  if (!hint) return null;
+  if (hint.mastery === "mastered") {
+    return hint.mastery_book_title
+      ? { key: "learningCard.memory.masteredIn", values: { book: hint.mastery_book_title } }
+      : { key: "learningCard.memory.mastered", values: {} };
+  }
+  if (hint.looked_up_times >= 2) {
+    return { key: "learningCard.memory.repeat", values: { count: hint.looked_up_times } };
+  }
+  return null;
 }
 
 export default function LearningCardView({
@@ -90,6 +111,7 @@ export default function LearningCardView({
   highlightedModuleId,
   animateModuleChanges = false,
   onNoteScopeChange,
+  memoryHint = null,
 }: LearningCardViewProps) {
   const { t } = useTranslation();
   const titleId = useId();
@@ -113,6 +135,7 @@ export default function LearningCardView({
   const title = result.kind === "word"
     ? result.sourceText
     : t(`learningCard.title.${result.kind}`);
+  const memoryLine = memoryHintKey(memoryHint);
 
   return (
     <div
@@ -166,6 +189,13 @@ export default function LearningCardView({
           </button>
         )}
       </header>
+
+      {memoryLine && !error && (
+        <p className="flex shrink-0 items-center gap-1.5 border-b border-border/60 bg-bg-muted px-4 py-1.5 text-[11px] leading-4 text-text-muted">
+          <History size={11} className="shrink-0" aria-hidden="true" />
+          <span className="min-w-0 break-words">{t(memoryLine.key, memoryLine.values)}</span>
+        </p>
+      )}
 
       <div
         className="min-h-0 flex-1 overflow-y-auto"

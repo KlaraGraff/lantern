@@ -124,6 +124,7 @@ export default function ReaderNotesRail({
       const page = await invoke<NotePage>("list_notes", {
         bookId,
         anchorKind: null,
+        word: null,
         search: null,
         updatedAfter: null,
         updatedBefore: null,
@@ -149,6 +150,7 @@ export default function ReaderNotesRail({
       const page = await invoke<NotePage>("list_notes", {
         bookId,
         anchorKind: null,
+        word: null,
         search: null,
         updatedAfter: null,
         updatedBefore: null,

@@ -24,6 +24,9 @@ import {
   CheckCircle2,
   History,
   RotateCcw,
+  BookmarkPlus,
+  BookmarkCheck,
+  Loader2,
 } from "lucide-react";
 import Button from "./ui/Button";
 import { useAllDictionary, useAllLookupHistory, type DictionaryWord, type LookupRecord, type LookupRecordPage } from "../hooks/useDictionary";
@@ -38,6 +41,11 @@ import {
   parseCardDesignConfig,
   type LearningCardResult,
 } from "./learning-card";
+
+// A word looked up this many times without ever being saved is the clearest
+// signal the vocabulary list has: the reader keeps needing it and keeps not
+// collecting it.
+const REPEAT_LOOKUP_THRESHOLD = 3;
 
 type SortMode = "newest" | "oldest" | "az";
 type ViewMode = "list" | "card";
@@ -134,6 +142,8 @@ export default function DictionaryContent() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewError, setReviewError] = useState(false);
   const [historyClearConfirming, setHistoryClearConfirming] = useState(false);
+  const [repeatUnsavedOnly, setRepeatUnsavedOnly] = useState(false);
+  const [collectingId, setCollectingId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [backupMenuOpen, setBackupMenuOpen] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -247,7 +257,56 @@ export default function DictionaryContent() {
   }, [words, t]);
 
   const isEmpty = words.length === 0;
-  const filteredRecords = records;
+
+  // Cross-book on purpose: a word saved from another book is still saved, and
+  // offering to collect it again would just mint the duplicate row the reader
+  // already has.
+  const savedWordKeys = useMemo(
+    () => new Set(words.map((word) => word.word.trim().toLowerCase())),
+    [words],
+  );
+
+  // One word looked up at five places is five rows. The reader thinks in
+  // words, so the repeat count has to be summed across them.
+  const lookupTotals = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const record of records) {
+      const key = record.normalized_text;
+      totals.set(key, (totals.get(key) ?? 0) + record.lookup_count);
+    }
+    return totals;
+  }, [records]);
+
+  const repeatUnsavedRecords = useMemo(
+    () => records.filter((record) =>
+      (lookupTotals.get(record.normalized_text) ?? 0) >= REPEAT_LOOKUP_THRESHOLD
+      && !savedWordKeys.has(record.lookup_text.trim().toLowerCase())),
+    [lookupTotals, records, savedWordKeys],
+  );
+
+  const filteredRecords = repeatUnsavedOnly ? repeatUnsavedRecords : records;
+
+  const collectRecord = useCallback(async (record: LookupRecord) => {
+    setCollectingId(record.id);
+    try {
+      // The stored definition is the one the reader already paid for. Saving
+      // reuses it rather than asking the model to say the same thing twice.
+      await invoke("add_vocab_word", {
+        bookId: record.book_id,
+        word: record.lookup_text,
+        definition: record.definition,
+        contextSentence: record.context_sentence,
+        contextExplanation: record.context_explanation,
+        cfi: record.cfi,
+      });
+      await refreshWords();
+    } catch (err) {
+      console.error("Failed to collect looked-up word:", err);
+    } finally {
+      setCollectingId(null);
+    }
+  }, [refreshWords]);
+
   const historyBookPills = useMemo(() => {
     return historyBooks.map((book) => ({
       id: book.book_id,
@@ -676,6 +735,17 @@ export default function DictionaryContent() {
             {t("vocab.reviewDue")}
             <span className="text-[11px]">{dueWords.length}</span>
           </button>}
+          {contentTab === "history" && <button
+            type="button"
+            onClick={() => setRepeatUnsavedOnly((value) => !value)}
+            className={`flex items-center gap-1.5 h-8 px-[13px] rounded-full text-[12px] font-medium cursor-pointer shrink-0 transition-colors border ${
+              repeatUnsavedOnly ? "bg-accent-bg border-accent/30 text-accent-text" : "bg-bg-surface border-border text-text-secondary hover:bg-bg-muted"
+            }`}
+          >
+            <BookmarkPlus size={12} />
+            {t("vocab.repeatUnsaved", { count: REPEAT_LOOKUP_THRESHOLD })}
+            <span className="text-[11px]">{repeatUnsavedRecords.length}</span>
+          </button>}
           <button
             onClick={() => setBookFilter(null)}
             className={`flex items-center gap-1.5 h-8 px-[13px] rounded-full text-[12px] font-medium cursor-pointer shrink-0 transition-colors border ${
@@ -808,25 +878,46 @@ export default function DictionaryContent() {
                   <div className="mt-2 flex items-center gap-3 text-[11px] text-text-muted">
                     <span className="flex items-center gap-1 min-w-0"><BookOpen size={12} /><span className="truncate">{record.book_title || t("common.unknownBook")}</span></span>
                     {record.chapter && <span className="truncate">{record.chapter}</span>}
-                    {record.lookup_count > 1 && <span>{t("vocab.lookedUpCount", { count: record.lookup_count })}</span>}
-                    {record.cfi && (
+                    {(lookupTotals.get(record.normalized_text) ?? record.lookup_count) > 1 && (
+                      <span>{t("vocab.lookedUpCount", { count: lookupTotals.get(record.normalized_text) ?? record.lookup_count })}</span>
+                    )}
+                    <div className="ml-auto flex items-center gap-3">
+                      {savedWordKeys.has(record.lookup_text.trim().toLowerCase()) ? (
+                        <span className="flex items-center gap-1 text-text-muted">
+                          <BookmarkCheck size={12} /> {t("vocab.alreadySaved")}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => collectRecord(record)}
+                          disabled={collectingId === record.id}
+                          className="flex items-center gap-1 text-accent-text hover:opacity-70 disabled:opacity-50 cursor-pointer"
+                        >
+                          {collectingId === record.id
+                            ? <Loader2 size={12} className="animate-spin" />
+                            : <BookmarkPlus size={12} />}
+                          {t("vocab.saveToVocab")}
+                        </button>
+                      )}
+                      {record.cfi && (
+                        <button
+                          type="button"
+                          onClick={() => openInReader(record.book_id, { openVocab: true, cfi: record.cfi })}
+                          className="flex items-center gap-1 text-accent-text hover:opacity-70 cursor-pointer"
+                        >
+                          {t("vocab.openInReader")} <FileText size={12} />
+                        </button>
+                      )}
                       <button
                         type="button"
-                        onClick={() => openInReader(record.book_id, { openVocab: true, cfi: record.cfi })}
-                        className="ml-auto flex items-center gap-1 text-accent-text hover:opacity-70 cursor-pointer"
+                        title={t("vocab.deleteHistory")}
+                        aria-label={t("vocab.deleteHistory")}
+                        onClick={() => removeHistoryRecord(record.id)}
+                        className="size-6 flex items-center justify-center rounded text-text-muted hover:bg-bg-input hover:text-danger-text cursor-pointer"
                       >
-                        {t("vocab.openInReader")} <FileText size={12} />
+                        <Trash2 size={13} />
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      title={t("vocab.deleteHistory")}
-                      aria-label={t("vocab.deleteHistory")}
-                      onClick={() => removeHistoryRecord(record.id)}
-                      className="size-6 flex items-center justify-center rounded text-text-muted hover:bg-bg-input hover:text-danger-text cursor-pointer"
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                    </div>
                   </div>
                 </div>
               ))}

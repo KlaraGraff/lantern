@@ -9,6 +9,14 @@ import { LOOKUP_PROSE } from "../lookup-prose";
 import { parseDefinition, truncateMiddle } from "./entry-text";
 import PronounceButton from "../speech/PronounceButton";
 
+interface WordNote {
+  id: string;
+  book_title: string | null;
+  scope: "book" | "global" | "detached";
+  content: string;
+  updated_at: number;
+}
+
 export interface VocabEntryDetailsProps {
   word: DictionaryWord;
   /** Overrides the row's stored book title, e.g. inside a single-book panel. */
@@ -33,6 +41,7 @@ export default function VocabEntryDetails({
   const contextExplanation = word.context_explanation?.trim() || null;
   const source = bookTitle ?? word.book_title ?? t("vocab.detail.unknownBook");
   const [dictionary, setDictionary] = useState<string | null>(null);
+  const [notes, setNotes] = useState<WordNote[]>([]);
 
   // Only mounted while expanded, so this is the lazy load. A miss is silent —
   // the section simply does not appear.
@@ -41,6 +50,30 @@ export default function VocabEntryDetails({
     invoke<{ explain: string }>("dictionary_gloss", { word: word.word })
       .then((entry) => {
         if (!cancelled) setDictionary(entry.explain.trim() || null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [word.word]);
+
+  // What the reader wrote about this word, from any book. The note was written
+  // in the lookup card; review is exactly when it is worth the most, so the
+  // entry has to carry it rather than leave it behind in the reader.
+  useEffect(() => {
+    let cancelled = false;
+    invoke<{ notes: WordNote[] }>("list_notes", {
+      bookId: null,
+      anchorKind: "word",
+      word: word.word,
+      search: null,
+      updatedAfter: null,
+      updatedBefore: null,
+      cursor: null,
+      limit: 20,
+    })
+      .then((page) => {
+        if (!cancelled) setNotes(page.notes);
       })
       .catch(() => {});
     return () => {
@@ -105,6 +138,28 @@ export default function VocabEntryDetails({
           <div className={`${LOOKUP_PROSE} text-[12px] text-text-secondary`}>
             <Markdown>{contextExplanation}</Markdown>
           </div>
+        </section>
+      )}
+
+      {notes.length > 0 && (
+        <section className="flex flex-col gap-1.5">
+          <h3 className="text-[10px] font-semibold uppercase tracking-[0.4px] text-text-muted">
+            {t("vocab.detail.myNotes")}
+          </h3>
+          {notes.map((note) => (
+            <div key={note.id} className="rounded-md border border-border-light bg-bg-muted px-2.5 py-2">
+              <p className="whitespace-pre-line text-[12px] leading-[1.55] text-text-primary">
+                {note.content}
+              </p>
+              <p className="mt-1 text-[10px] text-text-muted">
+                {note.scope === "global"
+                  ? t("vocab.detail.noteGlobal")
+                  : t("vocab.detail.noteFromBook", {
+                      source: truncateMiddle(note.book_title || t("vocab.detail.unknownBook")),
+                    })}
+              </p>
+            </div>
+          ))}
         </section>
       )}
 

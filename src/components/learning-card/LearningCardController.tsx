@@ -17,6 +17,7 @@ import type {
   LearningCardNote,
   LearningCardResult,
   LearningModuleContent,
+  WordMemoryHint,
 } from "./types";
 import LearningCardView from "./LearningCardView";
 import { LearningCardStreamParser } from "./streaming";
@@ -194,6 +195,7 @@ export default function LearningCardController({
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteScope, setNoteScope] = useState<"book" | "global">("book");
   const [collected, setCollected] = useState(false);
+  const [memoryHint, setMemoryHint] = useState<WordMemoryHint | null>(null);
   const [copied, setCopied] = useState(false);
 
   const refreshNotes = useCallback(async () => {
@@ -356,6 +358,11 @@ export default function LearningCardController({
     if (interaction.kind === "word") {
       invoke<string | null>("check_vocab_exists", { bookId, word: interaction.text })
         .then((id) => setCollected(Boolean(id)))
+        .catch(() => {});
+      // Read on mount, before this lookup's own record is written, so the
+      // counts here are the ones the prompt was built from.
+      invoke<WordMemoryHint | null>("word_memory_hint", { word: interaction.text })
+        .then(setMemoryHint)
         .catch(() => {});
     }
   }, [bookId, interaction.kind, interaction.text, refreshNotes]);
@@ -562,6 +569,9 @@ export default function LearningCardController({
         onDragPointerEnd={onDragPointerEnd}
         onRetry={() => setRetry((value) => value + 1)}
         onRefresh={fromCache ? () => setRetry((value) => value + 1) : undefined}
+        // A cached card was written before this record was read, so claiming
+        // the record shaped it would be a guess. Only a fresh answer earns it.
+        memoryHint={fromCache ? null : memoryHint}
         onLookupWord={onLookupWord}
         onSelectText={onSelectText}
         onNoteDraftChange={setNoteDraft}

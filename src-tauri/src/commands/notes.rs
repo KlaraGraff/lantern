@@ -282,6 +282,10 @@ pub(crate) fn query_notes(
 pub fn list_notes(
     book_id: Option<String>,
     anchor_kind: Option<String>,
+    // Cross-book on purpose. The vocabulary entry asks with this to show what
+    // the reader wrote about a word, and a note written in one book is still
+    // theirs when the word turns up in another.
+    word: Option<String>,
     search: Option<String>,
     updated_after: Option<i64>,
     updated_before: Option<i64>,
@@ -293,7 +297,7 @@ pub fn list_notes(
         &db,
         book_id.as_deref(),
         anchor_kind.as_deref(),
-        None,
+        word.as_deref(),
         search.as_deref(),
         updated_after,
         updated_before,
