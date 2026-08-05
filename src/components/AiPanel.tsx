@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, memo } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { BookOpen, Check, Database, Sparkles, Send, Loader2, Plus, ChevronDown, ChevronUp, Trash2, X, Square } from "lucide-react";
@@ -134,7 +134,7 @@ interface ComposerQuote {
   analysis?: string;
 }
 
-export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSectionIndex, currentScopeStartIndex, currentScopeEndIndex, currentScopeAmbiguous, getViewportText, getSelectionQuote, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource, onLookupWord, onSelectText }: AiPanelProps) {
+function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSectionIndex, currentScopeStartIndex, currentScopeEndIndex, currentScopeAmbiguous, getViewportText, getSelectionQuote, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource, onLookupWord, onSelectText }: AiPanelProps) {
   const { t } = useTranslation();
 
   const SUGGESTED_PROMPTS = [
@@ -593,3 +593,7 @@ export default function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter,
     </div>
   );
 }
+
+// The reader hides this behind a `hidden` class rather than unmounting it, so
+// an unopened chat would otherwise re-render on every relocate.
+export default memo(AiPanel);

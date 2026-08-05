@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronRight } from "lucide-react";
@@ -39,7 +39,7 @@ interface PendingTocSave {
   scroll?: number;
 }
 
-export default function TableOfContents({
+function TableOfContents({
   open,
   chapters,
   currentPage,
@@ -279,3 +279,7 @@ export default function TableOfContents({
     </aside>
   );
 }
+
+// The reader keeps this mounted while closed (it only hides with CSS), so
+// without `memo` it re-renders on every page turn.
+export default memo(TableOfContents);

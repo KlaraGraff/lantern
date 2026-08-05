@@ -1419,6 +1419,57 @@ export default function Reader() {
     viewRef,
   ]);
 
+  // The three panels below (TOC, settings, AI) stay mounted while closed —
+  // they only hide with CSS — so they re-render on every relocate along with
+  // the reader. `memo` on the components only bites if every prop keeps its
+  // identity between renders, which is why these are `useCallback` rather than
+  // inline arrows.
+  const handleTocNavigate = useCallback((page: number) => {
+    const chapter = chapters[page - 1];
+    if (chapter?.targetHref) navigateToChapter(chapter.targetHref);
+  }, [chapters, navigateToChapter]);
+
+  const closeReaderSettings = useCallback(() => setSettingsOpen(false), []);
+
+  const handlePassiveVocabChange = useCallback((enabled: boolean) => {
+    const previous = passiveVocab;
+    const request = ++passiveVocabToggleRevisionRef.current;
+    setPassiveVocab({ ...previous, enabled });
+    void invoke("set_setting", { key: "passive_vocab_enabled", value: String(enabled) })
+      .then(() => {
+        void notifyReadingAssistanceSettingsChanged(["passive_vocab_enabled"]).catch((error) => {
+          console.error("Failed to notify passive vocabulary settings change:", error);
+        });
+      })
+      .catch(() => {
+        if (passiveVocabToggleRevisionRef.current !== request) return;
+        setPassiveVocab((current) => current.enabled === enabled ? previous : current);
+        setReaderToast(t("readerSettings.passiveVocabSaveFailed"));
+      });
+  }, [passiveVocab, setPassiveVocab, t]);
+
+  const openPassiveVocabSettings = useCallback(() => openSettings("reading"), []);
+
+  // Only ever reached through the `bookId ? … : undefined` guard at the call
+  // site; the check inside is what lets the callback itself stay stable.
+  const clearLookupMarks = useCallback(async () => {
+    if (!bookId) return;
+    await invoke("clear_lookup_marks_for_book", { bookId });
+    window.dispatchEvent(new CustomEvent("word-mark-changed", { detail: { bookId } }));
+    window.dispatchEvent(new CustomEvent("lookup-mark-changed", { detail: { bookId } }));
+    await refreshAnnotations();
+  }, [bookId, refreshAnnotations]);
+
+  const consumeAiContext = useCallback(() => setAiContext(undefined), []);
+
+  const navigateToCitedCfi = useCallback((cfi: string) => {
+    flashNavigationTarget(cfi).catch(() => {});
+  }, [flashNavigationTarget]);
+
+  const navigateToCitedSource = useCallback((source: CitedSource) => {
+    navigateToSource(source).catch(() => {});
+  }, [navigateToSource]);
+
   if (loading || (bookId !== undefined && book?.id !== bookId)) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-3">
@@ -1576,7 +1627,6 @@ export default function Reader() {
     );
   }
 
-
   const toggleTocPanel = () => {
     setTocOpen((open) => !open);
     setSettingsOpen(false);
@@ -1595,11 +1645,6 @@ export default function Reader() {
     setXrayInteraction(interaction);
     setXrayOpen(true);
     setSidePanel(null);
-  };
-
-  const handleTocNavigate = (page: number) => {
-    const chapter = chapters[page - 1];
-    if (chapter?.targetHref) navigateToChapter(chapter.targetHref);
   };
 
   return (
@@ -1784,7 +1829,7 @@ export default function Reader() {
           </button>
           <ReaderSettings
             open={settingsOpen}
-            onClose={() => setSettingsOpen(false)}
+            onClose={closeReaderSettings}
             anchorRef={settingsAnchorRef}
             settings={readerSettings}
             globalSettings={globalReaderSettings}
@@ -1792,34 +1837,14 @@ export default function Reader() {
             capabilities={capabilities}
             passiveVocab={passiveVocab}
             passiveVocabAvailable={passiveVocabAvailable}
-            onPassiveVocabChange={(enabled) => {
-              const previous = passiveVocab;
-              const request = ++passiveVocabToggleRevisionRef.current;
-              setPassiveVocab({ ...previous, enabled });
-              void invoke("set_setting", { key: "passive_vocab_enabled", value: String(enabled) })
-                .then(() => {
-                  void notifyReadingAssistanceSettingsChanged(["passive_vocab_enabled"]).catch((error) => {
-                    console.error("Failed to notify passive vocabulary settings change:", error);
-                  });
-                })
-                .catch(() => {
-                  if (passiveVocabToggleRevisionRef.current !== request) return;
-                  setPassiveVocab((current) => current.enabled === enabled ? previous : current);
-                  setReaderToast(t("readerSettings.passiveVocabSaveFailed"));
-                });
-            }}
-            onOpenPassiveVocabSettings={() => openSettings("reading")}
+            onPassiveVocabChange={handlePassiveVocabChange}
+            onOpenPassiveVocabSettings={openPassiveVocabSettings}
             bookId={bookId}
             bookOverrides={bookOverrides}
             onRestoreBookOverrides={restoreBookOverrides}
             onUndoRestoreBookOverrides={undoRestoreBookOverrides}
             onPromoteBookOverrides={promoteBookOverrides}
-            onClearLookupMarks={bookId ? async () => {
-              await invoke("clear_lookup_marks_for_book", { bookId });
-              window.dispatchEvent(new CustomEvent("word-mark-changed", { detail: { bookId } }));
-              window.dispatchEvent(new CustomEvent("lookup-mark-changed", { detail: { bookId } }));
-              await refreshAnnotations();
-            } : undefined}
+            onClearLookupMarks={bookId ? clearLookupMarks : undefined}
           />
 
           {supportsCfiNavigation && <>
@@ -2150,13 +2175,9 @@ export default function Reader() {
               getSelectionQuote={getSelectionQuote}
               context={aiContext}
               initialChatId={initialChatId}
-              onContextConsumed={() => setAiContext(undefined)}
-              onNavigateToCfi={(cfi) => {
-                flashNavigationTarget(cfi).catch(() => {});
-              }}
-              onNavigateToSource={(source) => {
-                navigateToSource(source).catch(() => {});
-              }}
+              onContextConsumed={consumeAiContext}
+              onNavigateToCfi={navigateToCitedCfi}
+              onNavigateToSource={navigateToCitedSource}
               onLookupWord={lookupWordInPanel}
               onSelectText={openPanelSelectionMenu}
             />

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
+import { useState, useRef, useEffect, useCallback, useLayoutEffect, memo } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { Check, ChevronLeft, ChevronRight, ScrollText, BookOpen, File, Files, Keyboard, Loader2, MousePointer2, Search, Trash2 } from "lucide-react";
@@ -164,7 +164,7 @@ export function PageTurnBindingButton({
   );
 }
 
-export default function ReaderSettings({
+function ReaderSettings({
   open,
   onClose,
   anchorRef,
@@ -1022,3 +1022,7 @@ export default function ReaderSettings({
     </div>
   );
 }
+
+// Mounted for the whole reading session, open or not — `memo` keeps a page
+// turn from re-rendering the entire settings popover.
+export default memo(ReaderSettings);
