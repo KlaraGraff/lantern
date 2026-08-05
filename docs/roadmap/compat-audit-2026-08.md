@@ -94,6 +94,7 @@ C2 前端有一处要小心：`TranslationPopover.tsx:93` 是 `s.translation_lan
 |---|---|---|---|
 | D1 | Quill → Lantern 目录/库文件认领：`db.rs` 的 `LEGACY_DB_FILE_NAME`、`library_exists_in`、`rename_legacy_db_file`；`lib.rs` 的 `migrate_legacy_app_data` | 两个目标目录都已有书库，认领分支永久不再触发 | `db.rs` + `lib.rs` + 2 个测试 |
 | D2 | 非规范标记 id 修复：`db.rs:417-526` 的 `repair_noncanonical_marker_ids` 及两个子函数，以及 `run_migrations` 里的调用 | 实测两库共 10 条规则、0 条非规范 id | `db.rs`。**注意**：`sync/merge.rs` 的 `reconcile_legacy_word_mark_exceptions` 不能删，它同时服务于仍在用的取消/重建流程，只是名字带 legacy |
+| D4 | `ai/router.rs:437-506` 的 `migrate_legacy_config` 中**仅** `has_legacy_ai_config`（读旧的扁平 `ai_provider` / `ai_model` / `ai_auth_mode` / `ai_base_url` / `ai_provider_label` 设置键）与 `legacy_key_exists` 的第三个分支 | 已确认没有任何现有代码再写那些扁平键 | `router.rs`。**这一项必须只删一半**：同一个函数还负责「`ai_profiles` 为空时插入默认 AI 配置」，那是每次全新安装都要走的引导逻辑。删过头，新装用户就没有默认 AI 配置了。改前先补测试 |
 | D3 | V1 文本书定位：后端 `commands/books/mod.rs:172-175` 的 `legacy_locations` 字段、`text_headings.rs:79-110`、`text_prepare.rs:33-41`；前端 `components/text-book-location.ts` 的 `LegacyTextLocation` / `textloc:v1` 解析 | 实测 0 条 v1 锚点，且两库根本没有纯文本书 | 后端 3 文件 + 约 15 行测试夹具 + 前端 1 文件。这是全表最大的一项，但也是每次打开纯文本书都在白算的一张表 |
 
 ### E 组：i18n 孤儿词条
