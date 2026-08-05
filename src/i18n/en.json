@@ -1072,6 +1072,7 @@
   "settings.ai.health.available": "Available",
   "settings.ai.health.cooldown": "Temporarily unavailable",
   "settings.ai.health.retest": "Retest needed",
+  "settings.ai.health.keysOff": "All keys off",
   "settings.ai.health.unavailable": "Unusable setup",
   "settings.ai.health.invalid": "Reconnect needed",
   "settings.ai.provider": "AI Provider",

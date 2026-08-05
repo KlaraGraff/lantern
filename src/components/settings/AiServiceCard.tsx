@@ -186,10 +186,17 @@ function useCountdown(until: number | null): number | null {
  * `connected` is whatever counts as having credentials for this profile's auth
  * mode; a model with nothing to authenticate with is not "unavailable", it has
  * simply never been connected, and says so.
+ *
+ * `keyBlock` is the model having keys that cannot be used. The router drops
+ * such a model out of the route without a word — no request ever reaches it,
+ * so nothing ever updates its health, and it would otherwise keep showing
+ * whatever the last request that did reach it left behind. This card is the
+ * only place that can tell the reader, so it outranks the older news.
  */
 function profileHealth(
   profile: AiProfile,
   connected: boolean,
+  keyBlock: "off" | "rejected" | null,
   testing: boolean,
   result: AiConnectionTestResult | undefined,
   healthStale: boolean,
@@ -210,6 +217,18 @@ function profileHealth(
     return {
       label: t("settings.ai.health.needsConnection"),
       className: "bg-accent-bg text-accent-text",
+    };
+  }
+  if (keyBlock === "off") {
+    return {
+      label: t("settings.ai.health.keysOff"),
+      className: "bg-accent-bg text-accent-text",
+    };
+  }
+  if (keyBlock === "rejected") {
+    return {
+      label: t("settings.ai.health.invalid"),
+      className: "bg-danger-bg text-danger-text",
     };
   }
   if (healthStale) {
@@ -402,10 +421,22 @@ export default function AiServiceCard({
   const connected = !usesApiKeys
     ? profile.auth_mode !== "oauth" || oauthStatus.connected
     : credentials.length > 0;
+  // Keys the route could actually pick up. All off or all rejected means the
+  // model is skipped on every request; the card is where that has to show.
+  const liveKeys = credentials.filter((credential) => credential.enabled);
+  const keyBlock: "off" | "rejected" | null =
+    !usesApiKeys || credentials.length === 0
+      ? null
+      : liveKeys.length === 0
+        ? "off"
+        : liveKeys.every((credential) => credential.state === "invalid")
+          ? "rejected"
+          : null;
   const remaining = useCountdown(profile.cooldown_until);
   const health = profileHealth(
     profile,
     connected,
+    keyBlock,
     testing,
     testResult,
     healthStale,

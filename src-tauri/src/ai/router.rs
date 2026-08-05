@@ -967,22 +967,88 @@ fn profiles(db: &Db, enabled_only: bool) -> AppResult<Vec<AiProfile>> {
     Ok(profiles)
 }
 
+/// Whether the profile carries its own credentials instead of a list of keys:
+/// an OpenAI OAuth session, or a local Ollama that asks for nothing. These have
+/// no per-key health to record and no key list that can run empty, so the two
+/// places that ask "what can this model offer the route?" both start here.
+fn authenticates_without_keys(profile: &AiProfileView) -> bool {
+    (profile.auth_mode == "oauth" && profile.provider == "openai") || profile.provider == "ollama"
+}
+
 /// The models still in play for one request, in route order.
 ///
-/// A cooling-down model is not skipped part-way through the traversal — it is
-/// gone before the traversal starts. That is what makes a second request inside
-/// the same cooldown window silent: the failed model is no longer at the head of
-/// the route, so there is no switch left to announce.
-fn routable_profiles(enabled: Vec<AiProfile>, cutoff: i64) -> Vec<AiProfile> {
-    enabled
-        .into_iter()
-        .filter(|profile| {
-            profile
+/// Two ways to be out of play, and the difference matters. A cooling-down model
+/// is resting and will come back by itself. A model with no usable key —
+/// every key switched off, rejected, or resting — will not come back until the
+/// reader does something, and it is the one that used to cause trouble: it was
+/// left at the head of the route, contributed nothing to every request, and so
+/// every request looked like a fresh switch away from it. Neither is skipped
+/// part-way through the traversal; both are gone before it starts, which is
+/// what leaves the reader with one honest head of the route.
+fn routable_profiles(db: &Db, enabled: Vec<AiProfile>, cutoff: i64) -> AppResult<Vec<AiProfile>> {
+    let mut routable = Vec::new();
+    for profile in enabled {
+        if profile
+            .view
+            .cooldown_until
+            .is_some_and(|deadline| deadline > cutoff)
+        {
+            continue;
+        }
+        if authenticates_without_keys(&profile.view)
+            || !credentials_for(db, &profile.view.id, cutoff)?.is_empty()
+        {
+            routable.push(profile);
+        }
+    }
+    Ok(routable)
+}
+
+/// Why a set of keys could not carry a request, in terms the reader can act on.
+/// Each answer is a different next move: add one, switch one back on, replace
+/// one, or wait.
+fn no_usable_key_error(credentials: &[AiCredential]) -> AppError {
+    let code = if credentials.is_empty() {
+        "AI_NOT_CONFIGURED"
+    } else if credentials.iter().all(|item| !item.view.enabled) {
+        "AI_KEYS_DISABLED"
+    } else if credentials
+        .iter()
+        .filter(|item| item.view.enabled)
+        .all(|item| item.view.state == "invalid")
+    {
+        "AI_ALL_KEYS_INVALID"
+    } else if credentials.iter().any(|item| {
+        item.view.enabled
+            && item
                 .view
                 .cooldown_until
-                .is_none_or(|deadline| deadline <= cutoff)
-        })
-        .collect()
+                .is_some_and(|deadline| deadline > now())
+    }) {
+        "AI_KEYS_COOLING_DOWN"
+    } else {
+        "AI_NO_USABLE_KEYS"
+    };
+    AppError::Other(code.to_string())
+}
+
+/// Why the route came up empty before it started. A model that is only resting
+/// says so first — that ends by itself and the reader has nothing to do — and
+/// only when nothing is resting is the answer about the keys.
+fn empty_route_error(db: &Db, enabled: &[AiProfile], cutoff: i64) -> AppResult<AppError> {
+    if enabled.iter().any(|profile| {
+        profile
+            .view
+            .cooldown_until
+            .is_some_and(|deadline| deadline > cutoff)
+    }) {
+        return Ok(AppError::Other("AI_KEYS_COOLING_DOWN".to_string()));
+    }
+    let mut credentials = Vec::new();
+    for profile in enabled {
+        credentials.extend(all_credentials_for(db, &profile.view.id)?);
+    }
+    Ok(no_usable_key_error(&credentials))
 }
 
 fn active_profile(db: &Db) -> AppResult<AiProfile> {
@@ -1939,9 +2005,9 @@ async fn stream_with_failover_inner<R: Runtime>(
         return Err(AppError::Other("AI_NOT_CONFIGURED".to_string()));
     }
     let timestamp = cooldown_cutoff(retry);
-    let profiles = routable_profiles(enabled_profiles, timestamp);
+    let profiles = routable_profiles(db, enabled_profiles.clone(), timestamp)?;
     if profiles.is_empty() {
-        return Err(AppError::Other("AI_KEYS_COOLING_DOWN".to_string()));
+        return Err(empty_route_error(db, &enabled_profiles, timestamp)?);
     }
 
     let mut last_error = None;
@@ -1956,31 +2022,39 @@ async fn stream_with_failover_inner<R: Runtime>(
         // health to record; an API-key profile offers each usable key, and its
         // secret is fetched only when the route actually reaches it — reading
         // the keychain for a key the first one made unnecessary is not free.
-        let attempts = if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" {
-            match crate::ai::oauth::get_valid_token(secrets).await {
-                Ok((token, account_id)) => vec![Attempt::Direct {
-                    key: token,
-                    account_id,
-                }],
-                Err(error) => {
-                    let kind = classify_error(&error);
-                    update_profile_health(db, &profile, Some(kind), retry_after_ms(&error), None);
-                    if is_cancelled(&error) || !kind.retryable() {
-                        return Err(error);
+        let attempts = if authenticates_without_keys(&profile.view) {
+            if profile.view.provider == "ollama" {
+                vec![Attempt::Direct {
+                    key: String::new(),
+                    account_id: None,
+                }]
+            } else {
+                match crate::ai::oauth::get_valid_token(secrets).await {
+                    Ok((token, account_id)) => vec![Attempt::Direct {
+                        key: token,
+                        account_id,
+                    }],
+                    Err(error) => {
+                        let kind = classify_error(&error);
+                        update_profile_health(
+                            db,
+                            &profile,
+                            Some(kind),
+                            retry_after_ms(&error),
+                            None,
+                        );
+                        if is_cancelled(&error) || !kind.retryable() {
+                            return Err(error);
+                        }
+                        log::warn!(
+                            "ai router: profile={} oauth unavailable, trying next profile",
+                            profile.view.id
+                        );
+                        last_error = Some(error);
+                        continue;
                     }
-                    log::warn!(
-                        "ai router: profile={} oauth unavailable, trying next profile",
-                        profile.view.id
-                    );
-                    last_error = Some(error);
-                    continue;
                 }
             }
-        } else if profile.view.provider == "ollama" {
-            vec![Attempt::Direct {
-                key: String::new(),
-                account_id: None,
-            }]
         } else {
             configured_credentials.extend(all_credentials_for(db, &profile.view.id)?);
             credentials_for(db, &profile.view.id, timestamp)?
@@ -2084,28 +2158,10 @@ async fn stream_with_failover_inner<R: Runtime>(
         return Err(error);
     }
 
-    let code = if configured_credentials.is_empty() {
-        "AI_NOT_CONFIGURED"
-    } else if configured_credentials.iter().all(|item| !item.view.enabled) {
-        "AI_KEYS_DISABLED"
-    } else if configured_credentials
-        .iter()
-        .filter(|item| item.view.enabled)
-        .all(|item| item.view.state == "invalid")
-    {
-        "AI_ALL_KEYS_INVALID"
-    } else if configured_credentials.iter().any(|item| {
-        item.view.enabled
-            && item
-                .view
-                .cooldown_until
-                .is_some_and(|deadline| deadline > now())
-    }) {
-        "AI_KEYS_COOLING_DOWN"
-    } else {
-        "AI_NO_USABLE_KEYS"
-    };
-    Err(AppError::Other(code.to_string()))
+    // Reaching here means every model in the route offered a key and none of
+    // them raised an error worth keeping — which the filtering above makes hard
+    // to arrange. Answer from the keys anyway rather than inventing a reason.
+    Err(no_usable_key_error(&configured_credentials))
 }
 
 pub fn list_credentials(db: &Db, profile_id: Option<&str>) -> AppResult<Vec<AiCredentialView>> {
@@ -3736,8 +3792,9 @@ mod tests {
     fn a_spent_free_model_leaves_the_route_until_its_window_ends() {
         let directory = tempfile::TempDir::new().unwrap();
         let db = Db::init(directory.path()).unwrap();
+        let secrets = Secrets::init_in_memory().unwrap();
         let profile = |label: &str, model: &str| {
-            create_profile(
+            let profile = create_profile(
                 &db,
                 label.to_string(),
                 "custom".to_string(),
@@ -3750,10 +3807,22 @@ mod tests {
                 None,
                 true,
             )
-            .unwrap()
+            .unwrap();
+            // A model with no key is not in the route at all, so give each one
+            // something to answer with; what is under test here is the deadline.
+            add_credential(
+                &db,
+                &secrets,
+                profile.id.clone(),
+                "Key".to_string(),
+                format!("key-{label}"),
+            )
+            .unwrap();
+            profile
         };
         let route = |cutoff: i64| {
-            routable_profiles(profiles(&db, true).unwrap(), cutoff)
+            routable_profiles(&db, profiles(&db, true).unwrap(), cutoff)
+                .unwrap()
                 .into_iter()
                 .map(|profile| profile.view.id)
                 .collect::<Vec<_>>()
@@ -3793,6 +3862,142 @@ mod tests {
         );
         assert_eq!(route(deadline), vec![free.id.clone(), paid.id.clone()]);
         assert_eq!(route(deadline - 1), vec![paid.id.clone()]);
+    }
+
+    /// A model with nothing to send is not part of the route either. It used to
+    /// sit at the head of it, contribute nothing to every request, and make
+    /// every request look like a fresh switch away from it.
+    #[test]
+    fn a_model_with_no_usable_key_leaves_the_route() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let secrets = Secrets::init_in_memory().unwrap();
+        let profile = |label: &str| {
+            create_profile(
+                &db,
+                label.to_string(),
+                "custom".to_string(),
+                "api_key".to_string(),
+                Some("https://gateway.example/v1".to_string()),
+                "model".to_string(),
+                0.2,
+                None,
+                false,
+                None,
+                true,
+            )
+            .unwrap()
+        };
+        let key = |profile_id: &str| {
+            add_credential(
+                &db,
+                &secrets,
+                profile_id.to_string(),
+                "Key".to_string(),
+                format!("key-{profile_id}"),
+            )
+            .unwrap()
+        };
+        let route = || {
+            routable_profiles(
+                &db,
+                profiles(&db, true).unwrap(),
+                cooldown_cutoff(AiRetryMode::Automatic),
+            )
+            .unwrap()
+            .into_iter()
+            .map(|profile| profile.view.label)
+            .collect::<Vec<_>>()
+        };
+
+        let empty = profile("Never given a key");
+        let switched_off = profile("Key switched off");
+        set_credential_enabled(&db, &key(&switched_off.id).id, false).unwrap();
+        let rejected = profile("Key rejected");
+        let dead = key(&rejected.id);
+        update_credential_health(
+            &db,
+            &credential_by_id(&db, &dead.id).unwrap(),
+            Some(AiErrorKind::CredentialInvalid),
+            None,
+        );
+        let working = profile("Working");
+        key(&working.id);
+
+        assert_eq!(route(), vec!["Working".to_string()]);
+        // None of them is cooling down, so none of them recovers on its own.
+        for profile in [&empty, &switched_off, &rejected] {
+            assert!(profile_by_id(&db, &profile.id)
+                .unwrap()
+                .view
+                .cooldown_until
+                .is_none());
+        }
+    }
+
+    /// When the whole route is out, the reader is told which kind of out it is:
+    /// resting ends by itself, the rest need them to do something, and the
+    /// something differs.
+    #[test]
+    fn an_empty_route_says_which_kind_of_empty() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let secrets = Secrets::init_in_memory().unwrap();
+        let profile = create_profile(
+            &db,
+            "Only".to_string(),
+            "custom".to_string(),
+            "api_key".to_string(),
+            Some("https://gateway.example/v1".to_string()),
+            "model".to_string(),
+            0.2,
+            None,
+            false,
+            None,
+            true,
+        )
+        .unwrap();
+        let reason = || {
+            empty_route_error(
+                &db,
+                &profiles(&db, true).unwrap(),
+                cooldown_cutoff(AiRetryMode::Automatic),
+            )
+            .unwrap()
+            .to_string()
+        };
+
+        assert!(reason().contains("AI_NOT_CONFIGURED"));
+
+        let credential = add_credential(
+            &db,
+            &secrets,
+            profile.id.clone(),
+            "Key".to_string(),
+            "key".to_string(),
+        )
+        .unwrap();
+        set_credential_enabled(&db, &credential.id, false).unwrap();
+        assert!(reason().contains("AI_KEYS_DISABLED"));
+
+        set_credential_enabled(&db, &credential.id, true).unwrap();
+        update_credential_health(
+            &db,
+            &credential_by_id(&db, &credential.id).unwrap(),
+            Some(AiErrorKind::CredentialInvalid),
+            None,
+        );
+        assert!(reason().contains("AI_ALL_KEYS_INVALID"));
+
+        // A model resting outranks its keys: it comes back on its own.
+        update_profile_health(
+            &db,
+            &profile_by_id(&db, &profile.id).unwrap(),
+            Some(AiErrorKind::RateLimit),
+            None,
+            None,
+        );
+        assert!(reason().contains("AI_KEYS_COOLING_DOWN"));
     }
 
     /// A model the user turned off is not part of the route at all, however

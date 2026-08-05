@@ -306,7 +306,7 @@ router.rs 是这个仓库里注释质量最高的文件之一。几乎每个非�
 
 **调研时写的场景。** 两个请求同时在飞，都看到 profile A 还没冷却、都失败、都降级到 B，于是提示弹两次。这是一次性的毛刺。
 
-**实际还有一个持久场景，更糟。** [`routable_profiles`](src-tauri/src/ai/router.rs:983) 只按 `cooldown_until` 过滤，不看 `state`。而当一个 profile 的所有 key 都被判为 `invalid`（key 被吊销，或 keychain 里的密文丢了），`profile_health_state(CredentialInvalid)` 给出的是 `("invalid", None)`——**没有冷却时间**。于是这个 profile 永远留在路由头部，每次请求都被 `credentials_for`（它按 `state != 'invalid'` 过滤）掏空成零个候选，什么都不记录，请求落到 B，`emit_route_fallback` 就再报一次。这不是弹两次，是**在用户修好 key 之前每次请求都弹一次**。
+**实际还有一个持久场景，更糟。** [`routable_profiles`](src-tauri/src/ai/router.rs:988) 当时只按 `cooldown_until` 过滤，不看这个 profile 手上还有没有能用的 key。而当一个 profile 的所有 key 都被判为 `invalid`（key 被吊销，或 keychain 里的密文丢了），`profile_health_state(CredentialInvalid)` 给出的是 `("invalid", None)`——**没有冷却时间**。于是这个 profile 永远留在路由头部，每次请求都被 `credentials_for`（它按 `state != 'invalid'` 过滤）掏空成零个候选，什么都不记录，请求落到 B，`emit_route_fallback` 就再报一次。这不是弹两次，是**在用户修好 key 之前每次请求都弹一次**。
 
 **这也决定了去重的形状。** 固定时间窗做不到：窗口短于最短冷却（30 秒）压不住持久场景，长于它又会吞掉真实的二次故障。所以键是 `(from_id, to_id)`，值是**当时报给用户的恢复时间**，只有理由变了才重报——上次报的截止时间已过（是一次新故障），或者上次没有截止时间而这次有了（用户不知道的新信息）。持久场景里两次都是 `None`，只报一次。
 
@@ -314,7 +314,23 @@ router.rs 是这个仓库里注释质量最高的文件之一。几乎每个非�
 
 验证：新增一个单元测试逐条锁住上面的规则，一个端到端测试跑两次连续请求（profile A 的唯一 key 密文已删）——对旧代码计到 2 次提示，对新代码 1 次。`cargo test --lib` 747 passed / 0 failed，clippy 与 fmt 干净。
 
-**留给用户的一个决定。** 上面那个「所有 key 都 invalid 的 profile 永远占着路由头部」是路由语义问题，去重只是把它的症状挡住了。根治要让 `routable_profiles` 把「没有任何可用 key」的 profile 也排除掉——那会改变路由行为（也会改变设置页里这个 profile 显示成什么），超出这次授权的范围，是产品决策，等用户拍板。
+**留给用户的一个决定。** 上面那个「所有 key 都 invalid 的 profile 永远占着路由头部」是路由语义问题，去重只是把它的症状挡住了。根治要让 `routable_profiles` 把「没有任何可用 key」的 profile 也排除掉——那会改变路由行为（也会改变设置页里这个 profile 显示成什么），超出这次授权的范围，是产品决策，等用户拍板。**用户已批准，见 6.2。**
+
+### 6.2 路由语义根治 + 设置页状态（已落地）
+
+6.1 只挡住了症状，用户批准根治。两处一起改，因为分开改会造出一个「界面说可用、路由从不选它」的中间状态。
+
+**路由。** [`routable_profiles`](src-tauri/src/ai/router.rs:988) 现在过滤两件事，而不是一件：正在冷却的（会自己恢复），以及**手上没有一把能用的 key 的**（不会自己恢复）。后者靠问 `credentials_for` 要不要得到东西来判断——和遍历循环问的是同一个问题、同一个函数，不会各说各话。OAuth 与 Ollama 这类「不靠 key 列表认证」的 profile 由 `authenticates_without_keys` 认领，两处共用这一个判定，也是为了不漂移（第 4 节 C 讲的就是这类漂移）。
+
+副作用是好的：这样的 profile 不再是「路由头部」，`expected` 变成真正会答的那个，于是第二次请求**结构上就没有切换可报**了。6.1 的去重表仍然保留——它管的是并发那一份，两者互补。
+
+**空路由的报错。** 过去 `profiles.is_empty()` 一律报 `AI_KEYS_COOLING_DOWN`。现在路由可能因为「key 全废」而空，再报「冷却中」就是骗人。新增 `empty_route_error`：有 profile 在冷却就报冷却（用户什么都不用做），否则把所有 key 收齐交给 `no_usable_key_error` —— 这个梯子原本内联在遍历末尾，现在提出来两处共用，答案分成「没配 key / key 全停用 / key 全失效 / key 在冷却 / 其它」，每一档对应用户的一个不同动作。
+
+**设置页。** 路由跳过一个模型是无声的——请求从不落到它头上，它的健康度也就永远不再更新，卡片会一直显示上一次成功请求留下的绿色「可用」。所以卡片自己判断：`usesApiKeys` 且所有 key 都被停用 → 新标签「密钥已全部停用」（琥珀色，动作是打开一把）；所有启用的 key 都是 `invalid` → 复用「需要重新连接」（红色，动作是换一把）。这两个判定排在「上次测试结果」之前，因为现状比旧新闻重要。
+
+**没做的一档。** 「所有 key 都在冷却」没有单独的标签。它会自己恢复，而且 profile 自身的冷却标签（带倒计时）在实际路径上几乎总是同时亮着。为它加一个依赖时钟的判定，代价大于收益。
+
+验证：新增两个测试（`a_model_with_no_usable_key_leaves_the_route` 锁住四种「用不了」都掉出路由，`an_empty_route_says_which_kind_of_empty` 锁住四档报错）；两个既有测试的 fixture 补上了 key——因为「一个 key 都没有的模型」现在本来就不在路由里，这也让它们更接近真实。`cargo test --lib` 749 passed / 0 failed，clippy、rustfmt、`tsc --noEmit`、`eslint` 全干净。
 
 ---
 

@@ -1070,6 +1070,7 @@
   "settings.ai.health.available": "可用",
   "settings.ai.health.cooldown": "暂时不可用",
   "settings.ai.health.retest": "需重新测试",
+  "settings.ai.health.keysOff": "密钥已全部停用",
   "settings.ai.health.unavailable": "配置不可用",
   "settings.ai.health.invalid": "需要重新连接",
   "settings.ai.provider": "AI 服务商",
