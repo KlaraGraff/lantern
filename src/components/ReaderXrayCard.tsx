@@ -20,10 +20,13 @@ import {
   canReuseXrayCache,
   didXrayNavigationSucceed,
   isEmptyXrayResult,
+  setBoundedCacheEntry,
   shouldOfferXrayUpdate,
   xrayCacheKey,
   type XrayCardResult,
 } from "./xray-card";
+
+const SAFE_CACHE_LIMIT = 50;
 
 const safeCache = new Map<string, { location: string; result: XrayCardResult }>();
 
@@ -94,6 +97,7 @@ export default function ReaderXrayCard({
     // A result generated farther ahead must never be reused after the reader
     // jumps backward. Exact-location reuse is intentionally conservative.
     if (cached && canReuseXrayCache(cached.location, safeLocation)) {
+      setBoundedCacheEntry(safeCache, key, cached, SAFE_CACHE_LIMIT);
       setResult(cached.result);
       setFromCache(true);
       setError(false);
@@ -119,7 +123,7 @@ export default function ReaderXrayCard({
       });
       if (!canApplyXrayLoad(loadGenerationRef.current, generation)) return;
       setResult(response);
-      if (!wholeBook) safeCache.set(key, { location: safeLocation, result: response });
+      if (!wholeBook) setBoundedCacheEntry(safeCache, key, { location: safeLocation, result: response }, SAFE_CACHE_LIMIT);
       setView("summary");
     } catch {
       if (canApplyXrayLoad(loadGenerationRef.current, generation)) setError(true);
@@ -170,6 +174,14 @@ export default function ReaderXrayCard({
   useEffect(() => {
     return invalidateActiveRequest;
   }, [invalidateActiveRequest]);
+
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [onClose]);
 
   const wholeBook = result?.scope === "wholeBook";
   const empty = result ? isEmptyXrayResult(result) : false;

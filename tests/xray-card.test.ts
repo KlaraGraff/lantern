@@ -6,6 +6,7 @@ import {
   canReuseXrayCache,
   didXrayNavigationSucceed,
   isEmptyXrayResult,
+  setBoundedCacheEntry,
   shouldOfferXrayUpdate,
   xrayCacheKey,
 } from "../src/components/xray-card.ts";
@@ -44,4 +45,23 @@ test("an unknown result with an explanation is not a blank protocol result", () 
   const base = { kind: "unknown" as const, facts: [], relations: [], relationPaths: [] };
   assert.equal(isEmptyXrayResult({ ...base, summary: "" }), true);
   assert.equal(isEmptyXrayResult({ ...base, summary: "Not enough read context." }), false);
+});
+
+test("the safe cache evicts the oldest entry once it exceeds its bound", () => {
+  const cache = new Map<string, number>();
+  setBoundedCacheEntry(cache, "a", 1, 2);
+  setBoundedCacheEntry(cache, "b", 2, 2);
+  setBoundedCacheEntry(cache, "c", 3, 2);
+  assert.deepEqual([...cache.keys()], ["b", "c"]);
+  assert.equal(cache.size, 2);
+});
+
+test("re-inserting an existing key refreshes its recency instead of duplicating it", () => {
+  const cache = new Map<string, number>();
+  setBoundedCacheEntry(cache, "a", 1, 2);
+  setBoundedCacheEntry(cache, "b", 2, 2);
+  setBoundedCacheEntry(cache, "a", 1, 2);
+  setBoundedCacheEntry(cache, "c", 3, 2);
+  // "a" was most-recently touched, so "b" (now the oldest) is evicted, not "a".
+  assert.deepEqual([...cache.keys()], ["a", "c"]);
 });

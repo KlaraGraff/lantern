@@ -16,6 +16,22 @@ export interface XrayCardResult {
   progress: number;
 }
 
+/**
+ * Inserts a key into a Map with a bounded insertion-order LRU eviction: the
+ * key is moved to the most-recently-used end, and the oldest entries are
+ * dropped once the map exceeds `limit`. Maps preserve insertion order, so no
+ * separate LRU data structure is needed.
+ */
+export function setBoundedCacheEntry<K, V>(cache: Map<K, V>, key: K, value: V, limit: number): void {
+  cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > limit) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey === undefined) break;
+    cache.delete(oldestKey);
+  }
+}
+
 export function xrayCacheKey(bookId: string, entity: string): string {
   return `${bookId}\u0000${entity.trim().toLocaleLowerCase()}`;
 }
