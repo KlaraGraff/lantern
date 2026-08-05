@@ -228,6 +228,78 @@ export function resolveReaderSettings(
   };
 }
 
+// Pure orchestration for the debounced per-book settings write, pulled out of the
+// hook so the race between a flush and a concurrent restore/delete is directly
+// testable without a React renderer (this repo's test runner is plain
+// `node:test`, with no DOM/hook-rendering harness).
+//
+// `pending` is mutated in place — it is meant to be a hook's ref contents — and
+// its ownership of a book id is the only signal the rest of the module has for
+// "a write for this book is still outstanding". That is why an entry is deleted
+// only once its own `invokeSetBulk` call has resolved, never up front: clearing
+// it before the await would make a concurrent reader (`restoreBookSettingsKeys`)
+// believe nothing is in flight while the write is still on the wire.
+export async function flushPendingBookSettings(
+  pending: Record<string, Record<string, string>>,
+  invokeSetBulk: (bookId: string, settings: Record<string, string>) => Promise<unknown>,
+  throwOnError = false,
+): Promise<void> {
+  const bookEntries = Object.entries(pending);
+  let failed = false;
+  for (const [book, values] of bookEntries) {
+    try {
+      await invokeSetBulk(book, values);
+      // Only clear if no newer edit was queued for this book while we awaited
+      // above (reference equality: the scheduler always replaces the object, so
+      // a still-`===` entry means nothing new arrived during the await).
+      if (pending[book] === values) {
+        delete pending[book];
+      }
+    } catch {
+      failed = true;
+      // Keep the edit queued for the next settle, letting newer values win.
+      pending[book] = {
+        ...values,
+        ...pending[book],
+      };
+    }
+  }
+  if (failed && throwOnError) throw new Error("BOOK_SETTINGS_SAVE_FAILED");
+}
+
+// Settles any write still in flight for `bookId` before deleting `keys`, so the
+// two IPCs cannot land out of order (an in-flight bulk write landing after the
+// delete would re-insert the row the caller just asked to remove, and clear the
+// deletion tombstone with it). `flush` is expected to be a call that resolves
+// once `pending`'s outstanding entry for `bookId`, if any, has settled.
+export async function restoreBookSettingsKeys(
+  bookId: string,
+  keys: string[],
+  pending: Record<string, Record<string, string>>,
+  invokeDelete: (bookId: string, keys: string[]) => Promise<Record<string, string>>,
+  flush: () => Promise<void>,
+  onDeleteFailed?: (pendingDeleted: Record<string, string>) => void,
+): Promise<Record<string, string>> {
+  await flush();
+  const inFlight = pending[bookId];
+  const pendingDeleted: Record<string, string> = {};
+  if (inFlight) {
+    for (const key of keys) {
+      if (inFlight[key] !== undefined) pendingDeleted[key] = inFlight[key];
+      delete inFlight[key];
+    }
+    if (Object.keys(inFlight).length === 0) delete pending[bookId];
+  }
+  let deleted: Record<string, string>;
+  try {
+    deleted = await invokeDelete(bookId, keys);
+  } catch (error) {
+    onDeleteFailed?.(pendingDeleted);
+    throw error;
+  }
+  return { ...deleted, ...pendingDeleted };
+}
+
 interface ReaderSettingsController {
   readerSettings: ReaderSettingsState;
   globalReaderSettings: ReaderSettingsState;
@@ -306,25 +378,17 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
   // per frame. Closing the book mid-debounce still lands the edit — the effect
   // below flushes on every `bookId` change and on unmount, and each batch is
   // written against the book it was queued under, not the one now open.
-  const flushBookSettings = useCallback(async (throwOnError = false) => {
-    bookSaveTimerRef.current = null;
-    const pending = pendingBookSettingsRef.current;
-    pendingBookSettingsRef.current = {};
-    let failed = false;
-    for (const [book, values] of Object.entries(pending)) {
-      try {
-        await invoke("set_book_settings_bulk", { bookId: book, settings: values });
-      } catch {
-        failed = true;
-        // Keep the edit queued for the next settle, letting newer values win.
-        pendingBookSettingsRef.current[book] = {
-          ...values,
-          ...pendingBookSettingsRef.current[book],
-        };
-      }
-    }
-    if (failed && throwOnError) throw new Error("BOOK_SETTINGS_SAVE_FAILED");
-  }, []);
+  const flushBookSettings = useCallback(
+    (throwOnError = false) => {
+      bookSaveTimerRef.current = null;
+      return flushPendingBookSettings(
+        pendingBookSettingsRef.current,
+        (book, values) => invoke("set_book_settings_bulk", { bookId: book, settings: values }),
+        throwOnError,
+      );
+    },
+    [],
+  );
 
   const scheduleBookSettingsSave = useCallback((book: string, values: Record<string, string>) => {
     if (Object.keys(values).length === 0) return;
@@ -413,27 +477,19 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
 
   const restoreBookOverrides = useCallback(async (keys: string[]) => {
     if (!bookId || keys.length === 0) return {};
-    const pending = pendingBookSettingsRef.current[bookId];
-    const pendingDeleted: Record<string, string> = {};
-    if (pending) {
-      for (const key of keys) {
-        if (pending[key] !== undefined) pendingDeleted[key] = pending[key];
-        delete pending[key];
-      }
-      if (Object.keys(pending).length === 0) delete pendingBookSettingsRef.current[bookId];
-    }
-    let deleted: Record<string, string>;
-    try {
-      deleted = await invoke<Record<string, string>>("delete_book_settings", { bookId, keys });
-    } catch (error) {
-      scheduleBookSettingsSave(bookId, pendingDeleted);
-      throw error;
-    }
-    const remaining = { ...bookOverrides };
+    const result = await restoreBookSettingsKeys(
+      bookId,
+      keys,
+      pendingBookSettingsRef.current,
+      (book, deleteKeys) => invoke<Record<string, string>>("delete_book_settings", { bookId: book, keys: deleteKeys }),
+      () => flushBookSettings(true),
+      (pendingDeleted) => scheduleBookSettingsSave(bookId, pendingDeleted),
+    );
+    const remaining = { ...bookOverridesRef.current };
     for (const key of keys) delete remaining[key];
     applySources(globalSettingsRef.current, remaining);
-    return { ...deleted, ...pendingDeleted };
-  }, [applySources, bookId, bookOverrides, scheduleBookSettingsSave]);
+    return result;
+  }, [applySources, bookId, flushBookSettings, scheduleBookSettingsSave]);
 
   const undoRestoreBookOverrides = useCallback(async (values: Record<string, string>) => {
     if (!bookId || Object.keys(values).length === 0) return;
@@ -448,13 +504,13 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
       "promote_book_settings_to_global",
       { sourceBookId: bookId, selectedBookIds },
     );
-    const remaining = { ...bookOverrides };
+    const remaining = { ...bookOverridesRef.current };
     for (const key of result.promoted_keys) delete remaining[key];
     const globals = { ...globalSettingsRef.current, ...result.settings };
     applySources(globals, remaining);
     await notifySettingsChanged(result.settings).catch(() => {});
     return result.settings;
-  }, [applySources, bookId, bookOverrides, flushBookSettings]);
+  }, [applySources, bookId, flushBookSettings]);
 
   useEffect(() => {
     let disposed = false;
