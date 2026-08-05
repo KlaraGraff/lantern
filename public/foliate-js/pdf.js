@@ -12,11 +12,30 @@ const pdfjsPath = path => new URL(`vendor/pdfjs/${path}`, import.meta.url).toStr
 
 const fetchText = async url => await (await fetch(url)).text()
 
-// https://raw.githubusercontent.com/mozilla/pdf.js/refs/tags/v5.5.207/web/text_layer_builder.css
-const textLayerBuilderCSS = await fetchText(pdfjsPath('text_layer_builder.css'))
-
-// https://raw.githubusercontent.com/mozilla/pdf.js/refs/tags/v5.5.207/web/annotation_layer_builder.css
-const annotationLayerBuilderCSS = await fetchText(pdfjsPath('annotation_layer_builder.css'))
+// Two stylesheets lifted from pdf.js's own viewer:
+//   https://raw.githubusercontent.com/mozilla/pdf.js/refs/tags/v5.5.207/web/text_layer_builder.css
+//   https://raw.githubusercontent.com/mozilla/pdf.js/refs/tags/v5.5.207/web/annotation_layer_builder.css
+//
+// Fetched lazily, on purpose. These used to be two top-level `await`s, which
+// meant every export of this module sat in the temporal dead zone until both
+// requests came back. A second `import('./pdf.js')` landing inside that window
+// resolves to a namespace whose `makePDF` binding is not initialised yet, and
+// destructuring it throws `Cannot access 'makePDF' before initialization` —
+// which is how opening a PDF failed on iOS, where the reader issues two
+// concurrent opens and the fetches are slow enough for the second to lose.
+// Desktop wins the same race by timing alone, so this was latent there rather
+// than absent.
+//
+// Memoised, so the two files are still fetched once per session and not once
+// per rendered page.
+let builderCSS
+const loadBuilderCSS = () => {
+    if (!builderCSS) builderCSS = Promise.all([
+        fetchText(pdfjsPath('text_layer_builder.css')),
+        fetchText(pdfjsPath('annotation_layer_builder.css')),
+    ]).then(([textLayer, annotationLayer]) => ({ textLayer, annotationLayer }))
+    return builderCSS
+}
 
 const render = async (page, doc, zoom, pdfjsLib) => {
     const scale = zoom * devicePixelRatio
@@ -191,6 +210,10 @@ const renderPage = async (page, getImageBlob, pdfjsLib) => {
         await page.render({ canvasContext, viewport }).promise
         return new Promise(resolve => canvas.toBlob(resolve))
     }
+    // Awaited here rather than at module scope — see loadBuilderCSS. The
+    // cover-image branch above returns before this, so a thumbnail render
+    // never pays for the two stylesheets.
+    const css = await loadBuilderCSS()
     const src = URL.createObjectURL(new Blob([`
         <!DOCTYPE html>
         <html lang="en">
@@ -229,13 +252,13 @@ const renderPage = async (page, getImageBlob, pdfjsLib) => {
             -webkit-user-select: text;
             user-select: text;
         }
-        ${textLayerBuilderCSS}
+        ${css.textLayer}
         /* override pdfjs selection color for consistent appearance in WebKit;
            AccentColor/color-mix can be unreliable in iframe contexts */
         .textLayer ::selection {
             background: rgba(56 117 215 / 0.25);
         }
-        ${annotationLayerBuilderCSS}
+        ${css.annotationLayer}
         </style>
         <div id="canvas"></div>
         <div class="textLayer"></div>

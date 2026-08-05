@@ -479,8 +479,9 @@ P6 ends at "installable from TestFlight", and stops there for now.
 
 **Why:** App Review, store screenshots, description and the rejection round-trips are most of
 P6's 10 days, and they buy nothing until the app is actually good on a phone — which is P2
-and P3's job, not P6's. TestFlight puts it on real hardware, which is the only way to answer
-[Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device).
+and P3's job, not P6's. TestFlight puts it on real hardware, which is the only way to answer the
+half of [Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) about
+whether iOS kills the app.
 
 **What is still required, and is easy to under-budget:** an Apple Developer Program
 membership, signing and provisioning, and a privacy manifest — App Store Connect requires
@@ -695,11 +696,27 @@ The last one is the most substantive: the reader responds to touch, but the page
 is not wired to a swipe, so the current touch handling reaches the webview as a plain scroll.
 Sizing P3 should start from that rather than from the assumption that pagination works.
 
-**Memory:** 377 MB RSS with the 15 MB book open. This does **not** answer
-[Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) — it is a debug
-build, on a Simulator process with no jetsam limit, serving assets over HTTP from the Vite dev
-server. Treat it as an order of magnitude, and measure a release build on hardware before
-drawing any conclusion.
+**Memory:** 377 MB RSS with the 15 MB book open. Superseded — that reading was RSS on a
+debug build served over HTTP from the Vite dev server, and RSS is the wrong meter for a
+WebKit process anyway. See the measured table under
+[Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) for figures taken
+against bundled assets with `phys_footprint`.
+
+### F-012 — The reader opens every book twice
+
+Every book open runs the whole open sequence twice, concurrently. The `reader.diag` trail
+shows matched, interleaved pairs — two `reader.open.start`, two `reader.open.fetch-start`,
+two `reader.open.fetch-done`, two `view-open-start` — for EPUB and PDF alike. This is a
+`vite build` frontend, so it is not React's development-only double-effect.
+
+It costs a duplicated download and parse of the whole book (30 MB of transfer for the 15 MB
+test file), and it races: two concurrent `import('./pdf.js')` calls are what exposed the
+temporal-dead-zone bug that stopped PDFs opening on iOS at all. That particular window is
+closed, but the duplicate open is still there and can lose other races.
+
+The cause is in `src/pages/Reader.tsx`, which the desktop mastery line owns right now, so it
+is filed rather than fixed. Whoever takes it: make a second open for the same book id no-op
+or cancel the first, and verify by opening a book and seeing one pair of trail entries.
 
 ---
 
@@ -731,7 +748,64 @@ Whole books load as a single in-memory Blob, and PDF pages render at
 memory ceiling. Readest addresses the same problem by parsing EPUB/MOBI in Rust to avoid
 ferrying large blobs across IPC.
 
-**Verify during P0** on the largest book available, before committing to the P4 budget.
+**This is two questions, and the Simulator answers one of them.** The earlier note here —
+that nothing could be learned before hardware — was wrong and cost time.
+
+- **How much does the reader actually use?** The Simulator answers this. An arm64 simulator
+  on Apple Silicon runs the same compiled code against the same WebKit, and it emulates 3×
+  DPR faithfully, so the blob and the canvas backing store are the same size they will be on
+  a phone. Measure with `xcrun simctl spawn … footprint` or Instruments' Allocations against
+  the largest book on hand. Answerable now, and answered below.
+- **Does that number get the app killed?** The Simulator cannot answer this. It allocates
+  from the Mac's RAM and does not enforce jetsam limits, so the app will happily grow past
+  any figure a real device would kill it at. Only a release build on hardware settles it.
+
+Splitting them matters because the first half is what drives design work. If the reader
+already sits far under an iPhone's jetsam budget, the Rust-side EPUB parsing that Readest
+does is not work Lantern needs, and P4 can drop it. If it sits near the line, that work
+starts now rather than after a device test. The kill question only ever gates shipping.
+
+#### Measured, 2026-08-06 — EPUB is fine, PDF is not
+
+iPhone 17 Pro Simulator (iOS 26.5, 402×874 pt at DPR 3), bundled assets, no dev server.
+Figures are `phys_footprint` from `footprint(1)` — the number jetsam meters — not RSS, which
+counts evictable file-backed pages and flatters a WebKit process badly. iOS runs the web
+content in its own process with its own limit, so both are reported.
+
+| State | app | WebContent |
+| --- | --- | --- |
+| Launched, library | 24 MB | 44 MB |
+| 15 MB EPUB open | 32 MB | 57 MB |
+| …after reading on | 32 MB | 55 MB |
+| 15 MB PDF, page 1 | 33 MB | 158 MB |
+| …after 4 pages | 34 MB | 208 MB |
+| …after 8 pages | 35 MB | 260 MB |
+| …after 12 pages | 36 MB | 303 MB |
+
+**EPUB answers the original worry, and answers it well.** A 15 MB book costs ~21 MB across
+both processes, and the figure *falls* as you keep reading — foliate-js drops sections behind
+you. The whole-book Blob does not stay resident. So the Rust-side EPUB parsing Readest does
+is not work Lantern needs; it comes off P4.
+
+**PDF is a real defect.** ~12 MB per page, linear, no plateau across 12 pages, and nothing
+returns after 20 s idle. That figure is exactly one full-page canvas at DPR 3
+(1206 × 2622 × 4 B = 12.6 MB), so it is one retained backing store per page visited. Reading
+this 253-page book end to end would ask for ~3 GB. It will be killed long before that.
+
+Cause is `cache` in `public/foliate-js/pdf.js` — an unbounded `Map` of rendered pages' blob
+URLs, never evicted and never `revokeObjectURL`'d. It needs a bounded window with revocation
+on eviction; `section.load()` already re-renders on demand, so eviction costs a re-render and
+nothing else. The mechanism is platform-independent — desktop has the same leak and only
+hides it behind DPR 2 and plentiful RAM.
+
+**This is not the jetsam question.** The Simulator allocates from the Mac's RAM, so it never
+killed the app; it only showed the growth. Whether a given figure survives on a device stays
+with P6.
+
+Found on the way in: PDFs would not open on iOS at all (`Cannot access 'makePDF' before
+initialization`) — two top-level `await`s in `pdf.js` left its exports in the temporal dead
+zone while the reader's duplicated open raced into the window. Fixed by loading those
+stylesheets lazily. The duplicated open itself is [F-012](#f-012--the-reader-opens-every-book-twice).
 
 ### Q-003 — Does iOS text selection fight the lookup popover?
 
@@ -784,8 +858,10 @@ foliate-js paginating CJK text correctly in WKWebView. Badly laid out, exactly a
 See [F-011](#f-011--first-run-what-the-app-actually-does-on-a-phone) for what was observed and
 which later phase owns each defect.
 
-[Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) is **not** answered
-here and cannot be from a Simulator; it moves to P6, against a release build on hardware.
+[Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) is not answered here.
+Only its second half needs hardware, though — the first half, how much memory the reader
+actually uses, is measurable on the Simulator and is being measured. See the question itself
+for why the two split.
 
 #### Toolchain prerequisites (resolved 2026-08-02)
 
