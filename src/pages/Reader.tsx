@@ -435,7 +435,7 @@ export default function Reader() {
     progress,
     readerSettings,
   });
-  const textReaderNavigateRef = useRef<((location: string, flash?: boolean) => void) | null>(null);
+  const textReaderNavigateRef = useRef<((location: string, flash?: boolean) => boolean) | null>(null);
 
   // A short human-readable description of "here", for the jump-history entry
   // (P1.3) a push records. Kept behind a stable-identity ref wrapper because
@@ -757,7 +757,7 @@ export default function Reader() {
     setBookReady(false);
   }, []);
 
-  const registerTextBookNavigation = useCallback((navigateText: (location: string, flash?: boolean) => void) => {
+  const registerTextBookNavigation = useCallback((navigateText: (location: string, flash?: boolean) => boolean) => {
     textReaderNavigateRef.current = navigateText;
     setTextNavigationRegistration((value) => value + 1);
   }, []);
@@ -1002,21 +1002,20 @@ export default function Reader() {
   // Nothing else does now that a dismissed card no longer cancels playback.
   useEffect(() => () => cancelSpeech(), []);
 
-  const navigateToCurrentXrayOccurrence = useCallback(async (location: string): Promise<boolean> => {
-    if (isTextBook) {
-      if (!textReaderNavigateRef.current) return false;
-    } else if (!viewRef.current || !supportsCfiNavigation) {
-      return false;
-    }
-    await flashNavigationTarget(location);
-    return true;
-  }, [flashNavigationTarget, isTextBook, supportsCfiNavigation, textReaderNavigateRef, viewRef]);
+  // The X-Ray card only dismisses itself once the reader has actually landed on
+  // the occurrence, so this must report the real outcome rather than "we tried".
+  // `flashNavigationTarget` already returns false for an unresolvable location
+  // or a block that never rendered.
+  const navigateToCurrentXrayOccurrence = useCallback(
+    (location: string): Promise<boolean> => flashNavigationTarget(location),
+    [flashNavigationTarget],
+  );
 
   const navigateToSource = useCallback(async (source: CitedSource): Promise<boolean> => {
     if (isTextBook && source.charStart != null) {
-      if (!textReaderNavigateRef.current) return false;
-      await flashNavigationTarget(textLocation(source.charStart, source.charEnd ?? source.charStart));
-      return true;
+      return await flashNavigationTarget(
+        textLocation(source.charStart, source.charEnd ?? source.charStart),
+      );
     }
     if (book?.format === "pdf" && viewRef.current) {
       pushJump(currentCfiRef.current, getCurrentJumpLabel());

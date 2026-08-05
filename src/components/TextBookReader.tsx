@@ -53,7 +53,10 @@ interface TextBookReaderProps {
   ) => void;
   onInteraction: (interaction: ReaderInteraction) => void;
   onError: (error: string) => void;
-  onRegisterNavigation: (navigate: (location: string, flash?: boolean) => void) => void;
+  // Returns whether the location actually resolved and was scrolled to. The
+  // X-Ray card and citation jumps only dismiss themselves on a real success
+  // (see docs/impls/reader-p3-xray.md), so this must not collapse to void.
+  onRegisterNavigation: (navigate: (location: string, flash?: boolean) => boolean) => void;
   onRegisterPageNavigation?: (navigation: TextBookPageNavigation) => void;
   onHighlightClick: (highlight: Highlight, rect: DOMRect, fallbackText?: string) => void;
   doubleClickQuickLookup?: boolean;
@@ -943,7 +946,10 @@ function TextBookReader({
   }, [document, isPaginated, navigateToLocation]);
 
   useEffect(() => {
-    onRegisterNavigation(navigateToLocation);
+    // `navigateToLocation` already returns null for every failure (no document,
+    // unresolvable location, block not rendered); narrow it to the boolean the
+    // caller needs rather than discarding it.
+    onRegisterNavigation((location, flash) => navigateToLocation(location, flash) !== null);
     return () => {
       if (flashTimerRef.current !== null) window.clearTimeout(flashTimerRef.current);
       if (wordClickTimerRef.current !== null) window.clearTimeout(wordClickTimerRef.current);

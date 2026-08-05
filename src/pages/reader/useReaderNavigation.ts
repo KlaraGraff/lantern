@@ -18,10 +18,13 @@ interface UseReaderNavigationOptions {
   supportsCfiNavigation: boolean;
   textNavigationRegistration: number;
   viewRef: MutableRefObject<FoliateView | null>;
-  textReaderNavigateRef: MutableRefObject<((location: string, flash?: boolean) => void) | null>;
+  textReaderNavigateRef: MutableRefObject<((location: string, flash?: boolean) => boolean) | null>;
   refreshAnnotations(): Promise<void>;
-  /** Format-aware navigate-with-flash, already wired to push a jump-history entry (P1.3). */
-  flashNavigationTarget(cfi: string): Promise<void>;
+  /**
+   * Format-aware navigate-with-flash, already wired to push a jump-history entry
+   * (P1.3). Resolves to whether the reader actually landed on the target.
+   */
+  flashNavigationTarget(cfi: string): Promise<boolean>;
   pushJump(location: string | null | undefined, label: string): void;
   getCurrentLabel(): string;
   currentCfiRef: MutableRefObject<string | null>;

@@ -42,6 +42,7 @@ import type { AnnotationStyleKind, FoliateView } from "./foliate-types";
 import {
   cleanupPassiveVocabAnnotations,
   installPassiveVocabAnnotations,
+  isNarrowPassiveVocabViewport,
   passiveVocabLabel,
   selectPassiveVocab,
   type PassiveVocabSettings,
@@ -245,7 +246,7 @@ interface UseFoliateAnnotationsOptions {
   markMatchingWordsRef: MutableRefObject<boolean>;
   setMarkerStyle: Dispatch<SetStateAction<MarkerStyleConfig>>;
   setReaderSettings: Dispatch<SetStateAction<ReaderSettingsState>>;
-  textReaderNavigateRef: MutableRefObject<((location: string, flash?: boolean) => void) | null>;
+  textReaderNavigateRef: MutableRefObject<((location: string, flash?: boolean) => boolean) | null>;
   currentCfiRef: MutableRefObject<string | null>;
   /** Jump-history push (P1.3) — see `useJumpHistory`. */
   pushJump: (location: string | null | undefined, label: string) => void;
@@ -368,7 +369,7 @@ export function useFoliateAnnotations({
           }
         },
         style: passiveVocab.style,
-        narrowViewport: window.innerWidth < 760,
+        narrowViewport: isNarrowPassiveVocabViewport(window.innerWidth),
         spread: Number(view.renderer?.getAttribute?.("max-column-count")) > 1,
       });
     }
@@ -425,17 +426,25 @@ export function useFoliateAnnotations({
     viewRef,
   ]);
 
-  const flashNavigationTarget = useCallback(async (cfi: string) => {
+  const flashNavigationTarget = useCallback(async (cfi: string): Promise<boolean> => {
     // Centralized here rather than at each caller: every AI/vocab/cross-window
     // jump that lands on a specific spot goes through this one function, so
-    // pushing once here covers all of them (P1.3).
-    pushJump(currentCfiRef.current, getCurrentLabel());
+    // pushing once here covers all of them (P1.3). The push happens only once
+    // the jump is known to be feasible — recording a jump that never happened
+    // would send "return" to a place the reader never left.
     if (isTextBook) {
-      textReaderNavigateRef.current?.(cfi, true);
-      return;
+      const navigateText = textReaderNavigateRef.current;
+      if (!navigateText) return false;
+      // Read "here" before moving; afterwards it is the destination.
+      const from = currentCfiRef.current;
+      const label = getCurrentLabel();
+      if (!navigateText(cfi, true)) return false;
+      pushJump(from, label);
+      return true;
     }
     const view = viewRef.current;
-    if (!view || !supportsCfiNavigation) return;
+    if (!view || !supportsCfiNavigation) return false;
+    pushJump(currentCfiRef.current, getCurrentLabel());
     await view.goTo(cfi);
     await view.addAnnotation({ value: cfi, color: "#c27aff" }).catch(() => {});
     const token = Date.now() + Math.random();
@@ -447,6 +456,7 @@ export function useFoliateAnnotations({
       const annotation = appliedAnnotationsRef.current.get(cfi);
       if (annotation) await view.addAnnotation({ value: cfi, ...annotation }).catch(() => {});
     }, 3000);
+    return true;
   }, [currentCfiRef, getCurrentLabel, isTextBook, pushJump, supportsCfiNavigation, textReaderNavigateRef, viewRef]);
 
   /**
