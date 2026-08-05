@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Runtime, Emitter};
 
 use crate::commands::ai::{AiStreamChunk, ChatMessage};
 use crate::error::{AppError, AppResult};
@@ -76,8 +76,8 @@ fn request_body(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn stream_chat(
-    app: &AppHandle,
+pub async fn stream_chat<R: Runtime>(
+    app: &AppHandle<R>,
     base_url: &str,
     api_key: &str,
     model: &str,
@@ -138,8 +138,8 @@ pub async fn stream_chat(
     Err(AppError::Ai("AI_STREAM_INCOMPLETE".to_string()))
 }
 
-fn process_data(
-    app: &AppHandle,
+fn process_data<R: Runtime>(
+    app: &AppHandle<R>,
     event_name: &str,
     data: &str,
     emitted: &AtomicBool,

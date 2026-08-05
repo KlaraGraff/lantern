@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 use futures::StreamExt;
 use rusqlite::{params, OptionalExtension};
-use tauri::{AppHandle, Emitter, Listener};
+use tauri::{AppHandle, Runtime, Emitter, Listener};
 use tokio::sync::watch;
 
 use crate::commands::ai::ChatMessage;
@@ -742,8 +742,8 @@ struct AiReasoningEffortCleared {
 /// an effort was set retries once without it. Gateways word this rejection every
 /// way imaginable, and the cost of being wrong is one extra failed request,
 /// while the cost of being narrow is an answer the user never gets.
-fn handle_effort_rejection(
-    app: &AppHandle,
+fn handle_effort_rejection<R: Runtime>(
+    app: &AppHandle<R>,
     db: &Db,
     profile: &AiProfile,
     effort: &str,
@@ -802,8 +802,8 @@ fn handle_effort_rejection(
 /// before the traversal starts and there is no switch left to announce. That
 /// falls out of the routing rather than being counted, which is why there is no
 /// bookkeeping here.
-fn emit_route_fallback(
-    app: &AppHandle,
+fn emit_route_fallback<R: Runtime>(
+    app: &AppHandle<R>,
     db: &Db,
     expected: Option<&AiProfileView>,
     used: &AiProfileView,
@@ -1088,8 +1088,8 @@ async fn wait_cancelled(cancel: &mut watch::Receiver<bool>) {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn stream_once(
-    app: &AppHandle,
+async fn stream_once<R: Runtime>(
+    app: &AppHandle<R>,
     profile: &AiProfile,
     api_key: &str,
     oauth_account_id: Option<&str>,
@@ -1161,8 +1161,8 @@ async fn stream_once(
 /// effort. The retry is only safe before any token reached the frontend, so it
 /// is gated on `emitted` exactly like credential failover is.
 #[allow(clippy::too_many_arguments)]
-async fn stream_once_with_effort_fallback(
-    app: &AppHandle,
+async fn stream_once_with_effort_fallback<R: Runtime>(
+    app: &AppHandle<R>,
     db: &Db,
     profile: &AiProfile,
     api_key: &str,
@@ -1445,8 +1445,8 @@ pub async fn list_models(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn stream_with_failover(
-    app: &AppHandle,
+pub async fn stream_with_failover<R: Runtime>(
+    app: &AppHandle<R>,
     db: &Db,
     secrets: &Secrets,
     messages: &[ChatMessage],
@@ -1491,8 +1491,8 @@ pub async fn stream_with_failover(
 /// per-request listener collects those deltas until the adapters can be moved
 /// to a provider-neutral sink.
 #[allow(clippy::too_many_arguments)]
-pub async fn complete_with_failover(
-    app: &AppHandle,
+pub async fn complete_with_failover<R: Runtime>(
+    app: &AppHandle<R>,
     db: &Db,
     secrets: &Secrets,
     messages: &[ChatMessage],
@@ -1578,8 +1578,8 @@ pub async fn complete_with_failover(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn stream_with_profile_inner(
-    app: &AppHandle,
+async fn stream_with_profile_inner<R: Runtime>(
+    app: &AppHandle<R>,
     db: &Db,
     secrets: &Secrets,
     profile_id: &str,
@@ -1598,7 +1598,8 @@ async fn stream_with_profile_inner(
     let effort = effort_for(&profile.view, AiRequestPurpose::Utility);
     if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" {
         let (token, account_id) = crate::ai::oauth::get_valid_token(secrets).await?;
-        stream_once_with_effort_fallback(
+        let started = Instant::now();
+        let result = stream_once_with_effort_fallback(
             app,
             db,
             &profile,
@@ -1612,11 +1613,14 @@ async fn stream_with_profile_inner(
             Arc::new(AtomicBool::new(false)),
             cancel,
         )
-        .await?;
+        .await;
+        record_profile_attempt(db, &profile, &result, started.elapsed().as_millis() as u64);
+        result?;
         return Ok(profile.view);
     }
     if profile.view.provider == "ollama" {
-        stream_once_with_effort_fallback(
+        let started = Instant::now();
+        let result = stream_once_with_effort_fallback(
             app,
             db,
             &profile,
@@ -1630,10 +1634,14 @@ async fn stream_with_profile_inner(
             Arc::new(AtomicBool::new(false)),
             cancel,
         )
-        .await?;
+        .await;
+        record_profile_attempt(db, &profile, &result, started.elapsed().as_millis() as u64);
+        result?;
         return Ok(profile.view);
     }
     let mut last_error = None;
+    let profile_started = Instant::now();
+    let mut profile_failure = None;
     for credential in credentials_for(db, profile_id, now())? {
         let Some(key) = secrets
             .get(&credential.secret_ref)?
@@ -1641,6 +1649,7 @@ async fn stream_with_profile_inner(
         else {
             continue;
         };
+        let emitted = Arc::new(AtomicBool::new(false));
         match stream_once_with_effort_fallback(
             app,
             db,
@@ -1652,21 +1661,85 @@ async fn stream_with_profile_inner(
             max_tokens,
             effort,
             true,
-            Arc::new(AtomicBool::new(false)),
+            Arc::clone(&emitted),
             cancel,
         )
         .await
         {
-            Ok(()) => return Ok(profile.view),
+            Ok(()) => {
+                update_credential_health(db, &credential, None, None);
+                update_profile_health(
+                    db,
+                    &profile,
+                    None,
+                    None,
+                    Some(profile_started.elapsed().as_millis() as u64),
+                );
+                return Ok(profile.view);
+            }
             Err(error) if is_cancelled(&error) => return Err(error),
-            Err(error) => last_error = Some(error),
+            Err(error) => {
+                let kind = classify_error(&error);
+                let retry_after = retry_after_ms(&error);
+                update_credential_health(db, &credential, Some(kind), retry_after);
+                profile_failure = Some((kind, retry_after));
+                // The same two stopping conditions the routed path applies. The
+                // second one matters more here than there: `complete_with_profile`
+                // accumulates every delta into one buffer for the whole call, so a
+                // key swapped in after output has already landed appends a second
+                // copy of the answer to the first one's half.
+                if !may_continue_after(kind, emitted.load(Ordering::Relaxed)) {
+                    update_profile_health(
+                        db,
+                        &profile,
+                        Some(kind),
+                        retry_after,
+                        Some(profile_started.elapsed().as_millis() as u64),
+                    );
+                    return Err(error);
+                }
+                log::warn!(
+                    "ai router: profile={} credential={} failed kind={}, trying next candidate",
+                    profile.view.id,
+                    credential.view.id,
+                    kind.as_str()
+                );
+                last_error = Some(error);
+            }
         }
+    }
+    if let Some((kind, retry_after)) = profile_failure {
+        update_profile_health(
+            db,
+            &profile,
+            Some(kind),
+            retry_after,
+            Some(profile_started.elapsed().as_millis() as u64),
+        );
     }
     Err(last_error.unwrap_or_else(|| AppError::Other("AI_NO_USABLE_KEYS".to_string())))
 }
 
-pub async fn complete_with_profile(
-    app: &AppHandle,
+/// Record one whole-profile attempt on a path that has no credential layer to
+/// fail over through (OAuth, Ollama).
+///
+/// This is inference against a saved profile, so its failures belong in the
+/// profile's health exactly as the routed path records them. `list_models`
+/// deliberately does not record health, but that probes an endpoint a provider
+/// may deny while inference still works — this is the inference.
+fn record_profile_attempt(db: &Db, profile: &AiProfile, result: &AppResult<()>, latency_ms: u64) {
+    let error = result.as_ref().err();
+    update_profile_health(
+        db,
+        profile,
+        error.map(classify_error),
+        error.and_then(retry_after_ms),
+        Some(latency_ms),
+    );
+}
+
+pub async fn complete_with_profile<R: Runtime>(
+    app: &AppHandle<R>,
     db: &Db,
     secrets: &Secrets,
     profile_id: &str,
@@ -1755,8 +1828,8 @@ fn connection_test_token_limit(profile: &AiProfile) -> Option<u32> {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn stream_with_failover_inner(
-    app: &AppHandle,
+async fn stream_with_failover_inner<R: Runtime>(
+    app: &AppHandle<R>,
     db: &Db,
     secrets: &Secrets,
     messages: &[ChatMessage],
@@ -2632,8 +2705,8 @@ pub fn delete_credential(db: &Db, secrets: &Secrets, id: &str) -> AppResult<()> 
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn timed_stream_once(
-    app: &AppHandle,
+async fn timed_stream_once<R: Runtime>(
+    app: &AppHandle<R>,
     db: &Db,
     profile: &AiProfile,
     api_key: &str,
@@ -2767,8 +2840,8 @@ fn profile_for_connection_test(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn test_profile(
-    app: &AppHandle,
+pub async fn test_profile<R: Runtime>(
+    app: &AppHandle<R>,
     db: &Db,
     secrets: &Secrets,
     profile_id: &str,
@@ -3094,8 +3167,8 @@ pub fn ensure_stream_credentials_accessible(db: &Db, secrets: &Secrets) -> AppRe
     Ok(())
 }
 
-pub async fn test_credential(
-    app: &AppHandle,
+pub async fn test_credential<R: Runtime>(
+    app: &AppHandle<R>,
     db: &Db,
     secrets: &Secrets,
     credential_id: &str,
@@ -4176,5 +4249,122 @@ mod tests {
         assert!(credentials[0].last_error_kind.is_none());
         assert!(credentials[0].last_used_at.is_none());
         assert!(credentials[1].last_used_at.is_none());
+    }
+
+    /// Like `model_list_server`, but the count of requests that actually
+    /// arrived is readable without joining the task — a router that stops
+    /// early leaves the remaining responses unclaimed, and the test has to be
+    /// able to see that without waiting for a connection that never comes.
+    async fn counting_stream_server(
+        responses: Vec<(&'static str, String)>,
+    ) -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let seen = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = Arc::clone(&seen);
+        tokio::spawn(async move {
+            for (status, body) in responses {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+                counter.fetch_add(1, Ordering::Relaxed);
+                let mut request = Vec::new();
+                let mut buffer = [0_u8; 2048];
+                while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    let Ok(read) = stream.read(&mut buffer).await else {
+                        return;
+                    };
+                    if read == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&buffer[..read]);
+                }
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+            }
+        });
+        (format!("http://{address}"), seen)
+    }
+
+    fn sse_delta(text: &str) -> String {
+        format!("data: {{\"choices\":[{{\"delta\":{{\"content\":\"{text}\"}}}}]}}\n\n")
+    }
+
+    /// A truncated stream is retryable in the abstract — but not once its words
+    /// have already reached the reader. `complete_with_profile` accumulates
+    /// every delta into one buffer for the whole call, so a second key picking
+    /// up from scratch would append a whole answer to the first one's half.
+    #[tokio::test]
+    async fn a_stream_that_already_reached_the_reader_does_not_restart_on_the_next_key() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let secrets = Secrets::init_in_memory().unwrap();
+        let (base_url, seen) = counting_stream_server(vec![
+            // Half an answer, then the connection ends without `[DONE]`.
+            ("200 OK", sse_delta("first half")),
+            // The backup key would have answered in full — reaching it at all
+            // is the bug.
+            (
+                "200 OK",
+                format!("{}data: [DONE]\n\n", sse_delta("second half")),
+            ),
+        ])
+        .await;
+        let profile = model_list_test_profile(&db, base_url);
+        let first = add_credential(
+            &db,
+            &secrets,
+            profile.id.clone(),
+            "First".to_string(),
+            "first-key".to_string(),
+        )
+        .unwrap();
+        add_credential(
+            &db,
+            &secrets,
+            profile.id.clone(),
+            "Second".to_string(),
+            "second-key".to_string(),
+        )
+        .unwrap();
+
+        let app = tauri::test::mock_app();
+        let (_sender, mut cancel) = watch::channel(false);
+        let error = stream_with_profile_inner(
+            app.handle(),
+            &db,
+            &secrets,
+            &profile.id,
+            &[crate::commands::ai::ChatMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+            }],
+            "ai-stream-test",
+            None,
+            &mut cancel,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.to_string().contains("AI_STREAM_INCOMPLETE"));
+        assert_eq!(seen.load(Ordering::Relaxed), 1);
+
+        // The attempt is also recorded now, which it was not before: the key
+        // that dropped the stream cools off, and the profile carries the same
+        // verdict so the routed path can see it.
+        let credentials = list_credentials(&db, Some(&profile.id)).unwrap();
+        assert_eq!(credentials[0].id, first.id);
+        assert_eq!(credentials[0].state, "cooldown");
+        assert_eq!(credentials[0].last_error_kind.as_deref(), Some("protocol"));
+        assert!(credentials[0].last_used_at.is_some());
+        assert_eq!(credentials[1].state, "active");
+        assert!(credentials[1].last_used_at.is_none());
+
+        let stored = profile_by_id(&db, &profile.id).unwrap().view;
+        assert_eq!(stored.state, "cooldown");
+        assert_eq!(stored.last_error_kind.as_deref(), Some("protocol"));
     }
 }
