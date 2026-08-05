@@ -4,6 +4,7 @@
 > 范围：调研阶段只读；用户批准后已按第 5 节顺序全部实施，落地情况见文末「实施记录」。
 > 被调研文件：`src-tauri/src/ai/router.rs`（4,180 行）、`src-tauri/src/commands/ai.rs`（调用方部分）
 > 对标项目：[farion1231/cc-switch](https://github.com/farion1231/cc-switch)
+> 行号：正文链接已重指到实施后的 `router.rs`（5,030 行）。第 3–4 节描述的是调研时的代码，实施把其中大部分挪了位置；凡是实施已改掉其形态、当前文件里不再有对应结构的引用（如主遍历循环里那三段重复分支），保留原行号但不再做成链接。
 
 ---
 
@@ -71,7 +72,7 @@ ProxyError::UpstreamError { status: u16, body: Option<String> }
 
 分类时直接 `match`，`map_proxy_error_to_status` 只是把 enum 变体映射成 HTTP 码，没有任何字符串解析。
 
-**Lantern 现状。** `crate::ai::http_status_error`（`src-tauri/src/ai/mod.rs:79`）把状态码 `format!` 进一条人类可读的消息里（`status=429 type=... code=...`），然后 [`classify_error`](src-tauri/src/ai/router.rs:176) 把这条消息 `to_ascii_lowercase()` 之后用 `contains("status=429")` 反解回来。中间隔了一次字符串编码 + 一次字符串解码。
+**Lantern 现状。** `crate::ai::http_status_error`（`src-tauri/src/ai/mod.rs:79`）把状态码 `format!` 进一条人类可读的消息里（`status=429 type=... code=...`），然后 [`classify_error`](../../src-tauri/src/ai/router.rs:236) 把这条消息 `to_ascii_lowercase()` 之后用 `contains("status=429")` 反解回来。中间隔了一次字符串编码 + 一次字符串解码。
 
 **为什么这是个真问题。** 不是「不优雅」，是**失败方式很安静**。`classify_error` 的最后一个分支是 `else { AiErrorKind::Network }` —— 兜底。任何一次格式变动、任何一个没匹配上的状态码，都不会报错，只会静默降级成「网络错误，冷却 30 秒后重试」。你不会收到任何信号说分类挂了，只会看到重试策略变得不对。第 4 节列了四个已经存在的具体盲区。
 
@@ -101,7 +102,7 @@ ProxyError::UpstreamError { status: u16, body: Option<String> }
 
 ### 3.4 熔断参数可配置 + 热更新 —— **不做**
 
-cc-switch 的失败阈值、超时、错误率阈值全部从 DB 读，改了立即热更新到所有已创建的熔断器实例。Lantern 的冷却时长是四个硬编码常量（[`router.rs:1002`](src-tauri/src/ai/router.rs:1002) 和 [`router.rs:1058`](src-tauri/src/ai/router.rs:1058)）。
+cc-switch 的失败阈值、超时、错误率阈值全部从 DB 读，改了立即热更新到所有已创建的熔断器实例。Lantern 的冷却时长是四个硬编码常量（[`update_credential_health`](../../src-tauri/src/ai/router.rs:1133) 和 [`profile_health_state`](../../src-tauri/src/ai/router.rs:1185)）。
 
 不抄的理由是产品判断：这四个数字对用户没有意义，暴露出去只会多四个看不懂的设置项。如果将来真要调，把它们提成一张有名字的常量表（`const AUTH_COOLDOWN_MS` 之类）就够了，不需要进设置界面。这一条属于**产品形态决策**，最终由用户拍板；技术上两条路成本都很低。
 
@@ -109,7 +110,7 @@ cc-switch 的失败阈值、超时、错误率阈值全部从 DB 读，改了立
 
 **cc-switch 的做法。** `FailoverSwitchManager` 用一个 `HashSet<String>` 记「正在处理中的切换」，同一个 `app_type:provider_id` 的切换如果已在进行中就跳过，避免并发请求重复触发同一次 UI 事件和托盘刷新。
 
-**Lantern 现状。** [`emit_route_fallback`](src-tauri/src/ai/router.rs:805) 的注释解释得很清楚：第二次请求时失败的 profile 已经被冷却过滤掉了，所以不在路由头部，也就没有「切换」可报——**这个推理对串行请求是成立的**。
+**Lantern 现状。** [`emit_route_fallback`](../../src-tauri/src/ai/router.rs:907) 的注释解释得很清楚：第二次请求时失败的 profile 已经被冷却过滤掉了，所以不在路由头部，也就没有「切换」可报——**这个推理对串行请求是成立的**。
 
 但对**同时在飞**的请求不成立：假设用户开着侧边栏聊天，后台同时在跑分节摘要，两个请求几乎同时出发、都看到 profile A 还没冷却、都失败、都降级到 profile B，于是 `ai-route-fallback` 事件会发两次，前端会弹两次「已切换到 B」的提示。
 
@@ -121,7 +122,7 @@ cc-switch 的失败阈值、超时、错误率阈值全部从 DB 读，改了立
 
 ### 3.6 手动重置熔断器 —— **Lantern 已有等价物，且更好**
 
-cc-switch 有 `reset_circuit_breaker` / `reset_provider_breaker`。Lantern 的对应物是 [`AiRetryMode::Manual`](src-tauri/src/ai/router.rs:493)：用户主动重试时，冷却截止时间按 `i64::MAX` 比较，等于所有冷却都已过期。
+cc-switch 有 `reset_circuit_breaker` / `reset_provider_breaker`。Lantern 的对应物是 [`AiRetryMode::Manual`](../../src-tauri/src/ai/router.rs:561)：用户主动重试时，冷却截止时间按 `i64::MAX` 比较，等于所有冷却都已过期。
 
 Lantern 这个设计更好，理由写在注释里：冷却期只是 Lantern 自己的猜测（供应商很少说什么时候恢复），用户明确的重试意图应该压过一个猜测；而**被判定为 invalid 的凭据仍然排除**，因为「这把 key 被拒了」不是猜测、是已知结论。cc-switch 的 reset 是一个粗粒度的全清。这条不用抄。
 
@@ -133,7 +134,7 @@ Lantern 这个设计更好，理由写在注释里：冷却期只是 Lantern 自
 
 ### A. `stream_with_profile_inner` 会把内容重复输出 —— **真缺陷，唯一用户可见的**
 
-**位置**：[`router.rs:1636-1665`](src-tauri/src/ai/router.rs:1636)
+**位置**：[`complete_with_failover`](../../src-tauri/src/ai/router.rs:1641)
 
 这条路径专供书籍摘要（`ai/grounding/summarize.rs:170` 调 `complete_with_profile`，后者调 `stream_with_profile_inner`）。它遍历凭据的循环长这样：
 
@@ -147,11 +148,11 @@ for credential in credentials_for(db, profile_id, now())? {
 }
 ```
 
-对比主路径 [`stream_with_failover_inner`](src-tauri/src/ai/router.rs:1961)，那里有一道 `if !may_continue_after(kind, emitted.load(...)) { return Err(error); }`。这条路径**没有**。三个后果：
+对比主路径 [`stream_with_failover_inner`](../../src-tauri/src/ai/router.rs:1992)，那里有一道 `if !may_continue_after(kind, emitted.load(...)) { return Err(error); }`。这条路径**没有**。三个后果：
 
-1. **内容重复。** `emitted` 在这里是 `Arc::new(AtomicBool::new(false))` 内联创建、创建完就没人读了，所以「已经吐字了就不许换 key」这条保护完全失效。如果第一把 key 流到一半断线，它会拿第二把 key **从头重跑**。而 `complete_with_profile` 的 listener 是**整个调用期间共用一个 `String`**（[`router.rs:1678`](src-tauri/src/ai/router.rs:1678)），两次尝试的 delta 会拼在一起 —— 摘要正文里会出现一段重复的内容。
+1. **内容重复。** `emitted` 在这里是 `Arc::new(AtomicBool::new(false))` 内联创建、创建完就没人读了，所以「已经吐字了就不许换 key」这条保护完全失效。如果第一把 key 流到一半断线，它会拿第二把 key **从头重跑**。而 `complete_with_profile` 的 listener 是**整个调用期间共用一个 `String`**（[`complete_with_failover`](../../src-tauri/src/ai/router.rs:1641)），两次尝试的 delta 会拼在一起 —— 摘要正文里会出现一段重复的内容。
 2. **不可重试的错误也照试不误。** 一个 400（比如 model 名字打错）会把该 profile 下**每一把 key 都试一遍**，每次都 400。主路径靠 `kind.retryable()` 短路，这里没有。
-3. **健康度完全不记。** 这条路径一次都不调 `update_credential_health` / `update_profile_health`。书籍摘要跑失败多少次，设置界面里的健康状态都不会变。这**可能是有意的**（跟 `list_models` 一样，「探测性操作不该污染推理健康度」），但 `list_models` 把这个决定写进了注释（[`router.rs:1400-1403`](src-tauri/src/ai/router.rs:1400)），这里什么都没写。需要确认是决策还是遗漏。
+3. **健康度完全不记。** 这条路径一次都不调 `update_credential_health` / `update_profile_health`。书籍摘要跑失败多少次，设置界面里的健康状态都不会变。这**可能是有意的**（跟 `list_models` 一样，「探测性操作不该污染推理健康度」），但 `list_models` 把这个决定写进了注释（[`list_models` 里那段注释](../../src-tauri/src/ai/router.rs:1547)），这里什么都没写。需要确认是决策还是遗漏。
 
 **改动成本**：小。加一道 `may_continue_after` 检查 + 把 `emitted` 提到循环外正确使用，大约 10 行。第 3 点要先确认意图。
 
@@ -159,15 +160,15 @@ for credential in credentials_for(db, profile_id, now())? {
 
 ### B. `classify_error` 的四个具体盲区 —— **建议做，配合 3.1**
 
-**位置**：[`router.rs:176-241`](src-tauri/src/ai/router.rs:176)
+**位置**：[`classify_error`](../../src-tauri/src/ai/router.rs:236)
 
 3.1 说的是机制层面（字符串反解本身脆弱），这里是四个已经存在的具体后果：
 
-1. **`quota` 分支排在 `rate_limit` 前面，且丢掉 Retry-After。** 判断顺序是 `status=402 || quota || insufficient` → Quota，然后才轮到 `status=429 || rate limit` → RateLimit。一个 **429 而 body 里出现 "quota" 字样**的响应会被判成 Quota。代价是双份的：Quota 固定冷却 **1 小时**，而且 [`update_credential_health`](src-tauri/src/ai/router.rs:1008) 的 Quota 分支**根本不读 `retry_after`** —— 供应商明说了「30 秒后重试」也会被忽略，用户白等一小时。OpenAI 真正的 `insufficient_quota`（余额耗尽）判成 Quota 是对的，但网关把限流报文写成 "quota exceeded, retry after 30s" 的非常常见。
+1. **`quota` 分支排在 `rate_limit` 前面，且丢掉 Retry-After。** 判断顺序是 `status=402 || quota || insufficient` → Quota，然后才轮到 `status=429 || rate limit` → RateLimit。一个 **429 而 body 里出现 "quota" 字样**的响应会被判成 Quota。代价是双份的：Quota 固定冷却 **1 小时**，而且 [`update_credential_health`](../../src-tauri/src/ai/router.rs:1133) 的 Quota 分支**根本不读 `retry_after`** —— 供应商明说了「30 秒后重试」也会被忽略，用户白等一小时。OpenAI 真正的 `insufficient_quota`（余额耗尽）判成 Quota 是对的，但网关把限流报文写成 "quota exceeded, retry after 30s" 的非常常见。
 
 2. **`contains("insufficient")` 太宽。** 上游返回 "insufficient capacity"（本质是容量不足，属于 5xx 类瞬时故障）会被判成 Quota → 1 小时冷却，而不是 Provider5xx → 30 秒。一个本该 30 秒后自愈的抖动，把这个 profile 踢出路由整整一小时。
 
-3. **匹配的是未脱敏的原始字符串。** `classify_error` 读的是 `error.to_string()` 全文，里面可能带 base_url、model 名、供应商回显的部分请求内容。用户的自定义 base_url 里如果出现 `quota`、`forbidden`、`protocol` 这类词，就会污染分类。注意 `sanitized_error_detail`（[`router.rs:247`](src-tauri/src/ai/router.rs:247)）只在**上报给前端时**脱敏，分类路径上没有这层。
+3. **匹配的是未脱敏的原始字符串。** `classify_error` 读的是 `error.to_string()` 全文，里面可能带 base_url、model 名、供应商回显的部分请求内容。用户的自定义 base_url 里如果出现 `quota`、`forbidden`、`protocol` 这类词，就会污染分类。注意 `sanitized_error_detail`（[`sanitized_error_detail`](../../src-tauri/src/ai/router.rs:296)）只在**上报给前端时**脱敏，分类路径上没有这层。
 
 4. **漏了 529。** 5xx 的判断硬编码了 `500/502/503/504`。Anthropic 的过载状态码是 **529**，会落到默认的 `Network` 分支。行为上恰好无害（Network 和 Provider5xx 都是 30 秒冷却），但**诊断信息是错的**：`last_error_kind` 会记成 `network`，用户在设置里看到的是「网络问题」而不是「供应商过载」。顺带一提，这段的写法本身也绕了一圈：`[" 500", " 502", ...].iter().any(|code| message.contains(&format!("status={}", code.trim())))` —— 先给字面量加空格再 trim 掉，等价于直接写 `["500","502",...]`。
 
@@ -175,9 +176,9 @@ for credential in credentials_for(db, profile_id, now())? {
 
 ### C. 遍历循环的三个分支是复制粘贴，而且已经不一致 —— **建议做，和 F 一起**
 
-**位置**：[`stream_with_failover_inner`](src-tauri/src/ai/router.rs:1758)，约 260 行
+**位置**：[`stream_with_failover_inner`](../../src-tauri/src/ai/router.rs:1992)，约 260 行
 
-主遍历循环里有三段独立分支：OAuth（[1786-1851](src-tauri/src/ai/router.rs:1786)）、Ollama（[1853-1902](src-tauri/src/ai/router.rs:1853)）、api_key（[1904-1989](src-tauri/src/ai/router.rs:1904)）。三段的成败处理几乎逐字重复同一套动作：`update_*_health` → `emit_route_fallback` → `may_continue_after` → `log::warn!` → `last_error = Some(error)`。粗算 200 行里 120 行是重复的。加上 [`stream_with_profile_inner`](src-tauri/src/ai/router.rs:1581)，同一套逻辑一共有**四份拷贝**。
+主遍历循环里有三段独立分支：OAuth（调研时 1786-1851）、Ollama（调研时 1853-1902）、api_key（调研时 1904-1989）。三段的成败处理几乎逐字重复同一套动作：`update_*_health` → `emit_route_fallback` → `may_continue_after` → `log::warn!` → `last_error = Some(error)`。粗算 200 行里 120 行是重复的。加上 [`stream_with_profile_inner`](../../src-tauri/src/ai/router.rs:1728)，同一套逻辑一共有**四份拷贝**。
 
 **风险不是「不好看」，是四份拷贝已经互相不一致了**：
 
@@ -193,7 +194,7 @@ for credential in credentials_for(db, profile_id, now())? {
 
 ### D. 取消注册表有一个小竞态窗口 —— **可做，改动三行**
 
-**位置**：[`register_request`](src-tauri/src/ai/router.rs:311) / [`cancel_request`](src-tauri/src/ai/router.rs:329)
+**位置**：[`register_request`](../../src-tauri/src/ai/router.rs:360) / [`cancel_request`](../../src-tauri/src/ai/router.rs:386)
 
 `cancellation_registry()` 和 `pending_cancellations()` 是**两把独立的 Mutex**。两个函数各自跨这两把锁做两步操作，中间没有共同的临界区：
 
@@ -205,7 +206,7 @@ for credential in credentials_for(db, profile_id, now())? {
 
 结果：B 拿到的 `watch::Receiver` 永远收不到 `true`，而 pending 里留着一条孤儿记录（会被 TTL 清掉，不会累积）。
 
-**后果有限但不为零。** `request_is_cancelled` 同时查两张表，所以**轮询式的检查点**（多步任务在每一节之间的检查）还能捕获到。但 [`stream_once`](src-tauri/src/ai/router.rs:1152) 里那个 `tokio::select! { _ = wait_cancelled(cancel) }` 是靠 watch channel 醒的，它**不会醒**。也就是说落在这个窗口里的「停止」点击，对正在流式传输的那一段无效，要等到下一个检查点才生效。窗口很窄（两次锁获取之间），但代码路径是真实存在的。
+**后果有限但不为零。** `request_is_cancelled` 同时查两张表，所以**轮询式的检查点**（多步任务在每一节之间的检查）还能捕获到。但 [`stream_once`](../../src-tauri/src/ai/router.rs:1238) 里那个 `tokio::select! { _ = wait_cancelled(cancel) }` 是靠 watch channel 醒的，它**不会醒**。也就是说落在这个窗口里的「停止」点击，对正在流式传输的那一段无效，要等到下一个检查点才生效。窗口很窄（两次锁获取之间），但代码路径是真实存在的。
 
 **改法两种，都便宜**：把两张表合并到同一把 Mutex 下；或者更省事——`register_request` 在插完 registry **之后再 take 一次 pending**，三行代码就补上了。
 
@@ -213,15 +214,15 @@ for credential in credentials_for(db, profile_id, now())? {
 
 ### E. 三份 credential 行映射逐字重复 —— **顺手清理，零风险**
 
-[`credentials_for`](src-tauri/src/ai/router.rs:893)、[`all_credentials_for`](src-tauri/src/ai/router.rs:923)、[`credential_by_id`](src-tauri/src/ai/router.rs:952) 三个函数里，那段 11 个字段的 `AiCredential { secret_ref, view: AiCredentialView { ... } }` 构造**逐字重复了三遍**，每遍约 20 行，列名字符串也重复三遍。
+[`credentials_for`](../../src-tauri/src/ai/router.rs:1085)、[`all_credentials_for`](../../src-tauri/src/ai/router.rs:1099)、[`credential_by_id`](../../src-tauri/src/ai/router.rs:1112) 三个函数里，那段 11 个字段的 `AiCredential { secret_ref, view: AiCredentialView { ... } }` 构造**逐字重复了三遍**，每遍约 20 行，列名字符串也重复三遍。
 
-关键是**这个文件里已经有正确的做法**：profile 侧用 `const PROFILE_COLUMNS` + `fn row_to_profile`（[`router.rs:447-472`](src-tauri/src/ai/router.rs:447)）。credential 侧只是没照着套。加一个 `CREDENTIAL_COLUMNS` 常量和一个 `row_to_credential` 函数，能删掉约 50 行，且和既有模式完全一致。
+关键是**这个文件里已经有正确的做法**：profile 侧用 `const PROFILE_COLUMNS` + `fn row_to_profile`（[`PROFILE_COLUMNS` + `row_to_profile`](../../src-tauri/src/ai/router.rs:508)）。credential 侧只是没照着套。加一个 `CREDENTIAL_COLUMNS` 常量和一个 `row_to_credential` 函数，能删掉约 50 行，且和既有模式完全一致。
 
 **改动成本**：极小，零风险（纯机械提取）。不值得单独排期，跟着 C 一起做。
 
 ### F. 冷却期表重复了两遍 —— **顺手清理**
 
-[`update_credential_health`](src-tauri/src/ai/router.rs:1002) 和 [`profile_health_state`](src-tauri/src/ai/router.rs:1058) 里的 match 表，分支和数值一模一样，只有两处不同：`Request` 在 credential 侧是 `active`、profile 侧也是 `active`；`NotConfigured` 在 credential 侧是 `active`、profile 侧是 `unavailable`。
+[`update_credential_health`](../../src-tauri/src/ai/router.rs:1133) 和 [`profile_health_state`](../../src-tauri/src/ai/router.rs:1185) 里的 match 表，分支和数值一模一样，只有两处不同：`Request` 在 credential 侧是 `active`、profile 侧也是 `active`；`NotConfigured` 在 credential 侧是 `active`、profile 侧是 `unavailable`。
 
 也就是说 12 个分支里有 11 个完全重复。可以让 credential 侧复用 `profile_health_state` 再覆盖 `NotConfigured` 那一个分支。这样将来调整任何一个冷却时长，只需要改一处 —— 现在要改两处，而且没有任何机制保证你不会漏。
 
@@ -229,7 +230,7 @@ for credential in credentials_for(db, profile_id, now())? {
 
 ### G. 测试覆盖缺口 —— **和 C 绑定做**
 
-先说结论：**现有测试比大多数项目好**。4,180 行里 1,040 行是测试，约 40 个 case，覆盖了错误分类、冷却期语义、effort 学习与降级、model list 的凭据轮换、secrets 删除/替换失败时的补偿回滚。测试名字本身就是文档（`a_spent_free_model_leaves_the_route_until_its_window_ends`、`nothing_switches_models_once_output_has_reached_the_reader`）。而且 [`model_list_server`](src-tauri/src/ai/router.rs:3610) 已经证明了在这个文件里起本地 HTTP server 做端到端测试是可行的。
+先说结论：**现有测试比大多数项目好**。4,180 行里 1,040 行是测试，约 40 个 case，覆盖了错误分类、冷却期语义、effort 学习与降级、model list 的凭据轮换、secrets 删除/替换失败时的补偿回滚。测试名字本身就是文档（`a_spent_free_model_leaves_the_route_until_its_window_ends`、`nothing_switches_models_once_output_has_reached_the_reader`）。而且 [`model_list_server`](../../src-tauri/src/ai/router.rs:4054) 已经证明了在这个文件里起本地 HTTP server 做端到端测试是可行的。
 
 缺的是三块：
 
@@ -306,7 +307,7 @@ router.rs 是这个仓库里注释质量最高的文件之一。几乎每个非�
 
 **调研时写的场景。** 两个请求同时在飞，都看到 profile A 还没冷却、都失败、都降级到 B，于是提示弹两次。这是一次性的毛刺。
 
-**实际还有一个持久场景，更糟。** [`routable_profiles`](src-tauri/src/ai/router.rs:988) 当时只按 `cooldown_until` 过滤，不看这个 profile 手上还有没有能用的 key。而当一个 profile 的所有 key 都被判为 `invalid`（key 被吊销，或 keychain 里的密文丢了），`profile_health_state(CredentialInvalid)` 给出的是 `("invalid", None)`——**没有冷却时间**。于是这个 profile 永远留在路由头部，每次请求都被 `credentials_for`（它按 `state != 'invalid'` 过滤）掏空成零个候选，什么都不记录，请求落到 B，`emit_route_fallback` 就再报一次。这不是弹两次，是**在用户修好 key 之前每次请求都弹一次**。
+**实际还有一个持久场景，更糟。** [`routable_profiles`](../../src-tauri/src/ai/router.rs:988) 当时只按 `cooldown_until` 过滤，不看这个 profile 手上还有没有能用的 key。而当一个 profile 的所有 key 都被判为 `invalid`（key 被吊销，或 keychain 里的密文丢了），`profile_health_state(CredentialInvalid)` 给出的是 `("invalid", None)`——**没有冷却时间**。于是这个 profile 永远留在路由头部，每次请求都被 `credentials_for`（它按 `state != 'invalid'` 过滤）掏空成零个候选，什么都不记录，请求落到 B，`emit_route_fallback` 就再报一次。这不是弹两次，是**在用户修好 key 之前每次请求都弹一次**。
 
 **这也决定了去重的形状。** 固定时间窗做不到：窗口短于最短冷却（30 秒）压不住持久场景，长于它又会吞掉真实的二次故障。所以键是 `(from_id, to_id)`，值是**当时报给用户的恢复时间**，只有理由变了才重报——上次报的截止时间已过（是一次新故障），或者上次没有截止时间而这次有了（用户不知道的新信息）。持久场景里两次都是 `None`，只报一次。
 
@@ -320,7 +321,7 @@ router.rs 是这个仓库里注释质量最高的文件之一。几乎每个非�
 
 6.1 只挡住了症状，用户批准根治。两处一起改，因为分开改会造出一个「界面说可用、路由从不选它」的中间状态。
 
-**路由。** [`routable_profiles`](src-tauri/src/ai/router.rs:988) 现在过滤两件事，而不是一件：正在冷却的（会自己恢复），以及**手上没有一把能用的 key 的**（不会自己恢复）。后者靠问 `credentials_for` 要不要得到东西来判断——和遍历循环问的是同一个问题、同一个函数，不会各说各话。OAuth 与 Ollama 这类「不靠 key 列表认证」的 profile 由 `authenticates_without_keys` 认领，两处共用这一个判定，也是为了不漂移（第 4 节 C 讲的就是这类漂移）。
+**路由。** [`routable_profiles`](../../src-tauri/src/ai/router.rs:988) 现在过滤两件事，而不是一件：正在冷却的（会自己恢复），以及**手上没有一把能用的 key 的**（不会自己恢复）。后者靠问 `credentials_for` 要不要得到东西来判断——和遍历循环问的是同一个问题、同一个函数，不会各说各话。OAuth 与 Ollama 这类「不靠 key 列表认证」的 profile 由 `authenticates_without_keys` 认领，两处共用这一个判定，也是为了不漂移（第 4 节 C 讲的就是这类漂移）。
 
 副作用是好的：这样的 profile 不再是「路由头部」，`expected` 变成真正会答的那个，于是第二次请求**结构上就没有切换可报**了。6.1 的去重表仍然保留——它管的是并发那一份，两者互补。
 

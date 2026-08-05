@@ -29,11 +29,23 @@ export function maskNonProse(text) {
   return masked;
 }
 
-/** Rewrites to try, most likely first. Each is only accepted if it resolves. */
-function candidates(fileDir, target) {
+// A link may carry a heading anchor (`#section`) or a line reference
+// (`:236`, `:236-241`) after the path. Both name a place inside the file, not
+// a different file, so resolution has to run on the path alone and put the
+// suffix back afterwards — otherwise every `file.rs:236` link reads as broken.
+export function splitTarget(target) {
   const hash = target.indexOf("#");
   const path = hash === -1 ? target : target.slice(0, hash);
   const anchor = hash === -1 ? "" : target.slice(hash);
+  const line = /:\d+(-\d+)?$/.exec(path);
+  return line
+    ? { path: path.slice(0, line.index), suffix: line[0] + anchor }
+    : { path, suffix: anchor };
+}
+
+/** Rewrites to try, most likely first. Each is only accepted if it resolves. */
+function candidates(fileDir, target) {
+  const { path, suffix: anchor } = splitTarget(target);
   const parent = posix.dirname(path);
   const name = posix.basename(path);
   const tries = [];
@@ -83,7 +95,7 @@ export async function checkDocLinks({ fix = false } = {}) {
     for (const match of masked.matchAll(/\[([^\]]*)\]\(([^)\s]+)\)/g)) {
       const [, label, target] = match;
       if (/^(https?:|mailto:|#)/.test(target)) continue;
-      const path = target.split("#")[0];
+      const { path } = splitTarget(target);
       if (!path || existsSync(join(dir, path))) continue;
       const line = masked.slice(0, match.index).split("\n").length;
       const where = `${relative(ROOT, file)}:${line}`;
