@@ -143,7 +143,8 @@ fn safe_cutoff(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) async fn run_xray(
+#[tauri::command]
+pub async fn ai_xray(
     book_id: String,
     entity: String,
     visible_context: Option<String>,

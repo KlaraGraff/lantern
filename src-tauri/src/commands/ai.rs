@@ -1,9 +1,4 @@
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State};
-
-use crate::db::Db;
-use crate::error::AppResult;
-use crate::secrets::Secrets;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatMessage {
@@ -39,36 +34,6 @@ pub use stream::*;
 pub use title::*;
 pub use vocabulary::*;
 pub use word_forms::*;
+pub use xray::*;
 
 pub(crate) use prompt::book_reference_block;
-
-#[allow(clippy::too_many_arguments)]
-#[tauri::command]
-pub async fn ai_xray(
-    book_id: String,
-    entity: String,
-    visible_context: Option<String>,
-    current_location: Option<String>,
-    current_chapter: Option<String>,
-    progress: i32,
-    spoiler_override: bool,
-    request_id: String,
-    app: AppHandle,
-    db: State<'_, Db>,
-    secrets: State<'_, Secrets>,
-) -> AppResult<xray::XrayCardResponse> {
-    xray::run_xray(
-        book_id,
-        entity,
-        visible_context,
-        current_location,
-        current_chapter,
-        progress,
-        spoiler_override,
-        request_id,
-        app,
-        db,
-        secrets,
-    )
-    .await
-}
