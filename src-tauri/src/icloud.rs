@@ -91,6 +91,41 @@ fn read_first_byte(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// The app's own iCloud ubiquity container, or `None` when there isn't one.
+///
+/// `None` is an ordinary answer, not an error: it is what a build without the
+/// iCloud Documents entitlement gets, what a device with iCloud Drive switched
+/// off gets, and what an account-less device gets. Callers treat it as "sync is
+/// unavailable here" rather than as a failure to report.
+///
+/// This is the iOS answer to the question macOS answers by asking the user to
+/// pick a folder. A sandboxed iOS app cannot see `~/Library/Mobile
+/// Documents/com~apple~CloudDocs` at all, so there is nothing to pick from and
+/// no path to hardcode — only the container Foundation hands back for this
+/// bundle identifier.
+///
+/// **This blocks.** Apple documents the first call as setting the container up
+/// on disk, and warns against calling it on the main thread. Callers are
+/// command handlers on Tauri's async runtime, which is off the UI thread;
+/// anything that moves this call has to preserve that.
+///
+/// **iOS-only on purpose.** macOS still syncs to a folder the user picked, so
+/// it has no caller here and a `target_vendor` gate would only be dead code on
+/// the desktop. Q-004 — relocating macOS into this same container so the two
+/// platforms actually meet — is what widens it.
+#[cfg(target_os = "ios")]
+pub fn ubiquity_container_dir() -> Option<PathBuf> {
+    use objc2_foundation::NSFileManager;
+
+    let fm = NSFileManager::defaultManager();
+    // Passing nil asks for the first container in the entitlement's list, which
+    // is the app's own. Naming it explicitly would duplicate the identifier
+    // that already lives in the entitlement, and the two would drift.
+    let url = fm.URLForUbiquityContainerIdentifier(None)?;
+    let path = url.path()?;
+    Some(PathBuf::from(path.to_string()))
+}
+
 /// True when the path is an iCloud item whose contents are not on this machine
 /// yet. Answered from the item's resource values, so it never blocks on a
 /// download the way opening the file would.
