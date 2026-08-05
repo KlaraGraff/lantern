@@ -34,7 +34,7 @@ import {
 import { bindingFromKeyboardEvent } from "./reader-bindings";
 import { expandWordForms } from "./word-forms";
 import {
-  resolveTextLocation,
+  parseTextLocation,
   textLocation,
   type TextBookBlock,
   type TextBookDocument,
@@ -295,7 +295,6 @@ function formatError(error: unknown) {
 
 function renderHighlightedBlock(
   block: TextBookBlock,
-  document: TextBookDocument,
   highlights: Highlight[],
   onHighlightClick: (highlight: Highlight, rect: DOMRect, fallbackText?: string) => void,
   markerStyle: MarkerStyleConfig,
@@ -306,7 +305,7 @@ function renderHighlightedBlock(
 ): ReactNode[] {
   const manualRanges = highlights
     .flatMap((highlight, priority) => {
-      const location = resolveTextLocation(highlight.cfi_range, document);
+      const location = parseTextLocation(highlight.cfi_range);
       if (!location || location.end <= block.source_start || location.start >= block.source_end) return [];
       const start = sourceOffsetToRenderedOffset(block, Math.max(location.start, block.source_start));
       const end = sourceOffsetToRenderedOffset(block, Math.min(location.end, block.source_end));
@@ -328,7 +327,7 @@ function renderHighlightedBlock(
       });
   const occurrenceAutomaticRanges = lookupOccurrenceMarks.flatMap((mark) => {
     if (!mark.enabled) return [];
-    const location = resolveTextLocation(mark.location, document);
+    const location = parseTextLocation(mark.location);
     if (!location || location.end <= block.source_start || location.start >= block.source_end) return [];
     const start = sourceOffsetToRenderedOffset(block, Math.max(location.start, block.source_start));
     const end = sourceOffsetToRenderedOffset(block, Math.min(location.end, block.source_end));
@@ -887,7 +886,7 @@ function TextBookReader({
     behavior: ScrollBehavior = "smooth",
   ) => {
     if (!document || !containerRef.current) return null;
-    const resolved = resolveTextLocation(location, document);
+    const resolved = parseTextLocation(location);
     if (!resolved) return null;
     if (renderedElementsByStartRef.current.size === 0) updateRenderedBlockCache();
     const targetBlock = documentBlocks[blockIndexAtOffset(documentBlocks, resolved.start)];
@@ -1420,7 +1419,6 @@ function TextBookReader({
         const className = `${isFlashing ? "outline outline-2 outline-purple-400 outline-offset-4" : ""} transition-colors`;
         const content = renderHighlightedBlock(
           block,
-          document,
           highlights,
           onHighlightClick,
           markerStyle,

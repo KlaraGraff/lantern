@@ -169,10 +169,6 @@ pub struct TextBookDocument {
     pub coordinate_space: String,
     pub chunks: Vec<TextBookChunk>,
     pub toc: Vec<TextBookTocEntry>,
-    // V1 locations used generated chunk and paragraph indexes. Keeping this
-    // compact offset table lets existing progress, bookmarks, and highlights
-    // survive a V2 re-parse without retaining the old rendered document.
-    pub legacy_locations: Vec<Vec<u64>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

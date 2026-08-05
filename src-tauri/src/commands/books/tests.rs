@@ -117,7 +117,7 @@ fn text_preparation_hashes_the_source_bytes() {
 #[test]
 fn text_parser_builds_hierarchical_part_toc_without_generated_chunks() {
     let text = "PART ONE 1\nFirst.\nPART ONE 2\nSecond.\nPART TWO 1\nThird.\nPART TWO 22\nLast.\nEPILOGUE\nDone.";
-    let (chunks, toc, legacy_locations) = text_document_parts(text, true);
+    let (chunks, toc) = text_document_parts(text, true);
     let entries = toc
         .iter()
         .map(|entry| (entry.title.as_str(), entry.depth))
@@ -145,19 +145,12 @@ fn text_parser_builds_hierarchical_part_toc_without_generated_chunks() {
     );
     assert!(toc.iter().all(|entry| !entry.title.starts_with("Part ")));
     assert_eq!(text_toc_leaf_count(&toc), 5);
-    // PART headings were ordinary V1 paragraphs, so old locations still
-    // resolve to the exact same canonical source offsets.
-    assert_eq!(legacy_locations[0][0], 0);
-    assert_eq!(
-        legacy_locations[0][2],
-        "PART ONE 1\nFirst.\n".encode_utf16().count() as u64
-    );
 }
 
 #[test]
 fn text_parser_recognizes_common_english_and_chinese_headings() {
     let text = "BOOK I\nCHAPTER ONE\nBody\nSECTION 2\nMore\nACT III\nPlay\nVOLUME TWO 3\nNext\n第一卷\n第一章 开始\n正文\n第十二章：结局\n第一章初见\nEPILOGUE\nEnd";
-    let (_, toc, _) = text_document_parts(text, true);
+    let (_, toc) = text_document_parts(text, true);
     let entries = toc
         .iter()
         .map(|entry| (entry.title.as_str(), entry.depth))
@@ -184,7 +177,7 @@ fn text_parser_recognizes_common_english_and_chinese_headings() {
 #[test]
 fn text_parser_builds_multilevel_book_and_play_trees() {
     let text = "VOLUME I\nBOOK ONE\nPART ONE\nCHAPTER 1\nSECTION 1\nText\nACT II\nSCENE 1\nPlay\nEPILOGUE\nEnd";
-    let (chunks, toc, _) = text_document_parts(text, true);
+    let (chunks, toc) = text_document_parts(text, true);
     let entries = toc
         .iter()
         .map(|entry| (entry.title.as_str(), entry.depth))
@@ -224,7 +217,7 @@ fn text_parser_builds_multilevel_book_and_play_trees() {
     );
     assert!(!page_start_titles.contains(&"SECTION 1"));
 
-    let (_, play_toc, _) = text_document_parts("ACT I\nSCENE 1\nText\nSCENE 2\nMore", true);
+    let (_, play_toc) = text_document_parts("ACT I\nSCENE 1\nText\nSCENE 2\nMore", true);
     let play_entries = play_toc
         .iter()
         .map(|entry| (entry.title.as_str(), entry.depth))
@@ -235,7 +228,7 @@ fn text_parser_builds_multilevel_book_and_play_trees() {
 #[test]
 fn text_parser_recognizes_punctuated_english_headings() {
     let text = "Chapter 1.\nBody\n\nChapter One.\nMore\n\nPart Two.\nLast";
-    let (_, toc, _) = text_document_parts(text, true);
+    let (_, toc) = text_document_parts(text, true);
     let entries = toc
         .iter()
         .map(|entry| (entry.title.as_str(), entry.depth))
@@ -250,7 +243,7 @@ fn text_parser_recognizes_punctuated_english_headings() {
 #[test]
 fn text_parser_recognizes_bare_number_chapters_without_a_parent() {
     let text = "1\nFirst\n\n2\nSecond\n\nI\nThird\n\nII\nFourth";
-    let (_, toc, _) = text_document_parts(text, true);
+    let (_, toc) = text_document_parts(text, true);
     let entries = toc
         .iter()
         .map(|entry| (entry.title.as_str(), entry.depth))
@@ -262,7 +255,7 @@ fn text_parser_recognizes_bare_number_chapters_without_a_parent() {
 #[test]
 fn text_parser_does_not_treat_prose_as_a_heading() {
     let text = "The chapter was short.\nWe took part in the work.\nChapter books were nearby.\nChapter one was the longest\nPart one of the story\nPART CIVIL DUTY\n2024\ncontinues as prose\n第一次读到这一章时，我没有停下来\n\nmix";
-    let (chunks, toc, _) = text_document_parts(text, true);
+    let (chunks, toc) = text_document_parts(text, true);
     assert_eq!(toc.len(), 1);
     assert_eq!(toc[0].title, "Reading");
     assert!(chunks
@@ -273,7 +266,7 @@ fn text_parser_does_not_treat_prose_as_a_heading() {
 
 #[test]
 fn text_parser_does_not_promote_inline_numbers_after_a_chapter() {
-    let (_, toc, _) = text_document_parts("CHAPTER 1\nprose\n2024\ncontinues", true);
+    let (_, toc) = text_document_parts("CHAPTER 1\nprose\n2024\ncontinues", true);
     let entries = toc
         .iter()
         .map(|entry| (entry.title.as_str(), entry.depth))
@@ -287,7 +280,7 @@ fn text_parser_accepts_canonical_roman_and_compound_word_numbers() {
     assert!(!canonical_roman_number("CIVIL"));
     assert!(!canonical_roman_number("ILL"));
 
-    let (_, toc, _) = text_document_parts("PART TWENTY ONE 3\nText\nCHAPTER XLII\nMore", true);
+    let (_, toc) = text_document_parts("PART TWENTY ONE 3\nText\nCHAPTER XLII\nMore", true);
     let entries = toc
         .iter()
         .map(|entry| (entry.title.as_str(), entry.depth))
@@ -301,7 +294,7 @@ fn text_parser_accepts_canonical_roman_and_compound_word_numbers() {
 #[test]
 fn text_parser_accepts_valid_hyphenated_word_numbers_only() {
     let text = "BOOK ONE\nCHAPTER TWENTY-ONE\nBody\nCHAPTER ONE HUNDRED TWENTY-THREE\nMore\nCHAPTER TWENTY-TEN\nProse\nCHAPTER TWENTY--ONE\nEnd";
-    let (_, toc, _) = text_document_parts(text, true);
+    let (_, toc) = text_document_parts(text, true);
     let entries = toc
         .iter()
         .map(|entry| (entry.title.as_str(), entry.depth))
@@ -327,7 +320,7 @@ fn text_parser_reflows_consistently_hard_wrapped_paragraphs() {
     }
     let text = groups.join("\n\n");
     let lines = normalized_text_lines(&text);
-    let (chunks, _, legacy_locations) = text_document_parts(&text, true);
+    let (chunks, _) = text_document_parts(&text, true);
     let blocks = chunks
         .iter()
         .flat_map(|chunk| &chunk.blocks)
@@ -335,7 +328,6 @@ fn text_parser_reflows_consistently_hard_wrapped_paragraphs() {
 
     assert!(hard_wrap_width(&lines, &vec![None; lines.len()]).is_some());
     assert_eq!(blocks.len(), 5);
-    assert_eq!(legacy_locations[0].len(), 15);
     assert_eq!(
         blocks[0].text,
         format!("{first} {second} paragraph 0 ends.")
@@ -346,7 +338,7 @@ fn text_parser_reflows_consistently_hard_wrapped_paragraphs() {
         blocks[0].source_spans[4].source_start,
         utf16_len(first) + 1 + utf16_len(second) + 2 + 1
     );
-    let (unreflowed, _, _) = text_document_parts(&text, false);
+    let (unreflowed, _) = text_document_parts(&text, false);
     assert_eq!(
         unreflowed
             .iter()
@@ -372,7 +364,7 @@ fn text_parser_reflows_prose_with_lowercase_continuation_lines() {
     let lines = normalized_text_lines(&text);
     assert!(hard_wrap_width(&lines, &vec![None; lines.len()]).is_some());
 
-    let (chunks, _, _) = text_document_parts(&text, true);
+    let (chunks, _) = text_document_parts(&text, true);
     assert_eq!(
         chunks.iter().map(|chunk| chunk.blocks.len()).sum::<usize>(),
         4
@@ -420,7 +412,7 @@ fn text_parser_preserves_bullet_and_numbered_lists() {
         let lines = normalized_text_lines(&text);
         assert_eq!(hard_wrap_width(&lines, &vec![None; lines.len()]), None);
 
-        let (chunks, _, _) = text_document_parts(&text, true);
+        let (chunks, _) = text_document_parts(&text, true);
         assert_eq!(
             chunks.iter().map(|chunk| chunk.blocks.len()).sum::<usize>(),
             12
@@ -437,7 +429,7 @@ fn text_parser_preserves_repeated_capitalized_verse_lines() {
     let lines = normalized_text_lines(&text);
 
     assert_eq!(hard_wrap_width(&lines, &vec![None; lines.len()]), None);
-    let (chunks, _, _) = text_document_parts(&text, true);
+    let (chunks, _) = text_document_parts(&text, true);
     assert_eq!(
         chunks.iter().map(|chunk| chunk.blocks.len()).sum::<usize>(),
         12
@@ -453,7 +445,7 @@ fn text_parser_preserves_repeated_lowercase_verse_lines() {
     let lines = normalized_text_lines(&text);
 
     assert!(hard_wrap_width(&lines, &vec![None; lines.len()]).is_some());
-    let (chunks, _, _) = text_document_parts(&text, true);
+    let (chunks, _) = text_document_parts(&text, true);
     assert_eq!(
         chunks.iter().map(|chunk| chunk.blocks.len()).sum::<usize>(),
         12
@@ -478,7 +470,7 @@ fn text_parser_preserves_an_embedded_lowercase_verse_stanza() {
     let lines = normalized_text_lines(&text);
     assert!(hard_wrap_width(&lines, &vec![None; lines.len()]).is_some());
 
-    let (chunks, _, _) = text_document_parts(&text, true);
+    let (chunks, _) = text_document_parts(&text, true);
     let blocks = chunks
         .iter()
         .flat_map(|chunk| &chunk.blocks)
@@ -503,7 +495,7 @@ fn text_parser_keeps_prose_after_an_indented_line_separate() {
     let lines = normalized_text_lines(&text);
     assert!(hard_wrap_width(&lines, &vec![None; lines.len()]).is_some());
 
-    let (chunks, _, _) = text_document_parts(&text, true);
+    let (chunks, _) = text_document_parts(&text, true);
     let blocks = chunks
         .iter()
         .flat_map(|chunk| &chunk.blocks)
@@ -536,7 +528,7 @@ fn text_parser_keeps_complete_lines_as_separate_paragraphs() {
         .join("\n");
     let lines = normalized_text_lines(&text);
     assert_eq!(hard_wrap_width(&lines, &vec![None; lines.len()]), None);
-    let (chunks, _, _) = text_document_parts(&text, true);
+    let (chunks, _) = text_document_parts(&text, true);
     assert_eq!(
         chunks.iter().map(|chunk| chunk.blocks.len()).sum::<usize>(),
         12
@@ -565,18 +557,11 @@ fn text_preparation_does_not_reflow_markdown_soft_breaks() {
 }
 
 #[test]
-fn text_offsets_use_utf16_but_legacy_chunks_keep_utf8_threshold() {
+fn text_offsets_use_utf16_for_line_boundaries() {
     let emoji_lines = normalized_text_lines("A😀B\nNext");
     assert_eq!(emoji_lines[0].source_start, 0);
     assert_eq!(emoji_lines[0].source_end, 4);
     assert_eq!(emoji_lines[1].source_start, 5);
-
-    let cjk_line = "文".repeat(8_000);
-    let text = format!("{cjk_line}\n{cjk_line}");
-    let locations = legacy_text_locations(&normalized_text_lines(&text));
-    assert_eq!(locations.len(), 2);
-    assert_eq!(locations[0], [0]);
-    assert_eq!(locations[1], [8_001]);
 }
 
 fn sample_text_document(source_sha256: &str) -> TextBookDocument {
@@ -604,7 +589,6 @@ fn sample_text_document(source_sha256: &str) -> TextBookDocument {
             depth: 0,
             source_offset: 0,
         }],
-        legacy_locations: vec![vec![0]],
     }
 }
 

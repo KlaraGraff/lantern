@@ -32,7 +32,6 @@ export interface TextBookDocument {
   coordinate_space: "normalized_utf16";
   chunks: TextBookChunk[];
   toc: TextBookTocEntry[];
-  legacy_locations: number[][];
 }
 
 export interface AbsoluteTextLocation {
@@ -41,61 +40,16 @@ export interface AbsoluteTextLocation {
   end: number;
 }
 
-export interface LegacyTextLocation {
-  version: 1;
-  startChapter: number;
-  startParagraph: number;
-  startOffset: number;
-  endChapter: number;
-  endParagraph: number;
-  endOffset: number;
-}
-
-export type ParsedTextLocation = AbsoluteTextLocation | LegacyTextLocation;
-
 export function textLocation(start: number, end = start): string {
   return `textloc:v2:${start}:${end}`;
 }
 
-export function parseTextLocation(value: string | null | undefined): ParsedTextLocation | null {
-  if (!value?.startsWith("textloc:")) return null;
-  if (value.startsWith("textloc:v2:")) {
-    const match = /^textloc:v2:(\d+):(\d+)$/.exec(value);
-    if (!match) return null;
-    const start = Number(match[1]);
-    const end = Number(match[2]);
-    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start) return null;
-    return { version: 2, start, end };
-  }
-
-  const match = /^textloc:(\d+):(\d+):(\d+):(\d+):(\d+):(\d+)$/.exec(value);
+export function parseTextLocation(value: string | null | undefined): AbsoluteTextLocation | null {
+  if (!value?.startsWith("textloc:v2:")) return null;
+  const match = /^textloc:v2:(\d+):(\d+)$/.exec(value);
   if (!match) return null;
-  const parts = match.slice(1).map(Number);
-  if (parts.some((part) => !Number.isSafeInteger(part))) return null;
-  return {
-    version: 1,
-    startChapter: parts[0],
-    startParagraph: parts[1],
-    startOffset: parts[2],
-    endChapter: parts[3],
-    endParagraph: parts[4],
-    endOffset: parts[5],
-  };
-}
-
-export function resolveTextLocation(
-  value: string | null | undefined,
-  document: TextBookDocument,
-): AbsoluteTextLocation | null {
-  const parsed = parseTextLocation(value);
-  if (!parsed) return null;
-  if (parsed.version === 2) return parsed;
-
-  const startBase = document.legacy_locations[parsed.startChapter]?.[parsed.startParagraph];
-  const endBase = document.legacy_locations[parsed.endChapter]?.[parsed.endParagraph];
-  if (!Number.isSafeInteger(startBase) || !Number.isSafeInteger(endBase)) return null;
-  const start = startBase + parsed.startOffset;
-  const end = endBase + parsed.endOffset;
+  const start = Number(match[1]);
+  const end = Number(match[2]);
   if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start) return null;
   return { version: 2, start, end };
 }

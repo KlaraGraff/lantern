@@ -30,14 +30,13 @@ pub(super) fn prepare_text_document(
     if text.trim().is_empty() {
         return Err(AppError::Other("EMPTY_BOOK".to_string()));
     }
-    let (chunks, toc, legacy_locations) = text_document_parts(&text, source_format == "txt");
+    let (chunks, toc) = text_document_parts(&text, source_format == "txt");
     Ok(TextBookDocument {
         version: TEXT_DOCUMENT_VERSION,
         source_sha256: Some(actual_source_sha256),
         coordinate_space: "normalized_utf16".to_string(),
         chunks,
         toc,
-        legacy_locations,
     })
 }
 

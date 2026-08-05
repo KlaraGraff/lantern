@@ -76,43 +76,6 @@ pub(super) fn normalized_text_lines(text: &str) -> Vec<TextLine> {
     result
 }
 
-fn legacy_chapter_title(line: &str) -> bool {
-    line.len() < 100
-        && (line.to_ascii_lowercase().starts_with("chapter ")
-            || line.to_ascii_lowercase().starts_with("chapter\t")
-            || (line.starts_with('第') && (line.contains('章') || line.contains('节'))))
-}
-
-pub(super) fn legacy_text_locations(lines: &[TextLine]) -> Vec<Vec<u64>> {
-    let mut chapters = Vec::new();
-    let mut current = Vec::new();
-    let mut current_chars = 0_usize;
-    let flush = |chapters: &mut Vec<Vec<u64>>, current: &mut Vec<u64>| {
-        if !current.is_empty() {
-            chapters.push(std::mem::take(current));
-        }
-    };
-
-    for line in lines {
-        if legacy_chapter_title(&line.text) {
-            flush(&mut chapters, &mut current);
-            current_chars = 0;
-            continue;
-        }
-        current.push(line.source_start);
-        current_chars += line.text.len();
-        if current_chars >= TXT_CHAPTER_TARGET_CHARS {
-            flush(&mut chapters, &mut current);
-            current_chars = 0;
-        }
-    }
-    flush(&mut chapters, &mut current);
-    if chapters.is_empty() {
-        chapters.push(vec![0]);
-    }
-    chapters
-}
-
 fn trim_heading_separator(value: &str) -> &str {
     value.trim_matches(|character: char| {
         character.is_whitespace()
@@ -810,9 +773,8 @@ fn enter_heading_context(
 pub(super) fn text_document_parts(
     text: &str,
     reflow_hard_wraps: bool,
-) -> (Vec<TextBookChunk>, Vec<TextBookTocEntry>, Vec<Vec<u64>>) {
+) -> (Vec<TextBookChunk>, Vec<TextBookTocEntry>) {
     let lines = normalized_text_lines(text);
-    let legacy_locations = legacy_text_locations(&lines);
     let mut toc = Vec::new();
     let mut heading_stack = Vec::<HeadingContext>::new();
     let mut depths = Vec::with_capacity(lines.len());
@@ -948,5 +910,5 @@ pub(super) fn text_document_parts(
             );
         }
     }
-    (chunks, toc, legacy_locations)
+    (chunks, toc)
 }
