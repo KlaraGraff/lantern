@@ -30,6 +30,18 @@ export interface PassiveVocabDomInstallOptions {
   spread?: boolean;
 }
 
+/**
+ * Below this viewport width there is no room for a margin rail, so the margin
+ * style falls back to ruby. Shared with the reader's resize path so a window
+ * that crosses the line re-installs in the other style instead of keeping
+ * whatever it happened to open at.
+ */
+export const PASSIVE_VOCAB_NARROW_VIEWPORT_WIDTH = 760;
+
+export function isNarrowPassiveVocabViewport(width: number) {
+  return width < PASSIVE_VOCAB_NARROW_VIEWPORT_WIDTH;
+}
+
 export const PASSIVE_VOCAB_SETTING_KEYS = [
   "passive_vocab_enabled",
   "passive_vocab_style",
@@ -42,6 +54,7 @@ const PASSIVE_VOCAB_ROOT_ATTRIBUTE = "data-passive-vocab-root";
 const PASSIVE_VOCAB_RAIL_ATTRIBUTE = "data-passive-vocab-margin-rail";
 const PASSIVE_VOCAB_LABEL_ATTRIBUTE = "data-passive-vocab-margin-label";
 const PASSIVE_VOCAB_RUBY_TEXT_ATTRIBUTE = "data-passive-vocab-ruby-text";
+const PASSIVE_VOCAB_OVERFLOW_ATTRIBUTE = "data-passive-vocab-margin-overflow";
 
 export function parsePassiveVocabSettings(settings: Record<string, string>): PassiveVocabSettings {
   return {
@@ -154,12 +167,25 @@ function installRuby(doc: Document, range: Range, label: string) {
   ruby.append(rt);
 }
 
-function railSide(rect: DOMRect, doc: Document, spread: boolean) {
-  const viewport = doc.defaultView?.innerWidth ?? doc.documentElement.clientWidth;
-  // The two physical pages in Foliate's spread share one viewport. The far
-  // edges are the outside rails; a single page uses its less crowded edge.
-  if (spread) return rect.left + rect.width / 2 < viewport / 2 ? "left" : "right";
-  return rect.left + rect.width / 2 < viewport / 2 ? "left" : "right";
+function railSide(
+  rect: DOMRect,
+  doc: Document,
+  spread: boolean,
+  occupiedBottom: Map<"left" | "right", number>,
+) {
+  if (spread) {
+    // The two physical pages in Foliate's spread share one viewport, side by
+    // side. Whichever half the word's rect falls in is its physical page;
+    // the far edge of that half is the page's outside rail.
+    const viewport = doc.defaultView?.innerWidth ?? doc.documentElement.clientWidth;
+    return rect.left + rect.width / 2 < viewport / 2 ? "left" : "right";
+  }
+  // A single page has only one outside edge, so there is no page geometry to
+  // split on. Instead balance load: send each new note to whichever rail has
+  // accumulated less content so far, keeping both margins evenly filled.
+  const left = occupiedBottom.get("left") ?? 0;
+  const right = occupiedBottom.get("right") ?? 0;
+  return left <= right ? "left" : "right";
 }
 
 function styleMarginRail(rail: HTMLElement, side: "left" | "right") {
@@ -182,10 +208,19 @@ function installMargin(
   id: string,
   rails: Map<"left" | "right", HTMLElement>,
   occupiedBottom: Map<"left" | "right", number>,
+  overflow: Map<"left" | "right", number>,
   spread: boolean,
 ) {
   const rect = range.getBoundingClientRect();
-  const side = railSide(rect, doc, spread);
+  const side = railSide(rect, doc, spread, occupiedBottom);
+  const viewportHeight = doc.defaultView?.innerHeight ?? doc.documentElement.clientHeight;
+  const top = Math.max(rect.top, occupiedBottom.get(side) ?? 4);
+  // A note placed at or past the bottom edge would be invisible; count it as
+  // dropped instead of silently rendering off-page.
+  if (top >= viewportHeight - 4) {
+    overflow.set(side, (overflow.get(side) ?? 0) + 1);
+    return;
+  }
   let rail = rails.get(side);
   if (!rail) {
     rail = doc.createElement("aside");
@@ -197,7 +232,6 @@ function installMargin(
   const wrapper = transparentWrapper(doc, range, "span");
   wrapper.className = "lantern-passive-vocab-anchor";
   wrapper.setAttribute("aria-describedby", id);
-  const top = Math.max(rect.top, occupiedBottom.get(side) ?? 4);
   const note = doc.createElement("span");
   note.id = id;
   note.setAttribute(PASSIVE_VOCAB_LABEL_ATTRIBUTE, "");
@@ -208,13 +242,47 @@ function installMargin(
     top: `${Math.round(top)}px`,
     left: "6px",
     right: "6px",
-    color: "#8a6a45",
+    // Inherits the reader theme's text colour, same as the ruby branch,
+    // instead of a colour fixed to the light "paper" theme.
+    color: "inherit",
     font: "500 0.72em/1.25 system-ui, sans-serif",
     overflowWrap: "anywhere",
   });
   rail.append(note);
   // ScrollHeight reflects a wrapped definition, avoiding overlap on the rail.
   occupiedBottom.set(side, top + Math.max(note.getBoundingClientRect().height, note.scrollHeight, 16) + 5);
+}
+
+function installMarginOverflowBadges(
+  doc: Document,
+  rails: Map<"left" | "right", HTMLElement>,
+  overflow: Map<"left" | "right", number>,
+) {
+  for (const [side, count] of overflow) {
+    if (count <= 0) continue;
+    let rail = rails.get(side);
+    if (!rail) {
+      rail = doc.createElement("aside");
+      rail.setAttribute(PASSIVE_VOCAB_RAIL_ATTRIBUTE, side);
+      styleMarginRail(rail, side);
+      doc.body.append(rail);
+      rails.set(side, rail);
+    }
+    const badge = doc.createElement("span");
+    badge.setAttribute(PASSIVE_VOCAB_OVERFLOW_ATTRIBUTE, "");
+    badge.setAttribute("aria-hidden", "true");
+    badge.textContent = `+${count}`;
+    Object.assign(badge.style, {
+      position: "absolute",
+      bottom: "6px",
+      left: side === "left" ? "6px" : "",
+      right: side === "right" ? "6px" : "",
+      color: "inherit",
+      opacity: "0.7",
+      font: "600 0.72em/1 system-ui, sans-serif",
+    });
+    rail.append(badge);
+  }
 }
 
 /**
@@ -229,13 +297,14 @@ export function installPassiveVocabAnnotations(options: PassiveVocabDomInstallOp
   const useMargin = options.style === "margin" && !options.narrowViewport;
   const rails = new Map<"left" | "right", HTMLElement>();
   const occupiedBottom = new Map<"left" | "right", number>();
+  const overflow = new Map<"left" | "right", number>();
   let index = 0;
   for (const annotation of annotations) {
     const range = resolveRange(annotation.cfi);
     if (!range || range.collapsed || !annotation.label) continue;
     try {
       if (useMargin) {
-        installMargin(doc, range, annotation.label, idForAnnotation(index), rails, occupiedBottom, spread);
+        installMargin(doc, range, annotation.label, idForAnnotation(index), rails, occupiedBottom, overflow, spread);
       } else {
         installRuby(doc, range, annotation.label);
       }
@@ -245,6 +314,7 @@ export function installPassiveVocabAnnotations(options: PassiveVocabDomInstallOp
       // rest of the reader's document from loading.
     }
   }
+  if (useMargin) installMarginOverflowBadges(doc, rails, overflow);
   return () => cleanupPassiveVocabAnnotations(doc);
 }
 

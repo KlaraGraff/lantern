@@ -23,6 +23,7 @@ import {
 import { installCustomFontFacesInDocument } from "../../components/custom-fonts";
 import { installBuiltinFontFacesInDocument } from "../../components/builtin-fonts";
 import { expandWordForms } from "../../components/word-forms";
+import { isNarrowPassiveVocabViewport } from "../../components/passive-vocab";
 import type { Highlight } from "../../hooks/useBookmarks";
 import type { Book } from "../../hooks/useBooks";
 import { logIgnoredError } from "../../utils/logIgnoredError";
@@ -335,6 +336,10 @@ export function useFoliateView({
   // Size the reader stylesheet was last written with. Tracked because the
   // narrow-viewport shrink can change it on resize alone.
   const appliedFontSizeRef = useRef(readerSettings.fontSize);
+  // Which passive-vocab presentation the loaded documents were installed with.
+  const appliedNarrowViewportRef = useRef(
+    isNarrowPassiveVocabViewport(typeof window === "undefined" ? 0 : window.innerWidth),
+  );
   const pdfReadingMode = book?.format === "pdf" ? readerSettings.readingMode : null;
 
   useEffect(() => {
@@ -981,6 +986,15 @@ export function useFoliateView({
           viewer.clientHeight,
         );
         recordReflowTiming(performance.now() - started);
+        // Passive-vocab notes pick margin rail or ruby from the window width at
+        // install time. Crossing that threshold mid-session leaves rails in a
+        // window too narrow for them (or ruby in one that has room again), so
+        // re-install once here — after the reflow, so the new rects are final.
+        const narrow = isNarrowPassiveVocabViewport(window.innerWidth);
+        if (narrow !== appliedNarrowViewportRef.current) {
+          appliedNarrowViewportRef.current = narrow;
+          applyPassiveVocabAnnotationsRef.current();
+        }
       }
     };
     const scheduleLayout = () => {
