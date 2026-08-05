@@ -58,6 +58,7 @@ pub fn validate_tombstone_entity(entity: &str) -> AppResult<()> {
             | "book_asset"
             | "custom_font"
             | "book_setting"
+            | "setting"
     ) {
         return Ok(());
     }
@@ -91,7 +92,18 @@ pub fn validate_tombstone_id(entity: &str, id: &str) -> AppResult<()> {
         return Ok(());
     }
     validate_entity_id(id)
-        .map_err(|_| AppError::Other("SYNC_SNAPSHOT_TOMBSTONE_INVALID".to_string()))
+        .map_err(|_| AppError::Other("SYNC_SNAPSHOT_TOMBSTONE_INVALID".to_string()))?;
+    // A global setting tombstone's id is a bare `settings.key`, and that table
+    // also holds this device's local-only preferences and the AI credential
+    // pointers. Refuse any key outside the sync whitelist rather than let a
+    // peer's snapshot name one — for `book_setting` the same check exists in
+    // the composite branch above.
+    if entity == "setting" && !super::events::is_syncable_setting(false, id) {
+        return Err(AppError::Other(
+            "SYNC_SNAPSHOT_TOMBSTONE_INVALID".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 pub fn validate_peer_device(device: &str) -> AppResult<()> {
@@ -845,6 +857,32 @@ mod tests {
             assert!(
                 validate_tombstone_id(entity, id).is_err(),
                 "accepted invalid tombstone id {entity}:{id}"
+            );
+        }
+    }
+
+    /// A global setting tombstone's id is a bare `settings.key`, and that table
+    /// also holds this device's local-only preferences and its AI credential
+    /// pointers. Only the sync whitelist may be named, or a peer's snapshot
+    /// could delete a row it has no business knowing about.
+    #[test]
+    fn a_global_setting_tombstone_may_only_name_a_synced_key() {
+        for key in [
+            "font_family",
+            "show_lookup_markers",
+            "show_new_vocab_markers",
+            "show_learning_markers",
+            "show_mastered_markers",
+        ] {
+            assert!(
+                validate_tombstone_id("setting", key).is_ok(),
+                "expected {key} to be a valid setting tombstone"
+            );
+        }
+        for key in ["reader_theme", "ai_active_profile", "font", ""] {
+            assert!(
+                validate_tombstone_id("setting", key).is_err(),
+                "accepted a setting tombstone for {key}"
             );
         }
     }

@@ -22,10 +22,12 @@ use sha2::{Digest, Sha256};
 /// version 6 adds LWW replacement of an existing assistant message; version 7
 /// adds immutable OCR-derived book assets and their tombstones; version 8 adds
 /// the imported-font catalog and a whitelisted subset of settings keys; version
-/// 9 lets `setting.set` carry `null` to delete an override.
+/// 9 lets `setting.set` carry `null` to delete a per-book override; version 10
+/// gives the same `null` meaning to a *global* setting, which version 9 read
+/// and discarded as a documented no-op.
 /// Readers retain old-version support while older clients reject newer
 /// envelopes instead of advancing their watermark past data they cannot apply.
-pub const EVENT_SCHEMA_VERSION: u32 = 9;
+pub const EVENT_SCHEMA_VERSION: u32 = 10;
 pub const MIN_SUPPORTED_EVENT_SCHEMA_VERSION: u32 = 1;
 
 pub fn is_supported_event_schema_version(version: u32) -> bool {
@@ -47,9 +49,13 @@ pub fn is_supported_event_schema_version(version: u32) -> bool {
 /// override stayed home would be worse than syncing nothing: the second device
 /// would draw markers on exactly the book where the user turned them off.
 ///
-/// So the gate is a key whitelist, not a table. Both the writer (which decides
-/// whether to emit at all) and the reader (`apply_setting_set`) consult it, as
-/// does `dump_state` when it selects the rows a snapshot carries.
+/// So the gate is a key whitelist, not a table. The writer (which decides
+/// whether to emit at all), the reader (`apply_setting_set`), and `dump_state`
+/// (which selects the rows a snapshot carries) all consult it. So do
+/// `validate_tombstone_id` and `cascade_delete`, because a `setting` tombstone's
+/// id is a bare `settings.key` and that table also holds every local-only
+/// preference — the whitelist is the only thing standing between a peer's
+/// tombstone list and a row it has no business naming.
 pub fn is_syncable_setting(per_book: bool, key: &str) -> bool {
     if MARKER_VISIBILITY_KEYS.contains(&key) {
         return true;

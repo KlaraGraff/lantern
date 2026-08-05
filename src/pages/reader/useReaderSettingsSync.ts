@@ -27,8 +27,10 @@ import {
   DEFAULT_PREVIOUS_PAGE_BINDING,
 } from "../../components/reader-bindings.ts";
 import {
+  applySettingsChange,
   listenForSettingsChanged,
   notifySettingsChanged,
+  type SettingsChangedValues,
 } from "../../components/settings-events.ts";
 import {
   encodeReaderSetting,
@@ -560,26 +562,24 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
     if (!isPromotionUndoable(undo)) return;
     await invoke("undo_promote_book_settings", { undo });
     const globals = { ...globalSettingsRef.current };
-    const restored: Record<string, string> = {};
+    // Every key the undo touched is broadcast, deletions included: `null` says
+    // "this row went away", which is the same thing the backend now puts on the
+    // wire as a `setting` tombstone. Without it another open reader window
+    // would keep showing the promoted value until it reloaded.
+    const broadcast: SettingsChangedValues = {};
     for (const [key, value] of Object.entries(undo.globals)) {
       // `null` means the key had no row before the promotion. Dropping it here
       // is what lets `resolveReaderSettings` fall through to the default again.
       if (value === null) delete globals[key];
-      else {
-        globals[key] = value;
-        restored[key] = value;
-      }
+      else globals[key] = value;
+      broadcast[key] = value;
     }
     const overrides = { ...bookOverridesRef.current };
     for (const row of undo.book_settings) {
       if (row.book_id === bookId) overrides[row.key] = row.value;
     }
     applySources(globals, overrides);
-    // Only the re-written keys can be broadcast: the settings-changed payload
-    // carries values, so it has no way to say "this key went away again".
-    // Another open reader window keeps the promoted value for a deleted global
-    // until it reloads its settings.
-    await notifySettingsChanged(restored).catch(() => {});
+    await notifySettingsChanged(broadcast).catch(() => {});
   }, [applySources, bookId]);
 
   useEffect(() => {
@@ -587,7 +587,7 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
     let unlisten: (() => void) | undefined;
     listenForSettingsChanged((values) => {
       if (disposed) return;
-      globalSettingsRef.current = { ...globalSettingsRef.current, ...values };
+      globalSettingsRef.current = applySettingsChange(globalSettingsRef.current, values);
       setGlobalReaderSettings(resolveReaderSettings(
         createDefaultReaderSettings(),
         globalSettingsRef.current,

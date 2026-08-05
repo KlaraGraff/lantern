@@ -80,6 +80,72 @@ fn setting_tombstone_id(book_id: &str, key: &str) -> String {
     format!("{book_id}:{key}")
 }
 
+/// Write one global `settings` row, clearing any older deletion tombstone first
+/// so a re-written key is not immediately re-deleted by its own tombstone.
+/// The per-book twin is `set_book_setting_in_tx`.
+///
+/// Non-whitelisted keys take the same INSERT but are stamped `(0, "")` and emit
+/// nothing — they are per-screen preferences that never leave this device, and
+/// a real timestamp on them would only invite a peer to argue about it.
+fn set_global_setting_in_tx(
+    tx: &rusqlite::Transaction<'_>,
+    events: &mut Vec<EventBody>,
+    key: &str,
+    value: &str,
+    now: i64,
+    device: &str,
+) -> AppResult<()> {
+    let syncable = is_syncable_setting(false, key);
+    if syncable {
+        tx.execute(
+            "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2 AND ts < ?3",
+            params![crate::sync::merge::entity::SETTING, key, now],
+        )?;
+    }
+    tx.execute(
+        "INSERT INTO settings (key, value, updated_at, updated_by_device)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+           updated_at = excluded.updated_at,
+           updated_by_device = excluded.updated_by_device",
+        params![
+            key,
+            value,
+            if syncable { now } else { 0 },
+            if syncable { device } else { "" }
+        ],
+    )?;
+    if syncable {
+        events.push(EventBody::SettingSet(SettingPayload {
+            book: None,
+            key: key.to_string(),
+            value: Some(value.to_string()),
+        }));
+    }
+    Ok(())
+}
+
+/// Drop one global `settings` row and, for a whitelisted key, say so on the
+/// wire. The tombstone is what makes the removal survive a peer's next
+/// snapshot, which lists the rows that exist and never the ones that went away.
+fn delete_global_setting_in_tx(
+    tx: &rusqlite::Transaction<'_>,
+    events: &mut Vec<EventBody>,
+    key: &str,
+    now: i64,
+) -> AppResult<()> {
+    if is_syncable_setting(false, key) {
+        crate::sync::merge::insert_tombstone(tx, crate::sync::merge::entity::SETTING, key, now)?;
+        events.push(EventBody::SettingSet(SettingPayload {
+            book: None,
+            key: key.to_string(),
+            value: None,
+        }));
+    }
+    tx.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_all_settings(
     db: State<'_, Db>,
@@ -207,6 +273,12 @@ pub fn set_settings_bulk(
 /// `events::is_syncable_setting` for why each one earns it. Non-whitelisted keys
 /// never reach the log at all, so the event stream stays clean rather than being
 /// filtered on read.
+///
+/// The clock is `next_logical_timestamp`, not `Utc::now`, and that matters now
+/// that a global setting can be deleted: the delete stamps a tombstone from the
+/// logical clock, which is `max(wall_clock, previous + 1)` and so can run ahead
+/// of the wall clock. A write taking the raw wall clock could land *behind* a
+/// tombstone written moments earlier and lose to it.
 fn set_settings_bulk_inner(
     settings: &HashMap<String, String>,
     db: &Db,
@@ -218,31 +290,11 @@ fn set_settings_bulk_inner(
         ));
     }
 
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = sync.next_logical_timestamp();
     let device = sync.self_device().to_string();
     sync.with_tx(db, now, |tx, events| {
         for (key, value) in settings {
-            let syncable = is_syncable_setting(false, key);
-            tx.execute(
-                "INSERT INTO settings (key, value, updated_at, updated_by_device)
-                 VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(key) DO UPDATE SET value = excluded.value,
-                   updated_at = excluded.updated_at,
-                   updated_by_device = excluded.updated_by_device",
-                params![
-                    key,
-                    value,
-                    if syncable { now } else { 0 },
-                    if syncable { device.as_str() } else { "" }
-                ],
-            )?;
-            if syncable {
-                events.push(EventBody::SettingSet(SettingPayload {
-                    book: None,
-                    key: key.clone(),
-                    value: Some(value.clone()),
-                }));
-            }
+            set_global_setting_in_tx(tx, events, key, value, now, &device)?;
         }
         Ok(())
     })
@@ -729,28 +781,8 @@ pub(crate) fn do_promote_book_settings_to_global(
                 )
                 .optional()?;
             undo.globals.insert((*global_key).to_string(), previous);
-            let syncable = is_syncable_setting(false, global_key);
-            tx.execute(
-                "INSERT INTO settings (key, value, updated_at, updated_by_device)
-                 VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(key) DO UPDATE SET value = excluded.value,
-                   updated_at = excluded.updated_at,
-                   updated_by_device = excluded.updated_by_device",
-                params![
-                    global_key,
-                    value,
-                    if syncable { now } else { 0 },
-                    if syncable { device.as_str() } else { "" }
-                ],
-            )?;
+            set_global_setting_in_tx(tx, events, global_key, value, now, &device)?;
             changed_settings.insert((*global_key).to_string(), value.clone());
-            if syncable {
-                events.push(EventBody::SettingSet(SettingPayload {
-                    book: None,
-                    key: (*global_key).to_string(),
-                    value: Some(value.clone()),
-                }));
-            }
         }
 
         // Ordered so the undo payload — and the tests that pin it — is
@@ -819,42 +851,16 @@ pub(crate) fn do_undo_promote_book_settings(
                 // than writing "" — an empty string is a value, and every
                 // reader setting would parse it as something.
                 //
-                // A syncable key deleted here stays deleted only on this
-                // device: the event stream has no global-setting delete (see
-                // `apply_setting_set`'s `(None, None)` arm) and a snapshot
-                // states which global rows exist, never which ones stopped
-                // existing. The peer therefore keeps the promoted value, and
-                // its next snapshot pushes that value back here, because a
-                // local row that is simply gone loses to any row the peer has.
-                //
-                // Expressing this needs a `setting` tombstone entity — a wire
-                // addition, not a whitelist entry — so it is deliberately not
-                // done here. It now reaches `font_family` and the four marker
-                // toggles, and only when the key had no row before promotion.
-                tx.execute("DELETE FROM settings WHERE key = ?1", params![global_key])?;
+                // For a whitelisted key this is a real deletion on the wire: a
+                // `setting` tombstone plus a `setting.set` carrying `null`. Both
+                // are needed. The event tells a peer that is listening; the
+                // tombstone is what stops that peer's next snapshot — which
+                // lists the rows that exist, never the ones that went away —
+                // from handing the promoted value straight back.
+                delete_global_setting_in_tx(tx, events, global_key, now)?;
                 continue;
             };
-            let syncable = is_syncable_setting(false, global_key);
-            tx.execute(
-                "INSERT INTO settings (key, value, updated_at, updated_by_device)
-                 VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(key) DO UPDATE SET value = excluded.value,
-                   updated_at = excluded.updated_at,
-                   updated_by_device = excluded.updated_by_device",
-                params![
-                    global_key,
-                    value,
-                    if syncable { now } else { 0 },
-                    if syncable { device.as_str() } else { "" }
-                ],
-            )?;
-            if syncable {
-                events.push(EventBody::SettingSet(SettingPayload {
-                    book: None,
-                    key: global_key.clone(),
-                    value: Some(value.clone()),
-                }));
-            }
+            set_global_setting_in_tx(tx, events, global_key, value, now, &device)?;
         }
         for row in &undo.book_settings {
             set_book_setting_in_tx(tx, events, &row.book_id, &row.key, &row.value, now, &device)?;
@@ -949,10 +955,102 @@ mod tests {
         ReaderSettingsPromotionUndo,
     };
     use crate::db::Db;
+    use crate::sync::events::{Event, EventBody, EVENT_SCHEMA_VERSION};
+    use crate::sync::snapshot::Snapshot;
     use crate::sync::writer::SyncWriter;
-    use rusqlite::{params, OptionalExtension};
+    use rusqlite::{params, Connection, OptionalExtension};
     use std::collections::HashMap;
     use tempfile::TempDir;
+
+    /// Everything this device queued for its peers, rebuilt into the events a
+    /// peer would actually receive. Ordered by insertion, which is the order
+    /// the log is appended in.
+    ///
+    /// The stream is prefixed with `book1`'s import, because `setup` puts that
+    /// row in with raw SQL rather than through the importer. Without it the
+    /// stream is not a stream any device could produce: `book_settings` has a
+    /// foreign key onto `books`, so a peer replaying from empty would fail.
+    fn published_events(db: &Db, device: &str) -> Vec<Event> {
+        let import = Event {
+            // Sorts before every queued event's synthetic id below.
+            id: "01HYZW0000000000000000000Z".to_string(),
+            ts: 1,
+            device: device.to_string(),
+            v: EVENT_SCHEMA_VERSION,
+            body: EventBody::BookImport(crate::sync::events::BookImportPayload {
+                id: "book1".to_string(),
+                title: "Test Book".to_string(),
+                author: "Author".to_string(),
+                description: None,
+                cover_path: None,
+                file_path: "books/test.epub".to_string(),
+                format: "epub".to_string(),
+                source_format: None,
+                render_format: None,
+                source_file_path: None,
+                source_sha256: None,
+                conversion_version: 0,
+                genre: None,
+                pages: None,
+            }),
+            extra: serde_json::Map::new(),
+        };
+        std::iter::once(import)
+            .chain(queued_events(db, device))
+            .collect()
+    }
+
+    /// Just the rows the writer parked in `_pending_publish`, in log order.
+    fn queued_events(db: &Db, device: &str) -> Vec<Event> {
+        let conn = db.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT id, ts, body_json FROM _pending_publish ORDER BY rowid")
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        drop(stmt);
+        rows.into_iter()
+            .enumerate()
+            .map(|(index, (_, ts, body_json))| Event {
+                // A ULID that sorts with the row order; the merge engine keys
+                // off `ts`, and the snapshot builder only needs them ordered.
+                id: format!("01HYZX00000000000000{index:06X}"),
+                ts,
+                device: device.to_string(),
+                v: EVENT_SCHEMA_VERSION,
+                body: serde_json::from_str::<EventBody>(&body_json).unwrap(),
+                extra: serde_json::Map::new(),
+            })
+            .collect()
+    }
+
+    /// A second device: a bare migrated DB that only ever sees `dev-A`'s
+    /// events. No `SyncWriter`, because a peer applies rather than writes, and
+    /// nothing seeded — the stream is expected to carry everything it needs.
+    fn peer_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        Db::run_migrations_on(&conn).unwrap();
+        conn
+    }
+
+    fn peer_global(conn: &Connection, key: &str) -> Option<String> {
+        conn.query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            params![key],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap()
+    }
 
     fn setup() -> (TempDir, Db) {
         let dir = TempDir::new().unwrap();
@@ -1312,6 +1410,176 @@ mod tests {
             )
             .unwrap();
         assert_eq!(tombstone, 0, "the restored row must not stay tombstoned");
+    }
+
+    /// The whole bug, end to end, on two devices: promote a book's reader
+    /// settings to global, then undo. The undo deletes a global row that had no
+    /// value before the promotion, and that deletion has to reach the peer —
+    /// otherwise the peer keeps the promoted value and hands it back on its
+    /// next snapshot, silently un-undoing the undo.
+    ///
+    /// Both transports are checked, because they fail differently: the event
+    /// path can carry the delete and still lose it to a later snapshot, and the
+    /// snapshot path only works if the tombstone is what rides along.
+    #[test]
+    fn promotion_undo_converges_on_a_second_device_through_both_transports() {
+        let (_dir, db) = setup();
+        let sync = SyncWriter::new("dev-A".into());
+        sync.set_should_queue(true);
+
+        // `font` and `show_lookup_markers` are the two syncable per-book keys.
+        // Neither has a global row yet, so promotion's undo is a deletion for
+        // both — the exact case that had no way to travel.
+        do_set_book_settings_bulk(
+            "book1",
+            &HashMap::from([
+                ("font".to_string(), "literata".to_string()),
+                ("show_lookup_markers".to_string(), "false".to_string()),
+            ]),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        let promotion = do_promote_book_settings_to_global("book1", &[], &db, &sync).unwrap();
+        assert_eq!(promotion.undo.globals.get("font_family"), Some(&None));
+        assert_eq!(
+            promotion.undo.globals.get("show_lookup_markers"),
+            Some(&None)
+        );
+
+        // A peer that has seen only the promotion holds the promoted values.
+        let mut mid_flight = peer_db();
+        {
+            let tx = mid_flight.transaction().unwrap();
+            for event in published_events(&db, "dev-A") {
+                crate::sync::merge::apply_event(&tx, &event).unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        assert_eq!(
+            peer_global(&mid_flight, "font_family").as_deref(),
+            Some("literata"),
+            "the promotion itself must cross, or the test proves nothing"
+        );
+
+        do_undo_promote_book_settings(&promotion.undo, &db, &sync).unwrap();
+        assert_eq!(get_global_setting(&db, "font_family"), None);
+        assert_eq!(get_global_setting(&db, "show_lookup_markers"), None);
+
+        let events = published_events(&db, "dev-A");
+
+        // Transport 1: the peer that already applied the promotion now applies
+        // the rest of the stream.
+        {
+            let tx = mid_flight.transaction().unwrap();
+            for event in &events {
+                crate::sync::merge::apply_event(&tx, event).unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        assert_eq!(
+            peer_global(&mid_flight, "font_family"),
+            None,
+            "the undo must delete the promoted global row on the peer too"
+        );
+        assert_eq!(peer_global(&mid_flight, "show_lookup_markers"), None);
+
+        // Transport 2: a peer that only ever sees the compacted snapshot.
+        let snapshot = Snapshot::from_events("dev-A", &events).unwrap();
+        let mut from_snapshot = peer_db();
+        {
+            let tx = from_snapshot.transaction().unwrap();
+            snapshot.apply_peer(&tx, "dev-A").unwrap();
+            tx.commit().unwrap();
+        }
+        assert_eq!(
+            peer_global(&from_snapshot, "font_family"),
+            None,
+            "a snapshot must not reinstate the row the undo removed"
+        );
+        assert_eq!(peer_global(&from_snapshot, "show_lookup_markers"), None);
+
+        // And the peer that took the event path must not be talked out of it
+        // when that same snapshot arrives afterwards.
+        {
+            let tx = mid_flight.transaction().unwrap();
+            snapshot.apply_peer(&tx, "dev-A").unwrap();
+            tx.commit().unwrap();
+        }
+        assert_eq!(peer_global(&mid_flight, "font_family"), None);
+        assert_eq!(peer_global(&mid_flight, "show_lookup_markers"), None);
+    }
+
+    /// The undo has to stay undoable. Choosing the key again after the delete
+    /// must win on the peer as well, or "restore the default" would quietly
+    /// mean "never sync this key again".
+    #[test]
+    fn a_global_setting_rewritten_after_its_delete_wins_on_the_peer() {
+        let (_dir, db) = setup();
+        let sync = SyncWriter::new("dev-A".into());
+        sync.set_should_queue(true);
+
+        do_set_book_settings_bulk(
+            "book1",
+            &HashMap::from([("font".to_string(), "literata".to_string())]),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        let promotion = do_promote_book_settings_to_global("book1", &[], &db, &sync).unwrap();
+        do_undo_promote_book_settings(&promotion.undo, &db, &sync).unwrap();
+
+        set_settings_bulk_inner(
+            &HashMap::from([("font_family".to_string(), "chosen-again".to_string())]),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        assert_eq!(
+            get_global_setting(&db, "font_family").as_deref(),
+            Some("chosen-again")
+        );
+        // The local tombstone has to be gone, or this device's own next
+        // snapshot would carry a delete for the value it just chose.
+        {
+            let conn = db.conn.lock().unwrap();
+            let tombstones: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM _tombstones
+                     WHERE entity = 'setting' AND id = 'font_family'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(tombstones, 0, "the re-written key must not stay tombstoned");
+        }
+
+        let events = published_events(&db, "dev-A");
+        let mut peer = peer_db();
+        {
+            let tx = peer.transaction().unwrap();
+            for event in &events {
+                crate::sync::merge::apply_event(&tx, event).unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        assert_eq!(
+            peer_global(&peer, "font_family").as_deref(),
+            Some("chosen-again")
+        );
+
+        // Same answer through the snapshot, and re-applying it is idempotent.
+        let snapshot = Snapshot::from_events("dev-A", &events).unwrap();
+        let mut from_snapshot = peer_db();
+        for _ in 0..2 {
+            let tx = from_snapshot.transaction().unwrap();
+            snapshot.apply_peer(&tx, "dev-A").unwrap();
+            tx.commit().unwrap();
+        }
+        assert_eq!(
+            peer_global(&from_snapshot, "font_family").as_deref(),
+            Some("chosen-again")
+        );
     }
 
     /// The writer decides what leaves this device. Queue-only mode parks the

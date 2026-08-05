@@ -1,5 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listenForSettingsChanged, notifySettingsChanged } from "../settings-events";
+import {
+  applySettingsChange,
+  listenForSettingsChanged,
+  notifySettingsChanged,
+} from "../settings-events";
 import {
   DEFAULT_SPEECH_SETTINGS,
   parseSpeechSettings,
@@ -42,7 +46,7 @@ export function ensureSpeechSettings(): Promise<void> {
     publish();
     await listenForSettingsChanged((values) => {
       if (!SPEECH_SETTING_KEYS.some((key) => key in values)) return;
-      raw = { ...raw, ...values };
+      raw = applySettingsChange(raw, values);
       publish();
     });
   })().catch((error) => {

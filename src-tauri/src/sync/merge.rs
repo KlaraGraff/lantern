@@ -168,6 +168,12 @@ pub mod entity {
     /// Re-creatable tombstone for one synced per-book setting. Id format:
     /// `"<book_id>:<key>"`.
     pub const BOOK_SETTING: &str = "book_setting";
+    /// Re-creatable tombstone for one synced *global* setting. The id is the
+    /// bare `settings.key` — global rows have no book to qualify them. Only
+    /// whitelisted keys ever get one; `validation::validate_tombstone_id`
+    /// enforces that on the way in, because `settings` is also where the
+    /// non-synced local preferences live.
+    pub const SETTING: &str = "setting";
 }
 
 pub fn is_tombstoned(tx: &Transaction, entity: &str, id: &str) -> AppResult<bool> {
@@ -291,6 +297,20 @@ pub fn cascade_delete(tx: &Transaction, entity: &str, id: &str, ts: i64) -> AppR
             )?;
             Ok(())
         }
+        entity::SETTING => {
+            // `book_setting`'s arm is structurally safe — a malformed id has no
+            // `':'` and falls out. A global id is a bare key, so the whitelist
+            // is the equivalent guard, and it matters more here: `settings` is
+            // the table the local-only preferences live in.
+            if !super::events::is_syncable_setting(false, id) {
+                return Ok(());
+            }
+            tx.execute(
+                "DELETE FROM settings WHERE key = ?1 AND updated_at <= ?2",
+                params![id, ts],
+            )?;
+            Ok(())
+        }
         "translation" => Ok(()),
         entity::CHAT_MESSAGE => {
             tx.execute("DELETE FROM chat_messages WHERE id = ?1", params![id])?;
@@ -393,6 +413,9 @@ fn cascade_delete_book(tx: &Transaction, id: &str, ts: i64) -> AppResult<()> {
         params![id],
     )?;
     tx.execute("DELETE FROM book_settings WHERE book_id = ?1", params![id])?;
+    // The one global `settings` row keyed off a book. It needs no `setting`
+    // tombstone: the key is not on the sync whitelist, so no peer ever had it,
+    // and the book's own tombstone already makes this deletion converge.
     tx.execute(
         "DELETE FROM settings WHERE key = ?1",
         params![format!("book_spoiler_guard_{id}")],
@@ -1607,6 +1630,20 @@ fn apply_setting_set(tx: &Transaction, event: &Event, payload: &SettingPayload) 
     }
     match (payload.book.as_deref(), payload.value.as_deref()) {
         (None, Some(value)) => {
+            // Same shape as the per-book write below: a deletion tombstone
+            // suppresses any write at or before its own timestamp, and a
+            // strictly newer write clears it. Without the clear, re-choosing a
+            // font after "restore the default" would be undone by its own
+            // tombstone the next time a snapshot came round.
+            if tombstone_timestamp(tx, entity::SETTING, &payload.key)?
+                .is_some_and(|timestamp| timestamp >= event.ts)
+            {
+                return Ok(());
+            }
+            tx.execute(
+                "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2",
+                params![entity::SETTING, payload.key],
+            )?;
             tx.execute(
                 "INSERT INTO settings (key, value, updated_at, updated_by_device)
                  VALUES (?1, ?2, ?3, ?4)
@@ -1656,13 +1693,18 @@ fn apply_setting_set(tx: &Transaction, event: &Event, payload: &SettingPayload) 
                 params![book_id, payload.key, event.ts],
             )?;
         }
-        // A global-setting delete cannot be applied: unlike `book_settings`,
-        // `settings` has no tombstone entity, so nothing would stop the next
-        // peer snapshot — which lists the rows that exist, not the ones that
-        // went away — from reinstating the row. `undo_promote_book_settings`
-        // does delete such a row locally and deliberately emits nothing.
-        // Accepting the payload as a no-op keeps replay forward-compatible.
-        (None, None) => {}
+        // Deleting a global setting is how "this key follows the resolved
+        // default again" crosses — see `undo_promote_book_settings`. It needs a
+        // tombstone for the same reason the per-book arm above does: a snapshot
+        // states which rows exist, never which ones stopped existing, so
+        // without one the peer's next snapshot would simply put the row back.
+        (None, None) => {
+            insert_tombstone(tx, entity::SETTING, &payload.key, event.ts)?;
+            tx.execute(
+                "DELETE FROM settings WHERE key = ?1 AND updated_at <= ?2",
+                params![payload.key, event.ts],
+            )?;
+        }
     }
     Ok(())
 }
@@ -3848,6 +3890,24 @@ mod tests {
         })
     }
 
+    fn global_setting_delete_event(key: &str) -> EventBody {
+        EventBody::SettingSet(SettingPayload {
+            book: None,
+            key: key.to_string(),
+            value: None,
+        })
+    }
+
+    fn setting_tombstone_ts(conn: &Connection, key: &str) -> Option<i64> {
+        conn.query_row(
+            "SELECT ts FROM _tombstones WHERE entity = 'setting' AND id = ?1",
+            params![key],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap()
+    }
+
     fn setting_value(conn: &Connection, key: &str) -> Option<String> {
         conn.query_row(
             "SELECT value FROM settings WHERE key = ?1",
@@ -4080,6 +4140,191 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM book_settings", [], |row| row.get(0))
             .unwrap();
         assert_eq!(per_book, 0);
+    }
+
+    /// The global layer's half of the same story the per-book test above
+    /// tells. "Go back to the default" is a deletion, and until it had a
+    /// tombstone the peer's next snapshot handed the old value straight back.
+    #[test]
+    fn global_setting_delete_crosses_and_blocks_a_stale_write() {
+        let mut conn = open_db();
+        apply_all(
+            &mut conn,
+            &[ev(
+                1_000,
+                "dev-a",
+                setting_event(None, "font_family", "literata"),
+            )],
+        );
+        assert_eq!(
+            setting_value(&conn, "font_family").as_deref(),
+            Some("literata")
+        );
+
+        apply_all(
+            &mut conn,
+            &[ev(
+                2_000,
+                "dev-b",
+                global_setting_delete_event("font_family"),
+            )],
+        );
+        assert_eq!(setting_value(&conn, "font_family"), None);
+        assert_eq!(setting_tombstone_ts(&conn, "font_family"), Some(2_000));
+
+        // A write from before the delete is exactly what a lagging peer's
+        // snapshot replays. It must not resurrect the row.
+        apply_all(
+            &mut conn,
+            &[ev(
+                1_500,
+                "dev-c",
+                setting_event(None, "font_family", "stale"),
+            )],
+        );
+        assert_eq!(setting_value(&conn, "font_family"), None);
+
+        // ...but the tombstone is clearable, or "restore the default" would
+        // mean "never choose this key again".
+        apply_all(
+            &mut conn,
+            &[ev(
+                3_000,
+                "dev-c",
+                setting_event(None, "font_family", "newer"),
+            )],
+        );
+        assert_eq!(
+            setting_value(&conn, "font_family").as_deref(),
+            Some("newer")
+        );
+        assert_eq!(setting_tombstone_ts(&conn, "font_family"), None);
+    }
+
+    /// The other direction: a delete that arrives *after* a newer write has
+    /// already landed loses, exactly as an older write would.
+    #[test]
+    fn global_setting_delete_loses_to_an_already_newer_write() {
+        let mut conn = open_db();
+        apply_all(
+            &mut conn,
+            &[ev(
+                3_000,
+                "dev-a",
+                setting_event(None, "show_mastered_markers", "false"),
+            )],
+        );
+        apply_all(
+            &mut conn,
+            &[ev(
+                2_000,
+                "dev-b",
+                global_setting_delete_event("show_mastered_markers"),
+            )],
+        );
+        assert_eq!(
+            setting_value(&conn, "show_mastered_markers").as_deref(),
+            Some("false"),
+            "a delete older than the stored row must not remove it"
+        );
+    }
+
+    /// Delivery order is not something either device controls, so the pair
+    /// {write, delete} has to land on the same answer whichever way round it
+    /// arrives — for both orderings of the two timestamps.
+    #[test]
+    fn global_setting_write_and_delete_converge_in_either_delivery_order() {
+        let write = ev(
+            2_000,
+            "dev-a",
+            setting_event(None, "font_family", "literata"),
+        );
+        let delete_after = ev(3_000, "dev-b", global_setting_delete_event("font_family"));
+        let delete_before = ev(1_000, "dev-b", global_setting_delete_event("font_family"));
+
+        for (label, delete, expected) in [
+            ("delete wins", &delete_after, None),
+            ("write wins", &delete_before, Some("literata")),
+        ] {
+            let mut forward = open_db();
+            apply_all(&mut forward, &[write.clone(), delete.clone()]);
+            let mut backward = open_db();
+            apply_all(&mut backward, &[delete.clone(), write.clone()]);
+            assert_eq!(
+                setting_value(&forward, "font_family").as_deref(),
+                expected,
+                "{label}: forward order disagreed"
+            );
+            assert_eq!(
+                setting_value(&backward, "font_family").as_deref(),
+                expected,
+                "{label}: reverse order disagreed"
+            );
+        }
+    }
+
+    /// `settings` is also where the AI credential pointers and every
+    /// per-screen preference live. A delete for a key outside the whitelist is
+    /// skipped on the same terms as a write for one — silently, so it cannot
+    /// wedge a peer's watermark, but without touching the row.
+    #[test]
+    fn global_setting_delete_ignores_non_whitelisted_keys() {
+        let mut conn = open_db();
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('reader_theme', 'night')",
+            [],
+        )
+        .unwrap();
+        apply_all(
+            &mut conn,
+            &[ev(
+                9_000,
+                "dev-a",
+                global_setting_delete_event("reader_theme"),
+            )],
+        );
+        assert_eq!(
+            setting_value(&conn, "reader_theme").as_deref(),
+            Some("night")
+        );
+        assert_eq!(setting_tombstone_ts(&conn, "reader_theme"), None);
+    }
+
+    /// `cascade_delete` is the snapshot path's way in, and it is handed an id
+    /// straight off a peer's tombstone list. `validate_tombstone_id` already
+    /// refuses anything outside the whitelist, so this is the second lock on
+    /// the same door — `settings` is where the local-only preferences and the
+    /// AI credential pointers live, and one guard away from a peer being able
+    /// to name them is not enough.
+    #[test]
+    fn cascade_delete_of_a_setting_refuses_a_key_outside_the_whitelist() {
+        let mut conn = open_db();
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES ('reader_theme', 'night', 100)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES ('font_family', 'literata', 100)",
+            [],
+        )
+        .unwrap();
+        {
+            let tx = conn.transaction().unwrap();
+            cascade_delete(&tx, entity::SETTING, "reader_theme", 9_000).unwrap();
+            cascade_delete(&tx, entity::SETTING, "font_family", 9_000).unwrap();
+            tx.commit().unwrap();
+        }
+        assert_eq!(
+            setting_value(&conn, "reader_theme").as_deref(),
+            Some("night"),
+            "a non-syncable key must survive a cascade it should never have reached"
+        );
+        assert_eq!(
+            setting_value(&conn, "font_family"),
+            None,
+            "the whitelisted key must still be deleted, or the guard is just off"
+        );
     }
 
     #[test]

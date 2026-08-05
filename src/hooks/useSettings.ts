@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listenForSettingsChanged, notifySettingsChanged } from "../components/settings-events";
+import {
+  applySettingsChange,
+  listenForSettingsChanged,
+  notifySettingsChanged,
+} from "../components/settings-events";
 
 export function useSettings() {
   const [settings, setSettings] = useState<Record<string, string>>({});
@@ -26,7 +30,7 @@ export function useSettings() {
     let disposed = false;
     let unlisten: (() => void) | undefined;
     listenForSettingsChanged((values) => {
-      if (!disposed) setSettings((current) => ({ ...current, ...values }));
+      if (!disposed) setSettings((current) => applySettingsChange(current, values));
     }).then((stop) => {
       if (disposed) stop();
       else unlisten = stop;

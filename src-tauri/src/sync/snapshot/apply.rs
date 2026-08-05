@@ -343,6 +343,22 @@ impl Snapshot {
                         continue;
                     }
                 }
+                if entity == merge::entity::SETTING {
+                    // Same clearable-tombstone rule as `book_setting`: a
+                    // strictly newer local write of the key outranks the peer's
+                    // delete, so neither the row nor the tombstone is touched.
+                    let newer_setting_exists: bool = tx.query_row(
+                        "SELECT EXISTS(
+                           SELECT 1 FROM settings
+                           WHERE key = ?1 AND updated_at > ?2
+                         )",
+                        params![t.id, t.ts],
+                        |row| row.get(0),
+                    )?;
+                    if newer_setting_exists {
+                        continue;
+                    }
+                }
                 merge::cascade_delete(tx, entity, &t.id, t.ts)?;
                 merge::insert_tombstone(tx, entity, &t.id, t.ts)?;
             }
@@ -473,6 +489,15 @@ impl Snapshot {
             if !super::super::events::is_syncable_setting(false, &row.key) {
                 continue;
             }
+            if merge::tombstone_timestamp(tx, merge::entity::SETTING, &row.key)?
+                .is_some_and(|timestamp| timestamp >= row.updated_at)
+            {
+                continue;
+            }
+            tx.execute(
+                "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2",
+                params![merge::entity::SETTING, row.key],
+            )?;
             upsert_setting(tx, None, row)?;
         }
         for row in self.state.book_settings.values() {

@@ -722,6 +722,282 @@ fn marker_visibility_travels_through_a_snapshot_to_a_peer() {
     assert_eq!(per_book.as_deref(), Some("false"));
 }
 
+fn global_setting(conn: &Connection, key: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        params![key],
+        |row| row.get(0),
+    )
+    .optional()
+    .unwrap()
+}
+
+fn global_setting_tombstone_ts(conn: &Connection, key: &str) -> Option<i64> {
+    conn.query_row(
+        "SELECT ts FROM _tombstones WHERE entity = 'setting' AND id = ?1",
+        params![key],
+        |row| row.get(0),
+    )
+    .optional()
+    .unwrap()
+}
+
+fn global_setting_event(key: &str, value: Option<&str>) -> EventBody {
+    EventBody::SettingSet(SettingPayload {
+        book: None,
+        key: key.into(),
+        value: value.map(str::to_string),
+    })
+}
+
+/// The snapshot half of the global delete. A snapshot lists the rows that
+/// exist, so without the tombstone riding along, the peer's own copy of the
+/// deleted row would simply survive the ingest — which is precisely how the
+/// promotion undo used to un-undo itself.
+#[test]
+fn global_setting_delete_tombstone_survives_snapshot_and_blocks_stale_row() {
+    let snapshot = Snapshot::from_events(
+        "dev-A",
+        &[
+            ev(
+                1_100,
+                "dev-A",
+                global_setting_event("font_family", Some("literata")),
+            ),
+            ev(1_200, "dev-A", global_setting_event("font_family", None)),
+        ],
+    )
+    .unwrap();
+
+    assert!(
+        !snapshot.state.settings.contains_key("font_family"),
+        "the deleted row must not still be listed as existing"
+    );
+    assert!(
+        snapshot
+            .state
+            .tombstones
+            .get(merge::entity::SETTING)
+            .is_some_and(|rows| rows
+                .iter()
+                .any(|row| row.id == "font_family" && row.ts == 1_200)),
+        "the delete has to travel as a tombstone: {:?}",
+        snapshot.state.tombstones
+    );
+
+    let mut local = open_db();
+    local
+        .execute(
+            "INSERT INTO settings (key, value, updated_at, updated_by_device)
+             VALUES ('font_family', 'stale', 1150, 'dev-local')",
+            [],
+        )
+        .unwrap();
+    {
+        let tx = local.transaction().unwrap();
+        snapshot.apply_peer(&tx, "dev-A").unwrap();
+        tx.commit().unwrap();
+    }
+    assert_eq!(global_setting(&local, "font_family"), None);
+}
+
+/// The tombstone must not be a one-way door either. A local row written after
+/// the peer's delete outranks it, and the peer's later snapshot must leave
+/// both that row and the choice it represents alone.
+#[test]
+fn a_newer_local_global_setting_outranks_an_older_snapshot_tombstone() {
+    let snapshot = Snapshot::from_events(
+        "dev-A",
+        &[
+            ev(
+                1_100,
+                "dev-A",
+                global_setting_event("show_mastered_markers", Some("false")),
+            ),
+            ev(
+                1_200,
+                "dev-A",
+                global_setting_event("show_mastered_markers", None),
+            ),
+        ],
+    )
+    .unwrap();
+
+    let mut local = open_db();
+    local
+        .execute(
+            "INSERT INTO settings (key, value, updated_at, updated_by_device)
+             VALUES ('show_mastered_markers', 'true', 5000, 'dev-local')",
+            [],
+        )
+        .unwrap();
+    {
+        let tx = local.transaction().unwrap();
+        snapshot.apply_peer(&tx, "dev-A").unwrap();
+        tx.commit().unwrap();
+    }
+    assert_eq!(
+        global_setting(&local, "show_mastered_markers").as_deref(),
+        Some("true"),
+        "a newer local choice must survive an older peer delete"
+    );
+    // And the delete must not be filed either. Recording a tombstone this
+    // device already knows to be stale would put it in this device's own next
+    // snapshot, arguing against the value sitting right next to it.
+    assert_eq!(
+        global_setting_tombstone_ts(&local, "show_mastered_markers"),
+        None,
+        "an outranked peer delete must not be recorded"
+    );
+}
+
+/// The mirror image, and the one that actually bit: a peer that never heard
+/// about the delete keeps listing the row as existing. Its snapshot is not
+/// wrong — it simply predates the deletion — so the local tombstone is the only
+/// thing standing between "restore the default" and the value coming straight
+/// back on the next sync.
+#[test]
+fn a_stale_snapshot_row_cannot_outlive_a_newer_local_delete() {
+    let snapshot = Snapshot::from_events(
+        "dev-A",
+        &[ev(
+            1_100,
+            "dev-A",
+            global_setting_event("font_family", Some("literata")),
+        )],
+    )
+    .unwrap();
+    assert!(
+        snapshot.state.settings.contains_key("font_family"),
+        "the peer must still be claiming the row exists, or this proves nothing"
+    );
+
+    let mut local = open_db();
+    local
+        .execute(
+            "INSERT INTO _tombstones (entity, id, ts) VALUES ('setting', 'font_family', 1200)",
+            [],
+        )
+        .unwrap();
+    {
+        let tx = local.transaction().unwrap();
+        snapshot.apply_peer(&tx, "dev-A").unwrap();
+        tx.commit().unwrap();
+    }
+    assert_eq!(
+        global_setting(&local, "font_family"),
+        None,
+        "a snapshot row older than the local delete must not resurrect it"
+    );
+    assert_eq!(
+        global_setting_tombstone_ts(&local, "font_family"),
+        Some(1_200),
+        "and the tombstone has to still be there for the next peer"
+    );
+}
+
+/// Rebuilding the same key after a delete has to win and stay won — including
+/// across a second snapshot from the same peer, which is where a tombstone
+/// that was written but never cleared would show up.
+#[test]
+fn a_rewritten_global_setting_clears_its_tombstone_through_the_snapshot_path() {
+    let deletion = Snapshot::from_events(
+        "dev-A",
+        &[
+            ev(
+                1_100,
+                "dev-A",
+                global_setting_event("font_family", Some("literata")),
+            ),
+            ev(1_200, "dev-A", global_setting_event("font_family", None)),
+        ],
+    )
+    .unwrap();
+    let mut local = open_db();
+    {
+        let tx = local.transaction().unwrap();
+        deletion.apply_peer(&tx, "dev-A").unwrap();
+        tx.commit().unwrap();
+    }
+    assert_eq!(global_setting(&local, "font_family"), None);
+
+    // The peer picks a font again. Its next snapshot still carries the old
+    // tombstone alongside the new row; the row is newer, so it wins.
+    let rewrite = Snapshot::from_events(
+        "dev-A",
+        &[
+            ev(
+                1_100,
+                "dev-A",
+                global_setting_event("font_family", Some("literata")),
+            ),
+            ev(1_200, "dev-A", global_setting_event("font_family", None)),
+            ev(
+                2_000,
+                "dev-A",
+                global_setting_event("font_family", Some("newer")),
+            ),
+        ],
+    )
+    .unwrap();
+    {
+        let tx = local.transaction().unwrap();
+        rewrite.apply_peer(&tx, "dev-A").unwrap();
+        tx.commit().unwrap();
+    }
+    assert_eq!(
+        global_setting(&local, "font_family").as_deref(),
+        Some("newer")
+    );
+    // The outranked tombstone has to go, not just lose. Left behind it would
+    // ride out in this device's own snapshot and, worse, block any peer whose
+    // write happens to land on the same millisecond as the old delete.
+    assert_eq!(
+        global_setting_tombstone_ts(&local, "font_family"),
+        None,
+        "a superseded tombstone must be cleared, not merely outvoted"
+    );
+
+    // ...and re-applying the deletion snapshot afterwards must not undo it.
+    {
+        let tx = local.transaction().unwrap();
+        deletion.apply_peer(&tx, "dev-A").unwrap();
+        tx.commit().unwrap();
+    }
+    assert_eq!(
+        global_setting(&local, "font_family").as_deref(),
+        Some("newer"),
+        "a re-delivered older delete must not remove the newer choice"
+    );
+}
+
+/// `settings` holds the AI credential pointers and every per-screen
+/// preference. A peer must not be able to name one in its tombstone list.
+#[test]
+fn a_snapshot_naming_a_non_syncable_setting_tombstone_is_rejected() {
+    let mut snapshot = Snapshot::from_events(
+        "dev-A",
+        &[ev(
+            1_100,
+            "dev-A",
+            global_setting_event("font_family", None),
+        )],
+    )
+    .unwrap();
+    snapshot.state.tombstones.insert(
+        merge::entity::SETTING.to_string(),
+        vec![TombstoneRow {
+            id: "reader_theme".into(),
+            ts: 9_000,
+        }],
+    );
+
+    let mut local = open_db();
+    let tx = local.transaction().unwrap();
+    let error = snapshot.apply_peer(&tx, "dev-A").unwrap_err();
+    assert_eq!(error.to_string(), "SYNC_SNAPSHOT_TOMBSTONE_INVALID");
+}
+
 /// The reason marker visibility was held back: a `book_setting` tombstone whose
 /// key is not syncable fails validation, and that rejects the *entire* snapshot
 /// rather than the one row. Whitelisting the keys is what makes the tombstone
