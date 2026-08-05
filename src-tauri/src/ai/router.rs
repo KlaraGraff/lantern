@@ -1193,7 +1193,6 @@ async fn wait_cancelled(cancel: &mut watch::Receiver<bool>) {
 }
 
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
 async fn stream_once<R: Runtime>(
     app: &AppHandle<R>,
     profile: &AiProfile,

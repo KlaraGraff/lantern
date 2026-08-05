@@ -181,6 +181,9 @@ pub fn record_reading_behavior_batch_inner(
 /// The `encounters_on_lookup_active_screen <= encounter_count` CHECK holds
 /// across the update because SQLite evaluates every right-hand side against
 /// the pre-update row: the count grows by 1 and the subset by 0 or 1.
+// Eight columns of one row, each a distinct type the caller already has on
+// hand; bundling them into a struct would only move the same list one line up.
+#[allow(clippy::too_many_arguments)]
 fn upsert_word_exposure(
     tx: &rusqlite::Transaction<'_>,
     book_id: &str,
