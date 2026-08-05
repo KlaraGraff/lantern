@@ -195,13 +195,20 @@ where
     let backup = root.join(format!(".{PACKAGE_FILE}.{}.backup", uuid::Uuid::new_v4()));
     let had_previous = package.exists();
     if had_previous {
-        fs::rename(&package, &backup).map_err(|_| font_error("ENHANCED_FONT_STORAGE_FAILED"))?;
+        if let Err(_rename_error) = fs::rename(&package, &backup) {
+            let _ = fs::remove_file(&temporary);
+            let error = font_error("ENHANCED_FONT_STORAGE_FAILED");
+            progress(failed(&error));
+            return Err(error);
+        }
     }
     if fs::rename(&temporary, &package).is_err() {
         if had_previous {
             let _ = fs::rename(&backup, &package);
         }
-        return Err(font_error("ENHANCED_FONT_STORAGE_FAILED"));
+        let error = font_error("ENHANCED_FONT_STORAGE_FAILED");
+        progress(failed(&error));
+        return Err(error);
     }
     let pointer = Pointer {
         version: manifest.version.clone(),
@@ -316,41 +323,73 @@ pub async fn enhanced_font_download(
         &app,
         transient(EnhancedFontState::Downloading, &manifest, 0),
     );
-    let response = crate::ai::http_client()
-        .get(&manifest.url)
-        .send()
-        .await
-        .map_err(|_| font_error("ENHANCED_FONT_DOWNLOAD_FAILED"))?;
+    let response = match crate::ai::http_client().get(&manifest.url).send().await {
+        Ok(response) => response,
+        Err(_) => {
+            let error = font_error("ENHANCED_FONT_DOWNLOAD_FAILED");
+            emit_progress(&app, failed(&error));
+            return Err(error);
+        }
+    };
     if !response.status().is_success()
         || response
             .content_length()
             .is_some_and(|length| length != manifest.download_size)
     {
-        return Err(font_error("ENHANCED_FONT_DOWNLOAD_FAILED"));
+        let error = font_error("ENHANCED_FONT_DOWNLOAD_FAILED");
+        emit_progress(&app, failed(&error));
+        return Err(error);
     }
-    let mut file = OpenOptions::new()
+    let mut file = match OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&incoming)
-        .map_err(|_| font_error("ENHANCED_FONT_STORAGE_FAILED"))?;
+    {
+        Ok(file) => file,
+        Err(_) => {
+            let error = font_error("ENHANCED_FONT_STORAGE_FAILED");
+            emit_progress(&app, failed(&error));
+            return Err(error);
+        }
+    };
     let mut downloaded = 0_u64;
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| font_error("ENHANCED_FONT_DOWNLOAD_FAILED"))?;
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(_) => {
+                let _ = fs::remove_file(&incoming);
+                let error = font_error("ENHANCED_FONT_DOWNLOAD_FAILED");
+                emit_progress(&app, failed(&error));
+                return Err(error);
+            }
+        };
         downloaded = downloaded.saturating_add(chunk.len() as u64);
         if downloaded > manifest.download_size || downloaded > MAX_PACKAGE_BYTES {
             let _ = fs::remove_file(&incoming);
-            return Err(font_error("ENHANCED_FONT_LENGTH_MISMATCH"));
+            let error = font_error("ENHANCED_FONT_LENGTH_MISMATCH");
+            emit_progress(&app, failed(&error));
+            return Err(error);
         }
-        file.write_all(&chunk)
-            .map_err(|_| font_error("ENHANCED_FONT_STORAGE_FAILED"))?;
+        if let Err(_write_error) = file.write_all(&chunk) {
+            drop(file);
+            let _ = fs::remove_file(&incoming);
+            let error = font_error("ENHANCED_FONT_STORAGE_FAILED");
+            emit_progress(&app, failed(&error));
+            return Err(error);
+        }
         emit_progress(
             &app,
             transient(EnhancedFontState::Downloading, &manifest, downloaded),
         );
     }
-    file.sync_all()
-        .map_err(|_| font_error("ENHANCED_FONT_STORAGE_FAILED"))?;
+    if let Err(_sync_error) = file.sync_all() {
+        drop(file);
+        let _ = fs::remove_file(&incoming);
+        let error = font_error("ENHANCED_FONT_STORAGE_FAILED");
+        emit_progress(&app, failed(&error));
+        return Err(error);
+    }
     drop(file);
     if let Err(error) = verify_download(&incoming, &manifest) {
         let _ = fs::remove_file(&incoming);
@@ -517,6 +556,42 @@ mod tests {
             sha256: format!("{:x}", Sha256::digest(bytes)),
             url: "https://release.example/font.ttf".into(),
         }
+    }
+
+    struct FailingDownload;
+    impl EnhancedFontDownloader for FailingDownload {
+        fn download(
+            &self,
+            _: &EnhancedFontManifest,
+            _destination: &Path,
+            _progress: &mut dyn FnMut(u64),
+        ) -> AppResult<()> {
+            Err(font_error("ENHANCED_FONT_DOWNLOAD_FAILED"))
+        }
+    }
+
+    #[test]
+    fn download_failure_emits_failed_progress_and_leaves_no_temp_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let bytes = b"font bytes";
+        let mut statuses = Vec::new();
+        let result =
+            download_and_install_at(temp.path(), &manifest(bytes), &FailingDownload, |status| {
+                statuses.push(status);
+            });
+        assert!(result.is_err());
+        assert_eq!(
+            statuses.last().map(|status| status.state),
+            Some(EnhancedFontState::Failed)
+        );
+        let leftovers: Vec<_> = fs::read_dir(temp.path())
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "expected no leftover files after a failed download, found {leftovers:?}"
+        );
     }
 
     #[test]
