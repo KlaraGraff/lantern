@@ -12,9 +12,10 @@ import ChatsContent from "../components/ChatsContent";
 import AnnotationsContent from "../components/AnnotationsContent";
 import { openSettings } from "../components/settings-open";
 import { listenForSettingsChanged } from "../components/settings-events";
+import LibraryHintBanner from "../components/onboarding/LibraryHintBanner";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
-import { useBooks, importBookDialog } from "../hooks/useBooks";
+import { useBooks, importBookDialog, IMPORT_SLOW_HINT_MS } from "../hooks/useBooks";
 import { useCollections } from "../hooks/useCollections";
 import { platform } from "../services/platform";
 
@@ -119,7 +120,7 @@ export default function Home() {
       setImportSlow(false);
       return;
     }
-    const timer = setTimeout(() => setImportSlow(true), 5000);
+    const timer = setTimeout(() => setImportSlow(true), IMPORT_SLOW_HINT_MS);
     return () => clearTimeout(timer);
   }, [importing]);
 
@@ -306,6 +307,8 @@ export default function Home() {
               className="w-[448px]"
             />
           </div>
+
+          <LibraryHintBanner />
 
           <div className="flex-1 overflow-auto p-page pb-20">
             {loading ? (

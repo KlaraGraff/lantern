@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { X, Loader2, WandSparkles, BookmarkPlus, Check, Copy, Settings, MessageSquareMore } from "lucide-react";
+import { X, Loader2, WandSparkles, BookmarkPlus, Check, Copy, Settings, MessageSquareMore, BookOpenCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
 import { LOOKUP_PROSE } from "./lookup-prose";
@@ -162,6 +162,39 @@ export default function ExplainPopover({
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
+  // "Check the local dictionary first" on the AI_NOT_CONFIGURED screen — a
+  // fallback path, so a miss (word absent, or the lookup itself failing) is
+  // just as silent here as it is in VocabEntryDetails' own use of this
+  // command: the state settles on "not found" either way.
+  const [dictState, setDictState] = useState<"idle" | "loading" | "found" | "notFound">("idle");
+  const [dictText, setDictText] = useState("");
+
+  const checkLocalDictionary = () => {
+    setDictState("loading");
+    invoke<{ explain: string }>("dictionary_gloss", { word: text })
+      .then((entry) => {
+        const trimmed = entry.explain.trim();
+        if (trimmed) {
+          setDictText(trimmed);
+          setDictState("found");
+        } else {
+          setDictState("notFound");
+        }
+      })
+      .catch(() => setDictState("notFound"));
+  };
+
+  // Shared by the AI_NOT_CONFIGURED screen's "Connect now" and the generic
+  // settings-error screen below — both close this popover, then focus the
+  // main window's Settings on the AI services tab. A cross-window Tauri event
+  // rather than the same-window `openSettings()` DOM event, because a reader
+  // window can be detached from main and this popover can be mounted in it.
+  const openAiSettings = async () => {
+    onClose();
+    await invoke("open_settings_on_main", { section: "services" });
+    const main = await WebviewWindow.getByLabel("main");
+    await main?.setFocus();
+  };
 
   const { content, contentRef, streaming, aiError, streamError, retry } = useExplainStream(
     text,
@@ -283,16 +316,51 @@ export default function ExplainPopover({
           <p className="text-[12px] italic text-text-muted line-clamp-3">{text}</p>
         </div>
 
-        {aiError ? (
+        {aiError === "AI_NOT_CONFIGURED" ? (
+          <div className="flex flex-col gap-3 py-3 text-left">
+            <div>
+              <p className="text-[13px] font-medium text-text-primary">{t("ai.notConfiguredExplain.title")}</p>
+              <p className="mt-1 text-[12px] leading-5 text-text-muted">{t("ai.notConfiguredExplain.body")}</p>
+            </div>
+            <button
+              onClick={() => void openAiSettings()}
+              className="flex items-center gap-1.5 self-start text-[13px] font-medium text-accent-text hover:opacity-70 cursor-pointer"
+            >
+              <Settings size={14} />
+              {t("ai.notConfiguredExplain.connect")}
+            </button>
+
+            <div className="border-t border-border/40 pt-3">
+              {dictState === "idle" ? (
+                <button
+                  onClick={checkLocalDictionary}
+                  className="flex items-center gap-1.5 text-[12px] font-medium text-text-secondary hover:text-accent-text cursor-pointer"
+                >
+                  <BookOpenCheck size={13} />
+                  {t("ai.notConfiguredExplain.checkDictionary")}
+                </button>
+              ) : dictState === "loading" ? (
+                <div className="flex items-center gap-1.5 text-[12px] text-text-muted">
+                  <Loader2 size={13} className="animate-spin" />
+                  {t("ai.notConfiguredExplain.dictLoading")}
+                </div>
+              ) : dictState === "notFound" ? (
+                <p className="text-[12px] text-text-muted">{t("ai.notConfiguredExplain.dictNotFound")}</p>
+              ) : (
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-[0.5px] text-text-muted">
+                    {t("ai.notConfiguredExplain.dictLabel")}
+                  </p>
+                  <p className="mt-1 text-[13px] leading-5 text-text-primary">{dictText}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : aiError ? (
           <div className="flex flex-col items-center gap-2 py-4 text-center">
             <p className="text-[13px] text-text-muted">{t(aiErrorMessageKey(aiError))}</p>
             <button
-              onClick={async () => {
-                onClose();
-                await invoke("open_settings_on_main", { section: "services" });
-                const main = await WebviewWindow.getByLabel("main");
-                await main?.setFocus();
-              }}
+              onClick={() => void openAiSettings()}
               className="flex items-center gap-1.5 text-[13px] font-medium text-accent-text hover:opacity-70 cursor-pointer"
             >
               <Settings size={14} />

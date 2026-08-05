@@ -9,6 +9,14 @@ import { ROW_CONTROL_WIDTH, type SettingsProps } from "./types";
 import { LANGUAGE_OPTIONS } from "./languageOptions";
 import { platform } from "../../services/platform";
 import { notifyAllReaders } from "../../utils/notifyReaders";
+import {
+  CEFR_LEVELS,
+  EXAM_OPTIONS,
+  EXAM_SCORE_RULES,
+  scoreWithinRule,
+  type ScoreRule,
+} from "./cefr";
+import { ONBOARDING_STATE_KEY } from "../onboarding/onboarding-state";
 
 interface CefrEstimate {
   estimated_cefr: string;
@@ -37,68 +45,9 @@ interface LanguageAssessmentSummary extends CefrEstimate {
   primary_assessment_id: string;
 }
 
-const CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
-const EXAM_OPTIONS = [
-  { value: "ielts", label: "IELTS" },
-  { value: "toefl_ibt", label: "TOEFL iBT" },
-  { value: "toeic_lr", label: "TOEIC Listening & Reading" },
-  { value: "cambridge", label: "Cambridge English Scale" },
-  { value: "det", label: "Duolingo English Test" },
-  { value: "cet4", label: "CET-4" },
-  { value: "cet6", label: "CET-6" },
-];
-
-interface ScoreRule {
-  min: number;
-  max: number;
-  step: number;
-}
-
-interface ExamScoreRules {
-  overall: ScoreRule;
-  reading: ScoreRule;
-}
-
-const EXAM_SCORE_RULES: Record<string, ExamScoreRules> = {
-  ielts: {
-    overall: { min: 0, max: 9, step: 0.5 },
-    reading: { min: 0, max: 9, step: 0.5 },
-  },
-  toefl_ibt: {
-    overall: { min: 0, max: 120, step: 1 },
-    reading: { min: 0, max: 30, step: 1 },
-  },
-  toeic_lr: {
-    overall: { min: 10, max: 990, step: 1 },
-    reading: { min: 5, max: 495, step: 1 },
-  },
-  cambridge: {
-    overall: { min: 80, max: 230, step: 1 },
-    reading: { min: 80, max: 230, step: 1 },
-  },
-  det: {
-    overall: { min: 10, max: 160, step: 1 },
-    reading: { min: 10, max: 160, step: 1 },
-  },
-  cet4: {
-    overall: { min: 0, max: 710, step: 1 },
-    reading: { min: 0, max: 249, step: 1 },
-  },
-  cet6: {
-    overall: { min: 0, max: 710, step: 1 },
-    reading: { min: 0, max: 249, step: 1 },
-  },
-};
-
 function normalizedExplanationMode(value: string | undefined): string {
   if (value === "english_by_level" || value === "chinese") return value;
   return "adaptive_bilingual";
-}
-
-function scoreWithinRule(value: number, rule: ScoreRule): boolean {
-  if (!Number.isFinite(value) || value < rule.min || value > rule.max) return false;
-  const steps = (value - rule.min) / rule.step;
-  return Math.abs(steps - Math.round(steps)) < 1e-8;
 }
 
 function errorCode(error: unknown): string {
@@ -789,6 +738,28 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
             { value: "365", label: t("settings.general.lookupHistory1Year") },
           ]}
         />
+      </div>
+
+      {/* Lets someone who skipped or rushed through the first-launch card see
+          it again, without a support request to reset a hidden flag. */}
+      <div className="mt-8 mb-2 text-[11px] font-medium uppercase tracking-[0.5px] text-text-muted">
+        {t("settings.onboarding.title")}
+      </div>
+      <div className="h-px bg-border-light" />
+      <div className="flex items-center justify-between h-[73px]">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.onboarding.replay")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.onboarding.replayHint")}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            void save(ONBOARDING_STATE_KEY, "").then(() => showSavedToast(t("settings.onboarding.replayed")));
+          }}
+          className="h-8 px-3 bg-white dark:bg-bg-surface rounded-[10px] text-[13px] font-medium text-text-secondary border border-border hover:border-accent transition-colors"
+        >
+          {t("settings.onboarding.replayButton")}
+        </button>
       </div>
 
       {/* Diagnostics — log triage entry point. Mirrors the Help menu's

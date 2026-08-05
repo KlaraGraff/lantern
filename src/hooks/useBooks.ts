@@ -109,6 +109,11 @@ async function importFile(): Promise<Book | null> {
 
 export const importBookDialog = { importFile };
 
+/** Healthy imports finish in 1-5s; past this, either pdf.js is stalled
+ * (PDF_METADATA_TIMEOUT_MS) or the Rust EPUB path is grinding on a large
+ * file. Shared so every "still working" hint agrees on the threshold. */
+export const IMPORT_SLOW_HINT_MS = 5000;
+
 export async function getBook(id: string): Promise<Book> {
   return invoke<Book>("get_book", { id });
 }

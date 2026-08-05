@@ -24,6 +24,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { formatDuration } from "./aiDuration";
+import { connectionErrorLabel } from "./ai-connection-errors";
 import { AI_PRESETS, COST_TIER_CLASSES, presetFor } from "./aiPresets";
 import Button from "../ui/Button";
 import ComboField from "../ui/ComboField";
@@ -313,28 +314,6 @@ function credentialStateLabel(
   if (credential.state === "quota") return t("settings.ai.keyQuota");
   if (credential.state === "invalid") return t("settings.ai.keyInvalid");
   return t("settings.ai.keyState", { state: credential.state });
-}
-
-const CONNECTION_ERROR_KEYS: Record<string, string> = {
-  credential_invalid: "credentialInvalid",
-  auth: "auth",
-  permission: "permission",
-  rate_limit: "rateLimit",
-  quota: "quota",
-  network: "network",
-  provider_5xx: "provider5xx",
-  protocol: "protocol",
-  request: "request",
-  not_configured: "notConfigured",
-  cancelled: "cancelled",
-};
-
-function connectionErrorLabel(
-  kind: string | undefined,
-  t: (key: string, options?: Record<string, unknown>) => string,
-): string {
-  const key = kind ? CONNECTION_ERROR_KEYS[kind] : undefined;
-  return key ? t(`settings.ai.testError.${key}`) : (kind ?? t("settings.ai.unknownError"));
 }
 
 export default function AiServiceCard({

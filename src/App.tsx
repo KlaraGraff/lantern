@@ -10,6 +10,7 @@ import AiRouteFallbackNotice from "./components/AiRouteFallbackNotice";
 import ReasoningEffortNotice from "./components/ReasoningEffortNotice";
 import SettingsHost from "./components/SettingsHost";
 import McpApprovalDialog from "./components/McpApprovalDialog";
+import OnboardingCard from "./components/onboarding/OnboardingCard";
 import { reconcileLanguage } from "./i18n";
 import { useAppZoom } from "./hooks/useAppZoom";
 import { openReaderWindow } from "./utils/openReaderWindow";
@@ -96,6 +97,7 @@ export default function App() {
           mounting a second modal of its own. */}
       {isMainWindow && <SettingsHost />}
       {isMainWindow && <McpApprovalDialog />}
+      {isMainWindow && <OnboardingCard />}
     </>
   );
 
