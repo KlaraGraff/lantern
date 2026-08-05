@@ -315,9 +315,7 @@ export default function ToolsSettings({
     || (previewExplanationMode === "adaptive_bilingual" && ["A1", "A2"].includes(settings.cefr_level || "B1"))
     ? "zh"
     : "en";
-  const targetLanguage = settings.translation_language
-    || settings.lookup_translation_language
-    || "zh";
+  const targetLanguage = settings.translation_language || "zh";
 
   useEffect(() => {
     if (loading || !previewOpen || (view !== "cards" && view !== "menu")) {

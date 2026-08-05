@@ -18,24 +18,12 @@ pub(super) fn language_name(code: &str) -> String {
     .to_string()
 }
 
-/// Normalize legacy or damaged values into the three user-visible modes.
-fn normalized_explanation_mode(mode: Option<&str>) -> &'static str {
+/// Normalize damaged or unrecognized values into the three user-visible modes.
+pub(super) fn normalized_explanation_mode(mode: Option<&str>) -> &'static str {
     match mode.map(str::trim) {
         Some("english_by_level") => "english_by_level",
-        Some("chinese" | "target_language") => "chinese",
+        Some("chinese") => "chinese",
         _ => "adaptive_bilingual",
-    }
-}
-
-pub(super) fn configured_explanation_mode(
-    mode: Option<&str>,
-    translation_language: &str,
-) -> &'static str {
-    let is_chinese = matches!(translation_language.trim(), "zh" | "zh-CN" | "zh-Hans");
-    if mode.map(str::trim) == Some("target_language") && !is_chinese {
-        "adaptive_bilingual"
-    } else {
-        normalized_explanation_mode(mode)
     }
 }
 
@@ -218,22 +206,6 @@ pub(crate) fn book_reference_block(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn legacy_target_language_mode_migrates_to_chinese_semantics() {
-        assert_eq!(
-            normalized_explanation_mode(Some("target_language")),
-            "chinese"
-        );
-        assert_eq!(
-            configured_explanation_mode(Some("target_language"), "fr"),
-            "adaptive_bilingual"
-        );
-        assert_eq!(
-            normalized_explanation_mode(Some("unexpected")),
-            "adaptive_bilingual"
-        );
-    }
 
     #[test]
     fn a_level_constrains_wording_without_thinning_the_card() {

@@ -2,7 +2,7 @@
 
 use tauri::{AppHandle, State};
 
-use super::prompt::{book_reference_block, configured_explanation_mode, explanation_strategy};
+use super::prompt::{book_reference_block, explanation_strategy, normalized_explanation_mode};
 use super::stream::{ensure_stream_credentials_ready, spawn_routed_stream};
 use super::ChatMessage;
 use crate::db::Db;
@@ -49,13 +49,8 @@ pub async fn ai_explain(
             )
             .ok()
         };
-        let translation_language = get("translation_language")
-            .or_else(|| get("lookup_translation_language"))
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| "zh".to_string());
         (
-            configured_explanation_mode(get("explanation_mode").as_deref(), &translation_language)
-                .to_string(),
+            normalized_explanation_mode(get("explanation_mode").as_deref()).to_string(),
             get("cefr_level").unwrap_or_else(|| "B1".to_string()),
         )
     };

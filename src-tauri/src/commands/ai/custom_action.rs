@@ -5,7 +5,7 @@ use tauri::{AppHandle, State};
 
 use super::learning_card::{LEARNING_CARD_MAX_CONTEXT_CHARS, LEARNING_CARD_MAX_SOURCE_CHARS};
 use super::prompt::{
-    checked_learning_text, configured_explanation_mode, learning_language_strategy,
+    checked_learning_text, learning_language_strategy, normalized_explanation_mode,
     strip_single_json_fence,
 };
 use super::stream::{ensure_stream_credentials_ready, spawn_routed_stream};
@@ -106,13 +106,10 @@ pub async fn ai_custom_action(
             )
             .ok()
         };
-        let translation = get("translation_language")
-            .or_else(|| get("lookup_translation_language"))
-            .unwrap_or_else(|| "zh".to_string());
+        let translation = get("translation_language").unwrap_or_else(|| "zh".to_string());
         (
             get("cefr_level").unwrap_or_else(|| "B1".to_string()),
-            configured_explanation_mode(get("explanation_mode").as_deref(), &translation)
-                .to_string(),
+            normalized_explanation_mode(get("explanation_mode").as_deref()).to_string(),
             translation,
         )
     };

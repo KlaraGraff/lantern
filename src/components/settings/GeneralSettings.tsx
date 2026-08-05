@@ -92,13 +92,7 @@ const EXAM_SCORE_RULES: Record<string, ExamScoreRules> = {
 
 function normalizedExplanationMode(value: string | undefined): string {
   if (value === "english_by_level" || value === "chinese") return value;
-  if (value === "target_language") return "chinese";
   return "adaptive_bilingual";
-}
-
-function legacyExplanationMode(value: string | undefined, language: string): string {
-  if (value !== "target_language") return normalizedExplanationMode(value);
-  return ["zh", "zh-CN", "zh-Hans"].includes(language) ? "chinese" : "adaptive_bilingual";
 }
 
 function scoreWithinRule(value: number, rule: ScoreRule): boolean {
@@ -155,10 +149,8 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
     }
     setCefrLevel(settings.cefr_level || "B1");
     setCefrSource(settings.cefr_source || "manual");
-    const translatedTo = settings.translation_language
-      || settings.lookup_translation_language
-      || "zh";
-    const mode = legacyExplanationMode(settings.explanation_mode, translatedTo);
+    const translatedTo = settings.translation_language || "zh";
+    const mode = normalizedExplanationMode(settings.explanation_mode);
     setExplanationMode(mode);
     setTranslationLanguage(translatedTo);
     const acknowledged = settings.cefr_low_level_english_warning_ack === "true";
@@ -169,7 +161,6 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
       && mode === "english_by_level",
     );
     const migration: Record<string, string> = {};
-    if (settings.explanation_mode === "target_language") migration.explanation_mode = mode;
     if (!settings.translation_language) migration.translation_language = translatedTo;
     const migrationSignature = JSON.stringify(migration);
     if (Object.keys(migration).length > 0

@@ -9,8 +9,8 @@ use tauri::{AppHandle, State};
 
 use super::lookup::learning_card_memory_block;
 use super::prompt::{
-    book_reference_block, checked_learning_text, configured_explanation_mode,
-    explanation_matches_translation, learning_language_strategy, strip_single_json_fence,
+    book_reference_block, checked_learning_text, explanation_matches_translation,
+    learning_language_strategy, normalized_explanation_mode, strip_single_json_fence,
 };
 use super::stream::ensure_stream_credentials_ready;
 use super::ChatMessage;
@@ -462,7 +462,6 @@ pub async fn ai_learning_card(
             .ok()
         };
         let translation_language = get("translation_language")
-            .or_else(|| get("lookup_translation_language"))
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| "zh".to_string());
         // Word cards only. A phrase or a passage is almost never looked up at
@@ -474,8 +473,7 @@ pub async fn ai_learning_card(
             .flatten();
         (
             get("cefr_level").unwrap_or_else(|| "B1".to_string()),
-            configured_explanation_mode(get("explanation_mode").as_deref(), &translation_language)
-                .to_string(),
+            normalized_explanation_mode(get("explanation_mode").as_deref()).to_string(),
             translation_language,
             memory,
         )

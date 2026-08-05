@@ -458,7 +458,6 @@ pub async fn ai_vocab_gloss(
             .filter(|value| !value.is_empty())
         };
         get("translation_language")
-            .or_else(|| get("lookup_translation_language"))
             .or_else(|| get("language"))
             .unwrap_or_else(|| "en".to_string())
     };
