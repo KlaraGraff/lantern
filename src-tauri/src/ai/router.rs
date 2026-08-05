@@ -948,33 +948,38 @@ fn active_profile(db: &Db) -> AppResult<AiProfile> {
         .ok_or_else(|| AppError::Other("AI_NOT_CONFIGURED".to_string()))
 }
 
+const CREDENTIAL_COLUMNS: &str =
+    "id, profile_id, label, secret_ref, masked_suffix, enabled, priority, state, cooldown_until, last_error_kind, last_used_at";
+
+fn row_to_credential(row: &rusqlite::Row<'_>) -> rusqlite::Result<AiCredential> {
+    Ok(AiCredential {
+        secret_ref: row.get(3)?,
+        view: AiCredentialView {
+            id: row.get(0)?,
+            profile_id: row.get(1)?,
+            label: row.get(2)?,
+            masked_suffix: row.get(4)?,
+            enabled: row.get::<_, i64>(5)? != 0,
+            priority: row.get(6)?,
+            state: row.get(7)?,
+            cooldown_until: row.get(8)?,
+            last_error_kind: row.get(9)?,
+            last_used_at: row.get(10)?,
+        },
+    })
+}
+
 /// Usable credentials for a profile, in route order. `cutoff` is the instant
 /// cooldowns are measured against, so a manual retry can pass one that has
 /// already outlasted every deadline.
 fn credentials_for(db: &Db, profile_id: &str, cutoff: i64) -> AppResult<Vec<AiCredential>> {
     let conn = db.reader();
     let timestamp = cutoff;
-    let mut statement = conn.prepare(
-        "SELECT id, profile_id, label, secret_ref, masked_suffix, enabled, priority, state, cooldown_until, last_error_kind, last_used_at FROM ai_credentials WHERE profile_id = ?1 AND enabled = 1 AND state != 'invalid' AND (cooldown_until IS NULL OR cooldown_until <= ?2) ORDER BY priority ASC, created_at ASC"
-    )?;
+    let mut statement = conn.prepare(&format!(
+        "SELECT {CREDENTIAL_COLUMNS} FROM ai_credentials WHERE profile_id = ?1 AND enabled = 1 AND state != 'invalid' AND (cooldown_until IS NULL OR cooldown_until <= ?2) ORDER BY priority ASC, created_at ASC"
+    ))?;
     let credentials = statement
-        .query_map(params![profile_id, timestamp], |row| {
-            Ok(AiCredential {
-                secret_ref: row.get(3)?,
-                view: AiCredentialView {
-                    id: row.get(0)?,
-                    profile_id: row.get(1)?,
-                    label: row.get(2)?,
-                    masked_suffix: row.get(4)?,
-                    enabled: row.get::<_, i64>(5)? != 0,
-                    priority: row.get(6)?,
-                    state: row.get(7)?,
-                    cooldown_until: row.get(8)?,
-                    last_error_kind: row.get(9)?,
-                    last_used_at: row.get(10)?,
-                },
-            })
-        })
+        .query_map(params![profile_id, timestamp], row_to_credential)
         .map_err(AppError::from)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(AppError::from)?;
@@ -983,27 +988,11 @@ fn credentials_for(db: &Db, profile_id: &str, cutoff: i64) -> AppResult<Vec<AiCr
 
 fn all_credentials_for(db: &Db, profile_id: &str) -> AppResult<Vec<AiCredential>> {
     let conn = db.reader();
-    let mut statement = conn.prepare(
-        "SELECT id, profile_id, label, secret_ref, masked_suffix, enabled, priority, state, cooldown_until, last_error_kind, last_used_at FROM ai_credentials WHERE profile_id = ?1 ORDER BY priority ASC, created_at ASC"
-    )?;
+    let mut statement = conn.prepare(&format!(
+        "SELECT {CREDENTIAL_COLUMNS} FROM ai_credentials WHERE profile_id = ?1 ORDER BY priority ASC, created_at ASC"
+    ))?;
     let credentials = statement
-        .query_map(params![profile_id], |row| {
-            Ok(AiCredential {
-                secret_ref: row.get(3)?,
-                view: AiCredentialView {
-                    id: row.get(0)?,
-                    profile_id: row.get(1)?,
-                    label: row.get(2)?,
-                    masked_suffix: row.get(4)?,
-                    enabled: row.get::<_, i64>(5)? != 0,
-                    priority: row.get(6)?,
-                    state: row.get(7)?,
-                    cooldown_until: row.get(8)?,
-                    last_error_kind: row.get(9)?,
-                    last_used_at: row.get(10)?,
-                },
-            })
-        })
+        .query_map(params![profile_id], row_to_credential)
         .map_err(AppError::from)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(AppError::from)?;
@@ -1013,25 +1002,9 @@ fn all_credentials_for(db: &Db, profile_id: &str) -> AppResult<Vec<AiCredential>
 fn credential_by_id(db: &Db, id: &str) -> AppResult<AiCredential> {
     let conn = db.reader();
     conn.query_row(
-        "SELECT id, profile_id, label, secret_ref, masked_suffix, enabled, priority, state, cooldown_until, last_error_kind, last_used_at FROM ai_credentials WHERE id = ?1",
+        &format!("SELECT {CREDENTIAL_COLUMNS} FROM ai_credentials WHERE id = ?1"),
         params![id],
-        |row| {
-            Ok(AiCredential {
-                secret_ref: row.get(3)?,
-                view: AiCredentialView {
-                    id: row.get(0)?,
-                    profile_id: row.get(1)?,
-                    label: row.get(2)?,
-                    masked_suffix: row.get(4)?,
-                    enabled: row.get::<_, i64>(5)? != 0,
-                    priority: row.get(6)?,
-                    state: row.get(7)?,
-                    cooldown_until: row.get(8)?,
-                    last_error_kind: row.get(9)?,
-                    last_used_at: row.get(10)?,
-                },
-            })
-        },
+        row_to_credential,
     )
     .optional()?
     .ok_or_else(|| AppError::Other("AI_CREDENTIAL_NOT_FOUND".to_string()))
@@ -1891,6 +1864,20 @@ fn connection_test_token_limit(profile: &AiProfile) -> Option<u32> {
     answer_token_limit(profile, Some(64))
 }
 
+/// One thing the route can try against a profile.
+///
+/// The distinction is not the provider but whether there is a credential row
+/// behind the secret: an OAuth token and Ollama's empty key belong to the
+/// profile as a whole, so a failure has nowhere per-key to be recorded, while
+/// an API key has its own health and its own place in the order.
+enum Attempt {
+    Direct {
+        key: String,
+        account_id: Option<String>,
+    },
+    Credential(AiCredential),
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn stream_with_failover_inner<R: Runtime>(
     app: &AppHandle<R>,
@@ -1920,10 +1907,17 @@ async fn stream_with_failover_inner<R: Runtime>(
     let expected = profiles.first().map(|profile| profile.view.clone());
 
     for profile in profiles {
-        if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" {
-            let emitted = Arc::new(AtomicBool::new(false));
-            let (token, account_id) = match crate::ai::oauth::get_valid_token(secrets).await {
-                Ok(token) => token,
+        // What this profile offers the route to try, in order. A profile that
+        // authenticates as a whole offers exactly one thing and has no per-key
+        // health to record; an API-key profile offers each usable key, and its
+        // secret is fetched only when the route actually reaches it — reading
+        // the keychain for a key the first one made unnecessary is not free.
+        let attempts = if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" {
+            match crate::ai::oauth::get_valid_token(secrets).await {
+                Ok((token, account_id)) => vec![Attempt::Direct {
+                    key: token,
+                    account_id,
+                }],
                 Err(error) => {
                     let kind = classify_error(&error);
                     update_profile_health(db, &profile, Some(kind), retry_after_ms(&error), None);
@@ -1937,13 +1931,51 @@ async fn stream_with_failover_inner<R: Runtime>(
                     last_error = Some(error);
                     continue;
                 }
+            }
+        } else if profile.view.provider == "ollama" {
+            vec![Attempt::Direct {
+                key: String::new(),
+                account_id: None,
+            }]
+        } else {
+            configured_credentials.extend(all_credentials_for(db, &profile.view.id)?);
+            credentials_for(db, &profile.view.id, timestamp)?
+                .into_iter()
+                .map(Attempt::Credential)
+                .collect()
+        };
+
+        let profile_started = Instant::now();
+        let mut profile_failure = None;
+        for attempt in attempts {
+            let (key, account_id, credential) = match attempt {
+                Attempt::Direct { key, account_id } => (key, account_id, None),
+                Attempt::Credential(credential) => {
+                    let Some(key) = secrets
+                        .get(&credential.secret_ref)?
+                        .filter(|value| !value.trim().is_empty())
+                    else {
+                        // The row says there is a key and the keychain says
+                        // otherwise. Nothing to send, so nothing to time.
+                        update_credential_health(
+                            db,
+                            &credential,
+                            Some(AiErrorKind::CredentialInvalid),
+                            None,
+                        );
+                        profile_failure = Some((AiErrorKind::CredentialInvalid, None));
+                        last_error = Some(AppError::Other("AI_CREDENTIAL_UNAVAILABLE".to_string()));
+                        continue;
+                    };
+                    (key, None, Some(credential))
+                }
             };
-            let started = Instant::now();
+            let emitted = Arc::new(AtomicBool::new(false));
             let result = stream_once_with_effort_fallback(
                 app,
                 db,
                 &profile,
-                &token,
+                &key,
                 account_id.as_deref(),
                 messages,
                 event_name,
@@ -1954,136 +1986,16 @@ async fn stream_with_failover_inner<R: Runtime>(
                 cancel,
             )
             .await;
-            let latency = started.elapsed().as_millis() as u64;
+            // Measured from the profile's first attempt, not this one: the
+            // settings page shows one latency per model, and what the reader
+            // waited for is the whole time the profile held the request.
+            let latency = profile_started.elapsed().as_millis() as u64;
             match result {
                 Ok(()) => {
+                    if let Some(credential) = &credential {
+                        update_credential_health(db, credential, None, None);
+                    }
                     update_profile_health(db, &profile, None, None, Some(latency));
-                    emit_route_fallback(app, db, expected.as_ref(), &profile.view);
-                    return Ok(profile.view.clone());
-                }
-                Err(error) => {
-                    if is_cancelled(&error) {
-                        return Err(error);
-                    }
-                    let kind = classify_error(&error);
-                    update_profile_health(
-                        db,
-                        &profile,
-                        Some(kind),
-                        retry_after_ms(&error),
-                        Some(latency),
-                    );
-                    if !may_continue_after(kind, emitted.load(Ordering::Relaxed)) {
-                        return Err(error);
-                    }
-                    log::warn!(
-                        "ai router: profile={} failed kind={}, trying next profile",
-                        profile.view.id,
-                        kind.as_str()
-                    );
-                    last_error = Some(error);
-                    continue;
-                }
-            }
-        }
-
-        if profile.view.provider == "ollama" {
-            let emitted = Arc::new(AtomicBool::new(false));
-            let started = Instant::now();
-            let result = stream_once_with_effort_fallback(
-                app,
-                db,
-                &profile,
-                "",
-                None,
-                messages,
-                event_name,
-                max_tokens,
-                effort_for(&profile.view, purpose),
-                true,
-                Arc::clone(&emitted),
-                cancel,
-            )
-            .await;
-            let latency = started.elapsed().as_millis() as u64;
-            match result {
-                Ok(()) => {
-                    update_profile_health(db, &profile, None, None, Some(latency));
-                    emit_route_fallback(app, db, expected.as_ref(), &profile.view);
-                    return Ok(profile.view.clone());
-                }
-                Err(error) => {
-                    if is_cancelled(&error) {
-                        return Err(error);
-                    }
-                    let kind = classify_error(&error);
-                    update_profile_health(
-                        db,
-                        &profile,
-                        Some(kind),
-                        retry_after_ms(&error),
-                        Some(latency),
-                    );
-                    if !may_continue_after(kind, emitted.load(Ordering::Relaxed)) {
-                        return Err(error);
-                    }
-                    log::warn!(
-                        "ai router: profile={} failed kind={}, trying next profile",
-                        profile.view.id,
-                        kind.as_str()
-                    );
-                    last_error = Some(error);
-                    continue;
-                }
-            }
-        }
-
-        let all = all_credentials_for(db, &profile.view.id)?;
-        configured_credentials.extend(all.clone());
-        let candidates = credentials_for(db, &profile.view.id, timestamp)?;
-        let profile_started = Instant::now();
-        let mut profile_failure = None;
-        for credential in candidates {
-            let Some(key) = secrets
-                .get(&credential.secret_ref)?
-                .filter(|value| !value.trim().is_empty())
-            else {
-                update_credential_health(
-                    db,
-                    &credential,
-                    Some(AiErrorKind::CredentialInvalid),
-                    None,
-                );
-                profile_failure = Some((AiErrorKind::CredentialInvalid, None));
-                last_error = Some(AppError::Other("AI_CREDENTIAL_UNAVAILABLE".to_string()));
-                continue;
-            };
-            let emitted = Arc::new(AtomicBool::new(false));
-            match stream_once_with_effort_fallback(
-                app,
-                db,
-                &profile,
-                &key,
-                None,
-                messages,
-                event_name,
-                max_tokens,
-                effort_for(&profile.view, purpose),
-                true,
-                Arc::clone(&emitted),
-                cancel,
-            )
-            .await
-            {
-                Ok(()) => {
-                    update_credential_health(db, &credential, None, None);
-                    update_profile_health(
-                        db,
-                        &profile,
-                        None,
-                        None,
-                        Some(profile_started.elapsed().as_millis() as u64),
-                    );
                     emit_route_fallback(app, db, expected.as_ref(), &profile.view);
                     return Ok(profile.view.clone());
                 }
@@ -2093,22 +2005,20 @@ async fn stream_with_failover_inner<R: Runtime>(
                     }
                     let kind = classify_error(&error);
                     let retry_after = retry_after_ms(&error);
-                    update_credential_health(db, &credential, Some(kind), retry_after);
+                    if let Some(credential) = &credential {
+                        update_credential_health(db, credential, Some(kind), retry_after);
+                    }
                     profile_failure = Some((kind, retry_after));
                     if !may_continue_after(kind, emitted.load(Ordering::Relaxed)) {
-                        update_profile_health(
-                            db,
-                            &profile,
-                            Some(kind),
-                            retry_after,
-                            Some(profile_started.elapsed().as_millis() as u64),
-                        );
+                        update_profile_health(db, &profile, Some(kind), retry_after, Some(latency));
                         return Err(error);
                     }
                     log::warn!(
                         "ai router: profile={} credential={} failed kind={}, trying next candidate",
                         profile.view.id,
-                        credential.view.id,
+                        credential
+                            .as_ref()
+                            .map_or("-", |credential| credential.view.id.as_str()),
                         kind.as_str()
                     );
                     last_error = Some(error);
@@ -4499,6 +4409,214 @@ mod tests {
             }
         });
         (format!("http://{address}"), seen)
+    }
+
+    fn sse_answer(text: &str) -> String {
+        format!("{}data: [DONE]\n\n", sse_delta(text))
+    }
+
+    async fn route_test_setup(
+        directory: &tempfile::TempDir,
+        responses: Vec<(&'static str, String)>,
+    ) -> (Db, Secrets, Arc<std::sync::atomic::AtomicUsize>, String) {
+        let db = Db::init(directory.path()).unwrap();
+        let secrets = Secrets::init_in_memory().unwrap();
+        let (base_url, seen) = counting_stream_server(responses).await;
+        (db, secrets, seen, base_url)
+    }
+
+    async fn route(
+        app: &tauri::App<tauri::test::MockRuntime>,
+        db: &Db,
+        secrets: &Secrets,
+    ) -> AppResult<AiProfileView> {
+        let (_sender, mut cancel) = watch::channel(false);
+        stream_with_failover_inner(
+            app.handle(),
+            db,
+            secrets,
+            &[crate::commands::ai::ChatMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+            }],
+            "ai-route-test",
+            None,
+            AiRequestPurpose::Chat,
+            AiRetryMode::Automatic,
+            &mut cancel,
+        )
+        .await
+    }
+
+    /// The first exit from the traversal: a key that is no longer a key hands
+    /// the request to the next one under the same model, and says so in its own
+    /// health rather than the model's.
+    #[tokio::test]
+    async fn a_dead_key_hands_the_request_to_the_next_one() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let (db, secrets, seen, base_url) = route_test_setup(
+            &directory,
+            vec![
+                (
+                    "401 Unauthorized",
+                    r#"{"error":{"code":"invalid_api_key"}}"#.to_string(),
+                ),
+                ("200 OK", sse_answer("answered")),
+            ],
+        )
+        .await;
+        let profile = model_list_test_profile(&db, base_url);
+        for (label, value) in [("First", "dead-key"), ("Second", "live-key")] {
+            add_credential(
+                &db,
+                &secrets,
+                profile.id.clone(),
+                label.to_string(),
+                value.to_string(),
+            )
+            .unwrap();
+        }
+
+        let app = tauri::test::mock_app();
+        let answered = route(&app, &db, &secrets).await.unwrap();
+
+        assert_eq!(answered.id, profile.id);
+        assert_eq!(seen.load(Ordering::Relaxed), 2);
+        let credentials = list_credentials(&db, Some(&profile.id)).unwrap();
+        assert_eq!(credentials[0].state, "invalid");
+        assert_eq!(
+            credentials[0].last_error_kind.as_deref(),
+            Some("credential_invalid")
+        );
+        assert_eq!(credentials[1].state, "active");
+        assert!(credentials[1].last_used_at.is_some());
+        // The model itself answered, so nothing is wrong with the model.
+        let stored = profile_by_id(&db, &profile.id).unwrap().view;
+        assert_eq!(stored.state, "active");
+        assert!(stored.last_latency_ms.is_some());
+    }
+
+    /// The second exit: a model that is down hands the request to the next
+    /// model, and the one that answers is not the one the reader expected.
+    #[tokio::test]
+    async fn a_model_that_is_down_hands_the_request_to_the_next_model() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let (db, secrets, seen, base_url) = route_test_setup(
+            &directory,
+            vec![
+                ("503 Service Unavailable", "{}".to_string()),
+                ("200 OK", sse_answer("answered")),
+            ],
+        )
+        .await;
+        let first = model_list_test_profile(&db, base_url.clone());
+        let second = model_list_test_profile(&db, base_url);
+        for profile in [&first, &second] {
+            add_credential(
+                &db,
+                &secrets,
+                profile.id.clone(),
+                "Key".to_string(),
+                format!("key-{}", profile.id),
+            )
+            .unwrap();
+        }
+
+        let app = tauri::test::mock_app();
+        let answered = route(&app, &db, &secrets).await.unwrap();
+
+        assert_eq!(answered.id, second.id);
+        assert_eq!(seen.load(Ordering::Relaxed), 2);
+        let down = profile_by_id(&db, &first.id).unwrap().view;
+        assert_eq!(down.state, "cooldown");
+        assert_eq!(down.last_error_kind.as_deref(), Some("provider_5xx"));
+        assert_eq!(profile_by_id(&db, &second.id).unwrap().view.state, "active");
+    }
+
+    /// The third exit: a request the provider refused on its shape is refused
+    /// on its shape everywhere, so the route stops instead of spending every
+    /// remaining key and model on the same rejected bytes — and nothing is
+    /// cooled down for it, because nothing failed.
+    #[tokio::test]
+    async fn a_refused_request_stops_the_route_instead_of_touring_it() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let (db, secrets, seen, base_url) = route_test_setup(
+            &directory,
+            vec![
+                (
+                    "400 Bad Request",
+                    r#"{"error":{"code":"context_length_exceeded"}}"#.to_string(),
+                ),
+                ("200 OK", sse_answer("never reached")),
+            ],
+        )
+        .await;
+        let first = model_list_test_profile(&db, base_url.clone());
+        let second = model_list_test_profile(&db, base_url);
+        for profile in [&first, &second] {
+            for label in ["A", "B"] {
+                add_credential(
+                    &db,
+                    &secrets,
+                    profile.id.clone(),
+                    label.to_string(),
+                    format!("key-{}-{label}", profile.id),
+                )
+                .unwrap();
+            }
+        }
+
+        let app = tauri::test::mock_app();
+        let error = route(&app, &db, &secrets).await.unwrap_err();
+
+        assert!(error.to_string().contains("status=400"));
+        assert_eq!(seen.load(Ordering::Relaxed), 1);
+        for profile in [&first, &second] {
+            assert_eq!(
+                profile_by_id(&db, &profile.id).unwrap().view.state,
+                "active"
+            );
+            for credential in list_credentials(&db, Some(&profile.id)).unwrap() {
+                assert_eq!(credential.state, "active", "{}", credential.label);
+            }
+        }
+    }
+
+    /// A key whose secret is gone is not a key. It is marked and skipped, and
+    /// the model is still reached through the next one.
+    #[tokio::test]
+    async fn a_key_whose_secret_vanished_is_marked_and_skipped() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let (db, secrets, seen, base_url) =
+            route_test_setup(&directory, vec![("200 OK", sse_answer("answered"))]).await;
+        let profile = model_list_test_profile(&db, base_url);
+        let missing = add_credential(
+            &db,
+            &secrets,
+            profile.id.clone(),
+            "Gone".to_string(),
+            "about-to-vanish".to_string(),
+        )
+        .unwrap();
+        add_credential(
+            &db,
+            &secrets,
+            profile.id.clone(),
+            "Present".to_string(),
+            "live-key".to_string(),
+        )
+        .unwrap();
+        secrets
+            .delete(&format!("ai_api_key/{}", missing.id))
+            .unwrap();
+
+        let app = tauri::test::mock_app();
+        route(&app, &db, &secrets).await.unwrap();
+
+        assert_eq!(seen.load(Ordering::Relaxed), 1);
+        let credentials = list_credentials(&db, Some(&profile.id)).unwrap();
+        assert_eq!(credentials[0].state, "invalid");
+        assert_eq!(credentials[1].state, "active");
     }
 
     fn sse_delta(text: &str) -> String {
