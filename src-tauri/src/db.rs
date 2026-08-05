@@ -117,6 +117,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
         include_str!("../migrations/032_normalize_empty_highlight_notes.sql"),
     ),
     (33, include_str!("../migrations/033_reading_stats.sql")),
+    (
+        34,
+        include_str!("../migrations/034_lookup_records_word_recency.sql"),
+    ),
 ];
 
 fn register_sqlite_vec() {

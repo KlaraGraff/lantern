@@ -67,3 +67,47 @@ export function contextualReviewCloze(sentence: string | null | undefined, word:
 export function contextualSentenceMeaning(value: string | null | undefined) {
   return value?.trim() || null;
 }
+
+export interface ContextualReviewProgress {
+  /** 1-based position of the card on screen; 0 only when the round is empty. */
+  position: number;
+  total: number;
+  /** 0–1 share of the round reached, for the hairline bar under the header. */
+  ratio: number;
+}
+
+/**
+ * Review is a task with an end, so the card has to say how much of the round
+ * is left. Takes the queue index (0-based) and the queue length; clamps both
+ * so a stale index during a queue swap can never render "0 / 5" or "6 / 5".
+ */
+export function contextualReviewProgress(index: number, total: number): ContextualReviewProgress {
+  const size = Number.isFinite(total) && total > 0 ? Math.floor(total) : 0;
+  if (size === 0) return { position: 0, total: 0, ratio: 0 };
+  const safeIndex = Number.isFinite(index) ? Math.floor(index) : 0;
+  const position = Math.min(Math.max(safeIndex + 1, 1), size);
+  return { position, total: size, ratio: position / size };
+}
+
+export interface ContextualReviewSource {
+  bookTitle: string;
+  /** Null means the UI must not draw the separator or an empty segment. */
+  chapter: string | null;
+}
+
+/**
+ * Composes the source line above the sentence. The chapter is what actually
+ * lets the reader recall the original context, but it is not always saved, so
+ * the caller gets an explicit null rather than a blank tail to render.
+ */
+export function contextualReviewSource(
+  bookTitle: string | null | undefined,
+  chapter: string | null | undefined,
+  unknownBookLabel: string,
+): ContextualReviewSource {
+  const title = bookTitle?.trim() || unknownBookLabel;
+  const section = chapter?.trim() ?? "";
+  // A chapter that merely repeats the book title reads as "Book · Book";
+  // dropping it is better than a separator that adds nothing.
+  return { bookTitle: title, chapter: section && section !== title ? section : null };
+}

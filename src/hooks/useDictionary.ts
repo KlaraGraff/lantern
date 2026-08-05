@@ -19,6 +19,12 @@ export interface DictionaryWord {
   created_at: number;
   updated_at: number;
   book_title: string | null;
+  /**
+   * Derived by the backend from lookup history, so it is only present on the
+   * full vocabulary listing and absent (undefined) on partial updates such as
+   * a recorded review.
+   */
+  chapter?: string | null;
 }
 
 export interface LookupRecord {

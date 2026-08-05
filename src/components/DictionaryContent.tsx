@@ -34,7 +34,13 @@ import { timeAgo } from "../utils/timeAgo";
 import PronounceButton from "./speech/PronounceButton";
 import VocabEntryDetails from "./vocab/VocabEntryDetails";
 import { glossOf, parseDefinition } from "./vocab/entry-text";
-import { contextualReviewAnswer, contextualReviewCloze, contextualSentenceMeaning } from "./vocab/contextual-review";
+import {
+  contextualReviewAnswer,
+  contextualReviewCloze,
+  contextualReviewProgress,
+  contextualReviewSource,
+  contextualSentenceMeaning,
+} from "./vocab/contextual-review";
 import { useOpenBook } from "../hooks/useOpenBook";
 import {
   LearningCardModules,
@@ -121,6 +127,16 @@ const VOCAB_BACKUP_CSV_HEADERS = [
   "updated_at",
 ];
 
+/** One key cap plus what it does, for the review card's shortcut footer. */
+function ReviewShortcut({ cap, label }: { cap: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <kbd className="grid h-[18px] min-w-[18px] place-items-center rounded border border-border border-b-2 bg-bg-muted px-1 font-sans text-[10px] leading-none text-text-secondary">{cap}</kbd>
+      {label}
+    </span>
+  );
+}
+
 export default function DictionaryContent() {
   const { t } = useTranslation();
   const openInReader = useOpenBook();
@@ -161,6 +177,7 @@ export default function DictionaryContent() {
   const reviewDialogRef = useRef<HTMLDivElement | null>(null);
   const reviewOpenerRef = useRef<HTMLElement | null>(null);
   const reviewRevealRef = useRef<HTMLButtonElement | null>(null);
+  const reviewPronounceRef = useRef<HTMLSpanElement | null>(null);
   const reviewSubmittingRef = useRef(false);
 
   useEffect(() => {
@@ -195,7 +212,11 @@ export default function DictionaryContent() {
   const reviewCloze = useMemo(() => reviewing ? contextualReviewCloze(reviewing.context_sentence, reviewing.word) : null, [reviewing]);
   const reviewAnswer = useMemo(() => reviewing ? contextualReviewAnswer(reviewing.context_sentence, reviewing.word) : null, [reviewing]);
   const reviewMeaning = useMemo(() => reviewing ? contextualSentenceMeaning(reviewing.context_explanation) : null, [reviewing]);
-  const reviewPosition = reviewing ? reviewIndex + 1 : reviewQueue.length;
+  const reviewProgress = useMemo(() => contextualReviewProgress(reviewIndex, reviewQueue.length), [reviewIndex, reviewQueue.length]);
+  const reviewSource = useMemo(
+    () => reviewing ? contextualReviewSource(reviewing.book_title, reviewing.chapter, t("common.unknownBook")) : null,
+    [reviewing, t],
+  );
 
   const filtered = useMemo(() => {
     let result = words;
@@ -356,6 +377,23 @@ export default function DictionaryContent() {
     }
   }, [recordReview, reviewIndex, reviewQueue.length, reviewing]);
 
+  // "获取提示" is one action with two possible carriers: the saved sentence
+  // meaning when the row has one, otherwise the pronunciation, which every
+  // card can offer. Keeping the fallback means the advertised shortcut always
+  // does something. Clicking the rendered pronounce button (rather than
+  // calling the speech hook here) keeps the button's own playback state and
+  // the keyboard path identical.
+  const revealReviewHint = useCallback(() => {
+    // The meaning box only exists on the contextual card, so a word-first
+    // fallback row with a saved explanation still gets the audio hint rather
+    // than a toggle nothing renders.
+    if (reviewCloze && reviewMeaning) {
+      setReviewMeaningVisible((visible) => !visible);
+      return;
+    }
+    reviewPronounceRef.current?.querySelector("button")?.click();
+  }, [reviewCloze, reviewMeaning]);
+
   useEffect(() => {
     setReviewAnswerVisible(false);
     setReviewMeaningVisible(false);
@@ -383,6 +421,22 @@ export default function DictionaryContent() {
         return;
       }
       const target = event.target as HTMLElement | null;
+      // The hint key is checked before the "focus is on a control" guard
+      // below: the reveal button holds focus by default, and H does nothing
+      // native on a button, so deferring there would make the advertised
+      // shortcut dead exactly where the reader starts. Typing targets are
+      // still excluded.
+      if (
+        reviewing
+        && !reviewAnswerVisible
+        && !event.metaKey && !event.ctrlKey && !event.altKey
+        && (event.key === "h" || event.key === "H")
+        && !target?.closest("input, select, textarea, [contenteditable='true']")
+      ) {
+        event.preventDefault();
+        revealReviewHint();
+        return;
+      }
       if (target?.closest("button, input, select, textarea, [contenteditable='true']")) return;
       if (reviewing && !reviewAnswerVisible && event.code === "Space") {
         event.preventDefault();
@@ -397,7 +451,7 @@ export default function DictionaryContent() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [reviewing, reviewComplete, reviewAnswerVisible, reviewSubmitting, closeReview, completeReview]);
+  }, [reviewing, reviewComplete, reviewAnswerVisible, reviewSubmitting, closeReview, completeReview, revealReviewHint]);
 
   useEffect(() => {
     if (!reviewing || !reviewAnswerVisible) return;
@@ -1212,12 +1266,29 @@ export default function DictionaryContent() {
                 <div className="flex items-center gap-2 text-text-primary">
                   <RotateCcw size={17} className="text-accent" />
                   <h2 id="vocab-review-title" className="text-[16px] font-semibold">{reviewCloze ? t("vocab.contextReview") : t("vocab.review")}</h2>
-                  <span className="ml-auto text-[12px] text-text-muted">{reviewPosition} / {reviewQueue.length}</span>
+                  <span className="ml-auto text-[12px] tabular-nums text-text-muted">{reviewProgress.position} / {reviewProgress.total}</span>
                   <button type="button" disabled={reviewSubmitting} aria-label={t("common.close")} onClick={closeReview} className="size-7 rounded-md text-text-muted hover:bg-bg-input hover:text-text-primary disabled:cursor-wait disabled:opacity-40"><X size={16} /></button>
+                </div>
+                <div
+                  role="progressbar"
+                  aria-valuemin={1}
+                  aria-valuemax={reviewProgress.total}
+                  aria-valuenow={reviewProgress.position}
+                  aria-valuetext={t("vocab.reviewProgressLabel", { position: reviewProgress.position, total: reviewProgress.total })}
+                  className="mt-3 h-[2px] w-full overflow-hidden rounded-full bg-bg-muted"
+                >
+                  <div className="h-full rounded-full bg-accent transition-[width] duration-200 motion-reduce:transition-none" style={{ width: `${reviewProgress.ratio * 100}%` }} />
                 </div>
                 {!reviewAnswerVisible ? (
                   <div className="flex min-h-[300px] flex-col text-center">
-                    <p className="mt-6 text-[12px] text-text-muted">{reviewing.book_title || t("common.unknownBook")}</p>
+                    <p className="mt-6 flex items-center justify-center gap-1.5 text-[12px] text-text-muted">
+                      <BookOpen size={12} className="shrink-0" />
+                      <span className="max-w-[220px] truncate">{reviewSource?.bookTitle}</span>
+                      {reviewSource?.chapter && <>
+                        <span aria-hidden="true" className="text-text-muted/60">·</span>
+                        <span className="max-w-[180px] truncate">{reviewSource.chapter}</span>
+                      </>}
+                    </p>
                     {reviewCloze ? <>
                       <p className="mt-4 text-[12px] text-text-muted">{t("vocab.contextReviewPrompt")}</p>
                       <p className="mt-3 font-serif text-[20px] leading-9 text-text-primary">
@@ -1226,19 +1297,18 @@ export default function DictionaryContent() {
                           : <span key={index}>{segment.text}</span>)}
                       </p>
                       <div className="mt-5 flex justify-center gap-2">
-                        <PronounceButton text={reviewing.word} size="md" />
+                        <span ref={reviewPronounceRef} className="inline-flex"><PronounceButton text={reviewing.word} size="md" /></span>
                         {reviewMeaning && <button type="button" onClick={() => setReviewMeaningVisible((visible) => !visible)} className="h-7 rounded-md border border-border px-2 text-[12px] text-text-secondary hover:border-accent hover:bg-accent-bg hover:text-accent-text">{t(reviewMeaningVisible ? "vocab.hideSentenceMeaning" : "vocab.showSentenceMeaning")}</button>}
                       </div>
                       {reviewMeaningVisible && <p className="mx-auto mt-3 max-w-md rounded-md bg-accent-bg px-3 py-2 text-[13px] leading-5 text-text-secondary">{reviewMeaning}</p>}
                     </> : <>
                       <div className="mt-12 flex items-center justify-center gap-2">
                         <p className="text-[24px] font-semibold text-text-primary">{reviewing.word}</p>
-                        <PronounceButton text={reviewing.word} size="md" />
+                        <span ref={reviewPronounceRef} className="inline-flex"><PronounceButton text={reviewing.word} size="md" /></span>
                       </div>
                       <p className="mt-3 text-[12px] text-text-muted">{t("vocab.reviewNoContext")}</p>
                     </>}
-                    <p className="mt-auto pt-6 text-[11px] text-text-muted">{t("vocab.reviewSpaceHint")}</p>
-                    <Button ref={reviewRevealRef} className="mx-auto mt-3" variant="primary" size="md" onClick={() => setReviewAnswerVisible(true)}>{t("vocab.showAnswer")}</Button>
+                    <Button ref={reviewRevealRef} className="mx-auto mt-auto" variant="primary" size="md" onClick={() => setReviewAnswerVisible(true)}>{t("vocab.showAnswer")}</Button>
                   </div>
                 ) : (
                   <div>
@@ -1262,6 +1332,17 @@ export default function DictionaryContent() {
                     </div>
                   </div>
                 )}
+                <div role="group" aria-label={t("vocab.reviewShortcuts")} className="mt-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border pt-3 text-[11px] text-text-muted">
+                  <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    {!reviewAnswerVisible ? <>
+                      <ReviewShortcut cap="Space" label={t("vocab.showAnswer")} />
+                      <ReviewShortcut cap="H" label={t("vocab.reviewHint")} />
+                    </> : (["again", "hard", "good", "easy"] as const).map((rating, index) => (
+                      <ReviewShortcut key={rating} cap={String(index + 1)} label={t(`vocab.rating.${rating}`)} />
+                    ))}
+                  </span>
+                  <ReviewShortcut cap="Esc" label={t("common.close")} />
+                </div>
               </>
             )}
           </div>

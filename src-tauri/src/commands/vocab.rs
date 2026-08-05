@@ -33,6 +33,12 @@ pub struct VocabWord {
     pub updated_at: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub book_title: Option<String>,
+    /// Derived, not stored: the chapter the word was looked up in, recovered
+    /// from lookup history. Absent from the JSON when unknown so a partial
+    /// update (e.g. a review result) can't blank a chapter the list already
+    /// resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chapter: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -65,6 +71,7 @@ fn row_to_vocab(row: &rusqlite::Row) -> rusqlite::Result<VocabWord> {
         fsrs_difficulty: row.get(16)?,
         fsrs_version: row.get(17)?,
         book_title: None,
+        chapter: None,
     })
 }
 
@@ -89,6 +96,7 @@ fn row_to_vocab_with_book(row: &rusqlite::Row) -> rusqlite::Result<VocabWord> {
         fsrs_difficulty: row.get(16)?,
         fsrs_version: row.get(17)?,
         book_title: row.get(18)?,
+        chapter: row.get(19)?,
     })
 }
 
@@ -473,6 +481,7 @@ pub(crate) fn add_vocab_word_inner(
             created_at: now,
             updated_at: now,
             book_title: None,
+            chapter: None,
         })
     })?;
 
@@ -530,7 +539,21 @@ pub fn check_vocab_exists(
 pub(crate) fn query_all_vocab_words(db: &Db) -> AppResult<Vec<VocabWord>> {
     let conn = db.reader();
     let mut stmt = conn.prepare(
-        "SELECT v.id, v.book_id, v.word, v.definition, v.context_sentence, v.cfi, v.mastery, v.review_count, v.next_review_at, v.created_at, v.updated_at, v.context_explanation, v.review_interval_days, v.last_reviewed_at, v.last_review_rating, v.fsrs_stability, v.fsrs_difficulty, v.fsrs_version, b.title FROM vocab_words v LEFT JOIN books b ON v.book_id = b.id ORDER BY v.created_at DESC"
+        // The chapter is not stored on the word: vocabulary rows predate the
+        // lookup history table. Recovering it from the lookup that produced
+        // the word gives contextual review the "which chapter was this" line
+        // without a migration, and simply yields NULL when nothing matches.
+        // Same-position lookups win over merely same-word ones.
+        "SELECT v.id, v.book_id, v.word, v.definition, v.context_sentence, v.cfi, v.mastery, v.review_count, v.next_review_at, v.created_at, v.updated_at, v.context_explanation, v.review_interval_days, v.last_reviewed_at, v.last_review_rating, v.fsrs_stability, v.fsrs_difficulty, v.fsrs_version, b.title, \
+         COALESCE( \
+           (SELECT l.chapter FROM lookup_records l \
+             WHERE l.book_id = v.book_id AND l.cfi = v.cfi AND l.normalized_text = lower(trim(v.word)) \
+               AND trim(COALESCE(l.chapter, '')) <> '' LIMIT 1), \
+           (SELECT l.chapter FROM lookup_records l \
+             WHERE l.book_id = v.book_id AND l.normalized_text = lower(trim(v.word)) \
+               AND trim(COALESCE(l.chapter, '')) <> '' \
+             ORDER BY l.last_looked_up_at DESC LIMIT 1)) \
+         FROM vocab_words v LEFT JOIN books b ON v.book_id = b.id ORDER BY v.created_at DESC"
     )?;
     let words = stmt
         .query_map([], row_to_vocab_with_book)?
@@ -1178,6 +1201,50 @@ mod tests {
                 params![id, now],
             )
             .unwrap();
+    }
+
+    #[test]
+    fn all_vocab_words_recover_the_chapter_from_lookup_history() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-chapter");
+        add_vocab_word_inner(
+            "book-chapter",
+            "Courage",
+            "the ability to act",
+            Some("True freedom is the courage to be disliked.".to_string()),
+            None,
+            Some("epubcfi(/6/2!/4/2)".to_string()),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        add_vocab_word_inner(
+            "book-chapter",
+            "Solitude",
+            "being alone",
+            None,
+            None,
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO lookup_records (id, book_id, lookup_text, normalized_text, chapter, cfi, definition, created_at, last_looked_up_at, lookup_count)
+                 VALUES ('lr-1', 'book-chapter', 'courage', 'courage', 'Chapter Three', 'epubcfi(/6/2!/4/2)', 'd', 1, 1, 1)",
+                [],
+            )
+            .unwrap();
+
+        let words = query_all_vocab_words(&db).unwrap();
+        let courage = words.iter().find(|w| w.word == "Courage").unwrap();
+        let solitude = words.iter().find(|w| w.word == "Solitude").unwrap();
+        assert_eq!(courage.chapter.as_deref(), Some("Chapter Three"));
+        // No lookup row, so the review surface must not draw a chapter at all.
+        assert_eq!(solitude.chapter, None);
     }
 
     fn backup_word(id: &str, book_id: &str, word: &str, definition: &str) -> VocabBackupWord {
