@@ -204,3 +204,45 @@ test("terminal states expand safely and restart from the first linear section", 
   await controller.start(true);
   assert.deepEqual(starts, [false, true]);
 });
+
+test("setCollapsed(true) is ignored while finished", async () => {
+  const { controller } = fixture();
+  await controller.start();
+  assert.equal(controller.snapshot().status, "finished");
+  controller.setCollapsed(true);
+  assert.equal(controller.snapshot().collapsed, false);
+});
+
+test("setCollapsed(true) is ignored while errored", async () => {
+  const source = {
+    first: async () => { throw new Error("boom"); },
+    next: async () => null,
+    previous: async () => null,
+    reveal: async () => {},
+  };
+  const player = { play: async () => {}, pause() {}, resume() {}, stop() {} };
+  const controller = new ContinuousReadAloudController(source, player);
+  await controller.start();
+  assert.equal(controller.snapshot().status, "error");
+  controller.setCollapsed(true);
+  assert.equal(controller.snapshot().collapsed, false);
+});
+
+test("setCollapsed(true) still collapses during an active playing/paused state", async () => {
+  let finish!: () => void;
+  const source = {
+    first: async () => sentences[0],
+    next: async () => new Promise<ContinuousReadSentence | null>((resolve) => { finish = () => resolve(null); }),
+    previous: async () => null,
+    reveal: async () => {},
+  };
+  const player = { play: async () => {}, pause() {}, resume() {}, stop() {} };
+  const controller = new ContinuousReadAloudController(source, player);
+  const run = controller.start();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(controller.snapshot().status, "playing");
+  controller.setCollapsed(true);
+  assert.equal(controller.snapshot().collapsed, true);
+  finish();
+  await run;
+});

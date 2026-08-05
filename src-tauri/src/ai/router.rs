@@ -360,10 +360,18 @@ fn take_pending_cancellation(request_id: &str) -> bool {
 pub fn register_request(request_id: &str) -> watch::Receiver<bool> {
     let (sender, receiver) = watch::channel(false);
     // Honor a cancel that arrived while this id was between registrations.
+    //
+    // The pending flag is read while the registry lock is held, and
+    // `cancel_request` holds the same lock across its whole decision. That
+    // closes the window the two used to leave between them, where a cancel
+    // could look up this id, find nothing, and record a flag this registration
+    // had already walked past — leaving a sender nobody would ever signal and a
+    // request that ran to completion with Stop already pressed.
+    let registry = cancellation_registry().lock();
     if take_pending_cancellation(request_id) {
         let _ = sender.send(true);
     }
-    if let Ok(mut registry) = cancellation_registry().lock() {
+    if let Ok(mut registry) = registry {
         registry.insert(request_id.to_string(), sender);
     }
     receiver
@@ -376,16 +384,20 @@ pub fn finish_request(request_id: &str) {
 }
 
 pub fn cancel_request(request_id: &str) -> bool {
-    let sender = cancellation_registry()
-        .lock()
-        .ok()
-        .and_then(|registry| registry.get(request_id).cloned());
-    match sender {
-        Some(sender) => sender.send(true).is_ok(),
-        // No live request right now. Remember the cancel so a multi-step job
-        // that re-registers this id in its next step (or checks before it
-        // registers) still stops instead of running to completion.
-        None => {
+    // The lookup and the fallback record stay under one lock — see
+    // `register_request` for what splitting them let through.
+    match cancellation_registry().lock() {
+        Ok(registry) => match registry.get(request_id) {
+            Some(sender) => sender.send(true).is_ok(),
+            // No live request right now. Remember the cancel so a multi-step
+            // job that re-registers this id in its next step (or checks before
+            // it registers) still stops instead of running to completion.
+            None => {
+                record_pending_cancellation(request_id);
+                true
+            }
+        },
+        Err(_) => {
             record_pending_cancellation(request_id);
             true
         }
@@ -3469,6 +3481,40 @@ mod tests {
 
         assert_eq!(classify_error(&error), AiErrorKind::Cancelled);
         assert!(!classify_error(&error).retryable());
+    }
+
+    /// Stop and start racing each other must never both come up empty. Either
+    /// the cancel finds the live request, or the registration finds the flag
+    /// the cancel left behind — never neither, which is a request that keeps
+    /// streaming after the reader pressed Stop.
+    ///
+    /// This guards the invariant, not the old bug: the window the fix closed
+    /// was a few instructions wide, and running the two threads against the old
+    /// code never lost a cancel in thousands of rounds. It is here so that a
+    /// later change which widens that window has something to trip over.
+    #[test]
+    fn stop_pressed_while_a_request_is_registering_is_never_dropped() {
+        for round in 0..500 {
+            let request_id = format!("race-{round}");
+            let gate = Arc::new(std::sync::Barrier::new(2));
+            let canceller = std::thread::spawn({
+                let request_id = request_id.clone();
+                let gate = Arc::clone(&gate);
+                move || {
+                    gate.wait();
+                    cancel_request(&request_id)
+                }
+            });
+            gate.wait();
+            let receiver = register_request(&request_id);
+            assert!(canceller.join().unwrap());
+
+            let stopped = *receiver.borrow() || has_pending_cancellation(&request_id);
+            assert!(stopped, "round {round} lost the cancel");
+
+            finish_request(&request_id);
+            take_pending_cancellation(&request_id);
+        }
     }
 
     fn provider_error(rest: &str) -> AppError {

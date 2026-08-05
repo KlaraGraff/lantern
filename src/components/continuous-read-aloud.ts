@@ -215,6 +215,10 @@ export class ContinuousReadAloudController {
   }
 
   setCollapsed(collapsed: boolean): void {
+    // Terminal states (finished/error/idle) are never collapsed: the expanded
+    // bar is the only surface that can reach them, so collapsing here would
+    // leave nothing rendered but the state still claiming "collapsed".
+    if (collapsed && (this.state.status === "finished" || this.state.status === "error" || this.state.status === "idle")) return;
     this.publish({ ...this.state, collapsed });
   }
 }
