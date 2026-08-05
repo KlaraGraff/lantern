@@ -12,6 +12,7 @@ mod panic_hook;
 mod pdfium;
 mod secrets;
 mod sync;
+mod word_frequency;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
