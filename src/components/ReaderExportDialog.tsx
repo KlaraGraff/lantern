@@ -159,8 +159,10 @@ export default function ReaderExportDialog({ open, bookId, bookTitle, onClose, r
         <div className="grid max-h-[62vh] grid-cols-1 overflow-auto md:grid-cols-[1fr_1fr]">
           <div className="space-y-5 border-border p-6 md:border-r">
             <fieldset><legend className="mb-2 text-sm font-medium">{t("readerExport.contents")}</legend><div className="grid grid-cols-2 gap-2">
-              {(["highlights", "vocabulary"] as const).map((kind) => <label key={kind} className={`rounded-lg border p-3 ${activeSelection[kind] ? "border-accent bg-accent/5" : "border-border"}`}><input type="checkbox" checked={activeSelection[kind]} disabled={format === "anki"} onChange={() => toggle(kind)} className="mr-2 accent-accent" />{t(`readerExport.${kind}`)}<span className="mt-1 block text-xs text-text-muted">{exportCounts(records)[kind]}</span></label>)}
-            </div></fieldset>
+              {(["highlights", "vocabulary"] as const).map((kind) => <label key={kind} className={`rounded-lg border p-3 ${activeSelection[kind] ? "border-accent bg-accent/5" : "border-border"} ${format === "anki" && kind === "highlights" ? "opacity-50" : ""}`}><input type="checkbox" checked={activeSelection[kind]} disabled={format === "anki"} onChange={() => toggle(kind)} className="mr-2 accent-accent" />{t(`readerExport.${kind}`)}<span className="mt-1 block text-xs text-text-muted">{exportCounts(records)[kind]}</span></label>)}
+            </div>
+            {format === "anki" && <p className="mt-2 text-xs text-text-muted">{t("readerExport.highlightsDisabledAnki")}</p>}
+            </fieldset>
             <fieldset><legend className="mb-2 text-sm font-medium">{t("readerExport.format")}</legend><div className="grid grid-cols-3 rounded-lg bg-bg-input p-1">{(["markdown", "csv", "anki"] as const).map((item) => <button key={item} onClick={() => chooseFormat(item)} className={`rounded-md py-2 text-xs ${format === item ? "bg-bg-surface font-semibold shadow-sm" : "text-text-muted"}`}>{t(`readerExport.format.${item}`)}</button>)}</div></fieldset>
             <p className="rounded-lg bg-bg-input p-3 text-xs leading-5 text-text-muted">{t("readerExport.privacy")}</p>
           </div>

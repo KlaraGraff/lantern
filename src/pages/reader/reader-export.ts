@@ -1,3 +1,5 @@
+import { findWordBoundaryMatch } from "../../components/vocab/word-boundary.ts";
+
 export type ExportFormat = "markdown" | "csv" | "anki";
 
 export interface ExportHighlight {
@@ -62,22 +64,32 @@ export function serializeMarkdown(records: readonly ExportRecord[], title: strin
     const grouped = records.filter((record) => record.kind === kind);
     if (!grouped.length) continue;
     output.push("", `## ${kind === "highlight" ? labels.highlights : labels.vocabulary}`);
-    let previousChapter: string | undefined;
+    // Stably group by chapter (preserving each chapter's first-seen order and
+    // the original record order within it) so every heading is emitted once,
+    // regardless of the input's sort order (the backend query orders by
+    // created_at, not chapter).
+    const chapterOrder: string[] = [];
+    const byChapter = new Map<string, ExportRecord[]>();
     for (const record of grouped) {
       const currentChapter = chapter(record, chinese);
-      if (currentChapter !== previousChapter) output.push("", `### ${markdownHeading(currentChapter)}`);
-      previousChapter = currentChapter;
-      if (record.kind === "highlight") {
-        if (record.sourceText) output.push(markdownQuote(record.sourceText));
-        if (record.note) output.push(markdownField(labels.note, record.note));
-        output.push(`\`${record.cfi}\` · ${date(record.createdAt)}`);
-      } else {
-        output.push(`#### ${markdownHeading(record.word)}`);
-        if (record.context) output.push(markdownField(labels.context, record.context));
-        if (record.definition) output.push(markdownField(labels.definition, record.definition));
-        if (record.contextExplanation) output.push(markdownField(labels.explanation, record.contextExplanation));
-        if (record.cfi) output.push(`\`${record.cfi}\` · ${date(record.createdAt)}`);
-        else output.push(date(record.createdAt));
+      if (!byChapter.has(currentChapter)) { byChapter.set(currentChapter, []); chapterOrder.push(currentChapter); }
+      byChapter.get(currentChapter)!.push(record);
+    }
+    for (const currentChapter of chapterOrder) {
+      output.push("", `### ${markdownHeading(currentChapter)}`);
+      for (const record of byChapter.get(currentChapter)!) {
+        if (record.kind === "highlight") {
+          if (record.sourceText) output.push(markdownQuote(record.sourceText));
+          if (record.note) output.push(markdownField(labels.note, record.note));
+          output.push(`\`${record.cfi}\` · ${date(record.createdAt)}`);
+        } else {
+          output.push(`#### ${markdownHeading(record.word)}`);
+          if (record.context) output.push(markdownField(labels.context, record.context));
+          if (record.definition) output.push(markdownField(labels.definition, record.definition));
+          if (record.contextExplanation) output.push(markdownField(labels.explanation, record.contextExplanation));
+          if (record.cfi) output.push(`\`${record.cfi}\` · ${date(record.createdAt)}`);
+          else output.push(date(record.createdAt));
+        }
       }
     }
   }
@@ -85,7 +97,13 @@ export function serializeMarkdown(records: readonly ExportRecord[], title: strin
 }
 
 const csvHeaders = ["kind", "book", "chapter", "source_text", "word", "note", "definition", "context", "context_explanation", "color", "mastery", "cfi", "created_at"];
-function csvCell(value: string | undefined) { return `"${(value ?? "").replace(/"/g, '""')}"`; }
+// Neutralise CSV formula injection: a leading =, +, -, or @ is interpreted as
+// a formula by Excel/Sheets when the exported CSV is opened. Prefixing with a
+// single quote makes it inert while keeping the visible text readable.
+function neutralizeFormula(value: string) {
+  return /^[=+\-@]/.test(value) ? `'${value}` : value;
+}
+function csvCell(value: string | undefined) { return `"${neutralizeFormula(value ?? "").replace(/"/g, '""')}"`; }
 export function serializeCsv(records: readonly ExportRecord[]) {
   const rows = records.map((record) => record.kind === "highlight"
     ? [record.kind, record.bookTitle, record.chapter, record.sourceText, "", record.note, "", "", "", record.color, "", record.cfi, record.createdAt]
@@ -95,7 +113,9 @@ export function serializeCsv(records: readonly ExportRecord[]) {
 
 export function ankiFront(word: string, context?: string) {
   if (!context?.trim()) return word;
-  return context.replace(new RegExp(`(${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "i"), "______");
+  const match = findWordBoundaryMatch(context, word);
+  if (!match) return word;
+  return context.slice(0, match.index) + "______" + context.slice(match.index + match[0].length);
 }
 function tagToken(value: string) { return sanitizeExportFilename(value).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/gi, "-").replace(/^-+|-+$/g, "") || "book"; }
 export function serializeAnkiCsv(records: readonly ExportRecord[]) {

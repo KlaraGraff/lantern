@@ -32,10 +32,34 @@ describe("reader export", () => {
     assert.equal(text.startsWith("\uFEFF\"kind\",\"book\""), true);
     assert.ok(text.includes('"A, ""quote""\nnext"'));
   });
+  it("neutralises CSV formula injection without corrupting plain text", () => {
+    const text = serializeCsv([{ ...records[0], note: "=cmd|'/c calc'!A1" }]);
+    assert.ok(text.includes(`"'=cmd|'/c calc'!A1"`.replace(/'/g, "'")) || text.includes("'=cmd"));
+    assert.ok(text.includes("'=cmd"));
+    const plain = serializeCsv([{ ...records[0], note: "regular note" }]);
+    assert.ok(plain.includes('"regular note"'));
+  });
   it("makes importable Anki cards and safe tags", () => {
     assert.equal(ankiFront("courage", "Show Courage now"), "Show ______ now");
     assert.equal(ankiFront("courage"), "courage");
     assert.ok(serializeAnkiCsv(records).includes("lantern a-book new"));
+  });
+  it("does not corrupt the Anki front when the target is a substring of another word", () => {
+    assert.equal(ankiFront("art", "He started early"), "art");
+  });
+  it("blanks the exact target word on a boundary-respecting match", () => {
+    assert.equal(ankiFront("art", "The art is here"), "The ______ is here");
+  });
+  it("groups markdown records by chapter once, regardless of input order", () => {
+    const shuffled: ExportRecord[] = [
+      { ...records[1], chapter: "Two", word: "second" },
+      { ...records[1], chapter: "One", word: "first" },
+      { ...records[1], chapter: "Two", word: "third" },
+      { ...records[1], chapter: "One", word: "fourth" },
+    ];
+    const text = serializeMarkdown(shuffled, "A Book", false);
+    assert.equal((text.match(/### One/g) ?? []).length, 1);
+    assert.equal((text.match(/### Two/g) ?? []).length, 1);
   });
   it("sanitizes filenames and previews/counts records", () => {
     assert.equal(sanitizeExportFilename(" /:\u0000 "), "Lantern");
