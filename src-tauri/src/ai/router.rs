@@ -434,7 +434,13 @@ fn compensation_failure(
     ))
 }
 
-pub fn migrate_legacy_config(db: &Db, secrets: &Secrets) -> AppResult<()> {
+/// The AI settings page edits profiles; it does not invent the first one. Every
+/// install therefore needs this at startup, or a new reader opens that page and
+/// finds nothing to configure.
+///
+/// The profile is a placeholder, not a working setup — it carries no credential,
+/// so it stays inert until the reader supplies one.
+pub fn ensure_default_ai_profile(db: &Db) -> AppResult<()> {
     let mut conn = db.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
     let profile_count: i64 =
         conn.query_row("SELECT COUNT(*) FROM ai_profiles", [], |row| row.get(0))?;
@@ -442,61 +448,13 @@ pub fn migrate_legacy_config(db: &Db, secrets: &Secrets) -> AppResult<()> {
         return Ok(());
     }
 
-    let get = |key: &str| -> Option<String> {
-        conn.query_row(
-            "SELECT value FROM settings WHERE key = ?1",
-            params![key],
-            |row| row.get(0),
-        )
-        .ok()
-    };
-    let provider = get("ai_provider").unwrap_or_else(|| "openai".to_string());
-    let profile_id = uuid::Uuid::new_v4().to_string();
     let created_at = now();
-    let profile_label = get("ai_provider_label")
-        .filter(|label| !label.trim().is_empty())
-        .unwrap_or_else(|| provider.clone());
-    let auth_mode = get("ai_auth_mode").unwrap_or_else(|| "api_key".to_string());
-    let base_url = get("ai_base_url");
-    let model = get("ai_model").unwrap_or_else(|| "gpt-4o-mini".to_string());
-    let temperature = get("ai_temperature")
-        .and_then(|value| value.parse::<f64>().ok())
-        .unwrap_or(0.3);
-    let keep_alive = get("ai_keep_alive");
-    // Startup migration is metadata-only. Reading an old Keychain item here
-    // would show a system password dialog before the user has any context.
-    let has_legacy_ai_config = [
-        "ai_provider",
-        "ai_provider_label",
-        "ai_auth_mode",
-        "ai_base_url",
-        "ai_model",
-    ]
-    .iter()
-    .any(|key| get(key).is_some());
-    let legacy_key_exists = secrets.has_stored_secret_metadata("ai_api_key")
-        || get("ai_api_key_configured").is_some_and(|value| value == "true")
-        // Builds before profile metadata existed stored the one API key only
-        // in Keychain. Existing AI settings are a safe, metadata-only signal
-        // that the legacy account should be offered for import on first use.
-        || (auth_mode == "api_key" && provider != "ollama" && has_legacy_ai_config);
-    let credential = legacy_key_exists.then(|| {
-        let id = uuid::Uuid::new_v4().to_string();
-        (id, "ai_api_key".to_string())
-    });
-
     let result = (|| -> AppResult<()> {
         let tx = conn.transaction()?;
         tx.execute(
-            "INSERT INTO ai_profiles (id, label, provider, auth_mode, base_url, model, temperature, keep_alive, enabled, priority, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, 0, ?9, ?9)",
-            params![profile_id, profile_label, provider, auth_mode, base_url, model, temperature, keep_alive, created_at],
+            "INSERT INTO ai_profiles (id, label, provider, auth_mode, base_url, model, temperature, keep_alive, enabled, priority, created_at, updated_at) VALUES (?1, 'openai', 'openai', 'api_key', NULL, 'gpt-4o-mini', 0.3, NULL, 1, 0, ?2, ?2)",
+            params![uuid::Uuid::new_v4().to_string(), created_at],
         )?;
-        if let Some((credential_id, secret_ref)) = credential.as_ref() {
-            tx.execute(
-                "INSERT INTO ai_credentials (id, profile_id, label, secret_ref, masked_suffix, enabled, priority, state, created_at, updated_at) VALUES (?1, ?2, 'Primary key', ?3, ?4, 1, 0, 'active', ?5, ?5)",
-                params![credential_id, profile_id, secret_ref, "", created_at],
-            )?;
-        }
         tx.commit()?;
         Ok(())
     })();
@@ -4606,6 +4564,28 @@ mod tests {
 
     fn sse_answer(text: &str) -> String {
         format!("{}data: [DONE]\n\n", sse_delta(text))
+    }
+
+    /// A brand-new install has no `ai_profiles` row at all, and nothing else
+    /// creates the first one — this is all that stands between a fresh reader
+    /// and an AI settings page with nothing to configure.
+    #[test]
+    fn a_fresh_database_gets_one_default_ai_profile() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+
+        ensure_default_ai_profile(&db).unwrap();
+
+        let profiles = list_profiles(&db).unwrap();
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].provider, "openai");
+        assert_eq!(profiles[0].model, "gpt-4o-mini");
+        assert_eq!(profiles[0].auth_mode, "api_key");
+
+        // Running it again on a database that already has a profile must be a
+        // no-op — it must never insert a second default profile.
+        ensure_default_ai_profile(&db).unwrap();
+        assert_eq!(list_profiles(&db).unwrap().len(), 1);
     }
 
     async fn route_test_setup(

@@ -591,8 +591,8 @@ pub fn run() {
             );
 
             let secrets = Secrets::init(&local_dir).expect("failed to initialize secrets store");
-            ai::router::migrate_legacy_config(&db, &secrets)
-                .expect("failed to migrate AI profile configuration");
+            ai::router::ensure_default_ai_profile(&db)
+                .expect("failed to seed the default AI profile");
             let sync_writer = SyncWriter::new(device.device_uuid.clone());
             sync_writer.set_process_lock_path(local_dir.join(".sync-transition.lock"));
             if sync_enabled {
