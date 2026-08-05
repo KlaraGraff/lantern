@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern 复习入口 · 样张</title>
+<style>
+  :root{
+    --paper:#f6f2ea; --page:#fffdf8; --ink:#2a2622; --ink2:#6b635b; --ink3:#9c948b;
+    --line:#e6dfd4; --line2:#efe9e0;
+    --accent:#8a5a2b; --accent-bg:#f4ece0; --accent-line:#d9c4a6;
+    --ok:#2f7d5b; --ok-bg:#e8f2ec;
+    --warn:#b8791c; --warn-bg:#fbf1e0;
+    --bad:#c0392b; --bad-bg:#fbeceb;
+    --shadow:0 18px 48px rgba(60,45,28,.16), 0 2px 8px rgba(60,45,28,.06);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#181614; --page:#211e1b; --ink:#e9e3da; --ink2:#a79e94; --ink3:#6e665e;
+      --line:#332f2a; --line2:#2a2724;
+      --accent:#d1a06a; --accent-bg:#2c2318; --accent-line:#4a3a26;
+      --ok:#6fc39a; --ok-bg:#152a20;
+      --warn:#e0a75a; --warn-bg:#332810;
+      --bad:#e88079; --bad-bg:#331b19;
+      --shadow:0 18px 48px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font:15px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1240px;margin:0 auto;padding:52px 28px 120px}
+
+  header.top{border-bottom:1px solid var(--line);padding-bottom:24px}
+  h1{font-size:27px;margin:0 0 8px;font-weight:650;letter-spacing:-.3px}
+  .sub{color:var(--ink2);font-size:14px;margin:0;max-width:76ch}
+  .sub b{color:var(--ink)}
+
+  h2.sec{font-size:18px;font-weight:620;margin:56px 0 4px;display:flex;align-items:baseline;gap:11px}
+  h2.sec .n{font-size:11.5px;font-weight:700;color:var(--ink3);border:1px solid var(--line);
+    border-radius:20px;padding:2px 9px;flex:none}
+  .seclede{color:var(--ink2);font-size:14px;margin:0 0 22px;max-width:82ch}
+  .seclede b{color:var(--ink)}
+
+  .row{display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start}
+  .shot{flex:1 1 380px;min-width:340px;max-width:452px}
+  .caption{font-size:12.5px;color:var(--ink3);margin:10px 2px 0;line-height:1.58}
+  .caption b{color:var(--ink2)}
+
+  .win{border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--page);
+    box-shadow:var(--shadow)}
+  .chrome{height:30px;background:var(--paper);border-bottom:1px solid var(--line2);
+    display:flex;align-items:center;padding:0 11px;gap:6px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#dcd4c8}
+  @media (prefers-color-scheme:dark){.dot{background:#3a3530}}
+  .chrome .ttl{margin-left:8px;font-size:11px;color:var(--ink3)}
+  .pane{padding:16px 17px 20px;min-height:352px}
+
+  .ph{display:flex;align-items:baseline;gap:9px;margin-bottom:3px}
+  .ph h4{margin:0;font-size:17px;font-weight:650;letter-spacing:-.2px}
+  .ph .cnt{font-size:12px;color:var(--ink3)}
+  .plede{font-size:12.4px;color:var(--ink2);margin:0 0 15px;line-height:1.55}
+
+  /* 堆卡片 */
+  .pile{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:9px;
+    background:var(--page);display:flex;align-items:center;gap:12px}
+  .pile.hot{border-color:var(--accent-line);background:var(--accent-bg)}
+  .pile .tx{flex:1;min-width:0}
+  .pile .t1{font-size:13.6px;font-weight:600;line-height:1.4}
+  .pile.hot .t1{color:var(--accent)}
+  .pile .t2{font-size:11.6px;color:var(--ink2);margin-top:3px;line-height:1.5}
+  .pile .num{font-size:19px;font-weight:600;color:var(--ink2);font-variant-numeric:tabular-nums;flex:none}
+  .pile.hot .num{color:var(--accent)}
+  .pile .arr{color:var(--ink3);font-size:12px;flex:none}
+
+  .quiet{margin-top:15px;padding-top:13px;border-top:1px solid var(--line2)}
+  .quiet .qh{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--ink3);margin-bottom:8px}
+
+  /* 空态 */
+  .empty{text-align:center;padding:56px 20px}
+  .empty .ic{font-size:28px;opacity:.4}
+  .empty p{margin:12px 0 5px;font-size:14.5px;font-weight:560}
+  .empty s{text-decoration:none;font-size:12.4px;color:var(--ink3);line-height:1.6;display:block;max-width:32ch;margin:0 auto}
+  .empty .btn{margin-top:16px}
+
+  .btn{border:1px solid var(--line);background:var(--page);color:var(--ink);
+    border-radius:8px;padding:7px 15px;font-size:13px;font-weight:560;font-family:inherit;cursor:default;
+    display:inline-block}
+  .btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+  @media (prefers-color-scheme:dark){.btn.pri{color:#1d1712}}
+  .btn.sm{padding:5px 11px;font-size:12px}
+  .btn.ghost{border-color:transparent;background:none;color:var(--ink3)}
+
+  /* 展开后的词表 */
+  .backlink{font-size:12px;color:var(--ink3);margin-bottom:11px;display:block}
+  .why{background:var(--accent-bg);border:1px solid var(--accent-line);border-radius:9px;
+    padding:10px 12px;font-size:12.2px;color:var(--ink2);line-height:1.6;margin-bottom:13px}
+  .why b{color:var(--accent);font-weight:650}
+
+  .wl{display:flex;flex-direction:column}
+  .wr{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line2)}
+  .wr:last-child{border-bottom:none}
+  .wr .w{font-size:13.8px;font-weight:600;min-width:112px}
+  .wr .g{font-size:12px;color:var(--ink2);flex:1;min-width:0;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .wr .m{font-size:11px;color:var(--ink3);flex:none;font-variant-numeric:tabular-nums}
+  .wr .m.hot{color:var(--bad)}
+
+  /* 复习卡 */
+  .rc{border:1px solid var(--line);border-radius:11px;padding:20px 18px;background:var(--paper);
+    text-align:center}
+  .rc .w{font-size:26px;font-weight:600;letter-spacing:-.4px}
+  .rc .p{font-size:12px;color:var(--ink3);margin-top:3px}
+  .rc .ctx{margin-top:16px;font-size:13px;line-height:1.85;color:var(--ink2);text-align:left;
+    background:var(--page);border:1px solid var(--line2);border-radius:8px;padding:11px 13px}
+  .rc .ctx mark{background:var(--accent-bg);border-bottom:1.5px solid var(--accent-line);
+    color:var(--ink);padding:1px 2px;border-radius:2px}
+  .rc .src{font-size:11.2px;color:var(--ink3);margin-top:9px;text-align:left}
+  .rc .acts{display:flex;gap:9px;margin-top:17px}
+  .rc .acts .btn{flex:1}
+  .rcbar{display:flex;align-items:center;gap:9px;margin-bottom:13px;font-size:11.5px;color:var(--ink3)}
+  .rcbar .bar{flex:1;height:3px;border-radius:2px;background:var(--line);overflow:hidden}
+  .rcbar .bar i{display:block;height:100%;width:35%;background:var(--accent)}
+
+  /* 词详情 */
+  .dw{font-size:22px;font-weight:600;letter-spacing:-.3px}
+  .dpos{font-size:12px;color:var(--ink3);margin-left:7px;font-weight:400}
+  .ddef{font-size:13.4px;color:var(--ink2);margin-top:6px}
+  .state{display:flex;align-items:center;gap:8px;margin-top:15px;padding:11px 13px;
+    border:1px solid var(--line);border-radius:9px;background:var(--paper)}
+  .state .lab{font-size:13px;font-weight:600}
+  .state .auto{font-size:10px;background:var(--ok-bg);color:var(--ok);padding:2px 7px;
+    border-radius:5px;font-weight:650}
+  .state .sp{flex:1}
+  .reason{margin-top:9px;font-size:12.2px;color:var(--ink2);line-height:1.6;
+    background:var(--ok-bg);border-radius:8px;padding:10px 12px}
+  .reason b{color:var(--ok);font-weight:650}
+  .undo{margin-top:9px}
+  .hist{margin-top:16px;padding-top:13px;border-top:1px solid var(--line2)}
+  .hist .hh{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--ink3);margin-bottom:9px}
+  .ev{display:flex;gap:10px;font-size:12.1px;color:var(--ink2);padding:5px 0;line-height:1.5}
+  .ev .d{color:var(--ink3);flex:none;width:62px;font-variant-numeric:tabular-nums}
+  .ev .up{color:var(--ok)}
+  .ev .dn{color:var(--bad)}
+
+  /* 正文标注三段 */
+  .stage3{display:flex;flex-direction:column;gap:12px}
+  .rt{border:1px solid var(--line);border-radius:9px;padding:13px 15px;background:var(--paper);
+    font-size:13.4px;line-height:2.5;color:var(--ink)}
+  .rt .lab{display:block;font-size:10.5px;font-weight:700;letter-spacing:.5px;color:var(--ink3);
+    margin-bottom:5px;line-height:1.4}
+  ruby{ruby-position:under}
+  rt{font-size:9.5px;color:var(--accent);font-weight:500;line-height:1}
+  .pip{display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--accent-line);
+    vertical-align:super;margin-left:1px}
+  .rt u{text-decoration:none;border-bottom:1.5px dotted var(--accent-line)}
+
+  .notes{margin:20px 0 0;padding:0;list-style:none;display:grid;gap:9px}
+  .notes li{font-size:13.5px;color:var(--ink2);padding-left:22px;position:relative;line-height:1.65}
+  .notes li::before{content:"";position:absolute;left:6px;top:9px;width:5px;height:5px;
+    border-radius:50%;background:var(--ink3)}
+  .notes li b{color:var(--ink);font-weight:600}
+
+  .q{margin-top:44px;border:1px solid var(--accent-line);background:var(--accent-bg);
+    border-radius:11px;padding:18px 20px}
+  .q h4{margin:0 0 8px;font-size:14.5px;font-weight:650;color:var(--accent)}
+  .q p{margin:0 0 8px;font-size:13.5px;color:var(--ink2);line-height:1.65}
+  .q p:last-child{margin-bottom:0}
+  .q b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>复习入口 · 样张</h1>
+  <p class="sub">
+    没有推送、没有红点、没有弹窗。复习模块留在原地，<b>想复习的人自己进来</b>。
+    所以这一页唯一的任务是：让他进来之后，<b>看到的每一堆词都有一个他自己认得出的来由</b>——
+    不是「今天到期 20 个」，而是「你在这本书里查了 4 次的词」。
+  </p>
+</header>
+
+<!-- 1 -->
+<h2 class="sec"><span class="n">1</span> 进来看到的</h2>
+<p class="seclede">
+  <b>核心改动：把一个算法队列拆成几个有来由的小堆。</b>
+  FSRS（决定每个词隔多久该再出现）还在底下照常工作，但用户看到的不是它的输出，
+  而是自己最近的行为。他要能一眼认出「这确实是我的问题」，才会有理由点进去。
+</p>
+
+<div class="row">
+
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern — 生词</span></div>
+      <div class="pane">
+        <div class="ph"><h4>回顾</h4><span class="cnt">最近两周</span></div>
+        <p class="plede">下面这些都是你自己读书时留下的，随时可以来，也随时可以不来。</p>
+
+        <div class="pile hot">
+          <div class="tx">
+            <div class="t1">你在《傲慢与偏见》里查了 4 次的词</div>
+            <div class="t2">同一本书里反复查，说明它是这本书的拦路虎</div>
+          </div>
+          <span class="num">6</span><span class="arr">›</span>
+        </div>
+
+        <div class="pile">
+          <div class="tx">
+            <div class="t1">以为会了，结果又查了</div>
+            <div class="t2">读的时候没查，被判定成熟了，后来你又查了它</div>
+          </div>
+          <span class="num">3</span><span class="arr">›</span>
+        </div>
+
+        <div class="pile">
+          <div class="tx">
+            <div class="t1">刚读完的第 12 章里，你查过这些</div>
+            <div class="t2">趁着还有印象，就地过一遍</div>
+          </div>
+          <span class="num">11</span><span class="arr">›</span>
+        </div>
+
+        <div class="quiet">
+          <div class="qh">还有</div>
+          <div class="pile">
+            <div class="tx">
+              <div class="t1">很久没再遇到的词</div>
+              <div class="t2">收藏了但书里一直没出现，不看就要忘了</div>
+            </div>
+            <span class="num">8</span><span class="arr">›</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption"><b>默认态。</b>前三堆是行为堆，来由具体；第四堆是兜底（FSRS 到期但没有别的故事可讲），所以放进「还有」里降一级。<b>每一堆的第二行都必须能一句话说清它怎么来的</b>——说不清的堆就不该存在。</p>
+  </div>
+
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern — 生词</span></div>
+      <div class="pane">
+        <div class="ph"><h4>回顾</h4></div>
+        <div class="empty">
+          <div class="ic">🍃</div>
+          <p>这几天没什么好回顾的</p>
+          <s>你最近查的词都还新鲜，过几天再来。<br>要是想自己翻翻，全部生词在这儿。</s>
+          <div><span class="btn sm">看全部生词（142）</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="caption"><b>空态。</b>这是最容易做错的一屏。<b>空态不能道歉，也不能催</b>——不要写「暂无待复习内容」，更不要写「快去读书吧！」。就说没什么好看的，然后把门留着。</p>
+  </div>
+
+</div>
+
+<!-- 2 -->
+<h2 class="sec"><span class="n">2</span> 点进一堆</h2>
+<p class="seclede">
+  进去先重复一遍来由，再给词。<b>用户随时能看出自己为什么在这儿</b>，
+  而不是被丢进一个只有"下一个"按钮的黑盒。
+</p>
+
+<div class="row">
+
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern — 生词</span></div>
+      <div class="pane">
+        <span class="backlink">‹ 回顾</span>
+        <div class="ph"><h4>《傲慢与偏见》里的拦路虎</h4><span class="cnt">6 个</span></div>
+        <div class="why">这几个词你在这本书里<b>各查了 3 次以上</b>，最近一次就在昨天。它们大概率还会再出现。</div>
+        <div class="wl">
+          <div class="wr"><span class="w">countenance</span><span class="g">面容、神情</span><span class="m hot">查过 5 次</span></div>
+          <div class="wr"><span class="w">condescension</span><span class="g">屈尊俯就</span><span class="m hot">查过 4 次</span></div>
+          <div class="wr"><span class="w">entail</span><span class="g">限定继承</span><span class="m">查过 4 次</span></div>
+          <div class="wr"><span class="w">amiable</span><span class="g">和蔼可亲的</span><span class="m">查过 3 次</span></div>
+          <div class="wr"><span class="w">impertinence</span><span class="g">无礼、莽撞</span><span class="m">查过 3 次</span></div>
+          <div class="wr"><span class="w">solicitude</span><span class="g">关切、挂念</span><span class="m">查过 3 次</span></div>
+        </div>
+        <div style="display:flex;gap:9px;margin-top:16px">
+          <span class="btn pri sm" style="flex:1;text-align:center">开始过一遍</span>
+          <span class="btn sm">只看，不测</span>
+        </div>
+      </div>
+    </div>
+    <p class="caption"><b>词表态。</b>「只看，不测」这个按钮要留——很多时候用户只想扫一眼确认自己还记得，不想被逐个提问。<b>强制答题会把「随便看看」变成「一场考试」</b>，那正是我们要避免的。</p>
+  </div>
+
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern — 生词</span></div>
+      <div class="pane">
+        <div class="rcbar"><span>拦路虎</span><span class="bar"><i></i></span><span>2 / 6</span></div>
+        <div class="rc">
+          <div class="w">condescension</div>
+          <div class="p">n.</div>
+          <div class="ctx">
+            …with a <mark>condescension</mark> which seemed to say that she was doing them a very great favour.
+          </div>
+          <div class="src">《傲慢与偏见》第 6 章 · 你昨天在这里查过它</div>
+          <div class="acts">
+            <span class="btn">还是不记得</span>
+            <span class="btn pri">想起来了</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption"><b>过词态。</b>关键是中间那段原文——<b>不给孤零零的单词，给他当初查它的那一句</b>。语境本身就是最好的提示，而且能把这次复习和读书那一刻接回去。底下那行「你昨天在这里查过它」也是同一个作用。</p>
+  </div>
+
+</div>
+
+<!-- 3 -->
+<h2 class="sec"><span class="n">3</span> 掌握度：看得见，能反悔</h2>
+<p class="seclede">
+  系统会根据「读到几次、查没查」自动调整掌握度。
+  <b>这件事必须能被用户看见，而且必须能被推翻</b>——悄悄改动学习状态，哪怕改对了，
+  用户一旦发现也会开始怀疑别的地方。
+</p>
+
+<div class="row">
+
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern — acknowledged</span></div>
+      <div class="pane">
+        <div><span class="dw">acknowledged</span><span class="dpos">adj.</span></div>
+        <div class="ddef">公认的、被承认的</div>
+
+        <div class="state">
+          <span class="lab">已经比较熟</span>
+          <span class="auto">读出来的</span>
+          <span class="sp"></span>
+          <span class="btn sm ghost">改成…</span>
+        </div>
+
+        <div class="reason">
+          <b>为什么：</b>你在《傲慢与偏见》里<b>跨 3 天读到它 4 次，一次都没查</b>。
+          同一章里的重复只算一点点，主要是那两次隔天重逢。
+        </div>
+        <div class="undo"><span class="btn sm">我其实不认识 →  退回学习中</span></div>
+
+        <div class="hist">
+          <div class="hh">最近发生了什么</div>
+          <div class="ev"><span class="d">昨天</span><span class="up">↑ 升到「比较熟」</span><span style="color:var(--ink3)">第 11 章，读到没查</span></div>
+          <div class="ev"><span class="d">3 天前</span><span>· 读到 2 次没查</span><span style="color:var(--ink3)">第 8 章</span></div>
+          <div class="ev"><span class="d">5 天前</span><span class="dn">↓ 你查了它</span><span style="color:var(--ink3)">第 3 章</span></div>
+          <div class="ev"><span class="d">5 天前</span><span>+ 收藏</span><span style="color:var(--ink3)">第 1 章</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="caption"><b>可解释态。</b>「读出来的」这个标记很重要——它把<b>自动判定的掌握度和用户自己标的分开</b>，将来发现算法不准，可以只回滚自动的那一部分。下面的时间线用大白话记录每一次升降，用户能自己核对。</p>
+  </div>
+
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern — 阅读</span></div>
+      <div class="pane">
+        <div class="stage3">
+          <div class="rt">
+            <span class="lab">刚查过的几天 — 释义直接挂着，不用点</span>
+            It is a truth universally
+            <ruby>acknowledged<rt>公认的</rt></ruby>, that a single man in
+            <ruby>possession<rt>拥有</rt></ruby> of a good fortune…
+          </div>
+          <div class="rt">
+            <span class="lab">熟一点之后 — 只剩一个小记号，想看点一下</span>
+            It is a truth universally <u>acknowledged</u><span class="pip"></span>, that a single man in
+            <u>possession</u><span class="pip"></span> of a good fortune…
+          </div>
+          <div class="rt">
+            <span class="lab">真的熟了 — 记号也消失，正文恢复干净</span>
+            It is a truth universally acknowledged, that a single man in possession of a good fortune…
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption"><b>正文标注的三段退场。</b>这是你问的「后面几次碰到要不要直接显示中文」的答案：<b>要，但它得会自己走</b>。释义的多少本身就是进度条——用户不用打开任何统计页，翻书时发现标注越来越少，就知道自己在进步。一屏有标注数量上限，满了按「最该标的」取前几个，不会糊满中文。</p>
+  </div>
+
+</div>
+
+<ul class="notes">
+  <li><b>全程没有推送、没有红点、没有角标。</b>侧边栏入口旁边最多一个灰色数字——灰数字是信息，红点是催促。</li>
+  <li><b>每一堆都要能一句话说清来由。</b>说不清的堆不做。这是判断一个堆该不该存在的唯一标准。</li>
+  <li><b>「只看，不测」和「我其实不认识」这两个出口必须留着</b>，它们是这套东西不变成作业的保险。</li>
+  <li><b>正文标注和复习模块是一件事的两面</b>：日常靠标注被动巩固，主动想练时才进复习。标注做好了，复习模块的压力就小了。</li>
+</ul>
+
+<div class="q">
+  <h4>三个想听你意见的点</h4>
+  <p><b>一、这一页放在哪。</b>现在它是「生词」页里的一个新板块（进生词先看到回顾，往下才是全部词表）。也可以做成生词页顶部的一条横幅。我倾向前者——它值一块完整的地方。</p>
+  <p><b>二、行为堆要不要设下限。</b>比如「在这本书里查了 4 次」这堆，如果只凑出 1 个词，还要不要显示？我倾向<b>要</b>，1 个词也是真问题，堆里就 1 个反而更有说服力。但这样空态会变少。</p>
+  <p><b>三、正文标注第一阶段挂多久。</b>我暂定「查过之后、掌握度还没升上来之前」一直挂着，由掌握度决定退场，不设固定天数。也可以简单点：固定 7 天。我倾向前者，但它依赖掌握度算得准。</p>
+</div>
+
+</div>
+</body>
+</html>

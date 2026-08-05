@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern 功能联动全景图 · 2026-08</title>
+<style>
+  :root {
+    --paper: #faf7f2;
+    --ink: #2b2724;
+    --ink-soft: #6a625b;
+    --ink-faint: #9a918a;
+    --rule: #e2dcd3;
+    --card: #fffdfa;
+
+    --ui: #2f6fb5;        /* 界面 / 入口 */
+    --ui-bg: #e8f0fa;
+    --ai: #7a4fb5;        /* AI 能力 */
+    --ai-bg: #f0eaf9;
+    --data: #2f7d5b;      /* 数据表 */
+    --data-bg: #e6f2ec;
+    --auto: #c2761a;      /* 自动联动 */
+    --auto-bg: #fbf1e2;
+    --break: #c33c3c;     /* 断点 / 缺失 */
+    --break-bg: #fbecec;
+    --local: #6a625b;     /* 本地边界 */
+    --local-bg: #eeeae4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #1a1816; --ink: #e8e2da; --ink-soft: #a89f96; --ink-faint: #6f665f;
+      --rule: #33302c; --card: #211e1b;
+      --ui: #74aae8;   --ui-bg: #1c2a3a;
+      --ai: #b490e8;   --ai-bg: #2a2038;
+      --data: #6fc39a; --data-bg: #162c22;
+      --auto: #e0a75a; --auto-bg: #33280f;
+      --break: #e88080; --break-bg: #35191a;
+      --local: #a89f96; --local-bg: #262320;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    background: var(--paper); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+    font-size: 15px; line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 56px 32px 120px; }
+
+  header.top { border-bottom: 1px solid var(--rule); padding-bottom: 28px; margin-bottom: 8px; }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 10px; letter-spacing: -0.3px; font-weight: 650; }
+  .sub { color: var(--ink-soft); font-size: 14px; margin: 0; }
+  .sub code { background: var(--local-bg); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 22px 0 0; font-size: 13px; color: var(--ink-soft); }
+  .legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+  section { margin-top: 64px; }
+  h2 {
+    font-size: 20px; margin: 0 0 6px; font-weight: 620; letter-spacing: -0.2px;
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  h2 .n {
+    font-size: 12px; font-weight: 600; color: var(--ink-faint);
+    border: 1px solid var(--rule); border-radius: 20px; padding: 2px 9px; flex: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .lede { color: var(--ink-soft); font-size: 14.5px; margin: 0 0 22px; max-width: 76ch; }
+  .lede b { color: var(--ink); font-weight: 600; }
+
+  .figure { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 8px; overflow-x: auto; }
+  .figure svg { display: block; width: 100%; height: auto; min-width: 720px; }
+
+  .notes { margin: 18px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+  .notes li {
+    font-size: 14px; color: var(--ink-soft); padding-left: 26px; position: relative; line-height: 1.65;
+  }
+  .notes li::before {
+    content: ""; position: absolute; left: 8px; top: 9px;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--ink-faint);
+  }
+  .notes li.good::before { background: var(--data); }
+  .notes li.bad::before  { background: var(--break); }
+  .notes li b { color: var(--ink); font-weight: 600; }
+  .notes li code, .lede code, p code {
+    background: var(--local-bg); padding: 1px 5px; border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+  }
+
+  svg text { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif; }
+  .t   { font-size: 12.5px; font-weight: 600; }
+  .ts  { font-size: 11px; }
+  .tt  { font-size: 10.5px; letter-spacing: .4px; font-weight: 700; }
+  .tm  { font-size: 11.5px; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>Lantern 功能联动全景图</h1>
+  <p class="sub">
+    基线 <code>main @ dddb61d</code> · v2.8.4 · 2026-08-05 ·
+    覆盖 209 个前端模块 / 24 个后端命令模块 / 35 条迁移 / 38 类同步事件
+  </p>
+  <div class="legend">
+    <span><i style="background:var(--ui)"></i>界面与入口</span>
+    <span><i style="background:var(--ai)"></i>AI / 能力层</span>
+    <span><i style="background:var(--data)"></i>数据表</span>
+    <span><i style="background:var(--auto)"></i>自动发生的联动</span>
+    <span><i style="background:var(--break)"></i>断点 / 未接通</span>
+    <span><i style="background:var(--local)"></i>只在本机，不同步</span>
+  </div>
+</header>
+
+<!-- ═══════════════════════ 图 1 ═══════════════════════ -->
+<section>
+  <h2><span class="n">图 1</span> 全景：四层结构</h2>
+  <p class="lede">
+    整个产品其实是一条<b>单向的沉淀管道</b>：三个入口触发能力层，能力层的产物落进九张表，九张表再从五个出口回到用户眼前。
+    值得注意的是 <b>MCP 是第二个平级入口</b>——外部 AI 客户端读写的是同一批表，不经过任何前端逻辑。
+  </p>
+  <div class="figure">
+    <svg viewBox="0 0 1120 660" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="a1" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+          <path d="M0,0 L7,3.2 L0,6.4 z" fill="var(--ink-faint)"/>
+        </marker>
+        <marker id="a1o" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+          <path d="M0,0 L7,3.2 L0,6.4 z" fill="var(--auto)"/>
+        </marker>
+      </defs>
+
+      <!-- 层带 -->
+      <g opacity=".55">
+        <rect x="0" y="40"  width="1120" height="102" fill="var(--ui-bg)"   rx="8"/>
+        <rect x="0" y="178" width="1120" height="118" fill="var(--ai-bg)"   rx="8"/>
+        <rect x="0" y="332" width="1120" height="118" fill="var(--data-bg)" rx="8"/>
+        <rect x="0" y="486" width="1120" height="102" fill="var(--auto-bg)" rx="8"/>
+      </g>
+      <g class="tt" fill="var(--ink-faint)">
+        <text x="10" y="30">① 入口层 · 用户在哪里操作</text>
+        <text x="10" y="168">② 能力层 · 谁去干活</text>
+        <text x="10" y="322">③ 沉淀层 · 结果落在哪</text>
+        <text x="10" y="476">④ 出口层 · 结果在哪能被看到</text>
+      </g>
+
+      <!-- ① 入口 -->
+      <g>
+        <rect x="24"  y="58" width="176" height="66" rx="9" fill="var(--card)" stroke="var(--ui)" stroke-width="1.5"/>
+        <text class="t"  x="112" y="84"  fill="var(--ui)" text-anchor="middle">书库 Home</text>
+        <text class="ts" x="112" y="103" fill="var(--ink-soft)" text-anchor="middle">导入 · 收藏集 · 记录页</text>
+
+        <rect x="220" y="58" width="256" height="66" rx="9" fill="var(--card)" stroke="var(--ui)" stroke-width="2.5"/>
+        <text class="t"  x="348" y="84"  fill="var(--ui)" text-anchor="middle">阅读器 Reader</text>
+        <text class="ts" x="348" y="103" fill="var(--ink-soft)" text-anchor="middle">选区菜单 · 9 图标工具栏 · 5 个右侧面板</text>
+
+        <rect x="496" y="58" width="168" height="66" rx="9" fill="var(--card)" stroke="var(--ui)" stroke-width="1.5"/>
+        <text class="t"  x="580" y="84"  fill="var(--ui)" text-anchor="middle">设置 Settings</text>
+        <text class="ts" x="580" y="103" fill="var(--ink-soft)" text-anchor="middle">17 个分区</text>
+
+        <rect x="684" y="58" width="152" height="66" rx="9" fill="var(--card)" stroke="var(--ui)" stroke-width="1.5"/>
+        <text class="t"  x="760" y="84"  fill="var(--ui)" text-anchor="middle">阅读统计页</text>
+        <text class="ts" x="760" y="103" fill="var(--ink-soft)" text-anchor="middle">独立路由</text>
+
+        <rect x="856" y="58" width="240" height="66" rx="9" fill="var(--card)" stroke="var(--ui)" stroke-width="1.5" stroke-dasharray="5 3"/>
+        <text class="t"  x="976" y="84"  fill="var(--ui)" text-anchor="middle">MCP 外部客户端</text>
+        <text class="ts" x="976" y="103" fill="var(--ink-soft)" text-anchor="middle">15 个工具 · 写操作需逐次批准</text>
+      </g>
+
+      <!-- ② 能力 -->
+      <g>
+        <rect x="24" y="196" width="300" height="82" rx="9" fill="var(--card)" stroke="var(--ai)" stroke-width="2.5"/>
+        <text class="t"  x="174" y="220" fill="var(--ai)" text-anchor="middle">AI 路由 · router.rs（5030 行）</text>
+        <text class="ts" x="174" y="239" fill="var(--ink-soft)" text-anchor="middle">档案 → 凭据 → 模型，逐级降级重试</text>
+        <text class="ts" x="174" y="257" fill="var(--ink-soft)" text-anchor="middle">两种用途：Chat（用户写的）/ Utility（Lantern 写的）</text>
+        <text class="ts" x="174" y="271" fill="var(--ink-faint)" text-anchor="middle">查词 · 解释 · 追问 · X-Ray · 翻译 · 复盘 · 词形 · 标题</text>
+
+        <rect x="344" y="196" width="192" height="82" rx="9" fill="var(--card)" stroke="var(--ai)" stroke-width="1.5"/>
+        <text class="t"  x="440" y="220" fill="var(--ai)" text-anchor="middle">索引与检索</text>
+        <text class="ts" x="440" y="239" fill="var(--ink-soft)" text-anchor="middle">分块 → FTS → 向量</text>
+        <text class="ts" x="440" y="257" fill="var(--ink-soft)" text-anchor="middle">12 档聊天检索路由</text>
+        <text class="ts" x="440" y="271" fill="var(--ink-faint)" text-anchor="middle">X-Ray 的硬前置</text>
+
+        <rect x="556" y="196" width="168" height="82" rx="9" fill="var(--card)" stroke="var(--ai)" stroke-width="1.5"/>
+        <text class="t"  x="640" y="220" fill="var(--ai)" text-anchor="middle">TTS 语音路由</text>
+        <text class="ts" x="640" y="239" fill="var(--ink-soft)" text-anchor="middle">词典音 / Edge / 自定义</text>
+        <text class="ts" x="640" y="257" fill="var(--ink-soft)" text-anchor="middle">/ 系统合成</text>
+        <text class="ts" x="640" y="271" fill="var(--ink-faint)" text-anchor="middle">单词朗读 + 连续朗读</text>
+
+        <rect x="744" y="196" width="150" height="82" rx="9" fill="var(--card)" stroke="var(--ai)" stroke-width="1.5"/>
+        <text class="t"  x="819" y="220" fill="var(--ai)" text-anchor="middle">OCR 管线</text>
+        <text class="ts" x="819" y="239" fill="var(--ink-soft)" text-anchor="middle">扫描版 PDF</text>
+        <text class="ts" x="819" y="257" fill="var(--ink-soft)" text-anchor="middle">按需下载运行时</text>
+        <text class="ts" x="819" y="271" fill="var(--ink-faint)" text-anchor="middle">仅桌面端</text>
+
+        <rect x="914" y="196" width="182" height="82" rx="9" fill="var(--card)" stroke="var(--ai)" stroke-width="1.5"/>
+        <text class="t"  x="1005" y="220" fill="var(--ai)" text-anchor="middle">词形还原</text>
+        <text class="ts" x="1005" y="239" fill="var(--ink-soft)" text-anchor="middle">resign / resigned / -ing</text>
+        <text class="ts" x="1005" y="257" fill="var(--ink-soft)" text-anchor="middle">归一为同一个词</text>
+        <text class="ts" x="1005" y="271" fill="var(--ink-faint)" text-anchor="middle">标记与去重都依赖它</text>
+      </g>
+
+      <!-- ③ 数据 -->
+      <g class="tm" text-anchor="middle">
+        <rect x="24"  y="352" width="128" height="46" rx="7" fill="var(--card)" stroke="var(--data)" stroke-width="1.4"/>
+        <text x="88"  y="373" fill="var(--data)">books</text><text class="ts" x="88" y="389" fill="var(--ink-faint)">+ 进度 / 状态</text>
+
+        <rect x="164" y="352" width="128" height="46" rx="7" fill="var(--card)" stroke="var(--data)" stroke-width="1.4"/>
+        <text x="228" y="373" fill="var(--data)">lookup_records</text><text class="ts" x="228" y="389" fill="var(--local)">本机 · 不同步</text>
+
+        <rect x="304" y="352" width="128" height="46" rx="7" fill="var(--card)" stroke="var(--data)" stroke-width="2.2"/>
+        <text x="368" y="373" fill="var(--data)">vocab_words</text><text class="ts" x="368" y="389" fill="var(--ink-faint)">FSRS 复习列</text>
+
+        <rect x="444" y="352" width="128" height="46" rx="7" fill="var(--card)" stroke="var(--data)" stroke-width="1.4"/>
+        <text x="508" y="373" fill="var(--data)">highlights</text><text class="ts" x="508" y="389" fill="var(--ink-faint)">色块 + 备注</text>
+
+        <rect x="584" y="352" width="128" height="46" rx="7" fill="var(--card)" stroke="var(--data)" stroke-width="1.4"/>
+        <text x="648" y="373" fill="var(--data)">notes</text><text class="ts" x="648" y="389" fill="var(--ink-faint)">按词 / 按选区</text>
+
+        <rect x="724" y="352" width="128" height="46" rx="7" fill="var(--card)" stroke="var(--data)" stroke-width="1.4"/>
+        <text x="788" y="373" fill="var(--data)">word_mark_*</text><text class="ts" x="788" y="389" fill="var(--ink-faint)">规则 + 例外 + 逐处</text>
+
+        <rect x="864" y="352" width="110" height="46" rx="7" fill="var(--card)" stroke="var(--data)" stroke-width="1.4"/>
+        <text x="919" y="373" fill="var(--data)">chats</text><text class="ts" x="919" y="389" fill="var(--ink-faint)">按书持久化</text>
+
+        <rect x="986" y="352" width="110" height="46" rx="7" fill="var(--card)" stroke="var(--data)" stroke-width="1.4"/>
+        <text x="1041" y="373" fill="var(--data)">reading_sessions</text><text class="ts" x="1041" y="389" fill="var(--local)">本机 · 不同步</text>
+
+        <rect x="24"  y="406" width="268" height="34" rx="7" fill="var(--card)" stroke="var(--data)" stroke-width="1" stroke-dasharray="4 3"/>
+        <text class="ts" x="158" y="427" fill="var(--ink-soft)">book_chunks / embeddings / summaries · 派生，可重建</text>
+
+        <rect x="304" y="406" width="268" height="34" rx="7" fill="var(--card)" stroke="var(--data)" stroke-width="1" stroke-dasharray="4 3"/>
+        <text class="ts" x="438" y="427" fill="var(--ink-soft)">bookmarks / collections / translations / word_forms</text>
+
+        <rect x="584" y="406" width="268" height="34" rx="7" fill="var(--card)" stroke="var(--data)" stroke-width="1" stroke-dasharray="4 3"/>
+        <text class="ts" x="718" y="427" fill="var(--ink-soft)">settings / book_settings · 除字体身份外全本机</text>
+
+        <rect x="864" y="406" width="232" height="34" rx="7" fill="var(--card)" stroke="var(--local)" stroke-width="1" stroke-dasharray="4 3"/>
+        <text class="ts" x="980" y="427" fill="var(--local)">secrets.db · 密钥永不进主库</text>
+      </g>
+
+      <!-- ④ 出口 -->
+      <g>
+        <rect x="24"  y="504" width="176" height="62" rx="9" fill="var(--card)" stroke="var(--auto)" stroke-width="1.5"/>
+        <text class="t"  x="112" y="528" fill="var(--auto)" text-anchor="middle">正文回显标记</text>
+        <text class="ts" x="112" y="546" fill="var(--ink-soft)" text-anchor="middle">已查 / 新词 / 学习中 / 已掌握</text>
+        <text class="ts" x="112" y="560" fill="var(--ink-faint)" text-anchor="middle">四档独立开关</text>
+
+        <rect x="212" y="504" width="176" height="62" rx="9" fill="var(--card)" stroke="var(--auto)" stroke-width="1.5"/>
+        <text class="t"  x="300" y="528" fill="var(--auto)" text-anchor="middle">被动生词注释</text>
+        <text class="ts" x="300" y="546" fill="var(--ink-soft)" text-anchor="middle">ruby / 页边栏 · 三档密度</text>
+        <text class="ts" x="300" y="560" fill="var(--data)" text-anchor="middle">零额外 AI 请求</text>
+
+        <rect x="400" y="504" width="176" height="62" rx="9" fill="var(--card)" stroke="var(--auto)" stroke-width="1.5"/>
+        <text class="t"  x="488" y="528" fill="var(--auto)" text-anchor="middle">语境复习</text>
+        <text class="ts" x="488" y="546" fill="var(--ink-soft)" text-anchor="middle">挖空 + FSRS 排期</text>
+        <text class="ts" x="488" y="560" fill="var(--ink-faint)" text-anchor="middle">入口埋在生词页内</text>
+
+        <rect x="588" y="504" width="176" height="62" rx="9" fill="var(--card)" stroke="var(--auto)" stroke-width="1.5"/>
+        <text class="t"  x="676" y="528" fill="var(--auto)" text-anchor="middle">书库层记录页</text>
+        <text class="ts" x="676" y="546" fill="var(--ink-soft)" text-anchor="middle">生词 · 笔记 · 聊天</text>
+        <text class="ts" x="676" y="560" fill="var(--break)" text-anchor="middle">纯高亮没有页</text>
+
+        <rect x="776" y="504" width="152" height="62" rx="9" fill="var(--card)" stroke="var(--auto)" stroke-width="1.5"/>
+        <text class="t"  x="852" y="528" fill="var(--auto)" text-anchor="middle">结构化导出</text>
+        <text class="ts" x="852" y="546" fill="var(--ink-soft)" text-anchor="middle">Markdown / CSV / Anki</text>
+        <text class="ts" x="852" y="560" fill="var(--ink-faint)" text-anchor="middle">11 个字段可选</text>
+
+        <rect x="940" y="504" width="156" height="62" rx="9" fill="var(--card)" stroke="var(--auto)" stroke-width="1.5"/>
+        <text class="t"  x="1018" y="528" fill="var(--auto)" text-anchor="middle">阅读统计 + 复盘</text>
+        <text class="ts" x="1018" y="546" fill="var(--ink-soft)" text-anchor="middle">时长 / 日历 / AI 短评</text>
+        <text class="ts" x="1018" y="560" fill="var(--break)" text-anchor="middle">与学习数据零交叉</text>
+      </g>
+
+      <!-- 连线 -->
+      <g fill="none" stroke="var(--ink-faint)" stroke-width="1.3" marker-end="url(#a1)" opacity=".7">
+        <path d="M348,124 L348,190"/>
+        <path d="M112,124 L112,160 L88,160 L88,346"/>
+        <path d="M580,124 L580,160 L718,160 L718,400"/>
+        <path d="M760,124 L760,160 L1041,160 L1041,346"/>
+        <path d="M976,124 L976,300 L1090,300 L1090,346" stroke-dasharray="5 3"/>
+        <path d="M174,278 L174,300 L228,300 L228,346"/>
+        <path d="M174,278 L174,300 L368,300 L368,346" opacity=".55"/>
+        <path d="M440,278 L440,300 L470,300 L470,400" opacity=".55"/>
+        <path d="M819,278 L819,300 L86,300 L86,346" opacity=".35" stroke-dasharray="4 3"/>
+        <path d="M1005,278 L1005,320 L820,320 L820,346"/>
+      </g>
+      <g fill="none" stroke="var(--auto)" stroke-width="1.5" marker-end="url(#a1o)">
+        <path d="M228,398 L228,460 L112,460 L112,498"/>
+        <path d="M368,398 L368,460 L300,460 L300,498"/>
+        <path d="M368,398 L368,460 L488,460 L488,498"/>
+        <path d="M648,398 L648,470 L676,470 L676,498"/>
+        <path d="M508,398 L508,470 L830,470 L830,498"/>
+        <path d="M1041,398 L1041,470 L1018,470 L1018,498"/>
+      </g>
+    </svg>
+  </div>
+  <ul class="notes">
+    <li class="good"><b>管道方向是干净的。</b>没有一处出口反向去改能力层的配置，也没有一张表被两个能力同时写。这在这个体量的个人项目里不常见。</li>
+    <li><b>MCP 是被低估的一层。</b>15 个工具直接读写沉淀层，绕过全部前端逻辑。它意味着「外部 AI 帮我整理生词本」是可行的，但也意味着前端加的任何校验都不是真正的护栏。</li>
+    <li class="bad"><b>阅读统计是一座孤岛。</b>它只读 <code>reading_sessions</code>，AI 复盘的入参白名单里明确排除了笔记、高亮、生词。隐私上是对的，但代价是「这个月读了 12 小时」和「这个月收了 80 个词」永远不会出现在同一句话里。</li>
+  </ul>
+</section>
+
+<!-- ═══════════════════════ 图 2 ═══════════════════════ -->
+<section>
+  <h2><span class="n">图 2</span> 一次选中，八个去向</h2>
+  <p class="lede">
+    这是「会不会卡手」最该看的一张。选中文字后，系统先按词数把它<b>分成三类</b>，三类各有一套可配置的菜单，
+    菜单项再分发到八条完全不同的链路。<b>没有一条链路会打断阅读</b>——全部是浮层或侧栏，正文不跳走。
+  </p>
+  <div class="figure">
+    <svg viewBox="0 0 1120 700" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="a2" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+          <path d="M0,0 L7,3.2 L0,6.4 z" fill="var(--ink-faint)"/>
+        </marker>
+        <marker id="a2p" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+          <path d="M0,0 L7,3.2 L0,6.4 z" fill="var(--ai)"/>
+        </marker>
+        <marker id="a2g" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+          <path d="M0,0 L7,3.2 L0,6.4 z" fill="var(--data)"/>
+        </marker>
+      </defs>
+
+      <!-- 触发 -->
+      <rect x="410" y="16" width="300" height="52" rx="9" fill="var(--ui-bg)" stroke="var(--ui)" stroke-width="2"/>
+      <text class="t" x="560" y="40" fill="var(--ui)" text-anchor="middle">在正文里选中一段文字</text>
+      <text class="ts" x="560" y="58" fill="var(--ink-soft)" text-anchor="middle">鼠标拖选 / 双击 / 长按 · 也可由键位绑定直接触发</text>
+
+      <path d="M560,68 L560,96" fill="none" stroke="var(--ink-faint)" stroke-width="1.4" marker-end="url(#a2)"/>
+
+      <!-- 分类 -->
+      <rect x="360" y="98" width="400" height="44" rx="9" fill="var(--card)" stroke="var(--ink-faint)" stroke-width="1.4" stroke-dasharray="5 3"/>
+      <text class="t" x="560" y="119" fill="var(--ink)" text-anchor="middle">classifySelection() · 按词数分类</text>
+      <text class="ts" x="560" y="135" fill="var(--ink-soft)" text-anchor="middle">用 Intl.Segmenter 分词，不是按空格切——中文与连字符都对</text>
+
+      <g fill="none" stroke="var(--ink-faint)" stroke-width="1.3" marker-end="url(#a2)">
+        <path d="M440,142 L440,164 L180,164 L180,186"/>
+        <path d="M560,142 L560,186"/>
+        <path d="M680,142 L680,164 L940,164 L940,186"/>
+      </g>
+
+      <!-- 三类 -->
+      <g text-anchor="middle">
+        <rect x="72" y="188" width="216" height="56" rx="9" fill="var(--ui-bg)" stroke="var(--ui)" stroke-width="1.6"/>
+        <text class="t"  x="180" y="211" fill="var(--ui)">word · 单词</text>
+        <text class="ts" x="180" y="230" fill="var(--ink-soft)">卡片 11 个模块可选</text>
+
+        <rect x="452" y="188" width="216" height="56" rx="9" fill="var(--ui-bg)" stroke="var(--ui)" stroke-width="1.6"/>
+        <text class="t"  x="560" y="211" fill="var(--ui)">phrase · 短语</text>
+        <text class="ts" x="560" y="230" fill="var(--ink-soft)">卡片 8 个模块可选</text>
+
+        <rect x="832" y="188" width="216" height="56" rx="9" fill="var(--ui-bg)" stroke="var(--ui)" stroke-width="1.6"/>
+        <text class="t"  x="940" y="211" fill="var(--ui)">passage · 段落</text>
+        <text class="ts" x="940" y="230" fill="var(--ink-soft)">卡片 9 个模块可选</text>
+      </g>
+
+      <!-- 菜单 -->
+      <rect x="72" y="266" width="976" height="52" rx="9" fill="var(--card)" stroke="var(--ui)" stroke-width="1.6"/>
+      <text class="t"  x="560" y="288" fill="var(--ui)" text-anchor="middle">选区菜单 · 每一类一套顺序，可在「设置 → 工具」里重排、禁用、加自定义动作（上限 6 个）</text>
+      <text class="ts" x="560" y="306" fill="var(--ink-soft)" text-anchor="middle">同一批动作也能绑到键盘 / 鼠标手势，跳过菜单直达</text>
+
+      <g fill="none" stroke="var(--ink-faint)" stroke-width="1.2" marker-end="url(#a2)" opacity=".65">
+        <path d="M180,244 L180,260"/><path d="M560,244 L560,260"/><path d="M940,244 L940,260"/>
+      </g>
+
+      <g fill="none" stroke="var(--ink-faint)" stroke-width="1.2" opacity=".55">
+        <path d="M118,318 L118,352"/><path d="M252,318 L252,352"/><path d="M386,318 L386,352"/>
+        <path d="M520,318 L520,352"/><path d="M654,318 L654,352"/><path d="M788,318 L788,352"/>
+        <path d="M922,318 L922,352"/><path d="M1002,318 L1002,352"/>
+      </g>
+
+      <!-- 八个动作 -->
+      <g text-anchor="middle" class="tm">
+        <rect x="72"  y="354" width="92" height="34" rx="7" fill="var(--ai-bg)"   stroke="var(--ai)"   stroke-width="1.8"/><text x="118" y="376" fill="var(--ai)">查词 define</text>
+        <rect x="206" y="354" width="92" height="34" rx="7" fill="var(--ai-bg)"   stroke="var(--ai)"   stroke-width="1.4"/><text x="252" y="376" fill="var(--ai)">解释 explain</text>
+        <rect x="340" y="354" width="92" height="34" rx="7" fill="var(--ai-bg)"   stroke="var(--ai)"   stroke-width="1.4"/><text x="386" y="376" fill="var(--ai)">追问 ask_ai</text>
+        <rect x="474" y="354" width="92" height="34" rx="7" fill="var(--ai-bg)"   stroke="var(--ai)"   stroke-width="1.4"/><text x="520" y="376" fill="var(--ai)">翻译 translate</text>
+        <rect x="608" y="354" width="92" height="34" rx="7" fill="var(--ai-bg)"   stroke="var(--ai)"   stroke-width="1.4"/><text x="654" y="376" fill="var(--ai)">朗读 speak</text>
+        <rect x="742" y="354" width="92" height="34" rx="7" fill="var(--data-bg)" stroke="var(--data)" stroke-width="1.8"/><text x="788" y="376" fill="var(--data)">收藏 collect</text>
+        <rect x="876" y="354" width="92" height="34" rx="7" fill="var(--data-bg)" stroke="var(--data)" stroke-width="1.4"/><text x="922" y="376" fill="var(--data)">高亮 highlight</text>
+        <rect x="956" y="354" width="92" height="34" rx="7" fill="var(--local-bg)" stroke="var(--local)" stroke-width="1.4" transform="translate(0,44)"/><text x="1002" y="420" fill="var(--local)">复制 copy</text>
+      </g>
+
+      <g fill="none" stroke="var(--ai)" stroke-width="1.3" marker-end="url(#a2p)" opacity=".8">
+        <path d="M118,388 L118,424"/><path d="M252,388 L252,410 L160,410 L160,424"/>
+        <path d="M386,388 L386,424"/><path d="M520,388 L520,424"/><path d="M654,388 L654,424"/>
+      </g>
+      <g fill="none" stroke="var(--data)" stroke-width="1.3" marker-end="url(#a2g)" opacity=".8">
+        <path d="M788,388 L788,424"/><path d="M922,388 L922,424"/>
+      </g>
+
+      <!-- 结果面 -->
+      <g>
+        <rect x="60" y="426" width="256" height="94" rx="9" fill="var(--card)" stroke="var(--ai)" stroke-width="2.2"/>
+        <text class="t"  x="188" y="449" fill="var(--ai)" text-anchor="middle">学习卡（就地浮层）</text>
+        <text class="ts" x="188" y="467" fill="var(--ink-soft)" text-anchor="middle">流式渲染 · 按 kind 装配模块</text>
+        <text class="ts" x="188" y="483" fill="var(--ink-soft)" text-anchor="middle">卡内还能：收藏 / 写笔记 / 朗读 / 追问</text>
+        <text class="ts" x="188" y="500" fill="var(--auto)" text-anchor="middle">带上「上次释义 + 掌握度 + 距上次天数」</text>
+        <text class="ts" x="188" y="514" fill="var(--auto)" text-anchor="middle">重复遭遇时答得更短</text>
+
+        <rect x="336" y="426" width="128" height="60" rx="9" fill="var(--card)" stroke="var(--ai)" stroke-width="1.5"/>
+        <text class="t"  x="400" y="450" fill="var(--ai)" text-anchor="middle">AI 侧栏</text>
+        <text class="ts" x="400" y="467" fill="var(--ink-soft)" text-anchor="middle">按书持久化会话</text>
+        <text class="ts" x="400" y="481" fill="var(--ink-soft)" text-anchor="middle">引用 chip 可见可删</text>
+
+        <rect x="484" y="426" width="128" height="60" rx="9" fill="var(--card)" stroke="var(--ai)" stroke-width="1.5"/>
+        <text class="t"  x="548" y="450" fill="var(--ai)" text-anchor="middle">翻译浮层</text>
+        <text class="ts" x="548" y="467" fill="var(--ink-soft)" text-anchor="middle">写 translations</text>
+        <text class="ts" x="548" y="481" fill="var(--ink-faint)" text-anchor="middle">默认关</text>
+
+        <rect x="632" y="426" width="128" height="60" rx="9" fill="var(--card)" stroke="var(--ai)" stroke-width="1.5"/>
+        <text class="t"  x="696" y="450" fill="var(--ai)" text-anchor="middle">TTS 播放</text>
+        <text class="ts" x="696" y="467" fill="var(--ink-soft)" text-anchor="middle">四档音源自动降级</text>
+        <text class="ts" x="696" y="481" fill="var(--ink-faint)" text-anchor="middle">音频缓存在本机</text>
+
+        <rect x="780" y="426" width="128" height="60" rx="9" fill="var(--card)" stroke="var(--data)" stroke-width="1.8"/>
+        <text class="t"  x="844" y="450" fill="var(--data)" text-anchor="middle">vocab_words</text>
+        <text class="ts" x="844" y="467" fill="var(--ink-soft)" text-anchor="middle">AI 短释义失败</text>
+        <text class="ts" x="844" y="481" fill="var(--ink-soft)" text-anchor="middle">→ 退本地词典 → 存空</text>
+
+        <rect x="928" y="426" width="128" height="60" rx="9" fill="var(--card)" stroke="var(--data)" stroke-width="1.5"/>
+        <text class="t"  x="992" y="450" fill="var(--data)" text-anchor="middle">highlights</text>
+        <text class="ts" x="992" y="467" fill="var(--ink-soft)" text-anchor="middle">五色 + 备注</text>
+        <text class="ts" x="992" y="481" fill="var(--ink-faint)" text-anchor="middle">备注写了才进笔记页</text>
+      </g>
+
+      <!-- 卡片的自动副作用 -->
+      <path d="M188,520 L188,556" fill="none" stroke="var(--auto)" stroke-width="1.6" marker-end="url(#a2)"/>
+      <rect x="60" y="558" width="500" height="60" rx="9" fill="var(--auto-bg)" stroke="var(--auto)" stroke-width="1.6"/>
+      <text class="t"  x="310" y="580" fill="var(--auto)" text-anchor="middle">查完自动发生的三件事，用户不需要做任何操作</text>
+      <text class="ts" x="310" y="598" fill="var(--ink-soft)" text-anchor="middle">① 写 lookup_records，同词同位置 lookup_count++　② 正文自动加「已查」标记</text>
+      <text class="ts" x="310" y="612" fill="var(--ink-soft)" text-anchor="middle">③ 记录词形，resign / resigned / resigning 归为一个词，标记跟着走</text>
+
+      <rect x="580" y="558" width="476" height="60" rx="9" fill="var(--data-bg)" stroke="var(--data)" stroke-width="1.4"/>
+      <text class="t"  x="818" y="580" fill="var(--data)" text-anchor="middle">两条克制的规则，值得单独记住</text>
+      <text class="ts" x="818" y="598" fill="var(--ink-soft)" text-anchor="middle">① 重复查同一个词命中缓存，不重复花钱</text>
+      <text class="ts" x="818" y="612" fill="var(--ink-soft)" text-anchor="middle">② 用户手动删掉的标记，再查一次也不会被复活</text>
+
+      <rect x="60" y="634" width="996" height="50" rx="9" fill="var(--break-bg)" stroke="var(--break)" stroke-width="1.4" stroke-dasharray="6 4"/>
+      <text class="t"  x="558" y="656" fill="var(--break)" text-anchor="middle">这一层唯一的结构性摩擦：八个动作全部是「一次一个」，没有批量口</text>
+      <text class="ts" x="558" y="673" fill="var(--ink-soft)" text-anchor="middle">读完一章想把划过的五处一起收进生词本，只能回到侧栏一条条点——选区菜单没有「多选」概念，高亮列表也没有批量转生词</text>
+    </svg>
+  </div>
+  <ul class="notes">
+    <li class="good"><b>三类分流是这个产品最聪明的一处设计。</b>单词、短语、段落要的东西本来就不一样，用一套 UI 硬撑会两头不讨好。而且分类用的是 <code>Intl.Segmenter</code> 而不是按空格切，中英文都对。</li>
+    <li class="good"><b>「收藏」的三级降级链</b>（AI 短释义 → 本地词典 → 存空词条）是全应用错误处理的第二个样板：AI 挂了，收藏这个动作本身不会失败。</li>
+    <li class="bad"><b>但配置面积也在这里失控。</b>3 类 × (菜单顺序 + 启用项 + 卡片模块 + 密度 + 宽度) + 6 个自定义动作 + 键位绑定 —— 一个只想「查个词」的用户，要在设置里穿过这一整片才能确认默认值合不合适。</li>
+    <li class="bad"><b>没有批量。</b>这是「卡手」在这张图上唯一的确凿位置，下面图 3 会看到它的后果。</li>
+  </ul>
+</section>
+
+<!-- ═══════════════════════ 图 3 ═══════════════════════ -->
+<section>
+  <h2><span class="n">图 3</span> 学习闭环：哪些自动，哪些要手动，哪里断</h2>
+  <p class="lede">
+    方针里那句核心闭环——<code>阅读 → 查词 → 追问 → 收藏 → 回显 → 复习 → 回到原文</code>——现在是通的。
+    <b>橙色实线是系统自动做的，蓝色虚线是必须用户动手的，红色是断口。</b>
+    看下来会发现：底层数据基本没有断点，<b>断的全在界面上</b>。
+  </p>
+  <div class="figure">
+    <svg viewBox="0 0 1120 620" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="a3o" markerWidth="10" markerHeight="10" refX="8" refY="3.4" orient="auto">
+          <path d="M0,0 L7.5,3.4 L0,6.8 z" fill="var(--auto)"/>
+        </marker>
+        <marker id="a3u" markerWidth="10" markerHeight="10" refX="8" refY="3.4" orient="auto">
+          <path d="M0,0 L7.5,3.4 L0,6.8 z" fill="var(--ui)"/>
+        </marker>
+        <marker id="a3r" markerWidth="10" markerHeight="10" refX="8" refY="3.4" orient="auto">
+          <path d="M0,0 L7.5,3.4 L0,6.8 z" fill="var(--break)"/>
+        </marker>
+      </defs>
+
+      <g class="ts" fill="var(--ink-soft)">
+        <line x1="740" y1="18" x2="768" y2="18" stroke="var(--auto)" stroke-width="2"/>
+        <text x="776" y="22">自动发生</text>
+        <line x1="852" y1="18" x2="880" y2="18" stroke="var(--ui)" stroke-width="2" stroke-dasharray="5 3"/>
+        <text x="888" y="22">需用户动手</text>
+        <line x1="972" y1="18" x2="1000" y2="18" stroke="var(--break)" stroke-width="2" stroke-dasharray="5 3"/>
+        <text x="1008" y="22">断口</text>
+      </g>
+
+      <!-- 主链 -->
+      <g text-anchor="middle">
+        <rect x="30" y="60" width="150" height="58" rx="9" fill="var(--ui-bg)" stroke="var(--ui)" stroke-width="1.8"/>
+        <text class="t"  x="105" y="84"  fill="var(--ui)">读到一个生词</text>
+        <text class="ts" x="105" y="102" fill="var(--ink-soft)">选中 → 查词</text>
+
+        <rect x="230" y="60" width="176" height="58" rx="9" fill="var(--data-bg)" stroke="var(--data)" stroke-width="1.8"/>
+        <text class="t"  x="318" y="84"  fill="var(--data)">lookup_records</text>
+        <text class="ts" x="318" y="102" fill="var(--ink-soft)">lookup_count++ · 存完整卡片</text>
+
+        <rect x="456" y="60" width="176" height="58" rx="9" fill="var(--auto-bg)" stroke="var(--auto)" stroke-width="1.8"/>
+        <text class="t"  x="544" y="84"  fill="var(--auto)">正文自动加标记</text>
+        <text class="ts" x="544" y="102" fill="var(--ink-soft)">下次读到有颜色提示</text>
+
+        <rect x="682" y="60" width="176" height="58" rx="9" fill="var(--data-bg)" stroke="var(--data)" stroke-width="2.4"/>
+        <text class="t"  x="770" y="84"  fill="var(--data)">vocab_words</text>
+        <text class="ts" x="770" y="102" fill="var(--ink-soft)">收藏 → 进 FSRS 队列</text>
+
+        <rect x="908" y="60" width="182" height="58" rx="9" fill="var(--auto-bg)" stroke="var(--auto)" stroke-width="1.8"/>
+        <text class="t"  x="999" y="84"  fill="var(--auto)">被动生词回显</text>
+        <text class="ts" x="999" y="102" fill="var(--ink-soft)">复用已存释义，不发请求</text>
+      </g>
+
+      <g fill="none" stroke="var(--auto)" stroke-width="2" marker-end="url(#a3o)">
+        <path d="M180,89 L224,89"/>
+        <path d="M406,89 L450,89"/>
+        <path d="M858,89 L902,89"/>
+      </g>
+      <path d="M632,89 L676,89" fill="none" stroke="var(--ui)" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a3u)"/>
+      <text class="ts" x="654" y="80" fill="var(--ui)" text-anchor="middle">点收藏</text>
+
+      <!-- 复习支链 -->
+      <path d="M770,118 L770,150" fill="none" stroke="var(--auto)" stroke-width="2" marker-end="url(#a3o)"/>
+      <g text-anchor="middle">
+        <rect x="660" y="152" width="220" height="66" rx="9" fill="var(--card)" stroke="var(--auto)" stroke-width="1.8"/>
+        <text class="t"  x="770" y="175" fill="var(--auto)">语境复习</text>
+        <text class="ts" x="770" y="192" fill="var(--ink-soft)">原句挖空 · 每一处重复词都遮</text>
+        <text class="ts" x="770" y="208" fill="var(--ink-soft)">显示「第 N / 共 M」+ 来源章节</text>
+      </g>
+      <path d="M770,218 L770,250" fill="none" stroke="var(--auto)" stroke-width="2" marker-end="url(#a3o)"/>
+      <g text-anchor="middle">
+        <rect x="676" y="252" width="188" height="52" rx="9" fill="var(--data-bg)" stroke="var(--data)" stroke-width="1.5"/>
+        <text class="t"  x="770" y="274" fill="var(--data)">掌握度更新 · FSRS 重排</text>
+        <text class="ts" x="770" y="291" fill="var(--ink-soft)">next_review_at 往后推</text>
+      </g>
+      <path d="M676,278 L560,278 L560,320" fill="none" stroke="var(--ui)" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#a3u)"/>
+      <g text-anchor="middle">
+        <rect x="466" y="322" width="188" height="52" rx="9" fill="var(--ui-bg)" stroke="var(--ui)" stroke-width="1.5"/>
+        <text class="t"  x="560" y="344" fill="var(--ui)">回到原文</text>
+        <text class="ts" x="560" y="361" fill="var(--ink-soft)">按 CFI 定位 · 跳转历史可回退</text>
+      </g>
+      <path d="M466,348 L105,348 L105,124" fill="none" stroke="var(--auto)" stroke-width="2" marker-end="url(#a3o)"/>
+      <text class="ts" x="250" y="341" fill="var(--auto)" text-anchor="middle">闭环合上</text>
+
+      <!-- 跨书掌握度 -->
+      <g text-anchor="middle">
+        <rect x="908" y="152" width="182" height="80" rx="9" fill="var(--auto-bg)" stroke="var(--auto)" stroke-width="1.8"/>
+        <text class="t"  x="999" y="174" fill="var(--auto)">跨书掌握度记忆</text>
+        <text class="ts" x="999" y="191" fill="var(--ink-soft)">在 A 书标了「已掌握」</text>
+        <text class="ts" x="999" y="206" fill="var(--ink-soft)">B 书再查，跳过基础释义</text>
+        <text class="ts" x="999" y="223" fill="var(--data)">卡片会说明一句「它记得你」</text>
+      </g>
+      <path d="M858,89 L890,89 L890,150" fill="none" stroke="var(--auto)" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#a3o)" opacity=".7"/>
+
+      <!-- 断点区 -->
+      <text class="tt" x="30" y="418" fill="var(--break)">界面上的四处断口 · 底层数据都是通的</text>
+      <line x1="30" y1="428" x2="1090" y2="428" stroke="var(--rule)" stroke-width="1"/>
+
+      <g>
+        <rect x="30" y="442" width="252" height="86" rx="9" fill="var(--break-bg)" stroke="var(--break)" stroke-width="1.5" stroke-dasharray="6 4"/>
+        <text class="t"  x="156" y="465" fill="var(--break)" text-anchor="middle">① 同一个词 × 三本书 = 三条</text>
+        <text class="ts" x="156" y="483" fill="var(--ink-soft)" text-anchor="middle">vocab_words.book_id NOT NULL</text>
+        <text class="ts" x="156" y="498" fill="var(--ink-soft)" text-anchor="middle">去重只在书内发生，复习时同词反复出现</text>
+        <text class="ts" x="156" y="516" fill="var(--ink-faint)" text-anchor="middle">讽刺：后端的跨书掌握度已经在合并了</text>
+
+        <rect x="298" y="442" width="252" height="86" rx="9" fill="var(--break-bg)" stroke="var(--break)" stroke-width="1.5" stroke-dasharray="6 4"/>
+        <text class="t"  x="424" y="465" fill="var(--break)" text-anchor="middle">② 纯高亮没有书库层入口</text>
+        <text class="ts" x="424" y="483" fill="var(--ink-soft)" text-anchor="middle">生词有页、笔记有页、聊天有页</text>
+        <text class="ts" x="424" y="498" fill="var(--ink-soft)" text-anchor="middle">没写备注的划线只活在阅读器侧栏里</text>
+        <text class="ts" x="424" y="516" fill="var(--auto)" text-anchor="middle">后端 list_annotations 已写好，前端页未挂载</text>
+
+        <rect x="566" y="442" width="252" height="86" rx="9" fill="var(--break-bg)" stroke="var(--break)" stroke-width="1.5" stroke-dasharray="6 4"/>
+        <text class="t"  x="692" y="465" fill="var(--break)" text-anchor="middle">③ 复习入口埋在生词页里</text>
+        <text class="ts" x="692" y="483" fill="var(--ink-soft)" text-anchor="middle">「今日该复习 N 个」在任何一级导航</text>
+        <text class="ts" x="692" y="498" fill="var(--ink-soft)" text-anchor="middle">都看不到，要先点进生词才发现</text>
+        <text class="ts" x="692" y="516" fill="var(--ink-faint)" text-anchor="middle">复习是有时效的动作，不该靠用户想起来</text>
+
+        <rect x="834" y="442" width="256" height="86" rx="9" fill="var(--break-bg)" stroke="var(--break)" stroke-width="1.5" stroke-dasharray="6 4"/>
+        <text class="t"  x="962" y="465" fill="var(--break)" text-anchor="middle">④ 收藏只能一个一个来</text>
+        <text class="ts" x="962" y="483" fill="var(--ink-soft)" text-anchor="middle">读完一章想把划过的词一起收</text>
+        <text class="ts" x="962" y="498" fill="var(--ink-soft)" text-anchor="middle">没有任何批量口（后端有 bulk_* 命令）</text>
+        <text class="ts" x="962" y="516" fill="var(--auto)" text-anchor="middle">bulk_update_vocab_mastery 已存在，前端没用</text>
+      </g>
+
+      <rect x="30" y="546" width="1060" height="52" rx="9" fill="var(--data-bg)" stroke="var(--data)" stroke-width="1.5"/>
+      <text class="t"  x="560" y="568" fill="var(--data)" text-anchor="middle">本月刚补上的三处（提交 059c6bf / dddb61d）</text>
+      <text class="ts" x="560" y="586" fill="var(--ink-soft)" text-anchor="middle">生词详情现在能看到该词的笔记（跨书）· 查词历史行可直接收藏并按「查过 ≥3 次」筛选 · 复习卡显示进度与来源章节</text>
+    </svg>
+  </div>
+  <ul class="notes">
+    <li class="good"><b>闭环确实合上了。</b>从「读到生词」走到「回到原文」，中间只需要用户主动做两件事：点收藏、点复习。其余全自动。这是这个项目最扎实的成果。</li>
+    <li class="good"><b>跨书掌握度是全应用最深的一层个性化</b>，而且本月刚把它从「用户完全感知不到」变成了卡片上的一行说明。做对了还说出来，这一步很关键。</li>
+    <li class="bad"><b>四处断口的性质完全一致：后端能力已就位，前端没有开口。</b><code>list_annotations</code>、<code>bulk_update_vocab_mastery</code> 都在命令表里注册着但前端零调用——这不是设计缺陷，是收尾没做完。</li>
+    <li class="bad"><b>断口 ③ 是唯一一个会让整条闭环空转的。</b>前面所有自动化都在往复习队列里灌词，而队列本身没有任何一处会主动出现在用户视野里。</li>
+  </ul>
+</section>
+
+<!-- ═══════════════════════ 图 4 ═══════════════════════ -->
+<section>
+  <h2><span class="n">图 4</span> 前置依赖链：「卡手」到底卡在哪</h2>
+  <p class="lede">
+    这张图回答的是「实际使用中会不会卡手」。<b>卡手不来自功能太多，来自前置条件不可见。</b>
+    左边是四个门槛，右边是过不去时各个功能的实际状态。红色是彻底不可用，橙色是静默降级——<b>静默降级比不可用更伤</b>，因为用户不知道自己错过了什么。
+  </p>
+  <div class="figure">
+    <svg viewBox="0 0 1120 640" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="a4" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+          <path d="M0,0 L7,3.2 L0,6.4 z" fill="var(--break)"/>
+        </marker>
+        <marker id="a4o" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+          <path d="M0,0 L7,3.2 L0,6.4 z" fill="var(--auto)"/>
+        </marker>
+      </defs>
+
+      <!-- 门槛 1 -->
+      <rect x="24" y="30" width="250" height="76" rx="10" fill="var(--break-bg)" stroke="var(--break)" stroke-width="2.2"/>
+      <text class="t"  x="149" y="55" fill="var(--break)" text-anchor="middle">门槛 ① 没配 AI 服务档案</text>
+      <text class="ts" x="149" y="73" fill="var(--ink-soft)" text-anchor="middle">全仓零首启引导</text>
+      <text class="ts" x="149" y="89" fill="var(--ink-soft)" text-anchor="middle">新用户第一次交互 = 一个红色错误</text>
+      <text class="ts" x="149" y="101" fill="var(--ink-faint)" text-anchor="middle">README 第一句「把 AI 放进书里」此刻不成立</text>
+
+      <rect x="330" y="24" width="766" height="88" rx="10" fill="var(--card)" stroke="var(--break)" stroke-width="1.4"/>
+      <text class="tt" x="346" y="44" fill="var(--break)">彻底不可用（6 条 AI 链路全废）</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="346" y="64">查词学习卡 · 句子解释 · AI 侧栏追问 · X-Ray · 段落翻译 · 阅读复盘 · 自定义动作</text>
+        <text x="346" y="82" fill="var(--data)">仍然可用：本地词典释义 · 系统 TTS 朗读 · 高亮 · 书签 · 笔记 · 手动收藏（存空词条）· 全文搜索 · 排版</text>
+        <text x="346" y="100" fill="var(--ink-faint)">查词框的失败态给了带 section 深链的 CTA，会把主窗口拉到前台——这条错误处理本身做得很好，问题是它出现在第一分钟</text>
+      </g>
+      <path d="M274,68 L324,68" fill="none" stroke="var(--break)" stroke-width="1.8" marker-end="url(#a4)"/>
+
+      <!-- 门槛 2 -->
+      <rect x="24" y="140" width="250" height="76" rx="10" fill="var(--auto-bg)" stroke="var(--auto)" stroke-width="2.2"/>
+      <text class="t"  x="149" y="165" fill="var(--auto)" text-anchor="middle">门槛 ② 没填英语水平</text>
+      <text class="ts" x="149" y="183" fill="var(--ink-soft)" text-anchor="middle">设置 → 通用，位置够浅</text>
+      <text class="ts" x="149" y="199" fill="var(--ink-soft)" text-anchor="middle">但不填也能用，走默认值</text>
+      <text class="ts" x="149" y="211" fill="var(--break)" text-anchor="middle">这是最贵的一处静默降级</text>
+
+      <rect x="330" y="140" width="766" height="76" rx="10" fill="var(--card)" stroke="var(--auto)" stroke-width="1.4"/>
+      <text class="tt" x="346" y="160" fill="var(--auto)">静默降级 · 用户不知道自己错过了什么</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="346" y="180">产品最大的差异化是「按你的水平解释」。不填 CEFR，所有 AI 输出退化成通用解释。</text>
+        <text x="346" y="198">用户的归因不会是「我没填」，而是「这 AI 跟别处一样，没什么特别」——比报错更难挽回，因为他连自己缺了什么都不知道。</text>
+      </g>
+      <path d="M274,178 L324,178" fill="none" stroke="var(--auto)" stroke-width="1.8" marker-end="url(#a4o)"/>
+
+      <!-- 门槛 3 -->
+      <rect x="24" y="244" width="250" height="90" rx="10" fill="var(--auto-bg)" stroke="var(--auto)" stroke-width="2.2"/>
+      <text class="t"  x="149" y="269" fill="var(--auto)" text-anchor="middle">门槛 ③ 索引没建好</text>
+      <text class="ts" x="149" y="287" fill="var(--ink-soft)" text-anchor="middle">分块 → FTS → 向量嵌入</text>
+      <text class="ts" x="149" y="303" fill="var(--ink-soft)" text-anchor="middle">向量检索需另配 embedding 模型</text>
+      <text class="ts" x="149" y="320" fill="var(--ink-faint)" text-anchor="middle">状态：missing / building / ready / failed</text>
+
+      <rect x="330" y="244" width="766" height="90" rx="10" fill="var(--card)" stroke="var(--auto)" stroke-width="1.4"/>
+      <text class="tt" x="346" y="264" fill="var(--auto)">X-Ray 有硬门，聊天是软降级</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="346" y="284"><tspan fill="var(--break)" font-weight="700">X-Ray：</tspan>索引未就绪就不出卡片——排队重建后重试。这是全应用唯一一个「点了要等」的功能。</text>
+        <text x="346" y="302"><tspan fill="var(--data)" font-weight="700">AI 聊天：</tspan>12 档检索路由自动降级，选区 → 视窗 → 当前章 → 全书 → 通用。没索引也答，只是范围窄。</text>
+        <text x="346" y="322" fill="var(--ink-faint)">这个差异是对的（X-Ray 无凭无据就是编造），但两个按钮并排放着，反馈形状不一样，用户学不会这条规律。</text>
+      </g>
+      <path d="M274,289 L324,289" fill="none" stroke="var(--auto)" stroke-width="1.8" marker-end="url(#a4o)"/>
+
+      <!-- 门槛 4 -->
+      <rect x="24" y="362" width="250" height="84" rx="10" fill="var(--break-bg)" stroke="var(--break)" stroke-width="2.2"/>
+      <text class="t"  x="149" y="387" fill="var(--break)" text-anchor="middle">门槛 ④ 扫描版 PDF 没 OCR</text>
+      <text class="ts" x="149" y="405" fill="var(--ink-soft)" text-anchor="middle">运行时按需下载，仅桌面端</text>
+      <text class="ts" x="149" y="421" fill="var(--ink-soft)" text-anchor="middle">没有文本层 = 选不中任何字</text>
+      <text class="ts" x="149" y="437" fill="var(--ink-faint)" text-anchor="middle">整条学习链从入口就断</text>
+
+      <rect x="330" y="362" width="766" height="84" rx="10" fill="var(--card)" stroke="var(--break)" stroke-width="1.4"/>
+      <text class="tt" x="346" y="382" fill="var(--break)">选区一断，八个动作全断</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="346" y="402">图 2 里的一切都以「能选中文字」为前提。扫描件在 OCR 完成前，查词 / 收藏 / 高亮 / 朗读 / 翻译一个都做不了。</text>
+        <text x="346" y="420">EPUB 与文本书没有这个问题；PDF 是否可选中，取决于它是不是扫描件——而用户在导入时看不出区别。</text>
+        <text x="346" y="438" fill="var(--ink-faint)">这是唯一一个「同一个功能在不同书上表现完全不同」的地方。</text>
+      </g>
+      <path d="M274,404 L324,404" fill="none" stroke="var(--break)" stroke-width="1.8" marker-end="url(#a4)"/>
+
+      <!-- 总结带 -->
+      <rect x="24" y="476" width="1072" height="140" rx="12" fill="var(--ui-bg)" stroke="var(--ui)" stroke-width="1.8"/>
+      <text class="t" x="44" y="502" fill="var(--ui)">共同的结构问题：四个门槛没有一处在「用户即将撞上它之前」出现</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="44" y="526">全部是<tspan font-weight="700" fill="var(--ink)">先动作、再失败、再引导</tspan>。① 查词才知道没配 AI；③ 点 X-Ray 才知道索引没好；④ 选不中才知道是扫描件；② 永远不会知道。</text>
+        <text x="44" y="548">四个门槛里有三个可以在<tspan font-weight="700" fill="var(--ink)">打开书的那一刻</tspan>就判定完毕——书是不是扫描件、索引状态、AI 档案是否可用，全是打开时已知的事实。</text>
+        <text x="44" y="570">而现在这三条信息都要等到用户伸手去够某个功能时才浮现，等于把「这本书上你能做什么」的答案藏在了尝试的后面。</text>
+        <text x="44" y="596" fill="var(--auto)" font-weight="700">这就是「卡手」的真正来源——不是功能之间不联动，是能不能用这件事本身不可预告。</text>
+      </g>
+    </svg>
+  </div>
+  <ul class="notes">
+    <li class="bad"><b>门槛 ② 是四个里最贵的。</b>另外三个用户至少知道自己被挡了，② 是产品的核心卖点在静默失效，而用户会把账算到产品头上。</li>
+    <li class="good"><b>降级策略本身设计得很对。</b>X-Ray 无索引不编、聊天 12 档自动收窄、收藏三级 fallback、TTS 四档音源——每一处的取舍都有道理。问题只在于这些道理没有一处对用户可见。</li>
+  </ul>
+</section>
+
+<!-- ═══════════════════════ 图 5 ═══════════════════════ -->
+<section>
+  <h2><span class="n">图 5</span> 界面骨架：面板、作用域、两套导航</h2>
+  <p class="lede">
+    功能跑得比容器快，最后都堆在这三处：<b>右侧五个面板走两种机制</b>、<b>阅读设置有四层来源</b>、<b>侧边栏有两套导航模型</b>。
+    这三处都不产生 bug，但都在持续消耗用户建立心智模型的能力。
+  </p>
+  <div class="figure">
+    <svg viewBox="0 0 1120 620" xmlns="http://www.w3.org/2000/svg">
+      <!-- A 面板 -->
+      <text class="tt" x="24" y="26" fill="var(--ink-faint)">A · 右侧五个展示面，两种反馈形状</text>
+      <line x1="24" y1="34" x2="360" y2="34" stroke="var(--rule)"/>
+
+      <rect x="24" y="48" width="336" height="146" rx="10" fill="var(--card)" stroke="var(--ui)" stroke-width="1.6"/>
+      <text class="t" x="40" y="72" fill="var(--ui)">sidePanel 状态机 · 推开一栏</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="40" y="94">书签　　—— 无 title / 无 aria-label</text>
+        <text x="40" y="114">生词　　—— 无 title / 无 aria-label</text>
+        <text x="40" y="134">笔记　　✓ 有</text>
+        <text x="40" y="154">AI 对话　✓ 有</text>
+        <text x="40" y="178" fill="var(--ink-faint)">宽度可拖，收起不丢会话，窄窗口下笔记栏改为横向</text>
+      </g>
+      <rect x="30" y="86" width="322" height="20" rx="4" fill="var(--break-bg)" opacity=".7"/>
+      <rect x="30" y="106" width="322" height="20" rx="4" fill="var(--break-bg)" opacity=".7"/>
+
+      <rect x="24" y="206" width="336" height="94" rx="10" fill="var(--card)" stroke="var(--ai)" stroke-width="1.6" stroke-dasharray="6 4"/>
+      <text class="t" x="40" y="230" fill="var(--ai)">xrayOpen 独立状态 · 弹出一张浮卡</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="40" y="252">与上面四个互斥，靠一个 effect 手工兜底</text>
+        <text x="40" y="272">行为没有 bug，但并排的第五个按钮反馈形状不同</text>
+        <text x="40" y="292" fill="var(--ink-faint)">合进 sidePanel 枚举后，那个兜底 effect 可以删掉</text>
+      </g>
+
+      <rect x="24" y="312" width="336" height="56" rx="10" fill="var(--break-bg)" stroke="var(--break)" stroke-width="1.4"/>
+      <text class="ts" x="40" y="334" fill="var(--break)">书签 / 生词 / 笔记本来是同一类东西：</text>
+      <text class="ts" x="40" y="352" fill="var(--ink-soft)">都是这本书的沉淀物，都按 CFI 定位，都是点一下回原文</text>
+
+      <!-- B 作用域 -->
+      <text class="tt" x="392" y="26" fill="var(--ink-faint)">B · 一个字号，四层来源</text>
+      <line x1="392" y1="34" x2="728" y2="34" stroke="var(--rule)"/>
+
+      <g>
+        <rect x="392" y="48" width="336" height="46" rx="8" fill="var(--data-bg)" stroke="var(--data)" stroke-width="1.6"/>
+        <text class="t"  x="408" y="68" fill="var(--data)">① 本书覆盖 book_settings（最高优先级）</text>
+        <text class="ts" x="408" y="85" fill="var(--ink-soft)">16 个键可按书覆盖 · 可一键「设为全局默认」并撤销</text>
+
+        <rect x="392" y="102" width="336" height="46" rx="8" fill="var(--card)" stroke="var(--data)" stroke-width="1.3"/>
+        <text class="t"  x="408" y="122" fill="var(--data)">② 全局 settings</text>
+        <text class="ts" x="408" y="139" fill="var(--ink-soft)">同名键的兜底值</text>
+
+        <rect x="392" y="156" width="336" height="46" rx="8" fill="var(--card)" stroke="var(--ink-faint)" stroke-width="1.3"/>
+        <text class="t"  x="408" y="176" fill="var(--ink)">③ 内置默认</text>
+        <text class="ts" x="408" y="193" fill="var(--ink-soft)">reading-defaults.ts</text>
+
+        <rect x="392" y="210" width="336" height="60" rx="8" fill="var(--auto-bg)" stroke="var(--auto)" stroke-width="1.6"/>
+        <text class="t"  x="408" y="230" fill="var(--auto)">④ 两个入口都能改同一个值</text>
+        <text class="ts" x="408" y="248" fill="var(--ink-soft)">Aa 面板（阅读页，约 18 组控件）</text>
+        <text class="ts" x="408" y="264" fill="var(--ink-soft)">设置 → 阅读（同样的键，另一套排版）</text>
+      </g>
+
+      <rect x="392" y="282" width="336" height="86" rx="10" fill="var(--break-bg)" stroke="var(--break)" stroke-width="1.4"/>
+      <text class="t"  x="408" y="304" fill="var(--break)">Aa 面板已经长成第二个设置页</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="408" y="324">从「A A」按钮点开的弹层里有「翻页键位捕获」</text>
+        <text x="408" y="342">判断标准很简单：调完之后要不要盯着正文看效果？</text>
+        <text x="408" y="360" fill="var(--auto)">要看的留 Aa，不用看的移进设置页</text>
+      </g>
+
+      <!-- C 导航 -->
+      <text class="tt" x="760" y="26" fill="var(--ink-faint)">C · 侧边栏两套导航模型</text>
+      <line x1="760" y1="34" x2="1096" y2="34" stroke="var(--rule)"/>
+
+      <rect x="760" y="48" width="336" height="120" rx="10" fill="var(--card)" stroke="var(--ui)" stroke-width="1.6"/>
+      <text class="t" x="776" y="72" fill="var(--ui)">同页换内容（改 activeFilter）</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="776" y="94">书库 · 全部 / 在读 / 已读完</text>
+        <text x="776" y="114">聊天　（单独占一个分组）</text>
+        <text x="776" y="134">生词 · 笔记　（分组名「已保存」）</text>
+        <text x="776" y="154">收藏集</text>
+      </g>
+
+      <rect x="760" y="180" width="336" height="72" rx="10" fill="var(--break-bg)" stroke="var(--break)" stroke-width="1.6" stroke-dasharray="6 4"/>
+      <text class="t" x="776" y="204" fill="var(--break)">换整页（navigate 到独立路由）</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="776" y="226">阅读统计 —— 就排在书库那一组的下面</text>
+        <text x="776" y="244">点它换整页，返回行为也和上面四条不一样</text>
+      </g>
+
+      <rect x="760" y="264" width="336" height="104" rx="10" fill="var(--auto-bg)" stroke="var(--auto)" stroke-width="1.5"/>
+      <text class="t" x="776" y="288" fill="var(--auto)">分组也没对齐</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="776" y="310">聊天、生词、笔记、统计其实是同一类东西——</text>
+        <text x="776" y="328">都是读书过程沉淀下来的记录，却分在三个组里。</text>
+        <text x="776" y="350" fill="var(--ink)">干净的三段应该是：</text>
+        <text x="776" y="364" fill="var(--data)">书库（读什么）· 记录（读出了什么）· 收藏集（怎么归置）</text>
+      </g>
+
+      <!-- 底部工具栏 -->
+      <rect x="24" y="392" width="1072" height="94" rx="12" fill="var(--card)" stroke="var(--ui)" stroke-width="1.8"/>
+      <text class="t" x="44" y="416" fill="var(--ui)">阅读页工具栏现状：9 个纯图标，无一处文字</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="44" y="440">目录 · 搜索 · 连续朗读 · Aa · 书签 · 生词 · 笔记 · X-Ray ｜ AI</text>
+        <text x="44" y="460" fill="var(--break)">其中书签与生词两个按钮既没有 title 也没有 aria-label——悬停不出提示，读屏软件读出来是「按钮」。</text>
+        <text x="44" y="478" fill="var(--ink-faint)">生词用的是 Languages 图标（两个字符），被猜成「切换语言」是完全合理的误解。这是 5 分钟的修复。</text>
+      </g>
+
+      <rect x="24" y="500" width="1072" height="104" rx="12" fill="var(--data-bg)" stroke="var(--data)" stroke-width="1.6"/>
+      <text class="t" x="44" y="524" fill="var(--data)">归并之后的形状（建议）</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="44" y="548">工具栏 9 → 6：目录 · 搜索 · 朗读 · Aa ｜ <tspan font-weight="700" fill="var(--ink)">本书痕迹</tspan>（书签 / 生词 / 笔记 / 高亮 四个 tab）· <tspan font-weight="700" fill="var(--ink)">AI</tspan>（对话 / X-Ray 两个 tab）</text>
+        <text x="44" y="570">五个面板 → 两个槽位，两种机制 → 一种。<tspan fill="var(--ink-faint)">xrayOpen 并入 sidePanel 枚举，手工兜底的 effect 一并删掉。</tspan></text>
+        <text x="44" y="592">侧边栏三段：书库 · 记录（聊天 / 生词 / 笔记 / 标注 / 统计）· 收藏集。统计从独立路由改成同页 filter。</text>
+      </g>
+    </svg>
+  </div>
+  <ul class="notes">
+    <li class="bad"><b>这三处都不是 bug，所以永远不会被测试发现，也永远不会被优先级排到前面。</b>但它们是新用户建立心智模型时唯一的成本来源。</li>
+    <li><b>面板归并顺带解决了图 3 的断口 ②：</b>「本书痕迹」加一个「高亮」tab，纯划线就有了归宿，书库层再加一个「标注」页对应即可，后端 <code>list_annotations</code> 已经写好在等着。</li>
+  </ul>
+</section>
+
+<!-- ═══════════════════════ 图 6 ═══════════════════════ -->
+<section>
+  <h2><span class="n">图 6</span> 数据边界：什么跨设备，什么只在本机</h2>
+  <p class="lede">
+    同步是<b>按事件日志走文件目录</b>（可放 iCloud Drive），不是服务端账户。
+    38 类事件决定了跨设备能看到什么。这里有一处需要产品拍板的取舍：<b>查词历史和阅读统计都不同步</b>。
+  </p>
+  <div class="figure">
+    <svg viewBox="0 0 1120 440" xmlns="http://www.w3.org/2000/svg">
+      <rect x="24" y="24" width="530" height="290" rx="12" fill="var(--data-bg)" stroke="var(--data)" stroke-width="2"/>
+      <text class="t" x="44" y="50" fill="var(--data)">跨设备同步 · 38 类事件 · 冲突用 LWW + 设备号打破平局</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="44" y="76">书籍本体与封面 · 阅读进度 · 读完状态 · 元数据</text>
+        <text x="44" y="98">高亮（含颜色与备注）· 书签 · 笔记</text>
+        <text x="44" y="120">生词与掌握度 · 词汇标记规则 / 例外 / 逐处开关</text>
+        <text x="44" y="142">聊天与消息 · 收藏集与排序 · 段落翻译</text>
+        <text x="44" y="164">自定义字体的<tspan font-weight="700" fill="var(--ink)">身份</tspan>（字体文件本身不同步）</text>
+        <text x="44" y="186">书籍摘要 · OCR 产出的书籍资产</text>
+      </g>
+      <rect x="44" y="204" width="490" height="94" rx="8" fill="var(--card)" stroke="var(--data)" stroke-width="1.2"/>
+      <text class="ts" x="60" y="226" fill="var(--ink)" font-weight="700">一处考究的例外</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="60" y="246">主题、字号、行距这些「屏幕形状」的偏好不同步（对）。</text>
+        <text x="60" y="266">但字体<tspan font-weight="700" fill="var(--ink)">身份</tspan>同步——字体是用户获取并选定的东西，属于书库形状。</text>
+        <text x="60" y="286">否则同步过去的字体文件到了第二台机器上没有任何东西选中它。</text>
+      </g>
+
+      <rect x="578" y="24" width="518" height="290" rx="12" fill="var(--local-bg)" stroke="var(--local)" stroke-width="2"/>
+      <text class="t" x="598" y="50" fill="var(--local)">只在本机</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="598" y="76"><tspan font-weight="700" fill="var(--break)">查词历史 lookup_records</tspan> —— 需要产品拍板</text>
+        <text x="598" y="98"><tspan font-weight="700" fill="var(--break)">阅读统计 reading_sessions</tspan> —— 需要产品拍板</text>
+        <text x="598" y="120">阅读排版偏好 settings / book_settings（字体身份除外）</text>
+        <text x="598" y="142">书籍索引、分块、向量嵌入（派生数据，可在新机重建）</text>
+        <text x="598" y="164">OCR 运行时与产物缓存 · 语音音频缓存 · 字体文件</text>
+        <text x="598" y="186">API Key 与 OAuth Token（secrets.db，永不进主库 / 日志 / 同步）</text>
+      </g>
+      <rect x="598" y="204" width="480" height="94" rx="8" fill="var(--card)" stroke="var(--break)" stroke-width="1.4" stroke-dasharray="6 4"/>
+      <text class="ts" x="614" y="226" fill="var(--break)" font-weight="700">这两条不同步的后果</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="614" y="246">在 Mac 上查过 200 个词，换 iPad 打开同一本书——生词本在，</text>
+        <text x="614" y="266">「查过 ≥3 次还没收藏」的漏斗从零开始；连续阅读天数也断。</text>
+        <text x="614" y="286" fill="var(--ink-faint)">隐私上讲得通，但用户不会预期「同一批数据一半跟着走一半不跟」。</text>
+      </g>
+
+      <rect x="24" y="330" width="1072" height="90" rx="12" fill="var(--ui-bg)" stroke="var(--ui)" stroke-width="1.6"/>
+      <text class="t" x="44" y="354" fill="var(--ui)">同步引擎本身：事件日志 + 快照 + 重放</text>
+      <g class="ts" fill="var(--ink-soft)">
+        <text x="44" y="376">每台设备只追加自己的日志文件到共享目录，其他设备用文件监听发现变化后重放合并。没有服务端，没有账户，冲突用「最后写入获胜 + 设备号打破平局」。</text>
+        <text x="44" y="396">merge.rs 4004 行、replay.rs 2137 行、validation.rs 996 行——<tspan font-weight="700" fill="var(--ink)">这是全仓最重、测试最密的一块</tspan>，事件 id 全部由内容确定性推导，接收方会重新计算校验。</text>
+        <text x="44" y="414" fill="var(--ink-faint)">代价是每加一个会沉淀数据的功能，就要同时想清楚它的事件形状——这是「功能跑得比容器快」在后端的对应成本。</text>
+      </g>
+    </svg>
+  </div>
+  <ul class="notes">
+    <li class="good"><b>同步的取舍面几乎处处正确</b>，尤其是「按键白名单而不是按表」这个决定，以及字体身份那个例外——注释里把为什么写清楚了，这是防止后人改回去的正确做法。</li>
+    <li class="bad"><b>但「查词历史 + 阅读统计不同步」是一个产品决策，不是技术结论</b>，而它现在是以技术默认值的形式存在的。这两张表恰好是最近三个功能（历史收藏漏斗、语境复习来源、阅读统计）的地基。</li>
+  </ul>
+</section>
+
+</div>
+</body>
+</html>

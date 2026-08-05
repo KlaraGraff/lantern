@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern 自动分析 · 样张</title>
+<style>
+  :root{
+    --paper:#f6f2ea; --page:#fffdf8; --ink:#2a2622; --ink2:#6b635b; --ink3:#9c948b;
+    --line:#e6dfd4; --line2:#efe9e0;
+    --accent:#8a5a2b; --accent-bg:#f4ece0; --accent-line:#d9c4a6;
+    --ok:#2f7d5b; --ok-bg:#e8f2ec;
+    --warn:#b8791c; --warn-bg:#fbf1e0;
+    --shadow:0 18px 48px rgba(60,45,28,.16), 0 2px 8px rgba(60,45,28,.06);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#181614; --page:#211e1b; --ink:#e9e3da; --ink2:#a79e94; --ink3:#6e665e;
+      --line:#332f2a; --line2:#2a2724;
+      --accent:#d1a06a; --accent-bg:#2c2318; --accent-line:#4a3a26;
+      --ok:#6fc39a; --ok-bg:#152a20;
+      --warn:#e0a75a; --warn-bg:#332810;
+      --shadow:0 18px 48px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font:15px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1240px;margin:0 auto;padding:52px 28px 120px}
+
+  header.top{border-bottom:1px solid var(--line);padding-bottom:24px}
+  h1{font-size:27px;margin:0 0 8px;font-weight:650;letter-spacing:-.3px}
+  .sub{color:var(--ink2);font-size:14px;margin:0;max-width:78ch}
+  .sub b{color:var(--ink)}
+
+  h2.sec{font-size:18px;font-weight:620;margin:56px 0 4px;display:flex;align-items:baseline;gap:11px}
+  h2.sec .n{font-size:11.5px;font-weight:700;color:var(--ink3);border:1px solid var(--line);
+    border-radius:20px;padding:2px 9px;flex:none}
+  .seclede{color:var(--ink2);font-size:14px;margin:0 0 22px;max-width:82ch}
+  .seclede b{color:var(--ink)}
+
+  .row{display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start}
+  .shot{flex:1 1 400px;min-width:350px;max-width:470px}
+  .shot.wide{max-width:560px;flex:1 1 520px}
+  .caption{font-size:12.5px;color:var(--ink3);margin:10px 2px 0;line-height:1.58}
+  .caption b{color:var(--ink2)}
+
+  .win{border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--page);
+    box-shadow:var(--shadow)}
+  .chrome{height:30px;background:var(--paper);border-bottom:1px solid var(--line2);
+    display:flex;align-items:center;padding:0 11px;gap:6px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#dcd4c8}
+  @media (prefers-color-scheme:dark){.dot{background:#3a3530}}
+  .chrome .ttl{margin-left:8px;font-size:11px;color:var(--ink3)}
+  .pane{padding:18px 19px 22px}
+
+  .ph{display:flex;align-items:baseline;gap:9px;margin-bottom:5px}
+  .ph h4{margin:0;font-size:17px;font-weight:650;letter-spacing:-.2px}
+  .plede{font-size:12.6px;color:var(--ink2);margin:0 0 6px;line-height:1.6}
+  .plede b{color:var(--ink)}
+
+  .spend{display:flex;align-items:center;gap:10px;background:var(--accent-bg);
+    border:1px solid var(--accent-line);border-radius:9px;padding:10px 13px;margin:13px 0 4px}
+  .spend .big{font-size:17px;font-weight:650;color:var(--accent);font-variant-numeric:tabular-nums}
+  .spend .lb{font-size:12.2px;color:var(--ink2);line-height:1.5}
+  .spend .sp{flex:1}
+  .spend .all{font-size:12px;color:var(--ink3)}
+
+  .grp{margin-top:19px}
+  .grp .gh{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--ink3);
+    padding-bottom:7px;border-bottom:1px solid var(--line);margin-bottom:2px}
+
+  .item{display:flex;gap:12px;padding:13px 2px;border-bottom:1px solid var(--line2);align-items:flex-start}
+  .item:last-child{border-bottom:none}
+  .item .tx{flex:1;min-width:0}
+  .item .t1{font-size:13.6px;font-weight:600;line-height:1.4}
+  .item .t2{font-size:11.6px;color:var(--ink2);margin-top:4px;line-height:1.55}
+  .item .meta{font-size:11.2px;color:var(--ink3);margin-top:5px;line-height:1.5;
+    display:flex;flex-wrap:wrap;gap:4px 12px}
+  .item .meta .send{color:var(--warn)}
+  .item.off .t1,.item.off .t2{color:var(--ink3)}
+  .item.off .manual{color:var(--accent);font-weight:560}
+
+  .sw{width:38px;height:22px;border-radius:12px;background:var(--accent);position:relative;flex:none;
+    margin-top:2px}
+  .sw::after{content:"";position:absolute;top:2px;right:2px;width:18px;height:18px;
+    border-radius:50%;background:#fff}
+  .sw.off{background:var(--line)}
+  .sw.off::after{right:auto;left:2px}
+  @media (prefers-color-scheme:dark){.sw::after{background:#f2ede6}.sw.off::after{background:#8a827a}}
+
+  .foot{margin-top:18px;padding-top:14px;border-top:1px solid var(--line2);
+    font-size:11.5px;color:var(--ink3);line-height:1.6}
+
+  /* 首启卡 */
+  .overlaywrap{position:relative}
+  .behind{padding:14px;filter:blur(1.5px);opacity:.42;min-height:360px}
+  .bh{display:flex;gap:12px}
+  .bh-nav{width:88px;flex:none;display:flex;flex-direction:column;gap:7px}
+  .bh-nav i{display:block;height:9px;border-radius:4px;background:var(--line)}
+  .bh-nav i:nth-child(1){width:56%}.bh-nav i:nth-child(2){width:72%}
+  .bh-nav i:nth-child(3){width:48%}.bh-nav i:nth-child(4){width:64%}
+  .bh-grid{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .bh-grid s{display:block;height:78px;border-radius:6px;background:var(--line);text-decoration:none}
+  .ov{position:absolute;inset:30px 0 0;background:rgba(30,24,16,.30);
+    display:flex;align-items:center;justify-content:center;padding:16px}
+  @media (prefers-color-scheme:dark){.ov{background:rgba(0,0,0,.55)}}
+
+  .card{width:100%;max-width:392px;background:var(--page);border:1px solid var(--line);
+    border-radius:13px;box-shadow:var(--shadow);overflow:hidden}
+  .card .head{padding:20px 22px 0}
+  .steps{display:flex;align-items:center;gap:5px;margin-bottom:14px}
+  .steps b{width:19px;height:19px;border-radius:50%;font-size:10.5px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;background:var(--line);color:var(--ink3)}
+  .steps b.on{background:var(--accent);color:#fff}
+  @media (prefers-color-scheme:dark){.steps b.on{color:#1d1712}}
+  .steps b.done{background:var(--ok-bg);color:var(--ok)}
+  .steps span{flex:1;height:1.5px;background:var(--line)}
+  .steps span.on{background:var(--accent);opacity:.4}
+  .steps em{margin-left:auto;font-style:normal;font-size:11px;color:var(--ink3)}
+  .card h3{font-size:17.5px;margin:0 0 6px;font-weight:640;letter-spacing:-.2px}
+  .card .why{font-size:12.8px;color:var(--ink2);margin:0 0 15px;line-height:1.6}
+  .card .why b{color:var(--accent);font-weight:600}
+  .card .body{padding:0 22px 4px}
+  .card .cf{display:flex;align-items:center;gap:10px;padding:14px 22px 18px;
+    border-top:1px solid var(--line2);margin-top:15px}
+  .cf .sp{flex:1}
+
+  .chk{display:flex;gap:9px;align-items:flex-start;padding:8px 0;font-size:12.8px;line-height:1.5}
+  .chk .tick{color:var(--ok);font-size:12px;flex:none;margin-top:2px;font-weight:700}
+  .chk s{text-decoration:none;display:block;font-size:11.2px;color:var(--ink3);margin-top:2px}
+
+  .btn{border:1px solid var(--line);background:var(--page);color:var(--ink);border-radius:8px;
+    padding:7px 15px;font-size:13px;font-weight:560;font-family:inherit;cursor:default;display:inline-block}
+  .btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+  @media (prefers-color-scheme:dark){.btn.pri{color:#1d1712}}
+  .btn.sm{padding:5px 11px;font-size:12px}
+  .btn.ghost{border-color:transparent;background:none;color:var(--ink3);padding-left:0}
+
+  /* 原地升级提示 */
+  .fpane{padding:18px 19px 20px;min-height:250px}
+  .fh{font-size:15.5px;font-weight:640;margin-bottom:3px}
+  .fsub{font-size:12.2px;color:var(--ink2);margin-bottom:15px}
+  .fbox{border:1px dashed var(--line);border-radius:10px;padding:22px 16px;text-align:center;
+    background:var(--paper)}
+  .fbox p{margin:0 0 12px;font-size:12.8px;color:var(--ink2);line-height:1.6}
+  .tiny{font-size:11.2px;color:var(--ink3);margin-top:11px}
+  .promo{display:flex;align-items:center;gap:10px;margin-top:13px;background:var(--accent-bg);
+    border:1px solid var(--accent-line);border-radius:9px;padding:10px 12px}
+  .promo .tx{flex:1;font-size:12.2px;color:var(--ink2);line-height:1.55}
+  .promo .tx b{color:var(--accent);font-weight:650;display:block;margin-bottom:2px;font-size:12.6px}
+
+  .notes{margin:22px 0 0;padding:0;list-style:none;display:grid;gap:9px}
+  .notes li{font-size:13.5px;color:var(--ink2);padding-left:22px;position:relative;line-height:1.65}
+  .notes li::before{content:"";position:absolute;left:6px;top:9px;width:5px;height:5px;
+    border-radius:50%;background:var(--ink3)}
+  .notes li b{color:var(--ink);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>自动分析 · 样张</h1>
+  <p class="sub">
+    把散在各处的「系统自己调用 AI」归到一处控制台，避免零碎授权。
+    这一页的两个设计要点：<b>每一项都必须写清楚花多少钱、会把什么发出去</b>；
+    <b>关掉之后每一项都还能手动调用</b>。首启第 4 步是这个控制台的精简版。
+  </p>
+</header>
+
+<!-- 1 控制台 -->
+<h2 class="sec"><span class="n">1</span> 控制台（设置里）</h2>
+<p class="seclede">
+  <b>按「什么时候跑」分组，不按功能模块分组</b>——用户关心的是它什么时候会花他的钱，
+  不是它属于哪个模块。子项控制在 5～6 个以内，多了这个控制台就白做了。
+</p>
+
+<div class="row">
+
+  <div class="shot wide">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">设置 — 自动分析</span></div>
+      <div class="pane">
+        <div class="ph"><h4>自动分析</h4></div>
+        <p class="plede">这些功能会在你不操作的时候自动调用 AI，<b>用的是你自己的额度</b>。全部关掉也不影响使用——每一项在各自的页面里都能手动点。</p>
+
+        <div class="spend">
+          <span class="big">6%</span>
+          <span class="lb">上月自动分析用掉 48 万 tokens<br>相当于你手动查词用量的 6%</span>
+          <span class="sp"></span>
+          <span class="all">全部关闭</span>
+        </div>
+
+        <div class="grp">
+          <div class="gh">读完一本书时</div>
+          <div class="item">
+            <div class="tx">
+              <div class="t1">这本书的收获汇总</div>
+              <div class="t2">把你在这本书里查过的词、做的笔记整理成一页回顾</div>
+              <div class="meta"><span>上月 3 次 · 约 21 万 tokens</span><span class="send">会发送：书名、你查过的词和原句</span></div>
+            </div>
+            <span class="sw"></span>
+          </div>
+          <div class="item">
+            <div class="tx">
+              <div class="t1">难度是否匹配的复核</div>
+              <div class="t2">对照你的实际查词情况，看看当前英语水平设置准不准</div>
+              <div class="meta"><span>上月 3 次 · 约 2 万 tokens</span><span class="send">会发送：词频统计，不发送任何原文</span></div>
+            </div>
+            <span class="sw"></span>
+          </div>
+        </div>
+
+        <div class="grp">
+          <div class="gh">每天一次</div>
+          <div class="item">
+            <div class="tx">
+              <div class="t1">整理今天该回顾的词</div>
+              <div class="t2">把它们分成几堆，每堆标上来由</div>
+              <div class="meta"><span>上月 30 次 · 约 22 万 tokens</span><span class="send">会发送：词和它们的来由，不发正文</span></div>
+            </div>
+            <span class="sw"></span>
+          </div>
+        </div>
+
+        <div class="grp">
+          <div class="gh">攒够一批时</div>
+          <div class="item off">
+            <div class="tx">
+              <div class="t1">分析你卡在哪一类问题上</div>
+              <div class="t2">看你追问 AI 时问的是词义、句子结构还是背景，据此调整界面优先给你什么</div>
+              <div class="meta"><span>每 20～30 条追问跑一次 · 约 1.5 万 tokens</span><span class="send">会发送：你的追问原话和对应原句</span></div>
+              <div class="meta"><span class="manual">已关闭 · 仍可在「学习」页手动分析</span></div>
+            </div>
+            <span class="sw off"></span>
+          </div>
+        </div>
+
+        <p class="foot">用量是服务商返回的确切数字，我们不折算成钱——缓存命中、峰谷时段、阶梯计价只有服务商自己算得准。<b style="color:var(--accent)">要看账单去 DeepSeek 用量页 ↗</b><br>
+          自动分析失败时（断网、额度用尽）会静默跳过，下次再试，不会打扰你。<br>
+          任何一项关闭后，对应页面里仍然保留手动按钮。</p>
+      </div>
+    </div>
+    <p class="caption"><b>控制台默认态。</b>三处是这一屏的全部重量：<b>顶部的「相当于你手动查词的 6%」</b>——不显示金额，因为各家定价、峰谷折扣、缓存命中价我们都算不准，一个会悄悄出错的金额比不显示更糟；而用量是服务商返回的确切数字，拿他自己的查词量做参照，<b>内部数据比内部数据，永远准确</b>，还正好回答了他真正想问的"费不费钱"。<b>每项橙色那行「会发送什么」</b>（用户不点任何按钮这些就出门了，必须当面交代）。<b>关闭项那行「仍可手动分析」</b>（关掉不等于失去功能，降低关闭的心理成本）。</p>
+  </div>
+
+  <div class="shot">
+    <div class="win overlaywrap">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern</span></div>
+      <div class="behind"><div class="bh">
+        <div class="bh-nav"><i></i><i></i><i></i><i></i></div>
+        <div class="bh-grid"><s></s><s></s><s></s><s></s><s></s><s></s></div>
+      </div></div>
+      <div class="ov"><div class="card">
+        <div class="head">
+          <div class="steps">
+            <b class="done">✓</b><span class="on"></span><b class="done">✓</b><span class="on"></span>
+            <b class="done">✓</b><span class="on"></span><b class="on">4</b>
+            <em>最后一步</em>
+          </div>
+          <h3>接下来 Lantern 会自己做这几件事</h3>
+          <p class="why">让它在你不操作的时候帮你整理。用的是你刚配好的那个额度，<b>每天最多跑一次，读完一本书时跑一次</b>。</p>
+        </div>
+        <div class="body">
+          <div class="chk"><span class="tick">✓</span><div>读完一本书时，帮你汇总这本书的收获<s>顺带看看你的英语水平设置准不准</s></div></div>
+          <div class="chk"><span class="tick">✓</span><div>每天一次，把该回顾的词整理成几堆<s>每堆标上来由，不会给你发通知</s></div></div>
+          <div class="chk"><span class="tick">✓</span><div>攒够一批追问后，分析你卡在哪一类问题上<s>据此调整界面优先给你什么</s></div></div>
+          <p class="tiny" style="margin-top:13px">这些都能随时在「设置 → 自动分析」里单独关掉，关掉后仍然可以手动点。</p>
+        </div>
+        <div class="cf">
+          <button class="btn ghost">我要自己挑</button>
+          <span class="sp"></span>
+          <button class="btn pri">好</button>
+        </div>
+      </div></div>
+    </div>
+    <p class="caption"><b>首启第 4 步。</b><b>不是判断题，是告知 + 已经替他选好</b>——首启是他对这软件价值判断为零的时刻，问他只会得到"先关着吧"。所以主按钮就一个「好」，想管的人走「我要自己挑」（点开就是左边那个控制台）。<b>第 3 步跳过（没配 AI）时，这一步整个不出现。</b></p>
+  </div>
+
+</div>
+
+<!-- 2 关闭之后 -->
+<h2 class="sec"><span class="n">2</span> 关掉之后，和怎么再打开</h2>
+<p class="seclede">
+  <b>永远不弹窗推荐</b>，只在原地把提示升级。授权发生在他刚看到这功能有用的那一刻，
+  而不是在一个抽象的设置页里。
+</p>
+
+<div class="row">
+
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern — 学习</span></div>
+      <div class="fpane">
+        <div class="fh">你卡在哪一类问题上</div>
+        <div class="fsub">看你追问 AI 时问的是词义、句子结构还是背景</div>
+        <div class="fbox">
+          <p>你最近有 <b>24</b> 条追问还没分析过</p>
+          <span class="btn sm">手动分析一次</span>
+          <div class="tiny">也可以设成自动</div>
+        </div>
+      </div>
+    </div>
+    <p class="caption"><b>第一次进来。</b>不弹窗、不劝、不解释。就一个手动按钮，底下一行几乎看不见的灰字留个门。<b>让功能自己证明有用，比任何文案都管用。</b></p>
+  </div>
+
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern — 学习</span></div>
+      <div class="fpane">
+        <div class="fh">你卡在哪一类问题上</div>
+        <div class="fsub">看你追问 AI 时问的是词义、句子结构还是背景</div>
+        <div class="fbox">
+          <p>你最近有 <b>19</b> 条追问还没分析过</p>
+          <span class="btn sm">手动分析一次</span>
+        </div>
+        <div class="promo">
+          <div class="tx">
+            <b>你已经手动点过 4 次了</b>
+            要不要让它攒够就自己跑？每次约 1.5 万 tokens，随时能关。
+          </div>
+          <span class="btn sm pri">设成自动</span>
+        </div>
+      </div>
+    </div>
+    <p class="caption"><b>手动点了几次之后。</b>灰字升级成一条明确的推荐，<b>就在他刚用完这个功能的地方</b>，而且直接把单次花费摆出来。<b>拒绝一次就长期闭嘴</b>——这条不能变成唠叨，跟整个产品"不推送不打断"的调性一致。</p>
+  </div>
+
+</div>
+
+<ul class="notes">
+  <li><b>名字叫「自动分析」，不叫「系统的 AI 调用」。</b>用户看不懂"系统"指谁；他要一眼分清的是「这是它自己会跑的」和「这是我点的」。</li>
+  <li><b>默认全开</b>——告知得够清楚（做什么、花谁的钱、大概多少、就在眼前能关），默认开就是合理的。默认关的功能等于没做。</li>
+  <li><b>失败静默是死规矩。</b>用户没点任何东西，凭什么给他报错。断网、额度用尽一律跳过，下次再试。</li>
+  <li><b>子项不能超过 6 个。</b>超了就只是把零碎从各页面搬到了一页，没有归集任何东西。</li>
+  <li><b>我们永远不显示金额，也不让用户填单价。</b>缓存命中比例、峰谷时段、GPT 那种首次输入 1.25 倍的阶梯——这些只有服务商自己算得准，两三个输入框根本装不下，而且计费规则还会变。要看钱就跳转到服务商自己的用量页：<b>各自只说自己确切知道的那部分。</b></li>
+  <li><b>token 用量从第一天就要记，而且要原样存。</b>AI 响应里的 <code>usage</code> 现在还没读；不要挑字段存，服务商返回什么就整个存下来（缓存命中、推理 token、将来新增的字段一并保留）。计价规则会变，原始数据不会——现在不记以后补不回来。</li>
+</ul>
+
+</div>
+</body>
+</html>

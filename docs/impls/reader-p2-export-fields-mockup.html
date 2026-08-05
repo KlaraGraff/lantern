@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lantern P2 · 导出「包含字段」高级区样张</title>
+  <style>
+    :root{--paper:#f6f0e5;--surface:#fff;--chrome:#fbfaf8;--text:#312d29;--muted:#746e67;--quiet:#99928b;--border:#dfdad3;--input:#f1eee9;--accent:#7c3aed;--accent-bg:#f2ebfd;--danger:#b45309;--bg-muted:#faf9f7}
+    *{box-sizing:border-box}body{margin:0;min-width:1080px;min-height:720px;background:#d8d6d2;color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}button{font:inherit;color:inherit;cursor:pointer}
+    .stage{min-height:100vh;padding:28px;display:grid;place-items:center}.window{position:relative;width:min(1440px,calc(100vw - 56px));height:min(900px,calc(100vh - 56px));min-height:664px;overflow:hidden;border:1px solid #c8c5c0;border-radius:16px;background:var(--chrome);box-shadow:0 24px 70px rgba(38,34,30,.17)}
+    .traffic{position:absolute;z-index:5;top:18px;left:18px;display:flex;gap:8px}.traffic i{width:12px;height:12px;border-radius:50%;display:block}.traffic i:nth-child(1){background:#ff5f57}.traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}
+    .toolbar{height:62px;padding:0 18px 0 72px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;border-bottom:1px solid var(--border)}.book b{display:block;font:600 13px Georgia,serif}.book span,.chapter{color:var(--quiet);font-size:10px}.chapter{font-size:11px}.tools{justify-self:end;display:flex;gap:5px}.tool{width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--muted)}.tool.active{background:var(--input);color:var(--text)}
+    .reader{position:absolute;inset:62px 0 28px;display:grid;place-items:center;padding:34px;background:var(--paper)}.page{width:min(650px,72%);height:100%;padding:62px 58px;background:#fbf7ef;box-shadow:0 5px 30px rgba(80,67,50,.08);font:17px/1.82 Georgia,"Songti SC",serif}.page h1{margin:0 0 34px;text-align:center;font-size:25px}.page p{margin:0 0 .7em;text-align:justify;text-indent:1.5em;hyphens:auto}.page mark{background:#fbe6a2;padding:0 1px}.footer{position:absolute;inset:auto 0 0;height:28px;padding:0 18px;display:flex;align-items:center;border-top:1px solid var(--border);color:var(--quiet);font-size:9px}.footer span:last-child{margin-left:auto}
+
+    .overlay{position:absolute;z-index:20;inset:0;display:grid;place-items:center;padding:16px;background:rgba(0,0,0,.35)}
+    .dialog{width:100%;max-width:768px;overflow:hidden;border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 26px 60px rgba(20,17,14,.34)}
+    .dlg-head{display:flex;align-items:flex-start;gap:16px;padding:17px 20px 15px;border-bottom:1px solid var(--border)}.dlg-head h2{margin:0;font-size:15px;font-weight:640}.dlg-head p{margin:5px 0 0;color:var(--muted);font-size:10.5px;line-height:1.5}.dlg-close{margin-left:auto;width:26px;height:26px;flex:none;border:0;border-radius:7px;background:transparent;color:var(--quiet);font-size:15px;line-height:1}.dlg-close:hover{background:var(--input);color:var(--text)}
+    .dlg-body{display:grid;grid-template-columns:1fr 1fr;max-height:min(648px,calc(100vh - 250px));overflow:auto}
+    .col-left{padding:18px 20px 20px;border-right:1px solid var(--border)}.col-right{padding:18px 20px 20px;background:var(--bg-muted)}
+    fieldset{margin:0;padding:0;border:0}legend{padding:0;margin-bottom:8px;font-size:11.5px;font-weight:600}
+    .block+.block{margin-top:17px}
+    .content-cards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .card{display:block;padding:10px 11px;border:1px solid var(--border);border-radius:9px;background:var(--surface);cursor:pointer}.card:hover{background:#fdfcfb}.card.on{border-color:var(--accent);background:var(--accent-bg)}.card-top{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:540}.card-count{display:block;margin-top:5px;padding-left:20px;color:var(--muted);font-size:9.5px}.card.off-limits{opacity:.45;cursor:not-allowed}
+    input[type=checkbox]{width:13px;height:13px;margin:0;flex:none;accent-color:var(--accent)}
+    .anki-note{display:none;margin:8px 0 0;color:var(--muted);font-size:9.5px;line-height:1.5}.anki .anki-note{display:block}
+    .segments{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:3px;border-radius:9px;background:var(--input)}.segments button{padding:7px 0;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:10.5px}.segments button.on{background:var(--surface);color:var(--text);font-weight:640;box-shadow:0 1px 3px rgba(60,52,44,.14)}
+
+    .fields{margin-top:15px;border-top:1px solid #eeeae5;border-bottom:1px solid #eeeae5}
+    .fields-head{display:flex;align-items:center;gap:7px;padding:10px 2px}.fields-head:hover .fields-name{color:var(--text)}
+    .disclose{display:flex;align-items:center;gap:6px;padding:0;border:0;background:transparent}.tri{display:inline-block;width:9px;color:var(--quiet);font-size:8px;transition:transform .12s ease}.fields.open .tri{transform:rotate(90deg)}
+    .fields-name{color:var(--muted);font-size:11px;font-weight:500}
+    .fields-status{margin-left:auto;color:var(--quiet);font-size:9.5px;white-space:nowrap}.fields.custom .fields-status{color:var(--accent)}
+    .restore{padding:0;border:0;background:transparent;color:var(--accent);font-size:9.5px;text-decoration:underline;text-decoration-color:#c9b5ed;text-underline-offset:2px}.restore:hover{color:#5b21b6}.restore[hidden]{display:none}
+    .fields-action{padding:0;border:0;background:transparent;color:var(--quiet);font-size:9.5px}.fields-action:hover{color:var(--muted)}
+    .fields-body{display:none;margin:0 0 12px;padding:2px 11px 9px;border:1px solid var(--border);border-radius:9px;background:#fcfbfa}.fields.open .fields-body{display:block}
+    .fgroup{padding:10px 0 9px;border-top:1px solid #efebe6}.fgroup:first-child{border-top:0}
+    .fgroup-title{margin:0 0 7px;color:var(--quiet);font-size:9px;font-weight:650;letter-spacing:.09em}
+    .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px}
+    .fitem{display:flex;align-items:center;gap:6px;min-width:0;font-size:10.5px;cursor:pointer}.fitem:hover span{color:var(--text)}.fitem span{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fitem em{flex:none;color:var(--quiet);font-size:8.5px;font-style:normal}
+    .fitem.off{cursor:not-allowed}.fitem.off span{color:#bfb9b2}.fitem.off input{opacity:.4}
+    .fields-hint{display:none;margin:0;padding:8px 0 2px;border-top:1px solid #efebe6;color:var(--quiet);font-size:9px;line-height:1.55}.fields-hint.show{display:block}
+    .privacy{margin:15px 0 0;padding:10px 11px;border-radius:9px;background:var(--input);color:var(--muted);font-size:9.5px;line-height:1.65}
+
+    .preview-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px;font-size:11.5px;font-weight:600}.preview-head span:last-child{color:var(--muted);font-size:9.5px;font-weight:400}
+    pre{margin:0;min-height:300px;max-height:420px;overflow:auto;padding:12px 13px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:#4a453f;font:10px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+    .filename{margin-top:8px;padding:7px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--muted);font-size:9.5px}
+    .dlg-foot{display:flex;align-items:center;gap:10px;padding:12px 20px;border-top:1px solid var(--border)}.dlg-foot .summary{color:var(--muted);font-size:10px}.dlg-foot .grow{flex:1}
+    .btn{height:32px;padding:0 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:11px}.btn:hover{background:var(--input)}.btn.primary{border-color:var(--accent);background:var(--accent);color:white;font-weight:640}.btn.primary:hover{background:#6d28d9}
+
+    .state-nav{position:fixed;z-index:80;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:4px;padding:4px;border:1px solid #d1d1d6;border-radius:10px;background:rgba(255,255,255,.95);box-shadow:0 8px 24px rgba(0,0,0,.12)}.state-nav button{height:28px;padding:0 11px;border:0;border-radius:7px;background:transparent;color:var(--quiet);font-size:11px}.state-nav button.active{background:var(--accent-bg);color:var(--accent);font-weight:650}
+  </style>
+</head>
+<body>
+  <nav class="state-nav">
+    <button class="active" data-state="md-collapsed">MD · 折叠</button>
+    <button data-state="md-expanded">MD · 展开</button>
+    <button data-state="md-custom">MD · 已自定义</button>
+    <button data-state="csv-expanded">CSV · 全选</button>
+    <button data-state="anki-collapsed">Anki · 折叠</button>
+    <button data-state="anki-expanded">Anki · 展开</button>
+  </nav>
+
+  <div class="stage"><div class="window">
+    <div class="traffic"><i></i><i></i><i></i></div>
+    <header class="toolbar"><div class="book"><b>The Elements of Eloquence</b><span>Mark Forsyth</span></div><span class="chapter">Chapter 4 · The Power of Three</span><div class="tools"><button class="tool">⌕</button><button class="tool">☰</button><button class="tool">Aa</button></div></header>
+    <main class="reader"><article class="page" lang="en"><h1>The Power of Three</h1><p><mark>Rhetoric is not a substitute for thought; it is the vehicle that carries thought into another mind.</mark> The pattern is old enough to feel invisible.</p><p>Their eloquence was not born of talent but of relentless practice. Every cadence had been tried aloud, discarded, and tried again.</p><p>The effect is not merely decorative. Rhythm quietly tells the reader where one thought finishes and another begins.</p></article></main>
+    <footer class="footer"><span>48%</span><span>184 / 382</span></footer>
+
+    <div class="overlay">
+      <section class="dialog" id="dialog" role="dialog" aria-modal="true">
+        <header class="dlg-head">
+          <div><h2 id="dlg-title">导出高亮与生词</h2><p>选择内容和格式，导出前先预览实际结构。</p></div>
+          <button class="dlg-close" aria-label="关闭">×</button>
+        </header>
+
+        <div class="dlg-body">
+          <div class="col-left" id="col-left">
+            <fieldset class="block">
+              <legend>导出内容</legend>
+              <div class="content-cards">
+                <label class="card on" id="card-highlights"><span class="card-top"><input type="checkbox" checked data-content="highlights" /> 高亮与备注</span><span class="card-count">24 条</span></label>
+                <label class="card on" id="card-vocabulary"><span class="card-top"><input type="checkbox" checked data-content="vocabulary" /> 生词</span><span class="card-count">18 个</span></label>
+              </div>
+              <p class="anki-note">Anki 导出仅包含生词，不含高亮。</p>
+            </fieldset>
+
+            <fieldset class="block">
+              <legend>文件格式</legend>
+              <div class="segments" id="segments">
+                <button data-format="markdown" class="on">Markdown</button>
+                <button data-format="csv">CSV</button>
+                <button data-format="anki">Anki CSV</button>
+              </div>
+            </fieldset>
+
+            <section class="fields" id="fields">
+              <div class="fields-head" id="fields-head">
+                <button class="disclose"><span class="tri">▶</span><span class="fields-name">包含字段</span></button>
+                <span class="fields-status" id="fields-status">按 Markdown 默认 · 8 项</span>
+                <button class="restore" id="restore" hidden>恢复默认</button>
+                <button class="fields-action" id="fields-action">展开</button>
+              </div>
+              <div class="fields-body" id="fields-body"></div>
+            </section>
+
+            <p class="privacy">所有内容均从本地数据生成，不会上传。AI 释义仅导出已经保存在本机的结果。</p>
+          </div>
+
+          <div class="col-right">
+            <div class="preview-head"><span>内容预览</span><span>前 2 条</span></div>
+            <pre id="preview"></pre>
+            <div class="filename" id="filename">The Elements of Eloquence-学习资料.md</div>
+          </div>
+        </div>
+
+        <footer class="dlg-foot">
+          <span class="summary" id="summary">将导出 24 条高亮和 18 个生词</span>
+          <span class="grow"></span>
+          <button class="btn">取消</button>
+          <button class="btn primary">选择保存位置</button>
+        </footer>
+      </section>
+    </div>
+  </div></div>
+
+<script>
+/* ------------------------------------------------------------------
+   Sample records — shaped exactly like ExportRecord in
+   src/pages/reader/reader-export.ts
+------------------------------------------------------------------ */
+const BOOK = "The Elements of Eloquence";
+const CHAPTER = "Chapter 4 · The Power of Three";
+const RECORDS = [
+  { kind: "highlight", bookTitle: BOOK, chapter: CHAPTER,
+    sourceText: "Rhetoric is not a substitute for thought; it is the vehicle that carries thought into another mind.",
+    note: "演讲稿开头可以用这句。", color: "yellow",
+    cfi: "epubcfi(/6/14!/4/2/28,/1:0,/1:97)", createdAt: "2026-07-28T21:14:03.000Z" },
+  { kind: "vocabulary", bookTitle: BOOK, chapter: CHAPTER, word: "eloquence",
+    definition: "n. 雄辩；有说服力的表达能力",
+    context: "Their eloquence was not born of talent but of relentless practice.",
+    contextExplanation: "这里强调雄辩来自反复练习，而不是天赋；born of 表示「源于」。",
+    mastery: "learning", cfi: "epubcfi(/6/14!/4/2/36,/1:5,/1:14)", createdAt: "2026-08-01T09:02:41.000Z" },
+];
+const COLOR_LABEL = { yellow: "黄色", green: "绿色", blue: "蓝色", pink: "粉色" };
+const MASTERY_LABEL = { new: "新词", learning: "学习中", mastered: "已掌握" };
+const TOTALS = { highlights: 24, vocabulary: 18 };
+
+/* ------------------------------------------------------------------
+   Field vocabulary
+------------------------------------------------------------------ */
+const FIELDS = [
+  { key: "chapter",    group: "通用", label: "章节标题" },
+  { key: "date",       group: "通用", label: "日期" },
+  { key: "cfi",        group: "通用", label: "定位码（CFI）" },
+  { key: "source",     group: "高亮", label: "原文摘录" },
+  { key: "note",       group: "高亮", label: "我的备注" },
+  { key: "color",      group: "高亮", label: "高亮颜色" },
+  { key: "word",       group: "生词", label: "单词" },
+  { key: "definition", group: "生词", label: "释义" },
+  { key: "context",    group: "生词", label: "原句" },
+  { key: "explanation",group: "生词", label: "AI 语境解释" },
+  { key: "mastery",    group: "生词", label: "掌握度" },
+];
+const GROUPS = ["通用", "高亮", "生词"];
+const FORMAT_LABEL = { markdown: "Markdown", csv: "CSV", anki: "Anki" };
+const DEFAULTS = {
+  markdown: { chapter:1, date:1, cfi:0, source:1, note:1, color:0, word:1, definition:1, context:1, explanation:1, mastery:0 },
+  csv:      { chapter:1, date:1, cfi:1, source:1, note:1, color:1, word:1, definition:1, context:1, explanation:1, mastery:1 },
+  anki:     { chapter:1, date:0, cfi:0, source:0, note:0, color:0, word:1, definition:1, context:1, explanation:1, mastery:1 },
+};
+
+const state = { format: "markdown", contents: { highlights: true, vocabulary: true }, fields: Object.assign({}, DEFAULTS.markdown), expanded: false };
+
+/* ------------------------------------------------------------------
+   Serializers — hand-ported from src/pages/reader/reader-export.ts
+------------------------------------------------------------------ */
+function escapeMarkdown(value){ return value.replace(/\\/g,"\\\\").replace(/([`*_{}\[\]()<>#+.!|-])/g,"\\$1").replace(/\r?\n/g,"\n"); }
+function markdownHeading(value){ return escapeMarkdown(value).replace(/\n+/g," "); }
+function markdownQuote(value){ return escapeMarkdown(value).split("\n").map(function(line){ return "> " + line; }).join("\n"); }
+function markdownField(label,value){ return "**" + label + "**: " + escapeMarkdown(value).replace(/\n/g,"  \n"); }
+function chapterOf(record){ return record.chapter || "未知章节"; }
+
+function trailingLine(record, F){
+  const parts = [];
+  if (F.cfi && record.cfi) parts.push("`" + record.cfi + "`");
+  if (F.date) parts.push(record.createdAt);
+  return parts.join(" · ");
+}
+
+function serializeMarkdown(records, title, F){
+  const out = ["# " + markdownHeading(title) + " · 学习资料"];
+  ["highlight","vocabulary"].forEach(function(kind){
+    const grouped = records.filter(function(r){ return r.kind === kind; });
+    if (!grouped.length) return;
+    out.push("", "## " + (kind === "highlight" ? "高亮" : "生词"));
+    const order = [], byChapter = new Map();
+    grouped.forEach(function(record){
+      const key = F.chapter ? chapterOf(record) : "";
+      if (!byChapter.has(key)) { byChapter.set(key, []); order.push(key); }
+      byChapter.get(key).push(record);
+    });
+    order.forEach(function(key){
+      if (F.chapter) out.push("", "### " + markdownHeading(key));
+      byChapter.get(key).forEach(function(record){
+        if (record.kind === "highlight") {
+          if (F.source && record.sourceText) out.push(markdownQuote(record.sourceText));
+          if (F.note && record.note) out.push(markdownField("备注", record.note));
+          if (F.color && record.color) out.push(markdownField("颜色", COLOR_LABEL[record.color] || record.color));
+        } else {
+          if (F.word) out.push("#### " + markdownHeading(record.word));
+          if (F.context && record.context) out.push(markdownField("语境", record.context));
+          if (F.definition && record.definition) out.push(markdownField("释义", record.definition));
+          if (F.explanation && record.contextExplanation) out.push(markdownField("语境解释", record.contextExplanation));
+          if (F.mastery && record.mastery) out.push(markdownField("掌握度", MASTERY_LABEL[record.mastery] || record.mastery));
+        }
+        const trailing = trailingLine(record, F);
+        if (trailing) out.push(trailing);
+      });
+    });
+  });
+  return out.join("\n") + "\n";
+}
+
+const CSV_COLUMNS = [
+  { header: "kind",               field: null,          highlight: function(r){ return r.kind; },        vocabulary: function(r){ return r.kind; } },
+  { header: "book",               field: null,          highlight: function(r){ return r.bookTitle; },   vocabulary: function(r){ return r.bookTitle; } },
+  { header: "chapter",            field: "chapter",     highlight: function(r){ return r.chapter; },     vocabulary: function(r){ return r.chapter; } },
+  { header: "source_text",        field: "source",      highlight: function(r){ return r.sourceText; },  vocabulary: function(){ return ""; } },
+  { header: "word",               field: "word",        highlight: function(){ return ""; },             vocabulary: function(r){ return r.word; } },
+  { header: "note",               field: "note",        highlight: function(r){ return r.note; },        vocabulary: function(){ return ""; } },
+  { header: "definition",         field: "definition",  highlight: function(){ return ""; },             vocabulary: function(r){ return r.definition; } },
+  { header: "context",            field: "context",     highlight: function(){ return ""; },             vocabulary: function(r){ return r.context; } },
+  { header: "context_explanation",field: "explanation", highlight: function(){ return ""; },             vocabulary: function(r){ return r.contextExplanation; } },
+  { header: "color",              field: "color",       highlight: function(r){ return r.color; },       vocabulary: function(){ return ""; } },
+  { header: "mastery",            field: "mastery",     highlight: function(){ return ""; },             vocabulary: function(r){ return r.mastery; } },
+  { header: "cfi",                field: "cfi",         highlight: function(r){ return r.cfi; },         vocabulary: function(r){ return r.cfi; } },
+  { header: "created_at",         field: "date",        highlight: function(r){ return r.createdAt; },   vocabulary: function(r){ return r.createdAt; } },
+];
+function neutralizeFormula(value){ return /^[=+\-@]/.test(value) ? "'" + value : value; }
+function csvCell(value){ return '"' + neutralizeFormula(value == null ? "" : String(value)).replace(/"/g,'""') + '"'; }
+function serializeCsv(records, F){
+  const columns = CSV_COLUMNS.filter(function(column){ return !column.field || F[column.field]; });
+  const rows = records.map(function(record){
+    return columns.map(function(column){ return column[record.kind === "highlight" ? "highlight" : "vocabulary"](record); });
+  });
+  const header = columns.map(function(column){ return column.header; });
+  return "﻿" + [header].concat(rows).map(function(row){ return row.map(csvCell).join(","); }).join("\r\n") + "\r\n";
+}
+
+const WORD_CHARACTER = "\\p{L}\\p{N}\\p{M}_";
+function escapeRegex(value){ return value.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); }
+function wordBoundaryRegex(target){
+  const escaped = escapeRegex(target);
+  const alphabetic = !/\p{Script=Han}/u.test(target);
+  const firstIsWord = new RegExp("^[" + WORD_CHARACTER + "]","u").test(target);
+  const lastIsWord = new RegExp("[" + WORD_CHARACTER + "]$","u").test(target);
+  return new RegExp((alphabetic && firstIsWord ? "(?<![" + WORD_CHARACTER + "])" : "") + escaped + (alphabetic && lastIsWord ? "(?![" + WORD_CHARACTER + "])" : ""), "iu");
+}
+function ankiFront(word, context){
+  if (!context || !context.trim()) return word;
+  const match = wordBoundaryRegex(word).exec(context);
+  if (!match) return word;
+  return context.slice(0, match.index) + "______" + context.slice(match.index + match[0].length);
+}
+function tagToken(value){ return value.toLowerCase().replace(/[^a-z0-9一-鿿]+/gi,"-").replace(/^-+|-+$/g,"") || "book"; }
+function serializeAnkiCsv(records, F){
+  const rows = records.filter(function(r){ return r.kind === "vocabulary"; }).map(function(record){
+    const back = [F.word ? record.word : "", F.definition ? record.definition : "", F.explanation ? record.contextExplanation : "", F.context ? record.context : ""].filter(Boolean).join("\n\n");
+    const source = [record.bookTitle, F.chapter ? record.chapter : "", F.date ? record.createdAt : "", F.cfi ? record.cfi : ""].filter(Boolean).join(" · ");
+    const tags = "lantern " + tagToken(record.bookTitle) + (F.mastery ? " " + record.mastery : "");
+    return [F.context ? ankiFront(record.word, record.context) : record.word, back, source, tags];
+  });
+  return "﻿" + [["Front","Back","Source","Tags"]].concat(rows).map(function(row){ return row.map(csvCell).join(","); }).join("\r\n") + "\r\n";
+}
+
+function serializeExport(records, F){
+  if (state.format === "markdown") return serializeMarkdown(records, BOOK, F);
+  return state.format === "csv" ? serializeCsv(records, F) : serializeAnkiCsv(records, F);
+}
+function exportFilename(){ return BOOK + "-学习资料." + (state.format === "markdown" ? "md" : "csv"); }
+
+/* ------------------------------------------------------------------
+   Applicability + derived state
+------------------------------------------------------------------ */
+function activeContents(){ return state.format === "anki" ? { highlights: false, vocabulary: state.contents.vocabulary } : state.contents; }
+function disabledReason(field){
+  const contents = activeContents();
+  if (field.group === "高亮") {
+    if (state.format === "anki") return "不适用";
+    if (!contents.highlights) return "未导出";
+  }
+  if (field.group === "生词" && !contents.vocabulary) return "未导出";
+  return "";
+}
+function effectiveFields(){
+  const out = {};
+  FIELDS.forEach(function(field){ out[field.key] = disabledReason(field) ? 0 : state.fields[field.key]; });
+  return out;
+}
+function effectiveCount(){
+  const F = effectiveFields();
+  return FIELDS.reduce(function(total, field){ return total + (F[field.key] ? 1 : 0); }, 0);
+}
+function isCustomized(){
+  const base = DEFAULTS[state.format];
+  return FIELDS.some(function(field){ return state.fields[field.key] !== base[field.key]; });
+}
+
+/* ------------------------------------------------------------------
+   Render
+------------------------------------------------------------------ */
+const fieldsBody = document.getElementById("fields-body");
+GROUPS.forEach(function(group){
+  const section = document.createElement("div");
+  section.className = "fgroup";
+  const title = document.createElement("p");
+  title.className = "fgroup-title";
+  title.textContent = group;
+  const grid = document.createElement("div");
+  grid.className = "fgrid";
+  FIELDS.filter(function(field){ return field.group === group; }).forEach(function(field){
+    const item = document.createElement("label");
+    item.className = "fitem";
+    item.dataset.field = field.key;
+    item.innerHTML = '<input type="checkbox" /><span></span><em></em>';
+    item.querySelector("span").textContent = field.label;
+    item.querySelector("input").addEventListener("change", function(event){
+      if (disabledReason(field)) { event.preventDefault(); return; }
+      state.fields[field.key] = event.target.checked ? 1 : 0;
+      render();
+    });
+    grid.appendChild(item);
+  });
+  section.appendChild(title);
+  section.appendChild(grid);
+  fieldsBody.appendChild(section);
+});
+const hint = document.createElement("p");
+hint.className = "fields-hint";
+hint.textContent = "Anki CSV 只有 Front / Back / Source / Tags 四列：章节、日期、定位码会并入 Source 一列。";
+fieldsBody.appendChild(hint);
+
+const fields = document.getElementById("fields");
+const fieldsStatus = document.getElementById("fields-status");
+const fieldsAction = document.getElementById("fields-action");
+const restore = document.getElementById("restore");
+const preview = document.getElementById("preview");
+const filename = document.getElementById("filename");
+const summary = document.getElementById("summary");
+const dialog = document.getElementById("dialog");
+const title = document.getElementById("dlg-title");
+
+function render(){
+  const contents = activeContents();
+  const F = effectiveFields();
+
+  dialog.classList.toggle("anki", state.format === "anki");
+  title.textContent = state.format === "anki" ? "导出生词到 Anki" : "导出高亮与生词";
+
+  document.querySelectorAll("[data-content]").forEach(function(input){
+    const kind = input.dataset.content;
+    input.checked = contents[kind];
+    input.disabled = state.format === "anki";
+    const card = input.closest(".card");
+    card.classList.toggle("on", contents[kind]);
+    card.classList.toggle("off-limits", state.format === "anki");
+  });
+  document.querySelectorAll("[data-format]").forEach(function(button){
+    button.classList.toggle("on", button.dataset.format === state.format);
+  });
+
+  FIELDS.forEach(function(field){
+    const item = fieldsBody.querySelector('[data-field="' + field.key + '"]');
+    const reason = disabledReason(field);
+    const input = item.querySelector("input");
+    input.checked = !!F[field.key];
+    input.disabled = !!reason;
+    item.classList.toggle("off", !!reason);
+    item.querySelector("em").textContent = reason;
+    item.title = reason === "不适用" ? "Anki 导出仅包含生词，这些字段没有去处。"
+      : reason === "未导出" ? "上方「导出内容」未勾选这一类，字段暂不参与。"
+      : "";
+  });
+  hint.classList.toggle("show", state.format === "anki");
+
+  const custom = isCustomized();
+  fields.classList.toggle("open", state.expanded);
+  fields.classList.toggle("custom", custom);
+  fieldsStatus.textContent = (custom ? "已自定义" : "按 " + FORMAT_LABEL[state.format] + " 默认") + " · " + effectiveCount() + " 项";
+  restore.hidden = !custom;
+  fieldsAction.textContent = state.expanded ? "收起" : "展开";
+
+  const selected = RECORDS.filter(function(record){ return record.kind === "vocabulary" ? contents.vocabulary : contents.highlights; });
+  preview.textContent = serializeExport(selected, F);
+  filename.textContent = exportFilename();
+  summary.textContent = "将导出 " + (contents.highlights ? TOTALS.highlights : 0) + " 条高亮和 " + (contents.vocabulary ? TOTALS.vocabulary : 0) + " 个生词";
+}
+
+/* ------------------------------------------------------------------
+   Interaction
+------------------------------------------------------------------ */
+document.getElementById("fields-head").addEventListener("click", function(event){
+  if (event.target.closest("#restore")) return;
+  state.expanded = !state.expanded;
+  render();
+});
+restore.addEventListener("click", function(){
+  state.fields = Object.assign({}, DEFAULTS[state.format]);
+  render();
+});
+document.getElementById("segments").addEventListener("click", function(event){
+  const button = event.target.closest("[data-format]");
+  if (!button) return;
+  state.format = button.dataset.format;
+  state.fields = Object.assign({}, DEFAULTS[state.format]);   // format switch resets the field set…
+  state.expanded = false;                                      // …and re-collapses the advanced area
+  if (state.format === "anki") state.contents = { highlights: false, vocabulary: true };
+  render();
+});
+document.querySelectorAll("[data-content]").forEach(function(input){
+  input.addEventListener("change", function(){
+    if (state.format === "anki") return;
+    state.contents[input.dataset.content] = input.checked;
+    render();
+  });
+});
+
+const PRESETS = {
+  "md-collapsed": { format: "markdown", expanded: false },
+  "md-expanded":  { format: "markdown", expanded: true },
+  "md-custom":    { format: "markdown", expanded: true, fields: { explanation: 0, context: 0 } },
+  "csv-expanded": { format: "csv", expanded: true },
+  "anki-collapsed": { format: "anki", expanded: false },
+  "anki-expanded":  { format: "anki", expanded: true },
+};
+document.querySelectorAll("[data-state]").forEach(function(button){
+  button.addEventListener("click", function(){
+    document.querySelectorAll("[data-state]").forEach(function(other){ other.classList.toggle("active", other === button); });
+    const preset = PRESETS[button.dataset.state];
+    state.format = preset.format;
+    state.contents = preset.format === "anki" ? { highlights: false, vocabulary: true } : { highlights: true, vocabulary: true };
+    state.fields = Object.assign({}, DEFAULTS[preset.format], preset.fields || {});
+    state.expanded = preset.expanded;
+    render();
+  });
+});
+
+render();
+</script>
+</body>
+</html>

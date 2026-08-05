@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern 首启三步卡 · 样张</title>
+<style>
+  :root{
+    --paper:#f6f2ea; --page:#fffdf8; --ink:#2a2622; --ink2:#6b635b; --ink3:#9c948b;
+    --line:#e6dfd4; --line2:#efe9e0;
+    --accent:#8a5a2b; --accent-bg:#f4ece0; --accent-line:#d9c4a6;
+    --ok:#2f7d5b; --ok-bg:#e8f2ec;
+    --warn:#b8791c; --warn-bg:#fbf1e0;
+    --bad:#c0392b; --bad-bg:#fbeceb;
+    --shadow:0 18px 48px rgba(60,45,28,.16), 0 2px 8px rgba(60,45,28,.06);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#181614; --page:#211e1b; --ink:#e9e3da; --ink2:#a79e94; --ink3:#6e665e;
+      --line:#332f2a; --line2:#2a2724;
+      --accent:#d1a06a; --accent-bg:#2c2318; --accent-line:#4a3a26;
+      --ok:#6fc39a; --ok-bg:#152a20;
+      --warn:#e0a75a; --warn-bg:#332810;
+      --bad:#e88079; --bad-bg:#331b19;
+      --shadow:0 18px 48px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font:15px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1240px;margin:0 auto;padding:52px 28px 120px}
+
+  header.top{border-bottom:1px solid var(--line);padding-bottom:24px;margin-bottom:8px}
+  h1{font-size:27px;margin:0 0 8px;font-weight:650;letter-spacing:-.3px}
+  .sub{color:var(--ink2);font-size:14px;margin:0;max-width:74ch}
+  .sub b{color:var(--ink)}
+
+  h2.sec{font-size:18px;font-weight:620;margin:56px 0 4px;display:flex;align-items:baseline;gap:11px}
+  h2.sec .n{font-size:11.5px;font-weight:700;color:var(--ink3);border:1px solid var(--line);
+    border-radius:20px;padding:2px 9px;flex:none}
+  .seclede{color:var(--ink2);font-size:14px;margin:0 0 22px;max-width:80ch}
+  .seclede b{color:var(--ink)}
+
+  .row{display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start}
+  .shot{flex:1 1 380px;min-width:340px;max-width:440px}
+  .caption{font-size:12.5px;color:var(--ink3);margin:10px 2px 0;line-height:1.55}
+  .caption b{color:var(--ink2)}
+
+  /* ── 窗口底：书库被压暗 ── */
+  .stage{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--line);
+    background:var(--page);box-shadow:var(--shadow)}
+  .chrome{height:30px;background:var(--paper);border-bottom:1px solid var(--line2);
+    display:flex;align-items:center;padding:0 11px;gap:6px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#dcd4c8}
+  @media (prefers-color-scheme:dark){.dot{background:#3a3530}}
+  .chrome .ttl{margin-left:8px;font-size:11px;color:var(--ink3)}
+
+  .behind{padding:14px;filter:blur(1.5px);opacity:.42;pointer-events:none;min-height:392px}
+  .bh-side{display:flex;gap:12px}
+  .bh-nav{width:88px;flex:none;display:flex;flex-direction:column;gap:7px}
+  .bh-nav i{display:block;height:9px;border-radius:4px;background:var(--line);}
+  .bh-nav i:nth-child(1){width:56%}.bh-nav i:nth-child(2){width:72%}
+  .bh-nav i:nth-child(3){width:48%}.bh-nav i:nth-child(4){width:64%}
+  .bh-grid{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .bh-grid s{display:block;height:78px;border-radius:6px;background:var(--line);text-decoration:none}
+
+  .overlay{position:absolute;inset:30px 0 0;background:rgba(30,24,16,.30);
+    display:flex;align-items:center;justify-content:center;padding:16px}
+  @media (prefers-color-scheme:dark){.overlay{background:rgba(0,0,0,.55)}}
+
+  /* ── 卡片 ── */
+  .card{width:100%;max-width:388px;background:var(--page);border:1px solid var(--line);
+    border-radius:13px;box-shadow:var(--shadow);overflow:hidden}
+  .card .head{padding:20px 22px 0}
+  .steps{display:flex;align-items:center;gap:5px;margin-bottom:14px}
+  .steps b{width:19px;height:19px;border-radius:50%;font-size:10.5px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--line);color:var(--ink3)}
+  .steps b.on{background:var(--accent);color:#fff}
+  @media (prefers-color-scheme:dark){.steps b.on{color:#1d1712}}
+  .steps b.done{background:var(--ok-bg);color:var(--ok)}
+  .steps span{flex:1;height:1.5px;background:var(--line)}
+  .steps span.on{background:var(--accent);opacity:.4}
+  .steps em{margin-left:auto;font-style:normal;font-size:11px;color:var(--ink3)}
+
+  .card h3{font-size:17.5px;margin:0 0 6px;font-weight:640;letter-spacing:-.2px}
+  .card .why{font-size:12.8px;color:var(--ink2);margin:0 0 16px;line-height:1.6}
+  .card .why b{color:var(--accent);font-weight:600}
+  .card .body{padding:0 22px 4px}
+  .card .foot{display:flex;align-items:center;gap:10px;padding:14px 22px 18px;
+    border-top:1px solid var(--line2);margin-top:16px}
+
+  .btn{border:1px solid var(--line);background:var(--page);color:var(--ink);
+    border-radius:8px;padding:7px 15px;font-size:13px;font-weight:560;cursor:default;font-family:inherit}
+  .btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+  @media (prefers-color-scheme:dark){.btn.pri{color:#1d1712}}
+  .btn.ghost{border-color:transparent;background:none;color:var(--ink3);padding-left:0}
+  .btn.sm{padding:5px 11px;font-size:12px}
+  .foot .sp{flex:1}
+
+  /* CEFR */
+  .levels{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .lv{border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:var(--page)}
+  .lv.on{border-color:var(--accent);background:var(--accent-bg);box-shadow:inset 0 0 0 1px var(--accent-line)}
+  .lv b{display:block;font-size:13px;font-weight:660;letter-spacing:.2px}
+  .lv.on b{color:var(--accent)}
+  .lv s{display:block;text-decoration:none;font-size:11px;color:var(--ink2);line-height:1.45;margin-top:2px}
+
+  .disc{margin-top:12px;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .disc .dh{padding:9px 12px;font-size:12.5px;color:var(--ink2);display:flex;align-items:center;gap:7px}
+  .disc .dh .ch{color:var(--ink3);font-size:10px}
+  .disc .db{padding:0 12px 12px;border-top:1px solid var(--line2)}
+
+  .field{display:flex;gap:8px;margin-top:10px}
+  .inp{flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:12.5px;
+    background:var(--paper);color:var(--ink)}
+  .inp.ph{color:var(--ink3)}
+  .sel{border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:12.5px;
+    background:var(--paper);color:var(--ink);min-width:104px}
+
+  .result{margin-top:10px;background:var(--ok-bg);border:1px solid var(--ok);border-radius:8px;
+    padding:9px 11px;font-size:12.2px;color:var(--ok);line-height:1.55}
+  .result b{font-weight:700}
+
+  /* 导入 */
+  .drop{border:1.5px dashed var(--line);border-radius:10px;padding:26px 14px;text-align:center;
+    background:var(--paper)}
+  .drop .ic{font-size:24px;opacity:.5;line-height:1}
+  .drop p{margin:9px 0 3px;font-size:13px;font-weight:560}
+  .drop s{text-decoration:none;font-size:11.5px;color:var(--ink3)}
+  .drop .btn{margin-top:12px}
+
+  .grouphd{font-size:10.5px;font-weight:700;letter-spacing:.6px;color:var(--ink3);
+    margin-top:11px;text-transform:none}
+  .grouphd.tp{color:var(--warn);margin-top:14px;padding-top:11px;border-top:1px solid var(--line2)}
+  .srclist{display:flex;flex-direction:column;gap:1px;margin-top:5px}
+  .src{display:flex;align-items:center;gap:8px;padding:7px 2px;font-size:12.5px}
+  .src b{font-weight:560}
+  .src .go{margin-left:auto;color:var(--ink3);font-size:11px}
+  .tag{font-size:10px;padding:1.5px 6px;border-radius:5px;font-weight:600;letter-spacing:.2px}
+  .tag.lib{background:var(--ok-bg);color:var(--ok)}
+  .tag.tp{background:var(--warn-bg);color:var(--warn)}
+  .srcnote{font-size:11.2px;color:var(--ink3);line-height:1.5;margin-top:9px;
+    padding-top:9px;border-top:1px solid var(--line2)}
+
+  .prog{margin-top:14px}
+  .bar{height:4px;border-radius:3px;background:var(--line);overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--accent);width:62%}
+  .prog p{margin:8px 0 0;font-size:12px;color:var(--ink2)}
+  .prog p.slow{color:var(--warn)}
+
+  /* AI */
+  .prov{border:1px solid var(--accent-line);background:var(--accent-bg);border-radius:10px;padding:12px 13px}
+  .prov .t{display:flex;align-items:center;gap:8px}
+  .prov .t b{font-size:13.5px;font-weight:650}
+  .prov .t .rec{font-size:10px;background:var(--accent);color:#fff;padding:1.5px 6px;border-radius:5px;font-weight:600}
+  @media (prefers-color-scheme:dark){.prov .t .rec{color:#1d1712}}
+  .prov .t .pay{font-size:10px;background:var(--page);border:1px solid var(--line);color:var(--ink2);
+    padding:1.5px 6px;border-radius:5px;font-weight:600}
+  .prov .d{font-size:11.8px;color:var(--ink2);margin:6px 0 0;line-height:1.55}
+  .prov .lnk{font-size:11.8px;color:var(--accent);margin-top:8px;display:block;font-weight:560}
+
+  .alt{margin-top:10px;font-size:12.2px;color:var(--ink3);display:flex;align-items:center;gap:7px}
+  .alt .ch{font-size:10px}
+
+  .test{margin-top:10px;border-radius:8px;padding:9px 11px;font-size:12.2px;line-height:1.55}
+  .test.run{background:var(--paper);border:1px solid var(--line);color:var(--ink2)}
+  .test.ok{background:var(--ok-bg);border:1px solid var(--ok);color:var(--ok)}
+  .test.err{background:var(--bad-bg);border:1px solid var(--bad);color:var(--bad)}
+  .test b{font-weight:700}
+  .test .hint{display:block;color:var(--ink2);margin-top:4px;font-size:11.5px}
+  @media (prefers-color-scheme:dark){.test.err .hint{color:var(--ink2)}}
+  .spin{display:inline-block;width:10px;height:10px;border-radius:50%;
+    border:1.6px solid var(--line);border-top-color:var(--accent);margin-right:6px;vertical-align:-1px}
+
+  .privacy{margin-top:12px;font-size:11.2px;color:var(--ink3);line-height:1.55;
+    padding-top:10px;border-top:1px solid var(--line2)}
+
+  /* 跳过之后 */
+  .live{border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--page);
+    box-shadow:var(--shadow)}
+  .live .inner{padding:14px}
+  .hintbar{display:flex;align-items:center;gap:9px;background:var(--warn-bg);
+    border:1px solid var(--line);border-radius:9px;padding:9px 12px;font-size:12.4px;color:var(--ink2)}
+  .hintbar .d{width:6px;height:6px;border-radius:50%;background:var(--warn);flex:none}
+  .hintbar .go{margin-left:auto;color:var(--accent);font-weight:600;font-size:12px}
+
+  .emptylib{margin-top:14px;text-align:center;padding:34px 14px;border:1px dashed var(--line);
+    border-radius:10px;background:var(--paper)}
+  .emptylib .ic{font-size:26px;opacity:.4}
+  .emptylib p{margin:9px 0 4px;font-size:13.5px;font-weight:560}
+  .emptylib s{text-decoration:none;font-size:11.5px;color:var(--ink3)}
+
+  .lookup{border:1px solid var(--line);border-radius:11px;background:var(--page);
+    box-shadow:var(--shadow);overflow:hidden;max-width:300px}
+  .lookup .lw{padding:13px 15px}
+  .lookup .word{font-size:15.5px;font-weight:660}
+  .lookup .pos{font-size:11.5px;color:var(--ink3);margin-left:6px;font-weight:400}
+  .lookup .msg{margin-top:9px;background:var(--warn-bg);border-radius:7px;padding:9px 10px;
+    font-size:12px;color:var(--ink2);line-height:1.55}
+  .lookup .msg b{color:var(--warn);font-weight:650;display:block;margin-bottom:2px}
+  .lookup .acts{display:flex;gap:7px;margin-top:10px}
+
+  .readtext{font-size:12.5px;color:var(--ink2);line-height:2;padding:6px 2px}
+  .readtext mark{background:var(--accent-bg);border-bottom:1.5px solid var(--accent-line);
+    color:var(--ink);padding:1px 2px;border-radius:2px}
+
+  .notes{margin:20px 0 0;padding:0;list-style:none;display:grid;gap:9px}
+  .notes li{font-size:13.5px;color:var(--ink2);padding-left:22px;position:relative;line-height:1.65}
+  .notes li::before{content:"";position:absolute;left:6px;top:9px;width:5px;height:5px;
+    border-radius:50%;background:var(--ink3)}
+  .notes li b{color:var(--ink);font-weight:600}
+  .q{margin-top:44px;border:1px solid var(--accent-line);background:var(--accent-bg);
+    border-radius:11px;padding:18px 20px}
+  .q h4{margin:0 0 8px;font-size:14.5px;font-weight:650;color:var(--accent)}
+  .q p{margin:0 0 6px;font-size:13.5px;color:var(--ink2);line-height:1.65}
+  .q p:last-child{margin-bottom:0}
+  .q b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>首启三步卡 · 样张</h1>
+  <p class="sub">
+    顺序按你定的：<b>英语水平 → 导入书 → 配置 AI</b>，从最容易走到门槛最高。
+    每一步都能跳过，跳过后不再弹卡，只在书库和查词框留一条浅色常驻提示。
+    下面是全部关键状态，一次看完。
+  </p>
+</header>
+
+<!-- ═════ 第 1 步 ═════ -->
+<h2 class="sec"><span class="n">第 1 步</span> 你的英语水平</h2>
+<p class="seclede">
+  <b>为什么放第一：</b>最容易，点一下就完事，而且它是唯一一个「不填也能用、但会静默失效」的设置——不在这里问，就永远不会有人填。
+  说明文案只讲一句「它会怎么改变你看到的东西」，不解释 CEFR 是什么。
+</p>
+
+<div class="row">
+
+  <div class="shot">
+    <div class="stage">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern</span></div>
+      <div class="behind"><div class="bh-side">
+        <div class="bh-nav"><i></i><i></i><i></i><i></i></div>
+        <div class="bh-grid"><s></s><s></s><s></s><s></s><s></s><s></s></div>
+      </div></div>
+      <div class="overlay"><div class="card">
+        <div class="head">
+          <div class="steps">
+            <b class="on">1</b><span class="on"></span><b>2</b><span></span><b>3</b>
+            <em>第 1 步，共 3 步</em>
+          </div>
+          <h3>你的英语大概在哪一档？</h3>
+          <p class="why">Lantern 会<b>按你的程度调整解释的深浅</b>——同一个词，给你和给别人看到的不一样。这是它和普通词典最大的区别。随时可以在设置里改。</p>
+        </div>
+        <div class="body">
+          <div class="levels">
+            <div class="lv"><b>A1</b><s>能理解最基础单词和极短句</s></div>
+            <div class="lv"><b>A2</b><s>能理解常见生活表达和简单段落</s></div>
+            <div class="lv on"><b>B1</b><s>能独立阅读清晰的日常英语</s></div>
+            <div class="lv"><b>B2</b><s>能理解抽象话题和一般文学表达</s></div>
+            <div class="lv"><b>C1</b><s>能理解复杂文章及细微差别</s></div>
+            <div class="lv"><b>C2</b><s>接近熟练母语阅读能力</s></div>
+          </div>
+          <div class="disc"><div class="dh"><span class="ch">▸</span> 说不准？用四六级 / 雅思成绩换算</div></div>
+        </div>
+        <div class="foot">
+          <button class="btn ghost">以后再说</button>
+          <span class="sp"></span>
+          <button class="btn pri">下一步</button>
+        </div>
+      </div></div>
+    </div>
+    <p class="caption"><b>默认态。</b><b>B1 已经替他选好</b>，直接点「下一步」就走，想改的人自己改。B1 是最不会出错的默认——高了会看到看不懂的解释，低了只是啰嗦一点。</p>
+  </div>
+
+  <div class="shot">
+    <div class="stage">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern</span></div>
+      <div class="behind"><div class="bh-side">
+        <div class="bh-nav"><i></i><i></i><i></i><i></i></div>
+        <div class="bh-grid"><s></s><s></s><s></s><s></s><s></s><s></s></div>
+      </div></div>
+      <div class="overlay"><div class="card">
+        <div class="head">
+          <div class="steps">
+            <b class="on">1</b><span class="on"></span><b>2</b><span></span><b>3</b>
+            <em>第 1 步，共 3 步</em>
+          </div>
+          <h3>你的英语大概在哪一档？</h3>
+          <p class="why">Lantern 会<b>按你的程度调整解释的深浅</b>——同一个词，给你和给别人看到的不一样。这是它和普通词典最大的区别。随时可以在设置里改。</p>
+        </div>
+        <div class="body">
+          <div class="levels">
+            <div class="lv"><b>A1</b><s>能理解最基础单词和极短句</s></div>
+            <div class="lv"><b>A2</b><s>能理解常见生活表达和简单段落</s></div>
+            <div class="lv"><b>B1</b><s>能独立阅读清晰的日常英语</s></div>
+            <div class="lv on"><b>B2</b><s>能理解抽象话题和一般文学表达</s></div>
+            <div class="lv"><b>C1</b><s>能理解复杂文章及细微差别</s></div>
+            <div class="lv"><b>C2</b><s>接近熟练母语阅读能力</s></div>
+          </div>
+          <div class="disc">
+            <div class="dh"><span class="ch">▾</span> 说不准？用四六级 / 雅思成绩换算</div>
+            <div class="db">
+              <div class="field">
+                <select class="sel"><option>CET-6</option></select>
+                <input class="inp" value="512">
+                <button class="btn sm">换算</button>
+              </div>
+              <div class="result">按六级 <b>512</b> 分推算，你大概在 <b>B2</b> —— 已替你选好，不同意可以直接改上面。</div>
+            </div>
+          </div>
+        </div>
+        <div class="foot">
+          <button class="btn ghost">以后再说</button>
+          <span class="sp"></span>
+          <button class="btn pri">下一步</button>
+        </div>
+      </div></div>
+    </div>
+    <p class="caption"><b>展开态。</b>换算功能产品里已经有了（雅思 / 托福 / 托业 / 剑桥 / 多邻国 / 四级 / 六级），这里只是把它搬到首启。换算结果直接替用户选好，不让他再判断一次。</p>
+  </div>
+
+</div>
+
+<!-- ═════ 第 2 步 ═════ -->
+<h2 class="sec"><span class="n">第 2 步</span> 导入第一本书</h2>
+<p class="seclede">
+  <b>为什么放第二：</b>没有书，后面配了 AI 也没地方用。而且这一步天然会分出两种人——手上有书的直接拖进来，没书的需要指路。
+  「去哪找书」复用产品里已有的书源清单（公版书和第三方站点分开标注，这个区分要保留）。
+</p>
+
+<div class="row">
+
+  <div class="shot">
+    <div class="stage">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern</span></div>
+      <div class="behind"><div class="bh-side">
+        <div class="bh-nav"><i></i><i></i><i></i><i></i></div>
+        <div class="bh-grid"><s></s><s></s><s></s><s></s><s></s><s></s></div>
+      </div></div>
+      <div class="overlay"><div class="card">
+        <div class="head">
+          <div class="steps">
+            <b class="done">✓</b><span class="on"></span><b class="on">2</b><span></span><b>3</b>
+            <em>第 2 步，共 3 步</em>
+          </div>
+          <h3>放一本书进来</h3>
+          <p class="why">支持 EPUB、PDF 和纯文本。书只存在你自己的电脑上，不会上传到任何地方。</p>
+        </div>
+        <div class="body">
+          <div class="drop">
+            <div class="ic">📖</div>
+            <p>把书拖到这里</p>
+            <s>EPUB · PDF · TXT</s>
+            <div><button class="btn sm">选择文件…</button></div>
+          </div>
+          <div class="disc"><div class="dh"><span class="ch">▸</span> 手上还没有书？看看去哪找</div></div>
+        </div>
+        <div class="foot">
+          <button class="btn ghost">以后再说</button>
+          <span class="sp"></span>
+          <button class="btn pri">下一步</button>
+        </div>
+      </div></div>
+    </div>
+    <p class="caption"><b>默认态。</b>一句「书只存在你自己的电脑上」——本地优先是这个产品的立身之本，值得在第一次见面时说一次。</p>
+  </div>
+
+  <div class="shot">
+    <div class="stage">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern</span></div>
+      <div class="behind"><div class="bh-side">
+        <div class="bh-nav"><i></i><i></i><i></i><i></i></div>
+        <div class="bh-grid"><s></s><s></s><s></s><s></s><s></s><s></s></div>
+      </div></div>
+      <div class="overlay"><div class="card">
+        <div class="head">
+          <div class="steps">
+            <b class="done">✓</b><span class="on"></span><b class="on">2</b><span></span><b>3</b>
+            <em>第 2 步，共 3 步</em>
+          </div>
+          <h3>放一本书进来</h3>
+          <p class="why">支持 EPUB、PDF 和纯文本。书只存在你自己的电脑上，不会上传到任何地方。</p>
+        </div>
+        <div class="body">
+          <div class="drop" style="padding:16px 14px">
+            <p style="margin:0">把书拖到这里　<button class="btn sm">选择文件…</button></p>
+          </div>
+          <div class="disc">
+            <div class="dh"><span class="ch">▾</span> 手上还没有书？看看去哪找</div>
+            <div class="db">
+              <div class="grouphd">免费下载，无需注册</div>
+              <div class="srclist">
+                <div class="src"><b>Project Gutenberg</b><span class="tag lib">公版书</span><span class="go">↗</span></div>
+                <div class="src"><b>Standard Ebooks</b><span class="tag lib">公版书</span><span class="go">↗</span></div>
+                <div class="src"><b>Open Library</b><span class="tag lib">图书馆</span><span class="go">↗</span></div>
+                <div class="src"><b>Internet Archive</b><span class="tag lib">图书馆</span><span class="go">↗</span></div>
+              </div>
+              <div class="grouphd tp">第三方站点</div>
+              <div class="srclist">
+                <div class="src"><b>Z-Library</b><span class="tag tp">第三方</span><span class="go">↗</span></div>
+                <div class="src"><b>Anna's Archive</b><span class="tag tp">第三方</span><span class="go">↗</span></div>
+              </div>
+              <p class="srcnote">第三方站点未经授权提供受版权保护的书籍，是否合法取决于你所在的地区。这份清单在设置里可以随意增删。</p>
+            </div>
+          </div>
+        </div>
+        <div class="foot">
+          <button class="btn ghost">以后再说</button>
+          <span class="sp"></span>
+          <button class="btn pri">下一步</button>
+        </div>
+      </div></div>
+    </div>
+    <p class="caption"><b>「去哪找书」展开态。</b>展开后拖拽区自动收窄给列表让位。<b>分两组，公版在前、第三方在后</b>，Z-Library 排在第三方组第一位——想找的人一眼看到，不多花一次点击，但产品的立场留在原处。</p>
+  </div>
+
+  <div class="shot">
+    <div class="stage">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern</span></div>
+      <div class="behind"><div class="bh-side">
+        <div class="bh-nav"><i></i><i></i><i></i><i></i></div>
+        <div class="bh-grid"><s></s><s></s><s></s><s></s><s></s><s></s></div>
+      </div></div>
+      <div class="overlay"><div class="card">
+        <div class="head">
+          <div class="steps">
+            <b class="done">✓</b><span class="on"></span><b class="on">2</b><span></span><b>3</b>
+            <em>第 2 步，共 3 步</em>
+          </div>
+          <h3>正在导入《Pride and Prejudice》</h3>
+          <p class="why">正在读取目录、生成封面和分章。</p>
+        </div>
+        <div class="body">
+          <div class="prog">
+            <div class="bar"><i></i></div>
+            <p class="slow">这本书比较大，还需要一点时间——可以先去下一步，导入会在后台继续。</p>
+          </div>
+        </div>
+        <div class="foot">
+          <button class="btn ghost">取消</button>
+          <span class="sp"></span>
+          <button class="btn pri">下一步</button>
+        </div>
+      </div></div>
+    </div>
+    <p class="caption"><b>导入中 / 慢速态。</b>产品里已有「超过 5 秒就提示」的判据，这里沿用。关键是<b>不阻塞</b>——大书可以边导入边进下一步。</p>
+  </div>
+
+</div>
+
+<!-- ═════ 第 3 步 ═════ -->
+<h2 class="sec"><span class="n">第 3 步</span> 连一个 AI 服务</h2>
+<p class="seclede">
+  <b>为什么放最后：</b>门槛最高（要去别的网站注册、拿 Key、可能还要充值）。走到这一步的人已经填了水平、导了书，有了投入，更愿意翻过这道坎。
+  这一屏<b>直接用他刚导入的那本书举例</b>——动机在这一刻最强。只推一个服务，不摆目录、不解释路由。
+</p>
+
+<div class="row">
+
+  <div class="shot">
+    <div class="stage">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern</span></div>
+      <div class="behind"><div class="bh-side">
+        <div class="bh-nav"><i></i><i></i><i></i><i></i></div>
+        <div class="bh-grid"><s></s><s></s><s></s><s></s><s></s><s></s></div>
+      </div></div>
+      <div class="overlay"><div class="card">
+        <div class="head">
+          <div class="steps">
+            <b class="done">✓</b><span class="on"></span><b class="done">✓</b><span class="on"></span><b class="on">3</b>
+            <em>最后一步</em>
+          </div>
+          <h3>连一个 AI 服务</h3>
+          <p class="why">配好之后，打开《Pride and Prejudice》<b>选中任何一个词就能查</b>——释义、例句、语境解释都在原文旁边出现。</p>
+        </div>
+        <div class="body">
+          <div class="prov">
+            <div class="t"><b>DeepSeek</b><span class="rec">推荐</span><span class="pay">按量付费</span></div>
+            <p class="d">便宜、够快，中文解释也自然。注册后到控制台复制一个 API Key 就行。</p>
+            <span class="lnk">去 DeepSeek 拿 API Key ↗</span>
+          </div>
+          <div class="field">
+            <input class="inp ph" value="把 API Key 粘贴到这里">
+            <button class="btn sm">测试</button>
+          </div>
+          <div class="alt"><span class="ch">▸</span> 我想用别的（OpenAI / Claude / 本地 Ollama）</div>
+          <p class="privacy">Key 只保存在你这台电脑上，不进同步、不进日志。所有 AI 请求都从你的电脑直接发给服务商，Lantern 不经手。</p>
+        </div>
+        <div class="foot">
+          <button class="btn ghost">以后再说</button>
+          <span class="sp"></span>
+          <button class="btn pri">完成</button>
+        </div>
+      </div></div>
+    </div>
+    <p class="caption"><b>默认态。</b>用刚导入的书名说明它能干什么。<b>只推 DeepSeek 一个</b>——这一屏是给没用过 AI 的人看的，多给一个选项就多一次不知道该选哪个。已经有别家账号的人自己会点开「我想用别的」。</p>
+  </div>
+
+  <div class="shot">
+    <div class="stage">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern</span></div>
+      <div class="behind"><div class="bh-side">
+        <div class="bh-nav"><i></i><i></i><i></i><i></i></div>
+        <div class="bh-grid"><s></s><s></s><s></s><s></s><s></s><s></s></div>
+      </div></div>
+      <div class="overlay"><div class="card">
+        <div class="head">
+          <div class="steps">
+            <b class="done">✓</b><span class="on"></span><b class="done">✓</b><span class="on"></span><b class="on">3</b>
+            <em>最后一步</em>
+          </div>
+          <h3>连一个 AI 服务</h3>
+          <p class="why">配好之后，打开《Pride and Prejudice》<b>选中任何一个词就能查</b>——释义、例句、语境解释都在原文旁边出现。</p>
+        </div>
+        <div class="body">
+          <div class="prov">
+            <div class="t"><b>DeepSeek</b><span class="rec">推荐</span><span class="pay">按量付费</span></div>
+            <p class="d">便宜、够快，中文解释也自然。注册后到控制台复制一个 API Key 就行。</p>
+            <span class="lnk">去 DeepSeek 拿 API Key ↗</span>
+          </div>
+          <div class="field">
+            <input class="inp" value="sk-••••••••••••••••••••3f7a">
+            <button class="btn sm">测试</button>
+          </div>
+          <div class="test err">
+            <b>这个 Key 被拒绝了（401）</b>
+            <span class="hint">通常是复制时少了几位，或者 Key 已经在控制台里删掉了。换一个再试，或者先跳过——随时能在「设置 → 服务」里补上。</span>
+          </div>
+          <div class="alt"><span class="ch">▸</span> 我想用别的（OpenAI / Claude / 本地 Ollama）</div>
+        </div>
+        <div class="foot">
+          <button class="btn ghost">以后再说</button>
+          <span class="sp"></span>
+          <button class="btn pri">完成</button>
+        </div>
+      </div></div>
+    </div>
+    <p class="caption"><b>测试失败态。</b>说人话解释最常见的原因，并且<b>明确给出「先跳过」这条路</b>——不能让人卡死在最后一步。旁边还有一个「测试中」的转圈态和一个绿色成功态，同一位置替换。</p>
+  </div>
+
+  <div class="shot">
+    <div class="stage">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern</span></div>
+      <div class="behind"><div class="bh-side">
+        <div class="bh-nav"><i></i><i></i><i></i><i></i></div>
+        <div class="bh-grid"><s></s><s></s><s></s><s></s><s></s><s></s></div>
+      </div></div>
+      <div class="overlay"><div class="card">
+        <div class="head">
+          <div class="steps">
+            <b class="done">✓</b><span class="on"></span><b class="done">✓</b><span class="on"></span><b class="done">✓</b>
+            <em>好了</em>
+          </div>
+          <h3>可以开始读了</h3>
+          <p class="why">《Pride and Prejudice》已经在书库里。读的时候<b>选中任何一个词</b>试试——查过的词会自动记下来，以后再遇到有标记提示。</p>
+        </div>
+        <div class="body">
+          <div class="readtext" style="border:1px solid var(--line);border-radius:9px;padding:12px 14px;background:var(--paper)">
+            It is a truth universally <mark>acknowledged</mark>, that a single man in possession of a good fortune, must be in want of a wife.
+          </div>
+          <div class="test ok" style="margin-top:10px">
+            <b>DeepSeek 已连接</b>
+            <span class="hint">水平 B1 · 解释会按这个程度来。想改就去「设置 → 通用」。</span>
+          </div>
+        </div>
+        <div class="foot">
+          <span class="sp"></span>
+          <button class="btn pri">开始阅读</button>
+        </div>
+      </div></div>
+    </div>
+    <p class="caption"><b>完成态。</b>用一句真实的原文示范「选中一个词」这个动作——这是整个产品的核心手势，值得亲手演示一次而不是用文字描述。</p>
+  </div>
+
+</div>
+
+<!-- ═════ 跳过之后 ═════ -->
+<h2 class="sec"><span class="n">跳过之后</span> 常驻提示，卡片不再出现</h2>
+<p class="seclede">
+  三步都能跳过。跳过之后<b>绝不再弹卡</b>——但要在他真正需要的两个位置留下一条浅色提示，让他知道还差什么、去哪补。
+</p>
+
+<div class="row">
+
+  <div class="shot">
+    <div class="live">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern — 书库</span></div>
+      <div class="inner">
+        <div class="hintbar">
+          <span class="d"></span>
+          还没连 AI 服务，查词和解释暂时用不了
+          <span class="go">去设置 ↗</span>
+        </div>
+        <div class="emptylib">
+          <div class="ic">📚</div>
+          <p>书库还是空的</p>
+          <s>导入书籍 · 或者看看去哪找书</s>
+        </div>
+      </div>
+    </div>
+    <p class="caption"><b>书库常驻提示。</b>一条，浅色，不可关闭但也不刺眼。连上之后自动消失。如果只跳过了「英语水平」，这里换成另一条同样形状的提示。</p>
+  </div>
+
+  <div class="shot">
+    <div class="live">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern — 阅读</span></div>
+      <div class="inner" style="padding:18px 16px 22px">
+        <div class="readtext" style="opacity:.75">
+          It is a truth universally <mark>acknowledged</mark>, that a single man in possession of a good fortune…
+        </div>
+        <div style="display:flex;justify-content:center;margin-top:12px">
+          <div class="lookup"><div class="lw">
+            <span class="word">acknowledged</span><span class="pos">adj.</span>
+            <div class="msg">
+              <b>还没连 AI 服务</b>
+              连上之后，这里会出现按你水平写的释义、这句话里的具体含义，还有例句。
+            </div>
+            <div class="acts">
+              <button class="btn sm pri">去连接</button>
+              <button class="btn sm">先看本地词典</button>
+            </div>
+          </div></div>
+        </div>
+      </div>
+    </div>
+    <p class="caption"><b>查词框未配置态。</b>产品现在这里是一个红色报错，改成<b>说明「连上之后你会看到什么」</b>——同样是没结果，但一个是失败，一个是预告。旁边保留「先看本地词典」，让这次点击不至于完全白费。</p>
+  </div>
+
+</div>
+
+<ul class="notes">
+  <li><b>三步全部可跳过，且跳过不惩罚。</b>任何一步的「以后再说」都是平级的文字按钮，不做灰色劝退设计。</li>
+  <li><b>不做的东西：</b>选主题、选字体、逛功能、动画引导页。你的用户是奔着读书来的，不是奔着配置来的。</li>
+  <li><b>记住状态只用一个开关</b>（已完成 / 已跳过），下次启动不再弹。设置里可以再打开一次。</li>
+</ul>
+
+<div class="q">
+  <h4>已定下来的三条</h4>
+  <p><b>一、</b>第 1 步默认选中 <b>B1</b>，可以直接「下一步」，想改的自己改。B1 是最不吃亏的默认值。</p>
+  <p><b>二、</b>「去哪找书」分两组：公版 / 图书馆在前，第三方在后，<b>Z-Library 排在第三方组第一位</b>。第三方的标记和那句地区说明保留。</p>
+  <p><b>三、</b>第 3 步<b>只推 DeepSeek</b>，不加「已有 OpenAI / Claude」的平铺入口。这一屏优先照顾没用过 AI 的人，会用的人自己会展开。</p>
+</div>
+
+</div>
+</body>
+</html>
