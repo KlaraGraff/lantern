@@ -9,7 +9,7 @@ import {
   bindingFromKeyboardEvent,
   bindingFromMouseEvent,
   formatPageTurnBinding,
-} from "./page-turn-bindings";
+} from "./reader-bindings";
 import {
   FONT_SIZE_MAX,
   FONT_SIZE_MIN,

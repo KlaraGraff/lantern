@@ -2,25 +2,6 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { claimZoomShortcuts } from "../../services/app-zoom";
 import type { FoliateView } from "./foliate-types";
 
-// One-time migration of `reader-zoom-${bookId}` keys written by PR #199.
-// That PR saved "100" on every default open, so every pre-upgrade book has
-// it even when the user never touched zoom. Under the new scheme, the
-// default is "fit" and "100" should mean the user explicitly chose 100%.
-// Rewrite legacy "100" → "fit" once, guarded by a global marker so new
-// explicit 100% saves aren't clobbered on subsequent opens.
-(() => {
-  try {
-    if (localStorage.getItem("reader-zoom-v2")) return;
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const k = localStorage.key(i);
-      if (k?.startsWith("reader-zoom-") && localStorage.getItem(k) === "100") {
-        localStorage.setItem(k, "fit");
-      }
-    }
-    localStorage.setItem("reader-zoom-v2", "1");
-  } catch { /* private-mode storage failures are non-fatal */ }
-})();
-
 interface ReaderZoomOptions {
   bookId: string | undefined;
   bookFormat: string | undefined;

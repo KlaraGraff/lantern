@@ -15,7 +15,6 @@ import { useAppZoom } from "./hooks/useAppZoom";
 import { openReaderWindow } from "./utils/openReaderWindow";
 import {
   installCustomFontFaces,
-  isCustomFontRecordList,
   loadCustomFonts,
   type CustomFontRecord,
 } from "./components/custom-fonts";
@@ -60,13 +59,7 @@ export default function App() {
     loadCustomFonts().catch((error) => console.error("Failed to load custom fonts:", error));
     loadEnhancedFontFace().catch(() => {});
     const unlistenFonts = listen<CustomFontRecord[]>("custom-fonts-changed", (event) => {
-      if (isCustomFontRecordList(event.payload)) {
-        installCustomFontFaces(event.payload);
-        return;
-      }
-      // Compatibility with an already-running backend from before the event
-      // acquired its font-list payload during development hot reloads.
-      loadCustomFonts().catch((error) => console.error("Failed to refresh custom fonts:", error));
+      installCustomFontFaces(event.payload);
     });
     const unlistenMcpOpen = isMainWindow
       ? listen<{ id?: string; cfi?: string | null }>("mcp:open-reader", (event) => {

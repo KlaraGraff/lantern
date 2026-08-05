@@ -25,7 +25,7 @@ import {
 import {
   DEFAULT_NEXT_PAGE_BINDING,
   DEFAULT_PREVIOUS_PAGE_BINDING,
-} from "../../components/page-turn-bindings.ts";
+} from "../../components/reader-bindings.ts";
 import {
   listenForSettingsChanged,
   notifySettingsChanged,

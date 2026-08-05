@@ -1,51 +1,11 @@
-//! `ai_lookup` — the word- and phrase-level definition command, its prompt
-//! (including the translation marker the frontend parses), and the reader's own
-//! lookup history that gets appended to that prompt.
+//! The reader's own lookup history — `word_memory_hint`, and the memory block
+//! appended to the learning-card prompt.
 
-use tauri::{AppHandle, State};
+use tauri::State;
 
-use super::prompt::{
-    book_reference_block, configured_explanation_mode, explanation_strategy, language_name,
-    truncate_utf8,
-};
-use super::stream::{ensure_stream_credentials_ready, spawn_routed_stream};
-use super::ChatMessage;
+use super::prompt::truncate_utf8;
 use crate::db::Db;
 use crate::error::AppResult;
-use crate::secrets::Secrets;
-
-const LOOKUP_TRANSLATION_MARKER: &str = "[[LANTERN_TRANSLATION]]";
-
-fn lookup_system_prompt(
-    kind: &str,
-    explanation_mode: &str,
-    cefr: &str,
-    translation_language: &str,
-    show_translation: bool,
-) -> String {
-    let should_show_translation = show_translation && !translation_language.is_empty();
-    let translation_prefix = if should_show_translation {
-        format!(
-            "Before the definition, provide a brief translation of the word/phrase in {}. The first line MUST be exactly `{}` followed immediately by the brief translation, then a newline. This marker is required machine-readable metadata, not a header. Keep the translation to a few words — no explanation, just the meaning. After that first line, proceed with the definition as usual. Do not put the marker anywhere except the first line.\n\n",
-            language_name(translation_language),
-            LOOKUP_TRANSLATION_MARKER,
-        )
-    } else {
-        String::new()
-    };
-    let explanation_prefix = format!("{}\n\n", explanation_strategy(explanation_mode, cefr));
-    let definition_language_prefix = format!("{translation_prefix}{explanation_prefix}");
-    let context_language_prefix = explanation_prefix;
-
-    let def_prefix = definition_language_prefix;
-    let ctx_prefix = &context_language_prefix;
-
-    match kind {
-        "definition" => format!("{}You are a reading assistant embedded in an ebook reader. The user selected a word or phrase and wants a dictionary-style definition.\n\nGive: pronunciation in IPA (if English), part of speech, and a concise definition in 1–2 sentences.\n\nIf the selection is a proper noun (person, place, historical event), give a brief factual identification instead.\n\nBe concise. No headers or labels.", def_prefix),
-        "context" => format!("{}You are a reading assistant embedded in an ebook reader. The user selected a word or phrase and wants to understand how it's used in the surrounding passage.\n\nExplain how the word is used in context. Consider the author's intent, tone, or any literary/idiomatic significance. Keep it to 2–3 sentences.\n\nBe concise. No headers or labels.", ctx_prefix),
-        _ => format!("{}You are a reading assistant embedded in an ebook reader. The user selected a word or phrase and wants to understand it.\n\nRespond in two parts:\n\n1. **Definition** — Give a dictionary-style entry: the word, pronunciation in IPA (if it's an English word), part of speech, and a concise definition in one sentence.\n\n2. **In context** — Explain how the word is used in the given passage. Consider the author's intent, tone, or any literary/idiomatic significance. Keep it to 2–3 sentences.\n\nIf the selection is a proper noun (person, place, historical event), replace the dictionary definition with a brief factual identification, then explain its relevance in context.\n\nDo not use headers or labels like \"Definition:\" or \"In context:\". Separate the two parts with a line break. Be concise.", def_prefix),
-    }
-}
 
 /// A previous definition is a whole card's worth of text; only its opening
 /// needs to travel into the next request for the model to tell "same sense"
@@ -54,9 +14,9 @@ const LOOKUP_MEMORY_DEFINITION_BYTES: usize = 200;
 
 /// What the user's own record says about this word.
 ///
-/// One fetch behind three consumers — the prose lookup prompt, the learning
-/// card prompt, and the card's provenance marker — so the line the reader is
-/// shown can never claim something the model was not told.
+/// One fetch behind two consumers — the learning card prompt and the card's
+/// provenance marker — so the line the reader is shown can never claim
+/// something the model was not told.
 pub(crate) struct LookupMemory {
     looked_up_times: Option<i64>,
     days_since_last_lookup: Option<i64>,
@@ -70,8 +30,8 @@ pub(crate) struct LookupMemory {
 }
 
 impl LookupMemory {
-    /// The prompt-facing projection. Field-for-field what both prompt blocks
-    /// serialise, so neither can drift from the other.
+    /// The prompt-facing projection: the subset of the record the model is
+    /// told about, kept separate from the fields the UI alone may read.
     fn record_json(&self) -> String {
         let mut record = serde_json::Map::new();
         if let Some(times) = self.looked_up_times {
@@ -181,28 +141,11 @@ pub(crate) fn lookup_memory(
     Some(memory)
 }
 
-/// The prose lookup card's block.
-///
-/// Appended to the system prompt rather than prefixed to it.
-/// `lookup_system_prompt`'s translation prefix owns the first line — the
-/// frontend parses a marker there — so a prefix that opens with anything else
-/// would break the translation strip.
-pub(crate) fn lookup_memory_block(
-    conn: &rusqlite::Connection,
-    word: &str,
-    now_ms: i64,
-) -> Option<String> {
-    Some(format!(
-        "The following is the user's own record for this word in Lantern:\n{}\n\nAnswer as a repeat encounter, not a first one — and keep the answer shorter, not longer:\n- When `previous_definition` is present, do not re-teach what it already covered. If this passage uses that same sense, confirm it in a few words and spend the rest on what this occurrence adds.\n- When it is present and this passage uses a different sense, lead with the contrast against it.\n- If `mastery` is \"mastered\", treat the word as known: skip the basic gloss even when the configured CEFR level would call for simpler language. The recorded state beats the level estimate.\n- Refer to the earlier lookup only when it carries information, such as a sense contrast. Never state counts or dates, never open with an acknowledgement, and never praise the user for reviewing.",
-        lookup_memory(conn, word, now_ms)?.record_json(),
-    ))
-}
-
 /// The structured learning card's block.
 ///
-/// Same facts as [`lookup_memory_block`], different closing instructions: the
-/// card's shape is fixed by the user's module configuration, so "answer
-/// shorter" has to become "fill the requested modules with what is new".
+/// The card's shape is fixed by the user's module configuration, so a repeat
+/// encounter cannot simply produce a shorter answer — it has to fill the
+/// requested modules with what is new.
 pub(crate) fn learning_card_memory_block(
     conn: &rusqlite::Connection,
     word: &str,
@@ -240,146 +183,9 @@ pub fn word_memory_hint(word: String, db: State<'_, Db>) -> AppResult<Option<Wor
     )
 }
 
-#[allow(clippy::too_many_arguments)]
-#[tauri::command]
-pub async fn ai_lookup(
-    word: String,
-    sentence: String,
-    book_title: Option<String>,
-    book_author: Option<String>,
-    chapter: Option<String>,
-    request_id: String,
-    kind: Option<String>,
-    // `true` only when the user asked again after a failure, so the router may
-    // look past a cooldown it recorded itself.
-    retry: Option<bool>,
-    app: AppHandle,
-    db: State<'_, Db>,
-    secrets: State<'_, Secrets>,
-) -> AppResult<()> {
-    let (explanation_mode, cefr, translation_language, show_translation, memory) = {
-        let conn = db.reader();
-        let get = |key: &str| -> Option<String> {
-            conn.query_row(
-                "SELECT value FROM settings WHERE key = ?1",
-                rusqlite::params![key],
-                |row| row.get(0),
-            )
-            .ok()
-        };
-        let translation_language = get("translation_language")
-            .or_else(|| get("lookup_translation_language"))
-            .map(|lang| lang.trim().to_string())
-            .filter(|lang| !lang.is_empty())
-            .unwrap_or_else(|| "zh".to_string());
-        (
-            configured_explanation_mode(get("explanation_mode").as_deref(), &translation_language)
-                .to_string(),
-            get("cefr_level").unwrap_or_else(|| "B1".to_string()),
-            translation_language,
-            get("show_translation").unwrap_or_else(|| "false".to_string()),
-            lookup_memory_block(&conn, &word, chrono::Utc::now().timestamp_millis()),
-        )
-    };
-
-    let user_content = format!(
-        "Word/phrase: \"{}\"\nSurrounding text: \"{}\"",
-        word, sentence
-    );
-    let kind = kind.unwrap_or_else(|| "full".to_string());
-
-    let mut system_prompt = lookup_system_prompt(
-        kind.as_str(),
-        &explanation_mode,
-        &cefr,
-        translation_language.trim(),
-        show_translation == "true",
-    );
-    if let Some(reference) = book_reference_block(
-        book_title.as_deref(),
-        book_author.as_deref(),
-        chapter.as_deref(),
-    ) {
-        system_prompt.push_str("\n\n");
-        system_prompt.push_str(&reference);
-    }
-    if let Some(memory) = memory {
-        system_prompt.push_str("\n\n");
-        system_prompt.push_str(&memory);
-    }
-
-    let max_tokens = match kind.as_str() {
-        "definition" => Some(128),
-        "context" => Some(192),
-        _ => Some(256),
-    };
-
-    let messages = vec![
-        ChatMessage {
-            role: "system".to_string(),
-            content: system_prompt,
-        },
-        ChatMessage {
-            role: "user".to_string(),
-            content: user_content,
-        },
-    ];
-
-    let event_name = format!("ai-lookup-chunk-{}", request_id);
-
-    ensure_stream_credentials_ready(&db, &secrets)?;
-    spawn_routed_stream(
-        app,
-        db.inner().clone(),
-        secrets.inner().clone(),
-        messages,
-        event_name,
-        max_tokens,
-        crate::ai::router::AiRequestPurpose::Utility,
-        crate::ai::router::retry_mode(retry),
-        request_id,
-    );
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn lookup_definition_prompt_marks_translation_when_target_differs() {
-        let p = lookup_system_prompt("definition", "english_by_level", "B1", "zh", true);
-        assert!(p.contains(LOOKUP_TRANSLATION_MARKER));
-        assert!(p.contains("Chinese (Simplified)"));
-
-        let non_english_lookup = lookup_system_prompt("definition", "chinese", "B1", "en", true);
-        assert!(non_english_lookup.contains(LOOKUP_TRANSLATION_MARKER));
-        assert!(non_english_lookup.contains("brief translation of the word/phrase in English"));
-        assert!(non_english_lookup.contains("Write explanations in clear Chinese (Simplified)."));
-
-        let disabled = lookup_system_prompt("definition", "english_by_level", "B1", "zh", false);
-        assert!(!disabled.contains(LOOKUP_TRANSLATION_MARKER));
-    }
-
-    #[test]
-    fn lookup_context_prompt_never_marks_english_translation() {
-        let p = lookup_system_prompt("context", "english_by_level", "B1", "zh", true);
-        assert!(!p.contains(LOOKUP_TRANSLATION_MARKER));
-        assert!(!p.to_lowercase().contains("brief translation"));
-    }
-
-    #[test]
-    fn lookup_prompt_uses_the_shared_explanation_mode() {
-        let zh = lookup_system_prompt("definition", "chinese", "B1", "en", true);
-        assert!(zh.contains("Write explanations in clear Chinese (Simplified)."));
-    }
-
-    #[test]
-    fn lookup_english_emits_explicit_english_directive() {
-        let p = lookup_system_prompt("definition", "english_by_level", "B2", "", false);
-        assert!(p.contains("Write explanations in English at CEFR B2."));
-    }
 
     const DAY_MS: i64 = 86_400_000;
     const NOW_MS: i64 = 1_800_000_000_000;
@@ -441,12 +247,6 @@ mod tests {
     }
 
     #[test]
-    fn lookup_memory_stays_absent_for_a_word_with_no_record() {
-        let conn = library_with_books(&["b1"]);
-        assert_eq!(lookup_memory_block(&conn, "resign", NOW_MS), None);
-    }
-
-    #[test]
     fn lookup_memory_reports_history_alone() {
         let conn = library_with_books(&["b1"]);
         record_lookup(
@@ -459,7 +259,7 @@ mod tests {
             1,
         );
 
-        let block = lookup_memory_block(&conn, "resign", NOW_MS).unwrap();
+        let block = learning_card_memory_block(&conn, "resign", NOW_MS).unwrap();
         assert!(block.contains("\"looked_up_times\":1"), "{block}");
         assert!(block.contains("\"days_since_last_lookup\":12"), "{block}");
         assert!(block.contains("to give up a position"), "{block}");
@@ -471,7 +271,7 @@ mod tests {
         let conn = library_with_books(&["b1"]);
         save_word(&conn, "v1", "b1", "resign", "learning");
 
-        let block = lookup_memory_block(&conn, "resign", NOW_MS).unwrap();
+        let block = learning_card_memory_block(&conn, "resign", NOW_MS).unwrap();
         assert!(block.contains("\"mastery\":\"learning\""), "{block}");
         assert!(block.contains("\"reviews\":3"), "{block}");
         assert!(!block.contains("\"looked_up_times\""), "{block}");
@@ -486,7 +286,7 @@ mod tests {
         record_lookup(&conn, "b1", "cfi/2", "Resign,", "", NOW_MS - 5 * DAY_MS, 1);
         record_lookup(&conn, "b2", "cfi/1", "resign", "", NOW_MS - DAY_MS, 1);
 
-        let block = lookup_memory_block(&conn, "resign", NOW_MS).unwrap();
+        let block = learning_card_memory_block(&conn, "resign", NOW_MS).unwrap();
         assert!(block.contains("\"looked_up_times\":4"), "{block}");
         assert!(block.contains("\"days_since_last_lookup\":1"), "{block}");
     }
@@ -514,7 +314,7 @@ mod tests {
         );
         record_lookup(&conn, "b1", "cfi/3", "resign", "", NOW_MS - DAY_MS, 1);
 
-        let block = lookup_memory_block(&conn, "resign", NOW_MS).unwrap();
+        let block = learning_card_memory_block(&conn, "resign", NOW_MS).unwrap();
         assert!(block.contains("newer sense"), "{block}");
         assert!(!block.contains("older sense"), "{block}");
     }
@@ -527,7 +327,7 @@ mod tests {
         save_word(&conn, "v1", "b1", "resign", "new");
         save_word(&conn, "v2", "b2", "resign", "mastered");
 
-        let block = lookup_memory_block(&conn, "resign", NOW_MS).unwrap();
+        let block = learning_card_memory_block(&conn, "resign", NOW_MS).unwrap();
         assert!(block.contains("\"mastery\":\"mastered\""), "{block}");
     }
 
@@ -550,22 +350,18 @@ mod tests {
     // The title is the one fact the prompt must not receive: the block forbids
     // stating counts and dates, and a book title is an invitation to do both.
     #[test]
-    fn neither_prompt_block_leaks_the_book_title() {
+    fn the_prompt_block_does_not_leak_the_book_title() {
         let conn = library_with_books(&["b1"]);
         conn.execute("UPDATE books SET title = 'Dubliners' WHERE id = 'b1'", [])
             .unwrap();
         save_word(&conn, "v1", "b1", "resign", "mastered");
 
-        let prose = lookup_memory_block(&conn, "resign", NOW_MS).unwrap();
         let card = learning_card_memory_block(&conn, "resign", NOW_MS).unwrap();
-        assert!(!prose.contains("Dubliners"), "{prose}");
         assert!(!card.contains("Dubliners"), "{card}");
     }
 
-    // Both cards are shaped by the same record; only the closing instructions
-    // differ, because one writes prose and the other fills fixed modules.
     #[test]
-    fn the_card_block_carries_the_same_record_as_the_prose_block() {
+    fn the_card_block_carries_the_whole_record() {
         let conn = library_with_books(&["b1"]);
         record_lookup(
             &conn,
@@ -586,7 +382,6 @@ mod tests {
         );
         assert!(card.contains("\"mastery\":\"mastered\""), "{card}");
         assert!(card.contains("requested modules"), "{card}");
-        assert!(!card.contains("keep the answer shorter"), "{card}");
     }
 
     #[test]
@@ -609,7 +404,7 @@ mod tests {
         );
         save_word(&conn, "v1", "b1", "resign", "learning");
 
-        let block = lookup_memory_block(&conn, "  Resign, ", NOW_MS).unwrap();
+        let block = learning_card_memory_block(&conn, "  Resign, ", NOW_MS).unwrap();
         assert!(block.contains("\"looked_up_times\":1"), "{block}");
         assert!(block.contains("\"mastery\":\"learning\""), "{block}");
     }
@@ -628,27 +423,9 @@ mod tests {
             1,
         );
 
-        let block = lookup_memory_block(&conn, "resign", NOW_MS).unwrap();
+        let block = learning_card_memory_block(&conn, "resign", NOW_MS).unwrap();
         let kept = "辞".repeat(LOOKUP_MEMORY_DEFINITION_BYTES / "辞".len());
         assert!(block.contains(&kept), "{block}");
         assert!(!block.contains(&format!("{kept}辞")), "{block}");
-    }
-
-    // The translation marker is a machine contract with the frontend: the model
-    // is told the first line must be exactly that marker. Appending the memory
-    // block must leave that instruction where it is.
-    #[test]
-    fn lookup_memory_appends_behind_the_translation_marker_rule() {
-        let conn = library_with_books(&["b1"]);
-        save_word(&conn, "v1", "b1", "resign", "mastered");
-        let mut prompt = lookup_system_prompt("definition", "english_by_level", "B1", "zh", true);
-        let memory = lookup_memory_block(&conn, "resign", NOW_MS).unwrap();
-        prompt.push_str("\n\n");
-        prompt.push_str(&memory);
-
-        let marker = prompt.find(LOOKUP_TRANSLATION_MARKER).unwrap();
-        let record = prompt.find("the user's own record").unwrap();
-        assert!(marker < record);
-        assert!(prompt.starts_with("Before the definition"));
     }
 }

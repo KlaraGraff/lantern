@@ -105,16 +105,12 @@ const SELECT_COLS: &str = "id, book_id, word, definition, context_sentence, cfi,
 #[cfg(test)]
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 const VOCAB_BACKUP_SCHEMA: &str = "lantern-vocabulary";
-/// Backups written before the Quill→Lantern rename carry the old identity.
-/// Import still accepts them so an existing backup file stays restorable;
-/// export only ever writes the current name.
-const LEGACY_VOCAB_BACKUP_SCHEMA: &str = "quill-vocabulary";
 const VOCAB_BACKUP_VERSION: u32 = 1;
 const MAX_VOCAB_IMPORT_BYTES: usize = 10 * 1024 * 1024;
 const MAX_VOCAB_IMPORT_WORDS: usize = 50_000;
 
 fn is_known_vocab_backup_schema(schema: &str) -> bool {
-    schema == VOCAB_BACKUP_SCHEMA || schema == LEGACY_VOCAB_BACKUP_SCHEMA
+    schema == VOCAB_BACKUP_SCHEMA
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1586,32 +1582,6 @@ mod tests {
     #[test]
     fn vocab_import_csv_accepts_a_valid_backup_row() {
         assert_eq!(import_one_csv_row(VOCAB_BACKUP_SCHEMA), 1);
-    }
-
-    #[test]
-    fn vocab_import_csv_still_accepts_the_pre_rename_schema() {
-        assert_eq!(import_one_csv_row(LEGACY_VOCAB_BACKUP_SCHEMA), 1);
-    }
-
-    #[test]
-    fn vocab_import_json_still_accepts_the_pre_rename_schema() {
-        let (_dir, db, writer) = setup_import_db();
-        insert_import_book(&db, "book-1");
-        let legacy = format!(
-            r#"{{"schema":"{LEGACY_VOCAB_BACKUP_SCHEMA}","version":1,"exported_at":0,"words":[]}}"#
-        );
-
-        let result = do_import_vocab_backup(
-            &legacy,
-            VocabImportFormat::Json,
-            VocabImportConflictPolicy::Skip,
-            false,
-            &db,
-            &writer,
-        )
-        .unwrap();
-
-        assert_eq!(result.imported, 0);
     }
 
     #[test]

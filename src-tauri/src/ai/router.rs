@@ -2242,62 +2242,6 @@ pub(crate) fn embedding_source(
     }))
 }
 
-pub fn migrate_embedding_source(db: &Db, secrets: &Secrets) -> AppResult<()> {
-    let should_migrate = {
-        let conn = db.reader();
-        let vector_enabled = conn
-            .query_row(
-                "SELECT value FROM settings WHERE key = 'ai_vector_retrieval'",
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .ok()
-            .is_some_and(|value| value == "true");
-        let explicit = conn
-            .query_row(
-                "SELECT value FROM settings WHERE key = 'ai_embedding_configured'",
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .ok()
-            .is_some_and(|value| value == "true");
-        vector_enabled && !explicit
-    };
-    if !should_migrate {
-        return Ok(());
-    }
-    let Some(source) = embedding_source(db, secrets)? else {
-        return Ok(());
-    };
-    if let Some(credential) = credentials_for(db, &source.profile_id, now())?
-        .into_iter()
-        .next()
-    {
-        let _ = secrets.copy_local(
-            &credential.secret_ref,
-            crate::ai::grounding::vector::EMBEDDING_SECRET_REF,
-        )?;
-    }
-    let conn = db
-        .conn
-        .lock()
-        .map_err(|error| AppError::Other(error.to_string()))?;
-    let dimensions = source.dimensions.to_string();
-    for (key, value) in [
-        ("ai_embedding_endpoint", source.endpoint.as_str()),
-        ("ai_embedding_model", source.model.as_str()),
-        ("ai_embedding_dimensions", dimensions.as_str()),
-        ("ai_embedding_configured", "true"),
-    ] {
-        conn.execute(
-            "INSERT INTO settings (key, value) VALUES (?1, ?2)
-             ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            params![key, value],
-        )?;
-    }
-    Ok(())
-}
-
 pub fn list_profiles(db: &Db) -> AppResult<Vec<AiProfileView>> {
     profiles(db, false).map(|items| items.into_iter().map(|item| item.view).collect())
 }

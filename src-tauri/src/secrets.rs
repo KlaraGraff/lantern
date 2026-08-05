@@ -3,7 +3,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use crate::db::Db;
 use crate::error::{AppError, AppResult};
 
 const SENSITIVE_KEYS: &[&str] = &[
@@ -13,16 +12,6 @@ const SENSITIVE_KEYS: &[&str] = &[
     "oauth_refresh_token",
     "oauth_expires_at",
     "oauth_account_id",
-];
-
-/// Tables that belonged to the v1.4 encrypted vault and to the per-item
-/// Keychain import that preceded it. Both import paths are gone (see the
-/// module doc), so the tables are dropped on open rather than left behind
-/// holding rows nothing can read.
-const RETIRED_VAULT_TABLES: &[&str] = &[
-    "encrypted_secrets",
-    "legacy_secret_candidates",
-    "secret_migration_tombstones",
 ];
 
 #[derive(Clone)]
@@ -88,9 +77,6 @@ impl Secrets {
             return Err(AppError::Other(format!(
                 "CREDENTIAL_DB_JOURNAL_MODE_UNSAFE:{journal_mode}"
             )));
-        }
-        for table in RETIRED_VAULT_TABLES {
-            conn.execute_batch(&format!("DROP TABLE IF EXISTS {table};"))?;
         }
         let has_created_at = conn
             .prepare("PRAGMA table_info(secrets)")?
@@ -181,24 +167,6 @@ impl Secrets {
         Self::store_local_in_transaction(&tx, key, value)?;
         tx.commit()?;
         Ok(())
-    }
-
-    pub fn copy_local(&self, source: &str, target: &str) -> AppResult<bool> {
-        let _operation = self
-            .operation_lock
-            .lock()
-            .map_err(|error| AppError::Other(error.to_string()))?;
-        let conn = self
-            .conn
-            .lock()
-            .map_err(|error| AppError::Other(error.to_string()))?;
-        let changed = conn.execute(
-            "INSERT INTO secrets (key, value, created_at)
-             SELECT ?2, value, ?3 FROM secrets WHERE key = ?1
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value, created_at = excluded.created_at",
-            params![source, target, chrono::Utc::now().timestamp_millis()],
-        )?;
-        Ok(changed > 0)
     }
 
     pub fn set_many(&self, values: &[(&str, Option<&str>)]) -> AppResult<()> {
@@ -344,53 +312,6 @@ impl Secrets {
         Ok(())
     }
 
-    /// Move older plaintext settings into the local-only credential database.
-    pub fn migrate_from_settings(&self, db: &Db) -> AppResult<()> {
-        let values: Vec<(String, String)> = {
-            let db_conn = db
-                .conn
-                .lock()
-                .map_err(|error| AppError::Other(error.to_string()))?;
-            SENSITIVE_KEYS
-                .iter()
-                .filter_map(|key| {
-                    db_conn
-                        .query_row(
-                            "SELECT value FROM settings WHERE key = ?1",
-                            params![key],
-                            |row| row.get::<_, String>(0),
-                        )
-                        .ok()
-                        .map(|value| ((*key).to_string(), value))
-                })
-                .collect()
-        };
-        if values.is_empty() {
-            return Ok(());
-        }
-        {
-            let conn = self
-                .conn
-                .lock()
-                .map_err(|error| AppError::Other(error.to_string()))?;
-            let tx = conn.unchecked_transaction()?;
-            for (key, value) in &values {
-                Self::store_local_in_transaction(&tx, key, value)?;
-            }
-            tx.commit()?;
-        }
-        let db_conn = db
-            .conn
-            .lock()
-            .map_err(|error| AppError::Other(error.to_string()))?;
-        let tx = db_conn.unchecked_transaction()?;
-        for (key, _) in values {
-            tx.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
-        }
-        tx.commit()?;
-        Ok(())
-    }
-
     pub fn has_stored_secret_metadata(&self, key: &str) -> bool {
         let Ok(conn) = self.conn.lock() else {
             return false;
@@ -508,34 +429,6 @@ mod tests {
         secrets.restore_state(&snapshot).unwrap();
 
         assert_eq!(secrets.get("ai_api_key/absent").unwrap(), None);
-    }
-
-    /// A secrets.db written before the vault was removed still carries its
-    /// three tables. Opening it must drop them rather than leave unreadable
-    /// ciphertext on disk.
-    #[test]
-    fn opening_an_old_file_drops_the_retired_vault_tables() {
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE encrypted_secrets (key TEXT PRIMARY KEY, ciphertext BLOB);
-             CREATE TABLE legacy_secret_candidates (key TEXT PRIMARY KEY);
-             CREATE TABLE secret_migration_tombstones (key TEXT PRIMARY KEY);
-             INSERT INTO encrypted_secrets VALUES ('ai_api_key/old', x'00');",
-        )
-        .unwrap();
-
-        Secrets::initialize_schema(&conn).unwrap();
-
-        for table in RETIRED_VAULT_TABLES {
-            let exists: i64 = conn
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
-                    params![table],
-                    |row| row.get(0),
-                )
-                .unwrap();
-            assert_eq!(exists, 0, "{table} should have been dropped");
-        }
     }
 
     #[cfg(unix)]

@@ -646,18 +646,6 @@ pub fn set_word_mark_rule_enabled(
     set_word_mark_rule_enabled_inner(&book_id, &word, enabled, color.as_deref(), &db, &sync)
 }
 
-/// Compatibility alias for callers that used the first implementation.
-#[tauri::command]
-pub fn upsert_word_mark(
-    book_id: String,
-    word: String,
-    color: Option<String>,
-    db: State<'_, Db>,
-    sync: State<'_, SyncWriter>,
-) -> AppResult<WordMarkRule> {
-    set_word_mark_rule_enabled_inner(&book_id, &word, true, color.as_deref(), &db, &sync)
-}
-
 /// Compatibility wrapper. Cancellation now persists an enabled=false rule so
 /// subsequent lookups do not recreate it.
 #[tauri::command]

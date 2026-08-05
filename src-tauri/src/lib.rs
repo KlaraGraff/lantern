@@ -652,13 +652,8 @@ pub fn run() {
             );
 
             let secrets = Secrets::init(&local_dir).expect("failed to initialize secrets store");
-            secrets
-                .migrate_from_settings(&db)
-                .expect("failed to migrate secrets");
             ai::router::migrate_legacy_config(&db, &secrets)
                 .expect("failed to migrate AI profile configuration");
-            ai::router::migrate_embedding_source(&db, &secrets)
-                .expect("failed to migrate embedding configuration");
             let sync_writer = SyncWriter::new(device.device_uuid.clone());
             sync_writer.set_process_lock_path(local_dir.join(".sync-transition.lock"));
             if sync_enabled {
@@ -892,7 +887,6 @@ pub fn run() {
             commands::notes::list_notes,
             commands::notes::list_context_notes,
             commands::annotations::list_annotations,
-            commands::word_marks::upsert_word_mark,
             commands::word_marks::ensure_word_mark_rule,
             commands::word_marks::find_covering_word_mark_rule,
             commands::word_marks::set_word_mark_rule_enabled,
@@ -925,7 +919,6 @@ pub fn run() {
             commands::ai::ai_custom_action,
             commands::ai::ai_xray,
             commands::ai::ai_word_forms,
-            commands::ai::ai_lookup,
             commands::ai::word_memory_hint,
             commands::ai::ai_explain,
             commands::ai::ai_generate_title,

@@ -10,7 +10,7 @@ import type { ReaderSettingsState } from "../../components/ReaderSettings";
 import {
   keyboardEventMatchesBinding,
   mouseEventMatchesBinding,
-} from "../../components/page-turn-bindings";
+} from "../../components/reader-bindings";
 import { appZoomCommandFor } from "../../services/app-zoom";
 import { createKeyboardPageTurnRepeater } from "../../components/keyboard-page-turn";
 import type { KeyboardPageTurnRepeater } from "../../components/keyboard-page-turn";

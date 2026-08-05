@@ -69,16 +69,6 @@ export function installCustomFontFaces(records: CustomFontRecord[]) {
   window.dispatchEvent(new CustomEvent("custom-font-faces-loaded", { detail: records }));
 }
 
-export function isCustomFontRecordList(value: unknown): value is CustomFontRecord[] {
-  return Array.isArray(value) && value.every((font) => (
-    font
-    && typeof font === "object"
-    && typeof (font as Partial<CustomFontRecord>).id === "string"
-    && typeof (font as Partial<CustomFontRecord>).family_name === "string"
-    && typeof (font as Partial<CustomFontRecord>).file_path === "string"
-  ));
-}
-
 export async function loadCustomFonts() {
   const records = await invoke<CustomFontRecord[]>("list_custom_fonts");
   installCustomFontFaces(records);

@@ -265,13 +265,6 @@ function parseContextBudget(value: unknown): ContextBudgetMetadata | undefined {
 }
 
 function parseAiChatResult(value: unknown): AiChatResult {
-  // Compatibility with v1.5 development builds that returned sources directly.
-  if (Array.isArray(value)) {
-    return {
-      sources: parseCitedSources(value) ?? [],
-      spoilerGuard: { active: false, wholeBookIntent: false, progress: 0 },
-    };
-  }
   if (!value || typeof value !== "object") {
     return {
       sources: [],

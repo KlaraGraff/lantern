@@ -59,7 +59,7 @@ export default function FootnotePopover({
     };
   }, [contentHost]);
 
-  // Position clamping, mirroring LookupPopover/ExplainPopover.
+  // Position clamping, mirroring ExplainPopover.
   useEffect(() => {
     const el = popoverRef.current;
     if (!el) return;
