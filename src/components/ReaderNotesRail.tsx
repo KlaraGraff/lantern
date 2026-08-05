@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ChevronLeft, FileText, Loader2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
+  isNotesTruncated,
   layoutReaderRailNotes,
   readerNoteDraftKey,
   type ReaderNoteAnchor,
@@ -21,7 +22,9 @@ interface Note {
   updated_at: number;
 }
 
-interface NotePage { notes: Note[]; total: number; }
+interface NotePage { notes: Note[]; total: number; next_cursor: string | null; }
+
+const NOTES_PAGE_SIZE = 100;
 
 export type { ReaderNoteAnchor } from "./reader-notes-rail";
 
@@ -108,7 +111,10 @@ export default function ReaderNotesRail({
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [deleteFailed, setDeleteFailed] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const handledSelectionRef = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -122,10 +128,11 @@ export default function ReaderNotesRail({
         updatedAfter: null,
         updatedBefore: null,
         cursor: null,
-        limit: 100,
+        limit: NOTES_PAGE_SIZE,
       });
       setNotes(page.notes);
       setTotal(page.total);
+      setNextCursor(page.next_cursor);
     } catch {
       setError(true);
     } finally {
@@ -134,6 +141,29 @@ export default function ReaderNotesRail({
   }, [bookId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await invoke<NotePage>("list_notes", {
+        bookId,
+        anchorKind: null,
+        search: null,
+        updatedAfter: null,
+        updatedBefore: null,
+        cursor: nextCursor,
+        limit: NOTES_PAGE_SIZE,
+      });
+      setNotes((current) => [...current, ...page.notes]);
+      setTotal(page.total);
+      setNextCursor(page.next_cursor);
+    } catch {
+      setError(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [bookId, loadingMore, nextCursor]);
 
   const openEditor = useCallback((note: Note | null = null, anchor?: ReaderNoteAnchor) => {
     const nextAnchor = note ? noteAnchor(note) : anchor ?? fallbackAnchor(currentCfi());
@@ -144,6 +174,7 @@ export default function ReaderNotesRail({
     setDraft(readDraft(nextDraftKey, note?.content ?? ""));
     setDeleting(null);
     setSaveFailed(false);
+    setDeleteFailed(false);
     setView("editor");
   }, [bookId, currentCfi]);
 
@@ -167,8 +198,29 @@ export default function ReaderNotesRail({
   const closeEditor = () => {
     setDeleting(null);
     setSaveFailed(false);
+    setDeleteFailed(false);
     setView("rail");
   };
+
+  // Escape leaves the editor/index view without discarding the draft: the
+  // draft is already persisted to localStorage on every keystroke, and
+  // closeEditor never clears it (only save/delete do). One layer at a time —
+  // an open delete confirmation is dismissed first, so Escape never both
+  // cancels the confirmation and walks the user out of the note behind it.
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setDeleteFailed(false);
+      if (deleting) {
+        setDeleting(null);
+        return;
+      }
+      setSaveFailed(false);
+      setView((current) => (current === "rail" ? current : "rail"));
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [deleting]);
 
   const save = async () => {
     if (!draft.trim() || saving || !editingAnchor) return;
@@ -203,6 +255,7 @@ export default function ReaderNotesRail({
   };
 
   const remove = async (note: Note) => {
+    setDeleteFailed(false);
     try {
       await invoke("delete_note", { id: note.id });
       clearDraft(draftKey);
@@ -214,7 +267,8 @@ export default function ReaderNotesRail({
       setDraft("");
       setView("rail");
     } catch {
-      setError(true);
+      setDeleting(null);
+      setDeleteFailed(true);
     }
   };
 
@@ -244,6 +298,7 @@ export default function ReaderNotesRail({
   );
   const railNotes = useMemo(() => railLayout.map(({ id, top }) => ({ note: railSourceNotes.find((candidate) => candidate.id === id)!, top })), [railLayout, railSourceNotes]);
   const railHeight = railLayout.length === 0 ? 0 : railLayout[railLayout.length - 1].top + 162;
+  const truncated = isNotesTruncated(total, notes.length);
 
   return <aside aria-label={t("readerNotes.title")} className="flex h-full min-h-0 w-full flex-col border-l border-border bg-bg-muted max-[1100px]:h-[238px] max-[1100px]:border-l-0 max-[1100px]:border-t">
     <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 max-[1100px]:h-10">
@@ -252,6 +307,7 @@ export default function ReaderNotesRail({
       <button type="button" onClick={() => openEditor()} aria-label={t("readerNotes.new")} title={t("readerNotes.new")} className="grid size-7 place-items-center rounded-md text-text-muted hover:bg-bg-input"><Plus size={17} /></button>
     </header>
     {error && <div role="alert" className="mx-3 mt-3 flex items-center gap-2 rounded-md bg-danger-bg p-2 text-[11px] text-danger-text"><span className="min-w-0 flex-1">{t("readerNotes.loadFailed")}</span><button type="button" onClick={() => void refresh()} className="font-medium">{t("common.retry")}</button></div>}
+    {deleteFailed && <div role="alert" className="mx-3 mt-3 flex items-center gap-2 rounded-md bg-danger-bg p-2 text-[11px] text-danger-text"><span className="min-w-0 flex-1">{t("readerNotes.deleteFailed")}</span></div>}
     {loading ? <div className="grid min-h-0 flex-1 place-items-center text-text-muted"><Loader2 size={18} className="animate-spin motion-reduce:animate-none" /></div> : view === "editor" ? <div className="min-h-0 flex-1 overflow-auto p-3 max-[1100px]:grid max-[1100px]:grid-cols-[minmax(150px,220px)_minmax(0,1fr)] max-[1100px]:gap-x-3">
       {saveFailed && <div role="alert" className="mb-3 rounded-md bg-danger-bg p-2 text-[11px] text-danger-text max-[1100px]:col-span-2">{t("readerNotes.saveFailed")}</div>}
       {editingAnchor?.selectedText && <blockquote className="mb-3 border-l-2 border-accent/40 pl-2 text-[12px] leading-5 text-text-muted">{editingAnchor.selectedText}</blockquote>}
@@ -270,6 +326,13 @@ export default function ReaderNotesRail({
         {railNotes.map(({ note, top }) => <NoteCard key={note.id} note={note} top={top} formatDate={formatDate} locateLabel={t("readerNotes.locate")} editLabel={t("common.edit")} onEdit={openEditor} onNavigate={onNavigate} />)}
       </div></div> : <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {visible.map((note) => <NoteCard key={note.id} note={note} formatDate={formatDate} locateLabel={t("readerNotes.locate")} editLabel={t("common.edit")} onEdit={openEditor} onNavigate={onNavigate} />)}
+        {view === "index" && truncated && <div role="status" className="mt-2 rounded-md bg-bg-input p-2 text-center text-[11px] text-text-muted">
+          <p>{t("readerNotes.truncated", { loaded: notes.length, total })}</p>
+          <button type="button" onClick={() => void loadMore()} disabled={loadingMore} className="mt-1.5 inline-flex items-center gap-1 font-medium text-accent-text disabled:opacity-60">
+            {loadingMore && <Loader2 size={12} className="animate-spin motion-reduce:animate-none" />}
+            {loadingMore ? t("readerNotes.loadingMore") : t("readerNotes.loadMore")}
+          </button>
+        </div>}
       </div>}
       {view === "rail" && <footer className="shrink-0 border-t border-border p-2"><button type="button" onClick={() => setView("index")} className="w-full rounded-md py-1.5 text-[12px] text-text-muted hover:bg-bg-input">{t("readerNotes.viewAll")}</button></footer>}
     </>}

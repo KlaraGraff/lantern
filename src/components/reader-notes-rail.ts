@@ -17,6 +17,11 @@ export interface ReaderRailNoteLayout {
   top: number;
 }
 
+/** The list view fetched fewer notes than the backend reports exist; the user must be told. */
+export function isNotesTruncated(total: number, loadedCount: number): boolean {
+  return total > loadedCount;
+}
+
 /** A new-note draft is scoped to a book and either the saved note or its source location. */
 export function readerNoteDraftKey(bookId: string, noteId: string | null, anchor: ReaderNoteAnchor): string {
   const identity = noteId ?? `new:${anchor.anchorKind}:${anchor.location ?? "unanchored"}`;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { layoutReaderRailNotes, readerNoteDraftKey } from "../src/components/reader-notes-rail.ts";
+import { isNotesTruncated, layoutReaderRailNotes, readerNoteDraftKey } from "../src/components/reader-notes-rail.ts";
 
 test("draft keys isolate books, saved notes, and unsaved anchors", () => {
   const anchor = { anchorKind: "selection" as const, location: "epubcfi(/6/4)", selectedText: "Quote" };
@@ -22,4 +22,10 @@ test("rail cards follow visible anchors and never overlap", () => {
     { id: "later", top: 340 },
     { id: "unknown", top: 452 },
   ]);
+});
+
+test("a fetched page smaller than the backend total is reported as truncated", () => {
+  assert.equal(isNotesTruncated(128, 100), true);
+  assert.equal(isNotesTruncated(100, 100), false);
+  assert.equal(isNotesTruncated(0, 0), false);
 });
