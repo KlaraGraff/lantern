@@ -1,6 +1,6 @@
 use rusqlite::{params, OptionalExtension};
-use serde::Serialize;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::ai::router::{self, AiCredentialView, AiProfileView};
@@ -29,6 +29,12 @@ const READER_BOOK_SETTING_KEYS: &[&str] = &[
     "show_mastered_markers",
 ];
 
+/// The global `settings` key a per-book `book_settings` key promotes into.
+///
+/// `theme`/`font` are renamed because the global rows predate the per-book ones.
+/// The four marker toggles reuse their own name: global and per-book live in
+/// different tables, so there is no collision, and one name for one concept is
+/// less to get wrong than a second spelling that exists only to be different.
 fn reader_global_key(book_key: &str) -> Option<&'static str> {
     match book_key {
         "theme" => Some("reader_theme"),
@@ -43,8 +49,21 @@ fn reader_global_key(book_key: &str) -> Option<&'static str> {
         "reading_mode" => Some("reading_mode"),
         "page_columns" => Some("page_columns"),
         "margins" => Some("margins"),
+        "show_lookup_markers" => Some("show_lookup_markers"),
+        "show_new_vocab_markers" => Some("show_new_vocab_markers"),
+        "show_learning_markers" => Some("show_learning_markers"),
+        "show_mastered_markers" => Some("show_mastered_markers"),
         _ => None,
     }
+}
+
+/// Whether a global `settings` key is one the reader owns and may therefore be
+/// written by the promotion-undo command. Without this the undo payload would
+/// be an arbitrary-key write path into `settings`, reachable from the webview.
+fn is_reader_global_key(key: &str) -> bool {
+    READER_BOOK_SETTING_KEYS
+        .iter()
+        .any(|book_key| reader_global_key(book_key) == Some(key))
 }
 
 fn validate_reader_book_keys(keys: &[String]) -> AppResult<()> {
@@ -515,10 +534,32 @@ pub struct ReaderSettingConflict {
     pub conflicting_keys: Vec<String>,
 }
 
+/// One `book_settings` row that promotion deleted, kept whole so undo can put
+/// it back on the book it came from rather than on whatever book is open now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromotedBookSetting {
+    pub book_id: String,
+    pub key: String,
+    pub value: String,
+}
+
+/// Everything promotion displaced, in the shape the frontend holds until the
+/// undo toast expires and hands straight back to `undo_promote_book_settings`.
+///
+/// `globals` maps a global key to the value it held **before** the promotion.
+/// `None` means the key had no row at all, and undo must delete it — writing
+/// `""` there would leave a row that resolves to a value the user never chose.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReaderSettingsPromotionUndo {
+    pub globals: HashMap<String, Option<String>>,
+    pub book_settings: Vec<PromotedBookSetting>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ReaderSettingsPromotion {
     pub settings: HashMap<String, String>,
     pub promoted_keys: Vec<String>,
+    pub undo: ReaderSettingsPromotionUndo,
 }
 
 #[tauri::command]
@@ -675,7 +716,18 @@ pub(crate) fn do_promote_book_settings_to_global(
         }
 
         let mut changed_settings = HashMap::new();
+        let mut undo = ReaderSettingsPromotionUndo::default();
         for (_, global_key, value) in &promoted {
+            // Read before the upsert: `ON CONFLICT DO UPDATE` is what makes this
+            // a one-way door, and this row is the only copy of what it displaced.
+            let previous = tx
+                .query_row(
+                    "SELECT value FROM settings WHERE key = ?1",
+                    params![global_key],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()?;
+            undo.globals.insert((*global_key).to_string(), previous);
             let syncable = is_syncable_setting(false, global_key);
             tx.execute(
                 "INSERT INTO settings (key, value, updated_at, updated_by_device)
@@ -700,19 +752,105 @@ pub(crate) fn do_promote_book_settings_to_global(
             }
         }
 
-        let mut targets = selected_book_ids.iter().cloned().collect::<HashSet<_>>();
-        targets.remove(source_book_id);
+        // Ordered so the undo payload — and the tests that pin it — is
+        // deterministic rather than hash-ordered.
+        let mut targets = selected_book_ids.iter().cloned().collect::<BTreeSet<_>>();
         targets.insert(source_book_id.to_string());
         for target in targets {
             for (book_key, _, _) in &promoted {
-                delete_book_setting_in_tx(tx, events, &target, book_key, now)?;
+                if let Some(value) = delete_book_setting_in_tx(tx, events, &target, book_key, now)?
+                {
+                    undo.book_settings.push(PromotedBookSetting {
+                        book_id: target.clone(),
+                        key: book_key.clone(),
+                        value,
+                    });
+                }
             }
         }
 
         Ok(ReaderSettingsPromotion {
             settings: changed_settings,
             promoted_keys: promoted.into_iter().map(|(key, _, _)| key).collect(),
+            undo,
         })
+    })
+}
+
+/// Put back everything one `promote_book_settings_to_global` displaced.
+///
+/// Mirrors the 「恢复跟随全局」 undo: the command that made the change hands the
+/// caller the displaced values, the caller holds them for as long as the undo
+/// affordance is on screen, and hands the same payload straight back here. The
+/// payload is therefore untrusted webview input — every key is re-validated
+/// against the reader's own key sets before a single row is touched.
+#[tauri::command]
+pub fn undo_promote_book_settings(
+    undo: ReaderSettingsPromotionUndo,
+    db: State<'_, Db>,
+    sync: State<'_, SyncWriter>,
+) -> AppResult<()> {
+    do_undo_promote_book_settings(&undo, &db, &sync)
+}
+
+pub(crate) fn do_undo_promote_book_settings(
+    undo: &ReaderSettingsPromotionUndo,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<()> {
+    if undo.globals.keys().any(|key| !is_reader_global_key(key)) {
+        return Err(AppError::Other("READER_SETTING_KEY_INVALID".to_string()));
+    }
+    validate_reader_book_keys(
+        &undo
+            .book_settings
+            .iter()
+            .map(|row| row.key.clone())
+            .collect::<Vec<_>>(),
+    )?;
+
+    let now = sync.next_logical_timestamp();
+    let device = sync.self_device().to_string();
+    sync.with_tx(db, now, |tx, events| {
+        for (global_key, previous) in &undo.globals {
+            let Some(value) = previous else {
+                // No row before the promotion, so undo removes the row rather
+                // than writing "" — an empty string is a value, and every
+                // reader setting would parse it as something.
+                //
+                // A syncable key deleted here stays deleted only on this
+                // device: the event stream has no global-setting delete (see
+                // `apply_setting_set`'s `(None, None)` arm). Only `font_family`
+                // is affected, and only when it had never been set at all.
+                tx.execute("DELETE FROM settings WHERE key = ?1", params![global_key])?;
+                continue;
+            };
+            let syncable = is_syncable_setting(false, global_key);
+            tx.execute(
+                "INSERT INTO settings (key, value, updated_at, updated_by_device)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                   updated_at = excluded.updated_at,
+                   updated_by_device = excluded.updated_by_device",
+                params![
+                    global_key,
+                    value,
+                    if syncable { now } else { 0 },
+                    if syncable { device.as_str() } else { "" }
+                ],
+            )?;
+            if syncable {
+                events.push(EventBody::SettingSet(SettingPayload {
+                    book: None,
+                    key: global_key.clone(),
+                    value: Some(value.clone()),
+                }));
+            }
+        }
+        for row in &undo.book_settings {
+            set_book_setting_in_tx(tx, events, &row.book_id, &row.key, &row.value, now, &device)?;
+        }
+        Ok(())
     })
 }
 
@@ -741,52 +879,68 @@ pub(crate) fn do_set_book_settings_bulk(
     let device = sync.self_device().to_string();
     sync.with_tx(db, now, |tx, events| {
         for (key, value) in settings {
-            let syncable = is_syncable_setting(true, key);
-            if syncable {
-                tx.execute(
-                    "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2 AND ts < ?3",
-                    params![
-                        crate::sync::merge::entity::BOOK_SETTING,
-                        setting_tombstone_id(book_id, key),
-                        now
-                    ],
-                )?;
-            }
-            tx.execute(
-                "INSERT INTO book_settings (book_id, key, value, updated_at, updated_by_device)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
-                 ON CONFLICT(book_id, key) DO UPDATE SET value = excluded.value,
-                   updated_at = excluded.updated_at,
-                   updated_by_device = excluded.updated_by_device",
-                params![
-                    book_id,
-                    key,
-                    value,
-                    if syncable { now } else { 0 },
-                    if syncable { device.as_str() } else { "" }
-                ],
-            )?;
-            if syncable {
-                events.push(EventBody::SettingSet(SettingPayload {
-                    book: Some(book_id.to_string()),
-                    key: key.clone(),
-                    value: Some(value.clone()),
-                }));
-            }
+            set_book_setting_in_tx(tx, events, book_id, key, value, now, &device)?;
         }
         Ok(())
     })
+}
+
+/// Write one `book_settings` row, clearing any older deletion tombstone first so
+/// a restored override is not immediately re-deleted by its own tombstone.
+fn set_book_setting_in_tx(
+    tx: &rusqlite::Transaction<'_>,
+    events: &mut Vec<EventBody>,
+    book_id: &str,
+    key: &str,
+    value: &str,
+    now: i64,
+    device: &str,
+) -> AppResult<()> {
+    let syncable = is_syncable_setting(true, key);
+    if syncable {
+        tx.execute(
+            "DELETE FROM _tombstones WHERE entity = ?1 AND id = ?2 AND ts < ?3",
+            params![
+                crate::sync::merge::entity::BOOK_SETTING,
+                setting_tombstone_id(book_id, key),
+                now
+            ],
+        )?;
+    }
+    tx.execute(
+        "INSERT INTO book_settings (book_id, key, value, updated_at, updated_by_device)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(book_id, key) DO UPDATE SET value = excluded.value,
+           updated_at = excluded.updated_at,
+           updated_by_device = excluded.updated_by_device",
+        params![
+            book_id,
+            key,
+            value,
+            if syncable { now } else { 0 },
+            if syncable { device } else { "" }
+        ],
+    )?;
+    if syncable {
+        events.push(EventBody::SettingSet(SettingPayload {
+            book: Some(book_id.to_string()),
+            key: key.to_string(),
+            value: Some(value.to_string()),
+        }));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
         do_delete_book_settings, do_promote_book_settings_to_global, do_set_book_settings_bulk,
-        set_settings_bulk_inner,
+        do_undo_promote_book_settings, set_settings_bulk_inner, PromotedBookSetting,
+        ReaderSettingsPromotionUndo,
     };
     use crate::db::Db;
     use crate::sync::writer::SyncWriter;
-    use rusqlite::params;
+    use rusqlite::{params, OptionalExtension};
     use std::collections::HashMap;
     use tempfile::TempDir;
 
@@ -961,6 +1115,17 @@ mod tests {
         assert_eq!(tombstone, 1);
     }
 
+    fn get_global_setting(db: &Db, key: &str) -> Option<String> {
+        let conn = db.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            params![key],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .unwrap()
+    }
+
     #[test]
     fn promotion_is_atomic_and_only_clears_overlapping_promoted_keys() {
         let (_dir, db) = setup();
@@ -971,6 +1136,9 @@ mod tests {
                 ("font".to_string(), "literata".to_string()),
                 ("font_size".to_string(), "24".to_string()),
                 ("show_lookup_markers".to_string(), "false".to_string()),
+                // Not a reader setting at all, so it has no global counterpart
+                // and must survive promotion untouched.
+                ("toc_expanded".to_string(), "[]".to_string()),
             ]),
             &db,
             &sync,
@@ -998,14 +1166,22 @@ mod tests {
             result.settings.get("font_size").map(String::as_str),
             Some("24")
         );
-
-        let source = get_book_settings(&db, "book1");
+        // Marker visibility now has a global layer, so it promotes like the
+        // typography keys instead of being silently left behind.
         assert_eq!(
-            source.get("show_lookup_markers").map(String::as_str),
+            result
+                .settings
+                .get("show_lookup_markers")
+                .map(String::as_str),
             Some("false")
         );
+
+        let source = get_book_settings(&db, "book1");
+        assert!(!source.contains_key("show_lookup_markers"));
         assert!(!source.contains_key("font"));
         assert!(!source.contains_key("font_size"));
+        // The non-promotable row is the one that still survives.
+        assert_eq!(source.get("toc_expanded").map(String::as_str), Some("[]"));
 
         let selected = get_book_settings(&db, "book2");
         assert!(!selected.contains_key("font_size"));
@@ -1013,6 +1189,150 @@ mod tests {
             selected.get("line_spacing").map(String::as_str),
             Some("2.1")
         );
+    }
+
+    #[test]
+    fn undoing_a_promotion_restores_globals_and_every_deleted_override() {
+        let (_dir, db) = setup();
+        let sync = SyncWriter::new("dev-A".into());
+        // `font_family` had a global row before the promotion; the marker key
+        // deliberately does not, which is the case undo must delete rather than
+        // write back as an empty string.
+        set_settings_bulk_inner(
+            &HashMap::from([("font_family".to_string(), "georgia".to_string())]),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        do_set_book_settings_bulk(
+            "book1",
+            &HashMap::from([
+                ("font".to_string(), "literata".to_string()),
+                ("show_lookup_markers".to_string(), "false".to_string()),
+            ]),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        do_set_book_settings_bulk(
+            "book2",
+            &HashMap::from([
+                ("font".to_string(), "palatino".to_string()),
+                ("show_lookup_markers".to_string(), "true".to_string()),
+            ]),
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        let result =
+            do_promote_book_settings_to_global("book1", &["book2".to_string()], &db, &sync)
+                .unwrap();
+        assert_eq!(
+            get_global_setting(&db, "font_family").as_deref(),
+            Some("literata")
+        );
+        assert_eq!(
+            get_global_setting(&db, "show_lookup_markers").as_deref(),
+            Some("false")
+        );
+        assert!(get_book_settings(&db, "book1").is_empty());
+        assert!(get_book_settings(&db, "book2").is_empty());
+
+        assert_eq!(
+            result.undo.globals.get("font_family"),
+            Some(&Some("georgia".to_string()))
+        );
+        assert_eq!(result.undo.globals.get("show_lookup_markers"), Some(&None));
+
+        do_undo_promote_book_settings(&result.undo, &db, &sync).unwrap();
+
+        assert_eq!(
+            get_global_setting(&db, "font_family").as_deref(),
+            Some("georgia")
+        );
+        // Absent before, absent again — not `""`.
+        assert_eq!(get_global_setting(&db, "show_lookup_markers"), None);
+        assert_eq!(
+            get_book_settings(&db, "book1"),
+            HashMap::from([
+                ("font".to_string(), "literata".to_string()),
+                ("show_lookup_markers".to_string(), "false".to_string()),
+            ])
+        );
+        assert_eq!(
+            get_book_settings(&db, "book2"),
+            HashMap::from([
+                ("font".to_string(), "palatino".to_string()),
+                ("show_lookup_markers".to_string(), "true".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_restored_syncable_override_outlives_the_promotion_tombstone() {
+        // `font` is the one per-book key that syncs, so promotion tombstones it.
+        // A restored row that the tombstone then swallowed would come back only
+        // until the next replay tick.
+        let (_dir, db) = setup();
+        let sync = SyncWriter::new("dev-A".into());
+        do_set_book_settings_bulk(
+            "book1",
+            &HashMap::from([("font".to_string(), "literata".to_string())]),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        let result = do_promote_book_settings_to_global("book1", &[], &db, &sync).unwrap();
+        do_undo_promote_book_settings(&result.undo, &db, &sync).unwrap();
+
+        assert_eq!(
+            get_book_settings(&db, "book1")
+                .get("font")
+                .map(String::as_str),
+            Some("literata")
+        );
+        let conn = db.conn.lock().unwrap();
+        let tombstone: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM _tombstones
+                 WHERE entity = 'book_setting' AND id = 'book1:font'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tombstone, 0, "the restored row must not stay tombstoned");
+    }
+
+    #[test]
+    fn undo_rejects_keys_outside_the_reader_setting_set() {
+        let (_dir, db) = setup();
+        let sync = SyncWriter::new("dev-A".into());
+
+        // The undo payload is webview input: it must not become a write path
+        // into arbitrary `settings` / `book_settings` keys.
+        let foreign_global = ReaderSettingsPromotionUndo {
+            globals: HashMap::from([("ai_api_key".to_string(), Some("leak".to_string()))]),
+            book_settings: Vec::new(),
+        };
+        assert_eq!(
+            do_undo_promote_book_settings(&foreign_global, &db, &sync)
+                .unwrap_err()
+                .to_string(),
+            "READER_SETTING_KEY_INVALID"
+        );
+
+        let foreign_book_key = ReaderSettingsPromotionUndo {
+            globals: HashMap::new(),
+            book_settings: vec![PromotedBookSetting {
+                book_id: "book1".to_string(),
+                key: "toc_expanded".to_string(),
+                value: "[1]".to_string(),
+            }],
+        };
+        assert!(do_undo_promote_book_settings(&foreign_book_key, &db, &sync).is_err());
+        assert!(get_book_settings(&db, "book1").is_empty());
+        assert_eq!(get_global_setting(&db, "ai_api_key"), None);
     }
 
     #[test]

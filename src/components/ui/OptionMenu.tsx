@@ -97,11 +97,22 @@ export default function OptionMenu({ anchorRef, items, value, onSelect, onClose 
       if (menuRef.current?.contains(event.target as Node)) return;
       onClose();
     };
+    // The menu is a layer of its own: Escape closes it and goes no further, so
+    // the same keypress cannot also dismiss the popover or modal it was opened
+    // from. Capture phase, ahead of every surface that listens on `document`.
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    };
     document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown, true);
     window.addEventListener("scroll", handleScroll, true);
     window.addEventListener("resize", onClose);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener("scroll", handleScroll, true);
       window.removeEventListener("resize", onClose);
     };

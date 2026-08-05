@@ -10,6 +10,16 @@ import {
 const PANEL_MIN_WIDTH = 320;
 const PANEL_MAX_WIDTH = 700;
 const PANEL_DEFAULT_WIDTH = 525;
+/**
+ * The notes rail is a margin, not a workspace: it holds one column of cards
+ * beside the text and every pixel it takes comes off the page. The AI panel is
+ * the opposite — it holds a conversation, and 380 would cramp it. So the width
+ * is per panel rather than one number shared by all four; dragging one no longer
+ * resizes the others behind it either, which was never intended.
+ */
+export type ResizableSidePanel = "ai" | "bookmarks" | "vocab" | "notes";
+
+const PANEL_DEFAULT_WIDTHS: Partial<Record<ResizableSidePanel, number>> = { notes: 380 };
 
 interface ShadowHost {
   shadowRoot: ShadowRoot | null;
@@ -18,15 +28,24 @@ interface ShadowHost {
 export function useSidePanelResize<T extends ShadowHost>(
   viewRef: RefObject<T | null>,
   viewerRef: RefObject<HTMLElement | null>,
+  panel: ResizableSidePanel | null,
 ) {
-  const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
+  const [widths, setWidths] = useState<Partial<Record<ResizableSidePanel, number>>>({});
+  // Nothing is open, so nothing is measured — the container is hidden. Any slot
+  // will do; "ai" avoids widening the key type for a width no one can see.
+  const panelKey = panel ?? "ai";
+  const panelWidth = widths[panelKey]
+    ?? PANEL_DEFAULT_WIDTHS[panelKey]
+    ?? PANEL_DEFAULT_WIDTH;
   const panelWidthRef = useRef(panelWidth);
+  const panelKeyRef = useRef(panelKey);
   const panelRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
 
   useEffect(() => {
     panelWidthRef.current = panelWidth;
-  }, [panelWidth]);
+    panelKeyRef.current = panelKey;
+  }, [panelKey, panelWidth]);
 
   const handlePanelResizePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
@@ -36,6 +55,13 @@ export function useSidePanelResize<T extends ShadowHost>(
     const pointerId = event.pointerId;
     const startX = event.clientX;
     const startWidth = panelWidthRef.current;
+    // The drag belongs to the panel it started on, whatever is open by the time
+    // it ends — otherwise a panel switch mid-drag would write the new width onto
+    // the wrong panel.
+    const draggedPanel = panelKeyRef.current;
+    const setPanelWidth = (width: number) => {
+      setWidths((current) => ({ ...current, [draggedPanel]: width }));
+    };
     let rafId = 0;
     let latestWidth = startWidth;
     let finished = false;

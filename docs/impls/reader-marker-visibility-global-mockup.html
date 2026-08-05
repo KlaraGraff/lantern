@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Lantern — 词汇标记的全局层 + 「设为全局默认」的撤销</title>
+<style>
+  :root{
+    --bg-page:#f4f4f5; --bg-surface:#ffffff; --bg-muted:#fafafa; --bg-input:#f3f3f5;
+    --text-primary:#18181b; --text-secondary:#52525c; --text-muted:#71717b;
+    --border:#e4e4e7; --border-light:#f4f4f5;
+    --accent:#7c3aed; --accent-bg:#f3e8ff; --accent-text:#7c3aed;
+  }
+  .dark{
+    --bg-page:#151518; --bg-surface:#18191d; --bg-muted:#1f2023; --bg-input:#25262c;
+    --text-primary:#f4f4f5; --text-secondary:#c9c9d1; --text-muted:#9a9aa4;
+    --border:#34343d; --border-light:#2a2b31;
+    --accent:#8b5cf6; --accent-bg:#302647; --accent-text:#a78bfa;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:40px 28px 80px; background:#ececed;
+    font:400 14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI",sans-serif;
+    color:#18181b;
+  }
+  h1{font-size:20px;margin:0 0 6px}
+  .lede{max-width:760px;color:#52525c;font-size:13px;line-height:1.75;margin:0 0 34px}
+  .lede b{color:#18181b;font-weight:600}
+  .frame{max-width:1180px;margin:0 auto 46px}
+  .frame > figcaption{
+    font-size:12px;color:#52525c;margin:0 0 10px;padding-left:2px;
+  }
+  .frame > figcaption b{display:block;font-size:13px;color:#18181b;font-weight:600;margin-bottom:3px}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  @media (max-width:940px){.row2{grid-template-columns:1fr}}
+
+  /* ---- settings panel shell ---- */
+  .panel{
+    background:var(--bg-surface); border:1px solid var(--border); border-radius:12px;
+    padding:20px 24px 22px; color:var(--text-primary);
+    box-shadow:0 1px 2px rgba(0,0,0,.04);
+  }
+  .crumb{font-size:11px;color:var(--text-muted);margin-bottom:12px}
+  .crumb span{opacity:.55;padding:0 4px}
+
+  .tabbar{display:inline-flex;border:1px solid var(--border);background:var(--bg-input);border-radius:6px;padding:2px;gap:2px}
+  .tabbar button{
+    height:26px;padding:0 12px;border:0;border-radius:5px;background:transparent;
+    font:500 11px/1 inherit;color:var(--text-muted);cursor:default;
+  }
+  .tabbar button[aria-selected=true]{background:var(--bg-surface);color:var(--text-primary);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+  .samples{display:grid;grid-template-columns:1fr 1fr;gap:8px;border:1px solid var(--border-light);border-radius:6px;padding:8px;margin-top:12px}
+  .paper{border-radius:6px;padding:10px 12px;font-size:12px;line-height:21px}
+  .paper.light{background:#FAF7F0;color:#3f3a33}
+  .paper.night{background:#1b1b1f;color:#d7d3cb}
+
+  /* marks */
+  .m-lookup{background:rgba(192,186,150,.16);border-bottom:1px solid rgba(192,186,150,.9)}
+  .m-new{border-bottom:2px solid rgba(217,119,6,.85)}
+  .m-learn{border-bottom:2px solid rgba(47,158,143,.85)}
+  .m-master{border-bottom:2px dashed rgba(148,163,184,.9)}
+  .off{border-bottom:0!important;background:transparent!important}
+
+  /* ---- the new block ---- */
+  .block{margin-top:18px;border-top:1px solid var(--border-light);padding-top:14px}
+  .block-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:2px}
+  .block-title{font-size:13px;font-weight:600;color:var(--text-primary)}
+  .block-sum{font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+  .block-hint{font-size:11px;line-height:17px;color:var(--text-muted);margin:0 0 6px}
+
+  .mrow{display:flex;align-items:center;gap:12px;min-height:46px;padding:5px 0;border-top:1px solid var(--border-light)}
+  .mrow:first-of-type{border-top:0}
+  .mrow .chip{
+    flex:0 0 auto;min-width:78px;text-align:center;font-size:12px;padding:2px 8px;border-radius:4px;
+    background:#FAF7F0;color:#3f3a33;
+  }
+  .dark .mrow .chip{background:#26262b;color:#d7d3cb}
+  .mrow .label{flex:1 1 auto;min-width:0}
+  .mrow .label p{margin:0;font-size:13px;color:var(--text-primary)}
+  .mrow .label small{display:block;font-size:11px;line-height:16px;color:var(--text-muted);margin-top:1px}
+  .mrow.is-off .label p{color:var(--text-muted)}
+
+  /* toggle */
+  .tg{flex:0 0 auto;width:38px;height:22px;border-radius:11px;background:#d4d4d8;position:relative;transition:none}
+  .dark .tg{background:#3f3f46}
+  .tg::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  .tg.on{background:var(--accent)}
+  .tg.on::after{left:18px}
+
+  .note{
+    display:flex;gap:8px;align-items:flex-start;border:1px solid rgba(124,58,237,.25);
+    background:var(--accent-bg);border-radius:6px;padding:9px 11px;margin-top:10px;
+  }
+  .note svg{flex:0 0 auto;margin-top:1px}
+  .note p{margin:0;font-size:11px;line-height:17px;color:var(--text-secondary)}
+
+  /* ---- reader scope popover ---- */
+  .pop{
+    width:320px;background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;
+    box-shadow:0 8px 28px rgba(0,0,0,.14);padding:14px 16px 14px;color:var(--text-primary);
+  }
+  .pop h3{margin:0 0 2px;font-size:13px;font-weight:600}
+  .pop .sub{margin:0 0 10px;font-size:11px;line-height:17px;color:var(--text-muted)}
+  .srow{display:flex;justify-content:space-between;gap:10px;font-size:12px;padding:7px 0;border-top:1px solid var(--border-light)}
+  .srow .k{color:var(--text-primary)}
+  .srow .v{color:var(--text-muted);text-align:right;font-size:11px;line-height:17px}
+  .btns{display:flex;flex-direction:column;gap:7px;margin-top:12px}
+  .btn{
+    height:32px;border-radius:7px;border:1px solid var(--border);background:var(--bg-surface);
+    font:500 12px/1 inherit;color:var(--text-primary);display:flex;align-items:center;justify-content:center;
+  }
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.ghost{border-color:transparent;color:var(--text-muted)}
+  .missing{
+    border:1px dashed rgba(200,60,60,.5);border-radius:7px;padding:9px 10px;margin-top:12px;
+    font-size:11px;line-height:17px;color:#b03a3a;background:rgba(200,60,60,.05);
+  }
+  .dark .missing{color:#f0a3a3;background:rgba(240,120,120,.08)}
+
+  /* ---- undo toast ---- */
+  .toast{
+    display:inline-flex;align-items:center;gap:14px;background:#26262b;color:#f4f4f5;
+    border-radius:9px;padding:11px 14px;font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,.24);
+  }
+  .toast b{font-weight:500}
+  .toast button{
+    border:0;background:transparent;color:#c4b5fd;font:500 12px/1 inherit;padding:0;cursor:default;
+  }
+  .toast .bar{width:1px;height:16px;background:rgba(255,255,255,.18)}
+
+  .tag{display:inline-block;font-size:10px;padding:1px 7px;border-radius:999px;margin-left:8px;vertical-align:2px}
+  .tag.now{background:#e4e4e7;color:#52525c}
+  .tag.new{background:#ede9fe;color:#6d28d9}
+  .tag.bad{background:#fde8e8;color:#b03a3a}
+</style>
+</head>
+<body>
+
+<h1>词汇标记的全局层，和「设为全局默认」的撤销</h1>
+<p class="lede">
+两件事画在一起：<b>①</b> 设置页「正文标记」新增一组全局的「显示哪些标记」开关——这是今天整个应用里根本不存在的一层，也是「设为全局默认」按钮在标记设置上消失的真正原因；<b>②</b> 阅读器里的「设为全局默认」补上撤销，排版和标记都适用。<br>
+下面每一屏都是静态样张，不能点。
+</p>
+
+<!-- ============ 1 ============ -->
+<figure class="frame">
+  <figcaption><b>1 · 设置 › 工具 › 正文标记 — 默认状态（四项全开）</b>
+  新块在页面下半部分。左边的样例块用的是标记真正的画法，所以它同时是一张图例——今天应用里没有任何地方告诉你「橙色下划线 = 生词、灰色虚线 = 已掌握」。</figcaption>
+  <div class="panel">
+    <div class="crumb">设置<span>›</span>工具<span>›</span>正文标记</div>
+    <div class="tabbar">
+      <button aria-selected="true">手动标记</button>
+      <button aria-selected="false">自动标记</button>
+    </div>
+    <div class="samples">
+      <div class="paper light">
+        读到 <span class="m-lookup">conspicuous</span> 时查了一下，<span class="m-new">meticulous</span> 还没学过，<span class="m-learn">ephemeral</span> 正在学，<span class="m-master">ubiquitous</span> 已经掌握。
+      </div>
+      <div class="paper night">
+        读到 <span class="m-lookup">conspicuous</span> 时查了一下，<span class="m-new">meticulous</span> 还没学过，<span class="m-learn">ephemeral</span> 正在学，<span class="m-master">ubiquitous</span> 已经掌握。
+      </div>
+    </div>
+
+    <div class="block">
+      <div class="block-head">
+        <span class="block-title">显示哪些标记<span class="tag new">新增</span></span>
+        <span class="block-sum">4 项全部显示</span>
+      </div>
+      <p class="block-hint">这是全局默认。单本书想不一样，可以在阅读界面里单独关掉，不影响其他书。</p>
+
+      <div class="mrow">
+        <span class="chip m-lookup">查过的词</span>
+        <span class="label"><p>查过的词</p><small>查完词自动留下的浅色标记</small></span>
+        <span class="tg on"></span>
+      </div>
+      <div class="mrow">
+        <span class="chip m-new">生词</span>
+        <span class="label"><p>生词</p><small>已加入生词本、还没开始学的词</small></span>
+        <span class="tg on"></span>
+      </div>
+      <div class="mrow">
+        <span class="chip m-learn">学习中</span>
+        <span class="label"><p>学习中</p><small>正在复习的词</small></span>
+        <span class="tg on"></span>
+      </div>
+      <div class="mrow">
+        <span class="chip m-master">已掌握</span>
+        <span class="label"><p>已掌握</p><small>复习通过的词</small></span>
+        <span class="tg on"></span>
+      </div>
+    </div>
+  </div>
+</figure>
+
+<!-- ============ 2 ============ -->
+<figure class="frame">
+  <figcaption><b>2 · 关掉两项 — 上面的样例同步变化</b>
+  关掉的行整行退成次要色，样例里那两个词立刻恢复成普通文字。右上角摘要跟着变，这样折叠状态下也能一眼看出「我动过」。</figcaption>
+  <div class="panel">
+    <div class="samples">
+      <div class="paper light">
+        读到 <span class="m-lookup off">conspicuous</span> 时查了一下，<span class="m-new">meticulous</span> 还没学过，<span class="m-learn">ephemeral</span> 正在学，<span class="m-master off">ubiquitous</span> 已经掌握。
+      </div>
+      <div class="paper night">
+        读到 <span class="m-lookup off">conspicuous</span> 时查了一下，<span class="m-new">meticulous</span> 还没学过，<span class="m-learn">ephemeral</span> 正在学，<span class="m-master off">ubiquitous</span> 已经掌握。
+      </div>
+    </div>
+    <div class="block">
+      <div class="block-head">
+        <span class="block-title">显示哪些标记</span>
+        <span class="block-sum">显示 2 / 4 项</span>
+      </div>
+      <p class="block-hint">这是全局默认。单本书想不一样，可以在阅读界面里单独关掉，不影响其他书。</p>
+      <div class="mrow is-off">
+        <span class="chip m-lookup off">查过的词</span>
+        <span class="label"><p>查过的词</p><small>查完词自动留下的浅色标记</small></span>
+        <span class="tg"></span>
+      </div>
+      <div class="mrow">
+        <span class="chip m-new">生词</span>
+        <span class="label"><p>生词</p><small>已加入生词本、还没开始学的词</small></span>
+        <span class="tg on"></span>
+      </div>
+      <div class="mrow">
+        <span class="chip m-learn">学习中</span>
+        <span class="label"><p>学习中</p><small>正在复习的词</small></span>
+        <span class="tg on"></span>
+      </div>
+      <div class="mrow is-off">
+        <span class="chip m-master off">已掌握</span>
+        <span class="label"><p>已掌握</p><small>复习通过的词</small></span>
+        <span class="tg"></span>
+      </div>
+    </div>
+  </div>
+</figure>
+
+<!-- ============ 3 ============ -->
+<figure class="frame">
+  <figcaption><b>3 · 四项全关 — 一句话说清「没丢东西」</b>
+  这是唯一需要额外解释的状态。正文变干净了，但查词记录和生词本照常在记；不说这句，用户会以为自己把数据关掉了。这不是警告，语气保持中性。</figcaption>
+  <div class="panel">
+    <div class="samples">
+      <div class="paper light">
+        读到 <span class="m-lookup off">conspicuous</span> 时查了一下，<span class="m-new off">meticulous</span> 还没学过，<span class="m-learn off">ephemeral</span> 正在学，<span class="m-master off">ubiquitous</span> 已经掌握。
+      </div>
+      <div class="paper night">
+        读到 <span class="m-lookup off">conspicuous</span> 时查了一下，<span class="m-new off">meticulous</span> 还没学过，<span class="m-learn off">ephemeral</span> 正在学，<span class="m-master off">ubiquitous</span> 已经掌握。
+      </div>
+    </div>
+    <div class="block">
+      <div class="block-head">
+        <span class="block-title">显示哪些标记</span>
+        <span class="block-sum">全部隐藏</span>
+      </div>
+      <p class="block-hint">这是全局默认。单本书想不一样，可以在阅读界面里单独关掉，不影响其他书。</p>
+      <div class="mrow is-off"><span class="chip m-lookup off">查过的词</span><span class="label"><p>查过的词</p><small>查完词自动留下的浅色标记</small></span><span class="tg"></span></div>
+      <div class="mrow is-off"><span class="chip m-new off">生词</span><span class="label"><p>生词</p><small>已加入生词本、还没开始学的词</small></span><span class="tg"></span></div>
+      <div class="mrow is-off"><span class="chip m-learn off">学习中</span><span class="label"><p>学习中</p><small>正在复习的词</small></span><span class="tg"></span></div>
+      <div class="mrow is-off"><span class="chip m-master off">已掌握</span><span class="label"><p>已掌握</p><small>复习通过的词</small></span><span class="tg"></span></div>
+      <div class="note">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        <p>正文里不会再出现词汇标记。查词记录和生词本照常保存，随时可以再打开。</p>
+      </div>
+    </div>
+  </div>
+</figure>
+
+<!-- ============ 4 ============ -->
+<figure class="frame">
+  <figcaption><b>4 · 阅读器「本书单独设置」 — 修掉的那个「沉默的缺失」</b>
+  场景：只在这本书里关掉了「已掌握」和「查过的词」。左边是现在的样子——面板承认你改过 2 项，却没有任何办法把它推成默认，也不解释为什么。右边是改后。</figcaption>
+  <div class="row2">
+    <div>
+      <p style="font-size:12px;color:#52525c;margin:0 0 8px">现在<span class="tag bad">缺一个按钮</span></p>
+      <div class="pop">
+        <h3>本书单独设置</h3>
+        <p class="sub">《人类简史》有 2 项和全局不一样。</p>
+        <div class="srow"><span class="k">已掌握标记</span><span class="v">默认：显示<br>本书：隐藏</span></div>
+        <div class="srow"><span class="k">查过的词标记</span><span class="v">默认：显示<br>本书：隐藏</span></div>
+        <div class="btns">
+          <div class="btn">恢复跟随全局</div>
+        </div>
+        <div class="missing">「设为全局默认」在这里根本不出现，也没有一个字说明原因。用户只会觉得按钮坏了。</div>
+      </div>
+    </div>
+    <div>
+      <p style="font-size:12px;color:#52525c;margin:0 0 8px">改后<span class="tag new">两个动作都在</span></p>
+      <div class="pop">
+        <h3>本书单独设置</h3>
+        <p class="sub">《人类简史》有 2 项和全局不一样。</p>
+        <div class="srow"><span class="k">已掌握标记</span><span class="v">全局：显示<br>本书：隐藏</span></div>
+        <div class="srow"><span class="k">查过的词标记</span><span class="v">全局：显示<br>本书：隐藏</span></div>
+        <div class="btns">
+          <div class="btn primary">设为全局默认</div>
+          <div class="btn">恢复跟随全局</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</figure>
+
+<!-- ============ 5 ============ -->
+<figure class="frame">
+  <figcaption><b>5 · 确认页 — 标题不能再写「排版」</b>
+  现在这句写死的是「将本书<b>排版</b>设为全局默认？」。标记不是排版，字改成中性的说法。下面照旧列出会推上去的项，以及有多少本书保留自己的设置。</figcaption>
+  <div class="row2">
+    <div>
+      <p style="font-size:12px;color:#52525c;margin:0 0 8px">确认</p>
+      <div class="pop">
+        <h3>将本书的阅读设置设为全局默认？</h3>
+        <p class="sub">以后新打开的书都会跟着这套设置。</p>
+        <div class="srow"><span class="k">已掌握标记</span><span class="v">显示 → 隐藏</span></div>
+        <div class="srow"><span class="k">查过的词标记</span><span class="v">显示 → 隐藏</span></div>
+        <div style="font-size:11px;line-height:17px;color:var(--text-muted);border-top:1px solid var(--border-light);padding-top:9px;margin-top:2px">
+          另有 <b style="color:var(--text-primary)">3</b> 本书有自己的标记设置，会保留不动。
+        </div>
+        <div class="btns">
+          <div class="btn primary">设为全局默认</div>
+          <div class="btn ghost">取消</div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p style="font-size:12px;color:#52525c;margin:0 0 8px">同一个确认页，推的是排版时</p>
+      <div class="pop">
+        <h3>将本书的阅读设置设为全局默认？</h3>
+        <p class="sub">以后新打开的书都会跟着这套设置。</p>
+        <div class="srow"><span class="k">字号</span><span class="v">17 → 19</span></div>
+        <div class="srow"><span class="k">行距</span><span class="v">1.6 → 1.8</span></div>
+        <div class="srow"><span class="k">两端对齐</span><span class="v">关 → 开</span></div>
+        <div style="font-size:11px;line-height:17px;color:var(--text-muted);border-top:1px solid var(--border-light);padding-top:9px;margin-top:2px">
+          另有 <b style="color:var(--text-primary)">3</b> 本书有自己的排版，会保留不动。
+        </div>
+        <div class="btns">
+          <div class="btn primary">设为全局默认</div>
+          <div class="btn ghost">取消</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</figure>
+
+<!-- ============ 6 ============ -->
+<figure class="frame">
+  <figcaption><b>6 · 撤销 — 「设为全局默认」现在也有了</b>
+  今天点下去是一扇单向门：原来的全局值被直接覆盖、不留底，其他书被清掉的单独设置也一并丢了。上面那条是现在就有的（恢复跟随全局），下面那条是新增的——样式完全一样，因为它们是同一类动作。</figcaption>
+  <div class="panel" style="background:#f4f4f5;border-color:#e4e4e7;display:flex;flex-direction:column;gap:14px;align-items:flex-start;padding:26px 24px">
+    <div>
+      <p style="font-size:11px;color:#71717b;margin:0 0 7px">现在就有的</p>
+      <div class="toast"><b>已恢复跟随全局</b><span class="bar"></span><button>撤销</button></div>
+    </div>
+    <div>
+      <p style="font-size:11px;color:#71717b;margin:0 0 7px">新增<span class="tag new" style="margin-left:6px">新增</span></p>
+      <div class="toast"><b>已设为全局默认 · 3 本书跟着变了</b><span class="bar"></span><button>撤销</button></div>
+    </div>
+    <p style="font-size:11px;line-height:18px;color:#52525c;margin:4px 0 0;max-width:560px">
+      「撤销」要把两样东西一起放回去：被覆盖掉的旧全局值，和被顺手删掉的那几本书的单独设置。后端其实一直有把删掉的值返回，只是前端扔了。
+    </p>
+  </div>
+</figure>
+
+<!-- ============ 7 ============ -->
+<figure class="frame">
+  <figcaption><b>7 · 深色</b></figcaption>
+  <div class="dark">
+    <div class="panel">
+      <div class="crumb">设置<span>›</span>工具<span>›</span>正文标记</div>
+      <div class="samples">
+        <div class="paper light">
+          读到 <span class="m-lookup">conspicuous</span> 时查了一下，<span class="m-new">meticulous</span> 还没学过，<span class="m-learn">ephemeral</span> 正在学，<span class="m-master off">ubiquitous</span> 已经掌握。
+        </div>
+        <div class="paper night">
+          读到 <span class="m-lookup">conspicuous</span> 时查了一下，<span class="m-new">meticulous</span> 还没学过，<span class="m-learn">ephemeral</span> 正在学，<span class="m-master off">ubiquitous</span> 已经掌握。
+        </div>
+      </div>
+      <div class="block">
+        <div class="block-head">
+          <span class="block-title">显示哪些标记</span>
+          <span class="block-sum">显示 3 / 4 项</span>
+        </div>
+        <p class="block-hint">这是全局默认。单本书想不一样，可以在阅读界面里单独关掉，不影响其他书。</p>
+        <div class="mrow"><span class="chip m-lookup">查过的词</span><span class="label"><p>查过的词</p><small>查完词自动留下的浅色标记</small></span><span class="tg on"></span></div>
+        <div class="mrow"><span class="chip m-new">生词</span><span class="label"><p>生词</p><small>已加入生词本、还没开始学的词</small></span><span class="tg on"></span></div>
+        <div class="mrow"><span class="chip m-learn">学习中</span><span class="label"><p>学习中</p><small>正在复习的词</small></span><span class="tg on"></span></div>
+        <div class="mrow is-off"><span class="chip m-master off">已掌握</span><span class="label"><p>已掌握</p><small>复习通过的词</small></span><span class="tg"></span></div>
+      </div>
+    </div>
+  </div>
+</figure>
+
+</body>
+</html>

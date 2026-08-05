@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- foliate-js has no TS definitions */
-export type AnnotationStyleKind = "manual" | "automatic" | "vocab" | "continuous";
+export type AnnotationStyleKind = "manual" | "automatic" | "vocab" | "continuous" | "note";
 
 export interface FoliateView extends HTMLElement {
   open(file: string | File | Blob): Promise<void>;
@@ -64,6 +64,8 @@ export interface FoliateView extends HTMLElement {
     value: string;
     color?: string;
     styleKind?: AnnotationStyleKind;
+    /** Continuous read-aloud only: how much of the sentence has been spoken, 0–1. */
+    progress?: number | null;
   }): Promise<any>;
   deleteAnnotation(annotation: { value: string }): Promise<void>;
   deselect(): void;

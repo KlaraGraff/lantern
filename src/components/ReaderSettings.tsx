@@ -22,14 +22,22 @@ import {
 } from "./reader-settings";
 import {
   filterReaderSettingConflicts,
+  isPendingUndoActionable,
   overriddenStateKeys,
   perBookSettingKeys,
   promotableRows,
+  promotionToastLabel,
   toggleVisibleConflictSelection,
+  type PendingReaderSettingsUndo,
   type PerBookOverrideKey,
   type PerBookReaderSettings,
   type ReaderSettingConflict,
+  type ReaderSettingsPromotionUndo,
 } from "../pages/reader/reader-settings-scope";
+import {
+  resolveReaderSettingsPlacement,
+  type PlacementRect,
+} from "../pages/reader/reader-settings-placement";
 
 const sliderClass =
   "w-full h-1 cursor-pointer appearance-none rounded-full bg-border [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-bg-surface [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-border [&::-webkit-slider-thumb]:shadow-sm";
@@ -79,11 +87,27 @@ interface ReaderSettingsProps {
   bookOverrides?: PerBookReaderSettings;
   onRestoreBookOverrides?: (keys: string[]) => Promise<Record<string, string>>;
   onUndoRestoreBookOverrides?: (values: Record<string, string>) => Promise<void>;
-  onPromoteBookOverrides?: (selectedBookIds: string[]) => Promise<Record<string, string>>;
+  /**
+   * Promotes this book's overrides. `onUndoAvailable` fires — before the promise
+   * settles — with everything the promotion displaced, and only when there is
+   * something to put back; it is the sole source of the undo payload, which
+   * exists nowhere else once the transaction commits.
+   */
+  onPromoteBookOverrides?: (
+    selectedBookIds: string[],
+    onUndoAvailable?: (undo: ReaderSettingsPromotionUndo) => void,
+  ) => Promise<Record<string, string>>;
+  onUndoPromoteBookOverrides?: (undo: ReaderSettingsPromotionUndo) => Promise<void>;
   passiveVocab?: PassiveVocabSettings;
   passiveVocabAvailable?: boolean;
   onPassiveVocabChange?: (enabled: boolean) => void;
   onOpenPassiveVocabSettings?: () => void;
+  /**
+   * The bounding box of the text on screen, in window coordinates, or null when
+   * nothing measurable is rendered. Called once per open — see
+   * `resolveReaderSettingsPlacement` for why it must not be re-read live.
+   */
+  measureTextRect?: () => PlacementRect | null;
 }
 
 export type BindingDirection = "previous" | "next";
@@ -108,7 +132,11 @@ export function PageTurnBindingButton({
     if (!active) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        // Cancelling the capture is a layer of its own: stop here so the same
+        // keypress does not also close the popover or the settings modal that
+        // this button is sitting in.
         event.preventDefault();
+        event.stopPropagation();
         onActivate(null);
         return;
       }
@@ -178,13 +206,16 @@ function ReaderSettings({
   onRestoreBookOverrides,
   onUndoRestoreBookOverrides,
   onPromoteBookOverrides,
+  onUndoPromoteBookOverrides,
   passiveVocab,
   passiveVocabAvailable = false,
   onPassiveVocabChange,
   onOpenPassiveVocabSettings,
+  measureTextRect,
 }: ReaderSettingsProps) {
   const { t } = useTranslation();
   const popoverRef = useRef<HTMLDivElement>(null);
+  const textRectRef = useRef<PlacementRect | null>(null);
   const [position, setPosition] = useState({ top: 0, right: 8, maxHeight: 0 });
   const [clearLookupConfirm, setClearLookupConfirm] = useState(false);
   const [clearLookupBusy, setClearLookupBusy] = useState(false);
@@ -196,26 +227,35 @@ function ReaderSettings({
   const [conflicts, setConflicts] = useState<ReaderSettingConflict[]>([]);
   const [conflictQuery, setConflictQuery] = useState("");
   const [selectedConflictIds, setSelectedConflictIds] = useState<Set<string>>(() => new Set());
-  const [undoValues, setUndoValues] = useState<Record<string, string> | null>(null);
-  const [undoLabel, setUndoLabel] = useState("");
+  // One slot for both undoable scope actions — see `PendingReaderSettingsUndo`.
+  const [pendingUndo, setPendingUndo] = useState<PendingReaderSettingsUndo | null>(null);
+  // The toast lives in the main view, where `scopeError` is never rendered, so
+  // a failed undo needs a message of its own or it disappears entirely.
+  const [undoError, setUndoError] = useState<string | null>(null);
 
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open) {
+      textRectRef.current = null;
+      return;
+    }
+    // Measured once, on open, and held until close. Every typography control in
+    // this panel changes the column width, so re-measuring would move the panel
+    // out from under the slider the user is dragging.
+    textRectRef.current = measureTextRect?.() ?? null;
     const updatePosition = () => {
       if (!anchorRef.current) return;
-      const rect = anchorRef.current.getBoundingClientRect();
-      const top = Math.max(8, rect.bottom + 4);
-      const maxRight = Math.max(8, window.innerWidth - 320 - 8);
-      setPosition({
-        top,
-        right: Math.max(8, Math.min(window.innerWidth - rect.right, maxRight)),
-        maxHeight: Math.max(0, Math.min(760, window.innerHeight - top - 8)),
+      const { top, right, maxHeight } = resolveReaderSettingsPlacement({
+        anchor: anchorRef.current.getBoundingClientRect(),
+        text: textRectRef.current,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
       });
+      setPosition({ top, right, maxHeight });
     };
     updatePosition();
     window.addEventListener("resize", updatePosition);
     return () => window.removeEventListener("resize", updatePosition);
-  }, [open, anchorRef]);
+  }, [open, anchorRef, measureTextRect]);
 
   useEffect(() => {
     if (!open) return;
@@ -233,6 +273,57 @@ function ReaderSettings({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open, onClose, anchorRef]);
 
+  // Escape, layered outermost first, so one keypress never collapses two
+  // layers. Above this handler and handled by their own owners:
+  //   · a modal dialog (settings modal, ConfirmDialog) opened over the popover
+  //     — the guard below leaves Escape to it;
+  //   · an open `Select` dropdown, which OptionMenu closes and stops;
+  //   · a page-turn binding waiting for a key, which PageTurnBindingButton
+  //     cancels and stops — the `capturingBinding` check is belt and braces.
+  // Then, here: the clear-marks confirmation, the scope sub-views, the popover.
+  useEffect(() => {
+    if (!open) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      // Never steal Escape from a dialog layered above us.
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target
+        && (target.tagName === "INPUT"
+          || target.tagName === "TEXTAREA"
+          || target.isContentEditable)
+      ) return;
+      if (capturingBinding) return;
+      event.preventDefault();
+      if (clearLookupConfirm) {
+        // Mid-delete the cancel button is disabled; Escape matches it.
+        if (clearLookupBusy) return;
+        setClearLookupConfirm(false);
+        setClearLookupError(false);
+        return;
+      }
+      if (scopeView !== "main") {
+        if (scopeBusy) return;
+        setScopeError(false);
+        // Same one-step-back walk as the header's chevron.
+        setScopeView(scopeView === "manage" ? "main" : scopeView === "confirm" ? "manage" : "confirm");
+        return;
+      }
+      onClose();
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [
+    open,
+    onClose,
+    capturingBinding,
+    clearLookupConfirm,
+    clearLookupBusy,
+    scopeView,
+    scopeBusy,
+  ]);
+
   useEffect(() => {
     if (open) return;
     setClearLookupConfirm(false);
@@ -240,6 +331,7 @@ function ReaderSettings({
     setCapturingBinding(null);
     setScopeView("main");
     setScopeError(false);
+    setUndoError(null);
     setConflictQuery("");
     setSelectedConflictIds(new Set());
   }, [open]);
@@ -258,8 +350,9 @@ function ReaderSettings({
     setScopeError(false);
     try {
       const deleted = await onRestoreBookOverrides(keys);
-      setUndoValues(deleted);
-      setUndoLabel(label);
+      setUndoError(null);
+      // Replaces any pending promote-undo: only the latest action is undoable.
+      setPendingUndo({ kind: "restore", label, values: deleted });
       setScopeView("main");
     } catch {
       setScopeError(true);
@@ -292,16 +385,59 @@ function ReaderSettings({
     if (!onPromoteBookOverrides) return;
     setScopeBusy(true);
     setScopeError(false);
+    // A holder rather than a plain `let`: the callback fires during the await,
+    // and this is the only copy of what the promotion displaced.
+    const captured: { undo: ReaderSettingsPromotionUndo | null } = { undo: null };
     try {
-      await onPromoteBookOverrides([...selectedConflictIds]);
-      setUndoValues(null);
+      await onPromoteBookOverrides([...selectedConflictIds], (undo) => {
+        captured.undo = undo;
+      });
+      setUndoError(null);
+      // No payload means nothing to put back, so the toast is dropped rather
+      // than shown with a 撤销 that would do nothing. Either way the pending
+      // restore-undo goes: it is no longer the last thing that happened.
+      setPendingUndo(captured.undo
+        ? {
+          kind: "promote",
+          // Counted off the payload, not off `selectedConflictIds` — the
+          // selection is what was asked for, the payload is what moved.
+          label: promotionToastLabel(captured.undo, bookId, t),
+          undo: captured.undo,
+        }
+        : null);
       setScopeView("main");
     } catch {
       setScopeError(true);
     } finally {
       setScopeBusy(false);
     }
-  }, [onPromoteBookOverrides, selectedConflictIds]);
+  }, [bookId, onPromoteBookOverrides, selectedConflictIds, t]);
+
+  const runPendingUndo = useCallback(async () => {
+    if (!pendingUndo) return;
+    setScopeBusy(true);
+    setUndoError(null);
+    try {
+      if (pendingUndo.kind === "restore") {
+        if (!onUndoRestoreBookOverrides) return;
+        await onUndoRestoreBookOverrides(pendingUndo.values);
+      } else {
+        if (!onUndoPromoteBookOverrides) return;
+        // The panel reads `settings`/`globalSettings`/`bookOverrides` from the
+        // reader; this call rewrites all three sources, so the rows repaint
+        // with the restored values rather than the promoted ones.
+        await onUndoPromoteBookOverrides(pendingUndo.undo);
+      }
+      setPendingUndo(null);
+    } catch {
+      // Kept on screen so a retry is still possible.
+      setUndoError(pendingUndo.kind === "promote"
+        ? t("readerSettings.scope.undoPromoteFailed")
+        : t("readerSettings.scope.actionFailed"));
+    } finally {
+      setScopeBusy(false);
+    }
+  }, [onUndoPromoteBookOverrides, onUndoRestoreBookOverrides, pendingUndo, t]);
 
   const themeLabels: Record<string, string> = {
     original: t("readerSettings.themeOriginal"),
@@ -995,28 +1131,24 @@ function ReaderSettings({
           )}
         </div>
       )}
-      {undoValues && Object.keys(undoValues).length > 0 && (
-        <div role="status" className="sticky bottom-2 mx-3 mt-2 flex items-center rounded-lg bg-text-primary px-3 py-2.5 text-[11px] text-bg-surface shadow-popover">
-          <span className="min-w-0 flex-1 truncate">{undoLabel}</span>
-          <button
-            type="button"
-            className="ml-2 shrink-0 font-medium text-accent-bg hover:underline"
-            onClick={async () => {
-              if (!onUndoRestoreBookOverrides) return;
-              const values = undoValues;
-              setScopeBusy(true);
-              try {
-                await onUndoRestoreBookOverrides(values);
-                setUndoValues(null);
-              } catch {
-                setScopeError(true);
-              } finally {
-                setScopeBusy(false);
-              }
-            }}
-          >
-            {t("common.undo")}
-          </button>
+      {pendingUndo && isPendingUndoActionable(pendingUndo) && (
+        <div className="sticky bottom-2 mx-3 mt-2 flex flex-col gap-1.5">
+          {undoError && (
+            <p role="alert" className="rounded-lg bg-danger-bg px-3 py-2 text-[11px] leading-4 text-danger-text">
+              {undoError}
+            </p>
+          )}
+          <div role="status" className="flex items-center rounded-lg bg-text-primary px-3 py-2.5 text-[11px] text-bg-surface shadow-popover">
+            <span className="min-w-0 flex-1 truncate">{pendingUndo.label}</span>
+            <button
+              type="button"
+              disabled={scopeBusy}
+              className="ml-2 shrink-0 font-medium text-accent-bg hover:underline disabled:opacity-50"
+              onClick={() => void runPendingUndo()}
+            >
+              {t("common.undo")}
+            </button>
+          </div>
         </div>
       )}
     </div>

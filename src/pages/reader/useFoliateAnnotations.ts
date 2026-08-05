@@ -23,9 +23,12 @@ import {
   type MarkerVisualStyle,
 } from "../../components/marker-style";
 import {
+  NOTE_ANCHOR_MARK_OPACITY,
+  NOTE_ANCHOR_MARK_SENTINEL,
   READING_HIGHLIGHT_COLOR,
   READING_HIGHLIGHT_OPACITY,
   SAVED_HIGHLIGHT_OPACITY,
+  noteAnchorMarkColor,
   savedHighlightColor,
   washBlendMode,
   wordMarkerColor,
@@ -69,6 +72,20 @@ export interface LookupOccurrenceMark {
   location: string;
   enabled: boolean;
 }
+
+/** Just enough of a margin note (P3.2) to mark the passage it was written about. */
+export interface NoteAnchorMark {
+  location: string | null;
+}
+
+interface NoteAnchorPage { notes: NoteAnchorMark[] }
+
+/**
+ * The rail loads a page of notes at a time and so does this: a book with
+ * thousands of notes must not stall the reader's first paint to mark them, and
+ * the ones past this bound are on pages nobody is looking at yet.
+ */
+const NOTE_ANCHOR_LIMIT = 500;
 
 type MarkerKind = "lookup" | "vocab";
 export type FoliateMarker = { color: string; kind: MarkerKind };
@@ -120,9 +137,22 @@ function drawMarkerRects(
 
 interface DrawAnnotationDetail {
   draw(renderer: (rects: DOMRectList) => SVGGElement): void;
-  annotation: { color: string; styleKind?: AnnotationStyleKind };
+  annotation: {
+    color: string;
+    styleKind?: AnnotationStyleKind;
+    /**
+     * How much of a continuously-read sentence the voice has already spoken,
+     * 0–1. Absent or `null` means the engine reports no word timings, and the
+     * whole sentence is drawn as one shade rather than a guessed split.
+     */
+    progress?: number | null;
+  };
   range?: Range;
 }
+
+/** Spoken text keeps the established weight; what is still ahead sits back. */
+const CONTINUOUS_SPOKEN_OPACITY = "0.42";
+const CONTINUOUS_AHEAD_OPACITY = "0.16";
 
 export function drawFoliateAnnotation(
   { draw, annotation, range }: DrawAnnotationDetail,
@@ -136,22 +166,69 @@ export function drawFoliateAnnotation(
 ) {
   const boxHeight = fontBoxHeight(range?.startContainer ?? null);
   if (annotation.styleKind === "continuous") {
+    const progress = typeof annotation.progress === "number" && Number.isFinite(annotation.progress)
+      ? Math.min(1, Math.max(0, annotation.progress))
+      : null;
     draw((rects) => {
       const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
       group.setAttribute("fill", annotation.color);
-      group.setAttribute("opacity", "0.42");
       group.style.mixBlendMode = washBlendMode(pageBackdrop());
-      for (const { left, top, height, width } of rects) {
+      const boxes = Array.from(rects);
+      // The split is measured along the underline, not in characters: rects are
+      // what the renderer gives us, and their widths already track the glyphs
+      // they cover — including across a line break, where the sentence arrives
+      // as two boxes and a character count would say nothing about either.
+      const total = boxes.reduce((sum, box) => sum + box.width, 0);
+      // `null` progress paints the whole sentence as spoken, which is the shade
+      // this highlight has always used. An unsplit underline is the honest
+      // fallback; a zero-width spoken part would claim the voice had not started.
+      let spokenLeft = progress === null ? total : total * progress;
+      for (const { left, top, height, width } of boxes) {
         const inset = glyphInset(height, boxHeight);
         const glyphTop = top + inset;
         const glyphHeight = height - inset * 2;
-        const marker = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        marker.setAttribute("x", String(left));
-        marker.setAttribute("y", String(glyphTop + glyphHeight * 0.61));
-        marker.setAttribute("height", String(Math.max(2, glyphHeight * 0.39)));
-        marker.setAttribute("width", String(width));
-        marker.setAttribute("rx", "1");
-        group.append(marker);
+        const y = String(glyphTop + glyphHeight * 0.61);
+        const markHeight = String(Math.max(2, glyphHeight * 0.39));
+        const spoken = Math.max(0, Math.min(width, spokenLeft));
+        spokenLeft -= spoken;
+        const segments: [number, number, string][] = [
+          [left, spoken, CONTINUOUS_SPOKEN_OPACITY],
+          [left + spoken, width - spoken, CONTINUOUS_AHEAD_OPACITY],
+        ];
+        for (const [x, segmentWidth, opacity] of segments) {
+          if (segmentWidth <= 0) continue;
+          const marker = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          marker.setAttribute("x", String(x));
+          marker.setAttribute("y", y);
+          marker.setAttribute("height", markHeight);
+          marker.setAttribute("width", String(segmentWidth));
+          marker.setAttribute("opacity", opacity);
+          marker.setAttribute("rx", "1");
+          group.append(marker);
+        }
+      }
+      return group;
+    });
+    return;
+  }
+  if (annotation.styleKind === "note") {
+    // A hairline sitting on the baseline, not a band through the words: a note
+    // anchor has to be findable when looked for and invisible when not. The
+    // colour follows the paper for the reason every mark's does — see
+    // `noteAnchorMarkColor`.
+    const color = noteAnchorMarkColor(pageBackdrop());
+    draw((rects) => {
+      const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      group.setAttribute("fill", color);
+      group.setAttribute("opacity", String(NOTE_ANCHOR_MARK_OPACITY));
+      for (const { left, top, height, width } of rects) {
+        const baseline = top + height - glyphInset(height, boxHeight);
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        line.setAttribute("x", String(left));
+        line.setAttribute("y", String(baseline - 1));
+        line.setAttribute("height", "1");
+        line.setAttribute("width", String(width));
+        group.append(line);
       }
       return group;
     });
@@ -282,6 +359,7 @@ export function useFoliateAnnotations({
     highlights: Highlight[];
     vocab: VocabMarker[];
     lookupOccurrences: LookupOccurrenceMark[];
+    noteAnchors: NoteAnchorMark[];
   } | null>(null);
   const wordMarkWordsRef = useRef<string[]>([]);
   const wordMarkExceptionsRef = useRef(new Set<string>());
@@ -291,7 +369,7 @@ export function useFoliateAnnotations({
     if (!view || !supportsManualAnnotations) return;
     const snapshot = markerSnapshotRef.current;
     if (!snapshot) return;
-    const { highlights, vocab, lookupOccurrences } = snapshot;
+    const { highlights, vocab, lookupOccurrences, noteAnchors } = snapshot;
     const manual = new Set(highlights.map((highlight) => highlight.cfi_range));
     const settings = readerSettingsRef.current;
     const next = new Map<string, FoliateMarker>();
@@ -319,6 +397,15 @@ export function useFoliateAnnotations({
       cfi,
       { color: marker.color, styleKind: marker.kind === "lookup" ? "automatic" : "vocab" },
     ]));
+    // Note anchors go in first and never overwrite: foliate's overlayer is keyed
+    // by CFI, so a note mark laid over a highlight would evict the highlight
+    // rather than sit under it. Where a passage already carries a mark, that
+    // mark is the stronger cue and the note anchor has nothing to add.
+    for (const note of noteAnchors) {
+      if (note.location && !desired.has(note.location)) {
+        desired.set(note.location, { color: NOTE_ANCHOR_MARK_SENTINEL, styleKind: "note" });
+      }
+    }
     for (const highlight of highlights) {
       desired.set(highlight.cfi_range, { color: highlight.color, styleKind: "manual" });
     }
@@ -404,14 +491,27 @@ export function useFoliateAnnotations({
 
   const refreshAnnotations = useCallback(async (reapplyVisible = false) => {
     if (isTextBook || !bookId || !viewRef.current || !supportsManualAnnotations) return;
-    const [highlights, vocab, lookupOccurrences] = await Promise.all([
+    const [highlights, vocab, lookupOccurrences, noteAnchors] = await Promise.all([
       invoke<Highlight[]>("list_highlights", { bookId }),
       supportsWordMarkers
         ? invoke<VocabMarker[]>("list_vocab_words", { bookId })
         : Promise.resolve([]),
       invoke<LookupOccurrenceMark[]>("list_lookup_occurrence_marks", { bookId }),
+      // A margin note the reader cannot find again is a note they will not
+      // write. The shipped rail left the passage unmarked, so a card and its
+      // sentence had nothing tying them together on the page itself.
+      invoke<NoteAnchorPage>("list_notes", {
+        bookId,
+        anchorKind: "selection",
+        word: null,
+        search: null,
+        updatedAfter: null,
+        updatedBefore: null,
+        cursor: null,
+        limit: NOTE_ANCHOR_LIMIT,
+      }).then((page) => page.notes).catch(() => [] as NoteAnchorMark[]),
     ]);
-    markerSnapshotRef.current = { highlights, vocab, lookupOccurrences };
+    markerSnapshotRef.current = { highlights, vocab, lookupOccurrences, noteAnchors };
     await applyAnnotations(reapplyVisible);
     applyFoliateMarkerStyles();
     applyPassiveVocabAnnotations();
@@ -489,7 +589,7 @@ export function useFoliateAnnotations({
     await view.addAnnotation({ value: cfi, color: READING_HIGHLIGHT_COLOR }).catch(() => {});
   }, [clearReadingHighlight, supportsCfiNavigation, viewRef]);
 
-  type ContinuousHighlight = { cfi: string; paused: boolean };
+  type ContinuousHighlight = { cfi: string; paused: boolean; progress: number | null };
   const continuousHighlightDesiredRef = useRef<ContinuousHighlight | null>(null);
   const continuousHighlightRenderedRef = useRef<ContinuousHighlight | null>(null);
   const continuousHighlightQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -499,7 +599,9 @@ export function useFoliateAnnotations({
     const sync = async () => {
       const target = continuousHighlightDesiredRef.current;
       const rendered = continuousHighlightRenderedRef.current;
-      if (rendered?.cfi === target?.cfi && rendered?.paused === target?.paused) return;
+      if (rendered?.cfi === target?.cfi
+        && rendered?.paused === target?.paused
+        && rendered?.progress === target?.progress) return;
       const view = viewRef.current;
       if (rendered && view) {
         await view.deleteAnnotation({ value: rendered.cfi }).catch(() => {});
@@ -512,6 +614,7 @@ export function useFoliateAnnotations({
         value: target.cfi,
         color: target.paused ? "#B4AEA6" : "#B99BE5",
         styleKind: "continuous",
+        progress: target.progress,
       }).catch(() => {});
       continuousHighlightRenderedRef.current = target;
     };
@@ -520,7 +623,8 @@ export function useFoliateAnnotations({
   }, [supportsCfiNavigation, viewRef]);
 
   const showContinuousReadingHighlight = useCallback(
-    (cfi: string, paused: boolean) => updateContinuousReadingHighlight({ cfi, paused }),
+    (cfi: string, paused: boolean, progress: number | null) =>
+      updateContinuousReadingHighlight({ cfi, paused, progress }),
     [updateContinuousReadingHighlight],
   );
   const clearContinuousReadingHighlight = useCallback(
@@ -666,11 +770,13 @@ export function useFoliateAnnotations({
     window.addEventListener("lookup-record-changed", refresh);
     window.addEventListener("vocab-changed", refresh);
     window.addEventListener("highlight-changed", refresh);
+    window.addEventListener("note-changed", refresh);
     window.addEventListener("focus", refresh);
     return () => {
       window.removeEventListener("lookup-record-changed", refresh);
       window.removeEventListener("vocab-changed", refresh);
       window.removeEventListener("highlight-changed", refresh);
+      window.removeEventListener("note-changed", refresh);
       window.removeEventListener("focus", refresh);
     };
   }, [bookId, refreshAnnotations]);

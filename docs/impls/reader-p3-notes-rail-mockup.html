@@ -3,165 +3,659 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Lantern P3.2 · 页边笔记轨 / 阅读工作区</title>
+  <title>Lantern P3.2 · 页边笔记轨（修订样张）</title>
   <style>
     :root{
-      --chrome:#fbfaf8;--paper:#f6f0e5;--page:#fffdf8;--surface:#fff;--text:#302c28;
-      --secondary:#5d5751;--muted:#817a73;--quiet:#a39b93;--border:#ddd7cf;--line:#ece6de;
-      --input:#f3f0eb;--accent:#7c3aed;--accent-bg:#f1eafd;--accent-soft:#dfcff8;
-      --danger:#a94f46;--danger-bg:#f9eae7;--warn:#a46025;--warn-bg:#fff4e5;
-      --shadow:0 16px 45px rgba(54,45,37,.12)
+      /* 取自 src/index.css 的实际设计令牌 */
+      --surface:#fff;--muted-surface:#fafafa;--input:#f3f3f5;
+      --text:#18181b;--secondary:#52525c;--muted:#71717b;--quiet:#a1a1aa;
+      --border:#e4e4e7;--border-light:#f4f4f5;
+      --accent:#7c3aed;--accent-bg:#f3e8ff;--accent-soft:#d8b4fe;
+      --danger:#e7000b;--danger-bg:#fef2f2;--danger-border:#ffc9c9;
+      --success:#00a63e;
+      /* 阅读区 */
+      --canvas:#d9d7d3;--chrome:#fbfaf8;--paper:#f6f0e5;--page:#fffdf8;
+      --paper-border:#ddd7cf;--paper-quiet:#a39b93;
     }
     *{box-sizing:border-box}
-    html,body{margin:0;min-width:980px;min-height:720px;background:#d9d7d3;color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    html,body{margin:0;min-width:1120px;background:var(--canvas);color:var(--text);
+      font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
     button,input,textarea{font:inherit;color:inherit}button{cursor:pointer}
-    svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-    .stage{min-height:100vh;padding:26px;display:grid;place-items:center}
-    .window{position:relative;width:min(1460px,calc(100vw - 52px));height:min(910px,calc(100vh - 52px));min-height:668px;overflow:hidden;border:1px solid #c9c5bf;border-radius:16px;background:var(--chrome);box-shadow:0 26px 75px rgba(42,37,32,.18);transition:width .28s ease}
-    .traffic{position:absolute;z-index:20;top:19px;left:18px;display:flex;gap:8px}.traffic i{width:12px;height:12px;border-radius:50%;display:block}.traffic i:nth-child(1){background:#ff5f57}.traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}
-    .app{height:100%;display:grid;grid-template-rows:62px minmax(0,1fr) 39px}
-    .toolbar{position:relative;z-index:10;padding:0 18px 0 72px;border-bottom:1px solid var(--border);background:rgba(251,250,248,.98);display:grid;grid-template-columns:1fr auto 1fr;align-items:center}
-    .book b{display:block;font:600 13px Georgia,"Songti SC",serif}.book span{display:block;margin-top:3px;color:var(--quiet);font-size:9.5px}.chapter{text-align:center}.chapter b{display:block;color:var(--secondary);font-size:10.5px}.chapter span{display:block;margin-top:3px;color:var(--quiet);font-size:9px}
-    .tools{justify-self:end;display:flex;align-items:center;gap:3px}.tool{height:34px;min-width:34px;padding:0 8px;border:0;border-radius:9px;background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:6px}.tool:hover{background:var(--input);color:var(--text)}.tool.active{background:var(--accent-bg);color:var(--accent)}.tool .count{min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:var(--accent);color:white;font-size:8px;line-height:16px}.divider{width:1px;height:21px;margin:0 3px;background:var(--border)}
-    .body{min-height:0;overflow:hidden;background:var(--paper)}
-    .workspace{height:100%;padding:28px 42px 20px;display:grid;grid-template-columns:minmax(520px,720px) 326px;justify-content:center;gap:42px;transition:all .25s ease}
-    .window.entry .workspace{grid-template-columns:minmax(560px,780px);gap:0}
-    .page-wrap{position:relative;min-width:0;height:100%;transition:all .25s ease}
-    .page{position:relative;width:100%;height:100%;overflow:hidden;padding:41px 70px 48px;background:var(--page);box-shadow:0 6px 28px rgba(76,62,48,.075);font:16.5px/1.83 Georgia,"Songti SC",serif;transition:padding .25s ease}
-    .page .kicker{margin:0 0 7px;text-align:center;color:#988f85;font:9px Inter,sans-serif;letter-spacing:.15em;text-transform:uppercase}.page h1{margin:0 0 25px;text-align:center;font-size:25px;font-weight:600}.page p{position:relative;margin:0 0 .78em;text-align:justify;text-indent:1.55em}.page p.no-indent{text-indent:0}.page em{font-style:italic}.chapter-rule{width:46px;height:1px;margin:0 auto 25px;background:#cfc7bd}
-    .anchor{border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;background:linear-gradient(transparent 65%,#eadff8 65%)}
-    .anchor.two{background:linear-gradient(transparent 65%,#ead9a8 65%)}.anchor.flash{animation:quote-flash 1.25s ease}@keyframes quote-flash{0%,100%{background-color:transparent}22%,72%{background-color:#d8c0f7}}
-    .anchor-dot{position:absolute;right:-55px;top:.5em;width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px #eee4fb;opacity:0;transition:opacity .18s}.show-anchors .anchor-dot{opacity:1}
-    .page-number{position:absolute;right:27px;bottom:18px;color:#aaa198;font:9px Inter,sans-serif}
-    .selection-action{display:none;position:absolute;z-index:8;right:42px;top:169px;transform:translateY(-100%);padding:4px;border:1px solid var(--border);border-radius:9px;background:white;box-shadow:0 9px 24px rgba(49,41,34,.15)}.selection-action.show{display:flex}.selection-action button{height:29px;padding:0 9px;border:0;border-radius:6px;background:transparent;color:var(--secondary);display:flex;align-items:center;gap:6px;font-size:9.5px}.selection-action button:hover,.selection-action button.active{background:var(--accent-bg);color:var(--accent)}
-    .rail{position:relative;min-width:0;height:100%;overflow:hidden}.window.entry .rail{display:none}
-    .rail-top{height:44px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(126,113,101,.22)}.rail-title{display:flex;align-items:center;gap:8px}.rail-title b{font-size:11px}.rail-title span{color:var(--quiet);font-size:9px}.rail-actions{display:flex;align-items:center;gap:3px}.rail-actions button{height:28px;padding:0 7px;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:9px}.rail-actions button:hover{background:rgba(255,255,255,.62);color:var(--text)}
-    .rail-view{display:none;position:absolute;inset:45px 0 0}.rail-view.active{display:block}
-    .note-card{position:absolute;left:0;right:0;padding:12px 13px 11px;border:1px solid rgba(197,186,176,.8);border-radius:11px;background:rgba(255,254,251,.94);box-shadow:0 7px 22px rgba(73,60,48,.07);font-size:10px;line-height:1.58;transition:box-shadow .15s,border-color .15s}.note-card:hover{border-color:#c5b4dc;box-shadow:0 9px 25px rgba(73,60,48,.10)}.note-card:before{content:"";position:absolute;right:100%;top:19px;width:43px;border-top:1px solid #c8b2e5}.note-card:after{content:"";position:absolute;right:calc(100% + 40px);top:15px;width:7px;height:7px;border-radius:50%;background:var(--accent)}
-    .note-card.one{top:170px}.note-card.two{top:320px}.note-card.three{top:471px}.note-card.warn{border-color:#e2a871;background:#fffaf2}
-    .note-head{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:8.5px}.note-head b{color:var(--secondary);font-size:9px}.note-head time{margin-left:auto}.note-head .status{color:#6e8d62}.quote{margin:8px 0;padding-left:9px;border-left:2px solid var(--accent-soft);color:var(--muted);font:italic 9.5px/1.55 Georgia,"Songti SC",serif}.note-text{margin:6px 0 0;color:var(--text);font-size:10.5px;line-height:1.65}.note-foot{margin-top:8px;display:flex;align-items:center;gap:8px;color:var(--quiet);font-size:8.5px}.note-foot button{margin-left:auto;padding:0;border:0;background:none;color:var(--accent);font-size:8.5px}.tag{padding:2px 6px;border-radius:9px;background:var(--input);color:var(--muted);font-size:8px}
-    .editor-card{position:absolute;inset:90px 0 auto;padding:14px;border:1px solid #c8b1e6;border-radius:12px;background:white;box-shadow:0 14px 34px rgba(65,47,83,.13)}.editor-card:before{content:"";position:absolute;right:100%;top:112px;width:43px;border-top:1px solid #bca0e0}.editor-card:after{content:"";position:absolute;right:calc(100% + 40px);top:108px;width:7px;height:7px;border-radius:50%;background:var(--accent)}
-    .editor-top{display:flex;align-items:center;gap:7px}.editor-top b{font-size:10.5px}.save-state{margin-left:auto;color:#6f8c65;font-size:8.5px;display:flex;align-items:center;gap:4px}.save-state.failed{color:var(--danger)}.save-state i{width:5px;height:5px;border-radius:50%;background:currentColor}.editor-quote{margin:10px 0 11px;padding:9px 10px;border-radius:8px;background:var(--input);color:var(--muted);font:italic 9.5px/1.55 Georgia,"Songti SC",serif}.formatbar{height:30px;padding:0 5px;border:1px solid var(--border);border-bottom:0;border-radius:8px 8px 0 0;background:#fbfaf8;display:flex;align-items:center;gap:1px}.formatbar button{width:27px;height:24px;border:0;border-radius:5px;background:transparent;color:var(--muted);font:600 10px Georgia,serif}.formatbar button:hover{background:var(--input);color:var(--text)}.formatbar i{width:1px;height:14px;margin:0 3px;background:var(--border)}
-    .editor{width:100%;height:136px;resize:none;padding:11px 12px;border:1px solid var(--border);border-radius:0 0 8px 8px;background:white;outline:none;color:var(--text);font-size:10.5px;line-height:1.65}.editor:focus{border-color:#b99bdc}.editor::placeholder{color:var(--quiet)}.editor-bottom{margin-top:9px;display:flex;align-items:center;gap:8px}.editor-bottom span{color:var(--quiet);font-size:8.5px}.editor-bottom .spacer{flex:1}.ghost,.primary,.danger{height:29px;padding:0 10px;border-radius:7px;font-size:9px}.ghost{border:0;background:transparent;color:var(--muted)}.primary{border:0;background:var(--accent);color:white}.danger{border:0;background:var(--danger);color:white}
-    .free-note{position:absolute;top:472px;left:0;width:100%;height:34px;border:1px dashed #c9b9dc;border-radius:9px;background:rgba(255,255,255,.42);color:#735895;font-size:9.5px}.free-note:hover{background:var(--accent-bg)}
-    .failure{margin-bottom:10px;padding:9px 10px;border-radius:8px;background:var(--danger-bg);color:var(--danger);display:flex;align-items:flex-start;gap:7px;font-size:8.5px;line-height:1.45}.failure button{margin-left:auto;padding:0;border:0;background:none;color:inherit;font-weight:650;font-size:8.5px}
-    .delete-confirm{margin-top:10px;padding:10px;border:1px solid #e7c0bb;border-radius:8px;background:var(--danger-bg)}.delete-confirm b{display:block;color:#78433e;font-size:9.5px}.delete-confirm p{margin:4px 0 9px;color:#93625c;font-size:8.5px;line-height:1.5}.confirm-actions{display:flex;justify-content:flex-end;gap:6px}
-    .index-head{padding:15px 0 10px}.search{height:34px;padding:0 10px;border:1px solid var(--border);border-radius:9px;background:rgba(255,255,255,.8);display:flex;align-items:center;gap:7px;color:var(--quiet)}.search input{width:100%;border:0;outline:0;background:transparent;font-size:9.5px}.index-meta{padding:2px 2px 9px;color:var(--quiet);display:flex;justify-content:space-between;font-size:8.5px}.index-list{height:calc(100% - 85px);overflow:auto;padding-right:3px}.index-item{width:100%;padding:11px 9px;border:0;border-top:1px solid rgba(129,116,104,.16);background:transparent;text-align:left}.index-item:hover,.index-item.active{border-radius:8px;background:rgba(255,255,255,.62)}.index-item strong{display:block;color:var(--text);font-size:9.5px;line-height:1.45}.index-item p{margin:5px 0 0;color:var(--secondary);font-size:9px;line-height:1.55}.index-item span{display:block;margin-top:6px;color:var(--quiet);font-size:8px}.index-hit{background:#e6d7fa;color:#553476}
-    .empty-state{height:100%;display:grid;place-items:center;text-align:center}.empty-state div{max-width:240px}.empty-icon{width:47px;height:47px;margin:0 auto 12px;border-radius:14px;background:rgba(255,255,255,.7);color:#9a84b4;display:grid;place-items:center}.empty-icon svg{width:22px;height:22px}.empty-state h3{margin:0;font:600 15px Georgia,"Songti SC",serif}.empty-state p{margin:8px 0 14px;color:var(--muted);font-size:9px;line-height:1.65}
-    .footer{padding:0 28px;border-top:1px solid var(--border);background:var(--chrome);display:flex;align-items:center;justify-content:space-between;color:var(--quiet);font-size:9px}.progress{width:155px;height:1px;background:#d8d2ca}.progress i{display:block;width:47%;height:100%;background:#8d857d}.keyboard{opacity:.8}
-    .state-nav{position:fixed;z-index:100;top:9px;left:50%;transform:translateX(-50%);display:flex;gap:3px;padding:4px;border:1px solid #d1d1d6;border-radius:11px;background:rgba(255,255,255,.97);box-shadow:0 8px 24px rgba(0,0,0,.13)}.state-nav button{height:29px;padding:0 9px;border:0;border-radius:7px;background:transparent;color:#89827c;font-size:9px;white-space:nowrap}.state-nav button.active{background:var(--accent-bg);color:var(--accent);font-weight:650}
-    .caption{position:fixed;z-index:90;left:18px;bottom:15px;width:276px;padding:12px 14px;border-radius:11px;background:rgba(39,35,32,.92);color:#d8d2cc;box-shadow:0 10px 28px rgba(0,0,0,.16);font-size:9.3px;line-height:1.55}.caption b{display:block;margin-bottom:3px;color:#fff;font-size:10px}.caption span{color:#bab2aa}
-    .index-item .index-hit{display:inline;margin:0;background:#e6d7fa;color:#553476;font-size:inherit}
-    .window.narrow{width:930px}.window.narrow .toolbar{grid-template-columns:1fr 1fr}.window.narrow .chapter{display:none}.window.narrow .workspace{padding:18px 36px 14px;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(290px,1fr) 238px;gap:14px}.window.narrow .page{padding:30px 88px;height:100%}.window.narrow .page p:nth-of-type(n+4){display:none}.window.narrow .anchor-dot{right:-72px}.window.narrow .rail{border-top:1px solid rgba(126,113,101,.25);overflow:visible}.window.narrow .rail-top{height:39px}.window.narrow .rail-view{inset:40px 0 0}.window.narrow .editor-card{inset:9px 0 auto;padding:11px 13px;display:grid;grid-template-columns:220px 1fr;gap:9px 14px}.window.narrow .editor-card:before,.window.narrow .editor-card:after{display:none}.window.narrow .editor-top{grid-column:1/-1}.window.narrow .editor-quote{margin:0}.window.narrow .editor-box{grid-column:2}.window.narrow .formatbar{display:none}.window.narrow .editor{height:81px;border-radius:8px}.window.narrow .editor-bottom{grid-column:1/-1;margin-top:0}.window.narrow .free-note{display:none}.window.narrow .caption{display:none}
-    @media(max-width:1190px){.caption{display:none}.workspace{padding-left:24px;padding-right:24px;gap:28px;grid-template-columns:minmax(500px,680px) 300px}.page{padding-left:54px;padding-right:54px}.note-card:before,.editor-card:before{width:29px}.note-card:after,.editor-card:after{right:calc(100% + 26px)}}
+    .icon{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+    .spin{animation:spin .9s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+    code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.94em}
+
+    /* ── 页面骨架 ── */
+    .sheet{max-width:1540px;margin:0 auto;padding:70px 26px 56px}
+    .sheet-head h1{margin:0 0 7px;font-size:19px;font-weight:650;letter-spacing:-.2px}
+    .sheet-head p{max-width:880px;margin:0;color:var(--secondary);font-size:12px;line-height:1.8}
+    .sheet-head p+p{margin-top:6px}
+    .deltas{display:flex;flex-wrap:wrap;gap:7px;margin-top:13px}
+    .delta{padding:6px 11px;border:1px solid var(--accent-soft);border-radius:999px;background:#faf5ff;color:#6b21a8;font-size:11px}
+    .delta.no{border-color:var(--border);background:var(--muted-surface);color:var(--muted)}
+    .section-label{margin:32px 0 12px;display:flex;align-items:baseline;gap:10px}
+    .section-label b{font-size:13.5px}.section-label span{color:var(--muted);font-size:11px}
+
+    /* ── 状态导航 ── */
+    .state-nav{position:fixed;z-index:100;top:9px;left:50%;transform:translateX(-50%);display:flex;flex-wrap:wrap;
+      justify-content:center;gap:2px;max-width:calc(100vw - 36px);padding:4px;border:1px solid #d4d4d8;border-radius:11px;
+      background:rgba(255,255,255,.97);box-shadow:0 8px 24px rgba(0,0,0,.13)}
+    .state-nav button{height:27px;padding:0 9px;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:11px;white-space:nowrap}
+    .state-nav button:hover{background:var(--input);color:var(--text)}
+    .state-nav button.active{background:var(--accent-bg);color:var(--accent);font-weight:650}
+    .state-nav i{width:1px;height:17px;margin:5px 5px;background:var(--border)}
+
+    /* ── 窗口 ── */
+    .window{position:relative;height:756px;overflow:hidden;border:1px solid #c9c5bf;border-radius:15px;
+      background:var(--chrome);box-shadow:0 26px 75px rgba(42,37,32,.18)}
+    .traffic{position:absolute;z-index:20;top:17px;left:18px;display:flex;gap:8px}
+    .traffic i{width:12px;height:12px;border-radius:50%;background:#ff5f57}
+    .traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}
+    .app{height:100%;display:grid;grid-template-rows:60px minmax(0,1fr) 34px}
+    .toolbar{padding:0 16px 0 72px;border-bottom:1px solid var(--paper-border);display:grid;grid-template-columns:1fr auto 1fr;align-items:center;user-select:none}
+    .book b{display:block;font:600 12.5px Georgia,"Songti SC",serif}
+    .book span{display:block;margin-top:2px;color:var(--paper-quiet);font-size:10px}
+    .chapter{text-align:center}.chapter b{display:block;color:var(--secondary);font-size:11px}
+    .chapter span{display:block;margin-top:2px;color:var(--paper-quiet);font-size:9.5px}
+    .tools{justify-self:end;display:flex;align-items:center;gap:2px}
+    .tool{height:32px;min-width:32px;padding:0 7px;border:0;border-radius:8px;background:transparent;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:5px}
+    .tool:hover{background:var(--input);color:var(--text)}.tool.active{background:var(--accent-bg);color:var(--accent)}
+    .tool .badge{min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:var(--accent);color:#fff;font-size:9px;line-height:16px}
+    .tool-divider{width:1px;height:20px;margin:0 3px;background:var(--paper-border)}
+    .workspace{min-height:0;display:flex;background:var(--paper)}
+    .reader{position:relative;min-width:0;flex:1;overflow:hidden;padding:26px 34px;display:grid;place-items:center}
+    .page{position:relative;width:min(680px,100%);height:100%;overflow:hidden;padding:38px 62px 44px;background:var(--page);
+      box-shadow:0 6px 28px rgba(76,62,48,.075);font:16px/1.9 Georgia,"Songti SC",serif}
+    .page .kicker{margin:0 0 7px;text-align:center;color:#988f85;font:9px Inter,sans-serif;letter-spacing:.15em;text-transform:uppercase}
+    .page h3{margin:0 0 8px;text-align:center;font-size:23px;font-weight:600}
+    .chapter-rule{width:44px;height:1px;margin:0 auto 22px;background:#cfc7bd}
+    .page p{margin:0 0 .74em;text-align:justify;text-indent:2em}.page p.no-indent{text-indent:0}
+    .anchor{border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone;
+      background:linear-gradient(transparent 66%,#ece2f8 66%)}
+    .anchor.flash{animation:quote-flash 1.3s ease}
+    @keyframes quote-flash{0%,100%{background-color:transparent}22%,72%{background-color:#dcc6f8}}
+    .page-number{position:absolute;right:24px;bottom:15px;color:#aaa198;font:9px Inter,sans-serif}
+    .resize{width:4px;flex:none;border-left:1px solid var(--paper-border);background:#f6f4f1;cursor:col-resize}
+    .resize:hover{background:var(--accent-soft)}
+    .footer{padding:0 24px;border-top:1px solid var(--paper-border);background:var(--chrome);color:var(--paper-quiet);
+      display:flex;align-items:center;justify-content:space-between;font-size:9.5px}
+    .progress{width:150px;height:1px;background:#d8d2ca}.progress i{display:block;width:47%;height:100%;background:#8d857d}
+
+    /* ── 笔记面板：轨 / 编辑 / 全部笔记 共用外壳 ── */
+    .panel{width:380px;flex:none;min-width:0;display:flex;flex-direction:column;overflow:hidden;
+      background:var(--muted-surface);border-left:1px solid var(--border)}
+    .panel-head{height:48px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--border)}
+    .panel-head b{font-size:12px}.panel-head .count{color:var(--muted);font-size:11px}
+    .head-grow{min-width:0;flex:1}
+    .head-btn{width:28px;height:28px;border:0;border-radius:7px;background:transparent;color:var(--muted);display:grid;place-items:center}
+    .head-btn:hover{background:var(--input);color:var(--text)}
+    .banner{margin:12px 12px 0;padding:8px 9px;display:flex;align-items:center;gap:8px;border-radius:7px;
+      background:var(--danger-bg);color:var(--danger);font-size:11px;line-height:1.5}
+    .banner button{margin-left:auto;flex:none;padding:0;border:0;background:transparent;color:var(--danger);font-size:11px;font-weight:600}
+    .panel-body{min-height:0;flex:1;overflow-y:auto;padding:12px}
+    .panel-foot{flex:none;padding:8px;border-top:1px solid var(--border)}
+    .panel-foot button{width:100%;padding:6px 0;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:12px}
+    .panel-foot button:hover{background:var(--input);color:var(--text)}
+
+    /* ── 卡片 ── */
+    .rail{position:relative}
+    .card{padding:12px;border:1px solid var(--border);border-radius:9px;background:var(--surface);box-shadow:0 1px 2px rgba(24,24,27,.05)}
+    .card.positioned{position:absolute;left:0;right:0;max-height:150px;overflow-y:auto}
+    .card.flow{position:relative;margin-bottom:12px}
+    .quote{display:block;width:100%;margin:0 0 8px;padding:0 0 0 8px;border:0;border-left:2px solid rgba(124,58,237,.4);
+      background:transparent;color:var(--muted);text-align:left;font:italic 12px/1.65 Georgia,"Songti SC",serif}
+    .quote:hover{color:var(--text)}
+    .card-body{margin:0;color:var(--text);font:13px/1.75 Georgia,"Songti SC",serif;white-space:pre-wrap;word-break:break-word}
+    .card-meta{margin-top:9px;display:flex;align-items:center;gap:7px;color:var(--muted);font-size:10px}
+    .chip{padding:1px 6px;border-radius:5px;background:var(--input);color:#8b8b93;font-size:9.5px;white-space:nowrap}
+    .grow{min-width:0;flex:1}
+    .card-meta .link{padding:0;border:0;background:transparent;color:var(--muted);font-size:10px}
+    .card-meta .link:hover{color:var(--accent)}
+    .card-meta .pencil{padding:0;border:0;background:transparent;color:var(--muted);display:grid;place-items:center;opacity:0;transition:opacity .15s}
+    .card:hover .pencil,.card:focus-within .pencil{opacity:1}
+    .saved-flag{display:inline-flex;align-items:center;gap:3px;color:var(--success);font-size:9.5px;white-space:nowrap}
+    .saved-flag .icon{width:11px;height:11px;stroke-width:2.4}
+    .card.just-saved{border-color:#bbf7d0;animation:settle 2.6s ease forwards}
+    @keyframes settle{0%,55%{background:#f2fcf5}100%{background:var(--surface)}}
+
+    /* ── 空态 ── */
+    .empty{height:100%;display:grid;place-items:center;text-align:center;padding:12px}
+    .empty .mark{color:#c4c4cb}
+    .empty h4{margin:12px 0 0;font-size:13px;font-weight:600;color:var(--secondary)}
+    .empty p{max-width:252px;margin:5px auto 0;color:var(--muted);font-size:12px;line-height:1.65}
+    .empty button{margin-top:14px;padding:8px 12px;border:0;border-radius:7px;background:var(--accent);color:#fff;font-size:12px;font-weight:500}
+
+    /* ── 编辑器 ── */
+    .editor blockquote{margin:0 0 12px;padding-left:8px;border-left:2px solid rgba(124,58,237,.4);color:var(--muted);
+      font:12px/1.65 Georgia,"Songti SC",serif}
+    .editor-anchor{margin:0 0 12px;display:flex;align-items:center;gap:6px;color:var(--quiet);font-size:11px}
+    .editor textarea{width:100%;min-height:150px;padding:12px;border:1px solid var(--border);border-radius:9px;
+      background:var(--surface);color:var(--text);outline:0;resize:vertical;font:13px/1.75 Georgia,"Songti SC",serif}
+    .editor textarea:focus{border-color:var(--accent)}
+    .editor textarea::placeholder{color:#a1a1aa;font-family:inherit}
+    .editor-row{margin-top:12px;display:flex;align-items:center;gap:7px}
+    .status{min-width:0;flex:1;display:flex;align-items:center;gap:5px;color:var(--muted);font-size:11px}
+    .status.ok{color:var(--success)}.status .icon{width:12px;height:12px}
+    .ghost{height:32px;padding:0 8px;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:12px}
+    .ghost:hover{background:var(--input);color:var(--text)}
+    .trash{width:32px;height:32px;padding:0;border:0;border-radius:7px;background:transparent;color:var(--muted);display:grid;place-items:center}
+    .trash:hover{background:var(--danger-bg);color:var(--danger)}
+    .primary{height:32px;padding:0 12px;display:flex;align-items:center;gap:5px;border:0;border-radius:7px;
+      background:var(--accent);color:#fff;font-size:12px;font-weight:500}
+    .primary[disabled]{opacity:.5;cursor:default}
+    .confirm{margin-top:12px;padding:12px;border:1px solid var(--danger-border);border-radius:9px;background:var(--danger-bg);color:var(--danger);font-size:12px}
+    .confirm p{margin:5px 0 0;line-height:1.6}
+    .confirm-actions{margin-top:12px;display:flex;justify-content:flex-end;gap:8px}
+    .confirm-actions button{height:28px;padding:0 9px;border:0;border-radius:6px;background:transparent;color:var(--danger);font-size:12px}
+    .confirm-actions .danger{background:var(--danger);color:#fff}
+
+    /* ── 全部笔记 ── */
+    .search{height:32px;margin-bottom:12px;padding:0 9px;display:flex;align-items:center;gap:7px;border-radius:7px;background:var(--input);color:var(--muted)}
+    .search input{min-width:0;flex:1;border:0;outline:0;background:transparent;font-size:12px}
+    .search input::placeholder{color:#a1a1aa}
+    .truncated{margin-top:8px;padding:9px;border-radius:7px;background:var(--input);color:var(--muted);text-align:center;font-size:11px;line-height:1.6}
+    .truncated p{margin:0}
+    .truncated button{margin-top:6px;display:inline-flex;align-items:center;gap:5px;padding:0;border:0;background:transparent;color:var(--accent);font-size:11px;font-weight:600}
+    .gap-note{margin:0 0 12px;padding:7px 9px;border:1px dashed #d4d4d8;border-radius:7px;color:var(--quiet);text-align:center;font-size:10px}
+
+    /* ── 说明块 ── */
+    .caption{margin-top:14px;padding:14px 16px;border:1px solid var(--border);border-radius:11px;background:var(--surface)}
+    .caption b{display:block;margin-bottom:6px;font-size:12.5px}
+    .caption p{margin:0;color:var(--secondary);font-size:12px;line-height:1.8}
+    .caption ul{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:11.5px;line-height:1.8}
+    .controls{margin-top:12px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;color:var(--muted);font-size:11px}
+    .controls button{height:26px;padding:0 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--muted);font-size:11px}
+    .controls button.active{border-color:var(--accent-soft);background:var(--accent-bg);color:var(--accent);font-weight:600}
+
+    /* ── 一览 ── */
+    .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(322px,1fr));gap:18px}
+    .tile{border:1px solid var(--border);border-radius:12px;background:var(--surface);overflow:hidden;cursor:pointer}
+    .tile:hover{border-color:var(--accent-soft)}
+    .tile-head{padding:12px 14px 11px;border-bottom:1px solid var(--border-light)}
+    .tile-head b{display:block;font-size:12px}
+    .tile-head span{display:block;margin-top:4px;color:var(--muted);font-size:11px;line-height:1.6}
+    .tile-frame{height:468px;overflow:hidden;background:var(--muted-surface)}
+    .tile-frame .panel{width:100%;height:100%;border-left:0}
+    .tile-frame *{pointer-events:none}
+    .tile-frame .panel-body{overflow:hidden}
+    .tile-frame .pencil{opacity:1}
+    .foot-note{margin-top:26px;color:var(--muted);font-size:11px;line-height:1.9}
   </style>
 </head>
 <body>
-  <nav class="state-nav" aria-label="样张状态">
-    <button data-state="entry">入口</button><button class="active" data-state="rail">页边笔记</button><button data-state="new">选择后新建</button><button data-state="edit">编辑 / 自动保存</button><button data-state="index">列表 / 搜索</button><button data-state="empty">空态</button><button data-state="fail">保存失败</button><button data-state="delete">删除确认</button><button data-state="narrow">窄窗</button>
-  </nav>
+  <nav class="state-nav" id="state-nav" aria-label="样张状态"></nav>
 
-  <div class="stage"><section class="window show-anchors" id="window">
-    <div class="traffic"><i></i><i></i><i></i></div>
-    <div class="app">
-      <header class="toolbar">
-        <div class="book"><b>The Left Hand of Darkness</b><span>Ursula K. Le Guin</span></div>
-        <div class="chapter"><b>Chapter 8 · Another Way into Orgoreyn</b><span>184 / 382</span></div>
-        <div class="tools">
-          <button class="tool" title="目录"><svg viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
-          <button class="tool" title="搜索"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg></button>
-          <button class="tool" title="阅读设置"><b style="font-size:14px">A</b><b style="font-size:9px">A</b></button>
-          <button class="tool" title="书签和高亮"><svg viewBox="0 0 24 24"><path d="M6 4h12v17l-6-4-6 4z"/></svg></button>
-          <button class="tool active" id="notes-tool" title="页边笔记"><svg viewBox="0 0 24 24"><path d="M5 4h14v13H9l-4 4zM9 8h6M9 12h4"/></svg><span class="count">3</span></button>
-          <div class="divider"></div>
-          <button class="tool" title="AI 助手"><svg viewBox="0 0 24 24"><rect x="5" y="7" width="14" height="11" rx="3"/><path d="M9 12h.01M15 12h.01M12 7V4M9 18v2M15 18v2"/></svg></button>
+  <div class="sheet">
+    <header class="sheet-head">
+      <h1>P3.2 页边笔记轨 · 修订样张</h1>
+      <p>按现在已经上线的 <code>ReaderNotesRail</code> 的实际形态重画：卡片按引用原文在这一页的高度排列，「全部笔记」仍然是列表底部的一个按钮。上排状态可以点，窗口里的卡片、编辑、保存、删除、定位都是真能走通的。</p>
+      <p>相对上一版样张，这次只改三件事，其余保持不动：</p>
+      <div class="deltas">
+        <span class="delta">① 卡片增加页码小标签</span>
+        <span class="delta">②「已保存」确认：卡片上 + 编辑器静止态</span>
+        <span class="delta no">③ 不加笔记标题（上一版有「我的想法」这类标题，去掉）</span>
+        <span class="delta no">④「全部笔记」留在底部按钮，不改成顶部分段控件</span>
+      </div>
+    </header>
+
+    <div class="section-label" style="margin-top:24px"><b>真实语境</b><span>一页正文 + 右侧笔记轨。点上排状态切换，也可以直接在窗口里操作</span></div>
+    <section class="window">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <div class="app">
+        <header class="toolbar">
+          <div class="book"><b>局外人</b><span>阿尔贝·加缪</span></div>
+          <div class="chapter"><b>第二部 · 第一章</b><span>48 / 102</span></div>
+          <div class="tools">
+            <button class="tool" title="目录"><svg class="icon" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
+            <button class="tool" title="搜索"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg></button>
+            <button class="tool" title="阅读设置"><b style="font-size:14px">A</b><b style="font-size:9px">A</b></button>
+            <button class="tool" title="书签和高亮"><svg class="icon" viewBox="0 0 24 24"><path d="M6 4h12v17l-6-4-6 4z"/></svg></button>
+            <button class="tool" title="生词"><svg class="icon" viewBox="0 0 24 24"><path d="m5 8 6 6M4 14l6-6 2-3M2 5h12M12 19l4-9 4 9M13.5 16h5"/></svg></button>
+            <button class="tool active" id="notes-tool" title="页边笔记"><svg class="icon" viewBox="0 0 24 24"><path d="M5 4h14v13H9l-4 4zM9 8h6M9 12h4"/></svg><span class="badge" id="tool-badge">6</span></button>
+            <div class="tool-divider"></div>
+            <button class="tool" title="AI 助手"><svg class="icon" viewBox="0 0 24 24"><rect x="5" y="7" width="14" height="11" rx="3"/><path d="M9 12h.01M15 12h.01M12 7V4M9 18v2M15 18v2"/></svg></button>
+          </div>
+        </header>
+
+        <div class="workspace">
+          <main class="reader" id="reader">
+            <article class="page">
+              <p class="kicker">Deuxième partie</p><h3>第一章</h3><div class="chapter-rule"></div>
+              <p class="no-indent">我被捕以后，接连受过好几次审讯。但最初的审讯只是核实身份，并没有持续很久，第一次在警察局，我的案子似乎谁也不感兴趣。</p>
+              <p>八天以后，预审法官却好奇地打量着我。他先问了我的姓名住址、职业、出生的日期和地点，然后问我是否已经请了律师。<span class="anchor" data-anchor="n1">他沉默了一会儿，随后问我，是否在母亲去世的那一天感到过悲伤。</span>这个问题使我非常惊讶，我想，如果是我去问别人，也会觉得难于启齿。</p>
+              <p><span class="anchor" data-anchor="n2">我回答说，我已经有点失去了自我省察的习惯，因此很难向他提供什么情况。</span>我当然是爱妈妈的，但这不说明任何问题。所有健康的人都或多或少地设想过他们所爱的人的死亡。</p>
+              <p><span data-anchor="n3"></span>他说话的时候没有看我，像是在一张看不见的纸上记录着什么。窗外的光落在桌角上，我忽然觉得那间屋子异常安静，安静得连笔尖的声音都显得过分清楚。</p>
+              <p>这时他站了起来，对我说他愿意帮助我，我使他很感兴趣，而且，有上帝帮忙，他会为我做点什么。</p>
+              <span class="page-number">48</span>
+            </article>
+          </main>
+          <div class="resize" title="拖动可调整面板宽度"></div>
+          <aside class="panel" id="hero-panel" aria-label="页边笔记"></aside>
         </div>
-      </header>
 
-      <div class="body"><div class="workspace">
-        <div class="page-wrap">
-          <article class="page">
-            <p class="kicker">Chapter Eight</p><h1>Another Way into Orgoreyn</h1><div class="chapter-rule"></div>
-            <p class="no-indent">It is a durable, quietly mysterious kind of loyalty. We crossed the border in darkness, with no witness but the snow and the small blue lamps of the sledge.</p>
-            <p>The first hours were passed in silence. Estraven had said that <span class="anchor" id="anchor-one">fear was useful only when it made the senses exact</span>; all other fear was borrowed from tomorrow.<i class="anchor-dot"></i></p>
-            <p>By noon the mountains behind us had become a pale wall. I could no longer tell whether I was leaving Karhide or carrying it with me. <span class="anchor two">A border persists most stubbornly in the mind of the person who has crossed it.</span></p>
-            <p>He spoke then, not looking at me. “<span class="anchor">Patriotism is not love. It is the fear of the other.</span> I have tried to learn the difference.”<i class="anchor-dot" style="top:1.9em"></i></p>
-            <p>Nothing in his tone asked agreement. The statement lay between us like another item of equipment: light enough to carry, dangerous to forget.</p>
-            <p>I wrote it down that evening. The act seemed absurdly formal, but I understood that memory changes an argument into a mood, and a mood is much harder to examine.</p>
-            <p>The road curved north. In the failing light the ice fields appeared not empty but complete, a country whose language we had not yet earned.</p>
-            <span class="page-number">184</span>
-          </article>
-          <div class="selection-action" id="selection-action"><button>复制</button><button>高亮</button><button class="active"><svg viewBox="0 0 24 24"><path d="M5 4h14v13H9l-4 4zM9 8h6"/></svg>记笔记</button></div>
-        </div>
+        <footer class="footer"><span>48 / 102 · 全书 47%</span><span>页边笔记与正文并排，不覆盖正文</span><span class="progress"><i></i></span></footer>
+      </div>
+    </section>
 
-        <aside class="rail" aria-label="页边笔记工作区">
-          <div class="rail-top"><div class="rail-title"><b>页边笔记</b><span id="rail-count">本章 3 条</span></div><div class="rail-actions"><button data-jump="rail">页边</button><button data-jump="index">全部笔记</button><button title="在当前位置写笔记">＋ 新建</button></div></div>
-
-          <section class="rail-view active" data-view="rail">
-            <article class="note-card one"><div class="note-head"><span class="tag">第 184 页</span><b>我的想法</b><time>刚刚</time></div><div class="quote">“fear was useful only when it made the senses exact”</div><p class="note-text">恐惧本身不是敌人；失去边界的恐惧才会替未来做决定。这里像是在为后面的冰原旅程定下判断方式。</p><div class="note-foot"><span>已保存</span><button data-jump="edit">编辑</button></div></article>
-            <article class="note-card two"><div class="note-head"><span class="tag">第 184 页</span><b>边界与身份</b><time>昨天</time></div><div class="quote">“A border persists most stubbornly in the mind…”</div><p class="note-text">跨越地理边界之后，人的旧身份仍然继续工作。这可能也是 Genly 理解格森人的真正障碍。</p><div class="note-foot"><span>已保存</span><button>定位引用</button></div></article>
-            <article class="note-card three"><div class="note-head"><span class="tag">第 184 页</span><b>待继续想</b><time>7 月 28 日</time></div><div class="quote">“Patriotism is not love.”</div><p class="note-text">Estraven 把“爱自己的共同体”和“害怕他者”拆开了。回头对照他被放逐时的选择。</p><div class="note-foot"><span>已保存</span><button>定位引用</button></div></article>
-          </section>
-
-          <section class="rail-view" data-view="new">
-            <div class="editor-card"><div class="editor-top"><b>给这段原文写笔记</b><span class="save-state"><i></i>草稿仅在本机</span></div><div class="editor-quote">“fear was useful only when it made the senses exact”</div><div class="editor-box"><div class="formatbar"><button>B</button><button style="font-style:italic">I</button><i></i><button>•</button><button>1.</button><i></i><button>H</button></div><textarea class="editor" autofocus placeholder="写下你的理解、疑问或联想…"></textarea></div><div class="editor-bottom"><span>⌘ Enter 保存</span><span class="spacer"></span><button class="ghost">取消</button><button class="primary" data-jump="edit">保存笔记</button></div></div>
-            <button class="free-note">＋ 不引用原文，在当前页写一条独立笔记</button>
-          </section>
-
-          <section class="rail-view" data-view="edit">
-            <div class="editor-card"><div class="editor-top"><b>编辑笔记</b><span class="save-state"><i></i>已自动保存 · 刚刚</span></div><div class="editor-quote">“fear was useful only when it made the senses exact”</div><div class="editor-box"><div class="formatbar"><button>B</button><button style="font-style:italic">I</button><i></i><button>•</button><button>1.</button><i></i><button>H</button></div><textarea class="editor">恐惧本身不是敌人；失去边界的恐惧才会替未来做决定。这里像是在为后面的冰原旅程定下判断方式。</textarea></div><div class="editor-bottom"><span>离开输入框后自动保存</span><span class="spacer"></span><button class="ghost" data-jump="delete">删除</button><button class="primary" data-jump="rail">完成</button></div></div>
-            <button class="free-note">＋ 不引用原文，在当前页写一条独立笔记</button>
-          </section>
-
-          <section class="rail-view" data-view="index">
-            <div class="index-head"><label class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg><input id="search-input" value="边界" placeholder="搜索本书笔记与引用"/><span>⌘F</span></label></div><div class="index-meta"><span id="result-count">找到 2 条</span><span>按阅读位置</span></div>
-            <div class="index-list" id="index-list">
-              <button class="index-item active" data-text="恐惧 未来 fear senses"><strong>恐惧本身不是敌人；失去边界的恐惧才会替未来做决定。</strong><p>“fear was useful only when it made the senses exact”</p><span>第 184 页 · 当前章节 · 点击定位引用</span></button>
-              <button class="index-item" data-text="边界 身份 border mind"><strong>跨越地理<span class="index-hit">边界</span>之后，人的旧身份仍然继续工作。</strong><p>“A <span class="index-hit">border</span> persists most stubbornly in the mind…”</p><span>第 184 页 · 当前章节</span></button>
-              <button class="index-item" data-text="共同体 他者 patriotism love"><strong>把“爱自己的共同体”和“害怕他者”拆开。</strong><p>“Patriotism is not love.”</p><span>第 184 页 · 当前章节</span></button>
-              <button class="index-item" data-text="边界 国王 预言"><strong>前面国王谈“预言”时也出现过类似的<span class="index-hit">边界</span>。</strong><p>“To oppose something is to maintain it.”</p><span>第 72 页 · 第三章</span></button>
-              <button class="index-item" data-text="冬天 信任"><strong>信任不是同意，而是愿意一起承担未知。</strong><p>“We shall have to trust each other.”</p><span>第 201 页 · 第九章</span></button>
-            </div>
-          </section>
-
-          <section class="rail-view" data-view="empty"><div class="empty-state"><div><span class="empty-icon"><svg viewBox="0 0 24 24"><path d="M5 4h14v13H9l-4 4zM9 8h6M9 12h4"/></svg></span><h3>这一页还没有笔记</h3><p>选择一段原文后点“记笔记”，卡片会沿着原文出现在页边；也可以在当前位置写一条不引用原文的笔记。</p><button class="primary" data-jump="new">在当前位置写笔记</button></div></div></section>
-
-          <section class="rail-view" data-view="fail">
-            <div class="editor-card"><div class="failure"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 17h.01"/></svg><span><b>暂时无法保存</b><br>内容仍保留在本机草稿中。</span><button>重试</button></div><div class="editor-top"><b>编辑笔记</b><span class="save-state failed"><i></i>未同步</span></div><div class="editor-quote">“fear was useful only when it made the senses exact”</div><div class="editor-box"><div class="formatbar"><button>B</button><button style="font-style:italic">I</button><i></i><button>•</button><button>1.</button></div><textarea class="editor">恐惧本身不是敌人；失去边界的恐惧才会替未来做决定。这段还要继续补充。</textarea></div><div class="editor-bottom"><span>关闭阅读器也不会丢失这份草稿</span><span class="spacer"></span><button class="primary">重试保存</button></div></div>
-          </section>
-
-          <section class="rail-view" data-view="delete">
-            <article class="note-card one" style="top:28px"><div class="note-head"><span class="tag">第 184 页</span><b>我的想法</b><time>刚刚</time></div><div class="quote">“fear was useful only when it made the senses exact”</div><p class="note-text">恐惧本身不是敌人；失去边界的恐惧才会替未来做决定。</p><div class="delete-confirm"><b>永久删除这条笔记？</b><p>原文不会改变；这条笔记删除后无法恢复。</p><div class="confirm-actions"><button class="ghost" data-jump="rail">取消</button><button class="danger">删除笔记</button></div></div></article>
-          </section>
-        </aside>
-      </div></div>
-
-      <footer class="footer"><span>184 / 382 · 全书 47%</span><span class="keyboard">页边笔记展开时，正文自动重排，不会被覆盖</span><span class="progress"><i></i></span></footer>
+    <div class="caption" id="caption"><b>—</b><p>—</p></div>
+    <div class="controls">
+      <span>面板宽度（当前上线默认 525px，可拖到 320–700，与 AI／书签／生词共用同一栏）：</span>
+      <button data-width="320">320</button>
+      <button class="active" data-width="380">380</button>
+      <button data-width="450">450</button>
+      <button data-width="525">525 · 默认</button>
+      <span style="margin-left:auto"></span>
+      <button id="reset">重置样张</button>
     </div>
-  </section></div>
 
-  <aside class="caption"><b>推荐：页边笔记轨</b><span>笔记卡跟随引用原文出现，读与写保持空间对应；“全部笔记”只是同一工作区的索引模式，不再与 AI、书签、生词争抢普通右侧面板。</span></aside>
+    <div class="section-label"><b>全部状态一览</b><span>点任意一格，上面的窗口会切到那个状态</span></div>
+    <section class="gallery" id="gallery"></section>
+
+    <p class="foot-note">
+      正文、笔记与页码均为示意内容。文案取自 <code>src/i18n/zh.json</code> 的 <code>readerNotes.*</code>；<br>
+      「已保存」「有未保存的修改」和页码标签是本次新增，需要补三条新 key（<code>readerNotes.saved</code> / <code>readerNotes.unsaved</code> / <code>readerNotes.page</code>）。
+    </p>
+  </div>
 
   <script>
-    const win=document.querySelector('#window'),buttons=[...document.querySelectorAll('[data-state]')],views=[...document.querySelectorAll('.rail-view')],tool=document.querySelector('#notes-tool'),selection=document.querySelector('#selection-action'),count=document.querySelector('#rail-count');
-    function show(state){
-      const view=state==='narrow'?'edit':state;
-      buttons.forEach(b=>b.classList.toggle('active',b.dataset.state===state));
-      views.forEach(v=>v.classList.toggle('active',v.dataset.view===view));
-      win.classList.toggle('entry',state==='entry');win.classList.toggle('narrow',state==='narrow');win.classList.toggle('show-anchors',!['entry','empty'].includes(state));
-      tool.classList.toggle('active',state!=='entry');selection.classList.toggle('show',state==='new');
-      count.textContent=state==='index'?'本书 12 条':state==='empty'?'本章 0 条':'本章 3 条';
+  (function(){
+    "use strict";
+
+    var SVG = {
+      plus:'<svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+      back:'<svg class="icon" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>',
+      pencil:'<svg class="icon" style="width:13px;height:13px" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+      trash:'<svg class="icon" style="width:15px;height:15px" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 11v6M14 11v6"/></svg>',
+      search:'<svg class="icon" style="width:14px;height:14px" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg>',
+      file:'<svg class="icon" style="width:28px;height:28px;stroke-width:1.5" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>',
+      check:'<svg class="icon" viewBox="0 0 24 24"><path d="m20 6-11 11-5-5"/></svg>',
+      loader:'<svg class="icon spin" style="width:13px;height:13px" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9"/></svg>',
+      pin:'<svg class="icon" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="M20 10c0 5-8 12-8 12s-8-7-8-12a8 8 0 1 1 16 0z"/><circle cx="12" cy="10" r="2.4"/></svg>'
+    };
+
+    /* 文案：能对上的一律用 zh.json 原句 */
+    var T = {
+      title:'页边笔记', all:'全部笔记', viewAll:'全部笔记',
+      count:function(n){ return n + ' 条'; },
+      neu:'新建笔记',
+      empty:'这一页还没有笔记',
+      emptyHint:'选择原文后可让笔记跟随引用出现在页边；也可以在当前位置写一条独立笔记。',
+      locate:'定位引用',
+      localDraft:'草稿仅保存在本机',
+      saving:'正在保存…',
+      saveFailed:'暂时无法保存，草稿仍保留在这里。',
+      deleteTitle:'永久删除这条笔记？',
+      deleteDetail:'原文不会改变；这条笔记删除后无法恢复。',
+      deleteFailed:'暂时无法删除这条笔记，请重试。',
+      truncated:function(loaded,total){ return '共 ' + total + ' 条笔记，当前显示最近 ' + loaded + ' 条。'; },
+      loadMore:'加载更多笔记',
+      search:'搜索笔记、原文、单词或书名',
+      placeholder:'写下你的理解、疑问或补充...',
+      save:'保存', cancel:'取消', del:'删除',
+      /* 本次新增 */
+      saved:'已保存', unsaved:'有未保存的修改 · 草稿仅保存在本机'
+    };
+
+    var NOTES = {
+      n1:{id:'n1',page:'第 48 页',date:'8月5日',time:'今天 09:12',
+          quote:'他沉默了一会儿，随后问我，是否在母亲去世的那一天感到过悲伤。',
+          content:'默尔索不是没有情绪，而是拒绝用别人熟悉的方式证明情绪。审判追问的其实不是罪行，而是他有没有按规则悲伤。'},
+      n2:{id:'n2',page:'第 48 页',date:'8月5日',time:'今天 08:57',
+          quote:'我回答说，我已经有点失去了自我省察的习惯。',
+          content:'这一句几乎是全书的方法论：他不解释自己，于是所有人只能替他解释。检察官需要一个动机，律师需要一个悲伤的儿子，而他两样都不肯提供，空白就被别人的叙述填满了。\n读到这里才明白，前半部那些关于天气、阳光和汗水的句子并不是闲笔——那是他唯一愿意承认的因果关系。'},
+      n3:{id:'n3',page:'第 48 页',date:'8月4日',time:'昨天 22:40',
+          quote:null,
+          content:'留意天气和身体感受如何替代心理描写：热、光、汗水，比“我感到……”更可靠。'},
+      n4:{id:'n4',page:'第 31 页',date:'8月2日',time:'8月2日 21:03',
+          quote:'一个人只要生活过，就可以适应任何生活。',
+          content:'“习惯”在这里是麻木还是保护？这个词贯穿了他对母亲、工作和婚姻的态度。'},
+      n5:{id:'n5',page:'第 15 页',date:'7月31日',time:'7月31日 19:22',
+          quote:null,
+          content:'母亲下葬那天的天气写得比人物还细。'},
+      n6:{id:'n6',page:'第 9 页',date:'7月29日',time:'7月29日 08:15',
+          quote:'今天，妈妈死了。也许是昨天，我不知道。',
+          content:'开头两句就把叙述者的时间感交了出去。'}
+    };
+
+    var BASE_RAIL = ['n1','n2','n3'];
+    var BASE_ALL  = ['n1','n2','n3','n4','n5','n6'];
+    var railIds = BASE_RAIL.slice();
+    var allIds  = BASE_ALL.slice();
+
+    /* 与 layoutReaderRailNotes 相同：卡高 150、间距 12，按需要下推避免重叠 */
+    var CARD_H = 150, GAP = 12;
+    function stack(requested){
+      var tops = [], min = 0, i, top;
+      for (i = 0; i < requested.length; i++){
+        top = Math.max(min, requested[i] == null ? min : requested[i]);
+        tops.push(top);
+        min = top + CARD_H + GAP;
+      }
+      return tops;
     }
-    buttons.forEach(b=>b.addEventListener('click',()=>show(b.dataset.state)));
-    document.querySelectorAll('[data-jump]').forEach(b=>b.addEventListener('click',()=>show(b.dataset.jump)));
-    tool.addEventListener('click',()=>show(win.classList.contains('entry')?'rail':'entry'));
-    const search=document.querySelector('#search-input'),items=[...document.querySelectorAll('.index-item')],result=document.querySelector('#result-count');
-    function filterNotes(){const q=search.value.trim().toLowerCase();let n=0;items.forEach(item=>{const visible=!q||item.dataset.text.toLowerCase().includes(q);item.style.display=visible?'block':'none';if(visible)n++});result.textContent=q?`找到 ${n} 条`:`共 ${items.length} 条`}
-    search.addEventListener('input',filterNotes);
-    function flashQuote(){const anchor=document.querySelector('#anchor-one');anchor.classList.remove('flash');requestAnimationFrame(()=>anchor.classList.add('flash'))}
-    document.querySelectorAll('.index-item').forEach(item=>item.addEventListener('click',()=>{document.querySelectorAll('.index-item').forEach(i=>i.classList.remove('active'));item.classList.add('active');flashQuote()}));
-    document.querySelectorAll('.note-foot button').forEach(button=>{if(button.textContent.includes('定位'))button.addEventListener('click',flashQuote)});
-    filterNotes();show(new URLSearchParams(location.search).get('state')||'rail');
+
+    var STATES = [
+      {key:'rail', nav:'笔记轨', label:'页边笔记轨 · 常规',
+       desc:'卡片按引用原文在这一页的高度排列；第二条正文较长，卡片到 150px 就停住，内部滚动。',
+       caption:'标题右边的「6 条」是这本书的总数，轨上只画出当前这一页能定位到的 3 条 —— 这是现在已上线的行为。每张卡片的结构：引用原文（可点，跳回原句）→ 笔记正文 → 底排「页码标签 · 日期 …… 定位引用 · 铅笔」。铅笔平时隐藏，悬停卡片时才出现。',
+       bullets:['① 页码标签放在底排最左，与日期同一行，不额外占高度，也不和正文抢视线。',
+                '正文超出 150px 的卡片在内部滚动，不裁字、不加「展开」按钮。',
+                '④ 底部「全部笔记」保持为一个按钮，顶部不做分段控件。',
+                '轨顶那段空白是对齐的代价：第一条引用出现在这一页的中段，卡片就得跟着落在中段。现状如此，本次不动 —— 如果你觉得空得太厉害，可以另起一版讨论。']},
+
+      {key:'empty', nav:'空态', label:'空态 · 这一页还没有笔记',
+       desc:'这一页没有可定位的笔记时的样子。',
+       caption:'空态判断的是「这一页有没有能定位的笔记」，不是「这本书有没有笔记」。所以这本书已经有 6 条时，翻到一页没有标注的正文仍然是空态 —— 底部的「全部笔记」就是这时候的出口。'},
+
+      {key:'editorRest', nav:'已保存（编辑器）', label:'打开一条已有笔记 · 静止态',
+       desc:'从铅笔进入，还没有改动任何字。',
+       caption:'② 这是「已保存」的静止态：左下角一枚很轻的对勾加「已保存」，后面跟上次保存的时间。它替换掉原先常驻的「草稿仅保存在本机」—— 那句话只在有未保存改动时才该出现。'},
+
+      {key:'editing', nav:'编辑中', label:'编辑中 · 有未保存的修改',
+       desc:'一开始输入，状态位立刻从「已保存」翻成未保存提示。',
+       caption:'改动会随手写进本机草稿，所以文案保留「草稿仅保存在本机」，前面加上「有未保存的修改」。内容为空时「保存」按钮禁用。'},
+
+      {key:'saving', nav:'保存中', label:'保存中',
+       desc:'点「保存」之后的短暂状态。',
+       caption:'状态位和按钮各转一个小圈，按钮禁用以防重复提交。保存成功后编辑器自动关闭、退回笔记轨 —— 「已保存」的确认落在卡片上（见下一格）。'},
+
+      {key:'saved', nav:'刚保存', label:'保存完成 · 回到笔记轨',
+       desc:'刚保存的那张卡片带一枚「已保存」标记，约 2.5 秒后自行淡出。',
+       caption:'② 保存成功会关掉编辑器，所以确认信号必须出现在卡片上，否则用户只看到面板一闪就回去了，不知道有没有存住。卡片底色短暂泛一点绿再退回白色，标记随后消失，不留常驻装饰。（这里是定格；想看完整过程，进「编辑中」改两个字再点「保存」。）'},
+
+      {key:'deleting', nav:'删除确认', label:'删除确认',
+       desc:'从编辑器里的垃圾桶进入，就地展开确认块，不弹窗。',
+       caption:'文案沿用现有的「永久删除这条笔记？／原文不会改变；这条笔记删除后无法恢复。」按 Esc 先收起这个确认块，再按一次才退出编辑器 —— 一次只关一层。'},
+
+      {key:'saveFailed', nav:'保存失败', label:'保存失败',
+       desc:'红条出现在编辑器顶部，草稿原样留在输入框里。',
+       caption:'失败后不清空、不退出，用户可以直接再点一次「保存」。状态位继续显示未保存提示。红条本身不带重试按钮，「保存」按钮就是重试入口。'},
+
+      {key:'deleteFailed', nav:'删除失败', label:'删除失败',
+       desc:'确认块收起，红条出现在面板标题栏下方。',
+       caption:'删除失败时停留在编辑器里，笔记还在。这条红条现在没有重试按钮 —— 文案是「请重试」，靠用户再点一次垃圾桶。要不要给它补一个重试按钮，留给你定。'},
+
+      {key:'index', nav:'全部笔记', label:'全部笔记 · 从底部按钮进入',
+       desc:'标题变成「全部笔记」，顶部出现搜索框，卡片改为顺序排列。',
+       caption:'④ 这就是底部那个按钮的去处，返回箭头出现在标题栏右侧。这里的卡片同样带页码标签 —— 脱离了页面语境的长列表里，页码标签比在轨上更有用。'},
+
+      {key:'truncated', nav:'截断提示', label:'全部笔记 · 只加载了最近 100 条',
+       desc:'笔记很多时，列表底部的截断提示与「加载更多笔记」。',
+       caption:'一次取 100 条。总数与已加载数不一致时才出现这条提示，点一次续取下一页。样张为了排版只画出列表尾部几张卡片。'}
+    ];
+
+    /* ── 渲染 ── */
+    function cardHtml(note, opts){
+      opts = opts || {};
+      var positioned = opts.top != null;
+      return '<article class="card ' + (positioned ? 'positioned' : 'flow') + (opts.saved ? ' just-saved' : '') +
+        '" data-note="' + note.id + '"' + (positioned ? ' style="top:' + opts.top + 'px"' : '') + '>' +
+        (note.quote ? '<button class="quote" data-locate="' + note.id + '">' + note.quote + '</button>' : '') +
+        '<p class="card-body">' + note.content.replace(/\n/g, '<br>') + '</p>' +
+        '<div class="card-meta">' +
+          '<span class="chip">' + note.page + '</span>' +
+          '<span>' + note.date + '</span>' +
+          (opts.saved ? '<span class="saved-flag">' + SVG.check + T.saved + '</span>' : '') +
+          '<span class="grow"></span>' +
+          '<button class="link" data-locate="' + note.id + '">' + T.locate + '</button>' +
+          '<button class="pencil" data-edit="' + note.id + '" aria-label="编辑">' + SVG.pencil + '</button>' +
+        '</div></article>';
+    }
+
+    function editorHtml(s){
+      var note = NOTES[s.editId || 'n1'];
+      var dirty = !!s.dirty, saving = !!s.saving;
+      var text = note.content + (dirty ? '\n\n（补一句：他给出的每个回答都准确，只是没有一个是别人想听的。）' : '');
+      var status = saving
+        ? '<span class="status">' + SVG.loader + T.saving + '</span>'
+        : dirty
+          ? '<span class="status">' + T.unsaved + '</span>'
+          : '<span class="status ok">' + SVG.check + T.saved + ' · ' + note.time + '</span>';
+      return '<div class="editor">' +
+        (s.saveFailed ? '<div class="banner" role="alert" style="margin:0 0 12px">' + T.saveFailed + '</div>' : '') +
+        (note.quote
+          ? '<blockquote>' + note.quote + '</blockquote>'
+          : '<p class="editor-anchor">' + SVG.pin + '锚定在当前阅读位置 · ' + note.page + '</p>') +
+        '<textarea id="draft" placeholder="' + T.placeholder + '">' + text + '</textarea>' +
+        '<div class="editor-row">' + status +
+          '<button class="trash" data-ask-delete aria-label="' + T.del + '">' + SVG.trash + '</button>' +
+          '<button class="ghost" data-back>' + T.cancel + '</button>' +
+          '<button class="primary" data-save' + (saving ? ' disabled' : '') + '>' + (saving ? SVG.loader : '') + T.save + '</button>' +
+        '</div>' +
+        (s.deleting
+          ? '<div class="confirm"><b>' + T.deleteTitle + '</b><p>' + T.deleteDetail + '</p>' +
+            '<div class="confirm-actions"><button data-cancel-delete>' + T.cancel + '</button>' +
+            '<button class="danger" data-confirm-delete>' + T.del + '</button></div></div>'
+          : '') +
+        '</div>';
+    }
+
+    function isEditorState(key){
+      return key === 'editorRest' || key === 'editing' || key === 'saving' ||
+             key === 'deleting' || key === 'saveFailed' || key === 'deleteFailed';
+    }
+    function isIndexState(key){ return key === 'index' || key === 'truncated'; }
+    function isRailState(key){ return key === 'rail' || key === 'saved'; }
+
+    function panelHtml(s, tops){
+      var editor = isEditorState(s.key), index = isIndexState(s.key), empty = s.key === 'empty';
+      /* 标题右边永远是「这本书的总数」；空态说的是「这一页没有」，两者可以并存 */
+      var total = s.key === 'truncated' ? 128 : allIds.length;
+
+      var head = '<header class="panel-head"><b>' + (index ? T.all : T.title) + '</b>' +
+        '<span class="count">' + T.count(total) + '</span><span class="head-grow"></span>' +
+        ((editor || index) ? '<button class="head-btn" data-back aria-label="返回">' + SVG.back + '</button>' : '') +
+        '<button class="head-btn" data-new aria-label="' + T.neu + '" title="' + T.neu + '">' + SVG.plus + '</button></header>';
+
+      var banner = s.key === 'deleteFailed'
+        ? '<div class="banner" role="alert">' + T.deleteFailed + '</div>' : '';
+
+      var body, ids, list, cards, height, railTops;
+      if (editor){
+        body = '<div class="panel-body">' + editorHtml(s) + '</div>';
+      } else if (empty){
+        body = '<div class="panel-body"><div class="empty"><div><span class="mark">' + SVG.file + '</span>' +
+          '<h4>' + T.empty + '</h4><p>' + T.emptyHint + '</p>' +
+          '<button data-new>' + T.neu + '</button></div></div></div>';
+      } else if (index){
+        ids = s.key === 'truncated' ? ['n2','n3','n4','n5','n6'] : allIds;
+        list = ids.map(function(id){ return cardHtml(NOTES[id], {}); }).join('');
+        body = '<div class="panel-body"><div class="search">' + SVG.search +
+            '<input placeholder="' + T.search + '" /></div>' +
+          (s.key === 'truncated' ? '<p class="gap-note">⋯ 上面还有 95 条已加载的笔记（样张省略）</p>' : '') +
+          list +
+          (s.key === 'truncated'
+            ? '<div class="truncated" role="status"><p>' + T.truncated(100, 128) + '</p>' +
+              '<button>' + T.loadMore + '</button></div>'
+            : '') +
+          '</div>';
+      } else {
+        railTops = tops || stack(railIds.map(function(){ return null; }));
+        cards = railIds.map(function(id, i){
+          return cardHtml(NOTES[id], {top: railTops[i], saved: s.savedId === id});
+        }).join('');
+        height = railIds.length ? railTops[railTops.length - 1] + CARD_H + GAP : 0;
+        body = '<div class="panel-body"><div class="rail" style="min-height:' + height + 'px">' + cards + '</div></div>';
+      }
+
+      var foot = (!editor && !index)
+        ? '<footer class="panel-foot"><button data-all>' + T.viewAll + '</button></footer>' : '';
+
+      return head + banner + body + foot;
+    }
+
+    /* ── 主窗口 ── */
+    var heroPanel = document.getElementById('hero-panel');
+    var caption = document.getElementById('caption');
+    var nav = document.getElementById('state-nav');
+    var badge = document.getElementById('tool-badge');
+    var current = STATES[0];
+    var savedTimer = null, saveTimer = null;
+
+    function stateByKey(key){
+      for (var i = 0; i < STATES.length; i++) if (STATES[i].key === key) return STATES[i];
+      return STATES[0];
+    }
+
+    /* 每个状态对应的渲染开关；导航、一览、窗口内的操作都走这里，保证三处一致 */
+    function stateFor(key, extra){
+      var flags = {key:key};
+      if (key === 'editing')    { flags.dirty = true; }
+      if (key === 'saving')     { flags.saving = true; flags.dirty = true; }
+      if (key === 'saved')      { flags.savedId = 'n1'; }
+      if (key === 'deleting')   { flags.deleting = true; }
+      if (key === 'saveFailed') { flags.saveFailed = true; flags.dirty = true; }
+      if (extra) for (var name in extra) if (Object.prototype.hasOwnProperty.call(extra, name)) flags[name] = extra[name];
+      return flags;
+    }
+
+    /* 用页面上引用原文的真实位置算 top，再套最小间距 —— 与 resolveAnchorPosition 的效果一致 */
+    function measuredTops(){
+      var body = heroPanel.querySelector('.panel-body');
+      if (!body) return stack(railIds.map(function(){ return null; }));
+      var base = body.getBoundingClientRect().top - body.scrollTop + 12; /* 12 = panel-body padding */
+      var requested = railIds.map(function(id){
+        var mark = document.querySelector('[data-anchor="' + id + '"]');
+        if (!mark) return null;
+        var rect = mark.getBoundingClientRect();
+        if (!rect.height && !rect.width) return null;
+        return Math.max(0, Math.round(rect.top - base));
+      });
+      return stack(requested);
+    }
+
+    function paint(state){
+      var buttons = nav.querySelectorAll('[data-state]'), i;
+      for (i = 0; i < buttons.length; i++){
+        buttons[i].classList.toggle('active', buttons[i].getAttribute('data-state') === state.key);
+      }
+      var meta = stateByKey(state.key);
+      caption.innerHTML = '<b>' + meta.label + '</b><p>' + meta.caption + '</p>' +
+        (meta.bullets ? '<ul><li>' + meta.bullets.join('</li><li>') + '</li></ul>' : '');
+      badge.textContent = state.key === 'truncated' ? '128' : String(allIds.length);
+    }
+
+    function render(state, opts){
+      opts = opts || {};
+      current = state;
+      heroPanel.innerHTML = panelHtml(state, stack(railIds.map(function(){ return null; })));
+      if (isRailState(state.key)){
+        /* 两遍：先落位，再按锚点的真实高度重排 */
+        heroPanel.innerHTML = panelHtml(state, measuredTops());
+      }
+      paint(state);
+      wire();
+      if (opts.savedFlash){
+        clearTimeout(savedTimer);
+        savedTimer = setTimeout(function(){ if (current.key === 'saved') go('rail'); }, 2600);
+      }
+    }
+
+    function go(key, opts){ clearTimeout(saveTimer); render(stateFor(key), opts); }
+
+    function flash(id){
+      var mark = document.querySelector('[data-anchor="' + id + '"]');
+      if (!mark || !mark.classList.contains('anchor')) return;
+      mark.classList.remove('flash');
+      void mark.offsetWidth;
+      mark.classList.add('flash');
+    }
+
+    function each(selector, fn){
+      var nodes = heroPanel.querySelectorAll(selector), i;
+      for (i = 0; i < nodes.length; i++) fn(nodes[i]);
+    }
+
+    function wire(){
+      each('[data-locate]', function(el){
+        el.addEventListener('click', function(){ flash(el.getAttribute('data-locate')); });
+      });
+      each('[data-edit]', function(el){
+        el.addEventListener('click', function(){
+          render({key:'editorRest', editId:el.getAttribute('data-edit')});
+        });
+      });
+      each('[data-back]', function(el){ el.addEventListener('click', function(){ go('rail'); }); });
+      each('[data-all]', function(el){ el.addEventListener('click', function(){ go('index'); }); });
+      each('[data-new]', function(el){ el.addEventListener('click', function(){ go('editing'); }); });
+      each('[data-ask-delete]', function(el){
+        el.addEventListener('click', function(){
+          render({key:'deleting', deleting:true, editId:current.editId || 'n1'});
+        });
+      });
+      each('[data-cancel-delete]', function(el){
+        el.addEventListener('click', function(){
+          render({key:'editorRest', editId:current.editId || 'n1'});
+        });
+      });
+      each('[data-confirm-delete]', function(el){
+        el.addEventListener('click', function(){
+          var id = current.editId || 'n1';
+          railIds = railIds.filter(function(x){ return x !== id; });
+          allIds  = allIds.filter(function(x){ return x !== id; });
+          go(railIds.length ? 'rail' : 'empty');
+        });
+      });
+      each('[data-save]', function(el){
+        el.addEventListener('click', function(){
+          var id = current.editId || 'n1';
+          render({key:'saving', saving:true, dirty:true, editId:id});
+          saveTimer = setTimeout(function(){
+            render({key:'saved', savedId:id}, {savedFlash:true});
+          }, 900);
+        });
+      });
+      var draft = heroPanel.querySelector('#draft');
+      if (draft){
+        draft.addEventListener('input', function(){
+          if (current.dirty || current.saving) return;
+          var value = draft.value;
+          render({key:'editing', dirty:true, editId:current.editId || 'n1'});
+          var next = heroPanel.querySelector('#draft');
+          if (next){ next.value = value; next.focus(); next.setSelectionRange(value.length, value.length); }
+        });
+      }
+    }
+
+    /* ── 顶部导航 ── */
+    nav.innerHTML = STATES.map(function(s){
+      return '<button data-state="' + s.key + '">' + s.nav + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(nav.querySelectorAll('[data-state]'), function(button){
+      button.addEventListener('click', function(){ go(button.getAttribute('data-state')); });
+    });
+    document.getElementById('reset').addEventListener('click', function(){
+      railIds = BASE_RAIL.slice(); allIds = BASE_ALL.slice(); go('rail');
+    });
+
+    /* ── 面板宽度 ── */
+    Array.prototype.forEach.call(document.querySelectorAll('[data-width]'), function(button){
+      button.addEventListener('click', function(){
+        Array.prototype.forEach.call(document.querySelectorAll('[data-width]'), function(b){ b.classList.remove('active'); });
+        button.classList.add('active');
+        heroPanel.style.width = button.getAttribute('data-width') + 'px';
+        render(current);
+      });
+    });
+
+    /* ── 状态一览（静态；整格可点，跳到上面的窗口） ── */
+    var tileTops = stack([6, 176, 350]);
+    document.getElementById('gallery').innerHTML = STATES.map(function(s){
+      return '<article class="tile" data-goto="' + s.key + '">' +
+        '<div class="tile-head"><b>' + s.label + '</b><span>' + s.desc + '</span></div>' +
+        '<div class="tile-frame"><aside class="panel">' + panelHtml(stateFor(s.key), tileTops) + '</aside></div>' +
+        '</article>';
+    }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('[data-goto]'), function(tile){
+      tile.addEventListener('click', function(){
+        go(tile.getAttribute('data-goto'));
+        window.scrollTo({top:0, behavior:'smooth'});
+      });
+    });
+
+    render(STATES[0]);
+    window.addEventListener('resize', function(){ if (isRailState(current.key)) render(current); });
+  })();
   </script>
 </body>
 </html>

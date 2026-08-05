@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lantern P2.5 · 贴边播放轨样张</title>
+  <style>
+    :root {
+      --desk: #d8d6d2;
+      --chrome: #fbfaf8;
+      --paper: #f4eee2;
+      --page: #fbf7ef;
+      --surface: #fffefd;
+      --text: #312d29;
+      --muted: #746e67;
+      --quiet: #a29b94;
+      --border: #ded9d2;
+      --soft: #f1ede8;
+      --accent: #7c3aed;
+      --accent-soft: #f1eafd;
+      --reading: #6d578a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 1040px;
+      min-height: 700px;
+      overflow: hidden;
+      color: var(--text);
+      background: var(--desk);
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    button { color: inherit; font: inherit; cursor: pointer; }
+    .states {
+      position: fixed;
+      z-index: 99;
+      top: 10px;
+      left: 50%;
+      display: flex;
+      gap: 3px;
+      padding: 4px;
+      transform: translateX(-50%);
+      border: 1px solid #ccc9c5;
+      border-radius: 11px;
+      background: rgba(255,255,255,.96);
+      box-shadow: 0 8px 26px rgba(42,38,34,.13);
+    }
+    .states button {
+      height: 28px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: #8a847e;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .states button.active { color: var(--accent); background: var(--accent-soft); font-weight: 650; }
+    .stage { min-height: 100vh; display: grid; place-items: center; padding: 42px 24px 24px; }
+    .window {
+      position: relative;
+      width: min(1420px, calc(100vw - 48px));
+      height: min(850px, calc(100vh - 66px));
+      min-height: 630px;
+      overflow: hidden;
+      border: 1px solid #c7c4bf;
+      border-radius: 16px;
+      background: var(--chrome);
+      box-shadow: 0 25px 70px rgba(40,35,31,.17);
+    }
+    .traffic { position: absolute; z-index: 5; top: 18px; left: 18px; display: flex; gap: 8px; }
+    .traffic i { width: 12px; height: 12px; border-radius: 50%; }
+    .traffic i:nth-child(1) { background: #ff5f57; }
+    .traffic i:nth-child(2) { background: #febc2e; }
+    .traffic i:nth-child(3) { background: #28c840; }
+    .toolbar {
+      height: 62px;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding: 0 17px 0 72px;
+      border-bottom: 1px solid var(--border);
+      background: var(--chrome);
+    }
+    .book b { display: block; font: 600 13px Georgia, serif; }
+    .book span, .chapter { color: var(--quiet); font-size: 10px; }
+    .chapter { font-size: 11px; }
+    .tools { justify-self: end; display: flex; align-items: center; gap: 4px; }
+    .tool {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+    }
+    .tool:hover, .tool.active { color: var(--text); background: var(--soft); }
+    .tool.active { color: var(--accent); background: var(--accent-soft); }
+    svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .entry-tip {
+      position: absolute;
+      z-index: 20;
+      top: 53px;
+      right: 16px;
+      width: 212px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.5;
+      box-shadow: 0 12px 30px rgba(45,39,34,.13);
+    }
+    .entry-tip b { display: block; margin-bottom: 3px; color: var(--text); font-size: 11px; }
+    .entry-tip::before { content: ""; position: absolute; top: -5px; right: 52px; width: 8px; height: 8px; transform: rotate(45deg); border-left: 1px solid var(--border); border-top: 1px solid var(--border); background: var(--surface); }
+    .reader {
+      position: absolute;
+      inset: 62px 0 27px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 0;
+      overflow: hidden;
+      background: var(--paper);
+      transition: grid-template-columns .25s ease;
+    }
+    .reader.with-rail { grid-template-columns: minmax(0, 1fr) 270px; }
+    .reader.compact-rail { grid-template-columns: minmax(0, 1fr) 74px; }
+    .page-zone { position: relative; min-width: 0; display: grid; place-items: center; padding: 30px 42px; overflow: hidden; }
+    .page {
+      width: min(680px, 90%);
+      height: 100%;
+      overflow: hidden;
+      padding: 39px 57px;
+      background: var(--page);
+      box-shadow: 0 5px 30px rgba(80,67,50,.07);
+      font: 17px/1.82 Georgia, "Songti SC", serif;
+      transition: width .25s ease;
+    }
+    .reader.with-rail .page { width: min(650px, 92%); }
+    .eyebrow { margin: 0 0 8px; text-align: center; color: #988d81; font: 9px Inter, sans-serif; letter-spacing: .14em; text-transform: uppercase; }
+    .page h1 { margin: 0 0 28px; text-align: center; font-size: 25px; font-weight: 600; }
+    .page p { margin: 0 0 .78em; text-align: justify; text-indent: 1.5em; }
+    .page p.first { text-indent: 0; }
+    .sentence { border-radius: 4px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+    .sentence.active { padding: 2px 1px; color: #2a2232; background: linear-gradient(transparent 59%, #ddcdf7 59%); }
+    .sentence.paused { color: #655f59; background: linear-gradient(transparent 59%, #ddd8d1 59%); }
+    .sentence.loading { color: #7e7770; background: linear-gradient(transparent 59%, #e7e1da 59%); }
+    .turning-note { position: absolute; right: 18px; bottom: 18px; padding: 7px 10px; border: 1px solid #ddd6cd; border-radius: 999px; background: rgba(255,254,252,.92); color: var(--muted); font-size: 10px; box-shadow: 0 5px 18px rgba(60,52,44,.07); opacity: 0; transform: translateY(5px); transition: .2s ease; }
+    .turning-note.show { opacity: 1; transform: none; }
+    .rail-zone { position: relative; min-width: 0; overflow: hidden; border-left: 1px solid transparent; }
+    .reader.with-rail .rail-zone, .reader.compact-rail .rail-zone { border-color: rgba(106,94,80,.09); }
+    .reader.with-rail .rail-zone { background: rgba(251,247,239,.56); }
+    .rail {
+      position: absolute;
+      top: 50%;
+      right: 16px;
+      width: 238px;
+      transform: translateY(-50%);
+      overflow: hidden;
+      border: 1px solid #d9d3cc;
+      border-radius: 15px;
+      background: rgba(255,254,252,.97);
+      box-shadow: 0 14px 34px rgba(58,49,42,.10);
+    }
+    .rail::before { content: ""; position: absolute; inset: 14px auto 14px 0; width: 2px; border-radius: 2px; background: var(--accent); opacity: .78; }
+    .rail-head { display: flex; align-items: center; gap: 7px; padding: 14px 14px 10px 16px; }
+    .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+    .live-dot.paused { background: #aaa29a; box-shadow: none; }
+    .live-dot.loading { width: 11px; height: 11px; border: 2px solid #d8caee; border-top-color: var(--accent); background: none; box-shadow: none; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .rail-title { min-width: 0; flex: 1; }
+    .rail-title b { display: block; font-size: 11px; font-weight: 650; }
+    .rail-title span { display: block; margin-top: 2px; color: var(--quiet); font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .head-btn { width: 25px; height: 25px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--quiet); }
+    .head-btn:hover { color: var(--text); background: var(--soft); }
+    .quote { margin: 2px 14px 0 16px; min-height: 60px; padding: 10px 11px; border-radius: 10px; background: #f7f3ed; color: #5f5851; font: 11px/1.58 Georgia, "Songti SC", serif; }
+    .quote .spoken { color: var(--text); background: linear-gradient(transparent 64%, #decff5 64%); }
+    .transport { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 13px 14px 11px; }
+    .round { width: 31px; height: 31px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: var(--muted); }
+    .round:hover { color: var(--text); background: var(--soft); }
+    .round.primary { width: 41px; height: 41px; color: white; background: var(--accent); box-shadow: 0 5px 13px rgba(124,58,237,.22); }
+    .round.primary svg { width: 17px; height: 17px; fill: currentColor; stroke: none; }
+    .round[disabled] { cursor: default; opacity: .34; }
+    .options { margin: 0 14px 12px 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .option { min-width: 0; height: 34px; padding: 0 9px; display: flex; align-items: center; justify-content: space-between; gap: 5px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); font-size: 9px; }
+    .option span { color: var(--quiet); }
+    .option b { overflow: hidden; color: var(--text); font-size: 9.5px; font-weight: 650; white-space: nowrap; text-overflow: ellipsis; }
+    .option.language { grid-column: 1 / -1; }
+    .option.language b { color: var(--reading); }
+    .autopage { margin: 0 14px 14px 16px; padding-top: 10px; display: flex; align-items: center; gap: 6px; border-top: 1px solid #ebe7e1; color: var(--quiet); font-size: 9px; }
+    .autopage svg { width: 12px; height: 12px; color: var(--accent); }
+    .collapsed {
+      position: absolute;
+      top: 50%;
+      right: 12px;
+      width: 48px;
+      transform: translateY(-50%);
+      border: 1px solid #d8d2ca;
+      border-radius: 15px;
+      background: rgba(255,254,252,.97);
+      box-shadow: 0 10px 28px rgba(58,49,42,.10);
+      overflow: hidden;
+    }
+    .collapsed::before { content: ""; display: block; width: 18px; height: 2px; margin: 10px auto 2px; border-radius: 2px; background: var(--accent); }
+    .collapsed button { width: 100%; height: 43px; display: grid; place-items: center; border: 0; background: transparent; color: var(--muted); }
+    .collapsed .mini-play { margin: 3px 7px 0; width: 32px; height: 32px; border-radius: 50%; color: white; background: var(--accent); }
+    .collapsed .mini-language { height: 27px; color: var(--reading); font-size: 8px; font-weight: 700; }
+    .collapsed .expand { height: 31px; border-top: 1px solid #ebe7e1; color: var(--quiet); }
+    .complete-card { padding: 22px 18px 18px; text-align: center; }
+    .complete-icon { width: 38px; height: 38px; margin: 0 auto 11px; display: grid; place-items: center; border-radius: 50%; color: var(--accent); background: var(--accent-soft); font-size: 18px; }
+    .complete-card b { display: block; font-size: 12px; }
+    .complete-card p { margin: 5px 0 15px; color: var(--quiet); font-size: 9.5px; line-height: 1.5; }
+    .complete-card button { width: 100%; height: 32px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 10px; }
+    .complete-card button.primary-action { margin-bottom: 7px; border-color: var(--accent); color: white; background: var(--accent); }
+    .footer { position: absolute; inset: auto 0 0; height: 27px; display: flex; align-items: center; padding: 0 18px; border-top: 1px solid var(--border); color: var(--quiet); background: var(--chrome); font-size: 9px; }
+    .footer span:last-child { margin-left: auto; }
+    .hidden { display: none !important; }
+    @media (max-width: 1160px) {
+      .reader.with-rail { grid-template-columns: minmax(0, 1fr) 250px; }
+      .rail { right: 10px; width: 228px; }
+      .page-zone { padding-left: 24px; padding-right: 24px; }
+      .page { padding-left: 45px; padding-right: 45px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="states" aria-label="样张状态">
+    <button class="active" data-state="entry">入口</button>
+    <button data-state="playing">朗读中</button>
+    <button data-state="compact">收起播放轨</button>
+    <button data-state="paused">暂停</button>
+    <button data-state="mixed">中英切换</button>
+    <button data-state="loading">准备音频</button>
+    <button data-state="turning">自动翻页</button>
+    <button data-state="complete">整书完成</button>
+  </nav>
+
+  <div class="stage">
+    <section class="window">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <header class="toolbar">
+        <div class="book"><b>The Elements of Eloquence</b><span>Mark Forsyth</span></div>
+        <span class="chapter" id="chapter-label">Chapter 4 · The Power of Three</span>
+        <div class="tools">
+          <button class="tool" aria-label="目录">☰</button>
+          <button class="tool" aria-label="搜索">⌕</button>
+          <button class="tool" aria-label="阅读设置">Aa</button>
+          <button class="tool" id="read-entry" aria-label="从当前位置连续朗读" title="从当前位置连续朗读">
+            <svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18 6a9 9 0 0 1 0 12"/></svg>
+          </button>
+        </div>
+      </header>
+      <aside class="entry-tip" id="entry-tip"><b>从当前位置连续朗读</b>从屏幕中央附近的完整句开始，之后自动跨段、翻页和进入下一章。</aside>
+
+      <main class="reader" id="reader">
+        <section class="page-zone">
+          <article class="page" id="page" lang="en">
+            <p class="eyebrow" id="page-eyebrow">Chapter Four</p>
+            <h1 id="page-title">The Power of Three</h1>
+            <div id="page-one">
+              <p class="first">Language is built from patterns, and the most satisfying pattern is often the simplest. Three examples feel complete without becoming predictable.</p>
+              <p><span class="sentence" data-index="0">Writers have understood this instinctively for centuries.</span> <span class="sentence" data-index="1">A balanced sentence makes a difficult idea easier to follow, because rhythm quietly tells the reader where one thought finishes and another begins.</span></p>
+              <p><span class="sentence" data-index="2">好的排版不是装饰，而是一种安静的引导。</span> <span class="sentence" data-index="3">It does not ask to be noticed, yet it lets reading continue naturally.</span></p>
+              <p><span class="sentence" data-index="4">The voice continues to the next paragraph and turns the page only when the active sentence moves beyond the visible reading area.</span></p>
+            </div>
+            <div id="page-two" class="hidden">
+              <p class="first"><span class="sentence" data-index="5">Repetition can give a sentence weight, but variation gives it life.</span></p>
+              <p><span class="sentence" data-index="6">The reader hears the pattern before consciously recognising it, and the thought arrives with the rhythm already attached.</span></p>
+              <p><span class="sentence" data-index="7">这也是为什么朗读不应该在页面边界突然停下。</span> <span class="sentence" data-index="8">A book is continuous even when its pages are not.</span></p>
+            </div>
+          </article>
+          <span class="turning-note" id="turning-note">已自动翻到下一页</span>
+        </section>
+
+        <aside class="rail-zone">
+          <section class="rail hidden" id="rail" aria-label="连续朗读控制器">
+            <div id="normal-controls">
+              <header class="rail-head">
+                <i class="live-dot" id="live-dot"></i>
+                <div class="rail-title"><b id="status">正在朗读</b><span id="position">第 4 章 · 第 2 句</span></div>
+                <button class="head-btn" id="collapse" aria-label="收起播放轨"><svg viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></svg></button>
+                <button class="head-btn" id="stop" aria-label="停止朗读">×</button>
+              </header>
+              <div class="quote" id="quote">A balanced sentence makes a <span class="spoken">difficult idea easier</span> to follow, because rhythm quietly tells…</div>
+              <div class="transport">
+                <button class="round" id="previous" aria-label="上一句"><svg viewBox="0 0 24 24"><path d="m11 18-6-6 6-6"/><path d="m19 18-6-6 6-6"/></svg></button>
+                <button class="round primary" id="play" aria-label="暂停"><svg id="play-icon" viewBox="0 0 24 24"><path d="M8 5h3v14H8zM13 5h3v14h-3z"/></svg></button>
+                <button class="round" id="next" aria-label="下一句"><svg viewBox="0 0 24 24"><path d="m13 6 6 6-6 6"/><path d="m5 6 6 6-6 6"/></svg></button>
+              </div>
+              <div class="options">
+                <button class="option" id="speed"><span>语速</span><b id="speed-value">1.0×</b></button>
+                <div class="option"><span>范围</span><b>整本书</b></div>
+                <div class="option language"><span>声音</span><b id="language">自动 · English</b></div>
+              </div>
+              <div class="autopage"><svg viewBox="0 0 24 24"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M8 20a3 3 0 0 1 3-3h8"/></svg><span id="autopage-label">自动翻页已开启 · 离开本页时继续</span></div>
+            </div>
+            <div class="complete-card hidden" id="complete-card">
+              <span class="complete-icon">✓</span><b>本书朗读完成</b><p>已经连续朗读至最后一章<br />进度停留在书末</p><button class="primary-action" id="restart">从头朗读</button><button id="finish">关闭播放轨</button>
+            </div>
+          </section>
+
+          <section class="collapsed hidden" id="collapsed" aria-label="已收起的连续朗读控制器">
+            <button class="mini-language" id="mini-language">EN</button>
+            <button class="mini-play" id="mini-play" aria-label="暂停"><svg id="mini-icon" viewBox="0 0 24 24"><path d="M8 5h3v14H8zM13 5h3v14h-3z"/></svg></button>
+            <button class="expand" id="expand" aria-label="展开播放轨"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
+          </section>
+        </aside>
+      </main>
+
+      <footer class="footer"><span id="progress">48%</span><span id="pages">184 / 382</span></footer>
+    </section>
+  </div>
+
+  <script>
+    const $ = (selector) => document.querySelector(selector);
+    const $$ = (selector) => [...document.querySelectorAll(selector)];
+    const reader = $("#reader"), rail = $("#rail"), collapsed = $("#collapsed"), entryTip = $("#entry-tip");
+    const sentences = $$(".sentence");
+    const content = [
+      { text: "Writers have understood this instinctively for centuries.", lang: "English" },
+      { text: "A balanced sentence makes a difficult idea easier to follow, because rhythm quietly tells the reader where one thought finishes and another begins.", lang: "English" },
+      { text: "好的排版不是装饰，而是一种安静的引导。", lang: "中文" },
+      { text: "It does not ask to be noticed, yet it lets reading continue naturally.", lang: "English" },
+      { text: "The voice continues to the next paragraph and turns the page only when the active sentence moves beyond the visible reading area.", lang: "English" },
+      { text: "Repetition can give a sentence weight, but variation gives it life.", lang: "English" },
+      { text: "The reader hears the pattern before consciously recognising it, and the thought arrives with the rhythm already attached.", lang: "English" },
+      { text: "这也是为什么朗读不应该在页面边界突然停下。", lang: "中文" },
+      { text: "A book is continuous even when its pages are not.", lang: "English" }
+    ];
+    let index = 1, speed = 1, state = "entry";
+
+    function markSentence(paused = false, loading = false) {
+      sentences.forEach((node) => node.classList.remove("active", "paused", "loading"));
+      const target = $(`[data-index="${index}"]`);
+      if (target) target.classList.add("active", paused ? "paused" : loading ? "loading" : "active");
+    }
+    function setPage(second) {
+      $("#page-one").classList.toggle("hidden", second);
+      $("#page-two").classList.toggle("hidden", !second);
+      $("#page-eyebrow").textContent = second ? "Chapter Five" : "Chapter Four";
+      $("#page-title").textContent = second ? "Variation and Return" : "The Power of Three";
+      $("#chapter-label").textContent = second ? "Chapter 5 · Variation and Return" : "Chapter 4 · The Power of Three";
+      $("#progress").textContent = second ? "49%" : "48%";
+      $("#pages").textContent = second ? "185 / 382" : "184 / 382";
+    }
+    function updateContent(paused = false) {
+      const item = content[index];
+      const preview = item.text.length > 102 ? item.text.slice(0, 102) + "…" : item.text;
+      $("#quote").textContent = preview;
+      $("#language").textContent = `自动 · ${item.lang}`;
+      $("#mini-language").textContent = item.lang === "中文" ? "中" : "EN";
+      $("#position").textContent = `${index >= 5 ? "第 5 章" : "第 4 章"} · 第 ${index >= 5 ? index - 4 : index + 1} 句`;
+      markSentence(paused);
+      setPage(index >= 5);
+    }
+    function resetChrome() {
+      reader.className = "reader";
+      rail.classList.add("hidden");
+      collapsed.classList.add("hidden");
+      entryTip.classList.add("hidden");
+      $("#normal-controls").classList.remove("hidden");
+      $("#complete-card").classList.add("hidden");
+      $("#turning-note").classList.remove("show");
+      $("#read-entry").classList.remove("active");
+      $("#live-dot").className = "live-dot";
+      $("#status").textContent = "正在朗读";
+      $("#autopage-label").textContent = "自动翻页已开启 · 离开本页时继续";
+      $("#play").disabled = false;
+      $("#previous").disabled = false;
+      $("#next").disabled = false;
+      $("#play-icon").innerHTML = '<path d="M8 5h3v14H8zM13 5h3v14h-3z"/>';
+      $("#mini-icon").innerHTML = '<path d="M8 5h3v14H8zM13 5h3v14h-3z"/>';
+    }
+    function show(name) {
+      state = name;
+      $$("[data-state]").forEach((button) => button.classList.toggle("active", button.dataset.state === name));
+      resetChrome();
+      if (name === "entry") {
+        index = 1; setPage(false); markSentence(); entryTip.classList.remove("hidden");
+        return;
+      }
+      $("#read-entry").classList.add("active");
+      if (name === "compact") {
+        reader.classList.add("compact-rail"); collapsed.classList.remove("hidden"); updateContent(false);
+        return;
+      }
+      reader.classList.add("with-rail"); rail.classList.remove("hidden");
+      if (name === "complete") {
+        index = 8; setPage(true); markSentence(); $("#normal-controls").classList.add("hidden"); $("#complete-card").classList.remove("hidden");
+        return;
+      }
+      if (name === "mixed") index = 2;
+      else if (name === "turning") index = 5;
+      else if (name !== "loading") index = 1;
+      updateContent(name === "paused");
+      if (name === "paused") {
+        $("#status").textContent = "朗读已暂停"; $("#live-dot").classList.add("paused");
+        $("#play-icon").innerHTML = '<path d="m8 5 11 7-11 7z"/>';
+      }
+      if (name === "loading") {
+        $("#status").textContent = "正在准备下一段音频…"; $("#position").textContent = "播放完成后将自动继续";
+        $("#live-dot").classList.add("loading"); $("#language").textContent = "自动 · 检测中"; $("#quote").textContent = "正在准备下一段，当前页面和位置会保持不变。";
+        $("#play").disabled = true; $("#next").disabled = true; markSentence(false, true);
+      }
+      if (name === "turning") {
+        $("#status").textContent = "正在朗读"; $("#autopage-label").textContent = "已自动翻到下一页 · 朗读未中断"; $("#turning-note").classList.add("show");
+      }
+    }
+
+    $$("[data-state]").forEach((button) => button.addEventListener("click", () => show(button.dataset.state)));
+    $("#read-entry").addEventListener("click", () => show("playing"));
+    $("#collapse").addEventListener("click", () => show("compact"));
+    $("#expand").addEventListener("click", () => show("playing"));
+    $("#stop").addEventListener("click", () => show("entry"));
+    $("#finish").addEventListener("click", () => show("entry"));
+    $("#restart").addEventListener("click", () => { index = 0; show("playing"); index = 0; updateContent(false); });
+    $("#play").addEventListener("click", () => show(state === "paused" ? "playing" : "paused"));
+    $("#mini-play").addEventListener("click", () => show("paused"));
+    $("#previous").addEventListener("click", () => { index = Math.max(0, index - 1); updateContent(false); state = "playing"; });
+    $("#next").addEventListener("click", () => {
+      if (index === content.length - 1) return show("complete");
+      index += 1; updateContent(false); state = "playing";
+      if (index === 5) { $("#turning-note").classList.add("show"); setTimeout(() => $("#turning-note").classList.remove("show"), 1600); }
+    });
+    $("#speed").addEventListener("click", () => { speed = speed >= 2 ? .8 : +(speed + .2).toFixed(1); $("#speed-value").textContent = speed.toFixed(1) + "×"; });
+    show(new URLSearchParams(location.search).get("state") || "entry");
+  </script>
+</body>
+</html>

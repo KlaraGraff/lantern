@@ -3,8 +3,15 @@ import test from "node:test";
 
 import {
   filterReaderSettingConflicts,
+  isPendingUndoActionable,
+  isPromotionUndoable,
   overriddenStateKeys,
+  perBookOverrideKeys,
+  perBookSettingKeys,
+  promotableBookSettingKeys,
   promotableRows,
+  promotionOtherBookCount,
+  promotionToastLabel,
   toggleVisibleConflictSelection,
   type ReaderSettingConflict,
 } from "../src/pages/reader/reader-settings-scope.ts";
@@ -23,9 +30,115 @@ test("row existence identifies overrides while unrelated book settings are ignor
 });
 
 test("only settings with a global counterpart are promotable", () => {
+  // `show_lookup_markers` has a global layer now, so it promotes with the rest.
+  // `toc_expanded` is a `book_settings` row that is not a reader setting at all
+  // — it has no global counterpart and never gains one, so it stays filtered.
   assert.deepEqual(
-    promotableRows({ font: "literata", show_lookup_markers: "false", reading_mode: "paginated" }),
-    ["font", "reading_mode"],
+    promotableRows({
+      font: "literata",
+      show_lookup_markers: "false",
+      reading_mode: "paginated",
+      toc_expanded: "[]",
+    }),
+    ["font", "reading_mode", "show_lookup_markers"],
+  );
+});
+
+test("every per-book reader setting can be promoted", () => {
+  // The button vanishing for a book whose only overrides were marker toggles is
+  // exactly the bug the global layer was built to fix; a key added to the
+  // per-book set without a global counterpart would bring it straight back.
+  const promotable = new Set<string>(promotableBookSettingKeys);
+  for (const key of perBookOverrideKeys) {
+    assert.ok(
+      promotable.has(perBookSettingKeys[key]),
+      `${perBookSettingKeys[key]} has no global counterpart, so it cannot be promoted`,
+    );
+  }
+});
+
+test("a promotion that displaced nothing offers no undo", () => {
+  assert.equal(isPromotionUndoable(null), false);
+  assert.equal(isPromotionUndoable({ globals: {}, book_settings: [] }), false);
+  // A displaced global with no prior row is still undoable — the undo deletes it.
+  assert.equal(
+    isPromotionUndoable({ globals: { show_lookup_markers: null }, book_settings: [] }),
+    true,
+  );
+  assert.equal(
+    isPromotionUndoable({
+      globals: {},
+      book_settings: [{ book_id: "a", key: "font", value: "literata" }],
+    }),
+    true,
+  );
+});
+
+// A stand-in for i18next: returns the key so the assertions read as structure
+// rather than as pinned Chinese copy, and interpolates `count` the same way.
+const fakeT = (key: string, options?: { count: number }) => (
+  options === undefined ? key : `${key}=${options.count}`
+);
+
+const promotionUndo = (books: [string, string][]) => ({
+  globals: { font_family: "georgia" },
+  book_settings: books.map(([book_id, key]) => ({ book_id, key, value: "x" })),
+});
+
+test("the promote toast counts books, not the rows it took from them", () => {
+  // Two rows off one book is still one book, and the source book never counts:
+  // its rows went away without a single value it renders moving.
+  assert.equal(
+    promotionOtherBookCount(
+      promotionUndo([["source", "font"], ["b", "font"], ["b", "font_size"], ["c", "font"]]),
+      "source",
+    ),
+    2,
+  );
+  assert.equal(promotionOtherBookCount(null, "source"), 0);
+});
+
+test("the promote toast drops the reach clause when no other book moved", () => {
+  // "0 本书跟着变了" reads as a failure. The plain label is the honest one.
+  assert.equal(
+    promotionToastLabel(promotionUndo([["source", "font"]]), "source", fakeT),
+    "readerSettings.scope.promoted",
+  );
+  assert.equal(
+    promotionToastLabel({ globals: { font_family: "georgia" }, book_settings: [] }, "source", fakeT),
+    "readerSettings.scope.promoted",
+  );
+});
+
+test("the promote toast reports its reach when other books moved", () => {
+  assert.equal(
+    promotionToastLabel(promotionUndo([["source", "font"], ["b", "font"], ["c", "font"]]), "source", fakeT),
+    "readerSettings.scope.promoted · readerSettings.scope.promotedBooks=2",
+  );
+});
+
+test("an undo slot that would put nothing back offers no affordance", () => {
+  assert.equal(isPendingUndoActionable(null), false);
+  assert.equal(isPendingUndoActionable({ kind: "restore", label: "l", values: {} }), false);
+  assert.equal(
+    isPendingUndoActionable({ kind: "restore", label: "l", values: { font: "literata" } }),
+    true,
+  );
+  assert.equal(
+    isPendingUndoActionable({
+      kind: "promote",
+      label: "l",
+      undo: { globals: {}, book_settings: [] },
+    }),
+    false,
+  );
+  assert.equal(
+    isPendingUndoActionable({
+      kind: "promote",
+      label: "l",
+      undo: promotionUndo([["source", "show_lookup_markers"]]),
+    }),
+    true,
   );
 });
 

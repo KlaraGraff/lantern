@@ -28,7 +28,22 @@ import {
   serializeMarkerStyleConfig,
   type MarkerStyleConfig,
 } from "../marker-style";
+import {
+  DEFAULT_MARKER_VISIBILITY,
+  MARKER_VISIBILITY_KEYS,
+  MARKER_VISIBILITY_SETTING_KEY,
+  resolveMarkerVisibility,
+  type MarkerVisibility,
+} from "../mark-palette";
 import { notifyReadingAssistanceSettingsChanged } from "../reading-assistance-events";
+import {
+  addPendingWrites,
+  appliedSnapshot,
+  groupsToRehydrate,
+  rehydrationKeys,
+  removePendingWrites,
+  type RehydrationGroup,
+} from "./settings-rehydration";
 import {
   parseReaderBindings,
   READER_BINDINGS_SETTING_KEY,
@@ -97,6 +112,38 @@ function wordTranslationEnabled(config: CardDesignConfigV1) {
   return module ? module.enabled : false;
 }
 
+/**
+ * The card design as the settings map has it. `show_translation` is only a
+ * fallback for the reader that predates the card config, so it is read here and
+ * watched below — a pane that ignored it would never notice the legacy row move.
+ */
+function hydratedCardConfig(settings: Record<string, string>): CardDesignConfigV1 {
+  const parsed = parseCardDesignConfig(settings[LEARNING_CARD_CONFIG_SETTING_KEY]);
+  return !settings[LEARNING_CARD_CONFIG_SETTING_KEY] && settings.show_translation !== undefined
+    ? setWordTranslationModule(parsed, settings.show_translation === "true")
+    : parsed;
+}
+
+/**
+ * Each block of local state below, with the settings keys it is built from.
+ * A change to any of them re-reads that block and nothing else — see
+ * `settings-rehydration.ts` for why it is grouped and what holds it back.
+ */
+const REHYDRATION_GROUPS: readonly RehydrationGroup[] = [
+  { id: "cards", keys: [LEARNING_CARD_CONFIG_SETTING_KEY, "show_translation"] },
+  { id: "autoHighlight", keys: ["auto_highlight_lookup_words"] },
+  { id: "markerStyle", keys: [MARKER_STYLE_SETTING_KEY] },
+  { id: "markerVisibility", keys: MARKER_VISIBILITY_KEYS.map((key) => MARKER_VISIBILITY_SETTING_KEY[key]) },
+  {
+    id: "interaction",
+    keys: ["double_click_quick_lookup", "triple_click_quick_select", "triple_click_scope"],
+  },
+  { id: "menuShortcuts", keys: [SHOW_MENU_SHORTCUTS_SETTING_KEY] },
+  { id: "bindings", keys: [READER_BINDINGS_SETTING_KEY] },
+];
+
+const REHYDRATION_KEYS = REHYDRATION_GROUPS.flatMap((group) => [...group.keys]);
+
 function resolveFollowingSources(config: CardDesignConfigV1): CardDesignConfigV1 {
   const cards = { ...config.cards };
   for (const kind of ["word", "phrase", "passage"] as LearningCardKind[]) {
@@ -143,6 +190,7 @@ export default function ToolsSettings({
   const [config, setConfig] = useState<CardDesignConfigV1>(createDefaultCardDesignConfig);
   const [autoHighlightLookupWords, setAutoHighlightLookupWords] = useState(true);
   const [markerStyle, setMarkerStyle] = useState<MarkerStyleConfig>(createDefaultMarkerStyleConfig);
+  const [markerVisibility, setMarkerVisibility] = useState<MarkerVisibility>(DEFAULT_MARKER_VISIBILITY);
   const [doubleClickQuickLookup, setDoubleClickQuickLookup] = useState(true);
   const [tripleClickQuickSelect, setTripleClickQuickSelect] = useState(true);
   const [tripleClickScope, setTripleClickScope] = useState<TripleClickScope>("sentence");
@@ -153,6 +201,11 @@ export default function ToolsSettings({
   const [customActionTest, setCustomActionTest] = useState<ToolsPreviewState["customActionTest"]>();
   const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const hydratedRef = useRef(false);
+  // What the rows on screen were built from, and which keys this pane is
+  // writing right now. Together they tell an outside change apart from the
+  // pane's own — only the first may replace a control the user can see.
+  const appliedRef = useRef<Record<string, string | undefined>>({});
+  const pendingWritesRef = useRef(new Map<string, number>());
   const editorControllerRef = useRef<UnsavedEditorController | null>(null);
   const pendingNavigationRef = useRef<(() => void) | null>(null);
   const [editorController, setEditorController] = useState<UnsavedEditorController | null>(null);
@@ -191,20 +244,71 @@ export default function ToolsSettings({
 
   useEffect(() => {
     if (loading || hydratedRef.current) return;
-    let parsed = parseCardDesignConfig(settings[LEARNING_CARD_CONFIG_SETTING_KEY]);
-    if (!settings[LEARNING_CARD_CONFIG_SETTING_KEY] && settings.show_translation !== undefined) {
-      parsed = setWordTranslationModule(parsed, settings.show_translation === "true");
-    }
-    setConfig(parsed);
+    setConfig(hydratedCardConfig(settings));
     setAutoHighlightLookupWords(settings.auto_highlight_lookup_words !== "false");
     setMarkerStyle(parseMarkerStyleConfig(settings[MARKER_STYLE_SETTING_KEY]));
+    setMarkerVisibility(resolveMarkerVisibility(settings));
     setDoubleClickQuickLookup(settings.double_click_quick_lookup !== "false");
     setTripleClickQuickSelect(settings.triple_click_quick_select !== "false");
     setTripleClickScope(parseTripleClickScope(settings.triple_click_scope));
     setShowMenuShortcuts(settings[SHOW_MENU_SHORTCUTS_SETTING_KEY] !== "false");
     setReaderBindings(parseReaderBindings(settings[READER_BINDINGS_SETTING_KEY]).bindings);
+    appliedRef.current = appliedSnapshot(REHYDRATION_KEYS, settings);
     hydratedRef.current = true;
   }, [settings, loading]);
+
+  // Reading on from there: the modal outlives the values it is showing. The
+  // reader's 「设为全局默认」, another window, another pane — anything that writes
+  // one of these keys while this pane is mounted has to reach the rows too, or
+  // they go on displaying what was true when the pane opened.
+  useEffect(() => {
+    if (loading || !hydratedRef.current) return;
+    const stale = groupsToRehydrate({
+      groups: REHYDRATION_GROUPS,
+      stored: settings,
+      applied: appliedRef.current,
+      pending: pendingWritesRef.current.keys(),
+      // A custom action mid-edit is the one block that cannot be re-read: its
+      // editor mirrors the config it was opened with, so replacing the config
+      // throws away the text the user has typed but not saved. The dependency
+      // list picks the change back up once the editor is clean or gone.
+      blocked: editorController?.dirty ? ["cards"] : [],
+    });
+    if (stale.length === 0) return;
+    for (const group of stale) {
+      switch (group) {
+        case "cards":
+          setConfig(hydratedCardConfig(settings));
+          setTestPreview(null);
+          setCustomActionTest(undefined);
+          break;
+        case "autoHighlight":
+          setAutoHighlightLookupWords(settings.auto_highlight_lookup_words !== "false");
+          break;
+        case "markerStyle":
+          setMarkerStyle(parseMarkerStyleConfig(settings[MARKER_STYLE_SETTING_KEY]));
+          break;
+        case "markerVisibility":
+          setMarkerVisibility(resolveMarkerVisibility(settings));
+          break;
+        case "interaction":
+          setDoubleClickQuickLookup(settings.double_click_quick_lookup !== "false");
+          setTripleClickQuickSelect(settings.triple_click_quick_select !== "false");
+          setTripleClickScope(parseTripleClickScope(settings.triple_click_scope));
+          break;
+        case "menuShortcuts":
+          setShowMenuShortcuts(settings[SHOW_MENU_SHORTCUTS_SETTING_KEY] !== "false");
+          break;
+        case "bindings":
+          setReaderBindings(parseReaderBindings(settings[READER_BINDINGS_SETTING_KEY]).bindings);
+          break;
+      }
+    }
+    appliedRef.current = {
+      ...appliedRef.current,
+      ...appliedSnapshot(rehydrationKeys(REHYDRATION_GROUPS, stale), settings),
+    };
+  }, [editorController, loading, settings]);
 
   const previewExplanationMode = settings.explanation_mode || "adaptive_bilingual";
   const resolvedExplanationLanguage = previewExplanationMode === "chinese"
@@ -264,12 +368,20 @@ export default function ToolsSettings({
 
   const queueSave = (entries: Record<string, string>, toastMessage?: string) => {
     const keys = Object.keys(entries);
+    // Claimed before the write starts, released only once it has settled: the
+    // pane's own change comes back to it as a settings change like any other,
+    // and while one is out the rows it touches answer to the control, not to
+    // the store. A failed write leaves the claim behind but not the value —
+    // the next change re-reads the row from what was actually stored.
+    addPendingWrites(pendingWritesRef.current, keys);
+    appliedRef.current = { ...appliedRef.current, ...entries };
     saveQueue.current = saveQueue.current
       .catch(() => {})
       .then(() => saveBulk(entries))
       .then(() => notifyReadingAssistanceSettingsChanged(keys))
       .then(() => showSavedToast(toastMessage))
-      .catch((error) => console.error("Failed to save learning tool settings:", error));
+      .catch((error) => console.error("Failed to save learning tool settings:", error))
+      .finally(() => removePendingWrites(pendingWritesRef.current, keys));
   };
   const persistConfig = (next: CardDesignConfigV1) => {
     const normalized = parseCardDesignConfig(resolveFollowingSources(next));
@@ -283,6 +395,8 @@ export default function ToolsSettings({
     });
   };
   const persistLegacy = (key: string, value: string) => {
+    addPendingWrites(pendingWritesRef.current, [key]);
+    appliedRef.current = { ...appliedRef.current, [key]: value };
     save(key, value)
       .then(() => {
         showSavedToast();
@@ -290,13 +404,26 @@ export default function ToolsSettings({
       })
       .catch((error) => {
         console.error(`Failed to save ${key}:`, error);
-      });
+      })
+      .finally(() => removePendingWrites(pendingWritesRef.current, [key]));
   };
   const persistMarkerStyle = (next: MarkerStyleConfig) => {
     const normalized = parseMarkerStyleConfig(next);
     setMarkerStyle(normalized);
     const serialized = serializeMarkerStyleConfig(normalized);
     queueSave({ [MARKER_STYLE_SETTING_KEY]: serialized });
+  };
+  // Only the switch that moved is written. Writing all four would create rows
+  // for three settings the user never touched, and an existing row is not the
+  // same thing as a default: it is what `promote_book_settings_to_global` puts
+  // back on undo, and what a future change to the defaults would no longer reach.
+  const persistMarkerVisibility = (next: MarkerVisibility) => {
+    const changed: Record<string, string> = {};
+    for (const key of MARKER_VISIBILITY_KEYS) {
+      if (next[key] !== markerVisibility[key]) changed[MARKER_VISIBILITY_SETTING_KEY[key]] = String(next[key]);
+    }
+    setMarkerVisibility(next);
+    if (Object.keys(changed).length > 0) queueSave(changed);
   };
   const updateCard = (kind: LearningCardKind, card: CardDesignConfigV1["cards"][LearningCardKind]) => {
     persistConfig({ ...config, cards: { ...config.cards, [kind]: card } });
@@ -564,6 +691,8 @@ export default function ToolsSettings({
           <MarkerStyleSettings
             value={markerStyle}
             onChange={persistMarkerStyle}
+            visibility={markerVisibility}
+            onVisibilityChange={persistMarkerVisibility}
             lookupRow={(
               <SettingsRow
                 title={t("settings.tools.autoHighlightLookupWords", { defaultValue: "查词后自动标记" })}

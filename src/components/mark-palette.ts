@@ -78,6 +78,84 @@ export const wordMarkerStyle: Record<string, SystemMark> = {
 export const READING_HIGHLIGHT_COLOR = systemMark.reading.color;
 export const READING_HIGHLIGHT_OPACITY = systemMark.reading.opacity;
 
+/**
+ * Which vocabulary marks the text is allowed to show, in the order they are
+ * offered — the lookup mark first because it is the one a reader meets without
+ * asking for it, then the three states a word moves through.
+ *
+ * This lives beside the palette rather than beside either screen that edits it:
+ * the Settings page sets the global default and the reader panel overrides it
+ * per book, and both have to agree on the key names, the order and the value an
+ * absent row means. A second copy of that answer is how the four ended up
+ * per-book-only in the first place.
+ */
+export const MARKER_VISIBILITY_KEYS = [
+  "showLookupMarkers",
+  "showNewVocabMarkers",
+  "showLearningMarkers",
+  "showMasteredMarkers",
+] as const;
+
+export type MarkerVisibilityKey = typeof MARKER_VISIBILITY_KEYS[number];
+
+export type MarkerVisibility = Record<MarkerVisibilityKey, boolean>;
+
+/** The row in the global `settings` table each switch is stored in. */
+export const MARKER_VISIBILITY_SETTING_KEY: Record<MarkerVisibilityKey, string> = {
+  showLookupMarkers: "show_lookup_markers",
+  showNewVocabMarkers: "show_new_vocab_markers",
+  showLearningMarkers: "show_learning_markers",
+  showMasteredMarkers: "show_mastered_markers",
+};
+
+/**
+ * What a missing row means — and it has to keep meaning exactly this, because
+ * every install that predates the global layer has all four rows missing. These
+ * are the values the reader hardcoded before there was anywhere to write them
+ * down; `DEFAULT_MARKER_VISIBILITY` in `useReaderSettingsSync` is the same set,
+ * and `tests/marker-visibility.test.ts` fails if the two ever drift.
+ *
+ * `showMasteredMarkers` is the odd one out on purpose: a word you have finished
+ * learning is a word you should be able to read straight past.
+ */
+export const DEFAULT_MARKER_VISIBILITY: MarkerVisibility = {
+  showLookupMarkers: true,
+  showNewVocabMarkers: true,
+  showLearningMarkers: true,
+  showMasteredMarkers: false,
+};
+
+/**
+ * The four switches as the settings table has them. Anything that is not the
+ * string `"true"` or `"false"` is treated as no answer at all rather than as
+ * `false` — a truncated write or a hand-edited database must not silently turn
+ * a mark off.
+ */
+export function resolveMarkerVisibility(
+  settings: Record<string, string | undefined>,
+): MarkerVisibility {
+  const resolved = {} as MarkerVisibility;
+  for (const key of MARKER_VISIBILITY_KEYS) {
+    const raw = settings[MARKER_VISIBILITY_SETTING_KEY[key]];
+    resolved[key] = raw === "true" ? true : raw === "false" ? false : DEFAULT_MARKER_VISIBILITY[key];
+  }
+  return resolved;
+}
+
+export interface MarkerVisibilitySummary {
+  /** `partial` is the only one that has to name a number. */
+  state: "all" | "none" | "partial";
+  shown: number;
+  total: number;
+}
+
+/** Which of the three sentences the heading gets to say, and the count it needs. */
+export function markerVisibilitySummary(visibility: MarkerVisibility): MarkerVisibilitySummary {
+  const total = MARKER_VISIBILITY_KEYS.length;
+  const shown = MARKER_VISIBILITY_KEYS.filter((key) => visibility[key]).length;
+  return { state: shown === total ? "all" : shown === 0 ? "none" : "partial", shown, total };
+}
+
 /** The colours a saved highlight can be named. Not configurable. */
 export const savedHighlightColor: Record<string, string> = {
   yellow: "#FBBF24",
@@ -88,6 +166,48 @@ export const savedHighlightColor: Record<string, string> = {
 };
 
 export const SAVED_HIGHLIGHT_OPACITY = 0.35;
+
+/**
+ * The passage a margin note (P3.2) was written about.
+ *
+ * Deliberately the faintest mark the reader can be shown: its whole job is to
+ * let you trace a card back to its sentence *when you go looking*, not to be
+ * noticed while reading. It is drawn as a hairline under the glyphs rather than
+ * a wash through them, so it competes with nothing — a saved highlight, the
+ * read-aloud wash and the vocabulary underlines all sit above it in weight, and
+ * `useFoliateAnnotations` never draws it where one of those already is.
+ *
+ * The colour has to follow the page for the same reason every other mark's
+ * does: the reader accent is a dark violet, and on the dark and Gray papers a
+ * dark violet hairline is not a faint mark, it is no mark. `NOTE_ANCHOR_MARK`
+ * keeps one entry per direction and `noteAnchorMarkColor` picks between them the
+ * way `washBlendMode` picks a blend — by how much light the paper has.
+ */
+/**
+ * A sentinel in the same spirit as `wordMarkerColor`: a note anchor's colour is
+ * decided at draw time from the page it lands on, so the annotation's `color`
+ * field carries no colour at all. It only has to be a value no saved highlight
+ * can be named, so the highlight path can never claim one of these.
+ */
+export const NOTE_ANCHOR_MARK_SENTINEL = "__note_anchor__";
+
+export const NOTE_ANCHOR_MARK = {
+  /** Papers with light to take away. */
+  onLight: "#7C3AED",
+  /** Papers that need light added — the dark theme, and the Gray mid-tone. */
+  onDark: "#C4B5FD",
+} as const;
+
+/**
+ * Low enough that the hairline reads as a tint of the paper rather than a line
+ * drawn on it, and still clear of `MARK_LEGIBILITY_THRESHOLD` on every theme.
+ */
+export const NOTE_ANCHOR_MARK_OPACITY = 0.18;
+
+/** Which of the two note-anchor tones this page can actually show. */
+export function noteAnchorMarkColor(backdrop: string): string {
+  return washBlendMode(backdrop) === "multiply" ? NOTE_ANCHOR_MARK.onLight : NOTE_ANCHOR_MARK.onDark;
+}
 
 function channels(hex: string): [number, number, number] {
   const value = hex.replace("#", "");

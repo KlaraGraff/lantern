@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, ChevronRight, Download, Trash2 } from "lucide-react";
+import { Check, ChevronRight, Download, RotateCcw, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import Select from "../ui/Select";
 import Toggle from "../ui/Toggle";
@@ -33,6 +33,10 @@ import type { PassiveVocabPreviewState } from "./PassiveVocabPreview";
 import { formatPassiveVocabSummary, parsePassiveVocabSettings } from "../passive-vocab";
 import type { SettingsView } from "../settings-destination";
 import EnhancedFontSettings from "./EnhancedFontSettings";
+import Button from "../ui/Button";
+import ConfirmDialog from "./ConfirmDialog";
+import { buildReadingDefaultSettings } from "./reading-defaults";
+import { createDefaultReaderSettings } from "../../pages/reader/useReaderSettingsSync";
 
 const READER_THEME_OPTIONS: {
   value: ReaderTheme;
@@ -153,6 +157,9 @@ export default function ReadingSettings({
   const [customFonts, setCustomFonts] = useState<CustomFontRecord[]>([]);
   const [fontBusy, setFontBusy] = useState(false);
   const [fontError, setFontError] = useState<string | null>(null);
+  const [restoreConfirm, setRestoreConfirm] = useState(false);
+  const [restoreBusy, setRestoreBusy] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
   const fontOptions = [
     ...fonts.filter((font) => font.group === "system").map((font) => ({ value: font.id, label: font.label, group: t("settings.layout.fontGroupSystem") })),
@@ -202,6 +209,28 @@ export default function ReadingSettings({
     if (settings.previous_page_binding) setPreviousPageBinding(settings.previous_page_binding);
     if (settings.next_page_binding) setNextPageBinding(settings.next_page_binding);
   }, [settings, loading]);
+
+  // One write for all twenty rows: `saveBulk` also pushes the new values back
+  // into `settings`, so the sync effect above repaints every control at once
+  // instead of the section flickering key by key.
+  const restoreReadingDefaults = useCallback(async () => {
+    setRestoreBusy(true);
+    setRestoreError(null);
+    try {
+      await saveBulk(buildReadingDefaultSettings(createDefaultReaderSettings()));
+      setRestoreConfirm(false);
+      showSavedToast();
+    } catch (error) {
+      console.error("Failed to restore reading defaults:", error);
+      // The dialog closes either way: the message belongs next to the row that
+      // still says 「恢复默认」, and a modal left open over the page hides the
+      // very settings the user is being told did not change.
+      setRestoreConfirm(false);
+      setRestoreError(t("settings.layout.restoreDefaultsFailed"));
+    } finally {
+      setRestoreBusy(false);
+    }
+  }, [saveBulk, showSavedToast, t]);
 
   const refreshCustomFonts = useCallback(async () => {
     const records = await loadCustomFonts();
@@ -667,6 +696,35 @@ export default function ReadingSettings({
         </span>
         <ChevronRight size={16} className="shrink-0 text-text-muted group-hover:text-text-primary" />
       </button>
+      {/* Restore defaults — last row, because it undoes every row above it. */}
+      <div className="border-t border-border-light">
+        <div className="flex items-center justify-between h-[73px]">
+          <div>
+            <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.restoreDefaults")}</p>
+            <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.restoreDefaultsHint")}</p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => { setRestoreError(null); setRestoreConfirm(true); }}>
+            <RotateCcw size={13} />
+            {t("settings.layout.restoreDefaultsAction")}
+          </Button>
+        </div>
+        {restoreError && (
+          <p role="alert" className="-mt-1 pb-3 text-[12px] leading-[18px] text-danger-text">
+            {restoreError}
+          </p>
+        )}
+      </div>
+      {restoreConfirm && (
+        <ConfirmDialog
+          title={t("settings.layout.restoreDefaultsConfirmTitle")}
+          description={t("settings.layout.restoreDefaultsConfirmBody")}
+          primaryLabel={t("settings.layout.restoreDefaultsAction")}
+          primaryDisabled={restoreBusy}
+          onPrimary={() => { void restoreReadingDefaults(); }}
+          secondaryLabel={t("common.cancel")}
+          onSecondary={() => { if (!restoreBusy) setRestoreConfirm(false); }}
+        />
+      )}
     </div>
   );
 }

@@ -163,10 +163,8 @@ pub(crate) fn lookup_memory(
     };
     if let Some((times, last_looked_up_at, definition)) = history {
         memory.looked_up_times = Some(times);
-        memory.days_since_last_lookup = Some(
-            (now_ms.saturating_sub(last_looked_up_at) / 86_400_000)
-                .max(0),
-        );
+        memory.days_since_last_lookup =
+            Some((now_ms.saturating_sub(last_looked_up_at) / 86_400_000).max(0));
         memory.previous_definition = definition
             .as_deref()
             .map(str::trim)
@@ -582,7 +580,10 @@ mod tests {
 
         let card = learning_card_memory_block(&conn, "resign", NOW_MS).unwrap();
         assert!(card.contains("\"looked_up_times\":2"), "{card}");
-        assert!(card.contains("\"previous_definition\":\"to give up\""), "{card}");
+        assert!(
+            card.contains("\"previous_definition\":\"to give up\""),
+            "{card}"
+        );
         assert!(card.contains("\"mastery\":\"mastered\""), "{card}");
         assert!(card.contains("requested modules"), "{card}");
         assert!(!card.contains("keep the answer shorter"), "{card}");

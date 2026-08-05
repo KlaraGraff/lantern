@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lantern P2.3 · 阅读排版样张（锚定弹层）</title>
+  <style>
+    :root{
+      --chrome:#fbfaf8; --stage:#f6f0e5; --surface:#fff;
+      --text:#312d29; --secondary:#56514b; --muted:#77716a; --quiet:#9a948d;
+      --border:#dfdad3; --border-light:#ece8e2; --input:#f1eee9;
+      --accent:#7c3aed; --accent-text:#6d28d9; --accent-bg:#f2ebfd; --danger:#b42318; --danger-bg:#fdf2f0;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;min-width:1120px;background:#d8d6d2;color:var(--text);font:13px/1.5 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    button{font:inherit;color:inherit;cursor:pointer}
+    .stage{min-height:100vh;padding:52px 24px 22px;display:flex;flex-direction:column;align-items:center;gap:14px}
+
+    /* ---------- window chrome ---------- */
+    .window{position:relative;width:min(1440px,calc(100vw - 48px));height:min(860px,calc(100vh - 168px));min-height:620px;overflow:hidden;border:1px solid #c8c5c0;border-radius:16px;background:var(--chrome);box-shadow:0 24px 70px rgba(38,34,30,.17);transition:width .18s ease}
+    .window.narrow{width:520px}
+    .traffic{position:absolute;z-index:10;top:19px;left:18px;display:flex;gap:8px}
+    .traffic i{width:12px;height:12px;border-radius:50%;display:block}
+    .traffic i:nth-child(1){background:#ff5f57}.traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}
+    .toolbar{position:relative;z-index:6;height:62px;padding:0 18px 0 68px;display:flex;align-items:center;border-bottom:1px solid var(--border);background:var(--chrome)}
+    .book{flex:1;display:flex;align-items:center;gap:10px;min-width:0}
+    .book-icon{width:34px;height:34px;flex:none;display:grid;place-items:center;border-radius:9px;background:var(--accent);color:#fff;font-size:15px}
+    .book-text{min-width:0}
+    .book-text b{display:block;max-width:340px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:14px;font-weight:600}
+    .book-text span{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--muted);font-size:11px}
+    .tools{flex:none;margin-left:auto;display:flex;align-items:center}
+    .tool{width:36px;height:36px;flex:none;display:grid;place-items:center;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:15px}
+    .tool:hover{background:var(--input);color:var(--text)}
+    .tool.aa{gap:1px;display:flex;align-items:baseline;justify-content:center;color:var(--accent-text)}
+    .tool.aa .big{font-size:16px;font-weight:600;line-height:24px}
+    .tool.aa .small{font-size:12px;font-weight:600;line-height:16px}
+    .dismissed .tool.aa{color:var(--muted)}
+
+    /* ---------- reading page (always full width) ---------- */
+    .reader{position:absolute;inset:62px 0 30px;display:grid;place-items:center;padding:26px 30px;background:var(--stage)}
+    .page{width:min(680px,100%);height:100%;overflow:hidden;padding:44px 56px;background:#FAF7F0;color:#29251E;box-shadow:0 5px 30px rgba(80,67,50,.08)}
+    .narrow .page{padding:30px 24px}
+    .kicker{margin:0 0 8px;color:#978c80;text-align:center;font:10px/1.4 Inter,sans-serif;letter-spacing:.13em;text-transform:uppercase}
+    .page h1{margin:0 0 28px;text-align:center;font:600 25px/1.3 Georgia,"Songti SC",serif}
+    .copy{font:17px/1.7 Georgia,"Songti SC",serif}
+    .copy p{margin:0 0 var(--paragraph-gap,0);text-align:var(--align,left);text-indent:var(--indent,0);hyphens:var(--hyphens,manual);-webkit-hyphens:var(--hyphens,manual)}
+    .copy p.heading{margin:24px 0 12px;text-align:center;text-indent:0;font-weight:700}
+    .copy p.image{height:84px;margin:18px auto;display:grid;place-items:center;border:1px solid #dbd2c6;border-radius:4px;background:#f1e9db;color:#9b8e7d;text-align:center;text-indent:0;font:11px Inter,sans-serif}
+    .copy p.quote{padding-left:22px;border-left:2px solid #cfc2b1;color:#62584e;text-indent:0}
+    .state-copy{display:none}.state-copy.on{display:block}
+    .footer{position:absolute;inset:auto 0 0;height:30px;padding:0 18px;display:flex;align-items:center;border-top:1px solid var(--border);background:var(--chrome);color:var(--quiet);font-size:10px}
+    .footer span:last-child{margin-left:auto}
+
+    /* ---------- the shipped surface: a 320px popover anchored to 「Aa」 ---------- */
+    .popover{position:absolute;z-index:20;top:66px;right:198px;width:320px;max-width:calc(100% - 16px);max-height:calc(100% - 74px);display:flex;flex-direction:column;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface);box-shadow:0 10px 34px rgba(48,42,36,.16)}
+    .narrow .popover{right:auto;left:8px}
+    .dismissed .popover{display:none}
+
+    .scope-card{margin:12px 12px 0;padding:10px 12px;display:flex;flex:none;align-items:flex-start;gap:8px;border-radius:8px;background:var(--input)}
+    .scope-card i{margin-top:5px;width:6px;height:6px;flex:none;border-radius:50%;background:var(--muted)}
+    .scope-card b{display:block;font-size:12px;font-weight:500}
+    .scope-card span span{display:block;margin-top:2px;color:var(--muted);font-size:11px;line-height:1.35}
+
+    .block{padding:12px 16px;border-bottom:1px solid var(--border-light)}
+    .block[hidden]{display:none}
+    .block-title{margin:0 0 8px;color:var(--muted);font-size:11px;font-weight:500;letter-spacing:.5px;text-transform:uppercase}
+    .fontsize{padding:8px 16px;border-bottom:1px solid var(--border-light)}
+    .fontsize-row{height:44px;display:flex;align-items:center}
+    .fontsize-row button{flex:1;height:28px;border:0;background:transparent;font-size:14px;font-weight:500}
+    .fontsize-row button:first-child{border-right:1px solid var(--border)}
+    .fontsize-row button:last-child{height:36px;border-left:1px solid var(--border);font-size:20px;letter-spacing:-.45px}
+    .fontsize-row button:hover{background:var(--input)}
+    .fontsize-row .value{flex:1;text-align:center;font-size:14px;font-weight:500}
+    .themes{height:78px;display:flex;align-items:center;justify-content:center;gap:20px;border-bottom:1px solid var(--border-light)}
+    .theme{display:flex;flex-direction:column;align-items:center;gap:6px;border:0;background:transparent;padding:0}
+    .swatch{width:32px;height:32px;display:grid;place-items:center;border-radius:50%;font-size:13px}
+    .theme.sel .swatch{box-shadow:0 0 0 2px #fff,0 0 0 4px var(--accent)}
+    .theme span{color:var(--muted);font-size:10px;font-weight:500}
+    .select{height:34px;padding:0 10px;display:flex;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:7px;background:var(--surface);font-size:12px}
+    .select i{color:var(--muted);font-style:normal}
+    .pair{display:flex;gap:8px}
+    .pair button{flex:1;padding:9px 0;display:flex;flex-direction:column;align-items:center;gap:5px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:12px;font-weight:500}
+    .pair button.sel{border-color:var(--accent);background:var(--accent-bg);color:var(--accent-text)}
+    .pair .glyph{font-size:17px;line-height:1}
+    .hint{margin:6px 0 0;color:var(--muted);font-size:11px;line-height:1.35}
+    .rows{display:flex;flex-direction:column;gap:10px}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:16px}
+    .row .name{font-size:13px}
+    .row .name.strong{font-weight:500}
+    .toggle{position:relative;width:36px;height:20px;flex:none;padding:0;border:0;border-radius:999px;background:#cbc7c1;transition:.16s}
+    .toggle:after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:.16s}
+    .toggle.on{background:var(--accent)}.toggle.on:after{left:18px}
+    .toggle[disabled]{opacity:.45;cursor:not-allowed}
+    .bind{height:32px;min-width:92px;padding:0 9px;display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--border);border-radius:6px;background:var(--input);color:var(--secondary);font-size:12px;font-weight:500}
+    .slider-row{display:flex;flex-direction:column;gap:6px}
+    .slider-row .top{display:flex;align-items:center;justify-content:space-between}
+    .slider-row .top b{font-size:13px;font-weight:500}
+    .slider-row .top span{color:var(--muted);font-size:13px}
+    .track{height:4px;border-radius:999px;background:var(--border)}
+    .track i{position:relative;display:block;height:100%;background:#bdb6ad;border-radius:999px}
+    .track i:after{content:"";position:absolute;right:-7px;top:-5px;width:14px;height:14px;border:1px solid var(--border);border-radius:50%;background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+    .layout{padding:12px 16px;display:flex;flex-direction:column;gap:16px}
+    .para{padding-top:16px;border-top:1px solid var(--border-light)}
+    .steps{margin-top:8px;padding:4px;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;border-radius:8px;background:var(--input)}
+    .steps button{height:28px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:11px}
+    .steps button.sel{background:var(--surface);color:var(--text);font-weight:500;box-shadow:0 1px 3px rgba(50,45,40,.12)}
+    .linkish{margin-top:8px;height:28px;margin-left:-8px;padding:0 8px;display:inline-flex;align-items:center;border:0;border-radius:6px;background:transparent;color:var(--accent-text);font-size:12px}
+    .linkish:hover{background:var(--accent-bg)}
+    .danger-block{padding:12px 16px;border-top:1px solid var(--border-light)}
+    .ico{width:13px;height:13px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+    .danger-btn{height:32px;margin-left:-8px;padding:0 8px;display:inline-flex;align-items:center;gap:8px;border:0;border-radius:6px;background:transparent;color:var(--danger);font-size:12px}
+    .danger-btn:hover{background:var(--danger-bg)}
+    .confirm{display:none;flex-direction:column;gap:8px}
+    .confirm p{margin:0;color:var(--muted);font-size:12px;line-height:1.55}
+    .confirm-actions{display:flex;justify-content:flex-end;gap:8px}
+    .confirm-actions button{height:32px;padding:0 8px;display:inline-flex;align-items:center;gap:6px;border:0;border-radius:6px;background:transparent;font-size:12px}
+    .confirm-actions .cancel{color:var(--muted)}.confirm-actions .cancel:hover{background:var(--input)}
+    .confirm-actions .go{color:var(--danger)}.confirm-actions .go:hover{background:var(--danger-bg)}
+    .clearing .confirm{display:flex}.clearing .danger-btn{display:none}
+
+    /* ---------- page annotation + state nav + captions ---------- */
+    .note{position:absolute;left:26px;bottom:44px;width:210px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:rgba(255,255,255,.94);color:var(--muted);font-size:10.5px;line-height:1.55}
+    .narrow .note{display:none}
+    .state-nav{position:fixed;z-index:80;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:4px;padding:4px;border:1px solid #d1d1d6;border-radius:10px;background:rgba(255,255,255,.95);box-shadow:0 8px 24px rgba(0,0,0,.12)}
+    .state-nav button{height:28px;padding:0 11px;border:0;border-radius:7px;background:transparent;color:var(--quiet);font-size:11px}
+    .state-nav button.on{background:var(--accent-bg);color:var(--accent-text);font-weight:600}
+    .caption{width:min(1440px,calc(100vw - 48px));display:flex;gap:22px;color:#5d5852;font-size:11px;line-height:1.65}
+    .caption p{margin:0;flex:1}
+    .caption b{color:#3b3733}
+    .caption .rejected{padding-left:14px;border-left:2px solid #c9bfe8}
+  </style>
+</head>
+<body>
+  <nav class="state-nav" aria-label="样张状态">
+    <button class="on" data-state="english">英文效果</button>
+    <button data-state="chinese">中文效果</button>
+    <button data-state="exceptions">智能跳过</button>
+    <button data-state="original">保留出版社样式</button>
+    <button data-state="clear">危险操作确认</button>
+    <button data-state="dismissed">点击别处收起</button>
+    <button data-state="narrow">窄窗口</button>
+    <button data-state="fixed">固定版式（PDF）</button>
+  </nav>
+
+  <div class="stage">
+    <div class="window" id="window">
+      <div class="traffic"><i></i><i></i><i></i></div>
+
+      <header class="toolbar">
+        <div class="book">
+          <span class="book-icon">▤</span>
+          <span class="book-text"><b id="book-title">The Elements of Eloquence</b><span id="book-sub">第 4 章，共 21 章</span></span>
+        </div>
+        <div class="tools">
+          <button class="tool" title="目录">☰</button>
+          <button class="tool" title="搜索">⌕</button>
+          <button class="tool" title="朗读">◗)</button>
+          <button class="tool aa" id="aa" title="阅读设置"><span class="big">A</span><span class="small">A</span></button>
+          <button class="tool" title="书签">⚑</button>
+          <button class="tool" title="生词">語</button>
+          <button class="tool" title="笔记">✎</button>
+          <button class="tool" title="帮助">?</button>
+          <button class="tool" title="AI">✦</button>
+        </div>
+      </header>
+
+      <main class="reader">
+        <article class="page" id="page">
+          <div class="state-copy on" data-copy="english" lang="en">
+            <p class="kicker">Chapter Four</p><h1>The Power of Three</h1>
+            <div class="copy">
+              <p>Language is built from patterns, and the most satisfying pattern is often the simplest. Three examples feel complete without becoming predictable, while a longer procession can lose its energy before reaching the end.</p>
+              <p>Writers have understood this instinctively for centuries. They promise blood, sweat and tears; they speak of life, liberty and happiness; they arrange an argument so that each phrase adds weight to the last.</p>
+              <p>The effect is not merely decorative. A balanced sentence makes a difficult idea easier to follow, because rhythm quietly tells the reader where one thought finishes and another begins.</p>
+            </div>
+          </div>
+          <div class="state-copy" data-copy="chinese" lang="zh-CN">
+            <p class="kicker">第三章</p><h1>阅读是一种缓慢的抵达</h1>
+            <div class="copy">
+              <p>真正的阅读并不急于获得结论。它让一个念头在心里停留片刻，等待它与过去的经验发生联系。</p>
+              <p>当文字拥有合适的呼吸，眼睛就不必在拥挤的行间寻找落脚处。段落之间留出的空间，也在提醒我们：这里结束了一次思考，下一次思考即将开始。</p>
+              <p>因此，好的排版不是装饰，而是一种安静的引导。它不要求被注意，却能让阅读自然地继续下去。</p>
+            </div>
+          </div>
+          <div class="state-copy" data-copy="exceptions" lang="zh-CN">
+            <p class="kicker">第六章</p><h1>被跳过的段落</h1>
+            <div class="copy">
+              <p>正文段落仍然保留首行缩进，帮助读者快速识别新段落的开始。</p>
+              <p class="heading">一个居中的小标题</p>
+              <p class="image">图片段落 · 不缩进</p>
+              <p class="quote">“引用、诗句和带有自身结构的段落，也不应该被强行缩进。”</p>
+              <p>回到普通正文后，首行缩进自动恢复，不需要用户逐段调整。</p>
+            </div>
+          </div>
+          <div class="state-copy" data-copy="original" lang="en">
+            <p class="kicker">Publisher Style</p><h1>Original Layout</h1>
+            <div class="copy">
+              <p>With paragraph spacing left at the publisher's setting, Lantern keeps the alignment, spacing and indentation the book shipped with. Existing books therefore do not change appearance merely because the application was updated.</p>
+              <p>This is the safe starting point for every imported book. The reader opts in only when they want Lantern to refine the layout.</p>
+            </div>
+          </div>
+        </article>
+        <p class="note" id="note">样张说明：正文会随设置变化；标题、居中段、图片段和引用段保持自己的排版，不被「首行缩进」误伤。</p>
+      </main>
+
+      <!-- 320px popover, anchored under 「Aa」 — this is the shipped surface -->
+      <div class="popover" id="popover" role="dialog" aria-label="阅读设置">
+        <div class="scope-card">
+          <i></i>
+          <span><b>本书正在跟随全局</b><span>修改全局阅读设置时，这本书会同步变化。</span></span>
+        </div>
+
+        <div class="fontsize" data-reflow>
+          <div class="fontsize-row">
+            <button>A-</button><span class="value" id="font-size">18px</span><button>A+</button>
+          </div>
+        </div>
+
+        <div class="themes">
+          <button class="theme"><span class="swatch" style="background:#fff;border:1px solid #dfdad3"></span><span>原始</span></button>
+          <button class="theme sel"><span class="swatch" style="background:#FAF7F0;border:1px solid #dfdad3;color:var(--accent)">✓</span><span>阅读纸</span></button>
+          <button class="theme"><span class="swatch" style="background:#71717b"></span><span>灰色</span></button>
+          <button class="theme"><span class="swatch" style="background:#1b1b1f"></span><span>深色</span></button>
+          <button class="theme"><span class="swatch" style="background:#DDE8D8;border:1px solid #dfdad3"></span><span>自定义</span></button>
+        </div>
+
+        <div class="block" data-reflow>
+          <p class="block-title">字体</p>
+          <div class="select"><span>Literata</span><i>⌄</i></div>
+        </div>
+
+        <div class="block">
+          <p class="block-title">阅读模式</p>
+          <div class="pair">
+            <button><span class="glyph">▤</span>滚动</button>
+            <button class="sel"><span class="glyph">▥</span>翻页</button>
+          </div>
+        </div>
+
+        <div class="block">
+          <p class="block-title">页面布局</p>
+          <div class="pair">
+            <button class="sel"><span class="glyph">▯</span>单页</button>
+            <button><span class="glyph">▯▯</span>双页</button>
+          </div>
+          <p class="hint">阅读窗口宽度大于高度时使用双页布局。</p>
+        </div>
+
+        <div class="block">
+          <p class="block-title">翻页动画</p>
+          <div class="select"><span>平滑滑动</span><i>⌄</i></div>
+        </div>
+
+        <div class="block">
+          <p class="block-title">进度显示</p>
+          <div class="rows">
+            <div class="row"><span class="name">当前章节进度</span><button class="toggle on" aria-label="当前章节进度"></button></div>
+            <div class="row"><span class="name">整书进度</span><button class="toggle on" aria-label="整书进度"></button></div>
+            <div class="row"><span class="name">当前页 / 总页数</span><button class="toggle" aria-label="当前页 / 总页数"></button></div>
+          </div>
+        </div>
+
+        <div class="block">
+          <p class="block-title">翻页控制</p>
+          <p class="hint" style="margin:4px 0 12px">点击要设置的操作，再按一个键盘按键或非主鼠标键。</p>
+          <div class="rows">
+            <div class="row"><span class="name">上一页</span><span class="bind">⌨ ←</span></div>
+            <div class="row"><span class="name">下一页</span><span class="bind">⌨ →</span></div>
+          </div>
+        </div>
+
+        <div class="layout" id="sec-layout" data-reflow>
+          <p class="block-title" style="margin:0">排版</p>
+
+          <div class="slider-row">
+            <div class="top"><b>行距</b><span>1.7</span></div>
+            <div class="track"><i style="width:35%"></i></div>
+          </div>
+          <div class="slider-row">
+            <div class="top"><b>字间距</b><span>0%</span></div>
+            <div class="track"><i style="width:20%"></i></div>
+          </div>
+          <div class="slider-row">
+            <div class="top"><b>词间距</b><span>0%</span></div>
+            <div class="track"><i style="width:17%"></i></div>
+          </div>
+
+          <div class="para">
+            <p class="block-title">段落</p>
+            <div class="row">
+              <div><span class="name strong">两端对齐</span><p class="hint">按书籍语言自动断词，无需单独设置。</p></div>
+              <button class="toggle on" id="justify" aria-label="两端对齐"></button>
+            </div>
+            <div style="margin-top:12px">
+              <div class="row"><span class="name strong">段落间距</span><span class="hint" id="publisher-default" style="margin:0;display:none">保留出版社样式</span></div>
+              <div class="steps" id="steps">
+                <button data-gap="0">无</button>
+                <button data-gap=".45em">紧凑</button>
+                <button class="sel" data-gap=".85em">舒适</button>
+                <button data-gap="1.25em">宽松</button>
+              </div>
+            </div>
+            <div class="row" style="margin-top:12px">
+              <div><span class="name strong">首行缩进</span><p class="hint">按书籍语言适配，并跳过标题、图片和引用。</p></div>
+              <button class="toggle on" id="indent" aria-label="首行缩进"></button>
+            </div>
+          </div>
+
+          <div class="slider-row">
+            <div class="top"><b>页边距</b><span>12%</span></div>
+            <div class="track"><i style="width:40%"></i></div>
+          </div>
+        </div>
+
+        <div class="block" style="border-bottom:0;border-top:1px solid var(--border-light)" data-markers>
+          <p class="block-title">词汇标记</p>
+          <div class="rows">
+            <div class="row"><span class="name">已查询</span><button class="toggle on" aria-label="已查询"></button></div>
+            <div class="row"><span class="name">收藏新词</span><button class="toggle on" aria-label="收藏新词"></button></div>
+            <div class="row"><span class="name">学习中</span><button class="toggle on" aria-label="学习中"></button></div>
+            <div class="row"><span class="name">已掌握</span><button class="toggle" aria-label="已掌握"></button></div>
+          </div>
+        </div>
+
+        <div class="block" style="border-bottom:0;border-top:1px solid var(--border-light)">
+          <div class="row">
+            <div>
+              <span class="name strong">生词辅助</span>
+              <p class="hint" id="vocab-hint">阅读时显示已保存单词的短释义。</p>
+            </div>
+            <button class="toggle on" id="vocab-toggle" aria-label="生词辅助"></button>
+          </div>
+          <button class="linkish" id="vocab-link">调整显示方式</button>
+        </div>
+
+        <div class="danger-block" id="danger">
+          <button class="danger-btn" id="clear-open"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v7M14 10v7"/></svg>清除本书全部查词标记</button>
+          <div class="confirm">
+            <p>将清除本书的当前位置及全书同词查词标记。手动标记、收藏词和笔记不会受到影响。</p>
+            <div class="confirm-actions">
+              <button class="cancel" id="clear-cancel">取消</button>
+              <button class="go"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v7M14 10v7"/></svg>确认清除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <footer class="footer"><span>48%</span><span>还剩约 12 分钟</span></footer>
+    </div>
+
+    <div class="caption">
+      <p><b>本样张按 <code>src/components/ReaderSettings.tsx</code> 的实际控件与顺序绘制。</b>阅读设置是锚定「Aa」按钮的 320px 弹层：顶端贴在按钮下方 4px，右边与按钮右缘对齐，内容超高时弹层内部滚动，点击弹层和「Aa」以外的任何地方即收起。窗口窄到放不下时（「窄窗口」状态），弹层不再贴住按钮，而是往右滑到左边留 8px 为止；窗口再窄于约 336px，弹层收窄为「窗口宽度 −16px」。「固定版式（PDF）」状态展示不可重排的书会隐藏哪些控件。</p>
+      <p class="rejected"><b>已否决方案：整栏右侧面板。</b>曾考虑把阅读设置做成贴住阅读页右边、占满高度的一栏。排版是「调两下就走」的操作——弹层让注意力留在书上，而整栏面板会把正文挤窄，恰恰是判断字号和行距最不该有的环境。不要再提这个方案。</p>
+    </div>
+  </div>
+
+  <script>
+    const win = document.getElementById("window");
+    const popover = document.getElementById("popover");
+    const page = document.getElementById("page");
+    const nav = [...document.querySelectorAll("[data-state]")];
+    const copies = [...document.querySelectorAll("[data-copy]")];
+    const justify = document.getElementById("justify");
+    const indent = document.getElementById("indent");
+    const steps = [...document.querySelectorAll("#steps button")];
+    const publisherDefault = document.getElementById("publisher-default");
+    const reflowBlocks = [...document.querySelectorAll("[data-reflow]")];
+    const markerBlock = document.querySelector("[data-markers]");
+    const layout = document.getElementById("sec-layout");
+    const danger = document.getElementById("danger");
+
+    let state = "english";
+
+    function applyPage() {
+      const on = (node) => node.classList.contains("on");
+      page.style.setProperty("--align", on(justify) ? "justify" : "left");
+      page.style.setProperty("--hyphens", on(justify) && state !== "chinese" && state !== "exceptions" ? "auto" : "manual");
+      page.style.setProperty("--indent", on(indent) ? (state === "chinese" || state === "exceptions" ? "2em" : "1.5em") : "0");
+      const active = steps.find((button) => button.classList.contains("sel"));
+      page.style.setProperty("--paragraph-gap", active ? active.dataset.gap : "0");
+      publisherDefault.style.display = active ? "none" : "block";
+    }
+
+    function show(next) {
+      state = next;
+      nav.forEach((button) => button.classList.toggle("on", button.dataset.state === next));
+      win.classList.toggle("narrow", next === "narrow");
+      win.classList.toggle("dismissed", next === "dismissed");
+      danger.classList.toggle("clearing", next === "clear");
+
+      const fixed = next === "fixed";
+      reflowBlocks.forEach((block) => { block.hidden = fixed; });
+      markerBlock.hidden = fixed;
+      document.getElementById("vocab-toggle").disabled = fixed;
+      document.getElementById("vocab-toggle").classList.toggle("on", !fixed);
+      document.getElementById("vocab-link").style.display = fixed ? "none" : "inline-flex";
+      document.getElementById("vocab-hint").textContent = fixed
+        ? "仅适用于可重排的 EPUB 书籍。"
+        : "阅读时显示已保存单词的短释义。";
+
+      const copyKey = next === "chinese" ? "chinese"
+        : next === "exceptions" ? "exceptions"
+        : next === "original" ? "original"
+        : next === "fixed" ? "original"
+        : "english";
+      copies.forEach((copy) => copy.classList.toggle("on", copy.dataset.copy === copyKey));
+
+      const chinese = copyKey === "chinese" || copyKey === "exceptions";
+      document.getElementById("book-title").textContent = fixed
+        ? "Thinking with Type.pdf"
+        : chinese ? "缓慢阅读" : "The Elements of Eloquence";
+      document.getElementById("book-sub").textContent = fixed
+        ? "第 42 页，共 224 页"
+        : chinese ? "第 3 章，共 12 章" : "第 4 章，共 21 章";
+
+      if (next === "original") {
+        steps.forEach((button) => button.classList.remove("sel"));
+        justify.classList.remove("on");
+        indent.classList.remove("on");
+      } else if (!steps.some((button) => button.classList.contains("sel"))) {
+        steps[2].classList.add("sel");
+        justify.classList.add("on");
+        indent.classList.add("on");
+      }
+
+      document.getElementById("note").textContent = fixed
+        ? "样张说明：固定版式的书不显示字号、字体和「排版」整组控件，词汇标记也不可用——弹层只保留仍然有效的项目。"
+        : next === "clear"
+          ? "样张说明：清除查词标记是弹层内就地确认的，不弹第二层对话框；取消即回到原来的一行按钮。"
+          : next === "dismissed"
+            ? "样张说明：弹层收起后正文宽度不变——弹层从来没有占走页面的宽度。"
+            : "样张说明：正文会随设置变化；标题、居中段、图片段和引用段保持自己的排版，不被「首行缩进」误伤。";
+
+      applyPage();
+      popover.scrollTop = next === "clear" ? popover.scrollHeight
+        : (next === "english" || next === "chinese" || next === "exceptions" || next === "original")
+          ? Math.max(0, layout.offsetTop - 8)
+          : 0;
+    }
+
+    nav.forEach((button) => button.addEventListener("click", () => show(button.dataset.state)));
+    justify.addEventListener("click", () => { justify.classList.toggle("on"); applyPage(); });
+    indent.addEventListener("click", () => { indent.classList.toggle("on"); applyPage(); });
+    steps.forEach((button) => button.addEventListener("click", () => {
+      steps.forEach((item) => item.classList.toggle("sel", item === button));
+      applyPage();
+    }));
+    document.getElementById("clear-open").addEventListener("click", () => danger.classList.add("clearing"));
+    document.getElementById("clear-cancel").addEventListener("click", () => danger.classList.remove("clearing"));
+    document.getElementById("aa").addEventListener("click", () => show(win.classList.contains("dismissed") ? "english" : "dismissed"));
+
+    show("english");
+  </script>
+</body>
+</html>

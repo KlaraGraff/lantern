@@ -240,6 +240,33 @@ test("char spacing and the marker toggles come from per-book rows", () => {
   assert.equal(merged.showMasteredMarkers, true);
 });
 
+test("marker toggles resolve per-book, then global, then the canonical default", () => {
+  // The global layer was added after the per-book rows, so the case that has to
+  // stay byte-identical is the one every existing install upgrades into: no
+  // global row at all must land on exactly the old hardcoded defaults.
+  const noGlobal = resolveReaderSettings(previous, {}, {});
+  assert.equal(noGlobal.showLookupMarkers, true);
+  assert.equal(noGlobal.showNewVocabMarkers, true);
+  assert.equal(noGlobal.showLearningMarkers, true);
+  assert.equal(noGlobal.showMasteredMarkers, false);
+
+  const globalOnly = resolveReaderSettings(previous, {
+    show_lookup_markers: "false",
+    show_mastered_markers: "true",
+  }, {});
+  assert.equal(globalOnly.showLookupMarkers, false);
+  assert.equal(globalOnly.showMasteredMarkers, true);
+  // Untouched globally, so still the default rather than the sibling's value.
+  assert.equal(globalOnly.showLearningMarkers, true);
+
+  const bookWins = resolveReaderSettings(
+    previous,
+    { show_lookup_markers: "false" },
+    { show_lookup_markers: "true" },
+  );
+  assert.equal(bookWins.showLookupMarkers, true);
+});
+
 test("marker settings without rows return to canonical defaults instead of leaking from another book", () => {
   const pollutedPrevious = {
     ...previous,

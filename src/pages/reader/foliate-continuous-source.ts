@@ -37,6 +37,25 @@ export function createFoliateContinuousSource(
 
   const sections = () => (view().book?.sections ?? []) as ReadAloudSection[];
 
+  const readable = (section: ReadAloudSection | undefined) => Boolean(section) && section?.linear !== "no";
+
+  /**
+   * Whether any readable section sits on the far side of this one.
+   *
+   * Only the spine is consulted, never the sections themselves: opening every
+   * later document to check it has sentences would defeat the streaming this
+   * source exists to preserve. A later section that turns out to hold nothing
+   * still ends the run — the reader simply sees "end of book" one sentence after
+   * the button said it could go further, which is the cheap way to be wrong.
+   */
+  const hasReadableBeyond = (index: number, direction: -1 | 1) => {
+    const all = sections();
+    for (let next = index + direction; next >= 0 && next < all.length; next += direction) {
+      if (readable(all[next])) return true;
+    }
+    return false;
+  };
+
   const load = async (index: number) => {
     const cached = cache.get(index);
     if (cached) return cached;
@@ -62,6 +81,18 @@ export function createFoliateContinuousSource(
       };
       records.push(record);
       byId.set(id, record);
+    }
+    // Position is filled in only once the whole section is segmented: the total
+    // and the characters still to come are both suffix facts, and a sentence
+    // that reported them mid-scan would be reporting a smaller book than it is.
+    const beforeStart = !hasReadableBeyond(index, -1);
+    const afterEnd = !hasReadableBeyond(index, 1);
+    let remainingCharacters = 0;
+    for (let at = records.length - 1; at >= 0; at -= 1) {
+      remainingCharacters += records[at].text.length;
+      records[at].position = { index: at + 1, total: records.length, remainingCharacters };
+      records[at].atBookStart = beforeStart && at === 0;
+      records[at].atBookEnd = afterEnd && at === records.length - 1;
     }
     cache.set(index, records);
     return records;

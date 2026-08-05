@@ -87,6 +87,7 @@ import { useReaderOcr } from "./reader/useReaderOcr";
 import {
   useReaderSettingsSync,
 } from "./reader/useReaderSettingsSync";
+import { measureRenderedTextRect } from "./reader/reader-settings-placement";
 import { useWindowSizePersistence } from "./reader/useWindowSizePersistence";
 import { useSidePanelResize } from "./reader/useSidePanelResize";
 import {
@@ -275,6 +276,7 @@ export default function Reader() {
     restoreBookOverrides,
     undoRestoreBookOverrides,
     promoteBookOverrides,
+    undoPromoteBookOverrides,
   } = useReaderSettingsSync(bookId);
   const {
     adoptReadingAssistanceSettings,
@@ -350,6 +352,11 @@ export default function Reader() {
     stop: t("reader.continuousReadAloud.stop"),
     collapse: t("reader.continuousReadAloud.collapse"),
     expand: t("reader.continuousReadAloud.expand"),
+    preparing: t("reader.continuousReadAloud.preparing"),
+    lastSentence: t("reader.continuousReadAloud.lastSentence"),
+    chapterProgress: t("reader.continuousReadAloud.chapterProgress"),
+    position: (index: number, total: number) => t("reader.continuousReadAloud.position", { index, total }),
+    timeLeft: (minutes: number) => t("reader.continuousReadAloud.timeLeft", { minutes }),
     speed: (rate: number) => t("reader.continuousReadAloud.speed", { rate }),
   }), [t]);
   const resolveExportChapter = useCallback(async (cfi: string) => (await viewRef.current?.getTOCItemOf(cfi))?.label, []);
@@ -384,7 +391,7 @@ export default function Reader() {
     }
     return undefined;
   }, []);
-  const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef);
+  const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef, sidePanel);
   const {
     zoom,
     zoomRef,
@@ -1374,6 +1381,46 @@ export default function Reader() {
     }
   }, [readerViewportRef, viewRef]);
 
+  /**
+   * The page a note's anchor sits on, for the card's page chip — or nothing,
+   * when there is no honest answer.
+   *
+   * A PDF renders one page per section, so every note in the book can be paged
+   * exactly. A reflowable book has no page numbers until it is laid out, and it
+   * is only ever laid out where the reader is: asking for the page of a passage
+   * the engine is not showing has no answer, and a guessed chip on a card is
+   * worse than no chip at all.
+   */
+  const bookFormat = book?.format;
+  const resolveNoteAnchorPage = useCallback((cfi: string) => {
+    const view = viewRef.current;
+    const viewport = readerViewportRef.current;
+    if (!view) return undefined;
+    try {
+      const { index, anchor } = view.resolveCFI(cfi);
+      if (bookFormat === "pdf") return index + 1;
+      if (!pageInfo || !viewport) return undefined;
+      const content = view.renderer?.getContents?.()
+        ?.find((candidate: { index?: number }) => candidate.index === index) as { doc?: Document } | undefined;
+      if (!content?.doc) return undefined;
+      const rect = anchor(content.doc).getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) return undefined;
+      const frame = content.doc.defaultView?.frameElement as HTMLElement | null;
+      const frameRect = frame?.getBoundingClientRect();
+      const left = (frameRect?.left ?? 0) + rect.left;
+      const top = (frameRect?.top ?? 0) + rect.top;
+      const bounds = viewport.getBoundingClientRect();
+      // Paginated columns keep their geometry off-screen, so "did it resolve" is
+      // not "is it on this page" — the anchor has to actually overlap the
+      // viewport before the current page number describes it.
+      const onThisPage = left < bounds.right && left + rect.width > bounds.left
+        && top < bounds.bottom && top + rect.height > bounds.top;
+      return onThisPage ? pageInfo.current : undefined;
+    } catch {
+      return undefined;
+    }
+  }, [bookFormat, pageInfo, readerViewportRef, viewRef]);
+
   // Handle navigation state from ChatsPage ("Open in Reader")
   // Supports both location.state (main window) and URL search params (standalone window)
   useEffect(() => {
@@ -1429,6 +1476,13 @@ export default function Reader() {
   }, [chapters, navigateToChapter]);
 
   const closeReaderSettings = useCallback(() => setSettingsOpen(false), []);
+
+  // Read once per open, by the popover itself. Stable identity so the memoized
+  // panel doesn't re-render on every relocate along with everything else here.
+  const measureReaderTextRect = useCallback(
+    () => measureRenderedTextRect({ view: viewRef.current, viewport: readerViewportRef.current }),
+    [],
+  );
 
   const handlePassiveVocabChange = useCallback((enabled: boolean) => {
     const previous = passiveVocab;
@@ -1830,6 +1884,7 @@ export default function Reader() {
             open={settingsOpen}
             onClose={closeReaderSettings}
             anchorRef={settingsAnchorRef}
+            measureTextRect={measureReaderTextRect}
             settings={readerSettings}
             globalSettings={globalReaderSettings}
             onSettingsChange={handleReaderSettingsChange}
@@ -1843,6 +1898,7 @@ export default function Reader() {
             onRestoreBookOverrides={restoreBookOverrides}
             onUndoRestoreBookOverrides={undoRestoreBookOverrides}
             onPromoteBookOverrides={promoteBookOverrides}
+            onUndoPromoteBookOverrides={undoPromoteBookOverrides}
             onClearLookupMarks={bookId ? clearLookupMarks : undefined}
           />
 
@@ -2223,6 +2279,7 @@ export default function Reader() {
                 viewRef.current?.deselect();
               }}
               resolveAnchorPosition={resolveNoteAnchorPosition}
+              resolveAnchorPage={resolveNoteAnchorPage}
               layoutKey={`${currentSectionIndex}:${progress}:${pageInfo?.current ?? ""}`}
             />
           )}

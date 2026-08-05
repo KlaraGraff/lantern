@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AlertTriangle, ChevronDown, ChevronRight, Pipette } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Info, Pipette } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   MARKER_COLOR_PRESETS,
@@ -17,6 +17,10 @@ import {
   markCollisions,
   markInvisibleOn,
   configuredMarksLookAlike,
+  MARKER_VISIBILITY_KEYS,
+  markerVisibilitySummary,
+  type MarkerVisibility,
+  type MarkerVisibilityKey,
 } from "../mark-palette";
 import { fonts, getDefaultReaderTheme, getThemeStyles, type ReaderTheme } from "../reader-settings";
 import { installCustomFontFaces, type CustomFontRecord } from "../custom-fonts";
@@ -35,6 +39,9 @@ interface MarkerStyleSettingsProps {
    * bury anything placed after it.
    */
   lookupRow?: React.ReactNode;
+  /** The global default for which vocabulary marks the text shows. */
+  visibility: MarkerVisibility;
+  onVisibilityChange: (value: MarkerVisibility) => void;
 }
 
 /** Which of the two styles the controls below the sample are editing. */
@@ -80,6 +87,39 @@ const MARK_LABEL_KEY: Record<SystemMarkId, string> = {
   vocabNew: "vocab.mastery.new",
   learning: "vocab.mastery.learning",
   mastered: "vocab.mastery.mastered",
+};
+
+/**
+ * What each visibility switch says, and which mark it draws its sample chip
+ * with. `mark: null` is the lookup switch: a lookup mark is not one of the
+ * palette's fixed marks at all, it is drawn with whatever the reader set the
+ * *automatic* style to, so its chip has to be read off the live config.
+ */
+const VISIBILITY_ROW: Record<MarkerVisibilityKey, {
+  mark: SystemMarkId | null;
+  titleKey: string;
+  hintKey: string;
+}> = {
+  showLookupMarkers: {
+    mark: null,
+    titleKey: "settings.tools.markers.visibility.lookup",
+    hintKey: "settings.tools.markers.visibility.lookupHint",
+  },
+  showNewVocabMarkers: {
+    mark: "vocabNew",
+    titleKey: "settings.tools.markers.visibility.vocabNew",
+    hintKey: "settings.tools.markers.visibility.vocabNewHint",
+  },
+  showLearningMarkers: {
+    mark: "learning",
+    titleKey: "settings.tools.markers.visibility.learning",
+    hintKey: "settings.tools.markers.visibility.learningHint",
+  },
+  showMasteredMarkers: {
+    mark: "mastered",
+    titleKey: "settings.tools.markers.visibility.mastered",
+    hintKey: "settings.tools.markers.visibility.masteredHint",
+  },
 };
 
 /** Partial: only the themes `markInvisibleOn` can name are ever looked up here. */
@@ -412,7 +452,116 @@ function StyleControls({
   );
 }
 
-export default function MarkerStyleSettings({ value, onChange, lookupRow }: MarkerStyleSettingsProps) {
+/**
+ * The global default for which vocabulary marks the text shows.
+ *
+ * Every row carries a chip drawn the way the mark is actually drawn, which
+ * makes this block the legend the app never had: nothing else anywhere tells a
+ * reader that the amber underline is a new word and the grey dash is one they
+ * have finished. The samples above obey these switches too — a setting whose
+ * effect you can only see by leaving the page is a setting you tune by guessing.
+ */
+function VisibilitySection({
+  visibility,
+  automatic,
+  onChange,
+}: {
+  visibility: MarkerVisibility;
+  automatic: MarkerVisualStyle;
+  onChange: (value: MarkerVisibility) => void;
+}) {
+  const { t } = useTranslation();
+  // The same reasoning the collision chips use: these sit on the settings panel
+  // rather than on a page of a book, so the nearest truth about what they blend
+  // into is which way the app itself is lit.
+  const { body: chipBackdrop, text: chipText } = getThemeStyles(getDefaultReaderTheme());
+  const summary = markerVisibilitySummary(visibility);
+  // Picked whole, never assembled: "2 / 4" reads differently in a language that
+  // counts with measure words, and a sentence stitched together in JSX cannot be
+  // reordered by a translator.
+  const summaryLabel = summary.state === "all"
+    ? t("settings.tools.markers.visibility.summaryAll", { total: summary.total })
+    : summary.state === "none"
+      ? t("settings.tools.markers.visibility.summaryNone")
+      : t("settings.tools.markers.visibility.summaryPartial", { shown: summary.shown, total: summary.total });
+
+  return (
+    <div className="border-t border-border-light pt-3">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-[13px] font-medium text-text-primary">
+          {t("settings.tools.markers.visibility.title")}
+        </p>
+        <span className="shrink-0 text-[11px] tabular-nums text-text-muted">{summaryLabel}</span>
+      </div>
+      <p className="mt-0.5 text-[11px] leading-[17px] text-text-muted">
+        {t("settings.tools.markers.visibility.hint")}
+      </p>
+
+      <div className="mt-1.5">
+        {MARKER_VISIBILITY_KEYS.map((key) => {
+          const row = VISIBILITY_ROW[key];
+          const shown = visibility[key];
+          const label = t(row.titleKey);
+          return (
+            <div
+              key={key}
+              className="flex min-h-[52px] items-center gap-3 border-t border-border-light py-3 first:border-t-0"
+            >
+              {/* Two spans, not one: the paper is the outer one and the mark the
+                  inner. A mark's background is a thinned colour meant to sit on
+                  top of a page — collapsed onto the same element it would replace
+                  the page instead of tinting it. */}
+              <span
+                aria-hidden
+                className="flex min-w-[88px] shrink-0 items-center justify-center rounded px-2 py-0.5 text-center text-[12px] leading-[18px]"
+                style={{ backgroundColor: chipBackdrop, color: chipText }}
+              >
+                <span
+                  style={shown
+                    ? (row.mark
+                      ? systemMarkCss(systemMark[row.mark], chipBackdrop)
+                      : markerStyleCss(automatic, fontFamilyForMarker(automatic.font)))
+                    : undefined}
+                >
+                  {label}
+                </span>
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className={`text-[13px] ${shown ? "text-text-primary" : "text-text-muted"}`}>{label}</p>
+                <p className="text-[11px] leading-[17px] text-text-muted">{t(row.hintKey)}</p>
+              </div>
+              <Toggle
+                label={label}
+                checked={shown}
+                onChange={(next) => onChange({ ...visibility, [key]: next })}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Not a warning, and deliberately not wearing the warning icon: nothing
+          is lost or at risk here. It exists because a clean page looks exactly
+          like a page that stopped recording. */}
+      {summary.state === "none" && (
+        <div role="status" className="mt-2 flex items-start gap-2 rounded-md border border-accent/25 bg-accent-bg px-3 py-2.5">
+          <Info size={14} className="mt-0.5 shrink-0 text-accent-text" />
+          <p className="min-w-0 text-[11px] leading-[17px] text-text-secondary">
+            {t("settings.tools.markers.visibility.allHidden")}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function MarkerStyleSettings({
+  value,
+  onChange,
+  lookupRow,
+  visibility,
+  onVisibilityChange,
+}: MarkerStyleSettingsProps) {
   const { t } = useTranslation();
   const [customFonts, setCustomFonts] = useState<CustomFontRecord[]>([]);
   const [wordFormsOpen, setWordFormsOpen] = useState(true);
@@ -436,13 +585,19 @@ export default function MarkerStyleSettings({ value, onChange, lookupRow }: Mark
 
   // Per pane, not once: a wash blends into the page it lands on, so the two
   // samples do not draw the read-aloud mark the same way.
+  //
+  // A switched-off mark hands back no style at all, which is what the book does
+  // with it too: the word is drawn as the plain text it would be. The read-aloud
+  // wash and the manual mark are not vocabulary marks and have no switch.
   const sampleStyles = (backdrop: string): Record<string, CSSProperties | undefined> => ({
     manual: markerStyleCss(value.manual, fontFamilyForMarker(value.manual.font)),
-    automatic: markerStyleCss(automatic, fontFamilyForMarker(automatic.font)),
+    automatic: visibility.showLookupMarkers
+      ? markerStyleCss(automatic, fontFamilyForMarker(automatic.font))
+      : undefined,
     reading: systemMarkCss(systemMark.reading, backdrop),
-    vocabNew: systemMarkCss(systemMark.vocabNew, backdrop),
-    learning: systemMarkCss(systemMark.learning, backdrop),
-    mastered: systemMarkCss(systemMark.mastered, backdrop),
+    vocabNew: visibility.showNewVocabMarkers ? systemMarkCss(systemMark.vocabNew, backdrop) : undefined,
+    learning: visibility.showLearningMarkers ? systemMarkCss(systemMark.learning, backdrop) : undefined,
+    mastered: visibility.showMasteredMarkers ? systemMarkCss(systemMark.mastered, backdrop) : undefined,
   });
 
   return (
@@ -547,6 +702,16 @@ export default function MarkerStyleSettings({ value, onChange, lookupRow }: Mark
           <div className="-mx-1">{lookupRow}</div>
         </div>
       )}
+
+      {/* Directly under the lookup switch, which is the other question about
+          when a mark appears at all rather than what it looks like — and still
+          above the word-form list, which is long enough to bury anything after
+          it. */}
+      <VisibilitySection
+        visibility={visibility}
+        automatic={automatic}
+        onChange={onVisibilityChange}
+      />
 
       {/* Last: the word-form list can run long and scrolls on its own, so
           nothing that needs finding sits below it. */}

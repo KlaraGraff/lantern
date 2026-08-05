@@ -7,11 +7,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
+use super::lookup::learning_card_memory_block;
 use super::prompt::{
     book_reference_block, checked_learning_text, configured_explanation_mode,
     explanation_matches_translation, learning_language_strategy, strip_single_json_fence,
 };
-use super::lookup::learning_card_memory_block;
 use super::stream::ensure_stream_credentials_ready;
 use super::ChatMessage;
 use crate::db::Db;

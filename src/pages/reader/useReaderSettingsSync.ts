@@ -32,9 +32,11 @@ import {
 } from "../../components/settings-events.ts";
 import {
   encodeReaderSetting,
+  isPromotionUndoable,
   perBookOverrideKeys,
   perBookSettingKeys,
   type PerBookReaderSettings,
+  type ReaderSettingsPromotionUndo,
 } from "./reader-settings-scope.ts";
 
 const readerPreferenceSettingKeys = {
@@ -64,8 +66,11 @@ const readerPreferenceSettingKeys = {
 // row is written only when the user changes the value in the reader panel, and a
 // book with no row follows the Settings page.
 //
-// The four marker toggles have no global counterpart: the reader panel is their only
-// control, so a row is the only place the choice can live. They used to sit in the
+// The four marker toggles were the exception for a while — no global counterpart,
+// so a row was the only place the choice could live, and 「设为全局默认」 quietly
+// vanished for a book whose only overrides were markers. They now have a global
+// layer like everything else; a book with no row follows it, and with no global
+// row either, `DEFAULT_MARKER_VISIBILITY`. They used to sit in the
 // `reader-settings-<bookId>` localStorage blob, which is why that blob existed;
 // with them here it is gone entirely.
 //
@@ -114,14 +119,25 @@ function marginSetting(value: string | number | undefined, fallback: number): nu
   return Number.isFinite(parsed) ? Math.min(30, Math.max(0, parsed)) : fallback;
 }
 
-const DEFAULT_MARKER_VISIBILITY = {
+/**
+ * What an absent marker row means, at both layers. Exported so the Settings
+ * page's copy in `mark-palette.ts` can be pinned equal to it by test rather
+ * than by hope: every install predating the global layer has all four rows
+ * missing, so the two disagreeing would change what those users see.
+ */
+export const DEFAULT_MARKER_VISIBILITY = {
   showLookupMarkers: true,
   showNewVocabMarkers: true,
   showLearningMarkers: true,
   showMasteredMarkers: false,
 } as const;
 
-function createDefaultReaderSettings(): ReaderSettingsState {
+/**
+ * The reader's out-of-the-box state, and the single source of default values.
+ * Exported so Settings → Reading's 「restore defaults」 writes exactly these
+ * rather than keeping a second copy of the same numbers.
+ */
+export function createDefaultReaderSettings(): ReaderSettingsState {
   return {
     theme: getDefaultReaderTheme(),
     customTheme: parseReaderCustomTheme(null),
@@ -209,21 +225,28 @@ export function resolveReaderSettings(
     ),
     charSpacing: numberSetting(perBookSettings[perBookSettingKeys.charSpacing])
       ?? (globalSettings.char_spacing ? parseInt(globalSettings.char_spacing) : previous.charSpacing),
+    // Marker visibility resolves per-book → global → default, like everything
+    // else. The global row is allowed to be absent — that is the state every
+    // existing install upgrades into, and it must land on exactly the same
+    // values the hardcoded defaults gave before the global layer existed.
+    // `previous` is deliberately not in the chain: these four used to leak
+    // between books through it, and the canonical default is what a book with
+    // no row of its own is entitled to.
     showLookupMarkers: booleanSetting(
       perBookSettings[perBookSettingKeys.showLookupMarkers],
-      DEFAULT_MARKER_VISIBILITY.showLookupMarkers,
+      booleanSetting(globalSettings.show_lookup_markers, DEFAULT_MARKER_VISIBILITY.showLookupMarkers),
     ),
     showNewVocabMarkers: booleanSetting(
       perBookSettings[perBookSettingKeys.showNewVocabMarkers],
-      DEFAULT_MARKER_VISIBILITY.showNewVocabMarkers,
+      booleanSetting(globalSettings.show_new_vocab_markers, DEFAULT_MARKER_VISIBILITY.showNewVocabMarkers),
     ),
     showLearningMarkers: booleanSetting(
       perBookSettings[perBookSettingKeys.showLearningMarkers],
-      DEFAULT_MARKER_VISIBILITY.showLearningMarkers,
+      booleanSetting(globalSettings.show_learning_markers, DEFAULT_MARKER_VISIBILITY.showLearningMarkers),
     ),
     showMasteredMarkers: booleanSetting(
       perBookSettings[perBookSettingKeys.showMasteredMarkers],
-      DEFAULT_MARKER_VISIBILITY.showMasteredMarkers,
+      booleanSetting(globalSettings.show_mastered_markers, DEFAULT_MARKER_VISIBILITY.showMasteredMarkers),
     ),
   };
 }
@@ -314,7 +337,17 @@ interface ReaderSettingsController {
   handleReaderSettingsChange(next: ReaderSettingsState): void;
   restoreBookOverrides(keys: string[]): Promise<Record<string, string>>;
   undoRestoreBookOverrides(values: Record<string, string>): Promise<void>;
-  promoteBookOverrides(selectedBookIds: string[]): Promise<Record<string, string>>;
+  /**
+   * `onUndoAvailable` receives everything the promotion displaced, for the undo
+   * affordance to hold and hand back to `undoPromoteBookOverrides`. It is an
+   * optional trailing parameter rather than part of the return value so that
+   * callers that do not offer an undo keep the old call shape unchanged.
+   */
+  promoteBookOverrides(
+    selectedBookIds: string[],
+    onUndoAvailable?: (undo: ReaderSettingsPromotionUndo) => void,
+  ): Promise<Record<string, string>>;
+  undoPromoteBookOverrides(undo: ReaderSettingsPromotionUndo): Promise<void>;
 }
 
 export function useReaderSettingsSync(bookId: string | undefined): ReaderSettingsController {
@@ -497,10 +530,17 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
     applySources(globalSettingsRef.current, { ...bookOverrides, ...values });
   }, [applySources, bookId, bookOverrides]);
 
-  const promoteBookOverrides = useCallback(async (selectedBookIds: string[]) => {
+  const promoteBookOverrides = useCallback(async (
+    selectedBookIds: string[],
+    onUndoAvailable?: (undo: ReaderSettingsPromotionUndo) => void,
+  ) => {
     if (!bookId) return {};
     await flushBookSettings(true);
-    const result = await invoke<{ settings: Record<string, string>; promoted_keys: string[] }>(
+    const result = await invoke<{
+      settings: Record<string, string>;
+      promoted_keys: string[];
+      undo: ReaderSettingsPromotionUndo;
+    }>(
       "promote_book_settings_to_global",
       { sourceBookId: bookId, selectedBookIds },
     );
@@ -509,8 +549,38 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
     const globals = { ...globalSettingsRef.current, ...result.settings };
     applySources(globals, remaining);
     await notifySettingsChanged(result.settings).catch(() => {});
+    if (isPromotionUndoable(result.undo)) onUndoAvailable?.(result.undo);
     return result.settings;
   }, [applySources, bookId, flushBookSettings]);
+
+  // The inverse of the call above, replayed from the payload it handed out.
+  // The backend restores the rows; this puts the same values back into the two
+  // in-memory sources so the panel does not have to wait for a reload.
+  const undoPromoteBookOverrides = useCallback(async (undo: ReaderSettingsPromotionUndo) => {
+    if (!isPromotionUndoable(undo)) return;
+    await invoke("undo_promote_book_settings", { undo });
+    const globals = { ...globalSettingsRef.current };
+    const restored: Record<string, string> = {};
+    for (const [key, value] of Object.entries(undo.globals)) {
+      // `null` means the key had no row before the promotion. Dropping it here
+      // is what lets `resolveReaderSettings` fall through to the default again.
+      if (value === null) delete globals[key];
+      else {
+        globals[key] = value;
+        restored[key] = value;
+      }
+    }
+    const overrides = { ...bookOverridesRef.current };
+    for (const row of undo.book_settings) {
+      if (row.book_id === bookId) overrides[row.key] = row.value;
+    }
+    applySources(globals, overrides);
+    // Only the re-written keys can be broadcast: the settings-changed payload
+    // carries values, so it has no way to say "this key went away again".
+    // Another open reader window keeps the promoted value for a deleted global
+    // until it reloads its settings.
+    await notifySettingsChanged(restored).catch(() => {});
+  }, [applySources, bookId]);
 
   useEffect(() => {
     let disposed = false;
@@ -553,5 +623,6 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
     restoreBookOverrides,
     undoRestoreBookOverrides,
     promoteBookOverrides,
+    undoPromoteBookOverrides,
   };
 }

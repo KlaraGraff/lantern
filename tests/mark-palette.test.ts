@@ -6,6 +6,9 @@ import {
   MARK_COLLISION_THRESHOLD,
   MARK_CUED_COLLISION_THRESHOLD,
   MARK_LEGIBILITY_THRESHOLD,
+  NOTE_ANCHOR_MARK,
+  NOTE_ANCHOR_MARK_OPACITY,
+  NOTE_ANCHOR_MARK_SENTINEL,
   SYSTEM_MARKS,
   blendOver,
   colorDistance,
@@ -13,6 +16,7 @@ import {
   configuredMarksLookAlike,
   markCollisions,
   markInvisibleOn,
+  noteAnchorMarkColor,
   marksLookAlike,
   systemMark,
   washBlendMode,
@@ -339,5 +343,44 @@ test("every system mark is visible on every page", () => {
         `${mark.id} lands only ${Math.round(distance)} from ${page}`,
       );
     }
+  }
+});
+
+test("the note anchor is visible on every page without ever being the loudest mark", () => {
+  for (const page of PAGES) {
+    const drawn = blendOver(noteAnchorMarkColor(page), NOTE_ANCHOR_MARK_OPACITY, page);
+    const distance = colorDistance(drawn, page);
+    // Faint is the point, but a mark nobody can see is not a faint mark.
+    assert.ok(
+      distance >= MARK_LEGIBILITY_THRESHOLD,
+      `the note anchor lands only ${Math.round(distance)} from ${page}`,
+    );
+    // And it has to stay quieter than everything the reader put there on
+    // purpose — a highlight, a vocabulary underline — on the same page.
+    for (const mark of SYSTEM_MARKS) {
+      const markDistance = colorDistance(asDrawn(mark, page), page);
+      assert.ok(
+        distance < markDistance,
+        `the note anchor (${Math.round(distance)}) is not fainter than ${mark.id} (${Math.round(markDistance)}) on ${page}`,
+      );
+    }
+  }
+});
+
+test("the note anchor takes its tone from the page, not from a fixed hex", () => {
+  // A dark violet hairline on the dark theme is no mark at all, so the two
+  // directions must not collapse into one colour.
+  assert.equal(noteAnchorMarkColor(getThemeStyles("original").body), NOTE_ANCHOR_MARK.onLight);
+  assert.equal(noteAnchorMarkColor(getThemeStyles("paper").body), NOTE_ANCHOR_MARK.onLight);
+  assert.equal(noteAnchorMarkColor(getThemeStyles("dark").body), NOTE_ANCHOR_MARK.onDark);
+  assert.equal(noteAnchorMarkColor(getThemeStyles("quiet").body), NOTE_ANCHOR_MARK.onDark);
+});
+
+test("no saved highlight colour can be mistaken for the note-anchor sentinel", () => {
+  // The overlayer keys on the annotation value, and the draw path keys on this
+  // string. A preset that happened to equal it would draw highlights as
+  // hairlines.
+  for (const preset of MARKER_COLOR_PRESETS) {
+    assert.notEqual(preset.color, NOTE_ANCHOR_MARK_SENTINEL);
   }
 });

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lantern P3.2 · 右侧常驻笔记面板</title>
+  <style>
+    :root{
+      --canvas:#dedddb;--surface:#fff;--muted-surface:#fafafa;--input:#f3f3f5;
+      --reader:#f6f0e5;--paper:#fbf7ef;--text:#272528;--secondary:#5d5960;
+      --muted:#7c7880;--quiet:#a09ba3;--border:#e4e2e4;--border-soft:#efedef;
+      --accent:#7c3aed;--accent-bg:#f3e8ff;--accent-soft:#e4d5f8;
+      --danger:#c84545;--danger-bg:#fef2f2;--success:#3e8060;
+      --shadow:0 24px 70px rgba(42,36,31,.17)
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-width:1160px;min-height:720px;background:var(--canvas);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    button,input,textarea{font:inherit}button{cursor:pointer}.icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+    .stage{height:100vh;padding:38px 28px 24px;display:grid;place-items:center}
+    .window{position:relative;width:min(1380px,calc(100vw - 56px));height:min(850px,calc(100vh - 62px));min-height:650px;overflow:hidden;border:1px solid #cbc8c5;border-radius:14px;background:var(--surface);box-shadow:var(--shadow)}
+    .traffic{position:absolute;z-index:40;top:13px;left:17px;display:flex;gap:8px}.traffic i{width:11px;height:11px;border-radius:50%;background:#ff5f57}.traffic i:nth-child(2){background:#ffbd2e}.traffic i:nth-child(3){background:#28c840}
+    .app{height:100%;display:grid;grid-template-rows:71px minmax(0,1fr);transition:grid-template-columns .2s}
+    .toolbar{padding:25px 18px 8px 20px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.97);display:flex;align-items:center;justify-content:space-between;user-select:none}
+    .book-meta{display:flex;align-items:center;gap:11px}.book-icon{width:34px;height:34px;border-radius:9px;background:var(--accent);color:white;display:grid;place-items:center}.book-icon .icon{width:17px}.book-meta h1{margin:0 0 2px;font-size:13px;font-weight:650;letter-spacing:-.1px}.book-meta p{margin:0;color:var(--muted);font-size:10px}.tools{display:flex;align-items:center;gap:2px}.tool{position:relative;width:34px;height:34px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--muted);display:grid;place-items:center}.tool:hover{background:var(--input);color:var(--text)}.tool.active{background:var(--accent-bg);color:var(--accent)}.tool.note-tool{width:auto;grid-auto-flow:column;gap:6px;padding:0 9px}.tool.note-tool span{display:none;font-size:10px;font-weight:650}.app.panel-closed .tool.note-tool span{display:block}.divider{width:1px;height:22px;margin:0 5px;background:var(--border)}
+    .workspace{min-height:0;display:flex;background:var(--reader)}
+    .reader-shell{min-width:0;flex:1;display:grid;grid-template-rows:minmax(0,1fr) 44px;transition:all .22s}
+    .reader{position:relative;min-width:0;overflow:hidden;padding:30px 50px;display:grid;place-items:center;background:var(--reader)}
+    .page{position:relative;width:min(720px,90%);height:100%;padding:42px 62px 50px;overflow:hidden;background:var(--paper);box-shadow:0 5px 28px rgba(77,63,49,.07);font:16px/1.86 Georgia,"Songti SC",serif}
+    .page .kicker{margin:0 0 8px;text-align:center;color:#968e86;font:9px Inter,sans-serif;letter-spacing:.15em;text-transform:uppercase}.page h2{margin:0 0 28px;text-align:center;font-size:24px;font-weight:600}.page p{position:relative;margin:0 0 .9em;text-align:justify;text-indent:1.5em}.page p.first{text-indent:0}.page .marked{padding:2px 0;background:linear-gradient(transparent 61%,rgba(124,58,237,.2) 61%);box-decoration-break:clone;-webkit-box-decoration-break:clone}.note-pin{position:absolute;right:-34px;top:1px;width:22px;height:22px;border:1px solid #d5c5ea;border-radius:50%;background:#fff;color:var(--accent);display:grid;place-items:center;box-shadow:0 3px 9px rgba(66,50,78,.08)}.note-pin .icon{width:11px}.page.flash .marked{animation:flash 1.45s ease}@keyframes flash{0%,100%{background-color:transparent}25%,70%{background-color:rgba(124,58,237,.18)}}.page-number{position:absolute;right:28px;bottom:17px;color:#a49c93;font:9px Inter,sans-serif}
+    .jump-toast{position:absolute;z-index:6;left:50%;bottom:24px;transform:translate(-50%,9px);padding:8px 12px;border:1px solid #d8c8ec;border-radius:999px;background:rgba(255,255,255,.97);color:#69577c;box-shadow:0 8px 24px rgba(54,44,62,.12);font-size:9.5px;opacity:0;pointer-events:none}.jump-toast.show{animation:toast 2.25s both}@keyframes toast{0%{opacity:0;transform:translate(-50%,9px)}13%,80%{opacity:1;transform:translate(-50%,0)}100%{opacity:0}}
+    .reader-footer{padding:0 23px;border-top:1px solid #e3ddd5;background:#fbfaf8;color:#938d87;display:flex;align-items:center;justify-content:space-between;font-size:9px}.reader-footer i{width:122px;height:1px;background:#d8d2ca}.reader-footer i:before{content:"";display:block;width:48%;height:1px;background:#948b84}
+    .resize{width:4px;flex:0 0 4px;border-left:1px solid var(--border);background:#f7f6f6;cursor:col-resize}.resize:hover{background:var(--accent-soft)}
+    .panel{width:420px;flex:0 0 420px;min-width:0;overflow:hidden;background:var(--muted-surface);transition:width .22s,flex-basis .22s;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto}.panel-closed .panel,.panel-closed .resize{width:0;flex-basis:0;border:0}.panel-closed .reader{padding-left:90px;padding-right:90px}
+    .panel-head{height:48px;padding:0 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:var(--muted-surface)}.panel-head h2{margin:0;font-size:13px;font-weight:650}.count{color:var(--quiet);font-size:9px}.close{width:28px;height:28px;margin-left:auto;border:0;border-radius:7px;background:transparent;color:var(--muted);display:grid;place-items:center}.close:hover{background:var(--input)}
+    .panel-actions{padding:10px 14px 11px;border-bottom:1px solid var(--border-soft);background:var(--muted-surface)}.new-note{width:100%;height:34px;border:0;border-radius:8px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;gap:7px;font-size:10.5px;font-weight:650;box-shadow:0 3px 9px rgba(124,58,237,.18)}.new-note .icon{width:14px}.place{margin-top:7px;display:flex;align-items:center;justify-content:center;gap:5px;color:var(--quiet);font-size:8.5px}.place .icon{width:10px}.search-row{margin-top:10px;display:flex;gap:6px}.searchbox{height:30px;flex:1;display:flex;align-items:center;gap:6px;padding:0 9px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--muted)}.searchbox:focus-within{border-color:#bea6dd;box-shadow:0 0 0 2px rgba(124,58,237,.07)}.searchbox .icon{width:12px}.searchbox input{width:100%;border:0;outline:0;background:transparent;color:var(--text);font-size:9.5px}.searchbox input::placeholder{color:var(--quiet)}.filter-wrap{position:relative}.filter{height:30px;padding:0 9px;border:1px solid var(--border);border-radius:7px;background:#fff;color:var(--muted);display:flex;align-items:center;gap:5px;font-size:9px}.filter.active{border-color:#c8b3e3;color:var(--accent);background:var(--accent-bg)}.filter .icon{width:12px}.filter-menu{display:none;position:absolute;z-index:9;right:0;top:35px;width:170px;padding:7px;border:1px solid var(--border);border-radius:9px;background:#fff;box-shadow:0 12px 30px rgba(30,27,32,.12)}.filter-menu.show{display:block}.filter-menu button{width:100%;height:30px;padding:0 9px;border:0;border-radius:6px;background:transparent;color:var(--secondary);text-align:left;font-size:9.5px}.filter-menu button:hover,.filter-menu button.selected{background:var(--accent-bg);color:var(--accent)}
+    .list,.editor,.empty{min-height:0;overflow:auto}.list{display:block}.editor,.empty{display:none}.panel[data-view="editor"] .list,.panel[data-view="empty"] .list{display:none}.panel[data-view="editor"] .editor{display:block}.panel[data-view="empty"] .empty{display:flex}
+    .results-meta{padding:9px 16px 4px;color:var(--quiet);font-size:8.5px}.note-card{position:relative;padding:13px 15px 14px;border-bottom:1px solid var(--border-soft);background:transparent;transition:background .15s}.note-card:hover{background:#fff}.note-card.active{background:#fff;border-left:2px solid var(--accent);padding-left:13px}.note-top{display:flex;align-items:center;gap:7px}.anchor{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:8.5px}.when{margin-left:auto;flex:none;color:var(--quiet);font-size:8px}.note-body{margin:7px 0 9px;color:var(--secondary);font:12.5px/1.67 Georgia,"Songti SC",serif}.quote{width:100%;padding:9px 10px;border:0;border-left:2px solid #cbb9e3;border-radius:0 6px 6px 0;background:#f5f1f8;color:#756b7e;text-align:left;font:10px/1.55 Georgia,"Songti SC",serif}.quote:hover{background:#eee6f6;color:#5f506e}.quote small{display:flex;align-items:center;gap:4px;margin-top:5px;color:#8a769c;font:8px Inter,sans-serif}.quote small .icon{width:9px}.card-tools{display:flex;gap:2px;margin-top:8px;opacity:0;transition:opacity .15s}.note-card:hover .card-tools,.note-card.active .card-tools{opacity:1}.card-tools button{height:25px;padding:0 7px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:8.5px}.card-tools button:hover{background:var(--input);color:var(--text)}.card-tools .trash{margin-left:auto;padding:0 6px}.card-tools .trash:hover{background:var(--danger-bg);color:var(--danger)}
+    .delete-confirm{display:none;margin:10px -2px -2px;padding:9px 10px;border:1px solid #f1cdcd;border-radius:8px;background:var(--danger-bg);align-items:center;gap:7px}.delete-confirm.show{display:flex}.delete-confirm p{margin:0;flex:1;color:#8d5151;font-size:8.8px;line-height:1.4}.delete-confirm button{height:25px;padding:0 8px;border:1px solid #e4bcbc;border-radius:6px;background:#fff;color:#955050;font-size:8.5px}.delete-confirm button.danger{border-color:var(--danger);background:var(--danger);color:#fff}
+    .panel-foot{height:35px;padding:0 15px;border-top:1px solid var(--border);background:var(--muted-surface);color:var(--quiet);display:flex;align-items:center;justify-content:space-between;font-size:8.5px}.panel-foot button{border:0;background:transparent;color:var(--muted);font-size:8.5px}.panel-foot button:hover{color:var(--accent)}
+    .editor{padding:15px;background:var(--muted-surface)}.back{height:27px;padding:0 5px;border:0;background:transparent;color:var(--muted);display:flex;align-items:center;gap:4px;font-size:9px}.back:hover{color:var(--text)}.back .icon{width:12px}.editor-title{margin:10px 0 3px;font-size:14px}.editor-place{margin:0 0 12px;color:var(--quiet);font-size:8.5px}.source-card{padding:10px 11px;border-left:2px solid #c6aedf;border-radius:0 7px 7px 0;background:#f4eff8;color:#706578;font:10px/1.6 Georgia,"Songti SC",serif}.source-card button{margin-top:7px;padding:0;border:0;background:transparent;color:#806698;font:8.5px Inter,sans-serif}.source-card.none{border-left-color:#dedade;background:#f6f5f6;color:var(--quiet);font-family:Inter,sans-serif}.formatbar{height:31px;margin-top:12px;padding:0 5px;border:1px solid var(--border);border-bottom:0;border-radius:8px 8px 0 0;background:#fff;display:flex;align-items:center;gap:1px}.formatbar button{width:25px;height:24px;border:0;border-radius:5px;background:transparent;color:var(--muted);font:600 10px Georgia,serif}.formatbar button:hover{background:var(--input);color:var(--text)}.formatbar i{width:1px;height:15px;margin:0 4px;background:var(--border)}.note-input{width:100%;min-height:198px;padding:12px;border:1px solid var(--border);border-radius:0 0 8px 8px;resize:vertical;outline:0;background:#fff;color:var(--text);font:12.5px/1.7 Georgia,"Songti SC",serif}.note-input:focus{border-color:#bda3dc;box-shadow:0 0 0 2px rgba(124,58,237,.07)}.save-row{height:34px;display:flex;align-items:center;gap:6px;color:var(--quiet);font-size:8.5px}.save-row .spinner{display:none;width:11px;height:11px;border:1.5px solid #d4ccd9;border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.save-row .ok{display:block;color:var(--success)}.save-row .error{display:none;color:var(--danger)}.save-row.saving .spinner{display:block}.save-row.saving .ok{display:none}.save-row.failed .ok{display:none}.save-row.failed .error{display:block}.retry{display:none;margin-left:auto;height:25px;padding:0 8px;border:1px solid #edc7c7;border-radius:6px;background:#fff;color:var(--danger);font-size:8.5px}.save-row.failed .retry{display:block}.editor-actions{margin-top:10px;padding-top:11px;border-top:1px solid var(--border-soft);display:flex;justify-content:flex-end}.delete-note{height:28px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:var(--quiet);font-size:8.5px}.delete-note:hover{background:var(--danger-bg);color:var(--danger)}
+    .empty{height:100%;padding:40px;align-items:center;justify-content:center;flex-direction:column;text-align:center}.empty-mark{width:48px;height:48px;border-radius:50%;background:var(--accent-bg);color:#9a74c3;display:grid;place-items:center}.empty-mark .icon{width:21px}.empty h3{margin:13px 0 5px;font-size:12px}.empty p{max-width:240px;margin:0;color:var(--muted);font-size:9.5px;line-height:1.6}.empty button{height:30px;margin-top:13px;padding:0 11px;border:0;border-radius:7px;background:var(--accent);color:#fff;font-size:9px}
+    .state-nav{position:fixed;z-index:100;top:7px;left:50%;transform:translateX(-50%);padding:4px;display:flex;gap:2px;border:1px solid #d0ced1;border-radius:10px;background:rgba(255,255,255,.97);box-shadow:0 8px 24px rgba(0,0,0,.12)}.state-nav button{height:26px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:9px}.state-nav button.active{background:var(--accent-bg);color:var(--accent);font-weight:650}
+    .annotation{position:fixed;z-index:90;left:20px;bottom:15px;width:258px;padding:10px 12px;border:1px solid rgba(255,255,255,.7);border-radius:10px;background:rgba(43,40,44,.91);color:#eeeaf0;box-shadow:0 10px 28px rgba(0,0,0,.13);font-size:8.8px;line-height:1.55}.annotation b{display:block;margin-bottom:3px;color:#fff;font-size:9.5px}.annotation span{color:#c9c4ca}
+    @media(max-width:1240px){.panel{width:386px;flex-basis:386px}.page{padding-left:46px;padding-right:46px}.annotation{display:none}.state-nav button{padding:0 6px}}
+  </style>
+</head>
+<body>
+  <nav class="state-nav" aria-label="样张状态">
+    <button data-state="closed">入口</button>
+    <button class="active" data-state="list">当前书笔记</button>
+    <button data-state="new">此处新建</button>
+    <button data-state="editing">编辑</button>
+    <button data-state="saving">保存中</button>
+    <button data-state="error">保存失败</button>
+    <button data-state="search">搜索 / 筛选</button>
+    <button data-state="empty">空态</button>
+    <button data-state="delete">删除确认</button>
+  </nav>
+
+  <div class="stage">
+    <section class="window">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <div class="app" id="app">
+        <header class="toolbar">
+          <div class="book-meta">
+            <div class="book-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+            <div><h1>局外人</h1><p>第二部 · 第一章　48 / 102</p></div>
+          </div>
+          <div class="tools">
+            <button class="tool" title="目录"><svg class="icon" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
+            <button class="tool" title="搜索"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></button>
+            <button class="tool" title="阅读设置"><span style="font-size:14px;font-weight:650">A</span><span style="font-size:9px;font-weight:650;margin-left:-4px;margin-top:4px">A</span></button>
+            <button class="tool" title="书签与高亮"><svg class="icon" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg></button>
+            <button class="tool" title="生词"><svg class="icon" viewBox="0 0 24 24"><path d="m5 8 6 6M4 14l6-6 2-3M2 5h12M12 19l4-9 4 9M13.5 16h5"/></svg></button>
+            <button class="tool note-tool active" id="note-entry" title="当前书笔记"><svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></svg><span>笔记</span></button>
+            <div class="divider"></div>
+            <button class="tool" title="AI 助手"><svg class="icon" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="13" rx="3"/><path d="M9 10h.01M15 10h.01M9 15h6M12 2v4"/></svg></button>
+          </div>
+        </header>
+
+        <div class="workspace">
+          <section class="reader-shell">
+            <main class="reader">
+              <article class="page" id="page">
+                <p class="kicker">Deuxième partie</p><h2>第一章</h2>
+                <p class="first">我被捕以后，接连受过好几次审讯。但是，最初的审讯只是核实身份，并没有持续很久。</p>
+                <p>在第一审讯室里，法官以一种探究的神情打量着我。他问我是否已经请了律师。我回答说没有，并认为我的案子很简单。</p>
+                <p><span class="marked">他沉默了一会儿，随后问我，是否在母亲去世的那一天感到过悲伤。</span><button class="note-pin" title="这里有笔记"><svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></button>这个问题使我非常惊讶。我想，如果是我来问别人，大概也会觉得很难开口。</p>
+                <p>我回答说，我已经不太习惯于分析自己，因而很难向他说明。也许我爱过母亲，不过这没有任何意义。</p>
+                <p>他说话的时候没有看我，像是在一张看不见的纸上记录。窗外的光落在桌角，我忽然觉得那间屋子异常安静。</p>
+                <span class="page-number">48</span>
+              </article>
+              <div class="jump-toast" id="jump-toast">已回到笔记引用的位置 · 第二部 第一章</div>
+            </main>
+            <footer class="reader-footer"><span>47%</span><i></i><span>48 / 102</span></footer>
+          </section>
+
+          <div class="resize" title="拖动调整面板宽度"></div>
+          <aside class="panel" id="panel" data-view="list" aria-label="当前书笔记">
+            <header class="panel-head"><h2>笔记</h2><span class="count" id="count">3 条</span><button class="close" id="close-panel" title="关闭面板"><svg class="icon" viewBox="0 0 24 24"><path d="m18 6-12 12M6 6l12 12"/></svg></button></header>
+            <section class="panel-actions">
+              <button class="new-note" id="new-note"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>在当前阅读位置新建笔记</button>
+              <div class="place"><svg class="icon" viewBox="0 0 24 24"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0z"/><circle cx="12" cy="10" r="2"/></svg>第二部 · 第一章 · 第 48 页</div>
+              <div class="search-row">
+                <label class="searchbox"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="search" placeholder="搜索笔记或引用原文" /></label>
+                <div class="filter-wrap"><button class="filter" id="filter"><svg class="icon" viewBox="0 0 24 24"><path d="M4 5h16M7 12h10M10 19h4"/></svg><span id="filter-label">全部</span></button><div class="filter-menu" id="filter-menu"><button class="selected" data-filter="全部">全部笔记</button><button data-filter="有引用">有原文引用</button><button data-filter="独立">独立笔记</button><button data-filter="最近">最近更新</button></div></div>
+              </div>
+            </section>
+
+            <section class="list" id="list-view">
+              <div class="results-meta" id="results-meta">按阅读位置排列 · 3 条笔记</div>
+              <article class="note-card active" data-note="reflection">
+                <div class="note-top"><span class="anchor">第二部 · 第一章 · 第 48 页</span><time class="when">刚刚</time></div>
+                <p class="note-body">默尔索不是没有情绪，而是拒绝用别人熟悉的方式证明情绪。审判真正追问的似乎不是罪行，而是他有没有按规则悲伤。</p>
+                <button class="quote jump"><span>“他沉默了一会儿，随后问我，是否在母亲去世的那一天感到过悲伤。”</span><small><svg class="icon" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>跳回原文</small></button>
+                <div class="card-tools"><button data-edit>编辑</button><button class="jump">定位</button><button class="trash" data-delete title="删除"><svg class="icon" viewBox="0 0 24 24" style="width:12px"><path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 11v6M14 11v6"/></svg></button></div>
+                <div class="delete-confirm" id="delete-confirm"><p>删除这条笔记？原文不会受影响，此操作无法撤销。</p><button id="cancel-delete">取消</button><button class="danger" id="confirm-delete">删除</button></div>
+              </article>
+              <article class="note-card" data-note="question">
+                <div class="note-top"><span class="anchor">第一部 · 第五章 · 第 31 页</span><time class="when">昨天</time></div>
+                <p class="note-body">“习惯”在这里是一种麻木，还是一种保护？这个词似乎贯穿了他对母亲、工作和婚姻的态度。</p>
+                <button class="quote jump"><span>“一个人只要生活过，就可以适应任何生活。”</span><small><svg class="icon" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>跳回原文</small></button>
+                <div class="card-tools"><button data-edit>编辑</button><button class="jump">定位</button><button class="trash" data-delete>删除</button></div>
+              </article>
+              <article class="note-card" data-note="free">
+                <div class="note-top"><span class="anchor">第一部 · 第二章 · 第 15 页</span><time class="when">7 月 29 日</time></div>
+                <p class="note-body">留意天气和身体感受如何替代心理描写：热、光、汗水比“我感到……”出现得更可靠。</p>
+                <div class="card-tools"><button data-edit>编辑</button><button class="jump">定位</button><button class="trash" data-delete>删除</button></div>
+              </article>
+            </section>
+
+            <section class="editor" id="editor-view">
+              <button class="back" id="back"><svg class="icon" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>返回本书笔记</button>
+              <h3 class="editor-title" id="editor-title">编辑笔记</h3>
+              <p class="editor-place">第二部 · 第一章 · 第 48 页</p>
+              <div class="source-card" id="source-card">“他沉默了一会儿，随后问我，是否在母亲去世的那一天感到过悲伤。”<br/><button class="jump">查看原文位置 →</button></div>
+              <div class="formatbar" aria-label="基础格式"><button title="粗体">B</button><button title="斜体"><em>I</em></button><i></i><button title="项目列表">•≡</button><button title="有序列表">1.</button><i></i><button title="小标题">H</button></div>
+              <textarea class="note-input" id="note-input">默尔索不是没有情绪，而是拒绝用别人熟悉的方式证明情绪。审判真正追问的似乎不是罪行，而是他有没有按规则悲伤。</textarea>
+              <div class="save-row" id="save-row"><i class="spinner"></i><span class="ok" id="save-status">✓ 已自动保存</span><span class="error">保存失败，内容仍保留在本机</span><button class="retry" id="retry">重试保存</button></div>
+              <div class="editor-actions"><button class="delete-note" id="editor-delete">删除这条笔记</button></div>
+            </section>
+
+            <section class="empty" id="empty-view">
+              <div class="empty-mark"><svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15h6"/></svg></div>
+              <h3 id="empty-title">这本书还没有笔记</h3>
+              <p id="empty-copy">读到想留下的念头时，直接在当前阅读位置开始写，不需要离开阅读页。</p>
+              <button id="empty-new">在这里写第一条</button>
+            </section>
+            <footer class="panel-foot"><span id="foot-count">当前书共 3 条笔记</span><button>在资料库查看全部笔记 →</button></footer>
+          </aside>
+        </div>
+      </div>
+    </section>
+  </div>
+  <aside class="annotation"><b>右侧常驻笔记面板</b><span>复用阅读页唯一右栏：笔记、AI、书签、生词互斥切换。新建、编辑、自动保存与删除确认都在栏内完成，正文不被遮挡。</span></aside>
+
+  <script>
+    const app=document.querySelector('#app'),panel=document.querySelector('#panel'),nav=[...document.querySelectorAll('[data-state]')],search=document.querySelector('#search'),filter=document.querySelector('#filter'),filterMenu=document.querySelector('#filter-menu'),filterLabel=document.querySelector('#filter-label'),deleteConfirm=document.querySelector('#delete-confirm'),saveRow=document.querySelector('#save-row'),saveStatus=document.querySelector('#save-status'),editorTitle=document.querySelector('#editor-title'),sourceCard=document.querySelector('#source-card'),noteInput=document.querySelector('#note-input'),resultsMeta=document.querySelector('#results-meta'),count=document.querySelector('#count'),footCount=document.querySelector('#foot-count'),emptyTitle=document.querySelector('#empty-title'),emptyCopy=document.querySelector('#empty-copy'),page=document.querySelector('#page'),jumpToast=document.querySelector('#jump-toast');
+    let currentState='list',saveTimer;
+    function base(){
+      app.classList.remove('panel-closed');panel.dataset.view='list';deleteConfirm.classList.remove('show');saveRow.className='save-row';saveStatus.textContent='✓ 已自动保存';search.value='';filter.classList.remove('active');filterLabel.textContent='全部';filterMenu.classList.remove('show');resultsMeta.textContent='按阅读位置排列 · 3 条笔记';count.textContent='3 条';footCount.textContent='当前书共 3 条笔记';document.querySelectorAll('.note-card').forEach(c=>c.style.display='block');
+    }
+    function editMode(kind='edit'){
+      panel.dataset.view='editor';editorTitle.textContent=kind==='new'?'新建笔记':'编辑笔记';
+      if(kind==='new'){sourceCard.className='source-card none';sourceCard.innerHTML='未选择原文 · 笔记将锚定在当前阅读位置';noteInput.value='';noteInput.placeholder='写下此刻的想法…';document.querySelector('#editor-delete').style.display='none'}
+      else{sourceCard.className='source-card';sourceCard.innerHTML='“他沉默了一会儿，随后问我，是否在母亲去世的那一天感到过悲伤。”<br><button class="jump">查看原文位置 →</button>';noteInput.value='默尔索不是没有情绪，而是拒绝用别人熟悉的方式证明情绪。审判真正追问的似乎不是罪行，而是他有没有按规则悲伤。';document.querySelector('#editor-delete').style.display='block';wireJump()}
+    }
+    function setState(state){
+      clearTimeout(saveTimer);currentState=state;base();nav.forEach(b=>b.classList.toggle('active',b.dataset.state===state));
+      if(state==='closed'){app.classList.add('panel-closed');return}
+      if(state==='new'){editMode('new');return}
+      if(['editing','saving','error'].includes(state)){editMode('edit');if(state==='saving')saveRow.classList.add('saving');if(state==='error')saveRow.classList.add('failed');return}
+      if(state==='search'){search.value='沉默';filter.classList.add('active');filterLabel.textContent='有引用';resultsMeta.textContent='“沉默” · 有原文引用 · 1 条结果';document.querySelectorAll('.note-card').forEach((c,i)=>c.style.display=i===0?'block':'none');count.textContent='1 条';footCount.textContent='筛选结果 1 条';return}
+      if(state==='empty'){panel.dataset.view='empty';emptyTitle.textContent='这本书还没有笔记';emptyCopy.textContent='读到想留下的念头时，直接在当前阅读位置开始写，不需要离开阅读页。';count.textContent='0 条';footCount.textContent='当前书共 0 条笔记';return}
+      if(state==='delete')deleteConfirm.classList.add('show');
+    }
+    function jump(){page.classList.remove('flash');void page.offsetWidth;page.classList.add('flash');jumpToast.classList.remove('show');void jumpToast.offsetWidth;jumpToast.classList.add('show')}
+    function wireJump(){document.querySelectorAll('.jump').forEach(button=>button.onclick=jump)}
+    nav.forEach(button=>button.addEventListener('click',()=>setState(button.dataset.state)));
+    document.querySelector('#note-entry').addEventListener('click',()=>setState(app.classList.contains('panel-closed')?'list':'closed'));
+    document.querySelector('#close-panel').addEventListener('click',()=>setState('closed'));
+    document.querySelector('#new-note').addEventListener('click',()=>setState('new'));
+    document.querySelector('#empty-new').addEventListener('click',()=>setState('new'));
+    document.querySelector('#back').addEventListener('click',()=>setState('list'));
+    document.querySelectorAll('[data-edit]').forEach(button=>button.addEventListener('click',()=>setState('editing')));
+    document.querySelectorAll('[data-delete]').forEach(button=>button.addEventListener('click',()=>setState('delete')));
+    document.querySelector('#cancel-delete').addEventListener('click',()=>setState('list'));
+    document.querySelector('#confirm-delete').addEventListener('click',()=>{document.querySelector('[data-note="reflection"]').style.display='none';deleteConfirm.classList.remove('show');count.textContent='2 条';footCount.textContent='当前书共 2 条笔记';resultsMeta.textContent='按阅读位置排列 · 2 条笔记'});
+    document.querySelector('#editor-delete').addEventListener('click',()=>setState('delete'));
+    filter.addEventListener('click',e=>{e.stopPropagation();filterMenu.classList.toggle('show')});
+    document.querySelectorAll('[data-filter]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-filter]').forEach(b=>b.classList.remove('selected'));button.classList.add('selected');filterLabel.textContent=button.dataset.filter;filter.classList.toggle('active',button.dataset.filter!=='全部');filterMenu.classList.remove('show')}));
+    document.addEventListener('click',e=>{if(!e.target.closest('.filter-wrap'))filterMenu.classList.remove('show')});
+    search.addEventListener('input',()=>{resultsMeta.textContent=search.value?`“${search.value}” · 1 条结果`:'按阅读位置排列 · 3 条笔记'});
+    noteInput.addEventListener('input',()=>{clearTimeout(saveTimer);saveRow.className='save-row';saveStatus.textContent='等待自动保存…';saveTimer=setTimeout(()=>{saveRow.classList.add('saving');saveTimer=setTimeout(()=>{saveRow.className='save-row';saveStatus.textContent='✓ 刚刚自动保存'},800)},550)});
+    document.querySelector('#retry').addEventListener('click',()=>{saveRow.className='save-row saving';setTimeout(()=>{saveRow.className='save-row';saveStatus.textContent='✓ 已重新保存'},900)});
+    wireJump();setState('list');
+  </script>
+</body>
+</html>

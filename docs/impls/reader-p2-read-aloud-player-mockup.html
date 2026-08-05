@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lantern P2.5 · 连续朗读播放条样张（修订）</title>
+  <style>
+    :root{
+      --desk:#d8d6d2;--chrome:#fbfaf8;--paper:#f6f0e5;--page:#fbf7ef;--surface:#fff;
+      --text:#312d29;--muted:#746e67;--quiet:#99928b;--border:#dfdad3;--frame:#ccc9c4;
+      --input:#f1eee9;--accent:#7c3aed;--accent-bg:#f2ebfd;--danger:#b45309;--danger-bg:#fdf3e6;
+    }
+    *{box-sizing:border-box}
+    [hidden]{display:none!important}
+    body{margin:0;background:var(--desk);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+    button{font:inherit;color:inherit;cursor:pointer}
+    svg{width:16px;height:16px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+    /* ---------- 页面框架 ---------- */
+    .doc{max-width:1240px;margin:0 auto;padding:30px 24px 72px}
+    .doc-head{padding:20px 22px;border:1px solid var(--frame);border-radius:14px;background:var(--surface)}
+    .doc-head h1{margin:0;font-size:19px;font-weight:650}
+    .doc-head p{margin:8px 0 0;color:var(--muted);font-size:12px;line-height:1.65}
+    .changes{margin:14px 0 0;padding:0;list-style:none;display:grid;gap:7px}
+    .changes li{display:flex;gap:9px;align-items:flex-start;font-size:12px;line-height:1.6}
+    .changes i{flex:none;width:17px;height:17px;margin-top:1px;display:grid;place-items:center;border-radius:50%;background:var(--accent-bg);color:var(--accent);font:600 10px/1 Inter,sans-serif;font-style:normal}
+    .changes b{font-weight:600}
+    .changes span{color:var(--muted)}
+    .keep{margin:13px 0 0;padding:10px 12px;border-radius:9px;background:var(--input);color:var(--muted);font-size:11px;line-height:1.6}
+
+    .block{margin-top:34px}
+    .block-head{display:flex;align-items:baseline;gap:10px;margin:0 0 13px;padding-left:2px}
+    .block-head h2{margin:0;font-size:14px;font-weight:650}
+    .block-head span{color:var(--quiet);font-size:11px}
+
+    /* ---------- 实境窗口 ---------- */
+    .controls{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:12px;padding:5px;border:1px solid var(--frame);border-radius:11px;background:rgba(255,255,255,.9)}
+    .controls .sep{width:1px;height:20px;margin:0 4px;background:var(--border)}
+    .controls .group-label{padding-left:6px;color:var(--quiet);font-size:10.5px}
+    .pill{height:28px;padding:0 11px;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:11px;white-space:nowrap}
+    .pill:hover{background:var(--input);color:var(--text)}
+    .pill.active{background:var(--accent-bg);color:var(--accent);font-weight:650}
+
+    .window{position:relative;height:660px;overflow:hidden;border:1px solid var(--frame);border-radius:16px;background:var(--chrome);box-shadow:0 20px 56px rgba(38,34,30,.15)}
+    .traffic{position:absolute;z-index:5;top:18px;left:18px;display:flex;gap:8px}
+    .traffic i{width:12px;height:12px;border-radius:50%}
+    .traffic i:nth-child(1){background:#ff5f57}.traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}
+    .win-bar{height:62px;padding:0 18px 0 72px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;border-bottom:1px solid var(--border)}
+    .book b{display:block;font:600 13px Georgia,serif}
+    .book span,.chapter{color:var(--quiet);font-size:10px}
+    .chapter{font-size:11px}
+    .tools{justify-self:end;display:flex;align-items:center;gap:5px}
+    .tool{width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:13px}
+    .tool:hover{background:var(--input);color:var(--text)}
+    .tool.active{background:var(--accent-bg);color:var(--accent)}
+    .reader-shell{position:absolute;inset:62px 0 28px;display:flex;flex-direction:column;background:var(--paper);container-type:inline-size}
+    .reader-shell.bottom{flex-direction:column-reverse}
+    .surface{flex:1;min-height:0;display:grid;place-items:center;padding:26px 40px;overflow:hidden}
+    .page{width:min(680px,94%);height:100%;overflow:hidden;padding:34px 54px;background:var(--page);box-shadow:0 5px 28px rgba(80,67,50,.08);font:17px/1.84 Georgia,"Songti SC",serif}
+    .page .kicker{margin:0 0 8px;text-align:center;color:#978c80;font:9px Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase}
+    .page h1{margin:0 0 26px;text-align:center;font-size:24px;font-weight:600}
+    .page p{margin:0 0 .7em;text-align:justify;text-indent:1.5em}
+    .page p:first-of-type{text-indent:0}
+    .win-foot{position:absolute;inset:auto 0 0;height:28px;padding:0 18px;display:flex;align-items:center;border-top:1px solid var(--border);color:var(--quiet);font-size:9px}
+    .win-foot span:last-child{margin-left:auto}
+
+    /* ---------- 句子标记（页面内的下划线即朗读进度） ---------- */
+    .sentence{border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+    .sentence.active .spoken{padding:1px 0;color:#2a2232;background:linear-gradient(transparent 63%,#cdb6f2 63%)}
+    .sentence.active .rest{padding:1px 0;color:#4b443f;background:linear-gradient(transparent 63%,#e8e1f4 63%)}
+    .paused .sentence.active .spoken{background:linear-gradient(transparent 63%,#d9d4cc 63%);color:#5d5751}
+    .paused .sentence.active .rest{background:linear-gradient(transparent 63%,#eae6df 63%);color:#6d675f}
+    .stopped .sentence.active .spoken,.stopped .sentence.active .rest{background:linear-gradient(transparent 63%,#e9dfcf 63%);color:#7a736b}
+
+    /* ---------- 播放条 ---------- */
+    .bar{display:flex;align-items:center;gap:14px;min-height:62px;padding:9px 14px;border-bottom:1px solid var(--border);background:var(--surface)}
+    .reader-shell.bottom .bar,.card-body.bottom .bar{border-bottom:0;border-top:1px solid var(--border)}
+    .bar-icon{flex:none;width:28px;height:28px;display:grid;place-items:center;border-radius:8px;color:var(--muted)}
+    .bar[data-status="playing"] .bar-icon,.bar[data-status="loading"] .bar-icon{color:var(--accent);background:var(--accent-bg)}
+    .bar[data-status="loading"] .bar-icon{animation:breathe 1.4s ease-in-out infinite}
+    .bar[data-status="error"] .bar-icon{color:var(--danger);background:var(--danger-bg)}
+    @keyframes breathe{50%{opacity:.45}}
+    .bar-now{flex:1;min-width:0}
+    .bar-line{display:flex;align-items:baseline;gap:7px;min-width:0}
+    .bar-line b{flex:none;font-size:12.5px;font-weight:600}
+    .bar[data-status="error"] .bar-line b{color:var(--danger)}
+    .status-short{display:none}
+    .preview{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--muted);font:12.5px/1.5 Georgia,"Songti SC",serif}
+    .preview:empty{display:none}
+    .bar-progress{margin-top:7px;display:flex;align-items:center;gap:10px}
+    .track{position:relative;flex:1;min-width:40px;height:2px;overflow:hidden;border-radius:2px;background:#e7e2db}
+    .track i{display:block;height:100%;border-radius:2px;background:var(--accent);opacity:.72;transition:width .12s linear}
+    .bar[data-status="paused"] .track i,.bar[data-status="error"] .track i{background:#b3aca3;opacity:1}
+    .track.busy i{width:28%;animation:drift 1.25s ease-in-out infinite alternate}
+    @keyframes drift{from{transform:translateX(-8%)}to{transform:translateX(272%)}}
+    .readout{flex:none;color:var(--quiet);font-size:10px;font-variant-numeric:tabular-nums}
+    .transport{flex:none;display:flex;align-items:center;gap:9px}
+    .key{display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted)}
+    .key.small{width:30px;height:30px}
+    .key.small:hover:not([disabled]){background:var(--input);color:var(--text)}
+    .key.big{width:46px;height:46px;background:var(--accent);color:#fff;box-shadow:0 4px 12px rgba(124,58,237,.22)}
+    .key.big svg{width:19px;height:19px}
+    .key.big:hover:not([disabled]){background:#6d28d9}
+    .key[disabled]{opacity:.28;cursor:default;box-shadow:none}
+    .bar-tail{flex:none;display:flex;align-items:center;gap:6px}
+    .rate-wrap{position:relative}
+    .rate{height:32px;min-width:72px;padding:0 7px 0 10px;display:flex;align-items:center;justify-content:space-between;gap:4px;border:1px solid transparent;border-radius:8px;background:var(--input);font-size:12px;font-weight:500}
+    .rate:hover{border-color:var(--border)}
+    .rate svg{width:15px;height:15px;color:var(--quiet);transition:transform .15s ease}
+    .rate.open svg{transform:rotate(180deg)}
+    .rate-menu{position:absolute;z-index:40;top:calc(100% + 4px);left:0;width:112px;padding:4px;border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:0 12px 30px rgba(45,39,34,.16)}
+    .reader-shell.bottom .rate-menu,.card-body.bottom .rate-menu{top:auto;bottom:calc(100% + 4px)}
+    .rate-menu[hidden]{display:none}
+    .rate-menu button{width:100%;height:34px;padding:0 9px;display:flex;align-items:center;justify-content:space-between;border:0;border-radius:7px;background:transparent;font-size:12px;text-align:left}
+    .rate-menu button:hover{background:var(--input)}
+    .rate-menu button[aria-checked="true"]{color:var(--accent);font-weight:650}
+    .rate-menu svg{width:14px;height:14px;stroke-width:2.2;opacity:0}
+    .rate-menu button[aria-checked="true"] svg{opacity:1}
+
+    /* 收起后的胶囊：现状是回到顶栏里的一颗按钮 */
+    .capsule{height:32px;display:flex;align-items:center;gap:7px;padding:0 11px;border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--muted);font-size:11.5px}
+    .capsule:hover{color:var(--text)}
+    .capsule .dot{color:var(--accent)}
+    .capsule svg{width:14px;height:14px}
+    .capsule .live{animation:breathe 1.4s ease-in-out infinite}
+
+    /* ---------- 静态一览 ---------- */
+    .cards{display:grid;gap:16px}
+    .card{border:1px solid var(--frame);border-radius:14px;background:var(--surface)}
+    .card-head{padding:12px 16px 13px;border-bottom:1px solid var(--border)}
+    .card-head b{font-size:12.5px}
+    .card-head .tag{margin-left:7px;padding:2px 7px;border-radius:999px;background:var(--input);color:var(--quiet);font-size:9.5px;vertical-align:1px}
+    .card-head .tag.extra{background:var(--accent-bg);color:var(--accent)}
+    .card-head p{margin:5px 0 0;color:var(--muted);font-size:11px;line-height:1.6}
+    .card-body{container-type:inline-size;border-radius:0 0 14px 14px}
+    .card-body .bar{pointer-events:none;border-radius:0}
+    .slice{padding:16px 22px 20px;display:grid;place-items:center;background:var(--paper);border-radius:0 0 14px 14px}
+    .slice .sheet{width:min(640px,100%);padding:18px 32px 20px;background:var(--page);box-shadow:0 4px 18px rgba(80,67,50,.07);font:16px/1.82 Georgia,"Songti SC",serif}
+    .slice p{margin:0 0 .5em;text-align:justify;text-indent:1.5em}
+    .slice p:last-child{margin-bottom:0}
+    .slice .empty{color:var(--quiet);font:11px Inter,sans-serif;text-align:center;text-indent:0}
+
+    /* ---------- 窄窗口 ---------- */
+    .narrow-row{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
+    .narrow{flex:none;border:1px solid var(--frame);border-radius:12px;background:var(--surface);overflow:hidden}
+    .narrow .cap{padding:9px 12px;border-bottom:1px solid var(--border);color:var(--muted);font-size:11px}
+    .narrow .cap b{color:var(--text);font-size:11.5px}
+    .narrow-body{container-type:inline-size;background:var(--paper)}
+    .narrow-body .bar{pointer-events:none}
+    .ladder{margin:14px 0 0;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface);font-size:11.5px;line-height:1.75;color:var(--muted)}
+    .ladder b{color:var(--text)}
+
+    /* ---------- 窄化阶梯（容器查询） ---------- */
+    @container (max-width: 840px){ .est{display:none} }
+    @container (max-width: 660px){
+      .bar-icon{display:none}
+      .preview{display:none}
+      .status-long{display:none}
+      .status-short{display:block}
+      .bar{gap:11px}
+    }
+    @container (max-width: 500px){
+      .bar{gap:8px;padding:8px 9px}
+      .key.small{width:28px;height:28px}
+      .rate{min-width:60px;padding:0 5px 0 8px;font-size:11.5px}
+      .transport{gap:6px}
+    }
+  </style>
+</head>
+<body>
+<div class="doc">
+
+  <header class="doc-head">
+    <h1>连续朗读播放条 · 修订样张</h1>
+    <p>在已上线的播放条基础上改三处。其余控件（语速、停止、收起、句子预览）保持现状，位置也仍在顶栏下方、正文之上。</p>
+    <ul class="changes">
+      <li><i>1</i><span><b>播放／暂停做成大键。</b>朗读时唯一要按的就是暂停，它必须一眼看到、不用瞄准。上一句／下一句缩小到两侧，其余控件全部退成次要。</span></li>
+      <li><i>2</i><span><b>加入句子进度。</b>正文里当前句的下划线分成「已读」与「未读」两段；播放条上是一条同样安静的细线（本章进度）加一行位置读数，用来判断「现在停下会不会半途而废」。不做成媒体进度条，不可拖动。</span></li>
+      <li><i>3</i><span><b>去掉语言标签。</b>原样张上的「语言 自动 EN」删除——它报告的是引擎自动识别的结果，用户既改不了也用不上。</span></li>
+    </ul>
+    <p class="keep">「实境」一节可交互：大键、上一句／下一句、语速菜单、停止、收起、顶栏的朗读按钮都真的会动，进度会随播放推进。下方「静态一览」与「窄窗口」是静态图，不响应点击。</p>
+  </header>
+
+  <!-- ========== 实境 ========== -->
+  <section class="block">
+    <div class="block-head"><h2>实境（可交互）</h2><span>切换状态，或直接操作播放条</span></div>
+    <div class="controls">
+      <span class="group-label">状态</span>
+      <button class="pill" data-preset="ready">就绪</button>
+      <button class="pill active" data-preset="playing">朗读中</button>
+      <button class="pill" data-preset="paused">已暂停</button>
+      <button class="pill" data-preset="first">第一句</button>
+      <button class="pill" data-preset="last">最后一句</button>
+      <button class="pill" data-preset="rate">语速展开</button>
+      <button class="pill" data-preset="loading">准备音频</button>
+      <button class="pill" data-preset="error">朗读失败</button>
+      <button class="pill" data-preset="finished">读到末尾</button>
+      <button class="pill" data-preset="collapsed">已收起</button>
+      <button class="pill" data-preset="stopped">已停止</button>
+      <span class="sep"></span>
+      <span class="group-label">位置</span>
+      <button class="pill active" data-dock="top">顶部（现状）</button>
+      <button class="pill" data-dock="bottom">底部</button>
+    </div>
+    <p id="stopped-hint" hidden style="margin:0 0 12px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--muted);font-size:11.5px;line-height:1.6">已停止：整条播放条移除，正文标记清除，入口退回顶栏那颗朗读按钮 —— 点它可以重新开始。</p>
+
+    <div class="window">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <header class="win-bar">
+        <div class="book"><b>The Elements of Eloquence</b><span>Mark Forsyth</span></div>
+        <span class="chapter">Chapter 4 · The Power of Three</span>
+        <div class="tools">
+          <button class="tool" aria-label="搜索">⌕</button>
+          <button class="tool" aria-label="目录">☰</button>
+          <button class="tool" aria-label="阅读设置">Aa</button>
+          <button class="tool active" id="tool-read" aria-label="连续朗读"></button>
+          <button class="capsule" id="capsule" hidden aria-label="展开播放器"></button>
+        </div>
+      </header>
+      <main class="reader-shell" id="shell">
+        <div id="bar-slot"></div>
+        <section class="surface">
+          <article class="page" id="live-page" lang="en">
+            <p class="kicker">Chapter Four</p>
+            <h1>The Power of Three</h1>
+          </article>
+        </section>
+      </main>
+      <footer class="win-foot"><span>48%</span><span>184 / 382</span></footer>
+    </div>
+  </section>
+
+  <!-- ========== 静态一览 ========== -->
+  <section class="block">
+    <div class="block-head"><h2>全部状态（静态一览）</h2><span>每格都带一段正文，用来对照播放条的高度与分量</span></div>
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <!-- ========== 窄窗口 ========== -->
+  <section class="block">
+    <div class="block-head"><h2>窄窗口</h2><span>位置不够时，先丢文字，再丢装饰；三颗键和进度永远留着</span></div>
+    <div class="narrow-row" id="narrow"></div>
+    <p class="ladder">
+      <b>退让顺序。</b><br>
+      ① 约 840px 以下：去掉「本章约剩 N 分钟」，只留「第 N / 9 句」。<br>
+      ② 约 660px 以下：去掉左侧喇叭图标与句子预览，状态文字缩成两字（朗读中 / 已暂停）。<br>
+      ③ 约 500px 以下：内边距与小键收紧一档，语速按钮变窄。<br>
+      <b>始终不动：</b>大键尺寸不变、上一句／下一句不消失、进度细线与位置读数不消失、停止与收起不消失。
+    </p>
+  </section>
+
+  <p style="margin:26px 2px 0;color:var(--quiet);font-size:10.5px;line-height:1.7">
+    文案取自 <code>src/i18n/zh.json</code> 的 <code>reader.continuousReadAloud.*</code>；位置读数「第 N / 9 句」与「本章约剩 N 分钟」是本次新增的字符串，尚未入表。
+  </p>
+</div>
+
+<!-- ---------- 模板 ---------- -->
+<template id="bar-tpl">
+  <section class="bar" aria-label="连续朗读">
+    <span class="bar-icon" data-el="icon"></span>
+    <div class="bar-now">
+      <div class="bar-line">
+        <b class="status-long" data-el="status-long"></b>
+        <b class="status-short" data-el="status-short"></b>
+        <span class="preview" data-el="preview"></span>
+      </div>
+      <div class="bar-progress">
+        <span class="track" data-el="track"><i data-el="fill"></i></span>
+        <span class="readout"><span data-el="pos"></span><span class="est" data-el="est"></span></span>
+      </div>
+    </div>
+    <div class="transport">
+      <button class="key small" data-el="prev" aria-label="上一句" title="上一句"></button>
+      <button class="key big" data-el="play"></button>
+      <button class="key small" data-el="next" aria-label="下一句" title="下一句"></button>
+    </div>
+    <div class="bar-tail">
+      <div class="rate-wrap">
+        <button class="rate" data-el="rate" aria-haspopup="listbox"><span data-el="rate-label">1×</span></button>
+        <div class="rate-menu" data-el="rate-menu" role="listbox" hidden></div>
+      </div>
+      <button class="key small" data-el="stop"></button>
+      <button class="key small" data-el="collapse" aria-label="收起播放器" title="收起播放器"></button>
+    </div>
+  </section>
+</template>
+
+<script>
+(() => {
+  "use strict";
+
+  const ICON = {
+    volume: '<svg viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18 6a9 9 0 0 1 0 12"/></svg>',
+    alert: '<svg viewBox="0 0 24 24"><path d="M10.4 4.4 2.7 18a1.5 1.5 0 0 0 1.3 2.2h16A1.5 1.5 0 0 0 21.3 18L13.6 4.4a1.5 1.5 0 0 0-2.6 0z"/><path d="M12 9.6v4"/><path d="M12 17h.01"/></svg>',
+    prev: '<svg viewBox="0 0 24 24"><path d="M19 20 9 12l10-8z" fill="currentColor" stroke="none"/><path d="M5 19V5"/></svg>',
+    next: '<svg viewBox="0 0 24 24"><path d="m5 4 10 8-10 8z" fill="currentColor" stroke="none"/><path d="M19 5v14"/></svg>',
+    play: '<svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z" fill="currentColor" stroke="none"/></svg>',
+    pause: '<svg viewBox="0 0 24 24"><path d="M8 5h3v14H8zM13 5h3v14h-3z" fill="currentColor" stroke="none"/></svg>',
+    retry: '<svg viewBox="0 0 24 24"><path d="M3.2 12a8.8 8.8 0 1 0 2.6-6.3"/><path d="M3 4v5h5"/></svg>',
+    stop: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.6" fill="currentColor" stroke="none"/></svg>',
+    up: '<svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg>',
+    down: '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
+    check: '<svg viewBox="0 0 24 24"><path d="m5 13 4 4 10-10"/></svg>'
+  };
+
+  // 与 ContinuousReadAloudToolbar.tsx 的 RATES 一致；标签是 `${rate}×`
+  const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  const rateLabel = (r) => `${r}×`;
+
+  const SENTENCES = [
+    "Language is built from patterns, and the most satisfying pattern is often the simplest.",
+    "Three examples feel complete without becoming predictable.",
+    "Writers have understood this instinctively for centuries.",
+    "A balanced sentence makes a difficult idea easier to follow, because rhythm quietly tells the reader where one thought finishes and another begins.",
+    "The effect is not merely decorative.",
+    "Repetition can give a sentence weight, but variation gives it life.",
+    "The reader hears the pattern before consciously recognising it.",
+    "A book is continuous even when its pages are not.",
+    "The voice carries on to the next section without asking."
+  ];
+  const PARAGRAPHS = [[0, 1], [2, 3], [4, 5, 6], [7, 8]];
+  const TOTAL = SENTENCES.length;
+  const SECONDS_PER_SENTENCE = 15;
+
+  const escape = (text) => text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+  function sentenceHtml(index, active, fraction) {
+    const text = SENTENCES[index];
+    if (!active) return `<span class="sentence">${escape(text)}</span>`;
+    const words = text.split(" ");
+    // fraction 0 = 一个字都还没出声，整句都算「未读」，不留一个突兀的深色首词。
+    const cut = fraction <= 0 ? 0 : Math.min(words.length, Math.max(1, Math.round(words.length * fraction)));
+    const spoken = words.slice(0, cut).join(" ");
+    const rest = words.slice(cut).join(" ");
+    return `<span class="sentence active">`
+      + (spoken ? `<span class="spoken">${escape(spoken)}${rest ? " " : ""}</span>` : "")
+      + (rest ? `<span class="rest">${escape(rest)}</span>` : "")
+      + `</span>`;
+  }
+
+  function paragraphsHtml(list, activeIndex, fraction) {
+    return list.map((para) => {
+      const inner = para.map((i) => sentenceHtml(i, i === activeIndex, fraction)).join(" ");
+      return `<p>${inner}</p>`;
+    }).join("");
+  }
+
+  /** 每格静态图只放当前句所在段落和它的邻段，够看清标记又不占版面。 */
+  function sliceParagraphs(activeIndex) {
+    if (activeIndex === null || activeIndex === undefined) return [PARAGRAPHS[0], PARAGRAPHS[1]];
+    const at = PARAGRAPHS.findIndex((para) => para.includes(activeIndex));
+    if (at <= 0) return [PARAGRAPHS[0], PARAGRAPHS[1]];
+    if (at >= PARAGRAPHS.length - 1) return [PARAGRAPHS[at - 1], PARAGRAPHS[at]];
+    return [PARAGRAPHS[at], PARAGRAPHS[at + 1]];
+  }
+
+  const STATUS = {
+    ready:    { long: "准备朗读",       short: "就绪" },
+    playing:  { long: "正在连续朗读",   short: "朗读中" },
+    loading:  { long: "正在准备音频…",  short: "准备中" },
+    paused:   { long: "朗读已暂停",     short: "已暂停" },
+    error:    { long: "连续朗读意外停止", short: "已停止" },
+    finished: { long: "已读到全书末尾", short: "已到末尾" }
+  };
+
+  function describe(spec) {
+    const status = spec.status;
+    const index = spec.index === undefined ? null : spec.index;
+    const fraction = spec.fraction || 0;
+    const has = index !== null;
+    const last = has && index === TOTAL - 1;
+    const info = STATUS[status];
+
+    let preview = "";
+    if (status === "ready") preview = SENTENCES[0];
+    else if (has && status !== "finished") preview = SENTENCES[index];
+    else if (status === "finished") preview = "已读完本书最后一句";
+
+    let position = "";
+    let estimate = "";
+    if (status === "loading" && !has) position = "正在准备第 1 句";
+    else if (status === "ready") { position = `本章共 ${TOTAL} 句`; estimate = " · 从第 1 句开始"; }
+    else if (status === "finished") position = "全书已读完";
+    else if (has) {
+      position = `第 ${index + 1} / ${TOTAL} 句`;
+      if (status === "error") estimate = " · 语音服务没有响应";
+      else if (last) estimate = " · 本章最后一句";
+      else {
+        const left = (TOTAL - index - 1 + (1 - fraction)) * SECONDS_PER_SENTENCE;
+        estimate = ` · 本章约剩 ${Math.max(1, Math.round(left / 60))} 分钟`;
+      }
+    }
+
+    let progress = 0;
+    if (has && status !== "finished") progress = ((index + fraction) / TOTAL) * 100;
+    if (status === "finished") progress = 100;
+
+    const playing = status === "playing" || status === "loading";
+    return {
+      status, index, has, last, info, preview, position, estimate, progress,
+      busy: status === "loading" && !has,
+      playIcon: status === "error" ? ICON.retry : playing ? ICON.pause : ICON.play,
+      playLabel: status === "error" ? "重新尝试连续朗读"
+        : status === "finished" ? "从头再听"
+        : playing ? "暂停"
+        : status === "ready" ? "连续朗读" : "继续",
+      prevDisabled: !has || index === 0,
+      nextDisabled: !has || last,
+      stopLabel: status === "finished" ? "留在结尾" : "停止连续朗读",
+      // 与实现一致：finished / error 下没有「收起」，展开的播放条是唯一能走出这两个状态的入口
+      showCollapse: status !== "finished" && status !== "error",
+      rate: spec.rate === undefined ? 1 : spec.rate,
+      rateOpen: !!spec.rateOpen
+    };
+  }
+
+  function buildBar() {
+    const node = document.querySelector("#bar-tpl").content.firstElementChild.cloneNode(true);
+    const el = {};
+    node.querySelectorAll("[data-el]").forEach((child) => { el[child.dataset.el] = child; });
+    el.prev.innerHTML = ICON.prev;
+    el.next.innerHTML = ICON.next;
+    el.stop.innerHTML = ICON.stop;
+    el.collapse.innerHTML = ICON.up;
+    el.rate.insertAdjacentHTML("beforeend", ICON.down);
+    el["rate-menu"].innerHTML = RATES.map((rate) =>
+      `<button type="button" role="option" data-rate="${rate}" aria-checked="false"><span>${rateLabel(rate)}</span>${ICON.check}</button>`
+    ).join("");
+    node._el = el;
+    return node;
+  }
+
+  function paintBar(node, spec) {
+    const d = describe(spec);
+    const el = node._el;
+    node.dataset.status = d.status;
+    el.icon.innerHTML = d.status === "error" ? ICON.alert : ICON.volume;
+    el["status-long"].textContent = d.info.long;
+    el["status-short"].textContent = d.info.short;
+    el.preview.textContent = d.preview;
+    el.track.classList.toggle("busy", d.busy);
+    el.fill.style.width = d.busy ? "" : `${d.progress}%`;
+    el.pos.textContent = d.position;
+    el.est.textContent = d.estimate;
+    el.play.innerHTML = d.playIcon;
+    el.play.setAttribute("aria-label", d.playLabel);
+    el.play.title = d.playLabel;
+    el.prev.disabled = d.prevDisabled;
+    el.next.disabled = d.nextDisabled;
+    el.stop.setAttribute("aria-label", d.stopLabel);
+    el.stop.title = d.stopLabel;
+    el.collapse.hidden = !d.showCollapse;
+    el["rate-label"].textContent = rateLabel(d.rate);
+    el.rate.classList.toggle("open", d.rateOpen);
+    el.rate.setAttribute("aria-expanded", String(d.rateOpen));
+    el["rate-menu"].hidden = !d.rateOpen;
+    el["rate-menu"].querySelectorAll("[data-rate]").forEach((option) => {
+      option.setAttribute("aria-checked", String(Number(option.dataset.rate) === d.rate));
+    });
+    return d;
+  }
+
+  // ---------------- 实境 ----------------
+  const shell = document.querySelector("#shell");
+  const slot = document.querySelector("#bar-slot");
+  const livePage = document.querySelector("#live-page");
+  const capsule = document.querySelector("#capsule");
+  const toolRead = document.querySelector("#tool-read");
+  toolRead.innerHTML = ICON.volume;
+
+  const liveBar = buildBar();
+  const stoppedHint = document.querySelector("#stopped-hint");
+
+  const live = { status: "playing", index: 3, fraction: 0.42, rate: 1, rateOpen: false, collapsed: false, stopped: false };
+  let ticker = null;
+  let lastCut = -1;
+
+  const PRESETS = {
+    ready:     { status: "ready", index: 0, fraction: 0 },
+    playing:   { status: "playing", index: 3, fraction: 0.42 },
+    paused:    { status: "paused", index: 3, fraction: 0.42 },
+    first:     { status: "playing", index: 0, fraction: 0.3 },
+    last:      { status: "playing", index: TOTAL - 1, fraction: 0.55 },
+    rate:      { status: "playing", index: 3, fraction: 0.42, rateOpen: true },
+    loading:   { status: "loading", index: null, fraction: 0 },
+    error:     { status: "error", index: 3, fraction: 0.42 },
+    finished:  { status: "finished", index: null, fraction: 0 },
+    collapsed: { status: "playing", index: 3, fraction: 0.42, collapsed: true },
+    stopped:   { status: "ready", index: null, fraction: 0, stopped: true }
+  };
+
+  const PAGE_HEAD = '<p class="kicker">Chapter Four</p><h1>The Power of Three</h1>';
+
+  /** 当前该高亮哪一颗状态胶囊——从状态本身推出来，手动操作后也不会指错。 */
+  function activePreset() {
+    if (live.stopped) return "stopped";
+    if (live.collapsed) return "collapsed";
+    if (live.status === "playing") {
+      if (live.rateOpen) return "rate";
+      if (live.index === 0) return "first";
+      if (live.index === TOTAL - 1) return "last";
+      return "playing";
+    }
+    return live.status;
+  }
+
+  function renderLivePage() {
+    livePage.classList.toggle("paused", live.status === "paused" || live.status === "error");
+    livePage.classList.toggle("stopped", live.stopped || live.status === "finished");
+    const index = live.stopped ? null : live.index;
+    livePage.innerHTML = PAGE_HEAD + paragraphsHtml(PARAGRAPHS, index, live.fraction);
+  }
+
+  function syncPills() {
+    const name = activePreset();
+    document.querySelectorAll("[data-preset]").forEach((pill) => {
+      pill.classList.toggle("active", pill.dataset.preset === name);
+    });
+  }
+
+  function renderLive() {
+    const showBar = !live.collapsed && !live.stopped;
+    slot.replaceChildren(...(showBar ? [liveBar] : []));
+    if (showBar) paintBar(liveBar, live);
+
+    capsule.hidden = !live.collapsed;
+    toolRead.hidden = live.collapsed;
+    toolRead.classList.toggle("active", !live.stopped);
+    stoppedHint.hidden = !live.stopped;
+    if (live.collapsed) {
+      const label = live.status === "paused" ? STATUS.paused.long : STATUS.playing.long;
+      const beat = live.status === "playing" || live.status === "loading" ? " live" : "";
+      capsule.innerHTML = `<span class="dot${beat}">${ICON.volume}</span>${label} · ${rateLabel(live.rate)}${ICON.down}`;
+    }
+
+    lastCut = -1;
+    renderLivePage();
+    syncPills();
+    stopTicker();
+    if (live.status === "playing" && showBar) startTicker();
+  }
+
+  function startTicker() {
+    ticker = window.setInterval(() => {
+      live.fraction += (90 / (SECONDS_PER_SENTENCE * 1000)) * live.rate;
+      if (live.fraction >= 1) {
+        if (live.index !== null && live.index < TOTAL - 1) { live.index += 1; live.fraction = 0; }
+        else { live.status = "finished"; live.index = null; live.fraction = 0; renderLive(); return; }
+        renderLive();
+        return;
+      }
+      paintBar(liveBar, live);
+      // 整页重绘只在下划线的分界真的挪动时才做，避免每 90ms 全量改写正文。
+      const words = SENTENCES[live.index].split(" ").length;
+      const cut = Math.max(1, Math.round(words * live.fraction));
+      if (cut !== lastCut) { lastCut = cut; renderLivePage(); }
+    }, 90);
+  }
+  function stopTicker() { if (ticker) { window.clearInterval(ticker); ticker = null; } }
+
+  function applyPreset(name) {
+    Object.assign(live, { rateOpen: false, collapsed: false, stopped: false }, PRESETS[name]);
+    renderLive();
+  }
+
+  const el = liveBar._el;
+  el.play.addEventListener("click", () => {
+    if (el.play.disabled) return;
+    if (live.status === "playing" || live.status === "loading") live.status = "paused";
+    else if (live.status === "finished") { live.status = "playing"; live.index = 0; live.fraction = 0; }
+    else if (live.status === "error") { live.status = "playing"; }
+    else { live.status = "playing"; if (live.index === null) live.index = 0; }
+    live.rateOpen = false;
+    renderLive();
+  });
+  el.prev.addEventListener("click", () => {
+    if (el.prev.disabled) return;
+    live.index = Math.max(0, live.index - 1); live.fraction = 0; live.rateOpen = false; renderLive();
+  });
+  el.next.addEventListener("click", () => {
+    if (el.next.disabled) return;
+    live.index = Math.min(TOTAL - 1, live.index + 1); live.fraction = 0; live.rateOpen = false; renderLive();
+  });
+  el.rate.addEventListener("click", (event) => {
+    event.stopPropagation();
+    live.rateOpen = !live.rateOpen;
+    paintBar(liveBar, live);
+    syncPills();
+  });
+  el["rate-menu"].addEventListener("click", (event) => {
+    const option = event.target.closest("[data-rate]");
+    if (!option) return;
+    event.stopPropagation();
+    live.rate = Number(option.dataset.rate);
+    live.rateOpen = false;
+    paintBar(liveBar, live);
+    syncPills();
+  });
+  el.stop.addEventListener("click", () => { live.stopped = true; live.rateOpen = false; renderLive(); });
+  el.collapse.addEventListener("click", () => { live.collapsed = true; live.rateOpen = false; renderLive(); });
+  capsule.addEventListener("click", () => { live.collapsed = false; renderLive(); });
+  toolRead.addEventListener("click", () => {
+    if (!live.stopped) return;
+    live.stopped = false; live.status = "loading"; live.index = null; live.fraction = 0;
+    renderLive();
+    window.setTimeout(() => {
+      if (live.status !== "loading" || live.stopped) return;
+      live.status = "playing"; live.index = 0; live.fraction = 0; renderLive();
+    }, 900);
+  });
+  document.addEventListener("click", () => {
+    if (!live.rateOpen) return;
+    live.rateOpen = false;
+    if (!live.collapsed && !live.stopped) { paintBar(liveBar, live); syncPills(); }
+  });
+
+  document.querySelectorAll("[data-preset]").forEach((pill) => {
+    pill.addEventListener("click", (event) => { event.stopPropagation(); applyPreset(pill.dataset.preset); });
+  });
+  document.querySelectorAll("[data-dock]").forEach((pill) => {
+    pill.addEventListener("click", () => {
+      const bottom = pill.dataset.dock === "bottom";
+      shell.classList.toggle("bottom", bottom);
+      document.querySelectorAll("[data-dock]").forEach((other) => other.classList.toggle("active", other === pill));
+    });
+  });
+
+  applyPreset("playing");
+
+  // ---------------- 静态一览 ----------------
+  const CARDS = [
+    {
+      title: "刚打开 · 尚未播放", spec: { status: "ready", index: 0, fraction: 0 },
+      note: "大键显示播放。读数先告诉用户这一章有多长、从哪一句开始。上一句此时不可用。（现状里播放条一出现就直接进入「准备音频」；这一格给的是按下开始前的静止形态。）"
+    },
+    {
+      title: "朗读中", spec: { status: "playing", index: 3, fraction: 0.42 },
+      note: "唯一显眼的是暂停。正文里当前句的下划线分两段：深色是已读、浅色是未读；播放条上的细线是本章进度，右侧读数给出还剩多少。"
+    },
+    {
+      title: "暂停在段落中间", spec: { status: "paused", index: 3, fraction: 0.42 },
+      note: "紫色全部退成灰色——正文下划线、播放条细线、左侧图标都退。位置一个字没丢，用户知道从哪里接着走。"
+    },
+    {
+      title: "第一句（上一句不可用）", spec: { status: "playing", index: 0, fraction: 0.3 },
+      note: "上一句变淡且不可点。大键的位置、尺寸不因此改变——两侧小键的可用与否不该让主键跳动。"
+    },
+    {
+      title: "最后一句（下一句不可用）", spec: { status: "playing", index: TOTAL - 1, fraction: 0.55 },
+      note: "读数把「本章约剩 N 分钟」换成「本章最后一句」——这时候剩余时间已经没有决策价值了。"
+    },
+    {
+      title: "语速菜单展开", spec: { status: "playing", index: 3, fraction: 0.42, rateOpen: true },
+      note: "沿用现有 Select 的下拉：0.5× 到 2×，当前值打勾。播放条在底部时菜单向上弹。"
+    },
+    {
+      title: "正在准备音频（第一句还没出声）", spec: { status: "loading", index: null, fraction: 0 },
+      note: "还没有「当前句」，所以上一句／下一句都不可用，正文里也没有标记。细线走成不定长的往返，读数说明在等什么。大键仍是暂停且可按——中途反悔不该等音频到齐。"
+    },
+    {
+      title: "朗读失败", spec: { status: "error", index: 3, fraction: 0.42 },
+      note: "大键换成重试，喇叭换成警告色。停在哪一句仍然显示，正文的标记也留着。此状态下没有「收起」——展开的播放条是唯一能走出错误的入口。"
+    },
+    {
+      title: "已读到全书末尾", tag: "附加", spec: { status: "finished", index: null, fraction: 0 },
+      note: "不在本次改动范围内，为对照一并给出：大键变成「从头再听」，右侧的停止按钮改称「留在结尾」。"
+    }
+  ];
+
+  const cards = document.querySelector("#cards");
+  CARDS.forEach((card) => {
+    const section = document.createElement("section");
+    section.className = "card";
+    const head = document.createElement("div");
+    head.className = "card-head";
+    head.innerHTML = `<b>${card.title}</b>${card.tag ? `<span class="tag extra">${card.tag}</span>` : ""}<p>${card.note}</p>`;
+    const body = document.createElement("div");
+    body.className = "card-body";
+    const bar = buildBar();
+    paintBar(bar, card.spec);
+    bar.querySelectorAll("button").forEach((button) => button.setAttribute("tabindex", "-1"));
+    body.appendChild(bar);
+
+    const slice = document.createElement("div");
+    slice.className = "slice";
+    const sheet = document.createElement("article");
+    sheet.className = "sheet";
+    sheet.lang = "en";
+    if (card.spec.status === "paused" || card.spec.status === "error") sheet.classList.add("paused");
+    if (card.spec.status === "finished") sheet.classList.add("stopped");
+    if (card.spec.index === null || card.spec.index === undefined) {
+      sheet.innerHTML = paragraphsHtml(sliceParagraphs(null), null, 0)
+        + `<p class="empty">${card.spec.status === "loading" ? "正文暂无标记 —— 第一句还没确定" : "正文标记已清除 —— 已到全书末尾"}</p>`;
+    } else {
+      sheet.innerHTML = paragraphsHtml(sliceParagraphs(card.spec.index), card.spec.index, card.spec.fraction);
+    }
+    slice.appendChild(sheet);
+    body.appendChild(slice);
+    section.appendChild(head);
+    section.appendChild(body);
+    cards.appendChild(section);
+  });
+
+  // 收起后的胶囊单独一格
+  const capsuleCard = document.createElement("section");
+  capsuleCard.className = "card";
+  capsuleCard.innerHTML = '<div class="card-head"><b>收起之后</b><span class="tag extra">附加</span>'
+    + '<p>播放条收起时退回顶栏里的一颗胶囊，仍显示状态与语速；点它展开。这是现状，本次不改。</p></div>';
+  const capsuleBody = document.createElement("div");
+  capsuleBody.style.cssText = "padding:18px 16px;display:flex;gap:12px;align-items:center;background:var(--paper);border-radius:0 0 14px 14px";
+  capsuleBody.innerHTML = `<span class="capsule" style="pointer-events:none"><span class="dot live">${ICON.volume}</span>正在连续朗读 · 1×${ICON.down}</span>`
+    + `<span class="capsule" style="pointer-events:none"><span class="dot">${ICON.volume}</span>朗读已暂停 · 1.25×${ICON.down}</span>`;
+  capsuleCard.appendChild(capsuleBody);
+  cards.appendChild(capsuleCard);
+
+  // ---------------- 窄窗口 ----------------
+  const NARROW = [
+    { width: 720, title: "约 720px", note: "时间估计已隐去，句子预览仍在" },
+    { width: 560, title: "约 560px", note: "喇叭与句子预览让位，状态缩成两字" },
+    { width: 430, title: "约 430px", note: "内边距与小键再收一档，三颗键与进度不动" }
+  ];
+  const narrowRow = document.querySelector("#narrow");
+  NARROW.forEach((item) => {
+    const frame = document.createElement("div");
+    frame.className = "narrow";
+    frame.style.width = `${item.width}px`;
+    frame.innerHTML = `<div class="cap"><b>${item.title}</b> · ${item.note}</div>`;
+    const body = document.createElement("div");
+    body.className = "narrow-body";
+    const bar = buildBar();
+    paintBar(bar, { status: "playing", index: 3, fraction: 0.42 });
+    bar.querySelectorAll("button").forEach((button) => button.setAttribute("tabindex", "-1"));
+    body.appendChild(bar);
+    const slice = document.createElement("div");
+    slice.className = "slice";
+    slice.style.padding = "14px 14px 16px";
+    slice.innerHTML = `<article class="sheet" lang="en" style="padding:14px 20px 16px;font-size:14px">${paragraphsHtml([PARAGRAPHS[1]], 3, 0.42)}</article>`;
+    body.appendChild(slice);
+    frame.appendChild(body);
+    narrowRow.appendChild(frame);
+  });
+})();
+</script>
+</body>
+</html>
