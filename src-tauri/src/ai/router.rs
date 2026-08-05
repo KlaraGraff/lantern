@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 use futures::StreamExt;
 use rusqlite::{params, OptionalExtension};
-use tauri::{AppHandle, Runtime, Emitter, Listener};
+use tauri::{AppHandle, Emitter, Listener, Runtime};
 use tokio::sync::watch;
 
 use crate::commands::ai::ChatMessage;
@@ -173,61 +173,110 @@ impl AiErrorKind {
     }
 }
 
+/// Codes that mean this key is not a key any more. Matched on `code=` only:
+/// Anthropic also sends `type=authentication_error` for a transient auth
+/// failure, and marking a working key permanently invalid is worse than the
+/// five-minute cooldown the `Auth` class gives it.
+const CREDENTIAL_INVALID_CODES: [&str; 6] = [
+    "invalid_api_key",
+    "invalid_api_key_error",
+    "authentication_error",
+    "invalid_x_api_key",
+    "api_key_revoked",
+    "key_revoked",
+];
+
+const POLICY_CODES: [&str; 4] = [
+    "content_policy_violation",
+    "content_filter",
+    "moderation_blocked",
+    "safety_violation",
+];
+
+/// Codes that mean the account is out of allowance rather than going too fast.
+/// Providers send them on 429 as often as on 402 — OpenAI's `insufficient_quota`
+/// is a 429 — so they are read before the status is. A spent quota put on a
+/// one-minute rate-limit cooldown just fails again a minute later.
+const QUOTA_CODES: [&str; 6] = [
+    "insufficient_quota",
+    "insufficient_user_quota",
+    "quota_exceeded",
+    "credit_balance_too_low",
+    "billing_hard_limit_reached",
+    "billing_not_active",
+];
+
+/// The prose fallback for providers that send no machine code at all. Narrow on
+/// purpose: the old rule matched bare `insufficient`, which swallowed
+/// "insufficient permissions" and sidelined a working key for an hour.
+const QUOTA_PHRASES: [&str; 6] = [
+    "quota",
+    "insufficient credit",
+    "insufficient balance",
+    "insufficient funds",
+    "credit balance too low",
+    "out of credits",
+];
+
+/// The wire status carried in the message, if it has one.
+///
+/// `http_status_error` formats it as `status=NNN`, so reading the number back
+/// once beats matching a substring per code — and it means a status nobody
+/// listed (Anthropic's 529 `overloaded_error`, a gateway's 520) still lands
+/// with the rest of its class instead of falling through to `Network`.
+fn status_code(message: &str) -> Option<u16> {
+    let rest = &message[message.find("status=")? + "status=".len()..];
+    rest.chars()
+        .take_while(|value| value.is_ascii_digit())
+        .collect::<String>()
+        .parse()
+        .ok()
+}
+
 fn classify_error(error: &AppError) -> AiErrorKind {
     let message = error.to_string().to_ascii_lowercase();
+    let status = status_code(&message);
+    let tagged = |codes: &[&str]| {
+        codes.iter().any(|code| {
+            message.contains(&format!("code={code}")) || message.contains(&format!("type={code}"))
+        })
+    };
     if message.contains("ai_request_cancelled") {
         AiErrorKind::Cancelled
-    } else if [
-        "invalid_api_key",
-        "invalid_api_key_error",
-        "authentication_error",
-        "invalid_x_api_key",
-        "api_key_revoked",
-        "key_revoked",
-    ]
-    .iter()
-    .any(|code| message.contains(&format!("code={code}")))
+    } else if CREDENTIAL_INVALID_CODES
+        .iter()
+        .any(|code| message.contains(&format!("code={code}")))
     {
         AiErrorKind::CredentialInvalid
-    } else if message.contains("status=401") || message.contains("unauthorized") {
+    } else if status == Some(401) || message.contains("unauthorized") {
         AiErrorKind::Auth
-    } else if [
-        "content_policy_violation",
-        "content_filter",
-        "moderation_blocked",
-        "safety_violation",
-    ]
-    .iter()
-    .any(|code| {
-        message.contains(&format!("code={code}")) || message.contains(&format!("type={code}"))
-    }) {
+    } else if tagged(&POLICY_CODES) {
         // A policy rejection belongs to this request, not to the credential.
         // Trying every key would repeat the same rejected request.
         AiErrorKind::Request
-    } else if message.contains("status=403") || message.contains("forbidden") {
+    } else if status == Some(403) || message.contains("forbidden") {
         AiErrorKind::Permission
-    } else if message.contains("status=402")
-        || message.contains("quota")
-        || message.contains("insufficient")
-    {
+    } else if status == Some(402) || tagged(&QUOTA_CODES) {
         AiErrorKind::Quota
-    } else if message.contains("status=429") || message.contains("rate limit") {
+    } else if status == Some(429) || message.contains("rate limit") {
         AiErrorKind::RateLimit
-    } else if [" 500", " 502", " 503", " 504"]
-        .iter()
-        .any(|code| message.contains(&format!("status={}", code.trim())))
-    {
+    } else if QUOTA_PHRASES.iter().any(|phrase| message.contains(phrase)) {
+        // Read after the status codes so that a 429 whose prose happens to say
+        // "quota" still cools down for a minute rather than an hour. Guessing
+        // low costs one wasted attempt; guessing high sidelines a live key.
+        AiErrorKind::Quota
+    } else if status.is_some_and(|status| (500..600).contains(&status)) {
         AiErrorKind::Provider5xx
     } else if message.contains("ai_stream_incomplete") || message.contains("protocol") {
         AiErrorKind::Protocol
-    } else if message.contains("status=400")
-        || message.contains("status=404")
-        || message.contains("status=413")
-        || message.contains("status=422")
+    } else if status.is_some_and(|status| (400..500).contains(&status))
         || message.contains("ai_model_list_invalid")
         || message.contains("ai_model_list_empty")
         || message.contains("ai_model_list_too_large")
     {
+        // Every 4xx that identifies a key or an allowance was claimed above, so
+        // what is left is the shape of the request. Retrying it under the next
+        // key would send the same rejected bytes again.
         AiErrorKind::Request
     } else if message.contains("ai_not_configured")
         || message.contains("ai_no_usable_keys")
@@ -992,29 +1041,12 @@ fn update_credential_health(
     error: Option<AiErrorKind>,
     retry_after: Option<i64>,
 ) {
-    if error == Some(AiErrorKind::Cancelled) {
-        return;
-    }
-    let Ok(conn) = db.conn.lock() else {
+    let timestamp = now();
+    let Some((state, cooldown)) = credential_health_state(error, retry_after, timestamp) else {
         return;
     };
-    let timestamp = now();
-    let (state, cooldown) = match error {
-        None => ("active", None),
-        Some(AiErrorKind::CredentialInvalid) => ("invalid", None),
-        Some(AiErrorKind::Auth | AiErrorKind::Permission) => {
-            ("cooldown", Some(timestamp + 5 * 60 * 1000))
-        }
-        Some(AiErrorKind::Quota) => ("quota", Some(timestamp + 60 * 60 * 1000)),
-        Some(AiErrorKind::RateLimit) => (
-            "cooldown",
-            Some(timestamp + retry_after.unwrap_or(60 * 1000)),
-        ),
-        Some(AiErrorKind::Network | AiErrorKind::Provider5xx | AiErrorKind::Protocol) => {
-            ("cooldown", Some(timestamp + 30 * 1000))
-        }
-        Some(AiErrorKind::Request | AiErrorKind::NotConfigured) => ("active", None),
-        Some(AiErrorKind::Cancelled) => unreachable!("cancelled requests do not update health"),
+    let Ok(conn) = db.conn.lock() else {
+        return;
     };
     let _ = conn.execute(
         "UPDATE ai_credentials SET state = ?1, cooldown_until = ?2, last_error_kind = ?3, last_used_at = ?4, updated_at = ?4 WHERE id = ?5",
@@ -1066,7 +1098,12 @@ fn profile_health_state(
         Some(AiErrorKind::Auth | AiErrorKind::Permission) => {
             ("cooldown", Some(timestamp + 5 * 60 * 1000))
         }
-        Some(AiErrorKind::Quota) => ("quota", Some(timestamp + 60 * 60 * 1000)),
+        // An hour is a guess about when an allowance resets. When the provider
+        // states a time, that is the one thing anyone actually knows.
+        Some(AiErrorKind::Quota) => (
+            "quota",
+            Some(timestamp + retry_after.unwrap_or(60 * 60 * 1000)),
+        ),
         Some(AiErrorKind::RateLimit) => (
             "cooldown",
             Some(timestamp + retry_after.unwrap_or(60 * 1000)),
@@ -1079,6 +1116,21 @@ fn profile_health_state(
         Some(AiErrorKind::Cancelled) => return None,
     };
     Some(state)
+}
+
+/// The same verdict for one key, which differs in exactly one arm.
+///
+/// A profile with nothing configured is unavailable; a key cannot be the reason
+/// nothing is configured, so it stays active and the next attempt reaches it.
+fn credential_health_state(
+    error: Option<AiErrorKind>,
+    retry_after: Option<i64>,
+    timestamp: i64,
+) -> Option<(&'static str, Option<i64>)> {
+    match profile_health_state(error, retry_after, timestamp)? {
+        ("unavailable", _) => Some(("active", None)),
+        state => Some(state),
+    }
 }
 
 async fn wait_cancelled(cancel: &mut watch::Receiver<bool>) {
@@ -3417,6 +3469,120 @@ mod tests {
 
         assert_eq!(classify_error(&error), AiErrorKind::Cancelled);
         assert!(!classify_error(&error).retryable());
+    }
+
+    fn provider_error(rest: &str) -> AppError {
+        AppError::Ai(format!("AI_PROVIDER_HTTP provider=custom {rest}"))
+    }
+
+    /// A spent allowance and a request sent too fast both arrive as 429. Only
+    /// the code tells them apart, and getting it wrong is expensive in both
+    /// directions: a minute's cooldown on a spent quota just fails again, and
+    /// an hour's cooldown on a rate limit sidelines a working key.
+    #[test]
+    fn a_429_is_read_by_its_code_not_by_its_status() {
+        assert_eq!(
+            classify_error(&provider_error("status=429 code=insufficient_quota")),
+            AiErrorKind::Quota
+        );
+        assert_eq!(
+            classify_error(&provider_error("status=429 type=rate_limit_error")),
+            AiErrorKind::RateLimit
+        );
+        // Prose that merely mentions the word does not outrank the status.
+        assert_eq!(
+            classify_error(&provider_error("status=429 code=quota_rate_exceeded")),
+            AiErrorKind::RateLimit
+        );
+        // With no status at all, the word is the only evidence there is.
+        assert_eq!(
+            classify_error(&AppError::Ai("monthly quota reached".to_string())),
+            AiErrorKind::Quota
+        );
+    }
+
+    /// The old rule matched bare `insufficient`, so anything a provider called
+    /// insufficient — permissions, context length — put the key in `quota` and
+    /// took it out of the route for an hour.
+    #[test]
+    fn insufficient_alone_is_not_a_spent_quota() {
+        assert_eq!(
+            classify_error(&provider_error(
+                "status=400 code=insufficient_context_length"
+            )),
+            AiErrorKind::Request
+        );
+        assert_eq!(
+            classify_error(&provider_error("status=403 code=insufficient_permissions")),
+            AiErrorKind::Permission
+        );
+    }
+
+    /// Statuses are read as numbers now, so the ones nobody listed still land
+    /// in the right class: Anthropic's 529 is a provider outage, and a 4xx that
+    /// named neither a key nor an allowance is a bad request — worth stopping
+    /// on rather than replaying under every remaining key.
+    #[test]
+    fn unlisted_statuses_land_with_their_own_class() {
+        assert_eq!(
+            classify_error(&provider_error("status=529 type=overloaded_error")),
+            AiErrorKind::Provider5xx
+        );
+        assert_eq!(
+            classify_error(&provider_error("status=520")),
+            AiErrorKind::Provider5xx
+        );
+        for status in ["status=405", "status=409", "status=415"] {
+            let kind = classify_error(&provider_error(status));
+            assert_eq!(kind, AiErrorKind::Request, "{status}");
+            assert!(!kind.retryable(), "{status}");
+        }
+    }
+
+    /// Locks §8.3 for the quota state too: an hour is Lantern guessing when an
+    /// allowance resets, and a stated time beats a guess.
+    #[test]
+    fn retry_after_overrides_the_default_quota_cooldown() {
+        let now = 1_000;
+        assert_eq!(
+            profile_health_state(Some(AiErrorKind::Quota), Some(90_000), now),
+            Some(("quota", Some(now + 90_000)))
+        );
+    }
+
+    /// A key and a profile reach the same verdict everywhere except one arm:
+    /// "nothing is configured" is a statement about the profile, and a key that
+    /// inherits it would be sidelined for a problem it cannot cause.
+    #[test]
+    fn credential_health_matches_profile_health_apart_from_unavailable() {
+        let now = 1_000;
+        for kind in [
+            AiErrorKind::CredentialInvalid,
+            AiErrorKind::Auth,
+            AiErrorKind::Permission,
+            AiErrorKind::Quota,
+            AiErrorKind::RateLimit,
+            AiErrorKind::Network,
+            AiErrorKind::Provider5xx,
+            AiErrorKind::Protocol,
+            AiErrorKind::Request,
+            AiErrorKind::Cancelled,
+        ] {
+            assert_eq!(
+                credential_health_state(Some(kind), None, now),
+                profile_health_state(Some(kind), None, now),
+                "{}",
+                kind.as_str()
+            );
+        }
+        assert_eq!(
+            profile_health_state(Some(AiErrorKind::NotConfigured), None, now),
+            Some(("unavailable", None))
+        );
+        assert_eq!(
+            credential_health_state(Some(AiErrorKind::NotConfigured), None, now),
+            Some(("active", None))
+        );
     }
 
     #[test]
