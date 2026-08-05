@@ -1,0 +1,105 @@
+name: Notary Probe
+
+# Diagnostic-only: signs a throwaway 20-line app with the real Developer ID
+# certificate and submits it for notarization. Answers one question a stuck
+# release build cannot: does this Apple account get its submissions processed
+# at all, or is every submission stalling?
+
+on:
+  workflow_dispatch:
+    inputs:
+      timeout:
+        description: "Seconds to wait for Apple before giving up."
+        type: string
+        default: "900"
+
+jobs:
+  notary-probe:
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Import Apple Developer Certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          openssl pkcs12 -in certificate.p12 -nodes \
+            -passin env:APPLE_CERTIFICATE_PASSWORD -out certificate.pem
+          openssl pkcs12 -export -legacy -in certificate.pem \
+            -passout env:APPLE_CERTIFICATE_PASSWORD -out certificate-compatible.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import certificate-compatible.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+      - name: Build and sign a throwaway app
+        id: probe
+        run: |
+          set -euo pipefail
+          IDENTITY=$(security find-identity -v -p codesigning build.keychain \
+            | grep "Developer ID Application" | awk -F'"' '{print $2}')
+          echo "signing identity found: ${IDENTITY:0:24}…"
+
+          APP=Probe.app
+          mkdir -p "$APP/Contents/MacOS"
+          printf 'int main(void){return 0;}\n' > probe.c
+          clang -arch arm64 -o "$APP/Contents/MacOS/probe" probe.c
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key><string>probe</string>
+            <key>CFBundleIdentifier</key><string>com.lantern.notaryprobe</string>
+            <key>CFBundleName</key><string>Probe</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>1.0</string>
+            <key>CFBundleVersion</key><string>1</string>
+            <key>LSMinimumSystemVersion</key><string>12.0</string>
+          </dict>
+          </plist>
+          PLIST
+
+          codesign --force --options runtime --timestamp \
+            --sign "$IDENTITY" "$APP/Contents/MacOS/probe"
+          codesign --force --options runtime --timestamp \
+            --sign "$IDENTITY" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          ditto -c -k --keepParent "$APP" Probe.zip
+          ls -l Probe.zip
+
+      - name: Submit to Apple and wait
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          PROBE_TIMEOUT: ${{ inputs.timeout }}
+        run: |
+          set -o pipefail
+          echo "=== submitting probe ==="
+          xcrun notarytool submit Probe.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait --timeout "${PROBE_TIMEOUT}s" 2>&1 | tee submit.log || true
+
+          PROBE_ID=$(grep -Eo '^ *id: [0-9a-f-]{36}' submit.log | head -1 | awk '{print $2}')
+          echo "probe submission id: ${PROBE_ID:-none}"
+          [ -n "$PROBE_ID" ] || exit 1
+
+          echo "=== probe log (reasons, if any) ==="
+          xcrun notarytool log "$PROBE_ID" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" || echo "no log available"
+
+          echo "=== full account history ==="
+          xcrun notarytool history \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" || true
