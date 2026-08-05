@@ -951,8 +951,12 @@ vertical lock 8px, horizontal dominance 1.5×) are the expensive part and are fr
 1. Memory: address whatever [Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) surfaced
 2. Stop background SQLite writes on app suspension (`0xdead10cc` termination risk)
 3. `NSURLIsExcludedFromBackupKey` on caches and logs
-4. Keychain via `keyring` `apple-native`; move the Apple-only Cargo target tables from
-   `cfg(target_os = "macos")` to `cfg(target_vendor = "apple")`
+4. ~~Keychain via `keyring` `apple-native`~~ — **not work, and not this milestone's.** Deleting
+   the v1.4 vault in v2.6.0 took `keyring` out of `Cargo.toml`; `secrets.rs` is plain SQLite on
+   every platform. This line survived the sweep that produced `427be38` and is now retired.
+5. ~~Move the Apple-only Cargo target tables from `cfg(target_os = "macos")` to
+   `cfg(target_vendor = "apple")`~~ — done, ahead of this phase, because P5 item 1 could not
+   compile without it. `objc2`, `objc2-foundation` and `block2` now resolve for iOS.
 
 **Exit criterion:** no crash across a 30-minute reading session with backgrounding, and
 Instruments shows no runaway memory.
@@ -963,19 +967,29 @@ iOS ↔ macOS only ([D-007](#d-007--windows-sync-is-out-of-scope)). Size
 [Q-004](#q-004--macos-relocation-to-the-app-container-largely-answered) before starting —
 it is not in the estimate below.
 
-1. Widen `cfg(target_os = "macos")` → `cfg(target_vendor = "apple")` in `src/icloud.rs`
-   (lines 10, 67, 82, 96) and `src/sync/log.rs` (355, 388); delete the `not(macos)` stubs.
-   No new dependencies — `objc2-foundation` and `block2` are already in the iOS tree via tao/wry
+1. ~~Widen `cfg(target_os = "macos")` → `cfg(target_vendor = "apple")` in `src/icloud.rs` and
+   `src/sync/log.rs`~~ — **done 2026-08-06.** Nine gates in `icloud.rs` and four in
+   `sync/log.rs`, not the six this line predicted; the line numbers it named were stale.
+   **The `not(macos)` stubs were kept, not deleted** — Windows and Linux still need them, and
+   the OCR manager (which calls the eviction pair) does compile on Windows. What changed on
+   iOS is that the pair now has no caller at all, so both carry an `#[allow(dead_code)]` with
+   the reason; without it an iOS clippy job would fail on `-D warnings` the day P6 adds one.
+   The claim that no dependency change was needed was **wrong**: `objc2`/`objc2-foundation`/
+   `block2` being in the iOS tree via tao/wry does not make them nameable here, so the Cargo
+   target table had to be widened too (formerly P4 item 4). Verified: `cargo check` and
+   `cargo clippy` clean on both the host and `aarch64-apple-ios-sim`, 25 `icloud`/`sync::log`
+   tests green.
 2. Target the app's own ubiquity container instead of a picked path; replace the hardcoded
    path check in `src/sync/migration.rs:59-64`
 3. Replace the `notify` watcher with `NSMetadataQuery` — kqueue does not observe
    iCloud-initiated downloads
-4. Replace the macOS `.name.icloud` placeholder probe in `icloud.rs` with
-   `NSURLUbiquitousItemDownloadingStatusKey`. Without this, a book evicted by iCloud is never
-   re-downloaded and simply never opens. **[D-013](#d-013--books-download-on-demand-not-eagerly)
-   promotes this from a correctness fix to the mechanism the phone runs on** — on-demand
-   download *is* the shipping behaviour, so this item also has to report progress to the
-   frontend, not merely trigger a fetch
+4. **Partly already done, and this line used to overstate the work.**
+   `is_awaiting_icloud_download` in `icloud.rs` already reads
+   `NSURLUbiquitousItemDownloadingStatusKey`, and `file_readability` already consults it before
+   attempting a read — precisely so a not-yet-downloaded item does not block. What is missing
+   is the *acting* half: on a placeholder, call `trigger_download_file` and report progress to
+   the frontend rather than surfacing "cannot open". [D-013](#d-013--books-download-on-demand-not-eagerly)
+   makes that the phone's normal path, not an edge case, so it is no longer optional
 5. iCloud Documents entitlement, container ID in the provisioning profile,
    `NSUbiquitousContainers` in `Info.plist`
 
@@ -1015,8 +1029,8 @@ account holder's to file, and this phase cannot close until the account is healt
 | P1 — Capability layer + routing | **Done** | Tapping a book opens it in-window; desktop-only surfaces are gated by [D-005](#d-005--capability-flags-not-platform-checks) flags |
 | P2 — Mobile UI | **Blocked** | Waits on the desktop mastery line — [D-011](#d-011--p2-waits-for-the-desktop-mastery-line-to-finish). Two items added since the 18.5-day estimate: mobile AI settings ([D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)) and a book-downloading state ([D-013](#d-013--books-download-on-demand-not-eagerly)) |
 | P3 — Touch interaction | Not started | Same file collision as P2; follows it |
-| P4 — iOS adaptation | Not started | Rust-side, no frontend overlap — may run before P2 |
-| P5 — iCloud sync | Not started | iOS ↔ macOS only. [Q-004](#q-004--macos-relocation-to-the-app-container-largely-answered) is already sized at ~0.5 day and folded in, so nothing gates the start. Rust-side; may run before P2 |
+| P4 — iOS adaptation | Not started | Rust-side, no frontend overlap — may run before P2. Item 4 shrank to nothing (the `keyring` it budgeted for was deleted in v2.6.0); the Cargo-table half moved out and is done |
+| P5 — iCloud sync | **Item 1 done** | iOS ↔ macOS only. The `cfg` gates in `icloud.rs` and `sync/log.rs` are widened to `target_vendor = "apple"` and both targets compile clean. [Q-004](#q-004--macos-relocation-to-the-app-container-largely-answered) is sized at ~0.5 day and folded in. Rust-side; runs before P2 |
 | P6 — Ship | Not started | TestFlight only ([D-014](#d-014--first-ios-release-is-testflight-not-the-app-store)). Account-level notarization blocker is outside this repo |
 
 ---

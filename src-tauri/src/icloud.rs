@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-#[cfg(target_os = "macos")]
+#[cfg(target_vendor = "apple")]
 use objc2_foundation::{NSFileManager, NSString};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,7 +94,7 @@ fn read_first_byte(path: &Path) -> std::io::Result<()> {
 /// True when the path is an iCloud item whose contents are not on this machine
 /// yet. Answered from the item's resource values, so it never blocks on a
 /// download the way opening the file would.
-#[cfg(target_os = "macos")]
+#[cfg(target_vendor = "apple")]
 fn is_awaiting_icloud_download(path: &Path) -> bool {
     use objc2_foundation::{
         NSURLUbiquitousItemDownloadingStatusKey, NSURLUbiquitousItemDownloadingStatusNotDownloaded,
@@ -122,7 +122,7 @@ fn is_awaiting_icloud_download(path: &Path) -> bool {
     *status == *not_downloaded
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(target_vendor = "apple"))]
 fn is_awaiting_icloud_download(_path: &Path) -> bool {
     false
 }
@@ -143,7 +143,7 @@ pub fn has_icloud_placeholder(path: &Path) -> bool {
 }
 
 /// Trigger iCloud to download a specific file.
-#[cfg(target_os = "macos")]
+#[cfg(target_vendor = "apple")]
 pub fn trigger_download_file(path: &Path) {
     use objc2_foundation::NSURL;
     let fm = NSFileManager::defaultManager();
@@ -152,13 +152,18 @@ pub fn trigger_download_file(path: &Path) {
     let _ = fm.startDownloadingUbiquitousItemAtURL_error(&url);
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(target_vendor = "apple"))]
 pub fn trigger_download_file(_path: &Path) {}
 
 /// Release the local bytes of an iCloud-backed file without deleting the
 /// shared item. Returns `false` when the path is not an evictable ubiquitous
 /// item or the platform does not support iCloud Drive.
-#[cfg(target_os = "macos")]
+// Both halves of the eviction pair are called only from the OCR manager, which
+// does not compile for mobile (D-003), so on iOS they are live code with no
+// caller yet — P5 gives them one. Without this, an iOS clippy job would fail on
+// `-D warnings` the day P6 adds it.
+#[allow(dead_code)]
+#[cfg(target_vendor = "apple")]
 pub fn is_ubiquitous_file(path: &Path) -> bool {
     use objc2_foundation::NSURL;
     let fm = NSFileManager::defaultManager();
@@ -167,12 +172,13 @@ pub fn is_ubiquitous_file(path: &Path) -> bool {
     fm.isUbiquitousItemAtURL(&url)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(target_vendor = "apple"))]
 pub fn is_ubiquitous_file(_path: &Path) -> bool {
     false
 }
 
-#[cfg(target_os = "macos")]
+#[allow(dead_code)] // see is_ubiquitous_file
+#[cfg(target_vendor = "apple")]
 pub fn evict_downloaded_file(path: &Path) -> bool {
     use objc2_foundation::NSURL;
     let fm = NSFileManager::defaultManager();
@@ -181,7 +187,7 @@ pub fn evict_downloaded_file(path: &Path) -> bool {
     fm.evictUbiquitousItemAtURL_error(&url).is_ok()
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(target_vendor = "apple"))]
 pub fn evict_downloaded_file(_path: &Path) -> bool {
     false
 }

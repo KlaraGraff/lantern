@@ -94,11 +94,12 @@ libc = "0.2"
 zstd = "0.13"
 tar = "0.4"
 
-# Still macOS-only: these back the iCloud Drive integration in icloud.rs, whose
-# `cfg(target_os = "macos")` gates are widened in P5 (see
-# docs/roadmap/mobile-ios.md). Declaring them for iOS before that lands would
-# only lengthen the build.
-[target.'cfg(target_os = "macos")'.dependencies]
+# These back the iCloud Drive integration in icloud.rs and the coordinated
+# append in sync/log.rs. Widened from `target_os = "macos"` to the whole Apple
+# vendor in P5 (docs/roadmap/mobile-ios.md): iOS needs the same Foundation
+# calls, and the gates in those two files moved in step with this table. Windows
+# and Linux still get the stub halves.
+[target.'cfg(target_vendor = "apple")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSFileManager", "NSFileCoordinator", "NSString", "NSURL", "NSError", "block2"] }
 block2 = "0.6"

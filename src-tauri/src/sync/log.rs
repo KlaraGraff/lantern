@@ -353,13 +353,13 @@ pub fn read_log_file_after(path: &Path, last_id: Option<&str>) -> AppResult<Vec<
 }
 
 fn append_bytes(path: &Path, bytes: &[u8], use_coordinator: bool) -> AppResult<()> {
-    #[cfg(target_os = "macos")]
+    #[cfg(target_vendor = "apple")]
     {
         if use_coordinator {
             return coordinated_append(path, bytes).map_err(AppError::Io);
         }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(target_vendor = "apple"))]
     let _ = use_coordinator; // silence unused on non-macOS
     naive_append(path, bytes).map_err(AppError::Io)
 }
@@ -372,7 +372,7 @@ fn naive_append(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 // -------------------------------------------------------------------------
-// macOS: NSFileCoordinator-wrapped append.
+// Apple platforms: NSFileCoordinator-wrapped append.
 //
 // Apple's iCloud daemon (`bird`) is a silent second writer on every file in
 // the ubiquity container — it uploads, re-downloads, evicts, and rematerializes
@@ -385,7 +385,7 @@ fn naive_append(path: &Path, bytes: &[u8]) -> io::Result<()> {
 // Only meaningful on paths inside a ubiquity container. Callers gate via
 // `use_coordinator`.
 // -------------------------------------------------------------------------
-#[cfg(target_os = "macos")]
+#[cfg(target_vendor = "apple")]
 fn coordinated_append(path: &Path, bytes: &[u8]) -> io::Result<()> {
     use block2::StackBlock;
     use objc2_foundation::{NSFileCoordinator, NSFileCoordinatorWritingOptions, NSString, NSURL};
@@ -710,7 +710,7 @@ mod tests {
         }
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(target_vendor = "apple")]
     #[test]
     #[ignore = "manual smoke test against a user-selected iCloud Drive folder"]
     fn coordinated_append_smoke_on_selected_icloud_path() {
