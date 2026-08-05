@@ -1,40 +1,31 @@
+import { findWordBoundaryMatch, wordBoundaryRegex } from "./word-boundary.ts";
+
+export interface ContextualReviewSegment {
+  text: string;
+  hidden: boolean;
+}
+
 export interface ContextualReviewCloze {
+  segments: ContextualReviewSegment[];
+}
+
+export interface ContextualReviewAnswer {
   before: string;
+  answer: string;
   after: string;
 }
 
-export interface ContextualReviewAnswer extends ContextualReviewCloze {
-  answer: string;
-}
-
-const WORD_CHARACTER = "\\p{L}\\p{N}\\p{M}_";
-
-function escapeRegex(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 /**
- * Returns a display-safe cloze model, or null when the saved context is not
- * reliable enough to quiz from. The model deliberately contains no word-length
- * information: the UI renders a fixed-width blank between these two strings.
+ * Returns a display-safe answer model for the revealed state, or null when
+ * the saved context is not reliable enough to quiz from.
  */
 export function contextualReviewAnswer(sentence: string | null | undefined, word: string | null | undefined): ContextualReviewAnswer | null {
   const source = sentence?.trim();
   const target = word?.trim();
   if (!source || !target) return null;
 
-  const escaped = escapeRegex(target);
-  // Han text is ordinarily written without separators, so applying alphabetic
-  // boundaries would reject every word embedded in an otherwise valid sentence.
-  const useAlphabeticBoundaries = !/\p{Script=Han}/u.test(target);
-  const firstIsWord = new RegExp(`^[${WORD_CHARACTER}]`, "u").test(target);
-  const lastIsWord = new RegExp(`[${WORD_CHARACTER}]$`, "u").test(target);
-  const pattern = new RegExp(
-    `${useAlphabeticBoundaries && firstIsWord ? `(?<![${WORD_CHARACTER}])` : ""}${escaped}${useAlphabeticBoundaries && lastIsWord ? `(?![${WORD_CHARACTER}])` : ""}`,
-    "iu",
-  );
-  const match = pattern.exec(source);
-  if (!match || match.index === undefined) return null;
+  const match = findWordBoundaryMatch(source, target);
+  if (!match) return null;
 
   return {
     before: source.slice(0, match.index),
@@ -43,9 +34,34 @@ export function contextualReviewAnswer(sentence: string | null | undefined, word
   };
 }
 
+/**
+ * Returns a display-safe cloze model, or null when the saved context is not
+ * reliable enough to quiz from. Every boundary-respecting occurrence of the
+ * target is hidden (not just the first) so the answer cannot leak through a
+ * repeated word elsewhere in the sentence. The model deliberately contains no
+ * per-occurrence length information: the UI renders a fixed-width blank for
+ * every hidden segment.
+ */
 export function contextualReviewCloze(sentence: string | null | undefined, word: string | null | undefined): ContextualReviewCloze | null {
-  const match = contextualReviewAnswer(sentence, word);
-  return match ? { before: match.before, after: match.after } : null;
+  const source = sentence?.trim();
+  const target = word?.trim();
+  if (!source || !target) return null;
+
+  const regex = wordBoundaryRegex(target, "giu");
+  const segments: ContextualReviewSegment[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let found = false;
+  while ((match = regex.exec(source))) {
+    found = true;
+    if (match.index > lastIndex) segments.push({ text: source.slice(lastIndex, match.index), hidden: false });
+    segments.push({ text: match[0], hidden: true });
+    lastIndex = match.index + match[0].length;
+    if (match[0].length === 0) regex.lastIndex += 1;
+  }
+  if (!found) return null;
+  if (lastIndex < source.length) segments.push({ text: source.slice(lastIndex), hidden: false });
+  return { segments };
 }
 
 export function contextualSentenceMeaning(value: string | null | undefined) {

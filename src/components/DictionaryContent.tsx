@@ -1130,7 +1130,9 @@ export default function DictionaryContent() {
                     {reviewCloze ? <>
                       <p className="mt-4 text-[12px] text-text-muted">{t("vocab.contextReviewPrompt")}</p>
                       <p className="mt-3 font-serif text-[20px] leading-9 text-text-primary">
-                        {reviewCloze.before}<span aria-label={t("vocab.hiddenWord")} className="mx-1 inline-block w-28 border-b-2 border-accent align-baseline" />{reviewCloze.after}
+                        {reviewCloze.segments.map((segment, index) => segment.hidden
+                          ? <span key={index} aria-label={t("vocab.hiddenWord")} className="mx-1 inline-block w-28 border-b-2 border-accent align-baseline" />
+                          : <span key={index}>{segment.text}</span>)}
                       </p>
                       <div className="mt-5 flex justify-center gap-2">
                         <PronounceButton text={reviewing.word} size="md" />
