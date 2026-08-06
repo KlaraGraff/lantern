@@ -1,5 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict/>
+<dict>
+	<!-- The only iCloud location a sandboxed iOS app can reach is a container
+	     it owns, which is why sync on the phone is this container or nothing.
+	     `URLForUbiquityContainerIdentifier` returns nil without these three
+	     keys, and the container identifier must also be registered to the team
+	     and present in the provisioning profile — the portal half of P5 item 5. -->
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.com.klaragraff.lantern</string>
+	</array>
+	<key>com.apple.developer.ubiquity-container-identifiers</key>
+	<array>
+		<string>iCloud.com.klaragraff.lantern</string>
+	</array>
+	<!-- Documents, not CloudKit. Lantern syncs a directory of files: an
+	     append-only JSONL log plus book and cover blobs. Nothing here wants a
+	     record database. -->
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudDocuments</string>
+	</array>
+</dict>
 </plist>

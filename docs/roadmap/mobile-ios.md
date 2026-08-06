@@ -1209,7 +1209,25 @@ is closed and added nothing to the estimate below.
    ([D-016](#d-016--on-cellular-a-book-download-asks-once-and-remembers)), which adds a
    remembered setting and therefore a row in mobile settings
 5. iCloud Documents entitlement, container ID in the provisioning profile,
-   `NSUbiquitousContainers` in `Info.plist`
+   `NSUbiquitousContainers` in `Info.plist` — **in-repo half done 2026-08-06, and it moved to
+   the front of this phase** because nothing else here works until the container exists.
+   `lantern_iOS.entitlements` declares `iCloud.com.klaragraff.lantern` under
+   `icloud-container-identifiers`, `ubiquity-container-identifiers` and `icloud-services`
+   (`CloudDocuments` — Lantern syncs a directory of files, not a record database);
+   `Info.plist` declares `NSUbiquitousContainers` with `IsDocumentScopePublic`, which is what
+   stops the container from being real but invisible in Files and Finder. The container is
+   `iCloud.com.klaragraff.lantern` with no `-dev` suffix, unlike the app-data and log paths:
+   one container, shared by debug and release, because the phone's bundle identifier carries
+   no suffix either.
+
+   **Two things are still owed, and neither is in the repo.** First, the container identifier
+   has to be registered to the team and appear in the provisioning profile — a developer-portal
+   action on the account holder's Apple account, not something this repo can do. Second, none
+   of it is verifiable on the Simulator: `ENTITLEMENTS_ALLOWED=NO` for simulator builds, so
+   Xcode strips every entitlement and `codesign -d --entitlements` on the built app prints an
+   empty dictionary. What is verified is that the plist key reaches the bundle and the app
+   still boots. That `URLForUbiquityContainerIdentifier` returns a real path can only be seen
+   on hardware, after the portal step
 
 **Exit criterion:** a book imported on the Mac appears on the iPhone; a highlight made on the
 iPhone appears on the Mac; a book evicted on the Mac downloads on demand from the iPhone;
