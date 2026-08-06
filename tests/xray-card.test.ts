@@ -8,7 +8,9 @@ import {
   didXrayNavigationSucceed,
   isEmptyXrayResult,
   setBoundedCacheEntry,
+  shouldContinueXrayIndexBuildingPoll,
   shouldOfferXrayUpdate,
+  XRAY_INDEX_BUILDING_POLL_MAX_ATTEMPTS,
   xrayCacheKey,
 } from "../src/components/xray-card.ts";
 
@@ -80,6 +82,22 @@ test("index lifecycle errors from ai_xray each get their own presentation, not t
 test("an unrecognized failure falls back to the generic presentation", () => {
   assert.equal(classifyXrayLoadError("XRAY_PROTOCOL_INVALID").kind, "generic");
   assert.equal(classifyXrayLoadError("BOOK_NOT_FOUND").kind, "generic");
+});
+
+test("the index-building auto-retry loop keeps polling under the attempt cap", () => {
+  assert.equal(shouldContinueXrayIndexBuildingPoll("indexBuilding", 0), true);
+  assert.equal(shouldContinueXrayIndexBuildingPoll("indexBuilding", XRAY_INDEX_BUILDING_POLL_MAX_ATTEMPTS - 1), true);
+});
+
+test("the index-building auto-retry loop stops once the attempt cap is reached", () => {
+  assert.equal(shouldContinueXrayIndexBuildingPoll("indexBuilding", XRAY_INDEX_BUILDING_POLL_MAX_ATTEMPTS), false);
+  assert.equal(shouldContinueXrayIndexBuildingPoll("indexBuilding", XRAY_INDEX_BUILDING_POLL_MAX_ATTEMPTS + 5), false);
+});
+
+test("the index-building auto-retry loop stops the moment the classification changes, cap or not", () => {
+  assert.equal(shouldContinueXrayIndexBuildingPoll("generic", 0), false);
+  assert.equal(shouldContinueXrayIndexBuildingPoll("ai", 0), false);
+  assert.equal(shouldContinueXrayIndexBuildingPoll(null, 0), false);
 });
 
 test("re-inserting an existing key refreshes its recency instead of duplicating it", () => {

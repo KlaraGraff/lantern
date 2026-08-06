@@ -88,6 +88,31 @@ export function classifyXrayLoadError(raw: string): XrayLoadErrorPresentation {
   return { kind: "generic", aiErrorCode: null };
 }
 
+/**
+ * Auto-retry cadence for the "index still building" state: poll every 5s,
+ * capped at 12 attempts (60s total). Long enough to ride out most mid-size
+ * book indexing runs without the user having to notice and click retry
+ * themselves; short enough that a genuinely stalled index falls back to the
+ * existing manual retry affordance instead of polling forever.
+ */
+export const XRAY_INDEX_BUILDING_POLL_INTERVAL_MS = 5000;
+export const XRAY_INDEX_BUILDING_POLL_MAX_ATTEMPTS = 12;
+
+/**
+ * Whether the "index still building" auto-retry loop should schedule another
+ * attempt. Polling only makes sense while the classification stays
+ * `indexBuilding` — a different kind (including no error at all, meaning the
+ * load just succeeded) means the situation changed and the loop must stop
+ * rather than plowing ahead with a stale reason. The attempt cap exists so a
+ * genuinely stalled index doesn't poll forever.
+ */
+export function shouldContinueXrayIndexBuildingPoll(
+  kind: XrayLoadErrorKind | null,
+  attemptsSoFar: number,
+): boolean {
+  return kind === "indexBuilding" && attemptsSoFar < XRAY_INDEX_BUILDING_POLL_MAX_ATTEMPTS;
+}
+
 export function isEmptyXrayResult(
   result: Pick<XrayCardResult, "kind" | "summary" | "facts" | "relations" | "relationPaths">,
 ): boolean {

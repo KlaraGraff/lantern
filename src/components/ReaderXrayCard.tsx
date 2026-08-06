@@ -17,6 +17,7 @@ import { useTranslation } from "react-i18next";
 import type { CitedSource } from "../hooks/useAiChat";
 import { aiErrorMessageKey, isAiRetryableError } from "../utils/aiError";
 import { createUuid } from "../utils/randomUuid";
+import { isAiConfigured, type AiCredentialLike, type AiProfileLike } from "./onboarding/onboarding-state";
 import type { ReaderInteraction } from "./reader-interaction";
 import {
   canApplyXrayLoad,
@@ -25,10 +26,18 @@ import {
   didXrayNavigationSucceed,
   isEmptyXrayResult,
   setBoundedCacheEntry,
+  shouldContinueXrayIndexBuildingPoll,
   shouldOfferXrayUpdate,
+  XRAY_INDEX_BUILDING_POLL_INTERVAL_MS,
   xrayCacheKey,
   type XrayCardResult,
 } from "./xray-card";
+
+/** Sentinel fed through the same `classifyXrayLoadError` path a real backend
+ * failure takes, so the proactive "no AI provider configured" gate below
+ * renders through the exact same `kind === "ai"` branch (copy, settings
+ * jump, everything) as an actual `AI_NOT_CONFIGURED` error would. */
+const AI_NOT_CONFIGURED_SENTINEL = "AI_NOT_CONFIGURED";
 
 const SAFE_CACHE_LIMIT = 50;
 
@@ -63,6 +72,11 @@ export default function ReaderXrayCard({
   const [result, setResult] = useState<XrayCardResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  // Bumped on every error-state write, even one that repeats the same string
+  // (`XRAY_INDEX_BUILDING` carries no variable content). The index-building
+  // poll effect below depends on this instead of `errorDetail` alone so that
+  // an unchanged classification still schedules the next attempt.
+  const [errorVersion, setErrorVersion] = useState(0);
   const [navigationError, setNavigationError] = useState(false);
   const [navigatingKey, setNavigatingKey] = useState<string | null>(null);
   const [fromCache, setFromCache] = useState(false);
@@ -70,6 +84,7 @@ export default function ReaderXrayCard({
   const requestRef = useRef<string | null>(null);
   const loadGenerationRef = useRef(0);
   const loadedIdentityRef = useRef<string | null>(null);
+  const pollAttemptRef = useRef(0);
   const cardRef = useRef<HTMLElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(
     typeof document !== "undefined" && document.activeElement instanceof HTMLElement
@@ -84,6 +99,32 @@ export default function ReaderXrayCard({
     requestRef.current = null;
     if (requestId) {
       void invoke("ai_cancel", { requestId }).catch(() => {});
+    }
+  }, []);
+
+  const applyErrorDetail = useCallback((value: string | null) => {
+    setErrorDetail(value);
+    setErrorVersion((version) => version + 1);
+  }, []);
+
+  /**
+   * "Configured" reuses the same definition the library hint banner and
+   * onboarding use (see `isAiConfigured` in onboarding-state.ts): at least
+   * one enabled, non-invalid credential attached to an enabled profile,
+   * fetched from the same `ai_list_profiles` / `ai_list_credentials`
+   * commands rather than a new backend query. Returns null (not false) when
+   * the check itself fails, so callers fail open into the normal request
+   * flow instead of blocking on a guess.
+   */
+  const checkAiConfigured = useCallback(async (): Promise<boolean | null> => {
+    try {
+      const profiles = await invoke<AiProfileLike[]>("ai_list_profiles");
+      const credentialLists = await Promise.all(
+        profiles.map((profile) => invoke<AiCredentialLike[]>("ai_list_credentials", { profileId: profile.id })),
+      );
+      return isAiConfigured(profiles, credentialLists.flat());
+    } catch {
+      return null;
     }
   }, []);
 
@@ -104,16 +145,27 @@ export default function ReaderXrayCard({
       setBoundedCacheEntry(safeCache, key, cached, SAFE_CACHE_LIMIT);
       setResult(cached.result);
       setFromCache(true);
-      setErrorDetail(null);
+      applyErrorDetail(null);
       setLoading(false);
       setView("summary");
       return;
     }
+    setLoading(true);
+    applyErrorDetail(null);
+    setFromCache(false);
+    // Confirm an AI provider is actually configured before firing a request
+    // that is guaranteed to fail otherwise. Routed through the same
+    // `classifyXrayLoadError`/`kind === "ai"` rendering path a real backend
+    // `AI_NOT_CONFIGURED` takes, so there is exactly one not-configured UI.
+    const configured = await checkAiConfigured();
+    if (!canApplyXrayLoad(loadGenerationRef.current, generation)) return;
+    if (configured === false) {
+      applyErrorDetail(AI_NOT_CONFIGURED_SENTINEL);
+      setLoading(false);
+      return;
+    }
     const requestId = createUuid();
     requestRef.current = requestId;
-    setLoading(true);
-    setErrorDetail(null);
-    setFromCache(false);
     try {
       const response = await invoke<XrayCardResult>("ai_xray", {
         bookId,
@@ -134,14 +186,23 @@ export default function ReaderXrayCard({
       // still building" from a genuine request failure — keep that detail
       // instead of collapsing everything into one "try again later" message,
       // since only some of these are fixed by waiting and retrying.
-      if (canApplyXrayLoad(loadGenerationRef.current, generation)) setErrorDetail(String(loadError));
+      if (canApplyXrayLoad(loadGenerationRef.current, generation)) applyErrorDetail(String(loadError));
     } finally {
       if (canApplyXrayLoad(loadGenerationRef.current, generation)) {
         requestRef.current = null;
         setLoading(false);
       }
     }
-  }, [bookId, currentChapter, getCurrentLocation, interaction, invalidateActiveRequest, progress]);
+  }, [applyErrorDetail, bookId, checkAiConfigured, currentChapter, getCurrentLocation, interaction, invalidateActiveRequest, progress]);
+
+  // Stable reference to the latest `load` for effects (the index-building
+  // poll and the settings-focus re-check below) that must not restart their
+  // timer/listener merely because `load` was recreated — e.g. `progress`
+  // ticking during normal reading would otherwise reset an in-flight poll.
+  const loadRef = useRef(load);
+  useEffect(() => {
+    loadRef.current = load;
+  }, [load]);
 
   useEffect(() => {
     const identity = interaction
@@ -158,6 +219,52 @@ export default function ReaderXrayCard({
       setLoading(false);
     }
   }, [bookId, interaction, invalidateActiveRequest, load]);
+
+  // Auto-retry while the entity index is still building: poll quietly and
+  // replace the "index building" hint the moment results come back, with no
+  // action from the user. Stops — by simply not scheduling another
+  // attempt — the instant the classification changes to anything else
+  // (including "no error", i.e. success), when `interaction` clears, once
+  // the attempt cap is reached, or when the card unmounts (effect cleanup).
+  // No polling for any other error kind.
+  useEffect(() => {
+    if (!interaction) {
+      pollAttemptRef.current = 0;
+      return;
+    }
+    const kind = errorDetail !== null ? classifyXrayLoadError(errorDetail).kind : null;
+    if (kind !== "indexBuilding") {
+      pollAttemptRef.current = 0;
+      return;
+    }
+    if (!shouldContinueXrayIndexBuildingPoll(kind, pollAttemptRef.current)) return;
+    const timer = window.setTimeout(() => {
+      pollAttemptRef.current += 1;
+      void loadRef.current(false, true);
+    }, XRAY_INDEX_BUILDING_POLL_INTERVAL_MS);
+    return () => window.clearTimeout(timer);
+    // `errorVersion` (not just `errorDetail`) is a dependency on purpose: the
+    // backend's XRAY_INDEX_BUILDING message is a fixed string with no
+    // variable content, so a poll attempt that lands on "still building"
+    // again would otherwise never re-trigger this effect to schedule the
+    // next attempt.
+  }, [errorDetail, errorVersion, interaction]);
+
+  // Re-resolve "AI not configured" on window focus and on every retry (the
+  // latter falls out of the check living inside `load` itself, run above) so
+  // coming back from the settings jump below clears a stale not-configured
+  // screen without the user having to do anything else.
+  useEffect(() => {
+    const presentation = errorDetail !== null ? classifyXrayLoadError(errorDetail) : null;
+    if (presentation?.aiErrorCode !== "AI_NOT_CONFIGURED") return;
+    const onFocus = () => {
+      void (async () => {
+        if (await checkAiConfigured()) void loadRef.current(false, true);
+      })();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [checkAiConfigured, errorDetail]);
 
   useEffect(() => {
     const restoreTarget = restoreFocusRef.current;
