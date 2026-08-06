@@ -936,7 +936,7 @@ pub fn run() {
             commands::mcp::mcp_reject_action,
             // Sync
             commands::sync::sync_status,
-            commands::sync::sync_set_shared_dir,
+            commands::sync::sync_reveal_folder,
             commands::sync::sync_enable,
             commands::sync::sync_disable,
             commands::sync::sync_now,

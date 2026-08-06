@@ -795,6 +795,27 @@ has never been distributed. Nothing needs detecting, chaining, or announcing. Th
 deleted rather than folded in; what remains in P5 item 2 is resolving the root from the
 container and removing the picker from settings.
 
+The picker half landed the same day. The container half turned out to have a question of its
+own — [Q-005](#q-005--can-the-macos-build-reach-the-apps-ubiquity-container).
+
+### Q-005 — Can the macOS build reach the app's ubiquity container?
+
+iOS syncs to `iCloud.com.klaragraff.lantern`. For the two to meet, the Mac has to write to the
+same place — `~/Library/Mobile Documents/iCloud~com~klaragraff~lantern/Documents`. Two ways to
+get there, and both have a problem:
+
+- **By API** (`URLForUbiquityContainerIdentifier`) needs the iCloud entitlement, which on a
+  Developer ID build needs an embedded provisioning profile. That changes the signing pipeline
+  — the one that has just been through notarization.
+- **By constructed path** avoids all of that, but a hand-made directory under
+  `Mobile Documents` may simply not be picked up: those directories are provisioned by iCloud
+  for entitled apps, and an unentitled `mkdir` may produce an inert local folder that looks
+  right and never syncs.
+
+Unanswered as of 2026-08-06. **P5 item 2's macOS half is blocked on it**, and the exit
+criterion for the whole phase is blocked on that. Nothing else in P5 is: items 3, 4 and 5 are
+about the phone and can proceed.
+
 ### Q-002 — Does the reader hold acceptable memory on a real device?
 
 Whole books load as a single in-memory Blob, and PDF pages render at
@@ -1081,7 +1102,7 @@ import* were confirmed by reading the gate rather than by tapping.
   on Reading Assistance instead of Services → OCR. Left alone because P1 must not change
   desktop behaviour.
 - **Backend commands with no `cfg` gate.** `reveal_logs`, the four `commands::mcp::*`,
-  `sync_set_shared_dir` and `import_custom_fonts` are registered unconditionally, unlike the
+  `sync_reveal_folder` and `import_custom_fonts` are registered unconditionally, unlike the
   OCR pipeline. Nothing panics — they return typed `AppResult` errors — so this is a
   dead-button risk that the frontend flags now cover, not a crash risk. Worth closing when
   something else takes that file apart.
@@ -1189,13 +1210,25 @@ is closed and added nothing to the estimate below.
    target table had to be widened too (formerly P4 item 4). Verified: `cargo check` and
    `cargo clippy` clean on both the host and `aarch64-apple-ios-sim`, 25 `icloud`/`sync::log`
    tests green.
-2. Target the app's own ubiquity container instead of a picked path; replace the hardcoded
-   path check in `src/sync/migration.rs:59-64`. Per
+2. Target the app's own ubiquity container instead of a picked path. Per
    [D-015](#d-015--the-sync-directory-is-the-apps-ubiquity-container-and-picking-one-goes-away)
-   this carries **no migration** — and it takes the folder picker out of Library Sync settings
-   with it, replacing "Change folder" with an "Open location" reveal in the shape
-   `reveal_logs` already uses. Several strings in that panel describe choosing a folder and
-   have to go with it
+   this carries **no migration**.
+
+   **The picker is gone, 2026-08-06.** `sync_set_shared_dir` was replaced by
+   `sync_reveal_folder`, which opens the recorded folder in the shape `reveal_logs` already
+   uses; the Library Sync row now reports the path and offers "Open location" instead of
+   "Change folder", gated on `hasFileReveal` so the phone gets the path without a dead button.
+   `hasFolderSync` became true for iOS. Removing the picker made `sync_enable` simpler rather
+   than more complex: the branch that protected a hand-picked folder from being silently
+   recreated had nothing left to protect, so `is_lantern_default_dir` and the
+   `SYNC_FOLDER_NOT_IN_ICLOUD_DRIVE` error went with it — a recorded folder that no longer
+   holds up is now just recreated. Fifteen strings in that panel described choosing a folder,
+   or said "this Mac" where the phone will read the same sentence; all fifteen were rewritten
+   in both locales.
+
+   **What is still open is the macOS half**, and it is the risky half: the desktop root is
+   still `~/Library/Mobile Documents/com~apple~CloudDocs/lantern`, which the phone cannot
+   reach. Moving it to the container is [Q-005](#q-005--can-the-macos-build-reach-the-apps-ubiquity-container)
 3. Replace the `notify` watcher with `NSMetadataQuery` — kqueue does not observe
    iCloud-initiated downloads
 4. **Partly already done, and this line used to overstate the work.**

@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
 import { FolderOpen, Loader2, Monitor, Smartphone, Laptop, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Button from "../ui/Button";
 import Toggle from "../ui/Toggle";
+import { platform } from "../../services/platform";
 import type { SettingsProps } from "./types";
 
 interface PeerInfo {
@@ -79,9 +79,7 @@ function syncErrorMessage(error: unknown, t: (key: string) => string): string {
     SYNC_FOLDER_NOT_CONFIGURED: true,
     SYNC_FOLDER_NOT_FOUND: true,
     ICLOUD_DRIVE_UNAVAILABLE: true,
-    SYNC_FOLDER_NOT_IN_ICLOUD_DRIVE: true,
     SYNC_FOLDER_NOT_WRITABLE: true,
-    SYNC_FOLDER_CHANGE_REQUIRES_DISABLE: true,
   }).find((candidate) => message.includes(candidate));
   return code ? t(`settings.librarySync.error.${code}`) : t("settings.librarySync.error.unknown");
 }
@@ -166,24 +164,12 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
     setConfirm(status.sync_enabled ? "disable" : "enable");
   };
 
-  const chooseSharedDirectory = async () => {
-    setBusy(true);
+  const revealSharedDirectory = async () => {
     setError(null);
     try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        recursive: true,
-        fileAccessMode: "scoped",
-      });
-      if (typeof selected === "string") {
-        await invoke("sync_set_shared_dir", { path: selected });
-        await refresh();
-      }
+      await invoke("sync_reveal_folder");
     } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -303,25 +289,31 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
   return (
     <>
       <div>
+        {/* The folder is Lantern's own and cannot be moved, so this row
+            reports rather than offers. The button is the whole reason the
+            path is still worth showing: it is the answer to "where are my
+            books", which is what the folder picker used to answer by
+            accident. Hidden where there is no file manager to open it in. */}
         <div className="flex items-center justify-between min-h-[73px] gap-4">
           <div className="min-w-0">
             <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">
               {t("settings.librarySync.folder")}
             </p>
             <p className="text-[12px] text-text-muted mt-0.5 truncate" title={status?.shared_dir ?? undefined}>
-              {status?.shared_dir ?? t("settings.librarySync.folderNotSelected")}
+              {status?.shared_dir ?? t("settings.librarySync.folderPending")}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={chooseSharedDirectory}
-            disabled={busy || syncOn}
-            title={syncOn ? t("settings.librarySync.changeFolderDisabled") : undefined}
-            className="shrink-0 flex items-center gap-1.5 text-[13px] font-medium text-accent-text hover:bg-accent-bg rounded-md px-2.5 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-          >
-            <FolderOpen size={14} />
-            {status?.shared_dir ? t("settings.librarySync.changeFolder") : t("settings.librarySync.chooseFolder")}
-          </button>
+          {platform.hasFileReveal && (
+            <button
+              type="button"
+              onClick={revealSharedDirectory}
+              disabled={!status?.shared_dir}
+              className="shrink-0 flex items-center gap-1.5 text-[13px] font-medium text-accent-text hover:bg-accent-bg rounded-md px-2.5 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <FolderOpen size={14} />
+              {t("settings.librarySync.openLocation")}
+            </button>
+          )}
         </div>
         <div className="h-px bg-border-light" />
         {/* Sync toggle */}

@@ -72,7 +72,11 @@ export interface PlatformCapabilities {
    * installed — the backend probes for that separately at runtime.
    */
   readonly hasFormatConvert: boolean;
-  /** A sync folder can be picked and watched. See D-006, D-007. */
+  /**
+   * The library can sync through an iCloud folder. Nothing is picked — Lantern
+   * owns the folder ([D-015](../../docs/roadmap/mobile-ios.md)); the capability
+   * is whether this platform can reach it at all. See D-006, D-007.
+   */
   readonly hasFolderSync: boolean;
   /**
    * The app may update itself. False on Apple's mobile platforms, which forbid
@@ -146,7 +150,9 @@ const BY_PLATFORM: Record<PlatformId, Capability> = {
   // Not a shipping target — `bundle.targets` is dmg/app/nsis. Reachable only
   // from a development run, and treated as a desktop for that purpose.
   linux: DESKTOP,
-  ios: MOBILE,
+  // The app's own ubiquity container is reachable from the sandbox, and it is
+  // the other half of the pair macOS syncs with (D-006, D-007).
+  ios: { ...MOBILE, hasFolderSync: true },
   android: MOBILE,
   unknown: ABSENT,
 };

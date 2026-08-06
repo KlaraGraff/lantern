@@ -223,36 +223,28 @@ pub async fn sync_status(
     .map_err(|e| AppError::Other(format!("sync_status worker failed: {e}")))?
 }
 
+/// Show the sync folder in the file manager.
+///
+/// This is what replaced choosing the folder. Sync lives in a location
+/// Lantern picks and the user cannot move
+/// ([D-015](../../../docs/roadmap/mobile-ios.md)), which removes the reason a
+/// picker existed but not the question it happened to answer — "where are my
+/// books?". A button that opens the folder answers that directly, and unlike a
+/// picker it cannot leave sync pointing somewhere the phone can never reach.
+///
+/// Reads the recorded path rather than recomputing the root, so what opens is
+/// the directory sync is actually using.
 #[tauri::command]
-pub fn sync_set_shared_dir(
-    path: String,
-    app: AppHandle,
-    local: State<'_, LocalDir>,
-    sync_state: State<'_, SyncState>,
-) -> AppResult<()> {
-    if sync_state.engine_snapshot()?.is_some() || sync::migration::is_sync_enabled(&local.0) {
-        return Err(AppError::Other(
-            "SYNC_FOLDER_CHANGE_REQUIRES_DISABLE".to_string(),
-        ));
-    }
-    let shared_dir = PathBuf::from(path);
-    if !shared_dir.is_dir() {
+pub fn sync_reveal_folder(app: AppHandle, local: State<'_, LocalDir>) -> AppResult<()> {
+    let dir = sync::migration::recorded_data_dir(&local.0)
+        .ok_or_else(|| AppError::Other("SYNC_FOLDER_NOT_CONFIGURED".to_string()))?;
+    if !dir.is_dir() {
         return Err(AppError::Other("SYNC_FOLDER_NOT_FOUND".to_string()));
     }
-    if !sync::migration::is_icloud_drive_dir(&shared_dir) {
-        return Err(AppError::Other(
-            "SYNC_FOLDER_NOT_IN_ICLOUD_DRIVE".to_string(),
-        ));
-    }
-    if !sync::migration::is_writable_dir(&shared_dir) {
-        return Err(AppError::Other("SYNC_FOLDER_NOT_WRITABLE".to_string()));
-    }
-    app.asset_protocol_scope()
-        .allow_directory(&shared_dir, true)
-        .map_err(|error| AppError::Other(format!("SYNC_FOLDER_ASSET_ACCESS_FAILED: {error}")))?;
-    sync::migration::set_shared_dir(&local.0, &shared_dir)?;
-    app.emit("sync-status-changed", ())
-        .map_err(|error| AppError::Other(error.to_string()))?;
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_path(dir.to_string_lossy(), None::<&str>)
+        .map_err(|e| AppError::Other(format!("open sync dir: {e}")))?;
     Ok(())
 }
 
@@ -278,28 +270,17 @@ pub fn sync_enable(
     // step below this line fails, the durable state is still "sync
     // off" and the user can retry with a clean slate.
 
+    // There is exactly one folder sync can use and Lantern is the one that
+    // created it ([D-015](../../../docs/roadmap/mobile-ios.md)), so anything
+    // recorded that no longer holds up is stale rather than a decision worth
+    // protecting: recreate the folder instead of asking the user to go find it.
+    // `create_default_icloud_dir` is idempotent, and reports the failures that
+    // are actually the user's to fix — iCloud Drive off, or the folder not
+    // writable.
     let (icloud_dir, record_default_dir) = match sync::migration::recorded_data_dir(&local.0) {
-        Some(dir) if dir.is_dir() => (dir, false),
-        // A folder the user picked by hand is a decision. If it has gone
-        // missing, say so and let them resolve it — silently substituting the
-        // default would overwrite that choice, republish the library into a
-        // new folder, and strand any other device on the old one.
-        Some(dir) if !sync::migration::is_lantern_default_dir(&dir) => {
-            return Err(AppError::Other("SYNC_FOLDER_NOT_FOUND".to_string()));
-        }
-        // Nothing recorded, or a folder Lantern named for itself that has
-        // since been deleted. Neither should force the user through Finder
-        // just to start or resume syncing, so create the default.
-        Some(_) | None => (sync::migration::create_default_icloud_dir()?, true),
+        Some(dir) if sync::migration::is_usable_icloud_dir(&dir) => (dir, false),
+        _ => (sync::migration::create_default_icloud_dir()?, true),
     };
-    if !sync::migration::is_icloud_drive_dir(&icloud_dir) {
-        return Err(AppError::Other(
-            "SYNC_FOLDER_NOT_IN_ICLOUD_DRIVE".to_string(),
-        ));
-    }
-    if !sync::migration::is_writable_dir(&icloud_dir) {
-        return Err(AppError::Other("SYNC_FOLDER_NOT_WRITABLE".to_string()));
-    }
     app.asset_protocol_scope()
         .allow_directory(&icloud_dir, true)
         .map_err(|error| AppError::Other(format!("SYNC_FOLDER_ASSET_ACCESS_FAILED: {error}")))?;

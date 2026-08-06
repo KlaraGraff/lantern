@@ -66,12 +66,14 @@ test("Android is mobile but is not iOS", () => {
   assert.equal(android.id, "android");
 });
 
-test("folder sync is macOS only", () => {
+test("folder sync is the macOS ↔ iOS pair, and nothing else", () => {
   // D-006 ships sync for macOS ↔ iOS; D-007 puts Windows out of scope. The
-  // desktop capability set must not hand it to Windows just for being a desktop.
+  // desktop capability set must not hand it to Windows just for being a desktop,
+  // and the mobile set must not withhold it from iOS just for being mobile.
   assert.equal(capabilitiesFor("macos").hasFolderSync, true);
+  assert.equal(capabilitiesFor("ios").hasFolderSync, true);
   assert.equal(capabilitiesFor("windows").hasFolderSync, false);
-  assert.equal(capabilitiesFor("ios").hasFolderSync, false);
+  assert.equal(capabilitiesFor("android").hasFolderSync, false);
 });
 
 test("the title-bar inset is macOS only", () => {

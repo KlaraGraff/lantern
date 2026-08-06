@@ -71,10 +71,9 @@ fn icloud_drive_root() -> Option<PathBuf> {
 /// The mobile sync root: `Documents` inside the app's own ubiquity container.
 ///
 /// `Documents` rather than the container root because only that subtree is
-/// eligible to appear in iCloud Drive under `NSUbiquitousContainers`. Nothing
-/// declares that key yet ([Q-001](../../../docs/roadmap/mobile-ios.md)), but
-/// putting the files anywhere else would make declaring it later a data move
-/// rather than a plist edit.
+/// eligible to appear in iCloud Drive under `NSUbiquitousContainers`, which
+/// `lantern_iOS/Info.plist` declares — that is what makes these files visible
+/// in Files and Finder as "Lantern" rather than an invisible container.
 ///
 /// There is no `lantern` subfolder the way the desktop default has one. The
 /// desktop needs it because it is a guest in the user's own iCloud Drive; the
@@ -84,12 +83,13 @@ fn ubiquity_sync_root() -> Option<PathBuf> {
     crate::icloud::ubiquity_container_dir().map(|dir| dir.join("Documents"))
 }
 
-/// Creates Lantern's default iCloud Drive folder when the previous selection
-/// is absent. Users can still select any existing iCloud Drive folder instead.
+/// Creates the one folder Lantern syncs to, or returns it if it already exists.
+/// Idempotent, and the only way a sync folder ever comes into being — there is
+/// nothing for the user to pick.
 ///
-/// The returned path is not checked for being inside iCloud Drive here —
-/// `sync_enable` checks that unconditionally on whatever folder it ends up
-/// with, so repeating it would only make this function untestable.
+/// The returned path is not checked for being inside iCloud Drive: it is built
+/// from the iCloud root, so the check would only be able to fail on a bug, and
+/// it would make this function untestable.
 #[cfg(not(target_os = "ios"))]
 pub fn create_default_icloud_dir() -> AppResult<PathBuf> {
     let root = icloud_drive_root()
@@ -106,8 +106,8 @@ pub fn create_default_icloud_dir() -> AppResult<PathBuf> {
 /// frontend already tells the user to check iCloud Drive on that code.
 #[cfg(target_os = "ios")]
 pub fn create_default_icloud_dir() -> AppResult<PathBuf> {
-    let dir =
-        ubiquity_sync_root().ok_or_else(|| AppError::Other("ICLOUD_DRIVE_UNAVAILABLE".to_string()))?;
+    let dir = ubiquity_sync_root()
+        .ok_or_else(|| AppError::Other("ICLOUD_DRIVE_UNAVAILABLE".to_string()))?;
     fs::create_dir_all(&dir)?;
     if !is_writable_dir(&dir) {
         return Err(AppError::Other("SYNC_FOLDER_NOT_WRITABLE".to_string()));
@@ -129,32 +129,6 @@ fn create_default_dir_in(root: &Path) -> AppResult<PathBuf> {
         return Err(AppError::Other("SYNC_FOLDER_NOT_WRITABLE".to_string()));
     }
     Ok(dir)
-}
-
-/// True when `dir` is a folder Lantern named for itself, rather than one the
-/// user picked in Finder.
-///
-/// Only the former is safe to silently re-create after it goes missing. A
-/// hand-picked folder is a decision — replacing it with the default would
-/// discard that decision, republish the whole library somewhere else, and
-/// leave the other device syncing to a folder this one has forgotten.
-#[cfg(not(target_os = "ios"))]
-pub fn is_lantern_default_dir(dir: &Path) -> bool {
-    icloud_drive_root().is_some_and(|root| is_default_dir_in(&root, dir))
-}
-
-/// Always true on iOS, and that is the point: the container is the only folder
-/// this app can sync to, so there is no hand-picked decision to protect. The
-/// caller's "silently re-create it if it went missing" branch is exactly what
-/// should happen here.
-#[cfg(target_os = "ios")]
-pub fn is_lantern_default_dir(dir: &Path) -> bool {
-    ubiquity_sync_root().is_some_and(|root| dir == root)
-}
-
-#[cfg(not(target_os = "ios"))]
-fn is_default_dir_in(root: &Path, dir: &Path) -> bool {
-    dir.parent() == Some(root) && dir.file_name() == Some(DEFAULT_SYNC_FOLDER_NAME.as_ref())
 }
 
 /// Guards against a recorded path that no longer belongs to iCloud — the marker
@@ -341,20 +315,6 @@ mod tests {
         let root = TempDir::new().unwrap();
         let canonical_root = root.path().canonicalize().unwrap();
         assert!(!is_dir_under(&canonical_root, &root.path().join("gone")));
-    }
-
-    #[test]
-    #[cfg(not(target_os = "ios"))]
-    fn only_folders_lantern_named_itself_count_as_the_default() {
-        let root = Path::new("/Users/someone/Library/Mobile Documents/com~apple~CloudDocs");
-        assert!(is_default_dir_in(root, &root.join("lantern")));
-
-        // A folder the user picked, even one that merely contains the name.
-        assert!(!is_default_dir_in(root, &root.join("my books")));
-        assert!(!is_default_dir_in(root, &root.join("lantern-backup")));
-        // Same name, but somewhere the user had to navigate to on purpose.
-        assert!(!is_default_dir_in(root, &root.join("Documents/lantern")));
-        assert!(!is_default_dir_in(root, Path::new("/tmp/lantern")));
     }
 
     #[test]
