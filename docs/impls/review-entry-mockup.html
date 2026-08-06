@@ -6,394 +6,740 @@
 <title>Lantern 复习入口 · 样张</title>
 <style>
   :root{
-    --paper:#f6f2ea; --page:#fffdf8; --ink:#2a2622; --ink2:#6b635b; --ink3:#9c948b;
-    --line:#e6dfd4; --line2:#efe9e0;
-    --accent:#8a5a2b; --accent-bg:#f4ece0; --accent-line:#d9c4a6;
-    --ok:#2f7d5b; --ok-bg:#e8f2ec;
-    --warn:#b8791c; --warn-bg:#fbf1e0;
-    --bad:#c0392b; --bad-bg:#fbeceb;
-    --shadow:0 18px 48px rgba(60,45,28,.16), 0 2px 8px rgba(60,45,28,.06);
-  }
-  @media (prefers-color-scheme:dark){
-    :root{
-      --paper:#181614; --page:#211e1b; --ink:#e9e3da; --ink2:#a79e94; --ink3:#6e665e;
-      --line:#332f2a; --line2:#2a2724;
-      --accent:#d1a06a; --accent-bg:#2c2318; --accent-line:#4a3a26;
-      --ok:#6fc39a; --ok-bg:#152a20;
-      --warn:#e0a75a; --warn-bg:#332810;
-      --bad:#e88079; --bad-bg:#331b19;
-      --shadow:0 18px 48px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3);
-    }
+    --bg-page:#f4f4f5; --bg-surface:#ffffff; --bg-muted:#fafafa; --bg-input:#f3f3f5;
+    --text-primary:#18181b; --text-body:#0a0a0a; --text-secondary:#52525c; --text-muted:#71717b;
+    --border:#e4e4e7; --border-light:#f4f4f5;
+    --accent:#7c3aed; --accent-bg:#f3e8ff; --lavender:#c084fc; --mist:#f3e8ff;
+    --success:#00a63e; --success-bg:#eefdf3;
+    --danger:#e7000b; --danger-bg:#fef2f2; --danger-border:#ffc9c9;
+    --paper:#faf7f0;
+    --shadow-card:0 1px 2px rgba(0,0,0,.04);
+    --shadow-pop:0 20px 25px rgba(0,0,0,.15), 0 8px 10px rgba(0,0,0,.15);
+    --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    --serif:Georgia,"Libre Baskerville","Songti SC",serif;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--paper);color:var(--ink);
-    font:15px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
-    -webkit-font-smoothing:antialiased}
-  .wrap{max-width:1240px;margin:0 auto;padding:52px 28px 120px}
+  body{margin:0;background:#e9e9ec;color:var(--text-primary);font-family:var(--sans);
+    font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:48px 28px 120px}
 
-  header.top{border-bottom:1px solid var(--line);padding-bottom:24px}
-  h1{font-size:27px;margin:0 0 8px;font-weight:650;letter-spacing:-.3px}
-  .sub{color:var(--ink2);font-size:14px;margin:0;max-width:76ch}
-  .sub b{color:var(--ink)}
+  /* ── 文档外壳 ── */
+  .doc-head{margin-bottom:44px}
+  .doc-head h1{font-size:28px;font-weight:650;letter-spacing:-.4px;margin:0 0 10px}
+  .doc-head p{margin:0;color:var(--text-secondary);font-size:14.5px;max-width:760px}
+  .doc-head .meta{margin-top:14px;font-size:12.5px;color:var(--text-muted)}
+  .doc-head .meta code{background:var(--bg-input);padding:1px 6px;border-radius:4px;font-size:12px}
 
-  h2.sec{font-size:18px;font-weight:620;margin:56px 0 4px;display:flex;align-items:baseline;gap:11px}
-  h2.sec .n{font-size:11.5px;font-weight:700;color:var(--ink3);border:1px solid var(--line);
-    border-radius:20px;padding:2px 9px;flex:none}
-  .seclede{color:var(--ink2);font-size:14px;margin:0 0 22px;max-width:82ch}
-  .seclede b{color:var(--ink)}
+  .sec{display:flex;align-items:baseline;gap:12px;margin:64px 0 8px;font-size:20px;font-weight:650;letter-spacing:-.3px}
+  .sec .n{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;
+    border-radius:8px;background:var(--accent);color:#fff;font-size:13px;font-weight:600;flex:none;
+    transform:translateY(-2px)}
+  .why{margin:0 0 22px 38px;color:var(--text-secondary);font-size:14px;max-width:820px}
+  .why b{color:var(--text-primary);font-weight:600}
+  .why .hard{color:var(--danger);font-weight:600}
 
-  .row{display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start}
-  .shot{flex:1 1 380px;min-width:340px;max-width:452px}
-  .caption{font-size:12.5px;color:var(--ink3);margin:10px 2px 0;line-height:1.58}
-  .caption b{color:var(--ink2)}
+  .stage{background:var(--bg-page);border:1px solid var(--border);border-radius:16px;padding:22px;
+    box-shadow:var(--shadow-card)}
+  .stage.dual{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+  .cap{margin:10px 2px 0;font-size:12.5px;color:var(--text-muted)}
+  .cap b{color:var(--text-secondary);font-weight:600}
 
-  .win{border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--page);
-    box-shadow:var(--shadow)}
-  .chrome{height:30px;background:var(--paper);border-bottom:1px solid var(--line2);
-    display:flex;align-items:center;padding:0 11px;gap:6px}
-  .dot{width:9px;height:9px;border-radius:50%;background:#dcd4c8}
-  @media (prefers-color-scheme:dark){.dot{background:#3a3530}}
-  .chrome .ttl{margin-left:8px;font-size:11px;color:var(--ink3)}
-  .pane{padding:16px 17px 20px;min-height:352px}
+  /* ── App 外框 ── */
+  .app{display:flex;background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;
+    overflow:hidden;min-height:520px}
+  .side{width:224px;flex:none;background:var(--bg-muted);border-right:1px solid var(--border);
+    padding:0 16px 12px;display:flex;flex-direction:column;gap:22px}
+  .brand{display:flex;align-items:center;gap:10px;padding:18px 0 2px}
+  .logo{width:26px;height:26px;border-radius:7px;background:linear-gradient(150deg,var(--accent),var(--lavender));
+    flex:none;display:flex;align-items:center;justify-content:center}
+  .brand span{font-size:18px;font-weight:600;letter-spacing:.5px}
+  .grp{display:flex;flex-direction:column;gap:10px}
+  .grp h4{margin:0;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;color:var(--text-muted)}
+  .rows{display:flex;flex-direction:column;gap:4px}
+  .row{display:flex;align-items:center;justify-content:space-between;height:36px;padding:0 12px;
+    border-radius:8px;cursor:default}
+  .row .l{display:flex;align-items:center;gap:8px}
+  .row .l span{font-size:14px;font-weight:500;letter-spacing:-.15px;color:var(--text-secondary)}
+  .row .c{font-size:12px;font-weight:500;color:var(--text-muted)}
+  .row.on{background:var(--accent-bg)}
+  .row.on .l span{color:var(--accent)}
+  .row.on svg{color:var(--accent)}
+  .row svg{color:var(--text-muted);flex:none}
+  .row.hl{position:relative}
+  .row.hl::after{content:"新";position:absolute;right:-7px;top:-7px;background:var(--accent);color:#fff;
+    font-size:10px;font-weight:600;padding:1px 6px;border-radius:99px;letter-spacing:.5px}
 
-  .ph{display:flex;align-items:baseline;gap:9px;margin-bottom:3px}
-  .ph h4{margin:0;font-size:17px;font-weight:650;letter-spacing:-.2px}
-  .ph .cnt{font-size:12px;color:var(--ink3)}
-  .plede{font-size:12.4px;color:var(--ink2);margin:0 0 15px;line-height:1.55}
+  .main{flex:1;min-width:0;padding:26px 30px;display:flex;flex-direction:column;gap:22px;overflow:hidden}
+  .page-h{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}
+  .page-h h2{margin:0;font-size:22px;font-weight:650;letter-spacing:-.3px}
+  .page-h p{margin:3px 0 0;font-size:13px;color:var(--text-muted)}
 
-  /* 堆卡片 */
-  .pile{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:9px;
-    background:var(--page);display:flex;align-items:center;gap:12px}
-  .pile.hot{border-color:var(--accent-line);background:var(--accent-bg)}
-  .pile .tx{flex:1;min-width:0}
-  .pile .t1{font-size:13.6px;font-weight:600;line-height:1.4}
-  .pile.hot .t1{color:var(--accent)}
-  .pile .t2{font-size:11.6px;color:var(--ink2);margin-top:3px;line-height:1.5}
-  .pile .num{font-size:19px;font-weight:600;color:var(--ink2);font-variant-numeric:tabular-nums;flex:none}
-  .pile.hot .num{color:var(--accent)}
-  .pile .arr{color:var(--ink3);font-size:12px;flex:none}
+  /* ── 回顾板块 ── */
+  .block-h{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+  .block-h h3{margin:0;font-size:15px;font-weight:650;letter-spacing:-.2px}
+  .block-h .sub{font-size:12.5px;color:var(--text-muted);margin-left:auto}
 
-  .quiet{margin-top:15px;padding-top:13px;border-top:1px solid var(--line2)}
-  .quiet .qh{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--ink3);margin-bottom:8px}
+  .piles{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .pile{background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:15px 16px 14px;
+    display:flex;flex-direction:column;gap:9px;cursor:default;position:relative;transition:.12s}
+  .pile:hover{border-color:var(--lavender);box-shadow:0 2px 10px rgba(124,58,237,.09)}
+  .pile .top{display:flex;align-items:flex-start;gap:10px}
+  .pile .ic{width:30px;height:30px;border-radius:9px;background:var(--accent-bg);color:var(--accent);
+    display:flex;align-items:center;justify-content:center;flex:none}
+  .pile h4{margin:0;font-size:14.5px;font-weight:600;letter-spacing:-.15px;line-height:1.45}
+  .pile .n{margin-left:auto;font-size:13px;font-weight:600;color:var(--accent);flex:none;
+    background:var(--accent-bg);padding:2px 9px;border-radius:99px}
+  .pile .reason{margin:0;font-size:12.8px;color:var(--text-secondary);line-height:1.6}
+  .pile .words{display:flex;flex-wrap:wrap;gap:5px;margin-top:1px}
+  .chip{font-size:12px;padding:2.5px 9px;border-radius:6px;background:var(--bg-input);color:var(--text-secondary);
+    font-family:var(--serif);letter-spacing:.1px}
+  .chip.more{background:transparent;color:var(--text-muted);padding-left:2px}
 
-  /* 空态 */
-  .empty{text-align:center;padding:56px 20px}
-  .empty .ic{font-size:28px;opacity:.4}
-  .empty p{margin:12px 0 5px;font-size:14.5px;font-weight:560}
-  .empty s{text-decoration:none;font-size:12.4px;color:var(--ink3);line-height:1.6;display:block;max-width:32ch;margin:0 auto}
-  .empty .btn{margin-top:16px}
+  /* 降一级的第四堆 */
+  .demoted{margin-top:14px;border-top:1px solid var(--border);padding-top:14px}
+  .demoted-h{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text-muted);
+    margin-bottom:9px;cursor:default}
+  .pile.quiet{background:transparent;border-style:dashed;border-color:var(--border)}
+  .pile.quiet .ic{background:var(--bg-input);color:var(--text-muted)}
+  .pile.quiet .n{background:var(--bg-input);color:var(--text-secondary)}
+  .pile.quiet:hover{border-color:var(--text-muted);box-shadow:none}
 
-  .btn{border:1px solid var(--line);background:var(--page);color:var(--ink);
-    border-radius:8px;padding:7px 15px;font-size:13px;font-weight:560;font-family:inherit;cursor:default;
-    display:inline-block}
-  .btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
-  @media (prefers-color-scheme:dark){.btn.pri{color:#1d1712}}
-  .btn.sm{padding:5px 11px;font-size:12px}
-  .btn.ghost{border-color:transparent;background:none;color:var(--ink3)}
+  .divider-all{display:flex;align-items:center;gap:12px;margin-top:4px}
+  .divider-all .ln{flex:1;height:1px;background:var(--border)}
+  .divider-all span{font-size:12px;color:var(--text-muted)}
 
-  /* 展开后的词表 */
-  .backlink{font-size:12px;color:var(--ink3);margin-bottom:11px;display:block}
-  .why{background:var(--accent-bg);border:1px solid var(--accent-line);border-radius:9px;
-    padding:10px 12px;font-size:12.2px;color:var(--ink2);line-height:1.6;margin-bottom:13px}
-  .why b{color:var(--accent);font-weight:650}
-
-  .wl{display:flex;flex-direction:column}
-  .wr{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line2)}
-  .wr:last-child{border-bottom:none}
-  .wr .w{font-size:13.8px;font-weight:600;min-width:112px}
-  .wr .g{font-size:12px;color:var(--ink2);flex:1;min-width:0;overflow:hidden;
+  .wordlist{display:flex;flex-direction:column;background:var(--bg-surface);
+    border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .wl{display:flex;align-items:center;gap:14px;padding:11px 16px;border-bottom:1px solid var(--border-light)}
+  .wl:last-child{border-bottom:0}
+  .wl .w{font-family:var(--serif);font-size:15px;font-weight:600;width:120px;flex:none}
+  .wl .d{font-size:13px;color:var(--text-secondary);flex:1;min-width:0;overflow:hidden;
     text-overflow:ellipsis;white-space:nowrap}
-  .wr .m{font-size:11px;color:var(--ink3);flex:none;font-variant-numeric:tabular-nums}
-  .wr .m.hot{color:var(--bad)}
+  .wl .st{font-size:11.5px;padding:2px 8px;border-radius:99px;flex:none;font-weight:500}
+  .st.learn{background:var(--accent-bg);color:var(--accent)}
+  .st.fam{background:#fff7e6;color:#b8791c}
+  .st.known{background:var(--success-bg);color:var(--success)}
 
-  /* 复习卡 */
-  .rc{border:1px solid var(--line);border-radius:11px;padding:20px 18px;background:var(--paper);
-    text-align:center}
-  .rc .w{font-size:26px;font-weight:600;letter-spacing:-.4px}
-  .rc .p{font-size:12px;color:var(--ink3);margin-top:3px}
-  .rc .ctx{margin-top:16px;font-size:13px;line-height:1.85;color:var(--ink2);text-align:left;
-    background:var(--page);border:1px solid var(--line2);border-radius:8px;padding:11px 13px}
-  .rc .ctx mark{background:var(--accent-bg);border-bottom:1.5px solid var(--accent-line);
-    color:var(--ink);padding:1px 2px;border-radius:2px}
-  .rc .src{font-size:11.2px;color:var(--ink3);margin-top:9px;text-align:left}
-  .rc .acts{display:flex;gap:9px;margin-top:17px}
-  .rc .acts .btn{flex:1}
-  .rcbar{display:flex;align-items:center;gap:9px;margin-bottom:13px;font-size:11.5px;color:var(--ink3)}
-  .rcbar .bar{flex:1;height:3px;border-radius:2px;background:var(--line);overflow:hidden}
-  .rcbar .bar i{display:block;height:100%;width:35%;background:var(--accent)}
+  /* ── 空态 ── */
+  .empty{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+  .empty h4{margin:0;font-size:15px;font-weight:600}
+  .empty p{margin:0;font-size:13.5px;color:var(--text-secondary);max-width:480px}
+  .empty .ghost{margin-top:8px}
 
-  /* 词详情 */
-  .dw{font-size:22px;font-weight:600;letter-spacing:-.3px}
-  .dpos{font-size:12px;color:var(--ink3);margin-left:7px;font-weight:400}
-  .ddef{font-size:13.4px;color:var(--ink2);margin-top:6px}
-  .state{display:flex;align-items:center;gap:8px;margin-top:15px;padding:11px 13px;
-    border:1px solid var(--line);border-radius:9px;background:var(--paper)}
-  .state .lab{font-size:13px;font-weight:600}
-  .state .auto{font-size:10px;background:var(--ok-bg);color:var(--ok);padding:2px 7px;
-    border-radius:5px;font-weight:650}
-  .state .sp{flex:1}
-  .reason{margin-top:9px;font-size:12.2px;color:var(--ink2);line-height:1.6;
-    background:var(--ok-bg);border-radius:8px;padding:10px 12px}
-  .reason b{color:var(--ok);font-weight:650}
-  .undo{margin-top:9px}
-  .hist{margin-top:16px;padding-top:13px;border-top:1px solid var(--line2)}
-  .hist .hh{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--ink3);margin-bottom:9px}
-  .ev{display:flex;gap:10px;font-size:12.1px;color:var(--ink2);padding:5px 0;line-height:1.5}
-  .ev .d{color:var(--ink3);flex:none;width:62px;font-variant-numeric:tabular-nums}
-  .ev .up{color:var(--ok)}
-  .ev .dn{color:var(--bad)}
+  /* ── 按钮 ── */
+  .btn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 15px;border-radius:8px;
+    font-size:13.5px;font-weight:500;border:1px solid transparent;cursor:default;font-family:inherit}
+  .btn.primary{background:var(--accent);color:#fff}
+  .btn.ghost{background:var(--bg-surface);border-color:var(--border);color:var(--text-secondary)}
+  .btn.quiet{background:transparent;color:var(--text-muted);padding:0 4px}
+  .btn.danger{background:var(--danger-bg);border-color:var(--danger-border);color:var(--danger)}
+  .btn.sm{height:30px;font-size:12.5px;padding:0 11px}
 
-  /* 正文标注三段 */
-  .stage3{display:flex;flex-direction:column;gap:12px}
-  .rt{border:1px solid var(--line);border-radius:9px;padding:13px 15px;background:var(--paper);
-    font-size:13.4px;line-height:2.5;color:var(--ink)}
-  .rt .lab{display:block;font-size:10.5px;font-weight:700;letter-spacing:.5px;color:var(--ink3);
-    margin-bottom:5px;line-height:1.4}
-  ruby{ruby-position:under}
-  rt{font-size:9.5px;color:var(--accent);font-weight:500;line-height:1}
-  .pip{display:inline-block;width:4px;height:4px;border-radius:50%;background:var(--accent-line);
-    vertical-align:super;margin-left:1px}
-  .rt u{text-decoration:none;border-bottom:1.5px dotted var(--accent-line)}
+  /* ── 过词卡 ── */
+  .cardwrap{background:var(--bg-page);border-radius:12px;padding:30px;display:flex;justify-content:center}
+  .card{width:100%;max-width:560px;background:var(--bg-surface);border:1px solid var(--border);
+    border-radius:16px;padding:26px 28px 20px;box-shadow:var(--shadow-pop)}
+  .card .prog{display:flex;align-items:center;gap:10px;margin-bottom:22px}
+  .card .bar{flex:1;height:3px;background:var(--bg-input);border-radius:99px;overflow:hidden}
+  .card .bar i{display:block;height:100%;width:37%;background:var(--accent);border-radius:99px}
+  .card .prog span{font-size:12px;color:var(--text-muted);flex:none}
+  .quote{font-family:var(--serif);font-size:19px;line-height:1.85;color:var(--text-body);margin:0 0 16px}
+  .quote mark{background:linear-gradient(transparent 62%,var(--mist) 62%);color:inherit;
+    font-weight:600;padding:0 1px}
+  .prov{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text-muted);
+    padding-bottom:20px;border-bottom:1px solid var(--border)}
+  .ask{margin:18px 0 16px;font-size:14px;color:var(--text-secondary)}
+  .ask b{font-family:var(--serif);font-size:17px;color:var(--text-primary);font-weight:700}
+  .grades{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .grade{height:44px;border-radius:10px;border:1px solid var(--border);background:var(--bg-surface);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;cursor:default}
+  .grade b{font-size:13px;font-weight:600}
+  .grade i{font-size:10.5px;font-style:normal;color:var(--text-muted)}
+  .grade.g1{border-color:var(--danger-border)} .grade.g1 b{color:var(--danger)}
+  .grade.g4{border-color:#b9f8cf} .grade.g4 b{color:var(--success)}
+  .card .outs{display:flex;align-items:center;justify-content:space-between;margin-top:16px;
+    padding-top:14px;border-top:1px solid var(--border-light)}
 
-  .notes{margin:20px 0 0;padding:0;list-style:none;display:grid;gap:9px}
-  .notes li{font-size:13.5px;color:var(--ink2);padding-left:22px;position:relative;line-height:1.65}
-  .notes li::before{content:"";position:absolute;left:6px;top:9px;width:5px;height:5px;
-    border-radius:50%;background:var(--ink3)}
-  .notes li b{color:var(--ink);font-weight:600}
+  /* ── 词详情 ── */
+  .detail{background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .detail .hd{padding:20px 22px 18px;border-bottom:1px solid var(--border)}
+  .detail .hd .w{font-family:var(--serif);font-size:26px;font-weight:700;letter-spacing:-.3px}
+  .detail .hd .ph{font-size:13px;color:var(--text-muted);margin-left:10px;font-family:var(--serif)}
+  .detail .hd .df{margin:6px 0 0;font-size:14px;color:var(--text-secondary)}
+  .lvlrow{display:flex;align-items:center;gap:10px;margin-top:16px;flex-wrap:wrap}
+  .auto{font-size:11.5px;color:var(--text-muted);display:inline-flex;align-items:center;gap:5px;
+    background:var(--bg-input);padding:3px 9px;border-radius:99px}
+  .because{margin:14px 0 0;padding:13px 15px;background:var(--accent-bg);border-radius:10px;
+    font-size:13.5px;color:#5b21b6;line-height:1.65}
+  .because b{font-family:var(--serif);font-weight:700}
+  .detail .bd{padding:18px 22px 22px}
+  .tl-h{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;color:var(--text-muted);
+    margin:0 0 14px}
+  .tl{position:relative;padding-left:22px}
+  .tl::before{content:"";position:absolute;left:5px;top:6px;bottom:8px;width:1px;background:var(--border)}
+  .ev{position:relative;padding-bottom:15px}
+  .ev::before{content:"";position:absolute;left:-21px;top:6px;width:9px;height:9px;border-radius:99px;
+    background:var(--bg-surface);border:2px solid var(--border)}
+  .ev.up::before{border-color:var(--success)}
+  .ev.down::before{border-color:var(--danger)}
+  .ev .t{font-size:13.5px;color:var(--text-primary);line-height:1.6}
+  .ev .t em{font-style:normal;font-family:var(--serif);font-weight:600}
+  .ev .d{font-size:12px;color:var(--text-muted);margin-top:1px}
+  .foot-out{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;
+    padding-top:16px;border-top:1px solid var(--border-light)}
+  .foot-out p{margin:0;font-size:12.5px;color:var(--text-muted);max-width:400px}
 
-  .q{margin-top:44px;border:1px solid var(--accent-line);background:var(--accent-bg);
-    border-radius:11px;padding:18px 20px}
-  .q h4{margin:0 0 8px;font-size:14.5px;font-weight:650;color:var(--accent)}
-  .q p{margin:0 0 8px;font-size:13.5px;color:var(--ink2);line-height:1.65}
-  .q p:last-child{margin-bottom:0}
-  .q b{color:var(--ink)}
+  /* ── 阅读器 ── */
+  .reader{background:var(--paper);border:1px solid var(--border);border-radius:12px;padding:0;overflow:hidden}
+  .rbar{height:44px;border-bottom:1px solid rgba(0,0,0,.06);display:flex;align-items:center;gap:14px;
+    padding:0 18px;color:var(--text-muted);font-size:12.5px}
+  .rbar .ttl{color:var(--text-secondary);font-weight:500}
+  .rbody{padding:34px 56px 40px;font-family:var(--serif);font-size:17px;line-height:1.95;color:#2b2723}
+  .rbody p{margin:0 0 17px}
+  .chapend{margin-top:34px;padding-top:22px;border-top:1px solid rgba(0,0,0,.08);
+    display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .chapend .line{font-family:var(--sans);font-size:13px;color:var(--text-muted)}
+  .chapend a{font-family:var(--sans);font-size:13px;color:var(--text-muted);text-decoration:none;
+    border-bottom:1px solid rgba(0,0,0,.14);padding-bottom:1px}
+  .chapend .x{margin-left:auto;display:flex;align-items:center;gap:6px;font-family:var(--sans);
+    font-size:12px;color:#c3bdb2}
+  .chapend.hover .x{color:var(--text-muted)}
+  .ban{margin-top:14px;display:flex;flex-direction:column;gap:7px}
+  .ban .item{display:flex;align-items:center;gap:9px;font-size:12.8px;color:var(--danger)}
+  .ban .item svg{flex:none}
+  .ban .item.ok{color:var(--success)}
+
+  /* ── 正文标注三阶段 ── */
+  .stages{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .st-card{background:var(--paper);border:1px solid var(--border);border-radius:12px;padding:18px 20px 20px}
+  .st-card .lbl{font-family:var(--sans);font-size:11.5px;font-weight:600;text-transform:uppercase;
+    letter-spacing:.4px;color:var(--accent);margin-bottom:12px}
+  .st-card .lbl.mid{color:#b8791c} .st-card .lbl.done{color:var(--success)}
+  .st-card .txt{font-family:var(--serif);font-size:15.5px;line-height:2.4;color:#2b2723}
+  .st-card .note{margin:14px 0 0;font-family:var(--sans);font-size:12.3px;color:var(--text-muted);line-height:1.6}
+  ruby{ruby-position:over}
+  rt{font-family:var(--sans);font-size:9.5px;color:var(--accent);font-weight:500;letter-spacing:.2px}
+  .mk{border-bottom:1.5px dotted var(--lavender);cursor:default;position:relative;padding-right:5px}
+  .mk::after{content:"";position:absolute;right:0;top:1px;width:3px;height:3px;border-radius:99px;
+    background:var(--lavender)}
+
+  @media (max-width:1000px){
+    .stage.dual{grid-template-columns:1fr}
+    .piles{grid-template-columns:1fr}
+    .stages{grid-template-columns:1fr}
+    .rbody{padding:28px 26px 32px}
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
 
-<header class="top">
+<div class="doc-head">
   <h1>复习入口 · 样张</h1>
-  <p class="sub">
-    没有推送、没有红点、没有弹窗。复习模块留在原地，<b>想复习的人自己进来</b>。
-    所以这一页唯一的任务是：让他进来之后，<b>看到的每一堆词都有一个他自己认得出的来由</b>——
-    不是「今天到期 20 个」，而是「你在这本书里查了 4 次的词」。
-  </p>
-</header>
+  <p>把 FSRS 的算法队列拆成<b>几个有来由的小堆</b>——用户看到的不是算法的输出，是自己最近的行为。
+     判断一个堆该不该存在的唯一标准：能不能一句话说清它是怎么来的。</p>
+  <div class="meta">
+    对应 <code>docs/impls/reading-driven-mastery-and-review.md</code> 第三、四节与 2.6、12.2
+    &nbsp;·&nbsp; 静态样张，不可点击 &nbsp;·&nbsp; 配色取自 <code>src/index.css</code> 的真实设计令牌
+  </div>
+</div>
 
-<!-- 1 -->
-<h2 class="sec"><span class="n">1</span> 进来看到的</h2>
-<p class="seclede">
-  <b>核心改动：把一个算法队列拆成几个有来由的小堆。</b>
-  FSRS（决定每个词隔多久该再出现）还在底下照常工作，但用户看到的不是它的输出，
-  而是自己最近的行为。他要能一眼认出「这确实是我的问题」，才会有理由点进去。
+<!-- ═══════════ 1 ═══════════ -->
+<h2 class="sec"><span class="n">1</span> 侧栏：常驻一个「复习」</h2>
+<p class="why">
+  复习是<b>跨书的</b>，不属于任何一本书，所以它和「生词 / 笔记」平级，不塞进某本书里。
+  注意右边那一列数字：书架三项都有计数，<b>「复习」这一行故意没有</b>——
+  <span class="hard">一个数字就是一次提醒</span>，它会让人每次打开 app 都先看见一笔待办债务。
+  想知道有多少，点进去看。
 </p>
-
-<div class="row">
-
-  <div class="shot">
-    <div class="win">
-      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern — 生词</span></div>
-      <div class="pane">
-        <div class="ph"><h4>回顾</h4><span class="cnt">最近两周</span></div>
-        <p class="plede">下面这些都是你自己读书时留下的，随时可以来，也随时可以不来。</p>
-
-        <div class="pile hot">
-          <div class="tx">
-            <div class="t1">你在《傲慢与偏见》里查了 4 次的词</div>
-            <div class="t2">同一本书里反复查，说明它是这本书的拦路虎</div>
-          </div>
-          <span class="num">6</span><span class="arr">›</span>
+<div class="stage dual">
+  <div>
+    <div class="app" style="min-height:auto">
+      <div class="side" style="border-right:0">
+        <div class="brand">
+          <div class="logo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v2M8 21h8M10 21c0-3-3-4-3-8a5 5 0 0 1 10 0c0 4-3 5-3 8"/></svg></div>
+          <span>Lantern</span>
         </div>
-
-        <div class="pile">
-          <div class="tx">
-            <div class="t1">以为会了，结果又查了</div>
-            <div class="t2">读的时候没查，被判定成熟了，后来你又查了它</div>
+        <div class="grp">
+          <h4>书库</h4>
+          <div class="rows">
+            <div class="row on"><div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 6H3M16 12H3M16 18H3M21 6v12"/></svg><span>全部书籍</span></div><div class="c">24</div></div>
+            <div class="row"><div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 7v14M3 18h7a2 2 0 0 1 2 2 2 2 0 0 1 2-2h7M3 6h7a2 2 0 0 1 2 2 2 2 0 0 1 2-2h7v12"/></svg><span>在读</span></div><div class="c">3</div></div>
+            <div class="row"><div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m9 12 2 2 4-4"/></svg><span>已读完</span></div><div class="c">11</div></div>
+            <div class="row"><div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18M7 16v-5M12 16V8M17 16v-3"/></svg><span>阅读统计</span></div></div>
           </div>
-          <span class="num">3</span><span class="arr">›</span>
         </div>
-
-        <div class="pile">
-          <div class="tx">
-            <div class="t1">刚读完的第 12 章里，你查过这些</div>
-            <div class="t2">趁着还有印象，就地过一遍</div>
+        <div class="grp">
+          <h4>已保存</h4>
+          <div class="rows">
+            <div class="row"><div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m4 18 5-12 5 12M5.5 15h7M22 15c0 2-1.5 3-3 3s-3-1-3-3 1.5-3 3-3 3 1 3 3v3"/></svg><span>生词</span></div><div class="c">218</div></div>
+            <div class="row hl"><div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg><span>复习</span></div></div>
+            <div class="row"><div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9l6-6V5a2 2 0 0 0-2-2Z"/><path d="M14 21v-5a1 1 0 0 1 1-1h5"/></svg><span>笔记</span></div></div>
           </div>
-          <span class="num">11</span><span class="arr">›</span>
         </div>
-
-        <div class="quiet">
-          <div class="qh">还有</div>
-          <div class="pile">
-            <div class="tx">
-              <div class="t1">很久没再遇到的词</div>
-              <div class="t2">收藏了但书里一直没出现，不看就要忘了</div>
+        <div class="grp">
+          <h4>对话</h4>
+          <div class="rows">
+            <div class="row"><div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>对话</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap"><b>放这里。</b>和「生词」挨着，因为它俩是一件事的两面：生词是存量，复习是这几天该动的那一部分。</p>
+  </div>
+  <div>
+    <div class="app" style="min-height:auto;opacity:.62">
+      <div class="side" style="border-right:0">
+        <div class="brand">
+          <div class="logo" style="background:#a1a1aa"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v2M8 21h8M10 21c0-3-3-4-3-8a5 5 0 0 1 10 0c0 4-3 5-3 8"/></svg></div>
+          <span>Lantern</span>
+        </div>
+        <div class="grp">
+          <h4>已保存</h4>
+          <div class="rows">
+            <div class="row"><div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m4 18 5-12 5 12M5.5 15h7M22 15c0 2-1.5 3-3 3s-3-1-3-3 1.5-3 3-3 3 1 3 3v3"/></svg><span>生词</span></div><div class="c">218</div></div>
+            <div class="row">
+              <div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg><span>复习</span></div>
+              <div class="c" style="background:var(--danger);color:#fff;padding:1px 7px;border-radius:99px;font-size:11px">47</div>
             </div>
-            <span class="num">8</span><span class="arr">›</span>
+            <div class="row"><div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9l6-6V5a2 2 0 0 0-2-2Z"/><path d="M14 21v-5a1 1 0 0 1 1-1h5"/></svg><span>笔记</span></div></div>
           </div>
         </div>
       </div>
     </div>
-    <p class="caption"><b>默认态。</b>前三堆是行为堆，来由具体；第四堆是兜底（FSRS 到期但没有别的故事可讲），所以放进「还有」里降一级。<b>每一堆的第二行都必须能一句话说清它怎么来的</b>——说不清的堆就不该存在。</p>
+    <p class="cap" style="color:var(--danger)"><b style="color:var(--danger)">不这样做。</b>
+      红点 / 计数气泡 = 每天进 app 都被告知欠了 47 个词。这正是「为什么不提醒」整节要避免的东西。</p>
   </div>
-
-  <div class="shot">
-    <div class="win">
-      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern — 生词</span></div>
-      <div class="pane">
-        <div class="ph"><h4>回顾</h4></div>
-        <div class="empty">
-          <div class="ic">🍃</div>
-          <p>这几天没什么好回顾的</p>
-          <s>你最近查的词都还新鲜，过几天再来。<br>要是想自己翻翻，全部生词在这儿。</s>
-          <div><span class="btn sm">看全部生词（142）</span></div>
-        </div>
-      </div>
-    </div>
-    <p class="caption"><b>空态。</b>这是最容易做错的一屏。<b>空态不能道歉，也不能催</b>——不要写「暂无待复习内容」，更不要写「快去读书吧！」。就说没什么好看的，然后把门留着。</p>
-  </div>
-
 </div>
 
-<!-- 2 -->
-<h2 class="sec"><span class="n">2</span> 点进一堆</h2>
-<p class="seclede">
-  进去先重复一遍来由，再给词。<b>用户随时能看出自己为什么在这儿</b>，
-  而不是被丢进一个只有"下一个"按钮的黑盒。
+<!-- ═══════════ 2 ═══════════ -->
+<h2 class="sec"><span class="n">2</span> 生词页：先看到回顾，往下才是全部</h2>
+<p class="why">
+  <b>位置已定</b>：「生词」页里的一个完整板块，不是顶部横幅——横幅是通知的语气，板块是内容的语气。
+  每堆<b>不设下限</b>，凑出 1 个词也显示：1 个词也是真问题，堆里就它一个反而更有说服力。
 </p>
-
-<div class="row">
-
-  <div class="shot">
-    <div class="win">
-      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern — 生词</span></div>
-      <div class="pane">
-        <span class="backlink">‹ 回顾</span>
-        <div class="ph"><h4>《傲慢与偏见》里的拦路虎</h4><span class="cnt">6 个</span></div>
-        <div class="why">这几个词你在这本书里<b>各查了 3 次以上</b>，最近一次就在昨天。它们大概率还会再出现。</div>
-        <div class="wl">
-          <div class="wr"><span class="w">countenance</span><span class="g">面容、神情</span><span class="m hot">查过 5 次</span></div>
-          <div class="wr"><span class="w">condescension</span><span class="g">屈尊俯就</span><span class="m hot">查过 4 次</span></div>
-          <div class="wr"><span class="w">entail</span><span class="g">限定继承</span><span class="m">查过 4 次</span></div>
-          <div class="wr"><span class="w">amiable</span><span class="g">和蔼可亲的</span><span class="m">查过 3 次</span></div>
-          <div class="wr"><span class="w">impertinence</span><span class="g">无礼、莽撞</span><span class="m">查过 3 次</span></div>
-          <div class="wr"><span class="w">solicitude</span><span class="g">关切、挂念</span><span class="m">查过 3 次</span></div>
+<div class="stage">
+  <div class="app">
+    <div class="side">
+      <div class="brand">
+        <div class="logo"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v2M8 21h8M10 21c0-3-3-4-3-8a5 5 0 0 1 10 0c0 4-3 5-3 8"/></svg></div>
+        <span>Lantern</span>
+      </div>
+      <div class="grp">
+        <h4>书库</h4>
+        <div class="rows">
+          <div class="row"><div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 6H3M16 12H3M16 18H3M21 6v12"/></svg><span>全部书籍</span></div><div class="c">24</div></div>
+          <div class="row"><div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 7v14M3 18h7a2 2 0 0 1 2 2 2 2 0 0 1 2-2h7M3 6h7a2 2 0 0 1 2 2 2 2 0 0 1 2-2h7v12"/></svg><span>在读</span></div><div class="c">3</div></div>
+          <div class="row"><div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m9 12 2 2 4-4"/></svg><span>已读完</span></div><div class="c">11</div></div>
         </div>
-        <div style="display:flex;gap:9px;margin-top:16px">
-          <span class="btn pri sm" style="flex:1;text-align:center">开始过一遍</span>
-          <span class="btn sm">只看，不测</span>
+      </div>
+      <div class="grp">
+        <h4>已保存</h4>
+        <div class="rows">
+          <div class="row on"><div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m4 18 5-12 5 12M5.5 15h7M22 15c0 2-1.5 3-3 3s-3-1-3-3 1.5-3 3-3 3 1 3 3v3"/></svg><span>生词</span></div><div class="c">218</div></div>
+          <div class="row"><div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg><span>复习</span></div></div>
+          <div class="row"><div class="l"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9l6-6V5a2 2 0 0 0-2-2Z"/><path d="M14 21v-5a1 1 0 0 1 1-1h5"/></svg><span>笔记</span></div></div>
         </div>
       </div>
     </div>
-    <p class="caption"><b>词表态。</b>「只看，不测」这个按钮要留——很多时候用户只想扫一眼确认自己还记得，不想被逐个提问。<b>强制答题会把「随便看看」变成「一场考试」</b>，那正是我们要避免的。</p>
-  </div>
 
-  <div class="shot">
-    <div class="win">
-      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern — 生词</span></div>
-      <div class="pane">
-        <div class="rcbar"><span>拦路虎</span><span class="bar"><i></i></span><span>2 / 6</span></div>
-        <div class="rc">
-          <div class="w">condescension</div>
-          <div class="p">n.</div>
-          <div class="ctx">
-            …with a <mark>condescension</mark> which seemed to say that she was doing them a very great favour.
+    <div class="main">
+      <div class="page-h">
+        <div>
+          <h2>生词</h2>
+          <p>218 个词 · 来自 9 本书</p>
+        </div>
+        <button class="btn ghost sm">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M7 12h10M10 18h4"/></svg>
+          筛选
+        </button>
+      </div>
+
+      <div>
+        <div class="block-h">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+          <h3>回顾</h3>
+          <span class="sub">这几天你自己的行为攒出来的</span>
+        </div>
+
+        <div class="piles">
+          <div class="pile">
+            <div class="top">
+              <div class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg></div>
+              <h4>你在《傲慢与偏见》里<br>反复查的词</h4>
+              <div class="n">6</div>
+            </div>
+            <p class="reason">同一本书里查了不止一次——它是这本书的拦路虎，不是随手一查。</p>
+            <div class="words">
+              <span class="chip">countenance</span><span class="chip">civility</span>
+              <span class="chip">obliged</span><span class="chip">amiable</span>
+              <span class="chip more">+2</span>
+            </div>
           </div>
-          <div class="src">《傲慢与偏见》第 6 章 · 你昨天在这里查过它</div>
-          <div class="acts">
-            <span class="btn">还是不记得</span>
-            <span class="btn pri">想起来了</span>
+
+          <div class="pile">
+            <div class="top">
+              <div class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 6.7 3L21 8"/><path d="M21 3v5h-5"/><path d="M12 8v4l2.5 2.5"/></svg></div>
+              <h4>以为会了，<br>结果又查了</h4>
+              <div class="n">3</div>
+            </div>
+            <p class="reason">读到几次都没查，自动升上去了；后来你又查它，说明升早了。</p>
+            <div class="words">
+              <span class="chip">prudence</span><span class="chip">discern</span><span class="chip">candour</span>
+            </div>
+          </div>
+
+          <div class="pile">
+            <div class="top">
+              <div class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 7v14M3 18h7a2 2 0 0 1 2 2 2 2 0 0 1 2-2h7M3 6h7a2 2 0 0 1 2 2 2 2 0 0 1 2-2h7v12"/></svg></div>
+              <h4>刚读完的第 14 章里<br>你查过这些</h4>
+              <div class="n">8</div>
+            </div>
+            <p class="reason">趁着还有印象，就地过一遍。半小时前你还在这一章里。</p>
+            <div class="words">
+              <span class="chip">solicitude</span><span class="chip">vexation</span>
+              <span class="chip">alacrity</span><span class="chip">abode</span>
+              <span class="chip more">+4</span>
+            </div>
+          </div>
+
+          <div class="pile">
+            <div class="top">
+              <div class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3 4 7v6c0 5 3.4 8.4 8 9 4.6-.6 8-4 8-9V7Z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></div>
+              <h4>《呼啸山庄》里<br>反复查的词</h4>
+              <div class="n">1</div>
+            </div>
+            <p class="reason">只有一个词，但它你查了 4 次——堆里就它一个，反而更说明问题。</p>
+            <div class="words"><span class="chip">wuthering</span></div>
+          </div>
+        </div>
+
+        <div class="demoted">
+          <div class="demoted-h">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>
+            还有
+          </div>
+          <div class="piles">
+            <div class="pile quiet">
+              <div class="top">
+                <div class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+                <h4>很久没再遇到的词</h4>
+                <div class="n">29</div>
+              </div>
+              <p class="reason">收藏了，但书里一直没再出现过。没有故事可讲，所以放在这儿——你想练的时候再点。</p>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-    <p class="caption"><b>过词态。</b>关键是中间那段原文——<b>不给孤零零的单词，给他当初查它的那一句</b>。语境本身就是最好的提示，而且能把这次复习和读书那一刻接回去。底下那行「你昨天在这里查过它」也是同一个作用。</p>
-  </div>
 
+      <div class="divider-all"><div class="ln"></div><span>全部生词 218</span><div class="ln"></div></div>
+
+      <div class="wordlist">
+        <div class="wl"><div class="w">countenance</div><div class="d">面容；神色 · 《傲慢与偏见》</div><div class="st learn">学习中</div></div>
+        <div class="wl"><div class="w">prudence</div><div class="d">审慎；精明 · 《傲慢与偏见》</div><div class="st fam">眼熟</div></div>
+        <div class="wl"><div class="w">meadow</div><div class="d">草地；牧场 · 《呼啸山庄》</div><div class="st known">已掌握</div></div>
+      </div>
+    </div>
+  </div>
+  <p class="cap"><b>四堆的排序不是随便定的：</b>越贴近「你刚刚在干什么」的越靠前。
+    第四堆（FSRS 兜底）说不出来由，所以收进「还有」里降一级——它是唯一一个算法说了算的堆。</p>
 </div>
 
-<!-- 3 -->
-<h2 class="sec"><span class="n">3</span> 掌握度：看得见，能反悔</h2>
-<p class="seclede">
-  系统会根据「读到几次、查没查」自动调整掌握度。
-  <b>这件事必须能被用户看见，而且必须能被推翻</b>——悄悄改动学习状态，哪怕改对了，
-  用户一旦发现也会开始怀疑别的地方。
+<!-- ═══════════ 3 ═══════════ -->
+<h2 class="sec"><span class="n">3</span> 空态：不道歉，也不催</h2>
+<p class="why">
+  不要写「暂无待复习内容」（道歉），更不要写「快去读书吧！」（催）。
+  就说这几天没什么好回顾的，然后把门留着。
 </p>
-
-<div class="row">
-
-  <div class="shot">
-    <div class="win">
-      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern — acknowledged</span></div>
-      <div class="pane">
-        <div><span class="dw">acknowledged</span><span class="dpos">adj.</span></div>
-        <div class="ddef">公认的、被承认的</div>
-
-        <div class="state">
-          <span class="lab">已经比较熟</span>
-          <span class="auto">读出来的</span>
-          <span class="sp"></span>
-          <span class="btn sm ghost">改成…</span>
-        </div>
-
-        <div class="reason">
-          <b>为什么：</b>你在《傲慢与偏见》里<b>跨 3 天读到它 4 次，一次都没查</b>。
-          同一章里的重复只算一点点，主要是那两次隔天重逢。
-        </div>
-        <div class="undo"><span class="btn sm">我其实不认识 →  退回学习中</span></div>
-
-        <div class="hist">
-          <div class="hh">最近发生了什么</div>
-          <div class="ev"><span class="d">昨天</span><span class="up">↑ 升到「比较熟」</span><span style="color:var(--ink3)">第 11 章，读到没查</span></div>
-          <div class="ev"><span class="d">3 天前</span><span>· 读到 2 次没查</span><span style="color:var(--ink3)">第 8 章</span></div>
-          <div class="ev"><span class="d">5 天前</span><span class="dn">↓ 你查了它</span><span style="color:var(--ink3)">第 3 章</span></div>
-          <div class="ev"><span class="d">5 天前</span><span>+ 收藏</span><span style="color:var(--ink3)">第 1 章</span></div>
-        </div>
+<div class="stage dual">
+  <div>
+    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:22px 24px">
+      <div class="block-h">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+        <h3>回顾</h3>
+      </div>
+      <div class="empty">
+        <h4>这几天没什么好回顾的。</h4>
+        <p>你最近查的词都还新鲜，过两天再看更有用。</p>
+        <div class="ghost"><button class="btn ghost sm">看全部生词 218</button></div>
       </div>
     </div>
-    <p class="caption"><b>可解释态。</b>「读出来的」这个标记很重要——它把<b>自动判定的掌握度和用户自己标的分开</b>，将来发现算法不准，可以只回滚自动的那一部分。下面的时间线用大白话记录每一次升降，用户能自己核对。</p>
+    <p class="cap"><b>这样写。</b>陈述事实，「过两天再看更有用」给的是一个真实的理由，不是软性催促。门（全部生词）始终留着。</p>
   </div>
-
-  <div class="shot">
-    <div class="win">
-      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">Lantern — 阅读</span></div>
-      <div class="pane">
-        <div class="stage3">
-          <div class="rt">
-            <span class="lab">刚查过的几天 — 释义直接挂着，不用点</span>
-            It is a truth universally
-            <ruby>acknowledged<rt>公认的</rt></ruby>, that a single man in
-            <ruby>possession<rt>拥有</rt></ruby> of a good fortune…
-          </div>
-          <div class="rt">
-            <span class="lab">熟一点之后 — 只剩一个小记号，想看点一下</span>
-            It is a truth universally <u>acknowledged</u><span class="pip"></span>, that a single man in
-            <u>possession</u><span class="pip"></span> of a good fortune…
-          </div>
-          <div class="rt">
-            <span class="lab">真的熟了 — 记号也消失，正文恢复干净</span>
-            It is a truth universally acknowledged, that a single man in possession of a good fortune…
-          </div>
-        </div>
+  <div>
+    <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:22px 24px;opacity:.62">
+      <div class="block-h">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+        <h3>回顾</h3>
+      </div>
+      <div style="text-align:center;padding:18px 0">
+        <div style="font-size:34px;line-height:1">📚</div>
+        <p style="margin:10px 0 4px;font-size:14px;font-weight:600">暂无待复习内容</p>
+        <p style="margin:0;font-size:13px;color:var(--text-muted)">快去读书，积累更多生词吧！</p>
+        <button class="btn primary sm" style="margin-top:12px">去阅读 →</button>
       </div>
     </div>
-    <p class="caption"><b>正文标注的三段退场。</b>这是你问的「后面几次碰到要不要直接显示中文」的答案：<b>要，但它得会自己走</b>。释义的多少本身就是进度条——用户不用打开任何统计页，翻书时发现标注越来越少，就知道自己在进步。一屏有标注数量上限，满了按「最该标的」取前几个，不会糊满中文。</p>
+    <p class="cap" style="color:var(--danger)"><b style="color:var(--danger)">不这样做。</b>
+      表情符号 +「暂无」+ 感叹号 + 行动号召，三种语气全踩：道歉、催促、把阅读变成任务。</p>
   </div>
-
 </div>
 
-<ul class="notes">
-  <li><b>全程没有推送、没有红点、没有角标。</b>侧边栏入口旁边最多一个灰色数字——灰数字是信息，红点是催促。</li>
-  <li><b>每一堆都要能一句话说清来由。</b>说不清的堆不做。这是判断一个堆该不该存在的唯一标准。</li>
-  <li><b>「只看，不测」和「我其实不认识」这两个出口必须留着</b>，它们是这套东西不变成作业的保险。</li>
-  <li><b>正文标注和复习模块是一件事的两面</b>：日常靠标注被动巩固，主动想练时才进复习。标注做好了，复习模块的压力就小了。</li>
-</ul>
+<!-- ═══════════ 4 ═══════════ -->
+<h2 class="sec"><span class="n">4</span> 过词卡：给他当初查它的那一句</h2>
+<p class="why">
+  不给孤零零的单词。<b>语境本身就是最好的提示</b>，而且能把这次复习和读书那一刻接回去。
+  底下那行「你昨天在第 6 章查过它」是同一个作用。
+  两个出口——<b>「只看，不测」</b>和词详情里的「我其实不认识」——是这套东西不变成作业的保险：
+  强制答题会把「随便看看」变成一场考试。
+</p>
+<div class="stage">
+  <div class="cardwrap">
+    <div class="card">
+      <div class="prog">
+        <div class="bar"><i></i></div>
+        <span>3 / 8 · 第 14 章</span>
+      </div>
 
-<div class="q">
-  <h4>三个想听你意见的点</h4>
-  <p><b>一、这一页放在哪。</b>现在它是「生词」页里的一个新板块（进生词先看到回顾，往下才是全部词表）。也可以做成生词页顶部的一条横幅。我倾向前者——它值一块完整的地方。</p>
-  <p><b>二、行为堆要不要设下限。</b>比如「在这本书里查了 4 次」这堆，如果只凑出 1 个词，还要不要显示？我倾向<b>要</b>，1 个词也是真问题，堆里就 1 个反而更有说服力。但这样空态会变少。</p>
-  <p><b>三、正文标注第一阶段挂多久。</b>我暂定「查过之后、掌握度还没升上来之前」一直挂着，由掌握度决定退场，不设固定天数。也可以简单点：固定 7 天。我倾向前者，但它依赖掌握度算得准。</p>
+      <p class="quote">
+        Elizabeth received them with all the <mark>solicitude</mark> of a sister,
+        and could not but feel how much of her own peace of mind depended on
+        the hour that was coming.
+      </p>
+
+      <div class="prov">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        你昨天在《傲慢与偏见》第 6 章查过它
+      </div>
+
+      <p class="ask">还记得 <b>solicitude</b> 是什么意思吗？</p>
+
+      <div class="grades">
+        <div class="grade g1"><b>忘了</b><i>&lt;1 分钟</i></div>
+        <div class="grade"><b>很难</b><i>2 天</i></div>
+        <div class="grade"><b>还行</b><i>6 天</i></div>
+        <div class="grade g4"><b>太简单</b><i>16 天</i></div>
+      </div>
+
+      <div class="outs">
+        <button class="btn quiet">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          只看，不测
+        </button>
+        <button class="btn quiet">跳过这个词</button>
+      </div>
+    </div>
+  </div>
+  <p class="cap">
+    <b>「只看，不测」不在次要按钮的位置——它和「跳过」并排在最底下一行，随时可以按。</b>
+    按下去之后这一堆就变成纯浏览：原句 + 释义直接摊开，不再问「还记得吗」。
+  </p>
+</div>
+
+<!-- ═══════════ 5 ═══════════ -->
+<h2 class="sec"><span class="n">5</span> 掌握度：看得见，能推翻</h2>
+<p class="why">
+  悄悄改动学习状态，<b>哪怕改对了</b>，用户一旦发现也会开始怀疑别的地方。
+  所以每个词的详情里必须有：当前档位 + 是不是自动判定的 + <b>一句话说清为什么</b> +
+  一个「我其实不认识」的一键退回 + 一条大白话时间线。
+</p>
+<div class="stage">
+  <div class="detail">
+    <div class="hd">
+      <div>
+        <span class="w">prudence</span>
+        <span class="ph">/ˈpruːdəns/</span>
+      </div>
+      <p class="df">审慎；深谋远虑；精明</p>
+      <div class="lvlrow">
+        <span class="st fam" style="font-size:12.5px;padding:3px 11px">眼熟</span>
+        <span class="auto">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v3M12 18v3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M3 12h3M18 12h3M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>
+          自动判定
+        </span>
+      </div>
+      <p class="because">
+        你在《傲慢与偏见》里跨 3 天读到 <b>prudence</b> 4 次，一次都没查。
+      </p>
+    </div>
+    <div class="bd">
+      <p class="tl-h">它是怎么走到这一步的</p>
+      <div class="tl">
+        <div class="ev down">
+          <div class="t">你又查了它一次 —— 从「眼熟」<em>退回学习中</em></div>
+          <div class="d">今天 14:22 · 《傲慢与偏见》第 14 章 · 等待复习</div>
+        </div>
+        <div class="ev up">
+          <div class="t">第 4 次读到没查 —— 升到<em>眼熟</em></div>
+          <div class="d">8 月 4 日 · 《傲慢与偏见》第 11 章</div>
+        </div>
+        <div class="ev up">
+          <div class="t">连着两天读到它都没查</div>
+          <div class="d">8 月 2 日 – 8 月 3 日 · 第 8、9 章</div>
+        </div>
+        <div class="ev">
+          <div class="t">你查了它，收进生词</div>
+          <div class="d">8 月 1 日 · 《傲慢与偏见》第 6 章</div>
+        </div>
+      </div>
+      <div class="foot-out">
+        <p>档位只影响它多久再出现一次，以及正文里还标不标它。改错了随时能拨回来。</p>
+        <button class="btn danger sm">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+          我其实不认识
+        </button>
+      </div>
+    </div>
+  </div>
+  <p class="cap">
+    <b>「一句话说清为什么」是这一屏的核心</b>，不是时间线。时间线是给想追究的人看的；
+    那一句紫底的话是给所有人看的——它让「自动判定」从黑箱变成一条能被反驳的陈述。
+  </p>
+</div>
+
+<!-- ═══════════ 6 ═══════════ -->
+<h2 class="sec"><span class="n">6</span> 阅读器：章节末尾一行小字</h2>
+<p class="why">
+  这是「两处都放」里<b>唯一的风险点</b>——它离阅读场景最近，也最容易做着做着变成变相提醒。
+  <span class="hard">死线：它永远不主动出现在用户视线焦点里。</span>
+  用户翻到章节末尾才看得见它，翻过去就没了。任何形式的弹出、浮层、角标、计数气泡都算越界。
+</p>
+<div class="stage">
+  <div class="reader">
+    <div class="rbar">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 18-6-6 6-6"/></svg>
+      <span class="ttl">傲慢与偏见</span>
+      <span style="margin-left:auto">第 14 章 · 68%</span>
+    </div>
+    <div class="rbody">
+      <p>Elizabeth received them with all the solicitude of a sister, and could not
+         but feel how much of her own peace of mind depended on the hour that was
+         coming. She had been unable to sleep, and the vexation of it showed.</p>
+      <p>Mr. Collins, meanwhile, was arranging his thoughts with an alacrity that
+         nobody in the room mistook for wit; and Mrs. Bennet, in her abode of
+         perpetual grievance, said nothing at all.</p>
+      <div class="chapend">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+        <span class="line">这一章你查了 8 个词。</span>
+        <a href="#">趁着还有印象，过一遍 →</a>
+      </div>
+    </div>
+  </div>
+  <p class="cap">
+    读到这里，说明他刚读完这一章、正在换气——这是一天里唯一一个「打断成本接近零」的时刻。
+    没读完就翻页走了，这行字他根本不会看见，也就没有被打扰。<br>
+    <b>整行和左边的正文注脚同一个灰</b>，没有紫色。紫色是「这里有个功能」的信号，那正是它不该发的信号。
+  </p>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px">
+    <div>
+      <div class="reader" style="border-radius:10px">
+        <div class="rbody" style="padding:22px 30px 24px">
+          <p style="margin:0;color:#8a827a;font-size:15px">…said nothing at all.</p>
+          <div class="chapend hover" style="margin-top:20px;padding-top:16px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+            <span class="line">这一章你查了 8 个词。</span>
+            <a href="#">趁着还有印象，过一遍 →</a>
+            <span class="x">
+              不再显示
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </span>
+          </div>
+        </div>
+      </div>
+      <p class="cap"><b>关掉它：鼠标移上去才浮出「不再显示 ×」</b>，平时那一行右边什么都没有。
+        点一下就永久关闭，不再问第二遍，也不弹确认框——关掉一行小字不值得一次打断。</p>
+    </div>
+    <div>
+      <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;overflow:hidden">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;
+          text-transform:uppercase;letter-spacing:.3px;color:var(--text-muted)">阅读设置 · 学习</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;
+          padding:0 16px;height:73px;border-bottom:1px solid rgba(0,0,0,.1)">
+          <div>
+            <div style="font-size:14px;font-weight:500">正文里标注生词</div>
+            <div style="font-size:12.5px;color:var(--text-muted)">按掌握度自动决定标注深浅</div>
+          </div>
+          <div style="width:38px;height:22px;border-radius:99px;background:var(--accent);flex:none;position:relative">
+            <span style="position:absolute;right:2px;top:2px;width:18px;height:18px;border-radius:99px;background:#fff"></span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;
+          padding:0 16px;height:73px">
+          <div>
+            <div style="font-size:14px;font-weight:500">章节末尾提示回顾</div>
+            <div style="font-size:12.5px;color:var(--text-muted)">读完一章时，在正文末尾显示一行小字</div>
+          </div>
+          <div style="width:38px;height:22px;border-radius:99px;background:var(--accent);flex:none;position:relative">
+            <span style="position:absolute;right:2px;top:2px;width:18px;height:18px;border-radius:99px;background:#fff"></span>
+          </div>
+        </div>
+      </div>
+      <p class="cap"><b>后悔了能找回来。</b>开关放在阅读设置的「学习」里，和「正文里标注生词」并排——
+        这两件事是同一类：都是学习状态往阅读界面里渗的程度。默认开。</p>
+    </div>
+  </div>
+  <div class="ban">
+    <div class="item ok">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m5 12 5 5L20 7"/></svg>
+      正文流里的一行静态文字，跟着页面一起翻走
+    </div>
+    <div class="item">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      读到一半弹出的浮层 / Toast / 底部抽屉
+    </div>
+    <div class="item">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      工具栏上的红点，或「8」这样的计数气泡
+    </div>
+    <div class="item">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      固定吸在屏幕底部、翻页也不走的常驻条
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 7 ═══════════ -->
+<h2 class="sec"><span class="n">7</span> 正文标注：释义的存在本身就是进度条</h2>
+<p class="why">
+  现有的被动标注是个全局开关（开/关，密度 25/50/100%），跟「这个词你什么时候查的、熟到什么程度」毫无关系——
+  <b>它现在只是装饰</b>。跟掌握度挂钩之后它变成真正的学习机制：翻书时发现标注越来越少，就知道自己在进步。
+  这比「已掌握 137 词」有力得多，因为<b>它出现在他真正在看的地方</b>。
+</p>
+<div class="stage">
+  <div class="stages">
+    <div class="st-card">
+      <div class="lbl">刚查过的几天</div>
+      <div class="txt">
+        Elizabeth received them with all the
+        <ruby>solicitude<rt>关切</rt></ruby> of a sister, and could not but feel
+        how much of her own <ruby>peace<rt>安宁</rt></ruby> of mind depended on it.
+      </div>
+      <p class="note">中文释义直接挂在旁边，不用点。此时他刚查过，正需要巩固。</p>
+    </div>
+    <div class="st-card">
+      <div class="lbl mid">熟一点之后</div>
+      <div class="txt">
+        Elizabeth received them with all the
+        <span class="mk">solicitude</span> of a sister, and could not but feel
+        how much of her own peace of mind depended on it.
+      </div>
+      <p class="note">释义收起，只留一个很小的记号，想看点一下。视线不再被拽住。</p>
+    </div>
+    <div class="st-card">
+      <div class="lbl done">真的熟了</div>
+      <div class="txt">
+        Elizabeth received them with all the solicitude of a sister,
+        and could not but feel how much of her own peace of mind depended on it.
+      </div>
+      <p class="note">记号也消失，正文恢复干净。<b>什么都没有，就是最好的反馈。</b></p>
+    </div>
+  </div>
+  <p class="cap">
+    <b>闭环：</b>如果一个词的标注已经退场了，用户又去查它 —— 标注重新出现，掌握度回落。
+    整套学习状态全程在正文里可见、可感，不用离开阅读。<br>
+    <b>第一阶段挂多久由掌握度决定，不设固定天数。</b>现有的密度设置（25/50/100%）改造成
+    「一屏最多标几个」的上限，满了就按「最该标的」排序取前几个。窄视口（760px）下沿用现有逻辑退回 ruby。
+  </p>
 </div>
 
 </div>
