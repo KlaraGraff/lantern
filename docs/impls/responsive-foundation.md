@@ -87,8 +87,10 @@ mobile Safari, which ignores `user-scalable=no` — so adding them would genuine
 pinch-zoom from a reading app, which is the worst category of app to remove it from. The two
 problems people reach for those flags to solve both have better answers: the double-tap-zoom
 delay is what `touch-action: manipulation` handles, and the other, iOS zooming the page when
-you focus an input whose font is under 16px, is a font-size fix in the input component.
-Lantern's shared input is `text-[14px]` and will trip that threshold — see below.
+you focus an input whose font is under 16px, is a font-size floor on coarse pointers. Every
+text field in Lantern was between 10px and 14px and would have tripped that threshold; the
+floor is now in place, and [the section below](#the-16px-floor-and-why-it-is-the-one-unlayered-rule)
+explains why it is a single stylesheet rule rather than an edit to each component.
 
 **`touch-action` was not set on the root.** A blanket `html { touch-action: manipulation }`
 is the one-liner that covers every clickable `div` without enumerating anything, and it was
@@ -144,15 +146,34 @@ exists there is nothing to look at.
 the double-tap-zoom wait in WebKit is documented behaviour; no before/after timing was taken
 on a device.
 
-**Two things the foundation does not fix, and cannot from these files.** Neither blocks item
-1, both will bite item 2. The app shell is `h-screen` — `100vh` — on every route, which on
+**One thing the foundation does not fix, and cannot from these files.** It does not block
+item 1, it will bite item 2. The app shell is `h-screen` — `100vh` — on every route, which on
 iOS measures the *largest* viewport and so runs the bottom of the layout underneath the
 browser chrome and the home indicator; `100dvh` is the fix, and it lives in `src/pages/` and
 `src/components/`, which this change was not permitted to touch.
 
-And the shared input primitive is `text-[14px]` (`../../src/components/ui/Input.tsx:21`),
-under the 16px floor below which iOS zooms the page on focus. Because page scaling was
-deliberately left on, that zoom will happen, and it does not zoom back out when the field
-blurs. Raising the input to 16px on coarse pointers — `touch:text-base`, which is what the
-variant is for — fixes it without touching the desktop's type scale, but it is a change to
-`src/components/ui/`, so it belongs to item 2.
+## The 16px floor, and why it is the one unlayered rule
+
+The second problem this uncovered — iOS zooming the page in when a text field under 16px
+takes focus, and never zooming back out — was first written down as a component fix:
+`touch:text-base` on the shared input primitive. That was too small an answer. There are 49
+raw `<input>`, `<textarea>` and `<select>` elements across 25 files, every one of them
+between 10px and 14px, and they are spread across surfaces three other work streams own.
+Twenty-five files of identical one-line edits is a merge conflict wearing a fix's clothes.
+
+So it is one rule in `src/index.css` instead, and it is the only rule in that file
+deliberately left out of `@layer base`. The rules in `base` are there so that a utility can
+override them, which is exactly what this one must not allow: it has to beat the
+`text-[13px]` already sitting on the element. Giving it the higher ground is safe only
+because `pointer: coarse` fences it off from every mouse-driven window — a macOS window
+dragged to 375px has a fine pointer and never sees it. That is the same rule the `touch:`
+variant exists to enforce, applied to itself.
+
+Range, checkbox and radio inputs are excluded: they have no text to zoom for, and they do
+have layouts a font size can push around. Nothing else shrinks, because nothing in the app
+sets a field above 14px — this raises a floor, it does not assign a size. A touch surface
+that genuinely wants smaller text has to outrank it deliberately.
+
+`tests/responsive-foundation.test.ts` asserts both halves: the exclusions, and that the rule
+has not been tidied into `@layer base`. The tidy is the likely regression, and it is silent —
+the CSS still compiles, still lints, and still looks right to whoever moved it.

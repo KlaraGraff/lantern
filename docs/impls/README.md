@@ -8,9 +8,9 @@ Detailed implementation plans for features and bug fixes. Numbers match the corr
 
 - [Responsive and touch foundation](responsive-foundation.md) —
   the `md:` / `touch:` vocabulary and the safe-area insets are in place and invisible on
-  desktop. It owes its first consumers: nothing reads the insets yet, and the two problems
-  it uncovered — the 14px input font that makes iOS zoom on focus, and `100vh` as the shell
-  on every route — belong to the components, which it was not allowed to touch.
+  desktop. The 16px floor that stops iOS zooming on focus landed here too, as one rule
+  rather than 25 identical component edits. It owes its first consumers: nothing reads the
+  insets yet, and `100vh` is still the shell on every route, which belongs to the pages.
 - [The Home sidebar becomes a drawer](mobile-home-drawer.md) —
   P2 item 2. Mockup approved 2026-08-06 and the gesture kernel is in flight; the drawer
   itself, the collections touch actions and the `hasTitleBarInset` wiring are all owed.

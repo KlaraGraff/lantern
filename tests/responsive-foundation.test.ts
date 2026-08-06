@@ -66,6 +66,28 @@ test("touch-action stays scoped to controls", async () => {
   assert.match(css, /touch-action:\s*manipulation/);
 });
 
+test("touch text fields clear the 16px floor iOS zooms below", async () => {
+  const css = await readRepo("src/index.css");
+  const rule =
+    /@media \(pointer: coarse\) \{\s*(input[^{]*|[^{}]*)\{\s*font-size:\s*16px;/.exec(
+      css,
+    );
+
+  assert.ok(rule, "a `pointer: coarse` rule must set text fields to 16px");
+  // Range, checkbox and radio have no text to zoom for and do have layouts
+  // that a font size can push around.
+  for (const type of ["range", "checkbox", "radio"]) {
+    assert.match(rule[1], new RegExp(`:not\\(\\[type="${type}"\\]\\)`));
+  }
+
+  // The rule has to outrank the `text-[13px]` utility on the element, so
+  // unlike everything else in this file it must stay out of `@layer base`.
+  // If someone tidies it in there it stops working and nothing else notices.
+  const base = /@layer base\s*\{([\s\S]*?)\n\}/.exec(css);
+  assert.ok(base, "src/index.css must still have an `@layer base` block");
+  assert.doesNotMatch(base[1], /pointer:\s*coarse/);
+});
+
 test("the safe-area insets survive with no consumer", async () => {
   const css = await readRepo("src/index.css");
   const block = /@theme static\s*\{([^}]*)\}/.exec(css);

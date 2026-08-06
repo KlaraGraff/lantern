@@ -236,6 +236,32 @@
   }
 }
 
+/* The one rule in this file that is deliberately *not* layered.
+ *
+ * iOS zooms the page in when a text field whose computed font size is under
+ * 16px takes focus, and it does not zoom back out afterwards — the reader is
+ * left at 1.2× with the layout off the right edge, and the only way back is a
+ * manual pinch. Every text field in the app is 10–14px, so this fires on the
+ * first tap into search.
+ *
+ * The fix has to beat the `text-[13px]` utility sitting on the element, which
+ * means it cannot live in `@layer base` like the rules above; the whole point
+ * there was to lose to utilities. It is safe to give this one the higher
+ * ground because `pointer: coarse` fences it off from every mouse-driven
+ * window, including a macOS window dragged narrow — the width breakpoints
+ * never reach it.
+ *
+ * It is a floor, not an assignment: nothing in the app sets a field above
+ * 14px today, so nothing shrinks. A touch surface that genuinely wants
+ * smaller text has to say so at higher specificity, and should think twice. */
+@media (pointer: coarse) {
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
 body {
   margin: 0;
   font-family: var(--font-sans);
