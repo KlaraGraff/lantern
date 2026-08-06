@@ -28,3 +28,8 @@ __pycache__/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 .nvmrc
+
+# 嵌套在项目目录里的临时 clone（例如 .codex-release-v2.8.2/）。
+# 唯一的工作目录是这个仓库本身 —— 见 AGENTS.md。这条规则只是防止
+# 这类目录被误提交，不是认可它们的存在。
+.codex-*/
