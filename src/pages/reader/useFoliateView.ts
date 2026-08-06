@@ -63,6 +63,7 @@ import type {
 import { readerOpenKey } from "./reader-open-key";
 import { toReaderOpenError, type ReaderOpenError } from "./reader-open-error";
 import { markTypographyMediaParagraphs } from "./reader-typography";
+import type { SidePanel, TracesTab } from "./side-panel";
 
 function getPdfStartCfi(
   progress: number,
@@ -147,8 +148,6 @@ interface InstallDocumentInteractionsOptions {
   interactionGeneration: number;
 }
 
-type SidePanel = "ai" | "bookmarks" | "vocab" | "notes" | null;
-
 interface UseFoliateViewOptions {
   book: Book | null;
   bookId?: string;
@@ -202,6 +201,7 @@ interface UseFoliateViewOptions {
   setChapterProgress: Dispatch<SetStateAction<number>>;
   setPageInfo: Dispatch<SetStateAction<ReaderPageInfo | null>>;
   setActiveVocabCfi: Dispatch<SetStateAction<string | null>>;
+  setTracesTab: Dispatch<SetStateAction<TracesTab>>;
   setSidePanel: Dispatch<SetStateAction<SidePanel>>;
   setContextMenu: Dispatch<SetStateAction<ReaderInteraction | null>>;
   setFootnote: Dispatch<SetStateAction<FootnotePopoverData | null>>;
@@ -328,6 +328,7 @@ export function useFoliateView({
   setChapterProgress,
   setPageInfo,
   setActiveVocabCfi,
+  setTracesTab,
   setSidePanel,
   setContextMenu,
   setFootnote,
@@ -819,7 +820,8 @@ export function useFoliateView({
         const marker = autoMarkersRef.current.get(value);
         if (marker?.kind === "vocab") {
           setActiveVocabCfi(value);
-          setSidePanel("vocab");
+          setTracesTab("vocab");
+          setSidePanel("traces");
           return;
         }
         if (marker?.kind === "lookup" && range) {

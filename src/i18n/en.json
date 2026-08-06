@@ -121,6 +121,8 @@
   "reader.scrubber.label": "Book progress",
   "reader.scrubber.tooltip": "{{chapter}} · {{progress}}%",
   "reader.aiAssistant": "AI Assistant",
+  "reader.traces.title": "Traces: bookmarks, vocab & notes",
+  "reader.typography": "Typography",
   "reader.tocTitle": "Table of Contents",
   "reader.tocOpen": "Open table of contents",
   "reader.tocClose": "Close table of contents",

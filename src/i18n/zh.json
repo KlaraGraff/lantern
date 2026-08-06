@@ -121,6 +121,8 @@
   "reader.scrubber.label": "阅读进度",
   "reader.scrubber.tooltip": "{{chapter}} · {{progress}}%",
   "reader.aiAssistant": "AI 助手",
+  "reader.traces.title": "痕迹：书签、生词、笔记",
+  "reader.typography": "排版",
   "reader.tocTitle": "目录",
   "reader.tocOpen": "打开目录",
   "reader.tocClose": "关闭目录",

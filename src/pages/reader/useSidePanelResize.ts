@@ -11,15 +11,16 @@ const PANEL_MIN_WIDTH = 320;
 const PANEL_MAX_WIDTH = 700;
 const PANEL_DEFAULT_WIDTH = 525;
 /**
- * The notes rail is a margin, not a workspace: it holds one column of cards
+ * The notes tab is a margin, not a workspace: it holds one column of cards
  * beside the text and every pixel it takes comes off the page. The AI panel is
  * the opposite — it holds a conversation, and 380 would cramp it. So the width
- * is per panel rather than one number shared by all four; dragging one no longer
- * resizes the others behind it either, which was never intended.
+ * is per panel (and, for the traces panel, per active tab) rather than one
+ * number shared by all of them; dragging one no longer resizes the others
+ * behind it either, which was never intended.
  */
-export type ResizableSidePanel = "ai" | "bookmarks" | "vocab" | "notes";
+export type ResizableSidePanel = "ai" | "traces" | "traces-notes";
 
-const PANEL_DEFAULT_WIDTHS: Partial<Record<ResizableSidePanel, number>> = { notes: 380 };
+const PANEL_DEFAULT_WIDTHS: Partial<Record<ResizableSidePanel, number>> = { "traces-notes": 380 };
 
 interface ShadowHost {
   shadowRoot: ShadowRoot | null;

@@ -8,8 +8,7 @@ import {
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { FoliateView, ReaderNavigation } from "./foliate-types";
-
-type SidePanel = "ai" | "bookmarks" | "vocab" | "notes" | null;
+import type { AiTab, SidePanel, TracesTab } from "./side-panel";
 
 interface UseReaderNavigationOptions {
   bookId?: string;
@@ -29,6 +28,8 @@ interface UseReaderNavigationOptions {
   getCurrentLabel(): string;
   currentCfiRef: MutableRefObject<string | null>;
   setSidePanel: Dispatch<SetStateAction<SidePanel>>;
+  setTracesTab: Dispatch<SetStateAction<TracesTab>>;
+  setAiTab: Dispatch<SetStateAction<AiTab>>;
   setInitialChatId: Dispatch<SetStateAction<string | undefined>>;
 }
 
@@ -46,6 +47,8 @@ export function useReaderNavigation({
   getCurrentLabel,
   currentCfiRef,
   setSidePanel,
+  setTracesTab,
+  setAiTab,
   setInitialChatId,
 }: UseReaderNavigationOptions) {
   const pendingNavigationRef = useRef<ReaderNavigation | null>(null);
@@ -69,8 +72,12 @@ export function useReaderNavigation({
         pushJump(currentCfiRef.current, getCurrentLabel());
         await viewRef.current?.goTo(target.page!);
       }
-      if (target.openVocab && supportsCfiNavigation) setSidePanel("vocab");
+      if (target.openVocab && supportsCfiNavigation) {
+        setTracesTab("vocab");
+        setSidePanel("traces");
+      }
       if (target.openChat) {
+        setAiTab("chat");
         setSidePanel("ai");
         if (target.chatId) setInitialChatId(target.chatId);
       }
@@ -109,8 +116,10 @@ export function useReaderNavigation({
     isTextBook,
     pushJump,
     refreshAnnotations,
+    setAiTab,
     setInitialChatId,
     setSidePanel,
+    setTracesTab,
     supportsCfiNavigation,
     textNavigationRegistration,
     textReaderNavigateRef,

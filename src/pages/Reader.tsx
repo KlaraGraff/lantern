@@ -9,22 +9,19 @@ import {
   ArrowLeft,
   BookOpen,
   List,
-  Bookmark,
   Bot,
-  MessageSquareMore,
-  Languages,
+  Layers,
   Loader2,
   Minus,
   Plus,
   FileWarning,
   Search,
   Volume2,
-  CircleHelp,
 } from "lucide-react";
 import Button from "../components/ui/Button";
 import Toast from "../components/ui/Toast";
 import AiPanel from "../components/AiPanel";
-import BookmarksPanel from "../components/BookmarksPanel";
+import ReaderTracesPanel from "../components/ReaderTracesPanel";
 import ReaderSettings from "../components/ReaderSettings";
 import { openSettings } from "../components/settings-open";
 import {
@@ -33,7 +30,6 @@ import {
 } from "../components/reader-settings";
 import ReaderContextMenu from "../components/ReaderContextMenu";
 import OcrReaderHud from "../components/OcrReaderHud";
-import DictionaryPanel from "../components/DictionaryPanel";
 import TranslationPopover from "../components/TranslationPopover";
 import FootnotePopover, { type FootnotePopoverData } from "../components/FootnotePopover";
 import TableOfContents from "../components/TableOfContents";
@@ -90,7 +86,7 @@ import {
 } from "./reader/useReaderSettingsSync";
 import { measureRenderedTextRect } from "./reader/reader-settings-placement";
 import { useWindowSizePersistence } from "./reader/useWindowSizePersistence";
-import { useSidePanelResize } from "./reader/useSidePanelResize";
+import { useSidePanelResize, type ResizableSidePanel } from "./reader/useSidePanelResize";
 import {
   useFoliateAnnotations,
   type WordMarkRule,
@@ -108,6 +104,7 @@ import { useFoliateView } from "./reader/useFoliateView";
 import { tocUnitKind } from "./reader/chapter-pagination";
 import { useReaderNavigation } from "./reader/useReaderNavigation";
 import { useJumpHistory } from "./reader/useJumpHistory";
+import { toggleSidePanel, type AiTab, type SidePanel, type TracesTab } from "./reader/side-panel";
 import {
   fileStatusExplainsFailure,
   toReaderOpenError,
@@ -121,7 +118,7 @@ import { useProgressReadout } from "./reader/useProgressReadout";
 import { chaptersToTicks, type ScrubberTick } from "./reader/progress-scrubber-math";
 import ProgressScrubber from "../components/ProgressScrubber";
 import ReaderExportDialog from "../components/ReaderExportDialog";
-import ReaderNotesRail, { type ReaderNoteAnchor } from "../components/ReaderNotesRail";
+import { type ReaderNoteAnchor } from "../components/ReaderNotesRail";
 import ContinuousReadAloudToolbar from "../components/ContinuousReadAloudToolbar";
 import { useContinuousReadAloud } from "../hooks/useContinuousReadAloud";
 import { supportsContinuousReadAloud } from "../components/continuous-read-aloud";
@@ -129,8 +126,6 @@ import { supportsContinuousReadAloud } from "../components/continuous-read-aloud
 // Opened only on an explicit "explain" action, never on first paint of the
 // reader — so the markdown renderer it needs waits for that action too.
 const ExplainPopover = lazy(() => import("../components/ExplainPopover"));
-
-type SidePanel = "ai" | "bookmarks" | "vocab" | "notes" | null;
 
 function tocKind(chapter: TocChapter) {
   return tocUnitKind({ label: chapter.title });
@@ -200,21 +195,18 @@ export default function Reader() {
   const supportsCfiNavigation = capabilities.supportsCfiNavigation;
   const [loading, setLoading] = useState(true);
   const [sidePanel, setSidePanel] = useState<SidePanel>(null);
+  const [tracesTab, setTracesTab] = useState<TracesTab>("bookmarks");
+  const [aiTab, setAiTab] = useState<AiTab>("chat");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tocOpen, setTocOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [xrayInteraction, setXrayInteraction] = useState<ReaderInteraction | null>(null);
-  const [xrayOpen, setXrayOpen] = useState(false);
   useEffect(() => {
-    setXrayOpen(false);
+    setTracesTab("bookmarks");
+    setAiTab("chat");
     setXrayInteraction(null);
   }, [bookId]);
-  useEffect(() => {
-    if (sidePanel === null || !xrayOpen) return;
-    setXrayOpen(false);
-    setXrayInteraction(null);
-  }, [sidePanel, xrayOpen]);
   // Bumped on every ⌘F, even while the panel is already open, so it re-focuses/re-selects the input.
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [tocSavedState, setTocSavedState] = useState<TocSavedState | undefined>(undefined);
@@ -426,7 +418,10 @@ export default function Reader() {
     }
     return undefined;
   }, []);
-  const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef, sidePanel);
+  const resizePanelKey: ResizableSidePanel | null = sidePanel === "traces"
+    ? (tracesTab === "notes" ? "traces-notes" : "traces")
+    : sidePanel;
+  const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef, resizePanelKey);
   const {
     zoom,
     zoomRef,
@@ -1253,6 +1248,7 @@ export default function Reader() {
       void navigator.clipboard.writeText(interaction.text);
     } else if (actionId === "ask_ai") {
       setAiContext({ text: interaction.text, cfi: interaction.location });
+      setAiTab("chat");
       setSidePanel("ai");
     } else if (actionId === "collect" && bookId) {
       void collectWord({
@@ -1386,6 +1382,7 @@ export default function Reader() {
     setChapterProgress,
     setPageInfo,
     setActiveVocabCfi,
+    setTracesTab,
     setSidePanel,
     setContextMenu,
     setFootnote,
@@ -1405,6 +1402,8 @@ export default function Reader() {
     getCurrentLabel,
     currentCfiRef,
     setSidePanel,
+    setTracesTab,
+    setAiTab,
     setInitialChatId,
   });
 
@@ -1429,8 +1428,33 @@ export default function Reader() {
     };
   }, []);
 
-  const togglePanel = (panel: "ai" | "bookmarks" | "vocab" | "notes") => {
-    setSidePanel((prev) => (prev === panel ? null : panel));
+  // Toolbar buttons toggle their own panel open/closed. Traces reopens on
+  // whichever of its tabs was last active (tracesTab persists across
+  // close/reopen); AI always reopens on chat — X-Ray is reached through the
+  // selection menu, not the toolbar, so the toolbar's own meaning stays
+  // "open the conversation".
+  const toggleTracesPanel = () => {
+    setSidePanel((prev) => toggleSidePanel(prev, "traces"));
+  };
+
+  const toggleAiPanel = () => {
+    setSidePanel((prev) => {
+      const next = toggleSidePanel(prev, "ai");
+      if (next === "ai") setAiTab("chat");
+      return next;
+    });
+  };
+
+  /** Forces the traces panel open on a specific tab — used by non-toolbar entry points (a vocab marker click, "add note" from the selection menu). */
+  const openTraces = (tab: TracesTab) => {
+    setTracesTab(tab);
+    setSidePanel("traces");
+  };
+
+  /** Forces the AI panel open on the chat tab — used by every "ask AI" entry point outside the toolbar. */
+  const openAiChat = () => {
+    setAiTab("chat");
+    setSidePanel("ai");
   };
 
   const resolveNoteAnchorPosition = useCallback((cfi: string) => {
@@ -1501,6 +1525,7 @@ export default function Reader() {
     const openChat = state?.openChat || searchParams.get("openChat") === "true";
     const chatId = state?.chatId || searchParams.get("chatId") || undefined;
     if (!openChat || !bookReady) return;
+    setAiTab("chat");
     setSidePanel("ai");
     if (chatId) setInitialChatId(chatId);
     if (!isStandaloneWindow) navigate(location.pathname, { replace: true });
@@ -1516,7 +1541,10 @@ export default function Reader() {
     const rawPage = state?.page ?? Number(searchParams.get("page"));
     const page = Number.isInteger(rawPage) && rawPage >= 0 ? rawPage : undefined;
     if (!bookReady || (!openVocab && !cfi && page == null)) return;
-    if (openVocab) setSidePanel("vocab");
+    if (openVocab) {
+      setTracesTab("vocab");
+      setSidePanel("traces");
+    }
     if (cfi && supportsCfiNavigation) flashNavigationTarget(cfi).catch(() => {});
     if (page != null && book?.format === "pdf") {
       pushJump(currentCfiRef.current, getCurrentJumpLabel());
@@ -1765,11 +1793,12 @@ export default function Reader() {
     setSearchFocusToken((token) => token + 1);
   };
 
-  const openXray = (interaction: ReaderInteraction) => {
+  /** X-Ray's primary entry point: the selection menu's "查看语境解释". Opens the AI panel on its X-Ray tab with the interaction that seeds the card. */
+  const openAiXray = (interaction: ReaderInteraction) => {
     setContextMenu(null);
     setXrayInteraction(interaction);
-    setXrayOpen(true);
-    setSidePanel(null);
+    setAiTab("xray");
+    setSidePanel("ai");
   };
 
   return (
@@ -1945,6 +1974,8 @@ export default function Reader() {
               setTocOpen(false);
               setSearchOpen(false);
             }}
+            aria-label={t("reader.typography")}
+            title={t("reader.typography")}
             className={`flex items-center justify-center gap-1 size-9 rounded-lg cursor-pointer transition-colors ${
               settingsOpen ? "text-accent-text" : isStandaloneWindow ? "opacity-60 hover:opacity-100" : "text-text-muted hover:bg-bg-input"
             }`}
@@ -1974,57 +2005,18 @@ export default function Reader() {
             onClearLookupMarks={bookId ? clearLookupMarks : undefined}
           />
 
-          {supportsCfiNavigation && <>
+          {supportsCfiNavigation && (
             <Button
               variant="icon"
               size="md"
-              active={sidePanel === "bookmarks"}
-              aria-label={t("bookmarks.tab.bookmarks")}
-              title={t("bookmarks.tab.bookmarks")}
-              onClick={() => togglePanel("bookmarks")}
+              active={sidePanel === "traces"}
+              aria-label={t("reader.traces.title")}
+              title={t("reader.traces.title")}
+              onClick={toggleTracesPanel}
             >
-              <Bookmark size={16} />
+              <Layers size={16} />
             </Button>
-
-            <Button
-              variant="icon"
-              size="md"
-              active={sidePanel === "vocab"}
-              aria-label={t("vocab.title")}
-              title={t("vocab.title")}
-              onClick={() => togglePanel("vocab")}
-            >
-              <Languages size={16} />
-            </Button>
-
-            <Button
-              variant="icon"
-              size="md"
-              active={sidePanel === "notes"}
-              aria-label={t("readerNotes.title")}
-              title={t("readerNotes.title")}
-              onClick={() => togglePanel("notes")}
-            >
-              <MessageSquareMore size={16} />
-            </Button>
-          </>}
-
-          <Button
-            variant="icon"
-            size="md"
-            active={xrayOpen && sidePanel === null}
-            aria-label={t("readerXray.title")}
-            title={t("readerXray.title")}
-            onClick={() => {
-              setXrayInteraction(null);
-              setXrayOpen((open) => !open);
-              setSidePanel(null);
-            }}
-          >
-            <CircleHelp size={16} />
-          </Button>
-
-          <div className="w-px h-6 bg-border mx-1" />
+          )}
 
           <Button
             variant="icon"
@@ -2032,7 +2024,7 @@ export default function Reader() {
             active={sidePanel === "ai"}
             aria-label={t("reader.aiAssistant")}
             title={t("reader.aiAssistant")}
-            onClick={() => togglePanel("ai")}
+            onClick={toggleAiPanel}
           >
             <Bot size={16} />
           </Button>
@@ -2058,7 +2050,7 @@ export default function Reader() {
 
       {/* Body */}
       <div
-        className={`flex flex-1 overflow-hidden ${sidePanel === "notes" ? "max-[1100px]:flex-col" : ""}`}
+        className={`flex flex-1 overflow-hidden ${sidePanel === "traces" && tracesTab === "notes" ? "max-[1100px]:flex-col" : ""}`}
         style={{ backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body }}
       >
         <TableOfContents
@@ -2283,80 +2275,116 @@ export default function Reader() {
         {sidePanel && (
           <div
             onPointerDown={handlePanelResizePointerDown}
-            className={`w-1 h-full shrink-0 cursor-col-resize touch-none hover:bg-accent/30 transition-colors z-10 ${sidePanel === "notes" ? "max-[1100px]:hidden" : ""}`}
+            className={`w-1 h-full shrink-0 cursor-col-resize touch-none hover:bg-accent/30 transition-colors z-10 ${sidePanel === "traces" && tracesTab === "notes" ? "max-[1100px]:hidden" : ""}`}
           />
         )}
         <div
           ref={panelRef}
-          className={sidePanel ? `shrink-0 h-full ${sidePanel === "notes" ? "max-[1100px]:!h-[38%] max-[1100px]:!w-full" : ""}` : "hidden"}
+          className={sidePanel ? `shrink-0 h-full ${sidePanel === "traces" && tracesTab === "notes" ? "max-[1100px]:!h-[38%] max-[1100px]:!w-full" : ""}` : "hidden"}
           style={{ width: panelWidth }}
           onPointerDownCapture={blockPageTurnKeyboard}
         >
-          <div className={sidePanel === "ai" ? "h-full" : "hidden"}>
-            <AiPanel
-              bookId={bookId}
-              bookTitle={book.title}
-              bookAuthor={book.author}
-              currentChapter={currentChapterIndex >= 0 && currentChapterIndex < chapters.length ? chapters[currentChapterIndex].title : undefined}
-              currentSectionIndex={currentSectionIndex >= 0 ? currentSectionIndex : undefined}
-              currentScopeStartIndex={currentScope.start}
-              currentScopeEndIndex={currentScope.end}
-              currentScopeAmbiguous={currentScope.ambiguous}
-              getViewportText={getViewportText}
-              getSelectionQuote={getSelectionQuote}
-              context={aiContext}
-              initialChatId={initialChatId}
-              onContextConsumed={consumeAiContext}
-              onNavigateToCfi={navigateToCitedCfi}
-              onNavigateToSource={navigateToCitedSource}
-              onLookupWord={lookupWordInPanel}
-              onSelectText={openPanelSelectionMenu}
-            />
+          <div className={sidePanel === "ai" ? "flex h-full flex-col" : "hidden"}>
+            <div className="flex border-b border-border shrink-0">
+              <button
+                type="button"
+                onClick={() => setAiTab("chat")}
+                className={`flex-1 h-[45px] text-[14px] font-medium tracking-[-0.15px] cursor-pointer transition-colors ${
+                  aiTab === "chat" ? "text-text-primary border-b-2 border-accent" : "text-text-muted hover:text-text-body"
+                }`}
+              >
+                {t("chats.title")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setAiTab("xray")}
+                className={`flex-1 h-[45px] text-[14px] font-medium tracking-[-0.15px] cursor-pointer transition-colors ${
+                  aiTab === "xray" ? "text-text-primary border-b-2 border-accent" : "text-text-muted hover:text-text-body"
+                }`}
+              >
+                {t("readerXray.title")}
+              </button>
+            </div>
+            <div className="relative flex-1 min-h-0">
+              <div className={aiTab === "chat" ? "h-full" : "hidden"}>
+                <AiPanel
+                  bookId={bookId}
+                  bookTitle={book.title}
+                  bookAuthor={book.author}
+                  currentChapter={currentChapterIndex >= 0 && currentChapterIndex < chapters.length ? chapters[currentChapterIndex].title : undefined}
+                  currentSectionIndex={currentSectionIndex >= 0 ? currentSectionIndex : undefined}
+                  currentScopeStartIndex={currentScope.start}
+                  currentScopeEndIndex={currentScope.end}
+                  currentScopeAmbiguous={currentScope.ambiguous}
+                  getViewportText={getViewportText}
+                  getSelectionQuote={getSelectionQuote}
+                  context={aiContext}
+                  initialChatId={initialChatId}
+                  onContextConsumed={consumeAiContext}
+                  onNavigateToCfi={navigateToCitedCfi}
+                  onNavigateToSource={navigateToCitedSource}
+                  onLookupWord={lookupWordInPanel}
+                  onSelectText={openPanelSelectionMenu}
+                />
+              </div>
+              {aiTab === "xray" && bookId && book && (
+                <ReaderXrayCard
+                  bookId={bookId}
+                  interaction={xrayInteraction}
+                  getCurrentLocation={() => currentCfiRef.current}
+                  currentChapter={currentChapterIndex >= 0 ? chapters[currentChapterIndex]?.title : undefined}
+                  progress={progress}
+                  onClose={() => { setAiTab("chat"); setXrayInteraction(null); }}
+                  onNavigate={(source) => navigateToSource(source)}
+                  onNavigateCurrent={navigateToCurrentXrayOccurrence}
+                />
+              )}
+            </div>
           </div>
-          {supportsCfiNavigation && sidePanel === "bookmarks" && bookId && (
-            <BookmarksPanel
-              bookId={bookId}
-              onNavigate={navigateToCfi}
-              getCurrentCfi={() => currentCfiRef.current}
-              getCurrentLabel={() => {
-                const idx = currentChapterIndex;
-                return idx >= 0 && idx < chapters.length
-                  ? chapters[idx].title
-                  : t("common.bookmark");
+          {supportsCfiNavigation && sidePanel === "traces" && bookId && (
+            <ReaderTracesPanel
+              tab={tracesTab}
+              onTabChange={setTracesTab}
+              bookmarksProps={{
+                bookId,
+                onNavigate: navigateToCfi,
+                getCurrentCfi: () => currentCfiRef.current,
+                getCurrentLabel: () => {
+                  const idx = currentChapterIndex;
+                  return idx >= 0 && idx < chapters.length
+                    ? chapters[idx].title
+                    : t("common.bookmark");
+                },
+                getPageFromCfi: () => {
+                  // foliate-js uses fraction-based progress, not location indices
+                  // Return page info from current state if available
+                  return pageInfo?.current ?? null;
+                },
+                onExport: () => setExportOpen(true),
               }}
-              getPageFromCfi={() => {
-                // foliate-js uses fraction-based progress, not location indices
-                // Return page info from current state if available
-                return pageInfo?.current ?? null;
+              vocabProps={{
+                bookId,
+                bookTitle: book.title,
+                onNavigate: (cfi) => {
+                  flashNavigationTarget(cfi).catch(() => {});
+                },
+                initialWordCfi: activeVocabCfi,
+                onWordDetailClosed: () => setActiveVocabCfi(null),
+                onExport: () => setExportOpen(true),
               }}
-              onExport={() => setExportOpen(true)}
-            />
-          )}
-          {supportsCfiNavigation && sidePanel === "vocab" && bookId && (
-            <DictionaryPanel
-              bookId={bookId}
-              bookTitle={book.title}
-              onNavigate={(cfi) => {
-                flashNavigationTarget(cfi).catch(() => {});
+              notesProps={{
+                bookId,
+                currentCfi: () => currentCfiRef.current,
+                onNavigate: navigateToCfi,
+                selectedAnchor: selectedNoteAnchor,
+                onSelectedAnchorHandled: () => {
+                  setSelectedNoteAnchor(null);
+                  viewRef.current?.deselect();
+                },
+                resolveAnchorPosition: resolveNoteAnchorPosition,
+                resolveAnchorPage: resolveNoteAnchorPage,
+                layoutKey: `${currentSectionIndex}:${progress}:${pageInfo?.current ?? ""}`,
               }}
-              initialWordCfi={activeVocabCfi}
-              onWordDetailClosed={() => setActiveVocabCfi(null)}
-              onExport={() => setExportOpen(true)}
-            />
-          )}
-          {supportsCfiNavigation && sidePanel === "notes" && bookId && (
-            <ReaderNotesRail
-              bookId={bookId}
-              currentCfi={() => currentCfiRef.current}
-              onNavigate={navigateToCfi}
-              selectedAnchor={selectedNoteAnchor}
-              onSelectedAnchorHandled={() => {
-                setSelectedNoteAnchor(null);
-                viewRef.current?.deselect();
-              }}
-              resolveAnchorPosition={resolveNoteAnchorPosition}
-              resolveAnchorPage={resolveNoteAnchorPage}
-              layoutKey={`${currentSectionIndex}:${progress}:${pageInfo?.current ?? ""}`}
             />
           )}
         </div>
@@ -2369,19 +2397,6 @@ export default function Reader() {
         onClose={() => setExportOpen(false)}
         resolveChapter={resolveExportChapter}
       />}
-
-      {xrayOpen && sidePanel === null && bookId && book && (
-        <ReaderXrayCard
-          bookId={bookId}
-          interaction={xrayInteraction}
-          getCurrentLocation={() => currentCfiRef.current}
-          currentChapter={currentChapterIndex >= 0 ? chapters[currentChapterIndex]?.title : undefined}
-          progress={progress}
-          onClose={() => { setXrayOpen(false); setXrayInteraction(null); }}
-          onNavigate={(source) => navigateToSource(source)}
-          onNavigateCurrent={navigateToCurrentXrayOccurrence}
-        />
-      )}
 
       {/* Context Menu */}
       {contextMenu && (
@@ -2423,10 +2438,10 @@ export default function Reader() {
               text: contextMenu.text,
               cfi: contextMenu.location || undefined,
             });
-            setSidePanel("ai");
+            openAiChat();
             setContextMenu(null);
           }}
-          onXray={contextMenu.location ? () => openXray(contextMenu) : undefined}
+          onXray={contextMenu.location ? () => openAiXray(contextMenu) : undefined}
           onLookup={() => {
             openLearningCard({ ...contextMenu, trigger: "word-quick-lookup" });
             setContextMenu(null);
@@ -2438,7 +2453,7 @@ export default function Reader() {
               location: contextMenu.location,
               selectedText: contextMenu.text,
             });
-            setSidePanel("notes");
+            openTraces("notes");
             setContextMenu(null);
           }) : undefined}
           onTranslate={() => {
@@ -2583,7 +2598,7 @@ export default function Reader() {
           onFocus={() => setTopLearningCardId(card.id)}
           onAskAi={(quote, cfi, analysis) => {
             setAiContext({ text: quote, cfi, analysis });
-            setSidePanel("ai");
+            openAiChat();
           }}
           onViewAllNotes={() => {
             invoke("open_library_on_main", { filter: "notes" }).catch(() => {});
@@ -2610,7 +2625,7 @@ export default function Reader() {
             onClose={() => setCustomAction(null)}
             onAskFollowUp={(quote, cfi) => {
               setAiContext({ text: quote, cfi });
-              setSidePanel("ai");
+              openAiChat();
             }}
           />
         </Suspense>
@@ -2632,7 +2647,7 @@ export default function Reader() {
           onClose={() => setTranslation(null)}
           onAskFollowUp={(quote, cfi) => {
             setAiContext({ text: quote, cfi });
-            setSidePanel("ai");
+            openAiChat();
           }}
         />
       )}
