@@ -23,12 +23,7 @@ import {
 import { bindingFromKeyboardEvent } from "../../components/reader-bindings";
 import { appZoomCommandFor, nextAppZoom } from "../../services/app-zoom";
 import { persistAppZoom, readAppZoom } from "../../services/app-zoom-window";
-
-/**
- * How long an action waits to see whether another click is coming. One click
- * yields to two, and two yield to three, so each count has to outlive the next.
- */
-const CLICK_COUNT_GRACE_MS = 240;
+import { clickCountGraceMs } from "./click-grace";
 
 /**
  * How close to the edge a drag has to get before the page turns. Wide enough to
@@ -198,6 +193,22 @@ export function useReaderInteractions({
     let pointerStart: { x: number; y: number } | null = null;
     let pointerMoved = false;
     let selectionNormalizationUntil = 0;
+    /**
+     * Set once the triple-click handler has put its own range in place at
+     * mousedown. The pointerup closing that same click still runs
+     * `finalizePointerSelection`, which would re-derive the selection from the
+     * document and reschedule the menu on top of the one this gesture just
+     * opened — so that one finalize is skipped. Only armed while a pointer is
+     * actually down, or the flag would outlive the gesture and swallow the next
+     * drag's finalize.
+     */
+    let tripleClickSelectionHandled = false;
+    /**
+     * Set when the triple-click handler answered the press, so the `click` that
+     * closes it can stand down instead of clearing the menu that handler just
+     * opened. Cleared on every pointerdown, so it cannot outlive its gesture.
+     */
+    let tripleClickOwnsClick = false;
     const scheduleSelectionMenu = (delay = 150, includeWord = false) => {
       cancelPendingSelectionMenu();
       pendingSelectionMenuRef.current = window.setTimeout(() => {
@@ -237,6 +248,10 @@ export function useReaderInteractions({
       } catch {
         // WebKit can release capture before dispatching lostpointercapture.
       }
+      if (tripleClickSelectionHandled) {
+        tripleClickSelectionHandled = false;
+        return;
+      }
       if (!openMenu || Date.now() < forceClickSuppressedUntilRef.current) {
         cancelPendingSelectionMenu();
         return;
@@ -262,6 +277,7 @@ export function useReaderInteractions({
       pointerCaptureTarget = event.target as Element | null;
       pointerStart = { x: event.clientX, y: event.clientY };
       pointerMoved = false;
+      tripleClickOwnsClick = false;
       try {
         pointerCaptureTarget?.setPointerCapture(event.pointerId);
       } catch {
@@ -396,6 +412,15 @@ export function useReaderInteractions({
 
     doc.addEventListener("click", (event: MouseEvent) => {
       if (annotationClickDocumentRef.current === doc) return;
+      // A third click the triple-click handler already answered at mousedown,
+      // menu included. Clearing the context menu here would close the one that
+      // gesture just opened, since a press held longer than the menu's own 30ms
+      // delay puts this event after it. A third click that handler passed on
+      // still comes through, and still clears.
+      if (event.detail === 3 && tripleClickOwnsClick) {
+        tripleClickOwnsClick = false;
+        return;
+      }
       setContextMenu(null);
       cancelPendingWordClick();
       if (Date.now() < forceClickSuppressedUntilRef.current) return;
@@ -452,7 +477,7 @@ export function useReaderInteractions({
       pendingWordClickRef.current = window.setTimeout(() => {
         pendingWordClickRef.current = null;
         openLearningInteraction(interaction);
-      }, CLICK_COUNT_GRACE_MS);
+      }, clickCountGraceMs(1, tripleClickQuickSelectRef.current));
     });
     doc.addEventListener("dblclick", (event: MouseEvent) => {
       cancelPendingWordClick();
@@ -500,11 +525,12 @@ export function useReaderInteractions({
       // followed by a third click, so looking the word up here would fire on the
       // way to selecting a sentence — the card would open over a selection the
       // reader never asked about. The third click cancels this the same way a
-      // double-click cancels the single-click lookup.
+      // double-click cancels the single-click lookup, and the wait is long
+      // enough for a third click the system still counts to arrive first.
       pendingWordClickRef.current = window.setTimeout(() => {
         pendingWordClickRef.current = null;
         openLearningInteraction(interaction);
-      }, CLICK_COUNT_GRACE_MS);
+      }, clickCountGraceMs(2, tripleClickQuickSelectRef.current));
     });
 
     // Triple-click. The browser would select the whole paragraph, but while
@@ -514,13 +540,24 @@ export function useReaderInteractions({
     // across. Which of the two it takes is a setting; the paragraph scope goes
     // through the same code rather than deferring to the browser, so the
     // selection lands on real characters and the menu sees the same snapshot.
-    doc.addEventListener("click", (event: MouseEvent) => {
+    //
+    // On mousedown rather than click, because WebKit makes its multi-click
+    // selection the moment the third press lands: by the time `click` runs the
+    // paragraph has already been selected and painted, and `preventDefault`
+    // there cannot undo a selection that already happened — the reader saw the
+    // word, then the whole paragraph, then our sentence. Preventing the
+    // mousedown default stops the paragraph from ever being drawn, leaving the
+    // word→sentence step the gesture actually means.
+    doc.addEventListener("mousedown", (event: MouseEvent) => {
       if (event.detail !== 3) return;
       // Before any other guard: the second click of this gesture queued a word
       // lookup, and it has to be called off even when this click resolves to no
       // sentence. Otherwise the card still opens and the gesture half-works.
       cancelPendingWordClick();
       cancelPendingSelectionMenu();
+      // This gesture's own pointerup must not re-derive what was just decided
+      // here — see `tripleClickSelectionHandled`.
+      tripleClickSelectionHandled = activePointerId !== null;
       if (!supportsSelection || isInteractiveReaderTarget(event.target)) return;
       const locale = doc.documentElement.lang || undefined;
       const range = tripleClickRangeAtPoint(
@@ -558,17 +595,20 @@ export function useReaderInteractions({
       }
 
       event.preventDefault();
-      // Same window `finalizePointerSelection` uses, restated rather than
-      // inherited from this gesture's pointerup: the selection about to be
-      // replaced fires a `selectionchange`, and letting that reschedule the menu
-      // would drop back to the word-suppressing default.
+      tripleClickOwnsClick = true;
+      // Same window `finalizePointerSelection` uses: replacing the selection
+      // fires a `selectionchange`, and letting that reschedule the menu would
+      // drop back to the word-suppressing default. A pointer held down already
+      // makes that listener stand down, so this covers the press whose
+      // pointerdown never registered — a capture the surface refused, or a
+      // synthetic click.
       selectionNormalizationUntil = Date.now() + 80;
       replaceDocumentSelection(doc, range);
       selectionSnapshot = snapshotSelectionRange(range);
       // Nothing else opens it: this handler called off the menu the second click
-      // queued, and the replacement `selectionchange` is inside the window above.
-      // includeWord, because a one-word sentence ("Yes.") is still the sentence
-      // the reader asked for.
+      // queued, the replacement `selectionchange` is inside the window above,
+      // and this gesture's pointerup stands down. includeWord, because a
+      // one-word sentence ("Yes.") is still the sentence the reader asked for.
       scheduleSelectionMenu(30, true);
     });
 
