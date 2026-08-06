@@ -27,6 +27,7 @@ import {
   BookmarkPlus,
   BookmarkCheck,
   Loader2,
+  Eye,
 } from "lucide-react";
 import Button from "./ui/Button";
 import { useAllDictionary, useAllLookupHistory, type LookupRecord, type LookupRecordPage } from "../hooks/useDictionary";
@@ -50,6 +51,7 @@ import {
   contextualReviewSource,
   contextualSentenceMeaning,
 } from "./vocab/contextual-review";
+import ReviewBoard from "./review/ReviewBoard";
 import { useOpenBook } from "../hooks/useOpenBook";
 import { useSettings } from "../hooks/useSettings";
 import {
@@ -174,7 +176,19 @@ function ReviewShortcut({ cap, label }: { cap: string; label: string }) {
   );
 }
 
-export default function DictionaryContent() {
+interface DictionaryContentProps {
+  /**
+   * "all" (the plain 生词/vocab entry) shows the review board with the full
+   * word list already expanded below it — today's behavior, unchanged.
+   * "review" (the 复习/review sidebar entry) shows the same board but starts
+   * the word list collapsed behind the "全部生词"/"All words" divider, so the
+   * two sidebar rows land somewhere visibly different rather than the same
+   * page with a different highlighted row.
+   */
+  initialView?: "all" | "review";
+}
+
+export default function DictionaryContent({ initialView = "all" }: DictionaryContentProps = {}) {
   const { t, i18n } = useTranslation();
   const openInReader = useOpenBook();
   const { words, remove, updateMastery, recordReview, refresh: refreshWords } = useAllDictionary();
@@ -212,6 +226,17 @@ export default function DictionaryContent() {
   const [deleteEntry, setDeleteEntry] = useState<MergedVocabEntry | null>(null);
   const [reviewContextIndex, setReviewContextIndex] = useState(0);
   const [reviewContextPickerOpen, setReviewContextPickerOpen] = useState(false);
+  // "review" starts the list collapsed behind the divider; "all" starts it
+  // open. Re-synced on prop change (not just on mount) so switching sidebar
+  // rows between 生词/复习 without unmounting this component still lands the
+  // list in the right state.
+  const [listExpanded, setListExpanded] = useState(initialView !== "review");
+  useEffect(() => setListExpanded(initialView !== "review"), [initialView]);
+  const wordListAnchorRef = useRef<HTMLDivElement | null>(null);
+  const revealWordList = useCallback(() => {
+    setListExpanded(true);
+    window.requestAnimationFrame(() => wordListAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, []);
   const { settings, save: saveSetting } = useSettings();
   const clearConfirmationTimer = useRef<number | null>(null);
   const reviewDialogRef = useRef<HTMLDivElement | null>(null);
@@ -502,6 +527,25 @@ export default function DictionaryContent() {
       setReviewSubmitting(false);
     }
   }, [recordReview, refreshWords, reviewIndex, reviewQueue.length, reviewing]);
+
+  // "只看，不测": the genuine exit from being quizzed. It reveals the
+  // definition (if not already visible) and moves on — never recordReview,
+  // never an FSRS rating, not even a disguised "again". Available the whole
+  // time the card is up, same as the rating buttons.
+  const justLook = useCallback(() => {
+    if (!reviewing) return;
+    if (!reviewAnswerVisible) {
+      setReviewAnswerVisible(true);
+      return;
+    }
+    const nextIndex = reviewIndex + 1;
+    if (nextIndex < reviewQueue.length) setReviewIndex(nextIndex);
+    else {
+      setReviewQueue([]);
+      setReviewIndex(0);
+      setReviewComplete(true);
+    }
+  }, [reviewing, reviewAnswerVisible, reviewIndex, reviewQueue.length]);
 
   // "获取提示" is one action with two possible carriers: the saved sentence
   // meaning when the row has one, otherwise the pronunciation, which every
@@ -1079,6 +1123,9 @@ export default function DictionaryContent() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-page pb-20">
+        {contentTab === "vocab" && !isEmpty && (
+          <ReviewBoard totalWordCount={allEntries.length} onSeeAllWords={revealWordList} />
+        )}
         {contentTab === "history" ? (
           historyTotal === 0 ? (
             <div className="flex flex-col items-center justify-center h-full">
@@ -1214,6 +1261,25 @@ export default function DictionaryContent() {
             </p>
           </div>
         ) : (
+          <>
+            <div ref={wordListAnchorRef} className="flex items-center gap-3 mt-1 mb-4">
+              <div className="h-px flex-1 bg-border" />
+              {listExpanded ? (
+                <span className="shrink-0 text-[12px] text-text-muted">
+                  {t("vocab.review.allWordsDivider", { count: allEntries.length })}
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setListExpanded(true)}
+                  className="shrink-0 text-[12px] text-text-muted hover:text-accent-text cursor-pointer"
+                >
+                  {t("vocab.review.allWordsDivider", { count: allEntries.length })}
+                </button>
+              )}
+              <div className="h-px flex-1 bg-border" />
+            </div>
+            {listExpanded && (
           <div key={`${listView}-${view}`} className={view === "card" ? "max-w-[525px] space-y-6" : undefined}>
             {listGroups.map((group) => (
               <div key={group.id} className={view === "card" ? undefined : "mb-6"}>
@@ -1406,6 +1472,8 @@ export default function DictionaryContent() {
               </div>
             ))}
           </div>
+            )}
+          </>
         )}
       </div>
 
@@ -1621,6 +1689,16 @@ export default function DictionaryContent() {
                     </div>
                   </div>
                 )}
+                <div className="mt-4 flex items-center gap-2 border-t border-border-light pt-3.5">
+                  <button
+                    type="button"
+                    onClick={justLook}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg px-1 text-[13.5px] font-medium text-text-muted hover:text-accent-text cursor-pointer"
+                  >
+                    <Eye size={14} />
+                    {t("vocab.reviewJustLook")}
+                  </button>
+                </div>
                 <div role="group" aria-label={t("vocab.reviewShortcuts")} className="mt-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border pt-3 text-[11px] text-text-muted">
                   <span className="flex flex-wrap items-center gap-x-3 gap-y-2">
                     {!reviewAnswerVisible ? <>

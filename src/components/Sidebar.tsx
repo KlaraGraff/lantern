@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
-import { Library, BookOpen, CheckCircle2, FolderClosed, BookA, Plus, MessageSquare, Pencil, Trash2, GripVertical, RefreshCw, StickyNote, BarChart3 } from "lucide-react";
+import { Library, BookOpen, CheckCircle2, FolderClosed, BookA, Plus, MessageSquare, Pencil, Trash2, GripVertical, RefreshCw, StickyNote, BarChart3, RotateCcw } from "lucide-react";
 import Button from "./ui/Button";
 import LanternLogo from "./LanternLogo";
 import type { Collection } from "../hooks/useCollections";
@@ -283,6 +283,19 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
               activeFilter === "vocab" ? "text-accent-text" : "text-text-secondary"
             }`}>
               {t("sidebar.vocab")}
+            </span>
+          </button>
+          <button
+            onClick={() => onFilterChange("review")}
+            className={`flex items-center gap-2 px-3 h-9 rounded-lg w-full cursor-pointer ${
+              activeFilter === "review" ? "bg-accent-bg" : "hover:bg-bg-input"
+            }`}
+          >
+            <RotateCcw size={16} className={activeFilter === "review" ? "text-accent-text" : "text-text-muted"} />
+            <span className={`text-[14px] font-medium tracking-[-0.15px] ${
+              activeFilter === "review" ? "text-accent-text" : "text-text-secondary"
+            }`}>
+              {t("sidebar.review")}
             </span>
           </button>
           <button

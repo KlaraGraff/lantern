@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useLocation, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { Search, LayoutGrid, List, Plus, Upload, BookOpen, Loader, AlertCircle, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -31,6 +32,8 @@ function formatError(err: unknown): string {
 
 export default function Home() {
   const { t } = useTranslation();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [activeFilter, setActiveFilter] = useState("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
@@ -70,6 +73,17 @@ export default function Home() {
     setActiveFilter("vocab");
     window.dispatchEvent(new CustomEvent("vocab-open-word", { detail: { word } }));
   }, []);
+
+  // The reader sends readers here to review with a navigation intent rather
+  // than a global event, so it survives Home not being mounted yet. Cleared
+  // right after acting on it, same as Reader.tsx's openVocab handler, so a
+  // later back/forward through history doesn't replay it.
+  useEffect(() => {
+    const state = location.state as { openReview?: boolean } | null;
+    if (!state?.openReview) return;
+    setActiveFilter("review");
+    navigate(location.pathname, { replace: true });
+  }, [location.state, location.pathname, navigate]);
 
   const isCollectionFilter = activeFilter.startsWith("collection:");
   const statusFilter = !isCollectionFilter && activeFilter !== "all" ? activeFilter : undefined;
@@ -267,6 +281,8 @@ export default function Home() {
 
       {activeFilter === "vocab" ? (
         <DictionaryContent />
+      ) : activeFilter === "review" ? (
+        <DictionaryContent initialView="review" />
       ) : activeFilter === "chats" ? (
         <ChatsContent />
       ) : activeFilter === "notes" ? (
