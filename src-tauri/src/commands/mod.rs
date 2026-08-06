@@ -9,6 +9,7 @@ pub mod chats;
 pub mod collections;
 pub mod dictionary;
 pub mod enhanced_fonts;
+pub mod explanations;
 pub mod fonts;
 pub mod followup_difficulty;
 pub mod language_assessments;

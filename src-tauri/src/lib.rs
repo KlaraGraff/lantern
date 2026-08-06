@@ -990,6 +990,14 @@ pub fn run() {
             commands::lookup_history::delete_lookup_record,
             commands::lookup_history::clear_lookup_records,
             commands::lookup_history::prune_lookup_records,
+            // Persisted AI explanations — cache (saved = 0) plus reader-saved
+            // list (saved = 1). See docs/impls/q257-persist-explanations.md.
+            commands::explanations::get_cached_explanation,
+            commands::explanations::save_explanation,
+            commands::explanations::set_explanation_saved,
+            commands::explanations::list_explanations,
+            commands::explanations::delete_explanation,
+            commands::explanations::prune_explanation_cache,
             // Chats
             commands::chats::create_chat,
             commands::chats::list_chats,

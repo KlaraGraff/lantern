@@ -401,6 +401,7 @@ fn cascade_delete_book(tx: &Transaction, id: &str, ts: i64) -> AppResult<()> {
     tx.execute("DELETE FROM highlights WHERE book_id = ?1", params![id])?;
     tx.execute("DELETE FROM vocab_words WHERE book_id = ?1", params![id])?;
     tx.execute("DELETE FROM lookup_records WHERE book_id = ?1", params![id])?;
+    tx.execute("DELETE FROM explanations WHERE book_id = ?1", params![id])?;
     tx.execute(
         "DELETE FROM word_mark_exceptions WHERE book_id = ?1",
         params![id],
