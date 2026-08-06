@@ -73,6 +73,7 @@ import {
 } from "./reader/reader-theme";
 import { ReadingProgressWriter } from "./reader/reading-progress-writer";
 import { useBookAvailability } from "./reader/useBookAvailability";
+import { useCellularDownloadConsent } from "../hooks/useCellularDownloadConsent";
 import { usePageTurnInput } from "./reader/usePageTurnInput";
 import { useReaderInteractions } from "./reader/useReaderInteractions";
 import { useSpeech } from "../hooks/useSpeech";
@@ -1200,7 +1201,9 @@ export default function Reader() {
 
   useWindowSizePersistence(bookId, isStandaloneWindow);
   const { availabilityState, retryAvailability } = useBookAvailability(book, setBook);
-  useReaderFileDiagnosis(bookId, readerError, setReaderError);
+  const { dialog: cellularConsentDialog, requestConsent: requestCellularConsent } =
+    useCellularDownloadConsent();
+  useReaderFileDiagnosis(bookId, readerError, setReaderError, requestCellularConsent);
   // Bound key/mouse triggers speak without opening any card, so the reader owns
   // its own playback slot alongside the cards and the selection menu.
   const { speak: speakSelection } = useSpeech();
@@ -1746,6 +1749,7 @@ export default function Reader() {
         open={diagnosticsPanelOpen}
         onClose={() => setDiagnosticsPanelOpen(false)}
       />
+      {cellularConsentDialog}
       </>
     );
   }
