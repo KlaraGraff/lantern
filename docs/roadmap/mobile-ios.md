@@ -1,7 +1,8 @@
 # Mobile — iOS
 
-Ship Lantern as an iOS app: a **reading-focused subset** of the desktop app, kept in step
-through iCloud sync. Desktop stays the place where books get in and get processed.
+Ship Lantern as an iOS app that **stands on its own**: every core capability of the desktop app
+is available on the phone, without a Mac anywhere in the picture. iCloud sync keeps the two in
+step for people who have both; it is not what makes the phone useful.
 
 Out of scope for this milestone: **Android** ([D-002](#d-002--ios-first-android-deferred) for
 the cost, [D-010](#d-010--android-is-deferred-not-abandoned) for whether it ever comes back)
@@ -21,32 +22,101 @@ changed scope: [D-011](#d-011--p2-waits-for-the-desktop-mastery-line-to-finish),
 [D-013](#d-013--books-download-on-demand-not-eagerly),
 [D-014](#d-014--first-ios-release-is-testflight-not-the-app-store).
 
-**Estimated effort:** 78–84 engineer-days across 7 phases, as originally scored. The 2026-08-06
-decisions move work around rather than adding much net: P6 loses roughly 5 days (no App
-Review), P2 gains roughly the same (mobile AI settings, downloading state).
+**The founding premise was overturned later the same day.** The phone is no longer a companion
+that consumes desktop output — see [§1](#1-goals-and-non-goals). That reversal promoted note
+editing, collection management, 书籍来源 and OCR into this release, moved 自动分析 to now,
+committed AI chat and format conversion to release 2, and produced
+[D-017](#d-017--ocr-moves-to-vision-on-ios-and-macos-ocrmypdf-stays-on-windows). It also amended
+[D-003](#d-003--ocr-stays-on-desktop--superseded-by-d-017),
+[D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat) and
+[D-016](#d-016--on-cellular-a-book-download-asks-once-and-remembers).
+
+**Estimated effort:** 78–84 engineer-days across 7 phases, as originally scored — **and that
+figure no longer covers the work.** It was scored against the companion premise. The three
+Tier-1 promotions, the Vision OCR backend and 自动分析 are all unscored; do not quote 78–84 as
+if it included them. The earlier 2026-08-06 decisions moved work around rather than adding much
+net — P6 loses roughly 5 days (no App Review), P2 gains roughly the same (mobile AI settings,
+downloading state) — but the premise change is additive and has not been re-scored.
 
 ---
 
 ## 1. Goals and non-goals
 
-The guiding model is *companion, not clone* — the phone consumes what the desktop produces.
+The guiding model is *every core feature is independently available on the phone*.
 
-| On iOS | Desktop only |
+**Why, and it is a fact about people rather than about software.** iPhone ownership vastly
+exceeds MacBook ownership, and a large share of readers own only a phone. For those readers, a
+feature that exists only on the desktop is a feature that does not exist. There is no "sync it
+from your Mac" for someone with no Mac.
+
+So the desktop is an **enhancer**, not a **producer**. It does things faster, in bulk, and with
+more screen — drag a folder of books in, work two windows at once, run a long job while doing
+something else. What it must never be is the only place a core capability lives.
+
+The test for the split below is therefore not "is this comfortable on a phone" but "can a
+phone-only reader do the job at all". Everything that fails that test is on the left.
+
+| On iOS | Desktop-only |
 |---|---|
-| Read EPUB / PDF / TXT / MD / HTML | Import via drag-and-drop |
-| Word lookup + lookup history | OCR (see [D-003](#d-003--ocr-stays-on-desktop)) |
-| AI contextual gloss, and the AI settings to configure it ([D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)) | AI chat panel |
-| Vocabulary list + FSRS review | MOBI / AZW3 / FB2 / CBZ conversion (needs Calibre) |
-| Reader settings (font size, theme, page-turn) | MCP server + client registration |
-| Import a book via the system file picker | Full settings surface |
-| Receive everything over iCloud sync, books downloading on demand ([D-013](#d-013--books-download-on-demand-not-eagerly)) | Font import, custom font management |
+| Read EPUB / PDF / TXT / MD / HTML, plus FB2 / FBZ / CBZ natively ([F-006](#f-006--ios-book-import-works-with-zero-code-changes)) | **Drag-and-drop import.** The phone imports the same formats through the system file picker; drag-and-drop is a faster route to the same capability, not a capability of its own |
+| Import a book via the system file picker | **MCP server + client registration.** This exposes Lantern to AI clients running on the same machine — a desktop integration surface, not a reading capability |
+| Word lookup + lookup history | **Custom font import.** *Unverified* whether the iOS document picker can take a font file at all. Under this premise that needs an answer rather than an assumption; it is on the right only because nobody has checked |
+| AI contextual gloss, and the AI settings to configure it ([D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)) | |
+| Vocabulary list + FSRS review | |
+| **Note editing** — Tier 1, promoted into [P2](#p2--mobile-ui-185-days) | |
+| **Collection management** — Tier 1, promoted into [P2](#p2--mobile-ui-185-days) | |
+| **书籍来源 (book sources)** — Tier 1, promoted into [P2](#p2--mobile-ui-185-days) | |
+| **OCR**, over Vision.framework ([D-017](#d-017--ocr-moves-to-vision-on-ios-and-macos-ocrmypdf-stays-on-windows)) | |
+| **自动分析 (auto-analysis)** — ships now, see below | |
+| Reader settings (font size, theme, page-turn) | |
+| Sync, with books downloading on demand ([D-013](#d-013--books-download-on-demand-not-eagerly)) | |
 
-**Deferred to a second iOS release**, not cut permanently:
+**"Full settings surface" left the desktop column, and that was not an oversight.** The phone
+carries a setting for every feature the phone has. The only settings it lacks are the settings
+for the three rows on the right.
 
-- AI chat, note editing, collection management
+**Why those three promotions are Tier 1.** Their absence is what is most damaging to a
+phone-only reader: without them the phone can *read* a library but cannot *maintain* one. Notes
+that can be seen and not corrected, collections that cannot be reorganised, and no route to the
+next book. Reading is half of what someone does with a library; the other half was missing.
+
+**Committed release-2 scope** — still deferred, but no longer "maybe". These are scheduled work
+with a stated reason for waiting, not open questions:
+
+- **AI chat on the phone.** Deferred for sequencing, not because the phone consumes desktop
+  output — the rationale in [D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)
+  was rewritten for exactly this reason.
+- **Mobile format conversion — MOBI → EPUB without Calibre.** Note what this does and does not
+  buy. The native-import path already hands MOBI, FB2 and CBZ straight to foliate-js, which
+  renders all three in-process (`mobi.js`, `fb2.js`, `comic-book.js`; see
+  [F-006](#f-006--ios-book-import-works-with-zero-code-changes)), so rendering is not what is
+  missing. What conversion buys back is **in-book search, the chapter scrubber, and AI
+  grounding** — the three things that sit on the EPUB normalisation. None of them tolerates a
+  partial result: a search over a half-converted book returns confidently wrong answers rather
+  than fewer answers. That is why a *streaming* conversion design — open the reader on the
+  converted prefix and keep converting behind it — was rejected. There is no useful partial
+  state to expose.
+
+**Still deferred, and these genuinely are affordances rather than capabilities** — a phone-only
+reader loses convenience, not a job:
+
 - A "keep this book on the phone" pin ([D-013](#d-013--books-download-on-demand-not-eagerly))
 - PDF cover thumbnails (needs pdfium on iOS — the reader itself works without it)
 - "Open in Lantern" from other apps (needs file-association / UTI work)
+
+**Shipping now rather than in release 2: 自动分析 (auto-analysis).** It rides along with the
+settings work currently in flight. Two design consequences follow, and both are new scope:
+
+1. **The metered-connection gate has to cover AI calls, not just book downloads.**
+   [D-016](#d-016--on-cellular-a-book-download-asks-once-and-remembers) guards downloads only
+   today. An analysis run started on cellular is an unannounced network spend of the same kind —
+   the user did not ask for it at that moment and finds out from the bill. Amended there.
+2. **The trigger moves from book completion to next app open.** iOS kills background work, so a
+   run triggered by finishing a book will simply not happen on a phone: finishing a book is
+   very often the moment the app is being closed. The run has to be queued and performed the
+   next time the app comes to the foreground. This changes *when the user sees results*, so
+   every place that describes the trigger has to be restated in both locales — the trigger
+   label is `settings.autoAnalysis.trigger.book_finished`, and it stops being true.
 
 ---
 
@@ -126,7 +196,23 @@ has proven itself. Android then reuses phases P1–P3 wholesale.
 **Where Android lives** — in this repo, always: [D-009](#d-009--android-stays-in-this-repo-only-the-guarantee-is-lowered).
 **Whether it is coming back at all:** [D-010](#d-010--android-is-deferred-not-abandoned).
 
-### D-003 — OCR stays on desktop
+### D-003 — OCR stays on desktop — superseded by D-017
+
+> **Superseded 2026-08-06 by [D-017](#d-017--ocr-moves-to-vision-on-ios-and-macos-ocrmypdf-stays-on-windows).**
+> The conclusion below — that the phone never runs OCR — is now wrong, and it is worth being
+> precise about *how* it was wrong, because none of its facts were. It reasoned correctly from
+> the companion premise, where a phone reading desktop output was the design rather than a
+> shortfall, and its closing clause said the quiet part: OCR "belongs on the machine with the
+> scanner anyway." Under [§1](#1-goals-and-non-goals)'s independence premise that clause is the
+> error. A phone-only reader has no machine with a scanner, so a scanned book that only the
+> desktop can make searchable is a book they cannot use.
+>
+> Three parts of what follows are still load-bearing and are why the entry is kept rather than
+> deleted: the **read/write split table**, which D-017 builds directly on; the reason the
+> external runtime is **impossible on iOS**, which is *why* D-017 goes to Vision rather than
+> staying put; and the **Windows situation**, where ocrmypdf remains the backend. The one figure
+> not to carry forward is the 10–15 day estimate — it assumed a rewrite where the code turns out
+> to have a seam. The desktop bug at the end of this entry is also still open and still real.
 
 The phone never runs OCR. It reads OCR output that the desktop produced and synced.
 
@@ -186,7 +272,7 @@ hasTitleBarInset   // macOS traffic-light padding
 hasSafeAreaInset   // notch / home indicator
 hasDragDrop        // register onDragDropEvent or not
 hasContextMenu     // right-click vs long-press
-hasOcr             // D-003
+hasOcr             // D-003, re-derived by D-017 — see the note there
 hasMcpIntegration  // MCP settings tab
 hasFormatConvert   // Calibre-backed conversion entry points
 hasFolderSync      // folder-picker sync settings section
@@ -208,10 +294,23 @@ Store build and a sideload of the same OS differ on what they may touch on disk.
 
 ### D-006 — Sync ships in v1
 
-**Why:** without sync, "process on the desktop, read on the phone" does not hold, and the
-iOS app degrades into a standalone reader that competes with better standalone readers. The
-sync engine itself is storage-agnostic and ports unchanged (see [F-005](#f-005--the-sync-engine-is-storage-agnostic)),
-so the cost is entitlement configuration and change-notification, not a re-architecture.
+**Why:** a reader who owns two devices expects to stop mid-chapter on the phone and resume on
+the Mac, with the same notes and the same vocabulary. That expectation is independent of how
+capable either device is on its own — it is about one person's reading state living in one
+place, not two. The sync engine itself is storage-agnostic and ports unchanged
+(see [F-005](#f-005--the-sync-engine-is-storage-agnostic)), so the cost is entitlement
+configuration and change-notification, not a re-architecture.
+
+> **This rationale was replaced on 2026-08-06, and the decision was not.** It used to read:
+> *"without sync, 'process on the desktop, read on the phone' does not hold, and the iOS app
+> degrades into a standalone reader that competes with better standalone readers."* Under the
+> premise this roadmap now runs on ([§1](#1-goals-and-non-goals)), the iOS app **is** a
+> standalone reader on purpose, so that sentence no longer argues for anything — it describes
+> the goal as if it were the failure. Worth noticing that the old argument made sync
+> load-bearing for *every* iOS user; the new one only makes it load-bearing for users who own
+> two devices. That is a smaller claim, and it is the true one. Sync still ships in v1 because
+> the two-device case is common and the engine is already written, not because the phone would
+> be crippled without it.
 
 **Scope:** iOS ↔ macOS only. See [D-007](#d-007--windows-sync-is-out-of-scope).
 
@@ -448,9 +547,21 @@ the phone measurably worse at the one thing it exists to do.
 carry AI provider configuration too — key entry, model choice, connection test. Budget
 accordingly; this is new scope, not a clarification.
 
-**This does not contradict [§1](#1-goals-and-non-goals)**, which defers "AI chat" to a second
-iOS release. A gloss is a single bounded request against the selected sentence; chat is a
-conversation surface with history, streaming and a panel. The first ships, the second waits.
+**Amended 2026-08-06 — the deferral stands, the reason for it does not.** This entry used to
+justify the split by observing that a gloss is a bounded request and chat is a surface, and
+concluded "the first ships, the second waits." That reasoning rested on the companion premise
+in [§1](#1-goals-and-non-goals), under which a conversation surface was desktop-shaped work the
+phone would consume the results of. The premise is gone. AI chat is a core feature, so the
+phone has to have it, and it is now **committed release-2 scope** rather than a maybe.
+
+**What it is deferred for is sequencing.** Chat depends on three things that do not exist yet
+and are already scheduled ahead of it: the phone's AI provider configuration (item 4 of
+[P2](#p2--mobile-ui-185-days), which this very entry added), the bottom-sheet and panel
+patterns the mobile layout establishes ([P2](#p2--mobile-ui-185-days) items 3 and 5), and the
+touch interaction those panels sit on ([P3](#p3--reader-touch-interaction-10-days)). A
+streaming conversation panel built before any of that exists gets built twice. A gloss carries
+none of those dependencies — it renders in the popover the lookup path already owns — which is
+why it goes first. That is a schedule, not a claim about what a phone is for.
 
 **Privacy consequence:** selected book text leaves the device for a third-party model. That
 has to be declared, in the privacy manifest and to the user, whenever this build reaches
@@ -525,7 +636,7 @@ migration.
 a machine belonging to someone other than the author needs to be announced. That is a
 post-release rule, not a pre-release one.
 
-**Consequence for the estimate:** [Q-004](#q-004--macos-relocation-to-the-app-container-largely-answered)
+**Consequence for the estimate:** [Q-004](#q-004--macos-relocation-to-the-app-container-answered--there-is-nothing-to-relocate)
 is closed and its ~0.5 day of migration work is deleted, not folded in. P5 item 2 shrinks to
 "resolve the root from the container" plus the settings-panel change.
 
@@ -541,6 +652,102 @@ Asking every time would be worse than either extreme, hence remembering.
 
 **Where the setting lives:** with the answer remembered, it needs somewhere to be changed back,
 which lands in mobile settings ([P2](#p2--mobile-ui-185-days)).
+
+**Amended 2026-08-06 — this gate covers AI calls too, not only book downloads.** 自动分析
+(auto-analysis) ships now rather than in release 2 ([§1](#1-goals-and-non-goals)), and an
+analysis run started on a metered connection is an unannounced network spend of exactly the
+same kind as a book download: the user did not ask for it at that moment, and they find out
+from the bill. The gate was written around downloads because downloads were the only automatic
+network spend the phone had. They are not any more.
+
+The two spends differ in shape, not in whether they need asking about: a download is large and
+infrequent, an analysis run is small and repeats. That difference is an argument for
+*remembering* the answer, which this decision already does — not for skipping the ask. Whether
+one remembered answer covers both or they are two separate answers is a settings-design
+question for [P2](#p2--mobile-ui-185-days); that there must be a gate on both is not.
+
+Decided 2026-08-06.
+
+### D-017 — OCR moves to Vision on iOS and macOS; ocrmypdf stays on Windows
+
+Amends and supersedes [D-003](#d-003--ocr-stays-on-desktop--superseded-by-d-017). OCR is a core
+capability, so it ships on the phone ([§1](#1-goals-and-non-goals)). The recognition backend
+becomes Apple's Vision framework on **iOS and macOS both**. The external ocrmypdf runtime is
+retained **only on Windows**.
+
+**This is a retrofit, not a greenfield choice.** OCR is fully implemented already — 5,689 lines
+across 9 files in `src-tauri/src/commands/ocr/`, behind the `ocr-pipeline` feature
+(`src-tauri/Cargo.toml:22`). Nothing here is about whether to build OCR. It is about which
+backend produces the searchable PDF, and on which platforms.
+
+**A real seam already exists, which is why this costs far less than D-003's 10–15 days
+implies.** `src-tauri/src/commands/ocr/backend.rs:120` defines `trait OcrBackend: Send + Sync`
+with exactly two methods:
+
+- `probe() -> AppResult<BackendCapabilities>`
+- `recognize_pdf_in_staging(&self, request, progress, cancel) -> AppResult<OcrOutput>`
+
+Its doc comment states that backends "only transform bytes in staging", and that database
+changes, sync events, final publication and active-asset selection are *deliberately* outside
+the interface. Three types implement it today: `OcrmypdfBackend` (`:192`) plus two test fakes
+(`:907`, `:954`). So a Vision backend is an **addition to that list**, not a rewrite of the
+orchestration around it — and the fact that two fakes already satisfy the trait is the evidence
+that a third implementation is an ordinary thing to do here rather than a structural change.
+
+**One module stops being needed on two of the three platforms, and it is the big one.**
+`package.rs` (1,975 lines) exists purely to fetch, unpack, install and uninstall the ~1 GB
+downloaded runtime — its whole public surface is `installed_runtime`, `acquire_installed_runtime`,
+`ocr_package_status`, `ocr_package_download`, `ocr_package_cancel`, `ocr_package_uninstall`.
+Under Vision none of that runs on macOS or iOS. It stays necessary for Windows, so this is a
+`cfg` narrowing and not a deletion.
+
+> **Correction, recorded because the wrong number was in circulation.** The briefing for this
+> entry said `package.rs` (1,975), `publish.rs` (303) and `validate.rs` (151) all exist to
+> fetch, unpack and verify the runtime, for a saving of ~2,400 lines. Reading them says
+> otherwise, and it matters in the direction that costs money rather than saves it.
+> `validate.rs` validates the **output PDF**, not the runtime: `validate_output(source, output:
+> OcrOutput) -> VerifiedOutput` (`:39`) plus `reject_signed_pdf` (`:28`), page sampling and
+> SHA-256, over `pdfium_render`. `publish.rs` then takes that `VerifiedOutput` and writes the
+> asset row and the sync event (`publish_verified_output`, `:29`). Both are the output half of
+> the pipeline and both are **reused unchanged** under Vision — in fact `validate.rs` matters
+> *more* under Vision, since the PDF being verified is one Lantern composited itself rather
+> than one a mature external tool produced. The saving is ~1,975 lines, not ~2,400.
+
+`jobs.rs` (583) and `manager.rs` (908) are orchestration and are reused unchanged, as are
+`assets.rs` and `resolver.rs` — the read half D-003 already established ships on iOS.
+
+**The real new cost is producing the output PDF, and it should be named rather than buried.**
+`OcrOutput` carries an `output_path` (`backend.rs:88`): the backend's contract is to emit a
+searchable PDF, and ocrmypdf does that for us today. Vision does not. It returns recognized
+text with bounding boxes — observations, not a document. So the Vision backend has to composite
+the searchable PDF itself: draw each original page image, then draw the recognized text in an
+invisible render mode at the observation rectangles, via PDFKit and Core Graphics. That is the
+bulk of the new code and it is the main risk in this decision. The failure mode to watch is
+text-layer alignment — if the invisible text does not sit on the glyphs the page still *looks*
+perfect, and only selection and copy come out displaced, which is the kind of defect that
+survives a visual check.
+
+**Why now, when this was evaluated and rejected before.** macOS's built-in OCR was tried
+earlier, and its output quality turned out to be actually *better* than the external runtime's.
+It was rejected anyway, purely on code volume — a second backend to write and maintain, for a
+quality gain that was liveable without. iOS removes the choice: the external runtime cannot run
+there at all (no `fork`/`exec` for third-party apps, App Store guideline 2.5.2), and
+[§1](#1-goals-and-non-goals) puts OCR on the phone. Once the Vision backend has to be written
+for iOS anyway, the marginal cost of also selecting it on macOS is small — same framework, same
+code, one `cfg` arm — and the quality is the better of the two. That is the entire
+justification, it is a judgement rather than a measurement, and it is not recoverable from the
+code, which is why it is recorded here.
+
+**Consequence for [D-005](#d-005--capability-flags-not-platform-checks):** `hasOcr` stops
+meaning "this is a desktop". Every platform has OCR after this; what differs is the backend
+behind it. So the flag either goes true everywhere, in which case it is dead weight, or it is
+re-derived to describe something a UI genuinely branches on — most likely whether there is a
+runtime download to manage, which is a Windows-only settings surface. Left to whoever does the
+work; flagged here so it is not carried over unexamined.
+
+**Revisit if:** Vision's PDF compositing turns out to cost materially more than the recognition
+backend itself. The fallback is macOS staying on ocrmypdf while iOS alone takes Vision — at the
+price of two backends on Apple platforms, which is exactly what this decision buys out of.
 
 Decided 2026-08-06.
 
@@ -725,7 +932,7 @@ Verified 2026-08-02 with `cargo check --target aarch64-apple-ios-sim` (Xcode 26.
 iPhoneSimulator26.5.sdk). Both targets now pass: `ios=0 mac=0`.
 
 The first run failed with three `E0433`s, all from gating `commands::ocr` wholesale
-(see [D-003](#d-003--ocr-stays-on-desktop)). Nothing about that mistake was visible on
+(see [D-003](#d-003--ocr-stays-on-desktop--superseded-by-d-017)). Nothing about that mistake was visible on
 macOS — the module was present there, so every call site resolved.
 
 The general lesson for the phases below: **`cargo check` on the host does not validate
@@ -1002,7 +1209,9 @@ Smallest possible reality check: does the Rust core survive the port at all.
 6. ~~cfg out `commands::ocr`~~ — done, but **the first attempt was wrong and shipped for a
    day.** `84ebd26` gated the whole module; the iOS compile then failed with three `E0433`s
    from call sites outside it. Re-cut along the read/write seam described in
-   [D-003](#d-003--ocr-stays-on-desktop) — the resolver ships on iOS, the pipeline does not.
+   [D-003](#d-003--ocr-stays-on-desktop--superseded-by-d-017) — the resolver ships on iOS, the
+   pipeline does not. **That gating is what [D-017](#d-017--ocr-moves-to-vision-on-ios-and-macos-ocrmypdf-stays-on-windows)
+   now partially undoes:** the resolver still ships, but so does a recognition backend.
 7. ~~Verify the port actually compiles for iOS~~ — done. `cargo check --target
    aarch64-apple-ios-sim` and the host check both pass (`ios=0 mac=0`), 618 backend tests
    green. See [F-010](#f-010--only-a-real-ios-compile-finds-the-cfg-holes) — the host check
@@ -1145,8 +1354,10 @@ import* were confirmed by reading the gate rather than by tapping.
 
 ### P2 — Mobile UI (18.5 days)
 
-Scope is the reduced surface from [§1](#1-goals-and-non-goals). Items 4 and 8 grew on
-2026-08-06 and the 18.5 days predate them.
+Scope is the surface from [§1](#1-goals-and-non-goals) — which is now *every core feature*,
+not a reduced subset. Items 4 and 8 grew on 2026-08-06; items 9–11 were added later the same
+day when the independence premise landed. **The 18.5 days predate all of them** and this phase
+has not been re-scored.
 
 **Do not start this phase until the desktop mastery line has landed — [D-011](#d-011--p2-waits-for-the-desktop-mastery-line-to-finish).**
 It rewrites the same files items 2, 4 and 5 below are about.
@@ -1154,9 +1365,12 @@ It rewrites the same files items 2, 4 and 5 below are about.
 1. Global: `viewport-fit=cover`, safe-area insets, `touch-action` defaults, breakpoint system
 2. Home: 224px sidebar → drawer or bottom nav
 3. Reader: three-column → phone layout (TOC as drawer, side panel as bottom sheet)
-4. Reduced settings: font size, theme, page-turn mode — **plus AI provider configuration**
+4. Mobile settings: font size, theme, page-turn mode — **plus AI provider configuration**
    (key entry, model choice, connection test), which [D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)
-   added and the original 18.5 days did not cover
+   added, **plus the metered-connection answer**, which now has to cover AI calls as well as
+   book downloads ([D-016](#d-016--on-cellular-a-book-download-asks-once-and-remembers)). The
+   original 18.5 days covered none of it. This is no longer a "reduced" settings pane: the
+   phone carries a setting for every feature the phone has
 5. Lookup / translation popovers → bottom sheets
 6. The subset of the 25 wide hardcoded widths that the reduced surface touches
 7. ~~`Info.plist` UTI declarations for the picker filter~~ — **done, at a third of its scope.**
@@ -1169,8 +1383,25 @@ It rewrites the same files items 2, 4 and 5 below are about.
    in-reader progress. Required by [D-013](#d-013--books-download-on-demand-not-eagerly), and
    on the common path rather than an edge case. Also new scope.
 
+Items 9–11 are the Tier-1 promotions from [§1](#1-goals-and-non-goals). Together they are the
+difference between a phone that can read a library and a phone that can maintain one, which is
+why they are in this release and not the next:
+
+9. **Note editing.** Whether the mobile layout already reaches the note editor, or the editor
+   is desktop-shaped and needs rebuilding as a sheet, is **unverified** — scope this by
+   looking, not from this line. What the phone owes is the write path, not only the read path
+10. **Collection management** — create, rename, delete, and move books in and out of
+    collections, from the phone alone
+11. **书籍来源 (book sources)** — the editable list of sites to get books from. Strings already
+    exist and are at parity in both locales (`settings.bookSources.*`), and the feature is a
+    settings list plus an open-in-browser action, which makes it the cheapest of the three.
+    It is also the one whose absence is most conspicuous: a phone-only reader with no source
+    list has no route to a first book except files already on the device
+
 **Exit criterion:** every screen in scope is usable one-handed on an iPhone SE viewport with
-no horizontal scroll.
+no horizontal scroll — **and** a reader who owns no Mac can import a book, file it into a
+collection, edit a note on it, and find the next book from the source list, without a desktop
+being involved at any point.
 
 ### P3 — Reader touch interaction (10 days)
 
@@ -1342,7 +1573,7 @@ all in-repo work — see [D-014](#d-014--first-ios-release-is-testflight-not-the
 |---|---|---|
 | P0 — Compile and boot | **Done** | Runs on the Simulator; shelf renders, import works, book opens. [F-011](#f-011--first-run-what-the-app-actually-does-on-a-phone) |
 | P1 — Capability layer + routing | **Done** | Tapping a book opens it in-window; desktop-only surfaces are gated by [D-005](#d-005--capability-flags-not-platform-checks) flags |
-| P2 — Mobile UI | **Items 1–2 done; 3 and 5 still blocked** | [D-011](#d-011--p2-waits-for-the-desktop-mastery-line-to-finish) blocked the phase on the desktop mastery line. That line is still at "design aligned, not implemented", so the file collision it predicted is not happening yet, and on 2026-08-06 the phase was split rather than held: item 1 (responsive foundation) and item 2 (the Home drawer) landed, because neither touches `Reader.tsx` or `ExplainPopover.tsx`. **Items 3 and 5 stay blocked** — those two files are the mastery line's core surface and D-011 still holds for them. Items 4, 6, 7, 8 are unblocked and unstarted. Two items were added after the 18.5-day estimate: mobile AI settings ([D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)) and a book-downloading state ([D-013](#d-013--books-download-on-demand-not-eagerly)) |
+| P2 — Mobile UI | **Items 1–2 done; 3 and 5 still blocked** | [D-011](#d-011--p2-waits-for-the-desktop-mastery-line-to-finish) blocked the phase on the desktop mastery line. That line is still at "design aligned, not implemented", so the file collision it predicted is not happening yet, and on 2026-08-06 the phase was split rather than held: item 1 (responsive foundation) and item 2 (the Home drawer) landed, because neither touches `Reader.tsx` or `ExplainPopover.tsx`. **Items 3 and 5 stay blocked** — those two files are the mastery line's core surface and D-011 still holds for them. Items 4, 6, 7, 8 are unblocked and unstarted. Five items now postdate the 18.5-day estimate: mobile AI settings ([D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)), a book-downloading state ([D-013](#d-013--books-download-on-demand-not-eagerly)), and the three Tier-1 promotions from [§1](#1-goals-and-non-goals) — note editing, collection management and 书籍来源 (items 9–11). The phase is unscored against its new scope |
 | P3 — Touch interaction | Not started | Same file collision as P2; follows it |
 | P4 — iOS adaptation | **Done** | Rust-side, no frontend overlap — ran before P2. Item 1 was the PDF retention leak [Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) surfaced, fixed and re-measured; item 2 the suspension gate in `src/lifecycle.rs`; item 3 backup exclusion in `src/backup.rs`. Item 4 shrank to nothing (the `keyring` it budgeted for was deleted in v2.6.0); the Cargo-table half moved out and is done. The one claim still owed to hardware is that the suspension gate prevents a real `0xdead10cc` kill — P6 |
 | P5 — iCloud sync | **Item 1 done** | iOS ↔ macOS only. The `cfg` gates in `icloud.rs` and `sync/log.rs` are widened to `target_vendor = "apple"` and both targets compile clean. [Q-004](#q-004--macos-relocation-to-the-app-container-answered--there-is-nothing-to-relocate) closed at zero cost — no migration, because there are no users to migrate. Rust-side; runs before P2 |
