@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-updater",
+  "description": "Update check, download and relaunch. Desktop only — the updater plugin has no mobile implementation, so these permissions cannot live in default.json without breaking the iOS build.",
+  "platforms": ["macOS", "windows", "linux"],
+  "windows": ["main", "reader-*"],
+  "permissions": ["updater:default", "process:allow-restart"]
+}

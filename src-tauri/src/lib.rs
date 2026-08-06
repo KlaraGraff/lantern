@@ -403,6 +403,27 @@ fn install_menu(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
                 }
             }
 
+            // "Check for Updates…" belongs in the app submenu — items[0] on
+            // macOS, the "Lantern" menu — directly under About, which is
+            // where a Mac user looks for it. Index 1 is the slot right after
+            // About. Windows/Linux placement is deliberately out of scope for
+            // this pass; the launch auto-check still runs there.
+            //
+            // English at boot for the same reason as the item above.
+            #[cfg(target_os = "macos")]
+            if let Some(app_kind) = menu.items()?.first() {
+                if let Some(app_submenu) = app_kind.as_submenu() {
+                    let item = tauri::menu::MenuItem::with_id(
+                        handle,
+                        "check_for_updates",
+                        "Check for Updates…",
+                        true,
+                        None::<&str>,
+                    )?;
+                    app_submenu.insert(&item, 1)?;
+                }
+            }
+
             Ok(menu)
         })
         .on_menu_event(|app, event| {
@@ -410,6 +431,17 @@ fn install_menu(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
                 if let Err(e) = commands::app::reveal_logs(app.clone()) {
                     log::warn!("menu: reveal_logs failed: {e}");
                 }
+            }
+            // The update UI lives in the main window, which on macOS may be
+            // hidden (red button hides rather than closes), so surface it
+            // before asking it to check — otherwise the click does nothing
+            // visible.
+            if event.id() == "check_for_updates" {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+                let _ = app.emit("menu:check-for-updates", ());
             }
         })
 }
@@ -465,6 +497,15 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init());
+
+    // The updater has no mobile implementation and `process` is only pulled in
+    // for the relaunch that follows a finished download, so both are compiled
+    // and registered for desktop targets only — see the matching `cfg` gate on
+    // the dependencies in Cargo.toml and `capabilities/desktop.json`.
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
 
     let app = install_menu(builder)
         .on_window_event(|window, event| {

@@ -1811,5 +1811,15 @@
   "reviewBoard.pile.recentChapterLookups.title": "刚读完的{{chapter}}里你查过这些",
   "reviewBoard.pile.recentChapterLookups.reason": "趁着还有印象，就地过一遍。{{ago}}你还在这一章里。",
   "reviewBoard.pile.longUnseen.title": "很久没再遇到的词",
-  "reviewBoard.pile.longUnseen.reason": "收藏了，但书里一直没再出现过。没有故事可讲，所以放在这儿——你想练的时候再点。"
+  "reviewBoard.pile.longUnseen.reason": "收藏了，但书里一直没再出现过。没有故事可讲，所以放在这儿——你想练的时候再点。",
+
+  "settings.general.autoCheckUpdates": "自动检查更新",
+  "settings.general.autoCheckUpdatesHint": "启动时看一眼有没有新版本。你不点，就不会下载。",
+  "update.toast.available": "Lantern v{{version}} 可以更新了",
+  "update.toast.update": "更新",
+  "update.toast.downloading": "正在下载更新… {{progress}}%",
+  "update.toast.checking": "正在检查更新…",
+  "update.toast.upToDate": "已是最新版本",
+  "update.toast.error": "检查更新失败",
+  "update.toast.dismiss": "关闭"
 }

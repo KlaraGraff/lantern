@@ -11,6 +11,7 @@ import ReasoningEffortNotice from "./components/ReasoningEffortNotice";
 import SettingsHost from "./components/SettingsHost";
 import McpApprovalDialog from "./components/McpApprovalDialog";
 import OnboardingCard from "./components/onboarding/OnboardingCard";
+import UpdateToast from "./components/UpdateToast";
 import { reconcileLanguage } from "./i18n";
 import { useAppZoom } from "./hooks/useAppZoom";
 import { openReaderWindow } from "./utils/openReaderWindow";
@@ -98,6 +99,9 @@ export default function App() {
       {isMainWindow && <SettingsHost />}
       {isMainWindow && <McpApprovalDialog />}
       {isMainWindow && <OnboardingCard />}
+      {/* One window checks and one window announces. A reader window mounting
+          its own copy would run a second check and stack a second toast. */}
+      {isMainWindow && <UpdateToast />}
     </>
   );
 

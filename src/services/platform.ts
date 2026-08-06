@@ -80,7 +80,8 @@ export interface PlatformCapabilities {
   readonly hasFolderSync: boolean;
   /**
    * The app may update itself. False on Apple's mobile platforms, which forbid
-   * it. No consumer yet — Lantern ships no updater at all.
+   * it — and the updater plugin is not even compiled for them, so every piece
+   * of update UI (the toast, the auto-check toggle) has to be gated on this.
    */
   readonly hasUpdater: boolean;
   /** A file can be revealed in a file manager (Finder, Explorer). */

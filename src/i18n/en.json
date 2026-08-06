@@ -1811,5 +1811,15 @@
   "reviewBoard.pile.recentChapterLookups.title": "You looked these up in {{chapter}}, just now",
   "reviewBoard.pile.recentChapterLookups.reason": "Go over them while they're still fresh — {{ago}} you were still in this chapter.",
   "reviewBoard.pile.longUnseen.title": "Words you haven't run into in a while",
-  "reviewBoard.pile.longUnseen.reason": "Saved, but never seen again in the book. There's no story to tell here, so it just waits — tap in whenever you want the practice."
+  "reviewBoard.pile.longUnseen.reason": "Saved, but never seen again in the book. There's no story to tell here, so it just waits — tap in whenever you want the practice.",
+
+  "settings.general.autoCheckUpdates": "Check for updates automatically",
+  "settings.general.autoCheckUpdatesHint": "Look for a new version at launch. Nothing downloads until you say so.",
+  "update.toast.available": "Lantern v{{version}} is available",
+  "update.toast.update": "Update",
+  "update.toast.downloading": "Downloading update… {{progress}}%",
+  "update.toast.checking": "Checking for updates…",
+  "update.toast.upToDate": "You're up to date",
+  "update.toast.error": "Update check failed",
+  "update.toast.dismiss": "Dismiss"
 }

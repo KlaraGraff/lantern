@@ -90,9 +90,15 @@ libc = "0.2"
 # both decoded and unpacked in-process (commands/ocr/package.rs), with no
 # external binary in the path. Desktop-only: the OCR write half is not compiled
 # for mobile.
+#
+# The updater lives here for a different reason: it has no mobile
+# implementation at all, and an unconditional dependency breaks the iOS build.
+# `process` is what `relaunch()` after a finished download goes through.
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 zstd = "0.13"
 tar = "0.4"
+tauri-plugin-updater = "=2.10.1"
+tauri-plugin-process = "=2.3.1"
 
 # These back the iCloud Drive integration in icloud.rs and the coordinated
 # append in sync/log.rs. Widened from `target_os = "macos"` to the whole Apple

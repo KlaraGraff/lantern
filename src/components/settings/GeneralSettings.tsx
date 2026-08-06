@@ -65,6 +65,7 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
   const [language, setLanguage] = useState("en");
   const [autoSave, setAutoSave] = useState(true);
   const [skipFrontMatter, setSkipFrontMatter] = useState(true);
+  const [autoCheckUpdates, setAutoCheckUpdates] = useState(true);
   const [lookupHistoryRetention, setLookupHistoryRetention] = useState("0");
   const [cefrLevel, setCefrLevel] = useState("B1");
   const [cefrSource, setCefrSource] = useState("manual");
@@ -93,6 +94,8 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
     if (settings.language) setLanguage(settings.language);
     if (settings.auto_save) setAutoSave(settings.auto_save === "true");
     if (settings.skip_front_matter) setSkipFrontMatter(settings.skip_front_matter === "true");
+    // Unset means on, matching what the toast does with a missing value.
+    setAutoCheckUpdates(settings.auto_check_updates !== "false");
     if (settings.lookup_history_retention_days) {
       setLookupHistoryRetention(settings.lookup_history_retention_days);
     }
@@ -739,6 +742,27 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
           ]}
         />
       </div>
+
+      {/* The only update control anywhere in Settings. Everything else about
+          an update happens in the toast; this row just decides whether the
+          launch check runs at all. Gone where there is no updater to run. */}
+      {platform.hasUpdater && (
+        <div className="flex items-center justify-between h-[73px]">
+          <div>
+            <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.general.autoCheckUpdates")}</p>
+            <p className="text-[12px] text-text-muted mt-0.5">{t("settings.general.autoCheckUpdatesHint")}</p>
+          </div>
+          <Toggle
+            label={t("settings.general.autoCheckUpdates")}
+            checked={autoCheckUpdates}
+            onChange={(v) => {
+              setAutoCheckUpdates(v);
+              save("auto_check_updates", String(v));
+              showSavedToast();
+            }}
+          />
+        </div>
+      )}
 
       {/* Lets someone who skipped or rushed through the first-launch card see
           it again, without a support request to reset a hidden flag. */}
