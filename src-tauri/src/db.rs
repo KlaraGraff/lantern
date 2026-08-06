@@ -98,6 +98,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
         include_str!("../migrations/037_reading_behavior.sql"),
     ),
     (38, include_str!("../migrations/038_mastery.sql")),
+    (
+        39,
+        include_str!("../migrations/039_mastery_scoring.sql"),
+    ),
 ];
 
 fn register_sqlite_vec() {

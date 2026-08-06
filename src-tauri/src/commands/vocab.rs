@@ -484,6 +484,97 @@ fn propagate_progress_to_siblings(
     Ok(())
 }
 
+/// Write a tier the reading-exposure engine decided, with its explanation.
+///
+/// The engine lives in `crate::mastery::store` and decides *what* the tier
+/// should be; this decides how a tier gets written down, which is the same
+/// three things every other path here does — update the row, append a
+/// timeline event, and carry the result to every sibling row spelling the
+/// same word — plus the two columns that make an automatic decision
+/// answerable: `mastery_source = 'auto'` and the `detail` JSON the
+/// word-detail page builds its one sentence from.
+///
+/// `next_review_at` and the whole FSRS block are read and written back
+/// untouched. Reading a word in a book is not an answer to a review card, so
+/// it must not move the review schedule; but `propagate_progress_to_siblings`
+/// copies the whole progress struct, so the current values have to travel
+/// with it or the siblings would be reset to nothing.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn set_auto_mastery(
+    tx: &rusqlite::Transaction,
+    events: &mut Vec<EventBody>,
+    id: &str,
+    previous_mastery: &str,
+    mastery: &str,
+    reason: &str,
+    detail: &str,
+    now: i64,
+    device: &str,
+) -> AppResult<()> {
+    validate_mastery(mastery)?;
+    let (word, review, next_review_at) = tx.query_row(
+        "SELECT word, review_count, review_interval_days, last_reviewed_at,
+                last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version,
+                next_review_at
+           FROM vocab_words WHERE id = ?1",
+        params![id],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row_to_review_state(row, 1)?,
+                row.get::<_, Option<i64>>(8)?,
+            ))
+        },
+    )?;
+
+    tx.execute(
+        "UPDATE vocab_words
+         SET mastery = ?1, mastery_source = 'auto', mastery_reason = ?2,
+             updated_at = ?3, updated_by_device = ?4
+         WHERE id = ?5",
+        params![mastery, detail, now, device, id],
+    )?;
+    record_mastery_event(
+        tx,
+        id,
+        previous_mastery,
+        mastery,
+        "auto",
+        reason,
+        detail,
+        now,
+    )?;
+
+    let progress = VocabProgress {
+        mastery: mastery.to_string(),
+        next_review_at,
+        review_count: review.review_count,
+        review_interval_days: review.review_interval_days,
+        last_reviewed_at: review.last_reviewed_at,
+        last_review_rating: review.last_review_rating,
+        fsrs_stability: review.fsrs_stability,
+        fsrs_difficulty: review.fsrs_difficulty,
+        fsrs_version: review.fsrs_version,
+        mastery_source: "auto".to_string(),
+        mastery_reason: Some(detail.to_string()),
+    };
+    events.push(EventBody::VocabMasterySet {
+        id: id.to_string(),
+        mastery: progress.mastery.clone(),
+        next_review_at: progress.next_review_at,
+        review_count: progress.review_count,
+        review_interval_days: progress.review_interval_days,
+        last_reviewed_at: progress.last_reviewed_at,
+        last_review_rating: progress.last_review_rating.clone(),
+        fsrs_stability: progress.fsrs_stability,
+        fsrs_difficulty: progress.fsrs_difficulty,
+        fsrs_version: progress.fsrs_version,
+        mastery_source: progress.mastery_source.clone(),
+        mastery_reason: progress.mastery_reason.clone(),
+    });
+    propagate_progress_to_siblings(tx, events, id, &word, &progress, now, device)
+}
+
 fn validate_mastery(mastery: &str) -> AppResult<()> {
     if matches!(mastery, "new" | "learning" | "familiar" | "mastered") {
         Ok(())

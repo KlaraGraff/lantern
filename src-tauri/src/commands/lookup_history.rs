@@ -116,7 +116,11 @@ fn row_to_lookup_with_book(row: &rusqlite::Row) -> rusqlite::Result<LookupRecord
     })
 }
 
-fn normalize(text: &str) -> String {
+/// Shared with `mastery::store`, which has to match aggregated exposure rows
+/// (already normalized this way on the frontend) against `vocab_words.word`,
+/// which is stored raw. SQL's `LOWER(TRIM(...))` is not the same function —
+/// it would leave the comma on `"quiet,"` and never match.
+pub(crate) fn normalize(text: &str) -> String {
     text.trim_matches(|c: char| !c.is_alphanumeric() && c != '\'')
         .to_lowercase()
 }

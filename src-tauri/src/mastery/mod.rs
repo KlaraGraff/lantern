@@ -2,11 +2,12 @@
 //!
 //! Design: `docs/impls/reading-driven-mastery-and-review.md` §2.1–§2.4.
 //!
-//! No caller wires this in yet — the SQLite side (reading `vocab_words` +
-//! `reading_word_exposures`, writing `mastery_events`, migration 038) is a
-//! separate commit. `#![allow(dead_code)]` reflects that honestly instead of
-//! adding a throwaway command just to silence `-D warnings`; the tests below
-//! are what exercises it for now.
+//! The SQLite side lives in [`crate::mastery::store`] (migration 039), which
+//! is what `commands::reading_behavior` calls once a batch of screens has
+//! been folded into `reading_word_exposures`. `#![allow(dead_code)]` still
+//! covers the parts no pipeline reaches yet rather than deleting them: the
+//! set of accessors a scoring pass needs is not final while the demotion
+//! path is still being wired.
 //!
 //! ## Why this module holds no database handle
 //!
@@ -61,11 +62,18 @@
 //! 1. Screens read more than [`FAST_SCREEN_WPM_MULTIPLE`]x the reader's own
 //!    median words-per-minute. The baseline is that reader's own median
 //!    ([`median_words_per_minute`]), so a genuinely fast reader is never
-//!    penalised for being fast. This is the only exclusion implemented here.
-//! 2. Long dwell with zero interaction (the reader walked away). **Already
-//!    applied upstream at write time** — see `IDLE_SCREEN_MS` and its `&&
-//!    operation_count == 0` in `commands::reading_behavior`. Exposures that
-//!    reach this module have passed that filter; do not re-apply it.
+//!    penalised for being fast.
+//! 2. Long dwell with zero interaction (the reader walked away).
+//!
+//! **Both are applied upstream at write time**, in
+//! `commands::reading_behavior` — see [`is_screen_too_fast`] and
+//! `IDLE_SCREEN_MS`. That is not an accident of where the code went: the
+//! aggregate rows this engine scores are per (book, chapter, word) totals, so
+//! by the time an exposure reaches here there is no screen left to ask how
+//! fast it was. The per-exposure knobs below ([`Exposure::screen_words_per_minute`],
+//! [`ExposureBatch::reader_median_wpm`]) stay as the specification of the
+//! rule; the pipeline passes `None` because the filter has already run where
+//! the data still existed.
 
 #![allow(dead_code)]
 
@@ -345,12 +353,31 @@ fn weight_for_occurrence(occurrence: u32) -> f64 {
 /// The too-fast exclusion. Non-finite or non-positive paces are *not*
 /// excluded: an unmeasurable screen is a data problem, and §2.4 says data
 /// problems break toward the reader.
-fn is_too_fast(exposure: &Exposure, median_wpm: Option<f64>) -> bool {
+fn exceeds_pace_limit(words_per_minute: f64, median_wpm: Option<f64>) -> bool {
     let Some(median) = median_wpm.filter(|m| m.is_finite() && *m > 0.0) else {
         return false;
     };
-    exposure.screen_words_per_minute.is_finite()
-        && exposure.screen_words_per_minute > median * FAST_SCREEN_WPM_MULTIPLE
+    words_per_minute.is_finite() && words_per_minute > median * FAST_SCREEN_WPM_MULTIPLE
+}
+
+fn is_too_fast(exposure: &Exposure, median_wpm: Option<f64>) -> bool {
+    exceeds_pace_limit(exposure.screen_words_per_minute, median_wpm)
+}
+
+/// Whether one finished screen was read too fast for the words on it to count
+/// as evidence — the same §2.4 rule as [`is_too_fast`], asked of a screen
+/// rather than of an exposure.
+///
+/// This is the form the write path uses, because a screen is the last place
+/// the pace is still knowable: `reading_word_exposures` aggregates away which
+/// screen each encounter came from. A screen with no words or no measurable
+/// dwell has no pace and is never excluded.
+pub fn is_screen_too_fast(screen: ScreenPace, reader_median_wpm: Option<f64>) -> bool {
+    if screen.word_count <= 0 || screen.dwell_ms <= 0 {
+        return false;
+    }
+    let wpm = screen.word_count as f64 * 60_000.0 / screen.dwell_ms as f64;
+    exceeds_pace_limit(wpm, reader_median_wpm)
 }
 
 /// Score a batch of not-looked-up exposures for one word.
@@ -487,6 +514,8 @@ pub fn median_words_per_minute(screens: &[ScreenPace]) -> Option<f64> {
         Some(paces[middle])
     }
 }
+
+pub mod store;
 
 #[cfg(test)]
 mod tests;

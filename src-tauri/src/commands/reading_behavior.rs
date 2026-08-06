@@ -15,6 +15,8 @@ use tauri::State;
 
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
+use crate::mastery::{is_screen_too_fast, median_words_per_minute, ScreenPace};
+use crate::sync::writer::SyncWriter;
 
 /// A word is credible viewport exposure evidence only once it clears these
 /// bounds — mirrors the sanity checks already used for reading sessions in
@@ -33,6 +35,16 @@ const MAX_CHAPTER_LEN: usize = 512;
 /// unused) `IDLE_PAUSE_SECONDS` in `commands::reading_stats`; kept as its
 /// own constant here because the two features may tune independently.
 const IDLE_SCREEN_MS: i64 = 5 * 60 * 1000;
+
+/// How many of the reader's most recent screens the pace baseline for §2.4's
+/// other exclusion — "read far faster than this reader normally reads" — is
+/// drawn from.
+///
+/// Bounded rather than "all of them" for two reasons: the median only has to
+/// be a stable picture of how this person reads, which a few hundred screens
+/// already is; and the cost of every single batch write should not grow with
+/// how long someone has owned the app.
+const MEDIAN_PACE_SAMPLE: i64 = 500;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -102,74 +114,129 @@ fn screen_is_valid(input: &ScreenExposureInput) -> bool {
             .all(|w| !w.is_empty() && w.len() <= MAX_WORD_LEN)
 }
 
+/// The reader's own median words-per-minute, over their most recent
+/// [`MEDIAN_PACE_SAMPLE`] measurable screens.
+///
+/// `None` means "no usable history yet", which callers must read as "run no
+/// speed filter" — never as a median of zero. §2.4 would rather over-count
+/// than exclude a reader it knows nothing about.
+fn reader_median_wpm(tx: &rusqlite::Transaction<'_>) -> AppResult<Option<f64>> {
+    let mut stmt = tx.prepare(
+        "SELECT word_count, dwell_ms FROM reading_screen_dwells
+          WHERE word_count > 0 AND dwell_ms > 0
+          ORDER BY started_at DESC
+          LIMIT ?1",
+    )?;
+    let screens = stmt
+        .query_map(params![MEDIAN_PACE_SAMPLE], |row| {
+            Ok(ScreenPace {
+                word_count: row.get(0)?,
+                dwell_ms: row.get(1)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(median_words_per_minute(&screens))
+}
+
 /// Persists one batch of finalized screens: one `reading_screen_dwells` row
 /// per screen (always, for the §5.1 pace signal and for future revisiting
-/// of the exclusion rule below), then folds each screen's words into
-/// `reading_word_exposures` — unless the screen itself matches §2.4's
-/// exclusion rule (dwelt >= 5 minutes with zero operations), in which case
-/// the dwell row is kept but its words are not counted as exposure
-/// evidence. This is the one place that rule is actually applied; nothing
-/// downstream needs to re-derive it from raw dwell/operation numbers.
+/// of the exclusion rules below), then folds each screen's words into
+/// `reading_word_exposures` — unless the screen matches one of §2.4's two
+/// exclusions, in which case the dwell row is kept but its words are not
+/// counted as exposure evidence:
+///
+/// 1. dwelt >= 5 minutes with zero operations (the reader walked away), and
+/// 2. read faster than [`crate::mastery::is_screen_too_fast`] allows against
+///    this reader's own median (skimmed, not read).
+///
+/// This is the one place either rule is applied. It has to be here rather
+/// than in the scoring engine because `reading_word_exposures` aggregates
+/// away which screen each encounter came from: once folded, there is no
+/// screen left to ask how fast it was or whether anyone touched it.
+///
+/// Then it scores what it just recorded, in the same transaction — see
+/// [`crate::mastery::store::score_book_exposures`].
 pub fn record_reading_behavior_batch_inner(
     screens: &[ScreenExposureInput],
     db: &Db,
+    sync: &SyncWriter,
 ) -> AppResult<RecordReadingBehaviorResult> {
-    let mut conn = db.conn.lock().expect("db mutex");
     let now = chrono::Utc::now().timestamp_millis();
-    let tx = conn.transaction()?;
-    let mut recorded = 0usize;
-    let mut skipped = 0usize;
+    let device = sync.self_device().to_string();
+    sync.with_tx(db, now, |tx, events| {
+        let mut recorded = 0usize;
+        let mut skipped = 0usize;
+        // Measured once per batch, before this batch's own rows land: a
+        // handful of new screens cannot meaningfully move a median drawn from
+        // hundreds, and re-measuring per screen would let one very fast page
+        // in the batch start excluding the pages after it.
+        let median_wpm = reader_median_wpm(tx)?;
+        let mut books_touched: Vec<String> = Vec::new();
 
-    for screen in screens {
-        if !screen_is_valid(screen) {
-            skipped += 1;
-            continue;
-        }
-        let dwell_ms = screen.ended_at - screen.started_at;
-        let id = uuid::Uuid::new_v4().to_string();
-        tx.execute(
-            "INSERT INTO reading_screen_dwells
-                (id, book_id, chapter, cfi, started_at, ended_at, dwell_ms,
-                 operation_count, lookup_count, word_count, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-            params![
-                id,
-                screen.book_id,
-                screen.chapter,
-                screen.cfi,
-                screen.started_at,
-                screen.ended_at,
-                dwell_ms,
-                screen.operation_count,
-                screen.lookup_count,
-                screen.word_count,
-                now,
-            ],
-        )?;
-
-        let is_idle_screen = dwell_ms >= IDLE_SCREEN_MS && screen.operation_count == 0;
-        if !is_idle_screen && !screen.words.is_empty() {
-            let chapter = screen.chapter.clone().unwrap_or_default();
-            let has_lookup_activity = screen.lookup_count > 0;
-            for word in &screen.words {
-                let upweight = has_lookup_activity && !screen.looked_up_words.contains(word);
-                upsert_word_exposure(
-                    &tx,
-                    &screen.book_id,
-                    &chapter,
-                    word,
-                    upweight,
+        for screen in screens {
+            if !screen_is_valid(screen) {
+                skipped += 1;
+                continue;
+            }
+            let dwell_ms = screen.ended_at - screen.started_at;
+            let id = uuid::Uuid::new_v4().to_string();
+            tx.execute(
+                "INSERT INTO reading_screen_dwells
+                    (id, book_id, chapter, cfi, started_at, ended_at, dwell_ms,
+                     operation_count, lookup_count, word_count, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    id,
+                    screen.book_id,
+                    screen.chapter,
+                    screen.cfi,
                     screen.started_at,
                     screen.ended_at,
+                    dwell_ms,
+                    screen.operation_count,
+                    screen.lookup_count,
+                    screen.word_count,
                     now,
-                )?;
-            }
-        }
-        recorded += 1;
-    }
+                ],
+            )?;
 
-    tx.commit()?;
-    Ok(RecordReadingBehaviorResult { recorded, skipped })
+            let is_idle_screen = dwell_ms >= IDLE_SCREEN_MS && screen.operation_count == 0;
+            let is_skimmed = is_screen_too_fast(
+                ScreenPace {
+                    word_count: screen.word_count,
+                    dwell_ms,
+                },
+                median_wpm,
+            );
+            if !is_idle_screen && !is_skimmed && !screen.words.is_empty() {
+                let chapter = screen.chapter.clone().unwrap_or_default();
+                let has_lookup_activity = screen.lookup_count > 0;
+                for word in &screen.words {
+                    let upweight = has_lookup_activity && !screen.looked_up_words.contains(word);
+                    upsert_word_exposure(
+                        tx,
+                        &screen.book_id,
+                        &chapter,
+                        word,
+                        upweight,
+                        screen.started_at,
+                        screen.ended_at,
+                        now,
+                    )?;
+                }
+                if !books_touched.contains(&screen.book_id) {
+                    books_touched.push(screen.book_id.clone());
+                }
+            }
+            recorded += 1;
+        }
+
+        for book_id in &books_touched {
+            crate::mastery::store::score_book_exposures(tx, events, book_id, now, &device)?;
+        }
+
+        Ok(RecordReadingBehaviorResult { recorded, skipped })
+    })
 }
 
 /// One statement per word, leaning on
@@ -198,12 +265,16 @@ fn upsert_word_exposure(
         "INSERT INTO reading_word_exposures
             (id, book_id, chapter, normalized_word, encounter_count,
              encounters_on_lookup_active_screen, first_seen_at, last_seen_at,
-             created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6, ?7, ?8, ?8)
+             distinct_days, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6, ?7, 1, ?8, ?8)
          ON CONFLICT(book_id, chapter, normalized_word) DO UPDATE SET
              encounter_count = encounter_count + 1,
              encounters_on_lookup_active_screen =
                  encounters_on_lookup_active_screen + ?5,
+             distinct_days = distinct_days + (CASE WHEN
+                 strftime('%Y-%m-%d', last_seen_at / 1000, 'unixepoch', 'localtime')
+                     = strftime('%Y-%m-%d', ?7 / 1000, 'unixepoch', 'localtime')
+                 THEN 0 ELSE 1 END),
              first_seen_at = MIN(first_seen_at, ?6),
              last_seen_at = MAX(last_seen_at, ?7),
              updated_at = ?8",
@@ -225,8 +296,9 @@ fn upsert_word_exposure(
 pub fn record_reading_behavior_batch(
     screens: Vec<ScreenExposureInput>,
     db: State<'_, Db>,
+    sync: State<'_, SyncWriter>,
 ) -> AppResult<RecordReadingBehaviorResult> {
-    record_reading_behavior_batch_inner(&screens, &db)
+    record_reading_behavior_batch_inner(&screens, &db, &sync)
 }
 
 /// One basic read for the next batch's mastery/review algorithm to build
@@ -270,9 +342,10 @@ pub fn list_word_exposures(book_id: String, db: State<'_, Db>) -> AppResult<Vec<
 mod tests {
     use super::*;
 
-    fn test_db() -> (tempfile::TempDir, Db) {
+    fn test_db() -> (tempfile::TempDir, Db, SyncWriter) {
         let dir = tempfile::tempdir().unwrap();
         let db = Db::init(dir.path()).unwrap();
+        let sync = SyncWriter::new("dev-test".to_string());
         db.conn
             .lock()
             .unwrap()
@@ -283,7 +356,7 @@ mod tests {
                 params![1_704_067_200_000_i64],
             )
             .unwrap();
-        (dir, db)
+        (dir, db, sync)
     }
 
     fn screen(words: &[&str], looked_up: &[&str], op_count: i64, lookup_count: i64) -> ScreenExposureInput {
@@ -303,12 +376,10 @@ mod tests {
 
     #[test]
     fn records_a_screen_and_its_word_exposures() {
-        let (_dir, db) = test_db();
-        let result = record_reading_behavior_batch_inner(
-            &[screen(&["quiet", "lantern", "dusk"], &[], 1, 0)],
-            &db,
-        )
-        .unwrap();
+        let (_dir, db, sync) = test_db();
+        let result =
+            record_reading_behavior_batch_inner(&[screen(&["quiet", "lantern", "dusk"], &[], 1, 0)], &db, &sync)
+                .unwrap();
         assert_eq!(result, RecordReadingBehaviorResult { recorded: 1, skipped: 0 });
 
         let rows = list_word_exposures_inner("book-1", &db).unwrap();
@@ -320,9 +391,9 @@ mod tests {
 
     #[test]
     fn repeat_encounters_accumulate_and_never_reset_to_zero() {
-        let (_dir, db) = test_db();
+        let (_dir, db, sync) = test_db();
         for _ in 0..6 {
-            record_reading_behavior_batch_inner(&[screen(&["dusk"], &[], 1, 0)], &db).unwrap();
+            record_reading_behavior_batch_inner(&[screen(&["dusk"], &[], 1, 0)], &db, &sync).unwrap();
         }
         let rows = list_word_exposures_inner("book-1", &db).unwrap();
         let dusk = rows.iter().find(|r| r.normalized_word == "dusk").unwrap();
@@ -333,11 +404,11 @@ mod tests {
 
     #[test]
     fn idle_screen_is_recorded_but_excluded_from_word_exposure() {
-        let (_dir, db) = test_db();
+        let (_dir, db, sync) = test_db();
         let mut idle = screen(&["quiet", "lantern"], &[], 0, 0);
         idle.started_at = 1_000;
         idle.ended_at = idle.started_at + IDLE_SCREEN_MS; // exactly 5 minutes, zero operations
-        let result = record_reading_behavior_batch_inner(&[idle], &db).unwrap();
+        let result = record_reading_behavior_batch_inner(&[idle], &db, &sync).unwrap();
         assert_eq!(result.recorded, 1, "the dwell row is still recorded");
 
         let rows = list_word_exposures_inner("book-1", &db).unwrap();
@@ -357,11 +428,11 @@ mod tests {
     fn dwell_under_five_minutes_with_zero_ops_still_counts() {
         // The rule is dwell AND zero ops together, not dwell time alone —
         // a short, quiet screen is ordinary reading, not idle.
-        let (_dir, db) = test_db();
+        let (_dir, db, sync) = test_db();
         let mut brief = screen(&["quiet"], &[], 0, 0);
         brief.started_at = 1_000;
         brief.ended_at = brief.started_at + 60_000; // one minute
-        record_reading_behavior_batch_inner(&[brief], &db).unwrap();
+        record_reading_behavior_batch_inner(&[brief], &db, &sync).unwrap();
         let rows = list_word_exposures_inner("book-1", &db).unwrap();
         assert_eq!(rows.len(), 1);
     }
@@ -370,23 +441,20 @@ mod tests {
     fn idle_dwell_with_an_operation_still_counts() {
         // Dwelt >= 5 minutes but had an operation: not idle, per the exact
         // AND rule (dwell alone is never sufficient to exclude a screen).
-        let (_dir, db) = test_db();
+        let (_dir, db, sync) = test_db();
         let mut long_but_active = screen(&["quiet"], &[], 1, 0);
         long_but_active.started_at = 1_000;
         long_but_active.ended_at = long_but_active.started_at + IDLE_SCREEN_MS + 60_000;
-        record_reading_behavior_batch_inner(&[long_but_active], &db).unwrap();
+        record_reading_behavior_batch_inner(&[long_but_active], &db, &sync).unwrap();
         let rows = list_word_exposures_inner("book-1", &db).unwrap();
         assert_eq!(rows.len(), 1);
     }
 
     #[test]
     fn lookup_active_screen_upweights_only_the_other_words() {
-        let (_dir, db) = test_db();
-        record_reading_behavior_batch_inner(
-            &[screen(&["quiet", "lantern", "dusk"], &["dusk"], 1, 1)],
-            &db,
-        )
-        .unwrap();
+        let (_dir, db, sync) = test_db();
+        record_reading_behavior_batch_inner(&[screen(&["quiet", "lantern", "dusk"], &["dusk"], 1, 1)], &db, &sync)
+            .unwrap();
         let rows = list_word_exposures_inner("book-1", &db).unwrap();
         let dusk = rows.iter().find(|r| r.normalized_word == "dusk").unwrap();
         let lantern = rows.iter().find(|r| r.normalized_word == "lantern").unwrap();
@@ -396,22 +464,22 @@ mod tests {
 
     #[test]
     fn invalid_screens_are_skipped_not_fatal_to_the_batch() {
-        let (_dir, db) = test_db();
+        let (_dir, db, sync) = test_db();
         let mut bad = screen(&["quiet"], &[], 0, 0);
         bad.book_id = String::new();
         let good = screen(&["lantern"], &[], 0, 0);
-        let result = record_reading_behavior_batch_inner(&[bad, good], &db).unwrap();
+        let result = record_reading_behavior_batch_inner(&[bad, good], &db, &sync).unwrap();
         assert_eq!(result, RecordReadingBehaviorResult { recorded: 1, skipped: 1 });
     }
 
     #[test]
     fn word_exposures_are_scoped_per_chapter() {
-        let (_dir, db) = test_db();
+        let (_dir, db, sync) = test_db();
         let mut ch1 = screen(&["dusk"], &[], 0, 0);
         ch1.chapter = Some("Chapter 1".to_string());
         let mut ch2 = screen(&["dusk"], &[], 0, 0);
         ch2.chapter = Some("Chapter 2".to_string());
-        record_reading_behavior_batch_inner(&[ch1, ch2], &db).unwrap();
+        record_reading_behavior_batch_inner(&[ch1, ch2], &db, &sync).unwrap();
         let rows = list_word_exposures_inner("book-1", &db).unwrap();
         assert_eq!(rows.len(), 2, "same word in two chapters stays two rows");
         assert!(rows.iter().all(|r| r.encounter_count == 1));
