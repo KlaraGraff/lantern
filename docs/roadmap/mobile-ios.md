@@ -470,6 +470,9 @@ the tradeoff invisible most of the time.
 never opens — under this decision that is the *common* path, not an edge case. The reader
 also needs a real downloading state, which is UI and therefore [P2](#p2--mobile-ui-185-days).
 
+**What it costs on cellular** is settled separately in
+[D-016](#d-016--on-cellular-a-book-download-asks-once-and-remembers).
+
 **Revisit if:** on-demand download proves slow enough on cellular that opening a book feels
 broken. A "keep on this phone" pin was considered and deferred as a second-release affordance.
 
@@ -495,24 +498,51 @@ account-level stands between P6 and a TestFlight upload.
 
 **Revisit when:** P2 and P3 are done and the app is worth strangers' attention.
 
-### D-015 — macOS moves its sync directory into the app's ubiquity container
+### D-015 — The sync directory is the app's ubiquity container, and picking one goes away
 
-Desktop sync points at a folder the user picked inside iCloud Drive. It moves to the app's own
-ubiquity container, once, automatically, on the launch that first sees a `.sync_setting`
-recorded outside it.
+Desktop sync points at a folder the user picked inside iCloud Drive. It stops being a choice:
+the sync root is the app's own ubiquity container, on every platform, and the folder picker is
+removed rather than repointed.
 
 **Why:** iOS cannot reach an arbitrary iCloud Drive path — an app only gets a container it
-owns. Without the move there is no iOS ↔ macOS sync at all, which is most of why the iOS
-version exists ([D-006](#d-006--sync-ships-in-v1)).
+owns. Without this there is no iOS ↔ macOS sync at all, which is most of why the iOS version
+exists ([D-006](#d-006--sync-ships-in-v1)).
 
-**What the user sees change:** the files move in Finder, from the folder they chose to
-Lantern's own directory under iCloud Drive. Books and annotations are not at risk — the
-relocation reuses the existing disable → enable path, which is already exercised whenever
-someone changes the folder by hand ([F-009](#f-009--relocating-the-sync-directory-is-already-a-solved-operation)).
-Decided 2026-08-06; the visible-location change was put to the account holder and accepted.
+**No migration, and this is the part that was nearly built wrong.** The first draft of this
+decision specified a one-time automatic relocation with a notice explaining where the files
+went. There is nobody to relocate: Lantern has never been distributed, so no installed copy
+has a picked folder recorded. Writing a migration path here would be exactly the legacy-shim
+work the project has already decided against, for users who do not exist. Point at the
+container and move on. Decided 2026-08-06 by the account holder, who caught this.
+
+**What replaces "Change folder": "Open location".** Once the directory is fixed it cannot be
+changed, so a control that changes it is dead weight — but "where did my books go" is still a
+real question. The row becomes a button that reveals the sync folder in Finder, in the shape
+`reveal_logs` already uses. That answers the question without a notice, a dialog, or a
+migration.
+
+**When a prompt *would* be owed:** after the app is distributed. Any data move that happens on
+a machine belonging to someone other than the author needs to be announced. That is a
+post-release rule, not a pre-release one.
 
 **Consequence for the estimate:** [Q-004](#q-004--macos-relocation-to-the-app-container-largely-answered)
-is closed. Its ~0.5 day is inside P5 item 2, not on top of it.
+is closed and its ~0.5 day of migration work is deleted, not folded in. P5 item 2 shrinks to
+"resolve the root from the container" plus the settings-panel change.
+
+### D-016 — On cellular, a book download asks once and remembers
+
+[D-013](#d-013--books-download-on-demand-not-eagerly) makes "tap a book, it downloads" the
+phone's normal path. On Wi-Fi that happens silently. On cellular the first such tap asks, and
+the answer is remembered for later taps.
+
+**Why:** books are not small — a PDF can be tens or hundreds of megabytes — and spending
+someone's metered data without asking is the kind of thing they only notice from the bill.
+Asking every time would be worse than either extreme, hence remembering.
+
+**Where the setting lives:** with the answer remembered, it needs somewhere to be changed back,
+which lands in mobile settings ([P2](#p2--mobile-ui-185-days)).
+
+Decided 2026-08-06.
 
 ---
 
@@ -751,19 +781,19 @@ was medium and it was never verified against first-party documentation.
 out. The container can stay private, so the question does not need answering for this
 milestone. Kept here because it is the first thing to check if Windows sync comes back.
 
-### Q-004 — macOS relocation to the app container (largely answered)
+### Q-004 — macOS relocation to the app container (answered — there is nothing to relocate)
 
 Desktop sync today points at a *user-picked* folder. For iOS to meet macOS, macOS has to use
-the app's own ubiquity container instead. This looked like a migration problem; it mostly is
-not — see [F-009](#f-009--relocating-the-sync-directory-is-already-a-solved-operation).
+the app's own ubiquity container instead. This was written up as a migration problem, then as a
+mostly-solved migration problem — see
+[F-009](#f-009--relocating-the-sync-directory-is-already-a-solved-operation) — and it is
+neither.
 
-Remaining work: detect a recorded `.sync_setting` pointing outside the container and chain the
-existing disable → enable path once. **~0.5 day, folded into P5.**
-
-**Answered 2026-08-06 — [D-015](#d-015--macos-moves-its-sync-directory-into-the-apps-ubiquity-container).**
-The one thing here that was never a technical question — that the files visibly move in Finder —
-was put to the account holder and accepted. Nothing in this question is open; P5 item 2 may
-proceed.
+**Answered 2026-08-06 — [D-015](#d-015--the-sync-directory-is-the-apps-ubiquity-container-and-picking-one-goes-away).**
+There is no installed copy of Lantern anywhere with a picked folder recorded, because the app
+has never been distributed. Nothing needs detecting, chaining, or announcing. The ~0.5 day is
+deleted rather than folded in; what remains in P5 item 2 is resolving the root from the
+container and removing the picker from settings.
 
 ### Q-002 — Does the reader hold acceptable memory on a real device?
 
@@ -1125,9 +1155,9 @@ Instruments shows no runaway memory.
 
 ### P5 — iCloud sync (12–18 days)
 
-iOS ↔ macOS only ([D-007](#d-007--windows-sync-is-out-of-scope)). Size
-[Q-004](#q-004--macos-relocation-to-the-app-container-largely-answered) before starting —
-it is not in the estimate below.
+iOS ↔ macOS only ([D-007](#d-007--windows-sync-is-out-of-scope)).
+[Q-004](#q-004--macos-relocation-to-the-app-container-answered--there-is-nothing-to-relocate)
+is closed and added nothing to the estimate below.
 
 1. ~~Widen `cfg(target_os = "macos")` → `cfg(target_vendor = "apple")` in `src/icloud.rs` and
    `src/sync/log.rs`~~ — **done 2026-08-06.** Nine gates in `icloud.rs` and four in
@@ -1142,7 +1172,12 @@ it is not in the estimate below.
    `cargo clippy` clean on both the host and `aarch64-apple-ios-sim`, 25 `icloud`/`sync::log`
    tests green.
 2. Target the app's own ubiquity container instead of a picked path; replace the hardcoded
-   path check in `src/sync/migration.rs:59-64`
+   path check in `src/sync/migration.rs:59-64`. Per
+   [D-015](#d-015--the-sync-directory-is-the-apps-ubiquity-container-and-picking-one-goes-away)
+   this carries **no migration** — and it takes the folder picker out of Library Sync settings
+   with it, replacing "Change folder" with an "Open location" reveal in the shape
+   `reveal_logs` already uses. Several strings in that panel describe choosing a folder and
+   have to go with it
 3. Replace the `notify` watcher with `NSMetadataQuery` — kqueue does not observe
    iCloud-initiated downloads
 4. **Partly already done, and this line used to overstate the work.**
@@ -1151,7 +1186,10 @@ it is not in the estimate below.
    attempting a read — precisely so a not-yet-downloaded item does not block. What is missing
    is the *acting* half: on a placeholder, call `trigger_download_file` and report progress to
    the frontend rather than surfacing "cannot open". [D-013](#d-013--books-download-on-demand-not-eagerly)
-   makes that the phone's normal path, not an edge case, so it is no longer optional
+   makes that the phone's normal path, not an edge case, so it is no longer optional. On a
+   cellular connection the first such download asks first and the answer sticks
+   ([D-016](#d-016--on-cellular-a-book-download-asks-once-and-remembers)), which adds a
+   remembered setting and therefore a row in mobile settings
 5. iCloud Documents entitlement, container ID in the provisioning profile,
    `NSUbiquitousContainers` in `Info.plist`
 
@@ -1192,7 +1230,7 @@ all in-repo work — see [D-014](#d-014--first-ios-release-is-testflight-not-the
 | P2 — Mobile UI | **Blocked** | Waits on the desktop mastery line — [D-011](#d-011--p2-waits-for-the-desktop-mastery-line-to-finish). Two items added since the 18.5-day estimate: mobile AI settings ([D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)) and a book-downloading state ([D-013](#d-013--books-download-on-demand-not-eagerly)) |
 | P3 — Touch interaction | Not started | Same file collision as P2; follows it |
 | P4 — iOS adaptation | **Items 1–2 done** | Rust-side, no frontend overlap — may run before P2. Item 2 is the suspension gate in `src/lifecycle.rs`; only item 3 is left. Item 1 was the PDF retention leak [Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) surfaced, fixed and re-measured. Item 4 shrank to nothing (the `keyring` it budgeted for was deleted in v2.6.0); the Cargo-table half moved out and is done |
-| P5 — iCloud sync | **Item 1 done** | iOS ↔ macOS only. The `cfg` gates in `icloud.rs` and `sync/log.rs` are widened to `target_vendor = "apple"` and both targets compile clean. [Q-004](#q-004--macos-relocation-to-the-app-container-largely-answered) is sized at ~0.5 day and folded in. Rust-side; runs before P2 |
+| P5 — iCloud sync | **Item 1 done** | iOS ↔ macOS only. The `cfg` gates in `icloud.rs` and `sync/log.rs` are widened to `target_vendor = "apple"` and both targets compile clean. [Q-004](#q-004--macos-relocation-to-the-app-container-answered--there-is-nothing-to-relocate) closed at zero cost — no migration, because there are no users to migrate. Rust-side; runs before P2 |
 | P6 — Ship | Not started | TestFlight only ([D-014](#d-014--first-ios-release-is-testflight-not-the-app-store)). The account-level notarization blocker cleared 2026-08-06; everything left is in-repo |
 
 ---
