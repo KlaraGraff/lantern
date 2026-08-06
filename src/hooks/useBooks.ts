@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import i18n from "../i18n";
 
 export interface Book {
   id: string;
@@ -135,7 +136,21 @@ export async function updateReadingProgress(
 }
 
 export async function markFinished(id: string): Promise<void> {
-  return invoke("mark_finished", { id });
+  await invoke("mark_finished", { id });
+  // The `reading_review` job's trigger. Fired here rather than inside
+  // `mark_finished` so the two context bits only the webview knows — the
+  // reader's interface language and timezone — travel with it. The gate,
+  // the spend tag and the silence all live in Rust; this side only says
+  // "a book was finished, here is where you are".
+  //
+  // Deliberately not awaited: marking a book finished must not wait on a
+  // provider round-trip, and there is nothing to report either way. The
+  // catch exists only for the case where the command itself is missing.
+  void invoke("run_book_finished_analysis", {
+    bookId: id,
+    language: i18n.language?.startsWith("zh") ? "zh" : "en",
+    timezoneOffsetMinutes: new Date().getTimezoneOffset(),
+  }).catch(() => {});
 }
 
 export async function updateBookStatus(id: string, status: "reading" | "finished" | "unread"): Promise<void> {

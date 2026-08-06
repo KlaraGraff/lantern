@@ -745,6 +745,15 @@ pub fn reading_review_error_code(error: &AppError) -> &'static str {
 
 /// Shared-router completion hook. The caller must surface provider/model and
 /// the explicit send-scope/fee confirmation in its UI before invoking this.
+///
+/// `origin` tags the spend in `ai_usage_records`: `"user"` when a button was
+/// pressed, `"auto"` when `commands::auto_analysis` decided to run it. The
+/// console's whole headline is that split, so it is a parameter rather than
+/// a constant — a job that forgot to say it was automatic would report its
+/// cost as something the reader chose to pay.
+// Every argument here is one the shared router needs verbatim; bundling them
+// into a struct would only move the same list one layer out.
+#[allow(clippy::too_many_arguments)]
 pub async fn generate_reading_review_inner(
     app: &tauri::AppHandle,
     db: &Db,
@@ -753,6 +762,7 @@ pub async fn generate_reading_review_inner(
     language: String,
     retry: Option<bool>,
     request_id: Option<String>,
+    origin: &str,
 ) -> AppResult<ReadingReviewAiResult> {
     let facts = aggregate_review_facts_with_timezone(
         db,
@@ -773,7 +783,10 @@ pub async fn generate_reading_review_inner(
         crate::ai::router::retry_mode(retry),
         request_id.as_deref(),
         None,
-        "user",
+        origin,
+        // Must stay exactly the `reading_review` job id in
+        // `commands::auto_analysis::JOBS` — the console totals this job's
+        // spend by this column and silently reports zero if the two drift.
         "reading_review",
     )
     .await
@@ -819,7 +832,93 @@ pub async fn generate_reading_review(
     db: State<'_, Db>,
     secrets: State<'_, crate::secrets::Secrets>,
 ) -> AppResult<ReadingReviewAiResult> {
-    generate_reading_review_inner(&app, &db, &secrets, query, language, retry, request_id).await
+    generate_reading_review_inner(&app, &db, &secrets, query, language, retry, request_id, "user")
+        .await
+}
+
+/// The window a whole-book review covers: the reader's first recorded
+/// session on that book through now.
+///
+/// `None` means there is nothing to review — a book with no sessions was
+/// marked finished without ever being opened here (imported as read, or
+/// finished elsewhere), and inventing a period for it would spend the
+/// reader's quota to describe an empty set.
+fn book_review_period(db: &Db, book_id: &str) -> Option<(i64, i64)> {
+    let conn = db.reader();
+    let first: Option<i64> = conn
+        .query_row(
+            "SELECT MIN(started_at) FROM reading_sessions WHERE book_id = ?1",
+            params![book_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten();
+    let start = first.filter(|value| *value > 0)?;
+    let end = chrono::Utc::now().timestamp_millis();
+    (end > start).then_some((start, end))
+}
+
+/// Whether this book already has a review stored, under any period.
+///
+/// The automatic run is once-per-book, not once-per-finish: a reader who
+/// marks a book unread and finished again is correcting their shelf, not
+/// asking to be billed a second time for the same summary.
+fn book_already_reviewed(db: &Db, book_id: &str) -> bool {
+    let conn = db.reader();
+    conn.query_row(
+        "SELECT 1 FROM ai_reading_reviews WHERE scope_book_id = ?1 LIMIT 1",
+        params![book_id],
+        |_| Ok(()),
+    )
+    .optional()
+    .ok()
+    .flatten()
+    .is_some()
+}
+
+/// The `reading_review` job's automatic trigger: a book was just marked
+/// finished.
+///
+/// Everything here is best-effort and silent. The reader pressed "mark as
+/// finished", not "summarise this" — being handed an error about a request
+/// they never made is worse than simply not getting the summary, so a closed
+/// gate, a missing period, an existing review, an unconfigured provider, an
+/// exhausted quota and a dead network all end the same way: nothing happens,
+/// and `Ok(false)` comes back.
+#[tauri::command]
+pub async fn run_book_finished_analysis(
+    book_id: String,
+    language: String,
+    timezone_offset_minutes: i32,
+    app: tauri::AppHandle,
+    db: State<'_, Db>,
+    secrets: State<'_, crate::secrets::Secrets>,
+) -> AppResult<bool> {
+    if !crate::commands::auto_analysis::is_enabled(&db.reader(), "reading_review") {
+        return Ok(false);
+    }
+    if book_already_reviewed(&db, &book_id) {
+        return Ok(false);
+    }
+    let Some((period_start, period_end)) = book_review_period(&db, &book_id) else {
+        return Ok(false);
+    };
+    let query = ReadingStatsQuery {
+        period_start,
+        period_end,
+        scope_book_id: Some(book_id),
+        timezone_offset_minutes,
+    };
+    match generate_reading_review_inner(&app, &db, &secrets, query, language, None, None, "auto")
+        .await
+    {
+        Ok(_) => Ok(true),
+        Err(error) => {
+            log::debug!("auto reading review skipped: {error}");
+            Ok(false)
+        }
+    }
 }
 
 pub fn cached_review(
@@ -877,6 +976,89 @@ mod tests {
             )
             .unwrap();
         (dir, db)
+    }
+
+    fn insert_session(db: &Db, id: &str, book_id: &str, started_at: i64) {
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO reading_sessions
+                    (id, book_id, started_at, ended_at, active_seconds, created_at)
+                 VALUES (?1, ?2, ?3, ?4, 600, ?3)",
+                params![id, book_id, started_at, started_at + 600_000],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn a_book_never_opened_here_has_nothing_to_review() {
+        let (_dir, db) = test_db();
+        // Marked finished on import, or finished on another device. Spending
+        // the reader's quota to summarise zero sessions is the failure mode
+        // this guards.
+        assert_eq!(book_review_period(&db, "book-1"), None);
+    }
+
+    #[test]
+    fn the_review_window_opens_at_the_first_session_on_that_book() {
+        let (_dir, db) = test_db();
+        insert_session(&db, "s2", "book-1", 2_000_000_000_000);
+        insert_session(&db, "s1", "book-1", 1_700_000_000_000);
+        let (start, end) = book_review_period(&db, "book-1").unwrap();
+        assert_eq!(start, 1_700_000_000_000);
+        assert!(end > start);
+    }
+
+    #[test]
+    fn another_books_sessions_do_not_open_a_window() {
+        let (_dir, db) = test_db();
+        insert_session(&db, "s1", "book-2", 1_700_000_000_000);
+        assert_eq!(book_review_period(&db, "book-1"), None);
+    }
+
+    #[test]
+    fn a_book_that_already_has_a_review_is_not_billed_for_a_second_one() {
+        let (_dir, db) = test_db();
+        assert!(!book_already_reviewed(&db, "book-1"));
+        save_cached_review_inner(
+            &db,
+            &ReviewFacts {
+                period_start: 1_700_000_000_000,
+                period_end: 1_700_000_100_000,
+                ..Default::default()
+            },
+            Some("book-1"),
+            "A summary.",
+            "profile",
+            "anthropic",
+            "model",
+        )
+        .unwrap();
+        // Any period counts: re-finishing a book is the reader tidying a
+        // shelf, not asking to pay again.
+        assert!(book_already_reviewed(&db, "book-1"));
+        assert!(!book_already_reviewed(&db, "book-2"));
+    }
+
+    #[test]
+    fn a_whole_library_review_does_not_look_like_a_books_own() {
+        let (_dir, db) = test_db();
+        save_cached_review_inner(
+            &db,
+            &ReviewFacts {
+                period_start: 1_700_000_000_000,
+                period_end: 1_700_000_100_000,
+                ..Default::default()
+            },
+            None,
+            "A summary.",
+            "profile",
+            "anthropic",
+            "model",
+        )
+        .unwrap();
+        assert!(!book_already_reviewed(&db, "book-1"));
     }
 
     #[test]

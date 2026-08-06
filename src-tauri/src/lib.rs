@@ -717,6 +717,7 @@ pub fn run() {
             commands::reading_stats::checkpoint_reading_session,
             commands::reading_stats::get_reading_stats_dashboard,
             commands::reading_stats::generate_reading_review,
+            commands::reading_stats::run_book_finished_analysis,
             commands::reading_stats::save_reading_review,
             // Raw viewport dwell/exposure collection for the future
             // mastery/review engine (device-local for now; see the
