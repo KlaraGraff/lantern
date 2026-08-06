@@ -140,6 +140,13 @@ pub struct AutoAnalysisJobView {
     pub auto_tokens: i64,
     /// How many times the reader has run this analysis by hand, ever.
     pub manual_runs: i64,
+    /// What one run of this job costs, averaged over every recorded run of
+    /// it regardless of who triggered it — what a run costs is not a fact
+    /// about who asked for it, and for a job that has never run on its own
+    /// the reader's own runs are the only evidence there is. `None` until
+    /// something has actually run, because the upgrade prompt quotes this
+    /// number and a guessed figure is not worth quoting.
+    pub typical_tokens: Option<i64>,
     /// Whether the manual page should offer to make this automatic — true
     /// only while the job is off, has been run by hand enough times to have
     /// proven itself, and the reader has not already said no.
@@ -183,6 +190,7 @@ fn providers_in_window(db: &Db, since_ms: i64) -> AppResult<Vec<String>> {
 
 fn console_inner(db: &Db, since_ms: i64) -> AppResult<AutoAnalysisConsole> {
     let auto = crate::ai::usage::by_feature(db, since_ms, "auto")?;
+    let by_hand = crate::ai::usage::by_feature(db, since_ms, "user")?;
     let totals = crate::ai::usage::summary(db, since_ms)?;
     let providers = providers_in_window(db, since_ms)?;
     let conn = db.reader();
@@ -190,16 +198,24 @@ fn console_inner(db: &Db, since_ms: i64) -> AppResult<AutoAnalysisConsole> {
         .iter()
         .map(|job| {
             let usage = auto.iter().find(|row| row.feature == job.id);
+            let manual_usage = by_hand.iter().find(|row| row.feature == job.id);
             let enabled = is_enabled(&conn, job.id);
             let runs = manual_runs(&conn, job.id);
+            let auto_calls = usage.map_or(0, |row| row.calls);
+            let auto_tokens =
+                usage.map_or(0, |row| row.input_tokens.saturating_add(row.output_tokens));
+            let every_call = auto_calls.saturating_add(manual_usage.map_or(0, |row| row.calls));
+            let every_token = auto_tokens.saturating_add(
+                manual_usage.map_or(0, |row| row.input_tokens.saturating_add(row.output_tokens)),
+            );
             AutoAnalysisJobView {
                 id: job.id.to_string(),
                 trigger: job.trigger,
                 enabled,
-                auto_calls: usage.map_or(0, |row| row.calls),
-                auto_tokens: usage
-                    .map_or(0, |row| row.input_tokens.saturating_add(row.output_tokens)),
+                auto_calls,
+                auto_tokens,
                 manual_runs: runs,
+                typical_tokens: (every_call > 0).then(|| every_token / every_call),
                 recommend_auto: !enabled
                     && runs >= MANUAL_RUNS_BEFORE_RECOMMENDING
                     && !recommendation_dismissed(&conn, job.id),
@@ -508,5 +524,39 @@ mod tests {
 
     fn bump(db: &Db) -> AutoAnalysisJobView {
         note_manual_run_inner(db, "reading_review").unwrap()
+    }
+
+    #[test]
+    fn a_job_that_has_never_run_quotes_no_price() {
+        let (_dir, db) = setup();
+        let view = view_of(&db, "reading_review").unwrap();
+        // The upgrade prompt quotes this number to someone deciding whether
+        // to hand over their quota. With nothing to average, the honest
+        // answer is silence, not a guess that reads like a measurement.
+        assert_eq!(view.typical_tokens, None);
+    }
+
+    #[test]
+    fn what_a_run_costs_does_not_depend_on_who_asked_for_it() {
+        let (_dir, db) = setup();
+        // Three runs by hand and one that ran on its own: 300 tokens over
+        // four calls. A job the reader has only ever run manually is exactly
+        // the job the upgrade prompt talks to, so its own runs have to count.
+        insert_usage(&db, "user", "reading_review", 1_000, 100);
+        insert_usage(&db, "user", "reading_review", 2_000, 50);
+        insert_usage(&db, "user", "reading_review", 3_000, 90);
+        insert_usage(&db, "auto", "reading_review", 4_000, 60);
+        let view = view_of(&db, "reading_review").unwrap();
+        assert_eq!(view.typical_tokens, Some(75));
+        assert_eq!(view.auto_calls, 1);
+    }
+
+    #[test]
+    fn another_features_spend_is_not_this_jobs_price() {
+        let (_dir, db) = setup();
+        insert_usage(&db, "user", "reading_review", 1_000, 100);
+        insert_usage(&db, "user", "chat", 2_000, 9_000);
+        let view = view_of(&db, "reading_review").unwrap();
+        assert_eq!(view.typical_tokens, Some(100));
     }
 }

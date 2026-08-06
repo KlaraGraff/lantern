@@ -89,9 +89,37 @@ export class ReadingReviewError extends Error {
  * The shared integration pass supplies the command implementation. Keeping
  * this boundary explicit lets the page be tested without a live Tauri shell.
  */
+/**
+ * What the page needs to know about making this review automatic.
+ *
+ * `recommend` is the backend's whole decision — the page never re-derives
+ * it. `typicalTokens` is what one run has actually cost, or null when
+ * nothing has run yet; the offer states the price or says nothing, it never
+ * estimates.
+ */
+export interface AutoReviewOffer {
+  recommend: boolean;
+  typicalTokens: number | null;
+  /**
+   * How many times the reader has done this by hand. The offer quotes the
+   * real count rather than the threshold that unlocked it — by the time
+   * someone is on their sixth run, telling them "you've done this 4 times"
+   * is a script, not an observation.
+   */
+  manualRuns: number;
+}
+
 export interface ReadingStatsAdapter {
   loadDashboard(query: ReadingStatsQuery): Promise<ReadingStatsDashboard>;
   generateReview(query: ReadingStatsQuery): Promise<CachedReadingReview>;
+  /** The offer as it stands, without changing anything. */
+  autoReviewOffer?(): Promise<AutoReviewOffer>;
+  /** Records one run by hand and returns the offer that results from it. */
+  noteManualReview?(): Promise<AutoReviewOffer>;
+  /** The reader said yes: the job runs on its own from now on. */
+  acceptAutoReview?(): Promise<AutoReviewOffer>;
+  /** The reader said no. One refusal settles it — this is never asked again. */
+  declineAutoReview?(): Promise<AutoReviewOffer>;
 }
 
 export interface ReadingStatsLabels {
@@ -149,6 +177,11 @@ export interface ReadingStatsLabels {
   aiOffline: string;
   aiFailed: string;
   aiCachedNotice: string;
+  autoOfferTitle(manualRuns: number): string;
+  autoOfferBody: string;
+  autoOfferBodyWithCost(tokens: number): string;
+  autoOfferAccept: string;
+  autoOfferDecline: string;
   progressLabel: string;
   sessionCountLabel: (count: number) => string;
   formatDuration: (seconds: number) => string;

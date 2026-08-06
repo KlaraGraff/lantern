@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AutoReviewOffer,
   CachedReadingReview,
   ReadingReviewErrorCode,
   ReadingStatsAdapter,
@@ -100,8 +101,70 @@ function errorCode(error: unknown): ReadingReviewErrorCode {
   return "failed";
 }
 
+/**
+ * The one automatic job this page owns a manual button for. It is the same
+ * string the backend registry uses and the same string the call is tagged
+ * with in `ai_usage_records.feature` — one name, or the switch and the bill
+ * stop describing the same thing.
+ */
+const REVIEW_JOB = "reading_review";
+
+type JobView = {
+  id: string;
+  recommendAuto: boolean;
+  typicalTokens: number | null;
+  manualRuns: number;
+};
+
+function offerOf(view: JobView): AutoReviewOffer {
+  return {
+    recommend: view.recommendAuto,
+    typicalTokens: view.typicalTokens,
+    manualRuns: view.manualRuns,
+  };
+}
+
+const NO_OFFER: AutoReviewOffer = { recommend: false, typicalTokens: null, manualRuns: 0 };
+
 export function createTauriReadingStatsAdapter(language = "en"): ReadingStatsAdapter {
   return {
+    async autoReviewOffer() {
+      // Every one of these swallows its error into "no offer". Nothing here
+      // is something the reader asked for, so nothing here has earned the
+      // right to put a failure on their screen.
+      try {
+        const console_ = await invoke<{ jobs: JobView[] }>("auto_analysis_console", { sinceMs: 0 });
+        const view = console_.jobs.find((job) => job.id === REVIEW_JOB);
+        return view ? offerOf(view) : NO_OFFER;
+      } catch {
+        return NO_OFFER;
+      }
+    },
+    async noteManualReview() {
+      try {
+        return offerOf(await invoke<JobView>("note_manual_analysis_run", { jobId: REVIEW_JOB }));
+      } catch {
+        return NO_OFFER;
+      }
+    },
+    async acceptAutoReview() {
+      try {
+        return offerOf(
+          await invoke<JobView>("set_auto_analysis_enabled", { jobId: REVIEW_JOB, enabled: true }),
+        );
+      } catch {
+        return NO_OFFER;
+      }
+    },
+    async declineAutoReview() {
+      try {
+        return offerOf(
+          await invoke<JobView>("dismiss_auto_analysis_recommendation", { jobId: REVIEW_JOB }),
+        );
+      } catch {
+        return NO_OFFER;
+      }
+    },
     async loadDashboard(query) {
       const backendQuery = toBackendQuery(query);
       const value = await invoke<BackendDashboard>("get_reading_stats_dashboard", { query: backendQuery });

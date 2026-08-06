@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, BookOpen, CalendarDays, LockKeyhole, RefreshCw, Sparkles, X } from "lucide-react";
 import type {
+  AutoReviewOffer,
   CachedReadingReview,
   ReadingReviewErrorCode,
   ReadingReviewProvider,
@@ -40,6 +41,9 @@ function ReviewPanel({
   generating,
   error,
   onGenerate,
+  autoOffer,
+  onAcceptAuto,
+  onDeclineAuto,
 }: {
   review: CachedReadingReview | null;
   provider: ReadingReviewProvider;
@@ -47,6 +51,9 @@ function ReviewPanel({
   generating: boolean;
   error: ReadingReviewErrorCode | null;
   onGenerate(): void;
+  autoOffer: AutoReviewOffer | null;
+  onAcceptAuto(): void;
+  onDeclineAuto(): void;
 }) {
   const errorText = error === "notConfigured"
     ? labels.aiNotConfigured
@@ -108,6 +115,36 @@ function ReviewPanel({
 
       {!provider.configured && !errorText ? (
         <p className="mt-3 text-[10px] text-text-muted">{labels.aiNotConfigured}</p>
+      ) : null}
+
+      {/* Never a dialog and never a nag. The offer appears in the place the
+          reader has just finished using the thing it is about, and one
+          refusal retires it for good. */}
+      {autoOffer?.recommend ? (
+        <div className="mt-4 flex items-center gap-3 rounded-lg border border-accent-bg bg-accent-bg px-3.5 py-3">
+          <div className="min-w-0 flex-1 text-[11px] leading-[1.55] text-text-secondary">
+            <b className="mb-0.5 block text-[11.5px] font-semibold text-accent-text">
+              {labels.autoOfferTitle(autoOffer.manualRuns)}
+            </b>
+            {autoOffer.typicalTokens === null
+              ? labels.autoOfferBody
+              : labels.autoOfferBodyWithCost(autoOffer.typicalTokens)}
+          </div>
+          <button
+            type="button"
+            onClick={onDeclineAuto}
+            className="shrink-0 rounded px-1.5 py-1 text-[11px] text-text-muted hover:text-text-primary"
+          >
+            {labels.autoOfferDecline}
+          </button>
+          <button
+            type="button"
+            onClick={onAcceptAuto}
+            className="inline-flex h-7 shrink-0 items-center rounded-lg bg-accent px-2.5 text-[11px] font-medium text-white"
+          >
+            {labels.autoOfferAccept}
+          </button>
+        </div>
       ) : null}
     </section>
   );
@@ -276,6 +313,7 @@ export default function ReadingStats({
   const [reloadKey, setReloadKey] = useState(0);
   const [generating, setGenerating] = useState(false);
   const [reviewError, setReviewError] = useState<ReadingReviewErrorCode | null>(null);
+  const [autoOffer, setAutoOffer] = useState<AutoReviewOffer | null>(null);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [disclosureOpen, setDisclosureOpen] = useState(false);
   const [acknowledgedLocally, setAcknowledgedLocally] = useState(aiReviewDisclosureAcknowledged);
@@ -305,6 +343,14 @@ export default function ReadingStats({
     });
   }, [adapter, query, reloadKey]);
 
+  useEffect(() => {
+    let disposed = false;
+    adapter.autoReviewOffer?.().then((next) => {
+      if (!disposed) setAutoOffer(next);
+    }).catch(() => {});
+    return () => { disposed = true; };
+  }, [adapter]);
+
   const generateReview = useCallback(async () => {
     if (!provider.configured) {
       setReviewError("notConfigured");
@@ -315,12 +361,25 @@ export default function ReadingStats({
     try {
       const review = await adapter.generateReview(query);
       setDashboard((current) => current ? { ...current, cachedReview: review } : current);
+      // Only a run that succeeded counts. A failed one spent nothing and
+      // proved nothing, and the offer's whole argument is that the reader
+      // has kept coming back to something that works.
+      const offer = await adapter.noteManualReview?.();
+      if (offer) setAutoOffer(offer);
     } catch (error) {
       setReviewError(reviewErrorCode(error));
     } finally {
       setGenerating(false);
     }
   }, [adapter, provider.configured, query]);
+
+  const acceptAuto = useCallback(async () => {
+    setAutoOffer(await adapter.acceptAutoReview?.() ?? null);
+  }, [adapter]);
+
+  const declineAuto = useCallback(async () => {
+    setAutoOffer(await adapter.declineAutoReview?.() ?? null);
+  }, [adapter]);
 
   const requestGenerate = useCallback(() => {
     if (!acknowledgedLocally) setDisclosureOpen(true);
@@ -412,7 +471,7 @@ export default function ReadingStats({
           ))}
         </section>
 
-        <ReviewPanel review={dashboard.cachedReview} provider={provider} labels={labels} generating={generating} error={reviewError} onGenerate={requestGenerate} />
+        <ReviewPanel review={dashboard.cachedReview} provider={provider} labels={labels} generating={generating} error={reviewError} onGenerate={requestGenerate} autoOffer={autoOffer} onAcceptAuto={() => void acceptAuto()} onDeclineAuto={() => void declineAuto()} />
 
         {view === "history"
           ? <BookHistory books={dashboard.books} labels={labels} onOpenBook={onOpenBook} />
