@@ -10,6 +10,7 @@ pub mod enhanced_fonts;
 pub mod fonts;
 pub mod language_assessments;
 pub mod lookup_history;
+pub mod mastery_events;
 pub mod mcp;
 pub mod notes;
 pub mod oauth;

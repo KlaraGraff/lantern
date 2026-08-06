@@ -416,6 +416,20 @@ pub struct VocabPayload {
     // populate it (legacy rows, iOS clients pre-update).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_explanation: Option<String>,
+    // Added for the reading-driven mastery engine: 'auto' when the tier was
+    // decided by the exposure engine, 'manual' otherwise. `default` lets
+    // older-client payloads decode; the column itself defaults to 'manual'.
+    #[serde(default = "default_mastery_source")]
+    pub mastery_source: String,
+    // The facts the word-detail page's explanation sentence is rendered
+    // from (see migration 038). JSON text, or None when no automatic
+    // decision has been made — omitted from the wire form in that case.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mastery_reason: Option<String>,
+}
+
+fn default_mastery_source() -> String {
+    "manual".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -633,6 +647,8 @@ mod tests {
             fsrs_version: 1,
             created_at: None,
             context_explanation: Some("Used to mean an unexpectedly happy turn.".into()),
+            mastery_source: "manual".into(),
+            mastery_reason: None,
         })));
         roundtrip(&mk(EventBody::VocabMasterySet {
             id: "v1".into(),
@@ -735,6 +751,8 @@ mod tests {
             panic!("expected VocabAdd");
         };
         assert_eq!(p.context_explanation, None);
+        assert_eq!(p.mastery_source, "manual");
+        assert_eq!(p.mastery_reason, None);
         assert_eq!(p.review_interval_days, 0);
         assert_eq!(p.fsrs_version, 1);
         assert_eq!(p.created_at, None);
@@ -742,6 +760,10 @@ mod tests {
         assert!(
             wire["payload"].get("context_explanation").is_none(),
             "context_explanation should be omitted when None: {wire}"
+        );
+        assert!(
+            wire["payload"].get("mastery_reason").is_none(),
+            "mastery_reason should be omitted when None: {wire}"
         );
     }
 

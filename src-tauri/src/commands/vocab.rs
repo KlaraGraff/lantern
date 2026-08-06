@@ -21,6 +21,14 @@ pub struct VocabWord {
     pub context_explanation: Option<String>,
     pub cfi: Option<String>,
     pub mastery: String,
+    /// 'auto' when the reading-exposure engine decided the tier, 'manual'
+    /// when the user set it or a review decided it. Defaults to 'manual'.
+    #[serde(default = "default_mastery_source")]
+    pub mastery_source: String,
+    /// The facts the word-detail page's explanation sentence is rendered
+    /// from. JSON text, or None when no automatic decision has been made.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mastery_reason: Option<String>,
     pub review_count: i64,
     pub next_review_at: Option<i64>,
     pub review_interval_days: i64,
@@ -46,6 +54,11 @@ pub struct VocabStats {
     pub total: i64,
     pub new_count: i64,
     pub learning_count: i64,
+    /// The tier migration 038 added. It has its own bucket rather than being
+    /// folded into a neighbour because these four counts are handed to the
+    /// MCP client as a breakdown of `total` — silently dropping a tier would
+    /// hand an AI numbers that do not add up, with nothing to say so.
+    pub familiar_count: i64,
     pub mastered_count: i64,
     pub due_for_review: i64,
 }
@@ -70,6 +83,8 @@ fn row_to_vocab(row: &rusqlite::Row) -> rusqlite::Result<VocabWord> {
         fsrs_stability: row.get(15)?,
         fsrs_difficulty: row.get(16)?,
         fsrs_version: row.get(17)?,
+        mastery_source: row.get(18)?,
+        mastery_reason: row.get(19)?,
         book_title: None,
         chapter: None,
     })
@@ -95,12 +110,14 @@ fn row_to_vocab_with_book(row: &rusqlite::Row) -> rusqlite::Result<VocabWord> {
         fsrs_stability: row.get(15)?,
         fsrs_difficulty: row.get(16)?,
         fsrs_version: row.get(17)?,
-        book_title: row.get(18)?,
-        chapter: row.get(19)?,
+        mastery_source: row.get(18)?,
+        mastery_reason: row.get(19)?,
+        book_title: row.get(20)?,
+        chapter: row.get(21)?,
     })
 }
 
-const SELECT_COLS: &str = "id, book_id, word, definition, context_sentence, cfi, mastery, review_count, next_review_at, created_at, updated_at, context_explanation, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version";
+const SELECT_COLS: &str = "id, book_id, word, definition, context_sentence, cfi, mastery, review_count, next_review_at, created_at, updated_at, context_explanation, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version, mastery_source, mastery_reason";
 
 #[cfg(test)]
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
@@ -135,6 +152,10 @@ pub struct VocabBackupWord {
     pub cfi: Option<String>,
     #[serde(default = "default_mastery")]
     pub mastery: String,
+    #[serde(default = "default_mastery_source")]
+    pub mastery_source: String,
+    #[serde(default)]
+    pub mastery_reason: Option<String>,
     #[serde(default)]
     pub review_count: i64,
     #[serde(default)]
@@ -159,6 +180,10 @@ pub struct VocabBackupWord {
 
 fn default_mastery() -> String {
     "new".to_string()
+}
+
+fn default_mastery_source() -> String {
+    "manual".to_string()
 }
 
 fn default_fsrs_version() -> i64 {
@@ -240,6 +265,10 @@ struct VocabCsvRow {
     cfi: Option<String>,
     #[serde(default = "default_mastery")]
     mastery: String,
+    #[serde(default = "default_mastery_source")]
+    mastery_source: String,
+    #[serde(default)]
+    mastery_reason: Option<String>,
     #[serde(default)]
     review_count: i64,
     #[serde(default)]
@@ -273,6 +302,8 @@ impl From<VocabCsvRow> for VocabBackupWord {
             context_explanation: row.context_explanation.filter(|value| !value.is_empty()),
             cfi: row.cfi.filter(|value| !value.is_empty()),
             mastery: row.mastery,
+            mastery_source: row.mastery_source,
+            mastery_reason: row.mastery_reason.filter(|value| !value.is_empty()),
             review_count: row.review_count,
             next_review_at: row.next_review_at,
             review_interval_days: row.review_interval_days,
@@ -438,7 +469,7 @@ fn propagate_progress_to_siblings(
 }
 
 fn validate_mastery(mastery: &str) -> AppResult<()> {
-    if matches!(mastery, "new" | "learning" | "mastered") {
+    if matches!(mastery, "new" | "learning" | "familiar" | "mastered") {
         Ok(())
     } else {
         Err(crate::error::AppError::Other(
@@ -526,6 +557,8 @@ pub(crate) fn add_vocab_word_inner(
             context_explanation: context_explanation.clone(),
             cfi: cfi.clone(),
             mastery: "new".to_string(),
+            mastery_source: "manual".to_string(),
+            mastery_reason: None,
             review_count: 0,
             next_review_at: None,
             review_interval_days: 0,
@@ -545,6 +578,8 @@ pub(crate) fn add_vocab_word_inner(
             context_explanation: context_explanation.clone(),
             cfi: cfi.clone(),
             mastery: "new".to_string(),
+            mastery_source: "manual".to_string(),
+            mastery_reason: None,
             review_count: 0,
             next_review_at: None,
             review_interval_days: 0,
@@ -619,7 +654,7 @@ pub(crate) fn query_all_vocab_words(db: &Db) -> AppResult<Vec<VocabWord>> {
         // the word gives contextual review the "which chapter was this" line
         // without a migration, and simply yields NULL when nothing matches.
         // Same-position lookups win over merely same-word ones.
-        "SELECT v.id, v.book_id, v.word, v.definition, v.context_sentence, v.cfi, v.mastery, v.review_count, v.next_review_at, v.created_at, v.updated_at, v.context_explanation, v.review_interval_days, v.last_reviewed_at, v.last_review_rating, v.fsrs_stability, v.fsrs_difficulty, v.fsrs_version, b.title, \
+        "SELECT v.id, v.book_id, v.word, v.definition, v.context_sentence, v.cfi, v.mastery, v.review_count, v.next_review_at, v.created_at, v.updated_at, v.context_explanation, v.review_interval_days, v.last_reviewed_at, v.last_review_rating, v.fsrs_stability, v.fsrs_difficulty, v.fsrs_version, v.mastery_source, v.mastery_reason, b.title, \
          COALESCE( \
            (SELECT l.chapter FROM lookup_records l \
              WHERE l.book_id = v.book_id AND l.cfi = v.cfi AND l.normalized_text = lower(trim(v.word)) \
@@ -831,6 +866,11 @@ pub(crate) fn query_vocab_stats(db: &Db) -> AppResult<VocabStats> {
         [],
         |r| r.get(0),
     )?;
+    let familiar_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM vocab_words WHERE mastery = 'familiar'",
+        [],
+        |r| r.get(0),
+    )?;
     let mastered_count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM vocab_words WHERE mastery = 'mastered'",
         [],
@@ -845,6 +885,7 @@ pub(crate) fn query_vocab_stats(db: &Db) -> AppResult<VocabStats> {
         total,
         new_count,
         learning_count,
+        familiar_count,
         mastered_count,
         due_for_review,
     })
@@ -860,6 +901,8 @@ fn vocab_backup_word(word: VocabWord) -> VocabBackupWord {
         context_explanation: word.context_explanation,
         cfi: word.cfi,
         mastery: word.mastery,
+        mastery_source: word.mastery_source,
+        mastery_reason: word.mastery_reason,
         review_count: word.review_count,
         next_review_at: word.next_review_at,
         review_interval_days: word.review_interval_days,
@@ -1100,8 +1143,8 @@ pub(crate) fn do_import_vocab_backup(
             let id = uuid::Uuid::new_v4().to_string();
             let created_at = if word.created_at > 0 { word.created_at } else { timestamp };
             tx.execute(
-                "INSERT INTO vocab_words (id, book_id, word, definition, context_sentence, context_explanation, cfi, mastery, review_count, next_review_at, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version, created_at, updated_at, updated_by_device)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+                "INSERT INTO vocab_words (id, book_id, word, definition, context_sentence, context_explanation, cfi, mastery, mastery_source, mastery_reason, review_count, next_review_at, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version, created_at, updated_at, updated_by_device)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
                 params![
                     id,
                     word.book_id,
@@ -1111,6 +1154,8 @@ pub(crate) fn do_import_vocab_backup(
                     word.context_explanation,
                     word.cfi,
                     word.mastery,
+                    word.mastery_source,
+                    word.mastery_reason,
                     word.review_count,
                     word.next_review_at,
                     word.review_interval_days,
@@ -1133,6 +1178,8 @@ pub(crate) fn do_import_vocab_backup(
                 context_explanation: word.context_explanation.clone(),
                 cfi: word.cfi.clone(),
                 mastery: word.mastery.clone(),
+                mastery_source: word.mastery_source.clone(),
+                mastery_reason: word.mastery_reason.clone(),
                 review_count: word.review_count,
                 next_review_at: word.next_review_at,
                 review_interval_days: word.review_interval_days,
@@ -1464,6 +1511,36 @@ mod tests {
         assert_eq!(rows, 1);
     }
 
+    /// The stats are handed to an MCP client as a breakdown of `total`, so a
+    /// tier without a bucket is not a cosmetic omission — it is a number that
+    /// silently stops adding up. Adding a fifth tier should fail here first.
+    #[test]
+    fn every_mastery_tier_lands_in_exactly_one_stats_bucket() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-a");
+
+        for (word, mastery) in [
+            ("alpha", "new"),
+            ("beta", "learning"),
+            ("gamma", "familiar"),
+            ("delta", "mastered"),
+        ] {
+            let added =
+                add_vocab_word_inner("book-a", word, "a definition", None, None, None, &db, &sync)
+                    .unwrap();
+            update_vocab_mastery_inner(&added.id, mastery, None, &db, &sync).unwrap();
+        }
+
+        let stats = query_vocab_stats(&db).unwrap();
+        assert_eq!(stats.total, 4);
+        assert_eq!(
+            stats.new_count + stats.learning_count + stats.familiar_count + stats.mastered_count,
+            stats.total,
+            "every word must be counted by exactly one bucket: {stats:?}"
+        );
+        assert_eq!(stats.familiar_count, 1);
+    }
+
     fn backup_word(id: &str, book_id: &str, word: &str, definition: &str) -> VocabBackupWord {
         VocabBackupWord {
             id: id.to_string(),
@@ -1474,6 +1551,8 @@ mod tests {
             context_explanation: Some("Useful context.".to_string()),
             cfi: Some("epubcfi(/6/2!/4/2)".to_string()),
             mastery: "learning".to_string(),
+            mastery_source: "manual".to_string(),
+            mastery_reason: None,
             review_count: 4,
             next_review_at: Some(1_800_000_000_000),
             review_interval_days: 9,

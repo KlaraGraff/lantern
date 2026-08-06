@@ -741,13 +741,15 @@ fn upsert_vocab(tx: &Transaction, id: &str, r: &VocabRow) -> AppResult<()> {
     tx.execute(
         "INSERT INTO vocab_words
          (id, book_id, word, definition, context_sentence, context_explanation, cfi,
-          mastery, review_count, next_review_at,
+          mastery, mastery_source, mastery_reason, review_count, next_review_at,
           review_interval_days, last_reviewed_at, last_review_rating,
           fsrs_stability, fsrs_difficulty, fsrs_version,
           created_at, updated_at, updated_by_device)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
          ON CONFLICT(id) DO UPDATE SET
            mastery=excluded.mastery,
+           mastery_source=excluded.mastery_source,
+           mastery_reason=excluded.mastery_reason,
            review_count=excluded.review_count,
            next_review_at=excluded.next_review_at,
            review_interval_days=excluded.review_interval_days,
@@ -769,6 +771,8 @@ fn upsert_vocab(tx: &Transaction, id: &str, r: &VocabRow) -> AppResult<()> {
             r.context_explanation,
             r.cfi,
             r.mastery,
+            r.mastery_source,
+            r.mastery_reason,
             r.review_count,
             r.next_review_at,
             r.review_interval_days,
@@ -1279,7 +1283,8 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
                 mastery, review_count, next_review_at, review_interval_days,
                 last_reviewed_at, last_review_rating,
                 fsrs_stability, fsrs_difficulty, fsrs_version,
-                created_at, updated_at, updated_by_device, context_explanation FROM vocab_words",
+                created_at, updated_at, updated_by_device, context_explanation,
+                mastery_source, mastery_reason FROM vocab_words",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
@@ -1303,6 +1308,8 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
                 updated_at: r.get(16)?,
                 updated_by_device: r.get(17)?,
                 context_explanation: r.get(18)?,
+                mastery_source: r.get(19)?,
+                mastery_reason: r.get(20)?,
             },
         ))
     })?;

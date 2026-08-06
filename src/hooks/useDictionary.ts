@@ -11,6 +11,10 @@ export interface DictionaryWord {
   context_explanation: string | null;
   cfi: string | null;
   mastery: string;
+  /** 'auto' when the reading-exposure engine decided the tier, 'manual' otherwise. */
+  mastery_source: string;
+  /** The facts the word-detail explanation sentence is rendered from, or null. */
+  mastery_reason: string | null;
   review_count: number;
   next_review_at: number | null;
   review_interval_days: number;

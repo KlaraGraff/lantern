@@ -1248,6 +1248,8 @@ fn apply_peer_parent_tombstones_suppress_snapshot_children() {
                 fsrs_version: 1,
                 created_at: None,
                 context_explanation: None,
+                mastery_source: "manual".into(),
+                mastery_reason: None,
             }),
         ),
         ev(

@@ -167,6 +167,10 @@ pub struct VocabRow {
     pub context_explanation: Option<String>,
     pub cfi: Option<String>,
     pub mastery: String,
+    #[serde(default = "default_mastery_source")]
+    pub mastery_source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mastery_reason: Option<String>,
     pub review_count: i64,
     pub next_review_at: Option<i64>,
     #[serde(default)]
@@ -256,6 +260,10 @@ pub struct BookSummaryRow {
 
 fn default_fsrs_version() -> i64 {
     1
+}
+
+fn default_mastery_source() -> String {
+    "manual".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

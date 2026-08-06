@@ -43,7 +43,7 @@ impl LanternMcpHandler {
     }
 
     #[tool(
-        description = "Return aggregate vocabulary counts: total, new, learning, mastered, and due_for_review across all books."
+        description = "Return aggregate vocabulary counts: total, new, learning, familiar, mastered, and due_for_review across all books."
     )]
     pub async fn get_vocab_stats(&self) -> Result<CallToolResult, ErrorData> {
         let stats = vocab::query_vocab_stats(&self.state.db)

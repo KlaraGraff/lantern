@@ -751,11 +751,11 @@ fn apply_vocab_add(tx: &Transaction, event: &Event, p: &VocabPayload) -> AppResu
     tx.execute(
         "INSERT OR IGNORE INTO vocab_words
          (id, book_id, word, definition, context_sentence, context_explanation, cfi,
-          mastery, review_count, next_review_at,
+          mastery, mastery_source, mastery_reason, review_count, next_review_at,
           review_interval_days, last_reviewed_at, last_review_rating,
           fsrs_stability, fsrs_difficulty, fsrs_version,
           created_at, updated_at, updated_by_device)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
         params![
             p.id,
             p.book_id,
@@ -765,6 +765,8 @@ fn apply_vocab_add(tx: &Transaction, event: &Event, p: &VocabPayload) -> AppResu
             p.context_explanation,
             p.cfi,
             p.mastery,
+            p.mastery_source,
+            p.mastery_reason,
             p.review_count,
             p.next_review_at,
             p.review_interval_days,
@@ -2762,6 +2764,8 @@ mod tests {
                         fsrs_difficulty: None,
                         fsrs_version: 1,
                         created_at: None,
+                        mastery_source: "manual".into(),
+                        mastery_reason: None,
                     }),
                 ),
                 ev(
