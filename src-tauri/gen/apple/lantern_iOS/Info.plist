@@ -156,6 +156,98 @@
 			<string>Default</string>
 		</dict>
 	</array>
+	<!--
+		Hand-added, and it stays. The iOS file picker builds its allow-list by
+		calling UTType(filenameExtension:) on every extension the Rust side
+		passes it (tauri-plugin-dialog, DialogPlugin.swift). An extension the
+		system cannot resolve is silently dropped from that list, and the file
+		is greyed out in the picker with no error and no explanation.
+
+		epub, pdf, txt, md and html all resolve to system types. fb2, fbz and
+		cbz have no system type on any Apple platform, so until this block
+		existed they were unpickable on iOS — for three formats foliate-js
+		parses in-process and can genuinely read. (The MOBI family is greyed
+		out too, and that one is correct: it needs Calibre, which cannot run
+		here, so IMPORTABLE_BOOK_EXTENSIONS already drops it on mobile.)
+
+		Imported, not exported: Lantern did not invent any of these formats and
+		does not want other apps treating it as their authority. fb2/fbz are
+		named for the specification's actual home (github.com/gribuser/fb2).
+		cbz has no owner and no well-accepted identifier — the identifier is
+		namespaced to Lantern precisely so it does not pretend otherwise.
+
+		Known limitation, not fixable from here: if another comic reader is
+		installed and has already claimed .cbz under its own identifier, the
+		system may type the file as that one instead, and it stays greyed out.
+		The format has a dozen competing declarations in the wild. This block
+		fixes the case where Lantern is the only claimant, and worsens none.
+	-->
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.gribuser.fb2</string>
+			<key>UTTypeDescription</key>
+			<string>FictionBook Ebook</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.xml</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>fb2</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-fictionbook+xml</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.gribuser.fb2.zip</string>
+			<key>UTTypeDescription</key>
+			<string>Compressed FictionBook Ebook</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>fbz</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-zip-compressed-fb2</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.klaragraff.lantern.cbz</string>
+			<key>UTTypeDescription</key>
+			<string>Comic Book Archive</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>cbz</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.comicbook+zip</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 	<key>NSUbiquitousContainers</key>
 	<dict>
 		<key>iCloud.com.klaragraff.lantern</key>

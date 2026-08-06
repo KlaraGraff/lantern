@@ -649,11 +649,28 @@ iOS copies the picked file into the app sandbox and returns a plain `file://` UR
 **Caveat:** `parseFiltersOption` (`DialogPlugin.swift:183-197`) maps extensions through
 `UTType(filenameExtension:)`. The system resolves epub/pdf/txt/md/html; mobi/azw3/fb2/cbz
 have no system UTType and are silently dropped from the filter, so those files appear greyed
-out in the picker. Declaring them in `Info.plist` (`UTImportedTypeDeclarations`) fixes the
-picker — but those formats need Calibre conversion
-(`src-tauri/src/commands/books/convert_prepare.rs:132`) and cannot be read on iOS regardless.
-Formats that need no conversion are listed at `src-tauri/src/commands/books/format.rs:40`:
-EPUB, PDF, TXT, Markdown, HTML.
+out in the picker.
+
+**This paragraph used to end with a wrong sentence, and the error mis-scoped
+[P2 item 7](#p2--mobile-ui-185-days) in both directions.** It said those formats "need Calibre
+conversion and cannot be read on iOS regardless." That is true of the MOBI family only. FB2,
+FBZ and CBZ are read natively by foliate-js (`fb2.js`, `comic-book.js`) — `do_import_native`
+(`import.rs:229`) copies the source in and hands it straight to the reader, and
+`convert_to_epub` is set only for `ImportFormat::Mobi` and only when a backend exists
+(`import.rs:246`). So three formats the phone can genuinely read were unpickable on it, which
+is the real gap item 7 closes; and declaring UTIs for the MOBI family — the thing the sentence
+implied was the whole job — would have been the one change worth *not* making, except that it
+was already moot: `IMPORTABLE_BOOK_EXTENSIONS` drops MOBI on mobile at
+`src-tauri/src/commands/books/mod.rs:119`, so it never reaches the filter.
+
+**Open, and a product call rather than a fix:** that mobile exclusion may itself be too strict.
+Its comment says offering MOBI "would import a book that never finishes preparing," and the
+code two files over says otherwise — with no backend, `preparation_state` is
+`default_preparation_state()`, which is `"ready"` (`mod.rs:223`), and `render_format` stays
+`mobi`, so foliate's `mobi.js` renders it read-only. A MOBI on iPhone would import and open;
+what it would lack is selection and the AI tools that sit on top of the EPUB normalisation.
+Whether the phone should offer a degraded-but-readable MOBI is a decision about what Lantern
+promises, not a bug, so it is written down here rather than changed.
 
 ### F-009 — Relocating the sync directory is already a solved operation
 
@@ -1142,7 +1159,12 @@ It rewrites the same files items 2, 4 and 5 below are about.
    added and the original 18.5 days did not cover
 5. Lookup / translation popovers → bottom sheets
 6. The subset of the 25 wide hardcoded widths that the reduced surface touches
-7. `Info.plist` UTI declarations for the picker filter ([F-006](#f-006--ios-book-import-works-with-zero-code-changes))
+7. ~~`Info.plist` UTI declarations for the picker filter~~ — **done, at a third of its scope.**
+   [F-006](#f-006--ios-book-import-works-with-zero-code-changes) had this covering
+   mobi/azw3/fb2/cbz; MOBI was already excluded from the mobile filter list and must stay
+   excluded, so only fb2/fbz/cbz needed declaring. `UTImportedTypeDeclarations` in
+   `gen/apple/lantern_iOS/Info.plist`, pinned by `tests/ios-picker-types.test.ts`. Runtime
+   behaviour is still owed a look on a device — see the note in that file.
 8. **A downloading state for a book that is not resident on the phone** — shelf badge plus
    in-reader progress. Required by [D-013](#d-013--books-download-on-demand-not-eagerly), and
    on the common path rather than an edge case. Also new scope.
