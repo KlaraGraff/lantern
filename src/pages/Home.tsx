@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useSyncExternalStore } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
-import { Search, LayoutGrid, List, Plus, Upload, BookOpen, Loader, AlertCircle, X } from "lucide-react";
+import { Search, LayoutGrid, List, Plus, Upload, BookOpen, Loader, AlertCircle, X, Menu } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -19,6 +19,12 @@ import Input from "../components/ui/Input";
 import { useBooks, importBookDialog, IMPORT_SLOW_HINT_MS } from "../hooks/useBooks";
 import { useCollections } from "../hooks/useCollections";
 import { platform } from "../services/platform";
+import {
+  useDrawerGesture,
+  DRAWER_EDGE_ZONE_PX,
+  DRAWER_SETTLE_MS,
+  type DrawerGestureState,
+} from "../hooks/useDrawerGesture";
 
 function formatError(err: unknown): string {
   if (typeof err === "string") return err;
@@ -29,6 +35,73 @@ function formatError(err: unknown): string {
     return String(err);
   }
 }
+
+/**
+ * Tailwind's `md:` is `min-width: 48rem`, so this asks the same question the
+ * stylesheet asks and the two can never disagree about where the layout flips.
+ */
+const DESKTOP_QUERY = "(min-width: 48rem)";
+
+let desktopQuery: MediaQueryList | null = null;
+function getDesktopQuery(): MediaQueryList | null {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return null;
+  desktopQuery ??= window.matchMedia(DESKTOP_QUERY);
+  return desktopQuery;
+}
+
+const subscribeToWidth = (onChange: () => void) => {
+  const query = getDesktopQuery();
+  query?.addEventListener("change", onChange);
+  return () => query?.removeEventListener("change", onChange);
+};
+
+const isNarrowNow = () => getDesktopQuery()?.matches === false;
+
+/**
+ * Which container the sidebar lives in is a JavaScript decision rather than a
+ * `hidden md:flex` pair, because the two containers hold the *same* component
+ * and only one of them may be mounted: two copies would mean two copies of its
+ * rename/create/drag state, and a right-click menu that opens in the invisible
+ * one. It also makes the desktop guarantee literal — above `md:` none of the
+ * drawer's nodes exist at all, rather than existing and being hidden.
+ */
+function useIsNarrow(): boolean {
+  return useSyncExternalStore(subscribeToWidth, isNarrowNow, () => false);
+}
+
+/**
+ * The strip macOS needs left clear for its traffic lights, and its first real
+ * consumer. Keyed to the platform and never to the width: the same window
+ * dragged down to 400px still has them.
+ */
+const TOP_INSET = platform.hasTitleBarInset ? "pt-titlebar" : "pt-safe-top";
+
+/** Only the fallback for a panel that has not been measured yet. */
+const DRAWER_WIDTH_PX = 300;
+
+/**
+ * Set once, from JSX, and never written again: React diffs style objects by
+ * value and this one never changes, so it will not fight the imperative writes
+ * that follow. The drawer starts closed, one panel-width to the left.
+ */
+const CLOSED_PANEL_STYLE = { transform: "translate3d(-100%, 0, 0)" } as const;
+const CLOSED_SCRIM_STYLE = { opacity: 0, pointerEvents: "none" } as const;
+const EDGE_ZONE_STYLE = { width: DRAWER_EDGE_ZONE_PX } as const;
+
+/**
+ * `inert` is the honest way to take the page behind a modal out of the tab
+ * order and the accessibility tree at once. Safari 17 and WKWebView have it;
+ * the fallback is the one the spec's polyfill advice gives — hide it from
+ * assistive technology and rely on the drawer's own focus trap for the keys.
+ */
+const SUPPORTS_INERT = typeof HTMLElement !== "undefined" && "inert" in HTMLElement.prototype;
+
+/** Applied both to the page behind an open drawer and to a closed drawer. */
+const unreachable = (yes: boolean): React.HTMLAttributes<HTMLDivElement> =>
+  !yes ? {} : SUPPORTS_INERT ? { inert: true } : { "aria-hidden": true };
+
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export default function Home() {
   const { t } = useTranslation();
@@ -45,6 +118,139 @@ export default function Home() {
   const [syncProgress, setSyncProgress] = useState<{ applied: number; total: number } | null>(null);
   const [userName, setUserName] = useState("");
   const collections = useCollections();
+
+  const isNarrow = useIsNarrow();
+  const drawerPanelRef = useRef<HTMLDivElement>(null);
+  const drawerScrimRef = useRef<HTMLDivElement>(null);
+  const hamburgerRef = useRef<HTMLButtonElement>(null);
+  // The gesture never measures the DOM itself, so the travel distance is read
+  // here and cached: reading `offsetWidth` inside a pointermove would force a
+  // synchronous layout on every frame of the drag.
+  const drawerTravelRef = useRef(DRAWER_WIDTH_PX);
+  const drawer = useDrawerGesture({ width: () => drawerTravelRef.current });
+  const drawerOpen = drawer.open;
+  const setDrawerOpen = drawer.setOpen;
+
+  // Picking anything in the sidebar is navigation, and navigation is done with
+  // the drawer. On the desktop there is nothing to close.
+  const handleFilterChange = useCallback((filter: string) => {
+    setActiveFilter(filter);
+    setDrawerOpen(false);
+  }, [setDrawerOpen]);
+
+  // A window dragged back out to desktop width unmounts the drawer; leaving the
+  // controller open would mean the next drag back to narrow starts open.
+  useEffect(() => {
+    if (!isNarrow) setDrawerOpen(false);
+  }, [isNarrow, setDrawerOpen]);
+
+  // The finger owns the position, React owns only the settled flag. Every frame
+  // of a drag is written straight to the two elements' style — a setState per
+  // pointermove would re-render the whole shelf behind the drawer, which is the
+  // frame budget a phone does not have. The transition is attached only when
+  // the finger is off; while it is down, an easing curve would lag the drag.
+  useLayoutEffect(() => {
+    if (!isNarrow) return;
+    const panel = drawerPanelRef.current;
+    const scrim = drawerScrimRef.current;
+    if (!panel || !scrim) return;
+
+    const measure = () => {
+      drawerTravelRef.current = panel.offsetWidth || DRAWER_WIDTH_PX;
+    };
+    const paint = (state: DrawerGestureState) => {
+      const offset = (state.fraction - 1) * drawerTravelRef.current;
+      panel.style.transition = state.dragging ? "none" : `transform ${DRAWER_SETTLE_MS}ms ease-out`;
+      panel.style.transform = `translate3d(${offset}px, 0, 0)`;
+      scrim.style.transition = state.dragging ? "none" : `opacity ${DRAWER_SETTLE_MS}ms ease-out`;
+      scrim.style.opacity = String(state.fraction);
+      // A fully transparent scrim still swallows every tap on the shelf.
+      scrim.style.pointerEvents = state.fraction > 0 ? "auto" : "none";
+    };
+
+    measure();
+    paint(drawer.getState());
+    const unsubscribe = drawer.subscribe(paint);
+    window.addEventListener("resize", measure);
+    return () => {
+      unsubscribe();
+      window.removeEventListener("resize", measure);
+    };
+  }, [isNarrow, drawer]);
+
+  const wasDrawerOpen = useRef(false);
+  useEffect(() => {
+    if (!isNarrow) {
+      wasDrawerOpen.current = false;
+      return;
+    }
+    if (drawerOpen) {
+      drawerPanelRef.current?.focus({ preventScroll: true });
+    } else if (wasDrawerOpen.current) {
+      // Only after a drawer that was actually open — otherwise the page would
+      // steal focus to the hamburger on first paint.
+      hamburgerRef.current?.focus({ preventScroll: true });
+    }
+    wasDrawerOpen.current = drawerOpen;
+  }, [drawerOpen, isNarrow]);
+
+  const handleDrawerKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      setDrawerOpen(false);
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const panel = drawerPanelRef.current;
+    if (!panel) return;
+    // An iPad with a keyboard is an ordinary setup, so this path is not
+    // optional. `offsetParent` filters the controls the `touch:` variants have
+    // hidden — a tab stop nobody can see is a trap of its own.
+    const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+      .filter((element) => element.offsetParent !== null);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      panel.focus({ preventScroll: true });
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && (active === first || active === panel)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }, [setDrawerOpen]);
+
+  const drawerPointer = {
+    onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => {
+      // A `false` here means the drawer wants nothing to do with this pointer.
+      // Nothing is captured and nothing is prevented either way — doing either
+      // on a pointer the controller rejected is what stops the shelf scrolling.
+      drawer.onPointerDown({ pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY });
+    },
+    onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => {
+      drawer.onPointerMove({ pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY });
+      // Capture only once the direction lock has opened. Capturing on
+      // pointerdown would retarget the following `click` to this element, and
+      // every row inside the open drawer would go dead.
+      if (drawer.getState().dragging && !event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
+    },
+    onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => {
+      drawer.onPointerUp({ pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY });
+    },
+    onPointerCancel: (event: React.PointerEvent<HTMLDivElement>) => {
+      drawer.onPointerCancel({ pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY });
+    },
+    onLostPointerCapture: (event: React.PointerEvent<HTMLDivElement>) => {
+      drawer.onLostPointerCapture({ pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY });
+    },
+  };
 
   // The name greets the reader in the sidebar. Tracking the save rather than
   // the settings modal closing keeps it correct wherever the edit came from —
@@ -267,19 +473,25 @@ export default function Home() {
             ? t("home.title.collection")
             : activeFilter;
 
-  return (
-    <div className="relative flex h-screen bg-bg-surface">
-      <Sidebar
-        activeFilter={activeFilter}
-        onFilterChange={setActiveFilter}
-        bookCounts={bookCounts}
-        collections={collections}
-        userName={userName}
-        onOpenSettings={() => openSettings()}
-        syncProgress={syncProgress}
-      />
+  // One set of props, two possible containers — the sidebar itself never learns
+  // which one it is in beyond the shell it should wear.
+  const sidebarProps = {
+    activeFilter,
+    onFilterChange: handleFilterChange,
+    bookCounts,
+    collections,
+    userName,
+    onOpenSettings: () => {
+      openSettings();
+      setDrawerOpen(false);
+    },
+    syncProgress,
+  };
 
-      {activeFilter === "vocab" ? (
+  const backgroundProps = unreachable(isNarrow && drawerOpen);
+
+  const content =
+    activeFilter === "vocab" ? (
         <DictionaryContent />
       ) : activeFilter === "review" ? (
         <DictionaryContent initialView="review" />
@@ -290,9 +502,27 @@ export default function Home() {
       ) : (
         <main className="flex-1 flex flex-col min-w-0">
           <div className="border-b border-border px-page pb-section relative select-none">
-            <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar" />
-            <div className="pt-titlebar flex items-center justify-between mb-4">
-              <h1 className="text-[24px] font-semibold text-text-primary tracking-[0.07px]">
+            {/* Reserved for the traffic lights, and only where there are any.
+                This is a platform question, not a width one — a macOS window
+                dragged narrow still has them. */}
+            {platform.hasTitleBarInset && <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar" />}
+            <div className={`${TOP_INSET} flex items-center justify-between mb-4`}>
+              {isNarrow && (
+                <Button
+                  ref={hamburgerRef}
+                  variant="icon"
+                  size="md"
+                  className="touch:size-11 -ml-2 mr-1"
+                  aria-label={t("home.openSidebar")}
+                  aria-expanded={drawerOpen}
+                  onClick={() => setDrawerOpen(true)}
+                >
+                  <Menu size={20} />
+                </Button>
+              )}
+              {/* `md:flex-initial` is the CSS initial value, so the desktop row
+                  is the two-item `justify-between` it has always been. */}
+              <h1 className="flex-1 md:flex-initial text-[21px] md:text-[24px] font-semibold text-text-primary tracking-[0.07px]">
                 {title}
               </h1>
               <div data-tauri-drag-region className="flex items-center gap-0">
@@ -320,7 +550,7 @@ export default function Home() {
               placeholder={t("home.search")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-[448px]"
+              className="w-full md:w-[448px]"
             />
           </div>
 
@@ -354,7 +584,11 @@ export default function Home() {
             )}
           </div>
 
-          <div className="shrink-0 mx-page mb-page flex flex-col items-center gap-1.5">
+          {/* `100dvh` puts the bottom of the layout at the bottom of the visible
+              viewport, which on a phone is where the home indicator sits. The
+              inset is 0 everywhere else, so this only ever adds on a device
+              that reports one. */}
+          <div className={`shrink-0 mx-page ${isNarrow ? "mb-[calc(var(--spacing-safe-bottom)+var(--spacing-page))]" : "mb-page"} flex flex-col items-center gap-1.5`}>
             <button
               onClick={handleImport}
               className="w-full rounded-lg border border-dashed border-text-muted/40 py-4 flex items-center justify-center gap-2 text-[14px] text-text-secondary hover:border-accent hover:text-accent transition-colors cursor-pointer"
@@ -375,6 +609,60 @@ export default function Home() {
             </button>
           </div>
         </main>
+      );
+
+  return (
+    // `h-dvh`, not `h-screen`: `100vh` on iOS measures the *largest* viewport,
+    // which runs the bottom of the layout underneath the home indicator.
+    // The pointer handlers sit here rather than on the drawer because a drag
+    // that starts at the screen edge crosses the whole shelf, and everything
+    // in the page bubbles to this element. The controller rejects any pointer
+    // that is none of its business, and nothing is captured or prevented until
+    // it claims one.
+    <div className="relative flex h-dvh bg-bg-surface" {...(isNarrow ? drawerPointer : null)}>
+      {!isNarrow && <Sidebar {...sidebarProps} />}
+
+      {isNarrow ? (
+        <div className="contents" {...backgroundProps}>
+          {content}
+        </div>
+      ) : (
+        content
+      )}
+
+      {isNarrow && (
+        <>
+          {/* The only place a closed drawer can be pulled from. It carries the
+              touch-action rather than any pixels: `pan-y` leaves the vertical
+              scroll to the browser and keeps the horizontal drag for us. */}
+          <div
+            aria-hidden="true"
+            style={EDGE_ZONE_STYLE}
+            className="fixed inset-y-0 left-0 z-30 touch-pan-y"
+          />
+          <div
+            ref={drawerScrimRef}
+            aria-hidden="true"
+            onClick={() => setDrawerOpen(false)}
+            style={CLOSED_SCRIM_STYLE}
+            className="fixed inset-0 z-40 bg-overlay touch-none"
+          />
+          <div
+            ref={drawerPanelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("home.sidebarLabel")}
+            tabIndex={-1}
+            // A closed drawer is off-screen, not gone: without this it stays in
+            // the tab order and a keyboard walks into an invisible sidebar.
+            {...unreachable(!drawerOpen)}
+            onKeyDown={handleDrawerKeyDown}
+            style={CLOSED_PANEL_STYLE}
+            className="fixed inset-y-0 left-0 z-50 w-[300px] max-w-[85%] touch-pan-y outline-none shadow-[8px_0_28px_0_rgba(0,0,0,0.22)]"
+          >
+            <Sidebar {...sidebarProps} inDrawer />
+          </div>
+        </>
       )}
 
       {isDragging && (

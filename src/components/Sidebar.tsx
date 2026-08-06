@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
-import { Library, BookOpen, CheckCircle2, FolderClosed, BookA, Plus, MessageSquare, Pencil, Trash2, GripVertical, RefreshCw, StickyNote, BarChart3, RotateCcw } from "lucide-react";
+import { Library, BookOpen, CheckCircle2, FolderClosed, BookA, Plus, MessageSquare, Pencil, Trash2, GripVertical, RefreshCw, StickyNote, BarChart3, RotateCcw, MoreHorizontal } from "lucide-react";
 import Button from "./ui/Button";
 import LanternLogo from "./LanternLogo";
+import { platform } from "../services/platform";
 import type { Collection } from "../hooks/useCollections";
 
 interface BookCounts {
@@ -26,7 +27,29 @@ interface SidebarProps {
   userName?: string;
   onOpenSettings?: () => void;
   syncProgress?: { applied: number; total: number } | null;
+  /**
+   * Same component, same content, different container: below `md:` this sits in
+   * Home's drawer instead of being a column of the page. Splitting it into two
+   * components would fork the content on the first row anyone adds, so the fork
+   * stops at the shell — width, chrome, and the mouse-only resize grip.
+   */
+  inDrawer?: boolean;
 }
+
+/**
+ * 36px under a mouse, 44px under a finger. The height is the one thing the
+ * drawer changes about a row, and it keys off width rather than pointer type
+ * because that is what the plan settled on — the drawer only exists below `md:`,
+ * so the two questions have the same answer everywhere this string is used.
+ */
+const ROW_HEIGHT = "h-11 md:h-9";
+
+/**
+ * The traffic lights are a macOS fact, not a wide-window fact: a window dragged
+ * narrow still has them and still needs the strip left clear. Branching on width
+ * here would put the brand name under the close button.
+ */
+const TOP_INSET = platform.hasTitleBarInset ? "pt-titlebar" : "pt-safe-top";
 
 const SIDEBAR_MIN = 180;
 const SIDEBAR_MAX = 400;
@@ -42,7 +65,7 @@ function getStoredWidth(): number {
   return SIDEBAR_DEFAULT;
 }
 
-export default function Sidebar({ activeFilter, onFilterChange, bookCounts, collections: collectionsHook, userName, onOpenSettings, syncProgress }: SidebarProps) {
+export default function Sidebar({ activeFilter, onFilterChange, bookCounts, collections: collectionsHook, userName, onOpenSettings, syncProgress, inDrawer = false }: SidebarProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [sidebarWidth, setSidebarWidth] = useState(getStoredWidth);
@@ -63,6 +86,13 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOrder, setDragOrder] = useState<string[]>([]);
   const collectionListRef = useRef<HTMLDivElement>(null);
+  // Touch has no equivalent of "grab the handle": the handles are hidden on a
+  // coarse pointer until the reader asks for them, because a list that is
+  // always draggable fights both the drawer's horizontal gesture and its own
+  // vertical scroll. Long-press is not the answer — it is spoken for by word
+  // lookup in the reader, and one gesture meaning two things is worse than a
+  // button. Under a mouse nothing changes: the handles are always there.
+  const [isSortingCollections, setIsSortingCollections] = useState(false);
 
   const handlePointerDown = useCallback((e: React.PointerEvent, id: string) => {
     // Only start drag from grip handle
@@ -134,6 +164,19 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
     setRenameValue("");
   };
 
+  // The trailing `···` and the desktop right-click open the same menu; only the
+  // anchor differs. Clamped, because a row near the bottom of a phone screen
+  // would otherwise anchor the menu off the end of the viewport.
+  const openCollectionMenu = (anchor: DOMRect, collection: Collection) => {
+    const MENU_WIDTH = 180;
+    const MENU_HEIGHT = 88;
+    setContextMenu({
+      x: Math.max(8, Math.min(anchor.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8)),
+      y: Math.max(8, Math.min(anchor.bottom + 4, window.innerHeight - MENU_HEIGHT - 8)),
+      collection,
+    });
+  };
+
   const handleDelete = async (id: string) => {
     if (activeFilter === `collection:${id}`) onFilterChange("all");
     await remove(id);
@@ -179,9 +222,14 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
   }, [sidebarWidth]);
 
   return (
-    <aside style={{ width: sidebarWidth }} className="shrink-0 bg-bg-muted border-r border-border h-full flex flex-col gap-6 px-4 relative select-none overflow-hidden">
-      <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar" />
-      <div className="flex items-center gap-2.5 pb-2 pt-titlebar">
+    <aside
+      style={inDrawer ? undefined : { width: sidebarWidth }}
+      className={inDrawer
+        ? "w-full bg-bg-muted h-full flex flex-col gap-6 px-4 relative select-none overflow-y-auto overscroll-contain"
+        : "shrink-0 bg-bg-muted border-r border-border h-full flex flex-col gap-6 px-4 relative select-none overflow-hidden"}
+    >
+      {platform.hasTitleBarInset && <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar" />}
+      <div className={`flex items-center gap-2.5 pb-2 ${TOP_INSET}`}>
         <div className="size-[26px] shrink-0 overflow-hidden rounded-[7px] border border-border">
           <LanternLogo size={26} className="block object-cover" />
         </div>
@@ -212,7 +260,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
               <button
                 key={filter.id}
                 onClick={() => onFilterChange(filter.id)}
-                className={`flex items-center justify-between px-3 h-9 rounded-lg w-full cursor-pointer ${
+                className={`flex items-center justify-between px-3 ${ROW_HEIGHT} rounded-lg w-full cursor-pointer ${
                   isActive ? "bg-accent-bg" : "hover:bg-bg-input"
                 }`}
               >
@@ -239,7 +287,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
         <button
           type="button"
           onClick={() => navigate("/reading-stats")}
-          className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left hover:bg-bg-input"
+          className={`flex ${ROW_HEIGHT} w-full items-center gap-2 rounded-lg px-3 text-left hover:bg-bg-input`}
         >
           <BarChart3 size={16} className="text-text-muted" />
           <span className="text-[14px] font-medium text-text-secondary">{t("sidebar.readingStats")}</span>
@@ -253,7 +301,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
         <div className="flex flex-col gap-1">
           <button
             onClick={() => onFilterChange("chats")}
-            className={`flex items-center gap-2 px-3 h-9 rounded-lg w-full cursor-pointer ${
+            className={`flex items-center gap-2 px-3 ${ROW_HEIGHT} rounded-lg w-full cursor-pointer ${
               activeFilter === "chats" ? "bg-accent-bg" : "hover:bg-bg-input"
             }`}
           >
@@ -274,7 +322,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
         <div className="flex flex-col gap-1">
           <button
             onClick={() => onFilterChange("vocab")}
-            className={`flex items-center gap-2 px-3 h-9 rounded-lg w-full cursor-pointer ${
+            className={`flex items-center gap-2 px-3 ${ROW_HEIGHT} rounded-lg w-full cursor-pointer ${
               activeFilter === "vocab" ? "bg-accent-bg" : "hover:bg-bg-input"
             }`}
           >
@@ -287,7 +335,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
           </button>
           <button
             onClick={() => onFilterChange("review")}
-            className={`flex items-center gap-2 px-3 h-9 rounded-lg w-full cursor-pointer ${
+            className={`flex items-center gap-2 px-3 ${ROW_HEIGHT} rounded-lg w-full cursor-pointer ${
               activeFilter === "review" ? "bg-accent-bg" : "hover:bg-bg-input"
             }`}
           >
@@ -300,7 +348,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
           </button>
           <button
             onClick={() => onFilterChange("notes")}
-            className={`flex items-center gap-2 px-3 h-9 rounded-lg w-full cursor-pointer ${
+            className={`flex items-center gap-2 px-3 ${ROW_HEIGHT} rounded-lg w-full cursor-pointer ${
               activeFilter === "notes" ? "bg-accent-bg" : "hover:bg-bg-input"
             }`}
           >
@@ -312,15 +360,26 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 min-h-0 flex-1">
+      <div className={`flex flex-col gap-3 ${inDrawer ? "min-h-[132px]" : "min-h-0"} flex-1`}>
         <div className="flex items-center justify-between shrink-0">
           <h2 className="text-[12px] font-semibold uppercase tracking-[0.3px] text-text-muted">
             {t("sidebar.collections")}
           </h2>
+          {/* `hidden` at every width under a mouse, so this is not a flex item
+              on the desktop at all and the heading row is untouched there. */}
+          {displayCollections.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setIsSortingCollections((editing) => !editing)}
+              className="hidden touch:inline-flex items-center h-8 px-2 rounded-md text-[12px] font-semibold text-accent"
+            >
+              {isSortingCollections ? t("sidebar.doneSortingCollections") : t("sidebar.sortCollections")}
+            </button>
+          )}
           <Button
             variant="icon"
             size="sm"
-            className="size-5"
+            className="size-5 touch:size-8"
             onClick={() => setIsCreating(true)}
           >
             <Plus size={16} />
@@ -349,7 +408,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
                 }
               }}
               placeholder={t("sidebar.collectionPlaceholder")}
-              className="w-full h-9 px-3 rounded-lg bg-bg-input text-[14px] text-text-primary placeholder:text-text-placeholder outline-none border border-accent"
+              className={`w-full ${ROW_HEIGHT} px-3 rounded-lg bg-bg-input text-[14px] text-text-primary placeholder:text-text-placeholder outline-none border border-accent`}
             />
           </form>
         )}
@@ -372,7 +431,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
                     onKeyDown={(e) => {
                       if (e.key === "Escape") { setRenamingId(null); setRenameValue(""); }
                     }}
-                    className="w-full h-9 px-3 rounded-lg bg-bg-input text-[14px] text-text-primary placeholder:text-text-placeholder outline-none border border-accent"
+                    className={`w-full ${ROW_HEIGHT} px-3 rounded-lg bg-bg-input text-[14px] text-text-primary placeholder:text-text-placeholder outline-none border border-accent`}
                   />
                 </form>
               );
@@ -386,12 +445,16 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
                   e.preventDefault();
                   setContextMenu({ x: e.clientX, y: e.clientY, collection });
                 }}
-                className={`flex items-center justify-between px-1 pr-3 h-9 rounded-lg w-full cursor-pointer ${
+                className={`flex items-center justify-between px-1 pr-3 ${ROW_HEIGHT} rounded-lg w-full cursor-pointer ${
                   isActive ? "bg-accent-bg" : "hover:bg-bg-input"
                 } ${dragId === collection.id ? "opacity-50" : ""}`}
               >
                 <div className="flex items-center gap-1">
-                  <div data-grip className="flex items-center justify-center w-5 h-9 cursor-grab touch-none">
+                  {/* Hidden rather than disabled on a coarse pointer: a handle
+                      that cannot be grabbed is worse than no handle, and
+                      `display: none` also takes it out of hit testing, which is
+                      what keeps `handlePointerDown` from ever firing there. */}
+                  <div data-grip className={`items-center justify-center w-5 ${ROW_HEIGHT} cursor-grab touch-none ${isSortingCollections ? "flex" : "flex touch:hidden"}`}>
                     <GripVertical size={12} className="text-text-muted/40" />
                   </div>
                   <FolderClosed
@@ -409,13 +472,28 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
                 <span className="text-[12px] font-medium text-text-muted">
                   {collection.book_count}
                 </span>
+                {/* Right-click has no finger equivalent, so the same menu gets a
+                    button — visible only on a coarse pointer, and stopping its
+                    own pointerdown so the row's drag never sees it. */}
+                <button
+                  type="button"
+                  aria-label={t("sidebar.collectionActions")}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openCollectionMenu(e.currentTarget.getBoundingClientRect(), collection);
+                  }}
+                  className="hidden touch:flex size-11 -mr-2 shrink-0 items-center justify-center rounded-lg text-text-muted"
+                >
+                  <MoreHorizontal size={16} />
+                </button>
               </div>
             );
           })}
         </div>
       </div>
       {/* User profile */}
-      <div className="border-t border-border pt-3 pb-3">
+      <div className={`border-t border-border pt-3 ${inDrawer ? "pb-[calc(var(--spacing-safe-bottom)+0.75rem)]" : "pb-3"}`}>
         <button
           onClick={onOpenSettings}
           className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg w-full cursor-pointer hover:bg-bg-input"
@@ -444,7 +522,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
               setRenameValue(contextMenu.collection.name);
               setContextMenu(null);
             }}
-            className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
+            className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] touch:h-11 rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
           >
             <Pencil size={14} className="text-text-muted" />
             <span className="text-[13px] font-medium text-text-primary tracking-[-0.08px]">
@@ -454,7 +532,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
           <div className="mx-3 my-1 h-px bg-border/80" />
           <button
             onClick={() => handleDelete(contextMenu.collection.id)}
-            className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
+            className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] touch:h-11 rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
           >
             <Trash2 size={14} className="text-red-500" />
             <span className="text-[13px] font-medium text-red-500 tracking-[-0.08px]">
@@ -463,11 +541,14 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
           </button>
         </div>
       )}
-      {/* Resize handle */}
-      <div
-        onMouseDown={handleResizeStart}
-        className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-accent/30 transition-colors"
-      />
+      {/* Resize handle — a 4px mouse target, and the drawer has a fixed width,
+          so it has nothing to drag there. */}
+      {!inDrawer && (
+        <div
+          onMouseDown={handleResizeStart}
+          className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-accent/30 transition-colors"
+        />
+      )}
     </aside>
   );
 }
