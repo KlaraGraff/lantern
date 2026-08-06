@@ -72,6 +72,7 @@ export interface ReaderSettingsState {
   showNewVocabMarkers: boolean;
   showLearningMarkers: boolean;
   showMasteredMarkers: boolean;
+  chapterEndReviewHint: boolean;
 }
 
 interface ReaderSettingsProps {
@@ -1051,26 +1052,40 @@ function ReaderSettings({
         </div>
       )}
 
-      <div className="px-4 py-3 border-t border-border-light">
+      <div className="px-4 py-3 border-t border-border-light flex flex-col gap-3">
+        <p className="text-[11px] font-medium text-text-muted tracking-[0.5px] uppercase">{t("readerSettings.learning")}</p>
+        <div>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-[13px] font-medium text-text-primary">{t("readerSettings.passiveVocab")}</p>
+              <p className="mt-0.5 text-[11px] leading-4 text-text-muted">
+                {passiveVocabAvailable ? t("readerSettings.passiveVocabHint") : t("readerSettings.passiveVocabUnavailable")}
+              </p>
+            </div>
+            <Toggle
+              label={t("readerSettings.passiveVocab")}
+              checked={passiveVocab?.enabled ?? false}
+              disabled={!passiveVocabAvailable}
+              onChange={onPassiveVocabChange ?? (() => {})}
+            />
+          </div>
+          {passiveVocabAvailable && onOpenPassiveVocabSettings && (
+            <button type="button" onClick={onOpenPassiveVocabSettings} className="mt-2 -ml-2 h-7 px-2 rounded-md text-[12px] text-accent-text hover:bg-accent-bg">
+              {t("readerSettings.passiveVocabSettings")}
+            </button>
+          )}
+        </div>
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-[13px] font-medium text-text-primary">{t("readerSettings.passiveVocab")}</p>
-            <p className="mt-0.5 text-[11px] leading-4 text-text-muted">
-              {passiveVocabAvailable ? t("readerSettings.passiveVocabHint") : t("readerSettings.passiveVocabUnavailable")}
-            </p>
+            <span className="text-[13px] font-medium text-text-primary">{t("readerSettings.chapterEndHint")}</span>
+            <p className="mt-0.5 text-[11px] leading-4 text-text-muted">{t("readerSettings.chapterEndHintDesc")}</p>
           </div>
           <Toggle
-            label={t("readerSettings.passiveVocab")}
-            checked={passiveVocab?.enabled ?? false}
-            disabled={!passiveVocabAvailable}
-            onChange={onPassiveVocabChange ?? (() => {})}
+            label={t("readerSettings.chapterEndHint")}
+            checked={settings.chapterEndReviewHint}
+            onChange={(checked) => update({ chapterEndReviewHint: checked })}
           />
         </div>
-        {passiveVocabAvailable && onOpenPassiveVocabSettings && (
-          <button type="button" onClick={onOpenPassiveVocabSettings} className="mt-2 -ml-2 h-7 px-2 rounded-md text-[12px] text-accent-text hover:bg-accent-bg">
-            {t("readerSettings.passiveVocabSettings")}
-          </button>
-        )}
       </div>
 
       {onClearLookupMarks && (

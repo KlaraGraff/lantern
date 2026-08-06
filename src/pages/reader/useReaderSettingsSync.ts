@@ -57,6 +57,7 @@ const readerPreferenceSettingKeys = {
   textJustification: "text_justification",
   paragraphSpacing: "paragraph_spacing",
   firstLineIndent: "first_line_indent",
+  chapterEndReviewHint: "chapter_end_review_hint",
 } as const;
 
 // Every setting the reader panel can hold per book, as `book_settings` rows: one
@@ -162,6 +163,7 @@ export function createDefaultReaderSettings(): ReaderSettingsState {
     firstLineIndent: false,
     margins: 0,
     ...DEFAULT_MARKER_VISIBILITY,
+    chapterEndReviewHint: true,
   };
 }
 
@@ -203,6 +205,10 @@ export function resolveReaderSettings(
     showChapterProgress: booleanSetting(globalSettings.show_chapter_progress, previous.showChapterProgress),
     showBookProgress: booleanSetting(globalSettings.show_book_progress, previous.showBookProgress),
     showPageNumbers: booleanSetting(globalSettings.show_page_numbers, previous.showPageNumbers),
+    // Global-only, same as the three toggles above: no per-book row, because a
+    // per-book override would need `commands/settings.rs`'s promotion map to
+    // know about it too, and this setting has no reason to vary by book anyway.
+    chapterEndReviewHint: booleanSetting(globalSettings.chapter_end_review_hint, previous.chapterEndReviewHint),
     previousPageBinding: globalSettings.previous_page_binding || previous.previousPageBinding,
     nextPageBinding: globalSettings.next_page_binding || previous.nextPageBinding,
     lineSpacing: numberSetting(perBookSettings[perBookSettingKeys.lineSpacing])
@@ -492,6 +498,7 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
     if (previous.showPageNumbers !== next.showPageNumbers) changed[readerPreferenceSettingKeys.showPageNumbers] = String(next.showPageNumbers);
     if (previous.previousPageBinding !== next.previousPageBinding) changed[readerPreferenceSettingKeys.previousPageBinding] = next.previousPageBinding;
     if (previous.nextPageBinding !== next.nextPageBinding) changed[readerPreferenceSettingKeys.nextPageBinding] = next.nextPageBinding;
+    if (previous.chapterEndReviewHint !== next.chapterEndReviewHint) changed[readerPreferenceSettingKeys.chapterEndReviewHint] = String(next.chapterEndReviewHint);
     scheduleReaderPreferenceSave(changed);
   }, [bookId, scheduleBookSettingsSave, scheduleReaderPreferenceSave, settingsLoadedBookRef]);
 

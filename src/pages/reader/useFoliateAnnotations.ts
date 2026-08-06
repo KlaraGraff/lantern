@@ -6,7 +6,10 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from "react";
+import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { ReaderSettingsState } from "../../components/ReaderSettings";
 import {
   applyWordMarks,
@@ -39,7 +42,7 @@ import {
   type CustomFontRecord,
 } from "../../components/custom-fonts";
 import { getFontFamily, getReaderMeasure } from "../../components/reader-settings";
-import { getReaderCSS } from "./reader-theme";
+import { getReaderCSS, getReaderThemeVars } from "./reader-theme";
 import { expandWordForms } from "../../components/word-forms";
 import type { AnnotationStyleKind, FoliateView } from "./foliate-types";
 import {
@@ -50,6 +53,21 @@ import {
   selectPassiveVocab,
   type PassiveVocabSettings,
 } from "../../components/passive-vocab";
+import {
+  cleanupChapterEndHint,
+  installChapterEndHint,
+  shouldShowChapterEndHint,
+} from "../../components/chapter-end-hint";
+import { notifySettingsChanged } from "../../components/settings-events";
+
+// Reader.tsx has its own copy of this pair for the same reason: a standalone
+// reader window (opened from the shelf, one book per window) has no library
+// list of its own, so "go review" there means closing the window rather than
+// routing within it. Duplicated here instead of threaded through as a prop
+// because this hook is the only place that needs it, and Reader.tsx is not a
+// file this feature is allowed to touch.
+const chapterEndHintAppWindow = getCurrentWebviewWindow();
+const isStandaloneReaderWindow = chapterEndHintAppWindow.label.startsWith("reader-");
 
 export interface VocabMarker {
   cfi: string | null;
@@ -352,6 +370,8 @@ export function useFoliateAnnotations({
   pushJump,
   getCurrentLabel,
 }: UseFoliateAnnotationsOptions) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
   const autoMarkersRef = useRef(new Map<string, FoliateMarker>());
   const appliedAnnotationsRef = useRef(new Map<string, AppliedAnnotation>());
   const navigationFlashRef = useRef(new Map<string, number>());
@@ -429,6 +449,36 @@ export function useFoliateAnnotations({
     appliedAnnotationsRef.current = desired;
   }, [readerSettingsRef, supportsManualAnnotations, supportsWordMarkers, viewRef]);
 
+  // "Go review" from the chapter-end line: a standalone reader window has no
+  // library of its own to route within, so there it just closes back to the
+  // window that does (falling back to a plain navigate if the close somehow
+  // fails). The normal in-app reader hands the intent to Home the same way the
+  // existing chat/vocab deep links do — via `location.state`, for Home's own
+  // code to pick up.
+  const reviewChapterEndHint = useCallback(() => {
+    if (isStandaloneReaderWindow) {
+      chapterEndHintAppWindow.close().catch(() => navigate("/"));
+    } else {
+      navigate("/", { state: { openReview: true } });
+    }
+  }, [navigate]);
+
+  // "Don't show again": takes effect immediately and everywhere, not just on
+  // the page the reader is looking at — the setting is global, so every
+  // currently loaded section document has its line pulled the moment this
+  // fires, not just on the next per-document install.
+  const dismissChapterEndHint = useCallback(() => {
+    const next = { ...readerSettingsRef.current, chapterEndReviewHint: false };
+    readerSettingsRef.current = next;
+    setReaderSettings(next);
+    const values = { chapter_end_review_hint: "false" };
+    invoke("set_settings_bulk", { settings: values }).catch(() => {});
+    notifySettingsChanged(values).catch(() => {});
+    for (const { doc } of viewRef.current?.renderer?.getContents?.() ?? []) {
+      if (doc) cleanupChapterEndHint(doc);
+    }
+  }, [readerSettingsRef, setReaderSettings, viewRef]);
+
   const applyPassiveVocabAnnotations = useCallback((loaded?: { doc: Document; index: number }) => {
     const view = viewRef.current;
     if (!view) return;
@@ -460,7 +510,55 @@ export function useFoliateAnnotations({
         spread: Number(view.renderer?.getAttribute?.("max-column-count")) > 1,
       });
     }
-  }, [passiveVocab, supportsReflowSettings, supportsWordMarkers, viewRef]);
+    // A second pass over the same documents for the chapter-end line. Kept
+    // separate from the loop above rather than merged into it: the line has
+    // nothing to do with word density or `supportsWordMarkers`/
+    // `supportsReflowSettings` (a scrolling or plain-reflow book still finishes
+    // chapters), and folding the two would make one feature's gate silently
+    // start applying to the other's.
+    const settings = readerSettingsRef.current;
+    const themeVars = getReaderThemeVars(settings.theme, settings.customTheme);
+    // The reader's resolved paper palette, not the host stylesheet's CSS
+    // variables — those do not reach inside a section document's iframe. The
+    // fallbacks are the "original" theme's own values (`getReaderThemeVars`
+    // returns `undefined` only for a theme id outside the five it knows,
+    // which `ReaderSettingsState` does not allow, so these should be inert).
+    const chapterEndColor = {
+      muted: themeVars?.["--color-text-muted"] ?? "#71717b",
+      rule: themeVars?.["--color-border-light"] ?? "rgba(0,0,0,.08)",
+    };
+    for (const { doc, index } of contents as Array<{ doc?: Document; index?: number }>) {
+      if (!doc || typeof index !== "number") continue;
+      cleanupChapterEndHint(doc);
+      // "Distinct saved words in this chapter" — not a string match against the
+      // TOC, but the same CFI→Range resolution the passive-vocab loop above
+      // uses: a word counts for this document only if its saved location
+      // actually resolves into it.
+      let lookupCount = 0;
+      for (const word of vocab) {
+        if (!word.cfi) continue;
+        try {
+          const resolved = view.resolveCFI(word.cfi);
+          if (resolved.index === index && resolved.anchor(doc)) lookupCount += 1;
+        } catch {
+          // Not resolvable at all, so certainly not resolvable into this doc.
+        }
+      }
+      if (!shouldShowChapterEndHint(settings.chapterEndReviewHint, lookupCount)) continue;
+      installChapterEndHint({
+        doc,
+        lookupCount,
+        text: {
+          line: t("reader.chapterEndHint.line", { count: lookupCount }),
+          action: t("reader.chapterEndHint.action"),
+          dismiss: t("reader.chapterEndHint.dismiss"),
+        },
+        color: chapterEndColor,
+        onReview: reviewChapterEndHint,
+        onDismiss: dismissChapterEndHint,
+      });
+    }
+  }, [dismissChapterEndHint, passiveVocab, readerSettingsRef, reviewChapterEndHint, supportsReflowSettings, supportsWordMarkers, t, viewRef]);
 
   const applyFoliateMarkerStyles = useCallback(() => {
     const view = viewRef.current;
@@ -635,7 +733,10 @@ export function useFoliateAnnotations({
   const resetAnnotationState = useCallback(() => {
     const view = viewRef.current;
     for (const { doc } of view?.renderer?.getContents?.() ?? []) {
-      if (doc) cleanupPassiveVocabAnnotations(doc);
+      if (doc) {
+        cleanupPassiveVocabAnnotations(doc);
+        cleanupChapterEndHint(doc);
+      }
     }
     autoMarkersRef.current.clear();
     appliedAnnotationsRef.current.clear();
@@ -703,9 +804,14 @@ export function useFoliateAnnotations({
     readerSettings.showMasteredMarkers,
   ].join(":");
   const passiveVocabSignature = `${passiveVocab.enabled}:${passiveVocab.style}:${passiveVocab.density}`;
+  // Theme is in here too, not just the toggle: the chapter-end line's colour is
+  // baked into inline styles at install time (the iframe cannot see the host's
+  // CSS variables), so a theme switch has to force a reinstall to repaint it,
+  // the way `getReaderCSS` repaints everything else that reads the theme.
+  const chapterEndHintSignature = `${readerSettings.chapterEndReviewHint}:${readerSettings.theme}:${readerSettings.customTheme.color}:${readerSettings.customTheme.opacity}`;
   useEffect(() => {
     refreshAnnotations(true).catch(() => {});
-  }, [bookReady, markerVisibility, markerStyle, passiveVocabSignature, refreshAnnotations]);
+  }, [bookReady, chapterEndHintSignature, markerVisibility, markerStyle, passiveVocabSignature, refreshAnnotations]);
 
   useEffect(() => {
     if (!bookId || !supportsWordMarkers || isTextBook) return;
