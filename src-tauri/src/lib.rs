@@ -7,6 +7,7 @@ pub mod db;
 mod epub;
 mod error;
 mod icloud;
+mod lifecycle;
 mod mastery;
 mod mcp;
 mod panic_hook;
@@ -591,6 +592,10 @@ pub fn run() {
                 data_dir = data_dir.display(),
                 schema = db.schema_version(),
             );
+
+            // Before any background worker exists, so none of them can be
+            // mid-write the first time the user swipes the app away.
+            lifecycle::install(db.clone());
 
             let secrets = Secrets::init(&local_dir).expect("failed to initialize secrets store");
             ai::router::ensure_default_ai_profile(&db)

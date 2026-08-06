@@ -488,12 +488,31 @@ membership, signing and provisioning, and a privacy manifest — App Store Conne
 one to accept the upload at all, TestFlight or not. Internal testing (up to 100 members of
 the team) skips Beta App Review; external testing does not.
 
-**Blocked on something outside this repo:** the account's notarization has been stuck since
-2026-08-04 and needs a support ticket only the account holder can file — see
-`docs/impls/apple-signing-release-handoff-2026-08-04.md`. That is a macOS release blocker
-today and would become an iOS blocker too.
+**~~Blocked on something outside this repo:~~ cleared 2026-08-06.** The account's notarization
+had been stuck since 2026-08-04 and needed a ticket only the account holder could file; Apple's
+review has now passed. Signing and provisioning are back on the normal path, and nothing
+account-level stands between P6 and a TestFlight upload.
 
 **Revisit when:** P2 and P3 are done and the app is worth strangers' attention.
+
+### D-015 — macOS moves its sync directory into the app's ubiquity container
+
+Desktop sync points at a folder the user picked inside iCloud Drive. It moves to the app's own
+ubiquity container, once, automatically, on the launch that first sees a `.sync_setting`
+recorded outside it.
+
+**Why:** iOS cannot reach an arbitrary iCloud Drive path — an app only gets a container it
+owns. Without the move there is no iOS ↔ macOS sync at all, which is most of why the iOS
+version exists ([D-006](#d-006--sync-ships-in-v1)).
+
+**What the user sees change:** the files move in Finder, from the folder they chose to
+Lantern's own directory under iCloud Drive. Books and annotations are not at risk — the
+relocation reuses the existing disable → enable path, which is already exercised whenever
+someone changes the folder by hand ([F-009](#f-009--relocating-the-sync-directory-is-already-a-solved-operation)).
+Decided 2026-08-06; the visible-location change was put to the account holder and accepted.
+
+**Consequence for the estimate:** [Q-004](#q-004--macos-relocation-to-the-app-container-largely-answered)
+is closed. Its ~0.5 day is inside P5 item 2, not on top of it.
 
 ---
 
@@ -740,6 +759,11 @@ not — see [F-009](#f-009--relocating-the-sync-directory-is-already-a-solved-op
 
 Remaining work: detect a recorded `.sync_setting` pointing outside the container and chain the
 existing disable → enable path once. **~0.5 day, folded into P5.**
+
+**Answered 2026-08-06 — [D-015](#d-015--macos-moves-its-sync-directory-into-the-apps-ubiquity-container).**
+The one thing here that was never a technical question — that the files visibly move in Finder —
+was put to the account holder and accepted. Nothing in this question is open; P5 item 2 may
+proceed.
 
 ### Q-002 — Does the reader hold acceptable memory on a real device?
 
@@ -1071,8 +1095,23 @@ vertical lock 8px, horizontal dominance 1.5×) are the expensive part and are fr
 
 ### P4 — iOS platform adaptation (11 days)
 
-1. Memory: address whatever [Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) surfaced
-2. Stop background SQLite writes on app suspension (`0xdead10cc` termination risk)
+1. ~~Memory: address whatever [Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device)
+   surfaced~~ — **done 2026-08-06.** EPUB needed nothing. PDF leaked every page it had ever
+   parsed because `pdf.js` never implemented the `unload()` hook foliate already calls; adding
+   it turned unbounded growth into a bounded, downward-trending band. Numbers in
+   [Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device)
+2. ~~Stop background SQLite writes on app suspension (`0xdead10cc` termination risk)~~ —
+   **done 2026-08-06.** `src/lifecycle.rs`. Tauri turned out to offer no hook at all: `RunEvent`
+   has `Resumed` and no suspension counterpart on any platform, so the UIKit notifications are
+   observed directly through `NSNotificationCenter`. The three background workers
+   (`sync-flush`, `cover-writer`, the watcher tick) take a permit around each unit of work;
+   backgrounding closes the gate and waits up to 2 s for in-flight work, then runs
+   `PRAGMA wal_checkpoint(TRUNCATE)` so a frozen process has no unflushed frames.
+   **Verified on the simulator, not on a device** — the simulator does not actually suspend
+   processes or issue `0xdead10cc`, so what was confirmed is that the wiring fires and does
+   the right thing, not that a real kill was prevented. Two background/foreground cycles:
+   both logged the quiesce and the release, and `lantern.db-wal` went 16512 → 0 bytes on
+   backgrounding. The kill itself can only be falsified on hardware, in P6.
 3. `NSURLIsExcludedFromBackupKey` on caches and logs
 4. ~~Keychain via `keyring` `apple-native`~~ — **not work, and not this milestone's.** Deleting
    the v1.4 vault in v2.6.0 took `keyring` out of `Cargo.toml`; `secrets.rs` is plain SQLite on
@@ -1136,9 +1175,9 @@ reaches the store.
 The privacy manifest must declare that selected book text is sent to a third-party model
 ([D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)).
 
-**Blocked outside this repo:** the Developer account's notarization has been stuck since
-2026-08-04 — see `docs/impls/apple-signing-release-handoff-2026-08-04.md`. The ticket is the
-account holder's to file, and this phase cannot close until the account is healthy.
+**No longer blocked outside this repo.** The Developer account's notarization was stuck from
+2026-08-04; Apple's review passed on 2026-08-06 and the account is healthy. What remains is
+all in-repo work — see [D-014](#d-014--first-ios-release-is-testflight-not-the-app-store).
 
 **Exit criterion:** installable from TestFlight on a device that has never had a dev build.
 
@@ -1152,9 +1191,9 @@ account holder's to file, and this phase cannot close until the account is healt
 | P1 — Capability layer + routing | **Done** | Tapping a book opens it in-window; desktop-only surfaces are gated by [D-005](#d-005--capability-flags-not-platform-checks) flags |
 | P2 — Mobile UI | **Blocked** | Waits on the desktop mastery line — [D-011](#d-011--p2-waits-for-the-desktop-mastery-line-to-finish). Two items added since the 18.5-day estimate: mobile AI settings ([D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)) and a book-downloading state ([D-013](#d-013--books-download-on-demand-not-eagerly)) |
 | P3 — Touch interaction | Not started | Same file collision as P2; follows it |
-| P4 — iOS adaptation | Not started | Rust-side, no frontend overlap — may run before P2. Item 4 shrank to nothing (the `keyring` it budgeted for was deleted in v2.6.0); the Cargo-table half moved out and is done |
+| P4 — iOS adaptation | **Items 1–2 done** | Rust-side, no frontend overlap — may run before P2. Item 2 is the suspension gate in `src/lifecycle.rs`; only item 3 is left. Item 1 was the PDF retention leak [Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) surfaced, fixed and re-measured. Item 4 shrank to nothing (the `keyring` it budgeted for was deleted in v2.6.0); the Cargo-table half moved out and is done |
 | P5 — iCloud sync | **Item 1 done** | iOS ↔ macOS only. The `cfg` gates in `icloud.rs` and `sync/log.rs` are widened to `target_vendor = "apple"` and both targets compile clean. [Q-004](#q-004--macos-relocation-to-the-app-container-largely-answered) is sized at ~0.5 day and folded in. Rust-side; runs before P2 |
-| P6 — Ship | Not started | TestFlight only ([D-014](#d-014--first-ios-release-is-testflight-not-the-app-store)). Account-level notarization blocker is outside this repo |
+| P6 — Ship | Not started | TestFlight only ([D-014](#d-014--first-ios-release-is-testflight-not-the-app-store)). The account-level notarization blocker cleared 2026-08-06; everything left is in-repo |
 
 ---
 

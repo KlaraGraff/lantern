@@ -196,6 +196,15 @@ fn run_loop(
         // slow iCloud I/O (`flush_outbox`, `write_own_manifest`,
         // `compact_own_log`). That keeps user-driven commands (e.g.
         // `import_book`) responsive while a tick is in flight.
+        //
+        // A tick is the single largest run of background SQL in the app,
+        // so it is also the one most likely to be halfway through when
+        // the user swipes the app away. Take the suspension permit before
+        // starting one — `crate::lifecycle` for why. Nothing is dropped
+        // by parking here: the events that provoked this tick are already
+        // debounced away, and the tick runs against the directory as it
+        // stands when the app comes back.
+        let _permit = crate::lifecycle::gate().permit();
         if let Err(e) = engine.tick(&db) {
             log::error!("sync watcher: tick failed: {e}");
         }

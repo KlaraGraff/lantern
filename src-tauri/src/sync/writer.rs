@@ -306,6 +306,11 @@ impl SyncWriter {
             .name("cover-writer".into())
             .spawn(move || {
                 for (path, bytes) in rx {
+                    // These land in the iCloud blob root, which on iOS is a
+                    // container the system holds against us at suspension
+                    // time — see `crate::lifecycle`. Park rather than start
+                    // a write the OS is about to freeze halfway through.
+                    let _permit = crate::lifecycle::gate().permit();
                     if let Some(parent) = path.parent() {
                         let _ = std::fs::create_dir_all(parent);
                     }
@@ -347,6 +352,13 @@ impl SyncWriter {
                         }
                         n
                     };
+                    // Held across the whole drain, not per event: this is
+                    // the SQLite write connection plus an append into the
+                    // event log, and a suspension landing between the
+                    // append and the outbox delete is exactly the tear
+                    // `crate::lifecycle` exists to prevent. Signals are not
+                    // lost while parked — they are already in `rx`.
+                    let _permit = crate::lifecycle::gate().permit();
                     match replay::flush_outbox(&db, &log) {
                         Ok(0) => {}
                         Ok(n) => log::debug!(
