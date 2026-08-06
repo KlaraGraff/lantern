@@ -7,6 +7,7 @@ pub mod db;
 mod epub;
 mod error;
 mod icloud;
+mod mastery;
 mod mcp;
 mod panic_hook;
 mod pdfium;
