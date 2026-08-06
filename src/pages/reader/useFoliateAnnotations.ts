@@ -484,11 +484,18 @@ export function useFoliateAnnotations({
     if (!view) return;
     const contents = loaded ? [loaded] : (view.renderer?.getContents?.() ?? []);
     const vocab = markerSnapshotRef.current?.vocab ?? [];
-    const selected = selectPassiveVocab(vocab.filter((word): word is VocabMarker & { cfi: string } => Boolean(word.cfi)), passiveVocab.density);
+    // Which of the three stages each saved word is in on this page: the gloss
+    // itself, a bare marker, or nothing at all. Mastery decides the stage; the
+    // limit only caps how many glosses one screen may carry.
+    const stages = selectPassiveVocab(
+      vocab.filter((word): word is VocabMarker & { cfi: string } => Boolean(word.cfi)),
+      passiveVocab.limit,
+    );
     const annotations = vocab.flatMap((word) => {
-      if (!word.cfi || !selected.has(word.cfi)) return [];
+      const stage = word.cfi ? stages.get(word.cfi) : undefined;
+      if (!word.cfi || !stage) return [];
       const label = passiveVocabLabel(word.definition);
-      return label ? [{ cfi: word.cfi, label }] : [];
+      return label ? [{ cfi: word.cfi, label, stage }] : [];
     });
     for (const { doc, index } of contents as Array<{ doc?: Document; index?: number }>) {
       if (!doc || typeof index !== "number") continue;
@@ -803,7 +810,7 @@ export function useFoliateAnnotations({
     readerSettings.showLearningMarkers,
     readerSettings.showMasteredMarkers,
   ].join(":");
-  const passiveVocabSignature = `${passiveVocab.enabled}:${passiveVocab.style}:${passiveVocab.density}`;
+  const passiveVocabSignature = `${passiveVocab.enabled}:${passiveVocab.style}:${passiveVocab.limit}`;
   // Theme is in here too, not just the toggle: the chapter-end line's colour is
   // baked into inline styles at install time (the iframe cannot see the host's
   // CSS variables), so a theme switch has to force a reinstall to repaint it,

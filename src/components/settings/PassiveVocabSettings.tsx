@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronRight, PanelRightOpen } from "lucide-react";
+import { ChevronRight, Minus, PanelRightOpen, Plus } from "lucide-react";
 import Toggle from "../ui/Toggle";
 import { nextRadioIndex } from "../ui/radio-group";
 import {
+  PASSIVE_VOCAB_MAX_LIMIT,
+  PASSIVE_VOCAB_MIN_LIMIT,
   formatPassiveVocabSummary,
   parsePassiveVocabSettings,
   rollbackPassiveVocabSettings,
   updatePassiveVocabSettings,
-  type PassiveVocabDensity,
   type PassiveVocabSettings as PassiveVocabSettingsValue,
   type PassiveVocabStyle,
 } from "../passive-vocab";
@@ -22,7 +23,6 @@ interface PassiveVocabSettingsProps extends SettingsProps {
   onPreviewChange?: (preview: PassiveVocabPreviewState | null) => void;
 }
 
-const DENSITIES: PassiveVocabDensity[] = ["low", "medium", "high"];
 const STYLES: PassiveVocabStyle[] = ["ruby", "margin"];
 
 /**
@@ -114,10 +114,10 @@ export default function PassiveVocabSettings({
     }
     onPreviewChange({
       style: passive.style,
-      density: passive.density,
+      limit: passive.limit,
       onDismiss: () => setPreviewOpen(false),
     });
-  }, [onPreviewChange, passive.density, passive.enabled, passive.style, previewOpen]);
+  }, [onPreviewChange, passive.enabled, passive.limit, passive.style, previewOpen]);
 
   useEffect(() => () => onPreviewChange?.(null), [onPreviewChange]);
 
@@ -176,7 +176,7 @@ export default function PassiveVocabSettings({
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.passiveVocab.masterTitle")}</p>
-            <p className="mt-0.5 text-[12px] text-text-muted">{formatPassiveVocabSummary(passive, (key) => t(key))}</p>
+            <p className="mt-0.5 text-[12px] text-text-muted">{formatPassiveVocabSummary(passive, (key, params) => t(key, params))}</p>
           </div>
           <Toggle
             label={t("settings.passiveVocab.masterTitle")}
@@ -256,33 +256,54 @@ export default function PassiveVocabSettings({
             </div>
           </div>
 
-          {/* Density */}
+          {/* How many definitions one screen may carry */}
           <div className="mt-6 border-t border-border-light pt-4">
-            <p className="text-[13px] font-medium text-text-primary">{t("settings.passiveVocab.density")}</p>
-            <p className="mt-0.5 text-[11px] leading-[17px] text-text-muted">{t("settings.passiveVocab.densityHint")}</p>
-            {/* Three mutually exclusive choices, like the style cards above:
-                a radiogroup, not a set of toggles that happen to be adjacent. */}
-            <div role="radiogroup" aria-label={t("settings.passiveVocab.density")} className="mt-3 grid grid-cols-3 gap-1 rounded-lg bg-bg-input p-1">
-              {DENSITIES.map((density) => {
-                const selected = passive.density === density;
-                return (
-                  <button
-                    key={density}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    tabIndex={selected ? 0 : -1}
-                    onKeyDown={(event) => handleRadioKeys(event, DENSITIES, passive.density, (value) => update({ density: value }))}
-                    onClick={() => update({ density })}
-                    className={`h-8 rounded-md text-[12px] ${
-                      selected ? "bg-bg-surface font-medium text-accent-text shadow-sm" : "text-text-muted hover:text-text-primary"
-                    }`}
-                  >
-                    {t(`settings.passiveVocab.density${density === "low" ? "Low" : density === "medium" ? "Medium" : "High"}`)}
-                  </button>
-                );
-              })}
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium text-text-primary">{t("settings.passiveVocab.limit")}</p>
+                <p className="mt-0.5 text-[11px] leading-[17px] text-text-muted">{t("settings.passiveVocab.limitHint")}</p>
+              </div>
+              {/* A count, not a density: the reader is choosing how many
+                  definitions they will actually see, so the control shows the
+                  number itself rather than three relative words. */}
+              <div className="flex shrink-0 items-center gap-1 rounded-lg bg-bg-input p-1">
+                <button
+                  type="button"
+                  onClick={() => update({ limit: passive.limit - 1 })}
+                  disabled={passive.limit <= PASSIVE_VOCAB_MIN_LIMIT}
+                  aria-label={t("settings.passiveVocab.limitFewer")}
+                  title={t("settings.passiveVocab.limitFewer")}
+                  className="flex size-[30px] items-center justify-center rounded-md text-text-secondary hover:bg-bg-surface hover:text-text-primary disabled:opacity-35 disabled:hover:bg-transparent"
+                >
+                  <Minus size={14} />
+                </button>
+                <span
+                  role="status"
+                  aria-label={t("settings.passiveVocab.limit")}
+                  className="min-w-[36px] text-center text-[14px] font-semibold text-text-primary tabular-nums"
+                >
+                  {passive.limit}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => update({ limit: passive.limit + 1 })}
+                  disabled={passive.limit >= PASSIVE_VOCAB_MAX_LIMIT}
+                  aria-label={t("settings.passiveVocab.limitMore")}
+                  title={t("settings.passiveVocab.limitMore")}
+                  className="flex size-[30px] items-center justify-center rounded-md text-text-secondary hover:bg-bg-surface hover:text-text-primary disabled:opacity-35 disabled:hover:bg-transparent"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
             </div>
+            {/* The three stages, stated once. Without this the marker stage
+                looks like a bug the first time a definition turns into a dotted
+                line on its own. */}
+            <ul className="mt-3 grid gap-1.5 rounded-md bg-bg-input px-3 py-2.5">
+              <li className="text-[11px] leading-[17px] text-text-muted">{t("settings.passiveVocab.stageDefinition")}</li>
+              <li className="text-[11px] leading-[17px] text-text-muted">{t("settings.passiveVocab.stageMarker")}</li>
+              <li className="text-[11px] leading-[17px] text-text-muted">{t("settings.passiveVocab.stageNone")}</li>
+            </ul>
           </div>
 
           {/* Privacy */}

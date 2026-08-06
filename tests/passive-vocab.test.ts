@@ -1,18 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  PASSIVE_VOCAB_DEFAULT_LIMIT,
+  clampPassiveVocabLimit,
+  cleanupPassiveVocabAnnotations,
   formatPassiveVocabSummary,
   installPassiveVocabAnnotations,
   parsePassiveVocabSettings,
-  passiveVocabSummaryKeys,
-  passiveVocabCount,
   passiveVocabLabel,
+  passiveVocabStage,
+  passiveVocabSummaryParts,
   rollbackPassiveVocabSettings,
   selectPassiveVocab,
-  shouldShowPassiveVocab,
   updatePassiveVocabSettings,
   type PassiveVocabDomAnnotation,
 } from "../src/components/passive-vocab.ts";
+
+/** What the assertions below need off a node the fake document handed back. */
+interface FakeLike {
+  textContent: string;
+  getAttribute(name: string): string | null;
+}
 
 // A minimal DOM stand-in covering only what passive-vocab.ts touches: element
 // creation/attributes/style, a document-level querySelectorAll that matches
@@ -24,16 +32,23 @@ function createFakeDoc(options: { innerWidth?: number; innerHeight?: number } = 
   class FakeElement {
     tagName: string;
     attributes = new Map<string, string>();
-    style: Record<string, string> = {};
+    style: Record<string, string> & { setProperty(name: string, value: string): void };
     id = "";
     className = "";
     textContent = "";
     scrollHeight = 20;
     rectHeight = 0;
     children: FakeElement[] = [];
+    childNodes: FakeElement[] = [];
     constructor(tagName: string) {
       this.tagName = tagName;
+      const style = {} as Record<string, string> & { setProperty(name: string, value: string): void };
+      style.setProperty = (name, value) => { style[name] = value; };
+      this.style = style;
       allElements.push(this);
+    }
+    replaceWith() {
+      this.remove();
     }
     setAttribute(name: string, value: string) {
       this.attributes.set(name, value);
@@ -50,24 +65,37 @@ function createFakeDoc(options: { innerWidth?: number; innerHeight?: number } = 
       }
     }
     remove() {
-      // Tests don't need real detach semantics; cleanup isn't exercised here.
+      const at = allElements.indexOf(this);
+      if (at >= 0) allElements.splice(at, 1);
+    }
+    /** Only ever asked about the marker attribute, and markers never nest. */
+    closest(selector: string) {
+      return matches(this, selector) ? this : null;
     }
     getBoundingClientRect() {
-      return { height: this.rectHeight } as DOMRect;
+      return { height: this.rectHeight, top: 100, bottom: 120, left: 40 } as DOMRect;
     }
   }
 
+  // Handles `[attr]`, `[attr="value"]`, and the two chained together.
   function matches(el: FakeElement, selector: string) {
-    const match = /^\[([^=\]]+)(?:="([^"]*)")?\]$/.exec(selector);
-    if (!match) return false;
-    const [, attr, value] = match;
-    if (!el.hasAttribute(attr)) return false;
-    return value === undefined || el.getAttribute(attr) === value;
+    const parts = selector.match(/\[[^\]]+\]/g);
+    if (!parts || parts.join("") !== selector) return false;
+    return parts.every((part) => {
+      const match = /^\[([^=\]]+)(?:="([^"]*)")?\]$/.exec(part);
+      if (!match) return false;
+      const [, attr, value] = match;
+      if (!el.hasAttribute(attr)) return false;
+      return value === undefined || el.getAttribute(attr) === value;
+    });
   }
 
   const body = new FakeElement("body");
+  const head = new FakeElement("head");
+  const listeners = new Map<string, Set<(event: unknown) => void>>();
   const doc = {
     body,
+    head,
     documentElement: { clientWidth: options.innerWidth ?? 400, clientHeight: options.innerHeight ?? 800 },
     defaultView: { innerWidth: options.innerWidth ?? 400, innerHeight: options.innerHeight ?? 800 },
     createElement(tag: string) {
@@ -79,8 +107,21 @@ function createFakeDoc(options: { innerWidth?: number; innerHeight?: number } = 
     querySelectorAll(selector: string) {
       return allElements.filter((el) => matches(el, selector));
     },
+    addEventListener(type: string, handler: (event: unknown) => void) {
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type)!.add(handler);
+    },
+    removeEventListener(type: string, handler: (event: unknown) => void) {
+      listeners.get(type)?.delete(handler);
+    },
   };
-  return { doc: doc as unknown as Document, FakeElement, allElements };
+  /** Fires whatever `installMarkerBehaviour` registered, the way the DOM would. */
+  function dispatch(type: string, event: Record<string, unknown>) {
+    for (const handler of [...(listeners.get(type) ?? [])]) {
+      handler({ preventDefault() {}, stopPropagation() {}, ...event });
+    }
+  }
+  return { doc: doc as unknown as Document, FakeElement, allElements, listeners, dispatch };
 }
 
 function fakeRange(rect: { left: number; top: number; width: number }) {
@@ -93,44 +134,86 @@ function fakeRange(rect: { left: number; top: number; width: number }) {
 }
 
 test("passive vocabulary settings default safely and accept only known choices", () => {
-  assert.deepEqual(parsePassiveVocabSettings({}), { enabled: false, style: "ruby", density: "medium" });
+  assert.deepEqual(parsePassiveVocabSettings({}), { enabled: false, style: "ruby", limit: PASSIVE_VOCAB_DEFAULT_LIMIT });
   assert.deepEqual(parsePassiveVocabSettings({
     passive_vocab_enabled: "true",
     passive_vocab_style: "margin",
-    passive_vocab_density: "high",
-  }), { enabled: true, style: "margin", density: "high" });
+    passive_vocab_limit: "6",
+  }), { enabled: true, style: "margin", limit: 6 });
+  // Anything outside the range the settings screen offers is pulled back into
+  // it rather than annotating a whole page or nothing at all.
+  assert.equal(parsePassiveVocabSettings({ passive_vocab_limit: "0" }).limit, 1);
+  assert.equal(parsePassiveVocabSettings({ passive_vocab_limit: "99" }).limit, 10);
+  assert.equal(parsePassiveVocabSettings({ passive_vocab_limit: "not a number" }).limit, PASSIVE_VOCAB_DEFAULT_LIMIT);
+  assert.equal(clampPassiveVocabLimit(Number.NaN), PASSIVE_VOCAB_DEFAULT_LIMIT);
 });
 
-test("passive vocabulary density deterministically prioritises active learning over CFI order", () => {
+// The three stages are the whole feature: an annotation that never steps back
+// is decoration, and one that steps back at the wrong tier lies to the reader
+// about their own progress.
+test("mastery decides which of the three stages a word is in", () => {
+  assert.equal(passiveVocabStage(null), "definition");
+  assert.equal(passiveVocabStage("new"), "definition");
+  assert.equal(passiveVocabStage("learning"), "definition");
+  assert.equal(passiveVocabStage("familiar"), "marker");
+  assert.equal(passiveVocabStage("mastered"), "none");
+});
+
+test("the limit caps definitions, and words past it show nothing rather than a marker", () => {
   const words = [
     { cfi: "epubcfi(/6/2)", mastery: "mastered", definition: "finished learning" },
     { cfi: "epubcfi(/6/6)", mastery: "new", definition: "unseen" },
     { cfi: "epubcfi(/6/4)", mastery: "learning", definition: "active practice" },
     { cfi: "epubcfi(/6/8)", mastery: "learning", definition: "second active word" },
+    { cfi: "epubcfi(/6/10)", mastery: "familiar", definition: "nearly known" },
   ];
   assert.equal(passiveVocabLabel("to move gradually toward"), "to move gradual…");
-  assert.equal(passiveVocabCount(words.length, "low"), 1);
-  assert.deepEqual([...selectPassiveVocab(words, "low")], ["epubcfi(/6/4)"]);
-  assert.deepEqual([...selectPassiveVocab(words, "medium")], ["epubcfi(/6/4)", "epubcfi(/6/8)"]);
-  assert.deepEqual([...selectPassiveVocab(words, "high")], [
-    "epubcfi(/6/4)", "epubcfi(/6/8)", "epubcfi(/6/6)", "epubcfi(/6/2)",
-  ]);
-  const selected = selectPassiveVocab(words, "low");
-  assert.equal(shouldShowPassiveVocab("epubcfi(/6/4)", "low", selected), true);
-  assert.equal(shouldShowPassiveVocab("epubcfi(/6/2)", "low", selected), false);
+
+  const tight = selectPassiveVocab(words, 1);
+  // Learning beats new, CFI breaks the tie, and the two words past the cap are
+  // absent entirely — not demoted to a marker they have not earned.
+  assert.deepEqual([...tight], [["epubcfi(/6/10)", "marker"], ["epubcfi(/6/4)", "definition"]]);
+  assert.equal(tight.has("epubcfi(/6/8)"), false);
+  assert.equal(tight.has("epubcfi(/6/6)"), false);
+  // A mastered word is gone at every limit, and never takes up a slot.
+  assert.equal(selectPassiveVocab(words, 10).has("epubcfi(/6/2)"), false);
+
+  const roomy = selectPassiveVocab(words, 3);
+  assert.equal(roomy.get("epubcfi(/6/4)"), "definition");
+  assert.equal(roomy.get("epubcfi(/6/8)"), "definition");
+  assert.equal(roomy.get("epubcfi(/6/6)"), "definition");
+  assert.equal(roomy.get("epubcfi(/6/10)"), "marker");
+});
+
+test("a familiar word keeps its marker no matter how tight the limit is", () => {
+  const words = [
+    { cfi: "epubcfi(/6/2)", mastery: "learning", definition: "one" },
+    { cfi: "epubcfi(/6/4)", mastery: "learning", definition: "two" },
+    { cfi: "epubcfi(/6/6)", mastery: "familiar", definition: "three" },
+    { cfi: "epubcfi(/6/8)", mastery: "familiar", definition: "four" },
+  ];
+  const stages = selectPassiveVocab(words, 1);
+  assert.equal(stages.get("epubcfi(/6/6)"), "marker");
+  assert.equal(stages.get("epubcfi(/6/8)"), "marker");
+  // A hairline under a word the reader nearly knows costs almost nothing;
+  // capping it would make stage two vanish on any page with fresh lookups.
+  assert.equal([...stages.values()].filter((stage) => stage === "definition").length, 1);
 });
 
 test("optimistic settings writes roll back only the failed state, never a newer edit", () => {
-  const original = { enabled: false, style: "ruby" as const, density: "medium" as const };
+  const original = { enabled: false, style: "ruby" as const, limit: 3 };
   const enable = updatePassiveVocabSettings(original, { enabled: true });
   assert.deepEqual(enable.values, {
     passive_vocab_enabled: "true",
     passive_vocab_style: "ruby",
-    passive_vocab_density: "medium",
+    passive_vocab_limit: "3",
   });
   assert.deepEqual(rollbackPassiveVocabSettings(enable.next, enable), original);
   const newer = { ...enable.next, style: "margin" as const };
   assert.deepEqual(rollbackPassiveVocabSettings(newer, enable), newer);
+  // The stepper hands over raw arithmetic, so the clamp has to live here too.
+  assert.equal(updatePassiveVocabSettings(original, { limit: 0 }).next.limit, 1);
+  assert.equal(updatePassiveVocabSettings(original, { limit: 11 }).next.limit, 10);
 });
 
 test("margin gloss inherits the reader theme colour instead of a hardcoded one", () => {
@@ -222,22 +305,24 @@ test("margin notes clamp at the viewport bottom and surface the drop as a +N bad
 // settings are stated in one sentence, so its "off" form matters as much as
 // its "on" one: listing a style and a density while the feature is off would
 // read as if it were still annotating pages.
-test("the settings summary states style and density only while it is on", () => {
-  const translate = (key: string) => key.replace("settings.passiveVocab.", "");
-  assert.equal(
-    formatPassiveVocabSummary({ enabled: true, style: "ruby", density: "medium" }, translate),
-    "summaryOn · styleRuby · summaryDensityMedium",
+test("the settings summary states style and limit only while it is on", () => {
+  const translate = (key: string, params?: { count: number }) => (
+    params ? `${key.replace("settings.passiveVocab.", "")}(${params.count})` : key.replace("settings.passiveVocab.", "")
   );
   assert.equal(
-    formatPassiveVocabSummary({ enabled: true, style: "margin", density: "high" }, translate),
-    "summaryOn · styleMargin · summaryDensityHigh",
+    formatPassiveVocabSummary({ enabled: true, style: "ruby", limit: 3 }, translate),
+    "summaryOn · styleRuby · summaryLimit(3)",
+  );
+  assert.equal(
+    formatPassiveVocabSummary({ enabled: true, style: "margin", limit: 7 }, translate),
+    "summaryOn · styleMargin · summaryLimit(7)",
   );
   assert.deepEqual(
-    passiveVocabSummaryKeys({ enabled: false, style: "margin", density: "low" }),
-    ["settings.passiveVocab.summaryOff"],
+    passiveVocabSummaryParts({ enabled: false, style: "margin", limit: 1 }),
+    [{ key: "settings.passiveVocab.summaryOff" }],
   );
   assert.equal(
-    formatPassiveVocabSummary({ enabled: false, style: "margin", density: "low" }, translate),
+    formatPassiveVocabSummary({ enabled: false, style: "margin", limit: 1 }, translate),
     "summaryOff",
   );
 });
@@ -246,11 +331,95 @@ test("every summary key the formatter can emit is a distinct key", () => {
   const emitted = new Set<string>();
   for (const enabled of [true, false]) {
     for (const style of ["ruby", "margin"] as const) {
-      for (const density of ["low", "medium", "high"] as const) {
-        for (const key of passiveVocabSummaryKeys({ enabled, style, density })) emitted.add(key);
+      for (const limit of [1, 3, 10]) {
+        for (const part of passiveVocabSummaryParts({ enabled, style, limit })) emitted.add(part.key);
       }
     }
   }
-  // 1 off + 1 on + 2 styles + 3 densities.
-  assert.equal(emitted.size, 7);
+  // 1 off + 1 on + 2 styles + 1 limit.
+  assert.equal(emitted.size, 5);
+});
+
+test("a marker carries its gloss in an attribute, keeping the paragraph's own text intact", () => {
+  const { doc } = createFakeDoc();
+  installPassiveVocabAnnotations({
+    doc,
+    annotations: [{ cfi: "epubcfi(/6/2)", label: "fruit garden", stage: "marker" }],
+    resolveRange: () => fakeRange({ left: 10, top: 100, width: 20 }),
+    style: "ruby",
+  });
+  const markers = doc.querySelectorAll("[data-passive-vocab-marker]") as unknown as FakeLike[];
+  assert.equal(markers.length, 1);
+  assert.equal(markers[0].getAttribute("data-passive-vocab-marker-label"), "fruit garden");
+  assert.equal(markers[0].getAttribute("role"), "button");
+  assert.equal(markers[0].getAttribute("aria-expanded"), "false");
+  // No <rt>, no rail note: stage two adds nothing the reader has to read past.
+  assert.equal(doc.querySelectorAll("[data-passive-vocab-ruby-text]").length, 0);
+  assert.equal(doc.querySelectorAll("[data-passive-vocab-margin-label]").length, 0);
+});
+
+test("tapping a marker opens exactly one gloss, and tapping it again puts it away", () => {
+  const { doc, dispatch } = createFakeDoc();
+  installPassiveVocabAnnotations({
+    doc,
+    annotations: [
+      { cfi: "epubcfi(/6/2)", label: "first gloss", stage: "marker" },
+      { cfi: "epubcfi(/6/4)", label: "second gloss", stage: "marker" },
+    ],
+    resolveRange: () => fakeRange({ left: 10, top: 100, width: 20 }),
+    style: "ruby",
+  });
+  const markers = doc.querySelectorAll("[data-passive-vocab-marker]") as unknown as FakeLike[];
+  assert.equal(markers.length, 2);
+  const popovers = () => doc.querySelectorAll("[data-passive-vocab-popover]") as unknown as FakeLike[];
+
+  dispatch("click", { target: markers[0] });
+  assert.equal(popovers().length, 1);
+  assert.equal(popovers()[0].textContent, "first gloss");
+  assert.equal(markers[0].getAttribute("aria-expanded"), "true");
+
+  // Opening the second one puts the first away instead of stacking two chips.
+  dispatch("click", { target: markers[1] });
+  assert.equal(popovers().length, 1);
+  assert.equal(popovers()[0].textContent, "second gloss");
+  assert.equal(markers[0].getAttribute("aria-expanded"), "false");
+
+  dispatch("click", { target: markers[1] });
+  assert.equal(popovers().length, 0);
+
+  // A tap anywhere else is a page turn, so the gloss just closes.
+  dispatch("click", { target: markers[0] });
+  assert.equal(popovers().length, 1);
+  dispatch("click", { target: null });
+  assert.equal(popovers().length, 0);
+});
+
+test("cleanup unhooks the marker listeners so re-installing never stacks them", () => {
+  const { doc, listeners } = createFakeDoc();
+  const install = () => installPassiveVocabAnnotations({
+    doc,
+    annotations: [{ cfi: "epubcfi(/6/2)", label: "gloss", stage: "marker" }],
+    resolveRange: () => fakeRange({ left: 10, top: 100, width: 20 }),
+    style: "ruby",
+  });
+  install();
+  install();
+  install();
+  assert.equal(listeners.get("click")?.size, 1);
+  assert.equal(listeners.get("keydown")?.size, 1);
+  cleanupPassiveVocabAnnotations(doc);
+  assert.equal(listeners.get("click")?.size, 0);
+  assert.equal(doc.querySelectorAll("[data-passive-vocab-style]").length, 0);
+});
+
+test("a page with no markers pays for no listeners and no stylesheet", () => {
+  const { doc, listeners } = createFakeDoc();
+  installPassiveVocabAnnotations({
+    doc,
+    annotations: [{ cfi: "epubcfi(/6/2)", label: "gloss", stage: "definition" }],
+    resolveRange: () => fakeRange({ left: 10, top: 100, width: 20 }),
+    style: "ruby",
+  });
+  assert.equal(listeners.get("click")?.size ?? 0, 0);
+  assert.equal(doc.querySelectorAll("[data-passive-vocab-style]").length, 0);
 });

@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getAllSettings } from "../../hooks/useSettings";
-import { parsePassiveVocabSettings, type PassiveVocabSettings } from "../../components/passive-vocab";
+import {
+  PASSIVE_VOCAB_DEFAULT_LIMIT,
+  parsePassiveVocabSettings,
+  type PassiveVocabSettings,
+} from "../../components/passive-vocab";
 import { parseTripleClickScope, type TripleClickScope } from "../../components/reader-interaction";
 import {
   MARKER_STYLE_SETTING_KEY,
@@ -52,7 +56,11 @@ export function useReadingAssistanceSettings() {
   const [readerBindings, setReaderBindings] = useState<ReaderActionBinding[]>([]);
   const [showMenuShortcuts, setShowMenuShortcuts] = useState(true);
   const [learningCardConfig, setLearningCardConfig] = useState<CardDesignConfigV1>(DEFAULT_CARD_DESIGN_CONFIG);
-  const [passiveVocab, setPassiveVocab] = useState<PassiveVocabSettings>({ enabled: false, style: "ruby", density: "medium" });
+  const [passiveVocab, setPassiveVocab] = useState<PassiveVocabSettings>({
+    enabled: false,
+    style: "ruby",
+    limit: PASSIVE_VOCAB_DEFAULT_LIMIT,
+  });
 
   const applyReadingAssistanceSettings = useCallback((settings: Record<string, string>) => {
     const doubleClick = settings.double_click_quick_lookup !== "false";

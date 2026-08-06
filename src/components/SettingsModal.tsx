@@ -432,7 +432,7 @@ export default function SettingsModal({ open, onClose, initialSection = "general
                   customActionTest={toolsPreview.customActionTest}
                 />
               ) : passiveVocabPreview ? (
-                <PassiveVocabPreview style={passiveVocabPreview.style} density={passiveVocabPreview.density} />
+                <PassiveVocabPreview style={passiveVocabPreview.style} limit={passiveVocabPreview.limit} />
               ) : null}
             </div>
           </aside>

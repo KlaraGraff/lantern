@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern 正文标注三阶段 · 样张</title>
+<style>
+  :root{
+    --bg-page:#f4f4f5; --bg-surface:#ffffff; --bg-muted:#fafafa; --bg-input:#f3f3f5;
+    --text-primary:#18181b; --text-body:#0a0a0a; --text-secondary:#52525c; --text-muted:#71717b;
+    --border:#e4e4e7; --border-light:#f4f4f5;
+    --accent:#7c3aed; --accent-bg:#f3e8ff; --lavender:#c084fc;
+    --success:#00a63e; --success-bg:#eefdf3;
+    --danger:#e7000b;
+    --paper:#faf7f0; --ink:#26221c; --ink-soft:#7a7268;
+    --shadow-card:0 1px 2px rgba(0,0,0,.04);
+    --shadow-pop:0 20px 25px rgba(0,0,0,.15), 0 8px 10px rgba(0,0,0,.15);
+    --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    --serif:Georgia,"Libre Baskerville","Songti SC",serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#e9e9ec;color:var(--text-primary);font-family:var(--sans);
+    font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:48px 28px 120px}
+
+  .doc-head{margin-bottom:44px}
+  .doc-head h1{font-size:28px;font-weight:650;letter-spacing:-.4px;margin:0 0 10px}
+  .doc-head p{margin:0;color:var(--text-secondary);font-size:14.5px;max-width:780px}
+  .doc-head .meta{margin-top:14px;font-size:12.5px;color:var(--text-muted)}
+  .doc-head .meta code{background:var(--bg-input);padding:1px 6px;border-radius:4px;font-size:12px}
+
+  .sec{display:flex;align-items:baseline;gap:12px;margin:64px 0 8px;font-size:20px;font-weight:650;letter-spacing:-.3px}
+  .sec .n{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;
+    border-radius:8px;background:var(--accent);color:#fff;font-size:13px;font-weight:600;flex:none;
+    transform:translateY(-2px)}
+  .why{margin:0 0 22px 38px;color:var(--text-secondary);font-size:14px;max-width:840px}
+  .why b{color:var(--text-primary);font-weight:600}
+
+  .stage{background:var(--bg-page);border:1px solid var(--border);border-radius:16px;padding:22px;
+    box-shadow:var(--shadow-card)}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:start}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  .cap{margin:10px 2px 0;font-size:12.5px;color:var(--text-muted)}
+  .cap b{color:var(--text-secondary);font-weight:600}
+
+  /* ── 阅读页纸面 ── */
+  .paper{background:var(--paper);border:1px solid #e8e2d6;border-radius:12px;padding:26px 24px;
+    font-family:var(--serif);color:var(--ink);font-size:15.5px;line-height:2.05;min-height:190px}
+  .paper.tall{min-height:250px}
+  .paper .pg{margin:0}
+  .paper .pg + .pg{margin-top:14px}
+
+  .tier{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-family:var(--sans);
+    font-size:12px;font-weight:600;letter-spacing:.2px;color:var(--text-muted)}
+  .dot{width:7px;height:7px;border-radius:50%;flex:none}
+  .dot.s1{background:var(--accent)} .dot.s2{background:#a1a1aa} .dot.s3{background:#d4d4d8}
+  .tier code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;
+    background:var(--bg-input);padding:1px 5px;border-radius:4px;color:var(--text-secondary)}
+
+  /* ── 阶段一：释义直接挂着（ruby） ── */
+  ruby.s1{ruby-position:over;ruby-align:center}
+  ruby.s1 rt{font-family:var(--sans);font-size:.56em;font-weight:500;color:var(--ink-soft);
+    letter-spacing:.2px;line-height:1.2}
+
+  /* ── 阶段二：三个记号候选 ── */
+  .m-underline{border-bottom:1px dotted #b6ada0;padding-bottom:1px;cursor:pointer}
+  .m-dot{cursor:pointer;position:relative}
+  .m-dot::after{content:"·";font-family:var(--sans);font-size:1.25em;font-weight:700;
+    color:#b6ada0;vertical-align:.05em;margin-left:.12em;line-height:0}
+  .m-tint{background:rgba(160,148,130,.16);border-radius:3px;padding:0 .12em;cursor:pointer}
+
+  /* 阶段二展开：点一下浮出 */
+  .pop-host{position:relative;display:inline-block}
+  .pop{position:absolute;left:50%;transform:translate(-50%,-100%);top:-6px;white-space:nowrap;
+    background:var(--ink);color:#fff;font-family:var(--sans);font-size:12px;font-weight:500;
+    padding:5px 9px;border-radius:7px;box-shadow:var(--shadow-pop);line-height:1.3;z-index:3}
+  .pop::after{content:"";position:absolute;left:50%;bottom:-4px;width:8px;height:8px;
+    background:var(--ink);transform:translateX(-50%) rotate(45deg)}
+
+  /* ── margin 样式 ── */
+  .spread{display:grid;grid-template-columns:118px 1fr;gap:0;background:var(--paper);
+    border:1px solid #e8e2d6;border-radius:12px;overflow:hidden;min-height:230px}
+  .rail{border-right:1px dashed #e2dbcd;padding:22px 12px;position:relative}
+  .rail .note{font-family:var(--sans);font-size:11.5px;font-weight:500;color:var(--ink-soft);
+    line-height:1.35;margin-bottom:12px}
+  .rail .badge{position:absolute;bottom:10px;left:12px;font-family:var(--sans);font-size:11.5px;
+    font-weight:600;color:var(--ink-soft);opacity:.75}
+  .spread .body{padding:22px 22px 22px 18px;font-family:var(--serif);color:var(--ink);
+    font-size:15px;line-height:2.05}
+  .anchor{border-bottom:1px solid #ded6c7}
+
+  /* ── 候选卡 ── */
+  .opt{background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .opt.pick{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
+  .opt h5{margin:0;padding:12px 16px;font-size:13px;font-weight:650;border-bottom:1px solid var(--border-light);
+    display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .opt h5 .tag{font-size:10.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+    background:var(--accent);color:#fff;padding:2px 7px;border-radius:5px}
+  .opt .demo{padding:20px 16px;background:var(--paper);font-family:var(--serif);font-size:15.5px;
+    line-height:2.1;color:var(--ink);text-align:center}
+  .opt .note{padding:12px 16px;font-size:12.5px;color:var(--text-secondary);line-height:1.6}
+  .opt .note b{color:var(--text-primary);font-weight:600}
+
+  /* ── 设置行 ── */
+  .panel{background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .srow{display:flex;align-items:center;justify-content:space-between;gap:20px;height:73px;padding:0 20px;
+    border-bottom:1px solid rgba(0,0,0,.1)}
+  .srow:last-child{border-bottom:0}
+  .srow .lbl{font-size:14px;font-weight:500}
+  .srow .sub{font-size:12.5px;color:var(--text-muted);margin-top:2px;font-weight:400}
+  .seg{display:flex;background:var(--bg-input);border-radius:9px;padding:3px;gap:2px;flex:none}
+  .seg button{border:0;background:transparent;font:inherit;font-size:13px;color:var(--text-secondary);
+    padding:6px 14px;border-radius:7px;cursor:default}
+  .seg button.on{background:#fff;color:var(--text-primary);font-weight:600;box-shadow:var(--shadow-card)}
+  .stepper{display:flex;align-items:center;gap:2px;background:var(--bg-input);border-radius:9px;padding:3px;flex:none}
+  .stepper button{border:0;background:transparent;font:inherit;font-size:15px;color:var(--text-secondary);
+    width:30px;height:30px;border-radius:7px;cursor:default}
+  .stepper .val{min-width:44px;text-align:center;font-size:14px;font-weight:600}
+  .strike{text-decoration:line-through;color:var(--text-muted)}
+
+  .kv{margin:0;padding:0;list-style:none;display:grid;gap:8px}
+  .kv li{display:grid;grid-template-columns:150px 1fr;gap:14px;font-size:13.5px;align-items:baseline}
+  .kv b{font-weight:600;color:var(--text-primary)}
+  .kv span{color:var(--text-secondary)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="doc-head">
+    <h1>正文标注三阶段</h1>
+    <p>标注不再是装饰性的开关，而是掌握度的显示器。同一个词随着读者读熟，标注自己往后退：
+      释义 → 小记号 → 什么都没有。释义的存在本身就是进度条，不用打开任何统计页面。
+      闭环是：标注退场之后又去查它，标注重新出现。</p>
+    <div class="meta">
+      改动范围：<code>src/components/passive-vocab.ts</code> ·
+      <code>src/components/settings/PassiveVocabSettings.tsx</code> ·
+      需要你拍板的只有第 <b>2</b> 节的记号样式
+    </div>
+  </div>
+
+  <!-- ══════════ 1 ══════════ -->
+  <h2 class="sec"><span class="n">1</span>三个阶段，同一段正文</h2>
+  <p class="why">三张纸面是同一页书、同一个读者，隔了几周。第一阶段挂多久<b>由档位决定，不设固定天数</b>——
+    引擎推着词往上走，正文自己就是进度条。<code>mastered</code> 的词直接出局，不占一屏的名额。</p>
+  <div class="stage">
+    <div class="grid3">
+      <div>
+        <div class="tier"><span class="dot s1"></span>刚查过 <code>new / learning</code></div>
+        <div class="paper">
+          <p class="pg">The house had been <ruby class="s1">quiet<rt>安静的</rt></ruby> for
+            three days, and the <ruby class="s1">dusk</ruby><rt>黄昏</rt></ruby> came down early
+            over the <ruby class="s1">orchard<rt>果园</rt></ruby>.</p>
+        </div>
+        <p class="cap">释义直接挂在旁边，不用点。<b>现有 ruby / margin 样式不变。</b></p>
+      </div>
+      <div>
+        <div class="tier"><span class="dot s2"></span>熟一点 <code>familiar</code></div>
+        <div class="paper">
+          <p class="pg">The house had been <span class="m-underline">quiet</span> for
+            three days, and the <span class="m-underline">dusk</span> came down early
+            over the <span class="m-underline">orchard</span>.</p>
+        </div>
+        <p class="cap">释义收起，只留一个很小的记号。<b>想看点一下。</b></p>
+      </div>
+      <div>
+        <div class="tier"><span class="dot s3"></span>真的熟了 <code>mastered</code></div>
+        <div class="paper">
+          <p class="pg">The house had been quiet for three days, and the dusk came down
+            early over the orchard.</p>
+        </div>
+        <p class="cap">记号也消失，正文恢复干净。<b>翻书时发现标注越来越少，就是进步。</b></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ 2 ══════════ -->
+  <h2 class="sec"><span class="n">2</span>阶段二的记号：三个候选</h2>
+  <p class="why">这是这次唯一的新视觉。要求是<b>看得见但不抢戏</b>：扫读时不该把视线拽过去，
+    真想看的时候又要能一眼找到。三个都用正文自己的墨色调，不引入紫色。</p>
+  <div class="stage">
+    <div class="grid3">
+      <div class="opt pick">
+        <h5>A · 虚线下划线 <span class="tag">推荐</span></h5>
+        <div class="demo">the <span class="m-underline">orchard</span> at dusk</div>
+        <div class="note">跟着基线走，不改变行高，长词短词都一样稳。
+          <b>和已有的「查过的词」实线下划线是同一套语言</b>，读者不用再学一个符号。</div>
+      </div>
+      <div class="opt">
+        <h5>B · 词尾小圆点</h5>
+        <div class="demo">the <span class="m-dot">orchard</span> at dusk</div>
+        <div class="note">最轻，但它落在词的<b>外面</b>——密排的一行里容易看成标点，
+          也不好点中。</div>
+      </div>
+      <div class="opt">
+        <h5>C · 淡色底</h5>
+        <div class="demo">the <span class="m-tint">orchard</span> at dusk</div>
+        <div class="note">最好点，但一屏几个色块就开始像划重点，
+          <b>和「已掌握」这件事传达的语气相反</b>。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ 3 ══════════ -->
+  <h2 class="sec"><span class="n">3</span>展开态：点一下</h2>
+  <p class="why">点记号浮出释义，再点一下或点别处收起。<b>不进入查词流程、不调用 AI、不写任何记录</b>——
+    这只是把已经存着的那句释义显示出来。看一眼就想起来，正是 <code>familiar</code> 该有的样子。</p>
+  <div class="stage">
+    <div class="grid2">
+      <div>
+        <div class="tier"><span class="dot s2"></span>收起</div>
+        <div class="paper">
+          <p class="pg">The house had been quiet for three days, and the dusk came down
+            early over the <span class="m-underline">orchard</span>.</p>
+        </div>
+      </div>
+      <div>
+        <div class="tier"><span class="dot s2"></span>点开</div>
+        <div class="paper">
+          <p class="pg">The house had been quiet for three days, and the dusk came down
+            early over the <span class="pop-host"><span class="pop">果园</span><span class="m-underline">orchard</span></span>.</p>
+        </div>
+      </div>
+    </div>
+    <p class="cap">浮层贴着词，不遮住这一行。<b>一次只开一个</b>；点开第二个，第一个自己收起。</p>
+  </div>
+
+  <!-- ══════════ 4 ══════════ -->
+  <h2 class="sec"><span class="n">4</span>margin 样式下的同三阶段</h2>
+  <p class="why">边栏样式里，阶段一是边栏上的那行释义；阶段二边栏里没有东西，
+    记号仍然在正文上；阶段三两边都空。<b>窄视口（760px 以下）退回 ruby，沿用现有逻辑。</b></p>
+  <div class="stage">
+    <div class="grid2">
+      <div>
+        <div class="tier"><span class="dot s1"></span>阶段一 · 边栏挂释义</div>
+        <div class="spread">
+          <div class="rail">
+            <div class="note">安静的</div>
+            <div class="note" style="margin-top:26px">黄昏</div>
+            <div class="note" style="margin-top:22px">果园</div>
+          </div>
+          <div class="body">The house had been <span class="anchor">quiet</span> for three days,
+            and the <span class="anchor">dusk</span> came down early over the
+            <span class="anchor">orchard</span>. Nobody had come up the lane since Tuesday.</div>
+        </div>
+      </div>
+      <div>
+        <div class="tier"><span class="dot s2"></span>阶段二 · 边栏空着，记号还在</div>
+        <div class="spread">
+          <div class="rail"></div>
+          <div class="body">The house had been <span class="m-underline">quiet</span> for three days,
+            and the <span class="m-underline">dusk</span> came down early over the
+            <span class="m-underline">orchard</span>. Nobody had come up the lane since Tuesday.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ 5 ══════════ -->
+  <h2 class="sec"><span class="n">5</span>一屏满了：上限与取舍</h2>
+  <p class="why">密度设置从「标全部候选的 25 / 50 / 100%」改成<b>一屏最多标几个</b>的上限。
+    满了按「最该标的」取前几个：<code>learning</code> → <code>new</code> → <code>familiar</code>，
+    <code>mastered</code> 直接出局。同分按 CFI 排，<b>同一页每次翻到都标同样几个词</b>，不会跳。</p>
+  <div class="stage">
+    <div class="grid2">
+      <div>
+        <div class="tier">上限 3 · 这一屏有 5 个候选</div>
+        <div class="spread">
+          <div class="rail">
+            <div class="note">安静的</div>
+            <div class="note" style="margin-top:24px">黄昏</div>
+            <div class="note" style="margin-top:20px">果园</div>
+            <div class="badge">+2</div>
+          </div>
+          <div class="body">The house had been <span class="anchor">quiet</span> for three days,
+            and the <span class="anchor">dusk</span> came down early over the
+            <span class="anchor">orchard</span>. The <span class="m-underline">lane</span> was
+            <span class="m-underline">overgrown</span>.</div>
+        </div>
+        <p class="cap">没轮上的两个是 <code>familiar</code>，<b>降级成记号而不是消失</b>——它们本来就该是记号。
+          边栏底部的 <b>+2</b> 是已有的溢出徽标。</p>
+      </div>
+      <div>
+        <div class="tier">上限 3 · 五个候选全是 learning</div>
+        <div class="spread">
+          <div class="rail">
+            <div class="note">安静的</div>
+            <div class="note" style="margin-top:24px">黄昏</div>
+            <div class="note" style="margin-top:20px">果园</div>
+            <div class="badge">+2</div>
+          </div>
+          <div class="body">The house had been <span class="anchor">quiet</span> for three days,
+            and the <span class="anchor">dusk</span> came down early over the
+            <span class="anchor">orchard</span>. The lane was overgrown.</div>
+        </div>
+        <p class="cap">超出上限的同档词<b>什么都不显示</b>，不降级成记号——
+          记号是「熟一点」的意思，给 <code>learning</code> 挂上就是在说谎。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ 6 ══════════ -->
+  <h2 class="sec"><span class="n">6</span>设置里那一行怎么变</h2>
+  <p class="why">阅读设置 →「正文标注」区。开关和样式两行不动，<b>只有密度那一行换掉</b>。
+    百分比是相对量，读者永远不知道自己会看到几个；上限是绝对量，说的就是他会看到什么。</p>
+  <div class="stage">
+    <div class="grid2">
+      <div>
+        <div class="tier">改之前</div>
+        <div class="panel">
+          <div class="srow">
+            <div><div class="lbl">正文标注</div><div class="sub">已开 · 边栏 · 平衡密度</div></div>
+            <div class="seg"><button>关</button><button class="on">开</button></div>
+          </div>
+          <div class="srow">
+            <div><div class="lbl">显示样式</div><div class="sub">窄窗口自动退回词上标注</div></div>
+            <div class="seg"><button>词上</button><button class="on">边栏</button></div>
+          </div>
+          <div class="srow">
+            <div><div class="lbl strike">显示密度</div>
+              <div class="sub strike">只改变一页显示多少个已保存的词</div></div>
+            <div class="seg"><button>更少</button><button class="on">平衡</button><button>更多</button></div>
+          </div>
+        </div>
+        <p class="cap">「平衡」= 候选的 50%。<b>读者无从知道那是几个。</b></p>
+      </div>
+      <div>
+        <div class="tier">改之后</div>
+        <div class="panel">
+          <div class="srow">
+            <div><div class="lbl">正文标注</div><div class="sub">已开 · 边栏 · 一屏最多 3 个</div></div>
+            <div class="seg"><button>关</button><button class="on">开</button></div>
+          </div>
+          <div class="srow">
+            <div><div class="lbl">显示样式</div><div class="sub">窄窗口自动退回词上标注</div></div>
+            <div class="seg"><button>词上</button><button class="on">边栏</button></div>
+          </div>
+          <div class="srow">
+            <div><div class="lbl">一屏最多标几个</div>
+              <div class="sub">超出的按最该复习的先标；读熟的词自己退场</div></div>
+            <div class="stepper"><button>−</button><span class="val">3</span><button>+</button></div>
+          </div>
+        </div>
+        <p class="cap">范围 <b>1–10</b>，默认 <b>3</b>。<b>没有「无上限」这一档</b>——
+          一屏标满二十个词，正文就不是正文了。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ 7 ══════════ -->
+  <h2 class="sec"><span class="n">7</span>规则速查</h2>
+  <div class="stage">
+    <ul class="kv">
+      <li><b>阶段一</b><span><code>new</code> / <code>learning</code> —— 释义直接显示（ruby 或边栏），和现在完全一样</span></li>
+      <li><b>阶段二</b><span><code>familiar</code> —— 只有记号，点开才看释义；边栏样式下边栏里不占位</span></li>
+      <li><b>阶段三</b><span><code>mastered</code> —— 什么都没有，也不占一屏的名额</span></li>
+      <li><b>排序</b><span><code>learning</code> → <code>new</code> → <code>familiar</code>，同分按 CFI，结果稳定不跳</span></li>
+      <li><b>上限</b><span>一屏最多 N 个（默认 3）。超出的同档词不显示，不降级成记号</span></li>
+      <li><b>展开</b><span>点一下浮出，一次只开一个。不查词、不调 AI、不写记录</span></li>
+      <li><b>闭环</b><span>退场的词再被查一次 → 掌握度回落 → 标注重新出现</span></li>
+      <li><b>窄视口</b><span>760px 以下边栏退回 ruby，沿用现有阈值和逻辑</span></li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,15 +1,11 @@
 import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-  passiveVocabCount,
-  type PassiveVocabDensity,
-  type PassiveVocabStyle,
-} from "../passive-vocab";
+import { type PassiveVocabStage, type PassiveVocabStyle } from "../passive-vocab";
 
 export interface PassiveVocabPreviewState {
   style: PassiveVocabStyle;
-  density: PassiveVocabDensity;
+  limit: number;
   onDismiss: () => void;
 }
 
@@ -21,7 +17,20 @@ export interface PassiveVocabPreviewState {
 const PAPER_INK = "#3f3a33";
 const PAPER_INK_MUTED = "#8b7f6b";
 
-const PREVIEW_LINES = [1, 2, 3] as const;
+/**
+ * The sample page carries one line per thing worth showing: two words still
+ * being learned (which the limit thins), one the reader nearly knows, and one
+ * they have finished with. The last two are the point of the sample — without
+ * them, a marker appearing in a real book looks like a rendering bug.
+ */
+const PREVIEW_LINES: ReadonlyArray<{ index: number; stage: PassiveVocabStage }> = [
+  { index: 1, stage: "definition" },
+  { index: 2, stage: "definition" },
+  { index: 3, stage: "marker" },
+  { index: 4, stage: "none" },
+];
+
+const GLOSSABLE_PREVIEW_LINES = PREVIEW_LINES.filter((line) => line.stage === "definition").length;
 
 /** One sample line, split around the word that carries a saved definition. */
 function splitLine(line: string, word: string) {
@@ -31,14 +40,14 @@ function splitLine(line: string, word: string) {
 }
 
 /**
- * A live sample of the reader page, rendered in whichever style and density is
- * currently selected. Density reuses the reader's own `passiveVocabCount`, so
- * the sample thins out exactly the way a real page does instead of following a
- * second, invented rule.
+ * A live sample of the reader page in whichever style is selected, showing all
+ * three stages at once: a gloss, a bare marker, and a word that has gone quiet.
+ * Only the gloss stage answers to the limit — the marker is what a word steps
+ * *down* to on its own, so capping it would contradict the page it previews.
  */
-export default function PassiveVocabPreview({ style, density }: { style: PassiveVocabStyle; density: PassiveVocabDensity }) {
+export default function PassiveVocabPreview({ style, limit }: { style: PassiveVocabStyle; limit: number }) {
   const { t } = useTranslation();
-  const annotated = passiveVocabCount(PREVIEW_LINES.length, density);
+  const glossed = Math.min(limit, GLOSSABLE_PREVIEW_LINES);
   const margin = style === "margin";
 
   return (
@@ -60,22 +69,30 @@ export default function PassiveVocabPreview({ style, density }: { style: Passive
             rule: the rows carry their spacing as padding, not as a gap that
             would break the border between them. */}
         <div className={margin ? "grid grid-cols-[1fr_88px] gap-x-3" : "flex flex-col gap-2.5"}>
-          {PREVIEW_LINES.map((index) => {
+          {PREVIEW_LINES.map(({ index, stage }, position) => {
             const word = t(`settings.passiveVocab.previewWord${index}`);
             const gloss = t(`settings.passiveVocab.previewGloss${index}`);
             const line = splitLine(t(`settings.passiveVocab.previewLine${index}`), word);
-            const showGloss = index <= annotated && line.word !== "";
+            // A gloss line past the limit keeps its word but loses its note —
+            // it does not fall back to a marker, exactly as a real page.
+            const showGloss = stage === "definition" && position < glossed && line.word !== "";
+            const showMarker = stage === "marker" && line.word !== "";
             return (
               <Fragment key={index}>
                 <p className={`min-w-0 font-serif text-[14px] leading-[26px] ${margin ? "py-[5px]" : ""}`}>
                   {line.before}
                   {line.word !== "" && (
                     margin || !showGloss ? (
-                      <span className={showGloss ? "underline decoration-dotted underline-offset-4" : undefined}>{line.word}</span>
+                      <span
+                        className={showMarker ? "underline decoration-dotted underline-offset-4 decoration-[1px]" : undefined}
+                        title={showMarker ? gloss : undefined}
+                      >
+                        {line.word}
+                      </span>
                     ) : (
                       // Without ruby-align the gloss is spread across the whole
                       // width of a long word, reading as letter-spaced.
-                      <ruby className="underline decoration-dotted underline-offset-4 [ruby-align:center]">
+                      <ruby className="[ruby-align:center]">
                         {line.word}
                         <rt className="font-sans text-[8px] font-medium leading-none" style={{ color: PAPER_INK_MUTED }}>
                           {gloss}

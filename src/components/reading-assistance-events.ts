@@ -15,7 +15,7 @@ export const READING_ASSISTANCE_SETTING_KEYS = [
   "learning_card_config",
   "passive_vocab_enabled",
   "passive_vocab_style",
-  "passive_vocab_density",
+  "passive_vocab_limit",
 ] as const;
 
 export async function notifyReadingAssistanceSettingsChanged(keys: string[]) {

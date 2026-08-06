@@ -1,11 +1,35 @@
 export type PassiveVocabStyle = "ruby" | "margin";
-export type PassiveVocabDensity = "low" | "medium" | "high";
+
+/**
+ * How much of a word's annotation survives on the page. This is the reading
+ * side of the mastery engine: a word the reader keeps meeting without looking
+ * up climbs a tier, and its annotation quietly steps back one stage. The
+ * annotation is the progress bar — nobody has to open a statistics screen.
+ *
+ * - `definition` — the gloss itself, hanging off the word (ruby or margin).
+ * - `marker` — a hairline dotted underline. Tap it to see the gloss.
+ * - `none` — nothing at all; the word is done.
+ */
+export type PassiveVocabStage = "definition" | "marker" | "none";
+
+/** The two stages that actually draw something. */
+export type PassiveVocabVisibleStage = Exclude<PassiveVocabStage, "none">;
 
 export interface PassiveVocabSettings {
   enabled: boolean;
   style: PassiveVocabStyle;
-  density: PassiveVocabDensity;
+  /**
+   * How many *definitions* one screen may show. Markers are deliberately not
+   * capped: a dotted underline on a word the reader nearly knows costs almost
+   * nothing, and capping it would mean stage two disappears the moment a page
+   * happens to carry a few freshly-looked-up words.
+   */
+  limit: number;
 }
+
+export const PASSIVE_VOCAB_MIN_LIMIT = 1;
+export const PASSIVE_VOCAB_MAX_LIMIT = 10;
+export const PASSIVE_VOCAB_DEFAULT_LIMIT = 3;
 
 export interface PassiveVocabCandidate {
   cfi: string;
@@ -16,6 +40,8 @@ export interface PassiveVocabCandidate {
 export interface PassiveVocabDomAnnotation {
   cfi: string;
   label: string;
+  /** Defaults to `definition` so a caller that has no mastery data still works. */
+  stage?: PassiveVocabVisibleStage;
 }
 
 export interface PassiveVocabDomInstallOptions {
@@ -45,7 +71,7 @@ export function isNarrowPassiveVocabViewport(width: number) {
 export const PASSIVE_VOCAB_SETTING_KEYS = [
   "passive_vocab_enabled",
   "passive_vocab_style",
-  "passive_vocab_density",
+  "passive_vocab_limit",
 ] as const;
 
 export const PASSIVE_VOCAB_CFI_TRANSPARENT_ATTRIBUTE = "data-cfi-transparent";
@@ -55,14 +81,23 @@ const PASSIVE_VOCAB_RAIL_ATTRIBUTE = "data-passive-vocab-margin-rail";
 const PASSIVE_VOCAB_LABEL_ATTRIBUTE = "data-passive-vocab-margin-label";
 const PASSIVE_VOCAB_RUBY_TEXT_ATTRIBUTE = "data-passive-vocab-ruby-text";
 const PASSIVE_VOCAB_OVERFLOW_ATTRIBUTE = "data-passive-vocab-margin-overflow";
+const PASSIVE_VOCAB_MARKER_ATTRIBUTE = "data-passive-vocab-marker";
+const PASSIVE_VOCAB_MARKER_LABEL_ATTRIBUTE = "data-passive-vocab-marker-label";
+const PASSIVE_VOCAB_POPOVER_ATTRIBUTE = "data-passive-vocab-popover";
+const PASSIVE_VOCAB_STYLE_ATTRIBUTE = "data-passive-vocab-style";
+
+/** Clamps a stored or stepped value into the range the settings screen offers. */
+export function clampPassiveVocabLimit(value: number) {
+  if (!Number.isFinite(value)) return PASSIVE_VOCAB_DEFAULT_LIMIT;
+  return Math.min(PASSIVE_VOCAB_MAX_LIMIT, Math.max(PASSIVE_VOCAB_MIN_LIMIT, Math.round(value)));
+}
 
 export function parsePassiveVocabSettings(settings: Record<string, string>): PassiveVocabSettings {
+  const stored = settings.passive_vocab_limit;
   return {
     enabled: settings.passive_vocab_enabled === "true",
     style: settings.passive_vocab_style === "margin" ? "margin" : "ruby",
-    density: settings.passive_vocab_density === "low" || settings.passive_vocab_density === "high"
-      ? settings.passive_vocab_density
-      : "medium",
+    limit: stored ? clampPassiveVocabLimit(Number(stored)) : PASSIVE_VOCAB_DEFAULT_LIMIT,
   };
 }
 
@@ -73,9 +108,20 @@ export function passiveVocabLabel(definition: string | null | undefined) {
 }
 
 /**
- * A predictable teaching order: words in active learning come first, then
- * unseen words, then everything else. CFI breaks ties so the same book state
- * always produces the same annotations without random-looking hash sampling.
+ * Which of the three stages a word is in, read straight off its mastery tier.
+ * A word with no tier yet is treated as new — it has just been saved, which is
+ * exactly when its definition is worth the most.
+ */
+export function passiveVocabStage(mastery: string | null | undefined): PassiveVocabStage {
+  if (mastery === "mastered") return "none";
+  if (mastery === "familiar") return "marker";
+  return "definition";
+}
+
+/**
+ * A predictable teaching order within the definition stage: words in active
+ * learning come first, then unseen words. CFI breaks ties so the same page
+ * always annotates the same words instead of shuffling on every turn.
  */
 export function passiveVocabLearningPriority(word: Pick<PassiveVocabCandidate, "mastery" | "cfi">) {
   if (word.mastery === "learning") return 0;
@@ -83,31 +129,36 @@ export function passiveVocabLearningPriority(word: Pick<PassiveVocabCandidate, "
   return 2;
 }
 
-export function passiveVocabCount(total: number, density: PassiveVocabDensity) {
-  if (total <= 0) return 0;
-  if (density === "high") return total;
-  return Math.max(1, Math.ceil(total * (density === "medium" ? 0.5 : 0.25)));
-}
-
-/** Select the saved words that may be annotated, in deterministic learning order. */
+/**
+ * Works out what each saved word does on the page. Returns only the words that
+ * draw something, keyed by CFI.
+ *
+ * The limit is a cap on definitions, and words past it show *nothing* rather
+ * than falling back to a marker — a marker means "you nearly know this", so
+ * hanging one on a word the reader just looked up would be a lie about their
+ * own progress.
+ */
 export function selectPassiveVocab<T extends PassiveVocabCandidate>(
   words: Iterable<T>,
-  density: PassiveVocabDensity,
+  limit: number,
 ) {
-  const eligible = [...words].filter((word) => Boolean(word.cfi) && Boolean(passiveVocabLabel(word.definition)));
-  eligible.sort((left, right) => (
+  const stages = new Map<string, PassiveVocabVisibleStage>();
+  const glossable: T[] = [];
+  for (const word of words) {
+    if (!word.cfi || !passiveVocabLabel(word.definition)) continue;
+    const stage = passiveVocabStage(word.mastery);
+    if (stage === "none") continue;
+    if (stage === "marker") stages.set(word.cfi, "marker");
+    else glossable.push(word);
+  }
+  glossable.sort((left, right) => (
     passiveVocabLearningPriority(left) - passiveVocabLearningPriority(right)
     || left.cfi.localeCompare(right.cfi)
   ));
-  return new Set(eligible.slice(0, passiveVocabCount(eligible.length, density)).map((word) => word.cfi));
-}
-
-/**
- * Compatibility predicate for callers that already selected a CFI list. New
- * callers should use selectPassiveVocab so density can honour learning state.
- */
-export function shouldShowPassiveVocab(cfi: string, density: PassiveVocabDensity, selected?: ReadonlySet<string>) {
-  return density === "high" || selected?.has(cfi) === true;
+  for (const word of glossable.slice(0, Math.max(0, clampPassiveVocabLimit(limit)))) {
+    stages.set(word.cfi, "definition");
+  }
+  return stages;
 }
 
 export interface PassiveVocabSettingsMutation {
@@ -122,42 +173,45 @@ export function updatePassiveVocabSettings(
   patch: Partial<PassiveVocabSettings>,
 ): PassiveVocabSettingsMutation {
   const next = { ...previous, ...patch };
+  if (patch.limit !== undefined) next.limit = clampPassiveVocabLimit(patch.limit);
   return {
     previous,
     next,
     values: {
       passive_vocab_enabled: String(next.enabled),
       passive_vocab_style: next.style,
-      passive_vocab_density: next.density,
+      passive_vocab_limit: String(next.limit),
     },
   };
 }
 
-const SUMMARY_DENSITY_KEYS: Record<PassiveVocabDensity, string> = {
-  low: "settings.passiveVocab.summaryDensityLow",
-  medium: "settings.passiveVocab.summaryDensityMedium",
-  high: "settings.passiveVocab.summaryDensityHigh",
-};
+/** One piece of the state summary; `count` is present only where a number is interpolated. */
+export interface PassiveVocabSummaryPart {
+  key: string;
+  count?: number;
+}
 
 /**
- * The one-line state summary shown under the master switch, as the i18n keys
- * that make it up. Off is a single key on its own — a summary that still listed
- * a style and a density would read as if the feature were running.
+ * The one-line state summary shown under the master switch, as the i18n parts
+ * that make it up. Off is a single part on its own — a summary that still
+ * listed a style and a limit would read as if the feature were running.
  */
-export function passiveVocabSummaryKeys(value: PassiveVocabSettings): string[] {
-  if (!value.enabled) return ["settings.passiveVocab.summaryOff"];
+export function passiveVocabSummaryParts(value: PassiveVocabSettings): PassiveVocabSummaryPart[] {
+  if (!value.enabled) return [{ key: "settings.passiveVocab.summaryOff" }];
   return [
-    "settings.passiveVocab.summaryOn",
-    value.style === "margin" ? "settings.passiveVocab.styleMargin" : "settings.passiveVocab.styleRuby",
-    SUMMARY_DENSITY_KEYS[value.density],
+    { key: "settings.passiveVocab.summaryOn" },
+    { key: value.style === "margin" ? "settings.passiveVocab.styleMargin" : "settings.passiveVocab.styleRuby" },
+    { key: "settings.passiveVocab.summaryLimit", count: value.limit },
   ];
 }
 
 export function formatPassiveVocabSummary(
   value: PassiveVocabSettings,
-  translate: (key: string) => string,
+  translate: (key: string, params?: { count: number }) => string,
 ) {
-  return passiveVocabSummaryKeys(value).map(translate).join(" · ");
+  return passiveVocabSummaryParts(value)
+    .map((part) => (part.count === undefined ? translate(part.key) : translate(part.key, { count: part.count })))
+    .join(" · ");
 }
 
 export function rollbackPassiveVocabSettings(
@@ -166,7 +220,7 @@ export function rollbackPassiveVocabSettings(
 ) {
   return current.enabled === mutation.next.enabled
     && current.style === mutation.next.style
-    && current.density === mutation.next.density
+    && current.limit === mutation.next.limit
     ? mutation.previous
     : current;
 }
@@ -192,6 +246,162 @@ function installRuby(doc: Document, range: Range, label: string) {
   rt.setAttribute(PASSIVE_VOCAB_RUBY_TEXT_ATTRIBUTE, "");
   rt.textContent = label;
   ruby.append(rt);
+}
+
+/**
+ * Stage two: the word keeps its own ink and gains a hairline dotted rule. The
+ * gloss rides along in an attribute rather than in the DOM, so the paragraph's
+ * text — and therefore every CFI resolved against it — is byte-for-byte what
+ * the book shipped.
+ */
+function installMarker(doc: Document, range: Range, label: string) {
+  const marker = transparentWrapper(doc, range, "span");
+  marker.setAttribute(PASSIVE_VOCAB_MARKER_ATTRIBUTE, "");
+  marker.setAttribute(PASSIVE_VOCAB_MARKER_LABEL_ATTRIBUTE, label);
+  marker.setAttribute("role", "button");
+  marker.setAttribute("tabindex", "0");
+  marker.setAttribute("aria-expanded", "false");
+  // The word itself is inside the wrapper, and `role="button"` would otherwise
+  // hide it from assistive tech; naming the button "<word> — <gloss>" keeps
+  // both readable without adding a node to the paragraph.
+  const text = (marker.textContent ?? "").trim();
+  marker.setAttribute("aria-label", text ? `${text} — ${label}` : label);
+}
+
+function markerStyleSheet(doc: Document) {
+  const style = doc.createElement("style");
+  style.setAttribute(PASSIVE_VOCAB_STYLE_ATTRIBUTE, "");
+  // Host CSS cannot reach inside a section document's iframe, so the rules ship
+  // as a sheet in the document they target. `currentColor` throughout: the
+  // reader has five paper themes, and a fixed grey is wrong in at least three.
+  style.textContent = `
+    [${PASSIVE_VOCAB_MARKER_ATTRIBUTE}] {
+      border-bottom: 1px dotted currentColor;
+      border-bottom-color: color-mix(in srgb, currentColor 45%, transparent);
+      cursor: pointer;
+    }
+    [${PASSIVE_VOCAB_MARKER_ATTRIBUTE}]:focus-visible {
+      outline: 1px dotted currentColor;
+      outline-offset: 2px;
+    }
+    [${PASSIVE_VOCAB_POPOVER_ATTRIBUTE}] {
+      position: fixed;
+      z-index: 4;
+      max-width: 15em;
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+      background: var(--lantern-passive-vocab-paper, #fff);
+      color: currentColor;
+      font: 500 0.72em/1.3 system-ui, sans-serif;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, .16);
+      overflow-wrap: anywhere;
+      pointer-events: none;
+    }
+  `;
+  return style;
+}
+
+/** The theme's actual paper colour, so the popover never floats on transparent. */
+function paperColor(doc: Document) {
+  try {
+    const view = doc.defaultView;
+    if (!view?.getComputedStyle) return "#fff";
+    for (const element of [doc.body, doc.documentElement]) {
+      const background = element && view.getComputedStyle(element).backgroundColor;
+      if (background && background !== "transparent" && !/,\s*0\)$/.test(background)) return background;
+    }
+  } catch {
+    // A document torn down mid-click; the fallback is still a readable chip.
+  }
+  return "#fff";
+}
+
+function closeMarkerPopover(doc: Document) {
+  doc.querySelectorAll(`[${PASSIVE_VOCAB_POPOVER_ATTRIBUTE}]`).forEach((node) => node.remove());
+  doc.querySelectorAll(`[${PASSIVE_VOCAB_MARKER_ATTRIBUTE}][aria-expanded="true"]`)
+    .forEach((node) => node.setAttribute("aria-expanded", "false"));
+}
+
+function openMarkerPopover(doc: Document, marker: Element) {
+  const label = marker.getAttribute(PASSIVE_VOCAB_MARKER_LABEL_ATTRIBUTE);
+  if (!label) return;
+  const rect = marker.getBoundingClientRect();
+  const popover = doc.createElement("span");
+  popover.setAttribute(PASSIVE_VOCAB_POPOVER_ATTRIBUTE, "");
+  popover.setAttribute("role", "tooltip");
+  popover.textContent = label;
+  popover.style.setProperty("--lantern-passive-vocab-paper", paperColor(doc));
+  doc.body.append(popover);
+  const height = popover.getBoundingClientRect().height || 22;
+  // Above the word by default, below it when the word sits at the very top of
+  // the page and there is no room left over it.
+  const above = rect.top - height - 6;
+  popover.style.top = `${Math.round(above >= 4 ? above : rect.bottom + 6)}px`;
+  popover.style.left = `${Math.round(Math.max(4, rect.left))}px`;
+  marker.setAttribute("aria-expanded", "true");
+}
+
+function toggleMarkerPopover(doc: Document, marker: Element) {
+  const wasOpen = marker.getAttribute("aria-expanded") === "true";
+  // Always close first: only one gloss is ever on screen, so opening a second
+  // marker puts the first one away rather than stacking two chips.
+  closeMarkerPopover(doc);
+  if (!wasOpen) openMarkerPopover(doc, marker);
+}
+
+/**
+ * Per-document teardown for the marker listeners. Kept in a WeakMap rather than
+ * on the returned cleanup closure because the reader also calls
+ * `cleanupPassiveVocabAnnotations(doc)` directly, and that path has to unhook
+ * the listeners too or every re-install would leave another pair behind.
+ */
+const markerTeardowns = new WeakMap<Document, () => void>();
+
+function installMarkerBehaviour(doc: Document) {
+  markerTeardowns.get(doc)?.();
+  doc.head?.append(markerStyleSheet(doc));
+
+  const findMarker = (target: EventTarget | null) => {
+    const node = target as Element | null;
+    return typeof node?.closest === "function"
+      ? node.closest(`[${PASSIVE_VOCAB_MARKER_ATTRIBUTE}]`)
+      : null;
+  };
+
+  // Capture phase, so a tap on a marker is consumed before Foliate's own
+  // click handling turns the page out from under the gloss.
+  const onClick = (event: Event) => {
+    const marker = findMarker(event.target);
+    if (!marker) {
+      closeMarkerPopover(doc);
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    toggleMarkerPopover(doc, marker);
+  };
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      closeMarkerPopover(doc);
+      return;
+    }
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const marker = findMarker(event.target);
+    if (!marker) return;
+    event.preventDefault();
+    event.stopPropagation();
+    toggleMarkerPopover(doc, marker);
+  };
+
+  doc.addEventListener("click", onClick, true);
+  doc.addEventListener("keydown", onKeyDown, true);
+  markerTeardowns.set(doc, () => {
+    doc.removeEventListener("click", onClick, true);
+    doc.removeEventListener("keydown", onKeyDown, true);
+    markerTeardowns.delete(doc);
+  });
 }
 
 function railSide(
@@ -326,27 +536,36 @@ export function installPassiveVocabAnnotations(options: PassiveVocabDomInstallOp
   const occupiedBottom = new Map<"left" | "right", number>();
   const overflow = new Map<"left" | "right", number>();
   let index = 0;
+  let markers = 0;
   for (const annotation of annotations) {
     const range = resolveRange(annotation.cfi);
     if (!range || range.collapsed || !annotation.label) continue;
     try {
-      if (useMargin) {
+      if (annotation.stage === "marker") {
+        installMarker(doc, range, annotation.label);
+        markers += 1;
+      } else if (useMargin) {
         installMargin(doc, range, annotation.label, idForAnnotation(index), rails, occupiedBottom, overflow, spread);
+        index += 1;
       } else {
         installRuby(doc, range, annotation.label);
+        index += 1;
       }
-      index += 1;
     } catch {
       // A malformed CFI or a partially-unwrappable range must never block the
       // rest of the reader's document from loading.
     }
   }
   if (useMargin) installMarginOverflowBadges(doc, rails, overflow);
+  // Only pay for the stylesheet and the two listeners on pages that actually
+  // carry a marker.
+  if (markers > 0) installMarkerBehaviour(doc);
   return () => cleanupPassiveVocabAnnotations(doc);
 }
 
 /** Remove all injected notes and restore each annotation's original content. */
 export function cleanupPassiveVocabAnnotations(doc: Document) {
+  markerTeardowns.get(doc)?.();
   doc.querySelectorAll<HTMLElement>(`[${PASSIVE_VOCAB_ROOT_ATTRIBUTE}]`).forEach((wrapper) => {
     const content = doc.createDocumentFragment();
     for (const child of [...wrapper.childNodes]) {
@@ -358,4 +577,6 @@ export function cleanupPassiveVocabAnnotations(doc: Document) {
     wrapper.replaceWith(content);
   });
   doc.querySelectorAll(`[${PASSIVE_VOCAB_RAIL_ATTRIBUTE}]`).forEach((rail) => rail.remove());
+  doc.querySelectorAll(`[${PASSIVE_VOCAB_POPOVER_ATTRIBUTE}]`).forEach((node) => node.remove());
+  doc.querySelectorAll(`[${PASSIVE_VOCAB_STYLE_ATTRIBUTE}]`).forEach((node) => node.remove());
 }
