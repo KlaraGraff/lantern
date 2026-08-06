@@ -13,6 +13,7 @@ import {
   type ReviewPile,
   type ReviewPileKind,
 } from "../src/components/review/review-piles.ts";
+import { memoRowBadgeCount } from "../src/components/sidebar-badges.ts";
 import type { DictionaryWord } from "../src/hooks/useDictionary.ts";
 
 const rootDir = path.join(fileURLToPath(new URL(".", import.meta.url)), "..");
@@ -188,20 +189,58 @@ describe("sidebar review row", () => {
     );
   });
 
-  test("the shared memo-row template contains no count", () => {
+  test("the shared memo-row template still fetches no count of its own", () => {
     const start = sidebarSource.indexOf("memoFilters.map((filter) => {");
     assert.ok(start >= 0, "no memoFilters.map(...) template found in Sidebar.tsx");
     const end = sidebarSource.indexOf("})}", start);
     assert.ok(end >= 0);
     const block = sidebarSource.slice(start, end);
 
-    // No badge/count-fetching call of any kind.
+    // The library rows (bookCounts/getCount) are a different data source with
+    // a different shape; the memo template must keep pulling its badge from
+    // the vocab-only allowlist (`memoRowBadgeCount`) rather than growing its
+    // own ad hoc count logic per row.
     assert.ok(!/getCount\(/.test(block), "memo row template must not call getCount(...)");
     assert.ok(!/bookCounts/.test(block), "memo row template must not reference bookCounts");
-    // Exactly one <span> — the label. A second span is how every counted row
-    // in this file renders its badge, so a second one here would be a count.
-    const spanCount = (block.match(/<span/g) ?? []).length;
-    assert.equal(spanCount, 1, "memo row template must render exactly one <span> (the label), never a count badge");
+    assert.match(
+      block,
+      /memoRowBadgeCount\(filter\.id,\s*dueForReviewCount\)/,
+      "memo row template must resolve its badge through memoRowBadgeCount, not a bespoke per-row count",
+    );
+  });
+});
+
+// Regression guard, narrowed from the blanket "the whole shared template
+// renders no count" assertion above: that older assertion covered the review
+// row's RED LINE (docs/impls/review-entry-mockup.html §1) only by accident,
+// as a side effect of banning every row's count. Now that the words row
+// legitimately carries a due-review badge, the review row's guarantee has to
+// stand on its own — this tests the actual allowlist function the shared
+// template calls, which is a stronger guarantee than scanning JSX source: no
+// matter how the template around it changes, "review" can never resolve to
+// a non-null badge.
+describe("memoRowBadgeCount", () => {
+  test("the words row shows the due count when it is positive", () => {
+    assert.equal(memoRowBadgeCount("vocab", 5), 5);
+  });
+
+  test("the words row shows no badge at zero", () => {
+    assert.equal(memoRowBadgeCount("vocab", 0), null);
+  });
+
+  test("the words row shows no badge for a negative or non-finite count", () => {
+    assert.equal(memoRowBadgeCount("vocab", -1), null);
+    assert.equal(memoRowBadgeCount("vocab", NaN), null);
+  });
+
+  test("the review row never carries a badge, even with words due", () => {
+    assert.equal(memoRowBadgeCount("review", 5), null);
+  });
+
+  test("no other memo row carries a badge", () => {
+    for (const id of ["chats", "notes", "stats"]) {
+      assert.equal(memoRowBadgeCount(id, 5), null);
+    }
   });
 });
 

@@ -285,6 +285,32 @@ export default function Home() {
   }, []);
   useEffect(() => { refreshCounts(); }, [refreshCounts]);
 
+  // Today's due-for-review count, for the sidebar's words-row badge. Uses
+  // `get_vocab_stats` rather than `list_vocab_due_for_review` — the badge only
+  // needs a number, and the stats command returns just that over IPC instead
+  // of every column of every due word.
+  const [dueForReviewCount, setDueForReviewCount] = useState(0);
+  const refreshDueForReviewCount = useCallback(async () => {
+    try {
+      const stats = await invoke<{ due_for_review: number }>("get_vocab_stats");
+      setDueForReviewCount(stats.due_for_review);
+    } catch (err) {
+      console.error("Failed to load vocab stats:", err);
+    }
+  }, []);
+  useEffect(() => { refreshDueForReviewCount(); }, [refreshDueForReviewCount]);
+  // `vocab-changed` covers saves, mastery updates and recorded reviews (see
+  // useDictionary.ts); `focus` catches anything that happened while another
+  // window — or the OS review-in-background flow — had the reader's attention.
+  useEffect(() => {
+    window.addEventListener("vocab-changed", refreshDueForReviewCount);
+    window.addEventListener("focus", refreshDueForReviewCount);
+    return () => {
+      window.removeEventListener("vocab-changed", refreshDueForReviewCount);
+      window.removeEventListener("focus", refreshDueForReviewCount);
+    };
+  }, [refreshDueForReviewCount]);
+
   // Keep stable refs for refresh functions so the drag-drop effect doesn't re-register
   const refreshRef = useRef(refresh);
   const countsRefreshRef = useRef(refreshCounts);
@@ -448,6 +474,7 @@ export default function Home() {
     activeFilter,
     onFilterChange: handleFilterChange,
     bookCounts,
+    dueForReviewCount,
     collections,
     userName,
     onOpenSettings: () => {

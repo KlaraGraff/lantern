@@ -8,6 +8,8 @@
   "sidebar.vocab": "单词",
   "sidebar.review": "复习",
   "sidebar.notes": "标注",
+  "sidebar.dueForReviewBadge_one": "今日待复习 {{count}} 词",
+  "sidebar.dueForReviewBadge_other": "今日待复习 {{count}} 词",
   "notes.title": "笔记",
   "notes.search": "搜索笔记、原文、单词或书名",
   "notes.filters.allBooks": "全部书籍",

@@ -8,6 +8,8 @@
   "sidebar.vocab": "Words",
   "sidebar.review": "Review",
   "sidebar.notes": "Annotations",
+  "sidebar.dueForReviewBadge_one": "{{count}} word due for review today",
+  "sidebar.dueForReviewBadge_other": "{{count}} words due for review today",
   "notes.title": "Notes",
   "notes.search": "Search notes, quoted text, words, or books",
   "notes.filters.allBooks": "All books",

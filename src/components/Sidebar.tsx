@@ -4,6 +4,7 @@ import { Library, BookOpen, CheckCircle2, FolderClosed, BookA, Plus, MessageSqua
 import Button from "./ui/Button";
 import LanternLogo from "./LanternLogo";
 import { platform } from "../services/platform";
+import { memoRowBadgeCount } from "./sidebar-badges";
 import type { Collection } from "../hooks/useCollections";
 
 interface BookCounts {
@@ -26,6 +27,8 @@ interface SidebarProps {
   userName?: string;
   onOpenSettings?: () => void;
   syncProgress?: { applied: number; total: number } | null;
+  /** Today's due-for-review count. Surfaced only on the words row — see `memoRowBadgeCount`. */
+  dueForReviewCount?: number;
   /**
    * Same component, same content, different container: below `md:` this sits in
    * Home's drawer instead of being a column of the page. Splitting it into two
@@ -64,7 +67,7 @@ function getStoredWidth(): number {
   return SIDEBAR_DEFAULT;
 }
 
-export default function Sidebar({ activeFilter, onFilterChange, bookCounts, collections: collectionsHook, userName, onOpenSettings, syncProgress, inDrawer = false }: SidebarProps) {
+export default function Sidebar({ activeFilter, onFilterChange, bookCounts, collections: collectionsHook, userName, onOpenSettings, syncProgress, dueForReviewCount = 0, inDrawer = false }: SidebarProps) {
   const { t } = useTranslation();
   const [sidebarWidth, setSidebarWidth] = useState(getStoredWidth);
   const resizingRef = useRef(false);
@@ -304,6 +307,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
           {memoFilters.map((filter) => {
             const Icon = filter.icon;
             const isActive = activeFilter === filter.id;
+            const badgeCount = memoRowBadgeCount(filter.id, dueForReviewCount);
             return (
               <button
                 key={filter.id}
@@ -318,6 +322,14 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
                 }`}>
                   {filter.label}
                 </span>
+                {badgeCount !== null && (
+                  <span
+                    aria-label={t("sidebar.dueForReviewBadge", { count: badgeCount })}
+                    className="ml-auto shrink-0 flex items-center justify-center h-[17px] min-w-[17px] rounded-full bg-accent px-1 text-[10px] font-semibold leading-none text-white"
+                  >
+                    {badgeCount}
+                  </span>
+                )}
               </button>
             );
           })}

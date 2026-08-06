@@ -1209,6 +1209,8 @@ export default function DictionaryContent({ initialView = "all" }: DictionaryCon
                       ) : (
                         <button
                           type="button"
+                          title={t("vocab.saveToVocab")}
+                          aria-label={t("vocab.saveToVocab")}
                           onClick={() => collectRecord(record)}
                           disabled={collectingId === record.id}
                           className="flex items-center gap-1 text-accent-text hover:opacity-70 disabled:opacity-50 cursor-pointer"
