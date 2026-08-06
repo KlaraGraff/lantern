@@ -1,4 +1,5 @@
 import type { CitedSource } from "../hooks/useAiChat.ts";
+import { getAiErrorCode, type AiErrorCode } from "../utils/aiError.ts";
 
 export type XrayScope = "safe" | "wholeBook";
 export type XrayKind = "person" | "term" | "unknown";
@@ -57,6 +58,34 @@ export function shouldOfferXrayUpdate(
   currentProgress: number,
 ): boolean {
   return result.scope === "safe" && currentProgress > result.progress;
+}
+
+export type XrayLoadErrorKind = "ai" | "indexBuilding" | "indexFailed" | "indexUnsupported" | "generic";
+
+export interface XrayLoadErrorPresentation {
+  kind: XrayLoadErrorKind;
+  /** Set only when `kind` is "ai", so the caller can render the shared
+   * `ai.*` copy (and settings/retry affordances) instead of duplicating it
+   * under `readerXray.*`. */
+  aiErrorCode: AiErrorCode | null;
+}
+
+/**
+ * `ai_xray` fails for reasons that need different UI: a missing/disabled AI
+ * provider (or a cooling-down key) needs a settings link, a still-building
+ * index needs a wait-and-retry, a failed or unsupported index needs neither.
+ * Collapsing all of these into one generic "try again later" message (as the
+ * card used to) actively misleads whichever case isn't "the index wasn't
+ * ready yet" — most visibly when no AI provider is configured at all, where
+ * retrying can never help.
+ */
+export function classifyXrayLoadError(raw: string): XrayLoadErrorPresentation {
+  const aiErrorCode = getAiErrorCode(raw);
+  if (aiErrorCode) return { kind: "ai", aiErrorCode };
+  if (raw.includes("XRAY_INDEX_BUILDING")) return { kind: "indexBuilding", aiErrorCode: null };
+  if (raw.includes("XRAY_INDEX_FAILED")) return { kind: "indexFailed", aiErrorCode: null };
+  if (raw.includes("XRAY_INDEX_UNSUPPORTED")) return { kind: "indexUnsupported", aiErrorCode: null };
+  return { kind: "generic", aiErrorCode: null };
 }
 
 export function isEmptyXrayResult(

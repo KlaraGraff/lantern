@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   canApplyXrayLoad,
   canReuseXrayCache,
+  classifyXrayLoadError,
   didXrayNavigationSucceed,
   isEmptyXrayResult,
   setBoundedCacheEntry,
@@ -54,6 +55,31 @@ test("the safe cache evicts the oldest entry once it exceeds its bound", () => {
   setBoundedCacheEntry(cache, "c", 3, 2);
   assert.deepEqual([...cache.keys()], ["b", "c"]);
   assert.equal(cache.size, 2);
+});
+
+test("any AI provider/credential failure is classified distinctly from a generic failure, and carries its code through", () => {
+  for (const code of [
+    "AI_NOT_CONFIGURED",
+    "AI_KEYS_DISABLED",
+    "AI_ALL_KEYS_INVALID",
+    "AI_NO_USABLE_KEYS",
+    "AI_KEYS_COOLING_DOWN",
+  ]) {
+    const presentation = classifyXrayLoadError(code);
+    assert.equal(presentation.kind, "ai");
+    assert.equal(presentation.aiErrorCode, code);
+  }
+});
+
+test("index lifecycle errors from ai_xray each get their own presentation, not the generic one", () => {
+  assert.equal(classifyXrayLoadError("XRAY_INDEX_BUILDING").kind, "indexBuilding");
+  assert.equal(classifyXrayLoadError("XRAY_INDEX_FAILED").kind, "indexFailed");
+  assert.equal(classifyXrayLoadError("XRAY_INDEX_UNSUPPORTED").kind, "indexUnsupported");
+});
+
+test("an unrecognized failure falls back to the generic presentation", () => {
+  assert.equal(classifyXrayLoadError("XRAY_PROTOCOL_INVALID").kind, "generic");
+  assert.equal(classifyXrayLoadError("BOOK_NOT_FOUND").kind, "generic");
 });
 
 test("re-inserting an existing key refreshes its recency instead of duplicating it", () => {

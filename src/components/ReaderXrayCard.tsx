@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -7,17 +8,20 @@ import {
   Loader2,
   RefreshCw,
   Route,
+  Settings,
   UserRound,
   X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { CitedSource } from "../hooks/useAiChat";
+import { aiErrorMessageKey, isAiRetryableError } from "../utils/aiError";
 import { createUuid } from "../utils/randomUuid";
 import type { ReaderInteraction } from "./reader-interaction";
 import {
   canApplyXrayLoad,
   canReuseXrayCache,
+  classifyXrayLoadError,
   didXrayNavigationSucceed,
   isEmptyXrayResult,
   setBoundedCacheEntry,
@@ -58,7 +62,7 @@ export default function ReaderXrayCard({
   const { t } = useTranslation();
   const [result, setResult] = useState<XrayCardResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [navigationError, setNavigationError] = useState(false);
   const [navigatingKey, setNavigatingKey] = useState<string | null>(null);
   const [fromCache, setFromCache] = useState(false);
@@ -100,7 +104,7 @@ export default function ReaderXrayCard({
       setBoundedCacheEntry(safeCache, key, cached, SAFE_CACHE_LIMIT);
       setResult(cached.result);
       setFromCache(true);
-      setError(false);
+      setErrorDetail(null);
       setLoading(false);
       setView("summary");
       return;
@@ -108,7 +112,7 @@ export default function ReaderXrayCard({
     const requestId = createUuid();
     requestRef.current = requestId;
     setLoading(true);
-    setError(false);
+    setErrorDetail(null);
     setFromCache(false);
     try {
       const response = await invoke<XrayCardResult>("ai_xray", {
@@ -125,8 +129,12 @@ export default function ReaderXrayCard({
       setResult(response);
       if (!wholeBook) setBoundedCacheEntry(safeCache, key, { location: safeLocation, result: response }, SAFE_CACHE_LIMIT);
       setView("summary");
-    } catch {
-      if (canApplyXrayLoad(loadGenerationRef.current, generation)) setError(true);
+    } catch (loadError) {
+      // The backend distinguishes "no AI provider configured" from "index
+      // still building" from a genuine request failure — keep that detail
+      // instead of collapsing everything into one "try again later" message,
+      // since only some of these are fixed by waiting and retrying.
+      if (canApplyXrayLoad(loadGenerationRef.current, generation)) setErrorDetail(String(loadError));
     } finally {
       if (canApplyXrayLoad(loadGenerationRef.current, generation)) {
         requestRef.current = null;
@@ -187,6 +195,19 @@ export default function ReaderXrayCard({
   const empty = result ? isEmptyXrayResult(result) : false;
   const showUpdate = result ? shouldOfferXrayUpdate(result, progress) : false;
   const KindIcon = result?.kind === "person" ? UserRound : CircleHelp;
+  const error = errorDetail !== null;
+  const errorPresentation = errorDetail !== null ? classifyXrayLoadError(errorDetail) : null;
+
+  // Shared with ExplainPopover's identical "AI_NOT_CONFIGURED" screen: close
+  // this card, then focus the main window's Settings on the AI services tab.
+  // A cross-window Tauri event rather than the same-window `openSettings()`
+  // DOM event, because a reader window can be detached from main.
+  const openAiSettings = useCallback(async () => {
+    onClose();
+    await invoke("open_settings_on_main", { section: "services" });
+    const main = await WebviewWindow.getByLabel("main");
+    await main?.setFocus();
+  }, [onClose]);
 
   const navigate = useCallback(
     async (key: string, action: () => boolean | Promise<boolean>) => {
@@ -254,8 +275,8 @@ export default function ReaderXrayCard({
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {navigationError ? (
           <div role="alert" aria-live="assertive" className="mb-3 rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-[12px] text-danger-text">
-            <strong className="block">{t("readerXray.failed")}</strong>
-            <span>{t("readerXray.failedHint")}</span>
+            <strong className="block">{t("readerXray.navigationFailed")}</strong>
+            <span>{t("readerXray.navigationFailedHint")}</span>
           </div>
         ) : null}
         {!interaction ? (
@@ -270,14 +291,51 @@ export default function ReaderXrayCard({
             <h3 className="text-[14px] font-semibold text-text-primary">{t("readerXray.loading")}</h3>
             <p className="mt-1 text-[12px] leading-5 text-text-muted">{t("readerXray.loadingHint")}</p>
           </div>
-        ) : error ? (
+        ) : error && errorPresentation ? (
           <div role="alert" aria-live="assertive" className="flex min-h-[240px] flex-col items-center justify-center text-center">
             <AlertTriangle size={30} className="mb-3 text-danger-text" />
-            <h3 className="text-[14px] font-semibold text-text-primary">{t("readerXray.failed")}</h3>
-            <p className="mt-1 text-[12px] leading-5 text-text-muted">{t("readerXray.failedHint")}</p>
-            <button type="button" className="mt-3 rounded-md border border-border px-3 py-2 text-[12px] text-accent-text" onClick={() => void load(false, true)}>
-              {t("common.retry")}
-            </button>
+            {errorPresentation.kind === "ai" && errorPresentation.aiErrorCode ? (
+              <>
+                <h3 className="text-[14px] font-semibold text-text-primary">{t("readerXray.failed")}</h3>
+                <p className="mt-1 text-[12px] leading-5 text-text-muted">{t(aiErrorMessageKey(errorPresentation.aiErrorCode))}</p>
+                <div className="mt-3 flex items-center gap-4">
+                  <button type="button" className="flex items-center gap-1.5 text-[12px] font-medium text-accent-text" onClick={() => void openAiSettings()}>
+                    <Settings size={13} /> {t("ai.openSettings")}
+                  </button>
+                  {isAiRetryableError(errorPresentation.aiErrorCode) ? (
+                    <button type="button" className="rounded-md border border-border px-3 py-2 text-[12px] text-accent-text" onClick={() => void load(false, true)}>
+                      {t("common.retry")}
+                    </button>
+                  ) : null}
+                </div>
+              </>
+            ) : errorPresentation.kind === "indexBuilding" ? (
+              <>
+                <h3 className="text-[14px] font-semibold text-text-primary">{t("readerXray.indexBuildingTitle")}</h3>
+                <p className="mt-1 text-[12px] leading-5 text-text-muted">{t("readerXray.indexBuildingHint")}</p>
+                <button type="button" className="mt-3 rounded-md border border-border px-3 py-2 text-[12px] text-accent-text" onClick={() => void load(false, true)}>
+                  {t("common.retry")}
+                </button>
+              </>
+            ) : errorPresentation.kind === "indexFailed" ? (
+              <>
+                <h3 className="text-[14px] font-semibold text-text-primary">{t("readerXray.indexFailedTitle")}</h3>
+                <p className="mt-1 text-[12px] leading-5 text-text-muted">{t("readerXray.indexFailedHint")}</p>
+              </>
+            ) : errorPresentation.kind === "indexUnsupported" ? (
+              <>
+                <h3 className="text-[14px] font-semibold text-text-primary">{t("readerXray.indexUnsupportedTitle")}</h3>
+                <p className="mt-1 text-[12px] leading-5 text-text-muted">{t("readerXray.indexUnsupportedHint")}</p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-[14px] font-semibold text-text-primary">{t("readerXray.failed")}</h3>
+                <p className="mt-1 text-[12px] leading-5 text-text-muted">{t("readerXray.failedHint")}</p>
+                <button type="button" className="mt-3 rounded-md border border-border px-3 py-2 text-[12px] text-accent-text" onClick={() => void load(false, true)}>
+                  {t("common.retry")}
+                </button>
+              </>
+            )}
           </div>
         ) : view === "confirm" ? (
           <div className="py-2">
