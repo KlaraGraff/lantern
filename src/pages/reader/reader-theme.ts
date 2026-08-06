@@ -9,7 +9,12 @@ import {
   getThemeStyles,
 } from "../../components/reader-settings";
 import { prefersReducedMotion } from "../../components/page-turn-transition";
-import { getParagraphTypographyCSS } from "./reader-typography";
+import {
+  READER_STYLESHEET_MARKER,
+  TYPOGRAPHY_DROP_CAP_LINE_HEIGHT_VAR,
+  TYPOGRAPHY_DROP_CAP_PARAGRAPH_CLASS,
+  getParagraphTypographyCSS,
+} from "./reader-typography";
 
 interface LayoutView {
   renderer: {
@@ -174,6 +179,7 @@ export function getReaderCSS(
     }
   ` : "";
   return `
+    ${READER_STYLESHEET_MARKER}
     body {
       background-color: ${themeColors.body} !important;
       color: ${themeColors.text} !important;
@@ -188,6 +194,14 @@ export function getReaderCSS(
       color: ${themeColors.text} !important;
       font-family: ${fontFamily} !important;
       line-height: ${settings.lineSpacing} !important;
+    }
+    /* Publisher drop caps (marked by markTypographyDropCapParagraphs, which
+       captures the true value before this stylesheet is live) keep their
+       original first-letter line-height instead of the forced one above —
+       an oversized floated letter needs a tight line-height to sit level
+       with the text beside it, not the user's prose line-spacing. */
+    .${TYPOGRAPHY_DROP_CAP_PARAGRAPH_CLASS}::first-letter {
+      line-height: var(${TYPOGRAPHY_DROP_CAP_LINE_HEIGHT_VAR}) !important;
     }
     /* Headings read better balanced and should never be hyphenated. */
     h1, h2, h3, h4, h5, h6 {

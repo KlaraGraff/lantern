@@ -62,7 +62,11 @@ import type {
 } from "./foliate-types";
 import { readerOpenKey } from "./reader-open-key";
 import { toReaderOpenError, type ReaderOpenError } from "./reader-open-error";
-import { markTypographyMediaParagraphs } from "./reader-typography";
+import {
+  markTypographyDropCapParagraphs,
+  markTypographyIndentExceptions,
+  markTypographyMediaParagraphs,
+} from "./reader-typography";
 import type { SidePanel, TracesTab } from "./side-panel";
 
 function getPdfStartCfi(
@@ -774,6 +778,8 @@ export function useFoliateView({
         }
         markChapterStarts(doc, index);
         markTypographyMediaParagraphs(doc);
+        markTypographyIndentExceptions(doc);
+        markTypographyDropCapParagraphs(doc);
         installBuiltinFontFacesInDocument(doc);
         installCustomFontFacesInDocument(doc);
         if (loadedInteractionDocumentsRef.current.has(doc)) return;
