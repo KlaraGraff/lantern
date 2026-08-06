@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern — 手机版书架与抽屉侧边栏 样张</title>
+<style>
+  :root {
+    --bg-page: #f4f4f5;
+    --bg-surface: #ffffff;
+    --bg-muted: #fafafa;
+    --bg-input: #f3f3f5;
+    --text-primary: #18181b;
+    --text-secondary: #52525c;
+    --text-muted: #71717b;
+    --text-placeholder: #717182;
+    --border: #e4e4e7;
+    --accent: #7c3aed;
+    --accent-bg: #f3e8ff;
+    --overlay: rgba(0,0,0,.5);
+    --danger: #e7000b;
+    --success: #00a63e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+    background: #e8e8ec;
+    color: var(--text-primary);
+    padding: 40px 24px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page-head { max-width: 1240px; margin: 0 auto 40px; }
+  .page-head h1 { font-size: 26px; font-weight: 650; letter-spacing: -.4px; }
+  .page-head p { margin-top: 10px; font-size: 14px; line-height: 1.7; color: var(--text-secondary); max-width: 720px; }
+  .page-head code { background: #dcdce2; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+
+  .grid { max-width: 1240px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 44px 40px; }
+  .cell { display: flex; flex-direction: column; gap: 12px; }
+  .cell > .label { font-size: 13px; font-weight: 620; letter-spacing: -.1px; }
+  .cell > .label span { display: block; font-weight: 400; color: var(--text-muted); margin-top: 3px; line-height: 1.55; max-width: 390px; }
+
+  /* ── iPhone frame ─────────────────────────────────────────── */
+  .phone {
+    width: 390px; height: 800px;
+    background: var(--bg-surface);
+    border-radius: 44px;
+    border: 10px solid #1c1c20;
+    position: relative; overflow: hidden;
+    box-shadow: 0 18px 44px rgba(0,0,0,.20);
+    display: flex; flex-direction: column;
+  }
+  .notch {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 124px; height: 30px; background: #1c1c20;
+    border-radius: 0 0 18px 18px; z-index: 60;
+  }
+  /* safe areas, drawn as real insets */
+  .safe-top { height: 54px; flex: none; }
+  .safe-bottom { height: 26px; flex: none; }
+  .home-bar {
+    position: absolute; bottom: 9px; left: 50%; transform: translateX(-50%);
+    width: 132px; height: 5px; border-radius: 3px; background: #00000033; z-index: 60;
+  }
+
+  /* ── phone top bar ────────────────────────────────────────── */
+  .topbar {
+    flex: none; padding: 0 12px 10px; display: flex; align-items: center; gap: 4px;
+  }
+  .tap {
+    width: 44px; height: 44px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 11px; color: var(--text-secondary); background: none; border: none;
+  }
+  .tap.on { background: var(--accent-bg); color: var(--accent); }
+  .topbar h1 { font-size: 21px; font-weight: 620; letter-spacing: -.3px; flex: 1; padding-left: 4px; }
+  .searchrow { flex: none; padding: 0 16px 12px; }
+  .search {
+    height: 40px; border-radius: 11px; background: var(--bg-input);
+    display: flex; align-items: center; gap: 9px; padding: 0 12px;
+    font-size: 15px; color: var(--text-placeholder);
+  }
+  .divider { height: 1px; background: var(--border); flex: none; }
+
+  /* ── book grid ────────────────────────────────────────────── */
+  .shelf { flex: 1; overflow: hidden; padding: 16px; }
+  .books { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 16px; }
+  .book .cover {
+    aspect-ratio: 2/3; border-radius: 8px; position: relative; overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,.14);
+    display: flex; align-items: flex-end; padding: 12px;
+    color: #fff; font-size: 13px; font-weight: 600; line-height: 1.35;
+  }
+  .book .t { margin-top: 8px; font-size: 13.5px; font-weight: 550; letter-spacing: -.1px;
+             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .book .a { margin-top: 2px; font-size: 12px; color: var(--text-muted); }
+  .c1 { background: linear-gradient(150deg,#7c3aed,#4c1d95); }
+  .c2 { background: linear-gradient(150deg,#0f766e,#134e4a); }
+  .c3 { background: linear-gradient(150deg,#b45309,#78350f); }
+  .c4 { background: linear-gradient(150deg,#be123c,#701a3f); }
+  .c5 { background: linear-gradient(150deg,#1e40af,#172554); }
+  .c6 { background: linear-gradient(150deg,#3f6212,#1a2e05); }
+
+  /* ── drawer ───────────────────────────────────────────────── */
+  .scrim { position: absolute; inset: 0; background: var(--overlay); z-index: 40; }
+  .drawer {
+    position: absolute; top: 0; bottom: 0; left: 0; width: 300px; z-index: 50;
+    background: var(--bg-surface); box-shadow: 8px 0 28px rgba(0,0,0,.22);
+    display: flex; flex-direction: column;
+  }
+  .drawer-scroll { flex: 1; overflow: hidden; padding: 0 12px; }
+  .brand { display: flex; align-items: center; gap: 9px; padding: 4px 6px 14px; }
+  .brand .mark {
+    width: 26px; height: 26px; border-radius: 8px; flex: none;
+    background: linear-gradient(140deg,#a855f7,#7c3aed);
+  }
+  .brand b { font-size: 16px; font-weight: 620; letter-spacing: -.2px; }
+  .sec { margin-bottom: 18px; }
+  .sec h2 {
+    font-size: 11.5px; font-weight: 620; text-transform: uppercase;
+    letter-spacing: .5px; color: var(--text-muted); padding: 0 6px; margin-bottom: 6px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .row {
+    height: 44px; border-radius: 11px; padding: 0 10px;
+    display: flex; align-items: center; gap: 11px; font-size: 15px;
+    color: var(--text-secondary); font-weight: 500; letter-spacing: -.15px;
+  }
+  .row .n { margin-left: auto; font-size: 13px; color: var(--text-muted); font-weight: 500; }
+  .row.on { background: var(--accent-bg); color: var(--accent); }
+  .row.on .n { color: var(--accent); }
+  .row .dots { margin-left: auto; color: var(--text-muted); opacity: .55; }
+  .drawer-foot {
+    flex: none; border-top: 1px solid var(--border); padding: 10px 12px;
+  }
+  .who { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 6px; border-radius: 11px; }
+  .who .av {
+    width: 32px; height: 32px; border-radius: 50%; background: var(--accent); flex: none;
+    color: #fff; font-size: 12.5px; font-weight: 650; display: flex; align-items: center; justify-content: center;
+  }
+  .who .nm { font-size: 14px; font-weight: 550; }
+  .who .sb { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
+
+  svg { display: block; }
+  .ic { width: 19px; height: 19px; stroke: currentColor; stroke-width: 1.9; fill: none;
+        stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  .ic-sm { width: 16px; height: 16px; }
+  .ic-lg { width: 22px; height: 22px; }
+
+  /* ── annotations ──────────────────────────────────────────── */
+  .note {
+    position: absolute; z-index: 70; font-size: 11px; line-height: 1.45;
+    background: #18181b; color: #fff; padding: 5px 8px; border-radius: 7px;
+    max-width: 200px; box-shadow: 0 4px 14px rgba(0,0,0,.3);
+  }
+  .note::after {
+    content: ""; position: absolute; width: 8px; height: 8px; background: #18181b;
+    transform: rotate(45deg);
+  }
+  .note.l::after { left: -3px; top: 12px; }
+  .note.r::after { right: -3px; top: 12px; }
+
+  /* ── empty state ──────────────────────────────────────────── */
+  .empty {
+    padding: 14px 10px; font-size: 13px; color: var(--text-muted); line-height: 1.6;
+  }
+
+  /* ── download states ──────────────────────────────────────── */
+  .veil {
+    position: absolute; inset: 0; background: rgba(10,10,14,.55);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    backdrop-filter: blur(1.5px);
+  }
+  .bar { width: 62%; height: 4px; border-radius: 2px; background: rgba(255,255,255,.28); overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: #fff; border-radius: 2px; }
+  .bar.indet > i { width: 38%; margin-left: 18%; opacity: .9; }
+  .veil .cap { font-size: 11.5px; font-weight: 550; letter-spacing: .1px; }
+  .cloud-badge {
+    position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%;
+    background: rgba(0,0,0,.42); display: flex; align-items: center; justify-content: center; color: #fff;
+  }
+
+  /* ── desktop narrow window ────────────────────────────────── */
+  .win {
+    width: 520px; height: 620px; background: var(--bg-surface);
+    border-radius: 12px; overflow: hidden; position: relative;
+    box-shadow: 0 18px 44px rgba(0,0,0,.20); border: 1px solid #d4d4d8;
+    display: flex; flex-direction: column;
+  }
+  .win.wide { width: 660px; }
+  .chrome { height: 34px; flex: none; display: flex; align-items: center; gap: 7px; padding: 0 13px;
+            border-bottom: 1px solid var(--border); background: var(--bg-muted); }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .win-body { flex: 1; display: flex; overflow: hidden; position: relative; }
+  .aside {
+    width: 224px; flex: none; border-right: 1px solid var(--border); padding: 12px;
+    overflow: hidden;
+  }
+  .aside .row { height: 36px; font-size: 14px; }
+  .aside .sec { margin-bottom: 14px; }
+  .win .shelf { padding: 14px; }
+  .win .books { grid-template-columns: repeat(3, 1fr); gap: 14px 12px; }
+  .win.wide .books { grid-template-columns: repeat(4, 1fr); }
+  .win .topbar { padding: 10px 12px 8px; }
+  .win .topbar h1 { font-size: 18px; }
+  .win .searchrow { padding: 0 14px 10px; }
+
+  .legend { max-width: 1240px; margin: 48px auto 0; font-size: 13.5px; line-height: 1.85; color: var(--text-secondary); }
+  .legend h3 { font-size: 15px; font-weight: 620; color: var(--text-primary); margin: 26px 0 8px; }
+  .legend b { color: var(--text-primary); font-weight: 600; }
+  .legend ul { padding-left: 20px; }
+  .legend li { margin-bottom: 5px; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>手机版书架 + 抽屉侧边栏</h1>
+  <p>
+    P2 第 2 项。左侧 224px 固定栏在 <code>&lt; 768px</code> 时变成抽屉，默认收起，点左上角按钮展开。
+    版式由宽度驱动，所以最后一屏那个 520px 宽的 macOS 窗口拿到的是同一套布局，没有第二份代码。
+    抽屉里的行高从桌面的 36px 提到 44px——这是触摸最小热区，代价是内容变长要滚动。
+  </p>
+</div>
+
+<div class="grid">
+
+  <!-- ══════════ 1. 收起态 ══════════ -->
+  <div class="cell">
+    <div class="label">1 · 收起态（默认）
+      <span>进 App 看到的就是这个。整屏都是书，没有被侧边栏切掉三分之一。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap">
+          <svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+        <h1>全部书籍</h1>
+        <button class="tap on">
+          <svg class="ic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        </button>
+        <button class="tap">
+          <svg class="ic" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        </button>
+      </div>
+      <div class="searchrow">
+        <div class="search">
+          <svg class="ic ic-sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          搜索书名或作者
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="shelf">
+        <div class="books">
+          <div class="book"><div class="cover c1">Pale Fire</div><div class="t">Pale Fire</div><div class="a">Nabokov</div></div>
+          <div class="book"><div class="cover c2">The Waves</div><div class="t">The Waves</div><div class="a">Woolf</div></div>
+          <div class="book"><div class="cover c3">Stoner</div><div class="t">Stoner</div><div class="a">Williams</div></div>
+          <div class="book"><div class="cover c4">Beloved</div><div class="t">Beloved</div><div class="a">Morrison</div></div>
+          <div class="book"><div class="cover c5">Austerlitz</div><div class="t">Austerlitz</div><div class="a">Sebald</div></div>
+          <div class="book"><div class="cover c6">Walden</div><div class="t">Walden</div><div class="a">Thoreau</div></div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note l" style="left:64px; top:64px;">44×44 触摸热区。桌面上这里是 32px。</div>
+      <div class="note r" style="right:16px; top:196px;">搜索框在桌面是写死的 448px，窄屏必须改成占满宽度。</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 2. 展开态 ══════════ -->
+  <div class="cell">
+    <div class="label">2 · 展开态
+      <span>抽屉 300px，右侧留 90px 露出书架——让人一眼知道点空白处可以关掉。遮罩点一下也关。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+        <h1>全部书籍</h1>
+      </div>
+      <div class="searchrow"><div class="search">搜索书名或作者</div></div>
+      <div class="divider"></div>
+      <div class="shelf"><div class="books">
+        <div class="book"><div class="cover c1">Pale Fire</div><div class="t">Pale Fire</div></div>
+        <div class="book"><div class="cover c2">The Waves</div><div class="t">The Waves</div></div>
+      </div></div>
+      <div class="safe-bottom"></div>
+
+      <div class="scrim"></div>
+      <div class="drawer">
+        <div class="safe-top"></div>
+        <div class="drawer-scroll">
+          <div class="brand"><div class="mark"></div><b>Lantern</b></div>
+
+          <div class="sec">
+            <h2>书库</h2>
+            <div class="row on">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 012-2h13v18H6a2 2 0 01-2-2z"/><path d="M4 19a2 2 0 012-2h13"/></svg>
+              全部书籍 <span class="n">42</span>
+            </div>
+            <div class="row">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M2 4h6a3 3 0 013 3v13a2.5 2.5 0 00-2.5-2.5H2z"/><path d="M22 4h-6a3 3 0 00-3 3v13a2.5 2.5 0 012.5-2.5H22z"/></svg>
+              在读 <span class="n">5</span>
+            </div>
+            <div class="row">
+              <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 5-5"/></svg>
+              已读完 <span class="n">17</span>
+            </div>
+            <div class="row">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15v3M12 10v8M17 6v12"/></svg>
+              阅读统计
+            </div>
+          </div>
+
+          <div class="sec">
+            <h2>对话</h2>
+            <div class="row">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H8l-4 4V5a2 2 0 012-2h13a2 2 0 012 2z"/></svg>
+              对话
+            </div>
+          </div>
+
+          <div class="sec">
+            <h2>收藏</h2>
+            <div class="row">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 012-2h13v18H6a2 2 0 01-2-2z"/><path d="M9 7h5M9 11h5"/></svg>
+              生词本 <span class="n">318</span>
+            </div>
+            <div class="row">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 12a9 9 0 109-9 9 9 0 00-6.4 2.7L3 8"/><path d="M3 3v5h5"/></svg>
+              复习 <span class="n">12</span>
+            </div>
+            <div class="row">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M15 3H6a2 2 0 00-2 2v14a2 2 0 002 2h9l5-5V5a2 2 0 00-2-2z"/><path d="M15 21v-5h5"/></svg>
+              笔记 <span class="n">64</span>
+            </div>
+          </div>
+        </div>
+        <div class="drawer-foot">
+          <div class="who">
+            <div class="av">R</div>
+            <div><div class="nm">Reader</div><div class="sb">设置</div></div>
+          </div>
+          <div class="safe-bottom" style="height:8px"></div>
+        </div>
+      </div>
+      <div class="home-bar"></div>
+      <div class="note r" style="right:10px; top:300px;">露出的这一条是可点的关闭区</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 2b. 拖到一半 ══════════ -->
+  <div class="cell">
+    <div class="label">2b · 拖到一半（跟手中间态）
+      <span>抽屉跟手指走，遮罩按拉出比例变深。松手过半到底，不过半弹回。左边那条竖带是唯一能<b>拉开</b>的起点区。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+        <h1>全部书籍</h1>
+      </div>
+      <div class="searchrow"><div class="search">搜索书名或作者</div></div>
+      <div class="divider"></div>
+      <div class="shelf"><div class="books">
+        <div class="book"><div class="cover c1">Pale Fire</div><div class="t">Pale Fire</div><div class="a">Nabokov</div></div>
+        <div class="book"><div class="cover c2">The Waves</div><div class="t">The Waves</div><div class="a">Woolf</div></div>
+        <div class="book"><div class="cover c3">Stoner</div><div class="t">Stoner</div><div class="a">Williams</div></div>
+        <div class="book"><div class="cover c4">Beloved</div><div class="t">Beloved</div><div class="a">Morrison</div></div>
+      </div></div>
+      <div class="safe-bottom"></div>
+
+      <!-- 拉出 45%：遮罩也只有 45% 的浓度 -->
+      <div class="scrim" style="background:rgba(0,0,0,.22)"></div>
+      <div class="drawer" style="left:-165px; box-shadow:8px 0 28px rgba(0,0,0,.18)">
+        <div class="safe-top"></div>
+        <div class="drawer-scroll">
+          <div class="brand"><div class="mark"></div><b>Lantern</b></div>
+          <div class="sec">
+            <h2>书库</h2>
+            <div class="row on">全部书籍 <span class="n">42</span></div>
+            <div class="row">在读 <span class="n">5</span></div>
+            <div class="row">已读完 <span class="n">17</span></div>
+            <div class="row">阅读统计</div>
+          </div>
+          <div class="sec">
+            <h2>对话</h2>
+            <div class="row">对话</div>
+          </div>
+        </div>
+        <div class="drawer-foot">
+          <div class="who"><div class="av">R</div><div><div class="nm">Reader</div><div class="sb">设置</div></div></div>
+          <div class="safe-bottom" style="height:8px"></div>
+        </div>
+      </div>
+
+      <!-- 边缘起手区 -->
+      <div style="position:absolute; left:0; top:0; bottom:0; width:20px; z-index:55;
+                  background:repeating-linear-gradient(45deg,rgba(124,58,237,.34) 0 5px,rgba(124,58,237,.14) 5px 10px);
+                  border-right:1px dashed rgba(124,58,237,.7);"></div>
+      <!-- 手指 -->
+      <div style="position:absolute; left:120px; top:420px; z-index:65;
+                  width:38px; height:38px; border-radius:50%;
+                  background:rgba(24,24,27,.30); border:2px solid rgba(24,24,27,.5);"></div>
+
+      <div class="home-bar"></div>
+      <div class="note l" style="left:30px; top:150px; max-width:150px;">20px 边缘起手区：<b>只有</b>从这里往右拉才开抽屉</div>
+      <div class="note l" style="left:168px; top:412px; max-width:150px;">拉出 45% → 遮罩也只有 45% 深。松手会弹回去</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 3. 抽屉滚到底：收藏夹 ══════════ -->
+  <div class="cell">
+    <div class="label">3 · 抽屉滚到底 · 收藏夹
+      <span>桌面上「拖手柄排序」和「右键改名/删除」在触摸上都不存在。改成：行尾 <b>···</b> 按钮出菜单，排序进「编辑」模式。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar"><button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button><h1>全部书籍</h1></div>
+      <div class="searchrow"><div class="search">搜索书名或作者</div></div>
+      <div class="divider"></div>
+      <div class="shelf"><div class="books"><div class="book"><div class="cover c1">Pale Fire</div></div><div class="book"><div class="cover c2">The Waves</div></div></div></div>
+      <div class="safe-bottom"></div>
+
+      <div class="scrim"></div>
+      <div class="drawer">
+        <div class="safe-top" style="height:20px"></div>
+        <div class="drawer-scroll">
+          <div class="sec" style="opacity:.4">
+            <h2>收藏</h2>
+            <div class="row">笔记 <span class="n">64</span></div>
+          </div>
+          <div class="sec">
+            <h2>收藏夹
+              <span style="display:flex; gap:2px">
+                <button class="tap" style="width:32px;height:32px">
+                  <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+                <button class="tap" style="width:32px;height:32px;font-size:12px;font-weight:600;color:var(--accent)">编辑</button>
+              </span>
+            </h2>
+            <div class="row">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+              十九世纪小说 <span class="n">8</span>
+              <span class="dots"><svg class="ic ic-sm" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span>
+            </div>
+            <div class="row on">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+              睡前读 <span class="n">3</span>
+              <span class="dots" style="color:var(--accent);opacity:.8"><svg class="ic ic-sm" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span>
+            </div>
+            <div class="row">
+              <svg class="ic" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+              待读 <span class="n">21</span>
+              <span class="dots"><svg class="ic ic-sm" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/></svg></span>
+            </div>
+          </div>
+        </div>
+        <div class="drawer-foot">
+          <div class="who"><div class="av">R</div><div><div class="nm">Reader</div><div class="sb">设置</div></div></div>
+          <div class="safe-bottom" style="height:8px"></div>
+        </div>
+      </div>
+      <div class="home-bar"></div>
+      <div class="note l" style="left:250px; top:330px; max-width:120px;">点 ··· 出改名 / 删除</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 4. 空态 ══════════ -->
+  <div class="cell">
+    <div class="label">4 · 空态
+      <span>一本书都没有 + 一个收藏夹都没有。两处都不能只留一片白。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar"><button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button><h1>全部书籍</h1></div>
+      <div class="searchrow"><div class="search">搜索书名或作者</div></div>
+      <div class="divider"></div>
+      <div class="shelf" style="display:flex;align-items:center;justify-content:center;">
+        <div style="text-align:center; padding:0 34px;">
+          <div style="width:56px;height:56px;border-radius:16px;background:var(--bg-input);margin:0 auto 16px;display:flex;align-items:center;justify-content:center;color:var(--text-muted)">
+            <svg class="ic" style="width:26px;height:26px" viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 012-2h13v18H6a2 2 0 01-2-2z"/><path d="M4 19a2 2 0 012-2h13"/></svg>
+          </div>
+          <div style="font-size:15px;font-weight:550;">书架是空的</div>
+          <div style="font-size:13.5px;color:var(--text-muted);margin-top:7px;line-height:1.6;">
+            从「文件」里选一本 EPUB 导入，<br>或者在 Mac 上导入后等它同步过来。
+          </div>
+          <div style="margin-top:18px;height:44px;border-radius:12px;background:var(--accent);color:#fff;font-size:15px;font-weight:550;display:flex;align-items:center;justify-content:center;gap:8px;">
+            <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> 导入书籍
+          </div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+
+      <div class="scrim" style="background:rgba(0,0,0,.5)"></div>
+      <div class="drawer" style="width:300px">
+        <div class="safe-top"></div>
+        <div class="drawer-scroll">
+          <div class="brand"><div class="mark"></div><b>Lantern</b></div>
+          <div class="sec">
+            <h2>书库</h2>
+            <div class="row on">全部书籍 <span class="n">0</span></div>
+            <div class="row">在读 <span class="n">0</span></div>
+            <div class="row">已读完 <span class="n">0</span></div>
+          </div>
+          <div class="sec">
+            <h2>收藏夹
+              <button class="tap" style="width:32px;height:32px"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+            </h2>
+            <div class="empty">还没有收藏夹。收藏夹用来把书分堆，比如「睡前读」。</div>
+          </div>
+        </div>
+        <div class="drawer-foot">
+          <div class="who"><div class="av">R</div><div><div class="nm">Reader</div><div class="sb">设置</div></div></div>
+          <div class="safe-bottom" style="height:8px"></div>
+        </div>
+      </div>
+      <div class="home-bar"></div>
+    </div>
+  </div>
+
+  <!-- ══════════ 5. 下载中 ══════════ -->
+  <div class="cell">
+    <div class="label">5 · 书不在本机（P2 第 8 项）
+      <span>后端已经做完了。<b>百分比经常拿不到</b>——系统只在有元数据查询盯着时才维护它。所以必须有「不确定进度」这一态。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar"><button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button><h1>全部书籍</h1></div>
+      <div class="searchrow"><div class="search">搜索书名或作者</div></div>
+      <div class="divider"></div>
+      <div class="shelf">
+        <div class="books">
+          <div class="book">
+            <div class="cover c1">Pale Fire
+              <div class="veil">
+                <div class="bar"><i style="width:64%"></i></div>
+                <div class="cap">下载中 64%</div>
+              </div>
+            </div>
+            <div class="t">Pale Fire</div><div class="a">Nabokov</div>
+          </div>
+          <div class="book">
+            <div class="cover c2">The Waves
+              <div class="veil">
+                <div class="bar indet"><i></i></div>
+                <div class="cap">下载中</div>
+              </div>
+            </div>
+            <div class="t">The Waves</div><div class="a">Woolf</div>
+          </div>
+          <div class="book">
+            <div class="cover c3">Stoner
+              <div class="cloud-badge">
+                <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M6.5 19a4.5 4.5 0 010-9 6 6 0 0111.6-1.6A4 4 0 0117.5 19z"/><path d="M12 12v5M9.5 14.5L12 17l2.5-2.5"/></svg>
+              </div>
+            </div>
+            <div class="t">Stoner</div><div class="a">Williams</div>
+          </div>
+          <div class="book">
+            <div class="cover c4">Beloved
+              <div class="veil" style="background:rgba(120,10,20,.6)">
+                <svg class="ic" style="width:22px;height:22px;color:#fff" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 16h.01"/></svg>
+                <div class="cap">下载失败 · 点击重试</div>
+              </div>
+            </div>
+            <div class="t">Beloved</div><div class="a">Morrison</div>
+          </div>
+          <div class="book"><div class="cover c5">Austerlitz</div><div class="t">Austerlitz</div><div class="a">Sebald</div></div>
+          <div class="book"><div class="cover c6">Walden</div><div class="t">Walden</div><div class="a">Thoreau</div></div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note l" style="left:206px; top:300px; max-width:118px;">没有百分比时：一条来回滑动的条，不显示数字</div>
+      <div class="note r" style="right:14px; top:406px; max-width:120px;">未下载：右上角一个云图标，不遮住封面</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 6. 打开一本没下载的书 ══════════ -->
+  <div class="cell">
+    <div class="label">6 · 点了一本没下载的书
+      <span>不能弹「无法打开文件」。等它下来，并且能取消。这是手机上的常规路径，不是异常。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 40px;text-align:center;">
+        <div style="width:96px;aspect-ratio:2/3;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.2);" class="c3"></div>
+        <div style="font-size:17px;font-weight:600;margin-top:22px;">Stoner</div>
+        <div style="font-size:13.5px;color:var(--text-muted);margin-top:4px;">John Williams</div>
+        <div style="width:100%;height:4px;border-radius:2px;background:var(--bg-input);margin-top:28px;overflow:hidden;">
+          <i style="display:block;height:100%;width:41%;background:var(--accent);border-radius:2px;"></i>
+        </div>
+        <div style="font-size:13px;color:var(--text-muted);margin-top:12px;">正在从 iCloud 取回 · 41%</div>
+        <div style="margin-top:26px;height:44px;padding:0 26px;border-radius:12px;border:1px solid var(--border);font-size:15px;font-weight:550;color:var(--text-secondary);display:flex;align-items:center;">
+          取消
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note r" style="right:16px; top:520px; max-width:150px;">取消只是不再等，已经下来的字节不退回</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 7. 窄窗口 macOS ══════════ -->
+  <div class="cell">
+    <div class="label">7 · macOS 窗口拖到 520px
+      <span>同一套断点，白拿。<b>注意：这里没有 44px 热区，也没有安全区</b>——那两样跟着输入方式走，不跟宽度走。</span>
+    </div>
+    <div class="win">
+      <div class="chrome">
+        <div class="dot" style="background:#ff5f57"></div><div class="dot" style="background:#febc2e"></div><div class="dot" style="background:#28c840"></div>
+      </div>
+      <div class="win-body">
+        <div style="flex:1;display:flex;flex-direction:column;min-width:0;">
+          <div class="topbar">
+            <button class="tap" style="width:32px;height:32px"><svg class="ic" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+            <h1>全部书籍</h1>
+            <button class="tap on" style="width:32px;height:32px"><svg class="ic ic-sm" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
+            <button class="tap" style="width:32px;height:32px"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
+          </div>
+          <div class="searchrow"><div class="search" style="height:34px;font-size:14px">搜索书名或作者</div></div>
+          <div class="divider"></div>
+          <div class="shelf">
+            <div class="books">
+              <div class="book"><div class="cover c1">Pale Fire</div><div class="t" style="font-size:12.5px">Pale Fire</div></div>
+              <div class="book"><div class="cover c2">The Waves</div><div class="t" style="font-size:12.5px">The Waves</div></div>
+              <div class="book"><div class="cover c3">Stoner</div><div class="t" style="font-size:12.5px">Stoner</div></div>
+              <div class="book"><div class="cover c4">Beloved</div><div class="t" style="font-size:12.5px">Beloved</div></div>
+              <div class="book"><div class="cover c5">Austerlitz</div><div class="t" style="font-size:12.5px">Austerlitz</div></div>
+              <div class="book"><div class="cover c6">Walden</div><div class="t" style="font-size:12.5px">Walden</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="note l" style="left:46px; top:46px; max-width:170px;">侧边栏收进按钮里，跟手机同一份代码</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 8. 正常宽度 macOS，不变 ══════════ -->
+  <div class="cell">
+    <div class="label">8 · macOS 正常宽度 · 完全不变
+      <span>≥768px 走原来那套。这一屏是回归基准：item 1 和 item 2 做完后，它必须跟今天一模一样。</span>
+    </div>
+    <div class="win wide">
+      <div class="chrome">
+        <div class="dot" style="background:#ff5f57"></div><div class="dot" style="background:#febc2e"></div><div class="dot" style="background:#28c840"></div>
+      </div>
+      <div class="win-body">
+        <div class="aside">
+          <div class="brand" style="padding:2px 4px 12px"><div class="mark" style="width:22px;height:22px"></div><b style="font-size:14px">Lantern</b></div>
+          <div class="sec">
+            <h2 style="font-size:11px">书库</h2>
+            <div class="row on">全部书籍 <span class="n">42</span></div>
+            <div class="row">在读 <span class="n">5</span></div>
+            <div class="row">已读完 <span class="n">17</span></div>
+            <div class="row">阅读统计</div>
+          </div>
+          <div class="sec">
+            <h2 style="font-size:11px">收藏</h2>
+            <div class="row">生词本 <span class="n">318</span></div>
+            <div class="row">复习 <span class="n">12</span></div>
+            <div class="row">笔记 <span class="n">64</span></div>
+          </div>
+          <div class="sec">
+            <h2 style="font-size:11px">收藏夹</h2>
+            <div class="row">十九世纪小说 <span class="n">8</span></div>
+            <div class="row">睡前读 <span class="n">3</span></div>
+          </div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;min-width:0;">
+          <div class="topbar">
+            <h1 style="padding-left:0">全部书籍</h1>
+            <button class="tap on" style="width:32px;height:32px"><svg class="ic ic-sm" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
+            <button class="tap" style="width:32px;height:32px"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
+          </div>
+          <div class="searchrow"><div class="search" style="height:34px;font-size:14px;width:250px">搜索书名或作者</div></div>
+          <div class="divider"></div>
+          <div class="shelf">
+            <div class="books">
+              <div class="book"><div class="cover c1">Pale Fire</div><div class="t" style="font-size:12px">Pale Fire</div></div>
+              <div class="book"><div class="cover c2">The Waves</div><div class="t" style="font-size:12px">The Waves</div></div>
+              <div class="book"><div class="cover c3">Stoner</div><div class="t" style="font-size:12px">Stoner</div></div>
+              <div class="book"><div class="cover c4">Beloved</div><div class="t" style="font-size:12px">Beloved</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="legend">
+  <h3>三个要你拍板的取舍</h3>
+  <ul>
+    <li><b>抽屉宽度 300px，右边露 90px。</b> 也可以做成占满整屏。露一条的好处是「点旁边关掉」这件事不用教；坏处是收藏夹名字长了会被挤。我选露一条。</li>
+    <li><b>拉开只认左边缘 20px，关闭不限起点。</b> 书架中间以后要留给别的横向手势；中间也能拉抽屉的话，以后每加一个手势都要跟它抢优先级。关掉的误触代价只是关掉，所以不设限。</li>
+    <li><b>收藏夹的改名 / 删除改成行尾 ···，排序改成「编辑」模式。</b> 桌面上这两件事分别靠右键和拖手柄，触摸上都没有对应动作。长按也能做，但长按已经许给了阅读器里的查词，两处含义不同会互相干扰。</li>
+    <li><b>抽屉里不放「导入书籍」。</b> 导入按钮留在空态和书架上。抽屉是导航，不是操作台——放进去会让它变成一个什么都塞的抽屉。</li>
+  </ul>
+
+  <h3>不用拍板，但值得知道的</h3>
+  <ul>
+    <li>桌面的侧边栏拖宽（180–400px，存 localStorage）在手机上直接消失，抽屉宽度固定。</li>
+    <li>第 7 屏和第 8 屏是<b>同一份组件</b>，差别只是窗口宽度。这也意味着 P2 的大部分验收可以在桌面浏览器里拖窗口完成，不用每次开模拟器。</li>
+    <li>第 8 屏是回归基准：改完之后 ≥768px 的样子必须和今天逐像素一致，任何变化都是 bug。</li>
+    <li>第 5、6 屏的后端已经提交（<code>faf43ee</code>），画在这里是因为它长在书架上，跟抽屉一起看更省事。真正实现是 P2 第 8 项。</li>
+  </ul>
+</div>
+
+</body>
+</html>
