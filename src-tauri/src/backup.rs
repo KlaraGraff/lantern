@@ -47,7 +47,11 @@ pub fn exclude_from_backup(path: &Path) -> bool {
     result.is_ok()
 }
 
+/// Same signature on Windows and Linux so the callers below need no
+/// platform branch of their own. Nothing there calls it, hence the
+/// allow: it exists to be compiled, not to be run.
 #[cfg(not(target_vendor = "apple"))]
+#[allow(dead_code)]
 pub fn exclude_from_backup(_path: &Path) -> bool {
     false
 }
