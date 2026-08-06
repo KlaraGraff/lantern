@@ -15,7 +15,7 @@
 | [q32 — Library Backup](../features/q32-library-backup.md) | 书库文件单向备份到用户指定目录 | 两期全未开工 |
 | [q257 — Persist Explanations](../features/q257-persist-explanations.md) | Explain 结果持久化 + 解释列表页 | **含一个待拍板的设计决策:自动持久化 vs 显式保存按钮**(spec 倾向显式,未定案) |
 | [q276 — Reset All Data](../features/q276-reset-all-data.md) | 设置里的「重置全部数据」危险操作 | 全未开工 |
-| [q285 — Memos 分组](../features/q285-group-chats-and-words-under-memos.md) | 侧栏新增 Memos 分组,收进 Chats 和改名后的 Words | 纯 IA 改动,全未开工;代码里未见任何 Memos 痕迹 |
+| ~~q285 — Memos 分组~~ | 侧栏新增 Memos 分组 | **已随三段式改造落地并归档(2026-08-06)**,见 C-9 |
 
 开放 issue 两条:
 
@@ -39,7 +39,7 @@
 
 **仍欠着**:
 
-1. 侧边栏「生词」条目不显示今日待复习数 — `list_vocab_due_for_review` / `get_vocab_stats` 前端仍是零调用(本次已核实)。
+1. 侧边栏「生词」条目不显示今日待复习数 — `list_vocab_due_for_review` / `get_vocab_stats` 前端仍是零调用(本次已核实)。注意:三段式改造后 `tests/review-piles.test.ts` 断言整个随记行模板不渲染计数,实现本条时需把该约束收窄回「复习行不显示计数」的原意。
 2. reader-page-optimization **P3.5 双语对照整书翻译** — P3 五项里唯一没进已归档 ship 清单的。
 3. 查词历史 → 生词本的一键收藏路径(audit 断点 1;`vocab/collect.ts` 已存在,历史页是否接上待确认)。
 4. 同词跨书 = 多条生词、多套复习进度,未合并(audit 断点 2)。
@@ -47,8 +47,8 @@
 6. 打开书时的一次性前置判定(扫描件未 OCR / 索引状态 / AI 档案可用性),替代现在的「先动作再失败」。
 7. 书签/生词按钮的 title + aria-label(audit P0 无障碍项,是否已随 P2/P3 线修复待确认)。
 8. 查词学习卡错误态无 CTA/无重试(`LearningCardView.tsx`),与翻译/解释弹层行为不一致。
-9. **结构归并三件套,均需先出样张**:侧边栏三段式(书库·记录·收藏集)、工具栏 9→6、Aa 面板分流。q285(Memos 分组)与侧边栏三段式是同一块区域的两个不同方案,**排班前需先拍板要哪个**。
-10. **两个待拍板的产品决策**:查词历史/阅读统计要不要跨设备同步;阅读统计要不要接学习数据。
+9. **结构归并三件套,均需先出样张**:侧边栏、工具栏 9→6、Aa 面板分流。侧边栏已拍板(2026-08-06):采用**三段式结构 × q285 的 Memos 命名**(样张 `impls/sidebar-ia-options-mockup.html` 方案 C),施工中;q285 spec 被该方案吸收,随实现落地归档。工具栏与 Aa 面板仍待出样张。
+10. **两个产品决策已定(2026-08-06)**:查词历史/阅读统计跨设备同步——**暂缓**,等 iOS 线启动时随其同步设计一并做;阅读统计接学习数据——**做**,排在侧边栏改造落地之后(同一块代码区域,避免并行冲突)。
 
 ## D. impls 活跃清单的欠账(摘自 `impls/README.md`,该索引本身是准的)
 

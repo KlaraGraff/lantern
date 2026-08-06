@@ -2,7 +2,7 @@
 
 GitHub issue: https://github.com/yicheng47/quill/issues/285
 
-**Status:** Planned
+**Status:** Absorbed and shipped, 2026-08-06 — the product call went to the three-section sidebar (option C in `docs/impls/sidebar-ia-options-mockup.html`), which keeps this spec's Memos naming and grouping but pulls Review, Annotations, and Reading Journey into the same group and makes all five rows same-page filters.
 
 ## Motivation
 

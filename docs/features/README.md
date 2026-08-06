@@ -11,4 +11,3 @@ A spec's number is its issue number here. A `q` prefix marks a number inherited 
 - [q32 — Library Backup](q32-library-backup.md)
 - [q257 — Persist Explain results + Explanations tools page](q257-persist-explanations.md)
 - [q276 - Reset All App Data](q276-reset-all-data.md)
-- [q285 - Group Chats and Words under Memos](q285-group-chats-and-words-under-memos.md)
