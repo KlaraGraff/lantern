@@ -55,9 +55,14 @@ const SUPPRESSION_DAYS: i64 = 90;
 // observation about them, it is an observation about the app being new, and
 // they can see that themselves.
 //
-// The three floor conditions are one condition seen from three sides —
-// enough time, enough text, enough lookups — because any one of them alone
-// is trivially cleared by an unrepresentative afternoon.
+// The two floor conditions are one condition seen from two sides — enough
+// lookups, over enough time — because either one alone is trivially cleared
+// by an unrepresentative afternoon.
+//
+// There is deliberately no floor on *chapters*. One used to sit here, and it
+// was a silent exclusion: a reader whose books carry no chapter labels (many
+// PDFs, plain text) never saw the row and had no way to find out why. A bar
+// nobody can see they failed is worse than no bar.
 // ---------------------------------------------------------------------------
 
 /// Lookups the frequency table could actually score. Unscorable lookups
@@ -65,11 +70,6 @@ const SUPPRESSION_DAYS: i64 = 90;
 /// from the bands, so a reader who mostly taps proper nouns does not clear
 /// the floor on evidence that carries no band information at all.
 const MIN_SCORABLE_LOOKUPS: i64 = 12;
-
-/// Chapters with reading on record. Also the denominator of
-/// `lookupsPerChapter`, which is why it has to be a count of chapters
-/// *read*, not chapters that happened to contain a lookup.
-const MIN_CHAPTERS: i64 = 6;
 
 /// Days between the oldest lookup in the window and now. A single weekend
 /// binge is not three months of evidence, however many lookups it holds.
@@ -90,12 +90,12 @@ const STRONG_MIN_LOOKUPS: i64 = 40;
 /// share of all scorable lookups they must be. 55% is chosen so the band is
 /// unambiguously *the* band — a plurality could be 30% of a flat spread,
 /// which is not concentration.
+///
+/// The share is measured against the reader's own record, which is the only
+/// fair denominator available: the alternative, a rate per chapter, implies
+/// a norm they are being compared to, and no such norm exists to publish.
 const HIGH_MIN_BAND_LOOKUPS: i64 = 25;
 const HIGH_MIN_BAND_SHARE: f64 = 0.55;
-
-/// `declaredHigh`: and it must be happening often enough to be a pattern
-/// rather than a scattering — roughly every other chapter.
-const HIGH_MIN_PER_CHAPTER: f64 = 0.5;
 
 /// `declaredLow`: distinct words in the hard band read past twice or more
 /// without ever being looked up, and what share of the reader's encounters
@@ -190,8 +190,14 @@ pub struct LevelObservation {
     pub band: Option<u8>,
     pub band_from: Option<u32>,
     pub band_to: Option<u32>,
-    pub lookups_per_chapter: Option<f64>,
+    /// `declaredLow`: distinct words in that band read past twice or more.
     pub passed_words: Option<i64>,
+    /// `declaredHigh` and `unclear`, with the same meaning in both: every
+    /// scorable lookup in the window, and how many of them sit in the band
+    /// named above. Counts, not rates — the number in the sentence is the
+    /// receipt that makes the remark checkable against the reader's own
+    /// record, and a rate would instead imply a norm they are being measured
+    /// against that this app has no business inventing.
     pub total_lookups: Option<i64>,
     pub concentrated_lookups: Option<i64>,
     pub window_days: i64,
@@ -213,8 +219,6 @@ struct RecordSummary {
     /// evidence rather than noise: the reader had the dictionary open on
     /// that screen and still walked past this word.
     passed_by_band: [i64; 6],
-    /// Distinct (book, chapter) pairs with reading on record in the window.
-    chapters: i64,
     /// Days from the oldest lookup in the window to now, clamped into
     /// 1..=WINDOW_DAYS.
     span_days: i64,
@@ -244,9 +248,7 @@ impl RecordSummary {
 }
 
 fn clear_of_floor(record: &RecordSummary) -> bool {
-    record.total_lookups() >= MIN_SCORABLE_LOOKUPS
-        && record.chapters >= MIN_CHAPTERS
-        && record.span_days >= MIN_SPAN_DAYS
+    record.total_lookups() >= MIN_SCORABLE_LOOKUPS && record.span_days >= MIN_SPAN_DAYS
 }
 
 fn with_band(mut observation: LevelObservation, band: u8) -> LevelObservation {
@@ -279,7 +281,6 @@ fn judge(record: &RecordSummary, declared: &str) -> Option<LevelObservation> {
         band: None,
         band_from: None,
         band_to: None,
-        lookups_per_chapter: None,
         passed_words: None,
         total_lookups: None,
         concentrated_lookups: None,
@@ -293,21 +294,20 @@ fn judge(record: &RecordSummary, declared: &str) -> Option<LevelObservation> {
         // at your level looks like.
         if let Some(band) = record.modal_band() {
             let in_band = record.lookups_by_band[band as usize];
-            let per_chapter = in_band as f64 / record.chapters as f64;
             if band < declared_band
                 && in_band >= HIGH_MIN_BAND_LOOKUPS
                 && record.share_of(in_band) >= HIGH_MIN_BAND_SHARE
-                && per_chapter >= HIGH_MIN_PER_CHAPTER
             {
                 return Some(with_band(
                     LevelObservation {
                         kind: LevelObservationKind::DeclaredHigh,
                         suggested_level: Some(level_for_band(band).to_string()),
-                        // One decimal: the copy renders this inside a
-                        // sentence, and "3.7 times per chapter" is a
-                        // readable claim where "3.6842105" is a machine
-                        // talking.
-                        lookups_per_chapter: Some((per_chapter * 10.0).round() / 10.0),
+                        // The same two counts `unclear` reports, meaning the
+                        // same two things. All three kinds speak in one
+                        // register, and the reader can check any of them
+                        // against a record they own.
+                        total_lookups: Some(total),
+                        concentrated_lookups: Some(in_band),
                         ..base
                     },
                     band,
@@ -399,8 +399,6 @@ fn declared_level(conn: &Connection) -> AppResult<String> {
 struct RawRecord {
     /// `(normalized word, when)` — one entry per lookup row in the window.
     window_lookups: Vec<(String, i64)>,
-    /// Distinct (book, chapter) pairs with reading on record in the window.
-    chapters: i64,
     /// Words already filtered down to "read past": seen twice or more, at
     /// least once on a lookup-active screen, never looked up anywhere.
     passed_candidates: Vec<String>,
@@ -441,20 +439,10 @@ fn collect(conn: &Connection, now: i64) -> AppResult<RawRecord> {
         }
     }
 
-    // Chapters read in the window — from exposures, not from lookups,
-    // because this is the denominator of "lookups per chapter" and a
-    // denominator counted from chapters that contained a lookup would make
-    // that average roughly one by construction. Rows with no chapter label
-    // cannot be counted as chapters and are left out; a reader whose books
-    // carry no chapter titles therefore never clears the floor, which is
-    // the quiet direction to fail in.
-    raw.chapters = conn.query_row(
-        "SELECT COUNT(*) FROM (SELECT DISTINCT book_id, chapter FROM reading_word_exposures \
-         WHERE last_seen_at >= ?1 AND chapter <> '')",
-        params![since],
-        |row| row.get(0),
-    )?;
-
+    // Nothing here counts chapters. Every number this module reports is a
+    // count of lookups or of words, measured against the reader's own
+    // record; there is no per-chapter rate left to need a denominator.
+    //
     // Words read past. Aggregated across books and chapters first: the same
     // word met once in three different chapters is a word met three times.
     {
@@ -485,10 +473,7 @@ fn collect(conn: &Connection, now: i64) -> AppResult<RawRecord> {
 /// with no read guard held — see [`RawRecord`].
 fn score(raw: &RawRecord, db: &Db, now: i64) -> AppResult<RecordSummary> {
     let forms = FormIndex::new(db);
-    let mut summary = RecordSummary {
-        chapters: raw.chapters,
-        ..RecordSummary::default()
-    };
+    let mut summary = RecordSummary::default();
 
     let mut oldest_lookup: Option<i64> = None;
     let mut distinct_looked_up: HashMap<String, u8> = HashMap::new();

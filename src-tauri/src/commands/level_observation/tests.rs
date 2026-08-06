@@ -63,25 +63,6 @@ fn insert_lookups(db: &Db, words: &[&str], count: usize, at: i64, tag: &str) {
     }
 }
 
-fn insert_chapters(db: &Db, count: usize, at: i64, tag: &str) {
-    let conn = db.conn.lock().unwrap();
-    for index in 0..count {
-        conn.execute(
-            "INSERT INTO reading_word_exposures
-                (id, book_id, chapter, normalized_word, encounter_count,
-                 encounters_on_lookup_active_screen, first_seen_at, last_seen_at,
-                 created_at, updated_at)
-             VALUES (?1, 'book', ?2, 'lantern', 1, 0, ?3, ?3, ?3, ?3)",
-            params![
-                format!("chapter-exposure-{tag}-{index}"),
-                format!("{tag} chapter {index}"),
-                at
-            ],
-        )
-        .unwrap();
-    }
-}
-
 fn insert_exposure(db: &Db, word: &str, encounters: i64, on_lookup_active: i64, at: i64) {
     db.conn
         .lock()
@@ -91,7 +72,7 @@ fn insert_exposure(db: &Db, word: &str, encounters: i64, on_lookup_active: i64, 
                 (id, book_id, chapter, normalized_word, encounter_count,
                  encounters_on_lookup_active_screen, first_seen_at, last_seen_at,
                  created_at, updated_at)
-             VALUES (?1, 'book', 'one chapter 0', ?2, ?3, ?4, ?5, ?5, ?5, ?5)",
+             VALUES (?1, 'book', 'Chapter 1', ?2, ?3, ?4, ?5, ?5, ?5, ?5)",
             params![
                 format!("exposure-{word}"),
                 word,
@@ -108,7 +89,6 @@ fn summary(lookups: [i64; 6], passed: [i64; 6], looked_up_words: [i64; 6]) -> Re
         lookups_by_band: lookups,
         looked_up_words_by_band: looked_up_words,
         passed_by_band: passed,
-        chapters: 20,
         span_days: 60,
     }
 }
@@ -131,10 +111,9 @@ fn serialized_keys_match_the_frontend_contract() {
         band: Some(2),
         band_from: Some(1_001),
         band_to: Some(3_000),
-        lookups_per_chapter: Some(2.5),
         passed_words: None,
-        total_lookups: None,
-        concentrated_lookups: None,
+        total_lookups: Some(40),
+        concentrated_lookups: Some(30),
         window_days: 90,
     };
     let value = serde_json::to_value(&observation).unwrap();
@@ -151,7 +130,6 @@ fn serialized_keys_match_the_frontend_contract() {
             "concentratedLookups",
             "declaredLevel",
             "kind",
-            "lookupsPerChapter",
             "passedWords",
             "suggestedLevel",
             "totalLookups",
@@ -162,8 +140,9 @@ fn serialized_keys_match_the_frontend_contract() {
     // Nullable fields must serialize as JSON null, not vanish: the frontend
     // reads `observation.passedWords ?? 0`, which needs the key to be there.
     assert!(object["passedWords"].is_null());
-    assert!(object["totalLookups"].is_null());
-    assert!(object["concentratedLookups"].is_null());
+    // And the fields this variant does fill carry their numbers through.
+    assert_eq!(object["totalLookups"], 40);
+    assert_eq!(object["concentratedLookups"], 30);
 }
 
 #[test]
@@ -197,15 +176,7 @@ fn an_empty_record_produces_no_row_at_all() {
 
 #[test]
 fn too_few_lookups_is_silence_not_unclear() {
-    let mut record = summary([0, 0, 0, 0, 8, 0], [0; 6], [0; 6]);
-    record.chapters = 20;
-    assert_eq!(judge(&record, "B1"), None);
-}
-
-#[test]
-fn too_few_chapters_is_silence() {
-    let mut record = summary([0, 0, 0, 0, 40, 0], [0; 6], [0; 6]);
-    record.chapters = MIN_CHAPTERS - 1;
+    let record = summary([0, 0, 0, 0, 8, 0], [0; 6], [0; 6]);
     assert_eq!(judge(&record, "B1"), None);
 }
 
@@ -223,18 +194,18 @@ fn one_weekend_of_lookups_is_silence_however_many_there_are() {
 #[test]
 fn lookups_piled_into_an_easy_band_read_as_declared_high() {
     // 30 of 40 lookups in band 2, declared B2 (band 4).
-    let mut record = summary([0, 0, 30, 0, 10, 0], [0; 6], [0; 6]);
-    record.chapters = 10;
+    let record = summary([0, 0, 30, 0, 10, 0], [0; 6], [0; 6]);
     let observation = judge(&record, "B2").expect("row");
     assert_eq!(observation.kind, LevelObservationKind::DeclaredHigh);
     assert_eq!(observation.suggested_level.as_deref(), Some("A2"));
     assert_eq!(observation.band, Some(2));
     assert_eq!(observation.band_from, Some(1_001));
     assert_eq!(observation.band_to, Some(3_000));
-    assert_eq!(observation.lookups_per_chapter, Some(3.0));
+    // The receipt: both counts, measured against the reader's own record.
+    assert_eq!(observation.total_lookups, Some(40));
+    assert_eq!(observation.concentrated_lookups, Some(30));
     // Only the fields this variant's sentence uses are filled.
     assert_eq!(observation.passed_words, None);
-    assert_eq!(observation.total_lookups, None);
 }
 
 #[test]
@@ -242,8 +213,7 @@ fn the_same_pile_inside_the_declared_level_is_not_a_remark() {
     // Identical record, but the reader declared B1 — band 2 is not below
     // B1's own band by enough to be "should not need looking up", and the
     // easy bands are not empty either, so nothing is concluded.
-    let mut record = summary([0, 0, 30, 0, 10, 0], [0; 6], [0; 6]);
-    record.chapters = 10;
+    let record = summary([0, 0, 30, 0, 10, 0], [0; 6], [0; 6]);
     assert_eq!(judge(&record, "A2"), None);
 }
 
@@ -251,8 +221,7 @@ fn the_same_pile_inside_the_declared_level_is_not_a_remark() {
 fn a_thin_pile_in_an_easy_band_is_not_enough_to_claim_declared_high() {
     // 24 lookups in band 2 out of 40: under HIGH_MIN_BAND_LOOKUPS, and only
     // 60% — the share passes, the count does not.
-    let mut record = summary([0, 0, 24, 0, 16, 0], [0; 6], [0; 6]);
-    record.chapters = 10;
+    let record = summary([0, 0, 24, 0, 16, 0], [0; 6], [0; 6]);
     assert_eq!(judge(&record, "B2"), None);
 }
 
@@ -260,26 +229,26 @@ fn a_thin_pile_in_an_easy_band_is_not_enough_to_claim_declared_high() {
 fn walking_past_hard_words_reads_as_declared_low() {
     // Declared B1 (band 3). 80 band-5 words read past twice or more against
     // 10 band-5 words actually looked up.
-    let mut record = summary([0, 0, 0, 10, 30, 80], [0, 0, 0, 0, 0, 80], [0, 0, 0, 5, 20, 10]);
-    record.chapters = 20;
+    let record = summary([0, 0, 0, 10, 30, 80], [0, 0, 0, 0, 0, 80], [0, 0, 0, 5, 20, 10]);
     let observation = judge(&record, "B1").expect("row");
     assert_eq!(observation.kind, LevelObservationKind::DeclaredLow);
     assert_eq!(observation.suggested_level.as_deref(), Some("C1"));
     assert_eq!(observation.band, Some(5));
     assert_eq!(observation.passed_words, Some(80));
-    assert_eq!(observation.lookups_per_chapter, None);
+    // This variant's sentence counts words read past, not lookups.
+    assert_eq!(observation.total_lookups, None);
+    assert_eq!(observation.concentrated_lookups, None);
 }
 
 #[test]
 fn the_hardest_qualifying_band_wins_not_the_first() {
     // Both band 4 and band 5 clear the bar; §5.3 says the hardest words the
     // reader gets through are the indicator, so band 5 is the answer.
-    let mut record = summary(
+    let record = summary(
         [0, 0, 0, 5, 30, 5],
         [0, 0, 0, 0, 90, 70],
         [0, 0, 0, 5, 5, 5],
     );
-    record.chapters = 20;
     let observation = judge(&record, "A2").expect("row");
     assert_eq!(observation.kind, LevelObservationKind::DeclaredLow);
     assert_eq!(observation.band, Some(5));
@@ -288,8 +257,7 @@ fn the_hardest_qualifying_band_wins_not_the_first() {
 #[test]
 fn passing_hard_words_while_also_stopping_at_them_proves_nothing() {
     // 80 passed against 40 stopped is 67% — under LOW_MIN_PASSED_SHARE.
-    let mut record = summary([0, 0, 0, 10, 30, 40], [0, 0, 0, 0, 0, 80], [0, 0, 0, 5, 20, 40]);
-    record.chapters = 20;
+    let record = summary([0, 0, 0, 10, 30, 40], [0, 0, 0, 0, 0, 80], [0, 0, 0, 5, 20, 40]);
     assert_eq!(judge(&record, "B1"), None);
 }
 
@@ -299,8 +267,7 @@ fn a_lopsided_hard_band_record_reads_as_unclear() {
     // neither easy nor hard relative to the declaration — and there is no
     // exposure evidence to say whether the silence in bands 1–3 is knowledge
     // or absence.
-    let mut record = summary([0, 0, 0, 0, 4, 44], [0; 6], [0; 6]);
-    record.chapters = 20;
+    let record = summary([0, 0, 0, 0, 4, 44], [0; 6], [0; 6]);
     let observation = judge(&record, "C1").expect("row");
     assert_eq!(observation.kind, LevelObservationKind::Unclear);
     // "This is a conclusion, not a failure" — but there is nothing to press.
@@ -316,8 +283,7 @@ fn a_record_with_real_easy_band_lookups_is_not_unclear() {
     // The unclear sentence claims bands 1–3 have almost no record. Here they
     // hold a fifth of the lookups, so that sentence would be false and no
     // row is produced rather than a wrong one.
-    let mut record = summary([0, 4, 4, 4, 8, 30], [0; 6], [0; 6]);
-    record.chapters = 20;
+    let record = summary([0, 4, 4, 4, 8, 30], [0; 6], [0; 6]);
     assert_eq!(judge(&record, "C1"), None);
 }
 
@@ -325,8 +291,7 @@ fn a_record_with_real_easy_band_lookups_is_not_unclear() {
 fn c2_is_never_suggested() {
     // Band 5 is the table's last band, so nothing here can tell a C1 from a
     // C2 — the row declines to guess rather than suggesting the top level.
-    let mut record = summary([0, 0, 0, 5, 5, 30], [0, 0, 0, 0, 0, 90], [0, 0, 0, 0, 0, 5]);
-    record.chapters = 20;
+    let record = summary([0, 0, 0, 5, 5, 30], [0, 0, 0, 0, 0, 90], [0, 0, 0, 0, 0, 5]);
     let observation = judge(&record, "B2").expect("row");
     assert_eq!(observation.suggested_level.as_deref(), Some("C1"));
 }
@@ -336,8 +301,7 @@ fn c2_is_never_suggested() {
 // ---------------------------------------------------------------------------
 
 /// A record that clears every bar for `declaredHigh`, dated relative to
-/// `at`: 30 band-1 lookups and 10 band-4 ones over six chapters, spanning a
-/// month.
+/// `at`: 30 band-1 lookups and 10 band-4 ones, spanning a month.
 fn record_that_produces_a_row(db: &Db, at: i64, tag: &str) {
     set_level(db, "B2");
     insert_lookups(
@@ -348,7 +312,6 @@ fn record_that_produces_a_row(db: &Db, at: i64, tag: &str) {
         &format!("{tag}-easy"),
     );
     insert_lookups(db, &BAND_4_WORDS, 10, at - 2 * DAY, &format!("{tag}-hard"));
-    insert_chapters(db, 6, at - 3 * DAY, tag);
 }
 
 #[test]
@@ -363,8 +326,9 @@ fn a_real_record_of_easy_lookups_produces_the_row() {
     assert_eq!(observation.band, Some(1));
     assert_eq!(observation.band_from, Some(1));
     assert_eq!(observation.band_to, Some(1_000));
-    // 30 band-1 lookups over 6 chapters.
-    assert_eq!(observation.lookups_per_chapter, Some(5.0));
+    // 30 of the 40 lookups on record sit in band 1.
+    assert_eq!(observation.total_lookups, Some(40));
+    assert_eq!(observation.concentrated_lookups, Some(30));
     // Reported as the span actually on record, not the nominal 90.
     assert_eq!(observation.window_days, 31);
 }
@@ -374,7 +338,6 @@ fn the_declared_level_defaults_to_b1_when_it_was_never_set() {
     let (_dir, db) = test_db();
     insert_lookups(&db, &BAND_1_WORDS, 30, NOW - 30 * DAY, "easy");
     insert_lookups(&db, &BAND_4_WORDS, 10, NOW - 2 * DAY, "hard");
-    insert_chapters(&db, 6, NOW - 3 * DAY, "one");
     let observation = get_level_observation_inner(&db, NOW).unwrap().expect("row");
     assert_eq!(observation.declared_level, "B1");
 }
@@ -382,7 +345,6 @@ fn the_declared_level_defaults_to_b1_when_it_was_never_set() {
 #[test]
 fn only_exposures_that_are_real_evidence_count_as_read_past() {
     let (_dir, db) = test_db();
-    insert_chapters(&db, 6, NOW - 3 * DAY, "one");
     // Counts: met twice, and at least once on a screen where the reader had
     // the dictionary open for some other word.
     insert_exposure(&db, BAND_5_WORDS[0], 3, 1, NOW - 5 * DAY);
@@ -403,7 +365,6 @@ fn only_exposures_that_are_real_evidence_count_as_read_past() {
     };
     let record = score(&raw, &db, NOW).unwrap();
     assert_eq!(record.passed_by_band[5], 1);
-    assert_eq!(record.chapters, 6);
 }
 
 // ---------------------------------------------------------------------------

@@ -73,7 +73,10 @@ export default function ReadingStatsRoute() {
       to: observation.bandTo ?? 0,
       level: observation.declaredLevel,
       suggested: observation.suggestedLevel ?? "",
-      lookups: markEmphasis(observation.lookupsPerChapter ?? 0),
+      total: observation.totalLookups ?? 0,
+      // The emphasis goes on the concentrated count, not the total: the total
+      // is only there to be the denominator the reader can see.
+      concentrated: markEmphasis(observation.concentratedLookups ?? 0),
       passed: markEmphasis(observation.passedWords ?? 0),
     }),
     levelEffect: (observation: LevelObservation) => {

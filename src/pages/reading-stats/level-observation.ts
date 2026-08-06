@@ -29,11 +29,18 @@ export interface LevelObservation {
   band: number | null;
   bandFrom: number | null;
   bandTo: number | null;
-  /** `declaredHigh`: lookups per chapter in that band. */
-  lookupsPerChapter: number | null;
   /** `declaredLow`: words in that band read twice or more without a lookup. */
   passedWords: number | null;
-  /** `unclear`: how thin, and how lopsided, the record is. */
+  /**
+   * How much was looked up, and how much of that landed in `band`.
+   *
+   * Set for `declaredHigh` and for `unclear` — the evidence for both. A count
+   * and a share of the reader's own lookups, deliberately, rather than a rate
+   * per chapter or per hour: a rate implies a normal value the reader is
+   * being held to, and there is no such value here to publish. The only fair
+   * denominator for "you look these up a lot" is everything else they looked
+   * up.
+   */
   totalLookups: number | null;
   concentratedLookups: number | null;
   /** Days of record the observation is drawn from. */
