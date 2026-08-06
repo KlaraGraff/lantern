@@ -326,6 +326,18 @@ function ReaderSettings({
     scopeBusy,
   ]);
 
+  // Auto-dismiss, same duration as the reader's own toast (`readerToast` in
+  // `Reader.tsx`). Paused while `scopeBusy` — an undo in flight must not have
+  // its toast (and the error message it might still need to show) vanish out
+  // from under it — and restarted once the retry settles. The click-to-undo
+  // path clears `pendingUndo` on its own success, at which point this effect's
+  // cleanup drops the timer with nothing new to schedule.
+  useEffect(() => {
+    if (!pendingUndo || !isPendingUndoActionable(pendingUndo) || scopeBusy) return;
+    const timer = window.setTimeout(() => setPendingUndo(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [pendingUndo, scopeBusy]);
+
   useEffect(() => {
     if (open) return;
     setClearLookupConfirm(false);

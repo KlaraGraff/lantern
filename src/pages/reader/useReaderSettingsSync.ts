@@ -33,9 +33,8 @@ import {
   type SettingsChangedValues,
 } from "../../components/settings-events.ts";
 import {
-  encodeReaderSetting,
+  diffBookOverrides,
   isPromotionUndoable,
-  perBookOverrideKeys,
   perBookSettingKeys,
   type PerBookReaderSettings,
   type ReaderSettingsPromotionUndo,
@@ -162,7 +161,10 @@ export function createDefaultReaderSettings(): ReaderSettingsState {
     textJustification: false,
     paragraphSpacing: "original",
     firstLineIndent: false,
-    margins: 0,
+    // 0% reads too tight in the two-page layout, the default `pageColumns`
+    // above — 4% gives the gutter and outer edges some breathing room without
+    // asking a fresh install to tune it first.
+    margins: 4,
     ...DEFAULT_MARKER_VISIBILITY,
     chapterEndReviewHint: true,
     bookFinishedHint: true,
@@ -379,6 +381,9 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
   // Keyed by book id: a batch outlives the book it belongs to only until the
   // flush below, and must never be written against whatever book is open then.
   const pendingBookSettingsRef = useRef<Record<string, Record<string, string>>>({});
+  // Same shape, for keys a settings-panel edit just brought back in line with
+  // the global value — see `diffBookOverrides` and `flushBookSettings`.
+  const pendingBookDeletesRef = useRef<Record<string, Set<string>>>({});
 
   useEffect(() => {
     readerSettingsRef.current = readerSettings;
@@ -426,14 +431,39 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
   // per frame. Closing the book mid-debounce still lands the edit — the effect
   // below flushes on every `bookId` change and on unmount, and each batch is
   // written against the book it was queued under, not the one now open.
+  //
+  // Deletions ride the same timer and the same flush: a key that stops
+  // overriding (its value now matches global — see `diffBookOverrides`) is
+  // queued in `pendingBookDeletesRef` instead of `pendingBookSettingsRef`, and
+  // `scheduleBookSettingsSave`/`scheduleBookSettingsDelete` keep a key out of
+  // whichever queue it just left, so the two queues never disagree about the
+  // same row at flush time.
   const flushBookSettings = useCallback(
     (throwOnError = false) => {
       bookSaveTimerRef.current = null;
-      return flushPendingBookSettings(
+      const deleteEntries = Object.entries(pendingBookDeletesRef.current);
+      pendingBookDeletesRef.current = {};
+      const deletesSettled = (async () => {
+        let failed = false;
+        for (const [book, keys] of deleteEntries) {
+          if (keys.size === 0) continue;
+          try {
+            await invoke("delete_book_settings", { bookId: book, keys: [...keys] });
+          } catch {
+            failed = true;
+            const requeued = pendingBookDeletesRef.current[book] ?? new Set<string>();
+            for (const key of keys) requeued.add(key);
+            pendingBookDeletesRef.current[book] = requeued;
+          }
+        }
+        if (failed && throwOnError) throw new Error("BOOK_SETTINGS_DELETE_FAILED");
+      })();
+      const writesSettled = flushPendingBookSettings(
         pendingBookSettingsRef.current,
         (book, values) => invoke("set_book_settings_bulk", { bookId: book, settings: values }),
         throwOnError,
       );
+      return Promise.all([writesSettled, deletesSettled]).then(() => {});
     },
     [],
   );
@@ -444,6 +474,25 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
       ...pendingBookSettingsRef.current[book],
       ...values,
     };
+    // A key just written no longer needs the deletion queued for it moments
+    // ago in the same debounce window — the newer edit wins.
+    const queuedDeletes = pendingBookDeletesRef.current[book];
+    if (queuedDeletes) for (const key of Object.keys(values)) queuedDeletes.delete(key);
+    if (bookSaveTimerRef.current !== null) window.clearTimeout(bookSaveTimerRef.current);
+    bookSaveTimerRef.current = window.setTimeout(() => {
+      void flushBookSettings();
+    }, 400);
+  }, [flushBookSettings]);
+
+  const scheduleBookSettingsDelete = useCallback((book: string, keys: string[]) => {
+    if (keys.length === 0) return;
+    const current = pendingBookDeletesRef.current[book] ?? new Set<string>();
+    for (const key of keys) current.add(key);
+    pendingBookDeletesRef.current[book] = current;
+    // Same reasoning in reverse: a key about to be deleted must not also carry
+    // a stale queued write from before it matched the global value.
+    const queuedWrite = pendingBookSettingsRef.current[book];
+    if (queuedWrite) for (const key of keys) delete queuedWrite[key];
     if (bookSaveTimerRef.current !== null) window.clearTimeout(bookSaveTimerRef.current);
     bookSaveTimerRef.current = window.setTimeout(() => {
       void flushBookSettings();
@@ -479,20 +528,23 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
     // the async load: before it finishes the merge has not run yet, so `previous`
     // is still the defaults and every key would look changed.
     if (bookId && settingsLoadedBookRef.current === bookId) {
-      const changedOverrides: Record<string, string> = {};
-      for (const key of perBookOverrideKeys) {
-        if (previous[key] !== next[key]) {
-          changedOverrides[perBookSettingKeys[key]] = encodeReaderSetting(key, next);
-        }
-      }
-      if (Object.keys(changedOverrides).length > 0) {
+      // Compared against the global value, not just against `previous`: a key
+      // set back to exactly what global already holds should stop overriding
+      // rather than store an identical row (see `diffBookOverrides`) — that
+      // identical row was what left the scope panel reporting a book-specific
+      // override that had nothing left to be specific about.
+      const globalResolved = resolveReaderSettings(createDefaultReaderSettings(), globalSettingsRef.current);
+      const { toWrite, toDelete } = diffBookOverrides(previous, next, globalResolved, bookOverridesRef.current);
+      if (Object.keys(toWrite).length > 0 || toDelete.length > 0) {
         setBookOverrides((current) => {
-          const updated = { ...current, ...changedOverrides };
+          const updated = { ...current, ...toWrite };
+          for (const key of toDelete) delete updated[key];
           bookOverridesRef.current = updated;
           return updated;
         });
       }
-      scheduleBookSettingsSave(bookId, changedOverrides);
+      scheduleBookSettingsSave(bookId, toWrite);
+      scheduleBookSettingsDelete(bookId, toDelete);
     }
     const changed: Record<string, string> = {};
     if (previous.customTheme.color !== next.customTheme.color
@@ -507,7 +559,7 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
     if (previous.nextPageBinding !== next.nextPageBinding) changed[readerPreferenceSettingKeys.nextPageBinding] = next.nextPageBinding;
     if (previous.chapterEndReviewHint !== next.chapterEndReviewHint) changed[readerPreferenceSettingKeys.chapterEndReviewHint] = String(next.chapterEndReviewHint);
     scheduleReaderPreferenceSave(changed);
-  }, [bookId, scheduleBookSettingsSave, scheduleReaderPreferenceSave, settingsLoadedBookRef]);
+  }, [bookId, scheduleBookSettingsSave, scheduleBookSettingsDelete, scheduleReaderPreferenceSave, settingsLoadedBookRef]);
 
   const applySources = useCallback((
     globals: Record<string, string>,

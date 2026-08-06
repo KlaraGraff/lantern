@@ -362,6 +362,13 @@ export function getThemeStyles(themeId: ReaderTheme, customTheme = DEFAULT_READE
   }
 }
 
+/**
+ * The reader's out-of-the-box theme: 「阅读纸」(sepia paper), regardless of the
+ * system's light/dark mode. It used to follow dark mode into the "dark" theme
+ * and light mode into "paper", but a fresh two-page layout landing on either
+ * "dark" or the stark white "original" theme read as harsh — 「阅读纸」 is the
+ * one default that looks right either way.
+ */
 export function getDefaultReaderTheme(): ReaderTheme {
-  return document.documentElement.classList.contains("dark") ? "dark" : "paper";
+  return "paper";
 }

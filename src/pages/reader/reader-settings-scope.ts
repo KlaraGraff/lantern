@@ -154,6 +154,38 @@ export function encodeReaderSetting(
   return String(state[key]);
 }
 
+/**
+ * What one settings-panel edit should do to the book's `book_settings` rows:
+ * write a row for every key that now differs from the global value, and drop
+ * the row for every key that used to differ but was just set back to match
+ * it. Matching the global value again *is* "follow global" — storing an
+ * identical-value row instead is exactly what left the scope panel reporting
+ * a book-specific override, and the row's own 「本书单独设置 · 恢复全局」 note,
+ * after the user had already switched the value right back.
+ *
+ * `currentOverrides` gates the delete side only: a key with no row to begin
+ * with needs no delete call just because it happens to equal the global value.
+ */
+export function diffBookOverrides(
+  previous: ReaderSettingsState,
+  next: ReaderSettingsState,
+  globalSettings: ReaderSettingsState,
+  currentOverrides: PerBookReaderSettings,
+): { toWrite: Record<string, string>; toDelete: string[] } {
+  const toWrite: Record<string, string> = {};
+  const toDelete: string[] = [];
+  for (const key of perBookOverrideKeys) {
+    if (previous[key] === next[key]) continue;
+    const rowKey = perBookSettingKeys[key];
+    if (next[key] === globalSettings[key]) {
+      if (currentOverrides[rowKey] !== undefined) toDelete.push(rowKey);
+    } else {
+      toWrite[rowKey] = encodeReaderSetting(key, next);
+    }
+  }
+  return { toWrite, toDelete };
+}
+
 export interface ReaderSettingConflict {
   id: string;
   title: string;

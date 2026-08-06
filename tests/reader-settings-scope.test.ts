@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { ReaderSettingsState } from "../src/components/ReaderSettings";
 import {
+  diffBookOverrides,
   filterReaderSettingConflicts,
   isPendingUndoActionable,
   isPromotionUndoable,
@@ -155,4 +157,75 @@ test("bulk selection applies only to visible results and preserves cross-search 
 
   const clearedVisible = toggleVisibleConflictSelection(selected, [conflicts[1], conflicts[2]]);
   assert.deepEqual([...clearedVisible], ["a"]);
+});
+
+// A minimal-but-complete state fixture for `diffBookOverrides`. Only
+// `textJustification` and `margins` vary across the tests below; everything
+// else exists just so the object satisfies `ReaderSettingsState`.
+const baseState: ReaderSettingsState = {
+  theme: "paper",
+  customTheme: { color: "#DDE8D8", opacity: 70 },
+  font: "palatino",
+  fontSize: 26,
+  narrowFontShrink: true,
+  readingMode: "scrolling",
+  pageColumns: 2,
+  pageTurnAnimation: "slide",
+  showChapterProgress: true,
+  showBookProgress: false,
+  showPageNumbers: false,
+  previousPageBinding: "key:ArrowLeft",
+  nextPageBinding: "key:ArrowRight",
+  lineSpacing: 1.8,
+  charSpacing: 0,
+  wordSpacing: 0,
+  textJustification: false,
+  paragraphSpacing: "original",
+  firstLineIndent: false,
+  margins: 4,
+  showLookupMarkers: true,
+  showNewVocabMarkers: true,
+  showLearningMarkers: true,
+  showMasteredMarkers: false,
+  chapterEndReviewHint: true,
+  bookFinishedHint: true,
+};
+
+test("a value set away from global writes an override row", () => {
+  const global = baseState;
+  const previous = baseState;
+  const next: ReaderSettingsState = { ...baseState, textJustification: true };
+  const { toWrite, toDelete } = diffBookOverrides(previous, next, global, {});
+  assert.deepEqual(toWrite, { text_justification: "true" });
+  assert.deepEqual(toDelete, []);
+});
+
+test("setting an overridden value back to the global value clears the override instead of storing a copy", () => {
+  // The book currently overrides justification to `true`; global is `false`.
+  const global = baseState;
+  const previous: ReaderSettingsState = { ...baseState, textJustification: true };
+  const next: ReaderSettingsState = { ...baseState, textJustification: false };
+  const currentOverrides = { text_justification: "true" };
+  const { toWrite, toDelete } = diffBookOverrides(previous, next, global, currentOverrides);
+  assert.deepEqual(toWrite, {});
+  assert.deepEqual(toDelete, ["text_justification"]);
+});
+
+test("a value that already matches global and has no override writes and deletes nothing", () => {
+  const global = baseState;
+  const previous = baseState;
+  const next = baseState;
+  const { toWrite, toDelete } = diffBookOverrides(previous, next, global, {});
+  assert.deepEqual(toWrite, {});
+  assert.deepEqual(toDelete, []);
+});
+
+test("only the keys that actually changed are diffed, even when others already equal global", () => {
+  const global = baseState;
+  const previous: ReaderSettingsState = { ...baseState, margins: 10 };
+  const next: ReaderSettingsState = { ...baseState, margins: 4 };
+  const currentOverrides = { margins: "10" };
+  const { toWrite, toDelete } = diffBookOverrides(previous, next, global, currentOverrides);
+  assert.deepEqual(toWrite, {});
+  assert.deepEqual(toDelete, ["margins"]);
 });

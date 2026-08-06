@@ -162,7 +162,10 @@ export default function ReadingSettings({
   const [textJustification, setTextJustification] = useState(false);
   const [paragraphSpacing, setParagraphSpacing] = useState<ParagraphSpacing>("original");
   const [firstLineIndent, setFirstLineIndent] = useState(false);
-  const [margins, setMargins] = useState(0);
+  // Same default as `createDefaultReaderSettings()` — read from there instead
+  // of a second hard-coded number, so the pre-hydration row and the reader's
+  // own default cannot drift apart.
+  const [margins, setMargins] = useState(() => createDefaultReaderSettings().margins);
   const [readingMode, setReadingMode] = useState<ReadingMode>("scrolling");
   const [pageLayout, setPageLayout] = useState<"1" | "2">("2");
   const [pageTurnAnimation, setPageTurnAnimation] = useState<PageTurnAnimation>("slide");
