@@ -22,7 +22,16 @@ const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ReviewPileKind {
     /// One pile per book. Words looked up more than once inside that one book.
-    RepeatLookupsInBook { book_id: String, book_title: String },
+    RepeatLookupsInBook {
+        book_id: String,
+        book_title: String,
+        /// How many times the reader looked that word up, but only when the
+        /// pile holds exactly one word. The approved copy for a one-word pile
+        /// leans entirely on this number ("only one word — but you looked it
+        /// up four times"), and without it the card would have to fall back
+        /// to apologising for being small.
+        solo_word_lookups: Option<i64>,
+    },
     /// Words the exposure engine promoted, that the reader then looked up.
     PromotedThenLookedUp,
     /// Words looked up in the chapter the reader was most recently in.
@@ -150,7 +159,7 @@ pub(crate) fn list_review_piles_at(db: &Db, now_ms: i64) -> AppResult<Vec<Review
 /// grouped by (book_id, normalized_text) catches both.
 fn repeat_lookups_piles(conn: &Connection) -> AppResult<Vec<ReviewPile>> {
     let mut stmt = conn.prepare(
-        "SELECT v.book_id, b.title, v.id, agg.newest
+        "SELECT v.book_id, b.title, v.id, agg.newest, agg.total_lookups
          FROM vocab_words v
          JOIN books b ON b.id = v.book_id
          JOIN (
@@ -169,28 +178,47 @@ fn repeat_lookups_piles(conn: &Connection) -> AppResult<Vec<ReviewPile>> {
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    let mut by_book: HashMap<String, (String, Vec<(String, i64)>)> = HashMap::new();
-    for (book_id, book_title, word_id, newest) in rows {
+    struct RepeatWord {
+        word_id: String,
+        newest: i64,
+        total_lookups: i64,
+    }
+
+    let mut by_book: HashMap<String, (String, Vec<RepeatWord>)> = HashMap::new();
+    for (book_id, book_title, word_id, newest, total_lookups) in rows {
         by_book
             .entry(book_id)
             .or_insert_with(|| (book_title, Vec::new()))
             .1
-            .push((word_id, newest));
+            .push(RepeatWord {
+                word_id,
+                newest,
+                total_lookups,
+            });
     }
 
     let mut piles: Vec<ReviewPile> = by_book
         .into_iter()
         .map(|(book_id, (book_title, mut words))| {
             // Most-recent behaviour first; word id breaks ties deterministically.
-            words.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-            let newest_activity_at = words.iter().map(|(_, newest)| *newest).max().unwrap_or(0);
-            let word_ids = words.into_iter().map(|(id, _)| id).collect();
+            words.sort_by(|a, b| b.newest.cmp(&a.newest).then_with(|| a.word_id.cmp(&b.word_id)));
+            let newest_activity_at = words.iter().map(|word| word.newest).max().unwrap_or(0);
+            let solo_word_lookups = match words.as_slice() {
+                [only] => Some(only.total_lookups),
+                _ => None,
+            };
+            let word_ids = words.into_iter().map(|word| word.word_id).collect();
             ReviewPile {
-                kind: ReviewPileKind::RepeatLookupsInBook { book_id, book_title },
+                kind: ReviewPileKind::RepeatLookupsInBook {
+                    book_id,
+                    book_title,
+                    solo_word_lookups,
+                },
                 word_ids,
                 words: Vec::new(),
                 newest_activity_at,
@@ -560,18 +588,56 @@ mod tests {
         assert!(piles.is_empty());
     }
 
+    /// A one-word pile is shown, not suppressed — and it carries the lookup
+    /// count its copy is built around ("only one word, but you looked it up
+    /// four times"). Both halves matter: without the count the card has
+    /// nothing to say for itself.
     #[test]
-    fn a_pile_with_exactly_one_word_is_returned() {
+    fn a_pile_with_exactly_one_word_is_returned_with_its_lookup_count() {
         let (_dir, db) = setup();
         let conn = db.conn.lock().unwrap();
         insert_book(&conn, "book-a", "Book A");
         insert_vocab_word(&conn, "w1", "book-a", "solitude", None);
-        insert_lookup_record(&conn, "l1", "book-a", "solitude", None, Some("cfi-1"), 1_000, 2);
+        insert_lookup_record(&conn, "l1", "book-a", "solitude", None, Some("cfi-1"), 1_000, 3);
+        insert_lookup_record(&conn, "l2", "book-a", "solitude", None, Some("cfi-2"), 1_200, 1);
         drop(conn);
 
         let piles = list_review_piles_at(&db, 10_000).unwrap();
         assert_eq!(piles.len(), 1);
         assert_eq!(piles[0].word_ids.len(), 1);
+        assert_eq!(
+            piles[0].kind,
+            ReviewPileKind::RepeatLookupsInBook {
+                book_id: "book-a".to_string(),
+                book_title: "Book A".to_string(),
+                // Summed across both positions, not just the newest row.
+                solo_word_lookups: Some(4),
+            }
+        );
+    }
+
+    /// The count is deliberately absent once the pile has company: the copy
+    /// that uses it only exists for the one-word case, and a number nothing
+    /// renders is a number that will drift out of sync unnoticed.
+    #[test]
+    fn a_pile_with_more_than_one_word_carries_no_solo_lookup_count() {
+        let (_dir, db) = setup();
+        let conn = db.conn.lock().unwrap();
+        insert_book(&conn, "book-a", "Book A");
+        insert_vocab_word(&conn, "w1", "book-a", "solitude", None);
+        insert_vocab_word(&conn, "w2", "book-a", "vexation", None);
+        insert_lookup_record(&conn, "l1", "book-a", "solitude", None, Some("cfi-1"), 1_000, 2);
+        insert_lookup_record(&conn, "l2", "book-a", "vexation", None, Some("cfi-2"), 1_100, 2);
+        drop(conn);
+
+        let piles = list_review_piles_at(&db, 10_000).unwrap();
+        let ReviewPileKind::RepeatLookupsInBook {
+            solo_word_lookups, ..
+        } = &piles[0].kind
+        else {
+            panic!("expected a RepeatLookupsInBook pile, got {:?}", piles[0].kind);
+        };
+        assert_eq!(*solo_word_lookups, None);
     }
 
     #[test]
@@ -617,6 +683,7 @@ mod tests {
                 &ReviewPileKind::RepeatLookupsInBook {
                     book_id: "book-b".to_string(),
                     book_title: "Book B".to_string(),
+                    solo_word_lookups: Some(2),
                 },
                 &ReviewPileKind::RecentChapterLookups {
                     book_id: "book-a".to_string(),
@@ -626,6 +693,7 @@ mod tests {
                 &ReviewPileKind::RepeatLookupsInBook {
                     book_id: "book-a".to_string(),
                     book_title: "Book A".to_string(),
+                    solo_word_lookups: Some(2),
                 },
                 &ReviewPileKind::LongUnseen,
             ]
