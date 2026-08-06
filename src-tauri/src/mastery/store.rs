@@ -31,8 +31,8 @@ use crate::error::AppResult;
 use crate::sync::events::EventBody;
 
 use super::{
-    apply_exposures, ChapterExposures, Exposure, ExposureBatch, Tier, WordState,
-    REASON_EXPOSURE_PROMOTION,
+    apply_exposures, apply_lookup, ChapterExposures, Exposure, ExposureBatch, Lookup, Tier,
+    WordState, REASON_EXPOSURE_PROMOTION, REASON_LOOKUP_DEMOTION, REASON_REPEAT_LOOKUP_DEMOTION,
 };
 
 /// One `reading_word_exposures` row with unscored occurrences on it.
@@ -161,6 +161,146 @@ pub fn score_book_exposures(
 
     advance_watermarks(tx, &pending, now)?;
     Ok(changed)
+}
+
+/// Record that the reader stopped and asked what a word means.
+///
+/// Returns whether a tier moved. A lookup on a word that is not in the
+/// reader's vocabulary list moves nothing and is not an error: there is no
+/// tier to lower, and inventing a list entry here would put words in the list
+/// that the reader never chose to keep.
+///
+/// Runs inside the caller's transaction, alongside the `lookup_records` write
+/// it describes, so the two facts cannot come apart.
+///
+/// ## Why every sibling row's credit is reset, not just one
+///
+/// The same word saved from three books is three rows and one entry to the
+/// reader — that is why every mastery write here propagates to siblings.
+/// Credit has to follow the same rule. Credit is evidence the reader knew the
+/// word and a lookup is the reader saying otherwise, so a lookup in book B
+/// cannot leave book A's half-finished promotion standing.
+pub fn apply_lookup_to_word(
+    tx: &Transaction<'_>,
+    events: &mut Vec<EventBody>,
+    book_id: &str,
+    lookup_text: &str,
+    now: i64,
+    device: &str,
+) -> AppResult<bool> {
+    let normalized = normalize(lookup_text);
+    if normalized.is_empty() {
+        return Ok(false);
+    }
+    let rows = load_lookup_targets(tx, book_id, lookup_text, &normalized)?;
+    let Some(primary) = rows.first() else {
+        return Ok(false);
+    };
+
+    // The chain lives on whichever sibling was written last. Reading the most
+    // recent one keeps a reader who looks the word up in a different book
+    // inside the same repeat window, which is the point of the window.
+    let state = load_chain(tx, &rows)?.with_tier(primary.tier);
+    let decision = apply_lookup(&state, Lookup { at_ms: now });
+
+    if decision.changed {
+        let reason = decision.reason.unwrap_or(REASON_LOOKUP_DEMOTION);
+        let detail = lookup_detail(tx, book_id, reason, decision.lookups_in_window);
+        set_auto_mastery(
+            tx,
+            events,
+            &primary.id,
+            &primary.mastery,
+            decision.tier.as_str(),
+            reason,
+            &detail,
+            now,
+            device,
+        )?;
+    }
+    for row in &rows {
+        save_progress(
+            tx,
+            &row.id,
+            decision.credit,
+            &WordState {
+                tier: decision.tier,
+                credit: decision.credit,
+                last_lookup_at_ms: Some(now),
+                lookups_in_window: decision.lookups_in_window,
+            },
+            now,
+        )?;
+    }
+    Ok(decision.changed)
+}
+
+/// The vocabulary rows a lookup applies to: every row spelling this word, the
+/// one in the book being read first.
+///
+/// "Spelling this word" is `COLLATE NOCASE` equality against either what the
+/// reader selected or its normalized form — the same rule
+/// `propagate_progress_to_siblings` uses to decide two rows are one entry, so
+/// the set that gets demoted is exactly the set that gets propagated to.
+fn load_lookup_targets(
+    tx: &Transaction<'_>,
+    book_id: &str,
+    lookup_text: &str,
+    normalized: &str,
+) -> AppResult<Vec<VocabTarget>> {
+    let mut stmt = tx.prepare(
+        "SELECT id, word, mastery FROM vocab_words
+          WHERE word = ?1 COLLATE NOCASE OR word = ?2 COLLATE NOCASE
+          ORDER BY (book_id = ?3) DESC, created_at ASC, id ASC",
+    )?;
+    let rows = stmt
+        .query_map(params![lookup_text.trim(), normalized, book_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(id, _, mastery)| {
+            Tier::from_db_str(&mastery).map(|tier| VocabTarget { id, tier, mastery })
+        })
+        .collect())
+}
+
+/// The word's lookup chain, taken from whichever sibling row was looked up
+/// most recently. Credit is not read: a lookup discards it either way.
+fn load_chain(tx: &Transaction<'_>, rows: &[VocabTarget]) -> AppResult<WordState> {
+    let mut chain = WordState::default();
+    for row in rows {
+        let state = load_progress(tx, &row.id)?;
+        if state.last_lookup_at_ms > chain.last_lookup_at_ms {
+            chain = state;
+        }
+    }
+    Ok(chain)
+}
+
+/// The numbers `vocab.mastery.because.lookup_demotion.detail` and its repeat
+/// variant interpolate. A missing book title degrades the sentence to the
+/// plain variant rather than rendering a hole.
+fn lookup_detail(
+    tx: &Transaction<'_>,
+    book_id: &str,
+    reason: &str,
+    lookups_in_window: u32,
+) -> String {
+    let mut detail = serde_json::Map::new();
+    detail.insert("reason".to_string(), reason.to_string().into());
+    if let Ok(Some(title)) = book_title(tx, book_id) {
+        detail.insert("book_title".to_string(), title.into());
+    }
+    if reason == REASON_REPEAT_LOOKUP_DEMOTION {
+        detail.insert("lookup_count".to_string(), lookups_in_window.into());
+    }
+    serde_json::Value::Object(detail).to_string()
 }
 
 /// The numbers `vocab.mastery.because.exposure_promotion.detail` interpolates:
@@ -360,8 +500,12 @@ fn load_progress(tx: &Transaction<'_>, vocab_word_id: &str) -> AppResult<WordSta
     Ok(state)
 }
 
-/// Persist the credit a scoring pass left behind, keeping the lookup chain
-/// untouched — reading a word says nothing about when it was last looked up.
+/// Persist a word's running arithmetic.
+///
+/// The caller passes the state it started from, so the exposure path writes
+/// the lookup chain back unchanged — reading a word says nothing about when
+/// it was last looked up — while the lookup path passes the chain it just
+/// advanced.
 fn save_progress(
     tx: &Transaction<'_>,
     vocab_word_id: &str,
@@ -374,7 +518,7 @@ fn save_progress(
             (vocab_word_id, credit, last_lookup_at, lookups_in_window, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5)
          ON CONFLICT(vocab_word_id) DO UPDATE SET
-             credit = ?2, updated_at = ?5",
+             credit = ?2, last_lookup_at = ?3, lookups_in_window = ?4, updated_at = ?5",
         params![
             vocab_word_id,
             credit,

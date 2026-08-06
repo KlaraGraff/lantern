@@ -4,6 +4,7 @@ use tauri::State;
 
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
+use crate::sync::writer::SyncWriter;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LookupRecord {
@@ -125,6 +126,22 @@ pub(crate) fn normalize(text: &str) -> String {
         .to_lowercase()
 }
 
+/// Everything one lookup records about itself. A struct rather than ten
+/// parameters because the command and its testable inner would otherwise have
+/// to keep two identical argument lists in the same order.
+pub struct LookupInput {
+    pub book_id: String,
+    pub lookup_text: String,
+    pub context_sentence: Option<String>,
+    pub chapter: Option<String>,
+    pub cfi: Option<String>,
+    pub definition: String,
+    pub context_explanation: Option<String>,
+    pub result_json: Option<String>,
+    pub provider_profile_id: Option<String>,
+    pub model: Option<String>,
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub fn save_lookup_record(
@@ -139,52 +156,106 @@ pub fn save_lookup_record(
     provider_profile_id: Option<String>,
     model: Option<String>,
     db: State<'_, Db>,
+    sync: State<'_, SyncWriter>,
 ) -> AppResult<LookupRecord> {
+    save_lookup_record_inner(
+        LookupInput {
+            book_id,
+            lookup_text,
+            context_sentence,
+            chapter,
+            cfi,
+            definition,
+            context_explanation,
+            result_json,
+            provider_profile_id,
+            model,
+        },
+        &db,
+        &sync,
+    )
+}
+
+/// Persist one lookup, and let the mastery engine hear about it.
+///
+/// The two happen in one transaction because they are one fact: the reader
+/// stopped and asked what a word means. A crash between them would leave the
+/// history saying the reader needed help and the word's tier saying they
+/// didn't.
+pub fn save_lookup_record_inner(
+    input: LookupInput,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<LookupRecord> {
+    let LookupInput {
+        book_id,
+        lookup_text,
+        context_sentence,
+        chapter,
+        cfi,
+        definition,
+        context_explanation,
+        result_json,
+        provider_profile_id,
+        model,
+    } = input;
     let normalized_text = normalize(&lookup_text);
     if normalized_text.is_empty() {
         return Err(AppError::Other("Lookup text cannot be empty".to_string()));
     }
     let now = chrono::Utc::now().timestamp_millis();
-    let id = uuid::Uuid::new_v4().to_string();
-    let conn = db.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
+    let device = sync.self_device().to_string();
 
-    // CFI is required for exact reader marking. Queries without a stable CFI
-    // remain in history but are inserted independently rather than deduped.
-    if let Some(ref cfi_value) = cfi {
-        let existing: Option<String> = conn
-            .query_row(
-                "SELECT id FROM lookup_records WHERE book_id = ?1 AND cfi = ?2 AND normalized_text = ?3 LIMIT 1",
-                params![book_id, cfi_value, normalized_text],
-                |row| row.get(0),
-            )
-            .ok();
-        if let Some(existing_id) = existing {
-            conn.execute(
-                "UPDATE lookup_records SET lookup_text = ?1, context_sentence = ?2, chapter = ?3, definition = ?4, context_explanation = ?5, result_json = ?6, provider_profile_id = ?7, model = ?8, last_looked_up_at = ?9, updated_at = ?9, lookup_count = lookup_count + 1 WHERE id = ?10",
-                params![lookup_text, context_sentence, chapter, definition, context_explanation, result_json, provider_profile_id, model, now, existing_id],
-            )?;
-            prune_lookup_records_conn(&conn, configured_retention_days(&conn))?;
-            return conn
+    sync.with_tx(db, now, |tx, events| {
+        let id = uuid::Uuid::new_v4().to_string();
+        // CFI is required for exact reader marking. Queries without a stable
+        // CFI remain in history but are inserted independently rather than
+        // deduped.
+        let existing: Option<String> = match cfi.as_ref() {
+            Some(cfi_value) => tx
                 .query_row(
-                    &format!("SELECT {SELECT_COLS} FROM lookup_records WHERE id = ?1"),
-                    params![existing_id],
-                    row_to_lookup,
+                    "SELECT id FROM lookup_records WHERE book_id = ?1 AND cfi = ?2 AND normalized_text = ?3 LIMIT 1",
+                    params![book_id, cfi_value, normalized_text],
+                    |row| row.get(0),
                 )
-                .map_err(Into::into);
-        }
-    }
+                .optional()?,
+            None => None,
+        };
 
-    conn.execute(
-        "INSERT INTO lookup_records (id, book_id, lookup_text, normalized_text, context_sentence, chapter, cfi, definition, context_explanation, result_json, provider_profile_id, model, created_at, last_looked_up_at, updated_at, lookup_count) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, ?13, 1)",
-        params![id, book_id, lookup_text, normalized_text, context_sentence, chapter, cfi, definition, context_explanation, result_json, provider_profile_id, model, now],
-    )?;
-    prune_lookup_records_conn(&conn, configured_retention_days(&conn))?;
-    conn.query_row(
-        &format!("SELECT {SELECT_COLS} FROM lookup_records WHERE id = ?1"),
-        params![id],
-        row_to_lookup,
-    )
-    .map_err(Into::into)
+        let record_id = match existing {
+            Some(existing_id) => {
+                tx.execute(
+                    "UPDATE lookup_records SET lookup_text = ?1, context_sentence = ?2, chapter = ?3, definition = ?4, context_explanation = ?5, result_json = ?6, provider_profile_id = ?7, model = ?8, last_looked_up_at = ?9, updated_at = ?9, lookup_count = lookup_count + 1 WHERE id = ?10",
+                    params![lookup_text, context_sentence, chapter, definition, context_explanation, result_json, provider_profile_id, model, now, existing_id],
+                )?;
+                existing_id
+            }
+            None => {
+                tx.execute(
+                    "INSERT INTO lookup_records (id, book_id, lookup_text, normalized_text, context_sentence, chapter, cfi, definition, context_explanation, result_json, provider_profile_id, model, created_at, last_looked_up_at, updated_at, lookup_count) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13, ?13, 1)",
+                    params![id, book_id, lookup_text, normalized_text, context_sentence, chapter, cfi, definition, context_explanation, result_json, provider_profile_id, model, now],
+                )?;
+                id
+            }
+        };
+
+        crate::mastery::store::apply_lookup_to_word(
+            tx,
+            events,
+            &book_id,
+            &lookup_text,
+            now,
+            &device,
+        )?;
+
+        prune_lookup_records_conn(tx, configured_retention_days(tx))?;
+        tx.query_row(
+            &format!("SELECT {SELECT_COLS} FROM lookup_records WHERE id = ?1"),
+            params![record_id],
+            row_to_lookup,
+        )
+        .map_err(Into::into)
+    })
 }
 
 /// Cached answers are scoped to one occurrence: the same word in the same

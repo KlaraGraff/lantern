@@ -9,6 +9,7 @@
 
 use rusqlite::params;
 
+use crate::commands::lookup_history::{save_lookup_record_inner, LookupInput};
 use crate::commands::reading_behavior::{record_reading_behavior_batch_inner, ScreenExposureInput};
 use crate::db::Db;
 use crate::sync::writer::SyncWriter;
@@ -84,6 +85,42 @@ fn read_across_chapters(db: &Db, sync: &SyncWriter, chapters: usize, word: &str)
             &[screen(&chapter, &[word], START + index as i64 * DAY_MS)],
         );
     }
+}
+
+/// The reader stops and asks what a word means. `now` is the wall clock, so
+/// tests that care about the repeat window move `last_lookup_at` instead of
+/// pretending to control it — see [`backdate_lookup`].
+fn look_up(db: &Db, sync: &SyncWriter, word: &str) {
+    save_lookup_record_inner(
+        LookupInput {
+            book_id: BOOK.to_string(),
+            lookup_text: word.to_string(),
+            context_sentence: None,
+            chapter: Some("Chapter 1".to_string()),
+            cfi: None,
+            definition: "a definition".to_string(),
+            context_explanation: None,
+            result_json: None,
+            provider_profile_id: None,
+            model: None,
+        },
+        db,
+        sync,
+    )
+    .unwrap();
+}
+
+/// Pushes the stored lookup back in time, which is the only way to be on
+/// either side of a seven-day window inside a test.
+fn backdate_lookup(db: &Db, days: i64) {
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE mastery_progress SET last_lookup_at = last_lookup_at - ?1",
+            params![days * DAY_MS],
+        )
+        .unwrap();
 }
 
 fn mastery_of(db: &Db) -> (String, String, Option<String>) {
@@ -358,4 +395,122 @@ fn two_visits_on_one_day_count_as_one_day() {
     let (seen, _, days) = exposure_row(&db, "quiet");
     assert_eq!(seen, 3);
     assert_eq!(days, 2);
+}
+
+#[test]
+fn looking_a_word_up_moves_it_back_one_tier() {
+    let (_dir, db, sync) = fixture();
+    save_word(&db, "quiet", "mastered");
+    look_up(&db, &sync, "quiet");
+
+    let (mastery, source, reason) = mastery_of(&db);
+    assert_eq!(mastery, "familiar");
+    assert_eq!(source, "auto");
+    let detail: serde_json::Value = serde_json::from_str(&reason.unwrap()).unwrap();
+    assert_eq!(detail["reason"], "lookup_demotion");
+    assert_eq!(detail["book_title"], "Quiet Book");
+}
+
+#[test]
+fn a_second_lookup_inside_the_window_goes_all_the_way_back_to_learning() {
+    let (_dir, db, sync) = fixture();
+    save_word(&db, "quiet", "mastered");
+    look_up(&db, &sync, "quiet");
+    look_up(&db, &sync, "quiet");
+
+    let (mastery, _, reason) = mastery_of(&db);
+    assert_eq!(mastery, "learning");
+    let detail: serde_json::Value = serde_json::from_str(&reason.unwrap()).unwrap();
+    assert_eq!(detail["reason"], "repeat_lookup_demotion");
+    assert_eq!(detail["lookup_count"], 2);
+}
+
+#[test]
+fn a_lookup_after_the_window_starts_a_fresh_chain() {
+    // Eight days later is a reader who forgot the word once, not a reader
+    // stuck on it — one tier, not straight back to learning.
+    let (_dir, db, sync) = fixture();
+    save_word(&db, "quiet", "mastered");
+    look_up(&db, &sync, "quiet");
+    backdate_lookup(&db, 8);
+    look_up(&db, &sync, "quiet");
+
+    let (mastery, _, reason) = mastery_of(&db);
+    assert_eq!(mastery, "learning", "familiar steps down to learning");
+    let detail: serde_json::Value = serde_json::from_str(&reason.unwrap()).unwrap();
+    assert_eq!(detail["reason"], "lookup_demotion");
+    assert!(detail.get("lookup_count").is_none());
+}
+
+#[test]
+fn a_lookup_discards_the_credit_reading_had_banked() {
+    // Credit is evidence the reader knew the word; a lookup is them saying
+    // otherwise, even when there is no tier left to take away.
+    let (_dir, db, sync) = fixture();
+    save_word(&db, "quiet", "learning");
+    read_across_chapters(&db, &sync, 3, "quiet");
+    assert!((credit_of(&db) - 3.0).abs() < 1e-9);
+
+    look_up(&db, &sync, "quiet");
+    assert_eq!(credit_of(&db), 0.0);
+    assert_eq!(mastery_of(&db).0, "learning", "learning is the floor");
+}
+
+#[test]
+fn a_lookup_on_a_word_the_reader_never_saved_changes_nothing() {
+    // Not an error, and not a reason to put a word in the list the reader
+    // never chose to keep.
+    let (_dir, db, sync) = fixture();
+    look_up(&db, &sync, "quiet");
+
+    let rows: i64 = db
+        .reader()
+        .query_row("SELECT COUNT(*) FROM mastery_progress", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(rows, 0);
+    let events: i64 = db
+        .reader()
+        .query_row("SELECT COUNT(*) FROM mastery_events", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(events, 0);
+}
+
+#[test]
+fn a_lookup_in_one_book_clears_the_same_words_credit_in_another() {
+    // The same word saved from two books is one entry to the reader. If a
+    // lookup only reset the book it happened in, the other book's
+    // half-finished promotion would still be standing.
+    let (_dir, db, sync) = fixture();
+    save_word(&db, "quiet", "learning");
+    db.conn
+        .lock()
+        .unwrap()
+        .execute_batch(
+            "INSERT INTO books
+                (id, title, author, file_path, status, progress, created_at, updated_at)
+             VALUES ('book-2', 'Other Book', 'Author', 'other.epub', 'reading', 5, 1, 1);
+             INSERT INTO vocab_words
+                (id, book_id, word, definition, mastery, review_count, created_at, updated_at)
+             VALUES ('vocab-2', 'book-2', 'quiet', 'a definition', 'learning', 0, 2, 2);",
+        )
+        .unwrap();
+    // Credit is banked against book-1's row; the lookup below also happens in
+    // book-1, so book-2's row is the one that could be left behind.
+    read_across_chapters(&db, &sync, 3, "quiet");
+
+    look_up(&db, &sync, "quiet");
+    let credits: Vec<f64> = {
+        let conn = db.reader();
+        let mut stmt = conn
+            .prepare("SELECT credit FROM mastery_progress ORDER BY vocab_word_id")
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<Vec<f64>, _>>()
+            .unwrap();
+        rows
+    };
+    assert_eq!(credits.len(), 2, "both rows carry progress");
+    assert!(credits.iter().all(|credit| *credit == 0.0));
 }

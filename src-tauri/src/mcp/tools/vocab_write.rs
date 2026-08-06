@@ -206,6 +206,11 @@ fn delete_lookup_records_inner(
     Ok(deleted)
 }
 
+/// Unlike the reader's own lookup path, this does **not** move the word's
+/// mastery tier. A demotion means "the reader stopped and asked what this
+/// means"; an agent filing a record through MCP is bookkeeping about the
+/// reader, not the reader admitting anything. Lowering a tier the reader
+/// earned, on an agent's say-so, is not a call this tool gets to make.
 fn save_lookup_record_inner(
     args: SaveLookupRecordArgs,
     db: &crate::db::Db,
