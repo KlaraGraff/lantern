@@ -1714,6 +1714,11 @@ async fn stream_with_profile_inner<R: Runtime>(
     if !profile.view.enabled {
         return Err(AppError::Other("AI_PROFILE_DISABLED".to_string()));
     }
+    // Counted once per logical request, before any provider attempt below —
+    // this path has no cross-profile failover, but OAuth/Ollama each retry
+    // internally (`stream_once_with_effort_fallback`), and that retry must
+    // not multiply the count either.
+    crate::ai::request_counts::record(db, origin, feature);
     // This path is background work against a model the user pinned by hand
     // (currently only book summaries), so the effort only rides along when the
     // profile opted every feature in.
@@ -2025,6 +2030,12 @@ async fn stream_with_failover_inner<R: Runtime>(
     if profiles.is_empty() {
         return Err(empty_route_error(db, &enabled_profiles, timestamp)?);
     }
+    // Counted once per logical request, before any per-profile/per-credential
+    // attempt below — cross-provider or cross-credential failover inside this
+    // one invocation must not multiply the count. Nothing is counted above
+    // this point: a request that never had a routable profile never reached
+    // the user as an answer, so it should not read as one either.
+    crate::ai::request_counts::record(db, origin, feature);
 
     let mut last_error = None;
     let mut configured_credentials = Vec::new();

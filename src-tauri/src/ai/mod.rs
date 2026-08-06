@@ -3,6 +3,7 @@ pub mod grounding;
 pub mod oauth;
 pub mod openai_compat;
 pub mod openai_responses;
+pub mod request_counts;
 pub mod router;
 mod sse;
 pub mod usage;

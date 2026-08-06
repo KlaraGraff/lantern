@@ -13,6 +13,7 @@ import AiServiceCard, {
   type AiEffortHints,
   type AiProfile,
 } from "./AiServiceCard";
+import AiRequestCountsSection from "./AiRequestCountsSection";
 import { AI_PRESETS, COST_TIER_CLASSES, availablePresets, presetFor } from "./aiPresets";
 import MissingKeyNotice from "./MissingKeyNotice";
 import { missingKeyState, wantsMissingKeyNotice, type MissingKeyPeer } from "./missing-key";
@@ -1030,6 +1031,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
             onRecheck={() => void recheckCredentials(profile.id)}
           />
         ))}
+
+      <AiRequestCountsSection />
     </div>
   );
 }
