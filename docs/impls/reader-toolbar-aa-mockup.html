@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>工具栏 9→6 与 Aa 面板分流 — 样张</title>
+<style>
+  :root {
+    --bg-surface: #ffffff; --bg-input: #f3f3f5; --bg-page: #f6f5f8;
+    --text-primary: #18181b; --text-secondary: #52525c; --text-muted: #71717b;
+    --border: #e4e4e7; --border-light: #f4f4f5;
+    --accent: #7c3aed; --accent-bg: #f3e8ff; --accent-text: #7c3aed;
+    --warn: #b45309; --warn-bg: #fef3c7;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", "Segoe UI", sans-serif; background: var(--bg-page); color: var(--text-primary); padding: 40px 24px 80px; }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  h1.doc { font-size: 22px; margin-bottom: 6px; }
+  h2.doc { font-size: 17px; margin: 56px 0 4px; padding-top: 28px; border-top: 2px solid var(--border); }
+  p.doc { font-size: 13px; color: var(--text-muted); line-height: 1.7; margin-bottom: 8px; }
+  .screen-label { margin: 40px 0 10px; font-size: 13px; font-weight: 600; color: var(--accent-text); }
+  .screen-label small { font-weight: 400; color: var(--text-muted); margin-left: 8px; }
+  .frame { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+  .note { margin-top: 12px; background: var(--accent-bg); border-radius: 10px; padding: 12px 16px; font-size: 12px; line-height: 1.8; color: #4c1d95; }
+  .note b { display: block; margin-bottom: 2px; }
+  ul.spec { margin: 14px 0 0 18px; font-size: 12.5px; line-height: 2; color: var(--text-secondary); }
+  ul.spec code { background: var(--bg-input); border-radius: 4px; padding: 1px 5px; font-size: 11px; }
+  .ghost { border: 1px dashed var(--border); border-radius: 12px; padding: 14px 18px; color: var(--text-muted); font-size: 11px; background: repeating-linear-gradient(-45deg, transparent, transparent 6px, var(--border-light) 6px, var(--border-light) 7px); }
+
+  /* —— 阅读页顶栏 —— */
+  .rd-top { display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; border-bottom: 1px solid var(--border); }
+  .rd-title { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-secondary); }
+  .rd-title svg { width: 16px; height: 16px; stroke: var(--text-secondary); stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .tb { display: flex; gap: 2px; }
+  .tb button { width: 34px; height: 34px; border: none; background: transparent; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); font: inherit; cursor: default; position: relative; }
+  .tb button svg { width: 17px; height: 17px; stroke: currentColor; stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .tb button .aa { font-size: 13px; font-weight: 600; letter-spacing: -.5px; }
+  .tb button.on { background: var(--accent-bg); color: var(--accent-text); }
+  .tb button.bad { outline: 1.5px dashed #dc2626; outline-offset: -2px; }
+  .cap-row { display: flex; justify-content: flex-end; padding: 6px 18px 12px; }
+  .caps { display: flex; gap: 2px; }
+  .caps span { width: 34px; text-align: center; font-size: 8.5px; color: var(--text-muted); line-height: 1.35; }
+  .caps span.hl { color: #dc2626; font-weight: 600; }
+  .caps span.new { color: var(--accent-text); font-weight: 600; }
+
+  /* —— 正文 + 右侧面板 —— */
+  .rd-body { display: flex; min-height: 240px; }
+  .rd-page { flex: 1; padding: 26px 34px; font-family: Georgia, "Songti SC", serif; font-size: 12.5px; line-height: 2; color: var(--text-secondary); }
+  .rd-page p + p { margin-top: 10px; }
+  .panel { width: 292px; border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+  .panel-tabs { display: flex; gap: 2px; padding: 10px 12px 0; border-bottom: 1px solid var(--border); }
+  .panel-tabs span { padding: 7px 12px 9px; font-size: 11.5px; color: var(--text-muted); border-bottom: 2px solid transparent; }
+  .panel-tabs .on { color: var(--accent-text); font-weight: 600; border-bottom-color: var(--accent); }
+  .panel-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .p-item { border: 1px solid var(--border-light); border-radius: 9px; padding: 9px 11px; font-size: 11px; }
+  .p-item b { display: block; font-size: 11.5px; font-weight: 600; margin-bottom: 2px; }
+  .p-item small { color: var(--text-muted); font-size: 10px; }
+  .p-item .hl-word { color: var(--accent-text); font-weight: 600; }
+
+  /* —— Aa 面板 —— */
+  .aa-wrap { display: flex; gap: 20px; align-items: flex-start; }
+  .aa-pop { width: 300px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 8px 28px rgba(0,0,0,.1); padding: 6px 0; flex-shrink: 0; }
+  .aa-sec { padding: 8px 16px 4px; font-size: 9.5px; font-weight: 600; letter-spacing: .06em; color: var(--text-muted); }
+  .aa-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; font-size: 11.5px; color: var(--text-primary); }
+  .aa-row.gone { opacity: .38; }
+  .aa-row .ctrl { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 10px; }
+  .slider { width: 86px; height: 3px; border-radius: 2px; background: var(--bg-input); position: relative; }
+  .slider i { position: absolute; left: 0; top: 0; bottom: 0; width: 55%; background: var(--accent); border-radius: 2px; }
+  .slider em { position: absolute; top: 50%; left: 55%; width: 11px; height: 11px; border-radius: 50%; background: #fff; border: 1px solid var(--border); box-shadow: 0 1px 2px rgba(0,0,0,.15); transform: translate(-50%,-50%); }
+  .toggle { width: 30px; height: 17px; border-radius: 9px; background: var(--accent); position: relative; }
+  .toggle::after { content: ""; position: absolute; right: 2px; top: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; }
+  .toggle.off { background: var(--border); } .toggle.off::after { right: auto; left: 2px; }
+  .swatches { display: flex; gap: 5px; }
+  .swatches i { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); }
+  .tag { font-size: 9px; padding: 2px 6px; border-radius: 5px; font-weight: 600; flex-shrink: 0; }
+  .tag.keep { background: var(--accent-bg); color: var(--accent-text); }
+  .tag.move { background: var(--warn-bg); color: var(--warn); }
+  .aa-foot { margin: 6px 12px 6px; padding: 9px 10px; border-top: 1px solid var(--border-light); font-size: 10.5px; color: var(--accent-text); font-weight: 500; }
+  .aa-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; padding: 6px 0; }
+  .aa-grid .aa-row { padding: 7px 16px; }
+
+  /* —— 设置模态 阅读页 —— */
+  .set-modal { flex: 1; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  .set-head { padding: 14px 20px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600; }
+  .set-head small { font-weight: 400; color: var(--text-muted); margin-left: 8px; font-size: 10.5px; }
+  .set-row { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; height: 58px; border-bottom: 1px solid rgba(0,0,0,.1); font-size: 12px; }
+  .set-row:last-child { border-bottom: 0; }
+  .set-row .l b { display: block; font-weight: 500; }
+  .set-row .l small { color: var(--text-muted); font-size: 10px; }
+  .set-row .sel { border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: 10.5px; color: var(--text-secondary); background: var(--bg-input); }
+  .set-row.new-mark { position: relative; }
+  .new-mark::before { content: ""; position: absolute; left: -18px; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="doc">阅读页 · 工具栏 9→6 与 Aa 面板分流 — 样张</h1>
+  <p class="doc">两个待拍板的结构归并,同出一张。上半部分:阅读页右上角的 9 个图标收成 6 个(书签/生词/笔记并成「痕迹」面板,X-Ray 并进 AI 面板);下半部分:Aa 排版面板里「不看正文也能调」的 5 组控件迁去 设置→阅读,Aa 只留「调完要盯着正文看效果」的 12 组。紫条与紫字标注新增/变化,其余为现状压缩示意。</p>
+
+  <!-- ═══════════ 第一部分:工具栏 ═══════════ -->
+  <h2 class="doc">一、工具栏 9 → 6</h2>
+
+  <div class="screen-label">屏 A · 现状:9 个图标<small>红色虚线框的两个按钮(书签、生词)连 title / aria-label 都没有,鼠标悬停无提示</small></div>
+  <div class="frame">
+    <div class="rd-top">
+      <div class="rd-title"><svg viewBox="0 0 18 18"><path d="M11 4L6 9l5 5"/></svg>The Remains of the Day · 第 3 章</div>
+      <div class="tb">
+        <button title="目录"><svg viewBox="0 0 18 18"><path d="M3 4.5h12M3 9h12M3 13.5h8"/></svg></button>
+        <button title="搜索"><svg viewBox="0 0 18 18"><circle cx="7.5" cy="7.5" r="4.2"/><path d="M10.8 10.8l3.7 3.7"/></svg></button>
+        <button title="连续朗读"><svg viewBox="0 0 18 18"><path d="M3.5 7v4H6l3.5 3V4L6 7H3.5z"/><path d="M12 6.8a3.2 3.2 0 010 4.4"/></svg></button>
+        <button title="排版"><span class="aa">Aa</span></button>
+        <button class="bad"><svg viewBox="0 0 18 18"><path d="M5.5 3h7v12l-3.5-2.8L5.5 15V3z"/></svg></button>
+        <button class="bad"><svg viewBox="0 0 18 18"><path d="M4.5 3.5h7.5a1.5 1.5 0 011.5 1.5v9.5H6.5a2 2 0 00-2 1.4V3.5z"/><path d="M7 6.5h4M7 9h3"/></svg></button>
+        <button title="笔记"><svg viewBox="0 0 18 18"><path d="M12.3 3.4l2.3 2.3L7 13.3H4.7V11z"/></svg></button>
+        <button title="X-Ray"><svg viewBox="0 0 18 18"><circle cx="9" cy="4.7" r="1.7"/><circle cx="4.5" cy="13" r="1.7"/><circle cx="13.5" cy="13" r="1.7"/><path d="M8.2 6.2l-2.8 5.2M9.8 6.2l2.8 5.2M6.2 13h5.6"/></svg></button>
+        <button title="AI"><svg viewBox="0 0 18 18"><path d="M9 3l1.4 3.6L14 8l-3.6 1.4L9 13 7.6 9.4 4 8l3.6-1.4z"/></svg></button>
+      </div>
+    </div>
+    <div class="cap-row"><div class="caps"><span>目录</span><span>搜索</span><span>朗读</span><span>排版</span><span class="hl">书签*</span><span class="hl">生词*</span><span>笔记</span><span>X-Ray</span><span>AI</span></div></div>
+  </div>
+
+  <div class="screen-label">屏 B · 推荐:6 个图标,右侧「痕迹」面板展开<small>书签/生词/笔记三合一,面板内部三个页签切换;当前在「生词」页签</small></div>
+  <div class="frame">
+    <div class="rd-top">
+      <div class="rd-title"><svg viewBox="0 0 18 18"><path d="M11 4L6 9l5 5"/></svg>The Remains of the Day · 第 3 章</div>
+      <div class="tb">
+        <button title="目录"><svg viewBox="0 0 18 18"><path d="M3 4.5h12M3 9h12M3 13.5h8"/></svg></button>
+        <button title="搜索"><svg viewBox="0 0 18 18"><circle cx="7.5" cy="7.5" r="4.2"/><path d="M10.8 10.8l3.7 3.7"/></svg></button>
+        <button title="连续朗读"><svg viewBox="0 0 18 18"><path d="M3.5 7v4H6l3.5 3V4L6 7H3.5z"/><path d="M12 6.8a3.2 3.2 0 010 4.4"/></svg></button>
+        <button title="排版"><span class="aa">Aa</span></button>
+        <button class="on" title="痕迹:书签、生词、笔记"><svg viewBox="0 0 18 18"><path d="M9 2.8l6 3-6 3-6-3z"/><path d="M3 9l6 3 6-3"/><path d="M3 12.2l6 3 6-3"/></svg></button>
+        <button title="AI:对话与 X-Ray"><svg viewBox="0 0 18 18"><path d="M9 3l1.4 3.6L14 8l-3.6 1.4L9 13 7.6 9.4 4 8l3.6-1.4z"/></svg></button>
+      </div>
+    </div>
+    <div class="cap-row"><div class="caps"><span>目录</span><span>搜索</span><span>朗读</span><span>排版</span><span class="new">痕迹</span><span class="new">AI</span></div></div>
+    <div class="rd-body">
+      <div class="rd-page">
+        <p>It was Miss Kenton who first drew my attention to the matter, one afternoon in the autumn of 1932, when I happened to be passing through the back corridor…</p>
+        <p>Indeed, now that I come to think further about it, I believe it may well have been that same evening that Mr Farraday made his suggestion concerning the expedition.</p>
+      </div>
+      <div class="panel">
+        <div class="panel-tabs"><span>书签 3</span><span class="on">生词 12</span><span>笔记 5</span></div>
+        <div class="panel-body">
+          <div class="p-item"><b class="hl-word">expedition</b><small>第 3 章 · 学习中 · "…concerning the expedition."</small></div>
+          <div class="p-item"><b class="hl-word">corridor</b><small>第 3 章 · 新词 · "…through the back corridor…"</small></div>
+          <div class="p-item"><b class="hl-word">bantering</b><small>第 1 章 · 熟悉 · "…the sort of bantering…"</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen-label">屏 C · 推荐:AI 面板展开<small>原来的 AI 对话面板不变,只是顶部多一个「X-Ray」页签;X-Ray 不再有独立按钮和浮窗</small></div>
+  <div class="frame">
+    <div class="rd-top">
+      <div class="rd-title"><svg viewBox="0 0 18 18"><path d="M11 4L6 9l5 5"/></svg>The Remains of the Day · 第 3 章</div>
+      <div class="tb">
+        <button title="目录"><svg viewBox="0 0 18 18"><path d="M3 4.5h12M3 9h12M3 13.5h8"/></svg></button>
+        <button title="搜索"><svg viewBox="0 0 18 18"><circle cx="7.5" cy="7.5" r="4.2"/><path d="M10.8 10.8l3.7 3.7"/></svg></button>
+        <button title="连续朗读"><svg viewBox="0 0 18 18"><path d="M3.5 7v4H6l3.5 3V4L6 7H3.5z"/><path d="M12 6.8a3.2 3.2 0 010 4.4"/></svg></button>
+        <button title="排版"><span class="aa">Aa</span></button>
+        <button title="痕迹:书签、生词、笔记"><svg viewBox="0 0 18 18"><path d="M9 2.8l6 3-6 3-6-3z"/><path d="M3 9l6 3 6-3"/><path d="M3 12.2l6 3 6-3"/></svg></button>
+        <button class="on" title="AI:对话与 X-Ray"><svg viewBox="0 0 18 18"><path d="M9 3l1.4 3.6L14 8l-3.6 1.4L9 13 7.6 9.4 4 8l3.6-1.4z"/></svg></button>
+      </div>
+    </div>
+    <div class="rd-body" style="border-top:1px solid var(--border)">
+      <div class="rd-page">
+        <p>It was Miss Kenton who first drew my attention to the matter, one afternoon in the autumn of 1932…</p>
+      </div>
+      <div class="panel">
+        <div class="panel-tabs"><span class="on">对话</span><span>X-Ray</span></div>
+        <div class="panel-body">
+          <div class="p-item"><b>你</b><small>Miss Kenton 到这一章为止和 Stevens 是什么关系?</small></div>
+          <div class="p-item" style="background:var(--bg-input); border-color:transparent"><b>AI</b><small>到第 3 章为止,两人是同事关系——她是女管家,他是男管家。叙述中已能看出 Stevens 回避正面回答她的问题…(基于本书前 3 章,含引文出处)</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:14px" class="ghost">〔备选:7 图标 —— X-Ray 保留独立按钮,但面板从"独立浮窗"改进右侧面板槽位(与其余面板同一套互斥机制)。这是审计原文的方案;如果你常直接开 X-Ray、不想多点一次页签,选这个。其余(痕迹三合一、无障碍补齐)两个方案完全相同。〕</div>
+
+  <div class="note"><b>这次归并顺手修掉的两笔技术账</b>① 书签、生词两个按钮补上 title 和 aria-label(现状鼠标悬停无任何提示,读屏软件读不出这是什么按钮),其余按钮统一检查;② 现在五个右侧面板用两套机制(四个走同一个枚举槽位,X-Ray 自己一套浮窗 + 手写互斥逻辑),归并后全部走同一个槽位,互斥不再需要手写。</div>
+
+  <!-- ═══════════ 第二部分:Aa 面板 ═══════════ -->
+  <h2 class="doc">二、Aa 面板分流</h2>
+  <p class="doc">分流标准就一句话:<b style="color:var(--text-primary)">调完之后要不要盯着正文看效果?</b>要盯着看的(字号、行距、主题…)留在 Aa,随调随看;设一次就不再动的(翻页动画、键位、进度显示…)迁去 设置→阅读。Aa 底部留一条入口链过去——这正是「被动生词:开关留在 Aa,详细设置链去设置页」已经用过的模式。</p>
+
+  <div class="screen-label">屏 D · 现状:一个面板塞下 17 组控件<small>紫标 = 留在 Aa(12 组),橙标 = 迁走(5 组);双列只为示意省高度,实际面板是单列长滚动</small></div>
+  <div class="frame" style="padding:20px 24px">
+    <div class="aa-grid">
+      <div class="aa-row"><span>主题</span><span class="tag keep">留</span></div>
+      <div class="aa-row"><span>阅读模式(滚动/分页)</span><span class="tag move">迁走</span></div>
+      <div class="aa-row"><span>字体</span><span class="tag keep">留</span></div>
+      <div class="aa-row"><span>单页 / 双页</span><span class="tag move">迁走</span></div>
+      <div class="aa-row"><span>字号</span><span class="tag keep">留</span></div>
+      <div class="aa-row"><span>翻页动画</span><span class="tag move">迁走</span></div>
+      <div class="aa-row"><span>行距</span><span class="tag keep">留</span></div>
+      <div class="aa-row"><span>翻页键位绑定</span><span class="tag move">迁走</span></div>
+      <div class="aa-row"><span>字距</span><span class="tag keep">留</span></div>
+      <div class="aa-row"><span>进度显示方式</span><span class="tag move">迁走</span></div>
+      <div class="aa-row"><span>词距</span><span class="tag keep">留</span></div>
+      <div class="aa-row"><span>对齐</span><span class="tag keep">留</span></div>
+      <div class="aa-row"><span>段距</span><span class="tag keep">留</span></div>
+      <div class="aa-row"><span>首行缩进</span><span class="tag keep">留</span></div>
+      <div class="aa-row"><span>页边距</span><span class="tag keep">留</span></div>
+      <div class="aa-row"><span>生词标记样式</span><span class="tag keep">留</span></div>
+      <div class="aa-row"><span>被动生词开关</span><span class="tag keep">留</span></div>
+    </div>
+  </div>
+
+  <div class="screen-label">屏 E · 分流后:Aa 只剩排版,设置→阅读 接住其余<small>左:Aa 弹出面板(压缩示意);右:设置模态「阅读」页,紫条为新迁入的 5 行</small></div>
+  <div class="aa-wrap">
+    <div class="aa-pop">
+      <div class="aa-sec">主题</div>
+      <div class="aa-row"><div class="swatches"><i style="background:#fff"></i><i style="background:#f7f1e3"></i><i style="background:#cfe3cf"></i><i style="background:#18191d"></i></div><span class="ctrl">白 / 米黄 / 护眼 / 深色</span></div>
+      <div class="aa-sec">文字</div>
+      <div class="aa-row"><span>字体</span><span class="ctrl">Georgia ▾</span></div>
+      <div class="aa-row"><span>字号</span><div class="slider"><i></i><em></em></div></div>
+      <div class="aa-row"><span>行距</span><div class="slider"><i style="width:42%"></i><em style="left:42%"></em></div></div>
+      <div class="aa-row"><span>字距 / 词距</span><div class="slider"><i style="width:30%"></i><em style="left:30%"></em></div></div>
+      <div class="aa-sec">段落</div>
+      <div class="aa-row"><span>对齐 · 段距 · 首行缩进 · 页边距</span><span class="ctrl">…</span></div>
+      <div class="aa-sec">生词</div>
+      <div class="aa-row"><span>生词标记样式</span><span class="ctrl">下划线 ▾</span></div>
+      <div class="aa-row"><span>被动生词</span><div class="toggle"></div></div>
+      <div class="aa-foot new-mark" style="position:relative">翻页与显示设置 → 设置 · 阅读</div>
+    </div>
+    <div class="set-modal">
+      <div class="set-head">设置 → 阅读<small>迁入的 5 行沿用 GeneralSettings 行模式;值仍是同一套 settings 键,只换住处</small></div>
+      <div class="set-row new-mark"><div class="l"><b>阅读模式</b><small>滚动或分页</small></div><span class="sel">分页 ▾</span></div>
+      <div class="set-row new-mark"><div class="l"><b>单页 / 双页</b><small>宽窗口时是否并排两页</small></div><span class="sel">自动 ▾</span></div>
+      <div class="set-row new-mark"><div class="l"><b>翻页动画</b></div><span class="sel">滑动 ▾</span></div>
+      <div class="set-row new-mark"><div class="l"><b>翻页键位</b><small>方向键、空格、点击边缘</small></div><span class="sel">默认 ▾</span></div>
+      <div class="set-row new-mark"><div class="l"><b>进度显示</b><small>百分比 / 页码 / 剩余时间</small></div><span class="sel">百分比 ▾</span></div>
+      <div class="set-row"><div class="l"><b>被动生词 · 详细设置</b><small>现状已在此,不动——它就是这个分流模式的先例</small></div><span class="sel">…</span></div>
+    </div>
+  </div>
+
+  <ul class="spec">
+    <li>迁走的 5 组值不换存储:仍是 <code>settings</code> 表里的同一批键,前端仍走 <code>useSettings</code>,只是控件从 <code>ReaderSettings.tsx</code> 移到 <code>settings/</code> 下的阅读分区。每书覆盖机制(P2.4)不受影响。</li>
+    <li>Aa 面板高度约减三分之一,不再需要长滚动才够到生词标记。</li>
+    <li>所有新文案走 i18n 键(en/zh 同步)。</li>
+  </ul>
+</div>
+</body>
+</html>

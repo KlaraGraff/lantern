@@ -85,18 +85,18 @@
 </head>
 <body>
 <div class="wrap">
-  <h1 class="doc">阅读统计 × 学习数据 — 样张</h1>
-  <p class="doc">已拍板「阅读统计接学习数据」(2026-08-06)。方案:在统计页新增一个「学习」区块,位置在书籍历史之后、水平观察之前;左侧紫条标记的是新增内容,其余为现有页面的压缩示意。全部数字本地计算,不经过 AI,不产生任何请求。页面顶部的书籍筛选与时间范围<b>同样作用于本区块</b>。</p>
+  <h1 class="doc">阅读统计 × 学习数据 — 样张(v2)</h1>
+  <p class="doc">v2(2026-08-06 反馈):「学习」<b>不再是独立堆叠的区块</b>,而是并进页面右上角现有的视图切换,成为 历史 / 日历 之后的第三个视图——同一页只有一个内容标题,看哪类统计就切哪个。左侧紫条标记新增内容,其余为现有页面的压缩示意。全部数字本地计算,不经过 AI;顶部的书籍筛选与时间范围<b>同样作用于学习视图</b>。水平观察保持在页面最后,不受视图切换影响(它读的是固定窗口,本来就不跟随筛选)。</p>
 
   <!-- ═══════════ 屏 1:正常态 ═══════════ -->
-  <div class="screen-label">屏 1 · 正常态(全部书籍 · 最近30天)<small>查词趋势条上真实可悬停;左一条演示了悬停提示</small></div>
+  <div class="screen-label">屏 1 · 学习视图(全部书籍 · 最近30天)<small>右上角第三个视图页签;查词趋势条上真实可悬停,左一条演示了悬停提示</small></div>
   <div class="frame">
     <div class="pg-head">
-      <div><h2>阅读统计</h2><div class="sub">你的专注阅读时间与足迹</div></div>
+      <div><h2>阅读统计</h2><div class="sub">阅读带来的查词与生词进展</div></div>
       <div class="controls">
         <span class="ctl">全部书籍 ▾</span>
         <div class="seg"><span class="on">最近30天</span><span>今年</span><span>全部</span></div>
-        <div class="seg"><span class="on">历史</span><span>日历</span></div>
+        <div class="seg new-mark" style="position:relative"><span>历史</span><span>日历</span><span class="on" style="color:var(--accent-text)">学习</span></div>
       </div>
     </div>
     <div class="body-pad">
@@ -106,14 +106,13 @@
         <div><strong class="serif">1</strong><span>读完的书</span></div>
         <div><strong class="serif">36</strong><span>有效会话</span></div>
       </div>
-      <div class="ghost">〔现有区块示意 · AI 阅读回顾面板 — 不动〕</div>
-      <div class="ghost">〔现有区块示意 · 书籍历史列表(封面 + 时长条 + 进度)— 不动〕</div>
+      <div class="ghost">〔现有区块示意 · AI 阅读回顾面板 — 不动;历史 / 日历两个视图也不动,此处切到了「学习」〕</div>
 
-      <!-- 新增:学习区块 -->
+      <!-- 新增:学习视图(占据历史/日历同一个槽位) -->
       <div class="new-mark">
         <div class="sec-head">
           <h3>学习</h3>
-          <p>这段时间里,阅读带来的查词与生词进展。全部在本机统计,不使用 AI。</p>
+          <p>与「历史」视图的标题同款式——同一时间只显示一个视图,不会出现双标题。全部在本机统计,不使用 AI。</p>
         </div>
         <div class="learn-card">
           <div class="learn-metrics">
@@ -152,20 +151,20 @@
         </div>
       </div>
 
-      <div class="ghost">〔现有区块示意 · 水平观察(阅读水平 vs 查词记录的那段话)— 位置不变,仍是页面最后一块〕</div>
+      <div class="ghost">〔现有区块示意 · 水平观察(阅读水平 vs 查词记录的那段话)— 位置不变,仍是页面最后一块,三个视图下都显示〕</div>
     </div>
   </div>
-  <div class="note"><b>为什么放在书籍历史之后、水平观察之前</b>页面的主角仍是阅读时间;学习区块是它的「产出」视角,排第二梯队。水平观察本来就在读你的查词记录,两块相邻后,页面尾部自然形成一个「学习」段落,而水平观察保持它「页面最后、最安静的一行」的既有定位不动。</div>
+  <div class="note"><b>为什么做成第三个视图而不是独立区块</b>历史、日历、学习都是「同一段时间的统计」,只是切面不同——堆叠会让页面同时出现两个标题,切换则保证一次只看一类。副标题跟随视图变化(历史「你的专注阅读时间与足迹」/ 学习「阅读带来的查词与生词进展」),沿用现有 historyView/calendarView 的机制加一个枚举值即可。</div>
 
   <!-- ═══════════ 屏 2:空态 ═══════════ -->
-  <div class="screen-label">屏 2 · 空态<small>这段时间没有任何查词、生词活动时,区块整体退成一行安静的说明</small></div>
+  <div class="screen-label">屏 2 · 学习视图空态<small>这段时间没有任何查词、生词活动时,视图退成一行安静的说明</small></div>
   <div class="frame">
     <div class="body-pad" style="padding-top:20px">
-      <div class="ghost">〔…上方现有区块同屏 1…〕</div>
+      <div class="ghost">〔…顶栏视图切换在「学习」,指标条与 AI 回顾同屏 1…〕</div>
       <div class="new-mark">
         <div class="sec-head">
           <h3>学习</h3>
-          <p>这段时间里,阅读带来的查词与生词进展。全部在本机统计,不使用 AI。</p>
+          <p>阅读带来的查词与生词进展。全部在本机统计,不使用 AI。</p>
         </div>
         <div class="empty-learn">
           <p>这段时间没有查词或生词记录</p>
@@ -176,14 +175,14 @@
   </div>
 
   <!-- ═══════════ 屏 3:单书视角 ═══════════ -->
-  <div class="screen-label">屏 3 · 书籍筛选后(《The Remains of the Day》)<small>四个数字、趋势、分布都收窄到这本书;待复习也只数这本书的词</small></div>
+  <div class="screen-label">屏 3 · 学习视图 + 书籍筛选(《The Remains of the Day》)<small>四个数字、趋势、分布都收窄到这本书;待复习也只数这本书的词</small></div>
   <div class="frame">
     <div class="pg-head">
-      <div><h2>阅读统计</h2><div class="sub">你的专注阅读时间与足迹</div></div>
+      <div><h2>阅读统计</h2><div class="sub">阅读带来的查词与生词进展</div></div>
       <div class="controls">
         <span class="ctl" style="border-color:var(--accent); color:var(--accent-text)">The Remains of the Day ▾</span>
         <div class="seg"><span class="on">最近30天</span><span>今年</span><span>全部</span></div>
-        <div class="seg"><span class="on">历史</span><span>日历</span></div>
+        <div class="seg"><span>历史</span><span>日历</span><span class="on" style="color:var(--accent-text)">学习</span></div>
       </div>
     </div>
     <div class="body-pad">
@@ -230,6 +229,7 @@
   <div class="screen-label">实现要点(拍板后进 impls 计划,此处仅供理解)</div>
   <div class="frame" style="padding:20px 26px 24px">
     <ul class="spec">
+      <li>视图机制沿用现成的 <code>ReadingStatsView</code> 切换(历史/日历),加一个 <code>"learning"</code> 枚举值;副标题跟随视图。</li>
       <li>数据源全部现成:<code>lookup_records</code>(查词/按书/按天)、<code>vocab_words</code>(四档掌握度、<code>next_review_at</code>)、<code>mastery_events</code>(「升为已掌握」= 本期 <code>to_mastery='mastered'</code> 的事件数)。零调用的 <code>get_vocab_stats</code> 就此接上第一个前端消费者。</li>
       <li>时间范围切到「今年 / 全部」时,趋势图粒度自动从按日改为按周/按月,柱数保持在 30–60 根以内。</li>
       <li>悬停提示每根柱都有(日期 + 次数);峰值柱常显数字,其余不标——选择性直接标注。</li>
