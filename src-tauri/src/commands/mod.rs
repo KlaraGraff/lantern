@@ -16,6 +16,7 @@ pub mod notes;
 pub mod oauth;
 pub mod reading_behavior;
 pub mod reading_stats;
+pub mod review_piles;
 // Split by platform *inside* the module, not here: the OCR *pipeline* is
 // desktop-only, but the *resolver* that picks a book's active asset has to
 // exist everywhere. See the cfgs in `ocr/mod.rs`.

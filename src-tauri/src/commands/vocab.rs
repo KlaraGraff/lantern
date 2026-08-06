@@ -11,7 +11,7 @@ use crate::sync::events::{EventBody, VocabPayload};
 use crate::sync::merge::{entity, insert_tombstone};
 use crate::sync::writer::SyncWriter;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct VocabWord {
     pub id: String,
     pub book_id: String,
