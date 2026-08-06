@@ -1,10 +1,11 @@
 use chrono::{TimeZone, Utc};
 use fsrs::{Card, Rating, State as FsrsState, FSRS};
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use tauri::State;
 
+use crate::commands::mastery_events::record_mastery_event;
 use crate::db::Db;
 use crate::error::AppResult;
 use crate::sync::events::{EventBody, VocabPayload};
@@ -404,6 +405,16 @@ struct VocabProgress {
     fsrs_stability: Option<f64>,
     fsrs_difficulty: Option<f64>,
     fsrs_version: i64,
+    /// Who decided the tier: `auto` for the reading-exposure engine, `manual`
+    /// for the reader, `review` for an SRS answer. Carried alongside
+    /// `mastery` rather than left behind, because a sibling row or a second
+    /// device showing the right tier under a stale "decided automatically"
+    /// mark is worse than showing nothing — it keeps asserting a reason the
+    /// reader has already overruled.
+    mastery_source: String,
+    /// The automatic explanation's raw JSON, or `None` once something other
+    /// than the exposure engine decided the tier.
+    mastery_reason: Option<String>,
 }
 
 /// Mastery and review progress belong to the word, not to the row: the same
@@ -435,8 +446,9 @@ fn propagate_progress_to_siblings(
              SET mastery = ?1, next_review_at = ?2, review_count = ?3,
                  review_interval_days = ?4, last_reviewed_at = ?5, last_review_rating = ?6,
                  fsrs_stability = ?7, fsrs_difficulty = ?8, fsrs_version = ?9,
-                 updated_at = ?10, updated_by_device = ?11
-             WHERE id = ?12",
+                 mastery_source = ?10, mastery_reason = ?11,
+                 updated_at = ?12, updated_by_device = ?13
+             WHERE id = ?14",
             params![
                 progress.mastery,
                 progress.next_review_at,
@@ -447,6 +459,8 @@ fn propagate_progress_to_siblings(
                 progress.fsrs_stability,
                 progress.fsrs_difficulty,
                 progress.fsrs_version,
+                progress.mastery_source,
+                progress.mastery_reason,
                 now,
                 device,
                 sibling,
@@ -463,6 +477,8 @@ fn propagate_progress_to_siblings(
             fsrs_stability: progress.fsrs_stability,
             fsrs_difficulty: progress.fsrs_difficulty,
             fsrs_version: progress.fsrs_version,
+            mastery_source: progress.mastery_source.clone(),
+            mastery_reason: progress.mastery_reason.clone(),
         });
     }
     Ok(())
@@ -717,6 +733,7 @@ pub(crate) fn record_vocab_review_inner(
              SET mastery = ?1, review_count = ?2, next_review_at = ?3,
                  review_interval_days = ?4, last_reviewed_at = ?5, last_review_rating = ?6,
                  fsrs_stability = ?7, fsrs_difficulty = ?8, fsrs_version = 1,
+                 mastery_source = 'manual', mastery_reason = NULL,
                  updated_at = ?5, updated_by_device = ?9
              WHERE id = ?10",
             params![
@@ -732,6 +749,12 @@ pub(crate) fn record_vocab_review_inner(
                 id,
             ],
         )?;
+        // An actual review outranks whatever the exposure scorer had guessed,
+        // so the automatic sentence is cleared rather than left to contradict
+        // the tier the reader just earned. `mastery_source` stays binary —
+        // migration 038 defines 'manual' as "the user set it or a review
+        // decided it", and the ability to roll back only the 'auto' rows
+        // depends on that staying a two-valued column.
         let progress = VocabProgress {
             mastery,
             next_review_at: Some(next_review_at),
@@ -742,6 +765,8 @@ pub(crate) fn record_vocab_review_inner(
             fsrs_stability: Some(stability),
             fsrs_difficulty: Some(difficulty),
             fsrs_version: 1,
+            mastery_source: "manual".to_string(),
+            mastery_reason: None,
         };
         events.push(EventBody::VocabMasterySet {
             id: id.to_string(),
@@ -754,6 +779,8 @@ pub(crate) fn record_vocab_review_inner(
             fsrs_stability: progress.fsrs_stability,
             fsrs_difficulty: progress.fsrs_difficulty,
             fsrs_version: progress.fsrs_version,
+            mastery_source: progress.mastery_source.clone(),
+            mastery_reason: progress.mastery_reason.clone(),
         });
         propagate_progress_to_siblings(tx, events, id, &current.word, &progress, now, &device)?;
         tx.query_row(
@@ -787,14 +814,41 @@ pub(crate) fn update_vocab_mastery_inner(
     let now = chrono::Utc::now().timestamp_millis();
     let device = sync.self_device().to_string();
     sync.with_tx(db, now, |tx, events| {
-        let changed = tx.execute(
-            "UPDATE vocab_words SET mastery = ?1, next_review_at = ?2, updated_at = ?3, updated_by_device = ?4 WHERE id = ?5",
+        // Read the tier first: once the UPDATE lands, the value this
+        // transition came *from* is gone, and the timeline needs both ends.
+        let previous_mastery = tx
+            .query_row(
+                "SELECT mastery FROM vocab_words WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .ok_or_else(|| crate::error::AppError::Other("VOCAB_WORD_NOT_FOUND".to_string()))?;
+        // This is the manual path — the "我其实不认识" button ends up here.
+        // Stamping `mastery_source = 'manual'` and clearing `mastery_reason`
+        // is what makes the override stick: leaving the automatic mark and
+        // its one-sentence explanation behind would have the app go on
+        // asserting a judgement the reader has just overruled, and because
+        // both columns sync, it would assert it on every other device too.
+        tx.execute(
+            "UPDATE vocab_words
+             SET mastery = ?1, next_review_at = ?2,
+                 mastery_source = 'manual', mastery_reason = NULL,
+                 updated_at = ?3, updated_by_device = ?4
+             WHERE id = ?5",
             params![mastery, next_review_at, now, device, id],
         )?;
-        if changed == 0 {
-            return Err(crate::error::AppError::Other(
-                "VOCAB_WORD_NOT_FOUND".to_string(),
-            ));
+        if previous_mastery != mastery {
+            record_mastery_event(
+                tx,
+                id,
+                &previous_mastery,
+                mastery,
+                "manual",
+                "user_override",
+                "{}",
+                now,
+            )?;
         }
         // A status change (for example, "start learning") is not a review.
         // Keep the absolute count in the sync event so a future explicit SRS
@@ -816,6 +870,8 @@ pub(crate) fn update_vocab_mastery_inner(
             fsrs_stability: review.fsrs_stability,
             fsrs_difficulty: review.fsrs_difficulty,
             fsrs_version: review.fsrs_version,
+            mastery_source: "manual".to_string(),
+            mastery_reason: None,
         };
         events.push(EventBody::VocabMasterySet {
             id: id.to_string(),
@@ -828,6 +884,8 @@ pub(crate) fn update_vocab_mastery_inner(
             fsrs_stability: progress.fsrs_stability,
             fsrs_difficulty: progress.fsrs_difficulty,
             fsrs_version: progress.fsrs_version,
+            mastery_source: progress.mastery_source.clone(),
+            mastery_reason: progress.mastery_reason.clone(),
         });
         propagate_progress_to_siblings(tx, events, id, &word, &progress, now, &device)?;
         Ok(())
@@ -1282,18 +1340,43 @@ pub(crate) fn bulk_update_vocab_mastery_inner(
         for id in ids {
             let found = tx
                 .query_row(
-                    "SELECT word, review_count, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version FROM vocab_words WHERE id = ?1",
+                    "SELECT word, review_count, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version, mastery FROM vocab_words WHERE id = ?1",
                     params![id],
-                    |row| Ok((row.get::<_, String>(0)?, row_to_review_state(row, 1)?)),
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row_to_review_state(row, 1)?,
+                            row.get::<_, String>(8)?,
+                        ))
+                    },
                 )
                 .ok();
-            let Some((word, review)) = found else {
+            let Some((word, review, previous_mastery)) = found else {
                 continue;
             };
+            // Same reasoning as the single-word path: a bulk tier change is
+            // still the reader overruling the app, so it stamps `manual` and
+            // drops the automatic explanation.
             tx.execute(
-                "UPDATE vocab_words SET mastery = ?1, next_review_at = ?2, updated_at = ?3, updated_by_device = ?4 WHERE id = ?5",
+                "UPDATE vocab_words
+                 SET mastery = ?1, next_review_at = ?2,
+                     mastery_source = 'manual', mastery_reason = NULL,
+                     updated_at = ?3, updated_by_device = ?4
+                 WHERE id = ?5",
                 params![mastery, next_review_at, timestamp, device, id],
             )?;
+            if previous_mastery != mastery {
+                record_mastery_event(
+                    tx,
+                    id,
+                    &previous_mastery,
+                    mastery,
+                    "manual",
+                    "user_override",
+                    "{}",
+                    timestamp,
+                )?;
+            }
             let progress = VocabProgress {
                 mastery: mastery.to_string(),
                 next_review_at,
@@ -1304,6 +1387,8 @@ pub(crate) fn bulk_update_vocab_mastery_inner(
                 fsrs_stability: review.fsrs_stability,
                 fsrs_difficulty: review.fsrs_difficulty,
                 fsrs_version: review.fsrs_version,
+                mastery_source: "manual".to_string(),
+                mastery_reason: None,
             };
             events.push(EventBody::VocabMasterySet {
                 id: id.clone(),
@@ -1316,6 +1401,8 @@ pub(crate) fn bulk_update_vocab_mastery_inner(
                 fsrs_stability: progress.fsrs_stability,
                 fsrs_difficulty: progress.fsrs_difficulty,
                 fsrs_version: progress.fsrs_version,
+                mastery_source: progress.mastery_source.clone(),
+                mastery_reason: progress.mastery_reason.clone(),
             });
             propagate_progress_to_siblings(
                 tx, events, id, &word, &progress, timestamp, &device,
@@ -1481,6 +1568,98 @@ mod tests {
         assert_eq!(changed, 1);
         assert_eq!(stored_word(&db, &b).mastery, "mastered");
         assert_eq!(stored_word(&db, &other).mastery, "new");
+    }
+
+    /// The "我其实不认识" button lands here. Overruling an automatic tier has
+    /// to clear the automatic mark *and* the sentence that justified it —
+    /// otherwise the word-detail page keeps showing "自动判定" next to a tier
+    /// the reader has just contradicted.
+    #[test]
+    fn overruling_an_automatic_tier_clears_the_automatic_mark_and_its_sentence() {
+        let (_dir, db, sync, a, b, _other) = setup_sibling_db();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE vocab_words
+                 SET mastery = 'familiar', mastery_source = 'auto',
+                     mastery_reason = '{\"reason\":\"exposure_promotion\"}'",
+                [],
+            )
+            .unwrap();
+
+        update_vocab_mastery_inner(&a, "learning", None, &db, &sync).unwrap();
+
+        for id in [&a, &b] {
+            let stored = stored_word(&db, id);
+            assert_eq!(stored.mastery, "learning");
+            assert_eq!(
+                stored.mastery_source, "manual",
+                "the sibling in the other book is the same word to the reader, \
+                 so it must stop claiming the app decided this"
+            );
+            assert_eq!(stored.mastery_reason, None);
+        }
+    }
+
+    /// The columns are synced, so a second device has to hear about the
+    /// override too — a peer still holding 'auto' would go on rendering the
+    /// explanation this reader already overruled.
+    #[test]
+    fn the_override_travels_to_other_devices_in_the_sync_event() {
+        let (dir, db, sync, a, b, _other) = setup_sibling_db();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE vocab_words SET mastery_source = 'auto', mastery_reason = '{}'",
+                [],
+            )
+            .unwrap();
+
+        update_vocab_mastery_inner(&a, "learning", None, &db, &sync).unwrap();
+
+        let log = std::fs::read_to_string(dir.path().join("logs/dev-import.jsonl")).unwrap();
+        let mastery_sets: Vec<_> = log
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| serde_json::from_str::<crate::sync::events::Event>(line).unwrap())
+            .filter_map(|event| match event.body {
+                EventBody::VocabMasterySet {
+                    id,
+                    mastery_source,
+                    mastery_reason,
+                    ..
+                } => Some((id, mastery_source, mastery_reason)),
+                _ => None,
+            })
+            .collect();
+        for id in [&a, &b] {
+            assert!(
+                mastery_sets.contains(&(id.clone(), "manual".to_string(), None)),
+                "expected a manual override event for {id}, got {mastery_sets:?}"
+            );
+        }
+    }
+
+    /// The timeline the word-detail page reads is written here, not by the
+    /// (still unbuilt) exposure engine — a manual override is the one
+    /// transition the app can already narrate.
+    #[test]
+    fn overruling_a_tier_records_one_timeline_entry() {
+        let (_dir, db, sync, a, _b, _other) = setup_sibling_db();
+
+        update_vocab_mastery_inner(&a, "learning", None, &db, &sync).unwrap();
+        // Setting the same tier again is not a transition and must not
+        // clutter the timeline with a row saying nothing changed.
+        update_vocab_mastery_inner(&a, "learning", None, &db, &sync).unwrap();
+
+        let events = crate::commands::mastery_events::list_mastery_events_for(&db, &a).unwrap();
+        assert_eq!(events.len(), 1, "got {events:?}");
+        assert_eq!(events[0].from_mastery, "new");
+        assert_eq!(events[0].to_mastery, "learning");
+        assert_eq!(events[0].source, "manual");
+        assert_eq!(events[0].reason, "user_override");
     }
 
     #[test]

@@ -76,6 +76,8 @@ pub fn apply_event(tx: &Transaction, event: &Event) -> AppResult<()> {
             fsrs_stability,
             fsrs_difficulty,
             fsrs_version,
+            mastery_source,
+            mastery_reason,
         } => apply_vocab_mastery(
             tx,
             event,
@@ -90,6 +92,8 @@ pub fn apply_event(tx: &Transaction, event: &Event) -> AppResult<()> {
                 fsrs_stability: *fsrs_stability,
                 fsrs_difficulty: *fsrs_difficulty,
                 fsrs_version: *fsrs_version,
+                mastery_source,
+                mastery_reason: mastery_reason.as_deref(),
             },
         ),
         EventBody::VocabDelete { id } => apply_vocab_delete(tx, event, id),
@@ -793,6 +797,8 @@ struct VocabMasteryUpdate<'a> {
     fsrs_stability: Option<f64>,
     fsrs_difficulty: Option<f64>,
     fsrs_version: i64,
+    mastery_source: &'a str,
+    mastery_reason: Option<&'a str>,
 }
 
 fn apply_vocab_mastery(
@@ -812,10 +818,12 @@ fn apply_vocab_mastery(
              fsrs_stability = ?7,
              fsrs_difficulty = ?8,
              fsrs_version = ?9,
-             updated_at = ?10,
-             updated_by_device = ?11
-         WHERE id = ?12
-           AND (updated_at < ?10 OR (updated_at = ?10 AND updated_by_device < ?11))",
+             mastery_source = ?10,
+             mastery_reason = ?11,
+             updated_at = ?12,
+             updated_by_device = ?13
+         WHERE id = ?14
+           AND (updated_at < ?12 OR (updated_at = ?12 AND updated_by_device < ?13))",
         params![
             update.mastery,
             update.next_review_at,
@@ -826,6 +834,8 @@ fn apply_vocab_mastery(
             update.fsrs_stability,
             update.fsrs_difficulty,
             update.fsrs_version,
+            update.mastery_source,
+            update.mastery_reason,
             event.ts,
             event.device,
             id
@@ -2782,6 +2792,8 @@ mod tests {
                         fsrs_stability: None,
                         fsrs_difficulty: None,
                         fsrs_version: 1,
+                        mastery_source: "manual".into(),
+                        mastery_reason: None,
                     },
                 ),
                 ev(
@@ -2798,6 +2810,8 @@ mod tests {
                         fsrs_stability: None,
                         fsrs_difficulty: None,
                         fsrs_version: 1,
+                        mastery_source: "manual".into(),
+                        mastery_reason: None,
                     },
                 ),
             ],
@@ -2811,6 +2825,75 @@ mod tests {
             .unwrap();
         assert_eq!(m, "learning");
         assert_eq!(n, 2, "absolute review_count from later event wins");
+    }
+
+    /// A tier the reader overruled on one Mac has to arrive on the other as
+    /// an override, not just as a new tier. If `mastery_source` stayed 'auto'
+    /// and `mastery_reason` survived, the second device would keep showing
+    /// "decided automatically" plus the sentence justifying a judgement its
+    /// owner has already rejected.
+    #[test]
+    fn a_manual_override_clears_the_automatic_mark_on_the_receiving_device() {
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(
+                    1100,
+                    "dev-A",
+                    EventBody::VocabAdd(VocabPayload {
+                        id: "v1".into(),
+                        book_id: "b1".into(),
+                        word: "serendipity".into(),
+                        definition: "fortunate".into(),
+                        context_sentence: None,
+                        context_explanation: None,
+                        cfi: None,
+                        mastery: "familiar".into(),
+                        review_count: 0,
+                        next_review_at: None,
+                        review_interval_days: 0,
+                        last_reviewed_at: None,
+                        last_review_rating: None,
+                        fsrs_stability: None,
+                        fsrs_difficulty: None,
+                        fsrs_version: 1,
+                        created_at: None,
+                        mastery_source: "auto".into(),
+                        mastery_reason: Some("{\"reason\":\"exposure_promotion\"}".into()),
+                    }),
+                ),
+                ev(
+                    1200,
+                    "dev-B",
+                    EventBody::VocabMasterySet {
+                        id: "v1".into(),
+                        mastery: "learning".into(),
+                        next_review_at: None,
+                        review_count: 0,
+                        review_interval_days: 0,
+                        last_reviewed_at: None,
+                        last_review_rating: None,
+                        fsrs_stability: None,
+                        fsrs_difficulty: None,
+                        fsrs_version: 1,
+                        mastery_source: "manual".into(),
+                        mastery_reason: None,
+                    },
+                ),
+            ],
+        );
+        let (mastery, source, reason): (String, String, Option<String>) = db
+            .query_row(
+                "SELECT mastery, mastery_source, mastery_reason FROM vocab_words WHERE id = 'v1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(mastery, "learning");
+        assert_eq!(source, "manual");
+        assert_eq!(reason, None);
     }
 
     // -----------------------------------------------------------------------

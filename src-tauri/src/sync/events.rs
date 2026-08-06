@@ -217,6 +217,17 @@ pub enum EventBody {
         fsrs_difficulty: Option<f64>,
         #[serde(default = "default_fsrs_version")]
         fsrs_version: i64,
+        /// Who decided this tier. Travels with the tier because the two are
+        /// one fact: a device that learns the word is now "familiar" but
+        /// keeps its own stale "decided automatically" mark would go on
+        /// showing an explanation the reader has already overruled.
+        #[serde(default = "default_mastery_source")]
+        mastery_source: String,
+        /// The one-sentence explanation's raw JSON, or absent once a human or
+        /// a review decided the tier — at that point there is no automatic
+        /// reasoning left to show.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mastery_reason: Option<String>,
     },
     #[serde(rename = "vocab.delete")]
     VocabDelete { id: String },
@@ -661,6 +672,8 @@ mod tests {
             fsrs_stability: None,
             fsrs_difficulty: None,
             fsrs_version: 1,
+            mastery_source: "manual".into(),
+            mastery_reason: None,
         }));
         roundtrip(&mk(EventBody::VocabDelete { id: "v1".into() }));
     }

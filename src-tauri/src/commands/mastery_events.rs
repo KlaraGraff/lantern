@@ -67,10 +67,10 @@ pub(crate) fn list_mastery_events_for(db: &Db, vocab_word_id: &str) -> AppResult
 /// text (the numbers `reason` was computed from) — this function does not
 /// parse or validate it, only stores it.
 ///
-/// Not yet called from production code: this batch only lays down the data
-/// model (schema + insert helper). The exposure-scoring engine and the SRS
-/// review path that will call this are future work.
-#[allow(dead_code, clippy::too_many_arguments)]
+/// Called today from the manual override paths in `commands::vocab`
+/// (`user_override`). The exposure-scoring engine that will record
+/// `exposure_promotion` / `lookup_demotion` is still future work.
+#[allow(clippy::too_many_arguments)]
 pub fn record_mastery_event(
     conn: &Connection,
     vocab_word_id: &str,
