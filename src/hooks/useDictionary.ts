@@ -143,7 +143,7 @@ export function useAllDictionary() {
     notifyReaders("vocab-changed", { bookId: word?.book_id, cfi: word?.cfi });
   }, [words]);
 
-  const updateMastery = useCallback(async (id: string, mastery: "new" | "learning" | "mastered", nextReviewAt: number | null) => {
+  const updateMastery = useCallback(async (id: string, mastery: "new" | "learning" | "familiar" | "mastered", nextReviewAt: number | null) => {
     const changed = words.find((word) => word.id === id);
     await invoke("update_vocab_mastery", { id, mastery, nextReviewAt });
     setWords((prev) => prev.map((word) => word.id === id

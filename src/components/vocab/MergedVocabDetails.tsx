@@ -1,14 +1,14 @@
 import { useTranslation } from "react-i18next";
-import { BookOpen, RotateCcw } from "lucide-react";
+import { BookOpen } from "lucide-react";
 import type { DictionaryWord } from "../../hooks/useDictionary";
 import { timeAgo } from "../../utils/timeAgo";
 import { contextualReviewAnswer } from "./contextual-review";
 import { glossOf, parseDefinition } from "./entry-text";
+import MasteryPanel, { type MasteryLevel } from "./MasteryPanel";
 import type { MergedVocabEntry } from "./merge";
 import VocabEntryDetails from "./VocabEntryDetails";
 
-const MASTERY_LEVELS = ["new", "learning", "mastered"] as const;
-export type MasteryLevel = (typeof MASTERY_LEVELS)[number];
+export type { MasteryLevel };
 
 export interface MergedVocabDetailsProps {
   entry: MergedVocabEntry;
@@ -71,7 +71,6 @@ export default function MergedVocabDetails({
 }: MergedVocabDetailsProps) {
   const { t } = useTranslation();
   const bookCount = entry.books.length;
-
   return (
     <>
       <VocabEntryDetails
@@ -115,29 +114,11 @@ export default function MergedVocabDetails({
           </section>
         )}
       />
-      <div className="flex flex-wrap items-center gap-2 border-t border-border-light px-3 pb-3 pt-2.5">
-        <div className="flex items-center gap-0.5 rounded-md border border-border bg-bg-input p-0.5">
-          {MASTERY_LEVELS.map((level) => (
-            <button
-              key={level}
-              type="button"
-              aria-pressed={entry.primary.mastery === level}
-              onClick={() => onSetMastery(level)}
-              className={`h-6 rounded px-2 text-[11px] cursor-pointer ${
-                entry.primary.mastery === level
-                  ? "bg-bg-surface font-semibold text-accent-text"
-                  : "text-text-muted hover:text-text-primary"
-              }`}
-            >
-              {t(`vocab.mastery.${level}`)}
-            </button>
-          ))}
-        </div>
-        <span className="ml-auto flex items-center gap-1.5 text-[10px] text-text-muted">
-          <RotateCcw size={10} className="shrink-0" />
-          {t("vocab.merged.masterySharedHint", { count: bookCount })}
-        </span>
-      </div>
+      <MasteryPanel
+        word={entry.primary}
+        onSetMastery={onSetMastery}
+        sharedBookCount={bookCount}
+      />
     </>
   );
 }

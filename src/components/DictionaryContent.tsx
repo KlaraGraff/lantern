@@ -34,7 +34,8 @@ import { useAllDictionary, useAllLookupHistory, type LookupRecord, type LookupRe
 import { timeAgo } from "../utils/timeAgo";
 import PronounceButton from "./speech/PronounceButton";
 import VocabEntryDetails from "./vocab/VocabEntryDetails";
-import MergedVocabDetails, { type MasteryLevel } from "./vocab/MergedVocabDetails";
+import MergedVocabDetails from "./vocab/MergedVocabDetails";
+import MasteryPanel, { type MasteryLevel } from "./vocab/MasteryPanel";
 import { glossOf, parseDefinition } from "./vocab/entry-text";
 import {
   bookCountsByWord,
@@ -805,13 +806,21 @@ export default function DictionaryContent({ initialView = "all" }: DictionaryCon
       onSetMastery={(mastery) => { void setEntryMastery(entry, mastery); }}
     />
   ) : (
-    <VocabEntryDetails
-      word={entry.primary}
-      onOpenInReader={() => openInReader(entry.primary.book_id, {
-        openVocab: true,
-        cfi: entry.primary.cfi ?? undefined,
-      })}
-    />
+    <>
+      <VocabEntryDetails
+        word={entry.primary}
+        onOpenInReader={() => openInReader(entry.primary.book_id, {
+          openVocab: true,
+          cfi: entry.primary.cfi ?? undefined,
+        })}
+      />
+      {/* Most saved words come from a single book, so this is where the
+          automatic tier is usually seen and overruled — not the merged panel. */}
+      <MasteryPanel
+        word={entry.primary}
+        onSetMastery={(mastery) => { void setEntryMastery(entry, mastery); }}
+      />
+    </>
   ));
   const toggleSelectVisible = () => {
     setSelectedWordIds((previous) => {
