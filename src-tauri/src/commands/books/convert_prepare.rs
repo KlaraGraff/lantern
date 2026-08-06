@@ -470,6 +470,12 @@ fn run_conversion_with(app: &AppHandle, book_id: &str, converter: &dyn Converter
         cleanup_obsolete_converted_documents(&local_dir.0, book_id);
         emit_conversion_changed(app, book_id, "ready");
         crate::ai::grounding::index::schedule_index(app.clone(), book_id.to_string());
+        // The converted EPUB is the first moment this book has readable text,
+        // so it is also the first moment its difficulty can be counted.
+        crate::commands::book_difficulty::schedule_book_difficulty(
+            app.clone(),
+            book_id.to_string(),
+        );
         return Ok(());
     }
 
@@ -538,6 +544,10 @@ fn run_conversion_with(app: &AppHandle, book_id: &str, converter: &dyn Converter
             cleanup_obsolete_converted_documents(&local_dir.0, book_id);
             emit_conversion_changed(app, book_id, "ready");
             crate::ai::grounding::index::schedule_index(app.clone(), book_id.to_string());
+            crate::commands::book_difficulty::schedule_book_difficulty(
+                app.clone(),
+                book_id.to_string(),
+            );
         }
         Ok(false) => {
             // Job went stale mid-flight (re-import/format change). Drop our

@@ -424,6 +424,10 @@ pub(super) fn run_text_preparation(app: &AppHandle, book_id: &str) -> AppResult<
         cleanup_obsolete_prepared_documents(&local_dir.0, book_id);
         emit_text_preparation_changed(app, book_id, "ready");
         crate::ai::grounding::index::schedule_index(app.clone(), book_id.to_string());
+        crate::commands::book_difficulty::schedule_book_difficulty(
+            app.clone(),
+            book_id.to_string(),
+        );
         return Ok(());
     }
     let Some(source_file_path) = source.file_path.as_deref() else {
@@ -505,6 +509,12 @@ pub(super) fn run_text_preparation(app: &AppHandle, book_id: &str) -> AppResult<
             cleanup_obsolete_prepared_documents(&local_dir.0, book_id);
             emit_text_preparation_changed(app, book_id, "ready");
             crate::ai::grounding::index::schedule_index(app.clone(), book_id.to_string());
+            // The prepared document is the text book's source; this is the
+            // first point at which its difficulty can be computed at all.
+            crate::commands::book_difficulty::schedule_book_difficulty(
+                app.clone(),
+                book_id.to_string(),
+            );
         }
         Ok(false) => {
             log::debug!("discarded stale text preparation task for {book_id}");

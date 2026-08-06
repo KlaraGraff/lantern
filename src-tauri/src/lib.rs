@@ -762,6 +762,11 @@ pub fn run() {
             commands::books::retry_text_book_preparation,
             commands::books::get_converted_book_path,
             commands::books::retry_book_conversion,
+            // Local vocabulary-difficulty preview (pure table lookup, never
+            // synced — see migration 041)
+            commands::book_difficulty::get_book_difficulty,
+            commands::book_difficulty::compute_book_difficulty,
+            commands::book_difficulty::set_book_difficulty_override,
             // Local reading history and optional AI prose (never synced)
             commands::reading_stats::record_reading_session,
             commands::reading_stats::checkpoint_reading_session,

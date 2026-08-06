@@ -4,8 +4,8 @@ use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 use super::chunk::chunk_sections;
-use super::extract::{extract_epub, extract_pdf, extract_text_book};
 use super::segment::{segment_for_fts, SegmentMode};
+use super::source::{extract_source_text, resolve_book_source, BookSource};
 use super::INDEX_VERSION;
 use crate::commands::books::source_sha256;
 use crate::db::Db;
@@ -50,15 +50,6 @@ impl IndexStatus {
             Self::Missing => "missing",
         }
     }
-}
-
-#[derive(Debug)]
-struct BookSource {
-    file_path: String,
-    source_file_path: Option<String>,
-    source_format: String,
-    render_format: String,
-    stored_sha256: Option<String>,
 }
 
 pub fn index_status(db: &Db, book_id: &str) -> AppResult<IndexStatus> {
@@ -214,72 +205,22 @@ fn record_state(
 /// Build the local derived index synchronously. Callers doing UI work run it
 /// through `spawn_blocking`; the function itself owns no async runtime state.
 pub fn ensure_index(db: &Db, book_id: &str) -> AppResult<IndexStatus> {
-    let source = {
-        let conn = db.reader();
-        conn.query_row(
-            "SELECT file_path, source_file_path, COALESCE(source_format, format),
-                    COALESCE(render_format, format), source_sha256
-             FROM books WHERE id = ?1",
-            params![book_id],
-            |row| {
-                Ok(BookSource {
-                    file_path: row.get(0)?,
-                    source_file_path: row.get(1)?,
-                    source_format: row.get(2)?,
-                    render_format: row.get(3)?,
-                    stored_sha256: row.get(4)?,
-                })
-            },
-        )
-        .optional()?
+    let source = match resolve_book_source(db, book_id)? {
+        BookSource::Missing => return Ok(IndexStatus::Missing),
+        BookSource::Unsupported { stored_sha256 } => {
+            record_state(
+                db,
+                book_id,
+                stored_sha256.as_deref(),
+                IndexStatus::Unsupported,
+                0,
+                None,
+            )?;
+            return Ok(IndexStatus::Unsupported);
+        }
+        BookSource::Ready(source) => source,
     };
-    let Some(source) = source else {
-        return Ok(IndexStatus::Missing);
-    };
-
-    let format = source.source_format.to_ascii_lowercase();
-    if !matches!(
-        format.as_str(),
-        "epub" | "pdf" | "txt" | "markdown" | "html"
-    ) {
-        record_state(
-            db,
-            book_id,
-            source.stored_sha256.as_deref(),
-            IndexStatus::Unsupported,
-            0,
-            None,
-        )?;
-        return Ok(IndexStatus::Unsupported);
-    }
-    let (source_path, resolved_sha256) = if format == "pdf" {
-        let data_dir = db
-            .data_dir
-            .lock()
-            .map_err(|error| AppError::Other(error.to_string()))?
-            .clone();
-        let resolved = {
-            let conn = db.reader();
-            crate::commands::ocr::resolver::resolve_active_asset(&conn, &data_dir, book_id)?
-        };
-        (resolved.absolute_path, resolved.content_sha256)
-    } else {
-        (
-            db.resolve_path(
-                source
-                    .source_file_path
-                    .as_deref()
-                    .unwrap_or(&source.file_path),
-            )?,
-            source.stored_sha256.clone(),
-        )
-    };
-    let actual_sha256 = resolved_sha256
-        .filter(|hash| !hash.is_empty())
-        .unwrap_or_else(|| {
-            source_sha256(&source_path)
-                .unwrap_or_else(|_| source.stored_sha256.clone().unwrap_or_default())
-        });
+    let actual_sha256 = source.sha256_or_empty().to_string();
 
     {
         let conn = db
@@ -315,14 +256,7 @@ pub fn ensure_index(db: &Db, book_id: &str) -> AppResult<IndexStatus> {
         )?;
     }
 
-    let result = match format.as_str() {
-        "txt" | "markdown" | "html" if source.render_format == "text" => {
-            extract_text_book(db, book_id, Some(&actual_sha256))
-        }
-        "pdf" => extract_pdf(&source_path),
-        _ => extract_epub(&source_path),
-    }
-    .map(chunk_sections);
+    let result = extract_source_text(db, book_id, &source).map(chunk_sections);
 
     let chunks = match result {
         Ok(chunks) => chunks,

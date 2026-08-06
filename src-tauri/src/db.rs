@@ -106,6 +106,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
         40,
         include_str!("../migrations/040_annotation_indexes.sql"),
     ),
+    (41, include_str!("../migrations/041_book_difficulty.sql")),
 ];
 
 fn register_sqlite_vec() {

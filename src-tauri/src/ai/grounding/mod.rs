@@ -5,6 +5,7 @@ pub mod extract;
 pub mod index;
 pub mod retrieve;
 pub mod segment;
+pub mod source;
 pub mod spoiler;
 pub mod summarize;
 pub mod vector;

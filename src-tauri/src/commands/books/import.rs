@@ -463,6 +463,10 @@ fn import_user_selected_path(
         schedule_book_conversion(app.clone(), book.id.clone());
     } else {
         crate::ai::grounding::index::schedule_index(app.clone(), book.id.clone());
+        // Difficulty is readable straight from the imported file. Text and
+        // conversion books get theirs when their preparation publishes,
+        // which is the first moment their text exists.
+        crate::commands::book_difficulty::schedule_book_difficulty(app.clone(), book.id.clone());
     }
     resolve_book_paths(&mut book, db, Some(app))?;
     Ok(book)

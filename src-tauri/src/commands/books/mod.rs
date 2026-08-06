@@ -51,7 +51,8 @@ pub use convert_prepare::{
     __tauri_command_name_get_converted_book_path, __tauri_command_name_retry_book_conversion,
 };
 pub(crate) use convert_prepare::{
-    conversion_backend_available, is_conversion_book, schedule_book_conversion,
+    conversion_backend_available, converted_artifact_exists, converted_document_path,
+    is_conversion_book, schedule_book_conversion,
 };
 pub use convert_prepare::{
     get_converted_book_path, resume_interrupted_book_conversions, retry_book_conversion,
