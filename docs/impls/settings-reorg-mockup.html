@@ -88,6 +88,31 @@
   .tabs span { font-size: 12.5px; padding: 5px 14px; border-radius: 7px; color: #71717b; }
   .tabs span.on { background: #fff; color: #18181b; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 
+  /* 右侧控件等宽对齐 */
+  .ctl .select { width: 160px; }
+  .ctl .btn { min-width: 96px; text-align: center; }
+  .chips { display: flex; gap: 6px; }
+  .chip { font-size: 12px; padding: 5px 12px; border-radius: 999px; border: 1px solid rgba(0,0,0,.14); color: #71717b; }
+  .chip.on { background: #ede9fe; border-color: #c4b5fd; color: #6d28d9; font-weight: 600; }
+
+  /* 书库详图 */
+  .inputbox { border: 1px solid rgba(0,0,0,.14); border-radius: 8px; padding: 7px 10px; font-size: 12.5px; color: #a1a1aa; flex: 1; }
+  .srcrow { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid rgba(0,0,0,.05); }
+  .srcrow .nm { font-size: 13px; }
+  .srcrow .url { font-size: 11px; color: #a1a1aa; }
+  .srcrow .acts { margin-left: auto; display: flex; gap: 12px; color: #a1a1aa; font-size: 13px; flex-shrink: 0; }
+  .subhead { font-size: 12px; font-weight: 700; margin-top: 16px; }
+  .subhint { font-size: 11px; color: #a1a1aa; margin: 2px 0 4px; line-height: 1.6; }
+  .peer { display: flex; align-items: center; gap: 10px; background: #f4f4f5; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px; }
+  .peer .when { font-size: 11px; color: #a1a1aa; }
+  .peer .rm { margin-left: auto; color: #a1a1aa; }
+  .dim { background: rgba(0,0,0,.30); border-radius: 14px; padding: 40px 0; display: flex; justify-content: center; }
+  .dialog { background: #fff; border-radius: 14px; padding: 20px 22px; max-width: 380px; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+  .dialog h5 { font-size: 14px; margin-bottom: 8px; }
+  .dialog p { font-size: 12.5px; color: #52525c; line-height: 1.7; margin-bottom: 16px; }
+  .dialog .acts { display: flex; justify-content: flex-end; gap: 8px; }
+  .btn.primary { background: #7c3aed; color: #fff; border-color: #7c3aed; }
+
   /* nav compare */
   .compare { display: flex; gap: 28px; flex-wrap: wrap; }
   .compare .col { background: #fff; border-radius: 14px; padding: 18px 14px; width: 250px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
@@ -315,8 +340,8 @@
           <div class="ctl"><span class="keycap">←</span><span class="keycap">→</span></div>
         </div>
         <div class="row">
-          <div class="l"><div class="name">进度显示</div><div class="hint">章节进度 · 全书进度 · 页码,三个开关</div></div>
-          <div class="ctl"><span class="toggle"></span><span class="toggle"></span><span class="toggle off"></span></div>
+          <div class="l"><div class="name">进度显示</div><div class="hint">点亮哪个就显示哪个,可多选</div></div>
+          <div class="ctl"><span class="chips"><span class="chip on">章节进度</span><span class="chip on">全书进度</span><span class="chip">页码</span></span></div>
         </div>
         <div class="grouphead">行为</div>
         <div class="row">
@@ -338,13 +363,12 @@
         </div>
       </div>
     </div>
-    <div class="note">Aa 面板对应的 5 组控件删除后,面板尾部保留一行常驻小字链接:「翻页与进度设置已移至 设置 → 阅读」,点击直达本页。</div>
   </div>
 
-  <!-- ═══════════ 屏 5:书库 ═══════════ -->
+  <!-- ═══════════ 屏 5:书库(详图) ═══════════ -->
   <div class="screen">
-    <h2>屏 5 · 书库 <span class="tag move">合并「书籍来源」+「书库同步」</span></h2>
-    <div class="desc">一个分区、两个块。来源块在所有平台都有;同步块仍按平台门控,Windows 上整块隐藏,分区不因此变空。</div>
+    <h2>屏 5A · 书库全貌(同步未开启时)<span class="tag move">合并「书籍来源」+「书库同步」</span></h2>
+    <div class="desc">这个分区就是把现有的两页原样接起来,内容一行没改。上半块「书籍来源」是一份<strong>找书网站的链接清单</strong>——点一条就在浏览器里打开那个网站,Lantern 只负责开链接,不下载不托管;可以自己增删改。下半块是 iCloud 同步。同步只在苹果设备上有(它走 iCloud),所以 <strong>Windows 版会自动隐藏下半块</strong>——界面上不会出现「仅 Mac」这种字样,Windows 用户根本看不到它。</div>
     <div class="modal">
       <div class="nav">
         <div class="item"><span class="ic">⚙︎</span>通用</div>
@@ -363,23 +387,89 @@
       <div class="content">
         <h3>书库</h3>
         <div class="chint">书从哪来,以及如何在设备间同步</div>
+
         <div class="grouphead">书籍来源</div>
+        <div class="subhint">点击后在系统浏览器中打开。这份清单可以随意增删改。</div>
+
+        <div class="subhead">公版书与图书馆</div>
+        <div class="subhint">版权已过期,或经权利人许可分发的作品。</div>
+        <div class="srcrow">
+          <div><div class="nm">Standard Ebooks</div><div class="url">standardebooks.org</div></div>
+          <div class="acts"><span>↗</span><span title="悬停时出现">✎</span><span title="悬停时出现">🗑</span></div>
+        </div>
+        <div class="srcrow">
+          <div><div class="nm">Project Gutenberg</div><div class="url">gutenberg.org</div></div>
+          <div class="acts"><span>↗</span></div>
+        </div>
+
+        <div class="subhead">第三方资源站</div>
+        <div class="subhint">这类站点未经授权提供受版权保护的书籍,是否合法取决于你所在的地区。</div>
+        <div class="subhint" style="color:#c4c4cc">这里还没有条目。</div>
+
+        <div style="display:flex;gap:8px;margin:12px 0 4px">
+          <span class="btn">＋ 添加网站</span><span class="btn">↺ 恢复默认</span>
+        </div>
+        <div class="subhint">Lantern 只负责打开这些链接,不进行搜索、下载或托管。</div>
+
+        <div class="grouphead">书库同步 · iCloud</div>
         <div class="row">
-          <div class="l"><div class="name">Standard Ebooks</div><div class="hint">内置来源</div></div>
+          <div class="l"><div class="name">同步文件夹</div><div class="hint">开启同步后在 iCloud 中创建</div></div>
+          <div class="ctl"><span class="btn" style="opacity:.45">打开所在位置</span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">同步此书库</div><div class="hint">开启后 Lantern 会在 iCloud 中创建自己的文件夹</div></div>
+          <div class="ctl"><span class="toggle off"></span></div>
+        </div>
+        <div class="subhint" style="margin-top:10px">API 密钥和登录令牌仅存储在本地,不会同步。<br>为获得最佳效果,请避免同时在多台设备上编辑。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen">
+    <h2>屏 5B · 书库同步(开启后的下半块)</h2>
+    <div class="desc">拨开开关并确认后,下半块长这样:文件夹有了实际路径;「其他设备」列出登录同一 iCloud 账户、也开了同步的设备,每台可单独移除(移除有确认框);底部是手动「立即同步」和上次同步时间。之前样张里那句让你困惑的「设备 · 立即同步 · 危险操作」就是把这一整块折叠成了一行——是我省略得太狠,不是新东西。</div>
+    <div class="modal" style="max-width:660px">
+      <div class="content">
+        <div class="grouphead" style="padding-top:4px">书库同步 · iCloud</div>
+        <div class="row">
+          <div class="l"><div class="name">同步文件夹</div><div class="hint">iCloud 云盘 › Lantern › Library</div></div>
+          <div class="ctl"><span class="btn">打开所在位置</span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">同步此书库</div><div class="hint">将书库和阅读进度保存到 iCloud</div></div>
           <div class="ctl"><span class="toggle"></span></div>
         </div>
-        <div class="row">
-          <div class="l"><div class="name">添加来源 / 恢复内置</div><div class="hint">现有列表与增删改原样保留(示意折叠)</div></div>
-          <div class="ctl"><span class="chev">⋯</span></div>
+        <div class="grouphead">其他设备</div>
+        <div class="peer"><span>📱</span><div>李建维的 iPhone<div class="when">上次活跃 3 分钟前</div></div><span class="rm" title="移除设备">🗑</span></div>
+        <div class="peer"><span>💻</span><div>MacBook Air<div class="when">上次活跃 2 小时前</div></div><span class="rm" title="移除设备">🗑</span></div>
+        <div class="row" style="border-top:1px solid rgba(0,0,0,.06);border-bottom:none;margin-top:4px">
+          <div class="l"><div class="name" style="color:#6d28d9;font-weight:500">立即同步 <span style="color:#a1a1aa;font-weight:400;margin-left:10px">压缩日志</span></div></div>
+          <div class="ctl"><span style="font-size:12px;color:#a1a1aa">上次同步 5 分钟前</span></div>
         </div>
-        <div class="grouphead">书库同步(仅 Mac 桌面)</div>
-        <div class="row">
-          <div class="l"><div class="name">启用同步</div><div class="hint">经 iCloud 共享文件夹同步书与进度</div></div>
-          <div class="ctl"><span class="toggle"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen">
+    <h2>屏 5C · 两个代表性状态</h2>
+    <div class="desc">左:点「＋ 添加网站」后的行内编辑(填名称和网址,选归到哪一组)。右:拨动同步开关时的确认框——开、关都会先问一句,关闭时还会先把书复制回本机再断开,不会丢书。</div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap">
+      <div class="modal" style="max-width:420px;flex:1;min-width:320px">
+        <div class="content">
+          <div class="grouphead" style="padding-top:4px">添加网站</div>
+          <div style="display:flex;flex-direction:column;gap:8px;border:1px solid rgba(0,0,0,.1);border-radius:10px;padding:12px">
+            <span class="inputbox">网站名称</span>
+            <span class="inputbox">https://example.com</span>
+            <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#52525c">类型 <span class="select" style="width:160px">公版书与图书馆</span></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end"><span class="btn">取消</span><span class="btn primary">保存</span></div>
+          </div>
         </div>
-        <div class="row">
-          <div class="l"><div class="name">设备 · 立即同步 · 危险操作</div><div class="hint">现有行原样保留(示意折叠)</div></div>
-          <div class="ctl"><span class="chev">⋯</span></div>
+      </div>
+      <div class="dim" style="flex:1;min-width:320px">
+        <div class="dialog">
+          <h5>同步此书库?</h5>
+          <p>书籍、阅读进度和高亮将存储在 Lantern 的 iCloud 文件夹中,并在你的各台设备之间保持同步。</p>
+          <div class="acts"><span class="btn">取消</span><span class="btn primary">开始同步</span></div>
         </div>
       </div>
     </div>
