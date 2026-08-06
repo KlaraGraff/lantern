@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useLayoutEffect, memo } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, ChevronLeft, ChevronRight, ScrollText, BookOpen, File, Files, Keyboard, Loader2, MousePointer2, Search, Trash2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Keyboard, Loader2, MousePointer2, Search, Trash2 } from "lucide-react";
 import Toggle from "./ui/Toggle";
 import type { PassiveVocabSettings } from "./passive-vocab";
 import Select from "./ui/Select";
@@ -778,152 +778,11 @@ function ReaderSettings({
       </div>
       )}
 
-      {capabilities.supportsContinuousScroll && (<div className="px-4 py-3 border-b border-border-light">
-        <p className="text-[11px] font-medium text-text-muted tracking-[0.5px] uppercase mb-2">{t("readerSettings.readingMode")}</p>
-        <div className="flex gap-2">
-          <button
-            onClick={() => update({ readingMode: "scrolling" })}
-            className={`flex-1 flex flex-col items-center gap-1.5 py-2.5 rounded-lg border cursor-pointer transition-colors ${
-              settings.readingMode === "scrolling"
-                ? "border-accent bg-accent-bg text-accent"
-                : "border-border bg-bg-surface text-text-primary hover:bg-bg-input"
-            }`}
-          >
-            <ScrollText size={20} />
-            <span className="text-[12px] font-medium">{t("readerSettings.scrolling")}</span>
-          </button>
-          <button
-            onClick={() => update({ readingMode: "paginated" })}
-            className={`flex-1 flex flex-col items-center gap-1.5 py-2.5 rounded-lg border cursor-pointer transition-colors ${
-              settings.readingMode === "paginated"
-                ? "border-accent bg-accent-bg text-accent"
-                : "border-border bg-bg-surface text-text-primary hover:bg-bg-input"
-            }`}
-          >
-            <BookOpen size={20} />
-            <span className="text-[12px] font-medium">{t("readerSettings.pageTurning")}</span>
-          </button>
-        </div>
-        {overrideNote("readingMode")}
-      </div>)}
-
-      {/* Page columns — only formats whose renderer supports a spread. */}
-      {capabilities.supportsSpread && settings.readingMode === "paginated" && (<div className="px-4 py-3 border-b border-border-light">
-        <p className="text-[11px] font-medium text-text-muted tracking-[0.5px] uppercase mb-2">{t("readerSettings.pageLayout")}</p>
-        <div className="flex gap-2">
-          <button
-            onClick={() => update({ pageColumns: 1 })}
-            className={`flex-1 flex flex-col items-center gap-1.5 py-2.5 rounded-lg border cursor-pointer transition-colors ${
-              settings.pageColumns === 1
-                ? "border-accent bg-accent-bg text-accent"
-                : "border-border bg-bg-surface text-text-primary hover:bg-bg-input"
-            }`}
-          >
-            <File size={20} />
-            <span className="text-[12px] font-medium">{t("readerSettings.singlePage")}</span>
-          </button>
-          <button
-            onClick={() => update({ pageColumns: 2 })}
-            className={`flex-1 flex flex-col items-center gap-1.5 py-2.5 rounded-lg border cursor-pointer transition-colors ${
-              settings.pageColumns === 2
-                ? "border-accent bg-accent-bg text-accent"
-                : "border-border bg-bg-surface text-text-primary hover:bg-bg-input"
-            }`}
-          >
-            <Files size={20} />
-            <span className="text-[12px] font-medium">{t("readerSettings.twoPages")}</span>
-          </button>
-        </div>
-        <p className="mt-2 text-[11px] leading-4 text-text-muted">
-          {t("readerSettings.twoPagesHint")}
-        </p>
-        {overrideNote("pageColumns")}
-      </div>)}
-
-      {settings.readingMode === "paginated" && (
-        <div className="border-b border-border-light px-4 py-3">
-          <p className="mb-2 text-[11px] font-medium uppercase text-text-muted">{t("readerSettings.pageTurnAnimation")}</p>
-          <Select
-            value={settings.pageTurnAnimation}
-            onChange={(value) => update({ pageTurnAnimation: value as PageTurnAnimation })}
-            options={[
-              { value: "slide", label: t("readerSettings.animationSlide") },
-              { value: "fade", label: t("readerSettings.animationFade") },
-              { value: "cover", label: t("readerSettings.animationCover") },
-              { value: "none", label: t("readerSettings.animationNone") },
-            ]}
-          />
-        </div>
-      )}
-
-      <div className="border-b border-border-light px-4 py-3">
-        <p className="mb-2 text-[11px] font-medium uppercase text-text-muted">{t("readerSettings.progressDisplay")}</p>
-        <div className="flex flex-col gap-2.5">
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-[13px] text-text-primary">{t("readerSettings.chapterProgressAlways")}</span>
-            <Toggle
-              label={t("readerSettings.chapterProgressAlways")}
-              checked={settings.showChapterProgress}
-              onChange={(checked) => update({ showChapterProgress: checked })}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-[13px] text-text-primary">{t("readerSettings.bookProgress")}</span>
-            <Toggle
-              label={t("readerSettings.bookProgress")}
-              checked={settings.showBookProgress}
-              onChange={(checked) => update({ showBookProgress: checked })}
-            />
-          </div>
-          {settings.readingMode === "paginated" && (
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-[13px] text-text-primary">{t("readerSettings.pageNumbers")}</span>
-              <Toggle
-                label={t("readerSettings.pageNumbers")}
-                checked={settings.showPageNumbers}
-                onChange={(checked) => update({ showPageNumbers: checked })}
-              />
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="border-b border-border-light px-4 py-3">
-        <p className="text-[11px] font-medium uppercase text-text-muted">{t("readerSettings.pageTurnBindings")}</p>
-        <p className="mb-3 mt-1 text-[11px] leading-4 text-text-muted">{t("readerSettings.pageTurnBindingsHint")}</p>
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[13px] text-text-primary">{t("readerSettings.previousPage")}</span>
-            <PageTurnBindingButton
-              direction="previous"
-              value={settings.previousPageBinding}
-              active={capturingBinding === "previous"}
-              onActivate={setCapturingBinding}
-              onChange={(value) => update({
-                previousPageBinding: value,
-                ...(value === settings.nextPageBinding
-                  ? { nextPageBinding: settings.previousPageBinding }
-                  : {}),
-              })}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[13px] text-text-primary">{t("readerSettings.nextPage")}</span>
-            <PageTurnBindingButton
-              direction="next"
-              value={settings.nextPageBinding}
-              active={capturingBinding === "next"}
-              onActivate={setCapturingBinding}
-              onChange={(value) => update({
-                nextPageBinding: value,
-                ...(value === settings.previousPageBinding
-                  ? { previousPageBinding: settings.nextPageBinding }
-                  : {}),
-              })}
-            />
-          </div>
-        </div>
-      </div>
+      {/* Reading mode, page layout, page-turn animation, progress display,
+          and page-turn key bindings all moved out to 设置 → 阅读 — the
+          "set once and forget" rows that used to be duplicated here as
+          per-book overrides. Aa keeps only what benefits from being changed
+          while looking at the actual page. */}
 
       {capabilities.supportsReflowSettings && (<div className="px-4 py-3 flex flex-col gap-4">
         <p className="text-[11px] font-medium text-text-muted tracking-[0.5px] uppercase">{t("readerSettings.layout")}</p>

@@ -1,27 +1,25 @@
 import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Globe, BookOpen, Bot, GraduationCap, Cloud, Compass, Info, Terminal, X, Check, ChevronDown, ChevronLeft, ChevronRight, Palette, Sparkles, Volume2 } from "lucide-react";
+import { Globe, BookOpen, Bot, GraduationCap, Highlighter, Library, Info, Terminal, X, ChevronLeft, ChevronRight, Sparkles, Volume2 } from "lucide-react";
 import GeneralSettings from "./settings/GeneralSettings";
-import AppearanceSettings from "./settings/AppearanceSettings";
 import ReadingSettings from "./settings/ReadingSettings";
+import LearningSettings from "./settings/LearningSettings";
 import ServicesSettings from "./settings/ServicesSettings";
 import AutoAnalysisSettings from "./settings/AutoAnalysisSettings";
 import ToolsSettings, { type ToolsPreviewState } from "./settings/ToolsSettings";
 import CardPreview from "./settings/CardPreview";
 import PassiveVocabPreview, { type PassiveVocabPreviewState } from "./settings/PassiveVocabPreview";
-import LibrarySyncSettings from "./settings/LibrarySyncSettings";
-import BookSourcesSettings from "./settings/BookSourcesSettings";
+import LibrarySettings from "./settings/LibrarySettings";
 import McpSettings from "./settings/McpSettings";
 import AboutSettings from "./settings/AboutSettings";
 import Toast from "./ui/Toast";
 import { LANGUAGE_OPTIONS } from "./settings/languageOptions";
-import { groupSettingsRootRows, type SettingsRootRow } from "./settings/settings-root-rows";
 import {
-  THEME_PREFERENCES,
-  THEME_PREFERENCE_LABEL_KEYS,
-  applyThemePreference,
-  themePreferenceOf,
-} from "./settings/theme-preference";
+  groupSettingsRootRows,
+  SETTINGS_ROOT_GROUPS,
+  type SettingsRootGroup,
+  type SettingsRootRow,
+} from "./settings/settings-root-rows";
 import { useSettings } from "../hooks/useSettings";
 import { isNarrowNow, useIsNarrow } from "../hooks/useIsNarrow";
 import { platform } from "../services/platform";
@@ -53,7 +51,6 @@ interface SettingsModalProps {
  * section the platform lacks cannot be reached by a deep link either.
  */
 function isSectionAvailable(id: SettingsSection): boolean {
-  if (id === "librarySync") return platform.hasFolderSync;
   if (id === "mcp") return platform.hasMcpIntegration;
   return true;
 }
@@ -78,14 +75,13 @@ function initialLevel(section: SettingsSection | undefined): SettingsSection | n
 /** Keyed by root row rather than by section: 对话模型 and 语音 share one. */
 const ROOT_ROW_ICONS: Record<string, typeof Globe> = {
   general: Globe,
-  theme: Palette,
   reading: BookOpen,
-  tools: GraduationCap,
+  learning: GraduationCap,
+  tools: Highlighter,
   models: Bot,
   speech: Volume2,
   autoAnalysis: Sparkles,
-  librarySync: Cloud,
-  bookSources: Compass,
+  library: Library,
   mcp: Terminal,
   about: Info,
 };
@@ -114,7 +110,6 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
   const isNarrow = useIsNarrow();
   const [activeSection, setActiveSection] = useState<SettingsSection | null>(() => initialLevel(initialSection));
   const [activeView, setActiveView] = useState<SettingsView | undefined>(initialView);
-  const [themeSheetOpen, setThemeSheetOpen] = useState(false);
   const [toolsPreview, setToolsPreview] = useState<ToolsPreviewState | null>(null);
   const [passiveVocabPreview, setPassiveVocabPreview] = useState<PassiveVocabPreviewState | null>(null);
   const { settings, loading, refresh, save, saveBulk } = useSettings();
@@ -126,7 +121,6 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
   const previewDismissRef = useRef<(() => void) | null>(null);
   const overlayPreviewRef = useRef(false);
   const subPageBackRef = useRef<(() => void) | null>(null);
-  const sheetCloseRef = useRef<(() => void) | null>(null);
   const levelBackRef = useRef<(() => void) | null>(null);
   const toolsNavigationGuardRef = useRef<((action: () => void) => void) | null>(null);
   const onCloseRef = useRef(onClose);
@@ -208,11 +202,6 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
     if (open) setActiveView(initialView);
   }, [open, initialView]);
 
-  // The sheet belongs to the root list, and the root list only exists narrow.
-  useEffect(() => {
-    if (!open || !isNarrow || activeSection !== null) setThemeSheetOpen(false);
-  }, [open, isNarrow, activeSection]);
-
   useEffect(() => {
     if (!open || activeSection !== "tools") setToolsPreview(null);
   }, [activeSection, open]);
@@ -239,10 +228,6 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
   }, [escapePreviewDismiss, overlayPreviewOpen]);
 
   useEffect(() => {
-    sheetCloseRef.current = themeSheetOpen ? () => setThemeSheetOpen(false) : null;
-  }, [themeSheetOpen]);
-
-  useEffect(() => {
     levelBackRef.current = isNarrow && activeSection !== null ? requestRoot : null;
   }, [isNarrow, activeSection, requestRoot]);
 
@@ -256,17 +241,14 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        // Layered, outermost first: a bottom sheet, then an overlay preview,
-        // then a settings sub-page, then a pushed section on the narrow layout,
-        // then the modal itself. Every step past the first goes through the
+        // Layered, outermost first: an overlay preview, then a settings
+        // sub-page, then a pushed section on the narrow layout, then the
+        // modal itself. Every step past the first goes through the
         // unsaved-changes guard, which is why none of them call setState here.
-        const closeSheet = sheetCloseRef.current;
         const dismiss = previewDismissRef.current;
         const back = subPageBackRef.current;
         const popLevel = levelBackRef.current;
-        if (closeSheet) {
-          closeSheet();
-        } else if (dismiss) {
+        if (dismiss) {
           dismiss();
         } else if (back) {
           back();
@@ -322,22 +304,23 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
 
   if (!open) return null;
 
-  const allSections: { id: SettingsSection; label: string; subtitle: string; paneSubtitle?: string; icon: typeof Globe }[] = [
-    { id: "general", label: t("settings.general.title"), subtitle: t("settings.general.subtitle"), icon: Globe },
-    { id: "appearance", label: t("settings.appearance.title"), subtitle: t("settings.appearance.subtitle"), icon: Palette },
-    { id: "reading", label: t("settings.reading.title"), subtitle: t("settings.reading.subtitle"), icon: BookOpen },
+  // Same three-way grouping as the narrow root list (`SETTINGS_ROOT_GROUPS`):
+  // "core"/"misc" carry no heading, "ai" and "library" do.
+  const allSections: { id: SettingsSection; label: string; subtitle: string; paneSubtitle?: string; icon: typeof Globe; group: SettingsRootGroup }[] = [
+    { id: "general", label: t("settings.general.title"), subtitle: t("settings.general.subtitle"), icon: Globe, group: "core" },
+    { id: "reading", label: t("settings.reading.title"), subtitle: t("settings.reading.subtitle"), icon: BookOpen, group: "core" },
+    { id: "learning", label: t("settings.learning.title"), subtitle: t("settings.learning.subtitle"), icon: GraduationCap, group: "core" },
+    { id: "tools", label: t("settings.tools.title"), subtitle: t("settings.tools.subtitle"), paneSubtitle: t("settings.tools.paneSubtitle"), icon: Highlighter, group: "core" },
     // The subtitle lists what the tab holds, and OCR is not in it where the
     // platform cannot run OCR — the tab would be advertising a missing view.
-    { id: "services", label: t("settings.services.shortTitle"), subtitle: t(platform.hasOcr ? "settings.services.shortSubtitle" : "settings.services.shortSubtitleNoOcr"), icon: Bot },
-    // Directly under 服务 rather than beside the other AI features: the
+    { id: "services", label: t("settings.services.shortTitle"), subtitle: t(platform.hasOcr ? "settings.services.shortSubtitle" : "settings.services.shortSubtitleNoOcr"), icon: Bot, group: "ai" },
+    // Directly under AI 配置 rather than beside the other AI features: the
     // question this tab answers is "what runs without me", which is about
     // the account that gets billed, not about the features themselves.
-    { id: "autoAnalysis", label: t("settings.autoAnalysis.title"), subtitle: t("settings.autoAnalysis.subtitle"), icon: Sparkles },
-    { id: "tools", label: t("settings.tools.title"), subtitle: t("settings.tools.subtitle"), paneSubtitle: t("settings.tools.paneSubtitle"), icon: GraduationCap },
-    { id: "librarySync", label: t("settings.librarySync.title"), subtitle: t("settings.librarySync.subtitle"), icon: Cloud },
-    { id: "bookSources", label: t("settings.bookSources.title"), subtitle: t("settings.bookSources.subtitle"), icon: Compass },
-    { id: "mcp", label: t("settings.mcp.title"), subtitle: t("settings.mcp.subtitle"), icon: Terminal },
-    { id: "about", label: t("settings.about.title"), subtitle: t("settings.about.subtitle"), icon: Info },
+    { id: "autoAnalysis", label: t("settings.autoAnalysis.title"), subtitle: t("settings.autoAnalysis.subtitle"), icon: Sparkles, group: "ai" },
+    { id: "library", label: t("settings.library.title"), subtitle: t("settings.library.subtitle"), icon: Library, group: "library" },
+    { id: "mcp", label: t("settings.mcp.title"), subtitle: t("settings.mcp.subtitle"), icon: Terminal, group: "misc" },
+    { id: "about", label: t("settings.about.title"), subtitle: t("settings.about.subtitle"), icon: Info, group: "misc" },
   ];
 
   const sections = allSections.filter((s) => isSectionAvailable(s.id));
@@ -352,7 +335,6 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
   const renderContent = (section: SettingsSection): ReactNode => {
     switch (section) {
       case "general": return <GeneralSettings {...settingsProps} />;
-      case "appearance": return <AppearanceSettings {...settingsProps} />;
       case "reading": return (
         <ReadingSettings
           {...settingsProps}
@@ -361,6 +343,7 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
           onSubPageChange={setSubPageBack}
         />
       );
+      case "learning": return <LearningSettings {...settingsProps} />;
       case "services": return (
         <ServicesSettings
           {...settingsProps}
@@ -377,8 +360,7 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
           onNavigationGuardChange={setToolsNavigationGuard}
         />
       );
-      case "librarySync": return <LibrarySyncSettings {...settingsProps} />;
-      case "bookSources": return <BookSourcesSettings {...settingsProps} />;
+      case "library": return <LibrarySettings {...settingsProps} />;
       case "mcp": return <McpSettings {...settingsProps} />;
       case "about": return <AboutSettings />;
     }
@@ -402,11 +384,9 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
     const rootGroups = groupSettingsRootRows((row) => isSectionAvailable(row.section));
     const rootRows = rootGroups.flatMap((group) => group.rows);
     const rowLabel = (row: SettingsRootRow) => (row.labelKey ? t(row.labelKey) : sectionLabel(row.section));
-    const theme = themePreferenceOf(settings.theme);
     // Only the summaries already sitting in `settings` — the asynchronous ones
     // (last sync, source count, provider status) arrive with their own stages.
     const rowValue = (row: SettingsRootRow): string | undefined => {
-      if (row.id === "theme") return t(THEME_PREFERENCE_LABEL_KEYS[theme]);
       if (row.id === "general") {
         const language = settings.language || i18n.language;
         return LANGUAGE_OPTIONS.find((option) => option.value === language)?.label;
@@ -441,11 +421,7 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
           atRoot ? "bg-bg-page" : "bg-bg-surface"
         }`}
       >
-        <div
-          inert={themeSheetOpen ? true : undefined}
-          aria-hidden={themeSheetOpen ? true : undefined}
-          className="flex min-h-0 flex-1 flex-col"
-        >
+        <div className="flex min-h-0 flex-1 flex-col">
           {/* Nav bar. The root list carries its own grey page colour up to the
               top edge under a finger; a narrow window keeps the ruled bar it
               shares with every other level. */}
@@ -504,14 +480,11 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
                         }
                         const Icon = ROOT_ROW_ICONS[row.id];
                         const value = rowValue(row);
-                        const isSheet = row.kind === "sheet";
                         return (
                           <button
                             key={row.id}
                             type="button"
-                            onClick={() => (isSheet ? setThemeSheetOpen(true) : requestRow(row))}
-                            aria-haspopup={isSheet ? "dialog" : undefined}
-                            aria-expanded={isSheet ? themeSheetOpen : undefined}
+                            onClick={() => requestRow(row)}
                             className={`${ROOT_ROW_CLASS} cursor-pointer hover:bg-bg-input`}
                           >
                             {Icon && <Icon className="size-4 shrink-0 text-text-muted touch:size-[19px]" />}
@@ -519,11 +492,7 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
                             <span className="ml-auto max-w-[150px] truncate pl-2 text-[13px] font-normal text-text-muted touch:text-[14px]">
                               {value}
                             </span>
-                            {isSheet ? (
-                              <ChevronDown className="size-3.5 shrink-0 text-text-muted/55 touch:size-4" />
-                            ) : (
-                              <ChevronRight className="size-3.5 shrink-0 text-text-muted/55 touch:size-4" />
-                            )}
+                            <ChevronRight className="size-3.5 shrink-0 text-text-muted/55 touch:size-4" />
                           </button>
                         );
                       })}
@@ -536,51 +505,6 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
             )}
           </div>
         </div>
-
-        {/* 外观 holds one control, so it is raised where it stands instead of
-            being given a level of its own. */}
-        {themeSheetOpen && (
-          <>
-            <div
-              className="absolute inset-0 z-40 bg-overlay"
-              onClick={() => setThemeSheetOpen(false)}
-            />
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-label={t("settings.appearance.theme")}
-              className="absolute inset-x-0 bottom-0 z-50 rounded-t-[20px] bg-bg-surface pb-safe-bottom shadow-[0_-8px_32px_rgba(0,0,0,0.22)]"
-            >
-              <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-border" />
-              <h3 className="px-[18px] pb-1 pt-2 text-[16px] font-semibold tracking-[-0.2px] text-text-primary">
-                {t("settings.appearance.theme")}
-              </h3>
-              <p className="px-[18px] pb-2.5 text-[12.5px] leading-[1.6] text-text-muted">
-                {t("settings.general.themeHint")}
-              </p>
-              {THEME_PREFERENCES.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => {
-                    setThemeSheetOpen(false);
-                    if (option === theme) return;
-                    save("theme", option);
-                    localStorage.setItem("lantern-theme", option);
-                    applyThemePreference(option);
-                    showSavedToast();
-                  }}
-                  className={`flex h-12 w-full cursor-pointer items-center gap-3 border-t border-border-light px-[18px] text-left text-[15px] touch:h-14 touch:text-[15.5px] ${
-                    option === theme ? "font-medium text-accent-text" : "text-text-primary"
-                  }`}
-                >
-                  <Check className={`size-4 shrink-0 ${option === theme ? "" : "invisible"}`} />
-                  {t(THEME_PREFERENCE_LABEL_KEYS[option])}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
 
         {showToast && <Toast>{toastMessage}</Toast>}
       </div>
@@ -624,38 +548,49 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
               {t("settings.title")}
             </p>
             <nav className="grid grid-cols-2 gap-0.5 px-2 pb-2 sm:flex sm:flex-col sm:pb-0">
-              {sections.map((section) => {
+              {sections.map((section, index) => {
                 const Icon = section.icon;
                 const isActive = desktopSection === section.id;
+                // Same three-way grouping as the narrow root list: "core"
+                // (first) and "misc" (last) carry no heading of their own.
+                const headingKey = section.group !== sections[index - 1]?.group
+                  ? SETTINGS_ROOT_GROUPS.find((g) => g.id === section.group)?.headingKey
+                  : undefined;
                 return (
-                  <button
-                    key={section.id}
-                    onClick={() => requestSection(section.id)}
-                    className={`flex h-[44px] w-full cursor-pointer items-center gap-2 rounded-[6px] px-2 text-left transition-colors sm:h-[56px] sm:gap-3 sm:rounded-[8px] sm:px-3 ${
-                      isActive ? "bg-accent-bg" : "hover:bg-bg-input"
-                    }`}
-                  >
-                    <Icon
-                      size={16}
-                      className={`shrink-0 ${isActive ? "text-accent-text" : "text-text-muted"}`}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-[14px] font-medium leading-[20px] tracking-[-0.15px] ${
-                        isActive ? "text-accent-text" : "text-text-secondary"
-                      }`}>
-                        {section.label}
+                  <div key={section.id} className="contents">
+                    {headingKey && (
+                      <p className="col-span-2 px-2 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-[0.5px] text-text-muted sm:px-3">
+                        {t(headingKey)}
                       </p>
-                      <p className={`hidden text-[11px] font-medium leading-[16px] tracking-[0.06px] truncate sm:block ${
-                        isActive ? "text-accent-text/60" : "text-text-muted"
-                      }`}>
-                        {section.subtitle}
-                      </p>
-                    </div>
-                    <ChevronRight
-                      size={14}
-                      className={`shrink-0 ${isActive ? "text-accent-text" : "text-text-muted/40"}`}
-                    />
-                  </button>
+                    )}
+                    <button
+                      onClick={() => requestSection(section.id)}
+                      className={`flex h-[44px] w-full cursor-pointer items-center gap-2 rounded-[6px] px-2 text-left transition-colors sm:h-[56px] sm:gap-3 sm:rounded-[8px] sm:px-3 ${
+                        isActive ? "bg-accent-bg" : "hover:bg-bg-input"
+                      }`}
+                    >
+                      <Icon
+                        size={16}
+                        className={`shrink-0 ${isActive ? "text-accent-text" : "text-text-muted"}`}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-[14px] font-medium leading-[20px] tracking-[-0.15px] ${
+                          isActive ? "text-accent-text" : "text-text-secondary"
+                        }`}>
+                          {section.label}
+                        </p>
+                        <p className={`hidden text-[11px] font-medium leading-[16px] tracking-[0.06px] truncate sm:block ${
+                          isActive ? "text-accent-text/60" : "text-text-muted"
+                        }`}>
+                          {section.subtitle}
+                        </p>
+                      </div>
+                      <ChevronRight
+                        size={14}
+                        className={`shrink-0 ${isActive ? "text-accent-text" : "text-text-muted/40"}`}
+                      />
+                    </button>
+                  </div>
                 );
               })}
             </nav>

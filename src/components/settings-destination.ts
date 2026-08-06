@@ -1,12 +1,11 @@
 export type SettingsSection =
   | "general"
-  | "appearance"
   | "reading"
+  | "learning"
   | "services"
   | "autoAnalysis"
   | "tools"
-  | "librarySync"
-  | "bookSources"
+  | "library"
   | "mcp"
   | "about";
 
@@ -32,13 +31,12 @@ export type SettingsDestination =
 
 const SECTIONS = new Set<SettingsSection>([
   "general",
-  "appearance",
   "reading",
+  "learning",
   "services",
   "autoAnalysis",
   "tools",
-  "librarySync",
-  "bookSources",
+  "library",
   "mcp",
   "about",
 ]);
@@ -46,11 +44,18 @@ const SECTIONS = new Set<SettingsSection>([
 const SERVICES_VIEWS = new Set<SettingsView>(["models", "embedding", "speech", "ocr"]);
 const READING_VIEWS = new Set<SettingsView>(["passiveVocab"]);
 
-/** Names that addressed a section before it was renamed. */
+/**
+ * Names that addressed a section before it was renamed, merged, or split off
+ * into its own section. `appearance` (1 row: theme) folded into `general`;
+ * `librarySync` and `bookSources` merged into `library`.
+ */
 const SECTION_ALIASES: Record<string, SettingsSection> = {
   lookup: "tools",
   translation: "tools",
   ai: "services",
+  appearance: "general",
+  librarySync: "library",
+  bookSources: "library",
 };
 
 function resolveSection(value: unknown): SettingsSection | undefined {

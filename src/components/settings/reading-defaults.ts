@@ -45,6 +45,8 @@ export const READING_DEFAULT_SETTING_KEYS = [
   "show_page_numbers",
   "previous_page_binding",
   "next_page_binding",
+  "auto_save",
+  "skip_front_matter",
 ] as const;
 
 export type ReadingDefaultSettingKey = (typeof READING_DEFAULT_SETTING_KEYS)[number];
@@ -77,5 +79,11 @@ export function buildReadingDefaultSettings(
     show_page_numbers: String(defaults.showPageNumbers),
     previous_page_binding: defaults.previousPageBinding,
     next_page_binding: defaults.nextPageBinding,
+    // Not part of `ReaderSettingsState` — these two moved in from 通用 as
+    // app-level behavior toggles, not per-book reader state, so there is no
+    // `createDefaultReaderSettings()` field to read them from. Their default
+    // has always simply been on; that is what the reset restores them to.
+    auto_save: "true",
+    skip_front_matter: "true",
   };
 }

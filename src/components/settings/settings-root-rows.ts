@@ -47,17 +47,11 @@ export interface SettingsRootRow {
 
 export const SETTINGS_ROOT_ROWS: readonly SettingsRootRow[] = [
   { id: "general", section: "general", kind: "push", group: "core", skeletonWidth: 52 },
-  // 外观 holds nothing but 主题, so the row is named after the control and
-  // opens it where it stands.
-  {
-    id: "theme",
-    section: "appearance",
-    kind: "sheet",
-    group: "core",
-    labelKey: "settings.appearance.theme",
-    skeletonWidth: 44,
-  },
+  // 主题 used to be its own one-row section raised as a sheet. It is now a
+  // normal row inside 通用 (`Select` already auto-sheets on a touch device),
+  // so it no longer has a root row of its own.
   { id: "reading", section: "reading", kind: "push", group: "core", skeletonWidth: 74 },
+  { id: "learning", section: "learning", kind: "push", group: "core", skeletonWidth: 60 },
   { id: "tools", section: "tools", kind: "push", group: "core", skeletonWidth: 74 },
   // 服务配置 does not survive as a layer on a phone: its four tabs are down to
   // two, and two root rows read better than one row opening a two-tab bar.
@@ -80,8 +74,9 @@ export const SETTINGS_ROOT_ROWS: readonly SettingsRootRow[] = [
     skeletonWidth: 40,
   },
   { id: "autoAnalysis", section: "autoAnalysis", kind: "push", group: "ai", skeletonWidth: 66 },
-  { id: "librarySync", section: "librarySync", kind: "push", group: "library", skeletonWidth: 66 },
-  { id: "bookSources", section: "bookSources", kind: "push", group: "library", skeletonWidth: 66 },
+  // 书籍来源 + 书库同步 merged into one section, so the phone gets one root
+  // row for it instead of two.
+  { id: "library", section: "library", kind: "push", group: "library", skeletonWidth: 66 },
   // Absent on a phone (`hasMcpIntegration`), so on a phone the last group is
   // 关于 by itself and needs no heading to separate it from anything.
   { id: "mcp", section: "mcp", kind: "push", group: "misc", skeletonWidth: 38 },

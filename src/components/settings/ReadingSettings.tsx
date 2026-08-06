@@ -181,6 +181,12 @@ export default function ReadingSettings({
   const [restoreConfirm, setRestoreConfirm] = useState(false);
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  // 行为 rows moved in from 通用. Plain settings, not part of the layout
+  // rehydration system below — they were never part of "restore defaults",
+  // and a per-book value never overrides them, so there is nothing for a
+  // group id or an outside-write echo to track.
+  const [autoSave, setAutoSave] = useState(true);
+  const [skipFrontMatter, setSkipFrontMatter] = useState(true);
   // What the rows on screen were built from, and which keys this pane is
   // writing right now. Together they tell an outside change apart from the
   // pane's own — only the first may replace a control the user can see.
@@ -267,6 +273,12 @@ export default function ReadingSettings({
           if (values.show_page_numbers !== undefined) {
             setShowPageNumbers(values.show_page_numbers === "true");
           }
+          break;
+        case "autoSave":
+          setAutoSave(values.auto_save !== "false");
+          break;
+        case "skipFrontMatter":
+          setSkipFrontMatter(values.skip_front_matter !== "false");
           break;
         case "bindings":
           if (values.previous_page_binding) setPreviousPageBinding(values.previous_page_binding);
@@ -433,6 +445,12 @@ export default function ReadingSettings({
 
   return (
     <div>
+      {/* 排版 — everything about how a page of text looks: theme, font, size,
+          spacing, margins. No divider above it; it is the first group. */}
+      <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.5px] text-text-muted">
+        {t("settings.layout.groupTypography")}
+      </div>
+      <div className="h-px bg-border-light" />
       {/* Theme */}
       <div className="flex items-center justify-between min-h-[88px] py-2">
         <div>
@@ -682,6 +700,13 @@ export default function ReadingSettings({
         </div>
         <NumberInput value={margins} onChange={setMargins} {...numberRow("margins", margins)} suffix="%" min={0} max={30} />
       </div>
+      {/* 翻页与进度 — the five "set once and forget" rows Aa used to duplicate
+          as per-book overrides. This section is now their only home; Aa keeps
+          nothing of its own for any of them. */}
+      <div className="mt-8 mb-2 text-[11px] font-medium uppercase tracking-[0.5px] text-text-muted">
+        {t("settings.layout.groupPageFlow")}
+      </div>
+      <div className="h-px bg-border-light" />
       {/* Default Page Flow */}
       <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
@@ -747,51 +772,6 @@ export default function ReadingSettings({
           ]}
         />
       </div>
-      {/* Progress Display */}
-      <div className="flex items-center justify-between min-h-[73px] py-3 gap-4">
-        <div>
-          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.progressDisplay")}</p>
-          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.progressDisplayHint")}</p>
-        </div>
-        <div className={`flex flex-col gap-2 ${ROW_CONTROL_WIDTH}`}>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[12px] text-text-secondary">{t("readerSettings.chapterProgressAlways")}</span>
-            <Toggle
-              label={t("readerSettings.chapterProgressAlways")}
-              checked={showChapterProgress}
-              onChange={(v) => {
-                setShowChapterProgress(v);
-                void persist({ show_chapter_progress: String(v) });
-                showSavedToast();
-              }}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[12px] text-text-secondary">{t("readerSettings.bookProgress")}</span>
-            <Toggle
-              label={t("readerSettings.bookProgress")}
-              checked={showBookProgress}
-              onChange={(v) => {
-                setShowBookProgress(v);
-                void persist({ show_book_progress: String(v) });
-                showSavedToast();
-              }}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[12px] text-text-secondary">{t("readerSettings.pageNumbers")}</span>
-            <Toggle
-              label={t("readerSettings.pageNumbers")}
-              checked={showPageNumbers}
-              onChange={(v) => {
-                setShowPageNumbers(v);
-                void persist({ show_page_numbers: String(v) });
-                showSavedToast();
-              }}
-            />
-          </div>
-        </div>
-      </div>
       {/* Previous-page Control */}
       <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
@@ -839,12 +819,93 @@ export default function ReadingSettings({
           }}
         />
       </div>
+      {/* Progress Display — a multi-select, not three independent toggles:
+          the three displays are peers (all can be lit, or none), so the row
+          reads better as chips than as a stack of on/off switches. */}
+      <div className="flex items-center justify-between min-h-[73px] py-3 gap-4">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.progressDisplay")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.progressDisplayHint")}</p>
+        </div>
+        <div className="flex flex-wrap justify-end gap-1.5 shrink-0">
+          {(
+            [
+              { key: "chapter", labelKey: "readerSettings.chapterProgressAlways", checked: showChapterProgress, settingKey: "show_chapter_progress", setter: setShowChapterProgress },
+              { key: "book", labelKey: "readerSettings.bookProgress", checked: showBookProgress, settingKey: "show_book_progress", setter: setShowBookProgress },
+              { key: "pageNumbers", labelKey: "readerSettings.pageNumbers", checked: showPageNumbers, settingKey: "show_page_numbers", setter: setShowPageNumbers },
+            ] as const
+          ).map((chip) => (
+            <button
+              key={chip.key}
+              type="button"
+              aria-pressed={chip.checked}
+              onClick={() => {
+                const next = !chip.checked;
+                chip.setter(next);
+                void persist({ [chip.settingKey]: String(next) });
+                showSavedToast();
+              }}
+              className={`h-8 rounded-full border px-3 text-[12px] font-medium transition-colors ${
+                chip.checked
+                  ? "border-accent bg-accent-bg text-accent-text"
+                  : "border-border text-text-secondary hover:border-accent/50"
+              }`}
+            >
+              {t(chip.labelKey)}
+            </button>
+          ))}
+        </div>
+      </div>
+      {/* 行为 — reading behavior that isn't about how a page looks. Moved in
+          from 通用, which had nothing else in common with these two rows. */}
+      <div className="mt-8 mb-2 text-[11px] font-medium uppercase tracking-[0.5px] text-text-muted">
+        {t("settings.layout.groupBehavior")}
+      </div>
+      <div className="h-px bg-border-light" />
+      {/* Auto Save */}
+      <div className="flex items-center justify-between min-h-[73px] py-3">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.reading.autoSave")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.reading.autoSaveHint")}</p>
+        </div>
+        <Toggle
+          label={t("settings.reading.autoSave")}
+          checked={autoSave}
+          onChange={(v) => {
+            setAutoSave(v);
+            void persist({ auto_save: String(v) });
+            showSavedToast();
+          }}
+        />
+      </div>
+      {/* Skip front matter on first open */}
+      <div className="flex items-center justify-between min-h-[73px] py-3">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.reading.skipFrontMatter")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.reading.skipFrontMatterHint")}</p>
+        </div>
+        <Toggle
+          label={t("settings.reading.skipFrontMatter")}
+          checked={skipFrontMatter}
+          onChange={(v) => {
+            setSkipFrontMatter(v);
+            void persist({ skip_front_matter: String(v) });
+            showSavedToast();
+          }}
+        />
+      </div>
+      {/* 学习辅助 — Aa keeps its own jump-link to this same sub-page; this is
+          the other entry point, for someone who never opened Aa at all. */}
+      <div className="mt-8 mb-2 text-[11px] font-medium uppercase tracking-[0.5px] text-text-muted">
+        {t("settings.layout.groupLearningAid")}
+      </div>
+      <div className="h-px bg-border-light" />
       {/* Vocabulary assist has a sub-page of its own — style, density and a
           live preview do not fit a single row. */}
       <button
         type="button"
         onClick={() => setView("passiveVocab")}
-        className="group flex min-h-[73px] py-3 w-full items-center justify-between gap-4 border-t border-border-light text-left"
+        className="group flex min-h-[73px] py-3 w-full items-center justify-between gap-4 text-left"
       >
         <span className="min-w-0">
           <span className="block text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.passiveVocab.title")}</span>

@@ -15,50 +15,49 @@ import type { SettingsSection } from "../src/components/settings-destination.ts"
  * reordering or dropping an entry.
  */
 
-/** What `isSectionAvailable` answers on a phone: no MCP, iCloud folder sync. */
+/** What `isSectionAvailable` answers on a phone: no MCP, iCloud folder sync
+ * gates only inside 书库's own sync block now, not the whole section. */
 const availableOnPhone = (row: SettingsRootRow) => row.section !== "mcp";
 
 function labels(rows: readonly SettingsRootRow[]): string[] {
   return rows.map((row) => row.id);
 }
 
-test("the phone's root list is ten rows in four groups", () => {
-  const groups = groupSettingsRootRows(availableOnPhone);
+test("the full root list is ten rows in four groups", () => {
+  const groups = groupSettingsRootRows(() => true);
   assert.deepEqual(
     groups.map((group) => [group.id, group.headingKey ?? null, labels(group.rows)]),
     [
-      ["core", null, ["general", "theme", "reading", "tools"]],
+      ["core", null, ["general", "reading", "learning", "tools"]],
       ["ai", "settings.groups.ai", ["models", "speech", "autoAnalysis"]],
-      ["library", "settings.groups.library", ["librarySync", "bookSources"]],
-      ["misc", null, ["about"]],
+      ["library", "settings.groups.library", ["library"]],
+      ["misc", null, ["mcp", "about"]],
     ],
   );
   assert.equal(groups.flatMap((group) => group.rows).length, 10);
 });
 
 test("a section the platform lacks takes its row with it", () => {
-  // Windows has no folder sync; the 书库 group is then 书籍来源 alone rather
-  // than a heading over an empty card.
-  const withoutSync = groupSettingsRootRows((row) => row.section !== "librarySync");
-  const library = withoutSync.find((group) => group.id === "library");
-  assert.deepEqual(labels(library?.rows ?? []), ["bookSources"]);
+  // No MCP on a phone: the last group is 关于 alone rather than a heading
+  // over an empty card (it carries no heading in the first place).
+  const withoutMcp = groupSettingsRootRows(availableOnPhone);
+  const misc = withoutMcp.find((group) => group.id === "misc");
+  assert.deepEqual(labels(misc?.rows ?? []), ["about"]);
+  assert.equal(withoutMcp.flatMap((group) => group.rows).length, 9);
 
-  const withoutEither = groupSettingsRootRows(
-    (row) => row.section !== "librarySync" && row.section !== "bookSources",
-  );
-  assert.equal(withoutEither.some((group) => group.id === "library"), false);
+  const withoutEverything = groupSettingsRootRows(() => false);
+  assert.equal(withoutEverything.length, 0);
 });
 
 test("every row points at a section the modal can render", () => {
   const sections: SettingsSection[] = [
     "general",
-    "appearance",
     "reading",
+    "learning",
     "services",
     "autoAnalysis",
     "tools",
-    "librarySync",
-    "bookSources",
+    "library",
     "mcp",
     "about",
   ];
@@ -67,17 +66,24 @@ test("every row points at a section the modal can render", () => {
   }
 });
 
-test("only a section with one control opens in place", () => {
-  // The rule the mock-up's two chevron directions encode: a right chevron
-  // pushes a level, a down chevron raises a sheet. 外观 is the only section
-  // holding exactly one control, so it is the only sheet.
+test("no row raises a bottom sheet anymore — 主题 lives inside 通用 now", () => {
+  // `Select` auto-sheets itself on a touch device, so the bespoke one-row
+  // sheet mechanism the old 外观 section needed no longer has a reason to
+  // exist. Every row pushes its own level.
   assert.deepEqual(
     SETTINGS_ROOT_ROWS.filter((row) => row.kind === "sheet").map((row) => row.id),
-    ["theme"],
+    [],
   );
+  assert.equal(SETTINGS_ROOT_ROWS.every((row) => row.kind === "push"), true);
 });
 
 test("the two rows sharing a section are told apart by their view", () => {
   const services = SETTINGS_ROOT_ROWS.filter((row) => row.section === "services");
   assert.deepEqual(services.map((row) => row.view), ["models", "speech"]);
+});
+
+test("书籍来源 and 书库同步 merged into one root row", () => {
+  const libraryRows = SETTINGS_ROOT_ROWS.filter((row) => row.section === "library");
+  assert.equal(libraryRows.length, 1);
+  assert.equal(libraryRows[0].id, "library");
 });

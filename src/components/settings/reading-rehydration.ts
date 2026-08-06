@@ -45,6 +45,8 @@ export const READING_REHYDRATION_GROUPS: readonly RehydrationGroup[] = [
   { id: "pageFlow", keys: ["reading_mode", "page_columns", "page_turn_animation"] },
   { id: "progress", keys: ["show_chapter_progress", "show_book_progress", "show_page_numbers"] },
   { id: "bindings", keys: ["previous_page_binding", "next_page_binding"] },
+  { id: "autoSave", keys: ["auto_save"] },
+  { id: "skipFrontMatter", keys: ["skip_front_matter"] },
 ];
 
 export const READING_REHYDRATION_KEYS = READING_REHYDRATION_GROUPS.flatMap(
