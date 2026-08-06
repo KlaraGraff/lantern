@@ -1007,6 +1007,8 @@
   "settings.about.buildDate": "Built at",
   "settings.about.copyDiagnostics": "Copy version information",
   "settings.about.copied": "Copied",
+  "settings.about.dataSources": "Data",
+  "settings.about.wordFrequency": "Word frequency table",
   "settings.ai.services": "Call order",
   "settings.ai.servicesHint": "Models are tried from top to bottom; within a model, enabled keys are tried in order before Lantern moves on. Drag the more expensive models to the end and they stay unused while one above them works.",
   "settings.ai.grounding": "Search the whole book",

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { arch } from "@tauri-apps/plugin-os";
-import { Github, BookText, Scale, ExternalLink, GitFork, Bug, Check, Copy } from "lucide-react";
+import { Github, BookText, Scale, ExternalLink, GitFork, Bug, Check, Copy, Database } from "lucide-react";
 import LanternLogo from "../LanternLogo";
 import { platform, type PlatformId } from "../../services/platform";
 
@@ -12,6 +12,9 @@ const CURRENT_RELEASES_URL = `${CURRENT_REPOSITORY_URL}/releases`;
 const CURRENT_ISSUES_URL = `${CURRENT_REPOSITORY_URL}/issues`;
 const CURRENT_DOCS_URL = `${CURRENT_REPOSITORY_URL}#readme`;
 const UPSTREAM_REPOSITORY_URL = "https://github.com/yicheng47/quill";
+// The word-frequency table ships under CC BY 3.0, which requires naming the
+// source. This row is that attribution, not a nicety.
+const WORD_FREQUENCY_SOURCE_URL = "https://github.com/orgtre/google-books-ngram-frequency";
 
 interface BuildInfo {
   version: string;
@@ -196,6 +199,24 @@ export default function AboutSettings() {
         </div>
         <span className="text-[12px] text-text-muted">MIT · yicheng47/quill</span>
       </div>
+
+      <div className="h-px bg-border-light my-3" />
+      <p className="text-[11px] font-semibold text-text-muted tracking-[0.6px] mb-1">
+        {t("settings.about.dataSources").toUpperCase()}
+      </p>
+      <button
+        onClick={() => open(WORD_FREQUENCY_SOURCE_URL)}
+        className="group flex items-center justify-between h-[57px] cursor-pointer"
+      >
+        <div className="flex items-center gap-3">
+          <Database size={16} className="text-text-muted" />
+          <span className="text-[14px] text-text-primary tracking-[-0.15px]">{t("settings.about.wordFrequency")}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] text-text-muted">CC BY 3.0 · Google Books Ngram</span>
+          <ExternalLink size={14} className="text-text-muted" />
+        </div>
+      </button>
     </div>
   );
 }

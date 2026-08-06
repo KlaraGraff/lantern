@@ -40,18 +40,39 @@
 //! - **5** — rank 20 001+. Rare enough that a hit here is a strong signal
 //!   regardless of the reader's level.
 //!
-//! These thresholds are a starting point, not a tuned constant — revisit
-//! them once real usage data (lookup rates per band, see §5.3) is in.
+//! Band 1's boundary is the one the data can check, and it holds: in the
+//! table below, rank 1 000 sits at a cumulative share of 0.780 — the top
+//! thousand words are 78% of running text in fiction, inside the 70–80%
+//! this band was described as covering before any real corpus was loaded.
+//!
+//! **Band 5 is currently unreachable.** The table stops at rank 10 000, so
+//! no word in it can exceed [`BAND_4_MAX_RANK`]; anything rarer is absent
+//! and comes back as `None` (see [`lookup`] on why that is not band 5). The
+//! threshold stays where it is rather than being squeezed down to fit
+//! today's table, so that widening the table later lights band 5 up without
+//! shifting what bands 1–4 mean. Revisit all of them once real usage data
+//! (lookup rates per band, see §5.3) is in.
 //!
 //! ## Data source
 //!
-//! Backed by [`FIXTURE_TSV`], a small hand-picked word list (see
-//! `fixture.tsv`) — enough to exercise every band and the lemmatization
-//! fallback below, **not** a real frequency table. Swapping in a real
-//! corpus-derived table (candidates evaluated in
-//! `docs/impls/word-frequency-data-sources.md`) only touches
-//! [`table`]; the rest of this module is agnostic to where the data comes
-//! from.
+//! Backed by [`FREQUENCY_TSV`] — Google Books Ngram Corpus v3, **English
+//! Fiction** subcorpus, 1-grams, books published 2010–2019, as aggregated
+//! and published by `orgtre/google-books-ngram-frequency` under CC BY 3.0.
+//! The fiction subcorpus is the point: this band answers "how hard is this
+//! word in a novel", and a general-English or subtitle-derived corpus
+//! answers a different question (the alternatives, and why they lost, are
+//! in `docs/impls/word-frequency-data-sources.md`).
+//!
+//! Google publishes per-word-per-year counts sharded by first letter, tens
+//! of gigabytes of it; the list above is that data already filtered to
+//! 2010–2019, aggregated, denoised and ranked. `scripts/build-word-
+//! frequency-table.mjs` turns it into the two-column file next door and is
+//! the only thing that should ever write it.
+//!
+//! The table holds the 10 000 commonest fiction words, which is the whole
+//! of what the published list offers. Widening it to the 20–50k originally
+//! wanted means re-running the upstream aggregation over the raw corpus —
+//! isolated work that touches [`table`] and nothing else.
 //!
 //! ## Why the backend
 //!
@@ -77,7 +98,7 @@
 //! get looked up, but a miss here does not prove no relationship exists —
 //! only that neither this word nor a word it's linked to has been recorded.
 //!
-//! Lazy + loaded once: [`table`] parses `fixture.tsv` on first call via
+//! Lazy + loaded once: [`table`] parses the word list on first call via
 //! [`OnceLock`] and reuses the parsed map for the process lifetime, so a
 //! lookup never re-reads or re-parses the file.
 
@@ -91,9 +112,10 @@ use crate::db::Db;
 use crate::error::AppResult;
 use crate::sync::events::normalize_learning_term;
 
-/// `<word> <rank>` per line, `#`-prefixed lines are comments. See the module
-/// doc for what this fixture is (and is not) standing in for.
-const FIXTURE_TSV: &str = include_str!("fixture.tsv");
+/// `<word> <rank>` per line, `#`-prefixed lines are comments. Generated —
+/// see the module doc's "Data source" section and the header of the file
+/// itself, which carries the attribution CC BY 3.0 requires.
+const FREQUENCY_TSV: &str = include_str!("english-fiction.tsv");
 
 const BAND_1_MAX_RANK: u32 = 1_000;
 const BAND_2_MAX_RANK: u32 = 3_000;
@@ -124,7 +146,7 @@ pub struct FrequencyEntry {
     pub rank: u32,
 }
 
-fn parse_fixture(source: &str) -> HashMap<String, FrequencyEntry> {
+fn parse_table(source: &str) -> HashMap<String, FrequencyEntry> {
     let mut map = HashMap::new();
     for line in source.lines() {
         let line = line.trim();
@@ -142,13 +164,24 @@ fn parse_fixture(source: &str) -> HashMap<String, FrequencyEntry> {
         if normalized.is_empty() {
             continue;
         }
-        map.insert(
-            normalized,
-            FrequencyEntry {
+        // Two upstream rows can normalize to one word — "OK" and "ok" are
+        // ranked separately in the source list. A lexeme is as common as its
+        // commonest spelling, so the better rank wins rather than whichever
+        // line happened to come last. The generator already collapses these,
+        // so this only guards a hand-edited or re-sourced file.
+        map.entry(normalized)
+            .and_modify(|existing: &mut FrequencyEntry| {
+                if rank < existing.rank {
+                    *existing = FrequencyEntry {
+                        band: band_for_rank(rank),
+                        rank,
+                    };
+                }
+            })
+            .or_insert(FrequencyEntry {
                 band: band_for_rank(rank),
                 rank,
-            },
-        );
+            });
     }
     map
 }
@@ -157,7 +190,7 @@ fn parse_fixture(source: &str) -> HashMap<String, FrequencyEntry> {
 /// lifetime. See the module doc's "Lazy + loaded once" note.
 fn table() -> &'static HashMap<String, FrequencyEntry> {
     static TABLE: OnceLock<HashMap<String, FrequencyEntry>> = OnceLock::new();
-    TABLE.get_or_init(|| parse_fixture(FIXTURE_TSV))
+    TABLE.get_or_init(|| parse_table(FREQUENCY_TSV))
 }
 
 /// Look up `word`'s frequency band and rank.
@@ -170,10 +203,15 @@ fn table() -> &'static HashMap<String, FrequencyEntry> {
 ///
 /// Returns `Ok(None)` when the word — and none of its recorded forms —
 /// appear in the table. This is a genuine "unknown", never coerced into
-/// band 5: a word absent from a ~400-entry fixture (or even a real 20–50k
-/// table) says nothing about its actual frequency, and treating "not found"
-/// as "rare" would silently mislabel every gap in the data as the rarest
-/// possible word.
+/// band 5.
+///
+/// The temptation grows now that the table is a complete top-10 000 list
+/// rather than a fixture: absence really does imply "rarer than rank
+/// 10 000". Resist it, because absence has a much more common cause in a
+/// novel — character and place names, invented words, foreign phrases, and
+/// whatever the reader's finger caught mid-selection are all absent too.
+/// Calling those the rarest words in English would mislabel exactly the
+/// text a fiction reader touches most.
 pub fn lookup(db: &Db, word: &str) -> AppResult<Option<FrequencyEntry>> {
     lookup_with(&FormIndex::new(db), word)
 }

@@ -1005,6 +1005,8 @@
   "settings.about.buildDate": "构建时间",
   "settings.about.copyDiagnostics": "复制版本信息",
   "settings.about.copied": "已复制",
+  "settings.about.dataSources": "数据来源",
+  "settings.about.wordFrequency": "词频表",
   "settings.ai.services": "调用顺序",
   "settings.ai.servicesHint": "模型按从上到下的顺序尝试；同一个模型内先试完已启用的密钥，再换下一个模型。把更贵的模型拖到最后，前面的能用时就不会用到它。",
   "settings.ai.grounding": "搜索全书",
