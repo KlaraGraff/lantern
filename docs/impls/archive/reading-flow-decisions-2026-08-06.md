@@ -3,7 +3,7 @@
 > 日期：2026-08-06
 > 上游：`docs/impls/reader-journey-flow-2026-08.html`（现状动线图）、
 > `docs/impls/reading-driven-mastery-and-review.md`（掌握度与复习的原始设计）
-> 状态：决策已定，待实现
+> 状态：已实现（2026-08-06，`d4a2147`，七项决策全部落地，含迁移 043–047）。原状态行「待实现」已过时。
 
 ---
 

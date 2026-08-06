@@ -2,7 +2,7 @@
 
 > **Archived — shipped.** This is the goal the MCP rework was executed
 > against. The result is the 29-tool catalog documented in
-> [`mcp-full-product-parity.md`](../../features/mcp-full-product-parity.md).
+> [`mcp-full-product-parity.md`](../../features/archive/mcp-full-product-parity.md).
 > Two things drifted afterwards and the shipped code is the authority:
 > `export_vocabulary` is a read rather than a write (12 reads, 16 writes), and
 > `rmcp` was upgraded 1.7 → 3.1 to put deletion confirmations inside the AI

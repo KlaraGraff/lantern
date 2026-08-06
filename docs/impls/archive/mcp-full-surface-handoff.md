@@ -4,7 +4,7 @@
 > the paused 67-tool "full parity" round. That premise was rejected: it
 > contradicted README section four, which promises context sharing, not an
 > external control surface. What shipped is the 29-tool catalog in
-> [`mcp-full-product-parity.md`](../../features/mcp-full-product-parity.md),
+> [`mcp-full-product-parity.md`](../../features/archive/mcp-full-product-parity.md),
 > designed in [`mcp-scope-goal.md`](mcp-scope-goal.md).
 >
 > The claim below that "no work from this redesign has been committed" is
@@ -35,7 +35,7 @@ These decisions are settled unless the user explicitly reopens them.
 
 ## Catalog conclusion
 
-The current product document describes a **67-tool candidate**, not a final catalog: [mcp-full-product-parity.md](../../features/mcp-full-product-parity.md).
+The current product document describes a **67-tool candidate**, not a final catalog: [mcp-full-product-parity.md](../../features/archive/mcp-full-product-parity.md).
 
 - The existing implemented server exposes 38 tools.
 - It shares 34 names with the 67-tool candidate.

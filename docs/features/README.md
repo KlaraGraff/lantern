@@ -6,12 +6,9 @@ A spec's number is its issue number here. A `q` prefix marks a number inherited 
 
 ## In progress / Planned
 
-- [12 - Reader Settings: Global Layer and Per-Book Overrides](12-reader-settings-layers.md)
 - [q14 — Notes (AI-Assisted)](q14-notes.md)
 - [q25 — Collection Folders](q25-collection-folders.md)
-- [q27 — Reading Stats](q27-reading-stats.md)
 - [q32 — Library Backup](q32-library-backup.md)
 - [q257 — Persist Explain results + Explanations tools page](q257-persist-explanations.md)
-- [q261 - Disable Sync Copy-to-Local Progress](q261-disable-sync-copy-progress.md)
 - [q276 - Reset All App Data](q276-reset-all-data.md)
 - [q285 - Group Chats and Words under Memos](q285-group-chats-and-words-under-memos.md)

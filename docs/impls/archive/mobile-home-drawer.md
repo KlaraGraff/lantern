@@ -1,7 +1,7 @@
 # Home 的侧边栏在窄屏变成抽屉
 
 > P2 第 2 项。样张：[`mobile-home-drawer-mockup.html`](mobile-home-drawer-mockup.html)（8 屏，含跟手中间态）。
-> 地基（安全区、`touch:` 变体、断点约定）是 P2 第 1 项，见 [`responsive-foundation.md`](responsive-foundation.md)。
+> 地基（安全区、`touch:` 变体、断点约定）是 P2 第 1 项，见 [`responsive-foundation.md`](../responsive-foundation.md)。
 
 ## 一句话
 
@@ -83,7 +83,7 @@ Home
 
 `useDrawerGesture` 只吃指针事件、吐出「当前拉出比例」和「松手后的目标态」，
 不碰 DOM 结构——所以它能脱离浏览器单测，不需要真机。**已实现**，见
-[`src/hooks/useDrawerGesture.ts`](../../src/hooks/useDrawerGesture.ts)，23 个单测。
+[`src/hooks/useDrawerGesture.ts`](../../../src/hooks/useDrawerGesture.ts)，23 个单测。
 
 ### 接线时唯一容易做错的地方：什么时候 `setPointerCapture`
 

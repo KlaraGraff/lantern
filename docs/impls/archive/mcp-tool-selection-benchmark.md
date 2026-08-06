@@ -8,7 +8,7 @@
 > reusable as a starting point if tool-selection evaluation is picked up again;
 > the counts below are not.
 
-`mcp-tool-selection-corpus.json` is a product-level, framework-neutral selection benchmark for the 67-tool candidate in [MCP Full Product Parity](../../features/mcp-full-product-parity.md). It evaluates whether an agent can select Lantern actions from ordinary user language. It is not a registry test and does not prescribe a user workflow.
+`mcp-tool-selection-corpus.json` is a product-level, framework-neutral selection benchmark for the 67-tool candidate in [MCP Full Product Parity](../../features/archive/mcp-full-product-parity.md). It evaluates whether an agent can select Lantern actions from ordinary user language. It is not a registry test and does not prescribe a user workflow.
 
 ## Coverage
 

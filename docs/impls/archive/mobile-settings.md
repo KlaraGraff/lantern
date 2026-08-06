@@ -1,9 +1,9 @@
 # Mobile settings — implementation plan
 
-**Scope:** P2 item 4 of [`docs/roadmap/mobile-ios.md`](../roadmap/mobile-ios.md#5-phases).
+**Scope:** P2 item 4 of [`docs/roadmap/mobile-ios.md`](../../roadmap/mobile-ios.md#5-phases).
 **Design:** [`mobile-settings-mockup.html`](mobile-settings-mockup.html) — 25 screens, approved
 2026-08-06. Screen 6 is superseded by
-[D-018](../roadmap/mobile-ios.md#d-018--a-missing-credential-names-the-channel-that-failed-instead-of-shrugging)
+[D-018](../../roadmap/mobile-ios.md#d-018--a-missing-credential-names-the-channel-that-failed-instead-of-shrugging)
 and was deliberately not redrawn; this plan carries the revision instead.
 
 ---
@@ -25,7 +25,7 @@ kinds and this plan keeps them apart, because they age differently.
 ## 1. What is cut, and the shorter list it became
 
 **Cut because iOS genuinely cannot.** These already have capability flags in
-[`src/services/platform.ts`](../../src/services/platform.ts) and disappear with no new code:
+[`src/services/platform.ts`](../../../src/services/platform.ts) and disappear with no new code:
 
 | Panel | Flag |
 |---|---|
@@ -39,11 +39,11 @@ kinds and this plan keeps them apart, because they age differently.
 
 | Panel | New flag | Why |
 |---|---|---|
-| 服务配置 › 搜索模型 (embedding) | `hasEmbeddingIndex` | The vector index serves AI chat's retrieval augmentation, and chat is not on the phone ([D-012](../roadmap/mobile-ios.md#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)). Contextual gloss reads the selected sentence, never an index |
+| 服务配置 › 搜索模型 (embedding) | `hasEmbeddingIndex` | The vector index serves AI chat's retrieval augmentation, and chat is not on the phone ([D-012](../../roadmap/mobile-ios.md#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)). Contextual gloss reads the selected sentence, never an index |
 
 It defaults to `false` in `ABSENT`, is `true` in `DESKTOP`, and stays absent in `MOBILE`, so the
 compiler catches a missing default exactly as that file's own comment promises. Per
-[D-005](../roadmap/mobile-ios.md#d-005--capability-flags-not-platform-checks) it is a named flag
+[D-005](../../roadmap/mobile-ios.md#d-005--capability-flags-not-platform-checks) it is a named flag
 rather than an `isMobile` check at the call site, because the flag name is where the reason lives.
 
 ### The cuts that were reversed
@@ -275,7 +275,7 @@ with real backend work in front of it.
 
 Stages 1–3 touch `SettingsModal.tsx`, `platform.ts`, `Select`, and the row pattern across the
 settings components. None of them touch `Reader.tsx` or `ExplainPopover.tsx`, so
-[D-011](../roadmap/mobile-ios.md#d-011--p2-waits-for-the-desktop-mastery-line-to-finish) does not
+[D-011](../../roadmap/mobile-ios.md#d-011--p2-waits-for-the-desktop-mastery-line-to-finish) does not
 block them — the same reasoning that let P2 items 1 and 2 land.
 
 Stages 4–7 are each large enough to be their own turn, and stages 6 and 7 have backend work in
