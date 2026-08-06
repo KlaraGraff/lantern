@@ -1,0 +1,1780 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern — 手机版设置 + AI 模型配置 样张</title>
+<style>
+  :root {
+    --bg-page: #f4f4f5;
+    --bg-surface: #ffffff;
+    --bg-muted: #fafafa;
+    --bg-input: #f3f3f5;
+    --text-primary: #18181b;
+    --text-secondary: #52525c;
+    --text-muted: #71717b;
+    --text-placeholder: #717182;
+    --border: #e4e4e7;
+    --border-light: #f4f4f5;
+    --accent: #7c3aed;
+    --accent-bg: #f3e8ff;
+    --overlay: rgba(0,0,0,.5);
+    --danger: #e7000b;
+    --danger-bg: #fef2f2;
+    --danger-border: #ffc9c9;
+    --success: #00c950;
+    --success-text: #00a63e;
+    --warning: #b8791c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+    background: #e8e8ec;
+    color: var(--text-primary);
+    padding: 40px 24px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page-head { max-width: 1240px; margin: 0 auto 28px; }
+  .page-head h1 { font-size: 26px; font-weight: 650; letter-spacing: -.4px; }
+  .page-head p { margin-top: 10px; font-size: 14px; line-height: 1.7; color: var(--text-secondary); max-width: 760px; }
+  .page-head code { background: #dcdce2; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+
+  .cut {
+    max-width: 1240px; margin: 0 auto 44px; background: var(--bg-surface);
+    border: 1px solid #d9d9df; border-radius: 12px; padding: 22px 26px 24px;
+  }
+  .cut h2 { font-size: 16px; font-weight: 640; letter-spacing: -.2px; }
+  .cut > p { margin-top: 8px; font-size: 13.5px; line-height: 1.75; color: var(--text-secondary); max-width: 780px; }
+  .cut table { border-collapse: collapse; margin-top: 16px; width: 100%; font-size: 13px; }
+  .cut th, .cut td { text-align: left; padding: 8px 12px 8px 0; vertical-align: top; border-bottom: 1px solid var(--border-light); line-height: 1.6; }
+  .cut th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); font-weight: 620; }
+  .cut td:first-child { font-weight: 600; white-space: nowrap; padding-right: 20px; }
+  .cut td:nth-child(2) { color: var(--text-secondary); }
+  .cut .gate { color: var(--accent); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  .cut .manual { color: var(--warning); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  .cut .back { color: var(--success-text); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  .cut .amend { background: #f7f3ff; border: 1px solid #e3d5ff; border-radius: 10px; padding: 13px 15px; margin-top: 14px;
+                font-size: 13px; line-height: 1.75; color: var(--text-secondary); }
+  .cut .amend b { color: var(--text-primary); }
+
+  .grid { max-width: 1240px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 44px 40px; }
+  .cell { display: flex; flex-direction: column; gap: 12px; }
+  .cell > .label { font-size: 13px; font-weight: 620; letter-spacing: -.1px; }
+  .cell > .label span { display: block; font-weight: 400; color: var(--text-muted); margin-top: 3px; line-height: 1.55; max-width: 390px; }
+
+  /* ── iPhone frame (identical to mobile-home-drawer-mockup.html) ── */
+  .phone {
+    width: 390px; height: 800px;
+    background: var(--bg-surface);
+    border-radius: 44px;
+    border: 10px solid #1c1c20;
+    position: relative; overflow: hidden;
+    box-shadow: 0 18px 44px rgba(0,0,0,.20);
+    display: flex; flex-direction: column;
+  }
+  .phone.grey { background: var(--bg-page); }
+  .notch {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 124px; height: 30px; background: #1c1c20;
+    border-radius: 0 0 18px 18px; z-index: 60;
+  }
+  .safe-top { height: 54px; flex: none; }
+  .safe-bottom { height: 26px; flex: none; }
+  .home-bar {
+    position: absolute; bottom: 9px; left: 50%; transform: translateX(-50%);
+    width: 132px; height: 5px; border-radius: 3px; background: #00000033; z-index: 60;
+  }
+
+  /* ── nav bar ── */
+  .topbar { flex: none; padding: 0 12px 10px; display: flex; align-items: center; gap: 4px; }
+  .tap {
+    width: 44px; height: 44px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 11px; color: var(--text-secondary); background: none; border: none;
+    font-size: 15px; font-weight: 550;
+  }
+  .tap.act { color: var(--accent); }
+  .tap.off { color: rgba(113,113,123,.4); }
+  .topbar h1 { font-size: 21px; font-weight: 620; letter-spacing: -.3px; flex: 1; padding-left: 4px;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .topbar h1.sm { font-size: 18px; }
+  .divider { height: 1px; background: var(--border); flex: none; }
+
+  .scroll { flex: 1; overflow: hidden; }
+  .pad { padding: 0 16px; }
+  .hint-block {
+    padding: 2px 16px 14px; font-size: 12.5px; line-height: 1.6; color: var(--text-muted);
+  }
+
+  /* ── grouped list (设置根页) ── */
+  .gcard {
+    background: var(--bg-surface); border-radius: 14px; overflow: hidden;
+    border: 1px solid var(--border); margin-bottom: 22px;
+  }
+  .ghead {
+    font-size: 11.5px; font-weight: 620; text-transform: uppercase; letter-spacing: .5px;
+    color: var(--text-muted); padding: 0 6px 6px; margin-top: 2px;
+  }
+  .grow {
+    height: 56px; display: flex; align-items: center; gap: 11px; padding: 0 14px;
+    border-bottom: 1px solid var(--border-light); font-size: 15.5px; letter-spacing: -.15px;
+    color: var(--text-primary); font-weight: 500;
+  }
+  .grow:last-child { border-bottom: 0; }
+  .grow .val { margin-left: auto; font-size: 14px; color: var(--text-muted); font-weight: 450;
+               max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .grow .chev { color: rgba(113,113,123,.55); flex: none; }
+  .grow .gi { color: var(--text-muted); flex: none; }
+
+  /* ── 73px leaf rows ── */
+  .srow {
+    min-height: 73px; display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; padding: 12px 0; border-bottom: 1px solid rgba(0,0,0,.1);
+  }
+  .srow:last-child { border-bottom: 0; }
+  .srow .tt { font-size: 14px; font-weight: 500; letter-spacing: -.15px; color: var(--text-primary); }
+  .srow .hh { font-size: 12px; color: var(--text-muted); margin-top: 2px; line-height: 1.5; }
+  .srow .lft { min-width: 0; }
+  .sec-h {
+    font-size: 11.5px; font-weight: 620; text-transform: uppercase; letter-spacing: .5px;
+    color: var(--text-muted); padding: 16px 0 4px;
+  }
+
+  /* ── controls ── */
+  .val-chev {
+    display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 8px 0 12px;
+    border-radius: 11px; background: var(--bg-input); font-size: 14px; font-weight: 500;
+    color: var(--text-primary); flex: none; max-width: 148px;
+  }
+  .val-chev span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .step {
+    display: flex; align-items: center; height: 44px; border-radius: 11px;
+    background: var(--bg-input); flex: none; overflow: hidden;
+  }
+  .step b { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+            color: var(--text-secondary); font-weight: 500; }
+  .step i { font-style: normal; min-width: 52px; text-align: center; font-size: 14px; font-weight: 550;
+            letter-spacing: -.2px; }
+  .tg { width: 44px; height: 26px; border-radius: 13px; background: #d4d4d8; flex: none; position: relative; }
+  .tg::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+               border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+  .tg.on { background: var(--accent); }
+  .tg.on::after { left: 21px; }
+
+  .btn {
+    height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    gap: 8px; font-size: 15px; font-weight: 550; border: 1px solid var(--border);
+    color: var(--text-secondary); background: var(--bg-surface);
+  }
+  .btn.pri { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.dng { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .btn.mut { color: rgba(113,113,123,.5); }
+
+  /* ── fields ── */
+  .field { margin-bottom: 16px; }
+  .field > label { display: block; font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 7px; }
+  .inp {
+    height: 48px; border-radius: 12px; background: var(--bg-input); border: 1px solid transparent;
+    display: flex; align-items: center; gap: 8px; padding: 0 12px;
+    font-size: 16px; color: var(--text-primary);
+  }
+  .inp.ph { color: var(--text-placeholder); }
+  .inp.focus { border-color: var(--accent); background: var(--bg-surface); }
+  .inp .grow1 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .inp .eye { width: 36px; height: 36px; margin-right: -6px; display: flex; align-items: center;
+              justify-content: center; color: var(--text-muted); flex: none; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 14.5px; letter-spacing: -.2px; }
+  .fhint { font-size: 11.5px; line-height: 1.55; color: var(--text-muted); margin-top: 6px; }
+
+  /* ── AI provider cards ── */
+  .pcard {
+    border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px;
+    background: var(--bg-surface); display: flex; align-items: center; gap: 12px;
+  }
+  .pcard.dim { opacity: .55; }
+  .pcard .pn { font-size: 15px; font-weight: 570; letter-spacing: -.15px; }
+  .pcard .ps { font-size: 12px; color: var(--text-muted); margin-top: 3px;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px;
+    border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: -.1px;
+  }
+  .pill.ok { background: #e8f8ee; color: var(--success-text); }
+  .pill.warn { background: #fdf3e3; color: var(--warning); }
+  .pill.err { background: var(--danger-bg); color: var(--danger); }
+  .pill.mut { background: var(--bg-input); color: var(--text-muted); }
+  .chip {
+    display: inline-flex; align-items: center; height: 19px; padding: 0 7px; border-radius: 999px;
+    background: var(--bg-input); color: var(--text-muted); font-size: 10.5px; font-weight: 600;
+  }
+
+  /* ── result panels ── */
+  .panel { border-radius: 12px; padding: 12px 13px; font-size: 13px; line-height: 1.6; }
+  .panel.ok { background: #f0fbf4; border: 1px solid #b9e8ca; color: #0a6b33; }
+  .panel.err { background: var(--danger-bg); border: 1px solid var(--danger-border); color: #a4000a; }
+  .panel .ttl { font-weight: 620; display: flex; gap: 7px; align-items: flex-start; }
+  .panel .sub { margin-top: 7px; font-size: 12px; opacity: .92; }
+  .panel .raw {
+    margin-top: 9px; background: rgba(0,0,0,.05); border-radius: 8px; padding: 7px 9px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; line-height: 1.55;
+    word-break: break-all; color: #7a1116;
+  }
+  .spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(124,58,237,.25);
+          border-top-color: var(--accent); flex: none; }
+
+  /* ── bottom sheet ── */
+  .scrim { position: absolute; inset: 0; background: var(--overlay); z-index: 40; }
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 50; background: var(--bg-surface);
+    border-radius: 20px 20px 0 0; box-shadow: 0 -8px 32px rgba(0,0,0,.22); padding: 8px 0 0;
+    display: flex; flex-direction: column;
+  }
+  .sheet .bargrip { width: 38px; height: 4px; border-radius: 2px; background: #d4d4d8; margin: 0 auto 6px; }
+  .sheet h3 { font-size: 16px; font-weight: 620; padding: 8px 18px 4px; letter-spacing: -.2px; }
+  .sheet .sd { font-size: 12.5px; color: var(--text-muted); padding: 0 18px 10px; line-height: 1.6; }
+  .opt {
+    height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 18px;
+    font-size: 15.5px; border-top: 1px solid var(--border-light);
+  }
+  .opt.sel { color: var(--accent); font-weight: 570; }
+  .opt .od { font-size: 12px; color: var(--text-muted); font-weight: 400; margin-top: 2px; line-height: 1.45; }
+  .opt.tall { height: auto; padding-top: 13px; padding-bottom: 13px; align-items: flex-start; }
+
+  /* ── dialog (居中的一次性询问) ── */
+  .dlg {
+    position: absolute; left: 24px; right: 24px; top: 50%; transform: translateY(-50%); z-index: 50;
+    background: var(--bg-surface); border-radius: 18px; padding: 22px 20px 16px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.3);
+  }
+  .dlg h3 { font-size: 17px; font-weight: 640; letter-spacing: -.25px; }
+  .dlg p { font-size: 13.5px; line-height: 1.65; color: var(--text-secondary); margin-top: 9px; }
+  .dlg .fine { font-size: 11.5px; color: var(--text-muted); margin-top: 14px; line-height: 1.55; }
+
+  /* ── skeleton ── */
+  .sk { background: #ebebef; border-radius: 6px; height: 12px; }
+
+  /* ── shelf bits (used by the cellular prompt screen) ── */
+  .books { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 16px; }
+  .book .cover {
+    aspect-ratio: 2/3; border-radius: 8px; position: relative; overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,.14);
+    display: flex; align-items: flex-end; padding: 12px;
+    color: #fff; font-size: 13px; font-weight: 600; line-height: 1.35;
+  }
+  .book .t { margin-top: 8px; font-size: 13.5px; font-weight: 550; letter-spacing: -.1px;
+             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .book .a { margin-top: 2px; font-size: 12px; color: var(--text-muted); }
+  .c1 { background: linear-gradient(150deg,#7c3aed,#4c1d95); }
+  .c2 { background: linear-gradient(150deg,#0f766e,#134e4a); }
+  .c3 { background: linear-gradient(150deg,#b45309,#78350f); }
+  .c4 { background: linear-gradient(150deg,#be123c,#701a3f); }
+  .c5 { background: linear-gradient(150deg,#1e40af,#172554); }
+  .c6 { background: linear-gradient(150deg,#3f6212,#1a2e05); }
+  .cloud-badge {
+    position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%;
+    background: rgba(0,0,0,.42); display: flex; align-items: center; justify-content: center; color: #fff;
+  }
+
+  svg { display: block; }
+  .ic { width: 19px; height: 19px; stroke: currentColor; stroke-width: 1.9; fill: none;
+        stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  .ic-sm { width: 16px; height: 16px; }
+  .ic-xs { width: 14px; height: 14px; }
+  .ic-lg { width: 22px; height: 22px; }
+
+  /* ── annotations ── */
+  .note {
+    position: absolute; z-index: 70; font-size: 11px; line-height: 1.45;
+    background: #18181b; color: #fff; padding: 5px 8px; border-radius: 7px;
+    max-width: 200px; box-shadow: 0 4px 14px rgba(0,0,0,.3);
+  }
+  .note::after { content: ""; position: absolute; width: 8px; height: 8px; background: #18181b; transform: rotate(45deg); }
+  .note.l::after { left: -3px; top: 12px; }
+  .note.r::after { right: -3px; top: 12px; }
+
+  /* ── desktop narrow window ── */
+  .win {
+    width: 520px; height: 880px; background: var(--bg-surface);
+    border-radius: 12px; overflow: hidden; position: relative;
+    box-shadow: 0 18px 44px rgba(0,0,0,.20); border: 1px solid #d4d4d8;
+    display: flex; flex-direction: column;
+  }
+  .chrome { height: 34px; flex: none; display: flex; align-items: center; gap: 7px; padding: 0 13px;
+            border-bottom: 1px solid var(--border); background: var(--bg-muted); }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .win .topbar { padding: 10px 12px 8px; }
+  .win .topbar h1 { font-size: 18px; }
+  .win .tap { width: 28px; height: 28px; border-radius: 7px; }
+  .win .grow { height: 40px; font-size: 14px; padding: 0 12px; }
+  .win .grow .val { font-size: 13px; }
+  .win .gcard { border-radius: 10px; margin-bottom: 16px; }
+  .win .ghead { font-size: 11px; }
+  .win .hover { background: var(--bg-input); }
+  .win .body { flex: 1; overflow: hidden; background: var(--bg-page); }
+
+  .legend { max-width: 1240px; margin: 48px auto 0; font-size: 13.5px; line-height: 1.85; color: var(--text-secondary); }
+  .legend h3 { font-size: 15px; font-weight: 620; color: var(--text-primary); margin: 26px 0 8px; }
+  .legend b { color: var(--text-primary); font-weight: 600; }
+  .legend ul { padding-left: 20px; }
+  .legend li { margin-bottom: 6px; }
+  .legend code { background: #dcdce2; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  .legend .q { background: #fff8e8; border: 1px solid #f0dfc0; border-radius: 10px; padding: 14px 16px; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>手机版设置 + AI 模型配置</h1>
+  <p>
+    P2 第 4 项。桌面的设置是一个 780px 宽的模态框，左边一根 220px 的导航，右边 73px 一行的表单。
+    手机上没有地方放这根导航，所以 <code>&lt; 768px</code> 时它整个不再是模态框：
+    变成一张<b>占满窗口的分组列表</b>，点一行推进一层，左上角返回。73px 的行本身<b>不变</b>——
+    它在 370px 宽下仍然成立，只是 <code>h-[73px]</code> 要放成 <code>min-h-[73px]</code>，让副标题换行时行能长高。
+    最后一屏是拖到 520px 的 macOS 窗口：同一份列表，但没有 44px 热区、没有安全区留白。
+  </p>
+</div>
+
+<div class="cut">
+  <h2>先看这个：手机上<b>不给</b>的桌面板块</h2>
+  <p>
+    这是这份样张里最需要你点头或否掉的一项。桌面今天有 10 个一级板块，其中「服务配置」和「阅读辅助」
+    各自还有 4 个子页，一共 16 个面板。手机上留 <b>8 个入口</b>。下表是砍掉的每一项和理由。
+    「能力位」那列是已经写在 <code>src/services/platform.ts</code> 里、不用新写代码就会消失的；
+    「本次决定」那列是这份样张<b>新提出</b>的删减，需要你确认。
+  </p>
+  <div class="amend">
+    <b>这一版改了前提。</b> 上一版是按「手机是桌面的配角，桌面生产、手机消费」画的，
+    所以把<b>书籍来源</b>和<b>自动分析</b>都砍了。前提已经被推翻：
+    <b>核心功能手机端都要能独立具备</b>——有 iPhone 的人远比有 MacBook 的人多，很多读者手里只有一台手机，
+    对他们来说「回 Mac 上做」不是备选，是做不了。这两项因此都<b>加回来</b>了，见下表末两行和第 15–18、22–24 屏。
+    表里其余的删减不受影响：它们被砍是因为 iOS 真的做不到，或者那件事本身还没上手机，不是因为「手机是配角」。
+  </div>
+  <div class="amend">
+    <b>密钥那条前提也翻了。</b> 上一版写的是「密钥不同步，每台设备各填一次」。现在<b>凭据要同步</b>：
+    密钥作为<b>可同步的钥匙串条目</b>存起来，由 <b>iCloud 钥匙串</b>在你自己的苹果设备之间端到端加密地复制——和 Safari 密码同一套。
+    它<b>不进</b>书库那个 iCloud Drive 目录：那个目录在「文件」里能翻（<code>NSUbiquitousContainerIsDocumentScopePublic</code>），
+    凭据一律不放进去，加密过也不放。Windows 没有 iCloud 钥匙串，那边的密钥留在本机，
+    和「Windows 不进 iOS↔macOS 那条同步链」是同一个决定。
+    代价是多出一种失败态：iCloud 钥匙串是系统里单独的开关，可以书在同步、密钥没过来。而钥匙串同步<b>没有回执</b>——没有完成信号、没有时限，开关状态应用也读不到，所以应用只知道「密钥不在这台设备上」，说不出为什么。<b>第 6 屏</b>画的就是这种说不清的状态。
+    另外<b>书籍来源清单</b>也进了同步白名单，它是一串网址、不是凭据，走普通设置那条，不经钥匙串。
+  </div>
+  <table>
+    <tr><th>砍掉</th><th>为什么</th><th>怎么消失</th></tr>
+    <tr>
+      <td>MCP</td>
+      <td>写本地 CLI 配置、起一个 localhost 端点。iOS 沙箱两样都做不到。</td>
+      <td class="gate">hasMcpIntegration: false</td>
+    </tr>
+    <tr>
+      <td>服务配置 › 扫描件 OCR</td>
+      <td>D-003：OCR 流水线要下载 1 GB 运行时并 exec 它，iOS 不允许。手机只读桌面 OCR 好的结果。</td>
+      <td class="gate">hasOcr: false</td>
+    </tr>
+    <tr>
+      <td>阅读偏好 › 自定义字体导入</td>
+      <td>没有原生字体选择器可用，手机只能用系统字体。字号／行距／页边距全部保留。</td>
+      <td class="gate">hasFontImport: false</td>
+    </tr>
+    <tr>
+      <td>通用 › 自动检查更新</td>
+      <td>Apple 禁止应用自更新，updater 插件根本没为 iOS 编译。</td>
+      <td class="gate">hasUpdater: false</td>
+    </tr>
+    <tr>
+      <td>书库同步 › 打开位置</td>
+      <td>D-015 把「换文件夹」换成了「在访达里打开」。iOS 没有访达。同步<b>状态</b>保留，见第 19 屏。</td>
+      <td class="gate">hasFileReveal: false</td>
+    </tr>
+    <tr>
+      <td>服务配置 › 搜索模型（embedding）</td>
+      <td>向量索引服务的是 AI 对话的检索增强，而对话按 D-012 不上手机。语境释义读的是选中的那句话，不查索引。</td>
+      <td class="manual">本次决定</td>
+    </tr>
+    <tr>
+      <td>服务配置 › 语音</td>
+      <td>朗读不在 §1 的 iOS 那一列里。第二版再谈，那时它是一个功能决定，不是一个设置项决定。</td>
+      <td class="manual">本次决定</td>
+    </tr>
+    <tr>
+      <td>阅读辅助 › 卡片设计 / 操作菜单 / 正文标记</td>
+      <td>三个都是<b>编排</b>界面：拖排序、实时预览面板（桌面上 xl 断点会开第三栏）。手机消费它们的产出，不生产。</td>
+      <td class="manual">本次决定</td>
+    </tr>
+    <tr>
+      <td>通用 › 考试成绩估算 CEFR</td>
+      <td>四个字段的表单 + 历史列表，一年填一次。手机保留<b>语言水平</b>那一行本身（它决定释义难度），只是不能用考试分数去推。</td>
+      <td class="manual">本次决定</td>
+    </tr>
+    <tr>
+      <td>书籍来源</td>
+      <td>上一版砍了，<b>这一版加回来</b>。只有 iPhone 的读者，这一页是他把书弄进来的唯一入口；砍掉它等于让他抱着一个空书架。第 22–24 屏。</td>
+      <td class="back">已加回</td>
+    </tr>
+    <tr>
+      <td>自动分析</td>
+      <td>上一版列为「待你拍板」，<b>这一版加回来</b>，并且带两条手机独有的改动：触发时机改成「下次打开应用」，蜂窝闸门扩大到 AI 请求。第 15–18、21 屏。</td>
+      <td class="back">已加回</td>
+    </tr>
+  </table>
+</div>
+
+<div class="grid">
+
+  <!-- ══════════ 1. 设置根页 ══════════ -->
+  <div class="cell">
+    <div class="label">1 · 设置根页
+      <span>桌面那 16 个面板收成 8 个入口。灰底白卡是整个 App 里唯一一处非纯白页面——分组靠留白读出来，不靠 15 条分割线。<b>「自动分析」和「书籍来源」是这一版新加回来的两行。</b></span>
+    </div>
+    <div class="phone grey">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1>设置</h1>
+      </div>
+      <div class="scroll pad">
+        <div class="gcard">
+          <div class="grow">
+            <svg class="ic gi" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 010 18 15 15 0 010-18z"/></svg>
+            通用
+            <span class="val">中文</span>
+            <svg class="ic ic-sm chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+          <div class="grow">
+            <svg class="ic gi" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r="1.2"/><circle cx="17.5" cy="10.5" r="1.2"/><circle cx="8.5" cy="7.5" r="1.2"/><circle cx="6.5" cy="12.5" r="1.2"/><path d="M12 2a10 10 0 000 20 2.5 2.5 0 002-4 2.5 2.5 0 012-4h2a4 4 0 004-4 10 10 0 00-10-8z"/></svg>
+            主题
+            <span class="val">跟随系统</span>
+            <svg class="ic ic-sm chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
+          <div class="grow">
+            <svg class="ic gi" viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 012-2h13v18H6a2 2 0 01-2-2z"/><path d="M4 19a2 2 0 012-2h13"/></svg>
+            阅读偏好
+            <svg class="ic ic-sm chev" style="margin-left:auto" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+        </div>
+
+        <div class="ghead">AI</div>
+        <div class="gcard">
+          <div class="grow">
+            <svg class="ic gi" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12v2M15 12v2"/></svg>
+            AI 模型
+            <span class="val">DeepSeek · 可用</span>
+            <svg class="ic ic-sm chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+          <div class="grow">
+            <svg class="ic gi" viewBox="0 0 24 24"><path d="M12 3l1.9 4.2 4.6.5-3.4 3.1 1 4.5L12 13l-4.1 2.3 1-4.5-3.4-3.1 4.6-.5z"/></svg>
+            自动分析
+            <span class="val">2 项开启</span>
+            <svg class="ic ic-sm chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+        </div>
+
+        <div class="ghead">书库</div>
+        <div class="gcard">
+          <div class="grow">
+            <svg class="ic gi" viewBox="0 0 24 24"><path d="M6.5 19a4.5 4.5 0 010-9 6 6 0 0111.6-1.6A4 4 0 0117.5 19z"/></svg>
+            书库同步
+            <span class="val">2 分钟前</span>
+            <svg class="ic ic-sm chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+          <div class="grow">
+            <svg class="ic gi" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+            书籍来源
+            <span class="val">3 个站点</span>
+            <svg class="ic ic-sm chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+        </div>
+
+        <div class="gcard">
+          <div class="grow">
+            <svg class="ic gi" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+            关于
+            <span class="val">v2.8.2</span>
+            <svg class="ic ic-sm chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="left:22px; top:300px; max-width:176px;">向右的箭头 = 推进一页。向下的箭头 = 就地开底部抽屉，不换页</div>
+      <div class="note" style="right:14px; top:404px; max-width:176px;">自动分析在手机上也跑，也能关。它花的是额度，所以必须有一行能改</div>
+      <div class="note" style="right:14px; top:558px; max-width:176px;">只有 iPhone 的读者，靠这一行把书弄进来。上一版砍了它，这是最要命的一处</div>
+      <div class="note" style="left:22px; top:684px; max-width:176px;">「外观」桌面上只有一行（主题），单独一页不值当——直接提到根列表上</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 2. 加载中 ══════════ -->
+  <div class="cell">
+    <div class="label">2 · 加载中
+      <span><code>useSettings</code> 还没回来的那一两帧。骨架保持行高和分组不变，所以内容到位时不跳。右边那些值是异步的，先不画。</span>
+    </div>
+    <div class="phone grey">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1>设置</h1>
+      </div>
+      <div class="scroll pad">
+        <div class="gcard">
+          <div class="grow"><div class="sk" style="width:52px"></div></div>
+          <div class="grow"><div class="sk" style="width:44px"></div></div>
+          <div class="grow"><div class="sk" style="width:74px"></div></div>
+        </div>
+        <div class="ghead">AI</div>
+        <div class="gcard">
+          <div class="grow"><div class="sk" style="width:66px"></div></div>
+          <div class="grow"><div class="sk" style="width:66px"></div></div>
+        </div>
+        <div class="ghead">书库</div>
+        <div class="gcard">
+          <div class="grow"><div class="sk" style="width:66px"></div></div>
+          <div class="grow"><div class="sk" style="width:66px"></div></div>
+        </div>
+        <div class="gcard">
+          <div class="grow"><div class="sk" style="width:38px"></div></div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="right:14px; top:680px; max-width:180px;">不转圈。列表结构本来就是已知的，转圈只会让它闪一下</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 3. 阅读偏好（叶子页） ══════════ -->
+  <div class="cell">
+    <div class="label">3 · 阅读偏好（叶子页）
+      <span>73px 行在 370px 宽下原样成立：左边标题 + 副标题，右边控件。<b>唯一的改动是 <code>h-[73px]</code> → <code>min-h-[73px]</code></b>——副标题一换行，行就得长高。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1>阅读偏好</h1>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll pad">
+        <div class="srow">
+          <div class="lft"><div class="tt">字号</div><div class="hh">默认字号（12–48 像素）</div></div>
+          <div class="step"><b>−</b><i>17 px</i><b>+</b></div>
+        </div>
+        <div class="srow">
+          <div class="lft"><div class="tt">行距</div><div class="hh">文本行之间的默认间距</div></div>
+          <div class="step"><b>−</b><i>1.6 x</i><b>+</b></div>
+        </div>
+        <div class="srow">
+          <div class="lft"><div class="tt">页边距</div><div class="hh">阅读区域周围的最小边距；大屏上会自动加宽，以保持每行长度适合阅读</div></div>
+          <div class="step"><b>−</b><i>6 %</i><b>+</b></div>
+        </div>
+        <div class="srow">
+          <div class="lft"><div class="tt">默认翻页方式</div><div class="hh">选择上下滚动或左右翻页</div></div>
+          <div class="val-chev"><span>翻页</span><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+        </div>
+        <div class="srow">
+          <div class="lft"><div class="tt">翻页动画</div><div class="hh">左右翻页时使用的动画效果</div></div>
+          <div class="val-chev"><span>平滑滑动</span><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+        </div>
+        <div class="srow">
+          <div class="lft"><div class="tt">两端对齐</div><div class="hh">段落左右两边都对齐</div></div>
+          <div class="tg on"></div>
+        </div>
+        <div class="srow">
+          <div class="lft"><div class="tt">首行缩进</div><div class="hh">每段第一行缩进两个字符</div></div>
+          <div class="tg"></div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="left:20px; top:668px; max-width:164px;">「页边距」那行副标题换到三行，行高长到 96px。这就是必须放成 min-h 的原因</div>
+      <div class="note" style="right:14px; top:668px; max-width:164px;">「默认页面布局（单页/双页）」手机上直接不渲染——双页在 370px 上没意义</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 4. 选项底部抽屉 ══════════ -->
+  <div class="cell">
+    <div class="label">4 · 下拉变底部抽屉
+      <span>桌面的 <code>Select</code> 是一个按钮 + 贴着它弹的 <code>OptionMenu</code>。组件不换，只让 <code>OptionMenu</code> 在 <code>touch:</code> 下改成从底部升起——贴弹菜单在手机上一半时候被手指挡住。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1>阅读偏好</h1>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll pad">
+        <div class="srow">
+          <div class="lft"><div class="tt">字号</div><div class="hh">默认字号（12–48 像素）</div></div>
+          <div class="step"><b>−</b><i>17 px</i><b>+</b></div>
+        </div>
+        <div class="srow">
+          <div class="lft"><div class="tt">行距</div><div class="hh">文本行之间的默认间距</div></div>
+          <div class="step"><b>−</b><i>1.6 x</i><b>+</b></div>
+        </div>
+        <div class="srow">
+          <div class="lft"><div class="tt">默认翻页方式</div><div class="hh">选择上下滚动或左右翻页</div></div>
+          <div class="val-chev" style="background:var(--accent-bg); color:var(--accent)"><span>翻页</span><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="bargrip"></div>
+        <h3>默认翻页方式</h3>
+        <div class="sd">选择上下滚动或左右翻页</div>
+        <div class="opt">
+          <svg class="ic ic-sm" style="opacity:0" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>
+          滚动
+        </div>
+        <div class="opt sel">
+          <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></svg>
+          翻页
+        </div>
+        <div class="safe-bottom"></div>
+      </div>
+      <div class="home-bar"></div>
+      <div class="note" style="left:22px; top:400px; max-width:190px;">选项行 56px。桌面 <code style="color:#fff">OptionMenu</code> 是 32px，跟着 <code style="color:#fff">touch:</code> 走，不跟宽度</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 5. AI 空态 ══════════ -->
+  <div class="cell">
+    <div class="label">5 · AI 模型 · 还没有配置
+      <span>这是<b>两头都还没配过</b>的人看到的一屏。桌面配好的密钥<b>会</b>同步过来——它作为可同步的钥匙串条目存着，由 <b>iCloud 钥匙串</b>端到端加密地复制到你自己的苹果设备，和 Safari 密码同一套。它不进书库那个 iCloud Drive 目录：那个目录在「文件」里能翻，凭据一律不放。配过却在这里看不到密钥，是第 6 屏那种情况。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1>AI 模型</h1>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll" style="display:flex;align-items:center;justify-content:center;">
+        <div style="text-align:center; padding:0 30px;">
+          <div style="width:56px;height:56px;border-radius:16px;background:var(--bg-input);margin:0 auto 16px;display:flex;align-items:center;justify-content:center;color:var(--text-muted)">
+            <svg class="ic" style="width:26px;height:26px" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12v2M15 12v2"/></svg>
+          </div>
+          <div style="font-size:15px;font-weight:550;">还没有配置 AI 模型</div>
+          <div style="font-size:13.5px;color:var(--text-muted);margin-top:8px;line-height:1.65;">
+            查词时的语境释义、读完之后的自动分析，都靠它。没有模型，查词只剩<br>
+            不看上下文的词典释义——bank 会把所有义项一起给你。
+          </div>
+          <div class="btn pri" style="margin-top:20px;">
+            <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> 添加模型
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:18px;line-height:1.65;padding:0 6px;">
+            密钥存在系统钥匙串里，由 iCloud 钥匙串在你自己的苹果设备之间同步。<br>Mac 上填过一次，这里通常不用再填。
+          </div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="right:14px; top:640px; max-width:180px;">这两句说清密钥从哪儿来。真的没同步过来，是另一屏，见第 6 屏</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 6. AI 模型 · 密钥还没有到这台设备 ══════════ -->
+  <div class="cell">
+    <div class="label">6 · AI 模型 · 密钥还没有到这台设备
+      <span>钥匙串同步是<b>没有回执</b>的：没有完成信号，也没有时限；iCloud 钥匙串那个系统开关，应用读不到；关着的时候写进去也不报错。所以这一屏<b>不诊断</b>——它只说「密钥不在这台设备上」，把两种可能并排摆着，不排先后，然后给一条一定走得通的路。三层照第 12 屏：<b>结论</b>（缺的是什么）、<b>原文</b>（应用查到的字面结果）、<b>出路</b>（就地填一次，或者再查一遍）。Windows 上没有 iCloud 钥匙串，那台机器的密钥一直只在本机——和「Windows 不进 iOS↔macOS 那条同步链」是同一个决定。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1>AI 模型</h1>
+        <button class="tap act"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll pad" style="padding-top:14px">
+        <div class="pcard">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:7px"><span class="pn">DeepSeek 主力</span><span class="chip">按量付费</span></div>
+            <div class="ps">DeepSeek · deepseek-v4-flash</div>
+            <div style="margin-top:7px"><span class="pill warn">缺少密钥</span></div>
+          </div>
+          <div class="tg on"></div>
+          <svg class="ic ic-sm chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </div>
+
+        <div class="panel" style="margin-top:12px;background:#fdf9f0;border:1px solid #f0dfc0;color:#7a5216">
+          <div class="ttl">
+            <svg class="ic ic-sm" style="margin-top:1px" viewBox="0 0 24 24"><circle cx="8.5" cy="14.5" r="3.8"/><path d="M11.2 11.8L19 4M15.8 7.2l2.4 2.4M13.6 9.4l2.4 2.4"/></svg>
+            这台 iPhone 上还没有这个模型的密钥
+          </div>
+          <div class="sub">模型的名字、服务商、端点都同步过来了，书也在正常同步。缺的只有密钥——它不走书库那条同步，存在系统钥匙串里，由 iCloud 钥匙串复制。</div>
+          <div class="raw" style="color:#7a5216">钥匙串里没有「DeepSeek 主力」这一项</div>
+          <div class="sub">可能它还在路上，也可能系统的 iCloud 钥匙串是关着的。<b>Lantern 分不清是哪一种</b>：同步没有完成的信号，也没有时限——可能几秒，也可能很久；那个开关的状态，应用读不到。</div>
+        </div>
+
+        <div class="btn pri" style="margin-top:14px">在这台 iPhone 上填一次密钥</div>
+        <div style="font-size:11.5px;line-height:1.65;color:var(--text-muted);padding:8px 2px 0">
+          最快，而且一定成：填完这台设备立刻能用。填进来的这一份同样存在系统钥匙串里，以后同步通了，它也会同步出去。
+        </div>
+
+        <div class="btn" style="margin-top:14px">
+          <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M3 12a9 9 0 109-9 9 9 0 00-6.4 2.7L3 8"/><path d="M3 3v5h5"/></svg>
+          再检查一次
+        </div>
+        <div style="font-size:11.5px;line-height:1.65;color:var(--text-muted);padding:8px 2px 0">
+          再读一遍钥匙串：到了就出现，没到还是这一屏。它不会催同步，也催不动——多点几次不会让它来得更快。
+        </div>
+
+        <div style="font-size:11.5px;line-height:1.65;color:var(--text-muted);padding:14px 2px 0;border-top:1px solid var(--border-light);margin-top:14px">
+          也可以去<b>系统设置 › [你的 Apple 账户] › iCloud › 密码与钥匙串</b>看一眼这个开关。它归系统管，Lantern 改不了，也读不到。
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="left:22px; top:396px; max-width:176px;">不猜原因：那个开关读不到，关着写进去也不报错，猜了就是在编</div>
+      <div class="note" style="right:14px; top:546px; max-width:176px;">填一次排在前面。它不是认输的路，对多数人就是更快的那条</div>
+      <div class="note" style="left:22px; top:664px; max-width:186px;">「再检查一次」的能耐就这么大。写清楚，点三次的人才知道没有别的事在发生</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 7. 添加模型 · 目录 ══════════ -->
+  <div class="cell">
+    <div class="label">7 · 添加模型 · 目录
+      <span>和桌面同一份 <code>aiPresets</code>，<b>少一个 Ollama（本地）</b>——iPhone 上没有 <code>localhost:11434</code>。想连 Mac 上的 Ollama 走「自定义兼容 API」填局域网地址。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1>AI 模型</h1>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll pad" style="padding-top:14px">
+        <div class="pcard" style="opacity:.35">
+          <div style="flex:1;min-width:0"><div class="pn">DeepSeek 主力</div><div class="ps">DeepSeek · deepseek-v4-flash</div></div>
+          <div class="tg on"></div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="bargrip"></div>
+        <h3>添加模型</h3>
+        <div class="sd">手机用它做「查词时的语境释义」和「自动分析」。AI 对话面板还在桌面上，不在这里。</div>
+        <div class="opt tall">
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:7px"><b style="font-weight:570">DeepSeek</b><span class="chip">按量付费</span></div>
+            <div class="od">推荐首选。讲解和语法分析的能力够用，按量付费，价格低。</div>
+          </div>
+          <svg class="ic ic-sm chev" style="margin-top:3px" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </div>
+        <div class="opt tall">
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:7px"><b style="font-weight:570">OpenAI</b><span class="chip">按量付费</span></div>
+            <div class="od">GPT 系列模型，需要海外支付方式。</div>
+          </div>
+          <svg class="ic ic-sm chev" style="margin-top:3px" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </div>
+        <div class="opt tall">
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:7px"><b style="font-weight:570">Anthropic</b><span class="chip">按量付费</span></div>
+            <div class="od">Claude 系列模型，需要海外支付方式。</div>
+          </div>
+          <svg class="ic ic-sm chev" style="margin-top:3px" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </div>
+        <div class="opt tall">
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:7px"><b style="font-weight:570">自定义兼容 API</b></div>
+            <div class="od">任意 OpenAI 兼容端点，地址和模型由你填写。</div>
+          </div>
+          <svg class="ic ic-sm chev" style="margin-top:3px" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </div>
+        <div style="padding:12px 18px 4px;font-size:11.5px;line-height:1.6;color:var(--warning);border-top:1px solid var(--border-light)">
+          太小的模型给出的语境释义经常是错的，比没有更糟。
+        </div>
+        <div class="safe-bottom"></div>
+      </div>
+      <div class="home-bar"></div>
+      <div class="note" style="left:22px; top:240px; max-width:190px;">桌面这里还有一项 Ollama（本地），手机上不出现</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 8. 编辑 · 密钥遮罩 ══════════ -->
+  <div class="cell">
+    <div class="label">8 · 配置服务商 · 密钥遮罩态
+      <span>桌面上这张卡是<b>就地展开</b>的手风琴。手机上改成<b>推进一页</b>——展开后有 600px 高，在 800px 的屏上等于把别的卡全挤没了，那还不如换页。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1 class="sm">DeepSeek 主力</h1>
+        <button class="tap off">保存</button>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll pad" style="padding-top:16px">
+        <div class="field">
+          <label>名称</label>
+          <div class="inp"><span class="grow1">DeepSeek 主力</span></div>
+        </div>
+        <div class="field">
+          <label>AI 服务商</label>
+          <div class="inp"><span class="grow1">DeepSeek</span><svg class="ic ic-sm" style="color:var(--text-muted)" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+        </div>
+
+        <div class="sec-h" style="padding-top:6px">API 密钥</div>
+        <div class="field">
+          <div class="inp focus">
+            <span class="grow1 mono">••••••••••••••••••••••••••••</span>
+            <span class="eye"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/><path d="M4 20L20 4"/></svg></span>
+          </div>
+          <div class="fhint">密钥存在系统钥匙串里，由 iCloud 钥匙串同步到你自己的苹果设备。尚未输出任何内容时，Lantern 会按顺序尝试已启用的密钥。</div>
+        </div>
+
+        <div class="srow" style="border-top:1px solid rgba(0,0,0,.1)">
+          <div class="lft"><div class="tt">高级设置</div><div class="hh">端点、模型 ID、温度</div></div>
+          <svg class="ic chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </div>
+
+        <div class="btn" style="margin-top:18px">
+          <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+          测试连接
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="right:14px; top:600px; max-width:190px;">输入框 48px 高、16px 字。<b style="color:#fff">16px 下限已经落地</b>，聚焦不会把整页缩放，也不用再退出来</div>
+      <div class="note" style="left:22px; top:700px; max-width:180px;">没改动时「保存」是灰的，和桌面一致</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 9. 编辑 · 密钥显形 + 高级 ══════════ -->
+  <div class="cell">
+    <div class="label">9 · 密钥显形 + 高级设置展开
+      <span>眼睛按钮是<b>新的</b>——桌面今天没有，密钥框永远是 <code>type="password"</code>。手机上粘贴常出错（少一位、多个空格），看不见就查不出来。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1 class="sm">DeepSeek 主力</h1>
+        <button class="tap act">保存</button>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll pad" style="padding-top:16px">
+        <div class="sec-h" style="padding-top:0">API 密钥</div>
+        <div class="field">
+          <div class="inp focus">
+            <span class="grow1 mono" style="font-size:13px">sk-3f9a1c7b84e2d05a6bf19c4e2a7d803f</span>
+            <span class="eye" style="color:var(--accent)"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/></svg></span>
+          </div>
+          <div class="fhint">密钥存在系统钥匙串里，随 iCloud 钥匙串同步。</div>
+        </div>
+
+        <div class="sec-h">高级设置</div>
+        <div class="field">
+          <label>基础 URL</label>
+          <div class="inp"><span class="grow1 mono" style="font-size:13.5px">https://api.deepseek.com</span></div>
+          <div class="fhint">可以填服务根 URL，也可以填以 /v1 结尾的 URL。</div>
+        </div>
+        <div class="field">
+          <label>模型</label>
+          <div style="display:flex;gap:8px">
+            <div class="inp" style="flex:1;min-width:0"><span class="grow1 mono" style="font-size:13.5px">deepseek-v4-flash</span><svg class="ic ic-sm" style="color:var(--text-muted)" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+            <div class="btn" style="width:48px;flex:none;padding:0"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M3 12a9 9 0 109-9 9 9 0 00-6.4 2.7L3 8"/><path d="M3 3v5h5"/></svg></div>
+          </div>
+          <div class="fhint">已获取 14 个模型；可在输入框中选择，也可保留手动输入的模型。</div>
+        </div>
+        <div class="field">
+          <label>温度</label>
+          <div style="height:44px;display:flex;align-items:center;gap:12px">
+            <div style="flex:1;height:4px;border-radius:2px;background:var(--bg-input);position:relative">
+              <i style="display:block;height:100%;width:50%;background:var(--accent);border-radius:2px"></i>
+              <i style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:24px;height:24px;border-radius:50%;background:#fff;border:1px solid var(--border);box-shadow:0 1px 4px rgba(0,0,0,.2)"></i>
+            </div>
+            <span style="font-size:14px;font-weight:550;width:34px;text-align:right">1.0</span>
+          </div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="left:22px; top:614px; max-width:180px;">显形只影响这一次输入。离开页面回到遮罩，不记住</div>
+      <div class="note" style="right:14px; top:700px; max-width:180px;">滑块拇指 24px，但热区补到 44px（<code style="color:#fff">touch:</code>）</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 10. 测试中 ══════════ -->
+  <div class="cell">
+    <div class="label">10 · 连接测试 · 测试中
+      <span>按钮自己变成状态，不另开一个转圈遮罩。测试期间整页仍可滚动、可返回——它可能要等 30 秒。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1 class="sm">DeepSeek 主力</h1>
+        <button class="tap off">保存</button>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll pad" style="padding-top:16px">
+        <div class="field">
+          <label>名称</label>
+          <div class="inp"><span class="grow1">DeepSeek 主力</span></div>
+        </div>
+        <div class="sec-h" style="padding-top:0">API 密钥</div>
+        <div class="field">
+          <div class="inp"><span class="grow1 mono">••••••••••••••••••••••••••••</span>
+            <span class="eye"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/><path d="M4 20L20 4"/></svg></span>
+          </div>
+        </div>
+        <div class="srow" style="border-top:1px solid rgba(0,0,0,.1)">
+          <div class="lft"><div class="tt">高级设置</div><div class="hh">端点、模型 ID、温度</div></div>
+          <svg class="ic chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </div>
+        <div class="btn mut" style="margin-top:18px">
+          <div class="spin"></div> 正在测试连接...
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="right:14px; top:560px; max-width:180px;">按钮禁用但不消失，位置不变——结果就落在它下面</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 11. 成功 ══════════ -->
+  <div class="cell">
+    <div class="label">11 · 连接测试 · 成功
+      <span>沿用桌面的 <code>testSuccessDetailed</code> 文案，含首响与总耗时。首响是这里唯一真正有用的数字——语境释义是流式的，读者感知的是第一个字。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1 class="sm">DeepSeek 主力</h1>
+        <button class="tap off">保存</button>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll pad" style="padding-top:16px">
+        <div class="field">
+          <label>名称</label>
+          <div class="inp"><span class="grow1">DeepSeek 主力</span></div>
+        </div>
+        <div class="sec-h" style="padding-top:0">API 密钥</div>
+        <div class="field">
+          <div class="inp"><span class="grow1 mono">••••••••••••••••••••••••••••</span>
+            <span class="eye"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/><path d="M4 20L20 4"/></svg></span>
+          </div>
+        </div>
+        <div class="srow" style="border-top:1px solid rgba(0,0,0,.1)">
+          <div class="lft"><div class="tt">高级设置</div><div class="hh">端点、模型 ID、温度</div></div>
+          <svg class="ic chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </div>
+        <div class="btn" style="margin-top:18px">
+          <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg> 测试连接
+        </div>
+        <div class="panel ok" style="margin-top:12px">
+          <div class="ttl">
+            <svg class="ic ic-sm" style="margin-top:1px" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 5-5"/></svg>
+            连接成功，首次响应 412 毫秒，总耗时 1180 毫秒，共尝试 1 次。
+          </div>
+          <div class="sub">主密钥 · 连接成功 · 412 毫秒</div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="right:14px; top:640px; max-width:180px;">成功面板不自动消失，也不弹 toast——toast 在手机上会被拇指挡住</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 12. 失败 ══════════ -->
+  <div class="cell">
+    <div class="label">12 · 连接测试 · 失败
+      <span>这一屏最重要。三层：<b>结论</b>（哪一个密钥、错在哪类）、<b>原文</b>（服务商返回的字面内容）、<b>出路</b>（一个按钮直接回到密钥输入框）。只写「失败」等于什么都没说。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1 class="sm">DeepSeek 主力</h1>
+        <button class="tap off">保存</button>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll pad" style="padding-top:16px">
+        <div class="field">
+          <label>名称</label>
+          <div class="inp"><span class="grow1">DeepSeek 主力</span></div>
+        </div>
+        <div class="sec-h" style="padding-top:0">API 密钥
+          <span class="pill err" style="margin-left:8px;text-transform:none;letter-spacing:0">需要重新连接</span>
+        </div>
+        <div class="field">
+          <div class="inp" style="border-color:var(--danger-border)"><span class="grow1 mono">••••••••••••••••••••••••4f2c</span>
+            <span class="eye"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/><path d="M4 20L20 4"/></svg></span>
+          </div>
+        </div>
+        <div class="btn" style="margin-top:2px">
+          <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg> 重新测试
+        </div>
+        <div class="panel err" style="margin-top:12px">
+          <div class="ttl">
+            <svg class="ic ic-sm" style="margin-top:1px" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5M12 16h.01"/></svg>
+            连接失败，耗时 1842 毫秒：API 密钥缺失或已失效
+          </div>
+          <div class="sub">主密钥 · API 密钥缺失或已失效 · 1842 毫秒</div>
+          <div class="raw">HTTP 401 · authentication_error<br>Authentication Fails, Your api key: sk-…4f2c is invalid</div>
+        </div>
+        <div class="btn pri" style="margin-top:12px">重新输入密钥</div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="left:22px; top:614px; max-width:180px;">原文照抄服务商的话。翻译它反而会把线索翻没</div>
+      <div class="note" style="right:14px; top:694px; max-width:180px;">出路按钮。手机上「自己滚回去找那个框」是真的有人放弃</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 13. 已配置列表 ══════════ -->
+  <div class="cell">
+    <div class="label">13 · AI 模型 · 已配置
+      <span>健康状态在手机上必须挤进第二行（桌面是右侧独立药丸，<code>sm:inline-flex</code>）。排序沿用抽屉样张里收藏夹那套：平时不能拖，进「排序」才能拖。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1>AI 模型</h1>
+        <button class="tap" style="width:auto;padding:0 8px;font-size:14px;color:var(--accent)">排序</button>
+        <button class="tap act"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      </div>
+      <div class="hint-block">手机用它做「查词时的语境释义」和「自动分析」。AI 对话面板还在桌面上。</div>
+      <div class="divider"></div>
+      <div class="scroll pad" style="padding-top:14px">
+        <div class="pcard">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:7px"><span class="pn">DeepSeek 主力</span><span class="chip">按量付费</span></div>
+            <div class="ps">DeepSeek · deepseek-v4-flash</div>
+            <div style="margin-top:7px"><span class="pill ok">可用 · 412 毫秒</span></div>
+          </div>
+          <div class="tg on"></div>
+          <svg class="ic ic-sm chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </div>
+        <div class="pcard">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:7px"><span class="pn">Claude 备用</span><span class="chip">按量付费</span></div>
+            <div class="ps">Anthropic · claude-sonnet-5</div>
+            <div style="margin-top:7px"><span class="pill err">需要重新连接</span></div>
+          </div>
+          <div class="tg on"></div>
+          <svg class="ic ic-sm chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </div>
+        <div class="pcard dim">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:7px"><span class="pn">书房 Mac</span></div>
+            <div class="ps">自定义兼容 API · qwen3.5</div>
+            <div style="margin-top:7px"><span class="pill mut">已停用</span></div>
+          </div>
+          <div class="tg"></div>
+          <svg class="ic ic-sm chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </div>
+        <div style="font-size:11.5px;line-height:1.6;color:var(--text-muted);padding:6px 2px 0">
+          从上往下依次尝试，第一个能出内容的胜出。
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="left:22px; top:596px; max-width:180px;">状态徽章换行放，不跟名字抢那 370px</div>
+      <div class="note" style="right:14px; top:676px; max-width:180px;">桌面的拖手柄在触摸下隐藏，改成「排序」模式</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 14. 删除确认 ══════════ -->
+  <div class="cell">
+    <div class="label">14 · 删除模型 · 就地确认
+      <span>沿用桌面的<b>就地确认条</b>，不弹系统对话框。原因和桌面一样：确认条留在被删的东西旁边，读者看得见自己在删哪一个。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1 class="sm">Claude 备用</h1>
+        <button class="tap off">保存</button>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll pad" style="padding-top:16px">
+        <div class="field">
+          <label>名称</label>
+          <div class="inp"><span class="grow1">Claude 备用</span></div>
+        </div>
+        <div class="field">
+          <label>AI 服务商</label>
+          <div class="inp"><span class="grow1">Anthropic</span><svg class="ic ic-sm" style="color:var(--text-muted)" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+        </div>
+        <div class="srow" style="border-top:1px solid rgba(0,0,0,.1)">
+          <div class="lft"><div class="tt">高级设置</div><div class="hh">端点、模型 ID、温度</div></div>
+          <svg class="ic chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </div>
+
+        <div style="margin-top:22px;border:1px solid var(--danger-border);background:var(--danger-bg);border-radius:14px;padding:14px">
+          <div style="font-size:14px;font-weight:600;color:#a4000a">删除该模型及其已保存密钥？</div>
+          <div style="font-size:12px;color:#a4000a;opacity:.85;margin-top:5px;line-height:1.55">
+            密钥跟着 iCloud 钥匙串走：在这里删掉，你其它苹果设备上的这一份也会一起消失，没有别处可以取回。
+          </div>
+          <div style="display:flex;gap:10px;margin-top:14px">
+            <div class="btn" style="flex:1;background:var(--bg-surface)">取消</div>
+            <div class="btn dng" style="flex:1">删除</div>
+          </div>
+        </div>
+
+        <div class="btn" style="margin-top:14px;color:var(--danger);border-color:var(--danger-border);opacity:.35">
+          <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg> 删除这个模型
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="left:22px; top:648px; max-width:190px;">第二句是同步带来的：删除会跟着钥匙串走到 Mac 上，不是只删这一台</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 15. 自动分析 · 关着 ══════════ -->
+  <div class="cell">
+    <div class="label">15 · 自动分析 · 关着
+      <span>能关是这个板块能上手机的前提——它会在你没开口的时候花额度。但关掉的<b>代价要写在行里</b>：关掉不等于省钱，等于读完之后什么都不发生，除非你自己回书里点一次。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1>自动分析</h1>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll pad">
+        <div class="srow">
+          <div class="lft">
+            <div class="tt">自动分析</div>
+            <div class="hh">读完一本书之后，不用你动手就把总结和生词整理好。关掉之后这些要在书里自己点「分析这本书」，一次一本。</div>
+          </div>
+          <div class="tg"></div>
+        </div>
+        <div class="sec-h">关掉之后不会发生的</div>
+        <div style="opacity:.4">
+          <div class="srow">
+            <div class="lft"><div class="tt">读完出整本总结</div><div class="hh">合上最后一页之后生成一份全书总结</div></div>
+            <div class="tg"></div>
+          </div>
+          <div class="srow">
+            <div class="lft"><div class="tt">整理生词本</div><div class="hh">把这本书里查过的词按主题归类，各补一句例句</div></div>
+            <div class="tg"></div>
+          </div>
+          <div class="srow">
+            <div class="lft"><div class="tt">每章要点</div><div class="hh">每读完一章生成三到五条要点</div></div>
+            <div class="tg"></div>
+          </div>
+        </div>
+        <div style="font-size:11.5px;line-height:1.65;color:var(--text-muted);padding:16px 2px 0">
+          已经分析过的书不受影响，结果留在书里。关着的时候<b>不攒队列</b>——重新打开之后，只处理之后读完的书。
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="left:22px; top:598px; max-width:180px;">三个子项灰着留在页面上，不隐藏。隐藏了就没人知道自己关掉的是什么</div>
+      <div class="note" style="right:14px; top:690px; max-width:186px;">「不攒队列」是一句承诺：关一个月再打开，不会突然跑三十本书的额度</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 16. 自动分析 · 开着 ══════════ -->
+  <div class="cell">
+    <div class="label">16 · 自动分析 · 开着（含触发时机和蜂窝闸门）
+      <span>三件事各自能关，这里开着两件，根列表上就显示「2 项开启」。中间那条<b>不是设置，是解释</b>——手机上没有「读完就跑」这个选项，iOS 给不了，所以真实的触发时机必须写出来。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1>自动分析</h1>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll pad">
+        <div class="srow">
+          <div class="lft">
+            <div class="tt">自动分析</div>
+            <div class="hh">读完一本书之后自动跑，用的是「AI 模型」里排第一的那个。</div>
+          </div>
+          <div class="tg on"></div>
+        </div>
+        <div class="sec-h">分析什么</div>
+        <div class="srow">
+          <div class="lft"><div class="tt">读完出整本总结</div><div class="hh">合上最后一页之后生成一份全书总结</div></div>
+          <div class="tg on"></div>
+        </div>
+        <div class="srow">
+          <div class="lft"><div class="tt">整理生词本</div><div class="hh">把这本书里查过的词按主题归类，各补一句例句</div></div>
+          <div class="tg on"></div>
+        </div>
+        <div class="srow">
+          <div class="lft"><div class="tt">每章要点</div><div class="hh">每读完一章生成三到五条要点</div></div>
+          <div class="tg"></div>
+        </div>
+        <div class="sec-h">什么时候跑</div>
+        <div class="srow">
+          <div class="lft">
+            <div class="tt">下次打开 Lantern 时，在前台跑</div>
+            <div class="hh">应用一退到后台，iPhone 很快就会把它停掉，读完的那一刻跑不完，锁着屏也做不完。所以这件事攒到你下次回来才做。</div>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="lft"><div class="tt">用蜂窝数据跑分析</div><div class="hh">不在 Wi-Fi 时先问一次，之后记住这个答案。</div></div>
+          <div class="val-chev"><span>每次询问</span><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+        </div>
+        <div class="srow">
+          <div class="lft"><div class="tt">等着分析的</div><div class="hh">2 本读完的书 ·《Pale Fire》《The Waves》</div></div>
+          <div class="btn" style="height:36px;padding:0 14px;font-size:13px">现在就跑</div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="left:22px; top:396px; max-width:186px;">下面那一行点不动。它解释的是第 17 屏——为什么一打开应用就有活在跑</div>
+      <div class="note" style="right:14px; top:700px; max-width:186px;">和「用蜂窝数据下载书籍」同一套闸门。问法见第 21 屏</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 17. 打开 App 就开跑 · 进行中 ══════════ -->
+  <div class="cell">
+    <div class="label">17 · 打开 App 就开跑 · 进行中
+      <span>读者什么都没点，回来就看见有活在跑。<b>不解释那一句，它就是「我的手机在偷偷干什么」。</b>横幅不挡书架、可以停、跑完自己变成第 18 屏。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+        <h1>全部书籍</h1>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll" style="padding:0 0 16px">
+        <div style="margin:12px 16px 0;border:1px solid var(--border);border-radius:14px;padding:12px 13px;background:var(--bg-muted)">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div class="spin"></div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13.5px;font-weight:550">正在分析读完的书 · 第 1 本，共 2 本</div>
+              <div style="font-size:12px;color:var(--text-muted);margin-top:3px">《Pale Fire》· 正在生成整本总结</div>
+            </div>
+            <div class="btn" style="height:32px;padding:0 12px;font-size:12.5px">停止</div>
+          </div>
+          <div style="height:3px;border-radius:2px;background:var(--bg-input);margin-top:12px;overflow:hidden">
+            <i style="display:block;height:100%;width:38%;background:var(--accent);border-radius:2px"></i>
+          </div>
+          <div style="font-size:11.5px;color:var(--text-muted);margin-top:10px;line-height:1.6">
+            你读完时应用已经退到后台，iPhone 不会让它继续跑，所以留到这次打开才做。
+          </div>
+        </div>
+        <div style="padding:16px">
+          <div class="books">
+            <div class="book"><div class="cover c1">Pale Fire</div><div class="t">Pale Fire</div><div class="a">Nabokov</div></div>
+            <div class="book"><div class="cover c2">The Waves</div><div class="t">The Waves</div><div class="a">Woolf</div></div>
+            <div class="book"><div class="cover c3">Stoner</div><div class="t">Stoner</div><div class="a">Williams</div></div>
+            <div class="book"><div class="cover c5">Austerlitz</div><div class="t">Austerlitz</div><div class="a">Sebald</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="left:20px; top:300px; max-width:186px;">这句是整块横幅存在的理由。删了它，剩下的就是一条没头没尾的进度条</div>
+      <div class="note" style="right:14px; top:430px; max-width:170px;">「停止」当场停，不留半份结果，也不重排队</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 18. 自动分析 · 这一轮跑完了 ══════════ -->
+  <div class="cell">
+    <div class="label">18 · 自动分析 · 这一轮跑完了
+      <span>同一块横幅换成结果，不弹通知、不盖阅读。第三行是<b>被闸门挡下的那一本</b>——花没花钱、剩几本没跑，都在这一块里说完。没有可分析的书时，横幅整个不出现。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+        <h1>全部书籍</h1>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll" style="padding:0 0 16px">
+        <div style="margin:12px 16px 0;border:1px solid #b9e8ca;border-radius:14px;padding:12px 13px;background:#f0fbf4">
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <svg class="ic ic-sm" style="color:var(--success-text);margin-top:2px" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 5-5"/></svg>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13.5px;font-weight:550;color:#0a6b33">1 本书分析好了</div>
+              <div style="font-size:12px;color:#0a6b33;opacity:.88;margin-top:3px;line-height:1.55">《Pale Fire》· 整本总结和 34 个生词都已经放进书里</div>
+            </div>
+            <button class="tap" style="width:28px;height:28px;color:#0a6b33">
+              <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:11px">
+            <div class="btn" style="height:34px;padding:0 14px;font-size:12.5px;background:#fff;flex:none">去看总结</div>
+          </div>
+          <div style="font-size:11.5px;color:#0a6b33;opacity:.88;margin-top:11px;line-height:1.6;border-top:1px solid #b9e8ca;padding-top:10px">
+            《The Waves》没跑：刚才不在 Wi-Fi，你选了等 Wi-Fi。连上之后自己会补。
+          </div>
+        </div>
+        <div style="padding:16px">
+          <div class="books">
+            <div class="book"><div class="cover c1">Pale Fire</div><div class="t">Pale Fire</div><div class="a">Nabokov</div></div>
+            <div class="book"><div class="cover c2">The Waves</div><div class="t">The Waves</div><div class="a">Woolf</div></div>
+            <div class="book"><div class="cover c3">Stoner</div><div class="t">Stoner</div><div class="a">Williams</div></div>
+            <div class="book"><div class="cover c5">Austerlitz</div><div class="t">Austerlitz</div><div class="a">Sebald</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="right:14px; top:452px; max-width:186px;">被闸门挡下的那本写在同一块里。分开报，读者会以为它失败了</div>
+      <div class="note" style="left:20px; top:352px; max-width:160px;">叉掉就没了，不再提醒。总结本来就在书里等着</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 19. 书库同步 + D-016 行 ══════════ -->
+  <div class="cell">
+    <div class="label">19 · 书库同步（D-016 那一行）
+      <span>D-016 说这一行必须先存在，蜂窝闸门才有地方读它的值。三态：<b>每次询问</b>（还没问过）／<b>允许</b>／<b>仅 Wi-Fi</b>。桌面的「打开位置」在这里没有。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1>书库同步</h1>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll pad">
+        <div style="display:flex;align-items:center;gap:10px;padding:16px 0 4px">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--success);flex:none"></span>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:550">已同步</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px">2 分钟前 · iCloud</div>
+          </div>
+          <div class="btn" style="height:36px;padding:0 14px;font-size:13px">立即同步</div>
+        </div>
+        <div class="srow" style="border-top:1px solid rgba(0,0,0,.1);margin-top:12px">
+          <div class="lft">
+            <div class="tt">用蜂窝数据下载书籍</div>
+            <div class="hh">首次在蜂窝网络下打开一本还没下载的书时会问一次，之后记住这个答案。</div>
+          </div>
+          <div class="val-chev"><span>仅 Wi-Fi</span><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></div>
+        </div>
+        <div class="srow">
+          <div class="lft">
+            <div class="tt">本机已下载</div>
+            <div class="hh">12 本 · 340 MB。没下载的书仍然在书架上，点开时再取。</div>
+          </div>
+        </div>
+        <div style="font-size:11.5px;line-height:1.65;color:var(--text-muted);padding:16px 2px 0">
+          书库固定同步到 Lantern 自己的 iCloud 容器，没有文件夹可选，也不需要选。<br>
+          AI 那边还有一个同样的蜂窝开关，在「设置 › 自动分析」里——它花的是额度，跟这里的流量不是一件事，但问法一样。
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="right:14px; top:436px; max-width:180px;">这一行是 D-016 的落点。没有它，闸门的「记住」无处可改</div>
+      <div class="note" style="left:22px; top:596px; max-width:190px;">桌面这里是「在访达里打开」按钮。<code style="color:#fff">hasFileReveal:false</code>，整行不渲染</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 20. 一次性询问 · 下载 ══════════ -->
+  <div class="cell">
+    <div class="label">20 · 蜂窝网络下载 · 问这一次
+      <span>没有「记住我的选择」勾选框。D-016 说的就是<b>记住</b>——勾选框可以不勾，等于把「每次都问」这个最差选项又放回来了。两个按钮本身就是答案，下面一行把「会记住」说清楚。<b>和第 21 屏是同一套闸门，只是花的东西不同。</b></span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+        <h1>全部书籍</h1>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll" style="padding:16px">
+        <div class="books">
+          <div class="book"><div class="cover c5">Austerlitz<div class="cloud-badge"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M6.5 19a4.5 4.5 0 010-9 6 6 0 0111.6-1.6A4 4 0 0117.5 19z"/><path d="M12 12v5M9.5 14.5L12 17l2.5-2.5"/></svg></div></div><div class="t">Austerlitz</div><div class="a">Sebald</div></div>
+          <div class="book"><div class="cover c1">Pale Fire</div><div class="t">Pale Fire</div><div class="a">Nabokov</div></div>
+          <div class="book"><div class="cover c2">The Waves</div><div class="t">The Waves</div><div class="a">Woolf</div></div>
+          <div class="book"><div class="cover c3">Stoner</div><div class="t">Stoner</div><div class="a">Williams</div></div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+
+      <div class="scrim"></div>
+      <div class="dlg">
+        <h3>用蜂窝数据下载这本书？</h3>
+        <p>《Austerlitz》还没有下载到这台 iPhone，需要 68.4 MB。当前不在 Wi-Fi 下。</p>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px">
+          <div class="btn pri">用蜂窝数据下载</div>
+          <div class="btn">等到有 Wi-Fi 再下</div>
+        </div>
+        <div class="fine">这个选择会被记住。以后可以在「设置 › 书库同步」里改。</div>
+      </div>
+      <div class="home-bar"></div>
+      <div class="note" style="left:20px; top:126px; max-width:162px;">云图标 = 书在书架上但不在本机（抽屉样张第 5 屏）</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 21. 一次性询问 · 自动分析 ══════════ -->
+  <div class="cell">
+    <div class="label">21 · 蜂窝网络跑自动分析 · 问这一次
+      <span>和第 20 屏<b>同一个对话框、同一种句式、同一句「会记住」</b>——变的只有花什么和去哪儿改。自动分析在蜂窝上跑，同样是一笔没打招呼的支出，凭什么下载要问、它不问。两条闸门读起来必须是一条政策。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+        <h1>全部书籍</h1>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll" style="padding:16px">
+        <div class="books">
+          <div class="book"><div class="cover c1">Pale Fire</div><div class="t">Pale Fire</div><div class="a">Nabokov</div></div>
+          <div class="book"><div class="cover c2">The Waves</div><div class="t">The Waves</div><div class="a">Woolf</div></div>
+          <div class="book"><div class="cover c3">Stoner</div><div class="t">Stoner</div><div class="a">Williams</div></div>
+          <div class="book"><div class="cover c5">Austerlitz</div><div class="t">Austerlitz</div><div class="a">Sebald</div></div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+
+      <div class="scrim"></div>
+      <div class="dlg">
+        <h3>用蜂窝数据跑自动分析？</h3>
+        <p>有 2 本读完的书等着分析。这会把书里的摘录发给「DeepSeek 主力」，按量计费，大约 0.4 MB 流量。当前不在 Wi-Fi 下。</p>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:18px">
+          <div class="btn pri">现在就跑</div>
+          <div class="btn">等到有 Wi-Fi 再跑</div>
+        </div>
+        <div class="fine">这个选择会被记住。以后可以在「设置 › 自动分析」里改。</div>
+      </div>
+      <div class="home-bar"></div>
+      <div class="note" style="left:20px; top:126px; max-width:170px;">选「等 Wi-Fi」不是取消：书留在队列里，连上就自己补跑</div>
+      <div class="note" style="right:14px; top:126px; max-width:170px;">流量和额度一起写。只说 MB，读者会以为它免费</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 22. 书籍来源 · 空态 ══════════ -->
+  <div class="cell">
+    <div class="label">22 · 书籍来源 · 还没有添加
+      <span>上一版把这一页整个砍了，理由是「书在桌面进来」。对只有 iPhone 的读者，这就是<b>没有地方把书弄进来</b>。这一屏是空书架的唯一出路，所以它必须自己把「这是干什么的」讲完。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1>书籍来源</h1>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll" style="display:flex;align-items:center;justify-content:center;">
+        <div style="text-align:center; padding:0 30px;">
+          <div style="width:56px;height:56px;border-radius:16px;background:var(--bg-input);margin:0 auto 16px;display:flex;align-items:center;justify-content:center;color:var(--text-muted)">
+            <svg class="ic" style="width:26px;height:26px" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+          </div>
+          <div style="font-size:15px;font-weight:550;">还没有添加书籍来源</div>
+          <div style="font-size:13.5px;color:var(--text-muted);margin-top:8px;line-height:1.65;">
+            来源是一份「能搜、能下书的站点」清单。<br>
+            加上之后，在书架里搜书名就能直接下载。
+          </div>
+          <div class="btn pri" style="margin-top:20px;">
+            <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg> 添加来源
+          </div>
+          <div class="btn" style="margin-top:10px;">
+            <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M13 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V9z"/><path d="M13 3v6h6"/></svg> 从「文件」导入一本
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:18px;line-height:1.65;padding:0 6px;">
+            来源清单跟着设置一起同步。Mac 上加过的站点，这里会自己出现——这一屏是空的，说明那边也还没加过。
+          </div>
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="left:20px; top:640px; max-width:180px;">第二个按钮是兜底：一个来源都不加，也得能把书弄进来</div>
+      <div class="note" style="right:14px; top:704px; max-width:180px;">来源是一串网址，不是凭据，走普通设置同步，不经过钥匙串。这句话防「以为还要再加一遍」</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 23. 书籍来源 · 已配置 ══════════ -->
+  <div class="cell">
+    <div class="label">23 · 书籍来源 · 已配置
+      <span>沿用第 13 屏那张卡：名字 + 地址 + 状态徽章换行放，右边开关，点进去改。顺序有意义（搜索按这个顺序查），所以和模型一样留一个「排序」。第三张是<b>正在检查</b>的样子。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1>书籍来源</h1>
+        <button class="tap" style="width:auto;padding:0 8px;font-size:14px;color:var(--accent)">排序</button>
+        <button class="tap act"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      </div>
+      <div class="hint-block">搜索书名时从上往下依次查，结果并在一起，每条标出处。</div>
+      <div class="divider"></div>
+      <div class="scroll pad" style="padding-top:14px">
+        <div class="pcard">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:7px"><span class="pn">Standard Ebooks</span><span class="chip">公版</span></div>
+            <div class="ps">standardebooks.org · OPDS</div>
+            <div style="margin-top:7px"><span class="pill ok">可用 · 2 小时前查过</span></div>
+          </div>
+          <div class="tg on"></div>
+          <svg class="ic ic-sm chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </div>
+        <div class="pcard">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:7px"><span class="pn">Project Gutenberg</span><span class="chip">公版</span></div>
+            <div class="ps">gutenberg.org · OPDS</div>
+            <div style="margin-top:7px"><span class="pill ok">可用 · 2 小时前查过</span></div>
+          </div>
+          <div class="tg on"></div>
+          <svg class="ic ic-sm chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </div>
+        <div class="pcard">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:7px"><span class="pn">书房 Calibre</span><span class="chip">局域网</span></div>
+            <div class="ps">192.168.1.20:8080 · OPDS</div>
+            <div style="margin-top:7px;display:flex;align-items:center;gap:7px">
+              <div class="spin" style="width:13px;height:13px;border-width:2px"></div>
+              <span style="font-size:11px;font-weight:600;color:var(--text-muted)">正在检查…</span>
+            </div>
+          </div>
+          <div class="tg on"></div>
+          <svg class="ic ic-sm chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </div>
+        <div class="pcard dim">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:7px"><span class="pn">旧的自建站</span></div>
+            <div class="ps">opds.example.net · OPDS</div>
+            <div style="margin-top:7px"><span class="pill err">打不开 · 已停用</span></div>
+          </div>
+          <div class="tg"></div>
+          <svg class="ic ic-sm chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </div>
+        <div style="font-size:11.5px;line-height:1.6;color:var(--text-muted);padding:6px 2px 0">
+          打不开的来源自动停用，不会拖慢搜索，也不会自己删掉。
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="left:22px; top:646px; max-width:180px;">检查是打开这一页时后台做的，不挡着用。查不完也能搜</div>
+      <div class="note" style="right:14px; top:712px; max-width:180px;">自动停用不等于删除。地址可能只是一时不通</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 24. 移除来源 · 就地确认 ══════════ -->
+  <div class="cell">
+    <div class="label">24 · 移除来源 · 就地确认
+      <span>和第 14 屏同一条规矩：确认条留在被删的东西旁边。这里那句<b>「已经下载的书不受影响」</b>是必须写的——不写，没人敢点，因为「删来源会不会把书一起删了」是这一步唯一的真问题。</span>
+    </div>
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="safe-top"></div>
+      <div class="topbar">
+        <button class="tap"><svg class="ic ic-lg" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h1 class="sm">书房 Calibre</h1>
+        <button class="tap off">保存</button>
+      </div>
+      <div class="divider"></div>
+      <div class="scroll pad" style="padding-top:16px">
+        <div class="field">
+          <label>名称</label>
+          <div class="inp"><span class="grow1">书房 Calibre</span></div>
+        </div>
+        <div class="field">
+          <label>地址</label>
+          <div class="inp"><span class="grow1 mono" style="font-size:13.5px">http://192.168.1.20:8080/opds</span></div>
+          <div class="fhint">OPDS 目录地址。填站点首页也行，Lantern 会自己找。</div>
+        </div>
+        <div class="srow" style="border-top:1px solid rgba(0,0,0,.1)">
+          <div class="lft"><div class="tt">只在 Wi-Fi 下连接</div><div class="hh">局域网地址在蜂窝下连不上，开着可以省掉每次超时的等待</div></div>
+          <div class="tg on"></div>
+        </div>
+        <div class="btn" style="margin-top:16px">
+          <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg> 测试连接
+        </div>
+
+        <div style="margin-top:20px;border:1px solid var(--danger-border);background:var(--danger-bg);border-radius:14px;padding:14px">
+          <div style="font-size:14px;font-weight:600;color:#a4000a">移除这个来源？</div>
+          <div style="font-size:12px;color:#a4000a;opacity:.85;margin-top:5px;line-height:1.55">
+            已经下载到书架上的书<b>不会</b>被删，留在本机。移除之后不能再从这里搜索和下载，这条地址要你自己记着。
+          </div>
+          <div style="display:flex;gap:10px;margin-top:14px">
+            <div class="btn" style="flex:1;background:var(--bg-surface)">取消</div>
+            <div class="btn dng" style="flex:1">移除</div>
+          </div>
+        </div>
+
+        <div class="btn" style="margin-top:14px;color:var(--danger);border-color:var(--danger-border);opacity:.35">
+          <svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg> 移除这个来源
+        </div>
+      </div>
+      <div class="safe-bottom"></div>
+      <div class="home-bar"></div>
+      <div class="note" style="right:14px; top:150px; max-width:180px;">局域网来源手机上必备：书在家里的 Mac 上，这是它唯一的过河方式</div>
+      <div class="note" style="right:14px; top:684px; max-width:186px;">「不会被删」加粗。这是读者按下去之前唯一真正想知道的事</div>
+    </div>
+  </div>
+
+  <!-- ══════════ 25. 520px macOS 窗口 ══════════ -->
+  <div class="cell">
+    <div class="label">25 · macOS 窗口拖到 520px
+      <span>同一份分组列表，白拿。<b>但行高 40px、没有安全区、有 hover</b>——版式跟宽度走（<code>md:</code>），热区跟输入方式走（<code>touch:</code>）。这一屏就是那条规矩的证据。</span>
+    </div>
+    <div class="win">
+      <div class="chrome">
+        <div class="dot" style="background:#ff5f57"></div><div class="dot" style="background:#febc2e"></div><div class="dot" style="background:#28c840"></div>
+      </div>
+      <div class="topbar" style="background:var(--bg-surface);border-bottom:1px solid var(--border)">
+        <h1 style="padding-left:4px">设置</h1>
+        <button class="tap"><svg class="ic ic-sm" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      </div>
+      <div class="body" style="padding:14px 16px">
+        <div class="gcard">
+          <div class="grow">
+            <svg class="ic ic-sm gi" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 010 18 15 15 0 010-18z"/></svg>
+            通用 <span class="val">中文</span>
+            <svg class="ic ic-xs chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+          <div class="grow hover">
+            <svg class="ic ic-sm gi" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r="1.2"/><circle cx="17.5" cy="10.5" r="1.2"/><circle cx="8.5" cy="7.5" r="1.2"/><circle cx="6.5" cy="12.5" r="1.2"/><path d="M12 2a10 10 0 000 20 2.5 2.5 0 002-4 2.5 2.5 0 012-4h2a4 4 0 004-4 10 10 0 00-10-8z"/></svg>
+            主题 <span class="val">跟随系统</span>
+            <svg class="ic ic-xs chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
+          <div class="grow">
+            <svg class="ic ic-sm gi" viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 012-2h13v18H6a2 2 0 01-2-2z"/><path d="M4 19a2 2 0 012-2h13"/></svg>
+            阅读偏好
+            <svg class="ic ic-xs chev" style="margin-left:auto" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+        </div>
+
+        <div class="ghead">AI</div>
+        <div class="gcard">
+          <div class="grow">
+            <svg class="ic ic-sm gi" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 3v4M9 12v2M15 12v2"/></svg>
+            AI 模型 <span class="val">DeepSeek · 可用</span>
+            <svg class="ic ic-xs chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+          <div class="grow">
+            <svg class="ic ic-sm gi" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>
+            搜索模型 <span class="val">未配置</span>
+            <svg class="ic ic-xs chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+          <div class="grow">
+            <svg class="ic ic-sm gi" viewBox="0 0 24 24"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M16 9a5 5 0 010 6"/></svg>
+            语音 <span class="val">系统语音</span>
+            <svg class="ic ic-xs chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+          <div class="grow">
+            <svg class="ic ic-sm gi" viewBox="0 0 24 24"><path d="M4 8V5h3M20 8V5h-3M4 16v3h3M20 16v3h-3"/><path d="M8 12h8"/></svg>
+            扫描件 OCR <span class="val">已就绪</span>
+            <svg class="ic ic-xs chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+          <div class="grow">
+            <svg class="ic ic-sm gi" viewBox="0 0 24 24"><path d="M12 3l1.9 4.2 4.6.5-3.4 3.1 1 4.5L12 13l-4.1 2.3 1-4.5-3.4-3.1 4.6-.5z"/></svg>
+            自动分析 <span class="val">2 项开启</span>
+            <svg class="ic ic-xs chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+        </div>
+
+        <div class="ghead">书库</div>
+        <div class="gcard">
+          <div class="grow">
+            <svg class="ic ic-sm gi" viewBox="0 0 24 24"><path d="M6.5 19a4.5 4.5 0 010-9 6 6 0 0111.6-1.6A4 4 0 0117.5 19z"/></svg>
+            书库同步 <span class="val">刚刚</span>
+            <svg class="ic ic-xs chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+          <div class="grow">
+            <svg class="ic ic-sm gi" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+            书籍来源 <span class="val">6 个站点</span>
+            <svg class="ic ic-xs chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+        </div>
+
+        <div class="ghead">其他</div>
+        <div class="gcard">
+          <div class="grow">
+            <svg class="ic ic-sm gi" viewBox="0 0 24 24"><path d="M4 5h11a3 3 0 013 3v11"/><path d="M8 9h7M8 13h5"/></svg>
+            阅读辅助
+            <svg class="ic ic-xs chev" style="margin-left:auto" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+          <div class="grow">
+            <svg class="ic ic-sm gi" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/><path d="M11 7.5h4a2 2 0 012 2v3.5"/></svg>
+            MCP <span class="val">未连接</span>
+            <svg class="ic ic-xs chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+          <div class="grow">
+            <svg class="ic ic-sm gi" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+            关于 <span class="val">v2.8.2</span>
+            <svg class="ic ic-xs chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+          </div>
+        </div>
+      </div>
+      <div class="note" style="left:18px; top:756px; max-width:200px;">行高 40px，不是 44px。这里是鼠标，热区不用留拇指的余量</div>
+      <div class="note" style="left:18px; top:822px; max-width:250px;">手机上砍掉的那 9 项<b>在这里全都还在</b>——删的是手机的清单，不是产品的清单。「自动分析」「书籍来源」两边都有</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="legend">
+  <h3>要你拍板的取舍</h3>
+  <ul>
+    <li><b>不是模态框，是整窗的一页。</b> <code>&lt; 768px</code> 时设置不再是 780px 的模态框 + 220px 导航，而是占满窗口、点进去、左上角返回。备选是保留模态框、把左导航折成顶部两列网格（今天 <code>&lt; 640px</code> 就是这么干的）——那样在 370px 上导航要吃掉 148px 高，剩下的内容区连两行 73px 都放不下。代价：<b>拖窄的 macOS 窗口也会变成整窗设置</b>，这是对一个在发的桌面目标的可见改动，第 25 屏就是它。</li>
+    <li><b>根列表的行高跟输入方式（<code>touch:</code>），不跟宽度（<code>md:</code>）。</b> 抽屉样张里侧边栏是 <code>h-11 md:h-9</code>——跟宽度。这里故意反过来：侧边栏的行高是密度选择，正好落到 44px；设置根列表的行<b>本身就是那个按钮</b>，所以它归热区管。第 25 屏 40px、手机 56px。</li>
+    <li><b>下拉变底部抽屉，开关和步进器留在原地。</b> <code>Select</code> 组件不动，只让它的 <code>OptionMenu</code> 在 <code>touch:</code> 下从底部升起。备选是直接用原生 <code>&lt;select&gt;</code> 拿系统滚轮——省事，但选项没法带说明文字（「添加模型」那一屏每一项都有一句描述），而且样式跟应用里其它地方对不上。</li>
+    <li><b>服务商配置是推进一页，不是就地展开。</b> 桌面那张卡展开后约 600px 高；在 800px 的屏上展开等于把别的卡全顶出视野，那就是换页了，只是没有返回按钮。</li>
+    <li><b>密钥框加一个眼睛按钮（桌面今天没有）。</b> 手机上粘贴密钥经常粘错——少一位、末尾多个空格、剪贴板拿的是上一条。看不见就查不出来。显形只在这次输入期间有效，离开页面回到遮罩。要不要顺手也给桌面加，是另一件事。</li>
+    <li><b>手机的模型目录里没有 Ollama（本地）。</b> iPhone 上没有 <code>localhost:11434</code>。要连书房 Mac 上的 Ollama，走「自定义兼容 API」填局域网地址——第 13 屏第三张卡画的就是这个。</li>
+    <li><b>「外观」提成根列表上的一行。</b> 它桌面上只有「主题」一个控件，为一行开一页不值当。规则是：只有一个控件的板块，直接内联到根列表。</li>
+    <li><b>蜂窝询问没有「记住我的选择」勾选框。</b> D-016 说的就是记住。给一个可以不勾的框，等于把「每次都问」这个两头不讨好的选项又放回来。两个按钮本身是答案，下面一行说明会记住、去哪儿改。</li>
+    <li><b>「服务配置」这一层在手机上消失。</b> 四个子页只剩「对话模型」一个，中间那层标签页就没有存在意义了，所以根列表上直接叫「AI 模型」。</li>
+    <li><b>书籍来源回到手机（第 22–24 屏）。</b> 上一版按「书在桌面进来」砍掉了它，那等于对只有 iPhone 的读者说「你没法把书弄进来」。除了来源清单，空态里还给了一个「从「文件」导入一本」的兜底——一个来源都不加，也要能进书。局域网那张卡（书房 Calibre）顺带解决了「书在家里的 Mac 上」这个最常见的情况。</li>
+    <li><b>自动分析的触发是「下次打开应用」，不是「读完那一刻」（第 16、17 屏）。</b> 这不是产品偏好，是 iOS 的事实：应用退到后台很快会被停掉，读完就跑的那一版在手机上只会<b>永远不跑</b>。所以设置页里那一行写的是真实时机，书架上那块横幅解释的是「你什么都没点，它为什么在跑」。这两处是最容易在实现时丢掉的部分——丢了就变成一个会自己动、又不说话的应用。</li>
+    <li><b>蜂窝闸门从「下书」扩大到「AI 请求」（第 20、21 屏）。</b> 在蜂窝上无声地发一轮分析请求，和无声地下一本 68 MB 的书，是同一类未打招呼的支出，只是一边花流量、一边花额度。两个对话框刻意做成同一个：同样的句式、同样两个按钮、同样一句「会记住」，只有「去哪儿改」不同。它们要读起来像一条政策，不是两个各自为政的弹窗。</li>
+    <li><b>自动分析能关，而且关掉的代价写在行里（第 15 屏）。</b> 三个子项关掉之后灰着留在页面上，不隐藏——隐藏了读者就不知道自己关掉的是什么。另外承诺一句「关着的时候不攒队列」：关一个月再打开，不该突然跑三十本书的额度。</li>
+  </ul>
+
+  <h3>不用拍板，但值得知道的</h3>
+  <ul>
+    <li>73px 的行<b>一个像素都没改</b>，只把 <code>h-[73px]</code> 放成 <code>min-h-[73px] py-3</code>。「页边距」那一行的副标题在 370px 下换到三行，行长到 96px——今天在桌面上写死 73px，这句话会被裁掉。</li>
+    <li>API 密钥输入框是普通文本框，<code>src/index.css</code> 里 <code>pointer: coarse</code> 的 16px 下限已经落地，聚焦不会把页面缩放上去。这是唯一一处本来会毁掉整个输入流程的 iOS 行为，它已经不是问题了。</li>
+    <li>桌面配好的密钥<b>会</b>同步到手机，但走的不是书库那条路：密钥作为可同步的钥匙串条目存着，由 <b>iCloud 钥匙串</b>端到端加密地复制到你自己的苹果设备。它<b>不进</b> iCloud Drive 那个书库容器——那个目录在「文件」里能翻（<code>NSUbiquitousContainerIsDocumentScopePublic</code>），凭据一律不放，加密过也不放。Windows 没有 iCloud 钥匙串，那边的密钥只留在本机。<b>iCloud 钥匙串是系统里另外一个开关</b>，可以书在同步、密钥没过来。这件事应用<b>诊断不了</b>：没有 API 能读那个开关（<code>ubiquityIdentityToken</code> 报的是 iCloud Drive 和账户，不是钥匙串），关着的时候写一个可同步条目也不报错，开着的时候又没有完成信号、没有时限。应用能做的只有再读一遍钥匙串，看东西到了没有。所以第 6 屏那一页只说「密钥不在这台设备上」，把两种可能并排摆着，把「就地填一次」放在最前面——那是这一屏上唯一有确定结果的动作。第 5 屏那两句也要留着，它说清密钥是从哪儿来的。</li>
+    <li>第 25 屏和手机是同一份组件。P2 第 4 项的大部分验收可以在桌面浏览器里拖窗口完成，只有安全区和 44px 热区要开模拟器。</li>
+    <li>第 20 屏那个云图标沿用抽屉样张第 5 屏的画法，不是新造的。</li>
+    <li>第 17、18 屏那块横幅是<b>新组件</b>，桌面上没有对应物——桌面的自动分析是读完当场就跑，不需要解释自己为什么在跑。手机上它是必需品。</li>
+    <li>第 23 屏那张来源卡和第 13 屏的模型卡是同一个骨架（名字 + 副行 + 状态徽章 + 开关 + 箭头），只换内容。两页都是「一串可排序、可停用、可点进去改的东西」。</li>
+  </ul>
+
+  <h3>上一版那个问题，已经拍板了</h3>
+  <div class="q">
+    <b>问的是「手机上跑不跑自动分析」，答案是跑，而且不是简版。</b><br>
+    你给的前提是「就核心的功能，手机端应该都要能独立具备」——有 iPhone 的人远比有 MacBook 的人多，
+    很多读者手里只有一台手机。上一版我推荐的 (a)「手机不跑，回 Mac 上再说」，对这批人不是慢一点，是<b>做不到</b>。
+    同一条理由把<b>书籍来源</b>也一起推翻了：没有它，只有手机的读者连第一本书都进不来。<br>
+    这一版按新前提重画，落到样张上是三件事：<br>
+    <b>1. 自动分析有完整的一页</b>（第 15、16 屏），不是只有一个总开关——三个子项各自能关，
+    因为「读完出总结」和「每章要点」花的额度差一个量级，只给总开关等于逼人在「全要」和「全不要」之间选。<br>
+    <b>2. 触发时机改成「下次打开应用」</b>（第 16、17 屏）。桌面上读完当场就跑，手机上做不到：
+    应用退到后台会被 iOS 停掉。这一条如果在实现时按桌面的写法照搬，结果不是慢，是<b>它一次都不会跑</b>。<br>
+    <b>3. 蜂窝闸门覆盖 AI 请求</b>（第 21 屏），和下书那一问长成同一个样子。
+    手机独立具备了花钱的能力，就得同时具备拦住它的地方。<br>
+    还需要你点头的只剩两处细节：<b>三个子项的默认值</b>（样张画的是「总结」「生词本」默认开、「每章要点」默认关），
+    以及<b>「用蜂窝数据跑分析」的默认值</b>（样张画的是「每次询问」，也可以默认「仅 Wi-Fi」——那样第一次就不问，
+    代价是有人一直以为它坏了）。
+  </div>
+</div>
+
+</body>
+</html>
