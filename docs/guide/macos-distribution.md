@@ -46,4 +46,4 @@ spctl --assess --type execute --verbose=4 <App>.app
 
 ## 历史：ad-hoc 时代（2026-07 至 2026-08 初）
 
-在拿到 Developer ID 证书之前，仓库一直靠 `signingIdentity: "-"` 做 ad-hoc 签名 + 资源封条，用户首次打开会被 Gatekeeper 判定为"已损坏"，需要手动执行 `xattr -dr com.apple.quarantine` 或在"系统设置 → 隐私与安全性"里选择"仍要打开"。这一阶段的完整根因分析（ad-hoc 签名 + 浏览器下载的 quarantine 属性组合触发新版 Gatekeeper 的"已损坏"话术，而非文件真的损坏）、缓解方案对比、以及申请 Apple Developer Program 的过程，完整记录在 [`impls/macos-distribution-gatekeeper-fix.md`](../impls/archive/macos-distribution-gatekeeper-fix.md)；公证阶段的延迟实测数据、CI 侧的分流策略、以及签名管线可用性的证据记录在 [`impls/apple-notarization-record.md`](../impls/apple-notarization-record.md)。
+在拿到 Developer ID 证书之前，仓库一直靠 `signingIdentity: "-"` 做 ad-hoc 签名 + 资源封条，用户首次打开会被 Gatekeeper 判定为"已损坏"，需要手动执行 `xattr -dr com.apple.quarantine` 或在"系统设置 → 隐私与安全性"里选择"仍要打开"。这一阶段的完整根因分析（ad-hoc 签名 + 浏览器下载的 quarantine 属性组合触发新版 Gatekeeper 的"已损坏"话术，而非文件真的损坏）、缓解方案对比、以及申请 Apple Developer Program 的过程，完整记录在 [`impls/macos-distribution-gatekeeper-fix.md`](../impls/archive/macos-distribution-gatekeeper-fix.md)；公证阶段的延迟实测数据、CI 侧的分流策略、以及签名管线可用性的证据记录在 [`impls/archive/apple-notarization-record.md`](../impls/archive/apple-notarization-record.md)。

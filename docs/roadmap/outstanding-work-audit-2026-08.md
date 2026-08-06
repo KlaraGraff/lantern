@@ -13,13 +13,13 @@
 | [q14 — Notes](../features/q14-notes.md) | 笔记实体 + AI 润色/扩写 + 笔记对话线程 | Milestone 2 核心项。阅读页笔记面板(P3.2 notes rail)已 ship,但 q14 的 AI 写作助手和对话线程是另一层,全欠 |
 | [q25 — Collection Folders](../features/q25-collection-folders.md) | 合集内一层文件夹,拖拽归类 | 四期全未开工 |
 | [q32 — Library Backup](../features/q32-library-backup.md) | 书库文件单向备份到用户指定目录 | 两期全未开工 |
-| [q257 — Persist Explanations](../features/q257-persist-explanations.md) | Explain 结果持久化 + 解释列表页 | **含一个待拍板的设计决策:自动持久化 vs 显式保存按钮**(spec 倾向显式,未定案) |
+| [q257 — Persist Explanations](../features/q257-persist-explanations.md) | Explain 结果持久化 + 解释列表页 | **已拍板(2026-08-06):显式保存 + 自动缓存层**(缓存管复用省额度,保存管列表页收什么),决定已写进 spec,待排期开工 |
 | [q276 — Reset All Data](../features/q276-reset-all-data.md) | 设置里的「重置全部数据」危险操作 | 全未开工 |
 | ~~q285 — Memos 分组~~ | 侧栏新增 Memos 分组 | **已随三段式改造落地并归档(2026-08-06)**,见 C-9 |
 
 开放 issue 两条:
 
-- [#12 — reader settings 分全局层与每书覆盖](https://github.com/KlaraGraff/lantern/issues/12)(P1 标签)。注意:P2.4 settings scope 已 ship 并归档,**issue 仍开着,需先确认剩余范围是什么**,可能只剩收尾或可以直接关闭。
+- ~~[#12 — reader settings 分全局层与每书覆盖](https://github.com/KlaraGraff/lantern/issues/12)~~ — 2026-08-06 回码核实:in-scope 清单全部已随 P2.4 settings-scope 线落地(六个全局行、字距全局键、覆盖可见标记、跟随全局/提升为全局两个动作、可覆盖集合含排版流/页面布局/边距),**已关闭**,关闭评论附证据。
 - [#11 — 应用内 AI 拿不到生词本和学习状态](https://github.com/KlaraGraff/lantern/issues/11)。**第一刀(查词卡注入该词自身记录)已随 `1beb07d` 落地**——issue 评论区有记录,正文的「现状核对」一段过时;2026-08-06 回码核实实现完整、测试全绿。issue 按其自身约定保持开启,等的是推迟项(整章注入、设置开关)的后续判断,不是欠实现。
 
 ## B. Milestone 层面的欠账
@@ -61,7 +61,7 @@
 
 ## E. 人工验收与操作欠账(多数需要真机,需要排班)
 
-1. **安全杂务一件**(apple-notarization-record §6):导出签名密钥备份,需用户本人从钥匙串手动完成(钥匙串口令无法代拿)。app-specific password 轮换已于 2026-08-06 决定不做——该口令只出现在与 Claude 的对话中,用户知情并接受这一风险,此项关闭。
+1. ~~**安全杂务**(apple-notarization-record §6)~~:两项均已于 2026-08-06 拍板关闭——app-specific password 不轮换(口令只出现在与 Claude 的对话中,用户知情接受);签名密钥不另做手动备份(GitHub secret + 本机钥匙串已是两份副本,双亡时可在开发者网站重新签发,用户知情接受)。
 2. **format-normalization 验收** — 代码已完成,运行时/GUI 验收一次都没做过:T1–T10 十组用例,其中 T7(iCloud 同步)需要两台 Mac。全绿后 testing.md + acceptance-brief 才能归档。
 3. **macOS 12 Reader QA** — v2.0.2 在真实 Monterey 上有 Preparing 卡死反馈,v2.0.3 修复候选**待同机复验**:T1–T6 手工矩阵、性能基线 CSV、最终 PASS/FAIL 全部空白。需要一台 Apple Silicon + Monterey 12.x 的机器。
 4. **README 截图** — 现有 `assets/home.png` / `reader.png` 还是旧品牌 Quill 的旧图;12 张新截图(6 必需 + 6 备用)待拍,README 里六处新图路径仍被 HTML 注释包着。

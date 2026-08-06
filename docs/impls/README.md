@@ -30,11 +30,6 @@ Detailed implementation plans for features and bug fixes. Numbers match the corr
 - [Auto-update signing setup](auto-update-setup.md) —
   keys and GitHub Secrets are in place; every line of code is still owed. The plan half
   lives in q243 above.
-- [Apple notarization record](apple-notarization-record.md) —
-  the investigation is closed (2.9.0 was Accepted). §6's password-rotation chore is
-  closed (2026-08-06 decision: not rotating, the user accepted the risk); the
-  signing-key export backup is still owed, pending the user doing it by hand from
-  Keychain.
 - [Mockup gap audit, 2026-08-06](mockup-gap-audit-2026-08-06.md) —
   open decision list G-00–G-I: credential sync on iOS, network gating, OPDS for book
   sources, the auto-analysis console mismatch, and two authoring-page gaps. Its two
@@ -96,6 +91,9 @@ six diagrams of how the shipped features hand off to each other, the companion p
   [settings take the phone's shape](archive/mobile-settings.md)
 - [AI router cc-switch review](archive/ai-router-cc-switch-review.md) — review implemented
   in full, §6 is the record
+- [Apple notarization record](archive/apple-notarization-record.md) — archived 2026-08-06
+  with both §6 chores closed by decision: no password rotation, no manual key backup
+  (GitHub secret + local Keychain are the two copies; both risks accepted by the user).
 - [macOS distribution: the Gatekeeper "damaged" problem](archive/macos-distribution-gatekeeper-fix.md) —
   resolved and archived 2026-08-06: Developer ID signing works, 2.9.0 was notarized and
   Accepted, users no longer hit Gatekeeper. The current pipeline is documented in

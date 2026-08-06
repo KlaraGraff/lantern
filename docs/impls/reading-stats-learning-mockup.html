@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>阅读统计 × 学习数据 — 样张</title>
+<style>
+  :root {
+    --bg-surface: #ffffff; --bg-input: #f3f3f5; --bg-page: #f6f5f8;
+    --text-primary: #18181b; --text-secondary: #52525c; --text-muted: #71717b;
+    --border: #e4e4e7; --border-light: #f4f4f5;
+    --accent: #7c3aed; --accent-bg: #f3e8ff; --accent-text: #7c3aed;
+    /* 掌握度序列色带(浅→深 = 新词→已掌握),已过验证:相邻可分 ΔE≥14.1(CVD)/15.9(正常视觉) */
+    --m-new: #c4b5fd; --m-learning: #8b5cf6; --m-familiar: #6021c0; --m-mastered: #2e1065;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", "Segoe UI", sans-serif; background: var(--bg-page); color: var(--text-primary); padding: 40px 24px 80px; }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  h1.doc { font-size: 22px; margin-bottom: 6px; }
+  p.doc { font-size: 13px; color: var(--text-muted); line-height: 1.7; margin-bottom: 8px; }
+  .screen-label { margin: 44px 0 10px; font-size: 13px; font-weight: 600; color: var(--accent-text); }
+  .screen-label small { font-weight: 400; color: var(--text-muted); margin-left: 8px; }
+  .frame { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+  .serif { font-family: Georgia, "Songti SC", serif; }
+
+  /* —— 页面骨架(现况,压缩示意) —— */
+  .pg-head { display: flex; align-items: flex-end; justify-content: space-between; padding: 22px 32px 14px; border-bottom: 1px solid var(--border); }
+  .pg-head h2 { font-size: 20px; }
+  .pg-head .sub { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+  .controls { display: flex; gap: 8px; align-items: center; font-size: 10px; }
+  .ctl { border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; color: var(--text-secondary); background: var(--bg-surface); }
+  .seg { display: flex; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
+  .seg span { padding: 4px 9px; border-radius: 6px; color: var(--text-muted); }
+  .seg .on { background: var(--bg-surface); color: var(--text-primary); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .body-pad { padding: 24px 32px 30px; display: flex; flex-direction: column; gap: 22px; }
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 14px 0; }
+  .metrics > div { padding: 0 18px; border-left: 1px solid var(--border); }
+  .metrics > div:first-child { border-left: 0; padding-left: 0; }
+  .metrics strong { display: block; font-size: 22px; font-weight: 500; }
+  .metrics span { display: block; font-size: 10px; color: var(--text-muted); margin-top: 3px; }
+  .ghost { border: 1px dashed var(--border); border-radius: 12px; padding: 14px 18px; color: var(--text-muted); font-size: 11px; background: repeating-linear-gradient(-45deg, transparent, transparent 6px, var(--border-light) 6px, var(--border-light) 7px); }
+
+  /* —— 新区块 —— */
+  .new-mark { position: relative; }
+  .new-mark::before { content: ""; position: absolute; left: -18px; top: 0; bottom: 0; width: 3px; border-radius: 2px; background: var(--accent); }
+  .sec-head h3 { font-size: 13px; font-weight: 600; }
+  .sec-head p { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
+  .learn-card { margin-top: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); padding: 20px; }
+  .learn-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-bottom: 20px; }
+  .learn-metrics > div { padding: 0 16px; border-left: 1px solid var(--border-light); }
+  .learn-metrics > div:first-child { border-left: 0; padding-left: 0; }
+  .learn-metrics strong { display: block; font-size: 19px; font-weight: 500; }
+  .learn-metrics span { display: block; font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+  .learn-metrics a { font-size: 10px; color: var(--accent-text); text-decoration: none; font-weight: 500; }
+
+  .chart-title { font-size: 11.5px; font-weight: 600; color: var(--text-primary); }
+  .chart-sub { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+  .trend { margin-top: 10px; position: relative; height: 96px; display: flex; align-items: flex-end; gap: 2px; border-bottom: 1px solid var(--border); }
+  .trend .grid { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border-light); font-size: 8px; color: var(--text-muted); }
+  .trend .grid em { position: absolute; right: 0; top: -11px; font-style: normal; }
+  .bar { flex: 1; max-width: 14px; background: var(--accent); border-radius: 4px 4px 0 0; opacity: .85; position: relative; min-height: 2px; }
+  .bar:hover { opacity: 1; }
+  .bar .tip { display: none; position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: var(--text-primary); color: #fff; font-size: 9.5px; padding: 4px 7px; border-radius: 6px; white-space: nowrap; z-index: 3; }
+  .bar:hover .tip, .bar.demo .tip { display: block; }
+  .bar.zero { background: var(--border); opacity: 1; height: 2px !important; border-radius: 1px; }
+  .bar .peak { position: absolute; top: -14px; left: 50%; transform: translateX(-50%); font-size: 9px; color: var(--text-secondary); font-weight: 600; }
+  .axis { display: flex; justify-content: space-between; font-size: 9px; color: var(--text-muted); margin-top: 5px; }
+
+  .mastery-row { margin-top: 22px; }
+  .stack { display: flex; height: 22px; margin-top: 10px; border-radius: 6px; overflow: hidden; gap: 2px; background: var(--bg-surface); }
+  .stack i { display: block; height: 100%; border-radius: 3px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 10.5px; color: var(--text-secondary); }
+  .legend b { font-weight: 600; color: var(--text-primary); margin-left: 3px; }
+  .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2.5px; margin-right: 5px; vertical-align: -1px; border: 1px solid rgba(0,0,0,.06); }
+  .foot-rule { border-top: 1px solid var(--border-light); margin-top: 18px; padding-top: 12px; font-size: 10px; color: var(--text-muted); line-height: 1.7; }
+
+  .empty-learn { margin-top: 10px; border: 1px dashed var(--border); border-radius: 12px; padding: 26px 20px; text-align: center; }
+  .empty-learn p { font-size: 11.5px; font-weight: 500; }
+  .empty-learn small { display: block; font-size: 10px; color: var(--text-muted); margin-top: 5px; line-height: 1.7; }
+
+  .note { margin-top: 12px; background: var(--accent-bg); border-radius: 10px; padding: 12px 16px; font-size: 12px; line-height: 1.8; color: #4c1d95; }
+  .note b { display: block; margin-bottom: 2px; }
+  ul.spec { margin: 14px 0 0 18px; font-size: 12.5px; line-height: 2; color: var(--text-secondary); }
+  ul.spec code { background: var(--bg-input); border-radius: 4px; padding: 1px 5px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="doc">阅读统计 × 学习数据 — 样张</h1>
+  <p class="doc">已拍板「阅读统计接学习数据」(2026-08-06)。方案:在统计页新增一个「学习」区块,位置在书籍历史之后、水平观察之前;左侧紫条标记的是新增内容,其余为现有页面的压缩示意。全部数字本地计算,不经过 AI,不产生任何请求。页面顶部的书籍筛选与时间范围<b>同样作用于本区块</b>。</p>
+
+  <!-- ═══════════ 屏 1:正常态 ═══════════ -->
+  <div class="screen-label">屏 1 · 正常态(全部书籍 · 最近30天)<small>查词趋势条上真实可悬停;左一条演示了悬停提示</small></div>
+  <div class="frame">
+    <div class="pg-head">
+      <div><h2>阅读统计</h2><div class="sub">你的专注阅读时间与足迹</div></div>
+      <div class="controls">
+        <span class="ctl">全部书籍 ▾</span>
+        <div class="seg"><span class="on">最近30天</span><span>今年</span><span>全部</span></div>
+        <div class="seg"><span class="on">历史</span><span>日历</span></div>
+      </div>
+    </div>
+    <div class="body-pad">
+      <div class="metrics">
+        <div><strong class="serif">21 小时</strong><span>专注阅读</span></div>
+        <div><strong class="serif">4</strong><span>读过的书</span></div>
+        <div><strong class="serif">1</strong><span>读完的书</span></div>
+        <div><strong class="serif">36</strong><span>有效会话</span></div>
+      </div>
+      <div class="ghost">〔现有区块示意 · AI 阅读回顾面板 — 不动〕</div>
+      <div class="ghost">〔现有区块示意 · 书籍历史列表(封面 + 时长条 + 进度)— 不动〕</div>
+
+      <!-- 新增:学习区块 -->
+      <div class="new-mark">
+        <div class="sec-head">
+          <h3>学习</h3>
+          <p>这段时间里,阅读带来的查词与生词进展。全部在本机统计,不使用 AI。</p>
+        </div>
+        <div class="learn-card">
+          <div class="learn-metrics">
+            <div><strong class="serif">214</strong><span>次查词</span></div>
+            <div><strong class="serif">38</strong><span>新收生词</span></div>
+            <div><strong class="serif">5</strong><span>升为已掌握</span></div>
+            <div><strong class="serif">7</strong><span>今日待复习 · <a href="#">去复习 →</a></span></div>
+          </div>
+
+          <div class="chart-title">查词趋势</div>
+          <div class="chart-sub">每天的查词次数。查得少的日子不是坏事——可能是书变熟了。</div>
+          <div class="trend" id="trend">
+            <div class="grid" style="bottom:88px"><em>26</em></div>
+            <div class="grid" style="bottom:44px"><em>13</em></div>
+          </div>
+          <div class="axis"><span>7月8日</span><span>7月22日</span><span>8月6日</span></div>
+
+          <div class="mastery-row">
+            <div class="chart-title">生词本 · 80 个词</div>
+            <div class="chart-sub">按掌握程度分布。颜色越深,离你越近。</div>
+            <div class="stack">
+              <i style="flex:38; background:var(--m-new)"></i>
+              <i style="flex:21; background:var(--m-learning)"></i>
+              <i style="flex:12; background:var(--m-familiar)"></i>
+              <i style="flex:9;  background:var(--m-mastered)"></i>
+            </div>
+            <div class="legend">
+              <span><i class="sw" style="background:var(--m-new)"></i>新词<b>38</b></span>
+              <span><i class="sw" style="background:var(--m-learning)"></i>学习中<b>21</b></span>
+              <span><i class="sw" style="background:var(--m-familiar)"></i>熟悉<b>12</b></span>
+              <span><i class="sw" style="background:var(--m-mastered)"></i>已掌握<b>9</b></span>
+            </div>
+          </div>
+
+          <div class="foot-rule">「升为已掌握」按掌握度变迁记录统计,包含阅读中自动判定与你手动标记的;复习产生的回退不在这里扣减。所有数字只在本机计算,不发送到任何服务。</div>
+        </div>
+      </div>
+
+      <div class="ghost">〔现有区块示意 · 水平观察(阅读水平 vs 查词记录的那段话)— 位置不变,仍是页面最后一块〕</div>
+    </div>
+  </div>
+  <div class="note"><b>为什么放在书籍历史之后、水平观察之前</b>页面的主角仍是阅读时间;学习区块是它的「产出」视角,排第二梯队。水平观察本来就在读你的查词记录,两块相邻后,页面尾部自然形成一个「学习」段落,而水平观察保持它「页面最后、最安静的一行」的既有定位不动。</div>
+
+  <!-- ═══════════ 屏 2:空态 ═══════════ -->
+  <div class="screen-label">屏 2 · 空态<small>这段时间没有任何查词、生词活动时,区块整体退成一行安静的说明</small></div>
+  <div class="frame">
+    <div class="body-pad" style="padding-top:20px">
+      <div class="ghost">〔…上方现有区块同屏 1…〕</div>
+      <div class="new-mark">
+        <div class="sec-head">
+          <h3>学习</h3>
+          <p>这段时间里,阅读带来的查词与生词进展。全部在本机统计,不使用 AI。</p>
+        </div>
+        <div class="empty-learn">
+          <p>这段时间没有查词或生词记录</p>
+          <small>在阅读器里选中一个词查词,或把词收进生词本,这里就会开始积累。<br>没查词也可能只说明:这本书对你刚刚好。</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 屏 3:单书视角 ═══════════ -->
+  <div class="screen-label">屏 3 · 书籍筛选后(《The Remains of the Day》)<small>四个数字、趋势、分布都收窄到这本书;待复习也只数这本书的词</small></div>
+  <div class="frame">
+    <div class="pg-head">
+      <div><h2>阅读统计</h2><div class="sub">你的专注阅读时间与足迹</div></div>
+      <div class="controls">
+        <span class="ctl" style="border-color:var(--accent); color:var(--accent-text)">The Remains of the Day ▾</span>
+        <div class="seg"><span class="on">最近30天</span><span>今年</span><span>全部</span></div>
+        <div class="seg"><span class="on">历史</span><span>日历</span></div>
+      </div>
+    </div>
+    <div class="body-pad">
+      <div class="ghost">〔…指标条 / AI 回顾 / 该书历史,同现有单书行为…〕</div>
+      <div class="new-mark">
+        <div class="sec-head">
+          <h3>学习 · 这本书</h3>
+          <p>只统计这本书里的查词与生词。</p>
+        </div>
+        <div class="learn-card">
+          <div class="learn-metrics">
+            <div><strong class="serif">96</strong><span>次查词</span></div>
+            <div><strong class="serif">17</strong><span>新收生词</span></div>
+            <div><strong class="serif">2</strong><span>升为已掌握</span></div>
+            <div><strong class="serif">3</strong><span>今日待复习 · <a href="#">去复习 →</a></span></div>
+          </div>
+          <div class="chart-title">查词趋势</div>
+          <div class="trend" id="trend2">
+            <div class="grid" style="bottom:88px"><em>14</em></div>
+            <div class="grid" style="bottom:44px"><em>7</em></div>
+          </div>
+          <div class="axis"><span>7月8日</span><span>7月22日</span><span>8月6日</span></div>
+          <div class="mastery-row">
+            <div class="chart-title">这本书的生词 · 31 个</div>
+            <div class="stack">
+              <i style="flex:17; background:var(--m-new)"></i>
+              <i style="flex:8; background:var(--m-learning)"></i>
+              <i style="flex:4; background:var(--m-familiar)"></i>
+              <i style="flex:2; background:var(--m-mastered)"></i>
+            </div>
+            <div class="legend">
+              <span><i class="sw" style="background:var(--m-new)"></i>新词<b>17</b></span>
+              <span><i class="sw" style="background:var(--m-learning)"></i>学习中<b>8</b></span>
+              <span><i class="sw" style="background:var(--m-familiar)"></i>熟悉<b>4</b></span>
+              <span><i class="sw" style="background:var(--m-mastered)"></i>已掌握<b>2</b></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 实现要点 ═══════════ -->
+  <div class="screen-label">实现要点(拍板后进 impls 计划,此处仅供理解)</div>
+  <div class="frame" style="padding:20px 26px 24px">
+    <ul class="spec">
+      <li>数据源全部现成:<code>lookup_records</code>(查词/按书/按天)、<code>vocab_words</code>(四档掌握度、<code>next_review_at</code>)、<code>mastery_events</code>(「升为已掌握」= 本期 <code>to_mastery='mastered'</code> 的事件数)。零调用的 <code>get_vocab_stats</code> 就此接上第一个前端消费者。</li>
+      <li>时间范围切到「今年 / 全部」时,趋势图粒度自动从按日改为按周/按月,柱数保持在 30–60 根以内。</li>
+      <li>悬停提示每根柱都有(日期 + 次数);峰值柱常显数字,其余不标——选择性直接标注。</li>
+      <li>「去复习」跳到侧边栏「复习」筛选页。注意:今日待复习数出现在<b>本区块内</b>,不加侧边栏角标——角标是审计 C-1 的另一件事,做它时需先收窄 <code>tests/review-piles.test.ts</code> 的断言范围。</li>
+      <li>掌握度色带(浅→深):<code>#c4b5fd / #8b5cf6 / #6021c0 / #2e1065</code>,已过配色验证(相邻 CVD ΔE≥14.1,正常视觉 ΔE≥15.9);浅色段对比度不足由「图例 + 每段计数」补救。暗色主题用单独验证过的一组:<code>#4c3f80 / #8461e0 / #b8a6fd / #f0ebff</code>,不做明暗自动翻转。</li>
+      <li>空态文案与页面现有空态同调性:不催促、不布置任务。</li>
+    </ul>
+  </div>
+</div>
+<script>
+  const days = [6,9,3,0,11,8,14,7,5,0,0,12,18,9,6,4,10,26,15,8,0,7,13,9,11,6,0,5,8,4];
+  const days2 = [3,5,1,0,6,4,8,3,2,0,0,5,9,4,3,2,5,14,7,4,0,3,6,4,5,3,0,2,4,2];
+  function render(id, data, max, demoIdx) {
+    const el = document.getElementById(id);
+    const start = new Date(2026, 6, 8);
+    data.forEach((v, i) => {
+      const d = new Date(start); d.setDate(d.getDate() + i);
+      const label = (d.getMonth()+1) + "月" + d.getDate() + "日 · " + v + " 次";
+      const bar = document.createElement("div");
+      bar.className = "bar" + (v === 0 ? " zero" : "") + (i === demoIdx ? " demo" : "");
+      bar.style.height = Math.max(2, Math.round(v / max * 88)) + "px";
+      bar.innerHTML = '<span class="tip">' + label + '</span>' + (v === max ? '<span class="peak">' + v + '</span>' : '');
+      el.appendChild(bar);
+    });
+  }
+  render("trend", days, 26, 4);
+  render("trend2", days2, 14, -1);
+</script>
+</body>
+</html>

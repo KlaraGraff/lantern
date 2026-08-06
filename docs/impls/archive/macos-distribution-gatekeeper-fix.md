@@ -3,7 +3,7 @@
 > **这是一份"活文档"。** 记录计划与进度,接手者先读本文件再动手。每完成一项更新勾选框与变更日志。
 
 - **发起:** Claude Code 会话(2026-07-17)
-- **状态:** 🟢 **已解决**(2026-08-06 回填)。方案 A 走完:Developer ID 证书到手,CI secrets 配齐,签名管线工作正常,2.9.0 公证 Accepted——三个目标(`libpdfium.dylib`、主执行文件、`Lantern.app`)均在 `Developer ID Application: JIANWEI LI` 下签名成功,实证见 [`apple-notarization-record.md`](../apple-notarization-record.md) §七。此后的 release 产物不再是 ad-hoc,下载用户不再被 Gatekeeper 拦。本文转为历史记录归档。
+- **状态:** 🟢 **已解决**(2026-08-06 回填)。方案 A 走完:Developer ID 证书到手,CI secrets 配齐,签名管线工作正常,2.9.0 公证 Accepted——三个目标(`libpdfium.dylib`、主执行文件、`Lantern.app`)均在 `Developer ID Application: JIANWEI LI` 下签名成功,实证见 [`apple-notarization-record.md`](apple-notarization-record.md) §七。此后的 release 产物不再是 ad-hoc,下载用户不再被 Gatekeeper 拦。本文转为历史记录归档。
 - **关联:** [`format-normalization-pipeline.md`](archive/format-normalization-pipeline.md)(昨日 CSP 阅读器修复,与本问题**无关但曾被混淆**,见 §2)
 
 ## 1. 症状
