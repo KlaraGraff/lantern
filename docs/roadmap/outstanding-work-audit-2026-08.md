@@ -53,7 +53,7 @@
 ## D. impls 活跃清单的欠账(摘自 `impls/README.md`,该索引本身是准的)
 
 - **Responsive foundation** — 基建就位但零消费者:safe-area insets 没人读,`100vh` 仍铺在每个路由上。
-- **On-demand book download** — 后端已 ship;书架角标 + 阅读器内进度(P2 item 8)欠着;metered-connection gate(D-016)只标了位没建。
+- **On-demand book download** — 后端已 ship;书架角标 + 阅读器内进度(P2 item 8)欠着;metered-connection gate(D-016)**已建成并接线(2026-08-07,b9dcd35)**:阅读器打开失败的诊断探针带 request id 走受观察下载路径,蜂窝首次询问、答案记入设置。
 - **iCloud metadata watcher** — 纯设计,未实现,需两个未启用的 `objc2-foundation` features,真实风险离开硬件无法验证。
 - **Built-in AI model catalog** — Phase 1–3 已 ship;**七条验收项因 2026-08-03 那次手工验收够不到而仍开着**(全新安装、额度耗尽、密钥吊销、英文 UI、日志与导出,见该文档 §11)。
 - **q243 更新体验 + auto-update-setup** — 见 B 节 Milestone 2 第 1 条。
