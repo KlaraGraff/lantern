@@ -500,19 +500,27 @@ pub fn check_book_available(
     probe_book_availability(&db, &id, Some(&app), Probe::Stat)
 }
 
-/// Diagnose a book whose file failed to open, once, at the point of failure.
+/// Diagnose a book whose file failed to open, once, at the point of failure,
+/// and — on the phone's ordinary path — start fetching it back.
 ///
 /// Deliberately a separate command from `check_book_available`: that one runs
 /// in a two-second poll and must stay a `stat`, while this one does real I/O.
 /// Running the deep probe on a schedule is what makes it expensive; running it
 /// after something has already gone wrong costs one probe per real failure.
+///
+/// `request_id` is what turns the diagnosis into a download the reader can
+/// watch (D-013). Pass one and an evicted book is fetched with progress on
+/// `book-download-<request_id>`; omit it — as the background callers do — and
+/// the placeholder is still nudged, just silently. It is optional rather than
+/// required because not every caller is a reader waiting on a screen.
 #[tauri::command]
 pub fn diagnose_book_file(
     id: String,
+    request_id: Option<String>,
     db: State<'_, Db>,
     app: AppHandle,
 ) -> AppResult<BookAvailability> {
-    probe_book_availability(&db, &id, Some(&app), Probe::Read)
+    probe_book_availability_watched(&db, &id, Some(&app), Probe::Read, request_id.as_deref())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -529,6 +537,27 @@ pub(super) fn probe_book_availability(
     app: Option<&AppHandle>,
     probe: Probe,
 ) -> AppResult<BookAvailability> {
+    probe_book_availability_watched(db, id, app, probe, None)
+}
+
+/// The probe, plus the option of staying with an evicted book until it lands.
+///
+/// `watch` carries the frontend's request id when a reader is waiting on this
+/// book. Without one the placeholder is nudged and forgotten, which is all a
+/// background caller can use; with one the download is followed to completion
+/// and reported on its own event channel (D-013), so an evicted book opens
+/// instead of surfacing "cannot open".
+///
+/// The watch is started against the same resolved path the probe just judged,
+/// never the row's raw `file_path`: fetching one file while the reader waits on
+/// another would report a success nobody can act on.
+pub(super) fn probe_book_availability_watched(
+    db: &Db,
+    id: &str,
+    app: Option<&AppHandle>,
+    probe: Probe,
+    watch: Option<&str>,
+) -> AppResult<BookAvailability> {
     let mut book = query_book(db, id)?;
     resolve_book_paths(&mut book, db, app)?;
 
@@ -538,7 +567,17 @@ pub(super) fn probe_book_availability(
         Probe::Read => icloud::file_readability(&abs_path),
     };
     if availability == icloud::FileAvailability::ICloudPlaceholder {
-        icloud::trigger_download_file(&abs_path);
+        match (watch, app) {
+            // D-016 belongs here: on a metered connection the first download of
+            // the session asks before this line, and the answer is remembered.
+            // It is not wired yet because the remembered answer needs a mobile
+            // settings row, which is blocked behind P2.
+            (Some(request_id), Some(app)) => {
+                icloud::download::start_watch(app, id, abs_path, request_id)?
+            }
+            // No reader is watching, so the request is all that can be made.
+            _ => icloud::trigger_download_file(&abs_path),
+        }
     }
     Ok(BookAvailability {
         status: availability.as_str().to_string(),

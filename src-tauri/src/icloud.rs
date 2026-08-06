@@ -4,11 +4,16 @@
 //!   `icloud_placeholder_path`, `has_icloud_placeholder`,
 //!   `trigger_download_file`) for book and cover binaries that live in
 //!   iCloud Documents and may be evicted.
+//! - **On-demand download** (`download_snapshot` here, and the watcher in
+//!   [`download`]) for turning an evicted book into a readable one while the
+//!   reader waits, which on the phone is the ordinary way a book opens (D-013).
 
 use std::path::{Path, PathBuf};
 
 #[cfg(target_vendor = "apple")]
 use objc2_foundation::{NSFileManager, NSString};
+
+pub mod download;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileAvailability {
@@ -190,6 +195,111 @@ pub fn trigger_download_file(path: &Path) {
 #[cfg(not(target_vendor = "apple"))]
 pub fn trigger_download_file(_path: &Path) {}
 
+/// How far iCloud has got with one specific item.
+///
+/// Read from that item's own URL resource values, deliberately not from an
+/// `NSMetadataQuery`: a query watches a whole folder and has to be kept alive
+/// on a run loop, which is a different mechanism with a different owner (P5
+/// item 3). A reader waiting on one book needs one file's numbers.
+///
+/// `NSURLUbiquitousItemDownloadingStatusKey` is not re-read here even though it
+/// is the obvious member of the family. `is_awaiting_icloud_download` already
+/// reads it, `file_readability` already acts on it, and a second reading in a
+/// second struct could only ever disagree with the first.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DownloadSnapshot {
+    /// True while iCloud is actively fetching this item.
+    ///
+    /// Separate from the downloading *status*, which stays `NotDownloaded` for
+    /// the whole transfer and only flips once every byte has landed.
+    pub downloading: bool,
+    /// Completion in percent, 0–100.
+    ///
+    /// **`None` is the expected answer much of the time**, not a failure.
+    /// `NSURLUbiquitousItemPercentDownloadedKey` is documented by Apple as only
+    /// being maintained while an `NSMetadataQuery` is observing the item, and
+    /// Apple deprecated it in favour of the metadata attribute of the same
+    /// name. Lantern reads it anyway — when a value is there it is free and
+    /// exact — but nothing downstream may assume one arrives. The reader's
+    /// progress display has to survive a whole download with `percent: None`.
+    pub percent: Option<f64>,
+    /// The item's last download failure, already stringified. `None` when
+    /// iCloud has nothing to complain about.
+    pub error: Option<String>,
+}
+
+/// Read one item's download state without blocking on the download itself.
+///
+/// A fresh `NSURL` is built on every call on purpose: `NSURL` caches resource
+/// values per instance the first time each key is read, so a reused URL would
+/// report the percentage it saw on the first poll forever.
+#[cfg(target_vendor = "apple")]
+pub fn download_snapshot(path: &Path) -> DownloadSnapshot {
+    use objc2_foundation::{
+        NSNumber, NSURLUbiquitousItemDownloadingErrorKey, NSURLUbiquitousItemIsDownloadingKey,
+        NSURL,
+    };
+
+    let path_str = NSString::from_str(&path.to_string_lossy());
+    let url = NSURL::fileURLWithPath(&path_str);
+
+    // SAFETY: reading a Foundation string constant, immutable for the process.
+    let downloading_key = unsafe { NSURLUbiquitousItemIsDownloadingKey };
+    let downloading = resource_value(&url, downloading_key)
+        .and_then(|value| value.downcast::<NSNumber>().ok())
+        .is_some_and(|value| value.boolValue());
+
+    // The percentage key is deprecated in favour of the `NSMetadataQuery`
+    // attribute of the same name. Lantern reads the deprecated one anyway
+    // because the replacement is only reachable through a folder-wide query,
+    // which is a different mechanism owned by P5 item 3, and because a key
+    // that sometimes returns nil is strictly better than no number at all.
+    #[allow(deprecated)]
+    // SAFETY: as above.
+    let percent_key = unsafe { objc2_foundation::NSURLUbiquitousItemPercentDownloadedKey };
+    let percent = resource_value(&url, percent_key)
+        .and_then(|value| value.downcast::<NSNumber>().ok())
+        .map(|value| value.doubleValue());
+
+    // SAFETY: as above.
+    let error_key = unsafe { NSURLUbiquitousItemDownloadingErrorKey };
+    let error = resource_value(&url, error_key)
+        .and_then(|value| value.downcast::<objc2_foundation::NSError>().ok())
+        .map(|value| value.localizedDescription().to_string());
+
+    DownloadSnapshot {
+        downloading,
+        percent,
+        error,
+    }
+}
+
+/// One resource value, or `None` when the key is absent or the read failed.
+///
+/// A missing value is the ordinary answer for a file that is not in iCloud at
+/// all, so it is folded together with a hard read error: neither tells the
+/// caller anything it can act on.
+#[cfg(target_vendor = "apple")]
+fn resource_value(
+    url: &objc2_foundation::NSURL,
+    key: &objc2_foundation::NSURLResourceKey,
+) -> Option<objc2::rc::Retained<objc2::runtime::AnyObject>> {
+    let mut value = None;
+    // SAFETY: every key passed here is a documented Foundation resource key,
+    // and each caller downcasts the result to the type Apple documents for it
+    // rather than assuming one.
+    let read = unsafe { url.getResourceValue_forKey_error(&mut value, key) };
+    if read.is_err() {
+        return None;
+    }
+    value
+}
+
+#[cfg(not(target_vendor = "apple"))]
+pub fn download_snapshot(_path: &Path) -> DownloadSnapshot {
+    DownloadSnapshot::default()
+}
+
 /// Release the local bytes of an iCloud-backed file without deleting the
 /// shared item. Returns `false` when the path is not an evictable ubiquitous
 /// item or the platform does not support iCloud Drive.
@@ -340,6 +450,30 @@ mod tests {
     #[test]
     fn unreadable_has_its_own_wire_name() {
         assert_eq!(FileAvailability::Unreadable.as_str(), "unreadable");
+    }
+
+    // --- download_snapshot ---
+
+    #[test]
+    fn snapshot_of_an_ordinary_file_claims_nothing() {
+        // A file that is not in iCloud has no value for any of the ubiquitous
+        // keys, and that has to read as "no information" rather than as "not
+        // downloaded" — otherwise every local book on the desktop would look
+        // like an evicted one. This is the only part of the snapshot that a
+        // host without an iCloud account can prove.
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("book.epub");
+        fs::write(&file, "epub data").unwrap();
+        assert_eq!(download_snapshot(&file), DownloadSnapshot::default());
+    }
+
+    #[test]
+    fn snapshot_of_a_missing_file_claims_nothing() {
+        let dir = TempDir::new().unwrap();
+        assert_eq!(
+            download_snapshot(&dir.path().join("gone.epub")),
+            DownloadSnapshot::default()
+        );
     }
 
     // --- icloud_placeholder_path ---
