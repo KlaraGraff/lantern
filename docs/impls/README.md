@@ -30,6 +30,10 @@ Detailed implementation plans for features and bug fixes. Numbers match the corr
 - [Auto-update signing setup](auto-update-setup.md) —
   keys and GitHub Secrets are in place; every line of code is still owed. The plan half
   lives in q243 above.
+- [q257 — Explain 结果持久化](q257-persist-explanations.md) —
+  计划已写，未开工。Phase 1（`explanations` 表 + 缓存/保存/清理命令）可以立刻开工；
+  Phase 2 的弹层 footer 改动等 O-1 拍板（新的「保存解释」如何与既有「存入词典」共处），
+  Phase 3 的列表页等样张获批。
 - [Mockup gap audit, 2026-08-06](mockup-gap-audit-2026-08-06.md) —
   open decision list G-00–G-I: credential sync on iOS, network gating, OPDS for book
   sources, the auto-analysis console mismatch, and two authoring-page gaps. Its two
