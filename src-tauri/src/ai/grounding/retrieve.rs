@@ -5,33 +5,59 @@ use serde::{Deserialize, Serialize};
 
 use super::chunk::estimate_tokens;
 use super::segment::{segment_for_fts, SegmentMode};
-use super::RETRIEVAL_TOP_K;
+use super::{CHUNK_TARGET_TOKENS, RETRIEVAL_TOP_K};
 use crate::error::AppResult;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpoilerCutoff {
     Character(i64),
     Section(i64),
+    /// Sections before `section` are fully visible; within `section`, only
+    /// chunks with `chunk_index <= chunk_index` are visible. Used by ai_xray
+    /// to admit the read-so-far prefix of the current EPUB section instead
+    /// of excluding it wholesale — see `commands/ai/xray.rs`. Chat never
+    /// constructs this variant.
+    SectionPrefix { section: i64, chunk_index: i64 },
 }
 
 impl SpoilerCutoff {
+    /// Section/character-granularity check. A `SectionPrefix` cutoff is
+    /// treated conservatively here (as if it excluded the whole boundary
+    /// section) because callers of this method — vector ranking and
+    /// section-overview filtering — only have section-level data, not a
+    /// chunk_index. Only `retrieve_ranked`'s own candidate building has a
+    /// chunk_index to resolve a `SectionPrefix` boundary precisely; it uses
+    /// `allows_complete_chunk_at` instead. This keeps `SectionPrefix`
+    /// harmless everywhere it isn't specifically handled, since chat, the
+    /// vector path, and section summaries never construct it.
     pub fn allows_complete_chunk(self, section_index: i64, char_end: Option<i64>) -> bool {
+        self.allows_complete_chunk_at(section_index, i64::MAX, char_end)
+    }
+
+    /// Chunk-precise variant of `allows_complete_chunk`, used where a real
+    /// `chunk_index` is available.
+    fn allows_complete_chunk_at(self, section_index: i64, chunk_index: i64, char_end: Option<i64>) -> bool {
         match self {
             Self::Character(offset) => char_end.is_some_and(|end| end <= offset),
             Self::Section(section) => section_index <= section,
+            Self::SectionPrefix {
+                section,
+                chunk_index: boundary,
+            } => section_index < section || (section_index == section && chunk_index <= boundary),
         }
     }
 
-    fn sql_parts(self) -> (i64, i64) {
+    fn sql_parts(self) -> (i64, i64, i64) {
         match self {
-            Self::Character(offset) => (1, offset),
-            Self::Section(section) => (2, section),
+            Self::Character(offset) => (1, offset, 0),
+            Self::Section(section) => (2, section, 0),
+            Self::SectionPrefix { section, chunk_index } => (3, section, chunk_index),
         }
     }
 }
 
-fn cutoff_sql_parts(cutoff: Option<SpoilerCutoff>) -> (i64, i64) {
-    cutoff.map(SpoilerCutoff::sql_parts).unwrap_or((0, 0))
+fn cutoff_sql_parts(cutoff: Option<SpoilerCutoff>) -> (i64, i64, i64) {
+    cutoff.map(SpoilerCutoff::sql_parts).unwrap_or((0, 0, 0))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -122,16 +148,7 @@ fn truncate_to_budget(value: &str, budget: usize) -> String {
 
 /// Query FTS5, add immediate reading-order neighbors, then merge and budget
 /// excerpts. Lower SQLite BM25 scores are better.
-pub(crate) fn lexical_ranks(
-    conn: &Connection,
-    book_id: &str,
-    query_text: &str,
-    cutoff: Option<SpoilerCutoff>,
-) -> AppResult<Vec<(String, f64)>> {
-    lexical_ranks_with_limit(conn, book_id, query_text, RETRIEVAL_TOP_K, cutoff)
-}
-
-fn lexical_ranks_with_limit(
+pub(crate) fn lexical_ranks_with_limit(
     conn: &Connection,
     book_id: &str,
     query_text: &str,
@@ -142,7 +159,7 @@ fn lexical_ranks_with_limit(
     if query.is_empty() {
         return Ok(Vec::new());
     }
-    let (cutoff_kind, cutoff_value) = cutoff_sql_parts(cutoff);
+    let (cutoff_kind, cutoff_value, cutoff_chunk_index) = cutoff_sql_parts(cutoff);
     let hits = conn
         .prepare(
             "SELECT book_chunks_fts.chunk_id, bm25(book_chunks_fts) AS score
@@ -152,11 +169,20 @@ fn lexical_ranks_with_limit(
              WHERE book_chunks_fts MATCH ?1 AND book_chunks_fts.book_id = ?2
                AND (?3 = 0
                  OR (?3 = 1 AND book_chunks.char_end <= ?4)
-                 OR (?3 = 2 AND book_chunks.section_index <= ?4))
+                 OR (?3 = 2 AND book_chunks.section_index <= ?4)
+                 OR (?3 = 3 AND (book_chunks.section_index < ?4
+                     OR (book_chunks.section_index = ?4 AND book_chunks.chunk_index <= ?6))))
              ORDER BY score LIMIT ?5",
         )?
         .query_map(
-            params![query, book_id, cutoff_kind, cutoff_value, top_k as i64],
+            params![
+                query,
+                book_id,
+                cutoff_kind,
+                cutoff_value,
+                top_k as i64,
+                cutoff_chunk_index
+            ],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?)),
         )?
         .collect::<Result<Vec<_>, _>>()?;
@@ -191,7 +217,7 @@ pub(crate) fn retrieve_ranked(
                 continue;
             };
             if cutoff.is_some_and(|value| {
-                !value.allows_complete_chunk(chunk.section_index, chunk.char_end)
+                !value.allows_complete_chunk_at(chunk.section_index, chunk.chunk_index, chunk.char_end)
             }) {
                 continue;
             }
@@ -228,9 +254,9 @@ pub(crate) fn retrieve_ranked(
         let Some(mut chunk) = maybe_chunk else {
             continue;
         };
-        if cutoff
-            .is_some_and(|value| !value.allows_complete_chunk(chunk.section_index, chunk.char_end))
-        {
+        if cutoff.is_some_and(|value| {
+            !value.allows_complete_chunk_at(chunk.section_index, chunk.chunk_index, chunk.char_end)
+        }) {
             continue;
         }
         if let Some(score) = hit_scores.get(&chunk.chunk_id) {
@@ -305,6 +331,28 @@ pub(crate) fn retrieve_ranked(
     Ok(merged)
 }
 
+/// SQL LIMIT safety net for `top_k_for_budget`. Real books have far fewer
+/// FTS-matching chunks than this for any single query; it only guards
+/// against a pathological budget value inflating the candidate query.
+const MAX_RETRIEVAL_TOP_K: usize = 6_000;
+
+/// Convert a token budget into an FTS candidate-hit limit. `retrieve()` used
+/// to always ask SQL for `RETRIEVAL_TOP_K` (12) hits regardless of
+/// `budget_tokens`, which made raising a caller's budget a no-op once the
+/// caller already had 12 relevant hits available: `retrieve_ranked`'s
+/// score-based trimming can only choose among what SQL handed it. Size the
+/// candidate limit off the budget instead, with headroom (x3) for neighbor
+/// expansion — each hit can pull in up to two adjacent chunks — so enough
+/// raw candidates are fetched that the budget, not this limit, ends up being
+/// the binding constraint. `RETRIEVAL_TOP_K` remains the floor so today's
+/// small budgets keep today's behavior.
+pub(crate) fn top_k_for_budget(budget_tokens: usize) -> usize {
+    let by_budget = budget_tokens
+        .div_ceil(CHUNK_TARGET_TOKENS.max(1))
+        .saturating_mul(3);
+    by_budget.clamp(RETRIEVAL_TOP_K, MAX_RETRIEVAL_TOP_K)
+}
+
 pub fn retrieve(
     conn: &Connection,
     book_id: &str,
@@ -312,7 +360,8 @@ pub fn retrieve(
     budget_tokens: usize,
     cutoff: Option<SpoilerCutoff>,
 ) -> AppResult<Vec<RetrievedChunk>> {
-    let hits = lexical_ranks(conn, book_id, query_text, cutoff)?;
+    let hits =
+        lexical_ranks_with_limit(conn, book_id, query_text, top_k_for_budget(budget_tokens), cutoff)?;
     retrieve_ranked(conn, book_id, &hits, budget_tokens, cutoff)
 }
 
@@ -762,5 +811,117 @@ mod tests {
         assert!(!result.truncated);
         assert!(!result.spoiler_limited);
         assert!(result.chunks.is_empty());
+    }
+
+    #[test]
+    fn top_k_for_budget_scales_up_with_a_floor_and_a_ceiling() {
+        // Tiny budgets still get today's floor, so small-budget behavior is
+        // unchanged.
+        assert_eq!(top_k_for_budget(0), RETRIEVAL_TOP_K);
+        assert_eq!(top_k_for_budget(350), RETRIEVAL_TOP_K);
+        // A large budget asks SQL for proportionally more candidates.
+        assert!(top_k_for_budget(96_000) > RETRIEVAL_TOP_K);
+        assert_eq!(top_k_for_budget(96_000), 96_000_usize.div_ceil(350) * 3);
+        // A pathological budget can't overflow or blow past the safety net.
+        assert_eq!(top_k_for_budget(usize::MAX), MAX_RETRIEVAL_TOP_K);
+    }
+
+    #[test]
+    fn large_budget_returns_far_more_than_the_old_fixed_top_k_when_more_hits_exist() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE book_chunks (id TEXT PRIMARY KEY, book_id TEXT, chunk_index INTEGER, section_index INTEGER, section_href TEXT, section_title TEXT, char_start INTEGER, char_end INTEGER, text TEXT, snippet TEXT, token_estimate INTEGER); CREATE VIRTUAL TABLE book_chunks_fts USING fts5(seg_text, chunk_id UNINDEXED, book_id UNINDEXED);").unwrap();
+        // 20 distinct matching chunks, spaced far enough apart (step of 10)
+        // that ±1 neighbor expansion never touches another real chunk, so
+        // each hit surfaces as its own RetrievedChunk instead of merging.
+        for i in 0..20 {
+            let chunk_index = i * 10;
+            let id = format!("c{i}");
+            let text = format!("Gandalf appears in passage number {i}.");
+            conn.execute(
+                "INSERT INTO book_chunks VALUES (?1, 'book', ?2, 0, NULL, 'Chapter', ?2, ?2, ?3, ?3, 20)",
+                params![id, chunk_index, text],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO book_chunks_fts VALUES (?1, ?2, 'book')",
+                params![segment_for_fts(&text, SegmentMode::Index), id],
+            )
+            .unwrap();
+        }
+
+        // A small budget still only fits a handful of the 20 matches (5 * 20
+        // tokens = 100), same as today.
+        let small = retrieve(&conn, "book", "gandalf", 100, None).unwrap();
+        assert!(small.len() <= 5);
+        assert!(small.len() < 20);
+
+        // A large budget (well over what the old fixed top_k of 12 would
+        // have allowed through) must surface every matching chunk, proving
+        // the budget — not a hidden fixed hit cap — is now the binding
+        // constraint.
+        let large = retrieve(&conn, "book", "gandalf", 5_000, None).unwrap();
+        assert!(
+            large.len() > RETRIEVAL_TOP_K,
+            "expected more than the old fixed top_k of {RETRIEVAL_TOP_K}, got {}",
+            large.len()
+        );
+        assert_eq!(large.len(), 20);
+    }
+
+    #[test]
+    fn section_prefix_cutoff_admits_the_prefix_and_blocks_the_rest_end_to_end() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE book_chunks (id TEXT PRIMARY KEY, book_id TEXT, chunk_index INTEGER, section_index INTEGER, section_href TEXT, section_title TEXT, char_start INTEGER, char_end INTEGER, text TEXT, snippet TEXT, token_estimate INTEGER); CREATE VIRTUAL TABLE book_chunks_fts USING fts5(seg_text, chunk_id UNINDEXED, book_id UNINDEXED);").unwrap();
+        let rows: [(i64, i64, &str); 9] = [
+            (0, 0, "Alpha appears early."),
+            (0, 1, "Beta continues early."),
+            (1, 2, "Gamma section one."),
+            (1, 3, "Delta section one."),
+            (1, 4, "The rare signal here in section one."),
+            (1, 5, "Epsilon after the signal."),
+            (1, 6, "Zeta later still."),
+            (2, 7, "Theta section two."),
+            (2, 8, "Iota section two."),
+        ];
+        for (section_index, chunk_index, text) in rows {
+            let id = format!("c{chunk_index}");
+            conn.execute(
+                "INSERT INTO book_chunks VALUES (?1, 'book', ?2, ?3, NULL, 'Chapter', ?2, ?2, ?4, ?4, 20)",
+                params![id, chunk_index, section_index, text],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO book_chunks_fts VALUES (?1, ?2, 'book')",
+                params![segment_for_fts(text, SegmentMode::Index), id],
+            )
+            .unwrap();
+        }
+
+        // Boundary: section 1, up through (global) chunk_index 4.
+        let cutoff = Some(SpoilerCutoff::SectionPrefix {
+            section: 1,
+            chunk_index: 4,
+        });
+
+        // The hit chunk itself (chunk_index 4, at the boundary) is admitted
+        // and merges with its allowed left neighbor (chunk_index 3), but its
+        // right neighbor (chunk_index 5, past the boundary in the same
+        // section) must not leak into the merged excerpt even though ±1
+        // neighbor expansion touches it.
+        let boundary = retrieve(&conn, "book", "rare signal", 500, cutoff).unwrap();
+        assert_eq!(boundary.len(), 1);
+        assert!(boundary[0].text.contains("The rare signal"));
+        assert!(boundary[0].text.contains("Delta section one."));
+        assert!(!boundary[0].text.contains("Epsilon after the signal"));
+
+        // Sections before the boundary section are fully visible regardless
+        // of their own chunk_index values.
+        let earlier = retrieve(&conn, "book", "Alpha", 500, cutoff).unwrap();
+        assert_eq!(earlier.len(), 1);
+        assert!(earlier[0].text.contains("Alpha appears early."));
+
+        // Sections after the boundary section are excluded entirely.
+        let later = retrieve(&conn, "book", "Theta", 500, cutoff).unwrap();
+        assert!(later.is_empty());
     }
 }

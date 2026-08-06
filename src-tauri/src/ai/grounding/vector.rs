@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
-use super::retrieve::{lexical_ranks, retrieve_ranked, RetrievedChunk, SpoilerCutoff};
-use super::RETRIEVAL_TOP_K;
+use super::retrieve::{
+    lexical_ranks_with_limit, retrieve_ranked, top_k_for_budget, RetrievedChunk, SpoilerCutoff,
+};
 use crate::ai::router;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
@@ -509,6 +510,7 @@ fn vector_ranks(
     conn: &Connection,
     book_id: &str,
     embedding: &[f32],
+    top_k: usize,
     cutoff: Option<SpoilerCutoff>,
 ) -> AppResult<Vec<String>> {
     let query = embedding_json(embedding)?;
@@ -518,16 +520,15 @@ fn vector_ranks(
              WHERE embedding MATCH ?1 AND k = ?2 AND book_id = ?3
              ORDER BY distance",
         )?
-        .query_map(
-            params![query, (RETRIEVAL_TOP_K * 4) as i64, book_id],
-            |row| row.get(0),
-        )?
+        .query_map(params![query, (top_k * 4) as i64, book_id], |row| {
+            row.get(0)
+        })?
         .collect::<Result<Vec<String>, _>>()?;
     if cutoff.is_none() {
-        return Ok(rows.into_iter().take(RETRIEVAL_TOP_K).collect());
+        return Ok(rows.into_iter().take(top_k).collect());
     }
     let cutoff = cutoff.expect("cutoff checked");
-    let mut allowed = Vec::with_capacity(RETRIEVAL_TOP_K);
+    let mut allowed = Vec::with_capacity(top_k);
     let mut statement = conn.prepare(
         "SELECT section_index, char_end FROM book_chunks WHERE id = ?1 AND book_id = ?2",
     )?;
@@ -539,7 +540,7 @@ fn vector_ranks(
             .optional()?;
         if position.is_some_and(|(section, end)| cutoff.allows_complete_chunk(section, end)) {
             allowed.push(chunk_id);
-            if allowed.len() == RETRIEVAL_TOP_K {
+            if allowed.len() == top_k {
                 break;
             }
         }
@@ -555,8 +556,12 @@ pub fn hybrid_retrieve(
     budget_tokens: usize,
     cutoff: Option<SpoilerCutoff>,
 ) -> AppResult<Vec<RetrievedChunk>> {
-    let lexical = lexical_ranks(conn, book_id, query_text, cutoff)?;
-    let semantic = vector_ranks(conn, book_id, query_vector, cutoff)?;
+    // Candidate counts scale with the caller's token budget, mirroring the
+    // lexical-only path — a fixed top-k here would silently cap what a raised
+    // budget can actually pull in.
+    let top_k = top_k_for_budget(budget_tokens);
+    let lexical = lexical_ranks_with_limit(conn, book_id, query_text, top_k, cutoff)?;
+    let semantic = vector_ranks(conn, book_id, query_vector, top_k, cutoff)?;
     if semantic.is_empty() {
         return retrieve_ranked(conn, book_id, &lexical, budget_tokens, cutoff);
     }
@@ -615,7 +620,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(vector_ranks(&conn, "book", &near, None).unwrap()[0], "near");
+        assert_eq!(vector_ranks(&conn, "book", &near, 12, None).unwrap()[0], "near");
     }
 
     #[test]
@@ -639,7 +644,7 @@ mod tests {
             .unwrap();
         }
         assert_eq!(
-            vector_ranks(&conn, "book", &query, Some(SpoilerCutoff::Section(0))).unwrap(),
+            vector_ranks(&conn, "book", &query, 12, Some(SpoilerCutoff::Section(0))).unwrap(),
             vec!["allowed"]
         );
     }
@@ -665,7 +670,7 @@ mod tests {
         .unwrap();
         ensure_vector_table(&conn, 3).unwrap();
         assert_eq!(
-            vector_ranks(&conn, "book", &vector, None).unwrap(),
+            vector_ranks(&conn, "book", &vector, 12, None).unwrap(),
             vec!["cached"]
         );
     }

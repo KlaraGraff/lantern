@@ -268,6 +268,24 @@ fn list_visible_sections(
                 .query_map(rusqlite::params![book_id, offset], section_from_row)
                 .and_then(|rows| rows.collect::<Result<Vec<_>, _>>())
         }
+        // `SectionPrefix` is only ever constructed by ai_xray, never passed
+        // to this MCP tool, but the match must stay exhaustive. Mirror
+        // `SpoilerCutoff::allows_complete_chunk`'s own conservative
+        // section-level treatment of this variant: only sections strictly
+        // before the boundary section are visible.
+        Some(SpoilerCutoff::SectionPrefix { section, .. }) => {
+            let mut statement = conn
+                .prepare(
+                    "SELECT section_index, MAX(section_title), MAX(section_href),
+                            MIN(char_start), MAX(char_end), COUNT(*), SUM(token_estimate)
+                     FROM book_chunks WHERE book_id = ?1 AND section_index < ?2
+                     GROUP BY section_index ORDER BY section_index",
+                )
+                .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+            statement
+                .query_map(rusqlite::params![book_id, section], section_from_row)
+                .and_then(|rows| rows.collect::<Result<Vec<_>, _>>())
+        }
     }
     .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
     Ok(rows)
