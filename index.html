@@ -3,7 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/app-icon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- `viewport-fit=cover` is what makes `env(safe-area-inset-*)` report real
+         numbers instead of zero; without it the notch and home-indicator
+         variables in `src/index.css` are permanently 0px. Page scaling is left
+         enabled on purpose — see `docs/impls/responsive-foundation.md`. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Lantern</title>
   </head>
 

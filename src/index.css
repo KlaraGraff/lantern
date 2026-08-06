@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+/* Layout follows width. Interaction follows input type.
+ *
+ * `md:` and friends decide how many columns there are; `touch:` decides how big
+ * a thing you have to hit. Keeping them apart is what stops a macOS window
+ * dragged to phone width from arming the reader's tap-to-turn zones under a
+ * mouse pointer. `touch:` is the house name for Tailwind's own
+ * `pointer-coarse:` — identical output, but it says why the rule exists rather
+ * than which media feature it consults. There is deliberately no complement:
+ * `hover:` is already gated behind `(hover: hover)` by Tailwind 4, and
+ * `pointer-fine:` ships for the rare case that needs it explicitly.
+ * `docs/impls/responsive-foundation.md` has the full vocabulary.
+ */
+@custom-variant touch (@media (pointer: coarse));
+
 @font-face {
   font-family: "Lantern UI Latin";
   src: local("Inter");
@@ -113,6 +127,29 @@
   --spacing-titlebar-slim: calc(32px / var(--app-zoom, 1));
 }
 
+/* The notch, the home indicator, and the rounded corners in landscape.
+ *
+ * These sit in the spacing namespace rather than in loose custom properties so
+ * a component writes `pb-safe-bottom` the same way it already writes
+ * `pt-titlebar`, and so one name serves both the utility and any `calc()` that
+ * has to add page padding on top of the inset. Every one of them is 0px on
+ * macOS and in a desktop browser, so a rule that uses them is inert until it
+ * runs on a phone; `viewport-fit=cover` in `index.html` is the switch that
+ * makes them non-zero, and without it they read 0px on iOS as well.
+ *
+ * `static` because Tailwind drops theme variables no utility references, and
+ * these have to be readable from places the scanner cannot see — an inline
+ * style, a `calc()` composed at runtime, the CSS the reader injects into the
+ * book's iframe. A spacing variable that exists only when someone happened to
+ * write the matching utility is a trap, and four declarations is a cheap
+ * premium against it. */
+@theme static {
+  --spacing-safe-top: env(safe-area-inset-top, 0px);
+  --spacing-safe-right: env(safe-area-inset-right, 0px);
+  --spacing-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --spacing-safe-left: env(safe-area-inset-left, 0px);
+}
+
 .dark {
   --color-bg-page: #151518;
   --color-bg-surface: #18191d;
@@ -155,6 +192,48 @@
   --color-link-light: #93bbfd;
 
   --color-overlay: rgba(21, 21, 24, 0.72);
+}
+
+/* Both rules below sit in `@layer base` rather than loose at the end of the
+ * file. Unlayered CSS outranks everything Tailwind emits, so a bare
+ * `button { touch-action: manipulation }` would quietly beat a `touch-pan-y`
+ * utility written on that same button — the exact override P3 will need. In
+ * `base` they lose to any utility, which is the right way round. */
+@layer base {
+  /* Every route renders inside an `h-screen` shell, so the document scroller
+   * has nothing to scroll on any screen. All this can suppress, therefore, is
+   * the rubber-band on a page that never moves — which on iOS reads as the
+   * whole app coming loose from the glass. Scoped to the root on purpose: the
+   * scrollers that do carry content (settings panes, the TOC, the reader) keep
+   * their own momentum and bounce, because there the elasticity is feedback
+   * rather than a glitch. */
+  html {
+    overscroll-behavior: none;
+  }
+
+  /* `manipulation` drops the double-tap-to-zoom wait that otherwise sits in
+   * front of every tap in a scalable page, and drops nothing else: panning,
+   * pinch-zoom and text selection all survive it. It is listed per element
+   * rather than set on `html`, because `touch-action` is an intersection down
+   * the ancestor chain — a value on the root is a constraint no descendant can
+   * widen again, and that would reach into the reader body and the book's own
+   * iframe, which is where P3's gestures and the PDF view need the browser's
+   * defaults left alone. A clickable `div` is not covered here by design; give
+   * it Tailwind's `touch-manipulation` where it is actually a button. */
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  summary,
+  label,
+  [role="button"],
+  [role="tab"],
+  [role="switch"],
+  [role="menuitem"],
+  [role="option"] {
+    touch-action: manipulation;
+  }
 }
 
 body {

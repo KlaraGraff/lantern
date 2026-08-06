@@ -6,6 +6,20 @@ Detailed implementation plans for features and bug fixes. Numbers match the corr
 
 ## Active — still owes work
 
+- [Responsive and touch foundation](responsive-foundation.md) —
+  the `md:` / `touch:` vocabulary and the safe-area insets are in place and invisible on
+  desktop. It owes its first consumers: nothing reads the insets yet, and the two problems
+  it uncovered — the 14px input font that makes iOS zoom on focus, and `100vh` as the shell
+  on every route — belong to the components, which it was not allowed to touch.
+- [The Home sidebar becomes a drawer](mobile-home-drawer.md) —
+  P2 item 2. Mockup approved 2026-08-06 and the gesture kernel is in flight; the drawer
+  itself, the collections touch actions and the `hasTitleBarInset` wiring are all owed.
+- [On-demand book download](on-demand-book-download.md) —
+  the backend ships (`faf43ee`); the shelf badge and in-reader progress are P2 item 8 and
+  owed. The metered-connection gate (D-016) is marked at its call site and not built.
+- [The iCloud metadata watcher](icloud-metadata-watcher.md) —
+  design only. P5 item 3, unimplemented: it needs two `objc2-foundation` Cargo features
+  this repo does not enable yet, and its one real risk is unverifiable off hardware.
 - [P2.2 — contextual vocabulary review](vocab-contextual-review.md) —
   approved progressive audio/meaning hints and context-first review; implementation is pending.
 - [Reader P2.1 — structured highlights and vocabulary export](reader-p2-structured-export.md) —
