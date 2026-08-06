@@ -2,11 +2,24 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- The only iCloud location a sandboxed iOS app can reach is a container
-	     it owns, which is why sync on the phone is this container or nothing.
-	     `URLForUbiquityContainerIdentifier` returns nil without these three
-	     keys, and the container identifier must also be registered to the team
-	     and present in the provisioning profile — the portal half of P5 item 5. -->
+	<!--
+		The only iCloud location a sandboxed iOS app can reach is a container
+		it owns, which is why sync on the phone is this container or nothing.
+		`URLForUbiquityContainerIdentifier` returns nil without these three
+		keys, and the container must also be registered to the team and named
+		in the provisioning profile. That portal half was done on 2026-08-06
+		and checked by decoding the profile, not by reading Xcode's UI.
+
+		Two traps on the way there, both cheap to fall into twice. The App ID's
+		iCloud capability defaults to "Compatible with Xcode 5", a 2014 mode
+		that signs ubiquity-container-identifiers alone and emits neither of
+		the other two keys — the fix is the radio button labelled "Include
+		CloudKit support", which despite the name only selects the modern
+		entitlement set and obliges nobody to use CloudKit. And the Signing &
+		Capabilities pane renders *this file*, not the portal, so a ticked
+		container there is not evidence that Apple will grant one. The
+		authority is the decoded .mobileprovision.
+	-->
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>
 		<string>iCloud.com.klaragraff.lantern</string>
@@ -15,9 +28,17 @@
 	<array>
 		<string>iCloud.com.klaragraff.lantern</string>
 	</array>
-	<!-- Documents, not CloudKit. Lantern syncs a directory of files: an
-	     append-only JSONL log plus book and cover blobs. Nothing here wants a
-	     record database. -->
+	<!--
+		Documents, not CloudKit. Lantern syncs a directory of files: an
+		append-only JSONL log plus book and cover blobs. Nothing here wants a
+		record database.
+
+		Enabling iCloud from Xcode's UI also ticks Key-value storage and writes
+		a ubiquity-kvstore-identifier key in here. Lantern keeps no key-value
+		data in iCloud, so it gets removed again — an entitlement nothing
+		claims is one more question at review time and one more capability a
+		compromised build would inherit.
+	-->
 	<key>com.apple.developer.icloud-services</key>
 	<array>
 		<string>CloudDocuments</string>
