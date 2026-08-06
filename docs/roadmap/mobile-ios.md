@@ -796,25 +796,44 @@ deleted rather than folded in; what remains in P5 item 2 is resolving the root f
 container and removing the picker from settings.
 
 The picker half landed the same day. The container half turned out to have a question of its
-own — [Q-005](#q-005--can-the-macos-build-reach-the-apps-ubiquity-container).
+own — [Q-005](#q-005--can-the-macos-build-reach-the-apps-ubiquity-container-answered--yes-for-free).
 
-### Q-005 — Can the macOS build reach the app's ubiquity container?
+### Q-005 — Can the macOS build reach the app's ubiquity container? (answered — yes, for free)
 
-iOS syncs to `iCloud.com.klaragraff.lantern`. For the two to meet, the Mac has to write to the
-same place — `~/Library/Mobile Documents/iCloud~com~klaragraff~lantern/Documents`. Two ways to
-get there, and both have a problem:
+iOS syncs to `iCloud.com.klaragraff.lantern`. For the two to meet, the Mac has to write to
+`~/Library/Mobile Documents/iCloud~com~klaragraff~lantern/Documents`. The worry was that both
+routes cost something: the API (`URLForUbiquityContainerIdentifier`) needs the iCloud
+entitlement, and so an embedded provisioning profile on a Developer ID build; the constructed
+path avoids that but might produce an inert folder that looks right and never syncs.
 
-- **By API** (`URLForUbiquityContainerIdentifier`) needs the iCloud entitlement, which on a
-  Developer ID build needs an embedded provisioning profile. That changes the signing pipeline
-  — the one that has just been through notarization.
-- **By constructed path** avoids all of that, but a hand-made directory under
-  `Mobile Documents` may simply not be picked up: those directories are provisioned by iCloud
-  for entitled apps, and an unentitled `mkdir` may produce an inert local folder that looks
-  right and never syncs.
+**Answered 2026-08-06 — the constructed path works, and the signing pipeline is untouched.**
+The entitlement is needed for that API and for sandboxed builds, not for file I/O into the
+container. What binds an app to its container is `NSUbiquitousContainers` in `Info.plist`,
+which is not signed material and needs no portal authorization. Obsidian is the existence
+proof on this machine: Developer ID signed, no iCloud entitlement, no embedded profile, not
+sandboxed — and its desktop build created a vault inside `iCloud~md~obsidian/Documents` that
+`brctl` reports as `caught-up` with server-side etags. `release.yml`, `signingIdentity` and
+`entitlements: null` all stay exactly as they are.
 
-Unanswered as of 2026-08-06. **P5 item 2's macOS half is blocked on it**, and the exit
-criterion for the whole phase is blocked on that. Nothing else in P5 is: items 3, 4 and 5 are
-about the phone and can proceed.
+**One caveat that shapes the code:** never `mkdir` the container root. bird's registry and the
+on-disk tree match exactly (46 = 46), so those directories are the daemon's; a hand-made one
+never syncs. A missing container is the existing `ICLOUD_DRIVE_UNAVAILABLE` state.
+
+**P5 item 2's macOS half is unblocked**, and with it the exit criterion for the phase.
+
+**The price, and it is real:** nothing on the Mac provisions the container. `com~apple~CloudDocs`
+existed whenever iCloud Drive was on, so desktop sync used to stand alone; the app's own
+container appears only once the iCloud account learns it, which in practice means the iOS build
+running on hardware at least once. Until then macOS sync reports `ICLOUD_DRIVE_UNAVAILABLE`.
+Two Macs and no iPhone can no longer sync with each other.
+
+Accepted rather than fixed. [D-007](#d-007--windows-sync-is-out-of-scope) already scopes sync as
+the macOS ↔ iOS pair, so a Mac with no phone has no peer to sync with either way, and the fix —
+entitling the Developer ID build so `URLForUbiquityContainerIdentifier` can provision it — costs
+an embedded provisioning profile and a changed signing pipeline, which is the whole expense
+Q-005 just established we do not have to pay. What the error message says is the part worth
+getting right: on desktop it has to name the real precondition, not send the user to check an
+iCloud Drive switch that is already on.
 
 ### Q-002 — Does the reader hold acceptable memory on a real device?
 
@@ -1226,9 +1245,14 @@ is closed and added nothing to the estimate below.
    or said "this Mac" where the phone will read the same sentence; all fifteen were rewritten
    in both locales.
 
-   **What is still open is the macOS half**, and it is the risky half: the desktop root is
-   still `~/Library/Mobile Documents/com~apple~CloudDocs/lantern`, which the phone cannot
-   reach. Moving it to the container is [Q-005](#q-005--can-the-macos-build-reach-the-apps-ubiquity-container)
+   **The macOS half landed the same day**, and it turned out not to be the risky half:
+   [Q-005](#q-005--can-the-macos-build-reach-the-apps-ubiquity-container-answered--yes-for-free)
+   answered that a constructed path into the container syncs without an entitlement, so the
+   desktop root moved from `~/Library/Mobile Documents/com~apple~CloudDocs/lantern` to
+   `~/Library/Mobile Documents/iCloud~com~klaragraff~lantern/Documents` — the same place the
+   phone writes — and `src-tauri/Info.plist` now declares `NSUbiquitousContainers` for the Mac
+   too. The `lantern` subfolder is gone with it: the container is already this app's. Signing
+   is untouched
 3. Replace the `notify` watcher with `NSMetadataQuery` — kqueue does not observe
    iCloud-initiated downloads
 4. **Partly already done, and this line used to overstate the work.**

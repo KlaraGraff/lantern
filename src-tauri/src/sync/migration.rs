@@ -12,7 +12,16 @@ use serde::{Deserialize, Serialize};
 use crate::error::{AppError, AppResult};
 
 const SYNC_SETTINGS_FILE: &str = ".sync_setting";
-const DEFAULT_SYNC_FOLDER_NAME: &str = "lantern";
+
+/// The app's iCloud container as the filesystem spells it: under
+/// `Library/Mobile Documents` the dots of `iCloud.com.klaragraff.lantern`
+/// become tildes.
+#[cfg(not(target_os = "ios"))]
+const UBIQUITY_CONTAINER_DIR: &str = "iCloud~com~klaragraff~lantern";
+
+/// Only this subtree of the container is eligible to surface in iCloud Drive
+/// under `NSUbiquitousContainers`, so it is the sync root on both platforms.
+const UBIQUITY_DOCUMENTS_DIR: &str = "Documents";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncSettings {
@@ -55,17 +64,29 @@ pub fn is_usable_icloud_dir(path: &Path) -> bool {
     is_icloud_drive_dir(path) && is_writable_dir(path)
 }
 
-/// Where iCloud Drive puts a user's own files. Built from `HOME` rather than
-/// probed, so it answers for a path that does not exist yet.
+/// The app's own ubiquity container on this Mac — the same container the phone
+/// syncs through, which is the only way the two ever meet
+/// ([D-015](../../../docs/roadmap/mobile-ios.md)). Built from `HOME` rather
+/// than probed, so it answers for a path that does not exist yet.
 ///
-/// Desktop only, and deliberately not the whole Apple vendor: a sandboxed iOS
-/// app cannot read `com~apple~CloudDocs` at all, so on iOS this would name a
-/// path every later check then fails on. iOS resolves its root through
-/// [`ubiquity_sync_root`] instead.
+/// Spelled out by hand instead of resolved through
+/// `URLForUbiquityContainerIdentifier`, because that API needs the iCloud
+/// entitlement, and entitling a Developer ID build means an embedded
+/// provisioning profile and a changed signing pipeline. Plain file I/O into the
+/// container needs neither: the CloudDocs daemon syncs the directory because
+/// `Info.plist` declares `NSUbiquitousContainers`, not because the binary is
+/// entitled.
+///
+/// Desktop only. A sandboxed iOS app cannot reach a path spelled from `HOME`,
+/// so on iOS this would name a path every later check then fails on; iOS
+/// resolves its container through [`ubiquity_sync_root`] instead.
 #[cfg(not(target_os = "ios"))]
-fn icloud_drive_root() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .map(|home| PathBuf::from(home).join("Library/Mobile Documents/com~apple~CloudDocs"))
+fn ubiquity_container_root() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|home| {
+        PathBuf::from(home)
+            .join("Library/Mobile Documents")
+            .join(UBIQUITY_CONTAINER_DIR)
+    })
 }
 
 /// The mobile sync root: `Documents` inside the app's own ubiquity container.
@@ -75,24 +96,24 @@ fn icloud_drive_root() -> Option<PathBuf> {
 /// `lantern_iOS/Info.plist` declares — that is what makes these files visible
 /// in Files and Finder as "Lantern" rather than an invisible container.
 ///
-/// There is no `lantern` subfolder the way the desktop default has one. The
-/// desktop needs it because it is a guest in the user's own iCloud Drive; the
-/// container is already private to this app.
+/// Neither platform puts a folder of its own inside `Documents`: the container
+/// belongs to this app already, so a `lantern` subfolder inside it would only
+/// be nesting.
 #[cfg(target_os = "ios")]
 fn ubiquity_sync_root() -> Option<PathBuf> {
-    crate::icloud::ubiquity_container_dir().map(|dir| dir.join("Documents"))
+    crate::icloud::ubiquity_container_dir().map(|dir| dir.join(UBIQUITY_DOCUMENTS_DIR))
 }
 
 /// Creates the one folder Lantern syncs to, or returns it if it already exists.
 /// Idempotent, and the only way a sync folder ever comes into being — there is
 /// nothing for the user to pick.
 ///
-/// The returned path is not checked for being inside iCloud Drive: it is built
-/// from the iCloud root, so the check would only be able to fail on a bug, and
-/// it would make this function untestable.
+/// The returned path is not checked for being inside the container: it is built
+/// from the container root, so the check would only be able to fail on a bug,
+/// and it would make this function untestable.
 #[cfg(not(target_os = "ios"))]
 pub fn create_default_icloud_dir() -> AppResult<PathBuf> {
-    let root = icloud_drive_root()
+    let root = ubiquity_container_root()
         .ok_or_else(|| AppError::Other("ICLOUD_DRIVE_UNAVAILABLE".to_string()))?;
     create_default_dir_in(&root)
 }
@@ -115,14 +136,23 @@ pub fn create_default_icloud_dir() -> AppResult<PathBuf> {
     Ok(dir)
 }
 
+/// `root` is the container directory; the folder created inside it is
+/// `Documents`.
+///
+/// The container itself is never created here, and that is the whole reason
+/// this is not a single `create_dir_all`. Directories under
+/// `Library/Mobile Documents` are provisioned by the CloudDocs daemon when it
+/// learns the container; one made by hand is byte-identical on disk, is not
+/// registered, and never syncs. So a missing container means iCloud Drive is
+/// off or the container has not been provisioned yet — the same dead end as no
+/// iCloud Drive at all, and a different problem from "the folder you chose is
+/// missing", which must not borrow that error's advice to go pick the folder
+/// again.
 fn create_default_dir_in(root: &Path) -> AppResult<PathBuf> {
-    // No iCloud Drive root means the feature is off on this Mac, which is a
-    // different problem from "the folder you chose is missing" and must not
-    // borrow that error's advice to go pick the folder again.
     if !root.is_dir() {
         return Err(AppError::Other("ICLOUD_DRIVE_UNAVAILABLE".to_string()));
     }
-    let dir = root.join(DEFAULT_SYNC_FOLDER_NAME);
+    let dir = root.join(UBIQUITY_DOCUMENTS_DIR);
 
     fs::create_dir_all(&dir)?;
     if !is_writable_dir(&dir) {
@@ -131,26 +161,28 @@ fn create_default_dir_in(root: &Path) -> AppResult<PathBuf> {
     Ok(dir)
 }
 
-/// Guards against a recorded path that no longer belongs to iCloud — the marker
-/// is user-editable local state, so its raw path is never authority.
+/// Guards against a recorded path that no longer belongs to the container — the
+/// marker is user-editable local state, so its raw path is never authority.
+///
+/// Checked against this app's container rather than `Library/Mobile Documents`
+/// at large, which is what it used to accept. Since
+/// [D-015](../../../docs/roadmap/mobile-ios.md) there is exactly one legal sync
+/// folder, and the wider test would pass a path in some other app's container —
+/// as unreachable from the phone as a path outside iCloud entirely.
 #[cfg(not(target_os = "ios"))]
 pub fn is_icloud_drive_dir(path: &Path) -> bool {
-    let Some(home) = std::env::var_os("HOME") else {
+    let Some(container) = ubiquity_container_root() else {
         return false;
     };
-    let Ok(root) = PathBuf::from(home)
-        .join("Library/Mobile Documents")
-        .canonicalize()
-    else {
+    let Ok(root) = container.canonicalize() else {
         return false;
     };
     is_dir_under(&root, path)
 }
 
-/// The same guard, against the container rather than the user's iCloud Drive.
-/// A path recorded by some earlier build, or by a desktop that syncs to a
-/// picked folder, fails this and sync stays off rather than writing somewhere
-/// the phone cannot reach.
+/// The same guard, resolving the container through the entitled API rather than
+/// from `HOME`. A path recorded by some earlier build fails this and sync stays
+/// off rather than writing somewhere the phone cannot reach.
 #[cfg(target_os = "ios")]
 pub fn is_icloud_drive_dir(path: &Path) -> bool {
     let Some(container) = crate::icloud::ubiquity_container_dir() else {
@@ -256,10 +288,10 @@ mod tests {
     }
 
     #[test]
-    fn the_default_folder_is_created_under_the_icloud_root() {
+    fn the_sync_folder_is_documents_inside_the_container() {
         let root = TempDir::new().unwrap();
         let dir = create_default_dir_in(root.path()).unwrap();
-        assert_eq!(dir, root.path().join("lantern"));
+        assert_eq!(dir, root.path().join("Documents"));
         assert!(dir.is_dir());
     }
 
@@ -277,17 +309,49 @@ mod tests {
         );
     }
 
-    /// iCloud Drive being off is not the same problem as a chosen folder
-    /// having gone missing, and must not reuse that error — its advice is to
-    /// pick the folder again, which cannot help here.
+    /// A directory made by hand under `Library/Mobile Documents` looks right
+    /// and never syncs, because only the CloudDocs daemon registers one. So a
+    /// container that is not there has to stay not there — and the error it
+    /// reports is the iCloud-is-off one, not the chosen-folder-is-missing one,
+    /// whose advice is to go pick the folder again.
     #[test]
-    fn no_icloud_root_reports_icloud_drive_unavailable() {
-        let missing = TempDir::new().unwrap().path().join("gone");
-        let error = create_default_dir_in(&missing).unwrap_err().to_string();
+    fn a_missing_container_is_reported_rather_than_created() {
+        let parent = TempDir::new().unwrap();
+        let container = parent.path().join("iCloud~com~klaragraff~lantern");
+
+        let error = create_default_dir_in(&container).unwrap_err().to_string();
         assert!(
             error.contains("ICLOUD_DRIVE_UNAVAILABLE"),
             "unexpected error: {error}"
         );
+        assert!(
+            !container.exists(),
+            "the container must not be created here"
+        );
+    }
+
+    #[cfg(not(target_os = "ios"))]
+    #[test]
+    fn the_desktop_root_is_the_apps_own_container() {
+        let root = ubiquity_container_root().expect("HOME is set");
+        assert!(
+            root.ends_with("Library/Mobile Documents/iCloud~com~klaragraff~lantern"),
+            "unexpected container root: {}",
+            root.display()
+        );
+    }
+
+    /// Needs a Mac signed into iCloud that has already been given the
+    /// container — the daemon provisions it and this code must not, so there is
+    /// nothing a test can set up. Ignored rather than deleted: it is the only
+    /// check that the constructed path is the one the daemon actually made.
+    #[cfg(not(target_os = "ios"))]
+    #[test]
+    #[ignore]
+    fn the_real_container_yields_a_writable_documents_dir() {
+        let dir = create_default_icloud_dir().unwrap();
+        assert!(dir.ends_with("Documents"));
+        assert!(is_icloud_drive_dir(&dir));
     }
 
     #[test]

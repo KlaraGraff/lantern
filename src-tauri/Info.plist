@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+	Merged into the generated macOS Info.plist by Tauri, which picks this file up
+	by name; no bundle or workflow configuration refers to it.
+
+	It exists for one key. NSUbiquitousContainers is what binds the app to its
+	iCloud container and gives Documents a name in Finder — and it is a plist
+	key, not an entitlement, so the Developer ID signing pipeline is untouched
+	(D-015). The values mirror gen/apple/lantern_iOS/Info.plist exactly: one
+	container, described the same way on both platforms.
+
+	Caveat, recalled rather than verified: the system may only re-read this key
+	when CFBundleVersion increases, so the Finder name can lag until the next
+	version bump. Sync itself does not wait on it.
+-->
+<plist version="1.0">
+<dict>
+	<key>NSUbiquitousContainers</key>
+	<dict>
+		<key>iCloud.com.klaragraff.lantern</key>
+		<dict>
+			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
+			<true/>
+			<key>NSUbiquitousContainerName</key>
+			<string>Lantern</string>
+			<key>NSUbiquitousContainerSupportedFolderLevels</key>
+			<string>Any</string>
+		</dict>
+	</dict>
+</dict>
+</plist>
