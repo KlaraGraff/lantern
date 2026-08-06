@@ -88,6 +88,28 @@ export interface PlatformCapabilities {
   readonly hasFileReveal: boolean;
   /** Font files can be imported through a native picker. */
   readonly hasFontImport: boolean;
+
+  /**
+   * The vector/retrieval index.
+   *
+   * The one flag here that is a product decision rather than a platform limit,
+   * and the distinction is worth keeping visible: everything above says "this
+   * platform cannot" (no subprocess, no window manager, no updater plugin),
+   * while this one says the feature it serves is not on the phone. The index
+   * exists for AI chat's retrieval augmentation, and chat is not on the phone
+   * ([D-012](../../docs/roadmap/mobile-ios.md#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)).
+   * Contextual gloss reads the selected sentence directly — it never queries an
+   * index. It is a named flag rather than an `isMobile` check at the call site
+   * so that the reason lives here (D-005).
+   *
+   * A related set of cuts was considered and rejected: read-aloud, the three
+   * card/menu/marker authoring surfaces, and the CEFR score estimator were all
+   * going to be phone-absent on the same "consumes, does not produce" grounds.
+   * They are not, by an explicit product decision on 2026-08-06 — a reader whose
+   * only device is a phone must be able to do those things, so they are baseline
+   * usage conditions, not desktop luxuries. Do not add flags for them.
+   */
+  readonly hasEmbeddingIndex: boolean;
 }
 
 /*
@@ -116,6 +138,7 @@ const ABSENT: Capability = {
   hasUpdater: false,
   hasFileReveal: false,
   hasFontImport: false,
+  hasEmbeddingIndex: false,
 };
 
 const DESKTOP: Capability = {
@@ -129,6 +152,7 @@ const DESKTOP: Capability = {
   hasUpdater: true,
   hasFileReveal: true,
   hasFontImport: true,
+  hasEmbeddingIndex: true,
 };
 
 /**

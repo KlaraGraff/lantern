@@ -14,12 +14,17 @@ export type ServicesView = "models" | "embedding" | "speech" | "ocr";
 const SERVICES_VIEWS: ServicesView[] = ["models", "embedding", "speech", "ocr"];
 
 /**
- * OCR downloads and spawns a runtime, which a phone cannot do (D-003). The
- * reader deep-links straight to this pane, so the fallback matters as much as
- * dropping the tab.
+ * Two of the four tabs can be unavailable on the current platform: OCR
+ * downloads and spawns a runtime, which a phone cannot do (D-003), and the
+ * embedding index backs chat's retrieval augmentation, which is not on the
+ * phone (D-012). Speech and the chat models are everywhere. The reader and
+ * other panes deep-link straight into this section, so the fallback matters as
+ * much as dropping the tab.
  */
 function isViewAvailable(id: ServicesView): boolean {
-  return id !== "ocr" || platform.hasOcr;
+  if (id === "ocr") return platform.hasOcr;
+  if (id === "embedding") return platform.hasEmbeddingIndex;
+  return true;
 }
 
 /** Deep links address views section-wide, so a view from another section lands here too. */

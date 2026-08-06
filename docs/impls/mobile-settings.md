@@ -22,9 +22,9 @@ kinds and this plan keeps them apart, because they age differently.
 
 ---
 
-## 1. The two kinds of cut
+## 1. What is cut, and the shorter list it became
 
-**Kind A — iOS genuinely cannot.** These already have capability flags in
+**Cut because iOS genuinely cannot.** These already have capability flags in
 [`src/services/platform.ts`](../../src/services/platform.ts) and disappear with no new code:
 
 | Panel | Flag |
@@ -35,26 +35,62 @@ kinds and this plan keeps them apart, because they age differently.
 | 通用 › 自动检查更新 | `hasUpdater` |
 | 书库同步 › 打开位置 | `hasFileReveal` |
 
-**Kind B — the phone consumes this, it does not produce it.** These are product decisions taken in
-the mock-up, not platform limits. Per
-[D-005](../roadmap/mobile-ios.md#d-005--capability-flags-not-platform-checks) they still get named
-capability flags rather than an `isMobile` check at the call site, because the flag name is where
-the reason lives:
+**Cut because the feature it serves is not on the phone** — one panel, one new flag:
 
-| Panel | New flag | Why it is false on mobile |
+| Panel | New flag | Why |
 |---|---|---|
-| 服务配置 › 搜索模型 (embedding) | `hasEmbeddingIndex` | The vector index serves AI chat's retrieval, and chat is not on the phone ([D-012](../roadmap/mobile-ios.md#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)). Contextual gloss reads the selected sentence, not an index |
-| 服务配置 › 语音 | `hasSpeech` | Read-aloud is not in the iOS column of §1. A second-version feature decision, not a settings decision |
-| 阅读辅助 › 卡片设计 / 操作菜单 / 正文标记 | `hasComposerSurfaces` | Three authoring surfaces: drag-to-reorder plus a live preview pane that opens a third column at `xl`. The phone renders their output |
-| 通用 › 考试成绩估算 CEFR | `hasScoreEstimator` | A four-field form plus a history list, filled once a year. 语言水平 itself stays — it drives gloss difficulty; only deriving it from an exam score goes |
+| 服务配置 › 搜索模型 (embedding) | `hasEmbeddingIndex` | The vector index serves AI chat's retrieval augmentation, and chat is not on the phone ([D-012](../roadmap/mobile-ios.md#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)). Contextual gloss reads the selected sentence, never an index |
 
-Four new flags. Each defaults to `false` in `ABSENT`, is `true` in `DESKTOP`, and stays absent in
-`MOBILE` — so the compiler catches a missing default, exactly as the file's own comment promises.
+It defaults to `false` in `ABSENT`, is `true` in `DESKTOP`, and stays absent in `MOBILE`, so the
+compiler catches a missing default exactly as that file's own comment promises. Per
+[D-005](../roadmap/mobile-ios.md#d-005--capability-flags-not-platform-checks) it is a named flag
+rather than an `isMobile` check at the call site, because the flag name is where the reason lives.
 
-**Not cut, and this reverses the previous draft:** 书籍来源 and 自动分析 both stay. The premise
-changed — core features must stand alone on the phone, because far more readers own an iPhone than
-own a MacBook, and for them "go back to the Mac" is not slower, it is impossible. Without 书籍来源
-a phone-only reader cannot get a first book in at all.
+### The cuts that were reversed
+
+An earlier draft of this plan also cut **语音**, the three authoring surfaces
+(**卡片设计 / 操作菜单 / 正文标记**) and **CEFR 成绩估算**, on the grounds that the phone consumes
+those things rather than producing them. That was overruled on 2026-08-06: a reader whose only
+device is a phone has to be able to do them, so they are baseline usage conditions, not desktop
+luxuries. The same premise had already brought back 书籍来源 and 自动分析 — without 书籍来源 a
+phone-only reader cannot get a first book in at all, and 自动分析 spends their quota, so it needs a
+row that turns it off.
+
+`hasSpeech`, `hasComposerSurfaces` and `hasScoreEstimator` were written and then deleted. They are
+not coming back; `tests/platform-capabilities.test.ts` asserts their absence so they cannot return
+by accident.
+
+**What this costs, stated plainly.** Un-gating a panel is one line; making it work under a finger is
+not. Two of the three reversals carry real design work that the mock-up never drew:
+
+- **The three authoring surfaces** are drag-to-reorder plus a live preview that opens a third column
+  at `xl`. On a phone there is no third column and no mouse. Reorder has to work under a finger, and
+  the preview has to become a bottom sheet. This is a new design problem, not a reflow — it needs
+  its own screens before implementation.
+- **CEFR 成绩估算** is a four-field form plus a history list. That reflows into the 73px row pattern
+  with no new interaction, so it needs no new design.
+- **语音** turns out to be nearly free, and this was checked rather than assumed:
+  `src-tauri/src/commands/speech.rs` has no `cfg` gates at all — its three sources are ordinary HTTP
+  (Youdao dictionary audio, Edge's neural voices, any OpenAI-compatible `/audio/speech`) — and system
+  voices go through `window.speechSynthesis`, which WKWebView provides. Nothing in the read-aloud
+  path is desktop-only.
+
+### What the root list becomes
+
+The mock-up drew eight entries. Restoring 语音 and 阅读辅助 makes ten, and it also closes a hole:
+the mock-up cut three of 阅读辅助's four sub-pages and then dropped the whole section from the root
+list, which silently took **交互方式** — a page nothing had objected to — along with it.
+
+| Group | Rows |
+|---|---|
+| — | 通用 · 主题 · 阅读偏好 · 阅读辅助 |
+| AI | AI 模型 · 语音 · 自动分析 |
+| 书库 | 书库同步 · 书籍来源 |
+| — | 关于 |
+
+服务配置 still disappears as a layer, but for a weaker reason than the mock-up gave: it is down to
+two survivors (对话模型 and 语音) out of four, and two rows on the root list read better on a phone
+than one row that opens a tab bar holding two tabs.
 
 ---
 
@@ -70,9 +106,8 @@ The structural piece, and the one everything else lands inside.
 
 - `SettingsModal.tsx` gains a `< 768px` branch. Not a second component: the same `sections` array,
   the same `renderContent()`, a different chrome around them.
-- **Root page** — grouped cards on a `bg-bg-muted` page. Groups: (通用, 主题, 阅读偏好) / AI (AI
-  模型, 自动分析) / 书库 (书库同步, 书籍来源) / (关于). Group separation is whitespace and a small
-  caps header, not fifteen divider rules.
+- **Root page** — grouped cards on a `bg-bg-muted` page, ten rows in the four groups tabulated in
+  §1. Group separation is whitespace and a small caps header, not fifteen divider rules.
 - Each row carries a **right-hand value summary** (`中文`, `跟随系统`, `2 分钟前`, `3 个站点`,
   `DeepSeek · 可用`, `2 项开启`). These are the rows' reason for being scannable; they are async, so
   the loading state omits them.
@@ -99,13 +134,35 @@ screen unable to show even two 73px rows.
 **Acceptance:** `npm run lint`, `npx tsc --noEmit`, `npm run test:unit`, `npm run build`. Visual:
 drag a desktop window from 1400px to 370px and back; every section reachable, nothing clipped.
 
-### Stage 2 — Kind B capability flags
+### Stage 2 — `hasEmbeddingIndex` — **done**
 
-Add the four flags, gate the four surfaces, extend the platform-capability unit test. Small,
-mechanical, and independently landable. Splitting it out of stage 1 keeps the shell diff readable.
+One flag, one gate in `ServicesSettings`'s `isViewAvailable`, two test cases — the second of which
+asserts that `hasSpeech` / `hasComposerSurfaces` / `hasScoreEstimator` do *not* exist, so the
+reversed cuts cannot creep back in.
 
-**Acceptance:** the existing platform test plus four new cases; `ABSENT` completeness is enforced
-by the type, so a missing default fails to compile.
+### Stage 2b — The three authoring surfaces under a finger
+
+**Blocked on design.** 卡片设计 / 操作菜单 / 正文标记 all pair drag-to-reorder with a live preview
+that opens a third column at `xl`. Neither half survives a 370px screen unchanged: reorder needs a
+touch drag with a grab handle and an autoscroll edge, and the preview has to become a bottom sheet
+that can be raised and dismissed while the list underneath stays put. The mock-up drew none of this,
+because at the time these three pages were being cut.
+
+Needs its own screens before any code. Sequence it after stage 1, since the shell is what these
+pages are pushed into.
+
+### Stage 2c — CEFR 成绩估算 on the phone
+
+The four-field form and the assessment history reflow into the 73px row pattern with no new
+interaction. Folds into stage 1's sweep rather than standing alone.
+
+### Stage 2d — 语音 on the phone
+
+The panel un-gates as-is. What is owed is not code but a measurement: which voices
+`window.speechSynthesis.getVoices()` actually returns inside WKWebView, since `englishVoices()` and
+`voiceForAccent()` in `src/components/speech/system-voices.ts` filter on names and locales that were
+chosen against desktop voice lists. If iOS returns a different set, the accent picker silently
+narrows. That check needs a device — it goes on the install checklist, not into this stage.
 
 ### Stage 3 — `Select` opens from the bottom under touch
 
@@ -136,8 +193,8 @@ missing-key page.
   re-masks. Whether desktop should get one too is a separate question.
 - **No Ollama in the mobile catalogue.** There is no `localhost:11434` on an iPhone. Reaching a
   study-room Mac's Ollama goes through 自定义兼容 API with a LAN address — screen 13, third card.
-- **服务配置 as a layer disappears.** Of its four sub-pages only 对话模型 survives, so the
-  intermediate tab level has nothing left to do. The root list says AI 模型 directly.
+- **服务配置 as a layer disappears.** Two of its four sub-pages survive — 对话模型 and 语音 — and
+  two root rows read better on a phone than one row opening a tab bar that holds two tabs.
 - **The missing-key page follows D-018, not screen 6.** When a model's configuration is present but
   its Keychain item is not, the page compares the two sync channels and names the one that is not
   delivering. It says "probably", it shows the observation it inferred from
@@ -223,3 +280,7 @@ block them — the same reasoning that let P2 items 1 and 2 land.
 
 Stages 4–7 are each large enough to be their own turn, and stages 6 and 7 have backend work in
 front of them. They are listed here so the shape is agreed once, not re-litigated four times.
+
+Stage 2b is the only one blocked on something other than code: it needs screens drawn for touch
+reorder and a bottom-sheet preview before anything is built, because guessing at that interaction
+would mean rebuilding all three pages rather than adjusting them.

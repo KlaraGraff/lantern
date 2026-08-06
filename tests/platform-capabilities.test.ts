@@ -81,6 +81,29 @@ test("the title-bar inset is macOS only", () => {
   assert.equal(capabilitiesFor("windows").hasTitleBarInset, false);
 });
 
+test("the retrieval index follows chat, and chat is desktop-only", () => {
+  // The one capability here that is a product decision rather than a platform
+  // limit (D-012). Desktop opts in; mobile and unknown stay absent.
+  for (const id of ["macos", "windows", "linux"] as PlatformId[]) {
+    assert.equal(capabilitiesFor(id).hasEmbeddingIndex, true, `hasEmbeddingIndex should be true on ${id}`);
+  }
+  for (const id of ["ios", "android", "unknown"] as PlatformId[]) {
+    assert.equal(capabilitiesFor(id).hasEmbeddingIndex, false, `hasEmbeddingIndex should be false on ${id}`);
+  }
+});
+
+test("read-aloud, the authoring surfaces and the score estimator are NOT gated", () => {
+  // A phone-only reader has to be able to do these; they were briefly slated
+  // for removal on "the phone consumes, it does not produce" grounds and that
+  // was reversed on 2026-08-06. This test exists so the flags do not come back
+  // by accident — the surfaces are gated by nothing, so there is nothing to
+  // assert but the absence of a gate.
+  const caps = capabilitiesFor("ios") as Record<string, unknown>;
+  for (const gone of ["hasSpeech", "hasComposerSurfaces", "hasScoreEstimator"]) {
+    assert.equal(gone in caps, false, `${gone} must not exist — those surfaces ship on every platform`);
+  }
+});
+
 test("detection outside a Tauri webview falls back instead of throwing", () => {
   // The module is imported by components that unit tests reach; a `window` the
   // OS plugin can read does not exist here.
