@@ -890,6 +890,7 @@ pub fn run() {
             commands::vocab::bulk_delete_vocab_words,
             commands::vocab::bulk_update_vocab_mastery,
             commands::review_piles::list_review_piles,
+            commands::mastery_events::list_mastery_events,
             // Local lookup history
             commands::lookup_history::save_lookup_record,
             commands::lookup_history::get_cached_lookup,
