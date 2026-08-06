@@ -670,7 +670,7 @@
   "settings.autoAnalysis.trigger.unknown": "其他时候",
   "settings.autoAnalysis.ranTimes": "近 30 天 {{times}} 次 · 约 {{tokens}}",
   "settings.autoAnalysis.neverRan": "近 30 天没有跑过",
-  "settings.autoAnalysis.job.reading_review.title": "这本书的收获汇总",
+  "settings.autoAnalysis.job.reading_review.title": "阅读历程：这本书的收获汇总",
   "settings.autoAnalysis.job.reading_review.what": "把你在这本书里查过的词、做过的笔记整理成一页回顾——过段时间再拿起这本书，先看这一页，就能想起当时读到了什么、学会了什么",
   "settings.autoAnalysis.job.reading_review.sends": "会发送：书名、你查过的词和原句",
   "settings.autoAnalysis.job.reading_review.offButManual": "已关闭 · 仍可在「阅读历程」里手动生成",

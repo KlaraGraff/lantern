@@ -672,7 +672,7 @@
   "settings.autoAnalysis.trigger.unknown": "At other times",
   "settings.autoAnalysis.ranTimes": "{{times}}× in the last 30 days · about {{tokens}}",
   "settings.autoAnalysis.neverRan": "Has not run in the last 30 days",
-  "settings.autoAnalysis.job.reading_review.title": "What you got out of the book",
+  "settings.autoAnalysis.job.reading_review.title": "Reading History: what you got out of the book",
   "settings.autoAnalysis.job.reading_review.what": "Turns the words you looked up and the notes you took in this book into a one-page review — pick the book up again later, and that page brings back what you read and learned",
   "settings.autoAnalysis.job.reading_review.sends": "Sends: the book title, the words you looked up, and the sentences they came from",
   "settings.autoAnalysis.job.reading_review.offButManual": "Off · still available by hand under Reading History",

@@ -235,8 +235,47 @@ function BookHistory({
 
 function ReadingCalendar({ days, labels }: { days: ReadingStatsCalendarDay[]; labels: ReadingStatsLabels }) {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  // Replaces the native `title` attribute, whose hover delay is a fixed OS
+  // setting (~1s) no CSS or JS can shorten. `left`/`top` are pre-computed
+  // against `containerRef` (not the grid's own scrolling box) at the moment
+  // the dot is hovered, so the tooltip is never clipped by the grid's
+  // horizontal scrollbar.
+  const [hover, setHover] = useState<{ date: string; left: number; top: number } | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const selected = days.find((day) => day.date === selectedDate) ?? null;
   const maximum = Math.max(1, ...days.map((day) => day.activeSeconds));
+
+  const clearHoverTimer = () => {
+    if (hoverTimer.current) {
+      clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+  };
+
+  const scheduleHover = (date: string, target: HTMLElement) => {
+    clearHoverTimer();
+    hoverTimer.current = setTimeout(() => {
+      const container = containerRef.current;
+      if (!container) return;
+      const dotRect = target.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      setHover({
+        date,
+        left: dotRect.left - containerRect.left + dotRect.width / 2,
+        top: dotRect.top - containerRect.top,
+      });
+    }, 150);
+  };
+
+  const hideHover = () => {
+    clearHoverTimer();
+    setHover(null);
+  };
+
+  useEffect(() => clearHoverTimer, []);
+
+  const hoveredDay = hover ? days.find((day) => day.date === hover.date) ?? null : null;
 
   return (
     <section aria-labelledby="reading-calendar-heading">
@@ -244,7 +283,7 @@ function ReadingCalendar({ days, labels }: { days: ReadingStatsCalendarDay[]; la
         <h2 id="reading-calendar-heading" className="text-[13px] font-semibold text-text-primary">{labels.calendarHeading}</h2>
         <p className="mt-1 text-[10px] text-text-muted">{labels.calendarDescription}</p>
       </div>
-      <div className="rounded-xl border border-border bg-bg-surface p-5">
+      <div ref={containerRef} className="relative rounded-xl border border-border bg-bg-surface p-5">
         {days.length ? (
           <div
             className="grid w-full gap-1.5 overflow-x-auto pb-1"
@@ -259,8 +298,11 @@ function ReadingCalendar({ days, labels }: { days: ReadingStatsCalendarDay[]; la
                   type="button"
                   aria-label={`${labels.formatDate(day.date)} · ${labels.formatDuration(day.activeSeconds)}`}
                   aria-pressed={selectedDate === day.date}
-                  title={`${labels.formatDate(day.date)} · ${labels.formatDuration(day.activeSeconds)}`}
                   onClick={() => setSelectedDate(day.date)}
+                  onMouseEnter={(event) => scheduleHover(day.date, event.currentTarget)}
+                  onMouseLeave={hideHover}
+                  onFocus={(event) => scheduleHover(day.date, event.currentTarget)}
+                  onBlur={hideHover}
                   className="h-[13px] w-[13px] rounded-[3px] bg-accent outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent"
                   style={{ opacity }}
                 />
@@ -274,6 +316,16 @@ function ReadingCalendar({ days, labels }: { days: ReadingStatsCalendarDay[]; la
             <p className="mt-1 text-[10px] text-text-muted">{labels.noCalendarActivityDescription}</p>
           </div>
         )}
+
+        {hoveredDay ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md bg-[#18181B]/90 px-2.5 py-1.5 text-[11px] leading-4 text-white shadow-popover"
+            style={{ left: hover!.left, top: hover!.top - 6 }}
+          >
+            {`${labels.formatDate(hoveredDay.date)} · ${labels.formatDuration(hoveredDay.activeSeconds)}`}
+          </div>
+        ) : null}
 
         {selected ? (
           <div className="mt-4 rounded-lg bg-bg-input px-4 py-3" aria-live="polite">
