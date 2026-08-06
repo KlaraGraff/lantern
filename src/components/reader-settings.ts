@@ -349,12 +349,20 @@ export function getCustomThemeStyles(customTheme: ReaderCustomTheme) {
 
 export function getThemeStyles(themeId: ReaderTheme, customTheme = DEFAULT_READER_CUSTOM_THEME) {
   switch (themeId) {
+    // The four stock themes follow the lineup most readers converge on
+    // (Apple Books, Kindle, WeChat Reading): plain white, a true sepia paper,
+    // a dim gray for low light, and a near-black night theme.
     case "paper":
-      return { body: "#FAF7F0", text: "#29251E" };
+      // Warm and genuinely tinted — the old #FAF7F0 was within a hair of
+      // plain white, which reads as glare in a dim room.
+      return { body: "#F2E9D8", text: "#3B3325" };
     case "quiet":
-      return { body: "#71717b", text: "#fafafa" };
+      // A dim mid-dark gray with soft (not white) text: the low-light theme
+      // between paper and night. The old #71717b/#fafafa pairing sat at the
+      // 4.5:1 contrast floor and haloed badly.
+      return { body: "#45454C", text: "#D9D9DE" };
     case "dark":
-      return { body: "#1b1b1f", text: "#d8d8de" };
+      return { body: "#121216", text: "#C9C9D1" };
     case "custom":
       return getCustomThemeStyles(customTheme);
     default:

@@ -221,12 +221,15 @@ test("the defaults do not warn about themselves", () => {
 
 test("the automatic colour that shipped before is the one the legibility rule was written to reject", () => {
   // It cleared the paper and the dark theme and landed 10 from the Gray one —
-  // a mark the app drew that the reader could not see it had.
-  const faded = { ...defaults.automatic, color: "#8D7C65", underline: false };
-  assert.deepEqual(markInvisibleOn(faded), ["quiet"]);
+  // a mark the app drew that the reader could not see it had. The Gray paper
+  // it shipped on was the old #71717b; the stock themes have since been
+  // retuned (the Gray is far darker now, and this colour reads fine on it),
+  // so the historical page is pinned literally instead of read from the
+  // current theme table.
+  const HISTORICAL_QUIET_BODY = "#71717b";
   const distance = colorDistance(
-    blendOver("#8D7C65", AUTOMATIC_OPACITY / 100, getThemeStyles("quiet").body),
-    getThemeStyles("quiet").body,
+    blendOver("#8D7C65", AUTOMATIC_OPACITY / 100, HISTORICAL_QUIET_BODY),
+    HISTORICAL_QUIET_BODY,
   );
   assert.ok(distance < MARK_LEGIBILITY_THRESHOLD, `it was ${Math.round(distance)} from the page`);
 });

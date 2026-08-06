@@ -31,6 +31,19 @@ function readerSelectionColor(theme: string): string {
   }
 }
 
+// Book content forces its own text color (see getReaderCSS), but links —
+// footnote numbers above all — are <a> elements the publisher typically
+// colors black or navy. Without an override they vanish against the two
+// dark papers, so every theme pins a link color that survives its body.
+function readerLinkColor(theme: string): string {
+  switch (theme) {
+    case "paper": return "#8A5728";
+    case "quiet": return "#C4B5FD";
+    case "dark": return "#A78BFA";
+    default: return "#6D28D9";
+  }
+}
+
 export function getPdfOverlays(theme: string, customTheme?: ReaderCustomTheme): PdfOverlay {
   switch (theme) {
     case "paper": return { layers: [{
@@ -72,52 +85,52 @@ export function getReaderThemeVars(theme: string, customTheme?: ReaderCustomThem
       "--color-accent-bg": "#f3e8ff",
     };
     case "paper": return {
-      "--color-bg-page": "#F4F0E7",
-      "--color-bg-surface": "#FAF7F0",
-      "--color-bg-muted": "#F7F3EB",
-      "--color-bg-input": "#EFE9DD",
-      "--color-text-primary": "#29251E",
-      "--color-text-body": "#29251E",
-      "--color-text-secondary": "#5F584D",
-      "--color-text-muted": "#827969",
-      "--color-text-placeholder": "#9A907F",
-      "--color-border": "#DDD5C8",
-      "--color-border-light": "#EEE8DD",
+      "--color-bg-page": "#EBE1CB",
+      "--color-bg-surface": "#F2E9D8",
+      "--color-bg-muted": "#EFE5D2",
+      "--color-bg-input": "#E8DDC6",
+      "--color-text-primary": "#3B3325",
+      "--color-text-body": "#3B3325",
+      "--color-text-secondary": "#6B5F4B",
+      "--color-text-muted": "#8A7C63",
+      "--color-text-placeholder": "#A2947A",
+      "--color-border": "#D8CCB2",
+      "--color-border-light": "#E7DEC9",
       "--color-accent": "#A36A31",
       "--color-accent-text": "#8A5728",
-      "--color-accent-bg": "#F0E3D1",
+      "--color-accent-bg": "#EEDFC5",
     };
     case "quiet": return {
-      "--color-bg-page": "#5A5A63",
-      "--color-bg-surface": "#71717b",
-      "--color-bg-muted": "#68686F",
-      "--color-bg-input": "#5A5A63",
-      "--color-text-primary": "#fafafa",
-      "--color-text-body": "#fafafa",
-      "--color-text-secondary": "#d4d4d8",
-      "--color-text-muted": "#d4d4d8",
-      "--color-text-placeholder": "#a1a1aa",
-      "--color-border": "#9999a1",
-      "--color-border-light": "#5A5A63",
-      "--color-accent": "#D8B4FE",
-      "--color-accent-text": "#F3E8FF",
-      "--color-accent-bg": "#5A4D6E",
+      "--color-bg-page": "#3C3C43",
+      "--color-bg-surface": "#45454C",
+      "--color-bg-muted": "#4C4C54",
+      "--color-bg-input": "#55555E",
+      "--color-text-primary": "#E7E7EC",
+      "--color-text-body": "#D9D9DE",
+      "--color-text-secondary": "#B9B9C2",
+      "--color-text-muted": "#9A9AA4",
+      "--color-text-placeholder": "#82828C",
+      "--color-border": "#62626C",
+      "--color-border-light": "#52525A",
+      "--color-accent": "#A78BFA",
+      "--color-accent-text": "#C4B5FD",
+      "--color-accent-bg": "#4A4160",
     };
     case "dark": return {
-      "--color-bg-page": "#151518",
-      "--color-bg-surface": "#18191d",
-      "--color-bg-muted": "#1f2023",
-      "--color-bg-input": "#25262c",
-      "--color-text-primary": "#f4f4f5",
-      "--color-text-body": "#e7e7ea",
-      "--color-text-secondary": "#c9c9d1",
-      "--color-text-muted": "#9a9aa4",
-      "--color-text-placeholder": "#85858f",
-      "--color-border": "#34343d",
-      "--color-border-light": "#2a2b31",
+      "--color-bg-page": "#0E0E11",
+      "--color-bg-surface": "#121216",
+      "--color-bg-muted": "#1A1A1F",
+      "--color-bg-input": "#222228",
+      "--color-text-primary": "#EDEDF0",
+      "--color-text-body": "#C9C9D1",
+      "--color-text-secondary": "#B4B4BD",
+      "--color-text-muted": "#8E8E98",
+      "--color-text-placeholder": "#787882",
+      "--color-border": "#2E2E37",
+      "--color-border-light": "#25252C",
       "--color-accent": "#8B5CF6",
       "--color-accent-text": "#A78BFA",
-      "--color-accent-bg": "#302647",
+      "--color-accent-bg": "#2B2342",
     };
     case "custom": {
       const colors = getThemeStyles("custom", customTheme);
@@ -187,6 +200,9 @@ export function getReaderCSS(
       -webkit-hyphens: none;
       hyphens: none;
     }
+    a, a span {
+      color: ${readerLinkColor(settings.theme)} !important;
+    }
     ::selection {
       background: ${readerSelectionColor(settings.theme)} !important;
       color: inherit !important;
@@ -207,6 +223,14 @@ export function getReaderCSS(
       max-width: 100% !important;
       overflow: hidden !important;
     }
+    ${settings.theme === "dark" || settings.theme === "quiet" ? `
+    /* Illustrations keep their white page background; at full brightness they
+       glare against a dark paper, so night themes dim them slightly — the same
+       treatment Apple Books and Kindle give images in their night modes. */
+    img, svg, video {
+      filter: brightness(0.85);
+    }
+    ` : ""}
   `;
 }
 
