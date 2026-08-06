@@ -268,8 +268,8 @@ pub fn set_settings_bulk(
 /// Write global settings, publishing only the whitelisted keys.
 ///
 /// The `settings` table stays local-only as a table -- theme and font size are
-/// per-screen preferences that have no business crossing devices. `font_family`
-/// and the four marker-visibility toggles are the exceptions; see
+/// per-screen preferences that have no business crossing devices. `font_family`,
+/// the four marker-visibility toggles and `book_sources` are the exceptions; see
 /// `events::is_syncable_setting` for why each one earns it. Non-whitelisted keys
 /// never reach the log at all, so the event stream stays clean rather than being
 /// filtered on read.
@@ -1679,6 +1679,55 @@ mod tests {
             )
             .unwrap();
         assert_eq!(tombstone, 1);
+    }
+
+    /// The writer's half of the book-source story. Editing the list has to
+    /// leave the device, and it has to carry a real stamp — a `(0, "")` row
+    /// would lose every LWW compare and the user's edit would silently revert
+    /// to whatever the other Mac last said.
+    #[test]
+    fn book_source_edits_reach_the_outbox_and_stamp_their_row() {
+        let (_dir, db) = setup();
+        let sync = SyncWriter::new("dev-A".into());
+        sync.set_should_queue(true);
+
+        set_settings_bulk_inner(
+            &HashMap::from([(
+                "book_sources".to_string(),
+                r#"[{"id":"user:1","name":"My site","url":"https://example.com/","kind":"library"}]"#
+                    .to_string(),
+            )]),
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        let conn = db.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT body_json FROM _pending_publish ORDER BY rowid")
+            .unwrap();
+        let published = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        drop(stmt);
+
+        assert!(
+            published.iter().any(
+                |body| body.contains(r#""key":"book_sources""#) && body.contains("example.com")
+            ),
+            "the curated list must publish with its contents, got {published:?}"
+        );
+        let (ts, device): (i64, String) = conn
+            .query_row(
+                "SELECT updated_at, updated_by_device FROM settings WHERE key = 'book_sources'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert!(ts > 0, "a synced row needs a real timestamp, got {ts}");
+        assert_eq!(device, "dev-A");
     }
 
     #[test]

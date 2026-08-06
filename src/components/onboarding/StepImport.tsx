@@ -5,7 +5,7 @@ import { AlertCircle, ChevronDown, ChevronRight, Check, Loader2, Upload, Externa
 import Button from "../ui/Button";
 import { importBookDialog, type Book } from "../../hooks/useBooks";
 import { groupBookSources } from "./onboarding-state";
-import { BOOK_SOURCES_SEEDED_KEY, BUILT_IN_BOOK_SOURCES, parseBookSources, type BookSourceKind } from "../book-sources";
+import { BOOK_SOURCES_KEY, resolveBookSources, type BookSourceKind } from "../book-sources";
 
 interface StepImportProps {
   settings: Record<string, string>;
@@ -64,12 +64,11 @@ export default function StepImport({
     }
   };
 
-  // A fresh install has no seeded `book_sources` row yet — that only happens
-  // once BookSourcesSettings mounts. Reading the built-in catalog directly
-  // here shows the right list without performing that seed write ourselves.
-  const sources = settings[BOOK_SOURCES_SEEDED_KEY] === "true"
-    ? parseBookSources(settings.book_sources)
-    : BUILT_IN_BOOK_SOURCES;
+  // A fresh install has no `book_sources` row, and onboarding must not create
+  // one: the same resolve-don't-seed rule the settings pane follows applies
+  // here, and for the same reason — a write from this screen would outrank the
+  // list a device the user already owns is about to send over.
+  const sources = resolveBookSources(settings[BOOK_SOURCES_KEY]);
   const grouped = groupBookSources(sources);
   const groupFor = (kind: BookSourceKind) => (kind === "library" ? grouped.library : grouped.thirdParty);
 

@@ -49,6 +49,11 @@ pub fn is_supported_event_schema_version(version: u32) -> bool {
 /// override stayed home would be worse than syncing nothing: the second device
 /// would draw markers on exactly the book where the user turned them off.
 ///
+/// The book-source list is the third exception, and it is the font argument
+/// again: a site the reader tracked down and typed in is something they
+/// acquired. Nobody wants to curate the same seven links twice, and the list
+/// is per-user by construction — it names places, not screens.
+///
 /// So the gate is a key whitelist, not a table. The writer (which decides
 /// whether to emit at all), the reader (`apply_setting_set`), and `dump_state`
 /// (which selects the rows a snapshot carries) all consult it. So do
@@ -63,9 +68,33 @@ pub fn is_syncable_setting(per_book: bool, key: &str) -> bool {
     if per_book {
         key == "font"
     } else {
-        key == "font_family"
+        key == "font_family" || key == BOOK_SOURCES_KEY
     }
 }
+
+/// The book-source list: one JSON array of `{id, name, url, kind}` under one
+/// key. Two properties of that shape are worth knowing before touching it.
+///
+/// **It is last-write-wins over the whole list, not per source.** Two devices
+/// that each add a different site inside the same sync window converge on one
+/// of the two lists; the loser's addition is gone, not merged. That is a real
+/// defect and it is accepted rather than unnoticed. Per-source granularity
+/// would mean a new synced entity with its own ids and its own tombstones, for
+/// a configuration list a person edits a handful of times ever — the cost is
+/// paid on every future change to the sync layer, and the benefit only shows
+/// up in a window measured in seconds. If book sources ever become something
+/// people edit often, that is the fix; this paragraph is the record that the
+/// current behaviour was chosen and not overlooked.
+///
+/// **It has no companion "already seeded" flag.** The frontend used to write
+/// `book_sources_seeded` next to it, and that flag is now gone rather than
+/// whitelisted — deliberately, because syncing it would not have worked. The
+/// argument is written out where the decision lives, in
+/// `src/components/book-sources.ts` above `resolveBookSources`; the one-line
+/// version is that a fresh device now *renders* the built-in defaults without
+/// *writing* them, so it has nothing stamped with its own clock to beat an
+/// older peer's curated list in the LWW compare.
+const BOOK_SOURCES_KEY: &str = "book_sources";
 
 /// The four marker toggles, spelled the same in `settings` and `book_settings`
 /// — global and per-book live in different tables, so one name serves both.
@@ -919,5 +948,66 @@ mod tests {
                 "unexpected key in wire form: {k}"
             );
         }
+    }
+
+    /// The whitelist is the single gate ten call sites derive from, so its
+    /// membership is worth stating outright rather than inferring from the
+    /// behaviour tests in `merge.rs`. Both directions matter: what crosses,
+    /// and — for a table that also holds AI credential pointers — what does
+    /// not.
+    #[test]
+    fn the_settings_whitelist_admits_exactly_the_keys_that_earned_it() {
+        for key in [
+            "font_family",
+            "book_sources",
+            "show_lookup_markers",
+            "show_new_vocab_markers",
+            "show_learning_markers",
+            "show_mastered_markers",
+        ] {
+            assert!(
+                is_syncable_setting(false, key),
+                "expected the global key {key} to sync"
+            );
+        }
+        for key in [
+            "font",
+            "show_lookup_markers",
+            "show_new_vocab_markers",
+            "show_learning_markers",
+            "show_mastered_markers",
+        ] {
+            assert!(
+                is_syncable_setting(true, key),
+                "expected the per-book key {key} to sync"
+            );
+        }
+
+        // Ordinary per-screen preferences, plus the keys that are whitelisted
+        // in the *other* table: `font` is per-book only, `font_family` and
+        // `book_sources` global only. Naming the wrong layer must not open the
+        // gate — a per-book `book_sources` row would be a book carrying its own
+        // catalog of websites, which is not a thing.
+        for key in ["reader_theme", "font_size", "ai_active_profile", "font", ""] {
+            assert!(
+                !is_syncable_setting(false, key),
+                "the global key {key} must stay on this device"
+            );
+        }
+        for key in ["reader_theme", "font_size", "font_family", "book_sources"] {
+            assert!(
+                !is_syncable_setting(true, key),
+                "the per-book key {key} must stay on this device"
+            );
+        }
+
+        // A regression guard with no current caller, which is the point. The
+        // frontend's old `book_sources_seeded` flag is gone (see
+        // `src/components/book-sources.ts`); if anyone brings a
+        // "has this device been initialised" flag back, syncing it would tell
+        // a fresh device it had already seeded — a per-device fact wearing a
+        // per-user key's clothes.
+        assert!(!is_syncable_setting(false, "book_sources_seeded"));
+        assert!(!is_syncable_setting(true, "book_sources_seeded"));
     }
 }

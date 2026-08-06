@@ -4202,6 +4202,117 @@ mod tests {
         assert_eq!(tombstones, 0);
     }
 
+    /// The book-source list travels as one JSON blob, so "last write wins"
+    /// means the winner's *entire list* replaces the loser's. This test states
+    /// that plainly, because it is the one property of the key a reader is
+    /// likely to be surprised by: the site only device A knew about is gone
+    /// after device B's later edit, not merged into it.
+    #[test]
+    fn book_sources_cross_as_one_blob_and_replace_the_whole_list() {
+        const CURATED: &str =
+            r#"[{"id":"user:1","name":"My site","url":"https://example.com/","kind":"library"}]"#;
+        const OTHER: &str = r#"[{"id":"builtin:gutenberg","name":"Project Gutenberg","url":"https://www.gutenberg.org/","kind":"library"}]"#;
+
+        let mut conn = open_db();
+        apply_all(
+            &mut conn,
+            &[ev(
+                2_000,
+                "dev-a",
+                setting_event(None, "book_sources", CURATED),
+            )],
+        );
+        assert_eq!(
+            setting_value(&conn, "book_sources").as_deref(),
+            Some(CURATED),
+            "a peer's book-source list must be applied, not skipped"
+        );
+
+        apply_all(
+            &mut conn,
+            &[ev(
+                1_000,
+                "dev-b",
+                setting_event(None, "book_sources", OTHER),
+            )],
+        );
+        assert_eq!(
+            setting_value(&conn, "book_sources").as_deref(),
+            Some(CURATED),
+            "an older list must not win"
+        );
+
+        apply_all(
+            &mut conn,
+            &[ev(
+                3_000,
+                "dev-b",
+                setting_event(None, "book_sources", OTHER),
+            )],
+        );
+        assert_eq!(
+            setting_value(&conn, "book_sources").as_deref(),
+            Some(OTHER),
+            "the newer list replaces the old one whole — `user:1` is gone, \
+             not merged, and that is the accepted cost of one-blob storage"
+        );
+    }
+
+    /// Why a fresh device renders the built-in book sources instead of seeding
+    /// them (`resolveBookSources` in `src/components/book-sources.ts`). Both
+    /// halves are here: what happens now, and what the seed would have done.
+    #[test]
+    fn a_fresh_device_takes_a_peers_book_sources_because_it_seeded_nothing() {
+        const CURATED: &str =
+            r#"[{"id":"user:1","name":"My site","url":"https://example.com/","kind":"library"}]"#;
+        const DEFAULTS: &str = r#"[{"id":"builtin:gutenberg","name":"Project Gutenberg","url":"https://www.gutenberg.org/","kind":"library"}]"#;
+
+        // Device B has just launched and has no `book_sources` row at all,
+        // because showing the defaults no longer writes them. The list device A
+        // curated yesterday arrives afterwards and lands.
+        let mut conn = open_db();
+        apply_all(
+            &mut conn,
+            &[ev(
+                1_000,
+                "dev-a",
+                setting_event(None, "book_sources", CURATED),
+            )],
+        );
+        assert_eq!(
+            setting_value(&conn, "book_sources").as_deref(),
+            Some(CURATED),
+            "nothing local should have stood between the user and their own list"
+        );
+
+        // The counterfactual, with the seed left in: device B stamps the
+        // defaults with its own clock, which necessarily runs later than A's
+        // edit, so A's list loses the LWW compare here — and because the
+        // writer publishes whitelisted keys, the seed would have gone on to
+        // overwrite A's list on A as well.
+        let mut seeded = open_db();
+        seeded
+            .execute(
+                "INSERT INTO settings (key, value, updated_at, updated_by_device)
+                 VALUES ('book_sources', ?1, ?2, 'dev-b')",
+                params![DEFAULTS, 9_000_i64],
+            )
+            .unwrap();
+        apply_all(
+            &mut seeded,
+            &[ev(
+                1_000,
+                "dev-a",
+                setting_event(None, "book_sources", CURATED),
+            )],
+        );
+        assert_eq!(
+            setting_value(&seeded, "book_sources").as_deref(),
+            Some(DEFAULTS),
+            "this is the data loss the seed caused; the fix is to not write"
+        );
+    }
+
     /// A key outside the whitelist is skipped, **not** rejected. A validation
     /// error would leave the peer's watermark parked on the offending event
     /// forever, so a newer Lantern that syncs one more key must not be able to
@@ -4220,9 +4331,21 @@ mod tests {
             &ev(1_000, "dev-a", setting_event(Some("b1"), "fontSize", "22")),
         )
         .expect("non-whitelisted per-book key must not error");
+        // Adjacent to a whitelisted key by name and nothing else: whether a
+        // device has finished setting itself up is that device's business.
+        apply_event(
+            &tx,
+            &ev(
+                1_000,
+                "dev-a",
+                setting_event(None, "book_sources_seeded", "true"),
+            ),
+        )
+        .expect("a per-device flag must not error either");
         tx.commit().unwrap();
 
         assert!(setting_value(&conn, "theme").is_none());
+        assert!(setting_value(&conn, "book_sources_seeded").is_none());
         let per_book: i64 = conn
             .query_row("SELECT COUNT(*) FROM book_settings", [], |row| row.get(0))
             .unwrap();

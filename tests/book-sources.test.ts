@@ -6,6 +6,7 @@ import {
   bookSourceDeleteKind,
   isOpenableUrl,
   parseBookSources,
+  resolveBookSources,
   restoreBuiltInBookSources,
   serializeBookSources,
   type BookSource,
@@ -49,6 +50,44 @@ test("only http(s) links are handed to the system browser", () => {
   assert.ok(!isOpenableUrl("file:///etc/passwd"));
   assert.ok(!isOpenableUrl("javascript:alert(1)"));
   assert.ok(!isOpenableUrl("example.com"));
+});
+
+test("a device that was never told anything shows the defaults without owning them", () => {
+  // The whole seeding trap in one assertion pair. `book_sources` syncs now, so
+  // a second device must show the built-ins from an absent row rather than
+  // write them — a write would carry that device's clock and beat the list the
+  // first device curated earlier, on both machines.
+  assert.deepEqual(resolveBookSources(undefined), [...BUILT_IN_BOOK_SOURCES]);
+
+  const curated = serializeBookSources([userEntry]);
+  assert.deepEqual(
+    resolveBookSources(curated),
+    [userEntry],
+    "a list that arrived from a peer must be shown as-is",
+  );
+});
+
+test("the order the list and the launch happen in does not change the outcome", () => {
+  const curated = serializeBookSources([userEntry]);
+
+  // Device B opens the pane first, then the peer's list arrives: the pane read
+  // an absent row and wrote nothing, so there is nothing to overwrite.
+  assert.deepEqual(resolveBookSources(undefined), [...BUILT_IN_BOOK_SOURCES]);
+  assert.deepEqual(resolveBookSources(curated), [userEntry]);
+
+  // The other order — list first, then the pane opens — reads the same row and
+  // reaches the same list. Resolution has no memory, which is the point.
+  assert.deepEqual(resolveBookSources(curated), [userEntry]);
+});
+
+test("an empty stored list is a decision, not an absence", () => {
+  // A user who deleted every source gets an empty list back, not the defaults;
+  // handing the built-ins back here is exactly the bug the old "seeded once"
+  // flag existed to prevent, and presence of the row replaces it.
+  assert.deepEqual(resolveBookSources("[]"), []);
+  // Garbage degrades the same way `parseBookSources` does — the row exists, so
+  // it is honoured, even when it says nothing legible.
+  assert.deepEqual(resolveBookSources("not json"), []);
 });
 
 test("a source the user typed cannot be deleted without a warning", () => {

@@ -869,6 +869,7 @@ mod tests {
     fn a_global_setting_tombstone_may_only_name_a_synced_key() {
         for key in [
             "font_family",
+            "book_sources",
             "show_lookup_markers",
             "show_new_vocab_markers",
             "show_learning_markers",
@@ -879,7 +880,13 @@ mod tests {
                 "expected {key} to be a valid setting tombstone"
             );
         }
-        for key in ["reader_theme", "ai_active_profile", "font", ""] {
+        for key in [
+            "reader_theme",
+            "ai_active_profile",
+            "book_sources_seeded",
+            "font",
+            "",
+        ] {
             assert!(
                 validate_tombstone_id("setting", key).is_err(),
                 "accepted a setting tombstone for {key}"

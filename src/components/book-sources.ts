@@ -23,8 +23,6 @@ export interface BookSource {
 }
 
 export const BOOK_SOURCES_KEY = "book_sources";
-/** Set once the defaults have been written, so a deleted one stays deleted. */
-export const BOOK_SOURCES_SEEDED_KEY = "book_sources_seeded";
 
 export const BUILT_IN_BOOK_SOURCES: readonly BookSource[] = [
   {
@@ -109,6 +107,47 @@ export function parseBookSources(raw: string | undefined): BookSource[] {
 
 export function serializeBookSources(sources: BookSource[]): string {
   return JSON.stringify(sources);
+}
+
+/**
+ * The list to show for a `book_sources` row that may not exist yet.
+ *
+ * An absent row means "nobody has told this device anything", and the answer to
+ * that is the built-in catalog — computed on read, never written. A row that
+ * *does* exist is authoritative even when it is empty: `[]` is a user who
+ * deleted every site, and handing the defaults back would undo that. Presence,
+ * not contents, is the signal. That is what makes "a site the user deleted does
+ * not reappear after the next launch" hold without a separate flag.
+ *
+ * This replaced a `book_sources_seeded` flag, and the replacement is what makes
+ * `book_sources` safe to sync (it is on the whitelist in
+ * `src-tauri/src/sync/events.rs`). Under the old scheme the settings pane wrote
+ * the built-in list into `book_sources` the first time it mounted on a device
+ * that had no flag — and a second device is exactly that device. That seed is a
+ * real write to the synced key, stamped with *now*, which is necessarily later
+ * than the timestamp on the list the first device curated yesterday. Settings
+ * merge last-write-wins on `(updated_at, updated_by_device)`, so the defaults
+ * would win, and because the writer publishes every whitelisted key, the fresh
+ * device would then go on to overwrite the curated list on the *first* device
+ * too. A user's curation destroyed by a machine they just signed in on.
+ *
+ * Syncing `book_sources_seeded` alongside it — the obvious-looking fix — does
+ * not close that. The flag travels in the same sync as the list, so it arrives
+ * after the pane has already mounted, already seeded and already won; it can
+ * only prevent a *second* seed that was never the problem. Making the seed lose
+ * on purpose would work — a write stamped `(0, "")` that emits no event, the
+ * sentinel the writer already uses for local-only rows — but that needs a
+ * dedicated Tauri command and a special case in the writer, to perform a write
+ * whose entire job is to be beaten by everything.
+ *
+ * A device that writes nothing cannot lose the race. Whichever order the two
+ * events happen in — pane first then sync, or sync first then pane — there is
+ * no local row to beat the incoming list, and nothing published to beat the
+ * peer's. The first real mutation persists the whole resolved list, which is
+ * also the moment the user has actually expressed an opinion worth syncing.
+ */
+export function resolveBookSources(raw: string | undefined): BookSource[] {
+  return raw === undefined ? [...BUILT_IN_BOOK_SOURCES] : parseBookSources(raw);
 }
 
 /**

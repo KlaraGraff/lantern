@@ -7,11 +7,9 @@ import Input from "../ui/Input";
 import Select from "../ui/Select";
 import {
   BOOK_SOURCES_KEY,
-  BOOK_SOURCES_SEEDED_KEY,
-  BUILT_IN_BOOK_SOURCES,
   bookSourceDeleteKind,
   isOpenableUrl,
-  parseBookSources,
+  resolveBookSources,
   restoreBuiltInBookSources,
   serializeBookSources,
   type BookSource,
@@ -28,9 +26,9 @@ function newSourceId(): string {
   return `user:${createUuid()}`;
 }
 
-export default function BookSourcesSettings({ settings, loading, saveBulk, showSavedToast }: SettingsProps) {
+export default function BookSourcesSettings({ settings, saveBulk, showSavedToast }: SettingsProps) {
   const { t } = useTranslation();
-  const [sources, setSources] = useState<BookSource[]>(() => parseBookSources(settings[BOOK_SOURCES_KEY]));
+  const [sources, setSources] = useState<BookSource[]>(() => resolveBookSources(settings[BOOK_SOURCES_KEY]));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<BookSource | null>(null);
   const [adding, setAdding] = useState(false);
@@ -38,23 +36,15 @@ export default function BookSourcesSettings({ settings, loading, saveBulk, showS
     { id: string; confirmation: PresetDeleteConfirmation } | null
   >(null);
 
+  // The defaults are resolved, not seeded: a device that has never been told
+  // otherwise shows the built-in catalog and writes nothing. `resolveBookSources`
+  // explains at length why that matters now that the key syncs — the short of it
+  // is that a write here would be stamped with this device's clock and would
+  // beat a list another device curated earlier. A list arriving from a peer
+  // lands in `settings` and flows through this effect like any other change.
   useEffect(() => {
-    setSources(parseBookSources(settings[BOOK_SOURCES_KEY]));
+    setSources(resolveBookSources(settings[BOOK_SOURCES_KEY]));
   }, [settings]);
-
-  // Seeded once rather than merged on every load, so a site the user deleted
-  // does not reappear after the next launch.
-  useEffect(() => {
-    // Settings arrive empty on the first render. Seeding then would overwrite
-    // a list the user had already curated.
-    if (loading || settings[BOOK_SOURCES_SEEDED_KEY] === "true") return;
-    const seeded = [...BUILT_IN_BOOK_SOURCES];
-    setSources(seeded);
-    void saveBulk({
-      [BOOK_SOURCES_KEY]: serializeBookSources(seeded),
-      [BOOK_SOURCES_SEEDED_KEY]: "true",
-    });
-  }, [loading, settings, saveBulk]);
 
   const persist = (next: BookSource[]) => {
     setSources(next);
