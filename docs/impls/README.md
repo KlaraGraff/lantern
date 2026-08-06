@@ -22,10 +22,6 @@ Detailed implementation plans for features and bug fixes. Numbers match the corr
   Seven acceptance items are still open because that run could not reach them (clean
   install, exhausted quota, revoked key, English UI, logs and exports) — see §11.
   Phase 4 (an online catalog) is deliberately deferred, not owed.
-- [macOS distribution: the Gatekeeper "damaged" problem](macos-distribution-gatekeeper-fix.md) —
-  a living document. Route A is chosen and the Apple Developer application is submitted;
-  waiting on Apple's review. Until it lands, every release artifact is ad-hoc signed and
-  every downloading user hits Gatekeeper.
 - [q243 — Update Experience: Pill, App-Menu Check, Formal About](q243-update-experience.md) —
   **deferred, and needs rebasing before anyone starts.** It was written against Quill, whose
   update UI Lantern never inherited: there is no updater plugin, no `UpdateToast`, no
@@ -35,9 +31,10 @@ Detailed implementation plans for features and bug fixes. Numbers match the corr
   keys and GitHub Secrets are in place; every line of code is still owed. The plan half
   lives in q243 above.
 - [Apple notarization record](apple-notarization-record.md) —
-  the investigation is closed (2.9.0 was Accepted), but §6 still owes two security
-  chores: rotate the app-specific password that was pasted into a chat, and export a
-  backup of the signing key.
+  the investigation is closed (2.9.0 was Accepted). §6's password-rotation chore is
+  closed (2026-08-06 decision: not rotating, the user accepted the risk); the
+  signing-key export backup is still owed, pending the user doing it by hand from
+  Keychain.
 - [Mockup gap audit, 2026-08-06](mockup-gap-audit-2026-08-06.md) —
   open decision list G-00–G-I: credential sync on iOS, network gating, OPDS for book
   sources, the auto-analysis console mismatch, and two authoring-page gaps. Its two
@@ -99,3 +96,7 @@ six diagrams of how the shipped features hand off to each other, the companion p
   [settings take the phone's shape](archive/mobile-settings.md)
 - [AI router cc-switch review](archive/ai-router-cc-switch-review.md) — review implemented
   in full, §6 is the record
+- [macOS distribution: the Gatekeeper "damaged" problem](archive/macos-distribution-gatekeeper-fix.md) —
+  resolved and archived 2026-08-06: Developer ID signing works, 2.9.0 was notarized and
+  Accepted, users no longer hit Gatekeeper. The current pipeline is documented in
+  [`guide/macos-distribution.md`](../guide/macos-distribution.md).

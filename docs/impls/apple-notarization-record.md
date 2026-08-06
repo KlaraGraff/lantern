@@ -61,11 +61,15 @@ Team ID `J622D6994N`。Developer ID Application 证书 **2027-02-01 过期**。
 
 `KlaraGraff/lantern` 上有五个 Actions secret：`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID`。**永远不要打印或取回它们的值。** 凭据只存在于 GitHub Actions，本机没有，公证无法从这台机器驱动——`.agents/skills/release/SKILL.md` 里「凭据在 `~/.zshrc`」的说法是错的。
 
-## 六、两件未了的安全事项
+## 六、两件安全事项（2026-08-06 更新）
 
-**1. app-specific password 曾被粘贴进聊天，必须当作已泄露。** 它仍然有效，也不是任何一次失败的原因，但应当吊销并更换。新密码请直接填进 GitHub secret `APPLE_PASSWORD`，不要再粘进任何对话。
+**1. app-specific password 曾被粘贴进聊天，必须当作已泄露。** 它仍然有效，也不是任何一次失败的原因，但按一般纪律应当吊销并更换（换的话新密码直接填进 GitHub secret `APPLE_PASSWORD`，不再粘进任何对话）。
 
-**2. 私钥没有本地持久备份。** 原始密钥和它的 PKCS#12 口令建在 `/private/tmp` 下，已被系统清理删除。GitHub 上的加密 secret 还能用，但换一台机器重建 CI 就需要从钥匙串重新导出。值得单独安排一次由用户确认的导出备份。
+**2026-08-06 决定：不轮换，此项关闭。** 该口令只出现在与 Claude 的对话中，不会被其他任何人看到；用户知情并接受这一风险。
+
+**2. 私钥没有本地持久备份。** 原始密钥和它的 PKCS#12 口令建在 `/private/tmp` 下，已被系统清理删除。GitHub 上的加密 secret 还能用，但换一台机器重建 CI 就需要从钥匙串重新导出。
+
+**2026-08-06 决定：仍开放。** 导出备份待用户手动从钥匙串完成——需要用户本人的钥匙串口令，代理无法代劳。
 
 ## 七、签名管线本身是好的
 

@@ -4,6 +4,8 @@
 > 吐槽线只作对照检查，逐条判断值不值得改——发声的总是少数，全按意见改会丢掉占比最多的普通用户。
 > 所有建议以产品方针为前提：安静、像书、工具退后于正文、AI 辅助但不打断阅读（见 `personalized-english-reader-master-plan.md`）。
 
+> **状态（2026-08-06）：** 除 P3.5（双语对照整书翻译）外，P0、P1（7 项）、P2（5 项）、P3.1–P3.4 已全部落地并归档验收（见 `docs/impls/README.md` Archive 一节「Reader P2/P3 line, shipped and accepted」）。P3.5 的记录已带入 [`outstanding-work-audit-2026-08.md`](outstanding-work-audit-2026-08.md)。本文件作为历史规划记录归档，不再是待办清单。
+
 ---
 
 ## 一、已达标、应保持的底子

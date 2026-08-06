@@ -12,7 +12,7 @@ Issue: https://github.com/yicheng47/quill/issues/243
 > 所以本文写的「扩展现有 toast」「把控件从 About 挪走」全部无的放矢 —— 真实工作量是**从零搭一套
 > 更新机制**（引入 updater 插件、配置更新源与签名密钥、写检查/下载/重启流程），再谈这里的界面
 > 编排。签名密钥这一环还和
-> [`macos-distribution-gatekeeper-fix.md`](macos-distribution-gatekeeper-fix.md) 绑在一起：
+> [`macos-distribution-gatekeeper-fix.md`](archive/macos-distribution-gatekeeper-fix.md) 绑在一起：
 > 没有 Developer ID 之前，自动更新推下去的包同样会被 Gatekeeper 拦。
 >
 > 下面的内容作为**界面设计参考**保留，不要当作实施步骤读。

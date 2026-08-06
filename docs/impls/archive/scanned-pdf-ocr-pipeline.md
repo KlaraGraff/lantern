@@ -55,7 +55,7 @@
 3. **macOS 基线先行决策**：捆绑 libpdfium 实测 `minos 12.0`，macOS 11 支持在 OCR 之前就已失效（该库在 Big Sur 上无法加载）。README/产品基线已修正为 macOS 12+；OCR 扩展和 Vision 后端按该基线打包。若未来要恢复 macOS 11，必须先重建并在真实 Big Sur 设备验证 PDFium。
 4. **PoC 增加 OS 原生 OCR 对比**：评审稿未评估 Apple Vision（`VNRecognizeTextRequest`）与 Windows.Media.Ocr。若 Vision 中英质量达标，macOS 端可做到零 Python runtime 和零 OCR 引擎下载；代价是自建文字层写回（Vision 坐标 → PDFium grafting），且两平台引擎不一致。因为派生资产会同步，引擎跨平台不一致可接受。Phase C 已证明 Vision + 现有 PDFium 的单页闭环可行，但真实扫描、签名 app 和复杂 PDF 结构仍未验收。SDK 证据同时修正了最低版本判断：Revision 2 在 macOS 11+ 的 `accurate` 模式支持中文；Revision 3 是 macOS 13+ 的质量/旋转改进，不是中文支持的硬前提。
 5. **v1 数据模型裁剪**：不建 `book_asset_positions` 表。v1 唯一新增资产是页数与源一致的 searchable PDF，现有 `books.progress/current_cfi` 在源 ⇄ OCR 资产之间可直接复用；扫描页本无文字层，也就不存在会漂移的既有文本锚点。该表推迟到 EPUB 派生资产进入范围时再建（评审稿 §14.5 保留为未来设计）。
-6. **扩展签名依赖既有 Gatekeeper 工作**：主程序当前仍是 ad-hoc 签名（见 [macOS 分发计划](../macos-distribution-gatekeeper-fix.md)），评审稿 §9.4 安装第 5 步「验证签名/公证」在主程序签名方案落地前无从谈起。OCR runtime 的签名与主程序签名同批解决；Phase E 排期以此为前置。
+6. **扩展签名依赖既有 Gatekeeper 工作**：主程序当前仍是 ad-hoc 签名（见 [macOS 分发计划](macos-distribution-gatekeeper-fix.md)），评审稿 §9.4 安装第 5 步「验证签名/公证」在主程序签名方案落地前无从谈起。OCR runtime 的签名与主程序签名同批解决；Phase E 排期以此为前置。
 
 ### 0.4 对评审稿 §26「编码前必答」问题的裁决
 

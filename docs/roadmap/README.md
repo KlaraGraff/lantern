@@ -14,7 +14,7 @@
 | [Master plan](personalized-english-reader-master-plan.md) | Product direction: quiet, book-like personalized English reader |
 | [Aligned spec](reader-ai-learning-tools-aligned-spec.md) | Reader AI learning tools, aligned interaction model |
 | [Readest comparison](readest-comparison.md) | Feature comparison against Readest (mobile-focused) |
-| [Reader page optimization](reader-page-optimization.md) | 2026-08 survey of 12+ mature readers → prioritized reading-page improvement plan |
+| [Reader page optimization (archived)](archive/reader-page-optimization.md) | 2026-08 survey of 12+ mature readers → prioritized reading-page improvement plan; P0–P3.4 shipped and archived, only P3.5 (bilingual whole-book translation) remains |
 | [Product UX audit](product-ux-audit-2026-08.md) | 2026-08 whole-app information-architecture audit; its P0 (onboarding) has since shipped |
 | [Feature linkage analysis](feature-linkage-analysis-2026-08.md) | 2026-08 audit of how features hand off to each other; diagrams in `impls/lantern-feature-flow-map.html` |
 | [Outstanding work audit](outstanding-work-audit-2026-08.md) | 2026-08-06 sweep of every unarchived plan: what is still owed, what needs a decision, what needs hands on a real machine |

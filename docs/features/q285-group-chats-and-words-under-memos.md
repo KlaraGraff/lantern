@@ -2,6 +2,8 @@
 
 GitHub issue: https://github.com/yicheng47/quill/issues/285
 
+**Status:** Planned
+
 ## Motivation
 
 Lantern currently separates Chats and Vocab in the navigation, which makes the sidebar feel fragmented and gives Vocab an overly educational tone. Lantern should feel like a calm reading app, not a study tool.

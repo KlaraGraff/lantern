@@ -2,6 +2,8 @@
 
 GitHub issue: https://github.com/yicheng47/quill/issues/257
 
+**Status:** Planned
+
 ## Motivation
 
 [#215](https://github.com/yicheng47/quill/issues/215) added the inline **Explain** popover, but it's one-shot — the streamed explanation is discarded when the popover closes. By contrast, **Look Up** persists to Vocab. Explain has no persistence and nowhere to revisit past explanations.

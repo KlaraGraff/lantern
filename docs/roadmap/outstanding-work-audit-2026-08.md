@@ -20,7 +20,7 @@
 开放 issue 两条:
 
 - [#12 — reader settings 分全局层与每书覆盖](https://github.com/KlaraGraff/lantern/issues/12)(P1 标签)。注意:P2.4 settings scope 已 ship 并归档,**issue 仍开着,需先确认剩余范围是什么**,可能只剩收尾或可以直接关闭。
-- [#11 — 应用内 AI 拿不到生词本和学习状态](https://github.com/KlaraGraff/lantern/issues/11)(只有 MCP 能读)。已有功能之间的断点,改动面小、收益直接。
+- [#11 — 应用内 AI 拿不到生词本和学习状态](https://github.com/KlaraGraff/lantern/issues/11)。**第一刀(查词卡注入该词自身记录)已随 `1beb07d` 落地**——issue 评论区有记录,正文的「现状核对」一段过时;2026-08-06 回码核实实现完整、测试全绿。issue 按其自身约定保持开启,等的是推迟项(整章注入、设置开关)的后续判断,不是欠实现。
 
 ## B. Milestone 层面的欠账
 
@@ -61,7 +61,7 @@
 
 ## E. 人工验收与操作欠账(多数需要真机,需要排班)
 
-1. **安全杂务两件**(apple-notarization-record §6):轮换曾粘进聊天的 app-specific password;导出签名密钥备份。**体量最小、性质最急,建议最先做。**
+1. **安全杂务一件**(apple-notarization-record §6):导出签名密钥备份,需用户本人从钥匙串手动完成(钥匙串口令无法代拿)。app-specific password 轮换已于 2026-08-06 决定不做——该口令只出现在与 Claude 的对话中,用户知情并接受这一风险,此项关闭。
 2. **format-normalization 验收** — 代码已完成,运行时/GUI 验收一次都没做过:T1–T10 十组用例,其中 T7(iCloud 同步)需要两台 Mac。全绿后 testing.md + acceptance-brief 才能归档。
 3. **macOS 12 Reader QA** — v2.0.2 在真实 Monterey 上有 Preparing 卡死反馈,v2.0.3 修复候选**待同机复验**:T1–T6 手工矩阵、性能基线 CSV、最终 PASS/FAIL 全部空白。需要一台 Apple Silicon + Monterey 12.x 的机器。
 4. **README 截图** — 现有 `assets/home.png` / `reader.png` 还是旧品牌 Quill 的旧图;12 张新截图(6 必需 + 6 备用)待拍,README 里六处新图路径仍被 HTML 注释包着。
@@ -69,12 +69,12 @@
 
 ## F. 文档卫生(不需要拍板,可直接修)
 
-- `milestone2-depth.md`:Onboarding 标 Planned,实际已 ship。
-- `reader-page-optimization.md`:P0–P3.4 绝大部分已 ship 并归档,文件本身没回填状态;P0.5 要求归档 `q260-toc-side-panel.md` 也没执行。建议回填后整体归档,把 P3.5 单独带出来。
-- `guide/macos-distribution.md`:仍写着「未加入 Apple Developer Program」,与公证记录(2.9.0 已 Accepted)矛盾,需按现状重写。
-- `q257` / `q276` / `q285` 三份 spec 缺 `Status:` 字段,与另外三份格式不一致。
-- `feature-linkage-analysis` 中已修复的断点(AnnotationsContent、bulk_*)未回填状态。
+- `milestone2-depth.md`:Onboarding 标 Planned,实际已 ship。已修(2026-08-06)。
+- `reader-page-optimization.md`:P0–P3.4 绝大部分已 ship 并归档,文件本身没回填状态;P0.5 要求归档 `q260-toc-side-panel.md` 也没执行。建议回填后整体归档,把 P3.5 单独带出来。已修(2026-08-06):文件顶部加了状态说明,整体移入 `archive/`,`roadmap/README.md` 链接已更新;`q260-toc-side-panel.md` 早已在 `docs/features/archive/` 下,该项无需再动。
+- `guide/macos-distribution.md`:仍写着「未加入 Apple Developer Program」,与公证记录(2.9.0 已 Accepted)矛盾,需按现状重写。已修(2026-08-06)。
+- `q257` / `q276` / `q285` 三份 spec 缺 `Status:` 字段,与另外三份格式不一致。已修(2026-08-06)。
+- `feature-linkage-analysis` 中已修复的断点(AnnotationsContent、bulk_*)未回填状态。已修(2026-08-06)。
 
 ## 外部等待项(无法排班,只能等)
 
-- Gatekeeper Route A:Apple Developer 审核 / 公证链路——按既有约定,审核清掉之前 release notes 不做 promotion、不写 `xattr` workaround。
+- ~~Gatekeeper Route A:Apple Developer 审核 / 公证链路~~ — 2026-08-06 核实已清:Developer ID 证书到手,2.9.0 公证 Accepted,签名管线工作正常。相关文档(gatekeeper-fix、guide/macos-distribution.md、impls/README.md)已同日回填并归档。当前无外部等待项。

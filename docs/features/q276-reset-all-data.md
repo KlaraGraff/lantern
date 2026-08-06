@@ -2,6 +2,8 @@
 
 GitHub issue: https://github.com/yicheng47/quill/issues/276
 
+**Status:** Planned
+
 ## Motivation
 
 Lantern has no way to wipe local data from within the app. Users who want a fresh start, need to recover from corrupted state, or want to remove personal data — books, highlights, vocabulary, chat history, reading progress, API keys — before handing off a machine have to manually locate and delete the app data directory.

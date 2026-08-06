@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>侧边栏信息架构 — 两个方案对比样张</title>
+<style>
+  :root {
+    --accent: #7c3aed;
+    --accent-bg: #f3e8ff;
+    --bg: #fafaf9;
+    --bg-muted: #f4f3f1;
+    --bg-input: #ebe9e6;
+    --border: #e2e0dc;
+    --text-1: #1c1917;
+    --text-2: #44403c;
+    --text-muted: #a8a29e;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    background: var(--bg); color: var(--text-1);
+    padding: 40px 32px 64px;
+  }
+  h1 { font-size: 22px; margin-bottom: 8px; }
+  .intro { font-size: 14px; color: var(--text-2); max-width: 760px; line-height: 1.7; margin-bottom: 36px; }
+  .lanes { display: flex; gap: 36px; flex-wrap: wrap; align-items: flex-start; }
+  .lane { width: 280px; }
+  .lane-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; }
+  .tag-rec { background: var(--accent); color: #fff; }
+  .tag-dim { background: var(--bg-input); color: var(--text-2); }
+  .lane-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+
+  .sidebar {
+    background: var(--bg-muted); border: 1px solid var(--border); border-radius: 14px;
+    padding: 16px 14px 12px; display: flex; flex-direction: column; gap: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.05);
+  }
+  .brand { display: flex; align-items: center; gap: 9px; padding-bottom: 2px; }
+  .logo {
+    width: 26px; height: 26px; border-radius: 7px; border: 1px solid var(--border);
+    background: linear-gradient(135deg,#a78bfa,#7c3aed); display: flex; align-items: center; justify-content: center;
+  }
+  .logo svg { width: 15px; height: 15px; stroke: #fff; }
+  .brand span { font-size: 17px; font-weight: 600; letter-spacing: .5px; }
+  .section h2 {
+    font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px;
+    color: var(--text-muted); margin-bottom: 8px;
+  }
+  .row {
+    display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px;
+    border-radius: 9px; font-size: 13.5px; font-weight: 500; color: var(--text-2);
+  }
+  .row svg { width: 15px; height: 15px; stroke: var(--text-muted); flex: none; }
+  .row .count { margin-left: auto; font-size: 12px; color: var(--text-muted); font-weight: 500; }
+  .row.active { background: var(--accent-bg); color: var(--accent); }
+  .row.active svg { stroke: var(--accent); }
+  .row.active .count { color: var(--accent); }
+  .row .jump { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+  .row.changed { position: relative; }
+  .row.changed::after {
+    content: ""; position: absolute; left: -14px; top: 9px; bottom: 9px; width: 3px;
+    border-radius: 2px; background: var(--accent);
+  }
+  .footer { border-top: 1px solid var(--border); padding-top: 10px; display: flex; align-items: center; gap: 9px; }
+  .avatar {
+    width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #fff;
+    font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center;
+  }
+  .footer .name { font-size: 12.5px; font-weight: 500; }
+  .footer .sub { font-size: 10.5px; color: var(--text-muted); }
+
+  .notes { margin-top: 14px; font-size: 12.5px; color: var(--text-2); line-height: 1.65; }
+  .notes li { margin-bottom: 6px; margin-left: 16px; }
+  .notes .good::marker { color: #16a34a; }
+  .notes .bad::marker { color: #dc2626; }
+  .legend { margin-top: 40px; font-size: 12px; color: var(--text-muted); }
+  .legend .bar { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--accent); vertical-align: -1px; margin-right: 5px; }
+</style>
+</head>
+<body>
+
+<h1>侧边栏信息架构:两个方案 + 现状</h1>
+<p class="intro">
+  q285(Memos 分组)和产品 UX 审计的「三段式」动的是同一块区域,只能选一个方向。
+  方案 C 是把两者合并:结构采用三段式,命名采用 q285 的去教育味思路(Memos、词汇→单词)。
+  中文组名「随记」是占位文案,待定。
+</p>
+
+<div class="lanes">
+
+  <!-- A 现状 -->
+  <div class="lane">
+    <div class="lane-title">A · 现状 <span class="tag tag-dim">不改</span></div>
+    <div class="lane-sub">四个分组,两套导航模型并存</div>
+    <div class="sidebar">
+      <div class="brand"><div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v3M8 6h8l1 4H7l1-4zM7 10h10v8a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-8z"/></svg></div><span>Lantern</span></div>
+      <div class="section"><h2>书库</h2>
+        <div class="row active"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 4h4v16H4zM10 4h4v16h-4zM16.5 5l3.5 1-3 15-4-1z"/></svg>全部书籍<span class="count">12</span></div>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M2 5c3-2 7-2 10 0 3-2 7-2 10 0v14c-3-2-7-2-10 0-3-2-7-2-10 0V5zM12 5v14"/></svg>正在阅读<span class="count">3</span></div>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>已读完<span class="count">5</span></div>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M20 20H3"/></svg>阅读历程<span class="jump">↗ 跳路由</span></div>
+      </div>
+      <div class="section"><h2>对话</h2>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a8 8 0 0 1-8 8H4l2-3a8 8 0 1 1 15-5z"/></svg>对话</div>
+      </div>
+      <div class="section"><h2>已保存</h2>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 19V5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 1-2-2zM9 7l3 7M15 7l-3 7M10 12h4"/></svg>词汇</div>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>复习</div>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 4h16v11l-5 5H4V4zM15 20v-5h5"/></svg>标注</div>
+      </div>
+      <div class="section"><h2>书单 +</h2>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>精读会<span class="count">4</span></div>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>消遣<span class="count">7</span></div>
+      </div>
+      <div class="footer"><div class="avatar">JW</div><div><div class="name">Jianwei</div><div class="sub">设置</div></div></div>
+    </div>
+    <ul class="notes">
+      <li class="bad">「对话」独占一个分组,和词汇/标注其实是同类(读书沉淀的记录)</li>
+      <li class="bad">「阅读历程」点了整页跳走,其他行都是同页换内容——同列表两种行为</li>
+    </ul>
+  </div>
+
+  <!-- B q285 -->
+  <div class="lane">
+    <div class="lane-title">B · q285 Memos 分组 <span class="tag tag-dim">改动小</span></div>
+    <div class="lane-sub">只动对话 + 词汇,其余原样</div>
+    <div class="sidebar">
+      <div class="brand"><div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v3M8 6h8l1 4H7l1-4zM7 10h10v8a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-8z"/></svg></div><span>Lantern</span></div>
+      <div class="section"><h2>书库</h2>
+        <div class="row active"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 4h4v16H4zM10 4h4v16h-4zM16.5 5l3.5 1-3 15-4-1z"/></svg>全部书籍<span class="count">12</span></div>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M2 5c3-2 7-2 10 0 3-2 7-2 10 0v14c-3-2-7-2-10 0-3-2-7-2-10 0V5zM12 5v14"/></svg>正在阅读<span class="count">3</span></div>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>已读完<span class="count">5</span></div>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M20 20H3"/></svg>阅读历程<span class="jump">↗ 跳路由</span></div>
+      </div>
+      <div class="section"><h2>随记 Memos</h2>
+        <div class="row changed"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a8 8 0 0 1-8 8H4l2-3a8 8 0 1 1 15-5z"/></svg>对话</div>
+        <div class="row changed"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 19V5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 1-2-2zM9 7l3 7M15 7l-3 7M10 12h4"/></svg>单词 <span class="jump">原「词汇」</span></div>
+      </div>
+      <div class="section"><h2>已保存</h2>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>复习</div>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 4h16v11l-5 5H4V4zM15 20v-5h5"/></svg>标注</div>
+      </div>
+      <div class="section"><h2>书单 +</h2>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>精读会<span class="count">4</span></div>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>消遣<span class="count">7</span></div>
+      </div>
+      <div class="footer"><div class="avatar">JW</div><div><div class="name">Jianwei</div><div class="sub">设置</div></div></div>
+    </ul>
+    </div>
+    <ul class="notes">
+      <li class="good">改动最小:挪两行、改一个名,纯 IA 调整</li>
+      <li class="bad">仍是四个分组:「已保存」剩复习+标注,和随记的边界说不清(都是记录)</li>
+      <li class="bad">阅读历程的路由例外没解决,审计指出的问题原样留着</li>
+    </ul>
+  </div>
+
+  <!-- C 三段式 -->
+  <div class="lane">
+    <div class="lane-title">C · 三段式 × Memos 命名 <span class="tag tag-rec">推荐</span></div>
+    <div class="lane-sub">书库(读什么) · 随记(读出了什么) · 书单(怎么归置)</div>
+    <div class="sidebar">
+      <div class="brand"><div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v3M8 6h8l1 4H7l1-4zM7 10h10v8a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-8z"/></svg></div><span>Lantern</span></div>
+      <div class="section"><h2>书库</h2>
+        <div class="row active"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 4h4v16H4zM10 4h4v16h-4zM16.5 5l3.5 1-3 15-4-1z"/></svg>全部书籍<span class="count">12</span></div>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M2 5c3-2 7-2 10 0 3-2 7-2 10 0v14c-3-2-7-2-10 0-3-2-7-2-10 0V5zM12 5v14"/></svg>正在阅读<span class="count">3</span></div>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>已读完<span class="count">5</span></div>
+      </div>
+      <div class="section"><h2>随记 Memos</h2>
+        <div class="row changed"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M21 12a8 8 0 0 1-8 8H4l2-3a8 8 0 1 1 15-5z"/></svg>对话</div>
+        <div class="row changed"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 19V5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 1-2-2zM9 7l3 7M15 7l-3 7M10 12h4"/></svg>单词 <span class="jump">原「词汇」</span></div>
+        <div class="row changed"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>复习</div>
+        <div class="row changed"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 4h16v11l-5 5H4V4zM15 20v-5h5"/></svg>标注</div>
+        <div class="row changed"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M20 20H3"/></svg>阅读历程 <span class="jump">改同页</span></div>
+      </div>
+      <div class="section"><h2>书单 +</h2>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>精读会<span class="count">4</span></div>
+        <div class="row"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>消遣<span class="count">7</span></div>
+      </div>
+      <div class="footer"><div class="avatar">JW</div><div><div class="name">Jianwei</div><div class="sub">设置</div></div></div>
+    </div>
+    <ul class="notes">
+      <li class="good">三段各答一个问题:读什么 / 读出了什么 / 怎么归置;q285 的动机被完整覆盖</li>
+      <li class="good">五条记录行为完全一致:全部同页换内容,不再有路由例外</li>
+      <li class="bad">成本最高的一条:阅读历程从独立路由改成同页内容区(牵动 ReadingStatsRoute)</li>
+      <li class="good">将来 q14 笔记、解释列表(q257)天然落进「随记」,不用再动结构</li>
+    </ul>
+  </div>
+
+</div>
+
+<p class="legend"><span class="bar"></span>紫色竖线 = 相对现状有变化的行 · 「随记」为占位中文名,备选:摘记 / 手记 · 数字与书单内容为示意</p>
+
+</body>
+</html>

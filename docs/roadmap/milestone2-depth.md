@@ -41,7 +41,7 @@ Rich note-taking tied to books — capture thoughts, annotations, and reflection
 ### Onboarding
 Simple first-launch flow guiding new users to set up their AI provider in Settings.
 
-- **Status:** Planned
+- **Status:** Complete
 
 ### Region screenshot for AI
 Capture a selected region of the page (screenshot crop) and send it to the AI assistant as an image. Useful for magazines and image-heavy PDFs where text selection is unreliable and photos/diagrams can't be copied. The user draws a rectangle over the reader area, the captured image is attached to the AI chat as context.

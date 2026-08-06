@@ -1516,7 +1516,7 @@ Phase H ── 发布前硬化
 - `docs/reviews/scanned-pdf-ocr-phase-c-poc-2026-07-18.md`：Phase C 可复现实测证据与开放门槛。
 - `docs/reviews/scanned-pdf-ocr-upgrade-proposal-2026-07-17.md`：早期完整背景、候选比较、风险与验收表。
 - `docs/arch/overview.md`：Lantern 书库、Reader、SQLite 和 iCloud 同步架构。
-- `docs/impls/macos-distribution-gatekeeper-fix.md`：macOS 签名、公证与当前 ad-hoc 分发限制。
+- `docs/impls/archive/macos-distribution-gatekeeper-fix.md`：macOS 签名、公证与当前 ad-hoc 分发限制。
 
 ### 22.2 关键代码位置
 
