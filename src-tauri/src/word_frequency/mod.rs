@@ -41,38 +41,47 @@
 //!   regardless of the reader's level.
 //!
 //! Band 1's boundary is the one the data can check, and it holds: in the
-//! table below, rank 1 000 sits at a cumulative share of 0.780 — the top
-//! thousand words are 78% of running text in fiction, inside the 70–80%
+//! table below, rank 1 000 sits at a cumulative share of 0.787 — the top
+//! thousand words are 79% of running text in fiction, inside the 70–80%
 //! this band was described as covering before any real corpus was loaded.
+//! The other two checkable boundaries land at 0.877 (rank 3 000) and 0.912
+//! (rank 5 000).
 //!
-//! **Band 5 is currently unreachable.** The table stops at rank 10 000, so
-//! no word in it can exceed [`BAND_4_MAX_RANK`]; anything rarer is absent
-//! and comes back as `None` (see [`lookup`] on why that is not band 5). The
-//! threshold stays where it is rather than being squeezed down to fit
-//! today's table, so that widening the table later lights band 5 up without
-//! shifting what bands 1–4 mean. Revisit all of them once real usage data
-//! (lookup rates per band, see §5.3) is in.
+//! All five bands are populated: the table runs to rank 50 000, so band 5
+//! holds the 30 000 words past [`BAND_4_MAX_RANK`]. The thresholds were
+//! written before any corpus was loaded and have not been touched since —
+//! when the table went from 10 000 words to 50 000, only 131 of the words
+//! present in both changed band, all of them by a rank or two across a
+//! boundary. Revisit all of them once real usage data (lookup rates per
+//! band, see §5.3) is in, not before.
 //!
 //! ## Data source
 //!
 //! Backed by [`FREQUENCY_TSV`] — Google Books Ngram Corpus v3, **English
-//! Fiction** subcorpus, 1-grams, books published 2010–2019, as aggregated
-//! and published by `orgtre/google-books-ngram-frequency` under CC BY 3.0.
-//! The fiction subcorpus is the point: this band answers "how hard is this
-//! word in a novel", and a general-English or subtitle-derived corpus
+//! Fiction** subcorpus, 1-grams, books published 2010–2019, under CC BY
+//! 3.0. The fiction subcorpus is the point: this band answers "how hard is
+//! this word in a novel", and a general-English or subtitle-derived corpus
 //! answers a different question (the alternatives, and why they lost, are
 //! in `docs/impls/word-frequency-data-sources.md`).
 //!
-//! Google publishes per-word-per-year counts sharded by first letter, tens
-//! of gigabytes of it; the list above is that data already filtered to
-//! 2010–2019, aggregated, denoised and ranked. `scripts/build-word-
-//! frequency-table.mjs` turns it into the two-column file next door and is
-//! the only thing that should ever write it.
+//! Google ships that subcorpus as one 940 MB gzip of per-word-per-year
+//! counts, which has to be filtered to a year window, summed, denoised of
+//! POS tags and proper nouns, and ranked. `orgtre/google-books-ngram-
+//! frequency` publishes both a pipeline that does this and a finished
+//! 10 000-word list; we run the pipeline ourselves with its caps raised and
+//! nothing else changed, because 10 000 words is too shallow — a novel's
+//! genuinely hard vocabulary sits past it, and the module could not tell
+//! "rare" from "not a word we have data for". A control run at upstream's
+//! own caps reproduces their published list exactly, which is what licenses
+//! trusting ours; the recipe and that check are in the doc above.
+//! `scripts/build-word-frequency-table.mjs` turns the pipeline's CSV into
+//! the two-column file next door and is the only thing that should ever
+//! write it.
 //!
-//! The table holds the 10 000 commonest fiction words, which is the whole
-//! of what the published list offers. Widening it to the 20–50k originally
-//! wanted means re-running the upstream aggregation over the raw corpus —
-//! isolated work that touches [`table`] and nothing else.
+//! The table holds the 50 000 commonest fiction words. Its 173 surviving
+//! capitalized entries ("I", "English", "Christmas") are the residue of
+//! upstream's proper-noun filter and are harmless: lookups are lowercased
+//! before they get here.
 //!
 //! ## Why the backend
 //!
@@ -205,10 +214,10 @@ fn table() -> &'static HashMap<String, FrequencyEntry> {
 /// appear in the table. This is a genuine "unknown", never coerced into
 /// band 5.
 ///
-/// The temptation grows now that the table is a complete top-10 000 list
-/// rather than a fixture: absence really does imply "rarer than rank
-/// 10 000". Resist it, because absence has a much more common cause in a
-/// novel — character and place names, invented words, foreign phrases, and
+/// The temptation grows with every word added to the table: at 50 000,
+/// absence really does imply "rarer than rank 50 000". Resist it, because
+/// absence has a much more common cause in a novel — character and place
+/// names, invented words, foreign phrases, and
 /// whatever the reader's finger caught mid-selection are all absent too.
 /// Calling those the rarest words in English would mislabel exactly the
 /// text a fiction reader touches most.

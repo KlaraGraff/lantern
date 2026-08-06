@@ -1,28 +1,29 @@
 #!/usr/bin/env node
 /**
- * Regenerates `src-tauri/src/word_frequency/english-fiction.tsv` from the
- * published Google Books Ngram frequency lists.
+ * Regenerates `src-tauri/src/word_frequency/english-fiction.tsv` from a
+ * ranked Google Books Ngram frequency list.
  *
  * This is a one-off tool, not part of any build: the generated table is
  * committed and compiled in via `include_str!`. Run it only to refresh the
- * data or to widen it past the current 10 000 words.
+ * data or to change how many words we ship.
  *
- *   node scripts/build-word-frequency-table.mjs
  *   node scripts/build-word-frequency-table.mjs path/to/1grams_english-fiction.csv
  *
- * Why this list and not the raw corpus: Google publishes per-word-per-year
- * counts sharded by first letter — tens of GB — and every consumer of it has
- * to do the same filter/aggregate/rank pass. orgtre has done that pass and
- * published the result under the same licence as the corpus, so we take the
- * finished list. See docs/impls/word-frequency-data-sources.md.
+ * Where that CSV comes from: Google publishes the English Fiction 1-grams as
+ * one 940 MB gzip of per-word-per-year counts, which every consumer has to
+ * filter, aggregate and rank the same way. orgtre publishes both a pipeline
+ * that does it and a finished 10 000-word list. We run the pipeline rather
+ * than taking the finished list, because 10 000 words is too shallow to tell
+ * "rare" from "not in the table at all" — ours is aggregated to 50 000 with
+ * the caps raised and everything else left as upstream wrote it. The recipe,
+ * and the control run proving our output reproduces upstream's published list
+ * exactly at upstream's caps, are in
+ * docs/impls/word-frequency-data-sources.md.
  */
 
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-
-const SOURCE_URL =
-  "https://raw.githubusercontent.com/orgtre/google-books-ngram-frequency/main/ngrams/1grams_english-fiction.csv";
 
 const OUTPUT = join(
   dirname(dirname(fileURLToPath(import.meta.url))),
@@ -39,31 +40,37 @@ function normalize(word) {
   return word.replace(/^[^\p{L}\p{N}']+|[^\p{L}\p{N}']+$/gu, "").toLowerCase();
 }
 
-async function loadCsv(argument) {
-  if (argument) return readFile(argument, "utf8");
-  const response = await fetch(SOURCE_URL);
-  if (!response.ok) throw new Error(`${SOURCE_URL} -> HTTP ${response.status}`);
-  return response.text();
+// Deliberately no download fallback. The only thing this script could fetch
+// unattended is upstream's published 10 000-word list, which is not what we
+// ship; silently regenerating a quarter-sized table would be worse than
+// refusing to run.
+const source = process.argv[2];
+if (!source) {
+  throw new Error(
+    "usage: build-word-frequency-table.mjs <1grams_english-fiction.csv>\n" +
+      "see docs/impls/word-frequency-data-sources.md for how to produce it",
+  );
 }
 
-const csv = await loadCsv(process.argv[2]);
+const csv = await readFile(source, "utf8");
 const lines = csv.split("\n");
 if (lines[0].trim() !== "ngram,freq,cumshare") {
   throw new Error(`unexpected header: ${lines[0]}`);
 }
 
-// The published list is ordered by descending frequency, so a row's position
-// is its rank. `freq` and `cumshare` are dropped: the module returns a band
-// and a rank, never a raw count.
+// The list is ordered by descending frequency, so a row's position is its
+// rank. `freq` and `cumshare` are dropped: the module returns a band and a
+// rank, never a raw count.
 const ranks = new Map();
 let collisions = 0;
 lines.slice(1).forEach((line, index) => {
   const word = normalize(line.split(",")[0] ?? "");
   if (!word) return;
   const rank = index + 1;
-  // "OK" (rank 1984) and "ok" (rank 4370) are separate rows upstream and the
-  // same word to us. Keep the better rank — a lexeme is as common as its
-  // commonest spelling — instead of letting row order decide.
+  // "OK" (rank 2002) and "ok" (rank 4479) are separate rows in the source and
+  // the same word to us. Keeping the first row keeps the better rank, because
+  // the source is sorted — and the better rank is the right answer: a lexeme
+  // is as common as its commonest spelling.
   if (ranks.has(word)) {
     collisions += 1;
     return;
@@ -75,8 +82,8 @@ const header = [
   "# English word-frequency table for the word_frequency module.",
   "#",
   "# Source: Google Books Ngram Corpus v3 (20200217), English Fiction",
-  "# subcorpus, 1-grams, books published 2010-2019, as aggregated and",
-  "# published by orgtre/google-books-ngram-frequency.",
+  "# subcorpus, 1-grams, books published 2010-2019. Aggregated with the",
+  "# orgtre/google-books-ngram-frequency pipeline, caps raised to 50 000.",
   "#   https://github.com/orgtre/google-books-ngram-frequency",
   "#   http://books.google.com/ngrams",
   "#",
