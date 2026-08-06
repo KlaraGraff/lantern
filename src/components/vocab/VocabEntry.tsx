@@ -1,10 +1,13 @@
-import { useRef, useState } from "react";
+import { lazy, Suspense, useRef, useState } from "react";
 import { Check, ChevronDown, ChevronRight, Copy, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { DictionaryWord } from "../../hooks/useDictionary";
 import PronounceButton from "../speech/PronounceButton";
 import { entryClipboardText, glossOf, parseDefinition } from "./entry-text";
-import VocabEntryDetails from "./VocabEntryDetails";
+
+// The markdown renderer it pulls in is only worth paying for once a row is
+// actually opened — most of a vocab list never gets expanded in a session.
+const VocabEntryDetails = lazy(() => import("./VocabEntryDetails"));
 
 export interface VocabEntryProps {
   word: DictionaryWord;
@@ -113,7 +116,9 @@ export default function VocabEntry({
       </div>
 
       {expanded && (
-        <VocabEntryDetails word={word} bookTitle={bookTitle} onOpenInReader={onOpenInReader} />
+        <Suspense fallback={null}>
+          <VocabEntryDetails word={word} bookTitle={bookTitle} onOpenInReader={onOpenInReader} />
+        </Suspense>
       )}
     </div>
   );

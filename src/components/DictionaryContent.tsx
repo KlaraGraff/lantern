@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
@@ -33,7 +33,6 @@ import Button from "./ui/Button";
 import { useAllDictionary, useAllLookupHistory, type LookupRecord, type LookupRecordPage } from "../hooks/useDictionary";
 import { timeAgo } from "../utils/timeAgo";
 import PronounceButton from "./speech/PronounceButton";
-import VocabEntryDetails from "./vocab/VocabEntryDetails";
 import MergedVocabDetails from "./vocab/MergedVocabDetails";
 import MasteryPanel, { type MasteryLevel } from "./vocab/MasteryPanel";
 import { glossOf, parseDefinition } from "./vocab/entry-text";
@@ -60,6 +59,11 @@ import {
   parseCardDesignConfig,
   type LearningCardResult,
 } from "./learning-card";
+
+// Deferred the same way VocabEntry.tsx defers it — this panel only opens on
+// an explicit expand, and the markdown renderer it drags in has no business
+// in the library's first paint.
+const VocabEntryDetails = lazy(() => import("./vocab/VocabEntryDetails"));
 
 // A word looked up this many times without ever being saved is the clearest
 // signal the vocabulary list has: the reader keeps needing it and keeps not
@@ -807,13 +811,15 @@ export default function DictionaryContent({ initialView = "all" }: DictionaryCon
     />
   ) : (
     <>
-      <VocabEntryDetails
-        word={entry.primary}
-        onOpenInReader={() => openInReader(entry.primary.book_id, {
-          openVocab: true,
-          cfi: entry.primary.cfi ?? undefined,
-        })}
-      />
+      <Suspense fallback={null}>
+        <VocabEntryDetails
+          word={entry.primary}
+          onOpenInReader={() => openInReader(entry.primary.book_id, {
+            openVocab: true,
+            cfi: entry.primary.cfi ?? undefined,
+          })}
+        />
+      </Suspense>
       {/* Most saved words come from a single book, so this is where the
           automatic tier is usually seen and overruled — not the merged panel. */}
       <MasteryPanel

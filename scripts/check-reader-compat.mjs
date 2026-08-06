@@ -463,8 +463,8 @@ export const checkPdfAssets = async (distDir) => {
       ...extractPdfHeader(source, path),
     };
 
-    if (name.startsWith("legacy") && source.includes("sourceMappingURL=")) {
-      fail(`Legacy PDF.js source map reference must be removed: ${path}`);
+    if (source.includes("sourceMappingURL=")) {
+      fail(`PDF.js source map reference must be removed: ${path}`);
     }
     if (name.startsWith("legacy") && !source.includes(LEGACY_PDF_RUNTIME_MARKER)) {
       fail(`Legacy PDF.js is missing the Safari 15 runtime prelude: ${path}`);
@@ -477,11 +477,15 @@ export const checkPdfAssets = async (distDir) => {
     fail("PDF.js modern/legacy main-worker headers do not match");
   }
 
-  const legacyRoot = join(root, "foliate-js/vendor/pdfjs/legacy");
-  const legacyMaps = await listFiles(legacyRoot, (path) => path.endsWith(".map"));
-  if (legacyMaps.length > 0) {
+  // The legacy build has always been held to this; the modern build was not,
+  // and shipped 7.4 MB of .map alongside it in every release until 2026-08-06.
+  // Nothing reads them at runtime -- only an open Web Inspector would, and
+  // there is no inspector in a packaged app.
+  const pdfRoot = join(root, "foliate-js/vendor/pdfjs");
+  const pdfMaps = await listFiles(pdfRoot, (path) => path.endsWith(".map"));
+  if (pdfMaps.length > 0) {
     fail(
-      `Legacy PDF.js source maps must not be bundled: ${legacyMaps
+      `PDF.js source maps must not be bundled: ${pdfMaps
         .map((path) => normalizePath(relative(root, path)))
         .join(", ")}`,
     );

@@ -130,3 +130,10 @@ windows-sys = { version = "0.61", features = [
 tempfile = "3"
 lopdf = "0.42.0"
 tauri = { version = "=2.11.5", features = ["test"] }
+
+[profile.release]
+# Until this existed, every release shipped its debug info: 9.1 MB of the
+# 48.7 MB binary, in a bundle users download over the network. `debuginfo`
+# rather than `symbols` on purpose -- it drops the DWARF and keeps the symbol
+# table, so a panic in the wild still names the functions it came through.
+strip = "debuginfo"

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useParams, useNavigate, useLocation } from "react-router";
 import { useTranslation } from "react-i18next";
@@ -35,7 +35,6 @@ import ReaderContextMenu from "../components/ReaderContextMenu";
 import OcrReaderHud from "../components/OcrReaderHud";
 import DictionaryPanel from "../components/DictionaryPanel";
 import TranslationPopover from "../components/TranslationPopover";
-import ExplainPopover from "../components/ExplainPopover";
 import FootnotePopover, { type FootnotePopoverData } from "../components/FootnotePopover";
 import TableOfContents from "../components/TableOfContents";
 import BookSearchPanel from "../components/BookSearchPanel";
@@ -126,6 +125,10 @@ import ReaderNotesRail, { type ReaderNoteAnchor } from "../components/ReaderNote
 import ContinuousReadAloudToolbar from "../components/ContinuousReadAloudToolbar";
 import { useContinuousReadAloud } from "../hooks/useContinuousReadAloud";
 import { supportsContinuousReadAloud } from "../components/continuous-read-aloud";
+
+// Opened only on an explicit "explain" action, never on first paint of the
+// reader — so the markdown renderer it needs waits for that action too.
+const ExplainPopover = lazy(() => import("../components/ExplainPopover"));
 
 type SidePanel = "ai" | "bookmarks" | "vocab" | "notes" | null;
 
@@ -2566,25 +2569,27 @@ export default function Reader() {
       ))}
 
       {customAction && bookId && (
-        <ExplainPopover
-          key={`${customAction.interaction.location}:${customAction.action.name}`}
-          x={customAction.interaction.anchorRect.right}
-          y={customAction.interaction.anchorRect.top}
-          text={customAction.interaction.text}
-          sentence={customAction.interaction.context}
-          bookTitle={book?.title}
-          chapter={currentChapterIndex >= 0 && currentChapterIndex < chapters.length
-            ? chapters[currentChapterIndex].title
-            : undefined}
-          bookId={bookId}
-          cfi={customAction.interaction.location}
-          customAction={customAction.action}
-          onClose={() => setCustomAction(null)}
-          onAskFollowUp={(quote, cfi) => {
-            setAiContext({ text: quote, cfi });
-            setSidePanel("ai");
-          }}
-        />
+        <Suspense fallback={null}>
+          <ExplainPopover
+            key={`${customAction.interaction.location}:${customAction.action.name}`}
+            x={customAction.interaction.anchorRect.right}
+            y={customAction.interaction.anchorRect.top}
+            text={customAction.interaction.text}
+            sentence={customAction.interaction.context}
+            bookTitle={book?.title}
+            chapter={currentChapterIndex >= 0 && currentChapterIndex < chapters.length
+              ? chapters[currentChapterIndex].title
+              : undefined}
+            bookId={bookId}
+            cfi={customAction.interaction.location}
+            customAction={customAction.action}
+            onClose={() => setCustomAction(null)}
+            onAskFollowUp={(quote, cfi) => {
+              setAiContext({ text: quote, cfi });
+              setSidePanel("ai");
+            }}
+          />
+        </Suspense>
       )}
 
       {translation && (

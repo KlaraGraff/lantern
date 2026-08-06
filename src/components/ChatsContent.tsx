@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Search,
@@ -10,7 +10,10 @@ import {
 } from "lucide-react";
 import { useAllChats, type ChatSummary } from "../hooks/useChats";
 import { timeAgo } from "../utils/timeAgo";
-import ChatDetailView from "./ChatDetailView";
+
+// A chat is opened by explicit click, never on first paint of this tab — so
+// the markdown renderer it pulls in for message bubbles waits until then too.
+const ChatDetailView = lazy(() => import("./ChatDetailView"));
 
 type SortMode = "newest" | "oldest";
 
@@ -75,14 +78,16 @@ export default function ChatsContent() {
 
   if (selectedChat) {
     return (
-      <ChatDetailView
-        chat={selectedChat}
-        onBack={() => setSelectedChat(null)}
-        onChatDeleted={(id) => {
-          setSelectedChat(null);
-          remove(id);
-        }}
-      />
+      <Suspense fallback={<div className="flex-1 bg-bg-muted" />}>
+        <ChatDetailView
+          chat={selectedChat}
+          onBack={() => setSelectedChat(null)}
+          onChatDeleted={(id) => {
+            setSelectedChat(null);
+            remove(id);
+          }}
+        />
+      </Suspense>
     );
   }
 

@@ -102,6 +102,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
         39,
         include_str!("../migrations/039_mastery_scoring.sql"),
     ),
+    (
+        40,
+        include_str!("../migrations/040_annotation_indexes.sql"),
+    ),
 ];
 
 fn register_sqlite_vec() {
@@ -237,7 +241,7 @@ impl Db {
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX
                 | OpenFlags::SQLITE_OPEN_URI,
         )?;
-        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
         let data_dir = db_path
             .parent()
             .unwrap_or_else(|| Path::new(""))
@@ -290,7 +294,15 @@ impl Db {
         // event logs; the SQLite file is fully local, so WAL is the
         // right default — it gives the stdio MCP subprocess concurrent
         // read access without blocking the Tauri app's writes.
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=OFF;")?;
+        //
+        // `synchronous=NORMAL` is the pairing WAL was designed for: the log is
+        // still fsynced at every checkpoint, so a process crash loses nothing,
+        // and only an OS crash or power loss can cost the most recent commits.
+        // The alternative is an fsync per transaction, paid by every highlight,
+        // every bookmark, and every replayed sync event.
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=OFF;",
+        )?;
 
         Self::run_migrations(&conn)?;
         crate::ai::grounding::vector::ensure_configured_vector_table(&conn)?;

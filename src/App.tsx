@@ -1,11 +1,9 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
 import Home from "./pages/Home";
-import Reader from "./pages/Reader";
-import ReadingStatsRoute from "./pages/ReadingStatsRoute";
 import AiRouteFallbackNotice from "./components/AiRouteFallbackNotice";
 import ReasoningEffortNotice from "./components/ReasoningEffortNotice";
 import SettingsHost from "./components/SettingsHost";
@@ -23,6 +21,20 @@ import {
 import { loadEnhancedFontFace } from "./components/enhanced-fonts";
 
 const isMainWindow = getCurrentWebviewWindow().label === "main";
+
+// Home is the first paint and stays eager. Reader and the stats page are
+// only reached by navigating there, so they ship as their own chunks —
+// opening the shelf no longer pays to parse the reader, the AI chat markdown
+// renderer, and drag-and-drop before a single book cover appears.
+const Reader = lazy(() => import("./pages/Reader"));
+const ReadingStatsRoute = lazy(() => import("./pages/ReadingStatsRoute"));
+
+// Chunks load from the local filesystem here, so this is normally on screen
+// for less than a frame. It exists only so that frame is a plain rect in the
+// destination page's own background rather than a flash of whatever sits
+// behind the router — same colour each route already paints once it mounts.
+const ReaderFallback = () => <div className="h-screen bg-bg-page" />;
+const ReadingStatsFallback = () => <div className="h-screen bg-bg-page" />;
 
 function applyTheme(theme: string) {
   const root = document.documentElement;
@@ -88,8 +100,14 @@ export default function App() {
     <>
       <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="/reader/:bookId" element={<Reader />} />
-        <Route path="/reading-stats" element={<ReadingStatsRoute />} />
+        <Route
+          path="/reader/:bookId"
+          element={<Suspense fallback={<ReaderFallback />}><Reader /></Suspense>}
+        />
+        <Route
+          path="/reading-stats"
+          element={<Suspense fallback={<ReadingStatsFallback />}><ReadingStatsRoute /></Suspense>}
+        />
       </Routes>
       <ReasoningEffortNotice />
       <AiRouteFallbackNotice />

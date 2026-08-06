@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
 import { BookOpen } from "lucide-react";
 import type { DictionaryWord } from "../../hooks/useDictionary";
@@ -6,7 +7,10 @@ import { contextualReviewAnswer } from "./contextual-review";
 import { glossOf, parseDefinition } from "./entry-text";
 import MasteryPanel, { type MasteryLevel } from "./MasteryPanel";
 import type { MergedVocabEntry } from "./merge";
-import VocabEntryDetails from "./VocabEntryDetails";
+
+// Same deferral as the single-book entry — the markdown renderer only loads
+// once this merged panel is actually opened.
+const VocabEntryDetails = lazy(() => import("./VocabEntryDetails"));
 
 export type { MasteryLevel };
 
@@ -73,7 +77,7 @@ export default function MergedVocabDetails({
   const bookCount = entry.books.length;
   return (
     <>
-      <VocabEntryDetails
+      <Suspense fallback={null}><VocabEntryDetails
         word={entry.primary}
         onOpenInReader={() => onOpenRow(entry.primary)}
         afterDefinition={entry.altRows.length > 0 && (
@@ -113,7 +117,7 @@ export default function MergedVocabDetails({
             ))}
           </section>
         )}
-      />
+      /></Suspense>
       <MasteryPanel
         word={entry.primary}
         onSetMastery={onSetMastery}

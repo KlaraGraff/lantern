@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BookOpen, Search, Download } from "lucide-react";
 import { useDictionary } from "../hooks/useDictionary";
@@ -16,8 +16,14 @@ interface DictionaryPanelProps {
 export default function DictionaryPanel({ bookId, bookTitle, onNavigate, initialWordCfi, onWordDetailClosed, onExport }: DictionaryPanelProps) {
   const { t } = useTranslation();
   const [dictSearch, setDictSearch] = useState("");
+  const [debouncedDictSearch, setDebouncedDictSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const { words, remove: removeWord } = useDictionary(bookId);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedDictSearch(dictSearch.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [dictSearch]);
 
   // Arriving from a marker in the text opens that word straight away.
   useEffect(() => {
@@ -29,13 +35,15 @@ export default function DictionaryPanel({ bookId, bookTitle, onNavigate, initial
     }
   }, [initialWordCfi, words, onWordDetailClosed]);
 
-  const filteredWords = words.filter((w) => {
-    if (!dictSearch) return true;
-    const query = dictSearch.toLowerCase();
-    return [w.word, w.definition, w.context_sentence, bookTitle]
-      .filter(Boolean)
-      .some((value) => value!.toLowerCase().includes(query));
-  });
+  const filteredWords = useMemo(() => {
+    if (!debouncedDictSearch) return words;
+    const query = debouncedDictSearch.toLowerCase();
+    return words.filter((w) =>
+      [w.word, w.definition, w.context_sentence, bookTitle]
+        .filter(Boolean)
+        .some((value) => value!.toLowerCase().includes(query))
+    );
+  }, [words, debouncedDictSearch, bookTitle]);
 
   return (
     <div className="flex flex-col h-full bg-bg-muted">
