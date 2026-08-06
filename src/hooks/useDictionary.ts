@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { notifyReaders } from "../utils/notifyReaders";
+import { saveVocabWord } from "../components/vocab/collect";
 
 export interface DictionaryWord {
   id: string;
@@ -100,10 +101,10 @@ export function useDictionary(bookId: string) {
       cfi?: string,
       contextExplanation?: string
     ) => {
-      const dictionaryWord = await invoke<DictionaryWord>("add_vocab_word", {
+      const dictionaryWord = await saveVocabWord<DictionaryWord>({
         bookId,
         word,
-        definition,
+        gloss: definition,
         contextSentence: contextSentence || null,
         contextExplanation: contextExplanation || null,
         cfi: cfi || null,

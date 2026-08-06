@@ -10,6 +10,7 @@ import { aiErrorMessageKey, getAiErrorCode, isAiRetryableError, isAiSettingsErro
 import AiRetryButton from "./AiRetryButton";
 import { createUuid } from "../utils/randomUuid";
 import { notifyReaders } from "../utils/notifyReaders";
+import { saveVocabWord } from "./vocab/collect";
 
 interface ExplainPopoverProps {
   x: number;
@@ -238,12 +239,15 @@ export default function ExplainPopover({
 
   const handleSave = async () => {
     try {
-      await invoke("add_vocab_word", {
+      // The streamed explanation is the long form: it goes to
+      // `context_explanation`, and `definition` keeps the one short line the
+      // reader sees above the word and in the vocabulary list.
+      await saveVocabWord({
         bookId,
         word: text,
-        definition: contentRef.current,
+        gloss: contentRef.current,
         contextSentence: sentence || null,
-        contextExplanation: null,
+        contextExplanation: contentRef.current || null,
         cfi: cfi || null,
       });
       setSaved(true);

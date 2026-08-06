@@ -36,6 +36,7 @@ import PronounceButton from "./speech/PronounceButton";
 import MergedVocabDetails from "./vocab/MergedVocabDetails";
 import MasteryPanel, { type MasteryLevel } from "./vocab/MasteryPanel";
 import { glossOf, parseDefinition } from "./vocab/entry-text";
+import { saveVocabWord } from "./vocab/collect";
 import {
   bookCountsByWord,
   dueMergedEntries,
@@ -453,14 +454,16 @@ export default function DictionaryContent({ initialView = "all" }: DictionaryCon
   const collectRecord = useCallback(async (record: LookupRecord) => {
     setCollectingId(record.id);
     try {
-      // The stored definition is the one the reader already paid for. Saving
-      // reuses it rather than asking the model to say the same thing twice.
-      await invoke("add_vocab_word", {
+      // The stored definition is the one the reader already paid for, so it is
+      // reused rather than asking the model to say the same thing twice — but
+      // a lookup record's `definition` is the learning card's projection, so
+      // it is only short enough to be a gloss some of the time.
+      await saveVocabWord({
         bookId: record.book_id,
         word: record.lookup_text,
-        definition: record.definition,
+        gloss: record.definition,
         contextSentence: record.context_sentence,
-        contextExplanation: record.context_explanation,
+        contextExplanation: record.context_explanation ?? record.definition ?? null,
         cfi: record.cfi,
       });
       await refreshWords();

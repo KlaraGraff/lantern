@@ -19,6 +19,7 @@ import { aiErrorMessageKey, getAiErrorCode, isAiRetryableError, isAiSettingsErro
 import AiRetryButton from "./AiRetryButton";
 import { createUuid } from "../utils/randomUuid";
 import { notifyReaders } from "../utils/notifyReaders";
+import { saveVocabWord } from "./vocab/collect";
 
 interface TranslationPopoverProps {
   x: number;
@@ -234,12 +235,15 @@ export default function TranslationPopover({
 
   const handleSave = async () => {
     try {
-      await invoke("add_vocab_word", {
+      // A short selection's translation *is* the gloss and is stored as-is; a
+      // paragraph's translation is not, and gets a real gloss instead while
+      // the full text goes to `context_explanation`.
+      await saveVocabWord({
         bookId,
         word: text,
-        definition: contentRef.current,
+        gloss: contentRef.current,
         contextSentence: context || null,
-        contextExplanation: null,
+        contextExplanation: contentRef.current || null,
         cfi: cfi || null,
       });
       setSaved(true);

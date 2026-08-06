@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { createUuid } from "../../utils/randomUuid";
 import type { AiErrorCode } from "../../utils/aiError";
 import type { ReaderInteraction, SerializableRect } from "../reader-interaction";
+import { saveVocabWord } from "../vocab/collect";
 import {
   cachedLearningCardResult,
   learningCardCacheEnvelope,
@@ -512,12 +513,18 @@ export default function LearningCardController({
     }
     if (action === "collect") {
       const projected = projection(result);
-      await invoke("add_vocab_word", {
+      // `definition` is one short line above the word; the card's own text is
+      // the long form and belongs in `context_explanation`. Storing the card
+      // in `definition` (as this did) put a module heading over every saved
+      // word and corrupted the vocabulary list, review cards and export with
+      // it. The card's summary is offered as the gloss and used only if it is
+      // already short enough.
+      await saveVocabWord({
         bookId,
         word: interaction.text,
-        definition: projected.definition,
+        gloss: result.modules.context_meaning?.summary ?? result.modules.word_info?.summary ?? null,
         contextSentence: interaction.context || null,
-        contextExplanation: projected.contextExplanation,
+        contextExplanation: projected.contextExplanation ?? projected.definition ?? null,
         cfi: interaction.location || null,
       });
       setCollected(true);

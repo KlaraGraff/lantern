@@ -400,7 +400,7 @@ pub(super) fn spawn_vocabulary_scan_stream(
 
 /// Trims a model reply down to something that fits one line of a word list.
 /// Models like to answer "**recount** (verb): to tell" when asked for a gloss.
-fn sanitize_gloss(raw: &str) -> String {
+pub(crate) fn sanitize_gloss(raw: &str) -> String {
     let first_line = raw
         .lines()
         .map(str::trim)
@@ -413,19 +413,75 @@ fn sanitize_gloss(raw: &str) -> String {
         .replace("**", "")
         .replace('`', "");
     let cleaned = stripped.trim().trim_end_matches(['.', '。']).trim();
-    // A runaway answer is worse than none: the row shows one line either way.
-    if cleaned.chars().count() > MAX_GLOSS_CHARS {
-        return cleaned
-            .chars()
-            .take(MAX_GLOSS_CHARS)
-            .collect::<String>()
-            .trim_end()
-            .to_string();
+    // A runaway answer is worse than none — but truncation is the backstop, not
+    // the mechanism: the prompt asks for a length this ceiling never has to
+    // enforce. What arrives here over the ceiling was going to be unreadable
+    // above a word anyway.
+    if gloss_display_width(cleaned) > MAX_GLOSS_WIDTH {
+        let mut width = 0;
+        let mut out = String::new();
+        for character in cleaned.chars() {
+            let next = width + char_display_width(character);
+            // One column held back for the ellipsis.
+            if next > MAX_GLOSS_WIDTH - 1 {
+                break;
+            }
+            width = next;
+            out.push(character);
+        }
+        return format!("{}…", out.trim_end());
     }
     cleaned.to_string()
 }
 
-const MAX_GLOSS_CHARS: usize = 60;
+/// Columns a character occupies in a monospaced-ish sense: CJK and other
+/// full-width glyphs take two, everything else one. The gloss is drawn above a
+/// single word, so its *visual* length is what has to be bounded — counting
+/// `char`s would let eight Chinese characters and eight Latin letters look like
+/// the same budget when one is twice as wide.
+fn char_display_width(character: char) -> usize {
+    let code = character as u32;
+    let wide = (0x1100..=0x115F).contains(&code)
+        || (0x2E80..=0x303E).contains(&code)
+        || (0x3041..=0x33FF).contains(&code)
+        || (0x3400..=0x4DBF).contains(&code)
+        || (0x4E00..=0x9FFF).contains(&code)
+        || (0xA000..=0xA4CF).contains(&code)
+        || (0xAC00..=0xD7A3).contains(&code)
+        || (0xF900..=0xFAFF).contains(&code)
+        || (0xFE30..=0xFE6F).contains(&code)
+        || (0xFF00..=0xFF60).contains(&code)
+        || (0xFFE0..=0xFFE6).contains(&code);
+    if wide {
+        2
+    } else {
+        1
+    }
+}
+
+pub(crate) fn gloss_display_width(text: &str) -> usize {
+    text.chars().map(char_display_width).sum()
+}
+
+/// Twenty-eight columns — fourteen Chinese characters, or a short English
+/// phrase. Mirrors `MAX_GLOSS_WIDTH` in `src/components/vocab/gloss.ts`; the
+/// frontend applies the same ceiling to glosses that never came from here.
+pub(crate) const MAX_GLOSS_WIDTH: usize = 28;
+
+/// What to ask the model for, in the language the gloss will be written in.
+/// A CJK gloss says in eight characters what English needs four words for, so
+/// the two get different targets rather than one compromise number.
+fn gloss_length_instruction(locale: &str) -> &'static str {
+    let base = locale
+        .split(['-', '_'])
+        .next()
+        .unwrap_or(locale)
+        .to_ascii_lowercase();
+    match base.as_str() {
+        "zh" | "ja" | "ko" => "about 8 characters, never more than 14",
+        _ => "about 4 words, never more than 24 characters",
+    }
+}
 
 /// A few words of meaning, stored at collect time.
 ///
@@ -437,33 +493,77 @@ const MAX_GLOSS_CHARS: usize = 60;
 pub async fn ai_vocab_gloss(
     word: String,
     context: Option<String>,
+    locale: Option<String>,
     request_id: String,
     app: AppHandle,
     db: State<'_, Db>,
     secrets: State<'_, Secrets>,
 ) -> AppResult<String> {
+    if request_id.trim().is_empty() {
+        return Err(AppError::Other("VOCAB_GLOSS_REQUEST_INVALID".to_string()));
+    }
+    generate_vocab_gloss(
+        &app,
+        &db,
+        &secrets,
+        &word,
+        context.as_deref(),
+        locale.as_deref(),
+        &request_id,
+        "user",
+    )
+    .await
+}
+
+/// Resolves the language the gloss is written in.
+///
+/// The caller's own locale wins: the reader is looking at a Chinese interface,
+/// so the word above the word should be Chinese. `language` is the same choice
+/// stored, and `translation_language` is only a distant third — it is a target
+/// they picked for translating passages, which is a different job.
+pub(crate) fn gloss_locale(db: &Db, requested: Option<&str>) -> String {
+    if let Some(locale) = requested
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && value.chars().count() <= 32)
+    {
+        return locale.to_string();
+    }
+    let conn = db.reader();
+    let get = |key: &str| -> Option<String> {
+        conn.query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            rusqlite::params![key],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    };
+    get("language")
+        .or_else(|| get("translation_language"))
+        .unwrap_or_else(|| "en".to_string())
+}
+
+/// The one place a short contextual gloss is produced. `ai_vocab_gloss` is the
+/// frontend's door onto it; the backfill job walks in the same one so repaired
+/// rows read exactly like newly saved ones.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn generate_vocab_gloss<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    db: &Db,
+    secrets: &Secrets,
+    word: &str,
+    context: Option<&str>,
+    locale: Option<&str>,
+    request_id: &str,
+    origin: &str,
+) -> AppResult<String> {
     let word = word.trim().to_string();
-    if word.is_empty() || word.chars().count() > 128 || request_id.trim().is_empty() {
+    if word.is_empty() || word.chars().count() > 128 {
         return Err(AppError::Other("VOCAB_GLOSS_REQUEST_INVALID".to_string()));
     }
 
-    let target_language = {
-        let conn = db.reader();
-        let get = |key: &str| -> Option<String> {
-            conn.query_row(
-                "SELECT value FROM settings WHERE key = ?1",
-                rusqlite::params![key],
-                |row| row.get::<_, String>(0),
-            )
-            .ok()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-        };
-        get("translation_language")
-            .or_else(|| get("language"))
-            .unwrap_or_else(|| "en".to_string())
-    };
-
+    let locale = gloss_locale(db, locale);
     let context = context
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty() && value.chars().count() <= 1_000);
@@ -473,10 +573,11 @@ pub async fn ai_vocab_gloss(
             role: "system".to_string(),
             content: format!(
                 "Give the meaning of the supplied word or phrase in {}, as it is used in the \
-                 sentence provided. Reply with the gloss only: at most a few words, no more than \
-                 {MAX_GLOSS_CHARS} characters, on a single line. No part of speech, no phonetics, \
-                 no the original word, no quotes, no Markdown, no explanation.",
-                crate::commands::translation::lang_display_name(&target_language),
+                 sentence provided. This gloss is printed above the word itself in the book, so \
+                 it must be very short: {}, on a single line. No part of speech, no phonetics, \
+                 not the original word, no quotes, no Markdown, no explanation.",
+                crate::commands::translation::lang_display_name(&locale),
+                gloss_length_instruction(&locale),
             ),
         },
         ChatMessage {
@@ -488,18 +589,18 @@ pub async fn ai_vocab_gloss(
         },
     ];
 
-    ensure_stream_credentials_ready(&db, &secrets)?;
+    ensure_stream_credentials_ready(db, secrets)?;
     let completion = crate::ai::router::complete_with_failover(
-        &app,
-        &db,
-        &secrets,
+        app,
+        db,
+        secrets,
         &messages,
         Some(128),
         crate::ai::router::AiRequestPurpose::Utility,
         crate::ai::router::AiRetryMode::Automatic,
-        Some(&request_id),
+        Some(request_id),
         None,
-        "user",
+        origin,
         "vocab_gloss",
     )
     .await?;
@@ -537,7 +638,66 @@ mod tests {
     fn gloss_is_capped_so_a_runaway_answer_cannot_fill_the_row() {
         let long = "很长的解释".repeat(40);
         let result = sanitize_gloss(&long);
-        assert_eq!(result.chars().count(), MAX_GLOSS_CHARS);
+        assert!(result.ends_with('…'));
+        assert!(gloss_display_width(&result) <= MAX_GLOSS_WIDTH);
+    }
+
+    // The ceiling is columns, not `char`s: fourteen Chinese characters and
+    // twenty-eight Latin ones take the same space above a word.
+    #[test]
+    fn gloss_ceiling_counts_display_width_not_characters() {
+        let latin = "a".repeat(20);
+        assert_eq!(sanitize_gloss(&latin), latin);
+        assert_eq!(gloss_display_width("讲述"), 4);
+        assert_eq!(gloss_display_width("tell"), 4);
+        // Twenty Chinese characters is forty columns — over the ceiling, while
+        // twenty Latin ones were not.
+        assert!(sanitize_gloss(&"述".repeat(20)).ends_with('…'));
+    }
+
+    // A short gloss is the point; the cap must never fire on one.
+    #[test]
+    fn a_gloss_of_the_requested_length_passes_through_untouched() {
+        assert_eq!(sanitize_gloss("逐渐向某处移动"), "逐渐向某处移动");
+        assert_eq!(sanitize_gloss("to move gradually toward"), "to move gradually toward");
+    }
+
+    // The gloss is printed above a word in a Chinese interface, so it must be
+    // Chinese — `translation_language` is a target the reader chose for a
+    // different job (translating passages) and is only a last resort here.
+    #[test]
+    fn the_callers_locale_wins_then_the_ui_language_then_the_translation_target() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let db = crate::db::Db::init(dir.path()).unwrap();
+        let set = |key: &str, value: &str| {
+            db.conn
+                .lock()
+                .unwrap()
+                .execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+                    rusqlite::params![key, value],
+                )
+                .unwrap();
+        };
+
+        assert_eq!(gloss_locale(&db, None), "en");
+        set("translation_language", "ja");
+        assert_eq!(gloss_locale(&db, None), "ja");
+        set("language", "zh");
+        assert_eq!(gloss_locale(&db, None), "zh");
+        assert_eq!(gloss_locale(&db, Some("fr")), "fr");
+        // A blank or absurd parameter falls back rather than being sent to the
+        // model as the target language.
+        assert_eq!(gloss_locale(&db, Some("   ")), "zh");
+        assert_eq!(gloss_locale(&db, Some(&"x".repeat(64))), "zh");
+    }
+
+    #[test]
+    fn length_instruction_follows_the_script_of_the_locale() {
+        assert_eq!(gloss_length_instruction("zh"), gloss_length_instruction("zh-Hans"));
+        assert_eq!(gloss_length_instruction("ja"), gloss_length_instruction("zh"));
+        assert_ne!(gloss_length_instruction("en"), gloss_length_instruction("zh"));
+        assert_eq!(gloss_length_instruction("fr-FR"), gloss_length_instruction("en"));
     }
 
     #[test]

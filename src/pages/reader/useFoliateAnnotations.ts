@@ -518,37 +518,68 @@ export function useFoliateAnnotations({
     if (!view) return;
     const contents = loaded ? [loaded] : (view.renderer?.getContents?.() ?? []);
     const vocab = markerSnapshotRef.current?.vocab ?? [];
-    // Which of the three stages each saved word is in on this page: the gloss
-    // itself, a bare marker, or nothing at all. Mastery decides the stage; the
-    // limit only caps how many glosses one screen may carry.
-    const stages = selectPassiveVocab(
-      vocab.filter((word): word is VocabMarker & { cfi: string } => Boolean(word.cfi)),
-      passiveVocab.limit,
-    );
-    const annotations = vocab.flatMap((word) => {
-      const stage = word.cfi ? stages.get(word.cfi) : undefined;
-      if (!word.cfi || !stage) return [];
-      const label = passiveVocabLabel(word.definition);
-      return label ? [{ cfi: word.cfi, label, stage }] : [];
-    });
+    // One screen is one column of Foliate's CSS-columns layout, and a content
+    // document is laid out in full: a rect measured inside the section iframe
+    // is absolute across every column, not relative to whatever is on screen
+    // now. That is exactly how the paginator itself turns a rect into a page
+    // (`#scrollToRect` divides the same number by the same `size`), so the
+    // bucket a word lands in here is stable and does not change as the reader
+    // turns pages — which is why this can be computed once per document
+    // instead of re-running on every relocate. Re-installing ruby on relocate
+    // would change line heights, reflow the columns, and fire relocate again.
+    const renderer = view.renderer;
+    const screenSize = Number(renderer?.size) || 0;
+    // `scrollProp` and the size Foliate reports are always on the same axis:
+    // vertical writing and scrolled flow both page along the block axis.
+    const alongBlockAxis = renderer?.scrollProp === "scrollTop";
     for (const { doc, index } of contents as Array<{ doc?: Document; index?: number }>) {
       if (!doc || typeof index !== "number") continue;
       cleanupPassiveVocabAnnotations(doc);
       if (!passiveVocab.enabled || !supportsWordMarkers || !supportsReflowSettings) continue;
+      const resolveRange = (cfi: string) => {
+        try {
+          const resolved = view.resolveCFI(cfi);
+          return resolved.index === index ? resolved.anchor(doc) : null;
+        } catch {
+          return null;
+        }
+      };
+      // A measuring pass first, deliberately separate from the install below:
+      // installing extracts and re-inserts DOM, and measuring against a
+      // document that is being rewritten underneath would read positions that
+      // the next insertion invalidates. Costs a second CFI resolution per
+      // word; the chapter-end pass further down already pays the same price.
+      const placed = vocab.flatMap((word) => {
+        if (!word.cfi) return [];
+        const range = resolveRange(word.cfi);
+        if (!range) return [];
+        let screen = 0;
+        if (screenSize > 0) {
+          const rect = range.getBoundingClientRect();
+          const offset = alongBlockAxis ? rect.top : rect.left;
+          if (Number.isFinite(offset)) screen = Math.floor(offset / screenSize);
+        }
+        return [{ ...word, cfi: word.cfi, screen }];
+      });
+      // Which of the three stages each saved word is in: the gloss itself, a
+      // bare marker, or nothing at all. Mastery decides the stage; the limit
+      // caps glosses per screen, which is why it is applied here — over the
+      // words that resolve into *this* document, each tagged with the screen
+      // it falls on — rather than once over the whole book's vocabulary.
+      const stages = selectPassiveVocab(placed, passiveVocab.limit);
+      const annotations = placed.flatMap((word) => {
+        const stage = stages.get(word.cfi);
+        if (!stage) return [];
+        const label = passiveVocabLabel(word.definition);
+        return label ? [{ cfi: word.cfi, label, stage }] : [];
+      });
       installPassiveVocabAnnotations({
         doc,
         annotations,
-        resolveRange: (cfi) => {
-          try {
-            const resolved = view.resolveCFI(cfi);
-            return resolved.index === index ? resolved.anchor(doc) : null;
-          } catch {
-            return null;
-          }
-        },
+        resolveRange,
         style: passiveVocab.style,
         narrowViewport: isNarrowPassiveVocabViewport(window.innerWidth),
-        spread: Number(view.renderer?.getAttribute?.("max-column-count")) > 1,
+        spread: Number(renderer?.getAttribute?.("max-column-count")) > 1,
       });
     }
     // A second pass over the same documents for the chapter-end line. Kept

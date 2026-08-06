@@ -712,6 +712,16 @@ pub fn run() {
             commands::books::resume_interrupted_text_book_preparations(app.handle().clone());
             commands::books::resume_interrupted_book_conversions(app.handle().clone());
 
+            // Repair vocabulary rows whose `definition` still holds a whole
+            // learning card instead of a gloss. Paced, capped per launch, and
+            // silent — see the module docs. Wired here rather than exposed as
+            // a command because there is nothing for the reader to decide.
+            {
+                let db = app.state::<Db>().inner().clone();
+                let secrets = app.state::<Secrets>().inner().clone();
+                commands::vocab_gloss_backfill::spawn_on_start(app.handle().clone(), db, secrets);
+            }
+
             // Boot the sync engine on a background thread. Everything
             // that touches iCloud paths (EventLog::open, watcher::spawn,
             // initial tick) runs here so setup() is never blocked by

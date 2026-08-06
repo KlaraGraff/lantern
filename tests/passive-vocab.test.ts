@@ -7,6 +7,7 @@ import {
   formatPassiveVocabSummary,
   installPassiveVocabAnnotations,
   parsePassiveVocabSettings,
+  passiveVocabGlossShifts,
   passiveVocabLabel,
   passiveVocabStage,
   passiveVocabSummaryParts,
@@ -167,7 +168,14 @@ test("the limit caps definitions, and words past it show nothing rather than a m
     { cfi: "epubcfi(/6/8)", mastery: "learning", definition: "second active word" },
     { cfi: "epubcfi(/6/10)", mastery: "familiar", definition: "nearly known" },
   ];
-  assert.equal(passiveVocabLabel("to move gradually toward"), "to move gradual…");
+  // A gloss of the length the save path now produces goes over the word whole;
+  // the clamp is a guard rail for legacy blobs, not the thing that shortens it.
+  assert.equal(passiveVocabLabel("to move gradually toward"), "to move gradually toward");
+  assert.equal(passiveVocabLabel("逐渐向某处移动"), "逐渐向某处移动");
+  // Width, not character count: a full-width character costs two columns, so
+  // fourteen Chinese characters fill the same budget as twenty-eight Latin ones.
+  assert.equal(passiveVocabLabel("一".repeat(20)), `${"一".repeat(13)}…`);
+  assert.ok(passiveVocabLabel("Meaning in this context: to tell a story in order").endsWith("…"));
 
   const tight = selectPassiveVocab(words, 1);
   // Learning beats new, CFI breaks the tie, and the two words past the cap are
@@ -198,6 +206,64 @@ test("a familiar word keeps its marker no matter how tight the limit is", () => 
   // A hairline under a word the reader nearly knows costs almost nothing;
   // capping it would make stage two vanish on any page with fresh lookups.
   assert.equal([...stages.values()].filter((stage) => stage === "definition").length, 1);
+});
+
+// The setting says "how many definitions one screen may show", and it used to
+// be handed the whole book's vocabulary in a single call — so the first three
+// words in the book took the entire allowance and every later page was bare.
+test("the limit is spent per screen, not once for the whole book", () => {
+  const words = [
+    { cfi: "epubcfi(/6/2)", mastery: "new", definition: "first", screen: 0 },
+    { cfi: "epubcfi(/6/4)", mastery: "new", definition: "second", screen: 0 },
+    { cfi: "epubcfi(/6/6)", mastery: "new", definition: "third", screen: 1 },
+    { cfi: "epubcfi(/6/8)", mastery: "new", definition: "fourth", screen: 1 },
+    { cfi: "epubcfi(/6/10)", mastery: "new", definition: "fifth", screen: 9 },
+  ];
+  const stages = selectPassiveVocab(words, 1);
+  // One per screen — three screens, three glosses — and never two from one.
+  assert.equal([...stages.values()].filter((stage) => stage === "definition").length, 3);
+  assert.equal(stages.get("epubcfi(/6/2)"), "definition");
+  assert.equal(stages.has("epubcfi(/6/4)"), false);
+  assert.equal(stages.get("epubcfi(/6/6)"), "definition");
+  assert.equal(stages.has("epubcfi(/6/8)"), false);
+  assert.equal(stages.get("epubcfi(/6/10)"), "definition");
+});
+
+test("teaching order and tie-breaking are decided within a screen, not across the book", () => {
+  const words = [
+    // Later in the book, but the only "learning" word on its own screen.
+    { cfi: "epubcfi(/6/20)", mastery: "learning", definition: "later screen", screen: 5 },
+    { cfi: "epubcfi(/6/2)", mastery: "new", definition: "earliest", screen: 0 },
+    { cfi: "epubcfi(/6/4)", mastery: "learning", definition: "same screen, in learning", screen: 0 },
+  ];
+  const stages = selectPassiveVocab(words, 1);
+  // Screen 0 goes to the word in active learning, and screen 5's word is not
+  // competing with it at all.
+  assert.equal(stages.get("epubcfi(/6/4)"), "definition");
+  assert.equal(stages.has("epubcfi(/6/2)"), false);
+  assert.equal(stages.get("epubcfi(/6/20)"), "definition");
+});
+
+// A word whose position has not been measured yet must still be annotatable;
+// the fallback is the old single-bucket behaviour, not silence.
+test("words with no measured screen share one bucket", () => {
+  const words = [
+    { cfi: "epubcfi(/6/2)", mastery: "new", definition: "first" },
+    { cfi: "epubcfi(/6/4)", mastery: "new", definition: "second" },
+  ];
+  assert.equal([...selectPassiveVocab(words, 1).values()].filter((s) => s === "definition").length, 1);
+});
+
+// Markers are explicitly uncapped, so screens have nothing to do with them.
+test("markers are never bucketed or capped by screen", () => {
+  const words = Array.from({ length: 6 }, (_, index) => ({
+    cfi: `epubcfi(/6/${index})`,
+    mastery: "familiar",
+    definition: "nearly known",
+    screen: 0,
+  }));
+  const stages = selectPassiveVocab(words, 1);
+  assert.equal([...stages.values()].filter((stage) => stage === "marker").length, 6);
 });
 
 test("optimistic settings writes roll back only the failed state, never a newer edit", () => {
@@ -412,7 +478,7 @@ test("cleanup unhooks the marker listeners so re-installing never stacks them", 
   assert.equal(doc.querySelectorAll("[data-passive-vocab-style]").length, 0);
 });
 
-test("a page with no markers pays for no listeners and no stylesheet", () => {
+test("a page with no markers pays for no marker listeners", () => {
   const { doc, listeners } = createFakeDoc();
   installPassiveVocabAnnotations({
     doc,
@@ -421,5 +487,74 @@ test("a page with no markers pays for no listeners and no stylesheet", () => {
     style: "ruby",
   });
   assert.equal(listeners.get("click")?.size ?? 0, 0);
+});
+
+test("a page with no annotation at all pays for no stylesheet", () => {
+  const { doc } = createFakeDoc();
+  installPassiveVocabAnnotations({
+    doc,
+    annotations: [],
+    resolveRange: () => null,
+    style: "ruby",
+  });
   assert.equal(doc.querySelectorAll("[data-passive-vocab-style]").length, 0);
+});
+
+// The bug this covers: `<rt>` is sized to its base, so a gloss wider than the
+// word it sits over was clipped to the word's width. The fix takes the
+// annotation out of ruby layout — absolutely positioned, centred, and allowed
+// to be as wide as it needs — and gives the base back the vertical room native
+// ruby would have reserved.
+test("the ruby gloss overflows its word instead of being clipped to it", () => {
+  const { doc } = createFakeDoc();
+  installPassiveVocabAnnotations({
+    doc,
+    annotations: [{ cfi: "epubcfi(/6/2)", label: "逐渐向某处移动", stage: "definition" }],
+    resolveRange: () => fakeRange({ left: 10, top: 100, width: 20 }),
+    style: "ruby",
+  });
+  const sheets = doc.querySelectorAll("[data-passive-vocab-style]") as unknown as { textContent: string }[];
+  assert.equal(sheets.length, 1);
+  const css = sheets[0].textContent.replace(/\s+/g, " ");
+  assert.match(css, /rt\[data-passive-vocab-ruby-text\] \{[^}]*position: absolute/);
+  assert.match(css, /rt\[data-passive-vocab-ruby-text\] \{[^}]*white-space: nowrap/);
+  assert.match(css, /rt\[data-passive-vocab-ruby-text\] \{[^}]*left: 50%/);
+  assert.match(css, /translateX\(calc\(-50% \+ var\(--lantern-passive-vocab-shift, 0px\)\)\)/);
+  // The base has to reserve the line-box room the absolute annotation no
+  // longer takes, or the gloss would be drawn over the line above.
+  assert.match(css, /ruby\[data-passive-vocab-root\] \{[^}]*padding-top/);
+  assert.match(css, /ruby\[data-passive-vocab-root\] \{[^}]*position: relative/);
+});
+
+test("glosses on one line are nudged apart, and separate lines are left alone", () => {
+  // Two overlapping boxes on the same line, one clear box below them.
+  const shifts = passiveVocabGlossShifts([
+    { left: 0, right: 60, top: 10, bottom: 24 },
+    { left: 40, right: 100, top: 10, bottom: 24 },
+    { left: 0, right: 60, top: 60, bottom: 74 },
+  ]);
+  assert.equal(shifts[0], 0);
+  // 60 (previous right) + 4 (gap) - 40 (its own left) = 24.
+  assert.equal(shifts[1], 24);
+  assert.equal(shifts[2], 0);
+});
+
+test("a gloss that already clears its neighbour is not moved", () => {
+  const shifts = passiveVocabGlossShifts([
+    { left: 0, right: 30, top: 10, bottom: 24 },
+    { left: 80, right: 120, top: 10, bottom: 24 },
+  ]);
+  assert.deepEqual(shifts, [0, 0]);
+});
+
+// A fake DOM, or a document being torn down, reports rects with missing
+// coordinates. Centred-and-overlapping is a cosmetic flaw; NaN in a transform
+// is a gloss that vanishes.
+test("unmeasurable glosses are skipped rather than shifted by NaN", () => {
+  const shifts = passiveVocabGlossShifts([
+    { left: 0, right: Number.NaN, top: 10, bottom: 24 },
+    { left: 10, right: 50, top: 10, bottom: 24 },
+    { left: undefined as unknown as number, right: 20, top: 10, bottom: 24 },
+  ]);
+  assert.deepEqual(shifts, [0, 0, 0]);
 });

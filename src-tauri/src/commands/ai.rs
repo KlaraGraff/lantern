@@ -18,7 +18,7 @@ mod routing;
 mod stream;
 mod title;
 mod usage;
-mod vocabulary;
+pub(crate) mod vocabulary;
 mod word_forms;
 mod xray;
 

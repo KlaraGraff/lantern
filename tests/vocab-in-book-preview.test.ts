@@ -62,14 +62,14 @@ test("resolveInBookPreviewPlan: new/learning (and no tier at all) resolve to the
 });
 
 test("resolveInBookPreviewPlan: definition stage carries the reader's own style and the truncated label", () => {
-  // 26 characters — long enough to exercise passiveVocabLabel's 16-char cap,
-  // the same truncation the real in-book annotation applies.
-  const longDefinition = "abcdefghijklmnopqrstuvwxyz";
+  // Wider than passiveVocabLabel's 28-column ceiling, so the preview shows the
+  // same clamped label the real in-book annotation would.
+  const longDefinition = "abcdefghijklmnopqrstuvwxyz0123456789";
   const rubyPlan = resolveInBookPreviewPlan(settings({ style: "ruby" }), "new", longDefinition, "His countenance betrayed nothing.", "countenance", "epubcfi(/6/2!/4/2)");
   assert.equal(rubyPlan.kind, "definition");
   if (rubyPlan.kind === "definition") {
     assert.equal(rubyPlan.style, "ruby");
-    assert.equal(rubyPlan.label, "abcdefghijklmno…");
+    assert.equal(rubyPlan.label, "abcdefghijklmnopqrstuvwxyz0…");
     assert.deepEqual(rubyPlan.sentence, { before: "His ", answer: "countenance", after: " betrayed nothing." });
   }
 
@@ -77,7 +77,7 @@ test("resolveInBookPreviewPlan: definition stage carries the reader's own style 
   assert.equal(marginPlan.kind, "definition");
   if (marginPlan.kind === "definition") {
     assert.equal(marginPlan.style, "margin");
-    assert.equal(marginPlan.label, "face; expression"); // exactly 16 chars — under the cap, unchanged
+    assert.equal(marginPlan.label, "face; expression"); // 16 columns — well under the cap, unchanged
   }
 });
 

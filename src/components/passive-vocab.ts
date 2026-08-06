@@ -1,3 +1,5 @@
+import { clampGloss } from "./vocab/gloss.ts";
+
 export type PassiveVocabStyle = "ruby" | "margin";
 
 /**
@@ -35,6 +37,17 @@ export interface PassiveVocabCandidate {
   cfi: string;
   definition?: string | null;
   mastery?: string | null;
+  /**
+   * Which screen of the book this word lands on, as a zero-based column index
+   * within its section. The limit is *per screen*, so this is what buckets the
+   * competition: without it, three words anywhere in a 400-page book would use
+   * up the whole allowance and every later page would show nothing.
+   *
+   * Optional because the caller may not have measured yet — an unmeasured word
+   * falls into bucket 0, which degrades to the old single global cap rather
+   * than to nothing.
+   */
+  screen?: number | null;
 }
 
 export interface PassiveVocabDomAnnotation {
@@ -101,10 +114,17 @@ export function parsePassiveVocabSettings(settings: Record<string, string>): Pas
   };
 }
 
+/**
+ * The text drawn above the word.
+ *
+ * The ceiling is the same one every save path clamps to, measured in display
+ * columns rather than characters: a flat 16-character cut truncated "逐渐向某处
+ * 移动" to nothing useful while letting a much wider Latin string through. Rows
+ * written by the current save path arrive short and pass through untouched;
+ * the clamp only ever fires on a legacy blob the backfill has not reached yet.
+ */
 export function passiveVocabLabel(definition: string | null | undefined) {
-  const plain = (definition ?? "").replace(/\s+/g, " ").trim();
-  const limit = 16;
-  return plain.length > limit ? `${plain.slice(0, limit - 1)}…` : plain;
+  return clampGloss((definition ?? "").replace(/\s+/g, " ").trim());
 }
 
 /**
@@ -137,28 +157,102 @@ export function passiveVocabLearningPriority(word: Pick<PassiveVocabCandidate, "
  * than falling back to a marker — a marker means "you nearly know this", so
  * hanging one on a word the reader just looked up would be a lie about their
  * own progress.
+ *
+ * The cap is applied **per screen**, not across the whole input. The setting
+ * reads "how many definitions one screen may show", and it used to be handed
+ * the entire book's vocabulary in one call — so the first three words in the
+ * book took the whole allowance and nothing else was ever glossed again.
+ * Words carrying no `screen` all share bucket 0, which is exactly the old
+ * behaviour and is what the settings preview and the unit tests below rely on.
  */
 export function selectPassiveVocab<T extends PassiveVocabCandidate>(
   words: Iterable<T>,
   limit: number,
 ) {
   const stages = new Map<string, PassiveVocabVisibleStage>();
-  const glossable: T[] = [];
+  const byScreen = new Map<number, T[]>();
   for (const word of words) {
     if (!word.cfi || !passiveVocabLabel(word.definition)) continue;
     const stage = passiveVocabStage(word.mastery);
     if (stage === "none") continue;
-    if (stage === "marker") stages.set(word.cfi, "marker");
-    else glossable.push(word);
+    // Markers are uncapped, so they never need bucketing.
+    if (stage === "marker") {
+      stages.set(word.cfi, "marker");
+      continue;
+    }
+    const screen = Number.isFinite(word.screen) ? Number(word.screen) : 0;
+    const bucket = byScreen.get(screen);
+    if (bucket) bucket.push(word);
+    else byScreen.set(screen, [word]);
   }
-  glossable.sort((left, right) => (
-    passiveVocabLearningPriority(left) - passiveVocabLearningPriority(right)
-    || left.cfi.localeCompare(right.cfi)
-  ));
-  for (const word of glossable.slice(0, Math.max(0, clampPassiveVocabLimit(limit)))) {
-    stages.set(word.cfi, "definition");
+  const perScreen = Math.max(0, clampPassiveVocabLimit(limit));
+  for (const bucket of byScreen.values()) {
+    bucket.sort((left, right) => (
+      passiveVocabLearningPriority(left) - passiveVocabLearningPriority(right)
+      || left.cfi.localeCompare(right.cfi)
+    ));
+    for (const word of bucket.slice(0, perScreen)) stages.set(word.cfi, "definition");
   }
   return stages;
+}
+
+/** A gloss's measured box, in the content document's viewport coordinates. */
+export interface PassiveVocabGlossBox {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/**
+ * How far right each gloss has to move so it stops sitting on its neighbour.
+ *
+ * A gloss is centred on its word and allowed to be wider than it, so two
+ * annotated words close together on the same line overlap. Boxes are grouped
+ * into rows by vertical overlap — the only reliable way to tell "same line"
+ * apart from "the line below" without knowing the line height — then each row
+ * is swept left to right, nudging any box that starts before the previous one
+ * ended.
+ *
+ * Pure and index-aligned with its input: `shifts[i]` belongs to `boxes[i]`. A
+ * box with a non-finite coordinate (a document mid-teardown, a fake DOM that
+ * does not measure) is skipped, gets a shift of 0, and does not push anything.
+ */
+export function passiveVocabGlossShifts(boxes: readonly PassiveVocabGlossBox[], gap = 4) {
+  const shifts = new Array<number>(boxes.length).fill(0);
+  const usable = boxes
+    .map((box, index) => ({ box, index }))
+    .filter(({ box }) => (
+      Number.isFinite(box.left) && Number.isFinite(box.right)
+      && Number.isFinite(box.top) && Number.isFinite(box.bottom)
+    ));
+  if (usable.length < 2) return shifts;
+
+  usable.sort((left, right) => left.box.top - right.box.top || left.box.left - right.box.left);
+  const rows: { top: number; bottom: number; items: typeof usable }[] = [];
+  for (const entry of usable) {
+    const row = rows[rows.length - 1];
+    // Any vertical overlap at all means the same visual line: glosses on one
+    // line share a baseline, and the next line's boxes start below this one's.
+    if (row && entry.box.top < row.bottom && entry.box.bottom > row.top) {
+      row.items.push(entry);
+      row.top = Math.min(row.top, entry.box.top);
+      row.bottom = Math.max(row.bottom, entry.box.bottom);
+    } else {
+      rows.push({ top: entry.box.top, bottom: entry.box.bottom, items: [entry] });
+    }
+  }
+
+  for (const row of rows) {
+    row.items.sort((left, right) => left.box.left - right.box.left);
+    let occupiedRight = -Infinity;
+    for (const { box, index } of row.items) {
+      const shift = Math.max(0, occupiedRight + gap - box.left);
+      shifts[index] = shift;
+      occupiedRight = box.right + shift;
+    }
+  }
+  return shifts;
 }
 
 export interface PassiveVocabSettingsMutation {
@@ -246,6 +340,75 @@ function installRuby(doc: Document, range: Range, label: string) {
   rt.setAttribute(PASSIVE_VOCAB_RUBY_TEXT_ATTRIBUTE, "");
   rt.textContent = label;
   ruby.append(rt);
+  return rt;
+}
+
+/**
+ * Takes the gloss out of ruby layout altogether.
+ *
+ * Native `<rt>` is sized and clipped to its base, so "逐渐向某处移动" over a
+ * five-letter word was cut off mid-character — and the exact behaviour differs
+ * between WebKit and Chromium, which this app ships on both of. Absolutely
+ * positioning the annotation inside a relatively-positioned inline-block base
+ * makes it free of the base's width in every engine; the base's `padding-top`
+ * puts back the line-box room that native ruby would have reserved, so
+ * surrounding text is pushed apart exactly as before instead of being drawn
+ * over.
+ *
+ * `--lantern-passive-vocab-shift` is the horizontal nudge that keeps two
+ * glosses on the same line off each other; it defaults to zero, so a document
+ * that is never measured still renders centred.
+ */
+function rubyStyleSheet(doc: Document) {
+  const style = doc.createElement("style");
+  style.setAttribute(PASSIVE_VOCAB_STYLE_ATTRIBUTE, "");
+  style.textContent = `
+    ruby[${PASSIVE_VOCAB_ROOT_ATTRIBUTE}] {
+      display: inline-block;
+      position: relative;
+      padding-top: 1.15em;
+      text-indent: 0;
+      ruby-position: over;
+    }
+    rt[${PASSIVE_VOCAB_RUBY_TEXT_ATTRIBUTE}] {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(calc(-50% + var(--lantern-passive-vocab-shift, 0px)));
+      white-space: nowrap;
+      text-indent: 0;
+      color: inherit;
+      opacity: .7;
+      font: 500 0.62em/1.15 system-ui, sans-serif;
+      pointer-events: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+  `;
+  return style;
+}
+
+/**
+ * Nudge glosses that would sit on top of each other. Measured once, after every
+ * annotation in the document is in place — measuring as each one is inserted
+ * would read positions that the next insertion invalidates.
+ */
+function spreadGlosses(annotations: HTMLElement[]) {
+  if (annotations.length < 2) return;
+  let boxes: PassiveVocabGlossBox[];
+  try {
+    boxes = annotations.map((rt) => {
+      const rect = rt.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+    });
+  } catch {
+    // Nothing to measure against (a torn-down document); centred is fine.
+    return;
+  }
+  const shifts = passiveVocabGlossShifts(boxes);
+  shifts.forEach((shift, index) => {
+    if (shift > 0) annotations[index].style.setProperty("--lantern-passive-vocab-shift", `${Math.round(shift)}px`);
+  });
 }
 
 /**
@@ -537,6 +700,7 @@ export function installPassiveVocabAnnotations(options: PassiveVocabDomInstallOp
   const overflow = new Map<"left" | "right", number>();
   let index = 0;
   let markers = 0;
+  const rubies: HTMLElement[] = [];
   for (const annotation of annotations) {
     const range = resolveRange(annotation.cfi);
     if (!range || range.collapsed || !annotation.label) continue;
@@ -548,7 +712,7 @@ export function installPassiveVocabAnnotations(options: PassiveVocabDomInstallOp
         installMargin(doc, range, annotation.label, idForAnnotation(index), rails, occupiedBottom, overflow, spread);
         index += 1;
       } else {
-        installRuby(doc, range, annotation.label);
+        rubies.push(installRuby(doc, range, annotation.label));
         index += 1;
       }
     } catch {
@@ -557,6 +721,12 @@ export function installPassiveVocabAnnotations(options: PassiveVocabDomInstallOp
     }
   }
   if (useMargin) installMarginOverflowBadges(doc, rails, overflow);
+  // Same deal as the marker sheet: only pages that actually hang a gloss pay
+  // for the rules.
+  if (rubies.length > 0) {
+    doc.head?.append(rubyStyleSheet(doc));
+    spreadGlosses(rubies);
+  }
   // Only pay for the stylesheet and the two listeners on pages that actually
   // carry a marker.
   if (markers > 0) installMarkerBehaviour(doc);
