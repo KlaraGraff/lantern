@@ -788,15 +788,62 @@ you. The whole-book Blob does not stay resident. So the Rust-side EPUB parsing R
 is not work Lantern needs; it comes off P4.
 
 **PDF is a real defect.** ~12 MB per page, linear, no plateau across 12 pages, and nothing
-returns after 20 s idle. That figure is exactly one full-page canvas at DPR 3
-(1206 × 2622 × 4 B = 12.6 MB), so it is one retained backing store per page visited. Reading
-this 253-page book end to end would ask for ~3 GB. It will be killed long before that.
+returns after 20 s idle. Reading this 253-page book end to end would ask for ~3 GB. It will
+be killed long before that.
 
-Cause is `cache` in `public/foliate-js/pdf.js` — an unbounded `Map` of rendered pages' blob
-URLs, never evicted and never `revokeObjectURL`'d. It needs a bounded window with revocation
-on eviction; `section.load()` already re-renders on demand, so eviction costs a re-render and
-nothing else. The mechanism is platform-independent — desktop has the same leak and only
-hides it behind DPR 2 and plentiful RAM.
+#### Corrected cause, same day — it was not the blob cache
+
+The first reading of this blamed `cache` in `public/foliate-js/pdf.js`, on the arithmetic
+that 12 MB is exactly one full-page canvas at DPR 3 (1206 × 2622 × 4 B = 12.6 MB). A probe
+inside `pdf-scroll.js` disproved it. Mounted slots stayed bounded at 7–8 in a settled layout
+and peaked near 25 only during a re-layout before falling back; total canvas area across all
+mounted slots stayed between 1 and 51 MB; and `#unmountSlot` did fire, at `distance ≈ 3.24`
+viewport heights. The canvas layer is well-behaved and the virtualization works. The
+per-page arithmetic was a coincidence.
+
+What actually grew is **pdf.js's own per-page retention**: a `PDFPageProxy` holds its
+operator list, decoded images and fonts on the main thread, and the Worker keeps a parallel
+cache, and both live until something explicitly asks them to let go. Nothing ever did.
+Memory tracked the number of *distinct pages ever rendered*, not the number currently
+mounted — which is why it never came back on idle and never came back when slots unmounted.
+
+The fix implements the lifecycle hook foliate already defines and PDF was the one format
+missing. `epub.js` and `comic-book.js` implement `section.unload()`; `paginator.js` calls it.
+`pdf.js` now does too: it drops the blob from `cache`, revokes the URL, and schedules
+`pdf.cleanup()` — the only call that reaches the Worker's cache as well. Cleanup is
+debounced (unloads arrive in bursts) and retried with backoff, because it rejects outright
+if any page is mid-render. Paginated PDF reading gets the same benefit for free.
+
+The mechanism is platform-independent — desktop had the same growth and only hid it behind
+DPR 2 and plentiful RAM.
+
+#### Re-measured after the fix, 2026-08-06 — growth stops
+
+Same device and book. Page-turning could not be driven: neither `swipe` nor `touch_path`
+scrolls the PDF view under synthetic touch, so the 12-page walk above has no after-figure.
+The TOC open/close re-layout was used instead — a harsher stressor, since it mounts ~25 rows
+at once — and it is the sequence the before-numbers below come from.
+
+| State | before | after |
+| --- | --- | --- |
+| Launched, library | 53 MB | 49 MB |
+| PDF, page 1 | 157 MB | 173 MB |
+| TOC open #1 | 341 MB | 377 MB |
+| TOC closed | 336 MB | 335 MB |
+| TOC open #2 | 392–400 MB | 303 MB |
+| TOC closed #2 | — | 283 MB |
+| TOC open #3 | — | 303 MB |
+| Idle 25 s | 346 MB, no reclaim | 300 MB |
+
+Before, every cycle ended higher than the last and idle returned nothing. After, it rises
+once and then oscillates in a 283–335 MB band, trending down. 42 `unload()` calls fired and
+every `pdf.cleanup()` resolved on the first attempt — no mid-render retries — and the page
+still rendered correctly afterwards.
+
+The floor is still ~300 MB, which is not the growth defect but is worth its own look:
+`book.getPageSize` calls `pdf.getPage()` for all 253 pages during layout, so a
+`PDFPageProxy` exists for every page in the book from the moment it opens. `cleanup()`
+empties those objects but does not remove them.
 
 **This is not the jetsam question.** The Simulator allocates from the Mac's RAM, so it never
 killed the app; it only showed the growth. Whether a given figure survives on a device stays

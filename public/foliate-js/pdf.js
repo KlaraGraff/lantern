@@ -355,6 +355,46 @@ export const makePDF = async file => {
         const outline = await pdf.getOutline()
         book.toc = outline?.map(makeTOCItem)
 
+        // pdf.js holds on to every page it has ever parsed — the operator
+        // list, decoded images and fonts, on the main thread *and* inside the
+        // Worker — until something explicitly asks it to let go. Nothing here
+        // ever did. The scroll viewer unmounts off-screen iframes correctly,
+        // so the canvases stayed bounded (~50 MB), but underneath it the
+        // WebContent process climbed past 390 MB of phys_footprint on a
+        // 253-page PDF and never gave any of it back, idle or not. That is
+        // jetsam range on a real iPhone; measured on the iPhone 17 Pro
+        // simulator, 2026-08-06.
+        //
+        // `pdf.cleanup()` is the only call that reaches the Worker's cache
+        // too, and it cleans every page at once, so it is scheduled rather
+        // than run per unload.
+        let cleanupTimer = 0
+        let cleanupRetries = 0
+        const runCleanup = () => {
+            pdf.cleanup().then(() => {
+                cleanupRetries = 0
+            }, () => {
+                // "Page N is currently rendering" — the only expected failure.
+                // A single deferral is not enough: a burst of unloads is
+                // exactly when something is also being rendered, and if we
+                // gave up here the pages would stay parsed until the *next*
+                // unload, which on a settled layout never comes. Back off and
+                // keep trying, but stop rather than spin forever.
+                if (cleanupRetries >= 6) return
+                cleanupRetries += 1
+                cleanupTimer = setTimeout(runCleanup, 800 * cleanupRetries)
+            })
+        }
+        const scheduleCleanup = () => {
+            clearTimeout(cleanupTimer)
+            cleanupRetries = 0
+            // Debounced because unloads arrive in bursts — several rows leave
+            // the buffer on one scroll — and because cleanup() rejects
+            // outright if any page is mid-render, which is exactly what a
+            // scroll that is still settling looks like.
+            cleanupTimer = setTimeout(runCleanup, 500)
+        }
+
         const cache = new Map()
         book.sections = Array.from({ length: pdf.numPages }).map((_, i) => ({
             id: i,
@@ -365,6 +405,18 @@ export const makePDF = async file => {
                     await pdf.getPage(i + 1), false, pdfjsLib)
                 cache.set(i, url)
                 return url
+            },
+            // Called by the scroll viewer once it has removed the iframe, so
+            // the blob URL has no live document pointing at it by now. Without
+            // the revoke the Blob stays alive for the lifetime of the page,
+            // and the cached `{src, onZoom}` keeps its PDFPageProxy reachable,
+            // which would defeat the cleanup below.
+            unload: () => {
+                const cached = cache.get(i)
+                if (!cached) return
+                cache.delete(i)
+                URL.revokeObjectURL(cached.src ?? cached)
+                scheduleCleanup()
             },
             size: 1000,
         }))

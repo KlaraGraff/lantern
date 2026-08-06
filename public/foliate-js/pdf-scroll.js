@@ -289,6 +289,7 @@ export class PDFScroll extends HTMLElement {
     }
 
     #unmountSlot(slot) {
+        const wasMounted = Boolean(slot.iframe)
         if (slot.iframe) {
             slot.iframe.remove()
             slot.iframe = null
@@ -297,6 +298,14 @@ export class PDFScroll extends HTMLElement {
         slot.loading = false
         if (slot.overlayer?.element) slot.overlayer.element.remove()
         slot.overlayer = null
+        slot.srcRef = null
+        // Removing the iframe reclaims the canvas but not what the book kept
+        // behind it — for PDFs that is a parsed page per section, which is the
+        // larger half. Tell the book the section is off-screen so it can drop
+        // it; formats that have nothing to drop simply don't define `unload`.
+        // Only after the iframe is gone: `unload` may revoke the blob URL the
+        // iframe was rendering from.
+        if (wasMounted) this.book?.sections?.[slot.index]?.unload?.()
     }
 
     #setupOverlayer(slot) {
