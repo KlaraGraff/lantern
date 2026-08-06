@@ -120,12 +120,23 @@ export function installChapterEndHint(options: ChapterEndHintOptions): void {
   line.textContent = text.line;
   row.append(line);
 
-  const action = doc.createElement("a");
-  action.setAttribute("href", "#");
+  // A <button> styled as a link, never an `<a href="#">`. foliate-js installs
+  // its own listener on the whole content document that intercepts any click
+  // landing inside an `a[href]` and routes the href through `view.goTo()`.
+  // That listener never checks `defaultPrevented`, so an anchor here made one
+  // click do two things: run this handler *and* make the renderer jump. With
+  // "go review" that jump hits a view the host is already tearing down, and
+  // WebKit dereferences the dead scrolling tree on its next display refresh —
+  // a hard crash of the whole app, not a JS error.
+  const action = doc.createElement("button");
+  action.setAttribute("type", "button");
   Object.assign(action.style, {
     fontSize: "13px",
     color: color.muted,
-    textDecoration: "none",
+    background: "transparent",
+    border: "none",
+    padding: "0",
+    cursor: "pointer",
     // The same hairline the row's top border uses, rather than the mockup's
     // literal rgba(0,0,0,.14): the reader ships dark paper themes, and a
     // black underline on dark paper is no underline at all.
@@ -136,6 +147,10 @@ export function installChapterEndHint(options: ChapterEndHintOptions): void {
   action.textContent = text.action;
   action.addEventListener("click", (event) => {
     event.preventDefault();
+    // This row is host chrome that happens to live in the book's document, not
+    // book content — foliate's document-level handlers have no business seeing
+    // its clicks at all.
+    event.stopPropagation();
     onReview();
   });
   row.append(action);
@@ -167,6 +182,7 @@ export function installChapterEndHint(options: ChapterEndHintOptions): void {
   // line of small text is a worse interruption than the line ever was.
   dismiss.addEventListener("click", (event) => {
     event.preventDefault();
+    event.stopPropagation();
     onDismiss();
   });
   row.append(dismiss);

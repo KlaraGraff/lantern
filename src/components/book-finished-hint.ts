@@ -110,12 +110,20 @@ export function installBookFinishedHint(options: BookFinishedHintOptions): void 
   line.textContent = text.line;
   row.append(line);
 
-  const action = doc.createElement("a");
-  action.setAttribute("href", "#");
+  // A <button> styled as a link, never an `<a href="#">` — see the same note
+  // in chapter-end-hint.ts. foliate-js intercepts every click inside an
+  // `a[href]` at the document level and runs it through `view.goTo()`,
+  // regardless of `preventDefault`, so an anchor here also threw the reader
+  // back to the top of the section on every press.
+  const action = doc.createElement("button");
+  action.setAttribute("type", "button");
   Object.assign(action.style, {
     fontSize: "13px",
     color: color.muted,
-    textDecoration: "none",
+    background: "transparent",
+    border: "none",
+    padding: "0",
+    cursor: "pointer",
     // The same hairline the row's top border uses, rather than a literal
     // rgba(0,0,0,.14): the reader ships dark paper themes, and a black
     // underline on dark paper is no underline at all.
@@ -126,6 +134,7 @@ export function installBookFinishedHint(options: BookFinishedHintOptions): void 
   action.textContent = text.action;
   action.addEventListener("click", (event) => {
     event.preventDefault();
+    event.stopPropagation();
     onMarkFinished();
   });
   row.append(action);
@@ -157,6 +166,7 @@ export function installBookFinishedHint(options: BookFinishedHintOptions): void 
   // line of small text is a worse interruption than the line ever was.
   dismiss.addEventListener("click", (event) => {
     event.preventDefault();
+    event.stopPropagation();
     onDismiss();
   });
   row.append(dismiss);

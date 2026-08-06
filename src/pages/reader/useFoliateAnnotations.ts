@@ -465,12 +465,21 @@ export function useFoliateAnnotations({
   // fails). The normal in-app reader hands the intent to Home the same way the
   // existing chat/vocab deep links do — via `location.state`, for Home's own
   // code to pick up.
+  //
+  // Both branches destroy the webview the click came from, and this runs
+  // inside a section iframe's own click dispatch. Doing that synchronously
+  // asks WebKit to free a frame it is still dispatching an event in; the
+  // teardown therefore waits for the next task, by which point the event is
+  // done and the layer tree has settled. Cheap insurance against the same
+  // class of crash the `a[href]` fix above addresses at the source.
   const reviewChapterEndHint = useCallback(() => {
-    if (isStandaloneReaderWindow) {
-      chapterEndHintAppWindow.close().catch(() => navigate("/"));
-    } else {
-      navigate("/", { state: { openReview: true } });
-    }
+    window.setTimeout(() => {
+      if (isStandaloneReaderWindow) {
+        chapterEndHintAppWindow.close().catch(() => navigate("/"));
+      } else {
+        navigate("/", { state: { openReview: true } });
+      }
+    }, 0);
   }, [navigate]);
 
   // "Don't show again": takes effect immediately and everywhere, not just on

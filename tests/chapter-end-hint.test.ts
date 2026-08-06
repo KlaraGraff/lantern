@@ -135,6 +135,50 @@ test("the dismiss control is a real button with an accessible name", () => {
   assert.equal(dismiss.getAttribute("aria-label"), "Don't show again");
 });
 
+// The crash this guards against: foliate-js installs its own click listener on
+// every section document that intercepts anything inside an `a[href]` and runs
+// it through `view.goTo()`, without consulting `defaultPrevented`. So an
+// anchor here meant one press both ran our handler *and* moved the renderer —
+// and "go review" tears that renderer down, which took the whole app with it.
+// Two independent guarantees keep it dead: nothing we inject is an anchor, and
+// nothing we inject lets a click escape to the document at all.
+test("nothing the line injects is an anchor foliate would hijack", () => {
+  const { doc, allElements } = createFakeDoc();
+  installChapterEndHint(baseOptions(doc));
+  for (const el of allElements) {
+    assert.notEqual(el.tagName, "a", "the line must contain no anchors");
+    assert.equal(el.getAttribute("href"), null, `${el.tagName} must carry no href`);
+  }
+});
+
+test("both controls stop their click before it reaches the document", () => {
+  const { doc, allElements } = createFakeDoc();
+  let reviewed = 0;
+  let dismissed = 0;
+  installChapterEndHint(baseOptions(doc, {
+    onReview: () => { reviewed += 1; },
+    onDismiss: () => { dismissed += 1; },
+  }));
+
+  const clickable = allElements.filter((el) => el.listeners.click?.length);
+  assert.equal(clickable.length, 2, "exactly the action and the dismiss control take clicks");
+
+  for (const el of clickable) {
+    let prevented = 0;
+    let stopped = 0;
+    const event = {
+      preventDefault: () => { prevented += 1; },
+      stopPropagation: () => { stopped += 1; },
+    };
+    for (const handler of el.listeners.click) handler(event);
+    assert.equal(prevented, 1, `${el.tagName} must preventDefault`);
+    assert.equal(stopped, 1, `${el.tagName} must stopPropagation`);
+  }
+
+  assert.equal(reviewed, 1);
+  assert.equal(dismissed, 1);
+});
+
 test("no node the module produces carries the accent purple used elsewhere in the app", () => {
   const { doc, allElements } = createFakeDoc();
   installChapterEndHint(baseOptions(doc));
