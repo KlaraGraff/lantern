@@ -891,6 +891,11 @@ pub fn run() {
             commands::vocab::bulk_update_vocab_mastery,
             commands::review_piles::list_review_piles,
             commands::mastery_events::list_mastery_events,
+            // The one gate every system-initiated AI call passes through
+            commands::auto_analysis::auto_analysis_console,
+            commands::auto_analysis::set_auto_analysis_enabled,
+            commands::auto_analysis::note_manual_analysis_run,
+            commands::auto_analysis::dismiss_auto_analysis_recommendation,
             // Local lookup history
             commands::lookup_history::save_lookup_record,
             commands::lookup_history::get_cached_lookup,

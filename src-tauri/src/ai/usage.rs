@@ -180,6 +180,47 @@ pub fn summary(db: &Db, since_ms: i64) -> AppResult<AiUsageSummary> {
     Ok(out)
 }
 
+/// One feature's call count and token totals within a window.
+///
+/// `calls` counts *recorded* calls, not attempted ones: a provider that never
+/// sent a `usage` object leaves no row behind (see `record`). The console
+/// says "about" in front of every one of these numbers for that reason.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeatureUsage {
+    pub feature: String,
+    pub calls: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+}
+
+/// Per-feature rollup for one origin, since `since_ms` (inclusive).
+///
+/// The auto-analysis console needs this on top of `summary`: the headline
+/// ratio is an origin total, but each row in the console has to answer "how
+/// much did *this* job cost", and only `feature` distinguishes them.
+pub fn by_feature(db: &Db, since_ms: i64, origin: &str) -> AppResult<Vec<FeatureUsage>> {
+    let conn = db.reader();
+    let mut stmt = conn.prepare(
+        "SELECT feature,
+                COUNT(*),
+                COALESCE(SUM(input_tokens), 0),
+                COALESCE(SUM(output_tokens), 0)
+         FROM ai_usage_records
+         WHERE created_at >= ?1 AND origin = ?2
+         GROUP BY feature",
+    )?;
+    let rows = stmt.query_map(params![since_ms, origin], |row| {
+        Ok(FeatureUsage {
+            feature: row.get(0)?,
+            calls: row.get(1)?,
+            input_tokens: row.get(2)?,
+            output_tokens: row.get(3)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

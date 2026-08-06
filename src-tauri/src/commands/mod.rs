@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod annotations;
 pub mod app;
+pub mod auto_analysis;
 pub mod bookmarks;
 pub mod books;
 pub mod chats;
