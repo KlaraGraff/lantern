@@ -753,6 +753,55 @@ Decided 2026-08-06.
 
 ---
 
+### D-018 — A missing credential names the channel that failed, instead of shrugging
+
+**Decision.** When the settings pane finds no Keychain item for a model whose configuration is
+already on the device, it does not say "the key is not here and we cannot tell you why". It
+compares the two sync channels, says which one is not delivering, and states in the same breath
+that this is an inference and not a reading of any switch.
+
+**Why anything is undecidable here at all.** Credentials reach a second device over iCloud
+Keychain — a synchronizable Keychain item, per the convention in `CLAUDE.md`. Everything else,
+including the model's own name, provider and endpoint, reaches it over the iCloud Documents
+container. Those are two independent switches under one Apple ID, and nothing reports the
+Keychain one: `FileManager.ubiquityIdentityToken` answers a different question (iCloud Drive and
+the account), a synchronizable write with the switch off returns success, and Apple's own
+guidance puts no bound on arrival time once it is on. The cause is genuinely undetectable.
+
+**What is observable is the other channel.** `sync::peers::list_peers` (`sync/peers.rs:241`)
+returns peers from manifest files written into the shared container, each carrying a `name`
+(`:49`) — so a named peer appearing there is direct evidence that the document channel delivers
+from that device. Separately, `settings` rows carry `updated_at` and `updated_by_device`
+(`commands/settings.rs:106`), so the model configuration's origin and age are already on hand.
+When a configuration arrived from a named peer minutes ago and its credential did not, the two
+channels differ by exactly one variable. Naming that variable is more useful than silence, and
+it points at a switch the reader can actually go and flip.
+
+**The claim must stay an inference in the copy, not just in this document.** "Probably the
+iCloud Keychain switch on this iPhone is off", never "it is off". The pane says what Lantern
+observed — one channel through, one not — so the sentence carries its own evidence.
+
+**Two costs, accepted.**
+
+1. *False positives.* The switch is on and that one item is merely late. Mitigated by a
+   threshold rather than by hedging harder: for the first minute the pane says "just entered it
+   on another device? give it a moment", and only then escalates to the inference.
+2. *It needs a second device.* A single-device install has no control channel, so that pane
+   falls back to the plain "the key is not on this device" wording. Two variants, not one.
+
+**What this does not change.** No spinner, no progress bar, no estimated time — a spinner
+promises that waiting works, and here waiting may never finish. `[Enter the key on this iPhone]`
+stays the first and most prominent action, because it is the only one that is fast and certain.
+
+**Revisit if:** Apple ships an API that reports the iCloud Keychain switch, at which point the
+inference becomes a reading and the hedging comes out.
+
+Decided 2026-08-06, replacing the "Lantern cannot tell which" wording drawn in the settings
+mock-up earlier the same day. That wording was not wrong, only weaker than the available
+evidence allowed.
+
+---
+
 ## 3. Verified facts
 
 Established by direct source inspection so future sessions do not re-audit. Each entry names
@@ -1370,7 +1419,9 @@ It rewrites the same files items 2, 4 and 5 below are about.
    added, **plus the metered-connection answer**, which now has to cover AI calls as well as
    book downloads ([D-016](#d-016--on-cellular-a-book-download-asks-once-and-remembers)). The
    original 18.5 days covered none of it. This is no longer a "reduced" settings pane: the
-   phone carries a setting for every feature the phone has
+   phone carries a setting for every feature the phone has. Key entry also carries the
+   missing-credential pane in two variants —
+   [D-018](#d-018--a-missing-credential-names-the-channel-that-failed-instead-of-shrugging)
 5. Lookup / translation popovers → bottom sheets
 6. The subset of the 25 wide hardcoded widths that the reduced surface touches
 7. ~~`Info.plist` UTI declarations for the picker filter~~ — **done, at a third of its scope.**
