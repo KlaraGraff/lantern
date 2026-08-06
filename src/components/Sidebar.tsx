@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Library, BookOpen, CheckCircle2, FolderClosed, BookA, Plus, MessageSquare, Pencil, Trash2, GripVertical, RefreshCw, StickyNote, BarChart3, RotateCcw, MoreHorizontal } from "lucide-react";
+import { Library, BookOpen, CheckCircle2, FolderClosed, BookA, Plus, MessageSquare, Pencil, Trash2, GripVertical, RefreshCw, StickyNote, BarChart3, RotateCcw, MoreHorizontal, WandSparkles } from "lucide-react";
 import Button from "./ui/Button";
 import LanternLogo from "./LanternLogo";
 import { platform } from "../services/platform";
@@ -87,6 +87,7 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
     { id: "vocab", label: t("sidebar.vocab"), icon: BookA },
     { id: "review", label: t("sidebar.review"), icon: RotateCcw },
     { id: "notes", label: t("sidebar.notes"), icon: StickyNote },
+    { id: "explanations", label: t("sidebar.explanations"), icon: WandSparkles },
     { id: "stats", label: t("sidebar.readingStats"), icon: BarChart3 },
   ];
   const { collections, create, rename, remove, reorder } = collectionsHook;
