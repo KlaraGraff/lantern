@@ -82,7 +82,30 @@ Home
 - 遮罩的 `opacity` 与拉出比例线性绑定，同样直接写。
 
 `useDrawerGesture` 只吃指针事件、吐出「当前拉出比例」和「松手后的目标态」，
-不碰 DOM 结构——这样它能在 jsdom 里单测，不需要真机。
+不碰 DOM 结构——所以它能脱离浏览器单测，不需要真机。**已实现**，见
+[`src/hooks/useDrawerGesture.ts`](../../src/hooks/useDrawerGesture.ts)，23 个单测。
+
+### 接线时唯一容易做错的地方：什么时候 `setPointerCapture`
+
+`onPointerDown` 返回 `true` 只表示「这根手指值得跟」，不表示「这是一次拖拽」。
+抽屉打开时它对整个屏幕的按下都返回 `true`——包括点在侧边栏某一行上的那次点击。
+
+**这时候不能立刻 capture。** 指针捕获会把后续的 `click` 重定向到捕获元素，
+于是侧边栏里每一行都点不动了：手势没做错，但整个抽屉变成了一块死板。
+
+正确的时机是**方向锁解开之后**，也就是 `getState().dragging` 第一次变成 `true` 时：
+
+```tsx
+onPointerMove={(e) => {
+  drawer.onPointerMove(e);
+  if (drawer.getState().dragging && !e.currentTarget.hasPointerCapture(e.pointerId)) {
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+}}
+```
+
+在那之前手指还没离开起手元素，事件本来就冒泡得到，不捕获也收得到。
+一旦判定成拖拽，手指会横穿整个屏幕，这时才必须捕获。
 
 ## 收藏夹的触摸替代动作
 
@@ -118,7 +141,22 @@ Home
 1. `npm run lint`、`npm run test:unit`、`npm run build`、`npm run check:docs` 全绿
 2. `useDrawerGesture` 的单测覆盖：方向锁、优势比、位置吸附、速度吸附、边缘起手拒绝非边缘起手
 3. **回归基准：≥768px 的 Home 与改动前逐像素一致。** 任何可见变化都是 bug，不是改进。
-   验证方式：改动前后各截一张 1280px 宽的 Home 截图对比。
+
+   **验证方式不是截图对比。** 原本写的是「改动前后各截一张 1280px 截图」，
+   但这个应用在普通浏览器里跑不起来——`useWindowSizePersistence` 第一行就读 Tauri 的
+   window metadata，没有 Tauri runtime 时整个 App 在挂载阶段就抛异常，
+   截到的是一张空白页。给 vite dev server 补一层 `invoke` mock 才能截，
+   那是另一个项目（书籍、设置、收藏夹全都要造数据），本次不做。
+
+   替代方案更强，不是更弱：**逐行证明**。要求 diff 满足下面三条，
+   满足了就等价于像素一致，而且是证明，不是抽样：
+   - `<aside>` 分支渲染出的 class 字符串和 inline style，在 ≥768px 下与改动前**逐字符相同**；
+   - 每一个新增的 class 要么带 `md:` 前缀并且取值等于改动前的无前缀值，
+     要么它所在的元素在 ≥768px 下根本不渲染；
+   - 每一个新增的 DOM 节点（汉堡按钮、遮罩、起手区）在 ≥768px 下不渲染，
+     或者渲染成零尺寸且不参与布局流。
+
+   由一个独立的 reviewer 子代理按这三条审 diff，逐条给出结论。
 4. 375px 宽度下：无横向滚动，抽屉能开能关，所有可点元素 ≥44px
 5. 桌面浏览器把窗口从 1280px 拖到 375px，版式切换处不出现破版
 
