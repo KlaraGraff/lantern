@@ -4869,7 +4869,10 @@ mod tests {
         // failover, so it is the retry.
         assert_eq!(answered.id, profile.id);
         assert_eq!(seen.load(Ordering::Relaxed), 2);
-        assert_eq!(profile_by_id(&db, &profile.id).unwrap().view.state, "active");
+        assert_eq!(
+            profile_by_id(&db, &profile.id).unwrap().view.state,
+            "active"
+        );
         let credentials = list_credentials(&db, Some(&profile.id)).unwrap();
         assert_eq!(credentials[0].state, "active");
     }

@@ -15,6 +15,14 @@ export interface DictionaryWord {
   mastery_source: string;
   /** The facts the word-detail explanation sentence is rendered from, or null. */
   mastery_reason: string | null;
+  /**
+   * 'confirmed' once the reader saved the word (or looked it up a 3rd
+   * cumulative time in the same book), 'watchlist' before that — a lookup's
+   * first appearance, not yet something the reader chose to keep. Not a
+   * concept shown to the reader: the vocab list hooks below filter it out by
+   * default, it never gets its own row or badge.
+   */
+  list_status: "confirmed" | "watchlist";
   review_count: number;
   next_review_at: number | null;
   review_interval_days: number;
@@ -70,7 +78,11 @@ export function useDictionary(bookId: string) {
   const refresh = useCallback(async () => {
     try {
       const result = await invoke<DictionaryWord[]>("list_vocab_words", { bookId });
-      setWords(result);
+      // The backend command stays unfiltered — `useFoliateAnnotations` calls
+      // it directly for in-text markers, which must still see watchlist
+      // words. The vocab list itself is the one place that defaults to
+      // hiding them; see the `list_status` doc comment above.
+      setWords(result.filter((word) => word.list_status === "confirmed"));
     } catch (err) {
       console.error("Failed to load vocab words:", err);
     }
@@ -126,7 +138,10 @@ export function useAllDictionary() {
   const refresh = useCallback(async () => {
     try {
       const result = await invoke<DictionaryWord[]>("list_all_vocab_words");
-      setWords(result);
+      // See the matching comment in `useDictionary` above: watchlist words
+      // are excluded from the vocab list by default, not deleted or hidden
+      // behind a toggle — they simply aren't part of this hook's result.
+      setWords(result.filter((word) => word.list_status === "confirmed"));
     } catch (err) {
       console.error("Failed to load all vocab words:", err);
     }

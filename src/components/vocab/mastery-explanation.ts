@@ -43,6 +43,7 @@ export const MASTERY_REASON_CODES = [
   "user_override",
   "review_promotion",
   "review_demotion",
+  "watchlist_promoted",
 ] as const;
 
 export type MasteryReasonCode = (typeof MASTERY_REASON_CODES)[number];
@@ -75,6 +76,7 @@ const REQUIRED_FIELDS: Record<MasteryReasonCode, (keyof MasteryDetail)[]> = {
   user_override: [],
   review_promotion: ["rating"],
   review_demotion: ["rating"],
+  watchlist_promoted: ["book_title", "lookup_count"],
 };
 
 /** Safe JSON.parse: malformed, empty, or non-object input degrades to null. */

@@ -25,6 +25,7 @@ use std::collections::HashMap;
 
 use rusqlite::{params, OptionalExtension, Transaction};
 
+use crate::calibration;
 use crate::commands::lookup_history::normalize;
 use crate::commands::vocab::set_auto_mastery;
 use crate::error::AppResult;
@@ -117,12 +118,23 @@ pub fn score_book_exposures(
 
     if !vocab.is_empty() {
         let book_title = book_title(tx, book_id)?;
+        // Read once per pass, not once per word: this is this reader's own
+        // calibration, not a per-word fact, and re-reading it inside the
+        // loop below would turn one cheap indexed lookup into one per word
+        // scored. See crate::calibration for the derivation and the two
+        // guardrails (insufficient sample -> neutral 1.0; recompute never
+        // touches history already scored by an earlier pass's value).
+        let calibration = calibration::load_from_conn(tx)?;
+        let lookup_rate_scale = calibration::lookup_rate_scale(calibration.lookup_rate_per_1000);
         // Group a word's rows across chapters: CHAPTER_CREDIT_CAP is what
         // separates "read twenty times in one chapter" from "read once in
         // twenty chapters", and it can only be applied per chapter.
         let mut by_word: HashMap<&str, Vec<&PendingRow>> = HashMap::new();
         for row in &pending {
-            by_word.entry(row.normalized_word.as_str()).or_default().push(row);
+            by_word
+                .entry(row.normalized_word.as_str())
+                .or_default()
+                .push(row);
         }
         // Deterministic order: the same reading session must produce the same
         // sequence of timeline rows on every run.
@@ -137,6 +149,7 @@ pub fn score_book_exposures(
             let state = load_progress(tx, &target.id)?.with_tier(target.tier);
             let batch = ExposureBatch {
                 reader_median_wpm: None,
+                lookup_rate_scale,
                 chapters: rows.iter().map(|row| row.to_chapter_exposures()).collect(),
             };
             let decision = apply_exposures(&state, &batch);

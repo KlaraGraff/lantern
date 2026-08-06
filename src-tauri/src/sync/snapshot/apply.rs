@@ -743,9 +743,9 @@ fn upsert_vocab(tx: &Transaction, id: &str, r: &VocabRow) -> AppResult<()> {
          (id, book_id, word, definition, context_sentence, context_explanation, cfi,
           mastery, mastery_source, mastery_reason, review_count, next_review_at,
           review_interval_days, last_reviewed_at, last_review_rating,
-          fsrs_stability, fsrs_difficulty, fsrs_version,
+          fsrs_stability, fsrs_difficulty, fsrs_version, list_status,
           created_at, updated_at, updated_by_device)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
          ON CONFLICT(id) DO UPDATE SET
            mastery=excluded.mastery,
            mastery_source=excluded.mastery_source,
@@ -758,6 +758,7 @@ fn upsert_vocab(tx: &Transaction, id: &str, r: &VocabRow) -> AppResult<()> {
            fsrs_stability=excluded.fsrs_stability,
            fsrs_difficulty=excluded.fsrs_difficulty,
            fsrs_version=excluded.fsrs_version,
+           list_status=excluded.list_status,
            updated_at=excluded.updated_at,
            updated_by_device=excluded.updated_by_device
          WHERE (vocab_words.updated_at, vocab_words.updated_by_device)
@@ -781,6 +782,7 @@ fn upsert_vocab(tx: &Transaction, id: &str, r: &VocabRow) -> AppResult<()> {
             r.fsrs_stability,
             r.fsrs_difficulty,
             r.fsrs_version,
+            r.list_status,
             r.created_at,
             r.updated_at,
             r.updated_by_device,
@@ -1284,7 +1286,7 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
                 last_reviewed_at, last_review_rating,
                 fsrs_stability, fsrs_difficulty, fsrs_version,
                 created_at, updated_at, updated_by_device, context_explanation,
-                mastery_source, mastery_reason FROM vocab_words",
+                mastery_source, mastery_reason, list_status FROM vocab_words",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
@@ -1310,6 +1312,7 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
                 context_explanation: r.get(18)?,
                 mastery_source: r.get(19)?,
                 mastery_reason: r.get(20)?,
+                list_status: r.get(21)?,
             },
         ))
     })?;

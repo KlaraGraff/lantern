@@ -123,34 +123,58 @@ export async function deleteBook(id: string, preserveNotes = false): Promise<voi
   return invoke("delete_book", { id, preserveNotes });
 }
 
-export async function updateReadingProgress(
-  id: string,
-  progress: number,
-  cfi?: string
-): Promise<void> {
-  return invoke("update_reading_progress", {
-    id,
-    progress,
-    cfi: cfi || null,
-  });
-}
-
-export async function markFinished(id: string): Promise<void> {
-  await invoke("mark_finished", { id });
-  // The `reading_review` job's trigger. Fired here rather than inside
-  // `mark_finished` so the two context bits only the webview knows — the
-  // reader's interface language and timezone — travel with it. The gate,
-  // the spend tag and the silence all live in Rust; this side only says
-  // "a book was finished, here is where you are".
-  //
-  // Deliberately not awaited: marking a book finished must not wait on a
-  // provider round-trip, and there is nothing to report either way. The
-  // catch exists only for the case where the command itself is missing.
+/**
+ * The `reading_review` job's trigger, shared by every path that can land a
+ * book on "finished" — the manual `markFinished` below, and the §2.2
+ * auto-finish gate in `updateReadingProgress`. Kept as its own function
+ * rather than folded into either caller so the two context bits only the
+ * webview knows — the reader's interface language and timezone — travel with
+ * it exactly once, regardless of which path produced the finish. The gate,
+ * the spend tag and the silence all live in Rust; this side only says "a book
+ * was finished, here is where you are".
+ *
+ * Deliberately not awaited by callers: marking a book finished must not wait
+ * on a provider round-trip, and there is nothing to report either way. The
+ * catch exists only for the case where the command itself is missing.
+ */
+function triggerBookFinishedAnalysis(id: string): void {
   void invoke("run_book_finished_analysis", {
     bookId: id,
     language: i18n.language?.startsWith("zh") ? "zh" : "en",
     timezoneOffsetMinutes: new Date().getTimezoneOffset(),
   }).catch(() => {});
+}
+
+/**
+ * The §2.2 auto-finish gate's coverage denominator (how many screens the
+ * whole book takes) is computed on the backend from this book's own reading
+ * history (`reading_behavior::estimate_total_book_screens`), not passed in
+ * from here — see that function's doc comment for the derivation, and for
+ * why it returns "skip the check" rather than any fallback number whenever
+ * the evidence isn't trustworthy yet, per "宁可漏标，不可错标". When the
+ * gate does clear, the backend finishes the book through the same event
+ * shape `markFinished` produces and reports it back here, so the caller can
+ * run the same finished-book analysis a manual finish would have. Returns
+ * that same flag so a caller with local book state (the reader's own
+ * `book.status`) can reflect it without waiting for a refetch.
+ */
+export async function updateReadingProgress(
+  id: string,
+  progress: number,
+  cfi?: string,
+): Promise<boolean> {
+  const autoFinished = await invoke<boolean>("update_reading_progress", {
+    id,
+    progress,
+    cfi: cfi || null,
+  });
+  if (autoFinished) triggerBookFinishedAnalysis(id);
+  return autoFinished;
+}
+
+export async function markFinished(id: string): Promise<void> {
+  await invoke("mark_finished", { id });
+  triggerBookFinishedAnalysis(id);
 }
 
 export async function updateBookStatus(id: string, status: "reading" | "finished" | "unread"): Promise<void> {

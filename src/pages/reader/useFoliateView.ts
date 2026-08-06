@@ -682,6 +682,16 @@ export function useFoliateView({
         const activeSettings = readerSettingsRef.current;
         if (openedCapabilities.supportsReflowSettings && activeSettings.readingMode === "paginated") {
           const current = Number(view.renderer?.page);
+          // `view.renderer.pages` is foliate's *current-chapter* page count —
+          // it is rebuilt by the paginator on every chapter load, so it is
+          // only ever "how many screens the chapter now open takes", never
+          // the whole book. Fine for the page-number readout below, which is
+          // explicitly chapter-scoped (see `useProgressReadout.ts`'s
+          // in-chapter remaining-pages math for the same convention). Wrong
+          // as a §2.2 auto-finish denominator, which used to be sourced from
+          // this same value — see
+          // `reading_behavior::estimate_total_book_screens` on the backend
+          // for where that denominator comes from now.
           const total = Math.max(1, Number(view.renderer?.pages) - 2);
           setPageInfo(Number.isFinite(current) && Number.isFinite(total) ? {
             current: Math.max(1, Math.min(total, current)),

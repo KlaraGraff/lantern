@@ -32,6 +32,16 @@ use crate::error::{AppError, AppResult};
 pub enum AutoAnalysisTrigger {
     /// Once, when a book is marked finished.
     BookFinished,
+    /// At most once a day — see `commands::review_pile_ai`, the one job
+    /// that uses this today. There is no background scheduler; the job
+    /// checks its own staleness lazily and skips itself when it last ran
+    /// within the last 24h.
+    Daily,
+    /// Whenever enough has piled up — see `commands::followup_difficulty`,
+    /// the one job that uses this today. Nothing runs per-message; the
+    /// classification call fires once accumulated rows cross a fixed
+    /// threshold, so the trigger is a count, not a clock.
+    Batch,
 }
 
 /// One system-initiated AI job.
@@ -43,17 +53,44 @@ pub struct AutoAnalysisJob {
     /// feature tag drift apart silently reports zero forever.
     pub id: &'static str,
     pub trigger: AutoAnalysisTrigger,
+    /// What a reader who has never touched this job's switch gets. See the
+    /// doc comment on `is_enabled` for why `true` is the norm and what
+    /// justifies the one job that is not.
+    pub default_enabled: bool,
 }
 
 /// Every job the reader can authorise.
 ///
-/// One entry today: `reading_review` is the only automatic analysis whose
-/// underlying generator exists (`commands::reading_stats`). The mockup's
-/// other rows are absent on purpose until theirs do.
-pub const JOBS: &[AutoAnalysisJob] = &[AutoAnalysisJob {
-    id: "reading_review",
-    trigger: AutoAnalysisTrigger::BookFinished,
-}];
+/// `reading_review` is the automatic analysis whose underlying generator
+/// exists (`commands::reading_stats`) and has shipped enabled since before
+/// this registry could express anything else. `review_pile_curation`
+/// (`commands::review_pile_ai`) is the first job that ships *off*: see its
+/// module doc and docs/impls/reading-flow-decisions-2026-08-06.md §6 — its
+/// value, not just its cost, is still unproven, so the default cannot be
+/// "on" the way every job before it was. `followup_difficulty`
+/// (`commands::followup_difficulty`) ships *on*, the same as `reading_review`
+/// — see its module doc and
+/// docs/impls/reading-driven-mastery-and-review.md §5.5 — because unlike
+/// `review_pile_curation` it produces no reader-facing output to judge yet;
+/// it only accumulates data for statistics this registry does not gate. The
+/// mockup's other rows are absent on purpose until theirs do.
+pub const JOBS: &[AutoAnalysisJob] = &[
+    AutoAnalysisJob {
+        id: "reading_review",
+        trigger: AutoAnalysisTrigger::BookFinished,
+        default_enabled: true,
+    },
+    AutoAnalysisJob {
+        id: crate::commands::review_pile_ai::JOB_ID,
+        trigger: AutoAnalysisTrigger::Daily,
+        default_enabled: false,
+    },
+    AutoAnalysisJob {
+        id: crate::commands::followup_difficulty::JOB_ID,
+        trigger: AutoAnalysisTrigger::Batch,
+        default_enabled: true,
+    },
+];
 
 /// How many manual runs before the console offers to make a job automatic.
 /// Four is the mockup's number: enough that the reader has clearly chosen
@@ -79,6 +116,18 @@ fn dismissed_key(id: &str) -> String {
     format!("auto_analysis_recommend_dismissed_{id}")
 }
 
+/// Whether this job's switch has ever been turned on, distinct from whether
+/// it is on *now*. A job whose default is `true` counts as always having
+/// been on — nobody has ever had to reach for the switch, which is not the
+/// same fact as "declined it". This is the flag `review_pile_curation` needs
+/// to tell "turned on, tried it, and switched back off" apart from "never
+/// opened the settings row at all" — `enabled: false` alone cannot make that
+/// distinction, and that distinction is exactly what internal dogfooding
+/// needs to read.
+fn ever_enabled_key(id: &str) -> String {
+    format!("auto_analysis_ever_enabled_{id}")
+}
+
 fn read_setting(conn: &Connection, key: &str) -> Option<String> {
     conn.query_row(
         "SELECT value FROM settings WHERE key = ?1",
@@ -101,19 +150,26 @@ fn write_setting(conn: &Connection, key: &str, value: &str) -> AppResult<()> {
 
 /// Whether `job_id` may run automatically right now.
 ///
-/// Absent means enabled: automatic analysis ships on, which the console can
-/// only justify because it states plainly what each job does, whose quota it
+/// Absent means "use the job's own default": for every job before
+/// `review_pile_curation` that default is `true`, so a reader who never
+/// touches the switch gets automatic analysis on — the console can only
+/// justify that because it states plainly what each job does, whose quota it
 /// spends, roughly how much, and offers the switch in the same view. A job
-/// defaulting off would simply never run, and a feature that never runs was
-/// not built.
+/// whose default is `false` (see `AutoAnalysisJob::default_enabled`) simply
+/// never runs until the reader finds it and turns it on themselves — still
+/// registered, still explained, just not spending anything on its own.
 ///
 /// Unknown ids are refused rather than defaulted — a caller asking about a
 /// job that is not in the registry is a caller that was never reviewed here.
 pub fn is_enabled(conn: &Connection, job_id: &str) -> bool {
-    if !JOBS.iter().any(|job| job.id == job_id) {
+    let Some(job) = JOBS.iter().find(|job| job.id == job_id) else {
         return false;
+    };
+    match read_setting(conn, &enabled_key(job_id)).as_deref() {
+        Some("false") => false,
+        Some("true") => true,
+        _ => job.default_enabled,
     }
-    read_setting(conn, &enabled_key(job_id)).as_deref() != Some("false")
 }
 
 fn manual_runs(conn: &Connection, job_id: &str) -> i64 {
@@ -135,6 +191,12 @@ pub struct AutoAnalysisJobView {
     pub id: String,
     pub trigger: AutoAnalysisTrigger,
     pub enabled: bool,
+    /// Whether the switch has ever been on — `true` immediately for a job
+    /// whose default is on, and permanently `true` the first time a
+    /// default-off job's switch is flipped, even if it is off again now. See
+    /// `ever_enabled_key` for why this exists as its own bit rather than
+    /// being derived from `enabled`.
+    pub ever_enabled: bool,
     /// Recorded automatic calls and their tokens inside the console window.
     pub auto_calls: i64,
     pub auto_tokens: i64,
@@ -208,10 +270,13 @@ fn console_inner(db: &Db, since_ms: i64) -> AppResult<AutoAnalysisConsole> {
             let every_token = auto_tokens.saturating_add(
                 manual_usage.map_or(0, |row| row.input_tokens.saturating_add(row.output_tokens)),
             );
+            let ever_enabled = job.default_enabled
+                || read_setting(&conn, &ever_enabled_key(job.id)).as_deref() == Some("true");
             AutoAnalysisJobView {
                 id: job.id.to_string(),
                 trigger: job.trigger,
                 enabled,
+                ever_enabled,
                 auto_calls,
                 auto_tokens,
                 manual_runs: runs,
@@ -266,6 +331,10 @@ fn set_enabled_inner(db: &Db, job_id: &str, enabled: bool) -> AppResult<AutoAnal
                 "DELETE FROM settings WHERE key = ?1",
                 params![dismissed_key(job.id)],
             )?;
+            // Written once, never cleared — turning the switch off later
+            // must not erase the fact that it was tried. This is the "used
+            // it and liked it" side of the used/never-opened distinction.
+            write_setting(&conn, &ever_enabled_key(job.id), "true")?;
         }
     }
     view_of(db, job.id)
@@ -294,6 +363,15 @@ fn dismiss_recommendation_inner(db: &Db, job_id: &str) -> AppResult<AutoAnalysis
         write_setting(&conn, &dismissed_key(job.id), "true")?;
     }
     view_of(db, job.id)
+}
+
+/// Test-only escape hatch for other modules' test suites — e.g.
+/// `commands::followup_difficulty`'s tests, which need to assert their
+/// automatic trigger stays silent while their job is switched off, without
+/// standing up a full `State<Db>` extraction just to call the tauri command.
+#[cfg(test)]
+pub(crate) fn set_enabled_for_test(db: &Db, job_id: &str, enabled: bool) {
+    set_enabled_inner(db, job_id, enabled).unwrap();
 }
 
 /// Flip one job's switch.
@@ -558,5 +636,63 @@ mod tests {
         insert_usage(&db, "user", "chat", 2_000, 9_000);
         let view = view_of(&db, "reading_review").unwrap();
         assert_eq!(view.typical_tokens, Some(100));
+    }
+
+    /// `review_pile_curation` is the one job in `JOBS` whose
+    /// `default_enabled` is `false` — see its module doc and
+    /// docs/impls/reading-flow-decisions-2026-08-06.md §6. A reader who has
+    /// never touched its switch must get "off", not the "on" every job
+    /// before it shipped with.
+    #[test]
+    fn review_pile_curation_ships_off_by_default() {
+        let (_dir, db) = setup();
+        let conn = db.reader();
+        assert!(!is_enabled(
+            &conn,
+            crate::commands::review_pile_ai::JOB_ID
+        ));
+    }
+
+    /// A job nobody has ever touched, whose default is off, has never been
+    /// "on" either — `ever_enabled` must say so, not just `enabled`.
+    #[test]
+    fn a_never_touched_default_off_job_has_never_been_enabled() {
+        let (_dir, db) = setup();
+        let view = view_of(&db, crate::commands::review_pile_ai::JOB_ID).unwrap();
+        assert!(!view.enabled);
+        assert!(!view.ever_enabled);
+    }
+
+    /// The whole point of `ever_enabled`: a reader who turns a default-off
+    /// job on, then back off, has demonstrably tried it. That fact must
+    /// survive the switch going back off — `enabled` alone would erase it.
+    #[test]
+    fn turning_a_default_off_job_on_then_off_again_leaves_ever_enabled_true() {
+        let (_dir, db) = setup();
+        let job_id = crate::commands::review_pile_ai::JOB_ID;
+        let on = set_enabled_inner(&db, job_id, true).unwrap();
+        assert!(on.enabled);
+        assert!(on.ever_enabled);
+        let off = set_enabled_inner(&db, job_id, false).unwrap();
+        assert!(!off.enabled);
+        assert!(
+            off.ever_enabled,
+            "switching back off must not erase that it was tried"
+        );
+    }
+
+    /// A job whose default is `true` has never needed the switch touched to
+    /// be considered "tried" — `reading_review` (and any future default-on
+    /// job) is `ever_enabled` from the first read, same as `enabled`.
+    #[test]
+    fn a_default_on_job_is_always_ever_enabled() {
+        let (_dir, db) = setup();
+        let untouched = view_of(&db, "reading_review").unwrap();
+        assert!(untouched.ever_enabled);
+        let off = set_enabled_inner(&db, "reading_review", false).unwrap();
+        assert!(
+            off.ever_enabled,
+            "a default-on job stays ever_enabled even after being switched off"
+        );
     }
 }

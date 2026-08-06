@@ -40,6 +40,7 @@ type BackendDashboard = {
   }>;
   facts: ReadingStatsDashboard["facts"];
   cachedReview: null | { narrative: string; providerProfileId: string; provider: string; model: string; updatedAt: number; facts: ReadingStatsDashboard["facts"] };
+  reviewPendingReason: string | null;
 };
 
 function rangeBounds(range: ReadingStatsRange, now = new Date()): [number, number] {
@@ -57,6 +58,19 @@ export function toBackendQuery(query: ReadingStatsQuery): BackendQuery {
     scopeBookId: query.bookId,
     timezoneOffsetMinutes: new Date().getTimezoneOffset(),
   };
+}
+
+const PENDING_REASON_CODES: ReadingReviewErrorCode[] = ["notConfigured", "quotaExceeded", "offline", "failed"];
+
+/**
+ * The backend already sorts a failed automatic attempt into the same four
+ * buckets the manual retry path uses (see `pending_reason_bucket` in
+ * `reading_stats.rs`). This only guards against an unrecognized string ever
+ * reaching the UI as something other than one of those four.
+ */
+function pendingReasonCode(value: string | null): ReadingReviewErrorCode | null {
+  if (value && (PENDING_REASON_CODES as string[]).includes(value)) return value as ReadingReviewErrorCode;
+  return value ? "failed" : null;
 }
 
 function normalizeDashboard(value: BackendDashboard): ReadingStatsDashboard {
@@ -91,6 +105,7 @@ function normalizeDashboard(value: BackendDashboard): ReadingStatsDashboard {
       updatedAt: Math.floor(value.cachedReview.updatedAt / 1000),
       facts: value.cachedReview.facts,
     } : null,
+    reviewPendingReason: pendingReasonCode(value.reviewPendingReason),
   };
 }
 

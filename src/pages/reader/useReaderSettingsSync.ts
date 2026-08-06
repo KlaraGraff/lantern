@@ -58,6 +58,7 @@ const readerPreferenceSettingKeys = {
   paragraphSpacing: "paragraph_spacing",
   firstLineIndent: "first_line_indent",
   chapterEndReviewHint: "chapter_end_review_hint",
+  bookFinishedHint: "book_finished_hint",
 } as const;
 
 // Every setting the reader panel can hold per book, as `book_settings` rows: one
@@ -164,6 +165,7 @@ export function createDefaultReaderSettings(): ReaderSettingsState {
     margins: 0,
     ...DEFAULT_MARKER_VISIBILITY,
     chapterEndReviewHint: true,
+    bookFinishedHint: true,
   };
 }
 
@@ -209,6 +211,11 @@ export function resolveReaderSettings(
     // per-book override would need `commands/settings.rs`'s promotion map to
     // know about it too, and this setting has no reason to vary by book anyway.
     chapterEndReviewHint: booleanSetting(globalSettings.chapter_end_review_hint, previous.chapterEndReviewHint),
+    // Same shape as the chapter-end line's own setting: global-only, no
+    // per-book row, and no settings-panel toggle — §2.2's spec asks only for
+    // a "don't show again" exit on the line itself, which writes this key
+    // directly (see `dismissBookFinishedHint` in `useFoliateAnnotations.ts`).
+    bookFinishedHint: booleanSetting(globalSettings.book_finished_hint, previous.bookFinishedHint),
     previousPageBinding: globalSettings.previous_page_binding || previous.previousPageBinding,
     nextPageBinding: globalSettings.next_page_binding || previous.nextPageBinding,
     lineSpacing: numberSetting(perBookSettings[perBookSettingKeys.lineSpacing])

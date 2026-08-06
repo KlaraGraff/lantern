@@ -30,6 +30,13 @@ pub struct VocabWord {
     /// from. JSON text, or None when no automatic decision has been made.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mastery_reason: Option<String>,
+    /// The observation zone (docs/impls/reading-flow-decisions-2026-08-06.md
+    /// §1): 'watchlist' from the first lookup, 'confirmed' once the reader
+    /// saves the word or looks it up a 3rd cumulative time in the same book.
+    /// Not a new concept shown to the reader — see `default_list_status` and
+    /// migration 044 — only a filter value the vocab list defaults to.
+    #[serde(default = "default_list_status")]
+    pub list_status: String,
     pub review_count: i64,
     pub next_review_at: Option<i64>,
     pub review_interval_days: i64,
@@ -86,6 +93,7 @@ fn row_to_vocab(row: &rusqlite::Row) -> rusqlite::Result<VocabWord> {
         fsrs_version: row.get(17)?,
         mastery_source: row.get(18)?,
         mastery_reason: row.get(19)?,
+        list_status: row.get(20)?,
         book_title: None,
         chapter: None,
     })
@@ -113,12 +121,13 @@ fn row_to_vocab_with_book(row: &rusqlite::Row) -> rusqlite::Result<VocabWord> {
         fsrs_version: row.get(17)?,
         mastery_source: row.get(18)?,
         mastery_reason: row.get(19)?,
-        book_title: row.get(20)?,
-        chapter: row.get(21)?,
+        list_status: row.get(20)?,
+        book_title: row.get(21)?,
+        chapter: row.get(22)?,
     })
 }
 
-const SELECT_COLS: &str = "id, book_id, word, definition, context_sentence, cfi, mastery, review_count, next_review_at, created_at, updated_at, context_explanation, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version, mastery_source, mastery_reason";
+const SELECT_COLS: &str = "id, book_id, word, definition, context_sentence, cfi, mastery, review_count, next_review_at, created_at, updated_at, context_explanation, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version, mastery_source, mastery_reason, list_status";
 
 #[cfg(test)]
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
@@ -177,6 +186,12 @@ pub struct VocabBackupWord {
     pub created_at: i64,
     #[serde(default)]
     pub updated_at: i64,
+    // A backup never contains a watchlist word (export leaves them out — see
+    // `export_vocab_backup_inner`), but old backups predate this field
+    // outright, so both cases decode the same way: a word the reader
+    // consciously saved.
+    #[serde(default = "default_list_status")]
+    pub list_status: String,
 }
 
 fn default_mastery() -> String {
@@ -189,6 +204,10 @@ fn default_mastery_source() -> String {
 
 fn default_fsrs_version() -> i64 {
     1
+}
+
+fn default_list_status() -> String {
+    "confirmed".to_string()
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -315,6 +334,10 @@ impl From<VocabCsvRow> for VocabBackupWord {
             fsrs_version: row.fsrs_version,
             created_at: row.created_at,
             updated_at: row.updated_at,
+            // CSV never carries this column (see `VOCAB_BACKUP_CSV_HEADERS`
+            // on the frontend) — every CSV-imported word is treated as one
+            // the reader consciously saved.
+            list_status: default_list_status(),
         }
     }
 }
@@ -644,6 +667,26 @@ pub(crate) fn add_vocab_word_inner(
             row
         };
         if let Some(existing) = existing {
+            if existing.list_status == "watchlist" {
+                // The reader hit "收藏" (save) on a word that was already
+                // sitting in the observation zone from an earlier lookup —
+                // that's an explicit save, so it promotes immediately
+                // regardless of lookup count. Source stays whatever it was
+                // (this path never touches mastery_source/reason).
+                tx.execute(
+                    "UPDATE vocab_words SET list_status = 'confirmed', updated_at = ?1, updated_by_device = ?2 WHERE id = ?3",
+                    params![now, device, existing.id],
+                )?;
+                events.push(EventBody::VocabListStatusSet {
+                    id: existing.id.clone(),
+                    list_status: "confirmed".to_string(),
+                });
+                return Ok(VocabWord {
+                    list_status: "confirmed".to_string(),
+                    updated_at: now,
+                    ..existing
+                });
+            }
             // Existing match → no SQL write, no event published. The
             // closure still returns the row so the frontend gets the
             // canonical record.
@@ -651,8 +694,8 @@ pub(crate) fn add_vocab_word_inner(
         }
 
         tx.execute(
-            "INSERT INTO vocab_words (id, book_id, word, definition, context_sentence, context_explanation, cfi, mastery, review_count, next_review_at, created_at, updated_at, updated_by_device)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'new', 0, NULL, ?8, ?8, ?9)",
+            "INSERT INTO vocab_words (id, book_id, word, definition, context_sentence, context_explanation, cfi, mastery, review_count, next_review_at, list_status, created_at, updated_at, updated_by_device)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'new', 0, NULL, 'confirmed', ?8, ?8, ?9)",
             params![id, book_id, word, definition, context_sentence, context_explanation, cfi, now, device],
         )?;
         events.push(EventBody::VocabAdd(VocabPayload {
@@ -666,6 +709,7 @@ pub(crate) fn add_vocab_word_inner(
             mastery: "new".to_string(),
             mastery_source: "manual".to_string(),
             mastery_reason: None,
+            list_status: "confirmed".to_string(),
             review_count: 0,
             next_review_at: None,
             review_interval_days: 0,
@@ -687,6 +731,7 @@ pub(crate) fn add_vocab_word_inner(
             mastery: "new".to_string(),
             mastery_source: "manual".to_string(),
             mastery_reason: None,
+            list_status: "confirmed".to_string(),
             review_count: 0,
             next_review_at: None,
             review_interval_days: 0,
@@ -705,6 +750,131 @@ pub(crate) fn add_vocab_word_inner(
     Ok(vocab)
 }
 
+/// Runs on every lookup, inside `save_lookup_record_inner`'s transaction,
+/// before `mastery::store::apply_lookup_to_word` — that function only scores
+/// a word that already has a `vocab_words` row, so the first lookup has to
+/// create one here first. See docs/impls/reading-flow-decisions-2026-08-06.md
+/// §1 and §5.
+///
+/// A brand-new word is inserted straight into the observation zone
+/// (`list_status = 'watchlist'`) rather than the formal list: the reader
+/// asked what it means, not to save it. From there this same function
+/// promotes it to `'confirmed'` the moment the cumulative lookup count for
+/// this exact word in this exact book — summed across every position it's
+/// been looked up at, the identical aggregation
+/// `review_piles::repeat_lookups_piles` uses, never a single row's count —
+/// reaches 3. A word already `'confirmed'` (saved manually, or promoted on
+/// an earlier lookup) is left alone; this function has nothing further to do
+/// for it.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn observe_lookup_for_vocab(
+    tx: &rusqlite::Transaction,
+    events: &mut Vec<EventBody>,
+    book_id: &str,
+    word: &str,
+    normalized_text: &str,
+    definition: &str,
+    context_sentence: Option<&str>,
+    context_explanation: Option<&str>,
+    cfi: Option<&str>,
+    now: i64,
+    device: &str,
+) -> AppResult<()> {
+    let existing: Option<(String, String, String)> = tx
+        .query_row(
+            "SELECT id, list_status, mastery FROM vocab_words WHERE book_id = ?1 AND word = ?2 COLLATE NOCASE LIMIT 1",
+            params![book_id, word],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+
+    let (vocab_id, mastery) = match existing {
+        Some((_, list_status, _)) if list_status == "confirmed" => return Ok(()),
+        Some((id, _watchlist, mastery)) => (id, mastery),
+        None => {
+            let id = uuid::Uuid::new_v4().to_string();
+            tx.execute(
+                "INSERT INTO vocab_words (id, book_id, word, definition, context_sentence, context_explanation, cfi, mastery, review_count, next_review_at, list_status, created_at, updated_at, updated_by_device)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'new', 0, NULL, 'watchlist', ?8, ?8, ?9)",
+                params![id, book_id, word, definition, context_sentence, context_explanation, cfi, now, device],
+            )?;
+            events.push(EventBody::VocabAdd(VocabPayload {
+                id: id.clone(),
+                book_id: book_id.to_string(),
+                word: word.to_string(),
+                definition: definition.to_string(),
+                context_sentence: context_sentence.map(str::to_string),
+                context_explanation: context_explanation.map(str::to_string),
+                cfi: cfi.map(str::to_string),
+                mastery: "new".to_string(),
+                mastery_source: "manual".to_string(),
+                mastery_reason: None,
+                list_status: "watchlist".to_string(),
+                review_count: 0,
+                next_review_at: None,
+                review_interval_days: 0,
+                last_reviewed_at: None,
+                last_review_rating: None,
+                fsrs_stability: None,
+                fsrs_difficulty: None,
+                fsrs_version: 1,
+                created_at: Some(now),
+            }));
+            (id, "new".to_string())
+        }
+    };
+
+    // Same aggregation `review_piles::repeat_lookups_piles` uses: cumulative
+    // lookups of this word in this book, summed across every position —
+    // never a single row's `lookup_count`.
+    let total_lookups: i64 = tx.query_row(
+        "SELECT COALESCE(SUM(lookup_count), 0) FROM lookup_records WHERE book_id = ?1 AND normalized_text = ?2",
+        params![book_id, normalized_text],
+        |row| row.get(0),
+    )?;
+    if total_lookups < 3 {
+        return Ok(());
+    }
+
+    tx.execute(
+        "UPDATE vocab_words SET list_status = 'confirmed', updated_at = ?1, updated_by_device = ?2 WHERE id = ?3",
+        params![now, device, vocab_id],
+    )?;
+    events.push(EventBody::VocabListStatusSet {
+        id: vocab_id.clone(),
+        list_status: "confirmed".to_string(),
+    });
+
+    let book_title = tx
+        .query_row(
+            "SELECT title FROM books WHERE id = ?1",
+            params![book_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+        .filter(|title| !title.trim().is_empty());
+    let mut detail = serde_json::Map::new();
+    detail.insert(
+        "reason".to_string(),
+        "watchlist_promoted".to_string().into(),
+    );
+    if let Some(title) = book_title {
+        detail.insert("book_title".to_string(), title.into());
+    }
+    detail.insert("lookup_count".to_string(), total_lookups.into());
+    record_mastery_event(
+        tx,
+        &vocab_id,
+        &mastery,
+        &mastery,
+        "auto",
+        "watchlist_promoted",
+        &serde_json::Value::Object(detail).to_string(),
+        now,
+    )?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn remove_vocab_word(
     id: String,
@@ -719,6 +889,18 @@ pub fn remove_vocab_word(
     })
 }
 
+// `query_vocab_words` and `query_all_vocab_words` deliberately return every
+// row regardless of `list_status`. They back `list_vocab_words` /
+// `list_all_vocab_words`, and the in-text three-stage annotation
+// (`useFoliateAnnotations.ts`) reads through those same commands and needs
+// the full set — a watchlist word must still get its in-text mark. The
+// dictionary-style, reader-facing views (`useDictionary.ts`,
+// `ReaderExportDialog.tsx`) filter `list_status === "confirmed"` client-side
+// after the same call, and the MCP tools (`mcp/tools/vocab.rs`) do the
+// equivalent filtering server-side before handing rows to an AI client. Do
+// not add a `list_status` filter here — that would silently blind the
+// annotation path to every watchlist word. Reader-facing call sites are
+// responsible for filtering themselves.
 pub(crate) fn query_vocab_words(db: &Db, book_id: &str) -> AppResult<Vec<VocabWord>> {
     let conn = db.reader();
     let mut stmt = conn.prepare(&format!(
@@ -742,9 +924,21 @@ pub fn check_vocab_exists(
     word: String,
     db: State<'_, Db>,
 ) -> AppResult<Option<String>> {
+    check_vocab_exists_inner(&db, &book_id, &word)
+}
+
+pub(crate) fn check_vocab_exists_inner(
+    db: &Db,
+    book_id: &str,
+    word: &str,
+) -> AppResult<Option<String>> {
     let conn = db.reader();
     let mut stmt = conn.prepare(
-        "SELECT id FROM vocab_words WHERE book_id = ?1 AND word = ?2 COLLATE NOCASE LIMIT 1",
+        // 'watchlist' rows are invisible to the reader, so a word sitting
+        // there must still show up as "not yet collected" — otherwise the
+        // collect button would silently no-op on a word the reader has
+        // never consciously saved.
+        "SELECT id FROM vocab_words WHERE book_id = ?1 AND word = ?2 COLLATE NOCASE AND list_status = 'confirmed' LIMIT 1",
     )?;
     let id: Option<String> = stmt
         .query_map(params![book_id, word], |row| row.get(0))?
@@ -753,6 +947,9 @@ pub fn check_vocab_exists(
     Ok(id)
 }
 
+// See the comment on `query_vocab_words` above — same rule applies here:
+// this stays unfiltered on `list_status` because it also backs the in-text
+// annotation path. Filter at the call site if the caller is reader-facing.
 pub(crate) fn query_all_vocab_words(db: &Db) -> AppResult<Vec<VocabWord>> {
     let conn = db.reader();
     let mut stmt = conn.prepare(
@@ -761,7 +958,7 @@ pub(crate) fn query_all_vocab_words(db: &Db) -> AppResult<Vec<VocabWord>> {
         // the word gives contextual review the "which chapter was this" line
         // without a migration, and simply yields NULL when nothing matches.
         // Same-position lookups win over merely same-word ones.
-        "SELECT v.id, v.book_id, v.word, v.definition, v.context_sentence, v.cfi, v.mastery, v.review_count, v.next_review_at, v.created_at, v.updated_at, v.context_explanation, v.review_interval_days, v.last_reviewed_at, v.last_review_rating, v.fsrs_stability, v.fsrs_difficulty, v.fsrs_version, v.mastery_source, v.mastery_reason, b.title, \
+        "SELECT v.id, v.book_id, v.word, v.definition, v.context_sentence, v.cfi, v.mastery, v.review_count, v.next_review_at, v.created_at, v.updated_at, v.context_explanation, v.review_interval_days, v.last_reviewed_at, v.last_review_rating, v.fsrs_stability, v.fsrs_difficulty, v.fsrs_version, v.mastery_source, v.mastery_reason, v.list_status, b.title, \
          COALESCE( \
            (SELECT l.chapter FROM lookup_records l \
              WHERE l.book_id = v.book_id AND l.cfi = v.cfi AND l.normalized_text = lower(trim(v.word)) \
@@ -983,11 +1180,20 @@ pub(crate) fn update_vocab_mastery_inner(
     })
 }
 
+// Unlike `query_vocab_words`, this one is a "due for review" list, not a
+// backing store for the in-text annotation path — nothing needs the
+// watchlist rows here. `propagate_progress_to_siblings` copies
+// `next_review_at` onto every row sharing a spelling regardless of
+// `list_status` (mastery/review progress belongs to the word, not the row),
+// so a watchlist sibling of a confirmed word can carry a `next_review_at`
+// of its own. Filtering on `list_status = 'confirmed'` here keeps that
+// invisible-by-design data from resurfacing in a "words due for review"
+// list. See the equivalent guard in `commands/review_piles.rs`.
 pub(crate) fn query_vocab_due(db: &Db) -> AppResult<Vec<VocabWord>> {
     let conn = db.reader();
     let now_ms = chrono::Utc::now().timestamp_millis();
     let mut stmt = conn.prepare(&format!(
-        "SELECT {} FROM vocab_words WHERE next_review_at IS NOT NULL AND next_review_at <= ?1 ORDER BY next_review_at ASC",
+        "SELECT {} FROM vocab_words WHERE next_review_at IS NOT NULL AND next_review_at <= ?1 AND list_status = 'confirmed' ORDER BY next_review_at ASC",
         SELECT_COLS
     ))?;
     let words = stmt
@@ -1001,32 +1207,41 @@ pub fn list_vocab_due_for_review(db: State<'_, Db>) -> AppResult<Vec<VocabWord>>
     query_vocab_due(&db)
 }
 
+// Reader-facing aggregate counts (currently only consumed by the MCP
+// `get_vocab_stats` tool). The observation zone must not inflate any of
+// these — every predicate below carries `list_status = 'confirmed'` so a
+// word the reader only looked up once, and never consciously saved, never
+// counts toward "how many words have I saved".
 pub(crate) fn query_vocab_stats(db: &Db) -> AppResult<VocabStats> {
     let conn = db.reader();
     let now_ms = chrono::Utc::now().timestamp_millis();
-    let total: i64 = conn.query_row("SELECT COUNT(*) FROM vocab_words", [], |r| r.get(0))?;
+    let total: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM vocab_words WHERE list_status = 'confirmed'",
+        [],
+        |r| r.get(0),
+    )?;
     let new_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM vocab_words WHERE mastery = 'new'",
+        "SELECT COUNT(*) FROM vocab_words WHERE mastery = 'new' AND list_status = 'confirmed'",
         [],
         |r| r.get(0),
     )?;
     let learning_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM vocab_words WHERE mastery = 'learning'",
+        "SELECT COUNT(*) FROM vocab_words WHERE mastery = 'learning' AND list_status = 'confirmed'",
         [],
         |r| r.get(0),
     )?;
     let familiar_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM vocab_words WHERE mastery = 'familiar'",
+        "SELECT COUNT(*) FROM vocab_words WHERE mastery = 'familiar' AND list_status = 'confirmed'",
         [],
         |r| r.get(0),
     )?;
     let mastered_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM vocab_words WHERE mastery = 'mastered'",
+        "SELECT COUNT(*) FROM vocab_words WHERE mastery = 'mastered' AND list_status = 'confirmed'",
         [],
         |r| r.get(0),
     )?;
     let due_for_review: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM vocab_words WHERE next_review_at IS NOT NULL AND next_review_at <= ?1",
+        "SELECT COUNT(*) FROM vocab_words WHERE next_review_at IS NOT NULL AND next_review_at <= ?1 AND list_status = 'confirmed'",
         params![now_ms],
         |r| r.get(0),
     )?;
@@ -1062,12 +1277,19 @@ fn vocab_backup_word(word: VocabWord) -> VocabBackupWord {
         fsrs_version: word.fsrs_version,
         created_at: word.created_at,
         updated_at: word.updated_at,
+        list_status: word.list_status,
     }
 }
 
 pub(crate) fn export_vocab_backup_inner(db: &Db) -> AppResult<VocabBackup> {
+    // Watchlist words are excluded, not merely defaulted on the way out: a
+    // backup is something the reader explicitly asked for and may hand to
+    // someone else, and a word they only looked up once has no business in
+    // it — see the observation zone's invisibility rule in
+    // docs/impls/reading-flow-decisions-2026-08-06.md §1.
     let words = query_all_vocab_words(db)?
         .into_iter()
+        .filter(|word| word.list_status == "confirmed")
         .map(vocab_backup_word)
         .collect();
     Ok(VocabBackup {
@@ -1292,8 +1514,8 @@ pub(crate) fn do_import_vocab_backup(
             let id = uuid::Uuid::new_v4().to_string();
             let created_at = if word.created_at > 0 { word.created_at } else { timestamp };
             tx.execute(
-                "INSERT INTO vocab_words (id, book_id, word, definition, context_sentence, context_explanation, cfi, mastery, mastery_source, mastery_reason, review_count, next_review_at, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version, created_at, updated_at, updated_by_device)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+                "INSERT INTO vocab_words (id, book_id, word, definition, context_sentence, context_explanation, cfi, mastery, mastery_source, mastery_reason, review_count, next_review_at, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version, list_status, created_at, updated_at, updated_by_device)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
                 params![
                     id,
                     word.book_id,
@@ -1313,6 +1535,7 @@ pub(crate) fn do_import_vocab_backup(
                     word.fsrs_stability,
                     word.fsrs_difficulty,
                     word.fsrs_version,
+                    word.list_status,
                     created_at,
                     timestamp,
                     device,
@@ -1338,6 +1561,7 @@ pub(crate) fn do_import_vocab_backup(
                 fsrs_difficulty: word.fsrs_difficulty,
                 fsrs_version: word.fsrs_version,
                 created_at: Some(created_at),
+                list_status: word.list_status.clone(),
             }));
             imported += 1;
         }
@@ -1811,6 +2035,104 @@ mod tests {
         assert_eq!(stats.familiar_count, 1);
     }
 
+    /// Regression for the MCP watchlist leak: a word sitting in the
+    /// observation zone (`list_status = 'watchlist'`) must not inflate any
+    /// bucket the AI client sees through `get_vocab_stats`. Before the fix,
+    /// every `COUNT(*)` here was predicate-free.
+    #[test]
+    fn vocab_stats_excludes_the_observation_zone() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-a");
+
+        add_vocab_word_inner(
+            "book-a",
+            "steadfast",
+            "a definition",
+            None,
+            None,
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+        // A plain lookup, never saved: lands in the observation zone.
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO vocab_words
+                 (id, book_id, word, definition, mastery, review_count, list_status,
+                  created_at, updated_at)
+                 VALUES ('watchlist-word', 'book-a', 'ephemeral', 'a definition', 'new', 0,
+                         'watchlist', 1, 1)",
+                [],
+            )
+            .unwrap();
+
+        let stats = query_vocab_stats(&db).unwrap();
+        assert_eq!(
+            stats.total, 1,
+            "watchlist row must not count toward total: {stats:?}"
+        );
+        assert_eq!(stats.new_count, 1);
+    }
+
+    /// Regression for the more subtle half of the same leak:
+    /// `propagate_progress_to_siblings` copies `next_review_at` onto every
+    /// row sharing a spelling regardless of `list_status` (mastery belongs
+    /// to the word, not the row), so a watchlist sibling can end up with a
+    /// `next_review_at` in the past. `query_vocab_due` must still exclude
+    /// it — a word the reader never consciously saved must never show up
+    /// in a "due for review" list.
+    #[test]
+    fn due_for_review_excludes_a_watchlist_sibling() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-a");
+        let past = chrono::Utc::now().timestamp_millis() - 1_000;
+
+        let confirmed = add_vocab_word_inner(
+            "book-a",
+            "lucid",
+            "a definition",
+            None,
+            None,
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE vocab_words SET next_review_at = ?1 WHERE id = ?2",
+                params![past, confirmed.id],
+            )
+            .unwrap();
+        // Same spelling, still in the observation zone, but carrying its own
+        // (independently set) due timestamp — exactly what
+        // `propagate_progress_to_siblings` can produce.
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO vocab_words
+                 (id, book_id, word, definition, mastery, review_count, next_review_at,
+                  list_status, created_at, updated_at)
+                 VALUES ('watchlist-sibling', 'book-a', 'lucid', 'a definition', 'new', 0, ?1,
+                         'watchlist', 1, 1)",
+                params![past],
+            )
+            .unwrap();
+
+        let due = query_vocab_due(&db).unwrap();
+        assert_eq!(
+            due.iter().map(|w| w.id.as_str()).collect::<Vec<_>>(),
+            vec![confirmed.id.as_str()],
+            "watchlist sibling must not appear in the due-for-review list"
+        );
+    }
+
     fn backup_word(id: &str, book_id: &str, word: &str, definition: &str) -> VocabBackupWord {
         VocabBackupWord {
             id: id.to_string(),
@@ -1831,6 +2153,7 @@ mod tests {
             fsrs_stability: Some(12.5),
             fsrs_difficulty: Some(4.3),
             fsrs_version: 1,
+            list_status: default_list_status(),
             created_at: 1_600_000_000_000,
             updated_at: 1_700_000_000_000,
         }
@@ -2053,6 +2376,166 @@ mod tests {
         .unwrap();
         assert!(second >= first);
         assert!(due > 1_000);
+    }
+
+    // --- Observation zone (docs/impls/reading-flow-decisions-2026-08-06.md
+    // §1 and §5) -------------------------------------------------------
+
+    fn lookup(book_id: &str, word: &str, cfi: &str) -> crate::commands::lookup_history::LookupInput {
+        crate::commands::lookup_history::LookupInput {
+            book_id: book_id.to_string(),
+            lookup_text: word.to_string(),
+            context_sentence: None,
+            chapter: None,
+            cfi: Some(cfi.to_string()),
+            definition: "a definition".to_string(),
+            context_explanation: None,
+            result_json: None,
+            provider_profile_id: None,
+            model: None,
+        }
+    }
+
+    #[test]
+    fn a_first_lookup_creates_a_watchlist_word_that_still_scores_mastery() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-watch");
+
+        crate::commands::lookup_history::save_lookup_record_inner(
+            lookup("book-watch", "Solitude", "epubcfi(/6/2)"),
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        let words = query_vocab_words(&db, "book-watch").unwrap();
+        assert_eq!(words.len(), 1);
+        assert_eq!(words[0].list_status, "watchlist");
+        // Not shown as "already collected" — the reader never saved it.
+        assert_eq!(
+            check_vocab_exists_inner(&db, "book-watch", "Solitude").unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn a_3rd_cumulative_lookup_across_different_positions_promotes_the_word() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-watch");
+
+        crate::commands::lookup_history::save_lookup_record_inner(
+            lookup("book-watch", "Solitude", "epubcfi(/6/2)"),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        let after_two = {
+            crate::commands::lookup_history::save_lookup_record_inner(
+                lookup("book-watch", "Solitude", "epubcfi(/6/4)"),
+                &db,
+                &sync,
+            )
+            .unwrap();
+            query_vocab_words(&db, "book-watch").unwrap()
+        };
+        assert_eq!(after_two[0].list_status, "watchlist");
+
+        // 3rd lookup, a 3rd different position — summed, not per-row.
+        crate::commands::lookup_history::save_lookup_record_inner(
+            lookup("book-watch", "Solitude", "epubcfi(/6/6)"),
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        let words = query_vocab_words(&db, "book-watch").unwrap();
+        assert_eq!(words.len(), 1);
+        assert_eq!(words[0].list_status, "confirmed");
+        assert_eq!(
+            check_vocab_exists_inner(&db, "book-watch", "Solitude")
+                .unwrap()
+                .as_deref(),
+            Some(words[0].id.as_str())
+        );
+
+        let events =
+            crate::commands::mastery_events::list_mastery_events_for(&db, &words[0].id).unwrap();
+        let promotion = events
+            .iter()
+            .find(|e| e.reason == "watchlist_promoted")
+            .expect("expected a watchlist_promoted mastery event");
+        assert_eq!(promotion.source, "auto");
+        let detail: serde_json::Value = serde_json::from_str(&promotion.detail).unwrap();
+        assert_eq!(detail["lookup_count"], 3);
+        assert_eq!(detail["book_title"], "Import Book");
+    }
+
+    #[test]
+    fn manual_save_promotes_an_existing_watchlist_word_immediately() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-watch");
+
+        crate::commands::lookup_history::save_lookup_record_inner(
+            lookup("book-watch", "Solitude", "epubcfi(/6/2)"),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        let watchlisted = query_vocab_words(&db, "book-watch").unwrap();
+        assert_eq!(watchlisted[0].list_status, "watchlist");
+
+        // The reader hits "收藏" (save) before ever hitting a 3rd lookup.
+        let saved = add_vocab_word_inner(
+            "book-watch",
+            "Solitude",
+            "a definition",
+            None,
+            None,
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        assert_eq!(saved.id, watchlisted[0].id);
+        assert_eq!(saved.list_status, "confirmed");
+        let words = query_vocab_words(&db, "book-watch").unwrap();
+        assert_eq!(words.len(), 1, "must not create a second row for the same word");
+        assert_eq!(words[0].list_status, "confirmed");
+    }
+
+    #[test]
+    fn export_and_check_exists_both_ignore_watchlist_words() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-watch");
+        add_vocab_word_inner(
+            "book-watch",
+            "Courage",
+            "the ability to act",
+            None,
+            None,
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+        crate::commands::lookup_history::save_lookup_record_inner(
+            lookup("book-watch", "Solitude", "epubcfi(/6/2)"),
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        let backup = export_vocab_backup_inner(&db).unwrap();
+        assert_eq!(backup.words.len(), 1);
+        assert_eq!(backup.words[0].word, "Courage");
+
+        assert!(check_vocab_exists_inner(&db, "book-watch", "Courage")
+            .unwrap()
+            .is_some());
+        assert!(check_vocab_exists_inner(&db, "book-watch", "Solitude")
+            .unwrap()
+            .is_none());
     }
 }
 

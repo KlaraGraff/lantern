@@ -58,6 +58,10 @@ import {
   installChapterEndHint,
   shouldShowChapterEndHint,
 } from "../../components/chapter-end-hint";
+import {
+  cleanupBookFinishedHint,
+  installBookFinishedHint,
+} from "../../components/book-finished-hint";
 import { notifySettingsChanged } from "../../components/settings-events";
 
 // Reader.tsx has its own copy of this pair for the same reason: a standalone
@@ -328,6 +332,8 @@ interface UseFoliateAnnotationsOptions {
   bookId?: string;
   bookReady: boolean;
   isTextBook: boolean;
+  /** Gates the §2.2 book-finished hint below — an already-finished book never shows it. */
+  isFinished: boolean;
   supportsManualAnnotations: boolean;
   supportsWordMarkers: boolean;
   supportsCfiNavigation: boolean;
@@ -346,12 +352,15 @@ interface UseFoliateAnnotationsOptions {
   /** Jump-history push (P1.3) — see `useJumpHistory`. */
   pushJump: (location: string | null | undefined, label: string) => void;
   getCurrentLabel: () => string;
+  /** The book-finished hint's action — same command a manual shelf finish runs. */
+  onMarkBookFinished: () => void;
 }
 
 export function useFoliateAnnotations({
   bookId,
   bookReady,
   isTextBook,
+  isFinished,
   supportsManualAnnotations,
   supportsWordMarkers,
   supportsCfiNavigation,
@@ -369,6 +378,7 @@ export function useFoliateAnnotations({
   currentCfiRef,
   pushJump,
   getCurrentLabel,
+  onMarkBookFinished,
 }: UseFoliateAnnotationsOptions) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -479,6 +489,21 @@ export function useFoliateAnnotations({
     }
   }, [readerSettingsRef, setReaderSettings, viewRef]);
 
+  // The book-finished hint's own "don't show again" — same shape as
+  // `dismissChapterEndHint` just above: a global setting, applied immediately
+  // to every loaded section document, not only the one the reader is on.
+  const dismissBookFinishedHint = useCallback(() => {
+    const next = { ...readerSettingsRef.current, bookFinishedHint: false };
+    readerSettingsRef.current = next;
+    setReaderSettings(next);
+    const values = { book_finished_hint: "false" };
+    invoke("set_settings_bulk", { settings: values }).catch(() => {});
+    notifySettingsChanged(values).catch(() => {});
+    for (const { doc } of viewRef.current?.renderer?.getContents?.() ?? []) {
+      if (doc) cleanupBookFinishedHint(doc);
+    }
+  }, [readerSettingsRef, setReaderSettings, viewRef]);
+
   const applyPassiveVocabAnnotations = useCallback((loaded?: { doc: Document; index: number }) => {
     const view = viewRef.current;
     if (!view) return;
@@ -565,7 +590,46 @@ export function useFoliateAnnotations({
         onDismiss: dismissChapterEndHint,
       });
     }
-  }, [dismissChapterEndHint, passiveVocab, readerSettingsRef, reviewChapterEndHint, supportsReflowSettings, supportsWordMarkers, t, viewRef]);
+    // A third pass, same discipline as the one above: §2.2's fallback line
+    // (docs/impls/reading-flow-decisions-2026-08-06.md) only ever belongs on
+    // the book's very last loaded section — `installBookFinishedHint` places
+    // it at the end of whatever document it's given, so landing it on the
+    // wrong section would put a "finished?" line mid-book. It carries no
+    // per-page count of its own: whether the book *should* have finished by
+    // now was already decided every time progress was last written (see
+    // `do_update_reading_progress`'s auto-finish gate) — this only decides
+    // where the resulting line, if any, is allowed to render.
+    const lastSectionIndex = (view.book?.sections?.length ?? 0) - 1;
+    for (const { doc, index } of contents as Array<{ doc?: Document; index?: number }>) {
+      if (!doc || typeof index !== "number") continue;
+      cleanupBookFinishedHint(doc);
+      if (isFinished || !settings.bookFinishedHint) continue;
+      if (lastSectionIndex < 0 || index !== lastSectionIndex) continue;
+      installBookFinishedHint({
+        doc,
+        text: {
+          line: t("reader.bookFinishedHint.line"),
+          action: t("reader.bookFinishedHint.action"),
+          dismiss: t("reader.bookFinishedHint.dismiss"),
+        },
+        color: chapterEndColor,
+        onMarkFinished: onMarkBookFinished,
+        onDismiss: dismissBookFinishedHint,
+      });
+    }
+  }, [
+    dismissBookFinishedHint,
+    dismissChapterEndHint,
+    isFinished,
+    onMarkBookFinished,
+    passiveVocab,
+    readerSettingsRef,
+    reviewChapterEndHint,
+    supportsReflowSettings,
+    supportsWordMarkers,
+    t,
+    viewRef,
+  ]);
 
   const applyFoliateMarkerStyles = useCallback(() => {
     const view = viewRef.current;
@@ -743,6 +807,7 @@ export function useFoliateAnnotations({
       if (doc) {
         cleanupPassiveVocabAnnotations(doc);
         cleanupChapterEndHint(doc);
+        cleanupBookFinishedHint(doc);
       }
     }
     autoMarkersRef.current.clear();
@@ -816,9 +881,22 @@ export function useFoliateAnnotations({
   // CSS variables), so a theme switch has to force a reinstall to repaint it,
   // the way `getReaderCSS` repaints everything else that reads the theme.
   const chapterEndHintSignature = `${readerSettings.chapterEndReviewHint}:${readerSettings.theme}:${readerSettings.customTheme.color}:${readerSettings.customTheme.opacity}`;
+  // Theme is already covered by `chapterEndHintSignature` above (the two
+  // hints share the same colour object) — this only needs to add the two
+  // things that are specific to the book-finished line: whether the book
+  // just became finished, and whether the reader dismissed the line itself.
+  const bookFinishedHintSignature = `${isFinished}:${readerSettings.bookFinishedHint}`;
   useEffect(() => {
     refreshAnnotations(true).catch(() => {});
-  }, [bookReady, chapterEndHintSignature, markerVisibility, markerStyle, passiveVocabSignature, refreshAnnotations]);
+  }, [
+    bookFinishedHintSignature,
+    bookReady,
+    chapterEndHintSignature,
+    markerVisibility,
+    markerStyle,
+    passiveVocabSignature,
+    refreshAnnotations,
+  ]);
 
   useEffect(() => {
     if (!bookId || !supportsWordMarkers || isTextBook) return;

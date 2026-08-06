@@ -111,6 +111,26 @@ const MIGRATIONS: &[(i64, &str)] = &[
         42,
         include_str!("../migrations/042_level_observation.sql"),
     ),
+    (
+        43,
+        include_str!("../migrations/043_pending_book_reviews.sql"),
+    ),
+    (
+        44,
+        include_str!("../migrations/044_vocab_watchlist.sql"),
+    ),
+    (
+        45,
+        include_str!("../migrations/045_followup_difficulty.sql"),
+    ),
+    (
+        46,
+        include_str!("../migrations/046_local_calibration.sql"),
+    ),
+    (
+        47,
+        include_str!("../migrations/047_review_pile_curation.sql"),
+    ),
 ];
 
 fn register_sqlite_vec() {

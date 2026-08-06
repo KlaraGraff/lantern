@@ -239,6 +239,24 @@ pub fn save_lookup_record_inner(
             }
         };
 
+        // Must run before `apply_lookup_to_word`: that function only scores a
+        // word that already has a `vocab_words` row, and a first-time lookup
+        // doesn't have one until this call creates it (in the observation
+        // zone — see `observe_lookup_for_vocab`).
+        crate::commands::vocab::observe_lookup_for_vocab(
+            tx,
+            events,
+            &book_id,
+            &lookup_text,
+            &normalized_text,
+            &definition,
+            context_sentence.as_deref(),
+            context_explanation.as_deref(),
+            cfi.as_deref(),
+            now,
+            &device,
+        )?;
+
         crate::mastery::store::apply_lookup_to_word(
             tx,
             events,

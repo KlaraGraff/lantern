@@ -1,5 +1,6 @@
 mod ai;
 mod backup;
+mod calibration;
 mod commands;
 // `pub` so `tests/mcp_binary.rs` can call `Db::init` to seed a DB at
 // the temp HOME path the binary will read from. Otherwise integration
@@ -628,6 +629,28 @@ pub fn run() {
                     .ok();
             }
 
+            // Local calibration (migration 046): recompute at most once a
+            // day, off the UI-critical path. The computation itself is a
+            // couple of bounded SQL aggregates — see
+            // calibration::maybe_recompute_daily — but every other startup
+            // DB touch here (cover backfill, OCR recovery) already runs off
+            // this thread or after setup returns, and there is no reason
+            // for a reader's launch to wait on this one either.
+            {
+                let calibration_db = db.clone();
+                std::thread::Builder::new()
+                    .name("local-calibration".into())
+                    .spawn(move || {
+                        let now = chrono::Utc::now().timestamp_millis();
+                        if let Err(error) =
+                            calibration::maybe_recompute_daily(&calibration_db, now)
+                        {
+                            log::warn!("calibration: daily recompute failed: {error}");
+                        }
+                    })
+                    .ok();
+            }
+
             log::info!(
                 "lantern start v{version} os={os} arch={arch} data_dir={data_dir} schema_v={schema}",
                 version = env!("CARGO_PKG_VERSION"),
@@ -946,6 +969,8 @@ pub fn run() {
             commands::vocab::bulk_delete_vocab_words,
             commands::vocab::bulk_update_vocab_mastery,
             commands::review_piles::list_review_piles,
+            commands::review_pile_ai::refresh_review_pile_curation,
+            commands::review_pile_ai::review_pile_curation,
             commands::mastery_events::list_mastery_events,
             // The one gate every system-initiated AI call passes through
             commands::auto_analysis::auto_analysis_console,

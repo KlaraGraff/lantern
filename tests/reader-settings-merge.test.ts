@@ -35,6 +35,7 @@ const previous: ReaderSettingsState = {
   showLearningMarkers: true,
   showMasteredMarkers: false,
   chapterEndReviewHint: true,
+  bookFinishedHint: true,
 };
 
 // `perBook` is a `book_settings` row set: the row existing is the override. The

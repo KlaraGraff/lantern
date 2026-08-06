@@ -9,7 +9,9 @@
 //! best-effort from the caller's side: a failure here must never surface to
 //! the reader UI, so callers should treat any error as "drop this batch".
 
-use rusqlite::params;
+use std::collections::HashSet;
+
+use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -338,6 +340,123 @@ pub fn list_word_exposures(book_id: String, db: State<'_, Db>) -> AppResult<Vec<
     list_word_exposures_inner(&book_id, &db)
 }
 
+/// The numerator for `docs/impls/reading-flow-decisions-2026-08-06.md` §2.2's
+/// auto-finish coverage check: how many *distinct* screens of this book were
+/// dwelt at the reader's own normal pace, across its entire local reading
+/// history (not just the current session).
+///
+/// Distinct, not "how many rows" — `reading_screen_dwells` has no unique
+/// constraint on `(book_id, cfi)`, so revisiting the same screen (rereading a
+/// chapter, flipping back to check something) writes another row every time.
+/// Counting rows would let a reader who reread the first 20% of a book four
+/// times outscore the 80% coverage floor without ever having seen the other
+/// 80% of the book once — bug 2 in §2's writeup. A screen counts here if
+/// *any* dwell on it cleared the pace bar, deduped by `cfi` (the screen's own
+/// anchor) so rereads collapse to the one screen they are.
+///
+/// Rows with no `cfi` are excluded rather than counted individually — with
+/// no anchor to dedupe on, crediting them at all would reopen exactly the
+/// hole this function exists to close (each such row would count as its own
+/// "distinct" screen). Per "宁可漏标，不可错标" that is the safe direction:
+/// it can only undercount, never inflate, the numerator.
+///
+/// Reuses [`is_screen_too_fast`] against the same baseline
+/// [`reader_median_wpm`] computes at write time, so "normal pace" means
+/// exactly the same thing here as it does when a screen's words are folded
+/// into `reading_word_exposures`. A screen with no measurable pace counts as
+/// normal — that is `is_screen_too_fast`'s own rule, not a special case added
+/// here: an unmeasurable screen is a data problem, and data problems break
+/// toward the reader.
+pub fn count_normal_pace_screens(tx: &rusqlite::Transaction<'_>, book_id: &str) -> AppResult<i64> {
+    let median_wpm = reader_median_wpm(tx)?;
+    let mut stmt = tx.prepare(
+        "SELECT cfi, word_count, dwell_ms FROM reading_screen_dwells
+          WHERE book_id = ?1 AND cfi IS NOT NULL",
+    )?;
+    let mut distinct_screens: HashSet<String> = HashSet::new();
+    let mut rows = stmt.query(params![book_id])?;
+    while let Some(row) = rows.next()? {
+        let cfi: String = row.get(0)?;
+        let pace = ScreenPace {
+            word_count: row.get(1)?,
+            dwell_ms: row.get(2)?,
+        };
+        if !is_screen_too_fast(pace, median_wpm) {
+            distinct_screens.insert(cfi);
+        }
+    }
+    Ok(distinct_screens.len() as i64)
+}
+
+/// A book's estimated denominator needs at least this many of its own
+/// measurable screens before its average words-per-screen is trusted. Below
+/// this, a single unusually long or short screen (a title page, a screen
+/// caught mid-layout-reflow) can swing the whole-book estimate by a large
+/// margin; per §2.2, an untrustworthy denominator must skip the check, not
+/// approximate it.
+const MIN_SCREENS_FOR_BOOK_ESTIMATE: i64 = 5;
+
+/// The denominator for §2.2's auto-finish coverage check: an estimate of how
+/// many screens this book takes *in total*, at this reader's own on-screen
+/// density — never a per-chapter count (bug 1 in §2's writeup: the frontend
+/// used to pass `view.renderer?.pages`, which is foliate's current-section
+/// page count and is rebuilt on every chapter load, so it silently measured
+/// "pages in whatever chapter is open right now" wherever the reader
+/// happened to be when the last progress event fired).
+///
+/// Derivation: this device already has two whole-book-scale numbers for this
+/// book. `book_difficulty.total_tokens` is the entire book's word count,
+/// computed once from the source file by `book_difficulty::compute_and_store`
+/// regardless of which chapter is open. And this reader's own recorded
+/// screens for this book (`reading_screen_dwells.word_count`) give an average
+/// words-per-screen at this reader's actual font size, page size, and column
+/// count — all of which change how many words fit on one screen, so a fixed
+/// "words per page" constant would be wrong for nearly everyone. Dividing the
+/// first by the second estimates the whole book's screen count in units this
+/// reader's own history already speaks:
+///
+/// `total_screens ≈ book_difficulty.total_tokens / avg(this book's own dwell word_count)`
+///
+/// Returns `None` — never a smaller stand-in value — whenever either input
+/// isn't trustworthy yet: `book_difficulty` hasn't finished computing for
+/// this book (still pending/running, or failed), or this device has fewer
+/// than [`MIN_SCREENS_FOR_BOOK_ESTIMATE`] measurable screens for it. Per
+/// §2.2's "宁可漏标，不可错标", the caller must read `None` as "skip the
+/// auto-finish check entirely for this update" — never fall back to a
+/// chapter-scoped count, which is the exact bug this function replaces.
+pub fn estimate_total_book_screens(
+    tx: &rusqlite::Transaction<'_>,
+    book_id: &str,
+) -> AppResult<Option<i64>> {
+    let total_tokens: Option<i64> = tx
+        .query_row(
+            "SELECT total_tokens FROM book_difficulty WHERE book_id = ?1 AND status = 'done'",
+            params![book_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(total_tokens) = total_tokens.filter(|tokens| *tokens > 0) else {
+        return Ok(None);
+    };
+
+    let (avg_words, sample): (Option<f64>, i64) = tx.query_row(
+        "SELECT AVG(word_count), COUNT(*) FROM reading_screen_dwells
+          WHERE book_id = ?1 AND word_count > 0",
+        params![book_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+
+    if sample < MIN_SCREENS_FOR_BOOK_ESTIMATE {
+        return Ok(None);
+    }
+    let Some(avg_words) = avg_words.filter(|words| *words > 0.0) else {
+        return Ok(None);
+    };
+
+    let estimate = (total_tokens as f64 / avg_words).ceil() as i64;
+    Ok(Some(estimate.max(1)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,7 +478,12 @@ mod tests {
         (dir, db, sync)
     }
 
-    fn screen(words: &[&str], looked_up: &[&str], op_count: i64, lookup_count: i64) -> ScreenExposureInput {
+    fn screen(
+        words: &[&str],
+        looked_up: &[&str],
+        op_count: i64,
+        lookup_count: i64,
+    ) -> ScreenExposureInput {
         ScreenExposureInput {
             book_id: "book-1".to_string(),
             chapter: Some("Chapter 1".to_string()),
@@ -377,14 +501,26 @@ mod tests {
     #[test]
     fn records_a_screen_and_its_word_exposures() {
         let (_dir, db, sync) = test_db();
-        let result =
-            record_reading_behavior_batch_inner(&[screen(&["quiet", "lantern", "dusk"], &[], 1, 0)], &db, &sync)
-                .unwrap();
-        assert_eq!(result, RecordReadingBehaviorResult { recorded: 1, skipped: 0 });
+        let result = record_reading_behavior_batch_inner(
+            &[screen(&["quiet", "lantern", "dusk"], &[], 1, 0)],
+            &db,
+            &sync,
+        )
+        .unwrap();
+        assert_eq!(
+            result,
+            RecordReadingBehaviorResult {
+                recorded: 1,
+                skipped: 0
+            }
+        );
 
         let rows = list_word_exposures_inner("book-1", &db).unwrap();
         assert_eq!(rows.len(), 3);
-        let lantern = rows.iter().find(|r| r.normalized_word == "lantern").unwrap();
+        let lantern = rows
+            .iter()
+            .find(|r| r.normalized_word == "lantern")
+            .unwrap();
         assert_eq!(lantern.encounter_count, 1);
         assert_eq!(lantern.encounters_on_lookup_active_screen, 0);
     }
@@ -393,7 +529,8 @@ mod tests {
     fn repeat_encounters_accumulate_and_never_reset_to_zero() {
         let (_dir, db, sync) = test_db();
         for _ in 0..6 {
-            record_reading_behavior_batch_inner(&[screen(&["dusk"], &[], 1, 0)], &db, &sync).unwrap();
+            record_reading_behavior_batch_inner(&[screen(&["dusk"], &[], 1, 0)], &db, &sync)
+                .unwrap();
         }
         let rows = list_word_exposures_inner("book-1", &db).unwrap();
         let dusk = rows.iter().find(|r| r.normalized_word == "dusk").unwrap();
@@ -419,7 +556,9 @@ mod tests {
 
         let dwell_count: i64 = db
             .reader()
-            .query_row("SELECT COUNT(*) FROM reading_screen_dwells", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM reading_screen_dwells", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(dwell_count, 1);
     }
@@ -453,13 +592,26 @@ mod tests {
     #[test]
     fn lookup_active_screen_upweights_only_the_other_words() {
         let (_dir, db, sync) = test_db();
-        record_reading_behavior_batch_inner(&[screen(&["quiet", "lantern", "dusk"], &["dusk"], 1, 1)], &db, &sync)
-            .unwrap();
+        record_reading_behavior_batch_inner(
+            &[screen(&["quiet", "lantern", "dusk"], &["dusk"], 1, 1)],
+            &db,
+            &sync,
+        )
+        .unwrap();
         let rows = list_word_exposures_inner("book-1", &db).unwrap();
         let dusk = rows.iter().find(|r| r.normalized_word == "dusk").unwrap();
-        let lantern = rows.iter().find(|r| r.normalized_word == "lantern").unwrap();
-        assert_eq!(dusk.encounters_on_lookup_active_screen, 0, "the looked-up word itself is excluded");
-        assert_eq!(lantern.encounters_on_lookup_active_screen, 1, "other words on the same screen are upweighted");
+        let lantern = rows
+            .iter()
+            .find(|r| r.normalized_word == "lantern")
+            .unwrap();
+        assert_eq!(
+            dusk.encounters_on_lookup_active_screen, 0,
+            "the looked-up word itself is excluded"
+        );
+        assert_eq!(
+            lantern.encounters_on_lookup_active_screen, 1,
+            "other words on the same screen are upweighted"
+        );
     }
 
     #[test]
@@ -469,7 +621,13 @@ mod tests {
         bad.book_id = String::new();
         let good = screen(&["lantern"], &[], 0, 0);
         let result = record_reading_behavior_batch_inner(&[bad, good], &db, &sync).unwrap();
-        assert_eq!(result, RecordReadingBehaviorResult { recorded: 1, skipped: 1 });
+        assert_eq!(
+            result,
+            RecordReadingBehaviorResult {
+                recorded: 1,
+                skipped: 1
+            }
+        );
     }
 
     #[test]
@@ -483,5 +641,140 @@ mod tests {
         let rows = list_word_exposures_inner("book-1", &db).unwrap();
         assert_eq!(rows.len(), 2, "same word in two chapters stays two rows");
         assert!(rows.iter().all(|r| r.encounter_count == 1));
+    }
+
+    // -- §2.2 auto-finish gate: numerator (dedup) and denominator (estimate) --
+
+    fn insert_dwell_at(db: &Db, book_id: &str, cfi: Option<&str>, started_at: i64, word_count: i64, dwell_ms: i64) {
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO reading_screen_dwells
+                    (id, book_id, chapter, cfi, started_at, ended_at, dwell_ms,
+                     operation_count, lookup_count, word_count, created_at)
+                 VALUES (?1, ?2, 'Chapter 1', ?3, ?4, ?5, ?6, 0, 0, ?7, ?5)",
+                params![
+                    uuid::Uuid::new_v4().to_string(),
+                    book_id,
+                    cfi,
+                    started_at,
+                    started_at + dwell_ms,
+                    dwell_ms,
+                    word_count,
+                ],
+            )
+            .unwrap();
+    }
+
+    fn insert_done_book_difficulty(db: &Db, book_id: &str, total_tokens: i64) {
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO book_difficulty (book_id, status, total_tokens) VALUES (?1, 'done', ?2)",
+                params![book_id, total_tokens],
+            )
+            .unwrap();
+    }
+
+    /// Bug 2: `reading_screen_dwells` has no unique constraint on
+    /// `(book_id, cfi)`, so rereading the same screen writes another row
+    /// every time. The numerator must count distinct screens, not rows —
+    /// rereading one screen five times must count as one screen, not five.
+    #[test]
+    fn count_normal_pace_screens_dedupes_by_cfi() {
+        let (_dir, db, _sync) = test_db();
+        for i in 0..5 {
+            insert_dwell_at(&db, "book-1", Some("epubcfi(/6/4!/2)"), 1_000 + i * 60_000, 200, 60_000);
+        }
+        let conn = db.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction().unwrap();
+        let count = count_normal_pace_screens(&tx, "book-1").unwrap();
+        assert_eq!(count, 1, "five dwells on the same cfi are one screen, not five");
+    }
+
+    /// Rows with no `cfi` at all cannot be told apart, so they are dropped
+    /// from the numerator rather than each counted as its own screen — the
+    /// safe direction per "宁可漏标，不可错标".
+    #[test]
+    fn count_normal_pace_screens_excludes_rows_without_a_cfi() {
+        let (_dir, db, _sync) = test_db();
+        insert_dwell_at(&db, "book-1", None, 1_000, 200, 60_000);
+        insert_dwell_at(&db, "book-1", None, 61_000, 200, 60_000);
+        let conn = db.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction().unwrap();
+        let count = count_normal_pace_screens(&tx, "book-1").unwrap();
+        assert_eq!(count, 0);
+    }
+
+    /// Bug 1's fix: the denominator comes from this book's own whole-book
+    /// word count (`book_difficulty.total_tokens`) divided by this reader's
+    /// own average words-per-screen for the book — never a per-chapter
+    /// count.
+    #[test]
+    fn estimate_total_book_screens_derives_from_book_difficulty_and_own_pace() {
+        let (_dir, db, _sync) = test_db();
+        insert_done_book_difficulty(&db, "book-1", 30_000);
+        // Ten screens averaging 300 words each -> ~100 screens for the book.
+        for i in 0..10 {
+            insert_dwell_at(&db, "book-1", Some("cfi"), 1_000 + i * 60_000, 300, 60_000);
+        }
+        let conn = db.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction().unwrap();
+        let estimate = estimate_total_book_screens(&tx, "book-1").unwrap();
+        assert_eq!(estimate, Some(100));
+    }
+
+    /// No `book_difficulty` row yet (still pending, or never scheduled) —
+    /// there is no whole-book denominator to estimate from, so the check
+    /// must be skipped entirely, never fall back to something smaller.
+    #[test]
+    fn estimate_total_book_screens_is_none_without_book_difficulty() {
+        let (_dir, db, _sync) = test_db();
+        for i in 0..10 {
+            insert_dwell_at(&db, "book-1", Some("cfi"), 1_000 + i * 60_000, 300, 60_000);
+        }
+        let conn = db.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction().unwrap();
+        assert_eq!(estimate_total_book_screens(&tx, "book-1").unwrap(), None);
+    }
+
+    /// A `book_difficulty` row that hasn't finished computing (still
+    /// `running`) must not be treated as usable — only `status = 'done'`
+    /// is a trustworthy whole-book count.
+    #[test]
+    fn estimate_total_book_screens_is_none_while_difficulty_is_still_running() {
+        let (_dir, db, _sync) = test_db();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO book_difficulty (book_id, status, total_tokens) VALUES ('book-1', 'running', 0)",
+                [],
+            )
+            .unwrap();
+        for i in 0..10 {
+            insert_dwell_at(&db, "book-1", Some("cfi"), 1_000 + i * 60_000, 300, 60_000);
+        }
+        let conn = db.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction().unwrap();
+        assert_eq!(estimate_total_book_screens(&tx, "book-1").unwrap(), None);
+    }
+
+    /// Too few of this book's own screens recorded yet to trust an average
+    /// — a single screen (or a handful) could be wildly unrepresentative
+    /// (a title page, a mid-reflow glitch), so the estimate is withheld
+    /// rather than computed from a shaky sample.
+    #[test]
+    fn estimate_total_book_screens_is_none_below_the_minimum_sample() {
+        let (_dir, db, _sync) = test_db();
+        insert_done_book_difficulty(&db, "book-1", 30_000);
+        for i in 0..(MIN_SCREENS_FOR_BOOK_ESTIMATE - 1) {
+            insert_dwell_at(&db, "book-1", Some("cfi"), 1_000 + i * 60_000, 300, 60_000);
+        }
+        let conn = db.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction().unwrap();
+        assert_eq!(estimate_total_book_screens(&tx, "book-1").unwrap(), None);
     }
 }

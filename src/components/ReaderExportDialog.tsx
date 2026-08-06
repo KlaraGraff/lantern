@@ -104,11 +104,15 @@ export default function ReaderExportDialog({ open, bookId, bookTitle, onClose, r
     const generation = ++requestGenerationRef.current;
     setStatus("preparing"); setError(""); setRecords([]);
     try {
-      const [highlights, words, notes] = await Promise.all([
+      const [highlights, allWords, notes] = await Promise.all([
         invoke<Highlight[]>("list_highlights", { bookId }),
         invoke<DictionaryWord[]>("list_vocab_words", { bookId }),
         loadHighlightNotes(bookId),
       ]);
+      // Same rule as the vocab list itself: a watchlist word (first lookup,
+      // not yet saved) isn't something the reader asked to keep, so it isn't
+      // something they'd expect in an export of their vocabulary.
+      const words = allWords.filter((word) => word.list_status === "confirmed");
       const resolved = await resolveChapters(toExportRecords(highlights, words, bookTitle, notes), resolveChapter);
       if (generation !== requestGenerationRef.current) return;
       setRecords(resolved); setStatus("ready");

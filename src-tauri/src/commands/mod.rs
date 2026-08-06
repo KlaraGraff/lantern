@@ -10,6 +10,7 @@ pub mod collections;
 pub mod dictionary;
 pub mod enhanced_fonts;
 pub mod fonts;
+pub mod followup_difficulty;
 pub mod language_assessments;
 pub mod level_observation;
 pub mod lookup_history;
@@ -19,6 +20,7 @@ pub mod notes;
 pub mod oauth;
 pub mod reading_behavior;
 pub mod reading_stats;
+pub mod review_pile_ai;
 pub mod review_piles;
 // Split by platform *inside* the module, not here: the OCR *pipeline* is
 // desktop-only, but the *resolver* that picks a book's active asset has to

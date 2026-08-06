@@ -139,43 +139,65 @@ pub fn update_reading_progress(
     cfi: Option<String>,
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
-) -> AppResult<()> {
+) -> AppResult<bool> {
     do_update_reading_progress(&id, progress, cfi.as_deref(), &db, &sync)
 }
 
+/// Updates progress and, when the evidence clears both bars, auto-finishes
+/// the book through the exact same event shape a manual finish would produce
+/// (see `do_mark_finished`). Returns whether that happened, so the frontend
+/// knows to run the same finished-book analysis it would run after a manual
+/// mark.
+///
+/// The §2.2 coverage denominator is computed entirely on the backend now —
+/// see `reading_behavior::estimate_total_book_screens` — rather than taken
+/// from a frontend-supplied page count. The frontend used to pass
+/// `view.renderer?.pages`, foliate's *current-chapter* page count (it is
+/// rebuilt on every chapter load), as if it were the whole book's screen
+/// total; a book read faithfully through chapter 1 and then dragged to a
+/// three-screen "about the author" back-chapter would clear that
+/// (chapter-scoped) denominator on the very first drag. Per
+/// docs/impls/reading-flow-decisions-2026-08-06.md §2.2, missing or
+/// untrustworthy evidence must break toward NOT auto-finishing, never toward
+/// marking — see `estimate_total_book_screens`'s own doc comment for exactly
+/// which conditions make it return `None`.
 pub(crate) fn do_update_reading_progress(
     id: &str,
     progress: i32,
     cfi: Option<&str>,
     db: &Db,
     sync: &SyncWriter,
-) -> AppResult<()> {
-    let now = chrono::Utc::now().timestamp_millis();
-    let device = sync.self_device().to_string();
+) -> AppResult<bool> {
     // Page-turn rate is dominated by this command; gate the event push on
     // the per-book throttle so a reading session doesn't balloon the log.
     // The SQL write always lands so the local UI stays current — only the
     // event publication is coalesced. Semantic transitions like
-    // `mark_finished` deliberately do NOT consult the throttle.
+    // `do_mark_finished` deliberately do NOT consult the throttle.
     let emit = sync.should_emit_progress(id);
-    sync.with_tx(db, now, |tx, events| {
+    let ts = sync.next_logical_timestamp();
+    let device = sync.self_device().to_string();
+    let should_finish = sync.with_tx(db, ts, |tx, events| {
         // Reading a book is what puts it on the "reading" shelf — the user
         // shouldn't have to say so by hand. Read the status BEFORE the UPDATE
         // so we know whether the promotion actually happened and an event is
         // owed. Only `unread` is promoted: a finished book that gets reopened
-        // keeps the conclusion its owner drew about it.
-        let was_unread = tx
+        // keeps the conclusion its owner drew about it. Also captured here
+        // (not just re-derived after the UPDATE) so the auto-finish check
+        // below can tell "already finished" from "just became finished by
+        // this same call" — an already-finished book must never re-trigger.
+        let status_before: Option<String> = tx
             .query_row("SELECT status FROM books WHERE id = ?1", params![id], |r| {
-                r.get::<_, String>(0)
+                r.get(0)
             })
-            .map(|status| status == "unread")
-            .unwrap_or(false);
+            .ok();
+        let was_unread = status_before.as_deref() == Some("unread");
+        let was_finished = status_before.as_deref() == Some("finished");
         tx.execute(
             "UPDATE books SET progress = ?1, current_cfi = ?2,
                     status = CASE WHEN status = 'unread' THEN 'reading' ELSE status END,
                     updated_at = ?3, updated_by_device = ?4
              WHERE id = ?5",
-            params![progress, cfi, now, device, id],
+            params![progress, cfi, ts, device, id],
         )?;
         if was_unread {
             // Published unconditionally — the throttle below coalesces noisy
@@ -186,15 +208,48 @@ pub(crate) fn do_update_reading_progress(
                 status: "reading".into(),
             });
         }
-        if emit {
+
+        // Bug 3b: a book the reader just marked "unread" by hand resets
+        // `was_unread` here on its very next progress report, but its
+        // lifetime `reading_screen_dwells` history (never cleared by the
+        // manual reset) can still clear the coverage floor on that same
+        // report — silently undoing the reader's own "unread" verdict the
+        // moment they reopen the book, and spending an AI summary on it in
+        // the process. So a book that was unread a moment ago never
+        // auto-finishes on the call that promotes it; the check simply runs
+        // again on the next progress report, once the promotion has landed.
+        //
+        // Decided BEFORE the throttled progress event below is pushed, so a
+        // call that both updates progress and clears the auto-finish gate
+        // publishes only the promotion (or nothing) here — the finished pair
+        // is published separately, after this transaction commits, so it can
+        // carry its own later logical timestamps (see below).
+        let should_finish = if was_finished || was_unread {
+            false
+        } else if let Some(total_screens) =
+            crate::commands::reading_behavior::estimate_total_book_screens(tx, id)?
+        {
+            let normal_pace_screens =
+                crate::commands::reading_behavior::count_normal_pace_screens(tx, id)?;
+            crate::mastery::should_auto_finish(progress, normal_pace_screens, total_screens)
+        } else {
+            false
+        };
+
+        if !should_finish && emit {
             events.push(EventBody::BookProgressSet {
                 book: id.to_string(),
                 progress,
                 cfi: cfi.map(str::to_string),
             });
         }
-        Ok(())
-    })
+        Ok(should_finish)
+    })?;
+
+    if should_finish {
+        do_mark_finished(db, sync, id)?;
+    }
+    Ok(should_finish)
 }
 
 #[tauri::command]
@@ -209,11 +264,55 @@ pub fn update_book_pages(id: String, pages: i32, db: State<'_, Db>) -> AppResult
     Ok(())
 }
 
-#[tauri::command]
-pub fn mark_finished(id: String, db: State<'_, Db>, sync: State<'_, SyncWriter>) -> AppResult<()> {
-    let now = chrono::Utc::now().timestamp_millis();
+/// The one path to "finished": mutates the row and publishes the same pair
+/// of LWW events a manual finish always produced, so a caller can't drift
+/// from it by hand-rolling a second version. Used both by the manual
+/// `mark_finished` command and by `do_update_reading_progress`'s §2.2
+/// auto-finish check.
+///
+/// Two *sequential* transactions, each with its own strictly-increasing
+/// `SyncWriter::next_logical_timestamp()` — deliberately not one `with_tx`
+/// call sharing one timestamp for both events (bug 3 in
+/// docs/impls/reading-flow-decisions-2026-08-06.md §2's writeup, present on
+/// HEAD before this change too). `books` keeps a single `updated_at` /
+/// `updated_by_device` pair for the whole row, not one per column, and the
+/// merge engine's LWW check
+/// (`updated_at < event.ts OR (updated_at = event.ts AND updated_by_device <
+/// event.device)`, in `sync::merge`) is strict: when two events from the
+/// same device carry the *identical* `(ts, device)`, only whichever one a
+/// peer happens to replay first can ever satisfy that condition — the
+/// second finds `updated_at` already equal to its own `ts` and its own
+/// device already credited, so `device < device` is false and it becomes a
+/// silent no-op, forever. Which one "happens to replay first" is an
+/// unordered tiebreak (`replay.rs` sorts same-`(ts,device)` events by a
+/// random UUID), so which half of "finished" survives on a peer is not
+/// determined by this function at all — it was observed to drop the
+/// progress write and leave a peer at `status=reading, progress=0` even
+/// though every field committed correctly here, on this device.
+///
+/// Giving the two events distinct, increasing timestamps removes the tie
+/// entirely: the second event's `updated_at < event.ts` legitimately holds
+/// (the first event's `ts` — now sitting in `updated_at` — is strictly less
+/// than the second event's own, later `ts`), so it applies in the same
+/// order on every peer, deterministically, regardless of replay order.
+fn do_mark_finished(db: &Db, sync: &SyncWriter, id: &str) -> AppResult<()> {
     let device = sync.self_device().to_string();
-    sync.with_tx(&db, now, |tx, events| {
+
+    let status_ts = sync.next_logical_timestamp();
+    sync.with_tx(db, status_ts, |tx, events| {
+        tx.execute(
+            "UPDATE books SET status = 'finished', updated_at = ?1, updated_by_device = ?2 WHERE id = ?3",
+            params![status_ts, device, id],
+        )?;
+        events.push(EventBody::BookStatusSet {
+            book: id.to_string(),
+            status: "finished".into(),
+        });
+        Ok(())
+    })?;
+
+    let progress_ts = sync.next_logical_timestamp();
+    sync.with_tx(db, progress_ts, |tx, events| {
         // Read the current cfi BEFORE the UPDATE so the synthesized
         // `book.progress.set` carries the resume position the local row
         // keeps. Local SQL doesn't touch `current_cfi` here, so emitting
@@ -228,25 +327,23 @@ pub fn mark_finished(id: String, db: State<'_, Db>, sync: State<'_, SyncWriter>)
             .ok()
             .flatten();
         tx.execute(
-            "UPDATE books SET status = 'finished', progress = 100, updated_at = ?1, updated_by_device = ?2 WHERE id = ?3",
-            params![now, device, id],
+            "UPDATE books SET progress = 100, updated_at = ?1, updated_by_device = ?2 WHERE id = ?3",
+            params![progress_ts, device, id],
         )?;
-        // Mark-finished is two LWW columns moving in lockstep; the merge
-        // engine has no `book.finished` event, so we publish the same pair
-        // of events the user could have produced manually. The progress
-        // event is published unconditionally — the throttle is for noisy
-        // page-turn updates only, never for semantic transitions.
-        events.push(EventBody::BookStatusSet {
-            book: id.clone(),
-            status: "finished".into(),
-        });
+        // Published unconditionally — the throttle is for noisy page-turn
+        // updates only, never for semantic transitions.
         events.push(EventBody::BookProgressSet {
-            book: id.clone(),
+            book: id.to_string(),
             progress: 100,
             cfi: current_cfi,
         });
         Ok(())
     })
+}
+
+#[tauri::command]
+pub fn mark_finished(id: String, db: State<'_, Db>, sync: State<'_, SyncWriter>) -> AppResult<()> {
+    do_mark_finished(&db, &sync, &id)
 }
 
 pub(crate) fn do_update_book(

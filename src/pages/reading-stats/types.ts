@@ -66,6 +66,15 @@ export interface ReadingStatsDashboard {
   calendar: ReadingStatsCalendarDay[];
   facts: ReadingReviewFacts;
   cachedReview: CachedReadingReview | null;
+  /**
+   * Set only when the dashboard is scoped to one book and that book's most
+   * recent *automatic* review attempt failed — not configured, out of
+   * quota, offline, or the model itself. `null` once a review exists for
+   * that book, whether it arrived automatically or by hand. The reading
+   * page uses this to show a placeholder in that book's spot instead of
+   * nothing, without the reader having needed to press anything first.
+   */
+  reviewPendingReason: ReadingReviewErrorCode | null;
 }
 
 export interface ReadingReviewProvider {
@@ -192,6 +201,9 @@ export interface ReadingStatsLabels {
   aiOffline: string;
   aiFailed: string;
   aiCachedNotice: string;
+  /** Heading on the placeholder card shown at a finished book's own summary
+   * spot when its automatic attempt didn't produce a review yet. */
+  aiPendingTitle: string;
   autoOfferTitle(manualRuns: number): string;
   autoOfferBody: string;
   autoOfferBodyWithCost(tokens: number): string;

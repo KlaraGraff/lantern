@@ -122,6 +122,14 @@ pub struct ReadingStatsDashboard {
     pub calendar: Vec<ReadingStatsCalendarDay>,
     pub facts: ReviewFacts,
     pub cached_review: Option<CachedReadingReview>,
+    /// Set only when this dashboard is scoped to one book (`scope_book_id`)
+    /// and that book's most recent automatic review attempt failed. One of
+    /// `"notConfigured"`, `"quotaExceeded"`, `"offline"`, `"failed"` — the
+    /// same vocabulary the manual retry path already uses, so the page can
+    /// render its placeholder card with the exact same strings rather than a
+    /// parallel set invented for this one case. `None` once a generation for
+    /// this book succeeds, whether triggered automatically or by hand.
+    pub review_pending_reason: Option<String>,
 }
 
 /// The exact, allow-listed body that may leave the device for an AI review.
@@ -174,22 +182,48 @@ pub fn save_cached_review_inner(
     let facts_json = serde_json::to_string(facts)
         .map_err(|error| AppError::Other(format!("READING_REVIEW_FACTS_INVALID: {error}")))?;
     let conn = db.conn.lock().expect("db mutex");
-    let updated = conn.execute(
-        "UPDATE ai_reading_reviews SET facts_json = ?1, narrative = ?2,
-                provider_profile_id = ?3, provider = ?4, model = ?5, updated_at = ?6
-          WHERE period_start = ?7 AND period_end = ?8 AND scope_book_id IS ?9",
-        params![
-            facts_json,
-            narrative,
-            provider_profile_id.trim(),
-            provider.trim(),
-            model.trim(),
-            now,
-            facts.period_start,
-            facts.period_end,
-            scope_book_id
-        ],
-    )?;
+    // A book has exactly one review, so a book-scoped save is matched (and
+    // overwritten) by `scope_book_id` alone — never by period. The automatic
+    // trigger's window is always "first session on this book .. now", so a
+    // regeneration's `period_end` is different from the last save's on
+    // principle; matching on period here would silently start a version
+    // history instead of overwriting it. A whole-library review has no such
+    // single identity, so it keeps the old period-keyed match: "this year"
+    // and "all time" are legitimately two different rows.
+    let updated = match scope_book_id {
+        Some(book_id) => conn.execute(
+            "UPDATE ai_reading_reviews SET facts_json = ?1, narrative = ?2,
+                    provider_profile_id = ?3, provider = ?4, model = ?5, updated_at = ?6,
+                    period_start = ?7, period_end = ?8
+              WHERE scope_book_id = ?9",
+            params![
+                facts_json,
+                narrative,
+                provider_profile_id.trim(),
+                provider.trim(),
+                model.trim(),
+                now,
+                facts.period_start,
+                facts.period_end,
+                book_id
+            ],
+        )?,
+        None => conn.execute(
+            "UPDATE ai_reading_reviews SET facts_json = ?1, narrative = ?2,
+                    provider_profile_id = ?3, provider = ?4, model = ?5, updated_at = ?6
+              WHERE period_start = ?7 AND period_end = ?8 AND scope_book_id IS NULL",
+            params![
+                facts_json,
+                narrative,
+                provider_profile_id.trim(),
+                provider.trim(),
+                model.trim(),
+                now,
+                facts.period_start,
+                facts.period_end,
+            ],
+        )?,
+    };
     if updated == 0 {
         conn.execute(
             "INSERT INTO ai_reading_reviews (
@@ -209,6 +243,14 @@ pub fn save_cached_review_inner(
                 model.trim(),
                 now
             ],
+        )?;
+    }
+    // A saved review — automatic or by hand — is the thing the pending
+    // marker exists to promise. Whichever one arrives first retires it.
+    if let Some(book_id) = scope_book_id {
+        conn.execute(
+            "DELETE FROM pending_book_reviews WHERE book_id = ?1",
+            params![book_id],
         )?;
     }
     drop(conn);
@@ -635,6 +677,12 @@ pub fn get_reading_stats_dashboard_inner(
         query.period_end,
         query.scope_book_id.as_deref(),
     )?;
+    // Only meaningful once a review is scoped to one book — a "was it ever
+    // due" question the whole-library view has no answer to.
+    let review_pending_reason = match query.scope_book_id.as_deref() {
+        Some(book_id) => review_pending_reason(db, book_id)?,
+        None => None,
+    };
     Ok(ReadingStatsDashboard {
         query: query.clone(),
         overview,
@@ -642,6 +690,7 @@ pub fn get_reading_stats_dashboard_inner(
         calendar,
         facts,
         cached_review,
+        review_pending_reason,
     })
 }
 
@@ -832,8 +881,10 @@ pub async fn generate_reading_review(
     db: State<'_, Db>,
     secrets: State<'_, crate::secrets::Secrets>,
 ) -> AppResult<ReadingReviewAiResult> {
-    generate_reading_review_inner(&app, &db, &secrets, query, language, retry, request_id, "user")
-        .await
+    generate_reading_review_inner(
+        &app, &db, &secrets, query, language, retry, request_id, "user",
+    )
+    .await
 }
 
 /// The window a whole-book review covers: the reader's first recorded
@@ -880,12 +931,15 @@ fn book_already_reviewed(db: &Db, book_id: &str) -> bool {
 /// The `reading_review` job's automatic trigger: a book was just marked
 /// finished.
 ///
-/// Everything here is best-effort and silent. The reader pressed "mark as
-/// finished", not "summarise this" — being handed an error about a request
-/// they never made is worse than simply not getting the summary, so a closed
-/// gate, a missing period, an existing review, an unconfigured provider, an
-/// exhausted quota and a dead network all end the same way: nothing happens,
-/// and `Ok(false)` comes back.
+/// The reader pressed "mark as finished", not "summarise this" — being
+/// handed an error dialog for a request they never made would be worse than
+/// simply not getting the summary, so this never surfaces anything directly.
+/// But a distinction still matters underneath: a closed gate or an existing
+/// review are the reader's own choices and stay silent for good, while an
+/// unconfigured provider, an exhausted quota, a dead network and a model
+/// error are *this run's* failure, not a decision anyone made — those leave
+/// a pending marker (`mark_review_pending`) so the reading-stats page can
+/// still offer the summary, on request, the next time the reader is there.
 #[tauri::command]
 pub async fn run_book_finished_analysis(
     book_id: String,
@@ -907,7 +961,7 @@ pub async fn run_book_finished_analysis(
     let query = ReadingStatsQuery {
         period_start,
         period_end,
-        scope_book_id: Some(book_id),
+        scope_book_id: Some(book_id.clone()),
         timezone_offset_minutes,
     };
     match generate_reading_review_inner(&app, &db, &secrets, query, language, None, None, "auto")
@@ -916,11 +970,35 @@ pub async fn run_book_finished_analysis(
         Ok(_) => Ok(true),
         Err(error) => {
             log::debug!("auto reading review skipped: {error}");
+            let _ = mark_review_pending(&db, &book_id, pending_reason_bucket(&error));
             Ok(false)
         }
     }
 }
 
+fn row_to_cached_review(row: &rusqlite::Row) -> rusqlite::Result<CachedReadingReview> {
+    Ok(CachedReadingReview {
+        id: row.get(0)?,
+        facts: serde_json::from_str::<ReviewFacts>(&row.get::<_, String>(1)?).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e))
+        })?,
+        narrative: row.get(2)?,
+        provider_profile_id: row.get(3)?,
+        provider: row.get(4)?,
+        model: row.get(5)?,
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
+    })
+}
+
+/// A book-scoped lookup ignores `period_start`/`period_end` entirely and
+/// finds the one row that exists for `scope_book_id` — mirroring the
+/// overwrite-by-book-id rule in [`save_cached_review_inner`]. This is what
+/// lets the reading-stats page find a book's summary regardless of which
+/// date range tab happens to be selected: the summary was generated for
+/// "first session on this book .. now", not for "this year" or "all time".
+/// A whole-library lookup (`scope_book_id: None`) still matches the exact
+/// period, since a library review has no identity apart from its window.
 pub fn cached_review(
     db: &Db,
     period_start: i64,
@@ -928,34 +1006,69 @@ pub fn cached_review(
     scope_book_id: Option<&str>,
 ) -> AppResult<Option<CachedReadingReview>> {
     let conn = db.reader();
+    match scope_book_id {
+        Some(book_id) => conn
+            .query_row(
+                "SELECT id, facts_json, narrative, provider_profile_id, provider, model, created_at, updated_at
+                   FROM ai_reading_reviews WHERE scope_book_id = ?1",
+                params![book_id],
+                row_to_cached_review,
+            )
+            .optional()
+            .map_err(Into::into),
+        None => conn
+            .query_row(
+                "SELECT id, facts_json, narrative, provider_profile_id, provider, model, created_at, updated_at
+                   FROM ai_reading_reviews WHERE period_start = ?1 AND period_end = ?2 AND scope_book_id IS NULL",
+                params![period_start, period_end],
+                row_to_cached_review,
+            )
+            .optional()
+            .map_err(Into::into),
+    }
+}
+
+/// Whether this book's most recent automatic review attempt is still owed a
+/// successful generation. `None` once either an automatic or a manual run
+/// has produced a review (see the delete in [`save_cached_review_inner`]).
+pub fn review_pending_reason(db: &Db, book_id: &str) -> AppResult<Option<String>> {
+    let conn = db.reader();
     conn.query_row(
-        "SELECT id, facts_json, narrative, provider_profile_id, provider, model, created_at, updated_at
-           FROM ai_reading_reviews WHERE period_start = ?1 AND period_end = ?2
-             AND scope_book_id IS ?3",
-        params![period_start, period_end, scope_book_id],
-        |row| {
-            Ok(CachedReadingReview {
-                id: row.get(0)?,
-                facts: serde_json::from_str::<ReviewFacts>(&row.get::<_, String>(1)?).map_err(
-                    |e| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            1,
-                            rusqlite::types::Type::Text,
-                            Box::new(e),
-                        )
-                    },
-                )?,
-                narrative: row.get(2)?,
-                provider_profile_id: row.get(3)?,
-                provider: row.get(4)?,
-                model: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
-            })
-        },
+        "SELECT reason FROM pending_book_reviews WHERE book_id = ?1",
+        params![book_id],
+        |row| row.get(0),
     )
     .optional()
     .map_err(Into::into)
+}
+
+/// Records that this book's automatic review attempt failed, so the
+/// reading-stats page can show a placeholder in that book's spot instead of
+/// nothing. Overwrites any earlier reason for the same book — only the most
+/// recent attempt's outcome matters, there is no history of failures to
+/// keep.
+fn mark_review_pending(db: &Db, book_id: &str, reason: &str) -> AppResult<()> {
+    let now = chrono::Utc::now().timestamp_millis();
+    let conn = db.conn.lock().expect("db mutex");
+    conn.execute(
+        "INSERT INTO pending_book_reviews (book_id, reason, created_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT(book_id) DO UPDATE SET reason = excluded.reason, created_at = excluded.created_at",
+        params![book_id, reason, now],
+    )?;
+    Ok(())
+}
+
+/// Maps an automatic-attempt failure onto the same four buckets the manual
+/// retry path already shows on screen (`ReadingReviewErrorCode` on the
+/// frontend) — the placeholder card reuses that exact vocabulary instead of
+/// inventing a fifth state for the case where nobody was watching.
+fn pending_reason_bucket(error: &AppError) -> &'static str {
+    match reading_review_error_code(error) {
+        "READING_REVIEW_AI_NOT_CONFIGURED" => "notConfigured",
+        "READING_REVIEW_AI_QUOTA" => "quotaExceeded",
+        "READING_REVIEW_AI_OFFLINE" => "offline",
+        _ => "failed",
+    }
 }
 
 #[cfg(test)]
@@ -1039,6 +1152,106 @@ mod tests {
         // shelf, not asking to pay again.
         assert!(book_already_reviewed(&db, "book-1"));
         assert!(!book_already_reviewed(&db, "book-2"));
+    }
+
+    /// Reproduces the pre-043 shape a real library could carry: two
+    /// book-scoped reviews for the same book, coexisting because the old
+    /// unique index keyed on `(period_start, period_end, scope_book_id)`
+    /// rather than `scope_book_id` alone (`033_reading_stats.sql:41`). The
+    /// reading-stats page's book picker + date-range tabs are what produced
+    /// this in practice: regenerating the same book's review under "all
+    /// time" and then later under "last 30 days" writes two rows, since
+    /// each has a different period.
+    ///
+    /// Migration 043 must dedupe those rows to one-per-book before it lays
+    /// down `idx_ai_reading_reviews_book_scope`, or applying it against a
+    /// library with this shape fails outright (`UNIQUE constraint failed:
+    /// ai_reading_reviews.scope_book_id`) and the app never starts.
+    #[test]
+    fn migration_043_dedupes_duplicate_book_scoped_reviews_keeping_the_latest() {
+        use rusqlite::Connection;
+        use std::sync::{Arc, Mutex};
+
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("lantern.db");
+        let conn = Connection::open(&db_path).unwrap();
+
+        // Stop one migration short of the fix under test: the table exists
+        // with its *original* per-period unique index, matching exactly
+        // what a real user's database looks like right before upgrading.
+        Db::run_migrations_up_to(&conn, 42).unwrap();
+
+        conn.execute(
+            "INSERT INTO books
+                (id, title, author, file_path, status, progress, created_at, updated_at)
+             VALUES ('book-1', 'Book one', 'Author', 'book.epub', 'finished', 100, 1000, 1000)",
+            [],
+        )
+        .unwrap();
+
+        let facts_json = serde_json::to_string(&ReviewFacts::default()).unwrap();
+
+        // Row A: generated first, under "all time" — never regenerated
+        // again, so its updated_at never moves past its created_at.
+        conn.execute(
+            "INSERT INTO ai_reading_reviews
+                (id, period_start, period_end, scope_book_id, facts_json, narrative,
+                 provider_profile_id, provider, model, created_at, updated_at)
+             VALUES ('review-all-time', 1000, 5000, 'book-1', ?1, 'first summary',
+                     'profile', 'anthropic', 'model', 1000, 1000)",
+            params![facts_json],
+        )
+        .unwrap();
+        // Row B: generated later, under "last 30 days" — a different
+        // (period_start, period_end) than row A, so the old unique index
+        // (which included the period) let both rows coexist for the same
+        // book. Its updated_at is the highest of the two.
+        conn.execute(
+            "INSERT INTO ai_reading_reviews
+                (id, period_start, period_end, scope_book_id, facts_json, narrative,
+                 provider_profile_id, provider, model, created_at, updated_at)
+             VALUES ('review-30-days', 2000, 6000, 'book-1', ?1, 'latest summary',
+                     'profile', 'anthropic', 'model', 2000, 9000)",
+            params![facts_json],
+        )
+        .unwrap();
+
+        // Run migration 043 and everything after it. This line used to
+        // raise `UNIQUE constraint failed: ai_reading_reviews.scope_book_id`.
+        Db::run_migrations_on(&conn).unwrap();
+
+        let remaining: Vec<(String, String)> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, narrative FROM ai_reading_reviews WHERE scope_book_id = 'book-1'",
+                )
+                .unwrap();
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect()
+        };
+        // Exactly one row survives, and it's the one with the highest
+        // updated_at — the generation the reader actually saw last.
+        assert_eq!(
+            remaining,
+            vec![("review-30-days".to_string(), "latest summary".to_string())]
+        );
+
+        // Confirm the book-scoped read path (`cached_review`, which queries
+        // by `scope_book_id` alone and expects at most one row) is healthy
+        // post-dedup. Before the fix, this call would have panicked with
+        // `QueryReturnedMoreThanOneRow` on any library carrying this shape.
+        let db = Db {
+            conn: Arc::new(Mutex::new(conn)),
+            read_conn: Arc::new(Mutex::new(Connection::open(&db_path).unwrap())),
+            data_dir: Arc::new(Mutex::new(dir.path().to_path_buf())),
+            local_dir: Arc::new(Mutex::new(dir.path().to_path_buf())),
+        };
+        let review = cached_review(&db, 0, 0, Some("book-1"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(review.narrative, "latest summary");
     }
 
     #[test]
@@ -1184,5 +1397,207 @@ mod tests {
         assert!(prompt[1].content.contains("A title"));
         assert!(!prompt[1].content.contains("highlights"));
         assert!(!prompt[1].content.contains("notes"));
+    }
+
+    /// docs/impls/reading-flow-decisions-2026-08-06.md §3.4 — "the old one is
+    /// replaced, no version history". `run_book_finished_analysis` always
+    /// requests (first session .. now), so a regeneration's `period_end`
+    /// differs from the first save's on principle; this is the case the old
+    /// period-keyed uniqueness would have gotten wrong.
+    #[test]
+    fn regenerating_a_books_review_overwrites_it_rather_than_versioning() {
+        let (_dir, db) = test_db();
+        let first_facts = ReviewFacts {
+            period_start: 1_700_000_000_000,
+            period_end: 1_700_000_100_000,
+            total_active_seconds: 60,
+            ..Default::default()
+        };
+        save_cached_review_inner(
+            &db, &first_facts, Some("book-1"), "First read.", "profile", "anthropic", "model",
+        )
+        .unwrap();
+        // A reader who rereads the book generates again much later — the
+        // window's end (and therefore the whole period tuple) has moved on.
+        let second_facts = ReviewFacts {
+            period_start: 1_700_000_000_000,
+            period_end: 1_800_000_000_000,
+            total_active_seconds: 900,
+            ..Default::default()
+        };
+        save_cached_review_inner(
+            &db, &second_facts, Some("book-1"), "Second read.", "profile", "anthropic", "model",
+        )
+        .unwrap();
+        let count: i64 = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM ai_reading_reviews WHERE scope_book_id = 'book-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+        let review = cached_review(&db, 0, 0, Some("book-1")).unwrap().unwrap();
+        assert_eq!(review.narrative, "Second read.");
+    }
+
+    /// The reading-stats page may be scoped to "this year" or "30 days" while
+    /// a book's own summary was generated for an entirely different window
+    /// ("first session on this book .. whenever it finished"). The lookup
+    /// must find the book's one review regardless.
+    #[test]
+    fn a_books_review_is_found_no_matter_which_period_the_page_is_showing() {
+        let (_dir, db) = test_db();
+        let facts = ReviewFacts {
+            period_start: 1_700_000_000_000,
+            period_end: 1_700_000_100_000,
+            ..Default::default()
+        };
+        save_cached_review_inner(
+            &db, &facts, Some("book-1"), "A summary.", "profile", "anthropic", "model",
+        )
+        .unwrap();
+        let found = cached_review(&db, 0, 9_999_999_999_999, Some("book-1")).unwrap();
+        assert_eq!(found.map(|r| r.narrative), Some("A summary.".to_string()));
+    }
+
+    /// A whole-library review keeps its old identity: two different windows
+    /// ("this year" vs "all time") are two different rows, and a lookup for
+    /// one must not return the other's prose.
+    #[test]
+    fn a_library_reviews_period_still_has_to_match() {
+        let (_dir, db) = test_db();
+        save_cached_review_inner(
+            &db,
+            &ReviewFacts {
+                period_start: 1_700_000_000_000,
+                period_end: 1_700_000_100_000,
+                ..Default::default()
+            },
+            None,
+            "This year.",
+            "profile",
+            "anthropic",
+            "model",
+        )
+        .unwrap();
+        assert!(cached_review(&db, 1_700_000_000_000, 1_700_000_100_000, None)
+            .unwrap()
+            .is_some());
+        assert!(cached_review(&db, 0, 9_999_999_999_999, None).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_failed_automatic_attempt_leaves_a_pending_marker() {
+        let (_dir, db) = test_db();
+        assert_eq!(review_pending_reason(&db, "book-1").unwrap(), None);
+        mark_review_pending(&db, "book-1", "offline").unwrap();
+        assert_eq!(
+            review_pending_reason(&db, "book-1").unwrap(),
+            Some("offline".to_string())
+        );
+    }
+
+    /// Only the latest attempt's outcome is kept — there is no history of
+    /// failures, matching the "no version history" rule for the reviews
+    /// themselves.
+    #[test]
+    fn marking_pending_twice_overwrites_the_reason_in_place() {
+        let (_dir, db) = test_db();
+        mark_review_pending(&db, "book-1", "offline").unwrap();
+        mark_review_pending(&db, "book-1", "quotaExceeded").unwrap();
+        assert_eq!(
+            review_pending_reason(&db, "book-1").unwrap(),
+            Some("quotaExceeded".to_string())
+        );
+        let count: i64 = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM pending_book_reviews", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    /// Whichever generation succeeds first — automatic or by hand — retires
+    /// the marker. This is the only thing that clears it; a manual retry
+    /// that fails again must leave it exactly as it was (nothing re-asserts
+    /// it, so there is nothing to test there beyond this not firing).
+    #[test]
+    fn a_successful_save_clears_the_pending_marker_for_that_book() {
+        let (_dir, db) = test_db();
+        mark_review_pending(&db, "book-1", "offline").unwrap();
+        save_cached_review_inner(
+            &db,
+            &ReviewFacts {
+                period_start: 1_700_000_000_000,
+                period_end: 1_700_000_100_000,
+                ..Default::default()
+            },
+            Some("book-1"),
+            "Finally generated.",
+            "profile",
+            "anthropic",
+            "model",
+        )
+        .unwrap();
+        assert_eq!(review_pending_reason(&db, "book-1").unwrap(), None);
+    }
+
+    #[test]
+    fn pending_reason_bucket_matches_the_four_retry_error_codes() {
+        assert_eq!(
+            pending_reason_bucket(&AppError::Other("no_usable_keys".into())),
+            "notConfigured"
+        );
+        assert_eq!(
+            pending_reason_bucket(&AppError::Other("insufficient quota".into())),
+            "quotaExceeded"
+        );
+        assert_eq!(
+            pending_reason_bucket(&AppError::Other("network timeout".into())),
+            "offline"
+        );
+        assert_eq!(
+            pending_reason_bucket(&AppError::Other("the model refused".into())),
+            "failed"
+        );
+    }
+
+    /// `get_reading_stats_dashboard_inner` only ever answers "is a review
+    /// owed" when the page is scoped to one book — the whole-library view has
+    /// no book to be pending on.
+    #[test]
+    fn dashboard_only_reports_pending_when_scoped_to_a_book() {
+        let (_dir, db) = test_db();
+        insert_session(&db, "s1", "book-1", 1_700_000_000_000);
+        mark_review_pending(&db, "book-1", "offline").unwrap();
+        let scoped = get_reading_stats_dashboard_inner(
+            &db,
+            &ReadingStatsQuery {
+                period_start: 1,
+                period_end: 9_999_999_999_999,
+                scope_book_id: Some("book-1".to_string()),
+                timezone_offset_minutes: 0,
+            },
+        )
+        .unwrap();
+        assert_eq!(scoped.review_pending_reason, Some("offline".to_string()));
+        let library = get_reading_stats_dashboard_inner(
+            &db,
+            &ReadingStatsQuery {
+                period_start: 1,
+                period_end: 9_999_999_999_999,
+                scope_book_id: None,
+                timezone_offset_minutes: 0,
+            },
+        )
+        .unwrap();
+        assert_eq!(library.review_pending_reason, None);
     }
 }

@@ -97,6 +97,9 @@ pub fn apply_event(tx: &Transaction, event: &Event) -> AppResult<()> {
             },
         ),
         EventBody::VocabDelete { id } => apply_vocab_delete(tx, event, id),
+        EventBody::VocabListStatusSet { id, list_status } => {
+            apply_vocab_list_status(tx, event, id, list_status)
+        }
 
         EventBody::NoteUpsert(payload) => apply_note_upsert(tx, event, payload),
         EventBody::NoteDelete { id } => apply_note_delete(tx, event, id),
@@ -763,9 +766,9 @@ fn apply_vocab_add(tx: &Transaction, event: &Event, p: &VocabPayload) -> AppResu
          (id, book_id, word, definition, context_sentence, context_explanation, cfi,
           mastery, mastery_source, mastery_reason, review_count, next_review_at,
           review_interval_days, last_reviewed_at, last_review_rating,
-          fsrs_stability, fsrs_difficulty, fsrs_version,
+          fsrs_stability, fsrs_difficulty, fsrs_version, list_status,
           created_at, updated_at, updated_by_device)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
         params![
             p.id,
             p.book_id,
@@ -785,10 +788,33 @@ fn apply_vocab_add(tx: &Transaction, event: &Event, p: &VocabPayload) -> AppResu
             p.fsrs_stability,
             p.fsrs_difficulty,
             p.fsrs_version,
+            p.list_status,
             p.created_at.unwrap_or(event.ts),
             event.ts,
             event.device,
         ],
+    )?;
+    Ok(())
+}
+
+/// The observation zone's only transition (see `EventBody::VocabListStatusSet`
+/// and migration 044): 'watchlist' → 'confirmed'. LWW-guarded the same way
+/// `apply_highlight_color` is — a single field, compared against the row's
+/// own `(updated_at, updated_by_device)` rather than gated behind the
+/// mastery LWW tuple, because a lookup on one device and a manual save on
+/// another can race and either fact may legitimately win.
+fn apply_vocab_list_status(
+    tx: &Transaction,
+    event: &Event,
+    id: &str,
+    list_status: &str,
+) -> AppResult<()> {
+    tx.execute(
+        "UPDATE vocab_words
+         SET list_status = ?1, updated_at = ?2, updated_by_device = ?3
+         WHERE id = ?4
+           AND (updated_at < ?2 OR (updated_at = ?2 AND updated_by_device < ?3))",
+        params![list_status, event.ts, event.device, id],
     )?;
     Ok(())
 }
@@ -2782,6 +2808,7 @@ mod tests {
                         created_at: None,
                         mastery_source: "manual".into(),
                         mastery_reason: None,
+                        list_status: "confirmed".into(),
                     }),
                 ),
                 ev(
@@ -2868,6 +2895,7 @@ mod tests {
                         created_at: None,
                         mastery_source: "auto".into(),
                         mastery_reason: Some("{\"reason\":\"exposure_promotion\"}".into()),
+                        list_status: "confirmed".into(),
                     }),
                 ),
                 ev(

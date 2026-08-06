@@ -1841,6 +1841,33 @@ fn queued_events(db: &Db) -> Vec<(String, serde_json::Value)> {
         .collect()
 }
 
+/// Like `queued_events`, but also surfaces `_pending_publish.ts` — the
+/// column the outbox actually publishes the event under, separate from the
+/// serialized `body_json` blob. Only the bug 3 replay regression needs the
+/// timestamp each queued event carries, so it stays a separate helper
+/// rather than changing `queued_events`'s return shape for every caller.
+fn queued_events_with_ts(db: &Db) -> Vec<(String, serde_json::Value, i64)> {
+    let conn = db.reader();
+    let mut statement = conn
+        .prepare("SELECT body_json, ts FROM _pending_publish ORDER BY created_at, id")
+        .unwrap();
+    let rows: Vec<(String, i64)> = statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    rows.into_iter()
+        .map(|(body, ts)| {
+            let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+            (
+                value["type"].as_str().unwrap().to_string(),
+                value["payload"].clone(),
+                ts,
+            )
+        })
+        .collect()
+}
+
 fn stored_status(db: &Db, id: &str) -> String {
     db.reader()
         .query_row("SELECT status FROM books WHERE id = ?1", params![id], |r| {
@@ -1937,4 +1964,415 @@ fn promotion_is_published_even_when_the_progress_event_is_throttled() {
         "the progress event is throttled away; the promotion is not"
     );
     assert_eq!(stored_status(&db, "b1"), "reading");
+}
+
+// -- §2.2 auto-finish gate, wired end to end --
+//
+// `mastery::tests` already covers the pure `should_auto_finish`/
+// `finish_coverage_met` decision in isolation, and
+// `reading_behavior::tests` covers `count_normal_pace_screens`'s dedup and
+// `estimate_total_book_screens`'s derivation each in isolation. These
+// exercise the whole path through real `reading_screen_dwells` and
+// `book_difficulty` rows and a real transaction — the only place the two
+// feed `do_update_reading_progress`'s gate together.
+//
+// Every scenario below that wants the gate to have a trustworthy
+// whole-book denominator gives the book a `book_difficulty` row
+// (`status = 'done'`) sized so `estimate_total_book_screens` derives a
+// 100-screen book: `total_tokens = 100 * <this book's own avg word_count>`.
+// A scenario with no such row exercises the "no denominator yet" skip path
+// instead (`estimate_total_book_screens` returns `None`).
+
+fn insert_dwell(db: &Db, book_id: &str, cfi: &str, started_at: i64, word_count: i64, dwell_ms: i64) {
+    let conn = db.conn.lock().unwrap();
+    conn.execute(
+        "INSERT INTO reading_screen_dwells
+            (id, book_id, chapter, cfi, started_at, ended_at, dwell_ms,
+             operation_count, lookup_count, word_count, created_at)
+         VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, 0, 0, ?7, ?5)",
+        params![
+            uuid::Uuid::new_v4().to_string(),
+            book_id,
+            cfi,
+            started_at,
+            started_at + dwell_ms,
+            dwell_ms,
+            word_count,
+        ],
+    )
+    .unwrap();
+}
+
+/// Gives `book_id` a `book_difficulty` row `estimate_total_book_screens` can
+/// use — `status = 'done'` is the only status it trusts (`pending` /
+/// `running` / `failed` / `too_short` / `unsupported` all mean "no usable
+/// text-derived total yet", so the check must skip rather than guess).
+fn insert_done_book_difficulty(db: &Db, book_id: &str, total_tokens: i64) {
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO book_difficulty (book_id, status, total_tokens) VALUES (?1, 'done', ?2)",
+            params![book_id, total_tokens],
+        )
+        .unwrap();
+}
+
+/// (a) A normal complete read: progress crossed the 95% floor and the whole
+/// book was dwelt at one steady ~200 wpm pace over 100 distinct screens, so
+/// every screen counts as normal-pace and matches the book's own estimated
+/// 100-screen total. The auto path must land the book exactly where a
+/// manual `mark_finished` would — same status, same progress, same event
+/// pair, and it must report `true` so the frontend knows to run the same
+/// finished-book analysis a manual finish triggers.
+#[test]
+fn auto_finish_marks_a_normal_complete_read() {
+    let (_dir, db) = setup();
+    insert_book_with_ts(&db, "b1", "reading", 1000);
+    let sync = SyncWriter::new("dev-A".into());
+    sync.set_should_queue(true);
+
+    for i in 0..100 {
+        insert_dwell(&db, "b1", &format!("cfi-{i}"), 1000 + i * 60_000, 200, 60_000);
+    }
+    // avg word_count = 200, so total_tokens = 20_000 derives a 100-screen book.
+    insert_done_book_difficulty(&db, "b1", 20_000);
+
+    let auto_finished =
+        do_update_reading_progress("b1", 97, Some("epubcfi(/6/8!)"), &db, &sync).unwrap();
+
+    assert!(auto_finished, "95% progress and 100% normal-pace coverage must clear the gate");
+    assert_eq!(stored_status(&db, "b1"), "finished");
+    let events = queued_events(&db);
+    let mut kinds: Vec<&str> = events.iter().map(|(kind, _)| kind.as_str()).collect();
+    kinds.sort_unstable();
+    assert_eq!(
+        kinds,
+        vec!["book.progress.set", "book.status.set"],
+        "auto-finish must publish exactly the pair a manual mark_finished publishes — \
+         no leftover event for the pre-finish progress number"
+    );
+    let status_event = events
+        .iter()
+        .find(|(kind, _)| kind == "book.status.set")
+        .unwrap();
+    assert_eq!(status_event.1["status"], "finished");
+    let progress_event = events
+        .iter()
+        .find(|(kind, _)| kind == "book.progress.set")
+        .unwrap();
+    assert_eq!(progress_event.1["progress"], 100);
+}
+
+/// (b) Rapid flip-through to the end: every screen in the book got a dwell
+/// row at a distinct cfi (progress and "screens visited" both read as
+/// 100%), but all of them were skimmed far faster than this reader's own
+/// established pace. None count as normal-pace, so coverage is 0% and the
+/// gate must not open — "宁可漏标，不可错标".
+#[test]
+fn rapid_flip_through_to_the_end_does_not_auto_finish() {
+    let (_dir, db) = setup();
+    insert_book_with_ts(&db, "b1", "reading", 1000);
+    // A different book establishes this reader's normal ~200 wpm baseline —
+    // `reader_median_wpm` is a global, cross-book baseline by design (the
+    // reader's own median, not a per-book one), and it must not be skewed
+    // by the very screens being judged against it.
+    insert_book_with_ts(&db, "baseline", "reading", 1000);
+    let sync = SyncWriter::new("dev-A".into());
+    sync.set_should_queue(true);
+
+    for i in 0..400 {
+        insert_dwell(&db, "baseline", &format!("baseline-cfi-{i}"), 1000 + i * 60_000, 200, 60_000);
+    }
+    // Flipped through the whole book in ~1s per screen — ~12,000 wpm,
+    // roughly 60x this reader's own median. Still 100 distinct cfis, so
+    // this book's own average word_count (used for the denominator) reads
+    // as 200 regardless of the pace they were read at.
+    for i in 0..100 {
+        insert_dwell(&db, "b1", &format!("cfi-{i}"), 24_000_000 + i * 1_000, 200, 1_000);
+    }
+    insert_done_book_difficulty(&db, "b1", 20_000);
+
+    let auto_finished =
+        do_update_reading_progress("b1", 100, Some("epubcfi(/6/999!)"), &db, &sync).unwrap();
+
+    assert!(!auto_finished, "100% of screens visited but 0% at normal pace must not auto-finish");
+    assert_eq!(stored_status(&db, "b1"), "reading");
+}
+
+/// (c) Direct jump to the last page: only a handful of screens actually
+/// opened got a dwell row (kept at the 5-sample floor
+/// `estimate_total_book_screens` needs to trust this book's own average
+/// word_count, so the denominator is genuinely book-scale rather than "no
+/// denominator yet") — the untouched rest of the book was never recorded,
+/// so coverage stays near zero.
+#[test]
+fn jumping_straight_to_the_last_page_does_not_auto_finish() {
+    let (_dir, db) = setup();
+    insert_book_with_ts(&db, "b1", "reading", 1000);
+    let sync = SyncWriter::new("dev-A".into());
+    sync.set_should_queue(true);
+
+    for i in 0..5 {
+        insert_dwell(&db, "b1", &format!("cfi-{i}"), 1000 + i * 60_000, 200, 60_000);
+    }
+    // avg word_count = 200 from those same 5 screens, so total_tokens =
+    // 20_000 still derives a 100-screen book — 5 of 100 is nowhere near 80%.
+    insert_done_book_difficulty(&db, "b1", 20_000);
+
+    let auto_finished =
+        do_update_reading_progress("b1", 100, Some("epubcfi(/6/999!)"), &db, &sync).unwrap();
+
+    assert!(!auto_finished, "5 of 100 screens is nowhere near the 80% coverage floor");
+    assert_eq!(stored_status(&db, "b1"), "reading");
+}
+
+/// (d) Cross-device insufficient coverage: this device only has local dwell
+/// rows for the fraction of the book read here — the rest was read on
+/// another device, whose per-screen history never synced (by design, see
+/// docs/impls/reading-flow-decisions-2026-08-06.md §2.2). Progress itself
+/// did sync, so it can legitimately read 97%, but this device's own
+/// coverage falls short and must not be worked around.
+#[test]
+fn cross_device_reading_leaves_local_coverage_short() {
+    let (_dir, db) = setup();
+    insert_book_with_ts(&db, "b1", "reading", 1000);
+    let sync = SyncWriter::new("dev-A".into());
+    sync.set_should_queue(true);
+
+    for i in 0..40 {
+        insert_dwell(&db, "b1", &format!("cfi-{i}"), 1000 + i * 60_000, 200, 60_000);
+    }
+    insert_done_book_difficulty(&db, "b1", 20_000);
+
+    let auto_finished =
+        do_update_reading_progress("b1", 97, Some("epubcfi(/6/8!)"), &db, &sync).unwrap();
+
+    assert!(!auto_finished, "40 of 100 screens locally is well under the 80% floor");
+    assert_eq!(stored_status(&db, "b1"), "reading");
+}
+
+/// Already-`finished` books must never be re-evaluated — reopening a
+/// finished book to look something up must not restage the finished pair a
+/// second time, even when every gate would otherwise be satisfied.
+#[test]
+fn an_already_finished_book_is_not_re_evaluated() {
+    let (_dir, db) = setup();
+    insert_book_with_ts(&db, "b1", "finished", 1000);
+    let sync = SyncWriter::new("dev-A".into());
+    sync.set_should_queue(true);
+
+    for i in 0..100 {
+        insert_dwell(&db, "b1", &format!("cfi-{i}"), 1000 + i * 60_000, 200, 60_000);
+    }
+    insert_done_book_difficulty(&db, "b1", 20_000);
+
+    let auto_finished =
+        do_update_reading_progress("b1", 100, Some("epubcfi(/6/999!)"), &db, &sync).unwrap();
+
+    assert!(!auto_finished);
+    let promotions = queued_events(&db)
+        .into_iter()
+        .filter(|(kind, _)| kind == "book.status.set")
+        .count();
+    assert_eq!(promotions, 0, "an already-finished book must not republish the finished transition");
+}
+
+/// Bug 1 regression — "读完第一章然后拖到末尾": chapter 1 was read properly
+/// (20 distinct screens at normal pace), then the reader dragged the
+/// progress bar straight to the end without opening anything else. Before
+/// the fix, the denominator was `view.renderer?.pages` — foliate's
+/// *current-chapter* page count, rebuilt on every chapter load — so landing
+/// on a short back-chapter (e.g. a 3-page "about the author" section) after
+/// the drag made 20 normal-pace screens clear `3 * 0.8 = 2.4` and wrongly
+/// auto-finish. `estimate_total_book_screens` derives a whole-book total
+/// instead (a 300-screen book here), so 20 of 300 (~6.7%) must not clear
+/// the 80% floor.
+#[test]
+fn finishing_chapter_one_then_dragging_to_the_end_does_not_auto_finish() {
+    let (_dir, db) = setup();
+    insert_book_with_ts(&db, "b1", "reading", 1000);
+    let sync = SyncWriter::new("dev-A".into());
+    sync.set_should_queue(true);
+
+    for i in 0..20 {
+        insert_dwell(&db, "b1", &format!("ch1-cfi-{i}"), 1000 + i * 60_000, 200, 60_000);
+    }
+    // avg word_count = 200; total_tokens = 60_000 derives a 300-screen book —
+    // the whole-book scale a chapter-scoped denominator could never see.
+    insert_done_book_difficulty(&db, "b1", 60_000);
+
+    let auto_finished =
+        do_update_reading_progress("b1", 100, Some("epubcfi(/6/999!)"), &db, &sync).unwrap();
+
+    assert!(
+        !auto_finished,
+        "20 of an estimated 300 whole-book screens must not clear the 80% floor, \
+         even though it was every screen of the chapter last opened"
+    );
+    assert_eq!(stored_status(&db, "b1"), "reading");
+}
+
+/// Bug 2 regression — "前三章重读四遍然后跳末尾": the first 60 screens (the
+/// first three chapters) were each dwelt on four times over — 240 dwell
+/// rows, but only 60 distinct cfis — then the reader jumped straight to the
+/// end without reading the rest. Before the fix the numerator counted
+/// `reading_screen_dwells` *rows*, not distinct screens: 240 rows against
+/// this same 300-screen denominator clears `300 * 0.8 = 240` exactly. The
+/// fixed numerator (`count_normal_pace_screens`, deduped by cfi) reads only
+/// 60, nowhere near the floor.
+#[test]
+fn rereading_early_chapters_four_times_then_jumping_to_the_end_does_not_auto_finish() {
+    let (_dir, db) = setup();
+    insert_book_with_ts(&db, "b1", "reading", 1000);
+    let sync = SyncWriter::new("dev-A".into());
+    sync.set_should_queue(true);
+
+    let mut started_at = 1000;
+    for _pass in 0..4 {
+        for i in 0..60 {
+            insert_dwell(&db, "b1", &format!("cfi-{i}"), started_at, 200, 60_000);
+            started_at += 60_000;
+        }
+    }
+    // 240 rows, avg word_count still 200 (every row shares the same
+    // word_count) -> total_tokens = 60_000 derives the same 300-screen book.
+    insert_done_book_difficulty(&db, "b1", 60_000);
+
+    let auto_finished =
+        do_update_reading_progress("b1", 100, Some("epubcfi(/6/999!)"), &db, &sync).unwrap();
+
+    assert!(
+        !auto_finished,
+        "60 distinct screens reread 4x over is 240 rows but only 60 of an estimated \
+         300 screens — the old row-counting numerator would have wrongly cleared \
+         300 * 0.8 = 240 here"
+    );
+    assert_eq!(stored_status(&db, "b1"), "reading");
+}
+
+/// Bug 3 regression — the finished pair must survive a peer's replay
+/// intact. `do_mark_finished` (reached here through the auto-finish path)
+/// used to publish `book.status.set` and `book.progress.set` inside one
+/// `with_tx` call sharing a single timestamp; a peer merging both events at
+/// once could only ever apply whichever one `replay.rs`'s random same-
+/// `(ts,device)` tiebreak picked first, silently dropping the other and
+/// leaving `status=reading, progress=0` even though this device's own row
+/// was fully correct. This replays the two queued `_pending_publish`
+/// entries through the same merge path a peer would use and asserts BOTH
+/// land — the fix (two sequential transactions, each stamped by its own
+/// `next_logical_timestamp()`) removes the tie by giving the events
+/// distinct, strictly increasing timestamps instead of leaving the outcome
+/// to an unordered tiebreak.
+#[test]
+fn auto_finish_pair_survives_peer_replay() {
+    let (_dir, db) = setup();
+    insert_book_with_ts(&db, "b1", "reading", 1000);
+    let sync = SyncWriter::new("dev-A".into());
+    sync.set_should_queue(true);
+
+    for i in 0..100 {
+        insert_dwell(&db, "b1", &format!("cfi-{i}"), 1000 + i * 60_000, 200, 60_000);
+    }
+    insert_done_book_difficulty(&db, "b1", 20_000);
+
+    let auto_finished =
+        do_update_reading_progress("b1", 97, Some("epubcfi(/6/8!)"), &db, &sync).unwrap();
+    assert!(auto_finished);
+
+    // `queued_events` only surfaces (type, payload) — the timestamp each
+    // event was stamped with lives in `_pending_publish.ts`, a separate
+    // column, so it's read directly here rather than through that helper.
+    let outbox = queued_events_with_ts(&db);
+    let status_event = outbox.iter().find(|(kind, _, _)| kind == "book.status.set").unwrap();
+    let progress_event = outbox.iter().find(|(kind, _, _)| kind == "book.progress.set").unwrap();
+
+    // The two events must NOT share a timestamp — that shared timestamp is
+    // exactly what let a peer's tiebreak drop one of them. Distinct,
+    // strictly increasing timestamps are what make the merge deterministic.
+    let status_ts = status_event.2;
+    let progress_ts = progress_event.2;
+    assert_ne!(
+        status_ts, progress_ts,
+        "the finished pair must carry distinct timestamps, or a peer's same-(ts,device) \
+         tiebreak can drop either half of it"
+    );
+
+    assert!(status_ts < progress_ts, "do_mark_finished publishes status, then progress");
+
+    // Simulate a peer merging both events the way `replay.rs` actually
+    // delivers them — `all_events.sort_by(|a, b| (a.ts, &a.device, &a.id)...)`
+    // (see `sync/replay.rs`), i.e. strictly in ascending `ts` order, which is
+    // exactly what distinct timestamps make well-defined. Before the fix,
+    // both events shared one `ts`, so this ordering wasn't determined by
+    // `ts` at all — a random UUID tiebreak on the *third* sort key decided
+    // which one a peer applied first, and thanks to the shared per-row
+    // `updated_at`/`updated_by_device` columns, whichever applied second
+    // then read as "stale" against the row the first one had just bumped
+    // forward and was silently dropped.
+    let (peer_dir, peer_db) = setup();
+    insert_book_with_ts(&peer_db, "b1", "reading", 1000);
+    {
+        let conn = peer_db.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE books SET progress = 97, updated_at = 1000, updated_by_device = 'dev-A' \
+             WHERE id = 'b1'",
+            [],
+        )
+        .unwrap();
+    }
+    apply_book_status_event(&peer_db, "b1", status_ts, "dev-A", &status_event.1);
+    apply_book_progress_event(&peer_db, "b1", progress_ts, "dev-A", &progress_event.1);
+
+    let (peer_status, peer_progress): (String, i32) = peer_db
+        .conn
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT status, progress FROM books WHERE id = 'b1'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(peer_status, "finished", "peer must land on 'finished', not fall back to 'reading'");
+    assert_eq!(peer_progress, 100, "peer must land on progress 100, not lose it to the other event");
+    drop(peer_dir);
+}
+
+/// The book-progress half of `sync::merge`'s real LWW apply
+/// (`apply_book_progress` in `sync/merge.rs`), copied verbatim rather than
+/// reimplemented — the exact WHERE clause is the thing this regression
+/// depends on, so it must be the production one, not a hand-derived
+/// equivalent that could get the tiebreak direction backwards.
+fn apply_book_progress_event(db: &Db, book_id: &str, ts: i64, device: &str, payload: &serde_json::Value) {
+    let progress = payload["progress"].as_i64().unwrap();
+    let cfi = payload["cfi"].as_str();
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE books
+             SET progress = ?1, current_cfi = ?2, updated_at = ?3, updated_by_device = ?4
+             WHERE id = ?5
+               AND (updated_at < ?3 OR (updated_at = ?3 AND updated_by_device < ?4))",
+            params![progress, cfi, ts, device, book_id],
+        )
+        .unwrap();
+}
+
+/// See `apply_book_progress_event` — the `status` half, copied from
+/// `apply_book_status` in `sync/merge.rs`.
+fn apply_book_status_event(db: &Db, book_id: &str, ts: i64, device: &str, payload: &serde_json::Value) {
+    let status = payload["status"].as_str().unwrap();
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE books
+             SET status = ?1, updated_at = ?2, updated_by_device = ?3
+             WHERE id = ?4
+               AND (updated_at < ?2 OR (updated_at = ?2 AND updated_by_device < ?3))",
+            params![status, ts, device, book_id],
+        )
+        .unwrap();
 }

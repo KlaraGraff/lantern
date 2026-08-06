@@ -73,6 +73,7 @@ export interface ReaderSettingsState {
   showLearningMarkers: boolean;
   showMasteredMarkers: boolean;
   chapterEndReviewHint: boolean;
+  bookFinishedHint: boolean;
 }
 
 interface ReaderSettingsProps {

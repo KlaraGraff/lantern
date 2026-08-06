@@ -436,7 +436,11 @@ impl LanternMcpHandler {
         let entries = vocab::query_all_vocab_words(&self.state.db)
             .map_err(|error| ErrorData::internal_error(error.to_string(), None))?
             .into_iter()
-            .filter(|entry| requested.contains(&entry.id))
+            // `query_all_vocab_words` is deliberately unfiltered — the in-text
+            // annotator needs every row. Echoing rows back to an MCP client is
+            // reader-facing, so the observation zone stays out of it here, the
+            // same way `mcp::tools::vocab` filters its reads.
+            .filter(|entry| requested.contains(&entry.id) && entry.list_status == "confirmed")
             .collect::<Vec<_>>();
         self.state
             .notify("vocabulary", "updated", &entries.len().to_string());

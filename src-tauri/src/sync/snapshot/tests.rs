@@ -1250,6 +1250,7 @@ fn apply_peer_parent_tombstones_suppress_snapshot_children() {
                 context_explanation: None,
                 mastery_source: "manual".into(),
                 mastery_reason: None,
+                list_status: "confirmed".into(),
             }),
         ),
         ev(
@@ -1704,6 +1705,97 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
                 book: "b1".into(),
             },
         ),
+        // `list_status` exercise (regression for the watchlist snapshot leak):
+        // one word that's always been on the formal list, one that's stayed
+        // in the observation zone, and one that started in the observation
+        // zone and was promoted — the promotion goes through the dedicated
+        // `VocabListStatusSet` LWW path, not a plain `VocabAdd`.
+        ev(
+            1405,
+            "dev-A",
+            EventBody::VocabAdd(VocabPayload {
+                id: "voc-confirmed".into(),
+                book_id: "b1".into(),
+                word: "steadfast".into(),
+                definition: "resolutely firm".into(),
+                context_sentence: None,
+                cfi: None,
+                mastery: "new".into(),
+                review_count: 0,
+                next_review_at: None,
+                review_interval_days: 0,
+                last_reviewed_at: None,
+                last_review_rating: None,
+                fsrs_stability: None,
+                fsrs_difficulty: None,
+                fsrs_version: 1,
+                created_at: None,
+                context_explanation: None,
+                mastery_source: "manual".into(),
+                mastery_reason: None,
+                list_status: "confirmed".into(),
+            }),
+        ),
+        ev(
+            1410,
+            "dev-A",
+            EventBody::VocabAdd(VocabPayload {
+                id: "voc-watchlist".into(),
+                book_id: "b1".into(),
+                word: "ephemeral".into(),
+                definition: "lasting a short time".into(),
+                context_sentence: None,
+                cfi: None,
+                mastery: "new".into(),
+                review_count: 0,
+                next_review_at: None,
+                review_interval_days: 0,
+                last_reviewed_at: None,
+                last_review_rating: None,
+                fsrs_stability: None,
+                fsrs_difficulty: None,
+                fsrs_version: 1,
+                created_at: None,
+                context_explanation: None,
+                mastery_source: "manual".into(),
+                mastery_reason: None,
+                list_status: "watchlist".into(),
+            }),
+        ),
+        ev(
+            1415,
+            "dev-A",
+            EventBody::VocabAdd(VocabPayload {
+                id: "voc-promoted".into(),
+                book_id: "b1".into(),
+                word: "lucid".into(),
+                definition: "clear, easy to understand".into(),
+                context_sentence: None,
+                cfi: None,
+                mastery: "new".into(),
+                review_count: 0,
+                next_review_at: None,
+                review_interval_days: 0,
+                last_reviewed_at: None,
+                last_review_rating: None,
+                fsrs_stability: None,
+                fsrs_difficulty: None,
+                fsrs_version: 1,
+                created_at: None,
+                context_explanation: None,
+                mastery_source: "manual".into(),
+                mastery_reason: None,
+                list_status: "watchlist".into(),
+            }),
+        ),
+        ev(
+            1420,
+            "dev-A",
+            EventBody::VocabListStatusSet {
+                id: "voc-promoted".into(),
+                list_status: "confirmed".into(),
+            },
+        ),
         ev(
             1450,
             "dev-A",
@@ -1823,6 +1915,34 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
             "{table} differs between event-direct and snapshot-applied"
         );
     }
+
+    // Explicit watchlist assertions on the snapshot-bootstrapped DB: the
+    // table-dump equality above already proves this (both DBs would show
+    // 'confirmed' if `upsert_vocab` dropped `list_status`, since db1 is
+    // independently correct via `merge::apply_event`), but the bug this
+    // guards — a new device bootstrapping from a compacted snapshot and
+    // finding every watchlist word promoted to the formal vocab list — is
+    // severe enough to spell out directly rather than leave it implicit in
+    // a generic diff.
+    let list_status = |db: &Connection, id: &str| -> String {
+        db.query_row(
+            "SELECT list_status FROM vocab_words WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(list_status(&db2, "voc-confirmed"), "confirmed");
+    assert_eq!(
+        list_status(&db2, "voc-watchlist"),
+        "watchlist",
+        "watchlist row must not be promoted to 'confirmed' by snapshot bootstrap"
+    );
+    assert_eq!(
+        list_status(&db2, "voc-promoted"),
+        "confirmed",
+        "VocabListStatusSet promotion must survive snapshot round-trip"
+    );
 }
 
 // -----------------------------------------------------------------------

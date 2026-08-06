@@ -34,11 +34,17 @@ pub struct MasteryEvent {
 /// one-sentence explanation lives on `vocab_words.mastery_reason` and syncs,
 /// while this does not.
 #[tauri::command]
-pub fn list_mastery_events(db: State<'_, Db>, vocab_word_id: String) -> AppResult<Vec<MasteryEvent>> {
+pub fn list_mastery_events(
+    db: State<'_, Db>,
+    vocab_word_id: String,
+) -> AppResult<Vec<MasteryEvent>> {
     list_mastery_events_for(&db, &vocab_word_id)
 }
 
-pub(crate) fn list_mastery_events_for(db: &Db, vocab_word_id: &str) -> AppResult<Vec<MasteryEvent>> {
+pub(crate) fn list_mastery_events_for(
+    db: &Db,
+    vocab_word_id: &str,
+) -> AppResult<Vec<MasteryEvent>> {
     let conn = db.reader();
     let mut stmt = conn.prepare(
         "SELECT id, vocab_word_id, from_mastery, to_mastery, source, reason, detail, created_at

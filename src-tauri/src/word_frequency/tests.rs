@@ -26,7 +26,9 @@ fn insert_word_forms(db: &Db, normalized_word: &str, forms: &[&str]) {
 #[test]
 fn common_word_hits_a_low_band() {
     let (_dir, db) = test_db();
-    let entry = lookup(&db, "the").unwrap().expect("\"the\" is in the table");
+    let entry = lookup(&db, "the")
+        .unwrap()
+        .expect("\"the\" is in the table");
     assert_eq!(entry.band, 1);
     assert!(entry.rank <= BAND_1_MAX_RANK);
 }
@@ -34,7 +36,9 @@ fn common_word_hits_a_low_band() {
 #[test]
 fn rare_word_hits_a_high_band() {
     let (_dir, db) = test_db();
-    let entry = lookup(&db, "gallop").unwrap().expect("\"gallop\" is in the table");
+    let entry = lookup(&db, "gallop")
+        .unwrap()
+        .expect("\"gallop\" is in the table");
     assert_eq!(entry.band, 4);
     assert!(entry.rank > BAND_3_MAX_RANK);
 }
@@ -95,7 +99,9 @@ fn inflected_form_falls_back_via_word_forms_direct_row() {
     // the shape the AI produces when the reader looks up "quarrying" first.
     insert_word_forms(&db, "quarrying", &["quarry", "quarried", "quarries"]);
 
-    let base = lookup(&db, "quarry").unwrap().expect("\"quarry\" is in the table");
+    let base = lookup(&db, "quarry")
+        .unwrap()
+        .expect("\"quarry\" is in the table");
     let inflected = lookup(&db, "quarrying")
         .unwrap()
         .expect("\"quarrying\" should resolve via word_forms to \"quarry\"");
@@ -110,7 +116,9 @@ fn inflected_form_falls_back_via_word_forms_reverse_row() {
     // reverse direction of the same relationship.
     insert_word_forms(&db, "quarry", &["quarrying", "quarried", "quarries"]);
 
-    let base = lookup(&db, "quarry").unwrap().expect("\"quarry\" is in the table");
+    let base = lookup(&db, "quarry")
+        .unwrap()
+        .expect("\"quarry\" is in the table");
     let inflected = lookup(&db, "quarrying")
         .unwrap()
         .expect("\"quarrying\" should resolve via the reverse word_forms scan to \"quarry\"");

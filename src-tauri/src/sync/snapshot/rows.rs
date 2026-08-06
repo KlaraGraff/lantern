@@ -185,6 +185,14 @@ pub struct VocabRow {
     pub fsrs_difficulty: Option<f64>,
     #[serde(default = "default_fsrs_version")]
     pub fsrs_version: i64,
+    /// The observation zone (see migration 044 and `EventBody::VocabListStatusSet`).
+    /// Defaults to 'confirmed' so a snapshot written before this field existed
+    /// decodes as a word the reader consciously saved — every word saved
+    /// before migration 044 was exactly that. Without this default, a
+    /// bootstrap from an old snapshot silently promotes every watchlist row
+    /// to the formal vocab list.
+    #[serde(default = "default_list_status")]
+    pub list_status: String,
     pub created_at: i64,
     pub updated_at: i64,
     pub updated_by_device: String,
@@ -264,6 +272,10 @@ fn default_fsrs_version() -> i64 {
 
 fn default_mastery_source() -> String {
     "manual".to_string()
+}
+
+fn default_list_status() -> String {
+    "confirmed".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -28,6 +28,7 @@ fn chapter(occurrences: impl IntoIterator<Item = u32>) -> ChapterExposures {
 fn batch(chapters: Vec<ChapterExposures>) -> ExposureBatch {
     ExposureBatch {
         reader_median_wpm: None,
+        lookup_rate_scale: 1.0,
         chapters,
     }
 }
@@ -75,7 +76,11 @@ fn repeats_inside_one_chapter_shrink_but_never_stop_counting() {
             &WordState::new(Tier::Learning, 0.0),
             &batch(vec![chapter(1..=count)]),
         );
-        assert_eq!(decision.tier, Tier::Learning, "five repeats must not promote");
+        assert_eq!(
+            decision.tier,
+            Tier::Learning,
+            "five repeats must not promote"
+        );
         totals.push(decision.credit);
     }
     assert_close(totals[0], 1.0);
@@ -152,7 +157,10 @@ fn promotion_resets_credit_to_zero() {
 
 #[test]
 fn demotion_resets_credit_to_zero() {
-    let decision = apply_lookup(&WordState::new(Tier::Mastered, 6.0), Lookup { at_ms: 1_000 });
+    let decision = apply_lookup(
+        &WordState::new(Tier::Mastered, 6.0),
+        Lookup { at_ms: 1_000 },
+    );
     assert_eq!(decision.tier, Tier::Familiar);
     assert_close(decision.credit, 0.0);
 }
@@ -162,7 +170,10 @@ fn demotion_resets_credit_to_zero() {
 /// design explicitly refuses.
 #[test]
 fn a_first_lookup_costs_exactly_one_tier() {
-    let decision = apply_lookup(&WordState::new(Tier::Mastered, 3.0), Lookup { at_ms: 1_000 });
+    let decision = apply_lookup(
+        &WordState::new(Tier::Mastered, 3.0),
+        Lookup { at_ms: 1_000 },
+    );
     assert_eq!(decision.tier, Tier::Familiar);
     assert!(decision.changed);
     assert_eq!(decision.reason, Some(REASON_LOOKUP_DEMOTION));
@@ -216,7 +227,10 @@ fn a_third_lookup_inside_the_window_marks_the_word_a_blocker_for_its_book() {
 /// Learning, and looking one up there moved nothing. No row, every time.
 #[test]
 fn a_lookup_on_a_word_already_at_the_floor_writes_no_timeline_row() {
-    let decision = apply_lookup(&WordState::new(Tier::Learning, 2.5), Lookup { at_ms: 1_000 });
+    let decision = apply_lookup(
+        &WordState::new(Tier::Learning, 2.5),
+        Lookup { at_ms: 1_000 },
+    );
     assert_eq!(decision.tier, Tier::Learning);
     assert!(!decision.changed);
     assert_eq!(decision.reason, None);
@@ -261,6 +275,7 @@ fn a_screen_read_far_faster_than_the_readers_own_median_contributes_nothing() {
     let median = 200.0;
     let skimmed = ExposureBatch {
         reader_median_wpm: Some(median),
+        lookup_rate_scale: 1.0,
         chapters: vec![ChapterExposures::new(vec![Exposure {
             screen_words_per_minute: median * 3.5,
             ..exposure(1)
@@ -277,6 +292,7 @@ fn a_screen_merely_faster_than_usual_still_counts_in_full() {
     for multiple in [2.9, FAST_SCREEN_WPM_MULTIPLE] {
         let brisk = ExposureBatch {
             reader_median_wpm: Some(median),
+            lookup_rate_scale: 1.0,
             chapters: vec![ChapterExposures::new(vec![Exposure {
                 screen_words_per_minute: median * multiple,
                 ..exposure(1)
@@ -375,4 +391,121 @@ fn median_pace_without_usable_screens_is_none_not_zero() {
         ]),
         None
     );
+}
+
+// -- §5.2 lookup-rate scaling -------------------------------------------
+
+/// The scale multiplies every exposure's gain, so a reader calibrated at
+/// 0.5x needs twice as many otherwise-identical readings to reach the same
+/// credit as the neutral (1.0x) case above.
+#[test]
+fn a_low_lookup_rate_scale_halves_the_credit_from_an_identical_exposure() {
+    let discounted = ExposureBatch {
+        lookup_rate_scale: 0.5,
+        ..batch(vec![chapter([1])])
+    };
+    let decision = apply_exposures(&WordState::new(Tier::Learning, 0.0), &discounted);
+    assert_close(decision.credit, 0.5);
+}
+
+#[test]
+fn a_high_lookup_rate_scale_grants_more_credit_from_an_identical_exposure() {
+    let boosted = ExposureBatch {
+        lookup_rate_scale: 1.5,
+        ..batch(vec![chapter([1])])
+    };
+    let decision = apply_exposures(&WordState::new(Tier::Learning, 0.0), &boosted);
+    assert_close(decision.credit, 1.5);
+}
+
+/// `ExposureBatch::default()` — what any caller gets from
+/// `#[derive(Default)]` without setting the field — must behave as "no
+/// calibration", i.e. today's unscaled arithmetic, not as "calibrated to
+/// zero credit for everything". This is `sanitized_lookup_rate_scale`'s own
+/// job, exercised here from the public entry point.
+#[test]
+fn a_default_constructed_batch_applies_no_lookup_rate_scaling() {
+    let default_batch = ExposureBatch {
+        chapters: vec![chapter([1])],
+        ..ExposureBatch::default()
+    };
+    assert_close(default_batch.lookup_rate_scale, 0.0);
+    let decision = apply_exposures(&WordState::new(Tier::Learning, 0.0), &default_batch);
+    assert_close(decision.credit, 1.0);
+}
+
+/// A negative or non-finite scale is a caller bug, not a real calibration —
+/// it must fall back to neutral rather than propagate NaN or invert the
+/// sign of a credit.
+#[test]
+fn an_invalid_lookup_rate_scale_falls_back_to_neutral() {
+    for invalid in [-1.0, f64::NAN, f64::INFINITY, 0.0] {
+        let weird = ExposureBatch {
+            lookup_rate_scale: invalid,
+            ..batch(vec![chapter([1])])
+        };
+        let decision = apply_exposures(&WordState::new(Tier::Learning, 0.0), &weird);
+        assert_close(decision.credit, 1.0);
+    }
+}
+
+// -- §2.2 auto-finish gate ---------------------------------------------
+
+/// A normal complete read: progress cleared 95, and the reader stayed on
+/// the vast majority of the book's screens at their own pace.
+#[test]
+fn a_normal_complete_read_clears_the_gate() {
+    assert!(should_auto_finish(96, 85, 100));
+    assert!(finish_coverage_met(85, 100));
+}
+
+/// Sitting exactly on both floors still counts — §2.2's boundaries all
+/// break toward the reader, never away from them.
+#[test]
+fn sitting_exactly_on_both_floors_still_passes() {
+    assert!(should_auto_finish(95, 80, 100));
+}
+
+/// One point under either floor fails — these are floors, not roundable
+/// targets.
+#[test]
+fn just_under_either_floor_fails() {
+    assert!(!should_auto_finish(94, 100, 100), "progress one under 95");
+    assert!(!finish_coverage_met(79, 100), "coverage one under 80%");
+    assert!(!should_auto_finish(96, 79, 100), "coverage carries the gate");
+}
+
+/// Flipping through fast: progress reaches 100 (every screen was turned),
+/// but almost none of them were dwelt at normal pace, so almost none count
+/// toward coverage.
+#[test]
+fn rapid_flip_through_to_the_end_fails_on_coverage() {
+    assert!(!should_auto_finish(100, 3, 100));
+}
+
+/// Jumping straight to the last page: progress reads 100, and the handful
+/// of screens the reader actually landed on were read at a perfectly normal
+/// pace — but there are only a couple of them against the book's whole
+/// screen count, so coverage never clears 80%.
+#[test]
+fn jumping_straight_to_the_last_page_fails_on_coverage() {
+    assert!(!should_auto_finish(100, 2, 100));
+}
+
+/// Cross-device: this device's local screen history only covers the half
+/// of the book read here, so coverage cannot clear 80% no matter how
+/// carefully those screens were read. §2.2's accepted failure direction —
+/// this degrades to the last-screen hint, not a wrong auto-mark.
+#[test]
+fn cross_device_reading_leaves_local_coverage_short() {
+    assert!(!should_auto_finish(96, 48, 100));
+}
+
+/// No screen total to measure against (e.g. a layout that has not settled)
+/// must never read as "fully covered" by default.
+#[test]
+fn no_screen_total_never_auto_finishes() {
+    assert!(!finish_coverage_met(1_000, 0));
+    assert!(!finish_coverage_met(1_000, -1));
+    assert!(!should_auto_finish(100, 1_000, 0));
 }

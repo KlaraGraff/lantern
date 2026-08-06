@@ -51,8 +51,12 @@ pub(crate) fn merge_into(slot: &Mutex<Option<serde_json::Value>>, incoming: serd
 /// comes back as 0 rather than an error — this is only a fast-sum
 /// projection, never the source of truth.
 fn extract_tokens(usage: &serde_json::Value) -> (i64, i64) {
-    let as_i64 =
-        |key: &str| usage.get(key).and_then(serde_json::Value::as_i64).unwrap_or(0);
+    let as_i64 = |key: &str| {
+        usage
+            .get(key)
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(0)
+    };
     let input = if usage.get("input_tokens").is_some() {
         as_i64("input_tokens")
     } else {
@@ -90,9 +94,7 @@ pub(crate) fn record(
     feature: &str,
 ) {
     let Some(usage) = usage else {
-        log::debug!(
-            "ai usage: no usage object captured (provider={provider}, feature={feature})"
-        );
+        log::debug!("ai usage: no usage object captured (provider={provider}, feature={feature})");
         return;
     };
     let usage_json = match serde_json::to_string(&usage) {
@@ -273,7 +275,14 @@ mod tests {
             "cache_creation_input_tokens": 5,
             "some_future_field": {"nested": true}
         });
-        record(&db, Some(usage.clone()), "anthropic", "claude-x", "user", "chat");
+        record(
+            &db,
+            Some(usage.clone()),
+            "anthropic",
+            "claude-x",
+            "user",
+            "chat",
+        );
 
         let conn = db.conn.lock().unwrap();
         let stored_json: String = conn
@@ -291,7 +300,14 @@ mod tests {
     fn record_extracts_projected_columns_from_openai_shape() {
         let (_dir, db) = test_db();
         let usage = serde_json::json!({"prompt_tokens": 7, "completion_tokens": 9});
-        record(&db, Some(usage), "openai_compat", "gpt-x", "auto", "vocabulary_scan");
+        record(
+            &db,
+            Some(usage),
+            "openai_compat",
+            "gpt-x",
+            "auto",
+            "vocabulary_scan",
+        );
 
         let conn = db.conn.lock().unwrap();
         let (origin, feature, input_tokens, output_tokens): (String, String, i64, i64) = conn
@@ -314,7 +330,9 @@ mod tests {
 
         let conn = db.conn.lock().unwrap();
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM ai_usage_records", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM ai_usage_records", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(count, 0);
     }

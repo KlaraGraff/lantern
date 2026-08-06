@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern 使用者动线图 · 2026-08-06</title>
+<style>
+  :root {
+    --paper: #faf7f2; --ink: #2b2724; --ink-soft: #6a625b; --ink-faint: #9a918a;
+    --rule: #e2dcd3; --card: #fffdfa;
+    --hand: #2f6fb5; --hand-bg: #e8f0fa;   /* 手动：你按的 */
+    --auto: #2f7d5b; --auto-bg: #e6f2ec;   /* 自动：不用管的 */
+    --ai:   #7a4fb5; --ai-bg:   #f0eaf9;   /* 花钱的 AI 调用 */
+    --gate: #c2761a; --gate-bg: #fbf1e2;   /* 闸门 / 条件 */
+    --break:#c33c3c; --break-bg:#fbecec;   /* 断点 / 还没接上 */
+    --mute: #6a625b; --mute-bg: #eeeae4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:#1a1816; --ink:#e8e2da; --ink-soft:#a89f96; --ink-faint:#6f665f;
+      --rule:#33302c; --card:#211e1b;
+      --hand:#74aae8; --hand-bg:#1c2a3a;
+      --auto:#6fc39a; --auto-bg:#162c22;
+      --ai:#b490e8;   --ai-bg:#2a2038;
+      --gate:#e0a75a; --gate-bg:#33280f;
+      --break:#e88080; --break-bg:#35191a;
+      --mute:#a89f96; --mute-bg:#262320;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; padding:0; background:var(--paper); color:var(--ink);
+    font-family:-apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+    font-size:15px; line-height:1.7; -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width:1180px; margin:0 auto; padding:56px 32px 120px; }
+  header.top { border-bottom:1px solid var(--rule); padding-bottom:28px; }
+  h1 { font-size:30px; line-height:1.3; margin:0 0 10px; letter-spacing:-.3px; font-weight:650; }
+  .sub { color:var(--ink-soft); font-size:14px; margin:0; }
+  .legend { display:flex; flex-wrap:wrap; gap:8px 20px; margin:22px 0 0; font-size:13px; color:var(--ink-soft); }
+  .legend i { display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:6px; vertical-align:-1px; }
+  section { margin-top:64px; }
+  h2 { font-size:20px; margin:0 0 6px; font-weight:620; letter-spacing:-.2px; display:flex; align-items:baseline; gap:12px; }
+  h2 .n { font-size:12px; font-weight:600; color:var(--ink-faint); border:1px solid var(--rule);
+          border-radius:20px; padding:2px 9px; flex:none; font-variant-numeric:tabular-nums; }
+  .lede { color:var(--ink-soft); font-size:14.5px; margin:0 0 22px; max-width:78ch; }
+  .lede b { color:var(--ink); font-weight:600; }
+  .figure { background:var(--card); border:1px solid var(--rule); border-radius:14px; padding:8px; overflow-x:auto; }
+  .figure svg { display:block; width:100%; height:auto; min-width:760px; }
+  .notes { margin:18px 0 0; padding:0; list-style:none; display:grid; gap:10px; }
+  .notes li { font-size:14px; color:var(--ink-soft); padding-left:26px; position:relative; line-height:1.65; }
+  .notes li::before { content:""; position:absolute; left:8px; top:9px; width:6px; height:6px; border-radius:50%; background:var(--ink-faint); }
+  .notes li.good::before { background:var(--auto); }
+  .notes li.bad::before  { background:var(--break); }
+  .notes li.warn::before { background:var(--gate); }
+  .notes li b { color:var(--ink); font-weight:600; }
+  code { background:var(--mute-bg); padding:1px 5px; border-radius:4px;
+         font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12.5px; }
+  table { width:100%; border-collapse:collapse; margin-top:8px; font-size:14px; }
+  th, td { text-align:left; padding:11px 12px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  th { font-size:12.5px; font-weight:650; color:var(--ink-faint); letter-spacing:.3px; }
+  td b { font-weight:600; }
+  .tag { display:inline-block; font-size:11.5px; font-weight:650; padding:2px 8px; border-radius:20px; white-space:nowrap; }
+  .tag.keep { background:var(--hand-bg); color:var(--hand); }
+  .tag.auto { background:var(--auto-bg); color:var(--auto); }
+  .tag.gap  { background:var(--break-bg); color:var(--break); }
+  svg text { font-family:-apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif; }
+  .t  { font-size:12.5px; font-weight:600; }
+  .ts { font-size:11px; }
+  .tt { font-size:10.5px; letter-spacing:.4px; font-weight:700; }
+  .tm { font-size:11.5px; font-weight:600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>Lantern 使用者动线图</h1>
+  <p class="sub">以「今天我打开一本书，读到一个不认识的词」为主线，走完当前<b>已经写进代码</b>的全部路径。2026-08-06 · 对照 <code>main</code> 分支实际实现，不是设计稿。</p>
+  <div class="legend">
+    <span><i style="background:var(--hand)"></i>你按的（手动）</span>
+    <span><i style="background:var(--auto)"></i>底下自己发生的（自动）</span>
+    <span><i style="background:var(--ai)"></i>会花 AI 额度</span>
+    <span><i style="background:var(--gate)"></i>闸门 / 有条件</span>
+    <span><i style="background:var(--break)"></i>还没接上</span>
+  </div>
+</header>
+
+<!-- ============ 图 1 ============ -->
+<section>
+<h2><span class="n">图 1</span> 一天：从打开书架到合上书</h2>
+<p class="lede">三条泳道。<b>最上面一条是你全部要动的手</b>——一整天读书，总共七下。中间是屏幕上会自己出现的东西，最下面是你完全不会察觉、但决定了后面一切的记录。</p>
+<div class="figure">
+<svg viewBox="0 0 1120 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="阅读一天的三条泳道时间线">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--ink-faint)"/>
+    </marker>
+    <marker id="arG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--auto)"/>
+    </marker>
+  </defs>
+
+  <!-- lane labels -->
+  <text class="tt" x="14" y="34" fill="var(--hand)">你 按 的</text>
+  <text class="tt" x="14" y="196" fill="var(--ink-faint)">屏 幕 上 出 现 的</text>
+  <text class="tt" x="14" y="330" fill="var(--auto)">底 下 记 下 的</text>
+  <line x1="14" y1="308" x2="1106" y2="308" stroke="var(--rule)" stroke-width="1" stroke-dasharray="3 4"/>
+  <line x1="14" y1="172" x2="1106" y2="172" stroke="var(--rule)" stroke-width="1" stroke-dasharray="3 4"/>
+
+  <!-- lane A: manual -->
+  <g>
+    <rect x="14"  y="46" width="132" height="52" rx="9" fill="var(--hand-bg)" stroke="var(--hand)"/>
+    <text class="t" x="80" y="70" fill="var(--hand)" text-anchor="middle">打开书架</text>
+    <text class="ts" x="80" y="87" fill="var(--ink-soft)" text-anchor="middle">点一本书</text>
+
+    <rect x="170" y="46" width="132" height="52" rx="9" fill="var(--hand-bg)" stroke="var(--hand)"/>
+    <text class="t" x="236" y="70" fill="var(--hand)" text-anchor="middle">读、翻页</text>
+    <text class="ts" x="236" y="87" fill="var(--ink-soft)" text-anchor="middle">空格 / 滑动 / 滚轮</text>
+
+    <rect x="326" y="46" width="132" height="52" rx="9" fill="var(--hand-bg)" stroke="var(--hand)" stroke-width="2"/>
+    <text class="t" x="392" y="70" fill="var(--hand)" text-anchor="middle">双击 nuance</text>
+    <text class="ts" x="392" y="87" fill="var(--ink-soft)" text-anchor="middle">或选中一句</text>
+
+    <rect x="482" y="46" width="132" height="52" rx="9" fill="var(--gate-bg)" stroke="var(--gate)" stroke-width="2"/>
+    <text class="t" x="548" y="70" fill="var(--gate)" text-anchor="middle">按「收藏」</text>
+    <text class="ts" x="548" y="87" fill="var(--ink-soft)" text-anchor="middle">← 全片唯一的闸</text>
+
+    <rect x="638" y="46" width="132" height="52" rx="9" fill="var(--hand-bg)" stroke="var(--hand)" stroke-dasharray="4 3"/>
+    <text class="t" x="704" y="70" fill="var(--hand)" text-anchor="middle">高亮 / 写笔记</text>
+    <text class="ts" x="704" y="87" fill="var(--ink-soft)" text-anchor="middle">想留话才按</text>
+
+    <rect x="794" y="46" width="132" height="52" rx="9" fill="var(--hand-bg)" stroke="var(--hand)" stroke-dasharray="4 3"/>
+    <text class="t" x="860" y="70" fill="var(--hand)" text-anchor="middle">章末点「去回顾」</text>
+    <text class="ts" x="860" y="87" fill="var(--ink-soft)" text-anchor="middle">看见了才按</text>
+
+    <rect x="950" y="46" width="156" height="52" rx="9" fill="var(--hand-bg)" stroke="var(--hand)"/>
+    <text class="t" x="1028" y="70" fill="var(--hand)" text-anchor="middle">标记「已读完」</text>
+    <text class="ts" x="1028" y="87" fill="var(--ink-soft)" text-anchor="middle">书架右键菜单</text>
+  </g>
+  <path d="M146,72 H166"  stroke="var(--ink-faint)" marker-end="url(#ar)" fill="none"/>
+  <path d="M302,72 H322"  stroke="var(--ink-faint)" marker-end="url(#ar)" fill="none"/>
+  <path d="M458,72 H478"  stroke="var(--ink-faint)" marker-end="url(#ar)" fill="none"/>
+  <path d="M614,72 H634"  stroke="var(--ink-faint)" marker-end="url(#ar)" fill="none"/>
+  <path d="M770,72 H790"  stroke="var(--ink-faint)" marker-end="url(#ar)" fill="none"/>
+  <path d="M926,72 H946"  stroke="var(--ink-faint)" marker-end="url(#ar)" fill="none"/>
+
+  <!-- lane B: screen -->
+  <g>
+    <rect x="14"  y="112" width="132" height="50" rx="9" fill="var(--paper)" stroke="var(--rule)"/>
+    <text class="ts" x="80" y="132" fill="var(--ink-soft)" text-anchor="middle">封面上有难度标</text>
+    <text class="ts" x="80" y="148" fill="var(--ink-faint)" text-anchor="middle">导入时就算好了</text>
+
+    <rect x="170" y="112" width="132" height="50" rx="9" fill="var(--paper)" stroke="var(--rule)"/>
+    <text class="ts" x="236" y="132" fill="var(--ink-soft)" text-anchor="middle">正文里有释义 / 虚线</text>
+    <text class="ts" x="236" y="148" fill="var(--ink-faint)" text-anchor="middle">越读越少</text>
+
+    <rect x="326" y="112" width="132" height="50" rx="9" fill="var(--ai-bg)" stroke="var(--ai)"/>
+    <text class="ts" x="392" y="132" fill="var(--ai)" text-anchor="middle">学习卡片弹出</text>
+    <text class="ts" x="392" y="148" fill="var(--ink-faint)" text-anchor="middle">流式吐出各模块</text>
+
+    <rect x="482" y="112" width="132" height="50" rx="9" fill="var(--paper)" stroke="var(--rule)"/>
+    <text class="ts" x="548" y="132" fill="var(--ink-soft)" text-anchor="middle">这个词在正文变色</text>
+    <text class="ts" x="548" y="148" fill="var(--ink-faint)" text-anchor="middle">全书同词一起变</text>
+
+    <rect x="638" y="112" width="132" height="50" rx="9" fill="var(--paper)" stroke="var(--rule)"/>
+    <text class="ts" x="704" y="132" fill="var(--ink-soft)" text-anchor="middle">侧栏笔记轨道亮一条</text>
+
+    <rect x="794" y="112" width="132" height="50" rx="9" fill="var(--paper)" stroke="var(--rule)"/>
+    <text class="ts" x="860" y="132" fill="var(--ink-soft)" text-anchor="middle">章末一行小字</text>
+    <text class="ts" x="860" y="148" fill="var(--ink-faint)" text-anchor="middle">「这章你查过 6 个词」</text>
+
+    <rect x="950" y="112" width="156" height="50" rx="9" fill="var(--ai-bg)" stroke="var(--ai)"/>
+    <text class="ts" x="1028" y="132" fill="var(--ai)" text-anchor="middle">读完汇总自己生成</text>
+    <text class="ts" x="1028" y="148" fill="var(--ink-faint)" text-anchor="middle">失败就静默跳过</text>
+  </g>
+
+  <!-- lane C: automatic -->
+  <g>
+    <rect x="14"  y="344" width="288" height="98" rx="10" fill="var(--auto-bg)" stroke="var(--auto)"/>
+    <text class="tm" x="30" y="366" fill="var(--auto)">每一屏都在记</text>
+    <text class="ts" x="30" y="386" fill="var(--ink-soft)">· 停留多久、有没有操作</text>
+    <text class="ts" x="30" y="403" fill="var(--ink-soft)">· 这屏出现了哪些词（去重、归一）</text>
+    <text class="ts" x="30" y="420" fill="var(--ink-soft)">· 这屏你查了哪些词</text>
+    <text class="ts" x="30" y="437" fill="var(--ink-faint)">翻页 / 换章 / 关窗时成批落库</text>
+
+    <rect x="326" y="344" width="288" height="98" rx="10" fill="var(--auto-bg)" stroke="var(--auto)"/>
+    <text class="tm" x="342" y="366" fill="var(--auto)">查词落库，并且扣分</text>
+    <text class="ts" x="342" y="386" fill="var(--ink-soft)">· 原句、章节、位置、第几次查</text>
+    <text class="ts" x="342" y="403" fill="var(--ink-soft)">· 卡片结果整份缓存（再查不花钱）</text>
+    <text class="ts" x="342" y="420" fill="var(--ink-soft)">· 掌握度<tspan font-weight="700">降一档</tspan>，一周内再查则大降</text>
+    <text class="ts" x="342" y="437" fill="var(--ink-faint)">与查词记录同一个事务，不会对不上</text>
+
+    <rect x="638" y="344" width="468" height="98" rx="10" fill="var(--auto-bg)" stroke="var(--auto)"/>
+    <text class="tm" x="654" y="366" fill="var(--auto)">攒够了就结算：读到没查 = 你认识</text>
+    <text class="ts" x="654" y="386" fill="var(--ink-soft)">· 同章第 1/2/3/4 次记 1.0 / 0.4 / 0.2 / 0.1，之后 0.05，单章封顶 2.0</text>
+    <text class="ts" x="654" y="403" fill="var(--ink-soft)">· 满 4.0 升「熟悉」，满 8.0 升「已掌握」；升降都写一条带理由的时间线</text>
+    <text class="ts" x="654" y="420" fill="var(--ink-soft)">· 那一屏你在逐词查 → 跳过的词按 1.5 倍算（你当时确实在较真）</text>
+    <text class="ts" x="654" y="437" fill="var(--ink-faint)">翻太快的屏、停 5 分钟且零操作的屏，写入时就被剔掉了</text>
+  </g>
+
+  <path d="M236,164 V186 M236,186 H80 V340"  stroke="var(--auto)" stroke-width="1.2" fill="none" marker-end="url(#arG)" opacity=".55"/>
+  <path d="M392,164 V340" stroke="var(--auto)" stroke-width="1.2" fill="none" marker-end="url(#arG)" opacity=".55"/>
+  <path d="M548,164 V220 M548,220 H860 V340" stroke="var(--auto)" stroke-width="1.2" fill="none" marker-end="url(#arG)" opacity=".55"/>
+</svg>
+</div>
+<ul class="notes">
+  <li class="good"><b>七下手，其中四下是可选的。</b>真正非按不可的只有：打开书、翻页、双击查词、按「收藏」。高亮、笔记、章末回顾、标记读完，不按也读得下去。</li>
+  <li><b>章末那行小字是故意藏起来的。</b>它装在章节最后一个段落之后，只有真翻到章末才看得见，翻过去就没了——不弹窗、不红点、不角标，这是设计里划的死线。</li>
+  <li class="warn"><b>「标记已读完」目前必须手动点。</b>读到 100% 不会自动变成已读完，所以读完汇总那次 AI 调用也不会自己触发。</li>
+</ul>
+</section>
+
+<!-- ============ 图 2 ============ -->
+<section>
+<h2><span class="n">图 2</span> 双击那一下之后，同时发生的九件事</h2>
+<p class="lede">你只做了一个动作。左边是<b>不用管、自己会发生的</b>，右边是<b>卡片上等你按的按钮</b>。注意右边第一个：它决定了左边那条「掌握度」链条对这个词到底通不通电。</p>
+<div class="figure">
+<svg viewBox="0 0 1120 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="双击查词后的自动与手动分叉">
+  <defs>
+    <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--ink-faint)"/>
+    </marker>
+  </defs>
+
+  <rect x="430" y="20" width="260" height="58" rx="12" fill="var(--hand-bg)" stroke="var(--hand)" stroke-width="2"/>
+  <text class="t" x="560" y="44" fill="var(--hand)" text-anchor="middle" font-size="14">双击 “nuance”</text>
+  <text class="ts" x="560" y="63" fill="var(--ink-soft)" text-anchor="middle">（设置里可关；也可选中后从菜单进）</text>
+
+  <path d="M470,78 V104 H250 V126" stroke="var(--ink-faint)" fill="none" marker-end="url(#a2)"/>
+  <path d="M650,78 V104 H870 V126" stroke="var(--ink-faint)" fill="none" marker-end="url(#a2)"/>
+
+  <text class="tt" x="60" y="118" fill="var(--auto)">自 动 · 你 不 用 管</text>
+  <text class="tt" x="700" y="118" fill="var(--hand)">卡 片 上 等 你 按 的</text>
+
+  <!-- automatic column -->
+  <rect x="40" y="130" width="420" height="46" rx="9" fill="var(--ai-bg)" stroke="var(--ai)"/>
+  <text class="t" x="58" y="150" fill="var(--ai)">① 学习卡片调 AI，按模块流式吐出</text>
+  <text class="ts" x="58" y="167" fill="var(--ink-soft)">释义 / 例句 / 词源 / 语境……哪些模块、多详细，设置里自己配</text>
+
+  <rect x="40" y="186" width="420" height="46" rx="9" fill="var(--auto-bg)" stroke="var(--auto)"/>
+  <text class="t" x="58" y="206" fill="var(--auto)">② 整份结果写进查词记录并缓存</text>
+  <text class="ts" x="58" y="223" fill="var(--ink-soft)">原句、章节、CFI、第几次查；再查同一个词直接读缓存，不再花钱</text>
+
+  <rect x="40" y="242" width="420" height="46" rx="9" fill="var(--auto-bg)" stroke="var(--auto)"/>
+  <text class="t" x="58" y="262" fill="var(--auto)">③ 正文里这个词被标记出来</text>
+  <text class="ts" x="58" y="279" fill="var(--ink-soft)">全书同词同色；开了词形匹配则 nuanced / nuances 一起标</text>
+
+  <rect x="40" y="298" width="420" height="60" rx="9" fill="var(--auto-bg)" stroke="var(--auto)"/>
+  <text class="t" x="58" y="318" fill="var(--auto)">④ 掌握度降一档 —— 但只对已收藏的词</text>
+  <text class="ts" x="58" y="335" fill="var(--ink-soft)">同一个词在别的书里的进度一并清零（同一个词只有一份记忆）</text>
+  <text class="ts" x="58" y="351" fill="var(--break)">没收藏的词：这一步<tspan font-weight="700">什么也不做</tspan>，代码里明确写着不替你建条目</text>
+
+  <rect x="40" y="368" width="420" height="46" rx="9" fill="var(--auto-bg)" stroke="var(--auto)"/>
+  <text class="t" x="58" y="388" fill="var(--auto)">⑤ 这一屏被标成「查词活跃屏」</text>
+  <text class="ts" x="58" y="405" fill="var(--ink-soft)">你在这屏<tspan font-weight="700">跳过</tspan>的其他词，加分按 1.5 倍算</text>
+
+  <rect x="40" y="424" width="420" height="46" rx="9" fill="var(--auto-bg)" stroke="var(--auto)"/>
+  <text class="t" x="58" y="444" fill="var(--auto)">⑥ 本章查词计数 +1</text>
+  <text class="ts" x="58" y="461" fill="var(--ink-soft)">读到章末时，那行小字用的就是这个数</text>
+
+  <!-- manual column -->
+  <rect x="660" y="130" width="420" height="60" rx="9" fill="var(--gate-bg)" stroke="var(--gate)" stroke-width="2"/>
+  <text class="t" x="678" y="150" fill="var(--gate)">⑦「收藏」→ 进生词本</text>
+  <text class="ts" x="678" y="167" fill="var(--ink-soft)">从这一刻起：正文三阶段标注、掌握度升降、复习堆，才对它生效</text>
+  <text class="ts" x="678" y="183" fill="var(--ink-faint)">从选中菜单直接收藏时，会先叫一次便宜模型补一句释义再落库</text>
+
+  <rect x="660" y="200" width="420" height="46" rx="9" fill="var(--hand-bg)" stroke="var(--hand)"/>
+  <text class="t" x="678" y="220" fill="var(--hand)">⑧「问 AI」→ 带着这张卡片进对话</text>
+  <text class="ts" x="678" y="237" fill="var(--ink-soft)">对话默认锚在这本书上，可引用原文</text>
+
+  <rect x="660" y="256" width="420" height="46" rx="9" fill="var(--hand-bg)" stroke="var(--hand)"/>
+  <text class="t" x="678" y="276" fill="var(--hand)">⑨「笔记」→ 写一条，挂在这个词上</text>
+  <text class="ts" x="678" y="293" fill="var(--ink-soft)">可选挂在这本书里，或挂成跨书的（scope: book / global）</text>
+
+  <rect x="660" y="312" width="420" height="40" rx="9" fill="var(--mute-bg)" stroke="var(--rule)"/>
+  <text class="ts" x="678" y="337" fill="var(--ink-soft)">此外还有：朗读、复制、翻译、高亮 —— 都只影响当下，不进任何链条</text>
+
+  <rect x="660" y="376" width="420" height="94" rx="9" fill="var(--break-bg)" stroke="var(--break)" stroke-dasharray="5 4"/>
+  <text class="t" x="678" y="398" fill="var(--break)">如果你什么都不按（多数人多数时候）</text>
+  <text class="ts" x="678" y="418" fill="var(--ink-soft)">· 查词记录有了 —— 阅读统计、章末小字算得进去</text>
+  <text class="ts" x="678" y="435" fill="var(--ink-soft)">· 正文记号有了 —— 下次遇到还认得出「我查过」</text>
+  <text class="ts" x="678" y="452" fill="var(--ink-soft)">· 掌握度、正文释义、复习堆 —— 这个词一律不参与</text>
+</svg>
+</div>
+<ul class="notes">
+  <li class="warn"><b>①～⑥ 全自动，⑦ 是手动，而 ④ 依赖 ⑦。</b>这就是整张图的重点：自动化做得相当彻底，但它有一个手动的入口条件。</li>
+  <li><b>缓存是真的省钱。</b>同一个词再查一次读的是上次那份结果，只有卡片配置变了（换了模块、换了详略）才会重新调用。</li>
+</ul>
+</section>
+
+<!-- ============ 图 3 ============ -->
+<section>
+<h2><span class="n">图 3</span> 五个板块，一条链</h2>
+<p class="lede">左边是你在读书时产生的四种东西，右边是侧栏里点得到的板块。<b>粗线是有联动的，细虚线是各走各的。</b></p>
+<div class="figure">
+<svg viewBox="0 0 1120 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="各板块之间的联动关系">
+  <defs>
+    <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--auto)"/>
+    </marker>
+    <marker id="a3g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--ink-faint)"/>
+    </marker>
+  </defs>
+
+  <text class="tt" x="30" y="30" fill="var(--ink-faint)">读 书 时 产 生 的</text>
+  <text class="tt" x="470" y="30" fill="var(--ink-faint)">存 成 了 什 么</text>
+  <text class="tt" x="880" y="30" fill="var(--ink-faint)">侧 栏 里 看 得 到</text>
+
+  <!-- source column -->
+  <rect x="30" y="46" width="190" height="52" rx="9" fill="var(--hand-bg)" stroke="var(--hand)"/>
+  <text class="t" x="125" y="68" fill="var(--hand)" text-anchor="middle">查一个词</text>
+  <text class="ts" x="125" y="86" fill="var(--ink-soft)" text-anchor="middle">双击 / 选中 → 学习卡片</text>
+
+  <rect x="30" y="176" width="190" height="52" rx="9" fill="var(--gate-bg)" stroke="var(--gate)" stroke-width="2"/>
+  <text class="t" x="125" y="198" fill="var(--gate)" text-anchor="middle">按「收藏」</text>
+  <text class="ts" x="125" y="216" fill="var(--ink-soft)" text-anchor="middle">手动，一下</text>
+
+  <rect x="30" y="306" width="190" height="52" rx="9" fill="var(--hand-bg)" stroke="var(--hand)"/>
+  <text class="t" x="125" y="328" fill="var(--hand)" text-anchor="middle">高亮 / 写笔记</text>
+  <text class="ts" x="125" y="346" fill="var(--ink-soft)" text-anchor="middle">同一处可以既高亮又写字</text>
+
+  <rect x="30" y="436" width="190" height="52" rx="9" fill="var(--auto-bg)" stroke="var(--auto)"/>
+  <text class="t" x="125" y="458" fill="var(--auto)" text-anchor="middle">只是翻页</text>
+  <text class="ts" x="125" y="476" fill="var(--ink-soft)" text-anchor="middle">什么都不按</text>
+
+  <!-- storage column -->
+  <rect x="290" y="40" width="230" height="64" rx="9" fill="var(--auto-bg)" stroke="var(--auto)"/>
+  <text class="t" x="306" y="62" fill="var(--auto)">查词记录</text>
+  <text class="ts" x="306" y="80" fill="var(--ink-soft)">原句 / 章节 / 位置 / 查过几次</text>
+  <text class="ts" x="306" y="96" fill="var(--ink-faint)">自动写，跨设备同步</text>
+
+  <rect x="290" y="170" width="230" height="64" rx="9" fill="var(--auto-bg)" stroke="var(--auto)"/>
+  <text class="t" x="306" y="192" fill="var(--auto)">生词条目 + 掌握度</text>
+  <text class="ts" x="306" y="210" fill="var(--ink-soft)">新 → 学习中 → 熟悉 → 已掌握</text>
+  <text class="ts" x="306" y="226" fill="var(--ink-faint)">分「读出来的」和「你标的」两种来源</text>
+
+  <rect x="290" y="300" width="230" height="64" rx="9" fill="var(--auto-bg)" stroke="var(--auto)"/>
+  <text class="t" x="306" y="322" fill="var(--auto)">高亮 + 笔记</text>
+  <text class="ts" x="306" y="340" fill="var(--ink-soft)">两张表，靠同一个锚点合成一条</text>
+  <text class="ts" x="306" y="356" fill="var(--ink-faint)">笔记可挂书上，也可挂成跨书</text>
+
+  <rect x="290" y="430" width="230" height="64" rx="9" fill="var(--auto-bg)" stroke="var(--auto)"/>
+  <text class="t" x="306" y="452" fill="var(--auto)">每屏行为 + 词曝光</text>
+  <text class="ts" x="306" y="470" fill="var(--ink-soft)">停留、操作数、这屏有哪些词</text>
+  <text class="ts" x="306" y="486" fill="var(--break)">只在本机，不同步</text>
+
+  <!-- panel column -->
+  <rect x="700" y="40" width="230" height="52" rx="9" fill="var(--paper)" stroke="var(--rule)"/>
+  <text class="t" x="716" y="62" fill="var(--ink)">阅读统计</text>
+  <text class="ts" x="716" y="79" fill="var(--ink-soft)">时长、页数、查词密度、日历</text>
+
+  <rect x="700" y="106" width="230" height="52" rx="9" fill="var(--paper)" stroke="var(--rule)"/>
+  <text class="t" x="716" y="128" fill="var(--ink)">生词</text>
+  <text class="ts" x="716" y="145" fill="var(--ink-soft)">全部词 + 每个词的判定理由</text>
+
+  <rect x="700" y="172" width="230" height="66" rx="9" fill="var(--paper)" stroke="var(--rule)"/>
+  <text class="t" x="716" y="194" fill="var(--ink)">复习</text>
+  <text class="ts" x="716" y="211" fill="var(--ink-soft)">四种堆：这本书里反复查的 /</text>
+  <text class="ts" x="716" y="227" fill="var(--ink-soft)">以为会了又查的 / 刚读那章查的 / 很久没遇到的</text>
+
+  <rect x="700" y="252" width="230" height="52" rx="9" fill="var(--paper)" stroke="var(--rule)"/>
+  <text class="t" x="716" y="274" fill="var(--ink)">正文标注（不在侧栏，在书里）</text>
+  <text class="ts" x="716" y="291" fill="var(--ink-soft)">释义 → 虚线 → 消失，三阶段</text>
+
+  <rect x="700" y="318" width="230" height="52" rx="9" fill="var(--paper)" stroke="var(--rule)"/>
+  <text class="t" x="716" y="340" fill="var(--ink)">笔记</text>
+  <text class="ts" x="716" y="357" fill="var(--ink-soft)">全部高亮与笔记的一条时间线</text>
+
+  <rect x="700" y="384" width="230" height="52" rx="9" fill="var(--mute-bg)" stroke="var(--rule)" stroke-dasharray="4 3"/>
+  <text class="t" x="716" y="406" fill="var(--ink-soft)">收藏集 · 书签 · 对话</text>
+  <text class="ts" x="716" y="423" fill="var(--ink-faint)">纯手工整理，不进上面任何链条</text>
+
+  <!-- edges -->
+  <path d="M220,72 H286" stroke="var(--auto)" stroke-width="2" fill="none" marker-end="url(#a3)"/>
+  <path d="M220,202 H286" stroke="var(--gate)" stroke-width="2.5" fill="none" marker-end="url(#a3)"/>
+  <path d="M220,332 H286" stroke="var(--auto)" stroke-width="2" fill="none" marker-end="url(#a3)"/>
+  <path d="M220,462 H286" stroke="var(--auto)" stroke-width="2" fill="none" marker-end="url(#a3)"/>
+
+  <path d="M520,60 H610 V66 H696" stroke="var(--auto)" stroke-width="2" fill="none" marker-end="url(#a3)"/>
+  <path d="M520,88 H580 V196 H696" stroke="var(--auto)" stroke-width="2" fill="none" marker-end="url(#a3)"/>
+  <path d="M520,190 H620 V132 H696" stroke="var(--auto)" stroke-width="2" fill="none" marker-end="url(#a3)"/>
+  <path d="M520,206 H600 V206 H696" stroke="var(--auto)" stroke-width="2" fill="none" marker-end="url(#a3)"/>
+  <path d="M520,222 H560 V278 H696" stroke="var(--auto)" stroke-width="2" fill="none" marker-end="url(#a3)"/>
+  <path d="M520,332 H640 V344 H696" stroke="var(--auto)" stroke-width="2" fill="none" marker-end="url(#a3)"/>
+  <path d="M520,462 H660 V70 H696" stroke="var(--ink-faint)" stroke-width="1.2" stroke-dasharray="4 4" fill="none" marker-end="url(#a3g)" opacity=".7"/>
+
+  <!-- exposure -> mastery, the long one -->
+  <path d="M405,430 V250 H405 V238" stroke="var(--auto)" stroke-width="2.5" fill="none" marker-end="url(#a3)"/>
+  <rect x="330" y="252" width="152" height="40" rx="7" fill="var(--paper)" stroke="var(--auto)" stroke-dasharray="4 3"/>
+  <text class="ts" x="406" y="270" fill="var(--auto)" text-anchor="middle">读到没查 → 加分</text>
+  <text class="ts" x="406" y="285" fill="var(--ink-faint)" text-anchor="middle">仅限已收藏的词</text>
+
+  <!-- lookup -> demote -->
+  <path d="M540,104 V150 H540 V166" stroke="var(--break)" stroke-width="2" fill="none" marker-end="url(#a3)"/>
+  <text class="ts" x="556" y="140" fill="var(--break)">查一次 → 降一档</text>
+</svg>
+</div>
+<ul class="notes">
+  <li class="good"><b>「查词历史」和「生词本」是两样东西。</b>前者自动、全收，是行为记录；后者手动、你选的，是学习对象。复习堆的<em>成员</em>只从生词本里来，但堆的<em>理由</em>（在这本书里查了 4 次）是从查词历史里算的。</li>
+  <li class="good"><b>笔记页把高亮和笔记合成了一条流。</b>同一处既高亮又写了字，在页面上是一条，不是两条。</li>
+  <li><b>收藏集 / 书签 / 对话是三个孤岛。</b>它们不喂任何自动判断，也不被自动判断影响——这是对的，它们本来就是「我自己怎么整理」，不是「系统怎么看我」。</li>
+  <li class="bad"><b>每屏行为记录不跨设备。</b>换台机器要重新攒。掌握度本身跟着生词条目走，是同步的。</li>
+</ul>
+</section>
+
+<!-- ============ 图 4 ============ -->
+<section>
+<h2><span class="n">图 4</span> 那一下「收藏」，是整套自动化的总闸</h2>
+<p class="lede">你说手动的部分只想保留最基础的。<b>现在最基础的那一下不是「查」，是「收藏」。</b>查词是自动记的，收藏才是通电开关。这张图是两条平行宇宙。</p>
+<div class="figure">
+<svg viewBox="0 0 1120 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="收藏与否的两条路径对比">
+  <defs>
+    <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--ink-faint)"/>
+    </marker>
+  </defs>
+
+  <rect x="430" y="18" width="260" height="52" rx="11" fill="var(--paper)" stroke="var(--ink-faint)" stroke-width="1.5"/>
+  <text class="t" x="560" y="40" fill="var(--ink)" text-anchor="middle" font-size="14">你查了 “nuance”</text>
+  <text class="ts" x="560" y="58" fill="var(--ink-soft)" text-anchor="middle">卡片弹出来了，你在读它</text>
+
+  <path d="M470,70 V96 H250 V120" stroke="var(--ink-faint)" fill="none" marker-end="url(#a4)"/>
+  <path d="M650,70 V96 H870 V120" stroke="var(--ink-faint)" fill="none" marker-end="url(#a4)"/>
+  <text class="tm" x="250" y="112" fill="var(--break)" text-anchor="middle">读完就关掉了</text>
+  <text class="tm" x="870" y="112" fill="var(--auto)" text-anchor="middle">顺手按了「收藏」</text>
+
+  <!-- left: no collect -->
+  <rect x="40" y="128" width="420" height="264" rx="12" fill="var(--break-bg)" stroke="var(--break)"/>
+  <text class="t" x="60" y="154" fill="var(--break)">往后这个词的一生</text>
+  <text class="ts" x="60" y="180" fill="var(--ink-soft)">✓ 查词记录里有它，统计算得到</text>
+  <text class="ts" x="60" y="200" fill="var(--ink-soft)">✓ 正文里留着一个「查过」的记号</text>
+  <text class="ts" x="60" y="220" fill="var(--ink-soft)">✓ 再查一次读缓存，不重复花钱</text>
+  <text class="ts" x="60" y="246" fill="var(--break)">✗ 你后面读到它 20 次，掌握度纹丝不动</text>
+  <text class="ts" x="60" y="266" fill="var(--break)">✗ 正文永远不会挂出中文释义</text>
+  <text class="ts" x="60" y="286" fill="var(--break)">✗ 复习板块里永远不会出现它</text>
+  <text class="ts" x="60" y="306" fill="var(--break)">✗ 再查一次也不会「降档」——本来就没有档</text>
+  <text class="ts" x="60" y="336" fill="var(--ink-faint)">曝光照样一条条记着（每屏都在记），</text>
+  <text class="ts" x="60" y="353" fill="var(--ink-faint)">结算时找不到对应的生词条目，直接跳过。</text>
+  <text class="ts" x="60" y="376" fill="var(--ink-faint)">数据没丢——哪天补收藏了，从那天起才开始算。</text>
+
+  <!-- right: collect -->
+  <rect x="660" y="128" width="420" height="264" rx="12" fill="var(--auto-bg)" stroke="var(--auto)"/>
+  <text class="t" x="680" y="154" fill="var(--auto)">往后这个词的一生</text>
+  <text class="ts" x="680" y="180" fill="var(--ink-soft)">✓ 上面那三条一样有</text>
+  <text class="ts" x="680" y="206" fill="var(--auto)">✓ 明天在别的章遇到它、没查 → 加 1.0 分</text>
+  <text class="ts" x="680" y="226" fill="var(--auto)">✓ 攒到 4.0 → 升「熟悉」，正文释义收起，只剩虚线</text>
+  <text class="ts" x="680" y="246" fill="var(--auto)">✓ 攒到 8.0 → 升「已掌握」，正文彻底干净</text>
+  <text class="ts" x="680" y="266" fill="var(--auto)">✓ 哪天又忍不住查了 → 降一档，释义自己回来</text>
+  <text class="ts" x="680" y="286" fill="var(--auto)">✓ 一周内再查 → 大降，进「以为会了又查」那堆</text>
+  <text class="ts" x="680" y="306" fill="var(--auto)">✓ 词详情页能看到每一次升降和它的理由</text>
+  <text class="ts" x="680" y="336" fill="var(--ink-faint)">全程你只按过那一下。</text>
+  <text class="ts" x="680" y="353" fill="var(--ink-faint)">后面所有升降都是读书本身推动的，</text>
+  <text class="ts" x="680" y="376" fill="var(--ink-faint)">不需要你回答任何一道题。</text>
+</svg>
+</div>
+<ul class="notes">
+  <li class="warn"><b>代码里这是一个明写的决定，不是漏做。</b>降档逻辑的注释原话是：在这里替读者建一个生词条目，等于把他从没选择保留的词塞进他的词表。收藏是「我要学这个」的意思表示。</li>
+  <li><b>它值得重新拍一次板，因为它和「尽量都自动化」直接冲突。</b>三条可能的路子（都不影响已有数据）：<br>
+    ① 门槛自动收：同一个词查到第 2 次（查词记录里本来就有次数）自动收进来，第 1 次不动；<br>
+    ② 收进「观察区」：所有查过的词自动进一个不打扰的区，掌握度照常跑，只是不出现在生词列表里，升到「已掌握」就自己消失；<br>
+    ③ 维持现状，但把「收藏」从卡片里的一个按钮，改成查完之后更难错过的一下。</li>
+</ul>
+</section>
+
+<!-- ============ 图 5 ============ -->
+<section>
+<h2><span class="n">图 5</span> 全部手动动作，一张表</h2>
+<p class="lede">当前代码里所有需要你动手的地方，一共 13 处。<b>按「能不能拿掉」分成三类。</b></p>
+<table>
+  <thead>
+    <tr><th style="width:22%">动作</th><th style="width:14%">在哪</th><th style="width:12%">分类</th><th>为什么</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><b>导入书</b></td><td>书架</td><td><span class="tag keep">拿不掉</span></td><td>文件从哪来只有你知道。导入后难度分析自己会跑。</td></tr>
+    <tr><td><b>翻页</b></td><td>阅读器</td><td><span class="tag keep">拿不掉</span></td><td>阅读本身。所有自动记录都挂在翻页这个动作上。</td></tr>
+    <tr><td><b>双击查词</b></td><td>阅读器</td><td><span class="tag keep">拿不掉</span></td><td>你说的那一下。查完之后的记录、缓存、标记、降档全自动。</td></tr>
+    <tr><td><b>按「收藏」</b></td><td>学习卡片</td><td><span class="tag gap">该重议</span></td><td>见图 4。目前它是掌握度 / 正文标注 / 复习三件事的总开关。</td></tr>
+    <tr><td><b>标记「已读完」</b></td><td>书架右键</td><td><span class="tag gap">可自动</span></td><td>读到 100% 不会自动置为已读完，所以读完汇总那次 AI 也不触发。这个可以接。</td></tr>
+    <tr><td><b>进复习板块</b></td><td>侧栏</td><td><span class="tag keep">故意保留</span></td><td>设计里定死的：不推送、不红点、不角标，复习永远是你走进去的。</td></tr>
+    <tr><td><b>复习时评分</b></td><td>复习板块</td><td><span class="tag keep">故意保留</span></td><td>只有主动答对才是强证据，喂给 FSRS。阅读推断出来的绝不混进去。</td></tr>
+    <tr><td><b>「我其实不认识」</b></td><td>词详情</td><td><span class="tag keep">故意保留</span></td><td>推翻自动判定的出口。自动判定必须能被人一键否掉。</td></tr>
+    <tr><td><b>高亮 / 写笔记</b></td><td>选中菜单</td><td><span class="tag keep">拿不掉</span></td><td>「我想留句话」这件事没法猜。</td></tr>
+    <tr><td><b>加书签</b></td><td>阅读器</td><td><span class="tag keep">拿不掉</span></td><td>同上。进度是自动记的，书签是另一回事。</td></tr>
+    <tr><td><b>建收藏集、拖书进去</b></td><td>侧栏</td><td><span class="tag auto">已有半自动</span></td><td>AI 自动归类已经有了，但建组和最终归属还是你说了算。</td></tr>
+    <tr><td><b>改书的难度判定</b></td><td>书籍详情</td><td><span class="tag keep">故意保留</span></td><td>算出来的难度可以被你覆盖。</td></tr>
+    <tr><td><b>接受「调一下英语水平」</b></td><td>阅读统计</td><td><span class="tag keep">故意保留</span></td><td>水平决定 AI 解释的深浅，是你能立刻感觉到的东西，只提醒不自动改。</td></tr>
+  </tbody>
+</table>
+<ul class="notes">
+  <li class="good"><b>「故意保留手动」有六处，都是同一个理由：</b>这些动作要么是意思表示（我想留话、我要学它、我其实不认识），要么是会改变你能感知到的东西（解释深浅）。系统替你按了，你会开始不信任它别的判断。</li>
+  <li class="warn"><b>真正可以再往自动推的只有两处：</b>「收藏」和「标记已读完」。其余不是拿不掉，就是拿掉了会更糟。</li>
+</ul>
+</section>
+
+<!-- ============ 图 6 ============ -->
+<section>
+<h2><span class="n">图 6</span> 你不在的时候，系统在干什么</h2>
+<p class="lede">全部无人值守的动作。<b>只有紫色那一条会花钱</b>，而且它必须通过一个统一的开关闸门。</p>
+<div class="figure">
+<svg viewBox="0 0 1120 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="无人值守的自动动作">
+  <rect x="30" y="28" width="330" height="132" rx="11" fill="var(--auto-bg)" stroke="var(--auto)"/>
+  <text class="t" x="48" y="52" fill="var(--auto)">读的时候，每一屏</text>
+  <text class="ts" x="48" y="74" fill="var(--ink-soft)">· 阅读会话计时（进出阅读器、切窗口）</text>
+  <text class="ts" x="48" y="92" fill="var(--ink-soft)">· 每屏停留 / 操作次数 / 出现了哪些词</text>
+  <text class="ts" x="48" y="110" fill="var(--ink-soft)">· 阅读进度与位置写回</text>
+  <text class="ts" x="48" y="128" fill="var(--ink-soft)">· 词形归并（nuanced → nuance）</text>
+  <text class="ts" x="48" y="150" fill="var(--ink-faint)">批量落库：翻页 / 换章 / 关窗 / 失焦</text>
+
+  <rect x="390" y="28" width="330" height="132" rx="11" fill="var(--auto-bg)" stroke="var(--auto)"/>
+  <text class="t" x="408" y="52" fill="var(--auto)">落库的同一瞬间</text>
+  <text class="ts" x="408" y="74" fill="var(--ink-soft)">· 剔掉翻太快的屏、人走开的屏</text>
+  <text class="ts" x="408" y="92" fill="var(--ink-soft)">· 曝光结算 → 掌握度升档 + 写理由</text>
+  <text class="ts" x="408" y="110" fill="var(--ink-soft)">· 正文标注阶段跟着变（释义→虚线→无）</text>
+  <text class="ts" x="408" y="128" fill="var(--ink-soft)">· 复习堆下次打开时重算</text>
+  <text class="ts" x="408" y="150" fill="var(--ink-faint)">与曝光写入同一事务，不会算重也不会漏</text>
+
+  <rect x="750" y="28" width="340" height="132" rx="11" fill="var(--auto-bg)" stroke="var(--auto)"/>
+  <text class="t" x="768" y="52" fill="var(--auto)">别的时刻</text>
+  <text class="ts" x="768" y="74" fill="var(--ink-soft)">· 导入 / 转码完成 → 算这本书的难度分布</text>
+  <text class="ts" x="768" y="92" fill="var(--ink-soft)">· 打开书 → 检查 iCloud 有没有把文件收走</text>
+  <text class="ts" x="768" y="110" fill="var(--ink-soft)">· 后台同步：书、进度、生词、笔记、高亮</text>
+  <text class="ts" x="768" y="128" fill="var(--ink-soft)">· 记下每次 AI 调用的原始用量</text>
+  <text class="ts" x="768" y="150" fill="var(--ink-faint)">曝光记录和阅读行为<tspan font-weight="700">不同步</tspan>，只在本机</text>
+
+  <rect x="30" y="186" width="1060" height="112" rx="11" fill="var(--ai-bg)" stroke="var(--ai)" stroke-width="1.5"/>
+  <text class="t" x="48" y="210" fill="var(--ai)">唯一会自己花钱的一条 —— 而且要过闸</text>
+  <text class="ts" x="48" y="234" fill="var(--ink-soft)">你标记一本书「已读完」 → 系统生成这本书的阅读回顾（读了多久、查了哪些词、原句一并带上）。</text>
+  <text class="ts" x="48" y="254" fill="var(--ink-soft)">闸门：设置里的「自动分析」清单。默认开，随时能关；关掉之后功能还在，只是变成阅读统计页里的一个手动按钮。</text>
+  <text class="ts" x="48" y="274" fill="var(--ink-soft)">失败一律静默跳过，绝不弹错误——你没点任何东西，不该收到报错。手动按过 4 次的功能，控制台会反过来问你要不要设成自动。</text>
+  <text class="ts" x="48" y="292" fill="var(--break)">目前清单里只有这一项。设计里另外两项（复习堆整理、追问困难分类）还没实现，所以没有登记——宁可少一行，不放一个关了也没用的开关。</text>
+</svg>
+</div>
+</section>
+
+<section>
+<h2><span class="n">图 7</span> 设计里已经想好、但还没接上的</h2>
+<p class="lede">照着 <code>docs/impls/reading-driven-mastery-and-review.md</code> 逐条对了一遍。这些是<b>已经拍过板</b>但代码里还没有的。</p>
+<ul class="notes">
+  <li class="bad"><b>本地校准表。</b>设计里那套「用你自己的中位速度、你自己的查词率来定阈值」目前只做了一半：阅读速度中位数在用，<b>查词率还没有</b>。所以现在对每千词查 15 个的人和查 1 个的人，「没查」这个信号的分量是一样的。</li>
+  <li class="bad"><b>反哺英语水平的那次提醒。</b>判定逻辑刚写好（<code>level-observation.ts</code>），还没接进阅读统计页，也还没提交。</li>
+  <li class="bad"><b>追问困难分类。</b>「他卡在词义还是句法」那套事后批量分析，一行都还没有。</li>
+  <li class="bad"><b>书籍详情页 / 难度对比。</b>页面写了、没提交；「这本书对你偏难，要不要换一本」的提示还没接上。</li>
+  <li class="warn"><b>复习堆的 AI 整理。</b>设计里是每天一次的自动任务，目前堆是纯规则算出来的——这一条我倾向于就不做了，规则堆的理由更硬。</li>
+</ul>
+</section>
+
+</div>
+</body>
+</html>

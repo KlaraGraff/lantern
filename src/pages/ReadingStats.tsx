@@ -40,6 +40,7 @@ function reviewErrorCode(error: unknown): ReadingReviewErrorCode {
 
 function ReviewPanel({
   review,
+  pendingReason,
   provider,
   labels,
   generating,
@@ -50,6 +51,13 @@ function ReviewPanel({
   onDeclineAuto,
 }: {
   review: CachedReadingReview | null;
+  /**
+   * Set only when the page is scoped to one book and that book's automatic
+   * review attempt failed. Persisted server-side, so it is already here on
+   * the very first render — the reader never has to press "generate" once
+   * just to discover a summary was owed.
+   */
+  pendingReason: ReadingReviewErrorCode | null;
   provider: ReadingReviewProvider;
   labels: ReadingStatsLabels;
   generating: boolean;
@@ -59,15 +67,18 @@ function ReviewPanel({
   onAcceptAuto(): void;
   onDeclineAuto(): void;
 }) {
-  const errorText = error === "notConfigured"
+  const reasonText = (code: ReadingReviewErrorCode) => code === "notConfigured"
     ? labels.aiNotConfigured
-    : error === "quotaExceeded"
+    : code === "quotaExceeded"
       ? labels.aiQuotaExceeded
-      : error === "offline"
+      : code === "offline"
         ? labels.aiOffline
-        : error
-          ? labels.aiFailed
-          : null;
+        : labels.aiFailed;
+  const errorText = error ? reasonText(error) : null;
+  // The persisted placeholder only has something to say while there is
+  // nothing more current already on screen: a review that arrived since, or
+  // a live error from a just-pressed retry (same information, fresher).
+  const showPending = !review && !error && !generating && pendingReason !== null;
 
   return (
     <section className="rounded-xl border border-border bg-bg-surface p-5" aria-labelledby="reading-review-heading">
@@ -91,7 +102,7 @@ function ReviewPanel({
           className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-[11px] font-medium text-white disabled:cursor-wait disabled:opacity-60"
         >
           <RefreshCw size={13} className={generating ? "animate-spin" : ""} aria-hidden="true" />
-          {generating ? labels.aiGenerating : review ? labels.aiRefresh : labels.aiGenerate}
+          {generating ? labels.aiGenerating : review || pendingReason ? labels.aiRefresh : labels.aiGenerate}
         </button>
       </div>
 
@@ -106,6 +117,17 @@ function ReviewPanel({
             <span aria-hidden="true">·</span>
             <span>{labels.formatReviewUpdatedAt(review.updatedAt)}</span>
           </div>
+        </div>
+      ) : null}
+
+      {/* Static, not a notification: nothing here is a dialog, a badge, or a
+          dot. It sits exactly where the review itself would sit, and it
+          stays until a generation succeeds — it does not need to be
+          re-discovered on a later visit. */}
+      {showPending ? (
+        <div className="mt-4 rounded-lg border border-dashed border-border bg-bg-input px-4 py-3">
+          <p className="text-[11.5px] font-medium text-text-primary">{labels.aiPendingTitle}</p>
+          <p className="mt-1 text-[11px] leading-5 text-text-muted">{reasonText(pendingReason)}</p>
         </div>
       ) : null}
 
@@ -609,7 +631,7 @@ export default function ReadingStats({
           ))}
         </section>
 
-        <ReviewPanel review={dashboard.cachedReview} provider={provider} labels={labels} generating={generating} error={reviewError} onGenerate={requestGenerate} autoOffer={autoOffer} onAcceptAuto={() => void acceptAuto()} onDeclineAuto={() => void declineAuto()} />
+        <ReviewPanel review={dashboard.cachedReview} pendingReason={dashboard.reviewPendingReason} provider={provider} labels={labels} generating={generating} error={reviewError} onGenerate={requestGenerate} autoOffer={autoOffer} onAcceptAuto={() => void acceptAuto()} onDeclineAuto={() => void declineAuto()} />
 
         {view === "history"
           ? <BookHistory books={dashboard.books} labels={labels} onOpenBook={onOpenBook} />

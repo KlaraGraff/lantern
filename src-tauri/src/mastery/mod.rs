@@ -117,6 +117,21 @@ const FAST_SCREEN_WPM_MULTIPLE: f64 = 3.0;
 /// problem, and only the latter earns the hard drop.
 const REPEAT_LOOKUP_WINDOW_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
+/// `docs/impls/reading-flow-decisions-2026-08-06.md` §2.2's progress floor
+/// for auto-marking a book finished. Not 100: a book's own back matter
+/// (colophon, acknowledgements, ads for other titles) is not a fixed
+/// proportion of the book, so pinning the bar at 100 would leave short books
+/// permanently unable to auto-finish while the coverage rule below carries
+/// the actual risk of a false positive.
+const AUTO_FINISH_PROGRESS_THRESHOLD: i32 = 95;
+
+/// §2.2's coverage floor: the fraction of the book's screens that must have
+/// been dwelt on at the reader's own normal pace before progress alone is
+/// trusted. This is what tells "read it" apart from "flipped to the end" and
+/// "jumped straight to the last page" — both drive progress to 100 without
+/// ever earning this ratio.
+const AUTO_FINISH_COVERAGE_RATIO: f64 = 0.8;
+
 /// The four mastery tiers, ordered weakest to strongest.
 ///
 /// `Ord` follows the declaration order, which is what lets the promotion and
@@ -255,6 +270,13 @@ pub struct ExposureBatch {
     /// entirely: with no baseline there is no such thing as "too fast", and
     /// §2.4 would rather over-count than exclude a reader.
     pub reader_median_wpm: Option<f64>,
+    /// From [`crate::calibration::lookup_rate_scale`]: how much a "read it,
+    /// did not look it up" exposure is worth for this reader, given how
+    /// often they look words up at all. `1.0` (the `Default` value) is
+    /// exactly today's behavior — every exposure worth what
+    /// [`OCCURRENCE_WEIGHTS`] and [`LOOKUP_ACTIVE_MULTIPLIER`] alone say —
+    /// so a caller that has no calibration yet needs no special case here.
+    pub lookup_rate_scale: f64,
     pub chapters: Vec<ChapterExposures>,
 }
 
@@ -364,6 +386,25 @@ fn is_too_fast(exposure: &Exposure, median_wpm: Option<f64>) -> bool {
     exceeds_pace_limit(exposure.screen_words_per_minute, median_wpm)
 }
 
+/// Guards [`ExposureBatch::lookup_rate_scale`] against anything that is not
+/// a usable multiplier — non-finite, zero, or negative — by reading it as
+/// the neutral `1.0` instead.
+///
+/// This is also what makes `ExposureBatch::default()` safe:
+/// `#[derive(Default)]` gives `lookup_rate_scale` `0.0`, which unsanitized
+/// would zero out every exposure's credit. Reading an invalid scale as
+/// "no calibration" rather than "calibrated to zero" is the same guardrail
+/// [`crate::calibration::lookup_rate_scale`] itself applies to a missing
+/// rate — this is that guarantee holding even if a caller builds the batch
+/// by hand instead of through calibration.
+fn sanitized_lookup_rate_scale(scale: f64) -> f64 {
+    if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    }
+}
+
 /// Whether one finished screen was read too fast for the words on it to count
 /// as evidence — the same §2.4 rule as [`is_too_fast`], asked of a screen
 /// rather than of an exposure.
@@ -391,6 +432,7 @@ pub fn apply_exposures(state: &WordState, batch: &ExposureBatch) -> Decision {
     let mut tier = state.tier;
     let mut credit = state.credit;
     let mut changed = false;
+    let lookup_rate_scale = sanitized_lookup_rate_scale(batch.lookup_rate_scale);
 
     for chapter in &batch.chapters {
         let mut from_this_chapter = 0.0f64;
@@ -407,6 +449,11 @@ pub fn apply_exposures(state: &WordState, batch: &ExposureBatch) -> Decision {
             if exposure.on_lookup_active_screen {
                 gain *= LOOKUP_ACTIVE_MULTIPLIER;
             }
+            // §5.2: how much this reader's own lookup rate says a skip is
+            // worth. Applied before the cap, same as the lookup-active
+            // boost above, so a low-rate reader's chapter also reaches the
+            // cap more slowly rather than reaching the same cap discounted.
+            gain *= lookup_rate_scale;
             // The cap applies to what the chapter actually contributes, so
             // the 1.5x boost is inside it. A boosted chapter reaches the cap
             // sooner; it does not get a bigger one.
@@ -513,6 +560,36 @@ pub fn median_words_per_minute(screens: &[ScreenPace]) -> Option<f64> {
     } else {
         Some(paces[middle])
     }
+}
+
+/// §2.2's coverage ratio, isolated from the progress threshold so the two
+/// halves of the auto-finish gate can be reasoned about (and tested)
+/// separately.
+///
+/// `total_screens <= 0` means the caller has no denominator to measure
+/// against — a book outside paginated reflow, or a layout that has not
+/// settled yet — and answering `true` there would auto-finish a book this
+/// function cannot actually vouch for. §2.2 is explicit that an uncertain
+/// boundary breaks toward *not* marking, so this returns `false` instead.
+/// `normal_pace_screens` is clamped to zero rather than trusted negative,
+/// for the same reason a malformed count should never read as "covered".
+pub fn finish_coverage_met(normal_pace_screens: i64, total_screens: i64) -> bool {
+    if total_screens <= 0 {
+        return false;
+    }
+    let normal_pace_screens = normal_pace_screens.max(0) as f64;
+    normal_pace_screens >= total_screens as f64 * AUTO_FINISH_COVERAGE_RATIO
+}
+
+/// §2.2's full auto-finish gate: progress reaching [`AUTO_FINISH_PROGRESS_THRESHOLD`]
+/// **and** [`finish_coverage_met`], never either alone. Progress alone is
+/// fooled by flipping through fast or jumping straight to the last page —
+/// both drive progress to 100 while leaving most of the book's screens with
+/// no normal-pace dwell at all, which is exactly what the coverage half
+/// catches.
+pub fn should_auto_finish(progress: i32, normal_pace_screens: i64, total_screens: i64) -> bool {
+    progress >= AUTO_FINISH_PROGRESS_THRESHOLD
+        && finish_coverage_met(normal_pace_screens, total_screens)
 }
 
 pub mod store;

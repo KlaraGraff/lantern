@@ -260,6 +260,14 @@ pub enum EventBody {
     },
     #[serde(rename = "vocab.delete")]
     VocabDelete { id: String },
+    // The observation zone (docs/impls/reading-flow-decisions-2026-08-06.md
+    // §1): 'watchlist' on first lookup, 'confirmed' once the reader saves it
+    // or looks it up a 3rd cumulative time in the same book. Modeled on
+    // `HighlightColorSet` — a single-field LWW update, not folded into
+    // `VocabMasterySet` because list membership and mastery tier are
+    // different facts that change on different triggers.
+    #[serde(rename = "vocab.list_status.set")]
+    VocabListStatusSet { id: String, list_status: String },
 
     #[serde(rename = "note.upsert")]
     NoteUpsert(NotePayload),
@@ -466,10 +474,20 @@ pub struct VocabPayload {
     // decision has been made — omitted from the wire form in that case.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mastery_reason: Option<String>,
+    // The observation zone (see `EventBody::VocabListStatusSet`). Defaults to
+    // 'confirmed' so payloads from before this field existed — every word
+    // saved before migration 044 — decode as a word the reader consciously
+    // saved, which is exactly what they all are.
+    #[serde(default = "default_list_status")]
+    pub list_status: String,
 }
 
 fn default_mastery_source() -> String {
     "manual".to_string()
+}
+
+fn default_list_status() -> String {
+    "confirmed".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -689,7 +707,12 @@ mod tests {
             context_explanation: Some("Used to mean an unexpectedly happy turn.".into()),
             mastery_source: "manual".into(),
             mastery_reason: None,
+            list_status: "confirmed".into(),
         })));
+        roundtrip(&mk(EventBody::VocabListStatusSet {
+            id: "v1".into(),
+            list_status: "watchlist".into(),
+        }));
         roundtrip(&mk(EventBody::VocabMasterySet {
             id: "v1".into(),
             mastery: "learning".into(),
@@ -795,6 +818,7 @@ mod tests {
         assert_eq!(p.context_explanation, None);
         assert_eq!(p.mastery_source, "manual");
         assert_eq!(p.mastery_reason, None);
+        assert_eq!(p.list_status, "confirmed");
         assert_eq!(p.review_interval_days, 0);
         assert_eq!(p.fsrs_version, 1);
         assert_eq!(p.created_at, None);

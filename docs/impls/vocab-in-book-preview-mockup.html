@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>生词页 · 「它在书里长什么样」预览 — 样张</title>
+<style>
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-serif: Georgia, "Libre Baskerville", "Songti SC", serif;
+
+    --bg-page: #f4f4f5;
+    --bg-surface: #ffffff;
+    --bg-muted: #fafafa;
+    --bg-input: #f3f3f5;
+    --text-primary: #18181b;
+    --text-body: #0a0a0a;
+    --text-secondary: #52525c;
+    --text-muted: #71717b;
+    --border: #e4e4e7;
+    --border-light: #f4f4f5;
+    --accent: #7c3aed;
+    --accent-bg: #f3e8ff;
+    --accent-text: #7c3aed;
+    --paper: #fdfcfa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg-page: #151518;
+      --bg-surface: #18191d;
+      --bg-muted: #1f2023;
+      --bg-input: #25262c;
+      --text-primary: #f4f4f5;
+      --text-body: #e7e7ea;
+      --text-secondary: #c9c9d1;
+      --text-muted: #9a9aa4;
+      --border: #34343d;
+      --border-light: #2a2b31;
+      --accent: #8b5cf6;
+      --accent-bg: #302647;
+      --accent-text: #a78bfa;
+      --paper: #1c1d21;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 32px 24px 72px;
+    background: var(--bg-page);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+
+  h1 { font-size: 20px; font-weight: 650; margin: 0 0 6px; letter-spacing: -0.2px; }
+  .sub { color: var(--text-muted); font-size: 13px; margin: 0 0 4px; }
+  .note {
+    margin: 20px 0 32px;
+    padding: 12px 14px;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-bg);
+    color: var(--accent-text);
+    border-radius: 0 8px 8px 0;
+    font-size: 12.5px;
+    line-height: 1.65;
+  }
+
+  h2 {
+    font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 36px 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── the vocab row / mastery panel ── */
+  .panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 10px 10px 0;
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  .row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px;
+  }
+  .caret { color: var(--text-muted); font-size: 11px; }
+  .word { font-size: 14px; font-weight: 620; color: var(--text-primary); }
+  .gloss { font-size: 12px; color: var(--text-secondary); flex: 1; min-width: 0;
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .icons { color: var(--text-muted); font-size: 12px; letter-spacing: 3px; }
+
+  .body { border-top: 1px solid var(--border-light); padding: 10px 12px 12px; }
+  .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .tier {
+    border-radius: 999px; background: var(--accent-bg); color: var(--accent-text);
+    padding: 4px 10px; font-size: 12px; font-weight: 520;
+  }
+  .autobadge {
+    border-radius: 999px; background: var(--bg-input); color: var(--text-muted);
+    padding: 2px 8px; font-size: 11px;
+  }
+
+  /* ── THE NEW BIT: the in-book preview ── */
+  .preview {
+    margin-top: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--paper);
+    padding: 9px 12px 10px;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  .preview-label {
+    flex: 0 0 auto;
+    font-size: 10px; letter-spacing: 0.4px;
+    color: var(--text-muted);
+    padding-top: 2px;
+  }
+  .preview-text {
+    font-family: var(--font-serif);
+    font-size: 14px; line-height: 1.9;
+    color: var(--text-body);
+    min-width: 0;
+  }
+
+  /* stage 1 — ruby: the gloss rides above the word */
+  ruby { ruby-position: over; }
+  ruby rt { font-family: var(--font-sans); font-size: 9.5px; color: var(--accent-text); font-weight: 500; }
+
+  /* stage 1b — margin: the gloss sits in a rail */
+  .margin-demo { display: flex; gap: 12px; align-items: flex-start; }
+  .margin-rail {
+    flex: 0 0 74px; text-align: right;
+    font-family: var(--font-sans); font-size: 9.5px; line-height: 1.9;
+    color: var(--accent-text);
+    border-right: 1px solid var(--border); padding-right: 8px;
+  }
+
+  /* stage 2 — the hairline dotted rule (verbatim from passive-vocab.ts) */
+  .marker { border-bottom: 1px dotted currentColor;
+            border-bottom-color: color-mix(in srgb, currentColor 45%, transparent); }
+
+  .caption { font-size: 11.5px; color: var(--text-muted); margin: 6px 0 22px; padding-left: 2px; }
+  .caption b { color: var(--text-secondary); font-weight: 600; }
+
+  .off {
+    border: 1px dashed var(--border); border-radius: 8px;
+    padding: 12px; margin-top: 10px;
+    color: var(--text-muted); font-size: 12px; text-align: center;
+  }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12.5px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 600; }
+  td:first-child { white-space: nowrap; color: var(--text-primary); font-weight: 550; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>生词页 ·「它在书里长什么样」</h1>
+  <p class="sub">样张 · 2026-08-06 · 对应 <code>src/components/vocab/MasteryPanel.tsx</code> 顶部</p>
+
+  <div class="note">
+    要解决的问题：同一件事，正文用<b>虚线</b>说，生词页用<b>「熟悉」</b>说，两边从不互相引用，读者不知道自己到底会了没有。<br>
+    做法：<b>给图，不给规则。</b>在熟练度标签下面放一条它此刻在书里的真实样子。不加图例、不写「虚线表示熟悉」。
+  </div>
+
+  <h2>① 新词 / 学习中 — 释义直接跟着（悬挂样式）</h2>
+  <div class="panel">
+    <div class="row">
+      <span class="caret">▾</span>
+      <span class="word">countenance</span>
+      <span class="gloss">面容；神情</span>
+      <span class="icons">♪ ⧉ ␥</span>
+    </div>
+    <div class="body">
+      <div class="chips">
+        <span class="tier">学习中</span>
+        <span class="autobadge">✦ 自动判定</span>
+      </div>
+      <div class="preview">
+        <span class="preview-label">在书里</span>
+        <span class="preview-text">His <ruby>countenance<rt>面容；神情</rt></ruby> betrayed nothing.</span>
+      </div>
+    </div>
+  </div>
+  <p class="caption">读者一眼看到：<b>现在读到它，释义会直接出现在头顶。</b>不需要读任何说明。</p>
+
+  <h2>② 同一阶段，但读者选的是「边栏」样式</h2>
+  <div class="panel">
+    <div class="row">
+      <span class="caret">▾</span>
+      <span class="word">countenance</span>
+      <span class="gloss">面容；神情</span>
+      <span class="icons">♪ ⧉ ␥</span>
+    </div>
+    <div class="body">
+      <div class="chips">
+        <span class="tier">学习中</span>
+        <span class="autobadge">✦ 自动判定</span>
+      </div>
+      <div class="preview">
+        <span class="preview-label">在书里</span>
+        <span class="preview-text margin-demo">
+          <span class="margin-rail">面容；神情</span>
+          <span>His countenance betrayed nothing.</span>
+        </span>
+      </div>
+    </div>
+  </div>
+  <p class="caption">预览跟着读者自己的设置走。他把注释改成边栏，这里就是边栏——<b>预览必须是真的，不能是示意图。</b></p>
+
+  <h2>③ 熟悉 — 只剩一条虚线</h2>
+  <div class="panel">
+    <div class="row">
+      <span class="caret">▾</span>
+      <span class="word">countenance</span>
+      <span class="gloss">面容；神情</span>
+      <span class="icons">♪ ⧉ ␥</span>
+    </div>
+    <div class="body">
+      <div class="chips">
+        <span class="tier">熟悉</span>
+        <span class="autobadge">✦ 自动判定</span>
+      </div>
+      <div class="preview">
+        <span class="preview-label">在书里</span>
+        <span class="preview-text">His <span class="marker">countenance</span> betrayed nothing.</span>
+      </div>
+    </div>
+  </div>
+  <p class="caption">这一格就是整件事的解药：<b>「熟悉」和那条虚线，第一次出现在同一个画面里。</b></p>
+
+  <h2>④ 掌握 — 什么都没有了</h2>
+  <div class="panel">
+    <div class="row">
+      <span class="caret">▾</span>
+      <span class="word">countenance</span>
+      <span class="gloss">面容；神情</span>
+      <span class="icons">♪ ⧉ ␥</span>
+    </div>
+    <div class="body">
+      <div class="chips">
+        <span class="tier">掌握</span>
+        <span class="autobadge">✦ 自动判定</span>
+      </div>
+      <div class="preview">
+        <span class="preview-label">在书里</span>
+        <span class="preview-text">His countenance betrayed nothing.</span>
+      </div>
+    </div>
+  </div>
+  <p class="caption">干干净净的一句话。读者不会问「怎么不弹了」，因为他刚在这儿看见它本来就不该弹了。</p>
+
+  <h2>⑤ 读者把正文注释整个关掉了</h2>
+  <div class="panel">
+    <div class="row">
+      <span class="caret">▾</span>
+      <span class="word">countenance</span>
+      <span class="gloss">面容；神情</span>
+      <span class="icons">♪ ⧉ ␥</span>
+    </div>
+    <div class="body">
+      <div class="chips">
+        <span class="tier">熟悉</span>
+        <span class="autobadge">✦ 自动判定</span>
+      </div>
+      <div class="off">正文注释已关闭，这本书里不会显示任何标记</div>
+    </div>
+  </div>
+  <p class="caption"><b>这一格是必须有的。</b>注释关着的时候还画一条虚线，就是在骗人——预览的全部价值是它说真话。</p>
+
+  <h2>规则表（给实现用，不给读者看）</h2>
+  <table>
+    <tr><th>熟练度</th><th>预览里画什么</th><th>依据</th></tr>
+    <tr><td>新词 / 学习中</td><td>释义悬挂在词上（ruby 或边栏，按读者设置）</td><td><code>passiveVocabStage</code> → <code>definition</code></td></tr>
+    <tr><td>熟悉</td><td>1px 点线下划线，45% 透明度，取 <code>currentColor</code></td><td><code>passiveVocabStage</code> → <code>marker</code></td></tr>
+    <tr><td>掌握</td><td>纯文本，无任何装饰</td><td><code>passiveVocabStage</code> → <code>none</code></td></tr>
+    <tr><td>任意（注释已关）</td><td>不画预览，代之以一行说明</td><td><code>passive_vocab_enabled === false</code></td></tr>
+  </table>
+  <p class="caption">例句取这个词在书里<b>真实出现过的那一句</b>（已有 <code>contextual-review.ts</code> 在存上下文）；取不到时退回单独一个词，同样按上表的样式画。</p>
+
+</div>
+</body>
+</html>

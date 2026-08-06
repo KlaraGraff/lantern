@@ -157,6 +157,10 @@ pub(crate) fn list_review_piles_at(db: &Db, now_ms: i64) -> AppResult<Vec<Review
 /// position twice" and misses "two different positions in the same book" —
 /// the same phenomenon, arguably the stronger signal. Summing lookup_count
 /// grouped by (book_id, normalized_text) catches both.
+///
+/// `v.list_status = 'confirmed'` excludes the observation zone (see
+/// migration 044): a word still sitting there hasn't been saved, so it has
+/// no business turning up in review.
 fn repeat_lookups_piles(conn: &Connection) -> AppResult<Vec<ReviewPile>> {
     let mut stmt = conn.prepare(
         "SELECT v.book_id, b.title, v.id, agg.newest, agg.total_lookups
@@ -169,7 +173,8 @@ fn repeat_lookups_piles(conn: &Connection) -> AppResult<Vec<ReviewPile>> {
              FROM lookup_records
              GROUP BY book_id, normalized_text
              HAVING SUM(lookup_count) > 1
-         ) agg ON agg.book_id = v.book_id AND agg.normalized_text = lower(trim(v.word))",
+         ) agg ON agg.book_id = v.book_id AND agg.normalized_text = lower(trim(v.word))
+         WHERE v.list_status = 'confirmed'",
     )?;
     let rows = stmt
         .query_map([], |row| {
@@ -206,7 +211,11 @@ fn repeat_lookups_piles(conn: &Connection) -> AppResult<Vec<ReviewPile>> {
         .into_iter()
         .map(|(book_id, (book_title, mut words))| {
             // Most-recent behaviour first; word id breaks ties deterministically.
-            words.sort_by(|a, b| b.newest.cmp(&a.newest).then_with(|| a.word_id.cmp(&b.word_id)));
+            words.sort_by(|a, b| {
+                b.newest
+                    .cmp(&a.newest)
+                    .then_with(|| a.word_id.cmp(&b.word_id))
+            });
             let newest_activity_at = words.iter().map(|word| word.newest).max().unwrap_or(0);
             let solo_word_lookups = match words.as_slice() {
                 [only] => Some(only.total_lookups),
@@ -234,6 +243,11 @@ fn repeat_lookups_piles(conn: &Connection) -> AppResult<Vec<ReviewPile>> {
 /// demotion, with an earlier row that was an exposure promotion. Both are
 /// required — this means "the engine said you knew it, you proved
 /// otherwise", not merely "you looked something up".
+///
+/// Mastery scoring runs on watchlist words too (migration 044), so this
+/// pile's own query can find one that has both events without having
+/// reached its 3rd lookup yet — the `vocab_words` EXISTS check excludes it,
+/// same rule as every other pile.
 fn promoted_then_looked_up_pile(conn: &Connection) -> AppResult<Option<ReviewPile>> {
     let mut stmt = conn.prepare(
         "WITH newest AS (
@@ -254,10 +268,16 @@ fn promoted_then_looked_up_pile(conn: &Connection) -> AppResult<Option<ReviewPil
                  AND p.reason = 'exposure_promotion'
                  AND (p.created_at < n.created_at
                       OR (p.created_at = n.created_at AND p.rowid < n.rid))
+           )
+           AND EXISTS (
+               SELECT 1 FROM vocab_words v
+               WHERE v.id = n.vocab_word_id AND v.list_status = 'confirmed'
            )",
     )?;
     let mut rows = stmt
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?
         .collect::<Result<Vec<_>, _>>()?;
 
     if rows.is_empty() {
@@ -265,7 +285,11 @@ fn promoted_then_looked_up_pile(conn: &Connection) -> AppResult<Option<ReviewPil
     }
 
     rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    let newest_activity_at = rows.iter().map(|(_, created_at)| *created_at).max().unwrap_or(0);
+    let newest_activity_at = rows
+        .iter()
+        .map(|(_, created_at)| *created_at)
+        .max()
+        .unwrap_or(0);
     let word_ids = rows.into_iter().map(|(id, _)| id).collect();
 
     Ok(Some(ReviewPile {
@@ -304,7 +328,7 @@ fn recent_chapter_lookups_pile(conn: &Connection, now_ms: i64) -> AppResult<Opti
          FROM vocab_words v
          JOIN lookup_records l
            ON l.book_id = v.book_id AND l.chapter = ?1 AND l.normalized_text = lower(trim(v.word))
-         WHERE v.book_id = ?2
+         WHERE v.book_id = ?2 AND v.list_status = 'confirmed'
          GROUP BY v.id",
     )?;
     let mut rows = stmt
@@ -347,7 +371,7 @@ fn long_unseen_pile(
 ) -> AppResult<Option<ReviewPile>> {
     let mut stmt = conn.prepare(
         "SELECT id, next_review_at FROM vocab_words
-         WHERE next_review_at IS NOT NULL AND next_review_at <= ?1",
+         WHERE next_review_at IS NOT NULL AND next_review_at <= ?1 AND list_status = 'confirmed'",
     )?;
     let mut rows = stmt
         .query_map(params![now_ms], |row| {
@@ -410,6 +434,17 @@ mod tests {
         .unwrap();
     }
 
+    /// A word still in the observation zone (migration 044) — every pile
+    /// must ignore it regardless of how strong its behavioural signal is.
+    fn insert_watchlist_word(conn: &RusqliteConnection, id: &str, book_id: &str, word: &str) {
+        conn.execute(
+            "INSERT INTO vocab_words (id, book_id, word, definition, mastery, list_status, created_at, updated_at)
+             VALUES (?1, ?2, ?3, 'definition', 'new', 'watchlist', 1700000000000, 1700000000000)",
+            params![id, book_id, word],
+        )
+        .unwrap();
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn insert_lookup_record(
         conn: &RusqliteConnection,
@@ -456,8 +491,26 @@ mod tests {
         insert_vocab_word(&conn, "w1", "book-a", "solitude", None);
         // Same word, two different cfi positions — the case the naive
         // `lookup_count > 1` query gets wrong.
-        insert_lookup_record(&conn, "l1", "book-a", "solitude", None, Some("cfi-1"), 1_000, 1);
-        insert_lookup_record(&conn, "l2", "book-a", "solitude", None, Some("cfi-2"), 2_000, 1);
+        insert_lookup_record(
+            &conn,
+            "l1",
+            "book-a",
+            "solitude",
+            None,
+            Some("cfi-1"),
+            1_000,
+            1,
+        );
+        insert_lookup_record(
+            &conn,
+            "l2",
+            "book-a",
+            "solitude",
+            None,
+            Some("cfi-2"),
+            2_000,
+            1,
+        );
         drop(conn);
 
         let piles = list_review_piles_at(&db, 10_000).unwrap();
@@ -475,7 +528,16 @@ mod tests {
         let conn = db.conn.lock().unwrap();
         insert_book(&conn, "book-a", "Book A");
         insert_vocab_word(&conn, "w1", "book-a", "solitude", None);
-        insert_lookup_record(&conn, "l1", "book-a", "solitude", None, Some("cfi-1"), 1_500, 2);
+        insert_lookup_record(
+            &conn,
+            "l1",
+            "book-a",
+            "solitude",
+            None,
+            Some("cfi-1"),
+            1_500,
+            2,
+        );
         drop(conn);
 
         let piles = list_review_piles_at(&db, 10_000).unwrap();
@@ -494,8 +556,26 @@ mod tests {
         insert_book(&conn, "book-b", "Book B");
         insert_vocab_word(&conn, "w1", "book-a", "solitude", None);
         insert_vocab_word(&conn, "w2", "book-b", "solitude", None);
-        insert_lookup_record(&conn, "l1", "book-a", "solitude", None, Some("cfi-1"), 1_000, 1);
-        insert_lookup_record(&conn, "l2", "book-b", "solitude", None, Some("cfi-1"), 2_000, 1);
+        insert_lookup_record(
+            &conn,
+            "l1",
+            "book-a",
+            "solitude",
+            None,
+            Some("cfi-1"),
+            1_000,
+            1,
+        );
+        insert_lookup_record(
+            &conn,
+            "l2",
+            "book-b",
+            "solitude",
+            None,
+            Some("cfi-1"),
+            2_000,
+            1,
+        );
         drop(conn);
 
         let piles = list_review_piles_at(&db, 10_000).unwrap();
@@ -567,8 +647,26 @@ mod tests {
         insert_book(&conn, "book-a", "Book A");
         // Due, and carried by a behaviour pile (repeat lookups) — must be excluded.
         insert_vocab_word(&conn, "carried", "book-a", "solitude", Some(500));
-        insert_lookup_record(&conn, "l1", "book-a", "solitude", None, Some("cfi-1"), 100, 1);
-        insert_lookup_record(&conn, "l2", "book-a", "solitude", None, Some("cfi-2"), 200, 1);
+        insert_lookup_record(
+            &conn,
+            "l1",
+            "book-a",
+            "solitude",
+            None,
+            Some("cfi-1"),
+            100,
+            1,
+        );
+        insert_lookup_record(
+            &conn,
+            "l2",
+            "book-a",
+            "solitude",
+            None,
+            Some("cfi-2"),
+            200,
+            1,
+        );
         // Due, carried by nothing — must appear.
         insert_vocab_word(&conn, "uncarried", "book-a", "reverie", Some(600));
         drop(conn);
@@ -598,8 +696,26 @@ mod tests {
         let conn = db.conn.lock().unwrap();
         insert_book(&conn, "book-a", "Book A");
         insert_vocab_word(&conn, "w1", "book-a", "solitude", None);
-        insert_lookup_record(&conn, "l1", "book-a", "solitude", None, Some("cfi-1"), 1_000, 3);
-        insert_lookup_record(&conn, "l2", "book-a", "solitude", None, Some("cfi-2"), 1_200, 1);
+        insert_lookup_record(
+            &conn,
+            "l1",
+            "book-a",
+            "solitude",
+            None,
+            Some("cfi-1"),
+            1_000,
+            3,
+        );
+        insert_lookup_record(
+            &conn,
+            "l2",
+            "book-a",
+            "solitude",
+            None,
+            Some("cfi-2"),
+            1_200,
+            1,
+        );
         drop(conn);
 
         let piles = list_review_piles_at(&db, 10_000).unwrap();
@@ -626,8 +742,26 @@ mod tests {
         insert_book(&conn, "book-a", "Book A");
         insert_vocab_word(&conn, "w1", "book-a", "solitude", None);
         insert_vocab_word(&conn, "w2", "book-a", "vexation", None);
-        insert_lookup_record(&conn, "l1", "book-a", "solitude", None, Some("cfi-1"), 1_000, 2);
-        insert_lookup_record(&conn, "l2", "book-a", "vexation", None, Some("cfi-2"), 1_100, 2);
+        insert_lookup_record(
+            &conn,
+            "l1",
+            "book-a",
+            "solitude",
+            None,
+            Some("cfi-1"),
+            1_000,
+            2,
+        );
+        insert_lookup_record(
+            &conn,
+            "l2",
+            "book-a",
+            "vexation",
+            None,
+            Some("cfi-2"),
+            1_100,
+            2,
+        );
         drop(conn);
 
         let piles = list_review_piles_at(&db, 10_000).unwrap();
@@ -635,7 +769,10 @@ mod tests {
             solo_word_lookups, ..
         } = &piles[0].kind
         else {
-            panic!("expected a RepeatLookupsInBook pile, got {:?}", piles[0].kind);
+            panic!(
+                "expected a RepeatLookupsInBook pile, got {:?}",
+                piles[0].kind
+            );
         };
         assert_eq!(*solo_word_lookups, None);
     }
@@ -649,13 +786,49 @@ mod tests {
 
         // Book A's repeat-lookup pile: newest activity at 5_000.
         insert_vocab_word(&conn, "a1", "book-a", "solitude", None);
-        insert_lookup_record(&conn, "la1", "book-a", "solitude", None, Some("cfi-1"), 1_000, 1);
-        insert_lookup_record(&conn, "la2", "book-a", "solitude", None, Some("cfi-2"), 5_000, 1);
+        insert_lookup_record(
+            &conn,
+            "la1",
+            "book-a",
+            "solitude",
+            None,
+            Some("cfi-1"),
+            1_000,
+            1,
+        );
+        insert_lookup_record(
+            &conn,
+            "la2",
+            "book-a",
+            "solitude",
+            None,
+            Some("cfi-2"),
+            5_000,
+            1,
+        );
 
         // Book B's repeat-lookup pile: newest activity at 9_000 — should sort first.
         insert_vocab_word(&conn, "b1", "book-b", "reverie", None);
-        insert_lookup_record(&conn, "lb1", "book-b", "reverie", None, Some("cfi-1"), 3_000, 1);
-        insert_lookup_record(&conn, "lb2", "book-b", "reverie", None, Some("cfi-2"), 9_000, 1);
+        insert_lookup_record(
+            &conn,
+            "lb1",
+            "book-b",
+            "reverie",
+            None,
+            Some("cfi-1"),
+            3_000,
+            1,
+        );
+        insert_lookup_record(
+            &conn,
+            "lb2",
+            "book-b",
+            "reverie",
+            None,
+            Some("cfi-2"),
+            9_000,
+            1,
+        );
 
         // Recent-chapter pile: newest activity at 7_000 — should sort between them.
         insert_vocab_word(&conn, "c1", "book-a", "candour", None);
@@ -741,5 +914,83 @@ mod tests {
             .expect("expected a RecentChapterLookups pile");
         assert_eq!(repeat_pile.word_ids, vec!["w1".to_string()]);
         assert_eq!(chapter_pile.word_ids, vec!["w1".to_string()]);
+    }
+
+    /// A watchlist word (docs/impls/reading-flow-decisions-2026-08-06.md §1)
+    /// looked up at two different positions has exactly the signal pile 1
+    /// looks for — and must still be excluded, because it hasn't been saved.
+    #[test]
+    fn a_watchlist_word_never_lands_in_the_repeat_lookups_pile() {
+        let (_dir, db) = setup();
+        let conn = db.conn.lock().unwrap();
+        insert_book(&conn, "book-a", "Book A");
+        insert_watchlist_word(&conn, "w1", "book-a", "solitude");
+        insert_lookup_record(&conn, "l1", "book-a", "solitude", None, Some("cfi-1"), 1_000, 1);
+        insert_lookup_record(&conn, "l2", "book-a", "solitude", None, Some("cfi-2"), 2_000, 1);
+        drop(conn);
+
+        let piles = list_review_piles_at(&db, 10_000).unwrap();
+        assert!(!piles
+            .iter()
+            .any(|p| matches!(p.kind, ReviewPileKind::RepeatLookupsInBook { .. })));
+    }
+
+    #[test]
+    fn a_watchlist_word_never_lands_in_the_promoted_then_looked_up_pile() {
+        let (_dir, db) = setup();
+        let conn = db.conn.lock().unwrap();
+        insert_book(&conn, "book-a", "Book A");
+        insert_watchlist_word(&conn, "w1", "book-a", "gamma");
+        insert_mastery_event(&conn, "w1", "exposure_promotion", 1_000);
+        insert_mastery_event(&conn, "w1", "lookup_demotion", 2_000);
+        drop(conn);
+
+        let piles = list_review_piles_at(&db, 10_000).unwrap();
+        assert!(!piles
+            .iter()
+            .any(|p| matches!(p.kind, ReviewPileKind::PromotedThenLookedUp)));
+    }
+
+    #[test]
+    fn a_watchlist_word_never_lands_in_the_recent_chapter_pile() {
+        let (_dir, db) = setup();
+        let conn = db.conn.lock().unwrap();
+        insert_book(&conn, "book-a", "Book A");
+        insert_watchlist_word(&conn, "w1", "book-a", "solitude");
+        insert_lookup_record(
+            &conn,
+            "l1",
+            "book-a",
+            "solitude",
+            Some("Chapter One"),
+            Some("cfi-1"),
+            100_000_000,
+            1,
+        );
+        drop(conn);
+
+        let piles = list_review_piles_at(&db, 100_000_000 + 1_000).unwrap();
+        assert!(!piles
+            .iter()
+            .any(|p| matches!(p.kind, ReviewPileKind::RecentChapterLookups { .. })));
+    }
+
+    #[test]
+    fn a_watchlist_word_never_lands_in_the_long_unseen_pile() {
+        let (_dir, db) = setup();
+        let conn = db.conn.lock().unwrap();
+        insert_book(&conn, "book-a", "Book A");
+        conn.execute(
+            "INSERT INTO vocab_words (id, book_id, word, definition, mastery, list_status, next_review_at, created_at, updated_at)
+             VALUES ('w1', 'book-a', 'solitude', 'definition', 'new', 'watchlist', 500, 1700000000000, 1700000000000)",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        let piles = list_review_piles_at(&db, 10_000).unwrap();
+        assert!(!piles
+            .iter()
+            .any(|p| matches!(p.kind, ReviewPileKind::LongUnseen)));
     }
 }

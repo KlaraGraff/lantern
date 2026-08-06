@@ -194,7 +194,11 @@ fn a_later_flush_finds_nothing_left_to_score_in_an_old_chapter() {
     let credit_before = credit_of(&db);
 
     // A different word, so "quiet" gains nothing new — but the pass still runs.
-    flush(&db, &sync, &[screen("Chapter 4", &["dusk"], START + 4 * DAY_MS)]);
+    flush(
+        &db,
+        &sync,
+        &[screen("Chapter 4", &["dusk"], START + 4 * DAY_MS)],
+    );
 
     assert_eq!(mastery_of(&db).0, "new");
     assert_eq!(credit_of(&db), credit_before);
@@ -240,7 +244,11 @@ fn a_word_the_reader_never_saved_is_consumed_not_banked() {
     let (_dir, db, sync) = fixture();
     read_across_chapters(&db, &sync, 10, "quiet");
     save_word(&db, "quiet", "learning");
-    flush(&db, &sync, &[screen("Chapter 11", &["quiet"], START + 11 * DAY_MS)]);
+    flush(
+        &db,
+        &sync,
+        &[screen("Chapter 11", &["quiet"], START + 11 * DAY_MS)],
+    );
 
     assert_eq!(mastery_of(&db).0, "learning");
     let (seen, scored, _) = exposure_row(&db, "quiet");
@@ -390,7 +398,11 @@ fn two_visits_on_one_day_count_as_one_day() {
             screen("Chapter 1", &["quiet"], START + 120_000),
         ],
     );
-    flush(&db, &sync, &[screen("Chapter 1", &["quiet"], START + DAY_MS)]);
+    flush(
+        &db,
+        &sync,
+        &[screen("Chapter 1", &["quiet"], START + DAY_MS)],
+    );
 
     let (seen, _, days) = exposure_row(&db, "quiet");
     assert_eq!(seen, 3);
@@ -457,22 +469,61 @@ fn a_lookup_discards_the_credit_reading_had_banked() {
 }
 
 #[test]
-fn a_lookup_on_a_word_the_reader_never_saved_changes_nothing() {
-    // Not an error, and not a reason to put a word in the list the reader
-    // never chose to keep.
+fn a_lookup_on_a_word_the_reader_never_saved_creates_a_watchlist_entry_and_scores_it() {
+    // The observation zone (docs/impls/reading-flow-decisions-2026-08-06.md
+    // §1): a first lookup is no longer a no-op. It creates a `vocab_words`
+    // row the reader never consciously sees (`list_status = 'watchlist'`,
+    // migration 044), and that row scores mastery exactly like any word the
+    // reader saved themselves — it just isn't a reason to put the word on
+    // the *list* the reader chose to keep, which is a separate thing
+    // (`list_status`, not `mastery_progress`).
     let (_dir, db, sync) = fixture();
     look_up(&db, &sync, "quiet");
 
+    let (word_id, list_status): (String, String) = db
+        .reader()
+        .query_row(
+            "SELECT id, list_status FROM vocab_words WHERE book_id = ?1 AND word = 'quiet'",
+            params![BOOK],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(list_status, "watchlist");
+
     let rows: i64 = db
         .reader()
-        .query_row("SELECT COUNT(*) FROM mastery_progress", [], |row| row.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM mastery_progress WHERE vocab_word_id = ?1",
+            params![word_id],
+            |row| row.get(0),
+        )
         .unwrap();
-    assert_eq!(rows, 0);
+    assert_eq!(rows, 1, "a watchlist word scores mastery like any other");
+    // `Tier::New` has no floor case of its own in `next_down` — it demotes to
+    // Learning exactly like Familiar does — so the very first lookup still
+    // logs the ordinary `lookup_demotion` event. The 3rd-lookup promotion
+    // check hasn't fired yet (only one lookup so far), so that's the only
+    // event on the timeline. This word was never `save_word()`-ed, so it
+    // doesn't have the fixture's usual `WORD_ID` — read by the id we just got
+    // back from the watchlist row instead of using the `mastery_of` helper.
+    let (mastery, source, reason): (String, String, Option<String>) = db
+        .reader()
+        .query_row(
+            "SELECT mastery, mastery_source, mastery_reason FROM vocab_words WHERE id = ?1",
+            params![word_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(mastery, "learning");
+    assert_eq!(source, "auto");
+    let detail: serde_json::Value = serde_json::from_str(&reason.unwrap()).unwrap();
+    assert_eq!(detail["reason"], "lookup_demotion");
+
     let events: i64 = db
         .reader()
         .query_row("SELECT COUNT(*) FROM mastery_events", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(events, 0);
+    assert_eq!(events, 1);
 }
 
 #[test]

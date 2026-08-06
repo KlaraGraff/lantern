@@ -1,10 +1,11 @@
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, State};
 use uuid::Uuid;
 
 use crate::db::Db;
 use crate::error::AppResult;
+use crate::secrets::Secrets;
 use crate::sync::events::{ChatMessagePayload, EventBody};
 use crate::sync::merge::{entity, insert_tombstone};
 use crate::sync::writer::SyncWriter;
@@ -271,16 +272,47 @@ pub fn list_chat_messages(chat_id: String, db: State<'_, Db>) -> AppResult<Vec<C
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn save_chat_message(
     chat_id: String,
     role: String,
     content: String,
     context: Option<String>,
     metadata: Option<String>,
+    app: AppHandle,
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
+    secrets: State<'_, Secrets>,
 ) -> AppResult<ChatMsg> {
-    save_chat_message_inner(&chat_id, &role, &content, context, metadata, &db, &sync)
+    let msg = save_chat_message_inner(&chat_id, &role, &content, context, metadata, &db, &sync)?;
+
+    // Follow-up capture is a local insert — negligible next to the network
+    // round trip the chat reply itself makes — but the classification call
+    // it may go on to trigger never is, so that part is fully detached
+    // below. See commands::followup_difficulty's module doc.
+    match crate::commands::followup_difficulty::capture(
+        &db,
+        &msg.chat_id,
+        &msg.id,
+        &msg.role,
+        &msg.content,
+        msg.context.as_deref(),
+    ) {
+        Ok(_) => {
+            crate::commands::followup_difficulty::maybe_spawn_batch(
+                app,
+                Db::clone(&db),
+                Secrets::clone(&secrets),
+            );
+        }
+        Err(error) => {
+            // Never let a bookkeeping failure surface as a failure to send
+            // the reader's message — the message is already saved above.
+            log::debug!("followup_difficulty: capture skipped: {error}");
+        }
+    }
+
+    Ok(msg)
 }
 
 pub(crate) fn save_chat_message_inner(

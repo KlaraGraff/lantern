@@ -61,7 +61,7 @@ import { useContextMarkState } from "./reader/useContextMarkState";
 import { highlightMutationPlan, highlightRemovalPlan } from "./reader/highlight-plans";
 import { useLearningCards } from "./reader/useLearningCards";
 import { readerMenuAction } from "./reader/menu-actions";
-import { getBook, needsPreparation, retryPreparation, type Book } from "../hooks/useBooks";
+import { getBook, markFinished, needsPreparation, retryPreparation, type Book } from "../hooks/useBooks";
 import { getAllSettings, getBookSettings } from "../hooks/useSettings";
 import type { Highlight } from "../hooks/useBookmarks";
 import { LearningCardController } from "../components/learning-card";
@@ -242,7 +242,11 @@ export default function Reader() {
     visible: jumpHistoryVisible,
     label: jumpHistoryLabel,
   } = useJumpHistory(bookId);
-  const [progressWriter] = useState(() => new ReadingProgressWriter());
+  const [progressWriter] = useState(() => new ReadingProgressWriter((finishedId) => {
+    setBook((current) => current && current.id === finishedId
+      ? { ...current, status: "finished", progress: 100 }
+      : current);
+  }));
   const [bookReady, setBookReady] = useState(false);
   const [readerError, setReaderError] = useState<ReaderOpenError | null>(null);
   const [readerRetry, setReaderRetry] = useState(0);
@@ -570,9 +574,27 @@ export default function Reader() {
     setReaderError(null);
   }, []);
 
-  const queueReadingProgress = useCallback((targetBookId: string, nextProgress: number, cfi: string) => {
+  const queueReadingProgress = useCallback((
+    targetBookId: string,
+    nextProgress: number,
+    cfi: string,
+  ) => {
     progressWriter.queue(targetBookId, nextProgress, cfi);
   }, [progressWriter]);
+
+  // The book-finished hint's own action (docs/impls/reading-flow-decisions-2026-08-06.md
+  // §2.2's fallback): the exact same command a manual "mark as finished" from
+  // the shelf's context menu runs. Optimistic locally for the same reason the
+  // auto-finish path above is — waiting on a refetch would leave the hint
+  // sitting on screen for another render or two after the click that was
+  // supposed to remove it.
+  const markReaderBookFinished = useCallback(() => {
+    if (!bookId) return;
+    setBook((current) => current && current.id === bookId
+      ? { ...current, status: "finished", progress: 100 }
+      : current);
+    void markFinished(bookId);
+  }, [bookId]);
 
   useEffect(() => {
     const flush = () => { void progressWriter.flush(); };
@@ -991,6 +1013,7 @@ export default function Reader() {
     bookId,
     bookReady,
     isTextBook,
+    isFinished: book?.status === "finished",
     supportsManualAnnotations,
     supportsWordMarkers,
     supportsCfiNavigation,
@@ -1008,6 +1031,7 @@ export default function Reader() {
     currentCfiRef,
     pushJump,
     getCurrentLabel,
+    onMarkBookFinished: markReaderBookFinished,
   });
 
   const continuousReadAloud = useContinuousReadAloud({

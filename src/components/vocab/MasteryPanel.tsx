@@ -1,9 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { RotateCcw, Sparkles } from "lucide-react";
 import type { DictionaryWord } from "../../hooks/useDictionary";
+import { useSettings } from "../../hooks/useSettings";
 import { timeAgo } from "../../utils/timeAgo";
+import { parsePassiveVocabSettings } from "../passive-vocab";
+import InBookPreview from "./InBookPreview";
 import {
   masteryBecauseExplanation,
   masteryTransitionDirection,
@@ -83,6 +86,8 @@ export default function MasteryPanel({ word, onSetMastery, sharedBookCount }: Ma
   const { t } = useTranslation();
   const [events, setEvents] = useState<MasteryEvent[]>([]);
   const because = masteryBecauseExplanation(word.mastery_reason);
+  const { settings } = useSettings();
+  const passiveVocab = useMemo(() => parsePassiveVocabSettings(settings), [settings]);
 
   // mastery_events is device-local (migration 038) — a miss here is a normal
   // "nothing happened on this device yet", not an error, so it fails silent.
@@ -111,6 +116,15 @@ export default function MasteryPanel({ word, onSetMastery, sharedBookCount }: Ma
           </span>
         )}
       </div>
+
+      <InBookPreview
+        word={word.word}
+        definition={word.definition}
+        mastery={word.mastery}
+        contextSentence={word.context_sentence}
+        passiveVocab={passiveVocab}
+        cfi={word.cfi}
+      />
 
       {because && (
         <p className="rounded-lg bg-accent-bg px-3.5 py-3 text-[13.5px] leading-[1.65] text-accent-text">
