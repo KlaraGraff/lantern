@@ -32,6 +32,7 @@ import {
 import Button from "./ui/Button";
 import { useAllDictionary, useAllLookupHistory, type LookupRecord, type LookupRecordPage } from "../hooks/useDictionary";
 import { timeAgo } from "../utils/timeAgo";
+import { notifyReaders } from "../utils/notifyReaders";
 import PronounceButton from "./speech/PronounceButton";
 import MergedVocabDetails from "./vocab/MergedVocabDetails";
 import MasteryPanel, { type MasteryLevel } from "./vocab/MasteryPanel";
@@ -466,6 +467,7 @@ export default function DictionaryContent({ initialView = "all" }: DictionaryCon
         contextExplanation: record.context_explanation ?? record.definition ?? null,
         cfi: record.cfi,
       });
+      notifyReaders("vocab-changed", { bookId: record.book_id, cfi: record.cfi });
       await refreshWords();
     } catch (err) {
       console.error("Failed to collect looked-up word:", err);
