@@ -43,6 +43,8 @@ Frontend: React 19, TypeScript, Tailwind CSS 4, Vite, React Router. Backend: Tau
 
 Run the smallest check that covers the change: typecheck + lint for frontend, the relevant `cargo test` target for Rust, sync-focused tests first for sync changes.
 
+**iOS runtime checks.** `tauri ios dev` embeds the frontend into the Rust binary at compile time, so a cached `lantern` crate ships the *old* bundle no matter how many times the app reinstalls — the app runs, opens books, and logs normally, just from stale code. After changing frontend code, run `cd src-tauri && cargo clean -p lantern` before rebuilding, and confirm what actually shipped with `strings -a <installed>/Lantern.app/Lantern | grep -o 'index-[A-Za-z0-9_-]*\.js'` — it must match the hash in `dist/assets/`. Logs live in the simulator's `Library/Logs/com.klaragraff.lantern-dev/lantern.log`, which is **shared across reinstalls**: always read only past the last `lantern start` marker.
+
 ## Restraint
 
 **Write the minimum code that works. Before coding, ask: would a senior engineer call this overcomplicated?** (Adapted from [ponytail-lite](https://github.com/ilindaniel/ponytail-lite).)
