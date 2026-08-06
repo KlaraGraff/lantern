@@ -1,8 +1,8 @@
 # q257 — Explain 结果持久化
 
-Status: Phase 1 已上线；O-1 已拍板（2026-08-07，按推荐：随选中内容切换主操作）。样张制作中，获批后 Phase 2/3 动代码。
+Status: 全部上线。Phase 1（后端）先行；样张三轮修订获批后，Phase 2（弹层缓存/保存）+ Phase 3（解释列表页）以 7f2bd06 上线（2026-08-07）。
 
-产品裁决见 [`docs/features/q257-persist-explanations.md`](../features/q257-persist-explanations.md)
+产品裁决见 [`docs/features/q257-persist-explanations.md`](../../features/archive/q257-persist-explanations.md)
 的「## Decision (2026-08-06)」。本文件不重新讨论那个决定，只把它落到代码上。
 
 ## 一句话
@@ -15,12 +15,12 @@ Status: Phase 1 已上线；O-1 已拍板（2026-08-07，按推荐：随选中�
 
 | 东西 | 位置 | 说明 |
 | --- | --- | --- |
-| Explain 弹层 | [`src/components/ExplainPopover.tsx`](../../src/components/ExplainPopover.tsx) | `useExplainStream` 起流、累积 `contentRef`、`done` 时收尾；footer 已有「存入词典 / 追问 / 复制」三个操作 |
-| 解释命令 | [`src-tauri/src/commands/ai/explain.rs`](../../src-tauri/src/commands/ai/explain.rs) | `ai_explain`，纯流式，无返回值；prompt 受 `explanation_mode` 与 `cefr_level` 两个 setting 影响 |
+| Explain 弹层 | [`src/components/ExplainPopover.tsx`](../../../src/components/ExplainPopover.tsx) | `useExplainStream` 起流、累积 `contentRef`、`done` 时收尾；footer 已有「存入词典 / 追问 / 复制」三个操作 |
+| 解释命令 | [`src-tauri/src/commands/ai/explain.rs`](../../../src-tauri/src/commands/ai/explain.rs) | `ai_explain`，纯流式，无返回值；prompt 受 `explanation_mode` 与 `cefr_level` 两个 setting 影响 |
 | 自定义动作 | 同弹层，走 `ai_custom_action` | 复用同一个弹层与同一套流式通道 |
-| 最接近的先例 | [`src-tauri/src/commands/lookup_history.rs`](../../src-tauri/src/commands/lookup_history.rs) + [`migrations/014_lookup_history.sql`](../../src-tauri/migrations/014_lookup_history.sql) | `normalized_text` + `(book_id, cfi, normalized_text)` 唯一索引 + `get_cached_lookup`，本计划的表几乎是它的姊妹表 |
+| 最接近的先例 | [`src-tauri/src/commands/lookup_history.rs`](../../../src-tauri/src/commands/lookup_history.rs) + [`migrations/014_lookup_history.sql`](../../../src-tauri/migrations/014_lookup_history.sql) | `normalized_text` + `(book_id, cfi, normalized_text)` 唯一索引 + `get_cached_lookup`，本计划的表几乎是它的姊妹表 |
 | 列表页先例 | `AnnotationsContent.tsx` / `DictionaryContent.tsx` | 两个都是手写的，没有共享的「保存项列表」外壳 |
-| 跳回原文 | [`src/hooks/useOpenBook.ts`](../../src/hooks/useOpenBook.ts) | `openInReader(bookId, { cfi })`，有窗口就开窗口，没有就换路由 |
+| 跳回原文 | [`src/hooks/useOpenBook.ts`](../../../src/hooks/useOpenBook.ts) | `openInReader(bookId, { cfi })`，有窗口就开窗口，没有就换路由 |
 
 两条继承来的纪律：
 
@@ -249,7 +249,7 @@ explain.reexplain
 
 三条理由：
 
-1. [`docs/roadmap/product-ux-audit-2026-08.md`](../roadmap/product-ux-audit-2026-08.md)
+1. [`docs/roadmap/product-ux-audit-2026-08.md`](../../roadmap/product-ux-audit-2026-08.md)
    §四把「侧边栏两套导航模型并存」列为 P1 摩擦：记录段里只有阅读统计是
    `navigate("/reading-stats")`，其余全是同页 filter，审计的原话是留一个路由做例外，
    将来加第二个统计类页面时会再破一次。解释就是那个「将来」。新增一条路由等于把

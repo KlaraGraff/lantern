@@ -1,6 +1,6 @@
 # 全应用体验审查（2026-08）
 
-> 范围：整个产品的功能设计与使用流程，不只是阅读页。阅读页的排版与工具细节已有 [`reader-page-optimization.md`](reader-page-optimization.md)，本文不重复它的 P0–P3 清单，只在结论冲突或已落地后仍有残留问题的地方引用它。
+> 范围：整个产品的功能设计与使用流程，不只是阅读页。阅读页的排版与工具细节已有 [`reader-page-optimization.md`](archive/reader-page-optimization.md)，本文不重复它的 P0–P3 清单，只在结论冲突或已落地后仍有残留问题的地方引用它。
 > 方法：读代码现状（前端 209 个模块、后端 23 个命令模块、1625 条 i18n key、33 个迁移），对照 [`personalized-english-reader-master-plan.md`](personalized-english-reader-master-plan.md) 的产品方针逐条检查。
 > 基线：`main` @ `6f28481`，v2.8.4，P1–P3.4 全部已落地。
 

@@ -2,7 +2,7 @@
 
 GitHub issue: https://github.com/yicheng47/quill/issues/257
 
-**Status:** Planned
+**Status:** Shipped (2026-08-07)
 
 ## Motivation
 

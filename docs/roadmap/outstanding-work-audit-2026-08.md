@@ -13,7 +13,7 @@
 | [q14 — Notes](../features/q14-notes.md) | 笔记实体 + AI 润色/扩写 + 笔记对话线程 | Milestone 2 核心项。阅读页笔记面板(P3.2 notes rail)已 ship,但 q14 的 AI 写作助手和对话线程是另一层,全欠 |
 | [q25 — Collection Folders](../features/q25-collection-folders.md) | 合集内一层文件夹,拖拽归类 | 四期全未开工 |
 | [q32 — Library Backup](../features/q32-library-backup.md) | 书库文件单向备份到用户指定目录 | 两期全未开工 |
-| [q257 — Persist Explanations](../features/q257-persist-explanations.md) | Explain 结果持久化 + 解释列表页 | **已拍板(2026-08-06):显式保存 + 自动缓存层**(缓存管复用省额度,保存管列表页收什么),决定已写进 spec,待排期开工 |
+| ~~[q257 — Persist Explanations](../features/archive/q257-persist-explanations.md)~~ | Explain 结果持久化 + 解释列表页 | **已全部上线并归档(2026-08-07)**:Phase 1 后端 + Phase 2 弹层缓存/保存 + Phase 3 解释列表页(7f2bd06) |
 | [q276 — Reset All Data](../features/q276-reset-all-data.md) | 设置里的「重置全部数据」危险操作 | 全未开工 |
 | ~~q285 — Memos 分组~~ | 侧栏新增 Memos 分组 | **已随三段式改造落地并归档(2026-08-06)**,见 C-9 |
 

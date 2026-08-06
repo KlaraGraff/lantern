@@ -30,10 +30,6 @@ Detailed implementation plans for features and bug fixes. Numbers match the corr
 - [Auto-update signing setup](auto-update-setup.md) —
   keys and GitHub Secrets are in place; every line of code is still owed. The plan half
   lives in q243 above.
-- [q257 — Explain 结果持久化](q257-persist-explanations.md) —
-  计划已写，未开工。Phase 1（`explanations` 表 + 缓存/保存/清理命令）可以立刻开工；
-  Phase 2 的弹层 footer 改动等 O-1 拍板（新的「保存解释」如何与既有「存入词典」共处），
-  Phase 3 的列表页等样张获批。
 - [Mockup gap audit, 2026-08-06](mockup-gap-audit-2026-08-06.md) —
   open decision list G-00–G-I: credential sync on iOS, network gating, OPDS for book
   sources, the auto-analysis console mismatch, and two authoring-page gaps. Its two
@@ -47,6 +43,9 @@ six diagrams of how the shipped features hand off to each other, the companion p
 
 ## Archive
 
+- [q257 — Explain 结果持久化](archive/q257-persist-explanations.md) — 三期全部上线（2026-08-07，
+  Phase 2/3 为 7f2bd06）；样张 [q257-explanations-mockup.html](archive/q257-explanations-mockup.html)
+  经三轮修订获批后随文归档。
 - [1 — Grounded Book Chat: Overview](archive/1-grounded-book-chat-overview.md)
   - [Phase 1 — Indexing + Retrieval](archive/1-grounded-book-chat-phase1-indexing-retrieval.md)
   - [Phase 2 — Summaries + Citations](archive/1-grounded-book-chat-phase2-summaries-citations.md)

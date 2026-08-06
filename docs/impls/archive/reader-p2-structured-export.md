@@ -2,7 +2,7 @@
 
 Status: approved and implemented.
 
-Source: [`docs/roadmap/reader-page-optimization.md`](../../roadmap/reader-page-optimization.md) §P2.1.
+Source: [`docs/roadmap/reader-page-optimization.md`](../../roadmap/archive/reader-page-optimization.md) §P2.1.
 Approved visual reference: [`reader-p2-structured-export-mockup.html`](reader-p2-structured-export-mockup.html).
 
 ## 1. Outcome
