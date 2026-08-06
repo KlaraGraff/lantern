@@ -60,6 +60,7 @@ import type {
   ReaderPageInfo,
   TocChapter,
 } from "./foliate-types";
+import { readerOpenKey } from "./reader-open-key";
 import { toReaderOpenError, type ReaderOpenError } from "./reader-open-error";
 import { markTypographyMediaParagraphs } from "./reader-typography";
 
@@ -154,6 +155,13 @@ interface UseFoliateViewOptions {
   bookReady: boolean;
   isTextBook: boolean;
   readerRetry: number;
+  /**
+   * False until this book's settings have been read from the DB. The open
+   * sequence bakes in reader settings (PDF scroll mode picks the renderer,
+   * font size sizes the first columnize pass), so opening before they land
+   * meant opening twice — once with defaults, once for real.
+   */
+  settingsReady: boolean;
   readerSettings: ReaderSettingsState;
   readerSettingsRef: MutableRefObject<ReaderSettingsState>;
   initialCapabilities: ReaderCapabilities;
@@ -280,6 +288,7 @@ export function useFoliateView({
   bookReady,
   isTextBook,
   readerRetry,
+  settingsReady,
   readerSettings,
   readerSettingsRef,
   initialCapabilities,
@@ -333,6 +342,20 @@ export function useFoliateView({
   useEffect(() => {
     applyPassiveVocabAnnotationsRef.current = applyPassiveVocabAnnotations;
   }, [applyPassiveVocabAnnotations]);
+  // The rest of the callbacks the opened view calls back into. All of them are
+  // invoked from foliate event listeners or from post-open code, never during
+  // the open itself, so a ref is enough — and it keeps their identity out of
+  // the open effect's dependencies, where it used to force a full re-open.
+  const applyAnnotationsRef = useRef(applyAnnotations);
+  const installDocumentInteractionsRef = useRef(installDocumentInteractions);
+  const queueReadingProgressRef = useRef(queueReadingProgress);
+  const onRenditionLayoutRef = useRef(onRenditionLayout);
+  useEffect(() => {
+    applyAnnotationsRef.current = applyAnnotations;
+    installDocumentInteractionsRef.current = installDocumentInteractions;
+    queueReadingProgressRef.current = queueReadingProgress;
+    onRenditionLayoutRef.current = onRenditionLayout;
+  }, [applyAnnotations, installDocumentInteractions, onRenditionLayout, queueReadingProgress]);
   // Size the reader stylesheet was last written with. Tracked because the
   // narrow-viewport shrink can change it on resize alone.
   const appliedFontSizeRef = useRef(readerSettings.fontSize);
@@ -342,8 +365,17 @@ export function useFoliateView({
   );
   const pdfReadingMode = book?.format === "pdf" ? readerSettings.readingMode : null;
 
+  // The effect's one and only dependency — see `readerOpenKey` for why.
+  const openKey = readerOpenKey({
+    book,
+    isTextBook,
+    settingsReady,
+    pdfReadingMode,
+    readerRetry,
+  });
+
   useEffect(() => {
-    if (!book || !viewerRef.current || book.available === false || isTextBook) return;
+    if (!openKey || !book || !viewerRef.current) return;
 
     const interactionGeneration = ++readerInteractionGenerationRef.current;
     const container = viewerRef.current;
@@ -355,6 +387,10 @@ export function useFoliateView({
     setCurrentSectionIndex(-1);
     setReaderError(null);
     let cancelled = false;
+    // Drops the in-flight transfer the moment this open is superseded, rather
+    // than letting a whole book file finish downloading for a view nobody will
+    // ever see.
+    const fetchAbort = new AbortController();
     let activeView: FoliateView | null = null;
     let firstSectionLogged = false;
     let footnoteStagingHost: HTMLDivElement | null = null;
@@ -507,11 +543,19 @@ export function useFoliateView({
 
       logReaderDiagnostic("reader.open.fetch-start");
       const response = await withTimeout(
-        fetch(convertFileSrc(book.file_path)),
+        fetch(convertFileSrc(book.file_path), { signal: fetchAbort.signal }),
         30_000,
         "READER_FILE_TIMEOUT",
       );
       logReaderDiagnostic("reader.open.fetch-done", `status=${response.status}`);
+      // Superseded while the file was on the wire. Everything past here is the
+      // expensive half of the open — reading the body and handing it to
+      // foliate's `makeBook` — and it is exactly the half that used to run
+      // concurrently with the replacement open and race it.
+      if (cancelled) {
+        logReaderDiagnostic("reader.open.superseded", "at=fetch-done");
+        return;
+      }
       if (!response.ok) throw new Error(`READER_FILE_${response.status}`);
       const extension = (book.render_format || book.format || "epub").toLowerCase();
       const mime = {
@@ -529,6 +573,10 @@ export function useFoliateView({
         `book.${extension}`,
         { type: mime },
       );
+      if (cancelled) {
+        logReaderDiagnostic("reader.open.superseded", "at=file-read");
+        return;
+      }
       logReaderDiagnostic("reader.open.view-open-start", `bytes=${file.size} mime=${mime}`);
       await withTimeout(view.open(file), 45_000, "READER_OPEN_TIMEOUT");
       if (cancelled) return;
@@ -537,7 +585,7 @@ export function useFoliateView({
         ? view.book.rendition.layout
         : undefined;
       openedCapabilities = getReaderCapabilities(extension, renditionLayout);
-      onRenditionLayout(renditionLayout);
+      onRenditionLayoutRef.current(renditionLayout);
 
       // This was the one await in the open flow with no timeout: it eagerly
       // resolves every TOC href, and on Safari 15.1 a section resolve can hang
@@ -661,7 +709,7 @@ export function useFoliateView({
         // itself, which re-parses the section document.
         const chapterIndex = findCurrentChapterIndex(chaptersRef.current, tocItem);
         if (chapterIndex !== -1) setCurrentChapterIndex(chapterIndex);
-        if (bookId && cfi) queueReadingProgress(bookId, nextProgress, cfi);
+        if (bookId && cfi) queueReadingProgressRef.current(bookId, nextProgress, cfi);
         // Fires for both jumps and ordinary page turns — the return pill's
         // fade counter (P1.3) only needs to know a location changed, not why.
         notifyLocationChanged();
@@ -723,7 +771,7 @@ export function useFoliateView({
           applyFoliateMarkerStylesRef.current();
           applyPassiveVocabAnnotationsRef.current({ doc, index });
         });
-        installDocumentInteractions({
+        installDocumentInteractionsRef.current({
           doc,
           index,
           view,
@@ -734,7 +782,7 @@ export function useFoliateView({
 
       view.addEventListener("create-overlay", (() => {
         if (bookId && openedCapabilities.supportsManualAnnotations) {
-          applyAnnotations(true).catch(() => {});
+          applyAnnotationsRef.current(true).catch(() => {});
         }
       }) as EventListener);
       view.addEventListener("draw-annotation", ((event: CustomEvent) => {
@@ -903,6 +951,7 @@ export function useFoliateView({
 
     return () => {
       cancelled = true;
+      fetchAbort.abort();
       readerInteractionGenerationRef.current += 1;
       cancelPendingWordClick();
       cancelPendingSelectionMenu();
@@ -921,19 +970,11 @@ export function useFoliateView({
       footnoteStagingHost?.remove();
       setFootnote(null);
     };
-    // PDFs select their renderer from `pdf-mode` during open; EPUBs relayout live.
+    // `openKey` is the whole dependency on purpose — see the comment where it
+    // is built. Everything else the body reads is either derived from it, or
+    // reached through a ref precisely so it cannot reopen the book.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    book,
-    pdfReadingMode,
-    applyAnnotations,
-    initialCapabilities,
-    installDocumentInteractions,
-    isTextBook,
-    queueReadingProgress,
-    readerRetry,
-    onRenditionLayout,
-  ]);
+  }, [openKey]);
 
   useEffect(() => {
     const view = viewRef.current;
