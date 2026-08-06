@@ -244,6 +244,11 @@ export default function Reader() {
   const [readerError, setReaderError] = useState<ReaderOpenError | null>(null);
   const [readerRetry, setReaderRetry] = useState(0);
   const [textInitialLocation, setTextInitialLocation] = useState<string | null>(null);
+  // Which book's settings read has finished — success or failure, since a
+  // failed read just means the reader opens on defaults. `dbSettingsLoadedRef`
+  // deliberately tracks only the success case (it gates per-book override
+  // writes); this one gates the foliate open, which must happen either way.
+  const [settingsSettledBookId, setSettingsSettledBookId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ReaderInteraction | null>(null);
   const [selectedNoteAnchor, setSelectedNoteAnchor] = useState<ReaderNoteAnchor | null>(null);
   const passiveVocabToggleRevisionRef = useRef(0);
@@ -1098,6 +1103,7 @@ export default function Reader() {
     if (!bookId) return;
     let cancelled = false;
     dbSettingsLoadedRef.current = null;
+    setSettingsSettledBookId(null);
     setLoading(true);
     setReaderError(null);
     setBook(null);
@@ -1148,7 +1154,12 @@ export default function Reader() {
       restoreProgressReadout(perBookSettings);
       restoreSavedZoom();
       dbSettingsLoadedRef.current = bookId;
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => {
+      // Releases the foliate open (see `settingsReady` in useFoliateView). The
+      // open bakes these settings in, so letting it start first meant opening
+      // the book once on defaults and again the moment this landed.
+      if (!cancelled) setSettingsSettledBookId(bookId);
+    });
     return () => {
       cancelled = true;
     };
@@ -1308,6 +1319,7 @@ export default function Reader() {
     bookReady,
     isTextBook,
     readerRetry,
+    settingsReady: settingsSettledBookId !== null && settingsSettledBookId === bookId,
     readerSettings,
     readerSettingsRef,
     initialCapabilities,
