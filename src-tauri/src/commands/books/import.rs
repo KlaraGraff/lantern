@@ -472,26 +472,95 @@ fn import_user_selected_path(
     Ok(book)
 }
 
-/// Import through a native file chooser. The webview never supplies an
-/// arbitrary path, which keeps this command within Tauri's file-scope model.
+/// One file's outcome within a dialog-driven import batch that failed —
+/// paired with `imported` on `ImportBatchResult` so the caller can report a
+/// partial success ("N imported, M failed") instead of the whole picker
+/// selection dying on its first bad file.
+#[derive(Debug, Serialize)]
+pub struct ImportFailure {
+    pub file_name: String,
+    pub error: String,
+}
+
+/// Result of a (possibly multi-file) dialog import. Empty `imported` and
+/// empty `failures` together mean the user cancelled the picker — that is
+/// not itself an error.
+#[derive(Debug, Serialize)]
+pub struct ImportBatchResult {
+    pub imported: Vec<Book>,
+    pub failures: Vec<ImportFailure>,
+}
+
+/// Import through a native file chooser, one or many files at once. The
+/// webview never supplies an arbitrary path, which keeps this command within
+/// Tauri's file-scope model.
+///
+/// Each file is imported independently: one bad file (unsupported content,
+/// a corrupt archive, …) is recorded in `failures` and the rest of the
+/// selection still goes through, rather than the whole batch aborting on the
+/// first error — the same "skip and keep going" contract
+/// `import_external_paths` already gives drag-and-drop.
+///
+/// Emits `book-imported` once per successful batch (not once per file) so
+/// every listener — including onboarding's first-run import, which has no
+/// other way to learn the library changed underneath it — refreshes exactly
+/// once per picker round-trip instead of once per file.
 #[tauri::command]
 pub async fn import_book_from_dialog(
     app: AppHandle,
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
-) -> AppResult<Option<Book>> {
+) -> AppResult<ImportBatchResult> {
     let Some(selected) = app
         .dialog()
         .file()
         .add_filter("Books", IMPORTABLE_BOOK_EXTENSIONS)
-        .blocking_pick_file()
+        .blocking_pick_files()
     else {
-        return Ok(None);
+        return Ok(ImportBatchResult {
+            imported: Vec::new(),
+            failures: Vec::new(),
+        });
     };
-    let path = selected
-        .into_path()
-        .map_err(|_| AppError::Other("BOOK_IMPORT_PATH_INVALID".to_string()))?;
-    import_user_selected_path(&path, &db, &sync, &app).map(Some)
+
+    let mut imported = Vec::new();
+    let mut failures = Vec::new();
+    for file in selected {
+        let file_name = file
+            .as_path()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("?")
+            .to_string();
+        let path = match file.into_path() {
+            Ok(path) => path,
+            Err(_) => {
+                failures.push(ImportFailure {
+                    file_name,
+                    error: "BOOK_IMPORT_PATH_INVALID".to_string(),
+                });
+                continue;
+            }
+        };
+        match import_user_selected_path(&path, &db, &sync, &app) {
+            Ok(book) => imported.push(book),
+            Err(error) => {
+                log::warn!(
+                    "import_book_from_dialog: failed for {}: {error}",
+                    path.display()
+                );
+                failures.push(ImportFailure {
+                    file_name,
+                    error: error.to_string(),
+                });
+            }
+        }
+    }
+
+    if !imported.is_empty() {
+        let _ = app.emit("book-imported", ());
+    }
+    Ok(ImportBatchResult { imported, failures })
 }
 
 /// Native drag/drop and OS file-association events have already been approved

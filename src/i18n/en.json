@@ -1350,6 +1350,7 @@
   "common.on": "On",
   "common.off": "Off",
   "common.unknownAuthor": "Unknown author",
+  "import.batchFailedCount": "{{count}} books failed to import",
   "indexManager.title": "AI Index Manager",
   "indexManager.status": "Status",
   "indexManager.status.ready": "Ready",
@@ -1867,6 +1868,7 @@
   "onboarding.step2.sourcesDisclosure": "Don't have a book yet? See where to find one",
   "onboarding.step2.importSlowNonBlocking": "Feel free to move on — the import keeps going in the background.",
   "onboarding.step2.importedTitle": "Imported “{{title}}”",
+  "onboarding.step2.importedCount": "Imported {{count}} books",
 
   "onboarding.step3.title": "Connect an AI service",
   "onboarding.step3.why": "Once it's set up, open “{{title}}” and select any word to look it up — definitions, examples, and context all appear right beside the text.",

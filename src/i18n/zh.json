@@ -1350,6 +1350,7 @@
   "common.on": "开启",
   "common.off": "关闭",
   "common.unknownAuthor": "未知作者",
+  "import.batchFailedCount": "{{count}} 本书未能导入",
   "indexManager.title": "AI 索引管理",
   "indexManager.status": "状态",
   "indexManager.status.ready": "可用",
@@ -1867,6 +1868,7 @@
   "onboarding.step2.sourcesDisclosure": "手上还没有书？看看去哪找书",
   "onboarding.step2.importSlowNonBlocking": "可以先去下一步，导入会在后台继续。",
   "onboarding.step2.importedTitle": "已导入《{{title}}》",
+  "onboarding.step2.importedCount": "已导入 {{count}} 本书",
 
   "onboarding.step3.title": "连一个 AI 服务",
   "onboarding.step3.why": "配好之后，打开《{{title}}》选中任何一个词就能查——释义、例句、语境解释都在原文旁边出现。",

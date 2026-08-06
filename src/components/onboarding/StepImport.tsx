@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { AlertCircle, ChevronDown, ChevronRight, Check, Loader2, Upload, ExternalLink } from "lucide-react";
 import Button from "../ui/Button";
-import { importBookDialog, type Book } from "../../hooks/useBooks";
+import { importBookDialog, type Book, type ImportBatchResult } from "../../hooks/useBooks";
 import { groupBookSources } from "./onboarding-state";
 import { BOOK_SOURCES_KEY, resolveBookSources, type BookSourceKind } from "../book-sources";
 
@@ -11,10 +11,10 @@ interface StepImportProps {
   settings: Record<string, string>;
   importing: boolean;
   importSlow: boolean;
-  importedBook: Book | null;
+  importedBooks: Book[];
   importError: string | null;
   onImportStart: () => void;
-  onImportDone: (book: Book | null) => void;
+  onImportDone: (result: ImportBatchResult) => void;
   onImportError: (message: string) => void;
   onNext: () => void;
   onSkip: () => void;
@@ -43,7 +43,7 @@ export default function StepImport({
   settings,
   importing,
   importSlow,
-  importedBook,
+  importedBooks,
   importError,
   onImportStart,
   onImportDone,
@@ -57,8 +57,8 @@ export default function StepImport({
   const handleChoose = async () => {
     onImportStart();
     try {
-      const book = await importBookDialog.importFile();
-      onImportDone(book);
+      const result = await importBookDialog.importFiles();
+      onImportDone(result);
     } catch (err) {
       onImportError(formatError(err));
     }
@@ -77,13 +77,15 @@ export default function StepImport({
       <h2 className="text-[18px] font-semibold text-text-primary">{t("onboarding.step2.title")}</h2>
       <p className="mt-2 text-[13px] leading-5 text-text-secondary">{t("onboarding.step2.why")}</p>
 
-      {importedBook ? (
+      {importedBooks.length > 0 ? (
         <div className="mt-5 flex items-center gap-3 rounded-md border border-border bg-bg-muted px-3 py-3">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-success/10 text-success-text">
             <Check size={16} />
           </div>
           <p className="min-w-0 truncate text-[13px] font-medium text-text-primary">
-            {t("onboarding.step2.importedTitle", { title: importedBook.title })}
+            {importedBooks.length === 1
+              ? t("onboarding.step2.importedTitle", { title: importedBooks[0].title })
+              : t("onboarding.step2.importedCount", { count: importedBooks.length })}
           </p>
         </div>
       ) : (

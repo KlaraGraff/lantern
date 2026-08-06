@@ -18,6 +18,7 @@ import LibraryHintBanner from "../components/onboarding/LibraryHintBanner";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import { useBooks, importBookDialog, IMPORT_SLOW_HINT_MS } from "../hooks/useBooks";
+import { summarizeImportFailures } from "../hooks/import-batch";
 import { useCollections } from "../hooks/useCollections";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { platform } from "../services/platform";
@@ -443,10 +444,16 @@ export default function Home() {
     try {
       setImporting(true);
       try {
-        const book = await importBookDialog.importFile();
-        if (book) {
+        const result = await importBookDialog.importFiles();
+        if (result.imported.length > 0) {
           refresh();
           refreshCounts();
+        }
+        const failureSummary = summarizeImportFailures(result.failures);
+        if (failureSummary.kind === "singleFailure") {
+          setImportError(failureSummary.message);
+        } else if (failureSummary.kind === "batchFailure") {
+          setImportError(t("import.batchFailedCount", { count: failureSummary.failedCount }));
         }
       } finally {
         setImporting(false);
@@ -600,7 +607,7 @@ export default function Home() {
                 so the list of places to find one belongs here, not only in a
                 settings tab they have no reason to open. */}
             <button
-              onClick={() => openSettings("bookSources")}
+              onClick={() => openSettings("library")}
               className="text-[12px] text-text-muted hover:text-accent transition-colors"
             >
               {t("home.findBooks")}

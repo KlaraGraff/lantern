@@ -104,11 +104,27 @@ export function useBooks(filter?: string, search?: string, collectionId?: string
   return { books, total, loading, loadingMore, hasMore, loadMore, refresh };
 }
 
-async function importFile(): Promise<Book | null> {
-  return invoke<Book | null>("import_book_from_dialog");
+/** One file's failure inside a dialog import batch — kept alongside
+ * `imported` so a bad file can be reported without the rest of the
+ * selection aborting. Mirrors the backend's `ImportFailure`. */
+export interface ImportFailure {
+  file_name: string;
+  error: string;
 }
 
-export const importBookDialog = { importFile };
+/** Result of `import_book_from_dialog`, which now always resolves the whole
+ * file picker selection (one file or many) rather than a single `Book`.
+ * Both empty means the user cancelled the picker. */
+export interface ImportBatchResult {
+  imported: Book[];
+  failures: ImportFailure[];
+}
+
+async function importFiles(): Promise<ImportBatchResult> {
+  return invoke<ImportBatchResult>("import_book_from_dialog");
+}
+
+export const importBookDialog = { importFiles };
 
 /** Healthy imports finish in 1-5s; past this, either pdf.js is stalled
  * (PDF_METADATA_TIMEOUT_MS) or the Rust EPUB path is grinding on a large

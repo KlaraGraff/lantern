@@ -4,7 +4,8 @@ import { createPortal } from "react-dom";
 import { Check } from "lucide-react";
 import { useSettings } from "../../hooks/useSettings";
 import { useOpenBook } from "../../hooks/useOpenBook";
-import { type Book, IMPORT_SLOW_HINT_MS } from "../../hooks/useBooks";
+import { type Book, type ImportBatchResult, IMPORT_SLOW_HINT_MS } from "../../hooks/useBooks";
+import { summarizeImportFailures } from "../../hooks/import-batch";
 import {
   AUTO_ANALYSIS_INTRO_KEY,
   ONBOARDING_DONE,
@@ -52,7 +53,7 @@ export default function OnboardingCard() {
 
   const [importing, setImporting] = useState(false);
   const [importSlow, setImportSlow] = useState(false);
-  const [importedBook, setImportedBook] = useState<Book | null>(null);
+  const [importedBooks, setImportedBooks] = useState<Book[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   // Set only by StepAi's own successful connection test (via the
   // "lantern:ai-config-changed" event) — not a general "is AI configured"
@@ -77,7 +78,7 @@ export default function OnboardingCard() {
       setPhase("steps");
       setImporting(false);
       setImportSlow(false);
-      setImportedBook(null);
+      setImportedBooks([]);
       setImportError(null);
       setAiConnected(false);
       setAutoAnalysisStep(false);
@@ -104,9 +105,19 @@ export default function OnboardingCard() {
     setImporting(true);
     setImportError(null);
   };
-  const handleImportDone = (book: Book | null) => {
+  // Same batch a normal toolbar import produces — the backend's own
+  // `book-imported` event (emitted once per batch) is what tells `Home`'s
+  // book list and sidebar counts to refresh; this only owns what the
+  // onboarding card itself shows about the run.
+  const handleImportDone = (result: ImportBatchResult) => {
     setImporting(false);
-    if (book) setImportedBook(book);
+    if (result.imported.length > 0) setImportedBooks(result.imported);
+    const failureSummary = summarizeImportFailures(result.failures);
+    if (failureSummary.kind === "singleFailure") {
+      setImportError(failureSummary.message);
+    } else if (failureSummary.kind === "batchFailure") {
+      setImportError(t("import.batchFailedCount", { count: failureSummary.failedCount }));
+    }
   };
   const handleImportError = (message: string) => {
     setImporting(false);
@@ -131,7 +142,9 @@ export default function OnboardingCard() {
 
   const startReading = () => {
     void save(ONBOARDING_STATE_KEY, ONBOARDING_DONE);
-    if (importedBook) openBook(importedBook.id);
+    // The first of the batch, when more than one was picked — there is only
+    // one reader to open into.
+    if (importedBooks[0]) openBook(importedBooks[0].id);
   };
 
   useEffect(() => {
@@ -217,7 +230,7 @@ export default function OnboardingCard() {
         <div className="overflow-y-auto px-5 py-5">
           {phase === "review" ? (
             <Review
-              bookTitle={importedBook?.title ?? null}
+              bookTitle={importedBooks[0]?.title ?? null}
               cefrLevel={settings.cefr_level ?? null}
               aiConfigured={aiConnected}
               onStartReading={startReading}
@@ -234,7 +247,7 @@ export default function OnboardingCard() {
               settings={settings}
               importing={importing}
               importSlow={importSlow}
-              importedBook={importedBook}
+              importedBooks={importedBooks}
               importError={importError}
               onImportStart={handleImportStart}
               onImportDone={handleImportDone}
@@ -244,7 +257,7 @@ export default function OnboardingCard() {
             />
           ) : step === 3 ? (
             <StepAi
-              bookTitle={importedBook?.title ?? null}
+              bookTitle={importedBooks[0]?.title ?? null}
               onComplete={completeAiStep}
               onSkip={() => void save(ONBOARDING_STATE_KEY, ONBOARDING_DONE)}
             />
