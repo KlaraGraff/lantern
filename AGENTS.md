@@ -31,6 +31,10 @@ Frontend: React 19, TypeScript, Tailwind CSS 4, Vite, React Router. Backend: Tau
 - Start every session with `git fetch origin && git status`; another agent may have moved `main`.
 - Working-tree changes you did not make are another agent's in-flight work: inspect and preserve them; never revert, stash, or commit them as your own.
 - **Unrelated-change triage:** do not stop at a dirty worktree. First list each changed or untracked path, summarize its diff and overlap with the task, then recommend the safer path: continue with only owned files, use an isolated worktree for a release, or pause only when the changes make correctness impossible to establish. State that recommendation before asking for input. For release work, never include unowned changes; when a clean build is required, prefer an isolated worktree over asking the user to clean or classify another agent's work.
+- **Shared-worktree commit discipline** (multiple sessions run concurrently in this one clone; user directive 2026-08-07):
+  1. Never `git add .`, `git add -A`, `git add -u`, or `git commit -a`. Stage only explicit file paths you actually changed this round.
+  2. Run `git status --short` before every commit. Files you didn't touch are another session's in-flight work — leave them alone: no stash, no checkout, no restore. They are uncommitted on purpose, pending human review.
+  3. `src/i18n/zh.json` and `src/i18n/en.json` are the highest-risk files — several sessions add keys to them at once. Edit them only with targeted in-place replacements (never rewrite the whole file), and before committing run `git diff --cached src/i18n/` to confirm every staged key is yours; `git restore --staged` anything that isn't. (Staging these files whole has twice swept a concurrent session's keys into an unrelated commit.)
 
 ## Commands
 
