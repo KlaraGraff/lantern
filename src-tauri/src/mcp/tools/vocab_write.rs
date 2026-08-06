@@ -702,6 +702,8 @@ impl LanternMcpHandler {
 mod tests {
     use super::*;
     use crate::db::Db;
+    use crate::mcp::McpState;
+    use crate::sync::writer::SyncWriter;
     use tempfile::TempDir;
 
     fn lookup_db() -> (TempDir, Db) {
@@ -754,5 +756,93 @@ mod tests {
         let first = save_lookup_record_inner(lookup_args("first"), &db).unwrap();
         assert_eq!(delete_lookup_records_inner(&[first.id], &db).unwrap(), 1);
         assert_eq!(clear_lookup_history_inner(None, &db).unwrap(), 0);
+    }
+
+    /// `lookup_db` plus the write switch and two vocabulary rows: one the
+    /// reader saved, one still sitting in the observation zone
+    /// (`list_status = 'watchlist'`) — see migration 044 and
+    /// docs/impls/reading-flow-decisions-2026-08-06.md §1.3/§5.3.
+    fn mastery_db() -> (TempDir, Db) {
+        let (directory, db) = lookup_db();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES ('mcp_write_enabled', 'true')
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [],
+            )
+            .unwrap();
+            for (id, word, list_status) in [
+                ("v-confirmed", "steadfast", "confirmed"),
+                ("v-watchlist", "ephemeral", "watchlist"),
+            ] {
+                conn.execute(
+                    "INSERT INTO vocab_words
+                     (id, book_id, word, definition, mastery, review_count, list_status,
+                      created_at, updated_at)
+                     VALUES (?1, 'book', ?2, 'a definition', 'new', 0, ?3, 1, 1)",
+                    rusqlite::params![id, word, list_status],
+                )
+                .unwrap();
+            }
+        }
+        (directory, db)
+    }
+
+    fn text_of(result: CallToolResult) -> String {
+        assert_eq!(result.is_error, Some(false), "tool returned is_error=true");
+        match result.content.into_iter().next().expect("no content") {
+            ContentBlock::Text(text) => text.text,
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    /// Regression for the MCP watchlist leak, the write-side twin of
+    /// `get_vocab_words_excludes_the_observation_zone`: `set_vocab_mastery`
+    /// re-reads through the deliberately unfiltered `query_all_vocab_words`,
+    /// so without its own filter a client that already knew a watchlist row's
+    /// id could read the row back out of the response.
+    #[tokio::test]
+    async fn set_vocab_mastery_excludes_the_observation_zone_from_its_echo() {
+        let (directory, db) = mastery_db();
+        let handler = LanternMcpHandler::new(McpState::new(
+            db.clone(),
+            Some(SyncWriter::new("mcp-test".to_string())),
+            Some(directory.path()),
+        ));
+
+        let result = handler
+            .set_vocab_mastery(Parameters(SetVocabMasteryArgs {
+                ids: vec!["v-confirmed".into(), "v-watchlist".into()],
+                mastery: "learning".into(),
+                next_review_at: None,
+            }))
+            .await
+            .unwrap();
+
+        let entries: serde_json::Value = serde_json::from_str(&text_of(result)).unwrap();
+        let entries = entries.as_array().unwrap();
+        assert_eq!(
+            entries.len(),
+            1,
+            "watchlist row leaked through set_vocab_mastery: {entries:?}"
+        );
+        assert_eq!(entries[0]["word"], "steadfast");
+
+        // The filter belongs on what comes back, not on what gets written —
+        // the watchlist row's tier still moved. Narrowing the write instead
+        // would make the observation zone unscoreable, which is the opposite
+        // of why it exists.
+        let mastery: String = db
+            .conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT mastery FROM vocab_words WHERE id = 'v-watchlist'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(mastery, "learning");
     }
 }
