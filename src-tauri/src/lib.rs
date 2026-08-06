@@ -1,4 +1,5 @@
 mod ai;
+mod backup;
 mod commands;
 // `pub` so `tests/mcp_binary.rs` can call `Db::init` to seed a DB at
 // the temp HOME path the binary will read from. Otherwise integration
@@ -525,6 +526,8 @@ pub fn run() {
             }
             std::fs::create_dir_all(local_dir.join("prepared"))
                 .expect("failed to create text preparation cache");
+            // Before the caches have anything in them to be backed up.
+            backup::exclude_regenerable_paths(&local_dir);
             // The local imported-font dir. When sync is on the fonts live in the
             // shared directory instead, which is granted asset access further
             // down alongside the other blobs — this grant covers the sync-off

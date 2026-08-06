@@ -1142,7 +1142,21 @@ vertical lock 8px, horizontal dominance 1.5×) are the expensive part and are fr
    the right thing, not that a real kill was prevented. Two background/foreground cycles:
    both logged the quiesce and the release, and `lantern.db-wal` went 16512 → 0 bytes on
    backgrounding. The kill itself can only be falsified on hardware, in P6.
-3. `NSURLIsExcludedFromBackupKey` on caches and logs
+3. ~~`NSURLIsExcludedFromBackupKey` on caches and logs~~ — **done 2026-08-06.**
+   `src/backup.rs`. Three directories are excluded at every launch: `speech-cache`,
+   `prepared`, and the log directory. The motivating number is the speech cache's own
+   ceiling — it is allowed to reach 2 GiB before it evicts anything, against a 5 GB free
+   iCloud Backup allowance for the entire device. `books/`, `covers/`, `sources/`,
+   `imported-fonts/`, `lantern.db` and `secrets.db` are deliberately left in the backup;
+   losing any of those to a restore would lose the reader something no amount of waiting
+   brings back. Runs on every launch rather than once, because the flag is an extended
+   attribute on the directory and dies whenever the directory is deleted and recreated —
+   which is exactly what a cache does. **This one is fully verified without hardware:** the
+   flag is a filesystem attribute, so the simulator's is the same attribute a device would
+   carry. `xattr -p com.apple.metadata:com_apple_backup_excludeItem` is present on all three
+   targets and absent on `books/` and `lantern.db`. Four unit tests run the real Foundation
+   call on the host, including the two properties the approach rests on: files written after
+   the flag is set stay covered, and recreating the directory drops it
 4. ~~Keychain via `keyring` `apple-native`~~ — **not work, and not this milestone's.** Deleting
    the v1.4 vault in v2.6.0 took `keyring` out of `Cargo.toml`; `secrets.rs` is plain SQLite on
    every platform. This line survived the sweep that produced `427be38` and is now retired.
@@ -1151,7 +1165,11 @@ vertical lock 8px, horizontal dominance 1.5×) are the expensive part and are fr
    compile without it. `objc2`, `objc2-foundation` and `block2` now resolve for iOS.
 
 **Exit criterion:** no crash across a 30-minute reading session with backgrounding, and
-Instruments shows no runaway memory.
+Instruments shows no runaway memory. **Not met, and not meetable here.** All five items are
+done, but this criterion names Instruments and a 30-minute session on a device; the simulator
+neither suspends processes nor reproduces a phone's memory ceiling. It carries over to P6 as
+the first thing to run once hardware is in the loop — which is the right place for it, since
+that is also the only place the `0xdead10cc` claim in item 2 can be falsified.
 
 ### P5 — iCloud sync (12–18 days)
 
@@ -1229,7 +1247,7 @@ all in-repo work — see [D-014](#d-014--first-ios-release-is-testflight-not-the
 | P1 — Capability layer + routing | **Done** | Tapping a book opens it in-window; desktop-only surfaces are gated by [D-005](#d-005--capability-flags-not-platform-checks) flags |
 | P2 — Mobile UI | **Blocked** | Waits on the desktop mastery line — [D-011](#d-011--p2-waits-for-the-desktop-mastery-line-to-finish). Two items added since the 18.5-day estimate: mobile AI settings ([D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)) and a book-downloading state ([D-013](#d-013--books-download-on-demand-not-eagerly)) |
 | P3 — Touch interaction | Not started | Same file collision as P2; follows it |
-| P4 — iOS adaptation | **Items 1–2 done** | Rust-side, no frontend overlap — may run before P2. Item 2 is the suspension gate in `src/lifecycle.rs`; only item 3 is left. Item 1 was the PDF retention leak [Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) surfaced, fixed and re-measured. Item 4 shrank to nothing (the `keyring` it budgeted for was deleted in v2.6.0); the Cargo-table half moved out and is done |
+| P4 — iOS adaptation | **Done** | Rust-side, no frontend overlap — ran before P2. Item 1 was the PDF retention leak [Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) surfaced, fixed and re-measured; item 2 the suspension gate in `src/lifecycle.rs`; item 3 backup exclusion in `src/backup.rs`. Item 4 shrank to nothing (the `keyring` it budgeted for was deleted in v2.6.0); the Cargo-table half moved out and is done. The one claim still owed to hardware is that the suspension gate prevents a real `0xdead10cc` kill — P6 |
 | P5 — iCloud sync | **Item 1 done** | iOS ↔ macOS only. The `cfg` gates in `icloud.rs` and `sync/log.rs` are widened to `target_vendor = "apple"` and both targets compile clean. [Q-004](#q-004--macos-relocation-to-the-app-container-answered--there-is-nothing-to-relocate) closed at zero cost — no migration, because there are no users to migrate. Rust-side; runs before P2 |
 | P6 — Ship | Not started | TestFlight only ([D-014](#d-014--first-ios-release-is-testflight-not-the-app-store)). The account-level notarization blocker cleared 2026-08-06; everything left is in-repo |
 
