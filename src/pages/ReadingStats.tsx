@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, BookOpen, CalendarDays, LockKeyhole, RefreshCw, Sparkles, X } from "lucide-react";
+import { AlertCircle, ArrowRight, BookOpen, CalendarDays, LockKeyhole, RefreshCw, Sparkles, X } from "lucide-react";
 import type {
   AutoReviewOffer,
   CachedReadingReview,
@@ -13,6 +13,8 @@ import type {
   ReadingStatsQuery,
   ReadingStatsRange,
   ReadingStatsView,
+  VocabLearningStats,
+  VocabMasteryDistribution,
 } from "./reading-stats/types";
 import { ReadingReviewError } from "./reading-stats/types";
 import type { LevelObservation } from "./reading-stats/level-observation";
@@ -27,6 +29,9 @@ export interface ReadingStatsProps {
   onOpenBook?(bookId: string): void;
   /** Where the level actually lives. This page only ever points at it. */
   onOpenLevelSettings?(): void;
+  /** The "去复习 →" link on the learning view's due-for-review metric. Points
+   * at the same review entry point the sidebar's own "Review" row opens. */
+  onOpenReview?(): void;
 }
 
 function reviewErrorCode(error: unknown): ReadingReviewErrorCode {
@@ -293,6 +298,196 @@ function ReadingCalendar({ days, labels }: { days: ReadingStatsCalendarDay[]; la
   );
 }
 
+/**
+ * The daily/weekly/monthly bar chart on the learning view. Every bar carries
+ * a native `title` tooltip (date + count) rather than the mockup's bespoke
+ * hover popup — same information, and it is the same hover convention
+ * `ReadingCalendar`'s own day cells already use just above on this page. The
+ * peak bar's count is drawn permanently above it; every other bar stays bare
+ * until hovered, per the mockup's "selective, not general" labeling.
+ */
+function LearningTrendChart({
+  trend,
+  granularity,
+  labels,
+}: {
+  trend: VocabLearningStats["trend"];
+  granularity: VocabLearningStats["trendGranularity"];
+  labels: ReadingStatsLabels;
+}) {
+  const peak = Math.max(0, ...trend.map((bucket) => bucket.count));
+  const scale = Math.max(1, peak);
+  const first = trend[0];
+  const last = trend[trend.length - 1];
+  const middle = trend[Math.floor((trend.length - 1) / 2)];
+  const axisDates = [first, middle, last].filter(
+    (bucket, index, all) => bucket && all.findIndex((other) => other?.date === bucket.date) === index,
+  );
+
+  return (
+    <div>
+      <h3 className="text-[11.5px] font-semibold text-text-primary">{labels.learningTrendTitle}</h3>
+      <p className="mt-0.5 text-[10px] text-text-muted">{labels.learningTrendDescription(granularity)}</p>
+      <div className="mt-2.5 flex h-24 items-end gap-0.5 border-b border-border">
+        {trend.map((bucket) => {
+          const isPeak = peak > 0 && bucket.count === peak;
+          const heightPx = Math.max(2, Math.round((bucket.count / scale) * 84));
+          return (
+            <div
+              key={bucket.date}
+              className="relative max-w-[14px] flex-1"
+              style={{ height: `${heightPx}px` }}
+              title={labels.learningTrendTooltip(labels.formatDate(bucket.date), bucket.count)}
+            >
+              {isPeak ? (
+                <span className="pointer-events-none absolute inset-x-0 -top-3.5 text-center text-[9px] font-semibold text-text-secondary">
+                  {bucket.count}
+                </span>
+              ) : null}
+              <div
+                className={
+                  bucket.count === 0
+                    ? "h-full rounded-sm bg-border"
+                    : "h-full rounded-t bg-accent opacity-85 hover:opacity-100"
+                }
+              />
+            </div>
+          );
+        })}
+      </div>
+      {axisDates.length ? (
+        <div className="mt-1.5 flex justify-between text-[9px] text-text-muted">
+          {axisDates.map((bucket) => <span key={bucket!.date}>{labels.formatDate(bucket!.date)}</span>)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** The stacked mastery-tier bar plus its legend. Only tiers with at least one
+ * word get a stack segment — a zero-count tier would render as nothing but an
+ * extra 2px gap — but the legend always lists all four, so a tier reading
+ * zero is still visible as a fact rather than silently missing. */
+function LearningMasteryDistribution({
+  distribution,
+  scoped,
+  labels,
+}: {
+  distribution: VocabMasteryDistribution;
+  scoped: boolean;
+  labels: ReadingStatsLabels;
+}) {
+  if (distribution.total === 0) return null;
+
+  const tiers = [
+    { key: "new", count: distribution.newCount, color: "var(--color-mastery-new)", label: labels.masteryTierNew },
+    { key: "learning", count: distribution.learningCount, color: "var(--color-mastery-learning)", label: labels.masteryTierLearning },
+    { key: "familiar", count: distribution.familiarCount, color: "var(--color-mastery-familiar)", label: labels.masteryTierFamiliar },
+    { key: "mastered", count: distribution.masteredCount, color: "var(--color-mastery-mastered)", label: labels.masteryTierMastered },
+  ];
+
+  return (
+    <div className="mt-5">
+      <h3 className="text-[11.5px] font-semibold text-text-primary">{labels.learningDistributionTitle(distribution.total, scoped)}</h3>
+      <p className="mt-0.5 text-[10px] text-text-muted">{labels.learningDistributionDescription}</p>
+      <div className="mt-2.5 flex h-[22px] gap-0.5 overflow-hidden rounded-md">
+        {tiers.filter((tier) => tier.count > 0).map((tier) => (
+          <i key={tier.key} className="block h-full rounded-sm" style={{ flex: tier.count, background: tier.color }} />
+        ))}
+      </div>
+      <div className="mt-2.5 flex flex-wrap gap-x-3.5 gap-y-1.5 text-[10.5px] text-text-secondary">
+        {tiers.map((tier) => (
+          <span key={tier.key} className="inline-flex items-center gap-1.5">
+            <i className="inline-block size-[9px] rounded-[2.5px]" style={{ background: tier.color }} aria-hidden="true" />
+            {tier.label}
+            <b className="font-semibold text-text-primary">{tier.count}</b>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The reading-stats page's third view, alongside history/calendar
+ * (`docs/impls/reading-stats-learning-mockup.html`): what the reader's
+ * lookups and vocabulary show for the selected period. Every number here is
+ * computed on-device — no AI involved, see `labels.learningFootnote`.
+ *
+ * Collapses to a single quiet line when the period holds neither a lookup
+ * nor a newly-saved word — the metrics/trend/distribution card would
+ * otherwise just be four zeroes and two empty charts.
+ */
+function LearningView({
+  learning,
+  scoped,
+  labels,
+  onOpenReview,
+}: {
+  learning: VocabLearningStats;
+  scoped: boolean;
+  labels: ReadingStatsLabels;
+  onOpenReview?: () => void;
+}) {
+  const isEmpty = learning.lookupCount === 0 && learning.newWordsCount === 0;
+
+  return (
+    <section aria-labelledby="reading-learning-heading">
+      <div className="mb-3">
+        <h2 id="reading-learning-heading" className="text-[13px] font-semibold text-text-primary">{labels.learningHeading(scoped)}</h2>
+        <p className="mt-1 text-[10px] text-text-muted">{labels.learningDescription(scoped)}</p>
+      </div>
+
+      {isEmpty ? (
+        <div className="rounded-xl border border-dashed border-border px-5 py-6 text-center">
+          <p className="text-[11.5px] font-medium text-text-primary">{labels.learningEmptyTitle}</p>
+          <p className="mx-auto mt-1.5 max-w-sm whitespace-pre-line text-[10px] leading-5 text-text-muted">{labels.learningEmptyDescription}</p>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-border bg-bg-surface p-5">
+          <div className="grid grid-cols-4">
+            <div className="pr-4">
+              <strong className="block font-serif text-[19px] font-medium text-text-primary">{learning.lookupCount}</strong>
+              <span className="mt-0.5 block text-[10px] text-text-muted">{labels.learningLookupCount}</span>
+            </div>
+            <div className="border-l border-border-light px-4">
+              <strong className="block font-serif text-[19px] font-medium text-text-primary">{learning.newWordsCount}</strong>
+              <span className="mt-0.5 block text-[10px] text-text-muted">{labels.learningNewWords}</span>
+            </div>
+            <div className="border-l border-border-light px-4">
+              <strong className="block font-serif text-[19px] font-medium text-text-primary">{learning.masteredCount}</strong>
+              <span className="mt-0.5 block text-[10px] text-text-muted">{labels.learningMastered}</span>
+            </div>
+            <div className="border-l border-border-light pl-4">
+              <strong className="block font-serif text-[19px] font-medium text-text-primary">{learning.dueForReviewCount}</strong>
+              <span className="mt-0.5 flex items-center gap-1 text-[10px] text-text-muted">
+                {labels.learningDueForReview}
+                <button
+                  type="button"
+                  onClick={onOpenReview}
+                  disabled={!onOpenReview}
+                  className="inline-flex items-center gap-0.5 font-medium text-accent-text disabled:cursor-default disabled:opacity-60"
+                >
+                  {labels.learningGoToReview}
+                  <ArrowRight size={10} aria-hidden="true" />
+                </button>
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-5 border-t border-border-light pt-5">
+            <LearningTrendChart trend={learning.trend} granularity={learning.trendGranularity} labels={labels} />
+          </div>
+
+          <LearningMasteryDistribution distribution={learning.masteryDistribution} scoped={scoped} labels={labels} />
+
+          <p className="mt-4 border-t border-border-light pt-3 text-[10px] leading-[1.7] text-text-muted">{labels.learningFootnote}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function Modal({ title, onClose, children }: { title: string; onClose(): void; children: React.ReactNode }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -428,6 +623,7 @@ export default function ReadingStats({
   onAcknowledgeAiReviewDisclosure,
   onOpenBook,
   onOpenLevelSettings,
+  onOpenReview,
 }: ReadingStatsProps) {
   const [view, setView] = useState<ReadingStatsView>("history");
   const [range, setRange] = useState<ReadingStatsRange>("year");
@@ -594,7 +790,7 @@ export default function ReadingStats({
       <header className="sticky top-0 z-20 flex min-h-[104px] items-end justify-between gap-6 border-b border-border bg-bg-surface/95 px-8 pb-4 pt-titlebar backdrop-blur">
         <div>
           <h1 className="text-[23px] font-semibold">{labels.title}</h1>
-          <p className="mt-1 text-[11px] text-text-muted">{view === "history" ? labels.subtitleHistory : labels.subtitleCalendar}</p>
+          <p className="mt-1 text-[11px] text-text-muted">{view === "history" ? labels.subtitleHistory : view === "calendar" ? labels.subtitleCalendar : labels.subtitleLearning}</p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <select value={bookId ?? ""} onChange={(event) => setBookId(event.target.value || null)} className="h-8 rounded-lg border border-border bg-bg-surface px-2.5 text-[11px] text-text-secondary">
@@ -612,9 +808,9 @@ export default function ReadingStats({
             <LockKeyhole size={14} aria-hidden="true" />
           </button>
           <div className="flex rounded-lg border border-accent/25 bg-accent-bg p-0.5" role="group">
-            {(["history", "calendar"] as const).map((value) => (
+            {(["history", "calendar", "learning"] as const).map((value) => (
               <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)} className={`h-7 rounded-md px-2.5 text-[10px] ${view === value ? "bg-bg-surface font-medium text-accent-text shadow-sm" : "text-text-muted"}`}>
-                {value === "history" ? labels.historyView : labels.calendarView}
+                {value === "history" ? labels.historyView : value === "calendar" ? labels.calendarView : labels.learningView}
               </button>
             ))}
           </div>
@@ -635,7 +831,9 @@ export default function ReadingStats({
 
         {view === "history"
           ? <BookHistory books={dashboard.books} labels={labels} onOpenBook={onOpenBook} />
-          : <ReadingCalendar days={dashboard.calendar} labels={labels} />}
+          : view === "calendar"
+          ? <ReadingCalendar days={dashboard.calendar} labels={labels} />
+          : <LearningView learning={dashboard.learning} scoped={bookId !== null} labels={labels} onOpenReview={onOpenReview} />}
 
         {loadError ? (
           <div role="status" className="flex items-center gap-2 rounded-lg bg-danger-bg px-3 py-2 text-[10px] text-danger-text">

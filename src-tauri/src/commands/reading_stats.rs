@@ -431,7 +431,10 @@ fn validate_query(query: &ReadingStatsQuery) -> AppResult<()> {
     Ok(())
 }
 
-fn local_date(timestamp_ms: i64, timezone_offset_minutes: i32) -> String {
+/// Also used by `commands::vocab_learning` to bucket lookup/vocab activity by
+/// local calendar day — the same "which wall-clock day did this happen on"
+/// question the reading-stats calendar already answers.
+pub(crate) fn local_date(timestamp_ms: i64, timezone_offset_minutes: i32) -> String {
     // `getTimezoneOffset` is UTC minus local, hence subtract it to obtain the
     // local wall-clock instant. Clamping avoids FixedOffset construction errors
     // for malformed values received from a client.

@@ -1,6 +1,6 @@
 import type { LevelObservation } from "./level-observation";
 
-export type ReadingStatsView = "history" | "calendar";
+export type ReadingStatsView = "history" | "calendar" | "learning";
 export type ReadingStatsRange = "last30Days" | "year" | "all";
 
 export interface ReadingStatsQuery {
@@ -60,12 +60,54 @@ export interface CachedReadingReview {
   facts: ReadingReviewFacts;
 }
 
+/** How the lookup trend below is bucketed — chosen server-side from the span
+ * of the reader's actual activity, not the nominal query range, so a chart
+ * over "all time" doesn't walk decades of empty history. */
+export type VocabTrendGranularity = "day" | "week" | "month";
+
+export interface VocabTrendBucket {
+  /** Local date the bucket starts on (`YYYY-MM-DD`) — the day itself for
+   * `"day"` granularity, that ISO week's Monday for `"week"`, or the 1st of
+   * the month for `"month"`. */
+  date: string;
+  count: number;
+}
+
+export interface VocabMasteryDistribution {
+  total: number;
+  newCount: number;
+  learningCount: number;
+  familiarCount: number;
+  masteredCount: number;
+}
+
+/** The reading-stats page's "learning" view (`docs/impls/reading-stats-learning-mockup.html`):
+ * how much dictionary-lookup and vocabulary-mastery activity happened in the
+ * selected period, computed entirely on-device. */
+export interface VocabLearningStats {
+  lookupCount: number;
+  newWordsCount: number;
+  masteredCount: number;
+  /** Not scoped to the period — "today" means today regardless of the range
+   * tab, same as the sidebar's own review entry point. Still respects the
+   * book filter. */
+  dueForReviewCount: number;
+  trendGranularity: VocabTrendGranularity;
+  /** Oldest first, one entry per bucket across the whole period including
+   * zero-count buckets. */
+  trend: VocabTrendBucket[];
+  /** Current mastery-tier snapshot (not period-scoped), narrowed to the book
+   * filter only. */
+  masteryDistribution: VocabMasteryDistribution;
+}
+
 export interface ReadingStatsDashboard {
   overview: ReadingStatsOverview;
   books: ReadingStatsBook[];
   calendar: ReadingStatsCalendarDay[];
   facts: ReadingReviewFacts;
   cachedReview: CachedReadingReview | null;
+  learning: VocabLearningStats;
   /**
    * Set only when the dashboard is scoped to one book and that book's most
    * recent *automatic* review attempt failed — not configured, out of
@@ -150,6 +192,7 @@ export interface ReadingStatsLabels {
   title: string;
   subtitleHistory: string;
   subtitleCalendar: string;
+  subtitleLearning: string;
   loading: string;
   loadFailed: string;
   retry: string;
@@ -159,6 +202,7 @@ export interface ReadingStatsLabels {
   allTime: string;
   historyView: string;
   calendarView: string;
+  learningView: string;
   focusedReading: string;
   booksRead: string;
   booksCompleted: string;
@@ -169,6 +213,29 @@ export interface ReadingStatsLabels {
   calendarDescription: string;
   noCalendarActivity: string;
   noCalendarActivityDescription: string;
+  /** `scoped` is true once the book filter narrows to one title — the
+   * mockup's "学习 · 这本书" variant. */
+  learningHeading(scoped: boolean): string;
+  learningDescription(scoped: boolean): string;
+  learningLookupCount: string;
+  learningNewWords: string;
+  learningMastered: string;
+  learningDueForReview: string;
+  learningGoToReview: string;
+  learningTrendTitle: string;
+  learningTrendDescription(granularity: VocabTrendGranularity): string;
+  learningTrendTooltip(dateLabel: string, count: number): string;
+  learningDistributionTitle(count: number, scoped: boolean): string;
+  learningDistributionDescription: string;
+  /** Reuses the app's one canonical name per mastery tier — same strings the
+   * vocabulary page's own tier badges use. */
+  masteryTierNew: string;
+  masteryTierLearning: string;
+  masteryTierFamiliar: string;
+  masteryTierMastered: string;
+  learningEmptyTitle: string;
+  learningEmptyDescription: string;
+  learningFootnote: string;
   emptyTitle: string;
   emptyDescription: string;
   emptyRule: string;

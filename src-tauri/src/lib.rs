@@ -968,6 +968,7 @@ pub fn run() {
             commands::vocab::import_vocab_backup,
             commands::vocab::bulk_delete_vocab_words,
             commands::vocab::bulk_update_vocab_mastery,
+            commands::vocab_learning::get_vocab_learning_dashboard,
             commands::review_piles::list_review_piles,
             commands::review_pile_ai::refresh_review_pile_curation,
             commands::review_pile_ai::review_pile_curation,

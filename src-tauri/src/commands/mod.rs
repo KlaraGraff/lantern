@@ -31,4 +31,5 @@ pub mod speech;
 pub mod sync;
 pub mod translation;
 pub mod vocab;
+pub mod vocab_learning;
 pub mod word_marks;

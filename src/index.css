@@ -163,6 +163,21 @@
   --color-band-4: #9470dd;
   --color-band-5: #6f43c4;
   --color-band-unlisted: #d6d6dc;
+
+  /* Vocabulary mastery tiers, new to mastered — reading-stats' "learning"
+     view (docs/impls/reading-stats-learning-mockup.html). A ramp like the
+     word-frequency bands above, for the same reason: the tiers are ordered,
+     not four unrelated categories. Validated adjacent-pair contrast (ΔE≥14.1
+     CVD / ≥15.9 normal vision); the low contrast of the lightest step against
+     white is why the distribution bar always ships with a count-labeled
+     legend rather than relying on the color alone. `static` because these are
+     read from an inline `style` on a stacked-bar segment, not a class name
+     Tailwind's scanner can see. Dark mode below is a separately validated
+     ramp, not an automatic inversion of this one. */
+  --color-mastery-new: #c4b5fd;
+  --color-mastery-learning: #8b5cf6;
+  --color-mastery-familiar: #6021c0;
+  --color-mastery-mastered: #2e1065;
 }
 
 .dark {
@@ -172,6 +187,11 @@
   --color-band-4: #7259ab;
   --color-band-5: #9d84da;
   --color-band-unlisted: #3d3d46;
+
+  --color-mastery-new: #4c3f80;
+  --color-mastery-learning: #8461e0;
+  --color-mastery-familiar: #b8a6fd;
+  --color-mastery-mastered: #f0ebff;
 
   --color-bg-page: #151518;
   --color-bg-surface: #18191d;

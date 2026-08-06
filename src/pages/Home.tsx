@@ -496,7 +496,7 @@ export default function Home() {
       ) : activeFilter === "notes" ? (
         <AnnotationsContent onOpenVocab={openVocabWord} />
       ) : activeFilter === "stats" ? (
-        <ReadingStatsContent />
+        <ReadingStatsContent onOpenReview={() => setActiveFilter("review")} />
       ) : (
         <main className="flex-1 flex flex-col min-w-0">
           <div className="border-b border-border px-page pb-section relative select-none">

@@ -40,7 +40,7 @@ function formatTokens(tokens: number, language: string, t: TFunction): string {
  * on its own root for the same reason: Home's shell is a row flexbox and this
  * pane has to claim the width the sidebar isn't using.
  */
-export default function ReadingStatsContent() {
+export default function ReadingStatsContent({ onOpenReview }: { onOpenReview?: () => void } = {}) {
   const { t, i18n } = useTranslation();
   const adapter = useMemo(() => createTauriReadingStatsAdapter(i18n.language), [i18n.language]);
   const [acknowledged, setAcknowledged] = useState(false);
@@ -101,6 +101,35 @@ export default function ReadingStatsContent() {
     levelStop: t("readingStats.levelObservation.stop"),
     levelOpenSettings: t("readingStats.levelObservation.openSettings"),
     levelRules: (observation: LevelObservation) => levelObservationRuleKeys(observation.kind).map((key) => t(key)),
+    subtitleLearning: t("readingStats.subtitleLearning"),
+    learningView: t("readingStats.learningView"),
+    learningHeading: (scoped: boolean) => (scoped ? t("readingStats.learningHeadingScoped") : t("readingStats.learningHeading")),
+    learningDescription: (scoped: boolean) => (scoped ? t("readingStats.learningDescriptionScoped") : t("readingStats.learningDescription")),
+    learningLookupCount: t("readingStats.learningLookupCount"),
+    learningNewWords: t("readingStats.learningNewWords"),
+    learningMastered: t("readingStats.learningMastered"),
+    learningDueForReview: t("readingStats.learningDueForReview"),
+    learningGoToReview: t("readingStats.learningGoToReview"),
+    learningTrendTitle: t("readingStats.learningTrendTitle"),
+    learningTrendDescription: (granularity: "day" | "week" | "month") =>
+      granularity === "day"
+        ? t("readingStats.learningTrendDescriptionDay")
+        : granularity === "week"
+        ? t("readingStats.learningTrendDescriptionWeek")
+        : t("readingStats.learningTrendDescriptionMonth"),
+    learningTrendTooltip: (dateLabel: string, count: number) => t("readingStats.learningTrendTooltip", { date: dateLabel, count }),
+    learningDistributionTitle: (count: number, scoped: boolean) =>
+      scoped
+        ? t("readingStats.learningDistributionTitleScoped", { count })
+        : t("readingStats.learningDistributionTitleAll", { count }),
+    learningDistributionDescription: t("readingStats.learningDistributionDescription"),
+    masteryTierNew: t("vocab.mastery.new"),
+    masteryTierLearning: t("vocab.mastery.learning"),
+    masteryTierFamiliar: t("vocab.mastery.familiar"),
+    masteryTierMastered: t("vocab.mastery.mastered"),
+    learningEmptyTitle: t("readingStats.learningEmptyTitle"),
+    learningEmptyDescription: t("readingStats.learningEmptyDescription"),
+    learningFootnote: t("readingStats.learningFootnote"),
   }), [i18n.language, t]);
 
   return (
@@ -112,6 +141,7 @@ export default function ReadingStatsContent() {
         aiReviewDisclosureAcknowledged={acknowledged}
         onAcknowledgeAiReviewDisclosure={() => invoke("set_setting", { key: "reading_stats_ai_disclosure_acknowledged", value: "true" }).then(() => setAcknowledged(true))}
         onOpenLevelSettings={() => openSettings("general")}
+        onOpenReview={onOpenReview}
       />
     </div>
   );

@@ -7,6 +7,7 @@ import type {
   ReadingStatsDashboard,
   ReadingStatsQuery,
   ReadingStatsRange,
+  VocabLearningStats,
 } from "./types";
 import { ReadingReviewError } from "./types";
 import type { LevelObservation } from "./level-observation";
@@ -17,6 +18,11 @@ type BackendQuery = {
   scopeBookId: string | null;
   timezoneOffsetMinutes: number;
 };
+
+// `commands::vocab_learning::VocabLearningDashboard` on the Rust side — same
+// shape as `VocabLearningStats` plus the `query` it was answered for, which
+// this adapter already knows and has no use for.
+type BackendVocabLearningDashboard = VocabLearningStats & { query: BackendQuery };
 
 type BackendDashboard = {
   overview: ReadingStatsDashboard["overview"];
@@ -73,7 +79,7 @@ function pendingReasonCode(value: string | null): ReadingReviewErrorCode | null 
   return value ? "failed" : null;
 }
 
-function normalizeDashboard(value: BackendDashboard): ReadingStatsDashboard {
+function normalizeDashboard(value: BackendDashboard, learning: BackendVocabLearningDashboard): ReadingStatsDashboard {
   return {
     overview: value.overview,
     books: value.books.map((book) => ({
@@ -106,6 +112,15 @@ function normalizeDashboard(value: BackendDashboard): ReadingStatsDashboard {
       facts: value.cachedReview.facts,
     } : null,
     reviewPendingReason: pendingReasonCode(value.reviewPendingReason),
+    learning: {
+      lookupCount: learning.lookupCount,
+      newWordsCount: learning.newWordsCount,
+      masteredCount: learning.masteredCount,
+      dueForReviewCount: learning.dueForReviewCount,
+      trendGranularity: learning.trendGranularity,
+      trend: learning.trend,
+      masteryDistribution: learning.masteryDistribution,
+    },
   };
 }
 
@@ -204,8 +219,11 @@ export function createTauriReadingStatsAdapter(language = "en"): ReadingStatsAda
     },
     async loadDashboard(query) {
       const backendQuery = toBackendQuery(query);
-      const value = await invoke<BackendDashboard>("get_reading_stats_dashboard", { query: backendQuery });
-      return normalizeDashboard(value);
+      const [value, learning] = await Promise.all([
+        invoke<BackendDashboard>("get_reading_stats_dashboard", { query: backendQuery }),
+        invoke<BackendVocabLearningDashboard>("get_vocab_learning_dashboard", { query: backendQuery }),
+      ]);
+      return normalizeDashboard(value, learning);
     },
     async generateReview(query) {
       try {
