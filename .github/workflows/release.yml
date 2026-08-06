@@ -13,6 +13,9 @@ jobs:
   build-macos:
     runs-on: macos-latest
 
+    outputs:
+      signed: ${{ steps.signing.outputs.enabled }}
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,11 +45,24 @@ jobs:
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          PRERELEASE: ${{ contains(github.ref_name, '-') }}
         run: |
-          if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_CERTIFICATE_PASSWORD" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
+          # A pre-release tag -- anything carrying a hyphen, v2.9.0-rc.1 --
+          # takes the ad-hoc path deliberately. Notarization is the slowest
+          # and least predictable step in this workflow: submissions have
+          # been accepted in minutes and have also sat in Apple's queue for
+          # more than a day, and the run that exceeded 1h50m failed on the
+          # runner's own network rather than on anything Apple said. A
+          # pre-release is never served by the updater, which only reads
+          # `releases/latest`, so waiting on that queue buys a pre-release
+          # nothing at all.
+          if [ -z "$APPLE_CERTIFICATE" ] || [ -z "$APPLE_CERTIFICATE_PASSWORD" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
+          elif [ "$PRERELEASE" = "true" ]; then
+            echo "pre-release tag: skipping Developer ID signing and notarization"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Import Apple Developer Certificate
@@ -105,7 +121,6 @@ jobs:
 
             - macOS：仅支持 Apple Silicon（M 系列）Mac，要求 macOS 12 Monterey 或更高版本。
             - Windows：提供 Windows 11 x64 安装包。
-            - macOS 安装包已使用 Developer ID 证书签名并通过 Apple 公证，下载后可直接打开。
 
             [查看此版本的提交记录](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }})
 
@@ -116,11 +131,10 @@ jobs:
 
             - macOS: Apple Silicon (M-series) Macs only, running macOS 12 Monterey or later.
             - Windows: Windows 11 x64 installer available.
-            - The macOS installer is signed with a Developer ID certificate and notarized by Apple, so it opens without a Gatekeeper prompt.
 
             [View commits in this release](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }})
           releaseDraft: true
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
           args: >-
             --target aarch64-apple-darwin
             --features ocr-pipeline
@@ -151,7 +165,6 @@ jobs:
 
             - macOS：仅支持 Apple Silicon（M 系列）Mac，要求 macOS 12 Monterey 或更高版本。
             - Windows：提供 Windows 11 x64 安装包。
-            - 这个 macOS 安装包来自回退构建路径：只有临时签名、未经 Apple 公证，首次打开时 Gatekeeper 会要求确认。
 
             [查看此版本的提交记录](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }})
 
@@ -162,11 +175,10 @@ jobs:
 
             - macOS: Apple Silicon (M-series) Macs only, running macOS 12 Monterey or later.
             - Windows: Windows 11 x64 installer available.
-            - This macOS installer came from the fallback build path: it carries an ad-hoc signature and was not notarized, so Gatekeeper will ask for confirmation on first launch.
 
             [View commits in this release](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }})
           releaseDraft: true
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
           args: --target aarch64-apple-darwin --features ocr-pipeline
 
       - name: Verify macOS app signature
@@ -252,7 +264,6 @@ jobs:
 
             - macOS：仅支持 Apple Silicon（M 系列）Mac，要求 macOS 12 Monterey 或更高版本。
             - Windows：提供 Windows 11 x64 安装包。
-            - macOS 安装包已使用 Developer ID 证书签名并通过 Apple 公证，下载后可直接打开。
 
             [查看此版本的提交记录](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }})
 
@@ -263,9 +274,95 @@ jobs:
 
             - macOS: Apple Silicon (M-series) Macs only, running macOS 12 Monterey or later.
             - Windows: Windows 11 x64 installer available.
-            - The macOS installer is signed with a Developer ID certificate and notarized by Apple, so it opens without a Gatekeeper prompt.
 
             [View commits in this release](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }})
           releaseDraft: true
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
           args: --features ocr-pipeline
+
+  # Both build jobs write release notes into the same release, so whichever
+  # finishes last wins -- and the Windows job cannot know how macOS was
+  # signed. That is how the v2.9.0 draft ended up claiming "signed with a
+  # Developer ID certificate and notarized by Apple" while carrying no macOS
+  # asset at all, because the macOS job had failed. The bodies above are now
+  # deliberately silent about signing, and this job is the only thing that
+  # speaks about it -- after both builds have reported what actually happened.
+  #
+  # It runs even when a build failed, because an incomplete release still
+  # needs notes that say so. If this job itself fails, the release keeps the
+  # neutral body: less information, never a false claim.
+  release-notes:
+    needs: [build-macos, build-windows]
+    if: always() && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Write the signing and completeness notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          MACOS_RESULT: ${{ needs.build-macos.result }}
+          MACOS_SIGNED: ${{ needs.build-macos.outputs.signed }}
+          WINDOWS_RESULT: ${{ needs.build-windows.result }}
+          PRERELEASE: ${{ contains(github.ref_name, '-') }}
+        run: |
+          set -euo pipefail
+
+          zh_mac=""
+          en_mac=""
+          if [ "$MACOS_RESULT" != "success" ]; then
+            zh_mac="- 这个版本没有 macOS 安装包：macOS 构建未成功。"
+            en_mac="- This release has no macOS installer: the macOS build did not succeed."
+          elif [ "$MACOS_SIGNED" = "true" ]; then
+            zh_mac="- macOS 安装包已使用 Developer ID 证书签名并通过 Apple 公证，下载后可直接打开。"
+            en_mac="- The macOS installer is signed with a Developer ID certificate and notarized by Apple, so it opens without a Gatekeeper prompt."
+          else
+            zh_mac="- 这个 macOS 安装包只有临时签名、未经 Apple 公证，首次打开时 Gatekeeper 会要求确认。"
+            en_mac="- This macOS installer carries an ad-hoc signature and was not notarized, so Gatekeeper will ask for confirmation on first launch."
+          fi
+
+          zh_win=""
+          en_win=""
+          if [ "$WINDOWS_RESULT" != "success" ]; then
+            zh_win="- 这个版本没有 Windows 安装包：Windows 构建未成功。"
+            en_win="- This release has no Windows installer: the Windows build did not succeed."
+          fi
+
+          zh_pre=""
+          en_pre=""
+          if [ "$PRERELEASE" = "true" ]; then
+            zh_pre="这是一个预发布版本，只供测试。应用内的更新提示不会推送它——更新检查只读取正式发布。"
+            en_pre="This is a pre-release, published for testing only. The in-app updater will not offer it: update checks read the latest stable release."
+          fi
+
+          {
+            printf '[简体中文](#chinese) · [English](#english)\n\n'
+            printf '<a id="chinese"></a>\n## 中文\n\n'
+            if [ -n "$zh_pre" ]; then printf '%s\n\n' "$zh_pre"; fi
+            printf 'Lantern %s 的安装包已准备完成。\n\n' "$TAG"
+            if [ "$MACOS_RESULT" = "success" ]; then
+              printf -- '- macOS：仅支持 Apple Silicon（M 系列）Mac，要求 macOS 12 Monterey 或更高版本。\n'
+            fi
+            if [ "$WINDOWS_RESULT" = "success" ]; then
+              printf -- '- Windows：提供 Windows 11 x64 安装包。\n'
+            fi
+            printf '%s\n' "$zh_mac"
+            if [ -n "$zh_win" ]; then printf '%s\n' "$zh_win"; fi
+            printf '\n[查看此版本的提交记录](https://github.com/%s/commits/%s)\n\n' "$GH_REPO" "$TAG"
+            printf '<a id="english"></a>\n## English\n\n'
+            if [ -n "$en_pre" ]; then printf '%s\n\n' "$en_pre"; fi
+            printf 'The Lantern %s installers are ready.\n\n' "$TAG"
+            if [ "$MACOS_RESULT" = "success" ]; then
+              printf -- '- macOS: Apple Silicon (M-series) Macs only, running macOS 12 Monterey or later.\n'
+            fi
+            if [ "$WINDOWS_RESULT" = "success" ]; then
+              printf -- '- Windows: Windows 11 x64 installer available.\n'
+            fi
+            printf '%s\n' "$en_mac"
+            if [ -n "$en_win" ]; then printf '%s\n' "$en_win"; fi
+            printf '\n[View commits in this release](https://github.com/%s/commits/%s)\n' "$GH_REPO" "$TAG"
+          } > notes.md
+
+          cat notes.md
+          gh release edit "$TAG" --notes-file notes.md
