@@ -11,6 +11,7 @@ import BookList from "../components/BookList";
 import DictionaryContent from "../components/DictionaryContent";
 import ChatsContent from "../components/ChatsContent";
 import AnnotationsContent from "../components/AnnotationsContent";
+import ReadingStatsContent from "../components/ReadingStatsContent";
 import { openSettings } from "../components/settings-open";
 import { listenForSettingsChanged } from "../components/settings-events";
 import LibraryHintBanner from "../components/onboarding/LibraryHintBanner";
@@ -467,6 +468,8 @@ export default function Home() {
         <ChatsContent />
       ) : activeFilter === "notes" ? (
         <AnnotationsContent onOpenVocab={openVocabWord} />
+      ) : activeFilter === "stats" ? (
+        <ReadingStatsContent />
       ) : (
         <main className="flex-1 flex flex-col min-w-0">
           <div className="border-b border-border px-page pb-section relative select-none">

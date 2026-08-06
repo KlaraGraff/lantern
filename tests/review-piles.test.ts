@@ -170,23 +170,38 @@ describe("pileKey", () => {
 // the sidebar's 复习/Review row must never show a count, badge, dot, or bubble.
 // There is no DOM in this test runner, so this checks the source directly —
 // the same technique tests/i18n-keys.test.ts uses to check literal t() calls.
+//
+// Since the sidebar-IA rework (docs/impls/sidebar-ia-options-mockup.html,
+// option C) Review is one of five rows rendered off a single shared template
+// in the "随记"/Memos section (`memoFilters.map(...)`), not its own bespoke
+// JSX block — so this checks that Review is one of the ids the template maps
+// over, and that the shared template itself never renders a count for any of
+// its rows (which covers Review along with its neighbors).
 describe("sidebar review row", () => {
   const sidebarSource = readFileSync(path.join(rootDir, "src/components/Sidebar.tsx"), "utf8");
 
-  test("the review row's JSX block exists and contains no count", () => {
-    const start = sidebarSource.indexOf('onFilterChange("review")');
-    assert.ok(start >= 0, "no onFilterChange(\"review\") call found in Sidebar.tsx");
-    const end = sidebarSource.indexOf("</button>", start);
+  test("review is one of the memo rows", () => {
+    assert.match(
+      sidebarSource,
+      /\{\s*id:\s*"review",\s*label:\s*t\("sidebar\.review"\),\s*icon:\s*RotateCcw\s*\}/,
+      "no \"review\" entry found in memoFilters",
+    );
+  });
+
+  test("the shared memo-row template contains no count", () => {
+    const start = sidebarSource.indexOf("memoFilters.map((filter) => {");
+    assert.ok(start >= 0, "no memoFilters.map(...) template found in Sidebar.tsx");
+    const end = sidebarSource.indexOf("})}", start);
     assert.ok(end >= 0);
     const block = sidebarSource.slice(start, end);
 
     // No badge/count-fetching call of any kind.
-    assert.ok(!/getCount\(/.test(block), "review row must not call getCount(...)");
-    assert.ok(!/bookCounts/.test(block), "review row must not reference bookCounts");
+    assert.ok(!/getCount\(/.test(block), "memo row template must not call getCount(...)");
+    assert.ok(!/bookCounts/.test(block), "memo row template must not reference bookCounts");
     // Exactly one <span> — the label. A second span is how every counted row
     // in this file renders its badge, so a second one here would be a count.
     const spanCount = (block.match(/<span/g) ?? []).length;
-    assert.equal(spanCount, 1, "review row must render exactly one <span> (the label), never a count badge");
+    assert.equal(spanCount, 1, "memo row template must render exactly one <span> (the label), never a count badge");
   });
 });
 

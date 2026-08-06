@@ -22,12 +22,14 @@ import { loadEnhancedFontFace } from "./components/enhanced-fonts";
 
 const isMainWindow = getCurrentWebviewWindow().label === "main";
 
-// Home is the first paint and stays eager. Reader and the stats page are
-// only reached by navigating there, so they ship as their own chunks —
-// opening the shelf no longer pays to parse the reader, the AI chat markdown
-// renderer, and drag-and-drop before a single book cover appears.
+// Home is the first paint and stays eager. Reader is only reached by
+// navigating there, so it ships as its own chunk — opening the shelf no
+// longer pays to parse the reader, the AI chat markdown renderer, and
+// drag-and-drop before a single book cover appears. Reading stats used to be
+// a third lazy route; it is a same-page filter of Home now
+// (docs/impls/sidebar-ia-options-mockup.html, option C), so it ships in
+// Home's own chunk instead.
 const Reader = lazy(() => import("./pages/Reader"));
-const ReadingStatsRoute = lazy(() => import("./pages/ReadingStatsRoute"));
 const BookDetails = lazy(() => import("./pages/BookDetails"));
 
 // Chunks load from the local filesystem here, so this is normally on screen
@@ -35,7 +37,6 @@ const BookDetails = lazy(() => import("./pages/BookDetails"));
 // destination page's own background rather than a flash of whatever sits
 // behind the router — same colour each route already paints once it mounts.
 const ReaderFallback = () => <div className="h-screen bg-bg-page" />;
-const ReadingStatsFallback = () => <div className="h-screen bg-bg-page" />;
 const BookDetailsFallback = () => <div className="h-screen bg-bg-page" />;
 
 function applyTheme(theme: string) {
@@ -105,10 +106,6 @@ export default function App() {
         <Route
           path="/reader/:bookId"
           element={<Suspense fallback={<ReaderFallback />}><Reader /></Suspense>}
-        />
-        <Route
-          path="/reading-stats"
-          element={<Suspense fallback={<ReadingStatsFallback />}><ReadingStatsRoute /></Suspense>}
         />
         <Route
           path="/book/:id"

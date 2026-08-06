@@ -2,19 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { useNavigate } from "react-router";
-import { ArrowLeft } from "lucide-react";
-import ReadingStats from "./ReadingStats";
-import { createTauriReadingStatsAdapter } from "./reading-stats/tauri-adapter";
+import ReadingStats from "../pages/ReadingStats";
+import { createTauriReadingStatsAdapter } from "../pages/reading-stats/tauri-adapter";
 import {
   levelObservationBodyKey,
   levelObservationEffectKey,
   levelObservationRuleKeys,
   type LevelObservation,
-} from "./reading-stats/level-observation";
+} from "../pages/reading-stats/level-observation";
 import { markEmphasis } from "../i18n/emphasis";
-import { openSettings } from "../components/settings-open";
-import { compactTokens, needsUnit, tokenScaleFor } from "../components/settings/auto-analysis";
+import { openSettings } from "./settings-open";
+import { compactTokens, needsUnit, tokenScaleFor } from "./settings/auto-analysis";
 
 /**
  * The offer quotes what one run costs, in the unit the reader's language
@@ -32,9 +30,18 @@ function formatTokens(tokens: number, language: string, t: TFunction): string {
   return t(key, { amount });
 }
 
-export default function ReadingStatsRoute() {
+/**
+ * Home's "stats" filter, wearing the same `<ReadingStats>` the standalone
+ * route used to. This is the one row in the sidebar whose click used to be a
+ * navigation instead of a same-page filter (`docs/impls/sidebar-ia-options-mockup.html`,
+ * option C) — the route is gone, so this is the only place `<ReadingStats>`
+ * still mounts. `flex-1 min-w-0` is what every other same-page content
+ * component (`DictionaryContent`, `ChatsContent`, `AnnotationsContent`) puts
+ * on its own root for the same reason: Home's shell is a row flexbox and this
+ * pane has to claim the width the sidebar isn't using.
+ */
+export default function ReadingStatsContent() {
   const { t, i18n } = useTranslation();
-  const navigate = useNavigate();
   const adapter = useMemo(() => createTauriReadingStatsAdapter(i18n.language), [i18n.language]);
   const [acknowledged, setAcknowledged] = useState(false);
   const [provider, setProvider] = useState({ name: "Lantern AI", model: "", billingNotice: t("readingStats.aiBillingDefault"), configured: false });
@@ -96,5 +103,16 @@ export default function ReadingStatsRoute() {
     levelRules: (observation: LevelObservation) => levelObservationRuleKeys(observation.kind).map((key) => t(key)),
   }), [i18n.language, t]);
 
-  return <div className="relative h-screen"><button type="button" aria-label={t("reader.returnToLibrary")} title={t("reader.returnToLibrary")} onClick={() => navigate("/")} className="fixed left-3 top-titlebar z-40 grid size-8 place-items-center rounded-lg border border-border bg-bg-surface text-text-muted shadow-sm hover:bg-bg-input"><ArrowLeft size={15} /></button><ReadingStats adapter={adapter} labels={labels} provider={provider} aiReviewDisclosureAcknowledged={acknowledged} onAcknowledgeAiReviewDisclosure={() => invoke("set_setting", { key: "reading_stats_ai_disclosure_acknowledged", value: "true" }).then(() => setAcknowledged(true))} onOpenLevelSettings={() => openSettings("general")} /></div>;
+  return (
+    <div className="flex-1 flex flex-col min-w-0">
+      <ReadingStats
+        adapter={adapter}
+        labels={labels}
+        provider={provider}
+        aiReviewDisclosureAcknowledged={acknowledged}
+        onAcknowledgeAiReviewDisclosure={() => invoke("set_setting", { key: "reading_stats_ai_disclosure_acknowledged", value: "true" }).then(() => setAcknowledged(true))}
+        onOpenLevelSettings={() => openSettings("general")}
+      />
+    </div>
+  );
 }

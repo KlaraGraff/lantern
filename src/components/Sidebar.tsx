@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { Library, BookOpen, CheckCircle2, FolderClosed, BookA, Plus, MessageSquare, Pencil, Trash2, GripVertical, RefreshCw, StickyNote, BarChart3, RotateCcw, MoreHorizontal } from "lucide-react";
 import Button from "./ui/Button";
@@ -67,7 +66,6 @@ function getStoredWidth(): number {
 
 export default function Sidebar({ activeFilter, onFilterChange, bookCounts, collections: collectionsHook, userName, onOpenSettings, syncProgress, inDrawer = false }: SidebarProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const [sidebarWidth, setSidebarWidth] = useState(getStoredWidth);
   const resizingRef = useRef(false);
 
@@ -75,6 +73,18 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
     { id: "all", label: t("sidebar.allBooks"), icon: Library },
     { id: "reading", label: t("sidebar.currentlyReading"), icon: BookOpen },
     { id: "finished", label: t("sidebar.finished"), icon: CheckCircle2 },
+  ];
+  // Three-section IA (docs/impls/sidebar-ia-options-mockup.html, option C):
+  // library answers "what to read", memos answers "what reading produced",
+  // collections answers "how it's organized". All five memo rows are same-page
+  // filters — reading history used to be the one row here that navigated to
+  // its own route; now it is `activeFilter === "stats"` like its neighbors.
+  const memoFilters = [
+    { id: "chats", label: t("sidebar.chats"), icon: MessageSquare },
+    { id: "vocab", label: t("sidebar.vocab"), icon: BookA },
+    { id: "review", label: t("sidebar.review"), icon: RotateCcw },
+    { id: "notes", label: t("sidebar.notes"), icon: StickyNote },
+    { id: "stats", label: t("sidebar.readingStats"), icon: BarChart3 },
   ];
   const { collections, create, rename, remove, reorder } = collectionsHook;
   const [isCreating, setIsCreating] = useState(false);
@@ -284,79 +294,33 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
             );
           })}
         </div>
-        <button
-          type="button"
-          onClick={() => navigate("/reading-stats")}
-          className={`flex ${ROW_HEIGHT} w-full items-center gap-2 rounded-lg px-3 text-left hover:bg-bg-input`}
-        >
-          <BarChart3 size={16} className="text-text-muted" />
-          <span className="text-[14px] font-medium text-text-secondary">{t("sidebar.readingStats")}</span>
-        </button>
       </div>
 
       <div className="flex flex-col gap-3">
         <h2 className="text-[12px] font-semibold uppercase tracking-[0.3px] text-text-muted">
-          {t("sidebar.chats")}
+          {t("sidebar.memos")}
         </h2>
         <div className="flex flex-col gap-1">
-          <button
-            onClick={() => onFilterChange("chats")}
-            className={`flex items-center gap-2 px-3 ${ROW_HEIGHT} rounded-lg w-full cursor-pointer ${
-              activeFilter === "chats" ? "bg-accent-bg" : "hover:bg-bg-input"
-            }`}
-          >
-            <MessageSquare size={16} className={activeFilter === "chats" ? "text-accent-text" : "text-text-muted"} />
-            <span className={`text-[14px] font-medium tracking-[-0.15px] ${
-              activeFilter === "chats" ? "text-accent-text" : "text-text-secondary"
-            }`}>
-              {t("sidebar.chats")}
-            </span>
-          </button>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <h2 className="text-[12px] font-semibold uppercase tracking-[0.3px] text-text-muted">
-          {t("sidebar.saved")}
-        </h2>
-        <div className="flex flex-col gap-1">
-          <button
-            onClick={() => onFilterChange("vocab")}
-            className={`flex items-center gap-2 px-3 ${ROW_HEIGHT} rounded-lg w-full cursor-pointer ${
-              activeFilter === "vocab" ? "bg-accent-bg" : "hover:bg-bg-input"
-            }`}
-          >
-            <BookA size={16} className={activeFilter === "vocab" ? "text-accent-text" : "text-text-muted"} />
-            <span className={`text-[14px] font-medium tracking-[-0.15px] ${
-              activeFilter === "vocab" ? "text-accent-text" : "text-text-secondary"
-            }`}>
-              {t("sidebar.vocab")}
-            </span>
-          </button>
-          <button
-            onClick={() => onFilterChange("review")}
-            className={`flex items-center gap-2 px-3 ${ROW_HEIGHT} rounded-lg w-full cursor-pointer ${
-              activeFilter === "review" ? "bg-accent-bg" : "hover:bg-bg-input"
-            }`}
-          >
-            <RotateCcw size={16} className={activeFilter === "review" ? "text-accent-text" : "text-text-muted"} />
-            <span className={`text-[14px] font-medium tracking-[-0.15px] ${
-              activeFilter === "review" ? "text-accent-text" : "text-text-secondary"
-            }`}>
-              {t("sidebar.review")}
-            </span>
-          </button>
-          <button
-            onClick={() => onFilterChange("notes")}
-            className={`flex items-center gap-2 px-3 ${ROW_HEIGHT} rounded-lg w-full cursor-pointer ${
-              activeFilter === "notes" ? "bg-accent-bg" : "hover:bg-bg-input"
-            }`}
-          >
-            <StickyNote size={16} className={activeFilter === "notes" ? "text-accent-text" : "text-text-muted"} />
-            <span className={`text-[14px] font-medium ${activeFilter === "notes" ? "text-accent-text" : "text-text-secondary"}`}>
-              {t("sidebar.notes")}
-            </span>
-          </button>
+          {memoFilters.map((filter) => {
+            const Icon = filter.icon;
+            const isActive = activeFilter === filter.id;
+            return (
+              <button
+                key={filter.id}
+                onClick={() => onFilterChange(filter.id)}
+                className={`flex items-center gap-2 px-3 ${ROW_HEIGHT} rounded-lg w-full cursor-pointer ${
+                  isActive ? "bg-accent-bg" : "hover:bg-bg-input"
+                }`}
+              >
+                <Icon size={16} className={isActive ? "text-accent-text" : "text-text-muted"} />
+                <span className={`text-[14px] font-medium tracking-[-0.15px] ${
+                  isActive ? "text-accent-text" : "text-text-secondary"
+                }`}>
+                  {filter.label}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
