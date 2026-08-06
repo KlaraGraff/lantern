@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>解释持久化样张 — Lantern q257</title>
 <style>
-  /* ── 取自 src/index.css 的浅色主题 token,不新造颜色 ── */
+  /* 浅色主题 token 取自 src/index.css */
   :root {
     --bg-page: #f4f4f5;
     --bg-surface: #ffffff;
@@ -26,11 +26,6 @@
     --accent-text: #7c3aed;
     --lavender: #c084fc;
 
-    --danger: #e7000b;
-    --danger-bg: #fef2f2;
-    --danger-border: #ffc9c9;
-    --danger-text: #e7000b;
-
     --shadow-context: 0px 20px 25px 0px rgba(0,0,0,.15), 0px 8px 10px 0px rgba(0,0,0,.15);
     --shadow-card: 0px 4px 6px -1px rgba(0,0,0,.1), 0px 2px 4px -2px rgba(0,0,0,.1);
   }
@@ -39,16 +34,11 @@
   body {
     font-family: "Inter", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
     background: #ececf0; color: var(--text-primary);
-    padding: 40px 24px 90px; -webkit-font-smoothing: antialiased;
+    padding: 40px 24px 80px; -webkit-font-smoothing: antialiased;
   }
   .page { max-width: 1240px; margin: 0 auto; }
   h1 { font-size: 22px; margin-bottom: 6px; }
-  .sub { color: var(--text-muted); font-size: 13px; line-height: 1.75; margin-bottom: 14px; max-width: 900px; }
-  .ruling {
-    max-width: 900px; background: #f6f2ff; border: 1px solid #ddd0fb; border-radius: 10px;
-    padding: 12px 16px; font-size: 12.5px; color: #5b21b6; line-height: 1.75; margin-bottom: 40px;
-  }
-  .ruling b { font-weight: 600; }
+  .sub { color: var(--text-muted); font-size: 13px; margin-bottom: 40px; }
 
   .part {
     font-size: 12px; font-weight: 700; letter-spacing: .09em; color: var(--text-muted);
@@ -56,24 +46,14 @@
     padding-bottom: 8px; margin: 8px 0 26px;
   }
   .screen { margin-bottom: 46px; }
-  .screen > h2 { font-size: 15px; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
-  .screen > .desc { color: var(--text-muted); font-size: 12.5px; margin-bottom: 16px; max-width: 900px; line-height: 1.7; }
-  .tag {
-    display: inline-block; font-size: 10.5px; font-weight: 600; padding: 2px 7px;
-    border-radius: 999px; vertical-align: 1px;
-  }
-  .tag.new { background: #dcfce7; color: #15803d; }
-  .tag.same { background: #e4e4e7; color: #52525c; }
-  .tag.pin { background: #ede9fe; color: #6d28d9; }
-  .tag.warn { background: #fef3c7; color: #b45309; }
+  .screen > h2 { font-size: 14px; font-weight: 600; margin-bottom: 16px; color: var(--text-secondary); }
+  .cap { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
 
   .cols { display: flex; gap: 34px; flex-wrap: wrap; align-items: flex-start; }
-  .col-cap { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; line-height: 1.6; max-width: 460px; }
-  .col-cap b { color: var(--text-secondary); font-weight: 600; }
 
   svg.ic { flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
-  /* ═══════ 阅读页舞台(给弹层一个真实的来处) ═══════ */
+  /* ═══════ 阅读页舞台 ═══════ */
   .stage {
     width: 470px; background: var(--bg-surface); border: 1px solid var(--border);
     border-radius: 14px; padding: 20px 22px 18px; box-shadow: var(--shadow-card);
@@ -122,19 +102,14 @@
   /* 缓存回放条 */
   .cachebar {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 8px 0 0 12px;
+    padding: 10px 0 0 12px;
   }
   .cachebar .when { font-size: 12px; color: var(--text-muted); }
-  .cachebar .again { font-size: 12px; font-weight: 500; color: var(--accent-text); }
-
-  /* 标注气泡:给样张自己用的解说,不是产品的一部分 */
-  .callout {
-    margin-top: 12px; margin-left: 26px; width: 440px; font-size: 11.5px; line-height: 1.7;
-    color: var(--text-secondary); background: #fff; border: 1px dashed #cfcfd6;
-    border-radius: 10px; padding: 10px 12px;
+  .repill {
+    display: inline-flex; align-items: center; gap: 5px; height: 27px; padding: 0 11px;
+    border: 1px solid rgba(124,58,237,.3); background: var(--accent-bg); color: var(--accent-text);
+    border-radius: 8px; font-size: 11.5px; font-weight: 600;
   }
-  .callout b { color: var(--accent-text); font-weight: 600; }
-  .callout code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; background: var(--bg-input); padding: 1px 4px; border-radius: 4px; }
 
   /* ═══════ 侧边栏 ═══════ */
   .sidebar {
@@ -161,11 +136,6 @@
   .srow .badge {
     margin-left: auto; height: 17px; min-width: 17px; border-radius: 999px; background: var(--accent);
     color: #fff; font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center; padding: 0 4px;
-  }
-  .srow.isnew { position: relative; }
-  .srow.isnew::after {
-    content: ""; position: absolute; left: -16px; top: 8px; bottom: 8px; width: 3px;
-    border-radius: 2px; background: var(--accent);
   }
   .sfoot { border-top: 1px solid var(--border); padding-top: 12px; display: flex; align-items: center; gap: 10px; }
   .sfoot .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
@@ -216,35 +186,33 @@
   }
   .exp strong { font-weight: 600; color: var(--text-primary); }
   .meta { margin-top: 10px; font-size: 11px; color: var(--text-muted); }
-  .acts { display: flex; align-items: center; gap: 6px; flex: none; }
-  .acts.hidden { visibility: hidden; }
-  .abtn {
-    height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 10px;
-    border: 1px solid var(--border); border-radius: 8px; font-size: 11px; color: var(--text-secondary);
-    background: var(--bg-surface);
-  }
-  .abtn.hot { border-color: rgba(124,58,237,.3); background: var(--accent-bg); color: var(--accent-text); }
-  .abtn.danger { border-color: var(--danger-border); background: var(--danger-bg); color: var(--danger-text); }
-  .item.hovering { background: linear-gradient(90deg, rgba(124,58,237,.05), transparent 80%); margin: 0 -12px; padding-left: 12px; padding-right: 12px; border-radius: 10px; }
 
+  /* 行内操作:常驻、纯图标、32px —— 与 AnnotationsContent 同款 */
+  .acts { display: flex; align-items: center; gap: 4px; flex: none; }
+  .iconbtn {
+    width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+    border-radius: 8px; color: var(--text-muted);
+  }
+
+  /* 行内移出确认:中性,不用危险色 */
   .confirm {
-    margin-top: 10px; display: flex; align-items: flex-start; gap: 10px;
-    border: 1px solid var(--danger-border); background: var(--danger-bg);
+    margin-top: 10px; display: flex; align-items: center; gap: 10px;
+    border: 1px solid var(--border); background: var(--bg-muted);
     border-radius: 10px; padding: 10px 12px;
   }
-  .confirm .ic { color: var(--danger-text); margin-top: 2px; }
+  .confirm .ic { color: var(--text-muted); }
   .confirm .txt { flex: 1; min-width: 0; }
-  .confirm .ttl { font-size: 12px; font-weight: 500; color: var(--danger-text); }
-  .confirm .bd { margin-top: 4px; font-size: 10.5px; line-height: 1.55; color: rgba(231,0,11,.8); }
-  .confirm .btns { display: flex; align-items: center; gap: 6px; align-self: center; flex: none; }
-  .cbtn { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 11px; border: 1px solid var(--danger-border); background: var(--bg-surface); color: var(--danger-text); }
-  .cbtn.solid { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .confirm .ttl { font-size: 12px; font-weight: 500; color: var(--text-primary); }
+  .confirm .bd { margin-top: 3px; font-size: 11px; line-height: 1.55; color: var(--text-muted); }
+  .confirm .btns { display: flex; align-items: center; gap: 6px; flex: none; }
+  .cbtn { height: 28px; padding: 0 12px; border-radius: 8px; font-size: 11.5px; color: var(--text-muted); background: transparent; border: 1px solid transparent; display: flex; align-items: center; }
+  .cbtn.keep { border-color: var(--border); background: var(--bg-surface); color: var(--text-primary); font-weight: 500; }
 
   .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 56px 24px; }
   .empty .disc { width: 56px; height: 56px; border-radius: 50%; background: var(--accent-bg); color: var(--accent-text); display: flex; align-items: center; justify-content: center; }
   .empty .h { font-size: 14px; font-weight: 500; color: var(--text-secondary); }
   .empty .p { max-width: 380px; font-size: 12px; line-height: 1.7; color: var(--text-muted); }
-  .empty .clr { margin-top: 4px; height: 32px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; color: var(--text-secondary); background: var(--bg-surface); }
+  .empty .clr { margin-top: 4px; height: 32px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; color: var(--text-secondary); background: var(--bg-surface); display: flex; align-items: center; }
 
   .loadmore { display: flex; justify-content: center; padding: 20px 0 0; }
   .loadmore span { height: 36px; display: flex; align-items: center; padding: 0 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; color: var(--text-muted); }
@@ -260,49 +228,25 @@
   .phone .inp { min-width: 0; width: 100%; }
   .phone .sel-ctl { width: 100%; }
   .phone .panel-body { padding: 16px; min-height: 0; }
-  .phone .item .head { flex-direction: column; gap: 10px; }
-  .phone .acts { width: 100%; }
-  .phone .abtn { height: 36px; flex: 1; justify-content: center; }
+  .phone .iconbtn { width: 40px; height: 40px; }
   .phone .drawer-hint { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: var(--bg-muted); border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-muted); }
-
-  .footnote {
-    margin-top: 20px; max-width: 900px; background: #fffbeb; border: 1px solid #fde68a;
-    border-radius: 10px; padding: 14px 18px; font-size: 12.5px; color: #92400e; line-height: 1.85;
-  }
-  .footnote h4 { font-size: 13px; margin-bottom: 6px; }
-  .footnote li { margin-left: 18px; }
-  .keys { margin-top: 16px; max-width: 900px; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.9; }
-  .keys h4 { font-size: 13px; color: var(--text-primary); margin-bottom: 6px; }
-  .keys code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; background: var(--bg-input); padding: 1px 5px; border-radius: 4px; color: var(--text-primary); }
 </style>
 </head>
 <body>
 <div class="page">
 
   <h1>解释持久化 · 样张</h1>
-  <div class="sub">
-    方案:<code>docs/impls/q257-persist-explanations.md</code> — Phase 2(弹层接上缓存与保存)与 Phase 3(「解释」列表面板)。
-    颜色、圆角、行高全部取自 <code>src/index.css</code> 的浅色主题,组件尺寸对齐 <code>ExplainPopover.tsx</code> 与 <code>AnnotationsContent.tsx</code>,不新造视觉语言。
-  </div>
-  <div class="ruling">
-    <b>O-1 已拍板(2026-08-07):</b>底部操作永远只有三个,主操作随选中内容切换 —— 选中<b>一个词</b>时保持现状「存入词汇」;选中<b>一整段</b>时主操作换成「保存解释」。
-    本样张只渲染定案方案,不做两版对比。
-  </div>
+  <div class="sub">弹层的保存与缓存回放,以及「解释」列表面板。浅色主题。</div>
 
   <!-- ═══════════════════ 一 · 弹层 ═══════════════════ -->
-  <div class="part">一 · 弹层(Phase 2)</div>
+  <div class="part">一 · 弹层</div>
 
-  <!-- 屏 A / B -->
   <div class="screen">
-    <h2>屏 A · 段落选中,流式刚跑完 <span class="tag new">新</span> &nbsp;·&nbsp; 屏 B · 同一条,按下保存之后</h2>
-    <div class="desc">
-      选中的是一整句话,不是一个词,所以左起第一个操作是「保存解释」——它<b>顶替</b>了「存入词汇」的位置,没有变成第四个按钮。
-      右边的「继续追问」「复制」原样不动。按下之后按钮就地变成 ✓「已保存」,禁用(50% 不透明度),不弹提示、不关弹层。
-    </div>
+    <h2>屏 A — 弹层 · 段落选中,解释完成 &nbsp;|&nbsp; 屏 B — 同一条,已保存</h2>
     <div class="cols">
 
       <div>
-        <div class="col-cap"><b>A</b> · 解释刚生成完,还没保存</div>
+        <div class="cap">A · 主操作为「保存解释」</div>
         <div class="stage">
           <div class="chap">The Old Man and the Sea · 第一章</div>
           <p>He was an old man who fished alone in a skiff in the Gulf Stream and <span class="sel">he had gone eighty-four days now without taking a fish.</span> In the first forty days a boy had been with him.</p>
@@ -339,14 +283,10 @@
             </div>
           </div>
         </div>
-        <div class="callout">
-          这条解释在流跑完的那一刻<b>已经悄悄进了库</b>(<code>saved = 0</code>,当缓存用)。按钮做的只是把它翻成 <code>saved = 1</code> —— 也就是「让它出现在解释列表里」。
-          忘了按也不丢:下次重新选中这一段会命中缓存(见屏 D),那时再按。
-        </div>
       </div>
 
       <div>
-        <div class="col-cap"><b>B</b> · 按下「保存解释」之后的同一个弹层</div>
+        <div class="cap">B · 按下之后:✓ 已保存,禁用</div>
         <div class="stage">
           <div class="chap">The Old Man and the Sea · 第一章</div>
           <p>He was an old man who fished alone in a skiff in the Gulf Stream and <span class="sel">he had gone eighty-four days now without taking a fish.</span> In the first forty days a boy had been with him.</p>
@@ -383,25 +323,17 @@
             </div>
           </div>
         </div>
-        <div class="callout">
-          禁用态沿用弹层现有的「已保存」写法(<code>disabled:opacity-50</code>),和「存入词汇」按下之后一模一样——读者不需要学第二套反馈。
-        </div>
       </div>
 
     </div>
   </div>
 
-  <!-- 屏 C / D -->
   <div class="screen">
-    <h2>屏 C · 选中单个词 <span class="tag same">现状不变</span> &nbsp;·&nbsp; 屏 D · 缓存命中(回放) <span class="tag new">新</span></h2>
-    <div class="desc">
-      <b>C</b> 是今天已经在跑的界面,一个像素都不改:选中一个词,主操作还是「存入词汇」,因为对一个词来说存进生词表才是对的行为。
-      <b>D</b> 是回放:同一段第二次被选中,内容一次性整块出现(没有加载圈、没有流式光标),引用块下方多一行极轻的备注和一个「重新解释」出口。这里演示的是<b>已保存过</b>的那一条,所以底部直接是「已保存」——屏 B 与屏 D 在这里合并展示。
-    </div>
+    <h2>屏 C — 弹层 · 单词选中(现状不变) &nbsp;|&nbsp; 屏 D — 弹层 · 缓存命中回放</h2>
     <div class="cols">
 
       <div>
-        <div class="col-cap"><b>C</b> · 单词选中 —— 底部三个操作与今天完全一致</div>
+        <div class="cap">C · 主操作仍是「存入词汇」</div>
         <div class="stage">
           <div class="chap">Klara and the Sun · Part One</div>
           <p>The Sun always had ways to reach us, and we were <span class="sel">grateful</span> for whatever he gave, even on the days he seemed distant.</p>
@@ -438,13 +370,10 @@
             </div>
           </div>
         </div>
-        <div class="callout">
-          判定很朴素:<b>选中内容归一化后不含空格 = 一个词</b>。所以 “grateful” 走这条路,“take a fish” 走屏 A 那条。中间没有第三种情况。
-        </div>
       </div>
 
       <div>
-        <div class="col-cap"><b>D</b> · 三天后重新选中同一段:零 API 成本回放,且这条当初保存过</div>
+        <div class="cap">D · 内容一次性呈现,右上角随时可以「重新解释」</div>
         <div class="stage">
           <div class="chap">The Old Man and the Sea · 第一章</div>
           <p>He was an old man who fished alone in a skiff in the Gulf Stream and <span class="sel">he had gone eighty-four days now without taking a fish.</span> In the first forty days a boy had been with him.</p>
@@ -461,7 +390,10 @@
             <div class="quote"><p>he had gone eighty-four days now without taking a fish</p></div>
             <div class="cachebar">
               <div class="when">上次解释于 3 天前</div>
-              <div class="again">重新解释</div>
+              <div class="repill">
+                <svg class="ic" width="12" height="12" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                重新解释
+              </div>
             </div>
             <div class="prose">
               <p><strong>eighty-four days</strong> 不是随口说的数字。海明威用一个精确到天的计数,把「运气不好」写成了一件可以清点的事——老人自己在数。</p>
@@ -485,88 +417,60 @@
             </div>
           </div>
         </div>
-        <div class="callout">
-          那行字读起来要像一句<b>备注</b>,不像一句警告:12px、灰色、不加图标、不加底色。回放是省下来的等待,不是降级。<br>
-          若这条当初没按保存,底部左起第一个就是可点的「保存解释」(屏 A 的样子)——回放里补按同样算数。「重新解释」会真的发一次请求并覆盖这一条,但<b>不会</b>把它踢出解释列表。
-        </div>
       </div>
 
     </div>
   </div>
 
-  <!-- ═══════════════════ 二 · 入口 ═══════════════════ -->
-  <div class="part">二 · 侧边栏入口(Phase 3)</div>
+  <!-- ═══════════════════ 二 · 侧边栏 ═══════════════════ -->
+  <div class="part">二 · 侧边栏</div>
 
   <div class="screen">
-    <h2>屏 E · 「随记」段新增一行「解释」 <span class="tag new">新</span></h2>
-    <div class="desc">
-      排在「标注」之后、「阅读历程」之前——阅读历程是聚合视图,留在段尾。图标沿用弹层头部那把魔杖(<code>WandSparkles</code>):
-      读者按下的东西和它的归档处共用同一个记号。和同段其他行一样是<b>同页换内容</b>,不新增路由。
-    </div>
-    <div class="cols">
-      <div>
-        <div class="col-cap">当前选中态 —— 紫色竖线标的是相对现状新增的行</div>
-        <div class="sidebar">
-          <div class="brand">
-            <div class="logo"><svg class="ic" width="15" height="15" viewBox="0 0 24 24"><path d="M12 3v3M8 6h8l1 4H7l1-4zM7 10h10v8a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-8z"/></svg></div>
-            <span>Lantern</span>
-          </div>
-          <div class="sec">
-            <h2>书库</h2>
-            <div class="rows">
-              <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg>全部书籍<span class="count">12</span></div>
-              <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>正在阅读<span class="count">3</span></div>
-              <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>已读完<span class="count">5</span></div>
-            </div>
-          </div>
-          <div class="sec">
-            <h2>随记</h2>
-            <div class="rows">
-              <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>对话</div>
-              <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/><path d="m8 13 4-7 4 7"/><path d="M9.1 11h5.7"/></svg>单词</div>
-              <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>复习<span class="badge">7</span></div>
-              <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5z"/><path d="M15 3v6h6"/></svg>标注</div>
-              <div class="srow active isnew"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg>解释</div>
-              <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>阅读历程</div>
-            </div>
-          </div>
-          <div class="sec">
-            <h2>书单</h2>
-            <div class="rows">
-              <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M2 10h20"/></svg>精读会<span class="count">4</span></div>
-              <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M2 10h20"/></svg>消遣<span class="count">7</span></div>
-            </div>
-          </div>
-          <div class="sfoot">
-            <div class="avatar">JW</div>
-            <div><div class="nm">Jianwei</div><div class="sb">设置</div></div>
-          </div>
+    <h2>屏 E — 侧边栏 · 「随记」段新增「解释」,当前选中</h2>
+    <div class="sidebar">
+      <div class="brand">
+        <div class="logo"><svg class="ic" width="15" height="15" viewBox="0 0 24 24"><path d="M12 3v3M8 6h8l1 4H7l1-4zM7 10h10v8a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-8z"/></svg></div>
+        <span>Lantern</span>
+      </div>
+      <div class="sec">
+        <h2>书库</h2>
+        <div class="rows">
+          <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg>全部书籍<span class="count">12</span></div>
+          <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>正在阅读<span class="count">3</span></div>
+          <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>已读完<span class="count">5</span></div>
         </div>
       </div>
-      <div style="max-width:420px">
-        <div class="col-cap" style="max-width:420px">
-          <b>为什么不新开一个页面</b><br>
-          产品 UX 审计把「侧边栏两套导航模型并存」列为 P1 摩擦。随记段的五行现在全都是同页换内容,
-          新增一条路由等于把刚还掉的债又借回来。加一行 filter 的成本是侧边栏一行 + 首页一个分支。
+      <div class="sec">
+        <h2>随记</h2>
+        <div class="rows">
+          <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>对话</div>
+          <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/><path d="m8 13 4-7 4 7"/><path d="M9.1 11h5.7"/></svg>单词</div>
+          <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>复习<span class="badge">7</span></div>
+          <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5z"/><path d="M15 3v6h6"/></svg>标注</div>
+          <div class="srow active"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg>解释</div>
+          <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>阅读历程</div>
         </div>
-        <div class="callout" style="margin-left:0;width:420px">
-          图标复用魔杖会不会和「对话」混?不会:对话是气泡,解释是魔杖,两者在同一列里形状差别足够大。
-          真正的风险是<b>魔杖同时代表「动作」和「归档」</b>——这正是想要的联想,不是冲突。
+      </div>
+      <div class="sec">
+        <h2>书单</h2>
+        <div class="rows">
+          <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M2 10h20"/></svg>精读会<span class="count">4</span></div>
+          <div class="srow"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M2 10h20"/></svg>消遣<span class="count">7</span></div>
         </div>
+      </div>
+      <div class="sfoot">
+        <div class="avatar">JW</div>
+        <div><div class="nm">Jianwei</div><div class="sb">设置</div></div>
       </div>
     </div>
   </div>
 
-  <!-- ═══════════════════ 三 · 列表 ═══════════════════ -->
-  <div class="part">三 · 解释列表(Phase 3)</div>
+  <!-- ═══════════════════ 三 · 解释列表 ═══════════════════ -->
+  <div class="part">三 · 解释列表</div>
 
   <div class="screen">
-    <h2>屏 F · 满态,其中第二项处于 hover <span class="tag new">新</span></h2>
-    <div class="desc">
-      每一项两段文本:上面是当初选中的原文(引用感——紫色竖线 + 衬线斜体 12px,最多两行),下面是解释正文(正文感——13px,最多三行,点整项展开)。
-      读者扫这个列表时找的是「我当时在读什么」,所以原文在上、解释在下。底行是书名 · 章节 · 相对时间。
-      悬停才露出「回到原文」「移出列表」——第二项是<b>冻结的 hover 态</b>,其余项的操作区在真实界面里是不可见的。
-    </div>
+    <h2>屏 F — 列表 · 满态</h2>
+    <div class="cap">每项:选段(两行) / 解释(三行) / 书名 · 章节 · 时间;右侧两个操作常驻</div>
     <div class="panel">
       <div class="panel-head">
         <div class="top">
@@ -591,14 +495,14 @@
                 <div class="exp"><strong>eighty-four days</strong> 不是随口说的数字。海明威用一个精确到天的计数,把「运气不好」写成了一件可以清点的事——老人自己在数。take a fish 这里是「捕到鱼」,take 比 catch 更旧、更像渔民的说法,英文读者会听出一点老派口吻。</div>
                 <div class="meta">The Old Man and the Sea · 第一章 · 3 天前</div>
               </div>
-              <div class="acts hidden">
-                <div class="abtn">回到原文</div>
-                <div class="abtn">移出列表</div>
+              <div class="acts">
+                <div class="iconbtn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></div>
+                <div class="iconbtn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M3 5v14"/><path d="M21 12H7"/><path d="m15 18 6-6-6-6"/></svg></div>
               </div>
             </div>
           </div>
 
-          <div class="item hovering">
+          <div class="item">
             <div class="head">
               <div class="body">
                 <div class="exq"><p>Any large-scale human cooperation — whether a modern state, a medieval church, an ancient city or an archaic tribe — is rooted in common myths that exist only in people's collective imagination. There are no gods in the universe, no nations, no money, no human rights, no laws, and no justice outside the common imagination of human beings.</p></div>
@@ -606,14 +510,8 @@
                 <div class="meta">Sapiens · 第二章 知善恶树 · 昨天</div>
               </div>
               <div class="acts">
-                <div class="abtn hot">
-                  <svg class="ic" width="12" height="12" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
-                  回到原文
-                </div>
-                <div class="abtn danger">
-                  <svg class="ic" width="12" height="12" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                  移出列表
-                </div>
+                <div class="iconbtn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></div>
+                <div class="iconbtn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M3 5v14"/><path d="M21 12H7"/><path d="m15 18 6-6-6-6"/></svg></div>
               </div>
             </div>
           </div>
@@ -625,9 +523,9 @@
                 <div class="exp">Klara 是台机器,却用 <strong>he</strong> 称呼太阳,还认定太阳「有办法找到我们」。石黑一雄没有让她说错语法,他是在让读者听见一个信仰的雏形:太阳是她的能量来源,于是也顺理成章成了她的神。<em>have ways to</em> 口语味重,是「总有办法」,带着一点笃定。</div>
                 <div class="meta">Klara and the Sun · Part One · 5 天前</div>
               </div>
-              <div class="acts hidden">
-                <div class="abtn">回到原文</div>
-                <div class="abtn">移出列表</div>
+              <div class="acts">
+                <div class="iconbtn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></div>
+                <div class="iconbtn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M3 5v14"/><path d="M21 12H7"/><path d="m15 18 6-6-6-6"/></svg></div>
               </div>
             </div>
           </div>
@@ -639,9 +537,9 @@
                 <div class="exp"><strong>skiff</strong> 是单人划的小平底船,没有动力,也没有第二个人。<strong>Gulf Stream</strong> 墨西哥湾暖流,水深流急。两个词并排放,一个「小」一个「大」,老人的处境不用形容词就说完了。</div>
                 <div class="meta">The Old Man and the Sea · 第一章 · 上周</div>
               </div>
-              <div class="acts hidden">
-                <div class="abtn">回到原文</div>
-                <div class="abtn">移出列表</div>
+              <div class="acts">
+                <div class="iconbtn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></div>
+                <div class="iconbtn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M3 5v14"/><path d="M21 12H7"/><path d="m15 18 6-6-6-6"/></svg></div>
               </div>
             </div>
           </div>
@@ -650,20 +548,11 @@
         </div>
       </div>
     </div>
-    <div class="keys">
-      <h4>这一屏里被约束住的三件事</h4>
-      · 原文最多两行、解释最多三行,<b>硬裁</b>——否则一段五百字的选段会把一整屏吃掉。点整项展开看全文。<br>
-      · 只有 <code>saved = 1</code> 的解释出现在这里。自动落库的缓存(可能有几十上百条)一条都不露面。<br>
-      · 没有 cfi 的条目(PDF、纯文本阅读器给不出位置)不显示「回到原文」,其余照常。
-    </div>
   </div>
 
   <div class="screen">
-    <h2>屏 G · 行内移出确认 <span class="tag new">新</span></h2>
-    <div class="desc">
-      照 <code>AnnotationsContent</code> 的 <code>confirmingId</code> 那套:确认框长在被点的那一项下面,不弹模态,不遮挡列表。
-      文案要说清一件容易误解的事——<b>移出列表不等于删掉解释</b>,缓存还在,回到那一段重新解释仍然是零成本。
-    </div>
+    <h2>屏 G — 列表 · 行内移出确认</h2>
+    <div class="cap">中性配色,不弹模态</div>
     <div class="panel">
       <div class="panel-head">
         <div class="top">
@@ -688,14 +577,14 @@
                 <div class="exp"><strong>eighty-four days</strong> 不是随口说的数字。海明威用一个精确到天的计数,把「运气不好」写成了一件可以清点的事——老人自己在数。take a fish 这里是「捕到鱼」,take 比 catch 更旧、更像渔民的说法。</div>
                 <div class="meta">The Old Man and the Sea · 第一章 · 3 天前</div>
               </div>
-              <div class="acts hidden">
-                <div class="abtn">回到原文</div>
-                <div class="abtn">移出列表</div>
+              <div class="acts">
+                <div class="iconbtn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></div>
+                <div class="iconbtn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M3 5v14"/><path d="M21 12H7"/><path d="m15 18 6-6-6-6"/></svg></div>
               </div>
             </div>
           </div>
 
-          <div class="item hovering">
+          <div class="item">
             <div class="head">
               <div class="body">
                 <div class="exq"><p>Any large-scale human cooperation — whether a modern state, a medieval church, an ancient city or an archaic tribe — is rooted in common myths that exist only in people's collective imagination.</p></div>
@@ -703,25 +592,19 @@
                 <div class="meta">Sapiens · 第二章 知善恶树 · 昨天</div>
               </div>
               <div class="acts">
-                <div class="abtn hot">
-                  <svg class="ic" width="12" height="12" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
-                  回到原文
-                </div>
-                <div class="abtn danger">
-                  <svg class="ic" width="12" height="12" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                  移出列表
-                </div>
+                <div class="iconbtn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></div>
+                <div class="iconbtn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M3 5v14"/><path d="M21 12H7"/><path d="m15 18 6-6-6-6"/></svg></div>
               </div>
             </div>
             <div class="confirm">
-              <svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+              <svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M3 5v14"/><path d="M21 12H7"/><path d="m15 18 6-6-6-6"/></svg>
               <div class="txt">
                 <div class="ttl">把这条解释移出列表?</div>
-                <div class="bd">解释本身还留着。下次在书里选中同一段,仍然是立刻出结果、不花一次 API——只是它不再出现在这个列表里。</div>
+                <div class="bd">解释本身还留着,下次在书里选中同一段仍然立刻出结果。</div>
               </div>
               <div class="btns">
                 <div class="cbtn">取消</div>
-                <div class="cbtn solid">移出</div>
+                <div class="cbtn keep">移出</div>
               </div>
             </div>
           </div>
@@ -733,9 +616,9 @@
                 <div class="exp">Klara 是台机器,却用 <strong>he</strong> 称呼太阳,还认定太阳「有办法找到我们」。石黑一雄没有让她说错语法,他是在让读者听见一个信仰的雏形。</div>
                 <div class="meta">Klara and the Sun · Part One · 5 天前</div>
               </div>
-              <div class="acts hidden">
-                <div class="abtn">回到原文</div>
-                <div class="abtn">移出列表</div>
+              <div class="acts">
+                <div class="iconbtn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></div>
+                <div class="iconbtn"><svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M3 5v14"/><path d="M21 12H7"/><path d="m15 18 6-6-6-6"/></svg></div>
               </div>
             </div>
           </div>
@@ -746,15 +629,11 @@
   </div>
 
   <div class="screen">
-    <h2>屏 H · 首次空态 &nbsp;·&nbsp; 屏 I · 搜索无结果 <span class="tag new">新</span></h2>
-    <div class="desc">
-      两种空是两件不同的事,所以图标和文案都不同:<b>H</b> 是「你还没开始」,给一条三步的路;<b>I</b> 是「你筛过头了」,给一个退出口。
-      这套区分照搬 <code>annotations.empty</code> / <code>annotations.noResult</code>,包括那颗 56px 的圆形图标底。
-    </div>
+    <h2>屏 H — 列表 · 首次空态 &nbsp;|&nbsp; 屏 I — 列表 · 搜索无结果</h2>
     <div class="cols">
 
       <div>
-        <div class="col-cap"><b>H</b> · 一条解释都还没保存过</div>
+        <div class="cap">H · 一条都还没保存过</div>
         <div class="panel" style="width:560px">
           <div class="panel-head">
             <div class="top">
@@ -782,7 +661,7 @@
       </div>
 
       <div>
-        <div class="col-cap"><b>I</b> · 有数据,但当前搜索词 + 书籍筛选下没有命中</div>
+        <div class="cap">I · 有数据,当前筛选无命中</div>
         <div class="panel" style="width:560px">
           <div class="panel-head">
             <div class="top">
@@ -814,111 +693,57 @@
   </div>
 
   <div class="screen">
-    <h2>屏 J · 窄窗 / 抽屉态(375px) <span class="tag new">新</span></h2>
-    <div class="desc">
-      窄窗下侧边栏收进抽屉,内容区占满整宽。三处变化:搜索框和书籍下拉<b>各占一行</b>;两个操作<b>常驻</b>(手指没有 hover),并排铺满一行、高度抬到 36px;
-      原文与解释的两行/三行裁剪不变——正是在窄窗里它最有用。
-    </div>
-    <div class="cols">
-      <div>
-        <div class="phone">
-          <div class="drawer-hint">
-            <svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
-            抽屉已收起 · 当前:随记 › 解释
+    <h2>屏 J — 列表 · 窄窗抽屉态(375px)</h2>
+    <div class="cap">搜索与筛选各占一行,操作图标放大到 40px</div>
+    <div class="phone">
+      <div class="drawer-hint">
+        <svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
+        随记 › 解释
+      </div>
+      <div class="panel-head">
+        <div class="top">
+          <div>
+            <h3>解释</h3>
+            <div class="st">连着当时读的那一句。</div>
           </div>
-          <div class="panel-head">
-            <div class="top">
-              <div>
-                <h3>解释</h3>
-                <div class="st">连着当时读的那一句。</div>
+          <div class="cnt">14 条</div>
+        </div>
+        <div class="filters">
+          <div class="inp ph"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>搜索原文或解释内容</div>
+          <div class="sel-ctl">全部书籍<svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="list">
+          <div class="item">
+            <div class="head">
+              <div class="body">
+                <div class="exq"><p>he had gone eighty-four days now without taking a fish</p></div>
+                <div class="exp"><strong>eighty-four days</strong> 不是随口说的数字。海明威用一个精确到天的计数,把「运气不好」写成了一件可以清点的事——老人自己在数。take a fish 是「捕到鱼」,比 catch 更旧。</div>
+                <div class="meta">The Old Man and the Sea · 第一章 · 3 天前</div>
               </div>
-              <div class="cnt">14 条</div>
-            </div>
-            <div class="filters">
-              <div class="inp ph"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>搜索原文或解释内容</div>
-              <div class="sel-ctl">全部书籍<svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
+              <div class="acts">
+                <div class="iconbtn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></div>
+                <div class="iconbtn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M3 5v14"/><path d="M21 12H7"/><path d="m15 18 6-6-6-6"/></svg></div>
+              </div>
             </div>
           </div>
-          <div class="panel-body">
-            <div class="list">
-              <div class="item">
-                <div class="head">
-                  <div class="body">
-                    <div class="exq"><p>he had gone eighty-four days now without taking a fish</p></div>
-                    <div class="exp"><strong>eighty-four days</strong> 不是随口说的数字。海明威用一个精确到天的计数,把「运气不好」写成了一件可以清点的事——老人自己在数。take a fish 是「捕到鱼」,比 catch 更旧。</div>
-                    <div class="meta">The Old Man and the Sea · 第一章 · 3 天前</div>
-                  </div>
-                  <div class="acts">
-                    <div class="abtn">
-                      <svg class="ic" width="12" height="12" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
-                      回到原文
-                    </div>
-                    <div class="abtn">
-                      <svg class="ic" width="12" height="12" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                      移出列表
-                    </div>
-                  </div>
-                </div>
+          <div class="item">
+            <div class="head">
+              <div class="body">
+                <div class="exq"><p>Any large-scale human cooperation — whether a modern state, a medieval church, an ancient city or an archaic tribe — is rooted in common myths that exist only in people's collective imagination.</p></div>
+                <div class="exp">这一句是全书的骨架。<strong>rooted in</strong>「根植于」把合作说成一株植物,根不在制度里,在故事里。myth 不是「神话故事」,而是「大家都信、但只存在于想象中的东西」。</div>
+                <div class="meta">Sapiens · 第二章 · 昨天</div>
               </div>
-              <div class="item">
-                <div class="head">
-                  <div class="body">
-                    <div class="exq"><p>Any large-scale human cooperation — whether a modern state, a medieval church, an ancient city or an archaic tribe — is rooted in common myths.</p></div>
-                    <div class="exp">这一句是全书的骨架。<strong>rooted in</strong>「根植于」把合作说成一株植物,根不在制度里,在故事里。myth 不是「神话故事」,而是「大家都信、但只存在于想象中的东西」。</div>
-                    <div class="meta">Sapiens · 第二章 · 昨天</div>
-                  </div>
-                  <div class="acts">
-                    <div class="abtn">
-                      <svg class="ic" width="12" height="12" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
-                      回到原文
-                    </div>
-                    <div class="abtn">
-                      <svg class="ic" width="12" height="12" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                      移出列表
-                    </div>
-                  </div>
-                </div>
+              <div class="acts">
+                <div class="iconbtn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></div>
+                <div class="iconbtn"><svg class="ic" width="16" height="16" viewBox="0 0 24 24"><path d="M3 5v14"/><path d="M21 12H7"/><path d="m15 18 6-6-6-6"/></svg></div>
               </div>
             </div>
           </div>
         </div>
       </div>
-      <div style="max-width:420px">
-        <div class="callout" style="margin-left:0;width:420px">
-          弹层在窄窗下不需要单独设计:它已经有夹取逻辑(超出视口就贴边),440px 在 375px 屏上会自动缩到边距内。
-          底部三个操作在最窄处仍然放得下——这也是 O-1 不做四按钮版的一个附带好处。
-        </div>
-      </div>
     </div>
-  </div>
-
-  <!-- ═══════════════════ 附 ═══════════════════ -->
-  <div class="part">附 · 文案与差异</div>
-
-  <div class="keys">
-    <h4>本样张涉及的新增文案(中文;英文另配)</h4>
-    <code>explain.saveExplanation</code> = 保存解释 &nbsp;·&nbsp;
-    <code>explain.explanationSaved</code> = 已保存<br>
-    <code>explain.cachedAt</code> = 上次解释于 {{when}} &nbsp;·&nbsp;
-    <code>explain.reexplain</code> = 重新解释<br>
-    <code>sidebar.explanations</code> = 解释<br>
-    <code>explanations.title</code> = 解释 &nbsp;·&nbsp;
-    <code>explanations.subtitle</code> = 你保存下来的每一段解释,连着当时读的那一句。<br>
-    <code>explanations.search</code> = 搜索原文或解释内容 &nbsp;·&nbsp;
-    <code>explanations.locate</code> = 回到原文 &nbsp;·&nbsp;
-    <code>explanations.remove</code> = 移出列表<br>
-    <code>explanations.remove.title</code> = 把这条解释移出列表? &nbsp;·&nbsp;
-    <code>explanations.remove.body</code> = 解释本身还留着……<br>
-    <code>explanations.empty</code> / <code>emptyHint</code> / <code>noResult</code> / <code>noResultHint</code> —— 见屏 H、屏 I
-  </div>
-
-  <div class="footnote">
-    <h4>三处「计划文字」与「代码现状」对不上的地方,样张按代码渲染,请确认</h4>
-    <ul>
-      <li>计划里叫「存入词典」,代码里的中文实际是 <b>「存入词汇」</b>(<code>lookup.saveToDict</code>);「追问」实际是 <b>「继续追问」</b>(<code>lookup.askFollowUp</code>)。样张用了代码里的现有文案。</li>
-      <li>计划说新条目排在「笔记」之后、「阅读统计」之前;侧边栏里这两行的实际中文是 <b>「标注」</b> 和 <b>「阅读历程」</b>,分组名是 <b>「随记」</b> 而不是「记录」。位置照计划的意思落,名字用现状。</li>
-      <li>计划 §3.2 写「移出列表」的图标与措辞未定,样张用了垃圾桶图标 + 危险色确认框(照 <code>AnnotationsContent</code> 的删除确认)。若觉得垃圾桶太重(它并不真删),可以换成「移出」箭头图标 —— 这一条留给你拍。</li>
-    </ul>
   </div>
 
 </div>
