@@ -86,6 +86,9 @@
       "signingIdentity": "-",
       "entitlements": "Entitlements.adhoc.plist"
     },
+    "iOS": {
+      "developmentTeam": "J622D6994N"
+    },
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256"
