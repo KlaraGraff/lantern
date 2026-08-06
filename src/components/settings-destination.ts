@@ -3,6 +3,7 @@ export type SettingsSection =
   | "appearance"
   | "reading"
   | "services"
+  | "autoAnalysis"
   | "tools"
   | "librarySync"
   | "bookSources"
@@ -21,6 +22,7 @@ const SECTIONS = new Set<SettingsSection>([
   "appearance",
   "reading",
   "services",
+  "autoAnalysis",
   "tools",
   "librarySync",
   "bookSources",

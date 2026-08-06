@@ -162,11 +162,29 @@ pub struct AutoAnalysisConsole {
     /// it is "no answer yet" — and the console shows nothing rather than a
     /// number that would be wrong.
     pub ratio_percent: Option<i64>,
+    /// Distinct providers that billed anything in the window, sorted.
+    ///
+    /// The console never converts tokens into money, so the only honest
+    /// answer to "what did this cost" is a link to whoever is actually
+    /// keeping the account. Which provider that is comes from what ran, not
+    /// from what is configured — failover means the two differ.
+    pub providers: Vec<String>,
+}
+
+fn providers_in_window(db: &Db, since_ms: i64) -> AppResult<Vec<String>> {
+    let conn = db.reader();
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT provider FROM ai_usage_records
+         WHERE created_at >= ?1 AND provider <> '' ORDER BY provider",
+    )?;
+    let rows = stmt.query_map(params![since_ms], |row| row.get::<_, String>(0))?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
 
 fn console_inner(db: &Db, since_ms: i64) -> AppResult<AutoAnalysisConsole> {
     let auto = crate::ai::usage::by_feature(db, since_ms, "auto")?;
     let totals = crate::ai::usage::summary(db, since_ms)?;
+    let providers = providers_in_window(db, since_ms)?;
     let conn = db.reader();
     let jobs = JOBS
         .iter()
@@ -195,6 +213,7 @@ fn console_inner(db: &Db, since_ms: i64) -> AppResult<AutoAnalysisConsole> {
         auto_tokens,
         user_tokens,
         ratio_percent: (user_tokens > 0).then(|| auto_tokens.saturating_mul(100) / user_tokens),
+        providers,
     })
 }
 
@@ -364,6 +383,27 @@ mod tests {
         assert_eq!(console.user_tokens, 0);
         // Not Some(0) and not a division by zero — "no answer yet".
         assert_eq!(console.ratio_percent, None);
+    }
+
+    #[test]
+    fn the_billing_link_follows_whoever_actually_ran() {
+        let (_dir, db) = setup();
+        insert_usage(&db, "user", "lookup", 5_000, 10);
+        insert_usage(&db, "auto", "reading_review", 5_000, 10);
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "UPDATE ai_usage_records SET provider = 'deepseek' WHERE origin = 'auto'",
+                [],
+            )
+            .unwrap();
+        }
+        // Both providers billed something, so both are owed a link —
+        // failover means what ran is not what is configured.
+        let console = console_inner(&db, 0).unwrap();
+        assert_eq!(console.providers, vec!["anthropic", "deepseek"]);
+        // And a window that saw nothing offers no link at all.
+        assert!(console_inner(&db, 900_000).unwrap().providers.is_empty());
     }
 
     #[test]

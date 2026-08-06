@@ -67,6 +67,11 @@
   --color-danger-border: #ffc9c9;
   --color-danger-text: #e7000b;
 
+  /* Amber. For things the reader should read before they scroll past —
+     what an unattended job sends off this device — where red would claim
+     something is wrong and grey would let it be skipped. */
+  --color-warning: #b8791c;
+
   --color-link: #155dfc;
   --color-link-light: #2b7fff;
 
@@ -143,6 +148,8 @@
   --color-danger-bg: #450a0a4d;
   --color-danger-border: #991b1b;
   --color-danger-text: #f87171;
+
+  --color-warning: #e0a75a;
 
   --color-link: #60a5fa;
   --color-link-light: #93bbfd;

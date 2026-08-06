@@ -31,6 +31,14 @@ export interface AiPreset {
   cost: CostTier | null;
   /** Official key page, opened in the system browser. `null` disables the button. */
   keyPage: string | null;
+  /**
+   * The provider's own billing/usage page. The auto-analysis console links
+   * here for anything involving money, because it never converts tokens into
+   * currency itself. `null` for a provider that bills nothing (a local model)
+   * or whose page we cannot know (a custom endpoint) — the console then shows
+   * no link rather than a guess.
+   */
+  usagePage: string | null;
   /** i18n key for the provider's display name. */
   nameKey: string;
   /** i18n key for the one-line blurb in the catalog. */
@@ -66,6 +74,7 @@ export const AI_PRESETS: AiPreset[] = [
     keepAlive: null,
     cost: "metered",
     keyPage: "https://platform.deepseek.com/api_keys",
+    usagePage: "https://platform.deepseek.com/usage",
     nameKey: "settings.ai.presetName.deepseek",
     descriptionKey: "settings.ai.presetDesc.deepseek",
   },
@@ -76,6 +85,7 @@ export const AI_PRESETS: AiPreset[] = [
     keepAlive: null,
     cost: "metered",
     keyPage: "https://platform.openai.com/api-keys",
+    usagePage: "https://platform.openai.com/usage",
     nameKey: "settings.ai.presetName.openai",
     descriptionKey: "settings.ai.presetDesc.openai",
   },
@@ -86,6 +96,7 @@ export const AI_PRESETS: AiPreset[] = [
     keepAlive: null,
     cost: "metered",
     keyPage: "https://console.anthropic.com/settings/keys",
+    usagePage: "https://console.anthropic.com/settings/usage",
     nameKey: "settings.ai.presetName.anthropic",
     descriptionKey: "settings.ai.presetDesc.anthropic",
   },
@@ -96,6 +107,7 @@ export const AI_PRESETS: AiPreset[] = [
     keepAlive: "30m",
     cost: "local",
     keyPage: null,
+    usagePage: null,
     nameKey: "settings.ai.presetName.ollama",
     descriptionKey: "settings.ai.presetDesc.ollama",
   },
@@ -106,6 +118,7 @@ export const AI_PRESETS: AiPreset[] = [
     keepAlive: null,
     cost: null,
     keyPage: null,
+    usagePage: null,
     nameKey: "settings.ai.customCompatible",
     descriptionKey: "settings.ai.presetDesc.custom",
   },

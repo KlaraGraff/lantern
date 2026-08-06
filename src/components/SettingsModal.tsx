@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Globe, BookOpen, Bot, GraduationCap, Cloud, Compass, Info, Terminal, X, ChevronRight, Palette } from "lucide-react";
+import { Globe, BookOpen, Bot, GraduationCap, Cloud, Compass, Info, Terminal, X, ChevronRight, Palette, Sparkles } from "lucide-react";
 import GeneralSettings from "./settings/GeneralSettings";
 import AppearanceSettings from "./settings/AppearanceSettings";
 import ReadingSettings from "./settings/ReadingSettings";
 import ServicesSettings from "./settings/ServicesSettings";
+import AutoAnalysisSettings from "./settings/AutoAnalysisSettings";
 import ToolsSettings, { type ToolsPreviewState } from "./settings/ToolsSettings";
 import CardPreview from "./settings/CardPreview";
 import PassiveVocabPreview, { type PassiveVocabPreviewState } from "./settings/PassiveVocabPreview";
@@ -217,6 +218,10 @@ export default function SettingsModal({ open, onClose, initialSection = "general
     // The subtitle lists what the tab holds, and OCR is not in it where the
     // platform cannot run OCR — the tab would be advertising a missing view.
     { id: "services", label: t("settings.services.shortTitle"), subtitle: t(platform.hasOcr ? "settings.services.shortSubtitle" : "settings.services.shortSubtitleNoOcr"), icon: Bot },
+    // Directly under 服务 rather than beside the other AI features: the
+    // question this tab answers is "what runs without me", which is about
+    // the account that gets billed, not about the features themselves.
+    { id: "autoAnalysis", label: t("settings.autoAnalysis.title"), subtitle: t("settings.autoAnalysis.subtitle"), icon: Sparkles },
     { id: "tools", label: t("settings.tools.title"), subtitle: t("settings.tools.subtitle"), paneSubtitle: t("settings.tools.paneSubtitle"), icon: GraduationCap },
     { id: "librarySync", label: t("settings.librarySync.title"), subtitle: t("settings.librarySync.subtitle"), icon: Cloud },
     { id: "bookSources", label: t("settings.bookSources.title"), subtitle: t("settings.bookSources.subtitle"), icon: Compass },
@@ -248,6 +253,7 @@ export default function SettingsModal({ open, onClose, initialSection = "general
           initialView={initialView}
         />
       );
+      case "autoAnalysis": return <AutoAnalysisSettings />;
       case "tools": return (
         <ToolsSettings
           {...settingsProps}
