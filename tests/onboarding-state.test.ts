@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  AUTO_ANALYSIS_INTRO_KEY,
   ONBOARDING_STATE_KEY,
   ONBOARDING_DONE,
   afterAdvance,
+  shouldIntroduceAutoAnalysis,
   groupBookSources,
   isAiConfigured,
   isCefrLevelUnset,
@@ -88,4 +90,20 @@ test("book sources split into the library group before the third-party group", (
   const shuffled = [...BUILT_IN_BOOK_SOURCES].reverse();
   const regrouped = groupBookSources(shuffled);
   assert.deepEqual(regrouped.library.map((s) => s.id), [...library].reverse().map((s) => s.id));
+});
+
+test("what runs on its own is disclosed once, by whichever surface gets there first", () => {
+  assert.ok(shouldIntroduceAutoAnalysis({}));
+  assert.ok(shouldIntroduceAutoAnalysis({ [AUTO_ANALYSIS_INTRO_KEY]: "" }));
+  // The onboarding step and the AI settings pane both read this one key, so
+  // the reader is told exactly once no matter which of them said it.
+  assert.ok(!shouldIntroduceAutoAnalysis({ [AUTO_ANALYSIS_INTRO_KEY]: "true" }));
+});
+
+test("the fourth step is not something you can advance into", () => {
+  // It is reached only by *completing* the AI step. Skipping step 3 ends
+  // onboarding, which is what keeps the disclosure away from someone who
+  // configured no service and therefore has no quota to spend.
+  assert.equal(afterAdvance(3), "done");
+  assert.equal(afterAdvance(4), "done");
 });

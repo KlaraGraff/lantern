@@ -19,16 +19,36 @@ export function shouldShowOnboarding(settings: Record<string, string>): boolean 
   return settings[ONBOARDING_STATE_KEY] !== ONBOARDING_DONE;
 }
 
-export type OnboardingStep = 1 | 2 | 3;
+export type OnboardingStep = 1 | 2 | 3 | 4;
 
 /**
  * Both "Next" and "Skip" move to the same next step — skipping only omits
  * that step's save, it never abandons the whole card. Finishing step 3 either
  * way reaches `"done"`. This is the one transition rule every step's footer
  * button drives, so it is tested once here instead of once per button.
+ *
+ * Step 4 is not on this path. It is reached only by *completing* step 3, not
+ * by advancing past it — see `shouldIntroduceAutoAnalysis`.
  */
 export function afterAdvance(step: OnboardingStep): OnboardingStep | "done" {
   return step >= 3 ? "done" : ((step + 1) as OnboardingStep);
+}
+
+/** Written once the reader has been told what runs on its own. */
+export const AUTO_ANALYSIS_INTRO_KEY = "auto_analysis_intro_shown";
+
+/**
+ * Whether the auto-analysis disclosure still needs showing.
+ *
+ * It is said once and never again. Two surfaces can be the one to say it —
+ * the last onboarding step, and the AI settings pane the moment a service
+ * first connects there — and both consult this, so whichever happens first
+ * retires the other. Someone who skips the AI step never sees it from
+ * either place: with no service configured there is no quota to spend, and
+ * a disclosure about spending nothing is noise.
+ */
+export function shouldIntroduceAutoAnalysis(settings: Record<string, string>): boolean {
+  return settings[AUTO_ANALYSIS_INTRO_KEY] !== "true";
 }
 
 /** `cefr_level` is never seeded by the backend, so its absence in settings

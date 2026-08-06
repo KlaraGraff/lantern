@@ -1,14 +1,22 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createPortal } from "react-dom";
 import { Check } from "lucide-react";
 import { useSettings } from "../../hooks/useSettings";
 import { useOpenBook } from "../../hooks/useOpenBook";
 import { type Book, IMPORT_SLOW_HINT_MS } from "../../hooks/useBooks";
-import { ONBOARDING_DONE, ONBOARDING_STATE_KEY, shouldShowOnboarding, type OnboardingStep } from "./onboarding-state";
+import {
+  AUTO_ANALYSIS_INTRO_KEY,
+  ONBOARDING_DONE,
+  ONBOARDING_STATE_KEY,
+  shouldIntroduceAutoAnalysis,
+  shouldShowOnboarding,
+  type OnboardingStep,
+} from "./onboarding-state";
 import StepLevel from "./StepLevel";
 import StepImport from "./StepImport";
 import StepAi from "./StepAi";
+import AutoAnalysisIntro from "./AutoAnalysisIntro";
 import Review from "./Review";
 
 const FOCUSABLE_SELECTOR = [
@@ -51,6 +59,11 @@ export default function OnboardingCard() {
   // query, since the review screen only needs to know what happened in *this*
   // run to phrase its hint correctly.
   const [aiConnected, setAiConnected] = useState(false);
+  // Whether this run includes the auto-analysis step. Decided when step 3
+  // completes, because skipping step 3 means there is no quota to disclose
+  // the spending of — and promising a fourth dot before then would advertise
+  // a step that may never arrive.
+  const [autoAnalysisStep, setAutoAnalysisStep] = useState(false);
 
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -67,6 +80,7 @@ export default function OnboardingCard() {
       setImportedBook(null);
       setImportError(null);
       setAiConnected(false);
+      setAutoAnalysisStep(false);
     }
     wasVisibleRef.current = visible;
   }, [visible]);
@@ -99,6 +113,22 @@ export default function OnboardingCard() {
     setImportError(message);
   };
 
+  // Only a *completed* AI step opens the fourth one, and only if the
+  // disclosure has not already been made somewhere else.
+  const completeAiStep = () => {
+    if (shouldIntroduceAutoAnalysis(settings)) {
+      setAutoAnalysisStep(true);
+      setStep(4);
+    } else {
+      setPhase("review");
+    }
+  };
+
+  const finishAutoAnalysisStep = useCallback(() => {
+    void save(AUTO_ANALYSIS_INTRO_KEY, "true");
+    setPhase("review");
+  }, [save]);
+
   const startReading = () => {
     void save(ONBOARDING_STATE_KEY, ONBOARDING_DONE);
     if (importedBook) openBook(importedBook.id);
@@ -114,6 +144,8 @@ export default function OnboardingCard() {
         event.stopPropagation();
         if (phase === "review") {
           startReading();
+        } else if (step === 4) {
+          finishAutoAnalysisStep();
         } else if (step === 3) {
           void save(ONBOARDING_STATE_KEY, ONBOARDING_DONE);
         } else {
@@ -141,6 +173,8 @@ export default function OnboardingCard() {
 
   if (!visible) return null;
 
+  const dots = autoAnalysisStep ? ([1, 2, 3, 4] as const) : ([1, 2, 3] as const);
+
   const progressLabel = phase === "review"
     ? t("onboarding.progress.done")
     : step === 3
@@ -158,7 +192,7 @@ export default function OnboardingCard() {
       >
         <div className="flex items-center justify-between gap-3 border-b border-border-light px-5 py-3">
           <div className="flex items-center gap-1.5">
-            {([1, 2, 3] as const).map((dot) => {
+            {dots.map((dot) => {
               const done = phase === "review" || step > dot;
               const current = phase === "steps" && step === dot;
               return (
@@ -208,12 +242,14 @@ export default function OnboardingCard() {
               onNext={() => setStep(3)}
               onSkip={() => setStep(3)}
             />
-          ) : (
+          ) : step === 3 ? (
             <StepAi
               bookTitle={importedBook?.title ?? null}
-              onComplete={() => setPhase("review")}
+              onComplete={completeAiStep}
               onSkip={() => void save(ONBOARDING_STATE_KEY, ONBOARDING_DONE)}
             />
+          ) : (
+            <AutoAnalysisIntro onDone={finishAutoAnalysisStep} />
           )}
         </div>
       </div>

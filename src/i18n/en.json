@@ -1736,6 +1736,11 @@
   "onboarding.next": "Next",
   "onboarding.progress.stepOf": "Step {{step}} of 3",
   "onboarding.progress.last": "Last step",
+  "onboarding.autoAnalysis.title": "From here, Lantern does a few things on its own",
+  "onboarding.autoAnalysis.why": "It tidies up while you are not doing anything, on the quota you just set up.",
+  "onboarding.autoAnalysis.canTurnOff": "Each of these can be switched off on its own under Settings → Automatic Analysis, and each stays available by hand afterwards.",
+  "onboarding.autoAnalysis.chooseMyself": "Let me pick",
+  "onboarding.autoAnalysis.accept": "Got it",
   "onboarding.progress.done": "All set",
 
   "onboarding.step1.title": "Where's your English level roughly?",

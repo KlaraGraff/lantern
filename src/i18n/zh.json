@@ -1736,6 +1736,11 @@
   "onboarding.next": "下一步",
   "onboarding.progress.stepOf": "第 {{step}} 步，共 3 步",
   "onboarding.progress.last": "最后一步",
+  "onboarding.autoAnalysis.title": "接下来 Lantern 会自己做这几件事",
+  "onboarding.autoAnalysis.why": "让它在你不操作的时候帮你整理。用的是你刚配好的那个额度。",
+  "onboarding.autoAnalysis.canTurnOff": "这些都能随时在「设置 → 自动分析」里单独关掉，关掉后仍然可以手动点。",
+  "onboarding.autoAnalysis.chooseMyself": "我要自己挑",
+  "onboarding.autoAnalysis.accept": "好",
   "onboarding.progress.done": "好了",
 
   "onboarding.step1.title": "你的英语大概在哪一档？",

@@ -16,6 +16,8 @@ import AiServiceCard, {
 import { AI_PRESETS, COST_TIER_CLASSES, presetFor } from "./aiPresets";
 import type { SettingsProps } from "./types";
 import { useSettings } from "../../hooks/useSettings";
+import AutoAnalysisIntro from "../onboarding/AutoAnalysisIntro";
+import { AUTO_ANALYSIS_INTRO_KEY, shouldIntroduceAutoAnalysis } from "../onboarding/onboarding-state";
 
 interface AiSettingsProps extends SettingsProps {
   onSaveRef?: (save: (() => void) | null) => void;
@@ -540,6 +542,13 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     await applyProfileOrder(next);
   };
 
+  const [introduceAuto, setIntroduceAuto] = useState(false);
+
+  const dismissAutoIntro = useCallback(() => {
+    setIntroduceAuto(false);
+    void saveSetting(AUTO_ANALYSIS_INTRO_KEY, "true");
+  }, [saveSetting]);
+
   const testProfile = async (profile: AiProfile) => {
     setTestingId(profile.id);
     setError(null);
@@ -589,6 +598,10 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
         setError(errorText(refreshError));
       }
       showSavedToast(result.success ? t("settings.ai.connectionAvailable") : t("settings.ai.connectionUnavailable"));
+      // A working service is the first moment there is anything to disclose,
+      // and it is the moment the reader is looking at this pane. Said here,
+      // in place, rather than saved up for a dialog later.
+      if (result.success && shouldIntroduceAutoAnalysis(settings)) setIntroduceAuto(true);
     } catch (nextError) {
       setError(errorText(nextError));
     } finally {
@@ -732,6 +745,11 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
 
   return (
     <div className="pb-6 pt-2">
+      {introduceAuto ? (
+        <div className="mb-5 rounded-[10px] border border-accent-bg bg-accent-bg px-4 py-4">
+          <AutoAnalysisIntro onDone={dismissAutoIntro} />
+        </div>
+      ) : null}
       <div className="mb-3">
         <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.chatModels")}</h4>
         <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">{t("settings.ai.chatModelsHint")}</p>
