@@ -1952,6 +1952,8 @@ export default function Reader() {
               variant="icon"
               size="md"
               active={sidePanel === "bookmarks"}
+              aria-label={t("bookmarks.tab.bookmarks")}
+              title={t("bookmarks.tab.bookmarks")}
               onClick={() => togglePanel("bookmarks")}
             >
               <Bookmark size={16} />
@@ -1961,6 +1963,8 @@ export default function Reader() {
               variant="icon"
               size="md"
               active={sidePanel === "vocab"}
+              aria-label={t("vocab.title")}
+              title={t("vocab.title")}
               onClick={() => togglePanel("vocab")}
             >
               <Languages size={16} />
