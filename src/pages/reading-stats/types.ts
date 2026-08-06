@@ -1,3 +1,5 @@
+import type { LevelObservation } from "./level-observation";
+
 export type ReadingStatsView = "history" | "calendar";
 export type ReadingStatsRange = "last30Days" | "year" | "all";
 
@@ -112,6 +114,19 @@ export interface AutoReviewOffer {
 export interface ReadingStatsAdapter {
   loadDashboard(query: ReadingStatsQuery): Promise<ReadingStatsDashboard>;
   generateReview(query: ReadingStatsQuery): Promise<CachedReadingReview>;
+  /**
+   * The level observation as it stands, or `null` when there is nothing to
+   * say — no declared level, too little record, or the reader has turned the
+   * comparison off. Optional, and null-on-failure: this row is not something
+   * anyone asked for, so it says nothing rather than reporting an error.
+   */
+  loadLevelObservation?(): Promise<LevelObservation | null>;
+  /** Apply the suggested level. Only ever called from the reader's press. */
+  applyLevelSuggestion?(level: string): Promise<void>;
+  /** Keep the declared level. Settles this observation for a while. */
+  keepDeclaredLevel?(): Promise<void>;
+  /** Stop drawing the comparison at all. */
+  stopLevelObservation?(): Promise<void>;
   /** The offer as it stands, without changing anything. */
   autoReviewOffer?(): Promise<AutoReviewOffer>;
   /** Records one run by hand and returns the offer that results from it. */
@@ -182,6 +197,20 @@ export interface ReadingStatsLabels {
   autoOfferBodyWithCost(tokens: number): string;
   autoOfferAccept: string;
   autoOfferDecline: string;
+  levelHeading: string;
+  levelDescription: string;
+  levelDeclared(level: string): string;
+  levelBasis(days: number): string;
+  /** The observation sentence, with its emphasized run already marked. */
+  levelBody(observation: LevelObservation): string;
+  /** What pressing the button would change. `null` when there is no button. */
+  levelEffect(observation: LevelObservation): string | null;
+  levelApply(level: string): string;
+  levelKeep(level: string): string;
+  levelStop: string;
+  levelOpenSettings: string;
+  /** The fine print, mandatory sentence first. Never empty. */
+  levelRules(observation: LevelObservation): string[];
   progressLabel: string;
   sessionCountLabel: (count: number) => string;
   formatDuration: (seconds: number) => string;

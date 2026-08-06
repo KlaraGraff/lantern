@@ -11,6 +11,7 @@ pub mod dictionary;
 pub mod enhanced_fonts;
 pub mod fonts;
 pub mod language_assessments;
+pub mod level_observation;
 pub mod lookup_history;
 pub mod mastery_events;
 pub mod mcp;

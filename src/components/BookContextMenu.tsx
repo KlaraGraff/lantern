@@ -7,6 +7,7 @@ import {
   FolderMinus,
   Pencil,
   Database,
+  Info,
   Trash2,
   ChevronRight,
   Plus,
@@ -22,6 +23,7 @@ interface BookContextMenuProps {
   bookStatus: string;
   activeCollectionId?: string;
   onClose: () => void;
+  onViewDetails: () => void;
   onMarkFinished: () => void;
   onMarkReading: () => void;
   onMarkUnread: () => void;
@@ -38,6 +40,7 @@ export default function BookContextMenu({
   bookStatus,
   activeCollectionId,
   onClose,
+  onViewDetails,
   onMarkFinished,
   onMarkReading,
   onMarkUnread,
@@ -154,6 +157,22 @@ export default function BookContextMenu({
             {statusLabel}
           </span>
         </button>
+
+        {/* Details. First actionable item, because it is the only one that
+            opens something rather than changing something — and because the
+            left click on a book goes straight to the reader, which leaves the
+            right click as the only way in. */}
+        <button
+          onClick={onViewDetails}
+          className="flex items-center gap-3 w-[calc(100%-8px)] mx-1 px-3 h-[31.5px] rounded-sm text-left cursor-pointer hover:bg-accent-bg transition-colors"
+        >
+          <Info size={16} className="text-text-muted" />
+          <span className="flex-1 text-[13px] font-medium text-text-primary tracking-[-0.08px]">
+            {t("bookMenu.viewDetails")}
+          </span>
+        </button>
+
+        <div className="mx-3 my-1 h-px bg-border/80" />
 
         {/* Status actions — show all transitions except the current status */}
         {bookStatus !== "reading" && (

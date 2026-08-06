@@ -952,6 +952,10 @@ pub fn run() {
             commands::auto_analysis::set_auto_analysis_enabled,
             commands::auto_analysis::note_manual_analysis_run,
             commands::auto_analysis::dismiss_auto_analysis_recommendation,
+            // The declared level, held against the reader's own record.
+            // Reads and remembers a dismissal; never writes cefr_level.
+            commands::level_observation::get_level_observation,
+            commands::level_observation::dismiss_level_observation,
             // Local lookup history
             commands::lookup_history::save_lookup_record,
             commands::lookup_history::get_cached_lookup,

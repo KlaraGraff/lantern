@@ -28,6 +28,7 @@ const isMainWindow = getCurrentWebviewWindow().label === "main";
 // renderer, and drag-and-drop before a single book cover appears.
 const Reader = lazy(() => import("./pages/Reader"));
 const ReadingStatsRoute = lazy(() => import("./pages/ReadingStatsRoute"));
+const BookDetails = lazy(() => import("./pages/BookDetails"));
 
 // Chunks load from the local filesystem here, so this is normally on screen
 // for less than a frame. It exists only so that frame is a plain rect in the
@@ -35,6 +36,7 @@ const ReadingStatsRoute = lazy(() => import("./pages/ReadingStatsRoute"));
 // behind the router — same colour each route already paints once it mounts.
 const ReaderFallback = () => <div className="h-screen bg-bg-page" />;
 const ReadingStatsFallback = () => <div className="h-screen bg-bg-page" />;
+const BookDetailsFallback = () => <div className="h-screen bg-bg-page" />;
 
 function applyTheme(theme: string) {
   const root = document.documentElement;
@@ -107,6 +109,10 @@ export default function App() {
         <Route
           path="/reading-stats"
           element={<Suspense fallback={<ReadingStatsFallback />}><ReadingStatsRoute /></Suspense>}
+        />
+        <Route
+          path="/book/:id"
+          element={<Suspense fallback={<BookDetailsFallback />}><BookDetails /></Suspense>}
         />
       </Routes>
       <ReasoningEffortNotice />

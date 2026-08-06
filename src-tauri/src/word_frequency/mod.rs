@@ -145,6 +145,32 @@ fn band_for_rank(rank: u32) -> u8 {
     }
 }
 
+/// The inclusive rank window a band covers, or `None` for a band number
+/// outside 1–5.
+///
+/// Band 5's upper bound is the table's own last rank rather than infinity,
+/// and that is the honest bound: a word ranked past the end of the table is
+/// not band 5, it is absent, and [`lookup`] returns `None` for it (see that
+/// function's doc for why absence is never coerced into band 5). So the
+/// widest rank a caller can ever have *observed* in band 5 is the last rank
+/// in the file.
+pub fn band_rank_window(band: u8) -> Option<(u32, u32)> {
+    match band {
+        1 => Some((1, BAND_1_MAX_RANK)),
+        2 => Some((BAND_1_MAX_RANK + 1, BAND_2_MAX_RANK)),
+        3 => Some((BAND_2_MAX_RANK + 1, BAND_3_MAX_RANK)),
+        4 => Some((BAND_3_MAX_RANK + 1, BAND_4_MAX_RANK)),
+        5 => Some((BAND_4_MAX_RANK + 1, max_rank())),
+        _ => None,
+    }
+}
+
+/// The last rank present in the frequency table, computed once.
+fn max_rank() -> u32 {
+    static MAX: OnceLock<u32> = OnceLock::new();
+    *MAX.get_or_init(|| table().values().map(|entry| entry.rank).max().unwrap_or(0))
+}
+
 /// A word's frequency, as a 1 (most common) – 5 (rare) band plus the raw
 /// rank the band was computed from. `rank` is exposed for callers that want
 /// finer ordering *within* a band (e.g. sorting a book's hardest words); the

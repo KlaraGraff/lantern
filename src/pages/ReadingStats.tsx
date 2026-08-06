@@ -15,6 +15,8 @@ import type {
   ReadingStatsView,
 } from "./reading-stats/types";
 import { ReadingReviewError } from "./reading-stats/types";
+import type { LevelObservation } from "./reading-stats/level-observation";
+import { splitEmphasis } from "../i18n/emphasis";
 
 export interface ReadingStatsProps {
   adapter: ReadingStatsAdapter;
@@ -23,6 +25,8 @@ export interface ReadingStatsProps {
   aiReviewDisclosureAcknowledged: boolean;
   onAcknowledgeAiReviewDisclosure(): Promise<void> | void;
   onOpenBook?(bookId: string): void;
+  /** Where the level actually lives. This page only ever points at it. */
+  onOpenLevelSettings?(): void;
 }
 
 function reviewErrorCode(error: unknown): ReadingReviewErrorCode {
@@ -295,6 +299,105 @@ function Modal({ title, onClose, children }: { title: string; onClose(): void; c
   );
 }
 
+/**
+ * The declared level, held against the reader's own lookup record. Last thing
+ * on the page and the quietest: no accent panel, no icon, no badge — it earns
+ * attention by being read, not by catching the eye on the way past.
+ *
+ * The three variants differ only in the sentence and in which buttons exist.
+ * `labels.levelRules` always leads with the sentence that says this row never
+ * changes the setting by itself, and it is rendered outside every branch, so
+ * there is no variant that can be written without it.
+ */
+function LevelObservationRow({
+  observation,
+  labels,
+  onApply,
+  onKeep,
+  onStop,
+  onOpenSettings,
+}: {
+  observation: LevelObservation;
+  labels: ReadingStatsLabels;
+  onApply(level: string): void;
+  onKeep(): void;
+  onStop(): void;
+  onOpenSettings(): void;
+}) {
+  const effect = labels.levelEffect(observation);
+  const suggested = observation.suggestedLevel;
+
+  return (
+    <section aria-labelledby="level-observation-heading">
+      <div className="mb-3">
+        <h2 id="level-observation-heading" className="text-[13px] font-semibold text-text-primary">
+          {labels.levelHeading}
+        </h2>
+        <p className="mt-1 text-[10.5px] text-text-muted">{labels.levelDescription}</p>
+      </div>
+      <div className="rounded-xl border border-border bg-bg-surface p-5">
+        <div className="flex items-baseline justify-between gap-5">
+          <h3 className="text-[12.5px] font-semibold text-text-primary">
+            {labels.levelDeclared(observation.declaredLevel)}
+          </h3>
+          <span className="shrink-0 text-[10.5px] text-text-muted">
+            {labels.levelBasis(observation.windowDays)}
+          </span>
+        </div>
+
+        <p className="mt-2.5 max-w-[660px] font-serif text-[15px] leading-7 text-text-secondary">
+          {splitEmphasis(labels.levelBody(observation)).map((part, index) => (
+            part.emphasis
+              ? <strong key={index} className="font-semibold text-text-primary">{part.text}</strong>
+              : <span key={index}>{part.text}</span>
+          ))}
+        </p>
+
+        {effect ? (
+          <p className="mt-2.5 max-w-[640px] text-[11.5px] leading-[1.8] text-text-secondary">{effect}</p>
+        ) : null}
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {suggested ? (
+            <>
+              <button
+                type="button"
+                onClick={() => onApply(suggested)}
+                className="h-8 rounded-lg border border-border bg-bg-surface px-3 text-[12px] text-text-secondary hover:bg-bg-input"
+              >
+                {labels.levelApply(suggested)}
+              </button>
+              <button type="button" onClick={onKeep} className="h-8 rounded-lg px-3 text-[12px] text-text-muted hover:bg-bg-input">
+                {labels.levelKeep(observation.declaredLevel)}
+              </button>
+              <button type="button" onClick={onStop} className="h-8 rounded-lg px-3 text-[12px] text-text-muted hover:bg-bg-input">
+                {labels.levelStop}
+              </button>
+            </>
+          ) : (
+            // No suggestion to accept or decline — but "stop" is about the
+            // comparison, not about a suggestion, so it belongs here too.
+            // Without it this variant would be the one row on the page the
+            // reader cannot get rid of.
+            <>
+              <button type="button" onClick={onOpenSettings} className="h-8 rounded-lg px-3 text-[12px] text-text-muted hover:bg-bg-input">
+                {labels.levelOpenSettings}
+              </button>
+              <button type="button" onClick={onStop} className="h-8 rounded-lg px-3 text-[12px] text-text-muted hover:bg-bg-input">
+                {labels.levelStop}
+              </button>
+            </>
+          )}
+        </div>
+
+        <p className="mt-3 border-t border-border-light pt-3 text-[10px] leading-[1.7] text-text-muted">
+          {labels.levelRules(observation).join(" ")}
+        </p>
+      </div>
+    </section>
+  );
+}
+
 export default function ReadingStats({
   adapter,
   labels,
@@ -302,6 +405,7 @@ export default function ReadingStats({
   aiReviewDisclosureAcknowledged,
   onAcknowledgeAiReviewDisclosure,
   onOpenBook,
+  onOpenLevelSettings,
 }: ReadingStatsProps) {
   const [view, setView] = useState<ReadingStatsView>("history");
   const [range, setRange] = useState<ReadingStatsRange>("year");
@@ -317,6 +421,7 @@ export default function ReadingStats({
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [disclosureOpen, setDisclosureOpen] = useState(false);
   const [acknowledgedLocally, setAcknowledgedLocally] = useState(aiReviewDisclosureAcknowledged);
+  const [levelObservation, setLevelObservation] = useState<LevelObservation | null>(null);
   const loadGeneration = useRef(0);
   const query = useMemo<ReadingStatsQuery>(() => ({ range, bookId }), [range, bookId]);
 
@@ -349,6 +454,39 @@ export default function ReadingStats({
       if (!disposed) setAutoOffer(next);
     }).catch(() => {});
     return () => { disposed = true; };
+  }, [adapter]);
+
+  // Deliberately not keyed on `query`. The comparison reads a fixed recent
+  // window of the reader's own record; narrowing the page to one book or to
+  // last year does not change what their level is.
+  useEffect(() => {
+    let disposed = false;
+    adapter.loadLevelObservation?.().then((next) => {
+      if (!disposed) setLevelObservation(next);
+    }).catch(() => {});
+    return () => { disposed = true; };
+  }, [adapter]);
+
+  // All three settle this observation, so all three clear the row. Nothing
+  // here re-derives a verdict on the reader's behalf: the row is gone until
+  // the record next has something different to say.
+  const applyLevel = useCallback(async (level: string) => {
+    try {
+      await adapter.applyLevelSuggestion?.(level);
+      setLevelObservation(null);
+    } catch {
+      /* The setting is unchanged and the row stays as it was. */
+    }
+  }, [adapter]);
+
+  const keepLevel = useCallback(async () => {
+    await adapter.keepDeclaredLevel?.().catch(() => {});
+    setLevelObservation(null);
+  }, [adapter]);
+
+  const stopLevelObservation = useCallback(async () => {
+    await adapter.stopLevelObservation?.().catch(() => {});
+    setLevelObservation(null);
   }, [adapter]);
 
   const generateReview = useCallback(async () => {
@@ -482,6 +620,20 @@ export default function ReadingStats({
             <AlertCircle size={13} aria-hidden="true" />{labels.loadFailed}
             <button type="button" onClick={() => setReloadKey((value) => value + 1)} className="ml-auto underline">{labels.retry}</button>
           </div>
+        ) : null}
+
+        {/* Last on the page, after the book list and before the privacy note
+            behind the lock button in the header. It never appears anywhere
+            else — no popup, no badge, no dot. */}
+        {levelObservation ? (
+          <LevelObservationRow
+            observation={levelObservation}
+            labels={labels}
+            onApply={(level) => void applyLevel(level)}
+            onKeep={() => void keepLevel()}
+            onStop={() => void stopLevelObservation()}
+            onOpenSettings={() => onOpenLevelSettings?.()}
+          />
         ) : null}
       </div>
 

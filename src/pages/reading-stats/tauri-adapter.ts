@@ -9,6 +9,7 @@ import type {
   ReadingStatsRange,
 } from "./types";
 import { ReadingReviewError } from "./types";
+import type { LevelObservation } from "./level-observation";
 
 type BackendQuery = {
   periodStart: number;
@@ -164,6 +165,27 @@ export function createTauriReadingStatsAdapter(language = "en"): ReadingStatsAda
       } catch {
         return NO_OFFER;
       }
+    },
+    async loadLevelObservation() {
+      // Same rule as the auto-review offer above: nobody asked for this row,
+      // so a backend that cannot answer produces silence, not an error strip.
+      try {
+        return await invoke<LevelObservation | null>("get_level_observation");
+      } catch {
+        return null;
+      }
+    },
+    async applyLevelSuggestion(level) {
+      // The one write in this group the reader can feel, so unlike the reads
+      // it is allowed to throw — the row reloads and shows what actually is.
+      await invoke("set_setting", { key: "cefr_level", value: level });
+      await invoke("dismiss_level_observation", { outcome: "applied" }).catch(() => {});
+    },
+    async keepDeclaredLevel() {
+      await invoke("dismiss_level_observation", { outcome: "kept" }).catch(() => {});
+    },
+    async stopLevelObservation() {
+      await invoke("dismiss_level_observation", { outcome: "stopped" }).catch(() => {});
     },
     async loadDashboard(query) {
       const backendQuery = toBackendQuery(query);

@@ -148,9 +148,31 @@
   --spacing-safe-right: env(safe-area-inset-right, 0px);
   --spacing-safe-bottom: env(safe-area-inset-bottom, 0px);
   --spacing-safe-left: env(safe-area-inset-left, 0px);
+
+  /* Word-frequency bands, common to rare, plus the sixth bucket for words the
+     table does not list at all. One ramp of the brand purple rather than six
+     hues: the bands are ordered, and a rainbow would read as six unrelated
+     categories. The unlisted bucket steps out of the ramp into grey precisely
+     because it is not the far end of "rare" — it is "no answer".
+     `static` for the same reason as the insets above: every one of these is
+     read from an inline `style` on a bar segment or a swatch, which Tailwind's
+     scanner cannot see, so an unreferenced variable would be dropped. */
+  --color-band-1: #e7dffa;
+  --color-band-2: #cfc0f3;
+  --color-band-3: #b49aec;
+  --color-band-4: #9470dd;
+  --color-band-5: #6f43c4;
+  --color-band-unlisted: #d6d6dc;
 }
 
 .dark {
+  --color-band-1: #332c4a;
+  --color-band-2: #443a66;
+  --color-band-3: #584a85;
+  --color-band-4: #7259ab;
+  --color-band-5: #9d84da;
+  --color-band-unlisted: #3d3d46;
+
   --color-bg-page: #151518;
   --color-bg-surface: #18191d;
   --color-bg-muted: #1f2023;
@@ -413,6 +435,28 @@ html[data-reader-page-animation="cover"][data-reader-page-direction="previous"]:
 @keyframes reader-page-slide-in-previous {
   from { transform: translateX(-100%); }
   to { transform: translateX(0); }
+}
+
+/*
+ * The word-frequency pass reports completion, not progress, so the bar it
+ * fills has no fraction to show. It sweeps instead — honest about the fact
+ * that something is running and honest about not knowing how far along.
+ */
+.difficulty-scan {
+  animation: difficulty-scan 1.4s ease-in-out infinite;
+}
+
+@keyframes difficulty-scan {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .difficulty-scan {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

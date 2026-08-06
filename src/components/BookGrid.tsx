@@ -3,6 +3,7 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import type { Book } from "../hooks/useBooks";
 import { useOpenBook } from "../hooks/useOpenBook";
 import { deleteBook, markFinished, isPendingPreparation, needsPreparation, retryPreparation, updateBookStatus } from "../hooks/useBooks";
+import { useNavigate } from "react-router";
 import BookContextMenu from "./BookContextMenu";
 import EditMetadataModal from "./EditMetadataModal";
 import { useTranslation } from "react-i18next";
@@ -41,6 +42,7 @@ interface BookGridProps {
 export default function BookGrid({ books, hasMore, loadMore, loadingMore, activeCollectionId, onBooksChanged }: BookGridProps) {
   const { t } = useTranslation();
   const openInReader = useOpenBook();
+  const navigate = useNavigate();
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -121,6 +123,11 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
           bookStatus={contextMenu.book.status}
           activeCollectionId={activeCollectionId}
           onClose={() => setContextMenu(null)}
+          onViewDetails={() => {
+            const id = contextMenu.book.id;
+            setContextMenu(null);
+            navigate(`/book/${id}`);
+          }}
           onMarkFinished={async () => {
             await markFinished(contextMenu.book.id);
             setContextMenu(null);
