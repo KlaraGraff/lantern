@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 #[cfg(target_vendor = "apple")]
 use objc2_foundation::{NSFileManager, NSString};
 
+pub mod cellular;
 pub mod download;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -230,7 +230,16 @@ pub fn get_setting(key: String, db: State<'_, Db>) -> AppResult<Option<String>> 
     if Secrets::is_sensitive_key(&key) {
         return Err(AppError::Other("SECRET_READ_FORBIDDEN".to_string()));
     }
+    get_setting_value(&db, &key)
+}
 
+/// The body of `get_setting`, without the webview boundary — for a caller
+/// that already holds a `&Db` and is not a command handler itself, e.g.
+/// `icloud::cellular::enforce` reading the remembered cellular-download
+/// answer. Callers reading a key they picked themselves (not one that arrived
+/// from the webview) may skip `get_setting`'s `is_sensitive_key` check; this
+/// function does not repeat it.
+pub(crate) fn get_setting_value(db: &Db, key: &str) -> AppResult<Option<String>> {
     let conn = db.reader();
     let result = conn.query_row(
         "SELECT value FROM settings WHERE key = ?1",

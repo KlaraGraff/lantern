@@ -568,11 +568,12 @@ pub(super) fn probe_book_availability_watched(
     };
     if availability == icloud::FileAvailability::ICloudPlaceholder {
         match (watch, app) {
-            // D-016 belongs here: on a metered connection the first download of
-            // the session asks before this line, and the answer is remembered.
-            // It is not wired yet because the remembered answer needs a mobile
-            // settings row, which is blocked behind P2.
+            // D-016: on cellular, the first download of the session asks and
+            // the answer is remembered. Must run before `start_watch` — that
+            // call already asks iCloud, so a refusal after it would be
+            // theatre. A refusal here means the watch never started.
             (Some(request_id), Some(app)) => {
+                icloud::cellular::enforce(db)?;
                 icloud::download::start_watch(app, id, abs_path, request_id)?
             }
             // No reader is watching, so the request is all that can be made.

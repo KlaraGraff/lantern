@@ -5,8 +5,10 @@ import { FolderOpen, Loader2, Monitor, Smartphone, Laptop, Trash2 } from "lucide
 import { useTranslation } from "react-i18next";
 import Button from "../ui/Button";
 import Toggle from "../ui/Toggle";
+import Select from "../ui/Select";
 import { platform } from "../../services/platform";
-import type { SettingsProps } from "./types";
+import { ROW_CONTROL_WIDTH, type SettingsProps } from "./types";
+import { CELLULAR_CONSENT_SETTING_KEY, type CellularDownloadConsent } from "../../hooks/useBooks";
 
 interface PeerInfo {
   device_uuid: string;
@@ -95,8 +97,9 @@ function isRetryableSyncError(error: string | null): boolean {
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export default function LibrarySyncSettings(_props: SettingsProps) {
+const CELLULAR_CONSENT_OPTIONS: readonly CellularDownloadConsent[] = ["ask", "allow", "deny"];
+
+export default function LibrarySyncSettings({ settings, save, showSavedToast }: SettingsProps) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
@@ -285,6 +288,11 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
   const peers = status?.peers ?? [];
   const initialStatusLoading = loadingStatus && !status;
   const disableProgressValue = disableProgress ? progressPercent(disableProgress) : 0;
+  // D-016. Absent settings row reads the same as an explicit "ask" — the
+  // backend's `CellularConsent::from_stored` treats anything but "allow"/
+  // "deny" as unset, and this mirrors that on the display side.
+  const cellularConsent =
+    (settings[CELLULAR_CONSENT_SETTING_KEY] as CellularDownloadConsent | undefined) ?? "ask";
 
   return (
     <>
@@ -468,6 +476,41 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
         <p className="text-[12px] text-text-muted leading-[1.5] mt-1">
           {t("settings.librarySync.simultaneityNote")}
         </p>
+
+        {/* D-016 — the remembered cellular-download answer, and the only
+            place to change it back once given. Gated on `hasCellularReachability`
+            (D-005: a named capability, not a platform check) — it answers a
+            question ("cellular or Wi-Fi") that only has an answer on a
+            device with a cellular radio, so it stays off a build with no
+            reachability read at all rather than showing a control that can
+            never do anything but sit on "ask". */}
+        {platform.hasCellularReachability && (
+          <>
+            <div className="h-px bg-border-light mt-4" />
+            <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">
+                  {t("settings.library.cellularConsent.label")}
+                </p>
+                <p className="text-[12px] text-text-muted mt-0.5 leading-[1.45]">
+                  {t("settings.library.cellularConsent.hint")}
+                </p>
+              </div>
+              <Select
+                className={ROW_CONTROL_WIDTH}
+                value={cellularConsent}
+                onChange={(value) => {
+                  void save(CELLULAR_CONSENT_SETTING_KEY, value);
+                  showSavedToast();
+                }}
+                options={CELLULAR_CONSENT_OPTIONS.map((option) => ({
+                  value: option,
+                  label: t(`settings.library.cellularConsent.${option}`),
+                }))}
+              />
+            </div>
+          </>
+        )}
 
         {/* Error. Every one of these messages is a full sentence of
             instructions — 「先在 iPhone 上打开一次 Lantern…」 is three lines at

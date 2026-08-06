@@ -126,6 +126,25 @@ export interface PlatformCapabilities {
    * usage conditions, not desktop luxuries. Do not add flags for them.
    */
   readonly hasEmbeddingIndex: boolean;
+  /**
+   * The device has a cellular radio the OS can report on, so a book download
+   * can ask before spending its data ([D-016](../../docs/roadmap/mobile-ios.md)).
+   * Reachability is read through `SCNetworkReachability`, which only exists on
+   * iOS — Android is deferred (D-010) and every desktop target Lantern ships
+   * on has no cellular radio at all.
+   *
+   * Grouped with `hasSafeAreaInset` and `hasTitleBarInset`, not with the
+   * software-limit flags above: this says what the hardware *is* (does it
+   * have a cellular modem), not what the platform lets Lantern *do*. That is
+   * also why it is exempt from "mobile is a strict subset of desktop" in
+   * `tests/platform-capabilities.test.ts` — a MacBook having no cellular
+   * modem is not desktop missing a feature phones have, the same way a Mac
+   * having no notch is not desktop missing `hasSafeAreaInset`. Named as a
+   * capability rather than checked via `isIOS` at the call site regardless,
+   * per D-005 — see `hasEmbeddingIndex` above for the same reasoning applied
+   * to an actual feature flag.
+   */
+  readonly hasCellularReachability: boolean;
 }
 
 /*
@@ -156,6 +175,7 @@ const ABSENT: Capability = {
   hasFontImport: false,
   hasLocalModelRuntime: false,
   hasEmbeddingIndex: false,
+  hasCellularReachability: false,
 };
 
 const DESKTOP: Capability = {
@@ -195,7 +215,7 @@ const BY_PLATFORM: Record<PlatformId, Capability> = {
   linux: DESKTOP,
   // The app's own ubiquity container is reachable from the sandbox, and it is
   // the other half of the pair macOS syncs with (D-006, D-007).
-  ios: { ...MOBILE, hasFolderSync: true },
+  ios: { ...MOBILE, hasFolderSync: true, hasCellularReachability: true },
   android: MOBILE,
   unknown: ABSENT,
 };

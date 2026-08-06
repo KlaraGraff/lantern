@@ -217,9 +217,44 @@ export async function checkBookAvailable(id: string): Promise<BookAvailability> 
  * The deep probe, for use once at a failure point — it reads from the file
  * rather than asking the filesystem whether the name resolves. Never put this
  * on a poll; `checkBookAvailable` is the one built for that.
+ *
+ * `requestId` is what turns an evicted book into a download the caller can
+ * watch on `book-download-<requestId>` (D-013) — pass one when a screen is
+ * waiting on this book, omit it for a background nudge. It is also what
+ * makes the D-016 cellular gate reachable at all: the backend only asks for
+ * consent on the watched path, so a caller that wants
+ * {@link isCellularConsentError} to ever fire has to pass a request id.
  */
-export async function diagnoseBookFile(id: string): Promise<BookAvailability> {
-  return invoke<BookAvailability>("diagnose_book_file", { id });
+export async function diagnoseBookFile(id: string, requestId?: string): Promise<BookAvailability> {
+  return invoke<BookAvailability>("diagnose_book_file", { id, requestId: requestId ?? null });
+}
+
+// D-016's error code, settings key, and consent predicate live in
+// `cellular-consent.ts` (pure, no i18n import) — see that file's doc comment
+// for why. Re-exported here so existing callers keep one import site.
+export {
+  CELLULAR_CONSENT_ERROR,
+  CELLULAR_CONSENT_SETTING_KEY,
+  isCellularConsentError,
+  type CellularDownloadConsent,
+} from "./cellular-consent";
+
+/**
+ * Retry `diagnoseBookFile` once after the caller has recorded the user's
+ * cellular-download answer.
+ *
+ * Deliberately does not write the setting itself — `save`/`set_setting` is
+ * how every other settings row writes, and callers that already hold a
+ * `SettingsProps.save` (or an equivalent `set_setting` invoke) should keep
+ * using it rather than have this function open a second path to the same
+ * row. This only re-runs the probe, which is the part that is easy to get
+ * wrong (retrying the *unwatched* probe would silently drop the request id).
+ */
+export async function retryDiagnoseBookFileAfterConsent(
+  id: string,
+  requestId: string,
+): Promise<BookAvailability> {
+  return diagnoseBookFile(id, requestId);
 }
 
 export async function retryTextBookPreparation(id: string): Promise<void> {

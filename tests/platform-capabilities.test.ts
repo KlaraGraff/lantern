@@ -13,7 +13,17 @@ import {
  * subset check below excludes them: a notch is not a feature iOS has and macOS
  * lacks, and `isMobile` is true on mobile by definition.
  */
-const NOT_A_FEATURE = new Set(["isMobile", "isIOS", "hasSafeAreaInset", "hasTitleBarInset"]);
+const NOT_A_FEATURE = new Set([
+  "isMobile",
+  "isIOS",
+  "hasSafeAreaInset",
+  "hasTitleBarInset",
+  // A cellular radio is hardware, not a software limit — see the field's own
+  // doc comment in platform.ts. iOS having it while macOS does not is the
+  // same shape as macOS having a notch-free traffic-light inset that iOS
+  // does not; neither is "mobile has a feature desktop lacks".
+  "hasCellularReachability",
+]);
 
 function featureFlags(caps: PlatformCapabilities): [string, boolean][] {
   return Object.entries(caps).filter(
@@ -114,6 +124,19 @@ test("read-aloud, the authoring surfaces and the score estimator are NOT gated",
   const caps = capabilitiesFor("ios") as Record<string, unknown>;
   for (const gone of ["hasSpeech", "hasComposerSurfaces", "hasScoreEstimator"]) {
     assert.equal(gone in caps, false, `${gone} must not exist — those surfaces ship on every platform`);
+  }
+});
+
+test("cellular reachability is iOS only (D-016)", () => {
+  // Not Android (deferred, D-010), not any desktop target Lantern ships on —
+  // none of them carry a cellular modem.
+  assert.equal(capabilitiesFor("ios").hasCellularReachability, true);
+  for (const id of ["macos", "windows", "linux", "android", "unknown"] as PlatformId[]) {
+    assert.equal(
+      capabilitiesFor(id).hasCellularReachability,
+      false,
+      `hasCellularReachability should be false on ${id}`,
+    );
   }
 });
 
