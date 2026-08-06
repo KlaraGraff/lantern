@@ -261,7 +261,7 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
   return (
     <div>
       {/* Display Name */}
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.general.displayName")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.general.displayNameHint")}</p>
@@ -664,7 +664,7 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
       </section>
 
       {/* Interface Language */}
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.language")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.general.languageHint")}</p>
@@ -684,7 +684,7 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
       </div>
 
       {/* Auto Save */}
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.reading.autoSave")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.reading.autoSaveHint")}</p>
@@ -701,7 +701,7 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
       </div>
 
       {/* Skip front matter on first open */}
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.reading.skipFrontMatter")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.reading.skipFrontMatterHint")}</p>
@@ -717,7 +717,7 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
         />
       </div>
 
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.general.lookupHistoryRetention")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.general.lookupHistoryRetentionHint")}</p>
@@ -747,7 +747,7 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
           an update happens in the toast; this row just decides whether the
           launch check runs at all. Gone where there is no updater to run. */}
       {platform.hasUpdater && (
-        <div className="flex items-center justify-between h-[73px]">
+        <div className="flex items-center justify-between min-h-[73px] py-3">
           <div>
             <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.general.autoCheckUpdates")}</p>
             <p className="text-[12px] text-text-muted mt-0.5">{t("settings.general.autoCheckUpdatesHint")}</p>
@@ -770,7 +770,7 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
         {t("settings.onboarding.title")}
       </div>
       <div className="h-px bg-border-light" />
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.onboarding.replay")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.onboarding.replayHint")}</p>
@@ -796,7 +796,7 @@ export default function GeneralSettings({ settings, loading, save, saveBulk, sho
             {t("settings.diagnostics.title")}
           </div>
           <div className="h-px bg-border-light" />
-          <div className="flex items-center justify-between h-[73px]">
+          <div className="flex items-center justify-between min-h-[73px] py-3">
             <div>
               <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.diagnostics.revealLogs")}</p>
               <p className="text-[12px] text-text-muted mt-0.5">{t("settings.diagnostics.revealLogsHint")}</p>

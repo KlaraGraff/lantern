@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useSyncExternalStore } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { Search, LayoutGrid, List, Plus, Upload, BookOpen, Loader, AlertCircle, X, Menu } from "lucide-react";
@@ -18,6 +18,7 @@ import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import { useBooks, importBookDialog, IMPORT_SLOW_HINT_MS } from "../hooks/useBooks";
 import { useCollections } from "../hooks/useCollections";
+import { useIsNarrow } from "../hooks/useIsNarrow";
 import { platform } from "../services/platform";
 import {
   useDrawerGesture,
@@ -34,39 +35,6 @@ function formatError(err: unknown): string {
   } catch {
     return String(err);
   }
-}
-
-/**
- * Tailwind's `md:` is `min-width: 48rem`, so this asks the same question the
- * stylesheet asks and the two can never disagree about where the layout flips.
- */
-const DESKTOP_QUERY = "(min-width: 48rem)";
-
-let desktopQuery: MediaQueryList | null = null;
-function getDesktopQuery(): MediaQueryList | null {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return null;
-  desktopQuery ??= window.matchMedia(DESKTOP_QUERY);
-  return desktopQuery;
-}
-
-const subscribeToWidth = (onChange: () => void) => {
-  const query = getDesktopQuery();
-  query?.addEventListener("change", onChange);
-  return () => query?.removeEventListener("change", onChange);
-};
-
-const isNarrowNow = () => getDesktopQuery()?.matches === false;
-
-/**
- * Which container the sidebar lives in is a JavaScript decision rather than a
- * `hidden md:flex` pair, because the two containers hold the *same* component
- * and only one of them may be mounted: two copies would mean two copies of its
- * rename/create/drag state, and a right-click menu that opens in the invisible
- * one. It also makes the desktop guarantee literal — above `md:` none of the
- * drawer's nodes exist at all, rather than existing and being hidden.
- */
-function useIsNarrow(): boolean {
-  return useSyncExternalStore(subscribeToWidth, isNarrowNow, () => false);
 }
 
 /**

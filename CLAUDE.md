@@ -57,7 +57,13 @@ docs/
 ## Conventions
 
 - Settings are stored as key-value pairs in SQLite (`settings` table). Use `useSettings` hook on frontend, `commands/settings.rs` on backend.
-- Sensitive data (API keys, OAuth tokens) goes in `secrets.db` (local-only, never syncs), not `lantern.db`.
+- Sensitive data (API keys, OAuth tokens) goes in `secrets.db`, never `lantern.db`. `secrets.db`
+  itself never enters the sync container — that container is browsable in Files.app
+  (`NSUbiquitousContainerIsDocumentScopePublic`), so no credential belongs in it, encrypted or
+  not. Credentials **do** reach the user's other devices, by a different channel: a
+  synchronizable Keychain item, which iCloud Keychain replicates end-to-end encrypted. Apple
+  platforms only; Windows keeps its credentials local. Do not add a credential-bearing column,
+  file, or sync event to `lantern.db` to work around this.
 - All user-facing strings must use i18n keys — never hardcode English text in components.
 - Settings modal sections follow the row pattern in `GeneralSettings.tsx`: 73px-tall rows, flex justify-between, 1px `black/10` dividers.
 - AI streaming uses per-request event channels via Tauri event emitter.

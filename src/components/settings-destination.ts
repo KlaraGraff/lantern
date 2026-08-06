@@ -13,7 +13,20 @@ export type SettingsSection =
 /** Views inside a section that other surfaces can deep-link to. */
 export type SettingsView = "models" | "embedding" | "speech" | "ocr" | "passiveVocab";
 
+/**
+ * "No particular section" — open settings wherever it opens by default.
+ *
+ * Deliberately not spelled `"general"`, which three surfaces deep-link to on
+ * purpose (the reading-stats level row, the library hint banner, Cmd+`,`). On a
+ * phone the two answers differ: a bare `openSettings()` has to land on the root
+ * section list, while a deep link to 通用 still has to land inside 通用.
+ * Desktop resolves `"root"` back to 通用, because that is where its two-pane
+ * dialog has always opened.
+ */
+export type SettingsRoot = "root";
+
 export type SettingsDestination =
+  | SettingsRoot
   | SettingsSection
   | { section: SettingsSection; view: SettingsView };
 
@@ -65,10 +78,12 @@ export function normalizeSettingsDestination(value: unknown): SettingsDestinatio
     }
     if (section) return section;
   }
-  return "general";
+  return "root";
 }
 
-export function settingsDestinationSection(destination: SettingsDestination): SettingsSection {
+/** `undefined` for `"root"`: no section was asked for. */
+export function settingsDestinationSection(destination: SettingsDestination): SettingsSection | undefined {
+  if (destination === "root") return undefined;
   return typeof destination === "string" ? destination : destination.section;
 }
 

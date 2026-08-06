@@ -124,6 +124,30 @@ export const AI_PRESETS: AiPreset[] = [
   },
 ];
 
+/**
+ * The catalog as this platform may offer it.
+ *
+ * Ollama is a model server the reader runs beside Lantern and Lantern reaches
+ * at `localhost:11434`; a phone has neither, so offering it there would only
+ * produce a route that can never answer. Every other preset is an ordinary
+ * HTTPS endpoint and travels everywhere — including a study-room Mac's Ollama,
+ * which is reached through `custom` with a LAN address.
+ *
+ * Takes the capability rather than reading `platform` itself so the rule is
+ * testable without a webview, and so the call site stays the place that says
+ * which capability it is asking about.
+ *
+ * `keep` re-admits a provider a saved profile already uses. A model configured
+ * on a Mac syncs its provider name to the phone, and dropping it from the
+ * dropdown there would leave that profile showing a blank provider — the data
+ * exists whether or not this platform would offer it today.
+ */
+export function availablePresets(hasLocalModelRuntime: boolean, keep?: string): AiPreset[] {
+  return AI_PRESETS.filter((preset) => (
+    preset.provider !== "ollama" || hasLocalModelRuntime || preset.provider === keep
+  ));
+}
+
 /** Chip styling per cost tier. Lives here so the catalog and the route agree. */
 export const COST_TIER_CLASSES: Record<CostTier, string> = {
   free: "bg-success/10 text-success-text",

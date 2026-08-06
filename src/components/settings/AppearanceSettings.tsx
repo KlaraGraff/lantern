@@ -25,7 +25,7 @@ export default function AppearanceSettings({ settings, loading, save, showSavedT
   return (
     <div>
       {/* Theme */}
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.appearance.theme")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.general.themeHint")}</p>

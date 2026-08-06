@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Globe, BookOpen, Bot, GraduationCap, Cloud, Compass, Info, Terminal, X, ChevronRight, Palette, Sparkles } from "lucide-react";
+import { Globe, BookOpen, Bot, GraduationCap, Cloud, Compass, Info, Terminal, X, Check, ChevronDown, ChevronLeft, ChevronRight, Palette, Sparkles, Volume2 } from "lucide-react";
 import GeneralSettings from "./settings/GeneralSettings";
 import AppearanceSettings from "./settings/AppearanceSettings";
 import ReadingSettings from "./settings/ReadingSettings";
@@ -14,7 +14,16 @@ import BookSourcesSettings from "./settings/BookSourcesSettings";
 import McpSettings from "./settings/McpSettings";
 import AboutSettings from "./settings/AboutSettings";
 import Toast from "./ui/Toast";
+import { LANGUAGE_OPTIONS } from "./settings/languageOptions";
+import { groupSettingsRootRows, type SettingsRootRow } from "./settings/settings-root-rows";
+import {
+  THEME_PREFERENCES,
+  THEME_PREFERENCE_LABEL_KEYS,
+  applyThemePreference,
+  themePreferenceOf,
+} from "./settings/theme-preference";
 import { useSettings } from "../hooks/useSettings";
+import { isNarrowNow, useIsNarrow } from "../hooks/useIsNarrow";
 import { platform } from "../services/platform";
 import type { SettingsSection, SettingsView } from "./settings-destination";
 
@@ -33,6 +42,7 @@ const FOCUSABLE_SELECTOR = [
 interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
+  /** Undefined is `"root"` — no section was asked for. See `SettingsRoot`. */
   initialSection?: SettingsSection;
   initialView?: SettingsView;
 }
@@ -52,9 +62,59 @@ function availableSection(id: SettingsSection): SettingsSection {
   return isSectionAvailable(id) ? id : "general";
 }
 
-export default function SettingsModal({ open, onClose, initialSection = "general", initialView }: SettingsModalProps) {
-  const { t } = useTranslation();
-  const [activeSection, setActiveSection] = useState<SettingsSection>(availableSection(initialSection));
+/**
+ * Which level the modal opens on. `null` is the root list, which only the
+ * narrow layout has: asked for no section in particular, a desktop window opens
+ * 通用 exactly as it always has, and a phone opens the list of sections.
+ *
+ * Read once, off `isNarrowNow()` rather than the subscribed hook, so that
+ * dragging a window across 768px does not throw away the level the reader is on.
+ */
+function initialLevel(section: SettingsSection | undefined): SettingsSection | null {
+  if (section) return availableSection(section);
+  return isNarrowNow() ? null : "general";
+}
+
+/** Keyed by root row rather than by section: 对话模型 and 语音 share one. */
+const ROOT_ROW_ICONS: Record<string, typeof Globe> = {
+  general: Globe,
+  theme: Palette,
+  reading: BookOpen,
+  tools: GraduationCap,
+  models: Bot,
+  speech: Volume2,
+  autoAnalysis: Sparkles,
+  librarySync: Cloud,
+  bookSources: Compass,
+  mcp: Terminal,
+  about: Info,
+};
+
+/**
+ * The root row, and the button it is. Height follows the input device and not
+ * the width — 56px under a finger, 40px under a mouse — because the row *is*
+ * the hot zone. That is deliberately the opposite of the leaf rows below it,
+ * whose 73px is a density choice and stays put.
+ */
+const ROOT_ROW_CLASS =
+  "flex w-full items-center gap-2.5 border-b border-border-light px-3 text-left text-[14px] font-medium tracking-[-0.15px] text-text-primary last:border-b-0 h-10 touch:h-14 touch:gap-3 touch:px-3.5 touch:text-[15.5px]";
+
+const ROOT_CARD_CLASS =
+  "mb-4 overflow-hidden rounded-[10px] border border-border bg-bg-surface touch:mb-[22px] touch:rounded-[14px]";
+
+const ROOT_HEADING_CLASS =
+  "px-1.5 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.5px] text-text-muted touch:text-[11.5px]";
+
+/** 44px under a finger, and the 28px the same button is on a narrow window. */
+const NAV_BUTTON_CLASS =
+  "size-7 shrink-0 items-center justify-center rounded-[7px] text-text-secondary hover:bg-bg-input cursor-pointer touch:size-11 touch:rounded-[11px]";
+
+export default function SettingsModal({ open, onClose, initialSection, initialView }: SettingsModalProps) {
+  const { t, i18n } = useTranslation();
+  const isNarrow = useIsNarrow();
+  const [activeSection, setActiveSection] = useState<SettingsSection | null>(() => initialLevel(initialSection));
+  const [activeView, setActiveView] = useState<SettingsView | undefined>(initialView);
+  const [themeSheetOpen, setThemeSheetOpen] = useState(false);
   const [toolsPreview, setToolsPreview] = useState<ToolsPreviewState | null>(null);
   const [passiveVocabPreview, setPassiveVocabPreview] = useState<PassiveVocabPreviewState | null>(null);
   const { settings, loading, refresh, save, saveBulk } = useSettings();
@@ -66,6 +126,8 @@ export default function SettingsModal({ open, onClose, initialSection = "general
   const previewDismissRef = useRef<(() => void) | null>(null);
   const overlayPreviewRef = useRef(false);
   const subPageBackRef = useRef<(() => void) | null>(null);
+  const sheetCloseRef = useRef<(() => void) | null>(null);
+  const levelBackRef = useRef<(() => void) | null>(null);
   const toolsNavigationGuardRef = useRef<((action: () => void) => void) | null>(null);
   const onCloseRef = useRef(onClose);
   const [isXlViewport, setIsXlViewport] = useState(() => window.matchMedia(XL_PREVIEW_QUERY).matches);
@@ -102,6 +164,30 @@ export default function SettingsModal({ open, onClose, initialSection = "general
       changeSection();
     }
   };
+  /** Push a root row onto its own level. Guarded like any other navigation. */
+  const requestRow = (row: SettingsRootRow) => {
+    const push = () => {
+      setActiveSection(row.section);
+      setActiveView(row.view);
+    };
+    if (toolsNavigationGuardRef.current) {
+      toolsNavigationGuardRef.current(push);
+    } else {
+      push();
+    }
+  };
+  /** Pop back to the root list — the same guard the close button goes through. */
+  const requestRoot = useCallback(() => {
+    const pop = () => {
+      setActiveSection(null);
+      setActiveView(undefined);
+    };
+    if (toolsNavigationGuardRef.current) {
+      toolsNavigationGuardRef.current(pop);
+    } else {
+      pop();
+    }
+  }, []);
 
   // Toast state
   const [showToast, setShowToast] = useState(false);
@@ -115,8 +201,17 @@ export default function SettingsModal({ open, onClose, initialSection = "general
   };
 
   useEffect(() => {
-    if (open) setActiveSection(availableSection(initialSection));
+    if (open) setActiveSection(initialLevel(initialSection));
   }, [open, initialSection]);
+
+  useEffect(() => {
+    if (open) setActiveView(initialView);
+  }, [open, initialView]);
+
+  // The sheet belongs to the root list, and the root list only exists narrow.
+  useEffect(() => {
+    if (!open || !isNarrow || activeSection !== null) setThemeSheetOpen(false);
+  }, [open, isNarrow, activeSection]);
 
   useEffect(() => {
     if (!open || activeSection !== "tools") setToolsPreview(null);
@@ -144,6 +239,14 @@ export default function SettingsModal({ open, onClose, initialSection = "general
   }, [escapePreviewDismiss, overlayPreviewOpen]);
 
   useEffect(() => {
+    sheetCloseRef.current = themeSheetOpen ? () => setThemeSheetOpen(false) : null;
+  }, [themeSheetOpen]);
+
+  useEffect(() => {
+    levelBackRef.current = isNarrow && activeSection !== null ? requestRoot : null;
+  }, [isNarrow, activeSection, requestRoot]);
+
+  useEffect(() => {
     if (!open) return;
     previousFocusRef.current = document.activeElement as HTMLElement | null;
     const modal = modalRef.current;
@@ -153,14 +256,22 @@ export default function SettingsModal({ open, onClose, initialSection = "general
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        // Layered, outermost first: an overlay preview, then a settings
-        // sub-page, then the modal itself.
+        // Layered, outermost first: a bottom sheet, then an overlay preview,
+        // then a settings sub-page, then a pushed section on the narrow layout,
+        // then the modal itself. Every step past the first goes through the
+        // unsaved-changes guard, which is why none of them call setState here.
+        const closeSheet = sheetCloseRef.current;
         const dismiss = previewDismissRef.current;
         const back = subPageBackRef.current;
-        if (dismiss) {
+        const popLevel = levelBackRef.current;
+        if (closeSheet) {
+          closeSheet();
+        } else if (dismiss) {
           dismiss();
         } else if (back) {
           back();
+        } else if (popLevel) {
+          popLevel();
         } else {
           requestClose();
         }
@@ -230,17 +341,22 @@ export default function SettingsModal({ open, onClose, initialSection = "general
   ];
 
   const sections = allSections.filter((s) => isSectionAvailable(s.id));
+  const sectionLabel = (id: SettingsSection) => allSections.find((s) => s.id === id)?.label ?? "";
+
+  // Above `md:` this is always a section; the root list is the narrow layout's
+  // alone, so the desktop dialog keeps opening on 通用 with nothing asked for.
+  const desktopSection: SettingsSection = activeSection ?? "general";
 
   const settingsProps = { settings, loading, refresh, save, saveBulk, showSavedToast };
 
-  const renderContent = (): ReactNode => {
-    switch (activeSection) {
+  const renderContent = (section: SettingsSection): ReactNode => {
+    switch (section) {
       case "general": return <GeneralSettings {...settingsProps} />;
       case "appearance": return <AppearanceSettings {...settingsProps} />;
       case "reading": return (
         <ReadingSettings
           {...settingsProps}
-          initialView={initialView}
+          initialView={activeView}
           onPassiveVocabPreviewChange={setPassiveVocabPreview}
           onSubPageChange={setSubPageBack}
         />
@@ -250,7 +366,7 @@ export default function SettingsModal({ open, onClose, initialSection = "general
           {...settingsProps}
           onDirtyChange={setAiDirty}
           onSaveRef={(fn) => { aiSaveRef.current = fn; }}
-          initialView={initialView}
+          initialView={activeView}
         />
       );
       case "autoAnalysis": return <AutoAnalysisSettings />;
@@ -268,7 +384,210 @@ export default function SettingsModal({ open, onClose, initialSection = "general
     }
   };
 
-  const active = sections.find((s) => s.id === activeSection);
+  const saveAction = (
+    <button
+      onClick={() => aiSaveRef.current?.()}
+      disabled={!aiDirty}
+      className={`text-[13px] font-medium px-3 py-1 rounded-lg cursor-pointer transition-colors ${
+        aiDirty
+          ? "text-accent-text hover:bg-accent-bg"
+          : "text-text-muted/40 cursor-default"
+      }`}
+    >
+      {t("common.save")}
+    </button>
+  );
+
+  if (isNarrow) {
+    const rootGroups = groupSettingsRootRows((row) => isSectionAvailable(row.section));
+    const rootRows = rootGroups.flatMap((group) => group.rows);
+    const rowLabel = (row: SettingsRootRow) => (row.labelKey ? t(row.labelKey) : sectionLabel(row.section));
+    const theme = themePreferenceOf(settings.theme);
+    // Only the summaries already sitting in `settings` — the asynchronous ones
+    // (last sync, source count, provider status) arrive with their own stages.
+    const rowValue = (row: SettingsRootRow): string | undefined => {
+      if (row.id === "theme") return t(THEME_PREFERENCE_LABEL_KEYS[theme]);
+      if (row.id === "general") {
+        const language = settings.language || i18n.language;
+        return LANGUAGE_OPTIONS.find((option) => option.value === language)?.label;
+      }
+      return undefined;
+    };
+
+    const atRoot = activeSection === null;
+    // The row that was tapped, so the nav bar can be titled with the row's own
+    // name rather than its section's — 对话模型 and 语音 share a section. A deep
+    // link that named no row (Cmd+`,`, the reader's 生词辅助 link) falls through
+    // to the row that owns the section, and then to the section's own name.
+    const openRow = activeSection === null
+      ? undefined
+      : rootRows.find((row) => row.section === activeSection && row.view === activeView)
+        ?? rootRows.find((row) => row.section === activeSection && row.view === undefined)
+        ?? rootRows.find((row) => row.section === activeSection);
+    const title = activeSection === null
+      ? t("settings.title")
+      : openRow
+        ? rowLabel(openRow)
+        : sectionLabel(activeSection);
+
+    return (
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("settings.title")}
+        tabIndex={-1}
+        className={`fixed inset-0 z-50 flex flex-col pl-safe-left pr-safe-right ${
+          atRoot ? "bg-bg-page" : "bg-bg-surface"
+        }`}
+      >
+        <div
+          inert={themeSheetOpen ? true : undefined}
+          aria-hidden={themeSheetOpen ? true : undefined}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          {/* Nav bar. The root list carries its own grey page colour up to the
+              top edge under a finger; a narrow window keeps the ruled bar it
+              shares with every other level. */}
+          <div
+            className={`shrink-0 pt-safe-top ${
+              atRoot
+                ? "border-b border-border bg-bg-surface touch:border-b-0 touch:bg-transparent"
+                : "border-b border-border bg-bg-surface"
+            }`}
+          >
+            <div className="flex items-center gap-1 px-3 pb-2.5">
+              <button
+                type="button"
+                onClick={atRoot ? requestClose : requestRoot}
+                aria-label={atRoot ? t("common.close") : t("common.back")}
+                title={atRoot ? t("common.close") : t("common.back")}
+                className={`${NAV_BUTTON_CLASS} ${atRoot ? "hidden touch:flex" : "flex"}`}
+              >
+                <ChevronLeft className="size-4 touch:size-[22px]" />
+              </button>
+              <h2 className="min-w-0 flex-1 truncate pl-1 text-[18px] font-semibold tracking-[-0.3px] text-text-primary touch:text-[21px]">
+                {title}
+              </h2>
+              {activeSection === "services" && saveAction}
+              <button
+                type="button"
+                onClick={requestClose}
+                aria-label={t("common.close")}
+                title={t("common.close")}
+                className={`${NAV_BUTTON_CLASS} flex touch:hidden`}
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto pb-safe-bottom">
+            {activeSection === null ? (
+              <div className="px-4 pt-3.5">
+                {rootGroups.map((group) => (
+                  <div key={group.id}>
+                    {group.headingKey && <p className={ROOT_HEADING_CLASS}>{t(group.headingKey)}</p>}
+                    <div className={ROOT_CARD_CLASS}>
+                      {group.rows.map((row) => {
+                        // The skeleton is the finished layout with the words
+                        // taken out, so nothing moves when SQLite answers.
+                        if (loading) {
+                          return (
+                            <div key={row.id} className={ROOT_ROW_CLASS} aria-hidden="true">
+                              <span
+                                className="h-3 rounded-md bg-bg-input"
+                                style={{ width: row.skeletonWidth }}
+                              />
+                            </div>
+                          );
+                        }
+                        const Icon = ROOT_ROW_ICONS[row.id];
+                        const value = rowValue(row);
+                        const isSheet = row.kind === "sheet";
+                        return (
+                          <button
+                            key={row.id}
+                            type="button"
+                            onClick={() => (isSheet ? setThemeSheetOpen(true) : requestRow(row))}
+                            aria-haspopup={isSheet ? "dialog" : undefined}
+                            aria-expanded={isSheet ? themeSheetOpen : undefined}
+                            className={`${ROOT_ROW_CLASS} cursor-pointer hover:bg-bg-input`}
+                          >
+                            {Icon && <Icon className="size-4 shrink-0 text-text-muted touch:size-[19px]" />}
+                            <span className="truncate">{rowLabel(row)}</span>
+                            <span className="ml-auto max-w-[150px] truncate pl-2 text-[13px] font-normal text-text-muted touch:text-[14px]">
+                              {value}
+                            </span>
+                            {isSheet ? (
+                              <ChevronDown className="size-3.5 shrink-0 text-text-muted/55 touch:size-4" />
+                            ) : (
+                              <ChevronRight className="size-3.5 shrink-0 text-text-muted/55 touch:size-4" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="px-4">{renderContent(activeSection)}</div>
+            )}
+          </div>
+        </div>
+
+        {/* 外观 holds one control, so it is raised where it stands instead of
+            being given a level of its own. */}
+        {themeSheetOpen && (
+          <>
+            <div
+              className="absolute inset-0 z-40 bg-overlay"
+              onClick={() => setThemeSheetOpen(false)}
+            />
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label={t("settings.appearance.theme")}
+              className="absolute inset-x-0 bottom-0 z-50 rounded-t-[20px] bg-bg-surface pb-safe-bottom shadow-[0_-8px_32px_rgba(0,0,0,0.22)]"
+            >
+              <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-border" />
+              <h3 className="px-[18px] pb-1 pt-2 text-[16px] font-semibold tracking-[-0.2px] text-text-primary">
+                {t("settings.appearance.theme")}
+              </h3>
+              <p className="px-[18px] pb-2.5 text-[12.5px] leading-[1.6] text-text-muted">
+                {t("settings.general.themeHint")}
+              </p>
+              {THEME_PREFERENCES.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => {
+                    setThemeSheetOpen(false);
+                    if (option === theme) return;
+                    save("theme", option);
+                    localStorage.setItem("lantern-theme", option);
+                    applyThemePreference(option);
+                    showSavedToast();
+                  }}
+                  className={`flex h-12 w-full cursor-pointer items-center gap-3 border-t border-border-light px-[18px] text-left text-[15px] touch:h-14 touch:text-[15.5px] ${
+                    option === theme ? "font-medium text-accent-text" : "text-text-primary"
+                  }`}
+                >
+                  <Check className={`size-4 shrink-0 ${option === theme ? "" : "invisible"}`} />
+                  {t(THEME_PREFERENCE_LABEL_KEYS[option])}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {showToast && <Toast>{toastMessage}</Toast>}
+      </div>
+    );
+  }
+
+  const active = sections.find((s) => s.id === desktopSection);
 
   return (
     <div
@@ -307,7 +626,7 @@ export default function SettingsModal({ open, onClose, initialSection = "general
             <nav className="grid grid-cols-2 gap-0.5 px-2 pb-2 sm:flex sm:flex-col sm:pb-0">
               {sections.map((section) => {
                 const Icon = section.icon;
-                const isActive = activeSection === section.id;
+                const isActive = desktopSection === section.id;
                 return (
                   <button
                     key={section.id}
@@ -346,19 +665,7 @@ export default function SettingsModal({ open, onClose, initialSection = "general
           <div className="flex min-w-0 flex-1 flex-col">
             {/* Header actions */}
             <div className="flex items-center justify-end gap-2 pr-3 pt-3">
-              {activeSection === "services" && (
-                <button
-                  onClick={() => aiSaveRef.current?.()}
-                  disabled={!aiDirty}
-                  className={`text-[13px] font-medium px-3 py-1 rounded-lg cursor-pointer transition-colors ${
-                    aiDirty
-                      ? "text-accent-text hover:bg-accent-bg"
-                      : "text-text-muted/40 cursor-default"
-                  }`}
-                >
-                  {t("common.save")}
-                </button>
-              )}
+              {desktopSection === "services" && saveAction}
               <button
                 onClick={requestClose}
                 aria-label={t("common.close")}
@@ -377,7 +684,7 @@ export default function SettingsModal({ open, onClose, initialSection = "general
               {/* Pane header — title + subtitle, then a rule with room
                   below it. Suppressed for About, which leads with its
                   centered identity card. */}
-              {activeSection !== "about" && (
+              {desktopSection !== "about" && (
                 <div className="flex flex-col gap-1">
                   <h3 className="text-[18px] font-semibold text-text-primary">
                     {active?.label}
@@ -389,7 +696,7 @@ export default function SettingsModal({ open, onClose, initialSection = "general
                 </div>
               )}
 
-              {renderContent()}
+              {renderContent(desktopSection)}
             </div>
           </div>
         </div>

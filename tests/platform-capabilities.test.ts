@@ -54,6 +54,7 @@ test("iOS has no window management and none of the subprocess-backed features", 
   assert.equal(ios.hasOcr, false);
   assert.equal(ios.hasFormatConvert, false);
   assert.equal(ios.hasMcpIntegration, false);
+  assert.equal(ios.hasLocalModelRuntime, false);
   assert.equal(ios.hasDragDrop, false);
   assert.equal(ios.hasFileReveal, false);
   assert.equal(ios.hasFontImport, false);
@@ -89,6 +90,18 @@ test("the retrieval index follows chat, and chat is desktop-only", () => {
   }
   for (const id of ["ios", "android", "unknown"] as PlatformId[]) {
     assert.equal(capabilitiesFor(id).hasEmbeddingIndex, false, `hasEmbeddingIndex should be false on ${id}`);
+  }
+});
+
+test("a local model server is a desktop-only runtime", () => {
+  // Ollama listens on localhost; a phone has no such process and no such port.
+  // The escape hatch is the custom OpenAI-compatible preset with a LAN address,
+  // which is plain HTTP and stays available everywhere.
+  for (const id of ["macos", "windows", "linux"] as PlatformId[]) {
+    assert.equal(capabilitiesFor(id).hasLocalModelRuntime, true, `hasLocalModelRuntime should be true on ${id}`);
+  }
+  for (const id of ["ios", "android", "unknown"] as PlatformId[]) {
+    assert.equal(capabilitiesFor(id).hasLocalModelRuntime, false, `hasLocalModelRuntime should be false on ${id}`);
   }
 });
 

@@ -483,7 +483,7 @@ export default function ReadingSettings({
         </div>
       )}
       {/* Font Family */}
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.fontFamily")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.fontFamilyHint")}</p>
@@ -590,7 +590,7 @@ export default function ReadingSettings({
         </div>
       )}
       {/* Font Size */}
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.fontSize")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.fontSizeHint")}</p>
@@ -598,7 +598,7 @@ export default function ReadingSettings({
         <NumberInput value={fontSize} onChange={setFontSize} {...numberRow("font_size", fontSize)} suffix="px" min={FONT_SIZE_MIN} max={FONT_SIZE_MAX} />
       </div>
       {/* Shrink the font on narrow windows */}
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.narrowFontShrink")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.narrowFontShrinkHint")}</p>
@@ -614,7 +614,7 @@ export default function ReadingSettings({
         />
       </div>
       {/* Line Spacing */}
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.lineSpacing")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.lineSpacingHint")}</p>
@@ -622,7 +622,7 @@ export default function ReadingSettings({
         <NumberInput value={lineSpacing} onChange={setLineSpacing} {...numberRow("line_spacing", lineSpacing)} suffix="x" min={1} max={3} />
       </div>
       {/* Character Spacing */}
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.charSpacing")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.charSpacingHint")}</p>
@@ -630,7 +630,7 @@ export default function ReadingSettings({
         <NumberInput value={charSpacing} onChange={setCharSpacing} {...numberRow("char_spacing", charSpacing)} suffix="%" min={-5} max={20} />
       </div>
       {/* Word Spacing */}
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.wordSpacing")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.wordSpacingHint")}</p>
@@ -672,7 +672,7 @@ export default function ReadingSettings({
           }} />
         </div>
       </div>
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.margins")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.marginsHint")}</p>
@@ -680,7 +680,7 @@ export default function ReadingSettings({
         <NumberInput value={margins} onChange={setMargins} {...numberRow("margins", margins)} suffix="%" min={0} max={30} />
       </div>
       {/* Default Page Flow */}
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.readingMode")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.readingModeHint")}</p>
@@ -701,7 +701,7 @@ export default function ReadingSettings({
         />
       </div>
       {/* Default Page Layout */}
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.pageLayout")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.pageLayoutHint")}</p>
@@ -722,7 +722,7 @@ export default function ReadingSettings({
         />
       </div>
       {/* Page-turn Animation */}
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.pageTurnAnimation")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.pageTurnAnimationHint")}</p>
@@ -790,7 +790,7 @@ export default function ReadingSettings({
         </div>
       </div>
       {/* Previous-page Control */}
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.previousPageBinding")}</p>
           <p className="text-[12px] text-text-muted mt-0.5">{t("readerSettings.pageTurnBindingsHint")}</p>
@@ -814,7 +814,7 @@ export default function ReadingSettings({
         />
       </div>
       {/* Next-page Control */}
-      <div className="flex items-center justify-between h-[73px]">
+      <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.nextPageBinding")}</p>
         </div>
@@ -841,7 +841,7 @@ export default function ReadingSettings({
       <button
         type="button"
         onClick={() => setView("passiveVocab")}
-        className="group flex h-[73px] w-full items-center justify-between gap-4 border-t border-border-light text-left"
+        className="group flex min-h-[73px] py-3 w-full items-center justify-between gap-4 border-t border-border-light text-left"
       >
         <span className="min-w-0">
           <span className="block text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.passiveVocab.title")}</span>
@@ -853,7 +853,7 @@ export default function ReadingSettings({
       </button>
       {/* Restore defaults — last row, because it undoes every row above it. */}
       <div className="border-t border-border-light">
-        <div className="flex items-center justify-between h-[73px]">
+        <div className="flex items-center justify-between min-h-[73px] py-3">
           <div>
             <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.restoreDefaults")}</p>
             <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.restoreDefaultsHint")}</p>

@@ -19,13 +19,16 @@ import {
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { formatDuration } from "./aiDuration";
 import { connectionErrorLabel } from "./ai-connection-errors";
-import { AI_PRESETS, COST_TIER_CLASSES, presetFor } from "./aiPresets";
+import { COST_TIER_CLASSES, availablePresets, presetFor } from "./aiPresets";
+import ApiKeyField from "./ApiKeyField";
+import { platform } from "../../services/platform";
 import Button from "../ui/Button";
 import ComboField from "../ui/ComboField";
 import Input from "../ui/Input";
@@ -33,7 +36,6 @@ import Select from "../ui/Select";
 import Slider from "../ui/Slider";
 import SortableList from "../ui/SortableList";
 import Toggle from "../ui/Toggle";
-import { ROW_CONTROL_WIDTH } from "./types";
 
 export interface AiProfile {
   id: string;
@@ -136,6 +138,10 @@ interface AiServiceCardProps {
   onDuplicate: () => Promise<void>;
   onDelete: () => Promise<void>;
   onMove: (direction: -1 | 1) => Promise<void>;
+  /** Whether this model has somewhere to go. The card knows the route order
+   *  only through these — it never sees its own index. */
+  canMoveUp: boolean;
+  canMoveDown: boolean;
   onAddCredential: (label: string, value: string) => Promise<void>;
   onReplaceCredential: (id: string, value: string) => Promise<void>;
   onToggleCredential: (id: string, enabled: boolean) => Promise<void>;
@@ -338,6 +344,9 @@ export default function AiServiceCard({
   onForgetEffortOptions,
   onDuplicate,
   onDelete,
+  onMove,
+  canMoveUp,
+  canMoveDown,
   onAddCredential,
   onReplaceCredential,
   onToggleCredential,
@@ -353,6 +362,7 @@ export default function AiServiceCard({
   const [replaceValue, setReplaceValue] = useState("");
   const [credentialBusyId, setCredentialBusyId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const newKeyRef = useRef<HTMLInputElement>(null);
   // Connecting a preset needs none of the endpoint fields. They start open only
   // where nothing else can supply them: a custom endpoint, or a model ID the
   // preset never filled in.
@@ -481,10 +491,14 @@ export default function AiServiceCard({
   return (
     <section className="overflow-hidden rounded-lg border border-border bg-bg-surface transition-[border-color,opacity,box-shadow]">
       <div className="flex min-h-[68px] items-center gap-2 px-2.5 py-2">
+        {/* A pointer drag and a finger drag are not the same gesture: under
+            touch the browser claims the pointer for scrolling and the drag
+            never activates, so a handle would be a control that does nothing.
+            Reordering moves to the buttons in the expanded body instead. */}
         <span
           title={t("settings.ai.reorderHint")}
           aria-label={t("settings.ai.reorderService", { name: profile.label })}
-          className={`flex size-8 shrink-0 items-center justify-center text-text-muted ${profileBusy || expanded ? "opacity-35" : ""}`}
+          className={`flex size-8 shrink-0 items-center justify-center text-text-muted touch:hidden ${profileBusy || expanded ? "opacity-35" : ""}`}
         >
           <GripVertical size={15} />
         </span>
@@ -503,7 +517,7 @@ export default function AiServiceCard({
           )}
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
-              <span className="truncate text-[13px] font-semibold text-text-primary">{profile.label}</span>
+              <span className="truncate text-[13px] font-semibold text-text-primary touch:text-[14px]">{profile.label}</span>
               {cost && (
                 <span
                   className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${COST_TIER_CLASSES[cost]}`}
@@ -519,11 +533,17 @@ export default function AiServiceCard({
                 />
               )}
             </span>
-            <span className="mt-0.5 block truncate text-[11px] text-text-muted">
+            <span className="mt-0.5 block truncate text-[11px] text-text-muted touch:text-[12px]">
               {providerName} · {profile.model || t("settings.ai.modelNotSet")}
-              <span className="sm:hidden">
-                {` · ${health.label}${latency != null ? ` · ${latency} ms` : ""}`}
-              </span>
+            </span>
+            {/* Narrow enough and the badge stops fitting beside the name. It
+                drops to its own line rather than being appended to the subtitle,
+                where `truncate` was quietly eating the half that mattered. */}
+            <span
+              className={`mt-1.5 inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium sm:hidden ${health.className}`}
+            >
+              {health.label}
+              {latency != null && ` · ${latency} ms`}
             </span>
           </span>
         </button>
@@ -542,13 +562,16 @@ export default function AiServiceCard({
           />
         </div>
 
+        {/* Under touch the row is already carrying a name, a badge and a
+            switch across 390px. The test moves to a full-width button in the
+            open card, where it also has room to say what it is doing. */}
         <button
           type="button"
           disabled={testing || profileBusy}
           onClick={() => void onTest()}
           title={testing ? t("settings.ai.testingConnection") : t("settings.ai.testConnection")}
           aria-label={testing ? t("settings.ai.testingConnection") : t("settings.ai.testConnection")}
-          className="flex size-8 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text disabled:opacity-50"
+          className="flex size-8 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text disabled:opacity-50 touch:hidden"
         >
           {testing ? <Loader2 size={15} className="animate-spin" /> : <Activity size={15} />}
         </button>
@@ -574,7 +597,7 @@ export default function AiServiceCard({
                 onChange={(provider) => {
                   if (!profileBusy) setProvider(provider);
                 }}
-                options={AI_PRESETS.map((option) => ({
+                options={availablePresets(platform.hasLocalModelRuntime, profile.provider).map((option) => ({
                   value: option.provider,
                   label: t(option.nameKey),
                 }))}
@@ -721,14 +744,17 @@ export default function AiServiceCard({
                   groups={effortGroups}
                   onChange={(value) => onChange({ reasoning_effort: value.trim() || null })}
                 />
-                <div className="mt-2 flex items-center justify-between gap-3">
+                <div className="mt-2 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                   <span className="min-w-0 text-[12px] text-text-primary">
                     {t("settings.ai.reasoningEffortScope")}
                   </span>
+                  {/* The segmented control needs ~180px for its labels, which
+                      is half a phone. It takes the full width on its own line
+                      rather than squeezing the label it belongs to. */}
                   <div
                     role="group"
                     aria-label={t("settings.ai.reasoningEffortScope")}
-                    className={`flex rounded-md bg-bg-input p-0.5 ${ROW_CONTROL_WIDTH}`}
+                    className="flex w-full rounded-md bg-bg-input p-0.5 sm:w-[180px] sm:shrink-0"
                   >
                     {[
                       { all: false, label: t("settings.ai.reasoningEffortScopeChat") },
@@ -847,7 +873,10 @@ export default function AiServiceCard({
                   className="divide-y divide-border-light border-y border-border-light"
                   renderItem={(credential, credentialIndex) => (
                     <div className="py-2">
-                      <div className="flex items-center gap-2">
+                      {/* Five controls and a label do not fit across 390px.
+                          The actions take their own line below the key they act
+                          on, instead of stealing width from its name. */}
+                      <div className="flex flex-wrap items-center gap-2">
                         <Toggle
                           checked={credential.enabled}
                           disabled={credentialBusyId != null}
@@ -860,58 +889,58 @@ export default function AiServiceCard({
                           </p>
                           <p className="mt-0.5 text-[10px] text-text-muted">{credentialStateLabel(credential, t)}</p>
                         </div>
-                        <button
-                          type="button"
-                          disabled={credentialIndex === 0 || credentialBusyId != null}
-                          onClick={() => void moveCredential(credentialIndex, -1)}
-                          title={t("settings.ai.moveKeyUp")}
-                          aria-label={t("settings.ai.moveKeyUpNamed", { name: credential.label })}
-                          className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25"
-                        >
-                          <ArrowUp size={13} />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={credentialIndex === credentials.length - 1 || credentialBusyId != null}
-                          onClick={() => void moveCredential(credentialIndex, 1)}
-                          title={t("settings.ai.moveKeyDown")}
-                          aria-label={t("settings.ai.moveKeyDownNamed", { name: credential.label })}
-                          className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25"
-                        >
-                          <ArrowDown size={13} />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={credentialBusyId != null}
-                          onClick={() => {
-                            setReplaceId(credential.id);
-                            setReplaceValue("");
-                          }}
-                          title={t("settings.ai.replaceKey")}
-                          aria-label={t("settings.ai.replaceKeyNamed", { name: credential.label })}
-                          className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text disabled:opacity-40"
-                        >
-                          <RefreshCw size={13} />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={credentialBusyId != null}
-                          onClick={() => void runCredential(credential.id, () => onDeleteCredential(credential.id))}
-                          title={t("settings.ai.deleteKey")}
-                          aria-label={t("settings.ai.deleteKeyNamed", { name: credential.label })}
-                          className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-danger-bg hover:text-danger-text disabled:opacity-40"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+                        <div className="flex w-full items-center justify-end gap-1 sm:w-auto">
+                          <button
+                            type="button"
+                            disabled={credentialIndex === 0 || credentialBusyId != null}
+                            onClick={() => void moveCredential(credentialIndex, -1)}
+                            title={t("settings.ai.moveKeyUp")}
+                            aria-label={t("settings.ai.moveKeyUpNamed", { name: credential.label })}
+                            className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25 touch:size-11"
+                          >
+                            <ArrowUp size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={credentialIndex === credentials.length - 1 || credentialBusyId != null}
+                            onClick={() => void moveCredential(credentialIndex, 1)}
+                            title={t("settings.ai.moveKeyDown")}
+                            aria-label={t("settings.ai.moveKeyDownNamed", { name: credential.label })}
+                            className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25 touch:size-11"
+                          >
+                            <ArrowDown size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={credentialBusyId != null}
+                            onClick={() => {
+                              setReplaceId(credential.id);
+                              setReplaceValue("");
+                            }}
+                            title={t("settings.ai.replaceKey")}
+                            aria-label={t("settings.ai.replaceKeyNamed", { name: credential.label })}
+                            className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text disabled:opacity-40 touch:size-11"
+                          >
+                            <RefreshCw size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={credentialBusyId != null}
+                            onClick={() => void runCredential(credential.id, () => onDeleteCredential(credential.id))}
+                            title={t("settings.ai.deleteKey")}
+                            aria-label={t("settings.ai.deleteKeyNamed", { name: credential.label })}
+                            className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-danger-bg hover:text-danger-text disabled:opacity-40 touch:size-11"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       </div>
                       {replaceId === credential.id && (
                         <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:pl-[52px]">
-                          <Input
+                          <ApiKeyField
                             className="min-w-0 flex-1"
-                            type="password"
-                            autoComplete="new-password"
                             value={replaceValue}
-                            onChange={(event) => setReplaceValue(event.target.value)}
+                            onChange={setReplaceValue}
                             placeholder={t("settings.ai.keyValuePlaceholder")}
                           />
                           <Button
@@ -947,11 +976,10 @@ export default function AiServiceCard({
                     onChange={(event) => setNewLabel(event.target.value)}
                     placeholder={t("settings.ai.keyLabel")}
                   />
-                  <Input
-                    type="password"
-                    autoComplete="new-password"
+                  <ApiKeyField
+                    ref={newKeyRef}
                     value={newKey}
-                    onChange={(event) => setNewKey(event.target.value)}
+                    onChange={setNewKey}
                     placeholder={t("settings.ai.keyValuePlaceholder")}
                   />
                 </div>
@@ -959,6 +987,7 @@ export default function AiServiceCard({
                   <Button
                     variant="secondary"
                     size="sm"
+                    className="w-full justify-center touch:h-11 sm:w-auto"
                     disabled={!newKey.trim() || credentialBusyId === "new"}
                     onClick={() => void addCredential()}
                   >
@@ -969,6 +998,22 @@ export default function AiServiceCard({
               </div>
             </div>
           )}
+
+          {/* The header's icon button under a finger, given a label and a
+              width. It stays in place while a test runs — the result lands
+              directly beneath it, so the button is the anchor for both. */}
+          <div className="mt-4 hidden touch:block">
+            <Button
+              variant="secondary"
+              size="md"
+              disabled={testing || profileBusy}
+              className="h-12 w-full justify-center"
+              onClick={() => void onTest()}
+            >
+              {testing ? <Loader2 size={15} className="animate-spin" /> : <Activity size={15} />}
+              {testing ? t("settings.ai.testingConnection") : t("settings.ai.testConnection")}
+            </Button>
+          </div>
 
           {testResult && (
             <div className={`mt-3 rounded-md px-3 py-2 text-[11px] ${
@@ -1012,6 +1057,25 @@ export default function AiServiceCard({
             </div>
           )}
 
+          {/* The way out of a failure. On a phone the key field is several
+              scrolls back up by the time the error is read, and "scroll up and
+              find it yourself" is where people stop. */}
+          {testResult && !testResult.success && usesApiKeys && (
+            <div className="mt-3 hidden touch:block">
+              <Button
+                variant="primary"
+                size="md"
+                className="h-12 w-full justify-center"
+                onClick={() => {
+                  newKeyRef.current?.scrollIntoView({ block: "center" });
+                  newKeyRef.current?.focus();
+                }}
+              >
+                {t("settings.ai.reenterKey")}
+              </Button>
+            </div>
+          )}
+
           <div className="mt-4 flex min-h-9 items-center justify-end gap-2 border-t border-border-light pt-3">
             {confirmDelete ? (
               <div className="flex min-w-0 items-center gap-2">
@@ -1025,13 +1089,36 @@ export default function AiServiceCard({
               </div>
             ) : (
               <div className="flex items-center gap-1">
+                {/* Route order, which decides who is asked first, is otherwise
+                    unreachable under touch — the drag handle above is hidden
+                    there because a finger drag scrolls the page instead. */}
+                <button
+                  type="button"
+                  disabled={profileBusy || !canMoveUp}
+                  onClick={() => void onMove(-1)}
+                  title={t("settings.ai.moveServiceUp")}
+                  aria-label={t("settings.ai.moveServiceUpNamed", { name: profile.label })}
+                  className="hidden size-11 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25 touch:flex"
+                >
+                  <ArrowUp size={15} />
+                </button>
+                <button
+                  type="button"
+                  disabled={profileBusy || !canMoveDown}
+                  onClick={() => void onMove(1)}
+                  title={t("settings.ai.moveServiceDown")}
+                  aria-label={t("settings.ai.moveServiceDownNamed", { name: profile.label })}
+                  className="hidden size-11 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25 touch:flex"
+                >
+                  <ArrowDown size={15} />
+                </button>
                 <button
                   type="button"
                   disabled={profileBusy}
                   onClick={() => void onDuplicate()}
                   title={t("settings.ai.duplicateService")}
                   aria-label={t("settings.ai.duplicateServiceNamed", { name: profile.label })}
-                  className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text"
+                  className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text touch:size-11"
                 >
                   <CopyPlus size={14} />
                 </button>
@@ -1041,7 +1128,7 @@ export default function AiServiceCard({
                   onClick={() => setConfirmDelete(true)}
                   title={t("settings.ai.deleteService")}
                   aria-label={t("settings.ai.deleteServiceNamed", { name: profile.label })}
-                  className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-danger-bg hover:text-danger-text"
+                  className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-danger-bg hover:text-danger-text touch:size-11"
                 >
                   <Trash2 size={14} />
                 </button>

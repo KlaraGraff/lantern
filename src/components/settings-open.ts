@@ -12,7 +12,7 @@ import { normalizeSettingsDestination, type SettingsDestination } from "./settin
 export const OPEN_SETTINGS_EVENT = "open-settings";
 
 /** Open the modal in this window, optionally on a particular destination. */
-export function openSettings(destination: SettingsDestination = "general") {
+export function openSettings(destination: SettingsDestination = "root") {
   window.dispatchEvent(new CustomEvent(OPEN_SETTINGS_EVENT, { detail: destination }));
 }
 

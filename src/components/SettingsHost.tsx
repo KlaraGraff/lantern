@@ -22,7 +22,7 @@ import { listenForOpenSettings } from "./settings-open";
  */
 export default function SettingsHost() {
   const [open, setOpen] = useState(false);
-  const [destination, setDestination] = useState<SettingsDestination>("general");
+  const [destination, setDestination] = useState<SettingsDestination>("root");
 
   useEffect(() => listenForOpenSettings((next) => {
     setDestination(next);
@@ -33,6 +33,8 @@ export default function SettingsHost() {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === ",") {
         event.preventDefault();
+        // A keyboard shortcut is a desktop gesture and it keeps its desktop
+        // landing spot, rather than following the gear button to the root list.
         setDestination("general");
         setOpen(true);
       }
@@ -46,7 +48,7 @@ export default function SettingsHost() {
       open={open}
       onClose={() => {
         setOpen(false);
-        setDestination("general");
+        setDestination("root");
       }}
       initialSection={settingsDestinationSection(destination)}
       initialView={settingsDestinationView(destination)}

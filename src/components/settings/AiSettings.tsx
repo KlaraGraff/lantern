@@ -13,8 +13,11 @@ import AiServiceCard, {
   type AiEffortHints,
   type AiProfile,
 } from "./AiServiceCard";
-import { AI_PRESETS, COST_TIER_CLASSES, presetFor } from "./aiPresets";
+import { AI_PRESETS, COST_TIER_CLASSES, availablePresets, presetFor } from "./aiPresets";
+import MissingKeyNotice from "./MissingKeyNotice";
+import { missingKeyState, wantsMissingKeyNotice, type MissingKeyPeer } from "./missing-key";
 import type { SettingsProps } from "./types";
+import { platform } from "../../services/platform";
 import { useSettings } from "../../hooks/useSettings";
 import AutoAnalysisIntro from "../onboarding/AutoAnalysisIntro";
 import { AUTO_ANALYSIS_INTRO_KEY, shouldIntroduceAutoAnalysis } from "../onboarding/onboarding-state";
@@ -28,6 +31,17 @@ interface OAuthStatus {
   connected: boolean;
   account_id: string | null;
 }
+
+/** As much of `sync_status` as the missing-key notice reads. */
+interface SyncStatusPeers {
+  peers: MissingKeyPeer[];
+}
+
+/**
+ * The catalog this platform may offer. Read once — `platform` is a
+ * compile-time constant, so the list cannot change while the pane is open.
+ */
+const CATALOG = availablePresets(platform.hasLocalModelRuntime);
 
 /** Shared so an unopened card does not remount its field on every render. */
 const NO_EFFORT_HINTS: AiEffortHints = { options: [], updated_at: null };
@@ -57,6 +71,13 @@ function profileLabel(value: string): string {
   return Array.from(value).slice(0, 100).join("");
 }
 
+/**
+ * Validated against the whole catalog, not against `CATALOG`. A model
+ * configured on a Mac can name a provider this platform would not offer — an
+ * Ollama route synced to a phone is the case — and that profile is still valid
+ * data. Refusing to save it would mean a phone silently corrupting a route it
+ * merely cannot run.
+ */
 function isProfileConfigValid(profile: AiProfile): boolean {
   const label = profile.label.trim();
   const model = profile.model.trim();
@@ -103,6 +124,10 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   const [error, setError] = useState<string | null>(null);
   const [oauthStatus, setOauthStatus] = useState<OAuthStatus>({ connected: false, account_id: null });
   const [oauthLoading, setOauthLoading] = useState(false);
+  const [peers, setPeers] = useState<MissingKeyPeer[]>([]);
+  const [firstSeenMissing, setFirstSeenMissing] = useState<Record<string, number>>({});
+  const [recheckingId, setRecheckingId] = useState<string | null>(null);
+  const [graceNow, setGraceNow] = useState(() => Date.now());
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profilesRef = useRef<AiProfile[]>([]);
   const savedProfilesRef = useRef<AiProfile[]>([]);
@@ -376,6 +401,78 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
       }
     };
   }, [loading, saveProfiles, saving, validDirtyIds]);
+
+  /*
+   * ── A configuration that arrived without its credential (D-018) ──
+   *
+   * Mobile only. On a desktop this pane is unchanged: nothing below runs, and
+   * `sync_status` is never called, because the reader who configured the model
+   * is sitting at the machine that has the key.
+   */
+  const missingKeyProfiles = useMemo(() => (
+    platform.isMobile
+      ? profiles.filter((profile) => (
+          wantsMissingKeyNotice(profile, (credentials[profile.id] ?? []).length)
+        ))
+      : []
+  ), [credentials, profiles]);
+  // A stable dependency: the array identity changes on every credential
+  // refresh, and the effects below care only about which models are affected.
+  const missingKeyIds = missingKeyProfiles.map((profile) => profile.id).join("|");
+
+  // The clock starts when this device first noticed, not when the pane mounted,
+  // so opening settings twice does not restart the grace window.
+  useEffect(() => {
+    const ids = missingKeyIds ? missingKeyIds.split("|") : [];
+    setFirstSeenMissing((current) => {
+      const next: Record<string, number> = {};
+      let changed = Object.keys(current).length !== ids.length;
+      for (const id of ids) {
+        next[id] = current[id] ?? Date.now();
+        if (current[id] == null) changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [missingKeyIds]);
+
+  // One read of the peer list, the moment there is something to explain. It is
+  // evidence about the *other* channel — a named peer means documents are
+  // arriving from that device — so it is only worth fetching when a credential
+  // is missing.
+  useEffect(() => {
+    if (!missingKeyIds) return;
+    let active = true;
+    invoke<SyncStatusPeers>("sync_status")
+      .then((status) => {
+        if (active) setPeers(status.peers ?? []);
+      })
+      .catch(() => {
+        // Sync may be off entirely, which simply means no second channel to
+        // compare against — the notice falls back to its plainer wording.
+      });
+    return () => {
+      active = false;
+    };
+  }, [missingKeyIds]);
+
+  // Crosses the grace threshold without a spinner: the copy changes once, on
+  // its own, and nothing on screen claims that waiting is progress.
+  useEffect(() => {
+    if (!missingKeyIds) return;
+    const timer = window.setInterval(() => setGraceNow(Date.now()), 5000);
+    return () => window.clearInterval(timer);
+  }, [missingKeyIds]);
+
+  const recheckCredentials = useCallback(async (profileId: string) => {
+    setRecheckingId(profileId);
+    try {
+      await refreshCredentials(profileId);
+    } catch (nextError) {
+      setError(errorText(nextError));
+    } finally {
+      setRecheckingId(null);
+    }
+  }, [refreshCredentials]);
 
   /**
    * Add one model from the catalog. Nothing is added until the user picks a
@@ -821,24 +918,24 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
         <div className="mb-3 rounded-lg border border-border p-1">
           <p className="px-2 pb-1 pt-1.5 text-[10px] leading-4 text-text-muted">{t("settings.ai.catalogHint")}</p>
           <ul>
-            {AI_PRESETS.map((preset) => (
+            {CATALOG.map((preset) => (
               <li key={preset.provider}>
                 <button
                   type="button"
                   disabled={busyId != null || saving}
                   onClick={() => void createProfile(preset.provider)}
-                  className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-bg-input disabled:opacity-50"
+                  className="flex w-full items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-bg-input disabled:opacity-50 touch:min-h-[60px] touch:items-center touch:px-3"
                 >
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1.5">
-                      <span className="text-[12px] font-medium text-text-primary">{t(preset.nameKey)}</span>
+                      <span className="text-[12px] font-medium text-text-primary touch:text-[14px]">{t(preset.nameKey)}</span>
                       {preset.cost && (
                         <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${COST_TIER_CLASSES[preset.cost]}`}>
                           {t(`settings.ai.cost.${preset.cost}`)}
                         </span>
                       )}
                     </span>
-                    <span className="mt-0.5 block text-[10px] leading-4 text-text-muted">
+                    <span className="mt-0.5 block text-[10px] leading-4 text-text-muted touch:text-[11.5px] touch:leading-[1.5]">
                       {t(preset.descriptionKey)}
                     </span>
                   </span>
@@ -871,7 +968,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
           onReorder={applyProfileOrder}
           disabled={(profile) => expandedId === profile.id || saving || busyId != null}
           className="space-y-2"
-          renderItem={(profile) => (
+          renderItem={(profile, index) => (
             <AiServiceCard
               profile={profile}
               credentials={credentials[profile.id] ?? []}
@@ -895,6 +992,8 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
               onDuplicate={() => duplicateProfile(profile)}
               onDelete={() => deleteProfile(profile.id)}
               onMove={(direction) => moveProfile(profile.id, direction)}
+              canMoveUp={index > 0}
+              canMoveDown={index < profiles.length - 1}
               onAddCredential={(label, value) => addCredential(profile.id, label, value)}
               onReplaceCredential={(id, value) => replaceCredential(profile.id, id, value)}
               onToggleCredential={(id, enabled) => toggleCredential(profile.id, id, enabled)}
@@ -906,6 +1005,31 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
           )}
         />
       )}
+
+      {/* Below the list rather than inside a card: the card says the model is
+          not connected, and this says why the key it was configured with is not
+          here. An expanded card already shows the key field, so the notice
+          stands down while the reader is looking at it. */}
+      {missingKeyProfiles
+        .filter((profile) => profile.id !== expandedId)
+        .map((profile) => (
+          <MissingKeyNotice
+            key={profile.id}
+            name={profile.label}
+            state={missingKeyState({
+              missing: true,
+              // The one platform pair where both channels exist, so the one
+              // place where comparing them means anything (D-007, D-018).
+              pairedSync: platform.hasFolderSync,
+              peers,
+              observedSince: firstSeenMissing[profile.id] ?? graceNow,
+              now: graceNow,
+            })}
+            rechecking={recheckingId === profile.id}
+            onEnterKey={() => setExpandedId(profile.id)}
+            onRecheck={() => void recheckCredentials(profile.id)}
+          />
+        ))}
     </div>
   );
 }

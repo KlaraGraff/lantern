@@ -293,31 +293,37 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
             reports rather than offers. The button is the whole reason the
             path is still worth showing: it is the answer to "where are my
             books", which is what the folder picker used to answer by
-            accident. Hidden where there is no file manager to open it in. */}
-        <div className="flex items-center justify-between min-h-[73px] gap-4">
-          <div className="min-w-0">
-            <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">
-              {t("settings.librarySync.folder")}
-            </p>
-            <p className="text-[12px] text-text-muted mt-0.5 truncate" title={status?.shared_dir ?? undefined}>
-              {status?.shared_dir ?? t("settings.librarySync.folderPending")}
-            </p>
-          </div>
-          {platform.hasFileReveal && (
-            <button
-              type="button"
-              onClick={revealSharedDirectory}
-              disabled={!status?.shared_dir}
-              className="shrink-0 flex items-center gap-1.5 text-[13px] font-medium text-accent-text hover:bg-accent-bg rounded-md px-2.5 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-            >
-              <FolderOpen size={14} />
-              {t("settings.librarySync.openLocation")}
-            </button>
-          )}
-        </div>
-        <div className="h-px bg-border-light" />
+            accident. Take the button away and the row is a container path
+            nobody can act on — on iOS that is forty characters of
+            `/private/var/mobile/Containers/…` that would blow the row open
+            to say nothing. So the whole row goes with the button, not just
+            the button. Screen 19 of the mockup has no folder row at all. */}
+        {platform.hasFileReveal && (
+          <>
+            <div className="flex items-center justify-between min-h-[73px] gap-4">
+              <div className="min-w-0">
+                <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">
+                  {t("settings.librarySync.folder")}
+                </p>
+                <p className="text-[12px] text-text-muted mt-0.5 truncate" title={status?.shared_dir ?? undefined}>
+                  {status?.shared_dir ?? t("settings.librarySync.folderPending")}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={revealSharedDirectory}
+                disabled={!status?.shared_dir}
+                className="shrink-0 flex items-center gap-1.5 text-[13px] font-medium text-accent-text hover:bg-accent-bg rounded-md px-2.5 py-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <FolderOpen size={14} />
+                {t("settings.librarySync.openLocation")}
+              </button>
+            </div>
+            <div className="h-px bg-border-light" />
+          </>
+        )}
         {/* Sync toggle */}
-        <div className="flex items-center justify-between h-[73px]">
+        <div className="flex items-center justify-between gap-4 min-h-[73px] py-3">
           {busy || initialStatusLoading ? (
             <div className="flex items-center gap-2">
               <Loader2 size={16} className="text-text-muted animate-spin" />
@@ -327,11 +333,15 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
             </div>
           ) : (
             <>
-              <div>
+              {/* `min-w-0 flex-1` because the sub-line is a sentence, not a
+                  label: at 390px 「已暂停 — iCloud 当前不可用…」 wraps to two
+                  lines, and without this the flex row would rather crush the
+                  Toggle than let the text wrap. */}
+              <div className="min-w-0 flex-1">
                 <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">
                   {t("settings.librarySync.toggle")}
                 </p>
-                <p className="text-[12px] text-text-muted mt-0.5">
+                <p className="text-[12px] text-text-muted mt-0.5 leading-[1.45]">
                   {!available
                     ? t("settings.librarySync.defaultFolderHint")
                     : syncOn && !engineRunning
@@ -397,7 +407,7 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
                           disabled={busy}
                           aria-label={t("settings.librarySync.removeDevice")}
                           title={t("settings.librarySync.removeDevice")}
-                          className="text-text-muted hover:text-danger-text disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer p-1 -m-1"
+                          className="shrink-0 flex items-center justify-center rounded-lg p-1 -m-1 touch:m-0 touch:size-11 touch:p-0 text-text-muted hover:text-danger-text disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                         >
                           <Trash2 size={14} />
                         </button>
@@ -414,14 +424,20 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
                 we're in queue-only mode so the user isn't confused by
                 an error toast. The "Last sync" caption still renders
                 whatever the backend reports. */}
-            <div className="flex items-center justify-between pt-4 pb-2">
+            {/* Two verbs and a timestamp. Side by side they need ~330px of
+                the 358px a 390px phone leaves after the page gutters, and the
+                timestamp is the piece that loses — it would be the thing that
+                truncates, and "上次同步 2 分…" is worse than useless. Stacked
+                below `md:` instead. Width, not pointer type: a desktop window
+                dragged narrow has the same problem. */}
+            <div className="flex flex-col items-start gap-1 md:flex-row md:items-center md:justify-between md:gap-4 pt-4 pb-2">
               <div className="flex items-center gap-4">
                 <button
                   type="button"
                   onClick={syncing ? () => invoke("sync_cancel") : onSyncNow}
                   disabled={(!syncing && busy) || !engineRunning}
                   title={!engineRunning ? t("settings.librarySync.paused") : undefined}
-                  className="text-[13px] font-medium text-accent-text hover:underline disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  className="inline-flex items-center touch:min-h-11 text-[13px] font-medium text-accent-text hover:underline disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   {syncing ? t("settings.librarySync.cancelSync") : t("settings.librarySync.syncNow")}
                 </button>
@@ -430,7 +446,7 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
                   onClick={onCompact}
                   disabled={busy || !engineRunning}
                   title={!engineRunning ? t("settings.librarySync.paused") : undefined}
-                  className="text-[13px] font-medium text-accent-text hover:underline disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  className="inline-flex items-center touch:min-h-11 text-[13px] font-medium text-accent-text hover:underline disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                 >
                   {t("settings.librarySync.compact")}
                 </button>
@@ -453,9 +469,12 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
           {t("settings.librarySync.simultaneityNote")}
         </p>
 
-        {/* Error */}
+        {/* Error. Every one of these messages is a full sentence of
+            instructions — 「先在 iPhone 上打开一次 Lantern…」 is three lines at
+            390px. Beside it, Retry squeezes the sentence into a column;
+            beneath it, both are readable. */}
         {error && (
-          <div className="flex items-center justify-between bg-danger-bg border border-danger-border rounded-lg px-3.5 py-2 mt-3">
+          <div className="flex flex-col items-start gap-1 md:flex-row md:items-center md:justify-between bg-danger-bg border border-danger-border rounded-lg px-3.5 py-2 mt-3">
             <span className="text-[12px] text-danger-text leading-[1.45]">
               {syncErrorMessage(error, t)}
             </span>
@@ -463,7 +482,7 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
               <button
                 type="button"
                 disabled={busy}
-                className="text-[12px] font-medium text-danger-text underline cursor-pointer ml-2 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center touch:min-h-11 text-[12px] font-medium text-danger-text underline cursor-pointer md:ml-2 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={onRetry}
               >
                 {t("settings.ai.retry")}
@@ -476,8 +495,8 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
       {/* Remove-device confirmation. Mirrors iOS's destructive alert
           copy so the cross-platform UX matches. */}
       {pendingRemoval && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay">
-          <div className="bg-bg-surface rounded-xl shadow-lg w-[400px] p-6">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay p-4">
+          <div className="bg-bg-surface rounded-xl shadow-lg w-[min(400px,100%)] max-h-[calc(100dvh-2rem)] overflow-y-auto p-6">
             <h3 className="text-[18px] font-semibold text-text-primary mb-2">
               {t("settings.librarySync.removeDeviceTitle", { name: pendingRemoval.name })}
             </h3>
@@ -485,13 +504,13 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
               {t("settings.librarySync.removeDeviceBody")}
             </p>
             <div className="flex justify-end gap-3">
-              <Button variant="ghost" size="md" onClick={() => setPendingRemoval(null)}>
+              <Button variant="ghost" size="md" className="touch:h-11" onClick={() => setPendingRemoval(null)}>
                 {t("common.cancel")}
               </Button>
               <button
                 type="button"
                 onClick={onConfirmRemovePeer}
-                className="bg-danger hover:bg-danger-hover text-white text-[14px] font-medium rounded-md px-4 py-2 cursor-pointer"
+                className="inline-flex items-center touch:min-h-11 bg-danger hover:bg-danger-hover text-white text-[14px] font-medium rounded-md px-4 py-2 cursor-pointer"
               >
                 {t("settings.librarySync.remove")}
               </button>
@@ -501,8 +520,8 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
       )}
 
       {disableProgress && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-overlay">
-          <div className="bg-bg-surface rounded-xl shadow-lg w-[420px] p-6">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-overlay p-4">
+          <div className="bg-bg-surface rounded-xl shadow-lg w-[min(420px,100%)] max-h-[calc(100dvh-2rem)] overflow-y-auto p-6">
             <div className="flex items-center gap-3 mb-4">
               <Loader2 size={18} className="text-accent-text animate-spin" />
               <h3 className="text-[18px] font-semibold text-text-primary">
@@ -543,8 +562,8 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
       {/* Confirmation dialog — same shape as the legacy iCloud one so
           the UX is identical at the point of decision. */}
       {confirm && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay">
-          <div className="bg-bg-surface rounded-xl shadow-lg w-[400px] p-6">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay p-4">
+          <div className="bg-bg-surface rounded-xl shadow-lg w-[min(400px,100%)] max-h-[calc(100dvh-2rem)] overflow-y-auto p-6">
             <h3 className="text-[18px] font-semibold text-text-primary mb-2">
               {confirm === "enable"
                 ? t("settings.librarySync.confirmEnable")
@@ -556,10 +575,10 @@ export default function LibrarySyncSettings(_props: SettingsProps) {
                 : t("settings.librarySync.confirmDisableMsg")}
             </p>
             <div className="flex justify-end gap-3">
-              <Button variant="ghost" size="md" onClick={() => setConfirm(null)}>
+              <Button variant="ghost" size="md" className="touch:h-11" onClick={() => setConfirm(null)}>
                 {t("common.cancel")}
               </Button>
-              <Button variant="primary" size="md" onClick={onConfirmToggle}>
+              <Button variant="primary" size="md" className="touch:h-11" onClick={onConfirmToggle}>
                 {confirm === "enable"
                   ? t("settings.librarySync.confirmEnableCta")
                   : t("settings.librarySync.confirmDisableCta")}

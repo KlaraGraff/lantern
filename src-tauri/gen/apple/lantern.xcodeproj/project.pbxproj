@@ -23,118 +23,118 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		01062D824C342E5D2C7EA1FD /* extract.rs */ = {isa = PBXFileReference; path = extract.rs; sourceTree = "<group>"; };
+		01062D824C342E5D2C7EA1FD /* extract.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = extract.rs; sourceTree = "<group>"; };
 		026F9546254FF4C89D317215 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
-		02931386704740450D0D43F3 /* error.rs */ = {isa = PBXFileReference; path = error.rs; sourceTree = "<group>"; };
-		029497EE729004CF7C45B4BD /* vocab.rs */ = {isa = PBXFileReference; path = vocab.rs; sourceTree = "<group>"; };
-		03B0F34A453482373AFB2E8B /* retrieve.rs */ = {isa = PBXFileReference; path = retrieve.rs; sourceTree = "<group>"; };
-		05C94AFE1E548B5D07CFEB38 /* server.rs */ = {isa = PBXFileReference; path = server.rs; sourceTree = "<group>"; };
+		02931386704740450D0D43F3 /* error.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = error.rs; sourceTree = "<group>"; };
+		029497EE729004CF7C45B4BD /* vocab.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = vocab.rs; sourceTree = "<group>"; };
+		03B0F34A453482373AFB2E8B /* retrieve.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = retrieve.rs; sourceTree = "<group>"; };
+		05C94AFE1E548B5D07CFEB38 /* server.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = server.rs; sourceTree = "<group>"; };
 		08BBF27D309DF46B3099DFCA /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		0B415B6672D154E74643A52C /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
-		0F9E7A1DCD94F5FC72F5D22A /* format.rs */ = {isa = PBXFileReference; path = format.rs; sourceTree = "<group>"; };
+		0F9E7A1DCD94F5FC72F5D22A /* format.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = format.rs; sourceTree = "<group>"; };
 		121402447BE5CA2AA689E2B9 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
-		13CCB696CDE746E674A15350 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
-		14D189EAD1F6095C0070B86C /* publish.rs */ = {isa = PBXFileReference; path = publish.rs; sourceTree = "<group>"; };
-		1668AA797FB7B38B15F8EA0A /* summarize.rs */ = {isa = PBXFileReference; path = summarize.rs; sourceTree = "<group>"; };
-		16CD89F43F76773D79558EFC /* events.rs */ = {isa = PBXFileReference; path = events.rs; sourceTree = "<group>"; };
-		18C41FC2309751EBDDE6579C /* watcher.rs */ = {isa = PBXFileReference; path = watcher.rs; sourceTree = "<group>"; };
-		2009AB7E35A4BFB1117411D4 /* text_prepare.rs */ = {isa = PBXFileReference; path = text_prepare.rs; sourceTree = "<group>"; };
-		238AA9F691B9CF15C5C6BB4F /* openai_compat.rs */ = {isa = PBXFileReference; path = openai_compat.rs; sourceTree = "<group>"; };
-		23E63F3774CD54635A056331 /* rows.rs */ = {isa = PBXFileReference; path = rows.rs; sourceTree = "<group>"; };
-		25D6AB50DAD2528489F41FE3 /* db.rs */ = {isa = PBXFileReference; path = db.rs; sourceTree = "<group>"; };
-		2B3A92A7D10DD1DF59F88BA6 /* word_marks.rs */ = {isa = PBXFileReference; path = word_marks.rs; sourceTree = "<group>"; };
-		2F414F9875ACF3AC20C73E1D /* fonts.rs */ = {isa = PBXFileReference; path = fonts.rs; sourceTree = "<group>"; };
-		3237301CB5214EA1E04D4E4B /* resolver.rs */ = {isa = PBXFileReference; path = resolver.rs; sourceTree = "<group>"; };
-		35AEAE1C07D7DA4F09C20081 /* translation.rs */ = {isa = PBXFileReference; path = translation.rs; sourceTree = "<group>"; };
-		38357F6AC6AD4F8335AE9407 /* writer.rs */ = {isa = PBXFileReference; path = writer.rs; sourceTree = "<group>"; };
-		39EA14F817465F2EDF834B3B /* library_batch.rs */ = {isa = PBXFileReference; path = library_batch.rs; sourceTree = "<group>"; };
+		13CCB696CDE746E674A15350 /* mod.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = mod.rs; sourceTree = "<group>"; };
+		14D189EAD1F6095C0070B86C /* publish.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = publish.rs; sourceTree = "<group>"; };
+		1668AA797FB7B38B15F8EA0A /* summarize.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = summarize.rs; sourceTree = "<group>"; };
+		16CD89F43F76773D79558EFC /* events.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = events.rs; sourceTree = "<group>"; };
+		18C41FC2309751EBDDE6579C /* watcher.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = watcher.rs; sourceTree = "<group>"; };
+		2009AB7E35A4BFB1117411D4 /* text_prepare.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = text_prepare.rs; sourceTree = "<group>"; };
+		238AA9F691B9CF15C5C6BB4F /* openai_compat.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = openai_compat.rs; sourceTree = "<group>"; };
+		23E63F3774CD54635A056331 /* rows.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = rows.rs; sourceTree = "<group>"; };
+		25D6AB50DAD2528489F41FE3 /* db.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = db.rs; sourceTree = "<group>"; };
+		2B3A92A7D10DD1DF59F88BA6 /* word_marks.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = word_marks.rs; sourceTree = "<group>"; };
+		2F414F9875ACF3AC20C73E1D /* fonts.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = fonts.rs; sourceTree = "<group>"; };
+		3237301CB5214EA1E04D4E4B /* resolver.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = resolver.rs; sourceTree = "<group>"; };
+		35AEAE1C07D7DA4F09C20081 /* translation.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = translation.rs; sourceTree = "<group>"; };
+		38357F6AC6AD4F8335AE9407 /* writer.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = writer.rs; sourceTree = "<group>"; };
+		39EA14F817465F2EDF834B3B /* library_batch.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = library_batch.rs; sourceTree = "<group>"; };
 		3A5CEFB949B72A1A874DDBA9 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		3B8EFE7FC5B47837C1D8AA8C /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
-		3DBB4FE33D22E1BB67DDE458 /* spoiler.rs */ = {isa = PBXFileReference; path = spoiler.rs; sourceTree = "<group>"; };
+		3B8EFE7FC5B47837C1D8AA8C /* main.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = main.rs; sourceTree = "<group>"; };
+		3DBB4FE33D22E1BB67DDE458 /* spoiler.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = spoiler.rs; sourceTree = "<group>"; };
 		3FBEF4A1B7F73C1521A12A3C /* lantern_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = lantern_iOS.entitlements; sourceTree = "<group>"; };
-		434EE86AE664C00A460A90B8 /* vocabulary.rs */ = {isa = PBXFileReference; path = vocabulary.rs; sourceTree = "<group>"; };
-		44DFF08828A532DA52ABD674 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
-		48FCABDF94FDD637607C7C42 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
-		49279CD9B3948C9DC4A13ED2 /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
-		4CBCA99A6F8039E3D30267C4 /* chats.rs */ = {isa = PBXFileReference; path = chats.rs; sourceTree = "<group>"; };
-		5119A920E55D467E9775EB28 /* epub.rs */ = {isa = PBXFileReference; path = epub.rs; sourceTree = "<group>"; };
+		434EE86AE664C00A460A90B8 /* vocabulary.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = vocabulary.rs; sourceTree = "<group>"; };
+		44DFF08828A532DA52ABD674 /* mod.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = mod.rs; sourceTree = "<group>"; };
+		48FCABDF94FDD637607C7C42 /* mod.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = mod.rs; sourceTree = "<group>"; };
+		49279CD9B3948C9DC4A13ED2 /* lib.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = lib.rs; sourceTree = "<group>"; };
+		4CBCA99A6F8039E3D30267C4 /* chats.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = chats.rs; sourceTree = "<group>"; };
+		5119A920E55D467E9775EB28 /* epub.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = epub.rs; sourceTree = "<group>"; };
 		51A3E4E77EB1D917060606E3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		5236ED7F288D522ECC141C5C /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
-		53B470FD47AD5538B7508103 /* panic_hook.rs */ = {isa = PBXFileReference; path = panic_hook.rs; sourceTree = "<group>"; };
-		54A6E529FF765B59AD072343 /* language_assessments.rs */ = {isa = PBXFileReference; path = language_assessments.rs; sourceTree = "<group>"; };
-		54F9F79D89A3FDE1172DC4D6 /* vector.rs */ = {isa = PBXFileReference; path = vector.rs; sourceTree = "<group>"; };
-		5A5DAD95EB6A5F0E952B45FD /* content.rs */ = {isa = PBXFileReference; path = content.rs; sourceTree = "<group>"; };
-		5BF384C0B2FC1665A036DE02 /* assets.rs */ = {isa = PBXFileReference; path = assets.rs; sourceTree = "<group>"; };
+		53B470FD47AD5538B7508103 /* panic_hook.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = panic_hook.rs; sourceTree = "<group>"; };
+		54A6E529FF765B59AD072343 /* language_assessments.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = language_assessments.rs; sourceTree = "<group>"; };
+		54F9F79D89A3FDE1172DC4D6 /* vector.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = vector.rs; sourceTree = "<group>"; };
+		5A5DAD95EB6A5F0E952B45FD /* content.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = content.rs; sourceTree = "<group>"; };
+		5BF384C0B2FC1665A036DE02 /* assets.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = assets.rs; sourceTree = "<group>"; };
 		5F0B305347062781031E9E9A /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
-		620BC83B74A2DFB691E8FA40 /* bookmarks.rs */ = {isa = PBXFileReference; path = bookmarks.rs; sourceTree = "<group>"; };
+		620BC83B74A2DFB691E8FA40 /* bookmarks.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = bookmarks.rs; sourceTree = "<group>"; };
 		621A635E52E61BC32EA63989 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
-		6263EDF71D457FAC723A81AD /* sse.rs */ = {isa = PBXFileReference; path = sse.rs; sourceTree = "<group>"; };
-		646BE0E3482FC581DE1CC49E /* settings.rs */ = {isa = PBXFileReference; path = settings.rs; sourceTree = "<group>"; };
-		658BC422E3C85A78F2515CF2 /* backend.rs */ = {isa = PBXFileReference; path = backend.rs; sourceTree = "<group>"; };
-		65CB5A6B0066356F7A2553A5 /* lookup_history.rs */ = {isa = PBXFileReference; path = lookup_history.rs; sourceTree = "<group>"; };
+		6263EDF71D457FAC723A81AD /* sse.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = sse.rs; sourceTree = "<group>"; };
+		646BE0E3482FC581DE1CC49E /* settings.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = settings.rs; sourceTree = "<group>"; };
+		658BC422E3C85A78F2515CF2 /* backend.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = backend.rs; sourceTree = "<group>"; };
+		65CB5A6B0066356F7A2553A5 /* lookup_history.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = lookup_history.rs; sourceTree = "<group>"; };
 		6C63CBCCD55C47B52266CA9F /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
-		6C6F7990D020A43160EC2B04 /* state.rs */ = {isa = PBXFileReference; path = state.rs; sourceTree = "<group>"; };
+		6C6F7990D020A43160EC2B04 /* state.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = state.rs; sourceTree = "<group>"; };
 		73229AFEA3E8863B01934E84 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
-		7382E9B0AE2DFB6D7F881977 /* router.rs */ = {isa = PBXFileReference; path = router.rs; sourceTree = "<group>"; };
-		762AF1B6AA0C7EE479981662 /* collections.rs */ = {isa = PBXFileReference; path = collections.rs; sourceTree = "<group>"; };
-		7A7971F4672ACAD4297FDE7B /* tests.rs */ = {isa = PBXFileReference; path = tests.rs; sourceTree = "<group>"; };
-		7AE7F611BB3A95DDC8386321 /* replay.rs */ = {isa = PBXFileReference; path = replay.rs; sourceTree = "<group>"; };
-		7C4AB9D53366CBCA6C6B01B8 /* tests.rs */ = {isa = PBXFileReference; path = tests.rs; sourceTree = "<group>"; };
-		7C7A1173418EE338E2100340 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
-		81D8A7AB4DD180ACB3FF7DF3 /* segment.rs */ = {isa = PBXFileReference; path = segment.rs; sourceTree = "<group>"; };
-		820DE6E3011D45D00BCBBCB1 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
-		88C6EF7D2C9AAAA4686A33B6 /* import.rs */ = {isa = PBXFileReference; path = import.rs; sourceTree = "<group>"; };
-		93D5F6020FE3F4090B88EA62 /* merge.rs */ = {isa = PBXFileReference; path = merge.rs; sourceTree = "<group>"; };
-		9415B0695810E6E861490F4B /* openai_responses.rs */ = {isa = PBXFileReference; path = openai_responses.rs; sourceTree = "<group>"; };
-		9652A5CBE34742409D75B442 /* jobs.rs */ = {isa = PBXFileReference; path = jobs.rs; sourceTree = "<group>"; };
-		96C25AD57E50C5164C0E7B4B /* peers.rs */ = {isa = PBXFileReference; path = peers.rs; sourceTree = "<group>"; };
-		97A2615C8D6C31F7C8C1AE73 /* manager.rs */ = {isa = PBXFileReference; path = manager.rs; sourceTree = "<group>"; };
-		97BCCE4E7CA409F1BBF8125F /* lantern_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = lantern_iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		99086894998C5970986F591B /* query.rs */ = {isa = PBXFileReference; path = query.rs; sourceTree = "<group>"; };
-		9FABFCB1F96F4675A496A000 /* bookmarks.rs */ = {isa = PBXFileReference; path = bookmarks.rs; sourceTree = "<group>"; };
-		A1CFB698C73A300FCAB1EB35 /* validate.rs */ = {isa = PBXFileReference; path = validate.rs; sourceTree = "<group>"; };
-		A33F1363F9C84B130F0A1E0E /* ai.rs */ = {isa = PBXFileReference; path = ai.rs; sourceTree = "<group>"; };
-		A58CC0C6677E8E48916D02A8 /* validation.rs */ = {isa = PBXFileReference; path = validation.rs; sourceTree = "<group>"; };
-		A688EF1DCE541F8A7E79270A /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
-		AA41C9C9636EF40166819D14 /* convert_prepare.rs */ = {isa = PBXFileReference; path = convert_prepare.rs; sourceTree = "<group>"; };
-		AD314AC09D9FA1FDF8291878 /* library.rs */ = {isa = PBXFileReference; path = library.rs; sourceTree = "<group>"; };
-		AE979D4B85507E68845FB582 /* device.rs */ = {isa = PBXFileReference; path = device.rs; sourceTree = "<group>"; };
-		B6B0387A799C84DA0DE0FFA9 /* chunk.rs */ = {isa = PBXFileReference; path = chunk.rs; sourceTree = "<group>"; };
-		B7F30E17D1A90B34CA8E6E91 /* pdf.rs */ = {isa = PBXFileReference; path = pdf.rs; sourceTree = "<group>"; };
-		B9D694BCE575D55BEB98A6BA /* package.rs */ = {isa = PBXFileReference; path = package.rs; sourceTree = "<group>"; };
-		BA3BCE7362577CBD453781A1 /* text_headings.rs */ = {isa = PBXFileReference; path = text_headings.rs; sourceTree = "<group>"; };
-		BD1C6B17EE902AD9677DDF34 /* oauth.rs */ = {isa = PBXFileReference; path = oauth.rs; sourceTree = "<group>"; };
-		BF5D50BB62EC750033B509FB /* oauth.rs */ = {isa = PBXFileReference; path = oauth.rs; sourceTree = "<group>"; };
-		BFD5C6B76448D522C3317C73 /* intent.rs */ = {isa = PBXFileReference; path = intent.rs; sourceTree = "<group>"; };
-		C196C525FF7D0C331A9BFF97 /* secrets.rs */ = {isa = PBXFileReference; path = secrets.rs; sourceTree = "<group>"; };
-		C4F11CAB2F21F52D37696B0A /* compact.rs */ = {isa = PBXFileReference; path = compact.rs; sourceTree = "<group>"; };
-		C56016CB6C33AAC422AABBB7 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
+		7382E9B0AE2DFB6D7F881977 /* router.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = router.rs; sourceTree = "<group>"; };
+		762AF1B6AA0C7EE479981662 /* collections.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = collections.rs; sourceTree = "<group>"; };
+		7A7971F4672ACAD4297FDE7B /* tests.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = tests.rs; sourceTree = "<group>"; };
+		7AE7F611BB3A95DDC8386321 /* replay.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = replay.rs; sourceTree = "<group>"; };
+		7C4AB9D53366CBCA6C6B01B8 /* tests.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = tests.rs; sourceTree = "<group>"; };
+		7C7A1173418EE338E2100340 /* mod.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = mod.rs; sourceTree = "<group>"; };
+		81D8A7AB4DD180ACB3FF7DF3 /* segment.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = segment.rs; sourceTree = "<group>"; };
+		820DE6E3011D45D00BCBBCB1 /* mod.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = mod.rs; sourceTree = "<group>"; };
+		88C6EF7D2C9AAAA4686A33B6 /* import.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = import.rs; sourceTree = "<group>"; };
+		93D5F6020FE3F4090B88EA62 /* merge.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = merge.rs; sourceTree = "<group>"; };
+		9415B0695810E6E861490F4B /* openai_responses.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = openai_responses.rs; sourceTree = "<group>"; };
+		9652A5CBE34742409D75B442 /* jobs.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = jobs.rs; sourceTree = "<group>"; };
+		96C25AD57E50C5164C0E7B4B /* peers.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = peers.rs; sourceTree = "<group>"; };
+		97A2615C8D6C31F7C8C1AE73 /* manager.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = manager.rs; sourceTree = "<group>"; };
+		97BCCE4E7CA409F1BBF8125F /* Lantern.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Lantern.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		99086894998C5970986F591B /* query.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = query.rs; sourceTree = "<group>"; };
+		9FABFCB1F96F4675A496A000 /* bookmarks.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = bookmarks.rs; sourceTree = "<group>"; };
+		A1CFB698C73A300FCAB1EB35 /* validate.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = validate.rs; sourceTree = "<group>"; };
+		A33F1363F9C84B130F0A1E0E /* ai.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = ai.rs; sourceTree = "<group>"; };
+		A58CC0C6677E8E48916D02A8 /* validation.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = validation.rs; sourceTree = "<group>"; };
+		A688EF1DCE541F8A7E79270A /* mod.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = mod.rs; sourceTree = "<group>"; };
+		AA41C9C9636EF40166819D14 /* convert_prepare.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = convert_prepare.rs; sourceTree = "<group>"; };
+		AD314AC09D9FA1FDF8291878 /* library.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = library.rs; sourceTree = "<group>"; };
+		AE979D4B85507E68845FB582 /* device.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = device.rs; sourceTree = "<group>"; };
+		B6B0387A799C84DA0DE0FFA9 /* chunk.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = chunk.rs; sourceTree = "<group>"; };
+		B7F30E17D1A90B34CA8E6E91 /* pdf.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = pdf.rs; sourceTree = "<group>"; };
+		B9D694BCE575D55BEB98A6BA /* package.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = package.rs; sourceTree = "<group>"; };
+		BA3BCE7362577CBD453781A1 /* text_headings.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = text_headings.rs; sourceTree = "<group>"; };
+		BD1C6B17EE902AD9677DDF34 /* oauth.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = oauth.rs; sourceTree = "<group>"; };
+		BF5D50BB62EC750033B509FB /* oauth.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = oauth.rs; sourceTree = "<group>"; };
+		BFD5C6B76448D522C3317C73 /* intent.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = intent.rs; sourceTree = "<group>"; };
+		C196C525FF7D0C331A9BFF97 /* secrets.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = secrets.rs; sourceTree = "<group>"; };
+		C4F11CAB2F21F52D37696B0A /* compact.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = compact.rs; sourceTree = "<group>"; };
+		C56016CB6C33AAC422AABBB7 /* mod.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = mod.rs; sourceTree = "<group>"; };
 		C806FEC376CD72FC5DAE8D58 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
-		C8D69611A4E1240FDC49517C /* routing.rs */ = {isa = PBXFileReference; path = routing.rs; sourceTree = "<group>"; };
-		CB8EA8AC973CED2EF4E9E39A /* dictionary.rs */ = {isa = PBXFileReference; path = dictionary.rs; sourceTree = "<group>"; };
-		CBD379935E8AE9A597BEE51F /* migration.rs */ = {isa = PBXFileReference; path = migration.rs; sourceTree = "<group>"; };
-		CD630E693967091D353405FF /* icloud.rs */ = {isa = PBXFileReference; path = icloud.rs; sourceTree = "<group>"; };
-		CE73390071180E46A4B72994 /* learning.rs */ = {isa = PBXFileReference; path = learning.rs; sourceTree = "<group>"; };
-		D394F5389A4EBAF0D416E6FA /* mcp.rs */ = {isa = PBXFileReference; path = mcp.rs; sourceTree = "<group>"; };
+		C8D69611A4E1240FDC49517C /* routing.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = routing.rs; sourceTree = "<group>"; };
+		CB8EA8AC973CED2EF4E9E39A /* dictionary.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = dictionary.rs; sourceTree = "<group>"; };
+		CBD379935E8AE9A597BEE51F /* migration.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = migration.rs; sourceTree = "<group>"; };
+		CD630E693967091D353405FF /* icloud.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = icloud.rs; sourceTree = "<group>"; };
+		CE73390071180E46A4B72994 /* learning.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = learning.rs; sourceTree = "<group>"; };
+		D394F5389A4EBAF0D416E6FA /* mcp.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = mcp.rs; sourceTree = "<group>"; };
 		D3DB1C9D2D0A288149A8A81D /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
-		D531FFFA6A318FD50C8F4E8E /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
-		D84AF191DF8D565C58B4C737 /* pdfium.rs */ = {isa = PBXFileReference; path = pdfium.rs; sourceTree = "<group>"; };
-		D9C7FBD46F3241B233B8DE57 /* highlights.rs */ = {isa = PBXFileReference; path = highlights.rs; sourceTree = "<group>"; };
-		DBD26D884F4B7DFCEDB42235 /* log.rs */ = {isa = PBXFileReference; path = log.rs; sourceTree = "<group>"; };
-		DC9ECE011D23131BB66D2B0D /* chats.rs */ = {isa = PBXFileReference; path = chats.rs; sourceTree = "<group>"; };
-		E31A6C21A2362EE40637843E /* sync.rs */ = {isa = PBXFileReference; path = sync.rs; sourceTree = "<group>"; };
-		E403F6A1F336495915E7185D /* index.rs */ = {isa = PBXFileReference; path = index.rs; sourceTree = "<group>"; };
+		D531FFFA6A318FD50C8F4E8E /* mod.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = mod.rs; sourceTree = "<group>"; };
+		D84AF191DF8D565C58B4C737 /* pdfium.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = pdfium.rs; sourceTree = "<group>"; };
+		D9C7FBD46F3241B233B8DE57 /* highlights.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = highlights.rs; sourceTree = "<group>"; };
+		DBD26D884F4B7DFCEDB42235 /* log.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = log.rs; sourceTree = "<group>"; };
+		DC9ECE011D23131BB66D2B0D /* chats.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = chats.rs; sourceTree = "<group>"; };
+		E31A6C21A2362EE40637843E /* sync.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = sync.rs; sourceTree = "<group>"; };
+		E403F6A1F336495915E7185D /* index.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = index.rs; sourceTree = "<group>"; };
 		E443FB88C484F2902A1EC38C /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
-		E5A6E6B0B3EC7D516BD6A89A /* apply.rs */ = {isa = PBXFileReference; path = apply.rs; sourceTree = "<group>"; };
-		E65394DB2A045733393A84FF /* collections.rs */ = {isa = PBXFileReference; path = collections.rs; sourceTree = "<group>"; };
-		E71014DB906F93A30D8EE15B /* anthropic.rs */ = {isa = PBXFileReference; path = anthropic.rs; sourceTree = "<group>"; };
-		E85CB17DF3B75F0D8CD808FC /* notes.rs */ = {isa = PBXFileReference; path = notes.rs; sourceTree = "<group>"; };
-		ED6837C3E05170A6CBD5FBB9 /* speech.rs */ = {isa = PBXFileReference; path = speech.rs; sourceTree = "<group>"; };
-		EF73C84A1C0F63F999657B3A /* notify.rs */ = {isa = PBXFileReference; path = notify.rs; sourceTree = "<group>"; };
-		F11452823EDCDFABCA1A82A5 /* vocab.rs */ = {isa = PBXFileReference; path = vocab.rs; sourceTree = "<group>"; };
-		F13EF68A242B89FB40DF358F /* mutate.rs */ = {isa = PBXFileReference; path = mutate.rs; sourceTree = "<group>"; };
-		F626C13DA38BFA578198F2F2 /* mod.rs */ = {isa = PBXFileReference; path = mod.rs; sourceTree = "<group>"; };
-		F78166FCCAE03A2654F1159B /* app.rs */ = {isa = PBXFileReference; path = app.rs; sourceTree = "<group>"; };
+		E5A6E6B0B3EC7D516BD6A89A /* apply.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = apply.rs; sourceTree = "<group>"; };
+		E65394DB2A045733393A84FF /* collections.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = collections.rs; sourceTree = "<group>"; };
+		E71014DB906F93A30D8EE15B /* anthropic.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = anthropic.rs; sourceTree = "<group>"; };
+		E85CB17DF3B75F0D8CD808FC /* notes.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = notes.rs; sourceTree = "<group>"; };
+		ED6837C3E05170A6CBD5FBB9 /* speech.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = speech.rs; sourceTree = "<group>"; };
+		EF73C84A1C0F63F999657B3A /* notify.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = notify.rs; sourceTree = "<group>"; };
+		F11452823EDCDFABCA1A82A5 /* vocab.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = vocab.rs; sourceTree = "<group>"; };
+		F13EF68A242B89FB40DF358F /* mutate.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = mutate.rs; sourceTree = "<group>"; };
+		F626C13DA38BFA578198F2F2 /* mod.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = mod.rs; sourceTree = "<group>"; };
+		F78166FCCAE03A2654F1159B /* app.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = app.rs; sourceTree = "<group>"; };
 		FD9054392A3D7AB0FE71F2DA /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -315,7 +315,7 @@
 		90A9CF23D899FEF8EBE2AC91 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				97BCCE4E7CA409F1BBF8125F /* lantern_iOS.app */,
+				97BCCE4E7CA409F1BBF8125F /* Lantern.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -437,13 +437,6 @@
 			path = mcp;
 			sourceTree = "<group>";
 		};
-		"TEMP_3DB8BDAB-4A7F-4670-B2C9-26323134A00C" /* x86_64 */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = x86_64;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -464,7 +457,7 @@
 			packageProductDependencies = (
 			);
 			productName = lantern_iOS;
-			productReference = 97BCCE4E7CA409F1BBF8125F /* lantern_iOS.app */;
+			productReference = 97BCCE4E7CA409F1BBF8125F /* Lantern.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -475,8 +468,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = A67E66AAC43206C0A6EC3D79 /* Build configuration list for PBXProject "lantern" */;
 			developmentRegion = en;
@@ -670,12 +661,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				ARCHS = (
-					arm64,
-				);
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = lantern_iOS/lantern_iOS.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = J622D6994N;
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -687,10 +677,22 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
-				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION)",
+					"$(SDKROOT)/usr/lib/swift",
+					"$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME)",
+					"$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION)",
+					"$(SDKROOT)/usr/lib/swift",
+					"$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME)",
+					"$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.klaragraff.lantern;
-				PRODUCT_NAME = "Lantern";
+				PRODUCT_NAME = Lantern;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = arm64;
@@ -701,12 +703,11 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				ARCHS = (
-					arm64,
-				);
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = lantern_iOS/lantern_iOS.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = J622D6994N;
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -718,10 +719,22 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
-				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME) $(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION)",
+					"$(SDKROOT)/usr/lib/swift",
+					"$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME)",
+					"$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION)",
+					"$(SDKROOT)/usr/lib/swift",
+					"$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME)",
+					"$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.klaragraff.lantern;
-				PRODUCT_NAME = "Lantern";
+				PRODUCT_NAME = Lantern;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = arm64;

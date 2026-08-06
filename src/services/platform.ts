@@ -88,6 +88,22 @@ export interface PlatformCapabilities {
   readonly hasFileReveal: boolean;
   /** Font files can be imported through a native picker. */
   readonly hasFontImport: boolean;
+  /**
+   * A model server can run on this machine and be reached over the loopback
+   * address. Gates the Ollama preset in the AI catalog: Ollama is a process the
+   * reader starts alongside Lantern and Lantern talks to at
+   * `http://localhost:11434`, and iOS has neither the process nor the port.
+   *
+   * Named for the runtime rather than for Ollama so it does not have to be
+   * renamed when a second local backend appears, and kept apart from `hasOcr`
+   * and `hasFormatConvert` — those are Lantern spawning a helper of its own,
+   * which is a different fact about the platform and could plausibly diverge.
+   *
+   * Reaching a Mac's Ollama from a phone still works: it goes through the
+   * custom OpenAI-compatible preset with a LAN address, which is an ordinary
+   * HTTP endpoint and needs no capability.
+   */
+  readonly hasLocalModelRuntime: boolean;
 
   /**
    * The vector/retrieval index.
@@ -138,6 +154,7 @@ const ABSENT: Capability = {
   hasUpdater: false,
   hasFileReveal: false,
   hasFontImport: false,
+  hasLocalModelRuntime: false,
   hasEmbeddingIndex: false,
 };
 
@@ -152,6 +169,7 @@ const DESKTOP: Capability = {
   hasUpdater: true,
   hasFileReveal: true,
   hasFontImport: true,
+  hasLocalModelRuntime: true,
   hasEmbeddingIndex: true,
 };
 
