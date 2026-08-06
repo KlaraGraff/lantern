@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>设置重排样张 — Lantern</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #ececf0; color: #18181b; padding: 40px 24px 80px;
+  }
+  .page { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  .sub { color: #71717b; font-size: 13px; margin-bottom: 36px; }
+  .screen { margin-bottom: 56px; }
+  .screen > h2 {
+    font-size: 15px; margin-bottom: 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .screen > .desc { color: #71717b; font-size: 12.5px; margin-bottom: 14px; max-width: 860px; line-height: 1.7; }
+  .tag {
+    display: inline-block; font-size: 10.5px; font-weight: 600; padding: 2px 7px;
+    border-radius: 999px; vertical-align: 1px;
+  }
+  .tag.new { background: #dcfce7; color: #15803d; }
+  .tag.move { background: #fef3c7; color: #b45309; }
+  .tag.gone { background: #fee2e2; color: #b91c1c; }
+  .tag.pin { background: #ede9fe; color: #6d28d9; }
+
+  /* ===== settings modal frame ===== */
+  .modal {
+    background: #fff; border-radius: 14px; overflow: hidden;
+    box-shadow: 0 8px 40px rgba(0,0,0,.10), 0 1px 3px rgba(0,0,0,.06);
+    display: flex; min-height: 420px; max-width: 980px;
+  }
+  .nav {
+    width: 208px; flex-shrink: 0; background: #f7f7f8;
+    border-right: 1px solid rgba(0,0,0,.07); padding: 14px 10px;
+  }
+  .nav .group-label {
+    font-size: 10.5px; font-weight: 600; color: #a1a1aa; letter-spacing: .06em;
+    padding: 12px 10px 4px;
+  }
+  .nav .item {
+    display: flex; align-items: center; gap: 9px;
+    font-size: 13px; padding: 7px 10px; border-radius: 8px; color: #3f3f46;
+    position: relative;
+  }
+  .nav .item.on { background: #ede9fe; color: #6d28d9; font-weight: 600; }
+  .nav .item .ic { width: 15px; text-align: center; opacity: .75; font-size: 13px; }
+  .nav .item .tag { position: absolute; right: 8px; }
+  .content { flex: 1; padding: 22px 28px; min-width: 0; }
+  .content h3 { font-size: 16px; margin-bottom: 2px; }
+  .content .chint { color: #a1a1aa; font-size: 12px; margin-bottom: 10px; }
+  .grouphead {
+    font-size: 11.5px; font-weight: 700; color: #a1a1aa; letter-spacing: .05em;
+    padding: 20px 0 6px;
+  }
+  .row {
+    min-height: 58px; display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; border-bottom: 1px solid rgba(0,0,0,.06); padding: 9px 0;
+  }
+  .row:last-child { border-bottom: none; }
+  .row .l { min-width: 0; }
+  .row .name { font-size: 13.5px; font-weight: 500; display: flex; align-items: center; gap: 7px; }
+  .row .hint { font-size: 11.5px; color: #a1a1aa; margin-top: 2px; line-height: 1.5; }
+  .row.hl { background: linear-gradient(90deg, rgba(124,58,237,.07), transparent 70%); margin: 0 -12px; padding: 9px 12px; border-radius: 8px; }
+  .row.danger .name { color: #dc2626; }
+  .ctl { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
+  .select {
+    border: 1px solid rgba(0,0,0,.14); border-radius: 8px; padding: 6px 26px 6px 10px;
+    font-size: 12.5px; color: #3f3f46; background:
+      linear-gradient(45deg, transparent 50%, #a1a1aa 50%) calc(100% - 14px) 55%/5px 5px no-repeat,
+      linear-gradient(-45deg, transparent 50%, #a1a1aa 50%) calc(100% - 9px) 55%/5px 5px no-repeat;
+  }
+  .toggle { width: 36px; height: 21px; border-radius: 999px; background: #7c3aed; position: relative; }
+  .toggle::after { content: ""; position: absolute; top: 2.5px; right: 2.5px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .toggle.off { background: #d4d4d8; }
+  .toggle.off::after { right: auto; left: 2.5px; }
+  .btn { border: 1px solid rgba(0,0,0,.14); border-radius: 8px; padding: 6px 13px; font-size: 12.5px; color: #3f3f46; }
+  .btn.danger { color: #dc2626; border-color: rgba(220,38,38,.35); }
+  .chev { color: #d4d4d8; font-size: 15px; }
+  .swatches { display: flex; gap: 7px; }
+  .sw { width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(0,0,0,.12); }
+  .keycap { border: 1px solid rgba(0,0,0,.16); border-bottom-width: 2px; border-radius: 6px; padding: 3px 9px; font-size: 11.5px; color: #52525c; background: #fafafa; }
+  .tabs { display: flex; gap: 4px; background: #f4f4f5; border-radius: 9px; padding: 3px; width: fit-content; margin-bottom: 6px; }
+  .tabs span { font-size: 12.5px; padding: 5px 14px; border-radius: 7px; color: #71717b; }
+  .tabs span.on { background: #fff; color: #18181b; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+  /* nav compare */
+  .compare { display: flex; gap: 28px; flex-wrap: wrap; }
+  .compare .col { background: #fff; border-radius: 14px; padding: 18px 14px; width: 250px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+  .compare .col h4 { font-size: 12px; color: #71717b; margin-bottom: 10px; padding: 0 10px; }
+  .arrow { align-self: center; font-size: 22px; color: #a1a1aa; }
+  .legend { margin-top: 14px; font-size: 12px; color: #71717b; display: flex; gap: 18px; flex-wrap: wrap; }
+
+  /* mobile root */
+  .phone {
+    width: 300px; background: #fff; border-radius: 22px; padding: 18px 14px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.06);
+  }
+  .phone .group-label { font-size: 10.5px; font-weight: 600; color: #a1a1aa; padding: 14px 10px 5px; letter-spacing: .06em; }
+  .phone .item { display: flex; align-items: center; justify-content: space-between; padding: 11px 10px; font-size: 13.5px; border-bottom: 1px solid rgba(0,0,0,.05); }
+  .note {
+    max-width: 860px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
+    padding: 12px 16px; font-size: 12.5px; color: #92400e; line-height: 1.7; margin-top: 10px;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>设置重排样张</h1>
+  <div class="sub">方案:docs/impls/settings-reorg.md · 10 个分区 → 9 个,导航加分组;界面语言置顶;学习档案独立成区;书库合并;Aa 面板 5 组迁出后在「阅读」落位。</div>
+
+  <!-- ═══════════ 屏 1:导航对比 ═══════════ -->
+  <div class="screen">
+    <h2>屏 1 · 导航:现状 → 新结构</h2>
+    <div class="desc">左边是现在的 10 项平铺;右边是新的 9 项三段式。每个名字直接回答「我来这找什么」,不再有两个「阅读×」打架。</div>
+    <div class="compare">
+      <div class="col">
+        <h4>现状(10 项,平铺)</h4>
+        <div class="nav" style="width:auto;background:none;border:none;padding:0">
+          <div class="item"><span class="ic">⚙︎</span>通用</div>
+          <div class="item"><span class="ic">◐</span>外观 <span class="tag gone">仅 1 行</span></div>
+          <div class="item"><span class="ic">¶</span>阅读偏好</div>
+          <div class="item"><span class="ic">☁</span>服务配置</div>
+          <div class="item"><span class="ic">✦</span>自动分析</div>
+          <div class="item"><span class="ic">✎</span>阅读辅助 <span class="tag gone">与上重名</span></div>
+          <div class="item"><span class="ic">⇅</span>书库同步</div>
+          <div class="item"><span class="ic">▤</span>书籍来源</div>
+          <div class="item"><span class="ic">◫</span>MCP</div>
+          <div class="item"><span class="ic">ⓘ</span>关于</div>
+        </div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="col">
+        <h4>新结构(9 项,三段)</h4>
+        <div class="nav" style="width:auto;background:none;border:none;padding:0">
+          <div class="item"><span class="ic">⚙︎</span>通用</div>
+          <div class="item"><span class="ic">¶</span>阅读</div>
+          <div class="item"><span class="ic">🎓</span>学习 <span class="tag new">新</span></div>
+          <div class="item"><span class="ic">✎</span>划词与卡片 <span class="tag move">改名</span></div>
+          <div class="group-label">AI</div>
+          <div class="item"><span class="ic">☁</span>AI 服务 <span class="tag move">改名</span></div>
+          <div class="item"><span class="ic">✦</span>自动分析</div>
+          <div class="group-label">书库</div>
+          <div class="item"><span class="ic">▤</span>书库 <span class="tag move">合并</span></div>
+          <div class="group-label">&nbsp;</div>
+          <div class="item"><span class="ic">◫</span>MCP</div>
+          <div class="item"><span class="ic">ⓘ</span>关于</div>
+        </div>
+      </div>
+    </div>
+    <div class="legend">
+      <span><span class="tag new">新</span> 新增分区</span>
+      <span><span class="tag move">改名/合并</span> 内容不动,只改壳</span>
+      <span><span class="tag gone">问题</span> 现状病灶</span>
+      <span>「外观」消失:主题并入「通用」第 2 行</span>
+    </div>
+  </div>
+
+  <!-- ═══════════ 屏 2:通用 ═══════════ -->
+  <div class="screen">
+    <h2>屏 2 · 通用 <span class="tag pin">界面语言置顶</span></h2>
+    <div class="desc">瘦身到 6 行,全部是「应用壳」层面的事。界面语言在第一个分区的第一行——误设成英文的人,凭位置就能找回来。学习档案整块迁去「学习」。</div>
+    <div class="modal">
+      <div class="nav">
+        <div class="item on"><span class="ic">⚙︎</span>通用</div>
+        <div class="item"><span class="ic">¶</span>阅读</div>
+        <div class="item"><span class="ic">🎓</span>学习</div>
+        <div class="item"><span class="ic">✎</span>划词与卡片</div>
+        <div class="group-label">AI</div>
+        <div class="item"><span class="ic">☁</span>AI 服务</div>
+        <div class="item"><span class="ic">✦</span>自动分析</div>
+        <div class="group-label">书库</div>
+        <div class="item"><span class="ic">▤</span>书库</div>
+        <div class="group-label">&nbsp;</div>
+        <div class="item"><span class="ic">◫</span>MCP</div>
+        <div class="item"><span class="ic">ⓘ</span>关于</div>
+      </div>
+      <div class="content">
+        <h3>通用</h3>
+        <div class="chint">语言、主题与应用行为</div>
+        <div class="row hl">
+          <div class="l"><div class="name">界面语言 <span class="tag pin">第 1 行</span></div><div class="hint">Interface language — 保底逃生通道,永远在这</div></div>
+          <div class="ctl"><span class="select">简体中文</span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">主题 <span class="tag move">自「外观」</span></div><div class="hint">应用界面的亮暗;移动端仍以底部面板弹出</div></div>
+          <div class="ctl"><span class="select">跟随系统</span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">显示名称</div><div class="hint">问候语里怎么称呼你</div></div>
+          <div class="ctl"><span class="btn">李建维</span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">自动检查更新</div><div class="hint">启动时检查新版本(桌面)</div></div>
+          <div class="ctl"><span class="toggle"></span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">重新查看引导</div></div>
+          <div class="ctl"><span class="btn">重新查看</span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">显示日志</div><div class="hint">在访达中定位日志文件(桌面 · 诊断)</div></div>
+          <div class="ctl"><span class="btn">显示</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 屏 3:学习 ═══════════ -->
+  <div class="screen">
+    <h2>屏 3 · 学习 <span class="tag new">新分区</span></h2>
+    <div class="desc">原「英语学习档案」整块搬来,加上查词历史保留期(查词记录是学习数据)。这些项共同决定「AI 怎么向你解释英文」,独立成区后,「通用」不再被它撑爆,它自己也更好找。</div>
+    <div class="modal">
+      <div class="nav">
+        <div class="item"><span class="ic">⚙︎</span>通用</div>
+        <div class="item"><span class="ic">¶</span>阅读</div>
+        <div class="item on"><span class="ic">🎓</span>学习</div>
+        <div class="item"><span class="ic">✎</span>划词与卡片</div>
+        <div class="group-label">AI</div>
+        <div class="item"><span class="ic">☁</span>AI 服务</div>
+        <div class="item"><span class="ic">✦</span>自动分析</div>
+        <div class="group-label">书库</div>
+        <div class="item"><span class="ic">▤</span>书库</div>
+        <div class="group-label">&nbsp;</div>
+        <div class="item"><span class="ic">◫</span>MCP</div>
+        <div class="item"><span class="ic">ⓘ</span>关于</div>
+      </div>
+      <div class="content">
+        <h3>学习</h3>
+        <div class="chint">你的英语水平与解释偏好</div>
+        <div class="row">
+          <div class="l"><div class="name">学习水平</div><div class="hint">CEFR 等级,决定解释用词的深浅</div></div>
+          <div class="ctl"><span class="select">B1 · 进阶</span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">解释语言</div><div class="hint">查词与讲解用哪种方式说给你听</div></div>
+          <div class="ctl"><span class="select">中英自适应</span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">翻译语言</div><div class="hint">整段翻译的目标语言</div></div>
+          <div class="ctl"><span class="select">简体中文</span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">考试成绩估算</div><div class="hint">用考试分数估算 CEFR;含历史记录管理</div></div>
+          <div class="ctl"><span class="chev">›</span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">查词历史保留期 <span class="tag move">自「通用」</span></div><div class="hint">超过期限的查词记录自动清理</div></div>
+          <div class="ctl"><span class="select">永久保留</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 屏 4:阅读 ═══════════ -->
+  <div class="screen">
+    <h2>屏 4 · 阅读(原「阅读偏好」)</h2>
+    <div class="desc">四个组标题把长列表切成可扫读的段落。「翻页与进度」就是从 Aa 面板迁出的那 5 组的唯一归宿;「行为」两行从「通用」迁入。排版组行数多,此处示意前几行。</div>
+    <div class="modal">
+      <div class="nav">
+        <div class="item"><span class="ic">⚙︎</span>通用</div>
+        <div class="item on"><span class="ic">¶</span>阅读</div>
+        <div class="item"><span class="ic">🎓</span>学习</div>
+        <div class="item"><span class="ic">✎</span>划词与卡片</div>
+        <div class="group-label">AI</div>
+        <div class="item"><span class="ic">☁</span>AI 服务</div>
+        <div class="item"><span class="ic">✦</span>自动分析</div>
+        <div class="group-label">书库</div>
+        <div class="item"><span class="ic">▤</span>书库</div>
+        <div class="group-label">&nbsp;</div>
+        <div class="item"><span class="ic">◫</span>MCP</div>
+        <div class="item"><span class="ic">ⓘ</span>关于</div>
+      </div>
+      <div class="content">
+        <h3>阅读</h3>
+        <div class="chint">正文的样子与翻页方式(全局默认;Aa 面板可为本书单独调排版)</div>
+        <div class="grouphead">排版</div>
+        <div class="row">
+          <div class="l"><div class="name">阅读主题</div><div class="hint">正文纸色(新四色:原始 / 阅读纸 / 灰色 / 深色 + 自定义)</div></div>
+          <div class="ctl"><span class="swatches">
+            <span class="sw" style="background:#fff"></span>
+            <span class="sw" style="background:#F2E9D8;box-shadow:0 0 0 2px #7c3aed"></span>
+            <span class="sw" style="background:#45454C"></span>
+            <span class="sw" style="background:#121216"></span>
+            <span class="sw" style="background:conic-gradient(#f87171,#facc15,#4ade80,#60a5fa,#f87171)"></span>
+          </span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">字体</div></div>
+          <div class="ctl"><span class="select">Palatino</span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">字号 · 行距 · 字距 · 词距 · 段落 · 页边距 …</div><div class="hint">现有排版行原样保留,顺序不变(示意折叠)</div></div>
+          <div class="ctl"><span class="chev">⋯</span></div>
+        </div>
+        <div class="grouphead">翻页与进度 <span class="tag move">Aa 面板迁入 · 唯一入口</span></div>
+        <div class="row">
+          <div class="l"><div class="name">阅读模式</div><div class="hint">滚动 / 翻页</div></div>
+          <div class="ctl"><span class="select">翻页</span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">单双页</div></div>
+          <div class="ctl"><span class="select">双页</span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">翻页动画</div></div>
+          <div class="ctl"><span class="select">滑动</span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">翻页按键</div><div class="hint">上一页 / 下一页</div></div>
+          <div class="ctl"><span class="keycap">←</span><span class="keycap">→</span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">进度显示</div><div class="hint">章节进度 · 全书进度 · 页码,三个开关</div></div>
+          <div class="ctl"><span class="toggle"></span><span class="toggle"></span><span class="toggle off"></span></div>
+        </div>
+        <div class="grouphead">行为</div>
+        <div class="row">
+          <div class="l"><div class="name">自动保存 <span class="tag move">自「通用」</span></div><div class="hint">自动记住读到哪</div></div>
+          <div class="ctl"><span class="toggle"></span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">首次打开跳过前言 <span class="tag move">自「通用」</span></div></div>
+          <div class="ctl"><span class="toggle"></span></div>
+        </div>
+        <div class="grouphead">学习辅助</div>
+        <div class="row">
+          <div class="l"><div class="name">生词辅助</div><div class="hint">被动生词标注的子页(Aa 面板保留跳转链接)</div></div>
+          <div class="ctl"><span class="chev">›</span></div>
+        </div>
+        <div class="row danger">
+          <div class="l"><div class="name">恢复默认设置</div><div class="hint">本分区所有项恢复出厂值,需确认</div></div>
+          <div class="ctl"><span class="btn danger">恢复默认</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="note">Aa 面板对应的 5 组控件删除后,面板尾部保留一行常驻小字链接:「翻页与进度设置已移至 设置 → 阅读」,点击直达本页。</div>
+  </div>
+
+  <!-- ═══════════ 屏 5:书库 ═══════════ -->
+  <div class="screen">
+    <h2>屏 5 · 书库 <span class="tag move">合并「书籍来源」+「书库同步」</span></h2>
+    <div class="desc">一个分区、两个块。来源块在所有平台都有;同步块仍按平台门控,Windows 上整块隐藏,分区不因此变空。</div>
+    <div class="modal">
+      <div class="nav">
+        <div class="item"><span class="ic">⚙︎</span>通用</div>
+        <div class="item"><span class="ic">¶</span>阅读</div>
+        <div class="item"><span class="ic">🎓</span>学习</div>
+        <div class="item"><span class="ic">✎</span>划词与卡片</div>
+        <div class="group-label">AI</div>
+        <div class="item"><span class="ic">☁</span>AI 服务</div>
+        <div class="item"><span class="ic">✦</span>自动分析</div>
+        <div class="group-label">书库</div>
+        <div class="item on"><span class="ic">▤</span>书库</div>
+        <div class="group-label">&nbsp;</div>
+        <div class="item"><span class="ic">◫</span>MCP</div>
+        <div class="item"><span class="ic">ⓘ</span>关于</div>
+      </div>
+      <div class="content">
+        <h3>书库</h3>
+        <div class="chint">书从哪来,以及如何在设备间同步</div>
+        <div class="grouphead">书籍来源</div>
+        <div class="row">
+          <div class="l"><div class="name">Standard Ebooks</div><div class="hint">内置来源</div></div>
+          <div class="ctl"><span class="toggle"></span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">添加来源 / 恢复内置</div><div class="hint">现有列表与增删改原样保留(示意折叠)</div></div>
+          <div class="ctl"><span class="chev">⋯</span></div>
+        </div>
+        <div class="grouphead">书库同步(仅 Mac 桌面)</div>
+        <div class="row">
+          <div class="l"><div class="name">启用同步</div><div class="hint">经 iCloud 共享文件夹同步书与进度</div></div>
+          <div class="ctl"><span class="toggle"></span></div>
+        </div>
+        <div class="row">
+          <div class="l"><div class="name">设备 · 立即同步 · 危险操作</div><div class="hint">现有行原样保留(示意折叠)</div></div>
+          <div class="ctl"><span class="chev">⋯</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 屏 6:移动端 ═══════════ -->
+  <div class="screen">
+    <h2>屏 6 · 移动端根列表(同步重排)</h2>
+    <div class="desc">与桌面同一套三段结构。原来的「主题」独立行消失(主题在「通用」内,点开仍是底部面板);原来缺失入口的搜索模型/OCR 深链不受影响。</div>
+    <div class="phone">
+      <div class="item">通用 <span class="chev">›</span></div>
+      <div class="item">阅读 <span class="chev">›</span></div>
+      <div class="item">学习 <span class="chev">›</span></div>
+      <div class="item">划词与卡片 <span class="chev">›</span></div>
+      <div class="group-label">AI</div>
+      <div class="item">对话模型 <span class="chev">›</span></div>
+      <div class="item">语音 <span class="chev">›</span></div>
+      <div class="item">自动分析 <span class="chev">›</span></div>
+      <div class="group-label">书库</div>
+      <div class="item">书库 <span class="chev">›</span></div>
+      <div class="group-label">&nbsp;</div>
+      <div class="item">MCP <span class="chev">›</span></div>
+      <div class="item" style="border-bottom:none">关于 <span class="chev">›</span></div>
+    </div>
+  </div>
+
+  <div class="note" style="background:#eef2ff;border-color:#c7d2fe;color:#3730a3">
+    <strong>没画的部分都不动:</strong>「划词与卡片」「AI 服务」只改名,里面的 4 个标签页原样;「自动分析」「MCP」「关于」零改动;所有设置的存储 key 不变,无数据迁移;旧分区 id 全部重定向,深链不断。
+  </div>
+</div>
+</body>
+</html>
