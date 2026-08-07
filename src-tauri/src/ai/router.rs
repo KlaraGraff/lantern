@@ -439,7 +439,14 @@ fn compensation_failure(
 /// finds nothing to configure.
 ///
 /// The profile is a placeholder, not a working setup — it carries no credential,
-/// so it stays inert until the reader supplies one.
+/// so it stays inert until the reader supplies one. `route` skips any profile
+/// with no active credential, so an enabled placeholder costs nothing; it only
+/// means the reader's first key starts working the moment they paste it,
+/// without also having to find a toggle.
+///
+/// Which provider it names is a recommendation, and it must be the same
+/// recommendation the catalog makes — DeepSeek, first in `AI_PRESETS` for the
+/// reasons documented there. Change one and change the other.
 pub fn ensure_default_ai_profile(db: &Db) -> AppResult<()> {
     let mut conn = db.conn.lock().map_err(|e| AppError::Other(e.to_string()))?;
     let profile_count: i64 =
@@ -452,8 +459,12 @@ pub fn ensure_default_ai_profile(db: &Db) -> AppResult<()> {
     let result = (|| -> AppResult<()> {
         let tx = conn.transaction()?;
         tx.execute(
-            "INSERT INTO ai_profiles (id, label, provider, auth_mode, base_url, model, temperature, keep_alive, enabled, priority, created_at, updated_at) VALUES (?1, 'openai', 'openai', 'api_key', NULL, 'gpt-4o-mini', 0.3, NULL, 1, 0, ?2, ?2)",
-            params![uuid::Uuid::new_v4().to_string(), created_at],
+            "INSERT INTO ai_profiles (id, label, provider, auth_mode, base_url, model, temperature, keep_alive, enabled, priority, created_at, updated_at) VALUES (?1, 'DeepSeek', 'deepseek', 'api_key', NULL, ?2, 0.3, NULL, 1, 0, ?3, ?3)",
+            params![
+                uuid::Uuid::new_v4().to_string(),
+                DEEPSEEK_DEFAULT_MODEL,
+                created_at
+            ],
         )?;
         tx.commit()?;
         Ok(())
@@ -1385,6 +1396,11 @@ fn provider_default_base_url(provider: &str) -> Option<&'static str> {
 
 /// Published without a version segment, so `compat_endpoint` appends `/v1`.
 pub(crate) const DEEPSEEK_BASE_URL: &str = "https://api.deepseek.com";
+
+/// Mirrors `DEEPSEEK_DEFAULT_MODEL` in `settings/aiPresets.ts`. Only the
+/// placeholder profile a fresh install is seeded with reads it here; a profile
+/// the reader already saved is never rewritten from this.
+pub(crate) const DEEPSEEK_DEFAULT_MODEL: &str = "deepseek-v4-flash";
 
 fn models_endpoint(profile: &AiProfileView) -> AppResult<String> {
     let base = resolve_base_url(profile)?.trim_end_matches('/');
@@ -4703,6 +4719,10 @@ mod tests {
     /// A brand-new install has no `ai_profiles` row at all, and nothing else
     /// creates the first one — this is all that stands between a fresh reader
     /// and an AI settings page with nothing to configure.
+    ///
+    /// The provider it names is the one the catalog recommends first. A reader
+    /// who never opens the provider dropdown ends up on whatever this row says,
+    /// so it is the recommendation, not an arbitrary placeholder.
     #[test]
     fn a_fresh_database_gets_one_default_ai_profile() {
         let directory = tempfile::TempDir::new().unwrap();
@@ -4712,9 +4732,12 @@ mod tests {
 
         let profiles = list_profiles(&db).unwrap();
         assert_eq!(profiles.len(), 1);
-        assert_eq!(profiles[0].provider, "openai");
-        assert_eq!(profiles[0].model, "gpt-4o-mini");
+        assert_eq!(profiles[0].provider, "deepseek");
+        assert_eq!(profiles[0].model, DEEPSEEK_DEFAULT_MODEL);
         assert_eq!(profiles[0].auth_mode, "api_key");
+        // No base URL of its own: `resolve_base_url` supplies DeepSeek's, so a
+        // change of endpoint reaches this profile too.
+        assert_eq!(profiles[0].base_url, None);
 
         // Running it again on a database that already has a profile must be a
         // no-op — it must never insert a second default profile.
