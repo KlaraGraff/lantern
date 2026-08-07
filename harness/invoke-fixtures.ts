@@ -41,8 +41,12 @@ const nowSec = () => Math.floor(Date.now() / 1000);
  *  backend, so the harness only has to remember the decisions taken about them. */
 const harnessDismissedAnchors = new Set<string>();
 
-/** Highlights promoted out of the derived list this session. */
-const harnessPromoted: (typeof HIGHLIGHTS)[number][] = [];
+/** Highlights promoted out of the derived list this session. Same shape as the
+ *  static fixtures, except `text_content` is nullable the way the real row is. */
+type HarnessHighlight = Omit<(typeof HIGHLIGHTS)[number], "text_content"> & {
+  text_content: string | null;
+};
+const harnessPromoted: HarnessHighlight[] = [];
 
 /** Mutable so `set_setting` during a sweep is visible to the next read. */
 const settings: Record<string, string> = resolveSettings();
