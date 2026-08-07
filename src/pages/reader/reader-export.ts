@@ -255,7 +255,7 @@ export function ankiFront(word: string, context?: string) {
   if (!context?.trim()) return word;
   const match = findWordBoundaryMatch(context, word);
   if (!match) return word;
-  return context.slice(0, match.index) + "______" + context.slice(match.index + match[0].length);
+  return context.slice(0, match.index) + "______" + context.slice(match.index + match.text.length);
 }
 function tagToken(value: string) { return sanitizeExportFilename(value).toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/gi, "-").replace(/^-+|-+$/g, "") || "book"; }
 export function serializeAnkiCsv(records: readonly ExportRecord[], selected: ExportFields = exportFieldDefaults.anki) {

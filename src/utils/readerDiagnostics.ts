@@ -35,7 +35,15 @@ function nowMs(): number {
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) {
-    return error.stack && error.stack.trim() ? error.stack : error.message;
+    // V8 puts "TypeError: x is not a function" on the first line of `.stack`;
+    // JavaScriptCore does not — a Safari stack is frames only. Reading the raw
+    // stack therefore threw away the one line that says what went wrong, which
+    // is exactly the line these reports exist to carry off a machine we cannot
+    // attach a debugger to. So the headline is always written by us.
+    const headline = `${error.name || "Error"}: ${error.message}`;
+    const stack = error.stack && error.stack.trim() ? error.stack.trim() : "";
+    if (!stack) return headline;
+    return stack.startsWith(headline) ? stack : `${headline}\n${stack}`;
   }
   if (typeof error === "string") return error;
   try {

@@ -86,6 +86,11 @@ const GUARDED_CONSTRUCTORS = new Set([
 const MODERN_CSS_COLOR = /\b(?:oklch|oklab|lab|lch|color-mix)\(/iu;
 const MODERN_CSS_UNIT = /-?(?:\d+(?:\.\d+)?|\.\d+)(?:dvh|svh|lvh|dvw|svw|lvw|rlh|lh)\b/iu;
 
+// Lookbehind (`(?<=`, `(?<!`) landed in WebKit with Safari 16.4. Named capture
+// groups share the `(?<` prefix and have worked since Safari 11.1, so the two
+// have to be told apart rather than banned together.
+const LOOKBEHIND = /\(\?<[=!]/u;
+
 const normalizePath = (path) => path.split(sep).join("/");
 
 const fail = (message) => {
@@ -210,6 +215,29 @@ const scanJavaScriptCompatibility = (
       if (finalSlash >= 0 && literal.slice(finalSlash + 1).includes("v")) {
         errors.push(`${nodeLocation(sourceFile, node)} uses the Safari 17 RegExp v flag`);
       }
+      if (LOOKBEHIND.test(literal)) {
+        errors.push(`${nodeLocation(sourceFile, node)} uses a Safari 16.4 RegExp lookbehind`);
+      }
+    }
+
+    // esbuild rewrites a regex literal the target cannot parse into a
+    // `new RegExp(...)` call so the file still loads, which moves the failure
+    // from build time to the first call. Both spellings have to be caught, or
+    // the audit passes precisely because the bundle was lowered.
+    if (
+      (ts.isNewExpression(node) || ts.isCallExpression(node))
+      && expressionName(node.expression) === "RegExp"
+      && node.arguments?.length
+    ) {
+      const [pattern] = node.arguments;
+      const source = ts.isStringLiteralLike(pattern) || ts.isTemplateExpression(pattern)
+        ? pattern.getText(sourceFile)
+        : undefined;
+      if (source && LOOKBEHIND.test(source)) {
+        errors.push(
+          `${nodeLocation(sourceFile, node)} builds a Safari 16.4 RegExp lookbehind`,
+        );
+      }
     }
 
     if (restrictedApis && ts.isCallExpression(node)) {
@@ -254,6 +282,10 @@ const scanJavaScriptCompatibility = (
   visit(sourceFile);
   return errors;
 };
+
+/** Parse-and-scan in one call, so the audit rules are testable on a snippet. */
+export const scanJavaScriptSource = (source, path = "snippet.js", options) =>
+  scanJavaScriptCompatibility(parseJavaScript(source, path), options);
 
 const isModernPdfSpecifier = (specifier) => {
   const normalized = specifier.replaceAll("\\", "/");

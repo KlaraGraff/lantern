@@ -5,9 +5,40 @@ const ACCENT_LANG: Record<SpeechAccent, string> = {
   us: "en-us",
 };
 
+/**
+ * Every call into `speechSynthesis` goes through here.
+ *
+ * On macOS 12 / Safari 15 the object passes `"speechSynthesis" in window` but
+ * is not fully formed — reading it, calling `getVoices()`, or subscribing can
+ * throw. Nothing here is load-bearing: no system voice means the pronunciation
+ * button is unavailable, which is a UI state the app already renders. So the
+ * whole surface is written to degrade to "no voices" rather than to throw,
+ * because these functions run inside `useEffect` bodies and a throw there is
+ * not a missing button — it unwinds into the error boundary and takes the
+ * whole reader window with it.
+ */
+function attempt<T>(read: () => T, fallback: T): T {
+  try {
+    return read();
+  } catch {
+    return fallback;
+  }
+}
+
 function synthesis(): SpeechSynthesis | null {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
-  return window.speechSynthesis;
+  return attempt(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
+    return window.speechSynthesis ?? null;
+  }, null);
+}
+
+function voices(): SpeechSynthesisVoice[] {
+  const target = synthesis();
+  if (!target) return [];
+  return attempt(() => {
+    const list = target.getVoices();
+    return Array.isArray(list) ? list : [];
+  }, []);
 }
 
 export function speechSynthesisSupported(): boolean {
@@ -16,11 +47,11 @@ export function speechSynthesisSupported(): boolean {
 
 /** Platforms disagree on `en-GB` vs `en_GB` vs `en-gb`. */
 function normalizeLang(lang: string): string {
-  return lang.toLowerCase().replace(/_/g, "-");
+  return typeof lang === "string" ? lang.toLowerCase().replace(/_/g, "-") : "";
 }
 
 export function englishVoices(): SpeechSynthesisVoice[] {
-  return synthesis()?.getVoices().filter((voice) => normalizeLang(voice.lang).startsWith("en")) ?? [];
+  return voices().filter((voice) => normalizeLang(voice.lang).startsWith("en"));
 }
 
 export function voiceForAccent(accent: SpeechAccent): SpeechSynthesisVoice | null {
@@ -52,9 +83,9 @@ export function fallbackVoice(): SpeechSynthesisVoice | null {
 export function voiceForLanguage(language: string): SpeechSynthesisVoice | null {
   const target = normalizeLang(language);
   const base = target.split("-")[0];
-  const voices = synthesis()?.getVoices() ?? [];
-  const exact = voices.filter((voice) => normalizeLang(voice.lang).startsWith(target));
-  const sameLanguage = voices.filter((voice) => normalizeLang(voice.lang).split("-")[0] === base);
+  const installed = voices();
+  const exact = installed.filter((voice) => normalizeLang(voice.lang).startsWith(target));
+  const sameLanguage = installed.filter((voice) => normalizeLang(voice.lang).split("-")[0] === base);
   const pool = exact.length > 0 ? exact : sameLanguage;
   return pool.find((voice) => voice.default) ?? pool[0] ?? null;
 }
@@ -63,12 +94,40 @@ export function voiceForLanguage(language: string): SpeechSynthesisVoice | null 
  * WKWebView returns an empty list until the speech engine finishes loading, so
  * the voice inventory must be re-read after `voiceschanged` rather than trusted
  * on first call.
+ *
+ * Old WebKit builds expose `speechSynthesis` without the `EventTarget` half of
+ * its interface, so `addEventListener` is probed rather than assumed and the
+ * `onvoiceschanged` handler property is used when it is missing.
  */
 export function subscribeToVoices(listener: () => void): () => void {
   const target = synthesis();
   if (!target) return () => {};
-  target.addEventListener("voiceschanged", listener);
+
   // Some engines only populate the list once it has been asked for.
-  target.getVoices();
-  return () => target.removeEventListener("voiceschanged", listener);
+  voices();
+
+  if (typeof target.addEventListener === "function") {
+    const attached = attempt(() => {
+      target.addEventListener("voiceschanged", listener);
+      return true;
+    }, false);
+    if (attached) {
+      return () => {
+        attempt(() => target.removeEventListener("voiceschanged", listener), undefined);
+      };
+    }
+  }
+
+  return attempt(() => {
+    const previous = target.onvoiceschanged;
+    target.onvoiceschanged = (event) => {
+      if (typeof previous === "function") previous.call(target, event);
+      listener();
+    };
+    return () => {
+      attempt(() => {
+        target.onvoiceschanged = previous;
+      }, undefined);
+    };
+  }, () => {});
 }

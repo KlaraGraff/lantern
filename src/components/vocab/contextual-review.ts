@@ -1,4 +1,4 @@
-import { findWordBoundaryMatch, wordBoundaryRegex } from "./word-boundary.ts";
+import { findWordBoundaryMatch, wordBoundaryMatches } from "./word-boundary.ts";
 
 export interface ContextualReviewSegment {
   text: string;
@@ -29,8 +29,8 @@ export function contextualReviewAnswer(sentence: string | null | undefined, word
 
   return {
     before: source.slice(0, match.index),
-    answer: match[0],
-    after: source.slice(match.index + match[0].length),
+    answer: match.text,
+    after: source.slice(match.index + match.text.length),
   };
 }
 
@@ -47,19 +47,16 @@ export function contextualReviewCloze(sentence: string | null | undefined, word:
   const target = word?.trim();
   if (!source || !target) return null;
 
-  const regex = wordBoundaryRegex(target, "giu");
+  const matches = wordBoundaryMatches(source, target);
+  if (matches.length === 0) return null;
+
   const segments: ContextualReviewSegment[] = [];
   let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  let found = false;
-  while ((match = regex.exec(source))) {
-    found = true;
+  for (const match of matches) {
     if (match.index > lastIndex) segments.push({ text: source.slice(lastIndex, match.index), hidden: false });
-    segments.push({ text: match[0], hidden: true });
-    lastIndex = match.index + match[0].length;
-    if (match[0].length === 0) regex.lastIndex += 1;
+    segments.push({ text: match.text, hidden: true });
+    lastIndex = match.index + match.text.length;
   }
-  if (!found) return null;
   if (lastIndex < source.length) segments.push({ text: source.slice(lastIndex), hidden: false });
   return { segments };
 }
