@@ -1,8 +1,8 @@
 /**
  * Did a reflow move the reader off the line they were on?
  *
- * Anything that changes the viewer's size — the read-aloud bar opening, a side
- * panel dragging, the window resizing — makes the paginator re-columnize, and a
+ * Anything that changes the viewer's size — the window resizing, a side panel
+ * dragging, a reduced-motion change — makes the paginator re-columnize, and a
  * re-columnized book puts different text on the page. Foliate re-anchors to the
  * range it last saw, but that anchor is a whole visible *range*: when the new
  * columns are shorter, the range no longer fits and the page it lands on can

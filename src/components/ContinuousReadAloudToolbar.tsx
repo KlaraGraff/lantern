@@ -53,8 +53,12 @@ const SMALL_KEY = "grid size-[30px] shrink-0 cursor-pointer place-items-center r
 const BIG_KEY = "grid size-[46px] shrink-0 cursor-pointer place-items-center rounded-full bg-accent text-white shadow-[0_4px_12px_rgba(124,58,237,0.22)] transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2";
 
 /**
- * In-flow toolbar: its parent places it below Reader's title row, so it never
- * floats over the text.  The compact capsule is retained while reading.
+ * Overlay toolbar: the expanded bar is placed by its parent over the top of the
+ * reader viewport, so opening and closing it never resizes anything and the
+ * page never re-columnizes. It is styled to read as an extension of the header
+ * it hangs below — full bleed, surface fill, bottom rule — with a soft drop
+ * shadow as the only sign that text passes beneath rather than after it. The
+ * compact capsule (returned early, in the header) is retained while reading.
  */
 export default function ContinuousReadAloudToolbar({ state, labels, onStart, onPause, onResume, onStop, onPrevious, onNext, onRateChange, onCollapsedChange }: Props) {
   const active = state.status !== "idle" && state.status !== "finished" && state.status !== "error";
@@ -95,7 +99,7 @@ export default function ContinuousReadAloudToolbar({ state, labels, onStart, onP
   return <section
     aria-label={labels.reading}
     onKeyDown={onSectionKeyDown}
-    className="flex min-h-[62px] items-center gap-3.5 border-b border-border-light bg-bg-surface px-3.5 py-2"
+    className="flex min-h-[62px] items-center gap-3.5 border-b border-border-light bg-bg-surface px-3.5 py-2 shadow-[0_8px_20px_-14px_rgba(0,0,0,0.45)]"
   >
     <span className={`grid size-7 shrink-0 place-items-center rounded-lg max-[720px]:hidden ${
       state.status === "error"

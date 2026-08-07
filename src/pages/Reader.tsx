@@ -2035,23 +2035,6 @@ export default function Reader() {
         </div>
       </header>
 
-      {continuousReadAloudAvailable
-        && continuousReadAloud.state.status !== "idle"
-        && !continuousReadAloud.state.collapsed && (
-          <ContinuousReadAloudToolbar
-            state={continuousReadAloud.state}
-            labels={continuousReadAloudLabels}
-            onStart={() => { void continuousReadAloud.start(continuousReadAloud.state.status === "finished"); }}
-            onPause={continuousReadAloud.pause}
-            onResume={continuousReadAloud.resume}
-            onStop={continuousReadAloud.stop}
-            onPrevious={() => { void continuousReadAloud.previous(); }}
-            onNext={() => { void continuousReadAloud.next(); }}
-            onRateChange={continuousReadAloud.setRate}
-            onCollapsedChange={continuousReadAloud.setCollapsed}
-          />
-        )}
-
       {/* Body */}
       <div
         className={`flex flex-1 overflow-hidden ${sidePanel === "traces" && tracesTab === "notes" ? "max-[1100px]:flex-col" : ""}`}
@@ -2185,6 +2168,38 @@ export default function Reader() {
                 </span>
               </button>
             )}
+            {/* Read-aloud bar, floating over the page rather than above it.
+                In flow it reserved ~62px, so every open and close resized the
+                viewport and made the paginator re-columnize — the reader
+                watched the text re-wrap for a control they open for a few
+                minutes. As an overlay it costs no relayout at all. It does hide
+                whatever is under it, sometimes the sentence being spoken; that
+                is accepted, because the bar shows that sentence itself.
+
+                Click is stopped here so the toolbar keeps behaving as it did
+                outside <main>: bubbling would reach the viewport handler and
+                deselect the reader's selection on every transport press. */}
+            {continuousReadAloudAvailable
+              && continuousReadAloud.state.status !== "idle"
+              && !continuousReadAloud.state.collapsed && (
+                <div
+                  className="absolute inset-x-0 top-0 z-30"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <ContinuousReadAloudToolbar
+                    state={continuousReadAloud.state}
+                    labels={continuousReadAloudLabels}
+                    onStart={() => { void continuousReadAloud.start(continuousReadAloud.state.status === "finished"); }}
+                    onPause={continuousReadAloud.pause}
+                    onResume={continuousReadAloud.resume}
+                    onStop={continuousReadAloud.stop}
+                    onPrevious={() => { void continuousReadAloud.previous(); }}
+                    onNext={() => { void continuousReadAloud.next(); }}
+                    onRateChange={continuousReadAloud.setRate}
+                    onCollapsedChange={continuousReadAloud.setCollapsed}
+                  />
+                </div>
+              )}
             {!continuousReadAloudActive && <ReadingPlaybackBar />}
           </main>
 

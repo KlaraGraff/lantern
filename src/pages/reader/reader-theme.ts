@@ -325,7 +325,8 @@ export function applyReflowLayout(
   if (!flowRendered && !inlineSizeRendered) {
     // Nothing re-rendered above, either because only the non-rendering inputs
     // changed or because no attribute changed at all — the latter is every
-    // height-only resize, e.g. the read-aloud bar opening above the text.
+    // height-only resize, e.g. dragging the window shorter without changing
+    // its width.
     // Foliate would eventually re-columnize from its own ResizeObserver, but
     // 150ms later and outside this call, where the caller can no longer tell
     // whether the reader's position survived. Render here so this function
