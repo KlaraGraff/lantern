@@ -4,8 +4,16 @@
  * be tested without a DOM. See docs/impls/contextual-retrieval.md.
  */
 
-/** Settings-table key. Mirrors `ai_vector_retrieval`'s string-boolean shape. */
-export const CONTEXT_LINES_SETTING_KEY = "ai_context_lines_enabled";
+/**
+ * Settings-table key. Owned by the automatic-analysis registry
+ * (`auto_analysis_enabled_<job id>`, job id `grounding_context`), not by this
+ * page: the console is the one place that lists everything allowed to spend
+ * the reader's quota unprompted, so it owns the answer to "is this on". This
+ * row is a second door onto the same switch, put here because it is where
+ * someone setting up retrieval goes looking. Migration 053 carried the old
+ * page-local key across. Same string-boolean shape as `ai_vector_retrieval`.
+ */
+export const CONTEXT_LINES_SETTING_KEY = "auto_analysis_enabled_grounding_context";
 
 /**
  * The feature defaults to on (see the plan's "原文永不改变" principle — a

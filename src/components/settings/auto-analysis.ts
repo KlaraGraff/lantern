@@ -93,8 +93,17 @@ export function needsUnit(tokens: number, scale: TokenScale): boolean {
  * a repair job is finite, so once its backlog is gone the registry stops
  * offering the row at all. Everything above it recurs for as long as the
  * reader keeps reading, which is the order they are worth thinking about in.
+ * `book_imported` leads for the same reason `book_finished` used to: it is
+ * the earliest moment in a book's life, so a reader scanning the list meets
+ * the groups in the order their own reading will.
  */
-export const TRIGGER_ORDER = ["book_finished", "daily", "batch", "repair"] as const;
+export const TRIGGER_ORDER = [
+  "book_imported",
+  "book_finished",
+  "daily",
+  "batch",
+  "repair",
+] as const;
 
 export function groupJobsByTrigger(jobs: AutoAnalysisJobView[]): [string, AutoAnalysisJobView[]][] {
   const groups = new Map<string, AutoAnalysisJobView[]>();

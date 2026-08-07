@@ -63,6 +63,36 @@ pub enum AutoAnalysisTrigger {
     /// ever shrinks. What a reader deciding about this row needs to know is
     /// that the spend is finite and ends by itself.
     Repair,
+    /// Once, when a book is brought into the library — see
+    /// `ai::grounding::context`, the one job that uses this today.
+    ///
+    /// Its own variant because none of the others describes the shape of the
+    /// cost. `BookFinished` is the same "once per book" cadence at the
+    /// opposite end, and the difference matters to someone deciding: a job
+    /// that fires on import bills a whole shelf the day it is dragged in,
+    /// where one that fires on finishing bills a book at a time over months.
+    /// A reader about to import a backlog needs to see that first.
+    BookImported,
+}
+
+/// Whether a job makes the app work better, or makes it fit this reader
+/// better. The console splits on this so someone who wants the machinery but
+/// not the mirror can decline a whole half in one gesture.
+///
+/// Not a rephrasing of the trigger. `AutoAnalysisTrigger` answers "when does
+/// this spend my quota", a question about cost; this answers "what do I get
+/// out of it", a question about taste. Readers who turn off personalization
+/// are usually not economising — they would rather the software not form
+/// opinions about them — and no arrangement by cost lets them say that.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoAnalysisLayer {
+    /// Makes a feature work, or work better, the same way for everyone.
+    /// Turning it off costs capability.
+    Feature,
+    /// Builds something shaped around this particular reader. Turning it off
+    /// costs the tailoring and nothing else.
+    Personalization,
 }
 
 /// One system-initiated AI job.
@@ -74,6 +104,8 @@ pub struct AutoAnalysisJob {
     /// feature tag drift apart silently reports zero forever.
     pub id: &'static str,
     pub trigger: AutoAnalysisTrigger,
+    /// Which half of the console this row sits in. See `AutoAnalysisLayer`.
+    pub layer: AutoAnalysisLayer,
     /// What a reader who has never touched this job's switch gets. See the
     /// doc comment on `is_enabled` for why `true` is the norm and what
     /// justifies the one job that is not.
@@ -118,30 +150,47 @@ impl AutoAnalysisJob {
 /// `review_pile_curation` precedent — see its module doc for why a repair of
 /// our own defect is the one case where default-on is the conservative
 /// answer. The mockup's other rows are absent on purpose until theirs do.
+/// `grounding_context` (`ai::grounding::context`) is the first `Feature`-layer
+/// job, and the first whose switch the reader may already have found
+/// elsewhere: the embedding settings page offers the same toggle, writing the
+/// same key, because that is where someone setting up retrieval will look for
+/// it. Two doors, one switch — which is the arrangement the module doc's
+/// first rule demands, and the opposite of two switches that disagree.
 pub const JOBS: &[AutoAnalysisJob] = &[
     AutoAnalysisJob {
-        id: "reading_review",
-        trigger: AutoAnalysisTrigger::BookFinished,
-        default_enabled: true,
-        applies: None,
-    },
-    AutoAnalysisJob {
-        id: crate::commands::review_pile_ai::JOB_ID,
-        trigger: AutoAnalysisTrigger::Daily,
-        default_enabled: false,
-        applies: None,
-    },
-    AutoAnalysisJob {
-        id: crate::commands::followup_difficulty::JOB_ID,
-        trigger: AutoAnalysisTrigger::Batch,
+        id: crate::ai::grounding::context::JOB_ID,
+        trigger: AutoAnalysisTrigger::BookImported,
+        layer: AutoAnalysisLayer::Feature,
         default_enabled: true,
         applies: None,
     },
     AutoAnalysisJob {
         id: crate::commands::vocab_gloss_backfill::JOB_ID,
         trigger: AutoAnalysisTrigger::Repair,
+        layer: AutoAnalysisLayer::Feature,
         default_enabled: true,
         applies: Some(crate::commands::vocab_gloss_backfill::has_pending),
+    },
+    AutoAnalysisJob {
+        id: "reading_review",
+        trigger: AutoAnalysisTrigger::BookFinished,
+        layer: AutoAnalysisLayer::Personalization,
+        default_enabled: true,
+        applies: None,
+    },
+    AutoAnalysisJob {
+        id: crate::commands::review_pile_ai::JOB_ID,
+        trigger: AutoAnalysisTrigger::Daily,
+        layer: AutoAnalysisLayer::Personalization,
+        default_enabled: false,
+        applies: None,
+    },
+    AutoAnalysisJob {
+        id: crate::commands::followup_difficulty::JOB_ID,
+        trigger: AutoAnalysisTrigger::Batch,
+        layer: AutoAnalysisLayer::Personalization,
+        default_enabled: true,
+        applies: None,
     },
 ];
 
@@ -243,6 +292,7 @@ fn recommendation_dismissed(conn: &Connection, job_id: &str) -> bool {
 pub struct AutoAnalysisJobView {
     pub id: String,
     pub trigger: AutoAnalysisTrigger,
+    pub layer: AutoAnalysisLayer,
     pub enabled: bool,
     /// Whether the switch has ever been on — `true` immediately for a job
     /// whose default is on, and permanently `true` the first time a
@@ -328,6 +378,7 @@ fn console_inner(db: &Db, since_ms: i64) -> AppResult<AutoAnalysisConsole> {
             AutoAnalysisJobView {
                 id: job.id.to_string(),
                 trigger: job.trigger,
+                layer: job.layer,
                 enabled,
                 ever_enabled,
                 auto_calls,
@@ -584,8 +635,37 @@ mod tests {
         insert_usage(&db, "auto", "reading_review", 9_000, 70);
         let console = console_inner(&db, 5_000).unwrap();
         assert_eq!(console.auto_tokens, 70);
-        assert_eq!(console.jobs[0].auto_calls, 1);
-        assert_eq!(console.jobs[0].auto_tokens, 70);
+        let row = row_for(&console, "reading_review");
+        assert_eq!(row.auto_calls, 1);
+        assert_eq!(row.auto_tokens, 70);
+    }
+
+    /// The embedding settings page writes this exact string
+    /// (`CONTEXT_LINES_SETTING_KEY` in `src/components/settings/context-lines.ts`)
+    /// so its switch and the console's are one switch behind two doors. There
+    /// is no type shared across that boundary and no frontend test suite to
+    /// catch a drift, so the string is pinned here: changing `enabled_key`'s
+    /// shape must fail a test rather than silently leave the two pages
+    /// disagreeing about whether the feature is on.
+    #[test]
+    fn the_embedding_page_and_the_console_write_the_same_key() {
+        assert_eq!(
+            enabled_key(crate::ai::grounding::context::JOB_ID),
+            "auto_analysis_enabled_grounding_context"
+        );
+    }
+
+    /// Look a row up by id, never by position. `JOBS` is ordered for the
+    /// console's benefit — by layer, then by trigger — and that order has
+    /// already changed once; a test that indexes into it fails the next time
+    /// a job is added at the front, pointing at the wrong job rather than at
+    /// the real problem.
+    fn row_for<'a>(console: &'a AutoAnalysisConsole, job_id: &str) -> &'a AutoAnalysisJobView {
+        console
+            .jobs
+            .iter()
+            .find(|view| view.id == job_id)
+            .expect("job should be in the registry")
     }
 
     #[test]
@@ -598,7 +678,7 @@ mod tests {
         // number even though no row can explain it.
         assert_eq!(console.auto_tokens, 200);
         assert_eq!(console.ratio_percent, Some(20));
-        assert_eq!(console.jobs[0].auto_tokens, 0);
+        assert_eq!(row_for(&console, "reading_review").auto_tokens, 0);
     }
 
     #[test]

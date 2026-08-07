@@ -8,7 +8,11 @@ import Input from "../ui/Input";
 import Toggle from "../ui/Toggle";
 import { useSettings } from "../../hooks/useSettings";
 import { useContextLineProgress, resumeContextLines } from "../../hooks/useContextLineProgress";
-import { contextLinesEnabled, contextLinesRowDisabled } from "./context-lines";
+import {
+  CONTEXT_LINES_SETTING_KEY,
+  contextLinesEnabled,
+  contextLinesRowDisabled,
+} from "./context-lines";
 
 interface VectorAvailability {
   available: boolean;
@@ -85,7 +89,7 @@ export default function EmbeddingSettings() {
   const toggleContextLines = async (enabled: boolean) => {
     setError(null);
     try {
-      await saveSetting("ai_context_lines_enabled", enabled ? "true" : "false");
+      await saveSetting(CONTEXT_LINES_SETTING_KEY, enabled ? "true" : "false");
     } catch (nextError) {
       setError(errorText(nextError));
     }

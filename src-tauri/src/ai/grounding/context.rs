@@ -67,20 +67,27 @@ struct ChunkRow {
     context_line: Option<String>,
 }
 
-/// Whether the reader has this feature switched on. Missing key defaults to
-/// on: per the design's first principle, a wrong identity sentence can only
-/// make ranking worse, never fabricate what a citation shows, so there is no
-/// downside-on-launch risk that would call for defaulting off.
+/// This job's id in the automatic-analysis registry, and — by the registry's
+/// own requirement — the string its calls are tagged with in
+/// `ai_usage_records.feature`. One constant rather than two literals, because
+/// the failure mode when they drift is silent: the console keeps rendering the
+/// row and reports it as having spent nothing, forever.
+pub const JOB_ID: &str = "grounding_context";
+
+/// Whether the reader has this feature switched on.
+///
+/// The answer lives in the automatic-analysis registry, which is the single
+/// owner of "may this spend quota on its own". The embedding settings page
+/// offers the same switch — that is where someone setting up retrieval looks
+/// for it — but it writes the registry's key, so the two doors cannot
+/// disagree. See migration 053.
+///
+/// Missing key defaults to on (`JOBS`' `default_enabled`): per the design's
+/// first principle, a wrong identity sentence can only make ranking worse,
+/// never fabricate what a citation shows, so there is no downside-on-launch
+/// risk that would call for defaulting off.
 fn context_lines_enabled(db: &Db) -> bool {
-    let conn = db.reader();
-    conn.query_row(
-        "SELECT value FROM settings WHERE key = 'ai_context_lines_enabled'",
-        [],
-        |row| row.get::<_, String>(0),
-    )
-    .ok()
-    .map(|value| value != "false")
-    .unwrap_or(true)
+    crate::commands::auto_analysis::is_enabled(&db.reader(), JOB_ID)
 }
 
 /// All of a book's chunks, ordered the same way the pending query in the
@@ -546,7 +553,7 @@ pub async fn ensure_context_lines<R: Runtime>(
             None,
             None,
             "auto",
-            "grounding_context",
+            JOB_ID,
         )
         .await?;
         let cleaned = clean_context_line(&completion.text);
@@ -859,7 +866,8 @@ mod tests {
         {
             let conn = db.conn.lock().unwrap();
             conn.execute(
-                "INSERT INTO settings (key, value) VALUES ('ai_context_lines_enabled', 'false')",
+                "INSERT INTO settings (key, value)
+                 VALUES ('auto_analysis_enabled_grounding_context', 'false')",
                 [],
             )
             .unwrap();
@@ -877,7 +885,8 @@ mod tests {
         {
             let conn = db.conn.lock().unwrap();
             conn.execute(
-                "INSERT INTO settings (key, value) VALUES ('ai_context_lines_enabled', 'false')",
+                "INSERT INTO settings (key, value)
+                 VALUES ('auto_analysis_enabled_grounding_context', 'false')",
                 [],
             )
             .unwrap();

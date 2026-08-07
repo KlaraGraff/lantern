@@ -148,6 +148,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
         52,
         include_str!("../migrations/052_epub_source_metadata.sql"),
     ),
+    (
+        53,
+        include_str!("../migrations/053_context_lines_one_switch.sql"),
+    ),
 ];
 
 fn register_sqlite_vec() {
