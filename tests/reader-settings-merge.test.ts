@@ -33,7 +33,6 @@ const previous: ReaderSettingsState = {
   showLookupMarkers: true,
   showNewVocabMarkers: true,
   showLearningMarkers: true,
-  showMasteredMarkers: false,
   chapterEndReviewHint: true,
   bookFinishedHint: true,
 };
@@ -65,7 +64,6 @@ const perBookRows = {
   show_lookup_markers: "false",
   show_new_vocab_markers: "false",
   show_learning_markers: "false",
-  show_mastered_markers: "true",
 } as const;
 
 const perBookExpectations: Record<keyof typeof perBookRows, unknown> = {
@@ -84,7 +82,6 @@ const perBookExpectations: Record<keyof typeof perBookRows, unknown> = {
   show_lookup_markers: false,
   show_new_vocab_markers: false,
   show_learning_markers: false,
-  show_mastered_markers: true,
 };
 
 const perBookStateFields: Record<keyof typeof perBookRows, keyof ReaderSettingsState> = {
@@ -103,10 +100,9 @@ const perBookStateFields: Record<keyof typeof perBookRows, keyof ReaderSettingsS
   show_lookup_markers: "showLookupMarkers",
   show_new_vocab_markers: "showNewVocabMarkers",
   show_learning_markers: "showLearningMarkers",
-  show_mastered_markers: "showMasteredMarkers",
 };
 
-// The global values the rows above must beat. The last four keys have no global
+// The global values the rows above must beat. The marker keys have no global
 // counterpart at all, which is exactly why they moved into `book_settings`.
 const globalCounterparts = {
   reader_theme: "dark",
@@ -233,13 +229,11 @@ test("char spacing and the marker toggles come from per-book rows", () => {
     show_lookup_markers: "false",
     show_new_vocab_markers: "false",
     show_learning_markers: "false",
-    show_mastered_markers: "true",
   });
   assert.equal(merged.charSpacing, 7);
   assert.equal(merged.showLookupMarkers, false);
   assert.equal(merged.showNewVocabMarkers, false);
   assert.equal(merged.showLearningMarkers, false);
-  assert.equal(merged.showMasteredMarkers, true);
 });
 
 test("marker toggles resolve per-book, then global, then the canonical default", () => {
@@ -250,14 +244,13 @@ test("marker toggles resolve per-book, then global, then the canonical default",
   assert.equal(noGlobal.showLookupMarkers, true);
   assert.equal(noGlobal.showNewVocabMarkers, true);
   assert.equal(noGlobal.showLearningMarkers, true);
-  assert.equal(noGlobal.showMasteredMarkers, false);
 
   const globalOnly = resolveReaderSettings(previous, {
     show_lookup_markers: "false",
-    show_mastered_markers: "true",
+    show_new_vocab_markers: "false",
   }, {});
   assert.equal(globalOnly.showLookupMarkers, false);
-  assert.equal(globalOnly.showMasteredMarkers, true);
+  assert.equal(globalOnly.showNewVocabMarkers, false);
   // Untouched globally, so still the default rather than the sibling's value.
   assert.equal(globalOnly.showLearningMarkers, true);
 
@@ -275,13 +268,11 @@ test("marker settings without rows return to canonical defaults instead of leaki
     showLookupMarkers: false,
     showNewVocabMarkers: false,
     showLearningMarkers: false,
-    showMasteredMarkers: true,
   };
   const merged = resolveReaderSettings(pollutedPrevious, {}, {});
   assert.equal(merged.showLookupMarkers, true);
   assert.equal(merged.showNewVocabMarkers, true);
   assert.equal(merged.showLearningMarkers, true);
-  assert.equal(merged.showMasteredMarkers, false);
 });
 
 // The per-book guarantee, one key at a time: book A's row must not reach book B,

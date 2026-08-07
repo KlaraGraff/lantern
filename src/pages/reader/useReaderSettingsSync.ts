@@ -69,7 +69,7 @@ const readerPreferenceSettingKeys = {
 // row is written only when the user changes the value in the reader panel, and a
 // book with no row follows the Settings page.
 //
-// The four marker toggles were the exception for a while — no global counterpart,
+// The marker toggles were the exception for a while — no global counterpart,
 // so a row was the only place the choice could live, and 「设为全局默认」 quietly
 // vanished for a book whose only overrides were markers. They now have a global
 // layer like everything else; a book with no row follows it, and with no global
@@ -125,14 +125,13 @@ function marginSetting(value: string | number | undefined, fallback: number): nu
 /**
  * What an absent marker row means, at both layers. Exported so the Settings
  * page's copy in `mark-palette.ts` can be pinned equal to it by test rather
- * than by hope: every install predating the global layer has all four rows
+ * than by hope: every install predating the global layer has all three rows
  * missing, so the two disagreeing would change what those users see.
  */
 export const DEFAULT_MARKER_VISIBILITY = {
   showLookupMarkers: true,
   showNewVocabMarkers: true,
   showLearningMarkers: true,
-  showMasteredMarkers: false,
 } as const;
 
 /**
@@ -246,9 +245,9 @@ export function resolveReaderSettings(
     // else. The global row is allowed to be absent — that is the state every
     // existing install upgrades into, and it must land on exactly the same
     // values the hardcoded defaults gave before the global layer existed.
-    // `previous` is deliberately not in the chain: these four used to leak
-    // between books through it, and the canonical default is what a book with
-    // no row of its own is entitled to.
+    // `previous` is deliberately not in the chain: these used to leak between
+    // books through it, and the canonical default is what a book with no row of
+    // its own is entitled to.
     showLookupMarkers: booleanSetting(
       perBookSettings[perBookSettingKeys.showLookupMarkers],
       booleanSetting(globalSettings.show_lookup_markers, DEFAULT_MARKER_VISIBILITY.showLookupMarkers),
@@ -260,10 +259,6 @@ export function resolveReaderSettings(
     showLearningMarkers: booleanSetting(
       perBookSettings[perBookSettingKeys.showLearningMarkers],
       booleanSetting(globalSettings.show_learning_markers, DEFAULT_MARKER_VISIBILITY.showLearningMarkers),
-    ),
-    showMasteredMarkers: booleanSetting(
-      perBookSettings[perBookSettingKeys.showMasteredMarkers],
-      booleanSetting(globalSettings.show_mastered_markers, DEFAULT_MARKER_VISIBILITY.showMasteredMarkers),
     ),
   };
 }

@@ -36,7 +36,6 @@ const defaults = {
   showLookupMarkers: true,
   showNewVocabMarkers: true,
   showLearningMarkers: true,
-  showMasteredMarkers: false,
 } as unknown as ReaderSettingsState;
 
 test("the reset writes every global reading key and nothing else", () => {
@@ -66,9 +65,9 @@ test("the values come from the reader's own defaults, not a second table", () =>
 
 test("per-book override keys stay out of the reset", () => {
   const rows = buildReadingDefaultSettings(defaults);
-  // The four marker toggles exist only as per-book rows — a global default for
+  // The marker toggles exist only as per-book rows — a global default for
   // them would be a setting the UI has no control for.
-  for (const key of ["show_lookup_markers", "show_new_vocab_markers", "show_learning_markers", "show_mastered_markers"]) {
+  for (const key of ["show_lookup_markers", "show_new_vocab_markers", "show_learning_markers"]) {
     assert.ok(!(key in rows), `${key} should not be reset globally`);
   }
 });

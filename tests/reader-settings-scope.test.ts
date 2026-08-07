@@ -186,7 +186,6 @@ const baseState: ReaderSettingsState = {
   showLookupMarkers: true,
   showNewVocabMarkers: true,
   showLearningMarkers: true,
-  showMasteredMarkers: false,
   chapterEndReviewHint: true,
   bookFinishedHint: true,
 };

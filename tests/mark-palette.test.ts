@@ -208,7 +208,7 @@ test("the automatic mark can be told from whichever preset the reader marks with
 
 test("the presets that shipped before are the ones this rule was written to reject", () => {
   assert.deepEqual(markCollisions(underline("#4FAE91")), ["learning"]);
-  assert.deepEqual(markCollisions(underline("#8A8F98")), ["mastered"]);
+  assert.deepEqual(markCollisions(underline("#8A8F98")), ["familiar"]);
   assert.deepEqual(markCollisions(wash("#5B8FD9")), ["reading"]);
 });
 

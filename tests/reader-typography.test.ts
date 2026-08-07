@@ -17,7 +17,6 @@ const settings: ReaderSettingsState = {
   lineSpacing: 1.8, charSpacing: 0, wordSpacing: 0, textJustification: false,
   paragraphSpacing: "original", firstLineIndent: false, margins: 0,
   showLookupMarkers: true, showNewVocabMarkers: true, showLearningMarkers: true,
-  showMasteredMarkers: false,
 };
 
 test("publisher paragraph styles are untouched until a typography enhancement is chosen", () => {

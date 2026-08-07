@@ -71,7 +71,6 @@ export interface ReaderSettingsState {
   showLookupMarkers: boolean;
   showNewVocabMarkers: boolean;
   showLearningMarkers: boolean;
-  showMasteredMarkers: boolean;
   chapterEndReviewHint: boolean;
   bookFinishedHint: boolean;
 }
@@ -903,18 +902,20 @@ function ReaderSettings({
       {capabilities.supportsWordMarkers && (
         <div className="px-4 py-3 border-t border-border-light flex flex-col gap-3">
           <p className="text-[11px] font-medium text-text-muted tracking-[0.5px] uppercase">{t("readerSettings.wordMarkers")}</p>
+          {/* Three switches for four mastery tiers: a mastered word is never
+              marked, and a familiar one rides with 「学习中」 — see
+              `WORD_MARKER_BY_MASTERY` in `mark-palette.ts`. */}
           {[
             ["showLookupMarkers", "readerSettings.lookupMarkers"],
             ["showNewVocabMarkers", "readerSettings.newVocabMarkers"],
             ["showLearningMarkers", "readerSettings.learningMarkers"],
-            ["showMasteredMarkers", "readerSettings.masteredMarkers"],
           ].map(([key, label]) => (
             <div key={key}>
               <div className="flex items-center justify-between gap-4">
                 <span className="text-[13px] text-text-primary">{t(label)}</span>
                 <Toggle
                   label={t(label)}
-                  checked={settings[key as keyof Pick<ReaderSettingsState, "showLookupMarkers" | "showNewVocabMarkers" | "showLearningMarkers" | "showMasteredMarkers">]}
+                  checked={settings[key as keyof Pick<ReaderSettingsState, "showLookupMarkers" | "showNewVocabMarkers" | "showLearningMarkers">]}
                   onChange={(checked) => update({ [key]: checked } as Partial<ReaderSettingsState>)}
                 />
               </div>

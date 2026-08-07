@@ -16,7 +16,6 @@ export const perBookSettingKeys = {
   showLookupMarkers: "show_lookup_markers",
   showNewVocabMarkers: "show_new_vocab_markers",
   showLearningMarkers: "show_learning_markers",
-  showMasteredMarkers: "show_mastered_markers",
 } as const;
 
 export type PerBookOverrideKey = keyof typeof perBookSettingKeys;
@@ -31,9 +30,13 @@ export const perBookOverrideKeys = Object.keys(perBookSettingKeys) as PerBookOve
  * global key. The two lists have to agree: the backend rejects a promotion of a
  * key it cannot map, and a key missing from here silently loses the button.
  *
- * The four marker toggles are here now that they have a global layer of their
- * own. Rows that are not reader settings at all (`toc_expanded`) still fall
- * outside, which is what `promotableRows` filters out.
+ * The marker toggles are here now that they have a global layer of their own.
+ * Rows that are not reader settings at all (`toc_expanded`) still fall outside,
+ * which is what `promotableRows` filters out.
+ *
+ * `show_mastered_markers` is deliberately absent: mastered words are no longer
+ * marked, so the switch is gone. The backend still maps the key — harmless,
+ * since nothing on this side ever sends it again.
  */
 export const promotableBookSettingKeys: readonly PerBookSettingRowKey[] = [
   "theme",
@@ -51,7 +54,6 @@ export const promotableBookSettingKeys: readonly PerBookSettingRowKey[] = [
   "show_lookup_markers",
   "show_new_vocab_markers",
   "show_learning_markers",
-  "show_mastered_markers",
 ];
 
 /** One `book_settings` row that a promotion deleted, as the backend returns it. */

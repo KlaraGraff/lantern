@@ -86,7 +86,7 @@ const MARK_LABEL_KEY: Record<SystemMarkId, string> = {
   reading: "settings.tools.markers.markReading",
   vocabNew: "vocab.mastery.new",
   learning: "vocab.mastery.learning",
-  mastered: "vocab.mastery.mastered",
+  familiar: "vocab.mastery.familiar",
 };
 
 /**
@@ -110,15 +110,13 @@ const VISIBILITY_ROW: Record<MarkerVisibilityKey, {
     titleKey: "settings.tools.markers.visibility.vocabNew",
     hintKey: "settings.tools.markers.visibility.vocabNewHint",
   },
+  // Two tiers behind one switch, so the chip shows the `learning` mark and the
+  // hint names both. The `familiar` dash still appears in the sample paragraph
+  // above, which is where the two are seen side by side.
   showLearningMarkers: {
     mark: "learning",
     titleKey: "settings.tools.markers.visibility.learning",
     hintKey: "settings.tools.markers.visibility.learningHint",
-  },
-  showMasteredMarkers: {
-    mark: "mastered",
-    titleKey: "settings.tools.markers.visibility.mastered",
-    hintKey: "settings.tools.markers.visibility.masteredHint",
   },
 };
 
@@ -458,8 +456,11 @@ function StyleControls({
  * Every row carries a chip drawn the way the mark is actually drawn, which
  * makes this block the legend the app never had: nothing else anywhere tells a
  * reader that the amber underline is a new word and the grey dash is one they
- * have finished. The samples above obey these switches too — a setting whose
- * effect you can only see by leaving the page is a setting you tune by guessing.
+ * half-know. The samples above obey these switches too — a setting whose effect
+ * you can only see by leaving the page is a setting you tune by guessing.
+ *
+ * Three rows, four mastery tiers. A mastered word is drawn as plain text, so it
+ * has no row here and never had a switch worth keeping.
  */
 function VisibilitySection({
   visibility,
@@ -476,7 +477,7 @@ function VisibilitySection({
   // into is which way the app itself is lit.
   const { body: chipBackdrop, text: chipText } = getThemeStyles(getDefaultReaderTheme());
   const summary = markerVisibilitySummary(visibility);
-  // Picked whole, never assembled: "2 / 4" reads differently in a language that
+  // Picked whole, never assembled: "2 / 3" reads differently in a language that
   // counts with measure words, and a sentence stitched together in JSX cannot be
   // reordered by a translator.
   const summaryLabel = summary.state === "all"
@@ -597,7 +598,10 @@ export default function MarkerStyleSettings({
     reading: systemMarkCss(systemMark.reading, backdrop),
     vocabNew: visibility.showNewVocabMarkers ? systemMarkCss(systemMark.vocabNew, backdrop) : undefined,
     learning: visibility.showLearningMarkers ? systemMarkCss(systemMark.learning, backdrop) : undefined,
-    mastered: visibility.showMasteredMarkers ? systemMarkCss(systemMark.mastered, backdrop) : undefined,
+    // Same switch as `learning`, one tier further along: both are words still
+    // being worked on. A mastered word is absent from the sample entirely — it
+    // has no mark to demonstrate.
+    familiar: visibility.showLearningMarkers ? systemMarkCss(systemMark.familiar, backdrop) : undefined,
   });
 
   return (

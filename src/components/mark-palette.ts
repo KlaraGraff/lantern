@@ -26,11 +26,11 @@ export const wordMarkerColor = {
   lookup: "__lookup__",
   vocabNew: "__vocab_new__",
   learning: "__learning__",
-  mastered: "__mastered__",
+  familiar: "__familiar__",
 } as const;
 
 /** A mark whose colour is the app's to choose, and the reader's to avoid. */
-export type SystemMarkId = "reading" | "vocabNew" | "learning" | "mastered";
+export type SystemMarkId = "reading" | "vocabNew" | "learning" | "familiar";
 
 export interface SystemMark {
   id: SystemMarkId;
@@ -49,10 +49,16 @@ export interface SystemMark {
 }
 
 /**
- * The vocabulary marks read as one progression rather than four unrelated
- * colours: a new word is the warmest and most solid, each step towards mastered
- * drains the hue out of it, and mastered is a grey dash you can read straight
- * past without it ever having claimed your attention.
+ * The vocabulary marks read as one progression rather than three unrelated
+ * colours: a new word is the warmest and most solid, each step towards mastery
+ * drains the hue out of it, and a familiar word is a grey dash you can read
+ * straight past without it ever having claimed your attention.
+ *
+ * Mastery has a fourth tier and it is deliberately not here. `mastered` is
+ * drawn as nothing at all — the progression ends by disappearing, which is the
+ * only ending that means "you are done with this word". The three colours below
+ * are the ones that were tuned against every paper theme; the tiers moved under
+ * them, the hexes did not.
  *
  * The reading wash is the only cold colour here, and the only one that is not a
  * property of the text — it marks where the voice currently is.
@@ -61,7 +67,7 @@ export const SYSTEM_MARKS: readonly SystemMark[] = [
   { id: "reading", color: "#7DD3FC", opacity: 0.42, shape: "wash", blendIntoPage: true },
   { id: "vocabNew", color: "#D97706", opacity: 0.85, shape: "underline" },
   { id: "learning", color: "#2F9E8F", opacity: 0.85, shape: "underline" },
-  { id: "mastered", color: "#94A3B8", opacity: 0.9, shape: "underline", dashed: true },
+  { id: "familiar", color: "#94A3B8", opacity: 0.9, shape: "underline", dashed: true },
 ];
 
 export const systemMark = Object.fromEntries(
@@ -72,8 +78,47 @@ export const systemMark = Object.fromEntries(
 export const wordMarkerStyle: Record<string, SystemMark> = {
   [wordMarkerColor.vocabNew]: systemMark.vocabNew,
   [wordMarkerColor.learning]: systemMark.learning,
-  [wordMarkerColor.mastered]: systemMark.mastered,
+  [wordMarkerColor.familiar]: systemMark.familiar,
 };
+
+/**
+ * Which mark a saved word wears, by mastery tier, and which switch decides
+ * whether it is drawn at all.
+ *
+ * Every tier migration 038 defines is named here, `mastered` included — as
+ * `null`, which is an answer rather than a gap. Reading the mark off "everything
+ * that is not mastered or learning" is what painted a `familiar` word with the
+ * brand-new-word colour for as long as the tier existed, and turned it off with
+ * the new-word switch. A tier this table does not name therefore draws nothing:
+ * an unmarked word is a smaller wrong answer than a word wearing a claim about
+ * itself that is false, and a fifth tier can no longer land in the new-word
+ * bucket by default.
+ *
+ * `familiar` and `learning` share `showLearningMarkers` on purpose. The question
+ * a visibility switch answers is "do I want to see the words I am still working
+ * on", and a familiar word is still one — a fourth switch would be asking the
+ * same question twice.
+ */
+export const WORD_MARKER_BY_MASTERY: Record<
+  string,
+  { color: string; visibility: MarkerVisibilityKey } | null
+> = {
+  new: { color: wordMarkerColor.vocabNew, visibility: "showNewVocabMarkers" },
+  learning: { color: wordMarkerColor.learning, visibility: "showLearningMarkers" },
+  familiar: { color: wordMarkerColor.familiar, visibility: "showLearningMarkers" },
+  mastered: null,
+};
+
+/**
+ * The mark a word of this tier wears, or `null` for no mark at all.
+ *
+ * A word with no tier recorded has only just been saved, which is exactly what
+ * `new` means — so an absent tier resolves to the new-word mark rather than to
+ * nothing.
+ */
+export function wordMarkerForMastery(mastery: string | null | undefined) {
+  return WORD_MARKER_BY_MASTERY[mastery || "new"] ?? null;
+}
 
 export const READING_HIGHLIGHT_COLOR = systemMark.reading.color;
 export const READING_HIGHLIGHT_OPACITY = systemMark.reading.opacity;
@@ -81,19 +126,23 @@ export const READING_HIGHLIGHT_OPACITY = systemMark.reading.opacity;
 /**
  * Which vocabulary marks the text is allowed to show, in the order they are
  * offered — the lookup mark first because it is the one a reader meets without
- * asking for it, then the three states a word moves through.
+ * asking for it, then the two states a marked word can be in.
+ *
+ * Three switches for four mastery tiers, and that is the whole design: a
+ * mastered word carries no mark, so there is nothing to switch, and `familiar`
+ * rides with `learning` because both are words the reader is still working on.
+ * See `WORD_MARKER_BY_MASTERY` for the tier-to-mark half of the same answer.
  *
  * This lives beside the palette rather than beside either screen that edits it:
  * the Settings page sets the global default and the reader panel overrides it
  * per book, and both have to agree on the key names, the order and the value an
- * absent row means. A second copy of that answer is how the four ended up
+ * absent row means. A second copy of that answer is how these ended up
  * per-book-only in the first place.
  */
 export const MARKER_VISIBILITY_KEYS = [
   "showLookupMarkers",
   "showNewVocabMarkers",
   "showLearningMarkers",
-  "showMasteredMarkers",
 ] as const;
 
 export type MarkerVisibilityKey = typeof MARKER_VISIBILITY_KEYS[number];
@@ -105,28 +154,34 @@ export const MARKER_VISIBILITY_SETTING_KEY: Record<MarkerVisibilityKey, string> 
   showLookupMarkers: "show_lookup_markers",
   showNewVocabMarkers: "show_new_vocab_markers",
   showLearningMarkers: "show_learning_markers",
-  showMasteredMarkers: "show_mastered_markers",
 };
 
 /**
  * What a missing row means — and it has to keep meaning exactly this, because
- * every install that predates the global layer has all four rows missing. These
+ * every install that predates the global layer has all three rows missing. These
  * are the values the reader hardcoded before there was anywhere to write them
  * down; `DEFAULT_MARKER_VISIBILITY` in `useReaderSettingsSync` is the same set,
  * and `tests/marker-visibility.test.ts` fails if the two ever drift.
  *
- * `showMasteredMarkers` is the odd one out on purpose: a word you have finished
- * learning is a word you should be able to read straight past.
+ * All three are on, and there is no odd one out any more. The switch that used
+ * to be off by default governed mastered words, on the reasoning that a word you
+ * have finished learning is a word you should be able to read straight past —
+ * which is now true unconditionally, because a mastered word is never marked at
+ * all. Every switch that is left governs a word still being worked on, and those
+ * are worth seeing.
+ *
+ * A stale `show_mastered_markers` row survives in the `settings` table of any
+ * install that ever turned it on. Nothing reads it, which is the intended end
+ * state — do not add anything that does.
  */
 export const DEFAULT_MARKER_VISIBILITY: MarkerVisibility = {
   showLookupMarkers: true,
   showNewVocabMarkers: true,
   showLearningMarkers: true,
-  showMasteredMarkers: false,
 };
 
 /**
- * The four switches as the settings table has them. Anything that is not the
+ * The three switches as the settings table has them. Anything that is not the
  * string `"true"` or `"false"` is treated as no answer at all rather than as
  * `false` — a truncated write or a hand-edited database must not silently turn
  * a mark off.

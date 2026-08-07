@@ -35,6 +35,7 @@ import {
   savedHighlightColor,
   washBlendMode,
   wordMarkerColor,
+  wordMarkerForMastery,
   wordMarkerStyle,
 } from "../../components/mark-palette";
 import {
@@ -413,13 +414,15 @@ export function useFoliateAnnotations({
     if (supportsWordMarkers) {
       for (const word of vocab) {
         if (!word.cfi || manual.has(word.cfi)) continue;
-        if (word.mastery === "mastered" && settings.showMasteredMarkers) {
-          next.set(word.cfi, { color: wordMarkerColor.mastered, kind: "vocab" });
-        } else if (word.mastery === "learning" && settings.showLearningMarkers) {
-          next.set(word.cfi, { color: wordMarkerColor.learning, kind: "vocab" });
-        } else if (word.mastery !== "mastered" && word.mastery !== "learning" && settings.showNewVocabMarkers) {
-          next.set(word.cfi, { color: wordMarkerColor.vocabNew, kind: "vocab" });
-        }
+        // Looked up by tier, never worked out by elimination. The chain this
+        // replaced ended in "everything that is not mastered or learning", so
+        // `familiar` — a real tier since migration 038 — was painted with the
+        // brand-new-word colour and hidden by the new-word switch. A `null` here
+        // is `mastered`, or a tier the palette has not been taught yet; both
+        // draw nothing rather than falling into someone else's bucket.
+        const mark = wordMarkerForMastery(word.mastery);
+        if (!mark || !settings[mark.visibility]) continue;
+        next.set(word.cfi, { color: mark.color, kind: "vocab" });
       }
     }
     autoMarkersRef.current = next;
@@ -913,7 +916,6 @@ export function useFoliateAnnotations({
     readerSettings.showLookupMarkers,
     readerSettings.showNewVocabMarkers,
     readerSettings.showLearningMarkers,
-    readerSettings.showMasteredMarkers,
   ].join(":");
   const passiveVocabSignature = `${passiveVocab.enabled}:${passiveVocab.style}:${passiveVocab.limit}`;
   // Theme is in here too, not just the toggle: the chapter-end line's colour is
