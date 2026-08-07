@@ -13,6 +13,7 @@ import LibrarySettings from "./settings/LibrarySettings";
 import McpSettings from "./settings/McpSettings";
 import AboutSettings from "./settings/AboutSettings";
 import Toast from "./ui/Toast";
+import ErrorBoundary from "./ErrorBoundary";
 import { LANGUAGE_OPTIONS } from "./settings/languageOptions";
 import {
   groupSettingsRootRows,
@@ -332,7 +333,24 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
 
   const settingsProps = { settings, loading, refresh, save, saveBulk, showSavedToast };
 
-  const renderContent = (section: SettingsSection): ReactNode => {
+  /**
+   * Wrapped per section rather than once around the modal: the sidebar, the
+   * close button and the whole app behind them stay usable when one panel
+   * dies, and the section id as the reset key means picking another section
+   * clears the failure without the user pressing anything.
+   */
+  const renderContent = (section: SettingsSection): ReactNode => (
+    <ErrorBoundary
+      scope="region"
+      resetKey={section}
+      onDismiss={requestClose}
+      dismissLabel={t("errorBoundary.closeSettings")}
+    >
+      {renderSection(section)}
+    </ErrorBoundary>
+  );
+
+  const renderSection = (section: SettingsSection): ReactNode => {
     switch (section) {
       case "general": return <GeneralSettings {...settingsProps} />;
       case "reading": return (

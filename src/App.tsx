@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { BrowserRouter, Routes, Route } from "react-router";
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from "react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen } from "@tauri-apps/api/event";
@@ -7,9 +7,11 @@ import Home from "./pages/Home";
 import AiRouteFallbackNotice from "./components/AiRouteFallbackNotice";
 import ReasoningEffortNotice from "./components/ReasoningEffortNotice";
 import SettingsHost from "./components/SettingsHost";
+import ErrorBoundary from "./components/ErrorBoundary";
 import McpApprovalDialog from "./components/McpApprovalDialog";
 import OnboardingCard from "./components/onboarding/OnboardingCard";
 import UpdateToast from "./components/UpdateToast";
+import VocabGlossBackfillNotice from "./components/VocabGlossBackfillNotice";
 import { reconcileLanguage } from "./i18n";
 import { useAppZoom } from "./hooks/useAppZoom";
 import { openReaderWindow } from "./utils/openReaderWindow";
@@ -99,21 +101,56 @@ export default function App() {
     };
   }, []);
 
-  const content = (
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
+  );
+}
+
+/**
+ * Everything under the router. Split out of `App` only so the page-level error
+ * boundary can read the location it resets on — `useLocation` is unavailable
+ * above `BrowserRouter`.
+ */
+function AppContent() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  return (
     <>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route
-          path="/reader/:bookId"
-          element={<Suspense fallback={<ReaderFallback />}><Reader /></Suspense>}
-        />
-        <Route
-          path="/book/:id"
-          element={<Suspense fallback={<BookDetailsFallback />}><BookDetails /></Suspense>}
-        />
-      </Routes>
-      <ReasoningEffortNotice />
-      <AiRouteFallbackNotice />
+      {/* One page failing should cost that page, not the window. Keyed by the
+          path, so navigating anywhere else clears the failure on its own — and
+          "back to library" is therefore a real recovery, not a re-render of the
+          same broken route. Everything below this line keeps rendering. */}
+      <ErrorBoundary
+        scope="page"
+        resetKey={location.pathname}
+        isMainWindow={isMainWindow}
+        atHome={location.pathname === "/"}
+        onGoHome={() => navigate("/")}
+      >
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route
+            path="/reader/:bookId"
+            element={<Suspense fallback={<ReaderFallback />}><Reader /></Suspense>}
+          />
+          <Route
+            path="/book/:id"
+            element={<Suspense fallback={<BookDetailsFallback />}><BookDetails /></Suspense>}
+          />
+        </Routes>
+      </ErrorBoundary>
+      {/* Passive notices fail silently: a garnish that breaks should disappear,
+          not seize the screen to announce itself. Same principle already
+          applied to the footnote module — a garnish must never be able to stop
+          a book from opening. The error still reaches the console and the
+          on-disk log. */}
+      <ErrorBoundary scope="silent">
+        <ReasoningEffortNotice />
+        <AiRouteFallbackNotice />
+      </ErrorBoundary>
       {/* Settings belong to the window that owns the library, not to a page.
           A desktop reader window forwards to this one by label instead of
           mounting a second modal of its own. */}
@@ -122,13 +159,15 @@ export default function App() {
       {isMainWindow && <OnboardingCard />}
       {/* One window checks and one window announces. A reader window mounting
           its own copy would run a second check and stack a second toast. */}
-      {isMainWindow && <UpdateToast />}
+      {/* The repair runs once per launch in the backend and emits to every
+          window; only the library window announces it, so a reader with a
+          book open does not get the same notice twice. */}
+      {isMainWindow && (
+        <ErrorBoundary scope="silent">
+          <UpdateToast />
+          <VocabGlossBackfillNotice />
+        </ErrorBoundary>
+      )}
     </>
-  );
-
-  return (
-    <BrowserRouter>
-      {content}
-    </BrowserRouter>
   );
 }

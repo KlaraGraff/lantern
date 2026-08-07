@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import ErrorBoundary from "./components/ErrorBoundary";
 import "./index.css";
 import "./i18n";
 import { installReaderDiagnostics } from "./utils/readerDiagnostics";
@@ -43,6 +44,12 @@ applyAppZoom(readAppZoom());
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    {/* Last resort. The boundaries inside `App` contain a page or a panel and
+        leave the rest usable; this one only exists so that a failure in the
+        shell itself — router, providers, `App`'s own effects — is an error
+        screen with a way out rather than an empty white window. */}
+    <ErrorBoundary scope="app">
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>,
 );

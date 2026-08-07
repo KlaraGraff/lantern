@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>Lantern — 错误边界样张 / Error boundary sample</title>
+<style>
+/* Tokens copied verbatim from src/index.css @theme + .dark. Nothing invented. */
+:root {
+  --color-bg-page: #f4f4f5;
+  --color-bg-surface: #ffffff;
+  --color-bg-muted: #fafafa;
+  --color-bg-input: #f3f3f5;
+  --color-text-primary: #18181b;
+  --color-text-secondary: #52525c;
+  --color-text-muted: #71717b;
+  --color-border: #e4e4e7;
+  --color-border-light: #f4f4f5;
+  --color-accent: #7c3aed;
+  --color-accent-bg: #f3e8ff;
+  --color-accent-text: #7c3aed;
+  --color-danger-bg: #fef2f2;
+  --color-danger-text: #e7000b;
+  --color-warning: #b8791c;
+  --color-overlay: rgba(0, 0, 0, 0.5);
+  --shadow-popover: 0 10px 30px rgba(0,0,0,0.12);
+}
+.dark {
+  --color-bg-page: #151518;
+  --color-bg-surface: #18191d;
+  --color-bg-muted: #1f2023;
+  --color-bg-input: #25262c;
+  --color-text-primary: #f4f4f5;
+  --color-text-secondary: #c9c9d1;
+  --color-text-muted: #9a9aa4;
+  --color-border: #34343d;
+  --color-border-light: #2a2b31;
+  --color-accent: #8b5cf6;
+  --color-accent-bg: #302647;
+  --color-accent-text: #a78bfa;
+  --color-danger-bg: #450a0a4d;
+  --color-danger-text: #f87171;
+  --color-warning: #e0a75a;
+  --color-overlay: rgba(21, 21, 24, 0.72);
+  --shadow-popover: 0 10px 30px rgba(0,0,0,0.5);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+.page { max-width: 1180px; margin: 0 auto; padding: 32px 24px 80px; }
+h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.3px; margin: 0 0 4px; }
+.lede { font-size: 13px; line-height: 20px; color: var(--color-text-muted); margin: 0 0 28px; max-width: 720px; }
+h2 { font-size: 14px; font-weight: 600; margin: 36px 0 2px; }
+.note { font-size: 12px; line-height: 19px; color: var(--color-text-muted); margin: 0 0 12px; max-width: 780px; }
+.note b { color: var(--color-text-secondary); font-weight: 600; }
+
+/* The frame that stands in for the app window in each panel. */
+.frame {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--color-bg-page);
+  position: relative;
+}
+.frame-bar {
+  height: 26px; display: flex; align-items: center; gap: 6px; padding: 0 10px;
+  border-bottom: 1px solid var(--color-border); background: var(--color-bg-muted);
+}
+.dot { width: 8px; height: 8px; border-radius: 999px; background: var(--color-border); }
+.frame-label { margin-left: 6px; font-size: 11px; color: var(--color-text-muted); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+
+/* ---- The fallback itself. Type scale + colours match Reader.tsx's
+       readerError screen and DeleteBookDialog.tsx. ---- */
+.fatal {
+  min-height: 340px; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 16px; padding: 24px; text-align: center;
+}
+.icon-square {
+  width: 40px; height: 40px; border-radius: 6px; display: flex;
+  align-items: center; justify-content: center;
+  background: var(--color-danger-bg); color: var(--color-danger-text);
+}
+.icon-square.warn { color: var(--color-warning); background: color-mix(in srgb, var(--color-warning) 12%, transparent); }
+.copy { max-width: 560px; }
+.title { font-size: 16px; font-weight: 500; color: var(--color-text-primary); margin: 0; }
+.body { font-size: 13px; line-height: 20px; color: var(--color-text-muted); margin: 8px 0 0; overflow-wrap: break-word; }
+details.disc { max-width: 520px; margin: 12px auto 0; text-align: left; }
+details.disc > summary {
+  cursor: pointer; text-align: center; font-size: 12px; color: var(--color-text-secondary);
+  list-style: none;
+}
+details.disc > summary::-webkit-details-marker { display: none; }
+.trace {
+  margin: 8px 0 0; border-radius: 6px; background: var(--color-bg-input);
+  padding: 8px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; line-height: 20px; color: var(--color-text-muted);
+  white-space: pre-wrap; overflow-wrap: break-word;
+}
+.actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+
+/* Button — mirrors src/components/ui/Button.tsx, size sm. */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px;
+  border-radius: 6px; font-size: 13px; cursor: pointer; transition: background-color .15s;
+  background: transparent; font-family: inherit;
+}
+.btn-secondary { border: 1px solid var(--color-border); color: var(--color-text-secondary); font-weight: 500; }
+.btn-secondary:hover { background: var(--color-bg-input); }
+.btn-primary { border: none; background: var(--color-accent); color: #fff; font-weight: 500; }
+/* No `ghost` here on purpose. Button.tsx has one, and it is right for toolbars,
+   but next to a real button it reads as body text — which is exactly what went
+   wrong in the first draft of this sample. Every action on an error screen is
+   one the reader may need, so each panel gets one filled button (the
+   recommended action, which planBoundaryFallback already puts first) and
+   bordered buttons for the rest. Nothing recedes. */
+.btn[disabled] { opacity: .5; pointer-events: none; }
+.spin { animation: spin 1s linear infinite; transform-origin: 50% 50%; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- Contained region fallback, sitting inside a live settings modal ---- */
+.modal-stage {
+  min-height: 430px; display: flex; align-items: center; justify-content: center;
+  background: var(--color-overlay); padding: 16px;
+}
+.modal {
+  display: flex; width: 100%; max-width: 720px; height: 390px; overflow: hidden;
+  border: 1px solid var(--color-border); border-radius: 8px;
+  background: var(--color-bg-surface); box-shadow: 0 25px 50px -12px rgba(0,0,0,.25);
+}
+.side { width: 190px; flex-shrink: 0; border-right: 1px solid var(--color-border); background: var(--color-bg-muted); padding: 14px 8px; }
+.side-title { font-size: 13px; font-weight: 600; padding: 2px 8px 8px; }
+.side-row { display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 10px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--color-text-secondary); }
+.side-row.active { background: var(--color-accent-bg); color: var(--color-accent-text); }
+.side-glyph { width: 14px; height: 14px; border-radius: 3px; background: currentColor; opacity: .35; flex-shrink: 0; }
+.pane { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pane-head { display: flex; justify-content: flex-end; padding: 12px 12px 0; }
+.x { width: 28px; height: 28px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: var(--color-text-muted); cursor: pointer; }
+.x:hover { background: var(--color-bg-input); }
+.pane-body { flex: 1; padding: 0 24px 20px; overflow: auto; }
+.pane-h3 { font-size: 18px; font-weight: 600; margin: 0; }
+.pane-sub { font-size: 13px; color: var(--color-text-muted); margin: 4px 0 0; }
+.rule { height: 1px; background: var(--color-border-light); margin: 12px 0 8px; }
+
+/* The contained card: an inset panel, not a full-bleed takeover. */
+.contained {
+  border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-bg-muted);
+  padding: 18px; display: flex; gap: 12px; align-items: flex-start; margin-top: 12px;
+}
+.contained .icon-square { width: 36px; height: 36px; }
+.contained .copy { text-align: left; max-width: none; }
+.contained .actions { justify-content: flex-start; margin-top: 14px; }
+.contained details.disc { margin-left: 0; text-align: left; }
+.contained details.disc > summary { text-align: left; }
+
+/* Library shell behind the page-level boundary */
+.shell { display: flex; height: 340px; }
+.shelf { width: 168px; flex-shrink: 0; border-right: 1px solid var(--color-border); background: var(--color-bg-surface); padding: 14px 10px; }
+.shelf-row { height: 30px; border-radius: 6px; background: var(--color-bg-input); margin-bottom: 6px; }
+.shelf-row.w2 { width: 70%; } .shelf-row.w3 { width: 85%; }
+
+.states { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+@media (max-width: 900px) { .states { grid-template-columns: 1fr; } }
+.state-card { border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-bg-surface); padding: 16px; }
+.state-tag { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--color-text-muted); margin: 0 0 12px; }
+
+.toggle {
+  position: fixed; top: 14px; right: 16px; z-index: 20;
+  border: 1px solid var(--color-border); background: var(--color-bg-surface);
+  color: var(--color-text-secondary); border-radius: 8px; height: 32px; padding: 0 12px;
+  font-size: 13px; cursor: pointer; font-family: inherit; box-shadow: var(--shadow-popover);
+}
+.zh { display: block; } .en { display: block; font-size: 11px; color: var(--color-text-muted); margin-top: 3px; }
+.copy .en { margin-top: 6px; }
+</style>
+</head>
+<body>
+<button class="toggle" onclick="document.documentElement.classList.toggle('dark')">明 / 暗</button>
+<div class="page">
+
+<h1>错误边界 — 状态样张</h1>
+<p class="lede">
+  三个边界层级，各自的兜底界面。取值全部来自 <code>src/index.css</code> 的主题变量，版式沿用
+  <code>Reader.tsx</code> 现有的打开失败页与 <code>DeleteBookDialog.tsx</code>。每段文案下方的小字是英文对照，
+  实现时两种语言都进 <code>en.json</code> / <code>zh.json</code>。右上角可切换明暗。
+</p>
+
+<!-- ============================================================ -->
+<h2>1 · 整窗致命 —— 根边界接住</h2>
+<p class="note">
+  路由、i18n、App 自身的 effect 崩掉时只剩这一层。它<b>不提供「重试」</b>：能崩到根边界的东西，
+  重新挂载同一棵树几乎必然以同样的方式再崩一次。这里唯一诚实的动作是重新加载窗口。
+</p>
+<div class="frame">
+  <div class="frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="frame-label">Lantern — 主窗口</span></div>
+  <div class="fatal">
+    <div class="icon-square">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+    </div>
+    <div class="copy">
+      <p class="title">Lantern 遇到了意外错误<span class="en">Lantern hit an unexpected error</span></p>
+      <p class="body">
+        界面已经停止响应。重新加载窗口通常可以恢复；你的书籍、笔记和阅读进度都在本地数据库里，不会因此丢失。
+        <span class="en">The interface stopped responding. Reloading the window usually recovers it. Your books, notes, and reading progress live in the local database and are not affected.</span>
+      </p>
+      <details class="disc">
+        <summary>技术详情 / Technical details</summary>
+        <p class="trace">TypeError: Cannot read properties of undefined (reading 'byFeature')
+    at AiRequestCountsSection (AiRequestCountsSection.tsx:64:31)
+    at renderWithHooks (react-dom-client.js:5529:24)</p>
+      </details>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+        重新加载窗口 / Reload window
+      </button>
+      <button class="btn btn-secondary">复制诊断信息 / Copy diagnostics</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>2 · 整页致命 —— 路由边界接住</h2>
+<p class="note">
+  某个页面（书架、阅读器、书籍详情）崩了，窗口外壳、通知层、设置入口都还活着。
+  主窗口给「回到书架」——它<b>换掉的是 key，不是重新渲染同一份坏数据</b>，所以真有成功的可能。
+  阅读器独立窗口没有书架可回，只给重新加载。
+</p>
+<div class="grid2">
+  <div>
+    <div class="frame">
+      <div class="frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="frame-label">主窗口 · /book/42</span></div>
+      <div class="fatal" style="min-height:300px">
+        <div class="icon-square warn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+        </div>
+        <div class="copy">
+          <p class="title">这个页面无法显示<span class="en">This page can't be displayed</span></p>
+          <p class="body">出错的只是当前页面，应用的其他部分仍然可用。<span class="en">Only this page failed. The rest of the app still works.</span></p>
+          <details class="disc"><summary>技术详情 / Technical details</summary>
+            <p class="trace">TypeError: details.sections is undefined
+    at IndexManagerModal (IndexManagerModal.tsx:118:22)</p>
+          </details>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary">重试 / Retry</button>
+          <button class="btn btn-secondary">回到书架 / Back to library</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="frame">
+      <div class="frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="frame-label">阅读器窗口 · /reader/42</span></div>
+      <div class="fatal" style="min-height:300px">
+        <div class="icon-square warn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+        </div>
+        <div class="copy">
+          <p class="title">这个页面无法显示<span class="en">This page can't be displayed</span></p>
+          <p class="body">出错的只是当前页面，应用的其他部分仍然可用。<span class="en">Only this page failed. The rest of the app still works.</span></p>
+          <details class="disc"><summary>技术详情 / Technical details</summary>
+            <p class="trace">TypeError: assets.overview is undefined
+    at OcrReaderHud (OcrReaderHud.tsx:41:18)</p>
+          </details>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary">重试 / Retry</button>
+          <button class="btn btn-secondary">重新加载窗口 / Reload window</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>3 · 局部致命 —— 设置面板边界接住</h2>
+<p class="note">
+  五个已知崩溃点里有三个在设置面板内。边界包住内容区，<b>侧栏、关闭按钮、以及后面的书架/阅读器全部照常</b>。
+  切换到别的分区就自动复位——因为边界的 key 就是分区 id。
+</p>
+<div class="frame">
+  <div class="frame-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="frame-label">主窗口 · 设置 → 自动分析</span></div>
+  <div class="shell" style="height:auto">
+    <div class="modal-stage">
+      <div class="modal">
+        <div class="side">
+          <p class="side-title">设置</p>
+          <div class="side-row"><span class="side-glyph"></span>通用</div>
+          <div class="side-row"><span class="side-glyph"></span>阅读偏好</div>
+          <div class="side-row"><span class="side-glyph"></span>学习偏好</div>
+          <div class="side-row active"><span class="side-glyph"></span>自动分析</div>
+          <div class="side-row"><span class="side-glyph"></span>书库</div>
+        </div>
+        <div class="pane">
+          <div class="pane-head"><span class="x"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+          <div class="pane-body">
+            <h3 class="pane-h3">自动分析</h3>
+            <p class="pane-sub">哪些分析不需要你在场也会跑</p>
+            <div class="rule"></div>
+            <div class="contained">
+              <div class="icon-square warn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+              </div>
+              <div class="copy">
+                <p class="title">这部分内容无法显示<span class="en">This section can't be displayed</span></p>
+                <p class="body">
+                  应用的其他部分不受影响，换一个分区或关闭设置都可以继续。
+                  <span class="en">The rest of the app is unaffected — switch sections or close settings to carry on.</span>
+                </p>
+                <details class="disc"><summary>技术详情 / Technical details</summary>
+                  <p class="trace">TypeError: providers.map is not a function
+    at AutoAnalysisSettings (AutoAnalysisSettings.tsx:88:29)</p>
+                </details>
+                <div class="actions">
+                  <button class="btn btn-primary">重试 / Retry</button>
+                  <button class="btn btn-secondary">关闭设置 / Close settings</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>4 · 「重试」的三个状态</h2>
+<p class="note">
+  重试 = 用新的 key 重新挂载子树：组件 state 全部丢弃，effect 重跑，请求重发。
+  <b>如果重挂之后立刻又崩，重试按钮就消失</b>——继续给一个必然失败的按钮是在骗人。
+  这时只留「离开」类动作，并明说重试没有帮助。
+</p>
+<div class="states">
+  <div class="state-card">
+    <p class="state-tag">静止 / idle</p>
+    <div class="actions" style="justify-content:flex-start">
+      <button class="btn btn-primary">重试 / Retry</button>
+      <button class="btn btn-secondary">关闭设置</button>
+    </div>
+  </div>
+  <div class="state-card">
+    <p class="state-tag">重挂载中 / pending — 不做</p>
+    <div class="actions" style="justify-content:flex-start;opacity:.4">
+      <button class="btn btn-secondary" disabled>
+        <svg class="spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        重试中… / Retrying…
+      </button>
+    </div>
+    <p class="body" style="margin-top:10px">
+      <b>结论：边界不做等待态。</b>重挂载是同步的，按下去当帧就换成了真正的面板；
+      要等的是面板自己的请求，那条骨架屏归它自己画。边界再转一个圈，只能是假的。
+      <span class="en">The boundary renders no pending state. The remount is synchronous — the real panel is back the same frame, and any waiting after that belongs to the panel's own loading skeleton. A spinner here could only be fake.</span>
+    </p>
+  </div>
+  <div class="state-card">
+    <p class="state-tag">再次失败 / failed again</p>
+    <p class="body" style="margin:0 0 10px">
+      重试没有帮助，这个问题不会自己好。
+      <span class="en">Retrying didn't help — this one won't fix itself.</span>
+    </p>
+    <div class="actions" style="justify-content:flex-start">
+      <button class="btn btn-primary">关闭设置 / Close settings</button>
+    </div>
+  </div>
+</div>
+
+<h2>5 · 不出现在界面上的那一层</h2>
+<p class="note">
+  顶部通知（更新提示、AI 路由回退、生词回填公告）另有一个<b>静默边界</b>：它们崩了就消失，
+  不弹错误卡片。一个装饰性提示不该占住整块屏幕说自己坏了——但错误照样进 console 和磁盘日志。
+  这是既有约定的延伸：脚注模块加载失败也只记一条诊断然后继续。
+</p>
+
+</div>
+</body>
+</html>
