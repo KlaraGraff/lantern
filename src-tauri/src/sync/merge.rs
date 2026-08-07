@@ -30,9 +30,9 @@ use serde_json::Value;
 use crate::error::{AppError, AppResult};
 
 use super::events::{
-    word_mark_exception_id, BookAssetPayload, BookImportPayload, BookSummaryPayload,
-    BookmarkPayload, ChatMessagePayload, CustomFontPayload, Event, EventBody, HighlightPayload,
-    LookupOccurrenceMarkPayload, NotePayload, SettingPayload, VocabPayload,
+    word_mark_exception_id, AutoHighlightDismissalPayload, BookAssetPayload, BookImportPayload,
+    BookSummaryPayload, BookmarkPayload, ChatMessagePayload, CustomFontPayload, Event, EventBody,
+    HighlightPayload, LookupOccurrenceMarkPayload, NotePayload, SettingPayload, VocabPayload,
     WordMarkExceptionPayload, WordMarkPayload,
 };
 
@@ -113,6 +113,9 @@ pub fn apply_event(tx: &Transaction, event: &Event) -> AppResult<()> {
         }
         EventBody::LookupOccurrenceMarkSet(payload) => {
             apply_lookup_occurrence_mark_set(tx, event, payload)
+        }
+        EventBody::AutoHighlightDismissalSet(payload) => {
+            apply_auto_highlight_dismissal_set(tx, event, payload)
         }
         EventBody::BookSummaryUpsert(payload) => apply_book_summary_upsert(tx, event, payload),
 
@@ -1339,6 +1342,40 @@ fn apply_lookup_occurrence_mark_set(
             payload.display_word,
             payload.location,
             payload.enabled as i64,
+            payload.created_at,
+            event.ts,
+            event.device,
+        ],
+    )?;
+    Ok(())
+}
+
+/// The row may name an anchor this device has never derived — `lookup_records`
+/// does not sync, so a peer's dismissal of a lookup arrives without the lookup.
+/// It is stored anyway and simply matches nothing until the same word is looked
+/// up here.
+fn apply_auto_highlight_dismissal_set(
+    tx: &Transaction,
+    event: &Event,
+    payload: &AutoHighlightDismissalPayload,
+) -> AppResult<()> {
+    if parent_tombstoned(tx, &[(entity::BOOK, &payload.book_id)])? {
+        return Ok(());
+    }
+    tx.execute(
+        "INSERT INTO auto_highlight_dismissals
+         (id, book_id, anchor, dismissed, created_at, updated_at, updated_by_device)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT(book_id, anchor) DO UPDATE SET
+           id=excluded.id, dismissed=excluded.dismissed,
+           updated_at=excluded.updated_at, updated_by_device=excluded.updated_by_device
+         WHERE (auto_highlight_dismissals.updated_at, auto_highlight_dismissals.updated_by_device)
+             < (excluded.updated_at, excluded.updated_by_device)",
+        params![
+            payload.id,
+            payload.book_id,
+            payload.anchor,
+            payload.dismissed as i64,
             payload.created_at,
             event.ts,
             event.device,

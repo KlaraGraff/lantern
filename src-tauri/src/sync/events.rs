@@ -25,10 +25,11 @@ use sha2::{Digest, Sha256};
 /// 9 lets `setting.set` carry `null` to delete a per-book override; version 10
 /// gives the same `null` meaning to a *global* setting, which version 9 read
 /// and discarded as a documented no-op; version 11 adds `vocab.definition.set`,
-/// the first event that may rewrite a saved word's definition.
+/// the first event that may rewrite a saved word's definition; version 12 adds
+/// `auto_highlight.dismissal.set`, which hides one derived highlight.
 /// Readers retain old-version support while older clients reject newer
 /// envelopes instead of advancing their watermark past data they cannot apply.
-pub const EVENT_SCHEMA_VERSION: u32 = 11;
+pub const EVENT_SCHEMA_VERSION: u32 = 12;
 pub const MIN_SUPPORTED_EVENT_SCHEMA_VERSION: u32 = 1;
 
 pub fn is_supported_event_schema_version(version: u32) -> bool {
@@ -126,6 +127,7 @@ pub fn normalize_learning_term(value: &str) -> String {
 const RULE_ID_TAG: &[u8] = b"lantern-word-mark-rule-v1\0";
 const EXCEPTION_ID_TAG: &[u8] = b"lantern-word-mark-exception-v1\0";
 const LOOKUP_OCCURRENCE_ID_TAG: &[u8] = b"lantern-lookup-occurrence-mark-v1\0";
+const AUTO_HIGHLIGHT_DISMISSAL_ID_TAG: &[u8] = b"lantern-auto-highlight-dismissal-v1\0";
 
 /// A word-marker rule is one logical entity across every device. Deriving its
 /// id from the natural key prevents concurrent first-lookups from minting two
@@ -161,6 +163,19 @@ pub fn lookup_occurrence_mark_id(book_id: &str, location: &str) -> String {
     hasher.update(b"\0");
     hasher.update(location.as_bytes());
     format!("lookup-occurrence-mark-{:x}", hasher.finalize())
+}
+
+/// Stable identity for "do not show me this derived highlight again". Two
+/// devices dismissing the same anchor must converge on one LWW row, and the
+/// anchor is already the natural key, so the id is derived from it rather than
+/// minted.
+pub fn auto_highlight_dismissal_id(book_id: &str, anchor: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(AUTO_HIGHLIGHT_DISMISSAL_ID_TAG);
+    hasher.update(book_id.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(anchor.as_bytes());
+    format!("auto-highlight-dismissal-{:x}", hasher.finalize())
 }
 
 /// One log line. Fields after `v` come from the tagged body and any unknown
@@ -299,6 +314,8 @@ pub enum EventBody {
     WordMarkExceptionSet(WordMarkExceptionPayload),
     #[serde(rename = "lookup_occurrence_mark.set")]
     LookupOccurrenceMarkSet(LookupOccurrenceMarkPayload),
+    #[serde(rename = "auto_highlight.dismissal.set")]
+    AutoHighlightDismissalSet(AutoHighlightDismissalPayload),
 
     #[serde(rename = "book_summary.upsert")]
     BookSummaryUpsert(BookSummaryPayload),
@@ -555,6 +572,18 @@ pub struct LookupOccurrenceMarkPayload {
     pub created_at: i64,
 }
 
+/// `anchor` is the derived highlight's identity, not a location — two lookups
+/// of different words in the same sentence are two anchors, and dismissing one
+/// must not hide the other.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AutoHighlightDismissalPayload {
+    pub id: String,
+    pub book_id: String,
+    pub anchor: String,
+    pub dismissed: bool,
+    pub created_at: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TranslationPayload {
     pub id: String,
@@ -794,6 +823,34 @@ mod tests {
             },
         )));
         roundtrip(&mk(EventBody::WordMarkDelete { id: marker_id }));
+
+        let anchor = "lookup:record-1";
+        roundtrip(&mk(EventBody::AutoHighlightDismissalSet(
+            AutoHighlightDismissalPayload {
+                id: auto_highlight_dismissal_id("b1", anchor),
+                book_id: "b1".into(),
+                anchor: anchor.into(),
+                dismissed: true,
+                created_at: 1_714_770_000_000,
+            },
+        )));
+    }
+
+    #[test]
+    fn auto_highlight_dismissal_ids_separate_anchors_and_books() {
+        assert_eq!(
+            auto_highlight_dismissal_id("book-1", "lookup:r1"),
+            auto_highlight_dismissal_id("book-1", "lookup:r1")
+        );
+        // Two lookups inside one sentence are two anchors, not one.
+        assert_ne!(
+            auto_highlight_dismissal_id("book-1", "lookup:r1"),
+            auto_highlight_dismissal_id("book-1", "lookup:r2")
+        );
+        assert_ne!(
+            auto_highlight_dismissal_id("book-1", "lookup:r1"),
+            auto_highlight_dismissal_id("book-2", "lookup:r1")
+        );
     }
 
     #[test]

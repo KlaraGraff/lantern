@@ -918,6 +918,10 @@ pub fn run() {
             commands::bookmarks::replace_highlights,
             commands::bookmarks::list_highlights,
             commands::bookmarks::update_highlight_color,
+            // Highlights nobody drew: derived from lookups and quoted passages
+            commands::auto_highlights::list_auto_highlights,
+            commands::auto_highlights::set_auto_highlight_dismissed,
+            commands::auto_highlights::promote_auto_highlight,
             // Learning notes and automatic whole-book word markers
             commands::notes::save_note,
             commands::notes::delete_note,

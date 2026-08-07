@@ -152,6 +152,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
         53,
         include_str!("../migrations/053_context_lines_one_switch.sql"),
     ),
+    (
+        54,
+        include_str!("../migrations/054_auto_highlight_dismissals.sql"),
+    ),
 ];
 
 fn register_sqlite_vec() {

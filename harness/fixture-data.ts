@@ -202,6 +202,42 @@ export const HIGHLIGHTS = [
   },
 ];
 
+/**
+ * Highlights nobody drew. The backend derives these per read (see
+ * `commands/auto_highlights.rs`); the harness keeps a mutable copy so that
+ * 「不再显示」 and 「留下」 visibly remove a row instead of leaving the panel
+ * arguing with a frozen fixture.
+ */
+export const AUTO_HIGHLIGHTS = [
+  {
+    anchor: "lookup:lr-1",
+    book_id: "book-epub-reading",
+    cfi: "epubcfi(/6/4!/4/2/4,/1:0,/1:58)",
+    text: "The Mole had been working very hard all the morning, spring-cleaning his little home.",
+    source: "lookup",
+    label: "whitewash",
+    created_at: ago(4),
+  },
+  {
+    anchor: "chat:cm-1:0",
+    book_id: "book-epub-reading",
+    cfi: "epubcfi(/6/4!/4/2/8,/1:0,/1:44)",
+    text: "Never in his life had he seen a river before.",
+    source: "chat",
+    label: null,
+    created_at: ago(3),
+  },
+  {
+    anchor: "lookup:lr-2",
+    book_id: "book-epub-reading",
+    cfi: "epubcfi(/6/4!/4/2/12,/1:0,/1:51)",
+    text: "He thought his happiness was complete when suddenly he stood by the edge.",
+    source: "lookup",
+    label: "sedge",
+    created_at: ago(1),
+  },
+];
+
 export const BOOKMARKS = [
   {
     id: "bm-1",

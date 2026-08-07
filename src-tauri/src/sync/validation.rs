@@ -3,10 +3,10 @@ use std::path::{Component, Path, PathBuf};
 use crate::error::{AppError, AppResult};
 
 use super::events::{
-    is_supported_event_schema_version, lookup_occurrence_mark_id, normalize_learning_term,
-    word_mark_exception_id, word_mark_rule_id, BookAssetPayload, BookSummaryPayload,
-    ChatMessagePayload, Event, EventBody, LookupOccurrenceMarkPayload, NotePayload,
-    WordMarkExceptionPayload, WordMarkPayload,
+    auto_highlight_dismissal_id, is_supported_event_schema_version, lookup_occurrence_mark_id,
+    normalize_learning_term, word_mark_exception_id, word_mark_rule_id, AutoHighlightDismissalPayload,
+    BookAssetPayload, BookSummaryPayload, ChatMessagePayload, Event, EventBody,
+    LookupOccurrenceMarkPayload, NotePayload, WordMarkExceptionPayload, WordMarkPayload,
 };
 
 const BOOK_EXTENSIONS: &[&str] = &[
@@ -19,6 +19,7 @@ const MAX_FUTURE_CLOCK_SKEW_MS: i64 = 24 * 60 * 60 * 1_000;
 const MAX_NOTE_CONTENT_BYTES: usize = 100_000;
 const MAX_NOTE_SELECTED_TEXT_BYTES: usize = 100_000;
 const MAX_NOTE_LOCATION_BYTES: usize = 16 * 1024;
+const MAX_AUTO_HIGHLIGHT_ANCHOR_BYTES: usize = 512;
 const MAX_LEARNING_TERM_BYTES: usize = 256;
 const MAX_WORD_MARK_DISPLAY_BYTES: usize = 1_024;
 const MAX_WORD_MARK_COLOR_BYTES: usize = 64;
@@ -278,6 +279,27 @@ pub(crate) fn validate_lookup_occurrence_mark_fields(
     Ok(())
 }
 
+/// The anchor is opaque to sync — its shape belongs to the deriving code — so
+/// this checks only that it is a bounded, single-line string and that the id
+/// really is its hash. A peer cannot smuggle a dismissal onto a different
+/// anchor than the one it names.
+fn validate_auto_highlight_dismissal_payload(
+    payload: &AutoHighlightDismissalPayload,
+) -> AppResult<()> {
+    validate_entity_id(&payload.id)?;
+    validate_entity_id(&payload.book_id)?;
+    if payload.anchor.trim().is_empty()
+        || payload.anchor.len() > MAX_AUTO_HIGHLIGHT_ANCHOR_BYTES
+        || payload.anchor.chars().any(char::is_control)
+        || payload.id != auto_highlight_dismissal_id(&payload.book_id, &payload.anchor)
+    {
+        return Err(AppError::Other(
+            "SYNC_AUTO_HIGHLIGHT_DISMISSAL_INVALID".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_lookup_occurrence_mark_payload(payload: &LookupOccurrenceMarkPayload) -> AppResult<()> {
     validate_lookup_occurrence_mark_fields(
         &payload.id,
@@ -392,6 +414,18 @@ pub fn validate_event(event: &Event, expected_device: &str) -> AppResult<()> {
             }
             validate_lookup_occurrence_mark_payload(payload)?;
             ensure_not_from_far_future(payload.created_at, "SYNC_LOOKUP_OCCURRENCE_MARK_INVALID")?;
+        }
+        EventBody::AutoHighlightDismissalSet(payload) => {
+            if event.v < 12 {
+                return Err(AppError::Other(
+                    "SYNC_AUTO_HIGHLIGHT_DISMISSAL_INVALID".to_string(),
+                ));
+            }
+            validate_auto_highlight_dismissal_payload(payload)?;
+            ensure_not_from_far_future(
+                payload.created_at,
+                "SYNC_AUTO_HIGHLIGHT_DISMISSAL_INVALID",
+            )?;
         }
         EventBody::BookSummaryUpsert(payload) => {
             if event.v < 4 {

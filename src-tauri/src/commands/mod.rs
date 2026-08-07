@@ -2,6 +2,7 @@ pub mod ai;
 pub mod annotations;
 pub mod app;
 pub mod auto_analysis;
+pub mod auto_highlights;
 pub mod book_difficulty;
 pub mod bookmarks;
 pub mod books;

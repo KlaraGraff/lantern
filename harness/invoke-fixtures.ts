@@ -12,6 +12,7 @@
  * throw".
  */
 import {
+  AUTO_HIGHLIGHTS,
   BOOKMARKS,
   BOOKS,
   CHATS,
@@ -35,6 +36,13 @@ const bookById = (id: unknown): HarnessBook =>
   LIBRARY.find((b) => b.id === id) ?? LIBRARY[0] ?? BOOKS[0];
 
 const nowSec = () => Math.floor(Date.now() / 1000);
+
+/** Anchors hidden during this session. Derived highlights are computed on the
+ *  backend, so the harness only has to remember the decisions taken about them. */
+const harnessDismissedAnchors = new Set<string>();
+
+/** Highlights promoted out of the derived list this session. */
+const harnessPromoted: (typeof HIGHLIGHTS)[number][] = [];
 
 /** Mutable so `set_setting` during a sweep is visible to the next read. */
 const settings: Record<string, string> = resolveSettings();
@@ -144,7 +152,35 @@ export const FIXTURES: Record<string, Fixture> = {
   /* ---------------------------------------------------------------- *
    * Reader side panels
    * ---------------------------------------------------------------- */
-  list_highlights: () => HIGHLIGHTS.slice(),
+  list_highlights: () => [...HIGHLIGHTS, ...harnessPromoted],
+  // Derived rows are the one fixture with state: hiding or keeping one has to
+  // actually take it off the list, or the panel's own undo has nothing to undo.
+  list_auto_highlights: () =>
+    AUTO_HIGHLIGHTS.filter((item) => !harnessDismissedAnchors.has(item.anchor)),
+  set_auto_highlight_dismissed: (args: Args) => {
+    const anchor = String(args.anchor ?? "");
+    if (args.dismissed === false) harnessDismissedAnchors.delete(anchor);
+    else harnessDismissedAnchors.add(anchor);
+    return null;
+  },
+  promote_auto_highlight: (args: Args) => {
+    const anchor = String(args.anchor ?? "");
+    const source = AUTO_HIGHLIGHTS.find((item) => item.anchor === anchor);
+    harnessDismissedAnchors.add(anchor);
+    // Dated now, like the real command: a kept passage lands at the top of the
+    // list rather than back where it was derived from.
+    const promoted = {
+      id: `promoted-${anchor}`,
+      book_id: source?.book_id ?? "book-epub-reading",
+      cfi_range: source?.cfi ?? "",
+      color: "yellow",
+      text_content: source?.text ?? null,
+      created_at: nowSec(),
+      updated_at: nowSec(),
+    };
+    harnessPromoted.push(promoted);
+    return promoted;
+  },
   replace_highlights: () => HIGHLIGHTS.slice(),
   list_bookmarks: () => BOOKMARKS.slice(),
   add_bookmark: () => BOOKMARKS[0],
