@@ -44,8 +44,10 @@ jobs:
           cache: npm
       - run: npm ci
       # Boots the frontend in headless Chrome against the mocked Tauri backend
-      # and clicks every safe control on every route. Google Chrome is
-      # preinstalled on the runner image, so nothing is downloaded here.
+      # and clicks every safe control on every route, once per layout — the
+      # narrow side of the `md:` breakpoint is a different application, not a
+      # reflow. Google Chrome is preinstalled on the runner image, so nothing
+      # is downloaded here.
       #
       # Its own job rather than a step on `frontend`: it runs in parallel with
       # the typecheck/lint/build chain instead of behind it, and a red X here
@@ -53,15 +55,16 @@ jobs:
       - name: Sweep every route for runtime errors
         run: npm run smoke:ci
         timeout-minutes: 12
-      # The report distinguishes app faults from harness gaps (an unstubbed
-      # command answered with `{}` looks exactly like a bug). Keep it on
-      # failures so that call can be made without reproducing locally.
-      - name: Upload smoke report
+      # The reports distinguish app faults from harness gaps (an unstubbed
+      # command answered with `{}` looks exactly like a bug). Keep them on
+      # failures so that call can be made without reproducing locally. Both
+      # layouts are uploaded: the one that passed is the useful comparison.
+      - name: Upload smoke reports
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: smoke-report
-          path: dist/smoke-report.json
+          path: dist/smoke-report-*.json
           if-no-files-found: warn
 
   docs:

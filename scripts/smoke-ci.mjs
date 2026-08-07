@@ -4,8 +4,8 @@
  *
  * `npm run smoke` boots the frontend in Chrome against a mocked Tauri backend
  * and, with `?smoke=1`, sweeps every route clicking every safe control. That
- * sweep only ever ran by hand. This drives it headlessly, gates on the result,
- * and writes the full report to `dist/smoke-report.json`.
+ * sweep only ever ran by hand. This drives it headlessly once per layout, gates
+ * on both results, and writes each full report to `dist/smoke-report-*.json`.
  *
  *   node scripts/smoke-ci.mjs
  *   node scripts/smoke-ci.mjs --keep      # leave the harness up afterwards
@@ -30,7 +30,28 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = 1440;
 const ORIGIN = `http://localhost:${PORT}`;
-const REPORT_PATH = join(root, "dist", "smoke-report.json");
+const reportPath = (layout) => join(root, "dist", `smoke-report-${layout.name}.json`);
+
+/**
+ * Both layouts, because they are different applications.
+ *
+ * `useIsNarrow` flips at Tailwind's `md:` (48rem / 768px), and the narrow side
+ * is not a reflow — settings become their own screens, panels become sheets.
+ * It is the *larger* surface: ~435 actions against desktop's ~194.
+ *
+ * The window size is pinned rather than left to Chrome because the default is
+ * platform-dependent and lands on either side of that line: headless Chrome
+ * gives 756px wide on macOS and 800px on the Linux runner. Unpinned, the same
+ * commit swept the mobile layout locally and the desktop layout in CI, and
+ * nothing in the output said so.
+ */
+const LAYOUTS = [
+  { name: "desktop", window: "1280,800", wantsNarrow: false },
+  // 500 rather than a phone's 390: macOS clamps a Chrome window below ~500 wide
+  // and silently hands back 500 anyway, so asking for less only makes the log
+  // disagree with the viewport. Still well clear of the 768px breakpoint.
+  { name: "narrow", window: "500,900", wantsNarrow: true },
+];
 
 /** Whole-run ceiling. The sweep allows itself 12 restarts, each a full replay. */
 const RUN_TIMEOUT_MS = 8 * 60_000;
@@ -290,11 +311,12 @@ async function backgroundTheSweepTab(port) {
  * The sweep
  * ------------------------------------------------------------------ */
 
-async function runSweep() {
+async function runSweep(layout) {
   const chromeBin = findChrome();
   const profile = await mkdtemp(join(tmpdir(), "lantern-smoke-"));
   const args = [
     "--headless=new",
+    `--window-size=${layout.window}`,
     "--remote-debugging-port=0",
     `--user-data-dir=${profile}`,
     "--no-first-run",
@@ -340,7 +362,24 @@ async function runSweep() {
           "  See backgroundTheSweepTab() — the throwaway foreground tab did not take.",
       );
     }
-    console.log(`· sweeping (tab hidden: ${hidden}) …`);
+    // Which layout rendered is not cosmetic — it decides which half of the app
+    // gets swept at all. Ask the page the same question `useIsNarrow` asks, and
+    // refuse to sweep the wrong one: a silently mismatched viewport is exactly
+    // how this gate spent its first day covering desktop in CI and mobile
+    // locally while reporting "PASSED" for both.
+    const { width, height, narrow } = await cdp.evaluate(
+      "({ width: innerWidth, height: innerHeight," +
+        " narrow: !matchMedia('(min-width: 48rem)').matches })",
+    );
+    if (narrow !== layout.wantsNarrow) {
+      throw new Error(
+        `${layout.name}: asked for ${layout.window} but the page rendered the ` +
+          `${narrow ? "narrow" : "desktop"} layout at ${width}x${height}`,
+      );
+    }
+    console.log(
+      `· sweeping ${layout.name} (${width}x${height}, tab hidden: ${hidden}) …`,
+    );
 
     const startedAt = Date.now();
     let lastStep = null;
@@ -494,27 +533,38 @@ let exitCode = 0;
 
 try {
   harness = await ensureHarness();
-  const report = await runSweep();
-  summarize(report);
+  mkdirSync(dirname(reportPath(LAYOUTS[0])), { recursive: true });
 
-  mkdirSync(dirname(REPORT_PATH), { recursive: true });
-  writeFileSync(REPORT_PATH, JSON.stringify(report, null, 2));
-  console.log(`· full report written to ${REPORT_PATH.replace(`${root}/`, "")}`);
+  // Sequential, not parallel: two Chromes sweeping one dev server would race
+  // for it, and the sweep's own timing budgets are tuned for an idle machine.
+  for (const layout of LAYOUTS) {
+    const report = await runSweep(layout);
+    summarize(report);
 
-  const { failures, warnings } = gate(report);
-  if (warnings.length) {
-    console.log(`· ${warnings.length} console warning(s) recorded, not failing the build`);
+    const path = reportPath(layout);
+    writeFileSync(path, JSON.stringify(report, null, 2));
+    console.log(`· full ${layout.name} report written to ${path.replace(`${root}/`, "")}`);
+
+    const { failures, warnings } = gate(report);
+    if (warnings.length) {
+      console.log(`· ${warnings.length} console warning(s) recorded, not failing the build`);
+    }
+    if (failures.length) {
+      console.error(`\n✗ ${layout.name} FAILED — ${failures.length} error(s) that must not merge`);
+      exitCode = 1;
+    } else if (!report.visited.length) {
+      // A sweep that reached nothing is green for the wrong reason.
+      console.error(`\n✗ ${layout.name} FAILED — the sweep visited no routes at all`);
+      exitCode = 1;
+    } else {
+      console.log(`✓ ${layout.name} PASSED`);
+    }
+    console.log("");
   }
-  if (failures.length) {
-    console.error(`\n✗ smoke FAILED — ${failures.length} error(s) that must not merge`);
-    exitCode = 1;
-  } else if (!report.visited.length) {
-    // A sweep that reached nothing is green for the wrong reason.
-    console.error("\n✗ smoke FAILED — the sweep visited no routes at all");
-    exitCode = 1;
-  } else {
-    console.log("✓ smoke PASSED");
-  }
+
+  // Both layouts ran, so say so once — a single "PASSED" above could otherwise
+  // be read as the whole gate having passed.
+  if (!exitCode) console.log(`✓ smoke PASSED (${LAYOUTS.map((l) => l.name).join(" + ")})`);
 } catch (error) {
   console.error(`\n✗ smoke driver failed: ${error instanceof Error ? error.message : error}`);
   exitCode = 1;

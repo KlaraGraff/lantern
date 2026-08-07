@@ -52,10 +52,23 @@ URL knobs, all optional and additive:
 
 `scripts/smoke-ci.mjs` is the driver: it boots `npm run smoke` (or reuses one
 already on :1440), drives headless Chrome over the DevTools protocol with no
-dependencies, polls `window.__SMOKE_DONE__`, and writes the report to
-`dist/smoke-report.json` — uploaded as the `smoke-report` artifact when the job
-fails. `google-chrome` is preinstalled on the runner image; locally it finds the
-macOS install, and `CHROME_BIN` overrides both.
+dependencies, polls `window.__SMOKE_DONE__`, and writes each report to
+`dist/smoke-report-<layout>.json` — uploaded as the `smoke-report` artifact when
+the job fails. `google-chrome` is preinstalled on the runner image; locally it
+finds the macOS install, and `CHROME_BIN` overrides both.
+
+**It sweeps twice, once per layout,** at 1280×800 and 500×900 — roughly 60s and
+100s. The narrow side of `useIsNarrow`'s breakpoint (Tailwind `md:`, 768px) is
+not a reflow of the same screens: settings become their own routes and panels
+become sheets, so it is the *bigger* surface, ~435 actions against desktop's
+~194.
+
+The window size is pinned, and the driver then asks the page which layout it
+actually got and aborts on a mismatch. That check exists because the unpinned
+default is platform-dependent and straddles the breakpoint — headless Chrome
+gives 756px on macOS and 800px on the Linux runner, so the same commit swept
+mobile locally and desktop in CI, both reporting `PASSED`, with nothing in the
+output saying which.
 
 **The sweep tab is deliberately backgrounded.** The driver opens a throwaway
 foreground tab before navigating, because `--headless=new` otherwise reports
