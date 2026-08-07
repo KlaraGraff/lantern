@@ -361,3 +361,56 @@ pub async fn ai_regenerate_book_summaries(
     crate::ai::router::finish_request(&request_id);
     result
 }
+
+/// What the context-lines row in settings should show. `None` means "nothing
+/// to report" — no run in flight, no book left with gaps — and the row falls
+/// back to its plain state.
+#[tauri::command]
+pub fn context_line_progress(
+    db: State<'_, Db>,
+) -> AppResult<Option<grounding::context::ContextLineProgress>> {
+    grounding::context::current_progress(&db)
+}
+
+/// Picks a book's context-line generation back up from where it stopped.
+///
+/// The gaps this clears are the `''` sentinel — chunks an earlier run already
+/// asked about and got nothing usable for. An automatic run deliberately
+/// never retries those; this is the reader saying to try them again, so it is
+/// also the only place allowed to clear them.
+///
+/// Embeddings follow in the same task: a context line that never reaches
+/// `book_chunk_embeddings` changes nothing about what the search can find.
+#[tauri::command]
+pub fn resume_context_lines(
+    book_id: String,
+    app: AppHandle,
+    db: State<'_, Db>,
+    secrets: State<'_, Secrets>,
+) -> AppResult<()> {
+    crate::sync::validation::validate_entity_id(&book_id)?;
+    grounding::context::clear_failed_context_lines(&db, &book_id)?;
+    let db = db.inner().clone();
+    let secrets = secrets.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) =
+            grounding::context::ensure_context_lines(&app, &db, &secrets, &book_id).await
+        {
+            log::warn!("resuming context lines for {book_id} failed: {error}");
+        }
+        // Re-embedding is what makes the new sentences count; `context_sha256`
+        // means only the chunks that actually changed are re-sent.
+        match grounding::vector::source(&db, &secrets) {
+            Ok(Some(source)) => {
+                if let Err(error) =
+                    grounding::vector::ensure_embeddings(&db, &book_id, &source).await
+                {
+                    log::warn!("re-embedding after context resume failed: {error}");
+                }
+            }
+            Ok(None) => {}
+            Err(error) => log::warn!("no embedding source after context resume: {error}"),
+        }
+    });
+    Ok(())
+}

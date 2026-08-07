@@ -838,6 +838,8 @@ pub fn run() {
             commands::ai::ai_vocab_gloss,
             commands::ai::ai_reindex_book,
             commands::ai::ai_update_book_index,
+            commands::ai::context_line_progress,
+            commands::ai::resume_context_lines,
             commands::ai::ai_index_details,
             commands::ai::get_book_overview,
             commands::ai::update_book_overview,

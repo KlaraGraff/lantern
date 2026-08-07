@@ -5,7 +5,7 @@
 //! never touches `book_chunks.text`; it only ever prefixes what stage ③
 //! sends to the embedding model. See docs/impls/contextual-retrieval.md.
 
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use tauri::{AppHandle, Runtime};
 
 use crate::ai::router::{self, AiRequestPurpose, AiRetryMode};
@@ -268,6 +268,131 @@ fn write_context_line(db: &Db, chunk_id: &str, context_line: &str, model: &str) 
     Ok(())
 }
 
+/// The book a run is currently working through, if any.
+///
+/// Progress lives in `book_chunks` itself — `context_line IS NULL` is "not
+/// yet", `''` is "tried and got nothing" — so the only thing not derivable
+/// from the database is whether anyone is still working. That is what this
+/// holds, and nothing else: one book at a time, because the run is a
+/// sequential loop and a second one on the same book would duplicate every
+/// call.
+static RUNNING_BOOK: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Claims `RUNNING_BOOK` for the lifetime of a run and releases it on drop,
+/// so an early return, an error, or a panic can't leave the settings row
+/// showing a run that has already stopped.
+struct RunGuard;
+
+impl RunGuard {
+    /// `None` when another run already holds the slot — the caller should
+    /// simply do nothing rather than queue behind it.
+    fn claim(book_id: &str) -> Option<Self> {
+        let mut running = RUNNING_BOOK.lock().ok()?;
+        if running.is_some() {
+            return None;
+        }
+        *running = Some(book_id.to_string());
+        Some(Self)
+    }
+}
+
+impl Drop for RunGuard {
+    fn drop(&mut self) {
+        if let Ok(mut running) = RUNNING_BOOK.lock() {
+            *running = None;
+        }
+    }
+}
+
+fn running_book() -> Option<String> {
+    RUNNING_BOOK.lock().ok().and_then(|book| book.clone())
+}
+
+/// What the settings row renders. `failed` counts the `''` sentinel: chunks
+/// the model was asked about and returned nothing usable for. They stay
+/// searchable, so this is a degraded state, never an error.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ContextLineProgress {
+    pub book_id: String,
+    pub book_title: String,
+    pub done: i64,
+    pub total: i64,
+    pub failed: i64,
+    pub running: bool,
+}
+
+fn progress_for(db: &Db, book_id: &str, running: bool) -> AppResult<Option<ContextLineProgress>> {
+    let conn = db.reader();
+    let (total, done, failed): (i64, i64, i64) = conn.query_row(
+        "SELECT COUNT(*),
+                COUNT(CASE WHEN context_line IS NOT NULL AND context_line != '' THEN 1 END),
+                COUNT(CASE WHEN context_line = '' THEN 1 END)
+         FROM book_chunks WHERE book_id = ?1",
+        params![book_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    if total == 0 {
+        return Ok(None);
+    }
+    let book_title: String = conn
+        .query_row(
+            "SELECT title FROM books WHERE id = ?1",
+            params![book_id],
+            |row| row.get(0),
+        )
+        .unwrap_or_else(|_| "Untitled".to_string());
+    Ok(Some(ContextLineProgress {
+        book_id: book_id.to_string(),
+        book_title,
+        done,
+        total,
+        failed,
+        running,
+    }))
+}
+
+/// What the settings row should show right now, or `None` for "show the
+/// plain row". A live run wins; otherwise the most recently annotated book
+/// that ended with gaps is offered, because that is the only state with an
+/// action attached to it (Resume).
+pub fn current_progress(db: &Db) -> AppResult<Option<ContextLineProgress>> {
+    if let Some(book_id) = running_book() {
+        return progress_for(db, &book_id, true);
+    }
+    let stalled: Option<String> = {
+        let conn = db.reader();
+        conn.query_row(
+            "SELECT book_id FROM book_chunks
+             WHERE context_line = ''
+             GROUP BY book_id
+             ORDER BY MAX(context_at) DESC
+             LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?
+    };
+    match stalled {
+        Some(book_id) => progress_for(db, &book_id, false),
+        None => Ok(None),
+    }
+}
+
+/// Clears the `''` sentinel for a book so its gaps become pending again.
+/// Only ever called from the reader's own Resume button — the sentinel
+/// exists precisely so an automatic run never retries these.
+pub fn clear_failed_context_lines(db: &Db, book_id: &str) -> AppResult<()> {
+    let conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
+    conn.execute(
+        "UPDATE book_chunks SET context_line = NULL WHERE book_id = ?1 AND context_line = ''",
+        params![book_id],
+    )?;
+    Ok(())
+}
+
 /// Write an identity sentence for every chunk in `book_id` that doesn't have
 /// one yet. Resumable: each chunk is written as soon as its own call
 /// succeeds, and a call that fails stops the whole run and returns the error,
@@ -283,6 +408,12 @@ pub async fn ensure_context_lines<R: Runtime>(
     if !context_lines_enabled(db) {
         return Ok(());
     }
+    // Held for the whole run. A second caller for any book while one is in
+    // flight backs off entirely rather than interleaving: these are
+    // sequential provider calls, and two loops would double the spend.
+    let Some(_guard) = RunGuard::claim(book_id) else {
+        return Ok(());
+    };
     let (book_title, rows) = load_chunk_rows(db, book_id)?;
     let mut sections: std::collections::BTreeMap<i64, Vec<&ChunkRow>> =
         std::collections::BTreeMap::new();

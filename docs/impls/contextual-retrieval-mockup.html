@@ -117,7 +117,7 @@ body{margin:0;background:var(--page);color:var(--text-primary);
     <div class="row sub on">
       <div class="row-copy">
         <h4>段落上下文标注</h4>
-        <p class="hint">用你的聊天模型给每段书补一句说明，让「达西求婚后伊丽莎白什么反应」这类问题也能找到只写着「她沉默了」的段落。<span class="more">详细</span></p>
+        <p class="hint">建索引时用你的聊天模型给每段书补一句说明，联网模型约合几毛钱一本书。这样「达西求婚后伊丽莎白什么反应」也能找到只写着「她沉默了」的那一段。<span class="more">详细</span></p>
       </div>
       <div class="tg on"></div>
     </div>
@@ -133,7 +133,7 @@ body{margin:0;background:var(--page);color:var(--text-primary);
     <div class="row sub on">
       <div class="row-copy">
         <h4>段落上下文标注</h4>
-        <p class="hint">用你的聊天模型给每段书补一句说明，让「达西求婚后伊丽莎白什么反应」这类问题也能找到只写着「她沉默了」的段落。<span class="more">收起</span></p>
+        <p class="hint">建索引时用你的聊天模型给每段书补一句说明，联网模型约合几毛钱一本书。这样「达西求婚后伊丽莎白什么反应」也能找到只写着「她沉默了」的那一段。<span class="more">收起</span></p>
         <p class="detail">建索引时一次性完成，之后不再花费。它调用的是<strong>「AI 服务」里的聊天模型</strong>，不是上面配置的向量模型——按你排好的优先级顺序，第一个是本地模型就用本地模型，是 DeepSeek 就用 DeepSeek，联网模型约合几毛钱一本书。<br><br>这句说明只用于检索。AI 引用给你看的永远是书里的原句，所以即使说明写得不准，也只会影响找得准不准，不会改变引文内容。</p>
       </div>
       <div class="tg on"></div>
@@ -171,7 +171,7 @@ body{margin:0;background:var(--page);color:var(--text-primary);
     <div class="row sub on">
       <div class="row-copy">
         <h4>段落上下文标注</h4>
-        <p class="hint">正在标注《傲慢与偏见》，可以关掉设置继续读书。</p>
+        <p class="hint">正在为《傲慢与偏见》建索引，标注段落上下文。可以关掉设置继续读书。</p>
         <div class="prog">
           <div class="track"><div class="fill"></div></div>
           <span class="count">第 137 / 500 段</span>
@@ -191,7 +191,7 @@ body{margin:0;background:var(--page);color:var(--text-primary);
     <div class="row sub on">
       <div class="row-copy">
         <h4>段落上下文标注</h4>
-        <p class="hint">用你的聊天模型给每段书补一句说明，让「达西求婚后伊丽莎白什么反应」这类问题也能找到只写着「她沉默了」的段落。<span class="more">详细</span></p>
+        <p class="hint">建索引时用你的聊天模型给每段书补一句说明，联网模型约合几毛钱一本书。这样「达西求婚后伊丽莎白什么反应」也能找到只写着「她沉默了」的那一段。<span class="more">详细</span></p>
         <div class="softfail">
           <p>《傲慢与偏见》有 63 段没能标注完。这些段落照常可以被检索到，只是命中率略低一些。</p>
           <button class="retry">继续</button>
@@ -209,13 +209,13 @@ body{margin:0;background:var(--page);color:var(--text-primary);
     <dt>contextLines</dt>
     <dd>段落上下文标注</dd>
     <dt>contextLinesHint</dt>
-    <dd>用你的聊天模型给每段书补一句说明，让「达西求婚后伊丽莎白什么反应」这类问题也能找到只写着「她沉默了」的段落。</dd>
+    <dd>建索引时用你的聊天模型给每段书补一句说明，联网模型约合几毛钱一本书。这样「达西求婚后伊丽莎白什么反应」也能找到只写着「她沉默了」的那一段。</dd>
     <dt>contextLinesDetail</dt>
     <dd>建索引时一次性完成，之后不再花费。它调用的是「AI 服务」里的聊天模型，不是上面配置的向量模型——按你排好的优先级顺序，第一个是本地模型就用本地模型，是 DeepSeek 就用 DeepSeek，联网模型约合几毛钱一本书。<br>这句说明只用于检索。AI 引用给你看的永远是书里的原句，所以即使说明写得不准，也只会影响找得准不准，不会改变引文内容。</dd>
     <dt>contextLinesUnavailable</dt>
     <dd>需要先开启向量检索——这句说明只用于向量检索。</dd>
     <dt>contextLinesRunning</dt>
-    <dd>正在标注《{{book}}》，可以关掉设置继续读书。</dd>
+    <dd>正在为《{{book}}》建索引，标注段落上下文。可以关掉设置继续读书。</dd>
     <dt>contextLinesProgress</dt>
     <dd>第 {{done}} / {{total}} 段</dd>
     <dt>contextLinesPartial</dt>
