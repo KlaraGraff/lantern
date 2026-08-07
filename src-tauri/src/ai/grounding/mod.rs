@@ -1,6 +1,7 @@
 //! Local, rebuildable grounding data for book chat.
 
 pub mod chunk;
+pub mod context;
 pub mod extract;
 pub mod index;
 pub mod retrieve;

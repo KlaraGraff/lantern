@@ -136,6 +136,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
         49,
         include_str!("../migrations/049_ai_request_counts.sql"),
     ),
+    (
+        50,
+        include_str!("../migrations/050_contextual_retrieval.sql"),
+    ),
 ];
 
 fn register_sqlite_vec() {

@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern 检索调参 · 站在巨人肩膀上</title>
+<style>
+:root{
+  --bg:#faf9f7; --panel:#fff; --ink:#1a1815; --ink2:#5c564e; --ink3:#8b8378;
+  --line:#e6e2db; --accent:#b5651d; --accent-bg:#fdf3e9;
+  --ok:#2f7d4f; --ok-bg:#eaf5ee; --warn:#b0432c; --warn-bg:#fceeea;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#16150f; --panel:#1e1d17; --ink:#eeeae2; --ink2:#a9a297; --ink3:#7a7368;
+    --line:#302e26; --accent:#e0913f; --accent-bg:#2a2015;
+    --ok:#6bbd8a; --ok-bg:#16281d; --warn:#e08268; --warn-bg:#2a1a15;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB",sans-serif;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:900px;margin:0 auto;padding:56px 24px 96px}
+header{border-bottom:1px solid var(--line);padding-bottom:28px;margin-bottom:44px}
+h1{font-size:27px;margin:0 0 8px;letter-spacing:-.01em}
+.sub{color:var(--ink2);font-size:14px;margin:0}
+h2{font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink3);
+  margin:56px 0 18px;font-weight:600}
+h2:first-of-type{margin-top:0}
+h3{font-size:16px;margin:0 0 10px}
+p{margin:0 0 14px;color:var(--ink2)}
+p strong,li strong{color:var(--ink);font-weight:600}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:24px 26px;margin-bottom:18px}
+.verdict{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.06em;
+  padding:3px 9px;border-radius:5px;margin-bottom:12px}
+.v-keep{background:var(--ok-bg);color:var(--ok)}
+.v-change{background:var(--warn-bg);color:var(--warn)}
+.v-info{background:var(--accent-bg);color:var(--accent)}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 0 14px}
+table{border-collapse:collapse;width:100%;min-width:520px;font-size:13.5px}
+th,td{text-align:left;padding:9px 14px 9px 0;border-bottom:1px solid var(--line);
+  vertical-align:baseline}
+th{color:var(--ink3);font-weight:600;font-size:11.5px;letter-spacing:.06em;
+  text-transform:uppercase;white-space:nowrap}
+td.num{font-family:var(--mono);white-space:nowrap}
+tr.here td{background:var(--accent-bg)}
+tr.here td:first-child{font-weight:600;color:var(--ink)}
+.bar{display:inline-block;height:7px;border-radius:4px;background:var(--accent);
+  vertical-align:middle;margin-right:8px;min-width:2px}
+.bar.dim{background:var(--ink3);opacity:.45}
+code{font-family:var(--mono);font-size:12.5px;background:var(--accent-bg);
+  color:var(--accent);padding:1.5px 5px;border-radius:4px}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:660px){.split{grid-template-columns:1fr}}
+.ex{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:16px 18px;font-size:13.5px;line-height:1.7}
+.ex .tag{font-size:11px;letter-spacing:.06em;font-weight:600;display:block;margin-bottom:9px}
+.ex.bad{border-color:color-mix(in srgb,var(--warn) 34%,var(--line))}
+.ex.bad .tag{color:var(--warn)}
+.ex.good{border-color:color-mix(in srgb,var(--ok) 34%,var(--line))}
+.ex.good .tag{color:var(--ok)}
+.ex .ctx{color:var(--accent);font-weight:600}
+.ex .body{color:var(--ink2)}
+.note{font-size:12.5px;color:var(--ink3);margin-top:10px}
+ul{margin:0 0 14px;padding-left:19px;color:var(--ink2)}
+li{margin-bottom:7px}
+.src{font-size:12px;color:var(--ink3);border-top:1px solid var(--line);
+  margin-top:56px;padding-top:20px}
+.src a{color:var(--ink3)}
+.src li{margin-bottom:4px}
+.kicker{font-size:13px;color:var(--ink3);margin:-4px 0 22px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Lantern 检索调参：外面的人怎么做</h1>
+  <p class="sub">三个问题 —— 用多少维、怎么切片、还差什么。前两个我们已经在正确答案上，第三个没做。</p>
+</header>
+
+<h2>一 · 维度</h2>
+
+<div class="card">
+  <span class="verdict v-keep">结论：保持 1024，不要截断</span>
+  <h3>降维的代价是有公开数据的，不用猜</h3>
+  <p>Matryoshka 训练的模型会把最重要的语义压到前面几维，所以可以直接截断。社区实测的保留率：</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>维度</th><th>检索质量保留</th><th>相对满维</th><th>实际处境</th></tr></thead>
+    <tbody>
+      <tr class="here"><td>1024（Jina v5 原生）</td><td class="num"><span class="bar" style="width:150px"></span>100%</td><td class="num">基准</td><td>我们要用的</td></tr>
+      <tr><td>512</td><td class="num"><span class="bar" style="width:144px"></span>94–98%</td><td class="num">−2~6%</td><td>生产上常见的省钱档</td></tr>
+      <tr><td>384</td><td class="num"><span class="bar" style="width:139px"></span>~93%</td><td class="num">−7%</td><td>还在梯子上</td></tr>
+      <tr><td>256</td><td class="num"><span class="bar" style="width:132px"></span>88–95%</td><td class="num">−5~12%</td><td>亿级向量才值得</td></tr>
+      <tr><td>64</td><td class="num"><span class="bar dim" style="width:60px"></span>无人公布</td><td class="num">—</td><td>MRL 训练时有这一档，检索场景没人真发</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>具体一点：IBM Granite 的官方梯子上，768 维 MTEB Retrieval 52.6，截到 512 是 52.5，截到 256 是 51.6。<strong>降一半几乎白送，降到四分之一开始见血。</strong>另一组数据：1536 截到 256 保留 93–95%。</p>
+  <p><strong>为什么这不适用于我们。</strong>这些收益全部是在「向量太多、存不下、查得慢」的前提下才成立的。我们一本书约 500 个 chunk，全部藏书撑死几万条向量。省下的那点空间对着 119GB 空盘，等于零；而每一个百分点的召回，直接就是解释里引错原文。</p>
+  <p class="note">1024 维 × 4 字节 × 25,000 chunk ≈ 100MB。截到 64 维能省下来的，不到一部剧集的体积。</p>
+</div>
+
+<h2>二 · 切片</h2>
+
+<div class="card">
+  <span class="verdict v-keep">结论：现在的切法就是共识答案，不用改</span>
+  <h3>Lantern 已有的 vs 社区默认</h3>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>项目</th><th>社区共识（2026）</th><th>Lantern 现在</th><th></th></tr></thead>
+    <tbody>
+      <tr>
+        <td>chunk 大小</td>
+        <td>混合检索 256–512 token<br><span class="note">超过 1000 语义信号被稀释</span></td>
+        <td class="num">目标 350 / 上限 500</td>
+        <td><span class="verdict v-keep">正中</span></td>
+      </tr>
+      <tr>
+        <td>切分依据</td>
+        <td>优先跟着文档结构走，超长再按句子拆</td>
+        <td>按 EPUB 章节 → 段落块贪心打包 → 超长按句号拆</td>
+        <td><span class="verdict v-keep">一致</span></td>
+      </tr>
+      <tr>
+        <td>重叠 overlap</td>
+        <td>10–20%，为了接住跨边界的句子</td>
+        <td class="num">0</td>
+        <td><span class="verdict v-info">另解</span></td>
+      </tr>
+      <tr>
+        <td>检索方式</td>
+        <td>稠密向量 + BM25 混合；小语料下 BM25 权重更值钱</td>
+        <td>FTS5 + sqlite-vec 混合排序</td>
+        <td><span class="verdict v-keep">一致</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3 style="margin-top:26px">关于那个 0 重叠</h3>
+  <p>重叠存在的唯一理由，是一句话被切在两个 chunk 中间，两边都答不全。外面的做法是<strong>索引时把边界文字复制一份</strong>到隔壁 chunk 里 —— 代价是语料膨胀 10–20%，而且同一段话会重复命中。</p>
+  <p>Lantern 走的是另一条路：<code>lexical_ranks_with_limit</code> 命中一个 chunk 之后，<strong>检索时顺手把阅读顺序上的前后邻居一起取出来</strong>。同样接住了跨边界的句子，但不复制文本、不产生重复命中、换模型重建索引也不用重切。</p>
+  <p class="note">这在业界叫 small-to-big：小块用来匹配，大块用来喂给模型。它比 overlap 更贵一点（多一次查询），但我们本来就只查一本书。</p>
+</div>
+
+<h2>三 · 真正的差距</h2>
+
+<div class="card">
+  <span class="verdict v-change">结论：这一条值得做</span>
+  <h3>Contextual Retrieval —— 嵌入之前先给 chunk 加一句身份</h3>
+  <p>Anthropic 2024 年提出、现在已经是标配的做法：把 chunk 送去 embed 之前，前面拼一句「这段是从哪来的、在讲什么」。公开数据是这样的：</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>做法</th><th>top-20 检索失败率</th><th>相对改善</th></tr></thead>
+    <tbody>
+      <tr><td>裸 chunk（Lantern 现在）</td><td class="num"><span class="bar" style="width:114px"></span>5.7%</td><td class="num">—</td></tr>
+      <tr><td>+ 上下文前缀</td><td class="num"><span class="bar" style="width:74px"></span>3.7%</td><td class="num">−35%</td></tr>
+      <tr><td>+ 上下文前缀 + 上下文 BM25</td><td class="num"><span class="bar" style="width:58px"></span>2.9%</td><td class="num">−49%</td></tr>
+      <tr><td>再加重排</td><td class="num"><span class="bar" style="width:38px"></span>1.9%</td><td class="num">−67%</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>为什么小说比技术文档更需要它。</strong>叙事文本满是代词和省略 —— 一个 chunk 里可能整段没出现过任何人名。这种块的向量落在语义空间里几乎是随机的，问「谁最后原谅了谁」永远命中不到。</p>
+
+  <div class="split" style="margin-top:20px">
+    <div class="ex bad">
+      <span class="tag">现在送去 embed 的</span>
+      <span class="body">他终于点了点头，没有再说什么。窗外的雨下了整夜，天亮时才停。</span>
+    </div>
+    <div class="ex good">
+      <span class="tag">加一句身份之后</span>
+      <span class="ctx">《雾都孤儿》· 第十七章 · 南希向罗斯小姐坦白之后 —— </span><span class="body">他终于点了点头，没有再说什么。窗外的雨下了整夜，天亮时才停。</span>
+    </div>
+  </div>
+  <p class="note">左边这段向量里没有任何一个专有名词。右边有书名、章节、人物、事件，问「南希坦白之后发生了什么」才可能命中。</p>
+
+  <h3 style="margin-top:28px">我们能做的两档</h3>
+  <ul>
+    <li><strong>便宜版 —— 拼章节标题。</strong>chunk 表里已经存了 <code>section_title</code>，但 <code>ensure_embeddings</code> 只 <code>SELECT c.id, c.text</code>，标题从来没被送进模型。改成拼上「书名 · 章节标题」再 embed，<strong>零 LLM 成本、零新依赖</strong>，只需要重建一次索引。这是上表那 −35% 里最便宜的一段。</li>
+    <li><strong>完整版 —— 让本地模型给每个 chunk 写一句话。</strong>这才是 Anthropic 原方案。对我们唯一的成本是时间：一本书 500 个 chunk，本地模型跑一遍。你已经说过愿意用时间换质量，那这条在成本结构上是成立的 —— 而且它跑在本机，不花钱。</li>
+  </ul>
+  <p class="note">两档不冲突：便宜版先落地，完整版可以作为「深度索引」开关，愿意等的书才开。</p>
+</div>
+
+<div class="src">
+  <p style="color:var(--ink3);margin-bottom:10px">来源</p>
+  <ul style="color:var(--ink3);padding-left:18px">
+    <li><a href="https://platform.claude.com/cookbook/capabilities-contextual-embeddings-guide">Contextual Retrieval 指南 · Claude Cookbook</a> —— 失败率数据</li>
+    <li><a href="https://arxiv.org/pdf/2605.13521">Granite Embedding Multilingual R2</a> —— 官方截断梯子</li>
+    <li><a href="https://sbert.net/examples/sentence_transformer/training/matryoshka/README.html">Matryoshka Embeddings · Sentence Transformers</a> —— 训练截断点</li>
+    <li><a href="https://www.firecrawl.dev/blog/best-chunking-strategies-rag">Best Chunking Strategies for RAG (2026) · Firecrawl</a> —— chunk 大小与重叠共识</li>
+    <li><a href="https://denser.ai/blog/hybrid-search-for-rag/">Hybrid Search for RAG (2026) · Denser</a> —— 小语料下 BM25 的权重</li>
+    <li><a href="https://www.infoq.com/articles/vector-search-hybrid-retrieval-rag/">Why Vector Search Alone Isn't Enough · InfoQ</a></li>
+  </ul>
+</div>
+
+</div>
+</body>
+</html>

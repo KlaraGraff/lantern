@@ -908,9 +908,30 @@ pub async fn ai_chat(
                                                 }
                                             }
                                             Ok(false) => {
+                                                let index_app = app.clone();
                                                 let index_db = db.clone();
+                                                let index_secrets = secrets.inner().clone();
                                                 let index_book_id = book_id.clone();
                                                 tauri::async_runtime::spawn(async move {
+                                                    // Stage ② before stage ③, same as the
+                                                    // manual reindex path — but its failure
+                                                    // must not skip the embedding backfill:
+                                                    // this book still needs to become
+                                                    // searchable even with no identity
+                                                    // sentences.
+                                                    if let Err(error) =
+                                                        grounding::context::ensure_context_lines(
+                                                            &index_app,
+                                                            &index_db,
+                                                            &index_secrets,
+                                                            &index_book_id,
+                                                        )
+                                                        .await
+                                                    {
+                                                        log::warn!(
+                                                        "grounding context line backfill failed: {error}"
+                                                    );
+                                                    }
                                                     if let Err(error) =
                                                         grounding::vector::ensure_embeddings(
                                                             &index_db,

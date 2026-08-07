@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>段落上下文标注 · 设置面板样张</title>
+<style>
+:root{
+  --page:#f2f0ed; --panel:#fff; --border:#e4e0d9; --border-light:#eeebe5;
+  --text-primary:#1c1a17; --text-secondary:#6d665c; --text-tertiary:#9a938a;
+  --accent:#b5651d; --accent-bg:#fdf3e9;
+  --toggle-off:#d4cfc6; --toggle-on:#b5651d; --knob:#fff;
+  --success:#2f7d4f; --neutral-bar:#c9c3b8;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --page:#131209; --panel:#1c1b14; --border:#2e2c23; --border-light:#26251d;
+    --text-primary:#efebe3; --text-secondary:#a49d92; --text-tertiary:#756e64;
+    --accent:#e0913f; --accent-bg:#2a2015;
+    --toggle-off:#3b382e; --toggle-on:#c47c2c; --knob:#f2eee6;
+    --success:#6bbd8a; --neutral-bar:#4a463a;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--text-primary);
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB",sans-serif;
+  -webkit-font-smoothing:antialiased}
+.page{max-width:760px;margin:0 auto;padding:48px 20px 80px}
+.lede{margin-bottom:40px}
+.lede h1{font-size:22px;margin:0 0 6px;letter-spacing:-.01em}
+.lede p{margin:0;color:var(--text-secondary);font-size:13.5px}
+
+.state{margin-bottom:34px}
+.state-label{display:flex;align-items:baseline;gap:10px;margin-bottom:9px}
+.state-num{font-size:11px;font-weight:600;letter-spacing:.05em;color:var(--accent);
+  background:var(--accent-bg);border-radius:4px;padding:2px 7px}
+.state-name{font-size:13px;font-weight:600}
+.state-why{font-size:12.5px;color:var(--text-tertiary)}
+
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;
+  padding:16px 22px 4px;max-width:620px}
+
+/* ---- existing rows, shown for context ---- */
+.row{display:flex;min-height:73px;align-items:center;justify-content:space-between;
+  gap:16px;border-bottom:1px solid var(--border);padding:12px 0}
+.row:last-child{border-bottom:none}
+.row-copy{min-width:0}
+.row h4{font-size:13px;font-weight:500;margin:0;color:var(--text-primary)}
+.hint{font-size:11px;line-height:1.55;color:var(--text-secondary);margin:2px 0 0}
+.hint .more{color:var(--text-tertiary);text-decoration:underline;
+  text-underline-offset:2px;cursor:pointer;white-space:nowrap}
+.detail{font-size:11px;line-height:1.65;color:var(--text-secondary);
+  margin:7px 0 0;padding:9px 11px;background:var(--accent-bg);border-radius:6px}
+.ghost{opacity:.42}
+
+/* ---- the new sub-row ---- */
+.sub{position:relative;padding-left:20px}
+.sub::before{content:"";position:absolute;left:5px;top:14px;bottom:14px;width:2px;
+  border-radius:2px;background:var(--border)}
+.sub.on::before{background:var(--accent);opacity:.5}
+
+/* ---- toggle ---- */
+.tg{flex:none;width:38px;height:22px;border-radius:11px;background:var(--toggle-off);
+  position:relative;transition:background .15s}
+.tg.on{background:var(--toggle-on)}
+.tg::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;
+  border-radius:50%;background:var(--knob);box-shadow:0 1px 2px rgba(0,0,0,.25);
+  transition:transform .15s}
+.tg.on::after{transform:translateX(16px)}
+.tg.dis{opacity:.4}
+
+/* ---- progress ---- */
+.prog{margin-top:9px;display:flex;align-items:center;gap:9px}
+.track{flex:1;height:3px;border-radius:2px;background:var(--border);overflow:hidden;max-width:210px}
+.fill{height:100%;border-radius:2px;background:var(--accent);width:27%}
+.count{font-size:11px;color:var(--text-tertiary);font-variant-numeric:tabular-nums}
+
+/* ---- soft failure ---- */
+.softfail{margin-top:8px;display:flex;align-items:flex-start;gap:8px;
+  padding:8px 10px;border-radius:6px;background:var(--border-light)}
+.softfail p{margin:0;font-size:11px;line-height:1.55;color:var(--text-secondary)}
+.retry{flex:none;font:inherit;font-size:11px;font-weight:500;color:var(--text-primary);
+  background:var(--panel);border:1px solid var(--border);border-radius:5px;
+  padding:3px 10px;cursor:pointer}
+
+.note{max-width:620px;font-size:12.5px;color:var(--text-tertiary);margin:10px 0 0;
+  padding-left:2px}
+.copy-block{max-width:620px;margin-top:44px;border-top:1px solid var(--border);padding-top:22px}
+.copy-block h2{font-size:12px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--text-tertiary);margin:0 0 14px;font-weight:600}
+.copy-block dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:12.5px}
+.copy-block dt{color:var(--text-tertiary);font-family:ui-monospace,Menlo,monospace;
+  font-size:11px;white-space:nowrap;padding-top:2px}
+.copy-block dd{margin:0;color:var(--text-secondary)}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="lede">
+  <h1>段落上下文标注</h1>
+  <p>设置 → AI → 向量检索。作为「向量检索」的子项，五个状态。</p>
+</div>
+
+<!-- 1 -->
+<div class="state">
+  <div class="state-label"><span class="state-num">1</span><span class="state-name">默认</span>
+    <span class="state-why">向量检索已开，此项也开。放在上下文里看它的从属关系。</span></div>
+  <div class="panel">
+    <div class="row">
+      <div class="row-copy">
+        <h4>向量检索</h4>
+        <p class="hint">除了逐字匹配，也按意思找相关段落。<span class="more">详细</span></p>
+      </div>
+      <div class="tg on"></div>
+    </div>
+    <div class="row sub on">
+      <div class="row-copy">
+        <h4>段落上下文标注</h4>
+        <p class="hint">用你的聊天模型给每段书补一句说明，让「达西求婚后伊丽莎白什么反应」这类问题也能找到只写着「她沉默了」的段落。<span class="more">详细</span></p>
+      </div>
+      <div class="tg on"></div>
+    </div>
+  </div>
+  <p class="note">从属感靠缩进 + 左侧引导线，不做嵌套卡片。开启时引导线取强调色。</p>
+</div>
+
+<!-- 2 -->
+<div class="state">
+  <div class="state-label"><span class="state-num">2</span><span class="state-name">详情展开</span>
+    <span class="state-why">要在这里点破「开关在 embedding 设置里，干活走聊天路由」。</span></div>
+  <div class="panel">
+    <div class="row sub on">
+      <div class="row-copy">
+        <h4>段落上下文标注</h4>
+        <p class="hint">用你的聊天模型给每段书补一句说明，让「达西求婚后伊丽莎白什么反应」这类问题也能找到只写着「她沉默了」的段落。<span class="more">收起</span></p>
+        <p class="detail">建索引时一次性完成，之后不再花费。它调用的是<strong>「AI 服务」里的聊天模型</strong>，不是上面配置的向量模型——按你排好的优先级顺序，第一个是本地模型就用本地模型，是 DeepSeek 就用 DeepSeek，联网模型约合几毛钱一本书。<br><br>这句说明只用于检索。AI 引用给你看的永远是书里的原句，所以即使说明写得不准，也只会影响找得准不准，不会改变引文内容。</p>
+      </div>
+      <div class="tg on"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 3 -->
+<div class="state">
+  <div class="state-label"><span class="state-num">3</span><span class="state-name">禁用</span>
+    <span class="state-why">向量检索未开。说明文字换成禁用理由，不是灰掉原文案。</span></div>
+  <div class="panel">
+    <div class="row">
+      <div class="row-copy">
+        <h4>向量检索</h4>
+        <p class="hint">除了逐字匹配，也按意思找相关段落。<span class="more">详细</span></p>
+      </div>
+      <div class="tg"></div>
+    </div>
+    <div class="row sub ghost">
+      <div class="row-copy">
+        <h4>段落上下文标注</h4>
+        <p class="hint">需要先开启向量检索——这句说明只用于向量检索。</p>
+      </div>
+      <div class="tg dis"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 4 -->
+<div class="state">
+  <div class="state-label"><span class="state-num">4</span><span class="state-name">处理中</span>
+    <span class="state-why">进度落在行内，不弹窗、不占额外一行高度。</span></div>
+  <div class="panel">
+    <div class="row sub on">
+      <div class="row-copy">
+        <h4>段落上下文标注</h4>
+        <p class="hint">正在标注《傲慢与偏见》，可以关掉设置继续读书。</p>
+        <div class="prog">
+          <div class="track"><div class="fill"></div></div>
+          <span class="count">第 137 / 500 段</span>
+        </div>
+      </div>
+      <div class="tg on"></div>
+    </div>
+  </div>
+  <p class="note">书名要出现——用户可能同时导入了好几本，得知道正在跑哪一本。</p>
+</div>
+
+<!-- 5 -->
+<div class="state">
+  <div class="state-label"><span class="state-num">5</span><span class="state-name">部分失败</span>
+    <span class="state-why">中性色，不用红色。这是可降级的增强，不是错误。</span></div>
+  <div class="panel">
+    <div class="row sub on">
+      <div class="row-copy">
+        <h4>段落上下文标注</h4>
+        <p class="hint">用你的聊天模型给每段书补一句说明，让「达西求婚后伊丽莎白什么反应」这类问题也能找到只写着「她沉默了」的段落。<span class="more">详细</span></p>
+        <div class="softfail">
+          <p>《傲慢与偏见》有 63 段没能标注完。这些段落照常可以被检索到，只是命中率略低一些。</p>
+          <button class="retry">继续</button>
+        </div>
+      </div>
+      <div class="tg on"></div>
+    </div>
+  </div>
+  <p class="note">按钮写「继续」而不是「重试」——它是从断点接着跑，不是从头重来。</p>
+</div>
+
+<div class="copy-block">
+  <h2>文案清单</h2>
+  <dl>
+    <dt>contextLines</dt>
+    <dd>段落上下文标注</dd>
+    <dt>contextLinesHint</dt>
+    <dd>用你的聊天模型给每段书补一句说明，让「达西求婚后伊丽莎白什么反应」这类问题也能找到只写着「她沉默了」的段落。</dd>
+    <dt>contextLinesDetail</dt>
+    <dd>建索引时一次性完成，之后不再花费。它调用的是「AI 服务」里的聊天模型，不是上面配置的向量模型——按你排好的优先级顺序，第一个是本地模型就用本地模型，是 DeepSeek 就用 DeepSeek，联网模型约合几毛钱一本书。<br>这句说明只用于检索。AI 引用给你看的永远是书里的原句，所以即使说明写得不准，也只会影响找得准不准，不会改变引文内容。</dd>
+    <dt>contextLinesUnavailable</dt>
+    <dd>需要先开启向量检索——这句说明只用于向量检索。</dd>
+    <dt>contextLinesRunning</dt>
+    <dd>正在标注《{{book}}》，可以关掉设置继续读书。</dd>
+    <dt>contextLinesProgress</dt>
+    <dd>第 {{done}} / {{total}} 段</dd>
+    <dt>contextLinesPartial</dt>
+    <dd>《{{book}}》有 {{count}} 段没能标注完。这些段落照常可以被检索到，只是命中率略低一些。</dd>
+    <dt>contextLinesResume</dt>
+    <dd>继续</dd>
+  </dl>
+</div>
+
+</div>
+</body>
+</html>

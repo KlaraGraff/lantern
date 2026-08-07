@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 use super::retrieve::{
     lexical_ranks_with_limit, retrieve_ranked, top_k_for_budget, RetrievedChunk, SpoilerCutoff,
@@ -128,6 +129,33 @@ pub fn ensure_vector_table(conn: &Connection, dimensions: usize) -> AppResult<()
         }
     }
     Ok(())
+}
+
+/// Hash a chunk's identity sentence so the embedding-invalidation check below
+/// can see when it changes, without storing the sentence a second time in
+/// `book_chunk_embeddings`. A chunk with no identity sentence hashes to the
+/// empty string — matching the `DEFAULT ''` the migration gives every
+/// embedding row that predates this feature, so an old row and a freshly
+/// computed one with no context line agree instead of looking stale to each
+/// other (see docs/impls/contextual-retrieval.md's invalidation matrix).
+fn context_sha256_hex(context_line: &str) -> String {
+    if context_line.is_empty() {
+        String::new()
+    } else {
+        format!("{:x}", Sha256::digest(context_line.as_bytes()))
+    }
+}
+
+/// What actually gets embedded: the identity sentence in front of the raw
+/// chunk, when there is one. `book_chunks.text` itself is never touched —
+/// this is only ever the embedding *input*, never what a citation shows the
+/// reader.
+fn embedding_input(context_line: &str, text: &str) -> String {
+    if context_line.is_empty() {
+        text.to_string()
+    } else {
+        format!("{context_line} —— {text}")
+    }
 }
 
 fn embedding_json(embedding: &[f32]) -> AppResult<String> {
@@ -305,15 +333,37 @@ pub fn has_complete_embeddings(
     source: &EmbeddingSource,
 ) -> AppResult<bool> {
     let conn = db.reader();
-    let counts: (i64, i64) = conn.query_row(
-        "SELECT COUNT(*), COUNT(e.chunk_id)
+    // `context_sha256` has to match each chunk's *own* identity sentence, so
+    // it can't sit in the JOIN as a single bound parameter the way
+    // model/dimensions can — SQLite has no built-in SHA-256 to recompute it
+    // per row. Fetch what's needed and compare in Rust instead; this stays a
+    // single query, just with the per-row check moved out of SQL.
+    let mut statement = conn.prepare(
+        "SELECT COALESCE(c.context_line, ''), e.model, e.dimensions, e.context_sha256
          FROM book_chunks c
-         LEFT JOIN book_chunk_embeddings e ON e.chunk_id = c.id AND e.model = ?2 AND e.dimensions = ?3
+         LEFT JOIN book_chunk_embeddings e ON e.chunk_id = c.id
          WHERE c.book_id = ?1",
-        params![book_id, source.model, source.dimensions as i64],
-        |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
-    Ok(counts.0 > 0 && counts.0 == counts.1)
+    let rows = statement
+        .query_map(params![book_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<i64>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    if rows.is_empty() {
+        return Ok(false);
+    }
+    Ok(rows
+        .iter()
+        .all(|(context_line, model, dimensions, context_sha256)| {
+            model.as_deref() == Some(source.model.as_str())
+                && *dimensions == Some(source.dimensions as i64)
+                && context_sha256.as_deref() == Some(context_sha256_hex(context_line).as_str())
+        }))
 }
 
 pub async fn ensure_embeddings(db: &Db, book_id: &str, source: &EmbeddingSource) -> AppResult<()> {
@@ -324,29 +374,62 @@ pub async fn ensure_embeddings(db: &Db, book_id: &str, source: &EmbeddingSource)
             params![book_id],
             |row| row.get(0),
         )?;
+        // Same reasoning as `has_complete_embeddings`: `context_sha256` needs
+        // a per-row comparison, so the existing rows are loaded once and the
+        // pending set is decided in Rust rather than as a single JOIN keyed
+        // on one bound parameter.
+        let mut existing_statement = conn.prepare(
+            "SELECT chunk_id, model, source_sha256, dimensions, context_sha256
+             FROM book_chunk_embeddings WHERE book_id = ?1",
+        )?;
+        let existing: HashMap<String, (String, String, i64, String)> = existing_statement
+            .query_map(params![book_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    (
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, String>(4)?,
+                    ),
+                ))
+            })?
+            .collect::<Result<_, _>>()?;
         let mut statement = conn.prepare(
-            "SELECT c.id, c.text
-             FROM book_chunks c
-             LEFT JOIN book_chunk_embeddings e
-               ON e.chunk_id = c.id AND e.model = ?2 AND e.source_sha256 = ?3 AND e.dimensions = ?4
-             WHERE c.book_id = ?1 AND e.chunk_id IS NULL
-             ORDER BY c.chunk_index",
+            "SELECT c.id, c.text, COALESCE(c.context_line, '')
+             FROM book_chunks c WHERE c.book_id = ?1 ORDER BY c.chunk_index",
         )?;
         let chunks = statement
-            .query_map(
-                params![
-                    book_id,
-                    source.model,
-                    source_sha256,
-                    source.dimensions as i64
-                ],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-            )?
-            .collect::<Result<Vec<_>, _>>()?;
+            .query_map(params![book_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<(String, String, String)>, _>>()?
+            .into_iter()
+            .filter_map(|(chunk_id, text, context_line)| {
+                let context_sha256 = context_sha256_hex(&context_line);
+                let current = existing.get(&chunk_id).is_some_and(
+                    |(model, existing_source, dimensions, existing_context)| {
+                        *model == source.model
+                            && *existing_source == source_sha256
+                            && *dimensions == source.dimensions as i64
+                            && *existing_context == context_sha256
+                    },
+                );
+                if current {
+                    return None;
+                }
+                let input = embedding_input(&context_line, &text);
+                Some((chunk_id, input, context_sha256))
+            })
+            .collect::<Vec<(String, String, String)>>();
         (source_sha256, chunks)
     };
     for batch in chunks.chunks(EMBEDDING_BATCH_SIZE) {
-        let input = batch.iter().map(|(_, text)| text.clone()).collect();
+        let input = batch.iter().map(|(_, text, _)| text.clone()).collect();
         let vectors = embeddings(source, input).await?;
         let mut conn = db
             .conn
@@ -354,15 +437,16 @@ pub async fn ensure_embeddings(db: &Db, book_id: &str, source: &EmbeddingSource)
             .map_err(|error| AppError::Other(error.to_string()))?;
         ensure_vector_table(&conn, source.dimensions)?;
         let transaction = conn.transaction()?;
-        for ((chunk_id, _), vector) in batch.iter().zip(vectors.iter()) {
+        for ((chunk_id, _, context_sha256), vector) in batch.iter().zip(vectors.iter()) {
             let encoded = embedding_json(vector)?;
             transaction.execute(
                 "INSERT INTO book_chunk_embeddings
-                 (chunk_id, book_id, embedding, dimensions, model, source_sha256, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 (chunk_id, book_id, embedding, dimensions, model, source_sha256, context_sha256, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                  ON CONFLICT(chunk_id) DO UPDATE SET embedding = excluded.embedding,
                      dimensions = excluded.dimensions, model = excluded.model,
-                     source_sha256 = excluded.source_sha256, created_at = excluded.created_at",
+                     source_sha256 = excluded.source_sha256, context_sha256 = excluded.context_sha256,
+                     created_at = excluded.created_at",
                 params![
                     chunk_id,
                     book_id,
@@ -370,6 +454,7 @@ pub async fn ensure_embeddings(db: &Db, book_id: &str, source: &EmbeddingSource)
                     source.dimensions as i64,
                     source.model,
                     source_sha256,
+                    context_sha256,
                     chrono::Utc::now().timestamp_millis(),
                 ],
             )?;
@@ -673,5 +758,130 @@ mod tests {
             vector_ranks(&conn, "book", &vector, 12, None).unwrap(),
             vec!["cached"]
         );
+    }
+
+    fn test_source(model: &str) -> EmbeddingSource {
+        EmbeddingSource {
+            profile_id: "test".to_string(),
+            endpoint: "https://example.invalid".to_string(),
+            model: model.to_string(),
+            api_key: None,
+            dimensions: 3,
+        }
+    }
+
+    fn insert_chunk(conn: &Connection, id: &str, context_line: Option<&str>) {
+        conn.execute(
+            "INSERT INTO book_chunks
+             (id, book_id, chunk_index, section_index, text, snippet, token_estimate, context_line, created_at)
+             VALUES (?1, 'book', 0, 0, ?1, ?1, 1, ?2, 1)",
+            params![id, context_line],
+        )
+        .unwrap();
+    }
+
+    fn insert_embedding(conn: &Connection, chunk_id: &str, model: &str, context_sha256: &str) {
+        conn.execute(
+            "INSERT INTO book_chunk_embeddings
+             (chunk_id, book_id, embedding, dimensions, model, source_sha256, context_sha256, created_at)
+             VALUES (?1, 'book', ?2, 3, ?3, 'hash', ?4, 1)",
+            params![
+                chunk_id,
+                embedding_blob(&[0.0_f32, 0.0, 0.0]),
+                model,
+                context_sha256
+            ],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn embedding_input_is_byte_identical_to_bare_text_when_there_is_no_context_line() {
+        // The most important regression: a book with no identity sentences
+        // must embed exactly as it does today.
+        assert_eq!(embedding_input("", "the raw chunk text"), "the raw chunk text");
+    }
+
+    #[test]
+    fn embedding_input_prefixes_the_context_line_when_present() {
+        assert_eq!(
+            embedding_input("Darcy proposes to Elizabeth.", "She stared, coloured, doubted."),
+            "Darcy proposes to Elizabeth. —— She stared, coloured, doubted."
+        );
+    }
+
+    #[test]
+    fn context_sha256_hex_is_empty_for_no_context_line_and_stable_for_a_real_one() {
+        assert_eq!(context_sha256_hex(""), "");
+        let first = context_sha256_hex("a line");
+        let second = context_sha256_hex("a line");
+        assert!(!first.is_empty());
+        assert_eq!(first, second);
+        assert_ne!(first, context_sha256_hex("a different line"));
+    }
+
+    #[test]
+    fn has_complete_embeddings_is_false_when_context_sha256_is_stale() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            insert_chunk(&conn, "chunk", Some("an identity sentence"));
+            // Embedded back when this chunk had no identity sentence yet.
+            insert_embedding(&conn, "chunk", "model", "");
+        }
+        // The chunk now has a context line the stored embedding never saw —
+        // this is the invalidation matrix's "重新生成身份句" row, and it must
+        // register as incomplete so `ensure_embeddings` picks the chunk back
+        // up.
+        assert!(!has_complete_embeddings(&db, "book", &test_source("model")).unwrap());
+    }
+
+    #[test]
+    fn has_complete_embeddings_is_true_when_context_sha256_matches() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            insert_chunk(&conn, "chunk", Some("an identity sentence"));
+            insert_embedding(
+                &conn,
+                "chunk",
+                "model",
+                &context_sha256_hex("an identity sentence"),
+            );
+        }
+        assert!(has_complete_embeddings(&db, "book", &test_source("model")).unwrap());
+    }
+
+    #[test]
+    fn switching_embedding_model_does_not_clear_the_context_line() {
+        // Invalidation matrix row 1: changing the embedding model must force
+        // a recompute of the vector, but the identity sentence itself — a
+        // chat-model artifact, unrelated to which embedding model is
+        // configured — must survive untouched so it doesn't have to be
+        // regenerated (and repaid for) on every embedding-model switch.
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            insert_chunk(&conn, "chunk", Some("an identity sentence"));
+            insert_embedding(
+                &conn,
+                "chunk",
+                "old-model",
+                &context_sha256_hex("an identity sentence"),
+            );
+        }
+        assert!(!has_complete_embeddings(&db, "book", &test_source("new-model")).unwrap());
+        let conn = db.reader();
+        let context_line: String = conn
+            .query_row(
+                "SELECT context_line FROM book_chunks WHERE id = 'chunk'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(context_line, "an identity sentence");
     }
 }

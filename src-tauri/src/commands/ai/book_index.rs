@@ -207,6 +207,14 @@ pub async fn ai_update_book_index(
     let mut embeddings_updated = false;
     if status == grounding::index::IndexStatus::Ready {
         if let Some(source) = grounding::vector::source(&db, &secrets)? {
+            // Stage ② is a best-effort enhancement to stage ③'s input, not a
+            // precondition for it: a book with no identity sentences (switch
+            // off, no chat provider configured, a mid-book failure) must stay
+            // exactly as searchable as it is today, so its error is logged
+            // and swallowed rather than propagated.
+            if let Err(error) = grounding::context::ensure_context_lines(&app, &db, &secrets, &book_id).await {
+                log::warn!("grounding context line generation failed for {book_id}: {error}");
+            }
             let complete = grounding::vector::has_complete_embeddings(&db, &book_id, &source)?;
             if !complete {
                 grounding::vector::ensure_embeddings(&db, &book_id, &source).await?;

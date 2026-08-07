@@ -37,7 +37,7 @@ export default function DetailedHint({ hint, detail, className = "" }: DetailedH
           />
           {t("common.moreDetail")}
         </summary>
-        <p className="mt-1 text-[11px] leading-[1.55] text-text-muted">{detail}</p>
+        <p className="mt-1 whitespace-pre-line text-[11px] leading-[1.55] text-text-muted">{detail}</p>
       </details>
     </div>
   );
