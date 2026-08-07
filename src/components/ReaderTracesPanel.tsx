@@ -4,6 +4,7 @@ import BookmarksPanel from "./BookmarksPanel";
 import HighlightsPanel from "./HighlightsPanel";
 import DictionaryPanel from "./DictionaryPanel";
 import ReaderNotesRail from "./ReaderNotesRail";
+import ReaderXrayPanel from "./ReaderXrayPanel";
 import PanelTabs, { type PanelTab } from "./ui/PanelTabs";
 import type { TracesTab } from "../pages/reader/side-panel";
 
@@ -14,20 +15,26 @@ interface ReaderTracesPanelProps {
   highlightsProps: ComponentProps<typeof HighlightsPanel>;
   vocabProps: ComponentProps<typeof DictionaryPanel>;
   notesProps: ComponentProps<typeof ReaderNotesRail>;
+  xrayProps: ComponentProps<typeof ReaderXrayPanel>;
 }
 
 /**
  * 痕迹 (traces): the merger of what used to be separately-toggled panels —
- * bookmarks, highlights, vocab, notes — into one docked panel with tabs. Each
- * tab still mounts only its own component (unmounting the others), the same
- * "one active at a time" behavior they had before the merge.
+ * bookmarks, highlights, vocab, notes, context — into one docked panel with
+ * tabs. Each tab still mounts only its own component (unmounting the others),
+ * the same "one active at a time" behavior they had before the merge.
  *
- * The four are one flat row. Highlights previously sat in a second tab bar
+ * The five are one flat row. Highlights previously sat in a second tab bar
  * nested under bookmarks, so the panel showed "书签" containing "书签", and the
  * two stacked 45px bars cost as much vertical space as a list row. Flattening
  * removed both problems without having to invent a parent name for the pair.
+ *
+ * Context came last, from the AI panel. Unmounting it on a tab change is fine
+ * and deliberate: its safe-scope results are memoized in a module-level cache
+ * inside the panel, so reopening the tab on the same subject restores it
+ * without another AI call.
  */
-export default function ReaderTracesPanel({ tab, onTabChange, bookmarksProps, highlightsProps, vocabProps, notesProps }: ReaderTracesPanelProps) {
+export default function ReaderTracesPanel({ tab, onTabChange, bookmarksProps, highlightsProps, vocabProps, notesProps, xrayProps }: ReaderTracesPanelProps) {
   const { t } = useTranslation();
 
   const tabs: readonly PanelTab<TracesTab>[] = [
@@ -35,6 +42,7 @@ export default function ReaderTracesPanel({ tab, onTabChange, bookmarksProps, hi
     { id: "highlights", label: t("reader.traces.tab.highlights") },
     { id: "vocab", label: t("reader.traces.tab.vocab") },
     { id: "notes", label: t("reader.traces.tab.notes") },
+    { id: "xray", label: t("reader.traces.tab.xray") },
   ];
 
   return (
@@ -45,6 +53,7 @@ export default function ReaderTracesPanel({ tab, onTabChange, bookmarksProps, hi
         {tab === "highlights" && <HighlightsPanel {...highlightsProps} />}
         {tab === "vocab" && <DictionaryPanel {...vocabProps} />}
         {tab === "notes" && <ReaderNotesRail {...notesProps} />}
+        {tab === "xray" && <ReaderXrayPanel {...xrayProps} />}
       </div>
     </div>
   );

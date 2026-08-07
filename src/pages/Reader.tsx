@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import Button from "../components/ui/Button";
 import Toast from "../components/ui/Toast";
-import PanelTabs from "../components/ui/PanelTabs";
 import AiPanel from "../components/AiPanel";
 import ReaderTracesPanel from "../components/ReaderTracesPanel";
 import ReaderSettings from "../components/ReaderSettings";
@@ -95,7 +94,6 @@ import {
 } from "./reader/useFoliateAnnotations";
 import { useReadingHighlight } from "./reader/useReadingHighlight";
 import ReadingPlaybackBar from "../components/speech/ReadingPlaybackBar";
-import ReaderXrayCard from "../components/ReaderXrayCard";
 import { cancelSpeech } from "../components/speech/player";
 import type {
   FoliateView,
@@ -106,7 +104,7 @@ import { useFoliateView } from "./reader/useFoliateView";
 import { tocUnitKind } from "./reader/chapter-pagination";
 import { useReaderNavigation } from "./reader/useReaderNavigation";
 import { useJumpHistory } from "./reader/useJumpHistory";
-import { toggleSidePanel, type AiTab, type SidePanel, type TracesTab } from "./reader/side-panel";
+import { toggleSidePanel, type SidePanel, type TracesTab } from "./reader/side-panel";
 import {
   fileStatusExplainsFailure,
   toReaderOpenError,
@@ -198,7 +196,6 @@ export default function Reader() {
   const [loading, setLoading] = useState(true);
   const [sidePanel, setSidePanel] = useState<SidePanel>(null);
   const [tracesTab, setTracesTab] = useState<TracesTab>("bookmarks");
-  const [aiTab, setAiTab] = useState<AiTab>("chat");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tocOpen, setTocOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -206,7 +203,6 @@ export default function Reader() {
   const [xrayInteraction, setXrayInteraction] = useState<ReaderInteraction | null>(null);
   useEffect(() => {
     setTracesTab("bookmarks");
-    setAiTab("chat");
     setXrayInteraction(null);
   }, [bookId]);
   // Bumped on every ⌘F, even while the panel is already open, so it re-focuses/re-selects the input.
@@ -1249,7 +1245,6 @@ export default function Reader() {
       void navigator.clipboard.writeText(interaction.text);
     } else if (actionId === "ask_ai") {
       setAiContext({ text: interaction.text, cfi: interaction.location });
-      setAiTab("chat");
       setSidePanel("ai");
     } else if (actionId === "collect" && bookId) {
       void collectWord({
@@ -1404,7 +1399,6 @@ export default function Reader() {
     currentCfiRef,
     setSidePanel,
     setTracesTab,
-    setAiTab,
     setInitialChatId,
   });
 
@@ -1431,19 +1425,13 @@ export default function Reader() {
 
   // Toolbar buttons toggle their own panel open/closed. Traces reopens on
   // whichever of its tabs was last active (tracesTab persists across
-  // close/reopen); AI always reopens on chat — X-Ray is reached through the
-  // selection menu, not the toolbar, so the toolbar's own meaning stays
-  // "open the conversation".
+  // close/reopen); the AI panel has only the conversation to reopen on.
   const toggleTracesPanel = () => {
     setSidePanel((prev) => toggleSidePanel(prev, "traces"));
   };
 
   const toggleAiPanel = () => {
-    setSidePanel((prev) => {
-      const next = toggleSidePanel(prev, "ai");
-      if (next === "ai") setAiTab("chat");
-      return next;
-    });
+    setSidePanel((prev) => toggleSidePanel(prev, "ai"));
   };
 
   /** Forces the traces panel open on a specific tab — used by non-toolbar entry points (a vocab marker click, "add note" from the selection menu). */
@@ -1452,9 +1440,8 @@ export default function Reader() {
     setSidePanel("traces");
   };
 
-  /** Forces the AI panel open on the chat tab — used by every "ask AI" entry point outside the toolbar. */
+  /** Forces the AI panel open — used by every "ask AI" entry point outside the toolbar. */
   const openAiChat = () => {
-    setAiTab("chat");
     setSidePanel("ai");
   };
 
@@ -1526,7 +1513,6 @@ export default function Reader() {
     const openChat = state?.openChat || searchParams.get("openChat") === "true";
     const chatId = state?.chatId || searchParams.get("chatId") || undefined;
     if (!openChat || !bookReady) return;
-    setAiTab("chat");
     setSidePanel("ai");
     if (chatId) setInitialChatId(chatId);
     if (!isStandaloneWindow) navigate(location.pathname, { replace: true });
@@ -1795,12 +1781,12 @@ export default function Reader() {
     setSearchFocusToken((token) => token + 1);
   };
 
-  /** X-Ray's primary entry point: the selection menu's "查看语境解释". Opens the AI panel on its X-Ray tab with the interaction that seeds the card. */
-  const openAiXray = (interaction: ReaderInteraction) => {
+  /** X-Ray's primary entry point: the selection menu's "查看语境解释". Opens the traces panel on its 语境 tab with the interaction that seeds the answer. */
+  const openXray = (interaction: ReaderInteraction) => {
     setContextMenu(null);
     setXrayInteraction(interaction);
-    setAiTab("xray");
-    setSidePanel("ai");
+    setTracesTab("xray");
+    setSidePanel("traces");
   };
 
   return (
@@ -2301,18 +2287,12 @@ export default function Reader() {
           style={{ width: panelWidth }}
           onPointerDownCapture={blockPageTurnKeyboard}
         >
+          {/* No tab bar: X-Ray moved to the traces panel, so the conversation is
+              the only thing in here and a one-tab switcher would be a label
+              pretending to be a control. The panel gains back its 45px. */}
           <div className={sidePanel === "ai" ? "flex h-full flex-col" : "hidden"}>
-            <PanelTabs
-              tabs={[
-                { id: "chat", label: t("chats.title") },
-                { id: "xray", label: t("readerXray.title") },
-              ]}
-              active={aiTab}
-              onChange={setAiTab}
-              label={t("reader.aiAssistant")}
-            />
             <div className="relative flex-1 min-h-0">
-              <div className={aiTab === "chat" ? "h-full" : "hidden"}>
+              <div className="h-full">
                 <AiPanel
                   bookId={bookId}
                   bookTitle={book.title}
@@ -2333,18 +2313,6 @@ export default function Reader() {
                   onSelectText={openPanelSelectionMenu}
                 />
               </div>
-              {aiTab === "xray" && bookId && book && (
-                <ReaderXrayCard
-                  bookId={bookId}
-                  interaction={xrayInteraction}
-                  getCurrentLocation={() => currentCfiRef.current}
-                  currentChapter={currentChapterIndex >= 0 ? chapters[currentChapterIndex]?.title : undefined}
-                  progress={progress}
-                  onClose={() => { setAiTab("chat"); setXrayInteraction(null); }}
-                  onNavigate={(source) => navigateToSource(source)}
-                  onNavigateCurrent={navigateToCurrentXrayOccurrence}
-                />
-              )}
             </div>
           </div>
           {supportsCfiNavigation && sidePanel === "traces" && bookId && (
@@ -2395,6 +2363,16 @@ export default function Reader() {
                 resolveAnchorPosition: resolveNoteAnchorPosition,
                 resolveAnchorPage: resolveNoteAnchorPage,
                 layoutKey: `${currentSectionIndex}:${progress}:${pageInfo?.current ?? ""}`,
+              }}
+              xrayProps={{
+                bookId,
+                interaction: xrayInteraction,
+                getCurrentLocation: () => currentCfiRef.current,
+                currentChapter: currentChapterIndex >= 0 ? chapters[currentChapterIndex]?.title : undefined,
+                progress,
+                onClear: () => setXrayInteraction(null),
+                onNavigate: (source) => navigateToSource(source),
+                onNavigateCurrent: navigateToCurrentXrayOccurrence,
               }}
             />
           )}
@@ -2452,7 +2430,7 @@ export default function Reader() {
             openAiChat();
             setContextMenu(null);
           }}
-          onXray={contextMenu.location ? () => openAiXray(contextMenu) : undefined}
+          onXray={contextMenu.location ? () => openXray(contextMenu) : undefined}
           onLookup={() => {
             openLearningCard({ ...contextMenu, trigger: "word-quick-lookup" });
             setContextMenu(null);
