@@ -33,3 +33,7 @@ __pycache__/
 # 唯一的工作目录是这个仓库本身 —— 见 AGENTS.md。这条规则只是防止
 # 这类目录被误提交，不是认可它们的存在。
 .codex-*/
+
+# 推广样张用的公版书原文件。体积大、可随时从 standardebooks.org 重新下载，
+# 不进仓库；从中抽取的封面图会另外提交。见 harness/books/README.md。
+harness/books/*.epub
