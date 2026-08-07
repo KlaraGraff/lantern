@@ -1,6 +1,7 @@
 import type { ContinuousReadSentence, ContinuousReadSource } from "../../components/continuous-read-aloud";
 import { sentenceRangesInRange } from "../../components/reader-interaction";
 import type { FoliateView } from "./foliate-types";
+import { decideFollow, isReaderRelocation, type SentencePlacement } from "./read-aloud-follow";
 import { pickReadAloudStart } from "./read-aloud-start";
 
 interface ReadAloudSection {
@@ -36,11 +37,62 @@ export function createFoliateContinuousSource(
    * in the run is revealed normally.
    */
   let holdPositionFor: string | null = null;
+  /**
+   * Set once the reader moves the page themselves during a run, and cleared the
+   * moment playback lands back on what they are looking at. While it is set,
+   * `reveal` reports where the voice is but never moves the view — the app does
+   * not take the book out of the reader's hands.
+   */
+  let readerTurnedAway = false;
+  /** The renderer the manual-turn listener is already installed on. */
+  let watched: EventTarget | null = null;
 
   const view = () => {
     const current = viewRef.current;
     if (!current) throw new Error("READER_NOT_READY");
     return current;
+  };
+
+  /**
+   * Listens on the paginator rather than the view element: only the paginator's
+   * own `relocate` carries `reason`, which is the sole way to tell the reader
+   * turning a page from this source navigating to a sentence (or from a reflow
+   * re-anchoring the same one).
+   */
+  const watchForReaderTurns = (currentView: FoliateView) => {
+    const renderer = currentView.renderer as EventTarget | undefined | null;
+    if (!renderer || renderer === watched) return;
+    watched = renderer;
+    renderer.addEventListener("relocate", (event: Event) => {
+      const { reason } = (event as CustomEvent<{ reason?: unknown }>).detail ?? {};
+      if (isReaderRelocation(reason)) readerTurnedAway = true;
+    });
+  };
+
+  /**
+   * Where a sentence sits relative to the page on screen, or `null` when the
+   * question cannot be answered against the live document — a section that is
+   * not loaded, or a visible range measured in a document that has since been
+   * replaced.
+   */
+  const placeOnPage = (currentView: FoliateView, sentenceId: string): SentencePlacement | null => {
+    try {
+      const resolved = currentView.resolveCFI(sentenceId);
+      const loaded = currentView.renderer?.getContents?.()
+        ?.find((content: { index?: number }) => content.index === resolved.index) as
+          { doc?: Document } | undefined;
+      const doc = loaded?.doc;
+      if (!doc) return null;
+      const page = currentView.lastLocation?.range as Range | undefined;
+      if (!page?.startContainer || page.startContainer.ownerDocument !== doc) return null;
+      const target = resolved.anchor(doc);
+      return {
+        startVsVisibleEnd: target.compareBoundaryPoints(Range.END_TO_START, page),
+        endVsVisibleStart: target.compareBoundaryPoints(Range.START_TO_END, page),
+      };
+    } catch {
+      return null;
+    }
   };
 
   const sections = () => (view().book?.sections ?? []) as ReadAloudSection[];
@@ -117,9 +169,16 @@ export function createFoliateContinuousSource(
   };
 
   return {
+    refocus() {
+      // The reader asked for a particular sentence, so the page owes them that
+      // sentence even if they had paged away from the voice earlier.
+      readerTurnedAway = false;
+    },
     async first(fromBeginning = false) {
       const currentView = view();
+      watchForReaderTurns(currentView);
       holdPositionFor = null;
+      readerTurnedAway = false;
       if (fromBeginning) {
         const firstLinear = sections().findIndex((section) => section.linear !== "no");
         const startIndex = firstLinear >= 0 ? firstLinear : 0;
@@ -159,28 +218,23 @@ export function createFoliateContinuousSource(
     },
     async reveal(sentence) {
       const currentView = view();
+      watchForReaderTurns(currentView);
       if (holdPositionFor === sentence.id) {
         // The reader is already looking at the middle of this sentence; its start
         // is on an earlier page, so navigating to it would move them backwards.
         holdPositionFor = null;
+        readerTurnedAway = false;
         return;
       }
       currentView.deselect?.();
-      const resolved = currentView.resolveCFI(sentence.id);
-      const visible = currentView.renderer?.getContents?.()
-        ?.find((content: { index?: number }) => content.index === resolved.index) as { doc?: Document } | undefined;
-      if (visible?.doc) {
-        try {
-          const rect = resolved.anchor(visible.doc).getBoundingClientRect();
-          const width = visible.doc.defaultView?.innerWidth ?? visible.doc.documentElement.clientWidth;
-          const height = visible.doc.defaultView?.innerHeight ?? visible.doc.documentElement.clientHeight;
-          if (rect.bottom > 0 && rect.right > 0 && rect.top < height && rect.left < width) {
-            return;
-          }
-        } catch {
-          // Navigate below when the live document cannot resolve this CFI.
-        }
+      const decision = decideFollow(placeOnPage(currentView, sentence.id), readerTurnedAway);
+      if (decision === "visible") {
+        // Playback is on the page the reader is looking at, whether they put it
+        // there or the last reveal did. Either way the two are together again.
+        readerTurnedAway = false;
+        return;
       }
+      if (decision === "hold") return;
       const revealed = await currentView.goTo(sentence.id, { history: false });
       if (!revealed) throw new Error("CONTINUOUS_REVEAL_FAILED");
     },

@@ -45,11 +45,25 @@ export interface ContinuousReadSource {
   previous(before: ContinuousReadSentence): Promise<ContinuousReadSentence | null>;
   /** Turns the page/section only when this particular sentence becomes due. */
   reveal(sentence: ContinuousReadSentence): Promise<void>;
+  /**
+   * The reader asked for a specific sentence rather than letting the run carry
+   * them. A source that stops following after a manual page turn takes this as
+   * permission to follow again — the request was for that sentence's page.
+   */
+  refocus?(): void;
 }
 
 export interface ContinuousReadPlayer {
   /** Resolves only after the sentence ended naturally. */
   play(sentence: ContinuousReadSentence, rate: number): Promise<void>;
+  /**
+   * Starts fetching a sentence's audio before it is due, so the seam between it
+   * and the sentence still playing costs no synthesis round trip. At most one
+   * sentence is ever warmed, and only while the one before it is speaking — the
+   * same "fetch one ahead, and only once playback is heading there" rule the
+   * chunk queue already follows on a metered provider.
+   */
+  prefetch?(sentence: ContinuousReadSentence, rate: number): void;
   pause(): void;
   resume(): void;
   stop(): void;
@@ -301,6 +315,29 @@ export class ContinuousReadAloudController {
     for (const listener of this.listeners) listener(next);
   }
 
+  /**
+   * Looks the next sentence up, and starts fetching its audio, while the current
+   * one is still speaking.
+   *
+   * Doing either of these after the voice falls silent is what made the gap
+   * between sentences audible: segmenting the next section and then waiting out
+   * a synthesis round trip are both several hundred milliseconds of nothing.
+   *
+   * The returned promise is the source's own, so a failing `next` still reaches
+   * the loop's error branch; the handler attached here only keeps an abandoned
+   * lookahead from surfacing as an unhandled rejection.
+   */
+  private lookAhead(after: ContinuousReadSentence, token: number): Promise<ContinuousReadSentence | null> {
+    const pending = this.source.next(after);
+    pending.then(
+      (next) => {
+        if (next && token === this.generation) this.player.prefetch?.(next, this.state.rate);
+      },
+      () => {},
+    );
+    return pending;
+  }
+
   private async playFrom(sentence: ContinuousReadSentence, token: number): Promise<void> {
     let current: ContinuousReadSentence | null = sentence;
     while (current && token === this.generation) {
@@ -324,8 +361,12 @@ export class ContinuousReadAloudController {
         this.playerActive = true;
         this.sampleTainted = false;
         const startedAt = this.now();
+        /** The sentence after this one, looked up and synthesised while it plays. */
+        let upcoming: Promise<ContinuousReadSentence | null>;
         try {
-          await this.player.play(current, this.state.rate);
+          const playing = this.player.play(current, this.state.rate);
+          upcoming = this.lookAhead(current, token);
+          await playing;
         } finally {
           this.playerActive = false;
         }
@@ -336,13 +377,8 @@ export class ContinuousReadAloudController {
           const pace = updatePace(this.state.pace, current.text.length, this.now() - startedAt, this.state.rate);
           if (pace !== this.state.pace) this.publish({ ...this.state, pace });
         }
-      } catch {
-        if (token === this.generation) this.publish({ ...this.state, status: "error", current, collapsed: false });
-        return;
-      }
-      if (token !== this.generation || this.pauseRequested) return;
-      try {
-        current = await this.source.next(current);
+        if (token !== this.generation || this.pauseRequested) return;
+        current = await upcoming;
         if (token !== this.generation) return;
         if (current && this.pauseRequested) {
           this.publish({ ...this.state, status: "paused", current });
@@ -430,6 +466,9 @@ export class ContinuousReadAloudController {
     const token = ++this.generation;
     this.pauseRequested = false;
     this.player.stop();
+    // Pressing skip is a request for a sentence, not just for its audio: a
+    // source that had stopped following the reader's page owes them this one.
+    this.source.refocus?.();
     this.publish({ ...this.state, status: "loading", progress: null });
     try {
       const target = direction === "previous"

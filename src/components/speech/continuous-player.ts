@@ -1,4 +1,5 @@
 import { planSpeechPlayback } from "../../hooks/useSpeech";
+import { createSentencePrefetch } from "./continuous-prefetch";
 import {
   cancelSpeech,
   pauseSpeech,
@@ -9,8 +10,16 @@ import {
 } from "./player";
 import { speechSettings } from "./settings-store";
 import type { ContinuousReadPlayer, ContinuousReadSentence } from "../continuous-read-aloud";
+import type { SpeechSettings } from "./types";
 
 export function createContinuousSpeechPlayer(ownerId: string): ContinuousReadPlayer {
+  const ahead = createSentencePrefetch();
+  const planFor = (sentence: ContinuousReadSentence, settings: SpeechSettings, rate: number) =>
+    () => planSpeechPlayback(sentence.text, "passage", settings, {
+      language: sentence.language,
+      rate,
+    });
+
   return {
     play(sentence: ContinuousReadSentence, rate: number) {
       return new Promise<void>((resolve, reject) => {
@@ -37,18 +46,24 @@ export function createContinuousSpeechPlayer(ownerId: string): ContinuousReadPla
           }
         };
         const unsubscribe = subscribeToPlayer(watch);
+        const settings = speechSettings();
         void speak(
           ownerId,
-          async () => planSpeechPlayback(sentence.text, "passage", speechSettings(), {
-            language: sentence.language,
-            rate,
-          }),
+          async () => ahead.take({ id: sentence.id, settings }, planFor(sentence, settings, rate), rate),
           { detached: true },
         ).catch((error) => settle(error instanceof Error ? error : new Error(String(error))));
       });
     },
+    prefetch(sentence: ContinuousReadSentence, rate: number) {
+      const settings = speechSettings();
+      ahead.warm({ id: sentence.id, settings }, planFor(sentence, settings, rate));
+    },
     pause: pauseSpeech,
     resume: resumeSpeech,
+    // Deliberately not dropping the warmed clip: `stop` is also how skipping
+    // silences the sentence it is leaving, and the sentence it is skipping *to*
+    // is usually the one already warmed. Throwing it away there would spend a
+    // second request on audio that had already been paid for.
     stop: cancelSpeech,
   };
 }

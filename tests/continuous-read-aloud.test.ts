@@ -542,3 +542,277 @@ test("a sentence the listener paused through is timed but not counted", async ()
   await run;
   assert.equal(controller.snapshot().pace, null, "a ten-minute pause is not a ten-minute sentence");
 });
+
+// --- pipelining across the seam between sentences -------------------------
+//
+// The gap the reader hears is everything that used to happen only after the
+// voice fell silent: looking the next sentence up (which at a section boundary
+// segments a whole chapter) and then waiting out a synthesis round trip. These
+// cover that both now start while the previous sentence is still speaking, and
+// that nothing is warmed for audio the run is no longer heading towards.
+
+/**
+ * A run whose playback and lookups are all held open, so the order of what
+ * happens across a sentence boundary is observable rather than inferred.
+ */
+function pipeline(options: {
+  /** Sentence ids whose `play` rejects instead of finishing. */
+  failsToSpeak?: string[];
+  /** Sentence ids whose `next` lookup rejects. */
+  failsToAdvance?: string[];
+  /**
+   * Hold every lookup open until the test releases it, which is what makes the
+   * order of events around a sentence boundary observable. Tests that only care
+   * about where playback ends up leave it off and let lookups answer at once.
+   */
+  deferLookups?: boolean;
+} = {}) {
+  const events: string[] = [];
+  const finishers = new Map<string, () => void>();
+  const advancers = new Map<string, () => void>();
+  const after = (id: string) => sentences[sentences.findIndex((s) => s.id === id) + 1] ?? null;
+
+  const source = {
+    first: async () => sentences[0],
+    next: async (from: ContinuousReadSentence) => {
+      events.push(`next:${from.id}`);
+      if (options.deferLookups) {
+        await new Promise<void>((resolve) => advancers.set(from.id, resolve));
+      }
+      if (options.failsToAdvance?.includes(from.id)) throw new Error("SECTION_LOAD_FAILED");
+      return after(from.id);
+    },
+    previous: async (from: ContinuousReadSentence) =>
+      sentences[sentences.findIndex((s) => s.id === from.id) - 1] ?? null,
+    reveal: async (sentence: ContinuousReadSentence) => { events.push(`reveal:${sentence.id}`); },
+    refocus: () => { events.push("refocus"); },
+  };
+  const player = {
+    play: async (sentence: ContinuousReadSentence) => {
+      events.push(`play:${sentence.id}`);
+      await new Promise<void>((resolve) => finishers.set(sentence.id, resolve));
+      if (options.failsToSpeak?.includes(sentence.id)) throw new Error("CONTINUOUS_SPEECH_FAILED");
+      events.push(`ended:${sentence.id}`);
+    },
+    prefetch: (sentence: ContinuousReadSentence, rate: number) => {
+      events.push(`prefetch:${sentence.id}@${rate}`);
+    },
+    pause() { events.push("pause"); },
+    resume() { events.push("resume"); },
+    stop() { events.push("stop"); },
+  };
+  return {
+    controller: new ContinuousReadAloudController(source, player),
+    events,
+    /** Ends the audio of `id`. */
+    finish: (id: string) => finishers.get(id)!(),
+    /** Lets the lookup of what follows `id` complete. */
+    resolveLookup: (id: string) => advancers.get(id)!(),
+    /**
+     * Releases every held promise. Playback here never ends on its own, so a
+     * test that stops a run mid-sentence has to let that sentence's `play`
+     * settle before the run's own promise can.
+     */
+    release: () => {
+      for (const resolve of advancers.values()) resolve();
+      for (const resolve of finishers.values()) resolve();
+    },
+  };
+}
+
+test("the next sentence is looked up and synthesised while the current one still speaks", async () => {
+  const { controller, events, finish, resolveLookup, release } = pipeline({ deferLookups: true });
+  const run = controller.start();
+  await tick();
+  // `stop` is `start` clearing whatever the shared player was doing.
+  assert.deepEqual(events, ["stop", "reveal:s1", "play:s1", "next:s1"], "the lookup starts with the audio");
+
+  resolveLookup("s1");
+  await tick();
+  assert.ok(events.includes("prefetch:s2@1"), "and its audio is fetched before the voice falls silent");
+  assert.ok(!events.includes("play:s2"), "without playing it early");
+
+  finish("s1");
+  await tick();
+  // Nothing between the two sentences: no lookup, no round trip, no silence.
+  assert.deepEqual(events.slice(events.indexOf("ended:s1")), ["ended:s1", "reveal:s2", "play:s2", "next:s2"]);
+  controller.stop();
+  release();
+  await run;
+});
+
+test("only one sentence is ever warmed ahead of the voice", async () => {
+  const { controller, events, finish, resolveLookup, release } = pipeline({ deferLookups: true });
+  const run = controller.start();
+  await tick();
+  resolveLookup("s1");
+  await tick();
+  assert.deepEqual(
+    events.filter((event) => event.startsWith("prefetch")),
+    ["prefetch:s2@1"],
+    "while s1 speaks, only s2 is bought",
+  );
+  finish("s1");
+  await tick();
+  resolveLookup("s2");
+  await tick();
+  assert.deepEqual(
+    events.filter((event) => event.startsWith("prefetch")),
+    ["prefetch:s2@1", "prefetch:s3@1"],
+    "s3 is warmed only once s2 is the sentence being spoken",
+  );
+  controller.stop();
+  release();
+  await run;
+});
+
+test("the sentence that was looked up ahead is the one played, not looked up twice", async () => {
+  const { controller, events, finish, resolveLookup } = pipeline({ deferLookups: true });
+  const run = controller.start();
+  await tick();
+  for (const id of ["s1", "s2", "s3"]) {
+    resolveLookup(id);
+    await tick();
+    finish(id);
+    await tick();
+  }
+  await run;
+  assert.deepEqual(events.filter((event) => event.startsWith("next:")), ["next:s1", "next:s2", "next:s3"]);
+  assert.equal(controller.snapshot().status, "finished");
+});
+
+test("a sentence warmed at the old rate is re-warmed when the reader changes speed", async () => {
+  const { controller, events, resolveLookup, release } = pipeline({ deferLookups: true });
+  const run = controller.start();
+  await tick();
+  controller.setRate(1.5);
+  resolveLookup("s1");
+  await tick();
+  assert.ok(events.includes("prefetch:s2@1.5"), "the warm request carries the rate now in force");
+  controller.stop();
+  release();
+  await run;
+});
+
+test("stopping mid-sentence does not fetch audio the run will never reach", async () => {
+  const { controller, events, release } = pipeline({ deferLookups: true });
+  const run = controller.start();
+  await tick();
+  controller.stop();
+  // The lookup was already in flight when stop landed; its answer arrives late.
+  release();
+  await tick();
+  await run;
+  assert.deepEqual(events.filter((event) => event.startsWith("prefetch")), []);
+});
+
+test("skipping asks the source to follow the reader again, and plays on from there", async () => {
+  const { controller, events, finish, release } = pipeline();
+  const run = controller.start();
+  await tick();
+  const skip = controller.skip("next");
+  finish("s1");
+  await tick();
+  assert.ok(events.includes("play:s2"));
+  assert.ok(events.indexOf("refocus") < events.indexOf("play:s2"), "refocus precedes the sentence it is for");
+  controller.stop();
+  release();
+  await skip;
+  await run;
+});
+
+test("skipping backwards also re-follows, and does not consult the forward lookup", async () => {
+  const { controller, events, finish, release } = pipeline();
+  const run = controller.start();
+  await tick();
+  finish("s1");
+  await tick();
+  const before = events.length;
+  const skip = controller.skip("previous");
+  finish("s2");
+  await tick();
+  const during = events.slice(before);
+  assert.ok(during.includes("refocus"));
+  assert.ok(during.includes("play:s1"));
+  // Reading resumes forward from s1, so s2 is looked up again as its successor —
+  // what must not happen is the skip itself answering from the forward lookup.
+  assert.ok(!during.includes("next:s2"), "going back must not be served by the forward lookup");
+  assert.equal(during.indexOf("next:s1") > during.indexOf("play:s1"), true);
+  controller.stop();
+  release();
+  await skip;
+  await run;
+});
+
+test("pausing while a sentence plays never lets the sentence warmed behind it speak", async () => {
+  const { controller, events, finish, resolveLookup, release } = pipeline({ deferLookups: true });
+  const run = controller.start();
+  await tick();
+  resolveLookup("s1");
+  await tick();
+  controller.pause();
+  finish("s1");
+  await run;
+  assert.equal(controller.snapshot().status, "paused");
+  assert.ok(!events.includes("play:s2"), "a paused run does not speak the sentence it warmed");
+
+  controller.resume();
+  await tick();
+  assert.equal(controller.snapshot().status, "playing");
+  controller.stop();
+  release();
+});
+
+test("a sentence that fails to synthesise stops the run rather than skipping past it", async () => {
+  const { controller, events, finish, resolveLookup } = pipeline({ failsToSpeak: ["s2"], deferLookups: true });
+  const run = controller.start();
+  await tick();
+  resolveLookup("s1");
+  await tick();
+  finish("s1");
+  await tick();
+  finish("s2");
+  await run;
+  assert.equal(controller.snapshot().status, "error");
+  assert.equal(controller.snapshot().current?.id, "s2");
+  assert.ok(!events.includes("play:s3"), "the run stops at the failure, it does not read on");
+});
+
+test("a lookup that fails while the voice is still speaking surfaces as an error, not a crash", async () => {
+  const rejections: unknown[] = [];
+  const onRejection = (reason: unknown) => rejections.push(reason);
+  process.on("unhandledRejection", onRejection);
+  try {
+    const { controller, finish, resolveLookup } = pipeline({ failsToAdvance: ["s1"], deferLookups: true });
+    const run = controller.start();
+    await tick();
+    // The section after this sentence fails to load while its audio still plays.
+    resolveLookup("s1");
+    await tick();
+    finish("s1");
+    await run;
+    assert.equal(controller.snapshot().status, "error");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  } finally {
+    process.off("unhandledRejection", onRejection);
+  }
+  assert.deepEqual(rejections, [], "the pre-started lookup must not reject into the void");
+});
+
+test("a lookup abandoned by a stop never becomes an unhandled rejection", async () => {
+  const rejections: unknown[] = [];
+  const onRejection = (reason: unknown) => rejections.push(reason);
+  process.on("unhandledRejection", onRejection);
+  try {
+    const { controller, release } = pipeline({ failsToAdvance: ["s1"], deferLookups: true });
+    const run = controller.start();
+    await tick();
+    controller.stop();
+    release();
+    await run;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  } finally {
+    process.off("unhandledRejection", onRejection);
+  }
+  assert.deepEqual(rejections, []);
+});
