@@ -480,6 +480,34 @@ pub async fn query_embedding(source: &EmbeddingSource, query: String) -> AppResu
         .ok_or_else(|| AppError::Ai("AI_EMBEDDING_RESPONSE_INVALID".to_string()))
 }
 
+/// Fills in the path when the reader pasted a server address instead of an
+/// endpoint.
+///
+/// LM Studio and Ollama both advertise a bare `http://host:port`, and that is
+/// what lands in this box. But unlike the chat model — which takes a base URL
+/// and builds the path itself through `compat_endpoint` — this endpoint is
+/// POSTed verbatim, so a bare address hits `/`. LM Studio answers that with a
+/// 200 carrying no vectors, which reads to the reader as "cannot connect" when
+/// the connection was in fact fine. Bringing the two fields into line removes
+/// the trap.
+///
+/// Only a URL with nothing to say about its path is touched. Anything longer
+/// was typed deliberately — a gateway route, an Azure deployment — and guessing
+/// at it would break setups that work today.
+fn normalize_embedding_endpoint(endpoint: &str) -> String {
+    let trimmed = endpoint.trim();
+    let Ok(url) = reqwest::Url::parse(trimmed) else {
+        return trimmed.to_string();
+    };
+    if url.query().is_some() || url.fragment().is_some() {
+        return trimmed.to_string();
+    }
+    match url.path().trim_end_matches('/') {
+        "" | "/v1" => crate::ai::compat_endpoint(trimmed, "embeddings"),
+        _ => trimmed.to_string(),
+    }
+}
+
 pub async fn probe_and_save(
     db: &Db,
     secrets: &Secrets,
@@ -487,7 +515,7 @@ pub async fn probe_and_save(
     model: String,
     api_key: Option<String>,
 ) -> AppResult<EmbeddingProbeResult> {
-    let endpoint = endpoint.trim().to_string();
+    let endpoint = normalize_embedding_endpoint(&endpoint);
     let model = model.trim().to_string();
     let parsed = reqwest::Url::parse(&endpoint)
         .map_err(|_| AppError::Other("AI_EMBEDDING_CONFIG_INVALID".to_string()))?;
@@ -661,6 +689,45 @@ pub fn hybrid_retrieve(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pasted_server_address_grows_the_embeddings_path() {
+        // What LM Studio puts on screen as "Reachable at", and what Ollama's
+        // own docs lead with.
+        assert_eq!(
+            normalize_embedding_endpoint("http://127.0.0.1:1234"),
+            "http://127.0.0.1:1234/v1/embeddings"
+        );
+        assert_eq!(
+            normalize_embedding_endpoint("  http://127.0.0.1:1234/  "),
+            "http://127.0.0.1:1234/v1/embeddings"
+        );
+        assert_eq!(
+            normalize_embedding_endpoint("http://localhost:11434/v1"),
+            "http://localhost:11434/v1/embeddings"
+        );
+    }
+
+    #[test]
+    fn an_endpoint_that_already_names_a_path_is_left_alone() {
+        for endpoint in [
+            "http://127.0.0.1:1234/v1/embeddings",
+            "https://api.openai.com/v1/embeddings",
+            // A gateway route we would only ever guess wrong at.
+            "https://gateway.example.com/proxy/openai/v1/embeddings",
+            "https://x.openai.azure.com/openai/deployments/y/embeddings?api-version=2023-05-15",
+        ] {
+            assert_eq!(normalize_embedding_endpoint(endpoint), endpoint);
+        }
+    }
+
+    #[test]
+    fn an_unparseable_endpoint_survives_to_be_rejected_downstream() {
+        // `probe_and_save` reports AI_EMBEDDING_CONFIG_INVALID for these; the
+        // normalizer must not swallow them or paper over them with a path.
+        assert_eq!(normalize_embedding_endpoint(" not a url "), "not a url");
+        assert_eq!(normalize_embedding_endpoint(""), "");
+    }
 
     #[test]
     fn rrf_promotes_a_chunk_returned_by_both_retrievers() {
