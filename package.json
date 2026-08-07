@@ -10,6 +10,7 @@
     "check:reader-compat": "node scripts/check-reader-compat.mjs",
     "check:docs": "node scripts/check-doc-links.mjs",
     "test:unit": "node --experimental-strip-types --test tests/*.test.ts",
+    "smoke": "vite --config vite.config.harness.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "package": "tauri build",
