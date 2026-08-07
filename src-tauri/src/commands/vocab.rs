@@ -71,7 +71,7 @@ pub struct VocabStats {
     pub due_for_review: i64,
 }
 
-fn row_to_vocab(row: &rusqlite::Row) -> rusqlite::Result<VocabWord> {
+pub(crate) fn row_to_vocab(row: &rusqlite::Row) -> rusqlite::Result<VocabWord> {
     Ok(VocabWord {
         id: row.get(0)?,
         book_id: row.get(1)?,
@@ -127,7 +127,7 @@ fn row_to_vocab_with_book(row: &rusqlite::Row) -> rusqlite::Result<VocabWord> {
     })
 }
 
-const SELECT_COLS: &str = "id, book_id, word, definition, context_sentence, cfi, mastery, review_count, next_review_at, created_at, updated_at, context_explanation, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version, mastery_source, mastery_reason, list_status";
+pub(crate) const SELECT_COLS: &str = "id, book_id, word, definition, context_sentence, cfi, mastery, review_count, next_review_at, created_at, updated_at, context_explanation, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version, mastery_source, mastery_reason, list_status";
 
 #[cfg(test)]
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
@@ -606,6 +606,73 @@ fn validate_mastery(mastery: &str) -> AppResult<()> {
             "VOCAB_MASTERY_INVALID".to_string(),
         ))
     }
+}
+
+/// Rewrite one saved word's `definition` and publish the change.
+///
+/// The single write both definition rewriters go through —
+/// `vocab_regloss::regenerate_vocab_definition` (the reader's button) and
+/// `vocab_gloss_backfill` (the automatic repair) — so the two cannot drift,
+/// and so the rule a receiving device replays in
+/// `sync::merge::apply_vocab_definition` is literally the same code.
+///
+/// Returns `false` when the row is gone, which is the only way this writes
+/// nothing.
+///
+/// **The LWW clock moves.** Both writers used to leave `updated_at` and
+/// `updated_by_device` alone, on the stated grounds that the clock governs
+/// the columns that sync and `definition` was not one of them. That premise
+/// is what changed: `definition` now travels on `vocab.definition.set` and is
+/// carried by snapshots, so a device that publishes a new one and did not
+/// stamp the row would be advertising a change its own clock says never
+/// happened — a peer's older snapshot would beat it and hand the stale text
+/// straight back. The cost is the ordinary cost of one clock per row: a
+/// definition change made here and a mastery change made elsewhere inside the
+/// same sync window are ordered against each other, and the older one loses.
+/// That is the same trade `vocab.list_status.set` already makes against the
+/// same clock, and the alternative — a second clock for one column — is a
+/// migration plus a parallel convention in every merge and snapshot path.
+pub(crate) fn set_definition(
+    db: &Db,
+    sync: &SyncWriter,
+    id: &str,
+    definition: &str,
+    now: i64,
+) -> AppResult<bool> {
+    let device = sync.self_device().to_string();
+    sync.with_tx(db, now, |tx, events| {
+        let Some((current, explanation)) = tx
+            .query_row(
+                "SELECT definition, context_explanation FROM vocab_words WHERE id = ?1",
+                params![id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+            )
+            .optional()?
+        else {
+            return Ok(false);
+        };
+        // Read inside the transaction that writes, so "is the explanation
+        // column empty" is decided by the row the write lands on rather than
+        // by a value read before the AI call.
+        let displaced = crate::commands::vocab_gloss_backfill::displaced_explanation(
+            &current,
+            explanation.as_deref(),
+        );
+        tx.execute(
+            "UPDATE vocab_words
+             SET definition = ?1,
+                 context_explanation = COALESCE(?2, context_explanation),
+                 updated_at = ?3,
+                 updated_by_device = ?4
+             WHERE id = ?5",
+            params![definition, displaced, now, device, id],
+        )?;
+        events.push(EventBody::VocabDefinitionSet {
+            id: id.to_string(),
+            definition: definition.to_string(),
+        });
+        Ok(true)
+    })
 }
 
 #[tauri::command]

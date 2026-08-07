@@ -1796,6 +1796,44 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
                 list_status: "confirmed".into(),
             },
         ),
+        // `definition` exercise: a word saved with the card blob the repair
+        // job exists to clear, then re-glossed. A snapshot that dropped
+        // `definition` from its conflict clause would hand a bootstrapping
+        // device the blob back and buy the gloss a second time.
+        ev(
+            1425,
+            "dev-A",
+            EventBody::VocabAdd(VocabPayload {
+                id: "voc-reglossed".into(),
+                book_id: "b1".into(),
+                word: "thither".into(),
+                definition: "Meaning in this context\nto that place, in older English.".into(),
+                context_sentence: Some("She went thither at once.".into()),
+                cfi: None,
+                mastery: "new".into(),
+                review_count: 0,
+                next_review_at: None,
+                review_interval_days: 0,
+                last_reviewed_at: None,
+                last_review_rating: None,
+                fsrs_stability: None,
+                fsrs_difficulty: None,
+                fsrs_version: 1,
+                created_at: None,
+                context_explanation: None,
+                mastery_source: "manual".into(),
+                mastery_reason: None,
+                list_status: "confirmed".into(),
+            }),
+        ),
+        ev(
+            1430,
+            "dev-B",
+            EventBody::VocabDefinitionSet {
+                id: "voc-reglossed".into(),
+                definition: "到那里".into(),
+            },
+        ),
         ev(
             1450,
             "dev-A",
@@ -1942,6 +1980,24 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
         list_status(&db2, "voc-promoted"),
         "confirmed",
         "VocabListStatusSet promotion must survive snapshot round-trip"
+    );
+
+    // Same reasoning for the re-glossed row, and the same class of bug:
+    // `upsert_vocab` omitted `definition` from its conflict clause, so a
+    // device bootstrapping from a compacted snapshot found the card blob
+    // still sitting above the word and paid to re-gloss it itself.
+    let (definition, explanation): (String, Option<String>) = db2
+        .query_row(
+            "SELECT definition, context_explanation FROM vocab_words WHERE id = 'voc-reglossed'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(definition, "到那里", "re-gloss must survive snapshot bootstrap");
+    assert_eq!(
+        explanation.as_deref(),
+        Some("Meaning in this context\nto that place, in older English."),
+        "the displaced blob travels in the snapshot's own column"
     );
 }
 

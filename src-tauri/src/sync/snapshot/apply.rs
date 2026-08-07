@@ -737,6 +737,19 @@ fn insert_bookmark(tx: &Transaction, id: &str, r: &BookmarkRow) -> AppResult<()>
     Ok(())
 }
 
+/// `definition` joins the updatable columns because `vocab.definition.set`
+/// exists: a device whose log was compacted away, or one bootstrapping from a
+/// snapshot, would otherwise keep a definition every live device has already
+/// replaced, and its repair job would spend the reader's quota fixing it
+/// again.
+///
+/// `context_explanation` comes along, but only into an empty column. The
+/// event path never transmits it — each device displaces its own old
+/// definition — and the same restraint applies here: a snapshot must not
+/// overwrite the reader's own kept analysis with the sender's. Filling an
+/// empty one is the case that matters, and it is the only way a device that
+/// adopts a peer's repaired `definition` wholesale still ends up with the
+/// long text that definition displaced.
 fn upsert_vocab(tx: &Transaction, id: &str, r: &VocabRow) -> AppResult<()> {
     tx.execute(
         "INSERT INTO vocab_words
@@ -747,6 +760,13 @@ fn upsert_vocab(tx: &Transaction, id: &str, r: &VocabRow) -> AppResult<()> {
           created_at, updated_at, updated_by_device)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
          ON CONFLICT(id) DO UPDATE SET
+           definition=excluded.definition,
+           context_explanation=CASE
+             WHEN vocab_words.context_explanation IS NULL
+               OR trim(vocab_words.context_explanation) = ''
+             THEN excluded.context_explanation
+             ELSE vocab_words.context_explanation
+           END,
            mastery=excluded.mastery,
            mastery_source=excluded.mastery_source,
            mastery_reason=excluded.mastery_reason,

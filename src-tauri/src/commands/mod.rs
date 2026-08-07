@@ -34,4 +34,5 @@ pub mod translation;
 pub mod vocab;
 pub mod vocab_gloss_backfill;
 pub mod vocab_learning;
+pub mod vocab_regloss;
 pub mod word_marks;

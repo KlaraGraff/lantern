@@ -88,8 +88,13 @@ export function needsUnit(tokens: number, scale: TokenScale): boolean {
  * Triggers arriving from a newer backend than this build fall to the end
  * under their own heading rather than vanishing; a switch the reader cannot
  * see is a switch they cannot turn off.
+ *
+ * `repair` is last on purpose, and it is the only group that empties itself:
+ * a repair job is finite, so once its backlog is gone the registry stops
+ * offering the row at all. Everything above it recurs for as long as the
+ * reader keeps reading, which is the order they are worth thinking about in.
  */
-export const TRIGGER_ORDER = ["book_finished", "daily", "batch"] as const;
+export const TRIGGER_ORDER = ["book_finished", "daily", "batch", "repair"] as const;
 
 export function groupJobsByTrigger(jobs: AutoAnalysisJobView[]): [string, AutoAnalysisJobView[]][] {
   const groups = new Map<string, AutoAnalysisJobView[]>();

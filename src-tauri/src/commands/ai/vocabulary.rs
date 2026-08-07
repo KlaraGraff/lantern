@@ -511,6 +511,7 @@ pub async fn ai_vocab_gloss(
         locale.as_deref(),
         &request_id,
         "user",
+        "vocab_gloss",
     )
     .await
 }
@@ -547,6 +548,13 @@ pub(crate) fn gloss_locale(db: &Db, requested: Option<&str>) -> String {
 /// The one place a short contextual gloss is produced. `ai_vocab_gloss` is the
 /// frontend's door onto it; the backfill job walks in the same one so repaired
 /// rows read exactly like newly saved ones.
+///
+/// `feature` is the accounting tag, and the two callers deliberately pass
+/// different ones even though the prompt is identical. The interactive save
+/// path is `vocab_gloss`; the repair job passes its own registry id, because
+/// the auto-analysis console totals a job's spend by this column and a job
+/// billing under someone else's tag reports zero for itself while inflating
+/// theirs. Same call, two different questions about who spent what.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn generate_vocab_gloss<R: tauri::Runtime>(
     app: &AppHandle<R>,
@@ -557,6 +565,7 @@ pub(crate) async fn generate_vocab_gloss<R: tauri::Runtime>(
     locale: Option<&str>,
     request_id: &str,
     origin: &str,
+    feature: &str,
 ) -> AppResult<String> {
     let word = word.trim().to_string();
     if word.is_empty() || word.chars().count() > 128 {
@@ -601,7 +610,7 @@ pub(crate) async fn generate_vocab_gloss<R: tauri::Runtime>(
         Some(request_id),
         None,
         origin,
-        "vocab_gloss",
+        feature,
     )
     .await?;
     Ok(sanitize_gloss(&completion.text))

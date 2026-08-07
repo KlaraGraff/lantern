@@ -93,6 +93,15 @@ export function useDictionary(bookId: string) {
     refresh();
   }, [refresh]);
 
+  // A row's stored text can change without this list having asked — the
+  // regenerate action in the expanded entry rewrites `definition` in place —
+  // so the collapsed gloss has to be told rather than left stale.
+  useEffect(() => {
+    const reload = () => { void refresh(); };
+    window.addEventListener("vocab-changed", reload);
+    return () => window.removeEventListener("vocab-changed", reload);
+  }, [refresh]);
+
   const add = useCallback(
     async (
       word: string,
@@ -150,6 +159,14 @@ export function useAllDictionary() {
 
   useEffect(() => {
     refresh();
+  }, [refresh]);
+
+  // See the matching listener in `useDictionary`: a definition rewritten from
+  // an expanded entry has to reach the row above it.
+  useEffect(() => {
+    const reload = () => { void refresh(); };
+    window.addEventListener("vocab-changed", reload);
+    return () => window.removeEventListener("vocab-changed", reload);
   }, [refresh]);
 
   const remove = useCallback(async (id: string) => {

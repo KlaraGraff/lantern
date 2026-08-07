@@ -22,6 +22,7 @@ const MAX_NOTE_LOCATION_BYTES: usize = 16 * 1024;
 const MAX_LEARNING_TERM_BYTES: usize = 256;
 const MAX_WORD_MARK_DISPLAY_BYTES: usize = 1_024;
 const MAX_WORD_MARK_COLOR_BYTES: usize = 64;
+const MAX_VOCAB_DEFINITION_BYTES: usize = 16 * 1024;
 const MAX_CHAT_MESSAGE_BYTES: usize = 128 * 1024;
 const MAX_CHAT_METADATA_BYTES: usize = 256 * 1024;
 
@@ -408,6 +409,22 @@ pub fn validate_event(event: &Event, expected_device: &str) -> AppResult<()> {
                 ));
             }
             validate_chat_message_replace_payload(payload)?;
+        }
+        EventBody::VocabDefinitionSet { id, definition } => {
+            if event.v < 11 {
+                return Err(AppError::Other("SYNC_VOCAB_DEFINITION_INVALID".to_string()));
+            }
+            validate_entity_id(id)?;
+            // A blank definition is what both writers refuse to store locally
+            // — a failed gloss, not a gloss of nothing — so it is also what
+            // this device refuses to accept from a peer: applying one would
+            // blank a row that still has readable text on it. The byte cap is
+            // a sanity bound rather than the gloss ceiling (28 display
+            // columns, two orders of magnitude below this), deliberately loose
+            // because rejecting an event rejects the peer's whole log.
+            if definition.trim().is_empty() || definition.len() > MAX_VOCAB_DEFINITION_BYTES {
+                return Err(AppError::Other("SYNC_VOCAB_DEFINITION_INVALID".to_string()));
+            }
         }
         _ => {}
     }
@@ -1032,6 +1049,72 @@ mod tests {
         assert!(validate_event(
             &Event {
                 body: EventBody::ChatMessageReplace(invalid_payload),
+                ..event
+            },
+            "dev-A"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn vocab_definition_set_requires_v11_and_a_non_empty_gloss() {
+        let event = Event {
+            id: "01HYZX0000000000000000EVT3".into(),
+            ts: 1_714_770_000_000,
+            device: "dev-A".into(),
+            v: 11,
+            body: EventBody::VocabDefinitionSet {
+                id: "v1".into(),
+                definition: "到那里".into(),
+            },
+            extra: Map::new(),
+        };
+        assert!(validate_event(&event, "dev-A").is_ok());
+        // An older envelope claiming an event type that did not exist in its
+        // schema is a malformed log, not a forward-compatible one.
+        assert!(validate_event(
+            &Event {
+                v: 10,
+                ..event.clone()
+            },
+            "dev-A"
+        )
+        .is_err());
+        // Blank is what both writers refuse to store locally; it must not
+        // become a way to erase a peer's definition either.
+        for definition in ["", "   "] {
+            assert!(
+                validate_event(
+                    &Event {
+                        body: EventBody::VocabDefinitionSet {
+                            id: "v1".into(),
+                            definition: definition.into(),
+                        },
+                        ..event.clone()
+                    },
+                    "dev-A"
+                )
+                .is_err(),
+                "accepted a blank definition"
+            );
+        }
+        assert!(validate_event(
+            &Event {
+                body: EventBody::VocabDefinitionSet {
+                    id: "v1".into(),
+                    definition: "x".repeat(MAX_VOCAB_DEFINITION_BYTES + 1),
+                },
+                ..event.clone()
+            },
+            "dev-A"
+        )
+        .is_err());
+        assert!(validate_event(
+            &Event {
+                body: EventBody::VocabDefinitionSet {
+                    id: "../escape".into(),
+                    definition: "到那里".into(),
+                },
                 ..event
             },
             "dev-A"

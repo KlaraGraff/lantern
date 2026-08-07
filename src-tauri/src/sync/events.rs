@@ -24,10 +24,11 @@ use sha2::{Digest, Sha256};
 /// the imported-font catalog and a whitelisted subset of settings keys; version
 /// 9 lets `setting.set` carry `null` to delete a per-book override; version 10
 /// gives the same `null` meaning to a *global* setting, which version 9 read
-/// and discarded as a documented no-op.
+/// and discarded as a documented no-op; version 11 adds `vocab.definition.set`,
+/// the first event that may rewrite a saved word's definition.
 /// Readers retain old-version support while older clients reject newer
 /// envelopes instead of advancing their watermark past data they cannot apply.
-pub const EVENT_SCHEMA_VERSION: u32 = 10;
+pub const EVENT_SCHEMA_VERSION: u32 = 11;
 pub const MIN_SUPPORTED_EVENT_SCHEMA_VERSION: u32 = 1;
 
 pub fn is_supported_event_schema_version(version: u32) -> bool {
@@ -268,6 +269,22 @@ pub enum EventBody {
     // different facts that change on different triggers.
     #[serde(rename = "vocab.list_status.set")]
     VocabListStatusSet { id: String, list_status: String },
+    /// A saved word's definition, rewritten in place — by the reader pressing
+    /// regenerate (`commands::vocab_regloss`) or by the automatic repair of a
+    /// definition that holds a whole learning card
+    /// (`commands::vocab_gloss_backfill`). Before this event `definition` was
+    /// write-once across every sync path: `vocab.add` creates the row with
+    /// `INSERT OR IGNORE` and can never correct one.
+    ///
+    /// It carries the new definition and nothing else. The text it displaces
+    /// is *not* on the wire: the receiving device holds its own copy of the
+    /// old definition and runs the same displacement rule against its own row
+    /// (`merge::apply_vocab_definition`), so each device keeps its own text
+    /// and the payload stays one short line. Definitions are book-derived
+    /// text that `vocab.add` already transmits, so this adds no new class of
+    /// data to the shared container.
+    #[serde(rename = "vocab.definition.set")]
+    VocabDefinitionSet { id: String, definition: String },
 
     #[serde(rename = "note.upsert")]
     NoteUpsert(NotePayload),
@@ -726,6 +743,10 @@ mod tests {
             fsrs_version: 1,
             mastery_source: "manual".into(),
             mastery_reason: None,
+        }));
+        roundtrip(&mk(EventBody::VocabDefinitionSet {
+            id: "v1".into(),
+            definition: "an unexpectedly happy turn".into(),
         }));
         roundtrip(&mk(EventBody::VocabDelete { id: "v1".into() }));
     }

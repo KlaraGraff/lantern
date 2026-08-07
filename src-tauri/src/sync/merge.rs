@@ -100,6 +100,9 @@ pub fn apply_event(tx: &Transaction, event: &Event) -> AppResult<()> {
         EventBody::VocabListStatusSet { id, list_status } => {
             apply_vocab_list_status(tx, event, id, list_status)
         }
+        EventBody::VocabDefinitionSet { id, definition } => {
+            apply_vocab_definition(tx, event, id, definition)
+        }
 
         EventBody::NoteUpsert(payload) => apply_note_upsert(tx, event, payload),
         EventBody::NoteDelete { id } => apply_note_delete(tx, event, id),
@@ -816,6 +819,53 @@ fn apply_vocab_list_status(
          WHERE id = ?4
            AND (updated_at < ?2 OR (updated_at = ?2 AND updated_by_device < ?3))",
         params![list_status, event.ts, event.device, id],
+    )?;
+    Ok(())
+}
+
+/// A definition rewritten on another device.
+///
+/// LWW-guarded on the row's own `(updated_at, updated_by_device)` exactly like
+/// `apply_vocab_mastery` — `definition` is now one of the columns that clock
+/// governs, so both writers of it stamp the clock and this compare decides
+/// ties the same way every other vocab update does.
+///
+/// The event carries only the new definition. The old text this device is
+/// about to lose is *its own*, so the displacement rule runs here against the
+/// local row rather than travelling: `displaced_explanation` is the same
+/// function `vocab_regloss` and `vocab_gloss_backfill` call, which is what
+/// makes the local and remote outcomes identical.
+///
+/// A row that does not exist locally is a no-op, like `apply_vocab_mastery`'s
+/// zero-row UPDATE — the definition arrives with the `vocab.add` that creates
+/// it, and the same device's log always orders the add first.
+fn apply_vocab_definition(
+    tx: &Transaction,
+    event: &Event,
+    id: &str,
+    definition: &str,
+) -> AppResult<()> {
+    let Some((current, explanation)) = tx
+        .query_row(
+            "SELECT definition, context_explanation FROM vocab_words WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .optional()?
+    else {
+        return Ok(());
+    };
+    let displaced =
+        crate::commands::vocab_gloss_backfill::displaced_explanation(&current, explanation.as_deref());
+    tx.execute(
+        "UPDATE vocab_words
+         SET definition = ?1,
+             context_explanation = COALESCE(?2, context_explanation),
+             updated_at = ?3,
+             updated_by_device = ?4
+         WHERE id = ?5
+           AND (updated_at < ?3 OR (updated_at = ?3 AND updated_by_device < ?4))",
+        params![definition, displaced, event.ts, event.device, id],
     )?;
     Ok(())
 }
@@ -2929,6 +2979,237 @@ mod tests {
         assert_eq!(mastery, "learning");
         assert_eq!(source, "manual");
         assert_eq!(reason, None);
+    }
+
+    // --- vocab.definition.set ---
+
+    /// A saved word as the adding device published it. `definition` is the
+    /// only field these tests vary.
+    fn add_vocab(id: &str, definition: &str, explanation: Option<&str>) -> EventBody {
+        EventBody::VocabAdd(VocabPayload {
+            id: id.into(),
+            book_id: "b1".into(),
+            word: "thither".into(),
+            definition: definition.into(),
+            context_sentence: Some("She went thither at once.".into()),
+            context_explanation: explanation.map(str::to_string),
+            cfi: None,
+            mastery: "new".into(),
+            review_count: 0,
+            next_review_at: None,
+            review_interval_days: 0,
+            last_reviewed_at: None,
+            last_review_rating: None,
+            fsrs_stability: None,
+            fsrs_difficulty: None,
+            fsrs_version: 1,
+            created_at: None,
+            mastery_source: "manual".into(),
+            mastery_reason: None,
+            list_status: "confirmed".into(),
+        })
+    }
+
+    fn definition_set(id: &str, definition: &str) -> EventBody {
+        EventBody::VocabDefinitionSet {
+            id: id.into(),
+            definition: definition.into(),
+        }
+    }
+
+    fn vocab_gloss(db: &Connection, id: &str) -> (String, Option<String>) {
+        db.query_row(
+            "SELECT definition, context_explanation FROM vocab_words WHERE id = ?1",
+            params![id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+    }
+
+    /// The point of the whole event: one device repairs or regenerates a
+    /// gloss, the other stops showing the old one. The blob the *receiver*
+    /// held is displaced into `context_explanation` by the receiver, using the
+    /// same rule the writing device used on its own copy — which is why the
+    /// wire payload carries only the new definition.
+    #[test]
+    fn a_rewritten_definition_reaches_the_second_device() {
+        let mut db = open_db();
+        let blob = "Meaning in this context\nto that place, in older English.";
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1100, "dev-A", add_vocab("v1", blob, None)),
+                ev(1200, "dev-B", definition_set("v1", "到那里")),
+            ],
+        );
+        let (definition, explanation) = vocab_gloss(&db, "v1");
+        assert_eq!(definition, "到那里");
+        assert_eq!(explanation.as_deref(), Some(blob));
+        let (at, by): (i64, String) = db
+            .query_row(
+                "SELECT updated_at, updated_by_device FROM vocab_words WHERE id = 'v1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((at, by.as_str()), (1200, "dev-B"));
+    }
+
+    /// Replay is at-least-once. The second delivery finds an equal clock and
+    /// must not run the displacement again, which would file the gloss it just
+    /// wrote under "In context".
+    #[test]
+    fn a_redelivered_definition_changes_nothing() {
+        let mut db = open_db();
+        let blob = "Meaning in this context\nto that place.";
+        let again = ev(1200, "dev-B", definition_set("v1", "到那里"));
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1100, "dev-A", add_vocab("v1", blob, None)),
+                again.clone(),
+                again,
+            ],
+        );
+        assert_eq!(vocab_gloss(&db, "v1"), ("到那里".to_string(), Some(blob.to_string())));
+    }
+
+    /// The receiver's own kept analysis outranks anything being displaced —
+    /// same as locally.
+    #[test]
+    fn an_arriving_definition_never_overwrites_a_kept_explanation() {
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(
+                    1100,
+                    "dev-A",
+                    add_vocab("v1", "Meaning\nin this context", Some("the reader's own")),
+                ),
+                ev(1200, "dev-B", definition_set("v1", "到那里")),
+            ],
+        );
+        assert_eq!(
+            vocab_gloss(&db, "v1"),
+            ("到那里".to_string(), Some("the reader's own".to_string()))
+        );
+    }
+
+    /// Displacement is for the card blob this feature exists to clear. An
+    /// ordinary one-line gloss being replaced is discarded, not filed — the
+    /// same narrowing the writing device applies, so the two devices agree.
+    #[test]
+    fn an_ordinary_gloss_is_discarded_rather_than_filed() {
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1100, "dev-A", add_vocab("v1", "到那处", None)),
+                ev(1200, "dev-B", definition_set("v1", "到那里")),
+            ],
+        );
+        assert_eq!(vocab_gloss(&db, "v1"), ("到那里".to_string(), None));
+    }
+
+    /// `definition` shares the row's single clock with `mastery`, so a
+    /// definition change and a review made at the same moment on two devices
+    /// are ordered against each other rather than merged per column. This
+    /// pins the accepted cost: the later one wins the clock, and the earlier
+    /// one's column is left as the loser's device had it.
+    #[test]
+    fn a_definition_losing_the_clock_leaves_the_review_alone() {
+        let mastery = EventBody::VocabMasterySet {
+            id: "v1".into(),
+            mastery: "learning".into(),
+            next_review_at: Some(2_000_000),
+            review_count: 3,
+            review_interval_days: 1,
+            last_reviewed_at: Some(1300),
+            last_review_rating: Some("good".into()),
+            fsrs_stability: None,
+            fsrs_difficulty: None,
+            fsrs_version: 1,
+            mastery_source: "manual".into(),
+            mastery_reason: None,
+        };
+        // Definition first, review second: the review wins the clock and the
+        // definition it arrived with is still there — different columns.
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1100, "dev-A", add_vocab("v1", "Meaning\nin this context", None)),
+                ev(1200, "dev-B", definition_set("v1", "到那里")),
+                ev(1300, "dev-A", mastery.clone()),
+            ],
+        );
+        let (definition, _) = vocab_gloss(&db, "v1");
+        assert_eq!(definition, "到那里");
+        let (m, n): (String, i64) = db
+            .query_row(
+                "SELECT mastery, review_count FROM vocab_words WHERE id = 'v1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((m.as_str(), n), ("learning", 3));
+
+        // Reverse: the definition arrives stamped *older* than the review that
+        // already landed. It loses the whole write — the row keeps the blob.
+        // That is the shared-clock trade, and it is the same one
+        // `vocab.list_status.set` already makes.
+        let mut db2 = open_db();
+        apply_all(
+            &mut db2,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1100, "dev-A", add_vocab("v1", "Meaning\nin this context", None)),
+                ev(1300, "dev-A", mastery),
+                ev(1200, "dev-B", definition_set("v1", "到那里")),
+            ],
+        );
+        assert_eq!(
+            vocab_gloss(&db2, "v1"),
+            ("Meaning\nin this context".to_string(), None)
+        );
+        let (m2, n2): (String, i64) = db2
+            .query_row(
+                "SELECT mastery, review_count FROM vocab_words WHERE id = 'v1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (m2.as_str(), n2),
+            ("learning", 3),
+            "a losing definition must not roll the review back"
+        );
+    }
+
+    /// The word was deleted here, or its `vocab.add` has not replayed yet.
+    /// Neither is an error, and neither may conjure a row: a definition with
+    /// no `book_id`, `word` or `context_sentence` is not a saved word, and a
+    /// tombstoned one must stay deleted.
+    #[test]
+    fn a_definition_for_a_word_this_device_does_not_have_is_ignored() {
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1200, "dev-B", definition_set("ghost", "到那里")),
+            ],
+        );
+        let rows: i64 = db
+            .query_row("SELECT COUNT(*) FROM vocab_words", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 0);
     }
 
     // -----------------------------------------------------------------------
