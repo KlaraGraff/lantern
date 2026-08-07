@@ -18,6 +18,7 @@
  * under `tests/fixtures/reader-compat/`, served by the harness Vite middleware.
  * Nothing here invents a parallel book format.
  */
+import { activeScene } from "./promo";
 
 const DAY = 86_400_000;
 const now = Date.now();
@@ -281,6 +282,10 @@ export const SETTINGS: Record<string, string> = {
   // default. Add `?onboarding=1` to the harness URL to sweep it instead —
   // see `resolveSettings()` below.
   onboarding_state: "done",
+  // Set, so the library's "you never picked a level" hint stays down. The
+  // other reason that banner fires (AI unconfigured) is covered by the
+  // credential fixture in `invoke-fixtures.ts`.
+  cefr_level: "B2",
   ai_enabled: "true",
   ai_streaming: "true",
   ai_auto_title: "false",
@@ -314,9 +319,13 @@ export const SETTINGS: Record<string, string> = {
  *   `?onboarding=1`  — start with the first-run card showing
  *   `?empty=1`       — start with an empty library (empty-state coverage)
  *   `?lang=zh`       — start in Simplified Chinese
+ *   `?shot=<name>`   — a README screenshot scene (see `harness/promo/`)
+ *
+ * `?shot=` is applied before the others so an explicit `?lang=` still wins
+ * over the scene's own choice.
  */
 export function resolveSettings(): Record<string, string> {
-  const settings = { ...SETTINGS };
+  const settings = { ...SETTINGS, ...(activeScene()?.settings ?? {}) };
   let params: URLSearchParams;
   try {
     params = new URLSearchParams(window.location.search);

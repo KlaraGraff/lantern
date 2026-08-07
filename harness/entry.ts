@@ -7,13 +7,26 @@
  * Nothing in `src/` knows this file exists.
  */
 import { installCollectors } from "./collectors";
+import { applySceneRoute, runScene } from "./promo/scenes";
 import { harness } from "./state";
 
 installCollectors();
 
 console.info("[harness] collectors installed; Tauri APIs are mocked");
 
+// Before `/src/main.tsx`: a `?shot=` scene rewrites the address bar so the
+// router opens on the right page instead of flashing the library first.
+applySceneRoute();
+
 const params = new URLSearchParams(window.location.search);
+
+// After first paint: put the scene in place and flag `data-shot-ready`, which
+// is the signal `scripts/shoot-readme.mjs` waits on before capturing.
+if (params.get("shot")) {
+  window.addEventListener("load", () => {
+    void runScene();
+  });
+}
 
 if (params.get("smoke") === "1") {
   // Load the sweep lazily so a plain harness run (no `?smoke=1`) does not pay

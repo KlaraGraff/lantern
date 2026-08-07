@@ -132,12 +132,17 @@ function harnessPlugin(): Plugin {
           "application/pdf",
         ],
       };
-      server.middlewares.use((req, res, next) => {
-        const path = (req.url ?? "").split("?")[0];
-        const hit = fixtures[path];
-        if (!hit) return next();
+      // The promo shots (`scripts/shoot-readme.mjs`) render a curated shelf of
+      // public-domain books. Their covers are committed under
+      // `harness/promo/covers/`; the .epub files are not — they are downloaded
+      // into `harness/books/` on demand, so a miss here is expected and 404s.
+      const promoDirs: Array<[string, string, string]> = [
+        ["/__harness/covers/", resolvePath(here, "harness/promo/covers"), "image/jpeg"],
+        ["/__harness/books/", resolvePath(here, "harness/books"), "application/epub+zip"],
+      ];
+
+      const serve = (res: import("node:http").ServerResponse, file: string, mime: string) => {
         try {
-          const [file, mime] = hit;
           res.setHeader("Content-Type", mime);
           res.setHeader("Content-Length", String(statSync(file).size));
           res.setHeader("Access-Control-Allow-Origin", "*");
@@ -146,6 +151,23 @@ function harnessPlugin(): Plugin {
           res.statusCode = 404;
           res.end("harness fixture missing");
         }
+      };
+
+      server.middlewares.use((req, res, next) => {
+        const path = (req.url ?? "").split("?")[0];
+
+        const hit = fixtures[path];
+        if (hit) return serve(res, hit[0], hit[1]);
+
+        for (const [prefix, dir, mime] of promoDirs) {
+          if (!path.startsWith(prefix)) continue;
+          const name = decodeURIComponent(path.slice(prefix.length));
+          // No traversal out of the fixture directory.
+          if (!/^[A-Za-z0-9._-]+$/.test(name)) break;
+          return serve(res, resolvePath(dir, name), mime);
+        }
+
+        return next();
       });
     },
   };

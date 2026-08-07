@@ -24,20 +24,39 @@ import {
   resolveSettings,
   type HarnessBook,
 } from "./fixture-data";
+import { isShooting } from "./promo";
+import { PROMO_BOOKS, PROMO_COLLECTIONS } from "./promo/library";
 
 type Args = Record<string, unknown>;
 type Fixture = unknown | ((args: Args) => unknown);
 
+/** Resolves against whichever shelf is live, so `/book/:id` works in a shot too. */
 const bookById = (id: unknown): HarnessBook =>
-  BOOKS.find((b) => b.id === id) ?? BOOKS[0];
+  LIBRARY.find((b) => b.id === id) ?? LIBRARY[0] ?? BOOKS[0];
 
 const nowSec = () => Math.floor(Date.now() / 1000);
 
 /** Mutable so `set_setting` during a sweep is visible to the next read. */
 const settings: Record<string, string> = resolveSettings();
 
-/** `?empty=1` sweeps the empty-library state instead of the stocked one. */
-const LIBRARY: HarnessBook[] = emptyLibrary() ? [] : BOOKS;
+/**
+ * Which shelf the app sees.
+ *
+ *  - `?empty=1`      — nothing, for the empty state
+ *  - `?shot=<name>`  — the curated public-domain shelf the README images use
+ *  - otherwise       — the branch-covering smoke fixture
+ *
+ * The promo shelf is deliberately a *different* list, not an edit of `BOOKS`:
+ * the smoke fixture earns its keep by being awkward (a missing file, a PDF, a
+ * coverless book) and prettying it up would quietly delete that coverage.
+ */
+const LIBRARY: HarnessBook[] = emptyLibrary()
+  ? []
+  : isShooting()
+    ? PROMO_BOOKS
+    : BOOKS;
+
+const LIBRARY_COLLECTIONS = isShooting() ? PROMO_COLLECTIONS : COLLECTIONS;
 
 export const FIXTURES: Record<string, Fixture> = {
   /* ---------------------------------------------------------------- *
@@ -114,8 +133,8 @@ export const FIXTURES: Record<string, Fixture> = {
    */
   import_book_from_dialog: { imported: [], failures: [] },
   import_external_paths: { imported: [], failures: [] },
-  list_collections: () => COLLECTIONS.slice(),
-  list_books_in_collection: () => BOOKS.slice(0, 2).map((b) => b.id),
+  list_collections: () => LIBRARY_COLLECTIONS.slice(),
+  list_books_in_collection: () => LIBRARY.slice(0, 2).map((b) => b.id),
   update_reading_progress: false,
   mark_finished: null,
   update_book_status: null,
@@ -261,12 +280,21 @@ export const FIXTURES: Record<string, Fixture> = {
   ai_api_key_configured: true,
   ai_list_profiles: () => [harnessProfile()],
   ai_active_profile: () => harnessProfile(),
+  /**
+   * `profile_id` and `state` are not decoration: `isAiConfigured()` joins the
+   * credential back to its profile through `profile_id` and rejects anything
+   * whose last test came back `invalid`. Without both fields the app decides
+   * AI is unconfigured and the library grows a warning banner — which is a
+   * fixture bug, not a finding.
+   */
   ai_list_credentials: () => [
     {
       id: "cred-1",
+      profile_id: "profile-1",
       label: "Harness key",
       provider: "openai",
       enabled: true,
+      state: "valid",
       sort_order: 0,
       created_at: nowSec(),
       updated_at: nowSec(),
