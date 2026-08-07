@@ -318,14 +318,18 @@ export function applyReflowLayout(
     renderer.setAttribute(name, value);
     return true;
   };
-  const sizingChanged = [
-    setAttr("gap", `${settings.margins}%`),
-    setAttr("max-column-count", String(effectiveColumns)),
-  ].some(Boolean);
+  setAttr("gap", `${settings.margins}%`);
+  setAttr("max-column-count", String(effectiveColumns));
   const flowRendered = setAttr("flow", isPaginated ? "paginated" : "scrolled");
   const inlineSizeRendered = setAttr("max-inline-size", `${columnWidth}px`);
-  if (sizingChanged && !flowRendered && !inlineSizeRendered) {
-    // Only the non-rendering inputs changed, so nothing re-rendered above.
+  if (!flowRendered && !inlineSizeRendered) {
+    // Nothing re-rendered above, either because only the non-rendering inputs
+    // changed or because no attribute changed at all — the latter is every
+    // height-only resize, e.g. the read-aloud bar opening above the text.
+    // Foliate would eventually re-columnize from its own ResizeObserver, but
+    // 150ms later and outside this call, where the caller can no longer tell
+    // whether the reader's position survived. Render here so this function
+    // always leaves exactly one relayout behind it, finished on return.
     renderer.render?.();
   }
   // Reflowable books retain Foliate's native slide so direct trackpad gestures

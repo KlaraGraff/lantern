@@ -42,6 +42,7 @@ import {
   getFootnoteCSS,
   getReaderCSS,
 } from "./reader-theme";
+import { movedDuringReflow } from "./reader-reflow-anchor";
 import {
   FOOTNOTE_CONTENT_WIDTH,
   FOOTNOTE_POPOVER_MAX_HEIGHT,
@@ -1038,6 +1039,13 @@ export function useFoliateView({
           appliedFontSizeRef.current = measure.fontSize;
           view.renderer.setStyles?.(getReaderCSS(readerSettingsRef.current, measure.fontSize));
         }
+        // Re-columnizing puts different text on the page, and foliate's own
+        // re-anchor works off the whole previously-visible range — when the new
+        // columns are shorter that range no longer fits and the page can land
+        // somewhere else. Hold the location across the relayout: `relocate`
+        // fires synchronously from inside applyReflowLayout, so the reading
+        // either side of it is a genuine before/after pair.
+        const anchorBefore = currentCfiRef.current;
         applyReflowLayout(
           view,
           readerSettingsRef.current,
@@ -1045,6 +1053,9 @@ export function useFoliateView({
           viewer.clientHeight,
         );
         recordReflowTiming(performance.now() - started);
+        if (anchorBefore && movedDuringReflow(anchorBefore, currentCfiRef.current)) {
+          void view.goTo?.(anchorBefore, { history: false });
+        }
         // Passive-vocab notes pick margin rail or ruby from the window width at
         // install time. Crossing that threshold mid-session leaves rails in a
         // window too narrow for them (or ruby in one that has room again), so
@@ -1097,7 +1108,7 @@ export function useFoliateView({
       dragObserver?.disconnect();
       reducedMotion.removeEventListener("change", resize);
     };
-  }, [bookReady, capabilities.supportsReflowSettings, readerSettingsRef, viewRef, viewerRef]);
+  }, [bookReady, capabilities.supportsReflowSettings, currentCfiRef, readerSettingsRef, viewRef, viewerRef]);
 
   useEffect(() => {
     if (!bookReady || book?.format !== "pdf") return;

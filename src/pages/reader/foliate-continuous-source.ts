@@ -1,6 +1,7 @@
 import type { ContinuousReadSentence, ContinuousReadSource } from "../../components/continuous-read-aloud";
 import { sentenceRangesInRange } from "../../components/reader-interaction";
 import type { FoliateView } from "./foliate-types";
+import { pickReadAloudStart } from "./read-aloud-start";
 
 interface ReadAloudSection {
   linear?: string;
@@ -28,6 +29,13 @@ export function createFoliateContinuousSource(
 ): ContinuousReadSource {
   const cache = new Map<number, SentenceRecord[]>();
   const byId = new Map<string, SentenceRecord>();
+  /**
+   * The one sentence `reveal` must not navigate to: the page is the middle of
+   * it, so its true start is on an earlier page and going there would move the
+   * reader backwards. Cleared as soon as it is honoured — every later sentence
+   * in the run is revealed normally.
+   */
+  let holdPositionFor: string | null = null;
 
   const view = () => {
     const current = viewRef.current;
@@ -111,6 +119,7 @@ export function createFoliateContinuousSource(
   return {
     async first(fromBeginning = false) {
       const currentView = view();
+      holdPositionFor = null;
       if (fromBeginning) {
         const firstLinear = sections().findIndex((section) => section.linear !== "no");
         const startIndex = firstLinear >= 0 ? firstLinear : 0;
@@ -124,8 +133,14 @@ export function createFoliateContinuousSource(
       try {
         const doc = records[0].range.startContainer.ownerDocument!;
         const target = resolved.anchor(doc);
-        return records.find((record) => record.range.compareBoundaryPoints(Range.START_TO_END, target) > 0)
-          ?? adjacent(resolved.index, 1);
+        const choice = pickReadAloudStart(records.map((record) => ({
+          startVsPage: record.range.compareBoundaryPoints(Range.START_TO_START, target),
+          endVsPage: record.range.compareBoundaryPoints(Range.START_TO_END, target),
+        })));
+        if (choice.kind === "none") return adjacent(resolved.index, 1);
+        const record = records[choice.index];
+        if (choice.kind === "continuation") holdPositionFor = record.id;
+        return record;
       } catch {
         return records[0] ?? adjacent(resolved.index, 1);
       }
@@ -144,6 +159,12 @@ export function createFoliateContinuousSource(
     },
     async reveal(sentence) {
       const currentView = view();
+      if (holdPositionFor === sentence.id) {
+        // The reader is already looking at the middle of this sentence; its start
+        // is on an earlier page, so navigating to it would move them backwards.
+        holdPositionFor = null;
+        return;
+      }
       currentView.deselect?.();
       const resolved = currentView.resolveCFI(sentence.id);
       const visible = currentView.renderer?.getContents?.()

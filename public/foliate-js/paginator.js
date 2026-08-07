@@ -1051,6 +1051,14 @@ export class Paginator extends HTMLElement {
         else this.#justAnchored = true
 
         const index = this.#index
+        // LANTERN: no section is on screen yet, so there is nothing to relocate
+        // to. `#display` assigns `#index` only after its promise resolves, but
+        // `#createView` wires `onExpand` immediately, so the first
+        // `columnize → expand → onExpand → #scrollToAnchor` chain can reach
+        // here while `#index` is still its initial -1. Listeners take the index
+        // as a real section: `View.getCFI` reads `book.sections[index].cfi` and
+        // throws "Cannot read properties of undefined (reading 'cfi')".
+        if (index < 0) return
         const detail = { reason, range, index }
         if (this.scrolled) detail.fraction = this.start / this.viewSize
         else if (this.pages > 0) {
