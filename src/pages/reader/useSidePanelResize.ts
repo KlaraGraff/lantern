@@ -11,16 +11,19 @@ const PANEL_MIN_WIDTH = 320;
 const PANEL_MAX_WIDTH = 700;
 const PANEL_DEFAULT_WIDTH = 525;
 /**
- * The notes tab is a margin, not a workspace: it holds one column of cards
- * beside the text and every pixel it takes comes off the page. The AI panel is
- * the opposite — it holds a conversation, and 380 would cramp it. So the width
- * is per panel (and, for the traces panel, per active tab) rather than one
- * number shared by all of them; dragging one no longer resizes the others
- * behind it either, which was never intended.
+ * Width is per panel, not per tab. The AI panel holds a conversation and the
+ * traces panel holds lists, so they want different widths and dragging one
+ * must not resize the other behind it.
+ *
+ * Inside the traces panel it is deliberately ONE width for all four tabs. The
+ * notes tab used to have its own key and its own 380px default, so switching
+ * to it snapped the panel from 525 to 380 and reflowed the page under it — a
+ * visible jolt on a plain tab change. Panel geometry belongs to the panel; the
+ * active tab does not get a say in it.
  */
-export type ResizableSidePanel = "ai" | "traces" | "traces-notes";
+export type ResizableSidePanel = "ai" | "traces";
 
-const PANEL_DEFAULT_WIDTHS: Partial<Record<ResizableSidePanel, number>> = { "traces-notes": 380 };
+const PANEL_DEFAULT_WIDTHS: Partial<Record<ResizableSidePanel, number>> = { traces: 460 };
 
 interface ShadowHost {
   shadowRoot: ShadowRoot | null;

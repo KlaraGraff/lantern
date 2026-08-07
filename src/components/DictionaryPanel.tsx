@@ -47,18 +47,10 @@ export default function DictionaryPanel({ bookId, bookTitle, onNavigate, initial
 
   return (
     <div className="flex flex-col h-full bg-bg-muted">
-      <div className="border-b border-border shrink-0 px-4 h-[45px] flex items-center">
-        <h2 className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">
-          {t("vocab.title")}
-        </h2>
-        <button onClick={onExport} title={t("readerExport.open")} aria-label={t("readerExport.open")} className="ml-auto grid size-8 place-items-center rounded-lg text-text-muted hover:bg-bg-input hover:text-text-primary">
-          <Download size={16} />
-        </button>
-      </div>
-
-      {/* Search */}
-      <div className="px-4 pt-2 pb-2 shrink-0">
-        <div className="flex items-center gap-1.5 h-[28px] px-2 rounded-lg bg-bg-input border border-border">
+      {/* One 45px toolbar row, matching the other traces tabs. The panel used to
+          repeat its own "生词" title under the tab that already says it. */}
+      <div className="flex h-[45px] shrink-0 items-center gap-2 px-3">
+        <div className="flex h-[28px] flex-1 items-center gap-1.5 rounded-md bg-bg-input px-2">
           <Search size={12} className="text-text-muted shrink-0" />
           <input
             type="search"
@@ -73,6 +65,9 @@ export default function DictionaryPanel({ bookId, bookTitle, onNavigate, initial
             className="flex-1 text-[12px] text-text-primary bg-transparent outline-none placeholder:text-text-placeholder [&::-webkit-search-cancel-button]:hidden"
           />
         </div>
+        <button onClick={onExport} title={t("readerExport.open")} aria-label={t("readerExport.open")} className="grid size-8 shrink-0 place-items-center rounded-lg text-text-muted hover:bg-bg-input hover:text-text-primary">
+          <Download size={16} />
+        </button>
       </div>
 
       {/* Word list */}

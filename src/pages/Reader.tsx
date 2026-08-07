@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import Button from "../components/ui/Button";
 import Toast from "../components/ui/Toast";
+import PanelTabs from "../components/ui/PanelTabs";
 import AiPanel from "../components/AiPanel";
 import ReaderTracesPanel from "../components/ReaderTracesPanel";
 import ReaderSettings from "../components/ReaderSettings";
@@ -87,7 +88,7 @@ import {
 } from "./reader/useReaderSettingsSync";
 import { measureRenderedTextRect } from "./reader/reader-settings-placement";
 import { useWindowSizePersistence } from "./reader/useWindowSizePersistence";
-import { useSidePanelResize, type ResizableSidePanel } from "./reader/useSidePanelResize";
+import { useSidePanelResize } from "./reader/useSidePanelResize";
 import {
   useFoliateAnnotations,
   type WordMarkRule,
@@ -419,10 +420,7 @@ export default function Reader() {
     }
     return undefined;
   }, []);
-  const resizePanelKey: ResizableSidePanel | null = sidePanel === "traces"
-    ? (tracesTab === "notes" ? "traces-notes" : "traces")
-    : sidePanel;
-  const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef, resizePanelKey);
+  const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef, sidePanel);
   const {
     zoom,
     zoomRef,
@@ -2037,7 +2035,7 @@ export default function Reader() {
 
       {/* Body */}
       <div
-        className={`flex flex-1 overflow-hidden ${sidePanel === "traces" && tracesTab === "notes" ? "max-[1100px]:flex-col" : ""}`}
+        className="flex flex-1 overflow-hidden"
         style={{ backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body }}
       >
         <TableOfContents
@@ -2294,36 +2292,25 @@ export default function Reader() {
         {sidePanel && (
           <div
             onPointerDown={handlePanelResizePointerDown}
-            className={`w-1 h-full shrink-0 cursor-col-resize touch-none hover:bg-accent/30 transition-colors z-10 ${sidePanel === "traces" && tracesTab === "notes" ? "max-[1100px]:hidden" : ""}`}
+            className="w-1 h-full shrink-0 cursor-col-resize touch-none hover:bg-accent/30 transition-colors z-10"
           />
         )}
         <div
           ref={panelRef}
-          className={sidePanel ? `shrink-0 h-full ${sidePanel === "traces" && tracesTab === "notes" ? "max-[1100px]:!h-[38%] max-[1100px]:!w-full" : ""}` : "hidden"}
+          className={sidePanel ? "shrink-0 h-full" : "hidden"}
           style={{ width: panelWidth }}
           onPointerDownCapture={blockPageTurnKeyboard}
         >
           <div className={sidePanel === "ai" ? "flex h-full flex-col" : "hidden"}>
-            <div className="flex border-b border-border shrink-0">
-              <button
-                type="button"
-                onClick={() => setAiTab("chat")}
-                className={`flex-1 h-[45px] text-[14px] font-medium tracking-[-0.15px] cursor-pointer transition-colors ${
-                  aiTab === "chat" ? "text-text-primary border-b-2 border-accent" : "text-text-muted hover:text-text-body"
-                }`}
-              >
-                {t("chats.title")}
-              </button>
-              <button
-                type="button"
-                onClick={() => setAiTab("xray")}
-                className={`flex-1 h-[45px] text-[14px] font-medium tracking-[-0.15px] cursor-pointer transition-colors ${
-                  aiTab === "xray" ? "text-text-primary border-b-2 border-accent" : "text-text-muted hover:text-text-body"
-                }`}
-              >
-                {t("readerXray.title")}
-              </button>
-            </div>
+            <PanelTabs
+              tabs={[
+                { id: "chat", label: t("chats.title") },
+                { id: "xray", label: t("readerXray.title") },
+              ]}
+              active={aiTab}
+              onChange={setAiTab}
+              label={t("reader.aiAssistant")}
+            />
             <div className="relative flex-1 min-h-0">
               <div className={aiTab === "chat" ? "h-full" : "hidden"}>
                 <AiPanel
@@ -2379,6 +2366,11 @@ export default function Reader() {
                   // Return page info from current state if available
                   return pageInfo?.current ?? null;
                 },
+              }}
+              highlightsProps={{
+                bookId,
+                onNavigate: navigateToCfi,
+                getPageFromCfi: () => pageInfo?.current ?? null,
                 onExport: () => setExportOpen(true),
               }}
               vocabProps={{
