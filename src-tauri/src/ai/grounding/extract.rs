@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     fn extracts_text_layer_pdf_as_page_sections() {
-        if crate::pdfium::pdfium().is_err() {
+        if crate::pdfium::availability().is_err() {
             return;
         }
         let directory = tempfile::TempDir::new().unwrap();

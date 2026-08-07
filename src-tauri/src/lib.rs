@@ -41,7 +41,7 @@ pub struct LocalDir(pub PathBuf);
 /// users get. A static `codesign --verify --deep` cannot catch Team ID
 /// mismatches discovered only when `dlopen()` maps a nested dylib.
 pub fn pdfium_smoke_test() -> Result<(), String> {
-    pdfium::pdfium().map(|_| ()).map_err(str::to_owned)
+    pdfium::availability().map_err(str::to_owned)
 }
 
 /// Resolve the plugin's level filter, honoring `RUST_LOG` over the cfg
