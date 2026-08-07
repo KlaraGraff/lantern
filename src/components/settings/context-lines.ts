@@ -1,7 +1,7 @@
 /**
- * Pure helpers for the "context lines" sub-row under vector retrieval
- * (`EmbeddingSettings.tsx`). Framework-free so the enable/disable rules can
- * be tested without a DOM. See docs/impls/contextual-retrieval.md.
+ * Pure helpers for the "context lines" row on the embedding settings page
+ * (`EmbeddingSettings.tsx`). Framework-free so the rules can be tested
+ * without a DOM. See docs/impls/contextual-retrieval.md.
  */
 
 /**
@@ -26,13 +26,12 @@ export function contextLinesEnabled(settings: Record<string, string>): boolean {
   return settings[CONTEXT_LINES_SETTING_KEY] !== "false";
 }
 
-/**
- * The sub-row is disabled whenever vector retrieval itself is off — context
- * lines only ever feed the vector input, so they have nothing to do without
- * it. This reads `ai_vector_retrieval` directly (not the embedding probe's
- * `availability.available`): the row cares about the switch above it, not
- * about whether a search model happens to be reachable right now.
+/*
+ * There used to be a `contextLinesRowDisabled` here, greying the row out
+ * whenever `ai_vector_retrieval` was off, on the true-at-the-time premise
+ * that the identity sentence had exactly one reader: the embedding input.
+ * It has two now — it also fills `seg_context` in the full-text index, which
+ * every reader has whether or not they ever configure an embedding provider.
+ * Withholding the feature from those readers was withholding it from the
+ * ones with the least search to begin with.
  */
-export function contextLinesRowDisabled(settings: Record<string, string>): boolean {
-  return settings.ai_vector_retrieval !== "true";
-}

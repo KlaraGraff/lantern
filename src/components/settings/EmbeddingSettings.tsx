@@ -8,11 +8,7 @@ import Input from "../ui/Input";
 import Toggle from "../ui/Toggle";
 import { useSettings } from "../../hooks/useSettings";
 import { useContextLineProgress, resumeContextLines } from "../../hooks/useContextLineProgress";
-import {
-  CONTEXT_LINES_SETTING_KEY,
-  contextLinesEnabled,
-  contextLinesRowDisabled,
-} from "./context-lines";
+import { CONTEXT_LINES_SETTING_KEY, contextLinesEnabled } from "./context-lines";
 
 interface VectorAvailability {
   available: boolean;
@@ -52,11 +48,9 @@ export default function EmbeddingSettings() {
   const [error, setError] = useState<string | null>(null);
   const { progress, refresh: refreshProgress } = useContextLineProgress();
   const [resuming, setResuming] = useState(false);
-  const contextLinesRowIsDisabled = contextLinesRowDisabled(settings);
   const contextLinesOn = contextLinesEnabled(settings);
-  const contextLinesRunning = !contextLinesRowIsDisabled && progress?.running === true;
-  const contextLinesPartial =
-    !contextLinesRowIsDisabled && !contextLinesRunning && !!progress && progress.failed > 0;
+  const contextLinesRunning = progress?.running === true;
+  const contextLinesPartial = !contextLinesRunning && !!progress && progress.failed > 0;
 
   const refreshAvailability = useCallback(async () => {
     const next = await invoke<VectorAvailability>("ai_vector_retrieval_status");
@@ -201,30 +195,18 @@ export default function EmbeddingSettings() {
         />
       </div>
 
-      <div
-        className={`relative flex min-h-[73px] items-center justify-between gap-4 border-b border-border py-3 pl-5 ${
-          contextLinesRowIsDisabled ? "opacity-40" : ""
-        }`}
-      >
-        <div
-          aria-hidden="true"
-          className={`absolute bottom-3 left-[5px] top-3 w-0.5 rounded-full ${
-            !contextLinesRowIsDisabled && contextLinesOn ? "bg-accent/50" : "bg-border"
-          }`}
-        />
+      {/* A peer of the vector-retrieval row, not a sub-row of it. It was
+          indented under it while the identity sentence only ever prefixed
+          what went to the embedding model; it now also feeds the full-text
+          index, which works with no embedding provider configured at all. */}
+      <div className="flex min-h-[73px] items-center justify-between gap-4 border-b border-border py-3">
         <div className="min-w-0">
           <h4 className="text-[13px] font-medium text-text-primary">{t("settings.ai.contextLines")}</h4>
-          {contextLinesRowIsDisabled ? (
-            <p className="mt-0.5 text-[11px] leading-[1.55] text-text-muted">
-              {t("settings.ai.contextLinesUnavailable")}
-            </p>
-          ) : (
-            <DetailedHint
-              className="mt-0.5"
-              hint={t("settings.ai.contextLinesHint")}
-              detail={t("settings.ai.contextLinesDetail")}
-            />
-          )}
+          <DetailedHint
+            className="mt-0.5"
+            hint={t("settings.ai.contextLinesHint")}
+            detail={t("settings.ai.contextLinesDetail")}
+          />
           {contextLinesRunning && progress && (
             <>
               <p className="mt-1.5 text-[11px] text-text-muted">
@@ -268,7 +250,6 @@ export default function EmbeddingSettings() {
         <Toggle
           checked={contextLinesOn}
           onChange={(enabled) => void toggleContextLines(enabled)}
-          disabled={contextLinesRowIsDisabled}
           label={t("settings.ai.contextLines")}
         />
       </div>

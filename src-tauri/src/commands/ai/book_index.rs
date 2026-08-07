@@ -206,15 +206,25 @@ pub async fn ai_update_book_index(
     .map_err(|error| AppError::Other(error.to_string()))??;
     let mut embeddings_updated = false;
     if status == grounding::index::IndexStatus::Ready {
+        // Stage ② is a best-effort enhancement to the searches downstream of
+        // it, not a precondition for either: a book with no identity
+        // sentences (switch off, no chat provider configured, a mid-book
+        // failure) must stay exactly as searchable as it is today, so its
+        // error is logged and swallowed rather than propagated.
+        //
+        // It deliberately runs outside the embedding check below. It used to
+        // sit inside it, back when the sentence only ever prefixed what went
+        // to the embedding model — no embedding source meant nothing read it.
+        // It now also fills `seg_context` in the full-text index, which every
+        // reader has whether or not they have configured an embedding
+        // provider, so gating it on one would withhold the feature from the
+        // readers it can help with no embedding setup at all.
+        if let Err(error) =
+            grounding::context::ensure_context_lines(&app, &db, &secrets, &book_id).await
+        {
+            log::warn!("grounding context line generation failed for {book_id}: {error}");
+        }
         if let Some(source) = grounding::vector::source(&db, &secrets)? {
-            // Stage ② is a best-effort enhancement to stage ③'s input, not a
-            // precondition for it: a book with no identity sentences (switch
-            // off, no chat provider configured, a mid-book failure) must stay
-            // exactly as searchable as it is today, so its error is logged
-            // and swallowed rather than propagated.
-            if let Err(error) = grounding::context::ensure_context_lines(&app, &db, &secrets, &book_id).await {
-                log::warn!("grounding context line generation failed for {book_id}: {error}");
-            }
             let complete = grounding::vector::has_complete_embeddings(&db, &book_id, &source)?;
             if !complete {
                 grounding::vector::ensure_embeddings(&db, &book_id, &source).await?;
