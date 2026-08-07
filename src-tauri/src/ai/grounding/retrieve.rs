@@ -162,7 +162,15 @@ pub(crate) fn lexical_ranks_with_limit(
     let (cutoff_kind, cutoff_value, cutoff_chunk_index) = cutoff_sql_parts(cutoff);
     let hits = conn
         .prepare(
-            "SELECT book_chunks_fts.chunk_id, bm25(book_chunks_fts) AS score
+            // Weights are positional over every column, UNINDEXED ones
+            // included: text, context, chunk_id, book_id. The context line
+            // scores at 0.3 because it is a description of the passage, not
+            // the passage — it should break a tie between two chunks the
+            // book's own words rank equally, and never outrank a chunk that
+            // actually says the words. The two UNINDEXED columns take 0.0;
+            // they hold identifiers, and a UUID that happens to tokenise
+            // like a query term is noise.
+            "SELECT book_chunks_fts.chunk_id, bm25(book_chunks_fts, 1.0, 0.3, 0.0, 0.0) AS score
              FROM book_chunks_fts
              JOIN book_chunks ON book_chunks.id = book_chunks_fts.chunk_id
                AND book_chunks.book_id = book_chunks_fts.book_id

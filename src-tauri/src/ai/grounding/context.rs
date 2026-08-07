@@ -2,12 +2,17 @@
 //! "identity" — where it sits in the book, who or what it's about — so a
 //! chunk of pure narrative with no proper nouns can still be found by an
 //! embedding search that only has the raw sentence to go on. The sentence
-//! never touches `book_chunks.text`; it only ever prefixes what stage ③
-//! sends to the embedding model. See docs/impls/contextual-retrieval.md.
+//! never touches `book_chunks.text` — that column stays byte-identical to
+//! the book, which is what makes a citation a citation. It is stored beside
+//! the text and read by the two searches that benefit: it prefixes what
+//! stage ③ sends to the embedding model, and it fills `seg_context` in the
+//! full-text index so keyword search can find a passage by who it is about.
+//! See docs/impls/contextual-retrieval.md.
 
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 use tauri::{AppHandle, Runtime};
 
+use super::segment::{segment_for_fts, SegmentMode};
 use crate::ai::router::{self, AiRequestPurpose, AiRetryMode};
 use crate::commands::ai::ChatMessage;
 use crate::db::Db;
@@ -320,6 +325,25 @@ fn write_context_line(db: &Db, chunk_id: &str, context_line: &str, model: &str) 
             context_line,
             model,
             chrono::Utc::now().timestamp_millis(),
+            chunk_id
+        ],
+    )?;
+    write_fts_context(&conn, chunk_id, context_line)?;
+    Ok(())
+}
+
+/// Mirror one chunk's context line into the search index.
+///
+/// Addressed by `fts_rowid` rather than by `chunk_id`, because `chunk_id` is
+/// UNINDEXED in FTS5 — matching on it would scan the whole index, once per
+/// chunk of the book. A chunk with no rowid yet predates migration 051 and
+/// is skipped; `ensure_fts_current` picks it up on the next retrieval.
+fn write_fts_context(conn: &Connection, chunk_id: &str, context_line: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE book_chunks_fts SET seg_context = ?1
+         WHERE rowid = (SELECT fts_rowid FROM book_chunks WHERE id = ?2 AND fts_rowid IS NOT NULL)",
+        params![
+            segment_for_fts(context_line, SegmentMode::Index),
             chunk_id
         ],
     )?;

@@ -140,6 +140,14 @@ const MIGRATIONS: &[(i64, &str)] = &[
         50,
         include_str!("../migrations/050_contextual_retrieval.sql"),
     ),
+    (
+        51,
+        include_str!("../migrations/051_fts_context_column.sql"),
+    ),
+    (
+        52,
+        include_str!("../migrations/052_epub_source_metadata.sql"),
+    ),
 ];
 
 fn register_sqlite_vec() {

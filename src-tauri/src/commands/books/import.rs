@@ -148,7 +148,20 @@ pub(crate) fn do_import_epub(file_path: &str, db: &Db, sync: &SyncWriter) -> App
         cover_data: cover_data_b64,
     };
 
-    do_insert_book(&book, metadata.cover_data.as_deref(), db, sync, now)?;
+    // `original_title`/`original_author` capture what this import actually
+    // used (dc:title/dc:creator, or the fallback) so a future "revert AI
+    // cleanup" action has a baseline that doesn't require re-parsing the
+    // source file.
+    do_insert_book(
+        &book,
+        metadata.cover_data.as_deref(),
+        db,
+        sync,
+        now,
+        metadata.language.as_deref(),
+        Some(book.title.as_str()),
+        Some(book.author.as_str()),
+    )?;
     cleanup.commit();
 
     log::info!(
@@ -216,7 +229,10 @@ pub(crate) fn do_import_text(
         available: true,
         cover_data: None,
     };
-    do_insert_book(&book, None, db, sync, now)?;
+    // Plain text/markdown/html sources have no embedded title/author/language
+    // metadata to read, so this import leaves the new original_*/language
+    // columns NULL rather than manufacturing a baseline that isn't real.
+    do_insert_book(&book, None, db, sync, now, None, None, None)?;
     cleanup.commit();
     Ok(book)
 }
@@ -301,7 +317,11 @@ fn do_import_native(
         available: true,
         cover_data: None,
     };
-    do_insert_book(&book, None, db, sync, now)?;
+    // MOBI/FB2/FBZ/CBZ sources aren't EPUB containers the `epub` crate can
+    // read, and any MOBI→EPUB conversion happens later on a background
+    // thread (see convert_prepare.rs) — no EPUB exists yet at this point to
+    // pull dc:title/dc:creator/dc:language from. Left NULL/file-stem for now.
+    do_insert_book(&book, None, db, sync, now, None, None, None)?;
     cleanup.commit();
     Ok(book)
 }
@@ -369,7 +389,18 @@ pub(crate) fn do_import_pdf(file_path: &str, db: &Db, sync: &SyncWriter) -> AppR
         cover_data: cover_data_b64,
     };
 
-    do_insert_book(&book, extracted.cover.as_deref(), db, sync, now)?;
+    // PDF metadata reading already exists in extract_pdf; this ticket only
+    // extends the original-value snapshot to EPUB, so PDFs keep NULL here.
+    do_insert_book(
+        &book,
+        extracted.cover.as_deref(),
+        db,
+        sync,
+        now,
+        None,
+        None,
+        None,
+    )?;
     cleanup.commit();
 
     log::info!(
@@ -383,18 +414,26 @@ pub(crate) fn do_import_pdf(file_path: &str, db: &Db, sync: &SyncWriter) -> AppR
     Ok(book)
 }
 
+/// `language`/`original_title`/`original_author` are not (yet) part of
+/// `Book` or the synced `BookImportPayload` — they are written straight into
+/// this device's row. Only EPUB import (the one path that actually reads
+/// them) passes `Some`; every other format passes `None` and the columns
+/// stay NULL, matching every book imported before these columns existed.
 fn do_insert_book(
     book: &Book,
     cover_bytes: Option<&[u8]>,
     db: &Db,
     sync: &SyncWriter,
     now: i64,
+    language: Option<&str>,
+    original_title: Option<&str>,
+    original_author: Option<&str>,
 ) -> AppResult<()> {
     let device = sync.self_device().to_string();
     sync.with_tx(db, now, |tx, events| {
         tx.execute(
-            "INSERT INTO books (id, title, author, description, cover_path, file_path, format, source_format, render_format, source_file_path, source_sha256, conversion_version, preparation_state, preparation_error, genre, pages, status, progress, current_cfi, created_at, updated_at, updated_by_device, cover_data)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
+            "INSERT INTO books (id, title, author, description, cover_path, file_path, format, source_format, render_format, source_file_path, source_sha256, conversion_version, preparation_state, preparation_error, genre, pages, status, progress, current_cfi, created_at, updated_at, updated_by_device, cover_data, language, original_title, original_author)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
             params![
                 book.id,
                 book.title,
@@ -419,6 +458,9 @@ fn do_insert_book(
                 book.updated_at,
                 device,
                 cover_bytes,
+                language,
+                original_title,
+                original_author,
             ],
         )?;
         events.push(EventBody::BookImport(BookImportPayload {

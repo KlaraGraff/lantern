@@ -7,23 +7,33 @@ pub struct EpubMetadata {
     pub title: String,
     pub author: String,
     pub description: Option<String>,
+    /// Verbatim `dc:language` (e.g. "en-GB"), unnormalized — the reader
+    /// decides later what a region variant means, this layer just carries it.
+    pub language: Option<String>,
     pub cover_data: Option<Vec<u8>>,
 }
 
 pub fn extract_metadata(epub_path: &Path) -> AppResult<EpubMetadata> {
     let mut doc = EpubDoc::new(epub_path).map_err(|e| AppError::Epub(e.to_string()))?;
 
+    // `dc:title` is spec-required but plenty of real-world EPUBs (scanner
+    // exports, pirate sites) ship it empty or leave it out. Previously this
+    // fell back to a hardcoded "Untitled", which buried every such book under
+    // one indistinguishable name; the source filename at least carries
+    // whatever the downloader/scanner named it.
     let title = doc
         .mdata("title")
-        .map(|m| m.value.clone())
-        .unwrap_or_else(|| "Untitled".to_string());
+        .map(|m| m.value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| fallback_title_from_path(epub_path));
 
-    let author = doc
-        .mdata("creator")
-        .map(|m| m.value.clone())
-        .unwrap_or_else(|| "Unknown Author".to_string());
+    let author = joined_creators(&doc);
 
     let description = doc.mdata("description").map(|m| m.value.clone());
+    let language = doc
+        .mdata("language")
+        .map(|m| m.value.trim().to_string())
+        .filter(|value| !value.is_empty());
 
     let cover_data = extract_cover(&mut doc);
 
@@ -31,8 +41,64 @@ pub fn extract_metadata(epub_path: &Path) -> AppResult<EpubMetadata> {
         title,
         author,
         description,
+        language,
         cover_data,
     })
+}
+
+fn fallback_title_from_path(epub_path: &Path) -> String {
+    let stem = epub_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("Untitled")
+        .trim();
+    if stem.is_empty() {
+        "Untitled".to_string()
+    } else {
+        stem.to_string()
+    }
+}
+
+/// `dc:creator` may repeat once per contributor on a multi-author book, and
+/// the `epub` crate exposes every occurrence via `doc.metadata` (`mdata()`
+/// only returns the first). EPUB3 lets each occurrence carry a `role`
+/// refinement (e.g. `<meta refines="#id" property="role">edt</meta>`) that
+/// would let us separate authors from editors/translators, but real-world
+/// files are inconsistent about writing one at all — the Standard Ebooks
+/// fixture used in this crate's tests doesn't. Rather than silently dropping
+/// an unrole'd contributor (which could just as easily be the sole author),
+/// every `dc:creator` value is kept and joined, leaving the reader to sort
+/// out who's who by name.
+fn joined_creators(doc: &EpubDoc<std::io::BufReader<std::fs::File>>) -> String {
+    let names: Vec<&str> = doc
+        .metadata
+        .iter()
+        .filter(|item| item.property == "creator")
+        .map(|item| item.value.trim())
+        .filter(|value| !value.is_empty())
+        .collect();
+    if names.is_empty() {
+        return "Unknown Author".to_string();
+    }
+    // "、" is the enumeration comma CJK typography uses between names; a
+    // Latin-script book wants ", ". Picking by the names themselves rather
+    // than by `dc:language` keeps this right on the files that prompted all
+    // of this — the ones whose metadata is missing or wrong.
+    let separator = if names.iter().any(|name| name.chars().any(is_cjk)) {
+        "、"
+    } else {
+        ", "
+    };
+    names.join(separator)
+}
+
+fn is_cjk(value: char) -> bool {
+    matches!(value,
+        '\u{4E00}'..='\u{9FFF}'      // CJK unified ideographs
+        | '\u{3400}'..='\u{4DBF}'    // extension A
+        | '\u{3040}'..='\u{30FF}'    // kana
+        | '\u{AC00}'..='\u{D7AF}'    // hangul
+    )
 }
 
 fn extract_cover(doc: &mut EpubDoc<std::io::BufReader<std::fs::File>>) -> Option<Vec<u8>> {

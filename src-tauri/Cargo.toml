@@ -80,6 +80,7 @@ wuff = "0.2.7"
 # Edge Read aloud speech. Default features would pull a second blocking HTTP
 # stack (`ureq`) we have no use for, so only the tokio runtime is enabled.
 msedge-tts = { version = "0.4.0", default-features = false, features = ["tokio-runtime"] }
+whatlang = "0.18"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
