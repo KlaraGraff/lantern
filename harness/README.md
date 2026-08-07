@@ -4,14 +4,18 @@ Runs the Lantern React frontend in plain Chrome against a fake Tauri backend, an
 sweeps it for runtime errors — clicks every safe control on every route it can
 reach and reports everything that threw.
 
-It exists to close one specific gap: the ~800 frontend unit tests are all
+It exists to close one specific gap: the ~900 frontend unit tests are all
 pure-function tests. Nothing in the suite renders a component or clicks
-anything, so "click this and it throws" is invisible to CI. This catches that
-class, and only that class.
+anything, so "click this and it throws" would otherwise be invisible to CI.
+This catches that class, and only that class.
+
+CI runs it on every push and PR — the `Browser smoke` job, via
+`npm run smoke:ci` (`scripts/smoke-ci.mjs`). See [In CI](#in-ci) below for what
+that gate does and does not fail on.
 
 Nothing in `src/` knows the harness exists. No production file was modified for
-it; the only change outside `harness/` and `vite.config.harness.ts` is one added
-npm script.
+it; outside `harness/`, `vite.config.harness.ts` and `scripts/smoke-ci.mjs` the
+whole footprint is two npm scripts and one CI job.
 
 ## Run it
 
@@ -19,6 +23,9 @@ npm script.
 npm run smoke                      # dev server on :1440, app boots with mocked Tauri
 open http://localhost:1440/        # drive it by hand
 open http://localhost:1440/?smoke=1  # run the automated sweep
+
+npm run smoke:ci                   # what CI runs: boots the harness, sweeps, gates
+npm run smoke:ci -- --keep         # same, but leave the dev server up afterwards
 ```
 
 The sweep writes its report to `window.__SMOKE__` and flips
@@ -40,6 +47,35 @@ URL knobs, all optional and additive:
 | `?onboarding=1` | clear `onboarding_state` so onboarding shows |
 | `?lang=zh` | boot in Chinese |
 | `?platform=ios` | make the platform mock report iOS instead of macOS |
+
+## In CI
+
+`scripts/smoke-ci.mjs` is the driver: it boots `npm run smoke` (or reuses one
+already on :1440), drives headless Chrome over the DevTools protocol with no
+dependencies, polls `window.__SMOKE_DONE__`, and writes the report to
+`dist/smoke-report.json` — uploaded as the `smoke-report` artifact when the job
+fails. `google-chrome` is preinstalled on the runner image; locally it finds the
+macOS install, and `CHROME_BIN` overrides both.
+
+**The sweep tab is deliberately backgrounded.** The driver opens a throwaway
+foreground tab before navigating, because `--headless=new` otherwise reports
+`document.hidden === false` and the `ResizeObserver loop` filter in
+`collectors.ts` never engages — the first run collected 1991 of those and
+nothing else. Hidden is the mode this harness was built for; see *Hidden tabs*
+below.
+
+**What fails the build:** `error`, `unhandledrejection`, `click-threw`,
+`resource`, and anything flagged `fatal`. Also a sweep that visited no routes,
+which is otherwise green for the wrong reason.
+
+**What does not:** `console.warn`. It is printed and worth fixing, but a build
+that goes red on a legitimate warning teaches people to route around this check.
+`console.error` is likewise reported without failing — the app logs handled
+errors through it on paths the mocked backend deliberately rejects.
+
+**Not gated on:** `readerRendered`. A hidden document gets no frames, so the
+book does not paint and the flag is false in CI by construction. That is a
+property of automation, not a regression.
 
 ## What is here
 

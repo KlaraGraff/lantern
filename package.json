@@ -11,6 +11,7 @@
     "check:docs": "node scripts/check-doc-links.mjs",
     "test:unit": "node --experimental-strip-types --test tests/*.test.ts",
     "smoke": "vite --config vite.config.harness.ts",
+    "smoke:ci": "node scripts/smoke-ci.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "package": "tauri build",
