@@ -47,6 +47,8 @@ const CDP_CALL_TIMEOUT_MS = 15_000;
 const EVALUATE_TIMEOUT_MS = 5_000;
 /** How often to print where the sweep is, so a slow run is legible while it runs. */
 const HEARTBEAT_MS = 15_000;
+/** How long to let a SIGKILLed Chrome actually die before touching its profile. */
+const EXIT_GRACE_MS = 5_000;
 
 /* ------------------------------------------------------------------ *
  * Chrome
@@ -395,8 +397,30 @@ async function runSweep() {
   } finally {
     cdp?.close();
     chrome.kill("SIGKILL");
-    rmSync(profile, { recursive: true, force: true });
+    // SIGKILL is not synchronous. Deleting the profile while Chrome is still
+    // flushing it races the writes and `rmSync` fails with ENOTEMPTY even under
+    // `recursive`/`force` — which, thrown from a `finally`, replaces whatever
+    // the sweep was actually reporting. That is exactly how the first CI run
+    // failed: a finished sweep, reported as a driver crash, no report written.
+    await once(chrome, "exit", EXIT_GRACE_MS);
+    try {
+      rmSync(profile, { recursive: true, force: true });
+    } catch (error) {
+      // A leftover temp directory is not worth failing a build over.
+      console.warn(`! could not remove ${profile}: ${error.message}`);
+    }
   }
+}
+
+/** Resolve on the named event, or after `timeoutMs` regardless. Never rejects. */
+function once(emitter, event, timeoutMs) {
+  return new Promise((res) => {
+    const timer = setTimeout(res, timeoutMs);
+    emitter.once(event, () => {
+      clearTimeout(timer);
+      res();
+    });
+  });
 }
 
 /* ------------------------------------------------------------------ *
