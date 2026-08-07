@@ -14,7 +14,9 @@
 //! `commands::ocr::resolver::resolve_active_asset`'s job, not something a
 //! second caller should reimplement.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use rusqlite::{params, OptionalExtension};
 
@@ -181,17 +183,101 @@ impl ResolvedSource {
 /// Parse the resolved source into sections. Pure parsing: no network, no
 /// derived-table reads beyond the prepared document a text book was imported
 /// into.
+///
+/// Callers that ask for the same file at the same time share one parse. This
+/// is not a cache — nothing survives the last concurrent caller returning —
+/// it exists because finishing an import fires the grounding index and the
+/// difficulty preview onto the blocking pool in the same breath, and both
+/// land here on the same file within microseconds of each other. Reading a
+/// novel twice is merely wasteful; for a PDF it is worse, because the two
+/// then queue up behind `crate::pdfium`'s exclusive lock and the second parse
+/// is pure added latency before the shelf stops saying "analyzing".
 pub fn extract_source_text(
     db: &Db,
     book_id: &str,
     source: &ResolvedSource,
 ) -> AppResult<Vec<SectionText>> {
+    let key = format!(
+        "{book_id}\u{0}{}\u{0}{}",
+        source.sha256_or_empty(),
+        source.path.display()
+    );
+    let slot = claim(&key);
+
+    // Whoever gets the lock first does the parse; anyone else blocks here and
+    // reads the answer out. A leader that panics poisons the lock, and
+    // `into_inner` lets the next caller find `None` and parse it themselves
+    // rather than inheriting a wedged slot.
+    let mut cell = slot.lock().unwrap_or_else(|poison| poison.into_inner());
+    if let Some(shared) = cell.as_ref() {
+        return clone_out(shared);
+    }
+
+    let outcome = parse(db, book_id, source);
+    // Retire the slot before the lock is released: callers already holding an
+    // `Arc` to it still get this result, while anyone arriving afterwards
+    // starts a fresh parse instead of being served text of unknown age.
+    retire(&key, &slot);
+    if Arc::strong_count(&slot) == 1 {
+        // Retired, and the only reference left is this one — no caller is
+        // waiting and none can still arrive. The uncontended path, which is
+        // most of them, therefore hands back the sections it just parsed
+        // without paying for a copy or flattening the error type.
+        return outcome;
+    }
+    let shared = cell.insert(outcome.map(Arc::new).map_err(|error| error.to_string()));
+    clone_out(shared)
+}
+
+fn parse(db: &Db, book_id: &str, source: &ResolvedSource) -> AppResult<Vec<SectionText>> {
     match source.format.as_str() {
         "txt" | "markdown" | "html" if source.render_format == "text" => {
             extract_text_book(db, book_id, Some(source.sha256_or_empty()))
         }
         "pdf" => extract_pdf(&source.path),
         _ => extract_epub(&source.path),
+    }
+}
+
+/// One in-flight parse. `None` until the leader finishes.
+///
+/// The failure side is a `String` rather than an `AppError` because sharing
+/// requires cloning and `AppError` is not `Clone`. Both callers only ever read
+/// the message — `ensure_index` stores it and tests it for
+/// `PDF_TEXT_LAYER_UNAVAILABLE` — so the round trip through `AppError::Other`
+/// is lossless where it counts.
+type Slot = Mutex<Option<Result<Arc<Vec<SectionText>>, String>>>;
+
+static IN_FLIGHT: OnceLock<Mutex<HashMap<String, Arc<Slot>>>> = OnceLock::new();
+
+fn in_flight() -> &'static Mutex<HashMap<String, Arc<Slot>>> {
+    IN_FLIGHT.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn claim(key: &str) -> Arc<Slot> {
+    let mut map = in_flight()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    map.entry(key.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(None)))
+        .clone()
+}
+
+fn retire(key: &str, slot: &Arc<Slot>) {
+    let mut map = in_flight()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    // Only if it is still *this* slot: a caller that arrived after an earlier
+    // retire may already have installed a newer one for the same key.
+    if map.get(key).is_some_and(|current| Arc::ptr_eq(current, slot)) {
+        map.remove(key);
+    }
+}
+
+fn clone_out(shared: &Result<Arc<Vec<SectionText>>, String>) -> AppResult<Vec<SectionText>> {
+    match shared {
+        Ok(sections) => Ok(sections.as_ref().clone()),
+        Err(message) => Err(AppError::Other(message.clone())),
     }
 }
 
@@ -270,6 +356,73 @@ mod tests {
             resolve_book_source(&db, "book").unwrap(),
             BookSource::Unsupported { .. }
         ));
+    }
+
+    fn section(title: &str) -> SectionText {
+        SectionText {
+            section_index: 0,
+            section_href: None,
+            section_title: Some(title.to_string()),
+            blocks: Vec::new(),
+        }
+    }
+
+    /// Import fires the grounding index and the difficulty preview at the
+    /// same file microseconds apart. The second one to arrive waits for the
+    /// first parse instead of starting its own.
+    #[test]
+    fn callers_racing_on_one_file_share_a_single_parse() {
+        let key = "book\u{0}hash-a\u{0}/books/book.epub";
+        let leader = claim(key);
+        let follower = claim(key);
+        assert!(Arc::ptr_eq(&leader, &follower));
+
+        let mut parsing = leader.lock().unwrap();
+        let waiting = std::thread::spawn(move || {
+            let done = follower.lock().unwrap_or_else(|poison| poison.into_inner());
+            clone_out(done.as_ref().expect("the leader published a result"))
+        });
+
+        retire(key, &leader);
+        *parsing = Some(Ok(Arc::new(vec![section("Chapter 1")])));
+        drop(parsing);
+
+        let shared = waiting.join().unwrap().unwrap();
+        assert_eq!(shared.len(), 1);
+        assert_eq!(shared[0].section_title.as_deref(), Some("Chapter 1"));
+
+        // Nothing is cached: the next caller re-reads rather than being
+        // served text of unknown age.
+        let later = claim(key);
+        assert!(!Arc::ptr_eq(&later, &leader));
+        assert!(later.lock().unwrap().is_none());
+        retire(key, &later);
+    }
+
+    /// A failed parse is shared too — for a PDF the failure only comes back
+    /// *after* a full read, so re-running it is the expensive case, not the
+    /// cheap one. `AppError` cannot be cloned, so the message round-trips
+    /// through a string; the substring `ensure_index` keys off must survive.
+    #[test]
+    fn a_shared_failure_keeps_the_message_callers_match_on() {
+        let shared = Err("PDF_TEXT_LAYER_UNAVAILABLE".to_string());
+        let error = clone_out(&shared).unwrap_err();
+        assert!(error.to_string().contains("PDF_TEXT_LAYER_UNAVAILABLE"));
+    }
+
+    /// Two different books resolve to two different parses, obviously — but
+    /// so do two versions of one book, because the hash is part of the key.
+    /// An OCR rerun must not be served the pre-OCR text.
+    #[test]
+    fn a_new_content_hash_is_a_different_parse() {
+        let before = claim("book\u{0}hash-a\u{0}/books/book.pdf");
+        let after = claim("book\u{0}hash-b\u{0}/books/book.pdf");
+        let other = claim("other\u{0}hash-a\u{0}/books/other.pdf");
+        assert!(!Arc::ptr_eq(&before, &after));
+        assert!(!Arc::ptr_eq(&before, &other));
+        retire("book\u{0}hash-a\u{0}/books/book.pdf", &before);
+        retire("book\u{0}hash-b\u{0}/books/book.pdf", &after);
+        retire("other\u{0}hash-a\u{0}/books/other.pdf", &other);
     }
 
     #[test]
