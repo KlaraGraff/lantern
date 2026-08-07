@@ -6,7 +6,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use super::intent;
-use super::prompt::{book_reference_block, truncate_utf8};
+use super::prompt::{book_reference_block, truncate_utf8, MARKUP_GUIDE};
 use super::routing::*;
 use super::stream::{ensure_stream_credentials_ready, spawn_routed_stream};
 use super::vocabulary::{
@@ -388,6 +388,7 @@ fn append_chat_route_instructions(
         }
     }
     system_content.stable.push_str(ANSWER_DISCIPLINE);
+    system_content.stable.push_str(MARKUP_GUIDE);
 }
 
 fn should_inject_full_text(total_tokens: usize, threshold: usize) -> bool {
@@ -907,9 +908,30 @@ pub async fn ai_chat(
                                                 }
                                             }
                                             Ok(false) => {
+                                                let index_app = app.clone();
                                                 let index_db = db.clone();
+                                                let index_secrets = secrets.inner().clone();
                                                 let index_book_id = book_id.clone();
                                                 tauri::async_runtime::spawn(async move {
+                                                    // Stage ② before stage ③, same as the
+                                                    // manual reindex path — but its failure
+                                                    // must not skip the embedding backfill:
+                                                    // this book still needs to become
+                                                    // searchable even with no identity
+                                                    // sentences.
+                                                    if let Err(error) =
+                                                        grounding::context::ensure_context_lines(
+                                                            &index_app,
+                                                            &index_db,
+                                                            &index_secrets,
+                                                            &index_book_id,
+                                                        )
+                                                        .await
+                                                    {
+                                                        log::warn!(
+                                                        "grounding context line backfill failed: {error}"
+                                                    );
+                                                    }
                                                     if let Err(error) =
                                                         grounding::vector::ensure_embeddings(
                                                             &index_db,

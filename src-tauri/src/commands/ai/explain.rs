@@ -18,7 +18,7 @@ use crate::secrets::Secrets;
 /// language handling comes from the shared explanation mode and CEFR level.
 fn explain_system_prompt(explanation_mode: &str, cefr: &str) -> String {
     format!(
-        "{}\n\nYou are a reading assistant embedded in an ebook reader. The user selected a sentence or passage and wants to understand it in context.\n\nIn 2–3 sentences, explain what it means and why it matters here — clarify any difficult phrasing, allusion, or tone. Be direct and concise. Do not restate the passage, add headers or labels, or pad with preamble. Plain prose only.",
+        "{}\n\nYou are a reading assistant embedded in an ebook reader. The user selected a sentence or passage and wants to understand it in context.\n\nIn 2–3 sentences, explain what it means and why it matters here — clarify any difficult phrasing, allusion, or tone. Be direct and concise. Do not restate the passage, add headers or labels, or pad with preamble. Plain prose only — no headings, lists, tables, or block quotes. You may put a short language form under discussion in `backticks`, and may wrap the one phrase that unlocks the passage in ==double equal signs==; both optional, at most once or twice.",
         explanation_strategy(explanation_mode, cefr),
     )
 }

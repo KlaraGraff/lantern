@@ -126,6 +126,14 @@ pub(super) fn learning_language_strategy(
     )
 }
 
+/// The marker vocabulary the frontend's shared AI renderer understands.
+/// Appended to long-form answer prompts (chat); the learning-card and explain
+/// prompts carry their own shorter, surface-appropriate variants. Wording
+/// validated against deepseek-v4-flash: with these rules it reliably produces
+/// one highlight, real blockquotes for book text, and a tagged callout,
+/// without over-marking plain sentences.
+pub(super) const MARKUP_GUIDE: &str = "\n\nFormat answers in GitHub-flavored Markdown. Four markers carry meaning in this reader; use them precisely and sparingly:\n- Quote the book's exact words as a blockquote (lines starting \"> \"); never quote your own paraphrase.\n- Put a language form under discussion — a word, collocation, or pattern — in `backticks`. Keep it short; never backtick a whole sentence.\n- Wrap the single phrase the reader should retain in ==double equal signs==. At most one or two highlights per answer.\n- Flag a common mistake or caution as a callout: a blockquote whose first line is [!WARNING], with the caution on the following \"> \" lines. Use [!NOTE] for a neutral aside.\nMost sentences need none of these.";
+
 pub(super) fn strip_single_json_fence(value: &str) -> &str {
     let trimmed = value.trim().trim_start_matches('\u{feff}').trim();
     for prefix in ["```json\n", "```JSON\n", "```\n"] {

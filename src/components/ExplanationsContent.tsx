@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import Markdown from "react-markdown";
 import { ArrowRightFromLine, BookOpen, Loader2, Search, WandSparkles } from "lucide-react";
 import Input from "./ui/Input";
 import Select from "./ui/Select";
 import { useOpenBook } from "../hooks/useOpenBook";
 import { useExplanations, type Explanation } from "../hooks/useExplanations";
-import { LOOKUP_PROSE } from "./lookup-prose";
+import AiMarkdown from "./ai-markdown/AiMarkdown";
 import { timeAgo } from "../utils/timeAgo";
 
 /**
@@ -147,9 +146,12 @@ export default function ExplanationsContent() {
                           {item.passage}
                         </p>
                       </div>
-                      <div className={`${LOOKUP_PROSE} mt-2 text-[13px] leading-[1.7] text-text-secondary ${expanded ? "" : "line-clamp-3"}`}>
-                        <Markdown>{item.explanation}</Markdown>
-                      </div>
+                      <AiMarkdown
+                        size="compact"
+                        className={`mt-2 text-[13px] leading-[1.7] text-text-secondary ${expanded ? "" : "line-clamp-3"}`}
+                      >
+                        {item.explanation}
+                      </AiMarkdown>
                       <p className="mt-2.5 text-[11px] text-text-muted">{metaParts.join(" · ")}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">

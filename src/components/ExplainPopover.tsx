@@ -4,8 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { X, Loader2, WandSparkles, BookmarkPlus, Check, Copy, Settings, MessageSquareMore, BookOpenCheck, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import Markdown from "react-markdown";
-import { LOOKUP_PROSE } from "./lookup-prose";
+import AiMarkdown from "./ai-markdown/AiMarkdown";
 import { aiErrorMessageKey, getAiErrorCode, isAiRetryableError, isAiSettingsError, type AiErrorCode } from "../utils/aiError";
 import AiRetryButton from "./AiRetryButton";
 import { createUuid } from "../utils/randomUuid";
@@ -521,8 +520,10 @@ export default function ExplainPopover({
             <AiRetryButton onClick={retry} />
           </div>
         ) : (
-          <div className={`${LOOKUP_PROSE} text-[13px] text-text-primary pt-2.5`}>
-            <Markdown>{content}</Markdown>
+          <div className="pt-2.5">
+            <AiMarkdown size="compact" streaming={streaming} className="text-[13px] text-text-primary">
+              {content}
+            </AiMarkdown>
             {streaming && (
               <Loader2 size={12} className="inline-block ml-0.5 animate-spin text-text-muted" />
             )}

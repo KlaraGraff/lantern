@@ -3,79 +3,17 @@ import { useTranslation } from "react-i18next";
 import { AlertTriangle, ChevronDown, ChevronRight, Loader2, Quote, Settings } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import type { AiChatRoute, ChatMessage, CitedSource, SectionContextMetadata } from "../hooks/useAiChat";
 import { aiErrorMessageKey, isAiErrorCode, isAiRetryableError, isAiSettingsError } from "../utils/aiError";
 import AiRetryButton from "./AiRetryButton";
-import {
-  citedSourcesInContent,
-  citationMarkerFromHref,
-  citationUrlTransform,
-  markdownWithCitationLinks,
-} from "./citation-markers";
+import AiMarkdown from "./ai-markdown/AiMarkdown";
+import CitationChip from "./ai-markdown/CitationChip";
+import { citedSourcesInContent } from "./citation-markers";
 
 // Answers fill the column they are given — a percentage cap only strands
 // whitespace in the reader's side panel, which is already narrow. The ch cap
 // keeps the line measure readable in the full-width chats page instead.
 const ANSWER_WIDTH = "w-full max-w-[68ch]";
-
-/** Marks a paragraph the model meant as a section heading. */
-const ANSWER_LEAD_CLASS = "answer-lead";
-
-/** True for `**Heading**` on a line of its own — one bold child, nothing else. */
-function isLeadParagraph(node: unknown): boolean {
-  const children = (node as { children?: { type?: string; tagName?: string }[] } | undefined)?.children;
-  return children?.length === 1
-    && children[0]?.type === "element"
-    && children[0]?.tagName === "strong";
-}
-
-// Answer prose. A wall of same-weight, same-colour 14px text is what makes a
-// long vocabulary breakdown tiring to read, so the body sits a shade lighter
-// than the terms, lines breathe, and lists get their markers back (Tailwind's
-// preflight strips them, which is why bullets rendered as flat lines).
-const ANSWER_PROSE = [
-  "max-w-none text-[14px] text-text-secondary leading-[1.7] tracking-[-0.15px]",
-  "[&_h1]:text-[15px] [&_h2]:text-[14px] [&_h3]:text-[14px]",
-  "[&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold",
-  "[&_h1]:text-text-primary [&_h2]:text-text-primary [&_h3]:text-text-primary",
-  "[&_h1]:mt-4 [&_h1]:mb-1.5 [&_h2]:mt-4 [&_h2]:mb-1.5 [&_h3]:mt-3 [&_h3]:mb-1",
-  "[&_p]:my-2",
-  // Models write section headings as a lone bold line; space it like a heading.
-  // The marker class is applied by the paragraph renderer rather than matched
-  // with `:has()`, which the reader's Safari 15 baseline does not support. Two
-  // class selectors beat the plain `[&_p]` rule above, so ordering is not load
-  // bearing here.
-  //
-  // Spelled out rather than interpolated from ANSWER_LEAD_CLASS: Tailwind scans
-  // source text literally, so a template hole yields no rule at all and the
-  // spacing silently does nothing. Keep the two in step.
-  "[&_p.answer-lead]:mt-4 [&_p.answer-lead]:mb-1",
-  "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-[1.2em] [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-[1.5em]",
-  "[&_li]:my-1 [&_li]:pl-0.5 [&_li::marker]:text-text-muted",
-  "[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-text-muted",
-  "[&_code]:bg-bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-[13px]",
-  "[&_pre]:bg-bg-muted [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:overflow-x-auto",
-  "[&_strong]:font-semibold [&_strong]:text-text-primary [&_em]:italic",
-  "[&_hr]:border-border [&_hr]:my-3 [&_a]:text-accent [&_a]:underline",
-  // GFM tables. Preflight strips every default table border, so without these
-  // a comparison table renders as cells jammed together — worse to read than
-  // the raw pipes it replaced. The header sits on the muted fill rather than a
-  // heavier rule so a three-column table does not outweigh the prose above it.
-  // Vertical margin lives on the scroll wrapper below, not here, so the
-  // first/last-child reset at the end of this list can still reach it.
-  "[&_table]:w-full [&_table]:border-collapse [&_table]:text-[13px]",
-  "[&_th]:border [&_th]:border-border [&_th]:bg-bg-muted [&_th]:px-2.5 [&_th]:py-1.5",
-  "[&_th]:text-left [&_th]:font-semibold [&_th]:text-text-primary",
-  "[&_td]:border [&_td]:border-border [&_td]:px-2.5 [&_td]:py-1.5 [&_td]:align-top",
-  // Task lists: the checkbox replaces the marker, so the bullet would double
-  // up. Matched on the `task-list-item` class mdast-util-to-hast puts there,
-  // not with `:has()`, which the Safari 15 baseline does not support.
-  "[&_li.task-list-item]:list-none [&_li.task-list-item]:pl-0",
-  "[&_li_input[type=checkbox]]:mr-1.5 [&_li_input[type=checkbox]]:align-[-1px]",
-  "[&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-].join(" ");
 
 interface MessageBubbleProps {
   msg: ChatMessage;
@@ -87,22 +25,6 @@ interface MessageBubbleProps {
   /** Ask the same question again, looking past any cooldown. */
   onRetry?: (assistantId: string) => void;
   onQuoteReply?: (text: string) => void;
-}
-
-function CitationChip({ source, onClick }: { source: CitedSource; onClick?: () => void }) {
-  const number = source.marker.replace(/^S/, "");
-  const tooltip = [source.sectionTitle, source.snippet].filter(Boolean).join("\n");
-  return (
-    <button
-      type="button"
-      title={tooltip}
-      aria-label={`Source ${number}`}
-      onClick={onClick}
-      className="mx-0.5 inline-flex h-5 min-w-5 translate-y-[-1px] items-center justify-center rounded border border-accent/35 bg-accent-bg px-1 text-[10px] font-semibold leading-none text-accent-text align-super hover:opacity-75"
-    >
-      {number}
-    </button>
-  );
 }
 
 function isSectionRoute(route?: AiChatRoute): boolean {
@@ -289,33 +211,15 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
             {t("ai.thinking")}
           </span>
         ) : msg.content ? (
-          <div className={ANSWER_PROSE}>
-            <Markdown
-              remarkPlugins={[remarkGfm]}
-              urlTransform={citationUrlTransform}
-              components={{
-                // The bubble is capped at 68ch and table cells will not shrink
-                // below their content, so a wide table has to scroll on its own
-                // rather than widen the whole message list.
-                table: ({ children }) => (
-                  <div className="my-3 overflow-x-auto">
-                    <table>{children}</table>
-                  </div>
-                ),
-                p: ({ node, children }) => (
-                  <p className={isLeadParagraph(node) ? ANSWER_LEAD_CLASS : undefined}>{children}</p>
-                ),
-                a: ({ href, children }) => {
-                  const marker = citationMarkerFromHref(href);
-                  const source = marker ? sources.find((candidate) => candidate.marker === marker) : undefined;
-                  return source
-                    ? <CitationChip source={source} onClick={() => onNavigateToSource?.(source)} />
-                    : <a href={href}>{children}</a>;
-                },
-              }}
+          <div>
+            <AiMarkdown
+              size="chat"
+              streaming={streaming && isLast}
+              sources={sources}
+              onNavigateToSource={onNavigateToSource}
             >
-              {markdownWithCitationLinks(msg.content, sources)}
-            </Markdown>
+              {msg.content}
+            </AiMarkdown>
             {streaming && msg.content && isLast && (
               <Loader2 size={14} className="inline-block ml-1 animate-spin text-text-muted" />
             )}

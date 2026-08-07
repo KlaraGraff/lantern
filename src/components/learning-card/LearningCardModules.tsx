@@ -1,6 +1,8 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import AiMarkdown, { AlertStrip } from "../ai-markdown/AiMarkdown";
+import { leadingAlertTag } from "../ai-markdown/plugins";
 import { getEffectiveDensity, MODULE_DEFINITIONS } from "./config";
 import type {
   CardKindConfig,
@@ -51,12 +53,18 @@ function Item({
   return (
     <li className="break-words">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="text-[12px] font-semibold text-text-primary">{item.title}</span>
+        <AiMarkdown size="compact" inline className="text-[12px] font-semibold text-text-primary">
+          {item.title}
+        </AiMarkdown>
         {item.meta && density !== "compact" && (
           <span className="text-[10px] text-text-muted">{item.meta.join(" · ")}</span>
         )}
       </div>
-      {item.text && <p className="mt-0.5 text-[12px] leading-[1.55] text-text-secondary">{item.text}</p>}
+      {item.text && (
+        <AiMarkdown size="compact" inline className="mt-0.5 text-[12px] text-text-secondary">
+          {item.text}
+        </AiMarkdown>
+      )}
       {density !== "compact" && item.examples?.slice(0, exampleCount).map((example, index) => (
         <div key={`${example.source}:${index}`} className="mt-1 border-l-2 border-border pl-2 text-[11px] leading-[1.5]">
           <p className="text-text-secondary">{example.source}</p>
@@ -65,6 +73,46 @@ function Item({
       ))}
     </li>
   );
+}
+
+/**
+ * Details entries with a leading `[!warning]`-style tag break out of the
+ * bullet list as alert strips; the rest stay ordinary bullets. Rendered as a
+ * sequence so a strip is never nested inside a `<ul>`.
+ */
+function DetailEntries({ details }: { details: string[] }) {
+  const blocks: ReactNode[] = [];
+  let bullets: string[] = [];
+  const flush = () => {
+    if (!bullets.length) return;
+    blocks.push(
+      <ul key={`bullets:${blocks.length}`} className="mt-1.5 list-disc space-y-1 pl-4 text-text-secondary">
+        {bullets.map((detail) => (
+          <li key={detail}>
+            <AiMarkdown size="compact" inline>{detail}</AiMarkdown>
+          </li>
+        ))}
+      </ul>,
+    );
+    bullets = [];
+  };
+  for (const detail of details) {
+    const tagged = leadingAlertTag(detail);
+    if (!tagged) {
+      bullets.push(detail);
+      continue;
+    }
+    flush();
+    blocks.push(
+      <AlertStrip key={detail} tag={tagged.tag}>
+        <AiMarkdown size="compact" inline className="text-text-secondary">
+          {tagged.rest}
+        </AiMarkdown>
+      </AlertStrip>,
+    );
+  }
+  flush();
+  return <>{blocks}</>;
 }
 
 function ModuleContent({
@@ -93,18 +141,22 @@ function ModuleContent({
 
   return (
     <div className="break-words text-[12px] leading-[1.55]">
-      {content.heading && <p className="mb-1 font-semibold text-text-primary">{content.heading}</p>}
+      {content.heading && (
+        <AiMarkdown size="compact" inline className="mb-1 font-semibold text-text-primary">
+          {content.heading}
+        </AiMarkdown>
+      )}
       {meta && meta.length > 0 && (
         <p className="mb-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-text-muted">
           {meta.map((value) => <span key={value}>{value}</span>)}
         </p>
       )}
-      {content.summary && <p className="text-text-primary">{content.summary}</p>}
-      {details && details.length > 0 && (
-        <ul className="mt-1.5 list-disc space-y-1 pl-4 text-text-secondary">
-          {details.map((detail) => <li key={detail}>{detail}</li>)}
-        </ul>
+      {content.summary && (
+        <AiMarkdown size="compact" inline className="text-text-primary">
+          {content.summary}
+        </AiMarkdown>
       )}
+      {details && details.length > 0 && <DetailEntries details={details} />}
       {items && items.length > 0 && (
         <ul className="mt-2 space-y-2">
           {items.map((item, index) => (
@@ -117,8 +169,11 @@ function ModuleContent({
           ))}
         </ul>
       )}
+      {/* The book's own words, on the shared excerpt surface: serif on the
+          muted fill, not italic — fake italics mangle CJK. Literal text, so
+          no markdown pass. */}
       {content.quote && (
-        <blockquote className="border-l-2 border-accent/40 pl-3 italic text-text-secondary">
+        <blockquote className="mt-1.5 rounded-md border-l-2 border-lavender bg-bg-muted px-3 py-2 font-serif text-text-secondary">
           {content.quote}
         </blockquote>
       )}

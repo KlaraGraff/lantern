@@ -2,11 +2,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowRight, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import Markdown from "react-markdown";
 import type { DictionaryWord } from "../../hooks/useDictionary";
 import { notifyReaders } from "../../utils/notifyReaders";
 import { timeAgo } from "../../utils/timeAgo";
-import { LOOKUP_PROSE } from "../lookup-prose";
+import AiMarkdown from "../ai-markdown/AiMarkdown";
 import { parseDefinition, truncateMiddle } from "./entry-text";
 import PronounceButton from "../speech/PronounceButton";
 
@@ -168,9 +167,9 @@ export default function VocabEntryDetails({
           </button>
         </div>
         {definition && (
-          <div className={`${LOOKUP_PROSE} text-[13px] text-text-primary`}>
-            <Markdown>{definition}</Markdown>
-          </div>
+          <AiMarkdown size="compact" className="text-[13px] text-text-primary">
+            {definition}
+          </AiMarkdown>
         )}
         {regenerateError && (
           <p className="text-[11px] leading-[1.5] text-danger-text">
@@ -208,9 +207,9 @@ export default function VocabEntryDetails({
           <h3 className="text-[10px] font-semibold uppercase tracking-[0.4px] text-text-muted">
             {t("vocab.detail.inContext")}
           </h3>
-          <div className={`${LOOKUP_PROSE} text-[12px] text-text-secondary`}>
-            <Markdown>{contextExplanation}</Markdown>
-          </div>
+          <AiMarkdown size="compact" highlightTerm={word.word} className="text-[12px] text-text-secondary">
+            {contextExplanation}
+          </AiMarkdown>
         </section>
       )}
 
