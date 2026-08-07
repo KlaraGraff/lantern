@@ -27,7 +27,27 @@ const CONTEXT_LOCAL_WINDOW_TOKENS: usize = 2_000;
 /// locator sentence, not a summary.
 const CONTEXT_LINE_MAX_CHARS: usize = 200;
 
-const CONTEXT_LINE_SYSTEM_PROMPT: &str = "You are given the full text of one chapter from a book, and a single passage taken from within it. In one sentence, written in the same language as the passage, say where in the book this passage falls and who or what it concerns. Do not quote or restate the passage's wording, and do not add a label or quotation marks around your answer — output only that one sentence.";
+/// Written as a *locator*, not a summary, and deliberately not as a sentence
+/// about the passage. A first draft asked for "one sentence saying where this
+/// passage falls", and the model dutifully opened all but one of twelve
+/// answers with "This passage falls…" / "The passage occurs…" — thirty
+/// characters of text identical across every chunk in the book, which is
+/// noise in an embedding and eats the length cap. Naming the pronouns is the
+/// whole point of the feature: a chunk that only ever says "she was silent"
+/// is unfindable until something attached to it says Elizabeth.
+///
+/// The language rule is anchored to the book rather than to the passage for
+/// the same reason it is spelled out at all: a title page or a one-line
+/// passage carries too little text to identify a language from, and the next
+/// trial run answered exactly such a passage — in an English book — in
+/// Spanish.
+const CONTEXT_LINE_SYSTEM_PROMPT: &str = "You are given one chapter of a book and a single passage from within it. Write a short locator for that passage: where it sits in the book, and which people, places, and events it concerns. Name them explicitly — especially anyone the passage itself refers to only as \"he\", \"she\", or \"it\".
+
+Rules:
+- Write a bare phrase, not a sentence about the passage. Never begin with \"This passage\", \"The passage\", \"This section\", or the equivalent in another language.
+- Write in the language of the book, which the book title in the heading above is written in.
+- Keep it under 30 words.
+- Do not quote or restate the passage's wording, and do not add a label or quotation marks — output the locator and nothing else.";
 
 /// One `book_chunks` row, carrying just what stage ② needs: enough to decide
 /// whether it's pending, and enough (together with its section-mates) to
@@ -228,17 +248,28 @@ fn clean_context_line(raw: &str) -> String {
     // offset used to slice `value` afterwards stays valid — ASCII-only
     // lowercasing never changes a string's length or its char boundaries,
     // unlike a full Unicode lowercase.
+    // The prompt forbids these openings; this is the net under it, because a
+    // model that obeys eleven times out of twelve still leaves the twelfth
+    // chunk carrying a frame that says nothing about the chunk.
     const LEAD_INS: &[&str] = &[
         "this passage is about ",
         "this passage describes ",
+        "this passage falls ",
+        "this passage occurs ",
+        "this passage comes ",
         "this section is about ",
         "this section describes ",
+        "the passage falls ",
+        "the passage occurs ",
+        "the passage is ",
         "in this passage, ",
         "in this passage ",
         "这段讲的是",
         "这段描述的是",
         "这段说的是",
+        "这段出现在",
         "这一段讲的是",
+        "这一段出现在",
     ];
     let lower = value.to_ascii_lowercase();
     for lead_in in LEAD_INS {
@@ -248,7 +279,34 @@ fn clean_context_line(raw: &str) -> String {
         }
     }
     let value = value.trim_start_matches([':', '：', ',', '，']).trim();
-    value.chars().take(CONTEXT_LINE_MAX_CHARS).collect()
+    truncate_to_cap(value)
+}
+
+/// Cut to the character cap without leaving half a word behind.
+///
+/// A plain `take(CAP)` ended two of twelve trial lines in "…Elizabeth's
+/// faile" and "…destined for her daughte" — fragments that are not words in
+/// any language, and so embed as nothing in particular. Latin script backs
+/// off to the last space; CJK has none, so it falls back to punctuation, and
+/// failing that to the hard cut, which there costs one whole character rather
+/// than the tail of a word.
+fn truncate_to_cap(value: &str) -> String {
+    if value.chars().count() <= CONTEXT_LINE_MAX_CHARS {
+        return value.to_string();
+    }
+    let cut: String = value.chars().take(CONTEXT_LINE_MAX_CHARS).collect();
+    let boundary = cut
+        .rfind(char::is_whitespace)
+        .or_else(|| cut.rfind(['，', '。', '、', '；', '：', ',', ';']));
+    let kept = match boundary {
+        // Honour a boundary only if it keeps most of the budget: one
+        // enormous final token should shorten the line, not erase it.
+        Some(index) if index >= cut.len() / 2 => &cut[..index],
+        _ => cut.as_str(),
+    };
+    kept.trim_end()
+        .trim_end_matches([',', ';', '，', '、', '：', ':'])
+        .to_string()
 }
 
 fn write_context_line(db: &Db, chunk_id: &str, context_line: &str, model: &str) -> AppResult<()> {
@@ -473,6 +531,156 @@ pub async fn ensure_context_lines<R: Runtime>(
     Ok(())
 }
 
+/// A real run against a real book and a real provider, kept out of the normal
+/// suite because it needs both.
+///
+/// Everything else in this file tests a pure function. Nothing tests the one
+/// thing that can only be answered by asking a model: whether the sentences
+/// that come back are locators ("Elizabeth, at Longbourn, reading Jane's
+/// letter about Lydia") or restatements of the passage that add no
+/// discriminative power at all ("this passage describes a conversation").
+/// The second kind is invisible in the UI — progress still reaches 100% —
+/// which is exactly why it needs a test that prints what was written.
+///
+/// Run it with a book, a configured provider, and:
+///
+/// ```text
+/// cargo test --manifest-path src-tauri/Cargo.toml \
+///   live_context_lines_against_a_real_book -- --ignored --nocapture
+/// ```
+#[cfg(test)]
+mod live_tests {
+    use super::*;
+
+    /// The reader's own app data, copied — never opened. `-wal` and `-shm`
+    /// come along because the running app checkpoints lazily, and a copy of
+    /// the main file alone would silently miss its most recent writes.
+    fn copy_app_data(destination: &std::path::Path) -> Option<()> {
+        let source = dirs_next_home()?.join("Library/Application Support/com.klaragraff.lantern");
+        if !source.join("secrets.db").exists() {
+            return None;
+        }
+        for name in [
+            "lantern.db",
+            "lantern.db-wal",
+            "lantern.db-shm",
+            "secrets.db",
+        ] {
+            let from = source.join(name);
+            if from.exists() {
+                std::fs::copy(&from, destination.join(name)).ok()?;
+            }
+        }
+        Some(())
+    }
+
+    fn dirs_next_home() -> Option<std::path::PathBuf> {
+        std::env::var_os("HOME").map(std::path::PathBuf::from)
+    }
+
+    /// Spread across the whole book rather than taken from the front: the
+    /// opening chapters name everybody, so a sample drawn from them would
+    /// flatter the feature exactly where it is needed least.
+    const SAMPLE_SIZE: usize = 12;
+
+    #[tokio::test]
+    #[ignore = "needs a configured AI provider and spends real tokens; run manually"]
+    async fn live_context_lines_against_a_real_book() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let Some(()) = copy_app_data(directory.path()) else {
+            panic!("no Lantern app data on this machine to copy");
+        };
+
+        let epub = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../harness/books/pride-and-prejudice.epub");
+        assert!(epub.exists(), "missing {}", epub.display());
+        std::fs::create_dir_all(directory.path().join("books")).unwrap();
+        std::fs::copy(&epub, directory.path().join("books/pnp.epub")).unwrap();
+
+        // Opens the *copy*, which is also where migration 050 runs.
+        let db = Db::init(directory.path()).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT OR REPLACE INTO books (
+                     id, title, author, file_path, format, source_format, render_format,
+                     source_file_path, source_sha256, status, progress, created_at, updated_at
+                 ) VALUES ('pnp', 'Pride and Prejudice', 'Jane Austen', 'books/pnp.epub',
+                           'epub', 'epub', 'epub', 'books/pnp.epub', 'pnp-source',
+                           'unread', 0, '1970-01-01', '1970-01-01')",
+                [],
+            )
+            .unwrap();
+        }
+
+        let status = super::super::index::ensure_index(&db, "pnp").unwrap();
+        assert_eq!(status, super::super::index::IndexStatus::Ready, "index failed");
+
+        // Every chunk in the copied database starts out pending, including
+        // the reader's other books. Park them all, then un-park a spread of
+        // this book's chunks — that sample is the whole run.
+        let sampled: Vec<String> = {
+            let conn = db.conn.lock().unwrap();
+            conn.execute("UPDATE book_chunks SET context_line = '·'", []).unwrap();
+            let total: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM book_chunks WHERE book_id = 'pnp'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            println!("\n=== Pride and Prejudice: {total} chunks, sampling {SAMPLE_SIZE} ===\n");
+            let step = (total as usize / SAMPLE_SIZE).max(1);
+            let mut ids = Vec::new();
+            for index in 0..SAMPLE_SIZE {
+                let offset = (index * step) as i64;
+                let id: Option<String> = conn
+                    .query_row(
+                        "SELECT id FROM book_chunks WHERE book_id = 'pnp'
+                         ORDER BY chunk_index LIMIT 1 OFFSET ?1",
+                        params![offset],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .unwrap();
+                if let Some(id) = id {
+                    conn.execute(
+                        "UPDATE book_chunks SET context_line = NULL WHERE id = ?1",
+                        params![&id],
+                    )
+                    .unwrap();
+                    ids.push(id);
+                }
+            }
+            ids
+        };
+
+        let secrets = Secrets::init(&directory.path().to_path_buf()).unwrap();
+        let app = tauri::test::mock_app();
+        let outcome = ensure_context_lines(app.handle(), &db, &secrets, "pnp").await;
+
+        let conn = db.conn.lock().unwrap();
+        for id in &sampled {
+            let (text, line, model): (String, Option<String>, Option<String>) = conn
+                .query_row(
+                    "SELECT text, context_line, context_model FROM book_chunks WHERE id = ?1",
+                    params![id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .unwrap();
+            let head: String = text.chars().take(110).collect();
+            println!("PASSAGE  {}…", head.replace('\n', " "));
+            match line.as_deref() {
+                None => println!("CONTEXT  <never reached>"),
+                Some("") => println!("CONTEXT  <empty — model returned nothing usable>"),
+                Some(line) => println!("CONTEXT  {line}"),
+            }
+            println!("MODEL    {}\n", model.as_deref().unwrap_or("-"));
+        }
+        outcome.expect("the run itself failed");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -580,6 +788,37 @@ mod tests {
     fn clean_context_line_truncates_to_the_character_cap() {
         let long = "x".repeat(CONTEXT_LINE_MAX_CHARS + 50);
         assert_eq!(clean_context_line(&long).chars().count(), CONTEXT_LINE_MAX_CHARS);
+    }
+
+    #[test]
+    fn clean_context_line_cuts_at_a_word_boundary_not_mid_word() {
+        let long = format!("{} destined for her daughter", "word ".repeat(40));
+        let cleaned = clean_context_line(&long);
+        assert!(cleaned.chars().count() <= CONTEXT_LINE_MAX_CHARS);
+        assert!(cleaned.ends_with("word"), "cut mid-word: {cleaned:?}");
+    }
+
+    #[test]
+    fn clean_context_line_hard_cuts_when_no_boundary_is_near_the_cap() {
+        // A single unbroken token longer than the cap: shortening it is
+        // right, dropping the line entirely is not.
+        let long = format!("start {}", "x".repeat(CONTEXT_LINE_MAX_CHARS + 50));
+        assert_eq!(
+            clean_context_line(&long).chars().count(),
+            CONTEXT_LINE_MAX_CHARS
+        );
+    }
+
+    #[test]
+    fn clean_context_line_strips_the_locator_frames_the_prompt_forbids() {
+        assert_eq!(
+            clean_context_line("This passage falls near the end of Chapter 25."),
+            "near the end of Chapter 25."
+        );
+        assert_eq!(
+            clean_context_line("The passage is the title page of the book."),
+            "the title page of the book."
+        );
     }
 
     #[test]
