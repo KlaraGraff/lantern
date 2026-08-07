@@ -112,6 +112,20 @@ export const AI_PRESETS: AiPreset[] = [
     descriptionKey: "settings.ai.presetDesc.ollama",
   },
   {
+    provider: "lmstudio",
+    baseUrl: "http://localhost:1234",
+    model: "",
+    // LM Studio has its own idle-unload TTL in its Developer settings; unlike
+    // Ollama it does not read a `keep_alive` request field, so this preset
+    // never sets one.
+    keepAlive: null,
+    cost: "local",
+    keyPage: null,
+    usagePage: null,
+    nameKey: "settings.ai.presetName.lmstudio",
+    descriptionKey: "settings.ai.presetDesc.lmstudio",
+  },
+  {
     provider: "custom",
     baseUrl: "",
     model: "",
@@ -127,11 +141,12 @@ export const AI_PRESETS: AiPreset[] = [
 /**
  * The catalog as this platform may offer it.
  *
- * Ollama is a model server the reader runs beside Lantern and Lantern reaches
- * at `localhost:11434`; a phone has neither, so offering it there would only
- * produce a route that can never answer. Every other preset is an ordinary
- * HTTPS endpoint and travels everywhere — including a study-room Mac's Ollama,
- * which is reached through `custom` with a LAN address.
+ * Ollama and LM Studio are model servers the reader runs beside Lantern, reached
+ * at `localhost:11434` and `localhost:1234` respectively; a phone has neither,
+ * so offering either there would only produce a route that can never answer.
+ * Every other preset is an ordinary HTTPS endpoint and travels everywhere —
+ * including a study-room Mac's Ollama or LM Studio, which is reached through
+ * `custom` with a LAN address.
  *
  * Takes the capability rather than reading `platform` itself so the rule is
  * testable without a webview, and so the call site stays the place that says
@@ -144,7 +159,7 @@ export const AI_PRESETS: AiPreset[] = [
  */
 export function availablePresets(hasLocalModelRuntime: boolean, keep?: string): AiPreset[] {
   return AI_PRESETS.filter((preset) => (
-    preset.provider !== "ollama" || hasLocalModelRuntime || preset.provider === keep
+    !isLocalModelServerProvider(preset.provider) || hasLocalModelRuntime || preset.provider === keep
   ));
 }
 
@@ -157,4 +172,16 @@ export const COST_TIER_CLASSES: Record<CostTier, string> = {
 
 export function presetFor(provider: string): AiPreset | undefined {
   return AI_PRESETS.find((preset) => preset.provider === provider);
+}
+
+/**
+ * Ollama and LM Studio both run beside Lantern, answer with no credential at
+ * all, and are unreachable from anywhere but this machine. Every call site
+ * that means "does this provider need a key" or "is this a local model
+ * server" belongs on this predicate, so a second local provider is never
+ * added twice. Mirrors `is_keyless_local_provider` in `ai/router.rs` — keep
+ * the two lists in sync.
+ */
+export function isLocalModelServerProvider(provider: string): boolean {
+  return provider === "ollama" || provider === "lmstudio";
 }

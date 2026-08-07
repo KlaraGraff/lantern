@@ -13,8 +13,12 @@ jobs:
   build-macos:
     runs-on: macos-latest
 
+    # Not `steps.signing.outputs.enabled` -- that is only the intent to sign,
+    # read off whether the secrets exist. What the release notes have to state
+    # is what the bundle actually carries, which is only known once the
+    # certificate is in a keychain and `find-identity` has named it.
     outputs:
-      signed: ${{ steps.signing.outputs.enabled }}
+      signed: ${{ steps.certificate.outputs.identity != '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -65,15 +69,27 @@ jobs:
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # `continue-on-error` on purpose: a certificate the runner cannot import
+      # must cost the release its Developer ID signature, not its macOS
+      # installer. Without it the job dies here and the release ships with no
+      # macOS asset at all -- which is what happened to v2.11.0 and v2.11.1.
+      # The ad-hoc build below picks up whatever this step drops.
       - name: Import Apple Developer Certificate
+        id: import
         if: steps.signing.outputs.enabled == 'true'
+        continue-on-error: true
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
           KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
           printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
-          openssl pkcs12 -in certificate.p12 -nodes \
+          # `-legacy` on the read as well as the export. Apple's Keychain wraps
+          # an exported .p12 with RC2-40-CBC, which OpenSSL 3 moved out of the
+          # default provider; without the flag this line dies with
+          # "unsupported ... Algorithm (RC2-40-CBC : 0)" the moment a runner
+          # image ships an OpenSSL that no longer loads legacy by default.
+          openssl pkcs12 -legacy -in certificate.p12 -nodes \
             -passin env:APPLE_CERTIFICATE_PASSWORD -out certificate.pem
           openssl pkcs12 -export -legacy -in certificate.pem \
             -passout env:APPLE_CERTIFICATE_PASSWORD -out certificate-compatible.p12
@@ -84,9 +100,13 @@ jobs:
           security import certificate-compatible.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
 
+      # Also non-fatal, and for the same reason: an identity that imported but
+      # is not a Developer ID Application certificate leaves `identity` empty,
+      # and empty is what routes the build to the ad-hoc path below.
       - name: Verify Certificate
         id: certificate
-        if: steps.signing.outputs.enabled == 'true'
+        if: steps.import.outcome == 'success'
+        continue-on-error: true
         run: |
           CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
           CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
@@ -95,7 +115,7 @@ jobs:
 
       - name: Build signed Tauri app
         id: build-signed
-        if: steps.signing.outputs.enabled == 'true'
+        if: steps.certificate.outputs.identity != ''
         uses: tauri-apps/tauri-action@v0
         env:
           LANTERN_BUILD_COMMIT: ${{ github.sha }}
@@ -142,7 +162,7 @@ jobs:
 
       - name: Build ad-hoc signed Tauri app
         id: build-adhoc
-        if: steps.signing.outputs.enabled != 'true'
+        if: steps.certificate.outputs.identity == ''
         uses: tauri-apps/tauri-action@v0
         env:
           LANTERN_BUILD_COMMIT: ${{ github.sha }}

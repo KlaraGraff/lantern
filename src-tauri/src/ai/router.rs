@@ -925,12 +925,29 @@ fn profiles(db: &Db, enabled_only: bool) -> AppResult<Vec<AiProfile>> {
     Ok(profiles)
 }
 
+/// Whether this provider is a model server the reader runs on their own
+/// machine and that takes no credential at all — Ollama and LM Studio both
+/// answer on localhost with nothing but a base URL.
+///
+/// This is a statement about *authentication*, not about *protocol*. The two
+/// still disagree on the wire: Ollama's endpoints and body shape are its own
+/// (`models_endpoint`, `parse_model_ids`, the `keep_alive` field in
+/// `stream_once`), while LM Studio is OpenAI-compatible and goes through the
+/// same `compat_endpoint` paths as `openai` and `custom`. Every call site below
+/// that only cares "does this need a key" belongs on this helper; a call site
+/// that cares how the bytes are shaped stays keyed on the provider string.
+fn is_keyless_local_provider(provider: &str) -> bool {
+    matches!(provider, "ollama" | "lmstudio")
+}
+
 /// Whether the profile carries its own credentials instead of a list of keys:
-/// an OpenAI OAuth session, or a local Ollama that asks for nothing. These have
-/// no per-key health to record and no key list that can run empty, so the two
-/// places that ask "what can this model offer the route?" both start here.
+/// an OpenAI OAuth session, or a local model server that asks for nothing.
+/// These have no per-key health to record and no key list that can run empty,
+/// so the two places that ask "what can this model offer the route?" both
+/// start here.
 fn authenticates_without_keys(profile: &AiProfileView) -> bool {
-    (profile.auth_mode == "oauth" && profile.provider == "openai") || profile.provider == "ollama"
+    (profile.auth_mode == "oauth" && profile.provider == "openai")
+        || is_keyless_local_provider(&profile.provider)
 }
 
 /// The models still in play for one request, in route order.
@@ -1248,6 +1265,12 @@ async fn stream_once<R: Runtime>(
                 &profile.view.model,
                 profile.view.temperature,
                 messages,
+                // `keep_alive` is Ollama's own request field, not a general
+                // property of a local model server: LM Studio does not accept
+                // it and idles its models by its own Developer-settings TTL
+                // instead. So this stays keyed on the provider string rather
+                // than `is_keyless_local_provider` — sending it to LM Studio
+                // would just be an unknown field in the request body.
                 (profile.view.provider == "ollama")
                     .then_some(profile.view.keep_alive.as_deref())
                     .flatten(),
@@ -1350,6 +1373,7 @@ fn provider_default_base_url(provider: &str) -> Option<&'static str> {
         "openai" => Some("https://api.openai.com"),
         "anthropic" => Some("https://api.anthropic.com"),
         "ollama" => Some("http://localhost:11434"),
+        "lmstudio" => Some("http://localhost:1234"),
         // DeepSeek speaks the OpenAI chat shape, so only the base URL and the
         // default model differ from `custom`. It exists as its own provider so
         // the preset keeps a stable identity after the user renames the
@@ -1370,7 +1394,9 @@ fn models_endpoint(profile: &AiProfileView) -> AppResult<String> {
         } else {
             format!("{base}/api/tags")
         }),
-        "openai" | "anthropic" | "custom" | "deepseek" => {
+        // LM Studio is OpenAI-shaped despite being a local, keyless provider —
+        // it belongs with `custom` here, not with `ollama` above.
+        "openai" | "anthropic" | "custom" | "deepseek" | "lmstudio" => {
             Ok(crate::ai::compat_endpoint(base, "models"))
         }
         _ => Err(AppError::Other("AI_PROVIDER_UNSUPPORTED".to_string())),
@@ -1403,6 +1429,9 @@ async fn read_json_limited(response: reqwest::Response) -> AppResult<serde_json:
     serde_json::from_slice(&bytes).map_err(|_| AppError::Other("AI_MODEL_LIST_INVALID".to_string()))
 }
 
+/// `provider == "ollama"` is the only branch here: everything else, LM Studio
+/// included, returns the OpenAI `{data:[{id}]}` shape and falls through to the
+/// `else` arms below.
 fn parse_model_ids(provider: &str, value: &serde_json::Value) -> AppResult<Vec<String>> {
     let values = if provider == "ollama" {
         value.get("models").and_then(serde_json::Value::as_array)
@@ -1514,7 +1543,7 @@ pub async fn list_models(
     // health here: a provider may deny or omit `/models` while inference still
     // works, and this request may be probing an unsaved URL/provider draft.
     let endpoint = models_endpoint(&profile.view)?;
-    if profile.view.provider == "ollama" {
+    if is_keyless_local_provider(&profile.view.provider) {
         return list_models_once(&profile, &endpoint, None).await;
     }
 
@@ -1757,7 +1786,7 @@ async fn stream_with_profile_inner<R: Runtime>(
         result?;
         return Ok(profile.view);
     }
-    if profile.view.provider == "ollama" {
+    if is_keyless_local_provider(&profile.view.provider) {
         let started = Instant::now();
         let usage = Arc::new(Mutex::new(None::<serde_json::Value>));
         let result = stream_once_with_effort_fallback(
@@ -2050,7 +2079,7 @@ async fn stream_with_failover_inner<R: Runtime>(
         // secret is fetched only when the route actually reaches it — reading
         // the keychain for a key the first one made unnecessary is not free.
         let attempts = if authenticates_without_keys(&profile.view) {
-            if profile.view.provider == "ollama" {
+            if is_keyless_local_provider(&profile.view.provider) {
                 vec![Attempt::Direct {
                     key: String::new(),
                     account_id: None,
@@ -2308,7 +2337,7 @@ fn normalize_profile_config(
     }
     if !matches!(
         provider.as_str(),
-        "openai" | "anthropic" | "ollama" | "custom" | "deepseek"
+        "openai" | "anthropic" | "ollama" | "lmstudio" | "custom" | "deepseek"
     ) {
         return Err(AppError::Other("AI_PROVIDER_UNSUPPORTED".to_string()));
     }
@@ -3002,7 +3031,7 @@ pub async fn test_profile<R: Runtime>(
         ));
     }
 
-    if profile.view.provider == "ollama" {
+    if is_keyless_local_provider(&profile.view.provider) {
         let event_name = format!("ai-profile-test-{}", uuid::Uuid::new_v4());
         let (result, first_response_ms, _) = timed_stream_once(
             app,
@@ -3179,7 +3208,7 @@ pub fn has_configured_service(db: &Db) -> bool {
         return false;
     };
     profiles.into_iter().any(|profile| {
-        if profile.view.provider == "ollama" {
+        if is_keyless_local_provider(&profile.view.provider) {
             return true;
         }
         if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" {
@@ -3203,7 +3232,7 @@ pub fn ensure_stream_credentials_accessible(db: &Db, secrets: &Secrets) -> AppRe
             .cooldown_until
             .is_none_or(|deadline| deadline <= timestamp)
     }) {
-        if profile.view.provider == "ollama" {
+        if is_keyless_local_provider(&profile.view.provider) {
             return Ok(());
         }
         if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" {
@@ -4167,6 +4196,25 @@ mod tests {
             models_endpoint(&profile("ollama", Some("http://localhost:11434/api/"))).unwrap(),
             "http://localhost:11434/api/tags"
         );
+        // LM Studio is OpenAI-shaped, unlike Ollama: it goes through
+        // `compat_endpoint` and gains `/v1` rather than Ollama's `/api/tags`.
+        assert_eq!(
+            models_endpoint(&profile("lmstudio", Some("http://localhost:1234"))).unwrap(),
+            "http://localhost:1234/v1/models"
+        );
+    }
+
+    // Keyless means "authenticates with nothing" — Ollama and LM Studio both
+    // run on localhost and take no credential. It says nothing about the wire
+    // protocol: LM Studio still goes through the OpenAI-shaped paths above.
+    #[test]
+    fn keyless_local_provider_covers_ollama_and_lmstudio_only() {
+        assert!(is_keyless_local_provider("ollama"));
+        assert!(is_keyless_local_provider("lmstudio"));
+        assert!(!is_keyless_local_provider("openai"));
+        assert!(!is_keyless_local_provider("anthropic"));
+        assert!(!is_keyless_local_provider("custom"));
+        assert!(!is_keyless_local_provider("deepseek"));
     }
 
     #[test]

@@ -20,6 +20,8 @@
  * part is the decision and not the markup.
  */
 
+import { isLocalModelServerProvider } from "./aiPresets.ts";
+
 /** As much of `sync_status`'s peer as this decision reads. */
 export interface MissingKeyPeer {
   name: string;
@@ -93,6 +95,6 @@ export function wantsMissingKeyNotice(
   credentialCount: number,
 ): boolean {
   if (profile.auth_mode !== "api_key") return false;
-  if (profile.provider === "ollama") return false;
+  if (isLocalModelServerProvider(profile.provider)) return false;
   return credentialCount === 0;
 }

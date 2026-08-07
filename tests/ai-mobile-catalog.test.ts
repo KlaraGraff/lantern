@@ -14,21 +14,32 @@ test("a phone is not offered a model server it cannot run", () => {
 
   assert.ok(desktop.includes("ollama"));
   assert.ok(!phone.includes("ollama"));
-  // Nothing else goes missing: the phone loses exactly the local runtime.
+  assert.ok(desktop.includes("lmstudio"));
+  assert.ok(!phone.includes("lmstudio"));
+  // Nothing else goes missing: the phone loses exactly the local runtimes.
   assert.deepEqual(
-    desktop.filter((provider) => provider !== "ollama"),
+    desktop.filter((provider) => provider !== "ollama" && provider !== "lmstudio"),
     phone,
   );
   assert.equal(desktop.length, AI_PRESETS.length);
 });
 
-test("a profile already using the local runtime keeps its own provider visible", () => {
+test("a profile already using a local runtime keeps its own provider visible", () => {
   // A model configured on a Mac syncs to the phone. Hiding its provider would
   // leave the select showing nothing and rewrite the profile on the next save.
-  const phone = availablePresets(false, "ollama").map((preset) => preset.provider);
-  assert.ok(phone.includes("ollama"));
-  // And `keep` re-admits only that one.
-  assert.deepEqual(phone, availablePresets(true).map((preset) => preset.provider));
+  const desktop = availablePresets(true).map((preset) => preset.provider);
+
+  const phoneOllama = availablePresets(false, "ollama").map((preset) => preset.provider);
+  assert.ok(phoneOllama.includes("ollama"));
+  assert.ok(!phoneOllama.includes("lmstudio"));
+  // `keep` re-admits only the one it names, so the phone list still lacks
+  // whichever local provider the profile is not using.
+  assert.deepEqual(phoneOllama, desktop.filter((provider) => provider !== "lmstudio"));
+
+  const phoneLmstudio = availablePresets(false, "lmstudio").map((preset) => preset.provider);
+  assert.ok(phoneLmstudio.includes("lmstudio"));
+  assert.ok(!phoneLmstudio.includes("ollama"));
+  assert.deepEqual(phoneLmstudio, desktop.filter((provider) => provider !== "ollama"));
 });
 
 const PEERS = [{ name: "Klara 的 MacBook Air", last_seen: 200 }];
@@ -94,6 +105,8 @@ test("only a model that wants a key can be missing one", () => {
   assert.equal(wantsMissingKeyNotice({ auth_mode: "api_key", provider: "openai" }, 1), false);
   // Signed in with an account, not a key.
   assert.equal(wantsMissingKeyNotice({ auth_mode: "oauth", provider: "openai" }, 0), false);
-  // Ollama authenticates with nothing, and does not reach a phone anyway.
+  // Ollama and LM Studio authenticate with nothing, and neither reaches a
+  // phone anyway.
   assert.equal(wantsMissingKeyNotice({ auth_mode: "api_key", provider: "ollama" }, 0), false);
+  assert.equal(wantsMissingKeyNotice({ auth_mode: "api_key", provider: "lmstudio" }, 0), false);
 });

@@ -26,7 +26,7 @@ import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { formatDuration } from "./aiDuration";
 import { connectionErrorLabel } from "./ai-connection-errors";
-import { COST_TIER_CLASSES, availablePresets, presetFor } from "./aiPresets";
+import { COST_TIER_CLASSES, availablePresets, isLocalModelServerProvider, presetFor } from "./aiPresets";
 import ApiKeyField from "./ApiKeyField";
 import { platform } from "../../services/platform";
 import Button from "../ui/Button";
@@ -404,9 +404,10 @@ export default function AiServiceCard({
   const cost = preset?.cost ?? null;
   const keyPage = preset?.keyPage ?? null;
   const latency = healthStale ? null : (testResult?.total_ms ?? profile.last_latency_ms);
-  const usesApiKeys = profile.auth_mode === "api_key" && profile.provider !== "ollama";
-  // Ollama authenticates with nothing, OAuth with an account, everything else
-  // with a key — so "has something to authenticate with" is per auth mode.
+  const usesApiKeys = profile.auth_mode === "api_key" && !isLocalModelServerProvider(profile.provider);
+  // Ollama and LM Studio authenticate with nothing, OAuth with an account,
+  // everything else with a key — so "has something to authenticate with" is
+  // per auth mode.
   const connected = !usesApiKeys
     ? profile.auth_mode !== "oauth" || oauthStatus.connected
     : credentials.length > 0;
@@ -809,6 +810,10 @@ export default function AiServiceCard({
                 />
               </div>
 
+              {/* `keep_alive` is Ollama's own request field — LM Studio does not
+                  accept it and manages idle unload through its own Developer
+                  settings, so this stays keyed on the provider string rather
+                  than `isLocalModelServerProvider`. */}
               {profile.provider === "ollama" && (
                 <label className="block border-t border-border-light py-3">
                   <span className="mb-1.5 block text-[12px] font-medium text-text-primary">{t("settings.ai.keepAlive")}</span>
