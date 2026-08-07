@@ -910,7 +910,7 @@ export default function ReadingSettings({
         <span className="min-w-0">
           <span className="block text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.passiveVocab.title")}</span>
           <span className="mt-0.5 block truncate text-[12px] text-text-muted">
-            {formatPassiveVocabSummary(parsePassiveVocabSettings(settings), (key) => t(key))}
+            {formatPassiveVocabSummary(parsePassiveVocabSettings(settings), (key, params) => t(key, params))}
           </span>
         </span>
         <ChevronRight size={16} className="shrink-0 text-text-muted group-hover:text-text-primary" />
