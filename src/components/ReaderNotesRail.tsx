@@ -375,7 +375,7 @@ export default function ReaderNotesRail({
     {loading ? <div className="grid min-h-0 flex-1 place-items-center text-text-muted"><Loader2 size={18} className="animate-spin motion-reduce:animate-none" /></div> : view === "editor" ? <div className="min-h-0 flex-1 overflow-auto p-3">
       {saveFailed && <div role="alert" className="mb-3 flex items-center gap-2 rounded-md bg-danger-bg p-2 text-[11px] text-danger-text"><span className="min-w-0 flex-1">{t("readerNotes.saveFailed")}</span><button type="button" disabled={saving} onClick={() => void save()} className="font-medium disabled:opacity-60">{t("common.retry")}</button></div>}
       {editingAnchor?.selectedText && <blockquote className="mb-3 border-l-2 border-accent/40 pl-2 text-[12px] leading-5 text-text-muted">{editingAnchor.selectedText}</blockquote>}
-      <div className=""><label className="sr-only" htmlFor="reader-note-draft">{t("learningCard.notes.editorLabel")}</label>
+      <div><label className="sr-only" htmlFor="reader-note-draft">{t("learningCard.notes.editorLabel")}</label>
         <textarea id="reader-note-draft" autoFocus value={draft} onChange={(event) => updateDraft(event.target.value)} placeholder={t("learningCard.notes.placeholder")} className="min-h-36 w-full resize-y rounded-lg border border-border bg-bg-surface p-3 text-[13px] leading-6 text-text-primary outline-none focus:border-accent" />
       </div>
       <div className="mt-3 flex items-center gap-2">
