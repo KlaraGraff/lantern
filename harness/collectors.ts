@@ -46,6 +46,7 @@ export interface Fault {
 
 const faults: Fault[] = [];
 let installed = false;
+let hiddenTabResizeNoise = 0;
 
 /**
  * The sweep sets these so a fault can be attributed to what caused it.
@@ -76,6 +77,32 @@ function isIgnored(message: string): boolean {
   return IGNORED.some((pattern) => pattern.test(message));
 }
 
+/**
+ * Chrome's "the resize loop did not settle this frame" report — and the one
+ * fault that means nothing at all *while the document is hidden*.
+ *
+ * A hidden document gets no rendering opportunities, so the notifications a
+ * `ResizeObserver` queues cannot be delivered on schedule and Chrome says so.
+ * That is a statement about the tab being in the background, not about the app:
+ * during a full hidden sweep every `ResizeObserver` callback in the app fires
+ * exactly zero times, so no app code has run that could be looping. It arrives
+ * in bursts of hundreds when a dev-server module load stretches a frame, which
+ * is enough noise to bury a real fault underneath it.
+ *
+ * Deliberately conditioned on `document.hidden` rather than dropped outright.
+ * In a visible window the same message means what it says — a layout that
+ * re-triggers its own observer — and that is a bug this harness should report,
+ * so there it stays a fault.
+ *
+ * Chromium-only wording, incidentally: WebKit never emits it, so it cannot
+ * reach a macOS build at all. Windows (WebView2) is Chromium and could.
+ */
+const RESIZE_LOOP = /^ResizeObserver loop/;
+
+function isHiddenTabResizeNoise(message: string): boolean {
+  return RESIZE_LOOP.test(message) && document.hidden;
+}
+
 function stringify(value: unknown): string {
   if (value instanceof Error) return `${value.name}: ${value.message}`;
   if (typeof value === "string") return value;
@@ -93,6 +120,12 @@ function stackOf(value: unknown): string | null {
 
 export function record(kind: FaultKind, message: string, stack: string | null): void {
   if (isIgnored(message)) return;
+  if (isHiddenTabResizeNoise(message)) {
+    // Counted rather than dropped: a report that silently swallows hundreds of
+    // events is the same trap in the other direction.
+    hiddenTabResizeNoise += 1;
+    return;
+  }
   faults.push({
     kind,
     message: message.length > 2000 ? `${message.slice(0, 2000)}…` : message,
@@ -110,6 +143,11 @@ export function getFaults(): Fault[] {
 
 export function faultCount(): number {
   return faults.length;
+}
+
+/** How many hidden-tab resize reports were set aside, for the report's notes. */
+export function hiddenTabResizeNoiseCount(): number {
+  return hiddenTabResizeNoise;
 }
 
 export function installCollectors(): void {
