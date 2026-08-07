@@ -158,9 +158,11 @@ pub(crate) fn do_import_epub(file_path: &str, db: &Db, sync: &SyncWriter) -> App
         db,
         sync,
         now,
-        metadata.language.as_deref(),
-        Some(book.title.as_str()),
-        Some(book.author.as_str()),
+        LocalOnlyColumns {
+            language: metadata.language.as_deref(),
+            original_title: Some(book.title.as_str()),
+            original_author: Some(book.author.as_str()),
+        },
     )?;
     cleanup.commit();
 
@@ -232,7 +234,7 @@ pub(crate) fn do_import_text(
     // Plain text/markdown/html sources have no embedded title/author/language
     // metadata to read, so this import leaves the new original_*/language
     // columns NULL rather than manufacturing a baseline that isn't real.
-    do_insert_book(&book, None, db, sync, now, None, None, None)?;
+    do_insert_book(&book, None, db, sync, now, LocalOnlyColumns::default())?;
     cleanup.commit();
     Ok(book)
 }
@@ -321,7 +323,7 @@ fn do_import_native(
     // read, and any MOBI→EPUB conversion happens later on a background
     // thread (see convert_prepare.rs) — no EPUB exists yet at this point to
     // pull dc:title/dc:creator/dc:language from. Left NULL/file-stem for now.
-    do_insert_book(&book, None, db, sync, now, None, None, None)?;
+    do_insert_book(&book, None, db, sync, now, LocalOnlyColumns::default())?;
     cleanup.commit();
     Ok(book)
 }
@@ -397,9 +399,7 @@ pub(crate) fn do_import_pdf(file_path: &str, db: &Db, sync: &SyncWriter) -> AppR
         db,
         sync,
         now,
-        None,
-        None,
-        None,
+        LocalOnlyColumns::default(),
     )?;
     cleanup.commit();
 
@@ -414,20 +414,25 @@ pub(crate) fn do_import_pdf(file_path: &str, db: &Db, sync: &SyncWriter) -> AppR
     Ok(book)
 }
 
-/// `language`/`original_title`/`original_author` are not (yet) part of
-/// `Book` or the synced `BookImportPayload` — they are written straight into
-/// this device's row. Only EPUB import (the one path that actually reads
-/// them) passes `Some`; every other format passes `None` and the columns
-/// stay NULL, matching every book imported before these columns existed.
+/// Columns that are not (yet) part of `Book` or the synced
+/// `BookImportPayload` — they are written straight into this device's row.
+/// Only EPUB import (the one path that actually reads them) fills these in;
+/// every other format leaves them `None` and the columns stay NULL, matching
+/// every book imported before they existed.
+#[derive(Default)]
+struct LocalOnlyColumns<'a> {
+    language: Option<&'a str>,
+    original_title: Option<&'a str>,
+    original_author: Option<&'a str>,
+}
+
 fn do_insert_book(
     book: &Book,
     cover_bytes: Option<&[u8]>,
     db: &Db,
     sync: &SyncWriter,
     now: i64,
-    language: Option<&str>,
-    original_title: Option<&str>,
-    original_author: Option<&str>,
+    local: LocalOnlyColumns<'_>,
 ) -> AppResult<()> {
     let device = sync.self_device().to_string();
     sync.with_tx(db, now, |tx, events| {
@@ -458,9 +463,9 @@ fn do_insert_book(
                 book.updated_at,
                 device,
                 cover_bytes,
-                language,
-                original_title,
-                original_author,
+                local.language,
+                local.original_title,
+                local.original_author,
             ],
         )?;
         events.push(EventBody::BookImport(BookImportPayload {
