@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "smoke",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "smoke"],
+      "port": 1440
+    }
+  ]
+}

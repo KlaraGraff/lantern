@@ -1,0 +1,1014 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lantern 样张 · README 配图（8 张）</title>
+<style>
+  @font-face{font-family:LUI;src:local("Inter");unicode-range:U+0000-024F,U+2000-2BFF}
+  @font-face{font-family:LUI;src:local("PingFang SC"),local("Microsoft YaHei");unicode-range:U+3000-303F,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF}
+  @font-face{font-family:LSerif;src:local("Georgia");unicode-range:U+0000-024F,U+2000-2BFF}
+  @font-face{font-family:LSerif;src:local("Songti SC");unicode-range:U+3000-303F,U+3400-4DBF,U+4E00-9FFF,U+F900-FAFF}
+
+  :root{
+    --page:#ececed; --surface:#fff; --side:#fafafa; --input:#f3f3f5; --muted-bg:#fafafa;
+    --text:#18181b; --secondary:#52525c; --muted:#71717b; --quiet:#9a9aa4;
+    --border:#e4e4e7; --line:#f0f0f2;
+    --accent:#7c3aed; --accent-bg:#f3e8ff; --accent-soft:#faf5ff;
+    --success:#00a63e; --danger:#e7000b; --warning:#b8791c;
+    --paper:#faf7f0; --canvas:#ece7dd; --ink:#2f2b28; --ink-quiet:#8d857b; --paper-line:#e2dbcf;
+    --b1:#e7dffa; --b2:#cfc0f3; --b3:#b49aec; --b4:#9470dd; --b5:#6f43c4; --b0:#d6d6dc;
+    --m1:#c4b5fd; --m2:#8b5cf6; --m3:#6021c0; --m4:#2e1065;
+    --shadow-win:0 24px 64px rgba(24,24,27,.16),0 3px 10px rgba(24,24,27,.06);
+    --shadow-card:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -2px rgba(0,0,0,.1);
+    --shadow-pop:0 18px 44px rgba(48,40,58,.18),0 4px 10px rgba(48,40,58,.08);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--page);color:var(--text);
+    font-family:LUI,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;-webkit-font-smoothing:antialiased}
+  .serif{font-family:LSerif,Georgia,"Songti SC",serif}
+  button{font:inherit;cursor:default}
+
+  /* ── 样张外壳 ───────────────────────────────────── */
+  .sheet{max-width:1360px;margin:0 auto;padding:46px 26px 120px}
+  .sheet-head{padding-bottom:24px;border-bottom:1px solid var(--border)}
+  .sheet-head h1{margin:0;font-size:22px;letter-spacing:.01em}
+  .sheet-head p{margin:9px 0 0;max-width:820px;color:var(--muted);font-size:12.5px;line-height:1.8}
+  .rules{margin-top:16px;padding:13px 15px;border-radius:10px;background:#e6e6ea;color:#3f3f46;font-size:11.5px;line-height:1.85}
+  .rules b{color:var(--text)}
+  .toc{margin-top:16px;display:flex;flex-wrap:wrap;gap:7px}
+  .toc a{padding:5px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--secondary);text-decoration:none;font-size:11px}
+  .block{margin-top:52px}
+  .cap{margin:0 0 13px}
+  .cap b{display:block;font-size:13.5px}
+  .cap span{display:block;margin-top:5px;max-width:880px;color:var(--muted);font-size:11.5px;line-height:1.7}
+  .cap code{padding:1px 5px;border-radius:4px;background:#e2e2e6;font-size:10.5px}
+
+  /* ── 应用窗口 ───────────────────────────────────── */
+  .win{position:relative;border:1px solid #d7d7db;border-radius:14px;overflow:hidden;background:var(--surface);box-shadow:var(--shadow-win)}
+  .traffic{position:absolute;z-index:9;top:16px;left:17px;display:flex;gap:7px}
+  .traffic i{width:11px;height:11px;border-radius:50%;background:#ff5f57;display:block}
+  .traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}
+
+  /* 阅读器 */
+  .rd{display:grid;grid-template-columns:minmax(0,1fr) 336px;height:660px}
+  .rd.solo{grid-template-columns:minmax(0,1fr)}
+  .rd-main{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--canvas)}
+  .rd-bar{height:54px;flex:none;padding:0 14px 0 78px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+    border-bottom:1px solid var(--paper-line);background:#fbfaf8}
+  .rd-bar .bk b{display:block;font:600 12.5px LSerif,Georgia,serif;letter-spacing:.01em}
+  .rd-bar .bk span{color:var(--ink-quiet);font-size:9.5px}
+  .rd-bar .ch{color:var(--ink-quiet);font-size:10.5px;white-space:nowrap}
+  .rd-tools{justify-self:end;display:flex;gap:4px}
+  .tool{height:30px;min-width:30px;padding:0 8px;border:0;border-radius:8px;background:transparent;color:#6f675f;font-size:11px;display:grid;place-items:center}
+  .tool.on{background:var(--accent-bg);color:var(--accent);font-weight:650}
+  .tool svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .rd-canvas{position:relative;flex:1;min-height:0;display:grid;grid-template-rows:minmax(0,1fr);justify-items:center;align-items:stretch;padding:22px 26px 30px;overflow:hidden}
+  .paper{position:relative;width:min(680px,100%);min-height:0;padding:40px 62px;background:var(--paper);
+    box-shadow:0 4px 26px rgba(80,67,50,.09);overflow:hidden}
+  .paper .kick{margin:0 0 7px;text-align:center;color:#a89e91;font:8.5px LUI,sans-serif;letter-spacing:.16em;text-transform:uppercase}
+  .paper h2{margin:0 0 26px;text-align:center;font:600 22px LSerif,Georgia,serif;color:var(--ink)}
+  .paper p{margin:0 0 .78em;text-align:justify;font:15.5px/1.95 LSerif,Georgia,serif;color:var(--ink)}
+  .paper p.ind{text-indent:1.6em}
+  .rd-foot{position:absolute;left:0;right:0;bottom:0;height:26px;padding:0 18px;display:flex;align-items:center;
+    border-top:1px solid var(--paper-line);background:#fbfaf8;color:var(--ink-quiet);font-size:9px}
+  .rd-foot span:last-child{margin-left:auto}
+
+  /* 正文里的标记：手动=暖黄实底；自动查词=淡褐下划线；跳转落点=紫色一闪 */
+  .mk{background:linear-gradient(transparent 62%,rgba(212,163,58,.34) 62%)}
+  .au{border-bottom:1.5px solid rgba(150,110,70,.5)}
+  .sel{background:rgba(124,58,237,.13);border-radius:2px;box-shadow:0 0 0 1px rgba(124,58,237,.22)}
+  .land{background:rgba(124,58,237,.16);border-radius:3px;padding:2px 3px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+  .cite{display:inline-block;min-width:13px;height:13px;margin:0 1px 0 2px;padding:0 3px;border-radius:4px;
+    background:var(--accent-bg);color:var(--accent);font:600 8.5px/13px LUI,sans-serif;text-align:center;vertical-align:super}
+
+  /* 查词卡 */
+  .vcard{width:326px;border:1px solid #e0d6ee;border-radius:12px;background:#fff;box-shadow:var(--shadow-pop);overflow:hidden}
+  .vcard.float{position:absolute;z-index:20}
+  .vc-head{padding:13px 14px 11px;background:linear-gradient(122deg,#f7f1fc,#fdfbfe);border-bottom:1px solid #efe9f3;display:flex;align-items:flex-start;gap:8px}
+  .vc-head h3{margin:0;font:600 20px LSerif,Georgia,serif;letter-spacing:.01em}
+  .vc-head .ph{margin-top:3px;color:var(--quiet);font-size:9.5px}
+  .vc-head .x{margin-left:auto;width:24px;height:24px;border:0;border-radius:6px;background:transparent;color:var(--quiet);font-size:14px;line-height:1}
+  .memo{padding:7px 14px;background:#faf7fd;border-bottom:1px solid #efe9f3;color:#7a6f86;font-size:9.5px;line-height:1.55}
+  .vc-tier{display:flex;align-items:center;gap:6px;margin-top:7px}
+  .pill{padding:2.5px 8px;border-radius:999px;font-size:9px;font-weight:600}
+  .pill.learn{background:#ede9fe;color:#5b21b6}
+  .pill.auto{background:#f4f4f5;color:var(--muted);font-weight:500}
+  .vc-body{padding:12px 14px 4px}
+  .mod{padding:10px 0;border-bottom:1px solid #f2eff5}
+  .mod:last-child{border-bottom:0}
+  .mod h4{margin:0 0 6px;color:#8b8091;font:600 8.5px LUI,sans-serif;letter-spacing:.08em}
+  .mod p{margin:0;font-size:11.5px;line-height:1.72;color:#3f3a44}
+  .mod p.en{font-family:LSerif,Georgia,serif;font-size:12px}
+  .mod .quote{margin:0;padding:8px 10px;border-radius:7px;background:#f8f5fb;color:#6a6172;font:italic 10.5px/1.6 LSerif,Georgia,serif}
+  .gl{padding:1px 4px;border-radius:4px;background:#f0e9fa;color:#5b3fa0;font-size:10px;font-style:normal;font-family:LUI,sans-serif}
+  .vc-foot{padding:9px 12px;border-top:1px solid #efe9f3;background:#fcfbfd;display:flex;align-items:center;gap:6px}
+  .vc-foot .lbl{color:var(--quiet);font-size:9px}
+  .btn{height:28px;padding:0 11px;border:0;border-radius:7px;background:transparent;color:var(--secondary);font-size:10px}
+  .btn.pri{background:var(--accent);color:#fff;font-weight:600}
+  .btn.ghost{border:1px solid var(--border);background:#fff}
+  .btn.sm{height:25px;padding:0 9px;font-size:9.5px}
+  .ml{margin-left:auto}
+
+  /* AI 侧栏 */
+  .ai{display:flex;flex-direction:column;min-width:0;background:var(--surface);border-left:1px solid var(--border)}
+  .ai-head{height:54px;flex:none;padding:0 13px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)}
+  .ai-head b{font-size:12.5px}
+  .ai-head .bk{color:var(--quiet);font-size:9.5px}
+  .ai-scope{flex:none;padding:10px 13px;border-bottom:1px solid var(--line);background:var(--muted-bg)}
+  .seg{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;padding:3px;border-radius:8px;background:#ebebee}
+  .seg button{height:26px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:9.5px}
+  .seg button.on{background:#fff;color:var(--accent);font-weight:650;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+  .sw{margin-top:10px;display:flex;align-items:flex-start;gap:9px}
+  .sw .tg{flex:none;width:32px;height:19px;margin-top:1px;border-radius:999px;background:var(--accent);position:relative}
+  .sw .tg::after{content:"";position:absolute;top:2px;right:2px;width:15px;height:15px;border-radius:50%;background:#fff}
+  .sw .tg.off{background:#d4d4d8}.sw .tg.off::after{right:auto;left:2px}
+  .sw b{display:block;font-size:10.5px}
+  .sw p{margin:3px 0 0;color:var(--quiet);font-size:9.5px;line-height:1.55}
+  .ai-body{flex:1;min-height:0;overflow:hidden;padding:13px}
+  .ask{margin:0 0 11px;padding:9px 11px;border-radius:10px 10px 3px 10px;background:var(--accent-bg);color:#4c1d95;font-size:11px;line-height:1.65}
+  .ans{font-size:11px;line-height:1.78;color:#3f3a44}
+  .ans p{margin:0 0 8px}
+  .scope-note{display:flex;align-items:center;gap:7px;margin:10px 0;padding:7px 9px;border-radius:8px;background:#fff8ec;border:1px solid #f0e0c4;color:#8a6a2e;font-size:9.5px;line-height:1.5}
+  .scope-note b{color:#6f5320}
+  .src{margin-top:10px;padding-top:9px;border-top:1px solid var(--line)}
+  .src h5{margin:0 0 7px;color:var(--quiet);font:600 8.5px LUI,sans-serif;letter-spacing:.08em}
+  .src a{display:flex;gap:7px;padding:5px 7px;margin-bottom:3px;border-radius:7px;background:var(--muted-bg);color:var(--secondary);text-decoration:none;font-size:9.5px;line-height:1.5}
+  .src a i{flex:none;width:14px;height:14px;border-radius:4px;background:var(--accent-bg);color:var(--accent);font:600 8px/14px LUI,sans-serif;text-align:center;font-style:normal}
+  .ai-foot{flex:none;padding:10px 13px;border-top:1px solid var(--border)}
+  .ai-input{height:34px;padding:0 11px;display:flex;align-items:center;border:1px solid var(--border);border-radius:9px;background:var(--input);color:var(--quiet);font-size:10.5px}
+
+  /* 生词清单 */
+  .wlist{margin:0;padding:0;list-style:none}
+  .wlist li{display:flex;align-items:baseline;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:10.5px;line-height:1.6}
+  .wlist li:last-child{border-bottom:0}
+  .wlist b{flex:none;font:600 11.5px LSerif,Georgia,serif}
+  .wlist span{color:var(--secondary)}
+  .wlist .cite{position:relative;top:-1px}
+  .wlist li.act{background:var(--accent-soft);border-radius:7px;padding-left:7px;padding-right:7px;border-bottom-color:transparent}
+
+  /* 通用应用外壳：侧栏 + 内容 */
+  .app{display:grid;grid-template-columns:212px minmax(0,1fr);height:660px}
+  .nav{padding:46px 12px 14px;background:var(--side);border-right:1px solid var(--border);display:flex;flex-direction:column;gap:18px;overflow:hidden}
+  .brand{display:flex;align-items:center;gap:9px;padding:0 6px 2px}
+  .brand i{width:25px;height:25px;border:1px solid var(--border);border-radius:8px;display:grid;place-items:center;background:#fff;color:var(--accent);font:700 12px LSerif,Georgia,serif;font-style:normal}
+  .brand b{font-size:16px;letter-spacing:.3px}
+  .ngrp{display:flex;flex-direction:column;gap:3px}
+  .ngrp h6{margin:0 0 3px 10px;color:var(--quiet);font:600 9px LUI,sans-serif;letter-spacing:.1em;text-transform:uppercase}
+  .nitem{height:32px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--secondary);display:flex;align-items:center;gap:9px;font-size:12px;text-align:left}
+  .nitem small{margin-left:auto;color:var(--quiet);font-size:10.5px}
+  .nitem em{margin-left:auto;min-width:15px;height:15px;padding:0 4px;border-radius:99px;background:var(--accent);color:#fff;font:600 9.5px/15px LUI,sans-serif;font-style:normal;text-align:center}
+  .nitem.on{background:var(--accent-bg);color:var(--accent);font-weight:600}
+  .nav-title{margin:0 0 4px 10px;font:600 12px LUI,sans-serif;color:var(--text)}
+  .nitem.two{height:50px}
+  .nitem.two span{display:flex;flex-direction:column;gap:1.5px;min-width:0;overflow:hidden}
+  .nitem.two span u{text-decoration:none;color:var(--quiet);font-size:9.5px;font-weight:400;letter-spacing:.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nitem.two.on span u{color:color-mix(in srgb,var(--accent) 55%,transparent)}
+  .nitem svg{width:14px;height:14px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .main{min-width:0;overflow:hidden;display:flex;flex-direction:column;background:var(--surface)}
+  .mhead{flex:none;padding:20px 26px 14px;border-bottom:1px solid var(--border)}
+  .mhead h2{margin:0;font-size:17px}
+  .mhead p{margin:5px 0 0;color:var(--muted);font-size:11px;line-height:1.6}
+  .mbody{flex:1;min-height:0;overflow:hidden;padding:20px 26px}
+
+  /* 设置行 */
+  .srow{min-height:64px;padding:13px 0;display:flex;align-items:center;gap:18px;border-bottom:1px solid var(--line)}
+  .srow .t{min-width:0}
+  .srow .t b{display:block;font-size:12.5px}
+  .srow .t p{margin:4px 0 0;color:var(--muted);font-size:10.5px;line-height:1.6}
+  .srow .c{margin-left:auto;flex:none;display:flex;align-items:center;gap:8px}
+  .select{height:32px;min-width:132px;padding:0 10px;display:flex;align-items:center;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--text);font-size:11px}
+  .select::after{content:"⌄";margin-left:auto;color:var(--quiet);font-size:11px;transform:translateY(-3px)}
+
+  /* 卡片/区块 */
+  .card{border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:var(--shadow-card)}
+  .card-h{padding:14px 16px 12px;border-bottom:1px solid var(--line)}
+  .card-h b{font-size:13px}
+  .card-h p{margin:5px 0 0;color:var(--muted);font-size:10.5px;line-height:1.65}
+  .card-b{padding:16px}
+
+  /* 词频条 */
+  .bar{display:flex;height:26px;border-radius:7px;overflow:hidden}
+  .bar i{display:block}
+  .axis{margin-top:7px;display:flex;justify-content:space-between;color:var(--quiet);font-size:9.5px}
+  .ftab{width:100%;margin-top:14px;border-collapse:collapse;font-size:10.5px}
+  .ftab th{padding:0 0 7px;color:var(--quiet);font-weight:500;text-align:left;border-bottom:1px solid var(--line)}
+  .ftab th:last-child,.ftab td:last-child{text-align:right}
+  .ftab td{padding:7px 0;border-bottom:1px solid var(--line);color:var(--secondary)}
+  .ftab tr:last-child td{border-bottom:0}
+  .ftab .sw{display:inline-block;width:9px;height:9px;margin-right:8px;border-radius:3px;vertical-align:-1px}
+  .ftab .nm{color:var(--text)}
+  .ftab .hint{color:var(--quiet);font-size:9.5px}
+  .verdict{padding:13px 15px;border-radius:10px;background:#faf7fd;border:1px solid #ece3f7}
+  .verdict b{font-size:12.5px;line-height:1.6}
+  .verdict p{margin:7px 0 0;color:var(--muted);font-size:10.5px;line-height:1.7}
+  .stamps{margin-top:12px;display:flex;gap:14px;color:var(--quiet);font-size:9.5px}
+  .guard{margin-top:12px;padding:10px 12px;border-radius:9px;background:var(--muted-bg);border:1px solid var(--border);color:var(--secondary);font-size:10px;line-height:1.7}
+  .guard b{color:var(--text)}
+
+  /* 掌握度 */
+  .tiers{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;padding:3px;border-radius:9px;background:#ebebee}
+  .tiers button{height:32px;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:11px;display:flex;align-items:center;justify-content:center;gap:6px}
+  .tiers button.on{background:#fff;color:var(--text);font-weight:650;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  .tiers i{width:8px;height:8px;border-radius:50%;display:block}
+  .tl{margin:0;padding:0;list-style:none}
+  .tl li{position:relative;padding:0 0 16px 22px}
+  .tl li::before{content:"";position:absolute;left:4px;top:5px;width:7px;height:7px;border-radius:50%;background:var(--m2);box-shadow:0 0 0 3px #fff}
+  .tl li::after{content:"";position:absolute;left:7px;top:15px;bottom:1px;width:1px;background:#d9d9df}
+  .tl li:last-child{padding-bottom:0}
+  .tl li:last-child::after{display:none}
+  .tl li.down::before{background:#d4d4d8}
+  .tl li.you::before{background:var(--warning)}
+  .tl b{display:block;font-size:11.5px;line-height:1.55}
+  .tl span{display:block;margin-top:3px;color:var(--muted);font-size:10px;line-height:1.6}
+  .tl em{display:block;margin-top:3px;color:var(--quiet);font-style:normal;font-size:9.5px}
+
+  /* 复习堆 */
+  .pile{padding:14px 15px;border:1px solid var(--border);border-radius:11px;background:#fff}
+  .pile h4{margin:0;font-size:12.5px}
+  .pile .why{margin:6px 0 0;color:var(--muted);font-size:10.5px;line-height:1.65}
+  .chips{margin-top:11px;display:flex;flex-wrap:wrap;gap:6px}
+  .chip{padding:4px 9px;border:1px solid var(--border);border-radius:999px;background:var(--muted-bg);font:500 10.5px LSerif,Georgia,serif}
+  .chip.more{background:transparent;color:var(--quiet);font-family:LUI,sans-serif}
+
+  /* 自动分析 */
+  .job{padding:14px 0;border-bottom:1px solid var(--line);display:flex;gap:16px}
+  .job:last-child{border-bottom:0}
+  .job .t{min-width:0;flex:1}
+  .job .t b{font-size:12.5px}
+  .job .t p{margin:5px 0 0;color:var(--muted);font-size:10.5px;line-height:1.7}
+  .job .sends{margin-top:7px;display:inline-block;padding:4px 9px;border-radius:7px;background:#fff8ec;border:1px solid #f0e0c4;color:#8a6a2e;font-size:9.5px}
+  .job .r{flex:none;width:150px;text-align:right}
+  .job .r .ran{color:var(--quiet);font-size:9.5px;line-height:1.6}
+  .tg2{display:inline-block;width:34px;height:20px;border-radius:999px;background:var(--accent);position:relative;vertical-align:middle}
+  .tg2::after{content:"";position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fff}
+  .tg2.off{background:#d4d4d8}.tg2.off::after{right:auto;left:2px}
+  .spend{display:flex;align-items:center;gap:14px;padding:13px 15px;border-radius:10px;background:var(--muted-bg);border:1px solid var(--border)}
+  .spend b{font-size:16px}
+  .spend span{color:var(--muted);font-size:10.5px;line-height:1.6}
+
+  /* 模块编辑 */
+  .modlist{display:flex;flex-direction:column;gap:6px}
+  .modrow{height:38px;padding:0 11px;display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:9px;background:#fff;font-size:11.5px}
+  .modrow .grip{color:#c4c4ca;letter-spacing:1px;font-size:10px}
+  .modrow.custom{border-color:#ddd0f2;background:var(--accent-soft)}
+  .modrow .tag{margin-left:auto;padding:2px 7px;border-radius:999px;background:var(--accent-bg);color:var(--accent);font-size:9px;font-weight:600}
+  .modrow .tg3{flex:none;width:30px;height:18px;border-radius:999px;background:var(--accent);position:relative}
+  .modrow .tg3::after{content:"";position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+  .modrow .tg3.off{background:#d4d4d8}.modrow .tg3.off::after{right:auto;left:2px}
+  .ta{margin-top:8px;padding:11px 12px;border:1px solid var(--border);border-radius:9px;background:var(--input);
+    font:11px/1.75 LUI,sans-serif;color:#3f3a44;white-space:pre-wrap}
+  .counter{margin-top:6px;text-align:right;color:var(--quiet);font-size:9.5px}
+  .lab{margin:0 0 6px;color:var(--quiet);font:600 9px LUI,sans-serif;letter-spacing:.09em;text-transform:uppercase}
+
+  /* 终端 */
+  .term{border-radius:12px;overflow:hidden;background:#1b1b1f;border:1px solid #2c2c33;box-shadow:var(--shadow-win)}
+  .term-bar{height:34px;padding:0 12px;display:flex;align-items:center;gap:7px;background:#232329;border-bottom:1px solid #2c2c33;color:#8d8d97;font-size:10px}
+  .term-bar i{width:9px;height:9px;border-radius:50%;background:#ff5f57;display:block}
+  .term-bar i:nth-child(2){background:#febc2e}.term-bar i:nth-child(3){background:#28c840}
+  .term-bar span{margin-left:8px}
+  .term-body{padding:16px 18px;font:11.5px/1.85 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#cfcfd8}
+  .term-body .u{color:#a78bfa}
+  .term-body .g{color:#6f6f7b}
+  .term-body .k{color:#7dd3a8}
+  .term-body .w{color:#e6d8a8}
+  .term-body p{margin:0 0 6px}
+  .term-body .tooluse{margin:8px 0;padding:8px 11px;border-left:2px solid #7c3aed;background:#212128;color:#a9a9b5;font-size:11px}
+
+  /* 对照图（不是截图，是图） */
+  .fig{padding:26px;border-radius:14px;background:#e4e4e8;border:1px solid #d7d7db}
+  .fig-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  .fig-lab{margin:0 0 11px;display:flex;align-items:center;gap:8px}
+  .fig-lab b{font-size:12px}
+  .fig-lab .lv{padding:3px 9px;border-radius:999px;background:var(--accent);color:#fff;font-size:10px;font-weight:700}
+  .fig-lab .lv.b{background:#2e1065}
+  .fig-note{margin:18px 0 0;padding:11px 13px;border-radius:9px;background:#fff;border:1px solid var(--border);color:var(--secondary);font-size:10.5px;line-height:1.75}
+  .fig-note b{color:var(--text)}
+  .fig .vcard{width:auto}
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <header class="sheet-head">
+    <h1>Lantern 样张 · README 配图（8 张）</h1>
+    <p>这不是截图，是按应用真实的设计 token 画的样张：配色（主色 <code>#7c3aed</code>、纸面 <code>#faf7f0</code>）、六段词频色带、四档掌握度色阶、圆角与阴影，全部取自 <code>src/index.css</code>。文案取自 <code>src/i18n/zh.json</code> 里的真实字符串。</p>
+    <div class="rules">
+      <b>三条纪律。</b>① 只画真实存在的功能和真实会出现的状态，不画不存在的界面；② 书用公版书（<i>Pride and Prejudice</i>），数字用合理量级，不出现你的真实数据；③ 第 2 张是<b>对照图</b>不是截图，所以不套窗口壳——两张卡并排是解释性的图，不假装成一块屏幕。
+    </div>
+    <nav class="toc">
+      <a href="#s1">1 hero 全景</a><a href="#s2">2 分级解释对照</a><a href="#s3">3 上下文控件</a><a href="#s4">4 可点击引用</a>
+      <a href="#s5">5 掌握度时间线</a><a href="#s6">6 书籍难度</a><a href="#s7">7 自定义模块</a><a href="#s8">8 MCP</a>
+    </nav>
+  </header>
+
+  <!-- ═══ 1 · HERO ═══════════════════════════════════════ -->
+  <section class="block" id="s1">
+    <p class="cap"><b>1 · hero — 阅读器全景</b><span>README 顶部。一屏说清三件事：这是个真正的阅读器；双击一个词就地出卡；右边的 AI 认得这本书。选的词是 <i>want</i>——它在这句里是「缺少」，不是词典第一义的「想要」，正好是「先定住这个词在这里的意思」那句话的证据。对应 <code>assets/screenshots/hero.png</code></span></p>
+
+    <div class="win">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <div class="rd">
+        <div class="rd-main">
+          <header class="rd-bar">
+            <div class="bk"><b>Pride and Prejudice</b><span>Jane Austen</span></div>
+            <div class="ch">第一章 · 12%</div>
+            <div class="rd-tools">
+              <button class="tool"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+              <button class="tool"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
+              <button class="tool">Aa</button>
+              <button class="tool"><svg viewBox="0 0 24 24"><path d="M5 4h14v16l-7-4-7 4z"/></svg></button>
+              <button class="tool on"><svg viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2"/><circle cx="12" cy="12" r="3.2"/></svg></button>
+            </div>
+          </header>
+          <div class="rd-canvas">
+            <article class="paper">
+              <p class="kick">Chapter One</p>
+              <h2>Pride and Prejudice</h2>
+              <p>It is a truth universally <span class="au">acknowledged</span>, that a single man in possession of a good <span class="au">fortune</span>, must be in <span class="sel">want</span> of a wife.</p>
+              <p class="ind">However little known the feelings or views of such a man may be on his first entering a neighbourhood, this truth is so well fixed in the minds of the surrounding families, that he is considered as the rightful property of some one or other of their daughters.</p>
+              <p class="ind">“My dear Mr. Bennet,” said his lady to him one day, “have you heard that Netherfield Park is let at last?”</p>
+              <p class="ind">Mr. Bennet replied that he had not.</p>
+              <p class="ind">“But it is,” returned she; “for Mrs. Long has just been here, and she told me all about it.”</p>
+              <p class="ind">Mr. Bennet made no answer.</p>
+              <p class="ind">“Do you not want to know who has taken it?” cried his wife <span class="mk">impatiently</span>.</p>
+            </article>
+
+            <aside class="vcard float" style="right:34px;top:100px">
+              <div class="vc-head">
+                <div>
+                  <h3 class="serif">want</h3>
+                  <div class="ph">/wɒnt/ · noun</div>
+                </div>
+                <button class="x">×</button>
+              </div>
+              <div class="memo">你之前查过 2 次，这张卡不再重复讲过的部分</div>
+              <div class="vc-body">
+                <div class="mod">
+                  <h4>当前语境含义</h4>
+                  <p><b>缺少；没有。</b>这里是名词，不是「想要」。<code class="gl">in want of</code> = 需要、缺着一个。整句是说：一个有钱的单身汉，<b>缺</b>一位太太。</p>
+                </div>
+                <div class="mod">
+                  <h4>原文片段</h4>
+                  <p class="quote">“…a single man in possession of a good fortune, must be in <b>want</b> of a wife.”</p>
+                </div>
+                <div class="mod">
+                  <h4>常见释义</h4>
+                  <p><b>n.</b> 缺乏、需要 · <b>v.</b> 想要、希望 <span class="gl">日常最常见</span> · <b>v.</b> 缺少（较正式）</p>
+                </div>
+                <div class="mod">
+                  <h4>常用搭配</h4>
+                  <p class="en">be in want of · for want of · want for nothing</p>
+                </div>
+              </div>
+              <div class="vc-foot">
+                <button class="btn ghost sm">收藏</button>
+                <button class="btn ghost sm">问 AI</button>
+                <button class="btn ghost sm">笔记</button>
+                <button class="btn ghost sm ml">复制</button>
+              </div>
+            </aside>
+          </div>
+          <div class="rd-foot"><span>12%</span><span>18 / 291</span></div>
+        </div>
+
+        <aside class="ai">
+          <header class="ai-head"><b>AI 助手</b><span class="bk">· Pride and Prejudice</span><button class="btn sm ml">新对话</button></header>
+          <div class="ai-body">
+            <div class="ask">这句里的 “must be in want of a wife” 是反讽吗？</div>
+            <div class="ans">
+              <p>是。这一句用了最正经的口气——“It is a truth universally acknowledged”——去说一件根本谈不上「公认真理」的事<span class="cite">1</span>，语气和内容的落差就是反讽。</p>
+              <p>紧接着的第二句把这个反讽点破了：所谓「公认」，其实只存在于<b>周围人家</b>的想象里，他们已经把这位单身汉当成自家女儿的「合法财产」<span class="cite">2</span>。</p>
+            </div>
+            <div class="scope-note"><b>已按你的阅读进度回答（前 12%）</b></div>
+            <div class="src">
+              <h5>依据</h5>
+              <a href="#"><i>1</i><span>第一章 · “It is a truth universally acknowledged…”</span></a>
+              <a href="#"><i>2</i><span>第一章 · “…the rightful property of some one or other of their daughters.”</span></a>
+            </div>
+          </div>
+          <div class="ai-foot"><div class="ai-input">接着问……</div></div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 2 · 分级解释对照 ════════════════════════════════ -->
+  <section class="block" id="s2">
+    <p class="cap"><b>2 · 同一个词，A2 和 C1 拿到的两张卡</b><span>这一张是<b>对照图</b>，所以不套窗口壳——两张卡不可能同时出现在一块屏幕上，套壳就成了假截图。左边 A2：中文义打底，配一句读得懂的英文。右边 C1：英文为主。下面那条是 README 里那条硬规矩的证据——C1 卡里 <i>proverbial</i> 超出水平也不换成含糊的词，就地加注。对应 <code>assets/screenshots/level.png</code></span></p>
+
+    <div class="fig">
+      <div class="fig-grid">
+        <div>
+          <div class="fig-lab"><span class="lv">A2</span><b>学习等级 A2 · 解释语言「中文优先」</b></div>
+          <div class="vcard">
+            <div class="vc-head"><div><h3 class="serif">want</h3><div class="ph">/wɒnt/ · noun</div></div></div>
+            <div class="vc-body">
+              <div class="mod">
+                <h4>当前语境含义</h4>
+                <p><b>缺少；没有。</b>这里的 want 是名词，不是「想要」。<code class="gl">in want of a wife</code> 就是「缺一位太太」。</p>
+                <p style="margin-top:6px" class="en">Here <b>want</b> means “not having something you need”.</p>
+              </div>
+              <div class="mod">
+                <h4>常见释义</h4>
+                <p><b>n.</b> 缺乏、需要 · <b>v.</b> 想要 <span class="gl">日常最常见</span></p>
+              </div>
+              <div class="mod">
+                <h4>近义词辨析</h4>
+                <p><b>want</b> 缺、需要（这里是老式说法）· <b>need</b> 需要（最常用）· <b>lack</b> 缺少（书面）。三个都能说「没有」，日常先记 need。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="fig-lab"><span class="lv b">C1</span><b>学习等级 C1 · 解释语言「英语优先」</b></div>
+          <div class="vcard">
+            <div class="vc-head"><div><h3 class="serif">want</h3><div class="ph">/wɒnt/ · noun</div></div></div>
+            <div class="vc-body">
+              <div class="mod">
+                <h4>当前语境含义</h4>
+                <p class="en"><b>Lack; the state of not having.</b> A formal, slightly archaic noun sense. <i>To be in want of X</i> = to need X, with a faint suggestion that the need is obvious to everyone but the person concerned. The elevated phrasing is what carries the irony: Austen dresses village gossip in the grammar of a <b>proverbial</b> <code class="gl">谚语式的 · sounding like a well-known saying</code> truth.</p>
+              </div>
+              <div class="mod">
+                <h4>常见释义</h4>
+                <p class="en"><b>n.</b> lack, need <span class="gl">this sense</span> · <b>n.</b> destitution (<i>in want</i>) · <b>v.</b> to desire · <b>v.</b> to be lacking in</p>
+              </div>
+              <div class="mod">
+                <h4>近义词辨析</h4>
+                <p class="en">in want of（formal, faintly ironic）· in need of（neutral, the default）· wanting in（lacking a quality, not a thing）· destitute of（literary, absolute）</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="fig-note"><b>右边那个 <i>proverbial</i> 是重点。</b>它对 C1 来说也偏难，但它是这里唯一准确的词。规矩是：保留它，当场加注——一个中文括注加一句更简单的英文——<b>不许换成更含糊的词，也不许扔在那儿让你另外去查</b>。</p>
+    </div>
+  </section>
+
+  <!-- ═══ 3 · 上下文控件 ═════════════════════════════════ -->
+  <section class="block" id="s3">
+    <p class="cap"><b>3 · 它知道你读到哪</b><span>AI 侧栏顶部的回答范围（自动 / 选区 / 本章 / 全书）、阅读思考保护开关，以及答案下方那条进度提示和「结合全书重新回答」。这一张要让人看懂：剧透边界是一个<b>能看见、能自己解除</b>的东西，不是一句承诺。对应 <code>assets/screenshots/context.png</code></span></p>
+
+    <div class="win">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <div class="rd">
+        <div class="rd-main">
+          <header class="rd-bar">
+            <div class="bk"><b>Pride and Prejudice</b><span>Jane Austen</span></div>
+            <div class="ch">第十一章 · 34%</div>
+            <div class="rd-tools">
+              <button class="tool"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+              <button class="tool"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
+              <button class="tool">Aa</button>
+              <button class="tool on"><svg viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="3.2"/></svg></button>
+            </div>
+          </header>
+          <div class="rd-canvas">
+            <article class="paper">
+              <p class="kick">Chapter Eleven</p>
+              <h2>Netherfield</h2>
+              <p>When the ladies removed after dinner, Elizabeth ran up to her sister, and seeing her well guarded from cold, attended her into the drawing-room, where she was welcomed by her two friends with many professions of pleasure.</p>
+              <p class="ind">Elizabeth had never seen them so <span class="au">agreeable</span> as they were during the hour which passed before the gentlemen appeared. Their powers of conversation were considerable.</p>
+              <p class="ind">But when the gentlemen entered, Jane was no longer the first object; Miss Bingley’s eyes were instantly turned toward Darcy, and she had something to say to him before he had advanced many steps.</p>
+              <p class="ind">Mr. Darcy looked as if he had not heard her. Mr. Bingley, meanwhile, went directly to Jane, and sat down by her, and talked scarcely to anyone else.</p>
+            </article>
+          </div>
+          <div class="rd-foot"><span>34%</span><span>96 / 291</span></div>
+        </div>
+
+        <aside class="ai">
+          <header class="ai-head"><b>AI 助手</b><span class="bk">· 第十一章</span></header>
+          <div class="ai-scope">
+            <p class="lab" style="margin-bottom:7px">回答范围</p>
+            <div class="seg"><button class="on">自动</button><button>选区</button><button>本章</button><button>全书</button></div>
+            <div class="sw">
+              <span class="tg"></span>
+              <div>
+                <b>阅读思考保护</b>
+                <p>只用你已读过的部分回答，把后面的推理空间留给你自己。可按书单独设。</p>
+              </div>
+            </div>
+          </div>
+          <div class="ai-body">
+            <div class="ask">Darcy 现在到底怎么看 Elizabeth？</div>
+            <div class="ans">
+              <p>到这里为止，书里给的是<b>他自己没承认的转变</b>。他先前公开说她「还过得去，但没好看到能打动我」，此后却一再被记述为在留意她<span class="cite">1</span>。</p>
+              <p>Miss Bingley 的挖苦是旁证：她拿 Elizabeth 取笑他，说明在她眼里这件事已经明显到值得酸一句<span class="cite">2</span>。他本人的回应始终是回避的。</p>
+            </div>
+            <div class="scope-note"><b>已按你的阅读进度回答（前 34%）</b></div>
+            <button class="btn ghost sm" style="width:100%">结合全书重新回答 →</button>
+            <div class="src">
+              <h5>依据</h5>
+              <a href="#"><i>1</i><span>第六章 · “…he began to find it was rendered uncommonly intelligent…”</span></a>
+              <a href="#"><i>2</i><span>第十章 · Miss Bingley 的取笑</span></a>
+            </div>
+          </div>
+          <div class="ai-foot"><div class="ai-input">接着问……</div></div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 4 · 可点击引用 ═════════════════════════════════ -->
+  <section class="block" id="s4">
+    <p class="cap"><b>4 · 每一条都能点回原文</b><span>读这一章之前先列生词，清单里第 3 条 <i>tolerable</i> 被点开了——左边正文已经翻到那一句，落点闪着紫色。这一张要证明的是引用<b>落在书里</b>，不是落在侧栏的一段文本上。对应 <code>assets/screenshots/citations.png</code></span></p>
+
+    <div class="win">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <div class="rd">
+        <div class="rd-main">
+          <header class="rd-bar">
+            <div class="bk"><b>Pride and Prejudice</b><span>Jane Austen</span></div>
+            <div class="ch">第三章 · 8%</div>
+            <div class="rd-tools">
+              <button class="tool"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+              <button class="tool">Aa</button>
+              <button class="tool on"><svg viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="3.2"/></svg></button>
+            </div>
+          </header>
+          <div class="rd-canvas">
+            <article class="paper">
+              <p class="kick">Chapter Three</p>
+              <h2>The Assembly at Meryton</h2>
+              <p>Mr. Bingley had soon made himself acquainted with all the principal people in the room; he was lively and unreserved, danced every dance, was angry that the ball closed so early, and talked of giving one himself at Netherfield.</p>
+              <p class="ind">His brother-in-law, Mr. Hurst, merely looked the gentleman; but his friend Mr. Darcy soon drew the attention of the room by his fine, tall person, handsome features, noble mien.</p>
+              <p class="ind">“Which do you mean?” and turning round, he looked for a moment at Elizabeth, till catching her eye, he withdrew his own and coldly said: <span class="land">“She is <b>tolerable</b>; but not handsome enough to tempt me.”</span></p>
+              <p class="ind">Mr. Bingley followed his advice. Mr. Darcy walked off; and Elizabeth remained with no very cordial feelings towards him.</p>
+            </article>
+          </div>
+          <div class="rd-foot"><span>8%</span><span>24 / 291</span></div>
+        </div>
+
+        <aside class="ai">
+          <header class="ai-head"><b>AI 助手</b><span class="bk">· 第三章</span></header>
+          <div class="ai-body">
+            <div class="ask">读这一章之前，先列一下我可能不认识的词</div>
+            <div class="ans">
+              <p style="color:var(--muted);font-size:10.5px">按你的 B1 水平扫了第三章，挑出 9 个。<b>点角标跳到它在书里的那一句。</b></p>
+              <ul class="wlist">
+                <li><span class="cite">1</span><b class="serif">unreserved</b><span>不拘谨的、坦率的</span></li>
+                <li><span class="cite">2</span><b class="serif">mien</b><span>神态、仪态（正式）</span></li>
+                <li class="act"><span class="cite">3</span><b class="serif">tolerable</b><span>还过得去的——这里是贬义的「不过尔尔」</span></li>
+                <li><span class="cite">4</span><b class="serif">tempt</b><span>引起兴趣、打动</span></li>
+                <li><span class="cite">5</span><b class="serif">cordial</b><span>热诚的</span></li>
+                <li><span class="cite">6</span><b class="serif">countenance</b><span>面容、神色</span></li>
+                <li><span class="cite">7</span><b class="serif">fastidious</b><span>挑剔的</span></li>
+                <li><span class="cite">8</span><b class="serif">amiable</b><span>和蔼可亲的</span></li>
+                <li><span class="cite">9</span><b class="serif">slight</b><span>怠慢、冷落（动词）</span></li>
+              </ul>
+            </div>
+            <div class="scope-note"><b>只扫了第三章</b>——你还没读到的地方不在范围内</div>
+          </div>
+          <div class="ai-foot"><div class="ai-input">接着问……</div></div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 5 · 掌握度时间线 ═══════════════════════════════ -->
+  <section class="block" id="s5">
+    <p class="cap"><b>5 · 掌握度是读出来的，而且可以被你推翻</b><span>生词详情页。四档控件上 <b>眼熟</b> 是亮着的，旁边一枚「自动判定」；下面是「它是怎么走到这一步的」；右下角常驻「我其实不认识」。这一张的重点不是「有掌握度」，是<b>每一步都说得出理由，而且你随时能拨回去</b>。对应 <code>assets/screenshots/mastery.png</code></span></p>
+
+    <div class="win">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <div class="app" style="height:600px">
+        <nav class="nav">
+          <div class="brand"><i>L</i><b>Lantern</b></div>
+          <div class="ngrp">
+            <h6>书库</h6>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg>全部书籍</button>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>正在阅读</button>
+            <button class="nitem"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>已读完</button>
+          </div>
+          <div class="ngrp">
+            <h6>随记</h6>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>对话</button>
+            <button class="nitem on"><svg viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M16 12h2"/><path d="M16 8h2"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>单词<em>23</em></button>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>复习</button>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11l5-5V5a2 2 0 0 0-2-2z"/><path d="M15 21v-4a2 2 0 0 1 2-2h4"/></svg>标注</button>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/></svg>解释</button>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>阅读历程</button>
+          </div>
+          <div class="ngrp">
+            <h6>书单</h6>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>精读<small>4</small></button>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>睡前读<small>7</small></button>
+          </div>
+        </nav>
+
+        <div class="main">
+          <div class="mhead">
+            <h2 class="serif" style="font-size:26px">tolerable</h2>
+            <p>/ˈtɒlərəbl/ · adjective · 出自《Pride and Prejudice》第三章 · 3 本书里共 5 次</p>
+          </div>
+          <div class="mbody" style="display:grid;grid-template-columns:1fr 340px;gap:24px">
+            <div>
+              <p class="lab">掌握度</p>
+              <div class="tiers">
+                <button><i style="background:var(--m1)"></i>新词</button>
+                <button><i style="background:var(--m2)"></i>学习中</button>
+                <button class="on"><i style="background:var(--m3)"></i>眼熟</button>
+                <button><i style="background:var(--m4)"></i>已掌握</button>
+              </div>
+              <p style="margin:9px 0 0;color:var(--muted);font-size:10.5px;line-height:1.7">
+                <span class="pill auto">自动判定</span>&nbsp; 档位只影响它多久再出现一次，以及正文里还标不标它。改错了随时能拨回来。
+              </p>
+
+              <p class="lab" style="margin-top:22px">它是怎么走到这一步的</p>
+              <ul class="tl">
+                <li>
+                  <b>从「学习中」升到「眼熟」</b>
+                  <span>在《Pride and Prejudice》里跨 6 天读到 4 次，都没有查。</span>
+                  <em>7 月 28 日</em>
+                </li>
+                <li class="down">
+                  <b>从「眼熟」退回「学习中」</b>
+                  <span>你在《Emma》里又查了它一次，所以退回了一档。</span>
+                  <em>7 月 19 日</em>
+                </li>
+                <li>
+                  <b>从「新词」升到「眼熟」</b>
+                  <span>在《Emma》里跨 4 天读到 3 次，都没有查。</span>
+                  <em>7 月 12 日</em>
+                </li>
+                <li class="you">
+                  <b>你查得够多次了，已经替你记下了</b>
+                  <span>你在《Pride and Prejudice》里查过它 3 次。</span>
+                  <em>7 月 4 日</em>
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <div class="card">
+                <div class="card-h"><b>当前语境含义</b></div>
+                <div class="card-b">
+                  <p style="margin:0 0 10px;font-size:11.5px;line-height:1.75;color:#3f3a44"><b>还过得去，但也就那样。</b>字面是「可以容忍的」，用来评价人时几乎总是贬义——夸不出口才用这个词。</p>
+                  <p class="quote" style="margin:0;padding:9px 11px;border-radius:8px;background:#f8f5fb;color:#6a6172;font:italic 10.5px/1.65 LSerif,Georgia,serif">“She is <b>tolerable</b>; but not handsome enough to tempt me.”</p>
+                </div>
+              </div>
+
+              <div class="card" style="margin-top:14px">
+                <div class="card-h"><b>复习</b><p>下一次 8 月 14 日 · FSRS 安排</p></div>
+                <div class="card-b" style="padding-top:12px">
+                  <button class="btn ghost sm" style="width:100%">现在就练这一个</button>
+                </div>
+              </div>
+
+              <button class="btn ghost sm" style="width:100%;margin-top:14px;height:34px;color:var(--warning);border-color:#ecd9b8;background:#fff8ec">我其实不认识</button>
+              <p style="margin:8px 2px 0;color:var(--quiet);font-size:9.5px;line-height:1.65">按下去它立刻退回「学习中」，并记成你自己改的——后面的自动升级不会再覆盖它。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 6 · 书籍难度 ═══════════════════════════════════ -->
+  <section class="block" id="s6">
+    <p class="cap"><b>6 · 这本书对你多难，本地就算得出来</b><span>书籍详情页的「词汇难度」区块。主角是那根 100% 堆叠条和下面的六行表，等级只是一句带对冲的话。三条边界都在图里：不改你的水平设置、不联网不花额度、算不准就直说。对应 <code>assets/screenshots/difficulty.png</code></span></p>
+
+    <div class="win">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <div class="app" style="height:772px">
+        <nav class="nav">
+          <div class="brand"><i>L</i><b>Lantern</b></div>
+          <div class="ngrp">
+            <h6>书库</h6>
+            <button class="nitem on"><svg viewBox="0 0 24 24"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg>全部书籍</button>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>正在阅读</button>
+            <button class="nitem"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>已读完</button>
+          </div>
+          <div class="ngrp">
+            <h6>随记</h6>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>对话</button>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M16 12h2"/><path d="M16 8h2"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>单词<em>23</em></button>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>复习</button>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11l5-5V5a2 2 0 0 0-2-2z"/><path d="M15 21v-4a2 2 0 0 1 2-2h4"/></svg>标注</button>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/></svg>解释</button>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>阅读历程</button>
+          </div>
+          <div class="ngrp">
+            <h6>书单</h6>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>精读<small>4</small></button>
+            <button class="nitem"><svg viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>睡前读<small>7</small></button>
+          </div>
+        </nav>
+
+        <div class="main">
+          <div class="mhead" style="display:flex;gap:18px;align-items:flex-start;padding-bottom:22px">
+            <div style="flex:none;width:74px;height:104px;border-radius:6px;background:linear-gradient(150deg,#6f43c4,#9470dd);box-shadow:var(--shadow-card);display:grid;place-items:center;color:#fff;font:600 11px LSerif,Georgia,serif;text-align:center;padding:8px;line-height:1.4">Pride and Prejudice</div>
+            <div style="padding-top:4px">
+              <h2 class="serif" style="font-size:21px">Pride and Prejudice</h2>
+              <p>Jane Austen · EPUB · 291 页 · 已读 34%</p>
+              <div style="margin-top:10px;display:flex;gap:7px">
+                <button class="btn pri sm">继续阅读</button>
+                <button class="btn ghost sm">书内对话</button>
+                <button class="btn ghost sm">编辑信息</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="mbody">
+            <div class="card">
+              <div class="card-h">
+                <b>词汇难度</b>
+                <p>这本书的用词落在哪些频段，以及和你已经读过的书比起来是什么位置。</p>
+              </div>
+              <div class="card-b">
+                <div class="verdict">
+                  <b>这本书的用词，比你平常读的<span style="color:var(--accent)">难不少</span>，可能会查得比较累。</b>
+                  <p>书里 7.8% 的词次落在第 4、5 两段；你读完并分析过的 9 本书，这两段合计在 4.9% 上下。</p>
+                </div>
+
+                <div style="margin-top:18px">
+                  <p class="lab">全书词次在各频段的分布</p>
+                  <div class="bar">
+                    <i style="background:var(--b1);width:71.2%"></i>
+                    <i style="background:var(--b2);width:12.6%"></i>
+                    <i style="background:var(--b3);width:6.1%"></i>
+                    <i style="background:var(--b4);width:4.9%"></i>
+                    <i style="background:var(--b5);width:2.9%"></i>
+                    <i style="background:var(--b0);width:2.3%"></i>
+                  </div>
+                  <div class="axis"><span>越靠左越常见</span><span>越靠右越罕见</span></div>
+                </div>
+
+                <table class="ftab">
+                  <thead><tr><th>频段</th><th>词表排名</th><th>本书占比</th></tr></thead>
+                  <tbody>
+                    <tr><td><i class="sw" style="background:var(--b1)"></i><span class="nm">第 1 段</span> <span class="hint">最常见词</span></td><td>1–1,000</td><td>71.2%</td></tr>
+                    <tr><td><i class="sw" style="background:var(--b2)"></i><span class="nm">第 2 段</span> <span class="hint">日常词</span></td><td>1,001–3,000</td><td>12.6%</td></tr>
+                    <tr><td><i class="sw" style="background:var(--b3)"></i><span class="nm">第 3 段</span></td><td>3,001–8,000</td><td>6.1%</td></tr>
+                    <tr><td><i class="sw" style="background:var(--b4)"></i><span class="nm">第 4 段</span></td><td>8,001–20,000</td><td>4.9%</td></tr>
+                    <tr><td><i class="sw" style="background:var(--b5)"></i><span class="nm">第 5 段</span></td><td>20,001–50,000</td><td>2.9%</td></tr>
+                    <tr><td><i class="sw" style="background:var(--b0)"></i><span class="nm">未收录</span> <span class="hint">多为人名、地名与生造词</span></td><td>——</td><td>2.3%</td></tr>
+                  </tbody>
+                </table>
+
+                <div class="stamps"><span>分析于 2026 年 7 月 3 日</span><span>取样 122,189 词次</span><span>不同词形 6,842 个</span></div>
+
+                <div class="guard">
+                  <b>这里不会自己改动你的水平设置。</b>这是一次纯本地的查表统计——<b>在本机完成，不联网，也不消耗任何 AI 额度</b>。文件太短或这个格式取不出正文时，这里会直接说不下结论，而不是硬给一个数字。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 7 · 自定义模块 ═════════════════════════════════ -->
+  <section class="block" id="s7">
+    <p class="cap"><b>7 · 预设模块只是起点</b><span>设置 → 划词与卡片。左边是单词卡的模块列表（可开关、可拖动排序），里面已经混着一个自己造的模块；右边是它的编辑器，一个真的提示词输入框。对应 <code>assets/screenshots/modules.png</code></span></p>
+
+    <div class="win">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <div class="app" style="height:776px">
+        <nav class="nav">
+          <p class="nav-title">设置</p>
+          <div class="ngrp">
+            <button class="nitem two"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg><span>通用<u>个人资料与语言</u></span></button>
+            <button class="nitem two"><svg viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg><span>阅读偏好<u>自定义你的阅读体验</u></span></button>
+            <button class="nitem two"><svg viewBox="0 0 24 24"><path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/></svg><span>学习偏好<u>水平、解释方式与考试估算</u></span></button>
+            <button class="nitem two on"><svg viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg><span>划词与卡片<u>查词与学习卡片</u></span></button>
+          </div>
+          <div class="ngrp">
+            <h6>AI</h6>
+            <button class="nitem two"><svg viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg><span>AI 配置<u>模型、语音与 OCR</u></span></button>
+            <button class="nitem two"><svg viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg><span>自动分析<u>不用你动手就会跑的</u></span></button>
+          </div>
+          <div class="ngrp">
+            <h6>书库</h6>
+            <button class="nitem two"><svg viewBox="0 0 24 24"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg><span>书库与同步<u>书从哪里来，如何在设备间同步</u></span></button>
+          </div>
+          <div class="ngrp">
+            <button class="nitem two"><svg viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg><span>MCP<u>AI 客户端集成</u></span></button>
+            <button class="nitem two"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span>关于<u>版本与链接</u></span></button>
+          </div>
+        </nav>
+
+        <div class="main">
+          <div class="mhead">
+            <h2>划词与卡片</h2>
+            <p>配置查词、解读、学习卡片、操作菜单与正文标记。</p>
+          </div>
+          <div class="mbody" style="display:grid;grid-template-columns:340px minmax(0,1fr);gap:26px">
+            <div>
+              <p class="lab">展示模块 · 单词卡 · 已显示 8 项</p>
+              <div class="modlist">
+                <div class="modrow"><span class="grip">⠿</span>当前语境含义<span class="ml"></span><span class="tg3"></span></div>
+                <div class="modrow"><span class="grip">⠿</span>单词信息<span class="ml"></span><span class="tg3"></span></div>
+                <div class="modrow"><span class="grip">⠿</span>原文片段<span class="ml"></span><span class="tg3"></span></div>
+                <div class="modrow custom"><span class="grip">⠿</span>长难句拆解<span class="tag">自定义</span><span class="tg3"></span></div>
+                <div class="modrow"><span class="grip">⠿</span>常见释义<span class="ml"></span><span class="tg3"></span></div>
+                <div class="modrow"><span class="grip">⠿</span>常用搭配<span class="ml"></span><span class="tg3"></span></div>
+                <div class="modrow"><span class="grip">⠿</span>近义词辨析<span class="ml"></span><span class="tg3"></span></div>
+                <div class="modrow custom"><span class="grip">⠿</span>写作可复用表达<span class="tag">自定义</span><span class="tg3"></span></div>
+                <div class="modrow"><span class="grip">⠿</span>目标语言译文<span class="ml"></span><span class="tg3 off"></span></div>
+                <div class="modrow"><span class="grip">⠿</span>词形与构词<span class="ml"></span><span class="tg3 off"></span></div>
+                <div class="modrow"><span class="grip">⠿</span>句中语法作用<span class="ml"></span><span class="tg3 off"></span></div>
+                <div class="modrow"><span class="grip">⠿</span>语气与使用场景<span class="ml"></span><span class="tg3 off"></span></div>
+                <div class="modrow"><span class="grip">⠿</span>记忆辅助<span class="ml"></span><span class="tg3 off"></span></div>
+              </div>
+              <p style="margin:11px 2px 0;color:var(--quiet);font-size:10px;line-height:1.7">拖动排序即卡片上的显示顺序。单词卡内置 11 个模块，另可加最多 8 个自定义模块——自定义的可以插在内置模块中间。</p>
+            </div>
+
+            <div>
+              <div class="card">
+                <div class="card-h" style="display:flex;align-items:center;gap:10px">
+                  <div><b>长难句拆解</b><p>自定义模块 · 单词卡 / 段落卡</p></div>
+                  <span class="pill learn ml">默认展开</span>
+                </div>
+                <div class="card-b">
+                  <p class="lab">提示词</p>
+                  <div class="ta">把选中的句子按主干拆开，一层一层给我：
+
+1. 先只留主谓宾，其余全部剥掉，用一行写出来
+2. 再把剥掉的部分逐个装回去，说明每一块是什么成分、修饰谁
+3. 指出这句里最容易读错的那个地方，说明为什么会读错
+4. 最后给一句准确但自然的中文
+
+不要罗列语法术语的定义，只说这一句里的作用。</div>
+                  <div class="counter">312 / 2000</div>
+
+                  <div style="margin-top:16px;display:flex;gap:16px">
+                    <div style="flex:1">
+                      <p class="lab">内容密度</p>
+                      <div class="seg" style="grid-template-columns:repeat(3,1fr)"><button>简洁</button><button class="on">标准</button><button>详细</button></div>
+                    </div>
+                    <div style="flex:none;width:150px">
+                      <p class="lab">加入哪些卡片</p>
+                      <div class="select">单词卡 · 段落卡</div>
+                    </div>
+                  </div>
+
+                  <div style="margin-top:16px;display:flex;gap:8px;align-items:center">
+                    <button class="btn ghost sm">预览卡片结构</button>
+                    <button class="btn ghost sm">调用一次真实 AI</button>
+                    <button class="btn pri sm ml">保存</button>
+                  </div>
+                  <p style="margin:10px 0 0;color:var(--quiet);font-size:9.5px;line-height:1.65">预览只画结构，不花额度；要看真实效果时才调用一次。</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 8 · MCP ════════════════════════════════════════ -->
+  <section class="block" id="s8">
+    <p class="cap"><b>8 · 换成你自己的 AI</b><span>左边 MCP 设置页：Claude Code 一个开关就接上了，而写入权限那一格<b>默认关着</b>——这是这张图要讲的话。最下面那条不好听的话也照原样留着：任何以你账户运行的客户端都能读到你的书库。右边终端里 Claude Code 正按真实书库回答，用的是同一份英语水平。对应 <code>assets/screenshots/mcp.png</code></span></p>
+
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:22px;align-items:start">
+      <div class="win">
+        <div class="traffic"><i></i><i></i><i></i></div>
+        <div class="app" style="grid-template-columns:184px minmax(0,1fr);height:812px">
+          <nav class="nav" style="width:auto">
+            <p class="nav-title">设置</p>
+            <div class="ngrp">
+              <button class="nitem two"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg><span>通用<u>个人资料与语言</u></span></button>
+              <button class="nitem two"><svg viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg><span>阅读偏好<u>自定义你的阅读体验</u></span></button>
+              <button class="nitem two"><svg viewBox="0 0 24 24"><path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/></svg><span>学习偏好<u>水平、解释方式与考试估算</u></span></button>
+              <button class="nitem two"><svg viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg><span>划词与卡片<u>查词与学习卡片</u></span></button>
+            </div>
+            <div class="ngrp">
+              <h6>AI</h6>
+              <button class="nitem two"><svg viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg><span>AI 配置<u>模型、语音与 OCR</u></span></button>
+              <button class="nitem two"><svg viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg><span>自动分析<u>不用你动手就会跑的</u></span></button>
+            </div>
+            <div class="ngrp">
+              <h6>书库</h6>
+              <button class="nitem two"><svg viewBox="0 0 24 24"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg><span>书库与同步<u>书从哪里来，如何在设备间同步</u></span></button>
+            </div>
+            <div class="ngrp">
+              <button class="nitem two on"><svg viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg><span>MCP<u>AI 客户端集成</u></span></button>
+              <button class="nitem two"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><span>关于<u>版本与链接</u></span></button>
+            </div>
+          </nav>
+          <div class="main">
+            <div class="mhead"><h2>MCP</h2><p>AI 客户端集成</p></div>
+            <div class="mbody" style="padding-top:4px;overflow:hidden">
+              <div class="srow">
+                <div class="t"><b>Claude Code CLI</b><p>自动在 ~/.claude.json 中注册 Lantern</p></div>
+                <div class="c"><span class="tg2"></span></div>
+              </div>
+              <div class="srow" style="border-bottom:0">
+                <div class="t"><b>Codex CLI</b><p>自动在 ~/.codex/config.toml 中注册 Lantern</p></div>
+                <div class="c"><span class="tg2 off"></span></div>
+              </div>
+              <p style="margin:2px 0 0;color:var(--muted);font-size:10px;font-style:italic">切换开关会立即在客户端配置文件中写入或移除 Lantern 的条目。</p>
+
+              <div style="height:1px;background:var(--line);margin:14px 0"></div>
+
+              <div class="srow" style="border-bottom:0">
+                <div class="t" style="display:flex;gap:8px;align-items:flex-start">
+                  <svg viewBox="0 0 24 24" style="width:14px;height:14px;flex:none;margin-top:2px;fill:none;stroke:#f0b100;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+                  <div><b>允许写入权限</b><p>允许 MCP 客户端批量导入或删除书籍、管理书单、修改元数据，并按需建立本地书籍索引。</p></div>
+                </div>
+                <div class="c"><span class="tg2 off"></span></div>
+              </div>
+
+              <div style="height:1px;background:var(--line);margin:0 0 14px"></div>
+
+              <p style="margin:0;font-size:12px;font-weight:650">其他 AI 客户端</p>
+              <p style="margin:4px 0 0;color:var(--muted);font-size:10.5px;line-height:1.6">Claude Code 和 Codex 用上面的开关。其他客户端（Cursor、Gemini CLI、Claude 桌面版等）用下面任一种方式接入。</p>
+
+              <div style="margin-top:11px;padding:11px 12px;border:1px solid var(--border);border-radius:9px;display:flex;gap:12px;align-items:flex-start">
+                <div style="min-width:0"><b style="font-size:11.5px">交给 AI</b><p style="margin:3px 0 0;color:var(--muted);font-size:10.5px;line-height:1.55">复制这段话，粘贴到那个 AI 的对话框里发送，它会自己写好配置。</p></div>
+                <button class="btn pri sm" style="flex:none;margin-left:auto">复制这段话</button>
+              </div>
+
+              <div style="margin-top:8px;padding:11px 12px;border:1px solid var(--border);border-radius:9px">
+                <div style="display:flex;gap:12px;align-items:flex-start">
+                  <div style="min-width:0"><b style="font-size:11.5px">自己填配置</b><p style="margin:3px 0 0;color:var(--muted);font-size:10.5px;line-height:1.55">如果那个 AI 不能改文件，就把这段 JSON 加进它的 MCP 配置文件。</p></div>
+                  <button class="btn ghost sm" style="flex:none;margin-left:auto">复制 JSON</button>
+                </div>
+                <div class="ta" style="margin-top:9px;font-family:ui-monospace,Menlo,monospace;font-size:9px;line-height:1.65;white-space:pre;overflow:hidden">{
+  "mcpServers": {
+    "lantern": {
+      "command": "/Applications/Lantern.app/Contents/MacOS/lantern",
+      "args": ["mcp"]
+    }
+  }
+}</div>
+              </div>
+
+              <div style="margin-top:14px;padding:9px 11px;display:flex;gap:9px;align-items:flex-start;border-radius:9px;background:#f9f4fe">
+                <svg viewBox="0 0 24 24" style="width:14px;height:14px;flex:none;margin-top:1px;fill:none;stroke:var(--accent);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M12 3l8 3v6c0 4.5-3.2 7.9-8 9-4.8-1.1-8-4.5-8-9V6z"/><path d="M12 9v3.5M12 16h.01"/></svg>
+                <p style="margin:0;color:var(--secondary);font-size:10px;line-height:1.6">Lantern MCP 以本地子进程运行。本机上以你的账户运行的任何 AI 客户端都能启动它并读取你的书库。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="term">
+        <div class="term-bar"><i></i><i></i><i></i><span>claude — ~/reading</span></div>
+        <div class="term-body">
+          <p><span class="u">&gt;</span> 按我的英语水平，从我书库里挑三本现在能读下去的</p>
+          <p>&nbsp;</p>
+          <div class="tooluse">⏺ lantern · get_language_profile<br><span class="g">  → CEFR B1 · 雅思 6.0（2026-03）</span></div>
+          <div class="tooluse">⏺ lantern · list_books<span class="g"> (limit 200)</span><br><span class="g">  → 168 本 · 含难度分布 41 本</span></div>
+          <p>&nbsp;</p>
+          <p>按你的 B1 和已分析的词频分布，这三本最稳：</p>
+          <p>&nbsp;</p>
+          <p><span class="k">1.</span> <span class="w">Animal Farm</span> <span class="g">— 第 4、5 段合计 3.1%，比你平常读的浅一些。句子短，最没有阻力的一本。</span></p>
+          <p><span class="k">2.</span> <span class="w">Of Mice and Men</span> <span class="g">— 4.6%，和你平常读的差不多。方言拼写会拖一点速度，但词本身不难。</span></p>
+          <p><span class="k">3.</span> <span class="w">The Old Man and the Sea</span> <span class="g">— 4.2%，其中一半集中在航海术语上，查过一轮就不再挡路了。</span></p>
+          <p>&nbsp;</p>
+          <p class="g">没推荐 Pride and Prejudice（7.8%）和 Moby-Dick（11.4%）——
+          这两本第 4、5 段占比明显高于你读完过的 9 本书的 4.9%。</p>
+          <p>&nbsp;</p>
+          <p><span class="u">&gt;</span> 把我这个月标为「学习中」的词整理成一份带例句的清单</p>
+          <p>&nbsp;</p>
+          <div class="tooluse">⏺ lantern · list_vocabulary<span class="g"> (status: learning, since: 2026-08-01)</span><br><span class="g">  → 47 个词 · 均带原句与出处</span></div>
+          <p>47 个词，按出处分了三组。先给你第一组：</p>
+          <p>&nbsp;</p>
+          <p class="g">## Pride and Prejudice（19 个）</p>
+          <p><span class="w">tolerable</span> <span class="g">还过得去的（贬）</span><br>
+          <span class="g">　“She is tolerable; but not handsome enough to tempt me.” — 第三章</span></p>
+          <p><span class="w">countenance</span> <span class="g">面容、神色</span><br>
+          <span class="g">　“…a mixture of pride and impertinence in her countenance.” — 第八章</span></p>
+          <p><span class="w">impertinence</span> <span class="g">莽撞无礼</span><br>
+          <span class="g">　同上句。这两个词你是同一天查的，建议一起记。</span></p>
+          <p class="g">…</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* 导出模式：?only=N 只留第 N 张，去掉说明文字，页面收缩到图本身 —— 用于批量截 PNG。
+   ?only=N&pad=32 可调外边距。正常打开（无参数）时这段不做任何事。 */
+(function(){
+  var q = new URLSearchParams(location.search);
+  var only = q.get('only');
+  if (!only) return;
+  var pad = parseInt(q.get('pad') || '30', 10);
+  var block = document.getElementById('s' + only);
+  if (!block) return;
+  document.querySelector('.sheet-head').remove();
+  document.querySelectorAll('.block').forEach(function(b){ if (b !== block) b.remove(); });
+  block.querySelector('.cap').remove();
+  block.style.margin = '0';
+  var sheet = document.querySelector('.sheet');
+  sheet.style.cssText = 'max-width:none;margin:0;padding:' + pad + 'px;display:inline-block';
+  document.body.style.background = 'transparent';
+  document.documentElement.style.background = 'transparent';
+  /* 把真实尺寸报给截图脚本 */
+  requestAnimationFrame(function(){
+    var r = sheet.getBoundingClientRect();
+    document.title = 'shot-' + only + ' ' + Math.ceil(r.width) + 'x' + Math.ceil(r.height);
+  });
+})();
+</script>
+</body>
+</html>
+</content>
