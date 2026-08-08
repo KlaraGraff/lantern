@@ -25,14 +25,6 @@ import {
 import { bandSlices, hardShare } from "../pages/book-details/difficulty-view";
 import { markEmphasis, splitEmphasis } from "../i18n/emphasis";
 
-// Mirrors `level_observation::MIN_SCORABLE_LOOKUPS` /
-// `commands::book_difficulty::PASS_RATE_MIN_SCORABLE_LOOKUPS` (both 12) and
-// `MIN_SPAN_DAYS` (14). Not exposed over the wire as numbers — only the
-// already-evaluated `sufficient` boolean is — so the copy that explains the
-// threshold to a reader carries its own copy of the same two constants.
-const MIN_SCORABLE_LOOKUPS = 12;
-const MIN_SPAN_DAYS = 14;
-
 interface ReferenceBook {
   book: Book;
   difficulty: BookDifficulty;
@@ -421,16 +413,18 @@ export default function BookOpenCard({ book, onClose, onContinue, onHideForever 
           ))}
         </p>
         <p className="mt-2.5 max-w-[480px] text-[11px] leading-[1.8] text-text-secondary">
-          {t("bookOpenCard.insufficientNote", {
-            scorable: passRates.value?.scorableLookups ?? 0,
-            days: passRates.value?.spanDays ?? 0,
-            minScorable: MIN_SCORABLE_LOOKUPS,
-            minDays: MIN_SPAN_DAYS,
-          })}
+          {t("bookOpenCard.insufficientNote")}
         </p>
         {renderChapterBlock()}
         {renderBandBar()}
-        {renderDisclosure()}
+        {/* No disclosure here, deliberately. It is headed "这个数字怎么来的"
+            and ends in a 合计 — but the number it decomposes is the weighted
+            "对你" share, which is exactly the number this state has just said
+            it cannot give yet. Rendered anyway, the card read "还说不上这本书
+            对你算轻还是重" and then printed "合计 95%" four lines below it.
+            Worse, with no pass-rate evidence every band's contribution
+            collapses to its share, so the 贡献 column became a second copy of
+            占篇幅 that appeared to say the commonest words were the hardest. */}
         {renderFacts()}
       </>
     );

@@ -10,7 +10,7 @@ import { AUTO_DISMISS_MS, isPageTurn, isRearmed, markDismissed } from "./reading
 import { bandShares, classifyRidge, roundPercent, weightedHardShare, type BandPassRates } from "./book-open-card-view";
 
 interface BookReaderDifficultyStripProps {
-  book: Pick<Book, "id" | "format" | "status" | "progress">;
+  book: Pick<Book, "id" | "format" | "status" | "progress" | "title">;
   /** `TocChapter.title` at the reader's current position, when Foliate has
    *  resolved one. `undefined` renders the strip without a chapter name
    *  rather than a placeholder. */

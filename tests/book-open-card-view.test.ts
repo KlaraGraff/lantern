@@ -51,17 +51,17 @@ function book(overrides: Partial<{ format: string; status: string }> = {}) {
 
 test("a scanned PDF is the exact failed + PDF_TEXT_LAYER_UNAVAILABLE signal, not a proxy", () => {
   const scanned = difficulty({ status: "failed", error: "PDF_TEXT_LAYER_UNAVAILABLE" });
-  assert.equal(isScannedPdf({ format: "pdf" }, scanned), true);
+  assert.equal(isScannedPdf({ format: "pdf", title: "Some Book" }, scanned), true);
   // Same status/error on a non-PDF format never counts — the error only
   // means something for the format it was raised against.
-  assert.equal(isScannedPdf({ format: "epub" }, scanned), false);
+  assert.equal(isScannedPdf({ format: "epub", title: "Some Book" }, scanned), false);
   // A short PDF that simply failed for some other reason is not scanned.
   const otherFailure = difficulty({ status: "failed", error: "SOMETHING_ELSE" });
-  assert.equal(isScannedPdf({ format: "pdf" }, otherFailure), false);
+  assert.equal(isScannedPdf({ format: "pdf", title: "Some Book" }, otherFailure), false);
   // too_short is not failed — a short real-text PDF pamphlet must not be
   // mistaken for a scan.
   const short = difficulty({ status: "too_short", error: null, totalTokens: 200 });
-  assert.equal(isScannedPdf({ format: "pdf" }, short), false);
+  assert.equal(isScannedPdf({ format: "pdf", title: "Some Book" }, short), false);
 });
 
 test("openCardReasons collects every trigger condition independently", () => {
@@ -105,28 +105,28 @@ test("an unread book shows the card when enabled and not dismissed", () => {
 
 test("a scanned PDF classifies as scanned even though its status is literally failed", () => {
   const scanned = difficulty({ status: "failed", error: "PDF_TEXT_LAYER_UNAVAILABLE" });
-  assert.equal(classifyOpenCardBody({ format: "pdf" }, scanned, true), "scanned");
+  assert.equal(classifyOpenCardBody({ format: "pdf", title: "Some Book" }, scanned, true), "scanned");
 });
 
 test("no row at all, or a pending row, both read as never computed", () => {
-  assert.equal(classifyOpenCardBody({ format: "epub" }, null, true), "neverComputed");
-  assert.equal(classifyOpenCardBody({ format: "epub" }, difficulty({ status: "pending" }), true), "neverComputed");
+  assert.equal(classifyOpenCardBody({ format: "epub", title: "Some Book" }, null, true), "neverComputed");
+  assert.equal(classifyOpenCardBody({ format: "epub", title: "Some Book" }, difficulty({ status: "pending" }), true), "neverComputed");
 });
 
 test("running reads as computing; too_short/unsupported/a plain failure read as no conclusion", () => {
-  assert.equal(classifyOpenCardBody({ format: "epub" }, difficulty({ status: "running" }), true), "computing");
-  assert.equal(classifyOpenCardBody({ format: "epub" }, difficulty({ status: "too_short" }), true), "noConclusion");
-  assert.equal(classifyOpenCardBody({ format: "epub" }, difficulty({ status: "unsupported" }), true), "noConclusion");
+  assert.equal(classifyOpenCardBody({ format: "epub", title: "Some Book" }, difficulty({ status: "running" }), true), "computing");
+  assert.equal(classifyOpenCardBody({ format: "epub", title: "Some Book" }, difficulty({ status: "too_short" }), true), "noConclusion");
+  assert.equal(classifyOpenCardBody({ format: "epub", title: "Some Book" }, difficulty({ status: "unsupported" }), true), "noConclusion");
   assert.equal(
-    classifyOpenCardBody({ format: "epub" }, difficulty({ status: "failed", error: "BOOK_NOT_FOUND" }), true),
+    classifyOpenCardBody({ format: "epub", title: "Some Book" }, difficulty({ status: "failed", error: "BOOK_NOT_FOUND" }), true),
     "noConclusion",
   );
 });
 
 test("a done book splits on whether the reader's own pass-rate record is sufficient", () => {
   const done = difficulty({ status: "done" });
-  assert.equal(classifyOpenCardBody({ format: "epub" }, done, true), "ready");
-  assert.equal(classifyOpenCardBody({ format: "epub" }, done, false), "insufficientRecord");
+  assert.equal(classifyOpenCardBody({ format: "epub", title: "Some Book" }, done, true), "ready");
+  assert.equal(classifyOpenCardBody({ format: "epub", title: "Some Book" }, done, false), "insufficientRecord");
 });
 
 // --- bandShares / weightedHardShare / roundPercent ------------------------
@@ -178,17 +178,17 @@ function section(overrides: Partial<BookDifficultySection> = {}): BookDifficulty
 }
 
 test("no usable sections on a PDF is unavailable, never backfilling", () => {
-  const state = classifyRidge([], { format: "pdf" }, "done");
+  const state = classifyRidge([], { format: "pdf", title: "Some Book" }, "done");
   assert.deepEqual(state, { kind: "unavailable" });
 });
 
 test("no usable sections on a done non-PDF book is backfilling", () => {
-  const state = classifyRidge([], { format: "epub" }, "done");
+  const state = classifyRidge([], { format: "epub", title: "Some Book" }, "done");
   assert.deepEqual(state, { kind: "backfilling" });
 });
 
 test("no usable sections on a not-yet-done book is unavailable, not backfilling", () => {
-  const state = classifyRidge([], { format: "epub" }, "pending");
+  const state = classifyRidge([], { format: "epub", title: "Some Book" }, "pending");
   assert.deepEqual(state, { kind: "unavailable" });
 });
 
@@ -198,7 +198,7 @@ test("a peak well above the median names the hardest titled chapter", () => {
     section({ sectionOrder: 1, chapterTitle: "Chapter Two", band4: 300, band5: 200, totalTokens: 1000 }),
     section({ sectionOrder: 2, chapterTitle: "Chapter Three", band4: 25, band5: 5, totalTokens: 1000 }),
   ];
-  const state = classifyRidge(sections, { format: "epub" }, "done");
+  const state = classifyRidge(sections, { format: "epub", title: "Some Book" }, "done");
   assert.equal(state.kind, "peak");
   if (state.kind === "peak") {
     assert.equal(state.peakSectionOrder, 1);
@@ -213,8 +213,35 @@ test("a peak with no chapter title falls back to unavailable rather than a machi
     section({ sectionOrder: 1, chapterTitle: null, band4: 300, band5: 200, totalTokens: 1000 }),
     section({ sectionOrder: 2, chapterTitle: "Chapter Three", band4: 22, band5: 6, totalTokens: 1000 }),
   ];
-  const state = classifyRidge(sections, { format: "epub" }, "done");
+  const state = classifyRidge(sections, { format: "epub", title: "Some Book" }, "done");
   assert.deepEqual(state, { kind: "unavailable" });
+});
+
+// What this looked like shipped: Gutenberg's Tom Sawyer opens with a title
+// page, a contents list and the licence, all under one TOC entry named after
+// the book — and that front matter is the densest vocabulary in the file. The
+// card announced 「最吃力的一段在「THE ADVENTURES OF TOM SAWYER」前后」.
+test("a peak whose only title is the book's own name is not a chapter, so the block is dropped", () => {
+  const sections = [
+    section({ sectionOrder: 0, chapterTitle: "The Adventures of Tom Sawyer", band4: 300, band5: 200, totalTokens: 1000 }),
+    section({ sectionOrder: 1, chapterTitle: "Chapter Two", band4: 20, band5: 5, totalTokens: 1000 }),
+    section({ sectionOrder: 2, chapterTitle: "Chapter Three", band4: 22, band5: 6, totalTokens: 1000 }),
+  ];
+  const state = classifyRidge(sections, { format: "epub", title: "THE ADVENTURES OF TOM SAWYER" }, "done");
+  assert.deepEqual(state, { kind: "unavailable" });
+});
+
+test("a real chapter that merely contains the book's name still gets named", () => {
+  // The rule is "this section *is* the book", not "this section mentions it" —
+  // otherwise a legitimately titled chapter would go silent for no reason.
+  const sections = [
+    section({ sectionOrder: 0, chapterTitle: "Tom Sawyer Goes to School", band4: 300, band5: 200, totalTokens: 1000 }),
+    section({ sectionOrder: 1, chapterTitle: "Chapter Two", band4: 20, band5: 5, totalTokens: 1000 }),
+    section({ sectionOrder: 2, chapterTitle: "Chapter Three", band4: 22, band5: 6, totalTokens: 1000 }),
+  ];
+  const state = classifyRidge(sections, { format: "epub", title: "Tom Sawyer" }, "done");
+  assert.equal(state.kind, "peak");
+  if (state.kind === "peak") assert.equal(state.peakTitle, "Tom Sawyer Goes to School");
 });
 
 test("a flat distribution reads as flat even when every section is titled", () => {
@@ -223,7 +250,7 @@ test("a flat distribution reads as flat even when every section is titled", () =
     section({ sectionOrder: 1, chapterTitle: "Chapter Two", band4: 41, band5: 10, totalTokens: 1000 }),
     section({ sectionOrder: 2, chapterTitle: "Chapter Three", band4: 39, band5: 11, totalTokens: 1000 }),
   ];
-  const state = classifyRidge(sections, { format: "epub" }, "done");
+  const state = classifyRidge(sections, { format: "epub", title: "Some Book" }, "done");
   assert.equal(state.kind, "flat");
 });
 

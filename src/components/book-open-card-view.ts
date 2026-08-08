@@ -203,9 +203,18 @@ export type RidgeState =
  * has no chapter title that maps onto the book's own table of contents (the
  * whole block is dropped rather than naming a machine section index).
  */
+/** Whitespace- and case-insensitive, because a TOC entry and the book's own
+ *  metadata title routinely differ by capitalisation alone. */
+function sameTitle(a: string, b: string | null | undefined): boolean {
+  if (!b) return false;
+  const normalize = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
+  const left = normalize(a);
+  return left.length > 0 && left === normalize(b);
+}
+
 export function classifyRidge(
   sections: readonly BookDifficultySection[],
-  book: Pick<Book, "format">,
+  book: Pick<Book, "format" | "title">,
   bookStatus: BookDifficultyStatus,
 ): RidgeState {
   const usable = sections.filter((section) => section.totalTokens > 0);
@@ -244,7 +253,18 @@ export function classifyRidge(
   }
 
   const peak = withShare.reduce((best, section) => (section.hardShare > best.hardShare ? section : best));
-  if (!peak.chapterTitle) {
+  // A section titled after the book itself is not a chapter name. Gutenberg
+  // and similar editions open with front matter — title page, contents,
+  // licence — whose TOC entry is the book's own title, and that front matter
+  // is also, reliably, the densest vocabulary in the file. Naming it produced
+  // 「最吃力的一段在「THE ADVENTURES OF TOM SAWYER」前后」: a sentence that
+  // tells the reader nothing and points at nothing they will ever read.
+  //
+  // Dropped rather than downgraded to the flat sentence: "flat" asserts that
+  // no chapter stands out, and here one does — we just cannot name it. The
+  // mockup's own "对不上目录就整块不出现" rule already covers the untitled
+  // peak below for the same reason, so this takes the same exit.
+  if (!peak.chapterTitle || sameTitle(peak.chapterTitle, book.title)) {
     // Judgment call: the mockup's "对不上目录就整块不出现" rule is written
     // for this peak-naming case specifically. The flat sentence above never
     // names a chapter, so it can render even when no section in the book has
