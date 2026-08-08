@@ -508,3 +508,21 @@ export function emptyLibrary(): boolean {
     return false;
   }
 }
+
+/**
+ * `?profile=<variant>` — which shape of the profile page to serve.
+ *
+ * The profile page has six states and the difference between them is entirely
+ * in the data (`profile_get`'s reply), not in anything clickable: an empty
+ * profile, a profile over the soft limit, one over the hard limit. A sweep
+ * that only ever sees the default fixture never renders the other three, and
+ * neither can anyone looking at the page by hand. `?empty=1` set the
+ * precedent for a data-shaped knob living in the URL.
+ */
+export function profileVariant(): string {
+  try {
+    return new URLSearchParams(window.location.search).get("profile") ?? "";
+  } catch {
+    return "";
+  }
+}

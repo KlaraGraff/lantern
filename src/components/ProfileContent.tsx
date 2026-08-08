@@ -381,6 +381,16 @@ export default function ProfileContent() {
   // right now — a profile with every card deleted after a real revision is
   // not "waiting for its first batch" and must not say so.
   const neverSummarized = state.revisionCount === 0;
+  // A profile that has never held anything has nothing to delete, and a red
+  // destructive action sitting under an empty page invites a click that can
+  // only be a no-op. `revisionCount` is part of the test on purpose: once a
+  // batch has landed there is history behind the page even if every card was
+  // deleted afterwards, and `deleteAll` is the only way to purge that.
+  const nothingToDelete =
+    state.userText.length === 0
+    && state.draftText.length === 0
+    && visibleCards.length === 0
+    && neverSummarized;
   const moveDelta = pendingMove ? draftText.length - pendingMove.preText.length : 0;
 
   return (
@@ -390,10 +400,20 @@ export default function ProfileContent() {
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-[24px] font-semibold text-text-primary">{t("profile.title")}</h1>
-            <p className="mt-1 max-w-[58ch] text-[13px] leading-[1.6] text-text-secondary">{t("profile.subtitle")}</p>
+            <p className="mt-1 max-w-[58ch] text-[13px] leading-[1.6] text-text-secondary">
+              {state.enabled ? t("profile.subtitle") : t("profile.subtitleOff")}
+            </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <Button variant="secondary" size="sm" disabled={summarizing} onClick={() => void runSummarizeNow()}>
+            {/* Off means the summariser is not running; offering to run it once
+                anyway would contradict the line right above. */}
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={summarizing || !state.enabled}
+              title={state.enabled ? undefined : t("profile.summarizeNowOffHint")}
+              onClick={() => void runSummarizeNow()}
+            >
               {summarizing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
               {t("profile.summarizeNow")}
             </Button>
@@ -404,9 +424,18 @@ export default function ProfileContent() {
         </div>
       </header>
 
+      {/* Turned off, the strip stops reporting batch progress and decay: both
+          describe a summariser that is still running, and a green dot next to
+          them reads as "live". Nothing here is lost — it resumes on re-enable. */}
       <div className="flex flex-wrap items-center gap-2 border-b border-border-light bg-bg-muted px-page py-2 text-[11.8px] text-text-muted">
-        <span className={`size-1.5 shrink-0 rounded-full ${neverSummarized ? "bg-warning" : "bg-success"}`} />
-        {neverSummarized ? (
+        <span
+          className={`size-1.5 shrink-0 rounded-full ${
+            !state.enabled ? "bg-text-placeholder" : neverSummarized ? "bg-warning" : "bg-success"
+          }`}
+        />
+        {!state.enabled ? (
+          <span>{t("profile.strip.off")}</span>
+        ) : neverSummarized ? (
           <span>{t("profile.strip.firstBatch", { done: state.newFollowupsSinceLastBatch, total: state.batchSize })}</span>
         ) : (
           <span>
@@ -418,7 +447,9 @@ export default function ProfileContent() {
           </span>
         )}
         <span className="flex-1" />
-        <span>{neverSummarized ? t("profile.strip.writeNowHint") : t("profile.strip.decayHint")}</span>
+        {state.enabled && (
+          <span>{neverSummarized ? t("profile.strip.writeNowHint") : t("profile.strip.decayHint")}</span>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-page py-5">
@@ -427,10 +458,15 @@ export default function ProfileContent() {
           <div className="mb-1.5 flex items-center gap-2">
             <p className="text-[11px] font-bold uppercase tracking-wide text-text-muted">{t("profile.yourText.heading")}</p>
             <span className="flex-1" />
+            {/* Past the hard limit the count turns red but must also stop
+                *suggesting* — at this length saving is refused outright, and
+                "建议压缩" reads as advice the reader may decline. */}
             <span className={`text-[11.2px] tabular-nums ${countClass(draftText.length, softLimit, hardLimit)}`}>
-              {overSoft
-                ? t("profile.yourText.countWarn", { count: draftText.length, softLimit })
-                : t("profile.yourText.count", { count: draftText.length, softLimit })}
+              {overHard
+                ? t("profile.yourText.countBlocked", { count: draftText.length, softLimit })
+                : overSoft
+                  ? t("profile.yourText.countWarn", { count: draftText.length, softLimit })
+                  : t("profile.yourText.count", { count: draftText.length, softLimit })}
             </span>
           </div>
 
@@ -633,13 +669,15 @@ export default function ProfileContent() {
       <div className="flex items-center gap-2.5 border-t border-border bg-bg-muted px-page py-3 text-[11.5px] text-text-muted">
         <span>{t("profile.footer.autoAnalysisHint")}</span>
         <span className="flex-1" />
-        <button
-          type="button"
-          onClick={() => setConfirmingDeleteAll(true)}
-          className="text-[12px] font-medium text-danger-text hover:opacity-75"
-        >
-          {t("profile.deleteAll.trigger")}
-        </button>
+        {!nothingToDelete && (
+          <button
+            type="button"
+            onClick={() => setConfirmingDeleteAll(true)}
+            className="text-[12px] font-medium text-danger-text hover:opacity-75"
+          >
+            {t("profile.deleteAll.trigger")}
+          </button>
+        )}
       </div>
 
       {showHardLimit && (

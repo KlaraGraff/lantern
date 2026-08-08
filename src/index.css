@@ -214,7 +214,11 @@
   --color-deep-purple: #8b5cf6;
   --color-purple: #a78bfa;
   --color-lavender: #c4b5fd;
-  --color-soft-lilac: #ddd6fe;
+  /* Its one consumer is a resting border (the profile page's 你写的 box), so
+     this tracks `--color-border` (#34343d) with a violet cast rather than
+     mirroring the light ramp. The literal light-mode counterpart, #ddd6fe,
+     read as near-white here and made that box the loudest thing on the page. */
+  --color-soft-lilac: #4a3f68;
   --color-mist: #302647;
 
   --color-dark: #fafafa;

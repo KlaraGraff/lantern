@@ -23,6 +23,7 @@ import {
   PERSON_ALIAS_GROUPS,
   VOCAB,
   emptyLibrary,
+  profileVariant,
   resolveSettings,
   type HarnessBook,
 } from "./fixture-data";
@@ -74,6 +75,92 @@ const LIBRARY: HarnessBook[] = emptyLibrary()
     : BOOKS;
 
 const LIBRARY_COLLECTIONS = isShooting() ? PROMO_COLLECTIONS : COLLECTIONS;
+
+/* ------------------------------------------------------------------ *
+ * Profile
+ * ------------------------------------------------------------------ */
+
+/**
+ * The profile page's six states differ only in what `profile_get` returns —
+ * nothing on the page can be clicked to reach an empty profile or one past
+ * the hard limit. `?profile=<variant>` picks the shape; the default is the
+ * one the sweep uses.
+ */
+const PROFILE_CARDS = [
+  {
+    slot: "syntax_explain",
+    conclusion: "读者需要先看句子骨架，再看修饰成分。",
+    evidence: "多次追问从句的主干在哪里",
+    status: "active",
+    updatedAt: Date.now() - 3_600_000,
+  },
+  {
+    slot: "vocab_explain",
+    conclusion: "生词给一个例句比给同义词更有用。",
+    evidence: "反复要求换个例子",
+    status: "active",
+    updatedAt: Date.now() - 7_200_000,
+  },
+  {
+    slot: "reply_pacing",
+    conclusion: "回答偏长时读者会中途打断。",
+    evidence: "两次在解释途中改问别的",
+    status: "moved",
+    updatedAt: Date.now() - 86_400_000,
+  },
+];
+
+const PROFILE_SHORT = "我读英文小说主要是为了准备考试，遇到长句子容易卡住。";
+/** ~625 characters — past the 500 soft limit, short of the 1000 hard one. */
+const PROFILE_LONG = `${PROFILE_SHORT}${"我更想先看一句话的骨架，再看修饰成分，最后才是生词。".repeat(24)}`;
+/** Past the hard limit, so saving is blocked rather than truncated. */
+const PROFILE_TOO_LONG = PROFILE_LONG.repeat(2);
+
+const PROFILE_VARIANTS: Record<string, () => Record<string, unknown>> = {
+  /** ⓪ Nothing written, nothing summarized — the first-run page. */
+  empty: () => ({
+    userText: "",
+    draftText: "",
+    cards: [],
+    newFollowupsSinceLastBatch: 3,
+    lastSummarizedAt: null,
+    revisionCount: 0,
+  }),
+  /** ② Over the soft limit: the inline warning and the optimize affordance. */
+  soft: () => ({ userText: PROFILE_LONG, draftText: PROFILE_LONG }),
+  /** ③ Over the hard limit: saving is blocked by `HardLimitDialog`. */
+  hard: () => ({ userText: PROFILE_TOO_LONG, draftText: PROFILE_TOO_LONG }),
+  /** The profile switched off — cards stay visible, nothing is injected. */
+  off: () => ({ enabled: false }),
+};
+
+/**
+ * Mirrors `ProfileView` in `src-tauri/src/commands/profile.rs` field for
+ * field. `userText`/`draftText` are `unwrap_or_default()` there, so they are
+ * always strings and never null; `lastSummarizedAt` is **milliseconds** (the
+ * table stores `now_ms()`), which is what `timeAgo` expects.
+ *
+ * By default the draft differs from the saved text, because that is the
+ * interesting state: it is what makes the "restore draft" affordance render
+ * at all.
+ */
+function profileView(): Record<string, unknown> {
+  const base = {
+    userText: PROFILE_SHORT,
+    draftText: `${PROFILE_SHORT}希望解释能短一点。`,
+    enabled: true,
+    softLimit: 500,
+    // `profile_get_inner` computes `hard = soft * 2`; keep the fixture on that
+    // rule so the over-limit variants land where the real backend puts them.
+    hardLimit: 1000,
+    cards: PROFILE_CARDS,
+    newFollowupsSinceLastBatch: 8,
+    lastSummarizedAt: Date.now() - 172_800_000,
+    revisionCount: 3,
+    batchSize: 20,
+  };
+  return { ...base, ...(PROFILE_VARIANTS[profileVariant()]?.() ?? {}) };
+}
 
 export const FIXTURES: Record<string, Fixture> = {
   /* ---------------------------------------------------------------- *
@@ -411,48 +498,25 @@ export const FIXTURES: Record<string, Fixture> = {
   /**
    * Hand-written because `ProfileContent` reads `state.draftText.length`
    * unguarded, and the shape-guessed stub omits the string — which took the
-   * whole profile page down to its error boundary during the sweep. Mirrors
-   * `ProfileView` in `src-tauri/src/commands/profile.rs` field for field;
-   * `userText` and `draftText` are `unwrap_or_default()` there, so they are
-   * always strings and never null.
-   *
-   * A draft that differs from the saved text is the interesting state: it is
-   * what makes the "restore draft" affordance render at all.
+   * whole profile page down to its error boundary during the sweep. See
+   * `profileView` above for the shape and the `?profile=` variants.
    */
-  profile_get: () => ({
-    userText: "我读英文小说主要是为了准备考试，遇到长句子容易卡住。",
-    draftText: "我读英文小说主要是为了准备考试，遇到长句子容易卡住。希望解释能短一点。",
-    enabled: true,
-    softLimit: 500,
-    hardLimit: 2000,
-    cards: [
-      {
-        slot: "syntax_explain",
-        conclusion: "读者需要先看句子骨架，再看修饰成分。",
-        evidence: "多次追问从句的主干在哪里",
-        status: "active",
-        updatedAt: nowSec() - 3600,
-      },
-      {
-        slot: "vocab_explain",
-        conclusion: "生词给一个例句比给同义词更有用。",
-        evidence: "反复要求换个例子",
-        status: "active",
-        updatedAt: nowSec() - 7200,
-      },
-      {
-        slot: "reply_pacing",
-        conclusion: "回答偏长时读者会中途打断。",
-        evidence: "两次在解释途中改问别的",
-        status: "moved",
-        updatedAt: nowSec() - 86_400,
-      },
-    ],
-    newFollowupsSinceLastBatch: 8,
-    lastSummarizedAt: nowSec() - 172_800,
-    revisionCount: 3,
-    batchSize: 20,
-  }),
+  profile_get: () => profileView(),
+  /**
+   * Returns a bare string, not `{ text }` — `useProfile.optimizeText` types it
+   * as `invoke<string>`, and the shape-guessed stub's `{}` would render the
+   * compare panel with an empty "after" column that looks like a real result.
+   * Shortened rather than echoed so the two columns visibly differ — cut on a
+   * sentence boundary, because a screenshot of a half-sentence reads as a
+   * rendering bug rather than as a rewrite.
+   */
+  profile_optimize_text: (a: Args) => {
+    const text = String(a.text ?? "");
+    const sentences = text.split(/(?<=[。！？.!?])/).filter(Boolean);
+    const kept = sentences.slice(0, Math.max(1, Math.ceil(sentences.length * 0.6))).join("");
+    const direction = a.direction ? `（按你给的方向：${String(a.direction)}）` : "";
+    return `${kept || text}${direction}`;
+  },
   ai_cancel: true,
   /**
    * Hand-written because `AiRequestCountsSection` dereferences

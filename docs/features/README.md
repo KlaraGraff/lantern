@@ -10,3 +10,7 @@ A spec's number is its issue number here. A `q` prefix marks a number inherited 
 - [q25 — Collection Folders](q25-collection-folders.md)
 - [q32 — Library Backup](q32-library-backup.md)
 - [q276 - Reset All App Data](q276-reset-all-data.md)
+
+## Deferred
+
+- [用户画像 — 查看原始记录](profile-source-records.md) — 样张里画了链接，功能没做；用户明确先搁置
