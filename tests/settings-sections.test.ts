@@ -3,9 +3,11 @@ import test from "node:test";
 
 import {
   SETTINGS_ROOT_ROWS,
+  SETTINGS_SECTION_ORDER,
+  SETTINGS_SECTIONS,
   groupSettingsRootRows,
   type SettingsRootRow,
-} from "../src/components/settings/settings-root-rows.ts";
+} from "../src/components/settings/settings-sections.ts";
 import type { SettingsSection } from "../src/components/settings-destination.ts";
 
 /**
@@ -13,6 +15,13 @@ import type { SettingsSection } from "../src/components/settings-destination.ts"
  * product decision rather than a layout one — which rows, in which order, under
  * which headings. Asserting it here keeps a refactor of the modal from quietly
  * reordering or dropping an entry.
+ *
+ * Both navigation surfaces now read `SETTINGS_SECTIONS`, so the tests below
+ * cover the table itself as well as the list derived from it. The compiler
+ * carries part of that weight — `Record<SettingsSection, …>` will not let a
+ * section go undescribed — but not all of it: `SETTINGS_SECTION_ORDER` is a
+ * plain array, and a section missing from it vanishes from the sidebar and the
+ * root list at once, with nothing to say so.
  */
 
 /** What `isSectionAvailable` answers on a phone: no MCP, iCloud folder sync
@@ -86,4 +95,37 @@ test("书籍来源 and 书库同步 merged into one root row", () => {
   const libraryRows = SETTINGS_ROOT_ROWS.filter((row) => row.section === "library");
   assert.equal(libraryRows.length, 1);
   assert.equal(libraryRows[0].id, "library");
+});
+
+test("the order names every described section, and each exactly once", () => {
+  // The gap the type system leaves open. A section described in
+  // `SETTINGS_SECTIONS` but absent from the order is unreachable from both
+  // navigation surfaces — no sidebar row, no root row — and the only symptom
+  // is a settings page the reader cannot find.
+  const described = Object.keys(SETTINGS_SECTIONS).sort();
+  assert.deepEqual([...SETTINGS_SECTION_ORDER].sort(), described);
+  assert.equal(new Set(SETTINGS_SECTION_ORDER).size, SETTINGS_SECTION_ORDER.length);
+});
+
+test("the root list follows the sidebar's order, section by section", () => {
+  // One table, two surfaces: whatever order the sidebar reads is the order the
+  // root list is flattened from. Asserting it means a reordering can only be
+  // done in one place, which is the point of the merge.
+  const seen: SettingsSection[] = [];
+  for (const row of SETTINGS_ROOT_ROWS) {
+    if (seen[seen.length - 1] !== row.section) seen.push(row.section);
+  }
+  assert.deepEqual(seen, [...SETTINGS_SECTION_ORDER]);
+});
+
+test("every root row arrives with an icon, its own or its section's", () => {
+  // 服务配置's two rows override it; every other row inherits. The modal
+  // renders `row.icon` unconditionally, so an undefined here is a crash.
+  for (const row of SETTINGS_ROOT_ROWS) {
+    assert.ok(row.icon, `${row.id} has no icon`);
+  }
+  const services = SETTINGS_ROOT_ROWS.filter((row) => row.section === "services");
+  assert.notEqual(services[0].icon, services[1].icon);
+  const reading = SETTINGS_ROOT_ROWS.find((row) => row.id === "reading");
+  assert.equal(reading?.icon, SETTINGS_SECTIONS.reading.icon);
 });

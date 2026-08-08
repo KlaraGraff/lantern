@@ -89,7 +89,7 @@
 2. **`Reader.tsx` 2701 行，同类问题两套实现。** TOC/搜索/排版设置三者互斥靠三处内联手写（`Reader.tsx:1787-1798`、`1976-1980` 重复同一模式），Traces/AI 面板互斥走统一的 `sidePanel` 抽象——后来者不知道该学哪套。
 3. **排版设置弹层阻塞翻页的不对称。** `overlayOpen` 的注释写明「卡片打开不应阻塞翻页」，但 `settingsOpen` 在阻塞集合里（`Reader.tsx:887`），无注释说明是否有意。
 4. **220ms（选区菜单）与 240ms（双击查词）两个相邻魔法数**（`Reader.tsx:732`、`839-852`），无共享常量、无解释差异的注释。
-5. **设置导航两份数据源人工同步。** 桌面 tab 列表（`SettingsModal.tsx:310-325`）与窄屏行列表（`settings-root-rows.ts:48-84`）结构不同、需分别维护，新增 section 时容易漏改一处。
+5. ~~**设置导航两份数据源人工同步。** 桌面 tab 列表（`SettingsModal.tsx:310-325`）与窄屏行列表（`settings-root-rows.ts:48-84`）结构不同、需分别维护，新增 section 时容易漏改一处。~~ **已修复（2026-08-08）：** 两份合成 `settings-sections.ts` 一张表，桌面侧栏与窄屏行列表都从它派生；`Record<SettingsSection, …>` 让漏描述一个 section 无法通过编译，漏进 `SETTINGS_SECTION_ORDER` 则由 `tests/settings-sections.test.ts` 拦下。
 6. **watchlist 过滤责任下放给每个调用方。** `query_vocab_words` 等函数故意不过滤 `list_status`（`vocab.rs:959-970`），注释反复提醒「不要在这里加过滤器」——说明踩过坑。建议提供一个默认过滤的封装入口，把「记得过滤」从纪律变成类型。
 7. **mastery 降级路径半接线。** `mastery/mod.rs:78` 的 `#![allow(dead_code)]` 自陈「demotion path 仍在接线中」，属于开着口的施工面。
 8. **archive 语义超载。** `docs/features/archive/` 同时存放「已 ship」（q257）和「上游遗产、代码中不存在」（q21 自动分类、q22 书籍推荐——本次核验：无 Discover 标签、无任何推荐/分类命令）。审查者极易把后者误判为已完成（本次两个 scout 就得出了相反结论）。建议给上游遗产类 spec 加一行 `Status: inherited-from-quill, not implemented`。

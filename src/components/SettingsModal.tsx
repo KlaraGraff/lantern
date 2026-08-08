@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Globe, BookOpen, Bot, GraduationCap, Highlighter, Library, Info, Terminal, X, ChevronLeft, ChevronRight, Sparkles, Volume2 } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
 import GeneralSettings from "./settings/GeneralSettings";
 import ReadingSettings from "./settings/ReadingSettings";
 import LearningSettings from "./settings/LearningSettings";
@@ -18,9 +18,11 @@ import { LANGUAGE_OPTIONS } from "./settings/languageOptions";
 import {
   groupSettingsRootRows,
   SETTINGS_ROOT_GROUPS,
+  SETTINGS_SECTION_ORDER,
+  SETTINGS_SECTIONS,
   type SettingsRootGroup,
   type SettingsRootRow,
-} from "./settings/settings-root-rows";
+} from "./settings/settings-sections";
 import { useSettings } from "../hooks/useSettings";
 import { isNarrowNow, useIsNarrow } from "../hooks/useIsNarrow";
 import { platform } from "../services/platform";
@@ -72,20 +74,6 @@ function initialLevel(section: SettingsSection | undefined): SettingsSection | n
   if (section) return availableSection(section);
   return isNarrowNow() ? null : "general";
 }
-
-/** Keyed by root row rather than by section: 对话模型 and 语音 share one. */
-const ROOT_ROW_ICONS: Record<string, typeof Globe> = {
-  general: Globe,
-  reading: BookOpen,
-  learning: GraduationCap,
-  tools: Highlighter,
-  models: Bot,
-  speech: Volume2,
-  autoAnalysis: Sparkles,
-  library: Library,
-  mcp: Terminal,
-  about: Info,
-};
 
 /**
  * The root row, and the button it is. Height follows the input device and not
@@ -305,24 +293,30 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
 
   if (!open) return null;
 
+  // The desktop sidebar: one row per section, read off the same table the
+  // narrow root list reads (`settings-sections`), so a section cannot exist on
+  // one surface and be missing from the other. Order, icon, group and copy all
+  // come from there; what stays here is the translation, which needs `t`, and
+  // the platform question, which needs `platform`.
+  //
   // Same three-way grouping as the narrow root list (`SETTINGS_ROOT_GROUPS`):
   // "core"/"misc" carry no heading, "ai" and "library" do.
-  const allSections: { id: SettingsSection; label: string; subtitle: string; paneSubtitle?: string; icon: typeof Globe; group: SettingsRootGroup }[] = [
-    { id: "general", label: t("settings.general.title"), subtitle: t("settings.general.subtitle"), icon: Globe, group: "core" },
-    { id: "reading", label: t("settings.reading.title"), subtitle: t("settings.reading.subtitle"), icon: BookOpen, group: "core" },
-    { id: "learning", label: t("settings.learning.title"), subtitle: t("settings.learning.subtitle"), icon: GraduationCap, group: "core" },
-    { id: "tools", label: t("settings.tools.title"), subtitle: t("settings.tools.subtitle"), paneSubtitle: t("settings.tools.paneSubtitle"), icon: Highlighter, group: "core" },
-    // The subtitle lists what the tab holds, and OCR is not in it where the
-    // platform cannot run OCR — the tab would be advertising a missing view.
-    { id: "services", label: t("settings.services.shortTitle"), subtitle: t(platform.hasOcr ? "settings.services.shortSubtitle" : "settings.services.shortSubtitleNoOcr"), icon: Bot, group: "ai" },
-    // Directly under AI 配置 rather than beside the other AI features: the
-    // question this tab answers is "what runs without me", which is about
-    // the account that gets billed, not about the features themselves.
-    { id: "autoAnalysis", label: t("settings.autoAnalysis.title"), subtitle: t("settings.autoAnalysis.subtitle"), icon: Sparkles, group: "ai" },
-    { id: "library", label: t("settings.library.title"), subtitle: t("settings.library.subtitle"), icon: Library, group: "library" },
-    { id: "mcp", label: t("settings.mcp.title"), subtitle: t("settings.mcp.subtitle"), icon: Terminal, group: "misc" },
-    { id: "about", label: t("settings.about.title"), subtitle: t("settings.about.subtitle"), icon: Info, group: "misc" },
-  ];
+  const allSections: { id: SettingsSection; label: string; subtitle: string; paneSubtitle?: string; icon: LucideIcon; group: SettingsRootGroup }[] =
+    SETTINGS_SECTION_ORDER.map((id) => {
+      const meta = SETTINGS_SECTIONS[id];
+      return {
+        id,
+        label: t(meta.labelKey),
+        subtitle: t(
+          typeof meta.subtitleKey === "function"
+            ? meta.subtitleKey({ hasOcr: platform.hasOcr })
+            : meta.subtitleKey,
+        ),
+        paneSubtitle: meta.paneSubtitleKey ? t(meta.paneSubtitleKey) : undefined,
+        icon: meta.icon,
+        group: meta.group,
+      };
+    });
 
   const sections = allSections.filter((s) => isSectionAvailable(s.id));
   const sectionLabel = (id: SettingsSection) => allSections.find((s) => s.id === id)?.label ?? "";
@@ -496,7 +490,10 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
                             </div>
                           );
                         }
-                        const Icon = ROOT_ROW_ICONS[row.id];
+                        // The row's own icon where it has one (服务配置's two
+                        // rows), its section's otherwise — resolved in
+                        // `settings-sections`, not here.
+                        const Icon = row.icon;
                         const value = rowValue(row);
                         return (
                           <button
@@ -505,7 +502,7 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
                             onClick={() => requestRow(row)}
                             className={`${ROOT_ROW_CLASS} cursor-pointer hover:bg-bg-input`}
                           >
-                            {Icon && <Icon className="size-4 shrink-0 text-text-muted touch:size-[19px]" />}
+                            <Icon className="size-4 shrink-0 text-text-muted touch:size-[19px]" />
                             <span className="truncate">{rowLabel(row)}</span>
                             <span className="ml-auto max-w-[150px] truncate pl-2 text-[13px] font-normal text-text-muted touch:text-[14px]">
                               {value}
