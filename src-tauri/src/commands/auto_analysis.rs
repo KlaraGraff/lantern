@@ -192,6 +192,17 @@ pub const JOBS: &[AutoAnalysisJob] = &[
         default_enabled: true,
         applies: None,
     },
+    AutoAnalysisJob {
+        id: crate::commands::profile::JOB_ID,
+        // Same shape as `followup_difficulty` just above: nothing runs per
+        // message, a batch fires once enough newly classified follow-ups
+        // (the same threshold, by design — this is the job right behind it
+        // in the pipeline) have piled up since the last summary.
+        trigger: AutoAnalysisTrigger::Batch,
+        layer: AutoAnalysisLayer::Personalization,
+        default_enabled: true,
+        applies: None,
+    },
 ];
 
 /// How many manual runs before the console offers to make a job automatic.

@@ -11,14 +11,14 @@ pub struct SpoilerResolution {
     pub progress: i32,
 }
 
-fn parse_text_offset(value: &str) -> Option<i64> {
+pub(crate) fn parse_text_offset(value: &str) -> Option<i64> {
     if let Some(rest) = value.strip_prefix("textloc:v2:") {
         return rest.split(':').next()?.parse::<i64>().ok();
     }
     value.strip_prefix("textloc:")?.parse::<i64>().ok()
 }
 
-fn parse_spine_section(value: &str) -> Option<i64> {
+pub(crate) fn parse_spine_section(value: &str) -> Option<i64> {
     let prefix = value.strip_prefix("epubcfi(/6/")?;
     let number = prefix
         .split(|character: char| !character.is_ascii_digit())

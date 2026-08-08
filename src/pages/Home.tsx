@@ -12,6 +12,7 @@ import DictionaryContent from "../components/DictionaryContent";
 import ChatsContent from "../components/ChatsContent";
 import AnnotationsContent from "../components/AnnotationsContent";
 import ExplanationsContent from "../components/ExplanationsContent";
+import ProfileContent from "../components/ProfileContent";
 import ReadingStatsContent from "../components/ReadingStatsContent";
 import { openSettings } from "../components/settings-open";
 import { listenForSettingsChanged } from "../components/settings-events";
@@ -505,6 +506,8 @@ export default function Home() {
         <AnnotationsContent onOpenVocab={openVocabWord} />
       ) : activeFilter === "explanations" ? (
         <ExplanationsContent />
+      ) : activeFilter === "profile" ? (
+        <ProfileContent />
       ) : activeFilter === "stats" ? (
         <ReadingStatsContent onOpenReview={() => setActiveFilter("review")} />
       ) : (

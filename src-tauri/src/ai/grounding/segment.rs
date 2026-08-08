@@ -4,7 +4,7 @@ pub enum SegmentMode {
     Query,
 }
 
-fn is_cjk(character: char) -> bool {
+pub(crate) fn is_cjk(character: char) -> bool {
     matches!(character as u32,
         0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF |
         0x3040..=0x309F | 0x30A0..=0x30FF | 0xAC00..=0xD7AF

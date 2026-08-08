@@ -67,6 +67,7 @@ function localDateInputValue(date = new Date()): string {
 export default function LearningSettings({ settings, loading, save, saveBulk, showSavedToast }: SettingsProps) {
   const { t } = useTranslation();
   const [lookupHistoryRetention, setLookupHistoryRetention] = useState("0");
+  const [profileSoftLimit, setProfileSoftLimit] = useState("1200");
   const [cefrLevel, setCefrLevel] = useState("B1");
   const [cefrSource, setCefrSource] = useState("manual");
   const [explanationMode, setExplanationMode] = useState("adaptive_bilingual");
@@ -93,6 +94,9 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
     if (loading) return;
     if (settings.lookup_history_retention_days) {
       setLookupHistoryRetention(settings.lookup_history_retention_days);
+    }
+    if (settings["profile.soft_limit"]) {
+      setProfileSoftLimit(settings["profile.soft_limit"]);
     }
     setCefrLevel(settings.cefr_level || "B1");
     setCefrSource(settings.cefr_source || "manual");
@@ -684,6 +688,31 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
             { value: "90", label: t("settings.general.lookupHistory90Days") },
             { value: "365", label: t("settings.general.lookupHistory1Year") },
           ]}
+        />
+      </div>
+
+      <div className="flex items-center justify-between min-h-[73px] py-3 border-t border-black/10">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.learner.profileSoftLimit")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.learner.profileSoftLimitHint")}</p>
+        </div>
+        <input
+          type="number"
+          min={200}
+          max={10000}
+          step={100}
+          value={profileSoftLimit}
+          onChange={(event) => setProfileSoftLimit(event.target.value)}
+          onBlur={async () => {
+            const parsed = Math.max(200, Math.min(10000, parseInt(profileSoftLimit, 10) || 1200));
+            const normalized = String(parsed);
+            setProfileSoftLimit(normalized);
+            if (normalized !== settings["profile.soft_limit"]) {
+              await save("profile.soft_limit", normalized);
+              showSavedToast();
+            }
+          }}
+          className={`${ROW_CONTROL_WIDTH} h-9 rounded-lg border border-transparent bg-bg-input px-3 text-[13px] font-medium text-text-primary text-center outline-none hover:border-border focus:border-accent`}
         />
       </div>
     </div>

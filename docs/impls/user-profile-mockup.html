@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>用户画像 · 样张 v6 · 固定维度 + 双层举例 + 结论审核</title>
+<style>
+/* ── Lantern 的真实 token（src/index.css，浅色）── */
+:root{
+  --page:#f4f4f5; --surface:#ffffff; --muted:#fafafa; --input:#f3f3f5;
+  --t1:#18181b; --t2:#52525c; --t3:#71717b;
+  --border:#e4e4e7; --border-light:#f4f4f5;
+  --accent:#7c3aed; --accent-bg:#f3e8ff; --lavender:#c084fc; --lilac:#d8b4fe;
+  --warning:#b8791c; --warning-bg:#fdf6e9;
+  --danger:#e7000b; --danger-bg:#fef2f2; --danger-border:#ffc9c9;
+  --success:#00a63e;
+  --shadow-card:0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -2px rgba(0,0,0,.1);
+  --shadow-win:0 18px 44px rgba(24,24,27,.13), 0 2px 8px rgba(24,24,27,.05);
+  --sans:"Inter",system-ui,-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--t1);font:14px/1.6 var(--sans);
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:52px 32px 130px}
+
+/* ── 样张自身的排版（不属于产品 UI）── */
+header.lede{border-bottom:1px solid var(--border);padding-bottom:26px}
+header.lede h1{font-size:26px;margin:0 0 10px;font-weight:650;letter-spacing:-.3px}
+header.lede p{margin:0 0 8px;color:var(--t2);font-size:13.5px;max-width:84ch}
+header.lede p b{color:var(--t1);font-weight:600}
+header.lede ol{margin:10px 0 0;padding-left:22px;color:var(--t2);font-size:13px;max-width:84ch}
+header.lede li{margin-bottom:5px}
+header.lede li b{color:var(--t1);font-weight:600}
+
+.state{margin-top:56px}
+.state-label{display:flex;align-items:baseline;gap:11px;margin-bottom:12px;flex-wrap:wrap}
+.state-num{flex:none;font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-bg);
+  border-radius:5px;padding:2px 8px;letter-spacing:.03em}
+.state-name{font-size:14px;font-weight:650;letter-spacing:-.1px}
+.state-why{font-size:12.5px;color:var(--t3)}
+.note{max-width:920px;font-size:12.5px;line-height:1.75;color:var(--t3);margin:13px 0 0;padding-left:2px}
+.note b{color:var(--t2);font-weight:600}
+.note code{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;background:var(--input);
+  padding:1px 5px;border-radius:4px;color:var(--t2)}
+.cols{display:flex;flex-wrap:wrap;gap:30px;align-items:flex-start}
+
+/* ── 窗口外壳 ── */
+.win{border:1px solid var(--border);border-radius:12px;overflow:hidden;
+  background:var(--surface);box-shadow:var(--shadow-win);max-width:100%}
+.chrome{height:28px;background:var(--page);border-bottom:1px solid var(--border-light);
+  display:flex;align-items:center;gap:6px;padding:0 11px}
+.chrome i{width:9px;height:9px;border-radius:50%;background:#d9d9de;display:block}
+.chrome .ttl{margin-left:9px;font-size:11px;color:var(--t3)}
+
+/* ── 通用控件 ── */
+.btn{height:32px;display:inline-flex;align-items:center;gap:6px;border-radius:10px;padding:0 13px;
+  font:inherit;font-size:12.5px;border:1px solid transparent;background:none;color:var(--t2);cursor:pointer}
+.btn.primary{background:var(--accent);color:#fff;font-weight:500;border-color:var(--accent)}
+.btn.outline{border-color:var(--border);color:var(--t2);background:var(--surface)}
+.btn.quiet{color:var(--t3);padding-left:6px;padding-right:6px}
+.btn.danger{border:1px solid var(--danger-border);color:var(--danger);background:var(--surface)}
+.btn.sm{height:27px;font-size:11.5px;padding:0 10px;border-radius:8px}
+.link{color:var(--accent);cursor:pointer}
+.badge{display:inline-flex;align-items:center;font-size:10.5px;font-weight:600;border-radius:5px;
+  padding:1px 7px;letter-spacing:.02em}
+.badge.moved{background:var(--accent-bg);color:var(--accent)}
+
+/* ── 画像页 ── */
+.phead{padding:20px 26px 16px;border-bottom:1px solid var(--border);display:flex;
+  align-items:flex-start;gap:18px}
+.crumb{font-size:11.5px;color:var(--t3);margin-bottom:5px}
+.phead h2{margin:0 0 6px;font-size:21px;font-weight:650;letter-spacing:-.3px}
+.phead .psub{margin:0;font-size:12.5px;color:var(--t2);max-width:58ch;line-height:1.6}
+.phead .pacts{margin-left:auto;display:flex;gap:7px;flex:none;align-items:center}
+
+.strip{display:flex;align-items:center;gap:9px;padding:9px 26px;font-size:11.8px;color:var(--t3);
+  background:var(--muted);border-bottom:1px solid var(--border-light);flex-wrap:wrap}
+.strip .dot{width:6px;height:6px;border-radius:50%;background:var(--success);flex:none}
+.strip .dot.warn{background:var(--warning)}
+.strip b{color:var(--t2);font-weight:600}
+.strip .sp{flex:1}
+
+.pbody{padding:20px 26px 24px}
+.sechd{font-size:11px;font-weight:700;letter-spacing:.7px;color:var(--t3);text-transform:uppercase;
+  margin:0 0 10px;display:flex;align-items:center;gap:10px}
+.sechd .sp{flex:1}
+.sechd .cnt{font-weight:600;letter-spacing:.02em;text-transform:none;font-size:11.2px;
+  font-variant-numeric:tabular-nums;color:var(--t3)}
+.sechd .cnt.warn{color:var(--warning)}
+.sechd .cnt.over{color:var(--danger)}
+.secgap{margin-top:28px}
+
+/* 用户单输入框（显示态 / 编辑态） */
+.txtblock{border:1px solid var(--border);border-radius:11px;background:var(--surface);
+  padding:14px 16px}
+.txtblock.mine{border-color:var(--lilac);background:#fdfaff}
+.txtblock.empty{border-style:dashed;background:var(--muted)}
+.txtblock p{margin:0 0 9px;font-size:13px;line-height:1.7;color:var(--t1)}
+.txtblock p:last-child{margin-bottom:0}
+.txtblock.empty p{color:var(--t3);font-size:12.4px}
+.blockacts{margin-top:10px;padding-top:9px;border-top:1px solid var(--border-light);
+  display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.blockacts .del{color:var(--t3)}
+
+/* 系统卡片 */
+.card{border:1px solid var(--border);border-radius:11px;background:var(--surface);
+  padding:13px 16px;margin-bottom:10px}
+.card .ct{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.card .ct h5{margin:0;font-size:13px;font-weight:650;letter-spacing:-.1px}
+.card .ct .sp{flex:1}
+.card .cc{margin:0;font-size:13px;line-height:1.7;color:var(--t1)}
+.card .cacts{margin-top:9px;padding-top:8px;border-top:1px solid var(--border-light);
+  display:flex;gap:6px;align-items:center}
+.evidence{margin:9px 0 0;padding:8px 11px;background:var(--muted);border-radius:8px;
+  font-size:11.5px;line-height:1.65;color:var(--t3)}
+.evidence b{color:var(--t2);font-weight:600}
+/* 已移动的卡：虚化但完整保留，可撤回；默认折叠成一行 */
+.card.ghosted{border-style:dashed;background:var(--muted)}
+.card.ghosted .ct h5{color:var(--t3)}
+.card.ghosted .cc{color:var(--t3)}
+.card.ghosted .evidence{background:var(--input)}
+.card.ghosted.collapsed{padding:9px 16px}
+.card.ghosted.collapsed .ct{margin-bottom:0}
+
+/* 编辑器 */
+.editor{border:1px solid var(--lavender);border-radius:11px;background:#fdfaff;
+  padding:13px 15px 12px;box-shadow:0 0 0 2px var(--accent-bg)}
+.editor textarea{width:100%;border:1px solid var(--border);border-radius:9px;background:var(--surface);
+  font:13px/1.7 var(--sans);color:var(--t1);padding:11px 13px;resize:vertical;min-height:110px}
+.editor textarea.warn{border-color:#ecd4a8}
+.editor textarea.bad{border-color:var(--danger-border)}
+.editor .erow{display:flex;align-items:center;gap:8px;margin-top:9px}
+.editor .erow .sp{flex:1}
+.editor .hint{font-size:11.5px;color:var(--t3);line-height:1.6;margin-top:7px}
+.editor .hint b{color:var(--t2);font-weight:600}
+.editor .hint.warn{color:var(--warning)}
+.cnt2{font-size:11.2px;color:var(--t3);font-variant-numeric:tabular-nums}
+.cnt2.warn{color:var(--warning);font-weight:600}
+.cnt2.over{color:var(--danger);font-weight:600}
+.cnt2.ok{color:var(--success);font-weight:600}
+
+/* 假 textarea：用于展示「移动插入的几行」高亮 */
+.fake-ta{border:1px solid var(--border);border-radius:9px;background:var(--surface);
+  padding:11px 13px;min-height:110px}
+.fake-ta p{margin:0 0 8px;font-size:13px;line-height:1.7;color:var(--t1)}
+.fake-ta p:last-child{margin-bottom:0}
+.fake-ta p.new{background:var(--accent-bg);border-radius:5px;padding:2px 6px;
+  margin-left:-6px;margin-right:-6px}
+
+/* 确认卡 / 弹层 */
+.confirm{border:1px solid var(--border);border-radius:12px;background:var(--surface);
+  box-shadow:var(--shadow-card);width:460px;max-width:100%;overflow:hidden}
+.confirm .ch{padding:18px 20px 0}
+.confirm h4{margin:0 0 6px;font-size:15.5px;font-weight:650;letter-spacing:-.15px}
+.confirm .cw{margin:0;font-size:12.5px;color:var(--t2);line-height:1.65}
+.confirm ul{list-style:none;margin:14px 0 0;padding:0;border-top:1px solid var(--border-light)}
+.confirm li{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-light);
+  font-size:12.2px;line-height:1.55;align-items:flex-start}
+.confirm li b{font-weight:600;flex:none;width:92px;color:var(--t1)}
+.confirm li span{color:var(--t2)}
+.confirm .keep{background:var(--muted);border-radius:9px;padding:9px 11px;margin-top:13px;
+  font-size:11.8px;color:var(--t2);line-height:1.6}
+.confirm .keep b{color:var(--t1);font-weight:600}
+.confirm .cf{display:flex;align-items:center;gap:8px;padding:14px 20px 16px;margin-top:14px;
+  border-top:1px solid var(--border-light)}
+.confirm .cf .sp{flex:1}
+
+/* 左右对照面板 */
+.compare{border:1px solid var(--border);border-radius:12px;background:var(--surface);
+  box-shadow:var(--shadow-card);overflow:hidden;width:880px;max-width:100%}
+.compare .cph{padding:16px 20px 0}
+.compare .cph h4{margin:0 0 5px;font-size:15.5px;font-weight:650}
+.compare .cph p{margin:0;font-size:12.3px;color:var(--t2);line-height:1.6}
+.compare .grid{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:14px;
+  border-top:1px solid var(--border-light)}
+.compare .pane{padding:13px 20px 15px}
+.compare .pane + .pane{border-left:1px solid var(--border-light)}
+.compare .pane h5{margin:0 0 8px;font-size:10.8px;font-weight:700;letter-spacing:.5px;
+  text-transform:uppercase;color:var(--t3);display:flex;align-items:baseline;gap:8px}
+.compare .pane.after h5{color:var(--accent)}
+.compare .pane h5 .sp{flex:1}
+.compare .pane textarea{width:100%;border:1px solid var(--border);border-radius:9px;
+  background:var(--surface);font:12.3px/1.65 var(--sans);color:var(--t1);padding:10px 12px;
+  resize:vertical;min-height:132px}
+.compare .pane textarea.bad{border-color:var(--danger-border);background:#fffafa}
+.compare .pane.after textarea{border-color:var(--lilac);background:#fdfaff}
+.compare .pane .prow{display:flex;align-items:center;gap:8px;margin-top:9px}
+.compare .pane .prow .sp{flex:1}
+.compare .pane .why{font-size:11px;color:var(--t3);line-height:1.5;margin-top:6px}
+.direction{border-top:1px solid var(--border-light);padding:13px 20px 16px;background:var(--muted)}
+.direction label{display:block;font-size:11px;font-weight:700;letter-spacing:.5px;
+  text-transform:uppercase;color:var(--t3);margin-bottom:7px}
+.direction .drow{display:flex;gap:8px}
+.direction input{flex:1;border:1px solid var(--border);border-radius:9px;background:var(--surface);
+  font:12.5px/1.5 var(--sans);color:var(--t1);padding:8px 12px}
+.direction .dhint{font-size:11.3px;color:var(--t3);line-height:1.6;margin:8px 0 0}
+.direction .dhint b{color:var(--t2);font-weight:600}
+
+.pfoot{border-top:1px solid var(--border);padding:13px 26px;display:flex;align-items:center;gap:10px;
+  font-size:11.5px;color:var(--t3);background:var(--muted)}
+.pfoot .sp{flex:1}
+
+/* 附录表 */
+.appendix{margin-top:74px;border-top:1px solid var(--border);padding-top:34px}
+.appendix h2{font-size:19px;font-weight:650;margin:0 0 8px;letter-spacing:-.2px}
+.appendix h3{font-size:15px;font-weight:650;margin:30px 0 8px;letter-spacing:-.15px}
+.appendix p{color:var(--t2);font-size:13px;max-width:84ch;margin:0 0 16px}
+.appendix ol.mech{margin:0;padding-left:22px;color:var(--t2);font-size:12.8px;max-width:84ch}
+.appendix ol.mech li{margin-bottom:8px;line-height:1.7}
+.appendix ol.mech b{color:var(--t1);font-weight:600}
+table{border-collapse:collapse;width:100%;max-width:1060px;font-size:12.5px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top;
+  line-height:1.6}
+th{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--t3);text-transform:uppercase;
+  border-bottom:1px solid var(--t3)}
+td b{font-weight:600}
+td code{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;background:var(--input);
+  padding:1px 5px;border-radius:4px;color:var(--t2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="lede">
+  <h1>用户画像 · 样张 v6 <span style="font-size:14px;color:var(--t3);font-weight:500">2026-08-08 · 第五轮裁决后</span></h1>
+  <p><b>本版落实第五轮裁决（用应用里配置的 DeepSeek v4 flash 实测 12 轮支撑）：</b></p>
+  <ol>
+    <li><b>查词难度 → 查词取向</b>（键 <code style="font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--input);padding:1px 5px;border-radius:4px">lookup_level</code> → <code style="font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--input);padding:1px 5px;border-radius:4px">lookup_pattern</code>）。只描述你查什么类型的词，不下水平结论——水平归水平设置和「水平对照」功能管。由此立一条通用原则：<b>设置管的领地，画像不产结论</b>，禁区清单挂在每个维度定义上，审核请求兜底。</li>
+    <li><b>举例来源分两层。</b>画像卡只沉淀题材语体取向；<b>真句引用是回答时的跨书检索</b>（只取已读范围、书按最近阅读倒序、每本先取一句、词形复用 <code style="font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--input);padding:1px 5px;border-radius:4px">word_forms</code> 表、合计 3–5 句、带出处可点击跳转）。靠模型知识引书的弱版废弃——跳转不过去。</li>
+    <li><b>结论审核：产卡后同批再发一道请求逐卡审。</b>规则清单 R1–R5（语言 / 水平 / 引用 / 无指令价值 / 证据脱节），拒卡必须引用规则编号，引不出编号代码判 keep；被拒的卡沿用上一批结论。实测 3 轮：两张坏卡全部踢中，好卡 15 判仅 1 次可辩护的误杀。「防」与「审」叠加，不是二选一。</li>
+    <li><b>修正状态措辞实测校准。</b>「结论必须与裁决方向一致」会让删过的维度永久长不出新卡（4/4 轮复现——正是调研笔记里的过度压制失败模式）；改为「样本全部晚于删除时间，若足以支撑应当产出全新结论」后恢复正常（3/3 轮）。维度数量本身实测无害：空维度对模型不可见，合并反而稀释裁决，<b>7 格保持</b>。</li>
+  </ol>
+  <p><b>沿用 v5 定稿（依据见 <code style="font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--input);padding:1px 5px;border-radius:4px">docs/impls/user-profile-research-notes.md</code>）：</b></p>
+  <ol>
+    <li><b>锁格子，不锁句子。</b>系统段的卡片按<b>固定维度</b>组织，共 7 个：词义讲解 / 句法讲解 / 指代讲解 / 文化背景 / 查词取向 / 举例来源 / 回答节奏。每个维度最多一张卡，没攒出结论的维度不显示。维度名固定（走 i18n），是删除水位线和移动排除的锚点；<b>卡上的结论句完全自由</b>——个性化住在句子里。维度清单只随新数据源的版本更新一起长。</li>
+    <li><b>修正信号：存原始台账，喂派生状态。</b>用户的每次删除 / 移动 / 撤回 / 改写记进只增不改的事件日志（<code style="font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--input);padding:1px 5px;border-radius:4px">profile_events</code>），但<b>台账永不进提示词</b>。每次总结前由普通代码按「同一维度上最新的显式动作说了算」压成每维度一行的裁决状态，只把这几行给总结器。用户自相矛盾不需要 AI 去理解——时间戳排序就是答案。</li>
+    <li><b>虚化卡默认折叠成一行</b>（标题 + 「已移动」标记 + 展开 / 撤回），避免移动多了系统段变成虚卡坟场。展开后仍是完整留档。</li>
+  </ol>
+  <p>沿用 v4 定稿：用户段 = 一个输入框（纯自由文本）；双阈值 1,200 建议 / 2,400 硬线（软线 × 2，只劝不拦到硬线才拦）；移动 = 输入框里多几行「标题：结论」+ 原卡虚化可撤回；一键优化左右对照、方向拼接；攒够一批才重算（约 20 条新追问）；系统段结论预算 1,000 字符；冲突以用户为准；绝不静默截断；措辞是观察不是诊断；自学习钩子见附录乙。</p>
+</header>
+
+<!-- ── 状态 ① 整页默认态 ── -->
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">状态 ①</span>
+    <span class="state-name">整页默认态</span>
+    <span class="state-why">用户段：一个输入框，移动来的内容就是其中几行；系统段：固定维度卡片 + 一张折叠的已移动卡</span>
+  </div>
+
+  <div class="win" style="width:760px">
+    <div class="chrome"><i></i><i></i><i></i><span class="ttl">Lantern — 学习</span></div>
+    <div class="phead">
+      <div>
+        <div class="crumb">学习 / 用户画像</div>
+        <h2>用户画像</h2>
+        <p class="psub">AI 回答你的时候会先读这一页。上面一段你写，下面是系统从你的记录里总结的卡片——冲突时以你写的为准。</p>
+      </div>
+      <div class="pacts">
+        <button class="btn outline sm">立即总结</button>
+        <button class="btn quiet sm">关掉画像</button>
+      </div>
+    </div>
+    <div class="strip">
+      <span class="dot"></span>
+      <span>上次总结 <b>3 天前</b>（第 4 次）· 攒够一批再算：新追问已 <b>8 / 20</b> 条</span>
+      <span class="sp"></span>
+      <span>近的记录权重高，越旧越轻</span>
+    </div>
+
+    <div class="pbody">
+      <p class="sechd">你写的 <span class="sp"></span><span class="cnt">236 / 1200 字符</span></p>
+      <div class="txtblock mine">
+        <p>我母语是中文，正在准备雅思写作。例句请用正式书面语；术语第一次出现时中英对照；解释不超过三段。</p>
+        <p>别用「显而易见」「众所周知」这类说法。</p>
+        <p>句法讲解：更细致地为我介绍句子结构——先拆结构，再讲词义。</p>
+        <div class="blockacts">
+          <button class="btn quiet sm">编辑</button>
+        </div>
+      </div>
+
+      <p class="sechd secgap">系统总结的 <span class="sp"></span><span class="cnt">4 / 7 个维度有结论 · 142 / 1000 字符</span></p>
+
+      <div class="card ghosted collapsed">
+        <div class="ct">
+          <h5>句法讲解</h5>
+          <span class="badge moved">已移动到上段</span>
+          <span class="sp"></span>
+          <button class="btn quiet sm">展开</button>
+          <button class="btn quiet sm">撤回</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ct"><h5>查词取向</h5><span class="sp"></span></div>
+        <p class="cc">查的词集中在航海、历史类术语，名词居多——解释时优先讲语境义和搭配。</p>
+        <div class="evidence">
+          <b>依据：</b>近 90 天 412 次查词里，航海、历史类领域词占近四成，名词占六成，日常词几乎不查。· <span class="link">查看原始记录</span>
+        </div>
+        <div class="cacts">
+          <button class="btn quiet sm">移动到上段修改</button>
+          <span style="flex:1"></span>
+          <button class="btn quiet sm del">删除</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ct"><h5>举例来源</h5><span class="sp"></span></div>
+        <p class="cc">举例贴近十九世纪小说的题材和语体，少用商务、科技场景。</p>
+        <div class="evidence">
+          <b>依据：</b>最近读的六本书里，五本是十九世纪英国小说，一本天文科普。
+        </div>
+        <div class="cacts">
+          <button class="btn quiet sm">移动到上段修改</button>
+          <span style="flex:1"></span>
+          <button class="btn quiet sm del">删除</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ct"><h5>回答节奏</h5><span class="sp"></span></div>
+        <p class="cc">先给一句话结论，长解析等你追问了再给。</p>
+        <div class="evidence">
+          <b>依据：</b>查完词很少展开长解析，追问普遍很短。
+        </div>
+        <div class="cacts">
+          <button class="btn quiet sm">移动到上段修改</button>
+          <span style="flex:1"></span>
+          <button class="btn quiet sm del">删除</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="pfoot">
+      <span>触发和用量在「设置 → 自动分析」；那里也能整个关掉。</span>
+      <span class="sp"></span>
+      <button class="btn danger sm">删除整份画像</button>
+    </div>
+  </div>
+
+  <p class="note"><b>系统段按 7 个固定维度组织，每个维度最多一张卡</b>：词义讲解 / 句法讲解 / 指代讲解 / 文化背景 / 查词取向 / 举例来源 / 回答节奏。图中词义、指代、文化背景三个维度还没攒出结论，所以不显示——不占位、不放空卡。卡片标题就是维度名，固定不变（走 i18n）；<b>结论句完全自由</b>，个性化由句子承载（「查词取向」里既能长出「多是航海术语」，也能长出「集中在抽象名词」）。每个维度定义还带一份<b>禁区清单</b>：设置管的领地（解释语言、水平、难度上限）画像不产结论，越界的卡由审核请求踢除（附录甲）。</p>
+  <p class="note"><b>移动来的内容在输入框里没有任何特殊包装</b>——「句法讲解：……」就是普通一行字，改标题、改内容、合并进别的行、整行删掉，都只是编辑文本。来源痕迹留在下面那张虚化卡上，不留在你的文字里。</p>
+  <p class="note"><b>虚化卡默认折叠成一行</b>（标题 + 已移动标记 + 展开 / 撤回），移动得再多也不会把系统段挤成坟场。点「展开」看完整留档：当初的结论句、依据、以及「已由你上段的版本接管」的说明（展开形态见状态 ⑤ 右侧）。它不进提示词，也不算系统段字数。</p>
+  <p class="note"><b>「举例来源」卡只写题材语体取向</b>；从读过的书里引真句（带出处、可点击跳转）是回答时的检索动作，发生在每次追问的当下，不存在卡里——卡告诉模型「往哪个题材举例」，检索把真句递到它手上（附录甲「真句检索」）。</p>
+  <p class="note"><b>计数分母显示的是建议上限 1200</b>，不是硬上限 2400——让用户对着「应该」的数字写，而不是对着「极限」的数字写。</p>
+</div>
+
+<!-- ── 状态 ② 超过建议上限：静默提示，不拦 ── -->
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">状态 ②</span>
+    <span class="state-name">超过 1,200 · 静默提示</span>
+    <span class="state-why">计数变琥珀、「一键优化」出现，但保存照常——劝，不拦</span>
+  </div>
+
+  <div class="win" style="width:600px">
+    <div class="chrome"><i></i><i></i><i></i><span class="ttl">Lantern — 学习</span></div>
+    <div class="pbody">
+      <p class="sechd">你写的 <span class="sp"></span><span class="cnt warn">1263 / 1200 字符 · 建议压缩</span></p>
+      <div class="editor">
+        <textarea class="warn">我母语是中文，正在准备雅思写作，目标 7 分，主要卡在写作的 Task 2。我以前的老师总说我例证不够具体，展开不充分……（此处约 1200 字）</textarea>
+        <p class="hint warn">超过建议上限了。画像越长，回答越容易抓不住重点——用较弱模型时更明显。可以继续写，也可以让它帮你压一压。</p>
+        <div class="erow">
+          <button class="btn primary sm">保存</button>
+          <button class="btn outline sm">一键优化</button>
+          <button class="btn quiet sm">取消</button>
+          <span class="sp"></span>
+          <span class="cnt2 warn">1263 / 1200</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note"><b>「静默」的意思：不弹窗、不打断、保存照常成功。</b>提示只是编辑器里常驻的一行琥珀色小字 + 计数变色。「一键优化」的入口从这时起出现在保存旁边——给出路，但不强求。</p>
+  <p class="note"><b>1200 这个数对着调研取的</b>：ChatGPT 自定义指令免费档 1500、Gemini 每条约 1495，中文密度高于英文，1200 中文字符的信息量已与之相当。</p>
+</div>
+
+<!-- ── 状态 ③ 超过两倍：强制压缩 ── -->
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">状态 ③</span>
+    <span class="state-name">超过 2,400（两倍）· 强制压缩</span>
+    <span class="state-why">这时才拦保存；手动和自动保存都会走到这个提示</span>
+  </div>
+
+  <div class="cols">
+    <div class="win" style="width:600px">
+      <div class="chrome"><i></i><i></i><i></i><span class="ttl">Lantern — 学习</span></div>
+      <div class="pbody">
+        <p class="sechd">你写的 <span class="sp"></span><span class="cnt over">2521 / 1200 字符 · 已超两倍</span></p>
+        <div class="editor">
+          <textarea class="bad">我母语是中文，正在准备雅思写作，目标 7 分，主要卡在写作的 Task 2。我以前的老师总说我例证不够具体，展开不充分……（此处约 2500 字：考试背景、口吻偏好、忌讳用语、过往老师的建议、喜欢的作家风格……）</textarea>
+          <div class="erow">
+            <button class="btn primary sm">保存</button>
+            <button class="btn quiet sm">取消</button>
+            <span class="sp"></span>
+            <span class="cnt2 over">已超建议上限的两倍</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="confirm" style="align-self:flex-start">
+      <div class="ch">
+        <h4>太长了，得先压缩</h4>
+        <p class="cw">已经超过建议上限（1,200）的<b style="color:var(--danger);font-weight:600">两倍</b>。这个长度下，回答质量大概率不升反降——尤其在较弱的模型上。压到 2,400 以内才能保存。</p>
+        <p class="keep" style="margin-top:12px"><b>草稿已保留，一个字不会丢。</b>手动保存和自动保存都会走到这里——不会静默截断，也不会替你改。</p>
+      </div>
+      <div class="cf">
+        <button class="btn quiet">回去修改</button>
+        <span class="sp"></span>
+        <button class="btn primary">一键优化</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="note"><b>1,200 到 2,400 之间永远只劝不拦</b>；两倍是唯一的硬线。两条线都进设置项，数值可调，但「软线 = 建议、硬线 = 软线 × 2」这个关系固定。</p>
+</div>
+
+<!-- ── 状态 ④ 左右对照 + 按你的方向重新优化 ── -->
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">状态 ④</span>
+    <span class="state-name">一键优化 · 左右对照</span>
+    <span class="state-why">两个框都可编辑、各自计数；回到硬线以内的那版才能被采用；底部可给方向重新优化</span>
+  </div>
+
+  <div class="compare">
+    <div class="cph">
+      <h4>压缩了一版，用哪版由你</h4>
+      <p>用你配置的轻量模型压缩：意思保留，废话去掉。<b style="color:var(--t1);font-weight:600">只发送了这段文字本身。</b>两个框都能接着编辑；不点「使用这一版」之前，什么都不会变。</p>
+    </div>
+    <div class="grid">
+      <div class="pane">
+        <h5>你的原文 <span class="sp"></span><span class="cnt2 over">2521 / 1200</span></h5>
+        <textarea class="bad">我母语是中文，正在准备雅思写作，目标 7 分，主要卡在写作的 Task 2。我以前的老师总说我例证不够具体，展开不充分。解释的时候麻烦你尽量用正式一点的书面语，因为我要考的是学术类……（约 2500 字）</textarea>
+        <div class="prow">
+          <button class="btn outline sm" disabled style="border-color:var(--border);color:var(--t3);cursor:not-allowed">使用这一版</button>
+        </div>
+        <p class="why">仍超两倍硬线——在这个框里删到 2,400 以内，这个按钮就会亮。</p>
+      </div>
+      <div class="pane after">
+        <h5>优化后 <span class="sp"></span><span class="cnt2 ok">876 / 1200</span></h5>
+        <textarea>母语中文，备考雅思写作（目标 7 分，弱项 Task 2 例证展开）。解释用正式书面语；术语首次出现中英对照；例句偏学术语体；解释不超过三段；不用「显而易见」「众所周知」。以前老师的反馈：例证要具体、展开要充分——讲写作相关内容时往这上面使劲。喜欢的行文参考：奥威尔式的直白……</textarea>
+        <div class="prow">
+          <button class="btn primary sm">使用这一版</button>
+        </div>
+        <p class="why">这个框可以直接改——改完再点「使用这一版」，存的就是你改过的版本。</p>
+      </div>
+    </div>
+    <div class="direction">
+      <label>不满意？按你的方向重新优化</label>
+      <div class="drow">
+        <input type="text" value="保留我以前老师建议的那部分，别压掉">
+        <button class="btn outline">重新优化</button>
+      </div>
+      <p class="dhint"><b>你的方向会拼在基础优化指令后面一起发送</b>：基础指令保证压缩质量，你的方向决定往哪偏。不会只用你的方向——兜底始终由系统的基础指令负责。</p>
+    </div>
+  </div>
+
+  <p class="note"><b>「使用这一版」的门槛是硬线 2,400，不是软线 1,200</b>——软线只劝不拦的规则在这里也一致；优化目标仍然写进基础指令：尽量压到 1,200 以内。</p>
+  <p class="note"><b>「重新优化」每次都是全新的一版</b>（原文 + 基础指令 + 你的方向），不是在上一版优化稿上叠加——叠加几轮后文字会面目全非。方向输入框保留上次填的内容，方便微调重试。</p>
+  <p class="note"><b>方向文本按数据段传入</b>：它拼在基础指令之后、原文之前，包在「用户偏好」标记里。它说什么都改写不了基础指令——写「忽略以上所有要求」也只是一条无效的偏好。</p>
+</div>
+
+<!-- ── 状态 ⑤ 移动与撤回 ── -->
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">状态 ⑤</span>
+    <span class="state-name">「移动到上段修改」与「撤回」</span>
+    <span class="state-why">移动 = 输入框里多几行；原卡虚化留档；撤回 = 恢复原卡</span>
+  </div>
+
+  <div class="cols">
+    <div style="width:400px;max-width:100%">
+      <p class="sechd" style="margin-bottom:8px">移动后 · 输入框里多了两行（高亮的）</p>
+      <div class="win" style="width:100%">
+        <div class="pbody" style="padding:16px 18px">
+          <div class="editor">
+            <div class="fake-ta">
+              <p>我母语是中文，正在准备雅思写作。例句请用正式书面语；术语第一次出现时中英对照；解释不超过三段。</p>
+              <p>别用「显而易见」「众所周知」这类说法。</p>
+              <p class="new">查词取向：查的词集中在航海、历史类术语，名词居多——解释时优先讲语境义和搭配。</p>
+            </div>
+            <p class="hint"><b>插入的就是普通文字</b>，光标已停在这一行——改成你的说法（比如「航海术语我已经熟了，重点讲历史类的」），或原样保存。</p>
+            <div class="erow">
+              <button class="btn primary sm">保存</button>
+              <button class="btn quiet sm">取消</button>
+              <span class="sp"></span>
+              <span class="cnt2">+ 40 字符 · 276 / 1200</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note">插入格式固定为「标题：结论」一行。取消 = 什么都没发生（不插入、卡片不动）。</p>
+    </div>
+
+    <div style="width:400px;max-width:100%">
+      <p class="sechd" style="margin-bottom:8px">同时 · 系统段的原卡变虚化（刚移动完保持展开）</p>
+      <div class="win" style="width:100%">
+        <div class="pbody" style="padding:16px 18px">
+          <div class="card ghosted" style="margin-bottom:0">
+            <div class="ct">
+              <h5>查词取向</h5>
+              <span class="badge moved">已移动到上段</span>
+              <span class="sp"></span>
+              <button class="btn quiet sm">撤回</button>
+            </div>
+            <p class="cc">查的词集中在航海、历史类术语，名词居多——解释时优先讲语境义和搭配。</p>
+            <div class="evidence">
+              <b>依据：</b>近 90 天 412 次查词里，航海、历史类领域词占近四成……<br>
+              这张卡已由你上段的版本接管：这里只留档、不进提示词，总结器也不再更新这个维度。
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note"><b>撤回 = 原卡恢复为正常系统卡</b>（重新进提示词、总结器恢复更新这个维度），同时把当初插入的那几行从你的输入框里拿掉。<b>若你已经改过那几行</b>，撤回只恢复卡片，你的文字一个字不动——改过的文字归你，由你自己决定删不删。刚移动完的虚化卡保持展开（让你看清发生了什么）；之后回到这一页，它默认折叠成一行。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── 状态 ⑥ 删除单卡确认 ── -->
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">状态 ⑥</span>
+    <span class="state-name">删除一张系统卡 · 确认</span>
+    <span class="state-why">按维度记水位线：只有今后的记录能把它重新撑起来</span>
+  </div>
+
+  <div class="cols">
+    <div class="confirm">
+      <div class="ch">
+        <h4>删除「回答节奏」？</h4>
+        <p class="cw">删掉之后，AI 立刻不再参考这一条。</p>
+        <ul>
+          <li><b>会不会回来</b><span>可能——但只会由你<b style="color:var(--t1);font-weight:600">今后</b>的记录重新撑起来。删除前的那些追问已经被你裁决过，不拿它们二次下结论。</span></li>
+          <li><b>不动什么</b><span>原始记录、其他卡片、你写的上段——都不动。</span></li>
+        </ul>
+        <p class="keep"><b>如果只是说得不对</b>，更合适的是「移动到上段修改」——改成你的说法、长期生效，还不用把观察扔掉（而且可撤回）。</p>
+      </div>
+      <div class="cf">
+        <button class="btn quiet">取消</button>
+        <span class="sp"></span>
+        <button class="btn outline">移动到上段修改</button>
+        <button class="btn danger">删除</button>
+      </div>
+    </div>
+
+    <div style="flex:1;min-width:300px;max-width:420px">
+      <p class="note" style="margin-top:0"><b>「今后」两个字是水位线机制的全部用户可见面。</b>删除时按维度记水位，总结器重建这个维度时只吃水位之后的行——规则和交接文档第三节一字不差。固定维度名正是水位线能挂住的原因：维度键不变，删掉的结论就不可能换个说法从别的名字底下溜回来。</p>
+      <p class="note"><b>删除和移动的分工</b>：说得不对 → 移动（可撤回）；不想被记着 → 删除（水位线）。删除确认里放「移动」当逃生口，因为删除的常见真实动机其实是前者。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── 状态 ⓪ 空态 ── -->
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">状态 ⓪</span>
+    <span class="state-name">空态 · 第一次打开</span>
+    <span class="state-why">沿用往上数语气，仅系统段占位随卡片形态微调</span>
+  </div>
+
+  <div class="win" style="width:640px">
+    <div class="chrome"><i></i><i></i><i></i><span class="ttl">Lantern — 学习</span></div>
+    <div class="strip">
+      <span class="dot warn"></span>
+      <span>新追问已攒 <b>12 / 20</b> 条，攒满这一批就给出第一批卡片</span>
+      <span class="sp"></span>
+      <span>不用等：上面那段现在就能写</span>
+    </div>
+    <div class="pbody">
+      <p class="sechd">你写的 <span class="sp"></span><span class="cnt">0 / 1200 字符</span></p>
+      <div class="txtblock" style="background:var(--surface)">
+        <p style="color:var(--t3);font-size:12.4px">你在准备什么考试、母语是什么、想要什么口吻、有什么忌讳——随便写，怎么组织都行。这一段系统一个字都不会动。</p>
+        <div class="blockacts" style="border-top:none;padding-top:2px">
+          <button class="btn primary sm">开始写</button>
+        </div>
+      </div>
+      <p class="sechd secgap">系统总结的</p>
+      <div class="txtblock empty">
+        <p>攒够一批记录才给出第一批卡片——现在还差 8 条追问。追问是指你选中一段文字之后接着问的问题，普通查词不算。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ 附录甲 ══════════════ -->
+<div class="appendix">
+  <h2>附录甲 · 落到实现上的对应关系</h2>
+  <p>样张定稿后按这张表动工：</p>
+  <table>
+    <thead><tr><th style="width:28%">样张里的东西</th><th>实现上的对应</th></tr></thead>
+    <tbody>
+      <tr><td><b>用户段 = 一个输入框</b></td><td>单个文本字段（<code>user_text</code>）+ 草稿字段（<code>draft_text</code>）。移动插入的行没有独立存储——插入后就是 <code>user_text</code> 的一部分。</td></tr>
+      <tr><td><b>双阈值</b></td><td>软线 <b>1200</b>：仅前端提示 + 显示优化入口，保存照常。硬线 <b>2400</b>（软线 × 2）：拦保存。两值进 settings 可调，倍数关系固定。注入永远用已保存版本，<b>不截断</b>。取值依据（调研 2026-08）：ChatGPT 官方 1500（免费）/ 5000（付费）、Gemini 每条约 1495；中文密度高取 1200。</td></tr>
+      <tr><td><b>固定维度（格子）</b></td><td>维度注册表写死在代码里，7 个键：<code>vocab_explain</code> / <code>syntax_explain</code> / <code>reference_explain</code> / <code>cultural_context</code> / <code>lookup_pattern</code> / <code>example_source</code> / <code>reply_pacing</code>。前四个对应 <code>followup_questions.difficulty</code> 的四类，后三个对应查词记录 / 阅读历史 / 交互节奏。维度名走 i18n（键固定所以做得到）；<b>每维度最多一张卡</b>；没结论的维度不出卡。清单只随新数据源的版本更新一起长，总结器不得发明新维度——输出按维度键收，收不进的丢弃。<b>每个维度定义附禁区清单</b>：不得建议解释语言（归 <code>explanation_mode</code>）、不得给出或暗示水平 / 词汇量 / 难度上限（归 <code>cefr_level</code> 与「水平对照」）、不得声称引用具体原文。没攒够数据的维度，代码不把数据块给总结器——<b>空维度对模型不可见</b>，注册表大小不等于每次总结的工作量（实测：故意留空的维度 6 轮无一被编造）。</td></tr>
+      <tr><td><b>系统卡片</b></td><td>条目表：<code>slot</code>（维度键，唯一）、<code>conclusion</code>（进提示词，句子自由）、<code>evidence</code>（不进提示词）、<code>status</code>（active / moved / deleted）。每次攒批<b>整批重建 active 卡</b>（从原材料重新生成，上一批结论不进输入——无连环压缩，失真无处累积）。结论合计预算 1000 字符、每句约 140 字符写进总结器提示词；<b>超限规则</b>：超了 → 从原材料重新生成一次（更严的每句限制）；再超 → 代码逐卡验收，超长的卡拒收新版、沿用上一批旧结论。不截断、不进第三轮。</td></tr>
+      <tr><td><b>结论审核（第二道请求）</b></td><td>总结器产卡后，同一批内再发一道 <code>Utility</code> 请求逐卡独立审核。规则清单：<b>R1</b> 建议解释语言 / <b>R2</b> 给出或暗示水平、词汇量、难度上限 / <b>R3</b> 声称引用具体原文 / <b>R4</b> 无指令价值（复述统计数字、描述作息习惯，而非可执行的讲解指令）/ <b>R5</b> 证据不支撑结论。输出逐卡 keep / reject + 规则编号；<b>引不出编号 → 代码判 keep</b>（防误杀的确定性护栏）；被拒的卡沿用上一批结论，不空窗——最坏后果只是那格晚一批更新。输入端卫生照旧（能预见的垃圾不进聚合），「防」与「审」叠加。实测（DeepSeek v4 flash，3 轮）：水平违规卡、纯统计复述卡全部踢中且编号正确；好卡 15 判仅 1 次误杀，且那次的理由站得住。</td></tr>
+      <tr><td><b>移动 / 撤回</b></td><td>移动：<code>status = moved</code> + 记录插入文本快照（<code>inserted_text</code>），向 <code>user_text</code> 追加「维度名：结论」。撤回：<code>status = active</code>；若 <code>user_text</code> 中仍能整段找到 <code>inserted_text</code> 则移除之，否则不动用户文字。总结器跳过 moved / deleted 维度——查询排除，不靠提示词自觉。虚化卡默认折叠，仅前端展示态，不涉存储。</td></tr>
+      <tr><td><b>删除单卡 = 维度水位线</b></td><td><code>status = deleted</code> + <code>watermark = now</code>；聚合 <code>followup_questions</code> 时对该维度过滤 <code>created_at <= watermark</code>。不是墓碑、不是永久排除。</td></tr>
+      <tr><td><b>修正信号三层</b></td><td>① 原始层：删除 / 移动 / 撤回 / 改写全部记入只增不改的 <code>profile_events</code>（带维度键、时间戳、用户版本文字）——<b>永不进提示词</b>，是未来自学习的原料。② 裁决层：总结前由普通代码算每维度当前裁决——同一维度取时间戳最新的显式动作，撤回抵消移动，水位线取最后一次删除。矛盾不请 AI 判断，排序就是答案。③ 注入层：给总结器的只有每维度一行的派生状态，行数 ≤ 维度数，永不膨胀。<b>删除态的措辞已实测校准</b>：必须写成「旧结论已删除;下列样本全部晚于删除时间,数据有效,若足以支撑,应当产出全新结论。」（常量以代码为准，一字不改）——含糊的「与裁决方向一致」会让删过的维度永久长不出新卡（4/4 轮复现过度压制），校准后 3/3 轮正常。依据：mem0 实测写入时让 LLM 裁决拖慢且降准、arXiv 2606.01435「提取归 LLM、策略归代码」、context rot。</td></tr>
+      <tr><td><b>攒够一批才重算</b></td><td>注册表触发类型 <code>Batch</code>（与「追问归类」同组）：新分类追问 ≥ 20 条才触发；「立即总结」手动不受限。不是 Daily。</td></tr>
+      <tr><td><b>一键优化</b></td><td><code>AiRequestPurpose::Utility</code>（轻量模型、无推理），只发送用户段文本；结果进对照面板，绝不直写。目标写进基础指令：压到软线 1200 以内；采用门槛是硬线 2400。计入请求计数，feature 标签同 <code>user_profile</code>。</td></tr>
+      <tr><td><b>按你的方向重新优化</b></td><td>请求 = 基础优化指令 + 用户方向（包在「用户偏好」数据标记内）+ 原文。每次从原文重新优化，不叠加上一版。方向文本无法改写基础指令。</td></tr>
+      <tr><td><b>注入顺序</b></td><td><code>user_text</code> → 系统 active 卡结论句（<code>标题：结论</code>）→「如有冲突，以用户自述为准」。evidence 与虚化卡永不注入。下游第一站：卡片追问的提示词。</td></tr>
+      <tr><td><b>时间衰减 + 代码预聚合</b></td><td>总结器<b>不读原始记录全文</b>：计数、比例、按 <code>created_at</code> 的衰减加权（窗口 90 天，与 <code>level_observation</code> 对齐）全部由 SQL/Rust 算好，喂给模型的只有每维度一小块统计 + <b>每维度 ≤ 5 条按新近加权抽样的原文样本</b>。提示词长度与使用量无关（约几千字符定长），上下文永远撑不爆；样张里卡片的「依据」行就是这些统计的展示形态。<b>时段类统计（几点用）一律不进聚合</b>——实测模型会把它写进结论（「适合深夜快速阅读」），价值低、观感差。</td></tr>
+      <tr><td><b>真句检索（第三步）</b></td><td>追问涉及具体词语时，代码先查 <code>word_forms</code> 表拿词形列表（复用「同单词各词形」高亮的现成数据），展开成 OR 查询打到 <code>book_chunks_fts</code> 做跨书检索。<b>范围</b>：只取已读部分——本书当前位置之前、其他书各自进度之前（复用 <code>ai_spoiler_guard</code> 的阅读范围边界），没翻开过的书不取。<b>排序</b>：书按最近阅读时间倒序（记忆最鲜活的书优先）；每本先取 1 句保多样，名额未满再放宽到每本 2 句；句子过长直接跳过换下一句，不截断。<b>注入</b>：合计 3–5 句连同出处（<code>book_id</code> / <code>section_href</code> / <code>char_start</code>）作为数据段给模型，前端渲染成可点击跳转；模型只判断词义合不合适，允许空手而归。与画像卡分工：「举例来源」卡管往哪个题材举例，检索管真句在哪。提示词增量只有这 3–5 句，<b>与书库大小无关</b>。</td></tr>
+      <tr><td><b>上游</b></td><td>只读 <code>followup_questions.difficulty / created_at</code>；分类器（<code>followup_difficulty.rs</code>）归主会话，不改。</td></tr>
+      <tr><td><b>控制台那一行</b></td><td><code>auto_analysis.rs</code> 注册表新增 <code>user_profile</code>，id 必须严格等于 <code>ai_usage_records.feature</code>；zh/en 文案各自取词，四段式（title / what / sends / offButManual）。</td></tr>
+    </tbody>
+  </table>
+
+  <h3>附录乙 · 自学习机制（预留设计——现在建钩子，算法后做）</h3>
+  <p>目标：系统改动画像之后，要能知道这次改动是把效果推向了预期方向，还是被用户顶了回来；并让这些信号反过来喂总结器。</p>
+  <ol class="mech">
+    <li><b>版本留痕。</b>每次总结落一条版本记录（<code>profile_revisions</code>：前后卡片全文、触发原因、时间）。没有留痕，后面一切效果归因都无从谈起——这是第一块钩子，实现第一版时就建表。</li>
+    <li><b>修正信号记账。</b>用户对某维度的删除 / 移动 / 改写记为修正事件（<code>profile_events</code>，type = correction，带维度键和用户改后的说法）。<b>注意：台账本身永不直接喂给总结器</b>——堆积的「上次别这样写」负例会互相打架、越攒越糊（调研笔记第四节）。它经附录甲「修正信号三层」压成每维度一行的裁决状态后才进提示词——对应你说的第 1 条：把已经总结的内容改对，但改的依据永远是「该维度最新的那次裁决」，不是全部历史。</li>
+    <li><b>效果信号记账。</b>画像改动后，观察追问走向：同维度问题是否复发、用户是否在对话里反向纠正 AI（「不是让你这样」类表述）。记为 effect 事件——对应你说的第 2 条：针对效果不好的情况进一步优化。第一版只记账不判断，判断规则等数据攒出来再定。</li>
+    <li><b>事件满额自动触发。</b>correction + effect 事件攒满一批（阈值同攒批节奏），即使新追问没到 20 条也触发一次针对性再总结——记录满了不能干等。</li>
+    <li><b>可选上传（远期）。</b>用户体量足够后，提供自愿上传：匿名化的「画像改动 → 效果走向」统计（不含原文、不含画像内容本身），用于优化全局的总结器提示词与机制。默认关闭、明确一次性授权、可随时反悔——隐私纪律与现有自动分析条目一致。</li>
+  </ol>
+</div>
+
+</div>
+</body>
+</html>

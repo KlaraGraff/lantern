@@ -1000,6 +1000,19 @@ pub fn run() {
             // Reads and remembers a dismissal; never writes cefr_level.
             commands::level_observation::get_level_observation,
             commands::level_observation::dismiss_level_observation,
+            // User profile — a reader-written free-text segment plus seven
+            // system-derived dimension cards. See commands::profile's module
+            // doc; injecting either segment into follow-up prompts is a
+            // later batch.
+            commands::profile::profile_get,
+            commands::profile::profile_save_text,
+            commands::profile::profile_save_draft,
+            commands::profile::profile_move_card,
+            commands::profile::profile_undo_move,
+            commands::profile::profile_delete_card,
+            commands::profile::profile_delete_all,
+            commands::profile::profile_summarize_now,
+            commands::profile::profile_optimize_text,
             // Local lookup history
             commands::lookup_history::save_lookup_record,
             commands::lookup_history::get_cached_lookup,

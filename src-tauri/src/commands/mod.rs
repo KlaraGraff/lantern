@@ -21,6 +21,7 @@ pub mod mastery_events;
 pub mod mcp;
 pub mod notes;
 pub mod oauth;
+pub mod profile;
 pub mod reading_behavior;
 pub mod reading_stats;
 pub mod review_pile_ai;

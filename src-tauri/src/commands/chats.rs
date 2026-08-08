@@ -300,7 +300,7 @@ pub fn save_chat_message(
     ) {
         Ok(_) => {
             crate::commands::followup_difficulty::maybe_spawn_batch(
-                app,
+                app.clone(),
                 Db::clone(&db),
                 Secrets::clone(&secrets),
             );
@@ -311,6 +311,12 @@ pub fn save_chat_message(
             log::debug!("followup_difficulty: capture skipped: {error}");
         }
     }
+
+    // Independent of whether *this* message was itself a follow-up: the
+    // profile summarizer's own threshold is newly-classified follow-ups
+    // since its last revision, which only grows as `followup_difficulty`'s
+    // batches land. Cheap to check on every save — see its module doc.
+    crate::commands::profile::maybe_spawn_summarize(app, Db::clone(&db), Secrets::clone(&secrets));
 
     Ok(msg)
 }

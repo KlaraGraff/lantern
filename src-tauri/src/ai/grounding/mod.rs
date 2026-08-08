@@ -5,6 +5,7 @@ pub mod context;
 pub mod extract;
 pub mod index;
 pub mod language;
+pub mod quotes;
 pub mod retrieve;
 pub mod segment;
 pub mod source;

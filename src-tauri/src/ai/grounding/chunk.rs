@@ -60,7 +60,7 @@ fn snippet_for(text: &str) -> String {
     truncate_at_boundary(&normalize_whitespace(text), SNIPPET_MAX_CHARS)
 }
 
-fn sentence_split(text: &str) -> Vec<String> {
+pub(crate) fn sentence_split(text: &str) -> Vec<String> {
     let chars = text.chars().collect::<Vec<_>>();
     let mut chunks = Vec::new();
     let mut start = 0;
