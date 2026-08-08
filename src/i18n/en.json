@@ -107,9 +107,8 @@
   "reader.chapterOf": "Chapter {{current}} of {{total}}",
   "reader.chapterProgress": "Chapter {{progress}}%",
   "reader.bookProgress": "Book {{progress}}%",
-  "reader.chapterEndHint.line_one": "You looked up {{count}} word in this chapter.",
-  "reader.chapterEndHint.line_other": "You looked up {{count}} words in this chapter.",
-  "reader.chapterEndHint.action": "Go over them while they're fresh →",
+  "reader.chapterEndHint.line_one": "You looked up {{count}} word in this chapter",
+  "reader.chapterEndHint.line_other": "You looked up {{count}} words in this chapter",
   "reader.chapterEndHint.dismiss": "Don't show again",
   "reader.bookFinishedHint.line": "Read to here?",
   "reader.bookFinishedHint.action": "Mark as finished",
@@ -2188,5 +2187,11 @@
   "profile.errors.toggle": "Couldn't switch the profile on/off — please try again.",
   "profile.errors.deleteAll": "Couldn't delete the profile — please try again.",
   "settings.learner.profileSoftLimit": "Profile suggested length",
-  "settings.learner.profileSoftLimitHint": "Past this many characters, the text you write in \"User Profile\" gets a nudge to trim it — saving still works. Only double this length actually blocks a save."
+  "settings.learner.profileSoftLimitHint": "Past this many characters, the text you write in \"User Profile\" gets a nudge to trim it — saving still works. Only double this length actually blocks a save.",
+  "reader.chapterEndHint.expand": "Take a look ⌄",
+  "reader.chapterEndHint.collapse": "Collapse ⌃",
+  "reader.chapterEndHint.reason": "While it's still fresh, go over them right here.",
+  "reader.chapterEndHint.openInReview": "Open this chapter in Review →",
+  "reader.chapterEndHint.dismissedToast": "Turned off. You can switch it back on in Reading settings.",
+  "readerSettings.chapterEndHintDescOff": "Off — words you looked up are still there, chapter by chapter, in Review"
 }

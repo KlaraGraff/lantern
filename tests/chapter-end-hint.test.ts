@@ -6,13 +6,14 @@ import {
   shouldShowChapterEndHint,
   type ChapterEndHintOptions,
 } from "../src/components/chapter-end-hint.ts";
+import { readerPreferenceSettingKeys } from "../src/pages/reader/useReaderSettingsSync.ts";
 
 // A minimal DOM stand-in covering only what chapter-end-hint.ts touches:
 // element creation (including the SVG-namespaced path), a `head` to receive
 // the injected <style>, and a document-level querySelectorAll that matches
 // simple `[attr]` selectors — the same shape `tests/passive-vocab.test.ts`
 // uses for the same reason (this repo's test runner has no real DOM).
-function createFakeDoc() {
+function createFakeDoc(options: { coarsePointer?: boolean } = {}) {
   const allElements: FakeElement[] = [];
 
   class FakeElement {
@@ -62,6 +63,11 @@ function createFakeDoc() {
   const doc = {
     body,
     head,
+    defaultView: {
+      matchMedia: (query: string) => ({
+        matches: query.includes("coarse") ? (options.coarsePointer ?? false) : false,
+      }),
+    },
     createElement(tag: string) {
       return new FakeElement(tag);
     },
@@ -79,19 +85,44 @@ function baseOptions(doc: Document, overrides: Partial<ChapterEndHintOptions> = 
   return {
     doc,
     lookupCount: 3,
-    text: { line: "You looked up 3 words in this chapter.", action: "Go over them →", dismiss: "Don't show again" },
+    words: [
+      { id: "w1", word: "ephemeral" },
+      { id: "w2", word: "lantern" },
+      { id: "w3", word: "recap" },
+    ],
+    overflowLabel: null,
+    text: {
+      line: "You looked up 3 words in this chapter",
+      expand: "Take a look ⌄",
+      collapse: "Collapse ⌃",
+      reason: "While it's still fresh, go over them right here.",
+      openInReview: "Open this chapter in Review →",
+      dismiss: "Don't show again",
+    },
     color: { muted: "#71717b", rule: "rgba(0,0,0,.08)" },
     onReview: () => {},
     onDismiss: () => {},
+    onWordClick: () => {},
+    onExpandChange: () => {},
     ...overrides,
   };
 }
 
-test("a lookup count of zero installs nothing", () => {
+test("a lookup count of zero installs nothing — the block does not render at all", () => {
   const { doc } = createFakeDoc();
-  installChapterEndHint(baseOptions(doc, { lookupCount: 0 }));
+  installChapterEndHint(baseOptions(doc, { lookupCount: 0, words: [] }));
   assert.equal(doc.querySelectorAll("[data-lantern-chapter-end]").length, 0);
   assert.equal(doc.querySelectorAll("[data-lantern-chapter-end-style]").length, 0);
+});
+
+test("zero words still installs nothing even if a stray lookupCount disagreed with an empty words list", () => {
+  // Belt and suspenders: `words` is what actually reaches the DOM, but
+  // visibility is governed by `lookupCount` (see shouldShowChapterEndHint).
+  // A caller that got the two out of sync should still render nothing once
+  // the count says there is nothing to show.
+  const { doc } = createFakeDoc();
+  installChapterEndHint(baseOptions(doc, { lookupCount: 0, words: [{ id: "w1", word: "orphan" }] }));
+  assert.equal(doc.querySelectorAll("[data-lantern-chapter-end]").length, 0);
 });
 
 test("the setting being off is a suppression the caller can check without touching the DOM", () => {
@@ -121,11 +152,102 @@ test("cleanup removes both the line and its injected style", () => {
   assert.equal(doc.querySelectorAll("[data-lantern-chapter-end-style]").length, 0);
 });
 
+test("the collapsed state starts with the panel hidden and only the toggle, line and dismiss clickable", () => {
+  const { doc, allElements } = createFakeDoc();
+  installChapterEndHint(baseOptions(doc));
+  const clickable = allElements.filter((el) => el.listeners.click?.length);
+  // toggle + dismiss + 3 word chips + review link = 6, but the panel starts
+  // hidden — chips and the review link exist in the DOM already (this module
+  // has no lazy-render), only their *visibility* is deferred via display:none.
+  const toggle = clickable.find((el) => el.tagName === "button" && el.textContent === "Take a look ⌄");
+  assert.ok(toggle, "the collapsed row shows the expand toggle");
+  assert.equal(toggle!.getAttribute("aria-expanded"), "false");
+});
+
+test("expanding flips the toggle label, aria-expanded, and fires onExpandChange(true, root)", () => {
+  const { doc, allElements } = createFakeDoc();
+  let expandChangeCalls: Array<[boolean, unknown]> = [];
+  installChapterEndHint(baseOptions(doc, {
+    onExpandChange: (expanded, root) => { expandChangeCalls.push([expanded, root]); },
+  }));
+  const toggle = allElements.find((el) => el.tagName === "button" && el.textContent === "Take a look ⌄")!;
+  toggle.listeners.click![0]({ preventDefault: () => {}, stopPropagation: () => {} });
+  assert.equal(toggle.textContent, "Collapse ⌃");
+  assert.equal(toggle.getAttribute("aria-expanded"), "true");
+  assert.deepEqual(expandChangeCalls.length, 1);
+  assert.equal(expandChangeCalls[0][0], true);
+  const root = allElements.find((el) => el.hasAttribute("data-lantern-chapter-end"));
+  assert.equal(expandChangeCalls[0][1], root);
+});
+
+test("clicking a word chip calls onWordClick with that word's id and its own button", () => {
+  const { doc, allElements } = createFakeDoc();
+  const clicks: Array<[string, unknown]> = [];
+  installChapterEndHint(baseOptions(doc, {
+    onWordClick: (id, chipElement) => { clicks.push([id, chipElement]); },
+  }));
+  const chip = allElements.find((el) => el.tagName === "button" && el.textContent === "lantern")!;
+  chip.listeners.click![0]({ preventDefault: () => {}, stopPropagation: () => {} });
+  assert.deepEqual(clicks, [["w2", chip]]);
+});
+
+test("word chips are capped by the caller, not by this module — an overflow label renders once, verbatim", () => {
+  const { doc, allElements } = createFakeDoc();
+  installChapterEndHint(baseOptions(doc, {
+    words: [{ id: "w1", word: "one" }, { id: "w2", word: "two" }],
+    overflowLabel: "+3",
+  }));
+  const overflow = allElements.filter((el) => el.tagName === "i" && el.textContent === "+3");
+  assert.equal(overflow.length, 1);
+});
+
+test("no overflow label means no overflow marker at all", () => {
+  const { doc, allElements } = createFakeDoc();
+  installChapterEndHint(baseOptions(doc, { overflowLabel: null }));
+  assert.equal(allElements.filter((el) => el.tagName === "i").length, 0);
+});
+
+test("word chips are outlined, never filled — no background colour, only a border", () => {
+  const { doc, allElements } = createFakeDoc();
+  installChapterEndHint(baseOptions(doc));
+  const chips = allElements.filter((el) => el.tagName === "button" && ["ephemeral", "lantern", "recap"].includes(el.textContent));
+  assert.equal(chips.length, 3);
+  for (const chip of chips) {
+    assert.equal(chip.style.background, "transparent", `${chip.textContent} chip must not carry a fill`);
+    assert.ok(chip.style.border?.includes("rgba(0,0,0,.08)"), `${chip.textContent} chip must be outlined in the theme's rule colour`);
+  }
+});
+
+test("clicking the review link calls onReview", () => {
+  const { doc, allElements } = createFakeDoc();
+  let reviewed = 0;
+  installChapterEndHint(baseOptions(doc, { onReview: () => { reviewed += 1; } }));
+  const link = allElements.find((el) => el.tagName === "button" && el.textContent === "Open this chapter in Review →")!;
+  link.listeners.click![0]({ preventDefault: () => {}, stopPropagation: () => {} });
+  assert.equal(reviewed, 1);
+});
+
+test("on a fine pointer (mouse/trackpad) the dismiss control sits in the collapsed row, hover-revealed", () => {
+  const { doc, allElements } = createFakeDoc({ coarsePointer: false });
+  installChapterEndHint(baseOptions(doc));
+  const dismiss = allElements.find((el) => el.hasAttribute("data-lantern-chapter-end-dismiss"))!;
+  assert.ok(dismiss.hasAttribute("data-lantern-chapter-end-dismiss-hover"), "fine-pointer dismiss must be hover-revealed");
+});
+
+test("on a coarse pointer (touch) the dismiss control moves into the expanded panel and is always visible", () => {
+  const { doc, allElements } = createFakeDoc({ coarsePointer: true });
+  installChapterEndHint(baseOptions(doc));
+  const dismiss = allElements.find((el) => el.hasAttribute("data-lantern-chapter-end-dismiss"))!;
+  assert.equal(
+    dismiss.hasAttribute("data-lantern-chapter-end-dismiss-hover"),
+    false,
+    "touch dismiss must not be hidden behind a hover reveal nobody on touch can trigger",
+  );
+});
+
 test("the dismiss control is a real button with an accessible name", () => {
   const { doc } = createFakeDoc();
-  installChapterEndHint(baseOptions(doc, {
-    text: { line: "line", action: "action", dismiss: "Don't show again" },
-  }));
+  installChapterEndHint(baseOptions(doc));
   const [dismiss] = doc.querySelectorAll("[data-lantern-chapter-end-dismiss]") as unknown as {
     tagName: string;
     getAttribute(name: string): string | null;
@@ -151,7 +273,7 @@ test("nothing the line injects is an anchor foliate would hijack", () => {
   }
 });
 
-test("both controls stop their click before it reaches the document", () => {
+test("every clickable control stops its click before it reaches the document", () => {
   const { doc, allElements } = createFakeDoc();
   let reviewed = 0;
   let dismissed = 0;
@@ -161,7 +283,8 @@ test("both controls stop their click before it reaches the document", () => {
   }));
 
   const clickable = allElements.filter((el) => el.listeners.click?.length);
-  assert.equal(clickable.length, 2, "exactly the action and the dismiss control take clicks");
+  // toggle + review link + dismiss + 3 word chips = 6.
+  assert.equal(clickable.length, 6);
 
   for (const el of clickable) {
     let prevented = 0;
@@ -171,8 +294,8 @@ test("both controls stop their click before it reaches the document", () => {
       stopPropagation: () => { stopped += 1; },
     };
     for (const handler of el.listeners.click) handler(event);
-    assert.equal(prevented, 1, `${el.tagName} must preventDefault`);
-    assert.equal(stopped, 1, `${el.tagName} must stopPropagation`);
+    assert.equal(prevented, 1, `${el.tagName} "${el.textContent}" must preventDefault`);
+    assert.equal(stopped, 1, `${el.tagName} "${el.textContent}" must stopPropagation`);
   }
 
   assert.equal(reviewed, 1);
@@ -196,4 +319,14 @@ test("no node the module produces carries the accent purple used elsewhere in th
       );
     }
   }
+});
+
+// Three ways this line can stop appearing — simply not opening it (no state
+// change at all), "don't show again" in the collapsed row or expanded panel,
+// and the same toggle in Reading settings — and all three have to mean the
+// same thing to the backend: one boolean, one storage key. Two independently
+// maintained keys that happen to read "off" the same way today would still be
+// two settings a future change could silently split apart.
+test("the settings-panel toggle and the inline dismiss write the exact same settings key", () => {
+  assert.equal(readerPreferenceSettingKeys.chapterEndReviewHint, "chapter_end_review_hint");
 });

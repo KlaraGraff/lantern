@@ -11,9 +11,17 @@ import { useNavigate } from "react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { ReaderSettingsState } from "../../components/ReaderSettings";
+import type { DictionaryWord } from "../../hooks/useDictionary";
 import {
   applyWordMarks,
+  classifySelection,
+  contextForRange,
+  normalizeInteractionText,
+  viewportRectForRange,
+  type ReaderInteraction,
 } from "../../components/reader-interaction";
+import { capPileChips } from "../../components/review/review-piles";
+import { readerPreferenceSettingKeys } from "./useReaderSettingsSync";
 import { fontBoxHeight, glyphInset } from "../../components/glyph-metrics";
 import type { Highlight } from "../../hooks/useBookmarks";
 import {
@@ -73,12 +81,6 @@ import { notifySettingsChanged } from "../../components/settings-events";
 // file this feature is allowed to touch.
 const chapterEndHintAppWindow = getCurrentWebviewWindow();
 const isStandaloneReaderWindow = chapterEndHintAppWindow.label.startsWith("reader-");
-
-export interface VocabMarker {
-  cfi: string | null;
-  mastery: string;
-  definition?: string | null;
-}
 
 export interface WordMarkRule {
   normalized_word: string;
@@ -355,6 +357,11 @@ interface UseFoliateAnnotationsOptions {
   getCurrentLabel: () => string;
   /** The book-finished hint's action — same command a manual shelf finish runs. */
   onMarkBookFinished: () => void;
+  /** `"pdf"` vs anything else, same distinction `useReaderInteractions` makes for its own `ReaderInteraction`s. */
+  bookFormat: string;
+  /** Opens the same word-lookup card any other in-book tap opens — reused unmodified for the chapter-end hint's chips. */
+  openLearningCard: (interaction: ReaderInteraction) => void;
+  onToast: (message: string) => void;
 }
 
 export function useFoliateAnnotations({
@@ -380,6 +387,9 @@ export function useFoliateAnnotations({
   pushJump,
   getCurrentLabel,
   onMarkBookFinished,
+  bookFormat,
+  openLearningCard,
+  onToast,
 }: UseFoliateAnnotationsOptions) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -388,7 +398,7 @@ export function useFoliateAnnotations({
   const navigationFlashRef = useRef(new Map<string, number>());
   const markerSnapshotRef = useRef<{
     highlights: Highlight[];
-    vocab: VocabMarker[];
+    vocab: DictionaryWord[];
     lookupOccurrences: LookupOccurrenceMark[];
     noteAnchors: NoteAnchorMark[];
   } | null>(null);
@@ -493,13 +503,20 @@ export function useFoliateAnnotations({
     const next = { ...readerSettingsRef.current, chapterEndReviewHint: false };
     readerSettingsRef.current = next;
     setReaderSettings(next);
-    const values = { chapter_end_review_hint: "false" };
+    // Same key the settings-panel toggle writes (`readerPreferenceSettingKeys.chapterEndReviewHint`
+    // in useReaderSettingsSync.ts) — imported rather than repeated as a second
+    // literal, so this "don't show again" and that toggle can never end up
+    // reading and writing two different settings that happen to look alike.
+    const values = { [readerPreferenceSettingKeys.chapterEndReviewHint]: "false" };
     invoke("set_settings_bulk", { settings: values }).catch(() => {});
     notifySettingsChanged(values).catch(() => {});
     for (const { doc } of viewRef.current?.renderer?.getContents?.() ?? []) {
       if (doc) cleanupChapterEndHint(doc);
     }
-  }, [readerSettingsRef, setReaderSettings, viewRef]);
+    // The only feedback this click gets: a toast that says where the words
+    // went, not whether the reader meant it — no confirmation, no undo offer.
+    onToast(t("reader.chapterEndHint.dismissedToast"));
+  }, [onToast, readerSettingsRef, setReaderSettings, t, viewRef]);
 
   // The book-finished hint's own "don't show again" — same shape as
   // `dismissChapterEndHint` just above: a global setting, applied immediately
@@ -608,29 +625,104 @@ export function useFoliateAnnotations({
       // "Distinct saved words in this chapter" — not a string match against the
       // TOC, but the same CFI→Range resolution the passive-vocab loop above
       // uses: a word counts for this document only if its saved location
-      // actually resolves into it.
-      let lookupCount = 0;
+      // actually resolves into it. Collected here, not just tallied — the
+      // expanded panel shows the words themselves, and this is the one pass
+      // that already resolves each one's CFI, so keeping the matches (and
+      // their resolved Ranges, for the word-click handler below) costs no
+      // extra lookups.
+      const chapterWords: DictionaryWord[] = [];
+      const chapterWordRanges = new Map<string, Range>();
       for (const word of vocab) {
         if (!word.cfi) continue;
         try {
           const resolved = view.resolveCFI(word.cfi);
-          if (resolved.index === index && resolved.anchor(doc)) lookupCount += 1;
+          if (resolved.index !== index) continue;
+          const range = resolved.anchor(doc);
+          if (!range) continue;
+          chapterWords.push(word);
+          chapterWordRanges.set(word.id, range);
         } catch {
           // Not resolvable at all, so certainly not resolvable into this doc.
         }
       }
+      const lookupCount = chapterWords.length;
       if (!shouldShowChapterEndHint(settings.chapterEndReviewHint, lookupCount)) continue;
+      // Same cap the review board's pile cards use, and the same helper —
+      // so the two views of "words looked up in this chapter" never drift
+      // to different limits.
+      const { visible, overflow } = capPileChips(chapterWords);
+      const locale = doc.documentElement.lang || undefined;
       installChapterEndHint({
         doc,
         lookupCount,
+        words: visible.map((word) => ({ id: word.id, word: word.word })),
+        overflowLabel: overflow > 0 ? t("reviewBoard.pile.moreChips", { count: overflow }) : null,
         text: {
           line: t("reader.chapterEndHint.line", { count: lookupCount }),
-          action: t("reader.chapterEndHint.action"),
+          expand: t("reader.chapterEndHint.expand"),
+          collapse: t("reader.chapterEndHint.collapse"),
+          reason: t("reader.chapterEndHint.reason"),
+          openInReview: t("reader.chapterEndHint.openInReview"),
           dismiss: t("reader.chapterEndHint.dismiss"),
         },
         color: chapterEndColor,
         onReview: reviewChapterEndHint,
         onDismiss: dismissChapterEndHint,
+        // A chip's own on-screen position anchors the card, not the word's
+        // live occurrence in the text — that occurrence can be off-screen or
+        // on a page the paginator hasn't turned to yet, which would place the
+        // popup somewhere the reader cannot see it. The occurrence Range is
+        // still what supplies `context`: it is the actual sentence the word
+        // came from, which the chip's own text is not.
+        onWordClick: (id, chipElement) => {
+          const word = visible.find((entry) => entry.id === id);
+          const range = chapterWordRanges.get(id);
+          if (!word || !range) return;
+          const text = word.word;
+          const anchorRange = doc.createRange();
+          anchorRange.selectNode(chipElement);
+          const interaction: ReaderInteraction = {
+            trigger: "word-quick-lookup",
+            kind: classifySelection(text, locale),
+            text,
+            normalizedText: normalizeInteractionText(text),
+            context: contextForRange(range, text),
+            location: word.cfi ?? "",
+            anchorRect: viewportRectForRange(anchorRange),
+            source: "foliate",
+            format: bookFormat === "pdf" ? "pdf" : "epub",
+            locale,
+          };
+          openLearningCard(interaction);
+        },
+        // Expanding grows `doc.body`, which in paginated mode can push these
+        // chips onto the next column — Foliate's own ResizeObserver (see
+        // `View`'s `#observer` in paginator.js, watching `doc.body`) already
+        // re-columnizes for that, no new reflow mechanism needed. What it
+        // does not do on its own is bring the now-relocated line back into
+        // view, so once that relayout has landed, scroll the row's own anchor
+        // back into frame — same `scrollToAnchor` call the renderer already
+        // exposes for jump-to-CFI navigation elsewhere in this file.
+        // `ResizeObserver` notifications land after a frame's own
+        // `requestAnimationFrame` callbacks, so the relayout is only
+        // guaranteed visible by the *second* animation frame, not the first.
+        onExpandChange: (expanded, root) => {
+          if (!expanded) return;
+          window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+              const currentView = viewRef.current;
+              if (!currentView?.renderer?.scrollToAnchor) return;
+              try {
+                const anchor = doc.createRange();
+                anchor.selectNode(root);
+                currentView.renderer.scrollToAnchor(anchor).catch(() => {});
+              } catch {
+                // The document could have unmounted between the click and this
+                // deferred frame; nothing left worth scrolling to.
+              }
+            });
+          });
+        },
       });
     }
     // A third pass, same discipline as the one above: §2.2's fallback line
@@ -661,10 +753,12 @@ export function useFoliateAnnotations({
       });
     }
   }, [
+    bookFormat,
     dismissBookFinishedHint,
     dismissChapterEndHint,
     isFinished,
     onMarkBookFinished,
+    openLearningCard,
     passiveVocab,
     readerSettingsRef,
     reviewChapterEndHint,
@@ -706,7 +800,7 @@ export function useFoliateAnnotations({
     const [highlights, vocab, lookupOccurrences, noteAnchors] = await Promise.all([
       invoke<Highlight[]>("list_highlights", { bookId }),
       supportsWordMarkers
-        ? invoke<VocabMarker[]>("list_vocab_words", { bookId })
+        ? invoke<DictionaryWord[]>("list_vocab_words", { bookId })
         : Promise.resolve([]),
       invoke<LookupOccurrenceMark[]>("list_lookup_occurrence_marks", { bookId }),
       // A margin note the reader cannot find again is a note they will not

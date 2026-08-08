@@ -40,7 +40,12 @@ import {
   type ReaderSettingsPromotionUndo,
 } from "./reader-settings-scope.ts";
 
-const readerPreferenceSettingKeys = {
+// Exported so the handful of places that need to write one of these settings
+// outside a full diff — the chapter-end hint's own "don't show again", which
+// fires from inside useFoliateAnnotations.ts rather than from a settings-panel
+// save — read the same key this file writes, instead of a second literal that
+// could drift from it.
+export const readerPreferenceSettingKeys = {
   theme: "reader_theme",
   customTheme: "reader_custom_theme",
   margins: "margins",

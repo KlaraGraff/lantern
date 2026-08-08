@@ -951,7 +951,11 @@ function ReaderSettings({
         <div className="flex items-center justify-between gap-4">
           <div>
             <span className="text-[13px] font-medium text-text-primary">{t("readerSettings.chapterEndHint")}</span>
-            <p className="mt-0.5 text-[11px] leading-4 text-text-muted">{t("readerSettings.chapterEndHintDesc")}</p>
+            <p className="mt-0.5 text-[11px] leading-4 text-text-muted">
+              {settings.chapterEndReviewHint
+                ? t("readerSettings.chapterEndHintDesc")
+                : t("readerSettings.chapterEndHintDescOff")}
+            </p>
           </div>
           <Toggle
             label={t("readerSettings.chapterEndHint")}

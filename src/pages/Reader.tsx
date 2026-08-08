@@ -1022,6 +1022,9 @@ export default function Reader() {
     pushJump,
     getCurrentLabel,
     onMarkBookFinished: markReaderBookFinished,
+    bookFormat: book?.format ?? "",
+    openLearningCard,
+    onToast: setReaderToast,
   });
 
   const continuousReadAloud = useContinuousReadAloud({

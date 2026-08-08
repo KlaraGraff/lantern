@@ -107,9 +107,8 @@
   "reader.chapterOf": "第 {{current}} 章，共 {{total}} 章",
   "reader.chapterProgress": "本章 {{progress}}%",
   "reader.bookProgress": "全书 {{progress}}%",
-  "reader.chapterEndHint.line_one": "这一章你查了 {{count}} 个词。",
-  "reader.chapterEndHint.line_other": "这一章你查了 {{count}} 个词。",
-  "reader.chapterEndHint.action": "趁着还有印象，过一遍 →",
+  "reader.chapterEndHint.line_one": "这一章你查过 {{count}} 个词",
+  "reader.chapterEndHint.line_other": "这一章你查过 {{count}} 个词",
   "reader.chapterEndHint.dismiss": "不再显示",
   "reader.bookFinishedHint.line": "读到这儿了？",
   "reader.bookFinishedHint.action": "标记为已读完",
@@ -2188,5 +2187,11 @@
   "profile.errors.toggle": "切换失败，请重试。",
   "profile.errors.deleteAll": "删除画像失败，请重试。",
   "settings.learner.profileSoftLimit": "画像建议长度",
-  "settings.learner.profileSoftLimitHint": "「用户画像」里你写的那段超过这个字符数会提示压缩一下，但仍能继续保存；超过两倍才会真正拦下。"
+  "settings.learner.profileSoftLimitHint": "「用户画像」里你写的那段超过这个字符数会提示压缩一下，但仍能继续保存；超过两倍才会真正拦下。",
+  "reader.chapterEndHint.expand": "看看 ⌄",
+  "reader.chapterEndHint.collapse": "收起 ⌃",
+  "reader.chapterEndHint.reason": "趁着还有印象，就地过一遍。",
+  "reader.chapterEndHint.openInReview": "在「回顾」里打开这一章 →",
+  "reader.chapterEndHint.dismissedToast": "已关闭。阅读设置里可以再打开。",
+  "readerSettings.chapterEndHintDescOff": "已关闭 · 每一章查过的词仍在「回顾」里找得到"
 }
