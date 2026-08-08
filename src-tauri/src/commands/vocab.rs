@@ -956,19 +956,18 @@ pub fn remove_vocab_word(
     })
 }
 
-// `query_vocab_words` and `query_all_vocab_words` deliberately return every
-// row regardless of `list_status`. They back `list_vocab_words` /
-// `list_all_vocab_words`, and the in-text three-stage annotation
-// (`useFoliateAnnotations.ts`) reads through those same commands and needs
-// the full set — a watchlist word must still get its in-text mark. The
-// dictionary-style, reader-facing views (`useDictionary.ts`,
-// `ReaderExportDialog.tsx`) filter `list_status === "confirmed"` client-side
-// after the same call, and the MCP tools (`mcp/tools/vocab.rs`) do the
-// equivalent filtering server-side before handing rows to an AI client. Do
-// not add a `list_status` filter here — that would silently blind the
-// annotation path to every watchlist word. Reader-facing call sites are
-// responsible for filtering themselves.
-pub(crate) fn query_vocab_words(db: &Db, book_id: &str) -> AppResult<Vec<VocabWord>> {
+// `query_vocab_words_including_watchlist` returns every row regardless of
+// `list_status`. It exists for exactly one reason: the in-text three-stage
+// annotation path (`useFoliateAnnotations.ts`, via the `list_vocab_words`
+// command) needs a watchlist word to still get its in-text mark. Every other
+// caller should reach for `query_vocab_words` below instead — it already
+// excludes the observation zone, so a caller that has never heard of
+// `list_status` gets the safe, reader-facing behavior by default rather
+// than having to remember to filter.
+pub(crate) fn query_vocab_words_including_watchlist(
+    db: &Db,
+    book_id: &str,
+) -> AppResult<Vec<VocabWord>> {
     let conn = db.reader();
     let mut stmt = conn.prepare(&format!(
         "SELECT {} FROM vocab_words WHERE book_id = ?1 ORDER BY created_at DESC",
@@ -980,9 +979,26 @@ pub(crate) fn query_vocab_words(db: &Db, book_id: &str) -> AppResult<Vec<VocabWo
     Ok(words)
 }
 
+/// The default, reader-facing entry point: excludes the observation zone
+/// (`list_status = 'watchlist'`, migration 044) the same way every other
+/// reader-facing surface does. Call
+/// `query_vocab_words_including_watchlist` instead only when the caller
+/// genuinely needs every row — currently just the in-text annotation path.
+pub(crate) fn query_vocab_words(db: &Db, book_id: &str) -> AppResult<Vec<VocabWord>> {
+    Ok(query_vocab_words_including_watchlist(db, book_id)?
+        .into_iter()
+        .filter(|word| word.list_status == "confirmed")
+        .collect())
+}
+
 #[tauri::command]
 pub fn list_vocab_words(book_id: String, db: State<'_, Db>) -> AppResult<Vec<VocabWord>> {
-    query_vocab_words(&db, &book_id)
+    // Unfiltered on purpose: this command also backs in-text annotation,
+    // which must see watchlist words. See
+    // `query_vocab_words_including_watchlist`. Reader-facing frontend
+    // callers (`useDictionary.ts`, `ReaderExportDialog.tsx`) filter
+    // `list_status === "confirmed"` client-side after this same call.
+    query_vocab_words_including_watchlist(&db, &book_id)
 }
 
 #[tauri::command]
@@ -1014,9 +1030,12 @@ pub(crate) fn check_vocab_exists_inner(
     Ok(id)
 }
 
-// See the comment on `query_vocab_words` above — same rule applies here:
-// this stays unfiltered on `list_status` because it also backs the in-text
-// annotation path. Filter at the call site if the caller is reader-facing.
+/// Library-wide vocabulary, with the observation zone
+/// (`list_status = 'watchlist'`, migration 044) excluded in SQL. There is no
+/// unfiltered library-wide twin on purpose: every caller here — the library
+/// dictionary, review piles, backup export, the MCP tools — is reader-facing,
+/// and only the per-book path has a real need for the raw rows. That one asks
+/// for them by name (`query_vocab_words_including_watchlist`).
 pub(crate) fn query_all_vocab_words(db: &Db) -> AppResult<Vec<VocabWord>> {
     let conn = db.reader();
     let mut stmt = conn.prepare(
@@ -1034,7 +1053,8 @@ pub(crate) fn query_all_vocab_words(db: &Db) -> AppResult<Vec<VocabWord>> {
              WHERE l.book_id = v.book_id AND l.normalized_text = lower(trim(v.word)) \
                AND trim(COALESCE(l.chapter, '')) <> '' \
              ORDER BY l.last_looked_up_at DESC LIMIT 1)) \
-         FROM vocab_words v LEFT JOIN books b ON v.book_id = b.id ORDER BY v.created_at DESC"
+         FROM vocab_words v LEFT JOIN books b ON v.book_id = b.id \
+         WHERE v.list_status = 'confirmed' ORDER BY v.created_at DESC"
     )?;
     let words = stmt
         .query_map([], row_to_vocab_with_book)?
@@ -1349,14 +1369,13 @@ fn vocab_backup_word(word: VocabWord) -> VocabBackupWord {
 }
 
 pub(crate) fn export_vocab_backup_inner(db: &Db) -> AppResult<VocabBackup> {
-    // Watchlist words are excluded, not merely defaulted on the way out: a
-    // backup is something the reader explicitly asked for and may hand to
-    // someone else, and a word they only looked up once has no business in
-    // it — see the observation zone's invisibility rule in
-    // docs/impls/reading-flow-decisions-2026-08-06.md §1.
+    // Watchlist words stay out: a backup is something the reader explicitly
+    // asked for and may hand to someone else, and a word they only looked up
+    // once has no business in it — see the observation zone's invisibility
+    // rule in docs/impls/reading-flow-decisions-2026-08-06.md §1.
+    // `query_all_vocab_words` already excludes them.
     let words = query_all_vocab_words(db)?
         .into_iter()
-        .filter(|word| word.list_status == "confirmed")
         .map(vocab_backup_word)
         .collect();
     Ok(VocabBackup {
@@ -2258,7 +2277,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.imported, 1);
-        let stored = query_vocab_words(&db, "book-1").unwrap().pop().unwrap();
+        let stored = query_vocab_words_including_watchlist(&db, "book-1").unwrap().pop().unwrap();
         assert_eq!(stored.word, "serendipity");
         assert_eq!(stored.mastery, "learning");
         assert_eq!(stored.review_count, 4);
@@ -2312,7 +2331,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            query_vocab_words(&db, "book-1").unwrap()[0].word,
+            query_vocab_words_including_watchlist(&db, "book-1").unwrap()[0].word,
             "ephemeral"
         );
         result.imported
@@ -2398,7 +2417,7 @@ mod tests {
         assert_eq!(skipped.imported, 0);
         assert_eq!(skipped.skipped, 1);
         assert_eq!(
-            query_vocab_words(&db, "book-1").unwrap()[0].definition,
+            query_vocab_words_including_watchlist(&db, "book-1").unwrap()[0].definition,
             "Original definition."
         );
 
@@ -2413,7 +2432,7 @@ mod tests {
         .unwrap();
         assert_eq!(overwritten.imported, 1);
         assert_eq!(overwritten.replaced, 1);
-        let words = query_vocab_words(&db, "book-1").unwrap();
+        let words = query_vocab_words_including_watchlist(&db, "book-1").unwrap();
         assert_eq!(words.len(), 1);
         assert_eq!(words[0].definition, "Replacement definition.");
     }
@@ -2475,7 +2494,7 @@ mod tests {
         )
         .unwrap();
 
-        let words = query_vocab_words(&db, "book-watch").unwrap();
+        let words = query_vocab_words_including_watchlist(&db, "book-watch").unwrap();
         assert_eq!(words.len(), 1);
         assert_eq!(words[0].list_status, "watchlist");
         // Not shown as "already collected" — the reader never saved it.
@@ -2503,7 +2522,7 @@ mod tests {
                 &sync,
             )
             .unwrap();
-            query_vocab_words(&db, "book-watch").unwrap()
+            query_vocab_words_including_watchlist(&db, "book-watch").unwrap()
         };
         assert_eq!(after_two[0].list_status, "watchlist");
 
@@ -2515,7 +2534,7 @@ mod tests {
         )
         .unwrap();
 
-        let words = query_vocab_words(&db, "book-watch").unwrap();
+        let words = query_vocab_words_including_watchlist(&db, "book-watch").unwrap();
         assert_eq!(words.len(), 1);
         assert_eq!(words[0].list_status, "confirmed");
         assert_eq!(
@@ -2548,7 +2567,7 @@ mod tests {
             &sync,
         )
         .unwrap();
-        let watchlisted = query_vocab_words(&db, "book-watch").unwrap();
+        let watchlisted = query_vocab_words_including_watchlist(&db, "book-watch").unwrap();
         assert_eq!(watchlisted[0].list_status, "watchlist");
 
         // The reader hits "收藏" (save) before ever hitting a 3rd lookup.
@@ -2566,7 +2585,7 @@ mod tests {
 
         assert_eq!(saved.id, watchlisted[0].id);
         assert_eq!(saved.list_status, "confirmed");
-        let words = query_vocab_words(&db, "book-watch").unwrap();
+        let words = query_vocab_words_including_watchlist(&db, "book-watch").unwrap();
         assert_eq!(words.len(), 1, "must not create a second row for the same word");
         assert_eq!(words[0].list_status, "confirmed");
     }

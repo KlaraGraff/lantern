@@ -4,10 +4,10 @@
 //!
 //! The SQLite side lives in [`crate::mastery::store`] (migration 039), which
 //! is what `commands::reading_behavior` calls once a batch of screens has
-//! been folded into `reading_word_exposures`. `#![allow(dead_code)]` still
-//! covers the parts no pipeline reaches yet rather than deleting them: the
-//! set of accessors a scoring pass needs is not final while the demotion
-//! path is still being wired.
+//! been folded into `reading_word_exposures`, and what
+//! `commands::lookup_history` calls on every lookup. Both the promotion
+//! ([`apply_exposures`]) and demotion ([`apply_lookup`]) paths below are
+//! wired into real commands.
 //!
 //! ## Why this module holds no database handle
 //!
@@ -74,8 +74,6 @@
 //! [`ExposureBatch::reader_median_wpm`]) stay as the specification of the
 //! rule; the pipeline passes `None` because the filter has already run where
 //! the data still existed.
-
-#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 
@@ -316,6 +314,10 @@ impl Default for WordState {
 }
 
 impl WordState {
+    /// Test-only convenience constructor: production code always starts from
+    /// [`WordState::default`] (a never-scored word) or from a struct literal
+    /// built out of `mastery_progress` (see [`crate::mastery::store`]).
+    #[cfg(test)]
     pub fn new(tier: Tier, credit: f64) -> Self {
         Self {
             tier,
@@ -349,19 +351,6 @@ pub struct Decision {
     /// Persist alongside the lookup timestamp — the next call needs it to
     /// know where in the chain it lands.
     pub lookups_in_window: u32,
-}
-
-impl Decision {
-    fn unchanged(state: &WordState) -> Self {
-        Self {
-            tier: state.tier,
-            credit: state.credit,
-            changed: false,
-            reason: None,
-            is_book_blocker: false,
-            lookups_in_window: state.lookups_in_window,
-        }
-    }
 }
 
 fn weight_for_occurrence(occurrence: u32) -> f64 {

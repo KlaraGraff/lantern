@@ -436,10 +436,9 @@ impl LanternMcpHandler {
         let entries = vocab::query_all_vocab_words(&self.state.db)
             .map_err(|error| ErrorData::internal_error(error.to_string(), None))?
             .into_iter()
-            // `query_all_vocab_words` is deliberately unfiltered — the in-text
-            // annotator needs every row. Echoing rows back to an MCP client is
-            // reader-facing, so the observation zone stays out of it here, the
-            // same way `mcp::tools::vocab` filters its reads.
+            // `query_all_vocab_words` already drops the observation zone;
+            // the `list_status` check stays as the explicit statement that
+            // echoing rows back to an MCP client is reader-facing.
             .filter(|entry| requested.contains(&entry.id) && entry.list_status == "confirmed")
             .collect::<Vec<_>>();
         self.state
@@ -799,9 +798,9 @@ mod tests {
 
     /// Regression for the MCP watchlist leak, the write-side twin of
     /// `get_vocab_words_excludes_the_observation_zone`: `set_vocab_mastery`
-    /// re-reads through the deliberately unfiltered `query_all_vocab_words`,
-    /// so without its own filter a client that already knew a watchlist row's
-    /// id could read the row back out of the response.
+    /// re-reads through `query_all_vocab_words` and echoes the rows back, so a
+    /// client that already knew a watchlist row's id must still not be able to
+    /// read that row out of the response.
     #[tokio::test]
     async fn set_vocab_mastery_excludes_the_observation_zone_from_its_echo() {
         let (directory, db) = mastery_db();

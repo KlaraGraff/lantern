@@ -29,15 +29,12 @@ impl LanternMcpHandler {
         Parameters(GetVocabWordsArgs { book_id, due_only }): Parameters<GetVocabWordsArgs>,
     ) -> Result<CallToolResult, ErrorData> {
         let mut words = match (book_id.as_deref(), due_only.unwrap_or(false)) {
-            // `query_vocab_words` / `query_all_vocab_words` are shared with the
-            // in-text three-stage annotation path and deliberately return every
-            // row regardless of `list_status` (see the doc comment on
-            // `query_vocab_words` in commands/vocab.rs). The MCP tool is a
-            // reader-facing surface — an AI client speaks for the reader here —
-            // so the observation zone (`list_status = 'watchlist'`, see
-            // docs/impls/reading-flow-decisions-2026-08-06.md §1.3/§5.3) must
-            // never reach it. `query_vocab_due` already filters at the SQL
-            // level; the other two are filtered below.
+            // All three helpers exclude the observation zone
+            // (`list_status = 'watchlist'`, see
+            // docs/impls/reading-flow-decisions-2026-08-06.md §1.3/§5.3) on
+            // their own, which is what this surface needs: an AI client speaks
+            // for the reader here. The `retain` below is the belt to that
+            // braces — it also covers the `due_only` branch's own filtering.
             (Some(book_id), false) => vocab::query_vocab_words(&self.state.db, book_id),
             (None, false) => vocab::query_all_vocab_words(&self.state.db),
             (_, true) => vocab::query_vocab_due(&self.state.db),
@@ -113,9 +110,8 @@ mod tests {
 
     /// Regression for the MCP watchlist leak: an AI client asking for a
     /// book's vocabulary (or the whole library's) must never see a word
-    /// still sitting in the observation zone, even though the underlying
-    /// `query_vocab_words` / `query_all_vocab_words` helpers stay
-    /// unfiltered for the in-text annotation path.
+    /// still sitting in the observation zone. The helpers filter on their own
+    /// now; this keeps the guarantee pinned at the surface that promises it.
     #[tokio::test]
     async fn get_vocab_words_excludes_the_observation_zone() {
         let (_dir, db) = seed_db();
