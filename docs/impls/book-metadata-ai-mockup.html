@@ -1,0 +1,1223 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>书籍元数据读取与 AI 清洗 · 详情页样张</title>
+<style>
+/* ── Lantern 的真实 token（src/index.css，浅色）── */
+:root{
+  --page:#f4f4f5; --surface:#ffffff; --muted:#fafafa; --input:#f3f3f5;
+  --t1:#18181b; --t2:#52525c; --t3:#71717b;
+  --border:#e4e4e7; --border-light:#f4f4f5;
+  --accent:#7c3aed; --accent-bg:#f3e8ff;
+  --warning:#b8791c; --warning-bg:#fdf6e9;
+  --shadow-card:0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -2px rgba(0,0,0,.1);
+  --shadow-win:0 18px 44px rgba(24,24,27,.13), 0 2px 8px rgba(24,24,27,.05);
+  --shadow-pop:0 20px 25px rgba(0,0,0,.15), 0 8px 10px rgba(0,0,0,.09);
+  --sans:"Inter",system-ui,-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+  --serif:Georgia,"Libre Baskerville","Songti SC",serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--t1);font:14px/1.6 var(--sans);
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding:52px 32px 120px}
+
+/* ── 样张自身的排版（不属于产品 UI）── */
+header.lede{border-bottom:1px solid var(--border);padding-bottom:26px;margin-bottom:14px}
+header.lede h1{font-size:26px;margin:0 0 10px;font-weight:650;letter-spacing:-.3px}
+header.lede p{margin:0 0 8px;color:var(--t2);font-size:13.5px;max-width:80ch}
+header.lede p b{color:var(--t1);font-weight:600}
+header.lede .legend{display:flex;flex-wrap:wrap;gap:9px 22px;margin-top:16px;font-size:12px;color:var(--t3)}
+header.lede .legend span{display:flex;align-items:center;gap:7px}
+
+.state{margin-top:52px}
+.state-label{display:flex;align-items:baseline;gap:11px;margin-bottom:11px;flex-wrap:wrap}
+.state-num{flex:none;font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-bg);
+  border-radius:5px;padding:2px 8px;letter-spacing:.03em}
+.state-name{font-size:14px;font-weight:650;letter-spacing:-.1px}
+.state-why{font-size:12.5px;color:var(--t3)}
+.note{max-width:900px;font-size:12.5px;line-height:1.7;color:var(--t3);margin:11px 0 0;padding-left:2px}
+.note b{color:var(--t2);font-weight:600}
+.sub-cap{font-size:12px;color:var(--t3);margin:9px 0 0;padding-left:2px}
+.sub-cap b{color:var(--t2);font-weight:600}
+.stack{display:flex;flex-direction:column;gap:26px}
+
+/* ── 窗口外壳 ── */
+.win{width:900px;max-width:100%;border:1px solid var(--border);border-radius:12px;overflow:hidden;
+  background:var(--surface);box-shadow:var(--shadow-win)}
+.chrome{height:28px;background:var(--page);border-bottom:1px solid var(--border-light);
+  display:flex;align-items:center;gap:6px;padding:0 11px}
+.chrome i{width:9px;height:9px;border-radius:50%;background:#d9d9de;display:block}
+
+/* ── 详情页头栏 ── */
+.pagehead{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;
+  border-bottom:1px solid var(--border);padding:22px 28px 14px}
+.back{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--t2)}
+.acts{display:flex;align-items:center;gap:8px}
+.btn{height:32px;display:inline-flex;align-items:center;gap:6px;border-radius:10px;padding:0 12px;
+  font:inherit;font-size:12px;border:1px solid transparent;background:none;color:var(--t2);cursor:pointer}
+.btn.primary{background:var(--accent);color:#fff;font-weight:500;border-color:var(--accent)}
+.btn.outline{border-color:var(--border);color:var(--t2);background:var(--surface)}
+.btn.confirm{border-color:#d6bcfa;color:var(--accent);background:var(--surface);font-weight:500}
+.btn.quiet{color:var(--t3)}
+.btn.sm{height:29px;font-size:11.5px;padding:0 12px;border-radius:9px}
+.btn.link{height:auto;padding:0;font-size:11.5px;color:var(--accent);border:0;background:none}
+
+/* ── 详情页主体 ── */
+.body{padding:24px 28px 26px}
+.hero{display:grid;grid-template-columns:120px 1fr;gap:22px;border-bottom:1px solid var(--border);
+  padding-bottom:22px}
+.cover{aspect-ratio:3/4;width:120px;border-radius:6px;overflow:hidden;box-shadow:var(--shadow-card);
+  background:linear-gradient(150deg,#efe9f9,#e3dcef);display:grid;place-items:center;padding:0 12px;
+  text-align:center;font:400 10px/1.35 var(--sans);color:var(--t3)}
+.cover.dirty{background:linear-gradient(150deg,#f0f0f2,#e6e6ea)}
+.meta{min-width:0}
+
+/* 书名行 */
+.titleline{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-bottom:6px}
+h2.title{margin:0;font:600 24px/1.25 var(--serif);letter-spacing:-.2px}
+h2.title.rawname{font-family:var(--sans);font-size:19px;font-weight:600;color:var(--t1);
+  letter-spacing:0;word-break:break-all}
+.authorline{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:13px;color:var(--t2)}
+.author-empty{color:var(--t3);border-bottom:1px dashed #c9c9cf;padding-bottom:1px;cursor:pointer}
+.fill-link{font-size:11.5px;color:var(--accent);cursor:pointer}
+
+/* 来源标 */
+.badge{flex:none;display:inline-flex;align-items:center;gap:4px;border-radius:5px;
+  padding:2px 6px 2px 5px;font-size:10px;line-height:1.5;font-weight:600;letter-spacing:.01em;
+  background:var(--accent-bg);color:var(--accent)}
+.badge svg{display:block}
+.badge.manual{background:none;color:var(--t3);font-weight:500;padding-left:0}
+.badge.manual::before{content:"";width:4px;height:4px;border-radius:50%;background:#c9c9cf;
+  display:block;margin-right:1px}
+
+/* chip 行 */
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.chip{border-radius:6px;padding:3px 8px;font-size:10.5px;line-height:1.5;border:1px solid var(--border);
+  color:var(--t3);display:inline-flex;align-items:center;gap:5px}
+.chip.status{background:var(--accent-bg);color:var(--accent);border-color:transparent}
+.chip.ai{border-color:#e0d3f7;background:#faf6ff;color:var(--accent)}
+.chip.unknown{border-style:dashed;color:var(--t3);cursor:pointer}
+.chip .aidot{width:5px;height:5px;border-radius:50%;background:var(--accent);display:block}
+
+/* 进度 */
+.bar{margin-top:16px;height:4px;width:min(420px,100%);border-radius:99px;background:var(--input);overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:99px;background:color-mix(in srgb,var(--accent) 75%,transparent)}
+.prog-cap{margin:8px 0 0;font-size:11px;color:var(--t3)}
+
+/* ── 核对条 ── */
+.strip{margin-top:18px;border:1px solid var(--border);border-radius:11px;background:var(--muted);
+  padding:14px 16px}
+.strip.ai{border-color:#e8dcfb;background:#fcfaff}
+.strip.warn{border-color:#f0e2c6;background:var(--warning-bg)}
+.strip-top{display:flex;align-items:flex-start;gap:10px}
+.strip-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--accent);margin-top:6px}
+.strip-dot.grey{background:#c4c4cb}
+.strip-dot.warn{background:var(--warning)}
+.strip-txt{flex:1;min-width:0}
+.strip h3{margin:0;font-size:13px;font-weight:650;letter-spacing:-.1px}
+.strip p{margin:5px 0 0;font-size:11.5px;line-height:1.75;color:var(--t2);max-width:66ch}
+.strip p.faint{color:var(--t3)}
+.strip-acts{display:flex;align-items:center;gap:8px;flex:none;margin-left:12px}
+
+/* ── 主戏：新值 ← 原值 对照 ── */
+.compare{margin-top:13px;border-top:1px solid #ece1fb;padding-top:11px;max-width:680px}
+.cmp-head,.cmp-row{display:grid;grid-template-columns:46px minmax(0,1fr) 26px minmax(0,1.35fr);
+  gap:0 12px;align-items:baseline}
+.cmp-head{font-size:10.5px;color:var(--t3);padding-bottom:7px;border-bottom:1px solid #f0e9fa}
+.cmp-head b{font-weight:600;color:var(--t2)}
+.cmp-row{padding:10px 0;border-bottom:1px solid #f4effc}
+.cmp-row:last-child{border-bottom:none}
+.cmp-f{font-size:11.5px;color:var(--t3)}
+.cmp-now{font-size:13.5px;font-weight:600;color:var(--t1);word-break:break-word}
+.cmp-now.empty{font-size:12.5px;font-weight:400;color:var(--t3);border-bottom:1px dashed #c9c9cf;
+  display:inline-block;padding-bottom:1px}
+.cmp-arrow{font-size:12px;color:#cdbdea;text-align:center}
+.cmp-was{font-size:12px;color:var(--t3);word-break:break-all;font-family:ui-monospace,Menlo,monospace}
+.cmp-was.plain{font-family:var(--sans)}
+.cmp-was em{font-style:normal;color:#a1a1aa}
+.cmp-acts{margin-top:13px;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.cmp-acts .why{font-size:11px;line-height:1.65;color:var(--t3);flex:1;min-width:260px}
+.cmp-acts .why b{color:var(--t2);font-weight:600}
+.cmp-acts .why.full{flex:0 0 100%;min-width:0;margin-top:3px}
+.btn.scope{border-color:var(--border);color:var(--t2);background:var(--surface)}
+.btn.scope::before{content:"";flex:none;width:11px;height:11px;border-radius:3px;border:1.5px solid #cdbdea;
+  background:linear-gradient(135deg,#efe6fd 50%,transparent 50%)}
+
+/* 扫描条 */
+.scan{margin-top:11px;height:3px;width:min(360px,100%);border-radius:99px;background:var(--input);overflow:hidden}
+.scan>i{display:block;height:100%;width:34%;border-radius:99px;
+  background:color-mix(in srgb,var(--accent) 75%,transparent);animation:scan 1.5s ease-in-out infinite}
+@keyframes scan{0%{transform:translateX(-105%)}100%{transform:translateX(305%)}}
+
+/* 页面下方省略 */
+.elide{margin-top:22px;border-top:1px solid var(--border);padding-top:16px;display:flex;gap:14px;
+  align-items:center}
+.elide .ghostbox{flex:1;height:44px;border-radius:9px;background:var(--input)}
+.elide span{font-size:11px;color:var(--t3);flex:none}
+
+/* 4 指标行 */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--border);padding:16px 0}
+.metrics div{padding:0 18px}
+.metrics div:first-child{padding-left:0}
+.metrics div+div{border-left:1px solid var(--border)}
+.metrics b{display:block;font:500 22px/1.2 var(--serif)}
+.metrics span{display:block;margin-top:6px;font-size:10.5px;color:var(--t3)}
+
+/* 文件区块行 */
+.filesec{margin-top:24px}
+.filesec h3{margin:0 0 12px;font-size:13.5px;font-weight:650}
+.frow{display:flex;min-height:52px;align-items:center;justify-content:space-between;gap:20px;
+  border-bottom:1px solid var(--border-light);padding:9px 0}
+.frow:first-of-type{border-top:1px solid var(--border-light)}
+.frow .lb{font-size:12.5px}
+.frow .lb small{display:block;margin-top:2px;font-size:10.5px;color:var(--t3)}
+.frow .vl{font-size:12px;color:var(--t2);text-align:right;font-variant-numeric:tabular-nums;
+  display:flex;align-items:center;gap:10px;justify-content:flex-end}
+.frow.origin-row .vl{flex-direction:column;align-items:flex-end;gap:4px;text-align:right}
+.frow.origin-row .vl code{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--t2);
+  word-break:break-all}
+.frow.origin-row .vl .sub{font-size:10.5px;color:var(--t3)}
+
+/* ── 书架 ── */
+.libhead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;
+  border-bottom:1px solid var(--border);padding:20px 26px 13px}
+.libhead h3{margin:0;font:600 19px/1.3 var(--serif)}
+.libbar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 26px 0}
+.filters{display:flex;gap:7px}
+.fchip{border:1px solid var(--border);border-radius:8px;padding:4px 11px;font-size:11.5px;color:var(--t2);
+  background:var(--surface)}
+.fchip.on{background:var(--accent-bg);border-color:transparent;color:var(--accent);font-weight:500}
+.pending-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid #e0d3f7;background:#faf6ff;
+  color:var(--accent);border-radius:8px;padding:4px 11px;font-size:11.5px;font-weight:500;cursor:pointer}
+.pending-chip .aidot{width:5px;height:5px;border-radius:50%;background:var(--accent);display:block}
+.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:16px 15px;padding:18px 26px 24px}
+.card .thumb{position:relative;aspect-ratio:3/4;border-radius:6px;background:linear-gradient(150deg,#efe9f9,#e3dcef);
+  box-shadow:var(--shadow-card);display:grid;place-items:center;padding:0 8px;text-align:center;
+  font:400 9px/1.3 var(--sans);color:var(--t3)}
+.card .thumb.dirty{background:linear-gradient(150deg,#f0f0f2,#e6e6ea)}
+.card .thumb .mk{position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;
+  background:var(--accent);box-shadow:0 0 0 2px #fff}
+.card .ct{margin-top:7px;font-size:11px;line-height:1.4;color:var(--t1);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .ca{margin-top:2px;font-size:10px;color:var(--t3)}
+
+/* ── 批量确认面板 ── */
+.overlaywrap{position:relative}
+.dim{position:absolute;inset:28px 0 0;background:rgba(0,0,0,.32);display:flex;align-items:flex-start;
+  justify-content:center;padding:34px 16px}
+.sheet{width:100%;max-width:660px;background:var(--surface);border:1px solid var(--border);
+  border-radius:14px;box-shadow:var(--shadow-pop);overflow:hidden;display:flex;flex-direction:column;
+  max-height:520px}
+.sheet-h{padding:18px 20px 13px;border-bottom:1px solid var(--border)}
+.sheet-h h4{margin:0;font-size:14.5px;font-weight:650}
+.sheet-h p{margin:6px 0 0;font-size:11.5px;line-height:1.7;color:var(--t2);max-width:62ch}
+.sheet-list{overflow:hidden;padding:0 20px}
+.brow{display:grid;grid-template-columns:1fr 26px 1fr auto;gap:0 12px;align-items:center;
+  padding:12px 0;border-bottom:1px solid var(--border-light)}
+.brow .bn{font-size:12.5px;font-weight:600;color:var(--t1)}
+.brow .bn small{display:block;font-size:10.5px;font-weight:400;color:var(--t2);margin-top:2px}
+.brow .bn small.none{color:var(--t3)}
+.brow .barrow{font-size:11px;color:#cdbdea;text-align:center}
+.brow .bw{font-size:11px;color:var(--t3);font-family:ui-monospace,Menlo,monospace;word-break:break-all}
+.brow .bacts{display:flex;gap:12px;padding-left:8px}
+.sheet-f{padding:14px 20px;border-top:1px solid var(--border);display:flex;align-items:center;
+  justify-content:space-between;gap:14px;background:var(--muted)}
+.sheet-f .fnote{font-size:11px;line-height:1.6;color:var(--t3);flex:1}
+.sheet-f .fbtns{display:flex;gap:8px;flex:none}
+.fade{-webkit-mask-image:linear-gradient(#000 72%,transparent);mask-image:linear-gradient(#000 72%,transparent)}
+
+/* ── 二次确认弹窗 ── */
+.dlg{max-width:452px;max-height:none}
+.dlg .sheet-h{padding:20px 22px 4px;border-bottom:none}
+.dlg .sheet-h p{margin-top:7px}
+.dlg-list{margin:0;padding:8px 22px 18px;list-style:none}
+.dlg-list li{display:flex;gap:10px;padding:7px 0;font-size:12px;line-height:1.75;color:var(--t2)}
+.dlg-list li i{flex:none;width:5px;height:5px;border-radius:50%;background:#cdbdea;margin-top:8px}
+.dlg-list li b{color:var(--t1);font-weight:600}
+.dlg-list li span.path{font-family:var(--sans);color:var(--t1);font-weight:500}
+.dlg .sheet-f{justify-content:flex-end}
+
+/* ── 设置页（只画相关那一组）── */
+.sethead{padding:20px 28px 14px;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:14px}
+.sethead h3{margin:0;font-size:15px;font-weight:650}
+.sethead .tabs{display:flex;gap:14px;font-size:12px;color:var(--t3)}
+.sethead .tabs b{color:var(--accent);font-weight:600}
+.setbody{padding:4px 28px 24px}
+.setgrp{margin-top:20px;font-size:11px;letter-spacing:.08em;font-weight:700;color:var(--t3)}
+.srow{display:flex;align-items:center;justify-content:space-between;gap:26px;min-height:73px;
+  padding:12px 0;border-bottom:1px solid rgba(0,0,0,.1)}
+.srow:last-child{border-bottom:none}
+.srow .sl{font-size:13px}
+.srow .sl small{display:block;margin-top:4px;font-size:11.5px;line-height:1.65;color:var(--t3);max-width:56ch}
+.srow .sl small a{color:var(--accent);text-decoration:none}
+.tgl{flex:none;position:relative;width:38px;height:22px;border-radius:99px;background:#d4d4d8}
+.tgl.on{background:var(--accent)}
+.tgl::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;
+  background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.22)}
+.tgl.on::after{left:auto;right:2px}
+
+/* toast */
+.toastwrap{position:relative}
+.toast{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;
+  gap:10px;background:#27272a;color:#fafafa;border-radius:10px;padding:9px 14px;font-size:11.5px;
+  box-shadow:var(--shadow-pop);white-space:nowrap}
+.toast b{font-weight:600}
+.toast .undo{color:#d8b4fe;cursor:pointer}
+
+/* ── 附录 ── */
+.appendix{margin-top:72px;border-top:1px solid var(--border);padding-top:28px}
+.appendix h2{font-size:12px;letter-spacing:.12em;color:var(--t3);margin:0 0 16px;font-weight:700}
+.appendix h2+p{margin:-8px 0 18px;font-size:12.5px;color:var(--t3);max-width:80ch}
+table{border-collapse:collapse;width:100%;max-width:900px;font-size:12.5px}
+th{text-align:left;font-weight:600;color:var(--t3);font-size:11px;letter-spacing:.04em;
+  border-bottom:1px solid var(--border);padding:0 14px 8px 0}
+td{border-bottom:1px solid var(--border-light);padding:11px 14px 11px 0;color:var(--t2);vertical-align:top}
+td code{font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--input);
+  border-radius:4px;padding:1px 5px;color:var(--t2)}
+td b{color:var(--t1);font-weight:600}
+dl.copy{margin:0;display:grid;grid-template-columns:auto 1fr;gap:9px 18px;font-size:12.5px;max-width:900px}
+dl.copy dt{color:var(--t3);font-family:ui-monospace,Menlo,monospace;font-size:11px;white-space:nowrap;padding-top:2px}
+dl.copy dd{margin:0;color:var(--t2)}
+dl.copy dt.grp{grid-column:1/-1;font-family:var(--sans);font-size:11px;font-weight:700;color:var(--t3);
+  letter-spacing:.08em;padding-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="lede">
+  <h1>书籍元数据：读文件、判脏、AI 清洗</h1>
+  <p>书籍详情页（<b>BookDetails</b>）在各种元数据来源下的样子，纵向排列，末尾是书架的批量确认和「默认采纳」。视觉沿用现有详情页：120px 封面 + 衬线书名 + chip 行 + 文件区块，新增的只有<b>「核对条」</b>和<b>语言字段</b>。</p>
+  <p>三层处理：① 读 <code style="font-family:ui-monospace,Menlo,monospace;font-size:12px">dc:title / dc:creator / dc:language</code>；② 启发式判脏；③ 只对「缺失」或「脏」的书调 AI。模型允许回答不知道。<br><b>语言不走 AI</b>：文件里写了 <code style="font-family:ui-monospace,Menlo,monospace;font-size:12px">dc:language</code> 就用它，没写就由程序从正文抽样判定——不花调用，也不需要用户核对，所以它永远是一个不带标的普通 chip。</p>
+  <div class="legend">
+    <span><i class="badge"><svg width="9" height="9" viewBox="0 0 12 12" fill="currentColor"><path d="M6 0l1.3 3.4L10.9 4.7 7.5 6 6 9.4 4.7 6 1.1 4.7 4.7 3.4z"/></svg>AI 生成</i> 一个待核对的记号，确认或撤回之后消失</span>
+    <span><i class="badge manual">手动修改</i> 用户自己改的，不用核对，常驻</span>
+    <span>无标识 = 来自 EPUB 文件本身，这是基准</span>
+    <span>开了「默认采纳」之后，AI 填的字段也不带标——出处改由「文件 → 原始信息」那一行承担</span>
+  </div>
+</header>
+
+<!-- ────────────────────────────── ① ────────────────────────────── -->
+<section class="state">
+  <div class="state-label"><span class="state-num">状态 ①</span><span class="state-name">元数据来自文件，干净</span>
+    <span class="state-why">绝大多数正规 EPUB 走这条路。页面上没有任何 AI 痕迹——这是基准。</span></div>
+
+  <div class="win">
+    <div class="chrome"><i></i><i></i><i></i></div>
+    <div class="pagehead">
+      <span class="back">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        返回书架</span>
+      <div class="acts">
+        <button class="btn primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>继续阅读</button>
+        <button class="btn outline">编辑信息</button>
+        <button class="btn quiet">删除书籍</button>
+      </div>
+    </div>
+    <div class="body">
+      <div class="hero">
+        <div class="cover">Great Expectations</div>
+        <div class="meta">
+          <div class="titleline"><h2 class="title">Great Expectations</h2></div>
+          <div class="authorline">Charles Dickens</div>
+          <div class="chips">
+            <span class="chip status">正在阅读</span>
+            <span class="chip">EPUB</span>
+            <span class="chip">英语</span>
+            <span class="chip">2026年3月4日 加入</span>
+          </div>
+          <div class="bar"><i style="width:38%"></i></div>
+          <p class="prog-cap">已读 38%</p>
+        </div>
+      </div>
+
+      <div class="metrics">
+        <div><b>38%</b><span>阅读进度</span></div>
+        <div><b>4 小时 12 分</b><span>累计阅读</span></div>
+        <div><b>183,204</b><span>全书词次</span></div>
+        <div><b>67</b><span>高亮与笔记</span></div>
+      </div>
+
+      <div class="filesec">
+        <h3>文件</h3>
+        <div class="frow"><span class="lb">格式<small>导入时的原始格式</small></span><span class="vl">EPUB</span></div>
+        <div class="frow"><span class="lb">语言<small>取自文件里的 dc:language</small></span><span class="vl">英语（en-GB）</span></div>
+        <div class="frow"><span class="lb">加入时间</span><span class="vl">2026年3月4日 09:21</span></div>
+        <div class="frow"><span class="lb">文件名</span><span class="vl">great-expectations.epub</span></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note"><b>判断：文件来源不加任何标识。</b>如果三种来源都挂标，标识就等于没有——大多数书都来自文件，满屏「文件」只是噪音。只给<b>偏离原始文件的字段</b>加标。这一屏没有「原始信息」行，因为现在的值就是原始值，没有第二个版本可退。</p>
+</section>
+
+<!-- ────────────────────────────── ② ────────────────────────────── -->
+<section class="state">
+  <div class="state-label"><span class="state-num">状态 ②</span><span class="state-name">AI 已清洗 · 待核对</span>
+    <span class="state-why">主戏是「现在 ← 原来」的对照。底下三个按钮：两个管这一本，中间那个管以后。</span></div>
+
+  <div class="win">
+    <div class="chrome"><i></i><i></i><i></i></div>
+    <div class="pagehead">
+      <span class="back">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        返回书架</span>
+      <div class="acts">
+        <button class="btn primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>开始阅读</button>
+        <button class="btn outline">编辑信息</button>
+        <button class="btn quiet">删除书籍</button>
+      </div>
+    </div>
+    <div class="body">
+      <div class="hero">
+        <div class="cover">傲慢与偏见</div>
+        <div class="meta">
+          <div class="titleline">
+            <h2 class="title">傲慢与偏见</h2>
+            <span class="badge"><svg width="9" height="9" viewBox="0 0 12 12" fill="currentColor"><path d="M6 0l1.3 3.4L10.9 4.7 7.5 6 6 9.4 4.7 6 1.1 4.7 4.7 3.4z"/></svg>AI 生成</span>
+          </div>
+          <div class="authorline">简·奥斯汀
+            <span class="badge"><svg width="9" height="9" viewBox="0 0 12 12" fill="currentColor"><path d="M6 0l1.3 3.4L10.9 4.7 7.5 6 6 9.4 4.7 6 1.1 4.7 4.7 3.4z"/></svg>AI 生成</span>
+          </div>
+          <div class="chips">
+            <span class="chip status">未开始</span>
+            <span class="chip">EPUB</span>
+            <span class="chip">中文</span>
+            <span class="chip">2026年8月6日 加入</span>
+          </div>
+          <div class="bar"><i style="width:0"></i></div>
+          <p class="prog-cap">已读 0%</p>
+        </div>
+      </div>
+
+      <div class="strip ai">
+        <div class="strip-top">
+          <span class="strip-dot"></span>
+          <div class="strip-txt">
+            <h3>这两项是 AI 填的，核对一下</h3>
+            <p>这个文件里没写书名和作者，下面是 AI 填的值和文件里原来的样子。</p>
+          </div>
+        </div>
+
+        <div class="compare">
+          <div class="cmp-head"><span></span><span><b>现在</b>（AI 填的）</span><span></span><span>原来（文件里的）</span></div>
+
+          <div class="cmp-row">
+            <span class="cmp-f">书名</span>
+            <span class="cmp-now">傲慢与偏见</span>
+            <span class="cmp-arrow">←</span>
+            <span class="cmp-was">【世界名著】傲慢与偏见_高清完整版</span>
+          </div>
+          <div class="cmp-row">
+            <span class="cmp-f">作者</span>
+            <span class="cmp-now">简·奥斯汀</span>
+            <span class="cmp-arrow">←</span>
+            <span class="cmp-was plain"><em>文件里没写</em></span>
+          </div>
+        </div>
+
+        <div class="cmp-acts">
+          <button class="btn confirm sm">确认，就用这些</button>
+          <button class="btn scope sm">默认采纳</button>
+          <button class="btn outline sm">撤回，用原来的</button>
+          <span class="why full">左右两个只管这一本。中间那个管<b>以后所有新导入的书</b>，同时会一并采纳书架上还没核对的 12 本——点它会先问一次。三种情况下<b>原来的值都一直留着</b>，在下面的「文件 → 原始信息」里随时能退回去。</span>
+        </div>
+      </div>
+
+      <div class="elide"><div class="ghostbox"></div><span>以下为指标、难度分析、文件区块，样张略</span></div>
+    </div>
+  </div>
+
+  <p class="note"><b>判断一：核对条上没有模型名、没有时间戳。</b>写上它们，这个标就变成一条审计记录——用户会开始追问「换了模型要不要重跑」「上次是几点跑的」，而每个追问都要一套说法。去掉之后它只是一个记号：这里有个值可能是错的，看一眼。措辞也按记号的分量压过：标题写「核对一下」而不是「AI 已完成整理」，正文两行封顶。<br><br><b>判断二：确认和撤回等重，都是一次点击。</b>「确认」给了淡紫描边（常走的路），但没做成实心主按钮——实心会把这里变成一个「继续」，用户会闭着眼点。两个按钮之间没有默认项，因为这一屏的问题是「哪个对」，不是「要不要往下走」。<br><br><b>判断三：对照是这屏的主戏，所以它是一张两列表，不是一句「原为 XXX」。</b>两行字段左右对齐，眼睛只需要横着扫一遍。左列加粗、右列灰色等宽字体——等宽体让脏文件名的下划线和方括号显形，看一眼就知道该选哪边。缺失写「文件里没写」而不是「（空）」：前者说明了原因，后者只描述了现象。<br><br><b>判断四：语言不进这张表。</b>它由程序从正文抽样判定，不花 AI 调用，也没有「可能编错」这回事——把一个不需要核对的字段摆进核对表，会让另外两行的分量一起变轻。所以顶部它就是一枚普通 chip，和「EPUB」「加入时间」同级：一条程序算出来的事实。<br><br><b>判断五：第三个按钮叫「默认采纳」，范围写在说明里，不写在按钮上。</b>按钮名要的是词准——「默认」本来就是「以后照此办理」的意思，它立得住；把「以后所有新导入的书」「一并采纳待核对的 12 本」塞进按钮，是用一句话把话说满，读起来像口号而不像控件。这两件事交给下面那行说明和弹窗（状态 ⑩）。它左右各站一个只管这一本的按钮，位置本身就在说「这个不一样」；样式给了一个半填充的小方块图标做区分，但仍是描边按钮，不做成实心：一个作用范围这么大的开关，不该长得像「继续」。</p>
+</section>
+
+<!-- ────────────────────────────── ③ ────────────────────────────── -->
+<section class="state">
+  <div class="state-label"><span class="state-num">状态 ③</span><span class="state-name">已确认（紫标消失后）</span>
+    <span class="state-why">页面回到和状态 ① 一样干净。撤回权没有消失，它搬到了文件区块。</span></div>
+
+  <div class="win">
+    <div class="chrome"><i></i><i></i><i></i></div>
+    <div class="pagehead">
+      <span class="back">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        返回书架</span>
+      <div class="acts">
+        <button class="btn primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>开始阅读</button>
+        <button class="btn outline">编辑信息</button>
+        <button class="btn quiet">删除书籍</button>
+      </div>
+    </div>
+    <div class="body">
+      <div class="hero">
+        <div class="cover">傲慢与偏见</div>
+        <div class="meta">
+          <div class="titleline"><h2 class="title">傲慢与偏见</h2></div>
+          <div class="authorline">简·奥斯汀</div>
+          <div class="chips">
+            <span class="chip status">未开始</span>
+            <span class="chip">EPUB</span>
+            <span class="chip">中文</span>
+            <span class="chip">2026年8月6日 加入</span>
+          </div>
+          <div class="bar"><i style="width:0"></i></div>
+          <p class="prog-cap">已读 0%</p>
+        </div>
+      </div>
+
+      <div class="metrics">
+        <div><b>0%</b><span>阅读进度</span></div>
+        <div><b>—</b><span>累计阅读</span></div>
+        <div><b>121,890</b><span>全书词次</span></div>
+        <div><b>0</b><span>高亮与笔记</span></div>
+      </div>
+
+      <div class="filesec">
+        <h3>文件</h3>
+        <div class="frow"><span class="lb">格式<small>导入时的原始格式</small></span><span class="vl">EPUB</span></div>
+        <div class="frow"><span class="lb">语言</span><span class="vl">中文</span></div>
+        <div class="frow"><span class="lb">加入时间</span><span class="vl">2026年8月6日 21:04</span></div>
+        <div class="frow"><span class="lb">文件名</span><span class="vl">【世界名著】傲慢与偏见_高清完整版.epub</span></div>
+        <div class="frow origin-row">
+          <span class="lb">原始信息<small>这个文件导入时自带的书名和作者</small></span>
+          <span class="vl">
+            <code>【世界名著】傲慢与偏见_高清完整版</code>
+            <span class="sub">作者、语言：文件里没写</span>
+            <button class="btn link">退回原始信息</button>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note"><b>判断：撤回权搬进「文件」区块，做成一行常驻的「原始信息」。</b>三个位置里挑的：<br>
+  ① 留在页面顶部 —— 那等于紫标没消失，只是换了个说法，违背「核对完就该安静」；<br>
+  ② 收进「编辑信息」弹窗 —— 编辑是「我要写一个新值」，退回是「我要一个旧值」，把它塞进去等于要求用户先猜到它在那儿；<br>
+  ③ <b>文件区块 —— 选这个。</b>这个区块本来就在回答「这个文件本身是什么」，而原始书名恰恰是文件自带的事实，和它上面的「文件名」是同一类东西。任何一个月后冒出「这书名怎么来的」这个念头的人，会往下滚去看文件信息——那正是这行等着他的地方。它在视觉上是一条普通的 56px 行，和格式、加入时间同级，不抢已经核对完的页面；但它常驻、不折叠、不藏在 hover 里，所以也不等于不存在。<br><br>
+  <b>标记的寿命 ≠ 撤回权的寿命</b>，这一屏就是这条规则的样子：上面全部安静，下面永远留着一条退路。状态 ② 的按钮旁边那句「原来的值一直留着」，就是提前把这一屏许诺出去。</p>
+</section>
+
+<!-- ────────────────────────────── ④ ────────────────────────────── -->
+<section class="state">
+  <div class="state-label"><span class="state-num">状态 ④</span><span class="state-name">已撤回</span>
+    <span class="state-why">回到导入时的原始值。核对条留下但换了内容——它现在是「再整理一次」的入口。</span></div>
+
+  <div class="win">
+    <div class="chrome"><i></i><i></i><i></i></div>
+    <div class="pagehead">
+      <span class="back">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        返回书架</span>
+      <div class="acts">
+        <button class="btn primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>开始阅读</button>
+        <button class="btn outline">编辑信息</button>
+        <button class="btn quiet">删除书籍</button>
+      </div>
+    </div>
+    <div class="body">
+      <div class="hero">
+        <div class="cover dirty">【世界名著】傲慢与偏见_高清完整版</div>
+        <div class="meta">
+          <div class="titleline"><h2 class="title rawname">【世界名著】傲慢与偏见_高清完整版</h2></div>
+          <div class="authorline"><span class="author-empty">作者未知</span><span class="fill-link">补充</span></div>
+          <div class="chips">
+            <span class="chip status">未开始</span>
+            <span class="chip">EPUB</span>
+            <span class="chip">中文</span>
+            <span class="chip">2026年8月6日 加入</span>
+          </div>
+          <div class="bar"><i style="width:0"></i></div>
+          <p class="prog-cap">已读 0%</p>
+        </div>
+      </div>
+
+      <div class="strip">
+        <div class="strip-top">
+          <span class="strip-dot grey"></span>
+          <div class="strip-txt">
+            <h3>已退回文件里原来的信息</h3>
+            <p>刚才 AI 填的是「傲慢与偏见 · 简·奥斯汀」，可以再要一次。语言不受影响，它是程序判定的。</p>
+          </div>
+          <div class="strip-acts">
+            <button class="btn outline sm">重新用 AI 整理</button>
+            <button class="btn outline sm">手动编辑</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="elide"><div class="ghostbox"></div><span>以下为指标、难度分析、文件区块，样张略</span></div>
+    </div>
+  </div>
+
+  <p class="note"><b>判断：撤回也要能撤回，但只用一句话，不再摆表。</b>刚被丢掉的值写进正文那一行——用户撤回之后发现「其实那个更好」很常见，让他重看一眼比重跑一次模型便宜。这里不给对照表：对照是做决定时才需要的排版，决定已经做完了。<b>脏书名不用衬线体</b>：衬线是留给「真书名」的排版待遇，一串带下划线和方括号的文件名用无衬线 + 小一号，页面自己就在说「这不是书名」。</p>
+</section>
+
+<!-- ────────────────────────────── ⑤ ────────────────────────────── -->
+<section class="state">
+  <div class="state-label"><span class="state-num">状态 ⑤</span><span class="state-name">正在分析中</span>
+    <span class="state-why">导入后的几秒到几十秒。书已经能读了，所以页面不空、不骨架屏。</span></div>
+
+  <div class="win">
+    <div class="chrome"><i></i><i></i><i></i></div>
+    <div class="pagehead">
+      <span class="back">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        返回书架</span>
+      <div class="acts">
+        <button class="btn primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>开始阅读</button>
+        <button class="btn outline">编辑信息</button>
+        <button class="btn quiet">删除书籍</button>
+      </div>
+    </div>
+    <div class="body">
+      <div class="hero">
+        <div class="cover dirty">【世界名著】傲慢与偏见_高清完整版</div>
+        <div class="meta">
+          <div class="titleline"><h2 class="title rawname">【世界名著】傲慢与偏见_高清完整版</h2></div>
+          <div class="authorline"><span class="author-empty">作者未知</span></div>
+          <div class="chips">
+            <span class="chip status">未开始</span>
+            <span class="chip">EPUB</span>
+            <span class="chip">中文</span>
+            <span class="chip">2026年8月6日 加入</span>
+          </div>
+          <div class="bar"><i style="width:0"></i></div>
+          <p class="prog-cap">已读 0%</p>
+        </div>
+      </div>
+
+      <div class="strip ai">
+        <div class="strip-top">
+          <span class="strip-dot"></span>
+          <div class="strip-txt">
+            <h3>正在整理书名和作者</h3>
+            <p>这个文件里没写书名和作者，AI 正在推断。不影响阅读，可以直接开始读。</p>
+            <div class="scan"><i></i></div>
+          </div>
+          <div class="strip-acts">
+            <button class="btn quiet sm">跳过</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="elide"><div class="ghostbox"></div><span>以下为指标、难度分析、文件区块，样张略</span></div>
+    </div>
+  </div>
+
+  <p class="note"><b>判断：分析中的页面显示的是真实的脏值，不是占位骨架。</b>脏书名此刻就是这本书的书名，它不是「还没加载」——用骨架屏假装数据没到，等 AI 回来再闪一下换掉，会让用户以为页面卡了。扫描条不带百分比（后端只知道完成，不知道进度，参考难度分析里同样的处理）。<b>「跳过」而不是「取消」</b>：这轮不整理了，页面照常用，和状态 ⑦ 落在同一个样子。</p>
+</section>
+
+<!-- ────────────────────────────── ⑥ ────────────────────────────── -->
+<section class="state">
+  <div class="state-label"><span class="state-num">状态 ⑥</span><span class="state-name">AI 说不知道（作者留空）</span>
+    <span class="state-why">书名剥干净了，作者模型答不上来。冷门书编造作者比留空更坏。</span></div>
+
+  <div class="win">
+    <div class="chrome"><i></i><i></i><i></i></div>
+    <div class="pagehead">
+      <span class="back">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        返回书架</span>
+      <div class="acts">
+        <button class="btn primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>开始阅读</button>
+        <button class="btn outline">编辑信息</button>
+        <button class="btn quiet">删除书籍</button>
+      </div>
+    </div>
+    <div class="body">
+      <div class="hero">
+        <div class="cover">城南旧事选读本</div>
+        <div class="meta">
+          <div class="titleline">
+            <h2 class="title">城南旧事选读本</h2>
+            <span class="badge"><svg width="9" height="9" viewBox="0 0 12 12" fill="currentColor"><path d="M6 0l1.3 3.4L10.9 4.7 7.5 6 6 9.4 4.7 6 1.1 4.7 4.7 3.4z"/></svg>AI 生成</span>
+          </div>
+          <div class="authorline">
+            <span class="author-empty">作者未知</span>
+            <span class="fill-link">补充</span>
+          </div>
+          <div class="chips">
+            <span class="chip status">未开始</span>
+            <span class="chip">EPUB</span>
+            <span class="chip">中文</span>
+            <span class="chip">2026年8月7日 加入</span>
+          </div>
+          <div class="bar"><i style="width:0"></i></div>
+          <p class="prog-cap">已读 0%</p>
+        </div>
+      </div>
+
+      <div class="strip ai">
+        <div class="strip-top">
+          <span class="strip-dot"></span>
+          <div class="strip-txt">
+            <h3>书名是 AI 填的，作者没查到</h3>
+            <p>AI 对这本书的作者没有把握，所以留空了——比填一个错的好。你知道的话可以自己补上。</p>
+          </div>
+        </div>
+
+        <div class="compare">
+          <div class="cmp-head"><span></span><span><b>现在</b>（AI 填的）</span><span></span><span>原来（文件里的）</span></div>
+          <div class="cmp-row">
+            <span class="cmp-f">书名</span>
+            <span class="cmp-now">城南旧事选读本</span>
+            <span class="cmp-arrow">←</span>
+            <span class="cmp-was">城南旧事_选读本(全本)</span>
+          </div>
+          <div class="cmp-row">
+            <span class="cmp-f">作者</span>
+            <span class="cmp-now empty">仍然空着 · AI 没有把握，没有猜</span>
+            <span class="cmp-arrow">←</span>
+            <span class="cmp-was plain"><em>文件里没写</em></span>
+          </div>
+        </div>
+
+        <div class="cmp-acts">
+          <button class="btn confirm sm">确认，就用这些</button>
+          <button class="btn outline sm">撤回，用原来的</button>
+          <button class="btn outline sm">填写作者</button>
+          <span class="why">确认之后作者这行还是空的，「补充」入口一直在——<b>空不是一个待办，是一个结论</b>。</span>
+        </div>
+      </div>
+
+      <div class="elide"><div class="ghostbox"></div><span>以下为指标、难度分析、文件区块，样张略</span></div>
+    </div>
+  </div>
+
+  <p class="note"><b>判断：空作者写成灰色虚线下划线的「作者未知」+ 一个「补充」入口，不写「Unknown Author」，也不留纯空白。</b>三个选项各自的问题：留纯空白会让那一行塌掉，用户不知道是没有还是没加载；写「未知作者」是把「没查到」伪装成一条信息，还会在书架排序和筛选里被当成一个真作者名（今天的 <code>Unknown Author</code> 正是这么坏事的）；所以取第三条——<b>它长得像一个空着的输入框</b>：虚线下划线是「这里可以写点什么」的通用暗示，灰色说明它现在不是数据。<br><br>对照表里那行更关键：<b>「没查到」要占一整行、和其他字段并排，而不是从表里消失。</b>「仍然空着 · AI 没有把握，没有猜」把留空从一次失败变成一个诚实的结论——这是本功能最重要的一句文案。它也让「确认」有了明确的含义：确认的是「AI 不知道」这个事实本身。</p>
+</section>
+
+<!-- ────────────────────────────── ⑦ ────────────────────────────── -->
+<section class="state">
+  <div class="state-label"><span class="state-num">状态 ⑦</span><span class="state-name">没配 AI 模型</span>
+    <span class="state-why">只有第 ① 层生效。脏标题就这么留着，但页面得说清为什么，以及怎么办。</span></div>
+
+  <div class="win">
+    <div class="chrome"><i></i><i></i><i></i></div>
+    <div class="pagehead">
+      <span class="back">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        返回书架</span>
+      <div class="acts">
+        <button class="btn primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>开始阅读</button>
+        <button class="btn outline">编辑信息</button>
+        <button class="btn quiet">删除书籍</button>
+      </div>
+    </div>
+    <div class="body">
+      <div class="hero">
+        <div class="cover dirty">[E书吧]战争与和平_全译本_扫校版</div>
+        <div class="meta">
+          <div class="titleline"><h2 class="title rawname">[E书吧]战争与和平_全译本_扫校版</h2></div>
+          <div class="authorline"><span class="author-empty">作者未知</span><span class="fill-link">补充</span></div>
+          <div class="chips">
+            <span class="chip status">未开始</span>
+            <span class="chip">EPUB</span>
+            <span class="chip">中文</span>
+            <span class="chip">2026年8月7日 加入</span>
+          </div>
+          <div class="bar"><i style="width:0"></i></div>
+          <p class="prog-cap">已读 0%</p>
+        </div>
+      </div>
+
+      <div class="strip warn">
+        <div class="strip-top">
+          <span class="strip-dot warn"></span>
+          <div class="strip-txt">
+            <h3>这看起来是文件名，不是书名</h3>
+            <p>这个文件里没写书名和作者，现在用的是文件名。配一个 AI 模型就能自动整理，也可以直接手动改。</p>
+          </div>
+          <div class="strip-acts">
+            <button class="btn outline sm">去配置模型</button>
+            <button class="btn outline sm">手动编辑</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="elide"><div class="ghostbox"></div><span>以下为指标、难度分析、文件区块，样张略</span></div>
+    </div>
+  </div>
+
+  <p class="note"><b>判断：这条提示只在「判定为脏」或「元数据缺失」的书上出现，干净的书一个字都不提。</b>否则每打开一本书都在推销 AI 功能，这是广告不是提示。用的是 <code>--color-warning</code> 那套琥珀色而不是红色：没配模型不是错误，脏书名也不是错误，只是「你可能想处理一下」。<b>「手动编辑」和「去配置模型」并排、同等分量</b>——不配模型也能把这本书弄干净，这条路不能被做成次等选择。<b>语言那枚 chip 照常有值</b>——它不靠 AI，没配模型也照填。</p>
+</section>
+
+<!-- ────────────────────────────── ⑧ ────────────────────────────── -->
+<section class="state">
+  <div class="state-label"><span class="state-num">状态 ⑧</span><span class="state-name">三种来源同框（用户手改过）</span>
+    <span class="state-why">书名是用户改的，作者是 AI 填的还没核对，语言来自文件。</span></div>
+
+  <div class="win">
+    <div class="chrome"><i></i><i></i><i></i></div>
+    <div class="body" style="padding-top:22px">
+      <div class="hero">
+        <div class="cover">战争与和平</div>
+        <div class="meta">
+          <div class="titleline">
+            <h2 class="title">战争与和平</h2>
+            <span class="badge manual">手动修改</span>
+          </div>
+          <div class="authorline">列夫·托尔斯泰
+            <span class="badge"><svg width="9" height="9" viewBox="0 0 12 12" fill="currentColor"><path d="M6 0l1.3 3.4L10.9 4.7 7.5 6 6 9.4 4.7 6 1.1 4.7 4.7 3.4z"/></svg>AI 生成</span>
+          </div>
+          <div class="chips">
+            <span class="chip status">正在阅读</span>
+            <span class="chip">EPUB</span>
+            <span class="chip">中文</span>
+            <span class="chip">2026年8月7日 加入</span>
+          </div>
+          <div class="bar"><i style="width:6%"></i></div>
+          <p class="prog-cap">已读 6%</p>
+        </div>
+      </div>
+
+      <div class="strip ai">
+        <div class="strip-top">
+          <span class="strip-dot"></span>
+          <div class="strip-txt">
+            <h3>作者这一项是 AI 填的，核对一下</h3>
+            <p>书名是你自己改的，不用核对，也不会被下面的操作动到。</p>
+          </div>
+        </div>
+
+        <div class="compare">
+          <div class="cmp-head"><span></span><span><b>现在</b></span><span></span><span>原来（文件里的）</span></div>
+          <div class="cmp-row">
+            <span class="cmp-f">作者</span>
+            <span class="cmp-now">列夫·托尔斯泰</span>
+            <span class="cmp-arrow">←</span>
+            <span class="cmp-was plain"><em>文件里没写</em></span>
+          </div>
+        </div>
+
+        <div class="cmp-acts">
+          <button class="btn confirm sm">确认作者</button>
+          <button class="btn outline sm">撤回作者</button>
+          <span class="why"><b>只影响作者这一行。</b>你改过的书名留在原处，退回原始文件名的入口在下面「文件 → 原始信息」。</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note"><b>判断一：三种来源用「标识强度」分三档，而不是三个平级的彩色标签。</b>文件 = 无标（基准）；用户手改 = 灰点 + 灰字，不占强调色，且<b>常驻不消失</b>——它不是待办，只是在解释「为什么这里和文件不一样」；AI 待核对 = 紫底 pill + 星标，最强，但<b>只活到被核对为止</b>。三档强度对应三种「该有多警惕」，而不是三种「它从哪来」。<br><br><b>判断二：确认和撤回都按字段走，不按整本走。</b>核对条只列还挂着紫标的字段，按钮文案也点名到字段（「确认作者」）。用户手改过的字段永远不会被这两个操作碰掉——否则确认一次会把自己一分钟前的编辑一起吞掉。</p>
+</section>
+
+<!-- ────────────────────────────── ⑨ ────────────────────────────── -->
+<section class="state">
+  <div class="state-label"><span class="state-num">状态 ⑨</span><span class="state-name">书架批量确认</span>
+    <span class="state-why">一次导入五十本，就是五十个紫标。三格：入口 → 对照列表 → 确认之后。</span></div>
+
+  <div class="stack">
+
+    <!-- 9a 入口 -->
+    <div>
+      <div class="win">
+        <div class="chrome"><i></i><i></i><i></i></div>
+        <div class="libhead">
+          <h3>书架</h3>
+          <div class="acts">
+            <button class="btn outline">导入书籍</button>
+          </div>
+        </div>
+        <div class="libbar">
+          <div class="filters">
+            <span class="fchip on">全部 63</span>
+            <span class="fchip">正在阅读</span>
+            <span class="fchip">已读完</span>
+            <span class="fchip">未开始</span>
+          </div>
+          <span class="pending-chip"><i class="aidot"></i>12 本待核对</span>
+        </div>
+        <div class="grid">
+          <div class="card"><div class="thumb">傲慢与偏见<i class="mk"></i></div><div class="ct">傲慢与偏见</div><div class="ca">简·奥斯汀</div></div>
+          <div class="card"><div class="thumb">城南旧事选读本<i class="mk"></i></div><div class="ct">城南旧事选读本</div><div class="ca" style="color:#a1a1aa">作者未知</div></div>
+          <div class="card"><div class="thumb">Great Expectations</div><div class="ct">Great Expectations</div><div class="ca">Charles Dickens</div></div>
+          <div class="card"><div class="thumb">战争与和平<i class="mk"></i></div><div class="ct">战争与和平</div><div class="ca">列夫·托尔斯泰</div></div>
+          <div class="card"><div class="thumb">源氏物语<i class="mk"></i></div><div class="ct">源氏物语</div><div class="ca">紫式部</div></div>
+          <div class="card"><div class="thumb">Moby-Dick</div><div class="ct">Moby-Dick</div><div class="ca">Herman Melville</div></div>
+        </div>
+      </div>
+      <p class="sub-cap"><b>9a｜入口。</b>它是筛选行右端的一枚 chip，不是横幅——和左边的「全部 / 正在阅读」同一行、同一高度，随内容一起滚走。封面右上角的小紫点让「哪几本」一眼可见，chip 和点是同一个提醒的两种粒度。</p>
+    </div>
+
+    <!-- 9b 对照列表 -->
+    <div>
+      <div class="win overlaywrap">
+        <div class="chrome"><i></i><i></i><i></i></div>
+        <div class="libhead" style="opacity:.5">
+          <h3>书架</h3>
+          <div class="acts"><button class="btn outline">导入书籍</button></div>
+        </div>
+        <div class="libbar" style="opacity:.5">
+          <div class="filters">
+            <span class="fchip on">全部 63</span><span class="fchip">正在阅读</span>
+            <span class="fchip">已读完</span><span class="fchip">未开始</span>
+          </div>
+          <span class="pending-chip"><i class="aidot"></i>12 本待核对</span>
+        </div>
+        <div class="grid" style="opacity:.5">
+          <div class="card"><div class="thumb">傲慢与偏见<i class="mk"></i></div><div class="ct">傲慢与偏见</div><div class="ca">简·奥斯汀</div></div>
+          <div class="card"><div class="thumb">城南旧事选读本<i class="mk"></i></div><div class="ct">城南旧事选读本</div><div class="ca" style="color:#a1a1aa">作者未知</div></div>
+          <div class="card"><div class="thumb">Great Expectations</div><div class="ct">Great Expectations</div><div class="ca">Charles Dickens</div></div>
+          <div class="card"><div class="thumb">战争与和平<i class="mk"></i></div><div class="ct">战争与和平</div><div class="ca">列夫·托尔斯泰</div></div>
+          <div class="card"><div class="thumb">源氏物语<i class="mk"></i></div><div class="ct">源氏物语</div><div class="ca">紫式部</div></div>
+          <div class="card"><div class="thumb">Moby-Dick</div><div class="ct">Moby-Dick</div><div class="ca">Herman Melville</div></div>
+        </div>
+
+        <div class="dim">
+          <div class="sheet">
+            <div class="sheet-h">
+              <h4>核对 12 本书的书名和作者</h4>
+              <p>都是 AI 从文件名整理出来的。扫一遍，不对的单独退回，剩下的一次确认完。</p>
+            </div>
+            <div class="sheet-list fade">
+              <div class="brow">
+                <span class="bn">傲慢与偏见<small>简·奥斯汀</small></span>
+                <span class="barrow">←</span>
+                <span class="bw">【世界名著】傲慢与偏见_高清完整版</span>
+                <span class="bacts"><button class="btn link">退回</button></span>
+              </div>
+              <div class="brow">
+                <span class="bn">城南旧事选读本<small class="none">作者未知 · AI 没有把握</small></span>
+                <span class="barrow">←</span>
+                <span class="bw">城南旧事_选读本(全本)</span>
+                <span class="bacts"><button class="btn link">退回</button></span>
+              </div>
+              <div class="brow">
+                <span class="bn">战争与和平<small>列夫·托尔斯泰</small></span>
+                <span class="barrow">←</span>
+                <span class="bw">[E书吧]战争与和平_全译本_扫校版</span>
+                <span class="bacts"><button class="btn link">退回</button></span>
+              </div>
+              <div class="brow">
+                <span class="bn">源氏物语<small>紫式部</small></span>
+                <span class="barrow">←</span>
+                <span class="bw">[TXT2EPUB]源氏物语_全</span>
+                <span class="bacts"><button class="btn link">退回</button></span>
+              </div>
+              <div class="brow">
+                <span class="bn">哈利·波特与魔法石<small>J.K. 罗琳</small></span>
+                <span class="barrow">←</span>
+                <span class="bw">01 Harry Potter and the Philosopher's Stone</span>
+                <span class="bacts"><button class="btn link">退回</button></span>
+              </div>
+              <div class="brow">
+                <span class="bn">悉达多<small>赫尔曼·黑塞</small></span>
+                <span class="barrow">←</span>
+                <span class="bw">悉达多(德汉对照版)_v2</span>
+                <span class="bacts"><button class="btn link">退回</button></span>
+              </div>
+            </div>
+            <div class="sheet-f">
+              <span class="fnote">原来的书名一直留着，之后在每本书的「文件 → 原始信息」里还能退回。</span>
+              <span class="fbtns">
+                <button class="btn outline sm">以后再核对</button>
+                <button class="btn primary sm">全部确认（12）</button>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="sub-cap"><b>9b｜粒度：先看对照列表，再一次确认。</b>每行是一本书的「新值 ← 原值」，行尾一个「退回」处理掉个别不对的；底部一次确认剩下的全部。不做「不看就全确认」——那和一开始就不打这个标是一回事。</p>
+    </div>
+
+    <!-- 9c 确认之后 -->
+    <div>
+      <div class="win toastwrap">
+        <div class="chrome"><i></i><i></i><i></i></div>
+        <div class="libhead">
+          <h3>书架</h3>
+          <div class="acts"><button class="btn outline">导入书籍</button></div>
+        </div>
+        <div class="libbar">
+          <div class="filters">
+            <span class="fchip on">全部 63</span>
+            <span class="fchip">正在阅读</span>
+            <span class="fchip">已读完</span>
+            <span class="fchip">未开始</span>
+          </div>
+        </div>
+        <div class="grid">
+          <div class="card"><div class="thumb">傲慢与偏见</div><div class="ct">傲慢与偏见</div><div class="ca">简·奥斯汀</div></div>
+          <div class="card"><div class="thumb">城南旧事选读本</div><div class="ct">城南旧事选读本</div><div class="ca" style="color:#a1a1aa">作者未知</div></div>
+          <div class="card"><div class="thumb">Great Expectations</div><div class="ct">Great Expectations</div><div class="ca">Charles Dickens</div></div>
+          <div class="card"><div class="thumb">战争与和平</div><div class="ct">战争与和平</div><div class="ca">列夫·托尔斯泰</div></div>
+          <div class="card"><div class="thumb">源氏物语</div><div class="ct">源氏物语</div><div class="ca">紫式部</div></div>
+          <div class="card"><div class="thumb">Moby-Dick</div><div class="ct">Moby-Dick</div><div class="ca">Herman Melville</div></div>
+        </div>
+        <div class="toast"><span><b>12 本已确认</b>　原来的书名保留在每本书的文件信息里</span><span class="undo">撤销</span></div>
+      </div>
+      <p class="sub-cap"><b>9c｜消失。</b>chip 整枚移除，不留「0 本待核对」的空壳；封面上的紫点一并没了。一句 toast 说明原值还在，外加一次整体撤销——它只管这一次批量操作，过期后仍然回到每本书的「原始信息」那条常驻路。</p>
+    </div>
+
+  </div>
+
+  <p class="note"><b>判断：入口是筛选行的一枚 chip，不是横幅。</b>横幅有一条固定的坏性质——它要么常驻碍事，要么带一个「×」，而用户按下「×」的那一刻，那 12 本书就再也没有集中入口了。chip 和筛选器同级，本来就是「书架的一个视图」，滚上去就看不见，滚回来还在，用不着关闭按钮。它也顺理成章地兼任筛选：点开之前就已经在说「这一批是可以被单独看待的一组」。<br><br><b>判断：数量必须写在 chip 上。</b>「12 本待核对」和「有待核对的书」是两种东西——前者让用户当场估出这事要花多久，后者只能靠点开才知道是 2 本还是 200 本。<br><br><b>判断：面板不做逐本翻页。</b>50 本书翻 50 次不比逐本点开省事。一屏能扫的列表 + 行内退回，才是「批量」这个词的意思：批量的不是确认动作，是<b>审视</b>。</p>
+</section>
+
+<!-- ────────────────────────────── ⑩ ────────────────────────────── -->
+<section class="state">
+  <div class="state-label"><span class="state-num">状态 ⑩</span><span class="state-name">「默认采纳」</span>
+    <span class="state-why">给不打算逐本核对的人。三格：先问一次 → 从此的新书长什么样 → 在哪里关掉。</span></div>
+
+  <div class="stack">
+
+    <!-- 10a 二次确认 -->
+    <div>
+      <div class="win overlaywrap">
+        <div class="chrome"><i></i><i></i><i></i></div>
+        <div class="pagehead" style="opacity:.45">
+          <span class="back">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            返回书架</span>
+          <div class="acts">
+            <button class="btn primary">开始阅读</button>
+            <button class="btn outline">编辑信息</button>
+            <button class="btn quiet">删除书籍</button>
+          </div>
+        </div>
+        <div class="body" style="opacity:.45">
+          <div class="hero">
+            <div class="cover">傲慢与偏见</div>
+            <div class="meta">
+              <div class="titleline">
+                <h2 class="title">傲慢与偏见</h2>
+                <span class="badge"><svg width="9" height="9" viewBox="0 0 12 12" fill="currentColor"><path d="M6 0l1.3 3.4L10.9 4.7 7.5 6 6 9.4 4.7 6 1.1 4.7 4.7 3.4z"/></svg>AI 生成</span>
+              </div>
+              <div class="authorline">简·奥斯汀
+                <span class="badge"><svg width="9" height="9" viewBox="0 0 12 12" fill="currentColor"><path d="M6 0l1.3 3.4L10.9 4.7 7.5 6 6 9.4 4.7 6 1.1 4.7 4.7 3.4z"/></svg>AI 生成</span>
+              </div>
+              <div class="chips">
+                <span class="chip status">未开始</span>
+                <span class="chip">EPUB</span>
+                <span class="chip">中文</span>
+                <span class="chip">2026年8月6日 加入</span>
+              </div>
+            </div>
+          </div>
+          <div class="strip ai">
+            <div class="strip-top">
+              <span class="strip-dot"></span>
+              <div class="strip-txt">
+                <h3>这两项是 AI 填的，核对一下</h3>
+                <p>这个文件里没写书名和作者，下面是 AI 填的值和文件里原来的样子。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dim">
+          <div class="sheet dlg">
+            <div class="sheet-h">
+              <h4>打开「默认采纳」？</h4>
+              <p>以后 AI 整理完直接用，不再逐本核对。它管的范围有三件事，先说清楚。</p>
+            </div>
+            <ul class="dlg-list">
+              <li><i></i><span>管<b>以后所有新导入的书</b>，同时<b>书架上还没核对的 12 本会一并采纳</b>。它们的紫标和封面上的小点会同时消失。</span></li>
+              <li><i></i><span>原来的书名和作者<b>一条都不会丢</b>，仍然留在每本书的<span class="path">「文件 → 原始信息」</span>里，任何时候都能退回去。</span></li>
+              <li><i></i><span>想关掉：<span class="path">设置 → AI → 默认采纳</span>。关掉之后新导入的书重新弹核对卡片，已经采纳的不会被翻出来。</span></li>
+            </ul>
+            <div class="sheet-f">
+              <span class="fbtns">
+                <button class="btn outline sm">取消</button>
+                <button class="btn primary sm">打开默认采纳</button>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="sub-cap"><b>10a｜先问一次。</b>三条按「会发生什么 → 会不会丢 → 怎么反悔」排。第一条给的是<b>具体数字</b>，不是「已有的书」；第三条把关掉的路径原样写出来，用户点之前就知道这不是一扇单向门。</p>
+    </div>
+
+    <!-- 10b 开关打开之后的新书 -->
+    <div>
+      <div class="win">
+        <div class="chrome"><i></i><i></i><i></i></div>
+        <div class="pagehead">
+          <span class="back">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            返回书架</span>
+          <div class="acts">
+            <button class="btn primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>开始阅读</button>
+            <button class="btn outline">编辑信息</button>
+            <button class="btn quiet">删除书籍</button>
+          </div>
+        </div>
+        <div class="body">
+          <div class="hero">
+            <div class="cover">悉达多</div>
+            <div class="meta">
+              <div class="titleline"><h2 class="title">悉达多</h2></div>
+              <div class="authorline">赫尔曼·黑塞</div>
+              <div class="chips">
+                <span class="chip status">未开始</span>
+                <span class="chip">EPUB</span>
+                <span class="chip">中文</span>
+                <span class="chip">2026年8月7日 加入</span>
+              </div>
+              <div class="bar"><i style="width:0"></i></div>
+              <p class="prog-cap">已读 0%</p>
+            </div>
+          </div>
+
+          <div class="metrics">
+            <div><b>0%</b><span>阅读进度</span></div>
+            <div><b>—</b><span>累计阅读</span></div>
+            <div><b>41,203</b><span>全书词次</span></div>
+            <div><b>0</b><span>高亮与笔记</span></div>
+          </div>
+
+          <div class="filesec">
+            <h3>文件</h3>
+            <div class="frow"><span class="lb">格式<small>导入时的原始格式</small></span><span class="vl">EPUB</span></div>
+            <div class="frow"><span class="lb">语言</span><span class="vl">中文</span></div>
+            <div class="frow"><span class="lb">加入时间</span><span class="vl">2026年8月7日 10:22</span></div>
+            <div class="frow"><span class="lb">文件名</span><span class="vl">悉达多(德汉对照版)_v2.epub</span></div>
+            <div class="frow origin-row">
+              <span class="lb">原始信息<small>这个文件导入时自带的书名和作者</small></span>
+              <span class="vl">
+                <code>悉达多(德汉对照版)_v2</code>
+                <span class="sub">作者：文件里没写 · 现在的书名和作者是 AI 整理的</span>
+                <button class="btn link">退回原始信息</button>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="sub-cap"><b>10b｜从此的新书：没有卡片，也没有「AI 生成」标。</b>它就是一本信息齐全的普通书。出处没有丢——翻到下面「文件 → 原始信息」，它原来叫什么、现在这些是谁整理的，都写在那里，退回也在那里。</p>
+    </div>
+
+    <!-- 10c 设置里的开关 -->
+    <div>
+      <div class="win">
+        <div class="chrome"><i></i><i></i><i></i></div>
+        <div class="sethead">
+          <h3>设置</h3>
+          <div class="tabs"><span>通用</span><span>阅读</span><b>AI</b><span>同步</span><span>关于</span></div>
+        </div>
+        <div class="setbody">
+          <div class="setgrp">整理书籍信息</div>
+          <div class="srow">
+            <span class="sl">用 AI 整理书名和作者
+              <small>只对书名看起来像文件名、或者文件里没写作者的书调用。正规 EPUB 不花钱。</small></span>
+            <span class="tgl on"></span>
+          </div>
+          <div class="srow">
+            <span class="sl">默认采纳
+              <small>整理完直接用，不弹核对卡片，字段上也不再标「AI 生成」。原来的书名和作者永久保留在每本书的「文件 → 原始信息」里，随时能退回。</small></span>
+            <span class="tgl on"></span>
+          </div>
+          <div class="srow">
+            <span class="sl">使用的模型
+              <small>整理书名只需要一次很短的调用，便宜的模型就够。</small></span>
+            <span class="vl" style="font-size:12px;color:var(--t2)">跟随全局设置</span>
+          </div>
+        </div>
+      </div>
+      <p class="sub-cap"><b>10c｜关掉的地方。</b>就在「用 AI 整理书名和作者」下面一行——它是那个功能的一个修饰项，不是一个独立功能，所以不给它单开一组。第一行关掉时，这一行随之变灰不可点。</p>
+    </div>
+
+  </div>
+
+  <p class="note"><b>判断一：这个开关拿掉的是活儿，不是出处；而出处的落点是「原始信息」那一行，不是标。</b>用户开这个开关，说的是「我不打算逐本核对」——那么每本书上再挂一个紫标，就只是在提醒一件他已经决定不做的事，那是噪音。<b>出处并没有因此丢失</b>：原值永久留在「文件 → 原始信息」里，任何时候能查、能退回。标是「催你看一眼」，那一行是「记录这本书从哪来」——前者可以随开关消失，后者永远都在。<br><br>
+  <b>判断二：它是设置，所以必须先问一次，而且问的是三件事。</b>一个作用范围横跨「以后所有的书」和「现在待核对的 12 本」的动作，如果点下去直接生效，用户不会知道自己刚刚顺手把那 12 本也办了。弹窗的三条不是免责声明，是三个具体承诺：<b>会动多少本（给数字）、原值不丢（给位置）、怎么关掉（给路径）</b>。第三条最关键——一个看不到出口的开关，用户点之前会犹豫，点之后会后悔，而这两种情绪都会算到「AI 功能」头上。<br><br>
+  <b>判断三：关掉之后不追溯。</b>已经采纳的书不会被翻出来重新要求核对——把一堆早就翻过篇的书重新变成待办，是在惩罚用户改主意。开关只管它打开之后导入的书。</p>
+</section>
+
+<!-- ────────────────────────────── 附录 ────────────────────────────── -->
+<div class="appendix">
+  <h2>判脏规则 · 样例</h2>
+  <p>第 ② 层是启发式，不花钱、不联网，判完才决定要不要叫模型。下面是判脏命中的几类，以及 AI 清洗后的目标结果。</p>
+  <table>
+    <thead><tr><th style="width:34%">导入时拿到的书名</th><th style="width:22%">命中的规则</th><th style="width:22%">AI 清洗后</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>【世界名著】傲慢与偏见_高清完整版</code></td><td>方括号前缀 · 下划线 · 版本后缀</td><td><b>傲慢与偏见</b></td><td>作者同时补出</td></tr>
+      <tr><td><code>[E书吧]战争与和平_全译本_扫校版</code></td><td>站点标记 · 下划线 · 版本后缀</td><td><b>战争与和平</b></td><td>站点标记是最强信号</td></tr>
+      <tr><td><code>城南旧事_选读本(全本)</code></td><td>下划线 · 括号量词</td><td><b>城南旧事选读本</b></td><td>「选读本」是书的一部分，不能剥</td></tr>
+      <tr><td><code>01 Harry Potter and the Philosopher's Stone</code></td><td>纯数字前缀</td><td><b>Harry Potter and the Philosopher's Stone</b></td><td>序号来自套装文件夹</td></tr>
+      <tr><td><code>Great Expectations</code></td><td style="color:#71717b">未命中——不调用 AI</td><td style="color:#71717b">不变</td><td style="color:#71717b">这是绝大多数正规 EPUB</td></tr>
+    </tbody>
+  </table>
+
+  <h2 style="margin-top:44px">文案清单</h2>
+  <dl class="copy">
+    <dt class="grp">详情页字段</dt>
+    <dt>bookDetails.language</dt><dd>语言</dd>
+    <dt>bookDetails.languageHint</dt><dd>取自文件里的 dc:language；文件没写则由程序从正文抽样判定</dd>
+    <dt>bookDetails.languageUnknown</dt><dd>语言未知 · 补充<span style="color:#a1a1aa">（抽样也判不出时的兜底，很少见）</span></dd>
+    <dt>bookDetails.authorUnknown</dt><dd>作者未知</dd>
+    <dt>bookDetails.authorFill</dt><dd>补充</dd>
+    <dt>bookDetails.originTitle</dt><dd>原始信息</dd>
+    <dt>bookDetails.originHint</dt><dd>这个文件导入时自带的书名和作者</dd>
+    <dt>bookDetails.originNone</dt><dd>作者、语言：文件里没写</dd>
+    <dt>bookDetails.originRevert</dt><dd>退回原始信息</dd>
+
+    <dt class="grp">来源标记</dt>
+    <dt>bookMeta.badgeAi</dt><dd>AI 生成</dd>
+    <dt>bookMeta.badgeManual</dt><dd>手动修改</dd>
+
+    <dt class="grp">核对条</dt>
+    <dt>bookMeta.review.heading</dt><dd>这两项是 AI 填的，核对一下</dd>
+    <dt>bookMeta.review.headingOne</dt><dd>{{field}}这一项是 AI 填的，核对一下</dd>
+    <dt>bookMeta.review.body</dt><dd>这个文件里没写书名和作者，下面是 AI 填的值和文件里原来的样子。</dd>
+    <dt>bookMeta.review.colNow</dt><dd>现在（AI 填的）</dd>
+    <dt>bookMeta.review.colWas</dt><dd>原来（文件里的）</dd>
+    <dt>bookMeta.review.wasEmpty</dt><dd>文件里没写</dd>
+    <dt>bookMeta.review.confirm</dt><dd>确认，就用这些</dd>
+    <dt>bookMeta.review.always</dt><dd>默认采纳</dd>
+    <dt>bookMeta.review.revert</dt><dd>撤回，用原来的</dd>
+    <dt>bookMeta.review.keeps</dt><dd>左右两个只管这一本。中间那个管以后所有新导入的书，同时会一并采纳书架上还没核对的 {{count}} 本——点它会先问一次。三种情况下原来的值都一直留着，在下面的「文件 → 原始信息」里随时能退回去。</dd>
+
+    <dt class="grp">默认采纳（二次确认 + 设置）</dt>
+    <dt>bookMeta.always.heading</dt><dd>打开「默认采纳」？</dd>
+    <dt>bookMeta.always.body</dt><dd>以后 AI 整理完直接用，不再逐本核对。它管的范围有三件事，先说清楚。</dd>
+    <dt>bookMeta.always.scope</dt><dd>管以后所有新导入的书，同时书架上还没核对的 {{count}} 本会一并采纳。它们的紫标和封面上的小点会同时消失。</dd>
+    <dt>bookMeta.always.keeps</dt><dd>原来的书名和作者一条都不会丢，仍然留在每本书的「文件 → 原始信息」里，任何时候都能退回去。</dd>
+    <dt>bookMeta.always.howOff</dt><dd>想关掉：设置 → AI → 默认采纳。关掉之后新导入的书重新弹核对卡片，已经采纳的不会被翻出来。</dd>
+    <dt>bookMeta.always.cancel</dt><dd>取消</dd>
+    <dt>bookMeta.always.turnOn</dt><dd>打开默认采纳</dd>
+    <dt>settings.ai.metaGroup</dt><dd>整理书籍信息</dd>
+    <dt>settings.ai.metaEnabled</dt><dd>用 AI 整理书名和作者</dd>
+    <dt>settings.ai.metaEnabledHint</dt><dd>只对书名看起来像文件名、或者文件里没写作者的书调用。正规 EPUB 不花钱。</dd>
+    <dt>settings.ai.metaAuto</dt><dd>默认采纳</dd>
+    <dt>settings.ai.metaAutoHint</dt><dd>整理完直接用，不弹核对卡片，字段上也不再标「AI 生成」。原来的书名和作者永久保留在每本书的「文件 → 原始信息」里，随时能退回。</dd>
+    <dt>bookDetails.originAiNote</dt><dd>作者：文件里没写 · 现在的书名和作者是 AI 整理的</dd>
+
+    <dt class="grp">AI 没查到</dt>
+    <dt>bookMeta.unsure.heading</dt><dd>书名是 AI 填的，作者没查到</dd>
+    <dt>bookMeta.unsure.body</dt><dd>AI 对这本书的作者没有把握，所以留空了——比填一个错的好。你知道的话可以自己补上。</dd>
+    <dt>bookMeta.unsure.row</dt><dd>仍然空着 · AI 没有把握，没有猜</dd>
+    <dt>bookMeta.unsure.fill</dt><dd>填写作者</dd>
+    <dt>bookMeta.unsure.keeps</dt><dd>确认之后作者这行还是空的，「补充」入口一直在——空不是一个待办，是一个结论。</dd>
+
+    <dt class="grp">运行中 / 已撤回 / 无模型</dt>
+    <dt>bookMeta.running.heading</dt><dd>正在整理书名和作者</dd>
+    <dt>bookMeta.running.body</dt><dd>这个文件里没写书名和作者，AI 正在推断。不影响阅读，可以直接开始读。</dd>
+    <dt>bookMeta.running.skip</dt><dd>跳过</dd>
+    <dt>bookMeta.reverted.heading</dt><dd>已退回文件里原来的信息</dd>
+    <dt>bookMeta.reverted.body</dt><dd>刚才 AI 填的是「{{values}}」，可以再要一次。语言不受影响，它是程序判定的。</dd>
+    <dt>bookMeta.reverted.retry</dt><dd>重新用 AI 整理</dd>
+    <dt>bookMeta.noModel.heading</dt><dd>这看起来是文件名，不是书名</dd>
+    <dt>bookMeta.noModel.body</dt><dd>这个文件里没写书名和作者，现在用的是文件名。配一个 AI 模型就能自动整理，也可以直接手动改。</dd>
+    <dt>bookMeta.noModel.configure</dt><dd>去配置模型</dd>
+    <dt>bookMeta.edit</dt><dd>手动编辑</dd>
+
+    <dt class="grp">书架批量确认</dt>
+    <dt>library.pendingChip</dt><dd>{{count}} 本待核对</dd>
+    <dt>bookMeta.batch.heading</dt><dd>核对 {{count}} 本书的书名和作者</dd>
+    <dt>bookMeta.batch.body</dt><dd>都是 AI 从文件名整理出来的。扫一遍，不对的单独退回，剩下的一次确认完。</dd>
+    <dt>bookMeta.batch.rowRevert</dt><dd>退回</dd>
+    <dt>bookMeta.batch.keeps</dt><dd>原来的书名一直留着，之后在每本书的「文件 → 原始信息」里还能退回。</dd>
+    <dt>bookMeta.batch.later</dt><dd>以后再核对</dd>
+    <dt>bookMeta.batch.confirmAll</dt><dd>全部确认（{{count}}）</dd>
+    <dt>bookMeta.batch.done</dt><dd>{{count}} 本已确认</dd>
+    <dt>bookMeta.batch.doneNote</dt><dd>原来的书名保留在每本书的文件信息里</dd>
+    <dt>bookMeta.batch.undo</dt><dd>撤销</dd>
+  </dl>
+</div>
+
+</div>
+</body>
+</html>
