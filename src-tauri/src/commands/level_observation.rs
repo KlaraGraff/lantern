@@ -113,6 +113,43 @@ const LOW_MIN_PASSED_SHARE: f64 = 0.75;
 const UNCLEAR_MIN_BAND_SHARE: f64 = 0.55;
 const UNCLEAR_MAX_EASY_SHARE: f64 = 0.10;
 
+// ---------------------------------------------------------------------------
+// Topical-word screening.
+//
+// A specialized book drags a trail of its own terminology through the lookup
+// record — a sailing novel's rigging, a cookbook's techniques — and those
+// lookups leave the same trace as a genuine vocabulary gap. The screen below
+// separates the two with evidence the app already has: a word that one book
+// keeps using and no other book touches is that book's vocabulary, not a
+// sample of general English, and it is excluded from every count the
+// judgment reads. Excluded, and reported: the sentences on screen quote
+// totals as a receipt the reader can check, so the count of screened-out
+// lookups travels with the observation instead of silently shrinking it.
+//
+// The default runs the other way — a word the screen cannot positively
+// convict stays general. A reader whose books never produce exposure rows
+// (or whose lookups sit in bands 1–2) gets exactly today's behavior.
+// ---------------------------------------------------------------------------
+
+/// No word in bands 1–2 is ever called topical. Common words recur in every
+/// book, so recurrence carries no signal there — and the one case that
+/// would need it, a common word in a specialized sense ("deck", "bow"),
+/// needs sense information this module does not have. Past rank 3 000 the
+/// arithmetic turns over: Zipf puts a rank-3 000 word at roughly two
+/// occurrences per hundred thousand words of running text, so a single book
+/// using one six times is multiples past expectation.
+const TOPICAL_MIN_BAND: u8 = 3;
+
+/// In-window sightings (viewport exposures, summed across a word's books)
+/// before recurrence means anything. Below this a hard word seen a couple
+/// of times is just a hard word the book happened to contain.
+const TOPICAL_MIN_SIGHTINGS: i64 = 6;
+
+/// How much of that sighting total one book must hold. A word a reader
+/// meets across their shelf is their vocabulary problem, not any single
+/// book's subject matter.
+const TOPICAL_TOP_BOOK_SHARE: f64 = 0.8;
+
 /// The six levels the settings UI offers, ascending. Mirrors
 /// `src/components/settings/cefr.ts`.
 const LEVELS: [&str; 6] = ["A1", "A2", "B1", "B2", "C1", "C2"];
@@ -200,6 +237,12 @@ pub struct LevelObservation {
     /// against that this app has no business inventing.
     pub total_lookups: Option<i64>,
     pub concentrated_lookups: Option<i64>,
+    /// Lookups screened out as one book's own terminology (see the
+    /// topical-word section above) — set alongside `total_lookups`, because
+    /// the moment lookups are screened out, `total_lookups` stops matching
+    /// the count the reader could make themselves, and the receipt only
+    /// stays a receipt if the difference is stated.
+    pub topical_lookups: Option<i64>,
     pub window_days: i64,
 }
 
@@ -219,8 +262,13 @@ struct RecordSummary {
     /// evidence rather than noise: the reader had the dictionary open on
     /// that screen and still walked past this word.
     passed_by_band: [i64; 6],
-    /// Days from the oldest lookup in the window to now, clamped into
-    /// 1..=WINDOW_DAYS.
+    /// Scorable lookup rows screened out as topical. Counted in rows, like
+    /// `lookups_by_band`, so the two speak the same register on screen.
+    topical_lookups: i64,
+    /// Days from the oldest *kept* lookup in the window to now, clamped
+    /// into 1..=WINDOW_DAYS. Topical lookups don't stretch the span: the
+    /// record being judged is the general-word record, and its duration is
+    /// measured on its own rows.
     span_days: i64,
 }
 
@@ -249,6 +297,37 @@ impl RecordSummary {
 
 fn clear_of_floor(record: &RecordSummary) -> bool {
     record.total_lookups() >= MIN_SCORABLE_LOOKUPS && record.span_days >= MIN_SPAN_DAYS
+}
+
+/// How widely a word was sighted, summed per book over the window.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct BookSpread {
+    /// Viewport sightings across every book.
+    total: i64,
+    /// The largest single book's share of that total.
+    top: i64,
+}
+
+impl BookSpread {
+    fn add(&mut self, sightings: i64) {
+        self.total += sightings;
+        self.top = self.top.max(sightings);
+    }
+}
+
+/// Is this word one book's own vocabulary rather than a sample of general
+/// English? The three conditions are the three consts above; the default on
+/// any missing evidence is `false` — general — which is the direction that
+/// leaves today's behavior intact.
+fn is_topical(band: u8, sightings: Option<&BookSpread>, looked_up_in_books: usize) -> bool {
+    if band < TOPICAL_MIN_BAND || looked_up_in_books >= 2 {
+        return false;
+    }
+    let Some(spread) = sightings else {
+        return false;
+    };
+    spread.total >= TOPICAL_MIN_SIGHTINGS
+        && spread.top as f64 / spread.total as f64 >= TOPICAL_TOP_BOOK_SHARE
 }
 
 fn with_band(mut observation: LevelObservation, band: u8) -> LevelObservation {
@@ -284,6 +363,7 @@ fn judge(record: &RecordSummary, declared: &str) -> Option<LevelObservation> {
         passed_words: None,
         total_lookups: None,
         concentrated_lookups: None,
+        topical_lookups: None,
         window_days: record.span_days,
     };
 
@@ -308,6 +388,7 @@ fn judge(record: &RecordSummary, declared: &str) -> Option<LevelObservation> {
                         // against a record they own.
                         total_lookups: Some(total),
                         concentrated_lookups: Some(in_band),
+                        topical_lookups: Some(record.topical_lookups),
                         ..base
                     },
                     band,
@@ -359,6 +440,7 @@ fn judge(record: &RecordSummary, declared: &str) -> Option<LevelObservation> {
                     kind: LevelObservationKind::Unclear,
                     total_lookups: Some(total),
                     concentrated_lookups: Some(in_band),
+                    topical_lookups: Some(record.topical_lookups),
                     ..base
                 },
                 band,
@@ -397,11 +479,16 @@ fn declared_level(conn: &Connection) -> AppResult<String> {
 /// has never heard of, which in a novel is a character's name.
 #[derive(Debug, Default)]
 struct RawRecord {
-    /// `(normalized word, when)` — one entry per lookup row in the window.
-    window_lookups: Vec<(String, i64)>,
+    /// `(normalized word, book, when)` — one entry per lookup row in the
+    /// window. The book is there for the topical screen's second condition:
+    /// a word looked up in two different books is nobody's terminology.
+    window_lookups: Vec<(String, String, i64)>,
     /// Words already filtered down to "read past": seen twice or more, at
     /// least once on a lookup-active screen, never looked up anywhere.
     passed_candidates: Vec<String>,
+    /// Every word's in-window viewport sightings, summed per book and
+    /// collapsed to (total, largest book) — the topical screen's evidence.
+    sightings: HashMap<String, BookSpread>,
 }
 
 fn collect(conn: &Connection, now: i64) -> AppResult<RawRecord> {
@@ -428,14 +515,36 @@ fn collect(conn: &Connection, now: i64) -> AppResult<RawRecord> {
     // §5.4's dimension and a different row.
     {
         let mut stmt = conn.prepare(
-            "SELECT normalized_text, last_looked_up_at FROM lookup_records \
+            "SELECT normalized_text, book_id, last_looked_up_at FROM lookup_records \
              WHERE last_looked_up_at >= ?1",
+        )?;
+        let rows = stmt.query_map(params![since], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })?;
+        for row in rows {
+            raw.window_lookups.push(row?);
+        }
+    }
+
+    // Sightings per (word, book), for the topical screen. Same window
+    // filter as the passed-words query below, and the same approximation:
+    // an exposure row aggregates a chapter, so `last_seen_at` admits the
+    // whole row once its newest sighting is inside the window.
+    {
+        let mut stmt = conn.prepare(
+            "SELECT normalized_word, SUM(encounter_count) FROM reading_word_exposures \
+             WHERE last_seen_at >= ?1 GROUP BY normalized_word, book_id",
         )?;
         let rows = stmt.query_map(params![since], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
         })?;
         for row in rows {
-            raw.window_lookups.push(row?);
+            let (word, in_book) = row?;
+            raw.sightings.entry(word).or_default().add(in_book);
         }
     }
 
@@ -475,12 +584,31 @@ fn score(raw: &RawRecord, db: &Db, now: i64) -> AppResult<RecordSummary> {
     let forms = FormIndex::new(db);
     let mut summary = RecordSummary::default();
 
+    // The topical screen's second condition needs each word's spread of
+    // lookup *books*, which is a fact about the whole window — so it is
+    // gathered before any row is scored.
+    let mut looked_up_in_books: HashMap<&str, HashSet<&str>> = HashMap::new();
+    for (word, book, _) in &raw.window_lookups {
+        looked_up_in_books
+            .entry(word.as_str())
+            .or_default()
+            .insert(book.as_str());
+    }
+
     let mut oldest_lookup: Option<i64> = None;
     let mut distinct_looked_up: HashMap<String, u8> = HashMap::new();
-    for (word, at) in &raw.window_lookups {
+    for (word, _, at) in &raw.window_lookups {
         let Some(entry) = lookup_with(&forms, word)? else {
             continue;
         };
+        if is_topical(
+            entry.band,
+            raw.sightings.get(word),
+            looked_up_in_books.get(word.as_str()).map_or(0, HashSet::len),
+        ) {
+            summary.topical_lookups += 1;
+            continue;
+        }
         summary.lookups_by_band[entry.band as usize] += 1;
         distinct_looked_up.insert(word.clone(), entry.band);
         oldest_lookup = Some(oldest_lookup.map_or(*at, |current: i64| current.min(*at)));
@@ -491,6 +619,13 @@ fn score(raw: &RawRecord, db: &Db, now: i64) -> AppResult<RecordSummary> {
 
     for word in &raw.passed_candidates {
         if let Some(entry) = lookup_with(&forms, word)? {
+            // The same screen, for the same reason: a book that repeats its
+            // own hard vocabulary teaches it in passing, and reading past a
+            // word the book itself drilled says nothing about the level.
+            // (`passed_candidates` were never looked up, hence 0 books.)
+            if is_topical(entry.band, raw.sightings.get(word), 0) {
+                continue;
+            }
             summary.passed_by_band[entry.band as usize] += 1;
         }
     }

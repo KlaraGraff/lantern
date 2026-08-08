@@ -86,6 +86,14 @@ export default function ReadingStatsContent({ onOpenReview }: { onOpenReview?: (
       concentrated: markEmphasis(observation.concentratedLookups ?? 0),
       passed: markEmphasis(observation.passedWords ?? 0),
     }),
+    // Only when lookups were actually screened out: the note explains why
+    // the totals above are smaller than the record the reader can count.
+    levelTopicalNote: (observation: LevelObservation) => {
+      const topical = observation.topicalLookups ?? 0;
+      return topical > 0
+        ? t("readingStats.levelObservation.topicalNote", { topical })
+        : null;
+    },
     levelEffect: (observation: LevelObservation) => {
       const key = levelObservationEffectKey(observation.kind);
       return key ? t(key, {

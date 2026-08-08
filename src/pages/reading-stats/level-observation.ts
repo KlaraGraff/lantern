@@ -43,6 +43,13 @@ export interface LevelObservation {
    */
   totalLookups: number | null;
   concentratedLookups: number | null;
+  /**
+   * Lookups screened out of the judgment as one book's own recurring
+   * terminology. Set beside `totalLookups`: once anything is screened out,
+   * the totals stop matching a count the reader could make themselves, and
+   * the receipt only stays honest if the difference is stated on screen.
+   */
+  topicalLookups: number | null;
   /** Days of record the observation is drawn from. */
   windowDays: number;
 }

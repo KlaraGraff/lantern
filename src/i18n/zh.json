@@ -1781,6 +1781,7 @@
   "readingStats.levelObservation.body.unclear": "这段时间的记录，分不出你申报的水平准不准。",
   "readingStats.levelObservation.body.declaredHigh": "这段时间你查了 {{total}} 个词，其中 {{concentrated}} 个在第 {{band}} 频段（词表 {{from}}–{{to}}）。按你自己申报的水平，这一段的词通常不需要查。",
   "readingStats.levelObservation.body.declaredLow": "这段时间里，第 {{band}} 频段（词表 {{from}}–{{to}}）有 {{passed}} 个词，你读到过两次以上而没有查。这一段通常在 {{level}} 之上。",
+  "readingStats.levelObservation.topicalNote": "另有 {{topical}} 条查词记录没有算进上面的数字：查的是集中在某一本书里、又在那本书里反复出现的词——更像那本书题材自带的术语，说明不了水平。",
   "readingStats.levelObservation.effect.unclear": "近 {{days}} 天有 {{total}} 条查词记录，其中 {{concentrated}} 条集中在第 {{band}} 频段。第 1 到第 3 频段几乎没有记录 —— 可能是这些词你都认识，也可能是你读的这几本书本来就没什么难词。这两件事分不开，所以这里不下结论。",
   "readingStats.levelObservation.effect.declaredHigh": "把水平改成 {{level}}，AI 的解释会讲得更细一点，例句也会更短更常见。除此之外不影响别的设置。",
   "readingStats.levelObservation.effect.declaredLow": "把水平改成 {{level}}，AI 的解释会更简短，也会更多直接用英文。除此之外不影响别的设置。",

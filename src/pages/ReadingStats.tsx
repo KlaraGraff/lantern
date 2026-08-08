@@ -594,6 +594,7 @@ function LevelObservationRow({
   onOpenSettings(): void;
 }) {
   const effect = labels.levelEffect(observation);
+  const topicalNote = labels.levelTopicalNote(observation);
   const suggested = observation.suggestedLevel;
 
   return (
@@ -621,6 +622,12 @@ function LevelObservationRow({
               : <span key={index}>{part.text}</span>
           ))}
         </p>
+
+        {topicalNote ? (
+          // Why the totals above may undercount the record the reader can
+          // see: screened-out lookups are named, never silently dropped.
+          <p className="mt-2 max-w-[640px] text-[11.5px] leading-[1.8] text-text-muted">{topicalNote}</p>
+        ) : null}
 
         {effect ? (
           <p className="mt-2.5 max-w-[640px] text-[11.5px] leading-[1.8] text-text-secondary">{effect}</p>

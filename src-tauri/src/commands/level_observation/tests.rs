@@ -63,7 +63,19 @@ fn insert_lookups(db: &Db, words: &[&str], count: usize, at: i64, tag: &str) {
     }
 }
 
-fn insert_exposure(db: &Db, word: &str, encounters: i64, on_lookup_active: i64, at: i64) {
+fn insert_book(db: &Db, id: &str) {
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO books (id, title, author, file_path, status, progress, created_at, updated_at)
+             VALUES (?1, 'Book', 'Author', ?2, 'reading', 0, 1, 1)",
+            params![id, format!("books/{id}.epub")],
+        )
+        .unwrap();
+}
+
+fn insert_exposure_in(db: &Db, book: &str, word: &str, encounters: i64, on_lookup_active: i64, at: i64) {
     db.conn
         .lock()
         .unwrap()
@@ -72,16 +84,21 @@ fn insert_exposure(db: &Db, word: &str, encounters: i64, on_lookup_active: i64, 
                 (id, book_id, chapter, normalized_word, encounter_count,
                  encounters_on_lookup_active_screen, first_seen_at, last_seen_at,
                  created_at, updated_at)
-             VALUES (?1, 'book', 'Chapter 1', ?2, ?3, ?4, ?5, ?5, ?5, ?5)",
+             VALUES (?1, ?6, 'Chapter 1', ?2, ?3, ?4, ?5, ?5, ?5, ?5)",
             params![
-                format!("exposure-{word}"),
+                format!("exposure-{book}-{word}"),
                 word,
                 encounters,
                 on_lookup_active,
-                at
+                at,
+                book
             ],
         )
         .unwrap();
+}
+
+fn insert_exposure(db: &Db, word: &str, encounters: i64, on_lookup_active: i64, at: i64) {
+    insert_exposure_in(db, "book", word, encounters, on_lookup_active, at);
 }
 
 fn summary(lookups: [i64; 6], passed: [i64; 6], looked_up_words: [i64; 6]) -> RecordSummary {
@@ -89,6 +106,7 @@ fn summary(lookups: [i64; 6], passed: [i64; 6], looked_up_words: [i64; 6]) -> Re
         lookups_by_band: lookups,
         looked_up_words_by_band: looked_up_words,
         passed_by_band: passed,
+        topical_lookups: 0,
         span_days: 60,
     }
 }
@@ -114,6 +132,7 @@ fn serialized_keys_match_the_frontend_contract() {
         passed_words: None,
         total_lookups: Some(40),
         concentrated_lookups: Some(30),
+        topical_lookups: Some(7),
         window_days: 90,
     };
     let value = serde_json::to_value(&observation).unwrap();
@@ -132,6 +151,7 @@ fn serialized_keys_match_the_frontend_contract() {
             "kind",
             "passedWords",
             "suggestedLevel",
+            "topicalLookups",
             "totalLookups",
             "windowDays",
         ]
@@ -143,6 +163,7 @@ fn serialized_keys_match_the_frontend_contract() {
     // And the fields this variant does fill carry their numbers through.
     assert_eq!(object["totalLookups"], 40);
     assert_eq!(object["concentratedLookups"], 30);
+    assert_eq!(object["topicalLookups"], 7);
 }
 
 #[test]
@@ -294,6 +315,155 @@ fn c2_is_never_suggested() {
     let record = summary([0, 0, 0, 5, 5, 30], [0, 0, 0, 0, 0, 90], [0, 0, 0, 0, 0, 5]);
     let observation = judge(&record, "B2").expect("row");
     assert_eq!(observation.suggested_level.as_deref(), Some("C1"));
+}
+
+// ---------------------------------------------------------------------------
+// The topical screen.
+// ---------------------------------------------------------------------------
+
+fn spread(total: i64, top: i64) -> BookSpread {
+    BookSpread { total, top }
+}
+
+#[test]
+fn a_recurring_single_book_rare_word_is_topical() {
+    assert!(is_topical(4, Some(&spread(9, 9)), 1));
+    assert!(is_topical(5, Some(&spread(6, 5)), 1));
+    // Band 3 is the boundary band, and it is inside the screen.
+    assert!(is_topical(3, Some(&spread(9, 9)), 0));
+}
+
+#[test]
+fn common_band_words_are_never_topical() {
+    // Recurrence carries no signal in bands 1–2 — common words recur in
+    // every book — so no amount of it convicts.
+    assert!(!is_topical(1, Some(&spread(90, 90)), 1));
+    assert!(!is_topical(2, Some(&spread(90, 90)), 1));
+}
+
+#[test]
+fn a_word_looked_up_in_two_books_is_the_readers_own_gap() {
+    assert!(!is_topical(5, Some(&spread(12, 12)), 2));
+}
+
+#[test]
+fn a_word_met_across_the_shelf_is_not_topical() {
+    // 10 sightings, largest book holds 5 — no single book owns this word.
+    assert!(!is_topical(4, Some(&spread(10, 5)), 1));
+}
+
+#[test]
+fn a_hard_word_seen_only_a_few_times_stays_general() {
+    assert!(!is_topical(5, Some(&spread(5, 5)), 1));
+    // And no sighting evidence at all defaults the same way.
+    assert!(!is_topical(5, None, 1));
+}
+
+#[test]
+fn the_screened_out_count_travels_with_the_lookup_variants() {
+    // declaredHigh carries it…
+    let mut record = summary([0, 0, 30, 0, 10, 0], [0; 6], [0; 6]);
+    record.topical_lookups = 7;
+    let observation = judge(&record, "B2").expect("row");
+    assert_eq!(observation.kind, LevelObservationKind::DeclaredHigh);
+    assert_eq!(observation.topical_lookups, Some(7));
+
+    // …unclear carries it…
+    let mut record = summary([0, 0, 0, 0, 4, 44], [0; 6], [0; 6]);
+    record.topical_lookups = 7;
+    let observation = judge(&record, "C1").expect("row");
+    assert_eq!(observation.kind, LevelObservationKind::Unclear);
+    assert_eq!(observation.topical_lookups, Some(7));
+
+    // …and declaredLow, whose receipt counts passed words rather than
+    // lookups, does not.
+    let mut record = summary([0, 0, 0, 10, 30, 80], [0, 0, 0, 0, 0, 80], [0, 0, 0, 5, 20, 10]);
+    record.topical_lookups = 7;
+    let observation = judge(&record, "B1").expect("row");
+    assert_eq!(observation.kind, LevelObservationKind::DeclaredLow);
+    assert_eq!(observation.topical_lookups, None);
+}
+
+/// A C1 reader working through one specialized book: 30 lookups over three
+/// band-4 words, plus 10 band-5 lookups for the floor to almost clear.
+fn specialized_book_record(db: &Db) {
+    set_level(db, "C1");
+    insert_lookups(db, &BAND_4_WORDS, 30, NOW - 30 * DAY, "jargon");
+    insert_lookups(db, &BAND_5_WORDS, 10, NOW - 2 * DAY, "rare");
+}
+
+#[test]
+fn one_books_own_vocabulary_is_screened_out_of_the_judgment() {
+    let (_dir, db) = test_db();
+    specialized_book_record(&db);
+    // Without sighting evidence the screen stays out of the way: the band-4
+    // pile reads as declaredHigh against the declared C1.
+    let observation = get_level_observation_inner(&db, NOW).unwrap().expect("row");
+    assert_eq!(observation.kind, LevelObservationKind::DeclaredHigh);
+    assert_eq!(observation.band, Some(4));
+
+    // The same record, but the book demonstrably keeps using those three
+    // words. They are its terminology, not evidence — and the ten general
+    // lookups left are under the floor, so the answer is silence.
+    for word in BAND_4_WORDS {
+        insert_exposure(&db, word, 9, 0, NOW - 10 * DAY);
+    }
+    assert_eq!(get_level_observation_inner(&db, NOW).unwrap(), None);
+}
+
+#[test]
+fn a_word_recurring_across_books_stays_evidence() {
+    let (_dir, db) = test_db();
+    specialized_book_record(&db);
+    insert_book(&db, "other");
+    // The same sighting totals, but split evenly across two books — no
+    // single book owns these words, so they stay in the record and the
+    // remark stands.
+    for word in BAND_4_WORDS {
+        insert_exposure_in(&db, "book", word, 5, 0, NOW - 10 * DAY);
+        insert_exposure_in(&db, "other", word, 5, 0, NOW - 10 * DAY);
+    }
+    let observation = get_level_observation_inner(&db, NOW).unwrap().expect("row");
+    assert_eq!(observation.kind, LevelObservationKind::DeclaredHigh);
+    assert_eq!(observation.band, Some(4));
+}
+
+#[test]
+fn the_receipt_names_what_was_screened_out() {
+    let (_dir, db) = test_db();
+    // 45 band-1 lookups — enough to carry declaredHigh on their own — plus
+    // 10 band-4 lookups established as one book's terminology.
+    set_level(&db, "B2");
+    insert_lookups(&db, &BAND_1_WORDS, 45, NOW - 30 * DAY, "easy");
+    insert_lookups(&db, &BAND_4_WORDS, 10, NOW - 2 * DAY, "jargon");
+    for word in BAND_4_WORDS {
+        insert_exposure(&db, word, 9, 0, NOW - 10 * DAY);
+    }
+    let observation = get_level_observation_inner(&db, NOW).unwrap().expect("row");
+    assert_eq!(observation.kind, LevelObservationKind::DeclaredHigh);
+    // The totals shrink to the kept record, and the difference is stated.
+    assert_eq!(observation.total_lookups, Some(45));
+    assert_eq!(observation.concentrated_lookups, Some(45));
+    assert_eq!(observation.topical_lookups, Some(10));
+}
+
+#[test]
+fn a_passed_word_the_book_itself_drilled_is_not_low_evidence() {
+    let (_dir, db) = test_db();
+    // Nine sightings in one book, four of them lookup-active, never looked
+    // up: a passed candidate — but the recurrence that qualified it also
+    // convicts it as the book's own vocabulary.
+    insert_exposure(&db, BAND_5_WORDS[0], 9, 4, NOW - 5 * DAY);
+    // Three sightings stay under the recurrence bar: an ordinary hard word,
+    // still counted.
+    insert_exposure(&db, BAND_5_WORDS[1], 3, 1, NOW - 5 * DAY);
+
+    let raw = {
+        let conn = db.reader();
+        collect(&conn, NOW).unwrap()
+    };
+    let record = score(&raw, &db, NOW).unwrap();
+    assert_eq!(record.passed_by_band[5], 1);
 }
 
 // ---------------------------------------------------------------------------

@@ -1781,6 +1781,7 @@
   "readingStats.levelObservation.body.unclear": "The record from this period cannot tell whether your declared level fits.",
   "readingStats.levelObservation.body.declaredHigh": "Over this period you looked up {{total}} words, {{concentrated}} of them in band {{band}} (ranks {{from}}–{{to}}). At the level you declared, words in that band usually do not need looking up.",
   "readingStats.levelObservation.body.declaredLow": "Over this period there were {{passed}} words in band {{band}} (ranks {{from}}–{{to}}) that you read past twice or more without looking up. That band usually sits above {{level}}.",
+  "readingStats.levelObservation.topicalNote": "Another {{topical}} lookups are left out of the numbers above: words that sit in a single book and keep recurring there — more likely that book's own terminology than a signal about your level.",
   "readingStats.levelObservation.effect.unclear": "The last {{days}} days hold {{total}} lookups, {{concentrated}} of them in band {{band}}. Bands 1 through 3 have almost no record — either you know those words, or the books you happened to read had few hard ones. The record cannot separate the two, so nothing is concluded here.",
   "readingStats.levelObservation.effect.declaredHigh": "Setting the level to {{level}} makes the AI explain in more detail, with shorter and more common examples. Nothing else changes.",
   "readingStats.levelObservation.effect.declaredLow": "Setting the level to {{level}} makes the AI explain more briefly, and use English directly more often. Nothing else changes.",

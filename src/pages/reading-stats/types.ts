@@ -282,6 +282,8 @@ export interface ReadingStatsLabels {
   levelBasis(days: number): string;
   /** The observation sentence, with its emphasized run already marked. */
   levelBody(observation: LevelObservation): string;
+  /** What was screened out as one book's terminology. `null` when nothing was. */
+  levelTopicalNote(observation: LevelObservation): string | null;
   /** What pressing the button would change. `null` when there is no button. */
   levelEffect(observation: LevelObservation): string | null;
   levelApply(level: string): string;
