@@ -561,7 +561,10 @@ fn alias_disclosure_payload(
 /// ai/grounding/aliases.rs's module doc). Resist the urge to hand both arms
 /// the same string "for consistency"; the doc is explicit that the two arms
 /// are not meant to agree here.
-fn retrieval_queries(query: &str, resolution: &grounding::aliases::AliasResolution) -> (String, String) {
+fn retrieval_queries(
+    query: &str,
+    resolution: &grounding::aliases::AliasResolution,
+) -> (String, String) {
     (query.to_string(), resolution.expanded_query.clone())
 }
 
@@ -887,7 +890,13 @@ pub async fn ai_chat(
 
     let (spoiler_guard_active, spoiler_cutoff, reading_progress) =
         if let Some(book_id) = book_id.as_deref() {
-            let resolution = grounding::spoiler::resolve_cutoff(&db, book_id)?;
+            // Chunk-precise for EPUB when the reader's live viewport text can
+            // be located in the current section; falls back to the same
+            // whole-section `Section` cutoff `resolve_cutoff` gives every
+            // other caller (MCP tools included) when it can't be. See
+            // `resolve_chat_cutoff`'s doc comment.
+            let resolution =
+                grounding::spoiler::resolve_chat_cutoff(&db, book_id, viewport_text.as_deref())?;
             if spoiler_override.unwrap_or(false) {
                 (false, None, resolution.progress)
             } else {
@@ -1151,9 +1160,7 @@ pub async fn ai_chat(
                                         &mut alias_resolution,
                                     )
                                     .unwrap_or_else(|error| {
-                                        log::warn!(
-                                            "description alias resolution failed: {error}"
-                                        );
+                                        log::warn!("description alias resolution failed: {error}");
                                         false
                                     })
                                 }
@@ -1176,10 +1183,8 @@ pub async fn ai_chat(
                                 // only when something was actually added is what keeps a
                                 // turn with no description hit from paying a redundant
                                 // round trip to the UI.
-                                if let Some(payload) = alias_disclosure_payload(&alias_resolution)
-                                {
-                                    let event_name =
-                                        format!("ai-alias-resolution-{request_id}");
+                                if let Some(payload) = alias_disclosure_payload(&alias_resolution) {
+                                    let event_name = format!("ai-alias-resolution-{request_id}");
                                     let _ = app.emit(&event_name, payload);
                                 }
                             }
@@ -1649,8 +1654,17 @@ mod tests {
 
     #[test]
     fn no_profile_leaves_the_prompt_exactly_as_it_was() {
-        let (with_none, _) =
-            build_chat_system_content(Some("Book"), None, None, "en", None, &[], false, false, None);
+        let (with_none, _) = build_chat_system_content(
+            Some("Book"),
+            None,
+            None,
+            "en",
+            None,
+            &[],
+            false,
+            false,
+            None,
+        );
         assert!(!with_none.stable.contains("[Reader profile]"));
     }
 
@@ -1691,8 +1705,17 @@ mod tests {
 
     #[test]
     fn metadata_only_system_content_is_unchanged_without_excerpts() {
-        let (content, sources) =
-            build_chat_system_content(Some("Book"), None, None, "zh", None, &[], false, false, None);
+        let (content, sources) = build_chat_system_content(
+            Some("Book"),
+            None,
+            None,
+            "zh",
+            None,
+            &[],
+            false,
+            false,
+            None,
+        );
         assert_eq!(
             content.combined(),
             "You are a helpful reading assistant. Help the user understand and discuss the book they are reading.\n\nThe following is reference metadata for the book:\n{\"book\":{\"title\":\"Book\"}} Always respond in Chinese (Simplified).",
@@ -1812,10 +1835,28 @@ mod tests {
                 content: "A section summary.".into(),
             }],
         };
-        let (first, _) =
-            build_chat_system_content(None, None, None, "zh", Some(&overview), &[], false, false, None);
-        let (second, _) =
-            build_chat_system_content(None, None, None, "zh", Some(&overview), &[], false, false, None);
+        let (first, _) = build_chat_system_content(
+            None,
+            None,
+            None,
+            "zh",
+            Some(&overview),
+            &[],
+            false,
+            false,
+            None,
+        );
+        let (second, _) = build_chat_system_content(
+            None,
+            None,
+            None,
+            "zh",
+            Some(&overview),
+            &[],
+            false,
+            false,
+            None,
+        );
         assert_eq!(first, second);
         let first = first.combined();
         assert!(first.find("Book overview").unwrap() < first.find("Always respond").unwrap());
@@ -2059,7 +2100,8 @@ mod tests {
             None,
             "达西第一次向伊丽莎白求婚 Mr. Darcy",
         );
-        let (vector_query, lexical_query) = retrieval_queries("达西第一次向伊丽莎白求婚", &resolution);
+        let (vector_query, lexical_query) =
+            retrieval_queries("达西第一次向伊丽莎白求婚", &resolution);
         assert_eq!(
             vector_query, "达西第一次向伊丽莎白求婚",
             "the embedding call must see the reader's own words, unexpanded"
@@ -2082,7 +2124,8 @@ mod tests {
             None,
             "What is this book about?",
         );
-        let (vector_query, lexical_query) = retrieval_queries("What is this book about?", &resolution);
+        let (vector_query, lexical_query) =
+            retrieval_queries("What is this book about?", &resolution);
         assert_eq!(vector_query, lexical_query);
         assert_eq!(vector_query, "What is this book about?");
     }
@@ -2134,7 +2177,10 @@ mod tests {
         );
         let payload = alias_disclosure_payload(&resolution)
             .expect("a medium match must produce a disclosure payload");
-        assert_eq!(payload.confidence, grounding::aliases::AliasConfidence::Medium);
+        assert_eq!(
+            payload.confidence,
+            grounding::aliases::AliasConfidence::Medium
+        );
         assert_eq!(payload.matched, matched);
         assert_eq!(payload.default_canonical.as_deref(), Some("Miss Darcy"));
     }

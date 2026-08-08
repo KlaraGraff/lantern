@@ -13,10 +13,14 @@ pub enum SpoilerCutoff {
     Character(i64),
     Section(i64),
     /// Sections before `section` are fully visible; within `section`, only
-    /// chunks with `chunk_index <= chunk_index` are visible. Used by ai_xray
-    /// to admit the read-so-far prefix of the current EPUB section instead
-    /// of excluding it wholesale — see `commands/ai/xray.rs`. Chat never
-    /// constructs this variant.
+    /// chunks with `chunk_index <= chunk_index` are visible. Built from the
+    /// reader's live viewport text by `ai_xray` (`commands/ai/xray.rs`), which
+    /// uses it to admit the read-so-far prefix of the current EPUB section
+    /// instead of excluding it wholesale, and by chat
+    /// (`spoiler::resolve_chat_cutoff`), which uses it to stop admitting the
+    /// unread tail of the current chapter. The two differ only in where they
+    /// land when the viewport text can't be located: xray tightens, chat keeps
+    /// the wider `Section`.
     SectionPrefix { section: i64, chunk_index: i64 },
 }
 

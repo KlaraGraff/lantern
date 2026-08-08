@@ -151,53 +151,6 @@ fn safe_cutoff(
     }
 }
 
-fn normalize_for_match(value: &str) -> String {
-    value.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-/// Pure: locate which chunk contains the START of `visible_context` inside
-/// `chunks` (chunk_index, text pairs, ordered by chunk_index and belonging
-/// to one section), matching after whitespace normalization because the
-/// reader's live-extracted text and the indexer's stored text can disagree
-/// on whitespace. Returns `None` when `visible_context` is empty or cannot
-/// be found — callers must fall back to the conservative `safe_cutoff`
-/// rather than treating "not found" as "nothing to hide."
-fn locate_visible_context_chunk(chunks: &[(i64, String)], visible_context: &str) -> Option<i64> {
-    let needle = normalize_for_match(visible_context);
-    if needle.is_empty() {
-        return None;
-    }
-    let mut haystack = String::new();
-    let mut chunk_offsets = Vec::with_capacity(chunks.len());
-    for (chunk_index, text) in chunks {
-        chunk_offsets.push((haystack.len(), *chunk_index));
-        if !haystack.is_empty() {
-            haystack.push(' ');
-        }
-        haystack.push_str(&normalize_for_match(text));
-    }
-    let match_start = haystack.find(&needle)?;
-    chunk_offsets
-        .iter()
-        .rev()
-        .find(|(start, _)| *start <= match_start)
-        .map(|(_, chunk_index)| *chunk_index)
-}
-
-fn section_chunk_texts(
-    conn: &rusqlite::Connection,
-    book_id: &str,
-    section: i64,
-) -> rusqlite::Result<Vec<(i64, String)>> {
-    conn.prepare(
-        "SELECT chunk_index, text FROM book_chunks WHERE book_id = ?1 AND section_index = ?2 ORDER BY chunk_index",
-    )?
-    .query_map(rusqlite::params![book_id, section], |row| {
-        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-    })?
-    .collect()
-}
-
 /// EPUB only: replaces the blanket "exclude the whole current section" rule
 /// with a chunk-precise one. Locates the reader's `visible_context` snippet
 /// inside the current section's own stored chunk text and, when found,
@@ -214,15 +167,15 @@ fn epub_section_cutoff(
     section: i64,
     visible_context: Option<&str>,
 ) -> grounding::retrieve::SpoilerCutoff {
-    let located = visible_context
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .and_then(|value| {
-            let chunks = section_chunk_texts(conn, book_id, section).ok()?;
-            locate_visible_context_chunk(&chunks, value)
-        });
-    match located {
-        Some(chunk_index) => grounding::retrieve::SpoilerCutoff::SectionPrefix { section, chunk_index },
+    // Chunk-location logic is shared with `resolve_chat_cutoff`
+    // (`ai::grounding::spoiler`), which does the same lookup for chat but
+    // falls back to the permissive `Section` cutoff instead of this
+    // function's stricter whole-section exclusion.
+    match grounding::spoiler::locate_section_chunk_index(conn, book_id, section, visible_context) {
+        Some(chunk_index) => grounding::retrieve::SpoilerCutoff::SectionPrefix {
+            section,
+            chunk_index,
+        },
         // Not found: fall back to today's whole-section exclusion rather
         // than failing open.
         None => grounding::retrieve::SpoilerCutoff::Section(section.saturating_sub(1)),
@@ -339,7 +292,13 @@ pub async fn ai_xray(
     let cutoff_active = cutoff_in_force(spoiler_override, guard_active);
     let cutoff = cutoff_active.then(|| {
         let conn = db.reader();
-        position_cutoff(&conn, &book_id, &render_format, location, visible_context.as_deref())
+        position_cutoff(
+            &conn,
+            &book_id,
+            &render_format,
+            location,
+            visible_context.as_deref(),
+        )
     });
     let index_status = grounding::index::index_status(&db, &book_id)?;
     let ready_for_source = index_status == IndexStatus::Ready
@@ -525,59 +484,6 @@ mod tests {
     }
 
     #[test]
-    fn locates_visible_context_within_a_single_chunk() {
-        let chunks = vec![
-            (0_i64, "Alice walked into the room.".to_string()),
-            (1_i64, "She smiled and sat down.".to_string()),
-            (2_i64, "Bob was already there.".to_string()),
-        ];
-        assert_eq!(
-            locate_visible_context_chunk(&chunks, "She smiled and sat down."),
-            Some(1)
-        );
-    }
-
-    #[test]
-    fn locates_visible_context_after_whitespace_normalization() {
-        let chunks = vec![
-            (0_i64, "Alice walked into the room.".to_string()),
-            (1_i64, "She   smiled\nand  sat down.".to_string()),
-        ];
-        // The reader's extracted snippet uses different whitespace than the
-        // indexer's stored chunk text; normalization must still match.
-        assert_eq!(
-            locate_visible_context_chunk(&chunks, "She smiled and sat down."),
-            Some(1)
-        );
-    }
-
-    #[test]
-    fn locate_visible_context_uses_the_start_of_the_match_to_pick_the_chunk() {
-        let chunks = vec![
-            (0_i64, "...she stepped into the room.".to_string()),
-            (1_i64, "Bob turned to greet her.".to_string()),
-        ];
-        // The needle spans the chunk boundary; it starts inside chunk 0, so
-        // chunk 0 is the containing chunk even though the match tails into
-        // chunk 1's text.
-        assert_eq!(
-            locate_visible_context_chunk(&chunks, "the room. Bob turned"),
-            Some(0)
-        );
-    }
-
-    #[test]
-    fn locate_visible_context_returns_none_when_absent_or_empty() {
-        let chunks = vec![(0_i64, "Alice walked into the room.".to_string())];
-        assert_eq!(
-            locate_visible_context_chunk(&chunks, "a phrase that is not here"),
-            None
-        );
-        assert_eq!(locate_visible_context_chunk(&chunks, "   "), None);
-        assert_eq!(locate_visible_context_chunk(&[], "anything"), None);
-    }
-
-    #[test]
     fn epub_section_cutoff_admits_the_section_up_to_the_located_chunk() {
         let conn = setup_chunks(&[
             (3, 10, "Alice arrived at the manor."),
@@ -683,7 +589,10 @@ mod tests {
             None,
         )
         .unwrap();
-        let total_tokens = result.iter().map(|chunk| chunk.token_estimate).sum::<usize>();
+        let total_tokens = result
+            .iter()
+            .map(|chunk| chunk.token_estimate)
+            .sum::<usize>();
         // 5 chunks * 20 tokens each: a budget of 96k must not truncate,
         // duplicate, or otherwise mishandle a book with far less relevant
         // text than the budget allows.
