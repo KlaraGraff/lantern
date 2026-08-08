@@ -71,6 +71,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
   const [cefrSource, setCefrSource] = useState("manual");
   const [explanationMode, setExplanationMode] = useState("adaptive_bilingual");
   const [translationLanguage, setTranslationLanguage] = useState("zh");
+  const [levelWordClass, setLevelWordClass] = useState("ai");
   const [lowLevelEnglishAcknowledged, setLowLevelEnglishAcknowledged] = useState(false);
   const [showLowLevelEnglishWarning, setShowLowLevelEnglishWarning] = useState(false);
   const [examFormOpen, setExamFormOpen] = useState(false);
@@ -99,6 +100,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
     const mode = normalizedExplanationMode(settings.explanation_mode);
     setExplanationMode(mode);
     setTranslationLanguage(translatedTo);
+    setLevelWordClass(settings.level_observation_word_class === "local" ? "local" : "ai");
     const acknowledged = settings.cefr_low_level_english_warning_ack === "true";
     setLowLevelEnglishAcknowledged(acknowledged);
     setShowLowLevelEnglishWarning(
@@ -335,6 +337,28 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
             void save("translation_language", value).then(() => showSavedToast());
           }}
           options={LANGUAGE_OPTIONS}
+        />
+      </div>
+      <div className="flex min-h-[82px] flex-wrap items-center justify-between gap-4 py-3">
+        <div className="min-w-[220px] flex-1">
+          <p className="text-[14px] font-medium text-text-primary">
+            {t("settings.learner.levelWordClass")}
+          </p>
+          <p className="text-[12px] text-text-muted mt-0.5 max-w-[290px]">
+            {t("settings.learner.levelWordClassHint")}
+          </p>
+        </div>
+        <Select
+          className={ROW_CONTROL_WIDTH}
+          value={levelWordClass}
+          onChange={(value) => {
+            setLevelWordClass(value);
+            void save("level_observation_word_class", value).then(() => showSavedToast());
+          }}
+          options={[
+            { value: "ai", label: t("settings.learner.levelWordClassAi") },
+            { value: "local", label: t("settings.learner.levelWordClassLocal") },
+          ]}
         />
       </div>
 

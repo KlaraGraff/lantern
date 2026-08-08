@@ -108,7 +108,8 @@ export default function ReadingStatsContent({ onOpenReview }: { onOpenReview?: (
     levelKeep: (level: string) => t("readingStats.levelObservation.keep", { level }),
     levelStop: t("readingStats.levelObservation.stop"),
     levelOpenSettings: t("readingStats.levelObservation.openSettings"),
-    levelRules: (observation: LevelObservation) => levelObservationRuleKeys(observation.kind).map((key) => t(key)),
+    levelRules: (observation: LevelObservation) =>
+      levelObservationRuleKeys(observation.kind, observation.wordClassSource).map((key) => t(key)),
     subtitleLearning: t("readingStats.subtitleLearning"),
     learningView: t("readingStats.learningView"),
     learningHeading: (scoped: boolean) => (scoped ? t("readingStats.learningHeadingScoped") : t("readingStats.learningHeading")),

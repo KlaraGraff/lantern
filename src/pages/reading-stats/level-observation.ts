@@ -52,7 +52,16 @@ export interface LevelObservation {
   topicalLookups: number | null;
   /** Days of record the observation is drawn from. */
   windowDays: number;
+  /**
+   * Who screened the topical words: the reader's configured AI, or the local
+   * recurrence heuristic alone. Decides which privacy sentence the fine print
+   * states — the two modes make different promises about what leaves the
+   * machine, and the fine print must state the one that was actually kept.
+   */
+  wordClassSource: WordClassSource;
 }
+
+export type WordClassSource = "ai" | "local";
 
 /**
  * THE sentence. It appears under every variant, unconditionally, and it is the
@@ -68,10 +77,18 @@ export const LEVEL_OBSERVATION_RULE_KEY = "readingStats.levelObservation.rule";
  * The fine print under each variant, in order. The mandatory sentence is
  * always first; the rest depend on whether there was anything to press.
  */
-export function levelObservationRuleKeys(kind: LevelObservationKind): string[] {
+export function levelObservationRuleKeys(
+  kind: LevelObservationKind,
+  source: WordClassSource,
+): string[] {
   const keys = [LEVEL_OBSERVATION_RULE_KEY];
   if (kind !== "unclear") keys.push("readingStats.levelObservation.ruleChoice");
-  keys.push("readingStats.levelObservation.ruleLocal");
+  // The privacy sentence matches what actually happened this time: `ai` says
+  // what was sent and to whom, `local` keeps the original nothing-leaves
+  // promise. The backend reports the mode it ran, so this never guesses.
+  keys.push(source === "ai"
+    ? "readingStats.levelObservation.ruleAi"
+    : "readingStats.levelObservation.ruleLocal");
   // Every variant can be stopped, so every variant says what stopping does.
   // `unclear` has no suggestion to keep or apply, so it gets the shorter
   // sentence — the one that only describes the button it actually has.
@@ -104,8 +121,12 @@ export const LEVEL_OBSERVATION_KINDS: readonly LevelObservationKind[] = [
 ];
 
 export function levelObservationKeys(kind: LevelObservationKind): string[] {
-  const keys = [levelObservationBodyKey(kind), ...levelObservationRuleKeys(kind)];
+  const keys = [
+    levelObservationBodyKey(kind),
+    ...levelObservationRuleKeys(kind, "ai"),
+    ...levelObservationRuleKeys(kind, "local"),
+  ];
   const effect = levelObservationEffectKey(kind);
   if (effect) keys.push(effect);
-  return keys;
+  return [...new Set(keys)];
 }

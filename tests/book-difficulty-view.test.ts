@@ -137,13 +137,30 @@ test("emphasis survives a round trip and leaves plain strings alone", () => {
  */
 test("every level-observation variant carries the no-automatic-change rule", () => {
   for (const kind of LEVEL_OBSERVATION_KINDS) {
-    const keys = levelObservationRuleKeys(kind);
-    assert.equal(keys[0], LEVEL_OBSERVATION_RULE_KEY, `${kind} must lead with the rule`);
-    assert.equal(
-      keys.filter((key) => key === LEVEL_OBSERVATION_RULE_KEY).length,
-      1,
-      `${kind} must state the rule exactly once`,
-    );
+    for (const source of ["ai", "local"] as const) {
+      const keys = levelObservationRuleKeys(kind, source);
+      assert.equal(keys[0], LEVEL_OBSERVATION_RULE_KEY, `${kind}/${source} must lead with the rule`);
+      assert.equal(
+        keys.filter((key) => key === LEVEL_OBSERVATION_RULE_KEY).length,
+        1,
+        `${kind}/${source} must state the rule exactly once`,
+      );
+    }
+  }
+});
+
+/**
+ * The two word-class modes make different promises about what leaves the
+ * machine, so each must state its own — never the other's, never both.
+ */
+test("the privacy sentence matches the word-class source that actually ran", () => {
+  for (const kind of LEVEL_OBSERVATION_KINDS) {
+    const ai = levelObservationRuleKeys(kind, "ai");
+    const local = levelObservationRuleKeys(kind, "local");
+    assert.ok(ai.includes("readingStats.levelObservation.ruleAi"), `${kind} ai`);
+    assert.ok(!ai.includes("readingStats.levelObservation.ruleLocal"), `${kind} ai must not claim local-only`);
+    assert.ok(local.includes("readingStats.levelObservation.ruleLocal"), `${kind} local`);
+    assert.ok(!local.includes("readingStats.levelObservation.ruleAi"), `${kind} local must not mention the AI`);
   }
 });
 

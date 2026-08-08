@@ -111,6 +111,27 @@ fn summary(lookups: [i64; 6], passed: [i64; 6], looked_up_words: [i64; 6]) -> Re
     }
 }
 
+/// The observation as the local mode computes it — the shape almost every
+/// test below asserts on. AI-mode tests call
+/// [`get_level_observation_inner`] themselves with `ai_available: true`.
+fn observe(db: &Db, now: i64) -> Option<LevelObservation> {
+    get_level_observation_inner(db, now, false).unwrap().0
+}
+
+/// A cached AI verdict, as a finished classification pass would have left it.
+fn insert_verdict(db: &Db, word: &str, book: &str, verdict: &str) {
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO level_word_classifications
+                (normalized_word, book_id, verdict, classified_at, batch_id)
+             VALUES (?1, ?2, ?3, 1, 'test-batch')",
+            params![word, book, verdict],
+        )
+        .unwrap();
+}
+
 // ---------------------------------------------------------------------------
 // The wire contract.
 // ---------------------------------------------------------------------------
@@ -134,6 +155,7 @@ fn serialized_keys_match_the_frontend_contract() {
         concentrated_lookups: Some(30),
         topical_lookups: Some(7),
         window_days: 90,
+        word_class_source: WordClassSource::Ai,
     };
     let value = serde_json::to_value(&observation).unwrap();
     let object = value.as_object().unwrap();
@@ -154,6 +176,7 @@ fn serialized_keys_match_the_frontend_contract() {
             "topicalLookups",
             "totalLookups",
             "windowDays",
+            "wordClassSource",
         ]
     );
 
@@ -164,6 +187,8 @@ fn serialized_keys_match_the_frontend_contract() {
     assert_eq!(object["totalLookups"], 40);
     assert_eq!(object["concentratedLookups"], 30);
     assert_eq!(object["topicalLookups"], 7);
+    // The classifier's name crosses the wire as the frontend's two strings.
+    assert_eq!(object["wordClassSource"], "ai");
 }
 
 #[test]
@@ -192,7 +217,7 @@ fn band_windows_are_the_ones_the_copy_names() {
 #[test]
 fn an_empty_record_produces_no_row_at_all() {
     let (_dir, db) = test_db();
-    assert_eq!(get_level_observation_inner(&db, NOW).unwrap(), None);
+    assert_eq!(observe(&db, NOW), None);
 }
 
 #[test]
@@ -322,7 +347,11 @@ fn c2_is_never_suggested() {
 // ---------------------------------------------------------------------------
 
 fn spread(total: i64, top: i64) -> BookSpread {
-    BookSpread { total, top }
+    BookSpread {
+        total,
+        top,
+        top_book: Some("book".to_string()),
+    }
 }
 
 #[test]
@@ -398,7 +427,7 @@ fn one_books_own_vocabulary_is_screened_out_of_the_judgment() {
     specialized_book_record(&db);
     // Without sighting evidence the screen stays out of the way: the band-4
     // pile reads as declaredHigh against the declared C1.
-    let observation = get_level_observation_inner(&db, NOW).unwrap().expect("row");
+    let observation = observe(&db, NOW).expect("row");
     assert_eq!(observation.kind, LevelObservationKind::DeclaredHigh);
     assert_eq!(observation.band, Some(4));
 
@@ -408,7 +437,7 @@ fn one_books_own_vocabulary_is_screened_out_of_the_judgment() {
     for word in BAND_4_WORDS {
         insert_exposure(&db, word, 9, 0, NOW - 10 * DAY);
     }
-    assert_eq!(get_level_observation_inner(&db, NOW).unwrap(), None);
+    assert_eq!(observe(&db, NOW), None);
 }
 
 #[test]
@@ -423,7 +452,7 @@ fn a_word_recurring_across_books_stays_evidence() {
         insert_exposure_in(&db, "book", word, 5, 0, NOW - 10 * DAY);
         insert_exposure_in(&db, "other", word, 5, 0, NOW - 10 * DAY);
     }
-    let observation = get_level_observation_inner(&db, NOW).unwrap().expect("row");
+    let observation = observe(&db, NOW).expect("row");
     assert_eq!(observation.kind, LevelObservationKind::DeclaredHigh);
     assert_eq!(observation.band, Some(4));
 }
@@ -439,7 +468,7 @@ fn the_receipt_names_what_was_screened_out() {
     for word in BAND_4_WORDS {
         insert_exposure(&db, word, 9, 0, NOW - 10 * DAY);
     }
-    let observation = get_level_observation_inner(&db, NOW).unwrap().expect("row");
+    let observation = observe(&db, NOW).expect("row");
     assert_eq!(observation.kind, LevelObservationKind::DeclaredHigh);
     // The totals shrink to the kept record, and the difference is stated.
     assert_eq!(observation.total_lookups, Some(45));
@@ -460,10 +489,193 @@ fn a_passed_word_the_book_itself_drilled_is_not_low_evidence() {
 
     let raw = {
         let conn = db.reader();
-        collect(&conn, NOW).unwrap()
+        collect(&conn, NOW, WordClassSource::Local).unwrap()
     };
-    let record = score(&raw, &db, NOW).unwrap();
+    let (record, _) = score(&raw, &db, NOW, WordClassSource::Local).unwrap();
     assert_eq!(record.passed_by_band[5], 1);
+}
+
+// ---------------------------------------------------------------------------
+// AI word-class mode.
+// ---------------------------------------------------------------------------
+
+/// AI mode as `get_level_observation` invokes it: the setting untouched
+/// (AI is the default) and a configured provider claimed.
+fn observe_with_ai(db: &Db, now: i64) -> (Option<LevelObservation>, Vec<Candidate>) {
+    get_level_observation_inner(db, now, true).unwrap()
+}
+
+#[test]
+fn an_ai_general_verdict_keeps_a_word_the_heuristic_would_screen() {
+    let (_dir, db) = test_db();
+    specialized_book_record(&db);
+    for word in BAND_4_WORDS {
+        insert_exposure(&db, word, 9, 0, NOW - 10 * DAY);
+    }
+    // The heuristic alone screens the band-4 pile and falls silent — the
+    // shipped local behavior, retested here as the baseline.
+    assert_eq!(observe(&db, NOW), None);
+
+    // The AI read the same words against the book's title and judged them
+    // ordinary vocabulary. The verdict overrides the recurrence evidence and
+    // the remark comes back.
+    for word in BAND_4_WORDS {
+        insert_verdict(&db, word, "book", "general");
+    }
+    let (observation, _) = observe_with_ai(&db, NOW);
+    let observation = observation.expect("row");
+    assert_eq!(observation.kind, LevelObservationKind::DeclaredHigh);
+    assert_eq!(observation.band, Some(4));
+    assert_eq!(observation.topical_lookups, Some(0));
+    assert_eq!(observation.word_class_source, WordClassSource::Ai);
+}
+
+#[test]
+fn an_ai_topical_verdict_screens_a_word_the_heuristic_would_keep() {
+    let (_dir, db) = test_db();
+    // 45 band-1 lookups plus 10 band-4 lookups with *no* exposure evidence —
+    // the heuristic has nothing on them, so locally they stay in the record.
+    set_level(&db, "B2");
+    insert_lookups(&db, &BAND_1_WORDS, 45, NOW - 30 * DAY, "easy");
+    insert_lookups(&db, &BAND_4_WORDS, 10, NOW - 2 * DAY, "jargon");
+    let local = observe(&db, NOW).expect("row");
+    assert_eq!(local.total_lookups, Some(55));
+    assert_eq!(local.word_class_source, WordClassSource::Local);
+
+    // The AI knows the book and calls those three words its terminology —
+    // screened without any recurrence having been needed.
+    for word in BAND_4_WORDS {
+        insert_verdict(&db, word, "book", "topical");
+    }
+    let (observation, _) = observe_with_ai(&db, NOW);
+    let observation = observation.expect("row");
+    assert_eq!(observation.total_lookups, Some(45));
+    assert_eq!(observation.concentrated_lookups, Some(45));
+    assert_eq!(observation.topical_lookups, Some(10));
+}
+
+#[test]
+fn words_awaiting_a_verdict_fall_back_to_the_heuristic_and_are_nominated() {
+    let (_dir, db) = test_db();
+    specialized_book_record(&db);
+    for word in BAND_4_WORDS {
+        insert_exposure(&db, word, 9, 0, NOW - 10 * DAY);
+    }
+    // No verdicts cached yet: the judgment is exactly the local one…
+    let (observation, candidates) = observe_with_ai(&db, NOW);
+    assert_eq!(observation, None);
+    // …and every hard word with a nameable book is nominated for the pass,
+    // each exactly once however many lookup rows it holds.
+    let mut words: Vec<&str> = candidates
+        .iter()
+        .map(|candidate| candidate.word.as_str())
+        .collect();
+    words.sort_unstable();
+    let mut expected: Vec<&str> = BAND_4_WORDS.iter().chain(BAND_5_WORDS.iter()).copied().collect();
+    expected.sort_unstable();
+    assert_eq!(words, expected);
+    assert!(candidates
+        .iter()
+        .all(|candidate| candidate.book_id == "book"));
+}
+
+#[test]
+fn a_word_with_a_verdict_is_not_nominated_again() {
+    let (_dir, db) = test_db();
+    specialized_book_record(&db);
+    insert_verdict(&db, BAND_4_WORDS[0], "book", "topical");
+    let (_, candidates) = observe_with_ai(&db, NOW);
+    assert!(candidates
+        .iter()
+        .all(|candidate| candidate.word != BAND_4_WORDS[0]));
+}
+
+#[test]
+fn local_mode_ignores_verdicts_and_nominates_nothing() {
+    let (_dir, db) = test_db();
+    specialized_book_record(&db);
+    // A cached verdict that would screen the band-4 words if it were read…
+    for word in BAND_4_WORDS {
+        insert_verdict(&db, word, "book", "topical");
+    }
+    // …is not read: without AI available the mode is local, the verdicts
+    // stay cold, and nothing is nominated to be classified.
+    let (observation, candidates) = get_level_observation_inner(&db, NOW, false).unwrap();
+    let observation = observation.expect("row");
+    assert_eq!(observation.kind, LevelObservationKind::DeclaredHigh);
+    assert_eq!(observation.topical_lookups, Some(0));
+    assert_eq!(observation.word_class_source, WordClassSource::Local);
+    assert!(candidates.is_empty());
+}
+
+#[test]
+fn the_local_setting_turns_ai_mode_off_even_with_a_provider() {
+    let (_dir, db) = test_db();
+    specialized_book_record(&db);
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO settings (key, value) VALUES ('level_observation_word_class', 'local')",
+            [],
+        )
+        .unwrap();
+    let (observation, candidates) = observe_with_ai(&db, NOW);
+    assert_eq!(
+        observation.expect("row").word_class_source,
+        WordClassSource::Local
+    );
+    assert!(candidates.is_empty());
+}
+
+#[test]
+fn a_passed_word_with_a_topical_verdict_is_not_low_evidence() {
+    let (_dir, db) = test_db();
+    // Three sightings only — under the heuristic's recurrence bar, so
+    // locally this word counts as read past.
+    insert_exposure(&db, BAND_5_WORDS[0], 3, 1, NOW - 5 * DAY);
+    insert_verdict(&db, BAND_5_WORDS[0], "book", "topical");
+
+    let raw = {
+        let conn = db.reader();
+        collect(&conn, NOW, WordClassSource::Ai).unwrap()
+    };
+    let (record, candidates) = score(&raw, &db, NOW, WordClassSource::Ai).unwrap();
+    assert_eq!(record.passed_by_band[5], 0);
+    assert!(candidates.is_empty());
+}
+
+#[test]
+fn a_word_looked_up_in_two_books_is_never_sent_to_the_ai() {
+    let (_dir, db) = test_db();
+    insert_book(&db, "other");
+    set_level(&db, "B2");
+    insert_lookups(&db, &BAND_1_WORDS, 45, NOW - 30 * DAY, "easy");
+    // The same band-4 word looked up in both books: the reader's own gap by
+    // the hard gate, so no candidate — and a stray cached verdict for one of
+    // the books could not screen it either.
+    insert_lookups(&db, &[BAND_4_WORDS[0]], 1, NOW - 2 * DAY, "here");
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO lookup_records
+                (id, book_id, lookup_text, normalized_text, chapter, cfi, definition,
+                 created_at, last_looked_up_at, lookup_count)
+             VALUES ('elsewhere-0', 'other', ?1, ?1, 'Chapter 1', 'epubcfi(/6/x/0)', '', ?2, ?2, 1)",
+            params![BAND_4_WORDS[0], NOW - 3 * DAY],
+        )
+        .unwrap();
+    insert_verdict(&db, BAND_4_WORDS[0], "book", "topical");
+
+    let (observation, candidates) = observe_with_ai(&db, NOW);
+    let observation = observation.expect("row");
+    // Both lookup rows stay in the record: 45 easy + 2 of the hard word.
+    assert_eq!(observation.total_lookups, Some(47));
+    assert_eq!(observation.topical_lookups, Some(0));
+    assert!(candidates
+        .iter()
+        .all(|candidate| candidate.word != BAND_4_WORDS[0]));
 }
 
 // ---------------------------------------------------------------------------
@@ -489,7 +701,7 @@ fn a_real_record_of_easy_lookups_produces_the_row() {
     let (_dir, db) = test_db();
     record_that_produces_a_row(&db, NOW, "one");
 
-    let observation = get_level_observation_inner(&db, NOW).unwrap().expect("row");
+    let observation = observe(&db, NOW).expect("row");
     assert_eq!(observation.kind, LevelObservationKind::DeclaredHigh);
     assert_eq!(observation.declared_level, "B2");
     assert_eq!(observation.suggested_level.as_deref(), Some("A1"));
@@ -508,7 +720,7 @@ fn the_declared_level_defaults_to_b1_when_it_was_never_set() {
     let (_dir, db) = test_db();
     insert_lookups(&db, &BAND_1_WORDS, 30, NOW - 30 * DAY, "easy");
     insert_lookups(&db, &BAND_4_WORDS, 10, NOW - 2 * DAY, "hard");
-    let observation = get_level_observation_inner(&db, NOW).unwrap().expect("row");
+    let observation = observe(&db, NOW).expect("row");
     assert_eq!(observation.declared_level, "B1");
 }
 
@@ -531,9 +743,9 @@ fn only_exposures_that_are_real_evidence_count_as_read_past() {
 
     let raw = {
         let conn = db.reader();
-        collect(&conn, NOW).unwrap()
+        collect(&conn, NOW, WordClassSource::Local).unwrap()
     };
-    let record = score(&raw, &db, NOW).unwrap();
+    let (record, _) = score(&raw, &db, NOW, WordClassSource::Local).unwrap();
     assert_eq!(record.passed_by_band[5], 1);
 }
 
@@ -545,41 +757,36 @@ fn only_exposures_that_are_real_evidence_count_as_read_past() {
 fn stopped_silences_the_row_for_good() {
     let (_dir, db) = test_db();
     record_that_produces_a_row(&db, NOW, "one");
-    assert!(get_level_observation_inner(&db, NOW).unwrap().is_some());
+    assert!(observe(&db, NOW).is_some());
 
     dismiss_level_observation_inner(&db, "stopped", NOW).unwrap();
-    assert_eq!(get_level_observation_inner(&db, NOW).unwrap(), None);
+    assert_eq!(observe(&db, NOW), None);
 
     // Not a snooze. A year later, with a fresh record that would otherwise
     // produce exactly this remark again, it is still off.
     record_that_produces_a_row(&db, NOW + 365 * DAY, "later");
-    assert_eq!(
-        get_level_observation_inner(&db, NOW + 365 * DAY).unwrap(),
-        None
-    );
+    assert_eq!(observe(&db, NOW + 365 * DAY), None);
 }
 
 #[test]
 fn keeping_silences_the_same_remark_for_three_months_then_lets_it_back() {
     let (_dir, db) = test_db();
     record_that_produces_a_row(&db, NOW, "one");
-    assert!(get_level_observation_inner(&db, NOW).unwrap().is_some());
+    assert!(observe(&db, NOW).is_some());
     dismiss_level_observation_inner(&db, "kept", NOW).unwrap();
-    assert_eq!(get_level_observation_inner(&db, NOW + DAY).unwrap(), None);
+    assert_eq!(observe(&db, NOW + DAY), None);
 
     // A second batch of the same evidence, so what is being tested at the
     // far end is the suppression and not the 90-day reading window rolling
     // the first batch out from under it.
     record_that_produces_a_row(&db, NOW + 88 * DAY, "later");
     assert_eq!(
-        get_level_observation_inner(&db, NOW + 89 * DAY).unwrap(),
+        observe(&db, NOW + 89 * DAY),
         None,
         "one day short of three months, still quiet"
     );
     assert!(
-        get_level_observation_inner(&db, NOW + 91 * DAY)
-            .unwrap()
-            .is_some(),
+        observe(&db, NOW + 91 * DAY).is_some(),
         "past three months the same remark may be made again"
     );
 }
@@ -588,12 +795,12 @@ fn keeping_silences_the_same_remark_for_three_months_then_lets_it_back() {
 fn applying_silences_the_same_remark_too() {
     let (_dir, db) = test_db();
     record_that_produces_a_row(&db, NOW, "one");
-    assert!(get_level_observation_inner(&db, NOW).unwrap().is_some());
+    assert!(observe(&db, NOW).is_some());
 
     // The frontend writes the new level itself and then calls in; this
     // command must not be the thing that moved it.
     dismiss_level_observation_inner(&db, "applied", NOW).unwrap();
-    assert_eq!(get_level_observation_inner(&db, NOW + DAY).unwrap(), None);
+    assert_eq!(observe(&db, NOW + DAY), None);
 }
 
 #[test]
@@ -627,10 +834,10 @@ fn dismissing_never_writes_the_level_setting() {
 fn a_markedly_different_verdict_gets_through_the_suppression_window() {
     let (_dir, db) = test_db();
     record_that_produces_a_row(&db, NOW, "one");
-    let first = get_level_observation_inner(&db, NOW).unwrap().expect("row");
+    let first = observe(&db, NOW).expect("row");
     assert_eq!(first.band, Some(1));
     dismiss_level_observation_inner(&db, "kept", NOW).unwrap();
-    assert_eq!(get_level_observation_inner(&db, NOW + DAY).unwrap(), None);
+    assert_eq!(observe(&db, NOW + DAY), None);
 
     // The record moves: the easy-band lookups are now band 2, not band 1.
     // That is a different thing to be told, so it is allowed through before
@@ -643,9 +850,7 @@ fn a_markedly_different_verdict_gets_through_the_suppression_window() {
     // "cottage" is rank 2255 — band 2.
     insert_lookups(&db, &["cottage"], 30, NOW - 30 * DAY, "mid");
 
-    let second = get_level_observation_inner(&db, NOW + DAY)
-        .unwrap()
-        .expect("a different remark is not the dismissed one");
+    let second = observe(&db, NOW + DAY).expect("a different remark is not the dismissed one");
     assert_eq!(second.kind, LevelObservationKind::DeclaredHigh);
     assert_eq!(second.band, Some(2));
 }

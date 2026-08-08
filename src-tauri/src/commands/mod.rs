@@ -15,6 +15,7 @@ pub mod fonts;
 pub mod followup_difficulty;
 pub mod language_assessments;
 pub mod level_observation;
+pub mod level_word_class;
 pub mod lookup_history;
 pub mod mastery_events;
 pub mod mcp;

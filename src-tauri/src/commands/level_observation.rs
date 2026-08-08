@@ -27,10 +27,12 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, State};
 
+use crate::commands::level_word_class::{self, Candidate, WordClass};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
+use crate::secrets::Secrets;
 use crate::word_frequency::{band_rank_window, lookup_with, FormIndex};
 
 const DAY_MS: i64 = 86_400_000;
@@ -150,6 +152,53 @@ const TOPICAL_MIN_SIGHTINGS: i64 = 6;
 /// book's subject matter.
 const TOPICAL_TOP_BOOK_SHARE: f64 = 0.8;
 
+// ---------------------------------------------------------------------------
+// Word-class mode.
+//
+// The heuristic above sees recurrence; it cannot see meaning. In AI mode
+// (the `level_observation_word_class` setting, default on) each hard word
+// is also put to the reader's configured AI — word plus book title, nothing
+// else — and a cached AI verdict *replaces* the heuristic for that word, in
+// either direction: "general" keeps a word the heuristic would have
+// screened, "topical" screens a word the heuristic would have kept.
+// Classification runs detached after the page is served
+// (`level_word_class.rs`); words not yet judged fall back to the heuristic,
+// so the row never waits on the network and never changes because of a
+// *failed* call — only because of an answered one.
+//
+// Local mode — chosen in settings, or forced when no AI is configured — is
+// exactly the pre-AI behavior: heuristic only, nothing sent anywhere. The
+// observation reports which mode actually produced it (`wordClassSource`)
+// so the fine print on screen can tell the truth either way.
+// ---------------------------------------------------------------------------
+
+/// Which classifier the observation actually used. Serialized onto the wire
+/// (`"ai"` / `"local"`) for the fine print's benefit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WordClassSource {
+    Ai,
+    Local,
+}
+
+fn word_class_mode(conn: &Connection, ai_available: bool) -> AppResult<WordClassSource> {
+    if !ai_available {
+        return Ok(WordClassSource::Local);
+    }
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'level_observation_word_class'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(if raw.as_deref() == Some("local") {
+        WordClassSource::Local
+    } else {
+        WordClassSource::Ai
+    })
+}
+
 /// The six levels the settings UI offers, ascending. Mirrors
 /// `src/components/settings/cefr.ts`.
 const LEVELS: [&str; 6] = ["A1", "A2", "B1", "B2", "C1", "C2"];
@@ -244,6 +293,12 @@ pub struct LevelObservation {
     /// stays a receipt if the difference is stated.
     pub topical_lookups: Option<i64>,
     pub window_days: i64,
+    /// Which classifier separated topical words from general ones for this
+    /// observation — `Ai` when the AI mode was in effect (even if some words
+    /// were still waiting on a verdict), `Local` otherwise. The fine print
+    /// keys off this: the "nothing leaves this machine" sentence is only
+    /// shown when it is true.
+    pub word_class_source: WordClassSource,
 }
 
 /// What the two commands read out of the database before anything is judged.
@@ -300,18 +355,24 @@ fn clear_of_floor(record: &RecordSummary) -> bool {
 }
 
 /// How widely a word was sighted, summed per book over the window.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct BookSpread {
     /// Viewport sightings across every book.
     total: i64,
     /// The largest single book's share of that total.
     top: i64,
+    /// Which book that is — the context book an AI verdict for a read-past
+    /// word is looked up (and asked for) under.
+    top_book: Option<String>,
 }
 
 impl BookSpread {
-    fn add(&mut self, sightings: i64) {
+    fn add(&mut self, book: &str, sightings: i64) {
         self.total += sightings;
-        self.top = self.top.max(sightings);
+        if sightings > self.top {
+            self.top = sightings;
+            self.top_book = Some(book.to_string());
+        }
     }
 }
 
@@ -328,6 +389,47 @@ fn is_topical(band: u8, sightings: Option<&BookSpread>, looked_up_in_books: usiz
     };
     spread.total >= TOPICAL_MIN_SIGHTINGS
         && spread.top as f64 / spread.total as f64 >= TOPICAL_TOP_BOOK_SHARE
+}
+
+/// One word's class under the mode in effect, plus — in AI mode — the
+/// candidate to classify if no verdict exists yet.
+///
+/// The hard gates come first and hold in both modes: bands 1–2 are never
+/// topical (see [`TOPICAL_MIN_BAND`]), and a word looked up in two
+/// different books is the reader's own gap whatever any one book is about.
+/// The AI is never even asked about those. Inside the gates, a cached AI
+/// verdict replaces the heuristic outright — in either direction — and a
+/// missing verdict falls back to the heuristic while nominating the word
+/// for the next detached classification pass.
+fn classify(
+    mode: WordClassSource,
+    verdicts: &HashMap<(String, String), WordClass>,
+    word: &str,
+    context_book: Option<&str>,
+    band: u8,
+    sightings: Option<&BookSpread>,
+    looked_up_in_books: usize,
+) -> (bool, Option<Candidate>) {
+    if band < TOPICAL_MIN_BAND || looked_up_in_books >= 2 {
+        return (false, None);
+    }
+    let heuristic = is_topical(band, sightings, looked_up_in_books);
+    if mode == WordClassSource::Local {
+        return (heuristic, None);
+    }
+    let Some(book) = context_book else {
+        return (heuristic, None);
+    };
+    match verdicts.get(&(word.to_string(), book.to_string())) {
+        Some(verdict) => (*verdict == WordClass::Topical, None),
+        None => (
+            heuristic,
+            Some(Candidate {
+                word: word.to_string(),
+                book_id: book.to_string(),
+            }),
+        ),
+    }
 }
 
 fn with_band(mut observation: LevelObservation, band: u8) -> LevelObservation {
@@ -365,6 +467,10 @@ fn judge(record: &RecordSummary, declared: &str) -> Option<LevelObservation> {
         concentrated_lookups: None,
         topical_lookups: None,
         window_days: record.span_days,
+        // A placeholder: the judgment doesn't know which classifier fed it.
+        // `get_level_observation_inner` stamps the real source before the
+        // observation leaves this module.
+        word_class_source: WordClassSource::Local,
     };
 
     if total >= STRONG_MIN_LOOKUPS {
@@ -489,11 +595,19 @@ struct RawRecord {
     /// Every word's in-window viewport sightings, summed per book and
     /// collapsed to (total, largest book) — the topical screen's evidence.
     sightings: HashMap<String, BookSpread>,
+    /// Cached AI verdicts, keyed by (word, context book). Loaded only in AI
+    /// mode; empty in local mode, which makes every cache probe miss and
+    /// the heuristic decide everything — exactly local behavior.
+    verdicts: HashMap<(String, String), WordClass>,
 }
 
-fn collect(conn: &Connection, now: i64) -> AppResult<RawRecord> {
+fn collect(conn: &Connection, now: i64, mode: WordClassSource) -> AppResult<RawRecord> {
     let since = now - WINDOW_DAYS * DAY_MS;
     let mut raw = RawRecord::default();
+
+    if mode == WordClassSource::Ai {
+        raw.verdicts = level_word_class::cached_verdicts(conn)?;
+    }
 
     // Every word ever looked up, in any book. A word the reader once
     // stopped for is not a word they read past, even if the stop predates
@@ -536,15 +650,19 @@ fn collect(conn: &Connection, now: i64) -> AppResult<RawRecord> {
     // whole row once its newest sighting is inside the window.
     {
         let mut stmt = conn.prepare(
-            "SELECT normalized_word, SUM(encounter_count) FROM reading_word_exposures \
+            "SELECT normalized_word, book_id, SUM(encounter_count) FROM reading_word_exposures \
              WHERE last_seen_at >= ?1 GROUP BY normalized_word, book_id",
         )?;
         let rows = stmt.query_map(params![since], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
         })?;
         for row in rows {
-            let (word, in_book) = row?;
-            raw.sightings.entry(word).or_default().add(in_book);
+            let (word, book, in_book) = row?;
+            raw.sightings.entry(word).or_default().add(&book, in_book);
         }
     }
 
@@ -579,10 +697,26 @@ fn collect(conn: &Connection, now: i64) -> AppResult<RawRecord> {
 }
 
 /// Score the collected rows against the frequency table. Must be called
-/// with no read guard held — see [`RawRecord`].
-fn score(raw: &RawRecord, db: &Db, now: i64) -> AppResult<RecordSummary> {
+/// with no read guard held — see [`RawRecord`]. Returns the summary plus,
+/// in AI mode, the words that still need a verdict — the detached pass's
+/// work list.
+fn score(
+    raw: &RawRecord,
+    db: &Db,
+    now: i64,
+    mode: WordClassSource,
+) -> AppResult<(RecordSummary, Vec<Candidate>)> {
     let forms = FormIndex::new(db);
     let mut summary = RecordSummary::default();
+    let mut candidates: Vec<Candidate> = Vec::new();
+    let mut nominated: HashSet<(String, String)> = HashSet::new();
+    let mut nominate = |candidate: Option<Candidate>, candidates: &mut Vec<Candidate>| {
+        if let Some(candidate) = candidate {
+            if nominated.insert((candidate.word.clone(), candidate.book_id.clone())) {
+                candidates.push(candidate);
+            }
+        }
+    };
 
     // The topical screen's second condition needs each word's spread of
     // lookup *books*, which is a fact about the whole window — so it is
@@ -601,11 +735,25 @@ fn score(raw: &RawRecord, db: &Db, now: i64) -> AppResult<RecordSummary> {
         let Some(entry) = lookup_with(&forms, word)? else {
             continue;
         };
-        if is_topical(
+        let books = looked_up_in_books.get(word.as_str());
+        let book_count = books.map_or(0, HashSet::len);
+        // A looked-up word's context book is the one book it was looked up
+        // in; with two or more, `classify`'s gate answers before context
+        // matters.
+        let context_book = books
+            .filter(|books| books.len() == 1)
+            .and_then(|books| books.iter().next().copied());
+        let (topical, candidate) = classify(
+            mode,
+            &raw.verdicts,
+            word,
+            context_book,
             entry.band,
             raw.sightings.get(word),
-            looked_up_in_books.get(word.as_str()).map_or(0, HashSet::len),
-        ) {
+            book_count,
+        );
+        nominate(candidate, &mut candidates);
+        if topical {
             summary.topical_lookups += 1;
             continue;
         }
@@ -622,8 +770,14 @@ fn score(raw: &RawRecord, db: &Db, now: i64) -> AppResult<RecordSummary> {
             // The same screen, for the same reason: a book that repeats its
             // own hard vocabulary teaches it in passing, and reading past a
             // word the book itself drilled says nothing about the level.
-            // (`passed_candidates` were never looked up, hence 0 books.)
-            if is_topical(entry.band, raw.sightings.get(word), 0) {
+            // (`passed_candidates` were never looked up, hence 0 books —
+            // their context book is the one holding most of the sightings.)
+            let spread = raw.sightings.get(word);
+            let context_book = spread.and_then(|spread| spread.top_book.as_deref());
+            let (topical, candidate) =
+                classify(mode, &raw.verdicts, word, context_book, entry.band, spread, 0);
+            nominate(candidate, &mut candidates);
+            if topical {
                 continue;
             }
             summary.passed_by_band[entry.band as usize] += 1;
@@ -635,7 +789,7 @@ fn score(raw: &RawRecord, db: &Db, now: i64) -> AppResult<RecordSummary> {
         None => 0,
     };
 
-    Ok(summary)
+    Ok((summary, candidates))
 }
 
 // ---------------------------------------------------------------------------
@@ -710,26 +864,38 @@ fn remember_shown(conn: &Connection, observation: &LevelObservation, now: i64) -
 // Commands.
 // ---------------------------------------------------------------------------
 
-pub fn get_level_observation_inner(db: &Db, now: i64) -> AppResult<Option<LevelObservation>> {
+/// Compute the observation, plus — in AI mode — the words still awaiting a
+/// class verdict. Candidates come back even when the observation is `None`
+/// or suppressed: classifying them is what makes the *next* visit's answer
+/// better, and a visit that shows nothing still read the whole record.
+pub fn get_level_observation_inner(
+    db: &Db,
+    now: i64,
+    ai_available: bool,
+) -> AppResult<(Option<LevelObservation>, Vec<Candidate>)> {
     // Each guard is taken for one step and dropped, never held across the
     // scoring pass — see [`RawRecord`] for the deadlock that would be.
-    let (declared, raw) = {
+    let (mode, declared, raw) = {
         let conn = db.reader();
         if stopped_for_good(&conn)? {
-            return Ok(None);
+            // The reader ended the comparison; nothing may be spent on its
+            // behalf either, so no candidates.
+            return Ok((None, Vec::new()));
         }
-        (declared_level(&conn)?, collect(&conn, now)?)
+        let mode = word_class_mode(&conn, ai_available)?;
+        (mode, declared_level(&conn)?, collect(&conn, now, mode)?)
     };
 
-    let record = score(&raw, db, now)?;
-    let Some(observation) = judge(&record, &declared) else {
-        return Ok(None);
+    let (record, candidates) = score(&raw, db, now, mode)?;
+    let Some(mut observation) = judge(&record, &declared) else {
+        return Ok((None, candidates));
     };
+    observation.word_class_source = mode;
 
     {
         let conn = db.reader();
         if suppressed(&conn, &observation, now)? {
-            return Ok(None);
+            return Ok((None, candidates));
         }
     }
 
@@ -739,13 +905,29 @@ pub fn get_level_observation_inner(db: &Db, now: i64) -> AppResult<Option<LevelO
     if let Ok(conn) = db.conn.lock() {
         let _ = remember_shown(&conn, &observation, now);
     }
-    Ok(Some(observation))
+    Ok((Some(observation), candidates))
 }
 
 /// The row's whole data source. `None` — no row — is the normal answer.
+/// Also the AI classifier's only trigger: whatever the scoring pass left
+/// unjudged is handed to a detached batch after the answer is already on
+/// its way to the page — the row itself never waits on the network.
 #[tauri::command]
-pub fn get_level_observation(db: State<'_, Db>) -> AppResult<Option<LevelObservation>> {
-    get_level_observation_inner(&db, chrono::Utc::now().timestamp_millis())
+pub fn get_level_observation(
+    app: AppHandle,
+    db: State<'_, Db>,
+    secrets: State<'_, Secrets>,
+) -> AppResult<Option<LevelObservation>> {
+    let ai_available = crate::ai::router::has_configured_service(&db);
+    let (observation, candidates) =
+        get_level_observation_inner(&db, chrono::Utc::now().timestamp_millis(), ai_available)?;
+    level_word_class::spawn_classification(
+        app,
+        db.inner().clone(),
+        secrets.inner().clone(),
+        candidates,
+    );
+    Ok(observation)
 }
 
 pub fn dismiss_level_observation_inner(db: &Db, outcome: &str, now: i64) -> AppResult<()> {
