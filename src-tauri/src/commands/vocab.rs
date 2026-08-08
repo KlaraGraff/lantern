@@ -1,5 +1,5 @@
 use chrono::{TimeZone, Utc};
-use fsrs::{Card, Rating, State as FsrsState, FSRS};
+use fsrs::{MemoryState, DEFAULT_PARAMETERS, FSRS};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -129,8 +129,15 @@ fn row_to_vocab_with_book(row: &rusqlite::Row) -> rusqlite::Result<VocabWord> {
 
 pub(crate) const SELECT_COLS: &str = "id, book_id, word, definition, context_sentence, cfi, mastery, review_count, next_review_at, created_at, updated_at, context_explanation, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version, mastery_source, mastery_reason, list_status";
 
-#[cfg(test)]
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+/// Probability the scheduler aims for that a word is still recalled when it
+/// next comes up. 0.9 is the FSRS default and what `rs-fsrs` used implicitly
+/// before the swap, so the swap does not silently reschedule anyone's deck.
+const DESIRED_RETENTION: f32 = 0.9;
+/// How far ahead a card goes when FSRS asks for less than a day. Ten minutes
+/// is short enough that a lapsed word comes back in the same sitting and long
+/// enough that it is not the very next card.
+const RELEARN_STEP_MS: i64 = 10 * 60 * 1000;
 const VOCAB_BACKUP_SCHEMA: &str = "lantern-vocabulary";
 const VOCAB_BACKUP_VERSION: u32 = 1;
 const MAX_VOCAB_IMPORT_BYTES: usize = 10 * 1024 * 1024;
@@ -392,7 +399,6 @@ fn schedule_review(
     stability: Option<f64>,
     difficulty: Option<f64>,
     last_reviewed_at: Option<i64>,
-    review_count: i64,
     now: i64,
 ) -> AppResult<ScheduledReview> {
     let now_dt = Utc
@@ -403,31 +409,43 @@ fn schedule_review(
         .and_then(|value| Utc.timestamp_millis_opt(value).single())
         .unwrap_or(now_dt);
     let elapsed_days = now_dt.signed_duration_since(last_review).num_days().max(0);
-    let scheduled_before = stability.is_some() && difficulty.is_some();
-    let card = Card {
-        due: now_dt,
-        stability: stability.unwrap_or_default(),
-        difficulty: difficulty.unwrap_or_default(),
-        elapsed_days,
-        scheduled_days: 0,
-        reps: review_count.clamp(0, i32::MAX as i64) as i32,
-        lapses: 0,
-        state: if scheduled_before {
-            FsrsState::Review
-        } else {
-            FsrsState::New
-        },
-        last_review,
+    // A card is "seen before" only when both numbers are present. Passing
+    // `None` is not the same as passing zeros: `next_states` treats `None` as
+    // the very first review and takes a different branch for it.
+    let memory_before = match (stability, difficulty) {
+        (Some(stability), Some(difficulty)) => Some(MemoryState {
+            stability: stability as f32,
+            difficulty: difficulty as f32,
+        }),
+        _ => None,
     };
-    let fsrs_rating = match rating {
-        VocabReviewRating::Again => Rating::Again,
-        VocabReviewRating::Hard => Rating::Hard,
-        VocabReviewRating::Good => Rating::Good,
-        VocabReviewRating::Easy => Rating::Easy,
+    let scheduler = FSRS::new(&DEFAULT_PARAMETERS)
+        .map_err(|err| crate::error::AppError::Other(format!("FSRS_INIT_FAILED: {err}")))?;
+    let next = scheduler
+        .next_states(
+            memory_before,
+            DESIRED_RETENTION,
+            elapsed_days.clamp(0, u32::MAX as i64) as u32,
+        )
+        .map_err(|err| crate::error::AppError::Other(format!("FSRS_SCHEDULE_FAILED: {err}")))?;
+    let chosen = match rating {
+        VocabReviewRating::Again => next.again,
+        VocabReviewRating::Hard => next.hard,
+        VocabReviewRating::Good => next.good,
+        VocabReviewRating::Easy => next.easy,
     };
-    let state = FSRS::default().next(card, now_dt, fsrs_rating).card;
-    let interval = state.scheduled_days.clamp(0, 36_500);
-    let next_review_at = state.due.timestamp_millis();
+    // The upstream scheduler returns a fractional interval in days and no due
+    // date, so both the rounding and the clock arithmetic are ours.
+    let interval = (chosen.interval.round() as i64).clamp(0, 36_500);
+    // A sub-day interval rounds to zero, and `now + 0` would make the card due
+    // in the past the instant it is written — the queue would hand it straight
+    // back. `rs-fsrs` hid this behind its learning steps; the official crate
+    // models long-term scheduling only, so the same-day step is ours to supply.
+    let next_review_at = if interval == 0 {
+        now.saturating_add(RELEARN_STEP_MS)
+    } else {
+        now.saturating_add(interval.saturating_mul(DAY_MS))
+    };
     let mastery = if interval >= 21 && !matches!(rating, VocabReviewRating::Again) {
         "mastered"
     } else {
@@ -437,10 +455,10 @@ fn schedule_review(
         mastery: mastery.to_string(),
         review_interval_days: interval,
         next_review_at,
-        stability: state.stability,
-        difficulty: state.difficulty,
+        stability: f64::from(chosen.memory.stability),
+        difficulty: f64::from(chosen.memory.difficulty),
         elapsed_days,
-        state_before: scheduled_before.then_some("review"),
+        state_before: memory_before.map(|_| "review"),
     })
 }
 
@@ -1133,7 +1151,6 @@ pub(crate) fn record_vocab_review_inner(
             stability_before,
             difficulty_before,
             current.last_reviewed_at,
-            current.review_count,
             now,
         )?;
         let ScheduledReview {
@@ -2611,10 +2628,13 @@ mod tests {
 
     #[test]
     fn again_returns_word_to_short_learning_interval() {
-        let first = schedule_review(VocabReviewRating::Again, None, None, None, 0, 1_000).unwrap();
+        let first = schedule_review(VocabReviewRating::Again, None, None, None, 1_000).unwrap();
         assert_eq!(first.mastery, "learning");
         assert_eq!(first.review_interval_days, 0);
-        assert!(first.next_review_at > 1_000);
+        // A zero-day interval must still land in the future. The upstream
+        // scheduler has no learning steps, so this floor is ours; without it
+        // the card is due the moment it is written and the queue re-serves it.
+        assert_eq!(first.next_review_at, 1_000 + RELEARN_STEP_MS);
         assert!(first.stability > 0.0 && first.difficulty > 0.0);
     }
 
@@ -2625,7 +2645,7 @@ mod tests {
     /// judged new" indistinguishable in the optimizer's training data.
     #[test]
     fn first_review_has_no_prior_state_and_later_ones_do() {
-        let first = schedule_review(VocabReviewRating::Good, None, None, None, 0, 1_000).unwrap();
+        let first = schedule_review(VocabReviewRating::Good, None, None, None, 1_000).unwrap();
         assert_eq!(first.state_before, None);
         assert_eq!(first.elapsed_days, 0);
 
@@ -2634,7 +2654,6 @@ mod tests {
             Some(first.stability),
             Some(first.difficulty),
             Some(1_000),
-            1,
             1_000 + 3 * DAY_MS,
         )
         .unwrap();
@@ -2644,13 +2663,12 @@ mod tests {
 
     #[test]
     fn good_grows_interval_and_eventually_marks_mastered() {
-        let first = schedule_review(VocabReviewRating::Good, None, None, None, 0, 1_000).unwrap();
+        let first = schedule_review(VocabReviewRating::Good, None, None, None, 1_000).unwrap();
         let second = schedule_review(
             VocabReviewRating::Good,
             Some(first.stability),
             Some(first.difficulty),
             Some(1_000),
-            1,
             1_000 + first.review_interval_days * DAY_MS,
         )
         .unwrap();

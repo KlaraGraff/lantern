@@ -69,7 +69,14 @@ image = { version = "0.25", default-features = false, features = ["jpeg"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 encoding_rs = "0.8"
 chardetng = "0.1"
-fsrs = { package = "rs-fsrs", version = "1.2.1" }
+# The upstream FSRS crate, not the `rs-fsrs` port we ran until now. Two
+# reasons: it is the implementation the algorithm's authors ship, and it is the
+# only one carrying `ComputeParametersInput` — the optimizer that turns
+# `vocab_review_log` into parameters fitted to this reader. Its scheduler is
+# long-term only (`next_states` returns a fractional day interval, no due date
+# and no learning steps), so the sub-day step lives in `commands/vocab.rs`.
+# The training half pulls ndarray + rayon; `burn` stays dev-only.
+fsrs = "6.6.1"
 pulldown-cmark = "0.13"
 ammonia = "4"
 scraper = "0.24"
