@@ -116,6 +116,7 @@ fn build_chat_system_content(
     excerpts: &[RetrievedChunk],
     excerpts_are_stable: bool,
     spoiler_guard_active: bool,
+    profile: Option<&str>,
 ) -> (SystemContent, Vec<CitedSource>) {
     let mut stable = "You are a helpful reading assistant. Help the user understand and discuss the book they are reading.".to_string();
     if let Some(reference) = book_reference_block(book_title, book_author, current_chapter) {
@@ -132,6 +133,13 @@ fn build_chat_system_content(
         stable.push_str(
             " Spoiler protection is active. Only discuss events supported by the provided excerpts and read-section summaries. Never reveal, infer, or complete later events from your own knowledge of the book or from the user's request. State that the protected reading range does not contain the answer when necessary.",
         );
+    }
+
+    // Ahead of the excerpts, because the excerpts are the evidence and this is
+    // only a note on how to pitch the answer — and behind them the reader's own
+    // words would read as one more retrieved passage.
+    if let Some(profile) = profile {
+        stable.push_str(profile);
     }
 
     let mut sources = Vec::new();
@@ -163,6 +171,64 @@ fn build_chat_system_content(
         }
     };
     (content, sources)
+}
+
+/// One real sentence from the reader's own library, offered to the model as an
+/// example of the word in use, and to the frontend as something the reader can
+/// tap to go read in place.
+///
+/// Deliberately not `CitedSource`: a cited source is evidence from *this* book
+/// that the answer rests on, and clicking it never leaves the page the reader
+/// is on. A quote is an illustration from a *different* book that the model is
+/// free to ignore, and clicking it may open that other book. Same visual
+/// language in the UI, different promise — merging the two types would erase
+/// that difference at exactly the layer that has to preserve it.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct QuotedSource {
+    pub marker: String,
+    pub book_id: String,
+    pub book_title: String,
+    pub section_index: i64,
+    pub section_href: Option<String>,
+    pub text: String,
+    /// Anchoring context — see `grounding::quotes::QuoteCandidate::prefix`.
+    /// Present in this payload and absent from the prompt block below: the
+    /// frontend needs it to find the sentence, the model does not.
+    pub prefix: String,
+    pub suffix: String,
+    pub char_start: Option<i64>,
+}
+
+const QUOTES_PREAMBLE: &str = "\n\nBelow are real sentences from books this reader has already read, containing the word in question. Use one only if it shows the same sense the reader is asking about — a word can appear in three books in three unrelated senses, and an example that pulls the wrong way is worse than no example. When you use one, quote it and put its marker like [Q2] immediately after. Do not use any of them if none fits, and never say that you were given examples.";
+
+/// Render the retrieved sentences as a prompt block, and the same sentences as
+/// the metadata the frontend needs to make each marker clickable.
+fn build_quote_block(quotes: &[grounding::quotes::QuoteCandidate]) -> (String, Vec<QuotedSource>) {
+    if quotes.is_empty() {
+        return (String::new(), Vec::new());
+    }
+    let mut block = String::from(QUOTES_PREAMBLE);
+    let mut rendered = Vec::with_capacity(quotes.len());
+    for (index, quote) in quotes.iter().enumerate() {
+        let marker = format!("Q{}", index + 1);
+        block.push_str(&format!(
+            "\n\n[{marker}] (from: {})\n{}",
+            quote.book_title, quote.text,
+        ));
+        rendered.push(QuotedSource {
+            marker,
+            book_id: quote.book_id.clone(),
+            book_title: quote.book_title.clone(),
+            section_index: quote.section_index,
+            section_href: quote.section_href.clone(),
+            text: quote.text.clone(),
+            prefix: quote.prefix.clone(),
+            suffix: quote.suffix.clone(),
+            char_start: quote.chunk_char_start,
+        });
+    }
+    (block, rendered)
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -407,6 +473,10 @@ pub struct SpoilerGuardMetadata {
 #[serde(rename_all = "camelCase")]
 pub struct AiChatResult {
     pub sources: Vec<CitedSource>,
+    /// Real sentences offered for a word-sense follow-up. Empty unless the turn
+    /// named a word, and empty again when nothing in the read library contains
+    /// it — the frontend renders no row in either case.
+    pub quotes: Vec<QuotedSource>,
     pub spoiler_guard: SpoilerGuardMetadata,
     pub route: String,
     pub section_index: Option<i64>,
@@ -611,6 +681,13 @@ pub async fn ai_chat(
     retry: Option<bool>,
     scope_override: Option<String>,
     viewport_text: Option<String>,
+    // The single word this turn is about, when the reader arrived here by
+    // tapping 追问 on a lookup, a translation, or a word explanation. The
+    // popovers already hold the word, so it is passed rather than recovered
+    // from the quoted passage: that passage is a formatted blob
+    // ("Text: … / Context: … / Explanation: …") and reading the word back out
+    // of it in Rust would be parsing our own presentation layer.
+    focus_word: Option<String>,
     app: AppHandle,
     db: State<'_, Db>,
     secrets: State<'_, Secrets>,
@@ -1264,6 +1341,19 @@ pub async fn ai_chat(
         }
     }
 
+    // Appendix A's first downstream stop for the reader profile: a follow-up on
+    // an attached passage — the turn that starts from a card. A plain question
+    // with nothing attached is left alone, so the profile never quietly becomes
+    // a preamble on every answer in the app.
+    let profile_block = if matches!(
+        selection,
+        SelectionState::Attached | SelectionState::Carried
+    ) {
+        crate::commands::profile::injection_block(&db, &language).unwrap_or(None)
+    } else {
+        None
+    };
+
     let (mut system_content, mut sources) = build_chat_system_content(
         book_title.as_deref(),
         book_author.as_deref(),
@@ -1273,10 +1363,43 @@ pub async fn ai_chat(
         &excerpts,
         (full_text && spoiler_cutoff.is_none()) || scoped_text,
         spoiler_guard_active,
+        profile_block.as_deref(),
     );
     if vocabulary_scan_plan.is_some() {
         sources.clear();
     }
+
+    // Real sentences for a word-sense follow-up. Retrieval reads the reader's
+    // whole library, so a failure here must not take the answer down with it —
+    // the worst case is an answer with no examples, which is also the normal
+    // case for a word that appears nowhere else.
+    let (quote_block, quotes) = match focus_word
+        .as_deref()
+        .map(str::trim)
+        .filter(|word| !word.is_empty())
+    {
+        Some(word) => {
+            let candidates = grounding::quotes::find_quotes(
+                &db,
+                word,
+                book_id.as_deref().unwrap_or_default(),
+                // No live position to hand over: this command never receives
+                // one in the shape `cutoff_for_position` parses. `find_quotes`
+                // falls back to the book's saved `current_cfi`, which the
+                // reader writes continuously, so it trails the live position by
+                // at most a page.
+                None,
+            )
+            .unwrap_or_default();
+            build_quote_block(&candidates)
+        }
+        None => (String::new(), Vec::new()),
+    };
+    // Always the variable half: the block is keyed to one word and changes on
+    // every follow-up, so putting it in the cacheable prefix would invalidate
+    // that prefix each turn — the exact cost caching exists to avoid.
+    system_content.variable.push_str(&quote_block);
+
     append_chat_route_instructions(
         &mut system_content,
         route,
@@ -1336,6 +1459,7 @@ pub async fn ai_chat(
 
     Ok(AiChatResult {
         sources,
+        quotes,
         spoiler_guard: SpoilerGuardMetadata {
             active: spoiler_guard_active,
             whole_book_intent,
@@ -1444,6 +1568,92 @@ mod tests {
         assert_eq!(omitted, 0);
     }
 
+    fn candidate(book: &str, title: &str, text: &str) -> grounding::quotes::QuoteCandidate {
+        grounding::quotes::QuoteCandidate {
+            book_id: book.to_string(),
+            book_title: title.to_string(),
+            section_index: 3,
+            section_href: Some("ch3.xhtml".to_string()),
+            chunk_char_start: None,
+            text: text.to_string(),
+            prefix: "before it".to_string(),
+            suffix: "after it".to_string(),
+        }
+    }
+
+    #[test]
+    fn no_quotes_means_no_block_and_no_metadata() {
+        let (block, quotes) = build_quote_block(&[]);
+        assert!(block.is_empty(), "an empty block must add nothing");
+        assert!(quotes.is_empty());
+    }
+
+    #[test]
+    fn each_quote_gets_a_marker_the_model_and_the_frontend_agree_on() {
+        let (block, quotes) = build_quote_block(&[
+            candidate("b1", "Walden", "He had tempered his wants."),
+            candidate("b2", "The Old Man and the Sea", "His hands were tempered."),
+        ]);
+
+        assert!(block.contains("[Q1] (from: Walden)"));
+        assert!(block.contains("He had tempered his wants."));
+        assert!(block.contains("[Q2] (from: The Old Man and the Sea)"));
+        assert_eq!(quotes[0].marker, "Q1");
+        assert_eq!(quotes[1].marker, "Q2");
+        assert_eq!(quotes[1].book_id, "b2");
+    }
+
+    #[test]
+    fn anchoring_context_reaches_the_frontend_and_stays_out_of_the_prompt() {
+        let (block, quotes) = build_quote_block(&[candidate("b1", "Walden", "A sentence.")]);
+
+        assert_eq!(quotes[0].prefix, "before it");
+        assert_eq!(quotes[0].suffix, "after it");
+        assert!(
+            !block.contains("before it") && !block.contains("after it"),
+            "context is for anchoring, and costs tokens for nothing in a prompt"
+        );
+    }
+
+    #[test]
+    fn the_profile_sits_ahead_of_the_excerpts_it_must_not_be_mistaken_for() {
+        let excerpt = RetrievedChunk {
+            chunk_id: "chunk-1".to_string(),
+            chunk_index: 0,
+            section_index: 2,
+            section_href: Some("chapter.xhtml".to_string()),
+            section_title: Some("A chapter".to_string()),
+            char_start: None,
+            char_end: None,
+            snippet: "Retrieved passage.".to_string(),
+            text: "Retrieved passage.".to_string(),
+            token_estimate: 8,
+            score: -1.0,
+        };
+        let (content, _) = build_chat_system_content(
+            Some("Book"),
+            None,
+            None,
+            "en",
+            None,
+            &[excerpt],
+            true,
+            false,
+            Some("\n\n[Reader profile]\nI am a beginner.\n[/Reader profile]"),
+        );
+
+        let profile_at = content.stable.find("[Reader profile]").expect("injected");
+        let excerpt_at = content.stable.find("[S1]").expect("excerpts present");
+        assert!(profile_at < excerpt_at);
+    }
+
+    #[test]
+    fn no_profile_leaves_the_prompt_exactly_as_it_was() {
+        let (with_none, _) =
+            build_chat_system_content(Some("Book"), None, None, "en", None, &[], false, false, None);
+        assert!(!with_none.stable.contains("[Reader profile]"));
+    }
+
     #[test]
     fn grounded_chat_system_content_injects_untrusted_excerpts_and_sources() {
         let excerpt = RetrievedChunk {
@@ -1468,6 +1678,7 @@ mod tests {
             &[excerpt],
             false,
             false,
+            None,
         );
         let combined = content.combined();
         assert!(combined.contains("[S1] (section: A chapter)"));
@@ -1481,7 +1692,7 @@ mod tests {
     #[test]
     fn metadata_only_system_content_is_unchanged_without_excerpts() {
         let (content, sources) =
-            build_chat_system_content(Some("Book"), None, None, "zh", None, &[], false, false);
+            build_chat_system_content(Some("Book"), None, None, "zh", None, &[], false, false, None);
         assert_eq!(
             content.combined(),
             "You are a helpful reading assistant. Help the user understand and discuss the book they are reading.\n\nThe following is reference metadata for the book:\n{\"book\":{\"title\":\"Book\"}} Always respond in Chinese (Simplified).",
@@ -1495,7 +1706,7 @@ mod tests {
         // passage on a turn that attached none, and nothing in the request
         // contained one. The model said so, and it was right.
         let (mut carried, _) =
-            build_chat_system_content(None, None, None, "en", None, &[], false, false);
+            build_chat_system_content(None, None, None, "en", None, &[], false, false, None);
         append_chat_route_instructions(
             &mut carried,
             ChatRoute::SelectedContext,
@@ -1515,7 +1726,7 @@ mod tests {
     #[test]
     fn a_passage_route_with_nothing_selected_falls_back_to_what_is_on_screen() {
         let (mut missing, _) =
-            build_chat_system_content(None, None, None, "en", None, &[], false, false);
+            build_chat_system_content(None, None, None, "en", None, &[], false, false, None);
         append_chat_route_instructions(
             &mut missing,
             ChatRoute::SelectedContext,
@@ -1535,7 +1746,7 @@ mod tests {
     #[test]
     fn answer_discipline_is_appended_after_the_route_scope_rules() {
         let (mut content, _) =
-            build_chat_system_content(None, None, None, "en", None, &[], false, false);
+            build_chat_system_content(None, None, None, "en", None, &[], false, false, None);
         append_chat_route_instructions(
             &mut content,
             ChatRoute::SelectedContext,
@@ -1602,9 +1813,9 @@ mod tests {
             }],
         };
         let (first, _) =
-            build_chat_system_content(None, None, None, "zh", Some(&overview), &[], false, false);
+            build_chat_system_content(None, None, None, "zh", Some(&overview), &[], false, false, None);
         let (second, _) =
-            build_chat_system_content(None, None, None, "zh", Some(&overview), &[], false, false);
+            build_chat_system_content(None, None, None, "zh", Some(&overview), &[], false, false, None);
         assert_eq!(first, second);
         let first = first.combined();
         assert!(first.find("Book overview").unwrap() < first.find("Always respond").unwrap());
@@ -1660,6 +1871,7 @@ mod tests {
             &excerpts,
             true,
             false,
+            None,
         );
 
         assert!(content.stable.contains("[S1] (section: One)"));
@@ -1786,6 +1998,7 @@ mod tests {
             &[],
             false,
             true,
+            None,
         );
         assert!(content
             .stable

@@ -1,10 +1,11 @@
 //! The reader's user profile — see `docs/impls/user-profile.md`.
 //!
-//! Two segments feed every card-aware follow-up prompt (wiring deferred to a
-//! later batch): a free-text segment the reader writes themselves
-//! (`settings.profile.user_text` / `.draft_text` / `.enabled` /
-//! `.soft_limit`), and a system segment organised into a fixed set of seven
-//! [`DIMENSIONS`], one card each, held in `profile_cards`.
+//! Two segments feed every card-aware follow-up prompt: a free-text segment
+//! the reader writes themselves (`settings.profile.user_text` / `.draft_text`
+//! / `.enabled` / `.soft_limit`), and a system segment organised into a fixed
+//! set of seven [`DIMENSIONS`], one card each, held in `profile_cards`.
+//! [`injection_block`] is where the two become one prompt section; its only
+//! caller is the chat command's follow-up chain.
 //!
 //! ## The three layers between a correction and a prompt
 //!
@@ -109,10 +110,21 @@ impl Drop for SummarizeGuard {
 
 /// One of the seven fixed dimensions. `definition` is prompt text (English,
 /// never user-facing — the model reads it, not the reader), so it carries no
-/// i18n obligation. The reader-facing name for each key lives in the
-/// frontend under `profile.slot.<key>`.
+/// i18n obligation.
+///
+/// `label_zh` / `label_en` are the reader-facing dimension names, mirrored
+/// from the frontend's `profile.slot.<key>`. They exist here because
+/// [`injection_block`] must title an active card exactly the way the reader
+/// sees it on the profile page — and exactly the way a *moved* card reads
+/// once the frontend has appended "name：conclusion" into `user_text`. If the
+/// two halves of one profile titled their lines differently, the model would
+/// be reading two vocabularies for one set of dimensions. The duplication is
+/// pinned against the i18n files by `tests/profile-injection.test.ts`, which
+/// fails on drift in either direction.
 pub struct Dimension {
     pub key: &'static str,
+    pub label_zh: &'static str,
+    pub label_en: &'static str,
     definition: &'static str,
 }
 
@@ -125,6 +137,8 @@ pub struct Dimension {
 pub const DIMENSIONS: &[Dimension] = &[
     Dimension {
         key: "vocab_explain",
+        label_zh: "词义讲解",
+        label_en: "Word meanings",
         definition: "How this reader likes word meanings explained — e.g. contrastive nuance, \
             etymology, collocations, or example sentences. Never state what language to explain \
             in (that is a separate setting); never state or imply a CEFR level, vocabulary size, \
@@ -133,6 +147,8 @@ pub const DIMENSIONS: &[Dimension] = &[
     },
     Dimension {
         key: "syntax_explain",
+        label_zh: "句法讲解",
+        label_en: "Sentence structure",
         definition: "How this reader likes sentence structure broken down — e.g. what order to \
             work through it in, how much grammatical terminology to use. Never state what \
             language to explain in; never state or imply a CEFR level, vocabulary size, or \
@@ -140,6 +156,8 @@ pub const DIMENSIONS: &[Dimension] = &[
     },
     Dimension {
         key: "reference_explain",
+        label_zh: "指代讲解",
+        label_en: "References",
         definition: "Whether this reader prefers being told directly what a pronoun or reference \
             points to, or walked through the reasoning that gets there. Never state what language \
             to explain in; never state or imply a CEFR level, vocabulary size, or difficulty \
@@ -147,6 +165,8 @@ pub const DIMENSIONS: &[Dimension] = &[
     },
     Dimension {
         key: "cultural_context",
+        label_zh: "文化背景",
+        label_en: "Cultural context",
         definition: "How much background this reader wants for cultural or historical context, \
             and how closely tied to the plot it should stay. Never state what language to \
             explain in; never state or imply a CEFR level, vocabulary size, or difficulty \
@@ -154,6 +174,8 @@ pub const DIMENSIONS: &[Dimension] = &[
     },
     Dimension {
         key: "lookup_pattern",
+        label_zh: "查词取向",
+        label_en: "Lookup patterns",
         definition: "What kind of words this reader tends to look up — describe the pattern only \
             (word-frequency band, apparent domain, part of speech are all fair to describe from \
             the sample). Never turn this into a skill judgment — a level or vocabulary-size \
@@ -162,6 +184,8 @@ pub const DIMENSIONS: &[Dimension] = &[
     },
     Dimension {
         key: "example_source",
+        label_zh: "举例来源",
+        label_en: "Example sources",
         definition: "What genre and register this reader's own reading skews toward, so an \
             explanation's examples can be pulled from familiar territory. Never claim to quote a \
             specific original-text sentence — pulling an actual sentence is a separate retrieval \
@@ -170,6 +194,8 @@ pub const DIMENSIONS: &[Dimension] = &[
     },
     Dimension {
         key: "reply_pacing",
+        label_zh: "回答节奏",
+        label_en: "Reply pacing",
         definition: "How much this reader wants up front — a short answer first versus full \
             detail immediately — and how far a follow-up conversation usually goes before they \
             stop. Never describe when during the day this reader is active; time-of-day is out of \
@@ -1329,6 +1355,117 @@ pub fn profile_get(db: State<'_, Db>) -> AppResult<ProfileView> {
     profile_get_inner(&db)
 }
 
+// ---------------------------------------------------------------------------
+// Injection — the profile's one downstream consumer
+// ---------------------------------------------------------------------------
+
+/// Scaffolding for the injected block. English, like every other prompt
+/// instruction in this codebase: the model reads it, the reader never does.
+/// Only what the reader themselves authored stays in their own language — the
+/// free-text segment, and the conclusions the summarizer wrote on their
+/// behalf.
+///
+/// The "never evidence" sentence is not boilerplate. The block sits in the
+/// same system message as retrieved book excerpts, and without it a profile
+/// line like "喜欢从词源讲起" is one plausible step away from being reported
+/// to the reader as something the book says.
+const INJECTION_PREAMBLE: &str = "\n\nThe reader has described who they are and how they like things explained, and this application has derived a few observations from their own past questions. Both are below. They say how to pitch an answer — never what is true about the book, and never a topic to raise. Do not quote this back at the reader, do not acknowledge having it, and never let it outweigh the supplied source text.";
+
+/// Closes the block, per Appendix A's injection order. Only emitted when
+/// there is in fact something on both sides of the conflict it adjudicates —
+/// a precedence rule over an empty free-text segment names a party that isn't
+/// there.
+const PRECEDENCE_LINE: &str =
+    "Where the reader's own words above and these derived observations disagree, the reader's own words win.";
+
+const PROFILE_OPEN: &str = "[Reader profile]";
+const PROFILE_CLOSE: &str = "[/Reader profile]";
+
+/// The dimension name as the reader sees it on the profile page — and as a
+/// *moved* card already reads inside `user_text`, since the frontend composes
+/// that line from the same i18n key.
+fn dimension_label(dim: &Dimension, locale: &str) -> &'static str {
+    if locale.starts_with("zh") {
+        dim.label_zh
+    } else {
+        dim.label_en
+    }
+}
+
+/// Mirrors the frontend's `profile.move.separator`, for the same reason the
+/// labels are mirrored: a moved line and an active line must read alike.
+fn label_separator(locale: &str) -> &'static str {
+    if locale.starts_with("zh") {
+        "："
+    } else {
+        ": "
+    }
+}
+
+/// Build the profile section for a follow-up prompt, in Appendix A's order:
+/// the reader's own text, then one `name: conclusion` line per active card in
+/// registry order, then the precedence line.
+///
+/// `None` — inject nothing at all — when the reader has switched the profile
+/// off, or when neither half has anything in it. `moved` and `deleted` cards
+/// are excluded by the query, not by asking the model to ignore them: a moved
+/// card's text is already inside `user_text`, and repeating it under its old
+/// title would read as two independent sources agreeing.
+pub fn injection_block(db: &Db, locale: &str) -> AppResult<Option<String>> {
+    let conn = db.reader();
+    if !enabled(&conn) {
+        return Ok(None);
+    }
+    let user_text = read_setting(&conn, USER_TEXT_KEY).unwrap_or_default();
+    let user_text = user_text.trim();
+
+    let mut stmt = conn
+        .prepare("SELECT slot, conclusion FROM profile_cards WHERE status = 'active'")?;
+    let mut cards: Vec<(usize, String, String)> = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .filter_map(|row| row.ok())
+        .filter(|(_, conclusion)| !conclusion.trim().is_empty())
+        .filter_map(|(slot, conclusion)| {
+            let index = DIMENSIONS.iter().position(|dim| dim.key == slot)?;
+            Some((index, slot, conclusion))
+        })
+        .collect();
+    // Registry order, so the seven dimensions read the same way here as they
+    // do on the profile page.
+    cards.sort_by_key(|(index, _, _)| *index);
+
+    if user_text.is_empty() && cards.is_empty() {
+        return Ok(None);
+    }
+
+    let separator = label_separator(locale);
+    let mut block = String::from(INJECTION_PREAMBLE);
+    block.push_str("\n\n");
+    block.push_str(PROFILE_OPEN);
+    if !user_text.is_empty() {
+        block.push('\n');
+        block.push_str(user_text);
+    }
+    if !cards.is_empty() {
+        block.push('\n');
+        for (index, _, conclusion) in &cards {
+            block.push('\n');
+            block.push_str(dimension_label(&DIMENSIONS[*index], locale));
+            block.push_str(separator);
+            block.push_str(conclusion.trim());
+        }
+    }
+    if !user_text.is_empty() && !cards.is_empty() {
+        block.push_str("\n\n");
+        block.push_str(PRECEDENCE_LINE);
+    }
+    block.push('\n');
+    block.push_str(PROFILE_CLOSE);
+    Ok(Some(block))
+}
+
 pub fn profile_save_text_inner(db: &Db, text: &str) -> AppResult<()> {
     let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
     let limit = hard_limit(&conn);
@@ -1651,6 +1788,113 @@ mod tests {
             params![slot, status, watermark, now],
         )
         .unwrap();
+    }
+
+    // --- prompt injection (injection_block) ---
+
+    fn card_with_conclusion(db: &Db, slot: &str, status: &str, conclusion: &str) {
+        let conn = db.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO profile_cards (slot, conclusion, evidence, status, created_at, updated_at)
+             VALUES (?1, ?2, 'some evidence', ?3, 1, 1)",
+            params![slot, conclusion, status],
+        )
+        .unwrap();
+    }
+
+    fn set_user_text(db: &Db, text: &str) {
+        let conn = db.conn.lock().unwrap();
+        write_setting(&conn, USER_TEXT_KEY, text).unwrap();
+    }
+
+    #[test]
+    fn nothing_written_and_no_cards_injects_nothing() {
+        let (_dir, db) = setup();
+        assert_eq!(injection_block(&db, "zh").unwrap(), None);
+    }
+
+    #[test]
+    fn the_profile_switch_being_off_suppresses_the_block_entirely() {
+        let (_dir, db) = setup();
+        set_user_text(&db, "I read slowly.");
+        card_with_conclusion(&db, "vocab_explain", "active", "Wants the root, not a synonym.");
+        {
+            let conn = db.conn.lock().unwrap();
+            write_setting(&conn, ENABLED_KEY, "false").unwrap();
+        }
+        assert_eq!(injection_block(&db, "en").unwrap(), None);
+    }
+
+    #[test]
+    fn the_readers_own_words_come_first_then_the_cards_in_registry_order() {
+        let (_dir, db) = setup();
+        set_user_text(&db, "I am learning English through novels.");
+        // Inserted out of registry order on purpose.
+        card_with_conclusion(&db, "reply_pacing", "active", "Short answers.");
+        card_with_conclusion(&db, "vocab_explain", "active", "Wants the root.");
+
+        let block = injection_block(&db, "en").unwrap().unwrap();
+        let user_at = block.find("I am learning English").unwrap();
+        let vocab_at = block.find("Wants the root.").unwrap();
+        let pacing_at = block.find("Short answers.").unwrap();
+
+        assert!(user_at < vocab_at, "the reader's own words lead");
+        assert!(
+            vocab_at < pacing_at,
+            "cards follow DIMENSIONS order, not insertion order"
+        );
+        assert!(block.contains("Word meanings: Wants the root."));
+        assert!(block.contains("Reply pacing: Short answers."));
+    }
+
+    #[test]
+    fn the_precedence_line_appears_only_when_both_halves_are_present() {
+        let (_dir, db) = setup();
+        card_with_conclusion(&db, "vocab_explain", "active", "Wants the root.");
+
+        let cards_only = injection_block(&db, "en").unwrap().unwrap();
+        assert!(
+            !cards_only.contains(PRECEDENCE_LINE),
+            "with nothing of the reader's own to outrank, the line is noise"
+        );
+
+        set_user_text(&db, "I am a beginner.");
+        let both = injection_block(&db, "en").unwrap().unwrap();
+        assert!(both.contains(PRECEDENCE_LINE));
+    }
+
+    #[test]
+    fn moved_and_deleted_cards_never_reach_the_prompt() {
+        let (_dir, db) = setup();
+        card_with_conclusion(&db, "vocab_explain", "moved", "Moved out.");
+        card_with_conclusion(&db, "syntax_explain", "deleted", "Struck out.");
+        card_with_conclusion(&db, "reply_pacing", "active", "Short answers.");
+
+        let block = injection_block(&db, "en").unwrap().unwrap();
+        assert!(!block.contains("Moved out."));
+        assert!(!block.contains("Struck out."));
+        assert!(block.contains("Short answers."));
+    }
+
+    #[test]
+    fn the_evidence_behind_a_card_is_never_injected_only_its_conclusion() {
+        let (_dir, db) = setup();
+        card_with_conclusion(&db, "vocab_explain", "active", "Wants the root.");
+
+        let block = injection_block(&db, "en").unwrap().unwrap();
+        assert!(!block.contains("some evidence"));
+    }
+
+    #[test]
+    fn a_chinese_reader_gets_chinese_dimension_names_and_a_chinese_separator() {
+        let (_dir, db) = setup();
+        card_with_conclusion(&db, "lookup_pattern", "active", "偏历史类领域词。");
+
+        let block = injection_block(&db, "zh").unwrap().unwrap();
+        assert!(
+            block.contains("查词取向：偏历史类领域词。"),
+            "an injected card line must read like a line the reader could have written themselves"
+        );
     }
 
     // --- adjudication (derive_slot_state) ---

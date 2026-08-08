@@ -5,11 +5,12 @@
 //! reader has actually reached — that contain the word or one of its known
 //! forms, for a caller to cite or jump to.
 //!
-//! No caller wires this in yet. It is not registered as a Tauri command and
-//! nothing in `ai/` builds a prompt from it — this module is deliberately a
-//! standalone, independently testable piece; wiring it into a prompt is
-//! later work. `#![allow(dead_code)]` reflects that honestly, the same way
-//! `word_frequency` does before its own callers land.
+//! Its caller is `commands::ai::chat`, on the follow-up chain only: when a
+//! turn names a specific word (the reader tapped 追问 on a lookup, a
+//! translation, or an explanation), the sentences come back as a data block
+//! in that turn's prompt, each attributed to the book it came from. The model
+//! is free to use none of them — a word can be in three books in a sense that
+//! has nothing to do with the one being asked about.
 //!
 //! ## Reused, not reinvented
 //!
@@ -63,8 +64,6 @@
 //! up to `MAX_CANDIDATE_CHUNKS_PER_BOOK` rows of its own before any other
 //! book's volume can crowd it out of the global cap.
 
-#![allow(dead_code)]
-
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
@@ -105,11 +104,26 @@ const SECOND_ROUND_PER_BOOK: usize = 2;
 /// Hard cap on the number of candidates handed back, matching Appendix A's
 /// "≤ 3–5 条候选句".
 const MAX_TOTAL_QUOTES: usize = 5;
+/// How much text on either side of a quoted sentence travels with it as
+/// anchoring context. Short enough that it stays inside the same paragraph in
+/// the rendered page — context that crosses a block boundary describes a
+/// stretch of text the DOM never has contiguously — and long enough to tell
+/// two similar passages apart.
+const CONTEXT_CHARS: usize = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuoteCandidate {
     pub book_id: String,
+    /// `books.title`, carried along because every caller needs it and the
+    /// scope read above already had the row in hand — making the caller
+    /// re-query `books` for a string this function just held would be the
+    /// only reason it ever needed `book_id`.
+    pub book_title: String,
+    /// Spine position of the section this sentence sits in. The frontend needs
+    /// it to open that one section's document and anchor inside it;
+    /// `section_href` alone identifies the file but not its place in the spine.
+    pub section_index: i64,
     pub section_href: Option<String>,
     /// The *chunk's* starting offset (UTF-16 code units, matching
     /// `book_chunks.char_start` — see `commands::books::text_headings::
@@ -133,6 +147,15 @@ pub struct QuoteCandidate {
     /// section — not treat this field as sentence-precise.
     pub chunk_char_start: Option<i64>,
     pub text: String,
+    /// The text immediately before and after `text` inside the same chunk, up
+    /// to `CONTEXT_CHARS` each way. These are anchoring context, not content:
+    /// they never enter a prompt. The frontend locates `text` in the rendered
+    /// section by approximate match, and two passages in one chapter can look
+    /// alike enough that the quote alone picks the wrong one — the surrounding
+    /// text is what tells them apart. Empty when the sentence sits at a chunk
+    /// boundary, which is a weaker anchor but still a valid one.
+    pub prefix: String,
+    pub suffix: String,
 }
 
 /// One book's reading-range scope: the spoiler cutoff nothing past it may be
@@ -140,6 +163,7 @@ pub struct QuoteCandidate {
 /// first.
 struct BookScope {
     book_id: String,
+    title: String,
     cutoff: SpoilerCutoff,
     /// `books.updated_at` — the row's last-write time, not a dedicated
     /// last-*read* timestamp. Renaming a book or editing its metadata bumps
@@ -304,34 +328,55 @@ fn contains_form(sentence_lower: &str, form_lower: &str) -> bool {
 /// cutoff computed from that position. Order is not meaningful yet — the
 /// caller merges in the current book's scope and sorts once.
 fn candidate_books(conn: &rusqlite::Connection) -> AppResult<Vec<BookScope>> {
-    let mut statement = conn
-        .prepare("SELECT id, COALESCE(render_format, format), current_cfi, updated_at FROM books")?;
-    let rows: Vec<(String, String, Option<String>, i64)> = statement
+    let mut statement = conn.prepare(
+        "SELECT id, title, COALESCE(render_format, format), current_cfi, updated_at FROM books",
+    )?;
+    let rows: Vec<(String, String, String, Option<String>, i64)> = statement
         .query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
         })?
         .collect::<Result<_, _>>()?;
     Ok(rows
         .into_iter()
-        .filter(|(_, _, current_cfi, _)| book_has_progress(current_cfi.as_deref()))
-        .map(|(book_id, render_format, current_cfi, updated_at)| BookScope {
-            cutoff: cutoff_for_position(&render_format, current_cfi.as_deref()),
-            book_id,
-            updated_at,
-        })
+        .filter(|(_, _, _, current_cfi, _)| book_has_progress(current_cfi.as_deref()))
+        .map(
+            |(book_id, title, render_format, current_cfi, updated_at)| BookScope {
+                cutoff: cutoff_for_position(&render_format, current_cfi.as_deref()),
+                book_id,
+                title,
+                updated_at,
+            },
+        )
         .collect())
 }
 
-/// `(render_format, current_cfi, updated_at)` for one book, regardless of
-/// whether it has a saved position.
-fn book_row(
-    conn: &rusqlite::Connection,
-    book_id: &str,
-) -> AppResult<Option<(String, Option<String>, i64)>> {
+/// The `books` columns this module reads, for one book, regardless of whether
+/// it has a saved position.
+struct BookRow {
+    title: String,
+    render_format: String,
+    current_cfi: Option<String>,
+    updated_at: i64,
+}
+
+fn book_row(conn: &rusqlite::Connection, book_id: &str) -> AppResult<Option<BookRow>> {
     conn.query_row(
-        "SELECT COALESCE(render_format, format), current_cfi, updated_at FROM books WHERE id = ?1",
+        "SELECT title, COALESCE(render_format, format), current_cfi, updated_at FROM books WHERE id = ?1",
         params![book_id],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        |row| {
+            Ok(BookRow {
+                title: row.get(0)?,
+                render_format: row.get(1)?,
+                current_cfi: row.get(2)?,
+                updated_at: row.get(3)?,
+            })
+        },
     )
     .optional()
     .map_err(AppError::from)
@@ -353,7 +398,13 @@ fn current_book_scope(
     book_id: &str,
     current_position: Option<&str>,
 ) -> AppResult<Option<BookScope>> {
-    let Some((render_format, current_cfi, updated_at)) = book_row(conn, book_id)? else {
+    let Some(BookRow {
+        title,
+        render_format,
+        current_cfi,
+        updated_at,
+    }) = book_row(conn, book_id)?
+    else {
         return Ok(None);
     };
     let live = current_position
@@ -366,6 +417,7 @@ fn current_book_scope(
     }
     Ok(Some(BookScope {
         book_id: book_id.to_string(),
+        title,
         cutoff: cutoff_for_position(&render_format, position),
         updated_at,
     }))
@@ -450,22 +502,63 @@ fn matching_chunks_all_books(
     Ok(hits)
 }
 
+/// One matching sentence together with the text that surrounds it in its
+/// chunk. See `QuoteCandidate::prefix` for why the context travels with it.
+struct SentenceHit {
+    text: String,
+    prefix: String,
+    suffix: String,
+}
+
 /// Complete sentences in `chunk_text` that contain one of `forms`, skipping
-/// (never truncating) any sentence over `MAX_SENTENCE_CHARS`.
-fn sentences_containing(chunk_text: &str, forms: &[String]) -> Vec<String> {
+/// (never truncating) any sentence over `MAX_SENTENCE_CHARS`, each carrying
+/// up to `CONTEXT_CHARS` of the chunk text on either side.
+///
+/// `sentence_split` is loss-free — its pieces concatenate back to the text it
+/// was given, minus whitespace-only tails — so the neighbouring sentences can
+/// be re-joined to recover the surrounding text without tracking offsets.
+fn sentences_containing(chunk_text: &str, forms: &[String]) -> Vec<SentenceHit> {
     let lowered_forms: Vec<String> = forms.iter().map(|form| form.to_lowercase()).collect();
-    super::chunk::sentence_split(chunk_text)
-        .into_iter()
-        .map(|sentence| sentence.trim().to_string())
-        .filter(|sentence| !sentence.is_empty())
-        .filter(|sentence| sentence.chars().count() <= MAX_SENTENCE_CHARS)
-        .filter(|sentence| {
-            let lowered = sentence.to_lowercase();
-            lowered_forms
-                .iter()
-                .any(|form| contains_form(&lowered, form))
-        })
-        .collect()
+    let sentences = super::chunk::sentence_split(chunk_text);
+    let mut hits = Vec::new();
+    for (index, sentence) in sentences.iter().enumerate() {
+        let text = sentence.trim();
+        if text.is_empty() || text.chars().count() > MAX_SENTENCE_CHARS {
+            continue;
+        }
+        let lowered = text.to_lowercase();
+        if !lowered_forms
+            .iter()
+            .any(|form| contains_form(&lowered, form))
+        {
+            continue;
+        }
+        hits.push(SentenceHit {
+            text: text.to_string(),
+            prefix: context_before(&sentences[..index]),
+            suffix: context_after(&sentences[index + 1..]),
+        });
+    }
+    hits
+}
+
+/// The tail of everything preceding a sentence, capped at `CONTEXT_CHARS`.
+fn context_before(preceding: &[String]) -> String {
+    let joined = preceding.concat();
+    let chars: Vec<char> = joined.chars().collect();
+    let start = chars.len().saturating_sub(CONTEXT_CHARS);
+    chars[start..].iter().collect::<String>().trim().to_string()
+}
+
+/// The head of everything following a sentence, capped at `CONTEXT_CHARS`.
+fn context_after(following: &[String]) -> String {
+    let joined = following.concat();
+    joined
+        .chars()
+        .take(CONTEXT_CHARS)
+        .collect::<String>()
+        .trim()
+        .to_string()
 }
 
 /// Pick the final candidate list from each book's already-ordered sentences.
@@ -583,12 +676,16 @@ pub fn find_quotes(
                 .filter(|hit| book.cutoff.allows_complete_chunk(hit.section_index, hit.char_end))
             {
                 for sentence in sentences_containing(&hit.text, &forms) {
-                    if seen.insert(sentence.clone()) {
+                    if seen.insert(sentence.text.clone()) {
                         candidates.push(QuoteCandidate {
                             book_id: book.book_id.clone(),
+                            book_title: book.title.clone(),
+                            section_index: hit.section_index,
                             section_href: hit.section_href.clone(),
                             chunk_char_start: hit.chunk_char_start,
-                            text: sentence,
+                            text: sentence.text,
+                            prefix: sentence.prefix,
+                            suffix: sentence.suffix,
                         });
                     }
                 }
@@ -604,12 +701,20 @@ pub fn find_quotes(
 mod tests {
     use super::*;
 
+    fn texts(hits: &[SentenceHit]) -> Vec<&str> {
+        hits.iter().map(|hit| hit.text.as_str()).collect()
+    }
+
     fn quote(book: &str, text: &str) -> QuoteCandidate {
         QuoteCandidate {
             book_id: book.to_string(),
+            book_title: book.to_string(),
+            section_index: 0,
             section_href: None,
             chunk_char_start: None,
             text: text.to_string(),
+            prefix: String::new(),
+            suffix: String::new(),
         }
     }
 
@@ -746,12 +851,12 @@ mod tests {
         let forms = vec!["run".to_string(), "ran".to_string(), "running".to_string()];
         let sentences = sentences_containing(text, &forms);
         assert_eq!(
-            sentences,
-            vec!["He ran across the field.".to_string()],
+            texts(&sentences),
+            vec!["He ran across the field."],
             "\"ran\" must not match inside \"branch\" or \"Grant\"-like words"
         );
         assert!(sentences.iter().all(|sentence| word_boundary_contains(
-            &sentence.to_lowercase(),
+            &sentence.text.to_lowercase(),
             "ran"
         )));
     }
@@ -786,10 +891,47 @@ mod tests {
         let sentences = sentences_containing(&text, &["run".to_string()]);
 
         assert_eq!(
-            sentences,
-            vec!["Now a short one with run too.".to_string()],
+            texts(&sentences),
+            vec!["Now a short one with run too."],
             "the over-length sentence must be absent, not shortened"
         );
+    }
+
+    // -- anchoring context ---------------------------------------------------
+
+    #[test]
+    fn a_sentence_carries_the_chunk_text_on_either_side_of_it() {
+        let text = "The harbour was quiet. He ran across the field. Gulls turned overhead.";
+        let hits = sentences_containing(text, &["ran".to_string()]);
+
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].prefix, "The harbour was quiet.");
+        assert_eq!(hits[0].suffix, "Gulls turned overhead.");
+    }
+
+    #[test]
+    fn context_is_capped_and_taken_from_the_side_nearest_the_sentence() {
+        let filler = "padding words that keep going and going and going and going. ";
+        let text = format!("{filler}He ran across the field. {filler}");
+        let hits = sentences_containing(&text, &["ran".to_string()]);
+
+        assert_eq!(hits.len(), 1);
+        assert!(hits[0].prefix.chars().count() <= CONTEXT_CHARS);
+        assert!(hits[0].suffix.chars().count() <= CONTEXT_CHARS);
+        // The tail of what precedes, and the head of what follows — not the
+        // far ends, which would describe text nowhere near the sentence.
+        assert!(filler.trim_end().ends_with(&hits[0].prefix));
+        assert!(filler.trim_start().starts_with(&hits[0].suffix));
+    }
+
+    #[test]
+    fn a_sentence_at_a_chunk_boundary_still_anchors_with_one_sided_context() {
+        let text = "He ran across the field. Gulls turned overhead.";
+        let hits = sentences_containing(text, &["ran".to_string()]);
+
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].prefix, "", "nothing precedes the first sentence");
+        assert_eq!(hits[0].suffix, "Gulls turned overhead.");
     }
 
     // -- empty candidates -> empty result -----------------------------------
