@@ -533,7 +533,7 @@ async fn attempt_build<R: Runtime>(
         secrets,
         messages,
         Some(2_000),
-        AiRequestPurpose::Utility,
+        AiRequestPurpose::Analysis,
         AiRetryMode::Automatic,
         None,
         None,
@@ -2613,11 +2613,36 @@ mod live_tests {
         )
     }
 
+    /// The built table as a person per line, for reading rather than for
+    /// asserting on.
+    ///
+    /// A rate says the reply parsed and named people the book really contains.
+    /// It says nothing about whether the table is any good — `evaluate_attempt`
+    /// checks that each canonical appears in the book and never looks at the
+    /// aliases hung off it, so a run can be 6/6 "usable" and still be listing
+    /// every servant twice under a misspelling. `LANTERN_ALIAS_DUMP=1` prints
+    /// this, because judging the output is a thing a person has to do by eye
+    /// and they can only do it if the run shows them the output.
+    fn group_for_reading(rows: &[(String, String, String)]) -> Vec<String> {
+        let mut lines: Vec<String> = Vec::new();
+        for (canonical, alias, source) in rows {
+            let entry = if source == "user" { format!("{alias}*") } else { alias.clone() };
+            match lines.last_mut() {
+                Some(line) if line.starts_with(&format!("{canonical} · ")) => {
+                    line.push_str(", ");
+                    line.push_str(&entry);
+                }
+                _ => lines.push(format!("{canonical} · {entry}")),
+            }
+        }
+        lines
+    }
+
     /// How one pass ended. Carried out of the concurrent fan-out rather than
     /// printed and asserted inside it, so the report reads in pass order
     /// instead of in whatever order the endpoint happened to answer.
     enum Verdict {
-        Built { attempts: u32, rows: usize, taught_kept: bool },
+        Built { attempts: u32, rows: usize, taught_kept: bool, table: Vec<String> },
         Unusable { rows: usize, unchanged: bool },
         /// Not a verdict on the model's output: the request never came back,
         /// so `run_build_pass` bailed out of the retry loop on the attempt
@@ -2642,6 +2667,7 @@ mod live_tests {
         // absent-mindedly large `LANTERN_ALIAS_PASSES` from opening one
         // connection per pass at the same instant.
         let concurrency = env_count("LANTERN_ALIAS_CONCURRENCY", passes.min(12)).max(1) as usize;
+        let dump = std::env::var("LANTERN_ALIAS_DUMP").is_ok();
 
         let mut labs = Vec::new();
         let mut header = None;
@@ -2676,6 +2702,7 @@ mod live_tests {
                                 taught_kept: rows.iter().any(|(_, alias, source)| {
                                     alias == "seeded-taught-alias" && source == "user"
                                 }),
+                                table: group_for_reading(&rows),
                                 rows: rows.len(),
                             }
                         }
@@ -2714,14 +2741,20 @@ mod live_tests {
 
         for (pass, verdict) in &verdicts {
             match verdict {
-                Verdict::Built { attempts, rows, taught_kept } => {
+                Verdict::Built { attempts, rows, taught_kept, table } => {
                     succeeded += 1;
                     attempts_total += attempts;
                     unusable_attempts += attempts - 1;
                     println!(
-                        "pass {pass}: ok on attempt {attempts}, {rows} rows, \
-                         taught row kept: {taught_kept}"
+                        "pass {pass}: ok on attempt {attempts}, {rows} rows over {} people, \
+                         taught row kept: {taught_kept}",
+                        table.len()
                     );
+                    if dump {
+                        for line in table {
+                            println!("    {line}");
+                        }
+                    }
                     assert!(
                         *taught_kept,
                         "a successful build deleted a row the reader taught by hand"

@@ -501,9 +501,11 @@ fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<AiProfile> {
     })
 }
 
-/// What the routed request is for. Reasoning effort is a chat-level setting: a
+/// What the routed request is for. There are two tiers here, not three: a
+/// request either needs the reader's reasoning level or it does not. A
 /// vocabulary card or an inline translation should not pay for deep thinking
-/// unless the profile explicitly opts every feature in.
+/// unless the profile explicitly opts every feature in; the chat sidebar and
+/// the few Lantern-written prompts whose work *is* the thinking always get it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AiRequestPurpose {
     /// Words the reader wrote themselves — the chat sidebar, a custom action
@@ -512,6 +514,15 @@ pub enum AiRequestPurpose {
     /// A prompt Lantern wrote and whose shape Lantern dictates: a lookup card,
     /// a sentence explanation, a chat title, a vocabulary pass.
     Utility,
+    /// A prompt Lantern wrote where reading the whole book is the job. The
+    /// alias table has to notice that 简 and Miss Bennet and 班纳特小姐 are one
+    /// person across sixty section summaries; that is inference, not
+    /// formatting, and it degrades visibly without thinking. Measured on
+    /// *Pride and Prejudice*: the same model found 31 people at `none` and 41
+    /// at `high`, and a model given no level at all needed a second attempt
+    /// before it returned anything usable. Same tier as `Chat` — the reader's
+    /// level, whatever it is.
+    Analysis,
 }
 
 /// The level that asks a model not to think. OpenAI-compatible endpoints spell
@@ -561,8 +572,12 @@ fn cooldown_cutoff(retry: AiRetryMode) -> i64 {
 ///
 /// Opting every feature in hands those requests back to the reader's own level,
 /// including the case where they set no level at all.
+///
+/// `Utility` is the only purpose that gets pinned. Everything else — the
+/// reader's own words, and the Lantern-written prompts whose job is inference
+/// rather than formatting — carries whatever level the profile holds.
 fn effort_for(profile: &AiProfileView, purpose: AiRequestPurpose) -> Option<&str> {
-    if purpose == AiRequestPurpose::Chat || profile.reasoning_effort_all_features {
+    if purpose != AiRequestPurpose::Utility || profile.reasoning_effort_all_features {
         profile.reasoning_effort.as_deref()
     } else {
         Some(NO_REASONING)
@@ -3377,6 +3392,11 @@ mod tests {
             Some(NO_REASONING)
         );
 
+        // Building a book's alias table is Lantern's own prompt, but the work
+        // is inference across sixty summaries rather than filling in a shape,
+        // so it sits in the same tier as chat and keeps the reader's level.
+        assert_eq!(effort_for(&view, AiRequestPurpose::Analysis), Some("high"));
+
         view.reasoning_effort_all_features = true;
         assert_eq!(effort_for(&view, AiRequestPurpose::Utility), Some("high"));
     }
@@ -3393,6 +3413,9 @@ mod tests {
             effort_for(&view, AiRequestPurpose::Utility),
             Some(NO_REASONING)
         );
+        // And an analysis prompt sends nothing rather than `none` — the reader
+        // set no level, so the model uses its own default and is free to think.
+        assert_eq!(effort_for(&view, AiRequestPurpose::Analysis), None);
 
         // Opting every feature in hands the request back to the reader's
         // setting, including their decision to set nothing.

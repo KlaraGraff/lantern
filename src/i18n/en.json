@@ -1336,7 +1336,7 @@
   "settings.ai.temperatureHint": "Lower = more focused, Higher = more creative",
   "settings.ai.reasoningEffort": "Reasoning effort",
   "settings.ai.reasoningEffortDefault": "Default (send nothing)",
-  "settings.ai.reasoningEffortHint": "With “Chat only”, only chat requests carry the effort — inline translation, vocabulary cards, and explanations go without it, which keeps them fast and cheap. With “All requests”, those three carry it too: slower answers, higher token cost. Neither option changes whether those features use AI. They always do.",
+  "settings.ai.reasoningEffortHint": "With “Chat only”, chat requests and the character alias table carry the effort — both ask the model to work something out. Inline translation, vocabulary cards, and explanations go without it, which keeps them fast and cheap. With “All requests”, those three carry it too: slower answers, higher token cost. Neither option changes whether those features use AI. They always do.",
   "settings.ai.reasoningEffortDefaultOption": "Default · send no parameter",
   "settings.ai.reasoningEffortDesc.default": "Sends no parameter at all — the endpoint decides how much to think",
   "settings.ai.reasoningEffortDesc.none": "Explicitly asks the model not to think",

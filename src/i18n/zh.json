@@ -1334,7 +1334,7 @@
   "settings.ai.temperatureHint": "越低越精确，越高越有创意",
   "settings.ai.reasoningEffort": "推理强度",
   "settings.ai.reasoningEffortDefault": "默认（不发送）",
-  "settings.ai.reasoningEffortHint": "选「仅对话」，只有对话请求带上这个强度；划词翻译、词汇卡、解读三项不带，保持最快最省。选「所有请求」，这三项也会带上：回答更慢，token 消耗更高。两个选项都不改变这些功能是否使用 AI —— 它们一直都可用。",
+  "settings.ai.reasoningEffortHint": "选「仅对话」，对话请求和人物别名表带上这个强度——这两项都要模型自己推断；划词翻译、词汇卡、解读三项不带，保持最快最省。选「所有请求」，这三项也会带上：回答更慢，token 消耗更高。两个选项都不改变这些功能是否使用 AI —— 它们一直都可用。",
   "settings.ai.reasoningEffortDefaultOption": "默认 · 不发送该参数",
   "settings.ai.reasoningEffortDesc.default": "完全不带这个参数，由服务端决定思考多少",
   "settings.ai.reasoningEffortDesc.none": "明确要求模型不要思考",
