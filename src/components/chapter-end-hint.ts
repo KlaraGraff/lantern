@@ -22,6 +22,22 @@
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
+/**
+ * Which section documents were left with the panel open.
+ *
+ * The panel's open/closed state cannot live in the row, because the row does
+ * not survive: opening a word card from a chip records a lookup, the reader
+ * re-applies its annotations, and this whole line is torn down and rebuilt.
+ * Rebuilt collapsed, the reader had to re-expand and re-find their place for
+ * every single word they wanted to look at — which is most of the point of a
+ * recap.
+ *
+ * Keyed by the section document rather than by book or chapter index so it
+ * needs no invalidation: when the reader leaves the chapter far enough that
+ * foliate drops the section, the document goes and the entry goes with it.
+ */
+const expandedDocs = new WeakSet<Document>();
+
 /** The line's own container, and the cleanup selector's anchor. */
 const ROOT_ATTRIBUTE = "data-lantern-chapter-end";
 /** The visibility rules injected into `doc.head`; removed alongside the line. */
@@ -213,9 +229,16 @@ export function installChapterEndHint(options: ChapterEndHintOptions): void {
   line.textContent = text.line;
   top.append(line);
 
+  // Restored rather than reset, so a rebuild triggered by the reader's own
+  // chip click does not close the panel under them. Silently: the caller's
+  // `onExpandChange` scrolls the row into view, which is right when a reader
+  // presses the toggle and wrong when the line is merely being rebuilt where
+  // it already was.
+  let expanded = expandedDocs.has(doc);
+
   // ─── The expanded panel: reason, chips, review link — nothing else. ───
   const panel = doc.createElement("div");
-  Object.assign(panel.style, { marginTop: "13px", display: "none" });
+  Object.assign(panel.style, { marginTop: "13px", display: expanded ? "block" : "none" });
 
   const reason = doc.createElement("p");
   Object.assign(reason.style, { fontSize: "11.8px", lineHeight: "1.6", margin: "0 0 10px", opacity: "0.9" });
@@ -313,7 +336,13 @@ export function installChapterEndHint(options: ChapterEndHintOptions): void {
   });
   go.append(reviewLink);
 
-  const dismiss = buildDismissButton(doc, text.dismiss, onDismiss);
+  // "Don't show again" turns the whole feature off, so the remembered open
+  // state has nothing left to describe — and would otherwise be waiting if the
+  // reader ever switched the setting back on in the same session.
+  const dismiss = buildDismissButton(doc, text.dismiss, () => {
+    expandedDocs.delete(doc);
+    onDismiss();
+  });
   Object.assign(dismiss.style, { marginLeft: "auto" });
   if (coarsePointer) {
     go.append(dismiss);
@@ -330,7 +359,7 @@ export function installChapterEndHint(options: ChapterEndHintOptions): void {
   // used for its own trailing arrow.
   const toggle = doc.createElement("button");
   toggle.setAttribute("type", "button");
-  toggle.setAttribute("aria-expanded", "false");
+  toggle.setAttribute("aria-expanded", String(expanded));
   Object.assign(toggle.style, {
     fontSize: "13px",
     color: "inherit",
@@ -342,12 +371,13 @@ export function installChapterEndHint(options: ChapterEndHintOptions): void {
     fontFamily: "inherit",
     whiteSpace: "nowrap",
   });
-  toggle.textContent = text.expand;
-  let expanded = false;
+  toggle.textContent = expanded ? text.collapse : text.expand;
   toggle.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
     expanded = !expanded;
+    if (expanded) expandedDocs.add(doc);
+    else expandedDocs.delete(doc);
     panel.style.display = expanded ? "block" : "none";
     toggle.textContent = expanded ? text.collapse : text.expand;
     toggle.setAttribute("aria-expanded", String(expanded));

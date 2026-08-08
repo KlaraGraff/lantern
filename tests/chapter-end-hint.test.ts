@@ -194,6 +194,55 @@ test("the row refuses to be split across columns, so an expanded panel cannot be
   assert.equal(root.style.WebkitColumnBreakInside, "avoid");
 });
 
+// Clicking a chip opens the word card, which records a lookup, which makes the
+// reader re-apply annotations — and that tears this line down and builds it
+// again. Rebuilt collapsed, looking at a second word cost an expand and a
+// re-find every time.
+test("a line rebuilt while the reader had it open comes back open", () => {
+  const { doc, allElements } = createFakeDoc();
+  installChapterEndHint(baseOptions(doc));
+  const toggle = allElements.find((el) => el.tagName === "button" && el.textContent === "Take a look ⌄")!;
+  toggle.listeners.click![0]({ preventDefault: () => {}, stopPropagation: () => {} });
+
+  let expandChanges = 0;
+  installChapterEndHint(baseOptions(doc, { onExpandChange: () => { expandChanges += 1; } }));
+  const rebuilt = doc.querySelectorAll("[data-lantern-chapter-end]") as unknown as { children: { style: Record<string, string>; getAttribute(name: string): string | null; textContent: string }[] }[];
+  assert.equal(rebuilt.length, 1);
+  const [, panel] = rebuilt[0].children;
+  assert.equal(panel.style.display, "block", "the rebuilt panel must still be open");
+  const rebuiltToggle = allElements.filter((el) => el.tagName === "button" && el.textContent === "Collapse ⌃").at(-1)!;
+  assert.equal(rebuiltToggle.getAttribute("aria-expanded"), "true");
+  // Restoring is not the reader pressing the toggle: the caller scrolls the
+  // row into view on a real expand, and doing that on a rebuild would yank the
+  // page out from under someone who is reading a word card.
+  assert.equal(expandChanges, 0);
+});
+
+test("a line the reader collapsed again is rebuilt collapsed", () => {
+  const { doc, allElements } = createFakeDoc();
+  installChapterEndHint(baseOptions(doc));
+  const toggle = allElements.find((el) => el.tagName === "button" && el.textContent === "Take a look ⌄")!;
+  const click = { preventDefault: () => {}, stopPropagation: () => {} };
+  toggle.listeners.click![0](click);
+  toggle.listeners.click![0](click);
+
+  installChapterEndHint(baseOptions(doc));
+  const rebuiltToggle = allElements.filter((el) => el.tagName === "button" && el.textContent === "Take a look ⌄").at(-1)!;
+  assert.equal(rebuiltToggle.getAttribute("aria-expanded"), "false");
+});
+
+test("one document being left open says nothing about another's", () => {
+  const first = createFakeDoc();
+  installChapterEndHint(baseOptions(first.doc));
+  const toggle = first.allElements.find((el) => el.tagName === "button" && el.textContent === "Take a look ⌄")!;
+  toggle.listeners.click![0]({ preventDefault: () => {}, stopPropagation: () => {} });
+
+  const second = createFakeDoc();
+  installChapterEndHint(baseOptions(second.doc));
+  const other = second.allElements.find((el) => el.tagName === "button" && el.textContent === "Take a look ⌄")!;
+  assert.equal(other.getAttribute("aria-expanded"), "false");
+});
+
 test("clicking a word chip calls onWordClick with that word's id and its own button", () => {
   const { doc, allElements } = createFakeDoc();
   const clicks: Array<[string, unknown]> = [];
