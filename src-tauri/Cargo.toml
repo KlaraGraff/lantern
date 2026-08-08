@@ -81,6 +81,11 @@ wuff = "0.2.7"
 # stack (`ureq`) we have no use for, so only the tokio runtime is enabled.
 msedge-tts = { version = "0.4.0", default-features = false, features = ["tokio-runtime"] }
 whatlang = "0.18"
+# Toneless syllables are the only thing the alias pronunciation fallback in
+# ai/grounding/aliases.rs ever compares, so the tone tables and the heteronym
+# phrase database stay out of the binary: `plain` alone costs 226 KB / 82 KB
+# compressed against 540 KB / 129 KB for the default feature set.
+pinyin = { version = "0.11", default-features = false, features = ["plain"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

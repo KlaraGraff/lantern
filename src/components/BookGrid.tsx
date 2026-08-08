@@ -181,7 +181,13 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
           }}
         />
       )}
-      {indexBookId && <IndexManagerModal bookId={indexBookId} onClose={() => setIndexBookId(null)} />}
+      {indexBookId && (
+        <IndexManagerModal
+          bookId={indexBookId}
+          bookTitle={books.find((book) => book.id === indexBookId)?.title}
+          onClose={() => setIndexBookId(null)}
+        />
+      )}
 
       {hasMore && <LoadMoreSentinel loadMore={loadMore} loadingMore={loadingMore} />}
     </>

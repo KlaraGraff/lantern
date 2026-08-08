@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>人物别名与分级路由 · 样张</title>
+<style>
+:root{
+  --page:#f2f0ed; --panel:#fff; --border:#e4e0d9; --border-light:#eeebe5;
+  --text-primary:#1c1a17; --text-secondary:#6d665c; --text-tertiary:#9a938a;
+  --accent:#b5651d; --accent-bg:#fdf3e9;
+  --input:#f7f5f1;
+  --success:#2f7d4f; --success-bg:#eef6f0;
+  --warn:#8a6d1f; --warn-bg:#fbf5e4;
+  --danger:#a33a2a; --danger-bg:#fbeeeb;
+  --user-bubble:#e8e4dc;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --page:#131209; --panel:#1c1b14; --border:#2e2c23; --border-light:#26251d;
+    --text-primary:#efebe3; --text-secondary:#a49d92; --text-tertiary:#756e64;
+    --accent:#e0913f; --accent-bg:#2a2015;
+    --input:#232219;
+    --success:#6bbd8a; --success-bg:#1a2a1f;
+    --warn:#d9b45a; --warn-bg:#2a2415;
+    --danger:#e08573; --danger-bg:#2b1a16;
+    --user-bubble:#2a2820;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--text-primary);
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB",sans-serif;
+  -webkit-font-smoothing:antialiased}
+.page{max-width:860px;margin:0 auto;padding:48px 20px 96px}
+.lede{margin-bottom:14px}
+.lede h1{font-size:22px;margin:0 0 6px;letter-spacing:-.01em}
+.lede p{margin:0 0 8px;color:var(--text-secondary);font-size:13.5px}
+.lede p:last-child{margin-bottom:0}
+.rule{height:1px;background:var(--border);margin:34px 0 30px;border:0}
+
+h2.part{font-size:15px;margin:0 0 4px;letter-spacing:-.01em}
+p.part-why{margin:0 0 26px;font-size:12.5px;color:var(--text-tertiary);max-width:600px}
+
+.state{margin-bottom:32px}
+.state-label{display:flex;align-items:baseline;gap:10px;margin-bottom:9px;flex-wrap:wrap}
+.state-num{font-size:11px;font-weight:600;letter-spacing:.05em;color:var(--accent);
+  background:var(--accent-bg);border-radius:4px;padding:2px 7px;flex:none}
+.state-name{font-size:13px;font-weight:600}
+.state-why{font-size:12.5px;color:var(--text-tertiary)}
+
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;
+  padding:18px 22px;max-width:640px}
+.panel-wide{max-width:700px}
+
+/* modal chrome */
+.modal-head{display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid var(--border);margin:-18px -22px 16px;padding:14px 22px}
+.modal-head h3{font-size:15px;font-weight:600;margin:0}
+.x{width:26px;height:26px;border-radius:6px;display:flex;align-items:center;
+  justify-content:center;color:var(--text-tertiary);font-size:15px}
+.stats{display:flex;gap:26px;flex-wrap:wrap;margin-bottom:20px}
+.stat dt{font-size:10.5px;color:var(--text-tertiary);margin:0 0 2px}
+.stat dd{font-size:12.5px;margin:0;font-variant-numeric:tabular-nums}
+
+h4.sec{font-size:13px;font-weight:500;margin:0;display:flex;align-items:center;gap:8px}
+.sec-head{display:flex;align-items:center;justify-content:space-between;
+  gap:12px;margin-bottom:10px}
+.count{font-size:10.5px;color:var(--text-tertiary);font-variant-numeric:tabular-nums}
+.sec-note{font-size:11px;line-height:1.6;color:var(--text-secondary);margin:0 0 12px;max-width:520px}
+
+/* buttons */
+.btn{font:inherit;font-size:12px;border:1px solid var(--border);background:var(--panel);
+  color:var(--text-primary);border-radius:6px;padding:5px 11px;display:inline-flex;
+  align-items:center;gap:5px;line-height:1.4}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.quiet{border-color:transparent;background:transparent;color:var(--text-secondary);padding:5px 7px}
+.btn.danger{border-color:var(--danger);color:var(--danger);background:transparent}
+.btn.sm{font-size:11px;padding:3px 8px}
+
+/* alias table */
+.tbl{border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.tr{display:grid;grid-template-columns:1fr 1.45fr auto;gap:12px;align-items:center;
+  padding:9px 13px;border-bottom:1px solid var(--border-light);font-size:12.5px}
+.tr:last-child{border-bottom:none}
+.tr.head{background:var(--input);font-size:10.5px;color:var(--text-tertiary);
+  letter-spacing:.03em;padding:7px 13px}
+.canon{font-weight:500}
+.aliases{display:flex;gap:5px;flex-wrap:wrap}
+.chip{font-size:11px;padding:1.5px 7px;border-radius:20px;background:var(--input);
+  border:1px solid var(--border);color:var(--text-secondary);display:inline-flex;
+  align-items:center;gap:4px;line-height:1.5}
+.chip.user{background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
+.chip .del{opacity:.5;font-size:12px}
+.chip.add{border-style:dashed;color:var(--text-tertiary)}
+.src{font-size:10.5px;color:var(--text-tertiary);white-space:nowrap}
+
+/* empty + loading */
+.empty{text-align:center;padding:30px 20px;border:1px dashed var(--border);border-radius:8px}
+.empty p{margin:0 0 4px;font-size:12.5px;color:var(--text-secondary)}
+.empty .sub{font-size:11px;color:var(--text-tertiary);margin:0 0 14px;line-height:1.6}
+.bar{height:3px;border-radius:3px;background:var(--border);overflow:hidden;margin-top:12px}
+.bar i{display:block;height:100%;width:38%;background:var(--accent);border-radius:3px}
+.loading-line{font-size:11.5px;color:var(--text-secondary);display:flex;
+  align-items:center;justify-content:space-between;gap:12px}
+
+/* confirm */
+.confirm{border:1px solid var(--danger);background:var(--danger-bg);border-radius:8px;padding:13px 15px}
+.confirm h5{margin:0 0 5px;font-size:12.5px;font-weight:600;color:var(--danger)}
+.confirm p{margin:0 0 11px;font-size:11.5px;line-height:1.6;color:var(--text-secondary)}
+.confirm .acts{display:flex;gap:8px}
+
+/* chat */
+.chat{display:flex;flex-direction:column;gap:14px}
+.ask{align-self:flex-end;background:var(--user-bubble);border-radius:12px 12px 3px 12px;
+  padding:8px 13px;font-size:13px;max-width:76%}
+.reply{align-self:flex-start;max-width:88%}
+.reply p{margin:0;font-size:13px;line-height:1.72}
+.cite{font-size:11px;color:var(--accent);vertical-align:super;padding:0 1px}
+
+/* the disclosure line — the whole point of part 2 */
+.read-as{display:flex;align-items:flex-start;gap:8px;font-size:11.5px;line-height:1.6;
+  padding:7px 11px;border-radius:7px;margin:0 0 9px}
+.read-as.mid{background:var(--warn-bg);color:var(--text-secondary)}
+.read-as.low{background:var(--input);color:var(--text-secondary)}
+.read-as .tag{flex:none;font-size:10px;font-weight:600;letter-spacing:.03em;
+  padding:1px 6px;border-radius:4px;margin-top:1px}
+.read-as.mid .tag{background:var(--warn);color:#fff}
+.read-as.low .tag{background:var(--text-tertiary);color:var(--panel)}
+.read-as b{font-weight:600;color:var(--text-primary)}
+.swap{color:var(--accent);text-decoration:underline;text-underline-offset:2px;
+  white-space:nowrap;cursor:pointer}
+.none-mark{color:var(--text-tertiary);border-bottom:1px dotted var(--text-tertiary)}
+
+/* learned-back */
+.learned{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--success);
+  background:var(--success-bg);border-radius:7px;padding:7px 11px}
+.learned .undo{margin-left:auto;color:var(--text-secondary);text-decoration:underline;
+  text-underline-offset:2px;font-size:11px}
+.tick{flex:none;width:14px;height:14px;border-radius:50%;background:var(--success);
+  color:var(--panel);font-size:9px;display:flex;align-items:center;justify-content:center}
+
+/* one-tap confirm under a low-confidence answer */
+.quick{display:flex;gap:7px;flex-wrap:wrap;margin-top:11px}
+.qbtn{font:inherit;font-size:11.5px;line-height:1.5;padding:5px 12px;border-radius:20px;
+  border:1px solid var(--accent);color:var(--accent);background:var(--accent-bg);
+  display:inline-flex;align-items:center;gap:5px}
+.qbtn.alt{border-color:var(--border);color:var(--text-secondary);background:var(--panel)}
+.picker{margin-top:11px;border:1px solid var(--border);border-radius:8px;padding:11px 13px}
+.picker p{margin:0 0 9px;font-size:11px;color:var(--text-tertiary)}
+.picker .who{display:flex;gap:6px;flex-wrap:wrap}
+.who .chip{cursor:pointer;font-size:11.5px;padding:3px 10px}
+.picker .typeit{margin-top:9px;font-size:11px;color:var(--text-tertiary)}
+.picker .typeit u{text-underline-offset:2px}
+
+/* description aliases — matched by similarity, not by exact text */
+.desc-line{width:100%;margin-top:7px;padding-top:7px;border-top:1px dashed var(--border-light)}
+.chip.desc{background:var(--warn-bg);border-color:var(--warn);color:var(--warn);max-width:100%}
+.chip.desc .approx{font-size:10.5px;opacity:.75;margin-right:1px}
+.asked{display:block;font-size:10.5px;color:var(--text-tertiary);margin-top:4px;line-height:1.55}
+.off-note{display:flex;gap:8px;align-items:flex-start;font-size:11.5px;line-height:1.6;
+  background:var(--input);border:1px solid var(--border);border-radius:7px;
+  padding:9px 12px;margin-top:12px;color:var(--text-secondary)}
+.off-note b{color:var(--text-primary);font-weight:600}
+
+.note{font-size:11.5px;line-height:1.7;color:var(--text-secondary);
+  border-left:2px solid var(--border);padding-left:12px;margin:10px 0 0;max-width:600px}
+.note b{color:var(--text-primary);font-weight:600}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="lede">
+  <h1>人物别名与分级路由</h1>
+  <p>解决一件具体的事：问「达西第一次向伊丽莎白求婚」，而书里写的是 Darcy 和 Elizabeth。关键词检索按 token 对，两边一个词都对不上。</p>
+  <p>做法分两层。<b>第一层</b>是一张按书存的别名表，导入时建一次，查询时零模型调用。<b>第二层</b>是把查表的结果如实告诉用户——命中得干净就别废话，命中得含糊才解释。</p>
+</div>
+
+<hr class="rule">
+
+<h2 class="part">第一部分 · 别名表</h2>
+<p class="part-why">放进「索引管理器」——那一屏已经是这本书的检索机器（状态、分块数、向量数、章节摘要），别名表是同一类东西。不新开页面。</p>
+
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">1</span><span class="state-name">空态</span>
+    <span class="state-why">刚导入，或者用户手动清空过</span>
+  </div>
+  <div class="panel panel-wide">
+    <div class="modal-head"><h3>索引管理器</h3><div class="x">✕</div></div>
+    <div class="stats">
+      <dl class="stat"><dt>状态</dt><dd>已建好</dd></dl>
+      <dl class="stat"><dt>分块</dt><dd>642</dd></dl>
+      <dl class="stat"><dt>向量</dt><dd>642/642</dd></dl>
+      <dl class="stat"><dt>定位句</dt><dd>642/642</dd></dl>
+    </div>
+    <div class="sec-head"><h4 class="sec">人物别名</h4></div>
+    <p class="sec-note">让你用中文名、简称、或者「那个牧师」这类说法问一本英文书。</p>
+    <div class="empty">
+      <p>还没有建立别名</p>
+      <p class="sub">从书里认出人物，再给每个人配上常见的中文译名和简称。<br>一次模型调用，之后每次提问都不再花钱。</p>
+      <button class="btn primary">建立别名表</button>
+    </div>
+  </div>
+</div>
+
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">2</span><span class="state-name">加载态</span>
+    <span class="state-why">正在跑，不报进度也不给停止</span>
+  </div>
+  <div class="panel panel-wide">
+    <div class="sec-head"><h4 class="sec">人物别名</h4></div>
+    <div class="empty" style="text-align:left">
+      <div class="loading-line"><span>正在从书里认出人物…</span></div>
+      <div class="bar"><i></i></div>
+    </div>
+  </div>
+  <p class="note">没有「17 / 约 40」，也没有停止按钮。建别名表是<b>一次</b>模型调用——整本书的章节摘要一起发过去，模型一次吐回全部人物。没有循环，所以没有「第 17 个」；中途没有可插入的中断点，所以停不了。<br>
+  拆成分批能换来一个进度数字，代价是调用次数和费用翻几倍。这件事只跑几十秒，一本书一辈子跑一次，不值。</p>
+</div>
+
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">3</span><span class="state-name">正常态</span>
+    <span class="state-why">自动建的 + 用户教的，来源分得清</span>
+  </div>
+  <div class="panel panel-wide">
+    <div class="sec-head">
+      <h4 class="sec">人物别名</h4>
+      <span class="count">23 人 · 61 条别名</span>
+    </div>
+    <p class="sec-note">带底色的是你教过的，优先级高于自动认的。点 × 删掉一条。</p>
+    <div class="tbl">
+      <div class="tr head"><span>书里的写法</span><span>还可以这么叫</span><span>来源</span></div>
+      <div class="tr">
+        <span class="canon">Mr. Darcy</span>
+        <span class="aliases">
+          <span class="chip">达西<span class="del">✕</span></span>
+          <span class="chip">达西先生<span class="del">✕</span></span>
+          <span class="chip">Fitzwilliam Darcy<span class="del">✕</span></span>
+          <span class="chip add">＋</span>
+        </span>
+        <span class="src">自动</span>
+      </div>
+      <div class="tr">
+        <span class="canon">Elizabeth Bennet</span>
+        <span class="aliases">
+          <span class="chip">伊丽莎白<span class="del">✕</span></span>
+          <span class="chip">丽萃<span class="del">✕</span></span>
+          <span class="chip">Lizzy<span class="del">✕</span></span>
+          <span class="chip">Eliza<span class="del">✕</span></span>
+          <span class="chip add">＋</span>
+        </span>
+        <span class="src">自动</span>
+      </div>
+      <div class="tr">
+        <span class="canon">Mr. Collins</span>
+        <span class="aliases">
+          <span class="chip">柯林斯<span class="del">✕</span></span>
+          <span class="chip user">那个牧师<span class="del">✕</span></span>
+          <span class="chip add">＋</span>
+        </span>
+        <span class="src">自动 + 你</span>
+      </div>
+      <div class="tr">
+        <span class="canon">Georgiana Darcy</span>
+        <span class="aliases">
+          <span class="chip">乔治安娜<span class="del">✕</span></span>
+          <span class="chip">达西小姐<span class="del">✕</span></span>
+          <span class="chip add">＋</span>
+        </span>
+        <span class="src">自动</span>
+      </div>
+      <div class="tr">
+        <span class="canon">Lady Catherine de Bourgh</span>
+        <span class="aliases">
+          <span class="chip">凯瑟琳夫人<span class="del">✕</span></span>
+          <span class="chip">咖苔琳<span class="del">✕</span></span>
+          <span class="chip add">＋</span>
+        </span>
+        <span class="src">自动</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn">添加人物</button>
+      <button class="btn quiet">重建</button>
+      <button class="btn quiet" style="color:var(--danger)">全部清空</button>
+    </div>
+  </div>
+  <p class="note"><b>为什么按书存，不做成全局表。</b>「老爷」在不同的书里是不同的人，「先生」也是。一张全局表会把《傲慢与偏见》学到的东西泼到《红楼梦》上，越用越糟。</p>
+</div>
+
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">3b</span><span class="state-name">你教的描述性说法</span>
+    <span class="state-why">同一张表、同一个人，但匹配方式不一样，所以长得也不一样</span>
+  </div>
+  <div class="panel panel-wide">
+    <div class="sec-head">
+      <h4 class="sec">人物别名</h4>
+      <span class="count">23 人 · 61 条别名 · 2 条描述</span>
+    </div>
+    <p class="sec-note">带底色的是你教过的。<b>带 ≈ 的按意思匹配</b>，换个说法也能对上；其余的按字面匹配。</p>
+    <div class="tbl">
+      <div class="tr head"><span>书里的写法</span><span>还可以这么叫</span><span>来源</span></div>
+      <div class="tr">
+        <span class="canon">Mr. Collins</span>
+        <span class="aliases">
+          <span class="chip">柯林斯<span class="del">✕</span></span>
+          <span class="chip user">那个牧师<span class="del">✕</span></span>
+          <span class="chip add">＋</span>
+          <span class="desc-line">
+            <span class="chip desc"><span class="approx">≈</span> 那个总在拍马屁的牧师<span class="del">✕</span></span>
+            <span class="asked">你当时问的是「那个总在拍马屁的牧师后来怎么样了？」</span>
+          </span>
+        </span>
+        <span class="src">自动 + 你</span>
+      </div>
+      <div class="tr">
+        <span class="canon">Mrs. Bennet</span>
+        <span class="aliases">
+          <span class="chip">班纳特太太<span class="del">✕</span></span>
+          <span class="chip add">＋</span>
+          <span class="desc-line">
+            <span class="chip desc"><span class="approx">≈</span> 一心想把女儿嫁出去的那位母亲<span class="del">✕</span></span>
+            <span class="asked">你当时问的是「一心想把女儿嫁出去的那位母亲，最后如愿了吗？」</span>
+          </span>
+        </span>
+        <span class="src">自动 + 你</span>
+      </div>
+      <div class="tr">
+        <span class="canon">Elizabeth Bennet</span>
+        <span class="aliases">
+          <span class="chip">伊丽莎白<span class="del">✕</span></span>
+          <span class="chip">丽萃<span class="del">✕</span></span>
+          <span class="chip">Lizzy<span class="del">✕</span></span>
+          <span class="chip add">＋</span>
+        </span>
+        <span class="src">自动</span>
+      </div>
+    </div>
+  </div>
+  <p class="note"><b>为什么不给描述另开一个区块。</b>这张表已经按人分组了，而一条描述说的就是某个人——「那个总在拍马屁的牧师」属于 Mr. Collins 那一行，不属于别的地方。拆开等于让用户为了搞清楚「柯林斯一共有几种叫法」看两个列表。<br>
+  <b>为什么要单独标 ≈。</b>人名按字面对，描述按意思对。混成一样的 chip，用户会以为行为相同，然后不理解为什么换个说法有时管用有时不管用。这个差别不说清楚，功能就是玄学。<br>
+  <b>为什么把当时的原问句挂在下面。</b>「那个总在拍马屁的牧师」单看，六周后你想不起来自己为什么教过它、当时想找什么。配上原问句它就自解释了——而这正是决定「要不要删掉」时唯一需要的信息。<br>
+  <b>只给删，不给改。</b>改文字要重算向量、改两张表，而教的入口就在对话里，删掉重教一遍更快也更清楚。</p>
+</div>
+
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">3c</span><span class="state-name">向量检索关掉了</span>
+    <span class="state-why">描述类会静默失效——必须说出来</span>
+  </div>
+  <div class="panel panel-wide">
+    <div class="sec-head">
+      <h4 class="sec">人物别名</h4>
+      <span class="count">23 人 · 61 条别名 · 2 条描述</span>
+    </div>
+    <div class="tbl">
+      <div class="tr head"><span>书里的写法</span><span>还可以这么叫</span><span>来源</span></div>
+      <div class="tr">
+        <span class="canon">Mr. Collins</span>
+        <span class="aliases">
+          <span class="chip">柯林斯<span class="del">✕</span></span>
+          <span class="chip add">＋</span>
+          <span class="desc-line">
+            <span class="chip desc" style="opacity:.45"><span class="approx">≈</span> 那个总在拍马屁的牧师<span class="del">✕</span></span>
+            <span class="asked">你当时问的是「那个总在拍马屁的牧师后来怎么样了？」</span>
+          </span>
+        </span>
+        <span class="src">自动 + 你</span>
+      </div>
+    </div>
+    <div class="off-note">
+      <span>⚠</span>
+      <span><b>带 ≈ 的两条现在不生效。</b>它们靠意思匹配，需要「搜索模型」；那个开关现在是关的。人名不受影响，照常工作。</span>
+    </div>
+  </div>
+  <p class="note">这一条不能省。描述类跟向量检索共用同一个开关——用户在设置里关掉向量检索，或者搜索模型连不上，这些别名就悄悄不工作了，而表里还好端端列着。<b>列着但不生效，是比不列更糟的状态</b>：用户会以为教过了，然后把答不上来归咎于 AI 笨。<br>
+  变灰而不是隐藏，因为它们没有丢，开关打开就回来。</p>
+</div>
+
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">4</span><span class="state-name">危险操作确认</span>
+    <span class="state-why">清空会连你教过的一起删</span>
+  </div>
+  <div class="panel">
+    <div class="confirm">
+      <h5>清空这本书的全部别名？</h5>
+      <p>包括你教过的 6 条——那些是重建也找不回来的，自动认的只认书里出现过的写法。</p>
+      <div class="acts">
+        <button class="btn danger">清空</button>
+        <button class="btn quiet">取消</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<hr class="rule">
+
+<h2 class="part">第二部分 · 分级披露</h2>
+<p class="part-why">置信度不问模型，从查表结果数出来：唯一命中 = 高，命中多个 = 中，一条没中 = 低。模型自报的「我很确定」在它错的时候也会说确定，数出来的不会。</p>
+
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">5</span><span class="state-name">高 · 唯一命中</span>
+    <span class="state-why">界面上什么都不多说，直接答</span>
+  </div>
+  <div class="panel">
+    <div class="chat">
+      <div class="ask">柯林斯是怎么向伊丽莎白求婚的？</div>
+      <div class="reply">
+        <p>他先郑重其事地列了三条理由——牧师该做榜样、这样能增添他的幸福、还有凯瑟琳夫人特意嘱咐过<span class="cite">[S1]</span>。伊丽莎白几次想打断都没成功，等他说完才明确回绝，而他把这个回绝当成了年轻姑娘照例的推辞<span class="cite">[S2]</span>。</p>
+      </div>
+    </div>
+  </div>
+  <p class="note">「柯林斯」和「伊丽莎白」各自唯一命中，没有歧义，就不该在回答前面加一句「我把柯林斯理解为 Mr. Collins」。<b>那句话在这里是噪声</b>——用户本来就知道自己在说谁。</p>
+</div>
+
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">6</span><span class="state-name">中 · 命中多个</span>
+    <span class="state-why">先说按谁理解的，一句话，可当场换</span>
+  </div>
+  <div class="panel">
+    <div class="chat">
+      <div class="ask">达西小姐弹琴那段是在哪里？</div>
+      <div class="reply">
+        <div class="read-as mid">
+          <span class="tag">按</span>
+          <span>这本书里有两位达西小姐，我按 <b>Georgiana Darcy</b> 找的。<span class="swap">换成 Elizabeth 眼中的 Miss Darcy</span></span>
+        </div>
+        <p>在彭伯利。伊丽莎白和嘉丁纳夫妇到访时，乔治安娜被哥哥请出来待客，弹琴那一段紧接在宾利小姐出言试探之后<span class="cite">[S1]</span>。</p>
+      </div>
+    </div>
+  </div>
+  <p class="note">这一行的位置很关键：<b>在回答上面，不在下面</b>。放下面等于让用户读完一整段才发现找错了人。</p>
+</div>
+
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">7</span><span class="state-name">低 · 一条没中</span>
+    <span class="state-why">明说没认出来，别装作认出来了</span>
+  </div>
+  <div class="panel">
+    <div class="chat">
+      <div class="ask">那个总在拍马屁的牧师后来怎么样了？</div>
+      <div class="reply">
+        <div class="read-as low">
+          <span class="tag">未认出</span>
+          <span>没认出 <span class="none-mark">那个总在拍马屁的牧师</span> 是谁，按字面在书里找的。</span>
+        </div>
+        <p>书里有一位牧师符合这个说法：Mr. Collins。他在结尾仍住在 Hunsford，靠凯瑟琳夫人的赏识过活<span class="cite">[S1]</span>。</p>
+        <div class="quick">
+          <button class="qbtn">✓ 对，就是 Mr. Collins</button>
+          <button class="qbtn alt">不是，是别人</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note">低置信度<b>不等于不回答</b>。检索照跑，只是把「我是猜的」摆在前面。<br>
+  按钮在<b>回答下面</b>，不在披露行旁边——「Mr. Collins」这个名字是回答里才出现的，在它出现之前问「对不对」，用户没有可对的东西。</p>
+</div>
+
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">7b</span><span class="state-name">猜错了 · 人物选择器</span>
+    <span class="state-why">「不是，是别人」点开，仍然不用打字</span>
+  </div>
+  <div class="panel">
+    <div class="chat">
+      <div class="reply">
+        <p style="color:var(--text-tertiary);font-size:12px">…书里有一位牧师符合这个说法：Mr. Collins。</p>
+        <div class="picker">
+          <p>那你说的是谁？（这本书里的人物）</p>
+          <div class="who">
+            <span class="chip">Mr. Collins</span>
+            <span class="chip">Mr. Bennet</span>
+            <span class="chip">Mr. Darcy</span>
+            <span class="chip">Mr. Wickham</span>
+            <span class="chip">Sir William Lucas</span>
+            <span class="chip">Mr. Bingley</span>
+          </div>
+          <p class="typeit">都不是？<u>直接打出来</u></p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note">选择器<b>只列这本书的人物</b>，就是第一部分那张表的左列。点一下就写回，跟点「对」走的是同一条路。</p>
+</div>
+
+<div class="state">
+  <div class="state-label">
+    <span class="state-num">8</span><span class="state-name">点完之后</span>
+    <span class="state-why">原地换成回执，不新起一轮对话</span>
+  </div>
+  <div class="panel">
+    <div class="chat">
+      <div class="reply">
+        <p style="color:var(--text-tertiary);font-size:12px">…他在结尾仍住在 Hunsford，靠凯瑟琳夫人的赏识过活。</p>
+        <div class="learned" style="margin-top:11px">
+          <span class="tick">✓</span>
+          <span>已记下：这本书里「那个总在拍马屁的牧师」指 <b>Mr. Collins</b></span>
+          <span class="undo">撤销</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note">按钮那一行<b>原地变成这条回执</b>，不新起一轮对话——用户点的是「确认」，不是「提问」，不该在聊天记录里多出一来一回。<br>
+  写回<b>只影响这本书</b>，并且立刻出现在第一部分那张表里（带底色的那种 chip），随时能删。一条学错的别名比没有别名更糟——答案开始跑偏，而用户不知道为什么。所以它必须在表里看得见。</p>
+</div>
+
+<hr class="rule">
+
+<h2 class="part">这次不做的</h2>
+<p class="part-why" style="max-width:640px">
+把模糊问句整个交给模型改写成检索词——那是每问一次就掏一次模型，包括本来就检索得很好的大多数问题，回答开始吐字前先卡一秒。真要解决「第一次捞得不好」，正确做法是让模型能主动再检索一次（换个词自己再捞），而不是加一个所有人都要交过路费的前置阶段。那是更大的改动，排在这个后面。
+</p>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>索引入口与命名 · 样张</title>
+<style>
+:root{
+  --page:#f2f0ed; --panel:#fff; --border:#e4e0d9; --border-light:#eeebe5;
+  --text-primary:#1c1a17; --text-secondary:#6d665c; --text-tertiary:#9a938a;
+  --accent:#b5651d; --accent-bg:#fdf3e9;
+  --input:#f7f5f1;
+  --success:#2f7d4f; --success-bg:#eef6f0;
+  --warn:#8a6d1f; --warn-bg:#fbf5e4;
+  --danger:#a33a2a; --danger-bg:#fbeeeb;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --page:#131209; --panel:#1c1b14; --border:#2e2c23; --border-light:#26251d;
+    --text-primary:#efebe3; --text-secondary:#a49d92; --text-tertiary:#756e64;
+    --accent:#e0913f; --accent-bg:#2a2015;
+    --input:#232219;
+    --success:#6bbd8a; --success-bg:#1a2a1f;
+    --warn:#d9b45a; --warn-bg:#2a2415;
+    --danger:#e08573; --danger-bg:#2b1a16;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--text-primary);
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB",sans-serif;
+  -webkit-font-smoothing:antialiased}
+.page{max-width:880px;margin:0 auto;padding:48px 20px 96px}
+.lede h1{font-size:22px;margin:0 0 6px;letter-spacing:-.01em}
+.lede p{margin:0 0 8px;color:var(--text-secondary);font-size:13.5px}
+.lede p:last-child{margin-bottom:0}
+.rule{height:1px;background:var(--border);margin:34px 0 30px;border:0}
+h2.part{font-size:15px;margin:0 0 4px;letter-spacing:-.01em}
+p.part-why{margin:0 0 26px;font-size:12.5px;color:var(--text-tertiary);max-width:620px}
+.state{margin-bottom:32px}
+.state-label{display:flex;align-items:baseline;gap:10px;margin-bottom:9px;flex-wrap:wrap}
+.state-num{font-size:11px;font-weight:600;letter-spacing:.05em;color:var(--accent);
+  background:var(--accent-bg);border-radius:4px;padding:2px 7px;flex:none}
+.state-name{font-size:13px;font-weight:600}
+.state-why{font-size:12.5px;color:var(--text-tertiary)}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;
+  padding:18px 22px;max-width:660px}
+.panel-wide{max-width:720px}
+
+/* modal chrome */
+.modal-head{display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid var(--border);margin:-18px -22px 16px;padding:14px 22px}
+.modal-head h3{font-size:15px;font-weight:600;margin:0;display:flex;align-items:center;gap:7px}
+.modal-head h3 .ico{color:var(--accent)}
+.x{width:26px;height:26px;border-radius:6px;display:flex;align-items:center;
+  justify-content:center;color:var(--text-tertiary);font-size:15px}
+.modal-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  border-top:1px solid var(--border);margin:16px -22px -18px;padding:13px 22px;flex-wrap:wrap}
+
+/* stat cards */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.stat{border:1px solid var(--border);border-radius:7px;padding:10px 11px}
+.stat .k{font-size:10px;color:var(--text-tertiary);letter-spacing:.02em}
+.stat .v{font-size:13px;font-weight:600;margin-top:3px}
+.stat.flag{border-color:var(--warn);background:var(--warn-bg)}
+.stat.flag .v{color:var(--warn)}
+.stat.good .v{color:var(--success)}
+
+/* the plain-language verdict line */
+.verdict{margin-top:12px;border-radius:7px;padding:11px 13px;font-size:12.5px;line-height:1.65}
+.verdict.warn{background:var(--warn-bg);color:var(--warn)}
+.verdict.good{background:var(--success-bg);color:var(--success)}
+.verdict.info{background:var(--input);color:var(--text-secondary)}
+.verdict b{font-weight:600}
+
+/* buttons */
+.btn{border:1px solid var(--border);background:var(--panel);border-radius:7px;
+  padding:6px 13px;font-size:12.5px;font-weight:500;color:var(--text-primary);
+  display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.quiet{border-color:transparent;color:var(--text-secondary);padding-left:6px;padding-right:6px}
+.btn.danger{color:var(--danger);border-color:var(--border)}
+.btn.off{opacity:.4}
+.btn .dot{width:11px;height:11px;border-radius:50%;border:2px solid currentColor;
+  border-top-color:transparent;display:inline-block}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+
+/* progress */
+.bar{height:5px;border-radius:3px;background:var(--input);overflow:hidden;margin-top:9px}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:3px}
+.prog-line{display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary)}
+
+/* advanced disclosure */
+.adv{margin-top:14px;border-top:1px solid var(--border-light);padding-top:12px}
+.adv summary{font-size:12.5px;color:var(--text-secondary);cursor:pointer;list-style:none;
+  display:flex;align-items:center;gap:6px}
+.adv summary::-webkit-details-marker{display:none}
+.adv summary::before{content:"›";color:var(--text-tertiary);font-size:14px}
+.adv[open] summary::before{content:"⌄"}
+.adv-body{margin-top:11px;display:flex;flex-direction:column;gap:11px}
+.adv-item{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+.adv-item .txt{font-size:12.5px}
+.adv-item .txt p{margin:2px 0 0;font-size:11.5px;color:var(--text-tertiary);max-width:340px;line-height:1.55}
+
+/* settings rows */
+.srow{display:flex;justify-content:space-between;align-items:center;gap:20px;
+  padding:15px 0;border-bottom:1px solid var(--border-light)}
+.srow:last-child{border-bottom:0}
+.srow .txt h4{margin:0;font-size:13.5px;font-weight:600}
+.srow .txt p{margin:3px 0 0;font-size:12px;color:var(--text-tertiary);max-width:400px;line-height:1.55}
+.sec-title{font-size:13.5px;font-weight:600;margin:0 0 2px}
+.sec-sub{font-size:12px;color:var(--text-tertiary);margin:0 0 6px}
+
+/* per-book batch list */
+.blist{margin-top:13px;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.brow{display:flex;align-items:center;gap:11px;padding:10px 13px;font-size:12.5px;
+  border-bottom:1px solid var(--border-light)}
+.brow:last-child{border-bottom:0}
+.brow .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brow .st{font-size:11.5px;color:var(--text-tertiary);flex:none}
+.brow .st.ok{color:var(--success)}
+.brow .st.run{color:var(--accent)}
+.brow .st.err{color:var(--danger)}
+.tick{width:15px;flex:none;text-align:center;font-size:12px;color:var(--text-tertiary)}
+.tick.ok{color:var(--success)}
+.tick.err{color:var(--danger)}
+.tick.run{color:var(--accent)}
+
+/* context menu */
+.menu{background:var(--panel);border:1px solid var(--border);border-radius:9px;
+  padding:5px;max-width:230px;box-shadow:0 8px 26px rgba(0,0,0,.11)}
+.mi{padding:7px 11px;border-radius:6px;font-size:12.5px;display:flex;align-items:center;gap:9px}
+.mi.hl{background:var(--accent-bg);color:var(--accent);font-weight:500}
+.msep{height:1px;background:var(--border-light);margin:4px 8px}
+
+.note{border-left:2px solid var(--border);padding-left:14px;margin-top:26px;
+  font-size:12.5px;color:var(--text-secondary);max-width:640px;line-height:1.7}
+.note b{color:var(--text-primary);font-weight:600}
+.note ul{margin:8px 0 0;padding-left:17px}
+.note li{margin-bottom:5px}
+code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--input);
+  padding:1px 5px;border-radius:4px}
+del{color:var(--text-tertiary);text-decoration-color:var(--danger)}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="lede">
+  <h1>索引入口与命名</h1>
+  <p>两件事：把「增量更新 / 全量重建」这对反着的名字改掉，以及补上你要的两个入口——书籍里的单本入口、设置里的全库批量。</p>
+  <p>下面每一屏都编了号，直接报号给意见就行。</p>
+</div>
+
+<hr class="rule">
+
+<h2 class="part">第一部分 · 单本索引（右键 → AI 索引…）</h2>
+<p class="part-why">核心改动不是换词，是<b>先把「现在缺什么」用一句人话说出来</b>，再给一个按钮去补它。名字之所以会看错，是因为原来只有两个动词，没有任何一句话告诉你当前状态离「能用」差在哪。</p>
+
+<!-- 1 -->
+<div class="state">
+  <div class="state-label"><span class="state-num">1</span><span class="state-name">什么都没建</span>
+    <span class="state-why">刚导入的书。主按钮说「建立索引」，不说「更新」。</span></div>
+  <div class="panel panel-wide">
+    <div class="modal-head"><h3><span class="ico">▤</span>AI 索引 · Pride &amp; Prejudice</h3><span class="x">✕</span></div>
+    <div class="stats">
+      <div class="stat"><div class="k">状态</div><div class="v">未建立</div></div>
+      <div class="stat"><div class="k">分块</div><div class="v">—</div></div>
+      <div class="stat"><div class="k">向量覆盖</div><div class="v">—</div></div>
+      <div class="stat"><div class="k">向量模型</div><div class="v">—</div></div>
+    </div>
+    <div class="verdict info">这本书还没有索引。建立之后，AI 才能在书里找出处，你也才能按含义搜索。</div>
+    <div class="modal-foot">
+      <span></span>
+      <div class="btnrow"><button class="btn primary">建立索引</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- 2 -->
+<div class="state">
+  <div class="state-label"><span class="state-num">2</span><span class="state-name">有分块，没有向量 ← 你现在就在这个状态</span>
+    <span class="state-why">配好了搜索模型但还没跑。这一屏必须自己说清楚差什么。</span></div>
+  <div class="panel panel-wide">
+    <div class="modal-head"><h3><span class="ico">▤</span>AI 索引 · Pride &amp; Prejudice</h3><span class="x">✕</span></div>
+    <div class="stats">
+      <div class="stat"><div class="k">状态</div><div class="v">部分完成</div></div>
+      <div class="stat good"><div class="k">分块</div><div class="v">642</div></div>
+      <div class="stat flag"><div class="k">向量覆盖</div><div class="v">0 / 642</div></div>
+      <div class="stat"><div class="k">向量模型</div><div class="v">—</div></div>
+    </div>
+    <div class="verdict warn"><b>还差向量。</b>现在只能按关键词搜索。补齐之后才能按含义搜索——比如用中文问一本英文书，或者问「达西求婚被拒之后」这种书里没有原词的说法。</div>
+    <details class="adv"><summary>高级</summary>
+      <div class="adv-body">
+        <div class="adv-item"><div class="txt">重新切分块<p>把全书从头切一遍。切完向量和摘要都会失效，需要再补一次。只有换了书的文件版本才用得上。</p></div><button class="btn">重新切分块</button></div>
+        <div class="adv-item"><div class="txt">重写章节摘要<p>只重写下面那些摘要，不动分块和向量。</p></div><button class="btn">重写摘要</button></div>
+      </div>
+    </details>
+    <div class="modal-foot">
+      <span></span>
+      <div class="btnrow"><button class="btn primary">补齐索引</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- 3 -->
+<div class="state">
+  <div class="state-label"><span class="state-num">3</span><span class="state-name">正在补</span>
+    <span class="state-why">分阶段报进度，因为五个阶段用的模型不同，耗时也差一个数量级。</span></div>
+  <div class="panel panel-wide">
+    <div class="modal-head"><h3><span class="ico">▤</span>AI 索引 · Pride &amp; Prejudice</h3><span class="x">✕</span></div>
+    <div class="stats">
+      <div class="stat"><div class="k">状态</div><div class="v" style="color:var(--accent)">建立中</div></div>
+      <div class="stat good"><div class="k">分块</div><div class="v">642</div></div>
+      <div class="stat"><div class="k">向量覆盖</div><div class="v">288 / 642</div></div>
+      <div class="stat"><div class="k">向量模型</div><div class="v">qwen3-0.6b</div></div>
+    </div>
+    <div class="verdict info">
+      <div class="prog-line"><span>第 3 步，共 5 步 · 生成向量</span><span>288 / 642</span></div>
+      <div class="bar"><i style="width:45%"></i></div>
+      <div style="margin-top:7px;font-size:11.5px;color:var(--text-tertiary)">
+        ✓ 切分块 &nbsp;·&nbsp; ✓ 定位句 &nbsp;·&nbsp; <b>生成向量</b> &nbsp;·&nbsp; 章节摘要 &nbsp;·&nbsp; 人物别名
+      </div>
+    </div>
+    <div class="verdict info" style="background:transparent;padding:6px 0 0">可以关掉这个窗口继续读书，建索引在后台跑。</div>
+    <div class="modal-foot">
+      <span></span>
+      <div class="btnrow"><button class="btn danger">停止</button><button class="btn off"><span class="dot"></span>补齐索引</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- 4 -->
+<div class="state">
+  <div class="state-label"><span class="state-num">4</span><span class="state-name">完成</span>
+    <span class="state-why">主按钮不消失，但降级成次要样式，并且说清再点也不会重算。</span></div>
+  <div class="panel panel-wide">
+    <div class="modal-head"><h3><span class="ico">▤</span>AI 索引 · Pride &amp; Prejudice</h3><span class="x">✕</span></div>
+    <div class="stats">
+      <div class="stat"><div class="k">状态</div><div class="v" style="color:var(--success)">可用</div></div>
+      <div class="stat good"><div class="k">分块</div><div class="v">642</div></div>
+      <div class="stat good"><div class="k">向量覆盖</div><div class="v">642 / 642</div></div>
+      <div class="stat"><div class="k">向量模型</div><div class="v">qwen3-0.6b</div></div>
+    </div>
+    <div class="verdict good">索引齐了，关键词和含义两种搜索都能用。8 月 8 日 00:41 建立。</div>
+    <details class="adv"><summary>高级</summary>
+      <div class="adv-body">
+        <div class="adv-item"><div class="txt">重新切分块<p>把全书从头切一遍。切完向量和摘要都会失效，需要再补一次。只有换了书的文件版本才用得上。</p></div><button class="btn">重新切分块</button></div>
+        <div class="adv-item"><div class="txt">重写章节摘要<p>只重写下面那些摘要，不动分块和向量。</p></div><button class="btn">重写摘要</button></div>
+      </div>
+    </details>
+    <div class="modal-foot">
+      <span style="font-size:11.5px;color:var(--text-tertiary)">再点「补齐索引」只会补缺的，已有的不重算。</span>
+      <div class="btnrow"><button class="btn">补齐索引</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- 5 -->
+<div class="state">
+  <div class="state-label"><span class="state-num">5</span><span class="state-name">「重新切分块」的确认</span>
+    <span class="state-why">这是唯一一个会让已有成果作废的动作，所以它要说清作废的是什么。</span></div>
+  <div class="panel" style="max-width:470px">
+    <div style="font-size:13.5px;font-weight:600;margin-bottom:8px">重新切分块？</div>
+    <p style="margin:0 0 6px;font-size:12.5px;color:var(--text-secondary);line-height:1.7">
+      全书会重新切一遍。现有的 <b>642 条定位句</b>、<b>642 条向量</b>、<b>章节摘要</b>和<b>人物别名</b>都会作废，需要重新生成一次。</p>
+    <p style="margin:0 0 14px;font-size:12px;color:var(--text-tertiary);line-height:1.65">
+      定位句、摘要和别名用对话模型重写，向量用搜索模型重算。你手动改过的摘要、和你自己教过的别名都会保留。</p>
+    <div class="btnrow" style="justify-content:flex-end"><button class="btn quiet">取消</button><button class="btn danger">重新切分块</button></div>
+  </div>
+</div>
+
+<!-- 6 -->
+<div class="state">
+  <div class="state-label"><span class="state-num">6</span><span class="state-name">右键菜单</span>
+    <span class="state-why">菜单项从「AI 索引…」改成带状态的，不用点进去就知道要不要点。</span></div>
+  <div class="menu">
+    <div class="mi">打开</div>
+    <div class="mi">书籍信息…</div>
+    <div class="msep"></div>
+    <div class="mi hl">▤ &nbsp;AI 索引 · 缺向量</div>
+    <div class="mi">加入书单…</div>
+    <div class="msep"></div>
+    <div class="mi" style="color:var(--danger)">删除</div>
+  </div>
+</div>
+
+<hr class="rule">
+
+<h2 class="part">第二部分 · 全库批量（设置 → AI 配置 → 搜索模型）</h2>
+<p class="part-why">放在搜索模型这一页的最下面，紧跟着「测试并保存」。理由很直接：刚配完模型的那一秒，正是人想「那现在呢」的时刻。</p>
+
+<!-- 7 -->
+<div class="state">
+  <div class="state-label"><span class="state-num">7</span><span class="state-name">还没配好搜索模型</span>
+    <span class="state-why">按钮在，但是灰的，并且说清为什么灰——不要藏起来，藏起来就等于没有这个功能。</span></div>
+  <div class="panel">
+    <div class="srow">
+      <div class="txt"><h4>为书库建立索引</h4><p>把书转成向量，之后才能按含义搜索。需要先在上面配置并测试搜索模型。</p></div>
+      <button class="btn off">建立索引</button>
+    </div>
+  </div>
+</div>
+
+<!-- 8 -->
+<div class="state">
+  <div class="state-label"><span class="state-num">8</span><span class="state-name">配好了，有书待建</span>
+    <span class="state-why">先报数：多少本齐了、多少本没齐。数字本身就是行动理由。</span></div>
+  <div class="panel">
+    <div class="srow">
+      <div class="txt"><h4>为书库建立索引</h4><p>把书转成向量，之后才能按含义搜索。未建立的会逐本进行，可以随时停下，停在哪下次从哪继续。</p></div>
+      <button class="btn primary">为 2 本建立</button>
+    </div>
+  </div>
+</div>
+
+<!-- 9 -->
+<div class="state">
+  <div class="state-label"><span class="state-num">9</span><span class="state-name">批量进行中</span>
+    <span class="state-why">两层进度：整体第几本，当前这本第几块。只有一条总进度条的话，一本大书会看起来像卡死了。</span></div>
+  <div class="panel">
+    <div class="srow" style="border-bottom:0;padding-bottom:6px">
+      <div class="txt"><h4>为书库建立索引</h4><p>正在进行，第 2 本，共 2 本。可以关掉设置，它在后台继续。</p></div>
+      <button class="btn danger">停止</button>
+    </div>
+    <div class="bar"><i style="width:72%"></i></div>
+    <div class="blist">
+      <div class="brow"><span class="tick ok">✓</span><span class="name">Pride &amp; Prejudice</span><span class="st ok">642 / 642</span></div>
+      <div class="brow"><span class="tick run">◴</span><span class="name">The Great Gatsby</span><span class="st run">向量 118 / 279</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- 10 -->
+<div class="state">
+  <div class="state-label"><span class="state-num">10</span><span class="state-name">跑完了，有一本失败</span>
+    <span class="state-why">失败不拦住其余的书。错误挂在那一行上，重试也只重试那一本。</span></div>
+  <div class="panel">
+    <div class="srow" style="border-bottom:0;padding-bottom:6px">
+      <div class="txt"><h4>为书库建立索引</h4><p>完成 1 本，失败 1 本。失败的书保留了已经算出来的部分，重试会从断的地方接着走。</p></div>
+      <button class="btn">重试失败的</button>
+    </div>
+    <div class="blist">
+      <div class="brow"><span class="tick ok">✓</span><span class="name">Pride &amp; Prejudice</span><span class="st ok">642 / 642</span></div>
+      <div class="brow"><span class="tick err">!</span><span class="name">The Great Gatsby</span><span class="st err">连不上搜索模型</span></div>
+    </div>
+  </div>
+</div>
+
+<hr class="rule">
+
+<div class="note">
+  <b>名字为什么这么改。</b>
+  <ul>
+    <li><del>增量更新</del> → <b>补齐索引</b>（没建过时显示「建立索引」）。它本来就是「缺什么补什么」的那个按钮，四个阶段全包。叫「增量」把它说小了，你就是因此没点它。</li>
+    <li><del>全量重建</del> → <b>重新切分块</b>，并且收进「高级」。它实际只重切分块，向量和摘要一个都不碰——叫「全量重建」是三个字里错了三个字。</li>
+    <li><del>重新生成摘要</del> → <b>重写摘要</b>，也收进「高级」。</li>
+    <li><del>嵌入覆盖</del> → <b>向量覆盖</b>。「嵌入」是行话，界面上其它地方也都说「向量」。</li>
+  </ul>
+</div>
+
+<div class="note">
+  <b>第五步：人物别名。</b>
+  <ul>
+    <li>它单独占一步，不并进「章节摘要」。这一步也是一趟模型调用，耗时和摘要一个量级——藏在别人名下，进度条会在最后停住不动，而「停住不动」正是这一轮要治的病。</li>
+    <li><b>上面那四张统计卡不加第五张。</b>别名在弹窗里本来就有自己的一整块（人物、别名条数、你教过的哪几条都在那儿），再挤一张卡进去只会把「状态 / 分块 / 向量覆盖 / 向量模型」这排挤散。</li>
+    <li><b>第 2 屏那句话只报最要紧的那个缺口</b>，缺向量就说缺向量，不把五个阶段的缺失情况列成清单。那句话的作用是让人知道下一步按哪个按钮——按钮只有一个，所以话也只需要一句。</li>
+  </ul>
+</div>
+
+<div class="note">
+  <b>这次故意没做的。</b>
+  <ul>
+    <li><b>不做自动建索引。</b>导入一本书就自动跑向量，等于在你不知情的时候替你决定动用哪个模型、动用多久。要不要跑，你按按钮。</li>
+    <li><b>批量不并发。</b>逐本串行。并发只会让几本书互相抢同一个模型，总时间不会变短；而且串行才好停、好续。</li>
+    <li><b>不加全局进度浮窗。</b>先看这两本实际跑多久。如果一本几十秒，那关掉设置就跑完了，浮窗是多余的 UI。</li>
+  </ul>
+</div>
+
+</div>
+</body>
+</html>

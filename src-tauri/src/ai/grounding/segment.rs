@@ -4,6 +4,10 @@ pub enum SegmentMode {
     Query,
 }
 
+/// `pub(crate)`, not private: `aliases.rs` reuses this exact range test for
+/// two unrelated jobs (word-boundary rules on a Latin alias, and a query's
+/// coarse script family) rather than re-deriving "is this character CJK" a
+/// second time with the risk of the two definitions drifting apart.
 pub(crate) fn is_cjk(character: char) -> bool {
     matches!(character as u32,
         0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF |

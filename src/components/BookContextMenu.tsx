@@ -13,8 +13,10 @@ import {
   Plus,
   Check,
 } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import { useCollections } from "../hooks/useCollections";
 import { useTranslation } from "react-i18next";
+import { deriveBookIndexState, type BookIndexState, type IndexDetails } from "./index-state";
 
 interface BookContextMenuProps {
   x: number;
@@ -57,6 +59,18 @@ export default function BookContextMenu({
   const { t } = useTranslation();
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const submenuRef = useRef<HTMLDivElement>(null);
+  // The same reading the index modal opens on, so the menu can say whether
+  // it's worth opening at all. Until it arrives the item keeps its plain
+  // label rather than flashing a state it hasn't checked.
+  const [indexState, setIndexState] = useState<BookIndexState | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    invoke<IndexDetails>("ai_index_details", { bookId })
+      .then((details) => { if (!disposed) setIndexState(deriveBookIndexState(details)); })
+      .catch(() => {});
+    return () => { disposed = true; };
+  }, [bookId]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -226,7 +240,11 @@ export default function BookContextMenu({
           className="flex h-[31.5px] w-[calc(100%-8px)] items-center gap-3 rounded-sm px-3 mx-1 text-left hover:bg-accent-bg"
         >
           <Database size={16} className="text-text-muted" />
-          <span className="flex-1 text-[13px] font-medium text-text-primary">{t("bookMenu.aiIndex")}</span>
+          <span className="flex-1 truncate text-[13px] font-medium text-text-primary">
+            {indexState
+              ? t("bookMenu.aiIndexWithState", { state: t(`indexManager.stateShort.${indexState}`) })
+              : t("bookMenu.aiIndex")}
+          </span>
         </button>
 
         <div className="mx-3 my-1 h-px bg-border/80" />

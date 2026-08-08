@@ -430,6 +430,71 @@ pub struct ContextBudgetMetadata {
     pub excerpts_omitted: usize,
 }
 
+/// What the reader is shown above the answer when `aliases::resolve` couldn't
+/// be fully confident about who a query meant. Deliberately narrower than
+/// `AliasResolution` itself — it drops `expanded_query`, which is an
+/// implementation detail of the lexical retrieval arm and was never meant to
+/// reach the UI — so this is its own type rather than a reuse of that one
+/// with a field renamed away.
+///
+/// Emitted (see `alias_disclosure_payload`) over the same per-request event
+/// channel the grounding-status notices already use
+/// (`ai-grounding-status-{request_id}`), just under its own event name,
+/// `ai-alias-resolution-{request_id}`: one request already fans out into more
+/// than one named event here (status vs. stream chunks), so a third named
+/// event on the same request id is the established pattern, not a new
+/// channel.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AliasDisclosurePayload {
+    confidence: grounding::aliases::AliasConfidence,
+    matched: Vec<grounding::aliases::MatchedAlias>,
+    default_canonical: Option<String>,
+}
+
+/// `None` for `High` and `None` confidence, by the doc's 界面 table: those two
+/// render nothing. The check lives here, at construction, rather than as a
+/// condition the frontend is trusted to apply after receiving a payload —
+/// the acceptance rule this file was handed is explicit that sending a
+/// payload the UI merely happens to ignore is how a disclosure line
+/// eventually leaks into the high-confidence case, so the only proof against
+/// that leak is never constructing the payload in the first place.
+fn alias_disclosure_payload(
+    resolution: &grounding::aliases::AliasResolution,
+) -> Option<AliasDisclosurePayload> {
+    use grounding::aliases::AliasConfidence;
+    match resolution.confidence {
+        AliasConfidence::High | AliasConfidence::None => None,
+        AliasConfidence::Medium | AliasConfidence::Low => Some(AliasDisclosurePayload {
+            confidence: resolution.confidence,
+            matched: resolution.matched.clone(),
+            default_canonical: resolution.default_canonical.clone(),
+        }),
+    }
+}
+
+/// The two strings this turn's retrieval actually searches with — computed
+/// once, right after `aliases::resolve`, so both the embedding call and the
+/// lexical retrieval calls read off the same decision instead of each
+/// hard-coding which of `query` / `resolution.expanded_query` is theirs.
+///
+/// They are deliberately different. A multilingual embedding model already
+/// places a Chinese question and its English-book target near each other in
+/// vector space without help — matching across languages is what
+/// "multilingual" means for an embedding model — so the alias table has
+/// nothing to fix on that side, and appending romanized canonicals to a
+/// Chinese sentence risks perturbing its embedding in a way nobody here has
+/// measured, for an arm that was already working. Lexical/FTS retrieval is
+/// exact-token matching, so "达西" cannot hit a chunk that only ever spells
+/// the name "Darcy" — that gap is exactly what `expanded_query` was measured
+/// against and exists to close (see docs/impls/person-aliases.md and
+/// ai/grounding/aliases.rs's module doc). Resist the urge to hand both arms
+/// the same string "for consistency"; the doc is explicit that the two arms
+/// are not meant to agree here.
+fn retrieval_queries(query: &str, resolution: &grounding::aliases::AliasResolution) -> (String, String) {
+    (query.to_string(), resolution.expanded_query.clone())
+}
+
 /// How many bytes of book text this request may inject.
 ///
 /// Derived from the reader's own `ai_full_text_threshold` rather than guessed
@@ -880,6 +945,22 @@ pub async fn ai_chat(
                             let query =
                                 truncate_utf8(&routing_instruction(&question.content), 2_000)
                                     .to_string();
+                            // Zero-model-call, so there is no reason to gate this on
+                            // `use_full_text` below — it costs one indexed lookup either
+                            // way, and computing it unconditionally means the reader gets
+                            // the same "who did you mean" disclosure regardless of which
+                            // retrieval strategy this turn ends up using it for (only the
+                            // lexical arm, chosen a few lines down, ever consults it).
+                            let mut alias_resolution = {
+                                let conn = db.reader();
+                                grounding::aliases::resolve(&conn, &book_id, &query)?
+                            };
+                            if let Some(payload) = alias_disclosure_payload(&alias_resolution) {
+                                let event_name = format!("ai-alias-resolution-{request_id}");
+                                let _ = app.emit(&event_name, payload);
+                            }
+                            let (vector_query, mut lexical_query) =
+                                retrieval_queries(&query, &alias_resolution);
                             let use_full_text = {
                                 let conn = db.reader();
                                 should_inject_full_text(
@@ -896,7 +977,7 @@ pub async fn ai_chat(
                                             Ok(true) => {
                                                 match grounding::vector::query_embedding(
                                                     &source,
-                                                    query.clone(),
+                                                    vector_query.clone(),
                                                 )
                                                 .await
                                                 {
@@ -925,6 +1006,11 @@ pub async fn ai_chat(
                                                             &index_db,
                                                             &index_secrets,
                                                             &index_book_id,
+                                                            // Nothing is watching: this backfill
+                                                            // is a side effect of asking a
+                                                            // question, not a job the reader
+                                                            // started and is waiting on.
+                                                            None,
                                                         )
                                                         .await
                                                     {
@@ -937,6 +1023,7 @@ pub async fn ai_chat(
                                                             &index_db,
                                                             &index_book_id,
                                                             &source,
+                                                            None,
                                                         )
                                                         .await
                                                     {
@@ -964,6 +1051,66 @@ pub async fn ai_chat(
                             } else {
                                 None
                             };
+                            // Pass two. `kind = 'description'` rows ("那个爱占小便宜的牧师")
+                            // cannot be found by the substring scan `resolve` ran above, so
+                            // they are matched by cosine similarity — which means they can
+                            // only be resolved *here*, after the query embedding exists.
+                            // Hence two passes over one turn rather than one smarter pass:
+                            // pass one has no vector, and giving it one would mean issuing
+                            // an embedding request for alias resolution alone, on every
+                            // turn, including the ones that never retrieve. This reuses the
+                            // vector the hybrid retrieval below already needed; when there
+                            // is no vector — full-text injection, vector retrieval off, an
+                            // unembedded book, a failed embedding call — description
+                            // matching simply does not happen this turn, and the pass-one
+                            // answer stands. It is never worth a second network call.
+                            let matched_descriptions = match query_vector.as_deref() {
+                                Some(vector) => {
+                                    let conn = db.reader();
+                                    grounding::aliases::resolve_descriptions(
+                                        &conn,
+                                        &book_id,
+                                        vector,
+                                        &mut alias_resolution,
+                                    )
+                                    .unwrap_or_else(|error| {
+                                        log::warn!(
+                                            "description alias resolution failed: {error}"
+                                        );
+                                        false
+                                    })
+                                }
+                                None => false,
+                            };
+                            if matched_descriptions {
+                                // Pass two can only *add* canonicals, so the lexical query
+                                // is recomputed rather than patched — same function, same
+                                // rule, now reading a resolution that knows about the
+                                // description hits. `vector_query` is deliberately not
+                                // recomputed: the embedding is already made, and by
+                                // `retrieval_queries`' contract it was never the expanded
+                                // string anyway.
+                                lexical_query = retrieval_queries(&query, &alias_resolution).1;
+                                // A second disclosure on the same event name, superseding
+                                // the first. The frontend replaces the whole resolution
+                                // object per event, so "supersede" needs no new event name,
+                                // no sequence number, and no way for the two to interleave:
+                                // both emits happen in order on this one task. Emitting
+                                // only when something was actually added is what keeps a
+                                // turn with no description hit from paying a redundant
+                                // round trip to the UI.
+                                if let Some(payload) = alias_disclosure_payload(&alias_resolution)
+                                {
+                                    let event_name =
+                                        format!("ai-alias-resolution-{request_id}");
+                                    let _ = app.emit(&event_name, payload);
+                                }
+                            }
+                            // `vector_query` fed the embedding call above; `lexical_query`
+                            // feeds every retrieve call below. Both came out of
+                            // `retrieval_queries` right after `alias_resolution` was
+                            // computed — see that function's doc comment for why they are
+                            // deliberately not the same string.
                             let (next_excerpts, next_full_text) = tauri::async_runtime::spawn_blocking(
                                 move || {
                                     let conn = db.reader();
@@ -981,7 +1128,7 @@ pub async fn ai_chat(
                                             match grounding::vector::hybrid_retrieve(
                                                 &conn,
                                                 &book_id,
-                                                &query,
+                                                &lexical_query,
                                                 &query_vector,
                                                 RETRIEVAL_BUDGET_TOKENS,
                                                 spoiler_cutoff,
@@ -992,7 +1139,7 @@ pub async fn ai_chat(
                                                     grounding::retrieve(
                                                         &conn,
                                                         &book_id,
-                                                        &query,
+                                                        &lexical_query,
                                                         RETRIEVAL_BUDGET_TOKENS,
                                                         spoiler_cutoff,
                                                     )?
@@ -1002,7 +1149,7 @@ pub async fn ai_chat(
                                             grounding::retrieve(
                                                 &conn,
                                                 &book_id,
-                                                &query,
+                                                &lexical_query,
                                                 RETRIEVAL_BUDGET_TOKENS,
                                                 spoiler_cutoff,
                                             )?
@@ -1658,5 +1805,167 @@ mod tests {
         let rendered = format_book_overview(&overview);
         assert!(rendered.contains("Read-section summaries"));
         assert!(!rendered.contains("Book overview"));
+    }
+
+    // --- person-alias wiring ------------------------------------------------
+    //
+    // These test the two pure decisions this file adds around
+    // `aliases::resolve` — which query string goes to which retrieval arm,
+    // and which confidence levels ever produce a disclosure payload — without
+    // spinning up the surrounding async command, its db, or a live provider.
+    // `aliases.rs`'s own tests already cover resolve()'s matching rules; nothing
+    // here re-tests those.
+
+    fn sample_resolution(
+        confidence: grounding::aliases::AliasConfidence,
+        matched: Vec<grounding::aliases::MatchedAlias>,
+        default_canonical: Option<&str>,
+        expanded_query: &str,
+    ) -> grounding::aliases::AliasResolution {
+        grounding::aliases::AliasResolution {
+            confidence,
+            matched,
+            default_canonical: default_canonical.map(str::to_string),
+            expanded_query: expanded_query.to_string(),
+        }
+    }
+
+    #[test]
+    fn retrieval_queries_sends_the_lexical_arm_the_expansion_and_the_vector_arm_the_original() {
+        // "达西第一次向伊丽莎白求婚" resolving to an expanded query that also
+        // carries "Mr. Darcy" — same shape as aliases.rs's own
+        // `original_query_tokens_are_never_dropped_from_the_expansion` test.
+        let resolution = sample_resolution(
+            grounding::aliases::AliasConfidence::High,
+            vec![grounding::aliases::MatchedAlias {
+                alias: "达西".to_string(),
+                canonicals: vec!["Mr. Darcy".to_string()],
+                pinyin: false,
+                description: false,
+            }],
+            None,
+            "达西第一次向伊丽莎白求婚 Mr. Darcy",
+        );
+        let (vector_query, lexical_query) = retrieval_queries("达西第一次向伊丽莎白求婚", &resolution);
+        assert_eq!(
+            vector_query, "达西第一次向伊丽莎白求婚",
+            "the embedding call must see the reader's own words, unexpanded"
+        );
+        assert_eq!(
+            lexical_query, "达西第一次向伊丽莎白求婚 Mr. Darcy",
+            "the FTS/BM25 call must see the alias-expanded query"
+        );
+    }
+
+    #[test]
+    fn retrieval_queries_leaves_both_arms_identical_when_nothing_matched() {
+        // Mirrors aliases.rs's `expansion_is_purely_additive_when_nothing_matches`:
+        // with no alias hit, `expanded_query` degenerates to the original text,
+        // so the two arms happen to agree here — not because the wiring treats
+        // them the same, but because there was nothing to expand.
+        let resolution = sample_resolution(
+            grounding::aliases::AliasConfidence::None,
+            Vec::new(),
+            None,
+            "What is this book about?",
+        );
+        let (vector_query, lexical_query) = retrieval_queries("What is this book about?", &resolution);
+        assert_eq!(vector_query, lexical_query);
+        assert_eq!(vector_query, "What is this book about?");
+    }
+
+    #[test]
+    fn alias_disclosure_payload_is_none_for_high_confidence() {
+        let resolution = sample_resolution(
+            grounding::aliases::AliasConfidence::High,
+            vec![grounding::aliases::MatchedAlias {
+                alias: "达西".to_string(),
+                canonicals: vec!["Mr. Darcy".to_string()],
+                pinyin: false,
+                description: false,
+            }],
+            None,
+            "达西是谁 Mr. Darcy",
+        );
+        assert_eq!(
+            alias_disclosure_payload(&resolution),
+            None,
+            "a confident match must render nothing, per the doc's 界面 table"
+        );
+    }
+
+    #[test]
+    fn alias_disclosure_payload_is_none_for_no_confidence() {
+        let resolution = sample_resolution(
+            grounding::aliases::AliasConfidence::None,
+            Vec::new(),
+            None,
+            "What is this book about?",
+        );
+        assert_eq!(alias_disclosure_payload(&resolution), None);
+    }
+
+    #[test]
+    fn alias_disclosure_payload_carries_matches_and_default_for_medium_confidence() {
+        let matched = vec![grounding::aliases::MatchedAlias {
+            alias: "达西小姐".to_string(),
+            canonicals: vec!["Georgiana Darcy".to_string(), "Miss Darcy".to_string()],
+            pinyin: false,
+            description: false,
+        }];
+        let resolution = sample_resolution(
+            grounding::aliases::AliasConfidence::Medium,
+            matched.clone(),
+            Some("Miss Darcy"),
+            "达西小姐弹钢琴弹得怎么样 Georgiana Darcy Miss Darcy",
+        );
+        let payload = alias_disclosure_payload(&resolution)
+            .expect("a medium match must produce a disclosure payload");
+        assert_eq!(payload.confidence, grounding::aliases::AliasConfidence::Medium);
+        assert_eq!(payload.matched, matched);
+        assert_eq!(payload.default_canonical.as_deref(), Some("Miss Darcy"));
+    }
+
+    #[test]
+    fn alias_disclosure_payload_carries_through_for_low_confidence() {
+        let resolution = sample_resolution(
+            grounding::aliases::AliasConfidence::Low,
+            Vec::new(),
+            None,
+            "薇克姆是坏人吗",
+        );
+        let payload = alias_disclosure_payload(&resolution)
+            .expect("a low match must produce a disclosure payload");
+        assert_eq!(payload.confidence, grounding::aliases::AliasConfidence::Low);
+        assert!(payload.matched.is_empty());
+        assert_eq!(payload.default_canonical, None);
+    }
+
+    #[test]
+    fn alias_disclosure_payload_serializes_camel_case_field_names() {
+        let matched = vec![grounding::aliases::MatchedAlias {
+            alias: "达西小姐".to_string(),
+            canonicals: vec!["Georgiana Darcy".to_string(), "Miss Darcy".to_string()],
+            pinyin: false,
+            description: false,
+        }];
+        let resolution = sample_resolution(
+            grounding::aliases::AliasConfidence::Medium,
+            matched,
+            Some("Miss Darcy"),
+            "达西小姐弹钢琴弹得怎么样 Georgiana Darcy Miss Darcy",
+        );
+        let payload = alias_disclosure_payload(&resolution).unwrap();
+        let json = serde_json::to_value(&payload).unwrap();
+        // The frontend-facing shape this file's report promises: confidence,
+        // matched[].alias / matched[].canonicals, defaultCanonical — no
+        // `expanded_query` leaking through, and no snake_case field names.
+        assert_eq!(json["confidence"], "medium");
+        assert_eq!(json["matched"][0]["alias"], "达西小姐");
+        assert_eq!(json["matched"][0]["canonicals"][0], "Georgiana Darcy");
+        assert_eq!(json["defaultCanonical"], "Miss Darcy");
+        assert!(json.get("default_canonical").is_none());
+        assert!(json.get("expanded_query").is_none());
+        assert!(json.get("expandedQuery").is_none());
     }
 }

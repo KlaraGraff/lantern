@@ -6,6 +6,7 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { AiChatRoute, ChatMessage, CitedSource, SectionContextMetadata } from "../hooks/useAiChat";
 import { aiErrorMessageKey, isAiErrorCode, isAiRetryableError, isAiSettingsError } from "../utils/aiError";
 import AiRetryButton from "./AiRetryButton";
+import { AliasDisclosureLine, AliasResolutionFooter } from "./AliasDisclosure";
 import AiMarkdown from "./ai-markdown/AiMarkdown";
 import CitationChip from "./ai-markdown/CitationChip";
 import { citedSourcesInContent } from "./citation-markers";
@@ -25,6 +26,10 @@ interface MessageBubbleProps {
   /** Ask the same question again, looking past any cooldown. */
   onRetry?: (assistantId: string) => void;
   onQuoteReply?: (text: string) => void;
+  /** Re-asks the current turn's question naming a specific person — wires the
+   *  medium-confidence "try X instead" link (state 6). Left unwired by both
+   *  current callers (AiPanel, ChatDetailView); see AliasDisclosure.tsx. */
+  onSwapAlias?: (assistantId: string, canonical: string) => void;
 }
 
 function isSectionRoute(route?: AiChatRoute): boolean {
@@ -118,7 +123,7 @@ function SectionContextNotice({
   );
 }
 
-export default function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateToSource, onRetryWithWholeBook, onRetry, onQuoteReply }: MessageBubbleProps) {
+export default function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateToSource, onRetryWithWholeBook, onRetry, onQuoteReply, onSwapAlias }: MessageBubbleProps) {
   const { t } = useTranslation();
   const isLast = msg === messages[messages.length - 1];
   const [reasoningExpanded, setReasoningExpanded] = useState<boolean | null>(null);
@@ -168,6 +173,9 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
     const sources = msg.sources ?? [];
     const citedSources = citedSourcesInContent(msg.content, sources);
     const settled = !(streaming && isLast) && Boolean(msg.content);
+    const assistantIndex = messages.indexOf(msg);
+    const precedingUser = assistantIndex > 0 ? messages[assistantIndex - 1] : undefined;
+    const precedingUserContent = precedingUser?.role === "user" ? precedingUser.content : "";
 
     // Quote what the reader highlighted inside this answer, or the whole answer
     // when nothing is highlighted. The range has to be tested against this
@@ -205,6 +213,13 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
             )}
           </div>
         )}
+        {msg.aliasResolution && (
+          <AliasDisclosureLine
+            resolution={msg.aliasResolution}
+            precedingUserContent={precedingUserContent}
+            onSwapAlias={onSwapAlias ? (canonical) => onSwapAlias(msg.id, canonical) : undefined}
+          />
+        )}
         {streaming && !msg.content && isLast && !hasReasoning ? (
           <span className="flex items-center gap-1.5 text-[14px] text-text-muted">
             <Loader2 size={14} className="animate-spin" />
@@ -225,6 +240,9 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
             )}
           </div>
         ) : null}
+        {settled && msg.aliasResolution?.confidence === "low" && (
+          <AliasResolutionFooter message={msg} precedingUserContent={precedingUserContent} />
+        )}
         {/* Wraps: a vocabulary answer can cite thirty-odd sources, and one
             unwrapped row of chips overflows the bubble and gives the whole
             message list a horizontal scrollbar. */}

@@ -58,7 +58,9 @@ fn configured_dimensions(conn: &Connection) -> usize {
 }
 
 pub fn ensure_configured_vector_table(conn: &Connection) -> AppResult<()> {
-    ensure_vector_table(conn, configured_dimensions(conn))
+    let dimensions = configured_dimensions(conn);
+    ensure_vector_table(conn, dimensions)?;
+    ensure_alias_vector_table(conn, dimensions)
 }
 
 pub fn ensure_vector_table(conn: &Connection, dimensions: usize) -> AppResult<()> {
@@ -131,6 +133,255 @@ pub fn ensure_vector_table(conn: &Connection, dimensions: usize) -> AppResult<()
     Ok(())
 }
 
+/// The sqlite-vec index behind description-alias matching, and the twin of
+/// `ensure_vector_table` above — same DROP-on-dimension-change, same repopulate
+/// from the durable table that survives it (`book_person_alias_embeddings`).
+///
+/// Two differences from the chunk table, both deliberate:
+///
+/// It declares `distance_metric=cosine`, where the chunk table takes vec0's
+/// default L2. The chunk path never reads `distance` — it only needs an
+/// ordering, and for the unit-norm vectors most providers return, L2 and cosine
+/// order identically. Description matching reads the number: it accepts a hit
+/// only above a fixed cosine threshold (see `aliases::DESCRIPTION_SIMILARITY_FLOOR`),
+/// and a threshold is meaningless against a metric whose scale depends on how
+/// long the provider's vectors happen to be.
+///
+/// It is repopulated without filtering on the configured model, where the chunk
+/// rebuild filters on both model and dimension. A row whose model no longer
+/// matches is stale either way and `ensure_alias_embeddings` will recompute it;
+/// carrying it into the index in the meantime means a description alias taught
+/// before a model switch keeps matching approximately instead of not at all,
+/// which for a handful of hand-typed rows is the better failure.
+pub fn ensure_alias_vector_table(conn: &Connection, dimensions: usize) -> AppResult<()> {
+    if !(1..=65_536).contains(&dimensions) {
+        return Err(AppError::Other(
+            "AI_EMBEDDING_DIMENSIONS_UNSUPPORTED".to_string(),
+        ));
+    }
+    let existing: Option<String> = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'book_alias_vectors'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let expected = format!("float[{dimensions}] distance_metric=cosine");
+    let stale = existing
+        .as_deref()
+        .is_some_and(|sql| !sql.contains(&expected));
+    let rebuild = existing.is_none() || stale;
+    if stale {
+        conn.execute_batch("DROP TABLE book_alias_vectors;")?;
+    }
+    conn.execute_batch(&format!(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS book_alias_vectors USING vec0(
+            alias_id TEXT PRIMARY KEY,
+            book_id TEXT,
+            embedding float[{dimensions}] distance_metric=cosine
+        );"
+    ))?;
+    if rebuild {
+        let mut statement = conn.prepare(
+            "SELECT alias_id, book_id, embedding FROM book_person_alias_embeddings
+             WHERE dimensions = ?1",
+        )?;
+        let rows = statement
+            .query_map(params![dimensions as i64], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(statement);
+        for (alias_id, book_id, blob) in rows {
+            let Some(vector) = decode_embedding(&blob, dimensions) else {
+                continue;
+            };
+            conn.execute(
+                "INSERT INTO book_alias_vectors (alias_id, book_id, embedding) VALUES (?1, ?2, ?3)",
+                params![alias_id, book_id, embedding_json(&vector)?],
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// `None` when the blob isn't `dimensions` little-endian `f32`s. Callers skip
+/// the row rather than failing the rebuild: one unreadable cached vector is a
+/// row to recompute, not a reason to leave the whole index unbuilt.
+fn decode_embedding(blob: &[u8], dimensions: usize) -> Option<Vec<f32>> {
+    (blob.len() == dimensions * 4).then(|| {
+        blob.chunks_exact(4)
+            .map(|bytes| f32::from_le_bytes(bytes.try_into().expect("four bytes")))
+            .collect()
+    })
+}
+
+/// Write one alias's vector to both halves of the pair, replacing whatever was
+/// there. Called on the teach path (immediately, so the alias works on the very
+/// next question) and from the backfill below.
+fn write_alias_vector(
+    conn: &Connection,
+    alias_id: &str,
+    book_id: &str,
+    vector: &[f32],
+    source: &EmbeddingSource,
+) -> AppResult<()> {
+    validate_embedding(vector, source.dimensions)?;
+    ensure_alias_vector_table(conn, source.dimensions)?;
+    let encoded = embedding_json(vector)?;
+    conn.execute(
+        "INSERT INTO book_person_alias_embeddings
+         (alias_id, book_id, embedding, dimensions, model, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(alias_id) DO UPDATE SET embedding = excluded.embedding,
+             dimensions = excluded.dimensions, model = excluded.model,
+             created_at = excluded.created_at",
+        params![
+            alias_id,
+            book_id,
+            embedding_blob(vector),
+            source.dimensions as i64,
+            source.model,
+            chrono::Utc::now().timestamp_millis(),
+        ],
+    )?;
+    // DELETE then INSERT, as `ensure_embeddings` does for chunks: vec0 has no
+    // upsert, and an UPDATE on a virtual table's primary key is not the same
+    // statement in every sqlite-vec build.
+    conn.execute(
+        "DELETE FROM book_alias_vectors WHERE alias_id = ?1",
+        params![alias_id],
+    )?;
+    conn.execute(
+        "INSERT INTO book_alias_vectors (alias_id, book_id, embedding) VALUES (?1, ?2, ?3)",
+        params![alias_id, book_id, encoded],
+    )?;
+    Ok(())
+}
+
+/// Embed one description alias and store it, right now.
+///
+/// This is the whole reason description vectors are not a stage of the indexing
+/// pipeline. A reader teaches an alias in the middle of a conversation; if its
+/// vector only appeared on the next full reindex, the row they just typed would
+/// match nothing until they rebuilt the book — which is the dead-row bug this
+/// feature exists to fix, only with a slower fuse. One embedding call for one
+/// short phrase is roughly a fifth of a second, so it happens inline and the
+/// alias is live on the next question.
+pub async fn embed_alias(
+    db: &Db,
+    source: &EmbeddingSource,
+    alias_id: &str,
+    book_id: &str,
+    text: &str,
+) -> AppResult<()> {
+    let vector = query_embedding(source, text.to_string()).await?;
+    let conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
+    write_alias_vector(&conn, alias_id, book_id, &vector, source)
+}
+
+/// Recompute every description alias of `book_id` whose stored vector is
+/// missing or was written by a different embedding model or dimension.
+///
+/// The one place the indexing pipeline touches these vectors, and it runs in
+/// the existing "generate vectors" step alongside the chapter vectors — see
+/// `book_index.rs`. Two situations reach it: the reader changed the embedding
+/// model, which invalidates every vector in the database at once; and an alias
+/// that was taught while no embedding model was reachable, whose text row was
+/// stored anyway (`aliases::add_person_alias` never rejects something the
+/// reader typed because a server was down) and has been waiting for a vector
+/// since.
+///
+/// Unlike `ensure_embeddings` this reports no progress: the work is a handful
+/// of short phrases per book against a step already showing the chunk count, so
+/// a second progress stream would only make the bar jump backwards.
+pub async fn ensure_alias_embeddings(
+    db: &Db,
+    book_id: &str,
+    source: &EmbeddingSource,
+) -> AppResult<()> {
+    let pending: Vec<(String, String)> = {
+        let conn = db.reader();
+        let mut statement = conn.prepare(
+            "SELECT a.id, a.alias FROM book_person_aliases a
+             LEFT JOIN book_person_alias_embeddings e ON e.alias_id = a.id
+             WHERE a.book_id = ?1 AND a.kind = 'description'
+               AND (e.alias_id IS NULL OR e.model != ?2 OR e.dimensions != ?3)
+             ORDER BY a.created_at",
+        )?;
+        let rows = statement
+            .query_map(
+                params![book_id, source.model, source.dimensions as i64],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        // Collected into a named binding rather than returned as the block's
+        // tail expression: as a tail, `query_map`'s temporary iterator would
+        // outlive `statement` and the borrow checker rejects it.
+        drop(statement);
+        rows
+    };
+    for batch in pending.chunks(EMBEDDING_BATCH_SIZE) {
+        let input = batch.iter().map(|(_, alias)| alias.clone()).collect();
+        let vectors = embeddings(source, input).await?;
+        let mut conn = db
+            .conn
+            .lock()
+            .map_err(|error| AppError::Other(error.to_string()))?;
+        let transaction = conn.transaction()?;
+        for ((alias_id, _), vector) in batch.iter().zip(vectors.iter()) {
+            write_alias_vector(&transaction, alias_id, book_id, vector, source)?;
+        }
+        transaction.commit()?;
+        drop(conn);
+    }
+    Ok(())
+}
+
+/// Drop both halves of the pair for one alias. Called from every path in
+/// `aliases` that removes a row, because this database runs with
+/// `PRAGMA foreign_keys=OFF` (see `db.rs`) — the `REFERENCES` clause in
+/// migration 060 documents the relationship but SQLite will not enforce it, so
+/// a vector left behind would keep answering for an alias the reader deleted.
+pub fn delete_alias_vectors(conn: &Connection, alias_ids: &[&str]) -> AppResult<()> {
+    for alias_id in alias_ids {
+        conn.execute(
+            "DELETE FROM book_person_alias_embeddings WHERE alias_id = ?1",
+            params![alias_id],
+        )?;
+        conn.execute(
+            "DELETE FROM book_alias_vectors WHERE alias_id = ?1",
+            params![alias_id],
+        )?;
+    }
+    Ok(())
+}
+
+/// The same cleanup for a whole book, for `clear_person_aliases` and for the
+/// book-delete path. Written as its own statement pair rather than reading the
+/// ids first and calling the function above, because the caller has usually
+/// already deleted the `book_person_aliases` rows by the time it gets here —
+/// there is nothing left to read the ids *from*, and a vector whose text row is
+/// gone is exactly the orphan this is meant to prevent.
+pub fn delete_book_alias_vectors(conn: &Connection, book_id: &str) -> AppResult<()> {
+    conn.execute(
+        "DELETE FROM book_person_alias_embeddings WHERE book_id = ?1",
+        params![book_id],
+    )?;
+    conn.execute(
+        "DELETE FROM book_alias_vectors WHERE book_id = ?1",
+        params![book_id],
+    )?;
+    Ok(())
+}
+
 /// Hash a chunk's identity sentence so the embedding-invalidation check below
 /// can see when it changes, without storing the sentence a second time in
 /// `book_chunk_embeddings`. A chunk with no identity sentence hashes to the
@@ -158,7 +409,10 @@ fn embedding_input(context_line: &str, text: &str) -> String {
     }
 }
 
-fn embedding_json(embedding: &[f32]) -> AppResult<String> {
+/// Visible to the rest of `grounding` so `aliases::description_candidates` can
+/// hand the same JSON encoding to its own vec0 `MATCH`, rather than growing a
+/// second, subtly different one next to it.
+pub(super) fn embedding_json(embedding: &[f32]) -> AppResult<String> {
     serde_json::to_string(embedding).map_err(|error| AppError::Other(error.to_string()))
 }
 
@@ -366,7 +620,21 @@ pub fn has_complete_embeddings(
         }))
 }
 
-pub async fn ensure_embeddings(db: &Db, book_id: &str, source: &EmbeddingSource) -> AppResult<()> {
+/// Embed every chunk of `book_id` whose stored vector is missing or stale.
+///
+/// `progress` is called once per written batch with `(done, total)` counted in
+/// *pending* chunks, not in the book's chunks: a book that only needs thirty
+/// of its six hundred chunks re-embedded should report 30 as the work to do,
+/// because that is the work the reader is waiting on. It is called once with
+/// `(0, total)` before the first request so a caller can show the size of the
+/// job before the first batch comes back, and never at all when there is
+/// nothing pending.
+pub async fn ensure_embeddings(
+    db: &Db,
+    book_id: &str,
+    source: &EmbeddingSource,
+    progress: Option<super::ProgressFn<'_>>,
+) -> AppResult<()> {
     let (source_sha256, chunks) = {
         let conn = db.reader();
         let source_sha256: String = conn.query_row(
@@ -428,6 +696,10 @@ pub async fn ensure_embeddings(db: &Db, book_id: &str, source: &EmbeddingSource)
             .collect::<Vec<(String, String, String)>>();
         (source_sha256, chunks)
     };
+    if let Some(progress) = progress.filter(|_| !chunks.is_empty()) {
+        progress(0, chunks.len());
+    }
+    let mut done = 0usize;
     for batch in chunks.chunks(EMBEDDING_BATCH_SIZE) {
         let input = batch.iter().map(|(_, text, _)| text.clone()).collect();
         let vectors = embeddings(source, input).await?;
@@ -468,6 +740,17 @@ pub async fn ensure_embeddings(db: &Db, book_id: &str, source: &EmbeddingSource)
             )?;
         }
         transaction.commit()?;
+        // Before the callback, never during it. The callback is the caller's
+        // code — here, one that emits to the webview — and nothing it does
+        // should have to be audited for whether it might want this lock.
+        drop(conn);
+        // Counted after the commit, not after the request: a run that dies
+        // between the two picks these chunks up again next time, so reporting
+        // them earlier would claim progress the next run has to redo.
+        done += batch.len();
+        if let Some(progress) = progress {
+            progress(done, chunks.len());
+        }
     }
     Ok(())
 }

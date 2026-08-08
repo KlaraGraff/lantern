@@ -165,6 +165,14 @@ const MIGRATIONS: &[(i64, &str)] = &[
         57,
         include_str!("../migrations/057_book_difficulty_sections.sql"),
     ),
+    (
+        59,
+        include_str!("../migrations/059_person_aliases.sql"),
+    ),
+    (
+        60,
+        include_str!("../migrations/060_person_alias_embeddings.sql"),
+    ),
 ];
 
 fn register_sqlite_vec() {

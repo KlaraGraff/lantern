@@ -19,7 +19,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
   const { t } = useTranslation();
   const openInReader = useOpenBook();
   const {
-    messages, streaming, send, initialize,
+    messages, streaming, send, initialize, swapAlias,
     chatId, chats, titling, initializing, loadChat, deleteChat, renameChat,
   } = useAiChat(chat.book_id, { title: chat.book_title ?? undefined });
 
@@ -161,6 +161,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
                     msg={msg}
                     messages={messages}
                     streaming={streaming}
+                    onSwapAlias={swapAlias}
                     onNavigateToSource={(source) => {
                       const cfi = source.charStart != null
                         ? textLocation(source.charStart, source.charEnd ?? source.charStart)

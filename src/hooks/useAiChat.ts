@@ -30,6 +30,13 @@ export interface ChatMessage {
   sectionContext?: SectionContextMetadata;
   sourceHash?: string;
   contextBudget?: ContextBudgetMetadata;
+  aliasResolution?: AliasResolutionMetadata;
+  /** The book this turn belongs to. Set at construction time from the hook's
+   *  own `bookId` argument, not persisted in `metadata` — it lets alias-teaching
+   *  UI in MessageBubble call `add_person_alias`/`list_person_aliases` without
+   *  the two chat-hosting screens needing to prop-drill a book id they already
+   *  have some other way. */
+  bookId?: string;
   dbId?: string;
 }
 
@@ -78,6 +85,51 @@ export interface SectionContextMetadata {
   truncated: boolean;
   spoilerLimited: boolean;
   coverage: "complete" | "partial_budget" | "partial_reading_protection" | "partial_budget_and_reading_protection" | "unavailable";
+}
+
+/** The routing layer's confidence when an alias in the query could mean more
+ *  than one person, or matched no one at all — see docs/impls/person-aliases.md's
+ *  confidence table. Never "high"/"none": the backend only emits
+ *  `ai-alias-resolution-*` for medium and low (chat.rs's
+ *  `alias_disclosure_payload`), so a cleanly-resolved query carries no
+ *  resolution field rather than one that says so. */
+export type AliasConfidence = "medium" | "low";
+
+/** One alias the query contained, and the book's canonical names it could
+ *  mean. `canonicals.length > 1` is what makes a match ambiguous (medium). */
+export interface AliasMatch {
+  alias: string;
+  canonicals: string[];
+  /** This match came from a `kind = "description"` row the reader taught by
+   *  hand ("那个爱占小便宜的牧师"), found by embedding similarity rather than
+   *  by any character in the question. It renders its own line even with a
+   *  single canonical — the meaning-based guess is the thing worth
+   *  disclosing — so the UI cannot infer it from `canonicals.length`.
+   *  Optional because a resolution persisted before this existed has no flag. */
+  description?: boolean;
+}
+
+/** What the reader told Lantern in response to the low-confidence buttons.
+ *  Persisted on the message so reopening the chat shows the receipt in
+ *  place of the buttons, not the buttons again. */
+export interface AliasDecision {
+  canonical: string;
+  /** The row `add_person_alias` wrote, so the receipt's undo can delete
+   *  exactly that row. Optional because a receipt persisted before undo
+   *  existed has no id — those simply render without the undo link rather
+   *  than deleting something guessed at by name. */
+  aliasId?: string;
+}
+
+export interface AliasResolutionMetadata {
+  confidence: AliasConfidence;
+  /** Ambiguous (>1 canonical) matches for medium confidence. Always empty
+   *  for low — a low-confidence turn matched no alias at all. */
+  matched: AliasMatch[];
+  /** The canonical the router picked when it had to guess — `mentions`
+   *  breaks ties. `null` unless `confidence` is "medium". */
+  defaultCanonical: string | null;
+  decision?: AliasDecision;
 }
 
 interface AiChatResult {
@@ -163,6 +215,7 @@ interface ChatMessageMetadata {
   sectionContext?: SectionContextMetadata;
   sourceHash?: string;
   contextBudget?: ContextBudgetMetadata;
+  aliasResolution?: AliasResolutionMetadata;
 }
 
 function parseAiChatRoute(value: unknown): AiChatRoute | undefined {
@@ -264,6 +317,44 @@ function parseContextBudget(value: unknown): ContextBudgetMetadata | undefined {
   return { historyOmitted, excerptsOmitted };
 }
 
+function parseAliasMatches(value: unknown): AliasMatch[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const match = item as Record<string, unknown>;
+    if (typeof match.alias !== "string" || !Array.isArray(match.canonicals)) return [];
+    const canonicals = match.canonicals.filter((c): c is string => typeof c === "string" && c.length > 0);
+    if (canonicals.length === 0) return [];
+    // Only carried when true, so a name match serializes exactly as it did
+    // before this field existed and stored history stays byte-comparable.
+    return match.description === true
+      ? [{ alias: match.alias, canonicals, description: true }]
+      : [{ alias: match.alias, canonicals }];
+  });
+}
+
+function parseAliasDecision(value: unknown): AliasDecision | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const decision = value as Record<string, unknown>;
+  if (typeof decision.canonical !== "string" || !decision.canonical) return undefined;
+  return {
+    canonical: decision.canonical,
+    aliasId: typeof decision.aliasId === "string" && decision.aliasId ? decision.aliasId : undefined,
+  };
+}
+
+function parseAliasResolution(value: unknown): AliasResolutionMetadata | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const resolution = value as Record<string, unknown>;
+  if (resolution.confidence !== "medium" && resolution.confidence !== "low") return undefined;
+  return {
+    confidence: resolution.confidence,
+    matched: parseAliasMatches(resolution.matched),
+    defaultCanonical: typeof resolution.defaultCanonical === "string" ? resolution.defaultCanonical : null,
+    decision: parseAliasDecision(resolution.decision),
+  };
+}
+
 function parseAiChatResult(value: unknown): AiChatResult {
   if (!value || typeof value !== "object") {
     return {
@@ -333,13 +424,14 @@ function parseMessageMetadata(metadata: string | null): ChatMessageMetadata {
       sectionContext: parseSectionContext(value.sectionContext),
       sourceHash: typeof value.sourceHash === "string" ? value.sourceHash : undefined,
       contextBudget: parseContextBudget(value.contextBudget),
+      aliasResolution: parseAliasResolution(value.aliasResolution),
     };
   } catch {
     return {};
   }
 }
 
-function serializeMessageMetadata(metadata: ChatMessageMetadata): string | null {
+export function serializeMessageMetadata(metadata: ChatMessageMetadata): string | null {
   const compact: ChatMessageMetadata = {};
   if (metadata.cfi) compact.cfi = metadata.cfi;
   // Only the non-default kind is written, so passage rows stay byte-identical.
@@ -356,6 +448,7 @@ function serializeMessageMetadata(metadata: ChatMessageMetadata): string | null 
   if (metadata.sectionContext) compact.sectionContext = metadata.sectionContext;
   if (metadata.sourceHash) compact.sourceHash = metadata.sourceHash;
   if (metadata.contextBudget) compact.contextBudget = metadata.contextBudget;
+  if (metadata.aliasResolution) compact.aliasResolution = metadata.aliasResolution;
   return Object.keys(compact).length > 0 ? JSON.stringify(compact) : null;
 }
 
@@ -494,6 +587,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
 
   const unlistenRef = useRef<UnlistenFn | null>(null);
   const groundingUnlistenRef = useRef<UnlistenFn | null>(null);
+  const aliasResolutionUnlistenRef = useRef<UnlistenFn | null>(null);
   const summaryRequestIdRef = useRef<string | null>(null);
   const initializedBookRef = useRef<string | null>(null);
   const messagesRef = useRef<ChatMessage[]>([]);
@@ -524,6 +618,8 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
     unlistenRef.current = null;
     groundingUnlistenRef.current?.();
     groundingUnlistenRef.current = null;
+    aliasResolutionUnlistenRef.current?.();
+    aliasResolutionUnlistenRef.current = null;
     activeRequestIdRef.current = null;
     activeAssistantIdRef.current = null;
     streamingRef.current = false;
@@ -674,6 +770,8 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           sectionContext: metadata.sectionContext,
           sourceHash: metadata.sourceHash,
           contextBudget: metadata.contextBudget,
+          aliasResolution: metadata.aliasResolution,
+          bookId: bookIdRef.current ?? undefined,
           dbId: m.id,
         };
       });
@@ -863,6 +961,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         contextAnalysis,
         sectionIndex: bookContext?.scopeStartIndex ?? bookContext?.sectionIndex,
         sectionEndIndex: bookContext?.scopeEndIndex,
+        bookId: bookId ?? undefined,
       };
 
       const assistantId = replacingAssistant?.id ?? nextMsgId();
@@ -871,6 +970,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         role: "assistant",
         content: "",
         dbId: replacingAssistant?.dbId,
+        bookId: bookId ?? undefined,
       };
       activeAssistantIdRef.current = assistantId;
 
@@ -920,6 +1020,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       let sectionContext: SectionContextMetadata | undefined;
       let sourceHash: string | undefined;
       let contextBudget: ContextBudgetMetadata | undefined;
+      let aliasResolution: AliasResolutionMetadata | undefined;
       let chatResultPromise: Promise<AiChatResult> | null = null;
       let pendingContent = "";
       let pendingReasoning = "";
@@ -981,6 +1082,8 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         if (unlistenRef.current === streamUnlisten) unlistenRef.current = null;
         groundingUnlistenRef.current?.();
         groundingUnlistenRef.current = null;
+        aliasResolutionUnlistenRef.current?.();
+        aliasResolutionUnlistenRef.current = null;
         streamUnlisten?.();
         streamUnlisten = null;
         activeRequestIdRef.current = null;
@@ -1007,6 +1110,45 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         }
       } catch {
         // The status hint is optional; streaming chat remains usable without it.
+      }
+
+      // Unlike grounding status, this must survive on the message afterward
+      // (state 6/7's disclosure has to reappear when the chat is reopened),
+      // so it's written into the assistant message here, and folded into
+      // this turn's persisted metadata below once the stream settles.
+      try {
+        const registeredAliasResolutionUnlisten = await listen<{
+          confidence: AliasConfidence;
+          matched: AliasMatch[];
+          defaultCanonical: string | null;
+        }>(
+          `ai-alias-resolution-${requestId}`,
+          (event) => {
+            if (!isRequestActive()) return;
+            // One turn can fire this twice. The backend resolves aliases in
+            // two passes — names off the characters typed, then descriptions
+            // off the query embedding once retrieval has computed it — and
+            // emits again if the second pass found anything. The whole object
+            // is replaced rather than merged: the later event already carries
+            // the merged result, and pass two can only add, so the newer
+            // payload is always the complete one.
+            aliasResolution = {
+              confidence: event.payload.confidence,
+              matched: event.payload.matched,
+              defaultCanonical: event.payload.defaultCanonical,
+            };
+            updateMessages((previous) => previous.map((message) => (
+              message.id === assistantId ? { ...message, aliasResolution } : message
+            )));
+          },
+        );
+        aliasResolutionUnlistenRef.current = registeredAliasResolutionUnlisten;
+        if (!isRequestActive()) {
+          registeredAliasResolutionUnlisten();
+          return;
+        }
+      } catch {
+        // Same as grounding status: optional, streaming chat works without it.
       }
 
       try {
@@ -1086,6 +1228,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
                     sectionContext,
                     sourceHash,
                     contextBudget,
+                    aliasResolution,
                   });
                   if (replacingAssistant?.dbId) {
                     await invoke("replace_chat_message", {
@@ -1244,6 +1387,40 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
   }, [send]);
 
   /**
+   * The reader picked a different person from a medium-confidence disclosure.
+   * Re-asks the same question with that name appended and replaces the answer
+   * in place.
+   *
+   * Appended, never substituted, and the user's own bubble is left alone: the
+   * reader wrote what they wrote, and the visible transcript should keep
+   * saying so. Adding the canonical is the same additive move `resolve` makes
+   * on the retrieval side — it can only make the search find more, never less.
+   * The re-asked query now contains the name literally, so the next resolution
+   * matches it exactly and the disclosure line drops away on its own.
+   *
+   * Nothing is written to the alias table. A medium hit means the alias exists
+   * and is merely ambiguous; there is no schema for "this reader prefers this
+   * canonical", and inventing one here would be a guess applied to every
+   * future question.
+   */
+  const swapAlias = useCallback((assistantId: string, canonical: string) => {
+    const assistantIndex = messagesRef.current.findIndex((message) => message.id === assistantId);
+    const userMessage = assistantIndex > 0 ? messagesRef.current[assistantIndex - 1] : undefined;
+    if (!userMessage || userMessage.role !== "user" || !canonical) return;
+    void send(
+      `${userMessage.content} ${canonical}`,
+      userMessage.context,
+      userMessage.contextCfi,
+      userMessage.contextAnalysis,
+      {
+        replaceAssistantId: assistantId,
+        contextKind: userMessage.contextKind,
+        contexts: userMessage.contexts,
+      },
+    );
+  }, [send]);
+
+  /**
    * Ask the same question again after a failure, replacing the error in place.
    * Marked as a retry so the router reconsiders a model it is cooling — the
    * user pressing this is a better signal than Lantern's own guess at when the
@@ -1357,6 +1534,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
     send,
     retryWithWholeBook,
     retryFailed,
+    swapAlias,
     reset,
     initialize,
     chatId,

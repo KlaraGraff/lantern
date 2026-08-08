@@ -156,9 +156,20 @@ impl AutoAnalysisJob {
 /// same key, because that is where someone setting up retrieval will look for
 /// it. Two doors, one switch — which is the arrangement the module doc's
 /// first rule demands, and the opposite of two switches that disagree.
+/// `person_aliases` (`ai::grounding::aliases`) shares `grounding_context`'s
+/// `BookImported` cadence and `Feature` layer for the same reason: it is one
+/// model call that makes the retrieval every reader already has work a little
+/// better, not a personalization anyone would want to decline on taste.
 pub const JOBS: &[AutoAnalysisJob] = &[
     AutoAnalysisJob {
         id: crate::ai::grounding::context::JOB_ID,
+        trigger: AutoAnalysisTrigger::BookImported,
+        layer: AutoAnalysisLayer::Feature,
+        default_enabled: true,
+        applies: None,
+    },
+    AutoAnalysisJob {
+        id: crate::ai::grounding::aliases::JOB_ID,
         trigger: AutoAnalysisTrigger::BookImported,
         layer: AutoAnalysisLayer::Feature,
         default_enabled: true,

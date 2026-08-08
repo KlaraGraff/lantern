@@ -31,6 +31,25 @@ const CONTEXT_LOCAL_WINDOW_TOKENS: usize = 2_000;
 /// `context_line` is capped to this many characters after cleanup — a
 /// locator sentence, not a summary.
 const CONTEXT_LINE_MAX_CHARS: usize = 200;
+/// How many chunks in a row may fail before the run gives up on the book.
+/// Five, because the router has already retried each of those five itself:
+/// reaching this count means five independently-retried calls failed back to
+/// back, which is a provider that is down, not a network that stuttered.
+/// A chunk that blanks on every attempt (see `CONTEXT_LINE_BLANK_RETRIES`)
+/// feeds this same counter — it never raised a router error, but after
+/// paying for retries that changed nothing it is a failed call in every
+/// sense that matters.
+const CONTEXT_LINE_FAILURE_BUDGET: usize = 5;
+/// Extra attempts offered to a chunk whose cleaned line comes back empty
+/// before it is accepted as a persistent blank. A full-corpus run against
+/// *Pride and Prejudice* (598 chunks) produced 23 blanks; re-probing all 23
+/// with one identical retry recovered 20 of them (`finish_reason: "stop"`,
+/// well-formed sentences) — a blank is mostly a stochastic near-miss, not a
+/// hard limit. The 3 that stayed blank were all `finish_reason: "length"`
+/// chapter-opening chunks with no single scene to anchor a locator on, and
+/// no number of retries fixed those, so this stays small rather than
+/// growing to chase them.
+const CONTEXT_LINE_BLANK_RETRIES: usize = 2;
 
 /// Written as a *locator*, not a summary, and deliberately not as a sentence
 /// about the passage. A first draft asked for "one sentence saying where this
@@ -482,17 +501,137 @@ pub fn clear_failed_context_lines(db: &Db, book_id: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// What asking the model for one chunk's line came back with, after any
+/// blank-retry attempts inside `resolve_context_line`.
+enum ContextLineOutcome {
+    /// A line to store — `cleaned` is `""` when every attempt, including the
+    /// retries, cleaned down to nothing. That's still written, as the `''`
+    /// sentinel `pending_rows` already knows not to retry on a future run.
+    Written { cleaned: String, model: String },
+    /// The call itself failed (a router error) and the failure budget isn't
+    /// spent yet. The chunk is left untouched and picked up by the next run,
+    /// exactly as before this function existed.
+    Skipped,
+}
+
+/// Ask the model for one chunk's line, retrying up to
+/// `CONTEXT_LINE_BLANK_RETRIES` times when the cleaned result is blank.
+/// `consecutive_failures` is the same counter `ensure_context_lines` uses to
+/// decide when to give up on the book: a router error feeds it exactly as it
+/// did before this function existed, and a blank that survives every retry
+/// now feeds it too (see `CONTEXT_LINE_FAILURE_BUDGET`). A call that comes
+/// back with real content — first try or on retry — resets it to zero,
+/// same as before.
+#[allow(clippy::too_many_arguments)]
+async fn resolve_context_line<R: Runtime>(
+    app: &AppHandle<R>,
+    db: &Db,
+    secrets: &Secrets,
+    messages: &[ChatMessage],
+    chunk_id: &str,
+    consecutive_failures: &mut usize,
+) -> AppResult<ContextLineOutcome> {
+    let mut blank_attempts = 0usize;
+    loop {
+        let completion = router::complete_with_failover(
+            app,
+            db,
+            secrets,
+            messages,
+            Some(120),
+            AiRequestPurpose::Utility,
+            AiRetryMode::Automatic,
+            None,
+            None,
+            "auto",
+            JOB_ID,
+        )
+        .await;
+        let completion = match completion {
+            Ok(completion) => completion,
+            Err(error) => {
+                *consecutive_failures += 1;
+                if *consecutive_failures >= CONTEXT_LINE_FAILURE_BUDGET {
+                    return Err(error);
+                }
+                log::warn!(
+                    "context line for chunk {chunk_id} failed ({}/{CONTEXT_LINE_FAILURE_BUDGET}): {error}",
+                    *consecutive_failures
+                );
+                return Ok(ContextLineOutcome::Skipped);
+            }
+        };
+        let cleaned = clean_context_line(&completion.text);
+        if !cleaned.is_empty() {
+            *consecutive_failures = 0;
+            return Ok(ContextLineOutcome::Written {
+                cleaned,
+                model: completion.model,
+            });
+        }
+        if blank_attempts >= CONTEXT_LINE_BLANK_RETRIES {
+            *consecutive_failures += 1;
+            log::warn!(
+                "context line for chunk {chunk_id} still blank after {} attempts ({}/{CONTEXT_LINE_FAILURE_BUDGET})",
+                blank_attempts + 1,
+                *consecutive_failures
+            );
+            if *consecutive_failures >= CONTEXT_LINE_FAILURE_BUDGET {
+                return Err(AppError::Other(format!(
+                    "context line for chunk {chunk_id} returned blank after {} attempts",
+                    blank_attempts + 1
+                )));
+            }
+            return Ok(ContextLineOutcome::Written {
+                cleaned,
+                model: completion.model,
+            });
+        }
+        blank_attempts += 1;
+        log::warn!(
+            "context line for chunk {chunk_id} came back blank, retrying ({blank_attempts}/{CONTEXT_LINE_BLANK_RETRIES})"
+        );
+    }
+}
+
 /// Write an identity sentence for every chunk in `book_id` that doesn't have
 /// one yet. Resumable: each chunk is written as soon as its own call
-/// succeeds, and a call that fails stops the whole run and returns the error,
-/// leaving already-written rows in place — the next run picks up wherever
-/// `context_line IS NULL` still holds. No per-chunk retry here; `ai::router`
-/// already carries failover and cooldowns for the underlying calls.
+/// succeeds.
+///
+/// Two different things can go wrong with a call, and they're handled
+/// differently — see `resolve_context_line`. A router error means the call
+/// itself failed; `ai::router` has already tried failover and cooldowns
+/// before giving up, so retrying the same chunk here wouldn't help. That
+/// chunk is skipped — left as `context_line IS NULL`, so the next run picks
+/// it back up — and counts against `CONTEXT_LINE_FAILURE_BUDGET`, a budget
+/// shared across the whole run: hitting it aborts everything and returns the
+/// error, on the theory that several failures back to back mean a provider
+/// that's down, not one bad chunk. A blank cleaned line is not a router
+/// error — the call succeeded, the model just returned nothing usable — and
+/// is usually a stochastic near-miss, so it gets retried immediately, up to
+/// `CONTEXT_LINE_BLANK_RETRIES` times. Only a blank that survives every
+/// retry is written as the `''` sentinel (tried, nothing usable, never
+/// retried again), and that also counts against the same failure budget:
+/// after paying for retries that changed nothing, it is a failed call in
+/// every sense that matters.
+///
+/// `progress` is called with `(done, total)` counted over the *whole book*
+/// rather than over this run's pending set, so a resumed run opens at
+/// "480 / 642" instead of restarting from zero. `done` here means "chunks
+/// that no longer need asking about", which includes the ones the model
+/// returned nothing usable for — those are stored as the `''` sentinel and
+/// deliberately never retried, so a counter that excluded them would stall
+/// short of its total forever and read as a hang. (`current_progress`, which
+/// feeds the settings row, splits those out into its own `failed` count
+/// instead; that row has the space to explain them and this one number does
+/// not.) A chunk skipped by a failed call is not counted: it stays pending
+/// and the next run picks it up.
 pub async fn ensure_context_lines<R: Runtime>(
     app: &AppHandle<R>,
     db: &Db,
     secrets: &Secrets,
     book_id: &str,
+    progress: Option<super::ProgressFn<'_>>,
 ) -> AppResult<()> {
     if !context_lines_enabled(db) {
         return Ok(());
@@ -515,7 +654,22 @@ pub async fn ensure_context_lines<R: Runtime>(
     // every chunk in it. Held across iterations and recomputed on section
     // change instead.
     let mut cached_prefix: Option<(i64, String)> = None;
-    for row in pending_rows(&rows) {
+    // A few hundred sequential network calls will hit a hiccup. Losing the
+    // whole book to one of them is the wrong trade: each line is written the
+    // moment it comes back, and `pending_rows` skips what is already written,
+    // so a skipped chunk costs nothing but a retry on the next pass. What must
+    // still fail fast is the other shape — a revoked key, a provider that is
+    // down — where every call will fail and retrying is just burning the
+    // reader's battery. Consecutive failures tell the two apart: a flaky
+    // network recovers within a call or two, a broken provider never does.
+    let mut consecutive_failures = 0usize;
+    let pending = pending_rows(&rows);
+    let total = rows.len();
+    let mut done = total - pending.len();
+    if let Some(progress) = progress.filter(|_| !pending.is_empty()) {
+        progress(done, total);
+    }
+    for row in pending {
         // Re-read the switch every iteration, not just on entry. This runs in
         // the background while the reader reads, so the switch is their only
         // brake — a book of a few hundred chunks is a few hundred sequential
@@ -542,22 +696,18 @@ pub async fn ensure_context_lines<R: Runtime>(
             content: CONTEXT_LINE_SYSTEM_PROMPT.to_string(),
         }];
         messages.extend(user_messages(&header, &prefix, &window, &row.text));
-        let completion = router::complete_with_failover(
-            app,
-            db,
-            secrets,
-            &messages,
-            Some(120),
-            AiRequestPurpose::Utility,
-            AiRetryMode::Automatic,
-            None,
-            None,
-            "auto",
-            JOB_ID,
-        )
-        .await?;
-        let cleaned = clean_context_line(&completion.text);
-        write_context_line(db, &row.id, &cleaned, &completion.model)?;
+        let outcome =
+            resolve_context_line(app, db, secrets, &messages, &row.id, &mut consecutive_failures)
+                .await?;
+        let (cleaned, model) = match outcome {
+            ContextLineOutcome::Written { cleaned, model } => (cleaned, model),
+            ContextLineOutcome::Skipped => continue,
+        };
+        write_context_line(db, &row.id, &cleaned, &model)?;
+        done += 1;
+        if let Some(progress) = progress {
+            progress(done, total);
+        }
     }
     Ok(())
 }
@@ -688,7 +838,7 @@ mod live_tests {
 
         let secrets = Secrets::init(&directory.path().to_path_buf()).unwrap();
         let app = tauri::test::mock_app();
-        let outcome = ensure_context_lines(app.handle(), &db, &secrets, "pnp").await;
+        let outcome = ensure_context_lines(app.handle(), &db, &secrets, "pnp", None).await;
 
         let conn = db.conn.lock().unwrap();
         for id in &sampled {
@@ -709,6 +859,326 @@ mod live_tests {
             println!("MODEL    {}\n", model.as_deref().unwrap_or("-"));
         }
         outcome.expect("the run itself failed");
+    }
+
+    /// One measured question. `gold` is a verbatim phrase from the passage
+    /// that ought to answer it — the phrase is only a handle for finding the
+    /// chunk, never part of the query, so the search is not being told the
+    /// answer.
+    struct AbQuery {
+        /// What a reader would type. Deliberately names people, because
+        /// readers do — that is the whole premise: the reader knows the name,
+        /// the passage only says "he".
+        query: &'static str,
+        gold: &'static str,
+        /// `pronoun` — the target passage is thin on proper nouns, which is
+        /// what the feature is for. `named` — the target passage says the
+        /// names itself, so lexical search already had everything it needed.
+        /// The second group is the one that can only get worse; a report
+        /// showing only the first would not be a measurement.
+        kind: &'static str,
+    }
+
+    /// Written in the book's own language, not the reader's. Keyword search
+    /// matches tokens: a Chinese question against an English book shares
+    /// nothing with it but the proper nouns, so a cross-language arm would
+    /// measure the tokenizer rather than the feature. Closing that gap is the
+    /// vector path's job, not this one's.
+    const AB_QUERIES: &[AbQuery] = &[
+        AbQuery {
+            query: "Darcy proposes to Elizabeth for the first time and she turns him down",
+            gold: "In vain have I struggled",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "Elizabeth realises she was wrong about Wickham after reading the letter",
+            gold: "never knew myself",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "Mr Collins asks Elizabeth to marry him",
+            gold: "my reasons for marrying are",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "Lady Catherine confronts Elizabeth about her engagement to Darcy",
+            gold: "obstinate, headstrong girl",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "Elizabeth sees the grounds of Pemberley for the first time",
+            gold: "never seen a place for which nature had done more",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "Darcy proposes a second time and Elizabeth accepts him",
+            gold: "affections and wishes are unchanged",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "Darcy refuses to dance with Elizabeth at the assembly",
+            gold: "not handsome enough to tempt me",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "Lydia has run away with Wickham",
+            gold: "certainly not gone to Scotland",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "Mrs Bennet tells her husband that Netherfield has been taken",
+            gold: "Netherfield Park is let at last",
+            kind: "named",
+        },
+        AbQuery {
+            query: "Mr Bennet stops Mary singing at the ball",
+            gold: "You have delighted us long enough",
+            kind: "named",
+        },
+        AbQuery {
+            query: "Mr Collins reads a volume of sermons aloud to the Bennets",
+            gold: "Fordyce",
+            kind: "named",
+        },
+    ];
+
+    /// How deep to look for the gold chunk before calling it unfound. Chat
+    /// only ever sees `RETRIEVAL_TOP_K`; the deeper window exists so a
+    /// passage that moved from 40th to 3rd reports as exactly that rather
+    /// than as "absent → 3rd", which would overstate the gain.
+    const AB_DEPTH: usize = 50;
+
+    /// The lexical query the shipped code runs, with one knob: `context_on`
+    /// false restricts `MATCH` to the passage column, which is precisely the
+    /// world before `seg_context` existed. Same index, same rows, same
+    /// tokenizer — the only difference between the two arms is whether the
+    /// identity sentence is allowed to be seen.
+    fn ab_ranks(
+        conn: &Connection,
+        book_id: &str,
+        query_text: &str,
+        context_on: bool,
+    ) -> Vec<String> {
+        let terms = super::super::segment::segment_for_fts(
+            query_text,
+            super::super::segment::SegmentMode::Query,
+        )
+        .split_whitespace()
+        .filter(|token| token.chars().count() >= 2)
+        .map(|token| format!("\"{}\"", token.replace('"', "\"\"")))
+        .collect::<Vec<_>>()
+        .join(" OR ");
+        if terms.is_empty() {
+            return Vec::new();
+        }
+        let query = if context_on {
+            terms
+        } else {
+            format!("seg_text : ({terms})")
+        };
+        let weights = if context_on { "1.0, 0.3" } else { "1.0, 0.0" };
+        conn.prepare(&format!(
+            "SELECT book_chunks_fts.chunk_id,
+                    bm25(book_chunks_fts, {weights}, 0.0, 0.0) AS score
+             FROM book_chunks_fts
+             WHERE book_chunks_fts MATCH ?1 AND book_chunks_fts.book_id = ?2
+             ORDER BY score LIMIT ?3"
+        ))
+        .unwrap()
+        .query_map(params![query, book_id, AB_DEPTH as i64], |row| {
+            row.get::<_, String>(0)
+        })
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+    }
+
+    fn rank_of(ranks: &[String], chunk_id: &str) -> Option<usize> {
+        ranks.iter().position(|id| id == chunk_id).map(|at| at + 1)
+    }
+
+    fn rank_label(rank: Option<usize>) -> String {
+        match rank {
+            Some(at) => format!("#{at}"),
+            None => format!("未进前 {AB_DEPTH}"),
+        }
+    }
+
+    /// Generates identity sentences for a whole real book, then measures what
+    /// they actually did to keyword retrieval.
+    ///
+    /// Separate from the sampling test above because it costs a whole book of
+    /// provider calls. It writes a report next to the repo rather than only
+    /// printing, because the thing worth reviewing is the before/after table
+    /// and the cards, not a scrollback.
+    #[tokio::test]
+    #[ignore = "generates context lines for an entire book; spends real tokens"]
+    async fn live_retrieval_ab_against_a_real_book() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let Some(()) = copy_app_data(directory.path()) else {
+            panic!("no Lantern app data on this machine to copy");
+        };
+        let epub = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../harness/books/pride-and-prejudice.epub");
+        std::fs::create_dir_all(directory.path().join("books")).unwrap();
+        std::fs::copy(&epub, directory.path().join("books/pnp.epub")).unwrap();
+
+        let db = Db::init(directory.path()).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT OR REPLACE INTO books (
+                     id, title, author, file_path, format, source_format, render_format,
+                     source_file_path, source_sha256, status, progress, created_at, updated_at
+                 ) VALUES ('pnp', 'Pride and Prejudice', 'Jane Austen', 'books/pnp.epub',
+                           'epub', 'epub', 'epub', 'books/pnp.epub', 'pnp-source',
+                           'unread', 0, '1970-01-01', '1970-01-01')",
+                [],
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            super::super::index::ensure_index(&db, "pnp").unwrap(),
+            super::super::index::IndexStatus::Ready
+        );
+
+        // Park every other book's chunks so the run cannot wander into the
+        // reader's own library and bill them for it.
+        let total: i64 = {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "UPDATE book_chunks SET context_line = '·' WHERE book_id <> 'pnp'",
+                [],
+            )
+            .unwrap();
+            conn.query_row(
+                "SELECT COUNT(*) FROM book_chunks WHERE book_id = 'pnp'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+        };
+        println!("=== generating identity sentences for {total} chunks ===");
+
+        // Measured before anything is generated: at this point `seg_context`
+        // is empty for every row, so both arms must agree. Any difference
+        // here would mean the two arms differ by something other than the
+        // feature, and the whole table below would be measuring that instead.
+        let baseline_disagreements = {
+            let conn = db.conn.lock().unwrap();
+            AB_QUERIES
+                .iter()
+                .filter(|case| {
+                    ab_ranks(&conn, "pnp", case.query, false)
+                        != ab_ranks(&conn, "pnp", case.query, true)
+                })
+                .count()
+        };
+        assert_eq!(
+            baseline_disagreements, 0,
+            "the two arms already disagree before any context line exists"
+        );
+
+        let secrets = Secrets::init(&directory.path().to_path_buf()).unwrap();
+        let app = tauri::test::mock_app();
+        let started = std::time::Instant::now();
+        let outcome = ensure_context_lines(app.handle(), &db, &secrets, "pnp", None).await;
+        println!("=== finished in {:?} ===", started.elapsed());
+        outcome.expect("the run itself failed");
+
+        let conn = db.conn.lock().unwrap();
+        let (written, blank, skipped): (i64, i64, i64) = conn
+            .query_row(
+                "SELECT SUM(context_line IS NOT NULL AND context_line <> ''),
+                        SUM(context_line = ''),
+                        SUM(context_line IS NULL)
+                 FROM book_chunks WHERE book_id = 'pnp'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+
+        let mut report = String::new();
+        report.push_str("# 上下文行对关键词检索的实测\n\n");
+        report.push_str(&format!(
+            "《傲慢与偏见》，{total} 个 chunk，写出定位句 {written} 条，模型返回不可用 {blank} 条，\
+             调用失败跳过 {skipped} 条（留待下一轮补）。\n\n\
+             对照方式：同一个索引、同一批数据，唯一的差别是 `MATCH` 允不允许看 `seg_context` 这一列。\
+             「改前」把匹配限制在正文列上，等价于这一列不存在。查询里从不含 gold 短语。\n\n"
+        ));
+        report.push_str("| 查询 | 类型 | 改前 | 改后 |\n|---|---|---|---|\n");
+
+        let mut improved = 0;
+        let mut regressed = 0;
+        for case in AB_QUERIES {
+            let gold: Option<String> = conn
+                .query_row(
+                    "SELECT id FROM book_chunks
+                     WHERE book_id = 'pnp' AND text LIKE '%' || ?1 || '%'
+                     ORDER BY chunk_index LIMIT 1",
+                    params![case.gold],
+                    |row| row.get(0),
+                )
+                .optional()
+                .unwrap();
+            let Some(gold) = gold else {
+                report.push_str(&format!(
+                    "| {} | {} | 找不到原文锚点 `{}` | — |\n",
+                    case.query, case.kind, case.gold
+                ));
+                continue;
+            };
+            let before = rank_of(&ab_ranks(&conn, "pnp", case.query, false), &gold);
+            let after = rank_of(&ab_ranks(&conn, "pnp", case.query, true), &gold);
+            match (before, after) {
+                (Some(b), Some(a)) if a < b => improved += 1,
+                (Some(b), Some(a)) if a > b => regressed += 1,
+                (None, Some(_)) => improved += 1,
+                (Some(_), None) => regressed += 1,
+                _ => {}
+            }
+            report.push_str(&format!(
+                "| {} | {} | {} | {} |\n",
+                case.query,
+                case.kind,
+                rank_label(before),
+                rank_label(after)
+            ));
+        }
+        report.push_str(&format!("\n上升 {improved} 条，下降 {regressed} 条。\n"));
+
+        // The cards themselves. A rank table says the right passage moved up;
+        // it does not say the reader would recognise what came back.
+        report.push_str("\n## 实际返回的卡片\n");
+        for case in AB_QUERIES.iter().filter(|case| case.kind == "pronoun").take(3) {
+            report.push_str(&format!("\n### {}\n\n", case.query));
+            for (position, chunk_id) in ab_ranks(&conn, "pnp", case.query, true)
+                .iter()
+                .take(3)
+                .enumerate()
+            {
+                let (text, line): (String, Option<String>) = conn
+                    .query_row(
+                        "SELECT text, context_line FROM book_chunks WHERE id = ?1",
+                        params![chunk_id],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .unwrap();
+                let head: String = text.chars().take(180).collect();
+                report.push_str(&format!(
+                    "**#{}** · 定位句：{}\n\n> {}…\n\n",
+                    position + 1,
+                    line.as_deref().unwrap_or("—"),
+                    head.replace('\n', " ")
+                ));
+            }
+        }
+
+        let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../docs/impls/contextual-retrieval-ab.md");
+        std::fs::write(&out, &report).unwrap();
+        println!("{report}");
+        println!("=== written to {} ===", out.display());
     }
 }
 
@@ -893,7 +1363,8 @@ mod tests {
         }
         let secrets = Secrets::init_in_memory().unwrap();
         let app = tauri::test::mock_app();
-        let result = ensure_context_lines(app.handle(), &db, &secrets, "does-not-exist").await;
+        let result =
+            ensure_context_lines(app.handle(), &db, &secrets, "does-not-exist", None).await;
         assert!(result.is_ok());
     }
 }

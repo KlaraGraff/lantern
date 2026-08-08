@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
@@ -31,7 +33,11 @@ pub struct IndexDetails {
 }
 
 impl IndexStatus {
-    fn from_db(value: &str) -> Self {
+    /// The inverse of `as_db`, and public for the same reason: a caller that
+    /// reads `book_index_state.status` as part of a wider query — the
+    /// library-wide index scan does, to avoid one round trip per book —
+    /// should decode it through this rather than compare string literals.
+    pub fn from_db(value: &str) -> Self {
         match value {
             "ready" => Self::Ready,
             "building" => Self::Building,
@@ -333,9 +339,100 @@ fn fill_missing_language(
     Ok(())
 }
 
+/// The books this process is building right now — one entry per live call to
+/// [`ensure_index`].
+///
+/// This exists because `book_index_state.status = 'building'` does not answer
+/// the question it looks like it answers. That row is written before
+/// extraction starts and is overwritten only once the build reaches a terminal
+/// verdict, so what it actually records is "a build started and never reported
+/// back" — not "a build is still running". A crash, a force quit or an OS
+/// restart in between leaves it behind with nobody left to finish it, and
+/// reading it as "someone else has this book" wedged the book permanently:
+/// every later call turned round at the same row, so the whole-library button
+/// went on counting it as needing work and nothing the reader could press
+/// would ever clear it.
+///
+/// So: who is allowed to have written a `'building'` row? Only `ensure_index`,
+/// only on this device — `book_index_state` is local, the sync engine never
+/// writes it and only cascade-deletes it along with its book (see
+/// `sync::merge`) — and only from inside some process, alive or dead. A claim
+/// held here is therefore the one thing that separates a build still running
+/// from the remains of one that died: a set entry cannot outlive the process
+/// that made it, and [`BuildGuard`] gives it up on every exit from the build,
+/// error return and unwind included. A `'building'` row that no claim matches
+/// has no live owner anywhere, and the book is treated as never indexed.
+///
+/// The claim also closes a hole the old status check had in the opposite
+/// direction. It only turned round when the row's hash and index version both
+/// matched the build it was about to start, so a genuinely live build whose
+/// row said something else — the common case being a re-index after the file
+/// changed — was not recognised at all, and a second build started on top of
+/// it. The claim is about the book, not about what the row happens to say, so
+/// that cannot happen.
+///
+/// Deliberately not a staleness timeout on the row. That needs a threshold
+/// both long enough never to interrupt the six-hundred-chunk PDF that
+/// legitimately takes a quarter of an hour and short enough that a crashed
+/// book heals within one sitting, and no such number exists; storing a process
+/// identity worth trusting instead would have cost a column and a migration,
+/// where this costs neither.
+static BUILDING_BOOKS: std::sync::Mutex<Option<HashSet<String>>> = std::sync::Mutex::new(None);
+
+/// Holds one book's build claim for the length of one `ensure_index` call.
+///
+/// Per book rather than a single global slot, following `aliases::RunGuard`
+/// for the same reason: two different books have no cause to wait on each
+/// other, and a global slot would make the whole-library batch queue behind
+/// whatever book a reader happened to open.
+struct BuildGuard {
+    book_id: String,
+}
+
+impl BuildGuard {
+    /// `None` when this process is already building this book.
+    fn claim(book_id: &str) -> Option<Self> {
+        // A poisoned lock is recovered rather than treated as a refusal, the
+        // way `source::claim` recovers its own. The critical section is a
+        // `HashSet` insert and has nothing in it that can panic, but a change
+        // whose entire subject is "a book must never be wedged forever" has no
+        // business introducing a second way to wedge one.
+        let mut building = BUILDING_BOOKS
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if !building
+            .get_or_insert_with(HashSet::new)
+            .insert(book_id.to_string())
+        {
+            return None;
+        }
+        Some(Self {
+            book_id: book_id.to_string(),
+        })
+    }
+}
+
+impl Drop for BuildGuard {
+    fn drop(&mut self) {
+        let mut building = BUILDING_BOOKS
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if let Some(books) = building.as_mut() {
+            books.remove(&self.book_id);
+        }
+    }
+}
+
 /// Build the local derived index synchronously. Callers doing UI work run it
 /// through `spawn_blocking`; the function itself owns no async runtime state.
 pub fn ensure_index(db: &Db, book_id: &str) -> AppResult<IndexStatus> {
+    // Claimed before anything else this function does, the read of
+    // `book_index_state` below included, because holding the claim is what
+    // makes that read unambiguous: no other build in this process can be the
+    // owner of a `'building'` row for this book while this call holds it.
+    let Some(_build) = BuildGuard::claim(book_id) else {
+        return Ok(IndexStatus::Building);
+    };
     {
         let mut conn = db
             .conn
@@ -371,17 +468,20 @@ pub fn ensure_index(db: &Db, book_id: &str) -> AppResult<IndexStatus> {
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         ).optional()?;
         if let Some((hash, version, status)) = state {
-            if status == "building"
-                && hash.as_deref() == Some(actual_sha256.as_str())
-                && version == INDEX_VERSION
-            {
-                return Ok(IndexStatus::Building);
-            }
-            if status == "ready"
-                && hash.as_deref() == Some(actual_sha256.as_str())
-                && version == INDEX_VERSION
-            {
+            let current =
+                hash.as_deref() == Some(actual_sha256.as_str()) && version == INDEX_VERSION;
+            if current && status == IndexStatus::Ready.as_db() {
                 return Ok(IndexStatus::Ready);
+            }
+            // Everything else falls through to a rebuild, `'building'`
+            // included — this call holds the only claim on the book, so a
+            // `'building'` row here belongs to a process that is gone (see
+            // `BUILDING_BOOKS`). Turning round on it instead is what used to
+            // make one crash mid-index permanent.
+            if status == IndexStatus::Building.as_db() {
+                log::info!(
+                    "grounding: {book_id} was left mid-index by a process that is no longer running; rebuilding it"
+                );
             }
         }
         let now = chrono::Utc::now().timestamp_millis();
@@ -664,5 +764,85 @@ mod tests {
             )
             .unwrap();
         assert_eq!(ready_source_sha256(&db, "book").unwrap(), None);
+    }
+
+    /// Seed a book whose file is present but unreadable, so that a build gets
+    /// all the way past the state check and then fails at the parser. Each
+    /// caller uses its own `book_id`: `BUILDING_BOOKS` is process-wide and the
+    /// tests below run on the same process as each other.
+    fn seed_unreadable_book(db: &Db, directory: &std::path::Path, book_id: &str) {
+        let relative = format!("books/{book_id}.epub");
+        std::fs::create_dir_all(directory.join("books")).unwrap();
+        std::fs::write(directory.join(&relative), b"this is not a zip archive").unwrap();
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO books (
+                     id, title, author, file_path, source_format, render_format,
+                     source_file_path, source_sha256, status, progress, created_at, updated_at
+                 ) VALUES (?1, 'Book', 'Author', ?2, 'epub', 'epub', ?2, 'source-a', 'unread', 0, 1, 1)",
+                params![book_id, relative],
+            )
+            .unwrap();
+    }
+
+    /// The wedge this self-heal exists to clear: a `'building'` row naming the
+    /// current file and index version, left behind by a process that died
+    /// mid-extraction. Every later call used to read exactly that row and turn
+    /// round, so the book could never be indexed again and the library-wide
+    /// count could never reach zero.
+    ///
+    /// The rebuild is arranged to fail, because what is under test is whether
+    /// one was *attempted*: `Failed` is only reachable from past the point the
+    /// old code returned `Building` at.
+    #[test]
+    fn a_building_row_left_behind_by_a_dead_process_is_rebuilt() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        seed_unreadable_book(&db, directory.path(), "wedged");
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO book_index_state
+                 (book_id, source_sha256, index_version, chunk_count, status, indexed_at)
+                 VALUES ('wedged', 'source-a', ?1, 0, 'building', 1)",
+                params![INDEX_VERSION],
+            )
+            .unwrap();
+
+        assert_eq!(
+            ensure_index(&db, "wedged").unwrap(),
+            IndexStatus::Failed,
+            "a 'building' row nobody in this process is holding must not stop a rebuild"
+        );
+        assert_eq!(index_status(&db, "wedged").unwrap(), IndexStatus::Failed);
+    }
+
+    /// The other direction, and the one that would be a real bug to get wrong:
+    /// a build genuinely in flight in this process must not be stolen by a
+    /// second caller.
+    ///
+    /// The book deliberately does not exist in the database at all, which
+    /// makes the assertion sharp — without the claim this call would resolve
+    /// it as `Missing`, and for a book that does exist it would go straight on
+    /// to overwrite the live build's row and re-extract underneath it.
+    #[test]
+    fn a_build_running_in_this_process_is_not_stolen() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let claim = BuildGuard::claim("live").expect("nothing holds this book yet");
+
+        assert_eq!(
+            ensure_index(&db, "live").unwrap(),
+            IndexStatus::Building,
+            "a second caller must report the build in flight, not start its own"
+        );
+
+        // And the claim is given back, so the next call is free to proceed —
+        // the guard is what keeps a finished build from wedging its own book.
+        drop(claim);
+        assert_eq!(ensure_index(&db, "live").unwrap(), IndexStatus::Missing);
     }
 }
