@@ -408,6 +408,51 @@ export const FIXTURES: Record<string, Fixture> = {
   delete_person_alias: null,
   clear_person_aliases: null,
   build_person_aliases: () => PERSON_ALIAS_GROUPS.map((group) => ({ ...group })),
+  /**
+   * Hand-written because `ProfileContent` reads `state.draftText.length`
+   * unguarded, and the shape-guessed stub omits the string — which took the
+   * whole profile page down to its error boundary during the sweep. Mirrors
+   * `ProfileView` in `src-tauri/src/commands/profile.rs` field for field;
+   * `userText` and `draftText` are `unwrap_or_default()` there, so they are
+   * always strings and never null.
+   *
+   * A draft that differs from the saved text is the interesting state: it is
+   * what makes the "restore draft" affordance render at all.
+   */
+  profile_get: () => ({
+    userText: "我读英文小说主要是为了准备考试，遇到长句子容易卡住。",
+    draftText: "我读英文小说主要是为了准备考试，遇到长句子容易卡住。希望解释能短一点。",
+    enabled: true,
+    softLimit: 500,
+    hardLimit: 2000,
+    cards: [
+      {
+        slot: "syntax_explain",
+        conclusion: "读者需要先看句子骨架，再看修饰成分。",
+        evidence: "多次追问从句的主干在哪里",
+        status: "active",
+        updatedAt: nowSec() - 3600,
+      },
+      {
+        slot: "vocab_explain",
+        conclusion: "生词给一个例句比给同义词更有用。",
+        evidence: "反复要求换个例子",
+        status: "active",
+        updatedAt: nowSec() - 7200,
+      },
+      {
+        slot: "reply_pacing",
+        conclusion: "回答偏长时读者会中途打断。",
+        evidence: "两次在解释途中改问别的",
+        status: "moved",
+        updatedAt: nowSec() - 86_400,
+      },
+    ],
+    newFollowupsSinceLastBatch: 8,
+    lastSummarizedAt: nowSec() - 172_800,
+    revisionCount: 3,
+    batchSize: 20,
+  }),
   ai_cancel: true,
   /**
    * Hand-written because `AiRequestCountsSection` dereferences

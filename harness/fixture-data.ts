@@ -370,11 +370,21 @@ export const CHAT_MESSAGES = [
   },
 ];
 
+/**
+ * Field for field the shape of `AliasGroupView` in
+ * `src-tauri/src/ai/grounding/aliases.rs` — `entries`, not `aliases`, and no
+ * group-level `mentions`. The section reads `group.entries` directly, so a
+ * fixture that drifts from the struct does not render wrong, it throws.
+ *
+ * The last group is descriptions-only on purpose: those rows are the one thing
+ * in the table a rebuild cannot reconstruct, and they render differently
+ * enough (marked ≈, carrying the question that taught them) that the sweep
+ * should walk that branch rather than only the name one.
+ */
 export const PERSON_ALIAS_GROUPS = [
   {
     canonical: "Water Rat",
-    mentions: 214,
-    aliases: [
+    entries: [
       { id: "pa-1", alias: "Ratty", source: "auto", mentions: 214, kind: "name", sourceQuery: null },
       { id: "pa-2", alias: "河鼠", source: "auto", mentions: 214, kind: "name", sourceQuery: null },
       { id: "pa-3", alias: "老鼠", source: "auto", mentions: 214, kind: "name", sourceQuery: null },
@@ -382,24 +392,42 @@ export const PERSON_ALIAS_GROUPS = [
   },
   {
     canonical: "Mr. Toad",
-    mentions: 301,
-    aliases: [
+    entries: [
       { id: "pa-4", alias: "蟾蜍", source: "auto", mentions: 301, kind: "name", sourceQuery: null },
       { id: "pa-5", alias: "托德先生", source: "user", mentions: 301, kind: "name", sourceQuery: null },
+      {
+        id: "pa-8",
+        alias: "那个开汽车闯祸的",
+        source: "user",
+        mentions: 301,
+        kind: "description",
+        sourceQuery: "那个开汽车闯祸的后来怎么样了",
+      },
     ],
   },
   {
     canonical: "Field Mouse",
-    mentions: 12,
-    aliases: [
+    entries: [
       { id: "pa-6", alias: "老鼠", source: "auto", mentions: 12, kind: "name", sourceQuery: null },
     ],
   },
   {
     canonical: "Mole",
-    mentions: 188,
-    aliases: [
+    entries: [
       { id: "pa-7", alias: "鼹鼠", source: "auto", mentions: 188, kind: "name", sourceQuery: null },
+    ],
+  },
+  {
+    canonical: "Badger",
+    entries: [
+      {
+        id: "pa-9",
+        alias: "住在树林深处的那位长者",
+        source: "user",
+        mentions: 96,
+        kind: "description",
+        sourceQuery: "住在树林深处的那位长者是谁",
+      },
     ],
   },
 ];
