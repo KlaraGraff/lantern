@@ -7,6 +7,13 @@
  * `src-tauri/src/ai/grounding/aliases.rs`.
  */
 
+import {
+  aiErrorMessageKey,
+  getAiErrorCode,
+  isAiRetryableError,
+  isAiSettingsError,
+} from "../utils/aiError.ts";
+
 export interface AliasEntryView {
   id: string;
   alias: string;
@@ -85,6 +92,119 @@ export function rowSource(row: PersonAliasRow): "auto" | "user" | "both" {
   const hasUser = entries.some((entry) => entry.source === "user");
   if (hasAuto && hasUser) return "both";
   return hasUser ? "user" : "auto";
+}
+
+/**
+ * The failures `build_person_aliases` ends on that have something specific to
+ * say to the reader.
+ *
+ * These arrive as prose, not as bare codes: `AppError` serialises through
+ * `Display`, so what lands in `catch` is `"AI error: PERSON_ALIASES_AI_UNUSABLE"`.
+ * Match by substring, the same way `getAiErrorCode` does.
+ */
+export const ALIAS_BUILD_ERROR_CODES = [
+  "PERSON_ALIASES_AI_UNUSABLE",
+  "PERSON_ALIASES_AI_INVALID",
+  "PERSON_ALIASES_ALREADY_RUNNING",
+] as const;
+
+export type AliasBuildErrorCode = (typeof ALIAS_BUILD_ERROR_CODES)[number];
+
+export interface AliasBuildErrorView {
+  /** `"neutral"` for the one case where nothing actually broke. */
+  tone: "danger" | "neutral";
+  titleKey: string;
+  bodyKey: string;
+  canRetry: boolean;
+  /** Whether a different model is the thing that would fix this. */
+  canPickModel: boolean;
+  /**
+   * The raw string, kept only when nothing above could name the failure. It is
+   * what a bug report needs, and it is the one case where the reader has no
+   * better information than we do.
+   */
+  detail: string | null;
+}
+
+const K = "indexManager.aliases.buildError.";
+
+/**
+ * What to show instead of the raw rejection.
+ *
+ * A build runs for minutes; ending it with a stringified `AppError` spends all
+ * of that patience on a code the reader cannot act on. Three of these failures
+ * are ours and get their own sentence. The rest fall through to the generic AI
+ * codes, which already have messages and already know whether a retry or a
+ * settings trip is the way out — a missing API key should say so here exactly
+ * as it does in the chat panel, not become "the build didn't finish".
+ *
+ * Only a failure no layer can name keeps its raw text, and even then behind a
+ * disclosure rather than in the reader's face.
+ */
+export function aliasBuildError(error: unknown): AliasBuildErrorView {
+  const message = String(error);
+  const code = ALIAS_BUILD_ERROR_CODES.find((candidate) => message.includes(candidate));
+
+  switch (code) {
+    case "PERSON_ALIASES_AI_UNUSABLE":
+      // Three independent samples all came back with names that are not the
+      // book's. Retry first: attempts are independent, and the failure
+      // correlates with how long the model reasoned, not with the book.
+      return {
+        tone: "danger",
+        titleKey: `${K}unusableTitle`,
+        bodyKey: `${K}unusableBody`,
+        canRetry: true,
+        canPickModel: true,
+        detail: null,
+      };
+    case "PERSON_ALIASES_AI_INVALID":
+      // Thrown on the first unparseable reply — it never enters the retry
+      // loop — so the copy must not claim three tries were made. A model that
+      // cannot hold the format rarely learns it on the second ask, which is
+      // why picking another one leads here.
+      return {
+        tone: "danger",
+        titleKey: `${K}invalidTitle`,
+        bodyKey: `${K}invalidBody`,
+        canRetry: true,
+        canPickModel: true,
+        detail: null,
+      };
+    case "PERSON_ALIASES_ALREADY_RUNNING":
+      // Nothing broke: a pass for this book is in flight and the second one
+      // was turned away. Red would be a lie, and a retry button would only
+      // be turned away again.
+      return {
+        tone: "neutral",
+        titleKey: `${K}alreadyRunningTitle`,
+        bodyKey: `${K}alreadyRunningBody`,
+        canRetry: false,
+        canPickModel: false,
+        detail: null,
+      };
+  }
+
+  const aiCode = getAiErrorCode(error);
+  if (aiCode) {
+    return {
+      tone: "danger",
+      titleKey: `${K}unknownTitle`,
+      bodyKey: aiErrorMessageKey(aiCode),
+      canRetry: isAiRetryableError(aiCode),
+      canPickModel: isAiSettingsError(aiCode),
+      detail: null,
+    };
+  }
+
+  return {
+    tone: "danger",
+    titleKey: `${K}unknownTitle`,
+    bodyKey: `${K}unknownBody`,
+    canRetry: true,
+    canPickModel: false,
+    detail: message,
+  };
 }
 
 /** Same key the vector-retrieval toggle on the embedding settings page writes. */

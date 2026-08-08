@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>别名建表 · 失败态样张</title>
+<style>
+  :root {
+    --bg-page: #f4f4f5;
+    --bg-surface: #ffffff;
+    --bg-input: #f3f3f5;
+    --text-primary: #18181b;
+    --text-secondary: #52525c;
+    --text-muted: #71717b;
+    --border: #e4e4e7;
+    --border-light: #f4f4f5;
+    --accent: #7c3aed;
+    --accent-bg: #f3e8ff;
+    --accent-text: #7c3aed;
+    --danger: #e7000b;
+    --danger-bg: #fef2f2;
+    --danger-border: #ffc9c9;
+    --danger-text: #e7000b;
+    --warning: #b8791c;
+    --canvas: #e9e9ee;
+  }
+  [data-theme="dark"] {
+    --bg-page: #101014;
+    --bg-surface: #18191d;
+    --bg-input: #212227;
+    --text-primary: #f4f4f5;
+    --text-secondary: #c9c9d1;
+    --text-muted: #9a9aa4;
+    --border: #34343d;
+    --border-light: #2a2b31;
+    --accent: #8b5cf6;
+    --accent-bg: #302647;
+    --accent-text: #a78bfa;
+    --danger: #e7000b;
+    --danger-bg: #450a0a4d;
+    --danger-border: #991b1b;
+    --danger-text: #f87171;
+    --warning: #e0a75a;
+    --canvas: #08080a;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0 0 80px;
+    background: var(--canvas);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── 页面框架（样张自己的外壳，不属于产品 UI） ── */
+  .page-head {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    flex-wrap: wrap;
+    padding: 14px 28px;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .page-head h1 { margin: 0; font-size: 14px; font-weight: 600; }
+  .page-head p { margin: 3px 0 0; font-size: 11.5px; color: var(--text-muted); }
+  .switches { display: flex; gap: 8px; }
+  .switch {
+    display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden;
+    background: var(--bg-input);
+  }
+  .switch button {
+    appearance: none; border: 0; background: transparent; cursor: pointer;
+    font: inherit; font-size: 11.5px; padding: 5px 11px; color: var(--text-secondary);
+  }
+  .switch button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 28px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(560px, 1fr)); gap: 24px; align-items: start; }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel { min-width: 0; }
+  .panel-label {
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--text-primary);
+  }
+  .panel-label .code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px; font-weight: 400;
+    padding: 2px 6px; border-radius: 4px;
+    background: var(--bg-input); color: var(--text-muted); border: 1px solid var(--border);
+  }
+  .panel-label .star { color: var(--accent-text); font-weight: 600; }
+  .panel-note {
+    margin: 0 0 10px; font-size: 11px; line-height: 1.65; color: var(--text-muted);
+    border-left: 2px solid var(--border); padding-left: 9px; max-width: 560px;
+  }
+
+  /* ── 产品 UI：模态里的一个 section ── */
+  .surface {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px 20px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  }
+  [data-theme="dark"] .surface { box-shadow: none; }
+
+  .sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .sec-title { font-size: 13px; font-weight: 500; color: var(--text-primary); margin: 0; }
+  .sec-count { font-size: 10.5px; color: var(--text-muted); }
+  .intro { margin: 0 0 12px; max-width: 520px; font-size: 11.5px; line-height: 20px; color: var(--text-secondary); }
+
+  .dashed {
+    border: 1px dashed var(--border); border-radius: 6px; padding: 20px;
+  }
+  .dashed.center { text-align: center; padding: 24px 20px; }
+  .dashed .t { margin: 0 0 4px; font-size: 12.5px; color: var(--text-secondary); }
+  .dashed .b { margin: 0 0 16px; font-size: 11px; line-height: 20px; color: var(--text-muted); }
+
+  .bar { margin-top: 12px; height: 3px; border-radius: 999px; background: var(--bg-input); overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 33%; border-radius: 999px; background: var(--accent); animation: slide 1.8s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left: 0 } 50% { margin-left: 67% } 100% { margin-left: 0 } }
+
+  /* 表格 */
+  .table { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .thead, .trow { display: grid; grid-template-columns: 1fr 1.6fr auto; gap: 12px; }
+  .thead {
+    background: var(--bg-input); border-bottom: 1px solid var(--border-light);
+    padding: 6px 12px; font-size: 10.5px; letter-spacing: .02em; color: var(--text-muted);
+  }
+  .trow { align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border-light); font-size: 12.5px; }
+  .trow:last-child { border-bottom: 0; }
+  .canon { font-weight: 500; color: var(--text-primary); }
+  .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    border: 1px solid var(--border); background: var(--bg-input); color: var(--text-secondary);
+    border-radius: 999px; padding: 1px 8px; font-size: 11px; line-height: 20px;
+  }
+  .chip.user { border-color: var(--accent); background: var(--accent-bg); color: var(--accent-text); }
+  .chip .x { opacity: .5; font-size: 10px; line-height: 1; }
+  .chip.add { border-style: dashed; color: var(--text-muted); background: transparent; padding: 1px 7px; }
+  .src { white-space: nowrap; font-size: 10.5px; color: var(--text-muted); }
+
+  /* 按钮 */
+  .btn {
+    appearance: none; cursor: pointer; font: inherit; font-size: 12px;
+    height: 28px; padding: 0 10px; border-radius: 6px;
+    display: inline-flex; align-items: center; gap: 5px;
+    border: 1px solid var(--border); background: var(--bg-surface); color: var(--text-primary);
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.ghost { border-color: transparent; background: transparent; color: var(--text-secondary); }
+  .btn.small { height: 26px; font-size: 11.5px; }
+  .row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+
+  /* ── 错误块（本次要拍板的东西） ── */
+  .alert {
+    display: flex; gap: 9px; align-items: flex-start;
+    border-radius: 6px; padding: 11px 12px 12px;
+    border: 1px solid var(--danger-border); background: var(--danger-bg);
+    margin-bottom: 12px;
+  }
+  .alert.neutral { border-color: var(--border); background: var(--bg-input); }
+  .alert svg { flex: 0 0 auto; margin-top: 1px; }
+  .alert .body { min-width: 0; }
+  .alert .a-title { font-size: 12.5px; font-weight: 600; color: var(--danger-text); margin: 0 0 3px; }
+  .alert.neutral .a-title { color: var(--text-primary); }
+  .alert .a-text { margin: 0; font-size: 11.5px; line-height: 1.7; color: var(--text-secondary); }
+  .alert .a-keep {
+    margin: 7px 0 0; font-size: 11px; line-height: 1.65; color: var(--text-muted);
+    border-left: 2px solid var(--border); padding-left: 8px;
+  }
+  .alert .a-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .alert details { margin-top: 8px; }
+  .alert summary { font-size: 11px; color: var(--text-muted); cursor: pointer; }
+  .alert details pre {
+    margin: 6px 0 0; padding: 7px 9px; border-radius: 5px;
+    background: var(--bg-input); border: 1px solid var(--border);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px;
+    color: var(--text-secondary); white-space: pre-wrap; word-break: break-all;
+  }
+
+  /* 现状对照 */
+  .bare-error { margin: 12px 0 0; font-size: 12px; color: var(--danger-text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .callout-bad {
+    margin-top: 10px; font-size: 11px; line-height: 1.65; color: var(--text-muted);
+  }
+  .section-divider {
+    margin: 34px 0 22px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+    font-size: 12.5px; font-weight: 600; color: var(--text-secondary); letter-spacing: .02em;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <div>
+    <h1 class="i18n" data-zh="别名建表 · 失败态样张" data-en="Alias build · failure-state mockup">别名建表 · 失败态样张</h1>
+    <p class="i18n"
+       data-zh="人物别名建表要跑几分钟。跑完失败时用户现在只看到一行英文错误码。以下是三个错误码各自的样子 + 兜底。文案未定，看版式和语气。"
+       data-en="Building the alias table takes minutes. Today a failure shows one bare error code. Here is a state per code, plus a fallback. Copy is a draft — judge tone and layout.">人物别名建表要跑几分钟。跑完失败时用户现在只看到一行英文错误码。以下是三个错误码各自的样子 + 兜底。文案未定，看版式和语气。</p>
+  </div>
+  <div class="switches">
+    <div class="switch" id="lang">
+      <button data-lang="zh" aria-pressed="true">中文</button>
+      <button data-lang="en" aria-pressed="false">English</button>
+    </div>
+    <div class="switch" id="theme">
+      <button data-theme-set="light" aria-pressed="true">浅色</button>
+      <button data-theme-set="dark" aria-pressed="false">深色</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- ══════════════ 对照 ══════════════ -->
+  <div class="section-divider i18n" data-zh="对照 · 现在长这样" data-en="Baseline · what ships today">对照 · 现在长这样</div>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="panel-label">
+        <span class="i18n" data-zh="现状：跑了四分钟，得到这一行" data-en="Today: four minutes of waiting, then this line">现状：跑了四分钟，得到这一行</span>
+        <span class="code">PersonAliasesSection.tsx:375</span>
+      </div>
+      <p class="panel-note i18n"
+         data-zh="run() 直接 setError(String(reason))，第 375 行原样渲染。红字、英文、全大写、没有下一步。这是本次要替换掉的东西。"
+         data-en="run() does setError(String(reason)) and line 375 renders it verbatim. Red, English, shouting, no next step. This is what gets replaced.">run() 直接 setError(String(reason))，第 375 行原样渲染。红字、英文、全大写、没有下一步。这是本次要替换掉的东西。</p>
+      <div class="surface">
+        <div class="sec-head">
+          <h4 class="sec-title i18n" data-zh="人物别名" data-en="Character aliases">人物别名</h4>
+        </div>
+        <p class="intro i18n"
+           data-zh="让你用中文名、简称、或者「那个牧师」这类说法问一本书——哪怕书里从没出现过这些词。"
+           data-en="Ask about a book by Chinese name, short name, or “that clergyman” — even when the book never uses those words.">让你用中文名、简称、或者「那个牧师」这类说法问一本书——哪怕书里从没出现过这些词。</p>
+        <div class="dashed center">
+          <p class="t i18n" data-zh="还没有建立别名" data-en="No aliases yet">还没有建立别名</p>
+          <p class="b i18n" data-zh="从书里认出人物，再给每个人配上常见的译名和简称。" data-en="Find the people in the book, then give each one its common translations and short names.">从书里认出人物，再给每个人配上常见的译名和简称。</p>
+          <button class="btn primary i18n" data-zh="建立别名表" data-en="Build alias table">建立别名表</button>
+        </div>
+        <p class="bare-error">Ai(PERSON_ALIASES_AI_UNUSABLE)</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ 进行中 ══════════════ -->
+  <div class="section-divider i18n" data-zh="1 · 建表中" data-en="1 · Building">1 · 建表中</div>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="panel-label">
+        <span class="i18n" data-zh="建表中（现有，只补一句时长预期）" data-en="Building (exists today; one line added about duration)">建表中（现有，只补一句时长预期）</span>
+      </div>
+      <p class="panel-note i18n"
+         data-zh="现有文案只有「正在从书里认出人物…」。这一步现在可能内部重试三次，四五分钟很正常；不提前说，用户会以为卡死了。重试次数不外露——那是实现细节，写「可能要几分钟」就够。"
+         data-en="Today it only says “Finding the people in this book…”. The pass now retries up to three times internally, so four or five minutes is normal. Say so, or it reads as hung. Don’t expose the retry count — “a few minutes” is enough.">现有文案只有「正在从书里认出人物…」。这一步现在可能内部重试三次，四五分钟很正常；不提前说，用户会以为卡死了。重试次数不外露——那是实现细节，写「可能要几分钟」就够。</p>
+      <div class="surface">
+        <div class="sec-head">
+          <h4 class="sec-title i18n" data-zh="人物别名" data-en="Character aliases">人物别名</h4>
+        </div>
+        <div class="dashed">
+          <p style="margin:0;font-size:11.5px;line-height:1.7;color:var(--text-secondary)"
+             class="i18n" data-zh="正在从书里认出人物…" data-en="Finding the people in this book…">正在从书里认出人物…</p>
+          <p style="margin:5px 0 0;font-size:11px;line-height:1.65;color:var(--text-muted)"
+             class="i18n" data-zh="可能要几分钟。关掉这个窗口也不影响，它会继续跑。" data-en="This can take a few minutes. Closing this window won’t stop it.">可能要几分钟。关掉这个窗口也不影响，它会继续跑。</p>
+          <div class="bar"><i></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════ 三个错误码 ══════════════ -->
+  <div class="section-divider i18n" data-zh="2 · 三个错误码" data-en="2 · The three error codes">2 · 三个错误码</div>
+
+  <div class="grid">
+
+    <!-- UNUSABLE · 首次建表，无旧表 -->
+    <div class="panel">
+      <div class="panel-label">
+        <span class="i18n" data-zh="认不出人物 · 首次建表" data-en="Couldn’t identify people · first build">认不出人物 · 首次建表</span>
+        <span class="code">PERSON_ALIASES_AI_UNUSABLE</span>
+      </div>
+      <p class="panel-note i18n"
+         data-zh="三次采样回来的名字都对不上书里的写法（成因已测：推理越短越容易颠倒正名和别名）。没有旧表，所以回到空态 + 错误块。给两条出路：再试一次、换模型——两条都真的有效，不是安慰话。"
+         data-en="Three samples in a row came back with names that don’t match the book’s spelling (measured cause: shorter reasoning inverts canonical and alias). No prior table, so it falls back to the empty state plus the alert. Two real ways out: retry, or switch model — both actually work here.">三次采样回来的名字都对不上书里的写法（成因已测：推理越短越容易颠倒正名和别名）。没有旧表，所以回到空态 + 错误块。给两条出路：再试一次、换模型——两条都真的有效，不是安慰话。</p>
+      <div class="surface">
+        <div class="sec-head">
+          <h4 class="sec-title i18n" data-zh="人物别名" data-en="Character aliases">人物别名</h4>
+        </div>
+        <div class="alert">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--danger-text)"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <div class="body">
+            <p class="a-title i18n" data-zh="这次没认出书里的人物" data-en="Couldn’t make out who’s in this book">这次没认出书里的人物</p>
+            <p class="a-text i18n"
+               data-zh="试了三次，模型给回来的名字都对不上书里的写法，所以这次没有写进表里。同一个模型再跑一次常常就成了；换一个更强的模型更稳。"
+               data-en="Three tries, and each time the names that came back don’t match how the book spells them — so nothing was written. Running the same model again often works; a stronger model is steadier.">试了三次，模型给回来的名字都对不上书里的写法，所以这次没有写进表里。同一个模型再跑一次常常就成了；换一个更强的模型更稳。</p>
+            <div class="a-actions">
+              <button class="btn primary small i18n" data-zh="再试一次" data-en="Try again">再试一次</button>
+              <button class="btn small i18n" data-zh="去选模型" data-en="Choose a model">去选模型</button>
+            </div>
+          </div>
+        </div>
+        <div class="dashed center">
+          <p class="t i18n" data-zh="还没有建立别名" data-en="No aliases yet">还没有建立别名</p>
+          <p class="b i18n" data-zh="从书里认出人物，再给每个人配上常见的译名和简称。" data-en="Find the people in the book, then give each one its common translations and short names.">从书里认出人物，再给每个人配上常见的译名和简称。</p>
+          <button class="btn primary i18n" data-zh="建立别名表" data-en="Build alias table">建立别名表</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- UNUSABLE · 重建失败，旧表仍在 ★ -->
+    <div class="panel">
+      <div class="panel-label">
+        <span class="star">★</span>
+        <span class="i18n" data-zh="认不出人物 · 重建失败，旧表原样还在" data-en="Couldn’t identify people · rebuild failed, old table untouched">认不出人物 · 重建失败，旧表原样还在</span>
+        <span class="code">PERSON_ALIASES_AI_UNUSABLE</span>
+      </div>
+      <p class="panel-note i18n"
+         data-zh="这个状态是整个修复的要害：三次全失败时后端一个字都没写，旧表完好。用户看到表还在，但必须被明确告知——否则他会怀疑表已经被这次失败污染了，然后手动清空掉自己教过的东西。灰色引用那一行就是干这个的。"
+         data-en="This is the state the whole fix exists for: on three straight failures the backend writes nothing and the old table survives. The reader can see the table is still there, but must be told so plainly — otherwise they assume the failed run corrupted it and clear away the rows they taught. That’s the muted quoted line.">这个状态是整个修复的要害：三次全失败时后端一个字都没写，旧表完好。用户看到表还在，但必须被明确告知——否则他会怀疑表已经被这次失败污染了，然后手动清空掉自己教过的东西。灰色引用那一行就是干这个的。</p>
+      <div class="surface">
+        <div class="sec-head">
+          <h4 class="sec-title i18n" data-zh="人物别名" data-en="Character aliases">人物别名</h4>
+          <span class="sec-count i18n" data-zh="6 人 · 14 条别名" data-en="6 people · 14 aliases">6 人 · 14 条别名</span>
+        </div>
+        <div class="alert">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--danger-text)"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <div class="body">
+            <p class="a-title i18n" data-zh="这次没认出书里的人物" data-en="Couldn’t make out who’s in this book">这次没认出书里的人物</p>
+            <p class="a-text i18n"
+               data-zh="试了三次，模型给回来的名字都对不上书里的写法。同一个模型再跑一次常常就成了；换一个更强的模型更稳。"
+               data-en="Three tries, and each time the names that came back don’t match how the book spells them. Running the same model again often works; a stronger model is steadier.">试了三次，模型给回来的名字都对不上书里的写法。同一个模型再跑一次常常就成了；换一个更强的模型更稳。</p>
+            <p class="a-keep i18n"
+               data-zh="下面这张表没有动过——重建失败不会清掉已经建好的，你教过的那几条也都在。"
+               data-en="The table below was not touched. A failed rebuild never clears what’s already there, and the rows you taught are all still in it.">下面这张表没有动过——重建失败不会清掉已经建好的，你教过的那几条也都在。</p>
+            <div class="a-actions">
+              <button class="btn primary small i18n" data-zh="再试一次" data-en="Try again">再试一次</button>
+              <button class="btn small i18n" data-zh="去选模型" data-en="Choose a model">去选模型</button>
+            </div>
+          </div>
+        </div>
+
+        <p class="intro i18n" data-zh="带底色的是你教过的，优先级高于自动认的。点 × 删掉一条。" data-en="Highlighted rows are ones you taught; they outrank the automatic ones. Click × to remove one.">带底色的是你教过的，优先级高于自动认的。点 × 删掉一条。</p>
+
+        <div class="table">
+          <div class="thead">
+            <span class="i18n" data-zh="书里的写法" data-en="As the book spells it">书里的写法</span>
+            <span class="i18n" data-zh="还可以这么叫" data-en="Also called">还可以这么叫</span>
+            <span class="i18n" data-zh="来源" data-en="Source">来源</span>
+          </div>
+          <div class="trow">
+            <span class="canon">Mr. Darcy</span>
+            <div class="chips">
+              <span class="chip">Fitzwilliam Darcy<span class="x">✕</span></span>
+              <span class="chip user">达西<span class="x">✕</span></span>
+              <span class="chip user">达西先生<span class="x">✕</span></span>
+              <span class="chip add">＋</span>
+            </div>
+            <span class="src i18n" data-zh="自动 + 你" data-en="Auto + you">自动 + 你</span>
+          </div>
+          <div class="trow">
+            <span class="canon">Elizabeth Bennet</span>
+            <div class="chips">
+              <span class="chip">Lizzy<span class="x">✕</span></span>
+              <span class="chip">Eliza<span class="x">✕</span></span>
+              <span class="chip user">伊丽莎白<span class="x">✕</span></span>
+              <span class="chip add">＋</span>
+            </div>
+            <span class="src i18n" data-zh="自动 + 你" data-en="Auto + you">自动 + 你</span>
+          </div>
+          <div class="trow">
+            <span class="canon">Mr. Collins</span>
+            <div class="chips">
+              <span class="chip">William Collins<span class="x">✕</span></span>
+              <span class="chip user">柯林斯<span class="x">✕</span></span>
+              <span class="chip add">＋</span>
+            </div>
+            <span class="src i18n" data-zh="自动 + 你" data-en="Auto + you">自动 + 你</span>
+          </div>
+          <div class="trow">
+            <span class="canon">Jane Bennet</span>
+            <div class="chips">
+              <span class="chip">Jane<span class="x">✕</span></span>
+              <span class="chip add">＋</span>
+            </div>
+            <span class="src i18n" data-zh="自动" data-en="Auto">自动</span>
+          </div>
+        </div>
+
+        <div class="row-actions">
+          <button class="btn i18n" data-zh="添加人物" data-en="Add a person">添加人物</button>
+          <button class="btn i18n" data-zh="重建" data-en="Rebuild">重建</button>
+          <button class="btn ghost i18n" style="color:var(--danger-text)" data-zh="全部清空" data-en="Clear all">全部清空</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- INVALID -->
+    <div class="panel">
+      <div class="panel-label">
+        <span class="i18n" data-zh="回复读不出来 · 重建失败" data-en="Unreadable reply · rebuild failed">回复读不出来 · 重建失败</span>
+        <span class="code">PERSON_ALIASES_AI_INVALID</span>
+      </div>
+      <p class="panel-note i18n"
+         data-zh="模型返回的不是能解析的结构——注意这个码是在第一次解析失败时就直接抛的，不进重试循环。所以文案不能说「试了三次」。这几乎总是模型选得不合适（输出不稳、不听格式约束），换模型是第一出路，重试是第二。"
+         data-en="The model returned something that can’t be parsed — note this code throws on the first parse failure, it never enters the retry loop, so the copy must not claim “three tries”. It nearly always means the wrong model for the job (unstable output, ignores the format). Switching model is the first move here; retry is second.">模型返回的不是能解析的结构——注意这个码是在第一次解析失败时就直接抛的，不进重试循环。所以文案不能说「试了三次」。这几乎总是模型选得不合适（输出不稳、不听格式约束），换模型是第一出路，重试是第二。</p>
+      <div class="surface">
+        <div class="sec-head">
+          <h4 class="sec-title i18n" data-zh="人物别名" data-en="Character aliases">人物别名</h4>
+          <span class="sec-count i18n" data-zh="6 人 · 14 条别名" data-en="6 people · 14 aliases">6 人 · 14 条别名</span>
+        </div>
+        <div class="alert">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--danger-text)"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <div class="body">
+            <p class="a-title i18n" data-zh="模型的回复读不出来" data-en="Couldn’t read the model’s reply">模型的回复读不出来</p>
+            <p class="a-text i18n"
+               data-zh="这一步要模型按固定格式回答，这次回来的东西不是那个格式。多半是这个模型不适合干这活——换一个再试。"
+               data-en="This step needs the model to answer in a fixed format, and what came back isn’t in it. Usually the wrong model for this job — pick another and try again.">这一步要模型按固定格式回答，这次回来的东西不是那个格式。多半是这个模型不适合干这活——换一个再试。</p>
+            <p class="a-keep i18n"
+               data-zh="下面这张表没有动过。"
+               data-en="The table below was not touched.">下面这张表没有动过。</p>
+            <div class="a-actions">
+              <button class="btn primary small i18n" data-zh="去选模型" data-en="Choose a model">去选模型</button>
+              <button class="btn small i18n" data-zh="再试一次" data-en="Try again">再试一次</button>
+            </div>
+          </div>
+        </div>
+        <div class="table">
+          <div class="thead">
+            <span class="i18n" data-zh="书里的写法" data-en="As the book spells it">书里的写法</span>
+            <span class="i18n" data-zh="还可以这么叫" data-en="Also called">还可以这么叫</span>
+            <span class="i18n" data-zh="来源" data-en="Source">来源</span>
+          </div>
+          <div class="trow">
+            <span class="canon">Mr. Darcy</span>
+            <div class="chips">
+              <span class="chip">Fitzwilliam Darcy<span class="x">✕</span></span>
+              <span class="chip user">达西<span class="x">✕</span></span>
+              <span class="chip add">＋</span>
+            </div>
+            <span class="src i18n" data-zh="自动 + 你" data-en="Auto + you">自动 + 你</span>
+          </div>
+          <div class="trow">
+            <span class="canon">Elizabeth Bennet</span>
+            <div class="chips">
+              <span class="chip">Lizzy<span class="x">✕</span></span>
+              <span class="chip user">伊丽莎白<span class="x">✕</span></span>
+              <span class="chip add">＋</span>
+            </div>
+            <span class="src i18n" data-zh="自动 + 你" data-en="Auto + you">自动 + 你</span>
+          </div>
+        </div>
+        <div class="row-actions">
+          <button class="btn i18n" data-zh="添加人物" data-en="Add a person">添加人物</button>
+          <button class="btn i18n" data-zh="重建" data-en="Rebuild">重建</button>
+          <button class="btn ghost i18n" style="color:var(--danger-text)" data-zh="全部清空" data-en="Clear all">全部清空</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ALREADY_RUNNING -->
+    <div class="panel">
+      <div class="panel-label">
+        <span class="i18n" data-zh="已经在建了 · 不是错误" data-en="Already building · not an error">已经在建了 · 不是错误</span>
+        <span class="code">PERSON_ALIASES_ALREADY_RUNNING</span>
+      </div>
+      <p class="panel-note i18n"
+         data-zh="这一条没坏任何东西——同一本书已经有一次建表在跑，第二次被挡下了。用红色等于骗用户说出事了。所以：中性底色、无警告图标、无「再试一次」（再点还是会被挡）。唯一的动作是「知道了」，把这块收起来。"
+         data-en="Nothing broke here — a build for this book is already in flight and the second one was turned away. Red would be lying about that. So: neutral surface, no warning icon, no “Try again” (a second click is turned away too). The only action is “Got it”, which dismisses the block.">这一条没坏任何东西——同一本书已经有一次建表在跑，第二次被挡下了。用红色等于骗用户说出事了。所以：中性底色、无警告图标、无「再试一次」（再点还是会被挡）。唯一的动作是「知道了」，把这块收起来。</p>
+      <div class="surface">
+        <div class="sec-head">
+          <h4 class="sec-title i18n" data-zh="人物别名" data-en="Character aliases">人物别名</h4>
+        </div>
+        <div class="alert neutral">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-muted)"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          <div class="body">
+            <p class="a-title i18n" data-zh="这本书已经在建表了" data-en="This book is already building">这本书已经在建表了</p>
+            <p class="a-text i18n"
+               data-zh="上一次还没跑完。等它结束就行，不用再点一次。"
+               data-en="The earlier run hasn’t finished yet. Let it finish — there’s no need to start another.">上一次还没跑完。等它结束就行，不用再点一次。</p>
+            <div class="a-actions">
+              <button class="btn small i18n" data-zh="知道了" data-en="Got it">知道了</button>
+            </div>
+          </div>
+        </div>
+        <div class="dashed">
+          <p style="margin:0;font-size:11.5px;line-height:1.7;color:var(--text-secondary)"
+             class="i18n" data-zh="正在从书里认出人物…" data-en="Finding the people in this book…">正在从书里认出人物…</p>
+          <p style="margin:5px 0 0;font-size:11px;line-height:1.65;color:var(--text-muted)"
+             class="i18n" data-zh="可能要几分钟。关掉这个窗口也不影响，它会继续跑。" data-en="This can take a few minutes. Closing this window won’t stop it.">可能要几分钟。关掉这个窗口也不影响，它会继续跑。</p>
+          <div class="bar"><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 兜底 -->
+    <div class="panel">
+      <div class="panel-label">
+        <span class="i18n" data-zh="兜底 · 认不出的错误" data-en="Fallback · unrecognised error">兜底 · 认不出的错误</span>
+        <span class="code i18n" data-zh="任何其它 reason" data-en="any other reason">任何其它 reason</span>
+      </div>
+      <p class="panel-note i18n"
+         data-zh="网络断了、供应商 5xx、密钥过期——映射不到的一律走这里。原始字符串不再直接甩给用户，但也不能扔掉：折进「详情」，用户报 bug 时要用。这一条决定了以后后端加新错误码不会再漏到界面上。"
+         data-en="Network down, provider 5xx, expired key — anything unmapped lands here. The raw string is no longer thrown at the reader, but it isn’t discarded either: it folds into “Details”, which is what a bug report needs. This panel is what guarantees a future backend error code can’t leak to the UI again.">网络断了、供应商 5xx、密钥过期——映射不到的一律走这里。原始字符串不再直接甩给用户，但也不能扔掉：折进「详情」，用户报 bug 时要用。这一条决定了以后后端加新错误码不会再漏到界面上。</p>
+      <div class="surface">
+        <div class="sec-head">
+          <h4 class="sec-title i18n" data-zh="人物别名" data-en="Character aliases">人物别名</h4>
+          <span class="sec-count i18n" data-zh="6 人 · 14 条别名" data-en="6 people · 14 aliases">6 人 · 14 条别名</span>
+        </div>
+        <div class="alert">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--danger-text)"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <div class="body">
+            <p class="a-title i18n" data-zh="建表没能完成" data-en="The build didn’t finish">建表没能完成</p>
+            <p class="a-text i18n"
+               data-zh="这次没跑完，原因不在预料之内。可以直接再试一次；一直是同样的结果，就把下面的详情附上报给我们。"
+               data-en="It stopped for a reason we don’t have a specific message for. Trying again is worth a shot; if it keeps happening, send us the details below.">这次没跑完，原因不在预料之内。可以直接再试一次；一直是同样的结果，就把下面的详情附上报给我们。</p>
+            <p class="a-keep i18n" data-zh="下面这张表没有动过。" data-en="The table below was not touched.">下面这张表没有动过。</p>
+            <details open>
+              <summary class="i18n" data-zh="详情" data-en="Details">详情</summary>
+              <pre>Ai(request failed: error sending request for url (https://api.example.com/v1/chat/completions): operation timed out)</pre>
+            </details>
+            <div class="a-actions">
+              <button class="btn primary small i18n" data-zh="再试一次" data-en="Try again">再试一次</button>
+              <button class="btn small i18n" data-zh="复制详情" data-en="Copy details">复制详情</button>
+            </div>
+          </div>
+        </div>
+        <div class="table">
+          <div class="thead">
+            <span class="i18n" data-zh="书里的写法" data-en="As the book spells it">书里的写法</span>
+            <span class="i18n" data-zh="还可以这么叫" data-en="Also called">还可以这么叫</span>
+            <span class="i18n" data-zh="来源" data-en="Source">来源</span>
+          </div>
+          <div class="trow">
+            <span class="canon">Mr. Darcy</span>
+            <div class="chips">
+              <span class="chip">Fitzwilliam Darcy<span class="x">✕</span></span>
+              <span class="chip user">达西<span class="x">✕</span></span>
+              <span class="chip add">＋</span>
+            </div>
+            <span class="src i18n" data-zh="自动 + 你" data-en="Auto + you">自动 + 你</span>
+          </div>
+          <div class="trow">
+            <span class="canon">Elizabeth Bennet</span>
+            <div class="chips">
+              <span class="chip">Lizzy<span class="x">✕</span></span>
+              <span class="chip user">伊丽莎白<span class="x">✕</span></span>
+              <span class="chip add">＋</span>
+            </div>
+            <span class="src i18n" data-zh="自动 + 你" data-en="Auto + you">自动 + 你</span>
+          </div>
+        </div>
+        <div class="row-actions">
+          <button class="btn i18n" data-zh="添加人物" data-en="Add a person">添加人物</button>
+          <button class="btn i18n" data-zh="重建" data-en="Rebuild">重建</button>
+          <button class="btn ghost i18n" style="color:var(--danger-text)" data-zh="全部清空" data-en="Clear all">全部清空</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const apply = (lang) => {
+    document.querySelectorAll('.i18n').forEach((el) => {
+      const v = el.dataset[lang];
+      if (v != null) el.textContent = v;
+    });
+    document.documentElement.lang = lang === 'zh' ? 'zh' : 'en';
+  };
+  document.querySelectorAll('#lang button').forEach((b) => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#lang button').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+      apply(b.dataset.lang);
+    });
+  });
+  document.querySelectorAll('#theme button').forEach((b) => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#theme button').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+      document.documentElement.setAttribute('data-theme', b.dataset.themeSet);
+    });
+  });
+</script>
+</body>
+</html>

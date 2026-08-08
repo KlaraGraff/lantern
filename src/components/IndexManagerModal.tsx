@@ -417,7 +417,7 @@ export default function IndexManagerModal({
                   </details>
                 ))}
               </section>
-              <PersonAliasesSection bookId={bookId} />
+              <PersonAliasesSection bookId={bookId} onLeaveForSettings={onClose} />
               <details className="mt-5"><summary className="cursor-pointer text-[13px] font-medium text-text-primary">{t("indexManager.chunkPreview")}</summary><div className="mt-2 space-y-2">{details.chunks.map((chunk) => <div key={chunk.index} className="rounded-md bg-bg-input p-3 text-[11px] leading-5 text-text-secondary"><p className="font-medium text-text-primary">{chunk.sectionTitle || `#${chunk.index + 1}`}</p>{chunk.snippet}</div>)}</div></details>
             </>
           )}

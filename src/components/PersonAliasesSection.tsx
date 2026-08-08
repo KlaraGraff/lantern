@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AlertTriangle, Loader2, Plus, Sparkles, UserPlus, X } from "lucide-react";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { AlertTriangle, Info, Loader2, Plus, Sparkles, UserPlus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
 import { useSettings } from "../hooks/useSettings";
 import {
+  aliasBuildError,
   aliasTableCounts,
   descriptionMatching,
   personAliasRows,
@@ -23,13 +25,25 @@ interface VectorAvailability {
  * IndexManagerModal. Owns its own fetch/busy/error state rather than sharing
  * the parent's `details`, because the alias table lives behind five
  * independent commands that have nothing to do with `ai_index_details`. */
-export default function PersonAliasesSection({ bookId }: { bookId: string }) {
+export default function PersonAliasesSection({
+  bookId,
+  onLeaveForSettings,
+}: {
+  bookId: string;
+  /**
+   * Close the index manager. The settings modal sits at `z-50` and this one at
+   * `z-[70]`, so a deep link into 选模型 would otherwise open behind the dialog
+   * the reader is looking at, and read as a dead button.
+   */
+  onLeaveForSettings(): void;
+}) {
   const { t } = useTranslation();
   const { settings, loading: settingsLoading } = useSettings();
   const [groups, setGroups] = useState<AliasGroupView[] | null>(null);
   const [availability, setAvailability] = useState<VectorAvailability | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [copiedDetail, setCopiedDetail] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
   const [addingPerson, setAddingPerson] = useState(false);
   const [addPersonCanonical, setAddPersonCanonical] = useState("");
@@ -42,7 +56,7 @@ export default function PersonAliasesSection({ bookId }: { bookId: string }) {
     setGroups(next);
   }, [bookId]);
 
-  useEffect(() => { void load().catch((reason) => setError(String(reason))); }, [load]);
+  useEffect(() => { void load().catch(setError); }, [load]);
 
   // The same probe the embedding settings page runs, for the same reason: the
   // switch alone does not say whether there is a model behind it.
@@ -55,17 +69,41 @@ export default function PersonAliasesSection({ bookId }: { bookId: string }) {
   const run = async (name: string, action: () => Promise<unknown>) => {
     setBusy(name);
     setError(null);
+    setCopiedDetail(false);
     try {
       await action();
       await load();
     } catch (reason) {
-      setError(String(reason));
+      setError(reason);
     } finally {
       setBusy(null);
     }
   };
 
   const building = busy === "build" || busy === "rebuild";
+  const buildError = error == null ? null : aliasBuildError(error);
+
+  const rebuild = () => void run("rebuild", () => invoke("build_person_aliases", { bookId }));
+
+  /**
+   * Cross-window Tauri event rather than the same-window `openSettings()` DOM
+   * event, following `ExplainPopover`: `SettingsHost` is only mounted in the
+   * main window, and this section is reachable from a detached reader window
+   * through `AiPanel`.
+   */
+  const pickModel = async () => {
+    onLeaveForSettings();
+    await invoke("open_settings_on_main", { section: "services", view: "models" });
+    const main = await WebviewWindow.getByLabel("main");
+    await main?.setFocus();
+  };
+
+  const copyDetail = (detail: string) => {
+    void navigator.clipboard
+      .writeText(detail)
+      .then(() => setCopiedDetail(true))
+      .catch(() => {});
+  };
 
   const rows = personAliasRows(groups ?? []);
   const counts = aliasTableCounts(rows);
@@ -133,6 +171,76 @@ export default function PersonAliasesSection({ bookId }: { bookId: string }) {
         )}
       </div>
 
+      {/* Above the table, not below it: a build runs for minutes, and when it
+          lands the reader is looking at where the progress bar was. */}
+      {buildError && (
+        <div
+          role={buildError.tone === "danger" ? "alert" : "status"}
+          className={`mb-3 flex items-start gap-2.5 rounded-md border px-3 py-2.5 ${
+            buildError.tone === "danger"
+              ? "border-danger-border bg-danger-bg"
+              : "border-border bg-bg-input"
+          }`}
+        >
+          {buildError.tone === "danger" ? (
+            <AlertTriangle size={13} className="mt-0.5 shrink-0 text-danger-text" />
+          ) : (
+            <Info size={13} className="mt-0.5 shrink-0 text-text-muted" />
+          )}
+          <div className="min-w-0">
+            <p
+              className={`mb-0.5 text-[12.5px] font-semibold ${
+                buildError.tone === "danger" ? "text-danger-text" : "text-text-primary"
+              }`}
+            >
+              {t(buildError.titleKey)}
+            </p>
+            <p className="text-[11.5px] leading-[1.7] text-text-secondary">{t(buildError.bodyKey)}</p>
+            {/* The reason the whole retry fix exists is that a failed pass
+                writes nothing. The reader can see the table survived; saying so
+                is what stops them clearing rows they taught on the suspicion
+                that the failure corrupted them. */}
+            {rows.length > 0 && (
+              <p className="mt-1.5 border-l-2 border-border pl-2 text-[11px] leading-[1.65] text-text-muted">
+                {t("indexManager.aliases.buildError.tableKept")}
+              </p>
+            )}
+            {buildError.detail && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-[11px] text-text-muted">
+                  {t("indexManager.aliases.buildError.details")}
+                </summary>
+                <pre className="mt-1.5 whitespace-pre-wrap break-all rounded border border-border bg-bg-input px-2 py-1.5 font-mono text-[10.5px] text-text-secondary">
+                  {buildError.detail}
+                </pre>
+              </details>
+            )}
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              {buildError.canRetry && (
+                <Button size="sm" variant="primary" disabled={busy != null} onClick={rebuild}>
+                  {t("indexManager.aliases.buildError.retry")}
+                </Button>
+              )}
+              {buildError.canPickModel && (
+                <Button size="sm" variant="secondary" disabled={busy != null} onClick={() => void pickModel()}>
+                  {t("indexManager.aliases.buildError.pickModel")}
+                </Button>
+              )}
+              {buildError.detail && (
+                <Button size="sm" variant="secondary" onClick={() => copyDetail(buildError.detail!)}>
+                  {t(`indexManager.aliases.buildError.${copiedDetail ? "copied" : "copyDetails"}`)}
+                </Button>
+              )}
+              {!buildError.canRetry && !buildError.canPickModel && (
+                <Button size="sm" variant="secondary" onClick={() => setError(null)}>
+                  {t("indexManager.aliases.buildError.dismiss")}
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {!building && (
         <p className="mb-3 max-w-[520px] text-[11.5px] leading-5 text-text-secondary">
           {rows.length === 0 ? (
@@ -152,6 +260,13 @@ export default function PersonAliasesSection({ bookId }: { bookId: string }) {
       {building ? (
         <div className="rounded-md border border-dashed border-border px-5 py-5">
           <p className="text-[11.5px] text-text-secondary">{t("indexManager.aliases.building")}</p>
+          {/* The pass now samples up to three times before giving up, so four
+              or five minutes is ordinary. Unsaid, that reads as hung — and the
+              retry count itself is an implementation detail the reader has no
+              use for. */}
+          <p className="mt-1 text-[11px] leading-[1.65] text-text-muted">
+            {t("indexManager.aliases.buildingHint")}
+          </p>
           <div className="mt-3 h-[3px] overflow-hidden rounded-full bg-bg-input">
             <div className="h-full w-1/3 animate-pulse rounded-full bg-accent" />
           </div>
@@ -355,7 +470,7 @@ export default function PersonAliasesSection({ bookId }: { bookId: string }) {
                 variant="secondary"
                 size="sm"
                 disabled={busy != null}
-                onClick={() => void run("rebuild", () => invoke("build_person_aliases", { bookId }))}
+                onClick={rebuild}
               >
                 {t("indexManager.aliases.rebuild")}
               </Button>
@@ -371,8 +486,6 @@ export default function PersonAliasesSection({ bookId }: { bookId: string }) {
           )}
         </>
       )}
-
-      {error && <p role="alert" className="mt-3 text-[12px] text-danger-text">{error}</p>}
     </section>
   );
 }

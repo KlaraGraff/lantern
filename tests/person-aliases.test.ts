@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  aliasBuildError,
   aliasTableCounts,
   descriptionMatching,
   personAliasRows,
@@ -139,5 +140,69 @@ describe("descriptionMatching", () => {
     assert.equal(descriptionMatching({}, true, on), "on");
     assert.equal(descriptionMatching({ ai_vector_retrieval: "true" }, false, null), "on");
     assert.equal(descriptionMatching({}, true, null), "on");
+  });
+});
+
+describe("aliasBuildError", () => {
+  // What actually reaches `catch`: `AppError` serialises through `Display`, so
+  // the code arrives wrapped in a sentence, never on its own.
+  const wire = (code: string) => `AI error: ${code}`;
+
+  it("names the three failures the build pass raises", () => {
+    assert.equal(
+      aliasBuildError(wire("PERSON_ALIASES_AI_UNUSABLE")).titleKey,
+      "indexManager.aliases.buildError.unusableTitle",
+    );
+    assert.equal(
+      aliasBuildError(wire("PERSON_ALIASES_AI_INVALID")).titleKey,
+      "indexManager.aliases.buildError.invalidTitle",
+    );
+    assert.equal(
+      aliasBuildError(wire("PERSON_ALIASES_ALREADY_RUNNING")).titleKey,
+      "indexManager.aliases.buildError.alreadyRunningTitle",
+    );
+  });
+
+  it("never hands the reader the raw string for a failure it can name", () => {
+    for (const code of [
+      "PERSON_ALIASES_AI_UNUSABLE",
+      "PERSON_ALIASES_AI_INVALID",
+      "PERSON_ALIASES_ALREADY_RUNNING",
+    ]) {
+      assert.equal(aliasBuildError(wire(code)).detail, null);
+    }
+  });
+
+  it("keeps a concurrent build out of red, and offers no retry that would be refused", () => {
+    const view = aliasBuildError(wire("PERSON_ALIASES_ALREADY_RUNNING"));
+    assert.equal(view.tone, "neutral");
+    assert.equal(view.canRetry, false);
+    assert.equal(view.canPickModel, false);
+  });
+
+  it("offers both ways out of an unusable result", () => {
+    const view = aliasBuildError(wire("PERSON_ALIASES_AI_UNUSABLE"));
+    assert.equal(view.tone, "danger");
+    assert.equal(view.canRetry, true);
+    assert.equal(view.canPickModel, true);
+  });
+
+  it("defers to the generic AI codes rather than swallowing them", () => {
+    // The build goes through the same router as everything else, so a missing
+    // key must read as a missing key here too — not as "the build didn't
+    // finish" with the real reason hidden in a disclosure.
+    const view = aliasBuildError(wire("AI_NOT_CONFIGURED"));
+    assert.equal(view.bodyKey, "ai.notConfigured");
+    assert.equal(view.canPickModel, true);
+    assert.equal(view.canRetry, false);
+    assert.equal(view.detail, null);
+  });
+
+  it("keeps the raw text only when no layer can name the failure", () => {
+    const raw = "AI error: error sending request: operation timed out";
+    const view = aliasBuildError(raw);
+    assert.equal(view.bodyKey, "indexManager.aliases.buildError.unknownBody");
+    assert.equal(view.detail, raw);
+    assert.equal(view.canRetry, true);
   });
 });
