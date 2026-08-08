@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight } from "lucide-react";
 import { prefersReducedMotion } from "./page-turn-transition";
+import { usePopoverPosition } from "./use-popover-position";
 
 // Total bubble width and the width handed to the nested foliate-view's
 // content (useFoliateView sets the nested view's own `style.width` to this
@@ -40,9 +41,8 @@ export default function FootnotePopover({
   onJumpToSource,
 }: FootnotePopoverProps) {
   const { t } = useTranslation();
-  const popoverRef = useRef<HTMLDivElement>(null);
+  const { ref: floatingRef, style: floatingStyle, isOutside } = usePopoverPosition(x, y);
   const bodyHostRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ left: x, top: y });
   const [entered, setEntered] = useState(false);
   const reducedMotion = prefersReducedMotion();
 
@@ -58,28 +58,6 @@ export default function FootnotePopover({
       contentHost.remove();
     };
   }, [contentHost]);
-
-  // Position clamping, mirroring ExplainPopover.
-  useEffect(() => {
-    const el = popoverRef.current;
-    if (!el) return;
-    const clamp = () => {
-      const rect = el.getBoundingClientRect();
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      let left = x;
-      let top = y;
-      if (left + rect.width > vw - 16) left = vw - rect.width - 16;
-      if (left < 16) left = 16;
-      if (top + rect.height > vh - 16) top = y - rect.height - 8;
-      if (top < 16) top = 16;
-      setPos({ left, top });
-    };
-    const observer = new ResizeObserver(clamp);
-    observer.observe(el);
-    return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     if (reducedMotion) return;
@@ -99,7 +77,7 @@ export default function FootnotePopover({
   // click that opened us.
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+      if (isOutside(e.target as Node)) {
         onClose();
       }
     };
@@ -110,13 +88,13 @@ export default function FootnotePopover({
       cancelAnimationFrame(id);
       document.removeEventListener("mousedown", handler);
     };
-  }, [onClose]);
+  }, [onClose, isOutside]);
 
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
-        ref={popoverRef}
+        ref={floatingRef}
         className={`fixed z-50 rounded-lg border border-border/80 bg-bg-surface shadow-context ${
           reducedMotion
             ? ""
@@ -124,7 +102,7 @@ export default function FootnotePopover({
               entered ? "opacity-100 scale-100" : "opacity-0 scale-95"
             }`
         }`}
-        style={{ left: pos.left, top: pos.top, width: FOOTNOTE_POPOVER_WIDTH }}
+        style={{ ...floatingStyle, width: FOOTNOTE_POPOVER_WIDTH }}
       >
         <div className="px-3.5 pt-3">
           <span className="text-[12px] font-medium text-text-muted">

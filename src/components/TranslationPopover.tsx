@@ -15,6 +15,7 @@ import {
   MessageSquareMore,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { usePopoverPosition } from "./use-popover-position";
 import { aiErrorMessageKey, getAiErrorCode, isAiRetryableError, isAiSettingsError, type AiErrorCode } from "../utils/aiError";
 import AiRetryButton from "./AiRetryButton";
 import { createUuid } from "../utils/randomUuid";
@@ -194,7 +195,7 @@ export default function TranslationPopover({
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const popoverRef = useRef<HTMLDivElement>(null);
+  const { ref: floatingRef, style: floatingStyle, isOutside } = usePopoverPosition(x, y);
 
   const { content, contentRef, streaming, aiError, languageNotConfigured, targetLang, streamError, retry } =
     useStreamingTranslation(text, context, bookId, bookTitle, bookAuthor, chapter, cfi);
@@ -203,29 +204,6 @@ export default function TranslationPopover({
   const hasContent = !!content;
   const hasConfigurationError = aiError !== null || languageNotConfigured;
 
-  // Position clamping
-  const [pos, setPos] = useState({ left: x, top: y });
-
-  useEffect(() => {
-    const el = popoverRef.current;
-    if (!el) return;
-    const clamp = () => {
-      const rect = el.getBoundingClientRect();
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      let left = x;
-      let top = y;
-      if (left + rect.width > vw - 16) left = vw - rect.width - 16;
-      if (left < 16) left = 16;
-      if (top + rect.height > vh - 16) top = y - rect.height - 8;
-      if (top < 16) top = 16;
-      setPos({ left, top });
-    };
-    const observer = new ResizeObserver(clamp);
-    observer.observe(el);
-    return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Check if this text is already saved to the vocab list
   useEffect(() => {
@@ -272,7 +250,7 @@ export default function TranslationPopover({
   // Dismiss on click outside
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+      if (isOutside(e.target as Node)) {
         onClose();
       }
     };
@@ -283,7 +261,7 @@ export default function TranslationPopover({
       cancelAnimationFrame(id);
       document.removeEventListener("mousedown", handler);
     };
-  }, [onClose]);
+  }, [onClose, isOutside]);
 
   const langName = LANG_NAMES[targetLang] || targetLang;
 
@@ -291,9 +269,9 @@ export default function TranslationPopover({
     <>
     <div className="fixed inset-0 z-40" onClick={onClose} />
     <div
-      ref={popoverRef}
+      ref={floatingRef}
       className="fixed z-[62] w-[520px] bg-bg-surface border border-border/80 rounded-xl shadow-context"
-      style={{ left: pos.left, top: pos.top }}
+      style={floatingStyle}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 pt-3 pb-2.5 bg-accent-bg rounded-t-xl border-b border-border/40">

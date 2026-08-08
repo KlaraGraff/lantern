@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { X, Loader2, WandSparkles, BookmarkPlus, Check, Copy, Settings, MessageSquareMore, BookOpenCheck, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { usePopoverPosition } from "./use-popover-position";
 import AiMarkdown from "./ai-markdown/AiMarkdown";
 import { aiErrorMessageKey, getAiErrorCode, isAiRetryableError, isAiSettingsError, type AiErrorCode } from "../utils/aiError";
 import AiRetryButton from "./AiRetryButton";
@@ -249,7 +250,7 @@ export default function ExplainPopover({
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
-  const popoverRef = useRef<HTMLDivElement>(null);
+  const { ref: floatingRef, style: floatingStyle, isOutside } = usePopoverPosition(x, y);
   // A single word keeps today's "save to vocab" primary action; anything
   // with internal whitespace is a passage, which gets "save explanation"
   // instead (see docs/impls/q257-persist-explanations.md §2.3).
@@ -311,29 +312,6 @@ export default function ExplainPopover({
     customAction,
   );
 
-  // Position clamping — re-run whenever the popover resizes (e.g. as content streams in)
-  const [pos, setPos] = useState({ left: x, top: y });
-
-  useEffect(() => {
-    const el = popoverRef.current;
-    if (!el) return;
-    const clamp = () => {
-      const rect = el.getBoundingClientRect();
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      let left = x;
-      let top = y;
-      if (left + rect.width > vw - 16) left = vw - rect.width - 16;
-      if (left < 16) left = 16;
-      if (top + rect.height > vh - 16) top = y - rect.height - 8;
-      if (top < 16) top = 16;
-      setPos({ left, top });
-    };
-    const observer = new ResizeObserver(clamp);
-    observer.observe(el);
-    return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Check if this text is already saved to the vocab list
   useEffect(() => {
@@ -394,7 +372,7 @@ export default function ExplainPopover({
   // context-menu click that opened us
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+      if (isOutside(e.target as Node)) {
         onClose();
       }
     };
@@ -405,15 +383,15 @@ export default function ExplainPopover({
       cancelAnimationFrame(id);
       document.removeEventListener("mousedown", handler);
     };
-  }, [onClose]);
+  }, [onClose, isOutside]);
 
   return (
     <>
     <div className="fixed inset-0 z-40" onClick={onClose} />
     <div
-      ref={popoverRef}
+      ref={floatingRef}
       className="fixed z-[62] w-[440px] bg-bg-surface border border-border/80 rounded-xl shadow-context"
-      style={{ left: pos.left, top: pos.top }}
+      style={floatingStyle}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 pt-3 pb-2.5 bg-accent-bg rounded-t-xl border-b border-border/40">
