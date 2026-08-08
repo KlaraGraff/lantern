@@ -1,5 +1,7 @@
 # q28 — CloudKit Sync
 
+> **状态：继承自上游，未实现** — `src-tauri/src` 中搜不到任何 `CKRecord`/`CKAsset`/CloudKit 相关代码；`q31-sync.md` 正文明确写着「Supersedes: … q28 — CloudKit Sync」，且实际落地的 `src-tauri/src/sync/{peers,replay,log,writer,device}.rs` 是 spec 31 的按设备事件日志架构，不是本 spec 的 CloudKit 方案。
+
 **Issue:** [#178](https://github.com/yicheng47/quill/issues/178)
 **Status:** Planned
 **Milestone:** 4 — Cross-Platform Sync

@@ -1,5 +1,7 @@
 # q198 — Persist Per-Book Window Size and PDF Zoom
 
+> **状态：已上线** — `src/pages/reader/useReaderZoom.ts`/`useFoliateView.ts` 读写 `reader-zoom-${bookId}`，`src/utils/openReaderWindow.ts`/`useWindowSizePersistence.ts` 读写 `reader-window-${bookId}`，均为 localStorage 键。
+
 **GitHub Issue:** https://github.com/yicheng47/quill/issues/198
 
 ## Motivation

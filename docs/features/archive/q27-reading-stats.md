@@ -1,5 +1,7 @@
 # q27 — Reading Stats
 
+> **状态：已上线** — `src-tauri/src/commands/reading_stats.rs` + `src-tauri/migrations/033_reading_stats.sql` 实现后端，`src/pages/ReadingStats.tsx` 是对应前端页面。
+
 **GitHub Issue:** https://github.com/yicheng47/quill/issues/142
 
 ## Motivation

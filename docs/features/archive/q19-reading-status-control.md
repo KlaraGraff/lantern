@@ -1,5 +1,7 @@
 # q19 — Reading Status Control
 
+> **状态：已上线** — `src-tauri/src/commands/books/mutate.rs` 有 `update_book_status` 命令，独立于 `save_book_progress`。
+
 > GitHub Issue: https://github.com/yicheng47/quill/issues/91
 > Milestone: 2 (Core Reading Experience Polish)
 

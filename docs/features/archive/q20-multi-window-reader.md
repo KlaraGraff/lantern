@@ -1,5 +1,7 @@
 # q20 — Multi-Window Reader & Enhanced Reader Chrome
 
+> **状态：已上线** — `src/utils/openReaderWindow.ts` 为每本书创建独立 `WebviewWindow`（`reader-${bookId}` 标签），并通过 `WebviewWindow.getByLabel` 防止重复开窗。
+
 GitHub Issue: https://github.com/yicheng47/quill/issues/103
 
 ## Motivation

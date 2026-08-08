@@ -1,5 +1,7 @@
 # q22 — AI Book Recommendations
 
+> **状态：继承自上游，未实现** — 全仓搜索 `Discover`/`recommendation` 均无对应 Tab 或推荐命令命中（仅命中无关的 UI 文案，如「推荐使用 DeepSeek」「onboarding 推荐服务商」），`src-tauri/src/commands/` 下没有书籍推荐相关命令。
+
 GitHub Issue: https://github.com/yicheng47/quill/issues/106
 
 ## Motivation

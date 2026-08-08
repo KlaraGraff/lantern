@@ -1,5 +1,7 @@
 # q260 — TOC as Collapsible Left Side Panel
 
+> **状态：已上线** — `src/components/TableOfContents.tsx` 已作为左侧停靠面板集成进 `src/pages/Reader.tsx`；spec 正文自述「Status: Shipped」。
+
 GitHub issue: https://github.com/yicheng47/quill/issues/260
 
 > **Status: Shipped.** The TOC is a docked, collapsible left side panel (`src/components/TableOfContents.tsx`, integrated in `src/pages/Reader.tsx`) — implementation phases 1–2 below are done. Of the open design questions, persistence was left at "not remembered"; revisiting that is tracked as item P1.7 in [`docs/roadmap/reader-page-optimization.md`](../../roadmap/archive/reader-page-optimization.md). Archived 2026-08.

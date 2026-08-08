@@ -1,5 +1,7 @@
 # q13 — Settings Modal & User Profile Region
 
+> **状态：已上线** — `src/components/SettingsModal.tsx` 提供居中弹窗设置界面；`src/components/Sidebar.tsx` 底部「User profile」区块（头像/首字母 + `onOpenSettings`）替代了原设置齿轮图标。
+
 **Issue:** [#59](https://github.com/yicheng47/quill/issues/59)
 **Status:** Planned
 

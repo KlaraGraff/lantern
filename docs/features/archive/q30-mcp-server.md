@@ -1,5 +1,7 @@
 # q30 — MCP Server
 
+> **状态：已上线** — `src-tauri/src/mcp/server.rs` 实现了 MCP server 及 spec 描述的读写工具，但传输方式与 spec 不同：实际是 `src-tauri/src/mcp/mod.rs` 注释所述的 stdio 子进程（AI 客户端 spawn），而非 spec 提议的本地 HTTP/SSE 端口；功能已上线，架构细节以 `mcp-full-product-parity.md` 为准。
+
 **Status:** Planned
 **GitHub Issue:** [#184](https://github.com/yicheng47/quill/issues/184)
 

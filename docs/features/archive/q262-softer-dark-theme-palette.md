@@ -1,5 +1,7 @@
 # q262 - Softer Dark Theme Palette
 
+> **状态：已上线** — `src/index.css` 的 `.dark` 块使用 `#151518`/`#18191d`/`#1f2023`/`#25262c` 等柔和深色而非纯黑。
+
 GitHub issue: https://github.com/yicheng47/quill/issues/268
 
 ## Motivation

@@ -1,5 +1,7 @@
 # q261 - Disable Sync Copy-to-Local Progress
 
+> **状态：已上线** — `src-tauri/src/commands/sync.rs` 发出 `sync-disable-progress` 事件，并有 `is_icloud_placeholder`/`icloud_placeholder_for` 处理 iCloud 占位文件下载等待。
+
 GitHub issue: https://github.com/yicheng47/quill/issues/265
 
 ## Motivation

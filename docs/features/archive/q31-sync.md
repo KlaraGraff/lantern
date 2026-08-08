@@ -1,5 +1,7 @@
 # q31 — Sync
 
+> **状态：已上线** — `src-tauri/src/sync/{device,log,peers,replay,writer}.rs` 实现了按设备的 append-only 事件日志（`logs/<uuid>.jsonl`、`device.json`），与本 spec 设计一致。
+
 **Issue:** [#185](https://github.com/yicheng47/quill/issues/185)
 **Status:** Planned
 **Milestone:** Cross-Platform Sync

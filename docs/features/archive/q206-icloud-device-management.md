@@ -1,5 +1,7 @@
 # q206 — iCloud Device Management
 
+> **状态：已上线** — `src-tauri/src/sync/peers.rs` 的 `delete_peer` + `src-tauri/src/commands/sync.rs` 的 `sync_remove_peer` 命令均已实现，`LibrarySyncSettings.tsx`（经 `LibrarySettings.tsx` 挂载）提供对应的删除按钮。
+
 **GitHub Issue:** https://github.com/yicheng47/quill/issues/206
 
 ## Motivation

@@ -1,5 +1,7 @@
 # q236 — Sync Progress Indicator
 
+> **状态：已上线** — `src-tauri/src/sync/replay.rs` 发出 `sync-progress` 事件，`src/pages/Home.tsx` 与 `LibrarySyncSettings.tsx` 均监听该事件展示进度。
+
 GitHub Issue: https://github.com/yicheng47/quill/issues/236
 
 ## Motivation

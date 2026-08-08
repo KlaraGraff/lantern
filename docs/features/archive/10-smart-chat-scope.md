@@ -1,5 +1,7 @@
 # 10 — Smart Chat Scope
 
+> **状态：已上线** — `src/components/AiPanel.tsx` 的 `ScopePicker`/`AiChatScope` 实现了 Auto/Selection/Chapter/Book 四态切换。
+
 GitHub issue: https://github.com/KlaraGraff/lantern/issues/10
 
 Implementation plan: [Smart chat scope](../../impls/archive/10-smart-chat-scope.md)

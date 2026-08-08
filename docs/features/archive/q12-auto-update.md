@@ -1,5 +1,7 @@
 # Auto-Update — Implementation Plan
 
+> **状态：已上线** — `src-tauri/src/db.rs` 实现了 `schema_version` 表与迁移 runner，`src-tauri/Cargo.toml`/`lib.rs` 接入 `tauri-plugin-updater`。
+
 ## Context
 
 Quill currently distributes macOS builds via GitHub Releases (draft → manual publish), but users must manually download new versions. Adding Tauri 2's built-in updater plugin enables the app to check for updates on launch, prompt the user, and self-update — using the same GitHub Releases infrastructure already in place.

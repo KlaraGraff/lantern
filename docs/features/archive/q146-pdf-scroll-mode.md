@@ -1,5 +1,7 @@
 # q146 — PDF Continuous Scroll Mode
 
+> **状态：已上线** — `public/foliate-js/pdf-scroll.js` 实现了 PDF 连续滚动渲染器。
+
 **GitHub Issue:** https://github.com/yicheng47/quill/issues/146
 
 ## Motivation

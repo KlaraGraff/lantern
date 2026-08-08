@@ -1,5 +1,7 @@
 # 1 — Grounded Book Chat
 
+> **状态：已上线** — `src-tauri/src/ai/grounding/` 实现了 BM25 检索、分段、摘要与引用定位（`mod.rs`/`retrieve.rs`/`context.rs`/`segment.rs`），`src-tauri/src/commands/ai/chat.rs` 接入检索增强的 `ai_chat`。
+
 GitHub issue: https://github.com/KlaraGraff/lantern/issues/1
 
 Implementation plans:

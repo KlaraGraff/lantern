@@ -1,5 +1,7 @@
 # q243 — Separate Updates from About
 
+> **状态：待确认** — `src/components/UpdateToast.tsx` 已实现（spec Phase 3），`AboutSettings.tsx` 也确实不再含更新相关代码；但 `src/components/settings/` 下没有任何 `UpdateSettings.tsx` 或「Updates」设置分区（`settings-sections.ts` 只有 `about`，没有 `updates`）。更新检查入口可能只剩系统菜单（`lib.rs` 的 `check_for_updates` 菜单项）+ Toast，与 spec 要求的独立设置页不是一回事，无法判断这算不算达成。
+
 GitHub Issue: https://github.com/yicheng47/quill/issues/243
 
 ## Motivation

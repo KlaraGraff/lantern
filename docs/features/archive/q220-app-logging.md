@@ -1,5 +1,7 @@
 # q220 — App logging (tauri-plugin-log + panic hook + Reveal logs)
 
+> **状态：已上线** — `src-tauri/src/panic_hook.rs` 实现 panic hook，`src-tauri/src/lib.rs` 接入 `tauri_plugin_log::Builder`（含 `RotationStrategy::KeepSome(3)`）。
+
 > Tracking issue: [#220](https://github.com/yicheng47/quill/issues/220)
 
 ## Motivation

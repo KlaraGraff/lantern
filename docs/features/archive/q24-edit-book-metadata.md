@@ -1,5 +1,7 @@
 # q24 — Edit Book Metadata
 
+> **状态：已上线** — `src-tauri/src/commands/books/mutate.rs` 的 `update_book_metadata` 命令写入 `title`/`author` 并广播 `book-metadata-changed` 事件（未使用 spec 描述的 override 字段，而是直接更新，效果等价）。
+
 **GitHub Issue:** [#125](https://github.com/yicheng47/quill/issues/125)
 
 ## Motivation

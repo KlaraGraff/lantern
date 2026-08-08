@@ -1,5 +1,7 @@
 # MCP: context equity
 
+> **状态：已上线** — `src-tauri/src/mcp/tools/*.rs` 实现了 spec 列出的全部 12 个读工具（`query_books`、`query_collections` 等）及 `open_in_reader`，写工具受 `mcp_write_enabled` 开关门控（`src-tauri/src/mcp/state.rs`、`server.rs`）。
+
 ## Product boundary
 
 Lantern MCP gives a user's own AI client the reading context that Lantern's

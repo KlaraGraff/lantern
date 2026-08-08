@@ -1,5 +1,7 @@
 # q284 - MCP Batch Library and Collection Tools
 
+> **状态：已上线** — `src-tauri/src/mcp/server.rs` 实现了 `import_books`/`delete_books`/`get_collection_books` 等批量工具；spec 正文自述已随 MCP Surface Refresh 上线。
+
 > Status: Shipped as part of the MCP Surface Refresh on 2026-07-15.
 
 GitHub issue: https://github.com/yicheng47/quill/issues/284

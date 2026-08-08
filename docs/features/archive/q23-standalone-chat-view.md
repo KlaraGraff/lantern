@@ -1,5 +1,7 @@
 # q23 — Standalone Chat View
 
+> **状态：已上线** — `src/components/ChatDetailView.tsx` 实现主窗口内的完整会话详情视图。
+
 **GitHub Issue:** https://github.com/yicheng47/quill/issues/123
 
 ## Motivation

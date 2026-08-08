@@ -1,5 +1,7 @@
 # q15 — AI Translation
 
+> **状态：只做了一半，另一半暂缓** — 段落翻译已上线：`src-tauri/src/commands/translation.rs` 的 `ai_translate_passage` 命令 + `src/components/TranslationPopover.tsx`。双语阅读模式没做，全仓无 `bilingual_mode` / `translation_cache`（`bilingual` 只出现在学习卡片的 `adaptive_bilingual` 释义模式里，与本 spec 无关）。2026-08-08 产品裁决：这一半先往后放，暂时不做。
+
 **Issue:** [#73](https://github.com/yicheng47/quill/issues/73)
 **Status:** Planned
 **Milestone:** 2 — Depth

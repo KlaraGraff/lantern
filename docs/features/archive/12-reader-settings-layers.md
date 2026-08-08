@@ -1,5 +1,7 @@
 # 12 - Reader Settings: Global Layer and Per-Book Overrides
 
+> **状态：已上线** — `src/pages/reader/reader-settings-scope.ts` 的 `perBookSettingKeys`/`promotableBookSettingKeys` 已含 `reading_mode`/`page_columns`/`margins`，`ReaderSettings.tsx` 中的 `readerSettings.scope.followGlobal` 等 i18n key 实现了「恢复全局」/「应用到全局」。
+
 GitHub issue: https://github.com/KlaraGraff/lantern/issues/12
 
 ## Motivation

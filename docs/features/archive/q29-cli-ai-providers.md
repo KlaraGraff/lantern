@@ -1,5 +1,7 @@
 # q29 — CLI AI Providers (Claude Code & Codex)
 
+> **状态：继承自上游，未实现** — `src-tauri/src/ai/router.rs` 的 provider 分支只有 `openai`/`anthropic`/`ollama`/`lmstudio`/`custom`/`deepseek`，没有 `claude_cli`/`codex_cli`；仓库里也没有 spec 要求的 `ai/cli.rs` 子进程模块。
+
 **Status:** Planned
 **GitHub Issue:** [#183](https://github.com/yicheng47/quill/issues/183)
 

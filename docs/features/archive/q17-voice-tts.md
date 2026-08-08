@@ -1,5 +1,7 @@
 # q17 — Voice (TTS)
 
+> **状态：已上线** — `src/components/speech/ReadingPlaybackBar.tsx` + `player.ts` 实现了选区朗读（比 spec Phase 1 更进一步的连续朗读播放条），`src-tauri/src/commands/speech.rs` 实现了词典发音（Youdao/Edge/自定义三源缓存），覆盖 Phase 2 的发音诉求。
+
 > GitHub Issue: https://github.com/yicheng47/quill/issues/88
 > Milestone: 3 (Full AI Integration)
 

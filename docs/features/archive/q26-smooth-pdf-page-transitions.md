@@ -1,5 +1,7 @@
 # q26 — Smooth PDF Page Transitions
 
+> **状态：继承自上游，未实现** — `public/foliate-js/paginator.js` 的 `#createView()` 仍是先 `this.#view.destroy()` 再同步 `new View(...)`，没有 spec 要求的双缓冲（`#prepareNextView`）或 CSS crossfade，闪烁问题的根因代码未变。
+
 **GitHub Issue:** https://github.com/yicheng47/quill/issues/141
 
 ## Motivation

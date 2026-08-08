@@ -1,5 +1,7 @@
 # q257 — Persist Explain results + Explanations tools page
 
+> **状态：已上线** — `src-tauri/src/commands/explanations.rs` 实现了 `save_explanation`/`list_explanations`/`delete_explanation`；spec 正文自述「Status: Shipped (2026-08-07)」。
+
 GitHub issue: https://github.com/yicheng47/quill/issues/257
 
 **Status:** Shipped (2026-08-07)

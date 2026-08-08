@@ -1,5 +1,7 @@
 # q215 — Split Ask AI into Explain (inline) and Quote (side panel)
 
+> **状态：已上线** — `src/components/ExplainPopover.tsx` 实现内联 Explain；`src/components/AiPanel.tsx` 的 `pendingQuotes`/`quoteChips` 实现 Quote 引用条。
+
 GitHub issue: https://github.com/yicheng47/quill/issues/215
 
 ## Motivation

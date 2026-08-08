@@ -1,5 +1,7 @@
 # q21 — AI Auto-Sort Books into Collections
 
+> **状态：继承自上游，未实现** — `src-tauri/src/commands/collections.rs` 只有 `list_collections`/`create_collection`/`rename_collection`/`delete_collection`/`reorder_collections`/`add_book_to_collection`/`remove_book_from_collection`/`list_books_in_collection` 等基础 CRUD 命令，没有 AI 建议/自动分类相关命令；`src`、`src-tauri/src`、i18n 文件中也搜不到 auto-sort / collection suggest 相关字符串。
+
 GitHub Issue: https://github.com/yicheng47/quill/issues/105
 
 ## Motivation
