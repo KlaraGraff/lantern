@@ -48,27 +48,27 @@ pub struct LookupBookFacet {
 
 fn row_to_lookup(row: &rusqlite::Row) -> rusqlite::Result<LookupRecord> {
     Ok(LookupRecord {
-        id: row.get(0)?,
-        book_id: row.get(1)?,
-        lookup_text: row.get(2)?,
-        normalized_text: row.get(3)?,
-        context_sentence: row.get(4)?,
-        chapter: row.get(5)?,
-        cfi: row.get(6)?,
-        definition: row.get(7)?,
-        context_explanation: row.get(8)?,
-        created_at: row.get(9)?,
-        last_looked_up_at: row.get(10)?,
-        lookup_count: row.get(11)?,
-        result_json: row.get(12)?,
-        provider_profile_id: row.get(13)?,
-        model: row.get(14)?,
-        updated_at: row.get(15)?,
+        id: row.get("id")?,
+        book_id: row.get("book_id")?,
+        lookup_text: row.get("lookup_text")?,
+        normalized_text: row.get("normalized_text")?,
+        context_sentence: row.get("context_sentence")?,
+        chapter: row.get("chapter")?,
+        cfi: row.get("cfi")?,
+        definition: row.get("definition")?,
+        context_explanation: row.get("context_explanation")?,
+        created_at: row.get("created_at")?,
+        last_looked_up_at: row.get("last_looked_up_at")?,
+        lookup_count: row.get("lookup_count")?,
+        result_json: row.get("result_json")?,
+        provider_profile_id: row.get("provider_profile_id")?,
+        model: row.get("model")?,
+        updated_at: row.get("updated_at")?,
         book_title: None,
     })
 }
 
-const SELECT_COLS: &str = "id, book_id, lookup_text, normalized_text, context_sentence, chapter, cfi, definition, context_explanation, created_at, last_looked_up_at, lookup_count, result_json, provider_profile_id, model, COALESCE(updated_at, last_looked_up_at)";
+const SELECT_COLS: &str = "id, book_id, lookup_text, normalized_text, context_sentence, chapter, cfi, definition, context_explanation, created_at, last_looked_up_at, lookup_count, result_json, provider_profile_id, model, COALESCE(updated_at, last_looked_up_at) AS updated_at";
 
 fn configured_retention_days(conn: &rusqlite::Connection) -> Option<i64> {
     conn.query_row(
@@ -97,23 +97,23 @@ fn prune_lookup_records_conn(
 
 fn row_to_lookup_with_book(row: &rusqlite::Row) -> rusqlite::Result<LookupRecord> {
     Ok(LookupRecord {
-        id: row.get(0)?,
-        book_id: row.get(1)?,
-        lookup_text: row.get(2)?,
-        normalized_text: row.get(3)?,
-        context_sentence: row.get(4)?,
-        chapter: row.get(5)?,
-        cfi: row.get(6)?,
-        definition: row.get(7)?,
-        context_explanation: row.get(8)?,
-        created_at: row.get(9)?,
-        last_looked_up_at: row.get(10)?,
-        lookup_count: row.get(11)?,
-        result_json: row.get(12)?,
-        provider_profile_id: row.get(13)?,
-        model: row.get(14)?,
-        updated_at: row.get(15)?,
-        book_title: row.get(16)?,
+        id: row.get("id")?,
+        book_id: row.get("book_id")?,
+        lookup_text: row.get("lookup_text")?,
+        normalized_text: row.get("normalized_text")?,
+        context_sentence: row.get("context_sentence")?,
+        chapter: row.get("chapter")?,
+        cfi: row.get("cfi")?,
+        definition: row.get("definition")?,
+        context_explanation: row.get("context_explanation")?,
+        created_at: row.get("created_at")?,
+        last_looked_up_at: row.get("last_looked_up_at")?,
+        lookup_count: row.get("lookup_count")?,
+        result_json: row.get("result_json")?,
+        provider_profile_id: row.get("provider_profile_id")?,
+        model: row.get("model")?,
+        updated_at: row.get("updated_at")?,
+        book_title: row.get("book_title")?,
     })
 }
 
@@ -391,7 +391,7 @@ pub(crate) fn query_all_lookup_records(
         r" WHERE (LOWER(l.lookup_text) LIKE ? ESCAPE '\' OR LOWER(l.definition) LIKE ? ESCAPE '\' OR LOWER(COALESCE(l.context_sentence, '')) LIKE ? ESCAPE '\' OR LOWER(COALESCE(b.title, '')) LIKE ? ESCAPE '\')".to_string()
     };
     let facet_sql = format!(
-        "SELECT l.book_id, b.title, COUNT(*) FROM lookup_records l LEFT JOIN books b ON l.book_id = b.id{facet_where} GROUP BY l.book_id, b.title ORDER BY LOWER(COALESCE(b.title, '')), l.book_id"
+        "SELECT l.book_id, b.title, COUNT(*) AS count FROM lookup_records l LEFT JOIN books b ON l.book_id = b.id{facet_where} GROUP BY l.book_id, b.title ORDER BY LOWER(COALESCE(b.title, '')), l.book_id"
     );
     let facet_refs: Vec<&dyn rusqlite::types::ToSql> =
         facet_values.iter().map(|value| value.as_ref()).collect();
@@ -399,9 +399,9 @@ pub(crate) fn query_all_lookup_records(
     let books = facet_statement
         .query_map(facet_refs.as_slice(), |row| {
             Ok(LookupBookFacet {
-                book_id: row.get(0)?,
-                book_title: row.get(1)?,
-                count: row.get(2)?,
+                book_id: row.get("book_id")?,
+                book_title: row.get("title")?,
+                count: row.get("count")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -422,7 +422,7 @@ pub(crate) fn query_all_lookup_records(
         format!(" WHERE {}", conditions.join(" AND "))
     };
     let sql = format!(
-        "SELECT l.id, l.book_id, l.lookup_text, l.normalized_text, l.context_sentence, l.chapter, l.cfi, l.definition, l.context_explanation, l.created_at, l.last_looked_up_at, l.lookup_count, l.result_json, l.provider_profile_id, l.model, COALESCE(l.updated_at, l.last_looked_up_at), b.title FROM lookup_records l LEFT JOIN books b ON l.book_id = b.id{where_clause} ORDER BY l.last_looked_up_at DESC, l.id ASC LIMIT ?"
+        "SELECT l.id, l.book_id, l.lookup_text, l.normalized_text, l.context_sentence, l.chapter, l.cfi, l.definition, l.context_explanation, l.created_at, l.last_looked_up_at, l.lookup_count, l.result_json, l.provider_profile_id, l.model, COALESCE(l.updated_at, l.last_looked_up_at) AS updated_at, b.title AS book_title FROM lookup_records l LEFT JOIN books b ON l.book_id = b.id{where_clause} ORDER BY l.last_looked_up_at DESC, l.id ASC LIMIT ?"
     );
     values.push(Box::new((page_size + 1) as i64));
     let refs: Vec<&dyn rusqlite::types::ToSql> =
@@ -636,5 +636,284 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM lookup_records", [], |row| row.get(0))
             .unwrap();
         assert_eq!(count, 2);
+    }
+
+    // --- query_all_lookup_records / LookupBookFacet -----------------------
+
+    /// Second book, used by the filter/facet tests below. `setup()` already
+    /// inserts `'book'` / `'Book'`.
+    fn insert_second_book(db: &Db) {
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO books (id, title, author, file_path, status, progress, created_at, updated_at, updated_by_device) VALUES ('book2', 'Second Book', 'Author', 'books/book2.epub', 'reading', 0, 1, 1, 'test')",
+                [],
+            )
+            .unwrap();
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn insert_full_record(
+        conn: &rusqlite::Connection,
+        id: &str,
+        book_id: &str,
+        lookup_text: &str,
+        definition: &str,
+        context_sentence: &str,
+        last_looked_up_at: i64,
+    ) {
+        conn.execute(
+            "INSERT INTO lookup_records (id, book_id, lookup_text, normalized_text, context_sentence, definition, created_at, last_looked_up_at, lookup_count) VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?6, 1)",
+            params![id, book_id, lookup_text, context_sentence, definition, last_looked_up_at],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn no_filter_returns_everything_in_last_looked_up_at_descending_order() {
+        let db = setup();
+        let conn = db.conn.lock().unwrap();
+        insert_full_record(&conn, "a", "book", "alpha", "def a", "sentence a", 1);
+        insert_full_record(&conn, "b", "book", "beta", "def b", "sentence b", 3);
+        insert_full_record(&conn, "c", "book", "gamma", "def c", "sentence c", 2);
+        drop(conn);
+
+        let page = query_all_lookup_records(None, None, None, None, &db).unwrap();
+        assert_eq!(page.total, 3);
+        let ids: Vec<&str> = page.records.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, vec!["b", "c", "a"]);
+    }
+
+    #[test]
+    fn book_filter_includes_matching_and_excludes_non_matching() {
+        let db = setup();
+        insert_second_book(&db);
+        let conn = db.conn.lock().unwrap();
+        insert_full_record(&conn, "a", "book", "alpha", "def a", "sentence a", 1);
+        insert_full_record(&conn, "b", "book2", "beta", "def b", "sentence b", 2);
+        drop(conn);
+
+        let page =
+            query_all_lookup_records(None, Some("book".to_string()), None, None, &db).unwrap();
+        assert_eq!(page.total, 1);
+        assert_eq!(page.records.len(), 1);
+        assert_eq!(page.records[0].id, "a");
+    }
+
+    #[test]
+    fn search_matches_a_plain_term_in_the_lookup_text() {
+        let db = setup();
+        let conn = db.conn.lock().unwrap();
+        insert_full_record(&conn, "a", "book", "wonder", "def a", "sentence a", 1);
+        insert_full_record(&conn, "b", "book", "other", "def b", "sentence b", 2);
+        drop(conn);
+
+        let page =
+            query_all_lookup_records(Some("wonder".to_string()), None, None, None, &db).unwrap();
+        assert_eq!(page.total, 1);
+        assert_eq!(page.records[0].id, "a");
+    }
+
+    #[test]
+    fn search_matches_across_lookup_text_definition_context_and_book_title() {
+        let db = setup();
+        insert_second_book(&db);
+        let conn = db.conn.lock().unwrap();
+        insert_full_record(&conn, "text", "book", "needle", "def", "sentence", 1);
+        insert_full_record(&conn, "def", "book", "word", "needle def", "sentence", 2);
+        insert_full_record(&conn, "ctx", "book", "word", "def", "needle sentence", 3);
+        insert_full_record(&conn, "title", "book2", "word", "def", "sentence", 4);
+        drop(conn);
+
+        // Title match: the record belongs to a book whose title has 'Second'.
+        let title_hit =
+            query_all_lookup_records(Some("second".to_string()), None, None, None, &db).unwrap();
+        assert_eq!(title_hit.total, 1);
+        assert_eq!(title_hit.records[0].id, "title");
+
+        let needle_hits =
+            query_all_lookup_records(Some("needle".to_string()), None, None, None, &db).unwrap();
+        let mut ids: Vec<&str> = needle_hits.records.iter().map(|r| r.id.as_str()).collect();
+        ids.sort();
+        assert_eq!(needle_hits.total, 3);
+        assert_eq!(ids, vec!["ctx", "def", "text"]);
+    }
+
+    #[test]
+    fn search_term_with_percent_underscore_and_backslash_is_matched_literally() {
+        let db = setup();
+        let conn = db.conn.lock().unwrap();
+        // A lookup_text containing the exact literal characters we search for.
+        insert_full_record(
+            &conn,
+            "literal",
+            "book",
+            "100%_ready\\now",
+            "def",
+            "sentence",
+            1,
+        );
+        // A record that would match if '%' and '_' were treated as SQL
+        // wildcards instead of literal characters.
+        insert_full_record(
+            &conn,
+            "wildcard-lookalike",
+            "book",
+            "100Xready/now",
+            "def",
+            "sentence",
+            2,
+        );
+        drop(conn);
+
+        let page = query_all_lookup_records(
+            Some("100%_ready\\now".to_string()),
+            None,
+            None,
+            None,
+            &db,
+        )
+        .unwrap();
+        assert_eq!(page.total, 1, "search must treat %, _, and \\ literally");
+        assert_eq!(page.records[0].id, "literal");
+    }
+
+    #[test]
+    fn search_is_case_insensitive() {
+        let db = setup();
+        let conn = db.conn.lock().unwrap();
+        insert_full_record(&conn, "a", "book", "Wonder", "def", "sentence", 1);
+        drop(conn);
+
+        let page =
+            query_all_lookup_records(Some("WONDER".to_string()), None, None, None, &db).unwrap();
+        assert_eq!(page.total, 1);
+        assert_eq!(page.records[0].id, "a");
+    }
+
+    #[test]
+    fn search_and_book_filter_both_apply_together() {
+        let db = setup();
+        insert_second_book(&db);
+        let conn = db.conn.lock().unwrap();
+        // Matches the search term but not the book filter.
+        insert_full_record(&conn, "wrong-book", "book2", "wonder", "def", "sentence", 1);
+        // Matches the book filter but not the search term.
+        insert_full_record(&conn, "wrong-term", "book", "other", "def", "sentence", 2);
+        // Matches both.
+        insert_full_record(&conn, "both", "book", "wonder", "def", "sentence", 3);
+        drop(conn);
+
+        let page = query_all_lookup_records(
+            Some("wonder".to_string()),
+            Some("book".to_string()),
+            None,
+            None,
+            &db,
+        )
+        .unwrap();
+        assert_eq!(page.total, 1);
+        assert_eq!(page.records[0].id, "both");
+    }
+
+    #[test]
+    fn pagination_limits_offsets_via_cursor_and_runs_out_past_the_end() {
+        let db = setup();
+        let conn = db.conn.lock().unwrap();
+        // last_looked_up_at descending order will be: e(5) d(4) c(3) b(2) a(1)
+        for (id, ts) in [("a", 1), ("b", 2), ("c", 3), ("d", 4), ("e", 5)] {
+            insert_full_record(&conn, id, "book", "word", "def", "sentence", ts);
+        }
+        drop(conn);
+
+        // limit: first page of 2, and it must report a next cursor.
+        let first_page = query_all_lookup_records(None, None, None, Some(2), &db).unwrap();
+        assert_eq!(first_page.total, 5);
+        let first_ids: Vec<&str> = first_page.records.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(first_ids, vec!["e", "d"]);
+        let cursor = first_page.next_cursor.clone().unwrap();
+
+        // offset: cursor into the second page of 2.
+        let second_page =
+            query_all_lookup_records(None, None, Some(cursor), Some(2), &db).unwrap();
+        let second_ids: Vec<&str> = second_page.records.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(second_ids, vec!["c", "b"]);
+        let cursor2 = second_page.next_cursor.clone().unwrap();
+
+        // boundary: cursor past all remaining rows still returns the last
+        // one, with no further cursor.
+        let third_page =
+            query_all_lookup_records(None, None, Some(cursor2), Some(2), &db).unwrap();
+        let third_ids: Vec<&str> = third_page.records.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(third_ids, vec!["a"]);
+        assert!(third_page.next_cursor.is_none());
+
+        // A cursor placed after every row returns nothing further.
+        let past_end_cursor = format!("{}:{}", third_page.records[0].last_looked_up_at, "a");
+        let empty_page =
+            query_all_lookup_records(None, None, Some(past_end_cursor), Some(2), &db).unwrap();
+        assert!(empty_page.records.is_empty());
+        assert!(empty_page.next_cursor.is_none());
+    }
+
+    #[test]
+    fn facet_groups_by_book_orders_by_title_and_includes_records_whose_book_is_gone() {
+        let db = setup();
+        insert_second_book(&db);
+        let conn = db.conn.lock().unwrap();
+        insert_full_record(&conn, "a1", "book", "word", "def", "sentence", 1);
+        insert_full_record(&conn, "a2", "book", "word", "def", "sentence", 2);
+        insert_full_record(&conn, "b1", "book2", "word", "def", "sentence", 3);
+        // A record whose book_id no longer has a matching row in `books` —
+        // the LEFT JOIN must still surface it, with book_title = None.
+        insert_full_record(&conn, "g1", "gone-book", "word", "def", "sentence", 4);
+        drop(conn);
+
+        let page = query_all_lookup_records(None, None, None, None, &db).unwrap();
+        // Ordered by LOWER(COALESCE(b.title, '')): '' (gone-book) sorts
+        // before 'book' and 'second book'.
+        let facets: Vec<(String, Option<String>, usize)> = page
+            .books
+            .iter()
+            .map(|f| (f.book_id.clone(), f.book_title.clone(), f.count))
+            .collect();
+        assert_eq!(
+            facets,
+            vec![
+                ("gone-book".to_string(), None, 1),
+                ("book".to_string(), Some("Book".to_string()), 2),
+                ("book2".to_string(), Some("Second Book".to_string()), 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn facet_respects_the_search_filter() {
+        let db = setup();
+        insert_second_book(&db);
+        let conn = db.conn.lock().unwrap();
+        insert_full_record(&conn, "a", "book", "wonder", "def", "sentence", 1);
+        insert_full_record(&conn, "b", "book2", "other", "def", "sentence", 2);
+        drop(conn);
+
+        let page =
+            query_all_lookup_records(Some("wonder".to_string()), None, None, None, &db).unwrap();
+        let facets: Vec<(String, usize)> = page
+            .books
+            .iter()
+            .map(|f| (f.book_id.clone(), f.count))
+            .collect();
+        assert_eq!(facets, vec![("book".to_string(), 1)]);
+    }
+
+    #[test]
+    fn empty_table_returns_no_records_zero_total_and_no_facets() {
+        let db = setup();
+        let page = query_all_lookup_records(None, None, None, None, &db).unwrap();
+        assert!(page.records.is_empty());
+        assert_eq!(page.total, 0);
+        assert!(page.books.is_empty());
+        assert!(page.next_cursor.is_none());
     }
 }
