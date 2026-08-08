@@ -246,6 +246,35 @@ fn user_messages(header: &str, prefix: &str, window: &str, passage: &str) -> Vec
     ]
 }
 
+/// The whole request for one chunk, assembled in one place.
+///
+/// Extracted from the run loop so that a measurement can drive these calls
+/// itself — the shipped loop is strictly sequential, which is right for a
+/// background job on a metered provider but turns a thousand-chunk book into a
+/// multi-hour A/B — without rebuilding the prompt beside it. Two copies of this
+/// assembly would mean the A/B measured a feature slightly different from the
+/// shipped one, and the difference would be invisible in the report.
+///
+/// `prefix` is passed in rather than computed here because the loop caches it
+/// per section: it depends only on the section, and rebuilding it per chunk
+/// would re-join the same chapter text once for every chunk in it — and, worse,
+/// risk sending bytes that differ run to run, which is what the provider's
+/// prompt cache keys on.
+fn context_line_messages(
+    header: &str,
+    prefix: &str,
+    section_rows: &[&ChunkRow],
+    row: &ChunkRow,
+) -> Vec<ChatMessage> {
+    let window = local_window(section_rows, row.chunk_index);
+    let mut messages = vec![ChatMessage {
+        role: "system".to_string(),
+        content: CONTEXT_LINE_SYSTEM_PROMPT.to_string(),
+    }];
+    messages.extend(user_messages(header, prefix, &window, &row.text));
+    messages
+}
+
 /// Turn a raw completion into a stored `context_line`: strip the quoting and
 /// restating lead-ins a model adds despite being asked not to, then cap the
 /// length. An empty result collapses to `""`, never back to a value that
@@ -690,12 +719,7 @@ pub async fn ensure_context_lines<R: Runtime>(
                 prefix
             }
         };
-        let window = local_window(section_rows, row.chunk_index);
-        let mut messages = vec![ChatMessage {
-            role: "system".to_string(),
-            content: CONTEXT_LINE_SYSTEM_PROMPT.to_string(),
-        }];
-        messages.extend(user_messages(&header, &prefix, &window, &row.text));
+        let messages = context_line_messages(&header, &prefix, section_rows, row);
         let outcome =
             resolve_context_line(app, db, secrets, &messages, &row.id, &mut consecutive_failures)
                 .await?;
@@ -729,34 +753,135 @@ pub async fn ensure_context_lines<R: Runtime>(
 /// cargo test --manifest-path src-tauri/Cargo.toml \
 ///   live_context_lines_against_a_real_book -- --ignored --nocapture
 /// ```
+///
+/// Which book is a `LANTERN_LIVE_BOOK` away — see [`LIVE_BOOKS`]. It defaults
+/// to the one the first run used, so the command above still means what it did.
 #[cfg(test)]
 mod live_tests {
     use super::*;
 
-    /// The reader's own app data, copied — never opened. `-wal` and `-shm`
-    /// come along because the running app checkpoints lazily, and a copy of
-    /// the main file alone would silently miss its most recent writes.
-    fn copy_app_data(destination: &std::path::Path) -> Option<()> {
-        let source = dirs_next_home()?.join("Library/Application Support/com.klaragraff.lantern");
-        if !source.join("secrets.db").exists() {
-            return None;
-        }
-        for name in [
-            "lantern.db",
-            "lantern.db-wal",
-            "lantern.db-shm",
-            "secrets.db",
-        ] {
-            let from = source.join(name);
-            if from.exists() {
-                std::fs::copy(&from, destination.join(name)).ok()?;
-            }
-        }
-        Some(())
+    use futures::StreamExt;
+
+    use super::super::live_data::copy_app_data;
+
+    /// One measured question. `gold` is a verbatim phrase from the passage
+    /// that ought to answer it — the phrase is only a handle for finding the
+    /// chunk, never part of the query, so the search is not being told the
+    /// answer.
+    struct AbQuery {
+        /// What a reader would type. Deliberately names people, because
+        /// readers do — that is the whole premise: the reader knows the name,
+        /// the passage only says "he".
+        query: &'static str,
+        gold: &'static str,
+        /// `pronoun` — the target passage is thin on proper nouns, which is
+        /// what the feature is for. `named` — the target passage says the
+        /// names itself, so lexical search already had everything it needed.
+        /// The second group is the one that can only get worse; a report
+        /// showing only the first would not be a measurement.
+        kind: &'static str,
     }
 
-    fn dirs_next_home() -> Option<std::path::PathBuf> {
-        std::env::var_os("HOME").map(std::path::PathBuf::from)
+    /// A book these runs know how to stage.
+    ///
+    /// One book was never a measurement. The first A/B ran on Pride and
+    /// Prejudice with 11 queries and turned up a single regression that fell
+    /// *below its own baseline* — the one observation that could overturn the
+    /// whole change, and at n=1 indistinguishable from noise. Hence a list.
+    struct LiveBook {
+        /// Doubles as the book id in the copied database and the staged
+        /// filename, so a run's rows are easy to find afterwards.
+        id: &'static str,
+        epub: &'static str,
+        title: &'static str,
+        author: &'static str,
+        queries: &'static [AbQuery],
+    }
+
+    const LIVE_BOOKS: &[LiveBook] = &[
+        LiveBook {
+            id: "pnp",
+            epub: "pride-and-prejudice.epub",
+            title: "Pride and Prejudice",
+            author: "Jane Austen",
+            queries: PNP_QUERIES,
+        },
+        LiveBook {
+            id: "jane-eyre",
+            epub: "jane-eyre.epub",
+            title: "Jane Eyre",
+            author: "Charlotte Brontë",
+            queries: JANE_EYRE_QUERIES,
+        },
+        LiveBook {
+            id: "moby-dick",
+            epub: "moby-dick.epub",
+            title: "Moby-Dick",
+            author: "Herman Melville",
+            queries: MOBY_DICK_QUERIES,
+        },
+    ];
+
+    /// Which book this run measures. Defaults to the book the first run used.
+    fn selected_book() -> &'static LiveBook {
+        let want = std::env::var("LANTERN_LIVE_BOOK").unwrap_or_else(|_| "pnp".to_string());
+        LIVE_BOOKS
+            .iter()
+            .find(|book| book.id == want)
+            .unwrap_or_else(|| {
+                let known: Vec<&str> = LIVE_BOOKS.iter().map(|book| book.id).collect();
+                panic!("LANTERN_LIVE_BOOK={want} is not one of {known:?}")
+            })
+    }
+
+    /// Copies the epub in, registers it, and indexes it.
+    ///
+    /// Chunking is entirely local — staging a book spends nothing, which is
+    /// what lets `every_ab_query_anchor_resolves_to_one_chunk` run in the
+    /// normal suite.
+    /// Where the harness keeps its books. They are gitignored — `harness/books/README.md`
+    /// says how to fetch them — so anything in the normal suite has to treat a
+    /// missing file as "not here", not as a failure.
+    fn harness_epub(book: &LiveBook) -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../harness/books")
+            .join(book.epub)
+    }
+
+    fn stage_book(directory: &std::path::Path, book: &LiveBook) -> Db {
+        let epub = harness_epub(book);
+        assert!(epub.exists(), "missing {}", epub.display());
+        let staged = format!("books/{}.epub", book.id);
+        std::fs::create_dir_all(directory.join("books")).unwrap();
+        std::fs::copy(&epub, directory.join(&staged)).unwrap();
+
+        // Opens the *copy*, which is also where the migrations run.
+        let db = Db::init(directory).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT OR REPLACE INTO books (
+                     id, title, author, file_path, format, source_format, render_format,
+                     source_file_path, source_sha256, status, progress, created_at, updated_at
+                 ) VALUES (?1, ?2, ?3, ?4, 'epub', 'epub', 'epub', ?4, ?5,
+                           'unread', 0, '1970-01-01', '1970-01-01')",
+                params![
+                    book.id,
+                    book.title,
+                    book.author,
+                    &staged,
+                    format!("{}-source", book.id)
+                ],
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            super::super::index::ensure_index(&db, book.id).unwrap(),
+            super::super::index::IndexStatus::Ready,
+            "indexing failed for {}",
+            book.id
+        );
+        db
     }
 
     /// Spread across the whole book rather than taken from the front: the
@@ -767,35 +892,12 @@ mod live_tests {
     #[tokio::test]
     #[ignore = "needs a configured AI provider and spends real tokens; run manually"]
     async fn live_context_lines_against_a_real_book() {
+        let book = selected_book();
         let directory = tempfile::TempDir::new().unwrap();
         let Some(()) = copy_app_data(directory.path()) else {
             panic!("no Lantern app data on this machine to copy");
         };
-
-        let epub = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../harness/books/pride-and-prejudice.epub");
-        assert!(epub.exists(), "missing {}", epub.display());
-        std::fs::create_dir_all(directory.path().join("books")).unwrap();
-        std::fs::copy(&epub, directory.path().join("books/pnp.epub")).unwrap();
-
-        // Opens the *copy*, which is also where migration 050 runs.
-        let db = Db::init(directory.path()).unwrap();
-        {
-            let conn = db.conn.lock().unwrap();
-            conn.execute(
-                "INSERT OR REPLACE INTO books (
-                     id, title, author, file_path, format, source_format, render_format,
-                     source_file_path, source_sha256, status, progress, created_at, updated_at
-                 ) VALUES ('pnp', 'Pride and Prejudice', 'Jane Austen', 'books/pnp.epub',
-                           'epub', 'epub', 'epub', 'books/pnp.epub', 'pnp-source',
-                           'unread', 0, '1970-01-01', '1970-01-01')",
-                [],
-            )
-            .unwrap();
-        }
-
-        let status = super::super::index::ensure_index(&db, "pnp").unwrap();
-        assert_eq!(status, super::super::index::IndexStatus::Ready, "index failed");
+        let db = stage_book(directory.path(), book);
 
         // Every chunk in the copied database starts out pending, including
         // the reader's other books. Park them all, then un-park a spread of
@@ -805,21 +907,24 @@ mod live_tests {
             conn.execute("UPDATE book_chunks SET context_line = '·'", []).unwrap();
             let total: i64 = conn
                 .query_row(
-                    "SELECT COUNT(*) FROM book_chunks WHERE book_id = 'pnp'",
-                    [],
+                    "SELECT COUNT(*) FROM book_chunks WHERE book_id = ?1",
+                    params![book.id],
                     |row| row.get(0),
                 )
                 .unwrap();
-            println!("\n=== Pride and Prejudice: {total} chunks, sampling {SAMPLE_SIZE} ===\n");
+            println!(
+                "\n=== {}: {total} chunks, sampling {SAMPLE_SIZE} ===\n",
+                book.title
+            );
             let step = (total as usize / SAMPLE_SIZE).max(1);
             let mut ids = Vec::new();
             for index in 0..SAMPLE_SIZE {
                 let offset = (index * step) as i64;
                 let id: Option<String> = conn
                     .query_row(
-                        "SELECT id FROM book_chunks WHERE book_id = 'pnp'
-                         ORDER BY chunk_index LIMIT 1 OFFSET ?1",
-                        params![offset],
+                        "SELECT id FROM book_chunks WHERE book_id = ?1
+                         ORDER BY chunk_index LIMIT 1 OFFSET ?2",
+                        params![book.id, offset],
                         |row| row.get(0),
                     )
                     .optional()
@@ -838,7 +943,7 @@ mod live_tests {
 
         let secrets = Secrets::init(&directory.path().to_path_buf()).unwrap();
         let app = tauri::test::mock_app();
-        let outcome = ensure_context_lines(app.handle(), &db, &secrets, "pnp", None).await;
+        let outcome = ensure_context_lines(app.handle(), &db, &secrets, book.id, None).await;
 
         let conn = db.conn.lock().unwrap();
         for id in &sampled {
@@ -861,30 +966,12 @@ mod live_tests {
         outcome.expect("the run itself failed");
     }
 
-    /// One measured question. `gold` is a verbatim phrase from the passage
-    /// that ought to answer it — the phrase is only a handle for finding the
-    /// chunk, never part of the query, so the search is not being told the
-    /// answer.
-    struct AbQuery {
-        /// What a reader would type. Deliberately names people, because
-        /// readers do — that is the whole premise: the reader knows the name,
-        /// the passage only says "he".
-        query: &'static str,
-        gold: &'static str,
-        /// `pronoun` — the target passage is thin on proper nouns, which is
-        /// what the feature is for. `named` — the target passage says the
-        /// names itself, so lexical search already had everything it needed.
-        /// The second group is the one that can only get worse; a report
-        /// showing only the first would not be a measurement.
-        kind: &'static str,
-    }
-
     /// Written in the book's own language, not the reader's. Keyword search
     /// matches tokens: a Chinese question against an English book shares
     /// nothing with it but the proper nouns, so a cross-language arm would
     /// measure the tokenizer rather than the feature. Closing that gap is the
     /// vector path's job, not this one's.
-    const AB_QUERIES: &[AbQuery] = &[
+    const PNP_QUERIES: &[AbQuery] = &[
         AbQuery {
             query: "Darcy proposes to Elizabeth for the first time and she turns him down",
             gold: "In vain have I struggled",
@@ -942,6 +1029,392 @@ mod live_tests {
         },
     ];
 
+    /// Chosen for the pronoun problem in its purest form: first person
+    /// throughout, so the narrator is "I" and everyone else is "he"/"she"
+    /// for pages at a stretch, exactly the passage a reader searches for by
+    /// name and the passage least likely to contain one.
+    ///
+    /// A note that cost the authoring pass several silent misses: this epub
+    /// writes `Mr.`/`Mrs.`/`St.` with a non-breaking space before the surname,
+    /// so an anchor spanning that boundary matches nothing. Every anchor here
+    /// starts at the bare name instead.
+    const JANE_EYRE_QUERIES: &[AbQuery] = &[
+        AbQuery {
+            query: "How does Jane describe John Reed's eating habits and appearance as a boy at Gateshead?",
+            gold: "He gorged himself habitually at table, which made him bilious",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "How was Mrs. Reed positioned in the drawing room with her children on the afternoon Jane was excluded from the group?",
+            gold: "she lay reclined on a sofa by the fireside",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "What did Bessie and Miss Abbot do when Jane tried to spring up off the stool in the red room?",
+            gold: "their two pair of hands arrested me instantly",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "Which of the Reed children does Jane say she felt physically inferior to at the start of the novel?",
+            gold: "Eliza, John, and Georgiana Reed",
+            kind: "named",
+        },
+        AbQuery {
+            query: "How old was John Reed and how is he first described physically in the opening chapter?",
+            gold: "John Reed was a schoolboy of fourteen",
+            kind: "named",
+        },
+        AbQuery {
+            query: "What did Jane imagine Helen Burns was thinking about while she stood being punished in front of the class?",
+            gold: "she is looking at what she can remember",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "How did Miss Temple first appear to Jane as she walked to the front of the schoolroom at Lowood?",
+            gold: "surveyed the two rows of girls silently",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "How did Jane first recognize Mr Brocklehurst approaching the schoolroom before she could see his face clearly?",
+            gold: "I recognised almost instinctively that gaunt outline",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "What did Helen Burns do when Jane whispered to her in the middle of the night in Miss Temple's room?",
+            gold: "She stirred herself, put back the curtain",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "What did Helen Burns say to Miss Smith right after passing Jane while Jane stood on the stool of shame?",
+            gold: "Helen Burns asked some slight question about her work",
+            kind: "named",
+        },
+        AbQuery {
+            query: "What is Miss Temple's full first name, and how did Jane learn it?",
+            gold: "Maria Temple, as I afterwards saw the name",
+            kind: "named",
+        },
+        AbQuery {
+            query: "How does Jane describe the stranger's face when she first meets Rochester after his horse slips on the icy road near Thornfield?",
+            gold: "He had a dark face, with stern features and a heavy brow",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "What did Rochester say to Jane to get her to move out of his way while he tried to remount his horse on the icy lane?",
+            gold: "You must just stand on one side",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "How did Rochester move through the gallery on the night Jane heard the strange laugh outside her bedroom door?",
+            gold: "He passed up the gallery very softly",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "How did Rochester react right after Jane finished telling him about the curtain fire in his room?",
+            gold: "he did not immediately speak when I had concluded",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "How did Jane describe Mr Mason's condition as he sat wounded and bleeding in the hidden room upstairs at Thornfield?",
+            gold: "he was still; his head leant back; his eyes were closed",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "How did Rochester approach Jane in the orchard just before he proposed to her?",
+            gold: "He rose, and with a stride reached me",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "How did Rochester look and act right after Jane accepted his proposal in the orchard?",
+            gold: "very much agitated and very much flushed",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "How did Rochester stand and react in the church when Mr Briggs interrupted the wedding to reveal his existing marriage?",
+            gold: "he stood stubborn and rigid",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "How does Jane describe Bertha Mason's build and strength during the struggle when she attacked her brother?",
+            gold: "She was a big woman, in stature almost equalling her husband",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "What did the gypsy fortune teller do with the fire while reading Jane's palm during the party at Thornfield, before Jane realized it was Rochester in disguise?",
+            gold: "She stirred the fire, so that a ripple of light broke from the disturbed coal",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "According to Adele, how did Rochester bring her ashore from the ship when they landed in a foreign port?",
+            gold: "Rochester carried me in his arms over a plank to the land",
+            kind: "named",
+        },
+        AbQuery {
+            query: "In what state did Jane find Rochester in his bed just before she woke him during the curtain fire?",
+            gold: "Rochester lay stretched motionless, in deep sleep",
+            kind: "named",
+        },
+        AbQuery {
+            query: "How did Rochester arrive in the gallery right after Mr Mason was attacked in the night?",
+            gold: "Rochester advanced with a candle",
+            kind: "named",
+        },
+        AbQuery {
+            query: "What does Rochester tell his wedding guests about Bertha Mason's family and her sanity?",
+            gold: "Bertha Mason is mad; and she came of a mad family",
+            kind: "named",
+        },
+        AbQuery {
+            query: "How does Jane describe the voice that cried her name across the moors the night before she decided to leave Moor House and search for Rochester?",
+            gold: "the voice of a human being",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "What did St John Rivers say to Jane about death and suffering just after he found her collapsed outside Moor House?",
+            gold: "all are not condemned to meet a lingering",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "How did Jane describe Diana Rivers's countenance when she looked at her right after being taken in at Moor House?",
+            gold: "instinct both with power and goodness",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "How did Jane first describe Rosamond Oliver's appearance when she arrived at the garden gate to meet St John?",
+            gold: "a form clad in pure white",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "What did St John Rivers do with his foot while telling Rosamond Oliver it was too late for her to be out alone?",
+            gold: "crushed the snowy heads of the closed flowers",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "Which of the Rivers sisters spoke up to ask Jane if they had now given her all the aid she required?",
+            gold: "Diana took the word",
+            kind: "named",
+        },
+        AbQuery {
+            query: "How does Jane first identify Rosamond Oliver to herself after the young woman asks about Alice Wood?",
+            gold: "is Miss Oliver, the heiress",
+            kind: "named",
+        },
+        AbQuery {
+            query: "What phrase does Diana Rivers use to sum up her brother St John's character after Jane witnesses his encounter with Rosamond Oliver?",
+            gold: "Diana Rivers had designated her brother",
+            kind: "named",
+        },
+        AbQuery {
+            query: "How did Jane first spot Rochester when she arrived at Ferndean in the rainy twilight, before she recognized him?",
+            gold: "a man without a hat",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "How was Rochester described sitting by the fire in the parlour just before Jane brought him his glass of water at Ferndean?",
+            gold: "appeared the blind tenant of the room",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "How does Jane identify the figure who steps out of the house at Ferndean the moment she first sees him in the twilight?",
+            gold: "my master, Edward Fairfax Rochester, and no other",
+            kind: "named",
+        },
+    ];
+
+    /// Chosen for the chapters with nobody in them. Cetology, the whiteness
+    /// of the whale, the try-works, the lamp — long expository stretches where
+    /// "he" is the whale or a generic whaleman and a proper noun can be pages
+    /// away. Six of the `pronoun` rows target those on purpose, and two more
+    /// target the opening of a chapter that skips forward in time, which is the
+    /// shape that produced every one of the three stubbornly blank lines in the
+    /// Pride and Prejudice run.
+    ///
+    /// Known gap: the Town-Ho's story is unrepresented. The authoring pass read
+    /// a list of example names as a closed roster and dropped Radney and
+    /// Steelkilt rather than spend rows outside it.
+    const MOBY_DICK_QUERIES: &[AbQuery] = &[
+        AbQuery {
+            query: "The morning after Ishmael first wakes up sharing a bed with Queequeg, what does he notice covering Queequeg's arm?",
+            gold: "tattooed all over with an interminable Cretan labyrinth",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "When Ishmael introduces Starbuck as the chief mate, how does he describe Starbuck's body being suited to hot climates?",
+            gold: "seemed well adapted to endure hot latitudes",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "What does Stubb do with an old tune even while he's in the middle of a dangerous whale fight?",
+            gold: "hum over his old rigadig tunes",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "In the chapter where Ahab first appears after several days hidden in his cabin, how is his burned face and body described?",
+            gold: "cut away from the stake",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "Some days after Ahab's first appearance, how does the old man make his way up from the cabin at night to the deck?",
+            gold: "to help his crippled way",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "In the Cetology chapter, how does Ishmael define what makes a creature a whale rather than an ordinary fish?",
+            gold: "a spouting fish with a horizontal tail",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "In The Whiteness of the Whale, what legendary status does Ishmael give the White Steed of the Prairies among wild horses?",
+            gold: "elected Xerxes of vast herds of wild horses",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "When Fedallah is first introduced to the crew, what does Ishmael say stays unexplained about him for the rest of the voyage?",
+            gold: "remained a muffled mystery to the last",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "In The Fountain chapter, how does Ishmael sum up the sperm whale's overall character or bearing?",
+            gold: "He is both ponderous and profound",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "In The Tail chapter, what gentle motion does Ishmael describe the whale making with its flukes when it feels a sailor's whisker?",
+            gold: "moves his immense flukes from side to side",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "During the whale hunt in Stubb Kills a Whale, what is Stubb's lance secretly seeking as he churns it into the whale?",
+            gold: "was the innermost life of the fish",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "After Pip is rescued half-mad from being left alone in the ocean, what does he claim to have seen upon a loom in the depths?",
+            gold: "upon the treadle of the loom",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "In The Try-Works chapter, what does Ishmael say the whale itself provides to keep the trying-out fire burning?",
+            gold: "the whale supplies his own fuel",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "In The Lamp chapter, how does Ishmael contrast the ordinary sailor's darkness with how the whaleman experiences light?",
+            gold: "so he lives in light",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "In The First Lowering, when Ahab first calls out to Fedallah before the chase, how loud does Ishmael say his voice was?",
+            gold: "the thunder of his voice",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "As Queequeg lies dying of fever in his coffin chapter, what does Ishmael notice happening to his eyes even as the rest of him wastes away?",
+            gold: "seemed growing fuller and fuller",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "During Starbuck's tormented soliloquy over the loaded musket in the typhoon, what does he fear Ahab is willing to do to his own crew?",
+            gold: "he would fain kill all his crew",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "In The Symphony, as Starbuck approaches him at the rail, how is Ahab described leaning over the side of the ship?",
+            gold: "how he heavily leaned over the side",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "During the corpusants scene in The Candles, how is Fedallah positioned kneeling in front of Ahab at the base of the mainmast?",
+            gold: "with his head bowed away from him",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "On the third day of the chase, what does Starbuck murmur about the whale's direction as the ship comes about?",
+            gold: "he now steers for the open jaw",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "During the hiring negotiation in The Ship, what does Peleg insist Ishmael deserves regarding his pay lay?",
+            gold: "he must have more than that",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "In Stubb's comic dream in Queen Mab, what does Stubb say the old man Ahab did to him with his ivory leg?",
+            gold: "well I dreamed he kicked me with it",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "In A Bosom Friend, while Ishmael studies Queequeg counting the pages of a book, how does Queequeg react to being watched?",
+            gold: "he never heeded my presence",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "In Starbuck's Dusk soliloquy, what does Starbuck say about how Ahab dominates everyone beneath him on the ship?",
+            gold: "how he lords it over all below",
+            kind: "pronoun",
+        },
+        AbQuery {
+            query: "What is the very first line the narrator gives about his own name at the start of Moby Dick?",
+            gold: "Call me Ishmael",
+            kind: "named",
+        },
+        AbQuery {
+            query: "In the Spouter-Inn, what is Queequeg doing with his pipe when he first grunts at Ishmael from the bed?",
+            gold: "puffing away at his pipe",
+            kind: "named",
+        },
+        AbQuery {
+            query: "How does Ishmael compare Queequeg's head to a famous American historical figure in A Bosom Friend?",
+            gold: "Queequeg was George Washington cannibalistically developed",
+            kind: "named",
+        },
+        AbQuery {
+            query: "What does Ishmael say about Stubb's rank and origin when introducing him as the second mate?",
+            gold: "Stubb was the second mate",
+            kind: "named",
+        },
+        AbQuery {
+            query: "During the chase in Stubb Kills a Whale, where does Stubb keep his position relative to the other boats?",
+            gold: "Stubb retaining his place in the van",
+            kind: "named",
+        },
+        AbQuery {
+            query: "When Ahab finally appears on deck after days of hiding, how does Ishmael describe him standing there?",
+            gold: "Captain Ahab stood upon his quarterdeck",
+            kind: "named",
+        },
+        AbQuery {
+            query: "In The Doubloon, what does Ahab say the firm tower carved on the coin represents about himself?",
+            gold: "The firm tower, that is Ahab",
+            kind: "named",
+        },
+        AbQuery {
+            query: "When Captain Gardiner of the Rachel begs Ahab to help search for his lost son, what is Ahab's blunt reply?",
+            gold: "Captain Gardiner, I will not do it",
+            kind: "named",
+        },
+        AbQuery {
+            query: "In The Doubloon, how does Ishmael describe Fedallah's tail as he approaches the coin?",
+            gold: "tail coiled out of sight as usual",
+            kind: "named",
+        },
+        AbQuery {
+            query: "After their tense confrontation in the cabin, what does Ahab quietly say to Starbuck out on deck?",
+            gold: "Thou art but too good a fellow, Starbuck",
+            kind: "named",
+        },
+        AbQuery {
+            query: "What does Ishmael say about Starbuck's role and hometown when introducing him as chief mate?",
+            gold: "The chief mate of the Pequod was Starbuck",
+            kind: "named",
+        },
+        AbQuery {
+            query: "During the rowdy midnight dance on the forecastle, what warning is shouted at Pip as the royal yard swings?",
+            gold: "Duck lower, Pip, here comes the royal yard",
+            kind: "named",
+        },
+    ];
+
     /// How deep to look for the gold chunk before calling it unfound. Chat
     /// only ever sees `RETRIEVAL_TOP_K`; the deeper window exists so a
     /// passage that moved from 40th to 3rd reports as exactly that rather
@@ -993,6 +1466,93 @@ mod live_tests {
         .unwrap()
     }
 
+    /// How many chunks the measurement asks about at once.
+    ///
+    /// The shipped loop asks about one at a time on purpose — it runs in the
+    /// background against a metered provider, and the reader's only brake is a
+    /// switch it re-reads every iteration. That is the right trade for a
+    /// background job and the wrong one for a measurement: a 928-chunk book at
+    /// several seconds a call is most of a working day, and the A/B needs every
+    /// chunk done, distractors included. Sampling is not an option — measuring
+    /// only the gold chunks is the caliber that overstated this feature's gains
+    /// by 2–4× and must not be repeated.
+    ///
+    /// Whether the shipped loop should also run concurrently is a separate
+    /// question, and not this file's to answer: it changes how long a reader
+    /// waits for an index and how concentrated the spend is.
+    const GENERATE_CONCURRENCY: usize = 8;
+
+    /// The same calls `ensure_context_lines` makes, in flight several at a time.
+    ///
+    /// Reuses `context_line_messages` and `resolve_context_line`, so the prompt
+    /// and the blank-retry behaviour are the shipped ones. Two things are
+    /// deliberately not reproduced: the run guard, which exists to stop two
+    /// loops doubling a reader's spend, and the failure budget shared across the
+    /// whole book — each task here carries its own counter, so a provider that
+    /// dies mid-run shows up as many skipped chunks rather than one aborted run.
+    /// Both are about protecting a reader who is not present.
+    async fn generate_context_lines_concurrently<R: Runtime>(
+        app: &AppHandle<R>,
+        db: &Db,
+        secrets: &Secrets,
+        book_id: &str,
+    ) -> usize {
+        let (book_title, rows) = load_chunk_rows(db, book_id).unwrap();
+        let mut sections: std::collections::BTreeMap<i64, Vec<&ChunkRow>> =
+            std::collections::BTreeMap::new();
+        for row in &rows {
+            sections.entry(row.section_index).or_default().push(row);
+        }
+        // Built once per section, exactly as the shipped loop's cache does, so
+        // the bytes that reach the provider are identical run to run and its
+        // prompt cache actually fires.
+        let prefixes: std::collections::BTreeMap<i64, String> = sections
+            .iter()
+            .map(|(index, section_rows)| (*index, chapter_prefix(section_rows)))
+            .collect();
+
+        let pending = pending_rows(&rows);
+        let total = pending.len();
+        let done = std::sync::atomic::AtomicUsize::new(0);
+        let written = std::sync::atomic::AtomicUsize::new(0);
+        futures::stream::iter(pending.into_iter().map(|row| {
+            let sections = &sections;
+            let prefixes = &prefixes;
+            let book_title = &book_title;
+            let done = &done;
+            let written = &written;
+            async move {
+                let section_rows = sections.get(&row.section_index).expect("row's own section");
+                let header =
+                    chapter_header(book_title, row.section_index, row.section_title.as_deref());
+                let messages = context_line_messages(
+                    &header,
+                    prefixes.get(&row.section_index).expect("row's own section"),
+                    section_rows,
+                    row,
+                );
+                let mut failures = 0usize;
+                match resolve_context_line(app, db, secrets, &messages, &row.id, &mut failures).await
+                {
+                    Ok(ContextLineOutcome::Written { cleaned, model }) => {
+                        write_context_line(db, &row.id, &cleaned, &model).unwrap();
+                        written.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    Ok(ContextLineOutcome::Skipped) => {}
+                    Err(error) => println!("chunk {} failed: {error}", row.id),
+                }
+                let at = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                if at.is_multiple_of(50) || at == total {
+                    println!("  {at}/{total}");
+                }
+            }
+        }))
+        .buffer_unordered(GENERATE_CONCURRENCY)
+        .collect::<Vec<()>>()
+        .await;
+        written.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     fn rank_of(ranks: &[String], chunk_id: &str) -> Option<usize> {
         ranks.iter().position(|id| id == chunk_id).map(|at| at + 1)
     }
@@ -1014,51 +1574,33 @@ mod live_tests {
     #[tokio::test]
     #[ignore = "generates context lines for an entire book; spends real tokens"]
     async fn live_retrieval_ab_against_a_real_book() {
+        let book = selected_book();
         let directory = tempfile::TempDir::new().unwrap();
         let Some(()) = copy_app_data(directory.path()) else {
             panic!("no Lantern app data on this machine to copy");
         };
-        let epub = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../harness/books/pride-and-prejudice.epub");
-        std::fs::create_dir_all(directory.path().join("books")).unwrap();
-        std::fs::copy(&epub, directory.path().join("books/pnp.epub")).unwrap();
-
-        let db = Db::init(directory.path()).unwrap();
-        {
-            let conn = db.conn.lock().unwrap();
-            conn.execute(
-                "INSERT OR REPLACE INTO books (
-                     id, title, author, file_path, format, source_format, render_format,
-                     source_file_path, source_sha256, status, progress, created_at, updated_at
-                 ) VALUES ('pnp', 'Pride and Prejudice', 'Jane Austen', 'books/pnp.epub',
-                           'epub', 'epub', 'epub', 'books/pnp.epub', 'pnp-source',
-                           'unread', 0, '1970-01-01', '1970-01-01')",
-                [],
-            )
-            .unwrap();
-        }
-        assert_eq!(
-            super::super::index::ensure_index(&db, "pnp").unwrap(),
-            super::super::index::IndexStatus::Ready
-        );
+        let db = stage_book(directory.path(), book);
 
         // Park every other book's chunks so the run cannot wander into the
         // reader's own library and bill them for it.
         let total: i64 = {
             let conn = db.conn.lock().unwrap();
             conn.execute(
-                "UPDATE book_chunks SET context_line = '·' WHERE book_id <> 'pnp'",
-                [],
+                "UPDATE book_chunks SET context_line = '·' WHERE book_id <> ?1",
+                params![book.id],
             )
             .unwrap();
             conn.query_row(
-                "SELECT COUNT(*) FROM book_chunks WHERE book_id = 'pnp'",
-                [],
+                "SELECT COUNT(*) FROM book_chunks WHERE book_id = ?1",
+                params![book.id],
                 |row| row.get(0),
             )
             .unwrap()
         };
-        println!("=== generating identity sentences for {total} chunks ===");
+        println!(
+            "=== {}: generating identity sentences for {total} chunks ===",
+            book.title
+        );
 
         // Measured before anything is generated: at this point `seg_context`
         // is empty for every row, so both arms must agree. Any difference
@@ -1066,11 +1608,11 @@ mod live_tests {
         // feature, and the whole table below would be measuring that instead.
         let baseline_disagreements = {
             let conn = db.conn.lock().unwrap();
-            AB_QUERIES
+            book.queries
                 .iter()
                 .filter(|case| {
-                    ab_ranks(&conn, "pnp", case.query, false)
-                        != ab_ranks(&conn, "pnp", case.query, true)
+                    ab_ranks(&conn, book.id, case.query, false)
+                        != ab_ranks(&conn, book.id, case.query, true)
                 })
                 .count()
         };
@@ -1082,9 +1624,13 @@ mod live_tests {
         let secrets = Secrets::init(&directory.path().to_path_buf()).unwrap();
         let app = tauri::test::mock_app();
         let started = std::time::Instant::now();
-        let outcome = ensure_context_lines(app.handle(), &db, &secrets, "pnp", None).await;
-        println!("=== finished in {:?} ===", started.elapsed());
-        outcome.expect("the run itself failed");
+        let generated =
+            generate_context_lines_concurrently(app.handle(), &db, &secrets, book.id).await;
+        println!(
+            "=== wrote {generated} lines in {:?} at concurrency {GENERATE_CONCURRENCY} ===",
+            started.elapsed()
+        );
+        assert!(generated > 0, "not one line was written");
 
         let conn = db.conn.lock().unwrap();
         let (written, blank, skipped): (i64, i64, i64) = conn
@@ -1092,8 +1638,8 @@ mod live_tests {
                 "SELECT SUM(context_line IS NOT NULL AND context_line <> ''),
                         SUM(context_line = ''),
                         SUM(context_line IS NULL)
-                 FROM book_chunks WHERE book_id = 'pnp'",
-                [],
+                 FROM book_chunks WHERE book_id = ?1",
+                params![book.id],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .unwrap();
@@ -1101,22 +1647,30 @@ mod live_tests {
         let mut report = String::new();
         report.push_str("# 上下文行对关键词检索的实测\n\n");
         report.push_str(&format!(
-            "《傲慢与偏见》，{total} 个 chunk，写出定位句 {written} 条，模型返回不可用 {blank} 条，\
-             调用失败跳过 {skipped} 条（留待下一轮补）。\n\n\
+            "《{}》（{}），{total} 个 chunk，写出定位句 {written} 条，模型返回不可用 {blank} 条，\
+             调用失败跳过 {skipped} 条（留待下一轮补）。查询 {} 条。\n\n\
              对照方式：同一个索引、同一批数据，唯一的差别是 `MATCH` 允不允许看 `seg_context` 这一列。\
-             「改前」把匹配限制在正文列上，等价于这一列不存在。查询里从不含 gold 短语。\n\n"
+             「改前」把匹配限制在正文列上，等价于这一列不存在。查询里从不含 gold 短语。\n\n",
+            book.title,
+            book.author,
+            book.queries.len()
         ));
         report.push_str("| 查询 | 类型 | 改前 | 改后 |\n|---|---|---|---|\n");
 
         let mut improved = 0;
         let mut regressed = 0;
-        for case in AB_QUERIES {
+        // Counted apart, because they answer different questions: `pronoun` is
+        // where the feature is supposed to earn its keep, `named` is where it
+        // can only add noise. A single blended total hides a trade.
+        let mut by_kind: std::collections::BTreeMap<&str, (usize, usize, usize)> =
+            std::collections::BTreeMap::new();
+        for case in book.queries {
             let gold: Option<String> = conn
                 .query_row(
                     "SELECT id FROM book_chunks
-                     WHERE book_id = 'pnp' AND text LIKE '%' || ?1 || '%'
+                     WHERE book_id = ?1 AND text LIKE '%' || ?2 || '%'
                      ORDER BY chunk_index LIMIT 1",
-                    params![case.gold],
+                    params![book.id, case.gold],
                     |row| row.get(0),
                 )
                 .optional()
@@ -1128,14 +1682,27 @@ mod live_tests {
                 ));
                 continue;
             };
-            let before = rank_of(&ab_ranks(&conn, "pnp", case.query, false), &gold);
-            let after = rank_of(&ab_ranks(&conn, "pnp", case.query, true), &gold);
+            let before = rank_of(&ab_ranks(&conn, book.id, case.query, false), &gold);
+            let after = rank_of(&ab_ranks(&conn, book.id, case.query, true), &gold);
+            let tally = by_kind.entry(case.kind).or_default();
             match (before, after) {
-                (Some(b), Some(a)) if a < b => improved += 1,
-                (Some(b), Some(a)) if a > b => regressed += 1,
-                (None, Some(_)) => improved += 1,
-                (Some(_), None) => regressed += 1,
-                _ => {}
+                (Some(b), Some(a)) if a < b => {
+                    improved += 1;
+                    tally.0 += 1;
+                }
+                (Some(b), Some(a)) if a > b => {
+                    regressed += 1;
+                    tally.1 += 1;
+                }
+                (None, Some(_)) => {
+                    improved += 1;
+                    tally.0 += 1;
+                }
+                (Some(_), None) => {
+                    regressed += 1;
+                    tally.1 += 1;
+                }
+                _ => tally.2 += 1,
             }
             report.push_str(&format!(
                 "| {} | {} | {} | {} |\n",
@@ -1145,14 +1712,23 @@ mod live_tests {
                 rank_label(after)
             ));
         }
-        report.push_str(&format!("\n上升 {improved} 条，下降 {regressed} 条。\n"));
+        report.push_str(&format!("\n上升 {improved} 条，下降 {regressed} 条。\n\n"));
+        report.push_str("| 类型 | 上升 | 下降 | 不变 |\n|---|---|---|---|\n");
+        for (kind, (up, down, same)) in &by_kind {
+            report.push_str(&format!("| {kind} | {up} | {down} | {same} |\n"));
+        }
 
         // The cards themselves. A rank table says the right passage moved up;
         // it does not say the reader would recognise what came back.
         report.push_str("\n## 实际返回的卡片\n");
-        for case in AB_QUERIES.iter().filter(|case| case.kind == "pronoun").take(3) {
+        for case in book
+            .queries
+            .iter()
+            .filter(|case| case.kind == "pronoun")
+            .take(3)
+        {
             report.push_str(&format!("\n### {}\n\n", case.query));
-            for (position, chunk_id) in ab_ranks(&conn, "pnp", case.query, true)
+            for (position, chunk_id) in ab_ranks(&conn, book.id, case.query, true)
                 .iter()
                 .take(3)
                 .enumerate()
@@ -1174,11 +1750,84 @@ mod live_tests {
             }
         }
 
+        // One file per book: the earlier run's report is evidence, not a
+        // scratch file, and a second book must not overwrite it.
         let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../docs/impls/contextual-retrieval-ab.md");
+            .join("../docs/impls")
+            .join(format!("contextual-retrieval-ab-{}.md", book.id));
         std::fs::write(&out, &report).unwrap();
         println!("{report}");
         println!("=== written to {} ===", out.display());
+    }
+
+    /// The one part of the A/B that can be checked without spending anything.
+    ///
+    /// A `gold` phrase is a handle for finding the passage a query ought to
+    /// return. If it matches no chunk the row silently drops out of the report;
+    /// if it matches several, the report measures whichever came first —
+    /// possibly the wrong passage entirely, and a wrong passage is worse than a
+    /// missing one because it still produces a number. Both failures are
+    /// invisible in the output, so they are caught here instead: indexing is
+    /// local, so this costs a few seconds and no tokens.
+    ///
+    /// A book whose epub is not on this machine is skipped rather than failed —
+    /// the epubs are gitignored, so on CI this test checks nothing and says so.
+    /// It earns its keep on the machine that actually runs the A/B.
+    #[test]
+    fn every_ab_query_anchor_resolves_to_one_chunk() {
+        let mut problems: Vec<String> = Vec::new();
+        let mut checked = 0;
+        for book in LIVE_BOOKS {
+            if !harness_epub(book).exists() {
+                println!("skipping {} — no epub on this machine", book.id);
+                continue;
+            }
+            checked += book.queries.len();
+            let directory = tempfile::TempDir::new().unwrap();
+            let db = stage_book(directory.path(), book);
+            let conn = db.conn.lock().unwrap();
+            // Printed because it is what a live run on this book costs: one
+            // model call per chunk.
+            let chunks: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM book_chunks WHERE book_id = ?1",
+                    params![book.id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            println!("{}: {chunks} chunks, {} queries", book.id, book.queries.len());
+            for case in book.queries {
+                let hits: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM book_chunks
+                         WHERE book_id = ?1 AND text LIKE '%' || ?2 || '%'",
+                        params![book.id, case.gold],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                if hits != 1 {
+                    problems.push(format!(
+                        "{}: {hits} chunks match gold {:?} (query: {:?})",
+                        book.id, case.gold, case.query
+                    ));
+                }
+                // A query containing its own anchor would be handing the
+                // search the answer, which measures nothing.
+                if case.query.contains(case.gold) {
+                    problems.push(format!(
+                        "{}: query {:?} contains its own gold anchor",
+                        book.id, case.query
+                    ));
+                }
+            }
+        }
+        println!("{checked} anchors checked");
+        assert!(
+            problems.is_empty(),
+            "{} bad anchors:\n{}",
+            problems.len(),
+            problems.join("\n")
+        );
     }
 }
 

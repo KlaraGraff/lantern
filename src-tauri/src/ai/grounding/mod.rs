@@ -49,3 +49,32 @@ pub type ProgressFn<'a> = &'a (dyn Fn(usize, usize) + Sync);
 pub use extract::{BlockText, SectionText};
 pub use index::IndexStatus;
 pub use retrieve::{retrieve, CitedSource, RetrievedChunk};
+
+/// Shared by the live runs in `context.rs` and `aliases.rs`: both need the
+/// reader's own database, and neither may open it.
+#[cfg(test)]
+pub mod live_data {
+    /// The reader's app data, copied — never opened. `-wal` and `-shm` come
+    /// along because the running app checkpoints lazily, and a copy of the main
+    /// file alone would silently miss its most recent writes.
+    ///
+    /// `None` means there is no Lantern installation here to copy, which is the
+    /// normal state on CI and the reason every caller is `#[ignore]`d.
+    pub fn copy_app_data(destination: &std::path::Path) -> Option<()> {
+        let source = home()?.join("Library/Application Support/com.klaragraff.lantern");
+        if !source.join("secrets.db").exists() {
+            return None;
+        }
+        for name in ["lantern.db", "lantern.db-wal", "lantern.db-shm", "secrets.db"] {
+            let from = source.join(name);
+            if from.exists() {
+                std::fs::copy(&from, destination.join(name)).ok()?;
+            }
+        }
+        Some(())
+    }
+
+    fn home() -> Option<std::path::PathBuf> {
+        std::env::var_os("HOME").map(std::path::PathBuf::from)
+    }
+}

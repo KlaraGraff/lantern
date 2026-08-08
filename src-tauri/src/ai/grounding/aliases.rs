@@ -428,6 +428,25 @@ enum AttemptOutcome {
     Unusable,
 }
 
+/// How one model call ended. `AttemptOutcome` only describes what a *parsed*
+/// response resolves to, so the response that never parsed lives out here.
+///
+/// It exists because the two failures were not equally served by the retry
+/// budget. A response with no JSON array in it used to be raised as
+/// `PERSON_ALIASES_AI_INVALID` with `?` from inside the attempt, which
+/// propagated straight out of `run_build_pass`'s loop and ended the build on
+/// the first try — while `Unusable`, right next to it, got all three attempts.
+/// Measured on a real library, that was backwards: over 18 passes the
+/// unreadable case cost 3 builds and `Unusable` cost none, and a rebuild that
+/// simply asked again nearly always worked. Both are one sample of a
+/// non-deterministic response, so both retry.
+#[derive(Debug, PartialEq, Eq)]
+enum AttemptResult {
+    Parsed(AttemptOutcome),
+    /// No JSON array in the reply, or one that would not deserialize.
+    Unreadable,
+}
+
 /// Pure past the one read query `resolve_group_canonical` needs
 /// (`count_mentions`) — no writes, no network — so a test can reach the
 /// commit/retry decision directly, the same way `merge_description_candidates`
@@ -488,13 +507,71 @@ const MAX_BUILD_ATTEMPTS: u32 = 3;
 /// the loop below, driven by `evaluate_attempt` returning
 /// `AttemptOutcome::Unusable`, is what handles the rest — a call that comes
 /// back with the book's actual spelling nowhere in it at all.
+/// One model call and the decision it resolves to, with the model's own words
+/// handed back alongside.
+///
+/// Split out of the loop below for two reasons. The retry rate *is* the thing
+/// this pass exists for, and a test that could only observe the loop's final
+/// verdict could not report it — it would see "the build worked" and never
+/// learn that it took three calls. And a failed call's raw text is the only
+/// evidence of *how* it failed; discarding it inside the loop meant every
+/// measurement so far had to be run by hand to keep it.
+///
+/// No writes here. Everything destructive stays in the loop, where the reader
+/// of `run_build_pass` can see it against the retry logic that guards it.
+async fn attempt_build<R: Runtime>(
+    app: &AppHandle<R>,
+    db: &Db,
+    secrets: &Secrets,
+    book_id: &str,
+    origin: &str,
+    messages: &[ChatMessage],
+) -> AppResult<(String, AttemptResult)> {
+    let completion = router::complete_with_failover(
+        app,
+        db,
+        secrets,
+        messages,
+        Some(2_000),
+        AiRequestPurpose::Utility,
+        AiRetryMode::Automatic,
+        None,
+        None,
+        origin,
+        JOB_ID,
+    )
+    .await?;
+    let result = {
+        let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
+        classify_reply(&conn, book_id, &completion.text)?
+    };
+    Ok((completion.text, result))
+}
+
+/// One reply, all the way to the retry decision, with no network and no
+/// writes — so a test can hand it a string and assert which of the three
+/// endings it is. Everything `attempt_build` does besides making the call.
+fn classify_reply(conn: &Connection, book_id: &str, text: &str) -> AppResult<AttemptResult> {
+    let Some(json_slice) = extract_json_array(text) else {
+        return Ok(AttemptResult::Unreadable);
+    };
+    let Ok(raw) = serde_json::from_str::<Vec<RawAliasGroup>>(json_slice) else {
+        return Ok(AttemptResult::Unreadable);
+    };
+    Ok(AttemptResult::Parsed(evaluate_attempt(conn, book_id, &raw)?))
+}
+
+/// Returns how many model calls it took. Neither caller needs the number —
+/// both discard it — but a measurement of this pass does: "the build worked"
+/// and "the build worked on the third try" describe very different odds, and
+/// the retry budget can only be judged against the second.
 async fn run_build_pass<R: Runtime>(
     app: &AppHandle<R>,
     db: &Db,
     secrets: &Secrets,
     book_id: &str,
     origin: &str,
-) -> AppResult<()> {
+) -> AppResult<u32> {
     let (title, author, language) = book_meta(&db.reader(), book_id)?;
     let summaries = section_summaries(&db.reader(), book_id)?;
     let messages = build_messages(&title, &author, language.as_deref(), &summaries);
@@ -502,42 +579,32 @@ async fn run_build_pass<R: Runtime>(
     let mut attempt = 0u32;
     loop {
         attempt += 1;
-        let completion = router::complete_with_failover(
-            app,
-            db,
-            secrets,
-            &messages,
-            Some(2_000),
-            AiRequestPurpose::Utility,
-            AiRetryMode::Automatic,
-            None,
-            None,
-            origin,
-            JOB_ID,
-        )
-        .await?;
-        let json_slice = extract_json_array(&completion.text)
-            .ok_or_else(|| AppError::Ai("PERSON_ALIASES_AI_INVALID".to_string()))?;
-        let raw: Vec<RawAliasGroup> = serde_json::from_str(json_slice)
-            .map_err(|_| AppError::Ai("PERSON_ALIASES_AI_INVALID".to_string()))?;
-
-        let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
-        match evaluate_attempt(&conn, book_id, &raw)? {
-            AttemptOutcome::Unusable => {
-                // Deliberately no write at all on this branch — not even
-                // `clear_auto_aliases`. That call only ever runs in the
-                // `Commit` branch below, so a run that never produces a
-                // usable response leaves `book_person_aliases` exactly as it
-                // was before this call started: a prior successful build's
-                // rows, or nothing. The reader sees an error, never a table
-                // that used to have names in it and now doesn't because a
-                // retry cleared it out from under a failed attempt.
-                drop(conn);
+        let (_, result) = attempt_build(app, db, secrets, book_id, origin, &messages).await?;
+        match result {
+            // Deliberately no write at all on either failing branch — not even
+            // `clear_auto_aliases`. That call only ever runs in the `Commit`
+            // branch below, so a run that never produces a usable response
+            // leaves `book_person_aliases` exactly as it was before this call
+            // started: a prior successful build's rows, or nothing. The reader
+            // sees an error, never a table that used to have names in it and
+            // now doesn't because a retry cleared it out from under a failed
+            // attempt.
+            //
+            // Which error the reader sees is decided by the *last* attempt, not
+            // by whichever failure came first: it is the one whose response
+            // they could ask us about.
+            AttemptResult::Unreadable => {
+                if attempt >= MAX_BUILD_ATTEMPTS {
+                    return Err(AppError::Ai("PERSON_ALIASES_AI_INVALID".to_string()));
+                }
+            }
+            AttemptResult::Parsed(AttemptOutcome::Unusable) => {
                 if attempt >= MAX_BUILD_ATTEMPTS {
                     return Err(AppError::Ai("PERSON_ALIASES_AI_UNUSABLE".to_string()));
                 }
             }
-            AttemptOutcome::Commit(rows) => {
+            AttemptResult::Parsed(AttemptOutcome::Commit(rows)) => {
+                let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
                 clear_auto_aliases(&conn, book_id)?;
                 let now = chrono::Utc::now().timestamp_millis();
                 for (canonical, alias, mentions) in &rows {
@@ -561,7 +628,7 @@ async fn run_build_pass<R: Runtime>(
                         params![id, book_id, canonical, alias, mentions, now],
                     )?;
                 }
-                return Ok(());
+                return Ok(attempt);
             }
         }
     }
@@ -621,7 +688,7 @@ pub async fn ensure_person_aliases<R: Runtime>(
     let Some(_guard) = RunGuard::claim(book_id) else {
         return Ok(());
     };
-    run_build_pass(app, db, secrets, book_id, "auto").await
+    run_build_pass(app, db, secrets, book_id, "auto").await.map(|_| ())
 }
 
 /// The reader's own rebuild button. Runs regardless of the automatic-analysis
@@ -639,7 +706,7 @@ pub async fn build_person_aliases<R: Runtime>(
     let Some(_guard) = RunGuard::claim(book_id) else {
         return Err(AppError::Other("PERSON_ALIASES_ALREADY_RUNNING".to_string()));
     };
-    run_build_pass(app, db, secrets, book_id, "user").await
+    run_build_pass(app, db, secrets, book_id, "user").await.map(|_| ())
 }
 
 // ---------------------------------------------------------------------------
@@ -1510,6 +1577,56 @@ mod tests {
         }
     }
 
+    /// The regression this pair guards is not "the reply was bad" — it is
+    /// *which* bad the caller is told about, because that decides whether the
+    /// remaining attempts get spent. Prose with no array in it and an array of
+    /// the wrong shape both have to land on `Unreadable`, which the retry loop
+    /// treats exactly like `Unusable`; before this, they were raised as an
+    /// error from inside the attempt and ended the build on the first try.
+    #[test]
+    fn a_reply_with_no_json_array_is_unreadable_and_therefore_retryable() {
+        let (_dir, db) = setup();
+        assert_eq!(
+            classify_reply(&db.reader(), "b1", "I'm sorry, I can't help with that.").unwrap(),
+            AttemptResult::Unreadable
+        );
+    }
+
+    #[test]
+    fn a_json_array_of_the_wrong_shape_is_unreadable_not_a_commit() {
+        let (_dir, db) = setup();
+        assert_eq!(
+            classify_reply(&db.reader(), "b1", "[1, 2, 3]").unwrap(),
+            AttemptResult::Unreadable
+        );
+    }
+
+    #[test]
+    fn a_well_formed_reply_naming_nobody_in_the_book_is_unusable_not_unreadable() {
+        let (_dir, db) = setup();
+        insert_chunk(&db, "b1", 0, "Mr. Darcy spoke with Mr. Collins nearby.");
+        let reply = r#"[{"canonical": "Ghost", "aliases": ["Nobody"]}]"#;
+        assert_eq!(
+            classify_reply(&db.reader(), "b1", reply).unwrap(),
+            AttemptResult::Parsed(AttemptOutcome::Unusable)
+        );
+    }
+
+    #[test]
+    fn a_well_formed_reply_naming_someone_in_the_book_commits() {
+        let (_dir, db) = setup();
+        insert_chunk(&db, "b1", 0, "Mr. Darcy spoke with Mr. Collins nearby.");
+        let reply = r#"prose first [{"canonical": "Mr. Darcy", "aliases": ["达西"]}] and after"#;
+        assert_eq!(
+            classify_reply(&db.reader(), "b1", reply).unwrap(),
+            AttemptResult::Parsed(AttemptOutcome::Commit(vec![(
+                "Mr. Darcy".to_string(),
+                "达西".to_string(),
+                1
+            )]))
+        );
+    }
+
     #[test]
     fn evaluate_attempt_on_an_empty_response_is_a_legitimate_commit_not_unusable() {
         // The model looked at the book and reported no named people. That is
@@ -2226,5 +2343,444 @@ mod tests {
             })
             .unwrap();
         assert_eq!(remaining, 0);
+    }
+}
+
+/// A real build pass, against the reader's own library and a real provider.
+///
+/// Two questions the unit tests above structurally cannot answer, both of them
+/// about what a model actually does rather than about what this file does with
+/// the answer:
+///
+/// 1. **The rate a reader feels.** A 12-call hand-run measured roughly half of
+///    single calls coming back unusable — parseable, well-formed, and with the
+///    book's own spellings nowhere in them. `MAX_BUILD_ATTEMPTS` was set to 3
+///    off that number. What nobody has measured is the rate *after* those three
+///    attempts, which is the only rate a reader ever experiences.
+/// 2. **Whether the old table really survives.** `clear_auto_aliases` sits in
+///    the `Commit` branch and a unit test pins it there, but pinning a branch
+///    is not the same as watching a real three-in-a-row failure leave a real
+///    table alone.
+///
+/// ```text
+/// cargo test --manifest-path src-tauri/Cargo.toml \
+///   live_alias_build_usable_rate -- --ignored --nocapture
+/// ```
+///
+/// `LANTERN_ALIAS_PASSES` sets how many passes to run (default 6) and
+/// `LANTERN_ALIAS_CONCURRENCY` how many of them are in flight at once
+/// (default: all of them, capped at 12) — each pass owns its own copy of the
+/// library, so the only real ceiling is the account's concurrency limit.
+///
+/// `LANTERN_ALIAS_MODEL` overrides the model **in the copied database only**,
+/// which is how the second arm is run: the shipped failure copy tells a reader
+/// that a stronger model is steadier, and that claim is about readers on
+/// *smaller* models than the one configured here. Pointing this at a small
+/// model on the same key is what turns that sentence from plausible into
+/// measured. `LANTERN_ALIAS_BASE_URL` + `LANTERN_ALIAS_KEY` move the arm to a
+/// different provider entirely, and `LANTERN_ALIAS_EFFORT` sets reasoning
+/// effort — which, because this is a `Utility` request, also has to turn
+/// `reasoning_effort_all_features` on or the arm would measure `none` under
+/// whatever label it was given.
+#[cfg(test)]
+mod live_tests {
+    use super::*;
+    use crate::ai::grounding::live_data::copy_app_data;
+
+    /// The prompt is built from chapter summaries, not from the book's text, so
+    /// a freshly-indexed epub would measure the wrong question: with no
+    /// summaries `build_messages` sends title and author alone and the model
+    /// has to recall the spellings from memory. Readers hit this pass *after*
+    /// summarisation, so the run takes whichever book in the reader's own
+    /// library actually has summaries — and the one with the most of them,
+    /// since a book summarised halfway is its own confound.
+    fn book_with_summaries(conn: &Connection) -> Option<(String, String, i64)> {
+        conn.query_row(
+            "SELECT b.id, b.title, COUNT(*) AS sections
+               FROM book_summaries s JOIN books b ON b.id = s.book_id
+              WHERE s.scope = 'section'
+              GROUP BY b.id
+              ORDER BY sections DESC
+              LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .unwrap()
+    }
+
+    /// Every `(canonical, alias, source)` in the table, sorted — the thing that
+    /// must not move when a pass fails.
+    fn snapshot(conn: &Connection, book_id: &str) -> Vec<(String, String, String)> {
+        let mut statement = conn
+            .prepare(
+                "SELECT canonical, alias, source FROM book_person_aliases
+                  WHERE book_id = ?1 ORDER BY canonical, alias, source",
+            )
+            .unwrap();
+        statement
+            .query_map(params![book_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+    }
+
+    fn env_count(name: &str, default: u32) -> u32 {
+        std::env::var(name).ok().and_then(|value| value.parse().ok()).unwrap_or(default)
+    }
+
+    /// The arm under test. Every field comes from the environment because one
+    /// of them is an API key: a second arm has to be describable without a
+    /// credential ever entering a tracked file.
+    ///
+    /// `LANTERN_ALIAS_MODEL` alone switches the model on the reader's own
+    /// configured endpoint. Adding `LANTERN_ALIAS_BASE_URL` and
+    /// `LANTERN_ALIAS_KEY` replaces the endpoint too, which is what measuring a
+    /// different provider's small model needs.
+    struct Arm {
+        base_url: Option<String>,
+        model: Option<String>,
+        key: Option<String>,
+        effort: Option<String>,
+    }
+
+    impl Arm {
+        fn from_env() -> Self {
+            let read = |name: &str| {
+                std::env::var(name)
+                    .ok()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+            };
+            Self {
+                base_url: read("LANTERN_ALIAS_BASE_URL"),
+                model: read("LANTERN_ALIAS_MODEL"),
+                key: read("LANTERN_ALIAS_KEY"),
+                effort: read("LANTERN_ALIAS_EFFORT"),
+            }
+        }
+
+        fn describe(&self) -> String {
+            let model = self.model.as_deref().unwrap_or("<as configured>");
+            let endpoint = self.base_url.as_deref().unwrap_or("<as configured>");
+            let effort = self.effort.as_deref().unwrap_or("<Lantern's default>");
+            format!("model {model} at {endpoint}, reasoning effort {effort}")
+        }
+
+        /// Rewrites the copied database into a single-profile configuration.
+        /// The copy only — nothing here can reach the reader's own settings,
+        /// and the key is written to the copied `secrets.db`, which the temp
+        /// directory takes with it when the test ends.
+        fn apply(&self, db: &Db, secrets: &Secrets) {
+            if self.base_url.is_none() && self.model.is_none() {
+                return;
+            }
+            let Some(base_url) = self.base_url.as_deref() else {
+                // Model-only: keep the reader's endpoints and credentials.
+                let conn = db.conn.lock().unwrap();
+                let changed = conn
+                    .execute(
+                        "UPDATE ai_profiles SET model = ?1, reasoning_effort = ?2,
+                                reasoning_effort_all_features = ?3",
+                        params![
+                            self.model.as_deref().unwrap(),
+                            self.effort.as_deref(),
+                            i64::from(self.effort.is_some()),
+                        ],
+                    )
+                    .unwrap();
+                assert!(changed > 0, "no ai_profiles row to point at the arm");
+                return;
+            };
+            let model = self
+                .model
+                .as_deref()
+                .expect("LANTERN_ALIAS_BASE_URL needs LANTERN_ALIAS_MODEL");
+            let key = self
+                .key
+                .as_deref()
+                .expect("LANTERN_ALIAS_BASE_URL needs LANTERN_ALIAS_KEY");
+            const SECRET_REF: &str = "ai_api_key/live-arm";
+            secrets.set(SECRET_REF, key).unwrap();
+            let conn = db.conn.lock().unwrap();
+            // Failover is the enemy of a measurement: if this endpoint refuses,
+            // the run has to fail loudly rather than quietly answering from the
+            // reader's other provider.
+            conn.execute("DELETE FROM ai_profiles", []).unwrap();
+            conn.execute(
+                "INSERT INTO ai_profiles
+                   (id, label, provider, auth_mode, base_url, model, temperature,
+                    enabled, priority, created_at, updated_at,
+                    reasoning_effort, reasoning_effort_all_features)
+                 VALUES ('live-arm', 'live arm', 'custom', 'api_key', ?1, ?2, 0.3,
+                         1, 0, 0, 0, ?3, ?4)",
+                params![
+                    base_url,
+                    model,
+                    self.effort.as_deref(),
+                    // The alias pass is a `Utility` request, and utility
+                    // requests are pinned to `none` unless the profile opts
+                    // every feature in. Asking for max effort and leaving this
+                    // off would have measured `none` under a `max` label.
+                    i64::from(self.effort.is_some()),
+                ],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO ai_credentials
+                   (id, profile_id, label, secret_ref, masked_suffix, enabled,
+                    priority, state, created_at, updated_at)
+                 VALUES ('live-arm-key', 'live-arm', 'live arm', ?1, ?2, 1, 0,
+                         'active', 0, 0)",
+                params![SECRET_REF, &key[key.len().saturating_sub(4)..]],
+            )
+            .unwrap();
+        }
+    }
+
+    /// One pass's own copy of the reader's library.
+    ///
+    /// Every pass rebuilds the *same* book's alias table, and a successful
+    /// build clears the automatic rows before writing the new ones. Sharing
+    /// one database across concurrent passes would let one pass's clear land
+    /// between another's `before` and `after` snapshots, and the assertion
+    /// that a failed build left the old table alone would be reading someone
+    /// else's write. So each pass gets its own copy — ~13MB, well under a
+    /// second to make, against the tens of minutes an arm cost when the passes
+    /// were run one at a time waiting on a model each turn.
+    struct Lab {
+        /// Held only so the copy outlives the pass that reads it.
+        _directory: tempfile::TempDir,
+        db: Db,
+        secrets: Secrets,
+        book_id: String,
+    }
+
+    /// A copy, configured for the arm and seeded, plus the book it landed on.
+    fn open_lab(arm: &Arm) -> (Lab, String, i64) {
+        let directory = tempfile::TempDir::new().unwrap();
+        let Some(()) = copy_app_data(directory.path()) else {
+            panic!("no Lantern app data on this machine to copy");
+        };
+        let db = Db::init(directory.path()).unwrap();
+        let secrets = Secrets::init(&directory.path().to_path_buf()).unwrap();
+        arm.apply(&db, &secrets);
+
+        let (book_id, title, sections) = {
+            let conn = db.conn.lock().unwrap();
+            book_with_summaries(&conn).expect("no book in this library has section summaries")
+        };
+        {
+            let conn = db.conn.lock().unwrap();
+            // The copy inherits whatever cooldown the reader's own use — or an
+            // earlier arm — left on the credential, and `run_build_pass` asks
+            // in `Automatic` mode, which honours it. Left alone, the run
+            // answers a question nobody asked: the pass returns
+            // `AI_KEYS_COOLING_DOWN` without ever sending a request, and the
+            // arm reports n passes while holding none. Clearing it is what the
+            // reader does by hand when they press 再试一次, which routes as
+            // `Manual` and skips cooldowns too.
+            conn.execute(
+                "UPDATE ai_credentials SET state = 'active', cooldown_until = NULL",
+                [],
+            )
+            .unwrap();
+            conn.execute("UPDATE ai_profiles SET state = 'active', cooldown_until = NULL", [])
+                .unwrap();
+            // Seed a table so "the old table survived" is a claim about
+            // something. The reader's row is the one that matters most: a
+            // rebuild that loses a correction they typed by hand is the worst
+            // version of this bug.
+            for (id, canonical, alias, source) in [
+                ("seed-auto-1", "Seeded Canonical", "seeded-auto-alias", "auto"),
+                ("seed-user-1", "Seeded Canonical", "seeded-taught-alias", "user"),
+            ] {
+                conn.execute(
+                    "INSERT OR REPLACE INTO book_person_aliases
+                       (id, book_id, canonical, alias, source, mentions, created_at, kind, source_query)
+                     VALUES (?1, ?2, ?3, ?4, ?5, 1, 0, 'name', NULL)",
+                    params![id, &book_id, canonical, alias, source],
+                )
+                .unwrap();
+            }
+        }
+        (
+            Lab { _directory: directory, db, secrets, book_id },
+            title,
+            sections,
+        )
+    }
+
+    /// How one pass ended. Carried out of the concurrent fan-out rather than
+    /// printed and asserted inside it, so the report reads in pass order
+    /// instead of in whatever order the endpoint happened to answer.
+    enum Verdict {
+        Built { attempts: u32, rows: usize, taught_kept: bool },
+        Unusable { rows: usize, unchanged: bool },
+        /// Not a verdict on the model's output: the request never came back,
+        /// so `run_build_pass` bailed out of the retry loop on the attempt
+        /// that failed rather than using up all three. Counting these as
+        /// unusable attempts would blame the model for the transport, and
+        /// counting them as usable ones — which an earlier version of this
+        /// test did — would report a stream that died as three clean answers.
+        NoAnswer(String),
+    }
+
+    #[tokio::test]
+    #[ignore = "needs a configured AI provider and spends real tokens; run manually"]
+    async fn live_alias_build_usable_rate() {
+        use futures::StreamExt;
+
+        let arm = Arm::from_env();
+        let passes = env_count("LANTERN_ALIAS_PASSES", 6);
+        // The passes are independent requests to the same endpoint against
+        // independent copies of the library, so nothing here needs them
+        // staggered — only the account's own concurrency limit does. Default
+        // to running the whole arm at once, with a cap that keeps an
+        // absent-mindedly large `LANTERN_ALIAS_PASSES` from opening one
+        // connection per pass at the same instant.
+        let concurrency = env_count("LANTERN_ALIAS_CONCURRENCY", passes.min(12)).max(1) as usize;
+
+        let mut labs = Vec::new();
+        let mut header = None;
+        for _ in 0..passes {
+            let (lab, title, sections) = open_lab(&arm);
+            header.get_or_insert((title, sections));
+            labs.push(lab);
+        }
+        let (title, sections) = header.expect("LANTERN_ALIAS_PASSES must be at least 1");
+        println!(
+            "=== {title}: {sections} section summaries, {}, {passes} passes at concurrency {concurrency} ===",
+            arm.describe()
+        );
+
+        let app = tauri::test::mock_app();
+        let handle = app.handle();
+        let mut verdicts: Vec<(u32, Verdict)> = futures::stream::iter(labs.iter().enumerate())
+            .map(|(index, lab)| async move {
+                let before = {
+                    let conn = lab.db.conn.lock().unwrap();
+                    snapshot(&conn, &lab.book_id)
+                };
+                let verdict =
+                    match run_build_pass(handle, &lab.db, &lab.secrets, &lab.book_id, "user").await {
+                        Ok(attempts) => {
+                            let rows = {
+                                let conn = lab.db.conn.lock().unwrap();
+                                snapshot(&conn, &lab.book_id)
+                            };
+                            Verdict::Built {
+                                attempts,
+                                taught_kept: rows.iter().any(|(_, alias, source)| {
+                                    alias == "seeded-taught-alias" && source == "user"
+                                }),
+                                rows: rows.len(),
+                            }
+                        }
+                        Err(error) => {
+                            let message = error.to_string();
+                            if message.contains("PERSON_ALIASES_AI_UNUSABLE") {
+                                let after = {
+                                    let conn = lab.db.conn.lock().unwrap();
+                                    snapshot(&conn, &lab.book_id)
+                                };
+                                Verdict::Unusable {
+                                    rows: after.len(),
+                                    unchanged: before == after,
+                                }
+                            } else {
+                                Verdict::NoAnswer(message)
+                            }
+                        }
+                    };
+                (index as u32 + 1, verdict)
+            })
+            .buffer_unordered(concurrency)
+            .collect()
+            .await;
+        verdicts.sort_by_key(|(pass, _)| *pass);
+
+        let mut succeeded = 0u32;
+        let mut attempts_total = 0u32;
+        let mut unusable_attempts = 0u32;
+        let mut other_failures: Vec<String> = Vec::new();
+        // Only meaningful for passes that actually failed three in a row; a
+        // count of zero at the end is not a pass, it is a run that never
+        // reached the case, and the report has to say so rather than imply the
+        // invariant was exercised.
+        let mut survivals = 0u32;
+
+        for (pass, verdict) in &verdicts {
+            match verdict {
+                Verdict::Built { attempts, rows, taught_kept } => {
+                    succeeded += 1;
+                    attempts_total += attempts;
+                    unusable_attempts += attempts - 1;
+                    println!(
+                        "pass {pass}: ok on attempt {attempts}, {rows} rows, \
+                         taught row kept: {taught_kept}"
+                    );
+                    assert!(
+                        *taught_kept,
+                        "a successful build deleted a row the reader taught by hand"
+                    );
+                }
+                Verdict::Unusable { rows, unchanged } => {
+                    attempts_total += MAX_BUILD_ATTEMPTS;
+                    unusable_attempts += MAX_BUILD_ATTEMPTS;
+                    println!(
+                        "pass {pass}: unusable after {MAX_BUILD_ATTEMPTS} attempts, \
+                         table unchanged at {rows} rows"
+                    );
+                    assert!(
+                        *unchanged,
+                        "three failed attempts changed the table (pass {pass})"
+                    );
+                    survivals += 1;
+                }
+                Verdict::NoAnswer(message) => {
+                    other_failures.push(message.clone());
+                    println!("pass {pass}: no verdict, the request failed — {message}");
+                }
+            }
+        }
+
+        println!("\n=== {passes} passes, {} ===", arm.describe());
+        // Rates are over the passes that got an answer to judge. A pass whose
+        // request died is a real failure the reader would see, but it is not
+        // evidence about whether this model can name the book's people, and
+        // averaging it in either direction would answer a different question
+        // than the one the shipped copy makes a claim about.
+        let judged = passes - other_failures.len() as u32;
+        if judged == 0 {
+            println!("no pass got an answer to judge; every request failed before a verdict");
+        } else {
+            println!(
+                "pass-level usable rate: {succeeded}/{judged} judged passes ({:.0}%)",
+                100.0 * f64::from(succeeded) / f64::from(judged)
+            );
+            println!(
+                "attempt-level usable rate: {}/{attempts_total} ({:.0}%)",
+                attempts_total - unusable_attempts,
+                100.0 * f64::from(attempts_total - unusable_attempts) / f64::from(attempts_total)
+            );
+        }
+        println!("{}/{passes} passes never got an answer at all", other_failures.len());
+        if survivals == 0 {
+            println!(
+                "no pass failed {MAX_BUILD_ATTEMPTS} times in a row, so the \
+                 table-survives-failure case was never reached in this run"
+            );
+        } else {
+            println!("{survivals} three-in-a-row failures, table unchanged after every one");
+        }
+        if !other_failures.is_empty() {
+            println!("{} passes failed for other reasons:", other_failures.len());
+            for message in &other_failures {
+                println!("  {message}");
+            }
+        }
     }
 }

@@ -6,7 +6,7 @@
 
 问「达西第一次向伊丽莎白求婚」，书里写的是 Darcy 和 Elizabeth。关键词检索按 token 对，两边一个词都对不上。
 
-上一轮 A/B（[`contextual-retrieval-ab.md`](contextual-retrieval-ab.md)）已经确认：定位句在关键词这条路上只是个平局裁判（权重 0.3），救不了差几十名的查询。别名解析走的是另一条路——它不改排序，它改查询本身。
+上一轮 A/B（[`contextual-retrieval-ab-pnp.md`](contextual-retrieval-ab-pnp.md)）已经确认：定位句在关键词这条路上只是个平局裁判（权重 0.3），救不了差几十名的查询。别名解析走的是另一条路——它不改排序，它改查询本身。
 
 ## 分两层，只做第一层
 

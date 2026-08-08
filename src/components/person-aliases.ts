@@ -150,6 +150,14 @@ export function aliasBuildError(error: unknown): AliasBuildErrorView {
       // Three independent samples all came back with names that are not the
       // book's. Retry first: attempts are independent, and the failure
       // correlates with how long the model reasoned, not with the book.
+      //
+      // The button stays — a reader who wants a different model should be able
+      // to reach one — but the copy no longer *recommends* one. Measured
+      // across three configurations, a bigger model was not steadier: the
+      // small model returned a usable table 6/6 on the first ask, the larger
+      // configured one lost 3 builds in 18, and raising reasoning effort was
+      // the only knob that made things reliably worse. See
+      // docs/impls/grounding-retrieval-validation.md §2.
       return {
         tone: "danger",
         titleKey: `${K}unusableTitle`,
@@ -159,10 +167,11 @@ export function aliasBuildError(error: unknown): AliasBuildErrorView {
         detail: null,
       };
     case "PERSON_ALIASES_AI_INVALID":
-      // Thrown on the first unparseable reply — it never enters the retry
-      // loop — so the copy must not claim three tries were made. A model that
-      // cannot hold the format rarely learns it on the second ask, which is
-      // why picking another one leads here.
+      // Now raised only after three unparseable replies in a row: the parse
+      // failure used to skip the retry loop entirely, which cost 3 builds in
+      // 18 on a real library while the case the loop *did* cover cost none.
+      // So the copy may claim three tries, and a model that misses the format
+      // three times running is a fair reason to offer another one.
       return {
         tone: "danger",
         titleKey: `${K}invalidTitle`,
