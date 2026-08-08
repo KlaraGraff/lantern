@@ -402,6 +402,16 @@ impl Snapshot {
             }
             upsert_vocab(tx, id, row)?;
         }
+        for (id, row) in &self.state.vocab_review_log {
+            // Only the word's own tombstone is checked, not its book's. The
+            // book check above exists to stop a deleted book's words coming
+            // back; a review row cannot resurrect anything, and its word is
+            // already gated by the loop above.
+            if merge::is_tombstoned(tx, merge::entity::VOCAB, &row.vocab_word_id)? {
+                continue;
+            }
+            insert_vocab_review_log(tx, id, row)?;
+        }
         for (id, row) in &self.state.notes {
             if merge::is_tombstoned(tx, merge::entity::NOTE, id)? {
                 continue;
@@ -733,6 +743,37 @@ fn insert_bookmark(tx: &Transaction, id: &str, r: &BookmarkRow) -> AppResult<()>
          (id, book_id, cfi, label, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         params![id, r.book_id, r.cfi, r.label, r.created_at, r.updated_at],
+    )?;
+    Ok(())
+}
+
+/// `INSERT OR IGNORE`, with no `ON CONFLICT DO UPDATE` clause at all — the
+/// only writer in this file shaped that way. Every neighbour here has to
+/// decide which of two versions of a row wins; this one cannot, because the
+/// row is immutable by construction (migration 061). If the id is already
+/// present the local copy is the same review, so there is nothing to update
+/// and nothing lost by skipping it.
+fn insert_vocab_review_log(tx: &Transaction, id: &str, r: &VocabReviewLogRow) -> AppResult<()> {
+    tx.execute(
+        "INSERT OR IGNORE INTO vocab_review_log
+         (id, vocab_word_id, reviewed_at, rating, state_before, stability_before,
+          difficulty_before, elapsed_days, scheduled_days, fsrs_version,
+          created_at, updated_by_device)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        params![
+            id,
+            r.vocab_word_id,
+            r.reviewed_at,
+            r.rating,
+            r.state_before,
+            r.stability_before,
+            r.difficulty_before,
+            r.elapsed_days,
+            r.scheduled_days,
+            r.fsrs_version,
+            r.created_at,
+            r.updated_by_device,
+        ],
     )?;
     Ok(())
 }
@@ -1339,6 +1380,37 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     for row in rows {
         let (id, v) = row?;
         state.vocab_words.insert(id, v);
+    }
+    drop(stmt);
+
+    // vocab_review_log
+    let mut stmt = conn.prepare(
+        "SELECT id, vocab_word_id, reviewed_at, rating, state_before,
+                stability_before, difficulty_before, elapsed_days,
+                scheduled_days, fsrs_version, created_at, updated_by_device
+           FROM vocab_review_log",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>("id")?,
+            VocabReviewLogRow {
+                vocab_word_id: r.get("vocab_word_id")?,
+                reviewed_at: r.get("reviewed_at")?,
+                rating: r.get("rating")?,
+                state_before: r.get("state_before")?,
+                stability_before: r.get("stability_before")?,
+                difficulty_before: r.get("difficulty_before")?,
+                elapsed_days: r.get("elapsed_days")?,
+                scheduled_days: r.get("scheduled_days")?,
+                fsrs_version: r.get("fsrs_version")?,
+                created_at: r.get("created_at")?,
+                updated_by_device: r.get("updated_by_device")?,
+            },
+        ))
+    })?;
+    for row in rows {
+        let (id, v) = row?;
+        state.vocab_review_log.insert(id, v);
     }
     drop(stmt);
 

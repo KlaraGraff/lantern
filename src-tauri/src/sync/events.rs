@@ -26,10 +26,12 @@ use sha2::{Digest, Sha256};
 /// gives the same `null` meaning to a *global* setting, which version 9 read
 /// and discarded as a documented no-op; version 11 adds `vocab.definition.set`,
 /// the first event that may rewrite a saved word's definition; version 12 adds
-/// `auto_highlight.dismissal.set`, which hides one derived highlight.
+/// `auto_highlight.dismissal.set`, which hides one derived highlight; version
+/// 13 adds `vocab.review.append`, the first append-only event — see its
+/// doc comment for why it arbitrates nothing.
 /// Readers retain old-version support while older clients reject newer
 /// envelopes instead of advancing their watermark past data they cannot apply.
-pub const EVENT_SCHEMA_VERSION: u32 = 12;
+pub const EVENT_SCHEMA_VERSION: u32 = 13;
 pub const MIN_SUPPORTED_EVENT_SCHEMA_VERSION: u32 = 1;
 
 pub fn is_supported_event_schema_version(version: u32) -> bool {
@@ -300,6 +302,25 @@ pub enum EventBody {
     /// data to the shared container.
     #[serde(rename = "vocab.definition.set")]
     VocabDefinitionSet { id: String, definition: String },
+    /// One completed SRS review, appended to `vocab_review_log`.
+    ///
+    /// The first append-only event in this enum, and the only one that
+    /// arbitrates nothing. Every sibling here describes *current state*, so
+    /// two devices editing the same row have to be reconciled by comparing
+    /// `(updated_at, updated_by_device)` and letting one write lose. A review
+    /// is not state — it is something that happened, at a time, on a device,
+    /// under a freshly-minted id no other device can mint. There is no
+    /// conflict to resolve, so `merge::apply_vocab_review_append` is a plain
+    /// `INSERT OR IGNORE`: applying the same event twice is a no-op instead of
+    /// a double count, and two devices reviewing the same word simply keep
+    /// both rows, which is the truth.
+    ///
+    /// Nothing reads this table yet. It exists so that the ordered
+    /// `(reviewed_at, rating)` sequence an FSRS parameter optimizer needs
+    /// starts accumulating now — see migration 061 for why none of it can be
+    /// reconstructed after the fact.
+    #[serde(rename = "vocab.review.append")]
+    VocabReviewAppend(VocabReviewLogPayload),
 
     #[serde(rename = "note.upsert")]
     NoteUpsert(NotePayload),
@@ -459,6 +480,41 @@ pub struct BookmarkPayload {
     pub book_id: String,
     pub cfi: String,
     pub label: Option<String>,
+}
+
+/// The wire form of one `vocab_review_log` row — see
+/// `EventBody::VocabReviewAppend`.
+///
+/// `created_at` and `updated_by_device` are deliberately absent: they come
+/// from the event envelope (`event.ts`, `event.device`), which already says
+/// when this row was written and by whom. Duplicating them in the payload
+/// would create two answers to one question.
+///
+/// Every field after `rating` is optional because a card's first-ever review
+/// genuinely has no prior state to report, not because older clients might
+/// omit them — no client older than schema version 13 sends this event at all.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct VocabReviewLogPayload {
+    pub id: String,
+    pub vocab_word_id: String,
+    pub reviewed_at: i64,
+    /// 'again' | 'hard' | 'good' | 'easy'. Kept as the same string the
+    /// column's CHECK constraint enforces rather than an enum, so a payload
+    /// carrying an unknown value fails at the database rather than silently
+    /// decoding to a neighbouring variant.
+    pub rating: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_before: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stability_before: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub difficulty_before: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elapsed_days: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduled_days: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fsrs_version: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -777,6 +833,34 @@ mod tests {
             id: "v1".into(),
             definition: "an unexpectedly happy turn".into(),
         }));
+        roundtrip(&mk(EventBody::VocabReviewAppend(VocabReviewLogPayload {
+            id: "rev-1".into(),
+            vocab_word_id: "v1".into(),
+            reviewed_at: 1_714_770_000_000,
+            rating: "good".into(),
+            state_before: Some("review".into()),
+            stability_before: Some(4.5),
+            difficulty_before: Some(6.25),
+            elapsed_days: Some(3),
+            scheduled_days: Some(9),
+            fsrs_version: Some(1),
+        })));
+        // A first-ever review: every optional field absent. Worth its own
+        // roundtrip because `skip_serializing_if` drops all of them from the
+        // wire form, and the decoder has to rebuild the same `None`s rather
+        // than fail on the missing keys.
+        roundtrip(&mk(EventBody::VocabReviewAppend(VocabReviewLogPayload {
+            id: "rev-2".into(),
+            vocab_word_id: "v1".into(),
+            reviewed_at: 1_714_770_000_001,
+            rating: "again".into(),
+            state_before: None,
+            stability_before: None,
+            difficulty_before: None,
+            elapsed_days: None,
+            scheduled_days: None,
+            fsrs_version: None,
+        })));
         roundtrip(&mk(EventBody::VocabDelete { id: "v1".into() }));
     }
 

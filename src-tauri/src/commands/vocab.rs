@@ -8,7 +8,7 @@ use tauri::State;
 use crate::commands::mastery_events::record_mastery_event;
 use crate::db::Db;
 use crate::error::AppResult;
-use crate::sync::events::{EventBody, VocabPayload};
+use crate::sync::events::{EventBody, VocabPayload, VocabReviewLogPayload};
 use crate::sync::merge::{entity, insert_tombstone};
 use crate::sync::writer::SyncWriter;
 
@@ -362,6 +362,31 @@ impl VocabReviewRating {
     }
 }
 
+/// The outcome of one FSRS scheduling call.
+///
+/// A struct rather than the tuple this used to return, because
+/// `vocab_review_log` needs two values the caller cannot recover on its own:
+/// the elapsed interval the scheduler actually measured, and the state the
+/// card was in on the way in. Both are decided by the card-construction rules
+/// below, so recomputing them at the call site would mean keeping a second
+/// copy of those rules in step with this one.
+#[derive(Debug, Clone)]
+struct ScheduledReview {
+    mastery: String,
+    review_interval_days: i64,
+    next_review_at: i64,
+    stability: f64,
+    difficulty: f64,
+    /// Whole days between the previous review and this one — zero on a first
+    /// review, which has no earlier review to measure from.
+    elapsed_days: i64,
+    /// The FSRS state the card held before this call, or `None` for a card
+    /// that had never been scheduled. `None` is the honest answer there: a
+    /// never-scheduled card has no prior state, and writing `"new"` would let
+    /// an optimizer mistake "no history" for "observed as new".
+    state_before: Option<&'static str>,
+}
+
 fn schedule_review(
     rating: VocabReviewRating,
     stability: Option<f64>,
@@ -369,7 +394,7 @@ fn schedule_review(
     last_reviewed_at: Option<i64>,
     review_count: i64,
     now: i64,
-) -> AppResult<(String, i64, i64, f64, f64)> {
+) -> AppResult<ScheduledReview> {
     let now_dt = Utc
         .timestamp_millis_opt(now)
         .single()
@@ -377,15 +402,17 @@ fn schedule_review(
     let last_review = last_reviewed_at
         .and_then(|value| Utc.timestamp_millis_opt(value).single())
         .unwrap_or(now_dt);
+    let elapsed_days = now_dt.signed_duration_since(last_review).num_days().max(0);
+    let scheduled_before = stability.is_some() && difficulty.is_some();
     let card = Card {
         due: now_dt,
         stability: stability.unwrap_or_default(),
         difficulty: difficulty.unwrap_or_default(),
-        elapsed_days: now_dt.signed_duration_since(last_review).num_days().max(0),
+        elapsed_days,
         scheduled_days: 0,
         reps: review_count.clamp(0, i32::MAX as i64) as i32,
         lapses: 0,
-        state: if stability.is_some() && difficulty.is_some() {
+        state: if scheduled_before {
             FsrsState::Review
         } else {
             FsrsState::New
@@ -406,13 +433,15 @@ fn schedule_review(
     } else {
         "learning"
     };
-    Ok((
-        mastery.to_string(),
-        interval,
+    Ok(ScheduledReview {
+        mastery: mastery.to_string(),
+        review_interval_days: interval,
         next_review_at,
-        state.stability,
-        state.difficulty,
-    ))
+        stability: state.stability,
+        difficulty: state.difficulty,
+        elapsed_days,
+        state_before: scheduled_before.then_some("review"),
+    })
 }
 
 /// The state a review or a status change leaves behind, ready to be copied
@@ -1093,15 +1122,29 @@ pub(crate) fn record_vocab_review_inner(
                 row_to_vocab,
             )
             .map_err(|_| crate::error::AppError::Other("VOCAB_WORD_NOT_FOUND".to_string()))?;
-        let (mastery, review_interval_days, next_review_at, stability, difficulty) =
-            schedule_review(
-                rating,
-                current.fsrs_stability,
-                current.fsrs_difficulty,
-                current.last_reviewed_at,
-                current.review_count,
-                now,
-            )?;
+        // Read off the "before" side of the transition while it is still
+        // true. The UPDATE below overwrites `fsrs_stability` /
+        // `fsrs_difficulty` in place, so after it runs the numbers this
+        // review was scheduled *from* no longer exist anywhere.
+        let stability_before = current.fsrs_stability;
+        let difficulty_before = current.fsrs_difficulty;
+        let scheduled = schedule_review(
+            rating,
+            stability_before,
+            difficulty_before,
+            current.last_reviewed_at,
+            current.review_count,
+            now,
+        )?;
+        let ScheduledReview {
+            mastery,
+            review_interval_days,
+            next_review_at,
+            stability,
+            difficulty,
+            elapsed_days,
+            state_before,
+        } = scheduled;
         let review_count = current.review_count.saturating_add(1);
         tx.execute(
             "UPDATE vocab_words
@@ -1157,6 +1200,47 @@ pub(crate) fn record_vocab_review_inner(
             mastery_source: progress.mastery_source.clone(),
             mastery_reason: progress.mastery_reason.clone(),
         });
+        // The review itself, appended rather than overwritten. Deliberately
+        // outside `propagate_progress_to_siblings`: the *schedule* belongs to
+        // the word and is copied to every row spelling it, but the review
+        // happened once, to one card. Logging it per sibling row would make a
+        // word saved from three books look like three reviews and skew any
+        // optimizer trained on this log.
+        let log_id = uuid::Uuid::new_v4().to_string();
+        let review_log = VocabReviewLogPayload {
+            id: log_id,
+            vocab_word_id: id.to_string(),
+            reviewed_at: now,
+            rating: rating.as_str().to_string(),
+            state_before: state_before.map(str::to_string),
+            stability_before,
+            difficulty_before,
+            elapsed_days: Some(elapsed_days),
+            scheduled_days: Some(review_interval_days),
+            fsrs_version: Some(progress.fsrs_version),
+        };
+        tx.execute(
+            "INSERT INTO vocab_review_log
+             (id, vocab_word_id, reviewed_at, rating, state_before, stability_before,
+              difficulty_before, elapsed_days, scheduled_days, fsrs_version,
+              created_at, updated_by_device)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                review_log.id,
+                review_log.vocab_word_id,
+                review_log.reviewed_at,
+                review_log.rating,
+                review_log.state_before,
+                review_log.stability_before,
+                review_log.difficulty_before,
+                review_log.elapsed_days,
+                review_log.scheduled_days,
+                review_log.fsrs_version,
+                now,
+                device,
+            ],
+        )?;
+        events.push(EventBody::VocabReviewAppend(review_log));
         propagate_progress_to_siblings(tx, events, id, &current.word, &progress, now, &device)?;
         tx.query_row(
             &format!("SELECT {SELECT_COLS} FROM vocab_words WHERE id = ?1"),
@@ -1957,6 +2041,94 @@ mod tests {
         assert_eq!(stored_word(&db, &other).review_count, 0);
     }
 
+    /// The schedule propagates to sibling rows; the review does not. One word
+    /// saved from two books that gets reviewed once must leave one row in the
+    /// log, or an optimizer reads the reader's shelf as their study history.
+    #[test]
+    fn a_review_logs_one_row_no_matter_how_many_rows_spell_the_word() {
+        let (_dir, db, sync, a, b, _other) = setup_sibling_db();
+
+        record_vocab_review_inner(&a, VocabReviewRating::Good, &db, &sync).unwrap();
+
+        let conn = db.reader();
+        let total: i64 = conn
+            .query_row("SELECT COUNT(*) FROM vocab_review_log", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(total, 1);
+        let logged_for: String = conn
+            .query_row("SELECT vocab_word_id FROM vocab_review_log", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(logged_for, a);
+        assert_ne!(logged_for, b);
+    }
+
+    /// The subset of a `vocab_review_log` row the "before" assertions read.
+    struct LoggedReview {
+        rating: String,
+        state_before: Option<String>,
+        stability_before: Option<f64>,
+        difficulty_before: Option<f64>,
+    }
+
+    /// `stability_before` must hold what the card looked like going *into* the
+    /// review, not what the scheduler left behind. The UPDATE overwrites the
+    /// column in the same transaction, so reading it a statement too late
+    /// silently records the "after" value under an "before" name — a bug that
+    /// would produce a plausible-looking log and a badly trained optimizer.
+    #[test]
+    fn the_log_records_the_state_the_review_started_from() {
+        let (_dir, db, sync, a, _b, _other) = setup_sibling_db();
+
+        let first = record_vocab_review_inner(&a, VocabReviewRating::Good, &db, &sync).unwrap();
+        let second = record_vocab_review_inner(&a, VocabReviewRating::Hard, &db, &sync).unwrap();
+
+        let conn = db.reader();
+        let mut stmt = conn
+            .prepare(
+                "SELECT rating, state_before, stability_before, difficulty_before
+                   FROM vocab_review_log ORDER BY reviewed_at, rowid",
+            )
+            .unwrap();
+        let rows: Vec<LoggedReview> = stmt
+            .query_map([], |r| {
+                Ok(LoggedReview {
+                    rating: r.get(0)?,
+                    state_before: r.get(1)?,
+                    stability_before: r.get(2)?,
+                    difficulty_before: r.get(3)?,
+                })
+            })
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+
+        assert_eq!(rows.len(), 2);
+        // First review: nothing came before it.
+        assert_eq!(rows[0].rating, "good");
+        assert_eq!(rows[0].state_before, None);
+        assert_eq!(rows[0].stability_before, None);
+        assert_eq!(rows[0].difficulty_before, None);
+        // Second review: the "before" pair is exactly the first review's
+        // result.
+        assert_eq!(rows[1].rating, "hard");
+        assert_eq!(rows[1].state_before.as_deref(), Some("review"));
+        assert_eq!(rows[1].stability_before, first.fsrs_stability);
+        assert_eq!(rows[1].difficulty_before, first.fsrs_difficulty);
+        // ...and is not simply the second review's own result read back a
+        // statement too late. Asserted across the pair rather than on one
+        // column: both reviews land in the same millisecond, so FSRS leaves
+        // stability untouched and only difficulty moves. Requiring *some*
+        // movement keeps the guard honest without pinning which field carries
+        // it, which is a scheduler detail this test has no business fixing.
+        assert!(
+            (rows[1].stability_before, rows[1].difficulty_before)
+                != (second.fsrs_stability, second.fsrs_difficulty),
+            "stability_before/difficulty_before were read after the UPDATE"
+        );
+    }
+
     #[test]
     fn bulk_mastery_change_reaches_siblings_without_inflating_the_count() {
         let (_dir, db, sync, a, b, other) = setup_sibling_db();
@@ -2439,29 +2611,51 @@ mod tests {
 
     #[test]
     fn again_returns_word_to_short_learning_interval() {
-        let (mastery, interval, due, stability, difficulty) =
-            schedule_review(VocabReviewRating::Again, None, None, None, 0, 1_000).unwrap();
-        assert_eq!(mastery, "learning");
-        assert_eq!(interval, 0);
-        assert!(due > 1_000);
-        assert!(stability > 0.0 && difficulty > 0.0);
+        let first = schedule_review(VocabReviewRating::Again, None, None, None, 0, 1_000).unwrap();
+        assert_eq!(first.mastery, "learning");
+        assert_eq!(first.review_interval_days, 0);
+        assert!(first.next_review_at > 1_000);
+        assert!(first.stability > 0.0 && first.difficulty > 0.0);
+    }
+
+    /// A card with no stored stability has never been scheduled, so there is
+    /// no prior state to log — and once it has one, there is. Guards the two
+    /// `*_before` columns against the tempting-but-wrong shortcut of writing
+    /// `"new"` for a first review, which would make "never seen" and "seen,
+    /// judged new" indistinguishable in the optimizer's training data.
+    #[test]
+    fn first_review_has_no_prior_state_and_later_ones_do() {
+        let first = schedule_review(VocabReviewRating::Good, None, None, None, 0, 1_000).unwrap();
+        assert_eq!(first.state_before, None);
+        assert_eq!(first.elapsed_days, 0);
+
+        let second = schedule_review(
+            VocabReviewRating::Good,
+            Some(first.stability),
+            Some(first.difficulty),
+            Some(1_000),
+            1,
+            1_000 + 3 * DAY_MS,
+        )
+        .unwrap();
+        assert_eq!(second.state_before, Some("review"));
+        assert_eq!(second.elapsed_days, 3);
     }
 
     #[test]
     fn good_grows_interval_and_eventually_marks_mastered() {
-        let (_, first, _, stability, difficulty) =
-            schedule_review(VocabReviewRating::Good, None, None, None, 0, 1_000).unwrap();
-        let (_, second, due, _, _) = schedule_review(
+        let first = schedule_review(VocabReviewRating::Good, None, None, None, 0, 1_000).unwrap();
+        let second = schedule_review(
             VocabReviewRating::Good,
-            Some(stability),
-            Some(difficulty),
+            Some(first.stability),
+            Some(first.difficulty),
             Some(1_000),
             1,
-            1_000 + first * DAY_MS,
+            1_000 + first.review_interval_days * DAY_MS,
         )
         .unwrap();
-        assert!(second >= first);
-        assert!(due > 1_000);
+        assert!(second.review_interval_days >= first.review_interval_days);
+        assert!(second.next_review_at > 1_000);
     }
 
     // --- Observation zone (docs/impls/reading-flow-decisions-2026-08-06.md

@@ -30,6 +30,14 @@ pub struct SnapshotState {
     pub bookmarks: BTreeMap<String, BookmarkRow>,
     #[serde(default)]
     pub vocab_words: BTreeMap<String, VocabRow>,
+    /// Completed SRS reviews (migration 061). Unlike every other map here it
+    /// grows without bound rather than converging on one row per entity —
+    /// history has no current value to compact down to. It is carried in the
+    /// snapshot anyway because a device that bootstraps from a snapshot
+    /// instead of replaying the log would otherwise start with an empty
+    /// review history and hand a future optimizer a truncated timeline.
+    #[serde(default)]
+    pub vocab_review_log: BTreeMap<String, VocabReviewLogRow>,
     #[serde(default)]
     pub notes: BTreeMap<String, NoteRow>,
     #[serde(default)]
@@ -155,6 +163,30 @@ pub struct BookmarkRow {
     pub label: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+/// One row of `vocab_review_log`. No `updated_at`: the row is never updated,
+/// so `created_at` is the only timestamp it will ever have, and `reviewed_at`
+/// is the one that means anything to a reader of the log.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct VocabReviewLogRow {
+    pub vocab_word_id: String,
+    pub reviewed_at: i64,
+    pub rating: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_before: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stability_before: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub difficulty_before: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elapsed_days: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheduled_days: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fsrs_version: Option<i64>,
+    pub created_at: i64,
+    pub updated_by_device: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

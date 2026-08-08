@@ -15,6 +15,12 @@
 //! 3. **Deletes** drop the row plus all children manually (explicit
 //!    cascading — the app does not rely on `ON DELETE CASCADE`),
 //!    then `INSERT OR IGNORE` a tombstone keyed `(entity, id)`.
+//! 4. **Appends** (`vocab.review.append`) also use `INSERT OR IGNORE` behind a
+//!    tombstone check, but for a different reason than rule 1: the row records
+//!    something that happened rather than something that is true, so two
+//!    devices can never be describing the same fact differently. There is no
+//!    tuple to compare and no loser to discard — `INSERT OR IGNORE` buys
+//!    idempotence only.
 //!
 //! Foreign keys are off at the connection level (the app never enables
 //! `PRAGMA foreign_keys`). All cascading deletes are explicit. This
@@ -33,7 +39,7 @@ use super::events::{
     word_mark_exception_id, AutoHighlightDismissalPayload, BookAssetPayload, BookImportPayload,
     BookSummaryPayload, BookmarkPayload, ChatMessagePayload, CustomFontPayload, Event, EventBody,
     HighlightPayload, LookupOccurrenceMarkPayload, NotePayload, SettingPayload, VocabPayload,
-    WordMarkExceptionPayload, WordMarkPayload,
+    VocabReviewLogPayload, WordMarkExceptionPayload, WordMarkPayload,
 };
 
 /// Fold `event` into `tx`. Idempotent — applying the same event twice is a
@@ -103,6 +109,7 @@ pub fn apply_event(tx: &Transaction, event: &Event) -> AppResult<()> {
         EventBody::VocabDefinitionSet { id, definition } => {
             apply_vocab_definition(tx, event, id, definition)
         }
+        EventBody::VocabReviewAppend(payload) => apply_vocab_review_append(tx, event, payload),
 
         EventBody::NoteUpsert(payload) => apply_note_upsert(tx, event, payload),
         EventBody::NoteDelete { id } => apply_note_delete(tx, event, id),
@@ -930,6 +937,51 @@ fn apply_vocab_mastery(
             event.ts,
             event.device,
             id
+        ],
+    )?;
+    Ok(())
+}
+
+/// Append one review to `vocab_review_log` — see
+/// `EventBody::VocabReviewAppend`.
+///
+/// The only merge rule in this file with nothing to arbitrate. Row ids are
+/// minted locally and never reused, so `INSERT OR IGNORE` is not a
+/// conflict-resolution strategy here, only idempotence: a snapshot rebuild or
+/// a re-delivered event lands on the row already present instead of counting
+/// the review twice. Two devices reviewing the same word produce two rows,
+/// and that is the truth rather than a conflict.
+///
+/// Tombstone-guarded like every other add: a review that arrives after the
+/// reader deleted the word does not get to start a fresh history for it.
+/// Rows already written before the delete are left alone — see migration 061.
+fn apply_vocab_review_append(
+    tx: &Transaction,
+    event: &Event,
+    payload: &VocabReviewLogPayload,
+) -> AppResult<()> {
+    if is_tombstoned(tx, entity::VOCAB, &payload.vocab_word_id)? {
+        return Ok(());
+    }
+    tx.execute(
+        "INSERT OR IGNORE INTO vocab_review_log
+         (id, vocab_word_id, reviewed_at, rating, state_before, stability_before,
+          difficulty_before, elapsed_days, scheduled_days, fsrs_version,
+          created_at, updated_by_device)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        params![
+            payload.id,
+            payload.vocab_word_id,
+            payload.reviewed_at,
+            payload.rating,
+            payload.state_before,
+            payload.stability_before,
+            payload.difficulty_before,
+            payload.elapsed_days,
+            payload.scheduled_days,
+            payload.fsrs_version,
+            event.ts,
+            event.device,
         ],
     )?;
     Ok(())
@@ -3156,6 +3208,84 @@ mod tests {
             ],
         );
         assert_eq!(vocab_gloss(&db, "v1"), ("到那里".to_string(), None));
+    }
+
+    fn review_append(id: &str, reviewed_at: i64, rating: &str) -> EventBody {
+        EventBody::VocabReviewAppend(VocabReviewLogPayload {
+            id: id.into(),
+            vocab_word_id: "v1".into(),
+            reviewed_at,
+            rating: rating.into(),
+            state_before: None,
+            stability_before: None,
+            difficulty_before: None,
+            elapsed_days: Some(0),
+            scheduled_days: Some(1),
+            fsrs_version: Some(1),
+        })
+    }
+
+    fn review_log_ratings(db: &Connection) -> Vec<String> {
+        let mut stmt = db
+            .prepare("SELECT rating FROM vocab_review_log ORDER BY reviewed_at, id")
+            .unwrap();
+        let rows = stmt.query_map([], |r| r.get(0)).unwrap();
+        rows.collect::<Result<_, _>>().unwrap()
+    }
+
+    /// Re-delivery is normal: a peer that never saw our ack resends, and a
+    /// snapshot rebuild replays. For every other event that is harmless
+    /// because LWW equality short-circuits. An append has no equality test to
+    /// fall back on, so idempotence rests entirely on `INSERT OR IGNORE`
+    /// and the id being minted once — which is what this pins.
+    #[test]
+    fn re_delivering_a_review_does_not_count_it_twice() {
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1100, "dev-A", add_vocab("v1", "到那里", None)),
+                ev(1200, "dev-A", review_append("rev-1", 1200, "good")),
+                ev(1200, "dev-A", review_append("rev-1", 1200, "good")),
+            ],
+        );
+        assert_eq!(review_log_ratings(&db), vec!["good"]);
+    }
+
+    /// Two devices reviewing the same word are not in conflict — both reviews
+    /// happened. This is the one place in this file where the second write
+    /// must *not* displace the first.
+    #[test]
+    fn two_devices_reviewing_one_word_keep_both_reviews() {
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1100, "dev-A", add_vocab("v1", "到那里", None)),
+                ev(1200, "dev-A", review_append("rev-a", 1200, "good")),
+                ev(1300, "dev-B", review_append("rev-b", 1300, "again")),
+            ],
+        );
+        assert_eq!(review_log_ratings(&db), vec!["good", "again"]);
+    }
+
+    /// A review that arrives after the reader deleted the word must not open
+    /// a fresh history under a dead id. Same tombstone posture as every add.
+    #[test]
+    fn a_review_arriving_after_the_word_was_deleted_is_dropped() {
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1100, "dev-A", add_vocab("v1", "到那里", None)),
+                ev(1200, "dev-A", EventBody::VocabDelete { id: "v1".into() }),
+                ev(1300, "dev-B", review_append("rev-late", 1300, "good")),
+            ],
+        );
+        assert!(review_log_ratings(&db).is_empty());
     }
 
     /// `definition` shares the row's single clock with `mastery`, so a
