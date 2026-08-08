@@ -13,13 +13,16 @@ import { useTranslation } from "react-i18next";
 import { AlertTriangle, Info } from "lucide-react";
 import Markdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { CitedSource } from "../../hooks/useAiChat.ts";
+import type { CitedSource, QuotedSource } from "../../hooks/useAiChat.ts";
 import {
   citationMarkerFromHref,
   citationUrlTransform,
   markdownWithCitationLinks,
+  markdownWithQuoteLinks,
+  quoteMarkerFromHref,
 } from "../citation-markers.ts";
 import CitationChip from "./CitationChip.ts";
+import QuoteChip from "./QuoteChip.ts";
 import {
   remarkLanternAlerts,
   remarkLanternMarks,
@@ -87,6 +90,11 @@ export interface AiMarkdownProps {
   /** When present, [S1] markers render as citation chips. */
   sources?: CitedSource[];
   onNavigateToSource?: (source: CitedSource) => void;
+  /** When present, [Q1] markers render as example-sentence chips. */
+  quotes?: QuotedSource[];
+  onNavigateToQuote?: (quote: QuotedSource) => void;
+  /** Accessible name for a quote chip, given its book title. */
+  quoteLabel?: (quote: QuotedSource) => string;
   /** Extra wrapper classes — the call site's text size and colour. */
   className?: string;
 }
@@ -99,11 +107,15 @@ export default function AiMarkdown({
   highlightTerm,
   sources,
   onNavigateToSource,
+  quotes,
+  onNavigateToQuote,
+  quoteLabel,
   className,
 }: AiMarkdownProps) {
   let text = children;
   if (streaming) text = settleStreamingTail(text);
   if (sources?.length) text = markdownWithCitationLinks(text, sources);
+  if (quotes?.length) text = markdownWithQuoteLinks(text, quotes);
 
   const marksOptions: LanternMarksOptions = { highlightTerm };
   const components: Components = {
@@ -124,12 +136,24 @@ export default function AiMarkdown({
       const source = marker
         ? sources?.find((candidate) => candidate.marker === marker)
         : undefined;
-      return source
-        ? h(CitationChip, {
-            source,
-            onClick: onNavigateToSource ? () => onNavigateToSource(source) : undefined,
-          })
-        : h("a", { href }, kids);
+      if (source) {
+        return h(CitationChip, {
+          source,
+          onClick: onNavigateToSource ? () => onNavigateToSource(source) : undefined,
+        });
+      }
+      const quoteMarker = quoteMarkerFromHref(href);
+      const quote = quoteMarker
+        ? quotes?.find((candidate) => candidate.marker === quoteMarker)
+        : undefined;
+      if (quote) {
+        return h(QuoteChip, {
+          quote,
+          label: quoteLabel?.(quote) ?? quote.bookTitle,
+          onClick: onNavigateToQuote ? () => onNavigateToQuote(quote) : undefined,
+        });
+      }
+      return h("a", { href }, kids);
     },
   };
   if (size === "chat") {

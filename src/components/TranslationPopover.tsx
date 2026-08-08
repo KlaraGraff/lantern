@@ -20,6 +20,7 @@ import AiRetryButton from "./AiRetryButton";
 import { createUuid } from "../utils/randomUuid";
 import { notifyReaders } from "../utils/notifyReaders";
 import { saveVocabWord } from "./vocab/collect";
+import { focusWordFor } from "./focus-word";
 
 interface TranslationPopoverProps {
   x: number;
@@ -32,7 +33,7 @@ interface TranslationPopoverProps {
   chapter?: string;
   cfi?: string;
   onClose: () => void;
-  onAskFollowUp?: (quote: string, cfi?: string) => void;
+  onAskFollowUp?: (quote: string, cfi?: string, focusWord?: string) => void;
 }
 
 interface AiStreamChunk {
@@ -414,7 +415,7 @@ export default function TranslationPopover({
                     context ? `Context: ${context}` : "",
                     `Translation: ${contentRef.current}`,
                   ].filter(Boolean).join("\n\n");
-                  onAskFollowUp(quote, cfi);
+                  onAskFollowUp(quote, cfi, focusWordFor(text));
                   onClose();
                 }}
                 className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-text-secondary hover:text-accent-text"

@@ -23,6 +23,7 @@ export interface ChatMessage {
   contextAnalysis?: string;
   reasoning?: string;
   sources?: CitedSource[];
+  quotes?: QuotedSource[];
   spoilerGuard?: SpoilerGuardMetadata;
   route?: AiChatRoute;
   sectionIndex?: number;
@@ -134,6 +135,7 @@ export interface AliasResolutionMetadata {
 
 interface AiChatResult {
   sources: CitedSource[];
+  quotes: QuotedSource[];
   spoilerGuard: SpoilerGuardMetadata;
   route?: AiChatRoute;
   sectionIndex?: number;
@@ -153,6 +155,29 @@ export interface CitedSource {
   fallbackSnippet?: string;
   charStart?: number;
   charEnd?: number;
+}
+
+/**
+ * A `[Q1]` example sentence — a real line from a book the reader has already
+ * finished, showing the word they just asked about in use.
+ *
+ * Deliberately not a `CitedSource`. A `[S1]` is evidence from the book on
+ * screen and clicking it scrolls; a `[Q1]` is an illustration from somewhere
+ * else in the library and clicking it leaves the book. The two look alike in
+ * the payload and promise different things, so they stay apart in the types.
+ * See `QuotedSource` in `commands/ai/chat.rs`.
+ */
+export interface QuotedSource {
+  marker: string;
+  bookId: string;
+  bookTitle: string;
+  sectionIndex: number;
+  sectionHref?: string;
+  text: string;
+  /** Anchoring context — never shown, only used to find the sentence again. */
+  prefix: string;
+  suffix: string;
+  charStart?: number;
 }
 
 interface ChatRecord {
@@ -208,6 +233,7 @@ interface ChatMessageMetadata {
   analysis?: string;
   reasoning?: string;
   sources?: CitedSource[];
+  quotes?: QuotedSource[];
   spoilerGuard?: SpoilerGuardMetadata;
   route?: AiChatRoute;
   sectionIndex?: number;
@@ -359,12 +385,14 @@ function parseAiChatResult(value: unknown): AiChatResult {
   if (!value || typeof value !== "object") {
     return {
       sources: [],
+      quotes: [],
       spoilerGuard: { active: false, wholeBookIntent: false, progress: 0 },
     };
   }
   const result = value as Record<string, unknown>;
   return {
     sources: parseCitedSources(result.sources) ?? [],
+    quotes: parseQuotedSources(result.quotes) ?? [],
     spoilerGuard: parseSpoilerGuard(result.spoilerGuard)
       ?? { active: false, wholeBookIntent: false, progress: 0 },
     route: parseAiChatRoute(result.route),
@@ -387,6 +415,20 @@ function parseCitedSources(value: unknown): CitedSource[] | undefined {
       && typeof source.snippet === "string";
   });
   return sources.length > 0 ? sources : undefined;
+}
+
+function parseQuotedSources(value: unknown): QuotedSource[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const quotes = value.filter((item): item is QuotedSource => {
+    if (!item || typeof item !== "object") return false;
+    const quote = item as Record<string, unknown>;
+    return typeof quote.marker === "string"
+      && typeof quote.bookId === "string"
+      && typeof quote.bookTitle === "string"
+      && typeof quote.sectionIndex === "number"
+      && typeof quote.text === "string";
+  });
+  return quotes.length > 0 ? quotes : undefined;
 }
 
 function parseQuotedContexts(value: unknown): QuotedContext[] | undefined {
@@ -417,6 +459,7 @@ function parseMessageMetadata(metadata: string | null): ChatMessageMetadata {
       analysis: typeof value.analysis === "string" ? value.analysis : undefined,
       reasoning: typeof value.reasoning === "string" ? value.reasoning : undefined,
       sources: parseCitedSources(value.sources),
+      quotes: parseQuotedSources(value.quotes),
       spoilerGuard: parseSpoilerGuard(value.spoilerGuard),
       route: parseAiChatRoute(value.route),
       sectionIndex: parseNonNegativeInteger(value.sectionIndex),
@@ -441,6 +484,7 @@ export function serializeMessageMetadata(metadata: ChatMessageMetadata): string 
   if (metadata.analysis) compact.analysis = metadata.analysis;
   if (metadata.reasoning) compact.reasoning = metadata.reasoning;
   if (metadata.sources?.length) compact.sources = metadata.sources;
+  if (metadata.quotes?.length) compact.quotes = metadata.quotes;
   if (metadata.spoilerGuard) compact.spoilerGuard = metadata.spoilerGuard;
   if (metadata.route) compact.route = metadata.route;
   if (metadata.sectionIndex !== undefined) compact.sectionIndex = metadata.sectionIndex;
@@ -763,6 +807,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           contextAnalysis: metadata.analysis,
           reasoning: metadata.reasoning,
           sources: metadata.sources,
+          quotes: metadata.quotes,
           spoilerGuard: metadata.spoilerGuard,
           route: metadata.route,
           sectionIndex: metadata.sectionIndex,
@@ -866,6 +911,13 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
          * another chance instead of the request going straight to a fallback.
          */
         retry?: boolean;
+        /**
+         * The single word this turn is about, when the reader got here by
+         * tapping 追问 on a lookup, a translation, or a word explanation. It is
+         * what the backend searches the rest of the library for, to answer with
+         * sentences the reader has already met rather than invented ones.
+         */
+        focusWord?: string;
       },
     ) => {
       // Refuse while the session chat is still loading — otherwise the lazy
@@ -1013,6 +1065,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
       let fullContent = "";
       let fullReasoning = "";
       let citedSources: CitedSource[] = [];
+      let quotedSources: QuotedSource[] = [];
       let spoilerGuard: SpoilerGuardMetadata | undefined;
       let route: AiChatRoute | undefined;
       let sectionIndex: number | undefined;
@@ -1187,6 +1240,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
                 if (!result) throw new Error("AI_CHAT_RESULT_MISSING");
                 if (!isRequestActive()) return;
                 if (citedSources.length === 0) citedSources = result.sources;
+                quotedSources = result.quotes;
                 spoilerGuard = result.spoilerGuard;
                 route = result.route;
                 sectionIndex = result.sectionIndex;
@@ -1196,7 +1250,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         contextBudget = result.contextBudget;
                 updateMessages((previous) => previous.map((message) => (
                   message.id === assistantId
-                    ? { ...message, sources: citedSources, spoilerGuard, route, sectionIndex, sectionEndIndex, sectionContext, sourceHash, contextBudget }
+                    ? { ...message, sources: citedSources, quotes: quotedSources, spoilerGuard, route, sectionIndex, sectionEndIndex, sectionContext, sourceHash, contextBudget }
                     : message
                 )));
               } catch (err) {
@@ -1221,6 +1275,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
                   const metadata = serializeMessageMetadata({
                     reasoning: fullReasoning,
                     sources: citedSources,
+                    quotes: quotedSources,
                     spoilerGuard,
                     route,
                     sectionIndex,
@@ -1332,11 +1387,13 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
           requestId,
           spoilerOverride: options?.spoilerOverride ?? null,
           retry: options?.retry ?? false,
+          focusWord: options?.focusWord ?? null,
           scopeOverride,
           viewportText,
         }).then(parseAiChatResult);
         const result = await chatResultPromise;
         citedSources = result.sources;
+        quotedSources = result.quotes;
         spoilerGuard = result.spoilerGuard;
         route = result.route;
         sectionIndex = result.sectionIndex;
@@ -1346,7 +1403,7 @@ export function useAiChat(bookId?: string, bookContext?: BookContext) {
         if (isRequestActive()) {
           updateMessages((previous) => previous.map((message) => (
             message.id === assistantId
-              ? { ...message, sources: citedSources, spoilerGuard, route, sectionIndex, sectionEndIndex, sectionContext, sourceHash }
+              ? { ...message, sources: citedSources, quotes: quotedSources, spoilerGuard, route, sectionIndex, sectionEndIndex, sectionContext, sourceHash }
               : message
           )));
         }

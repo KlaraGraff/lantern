@@ -6,7 +6,7 @@ import { useAiChat } from "../hooks/useAiChat";
 import { usePinnedQuestionScroll } from "../hooks/usePinnedQuestionScroll";
 import { timeAgo } from "../utils/timeAgo";
 import MessageBubble from "./MessageBubble";
-import type { AiChatScope, CitedSource, ContextKind } from "../hooks/useAiChat";
+import type { AiChatScope, CitedSource, ContextKind, QuotedSource } from "../hooks/useAiChat";
 import IndexManagerModal from "./IndexManagerModal";
 
 interface AiPanelProps {
@@ -21,11 +21,12 @@ interface AiPanelProps {
   getViewportText?: () => string | undefined;
   /** The reader's live selection, read when the composer is used. */
   getSelectionQuote?: () => { text: string; cfi?: string } | undefined;
-  context?: { text: string; cfi?: string; analysis?: string };
+  context?: { text: string; cfi?: string; analysis?: string; focusWord?: string };
   initialChatId?: string;
   onContextConsumed?: () => void;
   onNavigateToCfi?: (cfi: string) => void;
   onNavigateToSource?: (source: CitedSource) => void;
+  onNavigateToQuote?: (quote: QuotedSource) => void;
   /** Answers are lookup surfaces too: double-click a word, or select a phrase. */
   onLookupWord?: (event: ReactMouseEvent<HTMLElement>) => void;
   onSelectText?: (event: ReactMouseEvent<HTMLElement>) => void;
@@ -132,9 +133,12 @@ interface ComposerQuote {
   kind?: ContextKind;
   cfi?: string;
   analysis?: string;
+  /** Set when the quote came from a lookup on one word — see `focus-word.ts`.
+   *  The whole card rides in `text`; this is the word to fetch examples for. */
+  focusWord?: string;
 }
 
-function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSectionIndex, currentScopeStartIndex, currentScopeEndIndex, currentScopeAmbiguous, getViewportText, getSelectionQuote, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource, onLookupWord, onSelectText }: AiPanelProps) {
+function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSectionIndex, currentScopeStartIndex, currentScopeEndIndex, currentScopeAmbiguous, getViewportText, getSelectionQuote, context, initialChatId, onContextConsumed, onNavigateToCfi, onNavigateToSource, onNavigateToQuote, onLookupWord, onSelectText }: AiPanelProps) {
   const { t } = useTranslation();
 
   const SUGGESTED_PROMPTS = [
@@ -274,6 +278,11 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
     return selected ? [selected] : [];
   };
 
+  // Not `quotes[0]` — the lookup card is whichever chip carries a word, and a
+  // reader can pin a passage before or after asking about the word.
+  const takeFocusWord = (quotes: ComposerQuote[]) =>
+    quotes.find((quote) => quote.focusWord)?.focusWord;
+
   const handleSend = () => {
     if (!input.trim() || streaming || initializing) return;
     pinLatestQuestion();
@@ -282,6 +291,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
       scope,
       contextKind: quotes[0]?.kind,
       contexts: quotes,
+      focusWord: takeFocusWord(quotes),
     });
     clearQuotes();
     setInput("");
@@ -478,6 +488,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
                       scope,
                       contextKind: quotes[0]?.kind,
                       contexts: quotes,
+                      focusWord: takeFocusWord(quotes),
                     });
                     clearQuotes();
                   }}
@@ -504,7 +515,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
             <div ref={messageListRef} className="flex flex-col gap-3">
               {messages.map((msg, index) => (
                 <div key={msg.id} ref={index === lastQuestionIndex ? questionAnchorRef : undefined}>
-                  <MessageBubble msg={msg} messages={messages} streaming={streaming} onNavigateToCfi={onNavigateToCfi} onNavigateToSource={onNavigateToSource} onRetryWithWholeBook={retryWithWholeBook} onRetry={retryFailed} onQuoteReply={quoteReply} onSwapAlias={swapAlias} />
+                  <MessageBubble msg={msg} messages={messages} streaming={streaming} onNavigateToCfi={onNavigateToCfi} onNavigateToSource={onNavigateToSource} onNavigateToQuote={onNavigateToQuote} onRetryWithWholeBook={retryWithWholeBook} onRetry={retryFailed} onQuoteReply={quoteReply} onSwapAlias={swapAlias} />
                 </div>
               ))}
             </div>

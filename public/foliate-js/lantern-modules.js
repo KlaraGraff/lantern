@@ -14,5 +14,6 @@
 // `src/pages/reader/foliate-modules.ts` for the loader side.
 import { FootnoteHandler } from './footnotes.js'
 import * as epubcfi from './epubcfi.js'
+import { textWalker } from './text-walker.js'
 
-globalThis.__lanternFoliateModules = { FootnoteHandler, epubcfi }
+globalThis.__lanternFoliateModules = { FootnoteHandler, epubcfi, textWalker }

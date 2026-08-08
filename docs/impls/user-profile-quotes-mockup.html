@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>真句检索 · 引用标记与跳转 · 样张</title>
+<style>
+:root {
+  --color-bg-page: #f4f4f5;
+  --color-bg-surface: #ffffff;
+  --color-bg-muted: #fafafa;
+  --color-bg-input: #f3f3f5;
+  --color-text-primary: #18181b;
+  --color-text-body: #0a0a0a;
+  --color-text-secondary: #52525c;
+  --color-text-muted: #71717b;
+  --color-border: #e4e4e7;
+  --color-border-light: #f4f4f5;
+  --color-accent: #7c3aed;
+  --color-accent-bg: #f3e8ff;
+  --color-accent-text: #7c3aed;
+  --color-warning: #b8791c;
+  --color-danger-text: #e7000b;
+  --color-danger-bg: #fef2f2;
+  --color-danger-border: #ffc9c9;
+  --color-reader-paper-bg: #faf7f0;
+  --shadow-card: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -2px rgba(0,0,0,.1);
+  --shadow-popover: 0 10px 15px 0 rgba(0,0,0,.1), 0 4px 6px 0 rgba(0,0,0,.1);
+  --flash: rgba(124,58,237,.20);
+}
+[data-theme="dark"] {
+  --color-bg-page: #151518;
+  --color-bg-surface: #18191d;
+  --color-bg-muted: #1f2023;
+  --color-bg-input: #25262c;
+  --color-text-primary: #f4f4f5;
+  --color-text-body: #e7e7ea;
+  --color-text-secondary: #c9c9d1;
+  --color-text-muted: #9a9aa4;
+  --color-border: #34343d;
+  --color-border-light: #2a2b31;
+  --color-accent: #8b5cf6;
+  --color-accent-bg: #302647;
+  --color-accent-text: #a78bfa;
+  --color-warning: #e0a75a;
+  --color-danger-text: #f87171;
+  --color-danger-bg: #450a0a;
+  --color-danger-border: #991b1b;
+  --color-reader-paper-bg: #1b1b1f;
+  --flash: rgba(139,92,246,.28);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--color-bg-page);
+  color: var(--color-text-body);
+  font-family: "Inter", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding: 40px 24px 96px; }
+h1 { font-size: 24px; margin: 0 0 6px; color: var(--color-text-primary); letter-spacing: -.01em; }
+.sub { color: var(--color-text-muted); font-size: 13px; margin: 0 0 28px; }
+h2 {
+  font-size: 17px; margin: 48px 0 4px; color: var(--color-text-primary);
+  padding-top: 20px; border-top: 1px solid var(--color-border);
+}
+h2:first-of-type { border-top: none; padding-top: 0; }
+h3 { font-size: 13px; margin: 0 0 10px; color: var(--color-text-secondary); font-weight: 600; }
+.note { color: var(--color-text-muted); font-size: 12.5px; margin: 0 0 20px; max-width: 74ch; }
+.grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); }
+.panel {
+  background: var(--color-bg-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 16px;
+}
+.panel > .cap {
+  font-size: 11px; color: var(--color-text-muted); margin-top: 12px; line-height: 1.55;
+}
+.tag {
+  display: inline-block; font-size: 10.5px; font-weight: 600; letter-spacing: .02em;
+  padding: 2px 7px; border-radius: 9999px; margin-left: 6px; vertical-align: 2px;
+  background: var(--color-accent-bg); color: var(--color-accent-text);
+}
+.tag.grey { background: var(--color-bg-input); color: var(--color-text-muted); }
+.tag.warn { background: rgba(184,121,28,.14); color: var(--color-warning); }
+
+/* ── theme switch ── */
+.toolbar { position: sticky; top: 0; z-index: 50; background: var(--color-bg-page); padding: 10px 0 14px; margin-bottom: 6px; }
+.tbtn {
+  font: inherit; font-size: 12.5px; cursor: pointer;
+  background: var(--color-bg-surface); color: var(--color-text-secondary);
+  border: 1px solid var(--color-border); border-radius: 9999px; padding: 5px 14px;
+}
+.tbtn:hover { color: var(--color-text-primary); }
+
+/* ── chat ── */
+.chat {
+  background: var(--color-bg-page);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 14px;
+}
+.chat-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--color-text-muted);
+  padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--color-border);
+}
+.userbubble {
+  background: var(--color-accent-bg); color: var(--color-text-primary);
+  border-radius: 10px; padding: 10px 13px; font-size: 13.5px; margin-left: 44px; margin-bottom: 12px;
+}
+.quoted {
+  border-left: 2px solid var(--color-accent); padding-left: 9px;
+  font-size: 12px; color: var(--color-text-secondary); margin-bottom: 7px; line-height: 1.5;
+}
+.bubble {
+  background: var(--color-bg-surface); border: 1px solid var(--color-border);
+  border-radius: 10px; padding: 13px; font-size: 13.5px; color: var(--color-text-body);
+}
+.bubble p { margin: 0 0 9px; }
+.bubble p:last-child { margin-bottom: 0; }
+.en { font-style: italic; color: var(--color-text-secondary); }
+
+/* ── the chip: copied from CitationChip.ts ── */
+.chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 20px; min-width: 20px; padding: 0 4px; margin: 0 2px;
+  transform: translateY(-1px); vertical-align: super;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+  background: var(--color-accent-bg); color: var(--color-accent-text);
+  border-radius: 4px; font-size: 10px; font-weight: 600; line-height: 1;
+  cursor: pointer; font-family: inherit;
+}
+.chip:hover { opacity: .75; }
+.srcrow {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--color-border);
+}
+.srcrow .label { font-size: 11px; color: var(--color-text-muted); margin-right: 4px; }
+/* the quote chip carries a book name, so it is wider than a bare [S1] */
+.chip.book { padding: 0 7px; gap: 4px; font-weight: 500; letter-spacing: .01em; }
+.chip.book b { font-weight: 700; }
+.chip.book .bk { font-weight: 500; }
+
+/* ── reader page ── */
+.reader {
+  position: relative; overflow: hidden;
+  background: var(--color-reader-paper-bg);
+  border: 1px solid var(--color-border); border-radius: 10px;
+  height: 400px; display: flex; flex-direction: column;
+}
+.rhead {
+  height: 40px; flex: 0 0 40px; display: flex; align-items: center; gap: 8px;
+  padding: 0 14px; border-bottom: 1px solid var(--color-border);
+  font-size: 12px; color: var(--color-text-muted);
+  background: var(--color-bg-surface);
+}
+.rhead .title { color: var(--color-text-primary); font-weight: 500; }
+.rbody { flex: 1; padding: 18px 22px; overflow: hidden; position: relative; }
+.rbody h4 { margin: 0 0 12px; font-size: 15px; color: var(--color-text-primary); }
+.rbody p {
+  margin: 0 0 11px; font-family: Georgia, "Songti SC", serif;
+  font-size: 13.5px; line-height: 1.85; color: var(--color-text-body);
+}
+mark.flash {
+  background: var(--flash); border-radius: 3px; padding: 1px 0;
+  box-shadow: 0 0 0 3px var(--flash);
+}
+.hintbar {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin: -4px -6px 14px; padding: 9px 11px;
+  background: var(--color-bg-surface); border: 1px solid var(--color-border);
+  border-radius: 8px; font-size: 12px; color: var(--color-text-secondary); line-height: 1.5;
+}
+.hintbar .dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--color-warning); margin-top: 6px; }
+.hintbar .x { margin-left: auto; color: var(--color-text-muted); cursor: pointer; font-size: 14px; line-height: 1; padding-left: 8px; }
+.pill {
+  position: absolute; bottom: 16px; left: 24px; z-index: 20;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px; border-radius: 9999px;
+  background: var(--color-accent-bg); color: var(--color-accent-text);
+  font-size: 13px; font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,.05);
+  cursor: pointer;
+}
+.pill:hover { opacity: .8; }
+.pill.faded { opacity: .0; }
+
+/* ── toast / dialog ── */
+.toast {
+  display: inline-flex; align-items: flex-start; gap: 8px; max-width: 320px;
+  background: var(--color-bg-surface); border: 1px solid var(--color-border);
+  border-radius: 8px; padding: 10px 12px; box-shadow: var(--shadow-popover);
+  font-size: 12.5px; color: var(--color-text-secondary); line-height: 1.5;
+}
+.toast .dot { flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--color-warning); margin-top: 6px; }
+
+/* ── mechanism table ── */
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+th { color: var(--color-text-muted); font-weight: 600; font-size: 11.5px; white-space: nowrap; }
+td:first-child { white-space: nowrap; color: var(--color-text-primary); font-weight: 500; }
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+  background: var(--color-bg-input); padding: 1px 5px; border-radius: 4px; color: var(--color-text-secondary);
+}
+.kv { display: grid; grid-template-columns: 120px 1fr; gap: 6px 16px; font-size: 12.5px; }
+.kv dt { color: var(--color-text-muted); }
+.kv dd { margin: 0; color: var(--color-text-secondary); }
+.alt { border-style: dashed; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="toolbar">
+  <button class="tbtn" id="themeBtn" type="button">切换到深色</button>
+</div>
+
+<h1>真句检索 · 引用标记与跳转</h1>
+<p class="sub">
+  规格来源：<code>docs/impls/user-profile-mockup.html</code> 附录甲「真句检索（第三步）」<br />
+  本样张只画两件事：<b>A</b> 检索回来的真句在答案里长什么样，<b>B</b> 点了之后发生什么。示例句子为示意，非真实引文。
+</p>
+
+<!-- ══════════════════════════ A ══════════════════════════ -->
+<h2>A · 真句在答案里怎么出现</h2>
+<p class="note">
+  做法是复用现在已有的引文标记机制：模型在用到某句时，在句末打一个 <code>[Q1]</code>；前端把它换成可点的小徽标，
+  气泡底部再列一行出处。和现有的 <code>[S1]</code>「来源」是同一套视觉语言，读者只用学一次。
+  区别只有一个——<code>[S1]</code> 指向<b>本书</b>的原文块，<code>[Q1]</code> 可能指向<b>另一本书</b>，
+  所以底部那行徽标写的是书名，不是编号：跨书跳转是件更大的事，点之前得知道要去哪儿。
+</p>
+
+<div class="grid">
+
+  <!-- A1 -->
+  <div class="panel">
+    <h3>A1 · 模型引了 1 句<span class="tag">最常见</span></h3>
+    <div class="chat">
+      <div class="chat-head">追问 · 词义</div>
+      <div class="userbubble">
+        <div class="quoted">temper — “…the sea that tempered his fury…”</div>
+        这里的 temper 是什么意思？
+      </div>
+      <div class="bubble">
+        <p>这里的 <span class="en">temper</span> 是动词，「使缓和、使有所节制」，不是名词的「脾气」。它形容的是一种力量被另一种力量压住之后的状态。</p>
+        <p>你读过的《瓦尔登湖》里也是这个用法：<span class="en">“I found that the man who had tempered his wants had also tempered his fears.”</span>——把欲望调低的人，恐惧也跟着低下去。<button class="chip">Q1</button></p>
+        <div class="srcrow">
+          <span class="label">例句</span>
+          <button class="chip book"><b>Q1</b><span class="bk">《瓦尔登湖》</span></button>
+        </div>
+      </div>
+    </div>
+    <p class="cap">
+      底部一行叫「例句」，与现有的「来源」是两行、两个词。悬停徽标显示整句原文和章节名。
+    </p>
+  </div>
+
+  <!-- A2 -->
+  <div class="panel">
+    <h3>A2 · 引了 3 句，其中两句同一本书</h3>
+    <div class="chat">
+      <div class="chat-head">追问 · 词义</div>
+      <div class="userbubble">
+        <div class="quoted">temper — “…the sea that tempered his fury…”</div>
+        这个词还有别的用法吗？
+      </div>
+      <div class="bubble">
+        <p>有三种，你都在书里见过：</p>
+        <p><b>一、使缓和。</b>《瓦尔登湖》：<span class="en">“…the man who had tempered his wants…”</span><button class="chip">Q1</button></p>
+        <p><b>二、（金属）淬火、锻炼。</b>《老人与海》里写手：<span class="en">“The old man’s hands were tempered by the line.”</span><button class="chip">Q2</button></p>
+        <p><b>三、名词的心性、气质。</b>《瓦尔登湖》另一处：<span class="en">“a temper that no winter could reach.”</span><button class="chip">Q3</button></p>
+        <div class="srcrow">
+          <span class="label">例句</span>
+          <button class="chip book"><b>Q1</b><span class="bk">《瓦尔登湖》</span></button>
+          <button class="chip book"><b>Q2</b><span class="bk">《老人与海》</span></button>
+          <button class="chip book"><b>Q3</b><span class="bk">《瓦尔登湖》</span></button>
+        </div>
+      </div>
+    </div>
+    <p class="cap">
+      同书两句不合并——编号本来就是给「这句」用的，合并了就点不准。检索上限是 5 句，一本书先给 1 句，
+      凑不够才放宽到 2 句，所以这一行最多 5 个徽标，不会撑爆气泡。
+    </p>
+  </div>
+
+  <!-- A3 -->
+  <div class="panel">
+    <h3>A3 · 检索有结果，模型一句没引<span class="tag grey">不出现任何东西</span></h3>
+    <div class="chat">
+      <div class="chat-head">追问 · 词义</div>
+      <div class="userbubble">
+        <div class="quoted">temper — “…tempered his fury…”</div>
+        这个词的词源是什么？
+      </div>
+      <div class="bubble">
+        <p>来自拉丁语 <span class="en">temperare</span>，本义是「按比例调和」，中世纪进入英语后先用在金属和体液上，才慢慢引申到情绪。</p>
+        <p>所以「淬火」和「脾气」在词源上是同一件事：都指把某种东西调到合适的比例。</p>
+      </div>
+    </div>
+    <p class="cap">
+      检索确实回来了三句，但问的是词源，一句都用不上——那就一个字都不显示。<b>不做「已检索到 3 句，模型未采用」这类提示</b>：
+      读者没问检索，告诉他检索空转了只会让他觉得哪里出了问题。
+    </p>
+  </div>
+
+  <!-- A4 -->
+  <div class="panel">
+    <h3>A4 · 检索本身没结果<span class="tag grey">与今天完全一致</span></h3>
+    <div class="chat">
+      <div class="chat-head">追问 · 词义</div>
+      <div class="userbubble">
+        <div class="quoted">quixotic — “…a quixotic attempt…”</div>
+        这个词什么意思？
+      </div>
+      <div class="bubble">
+        <p><span class="en">quixotic</span> 来自《堂吉诃德》主人公的名字，形容不切实际、明知不可为而为之的理想主义。</p>
+        <p>它带一点温和的嘲讽，但不刻薄——说一个人 quixotic，通常还是敬重他的。</p>
+      </div>
+    </div>
+    <p class="cap">
+      你读过的书里没有这个词，或者只出现在还没读到的部分。界面上和今天没有任何差别，也不提「未找到例句」。
+    </p>
+  </div>
+
+  <!-- A5 -->
+  <div class="panel" style="grid-column: 1 / -1;">
+    <h3>A5 · 和现有「来源」同时出现</h3>
+    <div class="chat" style="max-width: 620px;">
+      <div class="chat-head">追问 · 句法</div>
+      <div class="userbubble">
+        <div class="quoted">“…yet I began to feel myself mysteriously drawn towards him.”</div>
+        这句为什么用 yet 开头？
+      </div>
+      <div class="bubble">
+        <p><span class="en">yet</span> 在这里不是「还没有」，是转折连词，等于 <span class="en">but</span>，只是更书面、语气更重一点。前一句刚说这人怪得吓人，这句立刻说被他吸引——转折要够硬。<button class="chip">S1</button></p>
+        <p>同样的用法在你读过的另一本书里出现过：<span class="en">“He was strange to me, yet I trusted him at once.”</span><button class="chip">Q1</button></p>
+        <div class="srcrow">
+          <span class="label">来源</span>
+          <button class="chip">S1</button>
+        </div>
+        <div class="srcrow" style="margin-top: 6px; padding-top: 6px;">
+          <span class="label">例句</span>
+          <button class="chip book"><b>Q1</b><span class="bk">《老人与海》</span></button>
+        </div>
+      </div>
+    </div>
+    <p class="cap">
+      两行分开，不混排：「来源」是这本书里模型据以回答的原文块（点了不换书），「例句」是别的书里的真句（点了可能换书）。
+      合成一行会让读者以为点哪个都一样。
+    </p>
+  </div>
+
+  <!-- alternative -->
+  <div class="panel alt" style="grid-column: 1 / -1;">
+    <h3>备选（不推荐）· 把例句摊开成列表</h3>
+    <div class="chat" style="max-width: 620px;">
+      <div class="bubble">
+        <p>这里的 <span class="en">temper</span> 是动词，「使缓和」。你读过的书里有三处同样的用法。</p>
+        <div class="srcrow" style="display:block;">
+          <span class="label" style="display:block; margin-bottom:6px;">例句</span>
+          <div style="font-size:12.5px; line-height:1.6;">
+            <div style="padding:6px 0; border-bottom:1px solid var(--color-border-light); cursor:pointer;">
+              <b style="color:var(--color-accent-text);">Q1</b> 《瓦尔登湖》· Economy<br />
+              <span class="en" style="font-size:12px;">“…the man who had tempered his wants had also tempered his fears.”</span>
+            </div>
+            <div style="padding:6px 0; cursor:pointer;">
+              <b style="color:var(--color-accent-text);">Q2</b> 《老人与海》· 第 2 章<br />
+              <span class="en" style="font-size:12px;">“The old man’s hands were tempered by the line.”</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap">
+      好处是不用悬停就看得见原句；坏处是模型往往已经在答案里把句子念了一遍，这里等于再念一遍，
+      三句就把气泡撑成两屏。所以推荐 A1 的徽标行，原句放悬停。<b>你如果偏好这个，说一声即可换。</b>
+    </p>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════ B ══════════════════════════ -->
+<h2>B · 点下去之后</h2>
+<p class="note">
+  跳转复用现有的引文跳转链路：先按句子在目标章节里做文本匹配，命中就闪一下高亮；匹配不上就落到该章节开头。
+  跨书的例句需要先打开那本书，所以多两件事——一条落章节时的顶部提示，和一个能走回来的返回胶囊。
+</p>
+
+<div class="grid">
+
+  <!-- B1 -->
+  <div class="panel">
+    <h3>B1 · 跨书 · 精确命中<span class="tag">主路径</span></h3>
+    <div class="reader">
+      <div class="rhead"><span class="title">瓦尔登湖</span><span>· Economy</span></div>
+      <div class="rbody">
+        <h4>Economy</h4>
+        <p>When I wrote the following pages, I lived alone, in the woods, a mile from any neighbor, in a house which I had built myself.</p>
+        <p><mark class="flash">I found that the man who had tempered his wants had also tempered his fears.</mark></p>
+        <p>Most of the luxuries, and many of the so-called comforts of life, are not only not indispensable, but positive hindrances to the elevation of mankind.</p>
+      </div>
+      <div class="pill">← 返回 ·《白鲸》</div>
+    </div>
+    <p class="cap">
+      句子闪一下紫色高亮（就是现在点 <code>[S1]</code> 的那个效果），左下角出现返回胶囊。
+      胶囊上写的是<b>原来那本书的书名</b>——换了书，只写章节名读者会认不出要回哪儿。
+      翻三页后自动淡出，与现有规则一致；不额外弹确认框。
+    </p>
+  </div>
+
+  <!-- B2 -->
+  <div class="panel">
+    <h3>B2 · 跨书 · 匹配不上，落到章节开头<span class="tag warn">降级</span></h3>
+    <div class="reader">
+      <div class="rhead"><span class="title">瓦尔登湖</span><span>· Economy</span></div>
+      <div class="rbody">
+        <div class="hintbar">
+          <span class="dot"></span>
+          <span>已跳到这句所在的章节。这一版的排版和检索到的原文对不上，没能定位到具体那一句。</span>
+          <span class="x">×</span>
+        </div>
+        <h4>Economy</h4>
+        <p>When I wrote the following pages, I lived alone, in the woods, a mile from any neighbor, in a house which I had built myself.</p>
+        <p>Most of the luxuries, and many of the so-called comforts of life, are not only not indispensable, but positive hindrances to the elevation of mankind.</p>
+      </div>
+      <div class="pill">← 返回 ·《白鲸》</div>
+    </div>
+    <p class="cap">
+      <b>不把链接变灰、不禁用。</b>落到章节开头仍然有用——读者知道这句在哪一章，自己翻两页就找到了；
+      变灰则什么都不给。提示条可手动关，翻页也自动消失。
+    </p>
+  </div>
+
+  <!-- B3 -->
+  <div class="panel">
+    <h3>B3 · 例句就在本书里<span class="tag grey">今天的行为</span></h3>
+    <div class="reader">
+      <div class="rhead"><span class="title">白鲸</span><span>· Chapter 12</span></div>
+      <div class="rbody">
+        <h4>Chapter 12 · Biographical</h4>
+        <p>He was a native of Kokovoko, an island far away to the West and South.</p>
+        <p><mark class="flash">But it was especially the aspect of the sea that tempered his fury into something like patience.</mark></p>
+        <p>It is not down in any map; true places never are.</p>
+      </div>
+      <div class="pill">← 返回 · Chapter 3</div>
+    </div>
+    <p class="cap">
+      没换书，走的就是现有的跳转历史：胶囊上写<b>章节名</b>。徽标上仍然写书名（写「本书」反而要读者多想一步）。
+    </p>
+  </div>
+
+  <!-- B4 -->
+  <div class="panel">
+    <h3>B4 · 那本书打不开了<span class="tag warn">边界</span></h3>
+    <div class="reader" style="align-items:center; justify-content:center;">
+      <div class="rhead"><span class="title">白鲸</span><span>· Chapter 12</span></div>
+      <div class="rbody" style="display:flex; align-items:center; justify-content:center;">
+        <div class="toast">
+          <span class="dot"></span>
+          <span>《瓦尔登湖》的文件当前不可用，无法跳转。可以在书架里检查这本书。</span>
+        </div>
+      </div>
+    </div>
+    <p class="cap">
+      文件缺失、或 iCloud 里还是占位文件时点了徽标：<b>停在原地</b>，出一条短提示，不跳走、不清空当前阅读位置。
+      书被删掉的情况检索层就过滤掉了，走不到这里。
+    </p>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════ 机制 ══════════════════════════ -->
+<h2>要你知道的三条机制</h2>
+
+<div class="panel" style="margin-bottom:16px;">
+  <h3>一、返回胶囊在跨书时是新加的东西</h3>
+  <p class="note" style="margin:0;">
+    现有的跳转历史栈是<b>按书重置</b>的——换一本书，栈就清空，因为上一本书的位置在这本书里根本解析不了。
+    所以跨书跳转要单独存一条「从哪本书的哪个位置来的」，落地后渲染成胶囊。
+    这是唯一一处新增状态，其余（淡出规则、点击返回、不弹确认）全部沿用现有实现。
+  </p>
+</div>
+
+<div class="panel" style="margin-bottom:16px;">
+  <h3>二、能不能精确命中，取决于书的格式</h3>
+  <table>
+    <thead><tr><th>格式</th><th>检索给到的定位信息</th><th>点击结果</th></tr></thead>
+    <tbody>
+      <tr><td>纯文本 (.txt)</td><td><code>char_start</code> 有值</td><td>直接定位到字符位置，必中</td></tr>
+      <tr><td>EPUB</td><td>只有 <code>section_href</code></td><td>章节内文本匹配，命中率高；不中则 B2</td></tr>
+      <tr><td>PDF</td><td>只有页/节序号</td><td>翻到那一节，不做句级高亮</td></tr>
+    </tbody>
+  </table>
+  <p class="cap" style="margin-top:10px;">
+    EPUB 和 PDF 拿不到字符偏移是既有事实（检索模块里 <code>chunk_char_start</code> 对这两种格式返回空），不是这次要改的东西。
+    B2 那条提示就是为 EPUB 少数对不上的情况准备的。
+  </p>
+</div>
+
+<div class="panel">
+  <h3>三、检索边界（附录甲已定，这里只是复述）</h3>
+  <dl class="kv">
+    <dt>检索范围</dt><dd>只在<b>已读部分</b>里找；未读的段落不会被引用出来</dd>
+    <dt>书的顺序</dt><dd>按最近阅读时间倒序，最近在读的书优先给例句</dd>
+    <dt>数量</dt><dd>每本先 1 句，凑不满再放宽到 2 句，总共 3–5 句</dd>
+    <dt>过长的句子</dt><dd>整句跳过，不截断——截一半的句子当例句没有意义</dd>
+    <dt>模型可以不用</dt><dd>同一个词在三本书里可能是三个毫不相干的意思，允许一句都不引（A3）</dd>
+  </dl>
+</div>
+
+</div>
+
+<script>
+const btn = document.getElementById("themeBtn");
+btn.addEventListener("click", () => {
+  const dark = document.documentElement.getAttribute("data-theme") === "dark";
+  document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
+  btn.textContent = dark ? "切换到深色" : "切换到浅色";
+});
+</script>
+</body>
+</html>

@@ -10,6 +10,7 @@ import AiRetryButton from "./AiRetryButton";
 import { createUuid } from "../utils/randomUuid";
 import { notifyReaders } from "../utils/notifyReaders";
 import { saveVocabWord } from "./vocab/collect";
+import { focusWordFor } from "./focus-word";
 import { timeAgo } from "../utils/timeAgo";
 
 interface ExplainPopoverProps {
@@ -24,7 +25,7 @@ interface ExplainPopoverProps {
   cfi?: string;
   onClose: () => void;
   customAction?: { name: string; prompt: string };
-  onAskFollowUp?: (quote: string, cfi?: string) => void;
+  onAskFollowUp?: (quote: string, cfi?: string, focusWord?: string) => void;
 }
 
 interface AiStreamChunk {
@@ -565,7 +566,7 @@ export default function ExplainPopover({
                     sentence ? `Context: ${sentence}` : "",
                     `Explanation: ${contentRef.current}`,
                   ].filter(Boolean).join("\n\n");
-                  onAskFollowUp(quote, cfi);
+                  onAskFollowUp(quote, cfi, focusWordFor(text));
                   onClose();
                 }}
                 className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-text-secondary hover:text-accent-text"

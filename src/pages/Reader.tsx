@@ -38,8 +38,14 @@ import BookSearchPanel from "../components/BookSearchPanel";
 import { parseTocSavedState, type TocSavedState } from "../components/toc-state";
 import TextBookReader from "../components/TextBookReader";
 import { textLocation, type TextBookDocument } from "../components/text-book-location";
-import { citationSearchProbes } from "./reader/citationNavigation";
-import type { CitedSource } from "../hooks/useAiChat";
+import { citationSearchProbes, type AnchorOutcome, type AnchorTarget } from "./reader/citationNavigation";
+import { anchorQuoteCfi } from "./reader/quoteAnchoring";
+import {
+  crossBookReturnState,
+  parseCrossBookJump,
+  type CrossBookJump,
+} from "./reader/crossBookJump";
+import type { CitedSource, QuotedSource } from "../hooks/useAiChat";
 import {
   classifySelection,
   detachedInteraction,
@@ -163,6 +169,12 @@ export default function Reader() {
   const location = useLocation();
   const { t } = useTranslation();
   const [book, setBook] = useState<Book | null>(null);
+  // The trip that brought the reader into this book from another one's chat,
+  // and the two things that can go wrong with it: the sentence not being
+  // findable in the chapter, and the quoted book no longer being on the shelf.
+  const [crossBookJump, setCrossBookJump] = useState<CrossBookJump | null>(null);
+  const [quoteAnchorMissed, setQuoteAnchorMissed] = useState(false);
+  const [quoteJumpUnavailable, setQuoteJumpUnavailable] = useState<string | null>(null);
   const isTextBook = book?.render_format === "text";
   const readerFormat = book?.render_format || book?.format;
   const initialCapabilities = useMemo(
@@ -263,7 +275,7 @@ export default function Reader() {
   const [diagnosticsPanelOpen, setDiagnosticsPanelOpen] = useState(false);
   const [showStuckHint, setShowStuckHint] = useState(false);
   const [readerRect, setReaderRect] = useState<SerializableRect | null>(null);
-  const [aiContext, setAiContext] = useState<{ text: string; cfi?: string; analysis?: string } | undefined>();
+  const [aiContext, setAiContext] = useState<{ text: string; cfi?: string; analysis?: string; focusWord?: string } | undefined>();
   const [initialChatId, setInitialChatId] = useState<string | undefined>();
   const [activeVocabCfi, setActiveVocabCfi] = useState<string | null>(null);
   const [translation, setTranslation] = useState<{
@@ -1086,16 +1098,18 @@ export default function Reader() {
     [flashNavigationTarget],
   );
 
-  const navigateToSource = useCallback(async (source: CitedSource): Promise<boolean> => {
+  const navigateToSource = useCallback(async (source: AnchorTarget): Promise<AnchorOutcome> => {
     if (isTextBook && source.charStart != null) {
       return await flashNavigationTarget(
         textLocation(source.charStart, source.charEnd ?? source.charStart),
-      );
+      ) ? "anchored" : false;
     }
     if (book?.format === "pdf" && viewRef.current) {
       pushJump(currentCfiRef.current, getCurrentJumpLabel());
       await viewRef.current.goTo(source.sectionIndex);
-      return true;
+      // A PDF page is the finest address the format offers, so arriving on it
+      // is as anchored as a PDF citation ever gets.
+      return "anchored";
     }
     const view = viewRef.current;
     if (!view) return false;
@@ -1113,17 +1127,33 @@ export default function Reader() {
           view.clearSearch();
           if (cfi) {
             await flashNavigationTarget(cfi);
-            return true;
+            return "anchored";
           }
         } catch {
           view.clearSearch();
         }
       }
+      // Nothing matched character for character. A citation lifted off the page
+      // mid-session always does; a sentence that came back out of the search
+      // index often does not, because the extracted text and the rendered
+      // markup disagree over punctuation, footnote markers, and soft hyphens.
+      // Locate it by approximate match instead before giving up on the line.
+      const anchored = await anchorQuoteCfi(view, source.sectionIndex, {
+        exact: source.snippet,
+        prefix: source.prefix,
+        suffix: source.suffix,
+        // No position hint: EPUB chunks carry no character offset at all, and
+        // for the formats that do, the exact path above has already answered.
+      });
+      if (anchored) {
+        await flashNavigationTarget(anchored);
+        return "anchored";
+      }
     }
     if (source.sectionHref) {
       pushJump(currentCfiRef.current, getCurrentJumpLabel());
       await view.goTo(source.sectionHref);
-      return true;
+      return "section";
     }
     return false;
   }, [book?.format, flashNavigationTarget, getCurrentJumpLabel, isTextBook, pushJump, viewRef]);
@@ -1531,6 +1561,29 @@ export default function Reader() {
     if (!isStandaloneWindow) navigate(location.pathname, { replace: true });
   }, [bookReady, location.state, location.pathname, navigate]);
 
+  // Arriving from an example sentence in another book's chat. The jump is kept
+  // in component state because the router state is cleared immediately below —
+  // the return offer has to outlive it, and a reload should not re-run the jump.
+  useEffect(() => {
+    const jump = parseCrossBookJump(location.state);
+    if (!jump || !bookReady) return;
+    setCrossBookJump(jump);
+    setQuoteAnchorMissed(false);
+    void navigateToSource({
+      sectionIndex: jump.quote.sectionIndex,
+      sectionHref: jump.quote.sectionHref,
+      snippet: jump.quote.text,
+      prefix: jump.quote.prefix,
+      suffix: jump.quote.suffix,
+    }).then((outcome) => {
+      // Landed in the chapter but not on the sentence: say so rather than let
+      // the reader hunt down a page for a line that may not be printed there
+      // quite as the answer quoted it.
+      if (outcome !== "anchored") setQuoteAnchorMissed(true);
+    }).catch(() => setQuoteAnchorMissed(true));
+    if (!isStandaloneWindow) navigate(location.pathname, { replace: true });
+  }, [bookReady, location.state, location.pathname, navigate, navigateToSource]);
+
   // Handle source navigation and the optional vocabulary side panel.
   // Supports both location.state (main window) and URL search params (standalone window).
   useEffect(() => {
@@ -1622,6 +1675,30 @@ export default function Reader() {
   const navigateToCitedSource = useCallback((source: CitedSource) => {
     navigateToSource(source).catch(() => {});
   }, [navigateToSource]);
+
+  // Leave for another book, carrying the way back. The target is checked first
+  // rather than navigated to hopefully: a book deleted since the answer was
+  // written would otherwise land the reader on "book not found", with the book
+  // they were actually reading now two steps behind them.
+  const navigateToQuote = useCallback((quote: QuotedSource) => {
+    void (async () => {
+      try {
+        await getBook(quote.bookId);
+      } catch {
+        setQuoteJumpUnavailable(quote.bookTitle);
+        return;
+      }
+      const jump: CrossBookJump = {
+        quote,
+        from: {
+          bookId: book?.id ?? "",
+          cfi: currentCfiRef.current ?? undefined,
+          title: book?.title ?? "",
+        },
+      };
+      navigate(`/reader/${quote.bookId}`, { state: { crossBookJump: jump } });
+    })();
+  }, [book?.id, book?.title, navigate]);
 
   if (loading || (bookId !== undefined && book?.id !== bookId)) {
     return (
@@ -2160,6 +2237,62 @@ export default function Reader() {
                 </div>
               </div>
             )}
+            {/* Arriving in a book the reader did not choose to open needs an
+                explanation and a way out, both in the same strip. It stays put
+                until dismissed rather than fading like the in-book return pill:
+                that pill offers to undo a jump inside a book the reader knows
+                they are in, and this one is the only thing saying why they are
+                somewhere else. */}
+            {crossBookJump && (
+              <div
+                role="status"
+                className="absolute inset-x-0 top-0 z-20 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b border-border bg-bg-surface/95 px-4 py-2 text-[12px] text-text-muted backdrop-blur"
+              >
+                <span>
+                  {quoteAnchorMissed
+                    ? t("reader.crossBookJump.arrivedAtChapter", { book: crossBookJump.from.title })
+                    : t("reader.crossBookJump.arrived", { book: crossBookJump.from.title })}
+                </span>
+                <button
+                  type="button"
+                  className="cursor-pointer font-medium text-accent-text hover:opacity-70"
+                  onClick={() => {
+                    const target = crossBookJump;
+                    setCrossBookJump(null);
+                    setQuoteAnchorMissed(false);
+                    navigate(`/reader/${target.from.bookId}`, {
+                      state: crossBookReturnState(target),
+                    });
+                  }}
+                >
+                  {t("reader.crossBookJump.return", { book: crossBookJump.from.title })}
+                </button>
+                <button
+                  type="button"
+                  className="cursor-pointer hover:text-text-primary"
+                  onClick={() => {
+                    setCrossBookJump(null);
+                    setQuoteAnchorMissed(false);
+                  }}
+                >
+                  {t("reader.crossBookJump.dismiss")}
+                </button>
+              </div>
+            )}
+            {quoteJumpUnavailable && (
+              <div
+                role="status"
+                className="absolute inset-x-0 bottom-20 z-30 flex justify-center px-4"
+              >
+                <button
+                  type="button"
+                  onClick={() => setQuoteJumpUnavailable(null)}
+                  className="max-w-[min(520px,calc(100%_-_24px))] cursor-pointer rounded-md bg-[#18181B]/90 px-3 py-2 text-center text-[12px] leading-5 text-white shadow-popover"
+                >
+                  {t("reader.crossBookJump.unavailable", { book: quoteJumpUnavailable })}
+                </button>
+              </div>
+            )}
             {jumpHistoryLabel && (
               <button
                 type="button"
@@ -2333,6 +2466,7 @@ export default function Reader() {
                   onContextConsumed={consumeAiContext}
                   onNavigateToCfi={navigateToCitedCfi}
                   onNavigateToSource={navigateToCitedSource}
+                  onNavigateToQuote={navigateToQuote}
                   onLookupWord={lookupWordInPanel}
                   onSelectText={openPanelSelectionMenu}
                 />
@@ -2395,7 +2529,7 @@ export default function Reader() {
                 currentChapter: currentChapterIndex >= 0 ? chapters[currentChapterIndex]?.title : undefined,
                 progress,
                 onClear: () => setXrayInteraction(null),
-                onNavigate: (source) => navigateToSource(source),
+                onNavigate: async (source) => await navigateToSource(source) !== false,
                 onNavigateCurrent: navigateToCurrentXrayOccurrence,
               }}
             />
@@ -2636,8 +2770,8 @@ export default function Reader() {
             cfi={customAction.interaction.location}
             customAction={customAction.action}
             onClose={() => setCustomAction(null)}
-            onAskFollowUp={(quote, cfi) => {
-              setAiContext({ text: quote, cfi });
+            onAskFollowUp={(quote, cfi, focusWord) => {
+              setAiContext({ text: quote, cfi, focusWord });
               openAiChat();
             }}
           />
@@ -2658,8 +2792,8 @@ export default function Reader() {
             : undefined}
           cfi={translation.cfi}
           onClose={() => setTranslation(null)}
-          onAskFollowUp={(quote, cfi) => {
-            setAiContext({ text: quote, cfi });
+          onAskFollowUp={(quote, cfi, focusWord) => {
+            setAiContext({ text: quote, cfi, focusWord });
             openAiChat();
           }}
         />

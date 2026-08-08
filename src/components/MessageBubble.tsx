@@ -3,13 +3,14 @@ import { useTranslation } from "react-i18next";
 import { AlertTriangle, ChevronDown, ChevronRight, Loader2, Quote, Settings } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import type { AiChatRoute, ChatMessage, CitedSource, SectionContextMetadata } from "../hooks/useAiChat";
+import type { AiChatRoute, ChatMessage, CitedSource, QuotedSource, SectionContextMetadata } from "../hooks/useAiChat";
 import { aiErrorMessageKey, isAiErrorCode, isAiRetryableError, isAiSettingsError } from "../utils/aiError";
 import AiRetryButton from "./AiRetryButton";
 import { AliasDisclosureLine, AliasResolutionFooter } from "./AliasDisclosure";
 import AiMarkdown from "./ai-markdown/AiMarkdown";
 import CitationChip from "./ai-markdown/CitationChip";
-import { citedSourcesInContent } from "./citation-markers";
+import QuoteChip from "./ai-markdown/QuoteChip";
+import { citedSourcesInContent, quotedSourcesInContent } from "./citation-markers";
 
 // Answers fill the column they are given — a percentage cap only strands
 // whitespace in the reader's side panel, which is already narrow. The ch cap
@@ -22,6 +23,11 @@ interface MessageBubbleProps {
   streaming: boolean;
   onNavigateToCfi?: (cfi: string) => void;
   onNavigateToSource?: (source: CitedSource) => void;
+  /** Jump to an example sentence — in a different book, so this leaves the
+   *  current one. Absent on surfaces that cannot navigate, and the chips then
+   *  render inert rather than disappearing: the answer still says where its
+   *  example came from. */
+  onNavigateToQuote?: (quote: QuotedSource) => void;
   onRetryWithWholeBook?: (assistantId: string) => void;
   /** Ask the same question again, looking past any cooldown. */
   onRetry?: (assistantId: string) => void;
@@ -123,7 +129,7 @@ function SectionContextNotice({
   );
 }
 
-export default function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateToSource, onRetryWithWholeBook, onRetry, onQuoteReply, onSwapAlias }: MessageBubbleProps) {
+export default function MessageBubble({ msg, messages, streaming, onNavigateToCfi, onNavigateToSource, onNavigateToQuote, onRetryWithWholeBook, onRetry, onQuoteReply, onSwapAlias }: MessageBubbleProps) {
   const { t } = useTranslation();
   const isLast = msg === messages[messages.length - 1];
   const [reasoningExpanded, setReasoningExpanded] = useState<boolean | null>(null);
@@ -172,6 +178,11 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
     const reasoningOpen = reasoningExpanded ?? reasoningInProgress;
     const sources = msg.sources ?? [];
     const citedSources = citedSourcesInContent(msg.content, sources);
+    // Not `quotes` — that name already belongs to what the reader quoted into
+    // this turn, which is the opposite direction of travel.
+    const exampleQuotes = msg.quotes ?? [];
+    const usedQuotes = quotedSourcesInContent(msg.content, exampleQuotes);
+    const quoteLabel = (quote: QuotedSource) => t("ai.quoteChipLabel", { book: quote.bookTitle });
     const settled = !(streaming && isLast) && Boolean(msg.content);
     const assistantIndex = messages.indexOf(msg);
     const precedingUser = assistantIndex > 0 ? messages[assistantIndex - 1] : undefined;
@@ -232,6 +243,9 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
               streaming={streaming && isLast}
               sources={sources}
               onNavigateToSource={onNavigateToSource}
+              quotes={exampleQuotes}
+              onNavigateToQuote={onNavigateToQuote}
+              quoteLabel={quoteLabel}
             >
               {msg.content}
             </AiMarkdown>
@@ -251,6 +265,23 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
             <span className="mr-1 text-[11px] text-text-muted">{t("ai.sources")}</span>
             {citedSources.map((source) => (
               <CitationChip key={source.marker} source={source} onClick={() => onNavigateToSource?.(source)} />
+            ))}
+          </div>
+        )}
+        {/* Its own row rather than more chips in the sources row. These point
+            out of this book entirely, and a reader scanning 「来源」 for what
+            grounded the answer should not have to check each chip for whether
+            it will take them somewhere else. */}
+        {usedQuotes.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-border pt-2">
+            <span className="mr-1 text-[11px] text-text-muted">{t("ai.quotedExamples")}</span>
+            {usedQuotes.map((quote) => (
+              <QuoteChip
+                key={quote.marker}
+                quote={quote}
+                label={quoteLabel(quote)}
+                onClick={onNavigateToQuote ? () => onNavigateToQuote(quote) : undefined}
+              />
             ))}
           </div>
         )}

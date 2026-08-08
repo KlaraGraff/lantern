@@ -1,6 +1,6 @@
 /**
  * Loader for the Foliate modules the app needs to call directly (the footnote
- * handler and the CFI helpers).
+ * handler, the CFI helpers, and the text walker).
  *
  * These live in `/public/foliate-js`, which Vite serves as-is and never
  * transforms, so a dynamic `import()` from app source fails on the dev server:
@@ -18,9 +18,35 @@ export interface CfiModule {
   compare(left: string, right: string): number;
 }
 
+/**
+ * Builds a Range from indices into the array the walker handed out. `strs[i]`
+ * is the text of the i-th node, so `(0, 3, 1, 5)` starts three characters into
+ * the first node and ends five into the second.
+ */
+export type MakeRange = (
+  startIndex: number,
+  startOffset: number,
+  endIndex: number,
+  endOffset: number,
+) => Range;
+
+/**
+ * Walks a document's text nodes and hands the whole run to `visit` at once,
+ * yielding whatever `visit` yields.
+ *
+ * The flattened array plus `makeRange` is what makes cross-node matching
+ * possible: a sentence broken across an `<em>` is one string here, and the
+ * character offsets found in it map straight back to a real Range.
+ */
+export type TextWalker = <T>(
+  target: Document | Range | Element,
+  visit: (strs: string[], makeRange: MakeRange) => Iterable<T>,
+) => Generator<T>;
+
 export interface FoliateModules {
   FootnoteHandler: new () => unknown;
   epubcfi: CfiModule;
+  textWalker: TextWalker;
 }
 
 const BRIDGE_URL = "/foliate-js/lantern-modules.js";
