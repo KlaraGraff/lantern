@@ -24,6 +24,7 @@ import { summarizeImportFailures } from "../hooks/import-batch";
 import { useCollections } from "../hooks/useCollections";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { platform } from "../services/platform";
+import { getFocusableElements, resolveTabFocus } from "../components/focus-trap";
 import {
   useDrawerGesture,
   DRAWER_EDGE_ZONE_PX,
@@ -71,9 +72,6 @@ const SUPPORTS_INERT = typeof HTMLElement !== "undefined" && "inert" in HTMLElem
 /** Applied both to the page behind an open drawer and to a closed drawer. */
 const unreachable = (yes: boolean): React.HTMLAttributes<HTMLDivElement> =>
   !yes ? {} : SUPPORTS_INERT ? { inert: true } : { "aria-hidden": true };
-
-const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export default function Home() {
   const { t } = useTranslation();
@@ -176,25 +174,20 @@ export default function Home() {
     const panel = drawerPanelRef.current;
     if (!panel) return;
     // An iPad with a keyboard is an ordinary setup, so this path is not
-    // optional. `offsetParent` filters the controls the `touch:` variants have
-    // hidden — a tab stop nobody can see is a trap of its own.
-    const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
-      .filter((element) => element.offsetParent !== null);
-    if (focusable.length === 0) {
-      event.preventDefault();
-      panel.focus({ preventScroll: true });
-      return;
-    }
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
+    // optional. `getFocusableElements` drops the controls the `touch:` variants
+    // have hidden — a tab stop nobody can see is a trap of its own.
+    const focusable = getFocusableElements(panel);
+    // The panel itself holds focus for a moment after it opens (it carries
+    // `tabIndex={-1}`). Shift+Tab from there should wrap to the end of the
+    // drawer rather than walk out of it, so read it as "on the first item".
     const active = document.activeElement;
-    if (event.shiftKey && (active === first || active === panel)) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && active === last) {
-      event.preventDefault();
-      first.focus();
-    }
+    const effectiveActive =
+      event.shiftKey && active === panel ? focusable[0] ?? null : (active as HTMLElement | null);
+    const action = resolveTabFocus(focusable, effectiveActive, event.shiftKey, { parkWhenEmpty: true });
+    if (action.kind === "pass") return;
+    event.preventDefault();
+    if (action.kind === "park") panel.focus({ preventScroll: true });
+    else action.target.focus();
   }, [setDrawerOpen]);
 
   const drawerPointer = {

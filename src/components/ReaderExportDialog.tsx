@@ -4,6 +4,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { ChevronRight, Download, FileWarning, Loader2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { getFocusableElements, trapTabKey } from "./focus-trap";
 import type { Highlight } from "../hooks/useBookmarks";
 import type { DictionaryWord } from "../hooks/useDictionary";
 import { countExportFields, defaultExportFields, effectiveExportFields, exportCounts, exportFieldBlock, exportFieldGroups, exportFilename, filterExportRecords, isCustomExportFields, previewExport, selectionForFormat, serializeExport, type ExportFieldKey, type ExportFields, type ExportFormat, type ExportRecord, type ExportSelection } from "../pages/reader/reader-export";
@@ -188,12 +189,13 @@ export default function ReaderExportDialog({ open, bookId, bookTitle, onClose, r
   const onDialogKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === "Escape" && status !== "saving") { event.preventDefault(); onClose(); return; }
     if (event.key !== "Tab") return;
-    const focusable = [titleRef.current, ...Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? [])].filter((item): item is HTMLElement => item !== null);
-    if (!focusable.length) return;
-    const first = focusable[0]; const last = focusable[focusable.length - 1];
-    if (!dialogRef.current?.contains(document.activeElement)) { event.preventDefault(); (event.shiftKey ? last : first).focus(); }
-    else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    // The heading is `tabIndex={-1}` — deliberately out of the tab order, but
+    // kept at the head of the ring so Shift+Tab off the first control lands on
+    // the title rather than escaping the dialog.
+    const ring = [titleRef.current, ...getFocusableElements(dialogRef.current)].filter(
+      (item): item is HTMLElement => item !== null,
+    );
+    trapTabKey(event, dialogRef.current, { elements: ring, recoverOutsideFocus: true });
   };
   if (!open) return null;
 

@@ -54,6 +54,7 @@ import {
   contextualSentenceMeaning,
 } from "./vocab/contextual-review";
 import ReviewBoard from "./review/ReviewBoard";
+import { trapTabKey } from "./focus-trap";
 import { useOpenBook } from "../hooks/useOpenBook";
 import { useSettings } from "../hooks/useSettings";
 import {
@@ -593,13 +594,7 @@ export default function DictionaryContent({ initialView = "all" }: DictionaryCon
         return;
       }
       if (event.key === "Tab") {
-        const focusable = Array.from(reviewDialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])') ?? []);
-        if (focusable.length) {
-          const first = focusable[0]; const last = focusable[focusable.length - 1];
-          if (!reviewDialogRef.current?.contains(document.activeElement)) { event.preventDefault(); (event.shiftKey ? last : first).focus(); }
-          else if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-        }
+        trapTabKey(event, reviewDialogRef.current, { recoverOutsideFocus: true });
         return;
       }
       const target = event.target as HTMLElement | null;

@@ -23,6 +23,7 @@ import type {
 } from "./types";
 import LearningCardView from "./LearningCardView";
 import { LearningCardStreamParser } from "./streaming";
+import { focusFirstElement, trapTabKey } from "../focus-trap";
 
 interface LearningCardResponse extends LearningCardResult {
   provenance?: {
@@ -380,8 +381,9 @@ export default function LearningCardController({
   useEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
-    const focusable = wrapper.querySelector<HTMLElement>("button,[href],textarea,input,select,[tabindex]:not([tabindex='-1'])");
-    focusable?.focus();
+    // The old query here left the `:disabled` filter off, so a card whose first
+    // control starts disabled focused nothing at all and the trap never engaged.
+    focusFirstElement(wrapper);
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -389,19 +391,7 @@ export default function LearningCardController({
         return;
       }
       if (event.key !== "Tab") return;
-      const items = Array.from(wrapper.querySelectorAll<HTMLElement>(
-        "button:not(:disabled),[href],textarea:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex]:not([tabindex='-1'])",
-      ));
-      if (items.length === 0) return;
-      const first = items[0];
-      const last = items[items.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
+      trapTabKey(event, wrapper);
     };
     wrapper.addEventListener("keydown", onKeyDown);
     return () => wrapper.removeEventListener("keydown", onKeyDown);

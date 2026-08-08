@@ -26,19 +26,12 @@ import {
 import { useSettings } from "../hooks/useSettings";
 import { isNarrowNow, useIsNarrow } from "../hooks/useIsNarrow";
 import { platform } from "../services/platform";
+import { focusFirstElement, trapTabKey } from "./focus-trap";
 import type { SettingsSection, SettingsView } from "./settings-destination";
 
 export type { SettingsSection } from "./settings-destination";
 
 const XL_PREVIEW_QUERY = "(min-width: 1280px)";
-const FOCUSABLE_SELECTOR = [
-  "button:not([disabled])",
-  "[href]",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  "[tabindex]:not([tabindex='-1'])",
-].join(",");
 
 interface SettingsModalProps {
   open: boolean;
@@ -225,7 +218,7 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
     previousFocusRef.current = document.activeElement as HTMLElement | null;
     const modal = modalRef.current;
     window.requestAnimationFrame(() => {
-      modal?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
+      focusFirstElement(modal);
     });
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -249,23 +242,9 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
         return;
       }
       if (e.key !== "Tab" || !modal) return;
-      const focusScope = overlayPreviewRef.current ? previewRef.current : modal;
-      const focusable = Array.from(focusScope?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? [])
-        .filter((element) => !element.hasAttribute("disabled") && element.getClientRects().length > 0);
-      if (focusable.length === 0) {
-        e.preventDefault();
-        focusScope?.focus();
-        return;
-      }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
+      // An overlay preview is a layer on top of the modal, so the ring narrows
+      // to it while it is up.
+      trapTabKey(e, overlayPreviewRef.current ? previewRef.current : modal, { parkWhenEmpty: true });
     };
     document.addEventListener("keydown", handler);
     return () => {

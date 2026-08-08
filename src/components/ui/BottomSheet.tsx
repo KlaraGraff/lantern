@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { focusFirstElement, trapTabKey } from "../focus-trap";
 
 interface BottomSheetProps {
   open: boolean;
@@ -10,15 +11,6 @@ interface BottomSheetProps {
   description?: string;
   children: ReactNode;
 }
-
-const FOCUSABLE_SELECTOR = [
-  "button:not([disabled])",
-  "[href]",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  "[tabindex]:not([tabindex='-1'])",
-].join(",");
 
 /**
  * The touch presentation for pickers that are a dropdown (`OptionMenu`) under
@@ -40,7 +32,7 @@ export default function BottomSheet({ open, onClose, title, description, childre
   useEffect(() => {
     if (!open) return;
     openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    sheetRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
+    focusFirstElement(sheetRef.current);
     return () => openerRef.current?.focus();
   }, [open]);
 
@@ -54,19 +46,7 @@ export default function BottomSheet({ open, onClose, title, description, childre
         return;
       }
       if (event.key !== "Tab") return;
-      const sheet = sheetRef.current;
-      if (!sheet) return;
-      const focusable = Array.from(sheet.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
+      trapTabKey(event, sheetRef.current);
     };
     // Capture phase, ahead of any ancestor popover/dialog listening on
     // `document` — same reasoning as OptionMenu: the sheet is a layer of its

@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { CircleDollarSign, Loader2, TriangleAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { createPortal } from "react-dom";
+import { focusFirstElement, trapTabKey } from "./focus-trap";
 import Button from "./ui/Button";
 
 type CostDisclosure =
@@ -27,15 +28,6 @@ interface ApprovalRequest {
   id: string;
   confirmation: ApprovalConfirmation;
 }
-
-const FOCUSABLE_SELECTOR = [
-  "button:not([disabled])",
-  "[href]",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  "[tabindex]:not([tabindex='-1'])",
-].join(",");
 
 function costDescription(cost: CostDisclosure, t: (key: string, values?: Record<string, string | number>) => string) {
   switch (cost.kind) {
@@ -123,7 +115,7 @@ export default function McpApprovalDialog() {
   useEffect(() => {
     if (!request) return;
     const dialog = dialogRef.current;
-    dialog?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
+    focusFirstElement(dialog);
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !busy) {
         event.preventDefault();
@@ -131,18 +123,8 @@ export default function McpApprovalDialog() {
         void resolve("reject");
         return;
       }
-      if (event.key !== "Tab" || !dialog) return;
-      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
+      if (event.key !== "Tab") return;
+      trapTabKey(event, dialog);
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);

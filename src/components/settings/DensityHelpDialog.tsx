@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import { focusFirstElement, trapTabKey } from "../focus-trap";
 import { useTranslation } from "react-i18next";
 import type { LearningCardKind, LearningModuleId } from "../learning-card";
 
@@ -24,8 +25,10 @@ export default function DensityHelpDialog({ initialKind, onClose }: DensityHelpD
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    const focusable = dialog.querySelector<HTMLElement>("button:not([disabled])");
-    focusable?.focus();
+    // The close button is the first focusable thing in the header, so the old
+    // `button:not([disabled])`-only query and the shared one land on the same
+    // element — this dialog has no link or field ahead of it.
+    focusFirstElement(dialog);
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -35,19 +38,7 @@ export default function DensityHelpDialog({ initialKind, onClose }: DensityHelpD
         return;
       }
       if (event.key !== "Tab") return;
-      const elements = [...dialog.querySelectorAll<HTMLElement>(
-        "button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
-      )];
-      if (elements.length === 0) return;
-      const first = elements[0];
-      const last = elements[elements.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
+      trapTabKey(event, dialog);
     };
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);

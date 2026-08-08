@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
+import { focusFirstElement, trapTabKey } from "../focus-trap";
 import Button from "../ui/Button";
 
 interface ConfirmDialogProps {
@@ -13,15 +14,6 @@ interface ConfirmDialogProps {
   tertiaryLabel?: string;
   onTertiary?: () => void;
 }
-
-const FOCUSABLE_SELECTOR = [
-  "button:not([disabled])",
-  "[href]",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  "[tabindex]:not([tabindex='-1'])",
-].join(",");
 
 export default function ConfirmDialog({
   title,
@@ -42,7 +34,7 @@ export default function ConfirmDialog({
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    dialog.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus();
+    focusFirstElement(dialog);
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -51,18 +43,7 @@ export default function ConfirmDialog({
         return;
       }
       if (event.key !== "Tab") return;
-      event.stopPropagation();
-      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
+      trapTabKey(event, dialog, { stopPropagation: true });
     };
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
