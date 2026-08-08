@@ -394,19 +394,19 @@ fn read_row(db: &Db, book_id: &str) -> AppResult<Option<BookDifficulty>> {
             |row| {
                 Ok(BookDifficulty {
                     book_id: book_id.to_string(),
-                    status: DifficultyStatus::from_db(&row.get::<_, String>(0)?),
-                    total_tokens: row.get(1)?,
-                    distinct_words: row.get(2)?,
-                    band1: row.get(3)?,
-                    band2: row.get(4)?,
-                    band3: row.get(5)?,
-                    band4: row.get(6)?,
-                    band5: row.get(7)?,
-                    band_unlisted: row.get(8)?,
-                    source_sha256: row.get(9)?,
-                    computed_at: row.get(10)?,
-                    error: row.get(11)?,
-                    override_choice: row.get(12)?,
+                    status: DifficultyStatus::from_db(&row.get::<_, String>("status")?),
+                    total_tokens: row.get("total_tokens")?,
+                    distinct_words: row.get("distinct_words")?,
+                    band1: row.get("band1")?,
+                    band2: row.get("band2")?,
+                    band3: row.get("band3")?,
+                    band4: row.get("band4")?,
+                    band5: row.get("band5")?,
+                    band_unlisted: row.get("band_unlisted")?,
+                    source_sha256: row.get("source_sha256")?,
+                    computed_at: row.get("computed_at")?,
+                    error: row.get("error")?,
+                    override_choice: row.get("override")?,
                     stale: false,
                 })
             },
@@ -798,11 +798,11 @@ pub(crate) fn load_difficulty_sections(
     let rows = statement
         .query_map(params![book_id], |row| {
             Ok(BookDifficultySection {
-                section_order: row.get(0)?,
-                chapter_title: row.get(1)?,
-                total_tokens: row.get(2)?,
-                band4: row.get(3)?,
-                band5: row.get(4)?,
+                section_order: row.get("section_order")?,
+                chapter_title: row.get("chapter_title")?,
+                total_tokens: row.get("total_tokens")?,
+                band4: row.get("band4")?,
+                band5: row.get("band5")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -889,8 +889,8 @@ fn median_wpm_query(conn: &rusqlite::Connection, book_id: Option<&str>) -> AppRe
             let rows = stmt
                 .query_map(params![book_id, PACE_SAMPLE], |row| {
                     Ok(ScreenPace {
-                        word_count: row.get(0)?,
-                        dwell_ms: row.get(1)?,
+                        word_count: row.get("word_count")?,
+                        dwell_ms: row.get("dwell_ms")?,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -905,8 +905,8 @@ fn median_wpm_query(conn: &rusqlite::Connection, book_id: Option<&str>) -> AppRe
             let rows = stmt
                 .query_map(params![PACE_SAMPLE], |row| {
                     Ok(ScreenPace {
-                        word_count: row.get(0)?,
-                        dwell_ms: row.get(1)?,
+                        word_count: row.get("word_count")?,
+                        dwell_ms: row.get("dwell_ms")?,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;

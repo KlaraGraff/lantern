@@ -1041,11 +1041,11 @@ pub(crate) fn reconcile_legacy_word_mark_exceptions(
         let rows = statement
             .query_map(params![legacy_rule_id, canonical_rule_id], |row| {
                 Ok(LegacyWordMarkException {
-                    location: row.get(0)?,
-                    excluded: row.get::<_, i64>(1)? != 0,
-                    created_at: row.get(2)?,
-                    updated_at: row.get(3)?,
-                    updated_by_device: row.get(4)?,
+                    location: row.get("location")?,
+                    excluded: row.get::<_, i64>("excluded")? != 0,
+                    created_at: row.get("created_at")?,
+                    updated_at: row.get("updated_at")?,
+                    updated_by_device: row.get("updated_by_device")?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;

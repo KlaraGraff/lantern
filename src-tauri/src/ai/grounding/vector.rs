@@ -925,16 +925,28 @@ fn vector_ranks(
     }
     let cutoff = cutoff.expect("cutoff checked");
     let mut allowed = Vec::with_capacity(top_k);
+    // Selects `chunk_index` alongside `section_index`/`char_end` (unlike a
+    // bare section-level check) so `allows_complete_chunk_at` can resolve a
+    // `SectionPrefix` cutoff precisely instead of excluding the whole
+    // boundary section — the same read-so-far prefix `retrieve_ranked`
+    // already admits for its own candidates, now consistent between the
+    // lexical and semantic halves of hybrid retrieval.
     let mut statement = conn.prepare(
-        "SELECT section_index, char_end FROM book_chunks WHERE id = ?1 AND book_id = ?2",
+        "SELECT section_index, chunk_index, char_end FROM book_chunks WHERE id = ?1 AND book_id = ?2",
     )?;
     for chunk_id in rows {
         let position = statement
             .query_row(params![chunk_id, book_id], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?))
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                ))
             })
             .optional()?;
-        if position.is_some_and(|(section, end)| cutoff.allows_complete_chunk(section, end)) {
+        if position.is_some_and(|(section, chunk_index, end)| {
+            cutoff.allows_complete_chunk_at(section, chunk_index, end)
+        }) {
             allowed.push(chunk_id);
             if allowed.len() == top_k {
                 break;

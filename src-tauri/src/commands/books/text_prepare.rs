@@ -404,15 +404,15 @@ pub(super) fn run_text_preparation(app: &AppHandle, book_id: &str) -> AppResult<
         }
         conn.query_row(
             "SELECT source_file_path, source_format, source_sha256,
-                    COALESCE(conversion_version, 0)
+                    COALESCE(conversion_version, 0) AS conversion_version
              FROM books WHERE id = ?1",
             params![book_id],
             |row| {
                 Ok(TextPreparationSource {
-                    file_path: row.get(0)?,
-                    format: row.get(1)?,
-                    sha256: row.get(2)?,
-                    conversion_version: row.get(3)?,
+                    file_path: row.get("source_file_path")?,
+                    format: row.get("source_format")?,
+                    sha256: row.get("source_sha256")?,
+                    conversion_version: row.get("conversion_version")?,
                 })
             },
         )?

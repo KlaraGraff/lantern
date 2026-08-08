@@ -132,8 +132,8 @@ fn reader_median_wpm(tx: &rusqlite::Transaction<'_>) -> AppResult<Option<f64>> {
     let screens = stmt
         .query_map(params![MEDIAN_PACE_SAMPLE], |row| {
             Ok(ScreenPace {
-                word_count: row.get(0)?,
-                dwell_ms: row.get(1)?,
+                word_count: row.get("word_count")?,
+                dwell_ms: row.get("dwell_ms")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -323,12 +323,12 @@ pub fn list_word_exposures_inner(book_id: &str, db: &Db) -> AppResult<Vec<WordEx
     let rows = stmt
         .query_map(params![book_id], |row| {
             Ok(WordExposureRow {
-                chapter: row.get(0)?,
-                normalized_word: row.get(1)?,
-                encounter_count: row.get(2)?,
-                encounters_on_lookup_active_screen: row.get(3)?,
-                first_seen_at: row.get(4)?,
-                last_seen_at: row.get(5)?,
+                chapter: row.get("chapter")?,
+                normalized_word: row.get("normalized_word")?,
+                encounter_count: row.get("encounter_count")?,
+                encounters_on_lookup_active_screen: row.get("encounters_on_lookup_active_screen")?,
+                first_seen_at: row.get("first_seen_at")?,
+                last_seen_at: row.get("last_seen_at")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -376,10 +376,10 @@ pub fn count_normal_pace_screens(tx: &rusqlite::Transaction<'_>, book_id: &str) 
     let mut distinct_screens: HashSet<String> = HashSet::new();
     let mut rows = stmt.query(params![book_id])?;
     while let Some(row) = rows.next()? {
-        let cfi: String = row.get(0)?;
+        let cfi: String = row.get("cfi")?;
         let pace = ScreenPace {
-            word_count: row.get(1)?,
-            dwell_ms: row.get(2)?,
+            word_count: row.get("word_count")?,
+            dwell_ms: row.get("dwell_ms")?,
         };
         if !is_screen_too_fast(pace, median_wpm) {
             distinct_screens.insert(cfi);

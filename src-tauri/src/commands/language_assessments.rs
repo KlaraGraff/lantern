@@ -254,18 +254,22 @@ pub fn estimate_cefr(
     })
 }
 
+/// The `language_assessments` columns `row_to_assessment` reads, named in
+/// exactly one place so the two feeding SELECTs can't drift out of order.
+const ASSESSMENT_COLUMNS: &str = "id, exam_type, overall_score, reading_score, exam_date, mapping_version, estimated_cefr, confidence, created_at, updated_at";
+
 fn row_to_assessment(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredLanguageAssessment> {
     Ok(StoredLanguageAssessment {
-        id: row.get(0)?,
-        exam_type: row.get(1)?,
-        overall_score: row.get(2)?,
-        reading_score: row.get(3)?,
-        exam_date: row.get(4)?,
-        mapping_version: row.get(5)?,
-        estimated_cefr: row.get(6)?,
-        confidence: row.get(7)?,
-        created_at: row.get(8)?,
-        updated_at: row.get(9)?,
+        id: row.get("id")?,
+        exam_type: row.get("exam_type")?,
+        overall_score: row.get("overall_score")?,
+        reading_score: row.get("reading_score")?,
+        exam_date: row.get("exam_date")?,
+        mapping_version: row.get("mapping_version")?,
+        estimated_cefr: row.get("estimated_cefr")?,
+        confidence: row.get("confidence")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
     })
 }
 
@@ -302,11 +306,10 @@ fn enrich_assessment(stored: StoredLanguageAssessment) -> AppResult<LanguageAsse
 
 pub(crate) fn load_language_assessments(db: &Db) -> AppResult<Vec<LanguageAssessment>> {
     let conn = db.reader();
-    let mut statement = conn.prepare(
-        "SELECT id, exam_type, overall_score, reading_score, exam_date, mapping_version,
-                estimated_cefr, confidence, created_at, updated_at
+    let mut statement = conn.prepare(&format!(
+        "SELECT {ASSESSMENT_COLUMNS}
          FROM language_assessments ORDER BY updated_at DESC, id ASC",
-    )?;
+    ))?;
     let stored = statement
         .query_map([], row_to_assessment)?
         .collect::<Result<Vec<_>, _>>()?;
@@ -447,9 +450,7 @@ pub(crate) fn save_language_assessment_in(
             ],
         )?;
         let stored = transaction.query_row(
-            "SELECT id, exam_type, overall_score, reading_score, exam_date, mapping_version,
-                    estimated_cefr, confidence, created_at, updated_at
-             FROM language_assessments WHERE id = ?1",
+            &format!("SELECT {ASSESSMENT_COLUMNS} FROM language_assessments WHERE id = ?1"),
             params![id],
             row_to_assessment,
         )?;

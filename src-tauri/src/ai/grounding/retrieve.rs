@@ -23,20 +23,31 @@ pub enum SpoilerCutoff {
 impl SpoilerCutoff {
     /// Section/character-granularity check. A `SectionPrefix` cutoff is
     /// treated conservatively here (as if it excluded the whole boundary
-    /// section) because callers of this method — vector ranking and
-    /// section-overview filtering — only have section-level data, not a
-    /// chunk_index. Only `retrieve_ranked`'s own candidate building has a
-    /// chunk_index to resolve a `SectionPrefix` boundary precisely; it uses
-    /// `allows_complete_chunk_at` instead. This keeps `SectionPrefix`
-    /// harmless everywhere it isn't specifically handled, since chat, the
-    /// vector path, and section summaries never construct it.
+    /// section) because the one remaining caller of this method —
+    /// section-overview filtering (`summarize::filter_section_overviews`) —
+    /// only has section-level data, not a chunk_index. That is also the
+    /// semantically correct behavior there: a section overview is an
+    /// AI-written summary of the *whole* section, so it cannot be given a
+    /// chunk-precise prefix the way raw chunk text can — there being no
+    /// chunk_index to resolve it with is a symptom of that, not just an
+    /// accident of what the query happens to select. Every other caller with
+    /// a real per-chunk `chunk_index` on hand (`retrieve_ranked`'s candidate
+    /// building, `retrieve_section_range_with_budget`, `vector_ranks`) uses
+    /// `allows_complete_chunk_at` instead, so `SectionPrefix` only ever
+    /// falls back to whole-section exclusion where a boundary genuinely
+    /// cannot be drawn at chunk granularity.
     pub fn allows_complete_chunk(self, section_index: i64, char_end: Option<i64>) -> bool {
         self.allows_complete_chunk_at(section_index, i64::MAX, char_end)
     }
 
     /// Chunk-precise variant of `allows_complete_chunk`, used where a real
     /// `chunk_index` is available.
-    fn allows_complete_chunk_at(self, section_index: i64, chunk_index: i64, char_end: Option<i64>) -> bool {
+    pub(crate) fn allows_complete_chunk_at(
+        self,
+        section_index: i64,
+        chunk_index: i64,
+        char_end: Option<i64>,
+    ) -> bool {
         match self {
             Self::Character(offset) => char_end.is_some_and(|end| end <= offset),
             Self::Section(section) => section_index <= section,
@@ -115,18 +126,22 @@ fn fts_query(query_text: &str) -> String {
         .join(" OR ")
 }
 
+/// The `book_chunks` columns `row_to_chunk` reads, named once so the four
+/// queries that feed it cannot drift apart.
+const CHUNK_COLUMNS: &str = "id, chunk_index, section_index, section_href, section_title, char_start, char_end, text, snippet, token_estimate";
+
 fn row_to_chunk(row: &rusqlite::Row<'_>, score: f64) -> rusqlite::Result<RetrievedChunk> {
     Ok(RetrievedChunk {
-        chunk_id: row.get(0)?,
-        chunk_index: row.get(1)?,
-        section_index: row.get(2)?,
-        section_href: row.get(3)?,
-        section_title: row.get(4)?,
-        char_start: row.get(5)?,
-        char_end: row.get(6)?,
-        text: row.get(7)?,
-        snippet: row.get(8)?,
-        token_estimate: row.get::<_, i64>(9)? as usize,
+        chunk_id: row.get("id")?,
+        chunk_index: row.get("chunk_index")?,
+        section_index: row.get("section_index")?,
+        section_href: row.get("section_href")?,
+        section_title: row.get("section_title")?,
+        char_start: row.get("char_start")?,
+        char_end: row.get("char_end")?,
+        text: row.get("text")?,
+        snippet: row.get("snippet")?,
+        token_estimate: row.get::<_, i64>("token_estimate")? as usize,
         score,
     })
 }
@@ -213,10 +228,9 @@ pub(crate) fn retrieve_ranked(
 
     let mut chunks_by_id = HashMap::new();
     {
-        let mut statement = conn.prepare(
-            "SELECT id, chunk_index, section_index, section_href, section_title, char_start, char_end, text, snippet, token_estimate
-             FROM book_chunks WHERE id = ?1 AND book_id = ?2",
-        )?;
+        let mut statement = conn.prepare(&format!(
+            "SELECT {CHUNK_COLUMNS} FROM book_chunks WHERE id = ?1 AND book_id = ?2",
+        ))?;
         for (id, score) in hits {
             let chunk = statement
                 .query_row(params![id, book_id], |row| row_to_chunk(row, *score))
@@ -249,10 +263,9 @@ pub(crate) fn retrieve_ranked(
     // Retain score lookup by id to avoid relying on the uniqueness of BM25 values.
     let hit_scores = hits.iter().cloned().collect::<HashMap<_, _>>();
     let mut candidates: BTreeMap<i64, RetrievedChunk> = BTreeMap::new();
-    let mut statement = conn.prepare(
-        "SELECT id, chunk_index, section_index, section_href, section_title, char_start, char_end, text, snippet, token_estimate
-         FROM book_chunks WHERE book_id = ?1 AND chunk_index = ?2",
-    )?;
+    let mut statement = conn.prepare(&format!(
+        "SELECT {CHUNK_COLUMNS} FROM book_chunks WHERE book_id = ?1 AND chunk_index = ?2",
+    ))?;
     for (index, fallback_score) in expanded_scores {
         let maybe_chunk = statement
             .query_row(params![book_id, index], |row| {
@@ -399,20 +412,24 @@ pub fn retrieve_all(
     book_id: &str,
     cutoff: Option<SpoilerCutoff>,
 ) -> AppResult<Vec<RetrievedChunk>> {
-    let mut statement = conn.prepare(
-        "SELECT id, chunk_index, section_index, section_href, section_title, char_start, char_end,
-                text, snippet, token_estimate
-         FROM book_chunks WHERE book_id = ?1 ORDER BY chunk_index",
-    )?;
+    let mut statement = conn.prepare(&format!(
+        "SELECT {CHUNK_COLUMNS} FROM book_chunks WHERE book_id = ?1 ORDER BY chunk_index",
+    ))?;
     let chunks = statement
         .query_map(params![book_id], |row| row_to_chunk(row, 0.0))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(crate::error::AppError::from)?;
     Ok(chunks
         .into_iter()
+        // Every chunk here carries its real `chunk_index`, so
+        // `allows_complete_chunk_at` is used instead of the conservative
+        // `allows_complete_chunk` (see `SpoilerCutoff::allows_complete_chunk`'s
+        // doc comment). This path feeds chat's full-book-text injection, so
+        // a `SectionPrefix` cutoff must admit the read-so-far prefix of the
+        // boundary section rather than dropping it wholesale.
         .filter(|chunk| {
             cutoff.is_none_or(|value| {
-                value.allows_complete_chunk(chunk.section_index, chunk.char_end)
+                value.allows_complete_chunk_at(chunk.section_index, chunk.chunk_index, chunk.char_end)
             })
         })
         .collect())
@@ -473,14 +490,13 @@ pub fn retrieve_section_range_with_budget(
         Some(_) => Some(section_start),
         None => None,
     };
-    let mut statement = conn.prepare(
-        "SELECT id, chunk_index, section_index, section_href, section_title, char_start, char_end,
-                text, snippet, token_estimate
+    let mut statement = conn.prepare(&format!(
+        "SELECT {CHUNK_COLUMNS}
          FROM book_chunks
          WHERE book_id = ?1 AND section_index >= ?2
            AND (?3 IS NULL OR section_index <= ?3)
          ORDER BY chunk_index",
-    )?;
+    ))?;
     let all_chunks = statement
         .query_map(params![book_id, section_start, section_end], |row| {
             row_to_chunk(row, 0.0)
@@ -494,10 +510,15 @@ pub fn retrieve_section_range_with_budget(
     let chunks = all_chunks
         .into_iter()
         // Character cutoffs require a complete chunk. Passing a chunk that
-        // crosses the cursor would expose unread text from its tail.
+        // crosses the cursor would expose unread text from its tail. Uses
+        // `allows_complete_chunk_at` (not the conservative
+        // `allows_complete_chunk`) because every chunk here already carries
+        // its real `chunk_index`, so a `SectionPrefix` cutoff — e.g. from
+        // chat's current-section route — can admit the read-so-far prefix of
+        // the boundary section instead of excluding it wholesale.
         .filter(|chunk| {
             cutoff.is_none_or(|value| {
-                value.allows_complete_chunk(chunk.section_index, chunk.char_end)
+                value.allows_complete_chunk_at(chunk.section_index, chunk.chunk_index, chunk.char_end)
             })
         })
         .collect::<Vec<_>>();

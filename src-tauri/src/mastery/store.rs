@@ -366,10 +366,10 @@ fn load_sightings(tx: &Transaction<'_>, book_id: &str, word: &str) -> AppResult<
     let rows = stmt
         .query_map(params![book_id, word], |row| {
             Ok(Sightings {
-                encounters: row.get(0)?,
-                chapter_days: row.get(1)?,
-                first_seen_at: row.get(2)?,
-                last_seen_at: row.get(3)?,
+                encounters: row.get("encounter_count")?,
+                chapter_days: row.get("distinct_days")?,
+                first_seen_at: row.get("first_seen_at")?,
+                last_seen_at: row.get("last_seen_at")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -429,12 +429,12 @@ fn load_pending(tx: &Transaction<'_>, book_id: &str) -> AppResult<Vec<PendingRow
     let rows = stmt
         .query_map(params![book_id], |row| {
             Ok(PendingRow {
-                id: row.get(0)?,
-                normalized_word: row.get(1)?,
-                encounter_count: row.get(2)?,
-                scored_encounter_count: row.get(3)?,
-                lookup_active_count: row.get(4)?,
-                scored_lookup_active_count: row.get(5)?,
+                id: row.get("id")?,
+                normalized_word: row.get("normalized_word")?,
+                encounter_count: row.get("encounter_count")?,
+                scored_encounter_count: row.get("scored_encounter_count")?,
+                lookup_active_count: row.get("encounters_on_lookup_active_screen")?,
+                scored_lookup_active_count: row.get("scored_lookup_active_count")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -502,9 +502,11 @@ fn load_progress(tx: &Transaction<'_>, vocab_word_id: &str) -> AppResult<WordSta
             |row| {
                 Ok(WordState {
                     tier: Tier::New,
-                    credit: row.get(0)?,
-                    last_lookup_at_ms: row.get(1)?,
-                    lookups_in_window: row.get::<_, i64>(2)?.clamp(0, u32::MAX as i64) as u32,
+                    credit: row.get("credit")?,
+                    last_lookup_at_ms: row.get("last_lookup_at")?,
+                    lookups_in_window: row
+                        .get::<_, i64>("lookups_in_window")?
+                        .clamp(0, u32::MAX as i64) as u32,
                 })
             },
         )

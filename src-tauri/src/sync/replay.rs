@@ -875,9 +875,9 @@ fn read_outbox(conn: &Connection) -> AppResult<Vec<OutboxRow>> {
     let collected: Vec<OutboxRow> = stmt
         .query_map([], |r| {
             Ok(OutboxRow {
-                id: r.get(0)?,
-                ts: r.get(1)?,
-                body_json: r.get(2)?,
+                id: r.get("id")?,
+                ts: r.get("ts")?,
+                body_json: r.get("body_json")?,
             })
         })?
         .collect::<Result<_, _>>()?;
@@ -988,15 +988,15 @@ fn reconcile_book_assets(shared_dir: &Path, db: &Db) -> usize {
             Err(_) => return 0,
         };
         let rows = match statement.query_map([], |row| {
-            let byte_size = row.get::<_, i64>(3)?;
+            let byte_size = row.get::<_, i64>("byte_size")?;
             Ok(AssetCandidate {
-                id: row.get(0)?,
-                relative_path: row.get(1)?,
-                content_sha256: row.get(2)?,
+                id: row.get("id")?,
+                relative_path: row.get("relative_path")?,
+                content_sha256: row.get("content_sha256")?,
                 byte_size: u64::try_from(byte_size).unwrap_or(u64::MAX),
-                availability: row.get(4)?,
-                verified_at: row.get(5)?,
-                error_code: row.get(6)?,
+                availability: row.get("availability")?,
+                verified_at: row.get("verified_at")?,
+                error_code: row.get("error_code")?,
             })
         }) {
             Ok(rows) => rows,

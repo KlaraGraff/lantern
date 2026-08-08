@@ -153,23 +153,27 @@ const KIND_FILTER: &str = "
        OR (?5 = 'selection' AND i.anchor_kind = 'selection'))
 ";
 
+/// Reads an `items i LEFT JOIN books b` row. `items` has no `title` column of
+/// its own, but the feeding query still aliases `b.title AS book_title` so
+/// the lookup key matches the struct field rather than relying on the bare
+/// `books` column name.
 fn row_to_annotation(row: &Row<'_>) -> rusqlite::Result<Annotation> {
-    let content: Option<String> = row.get(11)?;
+    let content: Option<String> = row.get("content")?;
     Ok(Annotation {
-        id: row.get(0)?,
-        highlight_id: row.get(1)?,
-        note_id: row.get(2)?,
-        book_id: row.get(3)?,
-        anchor_kind: row.get(4)?,
-        normalized_word: row.get(5)?,
-        scope: row.get(6)?,
-        location: row.get(7)?,
-        selected_text: row.get(8)?,
-        color: row.get(9)?,
-        book_title: row.get(10)?,
+        id: row.get("id")?,
+        highlight_id: row.get("highlight_id")?,
+        note_id: row.get("note_id")?,
+        book_id: row.get("book_id")?,
+        anchor_kind: row.get("anchor_kind")?,
+        normalized_word: row.get("normalized_word")?,
+        scope: row.get("scope")?,
+        location: row.get("location")?,
+        selected_text: row.get("selected_text")?,
+        color: row.get("color")?,
+        book_title: row.get("book_title")?,
         content: content.filter(|value| !value.trim().is_empty()),
-        created_at: row.get(12)?,
-        updated_at: row.get(13)?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
     })
 }
 
@@ -198,25 +202,25 @@ pub(crate) fn query_annotations(
     let counts: AnnotationCounts = conn.query_row(
         &format!(
             "{ITEMS_CTE}
-             SELECT COUNT(*),
-                    COALESCE(SUM(i.highlight_id IS NOT NULL), 0),
-                    COALESCE(SUM(i.content IS NOT NULL AND TRIM(i.content) <> ''), 0),
-                    COALESCE(SUM(i.anchor_kind = 'word'), 0),
-                    COALESCE(SUM(i.anchor_kind = 'selection'), 0),
+             SELECT COUNT(*) AS all_count,
+                    COALESCE(SUM(i.highlight_id IS NOT NULL), 0) AS highlights,
+                    COALESCE(SUM(i.content IS NOT NULL AND TRIM(i.content) <> ''), 0) AS with_notes,
+                    COALESCE(SUM(i.anchor_kind = 'word'), 0) AS words,
+                    COALESCE(SUM(i.anchor_kind = 'selection'), 0) AS selections,
                     COALESCE(SUM(i.highlight_id IS NOT NULL
-                                 AND (i.content IS NULL OR TRIM(i.content) = '')), 0)
+                                 AND (i.content IS NULL OR TRIM(i.content) = '')), 0) AS bare_highlights
              FROM items i LEFT JOIN books b ON b.id = i.book_id
              WHERE {SCOPE_FILTER}"
         ),
         params![book_id, pattern, updated_after, updated_before],
         |row| {
             Ok(AnnotationCounts {
-                all: row.get(0)?,
-                highlights: row.get(1)?,
-                with_notes: row.get(2)?,
-                words: row.get(3)?,
-                selections: row.get(4)?,
-                bare_highlights: row.get(5)?,
+                all: row.get("all_count")?,
+                highlights: row.get("highlights")?,
+                with_notes: row.get("with_notes")?,
+                words: row.get("words")?,
+                selections: row.get("selections")?,
+                bare_highlights: row.get("bare_highlights")?,
             })
         },
     )?;
@@ -237,7 +241,7 @@ pub(crate) fn query_annotations(
         "{ITEMS_CTE}
          SELECT i.id, i.highlight_id, i.note_id, i.book_id, i.anchor_kind,
                 i.normalized_word, i.scope, i.location, i.selected_text, i.color,
-                b.title, i.content, i.created_at, i.updated_at
+                b.title AS book_title, i.content, i.created_at, i.updated_at
          FROM items i LEFT JOIN books b ON b.id = i.book_id
          WHERE {SCOPE_FILTER} {KIND_FILTER}
            AND (?6 IS NULL OR printf('%020lld:%s', i.updated_at, i.id) < ?6)

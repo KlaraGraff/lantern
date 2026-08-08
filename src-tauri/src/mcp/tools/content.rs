@@ -231,12 +231,11 @@ fn list_visible_sections(
     let rows = match cutoff {
         None => {
             let mut statement = conn
-                .prepare(
-                    "SELECT section_index, MAX(section_title), MAX(section_href),
-                            MIN(char_start), MAX(char_end), COUNT(*), SUM(token_estimate)
+                .prepare(&format!(
+                    "SELECT {SECTION_COLUMNS}
                      FROM book_chunks WHERE book_id = ?1 GROUP BY section_index
                      ORDER BY section_index",
-                )
+                ))
                 .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
             statement
                 .query_map(rusqlite::params![book_id], section_from_row)
@@ -244,12 +243,11 @@ fn list_visible_sections(
         }
         Some(SpoilerCutoff::Section(section)) => {
             let mut statement = conn
-                .prepare(
-                    "SELECT section_index, MAX(section_title), MAX(section_href),
-                            MIN(char_start), MAX(char_end), COUNT(*), SUM(token_estimate)
+                .prepare(&format!(
+                    "SELECT {SECTION_COLUMNS}
                      FROM book_chunks WHERE book_id = ?1 AND section_index <= ?2
                      GROUP BY section_index ORDER BY section_index",
-                )
+                ))
                 .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
             statement
                 .query_map(rusqlite::params![book_id, section], section_from_row)
@@ -257,12 +255,11 @@ fn list_visible_sections(
         }
         Some(SpoilerCutoff::Character(offset)) => {
             let mut statement = conn
-                .prepare(
-                    "SELECT section_index, MAX(section_title), MAX(section_href),
-                            MIN(char_start), MAX(char_end), COUNT(*), SUM(token_estimate)
-                     FROM book_chunks WHERE book_id = ?1 AND char_end <= ?2
+                .prepare(&format!(
+                    "SELECT {SECTION_COLUMNS}
+                     FROM book_chunks WHERE book_id = ?1 AND book_chunks.char_end <= ?2
                      GROUP BY section_index ORDER BY section_index",
-                )
+                ))
                 .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
             statement
                 .query_map(rusqlite::params![book_id, offset], section_from_row)
@@ -275,12 +272,11 @@ fn list_visible_sections(
         // before the boundary section are visible.
         Some(SpoilerCutoff::SectionPrefix { section, .. }) => {
             let mut statement = conn
-                .prepare(
-                    "SELECT section_index, MAX(section_title), MAX(section_href),
-                            MIN(char_start), MAX(char_end), COUNT(*), SUM(token_estimate)
+                .prepare(&format!(
+                    "SELECT {SECTION_COLUMNS}
                      FROM book_chunks WHERE book_id = ?1 AND section_index < ?2
                      GROUP BY section_index ORDER BY section_index",
-                )
+                ))
                 .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
             statement
                 .query_map(rusqlite::params![book_id, section], section_from_row)
@@ -291,15 +287,23 @@ fn list_visible_sections(
     Ok(rows)
 }
 
+/// The section rollup `section_from_row` reads, named once so the four cutoff
+/// branches that feed it cannot drift apart. Every column but the first is an
+/// aggregate and so carries an explicit alias — an unaliased `COUNT(*)` has no
+/// name to look up. The aliases deliberately reuse the underlying column
+/// names; the branches that filter on one of those (`char_end`) qualify it
+/// with the table so it still resolves to the column, not the alias.
+const SECTION_COLUMNS: &str = "section_index, MAX(section_title) AS section_title, MAX(section_href) AS section_href, MIN(char_start) AS char_start, MAX(char_end) AS char_end, COUNT(*) AS chunk_count, SUM(token_estimate) AS token_estimate";
+
 fn section_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<McpBookSection> {
     Ok(McpBookSection {
-        section_index: row.get(0)?,
-        section_title: row.get(1)?,
-        section_href: row.get(2)?,
-        char_start: row.get(3)?,
-        char_end: row.get(4)?,
-        chunk_count: row.get(5)?,
-        token_estimate: row.get::<_, Option<i64>>(6)?.unwrap_or(0),
+        section_index: row.get("section_index")?,
+        section_title: row.get("section_title")?,
+        section_href: row.get("section_href")?,
+        char_start: row.get("char_start")?,
+        char_end: row.get("char_end")?,
+        chunk_count: row.get("chunk_count")?,
+        token_estimate: row.get::<_, Option<i64>>("token_estimate")?.unwrap_or(0),
     })
 }
 

@@ -59,23 +59,23 @@ fn asset_error(code: &str) -> AppError {
 
 fn row_to_asset(row: &rusqlite::Row<'_>) -> rusqlite::Result<BookAsset> {
     Ok(BookAsset {
-        id: row.get(0)?,
-        book_id: row.get(1)?,
-        role: row.get(2)?,
-        format: row.get(3)?,
-        relative_path: row.get(4)?,
-        content_sha256: row.get(5)?,
-        byte_size: row.get(6)?,
-        source_sha256: row.get(7)?,
-        pipeline: row.get(8)?,
-        pipeline_version: row.get(9)?,
-        language_profile: row.get(10)?,
-        quality_profile: row.get(11)?,
-        page_count: row.get(12)?,
-        supersedes_asset_id: row.get(13)?,
-        created_at: row.get(14)?,
-        updated_at: row.get(15)?,
-        updated_by_device: row.get(16)?,
+        id: row.get("id")?,
+        book_id: row.get("book_id")?,
+        role: row.get("role")?,
+        format: row.get("format")?,
+        relative_path: row.get("relative_path")?,
+        content_sha256: row.get("content_sha256")?,
+        byte_size: row.get("byte_size")?,
+        source_sha256: row.get("source_sha256")?,
+        pipeline: row.get("pipeline")?,
+        pipeline_version: row.get("pipeline_version")?,
+        language_profile: row.get("language_profile")?,
+        quality_profile: row.get("quality_profile")?,
+        page_count: row.get("page_count")?,
+        supersedes_asset_id: row.get("supersedes_asset_id")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+        updated_by_device: row.get("updated_by_device")?,
     })
 }
 
@@ -186,11 +186,11 @@ pub(crate) fn get_local_state(
         params![asset_id],
         |row| {
             Ok(AssetLocalState {
-                asset_id: row.get(0)?,
-                availability: row.get(1)?,
-                verified_at: row.get(2)?,
-                error_code: row.get(3)?,
-                updated_at: row.get(4)?,
+                asset_id: row.get("asset_id")?,
+                availability: row.get("availability")?,
+                verified_at: row.get("verified_at")?,
+                error_code: row.get("error_code")?,
+                updated_at: row.get("updated_at")?,
             })
         },
     )

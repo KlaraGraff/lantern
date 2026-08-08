@@ -73,27 +73,27 @@ pub struct VocabStats {
 
 pub(crate) fn row_to_vocab(row: &rusqlite::Row) -> rusqlite::Result<VocabWord> {
     Ok(VocabWord {
-        id: row.get(0)?,
-        book_id: row.get(1)?,
-        word: row.get(2)?,
-        definition: row.get(3)?,
-        context_sentence: row.get(4)?,
-        cfi: row.get(5)?,
-        mastery: row.get(6)?,
-        review_count: row.get(7)?,
-        next_review_at: row.get(8)?,
-        created_at: row.get(9)?,
-        updated_at: row.get(10)?,
-        context_explanation: row.get(11)?,
-        review_interval_days: row.get(12)?,
-        last_reviewed_at: row.get(13)?,
-        last_review_rating: row.get(14)?,
-        fsrs_stability: row.get(15)?,
-        fsrs_difficulty: row.get(16)?,
-        fsrs_version: row.get(17)?,
-        mastery_source: row.get(18)?,
-        mastery_reason: row.get(19)?,
-        list_status: row.get(20)?,
+        id: row.get("id")?,
+        book_id: row.get("book_id")?,
+        word: row.get("word")?,
+        definition: row.get("definition")?,
+        context_sentence: row.get("context_sentence")?,
+        cfi: row.get("cfi")?,
+        mastery: row.get("mastery")?,
+        review_count: row.get("review_count")?,
+        next_review_at: row.get("next_review_at")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+        context_explanation: row.get("context_explanation")?,
+        review_interval_days: row.get("review_interval_days")?,
+        last_reviewed_at: row.get("last_reviewed_at")?,
+        last_review_rating: row.get("last_review_rating")?,
+        fsrs_stability: row.get("fsrs_stability")?,
+        fsrs_difficulty: row.get("fsrs_difficulty")?,
+        fsrs_version: row.get("fsrs_version")?,
+        mastery_source: row.get("mastery_source")?,
+        mastery_reason: row.get("mastery_reason")?,
+        list_status: row.get("list_status")?,
         book_title: None,
         chapter: None,
     })
@@ -101,29 +101,29 @@ pub(crate) fn row_to_vocab(row: &rusqlite::Row) -> rusqlite::Result<VocabWord> {
 
 fn row_to_vocab_with_book(row: &rusqlite::Row) -> rusqlite::Result<VocabWord> {
     Ok(VocabWord {
-        id: row.get(0)?,
-        book_id: row.get(1)?,
-        word: row.get(2)?,
-        definition: row.get(3)?,
-        context_sentence: row.get(4)?,
-        cfi: row.get(5)?,
-        mastery: row.get(6)?,
-        review_count: row.get(7)?,
-        next_review_at: row.get(8)?,
-        created_at: row.get(9)?,
-        updated_at: row.get(10)?,
-        context_explanation: row.get(11)?,
-        review_interval_days: row.get(12)?,
-        last_reviewed_at: row.get(13)?,
-        last_review_rating: row.get(14)?,
-        fsrs_stability: row.get(15)?,
-        fsrs_difficulty: row.get(16)?,
-        fsrs_version: row.get(17)?,
-        mastery_source: row.get(18)?,
-        mastery_reason: row.get(19)?,
-        list_status: row.get(20)?,
-        book_title: row.get(21)?,
-        chapter: row.get(22)?,
+        id: row.get("id")?,
+        book_id: row.get("book_id")?,
+        word: row.get("word")?,
+        definition: row.get("definition")?,
+        context_sentence: row.get("context_sentence")?,
+        cfi: row.get("cfi")?,
+        mastery: row.get("mastery")?,
+        review_count: row.get("review_count")?,
+        next_review_at: row.get("next_review_at")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+        context_explanation: row.get("context_explanation")?,
+        review_interval_days: row.get("review_interval_days")?,
+        last_reviewed_at: row.get("last_reviewed_at")?,
+        last_review_rating: row.get("last_review_rating")?,
+        fsrs_stability: row.get("fsrs_stability")?,
+        fsrs_difficulty: row.get("fsrs_difficulty")?,
+        fsrs_version: row.get("fsrs_version")?,
+        mastery_source: row.get("mastery_source")?,
+        mastery_reason: row.get("mastery_reason")?,
+        list_status: row.get("list_status")?,
+        book_title: row.get("book_title")?,
+        chapter: row.get("chapter")?,
     })
 }
 
@@ -255,17 +255,17 @@ struct VocabReviewState {
     fsrs_version: i64,
 }
 
-/// Reads the review columns starting at `offset`, so a query may select the
-/// word alongside them without a second round trip.
-fn row_to_review_state(row: &rusqlite::Row, offset: usize) -> rusqlite::Result<VocabReviewState> {
+/// Reads the review columns by name, so a query may select the word
+/// alongside them without a second round trip.
+fn row_to_review_state(row: &rusqlite::Row) -> rusqlite::Result<VocabReviewState> {
     Ok(VocabReviewState {
-        review_count: row.get(offset)?,
-        review_interval_days: row.get(offset + 1)?,
-        last_reviewed_at: row.get(offset + 2)?,
-        last_review_rating: row.get(offset + 3)?,
-        fsrs_stability: row.get(offset + 4)?,
-        fsrs_difficulty: row.get(offset + 5)?,
-        fsrs_version: row.get(offset + 6)?,
+        review_count: row.get("review_count")?,
+        review_interval_days: row.get("review_interval_days")?,
+        last_reviewed_at: row.get("last_reviewed_at")?,
+        last_review_rating: row.get("last_review_rating")?,
+        fsrs_stability: row.get("fsrs_stability")?,
+        fsrs_difficulty: row.get("fsrs_difficulty")?,
+        fsrs_version: row.get("fsrs_version")?,
     })
 }
 
@@ -543,9 +543,9 @@ pub(crate) fn set_auto_mastery(
         params![id],
         |row| {
             Ok((
-                row.get::<_, String>(0)?,
-                row_to_review_state(row, 1)?,
-                row.get::<_, Option<i64>>(8)?,
+                row.get::<_, String>("word")?,
+                row_to_review_state(row)?,
+                row.get::<_, Option<i64>>("next_review_at")?,
             ))
         },
     )?;
@@ -1044,7 +1044,7 @@ pub(crate) fn query_all_vocab_words(db: &Db) -> AppResult<Vec<VocabWord>> {
         // the word gives contextual review the "which chapter was this" line
         // without a migration, and simply yields NULL when nothing matches.
         // Same-position lookups win over merely same-word ones.
-        "SELECT v.id, v.book_id, v.word, v.definition, v.context_sentence, v.cfi, v.mastery, v.review_count, v.next_review_at, v.created_at, v.updated_at, v.context_explanation, v.review_interval_days, v.last_reviewed_at, v.last_review_rating, v.fsrs_stability, v.fsrs_difficulty, v.fsrs_version, v.mastery_source, v.mastery_reason, v.list_status, b.title, \
+        "SELECT v.id, v.book_id, v.word, v.definition, v.context_sentence, v.cfi, v.mastery, v.review_count, v.next_review_at, v.created_at, v.updated_at, v.context_explanation, v.review_interval_days, v.last_reviewed_at, v.last_review_rating, v.fsrs_stability, v.fsrs_difficulty, v.fsrs_version, v.mastery_source, v.mastery_reason, v.list_status, b.title AS book_title, \
          COALESCE( \
            (SELECT l.chapter FROM lookup_records l \
              WHERE l.book_id = v.book_id AND l.cfi = v.cfi AND l.normalized_text = lower(trim(v.word)) \
@@ -1052,7 +1052,7 @@ pub(crate) fn query_all_vocab_words(db: &Db) -> AppResult<Vec<VocabWord>> {
            (SELECT l.chapter FROM lookup_records l \
              WHERE l.book_id = v.book_id AND l.normalized_text = lower(trim(v.word)) \
                AND trim(COALESCE(l.chapter, '')) <> '' \
-             ORDER BY l.last_looked_up_at DESC LIMIT 1)) \
+             ORDER BY l.last_looked_up_at DESC LIMIT 1)) AS chapter \
          FROM vocab_words v LEFT JOIN books b ON v.book_id = b.id \
          WHERE v.list_status = 'confirmed' ORDER BY v.created_at DESC"
     )?;
@@ -1232,7 +1232,7 @@ pub(crate) fn update_vocab_mastery_inner(
             .query_row(
                 "SELECT word, review_count, review_interval_days, last_reviewed_at, last_review_rating, fsrs_stability, fsrs_difficulty, fsrs_version FROM vocab_words WHERE id = ?1",
                 params![id],
-                |row| Ok((row.get::<_, String>(0)?, row_to_review_state(row, 1)?)),
+                |row| Ok((row.get::<_, String>("word")?, row_to_review_state(row)?)),
             )
             .map_err(crate::error::AppError::from)?;
         let progress = VocabProgress {
@@ -1745,9 +1745,9 @@ pub(crate) fn bulk_update_vocab_mastery_inner(
                     params![id],
                     |row| {
                         Ok((
-                            row.get::<_, String>(0)?,
-                            row_to_review_state(row, 1)?,
-                            row.get::<_, String>(8)?,
+                            row.get::<_, String>("word")?,
+                            row_to_review_state(row)?,
+                            row.get::<_, String>("mastery")?,
                         ))
                     },
                 )

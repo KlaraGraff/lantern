@@ -200,10 +200,10 @@ fn pending_on(conn: &Connection, limit: usize) -> AppResult<Vec<PendingRow>> {
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(PendingRow {
-            id: row.get(0)?,
-            word: row.get(1)?,
-            definition: row.get(2)?,
-            context_sentence: row.get(3)?,
+            id: row.get("id")?,
+            word: row.get("word")?,
+            definition: row.get("definition")?,
+            context_sentence: row.get("context_sentence")?,
         })
     })?;
     let mut pending = Vec::new();

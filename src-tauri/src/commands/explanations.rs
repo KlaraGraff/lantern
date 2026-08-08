@@ -55,41 +55,45 @@ const SELECT_COLS: &str = "id, book_id, passage, normalized_passage, explanation
 
 fn row_to_explanation(row: &rusqlite::Row) -> rusqlite::Result<Explanation> {
     Ok(Explanation {
-        id: row.get(0)?,
-        book_id: row.get(1)?,
-        passage: row.get(2)?,
-        normalized_passage: row.get(3)?,
-        explanation: row.get(4)?,
-        context_sentence: row.get(5)?,
-        chapter: row.get(6)?,
-        cfi: row.get(7)?,
-        variant: row.get(8)?,
-        provider_profile_id: row.get(9)?,
-        model: row.get(10)?,
-        saved: row.get(11)?,
-        created_at: row.get(12)?,
-        updated_at: row.get(13)?,
+        id: row.get("id")?,
+        book_id: row.get("book_id")?,
+        passage: row.get("passage")?,
+        normalized_passage: row.get("normalized_passage")?,
+        explanation: row.get("explanation")?,
+        context_sentence: row.get("context_sentence")?,
+        chapter: row.get("chapter")?,
+        cfi: row.get("cfi")?,
+        variant: row.get("variant")?,
+        provider_profile_id: row.get("provider_profile_id")?,
+        model: row.get("model")?,
+        saved: row.get("saved")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
         book_title: None,
     })
 }
 
+/// Reads an `explanations e LEFT JOIN books b` row. `b.title` has no
+/// same-named column on the `explanations` side, but the query still aliases
+/// it `AS book_title` so the mapper's lookup key matches the struct field
+/// name rather than relying on `b`'s bare column name.
 fn row_to_explanation_with_book(row: &rusqlite::Row) -> rusqlite::Result<Explanation> {
     Ok(Explanation {
-        id: row.get(0)?,
-        book_id: row.get(1)?,
-        passage: row.get(2)?,
-        normalized_passage: row.get(3)?,
-        explanation: row.get(4)?,
-        context_sentence: row.get(5)?,
-        chapter: row.get(6)?,
-        cfi: row.get(7)?,
-        variant: row.get(8)?,
-        provider_profile_id: row.get(9)?,
-        model: row.get(10)?,
-        saved: row.get(11)?,
-        created_at: row.get(12)?,
-        updated_at: row.get(13)?,
-        book_title: row.get(14)?,
+        id: row.get("id")?,
+        book_id: row.get("book_id")?,
+        passage: row.get("passage")?,
+        normalized_passage: row.get("normalized_passage")?,
+        explanation: row.get("explanation")?,
+        context_sentence: row.get("context_sentence")?,
+        chapter: row.get("chapter")?,
+        cfi: row.get("cfi")?,
+        variant: row.get("variant")?,
+        provider_profile_id: row.get("provider_profile_id")?,
+        model: row.get("model")?,
+        saved: row.get("saved")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+        book_title: row.get("book_title")?,
     })
 }
 
@@ -424,7 +428,7 @@ pub(crate) fn query_all_explanations(
     }
     let facet_where = format!(" WHERE {}", facet_conditions.join(" AND "));
     let facet_sql = format!(
-        "SELECT e.book_id, b.title, COUNT(*) FROM explanations e LEFT JOIN books b ON e.book_id = b.id{facet_where} GROUP BY e.book_id, b.title ORDER BY LOWER(COALESCE(b.title, '')), e.book_id"
+        "SELECT e.book_id, b.title, COUNT(*) AS count FROM explanations e LEFT JOIN books b ON e.book_id = b.id{facet_where} GROUP BY e.book_id, b.title ORDER BY LOWER(COALESCE(b.title, '')), e.book_id"
     );
     let facet_refs: Vec<&dyn rusqlite::types::ToSql> =
         facet_values.iter().map(|value| value.as_ref()).collect();
@@ -432,9 +436,9 @@ pub(crate) fn query_all_explanations(
     let books = facet_statement
         .query_map(facet_refs.as_slice(), |row| {
             Ok(ExplanationBookFacet {
-                book_id: row.get(0)?,
-                book_title: row.get(1)?,
-                count: row.get(2)?,
+                book_id: row.get("book_id")?,
+                book_title: row.get("title")?,
+                count: row.get("count")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -450,7 +454,7 @@ pub(crate) fn query_all_explanations(
     }
     let where_clause = format!(" WHERE {}", conditions.join(" AND "));
     let sql = format!(
-        "SELECT e.id, e.book_id, e.passage, e.normalized_passage, e.explanation, e.context_sentence, e.chapter, e.cfi, e.variant, e.provider_profile_id, e.model, e.saved, e.created_at, e.updated_at, b.title FROM explanations e LEFT JOIN books b ON e.book_id = b.id{where_clause} ORDER BY e.updated_at DESC, e.id ASC LIMIT ?"
+        "SELECT e.id, e.book_id, e.passage, e.normalized_passage, e.explanation, e.context_sentence, e.chapter, e.cfi, e.variant, e.provider_profile_id, e.model, e.saved, e.created_at, e.updated_at, b.title AS book_title FROM explanations e LEFT JOIN books b ON e.book_id = b.id{where_clause} ORDER BY e.updated_at DESC, e.id ASC LIMIT ?"
     );
     values.push(Box::new((page_size + 1) as i64));
     let refs: Vec<&dyn rusqlite::types::ToSql> =

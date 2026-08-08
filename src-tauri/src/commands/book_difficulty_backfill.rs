@@ -95,8 +95,8 @@ fn pending_on(conn: &Connection, limit: usize) -> AppResult<Vec<PendingBook>> {
     )?;
     let rows = statement.query_map(params![limit as i64], |row| {
         Ok(PendingBook {
-            book_id: row.get(0)?,
-            source_sha256: row.get(1)?,
+            book_id: row.get("book_id")?,
+            source_sha256: row.get("source_sha256")?,
         })
     })?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)

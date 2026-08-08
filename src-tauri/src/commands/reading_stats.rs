@@ -516,7 +516,7 @@ fn query_sessions(db: &Db, query: &ReadingStatsQuery) -> AppResult<Vec<ReadingSe
     let mut stmt = conn.prepare(
         "SELECT s.id, s.book_id, b.title, b.author, b.progress,
                 s.started_at, s.ended_at, s.active_seconds,
-                (b.status = 'finished' OR b.progress >= 100)
+                (b.status = 'finished' OR b.progress >= 100) AS completed
            FROM reading_sessions s JOIN books b ON b.id = s.book_id
           WHERE s.ended_at > ?1 AND s.started_at < ?2
             AND (?3 IS NULL OR s.book_id = ?3)
@@ -530,15 +530,15 @@ fn query_sessions(db: &Db, query: &ReadingStatsQuery) -> AppResult<Vec<ReadingSe
         ],
         |row| {
             Ok(ReadingSessionRow {
-                id: row.get(0)?,
-                book_id: row.get(1)?,
-                title: row.get(2)?,
-                author: row.get(3)?,
-                progress: row.get(4)?,
-                started_at: row.get(5)?,
-                ended_at: row.get(6)?,
-                active_seconds: row.get(7)?,
-                completed: row.get::<_, i64>(8)? != 0,
+                id: row.get("id")?,
+                book_id: row.get("book_id")?,
+                title: row.get("title")?,
+                author: row.get("author")?,
+                progress: row.get("progress")?,
+                started_at: row.get("started_at")?,
+                ended_at: row.get("ended_at")?,
+                active_seconds: row.get("active_seconds")?,
+                completed: row.get::<_, i64>("completed")? != 0,
             })
         },
     )?;
@@ -979,18 +979,29 @@ pub async fn run_book_finished_analysis(
     }
 }
 
+/// The `ai_reading_reviews` columns `row_to_cached_review` reads, named in
+/// exactly one place so the two feeding SELECTs in `cached_review` can't
+/// drift out of order.
+const CACHED_REVIEW_COLUMNS: &str = "id, facts_json, narrative, provider_profile_id, provider, model, created_at, updated_at";
+
 fn row_to_cached_review(row: &rusqlite::Row) -> rusqlite::Result<CachedReadingReview> {
     Ok(CachedReadingReview {
-        id: row.get(0)?,
-        facts: serde_json::from_str::<ReviewFacts>(&row.get::<_, String>(1)?).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e))
-        })?,
-        narrative: row.get(2)?,
-        provider_profile_id: row.get(3)?,
-        provider: row.get(4)?,
-        model: row.get(5)?,
-        created_at: row.get(6)?,
-        updated_at: row.get(7)?,
+        id: row.get("id")?,
+        facts: serde_json::from_str::<ReviewFacts>(&row.get::<_, String>("facts_json")?).map_err(
+            |e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    1,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            },
+        )?,
+        narrative: row.get("narrative")?,
+        provider_profile_id: row.get("provider_profile_id")?,
+        provider: row.get("provider")?,
+        model: row.get("model")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
     })
 }
 
@@ -1012,8 +1023,10 @@ pub fn cached_review(
     match scope_book_id {
         Some(book_id) => conn
             .query_row(
-                "SELECT id, facts_json, narrative, provider_profile_id, provider, model, created_at, updated_at
-                   FROM ai_reading_reviews WHERE scope_book_id = ?1",
+                &format!(
+                    "SELECT {CACHED_REVIEW_COLUMNS}
+                   FROM ai_reading_reviews WHERE scope_book_id = ?1"
+                ),
                 params![book_id],
                 row_to_cached_review,
             )
@@ -1021,8 +1034,10 @@ pub fn cached_review(
             .map_err(Into::into),
         None => conn
             .query_row(
-                "SELECT id, facts_json, narrative, provider_profile_id, provider, model, created_at, updated_at
-                   FROM ai_reading_reviews WHERE period_start = ?1 AND period_end = ?2 AND scope_book_id IS NULL",
+                &format!(
+                    "SELECT {CACHED_REVIEW_COLUMNS}
+                   FROM ai_reading_reviews WHERE period_start = ?1 AND period_end = ?2 AND scope_book_id IS NULL"
+                ),
                 params![period_start, period_end],
                 row_to_cached_review,
             )

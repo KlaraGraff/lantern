@@ -104,8 +104,8 @@ fn normalized_forms(word: &str, forms: Vec<String>) -> Vec<String> {
 pub(crate) fn query_word_forms(db: &Db) -> AppResult<Vec<WordFormsEntry>> {
     let conn = db.reader();
     let mut statement = conn.prepare(
-        "SELECT r.normalized_word, MAX(r.display_word), f.forms, f.source,
-                MAX(r.created_at), f.updated_at
+        "SELECT r.normalized_word, MAX(r.display_word) AS display_word, f.forms, f.source,
+                MAX(r.created_at) AS created_at, f.updated_at
          FROM word_mark_rules r
          LEFT JOIN word_forms f ON f.normalized_word = r.normalized_word
          WHERE r.enabled = 1
@@ -115,16 +115,16 @@ pub(crate) fn query_word_forms(db: &Db) -> AppResult<Vec<WordFormsEntry>> {
     )?;
     let values = statement
         .query_map([], |row| {
-            let forms_json: Option<String> = row.get(2)?;
+            let forms_json: Option<String> = row.get("forms")?;
             Ok(WordFormsEntry {
-                normalized_word: row.get(0)?,
-                display_word: row.get(1)?,
+                normalized_word: row.get("normalized_word")?,
+                display_word: row.get("display_word")?,
                 forms: forms_json
                     .and_then(|value| serde_json::from_str(&value).ok())
                     .unwrap_or_default(),
-                source: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
+                source: row.get("source")?,
+                created_at: row.get("created_at")?,
+                updated_at: row.get("updated_at")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -208,18 +208,22 @@ pub(crate) fn query_word_forms_for(db: &Db, words: Vec<String>) -> AppResult<Vec
     let mut result = Vec::new();
     for word in words.into_iter().map(|word| normalize_learning_term(&word)) {
         let row = conn.query_row(
-            "SELECT normalized_word, normalized_word, forms, source, updated_at, updated_at
+            // `display_word` and `created_at` have no columns of their own here;
+            // they take the same values the row already carries. The select list
+            // used to name both columns twice to line up with positional reads —
+            // named lookup makes the duplicates pointless.
+            "SELECT normalized_word, forms, source, updated_at
              FROM word_forms WHERE normalized_word = ?1",
             params![word],
             |row| {
-                let forms_json: String = row.get(2)?;
+                let forms_json: String = row.get("forms")?;
                 Ok(WordFormsEntry {
-                    normalized_word: row.get(0)?,
-                    display_word: row.get(1)?,
+                    normalized_word: row.get("normalized_word")?,
+                    display_word: row.get("normalized_word")?,
                     forms: serde_json::from_str(&forms_json).unwrap_or_default(),
-                    source: row.get(3)?,
-                    created_at: row.get(4)?,
-                    updated_at: row.get(5)?,
+                    source: row.get("source")?,
+                    created_at: row.get("updated_at")?,
+                    updated_at: row.get("updated_at")?,
                 })
             },
         );
@@ -277,7 +281,7 @@ fn find_covering_rule(
     )?;
     let mut rows = statement.query(params![book_id])?;
     while let Some(row) = rows.next()? {
-        let forms_json: String = row.get(9)?;
+        let forms_json: String = row.get("forms")?;
         let forms: Vec<String> = serde_json::from_str(&forms_json).unwrap_or_default();
         if forms
             .iter()
@@ -311,15 +315,15 @@ pub fn find_covering_word_mark_rule(
 
 fn row_to_rule(row: &rusqlite::Row<'_>) -> rusqlite::Result<WordMarkRule> {
     Ok(WordMarkRule {
-        id: row.get(0)?,
-        book_id: row.get(1)?,
-        normalized_word: row.get(2)?,
-        display_word: row.get(3)?,
-        match_mode: row.get(4)?,
-        color: row.get(5)?,
-        enabled: row.get::<_, i64>(6)? != 0,
-        created_at: row.get(7)?,
-        updated_at: row.get(8)?,
+        id: row.get("id")?,
+        book_id: row.get("book_id")?,
+        normalized_word: row.get("normalized_word")?,
+        display_word: row.get("display_word")?,
+        match_mode: row.get("match_mode")?,
+        color: row.get("color")?,
+        enabled: row.get::<_, i64>("enabled")? != 0,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
     })
 }
 
@@ -525,13 +529,13 @@ pub(crate) fn set_word_mark_rule_enabled_inner(
             let rows = statement
                 .query_map(params![book_id, normalized_word], |row| {
                     Ok(LookupOccurrenceMarkPayload {
-                        id: row.get(0)?,
+                        id: row.get("id")?,
                         book_id: book_id.to_string(),
                         normalized_word: normalized_word.clone(),
-                        display_word: row.get(1)?,
-                        location: row.get(2)?,
+                        display_word: row.get("display_word")?,
+                        location: row.get("location")?,
                         enabled: false,
-                        created_at: row.get(3)?,
+                        created_at: row.get("created_at")?,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -794,14 +798,14 @@ pub(crate) fn query_word_mark_exceptions(
     let candidates = statement
         .query_map(params![book_id], |row| {
             Ok(WordMarkException {
-                id: row.get(0)?,
-                rule_id: row.get(1)?,
-                book_id: row.get(2)?,
-                normalized_word: row.get(3)?,
-                location: row.get(4)?,
-                excluded: row.get::<_, i64>(5)? != 0,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
+                id: row.get("id")?,
+                rule_id: row.get("rule_id")?,
+                book_id: row.get("book_id")?,
+                normalized_word: row.get("normalized_word")?,
+                location: row.get("location")?,
+                excluded: row.get::<_, i64>("excluded")? != 0,
+                created_at: row.get("created_at")?,
+                updated_at: row.get("updated_at")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -936,14 +940,14 @@ fn ensure_lookup_occurrence_mark_inner(
             params![book_id, location],
             |row| {
                 Ok(LookupOccurrenceMark {
-                    id: row.get(0)?,
-                    book_id: row.get(1)?,
-                    normalized_word: row.get(2)?,
-                    display_word: row.get(3)?,
-                    location: row.get(4)?,
-                    enabled: row.get::<_, i64>(5)? != 0,
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7)?,
+                    id: row.get("id")?,
+                    book_id: row.get("book_id")?,
+                    normalized_word: row.get("normalized_word")?,
+                    display_word: row.get("display_word")?,
+                    location: row.get("location")?,
+                    enabled: row.get::<_, i64>("enabled")? != 0,
+                    created_at: row.get("created_at")?,
+                    updated_at: row.get("updated_at")?,
                 })
             },
         )
@@ -997,14 +1001,14 @@ pub fn list_lookup_occurrence_marks(
     let rows = statement
         .query_map(params![book_id], |row| {
             Ok(LookupOccurrenceMark {
-                id: row.get(0)?,
-                book_id: row.get(1)?,
-                normalized_word: row.get(2)?,
-                display_word: row.get(3)?,
-                location: row.get(4)?,
-                enabled: row.get::<_, i64>(5)? != 0,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
+                id: row.get("id")?,
+                book_id: row.get("book_id")?,
+                normalized_word: row.get("normalized_word")?,
+                display_word: row.get("display_word")?,
+                location: row.get("location")?,
+                enabled: row.get::<_, i64>("enabled")? != 0,
+                created_at: row.get("created_at")?,
+                updated_at: row.get("updated_at")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -1076,14 +1080,14 @@ pub(crate) fn clear_lookup_marks_for_book_inner(
             let rows = statement
                 .query_map(params![book_id], |row| {
                     Ok(WordMarkPayload {
-                        id: row.get(0)?,
+                        id: row.get("id")?,
                         book_id: book_id.to_string(),
-                        normalized_word: row.get(1)?,
-                        display_word: row.get(2)?,
-                        match_mode: row.get(3)?,
-                        color: row.get(4)?,
+                        normalized_word: row.get("normalized_word")?,
+                        display_word: row.get("display_word")?,
+                        match_mode: row.get("match_mode")?,
+                        color: row.get("color")?,
                         enabled: false,
-                        created_at: row.get(5)?,
+                        created_at: row.get("created_at")?,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -1097,13 +1101,13 @@ pub(crate) fn clear_lookup_marks_for_book_inner(
             let rows = statement
                 .query_map(params![book_id], |row| {
                     Ok(LookupOccurrenceMarkPayload {
-                        id: row.get(0)?,
+                        id: row.get("id")?,
                         book_id: book_id.to_string(),
-                        normalized_word: row.get(1)?,
-                        display_word: row.get(2)?,
-                        location: row.get(3)?,
+                        normalized_word: row.get("normalized_word")?,
+                        display_word: row.get("display_word")?,
+                        location: row.get("location")?,
                         enabled: false,
-                        created_at: row.get(4)?,
+                        created_at: row.get("created_at")?,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -1122,13 +1126,13 @@ pub(crate) fn clear_lookup_marks_for_book_inner(
             let rows = statement
                 .query_map(params![book_id], |row| {
                     Ok(WordMarkExceptionPayload {
-                        id: row.get(0)?,
-                        rule_id: row.get(1)?,
+                        id: row.get("id")?,
+                        rule_id: row.get("rule_id")?,
                         book_id: book_id.to_string(),
-                        normalized_word: row.get(2)?,
-                        location: row.get(3)?,
+                        normalized_word: row.get("normalized_word")?,
+                        location: row.get("location")?,
                         excluded: false,
-                        created_at: row.get(4)?,
+                        created_at: row.get("created_at")?,
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;

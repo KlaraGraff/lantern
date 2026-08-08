@@ -454,9 +454,9 @@ fn followup_rows(
     )?;
     let rows = stmt.query_map(params![category, since], |row| {
         Ok(FollowupRow {
-            passage: row.get(0)?,
-            question: row.get(1)?,
-            created_at: row.get(2)?,
+            passage: row.get("passage")?,
+            question: row.get("question")?,
+            created_at: row.get("created_at")?,
         })
     })?;
     let mut out = Vec::new();
@@ -1307,11 +1307,11 @@ pub fn profile_get_inner(db: &Db) -> AppResult<ProfileView> {
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(ProfileCard {
-            slot: row.get(0)?,
-            conclusion: row.get(1)?,
-            evidence: row.get(2)?,
-            status: CardStatus::from_db(&row.get::<_, String>(3)?),
-            updated_at: row.get(4)?,
+            slot: row.get("slot")?,
+            conclusion: row.get("conclusion")?,
+            evidence: row.get("evidence")?,
+            status: CardStatus::from_db(&row.get::<_, String>("status")?),
+            updated_at: row.get("updated_at")?,
         })
     })?;
     let mut cards: Vec<ProfileCard> = rows.collect::<Result<_, _>>()?;

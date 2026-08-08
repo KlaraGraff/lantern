@@ -81,11 +81,11 @@ pub fn index_details(db: &Db, book_id: &str) -> AppResult<IndexDetails> {
             params![book_id],
             |row| {
                 Ok(IndexDetails {
-                    status: IndexStatus::from_db(&row.get::<_, String>(0)?),
-                    chunk_count: row.get(1)?,
-                    index_version: row.get(2)?,
-                    indexed_at: row.get(3)?,
-                    error: row.get(4)?,
+                    status: IndexStatus::from_db(&row.get::<_, String>("status")?),
+                    chunk_count: row.get("chunk_count")?,
+                    index_version: row.get("index_version")?,
+                    indexed_at: row.get("indexed_at")?,
+                    error: row.get("error")?,
                 })
             },
         )

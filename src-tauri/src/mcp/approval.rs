@@ -297,9 +297,7 @@ impl ApprovalStore {
         let conn = self.connection()?;
         let stored = conn
             .query_row(
-                "SELECT id, action, confirmation_json, arguments_json, status,
-                        requested_at, resolved_at, consumed_at, channel
-                 FROM approval_requests WHERE id = ?1",
+                &format!("SELECT {REQUEST_COLUMNS} FROM approval_requests WHERE id = ?1"),
                 params![id],
                 row_to_stored,
             )
@@ -310,13 +308,12 @@ impl ApprovalStore {
 
     pub fn list_pending(&self) -> AppResult<Vec<ApprovalRequest>> {
         let conn = self.connection()?;
-        let mut statement = conn.prepare(
-            "SELECT id, action, confirmation_json, arguments_json, status,
-                    requested_at, resolved_at, consumed_at, channel
+        let mut statement = conn.prepare(&format!(
+            "SELECT {REQUEST_COLUMNS}
              FROM approval_requests
              WHERE status = 'pending' AND consumed_at IS NULL AND channel = 'application'
              ORDER BY requested_at ASC, id ASC",
-        )?;
+        ))?;
         let rows = statement
             .query_map([], row_to_stored)?
             .collect::<Result<Vec<_>, _>>()?;
@@ -362,9 +359,7 @@ impl ApprovalStore {
 
     fn get_with_connection(&self, conn: &Connection, id: &str) -> AppResult<ApprovalRequest> {
         conn.query_row(
-            "SELECT id, action, confirmation_json, arguments_json, status,
-                    requested_at, resolved_at, consumed_at, channel
-             FROM approval_requests WHERE id = ?1",
+            &format!("SELECT {REQUEST_COLUMNS} FROM approval_requests WHERE id = ?1"),
             params![id],
             row_to_stored,
         )
@@ -400,17 +395,21 @@ impl ApprovalStore {
     }
 }
 
+/// The `approval_requests` columns `row_to_stored` reads, named once so the
+/// five queries that feed it cannot drift apart.
+const REQUEST_COLUMNS: &str = "id, action, confirmation_json, arguments_json, status, requested_at, resolved_at, consumed_at, channel";
+
 fn row_to_stored(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredRequest> {
     Ok(StoredRequest {
-        id: row.get(0)?,
-        action: row.get(1)?,
-        confirmation_json: row.get(2)?,
-        arguments_json: row.get(3)?,
-        status: row.get(4)?,
-        requested_at: row.get(5)?,
-        resolved_at: row.get(6)?,
-        consumed_at: row.get(7)?,
-        channel: row.get(8)?,
+        id: row.get("id")?,
+        action: row.get("action")?,
+        confirmation_json: row.get("confirmation_json")?,
+        arguments_json: row.get("arguments_json")?,
+        status: row.get("status")?,
+        requested_at: row.get("requested_at")?,
+        resolved_at: row.get("resolved_at")?,
+        consumed_at: row.get("consumed_at")?,
+        channel: row.get("channel")?,
     })
 }
 
@@ -456,13 +455,12 @@ fn find_active_bound(
     input: &ApprovalRequestInput,
     channel: ApprovalChannel,
 ) -> AppResult<Option<ApprovalRequest>> {
-    let mut statement = conn.prepare(
-        "SELECT id, action, confirmation_json, arguments_json, status,
-                requested_at, resolved_at, consumed_at, channel
+    let mut statement = conn.prepare(&format!(
+        "SELECT {REQUEST_COLUMNS}
          FROM approval_requests
          WHERE action = ?1 AND channel = ?2 AND consumed_at IS NULL
          ORDER BY requested_at DESC, id DESC",
-    )?;
+    ))?;
     let requests = statement
         .query_map(params![input.action, channel.as_str()], row_to_stored)?
         .collect::<Result<Vec<_>, _>>()?;
@@ -477,9 +475,7 @@ fn find_active_bound(
 
 fn get_with_connection(conn: &Connection, id: &str) -> AppResult<ApprovalRequest> {
     conn.query_row(
-        "SELECT id, action, confirmation_json, arguments_json, status,
-                requested_at, resolved_at, consumed_at, channel
-         FROM approval_requests WHERE id = ?1",
+        &format!("SELECT {REQUEST_COLUMNS} FROM approval_requests WHERE id = ?1"),
         params![id],
         row_to_stored,
     )

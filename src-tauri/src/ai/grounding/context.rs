@@ -131,13 +131,13 @@ fn load_chunk_rows(db: &Db, book_id: &str) -> AppResult<(String, Vec<ChunkRow>)>
     let rows = statement
         .query_map(params![book_id], |row| {
             Ok(ChunkRow {
-                id: row.get(0)?,
-                section_index: row.get(1)?,
-                section_title: row.get(2)?,
-                chunk_index: row.get(3)?,
-                text: row.get(4)?,
-                token_estimate: row.get::<_, i64>(5)? as usize,
-                context_line: row.get(6)?,
+                id: row.get("id")?,
+                section_index: row.get("section_index")?,
+                section_title: row.get("section_title")?,
+                chunk_index: row.get("chunk_index")?,
+                text: row.get("text")?,
+                token_estimate: row.get::<_, i64>("token_estimate")? as usize,
+                context_line: row.get("context_line")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

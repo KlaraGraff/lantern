@@ -34,22 +34,22 @@ pub struct NotePage {
 
 fn row_to_note(row: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
     Ok(Note {
-        id: row.get(0)?,
-        book_id: row.get(1)?,
-        book_title: row.get(2)?,
-        anchor_kind: row.get(3)?,
-        normalized_word: row.get(4)?,
-        scope: row.get(5)?,
-        location: row.get(6)?,
-        selected_text: row.get(7)?,
-        content: row.get(8)?,
-        content_format: row.get(9)?,
-        created_at: row.get(10)?,
-        updated_at: row.get(11)?,
+        id: row.get("id")?,
+        book_id: row.get("book_id")?,
+        book_title: row.get("book_title")?,
+        anchor_kind: row.get("anchor_kind")?,
+        normalized_word: row.get("normalized_word")?,
+        scope: row.get("scope")?,
+        location: row.get("location")?,
+        selected_text: row.get("selected_text")?,
+        content: row.get("content")?,
+        content_format: row.get("content_format")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
     })
 }
 
-const NOTE_COLUMNS: &str = "n.id, n.book_id, b.title, n.anchor_kind, n.normalized_word, n.scope, n.location, n.selected_text, n.content, n.content_format, n.created_at, n.updated_at";
+const NOTE_COLUMNS: &str = "n.id, n.book_id, b.title AS book_title, n.anchor_kind, n.normalized_word, n.scope, n.location, n.selected_text, n.content, n.content_format, n.created_at, n.updated_at";
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]

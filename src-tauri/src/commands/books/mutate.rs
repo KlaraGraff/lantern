@@ -52,16 +52,16 @@ pub(crate) fn do_delete_book_with_note_policy(
                 let notes = statement
                     .query_map(params![id], |row| {
                         Ok(NotePayload {
-                            id: row.get(0)?,
+                            id: row.get("id")?,
                             book_id: None,
-                            anchor_kind: row.get(1)?,
-                            normalized_word: row.get(2)?,
+                            anchor_kind: row.get("anchor_kind")?,
+                            normalized_word: row.get("normalized_word")?,
                             scope: "detached".to_string(),
                             location: None,
-                            selected_text: row.get(3)?,
-                            content: row.get(4)?,
-                            content_format: row.get(5)?,
-                            created_at: row.get(6)?,
+                            selected_text: row.get("selected_text")?,
+                            content: row.get("content")?,
+                            content_format: row.get("content_format")?,
+                            created_at: row.get("created_at")?,
                         })
                     })?
                     .collect::<Result<Vec<_>, _>>()?;

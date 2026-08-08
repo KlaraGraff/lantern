@@ -330,8 +330,8 @@ fn build_form_index(db: &Db) -> AppResult<HashMap<String, Vec<String>>> {
     let mut rows = statement.query([])?;
     let mut index: HashMap<String, Vec<String>> = HashMap::new();
     while let Some(row) = rows.next()? {
-        let key: String = row.get(0)?;
-        let forms_json: String = row.get(1)?;
+        let key: String = row.get("normalized_word")?;
+        let forms_json: String = row.get("forms")?;
         let forms: Vec<String> = serde_json::from_str(&forms_json).unwrap_or_default();
         for form in forms {
             if form == key {

@@ -29,12 +29,12 @@ pub(crate) fn query_collections(db: &Db) -> AppResult<Vec<Collection>> {
     let collections = stmt
         .query_map([], |row| {
             Ok(Collection {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                created_at: row.get(2)?,
-                updated_at: row.get(3)?,
-                sort_order: row.get(4)?,
-                book_count: row.get(5)?,
+                id: row.get("id")?,
+                name: row.get("name")?,
+                created_at: row.get("created_at")?,
+                updated_at: row.get("updated_at")?,
+                sort_order: row.get("sort_order")?,
+                book_count: row.get("book_count")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

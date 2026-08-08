@@ -55,14 +55,14 @@ pub(crate) fn list_mastery_events_for(
     let events = stmt
         .query_map(params![vocab_word_id], |row| {
             Ok(MasteryEvent {
-                id: row.get(0)?,
-                vocab_word_id: row.get(1)?,
-                from_mastery: row.get(2)?,
-                to_mastery: row.get(3)?,
-                source: row.get(4)?,
-                reason: row.get(5)?,
-                detail: row.get(6)?,
-                created_at: row.get(7)?,
+                id: row.get("id")?,
+                vocab_word_id: row.get("vocab_word_id")?,
+                from_mastery: row.get("from_mastery")?,
+                to_mastery: row.get("to_mastery")?,
+                source: row.get("source")?,
+                reason: row.get("reason")?,
+                detail: row.get("detail")?,
+                created_at: row.get("created_at")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

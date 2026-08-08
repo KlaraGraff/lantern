@@ -134,11 +134,11 @@ pub(crate) fn load_from_conn(conn: &Connection) -> AppResult<Calibration> {
             [],
             |row| {
                 Ok(Calibration {
-                    reading_speed_wpm: row.get(0)?,
-                    reading_speed_sample_screens: row.get(1)?,
-                    lookup_rate_per_1000: row.get(2)?,
-                    lookup_rate_sample_words: row.get(3)?,
-                    updated_at: row.get(4)?,
+                    reading_speed_wpm: row.get("reading_speed_wpm")?,
+                    reading_speed_sample_screens: row.get("reading_speed_sample_screens")?,
+                    lookup_rate_per_1000: row.get("lookup_rate_per_1000")?,
+                    lookup_rate_sample_words: row.get("lookup_rate_sample_words")?,
+                    updated_at: row.get("updated_at")?,
                 })
             },
         )
@@ -189,8 +189,8 @@ fn compute(conn: &Connection, now: i64) -> AppResult<Calibration> {
     let screens = stmt
         .query_map(params![SPEED_SAMPLE_SCREENS], |row| {
             Ok(ScreenPace {
-                word_count: row.get(0)?,
-                dwell_ms: row.get(1)?,
+                word_count: row.get("word_count")?,
+                dwell_ms: row.get("dwell_ms")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

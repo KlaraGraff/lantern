@@ -214,9 +214,9 @@ fn oldest_pending(db: &Db, limit: i64) -> AppResult<Vec<PendingRow>> {
     let rows = stmt
         .query_map(params![limit], |row| {
             Ok(PendingRow {
-                id: row.get(0)?,
-                passage: row.get(1)?,
-                question: row.get(2)?,
+                id: row.get("id")?,
+                passage: row.get("passage")?,
+                question: row.get("question")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

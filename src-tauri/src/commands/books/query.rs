@@ -16,6 +16,49 @@ pub(super) fn cover_blob_to_data_uri(bytes: &[u8]) -> String {
     format!("data:{mime};base64,{b64}")
 }
 
+/// The `books` columns `row_to_book` reads, named in exactly one place.
+/// Qualified with the table so they stay unambiguous under the collection
+/// JOIN; SQLite still names the *result* columns without the prefix, which is
+/// what the lookups in `row_to_book` use.
+///
+/// The cover is not in here — the three callers read it differently (BLOB, or
+/// a `has_cover` flag) and each appends its own column.
+const BOOK_COLUMNS: &str = "books.id, books.title, books.author, books.description, books.cover_path, books.file_path, books.format, books.source_format, books.render_format, books.source_file_path, books.source_sha256, books.conversion_version, books.genre, books.pages, books.status, books.progress, books.current_cfi, books.created_at, books.updated_at, books.preparation_state, books.preparation_error";
+
+/// Map a `books` row selected with [`BOOK_COLUMNS`] to a `Book`.
+///
+/// Columns are looked up by name, not position. This used to be three
+/// hand-maintained copies of a 22-entry index list, and one of them had
+/// already drifted out of order — a swap between two TEXT columns is
+/// something neither the compiler nor any test would have caught.
+fn row_to_book(row: &rusqlite::Row<'_>, cover_data: Option<String>) -> rusqlite::Result<Book> {
+    Ok(Book {
+        id: row.get("id")?,
+        title: row.get("title")?,
+        author: row.get("author")?,
+        description: row.get("description")?,
+        cover_path: row.get("cover_path")?,
+        file_path: row.get("file_path")?,
+        format: row.get("format")?,
+        source_format: row.get("source_format")?,
+        render_format: row.get("render_format")?,
+        source_file_path: row.get("source_file_path")?,
+        source_sha256: row.get("source_sha256")?,
+        conversion_version: row.get::<_, Option<i32>>("conversion_version")?.unwrap_or(0),
+        preparation_state: row.get("preparation_state")?,
+        preparation_error: row.get("preparation_error")?,
+        genre: row.get("genre")?,
+        pages: row.get("pages")?,
+        status: row.get("status")?,
+        progress: row.get("progress")?,
+        current_cfi: row.get("current_cfi")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+        available: true,
+        cover_data,
+    })
+}
+
 /// Resolve relative paths in a Book to absolute using data_dir,
 /// and check whether the book file is locally available.
 ///
@@ -226,7 +269,7 @@ pub(crate) fn query_books(
 
     // Main query with cursor + limit.
     let sql = format!(
-        "SELECT books.id, books.title, books.author, books.description, books.cover_path, books.file_path, books.format, books.source_format, books.render_format, books.source_file_path, books.source_sha256, books.conversion_version, books.genre, books.pages, books.status, books.progress, books.current_cfi, books.created_at, books.updated_at, books.cover_data, books.preparation_state, books.preparation_error FROM {from_clause}{where_clause} ORDER BY books.updated_at DESC, books.id ASC LIMIT ?",
+        "SELECT {BOOK_COLUMNS}, books.cover_data FROM {from_clause}{where_clause} ORDER BY books.updated_at DESC, books.id ASC LIMIT ?",
     );
     param_values.push(Box::new((limit + 1) as i64));
 
@@ -236,34 +279,13 @@ pub(crate) fn query_books(
     let mut stmt = conn.prepare(&sql)?;
     let mut books: Vec<Book> = stmt
         .query_map(params_refs.as_slice(), |row| {
-            let cover_blob: Option<Vec<u8>> = row.get(19)?;
-            Ok(Book {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                author: row.get(2)?,
-                description: row.get(3)?,
-                cover_path: row.get(4)?,
-                file_path: row.get(5)?,
-                format: row.get(6)?,
-                source_format: row.get(7)?,
-                render_format: row.get(8)?,
-                source_file_path: row.get(9)?,
-                source_sha256: row.get(10)?,
-                conversion_version: row.get::<_, Option<i32>>(11)?.unwrap_or(0),
-                preparation_state: row.get(20)?,
-                preparation_error: row.get(21)?,
-                genre: row.get(12)?,
-                pages: row.get(13)?,
-                status: row.get(14)?,
-                progress: row.get(15)?,
-                current_cfi: row.get(16)?,
-                created_at: row.get(17)?,
-                updated_at: row.get(18)?,
-                available: true,
-                cover_data: cover_blob
+            let cover_blob: Option<Vec<u8>> = row.get("cover_data")?;
+            row_to_book(
+                row,
+                cover_blob
                     .filter(|b| !b.is_empty())
                     .map(|b| cover_blob_to_data_uri(&b)),
-            })
+            )
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -287,35 +309,16 @@ pub(crate) fn query_books(
 pub(crate) fn query_book(db: &Db, id: &str) -> AppResult<Book> {
     let conn = db.reader();
     let book = conn.query_row(
-        "SELECT id, title, author, description, cover_path, file_path, format, source_format, render_format, source_file_path, source_sha256, conversion_version, genre, pages, status, progress, current_cfi, created_at, updated_at, cover_data, preparation_state, preparation_error FROM books WHERE id = ?1",
+        &format!("SELECT {BOOK_COLUMNS}, books.cover_data FROM books WHERE books.id = ?1"),
         params![id],
         |row| {
-            let cover_blob: Option<Vec<u8>> = row.get(19)?;
-            Ok(Book {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                author: row.get(2)?,
-                description: row.get(3)?,
-                cover_path: row.get(4)?,
-                file_path: row.get(5)?,
-                format: row.get(6)?,
-                source_format: row.get(7)?,
-                render_format: row.get(8)?,
-                source_file_path: row.get(9)?,
-                source_sha256: row.get(10)?,
-                conversion_version: row.get::<_, Option<i32>>(11)?.unwrap_or(0),
-                preparation_state: row.get(20)?,
-                preparation_error: row.get(21)?,
-                genre: row.get(12)?,
-                pages: row.get(13)?,
-                status: row.get(14)?,
-                progress: row.get(15)?,
-                current_cfi: row.get(16)?,
-                created_at: row.get(17)?,
-                updated_at: row.get(18)?,
-                available: true,
-                cover_data: cover_blob.filter(|b| !b.is_empty()).map(|b| cover_blob_to_data_uri(&b)),
-            })
+            let cover_blob: Option<Vec<u8>> = row.get("cover_data")?;
+            row_to_book(
+                row,
+                cover_blob
+                    .filter(|b| !b.is_empty())
+                    .map(|b| cover_blob_to_data_uri(&b)),
+            )
         },
     )?;
     Ok(book)
@@ -374,7 +377,7 @@ pub(crate) fn query_books_lite(
     };
 
     let sql = format!(
-        "SELECT id, title, author, description, cover_path, file_path, format, source_format, render_format, source_file_path, source_sha256, conversion_version, genre, pages, status, progress, current_cfi, created_at, updated_at, (cover_data IS NOT NULL AND LENGTH(cover_data) > 0) AS has_cover, preparation_state, preparation_error FROM books{where_clause} ORDER BY updated_at DESC LIMIT ?",
+        "SELECT {BOOK_COLUMNS}, (books.cover_data IS NOT NULL AND LENGTH(books.cover_data) > 0) AS has_cover FROM books{where_clause} ORDER BY books.updated_at DESC LIMIT ?",
     );
     param_values.push(Box::new(limit as i64));
     let params_refs: Vec<&dyn rusqlite::types::ToSql> =
@@ -383,36 +386,8 @@ pub(crate) fn query_books_lite(
     let mut stmt = conn.prepare(&sql)?;
     let books = stmt
         .query_map(params_refs.as_slice(), |row| {
-            let has_cover: bool = row.get(19)?;
-            Ok(Book {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                author: row.get(2)?,
-                description: row.get(3)?,
-                cover_path: row.get(4)?,
-                file_path: row.get(5)?,
-                format: row.get(6)?,
-                source_format: row.get(7)?,
-                render_format: row.get(8)?,
-                source_file_path: row.get(9)?,
-                source_sha256: row.get(10)?,
-                conversion_version: row.get::<_, Option<i32>>(11)?.unwrap_or(0),
-                preparation_state: row.get(20)?,
-                preparation_error: row.get(21)?,
-                genre: row.get(12)?,
-                pages: row.get(13)?,
-                status: row.get(14)?,
-                progress: row.get(15)?,
-                current_cfi: row.get(16)?,
-                created_at: row.get(17)?,
-                updated_at: row.get(18)?,
-                available: true,
-                cover_data: if has_cover {
-                    Some("has_cover".to_string())
-                } else {
-                    None
-                },
-            })
+            let has_cover: bool = row.get("has_cover")?;
+            row_to_book(row, has_cover.then(|| "has_cover".to_string()))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(books)

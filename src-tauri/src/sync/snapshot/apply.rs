@@ -1184,27 +1184,27 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
-            r.get::<_, String>(0)?,
+            r.get::<_, String>("id")?,
             BookRow {
-                title: r.get(1)?,
-                author: r.get(2)?,
-                description: r.get(3)?,
-                cover_path: r.get(4)?,
-                file_path: r.get(5)?,
-                genre: r.get(6)?,
-                pages: r.get(7)?,
-                format: r.get(8)?,
-                source_format: r.get(9)?,
-                render_format: r.get(10)?,
-                source_file_path: r.get(11)?,
-                source_sha256: r.get(12)?,
-                conversion_version: r.get::<_, Option<i32>>(13)?.unwrap_or(0),
-                status: r.get(14)?,
-                progress: r.get(15)?,
-                current_cfi: r.get(16)?,
-                created_at: r.get(17)?,
-                updated_at: r.get(18)?,
-                updated_by_device: r.get(19)?,
+                title: r.get("title")?,
+                author: r.get("author")?,
+                description: r.get("description")?,
+                cover_path: r.get("cover_path")?,
+                file_path: r.get("file_path")?,
+                genre: r.get("genre")?,
+                pages: r.get("pages")?,
+                format: r.get("format")?,
+                source_format: r.get("source_format")?,
+                render_format: r.get("render_format")?,
+                source_file_path: r.get("source_file_path")?,
+                source_sha256: r.get("source_sha256")?,
+                conversion_version: r.get::<_, Option<i32>>("conversion_version")?.unwrap_or(0),
+                status: r.get("status")?,
+                progress: r.get("progress")?,
+                current_cfi: r.get("current_cfi")?,
+                created_at: r.get("created_at")?,
+                updated_at: r.get("updated_at")?,
+                updated_by_device: r.get("updated_by_device")?,
                 cover_data: None,
             },
         ))
@@ -1226,24 +1226,24 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
-            r.get::<_, String>(0)?,
+            r.get::<_, String>("id")?,
             BookAssetRow {
-                book_id: r.get(1)?,
-                role: r.get(2)?,
-                format: r.get(3)?,
-                relative_path: r.get(4)?,
-                content_sha256: r.get(5)?,
-                byte_size: r.get(6)?,
-                source_sha256: r.get(7)?,
-                pipeline: r.get(8)?,
-                pipeline_version: r.get(9)?,
-                language_profile: r.get(10)?,
-                quality_profile: r.get(11)?,
-                page_count: r.get(12)?,
-                supersedes_asset_id: r.get(13)?,
-                created_at: r.get(14)?,
-                updated_at: r.get(15)?,
-                updated_by_device: r.get(16)?,
+                book_id: r.get("book_id")?,
+                role: r.get("role")?,
+                format: r.get("format")?,
+                relative_path: r.get("relative_path")?,
+                content_sha256: r.get("content_sha256")?,
+                byte_size: r.get("byte_size")?,
+                source_sha256: r.get("source_sha256")?,
+                pipeline: r.get("pipeline")?,
+                pipeline_version: r.get("pipeline_version")?,
+                language_profile: r.get("language_profile")?,
+                quality_profile: r.get("quality_profile")?,
+                page_count: r.get("page_count")?,
+                supersedes_asset_id: r.get("supersedes_asset_id")?,
+                created_at: r.get("created_at")?,
+                updated_at: r.get("updated_at")?,
+                updated_by_device: r.get("updated_by_device")?,
             },
         ))
     })?;
@@ -1260,15 +1260,15 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
-            r.get::<_, String>(0)?,
+            r.get::<_, String>("id")?,
             HighlightRow {
-                book_id: r.get(1)?,
-                cfi_range: r.get(2)?,
-                color: r.get(3)?,
-                text_content: r.get(4)?,
-                created_at: r.get(5)?,
-                updated_at: r.get(6)?,
-                updated_by_device: r.get(7)?,
+                book_id: r.get("book_id")?,
+                cfi_range: r.get("cfi_range")?,
+                color: r.get("color")?,
+                text_content: r.get("text_content")?,
+                created_at: r.get("created_at")?,
+                updated_at: r.get("updated_at")?,
+                updated_by_device: r.get("updated_by_device")?,
             },
         ))
     })?;
@@ -1283,13 +1283,13 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
         conn.prepare("SELECT id, book_id, cfi, label, created_at, updated_at FROM bookmarks")?;
     let rows = stmt.query_map([], |r| {
         Ok((
-            r.get::<_, String>(0)?,
+            r.get::<_, String>("id")?,
             BookmarkRow {
-                book_id: r.get(1)?,
-                cfi: r.get(2)?,
-                label: r.get(3)?,
-                created_at: r.get(4)?,
-                updated_at: r.get(5)?,
+                book_id: r.get("book_id")?,
+                cfi: r.get("cfi")?,
+                label: r.get("label")?,
+                created_at: r.get("created_at")?,
+                updated_at: r.get("updated_at")?,
             },
         ))
     })?;
@@ -1310,29 +1310,29 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
-            r.get::<_, String>(0)?,
+            r.get::<_, String>("id")?,
             VocabRow {
-                book_id: r.get(1)?,
-                word: r.get(2)?,
-                definition: r.get(3)?,
-                context_sentence: r.get(4)?,
-                cfi: r.get(5)?,
-                mastery: r.get(6)?,
-                review_count: r.get(7)?,
-                next_review_at: r.get(8)?,
-                review_interval_days: r.get(9)?,
-                last_reviewed_at: r.get(10)?,
-                last_review_rating: r.get(11)?,
-                fsrs_stability: r.get(12)?,
-                fsrs_difficulty: r.get(13)?,
-                fsrs_version: r.get(14)?,
-                created_at: r.get(15)?,
-                updated_at: r.get(16)?,
-                updated_by_device: r.get(17)?,
-                context_explanation: r.get(18)?,
-                mastery_source: r.get(19)?,
-                mastery_reason: r.get(20)?,
-                list_status: r.get(21)?,
+                book_id: r.get("book_id")?,
+                word: r.get("word")?,
+                definition: r.get("definition")?,
+                context_sentence: r.get("context_sentence")?,
+                cfi: r.get("cfi")?,
+                mastery: r.get("mastery")?,
+                review_count: r.get("review_count")?,
+                next_review_at: r.get("next_review_at")?,
+                review_interval_days: r.get("review_interval_days")?,
+                last_reviewed_at: r.get("last_reviewed_at")?,
+                last_review_rating: r.get("last_review_rating")?,
+                fsrs_stability: r.get("fsrs_stability")?,
+                fsrs_difficulty: r.get("fsrs_difficulty")?,
+                fsrs_version: r.get("fsrs_version")?,
+                created_at: r.get("created_at")?,
+                updated_at: r.get("updated_at")?,
+                updated_by_device: r.get("updated_by_device")?,
+                context_explanation: r.get("context_explanation")?,
+                mastery_source: r.get("mastery_source")?,
+                mastery_reason: r.get("mastery_reason")?,
+                list_status: r.get("list_status")?,
             },
         ))
     })?;
@@ -1350,19 +1350,19 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
-            r.get::<_, String>(0)?,
+            r.get::<_, String>("id")?,
             NoteRow {
-                book_id: r.get(1)?,
-                anchor_kind: r.get(2)?,
-                normalized_word: r.get(3)?,
-                scope: r.get(4)?,
-                location: r.get(5)?,
-                selected_text: r.get(6)?,
-                content: r.get(7)?,
-                content_format: r.get(8)?,
-                created_at: r.get(9)?,
-                updated_at: r.get(10)?,
-                updated_by_device: r.get(11)?,
+                book_id: r.get("book_id")?,
+                anchor_kind: r.get("anchor_kind")?,
+                normalized_word: r.get("normalized_word")?,
+                scope: r.get("scope")?,
+                location: r.get("location")?,
+                selected_text: r.get("selected_text")?,
+                content: r.get("content")?,
+                content_format: r.get("content_format")?,
+                created_at: r.get("created_at")?,
+                updated_at: r.get("updated_at")?,
+                updated_by_device: r.get("updated_by_device")?,
             },
         ))
     })?;
@@ -1380,17 +1380,17 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
-            r.get::<_, String>(0)?,
+            r.get::<_, String>("id")?,
             WordMarkRow {
-                book_id: r.get(1)?,
-                normalized_word: r.get(2)?,
-                display_word: r.get(3)?,
-                match_mode: r.get(4)?,
-                color: r.get(5)?,
-                enabled: r.get::<_, i64>(6)? != 0,
-                created_at: r.get(7)?,
-                updated_at: r.get(8)?,
-                updated_by_device: r.get(9)?,
+                book_id: r.get("book_id")?,
+                normalized_word: r.get("normalized_word")?,
+                display_word: r.get("display_word")?,
+                match_mode: r.get("match_mode")?,
+                color: r.get("color")?,
+                enabled: r.get::<_, i64>("enabled")? != 0,
+                created_at: r.get("created_at")?,
+                updated_at: r.get("updated_at")?,
+                updated_by_device: r.get("updated_by_device")?,
             },
         ))
     })?;
@@ -1408,16 +1408,16 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
-            r.get::<_, String>(0)?,
+            r.get::<_, String>("id")?,
             WordMarkExceptionRow {
-                rule_id: r.get(1)?,
-                book_id: r.get(2)?,
-                normalized_word: r.get(3)?,
-                location: r.get(4)?,
-                excluded: r.get::<_, i64>(5)? != 0,
-                created_at: r.get(6)?,
-                updated_at: r.get(7)?,
-                updated_by_device: r.get(8)?,
+                rule_id: r.get("rule_id")?,
+                book_id: r.get("book_id")?,
+                normalized_word: r.get("normalized_word")?,
+                location: r.get("location")?,
+                excluded: r.get::<_, i64>("excluded")? != 0,
+                created_at: r.get("created_at")?,
+                updated_at: r.get("updated_at")?,
+                updated_by_device: r.get("updated_by_device")?,
             },
         ))
     })?;
@@ -1435,16 +1435,16 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
-            r.get::<_, String>(0)?,
+            r.get::<_, String>("id")?,
             LookupOccurrenceMarkRow {
-                book_id: r.get(1)?,
-                normalized_word: r.get(2)?,
-                display_word: r.get(3)?,
-                location: r.get(4)?,
-                enabled: r.get::<_, i64>(5)? != 0,
-                created_at: r.get(6)?,
-                updated_at: r.get(7)?,
-                updated_by_device: r.get(8)?,
+                book_id: r.get("book_id")?,
+                normalized_word: r.get("normalized_word")?,
+                display_word: r.get("display_word")?,
+                location: r.get("location")?,
+                enabled: r.get::<_, i64>("enabled")? != 0,
+                created_at: r.get("created_at")?,
+                updated_at: r.get("updated_at")?,
+                updated_by_device: r.get("updated_by_device")?,
             },
         ))
     })?;
@@ -1462,19 +1462,19 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
-            r.get::<_, String>(0)?,
+            r.get::<_, String>("id")?,
             BookSummaryRow {
-                book_id: r.get(1)?,
-                scope: r.get(2)?,
-                section_index: r.get(3)?,
-                section_title: r.get(4)?,
-                content: r.get(5)?,
-                language: r.get(6)?,
-                model: r.get(7)?,
-                source_sha256: r.get(8)?,
-                created_at: r.get(9)?,
-                updated_at: r.get(10)?,
-                user_edited: r.get::<_, i64>(11)? != 0,
+                book_id: r.get("book_id")?,
+                scope: r.get("scope")?,
+                section_index: r.get("section_index")?,
+                section_title: r.get("section_title")?,
+                content: r.get("content")?,
+                language: r.get("language")?,
+                model: r.get("model")?,
+                source_sha256: r.get("source_sha256")?,
+                created_at: r.get("created_at")?,
+                updated_at: r.get("updated_at")?,
+                user_edited: r.get::<_, i64>("user_edited")? != 0,
             },
         ))
     })?;
@@ -1490,13 +1490,13 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
-            r.get::<_, String>(0)?,
+            r.get::<_, String>("id")?,
             CollectionRow {
-                name: r.get(1)?,
-                sort_order: r.get(2)?,
-                created_at: r.get(3)?,
-                updated_at: r.get(4)?,
-                updated_by_device: r.get(5)?,
+                name: r.get("name")?,
+                sort_order: r.get("sort_order")?,
+                created_at: r.get("created_at")?,
+                updated_at: r.get("updated_at")?,
+                updated_by_device: r.get("updated_by_device")?,
             },
         ))
     })?;
@@ -1512,16 +1512,16 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
          FROM collection_books",
     )?;
     let rows = stmt.query_map([], |r| {
-        let col: String = r.get(0)?;
-        let book: String = r.get(1)?;
+        let col: String = r.get("collection_id")?;
+        let book: String = r.get("book_id")?;
         Ok((
             format!("{col}:{book}"),
             CollectionBookRow {
                 collection_id: col,
                 book_id: book,
-                created_at: r.get(2)?,
-                updated_at: r.get(3)?,
-                updated_by_device: r.get(4)?,
+                created_at: r.get("created_at")?,
+                updated_at: r.get("updated_at")?,
+                updated_by_device: r.get("updated_by_device")?,
             },
         ))
     })?;
@@ -1537,18 +1537,18 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
                 created_at, updated_at, updated_by_device FROM chats",
     )?;
     let rows = stmt.query_map([], |r| {
-        let pinned: i64 = r.get(4)?;
+        let pinned: i64 = r.get("pinned")?;
         Ok((
-            r.get::<_, String>(0)?,
+            r.get::<_, String>("id")?,
             ChatRow {
-                book_id: r.get(1)?,
-                title: r.get(2)?,
-                model: r.get(3)?,
+                book_id: r.get("book_id")?,
+                title: r.get("title")?,
+                model: r.get("model")?,
                 pinned: pinned != 0,
-                metadata: r.get(5)?,
-                created_at: r.get(6)?,
-                updated_at: r.get(7)?,
-                updated_by_device: r.get(8)?,
+                metadata: r.get("metadata")?,
+                created_at: r.get("created_at")?,
+                updated_at: r.get("updated_at")?,
+                updated_by_device: r.get("updated_by_device")?,
             },
         ))
     })?;
@@ -1565,16 +1565,16 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
-            r.get::<_, String>(0)?,
+            r.get::<_, String>("id")?,
             ChatMessageRow {
-                chat_id: r.get(1)?,
-                role: r.get(2)?,
-                content: r.get(3)?,
-                context: r.get(4)?,
-                metadata: r.get(5)?,
-                created_at: r.get(6)?,
-                updated_at: r.get(7)?,
-                updated_by_device: r.get(8)?,
+                chat_id: r.get("chat_id")?,
+                role: r.get("role")?,
+                content: r.get("content")?,
+                context: r.get("context")?,
+                metadata: r.get("metadata")?,
+                created_at: r.get("created_at")?,
+                updated_at: r.get("updated_at")?,
+                updated_by_device: r.get("updated_by_device")?,
             },
         ))
     })?;
@@ -1593,15 +1593,15 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
-            r.get::<_, String>(0)?,
+            r.get::<_, String>("id")?,
             CustomFontRow {
-                family_name: r.get(1)?,
-                file_name: r.get(2)?,
-                format: r.get(3)?,
-                file_size: r.get(4)?,
-                created_at: r.get(5)?,
-                updated_at: r.get(6)?,
-                updated_by_device: r.get(7)?,
+                family_name: r.get("family_name")?,
+                file_name: r.get("file_name")?,
+                format: r.get("format")?,
+                file_size: r.get("file_size")?,
+                created_at: r.get("created_at")?,
+                updated_at: r.get("updated_at")?,
+                updated_by_device: r.get("updated_by_device")?,
             },
         ))
     })?;
@@ -1623,10 +1623,10 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     let rows = stmt.query_map([], |r| {
         Ok(SettingRow {
             book_id: None,
-            key: r.get(0)?,
-            value: r.get(1)?,
-            updated_at: r.get(2)?,
-            updated_by_device: r.get(3)?,
+            key: r.get("key")?,
+            value: r.get("value")?,
+            updated_at: r.get("updated_at")?,
+            updated_by_device: r.get("updated_by_device")?,
         })
     })?;
     for row in rows {
@@ -1644,11 +1644,11 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     )?;
     let rows = stmt.query_map([], |r| {
         Ok(SettingRow {
-            book_id: Some(r.get::<_, String>(0)?),
-            key: r.get(1)?,
-            value: r.get(2)?,
-            updated_at: r.get(3)?,
-            updated_by_device: r.get(4)?,
+            book_id: Some(r.get::<_, String>("book_id")?),
+            key: r.get("key")?,
+            value: r.get("value")?,
+            updated_at: r.get("updated_at")?,
+            updated_by_device: r.get("updated_by_device")?,
         })
     })?;
     for row in rows {
@@ -1665,10 +1665,10 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     let mut stmt = conn.prepare("SELECT entity, id, ts FROM _tombstones")?;
     let rows = stmt.query_map([], |r| {
         Ok((
-            r.get::<_, String>(0)?,
+            r.get::<_, String>("entity")?,
             TombstoneRow {
-                id: r.get(1)?,
-                ts: r.get(2)?,
+                id: r.get("id")?,
+                ts: r.get("ts")?,
             },
         ))
     })?;

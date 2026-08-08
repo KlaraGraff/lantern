@@ -329,16 +329,16 @@ fn contains_form(sentence_lower: &str, form_lower: &str) -> bool {
 /// caller merges in the current book's scope and sorts once.
 fn candidate_books(conn: &rusqlite::Connection) -> AppResult<Vec<BookScope>> {
     let mut statement = conn.prepare(
-        "SELECT id, title, COALESCE(render_format, format), current_cfi, updated_at FROM books",
+        "SELECT id, title, COALESCE(render_format, format) AS render_format, current_cfi, updated_at FROM books",
     )?;
     let rows: Vec<(String, String, String, Option<String>, i64)> = statement
         .query_map([], |row| {
             Ok((
-                row.get(0)?,
-                row.get(1)?,
-                row.get(2)?,
-                row.get(3)?,
-                row.get(4)?,
+                row.get("id")?,
+                row.get("title")?,
+                row.get("render_format")?,
+                row.get("current_cfi")?,
+                row.get("updated_at")?,
             ))
         })?
         .collect::<Result<_, _>>()?;
@@ -367,14 +367,14 @@ struct BookRow {
 
 fn book_row(conn: &rusqlite::Connection, book_id: &str) -> AppResult<Option<BookRow>> {
     conn.query_row(
-        "SELECT title, COALESCE(render_format, format), current_cfi, updated_at FROM books WHERE id = ?1",
+        "SELECT title, COALESCE(render_format, format) AS render_format, current_cfi, updated_at FROM books WHERE id = ?1",
         params![book_id],
         |row| {
             Ok(BookRow {
-                title: row.get(0)?,
-                render_format: row.get(1)?,
-                current_cfi: row.get(2)?,
-                updated_at: row.get(3)?,
+                title: row.get("title")?,
+                render_format: row.get("render_format")?,
+                current_cfi: row.get("current_cfi")?,
+                updated_at: row.get("updated_at")?,
             })
         },
     )
@@ -492,11 +492,11 @@ fn matching_chunks_all_books(
         *count += 1;
         hits.push(GlobalHit {
             book_id,
-            section_href: row.get(1)?,
-            chunk_char_start: row.get(2)?,
-            section_index: row.get(3)?,
-            char_end: row.get(4)?,
-            text: row.get(5)?,
+            section_href: row.get("section_href")?,
+            chunk_char_start: row.get("char_start")?,
+            section_index: row.get("section_index")?,
+            char_end: row.get("char_end")?,
+            text: row.get("text")?,
         });
     }
     Ok(hits)

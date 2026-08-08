@@ -205,19 +205,19 @@ pub fn by_feature(db: &Db, since_ms: i64, origin: &str) -> AppResult<Vec<Feature
     let conn = db.reader();
     let mut stmt = conn.prepare(
         "SELECT feature,
-                COUNT(*),
-                COALESCE(SUM(input_tokens), 0),
-                COALESCE(SUM(output_tokens), 0)
+                COUNT(*) AS calls,
+                COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                COALESCE(SUM(output_tokens), 0) AS output_tokens
          FROM ai_usage_records
          WHERE created_at >= ?1 AND origin = ?2
          GROUP BY feature",
     )?;
     let rows = stmt.query_map(params![since_ms, origin], |row| {
         Ok(FeatureUsage {
-            feature: row.get(0)?,
-            calls: row.get(1)?,
-            input_tokens: row.get(2)?,
-            output_tokens: row.get(3)?,
+            feature: row.get("feature")?,
+            calls: row.get("calls")?,
+            input_tokens: row.get("input_tokens")?,
+            output_tokens: row.get("output_tokens")?,
         })
     })?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)

@@ -40,48 +40,59 @@ pub struct ChatMsg {
     pub updated_at: i64,
 }
 
+/// The `chats` columns `row_to_chat`/`row_to_chat_with_extras` read, named in
+/// exactly one place so the various SELECTs can't drift out of order.
+const CHAT_COLUMNS: &str = "id, book_id, title, model, pinned, metadata, created_at, updated_at";
+
+/// The `chat_messages` columns `row_to_msg` reads, named in exactly one place.
+const CHAT_MSG_COLUMNS: &str = "id, chat_id, role, content, context, metadata, created_at, updated_at";
+
 fn row_to_chat(row: &rusqlite::Row) -> rusqlite::Result<Chat> {
     Ok(Chat {
-        id: row.get(0)?,
-        book_id: row.get(1)?,
-        title: row.get(2)?,
-        model: row.get(3)?,
-        pinned: row.get::<_, i64>(4)? != 0,
-        metadata: row.get(5)?,
-        created_at: row.get(6)?,
-        updated_at: row.get(7)?,
+        id: row.get("id")?,
+        book_id: row.get("book_id")?,
+        title: row.get("title")?,
+        model: row.get("model")?,
+        pinned: row.get::<_, i64>("pinned")? != 0,
+        metadata: row.get("metadata")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
         book_title: None,
         message_count: None,
         last_message: None,
     })
 }
 
+/// Reads a `chats c LEFT JOIN books b` row. `b.title` collides with `c.title`
+/// by name, so the query must alias it `AS book_title`; the two subqueries
+/// are expression columns with no reliable name of their own, so the query
+/// aliases those too (`AS message_count`, `AS last_message`).
 fn row_to_chat_with_extras(row: &rusqlite::Row) -> rusqlite::Result<Chat> {
     Ok(Chat {
-        id: row.get(0)?,
-        book_id: row.get(1)?,
-        title: row.get(2)?,
-        model: row.get(3)?,
-        pinned: row.get::<_, i64>(4)? != 0,
-        metadata: row.get(5)?,
-        created_at: row.get(6)?,
-        updated_at: row.get(7)?,
-        book_title: row.get(8)?,
-        message_count: row.get(9)?,
-        last_message: row.get(10)?,
+        id: row.get("id")?,
+        book_id: row.get("book_id")?,
+        title: row.get("title")?,
+        model: row.get("model")?,
+        pinned: row.get::<_, i64>("pinned")? != 0,
+        metadata: row.get("metadata")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+        book_title: row.get("book_title")?,
+        message_count: row.get("message_count")?,
+        last_message: row.get("last_message")?,
     })
 }
 
 fn row_to_msg(row: &rusqlite::Row) -> rusqlite::Result<ChatMsg> {
     Ok(ChatMsg {
-        id: row.get(0)?,
-        chat_id: row.get(1)?,
-        role: row.get(2)?,
-        content: row.get(3)?,
-        context: row.get(4)?,
-        metadata: row.get(5)?,
-        created_at: row.get(6)?,
-        updated_at: row.get(7)?,
+        id: row.get("id")?,
+        chat_id: row.get("chat_id")?,
+        role: row.get("role")?,
+        content: row.get("content")?,
+        context: row.get("context")?,
+        metadata: row.get("metadata")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
     })
 }
 
@@ -142,11 +153,11 @@ pub(crate) fn create_chat_inner(
 
 pub(crate) fn query_chats(db: &Db, book_id: &str) -> AppResult<Vec<Chat>> {
     let conn = db.reader();
-    let mut stmt = conn.prepare(
-        "SELECT id, book_id, title, model, pinned, metadata, created_at, updated_at
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {CHAT_COLUMNS}
          FROM chats WHERE book_id = ?1
          ORDER BY pinned DESC, updated_at DESC",
-    )?;
+    ))?;
     let chats = stmt
         .query_map(params![book_id], row_to_chat)?
         .collect::<Result<Vec<_>, _>>()?;
@@ -163,9 +174,9 @@ pub fn list_all_chats(db: State<'_, Db>) -> AppResult<Vec<Chat>> {
     let conn = db.reader();
     let mut stmt = conn.prepare(
         "SELECT c.id, c.book_id, c.title, c.model, c.pinned, c.metadata, c.created_at, c.updated_at,
-                b.title,
-                (SELECT COUNT(*) FROM chat_messages WHERE chat_id = c.id),
-                (SELECT content FROM chat_messages WHERE chat_id = c.id ORDER BY created_at DESC, rowid DESC LIMIT 1)
+                b.title AS book_title,
+                (SELECT COUNT(*) FROM chat_messages WHERE chat_id = c.id) AS message_count,
+                (SELECT content FROM chat_messages WHERE chat_id = c.id ORDER BY created_at DESC, rowid DESC LIMIT 1) AS last_message
          FROM chats c LEFT JOIN books b ON c.book_id = b.id
          ORDER BY c.pinned DESC, c.updated_at DESC",
     )?;
@@ -179,8 +190,7 @@ pub fn list_all_chats(db: State<'_, Db>) -> AppResult<Vec<Chat>> {
 pub fn get_chat(chat_id: String, db: State<'_, Db>) -> AppResult<Chat> {
     let conn = db.reader();
     let chat = conn.query_row(
-        "SELECT id, book_id, title, model, pinned, metadata, created_at, updated_at
-         FROM chats WHERE id = ?1",
+        &format!("SELECT {CHAT_COLUMNS} FROM chats WHERE id = ?1"),
         params![chat_id],
         row_to_chat,
     )?;
@@ -255,11 +265,11 @@ pub(crate) fn rename_chat_inner(
 
 pub(crate) fn query_chat_messages(db: &Db, chat_id: &str) -> AppResult<Vec<ChatMsg>> {
     let conn = db.reader();
-    let mut stmt = conn.prepare(
-        "SELECT id, chat_id, role, content, context, metadata, created_at, updated_at
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {CHAT_MSG_COLUMNS}
          FROM chat_messages WHERE chat_id = ?1
          ORDER BY created_at ASC",
-    )?;
+    ))?;
     let msgs = stmt
         .query_map(params![chat_id], row_to_msg)?
         .collect::<Result<Vec<_>, _>>()?;
@@ -398,8 +408,7 @@ pub(crate) fn replace_chat_message_inner(
     let device = sync.self_device().to_string();
     let message = sync.with_tx(db, now, |tx, events| {
         let mut message = tx.query_row(
-            "SELECT id, chat_id, role, content, context, metadata, created_at, updated_at
-             FROM chat_messages WHERE id = ?1",
+            &format!("SELECT {CHAT_MSG_COLUMNS} FROM chat_messages WHERE id = ?1"),
             params![message_id],
             row_to_msg,
         )?;
@@ -511,7 +520,7 @@ mod tests {
         .unwrap();
 
         let chat: Chat = conn.query_row(
-            "SELECT id, book_id, title, model, pinned, metadata, created_at, updated_at FROM chats WHERE id = ?1",
+            &format!("SELECT {CHAT_COLUMNS} FROM chats WHERE id = ?1"),
             params![id],
             row_to_chat,
         ).unwrap();
@@ -536,7 +545,7 @@ mod tests {
         .unwrap();
 
         let chat: Chat = conn.query_row(
-            "SELECT id, book_id, title, model, pinned, metadata, created_at, updated_at FROM chats WHERE id = ?1",
+            &format!("SELECT {CHAT_COLUMNS} FROM chats WHERE id = ?1"),
             params![id],
             row_to_chat,
         ).unwrap();
@@ -556,10 +565,10 @@ mod tests {
 
         let conn = db.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare(
-                "SELECT id, book_id, title, model, pinned, metadata, created_at, updated_at
+            .prepare(&format!(
+                "SELECT {CHAT_COLUMNS}
              FROM chats WHERE book_id = ?1 ORDER BY updated_at DESC",
-            )
+            ))
             .unwrap();
         let chats: Vec<Chat> = stmt
             .query_map(params!["book1"], row_to_chat)
@@ -576,10 +585,10 @@ mod tests {
         let (_dir, db) = setup();
         let conn = db.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare(
-                "SELECT id, book_id, title, model, pinned, metadata, created_at, updated_at
+            .prepare(&format!(
+                "SELECT {CHAT_COLUMNS}
              FROM chats WHERE book_id = ?1",
-            )
+            ))
             .unwrap();
         let chats: Vec<Chat> = stmt
             .query_map(params!["book1"], row_to_chat)
@@ -602,9 +611,9 @@ mod tests {
         let conn = db.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT c.id, c.book_id, c.title, c.model, c.pinned, c.metadata, c.created_at, c.updated_at,
-                    b.title,
-                    (SELECT COUNT(*) FROM chat_messages WHERE chat_id = c.id),
-                    (SELECT content FROM chat_messages WHERE chat_id = c.id ORDER BY created_at DESC, rowid DESC LIMIT 1)
+                    b.title AS book_title,
+                    (SELECT COUNT(*) FROM chat_messages WHERE chat_id = c.id) AS message_count,
+                    (SELECT content FROM chat_messages WHERE chat_id = c.id ORDER BY created_at DESC, rowid DESC LIMIT 1) AS last_message
              FROM chats c LEFT JOIN books b ON c.book_id = b.id
              ORDER BY c.updated_at DESC",
         ).unwrap();
@@ -724,7 +733,7 @@ mod tests {
         .unwrap();
 
         let chat: Chat = conn.query_row(
-            "SELECT id, book_id, title, model, pinned, metadata, created_at, updated_at FROM chats WHERE id = ?1",
+            &format!("SELECT {CHAT_COLUMNS} FROM chats WHERE id = ?1"),
             params!["c1"],
             row_to_chat,
         ).unwrap();
@@ -809,10 +818,10 @@ mod tests {
 
         let conn = db.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare(
-                "SELECT id, chat_id, role, content, context, metadata, created_at, updated_at
+            .prepare(&format!(
+                "SELECT {CHAT_MSG_COLUMNS}
              FROM chat_messages WHERE chat_id = ?1 ORDER BY created_at ASC",
-            )
+            ))
             .unwrap();
         let msgs: Vec<ChatMsg> = stmt
             .query_map(params!["c1"], row_to_msg)
@@ -844,7 +853,7 @@ mod tests {
         .unwrap();
 
         let chat: Chat = conn.query_row(
-            "SELECT id, book_id, title, model, pinned, metadata, created_at, updated_at FROM chats WHERE id = 'c1'",
+            &format!("SELECT {CHAT_COLUMNS} FROM chats WHERE id = 'c1'"),
             [],
             row_to_chat,
         ).unwrap();

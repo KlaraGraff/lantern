@@ -124,12 +124,12 @@ pub(crate) fn query_bookmarks(db: &Db, book_id: &str) -> AppResult<Vec<Bookmark>
     let bookmarks = stmt
         .query_map(params![book_id], |row| {
             Ok(Bookmark {
-                id: row.get(0)?,
-                book_id: row.get(1)?,
-                cfi: row.get(2)?,
-                label: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
+                id: row.get("id")?,
+                book_id: row.get("book_id")?,
+                cfi: row.get("cfi")?,
+                label: row.get("label")?,
+                created_at: row.get("created_at")?,
+                updated_at: row.get("updated_at")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -340,13 +340,13 @@ pub(crate) fn query_highlights(db: &Db, book_id: &str) -> AppResult<Vec<Highligh
     let highlights = stmt
         .query_map(params![book_id], |row| {
             Ok(Highlight {
-                id: row.get(0)?,
-                book_id: row.get(1)?,
-                cfi_range: row.get(2)?,
-                color: row.get(3)?,
-                text_content: row.get(4)?,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
+                id: row.get("id")?,
+                book_id: row.get("book_id")?,
+                cfi_range: row.get("cfi_range")?,
+                color: row.get("color")?,
+                text_content: row.get("text_content")?,
+                created_at: row.get("created_at")?,
+                updated_at: row.get("updated_at")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -387,13 +387,13 @@ pub(crate) fn update_highlight_inner(
                 params![id],
                 |row| {
                     Ok(Highlight {
-                        id: row.get(0)?,
-                        book_id: row.get(1)?,
-                        cfi_range: row.get(2)?,
-                        color: row.get(3)?,
-                        text_content: row.get(4)?,
-                        created_at: row.get(5)?,
-                        updated_at: row.get(6)?,
+                        id: row.get("id")?,
+                        book_id: row.get("book_id")?,
+                        cfi_range: row.get("cfi_range")?,
+                        color: row.get("color")?,
+                        text_content: row.get("text_content")?,
+                        created_at: row.get("created_at")?,
+                        updated_at: row.get("updated_at")?,
                     })
                 },
             )

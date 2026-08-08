@@ -605,7 +605,7 @@ pub(crate) fn ocr_assets_overview(db: State<'_, Db>) -> AppResult<OcrAssetsOverv
     let conn = db.reader();
     let mut statement = conn.prepare(
         "SELECT a.id, a.book_id, b.title, a.byte_size, a.created_at,
-                COALESCE(s.availability, 'remote_only')
+                COALESCE(s.availability, 'remote_only') AS availability
          FROM book_assets a JOIN books b ON b.id = a.book_id
          LEFT JOIN book_asset_local_state s ON s.asset_id = a.id
          ORDER BY a.created_at DESC, a.id DESC",
@@ -613,12 +613,12 @@ pub(crate) fn ocr_assets_overview(db: State<'_, Db>) -> AppResult<OcrAssetsOverv
     let items = statement
         .query_map([], |row| {
             Ok(OcrAssetItem {
-                asset_id: row.get(0)?,
-                book_id: row.get(1)?,
-                title: row.get(2)?,
-                byte_size: row.get(3)?,
-                created_at: row.get(4)?,
-                availability: row.get(5)?,
+                asset_id: row.get("id")?,
+                book_id: row.get("book_id")?,
+                title: row.get("title")?,
+                byte_size: row.get("byte_size")?,
+                created_at: row.get("created_at")?,
+                availability: row.get("availability")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

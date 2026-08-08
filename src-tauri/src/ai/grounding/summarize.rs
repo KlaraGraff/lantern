@@ -215,10 +215,10 @@ fn load_summary_chunks(db: &Db, book_id: &str) -> AppResult<(String, Vec<Summary
     let chunks = statement
         .query_map(params![book_id], |row| {
             Ok(SummaryChunk {
-                section_index: row.get(0)?,
-                section_title: row.get(1)?,
-                text: row.get(2)?,
-                token_estimate: row.get::<_, i64>(3)? as usize,
+                section_index: row.get("section_index")?,
+                section_title: row.get("section_title")?,
+                text: row.get("text")?,
+                token_estimate: row.get::<_, i64>("token_estimate")? as usize,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -549,9 +549,9 @@ pub fn load_book_overview(db: &Db, book_id: &str) -> AppResult<Option<BookOvervi
     let sections = statement
         .query_map(params![book_id, source_sha256], |row| {
             Ok(SectionOverview {
-                section_index: row.get(0)?,
-                section_title: row.get(1)?,
-                content: row.get(2)?,
+                section_index: row.get("section_index")?,
+                section_title: row.get("section_title")?,
+                content: row.get("content")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -580,7 +580,7 @@ pub fn load_section_overview(
         return Ok(None);
     };
     let mut statement = conn.prepare(
-        "SELECT s.section_index, s.section_title, s.content, MAX(c.char_end)
+        "SELECT s.section_index, s.section_title, s.content, MAX(c.char_end) AS max_char_end
          FROM book_summaries s
          LEFT JOIN book_chunks c
            ON c.book_id = s.book_id AND c.section_index = s.section_index
@@ -593,11 +593,11 @@ pub fn load_section_overview(
             .query_map(params![book_id, source_sha256], |row| {
                 Ok((
                     SectionOverview {
-                        section_index: row.get(0)?,
-                        section_title: row.get(1)?,
-                        content: row.get(2)?,
+                        section_index: row.get("section_index")?,
+                        section_title: row.get("section_title")?,
+                        content: row.get("content")?,
                     },
-                    row.get::<_, Option<i64>>(3)?,
+                    row.get::<_, Option<i64>>("max_char_end")?,
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?,

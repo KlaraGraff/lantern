@@ -128,11 +128,11 @@ fn derive_all(db: &Db, book_id: &str) -> AppResult<Vec<AutoHighlight>> {
           WHERE book_id = ?1 AND cfi IS NOT NULL AND TRIM(cfi) <> ''",
     )?;
     let rows = lookups.query_map(params![book_id], |row| {
-        let id: String = row.get(0)?;
-        let word: String = row.get(1)?;
-        let sentence: Option<String> = row.get(2)?;
-        let cfi: String = row.get(3)?;
-        let created_at: i64 = row.get(4)?;
+        let id: String = row.get("id")?;
+        let word: String = row.get("lookup_text")?;
+        let sentence: Option<String> = row.get("context_sentence")?;
+        let cfi: String = row.get("cfi")?;
+        let created_at: i64 = row.get("created_at")?;
         Ok((id, word, sentence, cfi, created_at))
     })?;
     for row in rows {
@@ -161,10 +161,10 @@ fn derive_all(db: &Db, book_id: &str) -> AppResult<Vec<AutoHighlight>> {
           WHERE c.book_id = ?1 AND m.role = 'user'",
     )?;
     let rows = quotes.query_map(params![book_id], |row| {
-        let id: String = row.get(0)?;
-        let context: Option<String> = row.get(1)?;
-        let metadata: Option<String> = row.get(2)?;
-        let created_at: i64 = row.get(3)?;
+        let id: String = row.get("id")?;
+        let context: Option<String> = row.get("context")?;
+        let metadata: Option<String> = row.get("metadata")?;
+        let created_at: i64 = row.get("created_at")?;
         Ok((id, context, metadata, created_at))
     })?;
     for row in rows {

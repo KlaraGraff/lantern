@@ -128,12 +128,12 @@ pub fn ai_index_details(book_id: String, db: State<'_, Db>) -> AppResult<BookInd
     let summaries = summary_statement
         .query_map(rusqlite::params![book_id], |row| {
             Ok((
-                row.get::<_, String>(0)?,
+                row.get::<_, String>("scope")?,
                 IndexSummaryView {
-                    section_index: row.get(1)?,
-                    section_title: row.get(2)?,
-                    content: row.get(3)?,
-                    user_edited: row.get::<_, i64>(4)? != 0,
+                    section_index: row.get("section_index")?,
+                    section_title: row.get("section_title")?,
+                    content: row.get("content")?,
+                    user_edited: row.get::<_, i64>("user_edited")? != 0,
                 },
             ))
         })?
@@ -145,9 +145,9 @@ pub fn ai_index_details(book_id: String, db: State<'_, Db>) -> AppResult<BookInd
     let chunks = chunk_statement
         .query_map(rusqlite::params![book_id], |row| {
             Ok(IndexChunkView {
-                index: row.get(0)?,
-                section_title: row.get(1)?,
-                snippet: row.get(2)?,
+                index: row.get("chunk_index")?,
+                section_title: row.get("section_title")?,
+                snippet: row.get("snippet")?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
