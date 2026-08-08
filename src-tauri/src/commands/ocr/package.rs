@@ -1381,16 +1381,21 @@ fn write_current_pointer(root: &Path, pointer: &CurrentPointer) -> AppResult<()>
     fs::create_dir_all(root).map_err(|_| package_error("OCR_PACKAGE_STORAGE_FAILED"))?;
     let bytes =
         serde_json::to_vec(pointer).map_err(|_| package_error("OCR_PACKAGE_POINTER_INVALID"))?;
-    let temporary = root.join(format!(".current-{}.tmp", uuid::Uuid::new_v4()));
     let destination = root.join("current.json");
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temporary)
+    // A `NamedTempFile` rather than a hand-named `.tmp`: the `?` returns below
+    // used to leave the staging file behind. The guard stays armed across the
+    // replace — on success the file has already been renamed away and the drop
+    // is a no-op, on failure the drop is what removes it.
+    let mut staging = tempfile::Builder::new()
+        .prefix(".current-")
+        .suffix(".tmp")
+        .tempfile_in(root)
         .map_err(|_| package_error("OCR_PACKAGE_STORAGE_FAILED"))?;
-    file.write_all(&bytes)
-        .and_then(|_| file.sync_all())
+    staging
+        .write_all(&bytes)
+        .and_then(|_| staging.as_file().sync_all())
         .map_err(|_| package_error("OCR_PACKAGE_STORAGE_FAILED"))?;
+    let temporary = staging.into_temp_path();
     atomic_replace_file(&temporary, &destination)
         .map_err(|_| package_error("OCR_PACKAGE_STORAGE_FAILED"))?;
     sync_directory(root);

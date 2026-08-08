@@ -86,6 +86,12 @@ whatlang = "0.18"
 # phrase database stay out of the binary: `plain` alone costs 226 KB / 82 KB
 # compressed against 540 KB / 129 KB for the default feature set.
 pinyin = { version = "0.11", default-features = false, features = ["plain"] }
+# Was dev-only until the atomic-write sites moved onto it. What it buys over a
+# hand-rolled `.{uuid}.partial` name is not the name: it is that the temp file
+# is removed when the guard drops, including on the `?` early returns where a
+# manual `fs::remove_file` is easiest to forget. That omission is what
+# 0c34177 had to fix in the font importer.
+tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -133,7 +139,6 @@ windows-sys = { version = "0.61", features = [
 ] }
 
 [dev-dependencies]
-tempfile = "3"
 lopdf = "0.42.0"
 tauri = { version = "=2.11.5", features = ["test"] }
 

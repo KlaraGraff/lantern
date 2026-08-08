@@ -20,6 +20,7 @@
 
 use std::collections::HashSet;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
@@ -706,10 +707,21 @@ where
     }
 
     fs::create_dir_all(dir)?;
-    // A partial write would poison the cache, so land it under a temporary name.
-    let staging = dir.join(format!("{stem}.partial"));
-    if !(fs::write(&staging, &audio).is_ok() && fs::rename(&staging, &audio_path).is_ok()) {
-        let _ = fs::remove_file(&staging);
+    // A partial write would poison the cache, so land it under a temporary
+    // name. The name is now unique per call rather than a shared
+    // `{stem}.partial`: two syntheses of the same text could otherwise
+    // interleave their writes into one staging file and rename the mixture
+    // into the cache. Caching is best-effort — every failure path here just
+    // drops the guard, which removes the staging file, and the audio is
+    // still returned to the caller.
+    if let Ok(mut staging) = tempfile::Builder::new()
+        .prefix(&format!("{stem}."))
+        .suffix(".partial")
+        .tempfile_in(dir)
+    {
+        if staging.write_all(&audio).is_ok() && staging.as_file().sync_all().is_ok() {
+            let _ = staging.persist(&audio_path);
+        }
     }
 
     Ok((audio, false))

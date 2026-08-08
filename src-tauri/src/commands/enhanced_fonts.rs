@@ -170,11 +170,16 @@ where
     manifest.validate()?;
     fs::create_dir_all(root).map_err(|_| font_error("ENHANCED_FONT_STORAGE_FAILED"))?;
     progress(transient(EnhancedFontState::Downloading, manifest, 0));
-    let temporary = root.join(format!(".{PACKAGE_FILE}.{}.partial", uuid::Uuid::new_v4()));
+    // `TempPath` names the staging file without creating it — the downloader
+    // wants a path to open itself — and removes it on every exit from here on.
+    // Doing that by hand meant one `let _ = fs::remove_file` per early return,
+    // and the rename-failure path below was missing its copy.
+    let temporary = tempfile::TempPath::from_path(
+        root.join(format!(".{PACKAGE_FILE}.{}.partial", uuid::Uuid::new_v4())),
+    );
     let mut on_bytes = |bytes| progress(transient(EnhancedFontState::Downloading, manifest, bytes));
     let result = downloader.download(manifest, &temporary, &mut on_bytes);
     if let Err(error) = result {
-        let _ = fs::remove_file(&temporary);
         progress(failed(&error));
         return Err(error);
     }
@@ -184,7 +189,6 @@ where
         manifest.download_size,
     ));
     if let Err(error) = verify_download(&temporary, manifest) {
-        let _ = fs::remove_file(&temporary);
         progress(failed(&error));
         return Err(error);
     }
@@ -196,7 +200,6 @@ where
     let had_previous = package.exists();
     if had_previous {
         if let Err(_rename_error) = fs::rename(&package, &backup) {
-            let _ = fs::remove_file(&temporary);
             let error = font_error("ENHANCED_FONT_STORAGE_FAILED");
             progress(failed(&error));
             return Err(error);
@@ -318,7 +321,12 @@ pub async fn enhanced_font_download(
         build_manifest()?.ok_or_else(|| font_error("ENHANCED_FONT_MANIFEST_UNAVAILABLE"))?;
     let root = enhanced_fonts_root(&db)?;
     fs::create_dir_all(&root).map_err(|_| font_error("ENHANCED_FONT_STORAGE_FAILED"))?;
-    let incoming = root.join(format!(".incoming.{}.partial", uuid::Uuid::new_v4()));
+    // Guarded rather than hand-cleaned: this function has seven exits between
+    // here and the install, and each one used to need its own
+    // `let _ = fs::remove_file(&incoming)`.
+    let incoming = tempfile::TempPath::from_path(
+        root.join(format!(".incoming.{}.partial", uuid::Uuid::new_v4())),
+    );
     emit_progress(
         &app,
         transient(EnhancedFontState::Downloading, &manifest, 0),
@@ -358,7 +366,6 @@ pub async fn enhanced_font_download(
         let chunk = match chunk {
             Ok(chunk) => chunk,
             Err(_) => {
-                let _ = fs::remove_file(&incoming);
                 let error = font_error("ENHANCED_FONT_DOWNLOAD_FAILED");
                 emit_progress(&app, failed(&error));
                 return Err(error);
@@ -366,14 +373,12 @@ pub async fn enhanced_font_download(
         };
         downloaded = downloaded.saturating_add(chunk.len() as u64);
         if downloaded > manifest.download_size || downloaded > MAX_PACKAGE_BYTES {
-            let _ = fs::remove_file(&incoming);
             let error = font_error("ENHANCED_FONT_LENGTH_MISMATCH");
             emit_progress(&app, failed(&error));
             return Err(error);
         }
         if let Err(_write_error) = file.write_all(&chunk) {
             drop(file);
-            let _ = fs::remove_file(&incoming);
             let error = font_error("ENHANCED_FONT_STORAGE_FAILED");
             emit_progress(&app, failed(&error));
             return Err(error);
@@ -385,24 +390,21 @@ pub async fn enhanced_font_download(
     }
     if let Err(_sync_error) = file.sync_all() {
         drop(file);
-        let _ = fs::remove_file(&incoming);
         let error = font_error("ENHANCED_FONT_STORAGE_FAILED");
         emit_progress(&app, failed(&error));
         return Err(error);
     }
     drop(file);
     if let Err(error) = verify_download(&incoming, &manifest) {
-        let _ = fs::remove_file(&incoming);
         emit_progress(&app, failed(&error));
         return Err(error);
     }
     let install_result = download_and_install_at(
         &root,
         &manifest,
-        &ExistingDownload(incoming.clone()),
+        &ExistingDownload(incoming.to_path_buf()),
         |status| emit_progress(&app, status),
     );
-    let _ = fs::remove_file(incoming);
     install_result?;
     availability(&db)
 }
@@ -469,17 +471,24 @@ fn read_pointer(root: &Path) -> AppResult<Option<Pointer>> {
 
 fn write_pointer_atomic(root: &Path, pointer: &Pointer) -> AppResult<()> {
     fs::create_dir_all(root).map_err(|_| font_error("ENHANCED_FONT_STORAGE_FAILED"))?;
-    let temporary = root.join(format!(".{POINTER_FILE}.{}.partial", uuid::Uuid::new_v4()));
     let bytes =
         serde_json::to_vec(pointer).map_err(|_| font_error("ENHANCED_FONT_POINTER_INVALID"))?;
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&temporary)
+    // A `NamedTempFile` rather than a hand-named `.partial`: the write/fsync
+    // `?` return below used to leak the staging file, because nothing on that
+    // path removed it.
+    let mut staging = tempfile::Builder::new()
+        .prefix(&format!(".{POINTER_FILE}."))
+        .suffix(".partial")
+        .tempfile_in(root)
         .map_err(|_| font_error("ENHANCED_FONT_STORAGE_FAILED"))?;
-    file.write_all(&bytes)
-        .and_then(|_| file.sync_all())
+    staging
+        .write_all(&bytes)
+        .and_then(|_| staging.as_file().sync_all())
         .map_err(|_| font_error("ENHANCED_FONT_STORAGE_FAILED"))?;
+    // The guard stays armed across `replace_file`. On the success path the
+    // rename has already moved the file, so the drop is a no-op; on the
+    // failure path it is what removes the leftover.
+    let temporary = staging.into_temp_path();
     replace_file(&temporary, &root.join(POINTER_FILE))
 }
 

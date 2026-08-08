@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{params, OptionalExtension, Transaction};
@@ -132,16 +133,16 @@ fn family_name_from_font(bytes: &[u8], fallback: &str) -> String {
 }
 
 fn row_to_font(row: &rusqlite::Row<'_>, font_dir: &Path) -> rusqlite::Result<CustomFont> {
-    let file_name: String = row.get(2)?;
+    let file_name: String = row.get("file_name")?;
     let path = font_dir.join(file_name);
     Ok(CustomFont {
-        id: row.get(0)?,
-        family_name: row.get(1)?,
+        id: row.get("id")?,
+        family_name: row.get("family_name")?,
         file_available: path.is_file(),
         file_path: path.to_string_lossy().into_owned(),
-        format: row.get(3)?,
-        file_size: row.get(4)?,
-        created_at: row.get(5)?,
+        format: row.get("format")?,
+        file_size: row.get("file_size")?,
+        created_at: row.get("created_at")?,
     })
 }
 
@@ -185,12 +186,24 @@ fn import_path(path: &Path, db: &Db, sync: &SyncWriter) -> AppResult<CustomFont>
     // guards a name arriving from a peer.
     let destination = db.resolve_path(&font_relative_path(&file_name))?;
     if !destination.exists() {
-        let temporary = font_dir.join(format!(".{file_name}.{}.tmp", uuid::Uuid::new_v4()));
-        fs::write(&temporary, &bytes)?;
-        if let Err(error) = fs::rename(&temporary, &destination) {
-            let _ = fs::remove_file(&temporary);
+        // The staging file is a `NamedTempFile` rather than a hand-named
+        // `.tmp`: a write failure here returns through `?`, and the manual
+        // cleanup that path needs is exactly the one easiest to forget. The
+        // guard removes it on every exit that is not `persist`.
+        let mut staging = tempfile::Builder::new()
+            .prefix(&format!(".{file_name}."))
+            .suffix(".tmp")
+            .tempfile_in(&font_dir)?;
+        staging.write_all(&bytes)?;
+        // Rename before fsync would leave a correctly-named, possibly empty
+        // file behind a power loss. Fonts are content-addressed, so a truncated
+        // one would be served under a hash it does not match.
+        staging.as_file().sync_all()?;
+        if let Err(error) = staging.persist(&destination) {
+            // A racing import that already landed the same content-addressed
+            // file is not a failure — the bytes are identical by construction.
             if !destination.exists() {
-                return Err(error.into());
+                return Err(error.error.into());
             }
         }
     }
