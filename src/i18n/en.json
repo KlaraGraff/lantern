@@ -2269,5 +2269,8 @@
   "bookOpenCard.notStartedStatus": "Not started yet",
   "bookOpenCard.chapterAxisStart": "Start",
   "bookOpenCard.chapterAxisEnd": "End",
-  "bookOpenCard.chapterHereMarker": "You are here ▾"
+  "bookOpenCard.chapterHereMarker": "You are here ▾",
+  "settings.about.checkForUpdates": "Check for Updates",
+  "settings.about.checkForUpdatesHint": "See if a newer version is out. Nothing downloads until you say so.",
+  "settings.about.checkForUpdatesButton": "Check"
 }

@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { check, type Update } from "@tauri-apps/plugin-updater";
+import { type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { AlertTriangle, ArrowDownToLine, Loader2, X } from "lucide-react";
 import Toast from "./ui/Toast";
 import { platform } from "../services/platform";
+import { DISMISSED_UPDATE_VERSION_KEY, runUpdateCheck, shouldSuppressAutoPrompt } from "../services/updateCheck";
 
 /** How long the manual "you're up to date" confirmation stays up. */
 const UP_TO_DATE_MS = 4000;
@@ -48,15 +49,25 @@ export default function UpdateToast() {
     checking.current = true;
     if (manual) setView({ kind: "checking" });
     try {
-      const update = await check();
-      if (update) {
-        setView({ kind: "available", update });
-      } else {
+      const result = await runUpdateCheck();
+      if (result.status === "available") {
+        // Only the silent launch check needs to know what was dismissed —
+        // a manual check (menu item) always shows what it found.
+        const dismissed = manual
+          ? null
+          : await invoke<string | null>("get_setting", { key: DISMISSED_UPDATE_VERSION_KEY }).catch(
+              () => null,
+            );
+        if (shouldSuppressAutoPrompt(manual, result.update.version, dismissed)) {
+          setView({ kind: "idle" });
+        } else {
+          setView({ kind: "available", update: result.update });
+        }
+      } else if (result.status === "upToDate") {
         setView(manual ? { kind: "upToDate" } : { kind: "idle" });
+      } else if (manual) {
+        setView({ kind: "error" });
       }
-    } catch (error) {
-      console.error("Update check failed:", error);
-      if (manual) setView({ kind: "error" });
     } finally {
       checking.current = false;
     }
@@ -134,7 +145,17 @@ export default function UpdateToast() {
   const dismiss = (
     <button
       type="button"
-      onClick={() => setView({ kind: "idle" })}
+      onClick={() => {
+        // Remember *this version* as dismissed, not "a toast was shown" —
+        // otherwise the next real release would never get to prompt either.
+        if (view.kind === "available") {
+          void invoke("set_setting", {
+            key: DISMISSED_UPDATE_VERSION_KEY,
+            value: view.update.version,
+          }).catch(() => {});
+        }
+        setView({ kind: "idle" });
+      }}
       aria-label={t("update.toast.dismiss")}
       title={t("update.toast.dismiss")}
       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-text-muted hover:bg-bg-input hover:text-text-secondary"

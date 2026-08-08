@@ -1,11 +1,25 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { arch } from "@tauri-apps/plugin-os";
-import { Github, BookText, Scale, ExternalLink, GitFork, Bug, Check, Copy, Database } from "lucide-react";
+import {
+  Github,
+  BookText,
+  Scale,
+  ExternalLink,
+  GitFork,
+  Bug,
+  Check,
+  Copy,
+  Database,
+  Loader2,
+} from "lucide-react";
 import LanternLogo from "../LanternLogo";
-import { platform, type PlatformId } from "../../services/platform";
+import { platform as platformCaps, type PlatformId } from "../../services/platform";
+import { runUpdateCheck } from "../../services/updateCheck";
+import Button from "../ui/Button";
+import { ROW_CONTROL_WIDTH } from "./types";
 
 const CURRENT_REPOSITORY_URL = "https://github.com/KlaraGraff/lantern";
 const CURRENT_RELEASES_URL = `${CURRENT_REPOSITORY_URL}/releases`;
@@ -38,7 +52,7 @@ const OS_NAMES: Partial<Record<PlatformId, string>> = {
 // Informational only. Read from the OS plugin rather than the UA string, which
 // says "Macintosh" on iPadOS and carries no architecture at all in a webview.
 function platformLabel(): string {
-  const os = OS_NAMES[platform.id];
+  const os = OS_NAMES[platformCaps.id];
   if (!os) return "";
   try {
     return `${os} · ${arch()}`;
@@ -48,15 +62,44 @@ function platformLabel(): string {
   }
 }
 
+type UpdateRowState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "upToDate" }
+  | { kind: "available"; version: string }
+  | { kind: "error" };
+
 export default function AboutSettings() {
   const { t } = useTranslation();
   const [buildInfo, setBuildInfo] = useState<BuildInfo | null>(null);
   const [copied, setCopied] = useState(false);
   const platform = platformLabel();
+  // Windows has no app menu, so this row is the only manual "check for
+  // updates" entry point it gets. Shares `runUpdateCheck` with the launch/menu
+  // toast so this and the macOS menu item never drift into two answers for
+  // the same question — this just displays the result in place instead of
+  // raising a toast for it.
+  const [updateRow, setUpdateRow] = useState<UpdateRowState>({ kind: "idle" });
+  const checkingUpdate = useRef(false);
 
   useEffect(() => {
     invoke<BuildInfo>("app_build_info").then(setBuildInfo).catch(() => setBuildInfo(null));
   }, []);
+
+  const checkForUpdates = async () => {
+    if (checkingUpdate.current) return;
+    checkingUpdate.current = true;
+    setUpdateRow({ kind: "checking" });
+    const result = await runUpdateCheck();
+    if (result.status === "available") {
+      setUpdateRow({ kind: "available", version: result.update.version });
+    } else if (result.status === "upToDate") {
+      setUpdateRow({ kind: "upToDate" });
+    } else {
+      setUpdateRow({ kind: "error" });
+    }
+    checkingUpdate.current = false;
+  };
 
   const open = (url: string) => {
     openUrl(url).catch(() => {});
@@ -107,6 +150,41 @@ export default function AboutSettings() {
         </div>
       </div>
       <div className="h-px bg-border-light mb-4" />
+
+      {/* Check for Updates — sits right under the version badge above, since
+          that's the number it's answering. The Mac menu bar carries the same
+          manual check (Lantern → Check for Updates…); this is that entry
+          point for every platform, Windows included. No per-row divider:
+          this file's own link rows below use one height, `GeneralSettings`'s
+          rows use another with no divider between them — this copies the
+          latter, since it needs the two-line title+hint layout. */}
+      {platformCaps.hasUpdater && (
+        <div className="flex items-center justify-between min-h-[73px] py-3">
+          <div>
+            <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">
+              {t("settings.about.checkForUpdates")}
+            </p>
+            <p className="text-[12px] text-text-muted mt-0.5">
+              {updateRow.kind === "idle" && t("settings.about.checkForUpdatesHint")}
+              {updateRow.kind === "checking" && t("update.toast.checking")}
+              {updateRow.kind === "upToDate" && t("update.toast.upToDate")}
+              {updateRow.kind === "available" &&
+                t("update.toast.available", { version: updateRow.version })}
+              {updateRow.kind === "error" && t("update.toast.error")}
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            className={`${ROW_CONTROL_WIDTH} justify-center gap-1.5`}
+            disabled={updateRow.kind === "checking"}
+            onClick={() => void checkForUpdates()}
+          >
+            {updateRow.kind === "checking" && <Loader2 size={14} className="shrink-0 animate-spin" />}
+            {t("settings.about.checkForUpdatesButton")}
+          </Button>
+        </div>
+      )}
 
       {buildInfo && (
         <div className="mb-4 border-y border-border-light py-3">

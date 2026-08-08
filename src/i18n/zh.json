@@ -2269,5 +2269,8 @@
   "bookOpenCard.notStartedStatus": "还没开始读",
   "bookOpenCard.chapterAxisStart": "开头",
   "bookOpenCard.chapterAxisEnd": "结尾",
-  "bookOpenCard.chapterHereMarker": "你在这里 ▾"
+  "bookOpenCard.chapterHereMarker": "你在这里 ▾",
+  "settings.about.checkForUpdates": "检查更新",
+  "settings.about.checkForUpdatesHint": "看看有没有新版本。你不点，就不会下载。",
+  "settings.about.checkForUpdatesButton": "检查"
 }
