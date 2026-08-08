@@ -303,10 +303,26 @@ fn a_screen_merely_faster_than_usual_still_counts_in_full() {
     }
 }
 
-/// No baseline means no such thing as "too fast" — §2.4 would rather
-/// over-count than shut a reader out.
+/// No baseline switches off the *relative* gate only — §2.4 would rather
+/// over-count than shut out a reader it has no history for, so a brisk but
+/// human pace still earns credit.
 #[test]
-fn without_a_pace_baseline_nothing_is_excluded_for_speed() {
+fn without_a_pace_baseline_a_human_pace_is_still_counted() {
+    let decision = apply_exposures(
+        &WordState::new(Tier::Learning, 0.0),
+        &batch(vec![ChapterExposures::new(vec![Exposure {
+            screen_words_per_minute: 450.0,
+            ..exposure(1)
+        }])]),
+    );
+    assert_close(decision.credit, 1.0);
+}
+
+/// The absolute gate is not switched off by a missing baseline. 9_000 wpm
+/// used to earn full credit here for exactly that reason; it is a page-turn,
+/// and it now earns nothing.
+#[test]
+fn without_a_pace_baseline_a_page_turn_still_earns_nothing() {
     let decision = apply_exposures(
         &WordState::new(Tier::Learning, 0.0),
         &batch(vec![ChapterExposures::new(vec![Exposure {
@@ -314,7 +330,7 @@ fn without_a_pace_baseline_nothing_is_excluded_for_speed() {
             ..exposure(1)
         }])]),
     );
-    assert_close(decision.credit, 1.0);
+    assert_close(decision.credit, 0.0);
 }
 
 #[test]
@@ -508,4 +524,90 @@ fn no_screen_total_never_auto_finishes() {
     assert!(!finish_coverage_met(1_000, 0));
     assert!(!finish_coverage_met(1_000, -1));
     assert!(!should_auto_finish(100, 1_000, 0));
+}
+
+// --- the two pace gates ---
+
+/// A screen 800 words long, dwelt on for `dwell_ms`.
+fn screen(dwell_ms: i64) -> ScreenPace {
+    ScreenPace { word_count: 800, dwell_ms }
+}
+
+/// The ordinary case both gates are written to leave alone: a normal reading
+/// pace, well under the absolute ceiling and well under 3x this reader's own
+/// median.
+#[test]
+fn a_normally_paced_screen_passes_both_gates() {
+    // 800 words in 4 minutes = 200 wpm.
+    assert!(!is_screen_too_fast(screen(240_000), Some(220.0)));
+}
+
+/// The gap the relative gate alone cannot close, and the reason
+/// `ABSOLUTE_MAX_WPM` exists. A median dragged up by page-turns puts the 3x
+/// gate at 16_881 wpm, so a 6_300 wpm screen — 189 words in 1.8 seconds, a
+/// real row from a real database — sails through the relative check. Nobody
+/// reads that fast.
+#[test]
+fn a_page_turn_is_caught_even_when_the_relative_gate_waves_it_through() {
+    let page_turn = ScreenPace { word_count: 189, dwell_ms: 1_800 };
+    let contaminated_median = 5_627.0;
+    // Stated as arithmetic rather than by calling `exceeds_pace_limit`: that
+    // function now answers with both gates, so it can no longer witness what
+    // the relative one would have said on its own.
+    assert!(
+        6_300.0 < contaminated_median * FAST_SCREEN_WPM_MULTIPLE,
+        "precondition: the relative gate alone does not catch this"
+    );
+    assert!(is_screen_too_fast(page_turn, Some(contaminated_median)));
+}
+
+/// The converse gap, and the reason the relative gate is not replaced by the
+/// absolute one: a screen can be unremarkable in absolute terms and still be
+/// three times faster than this particular reader ever goes.
+#[test]
+fn a_screen_under_the_ceiling_still_fails_this_readers_own_baseline() {
+    // 800 words in 96 seconds = 500 wpm: under 600, but 5x a 100 wpm median.
+    assert!(is_screen_too_fast(screen(96_000), Some(100.0)));
+}
+
+/// The absolute gate needs no baseline, so a reader with no pace history is
+/// still protected from having page-turns credited to them. §2.4's "break
+/// toward the reader" applies to the personalised half only.
+#[test]
+fn the_absolute_gate_applies_with_no_median_at_all() {
+    assert!(is_screen_too_fast(screen(10_000), None)); // 4_800 wpm
+    assert!(!is_screen_too_fast(screen(240_000), None)); // 200 wpm
+}
+
+/// Every boundary in §2.4 breaks toward including the reader, so a screen
+/// sitting exactly on a limit is kept.
+#[test]
+fn a_screen_exactly_on_either_limit_is_kept() {
+    assert!(!exceeds_pace_limit(ABSOLUTE_MAX_WPM, None));
+    assert!(!exceeds_pace_limit(300.0, Some(100.0)));
+    assert!(exceeds_pace_limit(300.001, Some(100.0)));
+}
+
+/// Unmeasurable screens stay a data problem, not an exclusion — unchanged by
+/// the absolute gate, which must not turn a garbage pace into a verdict.
+#[test]
+fn unmeasurable_screens_are_still_never_excluded() {
+    assert!(!is_screen_too_fast(ScreenPace { word_count: 0, dwell_ms: 1_000 }, None));
+    assert!(!is_screen_too_fast(ScreenPace { word_count: 800, dwell_ms: 0 }, None));
+    assert!(!is_screen_too_fast(ScreenPace { word_count: -5, dwell_ms: 1_000 }, None));
+    assert!(!exceeds_pace_limit(f64::NAN, Some(200.0)));
+    assert!(!exceeds_pace_limit(f64::INFINITY, Some(200.0)));
+}
+
+/// The exposure path shares `exceeds_pace_limit`, so it inherits the absolute
+/// gate rather than needing its own copy — this pins that it really does.
+#[test]
+fn the_exposure_path_inherits_the_absolute_gate() {
+    let flipped = Exposure {
+        chapter_occurrence: 1,
+        on_lookup_active_screen: false,
+        screen_words_per_minute: 6_300.0,
+    };
+    assert!(is_too_fast(&flipped, Some(5_627.0)));
+    assert!(is_too_fast(&flipped, None));
 }

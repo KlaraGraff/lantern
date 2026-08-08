@@ -340,9 +340,33 @@ fn a_skimmed_screen_never_becomes_evidence() {
 }
 
 #[test]
-fn with_no_pace_history_nothing_is_too_fast() {
-    // The reader's first screen has no baseline to be fast against, and §2.4
-    // breaks toward counting a reader it knows nothing about.
+fn with_no_pace_history_only_the_relative_gate_stands_down() {
+    // The reader's first screen has no baseline to be fast *against*, and
+    // §2.4 breaks toward counting a reader it knows nothing about — so a
+    // brisk-but-human 400 words in a minute still becomes evidence.
+    let (_dir, db, sync) = fixture();
+    save_word(&db, "quiet", "new");
+    flush(
+        &db,
+        &sync,
+        &[ScreenExposureInput {
+            word_count: 400,
+            ended_at: START + 60_000,
+            ..screen("Chapter 1", &["quiet"], START)
+        }],
+    );
+
+    let (seen, _, _) = exposure_row(&db, "quiet");
+    assert_eq!(seen, 1);
+}
+
+#[test]
+fn a_page_turn_is_excluded_even_on_the_very_first_screen() {
+    // This used to be the same case as the test above: 400 words gone in one
+    // second is 24_000 wpm, and with no baseline the relative gate had
+    // nothing to measure it against, so it was credited as evidence the
+    // reader knows the word. `ABSOLUTE_MAX_WPM` does not need a baseline, so
+    // the first screen is no longer a hole.
     let (_dir, db, sync) = fixture();
     save_word(&db, "quiet", "new");
     flush(
@@ -355,8 +379,16 @@ fn with_no_pace_history_nothing_is_too_fast() {
         }],
     );
 
-    let (seen, _, _) = exposure_row(&db, "quiet");
-    assert_eq!(seen, 1);
+    let seen: i64 = db
+        .reader()
+        .query_row(
+            "SELECT COUNT(*) FROM reading_word_exposures WHERE normalized_word = 'quiet'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(seen, 0, "a page-turn must not become vocabulary evidence");
+    assert_eq!(mastery_of(&db).0, "new");
 }
 
 #[test]

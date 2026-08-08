@@ -48,6 +48,25 @@ const IDLE_SCREEN_MS: i64 = 5 * 60 * 1000;
 /// how long someone has owned the app.
 const MEDIAN_PACE_SAMPLE: i64 = 500;
 
+/// How few plausibly-read screens make the median too thin to police anyone
+/// with.
+///
+/// Needed because the pace filter in [`reader_median_wpm`] can leave very
+/// little behind: on the database this was measured against, only 3 of 212
+/// screens were at a human reading pace. A median of three screens that
+/// happened to be slow would put the 3x gate below a normal reading speed and
+/// start excluding real reading — the exact harm §2.4 is written to avoid. So
+/// below this count the relative gate turns itself off and
+/// [`crate::mastery::ABSOLUTE_MAX_WPM`] carries the filtering alone.
+///
+/// **Unlike the other thresholds in this area, 20 has no source behind it.**
+/// It is a judgement call: large enough that one unusual screen cannot move
+/// the median far, small enough to start working within a session or two of
+/// real reading. It should be revisited once there is a corpus of genuine
+/// reading to calibrate against — which, as of this constant being written,
+/// does not exist.
+const MIN_MEDIAN_PACE_SAMPLE: usize = 20;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScreenExposureInput {
@@ -117,26 +136,45 @@ fn screen_is_valid(input: &ScreenExposureInput) -> bool {
 }
 
 /// The reader's own median words-per-minute, over their most recent
-/// [`MEDIAN_PACE_SAMPLE`] measurable screens.
+/// [`MEDIAN_PACE_SAMPLE`] screens that were plausibly *read*.
 ///
 /// `None` means "no usable history yet", which callers must read as "run no
 /// speed filter" — never as a median of zero. §2.4 would rather over-count
-/// than exclude a reader it knows nothing about.
+/// than exclude a reader it knows nothing about. Note that `None` disables
+/// only the *relative* gate; [`crate::mastery::ABSOLUTE_MAX_WPM`] does not
+/// depend on this baseline and keeps applying.
+///
+/// The [`crate::mastery::ABSOLUTE_MAX_WPM`] filter in the query is what makes
+/// this a reading pace rather than a page-turning rate. Without it the
+/// baseline is drawn from the same screens it exists to police: measured on a
+/// real device, 87.7% of screens were faster than any human reads, which
+/// dragged the median to 5627 wpm and put the 3x gate at 16882 — high enough
+/// that page-turns were being credited as vocabulary exposure. Filtering
+/// before `LIMIT` (not after) keeps the window meaning "the most recent 500
+/// screens they actually read", not "whatever survives out of the most recent
+/// 500 of anything".
 fn reader_median_wpm(tx: &rusqlite::Transaction<'_>) -> AppResult<Option<f64>> {
     let mut stmt = tx.prepare(
         "SELECT word_count, dwell_ms FROM reading_screen_dwells
           WHERE word_count > 0 AND dwell_ms > 0
+            AND (word_count * 60000.0) / dwell_ms <= ?1
           ORDER BY started_at DESC
-          LIMIT ?1",
+          LIMIT ?2",
     )?;
     let screens = stmt
-        .query_map(params![MEDIAN_PACE_SAMPLE], |row| {
-            Ok(ScreenPace {
-                word_count: row.get("word_count")?,
-                dwell_ms: row.get("dwell_ms")?,
-            })
-        })?
+        .query_map(
+            params![crate::mastery::ABSOLUTE_MAX_WPM, MEDIAN_PACE_SAMPLE],
+            |row| {
+                Ok(ScreenPace {
+                    word_count: row.get("word_count")?,
+                    dwell_ms: row.get("dwell_ms")?,
+                })
+            },
+        )?
         .collect::<Result<Vec<_>, _>>()?;
+    if screens.len() < MIN_MEDIAN_PACE_SAMPLE {
+        return Ok(None);
+    }
     Ok(median_words_per_minute(&screens))
 }
 
@@ -777,4 +815,76 @@ mod tests {
         let tx = conn.unchecked_transaction().unwrap();
         assert_eq!(estimate_total_book_screens(&tx, "book-1").unwrap(), None);
     }
+
+    /// The baseline must describe reading, not page-turning. Before the pace
+    /// filter, a table dominated by flips produced a median that was itself a
+    /// flip rate, which then licensed more flips: on a real device 87.7% of
+    /// screens were faster than any human reads and the median came out at
+    /// 5627 wpm.
+    #[test]
+    fn the_median_ignores_screens_nobody_could_have_read() {
+        let (_dir, db, _sync) = test_db();
+        // 25 genuine screens at 200 wpm, plus 60 page-turns at 6_000 wpm.
+        for i in 0..25 {
+            insert_dwell_at(&db, "book-1", Some("epubcfi(/6/4!/2)"), 1_000 + i * 60_000, 200, 60_000);
+        }
+        for i in 0..60 {
+            insert_dwell_at(&db, "book-1", Some("epubcfi(/6/4!/4)"), 2_000_000 + i * 2_000, 200, 2_000);
+        }
+        let conn = db.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction().unwrap();
+        let median = reader_median_wpm(&tx).unwrap().expect("25 read screens is enough");
+        assert!(
+            (median - 200.0).abs() < 1.0,
+            "median should describe the reading, got {median}"
+        );
+    }
+
+    /// Filtering happens before `LIMIT`, so the window means "the most recent
+    /// 500 screens they actually read" — a long run of flips must not push
+    /// real reading out of the sample.
+    #[test]
+    fn recent_page_turns_do_not_crowd_reading_out_of_the_window() {
+        let (_dir, db, _sync) = test_db();
+        for i in 0..30 {
+            insert_dwell_at(&db, "book-1", Some("epubcfi(/6/4!/2)"), 1_000 + i * 60_000, 200, 60_000);
+        }
+        for i in 0..600 {
+            insert_dwell_at(&db, "book-1", Some("epubcfi(/6/4!/4)"), 9_000_000 + i * 2_000, 200, 2_000);
+        }
+        let conn = db.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction().unwrap();
+        let median = reader_median_wpm(&tx).unwrap().expect("the 30 read screens survive the window");
+        assert!((median - 200.0).abs() < 1.0, "got {median}");
+    }
+
+    /// Too few plausibly-read screens is "no usable history", not a median of
+    /// whatever three screens happened to survive — a thin, slow sample would
+    /// put the 3x gate under a normal reading speed and start excluding real
+    /// reading.
+    #[test]
+    fn a_thin_sample_reports_no_baseline_at_all() {
+        let (_dir, db, _sync) = test_db();
+        for i in 0..(MIN_MEDIAN_PACE_SAMPLE - 1) {
+            insert_dwell_at(&db, "book-1", Some("epubcfi(/6/4!/2)"), 1_000 + (i as i64) * 60_000, 200, 60_000);
+        }
+        let conn = db.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction().unwrap();
+        assert!(reader_median_wpm(&tx).unwrap().is_none());
+    }
+
+    /// A table with nothing but page-turns in it yields no baseline, rather
+    /// than a baseline made of page-turns. The absolute gate still applies to
+    /// every screen, so this is a stand-down of the relative half only.
+    #[test]
+    fn a_table_of_only_page_turns_yields_no_baseline() {
+        let (_dir, db, _sync) = test_db();
+        for i in 0..200 {
+            insert_dwell_at(&db, "book-1", Some("epubcfi(/6/4!/4)"), 1_000 + i * 2_000, 200, 2_000);
+        }
+        let conn = db.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction().unwrap();
+        assert!(reader_median_wpm(&tx).unwrap().is_none());
+    }
+
 }

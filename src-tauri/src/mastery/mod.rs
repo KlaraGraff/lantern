@@ -59,11 +59,34 @@
 //! §2.4 allows exactly two, both deliberately loose — missing one exposure
 //! costs almost nothing, wrongly excluding a real reader costs a lot:
 //!
-//! 1. Screens read more than [`FAST_SCREEN_WPM_MULTIPLE`]x the reader's own
-//!    median words-per-minute. The baseline is that reader's own median
-//!    ([`median_words_per_minute`]), so a genuinely fast reader is never
-//!    penalised for being fast.
+//! 1. Screens read faster than either pace gate below allows.
 //! 2. Long dwell with zero interaction (the reader walked away).
+//!
+//! The pace gate is two checks, not one, because they calibrate against
+//! different things and a real reading database has shown each is needed to
+//! catch what the other misses:
+//!
+//! - [`ABSOLUTE_MAX_WPM`] calibrates against *people*: no human reads with
+//!   comprehension anywhere near this fast, regardless of who they are or
+//!   how they normally read.
+//! - [`FAST_SCREEN_WPM_MULTIPLE`] calibrates against *this reader*: it
+//!   catches a screen that was unusually fast for them personally, even at a
+//!   pace well under the absolute ceiling.
+//!
+//! A relative-only gate has a failure mode: its own baseline
+//! ([`median_words_per_minute`]) is drawn from the same screens it is
+//! supposed to be policing. A reader whose reading is mostly interrupted by
+//! fast page-turns (skipping ahead, jumping around, checking the end) gets a
+//! median dragged up by those turns, which then rubber-stamps *more*
+//! turns as "normal" for them — measured on a real device's data, this
+//! pushed the exclusion rate below 11% when the vast majority of screens
+//! were unmistakably page-turns, not reading. The absolute gate does not
+//! have this problem: 600 wpm is a fixed fact about reading comprehension,
+//! not a statistic drawn from the reader's own possibly-contaminated
+//! history, so it keeps working even when the relative baseline cannot be
+//! trusted. An absolute-only gate has the opposite failure mode — it cannot
+//! tell a reader who is simply fast from one who is skimming — which is what
+//! the relative gate is for. Neither replaces the other.
 //!
 //! **Both are applied upstream at write time**, in
 //! `commands::reading_behavior` — see [`is_screen_too_fast`] and
@@ -108,7 +131,30 @@ const MASTERED_CREDIT: f64 = 8.0;
 /// minute was skimmed, not read. Comparison is strictly greater, so a screen
 /// sitting exactly on 3x still counts — every boundary in §2.4 breaks toward
 /// including the reader.
+///
+/// This is the *relative* pace gate. See [`ABSOLUTE_MAX_WPM`] for the
+/// *absolute* one and the module doc's "Exclusions" section for why both
+/// exist rather than one or the other.
 const FAST_SCREEN_WPM_MULTIPLE: f64 = 3.0;
+
+/// Absolute ceiling on words-per-minute for reading *with comprehension*,
+/// independent of any particular reader's history.
+///
+/// Brysbaert (2019), a meta-analysis of 190 studies on adult silent reading
+/// speed, puts English prose at a mean of 238 wpm (normal range roughly
+/// 190-260); speed-reading that still retains comprehension almost never
+/// exceeds 600. 600 is therefore deliberately conservative — high enough
+/// that it never flags a genuinely fast reader, only speeds that are
+/// physically implausible for a human to be reading, as opposed to
+/// flipping, scrolling past, or jumping through.
+///
+/// This is the *absolute* pace gate, and it is deliberately a second,
+/// independent check from [`FAST_SCREEN_WPM_MULTIPLE`]'s *relative* one, not
+/// a replacement for it — see the module doc's "Exclusions" section for why
+/// a relative-only gate is not enough on its own: its own baseline can be
+/// (and, measured on a real database, was) itself dragged up by the very
+/// page-turns it exists to exclude.
+pub const ABSOLUTE_MAX_WPM: f64 = 600.0;
 
 /// §2.3's "short term". Two lookups a fortnight apart are two separate
 /// moments of not-quite-knowing; two in the same week are one unresolved
@@ -361,14 +407,27 @@ fn weight_for_occurrence(occurrence: u32) -> f64 {
         .unwrap_or(TAIL_OCCURRENCE_WEIGHT)
 }
 
-/// The too-fast exclusion. Non-finite or non-positive paces are *not*
-/// excluded: an unmeasurable screen is a data problem, and §2.4 says data
-/// problems break toward the reader.
+/// The too-fast exclusion: both pace gates, [`ABSOLUTE_MAX_WPM`] and
+/// [`FAST_SCREEN_WPM_MULTIPLE`], either one sufficient on its own to exclude.
+/// Non-finite or non-positive paces are *not* excluded: an unmeasurable
+/// screen is a data problem, and §2.4 says data problems break toward the
+/// reader.
+///
+/// The absolute check runs first and does not need `median_wpm` at all, so a
+/// reader with no pace history yet (`median_wpm: None`) still gets the
+/// absolute protection — only the personalised half of the filter is
+/// unavailable to them.
 fn exceeds_pace_limit(words_per_minute: f64, median_wpm: Option<f64>) -> bool {
+    if !words_per_minute.is_finite() {
+        return false;
+    }
+    if words_per_minute > ABSOLUTE_MAX_WPM {
+        return true;
+    }
     let Some(median) = median_wpm.filter(|m| m.is_finite() && *m > 0.0) else {
         return false;
     };
-    words_per_minute.is_finite() && words_per_minute > median * FAST_SCREEN_WPM_MULTIPLE
+    words_per_minute > median * FAST_SCREEN_WPM_MULTIPLE
 }
 
 fn is_too_fast(exposure: &Exposure, median_wpm: Option<f64>) -> bool {
