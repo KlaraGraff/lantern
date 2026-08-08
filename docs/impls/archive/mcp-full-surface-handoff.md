@@ -98,9 +98,19 @@ At least two independent GPT-5.6-series evaluators should run before freezing th
 
 ## Backend control bridge in progress
 
-The untracked `src-tauri/src/mcp/control.rs` was a backend foundation for MCP control of live app and reader windows. It was **not feature complete**, and it was discarded: the shipped `open_in_reader` reuses the existing `.mcp-notify` sentinel in 52 lines instead. The 1,059-line original survives on branch `codex/mcp-control-bridge-wip` at commit `3e99e3c`.
+`src-tauri/src/mcp/control.rs` was a backend foundation for MCP control of live app and reader windows. It was **not feature complete**, and it was discarded: the shipped `open_in_reader` reuses the existing `.mcp-notify` sentinel in 52 lines instead. The 1,059-line original survives on branch `codex/mcp-control-bridge-wip` at commit `d611c9b`.
 
-Implemented in the current working tree:
+> **Corrected 2026-08-08.** This paragraph used to point at `3e99e3c`, whose
+> subject line is "preserve discarded control bridge" — but that commit does
+> not contain `control.rs`. It preserved the docs, `ai/router.rs`, and
+> `commands/ai/routing.rs` and nothing else. For five days the file existed
+> only as an untracked file in the main clone's working tree, one `git clean`
+> away from gone, while this document said it was safe. `d611c9b` puts the
+> file itself on that branch (pushed to `origin`), and the working-tree copy
+> is now deleted. If you are reading this to recover the code, that commit is
+> the only copy.
+
+Implemented in the working tree at the time:
 
 - Main-window and reader-window runtime sessions.
 - Hashed session tokens and heartbeats.
