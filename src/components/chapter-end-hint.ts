@@ -193,6 +193,15 @@ export function installChapterEndHint(options: ChapterEndHintOptions): void {
     borderTop: `1px solid ${color.rule}`,
     fontFamily: SANS_FAMILY,
     color: color.muted,
+    // In paginated mode the section document is laid out in CSS columns, so
+    // expanding the panel makes the body taller and the renderer re-columnises
+    // around it. Without this the row's header stays on the page the reader is
+    // looking at and the panel it just opened flows into the *next* column —
+    // the row visibly expands into nothing. Keeping the row unbreakable means
+    // an expansion that no longer fits moves the whole unit to the next column,
+    // where the caller's post-expand `scrollToAnchor` can follow it.
+    breakInside: "avoid",
+    WebkitColumnBreakInside: "avoid",
   });
 
   const top = doc.createElement("div");

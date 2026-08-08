@@ -180,6 +180,20 @@ test("expanding flips the toggle label, aria-expanded, and fires onExpandChange(
   assert.equal(expandChangeCalls[0][1], root);
 });
 
+// The bug: in paginated mode the section document is laid out in CSS columns,
+// so expanding grew the body, the renderer re-columnised, and the panel flowed
+// into the next column while the row's header stayed put — the row expanded
+// into visibly nothing. Both spellings, because WebKit is the only engine this
+// runs on and the unprefixed property is the one that is easy to lose in a
+// refactor without anyone noticing until they open a book.
+test("the row refuses to be split across columns, so an expanded panel cannot be orphaned onto the next page", () => {
+  const { doc, allElements } = createFakeDoc();
+  installChapterEndHint(baseOptions(doc));
+  const root = allElements.find((el) => el.hasAttribute("data-lantern-chapter-end"))!;
+  assert.equal(root.style.breakInside, "avoid");
+  assert.equal(root.style.WebkitColumnBreakInside, "avoid");
+});
+
 test("clicking a word chip calls onWordClick with that word's id and its own button", () => {
   const { doc, allElements } = createFakeDoc();
   const clicks: Array<[string, unknown]> = [];
