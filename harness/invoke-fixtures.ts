@@ -20,6 +20,7 @@ import {
   COLLECTIONS,
   HIGHLIGHTS,
   NOTES,
+  PERSON_ALIAS_GROUPS,
   VOCAB,
   emptyLibrary,
   resolveSettings,
@@ -47,6 +48,10 @@ type HarnessHighlight = Omit<(typeof HIGHLIGHTS)[number], "text_content"> & {
   text_content: string | null;
 };
 const harnessPromoted: HarnessHighlight[] = [];
+
+/** Counter behind `add_person_alias`'s returned id — distinct per write so two
+ *  confirmations in one sweep don't hand the receipt the same row to undo. */
+let harnessAliasWrites = 0;
 
 /** Mutable so `set_setting` during a sweep is visible to the next read. */
 const settings: Record<string, string> = resolveSettings();
@@ -391,6 +396,18 @@ export const FIXTURES: Record<string, Fixture> = {
   list_chat_messages: () => CHAT_MESSAGES.slice(),
   save_chat_message: () => CHAT_MESSAGES[1],
   replace_chat_message: () => CHAT_MESSAGES[1],
+  /**
+   * The alias disclosure's "别的人" picker calls `list_person_aliases` and
+   * renders whatever canonicals come back, so without a fixture the picker
+   * opens onto its empty state and the whole confirm path is unreachable.
+   * `add_person_alias` has to return a real id string — the receipt only
+   * offers 撤销 when it has a row id to delete.
+   */
+  list_person_aliases: () => PERSON_ALIAS_GROUPS.map((group) => ({ ...group })),
+  add_person_alias: () => `pa-harness-${harnessAliasWrites++}`,
+  delete_person_alias: null,
+  clear_person_aliases: null,
+  build_person_aliases: () => PERSON_ALIAS_GROUPS.map((group) => ({ ...group })),
   ai_cancel: true,
   /**
    * Hand-written because `AiRequestCountsSection` dereferences

@@ -302,6 +302,106 @@ export const CHAT_MESSAGES = [
     model: "harness-model",
     error: null,
   },
+  // The two turns below exist so the sweep reaches the alias disclosure at
+  // all. It only renders off `metadata.aliasResolution`, which no real
+  // harness call can produce — the resolution arrives on a per-request Tauri
+  // event, and there is no AI backend here to fire one. Without these the
+  // whole medium/low/picker/receipt path is unreachable in the browser and
+  // in CI.
+  {
+    id: "msg-3",
+    chat_id: "chat-1",
+    role: "user",
+    content: "老鼠后来怎么样了？",
+    created_at: ago(3),
+    updated_at: ago(3),
+    reasoning: null,
+    citations: [],
+    model: null,
+    error: null,
+  },
+  {
+    id: "msg-4",
+    chat_id: "chat-1",
+    role: "assistant",
+    content: "The Water Rat stays on the river to the end, still keeping his boat.",
+    created_at: ago(3),
+    updated_at: ago(3),
+    reasoning: null,
+    citations: [],
+    model: "harness-model",
+    error: null,
+    metadata: JSON.stringify({
+      aliasResolution: {
+        confidence: "medium",
+        matched: [{ alias: "老鼠", canonicals: ["Water Rat", "Field Mouse"] }],
+        defaultCanonical: "Water Rat",
+      },
+    }),
+  },
+  {
+    id: "msg-5",
+    chat_id: "chat-1",
+    role: "user",
+    content: "那个总爱开快车的家伙后来怎么样了？",
+    created_at: ago(2),
+    updated_at: ago(2),
+    reasoning: null,
+    citations: [],
+    model: null,
+    error: null,
+  },
+  {
+    id: "msg-6",
+    chat_id: "chat-1",
+    role: "assistant",
+    // Names a canonical in its prose on purpose: the low-confidence confirm
+    // button has no name in its payload and reads one out of the answer.
+    content: "Mr. Toad gives up motor-cars after Toad Hall is won back, or says he does.",
+    created_at: ago(2),
+    updated_at: ago(2),
+    reasoning: null,
+    citations: [],
+    model: "harness-model",
+    error: null,
+    metadata: JSON.stringify({
+      aliasResolution: { confidence: "low", matched: [], defaultCanonical: null },
+    }),
+  },
+];
+
+export const PERSON_ALIAS_GROUPS = [
+  {
+    canonical: "Water Rat",
+    mentions: 214,
+    aliases: [
+      { id: "pa-1", alias: "Ratty", source: "auto", mentions: 214, kind: "name", sourceQuery: null },
+      { id: "pa-2", alias: "河鼠", source: "auto", mentions: 214, kind: "name", sourceQuery: null },
+      { id: "pa-3", alias: "老鼠", source: "auto", mentions: 214, kind: "name", sourceQuery: null },
+    ],
+  },
+  {
+    canonical: "Mr. Toad",
+    mentions: 301,
+    aliases: [
+      { id: "pa-4", alias: "蟾蜍", source: "auto", mentions: 301, kind: "name", sourceQuery: null },
+      { id: "pa-5", alias: "托德先生", source: "user", mentions: 301, kind: "name", sourceQuery: null },
+    ],
+  },
+  {
+    canonical: "Field Mouse",
+    mentions: 12,
+    aliases: [
+      { id: "pa-6", alias: "老鼠", source: "auto", mentions: 12, kind: "name", sourceQuery: null },
+    ],
+  },
+  {
+    canonical: "Mole",
+    mentions: 188,
+    aliases: [
+      { id: "pa-7", alias: "鼹鼠", source: "auto", mentions: 188, kind: "name", sourceQuery: null },
+    ],
+  },
 ];
 
 /**
