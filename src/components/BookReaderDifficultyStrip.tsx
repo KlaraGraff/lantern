@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { X } from "lucide-react";
 import type { Book } from "../hooks/useBooks";
 import { useBookDifficulty } from "../hooks/useBookDifficulty";
 import { useBookDifficultySections, useBookLookupStats, useVocabPassRates } from "../hooks/useOpenCardData";
 import RidgeChart from "./RidgeChart";
+import { useOpenCardControls } from "./BookOpenGateProvider";
+import { AUTO_DISMISS_MS, isPageTurn, isRearmed, markDismissed } from "./reading-strip-dismissal";
 import { bandShares, classifyRidge, roundPercent, weightedHardShare, type BandPassRates } from "./book-open-card-view";
-
-const AUTO_COLLAPSE_MS = 2000;
 
 interface BookReaderDifficultyStripProps {
   book: Pick<Book, "id" | "format" | "status" | "progress">;
@@ -15,24 +15,57 @@ interface BookReaderDifficultyStripProps {
    *  resolved one. `undefined` renders the strip without a chapter name
    *  rather than a placeholder. */
   currentChapterTitle?: string;
+  /** Bumped by `Reader` on every relocate — page turns and jumps alike. The
+   *  strip only needs to know the reader moved, not why. */
+  locationTick?: number;
 }
 
 /**
  * Mockup §5's reader-top strip: the downgrade a book already `"reading"`
- * gets instead of the full open card. Starts expanded for ~2s so a reader
- * who just resumed sees it once, then collapses to one line on its own —
- * never re-expands by itself, only a tap does that.
+ * gets instead of the full open card.
+ *
+ * Shows expanded, says its piece, and then leaves — see
+ * `reading-strip-dismissal.ts` for the three exits. It used to collapse to a
+ * one-line bar instead of leaving, which meant every reading screen
+ * permanently gave up a strip of its top edge to a sentence the reader had
+ * already read.
+ *
+ * Those three exits are all "not now". "Not ever" is `hideOpenCardForever`,
+ * which is the whole feature's switch, not this book's — see
+ * `useOpenCardControls`. Deliberately not per-book: a per-book hide would need
+ * somewhere to list and un-hide the books it had been used on, which is a
+ * settings screen's worth of machinery for a banner that already leaves on its
+ * own after six seconds.
  */
-export default function BookReaderDifficultyStrip({ book, currentChapterTitle }: BookReaderDifficultyStripProps) {
+export default function BookReaderDifficultyStrip({
+  book,
+  currentChapterTitle,
+  locationTick = 0,
+}: BookReaderDifficultyStripProps) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(true);
-  const [userToggled, setUserToggled] = useState(false);
+  const { openCardEnabled, hideOpenCardForever } = useOpenCardControls();
+  const mountedAtRef = useRef(Date.now());
+  const [visible, setVisible] = useState(() => isRearmed(book.id, Date.now()));
+  // The auto-dismiss timer holds while the pointer is on the strip: a reader
+  // who is looking at the ridge chart is not a reader who has finished with it.
+  const [hovered, setHovered] = useState(false);
+
+  const dismiss = useCallback(() => {
+    markDismissed(book.id, Date.now());
+    setVisible(false);
+  }, [book.id]);
 
   useEffect(() => {
-    if (userToggled) return;
-    const timer = window.setTimeout(() => setExpanded(false), AUTO_COLLAPSE_MS);
+    if (!visible || hovered) return;
+    const timer = window.setTimeout(dismiss, AUTO_DISMISS_MS);
     return () => window.clearTimeout(timer);
-  }, [userToggled]);
+  }, [visible, hovered, dismiss]);
+
+  useEffect(() => {
+    if (!visible) return;
+    if (!isPageTurn(mountedAtRef.current, Date.now())) return;
+    dismiss();
+  }, [locationTick, visible, dismiss]);
 
   const { difficulty } = useBookDifficulty(book.id);
   const sections = useBookDifficultySections(book.id);
@@ -81,50 +114,65 @@ export default function BookReaderDifficultyStrip({ book, currentChapterTitle }:
   const progressLine = t("bookOpenCard.readingStrip.progress", { percent: Math.round(book.progress) });
   const stats = lookupStats.value;
 
+  if (!visible || !openCardEnabled) return null;
+
   return (
-    <div className="shrink-0 border-b border-border bg-bg-muted px-section">
-      <button
-        type="button"
-        onClick={() => { setUserToggled(true); setExpanded((v) => !v); }}
-        className="flex w-full items-center justify-between gap-3 py-1.5 text-left"
-      >
+    <div
+      className="shrink-0 border-b border-border bg-bg-muted px-section pb-3"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div className="flex w-full items-center justify-between gap-3 py-1.5">
         <span className="flex min-w-0 items-center gap-2 text-[11.5px] text-text-secondary">
           <span className="shrink-0 font-medium text-text-primary">{progressLine}</span>
-          {!expanded && positionLine ? (
-            <span className="truncate text-text-muted">{positionLine}</span>
-          ) : null}
         </span>
-        {expanded ? <ChevronUp size={13} className="shrink-0 text-text-muted" /> : <ChevronDown size={13} className="shrink-0 text-text-muted" />}
-      </button>
-
-      {expanded ? (
-        <div className="pb-3">
-          {currentChapterTitle ? (
-            <p className="m-0 text-[11px] text-text-muted">
-              {t("bookOpenCard.readingStrip.chapter", { chapter: currentChapterTitle })}
-            </p>
-          ) : null}
-          {positionLine ? (
-            <p className="mt-1 text-[12px] leading-[1.6] text-text-secondary">{positionLine}</p>
-          ) : null}
-          {ridgeBars.length > 0 ? (
-            <RidgeChart bars={ridgeBars} markerSectionOrder={markerSectionOrder} className="mt-2 max-w-[420px]" />
-          ) : null}
-          {stats && stats.lookedUpWords > 0 ? (
-            <div className="mt-2 text-[11px] leading-[1.7] text-text-muted">
-              <p className="m-0">{t("bookOpenCard.readingStrip.lookedUpCount", { count: stats.lookedUpWords })}</p>
-              {stats.masteredWords > 0 ? (
-                <p className="m-0">{t("bookOpenCard.readingStrip.masteredCount", { count: stats.masteredWords })}</p>
-              ) : null}
-            </div>
-          ) : null}
+        <span className="flex shrink-0 items-center gap-3">
+          {/* The same copy and the same key as the card's own button — a reader
+              who turns it off here has turned off both surfaces, which is the
+              only reading of "不再显示开书卡" that is not a lie. */}
           <button
             type="button"
-            onClick={() => { setUserToggled(true); setExpanded(false); }}
-            className="mt-2 text-[11px] font-medium text-accent-text"
+            onClick={hideOpenCardForever}
+            className="text-[11px] font-medium text-text-muted transition-colors hover:text-text-primary"
           >
-            {t("bookOpenCard.readingStrip.collapse")}
+            {t("bookOpenCard.hideForever")}
           </button>
+          <button
+            type="button"
+            onClick={dismiss}
+            aria-label={t("bookOpenCard.readingStrip.dismiss")}
+            title={t("bookOpenCard.readingStrip.dismiss")}
+            className="rounded p-0.5 text-text-muted transition-colors hover:text-text-primary"
+          >
+            <X size={13} />
+          </button>
+        </span>
+      </div>
+
+      {currentChapterTitle ? (
+        <p className="m-0 text-[11px] text-text-muted">
+          {t("bookOpenCard.readingStrip.chapter", { chapter: currentChapterTitle })}
+        </p>
+      ) : null}
+      {positionLine ? (
+        <p className="mt-1 text-[12px] leading-[1.6] text-text-secondary">{positionLine}</p>
+      ) : null}
+      {ridgeBars.length > 0 ? (
+        // `mt-5` rather than `mt-2` when the "你在这里" marker is drawn: that
+        // label is absolutely positioned above the bars (`-top-4` in
+        // `RidgeChart`) and lands on the line above without the clearance.
+        <RidgeChart
+          bars={ridgeBars}
+          markerSectionOrder={markerSectionOrder}
+          className={`${markerSectionOrder !== null ? "mt-5" : "mt-2"} max-w-[420px]`}
+        />
+      ) : null}
+      {stats && stats.lookedUpWords > 0 ? (
+        <div className="mt-2 text-[11px] leading-[1.7] text-text-muted">
+          <p className="m-0">{t("bookOpenCard.readingStrip.lookedUpCount", { count: stats.lookedUpWords })}</p>
+          {stats.masteredWords > 0 ? (
+            <p className="m-0">{t("bookOpenCard.readingStrip.masteredCount", { count: stats.masteredWords })}</p>
+          ) : null}
         </div>
       ) : null}
     </div>

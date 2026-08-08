@@ -2348,7 +2348,7 @@
   "bookOpenCard.readingStrip.wholeBookShare": "Across the whole book, the words you haven't seen are {{share}}.",
   "bookOpenCard.readingStrip.lookedUpCount": "You've looked up {{count}} words in this book",
   "bookOpenCard.readingStrip.masteredCount": "{{count}} of those you no longer need to look up — you've read past them enough times since.",
-  "bookOpenCard.readingStrip.collapse": "Collapse",
+  "bookOpenCard.readingStrip.dismiss": "Dismiss",
   "bookOpenCard.notStartedStatus": "Not started yet",
   "bookOpenCard.chapterAxisStart": "Start",
   "bookOpenCard.chapterAxisEnd": "End",

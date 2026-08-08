@@ -26,6 +26,13 @@ interface GateContextValue {
    *  `useOpenBook()`, now routed through the mockup §0 gate first. Decides
    *  for itself whether that means the reader or the card. */
   requestOpen: (book: Book, target?: ReaderTarget) => void;
+  /** The feature's one master switch, read here so no second surface has to
+   *  know the key's name or its default. */
+  openCardEnabled: boolean;
+  /** Turn the whole feature off and offer the undo. Does not navigate — the
+   *  card's own button pairs this with continuing into the reader, the
+   *  reader-top strip is already there. */
+  hideOpenCardForever: () => void;
 }
 
 const GateContext = createContext<GateContextValue | null>(null);
@@ -34,6 +41,22 @@ export function useBookOpenGate(): GateContextValue["requestOpen"] {
   const ctx = useContext(GateContext);
   if (!ctx) throw new Error("useBookOpenGate must be used within BookOpenGateProvider");
   return ctx.requestOpen;
+}
+
+/**
+ * The master switch and its off button, for the feature's *other* surface —
+ * `BookReaderDifficultyStrip`, which is the form the open card takes once a
+ * book is already being read.
+ *
+ * Shared rather than reimplemented so the two surfaces cannot drift: one
+ * settings key, one undo toast, one piece of copy. A strip that owned its own
+ * copy of this would be a second thing to turn off, which is exactly what the
+ * Settings row's comment warns against.
+ */
+export function useOpenCardControls(): Pick<GateContextValue, "openCardEnabled" | "hideOpenCardForever"> {
+  const ctx = useContext(GateContext);
+  if (!ctx) throw new Error("useOpenCardControls must be used within BookOpenGateProvider");
+  return ctx;
 }
 
 /**
@@ -50,7 +73,10 @@ export default function BookOpenGateProvider({ children }: { children: ReactNode
   // *future* clicks, it never needs to repaint anything on its own account.
   const sessionDismissedRef = useRef<Set<string>>(new Set());
   const [cardState, setCardState] = useState<CardState | null>(null);
-  const [undoState, setUndoState] = useState<CardState | null>(null);
+  // Just "is the toast up": which book the reader was opening when they turned
+  // the feature off says nothing the toast's copy needs, and the strip's own
+  // off button has no book to hand over in the first place.
+  const [undoVisible, setUndoVisible] = useState(false);
   const undoTimerRef = useRef<number | undefined>(undefined);
 
   const enabled = settings[BOOK_OPEN_CARD_ENABLED_KEY] !== "false";
@@ -97,14 +123,18 @@ export default function BookOpenGateProvider({ children }: { children: ReactNode
     openInReader(book.id, target);
   }, [cardState, openInReader]);
 
+  const hideOpenCardForever = useCallback(() => {
+    void saveBulk({ [BOOK_OPEN_CARD_ENABLED_KEY]: "false" });
+    if (undoTimerRef.current !== undefined) window.clearTimeout(undoTimerRef.current);
+    setUndoVisible(true);
+    undoTimerRef.current = window.setTimeout(() => setUndoVisible(false), UNDO_WINDOW_MS);
+  }, [saveBulk]);
+
   const hideForever = useCallback(() => {
     if (!cardState) return;
     const { book, target } = cardState;
     setCardState(null);
-    void saveBulk({ [BOOK_OPEN_CARD_ENABLED_KEY]: "false" });
-    if (undoTimerRef.current !== undefined) window.clearTimeout(undoTimerRef.current);
-    setUndoState({ book, target });
-    undoTimerRef.current = window.setTimeout(() => setUndoState(null), UNDO_WINDOW_MS);
+    hideOpenCardForever();
     // The button just told the reader the card is getting out of their way —
     // "不挽留": it does not also hold the door shut on the book they were
     // trying to open while the toast makes its case. This exact sequencing
@@ -112,15 +142,18 @@ export default function BookOpenGateProvider({ children }: { children: ReactNode
     // spelled out in the mockup text; it is the reading that best fits the
     // "no residual UI, ever" rule in §7.
     openInReader(book.id, target);
-  }, [cardState, openInReader, saveBulk]);
+  }, [cardState, hideOpenCardForever, openInReader]);
 
   const undoHide = useCallback(() => {
     if (undoTimerRef.current !== undefined) window.clearTimeout(undoTimerRef.current);
-    setUndoState(null);
+    setUndoVisible(false);
     void saveBulk({ [BOOK_OPEN_CARD_ENABLED_KEY]: "true" });
   }, [saveBulk]);
 
-  const value = useMemo(() => ({ requestOpen }), [requestOpen]);
+  const value = useMemo(
+    () => ({ requestOpen, openCardEnabled: enabled, hideOpenCardForever }),
+    [requestOpen, enabled, hideOpenCardForever],
+  );
 
   return (
     <GateContext.Provider value={value}>
@@ -133,7 +166,7 @@ export default function BookOpenGateProvider({ children }: { children: ReactNode
           onHideForever={hideForever}
         />
       ) : null}
-      {undoState ? (
+      {undoVisible ? (
         <Toast icon={<Check size={14} className="shrink-0 text-success-text" />}>
           {t("bookOpenCard.undoToastMessage")}{" "}
           <button type="button" onClick={undoHide} className="font-medium text-accent-text underline underline-offset-2">
