@@ -47,6 +47,7 @@ export const READING_REHYDRATION_GROUPS: readonly RehydrationGroup[] = [
   { id: "bindings", keys: ["previous_page_binding", "next_page_binding"] },
   { id: "autoSave", keys: ["auto_save"] },
   { id: "skipFrontMatter", keys: ["skip_front_matter"] },
+  { id: "bookOpenCard", keys: ["book_open_card_enabled"] },
 ];
 
 export const READING_REHYDRATION_KEYS = READING_REHYDRATION_GROUPS.flatMap(

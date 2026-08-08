@@ -30,6 +30,7 @@ import {
 } from "../components/reader-settings";
 import ReaderContextMenu from "../components/ReaderContextMenu";
 import OcrReaderHud from "../components/OcrReaderHud";
+import BookReaderDifficultyStrip from "../components/BookReaderDifficultyStrip";
 import TranslationPopover from "../components/TranslationPopover";
 import FootnotePopover, { type FootnotePopoverData } from "../components/FootnotePopover";
 import TableOfContents from "../components/TableOfContents";
@@ -2021,6 +2022,13 @@ export default function Reader() {
           </Button>
         </div>
       </header>
+
+      {/* §5's downgrade for a book already "reading": the full open card
+          (BookOpenCard, gated in BookOpenGateProvider) never applies once a
+          book has a status of "reading" — only this thin strip does. */}
+      {book && book.status === "reading" && (
+        <BookReaderDifficultyStrip book={book} currentChapterTitle={currentChapterTitle ?? undefined} />
+      )}
 
       {/* Body */}
       <div

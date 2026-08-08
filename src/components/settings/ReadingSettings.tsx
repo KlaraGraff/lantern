@@ -187,6 +187,7 @@ export default function ReadingSettings({
   // group id or an outside-write echo to track.
   const [autoSave, setAutoSave] = useState(true);
   const [skipFrontMatter, setSkipFrontMatter] = useState(true);
+  const [bookOpenCardEnabled, setBookOpenCardEnabled] = useState(true);
   // What the rows on screen were built from, and which keys this pane is
   // writing right now. Together they tell an outside change apart from the
   // pane's own — only the first may replace a control the user can see.
@@ -279,6 +280,9 @@ export default function ReadingSettings({
           break;
         case "skipFrontMatter":
           setSkipFrontMatter(values.skip_front_matter !== "false");
+          break;
+        case "bookOpenCard":
+          setBookOpenCardEnabled(values.book_open_card_enabled !== "false");
           break;
         case "bindings":
           if (values.previous_page_binding) setPreviousPageBinding(values.previous_page_binding);
@@ -890,6 +894,32 @@ export default function ReadingSettings({
           onChange={(v) => {
             setSkipFrontMatter(v);
             void persist({ skip_front_matter: String(v) });
+            showSavedToast();
+          }}
+        />
+      </div>
+      {/* 打开一本书时 — the open card's one master switch. The card's own
+          "不再显示开书卡" button and this row write the same
+          `book_open_card_enabled` key, so they never need to be told apart:
+          `useSettings`'s shared change bus keeps them in sync on its own. */}
+      <div className="mt-8 mb-2 text-[11px] font-medium uppercase tracking-[0.5px] text-text-muted">
+        {t("settings.layout.groupOpenCard")}
+      </div>
+      <div className="h-px bg-border-light" />
+      <div className="flex items-center justify-between min-h-[73px] py-3">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("bookOpenCard.settingsTitle")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("bookOpenCard.settingsBody")}</p>
+          <p className="text-[11px] text-text-muted mt-1">
+            {bookOpenCardEnabled ? t("bookOpenCard.settingsMetaOn") : t("bookOpenCard.settingsMetaOff")}
+          </p>
+        </div>
+        <Toggle
+          label={t("bookOpenCard.settingsTitle")}
+          checked={bookOpenCardEnabled}
+          onChange={(v) => {
+            setBookOpenCardEnabled(v);
+            void persist({ book_open_card_enabled: String(v) });
             showSavedToast();
           }}
         />

@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>章末微复盘 · 样张</title>
+<style>
+  :root{
+    --bg:#f4f4f5; --surface:#ffffff; --muted-bg:#fafafa; --input:#f3f3f5;
+    --fg:#18181b; --fg2:#52525c; --fg3:#71717b;
+    --line:#e4e4e7; --line2:#f0f0f2;
+    --accent:#7c3aed; --accent-bg:#f3e8ff; --accent-text:#7c3aed;
+    --danger:#c9302c; --danger-bg:#fdf2f2; --ok:#2f7d5b; --ok-bg:#eaf3ee;
+    --shadow:0 14px 40px rgba(30,25,20,.13), 0 2px 6px rgba(30,25,20,.05);
+
+    /* 阅读器纸张主题 —— 取自 src/pages/reader/reader-theme.ts 的真实值 */
+    --p1-bg:#ffffff; --p1-body:#0a0a0a; --p1-muted:#71717b; --p1-rule:#e9e9ec; --p1-accent:#6D28D9;
+    --p2-bg:#EBE1CB; --p2-body:#3B3325; --p2-muted:#8A7C63; --p2-rule:#DCD1B8; --p2-accent:#8A5728;
+    --p3-bg:#0E0E11; --p3-body:#C9C9D1; --p3-muted:#8E8E98; --p3-rule:#25252C; --p3-accent:#A78BFA;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#151518; --surface:#1a1b1f; --muted-bg:#1f2023; --input:#25262c;
+      --fg:#f4f4f5; --fg2:#c9c9d1; --fg3:#9a9aa4;
+      --line:#34343d; --line2:#2a2b31;
+      --accent:#8b5cf6; --accent-bg:#302647; --accent-text:#a78bfa;
+      --danger:#f08a86; --danger-bg:#2c1a1a; --ok:#6fc39a; --ok-bg:#152a20;
+      --shadow:0 14px 40px rgba(0,0,0,.5), 0 2px 6px rgba(0,0,0,.3);
+      --p1-rule:#e9e9ec;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);overflow-x:hidden;
+    font:15px/1.66 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1200px;margin:0 auto;padding:46px 20px 130px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em;
+    background:var(--input);border-radius:4px;padding:1px 5px}
+
+  header.top{border-bottom:1px solid var(--line);padding-bottom:26px}
+  h1{font-size:26px;margin:0 0 12px;font-weight:650;letter-spacing:-.4px}
+  .lede{color:var(--fg2);font-size:14px;margin:0 0 11px;max-width:82ch;line-height:1.8}
+  .lede b{color:var(--fg)}
+  .lede.rule{border-left:4px solid var(--accent);padding-left:14px}
+  .meta{margin-top:16px;padding-top:13px;border-top:1px solid var(--line2);
+    font-size:12px;color:var(--fg3);line-height:1.85}
+
+  h2.sec{font-size:18px;font-weight:640;margin:62px 0 5px;display:flex;align-items:baseline;
+    gap:11px;flex-wrap:wrap}
+  h2.sec .n{font-size:11.5px;font-weight:700;color:var(--fg3);border:1px solid var(--line);
+    border-radius:20px;padding:2px 9px;flex:none}
+  .why{color:var(--fg2);font-size:13.6px;line-height:1.82;margin:0 0 22px;max-width:84ch}
+  .why b{color:var(--fg)} .why .no{color:var(--danger);font-weight:600}
+  .why + .why{margin-top:-12px}
+  h3.sub{font-size:13.6px;font-weight:640;margin:34px 0 4px}
+  .subwhy{font-size:12.6px;color:var(--fg3);line-height:1.75;margin:0 0 13px;max-width:80ch}
+
+  .row{display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start}
+  .col{flex:1 1 330px;min-width:min(320px,100%);max-width:420px}
+  .col.w{flex:1 1 560px;max-width:660px}
+  .cap{font-size:12.3px;color:var(--fg3);line-height:1.68;margin:10px 2px 0}
+  .cap b{color:var(--fg2)} .cap .no{color:var(--danger);font-weight:600}
+
+  /* ─── 设备外壳 ─── */
+  .phone{width:100%;max-width:375px;border:1px solid var(--line);border-radius:26px;
+    background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
+  .phone .notch{height:24px;display:flex;align-items:center;justify-content:center;
+    font-size:10px;color:var(--fg3);letter-spacing:.4px}
+  .win{border:1px solid var(--line);border-radius:12px;background:var(--surface);
+    box-shadow:var(--shadow);overflow:hidden}
+  .chrome{height:29px;background:var(--muted-bg);border-bottom:1px solid var(--line2);
+    display:flex;align-items:center;gap:6px;padding:0 11px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--line);flex:none}
+  .chrome .ttl{margin-left:7px;font-size:11px;color:var(--fg3);white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+
+  /* ─── 书页 ─── */
+  .sheet{background:var(--p1-bg);color:var(--p1-body);padding:20px 21px 0;
+    font-family:Georgia,"Songti SC",serif;position:relative}
+  .sheet.paper{background:var(--p2-bg);color:var(--p2-body)}
+  .sheet.night{background:var(--p3-bg);color:var(--p3-body)}
+  .sheet p.bd{margin:0 0 13px;font-size:14.6px;line-height:1.78;letter-spacing:.1px}
+  .sheet p.bd:last-of-type{margin-bottom:0}
+  .sheet .fade{position:relative}
+  .sheet .fade::before{content:"";position:absolute;left:0;right:0;top:-26px;height:26px;
+    background:linear-gradient(to bottom,transparent,var(--p1-bg))}
+  .sheet.paper .fade::before{background:linear-gradient(to bottom,transparent,var(--p2-bg))}
+  .sheet.night .fade::before{background:linear-gradient(to bottom,transparent,var(--p3-bg))}
+  .sheet .foot{display:flex;align-items:center;justify-content:space-between;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;
+    font-size:10.5px;color:var(--p1-muted);padding:16px 0 13px;letter-spacing:.2px}
+  .sheet.paper .foot{color:var(--p2-muted)} .sheet.night .foot{color:var(--p3-muted)}
+
+  /* ─── 章末细线（本样张的主角） ─── */
+  .ce{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;
+    margin-top:32px;padding-top:20px;border-top:1px solid var(--p1-rule);color:var(--p1-muted)}
+  .sheet.paper .ce{border-top-color:var(--p2-rule);color:var(--p2-muted)}
+  .sheet.night .ce{border-top-color:var(--p3-rule);color:var(--p3-muted)}
+  .ce .top{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .ce .top svg{flex:none}
+  .ce .txt{font-size:12.8px;line-height:1.5}
+  .ce .act{font-size:12.8px;background:none;border:none;padding:0 0 1px;cursor:default;
+    color:inherit;font-family:inherit;border-bottom:1px solid var(--p1-rule);white-space:nowrap}
+  .sheet.paper .ce .act{border-bottom-color:var(--p2-rule)}
+  .sheet.night .ce .act{border-bottom-color:var(--p3-rule)}
+  .ce .x{margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11.5px;
+    color:inherit;opacity:0;white-space:nowrap}
+  .ce .x.show{opacity:1}
+  .ce .panel{margin-top:13px}
+  .ce .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .ce .chips b{font-family:Georgia,"Songti SC",serif;font-weight:400;font-size:12.6px;
+    letter-spacing:.2px;border:1px solid var(--p1-rule);border-radius:6px;padding:2.5px 9px;
+    line-height:1.4}
+  .sheet.paper .ce .chips b{border-color:var(--p2-rule)}
+  .sheet.night .ce .chips b{border-color:var(--p3-rule)}
+  .ce .chips i{font-style:normal;font-size:12.4px;padding:3px 3px;opacity:.75;
+    font-family:Georgia,serif}
+  .ce .go{margin-top:11px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:12.3px}
+  .ce .go .lnk{border-bottom:1px solid var(--p1-rule);padding-bottom:1px}
+  .sheet.paper .ce .go .lnk{border-bottom-color:var(--p2-rule)}
+  .sheet.night .ce .go .lnk{border-bottom-color:var(--p3-rule)}
+  .ce .reason{font-size:11.8px;line-height:1.6;margin:0 0 10px;opacity:.9}
+
+  .nextch{font-family:Georgia,"Songti SC",serif;margin-top:30px;padding-top:26px;
+    border-top:1px solid var(--p1-rule)}
+  .sheet.paper .nextch{border-top-color:var(--p2-rule)}
+  .sheet.night .nextch{border-top-color:var(--p3-rule)}
+  .nextch .lbl{font-family:-apple-system,sans-serif;font-size:10.5px;letter-spacing:1.4px;
+    color:var(--p1-muted);margin-bottom:8px}
+  .sheet.paper .nextch .lbl{color:var(--p2-muted)} .sheet.night .nextch .lbl{color:var(--p3-muted)}
+  .nextch h4{margin:0 0 12px;font-size:19px;font-weight:600;letter-spacing:.3px}
+
+  .tapzone{position:absolute;top:0;bottom:0;right:0;width:78px;
+    background:linear-gradient(to right,transparent,rgba(124,58,237,.10));
+    border-left:1px dashed rgba(124,58,237,.4);display:flex;align-items:center;
+    justify-content:center;pointer-events:none}
+  .tapzone span{font-family:-apple-system,sans-serif;font-size:10px;color:var(--accent);
+    writing-mode:vertical-rl;letter-spacing:1px}
+
+  /* ─── 应用外壳（侧栏 + 回顾板） ─── */
+  .app{display:flex;min-height:250px}
+  .side{width:158px;flex:none;background:var(--muted-bg);border-right:1px solid var(--line2);
+    padding:12px 8px}
+  .side h5{font-size:9.5px;font-weight:600;letter-spacing:.6px;color:var(--fg3);
+    margin:0 0 6px;padding:0 6px}
+  .side h5+h5{margin-top:0}
+  .side .grp{margin-bottom:13px}
+  .srow{display:flex;align-items:center;gap:7px;padding:5px 7px;border-radius:6px;
+    font-size:11.6px;color:var(--fg2);line-height:1.3}
+  .srow svg{flex:none;opacity:.75}
+  .srow .n{margin-left:auto;font-size:10.5px;color:var(--fg3);font-variant-numeric:tabular-nums}
+  .srow .badge{margin-left:auto;background:var(--accent);color:#fff;border-radius:99px;
+    min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;
+    font-size:9.5px;font-weight:600;padding:0 4px;font-variant-numeric:tabular-nums}
+  .srow.on{background:var(--accent-bg);color:var(--accent-text);font-weight:600}
+  .srow.on svg{opacity:1}
+  .mainp{flex:1;min-width:0;padding:14px 15px 18px}
+  .bhead{display:flex;align-items:center;gap:8px;margin-bottom:11px}
+  .bhead h4{margin:0;font-size:13.5px;font-weight:640;letter-spacing:-.2px}
+  .bhead .sb{margin-left:auto;font-size:11px;color:var(--fg3)}
+  .piles{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+  .pile{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:12px 13px}
+  .pile.hi{border-color:var(--accent);box-shadow:0 2px 12px rgba(124,58,237,.14)}
+  .pile .ph{display:flex;align-items:flex-start;gap:8px;margin-bottom:6px}
+  .pile .ic{width:26px;height:26px;border-radius:8px;background:var(--accent-bg);color:var(--accent);
+    display:flex;align-items:center;justify-content:center;flex:none}
+  .pile h6{margin:0;font-size:12.4px;font-weight:640;line-height:1.4;letter-spacing:-.1px}
+  .pile .ct{margin-left:auto;background:var(--accent-bg);color:var(--accent);border-radius:99px;
+    padding:1px 8px;font-size:11.5px;font-weight:600;flex:none;font-variant-numeric:tabular-nums}
+  .pile .rs{margin:0;font-size:11.4px;color:var(--fg2);line-height:1.55}
+  .pile .cw{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+  .pile .cw b{font-family:Georgia,serif;font-weight:400;font-size:11.3px;background:var(--input);
+    border-radius:5px;padding:2px 7px;color:var(--fg2)}
+
+  /* ─── 设置行 ─── */
+  .setrow{display:flex;align-items:center;gap:14px;padding:13px 15px;background:var(--surface)}
+  .setrow + .setrow{border-top:1px solid var(--line2)}
+  .setrow .tx{flex:1;min-width:0}
+  .setrow .t1{font-size:12.8px;font-weight:500}
+  .setrow .t2{font-size:11.2px;color:var(--fg3);margin-top:2px;line-height:1.5}
+  .tg{width:38px;height:22px;border-radius:99px;background:var(--accent);flex:none;position:relative}
+  .tg.off{background:var(--line)}
+  .tg::after{content:"";position:absolute;top:2px;left:18px;width:18px;height:18px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  .tg.off::after{left:2px}
+
+  .toast{display:flex;align-items:center;gap:9px;background:var(--surface);
+    border:1px solid var(--line);border-radius:10px;padding:10px 13px;font-size:12.2px;
+    color:var(--fg2);box-shadow:var(--shadow)}
+  .toast svg{flex:none;color:var(--ok)}
+
+  /* ─── 表格 ─── */
+  table{width:100%;border-collapse:collapse;font-size:12.6px;margin:6px 0 4px;display:block;
+    overflow-x:auto}
+  table thead th{text-align:left;font-weight:600;color:var(--fg3);font-size:11.4px;
+    padding:7px 11px 7px 0;border-bottom:1px solid var(--line);white-space:nowrap}
+  table td{padding:9px 11px 9px 0;border-bottom:1px solid var(--line2);vertical-align:top;
+    line-height:1.6;color:var(--fg2)}
+  table td b{color:var(--fg)}
+  table td:first-child{min-width:150px}
+  .yes{color:var(--ok);font-weight:700} .nope{color:var(--danger);font-weight:700}
+
+  .note{border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:0 9px 9px 0;
+    background:var(--muted-bg);padding:13px 15px;font-size:12.8px;color:var(--fg2);line-height:1.75;
+    max-width:84ch}
+  .note b{color:var(--fg)}
+  .note.bad{border-left-color:var(--danger);background:var(--danger-bg)}
+  .note.good{border-left-color:var(--ok);background:var(--ok-bg)}
+
+  @media (max-width:420px){
+    .wrap{padding:32px 14px 90px}
+    .col,.col.w{max-width:100%;min-width:0;flex-basis:100%}
+    .row{gap:22px}
+    .side{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+<h1>章末微复盘 · 样张</h1>
+
+<p class="lede rule">
+  <b>先说一句最重要的：这个东西已经存在了。</b>
+  <code>src/components/chapter-end-hint.ts</code> 已经在正文末尾画了一条细线——「这一章你查了 N 个词。趁着还有印象，过一遍 →」，
+  外加一个悬停才出现的「不再显示」，以及阅读设置里的一个开关。
+  所以这份样张<b>不是新建一个板块</b>，是给这条已有的线补上它缺的那一半：<b>点开之后就地看到那些词</b>。
+</p>
+
+<p class="lede">
+  缺的为什么是这一半——现在这条线只有一个动作，而这个动作是<b>离开这本书</b>：
+  <code>navigate("/", { state: { openReview: true } })</code> 回首页开「回顾」板；
+  独立阅读器窗口更狠，直接 <code>window.close()</code>。
+  于是「可点可不点」在成本上并不成立：不点是零代价，点一下的代价是你正读着的书没了。
+  读者在章末真正想做的是<b>顺手扫一眼</b>，不是「合上书去工作区」。
+</p>
+
+<p class="lede">
+  这份样张的全部主张就一句：<b>把那一下点击从「跳走」改成「就地展开」。</b>
+  展开是可逆的、不离开书页、不改变阅读位置；真正要离开书的那一步挪到展开之后，并且明说它去哪。
+  形态一步不放大——依然是一条细线，不是卡片、不是面板、不是浮层。
+</p>
+
+<p class="meta">
+  静态样张，全部不可点 · 单文件零外部资源 · 随系统深浅色切换 ·
+  书页配色取自 <code>src/pages/reader/reader-theme.ts</code> 的真实纸张主题值（原色 / 纸黄 / 暗色三套，见 §8）<br>
+  相关既有代码：<code>src/components/chapter-end-hint.ts</code>、
+  <code>src/pages/reader/useFoliateAnnotations.ts</code>（安装与计数）、
+  <code>src/components/review/</code>（回顾板）、
+  <code>src-tauri/src/commands/review_piles.rs</code>（<code>recent_chapter_lookups</code> 堆）<br>
+  口径参照：<code>docs/impls/book-open-card-mockup.html</code>（三层关闭）、
+  <code>docs/impls/daily-review-entry-mockup.html</code>（被否决的首页入口，其文案通则在本文件全程生效）
+</p>
+</header>
+
+
+<!-- ══════════════════ 1 ══════════════════ -->
+<h2 class="sec"><span class="n">1</span> 现状：复习入口现在有哪几处</h2>
+<p class="why">
+  「和已有的复习入口放在一起」得先知道已有的是哪些。查完的结果是——<b>复习入口一共五处，但真正的复习工作区只有一个</b>：侧栏「回顾」。
+  其余四处全都只是通往它的不同门。
+</p>
+
+<table>
+  <thead><tr><th>入口</th><th>在哪</th><th>长什么样</th><th>去哪</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><b>侧栏「回顾」行</b></td>
+      <td><code>Sidebar.tsx</code> memoFilters</td>
+      <td>一行，圈箭头图标，<b>没有任何数字/红点</b></td>
+      <td>本页切到 <code>ReviewBoard</code>——这就是工作区本体</td>
+    </tr>
+    <tr>
+      <td>侧栏「单词」行的徽标</td>
+      <td><code>sidebar-badges.ts</code></td>
+      <td>紫色圆点数字，到期词数</td>
+      <td>点不动去复习，只是词表</td>
+    </tr>
+    <tr>
+      <td>阅读统计页</td>
+      <td><code>ReadingStatsContent</code></td>
+      <td>一个「去回顾」</td>
+      <td>同上，切 <code>review</code></td>
+    </tr>
+    <tr>
+      <td>词条卡</td>
+      <td><code>DictionaryContent.tsx</code> <code>openReview()</code></td>
+      <td>单词详情里的一个按钮</td>
+      <td>单词本内的复习</td>
+    </tr>
+    <tr>
+      <td><b>章末细线</b>（已上线）</td>
+      <td><code>chapter-end-hint.ts</code></td>
+      <td>一条细线一行小字 + 悬停出现的「不再显示」</td>
+      <td><b>跳回首页开回顾板 / 关掉阅读器窗口</b></td>
+    </tr>
+  </tbody>
+</table>
+
+<p class="why" style="margin-top:20px">
+  <b>还有一处不算入口、但决定了这次怎么做的东西</b>：回顾板里的四种堆之一，
+  <code>recent_chapter_lookups</code>——后端注释写着「Words looked up in the chapter the reader was most recently in」，
+  取最新一条带章节的查词记录做锚，把同一（书, 章）里的词全捞出来，24 小时内有效。
+  中文文案是「<b>刚读完的第七章里你查过这些</b>」，来由句是「<b>趁着还有印象，就地过一遍。</b>」
+</p>
+<div class="note good">
+  也就是说：<b>章末那条线和回顾板里那张堆卡，说的是同一批词、用的是同一句话。</b>
+  一个长在书里，一个长在库里，此前彼此不知情。这次不新造第三个东西——把它们认成一个东西的两个视图。
+</div>
+
+<h3 class="sub">另外两条已经立过的规矩，这次继续管用</h3>
+<p class="subwhy">
+  <b>①</b> 首页书架上的每日复习卡<span class="no">已被否决</span>（<code>daily-review-entry-mockup.html</code> 顶部裁决）：复习不该在打开应用第一眼来找人；
+  同时定了通则——复习相关界面不出现催促、责怪、倒计时、积压天数。<b>章末这条线不能变成那张卡的换个地方重来。</b><br>
+  <b>②</b> 侧栏「回顾」行<span class="no">永远不带计数/徽标/红点</span>（<code>sidebar-badges.ts</code> 的注释就是这条红线的落款：它是工作区，不是通知铃）。
+</p>
+
+
+<!-- ══════════════════ 2 ══════════════════ -->
+<h2 class="sec"><span class="n">2</span> 入口落在哪：和 <code style="font-size:13px">recent_chapter_lookups</code> 合并</h2>
+<p class="why">
+  <b>结论：章末细线的展开态 = 回顾板 <code>recent_chapter_lookups</code> 堆卡的就地版本。</b>
+  同一批词、同一个 4 词 + <code>+N</code> 上限（<code>capPileChips</code>）、同一句来由。区别只有渲染：
+  在书里它是排字，不是卡片——没有卡片背景、没有圆角边框、没有色块图标，只有一条细线和一行行小字。
+</p>
+<p class="why">
+  为什么是合并而不是新做：读者从章末点进复习，和从侧栏点进复习，<b>看到的必须是同一堆词</b>。
+  如果章末给一套「本章的词」、回顾板给另一套「刚读完那章的词」，那就是同一件事被讲了两遍，而且迟早对不上。
+  合并之后，章末细线在产品上的定义变得很干净：<b>它是那张堆卡的提前一步，出现在你还在书里的时候。</b>
+</p>
+
+<div class="row">
+  <div class="col w">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">已有的回顾板 —— 侧栏「回顾」</span></div>
+      <div class="app">
+        <div class="side">
+          <div class="grp">
+            <h5>书库</h5>
+            <div class="srow"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5V5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 1-2-2Z"/></svg>全部书籍<span class="n">42</span></div>
+            <div class="srow"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 6h7a3 3 0 0 1 3 3v11a2.5 2.5 0 0 0-2.5-2.5H2Zm20 0h-7a3 3 0 0 0-3 3v11a2.5 2.5 0 0 1 2.5-2.5H22Z"/></svg>在读<span class="n">3</span></div>
+          </div>
+          <div class="grp">
+            <h5>笔记</h5>
+            <div class="srow"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v12H7l-3 3Z"/></svg>对话</div>
+            <div class="srow"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m4 18 5-13 5 13M6 14h6M17 5v13"/></svg>单词<span class="badge">12</span></div>
+            <div class="srow on"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>回顾</div>
+            <div class="srow"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9Z"/><path d="M15 3v6h6"/></svg>笔记</div>
+            <div class="srow"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>阅读统计</div>
+          </div>
+        </div>
+        <div class="mainp">
+          <div class="bhead">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+            <h4>回顾</h4><span class="sb">这几天你自己的行为攒出来的</span>
+          </div>
+          <div class="piles">
+            <div class="pile hi">
+              <div class="ph">
+                <span class="ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 6h7a3 3 0 0 1 3 3v11a2.5 2.5 0 0 0-2.5-2.5H2Zm20 0h-7a3 3 0 0 0-3 3v11a2.5 2.5 0 0 1 2.5-2.5H22Z"/></svg></span>
+                <h6>刚读完的第七章里你查过这些</h6>
+                <span class="ct">5</span>
+              </div>
+              <p class="rs">趁着还有印象，就地过一遍。10 分钟前你还在这一章里。</p>
+              <div class="cw"><b>brackish</b><b>gnarled</b><b>obstinate</b><b>quay</b><b style="background:none;color:var(--fg3)">+1</b></div>
+            </div>
+            <div class="pile">
+              <div class="ph">
+                <span class="ic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5V5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 1-2-2Z"/></svg></span>
+                <h6>你在《The Sea, the Sea》里反复查的词</h6>
+                <span class="ct">7</span>
+              </div>
+              <p class="rs">同一本书里查了不止一次——它是这本书的拦路虎，不是随手一查。</p>
+              <div class="cw"><b>sedulous</b><b>lugubrious</b><b>febrile</b><b>wan</b><b style="background:none;color:var(--fg3)">+3</b></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap">
+      <b>这一屏一个像素都不改。</b>紫框那张堆卡就是章末细线要对齐的东西——文案、词数上限、来由句，全部沿用它。
+      注意侧栏「回顾」那一行<b>没有数字</b>，「单词」那一行才有：这是既有红线，本次不碰。
+    </p>
+  </div>
+</div>
+
+
+<!-- ══════════════════ 3 ══════════════════ -->
+<h2 class="sec"><span class="n">3</span> 收起态 —— 默认，也是绝大多数人唯一会看到的样子</h2>
+<p class="why">
+  一条细线，一个圈箭头，一句已经发生的事实，一个可逆的动作词。<b>和现在线上的那条几乎一模一样</b>，只改一个字眼：
+  动作从「趁着还有印象，过一遍 →」改成「<b>看看 ⌄</b>」。
+  箭头「→」在这套界面里意味着「你要走了」，而现在点它不再走；「⌄」意味着「往下展开」，点它不用下决心。
+  「趁着还有印象」这句话没删——它挪进了展开态，因为那才是它该说的位置（见 §4）。
+</p>
+
+<div class="row">
+  <div class="col">
+    <div class="phone">
+      <div class="notch">阅读器 · 分页模式</div>
+      <div class="sheet">
+        <div class="tapzone"><span>轻点 → 下一章</span></div>
+        <div class="fade">
+          <p class="bd">…她把灯举高了一点，光只够照到石阶最上面的三级。海水在下面翻动，声音闷得像隔着一层布。</p>
+          <p class="bd">他没有回头。等到脚步声完全听不见了，她才发觉自己一直屏着气。</p>
+        </div>
+        <div class="ce">
+          <div class="top">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+            <span class="txt">这一章你查过 5 个词</span>
+            <span class="act">看看 ⌄</span>
+          </div>
+        </div>
+        <div class="foot"><span>第七章</span><span>218 / 486</span></div>
+      </div>
+    </div>
+    <p class="cap">
+      <b>收起态 · 手机 375px。</b>它在正文最后一段和页脚之间，占一行。
+      右边那条虚线是翻页区——线没有挡住它，往下读的路一步没变。
+      「不再显示」在手指上没有悬停，处理见 §6。
+    </p>
+  </div>
+
+  <div class="col">
+    <div class="phone">
+      <div class="notch">阅读器 · 连续滚动模式</div>
+      <div class="sheet">
+        <div class="fade">
+          <p class="bd">他没有回头。等到脚步声完全听不见了，她才发觉自己一直屏着气。</p>
+        </div>
+        <div class="ce">
+          <div class="top">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+            <span class="txt">这一章你查过 5 个词</span>
+            <span class="act">看看 ⌄</span>
+            <span class="x show"><span>不再显示</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+          </div>
+        </div>
+        <div class="nextch">
+          <div class="lbl">第八章</div>
+          <h4>The Quay at Dusk</h4>
+          <p class="bd">天光散得很快。她数着自己的脚步走完了那一段栈桥，数到第四十一步的时候，……</p>
+        </div>
+      </div>
+    </div>
+    <p class="cap">
+      <b>收起态 · 滚动模式（鼠标悬停中，所以「不再显示」露出来了）。</b>
+      这一屏是「可点可不点」最硬的证据：<b>下一章就在它下面</b>，读者的手指往上一划就翻过去了，
+      细线连一次停顿都不要求。视而不见地滑过去是完全正常的用法，不产生任何后果、不留任何痕迹。
+    </p>
+  </div>
+</div>
+
+<div class="note" style="margin-top:24px">
+  <b>「5 个词」这个数为什么允许出现。</b>它是<b>已经发生的事</b>——你确实在这一章里查过五次，这句话不预测、不要求、不比较。
+  被禁的是另一类数字：<span class="no">「还需 N 个」「今天目标 N」「预计 N 分钟」「已经积压 N 天」</span>——那些是把没做的事换算成欠款。
+  这条线从头到尾只报一个数，而且是过去式。
+</div>
+
+
+<!-- ══════════════════ 4 ══════════════════ -->
+<h2 class="sec"><span class="n">4</span> 展开态 —— 点开之后</h2>
+<p class="why">
+  展开给三样东西，一样不多：<b>那句来由</b>（沿用堆卡的 <code>recentChapterLookups.reason</code>）、
+  <b>词本身</b>（最多 4 个 + <code>+N</code>，和堆卡同一个 <code>capPileChips</code>）、
+  <b>一个通往已有复习流程的链接</b>。
+</p>
+<p class="why">
+  <b>关键取舍：展开态里不做复习。</b>没有翻卡、没有「记得 / 忘了」按钮、没有进度条。
+  一旦章末能做复习，它就变成了第二套复习机制，和回顾板迟早分叉，而且会把「顺手扫一眼」变成一件有开始有结束的任务——那正是产品负责人说的「不要做那么明显」。
+  展开态只做一件事：<b>让你看见那五个词，确认自己还认不认得。</b>认得就翻页走人，不认得就点那个链接。
+</p>
+
+<div class="row">
+  <div class="col">
+    <div class="phone">
+      <div class="notch">阅读器 · 展开态</div>
+      <div class="sheet">
+        <div class="tapzone"><span>轻点 → 下一章</span></div>
+        <div class="fade">
+          <p class="bd">他没有回头。等到脚步声完全听不见了，她才发觉自己一直屏着气。</p>
+        </div>
+        <div class="ce">
+          <div class="top">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+            <span class="txt">这一章你查过 5 个词</span>
+            <span class="act">收起 ⌃</span>
+          </div>
+          <div class="panel">
+            <p class="reason">趁着还有印象，就地过一遍。</p>
+            <div class="chips">
+              <b>brackish</b><b>gnarled</b><b>obstinate</b><b>quay</b><i>+1</i>
+            </div>
+            <div class="go">
+              <span class="lnk">在「回顾」里打开这一章 →</span>
+            </div>
+          </div>
+        </div>
+        <div class="foot"><span>第七章</span><span>219 / 486</span></div>
+      </div>
+    </div>
+    <p class="cap">
+      <b>展开态 · 手机。</b>整块从 1 行涨到 5 行，约 <b>+96px</b>——上限就到这里（词最多两行，见下）。
+      它仍然是排字，没有卡片背景：<b>纸是什么颜色，它就是什么颜色。</b>
+    </p>
+  </div>
+
+  <div class="col">
+    <div class="phone">
+      <div class="notch">展开态 · 点一个词</div>
+      <div class="sheet">
+        <div class="fade">
+          <p class="bd">他没有回头。等到脚步声完全听不见了，她才发觉自己一直屏着气。</p>
+        </div>
+        <div class="ce">
+          <div class="top">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+            <span class="txt">这一章你查过 5 个词</span>
+            <span class="act">收起 ⌃</span>
+          </div>
+          <div class="panel">
+            <p class="reason">趁着还有印象，就地过一遍。</p>
+            <div class="chips">
+              <b style="border-color:currentColor">brackish</b><b>gnarled</b><b>obstinate</b><b>quay</b><i>+1</i>
+            </div>
+            <div class="go"><span class="lnk">在「回顾」里打开这一章 →</span></div>
+          </div>
+        </div>
+        <div style="padding:12px 0 16px">
+          <div style="border:1px solid var(--p1-rule);border-radius:11px;padding:12px 13px;
+                      font-family:-apple-system,sans-serif;background:var(--p1-bg)">
+            <div style="display:flex;align-items:baseline;gap:8px">
+              <span style="font-family:Georgia,serif;font-size:16px;font-weight:600">brackish</span>
+              <span style="font-size:11px;color:var(--p1-muted)">/ˈbrækɪʃ/</span>
+              <span style="margin-left:auto;font-size:10.5px;color:var(--p1-muted)">已收藏</span>
+            </div>
+            <p style="margin:6px 0 0;font-size:12.4px;color:var(--p1-muted);line-height:1.6">
+              adj. （水）微咸的、半咸的；令人不快的
+            </p>
+            <p style="margin:8px 0 0;font-size:11.6px;color:var(--p1-muted);line-height:1.6;
+                      padding-top:8px;border-top:1px solid var(--p1-rule);font-family:Georgia,serif">
+              「…the <u>brackish</u> water below the steps…」 第七章
+            </p>
+          </div>
+        </div>
+        <div class="foot"><span>第七章</span><span>219 / 486</span></div>
+      </div>
+    </div>
+    <p class="cap">
+      <b>点词 = 已有的词条卡，原样复用</b>（<code>useLearningCards</code> / 词典卡那一套），不是为这里新做的组件。
+      这是「就地过一遍」的实际含义：看一眼释义和原句，记起来了就关掉。<b>没有对错按钮，不记分。</b>
+    </p>
+  </div>
+</div>
+
+<h3 class="sub">「在「回顾」里打开这一章 →」到底做什么</h3>
+<p class="subwhy">
+  就是现在那个动作，一步没变：<code>navigate("/", { state: { openReview: true } })</code>；独立阅读器窗口仍然是关窗回主窗。
+  唯一的改动是<b>它现在说清了自己要去哪</b>——旧文案「趁着还有印象，过一遍 →」读起来像「在这儿过一遍」，
+  实际却会把书关掉，这是一次没交代的跳转。新文案把「回顾」两个字写出来，读者按下去之前就知道要换地方。
+</p>
+<div class="note">
+  <b>为什么这一步不做得更聪明（比如直接定位到那张堆卡）。</b>可以，但不该在这一轮做：
+  回顾板本来就把 <code>recent_chapter_lookups</code> 排在很靠前的位置，读者落地就看得见它；
+  为了省一次扫视而新增一条「跳转并高亮某张堆卡」的路，是给一个还没被抱怨过的问题加机制。<b>先用现成的路。</b>
+</div>
+
+
+<!-- ══════════════════ 5 ══════════════════ -->
+<h2 class="sec"><span class="n">5</span> 这一章一个词都没查过 —— 整块不出现</h2>
+<p class="why">
+  <b>我的判断和你的倾向一致：整块不出现，连一条线都不留。</b>三条理由，从弱到强：
+</p>
+<p class="why">
+  <b>①</b> 代码已经是这么做的，而且是有意的：<code>shouldShowChapterEndHint(enabled, lookupCount)</code> 要求 <code>lookupCount &gt; 0</code>，
+  <code>installChapterEndHint</code> 里还有一句注释——「there is nothing to review, so there is nothing to say」。这次不推翻它。<br>
+  <b>②</b> 零词态没有任何可做的事。一个只能被读、不能被点的东西，出现在正文末尾就是纯粹的噪音。<br>
+  <b>③</b> <span class="no">最重要的一条</span>：零词态的任何写法都会滑进被禁的语域。
+  「这一章你没有查词」是评判；「太好了，这一章你一个词都没查！」是表扬——而表扬和责怪是同一根杆子的两头，
+  一个会因为「没查词」被夸的读者，下一章查了三个词就会觉得自己退步了。
+  <b>沉默是这里唯一不带评价的选项。</b>
+</p>
+
+<div class="row">
+  <div class="col">
+    <div class="phone">
+      <div class="notch">零词 · 这一章什么都没查</div>
+      <div class="sheet">
+        <div class="tapzone"><span>轻点 → 下一章</span></div>
+        <div class="fade">
+          <p class="bd">…她把灯举高了一点，光只够照到石阶最上面的三级。海水在下面翻动，声音闷得像隔着一层布。</p>
+          <p class="bd">他没有回头。等到脚步声完全听不见了，她才发觉自己一直屏着气。</p>
+        </div>
+        <div class="foot"><span>第七章</span><span>218 / 486</span></div>
+      </div>
+    </div>
+    <p class="cap">
+      <b>没有线，没有留白占位，没有淡灰色的「本章无生词」。</b>
+      正文末尾直接接页脚——和这个功能上线之前完全一样。
+    </p>
+  </div>
+
+  <div class="col">
+    <div class="phone" style="opacity:.62">
+      <div class="notch" style="color:var(--danger)">这些写法一个都不做</div>
+      <div class="sheet">
+        <div class="fade"><p class="bd">他没有回头。等到脚步声完全听不见了，她才发觉自己一直屏着气。</p></div>
+        <div class="ce" style="color:var(--danger);border-top-color:rgba(201,48,44,.35)">
+          <div class="top"><span class="txt">这一章你一个词都没查，很棒 🎉</span></div>
+          <div class="top" style="margin-top:7px"><span class="txt">本章无生词 · 连续 3 章全对</span></div>
+          <div class="top" style="margin-top:7px"><span class="txt">还有 12 个词等着你，最早的等了 6 天</span></div>
+          <div class="top" style="margin-top:7px"><span class="txt">今天还剩 8 个，约 4 分钟</span></div>
+        </div>
+        <div class="foot"><span>第七章</span><span>218 / 486</span></div>
+      </div>
+    </div>
+    <p class="cap bad">
+      <b class="no">反例，全部否决。</b>依次是：表扬、连续打卡、积压天数、剩余额度与预计耗时。
+      第三、四条正是 <code>daily-review-entry-mockup.html</code> 里被点名否掉的写法；前两条是同一条规则的镜像面。
+      <b>章末细线一辈子只说一件事：这一章你查过几个词，要不要看看。</b>
+    </p>
+  </div>
+</div>
+
+
+<!-- ══════════════════ 6 ══════════════════ -->
+<h2 class="sec"><span class="n">6</span> 关掉它 —— 三层，以及关掉之后</h2>
+<p class="why">
+  照开书卡的三层，但这里最外面那层比开书卡还轻：<b>第一层是「不点开」。</b>
+  开书卡是浮层，不关它就挡着路，所以它的第一层必须是 ✕；这条线本来就不挡路，收起态就是它的常态，
+  <b>无视它不需要任何动作</b>。所以三层是：不点开 → 不再显示 → 设置开关。后两层是同一个状态，不是两个互不知情的开关。
+</p>
+
+<div class="row">
+  <div class="col">
+    <div class="phone">
+      <div class="notch">第二层 · 鼠标悬停时露出</div>
+      <div class="sheet">
+        <div class="fade"><p class="bd">他没有回头。等到脚步声完全听不见了，她才发觉自己一直屏着气。</p></div>
+        <div class="ce" style="background:rgba(124,58,237,.045);margin-left:-8px;margin-right:-8px;padding-left:8px;padding-right:8px;border-radius:0 0 8px 8px">
+          <div class="top">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+            <span class="txt">这一章你查过 5 个词</span>
+            <span class="act">看看 ⌄</span>
+            <span class="x show"><span>不再显示</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+          </div>
+        </div>
+        <div class="foot"><span>第七章</span><span>219 / 486</span></div>
+      </div>
+    </div>
+    <p class="cap">
+      <b>第二层：「不再显示」。</b>平时 <code>opacity:0</code>，悬停或键盘聚焦才现身——已经是线上行为，保留。
+      <b>点了不问、不确认</b>：为了确认「你真的要藏掉一行小字吗」而弹一个框，比那行小字本身烦人得多。
+    </p>
+  </div>
+
+  <div class="col">
+    <div class="phone">
+      <div class="notch">第二层 · 手指上没有悬停</div>
+      <div class="sheet">
+        <div class="fade"><p class="bd">他没有回头。等到脚步声完全听不见了，她才发觉自己一直屏着气。</p></div>
+        <div class="ce">
+          <div class="top">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+            <span class="txt">这一章你查过 5 个词</span>
+            <span class="act">收起 ⌃</span>
+          </div>
+          <div class="panel">
+            <p class="reason">趁着还有印象，就地过一遍。</p>
+            <div class="chips"><b>brackish</b><b>gnarled</b><b>obstinate</b><b>quay</b><i>+1</i></div>
+            <div class="go">
+              <span class="lnk">在「回顾」里打开这一章 →</span>
+              <span style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11.8px;opacity:.85">
+                不再显示
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="foot"><span>第七章</span><span>219 / 486</span></div>
+      </div>
+    </div>
+    <p class="cap">
+      <b>触摸设备上「不再显示」挪进展开态</b>，和链接同一行、贴右。
+      理由：手指没有悬停，收起态那一行只有 375px 宽，塞第三个可点目标会让「看看」和「不再显示」挤在一起误触。
+      想关掉它的人愿意多点一下；<b>不小心关掉它的人一次都不该有</b>。
+    </p>
+  </div>
+</div>
+
+<div class="row" style="margin-top:30px">
+  <div class="col w">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">第三层 · 阅读设置 —— 已有的那一行</span></div>
+      <div class="setrow">
+        <div class="tx">
+          <div class="t1">生词淡标</div>
+          <div class="t2">读到你收藏过的词时，在正文里轻轻标一下</div>
+        </div><span class="tg"></span>
+      </div>
+      <div class="setrow">
+        <div class="tx">
+          <div class="t1">章节末尾提示回顾</div>
+          <div class="t2">读完一章时，在正文末尾显示一行小字</div>
+        </div><span class="tg"></span>
+      </div>
+      <div class="setrow">
+        <div class="tx">
+          <div class="t1">读完整本时提示</div>
+          <div class="t2">读到全书最后，问一句要不要标记为已读完</div>
+        </div><span class="tg"></span>
+      </div>
+    </div>
+    <p class="cap">
+      <b>这一行已经存在</b>（<code>ReaderSettings.tsx</code> / <code>readerSettings.chapterEndHint</code>），不新增设置项。
+      它和「不再显示」写的是同一个键 <code>chapter_end_review_hint</code>，
+      而且是<b>全局立即生效</b>——按下「不再显示」的那一刻，所有已加载章节文档里的线一起消失，不是等下一章才生效。
+    </p>
+  </div>
+
+  <div class="col">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">第三层 · 关掉之后的同一行</span></div>
+      <div class="setrow">
+        <div class="tx">
+          <div class="t1" style="color:var(--fg2)">章节末尾提示回顾</div>
+          <div class="t2">已关闭 · 每一章查过的词仍在「回顾」里找得到</div>
+        </div><span class="tg off"></span>
+      </div>
+    </div>
+    <p class="cap">
+      沿用开书卡和自动分析控制台的写法：<b>说清楚关掉之后哪里还找得到</b>。
+      「回顾」板里的 <code>recent_chapter_lookups</code> 堆本来就在，不是为这句话新造的去处——
+      这也正是 §2 把两者合并的红利：关掉章末的线，没有关掉任何数据。<b>一句话，不劝。</b>
+    </p>
+  </div>
+</div>
+
+<h3 class="sub">关掉之后，章末长什么样</h3>
+<div class="row">
+  <div class="col">
+    <div class="phone">
+      <div class="notch">已关闭 · 分页模式</div>
+      <div class="sheet">
+        <div class="tapzone"><span>轻点 → 下一章</span></div>
+        <div class="fade">
+          <p class="bd">…她把灯举高了一点，光只够照到石阶最上面的三级。海水在下面翻动，声音闷得像隔着一层布。</p>
+          <p class="bd">他没有回头。等到脚步声完全听不见了，她才发觉自己一直屏着气。</p>
+        </div>
+        <div class="foot"><span>第七章</span><span>218 / 486</span></div>
+      </div>
+    </div>
+    <p class="cap">
+      <b>和 §5 的零词态是同一屏——这不是巧合，是设计目标。</b>
+      关掉之后什么都没有：没有淡出的小角标，没有「你关掉了章末提示」的常驻说明，没有一个月后再问一次。
+      读完一章就是翻页读下一章，跟这个功能不存在时一模一样。
+    </p>
+  </div>
+  <div class="col">
+    <div style="max-width:330px">
+      <div class="toast">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>
+        <span>已关闭。阅读设置里可以再打开。</span>
+      </div>
+    </div>
+    <p class="cap">
+      按下「不再显示」的瞬间，唯一的反馈：一条会自己消失的提示，说清楚从哪儿找回来。
+      <b>不挽留、不问原因、不提供「仅本书关闭」的第二个选择</b>——一个只有一行字的功能，不值得有两个作用域。
+    </p>
+  </div>
+</div>
+
+
+<!-- ══════════════════ 7 ══════════════════ -->
+<h2 class="sec"><span class="n">7</span> 一个真实的实现风险：分页模式下展开会不会把自己顶到下一页</h2>
+<p class="why">
+  这条线安装在 <code>doc.body</code> 末尾，分页模式下 foliate 用 CSS 多栏排版，所以<b>展开使 body 变高，就可能多出一栏</b>——
+  读者点了「看看」，词却排到了下一页，屏幕上什么也没变。这是这个设计唯一会被真实用到的技术坑，写在这里以免实现时才发现。
+</p>
+<div class="row">
+  <div class="col w">
+    <div class="note bad">
+      <b class="no">不能这么修：把展开做成浮层。</b>
+      浮层能绕开分栏，但那一瞬间它就不再是「正文末尾的一行小字」，而是一张盖在书上的卡片——
+      违反「做小、不要那么明显」，也违反「不挡住继续读下一章」。<b>形态优先于实现便利。</b>
+    </div>
+    <div class="note good" style="margin-top:14px">
+      <b>两条一起用：</b><br>
+      <b>①</b> <b>展开高度封顶。</b>词最多两行（4 个 chip + <code>+N</code>，就是 <code>capPileChips</code> 的现成上限），
+      加来由句和链接各一行——整块最多 5 行、约 96px。这个高度在常见字号下多数时候塞得进当前栏的余量。<br>
+      <b>②</b> <b>展开后把这一块滚回视野。</b>展开的回调里触发一次重排，再把这条线的锚点重新 <code>scrollToAnchor</code>——
+      即使它翻到了下一栏，读者看到的也是「页面翻了一下，词就在眼前」，而不是「点了没反应」。
+      这和 <code>useFoliateAnnotations</code> 里已有的重排时机是同一套机制，不新造。
+    </div>
+    <p class="cap">
+      顺带一条既有事实值得保留：<b>没读到章末的人永远看不到这条线</b>（它安装在 body 末尾，分页下只落在本节最后一页）。
+      这是特性不是缺口——「章末微复盘」的前提就是你确实读完了这一章。
+    </p>
+  </div>
+</div>
+
+
+<!-- ══════════════════ 8 ══════════════════ -->
+<h2 class="sec"><span class="n">8</span> 配色 —— 两套页面，五套纸</h2>
+<p class="why">
+  这份样张本身跟随系统深浅色（现在就可以切一下系统主题看）。但对这条线来说，<b>真正决定它颜色的不是系统主题，是阅读器的纸张主题</b>：
+  它活在书页文档里，拿不到应用的 CSS 变量，颜色由 <code>getReaderThemeVars(theme)</code> 解析后当作参数传进去
+  （现在传的是 <code>--color-text-muted</code> 和 <code>--color-border-light</code> 两支）。下面是三种代表性纸张上的同一条线。
+</p>
+<div class="row">
+  <div class="col" style="max-width:300px">
+    <div class="win"><div class="chrome"><span class="ttl" style="margin-left:0">纸张 · 原色</span></div>
+      <div class="sheet" style="padding-bottom:14px">
+        <p class="bd">…她才发觉自己一直屏着气。</p>
+        <div class="ce">
+          <div class="top">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+            <span class="txt">这一章你查过 5 个词</span><span class="act">看看 ⌄</span>
+          </div>
+          <div class="panel"><div class="chips"><b>brackish</b><b>gnarled</b><i>+3</i></div></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap">文字 <code>#71717b</code>，细线 <code>#e9e9ec</code>。</p>
+  </div>
+  <div class="col" style="max-width:300px">
+    <div class="win"><div class="chrome"><span class="ttl" style="margin-left:0">纸张 · 纸黄</span></div>
+      <div class="sheet paper" style="padding-bottom:14px">
+        <p class="bd">…她才发觉自己一直屏着气。</p>
+        <div class="ce">
+          <div class="top">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+            <span class="txt">这一章你查过 5 个词</span><span class="act">看看 ⌄</span>
+          </div>
+          <div class="panel"><div class="chips"><b>brackish</b><b>gnarled</b><i>+3</i></div></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap">文字 <code>#8A7C63</code>，细线取纸面的暖灰。</p>
+  </div>
+  <div class="col" style="max-width:300px">
+    <div class="win"><div class="chrome"><span class="ttl" style="margin-left:0">纸张 · 暗色</span></div>
+      <div class="sheet night" style="padding-bottom:14px">
+        <p class="bd">…她才发觉自己一直屏着气。</p>
+        <div class="ce">
+          <div class="top">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+            <span class="txt">这一章你查过 5 个词</span><span class="act">看看 ⌄</span>
+          </div>
+          <div class="panel"><div class="chips"><b>brackish</b><b>gnarled</b><i>+3</i></div></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap">文字 <code>#8E8E98</code>，细线 <code>#25252C</code>。</p>
+  </div>
+</div>
+<div class="note" style="margin-top:20px">
+  <b>词 chip 为什么是「描边」不是「填色」。</b>回顾板上的 chip 用 <code>bg-bg-input</code> 填底，那是应用里的做法；
+  书页上不行——阅读器有<b>自定义纸张主题</b>（读者自选背景色与文字色），任何写死的填色都可能在某张纸上变成一块脏斑。
+  描边只用已经传进来的 <code>border-light</code>，五套纸加自定义色全部自动成立。<b>同一件东西，在两个地方按各自的规矩长。</b>
+</div>
+
+
+<!-- ══════════════════ 9 ══════════════════ -->
+<h2 class="sec"><span class="n">9</span> 文案红线自查表</h2>
+<p class="why">这条线上会出现的全部文字，一共六句。逐句对照过禁令。</p>
+<table>
+  <thead><tr><th>位置</th><th>文案</th><th>判定</th></tr></thead>
+  <tbody>
+    <tr><td>收起态</td><td>这一章你查过 5 个词</td><td><span class="yes">✓</span> 过去式事实，不催不评</td></tr>
+    <tr><td>收起态动作</td><td>看看 ⌄</td><td><span class="yes">✓</span> 可逆，不暗示离开</td></tr>
+    <tr><td>展开态来由</td><td>趁着还有印象，就地过一遍。</td><td><span class="yes">✓</span> 与堆卡同句，给理由不给压力</td></tr>
+    <tr><td>展开态链接</td><td>在「回顾」里打开这一章 →</td><td><span class="yes">✓</span> 明说去哪</td></tr>
+    <tr><td>关闭</td><td>不再显示</td><td><span class="yes">✓</span> 沿用现有</td></tr>
+    <tr><td>关闭反馈</td><td>已关闭。阅读设置里可以再打开。</td><td><span class="yes">✓</span> 说清退路，不挽留</td></tr>
+    <tr><td colspan="3" style="padding-top:16px;color:var(--fg3);font-size:11.5px">— 以下为明令不做 —</td></tr>
+    <tr><td>—</td><td>还有 12 个词等着你 / 今天还剩 8 个</td><td><span class="nope">✗</span> 剩余额度</td></tr>
+    <tr><td>—</td><td>最早一个等了 6 天 / 积压 N 天</td><td><span class="nope">✗</span> 已被点名否决</td></tr>
+    <tr><td>—</td><td>约 4 分钟能过完</td><td><span class="nope">✗</span> 预计耗时，且算不出来</td></tr>
+    <tr><td>—</td><td>连续 5 天 / 连续 3 章</td><td><span class="nope">✗</span> 打卡</td></tr>
+    <tr><td>—</td><td>你还没有复习这一章</td><td><span class="nope">✗</span> 责怪</td></tr>
+    <tr><td>—</td><td>一个词都没查，很棒！</td><td><span class="nope">✗</span> 表扬即责怪的镜像（§5）</td></tr>
+    <tr><td>—</td><td>本章无生词</td><td><span class="nope">✗</span> 零词态整块不出现，无需此句</td></tr>
+  </tbody>
+</table>
+
+
+<!-- ══════════════════ 10 ══════════════════ -->
+<h2 class="sec"><span class="n">10</span> 改动清单：真要做的其实很少</h2>
+<p class="why">
+  这份设计刻意压到「在既有那条线上加一层展开」的规模。下面是它落地会碰到的全部东西，
+  <b>没有新表、没有新后端命令、没有新组件目录</b>。
+</p>
+<table>
+  <thead><tr><th>动</th><th>怎么动</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>chapter-end-hint.ts</code></td>
+      <td>收起/展开两态；展开的三段内容；触摸设备把「不再显示」挪进展开态。仍然是纯 DOM，无 React、无 Tauri——它跑在书页文档里。</td>
+    </tr>
+    <tr>
+      <td><code>useFoliateAnnotations.ts</code></td>
+      <td>现在那个循环只<b>数</b>词（<code>lookupCount += 1</code>）；改成顺手把词也收进数组。<b>数据已经在手里</b>——<code>vocab</code> 加 CFI 解析，同一次遍历，零额外查询。</td>
+    </tr>
+    <tr>
+      <td>i18n</td>
+      <td>新增：「看看」「收起」「在「回顾」里打开这一章」「已关闭…」。复用：<code>reviewBoard.pile.recentChapterLookups.reason</code>、<code>reviewBoard.pile.moreChips</code>。<br>旧键 <code>reader.chapterEndHint.action</code>（「趁着还有印象，过一遍 →」）退役。</td>
+    </tr>
+    <tr>
+      <td><code>review-piles.ts</code></td>
+      <td>只<b>用</b>不改：<code>capPileChips</code> 直接复用，保证两处词数上限永远一致。</td>
+    </tr>
+    <tr>
+      <td>设置 / 后端</td>
+      <td><b>不动。</b><code>chapter_end_review_hint</code> 键、设置行、<code>review_piles.rs</code>、任何 schema——一个字不改。</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="note" style="margin-top:26px">
+  <b>要你拍板的只有两点：</b><br>
+  <b>①</b> 收起态动作词从「趁着还有印象，过一遍 →」改成「看看 ⌄」——即把这条线从「跳走」改成「就地展开」。这是整份设计的地基。<br>
+  <b>②</b> 展开态<b>不做复习动作</b>（无对错按钮、不记分），只看词、只连去已有的回顾板。
+</div>
+
+</div>
+</body>
+</html>

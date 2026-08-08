@@ -722,6 +722,15 @@ pub fn run() {
                 commands::vocab_gloss_backfill::spawn_on_start(app.handle().clone(), db, secrets);
             }
 
+            // Fill in book_difficulty_sections (migration 057) for books
+            // analyzed before that table existed. Pure local recomputation
+            // from the file already on disk, paced across launches — see
+            // the module doc for why this needs no switch and no AppHandle.
+            {
+                let db = app.state::<Db>().inner().clone();
+                commands::book_difficulty_backfill::spawn_on_start(db);
+            }
+
             // Boot the sync engine on a background thread. Everything
             // that touches iCloud paths (EventLog::open, watcher::spawn,
             // initial tick) runs here so setup() is never blocked by
@@ -800,6 +809,11 @@ pub fn run() {
             commands::book_difficulty::get_book_difficulty,
             commands::book_difficulty::compute_book_difficulty,
             commands::book_difficulty::set_book_difficulty_override,
+            // Open-card read-only queries (docs/impls/book-open-card-mockup.html)
+            commands::book_difficulty::get_vocab_pass_rates,
+            commands::book_difficulty::get_book_difficulty_sections,
+            commands::book_difficulty::get_book_lookup_stats,
+            commands::book_difficulty::get_reading_pace,
             // Local reading history and optional AI prose (never synced)
             commands::reading_stats::record_reading_session,
             commands::reading_stats::checkpoint_reading_session,

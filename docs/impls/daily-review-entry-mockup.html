@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>每日复习入口 · 样张</title>
+<style>
+  :root{
+    --bg-page:#f4f4f5; --bg-surface:#ffffff; --bg-muted:#fafafa; --bg-input:#f3f3f5;
+    --text-primary:#18181b; --text-secondary:#52525c; --text-muted:#71717b;
+    --border:#e4e4e7; --border-light:#f4f4f5;
+    --accent:#7c3aed; --accent-bg:#f3e8ff; --accent-text:#7c3aed;
+    --lavender:#c084fc; --purple:#a855f7;
+    --success-text:#00a63e; --warning:#b8791c; --danger:#e7000b; --danger-bg:#fef2f2; --danger-border:#ffc9c9;
+    --m-new:#c4b5fd; --m-learning:#8b5cf6; --m-familiar:#6021c0; --m-mastered:#2e1065;
+    --shadow-card:0 4px 6px -1px rgba(0,0,0,.08), 0 2px 4px -2px rgba(0,0,0,.06);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg-page:#151518; --bg-surface:#18191d; --bg-muted:#1f2023; --bg-input:#25262c;
+      --text-primary:#f4f4f5; --text-secondary:#c9c9d1; --text-muted:#9a9aa4;
+      --border:#34343d; --border-light:#2a2b31;
+      --accent:#8b5cf6; --accent-bg:#302647; --accent-text:#a78bfa;
+      --lavender:#c4b5fd; --purple:#a78bfa;
+      --success-text:#4ade80; --warning:#e0a75a; --danger:#f87171; --danger-bg:#450a0a; --danger-border:#991b1b;
+      --m-new:#4c3f80; --m-learning:#8461e0; --m-familiar:#b8a6fd; --m-mastered:#f0ebff;
+      --shadow-card:0 4px 12px rgba(0,0,0,.45);
+    }
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg-page);color:var(--text-primary);
+    font:15px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Segoe UI","Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased;padding:44px 20px 120px}
+  .wrap{max-width:1040px;margin:0 auto}
+  .serif{font-family:Georgia,"Songti SC",serif;font-variant-numeric:tabular-nums}
+
+  h1{font-size:25px;font-weight:650;letter-spacing:-.4px;margin-bottom:10px}
+  .lede{font-size:14px;color:var(--text-secondary);line-height:1.8;max-width:80ch}
+  .lede b{color:var(--text-primary);font-weight:600}
+  .lede + .lede{margin-top:11px}
+  .meta{margin-top:16px;padding-top:14px;border-top:1px solid var(--border);
+    font-size:12px;color:var(--text-muted);line-height:1.8}
+  code{background:var(--bg-input);border-radius:4px;padding:1px 5px;font-size:11.5px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+  h2.sec{font-size:18px;font-weight:640;margin:56px 0 5px;display:flex;align-items:baseline;gap:11px}
+  h2.sec .n{font-size:11.5px;font-weight:700;color:var(--text-muted);border:1px solid var(--border);
+    border-radius:20px;padding:2px 9px;flex:none}
+  .why{font-size:13.5px;color:var(--text-secondary);line-height:1.8;margin-bottom:22px;max-width:82ch}
+  .why b{color:var(--text-primary);font-weight:600}
+  .why .no{color:var(--danger)}
+
+  h3.sub{font-size:13.5px;font-weight:640;margin:30px 0 4px;color:var(--text-primary)}
+  .subwhy{font-size:12.5px;color:var(--text-muted);line-height:1.75;margin-bottom:12px;max-width:78ch}
+
+  .cap{font-size:12.3px;color:var(--text-muted);line-height:1.65;margin-top:10px}
+  .cap b{color:var(--text-secondary);font-weight:600}
+  .cap.bad b, .cap.bad{color:var(--danger)}
+
+  /* ───── 应用外壳 ───── */
+  .app{display:flex;border:1px solid var(--border);border-radius:12px;overflow:hidden;
+    background:var(--bg-surface);box-shadow:var(--shadow-card)}
+  .side{width:196px;flex:none;border-right:1px solid var(--border);background:var(--bg-muted);
+    padding:14px 10px 18px;font-size:12px}
+  .brand{display:flex;align-items:center;gap:8px;padding:2px 6px 14px;font-weight:600;font-size:12.5px}
+  .logo{width:20px;height:20px;border-radius:6px;background:var(--accent);
+    display:flex;align-items:center;justify-content:center;flex:none}
+  .grp{margin-top:12px}
+  .grp h4{font-size:10px;font-weight:600;letter-spacing:.5px;color:var(--text-muted);
+    padding:0 6px 6px;text-transform:none}
+  .row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;
+    color:var(--text-secondary);line-height:1.3}
+  .row svg{flex:none;opacity:.85}
+  .row .lbl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .c{font-size:11px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+  .row.on{background:var(--accent-bg);color:var(--accent-text);font-weight:600}
+  .row.on svg{opacity:1}
+  .row .pill{font-size:10.5px;font-weight:600;background:var(--accent-bg);color:var(--accent-text);
+    border-radius:99px;padding:1px 7px;font-variant-numeric:tabular-nums}
+  .row .pill.red{background:var(--danger);color:#fff}
+
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .mhead{border-bottom:1px solid var(--border);padding:18px 22px 16px}
+  .mhead h2{font-size:19px;font-weight:640;letter-spacing:.05px;margin-bottom:12px}
+  .search{border:1px solid var(--border);background:var(--bg-input);border-radius:8px;
+    padding:7px 11px;font-size:12px;color:var(--text-muted);max-width:330px;
+    display:flex;align-items:center;gap:7px}
+  .mbody{padding:20px 22px 26px;display:flex;flex-direction:column;gap:18px}
+
+  .shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:16px}
+  .bk{aspect-ratio:2/3;border-radius:6px;border:1px solid var(--border);
+    background:linear-gradient(150deg,var(--bg-input),var(--bg-muted))}
+  .bk:nth-child(2){background:linear-gradient(150deg,#e9dcff,#d6c2f5)}
+  .bk:nth-child(4){background:linear-gradient(150deg,#dfe7f5,#c9d6ee)}
+  .shelf-note{font-size:11px;color:var(--text-muted)}
+
+  /* ───── 复习卡本体 ───── */
+  .rv{display:flex;align-items:flex-start;gap:13px;width:100%;text-align:left;
+    border:1px solid var(--border);border-radius:14px;background:var(--bg-surface);
+    padding:15px 16px 15px 15px;transition:border-color .15s,box-shadow .15s}
+  .rv:hover{border-color:var(--lavender);box-shadow:0 2px 10px rgba(124,58,237,.09)}
+  .rv .ic{width:34px;height:34px;flex:none;border-radius:10px;background:var(--accent-bg);
+    color:var(--accent-text);display:flex;align-items:center;justify-content:center}
+  .rv .tx{flex:1;min-width:0}
+  .rv .t1{font-size:15px;font-weight:600;letter-spacing:-.15px;line-height:1.45;
+    display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+  .rv .t1 .num{font-size:19px;font-weight:500;letter-spacing:0}
+  .rv .t2{font-size:12.5px;color:var(--text-secondary);line-height:1.65;margin-top:4px}
+  .rv .t3{font-size:12px;color:var(--text-muted);line-height:1.7;margin-top:8px;
+    padding-top:9px;border-top:1px solid var(--border-light)}
+  .rv .act{flex:none;display:flex;align-items:center;gap:9px;align-self:center}
+  .rv .chev{color:var(--text-muted);display:flex}
+  .btn{border:1px solid var(--accent);background:var(--accent);color:#fff;
+    border-radius:8px;padding:7px 13px;font-size:12.5px;font-weight:600;white-space:nowrap;
+    font-family:inherit}
+  .btn.ghost{background:transparent;border-color:var(--border);color:var(--text-secondary);font-weight:500}
+  .link{color:var(--accent-text);font-size:12.5px;font-weight:500;white-space:nowrap}
+
+  /* 状态变体 */
+  .rv.quiet{background:transparent;border-style:dashed}
+  .rv.quiet:hover{border-color:var(--text-muted);box-shadow:none}
+  .rv.quiet .ic{background:var(--bg-input);color:var(--text-muted)}
+  .rv.done .ic{background:var(--bg-input);color:var(--success-text)}
+  .rv.backlog .ic{background:var(--bg-input);color:var(--warning)}
+
+  .sk{border-radius:5px;background:var(--bg-input);position:relative;overflow:hidden}
+  .sk::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(90deg,transparent,rgba(125,125,140,.14),transparent);
+    animation:sh 1.35s ease-in-out infinite}
+  @keyframes sh{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+  .rv.loading .ic{background:var(--bg-input);color:transparent}
+  .rv.loading:hover{border-color:var(--border);box-shadow:none}
+  /* 与状态 1 等高：数据到达时书架不下跳 */
+  .rv.loading .tx{display:flex;flex-direction:column;justify-content:center;gap:12px;min-height:54px}
+
+  .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px}
+  .chip{border-radius:6px;background:var(--bg-input);color:var(--text-secondary);
+    padding:2.5px 9px;font-family:Georgia,"Songti SC",serif;font-size:12px;letter-spacing:.1px}
+  .chip.more{background:transparent;color:var(--text-muted);padding-left:2px}
+
+  /* ───── 版面工具 ───── */
+  .stage{background:var(--bg-page);border:1px solid var(--border);border-radius:12px;padding:20px}
+  .stage.plain{background:var(--bg-surface)}
+  .duo{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:24px;align-items:start}
+  .states{display:flex;flex-direction:column;gap:26px}
+
+  .flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:12px}
+  .step{flex:1 1 210px;border:1px solid var(--border);border-radius:11px;background:var(--bg-surface);
+    padding:13px 14px}
+  .step .k{font-size:10.5px;font-weight:700;letter-spacing:.5px;color:var(--text-muted)}
+  .step .n2{font-size:13.5px;font-weight:640;margin-top:5px}
+  .step .d{font-size:12px;color:var(--text-secondary);line-height:1.65;margin-top:5px}
+  .step.new{border-color:var(--lavender);background:var(--accent-bg)}
+  .step.new .k,.step.new .d{color:var(--accent-text)}
+  .step.new .n2{color:var(--accent-text)}
+  .arrow{align-self:center;color:var(--text-muted);flex:none}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px;display:block;overflow-x:auto}
+  table thead th{text-align:left;font-weight:600;color:var(--text-muted);font-size:11px;
+    letter-spacing:.4px;padding:0 12px 8px 0;border-bottom:1px solid var(--border);white-space:nowrap}
+  table td{padding:9px 12px 9px 0;border-bottom:1px solid var(--border-light);
+    color:var(--text-secondary);vertical-align:top;line-height:1.6}
+  table td:first-child{color:var(--text-primary);font-weight:500;white-space:nowrap}
+  table td.no{color:var(--danger)}
+  .tick{color:var(--success-text);font-weight:700}
+  .cross{color:var(--danger);font-weight:700}
+
+  .callout{border:1px solid var(--danger-border);background:var(--danger-bg);border-radius:11px;
+    padding:14px 16px;font-size:13px;line-height:1.8;color:var(--text-primary)}
+  .callout b{color:var(--danger)}
+  .callout.calm{border-color:var(--border);background:var(--accent-bg);color:var(--text-primary)}
+  .callout.calm b{color:var(--accent-text)}
+
+  .phone{width:100%;max-width:352px;border:1px solid var(--border);border-radius:20px;
+    background:var(--bg-surface);overflow:hidden;box-shadow:var(--shadow-card)}
+  .phone .ph-head{padding:16px 16px 12px;border-bottom:1px solid var(--border)}
+  .phone .ph-head h2{font-size:18px;font-weight:640}
+  .phone .ph-body{padding:14px 16px 20px;display:flex;flex-direction:column;gap:14px}
+  .phone .shelf{grid-template-columns:repeat(3,1fr);gap:12px}
+
+  @media (max-width:760px){
+    body{padding:28px 14px 90px}
+    .side{display:none}
+    .rv{flex-wrap:wrap}
+    .rv .act{width:100%;justify-content:flex-start;padding-left:47px}
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<h1>每日复习入口 · 样张</h1>
+
+<p class="lede" style="border-left:4px solid var(--accent);padding-left:14px">
+  <b>2026-08-08 产品裁决：不做。</b>
+  首页书架不放这个入口——复习不该在打开应用的第一眼就来找人。
+  想复习的人从侧栏进去就够了，侧栏那条路保持原样、不改。
+  文案上也定了一条通则：<b>复习相关的任何界面，不出现催促、责怪、倒计时、积压天数</b>
+  （本样张里「最早一个等了 N 天」正是被否掉的写法）。
+  下面的内容只作为「当时考虑过什么、为什么否掉」的记录保留，<b>不要照它实现</b>。
+</p>
+
+<p class="lede">
+  复习是 Lantern 里<b>唯一有时效的动作</b>——书可以明天再读，进度不会变；到期的词今天不碰，明天就和明天的堆在一起。
+  现在它在界面上只是「单词」那一行右边的一个数字：说明了有多少，没说明<b>是些什么、从哪来、该从哪下手</b>，而且点不动。
+  这张卡把那个数字换成一个<b>能点、能读懂的入口</b>：一句话说清今天的量和来路，一次点击进入已有的复习工作区。
+</p>
+<p class="lede">
+  它<b>不是通知</b>。卡片跟着书架一起滚走，不常驻在页面顶栏；语气是「这是今天的安排」，不是「你欠了多少」。
+  积压的时候尤其如此——见 <b>状态 3</b>，那一屏的全部设计目标就是<b>让一个荒废了一个月的人愿意点第一下</b>。
+</p>
+<p class="meta">
+  静态样张，不可点击 · 配色取自 <code>src/index.css</code> 的真实令牌，随系统深浅色切换 ·
+  数据来源见 <b>§1</b>，每个数字都注明了它由哪张表哪一列算出 ·
+  相关既有设计：<code>docs/impls/archive/review-entry-mockup.html</code>（复习工作区、来由分堆）、
+  <code>src/components/review/</code>、<code>src-tauri/src/commands/review_piles.rs</code>
+</p>
+
+<!-- ══════════════ 1 ══════════════ -->
+<h2 class="sec"><span class="n">1</span> 先说数字：哪些拿得到，哪些拿不到</h2>
+<p class="why">
+  样张里出现的每个数字都必须能从现有的表算出来，否则它就是一句好听的假话。下面这张表是画之前的核对结果。
+  <b>最重要的一条在最后一行：「约 4 分钟」画不出来。</b>
+</p>
+
+<table>
+  <thead><tr><th>卡上的说法</th><th>算法</th><th>数据来源</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><span class="tick">✓</span> 今日待复习 12 词</td>
+      <td><code>COUNT(*)</code>，<code>next_review_at &lt;= now</code> 且 <code>list_status='confirmed'</code></td>
+      <td><code>get_vocab_stats().due_for_review</code>（首页现在就在用）</td>
+    </tr>
+    <tr>
+      <td><span class="tick">✓</span> 来自 3 本书</td>
+      <td>到期词的 <code>COUNT(DISTINCT book_id)</code>；书名取其中最大的一本</td>
+      <td><code>vocab_words.book_id</code> + <code>books.title</code></td>
+    </tr>
+    <tr>
+      <td><span class="tick">✓</span> 最早一个等了 6 天</td>
+      <td><code>now − MIN(next_review_at)</code>，用现成的 <code>timeAgo()</code> 口径</td>
+      <td><code>vocab_words.next_review_at</code></td>
+    </tr>
+    <tr>
+      <td><span class="tick">✓</span> 今天到期 8 词 / 更早到期 129 词</td>
+      <td>以本地零点为界切分到期集合（<code>local_day_bounds()</code> 已存在）</td>
+      <td>同上</td>
+    </tr>
+    <tr>
+      <td><span class="tick">✓</span> 最早的一批：6 月 28 日的 14 词</td>
+      <td>过期词按 <code>next_review_at</code> 的本地日期分桶，取最旧的一桶</td>
+      <td>同上</td>
+    </tr>
+    <tr>
+      <td><span class="tick">✓</span> 下一批 4 词在 8 月 11 日</td>
+      <td><code>MIN(next_review_at)</code> 中 <code>&gt; now</code> 的那一天，及当天的词数</td>
+      <td>同上</td>
+    </tr>
+    <tr>
+      <td><span class="tick">✓</span> 今天已复习 12 词</td>
+      <td><code>COUNT(*)</code>，<code>last_reviewed_at &gt;= 本地零点</code></td>
+      <td><code>vocab_words.last_reviewed_at</code>（列已存在，需要新加一句 SQL）</td>
+    </tr>
+    <tr>
+      <td><span class="tick">✓</span> 「同一本书里反复查过」这类来由</td>
+      <td>直接复用复习页的分堆</td>
+      <td><code>list_review_piles</code> / <code>review_piles.rs</code></td>
+    </tr>
+    <tr>
+      <td class="no"><span class="cross">✗</span> 约 4 分钟</td>
+      <td class="no">无法计算，<b>已从样张中删除</b></td>
+      <td class="no">
+        全库没有任何一次复习的耗时记录：复习不写会话表，<code>vocab_words</code> 只存
+        <code>last_reviewed_at</code> 这一个时间点，没有开始/结束。
+        <code>reading_sessions.active_seconds</code>(033) 是<b>阅读</b>时长，
+        <code>reading_screen_dwells.dwell_ms</code>(037) 是<b>翻页停留</b>，
+        都不是复习。唯一的替代是拍一个「每词 X 秒」的常数——那是把猜测印成数字，不做。
+      </td>
+    </tr>
+    <tr>
+      <td class="no"><span class="cross">✗</span> 上次复习的正确率</td>
+      <td class="no">不画</td>
+      <td class="no"><code>last_review_rating</code> 只保留<b>最后一次</b>评分，没有逐次评分日志；
+        <code>mastery_events</code> 只在掌握度发生变化时才写一行，评「好」但没升级的复习不留痕。</td>
+    </tr>
+    <tr>
+      <td class="no"><span class="cross">✗</span> 连续复习天数</td>
+      <td class="no">不画</td>
+      <td class="no">既算不出（同上，无逐次日志），也不该画——见文末语气约定。</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout calm" style="margin-top:20px">
+  <b>关于时间预估的替代方案。</b>如果以后确实想说「大概要多久」，唯一诚实的路是<b>先记录</b>：
+  在复习工作区加一张 <code>vocab_review_sessions(started_at, ended_at, word_count)</code>（设备本地，和
+  <code>reading_sessions</code> 同一类），攒够十几次之后用<b>这个人自己的</b>中位数说话，而不是用行业均值。
+  在那之前，卡上第二行说的是「来路」，不是「时长」——它同样能回答用户真正的问题：<i>这值不值得我现在点开。</i>
+</div>
+
+<!-- ══════════════ 2 ══════════════ -->
+<h2 class="sec"><span class="n">2</span> 放在哪：书架页正文的第一行，会滚走</h2>
+<p class="why">
+  <b>推荐位置：</b>首页（书架）内容区的最上方，搜索框那条分隔线<b>之下</b>、书格之上，和书格共用同一个滚动容器。
+  <b>理由一句话：它得在你打开 app 时被看见一次，然后随着你翻书架自然消失。</b>
+  常驻顶栏 = 通知条，每次开 app 都在提醒你欠债；塞进书格里 = 它长得像一本书，但它不是书。
+  这两条正是既有设计（<code>archive/review-entry-mockup.html §1</code>）当初<b>拒绝在侧栏「复习」行加红点</b>的同一个理由，
+  这张卡必须继承它：<span class="no">卡片是内容，不是提醒。</span>
+</p>
+<p class="why">
+  <b>出现范围：</b>「全部书籍」与「正在阅读」两个视图显示；「已读完」「书单」和各随记页（单词 / 复习 / 标注 / 解释 / 阅读历程）不显示——
+  后者要么是归档式浏览，要么本身就是复习页，重复放一遍只会分散注意。<br>
+  <b>与侧栏的关系：</b>侧栏「单词」行右边那个既有角标<b>保持不变</b>（<code>sidebar-badges.ts</code> 里的规则不动），侧栏「复习」行依然<b>没有</b>数字。
+</p>
+
+<h3 class="sub">屏 1 · 有待复习（正常量）</h3>
+<p class="subwhy">首页 · 全部书籍。卡在书格之上，占一行，向下滚动就看不见了。</p>
+
+<div class="app">
+  <div class="side">
+    <div class="brand">
+      <span class="logo"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v2M8 21h8M10 21c0-3-3-4-3-8a5 5 0 0 1 10 0c0 4-3 5-3 8"/></svg></span>
+      <span>Lantern</span>
+    </div>
+    <div class="grp"><h4>书库</h4>
+      <div class="row on"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 6H3M16 12H3M16 18H3M21 6v12"/></svg><span class="lbl">全部书籍</span><span class="c">24</span></div>
+      <div class="row"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 7v14M3 18h7a2 2 0 0 1 2 2 2 2 0 0 1 2-2h7M3 6h7a2 2 0 0 1 2 2 2 2 0 0 1 2-2h7v12"/></svg><span class="lbl">正在阅读</span><span class="c">3</span></div>
+      <div class="row"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m9 12 2 2 4-4"/></svg><span class="lbl">已读完</span><span class="c">11</span></div>
+    </div>
+    <div class="grp"><h4>随记</h4>
+      <div class="row"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="lbl">对话</span></div>
+      <div class="row"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m4 18 5-12 5 12M5.5 15h7M22 15c0 2-1.5 3-3 3s-3-1-3-3 1.5-3 3-3 3 1 3 3v3"/></svg><span class="lbl">单词</span><span class="pill">12</span></div>
+      <div class="row"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg><span class="lbl">复习</span></div>
+      <div class="row"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9l6-6V5a2 2 0 0 0-2-2Z"/><path d="M14 21v-5a1 1 0 0 1 1-1h5"/></svg><span class="lbl">标注</span></div>
+      <div class="row"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m12 3-1.9 5.8L4 10l5.8 1.9L12 18l1.9-6.1L20 10l-6.1-1.9z"/></svg><span class="lbl">解释</span></div>
+      <div class="row"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18M7 16v-5M12 16V8M17 16v-3"/></svg><span class="lbl">阅读历程</span></div>
+    </div>
+  </div>
+  <div class="main">
+    <div class="mhead">
+      <h2>全部书籍</h2>
+      <div class="search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>搜索书籍...</div>
+    </div>
+    <div class="mbody">
+
+      <!-- ▼ 新增：每日复习卡 -->
+      <div class="rv">
+        <span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></span>
+        <div class="tx">
+          <div class="t1">今日待复习 <span class="num serif">12</span> 词</div>
+          <div class="t2">来自《The Old Man and the Sea》等 3 本书 · 最早一个等了 6 天</div>
+        </div>
+        <div class="act">
+          <button class="btn">开始</button>
+          <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+      </div>
+      <!-- ▲ -->
+
+      <div class="shelf">
+        <div class="bk"></div><div class="bk"></div><div class="bk"></div><div class="bk"></div>
+        <div class="bk"></div><div class="bk"></div><div class="bk"></div><div class="bk"></div>
+      </div>
+      <div class="shelf-note">〔现有书架 · 不动〕</div>
+    </div>
+  </div>
+</div>
+<p class="cap"><b>两处细节。</b>卡的圆角 14px、边框 1px、悬停变淡紫加一层极浅紫影——和复习页的堆卡（<code>PileCard.tsx</code>）完全同款，因为它俩是同一件事的两个入口。
+数字用衬线体，和阅读历程页的统计数字同一套写法。</p>
+
+<h3 class="sub">不这样做</h3>
+<div class="duo">
+  <div>
+    <div class="stage plain">
+      <div style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:9px;background:var(--danger-bg);border:1px solid var(--danger-border);border-radius:8px;padding:9px 12px">
+          <span style="width:8px;height:8px;border-radius:99px;background:var(--danger);flex:none"></span>
+          <span style="font-size:12.5px;font-weight:600">你有 12 个词待复习，还没开始</span>
+          <span style="margin-left:auto;font-size:11px;color:var(--text-muted)">✕</span>
+        </div>
+        <div style="margin-top:12px;font-size:18px;font-weight:640">全部书籍</div>
+      </div>
+      <div class="shelf" style="grid-template-columns:repeat(4,1fr)"><div class="bk"></div><div class="bk"></div><div class="bk"></div><div class="bk"></div></div>
+    </div>
+    <p class="cap bad"><b>常驻顶栏通知条。</b>它在分隔线之上，永远不滚走，还带一个「✕」——一个需要被关掉的东西，本质上是打扰。
+    这正是当初拒绝给侧栏「复习」加红点的理由，换个位置不会变得更好。</p>
+  </div>
+  <div>
+    <div class="stage plain">
+      <div style="font-size:18px;font-weight:640;border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:14px">全部书籍</div>
+      <div class="shelf" style="grid-template-columns:repeat(4,1fr)">
+        <div class="bk" style="background:var(--accent-bg);border-color:var(--lavender);display:flex;align-items:center;justify-content:center;color:var(--accent-text);font-size:11px;text-align:center;padding:6px;line-height:1.5">今日<br>复习<br>12</div>
+        <div class="bk"></div><div class="bk"></div><div class="bk"></div>
+      </div>
+    </div>
+    <p class="cap bad"><b>混进书格当一块砖。</b>它长得像书、排得像书、点下去却不是书。而且书格是会重排的——
+    这块砖会在不同窗宽下跑到第二行去，一个有时效的入口不能靠运气露面。</p>
+  </div>
+</div>
+
+<!-- ══════════════ 3 ══════════════ -->
+<h2 class="sec"><span class="n">3</span> 点进去是什么：不是新页面，也不是覆盖层</h2>
+<p class="why">
+  <b>推荐：进入已有的「复习」工作区</b>——就是侧栏「复习」那一行打开的同一个界面（<code>activeFilter = "review"</code>，
+  首页内容区整块切换，不换路由、不弹窗）。<b>理由：这个工作区已经存在</b>，里面已经有按来由分好的堆、可展开的全部生词、以及真正的复习卡。
+  第二个入口如果落到别的地方，Lantern 就有了两套复习界面，两边的文案、状态和键盘快捷键会立刻开始漂移。
+</p>
+<p class="why">
+  卡上有<b>两个落点</b>，都通向同一个工作区：整张卡（含右侧 ›）打开工作区让你<b>先挑</b>；「开始」按钮打开工作区并<b>直接开始</b>今天这一队。
+  真正的覆盖层出现在再下一层——复习卡本身已经是工作区里的一个对话框，那一层不动。
+</p>
+<div class="flow">
+  <div class="step new">
+    <div class="k">新增</div>
+    <div class="n2">首页 · 每日复习卡</div>
+    <div class="d">书架正文第一行。整卡可点。</div>
+  </div>
+  <span class="arrow"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+  <div class="step">
+    <div class="k">已存在</div>
+    <div class="n2">复习工作区</div>
+    <div class="d">侧栏「复习」的同一个界面：分堆看板 + 折叠着的全部生词。整块内容替换，不是新窗口。</div>
+  </div>
+  <span class="arrow"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+  <div class="step">
+    <div class="k">已存在</div>
+    <div class="n2">复习卡（对话框）</div>
+    <div class="d">语境挖空、评分、键盘快捷键。「开始」按钮把用户一步送到这里。</div>
+  </div>
+</div>
+
+<!-- ══════════════ 4 ══════════════ -->
+<h2 class="sec"><span class="n">4</span> 五种状态</h2>
+<p class="why">卡片高度在各状态之间尽量一致，避免书架在加载完成的一瞬间往下跳。</p>
+
+<div class="stage"><div class="states">
+
+  <!-- 状态 1 -->
+  <div>
+    <div class="rv">
+      <span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></span>
+      <div class="tx">
+        <div class="t1">今日待复习 <span class="num serif">12</span> 词</div>
+        <div class="t2">来自《The Old Man and the Sea》等 3 本书 · 最早一个等了 6 天</div>
+      </div>
+      <div class="act">
+        <button class="btn">开始</button>
+        <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 18 6-6-6-6"/></svg></span>
+      </div>
+    </div>
+    <p class="cap"><b>状态 1 · 正常量。</b>第二行回答的是「这些词是从哪来的」，不是「要花多久」——
+    对一个犹豫要不要点开的人来说，「我这三本书里查过的词」比一个时长更能说服他。
+    书名取到期词最多的那一本；只有一本书时写成「都来自《…》」，不写「等 1 本书」。</p>
+  </div>
+
+  <!-- 状态 2 -->
+  <div>
+    <div class="rv quiet">
+      <span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+      <div class="tx">
+        <div class="t1" style="font-size:14.5px">今天没有到期的词</div>
+        <div class="t2">下一批 4 词在 8 月 11 日。生词本里共 218 个词，随时可以只看不测。</div>
+      </div>
+      <div class="act"><span class="link">打开生词本 ›</span></div>
+    </div>
+    <p class="cap"><b>状态 2 · 空态。</b>这一屏的文案最难：既不能像奖状（「太棒了，今天没有任务！」——把学习说成任务，暗示不学才是好事），
+    也不能像催促（「要不要提前复习几个？」——间隔重复的整个价值就在于不该提前）。
+    <b>选的语气是「排班表」：陈述今天没有排、下一批排在哪天。</b>
+    虚线边框 + 灰色图标，是复习页「还有」那一段既有的安静写法。
+    最后半句给出<b>出口而非任务</b>——「只看，不测」是复习卡里已经存在的模式，想学的人有地方去，不想学的人不被拽住。</p>
+  </div>
+
+  <!-- 状态 3 -->
+  <div>
+    <div class="rv backlog">
+      <span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></span>
+      <div class="tx">
+        <div class="t1">今天到期 <span class="num serif">8</span> 词</div>
+        <div class="t2">另有 129 个词的到期日已经过去，最早的等了 41 天。</div>
+        <div class="t3">
+          晚了不要紧：间隔会按你复习当天的表现重新算，不因为迟到而额外惩罚。<br>
+          想清一清的话，从最早的一批开始——<b>6 月 28 日到期的 14 个词</b>。
+        </div>
+      </div>
+      <div class="act" style="flex-direction:column;align-items:stretch;gap:7px;align-self:flex-start;margin-top:2px">
+        <button class="btn">复习今天的 8 个</button>
+        <button class="btn ghost">从最早的一批开始</button>
+      </div>
+    </div>
+    <p class="cap"><b>状态 3 · 积压。</b>三件事让它不吓人：<br>
+    <b>① 标题只说今天。</b>数据上这 137 个词全都「已到期」，但把 137 印成大字只会让人合上电脑。
+    到期集合按本地零点切成「今天到期」和「更早到期」，标题只承担今天那 8 个——<b>一个够得着的数字</b>。<br>
+    <b>② 129 用正文写，不用角标。</b>它是一句陈述，不是一枚徽章；颜色是次要文字色，不是红色。红色的意思是「出错了」，而积压不是错误。<br>
+    <b>③ 给出一个可以只做一次的动作。</b>「从最早的一批开始」是真实存在的一堆词（按到期日期分桶取最旧的一桶），
+    做完就是做完了，不必面对剩下的 115 个。图标底色从紫改成琥珀色，是全卡唯一的警示信号，克制到一处。</p>
+  </div>
+
+  <!-- 状态 4 -->
+  <div>
+    <div class="rv loading">
+      <span class="ic"></span>
+      <div class="tx">
+        <div class="sk" style="width:168px;height:16px"></div>
+        <div class="sk" style="width:264px;height:13px"></div>
+      </div>
+      <div class="act"><div class="sk" style="width:62px;height:30px;border-radius:8px"></div></div>
+    </div>
+    <p class="cap"><b>状态 4 · 加载中。</b>骨架屏的高度和状态 1 完全一致，所以数据到达时书架不会往下跳一格。
+    没有转圈动画——这是一次本地 SQLite 计数，通常几毫秒就回来了，转圈只会闪一下，反而更吵。
+    如果查询失败：卡片<b>整个不渲染</b>，书架看起来就像今天没有复习，不弹错误——一个统计入口的失败不值得打断读书。</p>
+  </div>
+
+  <!-- 状态 5 -->
+  <div>
+    <div class="rv done">
+      <span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+      <div class="tx">
+        <div class="t1" style="font-size:14.5px">今天的 12 个词复习完了</div>
+        <div class="t2">下一批 4 词在 8 月 11 日。</div>
+        <div class="chips">
+          <span class="chip">solitude</span><span class="chip">courage</span>
+          <span class="chip">indifferent</span><span class="chip">reckon</span>
+          <span class="chip more">还有 8 个</span>
+        </div>
+      </div>
+      <div class="act"><span class="link">只看，不测 ›</span></div>
+    </div>
+    <p class="cap"><b>状态 5 · 刚复习完。</b>不说「做得好」「继续保持」，只说一句<b>事实</b>：今天的做完了，下一批在哪天。
+    唯一的「奖励」是把刚过的词摊出来给他看——那是他自己的成果，不是系统发的勋章。
+    评「忘了」的词会被 FSRS 排到更近的日期，因此它们会自动出现在「下一批」里，卡上不需要额外解释一句。
+    这个状态在<b>本地日期翻页时自然消失</b>，第二天重新变回状态 1 或 2。</p>
+  </div>
+
+</div></div>
+
+<h3 class="sub">还有一种：卡片根本不出现</h3>
+<p class="subwhy">
+  生词本是空的（一个词都没存过）时，这张卡<b>不渲染</b>。理由：它此刻只能说「你还没有词」，
+  而那既不是安排也不是入口，是一句废话——新用户该看到的是书架和导入按钮。
+  第一个词存下之后卡片自己出现，不需要任何引导。
+</p>
+
+<!-- ══════════════ 5 ══════════════ -->
+<h2 class="sec"><span class="n">5</span> 窄屏</h2>
+<p class="why">
+  卡片本来就是一行横排，窄屏下只做一件事：按钮从右侧掉到第二行，与文字左对齐（缩进对齐图标右缘）。
+  文字不截断、不出现横向滚动。侧栏在窄屏是抽屉，与卡片无关。
+</p>
+<div class="phone">
+  <div class="ph-head"><h2>全部书籍</h2></div>
+  <div class="ph-body">
+    <div class="rv" style="flex-wrap:wrap">
+      <span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></span>
+      <div class="tx">
+        <div class="t1">今日待复习 <span class="num serif">12</span> 词</div>
+        <div class="t2">来自《The Old Man and the Sea》等 3 本书 · 最早一个等了 6 天</div>
+      </div>
+      <div class="act" style="width:100%;justify-content:flex-start;padding-left:47px">
+        <button class="btn">开始</button>
+        <span class="link">先看看有哪些 ›</span>
+      </div>
+    </div>
+    <div class="shelf"><div class="bk"></div><div class="bk"></div><div class="bk"></div></div>
+  </div>
+</div>
+<p class="cap">窄屏把「›」换成一句明说的「先看看有哪些」，因为触屏上整卡可点这件事没有悬停态可以暗示。</p>
+
+<!-- ══════════════ 6 ══════════════ -->
+<h2 class="sec"><span class="n">6</span> 文案清单与语气约定</h2>
+<p class="why">全部中文文案汇总如下，实现时进 <code>src/i18n/zh.json</code> 与 <code>en.json</code>，键名前缀 <code>reviewEntry.</code>。</p>
+<table>
+  <thead><tr><th>状态</th><th>主行</th><th>副行 / 动作</th></tr></thead>
+  <tbody>
+    <tr><td>正常</td><td>今日待复习 {{count}} 词</td><td>来自《{{book}}》等 {{books}} 本书 · 最早一个等了 {{days}} 天 ／ 开始</td></tr>
+    <tr><td>正常（单书）</td><td>今日待复习 {{count}} 词</td><td>都来自《{{book}}》· 最早一个等了 {{days}} 天</td></tr>
+    <tr><td>空</td><td>今天没有到期的词</td><td>下一批 {{count}} 词在 {{date}}。生词本里共 {{total}} 个词，随时可以只看不测。／ 打开生词本</td></tr>
+    <tr><td>空（往后也没有排）</td><td>今天没有到期的词</td><td>生词本里共 {{total}} 个词。／ 打开生词本</td></tr>
+    <tr><td>积压</td><td>今天到期 {{count}} 词</td><td>另有 {{backlog}} 个词的到期日已经过去，最早的等了 {{days}} 天。／ 复习今天的 {{count}} 个 · 从最早的一批开始</td></tr>
+    <tr><td>积压 · 说明</td><td colspan="2">晚了不要紧：间隔会按你复习当天的表现重新算，不因为迟到而额外惩罚。想清一清的话，从最早的一批开始——{{date}} 到期的 {{count}} 个词。</td></tr>
+    <tr><td>刚完成</td><td>今天的 {{count}} 个词复习完了</td><td>下一批 {{count}} 词在 {{date}}。／ 只看，不测</td></tr>
+  </tbody>
+</table>
+<div class="callout" style="margin-top:22px">
+  <b>不用的词。</b>连续打卡、再接再厉、坚持、加油、任务、目标、达成、太棒了、每日挑战、别让 xx 断掉，
+  以及任何形式的红点、火苗、进度环、庆祝动画。<br>
+  <b>用的词。</b>到期、下一批、来自、等了 N 天、复习完了。—— Lantern 是一件工具，它报告状态，不评价使用者。
+</div>
+
+</div>
+</body>
+</html>

@@ -47,6 +47,7 @@ export const READING_DEFAULT_SETTING_KEYS = [
   "next_page_binding",
   "auto_save",
   "skip_front_matter",
+  "book_open_card_enabled",
 ] as const;
 
 export type ReadingDefaultSettingKey = (typeof READING_DEFAULT_SETTING_KEYS)[number];
@@ -85,5 +86,9 @@ export function buildReadingDefaultSettings(
     // has always simply been on; that is what the reset restores them to.
     auto_save: "true",
     skip_front_matter: "true",
+    // A third app-level behavior toggle that rode in on the same pane, for
+    // the same reason as the two above — "restore defaults" should turn the
+    // open card back on, since it lives on this screen next to the other two.
+    book_open_card_enabled: "true",
   };
 }

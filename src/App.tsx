@@ -8,6 +8,7 @@ import AiRouteFallbackNotice from "./components/AiRouteFallbackNotice";
 import ReasoningEffortNotice from "./components/ReasoningEffortNotice";
 import SettingsHost from "./components/SettingsHost";
 import ErrorBoundary from "./components/ErrorBoundary";
+import BookOpenGateProvider from "./components/BookOpenGateProvider";
 import McpApprovalDialog from "./components/McpApprovalDialog";
 import OnboardingCard from "./components/onboarding/OnboardingCard";
 import UpdateToast from "./components/UpdateToast";
@@ -118,7 +119,11 @@ function AppContent() {
   const navigate = useNavigate();
 
   return (
-    <>
+    // Wraps every route, not just Home: the card can be triggered from the
+    // shelf (BookGrid/BookList) or from a book's own details page, and both
+    // need to share the same session-dismiss list and undo toast rather than
+    // each carrying a copy.
+    <BookOpenGateProvider>
       {/* One page failing should cost that page, not the window. Keyed by the
           path, so navigating anywhere else clears the failure on its own — and
           "back to library" is therefore a real recovery, not a re-render of the
@@ -168,6 +173,6 @@ function AppContent() {
           <VocabGlossBackfillNotice />
         </ErrorBoundary>
       )}
-    </>
+    </BookOpenGateProvider>
   );
 }

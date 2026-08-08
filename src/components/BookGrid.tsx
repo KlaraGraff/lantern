@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import type { Book } from "../hooks/useBooks";
-import { useOpenBook } from "../hooks/useOpenBook";
+import { useBookOpenGate } from "./BookOpenGateProvider";
 import { deleteBook, markFinished, isPendingPreparation, needsPreparation, retryPreparation, updateBookStatus } from "../hooks/useBooks";
 import { useNavigate } from "react-router";
 import BookContextMenu from "./BookContextMenu";
@@ -41,7 +41,7 @@ interface BookGridProps {
 
 export default function BookGrid({ books, hasMore, loadMore, loadingMore, activeCollectionId, onBooksChanged }: BookGridProps) {
   const { t } = useTranslation();
-  const openInReader = useOpenBook();
+  const requestOpen = useBookOpenGate();
   const navigate = useNavigate();
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -65,7 +65,7 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
       onBooksChanged?.();
       return;
     }
-    if (!isPendingPreparation(book)) openInReader(book.id);
+    if (!isPendingPreparation(book)) requestOpen(book);
   };
 
   return (
@@ -181,7 +181,13 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
           }}
         />
       )}
-      {indexBookId && <IndexManagerModal bookId={indexBookId} onClose={() => setIndexBookId(null)} />}
+      {indexBookId && (
+        <IndexManagerModal
+          bookId={indexBookId}
+          bookTitle={books.find((book) => book.id === indexBookId)?.title}
+          onClose={() => setIndexBookId(null)}
+        />
+      )}
 
       {hasMore && <LoadMoreSentinel loadMore={loadMore} loadingMore={loadingMore} />}
     </>

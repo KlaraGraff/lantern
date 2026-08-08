@@ -4,6 +4,7 @@ pub mod app;
 pub mod auto_analysis;
 pub mod auto_highlights;
 pub mod book_difficulty;
+pub mod book_difficulty_backfill;
 pub mod bookmarks;
 pub mod books;
 pub mod chats;

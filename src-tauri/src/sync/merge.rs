@@ -402,6 +402,11 @@ fn cascade_delete_book(tx: &Transaction, id: &str, ts: i64) -> AppResult<()> {
         "DELETE FROM book_difficulty WHERE book_id = ?1",
         params![id],
     )?;
+    // Its per-section breakdown (migration 057): same posture, same reason.
+    tx.execute(
+        "DELETE FROM book_difficulty_sections WHERE book_id = ?1",
+        params![id],
+    )?;
     tx.execute("DELETE FROM book_summaries WHERE book_id = ?1", params![id])?;
     tx.execute("DELETE FROM bookmarks WHERE book_id = ?1", params![id])?;
     tx.execute("DELETE FROM highlights WHERE book_id = ?1", params![id])?;

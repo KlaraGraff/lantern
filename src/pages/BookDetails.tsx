@@ -9,7 +9,7 @@ import {
   getBook,
   type Book,
 } from "../hooks/useBooks";
-import { useOpenBook } from "../hooks/useOpenBook";
+import { useBookOpenGate } from "../components/BookOpenGateProvider";
 import {
   getBookDifficulty,
   useBookDifficulty,
@@ -60,7 +60,7 @@ export default function BookDetails() {
   const { id } = useParams<{ id: string }>();
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const openInReader = useOpenBook();
+  const requestOpen = useBookOpenGate();
 
   const [book, setBook] = useState<Book | null>(null);
   const [missing, setMissing] = useState(false);
@@ -204,7 +204,7 @@ export default function BookDetails() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => openInReader(book.id)}
+            onClick={() => requestOpen(book)}
             className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-[12px] font-medium text-white"
           >
             <BookOpen size={14} aria-hidden="true" />

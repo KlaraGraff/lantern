@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useOpenBook } from "../hooks/useOpenBook";
+import { useBookOpenGate } from "./BookOpenGateProvider";
 import { AlertCircle, Check, CloudDownload, Loader2 } from "lucide-react";
 import type { Book } from "../hooks/useBooks";
 import { deleteBook, markFinished, isPendingPreparation, needsPreparation, retryPreparation, updateBookStatus } from "../hooks/useBooks";
@@ -40,7 +40,7 @@ interface BookListProps {
 
 export default function BookList({ books, hasMore, loadMore, loadingMore, activeCollectionId, onBooksChanged }: BookListProps) {
   const { t } = useTranslation();
-  const openInReader = useOpenBook();
+  const requestOpen = useBookOpenGate();
   const navigate = useNavigate();
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -64,7 +64,7 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
       onBooksChanged?.();
       return;
     }
-    if (!isPendingPreparation(book)) openInReader(book.id);
+    if (!isPendingPreparation(book)) requestOpen(book);
   };
 
   return (
@@ -219,7 +219,13 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
           }}
         />
       )}
-      {indexBookId && <IndexManagerModal bookId={indexBookId} onClose={() => setIndexBookId(null)} />}
+      {indexBookId && (
+        <IndexManagerModal
+          bookId={indexBookId}
+          bookTitle={books.find((book) => book.id === indexBookId)?.title}
+          onClose={() => setIndexBookId(null)}
+        />
+      )}
 
       {hasMore && <LoadMoreSentinel loadMore={loadMore} loadingMore={loadingMore} />}
     </>

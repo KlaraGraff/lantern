@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern 开书卡 · 样张</title>
+<style>
+  :root{
+    --paper:#f6f2ea; --page:#fffdf8; --ink:#2a2622; --ink2:#6b635b; --ink3:#9c948b;
+    --line:#e6dfd4; --line2:#efe9e0;
+    --accent:#8a5a2b; --accent-bg:#f4ece0; --accent-line:#d9c4a6;
+    --ok:#2f7d5b; --ok-bg:#e8f2ec;
+    --warn:#b8791c; --warn-bg:#fbf1e0;
+    --shadow:0 18px 48px rgba(60,45,28,.16), 0 2px 8px rgba(60,45,28,.06);
+    --b1:#e7dffa; --b2:#cfc0f3; --b3:#b49aec; --b4:#9470dd; --b5:#6f43c4; --bu:#d6d6dc;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#181614; --page:#211e1b; --ink:#e9e3da; --ink2:#a79e94; --ink3:#6e665e;
+      --line:#332f2a; --line2:#2a2724;
+      --accent:#d1a06a; --accent-bg:#2c2318; --accent-line:#4a3a26;
+      --ok:#6fc39a; --ok-bg:#152a20;
+      --warn:#e0a75a; --warn-bg:#332810;
+      --shadow:0 18px 48px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3);
+      --b1:#332c4a; --b2:#443a66; --b3:#584a85; --b4:#7259ab; --b5:#9d84da; --bu:#3d3d46;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font:15px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;
+    -webkit-font-smoothing:antialiased;overflow-x:hidden}
+  .wrap{max-width:1240px;margin:0 auto;padding:52px 22px 120px}
+
+  header.top{border-bottom:1px solid var(--line);padding-bottom:26px}
+  h1{font-size:27px;margin:0 0 10px;font-weight:650;letter-spacing:-.3px}
+  .sub{color:var(--ink2);font-size:14px;margin:0 0 10px;max-width:80ch}
+  .sub b{color:var(--ink)}
+  .sub code{font-size:12.5px;background:var(--line2);border-radius:4px;padding:1px 5px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+  h2.sec{font-size:18px;font-weight:620;margin:60px 0 4px;display:flex;align-items:baseline;gap:11px;
+    flex-wrap:wrap}
+  h2.sec .n{font-size:11.5px;font-weight:700;color:var(--ink3);border:1px solid var(--line);
+    border-radius:20px;padding:2px 9px;flex:none}
+  .seclede{color:var(--ink2);font-size:14px;margin:0 0 22px;max-width:84ch}
+  .seclede b{color:var(--ink)}
+
+  .row{display:flex;flex-wrap:wrap;gap:26px;align-items:flex-start}
+  .shot{flex:1 1 380px;min-width:min(340px,100%);max-width:460px}
+  .shot.wide{flex:1 1 560px;max-width:620px}
+  .caption{font-size:12.5px;color:var(--ink3);margin:10px 2px 0;line-height:1.6}
+  .caption b{color:var(--ink2)}
+
+  .win{border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--page);
+    box-shadow:var(--shadow)}
+  .chrome{height:30px;background:var(--paper);border-bottom:1px solid var(--line2);
+    display:flex;align-items:center;padding:0 11px;gap:6px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#dcd4c8;flex:none}
+  @media (prefers-color-scheme:dark){.dot{background:#3a3530}}
+  .chrome .ttl{margin-left:8px;font-size:11px;color:var(--ink3);white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis}
+
+  /* 背景书架 + 遮罩 + 卡片 */
+  .overlaywrap{position:relative}
+  .behind{padding:14px;filter:blur(1.6px);opacity:.4;min-height:300px}
+  .bh{display:flex;gap:12px}
+  .bh-nav{width:78px;flex:none;display:flex;flex-direction:column;gap:7px}
+  .bh-nav i{display:block;height:9px;border-radius:4px;background:var(--line)}
+  .bh-nav i:nth-child(1){width:60%}.bh-nav i:nth-child(2){width:76%}
+  .bh-nav i:nth-child(3){width:50%}.bh-nav i:nth-child(4){width:66%}
+  .bh-grid{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .bh-grid s{display:block;height:84px;border-radius:6px;background:var(--line);text-decoration:none}
+  .ov{background:rgba(30,24,16,.32);
+    display:flex;align-items:center;justify-content:center;padding:22px 14px}
+  @media (prefers-color-scheme:dark){.ov{background:rgba(0,0,0,.56)}}
+  /* 背景和浮层叠在同一个网格单元里，行高取两者较大的那个——否则卡片比
+     模糊书架高时会被 .win 的 overflow:hidden 切掉顶部。 */
+  .win.overlaywrap{display:grid;grid-template-columns:1fr}
+  .overlaywrap>.chrome{grid-row:1;grid-column:1}
+  .overlaywrap>.behind{grid-row:2;grid-column:1}
+  .overlaywrap>.ov{grid-row:2;grid-column:1}
+
+  .card{width:100%;max-width:404px;background:var(--page);border:1px solid var(--line);
+    border-radius:13px;box-shadow:var(--shadow);overflow:hidden}
+  .card.plain{box-shadow:none;max-width:none}
+  .card .head{display:flex;gap:13px;padding:18px 20px 14px;align-items:flex-start}
+  .cov{width:46px;height:66px;border-radius:4px;flex:none;
+    background:linear-gradient(150deg,#c8b79a,#8f7c5e);position:relative;overflow:hidden}
+  .cov::after{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:rgba(0,0,0,.16)}
+  .cov.blue{background:linear-gradient(150deg,#9aaec8,#5e708f)}
+  .cov.grey{background:linear-gradient(150deg,#bfbab2,#7e7a73)}
+  .card .head .tx{flex:1;min-width:0}
+  .card h3{font-size:16px;margin:0 0 3px;font-weight:640;letter-spacing:-.2px;line-height:1.35}
+  .card .by{font-size:12.4px;color:var(--ink2);margin:0}
+  .card .fmt{font-size:11.4px;color:var(--ink3);margin:5px 0 0;display:flex;gap:4px 10px;flex-wrap:wrap}
+
+  .body{padding:0 20px}
+  .divider{height:1px;background:var(--line2);margin:0}
+
+  /* 结论区 */
+  .verdict{padding:15px 0 14px}
+  .vbig{font-size:15.4px;font-weight:600;line-height:1.5;margin:0 0 5px}
+  .vbig em{font-style:normal;color:var(--accent);font-variant-numeric:tabular-nums}
+  .vsub{font-size:12.4px;color:var(--ink2);margin:0;line-height:1.6}
+  .vsub b{color:var(--ink)}
+
+  /* 频段条 */
+  .bar{display:flex;height:10px;border-radius:5px;overflow:hidden;margin:13px 0 9px;
+    background:var(--line2)}
+  .bar i{display:block;height:100%}
+  .legend{display:flex;flex-wrap:wrap;gap:4px 13px;font-size:11.2px;color:var(--ink2);
+    font-variant-numeric:tabular-nums}
+  .legend span{display:flex;align-items:center;gap:5px;white-space:nowrap}
+  .legend u{width:8px;height:8px;border-radius:2px;text-decoration:none;flex:none}
+
+  /* 对比行 */
+  .cmp{display:flex;gap:9px;align-items:flex-start;padding:13px 0;font-size:12.8px;line-height:1.55}
+  .cmp .ic{flex:none;margin-top:1px;color:var(--accent)}
+  .cmp .tx{flex:1;min-width:0}
+  .cmp .t2{font-size:11.6px;color:var(--ink3);margin-top:3px;line-height:1.55}
+
+  /* 事实行 */
+  .facts{display:flex;flex-wrap:wrap;gap:6px 18px;padding:12px 0;font-size:11.8px;color:var(--ink3);
+    font-variant-numeric:tabular-nums}
+  .facts b{color:var(--ink2);font-weight:560}
+
+  /* 折叠算式 */
+  .disc{border-top:1px solid var(--line2);padding:11px 0 0}
+  .disc .dh{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink2);cursor:default}
+  .disc .dh .ch{color:var(--ink3);font-size:10px}
+  .tbl{width:100%;border-collapse:collapse;margin-top:10px;font-size:11.6px;
+    font-variant-numeric:tabular-nums}
+  .tbl th{text-align:right;font-weight:600;color:var(--ink3);font-size:10.6px;letter-spacing:.3px;
+    padding:0 0 6px;border-bottom:1px solid var(--line)}
+  .tbl th:first-child{text-align:left}
+  .tbl td{padding:6px 0;border-bottom:1px solid var(--line2);text-align:right;color:var(--ink2)}
+  .tbl td:first-child{text-align:left;color:var(--ink);display:flex;align-items:center;gap:6px}
+  .tbl td u{width:8px;height:8px;border-radius:2px;text-decoration:none;flex:none}
+  .tbl tr:last-child td{border-bottom:none}
+  .tbl tr.sum td{font-weight:650;color:var(--ink)}
+  .tbl tr.off td{color:var(--ink3)}
+  .fine{font-size:11.2px;color:var(--ink3);line-height:1.6;margin:9px 0 0}
+
+  /* 底部按钮 */
+  .cf{display:flex;align-items:center;gap:9px;padding:14px 20px 17px;
+    border-top:1px solid var(--line2);flex-wrap:wrap}
+  .cf .sp{flex:1;min-width:8px}
+  .btn{border:1px solid var(--line);background:var(--page);color:var(--ink);border-radius:8px;
+    padding:7px 15px;font-size:13px;font-weight:560;font-family:inherit;cursor:default;
+    display:inline-block;white-space:nowrap}
+  .btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+  @media (prefers-color-scheme:dark){.btn.pri{color:#1d1712}}
+  .btn.sm{padding:5px 11px;font-size:12px}
+  .btn.ghost{border-color:transparent;background:none;color:var(--ink3);padding-left:0;padding-right:8px}
+  .btn.dis{color:var(--ink3);border-color:var(--line2)}
+
+  /* 提示条 */
+  .note{display:flex;gap:9px;border-radius:9px;padding:11px 13px;font-size:12.3px;line-height:1.6;
+    align-items:flex-start;margin:13px 0 3px}
+  .note .ic{flex:none;margin-top:1px}
+  .note.warn{background:var(--warn-bg);border:1px solid var(--accent-line);color:var(--ink)}
+  .note.warn .ic{color:var(--warn)}
+  .note.calm{background:var(--accent-bg);border:1px solid var(--accent-line)}
+  .note.calm .ic{color:var(--accent)}
+  .note b{font-weight:620}
+  .note s{text-decoration:none;display:block;color:var(--ink2);font-size:11.5px;margin-top:4px}
+
+  /* 空/占位骨架 */
+  .sk{height:9px;border-radius:5px;background:var(--line);animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.5}50%{opacity:.95}}
+  .spinner{width:15px;height:15px;border-radius:50%;border:2px solid var(--line);
+    border-top-color:var(--accent);animation:spin 1s linear infinite;flex:none}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* 进度 */
+  .pg{height:5px;border-radius:3px;background:var(--line2);overflow:hidden;margin:9px 0 0}
+  .pg i{display:block;height:100%;background:var(--accent)}
+
+  /* 折叠条（在读中的书） */
+  .strip{display:flex;align-items:center;gap:11px;padding:13px 16px;border:1px solid var(--line);
+    border-radius:11px;background:var(--page);box-shadow:var(--shadow)}
+  .strip .tx{flex:1;min-width:0}
+  .strip .t1{font-size:13.4px;font-weight:600;line-height:1.4}
+  .strip .t2{font-size:11.6px;color:var(--ink2);margin-top:3px;line-height:1.5}
+
+  /* 放在哪 · 流程图 */
+  .flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:8px;margin:4px 0 0}
+  .step{flex:1 1 132px;min-width:0;border:1px solid var(--line);border-radius:10px;
+    background:var(--page);padding:12px 13px}
+  .step.on{border-color:var(--accent);background:var(--accent-bg)}
+  .step .k{font-size:10.4px;letter-spacing:.5px;font-weight:700;color:var(--ink3);margin-bottom:5px}
+  .step.on .k{color:var(--accent)}
+  .step .v{font-size:12.6px;line-height:1.5;font-weight:560}
+  .step .w{font-size:11.2px;color:var(--ink2);margin-top:5px;line-height:1.5}
+  .arw{align-self:center;color:var(--ink3);flex:none;padding:0 1px}
+  @media(max-width:640px){.arw{transform:rotate(90deg);align-self:center}}
+
+  .why{border-left:2px solid var(--accent-line);padding:2px 0 2px 14px;margin:20px 0 0;
+    font-size:13.2px;color:var(--ink2);line-height:1.7;max-width:80ch}
+  .why b{color:var(--ink)}
+
+  /* 来源表 */
+  .src{width:100%;border-collapse:collapse;font-size:12.4px;margin-top:6px}
+  .src th{text-align:left;font-size:10.8px;letter-spacing:.4px;font-weight:700;color:var(--ink3);
+    padding:0 12px 8px 0;border-bottom:1px solid var(--line);white-space:nowrap}
+  .src td{padding:9px 12px 9px 0;border-bottom:1px solid var(--line2);vertical-align:top;
+    color:var(--ink2);line-height:1.55}
+  .src td:first-child{color:var(--ink);font-weight:560}
+  .src code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.3px;
+    background:var(--line2);border-radius:4px;padding:1px 5px;word-break:break-word}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+  .cut{border:1px solid var(--line);border-radius:11px;padding:4px 16px 8px;background:var(--page);
+    margin-top:6px}
+  .cut .ci{padding:13px 0;border-bottom:1px solid var(--line2)}
+  .cut .ci:last-child{border-bottom:none}
+  .cut .ct{font-size:13.2px;font-weight:600;line-height:1.45}
+  .cut .cw{font-size:12px;color:var(--ink2);margin-top:5px;line-height:1.6}
+  .cut .cw code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.2px;
+    background:var(--line2);border-radius:4px;padding:1px 5px}
+
+  /* 卡片右上角的关闭（这次不看） */
+  .x{flex:none;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;
+    justify-content:center;color:var(--ink3);margin:-3px -6px 0 0;border:1px solid transparent}
+  .x.boxed{border-color:var(--line)}
+
+  /* 难点集中在哪一章 */
+  .chap{padding:14px 0 13px}
+  .chap .k{font-size:10.4px;letter-spacing:.5px;font-weight:700;color:var(--ink3);margin-bottom:6px}
+  .chap .t{font-size:13.4px;font-weight:600;line-height:1.45}
+  .chap .t b{color:var(--accent);font-weight:640}
+  .chap .w{font-size:11.6px;color:var(--ink2);margin-top:4px;line-height:1.55}
+  .ridge{display:flex;align-items:flex-end;gap:2px;height:30px;margin:12px 0 0}
+  .ridge i{flex:1 1 0;min-width:0;display:block;border-radius:2px 2px 0 0;background:var(--line)}
+  .ridge i.mid{background:var(--accent-line)}
+  .ridge i.hi{background:var(--accent)}
+  .ridge.wait i{animation:pulse 1.6s ease-in-out infinite}
+  .rlab{display:flex;justify-content:space-between;font-size:10.6px;color:var(--ink3);margin-top:6px}
+  .rlab em{font-style:normal;color:var(--accent);font-weight:600}
+
+  /* 设置面板 */
+  .pane{padding:17px 18px 20px}
+  .ph{display:flex;align-items:baseline;gap:9px;margin-bottom:4px}
+  .ph h4{margin:0;font-size:16.5px;font-weight:650;letter-spacing:-.2px}
+  .plede{font-size:12.4px;color:var(--ink2);margin:0;line-height:1.6}
+  .grp{margin-top:17px}
+  .grp .gh{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--ink3);
+    padding-bottom:7px;border-bottom:1px solid var(--line);margin-bottom:2px}
+  .item{display:flex;gap:12px;padding:13px 2px;border-bottom:1px solid var(--line2);
+    align-items:flex-start}
+  .item:last-child{border-bottom:none}
+  .item .tx{flex:1;min-width:0}
+  .item .t1{font-size:13.4px;font-weight:600;line-height:1.4}
+  .item .t2{font-size:11.6px;color:var(--ink2);margin-top:4px;line-height:1.55}
+  .item .meta{font-size:11.2px;color:var(--ink3);margin-top:5px;line-height:1.5}
+  .item.off .t1,.item.off .t2{color:var(--ink3)}
+  .sw{width:38px;height:22px;border-radius:12px;background:var(--accent);position:relative;
+    flex:none;margin-top:2px}
+  .sw::after{content:"";position:absolute;top:2px;right:2px;width:18px;height:18px;
+    border-radius:50%;background:#fff}
+  .sw.off{background:var(--line)}
+  .sw.off::after{right:auto;left:2px}
+  @media (prefers-color-scheme:dark){.sw::after{background:#f2ede6}.sw.off::after{background:#8a827a}}
+
+  /* 关闭后的提示条 */
+  .toast{display:flex;align-items:center;gap:12px;background:var(--ink);color:var(--page);
+    border-radius:9px;padding:10px 14px;font-size:12.4px;line-height:1.5;box-shadow:var(--shadow)}
+  .toast u{text-decoration:underline;font-weight:620;margin-left:auto;flex:none;color:inherit}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>开书卡 · 样张</h1>
+  <p class="sub">
+    <b>它解决什么。</b>今天点开一本书，进阅读器之前系统一句话都不说。这本书对你是轻松还是吃力、词汇难在哪一段频段、最吃力的一章在哪、比你读完的那几本重还是轻——全都要读进去几十页才知道。开书卡把这些放在<b>打开之前</b>。
+  </p>
+  <p class="sub">
+    <b>只给一个粗的量级，不给精确数字。</b>卡上关于「难」的说法只有一句：陌生词<b>约占篇幅百分之几</b>，取整到个位。<b>不写「有 N 个生词」，不写「每 N 个词 1 个」，也不预测你会查多少次词</b>——那是把一次翻开书变成一场考前估分。要看拆解的人可以展开「这个数字怎么来的」，但收起态永远只有一句话。
+  </p>
+  <p class="sub">
+    <b>数据从哪来。</b>两侧相乘。一侧是 <code>book_difficulty</code>：导入时把全书正文按 <code>word_frequency</code> 的五个频段 + 一个「表里没有」桶做过一次分布统计。另一侧是你自己的记录：<code>lookup_records</code>（你停下来查过的词）和 <code>reading_word_exposures</code>（在屏幕上出现过、你却读了过去的词），按频段折算成<b>实证通过率</b>。两者按频段逐段相乘再相加，就是这本书里陌生词占篇幅的比例。
+  </p>
+  <p class="sub">
+    <b>为什么零成本。</b>全部是本地表查表：频段表是随包的 5 万词 TSV，通过率来自本机 SQLite，分布在导入时已经算完并存进 <code>book_difficulty</code>。这条链上<b>没有任何一次网络请求，也不经过 AI</b>——开书卡打开时只是读几张表再做一次乘加，毫秒级。
+  </p>
+  <p class="sub">
+    <b>它必须能关掉，而且是三层。</b>每张卡右上角有 <b>✕</b>（这次不看）；卡里有<b>「不再显示开书卡」</b>（整个功能不再出现）；设置里有同一个开关。中间那一层和设置里那一行<b>是同一个状态</b>，不是两个互不知情的开关。见第 7 节，含关掉之后开书流程长什么样。
+  </p>
+  <p class="sub">
+    <b>顺手一起解决的。</b>扫描件 PDF 的前置判定。今天是你点了 AI 功能才弹错，其实这本书在导入时算难度就已经撞到过 <code>PDF_TEXT_LAYER_UNAVAILABLE</code>——那一刻就知道它没有文字层。开书卡把这件事挪到打开之前说清楚。
+  </p>
+  <p class="sub" style="color:var(--ink3);font-size:12.6px;margin-top:14px">
+    样张里的每个数字都标了出处，见最后一节《数字从哪来》；查证后确认拿不到、因此没有画的指标也列在那里。
+    <b style="color:var(--ink2)">「难点集中在哪一章」已获批做 schema 变更，逐章难度由后端另行落库</b>，本样张只定它怎么呈现（第 6 节）。
+  </p>
+</header>
+
+<!-- ============ 0 · 放在哪 ============ -->
+<h2 class="sec"><span class="n">0</span>放在哪 · 产品决策</h2>
+<p class="seclede">
+  三个候选位置：<b>首页卡片上直接显示</b>、<b>点封面后的中间层</b>、<b>书籍详情页</b>（那里今天已经有一张完整难度卡）。
+  推荐<b>中间层</b>，但<b>有条件出现</b>，不是每次开书都拦一下。
+</p>
+
+<div class="flow">
+  <div class="step">
+    <div class="k">书架</div>
+    <div class="v">点封面</div>
+    <div class="w">首页网格 / 列表，任一入口</div>
+  </div>
+  <svg class="arw" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+  <div class="step on">
+    <div class="k">开书卡</div>
+    <div class="v">一张浮层，覆盖在书架上</div>
+    <div class="w">只在三种情况出现，见下</div>
+  </div>
+  <svg class="arw" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+  <div class="step">
+    <div class="k">阅读器</div>
+    <div class="v">开始阅读</div>
+    <div class="w">卡上任何按钮或点空白都能进</div>
+  </div>
+</div>
+
+<div class="why">
+  <b>为什么是中间层，而不是首页卡片。</b>首页是扫视场景，一个需要解释的百分比塞进封面下方会变成噪音；更实际的问题是它对「还没分析过 / 太短 / 格式不支持」的书是空的，网格会参差不齐。而这张卡要回答的问题本来就只在「我现在要打开它」那一刻成立。<br>
+  <b>为什么不是详情页。</b>详情页要多点一次才到，而「打开之前什么都不知道」正是要治的病——治法不能是「你应该先去别的页面看看」。详情页那张卡继续存在，开书卡是它的摘要版，不是第二套数据。<br>
+  <b>为什么要有条件。</b>开书是高频动作，每次都拦一下就是收税。出现条件只有三条：这本书<b>从没打开过</b>（<code>status = 'unread'</code>）；它是<b>没有文字层的扫描件</b>（阻断性事实，必须说）；或者<b>书变了</b>（重新导入 / OCR 跑完，<code>stale = true</code>）。其余情况——你正在读的书——降级成一条可折叠的细条，不挡路（见第 5 节）。
+</div>
+
+<!-- ============ 1 · 正常态 ============ -->
+<h2 class="sec"><span class="n">1</span>正常态 · 数据齐全</h2>
+<p class="seclede">
+  这本书分析过（<code>status = 'done'</code>），你的查词记录也过了门槛。卡片默认收起结论，第二张是展开「这个数字怎么来的」之后的样子——把两侧数据摊开，让那个百分比能对上账。
+</p>
+
+<div class="row">
+  <div class="shot">
+    <div class="win overlaywrap">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">书架</span></div>
+      <div class="behind">
+        <div class="bh">
+          <div class="bh-nav"><i></i><i></i><i></i><i></i></div>
+          <div class="bh-grid"><s></s><s></s><s></s><s></s><s></s><s></s></div>
+        </div>
+      </div>
+      <div class="ov">
+        <div class="card">
+          <div class="head">
+            <div class="cov"></div>
+            <div class="tx">
+              <h3>The Remains of the Day</h3>
+              <p class="by">Kazuo Ishiguro</p>
+              <p class="fmt"><span>EPUB</span><span>6.2 万词</span><span>还没开始读</span></p>
+            </div>
+            <span class="x" title="这次不看">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </span>
+          </div>
+          <div class="body">
+            <div class="divider"></div>
+            <div class="verdict">
+              <p class="vbig">这本书里你没见过的词，<em>约占篇幅 3%</em></p>
+              <p class="vsub">其中一半来自 5001 名以后的两个频段。</p>
+              <div class="bar">
+                <i style="width:78.4%;background:var(--b1)"></i>
+                <i style="width:11.0%;background:var(--b2)"></i>
+                <i style="width:3.5%;background:var(--b3)"></i>
+                <i style="width:3.9%;background:var(--b4)"></i>
+                <i style="width:0.6%;background:var(--b5)"></i>
+                <i style="width:2.6%;background:var(--bu)"></i>
+              </div>
+              <div class="legend">
+                <span><u style="background:var(--b1)"></u>1–1000</span>
+                <span><u style="background:var(--b2)"></u>1001–3000</span>
+                <span><u style="background:var(--b3)"></u>3001–5000</span>
+                <span><u style="background:var(--b4)"></u>5001–2万</span>
+                <span><u style="background:var(--b5)"></u>2万以后</span>
+                <span><u style="background:var(--bu)"></u>表里没有</span>
+              </div>
+            </div>
+            <div class="divider"></div>
+            <div class="chap">
+              <div class="k">难点集中在</div>
+              <div class="t">最吃力的一段在 <b>第 8 章「Salisbury」</b>前后</div>
+              <div class="w">那几章的用词比全书其余部分重一些，读慢下来是正常的。其余章节彼此差不多。</div>
+              <div class="ridge">
+                <i style="height:38%"></i><i style="height:31%"></i><i style="height:44%"></i>
+                <i style="height:36%"></i><i style="height:52%" class="mid"></i><i style="height:41%"></i>
+                <i style="height:63%" class="mid"></i><i style="height:100%" class="hi"></i>
+                <i style="height:81%" class="hi"></i><i style="height:47%"></i><i style="height:35%"></i>
+                <i style="height:42%"></i><i style="height:33%"></i><i style="height:39%"></i>
+                <i style="height:29%"></i><i style="height:45%"></i><i style="height:34%"></i>
+              </div>
+              <div class="rlab"><span>开头</span><em>第 8 章</em><span>结尾</span></div>
+            </div>
+            <div class="divider"></div>
+            <div class="cmp">
+              <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17l5-5 5 5M7 11l5-5 5 5"/></svg>
+              <div class="tx">
+                比你读完的那几本略重一些
+                <div class="t2">生僻词多一点。最近读完的《Never Let Me Go》比这本轻。</div>
+              </div>
+            </div>
+            <div class="divider"></div>
+            <div class="facts">
+              <span>全书 <b>6.2 万</b>词</span>
+              <span>按你最近 <b>148 词/分</b>，约 <b>7–8 小时</b></span>
+            </div>
+          </div>
+          <div class="cf">
+            <span class="btn ghost sm">不再显示开书卡</span>
+            <span class="sp"></span>
+            <span class="btn sm">详情</span>
+            <span class="btn pri sm">开始阅读</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      收起态。四段：<b>一句结论</b>（陌生词约占篇幅 3%）、<b>一条分布</b>（书的词频构成，只标频段不标数值）、<b>难点集中在哪一章</b>（第 6 节）、<b>一句对比</b>（跟你读完的书比，不给比值）。
+      措辞是观察式的——说这本书里有多少你没见过的词，不说你的水平够不够。<b>结论那句取整到个位</b>：这个数是一次估算，标到小数点后一位只是把估算伪装成测量。<br>
+      两处关闭：右上角 <b>✕</b> 关掉这一张，底部左下 <b>「不再显示开书卡」</b>关掉整个功能（第 7 节）。
+    </p>
+  </div>
+
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">开书卡 · 展开「这个数字怎么来的」</span></div>
+      <div class="card plain" style="border:none;border-radius:0">
+        <div class="head">
+          <div class="cov"></div>
+          <div class="tx">
+            <h3>The Remains of the Day</h3>
+            <p class="by">Kazuo Ishiguro</p>
+            <p class="fmt"><span>EPUB</span><span>6.2 万词</span><span>还没开始读</span></p>
+          </div>
+          <span class="x" title="这次不看">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </span>
+        </div>
+        <div class="body">
+          <div class="divider"></div>
+          <div class="verdict">
+            <p class="vbig">这本书里你没见过的词，<em>约占篇幅 3%</em></p>
+          </div>
+          <div class="disc">
+            <div class="dh">
+              <svg class="ch" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M6 9l6 6 6-6"/></svg>
+              这个数字怎么来的
+            </div>
+            <div class="scroll">
+            <table class="tbl">
+              <tr><th>词频段</th><th>占篇幅</th><th>你的通过率</th><th>贡献</th></tr>
+              <tr><td><u style="background:var(--b1)"></u>1–1000</td><td>约 78%</td><td>约 99%</td><td><span style="display:inline-block;height:6px;border-radius:3px;background:var(--accent);width:26px;opacity:.75"></span></td></tr>
+              <tr><td><u style="background:var(--b2)"></u>1001–3000</td><td>约 11%</td><td>约 96%</td><td><span style="display:inline-block;height:6px;border-radius:3px;background:var(--accent);width:15px;opacity:.75"></span></td></tr>
+              <tr><td><u style="background:var(--b3)"></u>3001–5000</td><td>约 4%</td><td>约 86%</td><td><span style="display:inline-block;height:6px;border-radius:3px;background:var(--accent);width:19px;opacity:.75"></span></td></tr>
+              <tr><td><u style="background:var(--b4)"></u>5001–2万</td><td>约 4%</td><td>约 70%</td><td><span style="display:inline-block;height:6px;border-radius:3px;background:var(--accent);width:44px"></span></td></tr>
+              <tr><td><u style="background:var(--b5)"></u>2万以后</td><td>约 1%</td><td>约 52%</td><td><span style="display:inline-block;height:6px;border-radius:3px;background:var(--accent);width:11px;opacity:.75"></span></td></tr>
+              <tr class="off"><td><u style="background:var(--bu)"></u>表里没有</td><td>约 3%</td><td>—</td><td>不计</td></tr>
+              <tr class="sum"><td>合计</td><td>100%</td><td></td><td>约 3%</td></tr>
+            </table>
+            </div>
+            <p class="fine">
+              <b>左边这列</b>是这本书自己的构成，导入时算过一次，存在本机。
+              <b>中间这列</b>是你的实证通过率：这个频段里，你在屏幕上遇到过两次以上、一次都没查的词，占你遇到过的该频段词的比例。
+              <b>右边一列</b>只画相对轻重，不给数值——每一段各贡献多少个百分点，精确到那个程度既不可靠也没用处；能看出「重量压在 5001 名以后」就够了。
+            </p>
+            <p class="fine">
+              「表里没有」那一行不参与计算：那多半是人名地名，5 万词表对它没有答案，硬算进去会让每本有主角名字的小说都显得更难。
+              各列取整显示，所以逐行相加与合计会有出入。
+            </p>
+          </div>
+        </div>
+        <div class="cf">
+          <span class="btn ghost sm">不再显示开书卡</span>
+          <span class="sp"></span>
+          <span class="btn sm">详情</span>
+          <span class="btn pri sm">开始阅读</span>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      展开态。这张表让「约 3%」变成一个能被你自己的记录反驳的说法，而不是一个从黑箱里掉出来的分数。<b>「通过率」一列的门槛与阈值沿用 <code>level_observation.rs</code> 已有的口径</b>，不新造一套。<br>
+      展开态里<b>不再出现原先那段「这是篇幅占比、不是查词次数」的提醒</b>——那段话的存在本身就是在谈查词次数。既然卡上任何地方都不再出现次数，也就没有什么需要澄清。
+    </p>
+  </div>
+</div>
+
+<!-- ============ 2 · 数据不足 ============ -->
+<h2 class="sec"><span class="n">2</span>数据不足</h2>
+<p class="seclede">
+  两种互不相干的缺口，界面上必须分开说：<b>你这边的记录还不够</b>（新用户），和<b>这本书还没算过</b>。前者是等，后者是按一下。都不是错误状态，都不该用红色。
+</p>
+
+<div class="row">
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">2a · 书算过了，你的记录还不够</span></div>
+      <div class="card plain" style="border:none;border-radius:0">
+        <div class="head">
+          <div class="cov"></div>
+          <div class="tx">
+            <h3>The Remains of the Day</h3>
+            <p class="by">Kazuo Ishiguro</p>
+            <p class="fmt"><span>EPUB</span><span>6.2 万词</span><span>还没开始读</span></p>
+          </div>
+          <span class="x" title="这次不看">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </span>
+        </div>
+        <div class="body">
+          <div class="divider"></div>
+          <div class="verdict">
+            <p class="vbig">这本书的词，近八成落在最常用的 1000 个里</p>
+            <p class="vsub">5001 名以后的词<b>约占 5%</b>。这是书本身的构成，跟谁来读无关。</p>
+            <div class="bar">
+              <i style="width:78.4%;background:var(--b1)"></i>
+              <i style="width:11.0%;background:var(--b2)"></i>
+              <i style="width:3.5%;background:var(--b3)"></i>
+              <i style="width:3.9%;background:var(--b4)"></i>
+              <i style="width:0.6%;background:var(--b5)"></i>
+              <i style="width:2.6%;background:var(--bu)"></i>
+            </div>
+            <div class="legend">
+              <span><u style="background:var(--b1)"></u>1–1000</span>
+              <span><u style="background:var(--b2)"></u>1001–3000</span>
+              <span><u style="background:var(--b3)"></u>3001–5000</span>
+              <span><u style="background:var(--b4)"></u>5001–2万</span>
+              <span><u style="background:var(--b5)"></u>2万以后</span>
+              <span><u style="background:var(--bu)"></u>表里没有</span>
+            </div>
+          </div>
+          <div class="note calm">
+            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>
+            <div>
+              <b>还说不上这本书对你算轻还是重。</b>
+              <s>你的记录里现在有 7 次可评分查词，跨 9 天；到 12 次、跨 14 天，这里就会多出一行「对你」的估计。照常读就行，不用特意去查词。</s>
+            </div>
+          </div>
+          <div class="facts">
+            <span>全书 <b>6.2 万</b>词</span>
+          </div>
+        </div>
+        <div class="cf">
+          <span class="btn ghost sm">不再显示开书卡</span>
+          <span class="sp"></span>
+          <span class="btn sm">详情</span>
+          <span class="btn pri sm">开始阅读</span>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      书那一侧的数据是完整的，所以卡片不空——它退回去只讲书，把「对你」那一句摘掉。
+      门槛 <b>12 次 / 14 天</b>是 <code>level_observation.rs</code> 里已经在用的两条底线（<code>MIN_SCORABLE_LOOKUPS</code>、<code>MIN_SPAN_DAYS</code>），不是新数字。
+    </p>
+  </div>
+
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">2b · 这本书还没算过</span></div>
+      <div class="card plain" style="border:none;border-radius:0">
+        <div class="head">
+          <div class="cov blue"></div>
+          <div class="tx">
+            <h3>Piranesi</h3>
+            <p class="by">Susanna Clarke</p>
+            <p class="fmt"><span>EPUB</span><span>还没开始读</span></p>
+          </div>
+          <span class="x" title="这次不看">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </span>
+        </div>
+        <div class="body">
+          <div class="divider"></div>
+          <div class="verdict">
+            <p class="vbig" style="color:var(--ink2);font-weight:560">还没统计过这本书的词汇构成</p>
+            <p class="vsub">统计是本地的一次全文扫读，不联网、不经过 AI，几秒钟。通常在导入时就跑完了，这一本没赶上。</p>
+          </div>
+          <div class="cf" style="border:none;padding:2px 0 14px">
+            <span class="btn sm">现在统计</span>
+            <span class="sp"></span>
+          </div>
+        </div>
+        <div class="cf">
+          <span class="btn ghost sm">不再显示开书卡</span>
+          <span class="sp"></span>
+          <span class="btn pri sm">开始阅读</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="win" style="margin-top:16px">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">2c · 永久性的两种「没有结论」</span></div>
+      <div style="padding:4px 16px 6px;background:var(--page)">
+        <div class="note calm" style="margin:12px 0">
+          <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5a2 2 0 012-2h9l5 5v11a2 2 0 01-2 2H6a2 2 0 01-2-2z"/><path d="M14 3v6h6"/></svg>
+          <div>
+            <b>正文太短，统计不出比例。</b>
+            <s>只有 3120 个词，不到统计需要的 5000。样章、序言、试读本都会落在这里——这个文件不会再变长，所以这里不给「稍后再看」的按钮。</s>
+          </div>
+        </div>
+        <div class="note calm" style="margin:12px 0 16px">
+          <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg>
+          <div>
+            <b>这个格式读不出正文。</b>
+            <s>MOBI / AZW3 转换成 EPUB 之后才能阅读，词频统计读的是原始文件，读不到。这本书照常能读，只是没有难度信息。</s>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      <code>too_short</code>（正文 &lt; 5000 词）和 <code>unsupported</code> 是<b>结论，不是失败</b>——后端就是这么分的，两者都不给重试按钮，因为再跑一次读的还是同一个文件。
+    </p>
+  </div>
+</div>
+
+<!-- ============ 3 · 扫描件 ============ -->
+<h2 class="sec"><span class="n">3</span>扫描件 PDF · 没有文字层</h2>
+<p class="seclede">
+  这一条今天的时机是错的：你点了 AI 功能才弹错。其实导入时算难度就已经撞到过 <code>PDF_TEXT_LAYER_UNAVAILABLE</code>——那一刻就知道这本书是图片。开书卡在打开之前说清楚，并且把话说全：<b>能读，不能查词，不能问 AI，跑一次 OCR 之后三样都有</b>。
+</p>
+
+<div class="row">
+  <div class="shot">
+    <div class="win overlaywrap">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">3a · 扫描件，识别组件还没装</span></div>
+      <div class="behind">
+        <div class="bh">
+          <div class="bh-nav"><i></i><i></i><i></i><i></i></div>
+          <div class="bh-grid"><s></s><s></s><s></s><s></s><s></s><s></s></div>
+        </div>
+      </div>
+      <div class="ov">
+        <div class="card">
+          <div class="head">
+            <div class="cov grey"></div>
+            <div class="tx">
+              <h3>English Prose Style</h3>
+              <p class="by">Herbert Read</p>
+              <p class="fmt"><span>PDF</span><span>214 页</span><span>还没开始读</span></p>
+            </div>
+            <span class="x" title="这次不看">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </span>
+          </div>
+          <div class="body">
+            <div class="divider"></div>
+            <div class="note warn" style="margin:14px 0 4px">
+              <svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18v14H3z"/><path d="M3 15l5-5 4 4 3-3 6 6"/><circle cx="8.5" cy="9" r="1.3"/></svg>
+              <div>
+                <b>这本是扫描件——页面是图片，不是文字。</b>
+                <s>可以照常翻页阅读，但<b>划词查不了、AI 也读不到内容</b>，因为里面没有可选中的文字。词汇难度同样算不出来。</s>
+              </div>
+            </div>
+            <div class="verdict" style="padding-top:14px">
+              <p class="vsub">
+                跑一次 <b>OCR</b> 就都有了：文字识别在本机进行，不上传原文件。首次需要下载识别组件（约 180 MB），之后每本书识别一次，结果存下来不再重跑。
+              </p>
+            </div>
+          </div>
+          <div class="cf">
+            <span class="btn ghost sm">不再显示开书卡</span>
+            <span class="sp"></span>
+            <span class="btn sm">直接读</span>
+            <span class="btn pri sm">下载并识别</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      主按钮是<b>下载并识别</b>，次按钮是<b>直接读</b>——不把人堵在这里。文案先说事实（页面是图片），再说后果（查不了词、AI 读不到），最后才给办法；顺序反过来就变成推销。<br>
+      「约 180 MB」取自 <code>ocr_package_status.totalBytes</code>，实际显示以该字段为准。<br>
+      这张卡同样带两层关闭。但扫描件是<b>阻断性事实</b>，关掉开书卡之后它不会就此消失——降级成阅读器顶部一条细条说一次（第 7 节）。
+    </p>
+  </div>
+
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">3b · 识别进行中</span></div>
+      <div class="card plain" style="border:none;border-radius:0">
+        <div class="head">
+          <div class="cov grey"></div>
+          <div class="tx">
+            <h3>English Prose Style</h3>
+            <p class="by">Herbert Read</p>
+            <p class="fmt"><span>PDF</span><span>214 页</span></p>
+          </div>
+          <span class="x" title="这次不看">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </span>
+        </div>
+        <div class="body">
+          <div class="divider"></div>
+          <div class="verdict">
+            <p class="vbig" style="display:flex;align-items:center;gap:9px;font-size:14.4px">
+              <span class="spinner"></span>正在识别文字 · 第 86 / 214 页
+            </p>
+            <div class="pg"><i style="width:40%"></i></div>
+            <p class="vsub" style="margin-top:10px">
+              在本机进行，不上传。可以先读起来——识别完成后，划词和 AI 会自动可用，词汇难度也会一并算出来。
+            </p>
+          </div>
+        </div>
+        <div class="cf">
+          <span class="btn ghost sm">取消识别</span>
+          <span class="sp"></span>
+          <span class="btn pri sm">先去阅读</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="win" style="margin-top:16px">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">3c · 识别失败</span></div>
+      <div style="padding:4px 16px 16px;background:var(--page)">
+        <div class="note warn" style="margin:13px 0 0">
+          <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.01"/></svg>
+          <div>
+            <b>这一本没能识别出来。</b>
+            <s>照常能翻页读，划词和 AI 仍然不可用。可以重试一次；如果还是不行，多半是扫描质量本身的问题。</s>
+          </div>
+        </div>
+        <div class="cf" style="border:none;padding:12px 0 0">
+          <span class="btn ghost sm">直接读</span>
+          <span class="sp"></span>
+          <span class="btn sm">重试识别</span>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      进度是真的：<code>ocr_job_status</code> 会返回 <code>pagesDone</code> / <code>pagesTotal</code>。
+      注意这跟第 4 节的「计算中」不一样——那边<b>没有</b>进度可显示。
+    </p>
+  </div>
+</div>
+
+<!-- ============ 4 · 计算中 ============ -->
+<h2 class="sec"><span class="n">4</span>计算中</h2>
+<p class="seclede">
+  后端只在<b>算完</b>时发一个事件，中途不报进度。所以这里<b>不能画百分比进度条</b>——画了就是假的。用一句在做什么 + 一处不确定态的占位，并且这张卡不阻塞：可以直接开始读，结果算出来会自己填上。
+</p>
+
+<div class="row">
+  <div class="shot">
+    <div class="win overlaywrap">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">书架</span></div>
+      <div class="behind">
+        <div class="bh">
+          <div class="bh-nav"><i></i><i></i><i></i><i></i></div>
+          <div class="bh-grid"><s></s><s></s><s></s><s></s><s></s><s></s></div>
+        </div>
+      </div>
+      <div class="ov">
+        <div class="card">
+          <div class="head">
+            <div class="cov blue"></div>
+            <div class="tx">
+              <h3>Piranesi</h3>
+              <p class="by">Susanna Clarke</p>
+              <p class="fmt"><span>EPUB</span><span>还没开始读</span></p>
+            </div>
+            <span class="x" title="这次不看">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </span>
+          </div>
+          <div class="body">
+            <div class="divider"></div>
+            <div class="verdict">
+              <p class="vbig" style="display:flex;align-items:center;gap:9px;font-size:14.4px">
+                <span class="spinner"></span>正在通读这本书的正文
+              </p>
+              <div class="bar" style="background:transparent;gap:0">
+                <i class="sk" style="width:100%"></i>
+              </div>
+              <div class="legend" style="opacity:.55">
+                <span><u style="background:var(--line)"></u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+                <span><u style="background:var(--line)"></u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+                <span><u style="background:var(--line)"></u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+              </div>
+              <p class="vsub" style="margin-top:12px">
+                本地统计，不联网。一般几秒；可以现在就开始读，算完了这里会自己出现。
+              </p>
+            </div>
+          </div>
+          <div class="cf">
+            <span class="btn ghost sm">不再显示开书卡</span>
+            <span class="sp"></span>
+            <span class="btn pri sm">开始阅读</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      骨架占位用的是频段条本身的形状，算完之后同一块地方被真实分布替换，位置不跳。
+    </p>
+  </div>
+
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">4b · 书变了，旧结果还在</span></div>
+      <div class="card plain" style="border:none;border-radius:0">
+        <div class="head">
+          <div class="cov grey"></div>
+          <div class="tx">
+            <h3>English Prose Style</h3>
+            <p class="by">Herbert Read</p>
+            <p class="fmt"><span>PDF</span><span>214 页</span><span>OCR 已完成</span></p>
+          </div>
+          <span class="x" title="这次不看">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </span>
+        </div>
+        <div class="body">
+          <div class="divider"></div>
+          <div class="verdict">
+            <p class="vbig" style="opacity:.5">这本书里你没见过的词，<em>约占篇幅 5%</em></p>
+            <div class="bar" style="opacity:.5">
+              <i style="width:70.2%;background:var(--b1)"></i>
+              <i style="width:12.1%;background:var(--b2)"></i>
+              <i style="width:4.8%;background:var(--b3)"></i>
+              <i style="width:6.9%;background:var(--b4)"></i>
+              <i style="width:1.4%;background:var(--b5)"></i>
+              <i style="width:4.6%;background:var(--bu)"></i>
+            </div>
+          </div>
+          <div class="note calm" style="margin:4px 0 14px">
+            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 11A8.1 8.1 0 004.5 9M4 5v4h4M4 13a8.1 8.1 0 0015.5 2M20 19v-4h-4"/></svg>
+            <div>
+              <b>这些数字是按旧文件算的。</b>
+              <s>OCR 跑完之后，正文变了。重新统计一次几秒钟，同样不联网。</s>
+              <div class="cf" style="border:none;padding:11px 0 0">
+                <span class="btn sm">重新统计</span><span class="sp"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cf">
+          <span class="btn ghost sm">不再显示开书卡</span>
+          <span class="sp"></span>
+          <span class="btn pri sm">开始阅读</span>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      <code>stale</code>（存的哈希跟当前文件对不上）。旧数字<b>照常显示、不隐藏</b>，只是压暗——后端保留它们就是为了这个：有个旧答案比没答案有用，前提是说清楚它旧。
+    </p>
+  </div>
+</div>
+
+<!-- ============ 5 · 读过一半 ============ -->
+<h2 class="sec"><span class="n">5</span>读过一半 · 再次打开</h2>
+<p class="seclede">
+  在读中的书<b>不弹卡</b>。开书是高频动作，第 12 次打开同一本还拦一下，这张卡就从帮忙变成了收税。降级成阅读器顶部一条细条，两秒后自行收起；点一下才展开成完整卡片。细条上那一句讲的是<b>难点在你前面还是后面</b>——只有逐章数据才答得出来，也是重开一本书时唯一真正有用的新信息。展开之后再多一段这本书自己的记录。
+</p>
+
+<div class="row">
+  <div class="shot wide">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">阅读器 · 默认折叠</span></div>
+      <div style="background:var(--page);padding:14px">
+        <div class="strip">
+          <div class="cov" style="width:26px;height:37px"></div>
+          <div class="tx">
+            <div class="t1">读到 47% · 第 11 章</div>
+            <div class="t2">最吃力的一段已经过去了，剩下的章节彼此差不多</div>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--ink3);flex:none"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <div style="margin-top:14px;padding:0 4px">
+          <div class="sk" style="width:96%;animation:none;opacity:.35"></div>
+          <div class="sk" style="width:100%;margin-top:9px;animation:none;opacity:.35"></div>
+          <div class="sk" style="width:88%;margin-top:9px;animation:none;opacity:.35"></div>
+          <div class="sk" style="width:97%;margin-top:9px;animation:none;opacity:.35"></div>
+          <div class="sk" style="width:62%;margin-top:9px;animation:none;opacity:.35"></div>
+          <div class="sk" style="width:100%;margin-top:20px;animation:none;opacity:.35"></div>
+          <div class="sk" style="width:93%;margin-top:9px;animation:none;opacity:.35"></div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      一行讲进度，一行讲难度，进度在前——你回到一本读了一半的书，第一件想知道的事是「我读到哪了」。
+      第二行是<b>逐章难度落到细条上的样子</b>：只说最吃力的一段在你前面还是后面，不给任何数值。
+      这一段没有逐章数据（PDF、旧书未补算、章节名对不上目录）时，细条<b>只剩进度那一行</b>，不留空位。
+    </p>
+  </div>
+
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">展开后</span></div>
+      <div class="card plain" style="border:none;border-radius:0">
+        <div class="head">
+          <div class="cov"></div>
+          <div class="tx">
+            <h3>The Remains of the Day</h3>
+            <p class="by">Kazuo Ishiguro</p>
+            <p class="fmt"><span>读到 47%</span><span>第 11 章</span></p>
+            <div class="pg" style="margin-top:8px"><i style="width:47%"></i></div>
+          </div>
+          <span class="x" title="收起">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </span>
+        </div>
+        <div class="body">
+          <div class="divider"></div>
+          <div class="verdict">
+            <p class="vbig">整本算下来，你没见过的词<em>约占篇幅 3%</em></p>
+            <div class="bar">
+              <i style="width:78.4%;background:var(--b1)"></i>
+              <i style="width:11.0%;background:var(--b2)"></i>
+              <i style="width:3.5%;background:var(--b3)"></i>
+              <i style="width:3.9%;background:var(--b4)"></i>
+              <i style="width:0.6%;background:var(--b5)"></i>
+              <i style="width:2.6%;background:var(--bu)"></i>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="chap">
+            <div class="k">难点集中在</div>
+            <div class="t">最吃力的 <b>第 8 章「Salisbury」</b>你已经读过去了</div>
+            <div class="w">后面的章节彼此差不多，没有再明显重起来的一段。</div>
+            <div class="ridge">
+              <i style="height:38%"></i><i style="height:31%"></i><i style="height:44%"></i>
+              <i style="height:36%"></i><i style="height:52%" class="mid"></i><i style="height:41%"></i>
+              <i style="height:63%" class="mid"></i><i style="height:100%" class="hi"></i>
+              <i style="height:81%" class="hi"></i><i style="height:47%"></i><i style="height:35%"></i>
+              <i style="height:42%"></i><i style="height:33%"></i><i style="height:39%"></i>
+              <i style="height:29%"></i><i style="height:45%"></i><i style="height:34%"></i>
+            </div>
+            <div class="rlab"><span>开头</span><em>你在这里 ▾</em><span>结尾</span></div>
+          </div>
+          <div class="divider"></div>
+          <div class="cmp">
+            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M5 10l7-7 7 7"/></svg>
+            <div class="tx">
+              在这本书里，你查过 34 个词
+              <div class="t2">其中 9 个已经不用再查了——后来又遇见几次，你都读了过去。</div>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="facts">
+            <span>还剩 <b>3.3 万</b>词</span>
+            <span>按你在这本书里的 <b>141 词/分</b>，约 <b>4 小时</b></span>
+          </div>
+        </div>
+        <div class="cf">
+          <span class="btn ghost sm">不再显示开书卡</span>
+          <span class="sp"></span>
+          <span class="btn sm">收起</span>
+          <span class="btn pri sm">继续读</span>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      展开态里进度和难度共存的办法：<b>进度提到书名下面</b>（跟着标题走，不占结论区），结论区仍然只讲一件事。
+      逐章那一块在这里多一个标记：<b>「你在这里」</b>——同一张山脊图，读之前回答「难点在哪」，读到一半回答「难点过去了没有」。
+      再往下是这本书自己的记录：查过的词来自 <code>lookup_records</code>，「不用再查了」是 <code>vocab_words.mastery</code> 升到 familiar 以上的那几个；阅读速度换成这本书自己的中位数。<br>
+      细条和展开态同样带那两层关闭：右上角 ✕ 收起这一次，左下角关掉整个功能。
+    </p>
+  </div>
+</div>
+
+<!-- ============ 6 · 逐章难度 ============ -->
+<h2 class="sec"><span class="n">6</span>难点集中在哪一章 · 三种形态</h2>
+<p class="seclede">
+  逐章难度由后端另行落库（已批准的 schema 变更），这一节只定它<b>怎么呈现</b>。三条规矩：<b>只说哪一章，不报任何词数</b>；<b>对不上目录里一个人看得懂的章节名就整块不出现</b>——宁可没有，也不显示「第 7 段」这种机器编号；<b>它永远是可选块</b>，缺了上下两条分隔线自然合拢，卡片不会留一个空位。
+</p>
+
+<div class="row">
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">6a · 有逐章数据，且对得上章节名</span></div>
+      <div style="padding:2px 20px 16px;background:var(--page)">
+        <div class="chap">
+          <div class="k">难点集中在</div>
+          <div class="t">最吃力的一段在 <b>第 8 章「Salisbury」</b>前后</div>
+          <div class="w">那几章的用词比全书其余部分重一些，读慢下来是正常的。其余章节彼此差不多。</div>
+          <div class="ridge">
+            <i style="height:38%"></i><i style="height:31%"></i><i style="height:44%"></i>
+            <i style="height:36%"></i><i style="height:52%" class="mid"></i><i style="height:41%"></i>
+            <i style="height:63%" class="mid"></i><i style="height:100%" class="hi"></i>
+            <i style="height:81%" class="hi"></i><i style="height:47%"></i><i style="height:35%"></i>
+            <i style="height:42%"></i><i style="height:33%"></i><i style="height:39%"></i>
+            <i style="height:29%"></i><i style="height:45%"></i><i style="height:34%"></i>
+          </div>
+          <div class="rlab"><span>开头</span><em>第 8 章</em><span>结尾</span></div>
+        </div>
+        <div class="divider"></div>
+        <div class="chap">
+          <div class="k">难点集中在</div>
+          <div class="t">这本书<b>没有特别难的一段</b></div>
+          <div class="w">从头到尾用词轻重差不多，哪一章开始读都一样。</div>
+          <div class="ridge">
+            <i style="height:41%"></i><i style="height:36%"></i><i style="height:44%"></i>
+            <i style="height:39%"></i><i style="height:47%"></i><i style="height:35%"></i>
+            <i style="height:43%"></i><i style="height:38%"></i><i style="height:46%"></i>
+            <i style="height:40%"></i><i style="height:34%"></i><i style="height:45%"></i>
+            <i style="height:37%"></i><i style="height:42%"></i><i style="height:39%"></i>
+            <i style="height:44%"></i><i style="height:36%"></i>
+          </div>
+          <div class="rlab"><span>开头</span><span></span><span>结尾</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      上面是有峰的样子，下面是<b>没有峰</b>的样子——山脊平的时候不能硬点一章出来说它最难，那是把噪声当结论。
+      判定用「最难的那几章比全书中位数高出多少」定一条阈值，达不到就走下面这句。<br>
+      山脊图<b>一个数字都不标</b>：它回答的是「难点是集中还是均匀、在前面还是后面」，这是形状问题，不是数值问题。
+      鼠标停在某根柱子上给章节名，仍然不给数值。
+    </p>
+  </div>
+
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">6b · 旧书，还在补算</span></div>
+      <div style="padding:2px 20px 16px;background:var(--page)">
+        <div class="chap">
+          <div class="k">难点集中在</div>
+          <div class="t" style="font-weight:560;color:var(--ink2);display:flex;align-items:center;gap:9px">
+            <span class="spinner"></span>逐章的部分还在补算
+          </div>
+          <div class="w">这本书是早先导入的，那时只算了整本。补算是本地的一次重读，不联网、不经过 AI。算完这里会自己出现，不用回来看。</div>
+          <div class="ridge wait">
+            <i style="height:34%"></i><i style="height:30%"></i><i style="height:36%"></i>
+            <i style="height:32%"></i><i style="height:35%"></i><i style="height:31%"></i>
+            <i style="height:34%"></i><i style="height:33%"></i><i style="height:36%"></i>
+            <i style="height:30%"></i><i style="height:35%"></i><i style="height:32%"></i>
+            <i style="height:34%"></i><i style="height:31%"></i><i style="height:35%"></i>
+            <i style="height:33%"></i><i style="height:34%"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="win" style="margin-top:16px">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">6c · 这本书没有这一块（PDF / 章节名对不上）</span></div>
+      <div class="card plain" style="border:none;border-radius:0">
+        <div class="head">
+          <div class="cov grey"></div>
+          <div class="tx">
+            <h3>English Prose Style</h3>
+            <p class="by">Herbert Read</p>
+            <p class="fmt"><span>PDF</span><span>214 页</span><span>还没开始读</span></p>
+          </div>
+          <span class="x" title="这次不看">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </span>
+        </div>
+        <div class="body">
+          <div class="divider"></div>
+          <div class="verdict">
+            <p class="vbig">这本书里你没见过的词，<em>约占篇幅 5%</em></p>
+            <p class="vsub">其中大半来自 5001 名以后的两个频段。</p>
+            <div class="bar">
+              <i style="width:70.2%;background:var(--b1)"></i>
+              <i style="width:12.1%;background:var(--b2)"></i>
+              <i style="width:4.8%;background:var(--b3)"></i>
+              <i style="width:6.9%;background:var(--b4)"></i>
+              <i style="width:1.4%;background:var(--b5)"></i>
+              <i style="width:4.6%;background:var(--bu)"></i>
+            </div>
+            <div class="legend">
+              <span><u style="background:var(--b1)"></u>1–1000</span>
+              <span><u style="background:var(--b2)"></u>1001–3000</span>
+              <span><u style="background:var(--b3)"></u>3001–5000</span>
+              <span><u style="background:var(--b4)"></u>5001–2万</span>
+              <span><u style="background:var(--b5)"></u>2万以后</span>
+              <span><u style="background:var(--bu)"></u>表里没有</span>
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="cmp">
+            <svg class="ic" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17l5-5 5 5M7 11l5-5 5 5"/></svg>
+            <div class="tx">
+              比你读完的那几本重
+              <div class="t2">生僻词明显多一些。这是本文论，不是小说。</div>
+            </div>
+          </div>
+        </div>
+        <div class="cf">
+          <span class="btn ghost sm">不再显示开书卡</span>
+          <span class="sp"></span>
+          <span class="btn sm">详情</span>
+          <span class="btn pri sm">开始阅读</span>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      <b>6b</b>：补算态<b>不阻塞、不给按钮、不报进度</b>——后端只在算完时发事件，画进度条就是编的（同第 4 节）。
+      文案里写明「不用回来看」，否则这句话本身会变成一个待办。<br>
+      <b>6c</b>：整块<b>安静地不存在</b>，卡片里没有任何一处灰字说「此项不可用」。
+      两种情况共用这一形态：扫描件 PDF 永远拿不到逐章数据；以及逐章数据算出来了、但那本书的分段对不上目录里的人类章节名（EPUB 拿 <code>toc</code> 对，对不上就当没有）。
+      <b>不显示「第 7 段最难」</b>——一个读者不知道「第 7 段」在哪，这句话只会让他觉得系统在自言自语。
+    </p>
+  </div>
+</div>
+
+<!-- ============ 7 · 关掉它 ============ -->
+<h2 class="sec"><span class="n">7</span>关掉它 · 三层，以及关掉之后</h2>
+<p class="seclede">
+  开书卡是一个会在你没请求的时候出现的东西，所以它必须能关，而且要在<b>它出现的那一刻就能关</b>，不能让人去设置里找。
+  三层：<b>✕</b>（这次不看）、<b>「不再显示开书卡」</b>（整个功能不再出现）、<b>设置里的开关</b>。
+  后两者<b>是同一个状态</b>——卡里点掉，设置里那一行随即变成关；设置里打开，卡就回来。不存在「我明明关过了它怎么还在」这种局面。<br>
+  <b>措辞规矩：不挽留。</b>没有确认弹窗，没有「你将失去…」，没有「确定吗」。点了就关，给一次撤销，说一句去哪儿再打开，完。
+</p>
+
+<div class="row">
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">第一层 · ✕ 这次不看</span></div>
+      <div style="padding:14px 16px 16px;background:var(--page)">
+        <div class="strip" style="box-shadow:none">
+          <div class="cov" style="width:26px;height:37px"></div>
+          <div class="tx">
+            <div class="t1">The Remains of the Day</div>
+            <div class="t2">点右上角 ✕ —— 这一张收掉，直接进阅读器</div>
+          </div>
+          <span class="x boxed">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </span>
+        </div>
+        <div class="flow" style="margin-top:14px">
+          <div class="step">
+            <div class="k">这一次</div>
+            <div class="v">不出现</div>
+            <div class="w">直接进阅读器</div>
+          </div>
+          <svg class="arw" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          <div class="step on">
+            <div class="k">下一本书</div>
+            <div class="v">照常出现</div>
+            <div class="w">✕ 只管这一张，不改任何设置</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      ✕ 是<b>最轻的那一层</b>，也是最常被按的那一层——「我知道了，别挡着」。它不写进任何设置，下次开另一本书卡照常出现。
+      放在卡片右上角，是因为那是所有平台上「关掉这个东西」的默认位置；不占底部按钮区，底部留给真正的动作。
+    </p>
+
+    <div class="win" style="margin-top:22px">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">第二层 · 点「不再显示开书卡」之后</span></div>
+      <div style="padding:14px 14px 16px;background:var(--page)">
+        <div style="padding:0 4px">
+          <div class="sk" style="width:96%;animation:none;opacity:.3"></div>
+          <div class="sk" style="width:100%;margin-top:9px;animation:none;opacity:.3"></div>
+          <div class="sk" style="width:88%;margin-top:9px;animation:none;opacity:.3"></div>
+          <div class="sk" style="width:97%;margin-top:9px;animation:none;opacity:.3"></div>
+          <div class="sk" style="width:58%;margin-top:9px;animation:none;opacity:.3"></div>
+        </div>
+        <div class="toast" style="margin-top:18px">
+          <span>已关闭开书卡。设置 → 阅读 里可以再打开。</span>
+          <u>撤销</u>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      点下去<b>不弹确认框</b>——要关一个自己冒出来的东西，还要先答一道题，那是把成本转嫁给用户。
+      代价用<b>撤销</b>兜住，而不是用一次确认。提示条里那半句「设置 → 阅读 里可以再打开」是<b>说明去哪儿找</b>，不是劝返；它不说这个功能有多好，也不问为什么关。
+    </p>
+  </div>
+
+  <div class="shot">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">第三层 · 设置 — 阅读（开）</span></div>
+      <div class="pane">
+        <div class="ph"><h4>阅读</h4></div>
+        <p class="plede">这一屏里的东西都<b>不联网、不经过 AI</b>，全部是本机计算。</p>
+        <div class="grp">
+          <div class="gh">打开一本书时</div>
+          <div class="item">
+            <div class="tx">
+              <div class="t1">开书卡</div>
+              <div class="t2">第一次打开一本书之前，先说明它的词汇构成、难点集中在哪一章。正在读的书不打断，只在阅读器顶部留一条细条。</div>
+              <div class="meta">扫描件 PDF 那条提示不受这个开关影响</div>
+            </div>
+            <span class="sw"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="win" style="margin-top:16px">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">第三层 · 关掉之后的同一行</span></div>
+      <div class="pane">
+        <div class="ph"><h4>阅读</h4></div>
+        <p class="plede">这一屏里的东西都<b>不联网、不经过 AI</b>，全部是本机计算。</p>
+        <div class="grp">
+          <div class="gh">打开一本书时</div>
+          <div class="item off">
+            <div class="tx">
+              <div class="t1">开书卡</div>
+              <div class="t2">第一次打开一本书之前，先说明它的词汇构成、难点集中在哪一章。正在读的书不打断，只在阅读器顶部留一条细条。</div>
+              <div class="meta">已关闭 · 每本书的完整难度信息仍在「书籍详情」里</div>
+            </div>
+            <span class="sw off"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      设置里<b>只有一行</b>，不是一组。开书卡是一个功能，不是六个小开关——把它拆成「显示分布 / 显示逐章 / 显示对比」只会让人在这一屏里多待三分钟。
+      关闭那行沿用自动分析控制台的写法：<b>说清楚关掉之后哪里还找得到</b>（详情页那张完整难度卡本来就在，不是为此新造的去处），一句话，不劝。
+    </p>
+  </div>
+</div>
+
+<div class="row" style="margin-top:26px">
+  <div class="shot wide">
+    <div class="win">
+      <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="ttl">关掉之后 · 开书流程</span></div>
+      <div style="padding:15px 16px 17px;background:var(--page)">
+        <div class="flow">
+          <div class="step">
+            <div class="k">书架</div>
+            <div class="v">点封面</div>
+            <div class="w">首页网格 / 列表，任一入口</div>
+          </div>
+          <svg class="arw" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          <div class="step on">
+            <div class="k">阅读器</div>
+            <div class="v">直接进入，没有中间层</div>
+            <div class="w">回到今天的行为，一步不多</div>
+          </div>
+        </div>
+        <div class="strip" style="margin-top:16px;box-shadow:none">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--warn);flex:none"><path d="M3 5h18v14H3z"/><path d="M3 15l5-5 4 4 3-3 6 6"/><circle cx="8.5" cy="9" r="1.3"/></svg>
+          <div class="tx">
+            <div class="t1">这本是扫描件，划词和 AI 读不到内容</div>
+            <div class="t2">点这里跑一次文字识别</div>
+          </div>
+          <span class="x boxed">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </span>
+        </div>
+      </div>
+    </div>
+    <p class="caption">
+      <b>关掉之后是什么都没有</b>——没有淡入的小角标，没有「你关掉了开书卡」的常驻提醒，没有一个月后再问一次。开书就是点封面进阅读器，跟这个功能上线之前一模一样。
+      唯一的例外是<b>扫描件</b>：那是阻断性事实（划词和 AI 在这本书上根本不工作），不说会让人以为是软件坏了。所以它不跟着开书卡一起关，而是降级成阅读器顶部一条细条，每本书说一次，✕ 掉就不再说。
+    </p>
+  </div>
+</div>
+
+<!-- ============ 8 · 数字来源 ============ -->
+<h2 class="sec"><span class="n">8</span>数字从哪来 · 以及砍掉了什么</h2>
+<p class="seclede">
+  样张里每一处说法都对应现有的表和字段，<b>唯一的新数据源是逐章难度</b>（已批准的 schema 变更，后端另行落库）。下面是逐项对照，然后是查证后确认<b>拿不到、因此没画</b>的指标。<br>
+  注意一条贯穿全卡的口径：<b>库里的精度和卡上的精度不是一回事</b>。下面这些字段都是精确值，卡上一律取整到个位并加「约」——精度是算出来的，可信度不是，把 3.1% 印在卡上等于替一次估算背书。
+</p>
+
+<div class="scroll">
+<table class="src">
+  <tr><th>卡上的说法</th><th>来自</th><th>怎么算 · 怎么显示</th></tr>
+  <tr>
+    <td>词频构成（那条彩条）</td>
+    <td><code>book_difficulty.band1…band5, band_unlisted, total_tokens</code></td>
+    <td>导入时全文分词后逐词查 5 万词频率表，落进六个桶。<b>条的宽度用精确值，图例只标频段名不标数值</b>；展开态里才给「约 78%」这种取整数。</td>
+  </tr>
+  <tr>
+    <td>你的实证通过率（展开态，约 99 / 96 / 86 / 70 / 52%）</td>
+    <td><code>reading_word_exposures</code> + <code>lookup_records</code></td>
+    <td>按频段：读过两次以上且从没查过的词数 ÷（该数 + 查过的词数）。口径与 <code>level_observation.rs</code> 的 <code>passed_by_band</code> / <code>looked_up_words_by_band</code> 完全一致。显示时取整。</td>
+  </tr>
+  <tr>
+    <td>「没见过的词约占篇幅 3%」</td>
+    <td>上面两行相乘</td>
+    <td>Σ（该频段占篇幅 × (1 − 该频段通过率)），band 1–5，「表里没有」桶不参与。<b>四舍五入到整数百分点</b>；不取倒数，不换算成「每 N 词 1 个」，不换算成词数。</td>
+  </tr>
+  <tr>
+    <td>「比你读完的那几本略重一些」</td>
+    <td><code>book_difficulty</code>（全库）</td>
+    <td>(band4 + band5) ÷ total_tokens 与基线（已读完且统计过的书的平均值）比。两条阈值（至少 2 本、差 2 个百分点才算有差别）是 <code>difficulty-view.ts</code> 里已经在用的 <code>MIN_BASELINE_BOOKS</code> / <code>VERDICT_MARGIN</code>。<b>只出方向，不出两个百分比</b>——阈值判定本来就是三值的（轻 / 差不多 / 重），把中间量印出来只会引出「那 2.4% 是怎么来的」。</td>
+  </tr>
+  <tr>
+    <td>「最吃力的一段在第 8 章『Salisbury』前后」<br>山脊图 · 有峰 / 无峰 / 不显示</td>
+    <td><b>新增</b>：逐 section 的频段分布（后端另行落库）+ EPUB <code>toc</code></td>
+    <td>每个 section 用整本那套算法各算一次，得到一列相对值；山脊图画这一列，峰值那几段回查 <code>toc</code> 取人类可读的章节名。<b>三道闸</b>：没有逐章数据 → 整块不出现；有数据但对不上 <code>toc</code> → 整块不出现；峰值与中位数之差达不到阈值 → 显示「没有特别难的一段」。全程不输出任何词数。</td>
+  </tr>
+  <tr>
+    <td>全书 6.2 万词</td>
+    <td><code>book_difficulty.total_tokens</code></td>
+    <td>直接读，取两位有效数字。<code>distinct_words</code>（不同词形数）<b>不再显示</b>——它是一个读者用不上的统计量，摆在卡上只增加密度。</td>
+  </tr>
+  <tr>
+    <td>148 词/分 · 约 7–8 小时</td>
+    <td><code>reading_screen_dwells.word_count / dwell_ms</code></td>
+    <td>每屏词数 ÷ 停留时长取中位数（<code>median_words_per_minute</code> 已存在）。给区间而不是准确值，因为难度统计的分词丢掉了单字母和纯数字，比每屏词数偏少几个百分点。</td>
+  </tr>
+  <tr>
+    <td>7 次查词 / 跨 9 天 · 门槛 12 次 / 14 天</td>
+    <td><code>lookup_records</code> + <code>level_observation.rs</code> 常量</td>
+    <td>窗口内可评分查词数与跨度天数，对照 <code>MIN_SCORABLE_LOOKUPS</code> / <code>MIN_SPAN_DAYS</code>。</td>
+  </tr>
+  <tr>
+    <td>正文太短 · 3120 &lt; 5000</td>
+    <td><code>book_difficulty.status = 'too_short'</code></td>
+    <td>后端常量 <code>MIN_TOKENS = 5000</code>。</td>
+  </tr>
+  <tr>
+    <td>扫描件判定</td>
+    <td><code>book_difficulty.status = 'failed'</code> 且 <code>error</code> 含 <code>PDF_TEXT_LAYER_UNAVAILABLE</code></td>
+    <td>PDF 页数 &gt; 5 且全书可提取字符 &lt; 500 时，提取器直接返回这个错误码，导入时就已经记下了。<b>不需要新增探测</b>。</td>
+  </tr>
+  <tr>
+    <td>识别第 86 / 214 页 · 组件 180 MB</td>
+    <td><code>ocr_job_status</code> → <code>pagesDone / pagesTotal</code>；<code>ocr_package_status</code> → <code>state / totalBytes</code></td>
+    <td>直接读。</td>
+  </tr>
+  <tr>
+    <td>数字已过期</td>
+    <td><code>book_difficulty.stale</code></td>
+    <td>存的 <code>source_sha256</code> 与当前文件哈希不符。</td>
+  </tr>
+  <tr>
+    <td>读到 47% · 第 11 章</td>
+    <td><code>books.progress</code>、<code>reading_screen_dwells.chapter</code></td>
+    <td>直接读。</td>
+  </tr>
+  <tr>
+    <td>这本书里查过 34 个词 / 9 个不用再查</td>
+    <td><code>lookup_records</code>（按 book_id）、<code>vocab_words.mastery</code></td>
+    <td>去重词数；后者是升到 familiar 及以上的那几个。<b>这是唯一保留的具体词数</b>，因为它是<b>已经发生的事</b>——你做过的功课，不是等着你的工作量。回顾性的计数和预测性的计数是两回事，只有后者会变成负担。</td>
+  </tr>
+  <tr>
+    <td>开书卡的开关（卡里那一层 + 设置里那一行）</td>
+    <td><code>settings</code> 表里一个键</td>
+    <td>一个布尔，两个入口<b>读写同一个键</b>——这就是「后两层是同一个状态」的落法，不是两处各存一份再想办法同步。<b>✕ 不写库</b>，只在本次会话里记住这本书已经关过，重启后照常出现。</td>
+  </tr>
+</table>
+</div>
+
+<h2 class="sec" style="margin-top:46px"><span class="n">砍</span>不画的指标</h2>
+<p class="seclede">
+  分两类：<b>拿不到</b>（数据源里根本没有），和<b>拿得到但不画</b>（是设计决定）。第二类现在多了两条——具体词数和查词次数预测，即使将来算得出来也不画。
+</p>
+<div class="cut">
+  <div class="ci">
+    <div class="ct">「这本书里有 N 个你不认识的词」（一个具体词数）</div>
+    <div class="cw">
+      <b>两重否决。第一重，拿不到。</b>要得到这个数，需要<b>每个频段各有多少个不同词形</b>。<code>book_difficulty</code> 只存了一个总的 <code>distinct_words</code>，六个桶存的是<b>出现次数</b>不是<b>词形数</b>。
+      用「出现次数的比例」乘「按词形算的通过率」能得到<b>篇幅占比</b>（那是有意义的量），但反推不出词数。<br>
+      <b>第二重，就算算得出来也不画。</b>一个具体词数会被当成一道待办题读——「这本书要我认 1400 个新词」是一句能让人合上书的话。卡上一律说「约占篇幅 3%」，一个量级，不是一份清单。
+    </div>
+  </div>
+  <div class="ci">
+    <div class="ct">「每 N 个词里有 1 个生词」（比值）</div>
+    <div class="cw">
+      <b>算得出来，不画。</b>它就是那个百分比的倒数，不含任何新信息，但读起来完全不同：百分比是一个属性，「每 32 个词 1 个」是一段节奏——它让人开始在句子里数词，把阅读变成计数。<b>同一个事实，换个写法就成了负担，那就用不成负担的那个写法。</b>
+    </div>
+  </div>
+  <div class="ci">
+    <div class="ct">「预计你会查 N 次词」</div>
+    <div class="cw">
+      <b>拿不到，而且是个不同的量，而且不该有。</b>同一个生词在书里出现十次，占十个词的篇幅，你只查一次；从篇幅占比推查词次数需要知道生词的重复分布，库里没有。
+      更要紧的是它<b>把一个观察写成了一个预言</b>——预言会变成指标，指标会让人为了压低它而不去查词。卡上任何位置都不出现这个说法，<b>连「这不是查词次数」这样的澄清也不出现</b>：要澄清就得先把那个概念说出口。
+    </div>
+  </div>
+  <div class="ci">
+    <div class="ct">两个百分比的直接对比（「4.6% vs 平均 2.4%」）</div>
+    <div class="cw">
+      <b>算得出来，只出方向。</b>最近读完的那一本是拿得到的（<code>books.status = 'finished'</code> 排序），全库平均也是（<code>difficulty-view.ts</code> 的口径，至少 2 本）。
+      但阈值判定本来就只有三个结果（轻 / 差不多 / 重），把中间那两个百分比印出来，读者得到的不是更多信息，是两个需要自己再比一次的数。卡上只说「略重一些」，并点名一本读过的书当参照物——<b>参照物比数字好用</b>，因为你知道那本书读起来什么感觉。
+    </div>
+  </div>
+  <div class="ci">
+    <div class="ct">统计进度百分比</div>
+    <div class="cw">
+      <b>拿不到。</b><code>spawn_computation</code> 只在结束时发一次事件，中途不报进度。第 4 节因此用不确定态占位，没有进度条——这跟第 3 节的 OCR 不同，那边 <code>pagesDone / pagesTotal</code> 是真的。
+    </div>
+  </div>
+  <div class="ci">
+    <div class="ct">CEFR 等级标签（「这本书是 B2」）</div>
+    <div class="cw">
+      <b>不做，是设计决定不是数据限制。</b><code>book_difficulty</code> 的模块注释写得很清楚：结论就是那个分布，套一个等级标签是对它的有损压缩。
+      而且 <code>book_difficulty</code> 明文承诺永不改写 <code>language_assessments</code> 和任何设置——这张卡也不写，它只读。
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>
