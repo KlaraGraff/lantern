@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 /**
- * Backend mirrors for the four read-only queries the Book Open Card is built
- * from (`src-tauri/src/commands/book_difficulty.rs`). Each type mirrors its
- * Rust struct's `serde(rename_all = "camelCase")` output field for field.
+ * Backend mirrors for the read-only queries the Book Open Card is built from
+ * (`src-tauri/src/commands/book_difficulty.rs`). Each type mirrors its Rust
+ * struct's `serde(rename_all = "camelCase")` output field for field.
  */
 
 /** The reader's own empirical pass rate by frequency band, over their whole
@@ -25,11 +25,6 @@ export interface BookDifficultySection {
   band5: number;
 }
 
-export interface BookLookupStats {
-  lookedUpWords: number;
-  masteredWords: number;
-}
-
 export interface ReadingPace {
   bookWordsPerMinute: number | null;
   overallWordsPerMinute: number | null;
@@ -41,10 +36,6 @@ export function getVocabPassRates(): Promise<VocabPassRates> {
 
 export function getBookDifficultySections(bookId: string): Promise<BookDifficultySection[]> {
   return invoke<BookDifficultySection[]>("get_book_difficulty_sections", { bookId });
-}
-
-export function getBookLookupStats(bookId: string): Promise<BookLookupStats> {
-  return invoke<BookLookupStats>("get_book_lookup_stats", { bookId });
 }
 
 export function getReadingPace(bookId: string): Promise<ReadingPace> {
@@ -89,10 +80,6 @@ export function useVocabPassRates(enabled: boolean): AsyncSlice<VocabPassRates> 
 
 export function useBookDifficultySections(bookId: string | null): AsyncSlice<BookDifficultySection[]> {
   return useAsync(bookId, () => getBookDifficultySections(bookId as string));
-}
-
-export function useBookLookupStats(bookId: string | null): AsyncSlice<BookLookupStats> {
-  return useAsync(bookId, () => getBookLookupStats(bookId as string));
 }
 
 export function useReadingPace(bookId: string | null): AsyncSlice<ReadingPace> {

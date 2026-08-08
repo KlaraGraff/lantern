@@ -30,7 +30,6 @@ import {
 } from "../components/reader-settings";
 import ReaderContextMenu from "../components/ReaderContextMenu";
 import OcrReaderHud from "../components/OcrReaderHud";
-import BookReaderDifficultyStrip from "../components/BookReaderDifficultyStrip";
 import TranslationPopover from "../components/TranslationPopover";
 import FootnotePopover, { type FootnotePopoverData } from "../components/FootnotePopover";
 import TableOfContents from "../components/TableOfContents";
@@ -241,19 +240,10 @@ export default function Reader() {
   const {
     pushJump,
     popJump,
-    notifyLocationChanged: notifyJumpHistoryLocationChanged,
+    notifyLocationChanged,
     visible: jumpHistoryVisible,
     label: jumpHistoryLabel,
   } = useJumpHistory(bookId);
-  // Every relocate, counted. The jump-history pill was the only consumer of
-  // "the reader moved" until the difficulty strip needed the same signal to
-  // get out of the way on a page turn, so the notification now fans out to
-  // both rather than each growing its own `relocate` listener.
-  const [locationTick, setLocationTick] = useState(0);
-  const notifyLocationChanged = useCallback(() => {
-    setLocationTick((tick) => tick + 1);
-    notifyJumpHistoryLocationChanged();
-  }, [notifyJumpHistoryLocationChanged]);
   const [progressWriter] = useState(() => new ReadingProgressWriter((finishedId) => {
     setBook((current) => current && current.id === finishedId
       ? { ...current, status: "finished", progress: 100 }
@@ -2108,17 +2098,6 @@ export default function Reader() {
           </Button>
         </div>
       </header>
-
-      {/* §5's downgrade for a book already "reading": the full open card
-          (BookOpenCard, gated in BookOpenGateProvider) never applies once a
-          book has a status of "reading" — only this thin strip does. */}
-      {book && book.status === "reading" && (
-        <BookReaderDifficultyStrip
-          book={book}
-          currentChapterTitle={currentChapterTitle ?? undefined}
-          locationTick={locationTick}
-        />
-      )}
 
       {/* Body */}
       <div

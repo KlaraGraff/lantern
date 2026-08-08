@@ -36,23 +36,6 @@ export function isScannedPdf(
   );
 }
 
-export type OpenCardReason = "unread" | "scannedPdf" | "stale";
-
-/** Every trigger condition a book currently satisfies (mockup §0: never
- *  opened, scanned PDF, or a stale recompute). More than one may be true at
- *  once — a never-opened scanned PDF is both — but the card only ever shows
- *  one body, chosen by `classifyOpenCardBody`. */
-export function openCardReasons(
-  book: Pick<Book, "format" | "status">,
-  difficulty: Pick<BookDifficulty, "status" | "error" | "stale"> | null,
-): OpenCardReason[] {
-  const reasons: OpenCardReason[] = [];
-  if (book.status === "unread") reasons.push("unread");
-  if (isScannedPdf(book, difficulty)) reasons.push("scannedPdf");
-  if (difficulty?.stale) reasons.push("stale");
-  return reasons;
-}
-
 export type OpenSurface = "card" | "none";
 
 export interface OpenSurfaceOptions {
@@ -64,19 +47,21 @@ export interface OpenSurfaceOptions {
 
 /**
  * What clicking this book's cover should do: show the full-screen card, or
- * go straight to the reader. A book already `"reading"` never gets the card
- * — mockup §0's "其余情况（你正在读的书）降级成细条，永远不是全屏卡" — that
- * downgrade is a reader-top strip rendered inside the reader itself, not
- * something this gate produces.
+ * go straight to the reader. The card is a first-open-only greeting — it
+ * shows once, the moment a book stops being `"unread"`, and never again for
+ * that book. A book that has already been opened once (`"reading"` or
+ * `"finished"`) always goes straight to the reader: whoever wants this same
+ * information back goes to the book's own Details page — "已经打开过的书想
+ * 再看这些数字，去书籍详情页". No difficulty data is consulted here; that
+ * information belongs to what the card shows once open (see
+ * `classifyOpenCardBody`), not to whether it opens at all.
  */
 export function openSurface(
-  book: Pick<Book, "format" | "status">,
-  difficulty: Pick<BookDifficulty, "status" | "error" | "stale"> | null,
+  book: Pick<Book, "status">,
   options: OpenSurfaceOptions,
 ): OpenSurface {
   if (!options.enabled || options.sessionDismissed) return "none";
-  if (book.status === "reading") return "none";
-  return openCardReasons(book, difficulty).length > 0 ? "card" : "none";
+  return book.status === "unread" ? "card" : "none";
 }
 
 export type OpenCardBodyState =

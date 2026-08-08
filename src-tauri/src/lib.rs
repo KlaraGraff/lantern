@@ -812,7 +812,6 @@ pub fn run() {
             // Open-card read-only queries (docs/impls/book-open-card-mockup.html)
             commands::book_difficulty::get_vocab_pass_rates,
             commands::book_difficulty::get_book_difficulty_sections,
-            commands::book_difficulty::get_book_lookup_stats,
             commands::book_difficulty::get_reading_pace,
             // Local reading history and optional AI prose (never synced)
             commands::reading_stats::record_reading_session,

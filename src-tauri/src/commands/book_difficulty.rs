@@ -818,44 +818,6 @@ pub fn get_book_difficulty_sections(
     load_difficulty_sections(&db, &book_id)
 }
 
-/// Distinct words looked up in one book, and how many of those have since
-/// been promoted to `familiar` or better.
-///
-/// The one place on the open card a specific count survives (mockup §8):
-/// both numbers describe something that already happened — work the reader
-/// already did — not a prediction of work ahead, which is the distinction
-/// the rest of this feature draws its "no precise numbers" line around.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct BookLookupStats {
-    pub looked_up_words: i64,
-    pub mastered_words: i64,
-}
-
-pub(crate) fn load_book_lookup_stats(db: &Db, book_id: &str) -> AppResult<BookLookupStats> {
-    let conn = db.reader();
-    let looked_up_words: i64 = conn.query_row(
-        "SELECT COUNT(DISTINCT normalized_text) FROM lookup_records WHERE book_id = ?1",
-        params![book_id],
-        |row| row.get(0),
-    )?;
-    let mastered_words: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM vocab_words WHERE book_id = ?1 AND mastery IN ('familiar', 'mastered')",
-        params![book_id],
-        |row| row.get(0),
-    )?;
-    Ok(BookLookupStats {
-        looked_up_words,
-        mastered_words,
-    })
-}
-
-#[tauri::command]
-pub fn get_book_lookup_stats(book_id: String, db: State<'_, Db>) -> AppResult<BookLookupStats> {
-    crate::sync::validation::validate_entity_id(&book_id)?;
-    load_book_lookup_stats(&db, &book_id)
-}
-
 /// How many of the reader's most recent measurable screens a pace figure is
 /// drawn from. Mirrors `reading_behavior::MEDIAN_PACE_SAMPLE` — same
 /// reasoning (bounded so the query cost never grows with how long someone
@@ -1439,19 +1401,6 @@ mod tests {
             .unwrap();
     }
 
-    fn insert_vocab_word(db: &Db, id: &str, book_id: &str, word: &str, mastery: &str) {
-        db.conn
-            .lock()
-            .unwrap()
-            .execute(
-                "INSERT INTO vocab_words (
-                     id, book_id, word, definition, mastery, created_at, updated_at
-                 ) VALUES (?1, ?2, ?3, '', ?4, '1', '1')",
-                params![id, book_id, word, mastery],
-            )
-            .unwrap();
-    }
-
     fn insert_dwell(db: &Db, id: &str, book_id: &str, word_count: i64, dwell_ms: i64, started_at: i64) {
         db.conn
             .lock()
@@ -1493,34 +1442,6 @@ mod tests {
         let (_dir, db) = test_db();
         insert_book(&db, "");
         assert!(load_difficulty_sections(&db, "book").unwrap().is_empty());
-    }
-
-    /// The retrospective count (mockup §8) is the one number the card keeps:
-    /// distinct words looked up, and how many of those are now familiar or
-    /// better. A lookup on a different book must never leak in.
-    #[test]
-    fn lookup_stats_count_distinct_words_and_mastered_subset() {
-        let (_dir, db) = test_db();
-        insert_book(&db, "");
-        insert_lookup(&db, "l1", "book", "gallop", 10);
-        insert_lookup(&db, "l2", "book", "gallop", 20); // same word, second occurrence
-        insert_lookup(&db, "l3", "book", "steed", 30);
-        insert_lookup(&db, "l4", "other-book", "unrelated", 40);
-        insert_vocab_word(&db, "v1", "book", "gallop", "familiar");
-        insert_vocab_word(&db, "v2", "book", "steed", "new");
-
-        let stats = load_book_lookup_stats(&db, "book").unwrap();
-        assert_eq!(stats.looked_up_words, 2);
-        assert_eq!(stats.mastered_words, 1);
-    }
-
-    #[test]
-    fn lookup_stats_are_zero_for_a_book_with_no_history() {
-        let (_dir, db) = test_db();
-        insert_book(&db, "");
-        let stats = load_book_lookup_stats(&db, "book").unwrap();
-        assert_eq!(stats.looked_up_words, 0);
-        assert_eq!(stats.mastered_words, 0);
     }
 
     /// 1000 words in 5 minutes is 200 wpm; the book-scoped and overall

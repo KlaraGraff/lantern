@@ -2,7 +2,6 @@ import { createContext, useCallback, useContext, useMemo, useRef, useState, type
 import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
 import type { Book } from "../hooks/useBooks";
-import { getBookDifficulty } from "../hooks/useBookDifficulty";
 import { useOpenBook } from "../hooks/useOpenBook";
 import { useSettings } from "../hooks/useSettings";
 import type { ReaderTarget } from "../utils/openReaderWindow";
@@ -23,16 +22,9 @@ interface CardState {
 
 interface GateContextValue {
   /** "Open this book" — the same call every cover click already made through
-   *  `useOpenBook()`, now routed through the mockup §0 gate first. Decides
+   *  `useOpenBook()`, now routed through the first-open gate first. Decides
    *  for itself whether that means the reader or the card. */
   requestOpen: (book: Book, target?: ReaderTarget) => void;
-  /** The feature's one master switch, read here so no second surface has to
-   *  know the key's name or its default. */
-  openCardEnabled: boolean;
-  /** Turn the whole feature off and offer the undo. Does not navigate — the
-   *  card's own button pairs this with continuing into the reader, the
-   *  reader-top strip is already there. */
-  hideOpenCardForever: () => void;
 }
 
 const GateContext = createContext<GateContextValue | null>(null);
@@ -41,22 +33,6 @@ export function useBookOpenGate(): GateContextValue["requestOpen"] {
   const ctx = useContext(GateContext);
   if (!ctx) throw new Error("useBookOpenGate must be used within BookOpenGateProvider");
   return ctx.requestOpen;
-}
-
-/**
- * The master switch and its off button, for the feature's *other* surface —
- * `BookReaderDifficultyStrip`, which is the form the open card takes once a
- * book is already being read.
- *
- * Shared rather than reimplemented so the two surfaces cannot drift: one
- * settings key, one undo toast, one piece of copy. A strip that owned its own
- * copy of this would be a second thing to turn off, which is exactly what the
- * Settings row's comment warns against.
- */
-export function useOpenCardControls(): Pick<GateContextValue, "openCardEnabled" | "hideOpenCardForever"> {
-  const ctx = useContext(GateContext);
-  if (!ctx) throw new Error("useOpenCardControls must be used within BookOpenGateProvider");
-  return ctx;
 }
 
 /**
@@ -74,40 +50,26 @@ export default function BookOpenGateProvider({ children }: { children: ReactNode
   const sessionDismissedRef = useRef<Set<string>>(new Set());
   const [cardState, setCardState] = useState<CardState | null>(null);
   // Just "is the toast up": which book the reader was opening when they turned
-  // the feature off says nothing the toast's copy needs, and the strip's own
-  // off button has no book to hand over in the first place.
+  // the feature off says nothing the toast's copy needs.
   const [undoVisible, setUndoVisible] = useState(false);
   const undoTimerRef = useRef<number | undefined>(undefined);
 
   const enabled = settings[BOOK_OPEN_CARD_ENABLED_KEY] !== "false";
 
+  // Deliberately synchronous, with no `await` anywhere on this path: opening a
+  // book is the app's most-pressed button, and every millisecond between the
+  // click and the reader is felt. It used to ask the backend for the book's
+  // difficulty row before deciding — a round trip whose answer could not change
+  // the decision, because a never-opened book gets the card whatever that row
+  // says. Everything the card itself needs is fetched by the card, behind its
+  // own loading states, after it is already on screen.
   const requestOpen = useCallback((book: Book, target?: ReaderTarget) => {
-    // A book already being read never gets the card (mockup §0) — and since
-    // that is true regardless of what `book_difficulty` says, there is
-    // nothing here worth a backend round trip for.
-    if (book.status === "reading") {
-      openInReader(book.id, target);
-      return;
-    }
     const sessionDismissed = sessionDismissedRef.current.has(book.id);
-    if (!enabled || sessionDismissed) {
-      openInReader(book.id, target);
+    if (openSurface(book, { enabled, sessionDismissed }) === "card") {
+      setCardState({ book, target });
       return;
     }
-    getBookDifficulty(book.id)
-      .then((difficulty) => {
-        const surface = openSurface(book, difficulty, { enabled, sessionDismissed });
-        if (surface === "card") {
-          setCardState({ book, target });
-        } else {
-          openInReader(book.id, target);
-        }
-      })
-      .catch(() => {
-        // Fail open: a gate that cannot reach its own decision must not be
-        // the reason a book will not open.
-        openInReader(book.id, target);
-      });
+    openInReader(book.id, target);
   }, [enabled, openInReader]);
 
   const closeCard = useCallback(() => {
@@ -123,18 +85,14 @@ export default function BookOpenGateProvider({ children }: { children: ReactNode
     openInReader(book.id, target);
   }, [cardState, openInReader]);
 
-  const hideOpenCardForever = useCallback(() => {
-    void saveBulk({ [BOOK_OPEN_CARD_ENABLED_KEY]: "false" });
-    if (undoTimerRef.current !== undefined) window.clearTimeout(undoTimerRef.current);
-    setUndoVisible(true);
-    undoTimerRef.current = window.setTimeout(() => setUndoVisible(false), UNDO_WINDOW_MS);
-  }, [saveBulk]);
-
   const hideForever = useCallback(() => {
     if (!cardState) return;
     const { book, target } = cardState;
     setCardState(null);
-    hideOpenCardForever();
+    void saveBulk({ [BOOK_OPEN_CARD_ENABLED_KEY]: "false" });
+    if (undoTimerRef.current !== undefined) window.clearTimeout(undoTimerRef.current);
+    setUndoVisible(true);
+    undoTimerRef.current = window.setTimeout(() => setUndoVisible(false), UNDO_WINDOW_MS);
     // The button just told the reader the card is getting out of their way —
     // "不挽留": it does not also hold the door shut on the book they were
     // trying to open while the toast makes its case. This exact sequencing
@@ -142,7 +100,7 @@ export default function BookOpenGateProvider({ children }: { children: ReactNode
     // spelled out in the mockup text; it is the reading that best fits the
     // "no residual UI, ever" rule in §7.
     openInReader(book.id, target);
-  }, [cardState, hideOpenCardForever, openInReader]);
+  }, [cardState, saveBulk, openInReader]);
 
   const undoHide = useCallback(() => {
     if (undoTimerRef.current !== undefined) window.clearTimeout(undoTimerRef.current);
@@ -150,10 +108,7 @@ export default function BookOpenGateProvider({ children }: { children: ReactNode
     void saveBulk({ [BOOK_OPEN_CARD_ENABLED_KEY]: "true" });
   }, [saveBulk]);
 
-  const value = useMemo(
-    () => ({ requestOpen, openCardEnabled: enabled, hideOpenCardForever }),
-    [requestOpen, enabled, hideOpenCardForever],
-  );
+  const value = useMemo(() => ({ requestOpen }), [requestOpen]);
 
   return (
     <GateContext.Provider value={value}>

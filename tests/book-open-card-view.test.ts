@@ -12,7 +12,6 @@ import {
   estimateRemainingWords,
   formatApproxHours,
   isScannedPdf,
-  openCardReasons,
   openSurface,
   referenceBookComparison,
   roundPercent,
@@ -47,7 +46,7 @@ function book(overrides: Partial<{ format: string; status: string }> = {}) {
   return { format: "epub", status: "unread", ...overrides } as { format: string; status: "reading" | "finished" | "unread" };
 }
 
-// --- isScannedPdf / openCardReasons -----------------------------------
+// --- isScannedPdf ---------------------------------------------------------
 
 test("a scanned PDF is the exact failed + PDF_TEXT_LAYER_UNAVAILABLE signal, not a proxy", () => {
   const scanned = difficulty({ status: "failed", error: "PDF_TEXT_LAYER_UNAVAILABLE" });
@@ -64,41 +63,30 @@ test("a scanned PDF is the exact failed + PDF_TEXT_LAYER_UNAVAILABLE signal, not
   assert.equal(isScannedPdf({ format: "pdf", title: "Some Book" }, short), false);
 });
 
-test("openCardReasons collects every trigger condition independently", () => {
-  const scanned = difficulty({ status: "failed", error: "PDF_TEXT_LAYER_UNAVAILABLE" });
-  const reasons = openCardReasons(book({ format: "pdf", status: "unread" }), scanned);
-  assert.deepEqual(reasons.sort(), ["scannedPdf", "unread"]);
-
-  const stale = difficulty({ stale: true });
-  assert.deepEqual(openCardReasons(book({ status: "finished" }), stale), ["stale"]);
-
-  assert.deepEqual(openCardReasons(book({ status: "reading" }), difficulty()), []);
-});
-
 // --- openSurface ---------------------------------------------------------
 
-test("a currently-reading book never gets the full card, regardless of reason", () => {
-  const stale = difficulty({ stale: true });
-  const result = openSurface(book({ status: "reading" }), stale, { enabled: true, sessionDismissed: false });
-  assert.equal(result, "none");
+test("only a never-opened book gets the card", () => {
+  const options = { enabled: true, sessionDismissed: false };
+  assert.equal(openSurface(book({ status: "unread" }), options), "card");
+  assert.equal(openSurface(book({ status: "reading" }), options), "none");
+  // A finished book is re-openable and must stay silent too: the card is a
+  // first-open greeting, not a "here are this book's numbers again" panel.
+  // Those numbers live on the book's own Details page from then on.
+  assert.equal(openSurface(book({ status: "finished" }), options), "none");
 });
 
 test("the master toggle and a per-book session dismissal both suppress the card", () => {
   const unread = book({ status: "unread" });
-  assert.equal(openSurface(unread, null, { enabled: false, sessionDismissed: false }), "none");
-  assert.equal(openSurface(unread, null, { enabled: true, sessionDismissed: true }), "none");
+  assert.equal(openSurface(unread, { enabled: false, sessionDismissed: false }), "none");
+  assert.equal(openSurface(unread, { enabled: true, sessionDismissed: true }), "none");
 });
 
-test("an unread book with no reason present shows nothing", () => {
-  // unread alone is already a reason (never opened), so this checks a
-  // finished book with a clean, non-stale, non-scanned row.
-  const finished = book({ status: "finished" });
-  assert.equal(openSurface(finished, difficulty(), { enabled: true, sessionDismissed: false }), "none");
-});
-
-test("an unread book shows the card when enabled and not dismissed", () => {
-  const unread = book({ status: "unread" });
-  assert.equal(openSurface(unread, difficulty(), { enabled: true, sessionDismissed: false }), "card");
+test("the surface decision never consults difficulty data", () => {
+  // The gate takes the book alone — no `book_difficulty` argument to pass and
+  // therefore no round trip to await before the reader can open. A scanned
+  // PDF and a stale row used to be triggers in their own right, which is what
+  // made an already-read book show the card again.
+  assert.equal(openSurface.length, 2);
 });
 
 // --- classifyOpenCardBody -------------------------------------------------
