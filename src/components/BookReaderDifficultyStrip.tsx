@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import type { Book } from "../hooks/useBooks";
@@ -44,7 +44,10 @@ export default function BookReaderDifficultyStrip({
 }: BookReaderDifficultyStripProps) {
   const { t } = useTranslation();
   const { openCardEnabled, hideOpenCardForever } = useOpenCardControls();
-  const mountedAtRef = useRef(Date.now());
+  // A lazy initializer rather than `useRef(Date.now())`: the ref form reads the
+  // clock during render, which react-hooks/purity rejects and which would give a
+  // different mount time on every re-render were the ref ever recreated.
+  const [mountedAt] = useState(() => Date.now());
   const [visible, setVisible] = useState(() => isRearmed(book.id, Date.now()));
   // The auto-dismiss timer holds while the pointer is on the strip: a reader
   // who is looking at the ridge chart is not a reader who has finished with it.
@@ -63,9 +66,9 @@ export default function BookReaderDifficultyStrip({
 
   useEffect(() => {
     if (!visible) return;
-    if (!isPageTurn(mountedAtRef.current, Date.now())) return;
+    if (!isPageTurn(mountedAt, Date.now())) return;
     dismiss();
-  }, [locationTick, visible, dismiss]);
+  }, [locationTick, visible, dismiss, mountedAt]);
 
   const { difficulty } = useBookDifficulty(book.id);
   const sections = useBookDifficultySections(book.id);
