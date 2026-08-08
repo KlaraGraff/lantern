@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>人物别名表 · 界面样张</title>
+<style>
+  /* ---------------------------------------------------------------
+     取自 src/index.css 的亮色令牌，值一比一照抄，不新造颜色。
+     --------------------------------------------------------------- */
+  :root{
+    --bg-page:#f4f4f5;
+    --bg-surface:#ffffff;
+    --bg-muted:#fafafa;
+    --bg-input:#f3f3f5;
+    --text-primary:#18181b;
+    --text-secondary:#52525c;
+    --text-muted:#71717b;
+    --border:#e4e4e7;
+    --border-light:#f4f4f5;
+    --accent:#7c3aed;
+    --accent-bg:#f3e8ff;
+    --accent-text:#7c3aed;
+    --success-text:#00a63e;
+    --danger:#e7000b;
+    --danger-bg:#fef2f2;
+    --danger-border:#ffc9c9;
+    --danger-text:#e7000b;
+    --warning:#b8791c;
+    --link:#155dfc;
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg-page);
+    color:var(--text-primary);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro SC","PingFang SC","Helvetica Neue",Segoe UI,sans-serif;
+    font-size:14px;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page{max-width:940px;margin:0 auto;padding:44px 24px 120px}
+
+  /* ---------- 样张自己的排版（不是产品 UI 的一部分） ---------- */
+  .brief{
+    background:var(--bg-surface);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:28px 30px;
+    margin-bottom:48px;
+  }
+  .brief h1{font-size:22px;margin:0 0 4px;letter-spacing:-.4px}
+  .brief .sub{font-size:12.5px;color:var(--text-muted);margin:0 0 20px}
+  .brief h3{font-size:13px;margin:20px 0 6px;color:var(--text-primary)}
+  .brief p{font-size:13px;color:var(--text-secondary);margin:0 0 8px;max-width:74ch}
+  .brief ul{margin:4px 0 8px;padding-left:19px}
+  .brief li{font-size:13px;color:var(--text-secondary);margin-bottom:5px;max-width:72ch}
+  .brief code{
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:11.5px;background:var(--bg-input);
+    padding:1px 5px;border-radius:4px;color:var(--text-primary);
+  }
+  .brief b{color:var(--text-primary);font-weight:600}
+
+  .where{
+    margin-top:18px;border-left:3px solid var(--accent);
+    background:var(--accent-bg);border-radius:0 8px 8px 0;padding:14px 18px;
+  }
+  .where p{margin:0;color:#4c1d95}
+  .where p+p{margin-top:6px}
+
+  .state{margin-bottom:52px}
+  .state-head{margin-bottom:14px}
+  .state-head .no{
+    display:inline-block;font-size:10.5px;letter-spacing:.06em;
+    color:var(--text-muted);border:1px solid var(--border);
+    background:var(--bg-surface);border-radius:999px;padding:2px 9px;
+    margin-bottom:8px;
+  }
+  .state-head h2{font-size:16px;margin:0 0 4px;letter-spacing:-.2px}
+  .state-head p{font-size:12.5px;color:var(--text-muted);margin:0;max-width:78ch}
+
+  /* 设计注记：明确区别于产品文案 */
+  .note{
+    margin-top:12px;border-left:2px dashed #c8c8ce;padding:2px 0 2px 12px;
+    font-size:12px;line-height:1.7;color:var(--text-muted);max-width:76ch;
+  }
+  .note b{color:var(--text-secondary);font-weight:600}
+  .note .tag{
+    display:inline-block;font-size:10px;border:1px solid #c8c8ce;border-radius:4px;
+    padding:0 5px;margin-right:6px;color:var(--text-muted);vertical-align:1px;
+  }
+
+  /* ---------- 产品外壳：IndexManagerModal 的一段 ---------- */
+  .surface{
+    background:var(--bg-surface);border:1px solid var(--border);
+    border-radius:10px;padding:22px 24px 24px;
+  }
+  .modal-crumb{
+    display:flex;align-items:center;gap:7px;
+    font-size:11px;color:var(--text-muted);
+    padding-bottom:12px;margin-bottom:16px;border-bottom:1px solid var(--border-light);
+  }
+  .modal-crumb .sep{opacity:.5}
+  .modal-crumb .cur{color:var(--text-secondary)}
+
+  /* 章节头 */
+  .sec-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:12px}
+  .sec-head h4{font-size:13px;font-weight:500;margin:0;color:var(--text-primary)}
+  .sec-count{font-size:10.5px;color:var(--text-muted);white-space:nowrap}
+  .intro{
+    font-size:11.5px;line-height:1.75;color:var(--text-secondary);
+    margin:0 0 14px;max-width:560px;
+  }
+  .intro b{color:var(--text-primary);font-weight:600}
+
+  /* 工具条 */
+  .toolbar{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .search{
+    position:relative;flex:1;min-width:180px;max-width:260px;
+  }
+  .search input{
+    width:100%;height:28px;border:1px solid var(--border);border-radius:6px;
+    background:var(--bg-surface);padding:0 10px 0 28px;font-size:12px;
+    color:var(--text-primary);font-family:inherit;
+  }
+  .search svg{position:absolute;left:8px;top:7px;color:var(--text-muted)}
+  .seg{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;height:28px}
+  .seg button{
+    border:0;background:var(--bg-surface);font-family:inherit;font-size:11.5px;
+    color:var(--text-secondary);padding:0 10px;cursor:default;
+  }
+  .seg button+button{border-left:1px solid var(--border)}
+  .seg button[aria-pressed="true"]{background:var(--bg-input);color:var(--text-primary);font-weight:500}
+
+  /* 表 */
+  .table{border:1px solid var(--border);border-radius:6px;overflow:hidden}
+  .thead,.trow{
+    display:grid;grid-template-columns:1.15fr 2fr auto;gap:12px;align-items:center;
+  }
+  .thead{
+    background:var(--bg-input);border-bottom:1px solid var(--border-light);
+    padding:6px 12px;font-size:10.5px;letter-spacing:.02em;color:var(--text-muted);
+  }
+  .trow{padding:9px 12px;border-bottom:1px solid var(--border-light);font-size:12.5px}
+  .trow:last-child{border-bottom:0}
+  .trow.open{background:var(--bg-muted);align-items:flex-start}
+  .who{display:flex;flex-direction:column;gap:1px;min-width:0}
+  .who .name{font-weight:500;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .who .men{font-size:10.5px;color:var(--text-muted)}
+  .aliases{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+  .src{font-size:10.5px;color:var(--text-muted);white-space:nowrap;text-align:right}
+
+  /* 别名 chip */
+  .chip{
+    display:inline-flex;align-items:center;gap:4px;border-radius:999px;
+    border:1px solid var(--border);background:var(--bg-input);color:var(--text-secondary);
+    padding:1px 8px;font-size:11px;line-height:20px;
+  }
+  .chip .x{opacity:.45;display:inline-flex}
+  .chip.user{border-color:var(--accent);background:var(--accent-bg);color:var(--accent-text)}
+  /* 歧义 = 描边 + 计数徽标；描述 = 填色 + ≈。用「描边 vs 填色」区分两种黄，不再造第三种颜色 */
+  .chip.amb{border-color:rgba(184,121,28,.55);background:var(--bg-surface);color:#8a5a12}
+  .chip.amb .badge{
+    display:inline-flex;align-items:center;gap:2px;
+    background:rgba(184,121,28,.14);border-radius:999px;
+    padding:0 5px;font-size:10px;color:#8a5a12;
+  }
+  .chip.desc{border-color:rgba(184,121,28,.5);background:rgba(184,121,28,.1);color:var(--warning);max-width:100%}
+  .chip.dim{opacity:.45}
+  .chip.ghost{border-style:dashed;color:var(--text-muted);background:transparent}
+  .more{font-size:11px;color:var(--text-muted)}
+
+  /* 折叠展开条 */
+  .expand{
+    width:100%;border:0;border-top:1px solid var(--border-light);
+    background:var(--bg-muted);font-family:inherit;font-size:11.5px;
+    color:var(--text-secondary);padding:9px 12px;text-align:center;cursor:default;
+    display:flex;align-items:center;justify-content:center;gap:6px;
+  }
+
+  /* 需要确认的横幅 */
+  .flagband{
+    border:1px solid rgba(184,121,28,.4);background:rgba(184,121,28,.07);
+    border-radius:6px;padding:12px 14px;margin-bottom:12px;
+  }
+  .flagband .bhead{display:flex;align-items:flex-start;gap:8px;margin-bottom:2px}
+  .flagband .btitle{font-size:12.5px;font-weight:600;color:#8a5a12;margin:0}
+  .flagband .bbody{font-size:11.5px;line-height:1.7;color:var(--text-secondary);margin:2px 0 0}
+
+  /* 歧义桥卡片 */
+  .bridge{
+    background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;
+    padding:12px 14px;margin-top:10px;
+  }
+  .bridge .btop{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .bridge .btop .lead{font-size:12px;color:var(--text-secondary)}
+  .cands{display:flex;flex-direction:column;gap:7px}
+  .cand{display:grid;grid-template-columns:1fr 132px auto;gap:10px;align-items:center}
+  .cand .cname{font-size:12.5px;color:var(--text-primary);display:flex;align-items:center;gap:6px;min-width:0}
+  .cand .cname span.t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pri{
+    font-size:10px;border:1px solid var(--accent);color:var(--accent-text);
+    background:var(--accent-bg);border-radius:4px;padding:0 5px;white-space:nowrap;
+  }
+  .bar{height:5px;border-radius:999px;background:var(--bg-input);overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:999px;background:var(--accent)}
+  .bar.sec i{background:#c8c8ce}
+  .cand .cnum{font-size:10.5px;color:var(--text-muted);white-space:nowrap;text-align:right}
+  .explain{
+    margin-top:11px;padding-top:10px;border-top:1px dashed var(--border);
+    font-size:11.5px;line-height:1.75;color:var(--text-secondary);
+  }
+  .explain b{color:var(--text-primary);font-weight:600}
+  .preview{
+    margin-top:9px;background:var(--bg-input);border-radius:6px;padding:8px 10px;
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  }
+  .preview .plabel{font-size:10px;color:var(--text-muted);white-space:nowrap}
+  .preview .pline{font-size:11.5px;color:var(--text-secondary)}
+  .bactions{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap;align-items:center}
+
+  /* 按钮：对齐 ui/Button 的三种 variant */
+  .btn{
+    height:28px;border-radius:6px;font-family:inherit;font-size:12px;
+    display:inline-flex;align-items:center;gap:5px;padding:0 10px;cursor:default;
+    border:1px solid transparent;white-space:nowrap;
+  }
+  .btn.primary{background:var(--accent);color:#fff}
+  .btn.secondary{background:var(--bg-surface);border-color:var(--border);color:var(--text-primary)}
+  .btn.ghost{background:transparent;color:var(--text-secondary)}
+  .btn.danger{background:var(--danger);color:#fff}
+  .btn.dangerlink{background:transparent;color:var(--danger-text)}
+  .btn.big{height:32px;font-size:13px;padding:0 14px}
+  .btn[disabled]{opacity:.5}
+
+  /* 空态 / 进行中 */
+  .dashbox{border:1px dashed var(--border);border-radius:6px;padding:26px 20px;text-align:center}
+  .dashbox h5{font-size:12.5px;margin:0 0 5px;font-weight:500;color:var(--text-secondary)}
+  .dashbox p{font-size:11px;line-height:1.75;color:var(--text-muted);margin:0 0 16px}
+  .runbox{border:1px dashed var(--border);border-radius:6px;padding:18px 20px}
+  .runbox p{margin:0;font-size:11.5px;color:var(--text-secondary)}
+  .runbox .hint{margin-top:4px;font-size:11px;line-height:1.65;color:var(--text-muted)}
+  .track{margin-top:12px;height:3px;border-radius:999px;background:var(--bg-input);overflow:hidden}
+  .track i{display:block;height:100%;width:34%;border-radius:999px;background:var(--accent);opacity:.75}
+
+  /* 错误块 */
+  .alert{
+    display:flex;gap:10px;align-items:flex-start;border-radius:6px;
+    border:1px solid var(--danger-border);background:var(--danger-bg);padding:11px 13px;
+  }
+  .alert.neutral{border-color:var(--border);background:var(--bg-input)}
+  .alert h5{font-size:12.5px;font-weight:600;margin:0 0 3px;color:var(--danger-text)}
+  .alert.neutral h5{color:var(--text-primary)}
+  .alert p{font-size:11.5px;line-height:1.7;color:var(--text-secondary);margin:0}
+  .alert .kept{
+    margin-top:7px;border-left:2px solid var(--border);padding-left:9px;
+    font-size:11px;line-height:1.65;color:var(--text-muted);
+  }
+  .alert details{margin-top:9px}
+  .alert summary{font-size:11px;color:var(--text-muted);cursor:default}
+  .alert pre{
+    margin:6px 0 0;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;
+    padding:7px 9px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:10.5px;color:var(--text-secondary);white-space:pre-wrap;word-break:break-all;
+  }
+  .arow{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}
+
+  /* 表单 */
+  .formbox{
+    border:1px solid var(--border);background:var(--bg-input);border-radius:6px;
+    padding:12px 13px;
+  }
+  .formbox .flabel{font-size:11px;color:var(--text-muted);margin:0 0 7px}
+  .frow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .field{
+    height:28px;border:1px solid var(--border);border-radius:6px;background:var(--bg-surface);
+    padding:0 9px;font-size:12px;font-family:inherit;color:var(--text-primary);
+  }
+  .field.ph{color:var(--text-muted)}
+  .field.w200{width:210px}
+  .field.w150{width:160px}
+  .field.focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(124,58,237,.12)}
+  .picker{
+    margin-top:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-surface);
+    max-height:none;overflow:hidden;
+  }
+  .picker .pitem{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:6px 10px;font-size:12px;color:var(--text-primary);
+    border-bottom:1px solid var(--border-light);
+  }
+  .picker .pitem:last-child{border-bottom:0}
+  .picker .pitem.sel{background:var(--accent-bg);color:var(--accent-text)}
+  .picker .pitem .pm{font-size:10.5px;color:var(--text-muted)}
+  .picker .pitem.new{color:var(--text-secondary)}
+  .fhint{font-size:10.5px;line-height:1.7;color:var(--text-muted);margin:9px 0 0}
+
+  /* 确认框 */
+  .confirm{border:1px solid var(--danger-border);background:var(--danger-bg);border-radius:6px;padding:13px 14px}
+  .confirm.soft{border-color:var(--border);background:var(--bg-input)}
+  .confirm h5{font-size:12.5px;font-weight:600;margin:0 0 6px;color:var(--danger-text)}
+  .confirm.soft h5{color:var(--text-primary)}
+  .confirm p{font-size:11.5px;line-height:1.75;color:var(--text-secondary);margin:0 0 6px}
+  .confirm ul{margin:6px 0 10px;padding-left:17px}
+  .confirm li{font-size:11.5px;line-height:1.75;color:var(--text-secondary);margin-bottom:3px}
+  .confirm li b{color:var(--text-primary);font-weight:600}
+  .confirm .cactions{display:flex;gap:8px;margin-top:10px;align-items:center}
+  .quote{
+    background:var(--bg-surface);border:1px solid var(--border);border-radius:5px;
+    padding:7px 10px;font-size:11.5px;color:var(--text-secondary);margin:8px 0;
+  }
+
+  .footnote{
+    margin-top:12px;border-left:2px solid var(--border);padding-left:12px;
+    font-size:11px;line-height:1.75;color:var(--text-secondary);max-width:560px;
+  }
+  .footnote b{color:var(--text-primary);font-weight:600}
+
+  .ic{flex:none;display:inline-block;vertical-align:-2px}
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- =====================================================================
+     顶部说明
+     ===================================================================== -->
+<div class="brief">
+  <h1>人物别名表 · 可见与可改</h1>
+  <p class="sub">静态样张 · 全部状态平铺 · 文案为草稿，可改</p>
+
+  <h3>这个界面解决什么问题</h3>
+  <p>
+    每本书导入后会调一次 LLM，建一张「别名 → 书里的写法」的表，问答靠它把「达西怎么想」接到
+    <code>Mr. Darcy</code> 上。实测这张表约八成对。剩下两成里最伤的一类是
+    <b>把两个人合并成一个</b>——<code>Vesely-Frankl</code> 被整个判给 Alexander，而书里还有一个
+    Franz Vesely-Frankl，于是问 Franz 的问题被答成 Alexander。读者看不出来，只会觉得「AI 乱答」。
+  </p>
+
+  <h3>现状（调研结论，和任务简报不同）</h3>
+  <p>
+    这张表<b>已经有界面了</b>：<code>src/components/PersonAliasesSection.tsx</code>，挂在
+    <code>IndexManagerModal</code> 里，增、删、重建、清空、错误态、描述别名都已实现并接了后端。
+    所以这份样张不是「从零加一个入口」，是<b>改造现有那一节</b>。它今天缺的是三件事：
+  </p>
+  <ul>
+    <li><b>歧义完全不可见。</b>表按「书里的写法」分组，一个别名指向两个人，就变成两行里两个长得一样的普通标签，中间没有任何连线。而后端其实是知道的——<code>resolve()</code> 遇到这种就降到 <code>Medium</code>，答复上方会出现一行提示。表里却什么都不说。</li>
+    <li><b>出现次数取到了却没显示。</b><code>AliasEntryView.mentions</code> 一直在返回，界面从来没画出来。它正是判断「这条是不是模型编的」最直接的证据。</li>
+    <li><b>长表没有收纳。</b>所有人平铺。一本长篇几十上百人，真正需要看的那三条被淹掉。</li>
+  </ul>
+  <p>
+    另外两处今天没有确认就执行：<b>删一条别名</b>点 × 立刻删；<b>重建</b>点了立刻调模型花钱。只有「全部清空」有确认。
+  </p>
+
+  <div class="where">
+    <p><b>建议位置：留在原地，不新开页面。</b>还是 <code>IndexManagerModal</code> → 「人物别名」一节。它现在有三个入口：书库里书的右键菜单（<code>BookList</code> / <code>BookGrid</code>）、阅读器内 AI 面板的索引按钮（<code>AiPanel</code>）。这三个入口都是「我在读这本书 / 我在管这本书」的语境，正好。</p>
+    <p><b>再加一个入口：从答复里进来。</b>歧义真正被发现的时刻，是读者看到答复上方那行「「Frankl」按「Viktor E. Frankl」找的」并觉得不对的那一秒。那行现在只能「换成 Franz」一次性改这一轮；应该再给一个「管理这本书的别名」的去处，直接落到这张表的对应条目上。</p>
+  </div>
+</div>
+
+
+<!-- =====================================================================
+     状态 1 —— 正常态（长表 / 傲慢与偏见）
+     ===================================================================== -->
+<section class="state">
+  <div class="state-head">
+    <span class="no">状态 1</span>
+    <h2>正常态 · 长表默认收起</h2>
+    <p>《傲慢与偏见》，39 人 / 78 条别名。默认只展开两样东西：需要确认的，和出现最多的前 8 人。</p>
+  </div>
+
+  <div class="surface">
+    <div class="modal-crumb">
+      <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+      <span>AI 索引</span><span class="sep">·</span><span class="cur">傲慢与偏见</span>
+    </div>
+
+    <div class="sec-head">
+      <h4>人物别名</h4>
+      <span class="sec-count">39 人 · 78 条别名 · 1 条描述</span>
+    </div>
+    <p class="intro">
+      带底色的是你教过的，优先级高于自动认的。<b>「书里出现 N 次」</b>是这个名字在书里被写到的次数——次数很低、或者你根本不认识的名字，多半是这次没认准。
+    </p>
+
+    <!-- 需要确认的横幅 -->
+    <div class="flagband">
+      <div class="bhead">
+        <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#b8791c" stroke-width="2" style="margin-top:3px"><path d="M12 2 2 20h20L12 2z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+        <div>
+          <p class="btitle">有 1 个称呼同时指向两个人</p>
+          <p class="bbody">不一定是错的——书里本来就可能有两个人共用一个姓氏。下面写清楚了问到它的时候会怎么处理，你可以就这么留着。</p>
+        </div>
+      </div>
+
+      <!-- 歧义桥卡片 -->
+      <div class="bridge">
+        <div class="btop">
+          <span class="chip amb">班内特小姐 <span class="badge">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 3v6a4 4 0 0 0 4 4h8"/><path d="M6 21v-6a4 4 0 0 1 4-4h8"/></svg>2 人</span></span>
+          <span class="lead">这个称呼在书里可以是这两个人：</span>
+        </div>
+        <div class="cands">
+          <div class="cand">
+            <div class="cname"><span class="t">Elizabeth</span><span class="pri">默认按她找</span></div>
+            <div class="bar"><i style="width:100%"></i></div>
+            <div class="cnum">书里出现 634 次</div>
+          </div>
+          <div class="cand">
+            <div class="cname"><span class="t">Jane</span></div>
+            <div class="bar sec"><i style="width:46%"></i></div>
+            <div class="cnum">书里出现 292 次</div>
+          </div>
+        </div>
+        <div class="explain">
+          你问到「班内特小姐」时，<b>两个名字都会拿去检索</b>，不会漏掉谁。答复上方会写明这一次是按谁理解的，旁边就是换成另一个人的按钮。默认按出现次数更多的那位。
+        </div>
+        <div class="preview">
+          <span class="plabel">答复上方长这样</span>
+          <span class="pline">「班内特小姐」按「Elizabeth」找的。</span>
+          <span class="btn secondary" style="height:22px;font-size:11px;padding:0 8px">换成「Jane」</span>
+        </div>
+        <div class="bactions">
+          <button class="btn secondary">改成只指 Jane</button>
+          <button class="btn ghost">两个都留着</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <div class="search">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input placeholder="找人或找称呼" readonly>
+      </div>
+      <div class="seg">
+        <button aria-pressed="true">全部</button>
+        <button aria-pressed="false">你教过的</button>
+        <button aria-pressed="false">需要确认</button>
+      </div>
+    </div>
+
+    <div class="table">
+      <div class="thead">
+        <span>书里的写法</span><span>还可以这么叫</span><span>来源</span>
+      </div>
+
+      <div class="trow">
+        <div class="who"><span class="name">Elizabeth</span><span class="men">书里出现 634 次</span></div>
+        <div class="aliases">
+          <span class="chip">伊丽莎白<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip">Lizzy<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip user">丽兹<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip amb">班内特小姐 <span class="badge">2 人</span></span>
+          <span class="more">+1</span>
+        </div>
+        <div class="src">自动 + 你</div>
+      </div>
+
+      <div class="trow">
+        <div class="who"><span class="name">Mr. Darcy</span><span class="men">书里出现 418 次</span></div>
+        <div class="aliases">
+          <span class="chip">达西<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip">达西先生<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip">Darcy<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+        </div>
+        <div class="src">自动</div>
+      </div>
+
+      <div class="trow">
+        <div class="who"><span class="name">Jane</span><span class="men">书里出现 292 次</span></div>
+        <div class="aliases">
+          <span class="chip">简<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip">简·班内特<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip amb">班内特小姐 <span class="badge">2 人</span></span>
+        </div>
+        <div class="src">自动</div>
+      </div>
+
+      <!-- 展开态的一行：柯林斯，带描述别名 -->
+      <div class="trow open">
+        <div class="who">
+          <span class="name">Mr. Collins</span>
+          <span class="men">书里出现 108 次</span>
+        </div>
+        <div class="aliases">
+          <span class="chip">柯林斯<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip">柯林斯先生<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip user">牧师表哥<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip ghost"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></span>
+          <div style="width:100%;margin-top:6px;padding-top:7px;border-top:1px dashed var(--border-light)">
+            <span class="chip desc"><span style="opacity:.75;font-size:10.5px">≈</span> 那个总在拍马屁的牧师<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+            <span style="display:block;margin-top:5px;font-size:10.5px;line-height:1.55;color:var(--text-muted)">你当时问的是「那个总在拍马屁的牧师后来怎么样了」</span>
+          </div>
+        </div>
+        <div class="src">自动 + 你</div>
+      </div>
+
+      <div class="trow">
+        <div class="who"><span class="name">Mr. Bingley</span><span class="men">书里出现 148 次</span></div>
+        <div class="aliases">
+          <span class="chip">宾利<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip">宾利先生<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+        </div>
+        <div class="src">自动</div>
+      </div>
+
+      <div class="trow">
+        <div class="who"><span class="name">Mr. Bennet</span><span class="men">书里出现 183 次</span></div>
+        <div class="aliases">
+          <span class="chip">班内特先生<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+        </div>
+        <div class="src">自动</div>
+      </div>
+
+      <div class="trow">
+        <div class="who"><span class="name">Lydia</span><span class="men">书里出现 132 次</span></div>
+        <div class="aliases">
+          <span class="chip">莉迪亚<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip">丽迪雅<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+        </div>
+        <div class="src">自动</div>
+      </div>
+
+      <div class="trow">
+        <div class="who"><span class="name">Mr. Wickham</span><span class="men">书里出现 71 次</span></div>
+        <div class="aliases">
+          <span class="chip">威克姆<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip">韦翰<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+        </div>
+        <div class="src">自动</div>
+      </div>
+
+      <button class="expand">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+        还有 31 人，出现次数都在 71 次以下 · 展开
+      </button>
+    </div>
+
+    <p class="footnote">
+      <b>为什么按书存，不做成全局表。</b> 同一个称呼在不同书里可能是不同的人。一张全局表会把从一本书学到的东西泼到另一本书上，越用越糟。
+    </p>
+
+    <div class="toolbar" style="margin-top:14px;margin-bottom:0">
+      <button class="btn secondary">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+        添加人物
+      </button>
+      <button class="btn secondary">重建</button>
+      <button class="btn dangerlink">全部清空</button>
+    </div>
+  </div>
+
+  <div class="note">
+    <span class="tag">取舍</span><b>默认收到什么程度。</b> 不做「全收起」，也不做「全展开」。默认三段：需要确认的（永远展开，通常 0–2 条）、出现次数前 8 的人（一屏内看得完）、其余折成一行。折叠条上写清楚<b>被折走的都是 71 次以下的小角色</b>——只说「还有 31 人」，读者不知道自己错过了什么，还是得点开。
+  </div>
+  <div class="note">
+    <span class="tag">取舍</span><b>把 mentions 画出来。</b> 后端一直在返回，界面没用。它是发现两类典型错误的唯一线索：模型编的名字次数会低得离谱；<code>Young</code> 这种被当人名的常见词，次数会高得离谱（<code>count_mentions</code> 用的是大小写不敏感的 <code>LIKE '%Young%'</code>，会命中每一个 young man）。按次数排序之后，两头的异常都浮到眼皮底下。
+  </div>
+  <div class="note">
+    <span class="tag">规范</span><b>行高没走 73px。</b> 73px 是设置弹窗的行规范（<code>GeneralSettings.tsx</code>）。这是索引弹窗里的一张数据表，现有实现用的就是紧凑行（<code>py-2</code>），样张跟现有实现走；一行 73px 的话八个人就占满整屏。
+  </div>
+</section>
+
+
+<!-- =====================================================================
+     状态 2 —— 歧义（Embracing Hope，两处，其中一处是人物合并）
+     ===================================================================== -->
+<section class="state">
+  <div class="state-head">
+    <span class="no">状态 2</span>
+    <h2>歧义条目 · 一个称呼指向两个人</h2>
+    <p>《Embracing Hope》。两处歧义：<code>Frankl</code> 是真歧义（书里确实有三个 Frankl），<code>Vesely-Frankl</code> 是模型的人物合并——被整个判给了 Alexander。同一种表达方式要能装下这两种。</p>
+  </div>
+
+  <div class="surface">
+    <div class="modal-crumb">
+      <svg class="ic" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+      <span>AI 索引</span><span class="sep">·</span><span class="cur">Embracing Hope</span>
+    </div>
+
+    <div class="sec-head">
+      <h4>人物别名</h4>
+      <span class="sec-count">7 人 · 16 条别名</span>
+    </div>
+
+    <div class="flagband">
+      <div class="bhead">
+        <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#b8791c" stroke-width="2" style="margin-top:3px"><path d="M12 2 2 20h20L12 2z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+        <div>
+          <p class="btitle">有 2 个称呼同时指向两个人</p>
+          <p class="bbody">这本书里有几位同姓的人，出现这种情况很正常。下面写清楚了各自会怎么处理。</p>
+        </div>
+      </div>
+
+      <!-- 桥 1：真歧义 -->
+      <div class="bridge">
+        <div class="btop">
+          <span class="chip amb">Frankl <span class="badge">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 3v6a4 4 0 0 0 4 4h8"/><path d="M6 21v-6a4 4 0 0 1 4-4h8"/></svg>2 人</span></span>
+          <span class="lead">这个称呼在书里可以是这两个人：</span>
+        </div>
+        <div class="cands">
+          <div class="cand">
+            <div class="cname"><span class="t">Viktor E. Frankl</span><span class="pri">默认按他找</span></div>
+            <div class="bar"><i style="width:100%"></i></div>
+            <div class="cnum">书里出现 142 次</div>
+          </div>
+          <div class="cand">
+            <div class="cname"><span class="t">Elly Frankl</span></div>
+            <div class="bar sec"><i style="width:8%"></i></div>
+            <div class="cnum">书里出现 11 次</div>
+          </div>
+        </div>
+        <div class="explain">
+          你问到「Frankl」时，<b>两个名字都会拿去检索</b>，不会漏掉谁。答复上方会写明这一次是按谁理解的，旁边就是换成另一个人的按钮。默认按出现次数更多的那位。
+        </div>
+        <div class="preview">
+          <span class="plabel">答复上方长这样</span>
+          <span class="pline">「Frankl」按「Viktor E. Frankl」找的。</span>
+          <span class="btn secondary" style="height:22px;font-size:11px;padding:0 8px">换成「Elly Frankl」</span>
+        </div>
+        <div class="bactions">
+          <button class="btn secondary">改成只指 Viktor E. Frankl</button>
+          <button class="btn secondary">改成只指 Elly Frankl</button>
+          <button class="btn ghost">两个都留着</button>
+        </div>
+      </div>
+
+      <!-- 桥 2：人物合并，次要一方极低 -->
+      <div class="bridge">
+        <div class="btop">
+          <span class="chip amb">Vesely-Frankl <span class="badge">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 3v6a4 4 0 0 0 4 4h8"/><path d="M6 21v-6a4 4 0 0 1 4-4h8"/></svg>2 人</span></span>
+          <span class="lead">这个称呼在书里可以是这两个人：</span>
+        </div>
+        <div class="cands">
+          <div class="cand">
+            <div class="cname"><span class="t">Alexander Vesely-Frankl</span><span class="pri">默认按他找</span></div>
+            <div class="bar"><i style="width:100%"></i></div>
+            <div class="cnum">书里出现 23 次</div>
+          </div>
+          <div class="cand">
+            <div class="cname"><span class="t">Franz Vesely-Frankl</span></div>
+            <div class="bar sec"><i style="width:26%"></i></div>
+            <div class="cnum">书里出现 6 次</div>
+          </div>
+        </div>
+        <div class="explain">
+          差距比较大的时候，问到「Vesely-Frankl」几乎每次都会先按 <b>Alexander</b> 理解。如果你要问的其实是 Franz，
+          最省事的办法是<b>直接写全名</b>——这张表只在你没写全名的时候才起作用。
+        </div>
+        <div class="preview">
+          <span class="plabel">答复上方长这样</span>
+          <span class="pline">「Vesely-Frankl」按「Alexander Vesely-Frankl」找的。</span>
+          <span class="btn secondary" style="height:22px;font-size:11px;padding:0 8px">换成「Franz Vesely-Frankl」</span>
+        </div>
+        <div class="bactions">
+          <button class="btn secondary">改成只指 Alexander Vesely-Frankl</button>
+          <button class="btn secondary">改成只指 Franz Vesely-Frankl</button>
+          <button class="btn ghost">两个都留着</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="table">
+      <div class="thead"><span>书里的写法</span><span>还可以这么叫</span><span>来源</span></div>
+
+      <div class="trow">
+        <div class="who"><span class="name">Viktor E. Frankl</span><span class="men">书里出现 142 次</span></div>
+        <div class="aliases">
+          <span class="chip">弗兰克尔<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip">维克多·弗兰克<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip">Viktor<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip amb">Frankl <span class="badge">2 人</span></span>
+        </div>
+        <div class="src">自动</div>
+      </div>
+
+      <div class="trow">
+        <div class="who"><span class="name">Alexander Vesely-Frankl</span><span class="men">书里出现 23 次</span></div>
+        <div class="aliases">
+          <span class="chip">亚历山大<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip">Alexander<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip amb">Vesely-Frankl <span class="badge">2 人</span></span>
+        </div>
+        <div class="src">自动</div>
+      </div>
+
+      <div class="trow">
+        <div class="who"><span class="name">Elly Frankl</span><span class="men">书里出现 11 次</span></div>
+        <div class="aliases">
+          <span class="chip">艾莉<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip">Elly<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip amb">Frankl <span class="badge">2 人</span></span>
+        </div>
+        <div class="src">自动</div>
+      </div>
+
+      <div class="trow">
+        <div class="who"><span class="name">Franz Vesely-Frankl</span><span class="men">书里出现 6 次</span></div>
+        <div class="aliases">
+          <span class="chip user">弗朗茨<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip amb">Vesely-Frankl <span class="badge">2 人</span></span>
+          <span class="chip ghost"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></span>
+        </div>
+        <div class="src">你</div>
+      </div>
+
+      <div class="trow">
+        <div class="who"><span class="name">Gabriele Vesely-Frankl</span><span class="men">书里出现 4 次</span></div>
+        <div class="aliases">
+          <span class="chip">加布里埃尔<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+        </div>
+        <div class="src">自动</div>
+      </div>
+
+      <div class="trow">
+        <div class="who"><span class="name">Tilly Grosser</span><span class="men">书里出现 3 次</span></div>
+        <div class="aliases">
+          <span class="chip">蒂莉<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+        </div>
+        <div class="src">自动</div>
+      </div>
+
+      <div class="trow">
+        <div class="who"><span class="name">Otto Pötzl</span><span class="men">书里出现 2 次</span></div>
+        <div class="aliases">
+          <span class="chip">波茨尔<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+        </div>
+        <div class="src">自动</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <span class="tag">取舍</span><b>为什么歧义不能只做成一个标签样式。</b> 歧义是<b>两行之间的关系</b>，只在两行里各画一个记号，读者永远不会把它们联系起来——这正是今天的界面看不见它的原因。所以主体表达是「桥卡片」：一张卡同时装下两个候选，放在表的上方；表里的标签只是它的入口（<code>⑂ 2 人</code>）。
+  </div>
+  <div class="note">
+    <span class="tag">取舍</span><b>为什么用黄而不是红，用描边而不是填色。</b> 红色在这套界面里只归破坏性操作。歧义不是错误——书里真有三个 Frankl。同时描述别名（<code>≈</code>）已经占了填色的黄，所以歧义用<b>描边</b>的黄：一眼看得出是同一类「留意一下」，又不会跟描述混。
+  </div>
+  <div class="note">
+    <span class="tag">文案</span><b>「默认按他找」不是「猜」。</b> 实际行为要说准：<code>resolve()</code> 把<b>两个规范名都追加进检索词</b>（<code>expanded_query</code>），并不只查一个；<code>default_canonical</code> 只决定答复上方那行提示写谁的名字。所以文案是「两个名字都会拿去检索，不会漏掉谁」，而不是「系统会猜一个」——后者会让读者以为另一个人被丢掉了，从而去删掉一条本来正确的别名。
+  </div>
+  <div class="note">
+    <span class="tag">开放</span>桥卡片上的「改成只指 X」在后端就是删掉另一条 <code>(alias, canonical)</code> 行，现有 <code>delete_person_alias</code> 够用，不需要新命令。但它是<b>破坏性的</b>——要不要也走一遍状态 7 的确认？倾向：走，同一套文案。
+  </div>
+</section>
+
+
+<!-- =====================================================================
+     状态 3 —— 空态
+     ===================================================================== -->
+<section class="state">
+  <div class="state-head">
+    <span class="no">状态 3</span>
+    <h2>空态 · 这本书还没建过</h2>
+    <p>非虚构、工具书，或者自动建表的开关关着、之前失败过没重试。空态要说清「建它要花什么」，因为按下去就是一次模型调用。</p>
+  </div>
+
+  <div class="surface">
+    <div class="sec-head"><h4>人物别名</h4></div>
+    <p class="intro">让你用中文名、简称、或者「那个牧师」这类说法问一本书——哪怕书里从没出现过这些词。</p>
+    <div class="dashbox">
+      <h5>还没有建立别名</h5>
+      <p>从书里认出人物，再给每个人配上常见的译名和简称。<br>建索引时跑一次，之后每次提问都直接查这张表。</p>
+      <button class="btn primary big">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>
+        建立别名表
+      </button>
+    </div>
+    <p class="footnote">
+      <b>不是每本书都需要。</b> 讲人的书（小说、传记、书信集）用得上；一本讲语法的书里没有需要对上号的人名，空着也不影响提问。
+    </p>
+  </div>
+
+  <div class="note">
+    <span class="tag">取舍</span>空态不区分「从来没建过」和「建过但失败了」。失败有自己的状态（状态 5），失败之后表仍然是空的，但那时候屏幕上有错误块——两者叠在一起才是完整的信息。空态本身不该替失败道歉。
+  </div>
+</section>
+
+
+<!-- =====================================================================
+     状态 4 —— 建表中
+     ===================================================================== -->
+<section class="state">
+  <div class="state-head">
+    <span class="no">状态 4</span>
+    <h2>建表中</h2>
+    <p>要调 LLM，最多重试三次，四五分钟是常事。不说清楚就像卡死了。</p>
+  </div>
+
+  <div class="surface">
+    <div class="sec-head"><h4>人物别名</h4></div>
+    <div class="runbox">
+      <p>正在从书里认出人物…</p>
+      <p class="hint">可能要几分钟。关掉这个窗口也不影响，它会继续跑。</p>
+      <div class="track"><i></i></div>
+    </div>
+  </div>
+
+  <div class="note">
+    <span class="tag">现状</span>这一态现有实现已经对了，样张原样保留：不显示百分比（拿不到）、不显示第几次重试（读者用不上）、明说可以关窗口。样张唯一的补充是——重建时这个块要<b>顶在旧表上方</b>，旧表继续显示而不是被替换掉，这样读者知道自己没丢东西。
+  </div>
+</section>
+
+
+<!-- =====================================================================
+     状态 5 —— 建表失败
+     ===================================================================== -->
+<section class="state">
+  <div class="state-head">
+    <span class="no">状态 5</span>
+    <h2>建表失败</h2>
+    <p>三种可命名的失败各有一句话；剩下的落到通用 AI 错误码；都命不中才留原始文本。下面平铺两种。</p>
+  </div>
+
+  <div class="surface">
+    <div class="sec-head"><h4>人物别名</h4><span class="sec-count">7 人 · 16 条别名</span></div>
+
+    <div class="alert" style="margin-bottom:14px">
+      <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--danger-text)" stroke-width="2" style="margin-top:3px"><path d="M12 2 2 20h20L12 2z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+      <div style="min-width:0">
+        <h5>这次没认出书里的人物</h5>
+        <p>试了三次，模型给回来的名字都对不上书里的写法，所以这次没有写进表里。每次都是重新问一遍，同一个模型再试常常就成了。</p>
+        <p class="kept">下面这张表没有动过——重建失败不会清掉已经建好的，你教过的那几条也都在。</p>
+        <div class="arow">
+          <button class="btn primary">再试一次</button>
+          <button class="btn secondary">去选模型</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="alert neutral">
+      <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" style="margin-top:3px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      <div style="min-width:0">
+        <h5>建表没能完成</h5>
+        <p>这次没跑完，原因不在预料之内。可以直接再试一次；一直是同样的结果，就把下面的详情附上报给我们。</p>
+        <details open>
+          <summary>详情</summary>
+          <pre>AI error: request timed out after 120s (provider: openai-compatible, model: qwen3-30b-a3b)</pre>
+        </details>
+        <div class="arow">
+          <button class="btn primary">再试一次</button>
+          <button class="btn secondary">复制详情</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <span class="tag">现状</span>这一态现有实现也已经对了，包括「表没有动过」那句——它存在的原因是失败的一次 build 什么都不写，不说的话读者会怀疑表被写坏，然后手动清空掉自己教过的行。样张原样保留，只把「详情」默认展开画出来给你看长什么样（产品里默认是收起的）。
+  </div>
+</section>
+
+
+<!-- =====================================================================
+     状态 6 —— 添加
+     ===================================================================== -->
+<section class="state">
+  <div class="state-head">
+    <span class="no">状态 6</span>
+    <h2>添加别名</h2>
+    <p>两条路径：给已有的人加一个称呼（行内），和加一个表里还没有的人（底部表单）。难点在第二条——「指向谁」必须是<b>书里真实出现的写法</b>，随手打错一个字，这条就永远不会命中。</p>
+  </div>
+
+  <div class="surface">
+    <div class="sec-head"><h4>人物别名</h4><span class="sec-count">39 人 · 78 条别名</span></div>
+
+    <p class="intro" style="margin-bottom:8px"><b>路径一 · 给已有的人加一个称呼</b> —— 点这一行末尾的 <span style="display:inline-flex;vertical-align:-2px"><span class="chip ghost" style="line-height:16px"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></span></span> 原地输入。</p>
+    <div class="table" style="margin-bottom:22px">
+      <div class="thead"><span>书里的写法</span><span>还可以这么叫</span><span>来源</span></div>
+      <div class="trow open">
+        <div class="who"><span class="name">Mr. Darcy</span><span class="men">书里出现 418 次</span></div>
+        <div class="aliases">
+          <span class="chip">达西<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip">达西先生<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip">Darcy<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <input class="field focus" style="height:22px;border-radius:999px;width:130px;font-size:11px;padding:0 9px" value="彭伯里的主人">
+          <span style="font-size:10.5px;color:var(--text-muted)">回车保存 · Esc 取消</span>
+        </div>
+        <div class="src">自动</div>
+      </div>
+    </div>
+
+    <p class="intro" style="margin-bottom:8px"><b>路径二 · 加一个表里还没有的人</b></p>
+    <div class="formbox">
+      <p class="flabel">书里的写法 —— 必须和书里一模一样，包括大小写和缩写点</p>
+      <div class="frow">
+        <input class="field w200 focus" value="Mrs. Gard">
+      </div>
+      <div class="picker">
+        <div class="pitem sel"><span>Mrs. Gardiner</span><span class="pm">书里出现 19 次</span></div>
+        <div class="pitem"><span>Mr. Gardiner</span><span class="pm">书里出现 12 次</span></div>
+        <div class="pitem new"><span>就用「Mrs. Gard」——书里没找到这个写法</span><span class="pm">0 次</span></div>
+      </div>
+      <p class="fhint">边打边从这本书里找。选一个书里有的写法，这条别名才会命中；书里没有的写法也能存，只是问答时不会用上它。</p>
+
+      <div class="frow" style="margin-top:12px">
+        <input class="field w150 ph" value="还可以这么叫，例如 嘉丁纳舅妈" readonly>
+        <button class="btn primary">添加</button>
+        <button class="btn ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <span class="tag">改动</span><b>「指向谁」从自由输入改成边打边找。</b> 现在这个字段是一个空输入框（占位符「书里的写法，例如 Mr. Darcy」）。手打一个书里不存在的写法，后端照存不误——<code>add_person_alias</code> 会把 <code>mentions</code> 算成 0 然后正常写入，界面上看不出任何异常，读者以为教会了，其实这条永远命不中。让它从书里的现有人物里选，就把这类失败挡在输入的那一刻。
+  </div>
+  <div class="note">
+    <span class="tag">需要后端</span>候选列表可以先只查 <code>book_person_aliases</code> 里已有的 canonical（零成本，现有数据够）。要做到「书里有但表里没有的人也能选出来」，需要一个新命令按前缀扫 <code>book_chunks</code>。<b>建议先只做前者</b>，加上最后那条「就用我打的」兜底。
+  </div>
+</section>
+
+
+<!-- =====================================================================
+     状态 7 —— 删除确认
+     ===================================================================== -->
+<section class="state">
+  <div class="state-head">
+    <span class="no">状态 7</span>
+    <h2>删除一条别名的确认</h2>
+    <p>今天点 × 是立刻删。删一条会改变这本书之后<b>所有</b>提问的行为，值一次确认——但只值一句话，不值一个弹窗。</p>
+  </div>
+
+  <div class="surface">
+    <div class="sec-head"><h4>人物别名</h4></div>
+    <div class="table" style="margin-bottom:14px">
+      <div class="thead"><span>书里的写法</span><span>还可以这么叫</span><span>来源</span></div>
+      <div class="trow open">
+        <div class="who"><span class="name">Mr. Darcy</span><span class="men">书里出现 418 次</span></div>
+        <div class="aliases">
+          <span class="chip" style="opacity:.4">达西<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip">达西先生<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <span class="chip">Darcy<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <div style="width:100%;margin-top:9px">
+            <div class="confirm soft" style="max-width:470px">
+              <h5>删掉「达西」→ Mr. Darcy？</h5>
+              <p>删掉之后，只写「达西」的提问就不再自动带上 <b>Mr. Darcy</b> 去检索了；写全名照常。这本书之后的每次提问都按新表来。</p>
+              <p style="color:var(--text-muted);margin-bottom:0">重建的时候，自动认的这一条可能会再出现。</p>
+              <div class="cactions">
+                <button class="btn danger" style="height:26px;font-size:11.5px">删掉</button>
+                <button class="btn ghost" style="height:26px;font-size:11.5px">取消</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="src">自动</div>
+      </div>
+    </div>
+
+    <p class="intro" style="margin:0"><b>你教过的那一条，措辞不一样</b>——它是重建也找不回来的。</p>
+    <div class="confirm soft" style="max-width:470px;margin-top:8px">
+      <h5>删掉「牧师表哥」→ Mr. Collins？</h5>
+      <p>这条是你自己教的，删掉之后<b>重建也拿不回来</b>——自动认的只认书里出现过的写法，「牧师表哥」书里没有。</p>
+      <div class="cactions">
+        <button class="btn danger" style="height:26px;font-size:11.5px">删掉</button>
+        <button class="btn ghost" style="height:26px;font-size:11.5px">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <span class="tag">取舍</span><b>就地确认，不弹窗。</b> 删别名是高频、低后果的操作（表里有 78 条，读者可能连删五条）。每条都弹一个居中模态会把清理这张表变成折磨。就地展开的一句话既拦住了误点，又不打断节奏。
+  </div>
+  <div class="note">
+    <span class="tag">文案</span><b>两种来源两种话。</b> 自动认的那条，真正的后果是「重建时它可能回来」——不说的话读者会以为自己永久修好了。你教过的那条，后果是「删了就没了」。同一句通用文案说不清这两件事，所以分开写。都只陈述后果，不加「确定吗」「此操作不可撤销」这类吓人的话。
+  </div>
+</section>
+
+
+<!-- =====================================================================
+     状态 8 —— 重建确认
+     ===================================================================== -->
+<section class="state">
+  <div class="state-head">
+    <span class="no">状态 8</span>
+    <h2>重建整张表的确认</h2>
+    <p>今天点「重建」是立刻调模型。要花钱，而且结果不确定——同一本书重建两次结果可能不一样。一次确认，把三件事一次说完。</p>
+  </div>
+
+  <div class="surface">
+    <div class="sec-head"><h4>人物别名</h4><span class="sec-count">39 人 · 78 条别名 · 1 条描述</span></div>
+    <div class="confirm soft" style="max-width:520px">
+      <h5>重建这本书的别名表？</h5>
+      <p>会重新调一次模型，从头认一遍这本书里的人。三件事先说清楚：</p>
+      <ul>
+        <li><b>要花一次模型调用的钱。</b>用的是「分析」那档模型，一本书一次，失败重试最多三次。</li>
+        <li><b>你教过的 6 条会原样保留。</b>重建只重做自动认的那 72 条，不碰你的。</li>
+        <li><b>你删掉过的自动条目可能会回来。</b>删除没有被记下来，模型这次可能又认出同一条。</li>
+      </ul>
+      <div class="cactions">
+        <button class="btn primary" style="height:28px">重建</button>
+        <button class="btn ghost" style="height:28px">取消</button>
+      </div>
+    </div>
+
+    <p class="intro" style="margin:22px 0 8px"><b>对照 · 「全部清空」是另一回事</b>，它连你教过的一起删。这个已经有确认了，措辞保留。</p>
+    <div class="confirm" style="max-width:520px">
+      <h5>清空这本书的全部别名？</h5>
+      <p>包括你教过的 6 条——那些是重建也找不回来的，自动认的只认书里出现过的写法。</p>
+      <div class="cactions">
+        <button class="btn danger" style="height:26px;font-size:11.5px">清空</button>
+        <button class="btn ghost" style="height:26px;font-size:11.5px">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <span class="tag">纠正</span><b>重建并不覆盖你手动改过的条目。</b> 简报里说「重建会覆盖读者手动改过的条目」——代码不是这样：<code>clear_auto_aliases</code> 只删 <code>source = 'auto'</code> 的行，<code>run_build_pass</code> 写回时也不动已经是 <code>'user'</code> 的行。所以确认文案不能说「会覆盖你改的」，那是假的，说了会让读者不敢按这个本来安全的按钮。真正会丢的是<b>你删掉过的自动条目可能回来</b>——那才是这次要补的第三条。
+  </div>
+  <div class="note">
+    <span class="tag">取舍</span><b>重建用中性框，清空用红框。</b> 重建是可重复、可再来一次的；清空是唯一会毁掉不可重建数据的操作。两个都涂红，红色就不再意味着什么了。
+  </div>
+  <div class="note">
+    <span class="tag">文案</span>「要花一次模型调用的钱」不写具体金额——各家模型价格差太多，写死会骗人。写清楚是<b>一次、一本书、最多重试三次</b>，读者拿自己的价目表就能估。
+  </div>
+</section>
+
+
+<!-- =====================================================================
+     状态 9 —— 描述别名失效（现存态，一并列出）
+     ===================================================================== -->
+<section class="state">
+  <div class="state-head">
+    <span class="no">状态 9</span>
+    <h2>补 · 描述别名当前不生效</h2>
+    <p>不在需求清单里，但它是这一节现有的状态之一，改版不能弄丢。带 <code>≈</code> 的行靠「搜索模型」按意思匹配，开关关掉之后它们还在表里，但不再起作用。</p>
+  </div>
+
+  <div class="surface">
+    <div class="sec-head"><h4>人物别名</h4><span class="sec-count">39 人 · 78 条别名 · 2 条描述</span></div>
+    <div class="table">
+      <div class="thead"><span>书里的写法</span><span>还可以这么叫</span><span>来源</span></div>
+      <div class="trow open">
+        <div class="who"><span class="name">Mr. Collins</span><span class="men">书里出现 108 次</span></div>
+        <div class="aliases">
+          <span class="chip">柯林斯<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          <div style="width:100%;margin-top:6px;padding-top:7px;border-top:1px dashed var(--border-light)">
+            <span class="chip desc dim"><span style="opacity:.75;font-size:10.5px">≈</span> 那个总在拍马屁的牧师<span class="x"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M18 6 6 18M6 6l12 12"/></svg></span></span>
+          </div>
+        </div>
+        <div class="src">自动 + 你</div>
+      </div>
+    </div>
+    <div class="alert neutral" style="margin-top:12px">
+      <svg class="ic" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2" style="margin-top:3px"><path d="M12 2 2 20h20L12 2z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>
+      <p><b style="color:var(--text-primary)">带 ≈ 的 2 条现在不生效。</b> 它们靠意思匹配，需要「搜索模型」；那个开关现在是关的。人名不受影响，照常工作。</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <span class="tag">现状</span>原样保留。灰掉而不是隐藏——东西没丢，开关一开就回来；隐藏会让读者以为自己教的东西被吃了。
+  </div>
+</section>
+
+</div>
+</body>
+</html>

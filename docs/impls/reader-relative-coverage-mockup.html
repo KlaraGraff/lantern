@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern · 按读者已知词算覆盖率 — 静态样张</title>
+<style>
+:root {
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-serif: Georgia, "Libre Baskerville", "Songti SC", serif;
+
+  --color-bg-page: #f4f4f5;
+  --color-bg-surface: #ffffff;
+  --color-bg-muted: #fafafa;
+  --color-bg-input: #f3f3f5;
+
+  --color-text-primary: #18181b;
+  --color-text-secondary: #52525c;
+  --color-text-muted: #71717b;
+
+  --color-border: #e4e4e7;
+  --color-border-light: #f4f4f5;
+
+  --color-accent: #7c3aed;
+  --color-accent-bg: #f3e8ff;
+  --color-accent-text: #7c3aed;
+
+  --color-danger-text: #e7000b;
+  --color-danger-bg: #fef2f2;
+  --color-danger-border: #ffc9c9;
+
+  --color-band-1: #e7dffa;
+  --color-band-2: #cfc0f3;
+  --color-band-3: #b49aec;
+  --color-band-4: #9470dd;
+  --color-band-5: #6f43c4;
+  --color-band-unlisted: #d6d6dc;
+
+  --color-overlay: rgba(24, 24, 27, 0.4);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg-page: #151518;
+    --color-bg-surface: #18191d;
+    --color-bg-muted: #1f2023;
+    --color-bg-input: #25262c;
+
+    --color-text-primary: #f4f4f5;
+    --color-text-secondary: #c9c9d1;
+    --color-text-muted: #9a9aa4;
+
+    --color-border: #34343d;
+    --color-border-light: #2a2b31;
+
+    --color-accent: #8b5cf6;
+    --color-accent-bg: #302647;
+    --color-accent-text: #a78bfa;
+
+    --color-danger-text: #f87171;
+    --color-danger-bg: rgba(69, 10, 10, 0.5);
+    --color-danger-border: #991b1b;
+
+    --color-band-1: #332c4a;
+    --color-band-2: #443a66;
+    --color-band-3: #584a85;
+    --color-band-4: #7259ab;
+    --color-band-5: #9d84da;
+    --color-band-unlisted: #3d3d46;
+
+    --color-overlay: rgba(0, 0, 0, 0.6);
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  padding: 0 0 120px;
+  font-family: var(--font-sans);
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+p, h1, h2, h3, h4, ul, ol { margin: 0; }
+ul { padding: 0; list-style: none; }
+b, strong { font-weight: 600; }
+
+.page { max-width: 860px; margin: 0 auto; padding: 0 24px; }
+
+/* ---------- 样张自身的导览层（不属于产品界面） ---------- */
+.sheet-head {
+  padding: 44px 0 32px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 40px;
+}
+.sheet-head .kicker {
+  font-size: 10.5px; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.sheet-head h1 {
+  font-family: var(--font-serif);
+  font-size: 27px; font-weight: 600; line-height: 1.3; margin-top: 10px;
+}
+.sheet-head .lede {
+  margin-top: 14px; max-width: 660px;
+  font-size: 13px; line-height: 1.95; color: var(--color-text-secondary);
+}
+.sheet-head .lede + .lede { margin-top: 12px; }
+.diffbox {
+  margin-top: 20px; display: grid; gap: 0;
+  border: 1px solid var(--color-border); border-radius: 11px; overflow: hidden;
+  background: var(--color-bg-surface);
+}
+.diffbox > div { padding: 13px 16px; }
+.diffbox > div + div { border-top: 1px solid var(--color-border-light); }
+.diffbox .tag {
+  display: inline-block; font-size: 10px; letter-spacing: 0.05em;
+  padding: 2px 7px; border-radius: 5px; margin-bottom: 7px;
+}
+.tag-now { background: var(--color-bg-input); color: var(--color-text-muted); }
+.tag-next { background: var(--color-accent-bg); color: var(--color-accent-text); }
+.diffbox p { font-size: 12px; line-height: 1.85; color: var(--color-text-secondary); }
+
+.state-label {
+  margin: 46px 0 12px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+}
+.state-label .num {
+  font-family: var(--font-serif); font-size: 12px; font-weight: 600;
+  color: var(--color-text-muted); font-variant-numeric: tabular-nums;
+}
+.state-label h2 { font-size: 13px; font-weight: 600; letter-spacing: -0.1px; }
+.state-label .note { font-size: 11px; color: var(--color-text-muted); }
+
+/* ---------- 产品界面层 ---------- */
+.card {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 13px;
+  padding: 18px 20px;
+}
+.sec-head { margin-bottom: 12px; }
+.sec-head h3 { font-size: 13.5px; font-weight: 600; }
+.sec-head p { margin-top: 4px; font-size: 10.5px; color: var(--color-text-muted); line-height: 1.7; }
+
+.verdict-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.verdict {
+  font-family: var(--font-serif);
+  font-size: 19px; line-height: 1.6; margin: 0;
+}
+.verdict em { font-style: normal; font-weight: 600; color: var(--color-accent-text); }
+.verdict.quiet { color: var(--color-text-secondary); }
+.verdict.quiet em { color: var(--color-text-secondary); }
+.why {
+  margin-top: 10px; max-width: 560px;
+  font-size: 11.5px; line-height: 1.8; color: var(--color-text-secondary);
+}
+.why strong { color: var(--color-text-primary); }
+.why + .why { margin-top: 8px; }
+.stamp {
+  flex-shrink: 0; text-align: right;
+  font-size: 10px; line-height: 1.7; color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.stamp b { display: block; font-size: 11px; color: var(--color-text-secondary); }
+
+/* 三格落点梯 —— 位置编码，不是颜色编码。三种落点用同一个强调色，
+   区别只在哪一格被填上，以及旁边那句话。 */
+.ladder { display: inline-flex; align-items: center; gap: 9px; margin-bottom: 14px; }
+.ladder .cells { display: inline-flex; gap: 3px; }
+.ladder i {
+  display: block; width: 17px; height: 5px; border-radius: 2px;
+  background: var(--color-border);
+}
+.ladder i.on { background: var(--color-accent); }
+.ladder span { font-size: 11px; color: var(--color-text-secondary); letter-spacing: -0.1px; }
+
+/* 覆盖率标尺：刻度只画 88%–100%，否则 95 和 98 挤在最右边一根头发丝里 */
+.scale { margin-top: 18px; }
+.scale-track {
+  position: relative; height: 34px;
+  background: var(--color-bg-input); border-radius: 6px; overflow: hidden;
+}
+.scale-fill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  background: var(--color-band-2);
+}
+.scale-fill.faint { background: var(--color-band-1); }
+.scale-range {
+  position: absolute; top: 0; bottom: 0;
+  background: var(--color-band-1);
+  border-left: 1px dashed var(--color-band-4);
+  border-right: 1px dashed var(--color-band-4);
+}
+.scale-mark {
+  position: absolute; top: -1px; bottom: -1px; width: 2px;
+  background: var(--color-accent);
+}
+.scale-mark::after {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%; background: var(--color-accent);
+  box-shadow: 0 0 0 2.5px var(--color-bg-surface);
+}
+.scale-line {
+  position: absolute; top: 0; bottom: 0; width: 0;
+  border-left: 1px dashed var(--color-text-muted);
+  opacity: 0.65;
+}
+.scale-axis {
+  position: relative; height: 30px; margin-top: 5px;
+}
+.scale-axis .tick {
+  position: absolute; top: 0; transform: translateX(-50%);
+  text-align: center; white-space: nowrap;
+}
+.scale-axis .tick b {
+  display: block; font-size: 10.5px; font-weight: 600;
+  font-variant-numeric: tabular-nums; color: var(--color-text-secondary);
+}
+.scale-axis .tick small { display: block; font-size: 9.5px; color: var(--color-text-muted); margin-top: 1px; }
+.scale-ends {
+  display: flex; justify-content: space-between;
+  font-size: 9.5px; color: var(--color-text-muted); margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.scale-value {
+  position: absolute; transform: translateX(-50%);
+  bottom: calc(100% + 6px); white-space: nowrap;
+}
+.scale-value b {
+  font-family: var(--font-serif); font-size: 17px; font-weight: 600;
+  color: var(--color-accent-text); font-variant-numeric: tabular-nums;
+}
+.scale-head { position: relative; height: 26px; }
+
+/* 构成条：这本书 100 个词里各是什么，沿用现有频段条的做法 */
+.compo { margin-top: 20px; }
+.compo-bar {
+  display: flex; height: 16px; border-radius: 5px; overflow: hidden;
+  background: var(--color-bg-input);
+}
+.compo-bar > span {
+  display: grid; place-items: center; overflow: hidden; white-space: nowrap;
+  font-size: 9.5px; font-weight: 600; letter-spacing: 0.02em;
+  color: var(--color-text-secondary);
+}
+.legend { margin-top: 12px; border-top: 1px solid var(--color-border-light); }
+.legend-row {
+  display: grid; grid-template-columns: minmax(150px, 1.2fr) 1fr 74px;
+  align-items: center; gap: 14px;
+  padding: 10px 2px; border-bottom: 1px solid var(--color-border-light);
+}
+.legend-row .name { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.legend-row .name i { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.legend-row .hint { font-size: 10.5px; color: var(--color-text-muted); }
+.legend-row .val {
+  text-align: right; font-family: var(--font-serif); font-size: 14px; font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.legend-row .val.muted { color: var(--color-text-muted); }
+.legend-head {
+  display: grid; grid-template-columns: minmax(150px, 1.2fr) 1fr 74px;
+  gap: 14px; padding: 7px 2px; border-bottom: 1px solid var(--color-border-light);
+  font-size: 10px; letter-spacing: 0.04em; color: var(--color-text-muted);
+}
+.legend-head span:last-child { text-align: right; }
+
+.footnote {
+  margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--color-border);
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 20px; flex-wrap: wrap;
+}
+.footnote p { max-width: 620px; font-size: 10.5px; line-height: 1.8; color: var(--color-text-muted); }
+.footnote .links { display: flex; gap: 16px; flex-shrink: 0; }
+.linkbtn {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; font-size: 11px; color: var(--color-accent-text); white-space: nowrap;
+}
+.linkbtn.danger { color: var(--color-danger-text); }
+
+.btn {
+  height: 32px; border-radius: 9px; padding: 0 13px; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 500;
+  border: 1px solid transparent; background: var(--color-accent); color: #fff;
+}
+.btn.secondary {
+  background: var(--color-bg-surface); border-color: var(--color-border);
+  color: var(--color-text-primary);
+}
+.btn.ghost { background: none; border-color: transparent; color: var(--color-text-secondary); }
+.btn.danger { background: var(--color-danger-text); color: #fff; }
+
+/* 状态提示：一个点、一个标题、一段话，抄现有的 StateNote */
+.note { display: flex; align-items: flex-start; gap: 11px; }
+.note .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+.dot-idle { background: rgba(113, 113, 123, 0.5); }
+.dot-run { background: var(--color-accent); }
+.note h4 { font-size: 13.5px; font-weight: 600; }
+.note > div > p { margin-top: 6px; max-width: 640px; font-size: 11.5px; line-height: 1.8; color: var(--color-text-secondary); }
+.note .actions { margin-top: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.note .actions .hint { font-size: 10.5px; color: var(--color-text-muted); }
+
+.scanbar {
+  margin-top: 14px; height: 3px; width: min(420px, 100%);
+  background: var(--color-bg-input); border-radius: 99px; overflow: hidden;
+}
+.scanbar i {
+  display: block; height: 100%; width: 33%; border-radius: 99px;
+  background: color-mix(in srgb, var(--color-accent) 75%, transparent);
+  animation: scan 1.6s ease-in-out infinite;
+}
+@keyframes scan {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
+/* 画像来源清单（空态与样本不足态共用） */
+.sources { margin-top: 16px; border-top: 1px solid var(--color-border-light); }
+.source-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  padding: 11px 2px; border-bottom: 1px solid var(--color-border-light);
+}
+.source-row .l { font-size: 12px; }
+.source-row .l small { display: block; margin-top: 2px; font-size: 10.5px; color: var(--color-text-muted); }
+.source-row .r { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--color-text-secondary); }
+.source-row .r.none { color: var(--color-text-muted); }
+
+/* 设置行：73px 行高、flex justify-between、1px 分隔线 */
+.settings-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  min-height: 73px; padding: 12px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+@media (prefers-color-scheme: dark) {
+  .settings-row { border-bottom-color: rgba(255, 255, 255, 0.1); }
+}
+.settings-row:last-child { border-bottom: 0; }
+.settings-row .l p:first-child { font-size: 14px; font-weight: 500; letter-spacing: -0.15px; }
+.settings-row .l p + p { margin-top: 2px; font-size: 12px; color: var(--color-text-muted); line-height: 1.6; max-width: 480px; }
+
+/* 展开态词表 */
+.wordlist { margin-top: 4px; }
+.wordgroup + .wordgroup { margin-top: 18px; }
+.wordgroup > h5 {
+  font-size: 11px; font-weight: 600; color: var(--color-text-secondary);
+  display: flex; align-items: baseline; gap: 8px;
+}
+.wordgroup > h5 small { font-weight: 400; font-size: 10.5px; color: var(--color-text-muted); }
+.wordgroup > p { margin-top: 4px; font-size: 10.5px; color: var(--color-text-muted); line-height: 1.7; }
+.wordrow {
+  display: grid; grid-template-columns: minmax(120px, 1fr) 1fr 92px 78px;
+  align-items: center; gap: 14px;
+  padding: 9px 2px; border-bottom: 1px solid var(--color-border-light);
+}
+.wordrow:first-of-type { border-top: 1px solid var(--color-border-light); }
+.wordrow .w { font-size: 13px; font-weight: 500; }
+.wordrow .g { font-size: 11px; color: var(--color-text-muted); }
+.wordrow .m { font-size: 10.5px; color: var(--color-text-secondary); }
+.wordrow .c { text-align: right; font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--color-text-secondary); }
+.chip {
+  display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 5px;
+  background: var(--color-bg-input); color: var(--color-text-muted);
+}
+.chip.accent { background: var(--color-accent-bg); color: var(--color-accent-text); }
+
+/* 趋势 */
+.trend { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
+.trend svg { flex-shrink: 0; }
+.trend .cap { max-width: 300px; font-size: 11px; line-height: 1.8; color: var(--color-text-secondary); }
+.trend .cap small { display: block; margin-top: 7px; font-size: 10.5px; color: var(--color-text-muted); }
+
+/* 弹窗 */
+.overlay {
+  background: var(--color-overlay); border-radius: 13px;
+  padding: 40px 16px; display: flex; justify-content: center;
+}
+.dialog {
+  width: 480px; max-width: 100%;
+  background: var(--color-bg-surface); border: 1px solid var(--color-border);
+  border-radius: 10px; padding: 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+.dialog-head { display: flex; align-items: flex-start; gap: 12px; }
+.dialog-icon {
+  width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+  display: grid; place-items: center;
+  background: var(--color-danger-bg); color: var(--color-danger-text);
+}
+.dialog h4 { font-size: 16px; font-weight: 600; }
+.dialog-head p { margin-top: 4px; font-size: 13px; line-height: 1.55; color: var(--color-text-secondary); }
+.dialog-lists { margin-top: 18px; display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+.dialog-lists > div { border: 1px solid var(--color-border); border-radius: 8px; padding: 12px; }
+.dialog-lists > div.warn { border-color: var(--color-danger-border); }
+.dialog-lists h6 { font-size: 11.5px; font-weight: 600; }
+.dialog-lists h6.warn { color: var(--color-danger-text); }
+.dialog-lists li {
+  margin-top: 7px; font-size: 11px; line-height: 1.6; color: var(--color-text-muted);
+  padding-left: 12px; position: relative;
+}
+.dialog-lists li::before {
+  content: ""; position: absolute; left: 0; top: 7px;
+  width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: 0.5;
+}
+.dialog-foot {
+  margin-top: 18px; display: flex; justify-content: flex-end; gap: 10px; align-items: center;
+}
+.dialog-foot .keep { margin-right: auto; font-size: 10.5px; color: var(--color-text-muted); max-width: 250px; line-height: 1.6; }
+
+.pair { display: grid; gap: 20px; }
+@media (min-width: 760px) { .pair { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="sheet-head">
+  <p class="kicker">Lantern · 静态样张 · 未实现</p>
+  <h1>「这本书我现在读得下来吗」</h1>
+  <p class="lede">
+    这份样张只回答一个问题：<b>用这位读者自己已经认识的词，去数一本书的正文，能盖住多少。</b>
+    应用语言学里有两条常用的参考线（Nation）：95% 是借助查词能读下来，98% 是基本不用查也能读懂。
+  </p>
+  <div class="diffbox">
+    <div>
+      <span class="tag tag-now">现在的实现</span>
+      <p>
+        按 Google Books Ngram 词表把书里的词分成 5 档，报「第 5 档累计覆盖率」。
+        但 band 1–5 加起来就是整张词表，所以这个数测的不是书难不难，是<b>这本书有多少词在我们的词典里</b>。
+        六本书全落在 94.92%–98.12% 这三个百分点里，而且顺序是乱的——《白鲸》比《物种起源》还「容易」。
+        真正的难度差被挤到了表外（《白鲸》18.50% 未收录，《小王子》只有 5.80%）。换更大的词表只会把这三个点挪到 97–99。
+      </p>
+    </div>
+    <div>
+      <span class="tag tag-next">这份样张</span>
+      <p>
+        换主语。Nation 的 98% 说的是「<b>读者</b>认识的词占文本的 98%」，主语是读者，不是词表。
+        用这位读者自己的已知词集合（曝光记录、掌握度、查词历史）去数，95 / 98 这两条线立刻恢复意义。
+        既有的频段分布不删——它回答「这本书的用词有多罕见」，是另一个问题，两个数并排放。
+      </p>
+    </div>
+  </div>
+  <p class="lede">
+    下面把所有状态平铺出来。每块上面的小标题是状态说明，不属于界面本身；灰底卡片里的才是界面。
+    界面出现的位置：书籍详情页，在现有的「词汇难度」区块之上。
+  </p>
+</header>
+
+
+<!-- ============ 1. 正常态 A：落在两条线之间 ============ -->
+<div class="state-label">
+  <span class="num">01</span>
+  <h2>正常态 · 落在 95 与 98 之间</h2>
+  <span class="note">读得下来，会常查词。完整版式：这一块的所有元素都在这里，后面几块只画差异。</span>
+</div>
+
+<section class="card">
+  <div class="sec-head">
+    <h3>这本书对你</h3>
+    <p>用你已经认识的词去数这本书的正文，每 100 个词里能盖住多少。数的是你，不是词表。</p>
+  </div>
+
+  <div class="ladder" aria-label="落点：中间一档">
+    <span class="cells"><i></i><i class="on"></i><i></i></span>
+    <span>读得下来，会常查词</span>
+  </div>
+
+  <div class="verdict-row">
+    <div style="min-width:0">
+      <p class="verdict">你认识的词，盖住了《呼啸山庄》的 <em>96.4%</em>。</p>
+      <p class="why">
+        落在 95% 和 98% 之间。每 100 个词里有 <strong>3.6 个</strong>你还没掌握——大约每两三行遇到一个。
+        读得下来，但一路上会开着词典。
+      </p>
+      <p class="why">
+        这个数只用了你自己的记录：<strong>8 412 个</strong>词形被判为你认识的，来自读过的 6 本书。
+        人名地名（Heathcliff、Thrushcross 等 2 940 词次）按认识计入——一个反复出现的名字，第一次之后就不再花你力气了。
+      </p>
+    </div>
+    <div class="stamp">
+      <b>算于 8 月 6 日</b>
+      <span>全书 116 842 词次</span>
+      <span>不同词形 12 703 个</span>
+      <span>画像更新于 8 月 8 日</span>
+    </div>
+  </div>
+
+  <div class="scale">
+    <div class="scale-head">
+      <div class="scale-value" style="left:70%"><b>96.4%</b></div>
+    </div>
+    <div class="scale-track" role="img" aria-label="覆盖率 96.4%，位于 95% 与 98% 两条参考线之间">
+      <div class="scale-fill" style="width:70%"></div>
+      <div class="scale-line" style="left:58.33%"></div>
+      <div class="scale-line" style="left:83.33%"></div>
+      <div class="scale-mark" style="left:70%"></div>
+    </div>
+    <div class="scale-axis">
+      <div class="tick" style="left:58.33%"><b>95%</b><small>查着词能读下来</small></div>
+      <div class="tick" style="left:83.33%"><b>98%</b><small>基本不用查</small></div>
+    </div>
+    <div class="scale-ends"><span>88%</span><span>刻度从 88% 起，两条线才有地方站</span><span>100%</span></div>
+  </div>
+
+  <div class="compo">
+    <div class="compo-bar" role="img" aria-label="全书词次的构成">
+      <span style="width:88.1%;background:var(--color-band-1)">已掌握 88.1%</span>
+      <span style="width:5.8%;background:var(--color-band-2)">5.8%</span>
+      <span style="width:2.5%;background:var(--color-band-unlisted)"></span>
+      <span style="width:3.6%;background:var(--color-band-4)"></span>
+    </div>
+    <div class="legend">
+      <div class="legend-head"><span>这本书的词次构成</span><span>依据</span><span>本书占比</span></div>
+      <div class="legend-row">
+        <span class="name"><i style="background:var(--color-band-1)"></i>已掌握</span>
+        <span class="hint">复习通过，或多次读到没查</span>
+        <span class="val">88.1%</span>
+      </div>
+      <div class="legend-row">
+        <span class="name"><i style="background:var(--color-band-2)"></i>眼熟</span>
+        <span class="hint">读到过几次没查，还没到掌握</span>
+        <span class="val">5.8%</span>
+      </div>
+      <div class="legend-row">
+        <span class="name"><i style="background:var(--color-band-unlisted)"></i>人名地名</span>
+        <span class="hint">第一次之后就不再花力气</span>
+        <span class="val muted">2.5%</span>
+      </div>
+      <div class="legend-row">
+        <span class="name"><i style="background:var(--color-band-4)"></i>还没掌握</span>
+        <span class="hint">查过没记住，或从没遇到过</span>
+        <span class="val">3.6%</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="footnote">
+    <p>
+      覆盖率把「眼熟」也算作认识——只算「已掌握」的话是 <b>90.6%</b>。
+      两条参考线取自应用语言学里常用的两个阅读理解阈值（Nation, 2006）。它是一把尺子，不是一个分数。
+      所有计算在本机完成，不联网。
+    </p>
+    <span class="links">
+      <button class="linkbtn" type="button">看看那 3.6% 是哪些词</button>
+      <button class="linkbtn" type="button">重新计算</button>
+    </span>
+  </div>
+</section>
+
+
+<!-- ============ 2. 另外两种落点 ============ -->
+<div class="state-label">
+  <span class="num">02</span>
+  <h2>另外两种落点</h2>
+  <span class="note">98% 以上 / 95% 以下。区别靠标尺上的位置和三格梯的第几格，不靠红黄绿——同一个紫色，换的是位置。</span>
+</div>
+
+<div class="pair">
+  <section class="card">
+    <div class="ladder" aria-label="落点：右边一档">
+      <span class="cells"><i></i><i></i><i class="on"></i></span>
+      <span>可以自己读下去</span>
+    </div>
+    <p class="verdict">你认识的词，盖住了《小王子》的 <em>98.6%</em>。</p>
+    <p class="why">
+      过了 98% 这条线。每 100 个词里 1.4 个没掌握，大概一页碰上一两个，靠上下文多半能猜过去。
+      这本适合合上词典读一遍。
+    </p>
+    <div class="scale">
+      <div class="scale-head"><div class="scale-value" style="left:88.33%"><b>98.6%</b></div></div>
+      <div class="scale-track" role="img" aria-label="覆盖率 98.6%，在 98% 参考线右侧">
+        <div class="scale-fill" style="width:88.33%"></div>
+        <div class="scale-line" style="left:58.33%"></div>
+        <div class="scale-line" style="left:83.33%"></div>
+        <div class="scale-mark" style="left:88.33%"></div>
+      </div>
+      <div class="scale-axis">
+        <div class="tick" style="left:58.33%"><b>95%</b></div>
+        <div class="tick" style="left:83.33%"><b>98%</b></div>
+      </div>
+      <div class="scale-ends"><span>88%</span><span></span><span>100%</span></div>
+    </div>
+    <div class="footnote">
+      <p>全书 16 830 词次 · 没掌握的 236 词次 / 94 个词形 · 算于 8 月 6 日</p>
+      <span class="links"><button class="linkbtn" type="button">看看那 94 个词</button></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="ladder" aria-label="落点：左边一档">
+      <span class="cells"><i class="on"></i><i></i><i></i></span>
+      <span>现在读，查词会很密</span>
+    </div>
+    <p class="verdict">你认识的词，盖住了《白鲸》的 <em>91.8%</em>。</p>
+    <p class="why">
+      在 95% 这条线的左边。每 100 个词里有 8.2 个没掌握——差不多每行一个。
+      这不是说读不了：Lantern 的查词和标注就是为这种读法准备的，只是它会慢，而且更像精读而不是通读。
+    </p>
+    <div class="scale">
+      <div class="scale-head"><div class="scale-value" style="left:31.67%"><b>91.8%</b></div></div>
+      <div class="scale-track" role="img" aria-label="覆盖率 91.8%，在 95% 参考线左侧">
+        <div class="scale-fill" style="width:31.67%"></div>
+        <div class="scale-line" style="left:58.33%"></div>
+        <div class="scale-line" style="left:83.33%"></div>
+        <div class="scale-mark" style="left:31.67%"></div>
+      </div>
+      <div class="scale-axis">
+        <div class="tick" style="left:58.33%"><b>95%</b></div>
+        <div class="tick" style="left:83.33%"><b>98%</b></div>
+      </div>
+      <div class="scale-ends"><span>88%</span><span></span><span>100%</span></div>
+    </div>
+    <div class="footnote">
+      <p>全书 212 470 词次 · 没掌握的 17 423 词次 / 4 908 个词形 · 其中 1 260 词次是捕鲸术语，只在这本书里出现</p>
+      <span class="links"><button class="linkbtn" type="button">看看那 8.2% 是哪些词</button></span>
+    </div>
+  </section>
+</div>
+
+
+<!-- ============ 3. 空态 ============ -->
+<div class="state-label">
+  <span class="num">03</span>
+  <h2>空态 · 系统对这位读者的词汇量一无所知</h2>
+  <span class="note">新装，或刚导入还没读过任何东西。标尺画出来但不落点——教会这把尺子怎么读，但一个百分比都不编。</span>
+</div>
+
+<section class="card">
+  <div class="sec-head">
+    <h3>这本书对你</h3>
+    <p>用你已经认识的词去数这本书的正文，每 100 个词里能盖住多少。数的是你，不是词表。</p>
+  </div>
+
+  <div class="note">
+    <span class="dot dot-idle"></span>
+    <div>
+      <h4>还不知道你认识哪些词</h4>
+      <p>
+        这个数要用你自己的阅读记录来算，现在一条都还没有。
+        随便打开一本书读起来——你读到过哪些词、哪些查了哪些没查，Lantern 都在本机记下来，攒够了这里就会出现一个数。
+        在那之前这里不会摆一个猜出来的百分比。
+      </p>
+      <div class="actions">
+        <button class="btn" type="button">开始读这本</button>
+        <button class="btn secondary" type="button">先做一次词汇量估算</button>
+        <span class="hint">估算大约 3 分钟，也可以不做。</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="scale" aria-hidden="true">
+    <div class="scale-track">
+      <div class="scale-line" style="left:58.33%"></div>
+      <div class="scale-line" style="left:83.33%"></div>
+    </div>
+    <div class="scale-axis">
+      <div class="tick" style="left:58.33%"><b>95%</b><small>查着词能读下来</small></div>
+      <div class="tick" style="left:83.33%"><b>98%</b><small>基本不用查</small></div>
+    </div>
+    <div class="scale-ends"><span>88%</span><span>这把尺子在等一个落点</span><span>100%</span></div>
+  </div>
+
+  <div class="sources">
+    <div class="source-row">
+      <span class="l">读过的书<small>不用读完，读过就算</small></span>
+      <span class="r none">还没有</span>
+    </div>
+    <div class="source-row">
+      <span class="l">读到过的词<small>在屏幕上停留过、你没有查的词</small></span>
+      <span class="r none">还没有</span>
+    </div>
+    <div class="source-row">
+      <span class="l">查词记录<small>查过说明当时不认识，也是一种记录</small></span>
+      <span class="r none">还没有</span>
+    </div>
+    <div class="source-row">
+      <span class="l">生词本与复习<small>复习通过的词直接算你认识</small></span>
+      <span class="r none">还没有</span>
+    </div>
+  </div>
+
+  <div class="footnote">
+    <p>这一节完全在本机计算，不联网、不上传。这本书自己的词频分布（下面那一节）不需要等——它跟你无关，导入时已经算好了。</p>
+  </div>
+</section>
+
+
+<!-- ============ 4. 样本不足态 ============ -->
+<div class="state-label">
+  <span class="num">04</span>
+  <h2>样本不足 · 有数据，但还不足以给一个点</h2>
+  <span class="note">和空态的区别是画面上的：空态没有任何标记，这里给的是一段<b>区间</b>而不是一个点。区间会随着读的量自己收窄。</span>
+</div>
+
+<section class="card">
+  <div class="sec-head">
+    <h3>这本书对你</h3>
+    <p>用你已经认识的词去数这本书的正文，每 100 个词里能盖住多少。数的是你，不是词表。</p>
+  </div>
+
+  <div class="note">
+    <span class="dot dot-idle"></span>
+    <div>
+      <h4>现在只能给一段范围</h4>
+      <p>
+        已经认出你稳定认识的 <b>640</b> 个词形，来自《夏洛的网》读过的 12%。
+        按这些算出来，《呼啸山庄》对你的覆盖率大概在 <b>93.1% 到 97.9%</b> 之间。
+        这段范围横跨了 95% 那条线，所以「读得下来还是会吃力」，现在还分不出来。
+      </p>
+    </div>
+  </div>
+
+  <div class="scale">
+    <div class="scale-head">
+      <div class="scale-value" style="left:62.5%"><b style="font-size:15px">93.1% – 97.9%</b></div>
+    </div>
+    <div class="scale-track" role="img" aria-label="覆盖率区间 93.1% 到 97.9%，横跨 95% 参考线">
+      <div class="scale-range" style="left:42.5%;width:40%"></div>
+      <div class="scale-line" style="left:58.33%"></div>
+      <div class="scale-line" style="left:83.33%"></div>
+    </div>
+    <div class="scale-axis">
+      <div class="tick" style="left:58.33%"><b>95%</b><small>查着词能读下来</small></div>
+      <div class="tick" style="left:83.33%"><b>98%</b><small>基本不用查</small></div>
+    </div>
+    <div class="scale-ends"><span>88%</span><span>区间横跨 95%，所以这里不给结论</span><span>100%</span></div>
+  </div>
+
+  <div class="sources">
+    <div class="source-row">
+      <span class="l">读过的书<small>再多一本，区间会明显收窄</small></span>
+      <span class="r">1 本 · 读过 12%</span>
+    </div>
+    <div class="source-row">
+      <span class="l">读到过的词<small>已折算成 640 个稳定认识的词形</small></span>
+      <span class="r">4 180 词次 / 1 902 词形</span>
+    </div>
+    <div class="source-row">
+      <span class="l">查词记录<small>跨 6 天</small></span>
+      <span class="r">37 条</span>
+    </div>
+    <div class="source-row">
+      <span class="l">生词本与复习</span>
+      <span class="r">14 个词 · 还没复习过</span>
+    </div>
+  </div>
+
+  <div class="footnote">
+    <p>
+      范围是这么来的：现在看到的记录太集中在一本书上，换一本题材不同的书，同样这些词的表现可能差一截，所以给的是范围而不是一个点。
+      这段范围会随着你读的东西变多自己收窄，不需要做什么额外的事。
+    </p>
+    <span class="links"><button class="linkbtn" type="button">这段范围怎么算的</button></span>
+  </div>
+</section>
+
+
+<!-- ============ 5. 计算态 ============ -->
+<div class="state-label">
+  <span class="num">05</span>
+  <h2>计算中</h2>
+  <span class="note">要扫全书词表再和词汇画像做交集，不是瞬时的。两种触发：画像刚更新（自动），或读者按了重新计算。</span>
+</div>
+
+<section class="card">
+  <div class="sec-head">
+    <h3>这本书对你</h3>
+    <p>用你已经认识的词去数这本书的正文，每 100 个词里能盖住多少。数的是你，不是词表。</p>
+  </div>
+  <div class="note">
+    <span class="dot dot-run"></span>
+    <div>
+      <h4>正在把全书的词和你的词汇画像对一遍</h4>
+      <p>
+        全书 212 470 词次，已经过了 137 000。离开这一页不会中断，算完结果留在这里。
+      </p>
+      <div class="scanbar"><i></i></div>
+    </div>
+  </div>
+  <div class="footnote">
+    <p>本机计算，不联网。上次的结果（91.8%，算于 7 月 21 日）在算完之前一直留着，不会先清空。</p>
+  </div>
+</section>
+
+<div class="state-label">
+  <span class="num">05b</span>
+  <h2>计算中 · 上一次的结果还留在屏幕上</h2>
+  <span class="note">重算不清空旧值——旧值对它算的那份画像来说是真的。这是现有 stale 条的做法，照搬。</span>
+</div>
+
+<section class="card">
+  <div class="ladder">
+    <span class="cells"><i class="on"></i><i></i><i></i></span>
+    <span>现在读，查词会很密</span>
+  </div>
+  <p class="verdict quiet">你认识的词，盖住了《白鲸》的 <em>91.8%</em>。</p>
+  <p class="why">这是 7 月 21 日那份词汇画像算出来的。你后来又读了两本书，正在用新画像重算。</p>
+  <div style="margin-top:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+              background:var(--color-bg-muted);border:1px solid var(--color-border);
+              border-radius:9px;padding:11px 14px;">
+    <span class="scanbar" style="margin:0;flex:1;min-width:160px"><i></i></span>
+    <span style="font-size:11px;color:var(--color-text-secondary)">正在重算 · 65%</span>
+  </div>
+</section>
+
+
+<!-- ============ 6. 展开态 ============ -->
+<div class="state-label">
+  <span class="num">06</span>
+  <h2>展开态 · 「那 8.2% 到底是哪些词」</h2>
+  <span class="note">从 02 右边那张卡的「看看那 8.2% 是哪些词」展开。按在这本书里出现几次排，先看反复出现的——那些是真正决定读感的。</span>
+</div>
+
+<section class="card">
+  <div class="sec-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px">
+    <div>
+      <h3>《白鲸》里你还没掌握的词</h3>
+      <p>4 908 个词形，合计 17 423 词次。反复出现的排在前面——它们才是决定这本书读起来什么感觉的那几个。</p>
+    </div>
+    <button class="linkbtn" type="button" style="flex-shrink:0">收起</button>
+  </div>
+
+  <div class="wordlist">
+    <div class="wordgroup">
+      <h5>出现 40 次以上 <small>11 个词形 · 合计 1 903 词次，占全书 0.9%</small></h5>
+      <p>这几个词认下来，这本书的覆盖率会从 91.8% 升到 92.7%——它们在正文里出现得太密，值得先看一眼。</p>
+      <div class="wordrow">
+        <span class="w">forecastle</span><span class="g">船艏楼；水手舱</span>
+        <span class="m"><span class="chip">读到过 6 次没查</span></span><span class="c">96 次</span>
+      </div>
+      <div class="wordrow">
+        <span class="w">leviathan</span><span class="g">巨兽；（此书中指）鲸</span>
+        <span class="m"><span class="chip accent">眼熟</span></span><span class="c">84 次</span>
+      </div>
+      <div class="wordrow">
+        <span class="w">harpooneer</span><span class="g">投叉手</span>
+        <span class="m"><span class="chip">查过 3 次</span></span><span class="c">62 次</span>
+      </div>
+      <div class="wordrow">
+        <span class="w">gunwale</span><span class="g">舷缘</span>
+        <span class="m"><span class="chip">从没遇到过</span></span><span class="c">41 次</span>
+      </div>
+    </div>
+
+    <div class="wordgroup">
+      <h5>出现 5 到 39 次 <small>386 个词形 · 合计 4 122 词次</small></h5>
+      <div class="wordrow">
+        <span class="w">squall</span><span class="g">狂风骤雨</span>
+        <span class="m"><span class="chip">查过 1 次</span></span><span class="c">34 次</span>
+      </div>
+      <div class="wordrow">
+        <span class="w">binnacle</span><span class="g">罗盘座</span>
+        <span class="m"><span class="chip">从没遇到过</span></span><span class="c">27 次</span>
+      </div>
+      <div class="wordrow">
+        <span class="w">ambergris</span><span class="g">龙涎香</span>
+        <span class="m"><span class="chip">从没遇到过</span></span><span class="c">19 次</span>
+      </div>
+      <div class="wordrow">
+        <span class="w">cetology</span><span class="g">鲸类学</span>
+        <span class="m"><span class="chip accent">眼熟</span></span><span class="c">12 次</span>
+      </div>
+    </div>
+
+    <div class="wordgroup">
+      <h5>只出现 1 到 4 次 <small>4 511 个词形 · 合计 11 398 词次</small></h5>
+      <p>
+        这一堆占了没掌握词次的大头，但每个只碰到一两次。
+        先记它们的性价比不高——读到了当场查一下就够。
+      </p>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <span class="chip">unctuousness</span><span class="chip">pertinaciously</span>
+        <span class="chip">sagaciousness</span><span class="chip">interlacings</span>
+        <span class="chip">ponderousness</span><span class="chip">circumnavigation</span>
+        <span class="chip">…还有 4 505 个</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="footnote">
+    <p>
+      人名地名不在这张表里（Ahab、Queequeg、Nantucket 等 3 810 词次已按认识计入）。
+      这张表不会自动进你的生词本——收哪个词由你决定。
+    </p>
+    <span class="links">
+      <button class="linkbtn" type="button">把前 11 个收进生词本</button>
+      <button class="linkbtn" type="button">导出这张表</button>
+    </span>
+  </div>
+</section>
+
+
+<!-- ============ 7. 趋势（建议项） ============ -->
+<div class="state-label">
+  <span class="num">07</span>
+  <h2>这本书和你的距离怎么变的（建议项，非必需）</h2>
+  <span class="note">只记录发生过什么，不预测、不设目标、不写「还差多久」。放在卡片底部，默认收起。</span>
+</div>
+
+<section class="card">
+  <div class="sec-head"><h3>《白鲸》对你的覆盖率，这半年</h3></div>
+  <div class="trend">
+    <svg width="440" height="140" viewBox="0 0 440 140" role="img"
+         aria-label="折线图：《白鲸》覆盖率从三月的 89.6% 变到八月的 91.8%，全程在 95% 参考线下方">
+      <!-- y: 88% -> 130, 96% -> 20 -->
+      <line x1="34" y1="20" x2="430" y2="20" stroke="currentColor" stroke-opacity="0.3"
+            stroke-dasharray="3 3" stroke-width="1"/>
+      <text x="30" y="24" text-anchor="end" font-size="9.5" fill="currentColor" fill-opacity="0.55">95%</text>
+      <line x1="34" y1="130" x2="430" y2="130" stroke="currentColor" stroke-opacity="0.14" stroke-width="1"/>
+      <text x="30" y="133" text-anchor="end" font-size="9.5" fill="currentColor" fill-opacity="0.55">88%</text>
+      <polyline points="52,110 128,104 204,97 280,92 356,86 420,79"
+                fill="none" stroke="#7c3aed" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="52"  cy="110" r="3" fill="#7c3aed"/>
+      <circle cx="128" cy="104" r="3" fill="#7c3aed"/>
+      <circle cx="204" cy="97"  r="3" fill="#7c3aed"/>
+      <circle cx="280" cy="92"  r="3" fill="#7c3aed"/>
+      <circle cx="356" cy="86"  r="3" fill="#7c3aed"/>
+      <circle cx="420" cy="79"  r="4.5" fill="#7c3aed" stroke="#fff" stroke-width="2"/>
+      <text x="420" y="70" text-anchor="end" font-size="10.5" font-weight="600" fill="#7c3aed">91.8%</text>
+      <text x="52"  y="126" text-anchor="middle" font-size="9.5" fill="currentColor" fill-opacity="0.55">3 月</text>
+      <text x="204" y="126" text-anchor="middle" font-size="9.5" fill="currentColor" fill-opacity="0.55">5 月</text>
+      <text x="356" y="126" text-anchor="middle" font-size="9.5" fill="currentColor" fill-opacity="0.55">7 月</text>
+    </svg>
+    <div class="cap">
+      导入这本书的时候是 89.6%，现在 91.8%。中间你读完了《夏洛的网》和《动物庄园》。
+      <small>这条线只记录已经发生过的事。它不预测，也不指向任何一个日期。</small>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============ 8. 设置行 ============ -->
+<div class="state-label">
+  <span class="num">08</span>
+  <h2>设置 · 学习 里的相关行</h2>
+  <span class="note">照 GeneralSettings 的规范：73px 行高、flex justify-between、1px black/10 分隔线。危险操作从这里进。</span>
+</div>
+
+<section class="card" style="padding:2px 20px">
+  <div class="settings-row">
+    <div class="l">
+      <p>覆盖率把「眼熟」算作认识</p>
+      <p>关掉的话只数「已掌握」的词。同一本书的数会低 2 到 4 个百分点，两种算法都说得通。</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="width:38px;height:22px;border-radius:99px;background:var(--color-accent);
+                   display:inline-flex;align-items:center;padding:2px;justify-content:flex-end">
+        <span style="width:18px;height:18px;border-radius:50%;background:#fff;display:block"></span>
+      </span>
+    </div>
+  </div>
+  <div class="settings-row">
+    <div class="l">
+      <p>在书架卡片上显示覆盖率</p>
+      <p>书架上每本书的角上带一个百分比。关掉之后只有书籍详情页里有。</p>
+    </div>
+    <span style="width:38px;height:22px;border-radius:99px;background:var(--color-bg-input);
+                 border:1px solid var(--color-border);display:inline-flex;align-items:center;padding:2px">
+      <span style="width:16px;height:16px;border-radius:50%;background:var(--color-text-muted);display:block"></span>
+    </span>
+  </div>
+  <div class="settings-row">
+    <div class="l">
+      <p>清除词汇画像</p>
+      <p>把自动判定的掌握度和曝光记录清空，从头重来。你自己改过的档位、生词本和查词记录都不动。</p>
+    </div>
+    <button class="btn secondary" style="width:132px;justify-content:center;color:var(--color-danger-text);
+            border-color:var(--color-danger-border)" type="button">清除画像</button>
+  </div>
+</section>
+
+
+<!-- ============ 9. 危险操作确认 ============ -->
+<div class="state-label">
+  <span class="num">09</span>
+  <h2>危险操作确认 · 清除词汇画像</h2>
+  <span class="note">同一页里把「删什么」和「留什么」并排写清楚，不用读者去推。抄 DeleteBookDialog 的版式：480px、危险色图标块、取消在左。</span>
+</div>
+
+<section class="overlay">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="wipe-title">
+    <div class="dialog-head">
+      <span class="dialog-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>
+        </svg>
+      </span>
+      <div style="min-width:0">
+        <h4 id="wipe-title">清除词汇画像？</h4>
+        <p>之后每本书的覆盖率都会先消失，等你重新读出足够的记录才会回来。这个过程通常要几周。</p>
+      </div>
+    </div>
+
+    <div class="dialog-lists">
+      <div class="warn">
+        <h6 class="warn">会被清除</h6>
+        <ul>
+          <li>自动判定的掌握度（8 130 个词）</li>
+          <li>全部词汇曝光记录（214 682 条）</li>
+          <li>6 本书已经算好的覆盖率</li>
+        </ul>
+      </div>
+      <div>
+        <h6>不受影响</h6>
+        <ul>
+          <li>你自己改过的档位（282 个词）</li>
+          <li>生词本和复习进度</li>
+          <li>查词记录、标注、笔记</li>
+          <li>每本书自己的词频分布</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="dialog-foot">
+      <span class="keep">清除的是本机这一份。已经同步到其他设备的掌握度不受影响。</span>
+      <button class="btn ghost" type="button">取消</button>
+      <button class="btn danger" type="button">清除画像</button>
+    </div>
+  </div>
+</section>
+
+<div class="state-label">
+  <span class="num">09b</span>
+  <h2>危险操作 · 执行中</h2>
+  <span class="note">清空是本机数据库上的批量删除，不是瞬时的。按钮进忙态，取消保持可用直到真正开始写。</span>
+</div>
+
+<section class="overlay">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="wipe-title-2">
+    <div class="dialog-head">
+      <span class="dialog-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>
+        </svg>
+      </span>
+      <div style="min-width:0">
+        <h4 id="wipe-title-2">正在清除</h4>
+        <p>已清 214 682 条曝光记录中的 96 400 条。不要关闭应用。</p>
+      </div>
+    </div>
+    <div class="scanbar" style="width:100%;margin-top:16px"><i></i></div>
+    <div class="dialog-foot">
+      <button class="btn ghost" type="button" style="opacity:0.45">取消</button>
+      <button class="btn danger" type="button" style="opacity:0.6">清除中…</button>
+    </div>
+  </div>
+</section>
+
+<div class="state-label" style="margin-top:56px">
+  <span class="num">—</span>
+  <h2>样张到此结束</h2>
+  <span class="note">文案是给拍板用的初稿，不是最终 i18n 键值。</span>
+</div>
+
+</div>
+</body>
+</html>
