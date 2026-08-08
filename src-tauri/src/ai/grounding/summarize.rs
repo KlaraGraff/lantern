@@ -254,6 +254,9 @@ fn summary_payload(input: SummaryPayloadInput<'_>) -> BookSummaryPayload {
         created_at: input.now,
         updated_at: input.now,
         user_edited: false,
+        // Stamped by `persist_summaries`, the only place that has the
+        // `SyncWriter` needed to know this device's id.
+        updated_by_device: String::new(),
     }
 }
 
@@ -262,6 +265,7 @@ fn persist_summaries(db: &Db, sync: &SyncWriter, rows: &[BookSummaryPayload]) ->
         .first()
         .map(|row| row.updated_at)
         .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+    let device = sync.self_device().to_string();
     sync.with_tx(db, now, |tx, events| {
         if let Some(book_id) = rows.first().map(|row| row.book_id.as_str()) {
             // A changed source can have fewer sections. Other devices retain
@@ -270,21 +274,24 @@ fn persist_summaries(db: &Db, sync: &SyncWriter, rows: &[BookSummaryPayload]) ->
             tx.execute("DELETE FROM book_summaries WHERE book_id = ?1", params![book_id])?;
         }
         for row in rows {
+            let mut row = row.clone();
+            row.updated_by_device = device.clone();
             tx.execute(
                 "INSERT INTO book_summaries
-                 (id, book_id, scope, section_index, section_title, content, language, model, source_sha256, created_at, updated_at, user_edited)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                 (id, book_id, scope, section_index, section_title, content, language, model, source_sha256, created_at, updated_at, user_edited, updated_by_device)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
                  ON CONFLICT(book_id, scope, COALESCE(section_index, -1)) DO UPDATE SET
                    id=excluded.id, section_title=excluded.section_title, content=excluded.content,
                    language=excluded.language, model=excluded.model, source_sha256=excluded.source_sha256,
-                   updated_at=excluded.updated_at, user_edited=excluded.user_edited",
+                   updated_at=excluded.updated_at, user_edited=excluded.user_edited,
+                   updated_by_device=excluded.updated_by_device",
                 params![
                     row.id, row.book_id, row.scope, row.section_index, row.section_title,
                     row.content, row.language, row.model, row.source_sha256, row.created_at, row.updated_at,
-                    row.user_edited as i64,
+                    row.user_edited as i64, row.updated_by_device,
                 ],
             )?;
-            events.push(EventBody::BookSummaryUpsert(row.clone()));
+            events.push(EventBody::BookSummaryUpsert(row));
         }
         Ok(())
     })

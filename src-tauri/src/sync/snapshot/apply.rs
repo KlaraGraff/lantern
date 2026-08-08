@@ -1107,13 +1107,15 @@ fn upsert_book_summary(tx: &Transaction, id: &str, r: &BookSummaryRow) -> AppRes
     tx.execute(
         "INSERT INTO book_summaries
          (id, book_id, scope, section_index, section_title, content, language, model,
-          source_sha256, created_at, updated_at, user_edited)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+          source_sha256, created_at, updated_at, user_edited, updated_by_device)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
          ON CONFLICT(book_id, scope, COALESCE(section_index, -1)) DO UPDATE SET
            id=excluded.id, section_title=excluded.section_title, content=excluded.content,
            language=excluded.language, model=excluded.model, source_sha256=excluded.source_sha256,
-           updated_at=excluded.updated_at, user_edited=excluded.user_edited
-         WHERE book_summaries.updated_at < excluded.updated_at",
+           updated_at=excluded.updated_at, user_edited=excluded.user_edited,
+           updated_by_device=excluded.updated_by_device
+         WHERE (book_summaries.updated_at, book_summaries.updated_by_device)
+             < (excluded.updated_at, excluded.updated_by_device)",
         params![
             id,
             r.book_id,
@@ -1127,6 +1129,7 @@ fn upsert_book_summary(tx: &Transaction, id: &str, r: &BookSummaryRow) -> AppRes
             r.created_at,
             r.updated_at,
             r.user_edited as i64,
+            r.updated_by_device,
         ],
     )?;
     Ok(())
@@ -1530,7 +1533,7 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     // enumerated here; see docs/impls/1-grounded-book-chat-overview.md D2.
     let mut stmt = conn.prepare(
         "SELECT id, book_id, scope, section_index, section_title, content, language, model,
-                source_sha256, created_at, updated_at, user_edited FROM book_summaries",
+                source_sha256, created_at, updated_at, user_edited, updated_by_device FROM book_summaries",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok((
@@ -1547,6 +1550,7 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
                 created_at: r.get("created_at")?,
                 updated_at: r.get("updated_at")?,
                 user_edited: r.get::<_, i64>("user_edited")? != 0,
+                updated_by_device: r.get("updated_by_device")?,
             },
         ))
     })?;

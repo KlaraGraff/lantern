@@ -802,6 +802,7 @@ fn update_summary_content(
         return Err(AppError::Other("AI_SUMMARY_CONTENT_INVALID".to_string()));
     }
     let now = chrono::Utc::now().timestamp_millis();
+    let device = sync.self_device().to_string();
     sync.with_tx(db, now, |tx, events| {
         let row = tx
             .query_row(
@@ -814,8 +815,8 @@ fn update_summary_content(
             .optional()?
             .ok_or_else(|| AppError::Other("AI_SUMMARY_NOT_FOUND".to_string()))?;
         tx.execute(
-            "UPDATE book_summaries SET content = ?1, updated_at = ?2, user_edited = 1 WHERE id = ?3",
-            rusqlite::params![content, now, row.0],
+            "UPDATE book_summaries SET content = ?1, updated_at = ?2, user_edited = 1, updated_by_device = ?3 WHERE id = ?4",
+            rusqlite::params![content, now, device, row.0],
         )?;
         events.push(crate::sync::events::EventBody::BookSummaryUpsert(
             crate::sync::events::BookSummaryPayload {
@@ -831,6 +832,7 @@ fn update_summary_content(
                 created_at: row.6,
                 updated_at: now,
                 user_edited: true,
+                updated_by_device: device.clone(),
             },
         ));
         Ok(())

@@ -296,6 +296,8 @@ pub struct BookSummaryRow {
     pub updated_at: i64,
     #[serde(default)]
     pub user_edited: bool,
+    #[serde(default)]
+    pub updated_by_device: String,
 }
 
 fn default_fsrs_version() -> i64 {

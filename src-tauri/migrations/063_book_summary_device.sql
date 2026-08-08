@@ -1,0 +1,11 @@
+-- `book_summaries` syncs as LWW state (migration 023) but never got the
+-- device tiebreaker every other LWW table carries. `merge.rs` had nothing to
+-- compare on a same-millisecond tie from two devices, so its upsert guard
+-- fell back to a bare `updated_at <` compare -- non-deterministic on a tie,
+-- unlike `notes` and `word_mark_rules`.
+--
+-- Same column, same sentinel as every other LWW table backfilled post-hoc
+-- (see migration 011): pre-existing rows get the `'migration'` placeholder
+-- and take part in the normal tuple compare from there, same as any other
+-- table's `updated_by_device`.
+ALTER TABLE book_summaries ADD COLUMN updated_by_device TEXT NOT NULL DEFAULT 'migration';

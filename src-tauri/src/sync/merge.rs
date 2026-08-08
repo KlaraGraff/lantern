@@ -729,6 +729,21 @@ fn apply_highlight_add(tx: &Transaction, event: &Event, p: &HighlightPayload) ->
     Ok(())
 }
 
+// This delete carries no `(updated_at, updated_by_device)` guard of its own —
+// it converges by construction rather than by judging a tuple:
+//   - Replaying it twice (duplicate delivery, or two devices deleting the
+//     same id) is idempotent: the second `DELETE` matches zero rows, and
+//     `insert_tombstone`'s `MAX(ts, ...)` merge makes the tombstone itself
+//     order-independent too.
+//   - Racing `apply_highlight_add`: the add checks `is_tombstoned` up front,
+//     so an add that arrives after this delete (in any replay order) is
+//     suppressed outright — delete always beats add, never the reverse.
+//   - Racing `apply_highlight_color`: that update has no tombstone check and
+//     no row to fall back on once it's gone, so it relies on `UPDATE ...
+//     WHERE id = ?` silently affecting zero rows post-delete. Whichever
+//     event lands second, the outcome is the same: delete wins. There's no
+//     tuple to compare because there's no scenario in which "the color edit
+//     should win" is representable once the row no longer exists.
 fn apply_highlight_delete(tx: &Transaction, event: &Event, id: &str) -> AppResult<()> {
     tx.execute("DELETE FROM highlights WHERE id = ?1", params![id])?;
     insert_tombstone(tx, entity::HIGHLIGHT, id, event.ts)?;
@@ -764,6 +779,15 @@ fn apply_bookmark_add(tx: &Transaction, event: &Event, p: &BookmarkPayload) -> A
     Ok(())
 }
 
+// Unconditional delete, no `(updated_at, updated_by_device)` guard — same
+// shape as `apply_highlight_delete`, and it converges the same way. There's
+// no bookmark-update event to race (bookmarks are add/delete only, per the
+// section comment above), so the only two things this needs to be safe
+// against are: replaying itself (idempotent — a second `DELETE` matches zero
+// rows, and `insert_tombstone`'s `MAX(ts, ...)` merge is order-independent),
+// and racing `apply_bookmark_add` (which checks `is_tombstoned` up front, so
+// an add delivered after this delete is suppressed regardless of arrival
+// order — delete always wins).
 fn apply_bookmark_delete(tx: &Transaction, event: &Event, id: &str) -> AppResult<()> {
     tx.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])?;
     insert_tombstone(tx, entity::BOOKMARK, id, event.ts)?;
@@ -987,6 +1011,15 @@ fn apply_vocab_review_append(
     Ok(())
 }
 
+// Unconditional delete, no tuple guard — same idempotency argument as
+// `apply_highlight_delete` covers replays of this event and races against
+// `apply_vocab_add` (tombstone-checked, so a late add stays suppressed).
+// It also has three update arms to race that carry no tombstone check of
+// their own — `apply_vocab_list_status`, `apply_vocab_definition`, and
+// `apply_vocab_mastery` — each a plain `UPDATE ... WHERE id = ?`. None of
+// them need one: once this delete has run, the row is gone and their
+// `WHERE id = ?` matches zero rows regardless of replay order, so delete
+// always wins over any of them rather than the two being compared by tuple.
 fn apply_vocab_delete(tx: &Transaction, event: &Event, id: &str) -> AppResult<()> {
     tx.execute("DELETE FROM vocab_words WHERE id = ?1", params![id])?;
     insert_tombstone(tx, entity::VOCAB, id, event.ts)?;
@@ -1452,13 +1485,15 @@ fn apply_book_summary_upsert(
     tx.execute(
         "INSERT INTO book_summaries
          (id, book_id, scope, section_index, section_title, content, language, model,
-          source_sha256, created_at, updated_at, user_edited)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+          source_sha256, created_at, updated_at, user_edited, updated_by_device)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
          ON CONFLICT(book_id, scope, COALESCE(section_index, -1)) DO UPDATE SET
            id=excluded.id, section_title=excluded.section_title, content=excluded.content,
            language=excluded.language, model=excluded.model, source_sha256=excluded.source_sha256,
-           updated_at=excluded.updated_at, user_edited=excluded.user_edited
-         WHERE book_summaries.updated_at < excluded.updated_at",
+           updated_at=excluded.updated_at, user_edited=excluded.user_edited,
+           updated_by_device=excluded.updated_by_device
+         WHERE book_summaries.updated_at < excluded.updated_at
+            OR (book_summaries.updated_at = excluded.updated_at AND book_summaries.updated_by_device < excluded.updated_by_device)",
         params![
             payload.id,
             payload.book_id,
@@ -1472,6 +1507,7 @@ fn apply_book_summary_upsert(
             payload.created_at,
             payload.updated_at,
             payload.user_edited as i64,
+            payload.updated_by_device,
         ],
     )?;
     Ok(())
@@ -1628,6 +1664,17 @@ fn apply_chat_rename(tx: &Transaction, event: &Event, id: &str, title: &str) -> 
     Ok(())
 }
 
+// Unconditional cascade delete, no tuple guard — same idempotency argument
+// as `apply_highlight_delete` covers replays of this event and the race
+// against `apply_chat_create` (tombstone-checked, so a late create stays
+// suppressed) and `apply_chat_message_add` (checks the chat's own tombstone
+// via `parent_tombstoned`, so late messages stay suppressed too).
+// `apply_chat_rename`, though, carries no tombstone check — a plain
+// `UPDATE ... WHERE id = ?`. It doesn't need one: once this delete has run,
+// the chat row (and its messages, via `cascade_delete`) are gone, so the
+// rename's `WHERE id = ?` matches zero rows regardless of replay order.
+// Delete always wins over a concurrent rename rather than the two being
+// compared by tuple.
 fn apply_chat_delete(tx: &Transaction, event: &Event, id: &str) -> AppResult<()> {
     cascade_delete(tx, entity::CHAT, id, event.ts)?;
     insert_tombstone(tx, entity::CHAT, id, event.ts)?;
@@ -2235,6 +2282,10 @@ mod tests {
     }
 
     fn book_summary(content: &str, updated_at: i64) -> EventBody {
+        book_summary_from(content, updated_at, "dev-a")
+    }
+
+    fn book_summary_from(content: &str, updated_at: i64, device: &str) -> EventBody {
         EventBody::BookSummaryUpsert(BookSummaryPayload {
             id: format!("summary-{updated_at}"),
             book_id: "b1".into(),
@@ -2248,6 +2299,7 @@ mod tests {
             created_at: updated_at,
             updated_at,
             user_edited: false,
+            updated_by_device: device.into(),
         })
     }
 
@@ -2271,6 +2323,150 @@ mod tests {
             )
             .unwrap();
         assert_eq!(summary, "new");
+    }
+
+    /// A later `updated_at` always wins regardless of which device wrote it —
+    /// the millisecond compare alone must decide when the two differ, exactly
+    /// like `notes` and `word_mark_rules`.
+    #[test]
+    fn book_summary_later_timestamp_wins_regardless_of_device() {
+        let mut conn = open_db();
+        apply_all(
+            &mut conn,
+            &[
+                ev(1, "dev-a", import_book("b1")),
+                ev(
+                    10,
+                    "dev-z",
+                    book_summary_from("early, high device id", 10, "dev-z"),
+                ),
+                ev(
+                    20,
+                    "dev-a",
+                    book_summary_from("late, low device id", 20, "dev-a"),
+                ),
+            ],
+        );
+        let summary: String = conn
+            .query_row(
+                "SELECT content FROM book_summaries WHERE book_id = 'b1' AND scope = 'book'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(summary, "late, low device id");
+    }
+
+    /// Two devices write the same summary in the same millisecond. Neither
+    /// device's local clock can order this pair, so the outcome has to be
+    /// decided by the device-id tiebreaker alone -- and it has to be the same
+    /// tiebreaker on both devices, so whichever order the events replay in,
+    /// both peers converge on the row from the higher device id. This is the
+    /// defect migration 063 fixes: before it, `book_summaries` had no
+    /// `updated_by_device` column to break the tie on, so the two replay
+    /// orders below diverged.
+    #[test]
+    fn book_summary_same_millisecond_converges_regardless_of_replay_order() {
+        let a = ev(100, "dev-a", book_summary_from("from dev-a", 100, "dev-a"));
+        let b = ev(100, "dev-b", book_summary_from("from dev-b", 100, "dev-b"));
+
+        let mut forward = open_db();
+        apply_all(
+            &mut forward,
+            &[ev(1, "dev-a", import_book("b1")), a.clone(), b.clone()],
+        );
+        let mut backward = open_db();
+        apply_all(&mut backward, &[ev(1, "dev-a", import_book("b1")), b, a]);
+
+        let read = |conn: &Connection| -> (String, String) {
+            conn.query_row(
+                "SELECT content, updated_by_device FROM book_summaries WHERE book_id = 'b1' AND scope = 'book'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap()
+        };
+        let forward_result = read(&forward);
+        let backward_result = read(&backward);
+        assert_eq!(
+            forward_result, backward_result,
+            "replay order must not change the winner"
+        );
+        assert_eq!(
+            forward_result,
+            ("from dev-b".to_string(), "dev-b".to_string())
+        );
+    }
+
+    /// A row written before migration 063 carries `updated_by_device = ""`
+    /// (the migration's backfill default is `'migration'`, but a row created
+    /// through the old event-replay path before this column existed --
+    /// exercised here directly via `apply_all` -- has no way to have set it,
+    /// so the payload's own zero value is what a peer log entry from that era
+    /// would actually carry). It must still resolve deterministically against
+    /// a same-millisecond write from a real device, in both replay orders,
+    /// rather than erroring or resolving arbitrarily.
+    #[test]
+    fn book_summary_empty_device_string_still_converges_deterministically() {
+        let old = ev(100, "dev-a", book_summary_from("from old data", 100, ""));
+        let new = ev(
+            100,
+            "dev-b",
+            book_summary_from("from real device", 100, "dev-b"),
+        );
+
+        let mut forward = open_db();
+        apply_all(
+            &mut forward,
+            &[ev(1, "dev-a", import_book("b1")), old.clone(), new.clone()],
+        );
+        let mut backward = open_db();
+        apply_all(
+            &mut backward,
+            &[ev(1, "dev-a", import_book("b1")), new, old],
+        );
+
+        let read = |conn: &Connection| -> String {
+            conn.query_row(
+                "SELECT content FROM book_summaries WHERE book_id = 'b1' AND scope = 'book'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+        };
+        let forward_result = read(&forward);
+        let backward_result = read(&backward);
+        assert_eq!(
+            forward_result, backward_result,
+            "replay order must not change the winner"
+        );
+        // "" < "dev-b" lexicographically, so the real device id wins the tie.
+        assert_eq!(forward_result, "from real device");
+    }
+
+    /// Same millisecond, same device -- e.g. a retried write after a crash
+    /// before the outbox ack. The tuple compare's `<` is strict, so a second
+    /// delivery of the identical tuple is a no-op rather than reapplying: the
+    /// row that landed first stands.
+    #[test]
+    fn book_summary_same_millisecond_same_device_keeps_first_write() {
+        let mut conn = open_db();
+        apply_all(
+            &mut conn,
+            &[
+                ev(1, "dev-a", import_book("b1")),
+                ev(100, "dev-a", book_summary_from("first", 100, "dev-a")),
+                ev(100, "dev-a", book_summary_from("retried", 100, "dev-a")),
+            ],
+        );
+        let summary: String = conn
+            .query_row(
+                "SELECT content FROM book_summaries WHERE book_id = 'b1' AND scope = 'book'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(summary, "first");
     }
 
     fn add_highlight(id: &str, book: &str, color: &str) -> EventBody {

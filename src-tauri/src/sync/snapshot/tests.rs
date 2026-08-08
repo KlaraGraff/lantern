@@ -186,6 +186,7 @@ fn write_then_read_roundtrip() {
             created_at: 1_714_770_000_000,
             updated_at: 1_714_770_000_000,
             user_edited: true,
+            updated_by_device: "dev-A".into(),
         },
     );
     let marker_id = word_mark_rule_id("b1", "term", "exact");

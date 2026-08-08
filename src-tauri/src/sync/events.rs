@@ -665,6 +665,8 @@ pub struct BookSummaryPayload {
     pub updated_at: i64,
     #[serde(default)]
     pub user_edited: bool,
+    #[serde(default)]
+    pub updated_by_device: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1023,6 +1025,7 @@ mod tests {
             created_at: 1,
             updated_at: 2,
             user_edited: true,
+            updated_by_device: "dev-A".into(),
         })));
     }
 
