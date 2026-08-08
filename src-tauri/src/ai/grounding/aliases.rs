@@ -42,6 +42,7 @@ use crate::commands::ai::ChatMessage;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::secrets::Secrets;
+use crate::word_frequency;
 
 /// This job's id in the automatic-analysis registry, and — by the registry's
 /// own requirement — the exact string its call is tagged with in
@@ -409,6 +410,280 @@ fn resolve_group_canonical(
     Ok(None)
 }
 
+// ---------------------------------------------------------------------------
+// Three corrections layered on top of `resolve_group_canonical`'s winner,
+// measured against a real book (*Embracing Hope*): 25 aliases, 5 wrong.
+//
+//   A. Row-level fabrication. `resolve_group_canonical` only proves *one*
+//      candidate in a group has mentions — the group-level defense against a
+//      model that invents a person outright. It says nothing about the other
+//      candidates: "Mr. Darcy" being real does not make "Joel Young", sharing
+//      its group, real too. 9 of 25 measured aliases were exactly this —
+//      never in the book's text at all.
+//   B. A bare surname that collides with a common English word. "Young" is
+//      both a surname and a very common adjective; used as a canonical or
+//      alias by itself, every ordinary sentence using the adjective becomes a
+//      false match. Multi-word keys are exempt — "Joel Young" is unambiguous
+//      even though "Young" alone is not.
+//   C. A missed person, not a wrong judgment. "Vesely" and "Vesely-Frankl"
+//      both pointed at "Alexander Vesely-Frankl" in the measured run, but the
+//      book also has a different "Franz Vesely-Frankl" the model never
+//      extracted as a canonical at all — so every question about Franz
+//      silently resolved to Alexander. The fix is not a stricter filter (a
+//      naive "drop on any ambiguity" rule would also throw away "Frankl",
+//      142 mentions, overwhelmingly the book's most useful alias) — it is a
+//      deterministic scan of the book's own text for a second full name this
+//      alias also sits inside, registered as a second canonical. This reuses
+//      the ambiguity representation `resolve()` already has —
+//      `AliasRow`/`MatchedAlias.canonicals` already carry more than one
+//      canonical per alias text, and `resolve()` already goes `Medium` and
+//      picks the highest-`mentions` canonical as the default whenever that
+//      happens — so "Vesely-Frankl" simply becomes two rows and the existing
+//      query-time logic handles the rest unchanged.
+//
+// Order: A, then B, then C, applied in `evaluate_attempt` as (1) B on the
+// winner, (2) A per surviving alias, (3) B per alias that survived A, (4) C
+// over only the aliases left after 1–3, with B re-applied to whatever C
+// discovers. See `evaluate_attempt`'s own doc comment for the full
+// rationale — in particular why A before B is a cost ordering, not a
+// correctness one, and why C must run last: a fabricated or common-word
+// alias must never reach the text scan that discovers a new canonical, both
+// because there is nothing real to expand from and because scanning a common
+// word's neighborhood is exactly the kind of input that would manufacture a
+// false "new person" out of an ordinary capitalized sentence.
+// ---------------------------------------------------------------------------
+
+/// The text of every `book_chunks` row that might contain `text` — the same
+/// coarse `LIKE '%x%'` pre-filter `count_mentions` runs, but returning the
+/// rows instead of counting them. Both `alias_occurs_in_book` (change A) and
+/// `name_runs_for_alias` (change C) need the actual characters to run their
+/// own boundary/token logic against; `count_mentions` staying a chunk count
+/// is fine for its existing callers (see its own doc comment) but cannot
+/// answer either of those questions.
+fn chunks_containing(conn: &Connection, book_id: &str, text: &str) -> AppResult<Vec<String>> {
+    let mut statement = conn.prepare(
+        "SELECT text FROM book_chunks WHERE book_id = ?1 AND text LIKE '%' || ?2 || '%'",
+    )?;
+    let rows = statement
+        .query_map(params![book_id, text], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Change A: whether `alias` occurs anywhere in this book's text under the
+/// *same* word-boundary rule `resolve()`'s own scan uses
+/// (`find_unconsumed_match`'s `is_word_char` boundary, via a fresh empty
+/// `consumed` array since this only asks "does it occur at all", never "at
+/// which position"). This is deliberately not `count_mentions(...) > 0`:
+/// `count_mentions` is a raw `LIKE '%x%'` substring test with no word
+/// boundary, so a short Latin alias like "Young" would count as occurring
+/// inside "younger" — exactly the false positive that would let a
+/// fabricated-looking alias slip past this check. The `LIKE` scan inside
+/// `chunks_containing` is only the pre-filter here, narrowing to the handful
+/// of chunks that could possibly contain `alias`; the real verdict is the
+/// boundary check run against each one's actual text.
+fn alias_occurs_in_book(conn: &Connection, book_id: &str, alias: &str) -> AppResult<bool> {
+    let needle: Vec<char> = alias.to_lowercase().chars().collect();
+    if needle.is_empty() {
+        return Ok(false);
+    }
+    for chunk_text in chunks_containing(conn, book_id, alias)? {
+        let haystack: Vec<char> = chunk_text.to_lowercase().chars().collect();
+        let consumed = vec![false; haystack.len()];
+        if find_unconsumed_match(&haystack, &needle, &consumed).is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Change B: true when `text` is a *single* word — no internal whitespace —
+/// common enough that it cannot safely be used as a person key: rank within
+/// the top 3 000 of `crate::word_frequency`'s fiction frequency table, i.e.
+/// bands 1–2 (`FrequencyEntry::band <= 2`). A bare surname that is also a
+/// common noun or adjective ("Young") turns every ordinary sentence using
+/// that word into a false match.
+///
+/// Multi-word keys ("Joel Young", "Mr. Darcy") are never rejected, even
+/// though they may contain a common word — "Young" alone reads as the
+/// adjective, but the two words together do not, and the frequency table has
+/// nothing to say about a phrase, only a single word.
+///
+/// `forms` is threaded in rather than built fresh here — see
+/// `word_frequency::FormIndex`'s own doc comment on why a shared index
+/// matters once more than one lookup happens per book, which is exactly
+/// `evaluate_attempt`'s situation (every candidate in every group).
+fn is_common_single_word(forms: &word_frequency::FormIndex<'_>, text: &str) -> AppResult<bool> {
+    if text.split_whitespace().count() != 1 {
+        return Ok(false);
+    }
+    let Some(entry) = word_frequency::lookup_with(forms, text)? else {
+        return Ok(false);
+    };
+    Ok(entry.band <= 2)
+}
+
+/// A maximal run of name-shaped characters in some text's `char` sequence —
+/// letters, digits, and the marks a name can legitimately contain in the
+/// middle without splitting into two tokens (hyphen, period, apostrophe) —
+/// together with its `char`-index span. "Vesely-Frankl" and "Mr." are each
+/// one token; the comma after either would not be, since a comma has no
+/// business inside a name. This is change C's unit of work, deliberately
+/// coarser than `is_word_char` (which has no hyphen/period/apostrophe at
+/// all): the boundary scan needs to tell a name apart from the word next to
+/// it, but this needs to tell a whole name apart from the punctuation around
+/// it.
+struct NameToken {
+    text: String,
+    start: usize,
+    end: usize,
+}
+
+fn is_name_token_char(character: char) -> bool {
+    character.is_alphanumeric() || character == '-' || character == '.' || character == '\''
+}
+
+fn name_tokens(chars: &[char]) -> Vec<NameToken> {
+    let mut tokens = Vec::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if is_name_token_char(chars[index]) {
+            let start = index;
+            while index < chars.len() && is_name_token_char(chars[index]) {
+                index += 1;
+            }
+            tokens.push(NameToken { text: chars[start..index].iter().collect(), start, end: index });
+        } else {
+            index += 1;
+        }
+    }
+    tokens
+}
+
+/// Lowercase name-particle connectors that can sit *between* two capitalized
+/// tokens without breaking a name run ("Ludwig van Beethoven"). Deliberately
+/// small and Western-European rather than exhaustive — this only needs to
+/// cover the kind of names this build pass already targets: translated,
+/// shortened, or honorific variants of a Latin-script name.
+const NAME_CONNECTORS: &[&str] =
+    &["van", "de", "von", "der", "den", "la", "le", "di", "da", "del", "dos", "das"];
+
+fn is_connector(token: &str) -> bool {
+    NAME_CONNECTORS.contains(&token.to_lowercase().as_str())
+}
+
+fn starts_uppercase(token: &str) -> bool {
+    token.chars().next().is_some_and(char::is_uppercase)
+}
+
+/// Whether `chars[from..to]` is nothing but plain ASCII spaces — the gap
+/// between two tokens has to be exactly this for a name run to cross it. A
+/// comma, a quote mark, a newline (paragraph break), or the double space
+/// around an em dash all mean the tokens on either side belong to different
+/// clauses, not one name, and expansion must stop there rather than splice
+/// them together.
+fn gap_is_plain_space(chars: &[char], from: usize, to: usize) -> bool {
+    from <= to && chars[from..to].iter().all(|&character| character == ' ')
+}
+
+/// Grows the token span `[left, right)` outward across `tokens` for as long
+/// as the next token is capitalized, or is a `NAME_CONNECTORS` word
+/// immediately followed (on that same side) by a capitalized token — "van"
+/// alone at the edge of a run is never included on its own, only "van
+/// Beethoven" together, so a stray lowercase preposition can never dangle
+/// off the end of an extracted name. Only ever grows outward from the
+/// caller's own `[left, right)`; never shrinks it.
+fn expand_name_run(tokens: &[NameToken], chars: &[char], mut left: usize, mut right: usize) -> (usize, usize) {
+    while right < tokens.len() && gap_is_plain_space(chars, tokens[right - 1].end, tokens[right].start) {
+        let token = &tokens[right];
+        if starts_uppercase(&token.text) {
+            right += 1;
+        } else if is_connector(&token.text)
+            && right + 1 < tokens.len()
+            && gap_is_plain_space(chars, token.end, tokens[right + 1].start)
+            && starts_uppercase(&tokens[right + 1].text)
+        {
+            right += 2;
+        } else {
+            break;
+        }
+    }
+    while left > 0 && gap_is_plain_space(chars, tokens[left - 1].end, tokens[left].start) {
+        let token = &tokens[left - 1];
+        if starts_uppercase(&token.text) {
+            left -= 1;
+        } else if left >= 2
+            && is_connector(&token.text)
+            && gap_is_plain_space(chars, tokens[left - 2].end, token.start)
+            && starts_uppercase(&tokens[left - 2].text)
+        {
+            left -= 2;
+        } else {
+            break;
+        }
+    }
+    (left, right)
+}
+
+/// The index of the next run of consecutive whole tokens, at or after
+/// `from`, whose lowercased text equals `alias_words` word for word — or
+/// `None`. Whole tokens only: `name_tokens` never splits "younger" at a
+/// boundary the way `find_unconsumed_match`'s `is_word_char` rule does, so
+/// this compares complete token text rather than a substring, and "Young"
+/// can no more match inside a "younger" token than change A's boundary check
+/// can.
+fn find_token_span(tokens: &[NameToken], alias_words: &[String], from: usize) -> Option<usize> {
+    let width = alias_words.len();
+    if width == 0 || tokens.len() < width {
+        return None;
+    }
+    (from..=tokens.len() - width).find(|&start| {
+        (0..width).all(|offset| tokens[start + offset].text.to_lowercase() == alias_words[offset])
+    })
+}
+
+/// Change C's raw material: every distinct capitalized name run `alias`
+/// turns up inside, across every chunk it appears in, deduplicated by text.
+/// "Alexander Vesely-Frankl" mentioned three times is one entry, because
+/// what the caller wants to know is *which* full forms this alias keeps
+/// showing up inside, not how often each one does.
+///
+/// Every run returned strictly contains the alias's own tokens —
+/// `expand_name_run` only ever grows a span outward from wherever
+/// `find_token_span` anchored it — so a run identical to the alias itself
+/// (no expansion happened) is still reported; it is the caller's job (see
+/// `evaluate_attempt`) to filter those already-known forms out, not this
+/// function's, because "known" is relative to one group's own vocabulary,
+/// which this function has no view of.
+fn name_runs_for_alias(conn: &Connection, book_id: &str, alias: &str) -> AppResult<Vec<String>> {
+    let alias_words: Vec<String> = alias.split_whitespace().map(str::to_lowercase).collect();
+    if alias_words.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut runs: Vec<String> = Vec::new();
+    for chunk_text in chunks_containing(conn, book_id, alias)? {
+        let chars: Vec<char> = chunk_text.chars().collect();
+        let tokens = name_tokens(&chars);
+        let mut from = 0;
+        while let Some(start) = find_token_span(&tokens, &alias_words, from) {
+            let (left, right) = expand_name_run(&tokens, &chars, start, start + alias_words.len());
+            let run = tokens[left..right].iter().map(|token| token.text.as_str()).collect::<Vec<_>>().join(" ");
+            // A run that lands at the end of a sentence carries that
+            // sentence's own full stop as part of its last token (a period
+            // is a name-token character, for "Mr." and "St."'s sake) —
+            // trimmed once at the very end, on the assembled string, so it
+            // strips a genuinely trailing sentence period without touching
+            // an internal one like "Mr."'s.
+            let run = run.trim_end_matches('.').to_string();
+            if !run.is_empty() && !runs.contains(&run) {
+                runs.push(run);
+            }
+            from = start + 1;
+        }
+    }
+    Ok(runs)
+}
+
 /// What one model call, having already been parsed into `raw`, resolves to
 /// once every group has been run through `resolve_group_canonical`.
 #[derive(Debug, PartialEq, Eq)]
@@ -447,15 +722,68 @@ enum AttemptResult {
     Unreadable,
 }
 
-/// Pure past the one read query `resolve_group_canonical` needs
-/// (`count_mentions`) — no writes, no network — so a test can reach the
+/// Pure past the reads `resolve_group_canonical` and changes A/B/C need
+/// (`count_mentions`, `alias_occurs_in_book`, `word_frequency::lookup_with`,
+/// `name_runs_for_alias`) — no writes, no network — so a test can reach the
 /// commit/retry decision directly, the same way `merge_description_candidates`
 /// lets a test reach pass two's decisions without a database or a network.
+/// `db` is only needed for change B's frequency lookup (`FormIndex::new`
+/// wants the whole `Db`, not just a connection, to build its lemma fallback
+/// lazily); every other check here still goes through `conn` alone.
+///
+/// **Why this order.** See the doc comment on the block above this function
+/// for what each change fixes; this is the order they run in and why it has
+/// to be this order, not some other one:
+///
+/// 1. **B on the winner.** If the winner itself is one common word
+///    ("Young"), the whole group is worthless — every ordinary use of that
+///    word would become a false match — so this is checked before any
+///    per-alias work at all, and a hit skips straight to the next group.
+/// 2. **A per surviving alias.** Drop it if it never actually occurs in the
+///    book, word-boundary checked. `resolve_group_canonical`'s own mentions
+///    check only proves *something* in the group is real; it says nothing
+///    about any one alias.
+/// 3. **B per alias that survived A.** Drop it if it is itself one common
+///    word. A before B here is a cost ordering, not a correctness one — the
+///    two are independent predicates on the same row, so either order keeps
+///    the same survivors — but A's chunk-text scan is already needed for
+///    change C below, while B's frequency lookup is a database round trip on
+///    a miss (`FormIndex`'s lemma fallback); running the free check first
+///    means a fabricated alias never reaches the paid one.
+/// 4. **C, over only the aliases that survived 2 and 3.** A fabricated alias
+///    has no real occurrences to expand from, and a common-word alias is
+///    exactly the kind of string whose neighborhood in an ordinary sentence
+///    would manufacture a false "new person" — so C only ever expands from
+///    names this pass already trusts. Each name run C discovers is run back
+///    through `is_common_single_word` (not a new rule — the same call)
+///    before being kept as a new canonical: extraction can land on a
+///    sentence-initial common word exactly as easily as the model can
+///    hallucinate one, and a new canonical deserves no less scrutiny than
+///    the ones the model proposed directly. In practice this second B check
+///    can never actually reject anything here, because `expand_name_run`
+///    only ever *grows* a span outward from the alias's own token span — a
+///    run reaching this check has already failed the "equals a known form"
+///    test the caller runs first, which means it strictly contains more
+///    tokens than the (already non-empty) alias, and is therefore always
+///    multi-word. It stays in, at essentially no cost, as documentation of
+///    intent and a guard against a future change to the expansion algorithm
+///    quietly reopening that door.
 fn evaluate_attempt(
     conn: &Connection,
+    db: &Db,
     book_id: &str,
     raw: &[RawAliasGroup],
 ) -> AppResult<AttemptOutcome> {
+    // `conn` and `db` are both needed and must not be the same lock: on a
+    // frequency-table miss `forms` takes `db.reader()` itself, so a caller
+    // holding that same guard as `conn` would deadlock the thread against
+    // itself. `Db::new` gives `read_conn` its own connection, so the app's
+    // path (`attempt_build`, holding `db.conn`) is safe — but
+    // `Db::open_readonly`/`open_readwrite` alias the two, and the build pass
+    // must never be reached from there. It currently cannot: the `lantern
+    // mcp` subprocess is the only user of those constructors and exposes no
+    // index-building tool.
+    let forms = word_frequency::FormIndex::new(db);
     let mut rows: Vec<(String, String, i64)> = Vec::new();
     for group in raw {
         // The hallucination defense the doc requires, now judged on the whole
@@ -463,12 +791,69 @@ fn evaluate_attempt(
         // canonical, one that isn't actually in this book's text is worse
         // than no entry at all, because it becomes a query-expansion term
         // with nothing in the book for it to correctly match.
-        let Some((winner, mentions, losers)) = resolve_group_canonical(conn, book_id, group)?
+        let Some((winner, winner_mentions, losers)) = resolve_group_canonical(conn, book_id, group)?
         else {
             continue;
         };
+        if is_common_single_word(&forms, &winner)? {
+            continue;
+        }
+
+        let mut survivors: Vec<String> = Vec::new();
         for loser in losers {
-            rows.push((winner.clone(), loser, mentions));
+            if !alias_occurs_in_book(conn, book_id, &loser)? {
+                continue;
+            }
+            if is_common_single_word(&forms, &loser)? {
+                continue;
+            }
+            survivors.push(loser);
+        }
+
+        // Change C. `known_forms` starts as the winner plus every surviving
+        // alias — this group's full known vocabulary for this one person —
+        // and grows as new canonicals are discovered, so the same missed
+        // person found via two different aliases (e.g. both "Vesely" and
+        // "Vesely-Frankl" leading to "Franz Vesely-Frankl") is registered
+        // once, not twice.
+        let mut known_forms: HashSet<String> = std::iter::once(winner.to_lowercase())
+            .chain(survivors.iter().map(|alias| alias.to_lowercase()))
+            .collect();
+        let mut new_canonicals: Vec<(String, Vec<String>)> = Vec::new();
+        for alias in &survivors {
+            for run in name_runs_for_alias(conn, book_id, alias)? {
+                let key = run.to_lowercase();
+                if known_forms.contains(&key) || is_common_single_word(&forms, &run)? {
+                    continue;
+                }
+                known_forms.insert(key.clone());
+                match new_canonicals.iter_mut().find(|(name, _)| name.to_lowercase() == key) {
+                    Some((_, aliases)) => aliases.push(alias.clone()),
+                    None => new_canonicals.push((run, vec![alias.clone()])),
+                }
+            }
+        }
+
+        // Each survivor keeps `winner_mentions` — the existing convention
+        // (see `list_person_aliases`'s row shape): `mentions` is a fact
+        // about the canonical, the same across every alias row that shares
+        // it, not a count of that one alias's own occurrences.
+        for alias in survivors {
+            rows.push((winner.clone(), alias, winner_mentions));
+        }
+        for (new_canonical, aliases) in new_canonicals {
+            let mentions = count_mentions(conn, book_id, &new_canonical)?;
+            if mentions == 0 {
+                // Should not happen — `new_canonical` was just read out of a
+                // chunk's own text — but a row whose canonical this pass has
+                // never actually confirmed is worse than no row, so this
+                // stays defensive rather than trusting the extraction
+                // blindly.
+                continue;
+            }
+            for alias in aliases {
+                rows.push((new_canonical.clone(), alias, mentions));
+            }
         }
     }
     if !raw.is_empty() && rows.is_empty() {
@@ -543,7 +928,7 @@ async fn attempt_build<R: Runtime>(
     .await?;
     let result = {
         let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
-        classify_reply(&conn, book_id, &completion.text)?
+        classify_reply(&conn, db, book_id, &completion.text)?
     };
     Ok((completion.text, result))
 }
@@ -551,14 +936,14 @@ async fn attempt_build<R: Runtime>(
 /// One reply, all the way to the retry decision, with no network and no
 /// writes — so a test can hand it a string and assert which of the three
 /// endings it is. Everything `attempt_build` does besides making the call.
-fn classify_reply(conn: &Connection, book_id: &str, text: &str) -> AppResult<AttemptResult> {
+fn classify_reply(conn: &Connection, db: &Db, book_id: &str, text: &str) -> AppResult<AttemptResult> {
     let Some(json_slice) = extract_json_array(text) else {
         return Ok(AttemptResult::Unreadable);
     };
     let Ok(raw) = serde_json::from_str::<Vec<RawAliasGroup>>(json_slice) else {
         return Ok(AttemptResult::Unreadable);
     };
-    Ok(AttemptResult::Parsed(evaluate_attempt(conn, book_id, &raw)?))
+    Ok(AttemptResult::Parsed(evaluate_attempt(conn, db, book_id, &raw)?))
 }
 
 /// Returns how many model calls it took. Neither caller needs the number —
@@ -1563,12 +1948,19 @@ mod tests {
     #[test]
     fn evaluate_attempt_commits_survivors_and_silently_drops_the_rest() {
         let (_dir, db) = setup();
-        insert_chunk(&db, "b1", 0, "Mr. Darcy spoke with Mr. Collins nearby.");
+        // "达西" has to actually occur, word-boundary checked, or change A
+        // drops it before this test ever gets to see the drop it is really
+        // about (the fabricated "Ghost"/"Nobody" group). See `db.conn.lock()`
+        // below, not `db.reader()`: `evaluate_attempt` now looks up "达西" in
+        // the frequency table, whose lemma fallback locks `db.read_conn`
+        // itself, and `Mutex` is not reentrant.
+        insert_chunk(&db, "b1", 0, "Mr. Darcy spoke with Mr. Collins nearby. 达西 said nothing.");
         let raw = vec![
             RawAliasGroup { canonical: "Mr. Darcy".to_string(), aliases: vec!["达西".to_string()] },
             RawAliasGroup { canonical: "Ghost".to_string(), aliases: vec!["Nobody".to_string()] },
         ];
-        let outcome = evaluate_attempt(&db.reader(), "b1", &raw).unwrap();
+        let conn = db.conn.lock().unwrap();
+        let outcome = evaluate_attempt(&conn, &db, "b1", &raw).unwrap();
         match outcome {
             AttemptOutcome::Commit(rows) => {
                 assert_eq!(rows, vec![("Mr. Darcy".to_string(), "达西".to_string(), 1)]);
@@ -1587,7 +1979,7 @@ mod tests {
     fn a_reply_with_no_json_array_is_unreadable_and_therefore_retryable() {
         let (_dir, db) = setup();
         assert_eq!(
-            classify_reply(&db.reader(), "b1", "I'm sorry, I can't help with that.").unwrap(),
+            classify_reply(&db.reader(), &db, "b1", "I'm sorry, I can't help with that.").unwrap(),
             AttemptResult::Unreadable
         );
     }
@@ -1596,7 +1988,7 @@ mod tests {
     fn a_json_array_of_the_wrong_shape_is_unreadable_not_a_commit() {
         let (_dir, db) = setup();
         assert_eq!(
-            classify_reply(&db.reader(), "b1", "[1, 2, 3]").unwrap(),
+            classify_reply(&db.reader(), &db, "b1", "[1, 2, 3]").unwrap(),
             AttemptResult::Unreadable
         );
     }
@@ -1607,7 +1999,7 @@ mod tests {
         insert_chunk(&db, "b1", 0, "Mr. Darcy spoke with Mr. Collins nearby.");
         let reply = r#"[{"canonical": "Ghost", "aliases": ["Nobody"]}]"#;
         assert_eq!(
-            classify_reply(&db.reader(), "b1", reply).unwrap(),
+            classify_reply(&db.reader(), &db, "b1", reply).unwrap(),
             AttemptResult::Parsed(AttemptOutcome::Unusable)
         );
     }
@@ -1615,10 +2007,14 @@ mod tests {
     #[test]
     fn a_well_formed_reply_naming_someone_in_the_book_commits() {
         let (_dir, db) = setup();
-        insert_chunk(&db, "b1", 0, "Mr. Darcy spoke with Mr. Collins nearby.");
+        // See the sibling `evaluate_attempt_commits_survivors_...` test for
+        // why "达西" has to actually occur in the fixture text now, and why
+        // this uses `db.conn.lock()` rather than `db.reader()`.
+        insert_chunk(&db, "b1", 0, "Mr. Darcy spoke with Mr. Collins nearby. 达西 said nothing.");
         let reply = r#"prose first [{"canonical": "Mr. Darcy", "aliases": ["达西"]}] and after"#;
+        let conn = db.conn.lock().unwrap();
         assert_eq!(
-            classify_reply(&db.reader(), "b1", reply).unwrap(),
+            classify_reply(&conn, &db, "b1", reply).unwrap(),
             AttemptResult::Parsed(AttemptOutcome::Commit(vec![(
                 "Mr. Darcy".to_string(),
                 "达西".to_string(),
@@ -1635,8 +2031,15 @@ mod tests {
         // into one case.
         let (_dir, db) = setup();
         let raw: Vec<RawAliasGroup> = Vec::new();
+        // `db.conn.lock()` rather than `db.reader()`: change B's frequency
+        // lookup takes `db.reader()` itself on a table miss, and holding that
+        // same guard across the call would deadlock the thread against
+        // itself. This case never reaches the lookup, but the rule is
+        // "never hand `evaluate_attempt` a `read_conn` guard", not "only
+        // where it would currently bite".
+        let conn = db.conn.lock().unwrap();
         assert_eq!(
-            evaluate_attempt(&db.reader(), "b1", &raw).unwrap(),
+            evaluate_attempt(&conn, &db, "b1", &raw).unwrap(),
             AttemptOutcome::Commit(Vec::new())
         );
     }
@@ -1654,7 +2057,215 @@ mod tests {
         // the group for `resolve_group_canonical` to fall back to.
         let raw =
             vec![RawAliasGroup { canonical: "达西先生".to_string(), aliases: vec!["达西".to_string()] }];
-        assert_eq!(evaluate_attempt(&db.reader(), "b1", &raw).unwrap(), AttemptOutcome::Unusable);
+        let conn = db.conn.lock().unwrap();
+        assert_eq!(evaluate_attempt(&conn, &db, "b1", &raw).unwrap(), AttemptOutcome::Unusable);
+    }
+
+    // --- build pass: change A (row-level zero-mention drop) ----------------
+
+    #[test]
+    fn a_zero_mention_alias_is_dropped_but_its_group_survives() {
+        let (_dir, db) = setup();
+        insert_chunk(&db, "b1", 0, "Mr. Darcy spoke quietly to Mr. Collins.");
+        let raw = vec![RawAliasGroup {
+            canonical: "Mr. Darcy".to_string(),
+            // "达西" never appears anywhere in the book — a fabricated alias
+            // the group-level check in `resolve_group_canonical` cannot see,
+            // because "Mr. Darcy" itself already has mentions and lets the
+            // whole group past that check.
+            aliases: vec!["Darcy".to_string(), "达西".to_string()],
+        }];
+        let conn = db.conn.lock().unwrap();
+        let outcome = evaluate_attempt(&conn, &db, "b1", &raw).unwrap();
+        match outcome {
+            AttemptOutcome::Commit(rows) => {
+                assert_eq!(
+                    rows,
+                    vec![("Mr. Darcy".to_string(), "Darcy".to_string(), 1)],
+                    "the fabricated alias must be dropped, the real one kept: {rows:?}"
+                );
+            }
+            other => panic!("expected Commit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_group_whose_only_alias_is_fabricated_is_unusable() {
+        let (_dir, db) = setup();
+        insert_chunk(&db, "b1", 0, "Mr. Darcy spoke quietly to Mr. Collins.");
+        let raw = vec![RawAliasGroup { canonical: "Mr. Darcy".to_string(), aliases: vec!["达西".to_string()] }];
+        let conn = db.conn.lock().unwrap();
+        assert_eq!(
+            evaluate_attempt(&conn, &db, "b1", &raw).unwrap(),
+            AttemptOutcome::Unusable,
+            "the winner survives resolve_group_canonical but contributes zero rows once its \
+             only alias is dropped, which must retry rather than silently commit an empty table"
+        );
+    }
+
+    #[test]
+    fn a_substring_only_hit_does_not_count_as_an_occurrence() {
+        let (_dir, db) = setup();
+        // "Young" only ever appears as part of "younger" here — never as the
+        // word on its own — so the word-boundary check must say no, even
+        // though `count_mentions`'s raw `LIKE '%Young%'` scan says yes.
+        insert_chunk(&db, "b1", 0, "Elizabeth felt younger than her sister.");
+        let conn = db.conn.lock().unwrap();
+        assert!(!alias_occurs_in_book(&conn, "b1", "Young").unwrap());
+        assert!(
+            count_mentions(&conn, "b1", "Young").unwrap() > 0,
+            "sanity check: the raw LIKE scan this test exists to distinguish from does match"
+        );
+    }
+
+    // --- build pass: change B (common-word rejection) -----------------------
+
+    #[test]
+    fn a_single_word_common_word_key_is_rejected() {
+        let (_dir, db) = setup();
+        let forms = word_frequency::FormIndex::new(&db);
+        // "young" is rank 249 in the fiction frequency table — solidly inside
+        // band 1, the surname/adjective collision the measured run hit.
+        assert!(is_common_single_word(&forms, "Young").unwrap());
+    }
+
+    #[test]
+    fn a_multi_word_key_containing_a_common_word_is_not_rejected() {
+        let (_dir, db) = setup();
+        let forms = word_frequency::FormIndex::new(&db);
+        assert!(!is_common_single_word(&forms, "Joel Young").unwrap());
+    }
+
+    #[test]
+    fn a_rare_surname_is_not_rejected_as_a_common_word() {
+        let (_dir, db) = setup();
+        let forms = word_frequency::FormIndex::new(&db);
+        assert!(!is_common_single_word(&forms, "Frankl").unwrap());
+    }
+
+    #[test]
+    fn a_common_word_canonical_kills_its_whole_group() {
+        // The measured cascading result: a raw group whose *canonical* is a
+        // bare common word ("Young", with alias "Joel") must be rejected
+        // outright, not just have the canonical itself dropped and the alias
+        // promoted — "Joel" alone is not a name any of this book's text
+        // confirms, and this pass never promotes an alias to canonical on its
+        // own initiative.
+        let (_dir, db) = setup();
+        insert_chunk(&db, "b1", 0, "Joel Young walked into the young prince's court.");
+        let raw = vec![RawAliasGroup { canonical: "Young".to_string(), aliases: vec!["Joel".to_string()] }];
+        let conn = db.conn.lock().unwrap();
+        assert_eq!(evaluate_attempt(&conn, &db, "b1", &raw).unwrap(), AttemptOutcome::Unusable);
+    }
+
+    // --- build pass: change C (recovering a person the model missed) -------
+
+    #[test]
+    fn an_alias_shared_by_two_full_names_gains_a_second_canonical() {
+        let (_dir, db) = setup();
+        insert_chunk(
+            &db,
+            "b1",
+            0,
+            "Alexander Vesely-Frankl arrived first. Franz Vesely-Frankl came later. \
+             Vesely-Frankl often visited the old house.",
+        );
+        // The model only ever extracted Alexander — Franz is a real person in
+        // the book's own text that this raw group never names.
+        let raw = vec![RawAliasGroup {
+            canonical: "Alexander Vesely-Frankl".to_string(),
+            aliases: vec!["Vesely-Frankl".to_string()],
+        }];
+        let conn = db.conn.lock().unwrap();
+        let AttemptOutcome::Commit(rows) = evaluate_attempt(&conn, &db, "b1", &raw).unwrap() else {
+            panic!("expected Commit")
+        };
+        let mut canonicals: Vec<&str> = rows
+            .iter()
+            .filter(|(_, alias, _)| alias == "Vesely-Frankl")
+            .map(|(canonical, _, _)| canonical.as_str())
+            .collect();
+        canonicals.sort_unstable();
+        assert_eq!(
+            canonicals,
+            vec!["Alexander Vesely-Frankl", "Franz Vesely-Frankl"],
+            "the alias must end up pointing at both full names: {rows:?}"
+        );
+        // `insert_alias` locks `db.conn` itself — the same mutex `conn`
+        // above is still holding — so it has to be dropped first, or this
+        // deadlocks against itself on the next line.
+        drop(conn);
+
+        // Feeding these rows into the real table and asking `resolve()`
+        // about "Vesely-Frankl" must now come back ambiguous — the whole
+        // point of registering the second canonical rather than dropping it.
+        for (canonical, alias, mentions) in &rows {
+            insert_alias(&db, "b1", canonical, alias, "auto", *mentions);
+        }
+        let resolution = resolve(&db.reader(), "b1", "What did Vesely-Frankl say?").unwrap();
+        assert_eq!(resolution.confidence, AliasConfidence::Medium);
+        let mut resolved: Vec<&str> =
+            resolution.matched[0].canonicals.iter().map(String::as_str).collect();
+        resolved.sort_unstable();
+        assert_eq!(resolved, vec!["Alexander Vesely-Frankl", "Franz Vesely-Frankl"]);
+    }
+
+    #[test]
+    fn a_high_frequency_owner_beats_a_low_frequency_namesake_as_the_default() {
+        // The Frankl scenario itself: "Frankl" mostly means Viktor E. Frankl
+        // (142 mentions in the book this fix was measured against), but the
+        // book also has a second, much less frequently mentioned Frankl.
+        // Both must resolve as an ambiguous match, and the default has to be
+        // the one the book actually spends its time on — the existing
+        // mentions-descending tie-break in `resolve()`, exercised here on
+        // realistic numbers rather than a synthetic tie.
+        let (_dir, db) = setup();
+        insert_alias(&db, "b1", "Viktor E. Frankl", "Frankl", "auto", 142);
+        insert_alias(&db, "b1", "Franz Frankl", "Frankl", "auto", 3);
+        let resolution = resolve(&db.reader(), "b1", "What did Frankl believe?").unwrap();
+        assert_eq!(resolution.confidence, AliasConfidence::Medium);
+        let mut canonicals = resolution.matched[0].canonicals.clone();
+        canonicals.sort();
+        assert_eq!(canonicals, vec!["Franz Frankl".to_string(), "Viktor E. Frankl".to_string()]);
+        assert_eq!(resolution.default_canonical.as_deref(), Some("Viktor E. Frankl"));
+    }
+
+    // --- build pass: A, B, and C stacked together ---------------------------
+
+    #[test]
+    fn the_three_checks_apply_in_the_documented_order() {
+        let (_dir, db) = setup();
+        insert_chunk(
+            &db,
+            "b1",
+            0,
+            "Mr. Vesely spoke first. Franz Vesely arrived later. \
+             The young prince said nothing.",
+        );
+        let raw = vec![RawAliasGroup {
+            canonical: "Mr. Vesely".to_string(),
+            aliases: vec![
+                "Ghost Name".to_string(), // A: never occurs at all
+                "Young".to_string(),      // A survives (matches "young"); B rejects it
+                "Vesely".to_string(),     // A + B survive; C finds a second person
+            ],
+        }];
+        let conn = db.conn.lock().unwrap();
+        let AttemptOutcome::Commit(rows) = evaluate_attempt(&conn, &db, "b1", &raw).unwrap() else {
+            panic!("expected Commit")
+        };
+        let mut simplified: Vec<(String, String)> =
+            rows.iter().map(|(canonical, alias, _)| (canonical.clone(), alias.clone())).collect();
+        simplified.sort();
+        assert_eq!(
+            simplified,
+            vec![
+                ("Franz Vesely".to_string(), "Vesely".to_string()),
+                ("Mr. Vesely".to_string(), "Vesely".to_string()),
+            ],
+            "Ghost Name must be gone (A), Young must be gone (B), and Vesely must now point \
+             at both people (C): {rows:?}"
+        );
     }
 
     // --- resolve: the doc's 验收 rules, one test per rule ------------------
