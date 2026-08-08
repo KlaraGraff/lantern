@@ -370,6 +370,10 @@ export default function AiServiceCard({
     () => profile.provider === "custom" || !profile.model,
   );
   const profileBusy = busy || credentialBusyId != null;
+  // One `confirmDelete` serves both trash buttons, and they never coexist: the
+  // shut card asks in its own row, the open one in its footer. Expanding while
+  // a question is pending clears it, below.
+  const headerConfirm = confirmDelete && !expanded;
   // Kept as separate groups rather than merged into one list: which levels this
   // endpoint actually reported is the useful half of the information, and a
   // merged list loses it.
@@ -396,6 +400,12 @@ export default function AiServiceCard({
     setNewKey("");
     setReplaceId(null);
     setReplaceValue("");
+  }, [expanded]);
+
+  // Opening or shutting the card withdraws a pending delete question. It was
+  // asked in one of the two places that can ask it, and the answer belongs
+  // where it was asked — not carried over to the other.
+  useEffect(() => {
     setConfirmDelete(false);
   }, [expanded]);
 
@@ -549,33 +559,70 @@ export default function AiServiceCard({
           </span>
         </button>
 
-        <span className={`hidden shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium sm:inline-flex ${health.className}`}>
-          {health.label}
-          {latency != null && ` · ${latency} ms`}
-        </span>
+        {/* The confirm takes the row's whole action strip, badge included:
+            asking the question and leaving the switch beside it live would put
+            two different decisions under one glance. */}
+        {headerConfirm ? (
+          <div className="flex shrink-0 items-center gap-1.5">
+            <span className="text-[11px] text-danger-text">{t("settings.ai.deleteConfirm")}</span>
+            <Button variant="ghost" size="sm" disabled={profileBusy} onClick={() => setConfirmDelete(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="secondary" size="sm" disabled={profileBusy} onClick={() => void onDelete()}>
+              {t("common.delete")}
+            </Button>
+          </div>
+        ) : (
+          <>
+            <span className={`hidden shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium sm:inline-flex ${health.className}`}>
+              {health.label}
+              {latency != null && ` · ${latency} ms`}
+            </span>
 
-        <div onClick={(event) => event.stopPropagation()} className="shrink-0">
-          <Toggle
-            checked={profile.enabled}
-            disabled={profileBusy}
-            label={t("settings.ai.toggleService", { name: profile.label })}
-            onChange={(enabled) => void onToggleEnabled(enabled)}
-          />
-        </div>
+            <div onClick={(event) => event.stopPropagation()} className="shrink-0">
+              <Toggle
+                checked={profile.enabled}
+                disabled={profileBusy}
+                label={t("settings.ai.toggleService", { name: profile.label })}
+                onChange={(enabled) => void onToggleEnabled(enabled)}
+              />
+            </div>
 
-        {/* Under touch the row is already carrying a name, a badge and a
-            switch across 390px. The test moves to a full-width button in the
-            open card, where it also has room to say what it is doing. */}
-        <button
-          type="button"
-          disabled={testing || profileBusy}
-          onClick={() => void onTest()}
-          title={testing ? t("settings.ai.testingConnection") : t("settings.ai.testConnection")}
-          aria-label={testing ? t("settings.ai.testingConnection") : t("settings.ai.testConnection")}
-          className="flex size-8 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text disabled:opacity-50 touch:hidden"
-        >
-          {testing ? <Loader2 size={15} className="animate-spin" /> : <Activity size={15} />}
-        </button>
+            {/* Under touch the row is already carrying a name, a badge and a
+                switch across 390px. The test moves to a full-width button in the
+                open card, where it also has room to say what it is doing. */}
+            <button
+              type="button"
+              disabled={testing || profileBusy}
+              onClick={() => void onTest()}
+              title={testing ? t("settings.ai.testingConnection") : t("settings.ai.testConnection")}
+              aria-label={testing ? t("settings.ai.testingConnection") : t("settings.ai.testConnection")}
+              className="flex size-8 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text disabled:opacity-50 touch:hidden"
+            >
+              {testing ? <Loader2 size={15} className="animate-spin" /> : <Activity size={15} />}
+            </button>
+
+            {/* Removing a model was two moves away — open the card, scroll past
+                the key list — which is a long way to go for the model you added
+                by mistake. It sits beside the switch instead, and only while the
+                card is shut: the open card has its own delete in the footer, and
+                two of them would be two answers to the same question. Touch
+                keeps using that one; this row has no width left for a fifth
+                control across 390px. */}
+            {!expanded && (
+              <button
+                type="button"
+                disabled={profileBusy}
+                onClick={() => setConfirmDelete(true)}
+                title={t("settings.ai.deleteService")}
+                aria-label={t("settings.ai.deleteServiceNamed", { name: profile.label })}
+                className="flex size-8 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-danger-bg hover:text-danger-text disabled:opacity-50 touch:hidden"
+              >
+                <Trash2 size={15} />
+              </button>
+            )}
+          </>
+        )}
       </div>
 
       {expanded && (

@@ -934,13 +934,23 @@ fn profile_by_id(db: &Db, id: &str) -> AppResult<AiProfile> {
     .ok_or_else(|| AppError::Other("AI_PROFILE_NOT_FOUND".to_string()))
 }
 
-fn profiles(db: &Db, enabled_only: bool) -> AppResult<Vec<AiProfile>> {
+/// A model the reader started adding and has not finished: the model box is
+/// still empty, or a custom endpoint has no address yet. The row exists so the
+/// settings card has something to edit — a local model server is picked from
+/// the catalog before anyone knows which model it is serving, and `/v1/models`
+/// cannot be asked until the profile it belongs to exists. It can never answer
+/// a request, so every path that asks "what could serve this?" leaves it out.
+fn is_unconfigured(profile: &AiProfileView) -> bool {
+    profile.model.trim().is_empty() || resolve_base_url(profile).is_err()
+}
+
+/// `usable_only` means enabled *and* finished being configured. Every caller
+/// that passes `true` is about to route, or is reporting whether routing is
+/// possible at all; the settings pane reads the whole table instead, half-built
+/// rows included, because editing them is the whole point.
+fn profiles(db: &Db, usable_only: bool) -> AppResult<Vec<AiProfile>> {
     let conn = db.reader();
-    let where_clause = if enabled_only {
-        " WHERE enabled = 1"
-    } else {
-        ""
-    };
+    let where_clause = if usable_only { " WHERE enabled = 1" } else { "" };
     let mut statement = conn.prepare(&format!(
         "SELECT {PROFILE_COLUMNS} FROM ai_profiles{where_clause} ORDER BY priority ASC, created_at ASC"
     ))?;
@@ -948,7 +958,14 @@ fn profiles(db: &Db, enabled_only: bool) -> AppResult<Vec<AiProfile>> {
         .query_map([], row_to_profile)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(AppError::from)?;
-    Ok(profiles)
+    Ok(if usable_only {
+        profiles
+            .into_iter()
+            .filter(|profile| !is_unconfigured(&profile.view))
+            .collect()
+    } else {
+        profiles
+    })
 }
 
 /// Whether this provider is a model server the reader runs on their own
@@ -2377,14 +2394,17 @@ fn normalize_profile_config(
     {
         return Err(AppError::Other("AI_AUTH_MODE_INVALID".to_string()));
     }
-    if model.is_empty() || model.chars().count() > 200 {
+    // An empty model, and a custom endpoint with no address, are the two ways a
+    // profile can be half-built. Both are accepted here on purpose: the catalog
+    // adds a local model server before anyone knows which model it will serve,
+    // and the row has to exist before its model list can be fetched. What is
+    // still missing keeps the profile out of every route — see `is_unconfigured`
+    // — rather than blocking the row from being written at all.
+    if model.chars().count() > 200 {
         return Err(AppError::Other("AI_MODEL_INVALID".to_string()));
     }
     if !temperature.is_finite() || !(0.0..=2.0).contains(&temperature) {
         return Err(AppError::Other("AI_TEMPERATURE_INVALID".to_string()));
-    }
-    if provider == "custom" && base_url.is_none() {
-        return Err(AppError::Other("AI_CUSTOM_BASE_URL_REQUIRED".to_string()));
     }
     if let Some(url) = base_url.as_deref() {
         let parsed = reqwest::Url::parse(url)
@@ -2991,6 +3011,21 @@ pub async fn test_profile<R: Runtime>(
         content: "Reply with OK.".to_string(),
     }];
     let overall_started = Instant::now();
+
+    // Nothing to test yet. Said in the card's own words rather than by sending
+    // a request with an empty model and relaying whatever the endpoint makes of
+    // it — and health is left alone, because no request was ever attempted.
+    if is_unconfigured(&profile.view) {
+        return Ok(connection_test_result(
+            &profile,
+            false,
+            None,
+            None,
+            overall_started.elapsed().as_millis() as u64,
+            Some("not_configured"),
+            Vec::new(),
+        ));
+    }
 
     if profile.view.auth_mode == "oauth" && profile.view.provider == "openai" {
         let (token, account_id) = match crate::ai::oauth::get_valid_token(secrets).await {
@@ -4304,6 +4339,55 @@ mod tests {
             None,
         )
         .is_err());
+    }
+
+    /// Picking "LM Studio" or "custom endpoint" from the catalog creates the
+    /// row *before* the reader can say which model it serves — the model list
+    /// is fetched through the profile, so the profile has to exist first. The
+    /// price of that is a row that cannot answer anything yet, and the rule is
+    /// that it stays out of every route instead of being refused at the door.
+    #[test]
+    fn a_half_built_profile_saves_but_never_joins_the_route() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let add = |label: &str, base_url: Option<&str>, model: &str| {
+            create_profile(
+                &db,
+                label.to_string(),
+                "custom".to_string(),
+                "api_key".to_string(),
+                base_url.map(str::to_string),
+                model.to_string(),
+                0.3,
+                None,
+                false,
+                None,
+                true,
+            )
+            .expect("a half-built profile is a savable row")
+        };
+        let no_model = add("LM Studio", Some("http://localhost:1234"), "");
+        let no_address = add("Custom", None, "some-model");
+        let ready = add("Ready", Some("https://gateway.example"), "some-model");
+
+        // The settings pane edits what it can see, so it sees all three.
+        let listed: Vec<_> = list_profiles(&db)
+            .unwrap()
+            .into_iter()
+            .map(|profile| profile.id)
+            .collect();
+        assert_eq!(
+            listed,
+            vec![no_model.id.clone(), no_address.id.clone(), ready.id.clone()]
+        );
+
+        // Routing sees only the one that could actually answer.
+        let routable: Vec<_> = profiles(&db, true)
+            .unwrap()
+            .into_iter()
+            .map(|profile| profile.view.id)
+            .collect();
+        assert_eq!(routable, vec![ready.id]);
     }
 
     #[test]

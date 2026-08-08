@@ -14,7 +14,8 @@ import AiServiceCard, {
   type AiProfile,
 } from "./AiServiceCard";
 import AiRequestCountsSection from "./AiRequestCountsSection";
-import { AI_PRESETS, COST_TIER_CLASSES, availablePresets, presetFor } from "./aiPresets";
+import { COST_TIER_CLASSES, availablePresets, presetFor } from "./aiPresets";
+import { abandonedDraftIds, isProfileConfigComplete } from "./ai-draft-profiles";
 import MissingKeyNotice from "./MissingKeyNotice";
 import { missingKeyState, wantsMissingKeyNotice, type MissingKeyPeer } from "./missing-key";
 import type { SettingsProps } from "./types";
@@ -72,34 +73,6 @@ function profileLabel(value: string): string {
   return Array.from(value).slice(0, 100).join("");
 }
 
-/**
- * Validated against the whole catalog, not against `CATALOG`. A model
- * configured on a Mac can name a provider this platform would not offer — an
- * Ollama route synced to a phone is the case — and that profile is still valid
- * data. Refusing to save it would mean a phone silently corrupting a route it
- * merely cannot run.
- */
-function isProfileConfigValid(profile: AiProfile): boolean {
-  const label = profile.label.trim();
-  const model = profile.model.trim();
-  if (!label || Array.from(label).length > 100) return false;
-  if (!model || Array.from(model).length > 200) return false;
-  if (!Number.isFinite(profile.temperature) || profile.temperature < 0 || profile.temperature > 2) return false;
-  if (!AI_PRESETS.some((preset) => preset.provider === profile.provider)) return false;
-  if (profile.auth_mode === "oauth" && profile.provider !== "openai") return false;
-  const baseUrl = profile.base_url?.trim();
-  if (profile.provider === "custom" && !baseUrl) return false;
-  if (baseUrl) {
-    try {
-      const parsed = new URL(baseUrl);
-      if (!(["http:", "https:"] as string[]).includes(parsed.protocol) || !parsed.hostname) return false;
-    } catch {
-      return false;
-    }
-  }
-  return true;
-}
-
 function updateOne<T extends { id: string }>(items: T[], id: string, patch: Partial<T>): T[] {
   return items.map((item) => item.id === id ? { ...item, ...patch } : item);
 }
@@ -132,6 +105,10 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profilesRef = useRef<AiProfile[]>([]);
   const savedProfilesRef = useRef<AiProfile[]>([]);
+  /** Rows added from the catalog here that have not yet become a real
+   *  configuration. Emptied as each one is finished — see below. */
+  const draftIdsRef = useRef<Set<string>>(new Set());
+  const credentialsRef = useRef<Record<string, AiCredential[]>>({});
   const saveInFlightRef = useRef<Promise<void> | null>(null);
   const saveRequestedRef = useRef(false);
   const saveNotificationRequestedRef = useRef(false);
@@ -156,6 +133,53 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     };
   }, []);
 
+  useEffect(() => {
+    credentialsRef.current = credentials;
+  }, [credentials]);
+
+  // Finishing a draft promotes it to an ordinary model, permanently. Checked on
+  // every edit rather than at discard time, so that later emptying the model box
+  // of something the reader already set up cannot make it disappear.
+  useEffect(() => {
+    for (const profile of profiles) {
+      if (draftIdsRef.current.has(profile.id) && isProfileConfigComplete(profile)) {
+        draftIdsRef.current.delete(profile.id);
+      }
+    }
+  }, [profiles]);
+
+  /**
+   * Take back the models that were added and then left blank. Which ones those
+   * are is decided in `ai-draft-profiles`; this applies the answer.
+   */
+  const discardAbandonedDrafts = useCallback((keepId: string | null) => {
+    const abandoned = abandonedDraftIds({
+      profiles: profilesRef.current,
+      drafts: draftIdsRef.current,
+      keepId,
+      credentialCount: (id) => credentialsRef.current[id]?.length ?? 0,
+    });
+    if (abandoned.length === 0) return;
+    const dropped = new Set(abandoned);
+    for (const id of dropped) draftIdsRef.current.delete(id);
+    replaceProfiles(profilesRef.current.filter((profile) => !dropped.has(profile.id)));
+    replaceSavedProfiles(savedProfilesRef.current.filter((profile) => !dropped.has(profile.id)));
+    setCredentials((current) => {
+      const next = { ...current };
+      for (const id of dropped) delete next[id];
+      return next;
+    });
+    // Silently: the reader is undoing something they never finished starting,
+    // and "model deleted" would report it as a loss.
+    for (const id of dropped) invoke("ai_delete_profile", { id }).catch(() => {});
+  }, [replaceProfiles, replaceSavedProfiles]);
+
+  // Turning to another card, or shutting the one that was open, is the moment
+  // an unfinished model stops being worked on.
+  useEffect(() => {
+    discardAbandonedDrafts(expandedId);
+  }, [discardAbandonedDrafts, expandedId]);
+
   const dirtyIds = useMemo(() => {
     const saved = new Map(savedProfiles.map((profile) => [profile.id, profile]));
     return new Set(profiles.filter((profile) => !sameProfileConfig(profile, saved.get(profile.id))).map((profile) => profile.id));
@@ -170,7 +194,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
 
   const validDirtyIds = useMemo(() => new Set(
     profiles
-      .filter((profile) => dirtyIds.has(profile.id) && isProfileConfigValid(profile))
+      .filter((profile) => dirtyIds.has(profile.id) && isProfileConfigComplete(profile))
       .map((profile) => profile.id),
   ), [dirtyIds, profiles]);
 
@@ -347,7 +371,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
           saveRequestedRef.current = false;
           const savedById = new Map(savedProfilesRef.current.map((profile) => [profile.id, profile]));
           const pending = profilesRef.current.filter((profile) => (
-            !sameProfileConfig(profile, savedById.get(profile.id)) && isProfileConfigValid(profile)
+            !sameProfileConfig(profile, savedById.get(profile.id)) && isProfileConfigComplete(profile)
           ));
           for (const profile of pending) {
             await persistProfile(profile);
@@ -376,8 +400,11 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
   useEffect(() => {
     flushOnUnmountRef.current = () => {
       void saveProfiles(false);
+      // Nothing open is being worked on any more: closing settings is the last
+      // chance to take back a model that was added and never filled in.
+      discardAbandonedDrafts(null);
     };
-  }, [saveProfiles]);
+  }, [discardAbandonedDrafts, saveProfiles]);
 
   const requestSave = useCallback(() => {
     void saveProfiles(true);
@@ -499,6 +526,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
         keepAlive: preset.keepAlive,
         enabled: true,
       });
+      if (!isProfileConfigComplete(created)) draftIdsRef.current.add(created.id);
       replaceProfiles([...profilesRef.current, created]);
       replaceSavedProfiles([...savedProfilesRef.current, created]);
       setCredentials((current) => ({ ...current, [created.id]: [] }));
@@ -653,7 +681,7 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
     try {
       const latestProfile = profilesRef.current.find((item) => item.id === profile.id) ?? profile;
       const savedProfile = savedProfilesRef.current.find((item) => item.id === profile.id);
-      if (!sameProfileConfig(latestProfile, savedProfile) && isProfileConfigValid(latestProfile)) {
+      if (!sameProfileConfig(latestProfile, savedProfile) && isProfileConfigComplete(latestProfile)) {
         await saveProfiles(false);
       }
       const testedProfile = profilesRef.current.find((item) => item.id === profile.id) ?? latestProfile;
