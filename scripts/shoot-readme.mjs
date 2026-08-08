@@ -36,17 +36,18 @@ const CHROME =
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 /**
- * 八张图。`scene` 是 harness 里的场景名，`size` 是 CSS 像素的窗口尺寸
- * （按 2x 导出，实际像素是这里的两倍）。顺序就是 README 里的顺序。
+ * 八张图。`name` 是写出去的文件名 —— 必须和 README 里 `![](…)` 引的名字一致；
+ * `scene` 是 harness 里的场景名；`size` 是 CSS 像素的窗口尺寸（按 2x 导出，
+ * 实际像素是这里的两倍）。顺序就是 README 里的顺序。
  */
 const SHOTS = [
   { name: "hero", scene: "hero", size: [1280, 800] },
-  { name: "levels", scene: "levels", size: [900, 560] },
+  { name: "level", scene: "levels", size: [900, 560] },
   { name: "context", scene: "context", size: [1280, 800] },
   { name: "citations", scene: "citations", size: [1280, 800] },
-  { name: "vocab", scene: "vocab", size: [1180, 740] },
+  { name: "mastery", scene: "vocab", size: [1180, 740] },
   { name: "difficulty", scene: "difficulty", size: [1180, 860] },
-  { name: "cards", scene: "cards", size: [1180, 880] },
+  { name: "modules", scene: "cards", size: [1180, 880] },
   { name: "mcp", scene: "mcp", size: [1180, 900] },
 ];
 

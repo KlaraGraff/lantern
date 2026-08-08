@@ -64,6 +64,9 @@ export function invoke<T = unknown>(command: string, args?: InvokeArgs): Promise
  */
 export function convertFileSrc(filePath: string, _protocol?: string): string {
   void _protocol;
+  // 样张书架的书本来就是 harness 自己在伺服的真 EPUB（`harness/promo/`），
+  // 路径已经是能取的 URL，别把它折回那本测试用的小 EPUB。
+  if ((filePath ?? "").startsWith("/__harness/")) return filePath;
   const lower = (filePath ?? "").toLowerCase();
   if (lower.endsWith(".pdf")) return "/__harness/book.pdf";
   if (/\.(epub|mobi|azw3?|fb2|fbz|cbz)$/.test(lower)) return "/__harness/book.epub";
