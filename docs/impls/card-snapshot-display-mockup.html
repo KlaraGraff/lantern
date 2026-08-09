@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>收藏时的卡片 · 展示样张</title>
+<style>
+  :root {
+    --bg-page: #f4f4f5;
+    --bg-surface: #ffffff;
+    --bg-muted: #fafafa;
+    --text-primary: #18181b;
+    --text-secondary: #52525c;
+    --text-muted: #71717b;
+    --border: #e4e4e7;
+    --border-light: #f4f4f5;
+    --accent-text: #7c3aed;
+    --accent-bg: #f3e8ff;
+    --lavender: #c084fc;
+    --warning: #b8791c;
+  }
+  .dark {
+    --bg-page: #151518;
+    --bg-surface: #18191d;
+    --bg-muted: #1f2023;
+    --text-primary: #f4f4f5;
+    --text-secondary: #c9c9d1;
+    --text-muted: #9a9aa4;
+    --border: #34343d;
+    --border-light: #2a2b31;
+    --accent-text: #a78bfa;
+    --accent-bg: #302647;
+    --lavender: #c4b5fd;
+    --warning: #e0a75a;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Inter", system-ui, -apple-system, "PingFang SC", sans-serif;
+    background: #e9e9ec;
+    color: #18181b;
+    padding: 40px 24px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.2px; }
+  .lede { margin-top: 8px; font-size: 13px; line-height: 1.7; color: #52525c; max-width: 760px; }
+  .lede b { font-weight: 600; color: #18181b; }
+
+  .row { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 34px; align-items: flex-start; }
+  .slot { width: 372px; }
+  .slot.wide { width: 100%; max-width: 780px; }
+  .caption {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase;
+    color: #71717b; margin-bottom: 4px;
+  }
+  .caption em { font-style: normal; color: #7c3aed; }
+  .note { font-size: 12px; line-height: 1.65; color: #52525c; margin-bottom: 10px; }
+  .note code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; background: #fff; border: 1px solid #e4e4e7; border-radius: 4px; padding: 0 4px; }
+
+  /* ── the app surface ── */
+  .surface {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    color: var(--text-primary);
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.05);
+  }
+  .dark .surface { box-shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35); }
+
+  /* collapsed vocabulary row header (context only — not the subject of this mockup) */
+  .vrow {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 11px 12px 10px;
+  }
+  .vword { font-size: 15px; font-weight: 600; }
+  .vgloss { font-size: 12px; color: var(--text-secondary); flex: 1; min-width: 0;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip {
+    font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 999px;
+    background: var(--accent-bg); color: var(--accent-text); white-space: nowrap;
+  }
+
+  .body { display: flex; flex-direction: column; gap: 12px;
+          border-top: 1px solid var(--border-light); padding: 10px 12px 12px; }
+
+  .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .speak {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-secondary);
+  }
+  .speak .ico { width: 13px; height: 13px; }
+  .linkbtn {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500;
+    color: var(--accent-text); background: none; border: 0; cursor: pointer; padding: 2px 4px; border-radius: 6px;
+  }
+
+  h3.sec {
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px;
+    color: var(--text-muted);
+  }
+  .sechead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .p13 { font-size: 13px; line-height: 1.6; color: var(--text-primary); }
+  .p12 { font-size: 12px; line-height: 1.55; color: var(--text-secondary); }
+  .quote { border-left: 2px solid var(--lavender); padding: 2px 0 2px 12px; }
+  .quote p { font-size: 12px; line-height: 1.5; font-style: italic; color: var(--text-secondary); }
+  mark { background: transparent; color: var(--accent-text); font-weight: 600; }
+
+  .foot {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    border-top: 1px solid var(--border-light); padding-top: 8px;
+    font-size: 11px; color: var(--text-muted);
+  }
+
+  /* ── the new thing: the snapshot disclosure ── */
+  .snapbtn {
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    border: 0; background: none; cursor: pointer; padding: 7px 0 0;
+    border-top: 1px solid var(--border-light);
+    font-size: 12px; font-weight: 500; color: var(--accent-text); text-align: left;
+  }
+  .snapbtn .cnt { color: var(--text-muted); font-weight: 400; }
+  .snapbtn .chev { width: 13px; height: 13px; flex: none; }
+
+  .snapwrap { border-top: 1px solid var(--border-light); padding-top: 9px; }
+  .snapmeta {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 9px;
+  }
+  .snapmeta .when { font-size: 10px; color: var(--text-muted); }
+
+  .mod { padding: 9px 0; border-top: 1px solid var(--border-light); }
+  .mod:first-of-type { border-top: 0; padding-top: 0; }
+  .modhead {
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px;
+    color: var(--text-muted); margin-bottom: 3px;
+  }
+  .modsum { font-size: 12px; line-height: 1.55; color: var(--text-primary); }
+  .modlist { list-style: disc; padding-left: 16px; margin-top: 5px; display: flex; flex-direction: column; gap: 4px; }
+  .modlist li { font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+  .item { margin-top: 6px; }
+  .item .ititle { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+  .item .imeta { font-size: 10px; color: var(--text-muted); margin-left: 6px; font-weight: 400; }
+  .item .itext { font-size: 12px; line-height: 1.5; color: var(--text-secondary); margin-top: 1px; }
+  .ex { margin-top: 4px; border-left: 2px solid var(--border); padding-left: 8px; }
+  .ex .src { font-size: 11px; line-height: 1.5; color: var(--text-secondary); }
+  .ex .tgt { font-size: 11px; line-height: 1.5; color: var(--text-muted); }
+
+  /* skeleton */
+  .sk { background: var(--border-light); border-radius: 4px; height: 9px; animation: pulse 1.4s ease-in-out infinite; }
+  .dark .sk { background: var(--bg-muted); }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .45 } }
+
+  .darkpane { background: var(--bg-page); padding: 22px; border-radius: 14px; }
+
+  .legend {
+    margin-top: 12px; border-left: 3px solid #7c3aed; background: #fff; border-radius: 0 8px 8px 0;
+    padding: 12px 14px; font-size: 12px; line-height: 1.7; color: #3f3f46;
+  }
+  .legend b { color: #18181b; }
+  .legend ul { margin: 6px 0 0 16px; }
+  .legend li { margin-bottom: 4px; }
+
+  hr.div { border: 0; border-top: 1px solid #d4d4d8; margin: 46px 0 0; }
+  h2 { font-size: 15px; font-weight: 600; margin-top: 34px; }
+  h2 .num { color: #7c3aed; margin-right: 8px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>收藏时的卡片 —— 展示样张</h1>
+  <p class="lede">
+    你在正文里查一个词，AI 给的是一整张卡片：这里的意思、词形、常见义项、搭配、构词、近义词、用法、记忆法。
+    你点「收藏」，卡片<b>整张都存下来了</b>（v2.x 起），但生词本里只看得到其中两块——那句意思，和语境解释。
+    剩下九块一直躺在库里，没有任何界面把它们打开过。这张样张就是那个界面。
+  </p>
+
+  <h2><span class="num">01</span>现在打开一个收藏的词，是这样</h2>
+  <div class="row">
+    <div class="slot">
+      <div class="caption">现在 · 生词本里展开一个词</div>
+      <p class="note">存进去的东西是这里的三四倍，但看不到。</p>
+      <div class="surface">
+        <div class="vrow">
+          <span class="vword">brittle</span>
+          <span class="vgloss">易碎的；一碰就裂</span>
+          <span class="chip">学习中</span>
+        </div>
+        <div class="body">
+          <div class="toolbar">
+            <span class="speak">🔊 <span>/ˈbrɪt̬.əl/</span></span>
+            <button class="linkbtn">在阅读器里打开 →</button>
+          </div>
+
+          <section>
+            <div class="sechead">
+              <h3 class="sec">词在这里的意思</h3>
+              <button class="linkbtn">↻ 重新生成</button>
+            </div>
+            <p class="p13">易碎的、一受力就断的。这里不是说玻璃，是说她的语气——绷得太紧，随时会碎。</p>
+          </section>
+
+          <section>
+            <h3 class="sec">词典</h3>
+            <p class="p12">hard but easily broken; (of a voice or manner) tense and sharp, close to breaking.</p>
+          </section>
+
+          <section>
+            <h3 class="sec">书里的原句</h3>
+            <div class="quote"><p>“Her answer came back brittle, each word set down like a plate she was afraid to drop.”</p></div>
+          </section>
+
+          <section>
+            <h3 class="sec">在这个语境里</h3>
+            <p class="p12">形容<mark>语气</mark>而不是形容物件，是这个词最常被读漏的一层。她不是在生气，是在硬撑。</p>
+          </section>
+
+          <div class="foot"><span>收藏自《The Salt Line》</span><span>3 个月前</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="slot">
+      <div class="caption">之后 · 默认还是收起的 <em>← 推荐</em></div>
+      <p class="note">底部多一行，一行而已。列表还是能扫。</p>
+      <div class="surface">
+        <div class="vrow">
+          <span class="vword">brittle</span>
+          <span class="vgloss">易碎的；一碰就裂</span>
+          <span class="chip">学习中</span>
+        </div>
+        <div class="body">
+          <div class="toolbar">
+            <span class="speak">🔊 <span>/ˈbrɪt̬.əl/</span></span>
+            <button class="linkbtn">在阅读器里打开 →</button>
+          </div>
+
+          <section>
+            <div class="sechead">
+              <h3 class="sec">词在这里的意思</h3>
+              <button class="linkbtn">↻ 重新生成</button>
+            </div>
+            <p class="p13">易碎的、一受力就断的。这里不是说玻璃，是说她的语气——绷得太紧，随时会碎。</p>
+          </section>
+
+          <section>
+            <h3 class="sec">词典</h3>
+            <p class="p12">hard but easily broken; (of a voice or manner) tense and sharp, close to breaking.</p>
+          </section>
+
+          <section>
+            <h3 class="sec">书里的原句</h3>
+            <div class="quote"><p>“Her answer came back brittle, each word set down like a plate she was afraid to drop.”</p></div>
+          </section>
+
+          <section>
+            <h3 class="sec">在这个语境里</h3>
+            <p class="p12">形容<mark>语气</mark>而不是形容物件，是这个词最常被读漏的一层。她不是在生气，是在硬撑。</p>
+          </section>
+
+          <button class="snapbtn">
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            展开收藏时的卡片 <span class="cnt">还有 7 块</span>
+          </button>
+
+          <div class="foot"><span>收藏自《The Salt Line》</span><span>3 个月前</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="slot">
+      <div class="caption">点开的那一下 · 读取中</div>
+      <p class="note">卡片是单独一次查询（<code>get_vocab_card_snapshot</code>），不跟着列表一起加载，所以有极短的一帧。</p>
+      <div class="surface">
+        <div class="body" style="border-top:0">
+          <section>
+            <div class="sechead"><h3 class="sec">词在这里的意思</h3><button class="linkbtn">↻ 重新生成</button></div>
+            <p class="p13">易碎的、一受力就断的。这里不是说玻璃，是说她的语气——绷得太紧，随时会碎。</p>
+          </section>
+          <section>
+            <h3 class="sec">书里的原句</h3>
+            <div class="quote"><p>“Her answer came back brittle, each word set down like a plate she was afraid to drop.”</p></div>
+          </section>
+
+          <div class="snapwrap">
+            <div class="snapmeta">
+              <h3 class="sec">收藏时的卡片</h3>
+              <span class="when">读取中…</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div class="sk" style="width:38%"></div>
+              <div class="sk" style="width:92%"></div>
+              <div class="sk" style="width:74%"></div>
+              <div class="sk" style="width:31%;margin-top:6px"></div>
+              <div class="sk" style="width:86%"></div>
+            </div>
+          </div>
+
+          <div class="foot"><span>收藏自《The Salt Line》</span><span>3 个月前</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <b>为什么默认收起，而不是直接铺开。</b>
+    生词本是拿来<b>扫</b>的——一屏能看见几个词，决定了你会不会翻。整张卡片铺开是七八屏，一个词就把列表撑没了。
+    <br>所以：上面四段（意思 / 词典 / 原句 / 语境）是<b>每次都要看的</b>，保持原样；剩下的是<b>偶尔要查的</b>，收在一行后面。
+    「还有 7 块」这个数字是有用的——它让你知道底下确实有东西，不用点开赌一把。
+  </div>
+
+  <hr class="div">
+  <h2><span class="num">02</span>展开之后</h2>
+  <div class="row">
+    <div class="slot wide">
+      <div class="caption">之后 · 展开</div>
+      <p class="note">上面四段不变，展开的部分接在下面。已经显示过的两块（这里的意思、原文摘录）不重复出现。</p>
+      <div class="surface">
+        <div class="vrow">
+          <span class="vword">brittle</span>
+          <span class="vgloss">易碎的；一碰就裂</span>
+          <span class="chip">学习中</span>
+        </div>
+        <div class="body">
+          <div class="toolbar">
+            <span class="speak">🔊 <span>/ˈbrɪt̬.əl/</span></span>
+            <button class="linkbtn">在阅读器里打开 →</button>
+          </div>
+
+          <section>
+            <div class="sechead"><h3 class="sec">词在这里的意思</h3><button class="linkbtn">↻ 重新生成</button></div>
+            <p class="p13">易碎的、一受力就断的。这里不是说玻璃，是说她的语气——绷得太紧，随时会碎。</p>
+          </section>
+
+          <section>
+            <h3 class="sec">词典</h3>
+            <p class="p12">hard but easily broken; (of a voice or manner) tense and sharp, close to breaking.</p>
+          </section>
+
+          <section>
+            <h3 class="sec">书里的原句</h3>
+            <div class="quote"><p>“Her answer came back brittle, each word set down like a plate she was afraid to drop.”</p></div>
+          </section>
+
+          <section>
+            <h3 class="sec">在这个语境里</h3>
+            <p class="p12">形容<mark>语气</mark>而不是形容物件，是这个词最常被读漏的一层。她不是在生气，是在硬撑。</p>
+          </section>
+
+          <div class="snapwrap">
+            <div class="snapmeta">
+              <button class="snapbtn" style="border-top:0;padding-top:0;width:auto">
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                收藏时的卡片
+              </button>
+              <span class="when">2026 年 3 月 14 日存下的</span>
+            </div>
+
+            <div class="mod">
+              <div class="modhead">词形</div>
+              <p class="modsum">brittle · 形容词 · /ˈbrɪt̬.əl/ · 比较级 brittler，也常说 more brittle</p>
+            </div>
+
+            <div class="mod">
+              <div class="modhead">常见义项</div>
+              <div class="item">
+                <span class="ititle">硬而脆<span class="imeta">物件 · 最常见</span></span>
+                <p class="itext">受力不弯，直接断。骨头、塑料、干树枝。</p>
+                <div class="ex"><p class="src">The old tape had gone brittle and snapped.</p><p class="tgt">那卷旧磁带已经脆了，一拉就断。</p></div>
+              </div>
+              <div class="item">
+                <span class="ititle">绷得快碎的<span class="imeta">语气 / 神情</span></span>
+                <p class="itext">表面还撑着，里面已经到极限。这本书里用的是这个。</p>
+              </div>
+              <div class="item">
+                <span class="ititle">经不起变化的<span class="imeta">系统 / 关系 · 偏书面</span></span>
+                <p class="itext">看着能用，一改就塌。写代码的人会用这个词骂架构。</p>
+              </div>
+            </div>
+
+            <div class="mod">
+              <div class="modhead">常见搭配</div>
+              <ul class="modlist">
+                <li><b>brittle laugh / smile / voice</b> —— 撑出来的笑、绷住的声音，小说里的高频用法</li>
+                <li><b>brittle bones</b> —— 医学上的固定说法，骨质疏松</li>
+                <li><b>grow / become brittle</b> —— 强调「变脆」这个过程，不是本来就脆</li>
+              </ul>
+            </div>
+
+            <div class="mod">
+              <div class="modhead">构词</div>
+              <p class="modsum">古英语 <i>brēotan</i>「打碎」→ 中古英语 <i>britel</i>。同源的还有 <b>brittleness</b>（名词）。
+                注意 <b>-le</b> 这个尾巴常出现在「反复小动作」的词里：crackle、crumble、topple。</p>
+            </div>
+
+            <div class="mod">
+              <div class="modhead">语法角色</div>
+              <p class="modsum">典型的形容词，定语（a brittle voice）和表语（her voice was brittle）都行。
+                <b>没有</b>动词形式——想说「使变脆」要绕开，用 make ... brittle。</p>
+            </div>
+
+            <div class="mod">
+              <div class="modhead">近义 / 反义</div>
+              <ul class="modlist">
+                <li><b>fragile</b> —— 也是「易碎」，但强调<i>要小心轻放</i>；brittle 强调<i>不肯弯，直接断</i>。玻璃杯是 fragile，饼干是 brittle。</li>
+                <li><b>crisp</b> —— 同样是「脆」，但是褒义，指口感或空气。</li>
+                <li>反义：<b>flexible</b>（能弯）、<b>resilient</b>（弯了能弹回来）</li>
+              </ul>
+            </div>
+
+            <div class="mod">
+              <div class="modhead">怎么用</div>
+              <p class="modsum">形容人的时候几乎总是负面的，而且暗示<b>对方在硬撑</b>，不是在发火。
+                夸人「坚强」千万别用这个词。</p>
+            </div>
+
+            <div class="mod">
+              <div class="modhead">记忆法</div>
+              <p class="modsum">brittle ≈ <b>break + little</b>：一点点力就 break。
+                和 little 一起记，还能顺带记住它常修饰的是小东西、小动静——一声笑、一句话。</p>
+            </div>
+          </div>
+
+          <div class="foot"><span>收藏自《The Salt Line》</span><span>3 个月前</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <b>三个细节，看的时候留意一下。</b>
+    <ul>
+      <li><b>「2026 年 3 月 14 日存下的」</b>——这是快照，不是现在重新问出来的。上面点「重新生成」只会改最上面那段意思，<b>不会</b>动这张卡片。得让人一眼看出这两块不是同一个时间的东西，否则会以为界面自相矛盾。</li>
+      <li><b>不重复。</b>卡片里的「这里的意思」和「原文摘录」已经在上面显示过了，展开区里跳过；剩下 7 块按卡片原来的顺序排。</li>
+      <li><b>每块之间只有一条 1px 细线</b>，没有边框、没有底色块。这一屏已经够满了，再加容器就成了套娃。</li>
+    </ul>
+  </div>
+
+  <hr class="div">
+  <h2><span class="num">03</span>没有卡片的词</h2>
+  <div class="row">
+    <div class="slot">
+      <div class="caption">老词 · 收藏时还没有这个功能</div>
+      <p class="note">那一行<b>整个不出现</b>。不显示灰掉的按钮，也不写「无卡片」——对一个几个月前存的词来说，那是凭空多出来一句坏消息。</p>
+      <div class="surface">
+        <div class="vrow">
+          <span class="vword">languid</span>
+          <span class="vgloss">懒洋洋的；没力气的</span>
+          <span class="chip">新词</span>
+        </div>
+        <div class="body">
+          <div class="toolbar">
+            <span class="speak">🔊 <span>/ˈlæŋ.ɡwɪd/</span></span>
+            <button class="linkbtn">在阅读器里打开 →</button>
+          </div>
+          <section>
+            <div class="sechead"><h3 class="sec">词在这里的意思</h3><button class="linkbtn">↻ 重新生成</button></div>
+            <p class="p13">动作慢、提不起劲的样子。这里带点享受的意思，不是病恹恹。</p>
+          </section>
+          <section>
+            <h3 class="sec">书里的原句</h3>
+            <div class="quote"><p>“He gave the rope a languid tug and let the boat drift where it liked.”</p></div>
+          </section>
+          <div class="foot"><span>收藏自《The Salt Line》</span><span>7 个月前</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="slot">
+      <div class="caption">划词直接存的词</div>
+      <p class="note">没走 AI 卡片、直接从选词菜单存的，同样什么都不多出来。以后哪天再查这个词并收藏，卡片就补上了。</p>
+      <div class="surface">
+        <div class="vrow">
+          <span class="vword">tug</span>
+          <span class="vgloss">拽一下</span>
+          <span class="chip">新词</span>
+        </div>
+        <div class="body">
+          <div class="toolbar">
+            <span class="speak">🔊 <span>/tʌɡ/</span></span>
+            <button class="linkbtn">在阅读器里打开 →</button>
+          </div>
+          <section>
+            <div class="sechead"><h3 class="sec">词在这里的意思</h3><button class="linkbtn">↻ 重新生成</button></div>
+            <p class="p13">拽、拉一下，动作短。</p>
+          </section>
+          <section>
+            <h3 class="sec">书里的原句</h3>
+            <div class="quote"><p>“He gave the rope a languid tug and let the boat drift where it liked.”</p></div>
+          </section>
+          <div class="foot"><span>收藏自《The Salt Line》</span><span>7 个月前</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="slot">
+      <div class="caption">卡片存过、但读不出来</div>
+      <p class="note">硬盘出错、库被外部工具改坏这类。<b>只有这一种情况</b>才说话——因为这时候沉默会骗人：明明存过，却装作没有。</p>
+      <div class="surface">
+        <div class="body" style="border-top:0">
+          <section>
+            <div class="sechead"><h3 class="sec">词在这里的意思</h3><button class="linkbtn">↻ 重新生成</button></div>
+            <p class="p13">易碎的、一受力就断的。这里不是说玻璃，是说她的语气。</p>
+          </section>
+          <section>
+            <h3 class="sec">书里的原句</h3>
+            <div class="quote"><p>“Her answer came back brittle, each word set down like a plate she was afraid to drop.”</p></div>
+          </section>
+          <div class="snapwrap">
+            <div class="snapmeta"><h3 class="sec">收藏时的卡片</h3></div>
+            <p class="p12" style="color:var(--warning)">这张卡片读不出来了。上面几段是另外存的，不受影响。</p>
+          </div>
+          <div class="foot"><span>收藏自《The Salt Line》</span><span>3 个月前</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="div">
+  <h2><span class="num">04</span>深色</h2>
+  <div class="darkpane dark">
+    <div class="row" style="margin-top:0">
+      <div class="slot">
+        <div class="surface">
+          <div class="vrow">
+            <span class="vword">brittle</span>
+            <span class="vgloss">易碎的；一碰就裂</span>
+            <span class="chip">学习中</span>
+          </div>
+          <div class="body">
+            <section>
+              <div class="sechead"><h3 class="sec">词在这里的意思</h3><button class="linkbtn">↻ 重新生成</button></div>
+              <p class="p13">易碎的、一受力就断的。这里不是说玻璃，是说她的语气——绷得太紧，随时会碎。</p>
+            </section>
+            <section>
+              <h3 class="sec">书里的原句</h3>
+              <div class="quote"><p>“Her answer came back brittle, each word set down like a plate she was afraid to drop.”</p></div>
+            </section>
+            <button class="snapbtn">
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+              展开收藏时的卡片 <span class="cnt">还有 7 块</span>
+            </button>
+            <div class="foot"><span>收藏自《The Salt Line》</span><span>3 个月前</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="slot">
+        <div class="surface">
+          <div class="body" style="border-top:0">
+            <section>
+              <div class="sechead"><h3 class="sec">词在这里的意思</h3><button class="linkbtn">↻ 重新生成</button></div>
+              <p class="p13">易碎的、一受力就断的。这里不是说玻璃，是说她的语气。</p>
+            </section>
+            <div class="snapwrap">
+              <div class="snapmeta">
+                <button class="snapbtn" style="border-top:0;padding-top:0;width:auto">
+                  <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                  收藏时的卡片
+                </button>
+                <span class="when">2026 年 3 月 14 日存下的</span>
+              </div>
+              <div class="mod">
+                <div class="modhead">词形</div>
+                <p class="modsum">brittle · 形容词 · /ˈbrɪt̬.əl/ · 比较级 brittler，也常说 more brittle</p>
+              </div>
+              <div class="mod">
+                <div class="modhead">常见搭配</div>
+                <ul class="modlist">
+                  <li><b>brittle laugh / smile / voice</b> —— 撑出来的笑、绷住的声音</li>
+                  <li><b>brittle bones</b> —— 医学上的固定说法，骨质疏松</li>
+                </ul>
+              </div>
+              <div class="mod">
+                <div class="modhead">记忆法</div>
+                <p class="modsum">brittle ≈ <b>break + little</b>：一点点力就 break。</p>
+              </div>
+            </div>
+            <div class="foot"><span>收藏自《The Salt Line》</span><span>3 个月前</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="div">
+  <h2><span class="num">05</span>要你拍板的三件事</h2>
+  <div class="legend" style="max-width:780px">
+    <ul>
+      <li><b>展开状态记不记住？</b> 我的推荐是<b>记住</b>——一个全局开关，你展开过一次，以后每个词打开都是展开的。理由：会想看整张卡片的人，是每个词都想看；只想扫一眼的人，一次都不会点。不做「每个词各记各的」，那种状态多到自己都忘了。</li>
+      <li><b>复习卡片里要不要也出现？</b> 我的推荐是<b>不要</b>。复习是回想，不是重读；把卡片塞进复习里，等于给了个偷看的口子。想看就到生词本里看。</li>
+      <li><b>「重新生成」要不要连卡片一起重来？</b> 我的推荐是<b>不要，但另加一个入口</b>——展开区底部一个「重问一次」，明确说清是花钱重新生成整张卡片，并且会覆盖当时那张。现在的「重新生成」只改最上面那一句、便宜，两者混在一起会让人不敢点。<b>这个新入口本身要不要做，是第二个问题</b>，可以先不做，只做展示。</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>
