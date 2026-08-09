@@ -820,6 +820,7 @@ pub fn run() {
             commands::coverage::compute_book_coverage,
             commands::coverage::get_vocab_profile,
             commands::coverage::get_book_unknown_words,
+            commands::coverage::preview_vocab_profile_clear,
             commands::coverage::clear_vocab_profile,
             // Local reading history and optional AI prose (never synced)
             commands::reading_stats::record_reading_session,

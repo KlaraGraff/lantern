@@ -467,3 +467,69 @@ fn an_untouched_device_reports_nothing_rather_than_zeroes_it_invented() {
     assert_eq!(summary, VocabProfileSummary::default());
     assert_eq!(summary.updated_at, None);
 }
+
+/// The dialog's two columns, checked against what the delete actually does
+/// rather than against the intention behind it: a promise that the word list
+/// survives is only worth the row count that is still there afterwards.
+#[test]
+fn the_clearing_dialog_counts_what_the_clear_really_takes_and_leaves() {
+    let (_directory, db) = test_db();
+    insert_book(&db, "book", "Book", 0);
+    // Two tiers the scorer set, one the reader set themselves.
+    insert_vocab(&db, "auto-1", "gam", "familiar", Some(2.5));
+    insert_vocab(&db, "auto-2", "davit", "mastered", Some(6.0));
+    insert_vocab(&db, "mine", "scrimshaw", "mastered", None);
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE vocab_words SET mastery_source = 'auto' WHERE id LIKE 'auto-%'",
+            [],
+        )
+        .unwrap();
+    insert_exposure(&db, "e1", "book", "gam", 4);
+    insert_exposure(&db, "e2", "book", "davit", 3);
+    store(
+        &db,
+        "book",
+        CoverageStatus::Done,
+        &CoverageTally::default(),
+        None,
+        Some("sha"),
+        None,
+    )
+    .unwrap();
+
+    let preview = load_clear_preview(&db).unwrap();
+    assert_eq!(preview.auto_mastery_words, 2);
+    assert_eq!(preview.exposure_records, 2);
+    assert_eq!(preview.computed_books, 1);
+    assert_eq!(preview.manual_words, 1);
+    assert_eq!(preview.vocab_words, 3);
+
+    let cleared = clear_vocab_profile_inner(&db, "device", 99, |_, _| {}).unwrap();
+    assert_eq!(cleared, preview.exposure_records);
+
+    let after = load_clear_preview(&db).unwrap();
+    assert_eq!(after.auto_mastery_words, 0);
+    assert_eq!(after.exposure_records, 0);
+    assert_eq!(after.computed_books, 0);
+    // The reader's own tier survives, and so does every word in the list.
+    assert_eq!(after.manual_words, 1);
+    assert_eq!(after.vocab_words, 3);
+}
+
+/// A device with nothing on it must not offer a dialog full of zeroes as if
+/// they were losses.
+#[test]
+fn there_is_nothing_to_lose_on_a_device_that_has_read_nothing() {
+    let (_directory, db) = test_db();
+
+    let preview = load_clear_preview(&db).unwrap();
+
+    assert_eq!(preview.auto_mastery_words, 0);
+    assert_eq!(preview.exposure_records, 0);
+    assert_eq!(preview.computed_books, 0);
+    assert_eq!(preview.manual_words, 0);
+    assert_eq!(preview.vocab_words, 0);
+}

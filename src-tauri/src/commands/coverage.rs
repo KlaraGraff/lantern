@@ -1008,6 +1008,50 @@ pub fn get_book_unknown_words(
     load_unknown_words(&db, &book_id, count_familiar)
 }
 
+/// What the clearing dialog puts in its two columns (09).
+///
+/// Counted rather than described, because "会被清除 / 不受影响" is a promise
+/// about this particular database and a reader with 214 682 exposure rows is
+/// owed the number before they press the button, not a category name. The
+/// spared column is not decoration: the single most common fear here is that
+/// the word list goes with it, and the only convincing answer is its size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VocabProfileClearPreview {
+    /// Words carrying an automatically-scored tier — the `mastery_progress`
+    /// rows, all of which go.
+    pub auto_mastery_words: i64,
+    /// Rows in `reading_word_exposures`; the batched part of the delete.
+    pub exposure_records: i64,
+    /// Books with a coverage result that will have to be computed again.
+    pub computed_books: i64,
+    /// Tiers the reader set themselves. Untouched, and the reason the dialog
+    /// has a second column at all.
+    pub manual_words: i64,
+    /// Words in the confirmed word list. Untouched.
+    pub vocab_words: i64,
+}
+
+pub fn load_clear_preview(db: &Db) -> AppResult<VocabProfileClearPreview> {
+    let conn = db.reader();
+    let one = |sql: &str| -> AppResult<i64> { Ok(conn.query_row(sql, [], |row| row.get(0))?) };
+    Ok(VocabProfileClearPreview {
+        auto_mastery_words: one("SELECT COUNT(*) FROM mastery_progress")?,
+        exposure_records: one("SELECT COUNT(*) FROM reading_word_exposures")?,
+        computed_books: one("SELECT COUNT(*) FROM book_reader_coverage WHERE status = 'done'")?,
+        manual_words: one(
+            "SELECT COUNT(*) FROM vocab_words
+              WHERE mastery_source <> 'auto' AND mastery <> 'new'",
+        )?,
+        vocab_words: one("SELECT COUNT(*) FROM vocab_words WHERE list_status = 'confirmed'")?,
+    })
+}
+
+#[tauri::command]
+pub fn preview_vocab_profile_clear(db: State<'_, Db>) -> AppResult<VocabProfileClearPreview> {
+    load_clear_preview(&db)
+}
+
 /// Where the clearing dialog's progress and completion arrive (09b).
 pub const CLEAR_PROGRESS_EVENT: &str = "vocab-profile-clear-progress";
 
