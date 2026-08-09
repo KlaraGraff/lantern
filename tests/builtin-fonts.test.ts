@@ -12,8 +12,10 @@ import test from "node:test";
   location: { origin: "http://localhost:1420", href: "http://localhost:1420/reader/42" },
 };
 
-const { builtinFontFaceCss, builtinFonts } = await import("../src/components/builtin-fonts.ts");
-const { fonts, getFontFamily } = await import("../src/components/reader-settings.ts");
+const { builtinFontFaceCss, builtinFonts, cjkFontFaceCss, CJK_SERIF, CJK_SANS } =
+  await import("../src/components/builtin-fonts.ts");
+const { fonts, cjkFonts, getFontFamily } = await import("../src/components/reader-settings.ts");
+type ReaderFont = Parameters<typeof getFontFamily>[0];
 
 const fontsDir = path.join(fileURLToPath(new URL(".", import.meta.url)), "../public/fonts");
 const onDisk = readdirSync(fontsDir).filter((name) => name.endsWith(".woff2"));
@@ -89,7 +91,7 @@ test("built-in fonts reach the reader picker with a quoted family and a fallback
   }
 });
 
-test("every chain names a CJK face instead of leaving Chinese to the generic keyword", () => {
+test("every chain names an isolated CJK face instead of leaving Chinese to the generic keyword", () => {
   // No face the picker offers has a CJK glyph — not the bundled ones, and not
   // Georgia, Palatino or Times either — so Chinese always falls through.
   // Unnamed, that lands on SimSun under Windows, which goes soft at reading
@@ -98,18 +100,101 @@ test("every chain names a CJK face instead of leaving Chinese to the generic key
   assert.ok(offered.length > builtinFonts.length, "expected system faces alongside the bundled ones");
   for (const font of offered) {
     const stack = getFontFamily(font.id);
-    const expected = stack.includes("serif") && !stack.includes("sans-serif")
-      ? ["Songti SC", "SimSun"]
-      : ["PingFang SC", "Microsoft YaHei"];
-    for (const face of expected) {
-      assert.ok(stack.includes(face), `${font.label} chain is missing ${face}: ${stack}`);
-    }
-    // The named faces have to precede the generic keyword, or it never gets there.
+    const expected = stack.includes("serif") && !stack.includes("sans-serif") ? CJK_SERIF : CJK_SANS;
+    assert.ok(stack.includes(expected), `${font.label} chain is missing ${expected}: ${stack}`);
+    // The named face has to precede the generic keyword, or it never gets there.
     const generic = stack.includes("sans-serif") ? "sans-serif" : "serif";
     assert.ok(
-      stack.indexOf(expected[0]) < stack.lastIndexOf(generic),
+      stack.indexOf(expected) < stack.lastIndexOf(generic),
       `${font.label} names a CJK face after the generic keyword: ${stack}`,
     );
+  }
+});
+
+test("no Latin chain names a bare system CJK face ahead of the generic keyword", () => {
+  // This is the bug the unicode-range isolation fixes: `Georgia, "Songti SC",
+  // serif` matches per character, so on a machine missing Georgia the Latin
+  // letters fall to Songti's own (thin, badly-spaced) Latin glyphs instead of
+  // the `serif` keyword. Only the fenced wrapper family (`CJK_SERIF` /
+  // `CJK_SANS`, already asserted present above) may appear — never the raw
+  // system face names the wrapper's `@font-face` resolves to internally.
+  const rawSystemFaces = ["Songti SC", "SimSun", "PingFang SC", "Microsoft YaHei"];
+  for (const font of fonts.filter((entry) => entry.group !== "custom")) {
+    const stack = getFontFamily(font.id);
+    for (const raw of rawSystemFaces) {
+      assert.ok(!stack.includes(raw), `${font.label} chain names the bare system face "${raw}": ${stack}`);
+    }
+  }
+});
+
+test("getFontFamily's two-argument form orders Latin, then CJK, then the generic keyword", () => {
+  const georgiaSystemSans = getFontFamily("georgia", "system-sans");
+  assert.equal(georgiaSystemSans, `Georgia, ${CJK_SANS}, serif`);
+  assert.ok(georgiaSystemSans.indexOf("Georgia") < georgiaSystemSans.indexOf(CJK_SANS));
+  assert.ok(georgiaSystemSans.indexOf(CJK_SANS) < georgiaSystemSans.lastIndexOf("serif"));
+
+  // Omitting cjkId keeps the baked-in chain, so the single-argument call sites
+  // in marker-style.ts and useFoliateAnnotations.ts render exactly as before.
+  assert.equal(getFontFamily("inter"), `"Inter", system-ui, ${CJK_SANS}, sans-serif`);
+});
+
+test("the Chinese setting wins over the Latin font's own CJK pairing", () => {
+  // The baked-in CJK segment tracks the Latin font — sans for Inter, serif for
+  // Georgia. Once the two are set separately, that pairing must not leak: the
+  // label says 系统宋体, so picking it has to produce the serif face even on a
+  // sans Latin font, and the Chinese font must not shift when the Latin one does.
+  assert.equal(getFontFamily("inter", "system"), `"Inter", system-ui, ${CJK_SERIF}, sans-serif`);
+  assert.equal(getFontFamily("georgia", "system"), `Georgia, ${CJK_SERIF}, serif`);
+
+  const cjkOf = (stack: string) => (stack.includes(CJK_SERIF) ? "serif" : "sans");
+  for (const latin of ["inter", "georgia", "literata", "system"] as const) {
+    assert.equal(cjkOf(getFontFamily(latin, "system")), "serif", `${latin} + system should be serif`);
+    assert.equal(cjkOf(getFontFamily(latin, "system-sans")), "sans", `${latin} + system-sans should be sans`);
+  }
+});
+
+test("an imported Latin font still leaves a CJK slot for the Chinese setting to fill", () => {
+  // A custom chain used to be `<custom>, serif` with no CJK segment at all, so
+  // the splice had nothing to replace and the Chinese picker silently did
+  // nothing for anyone reading in an imported font.
+  const stack = getFontFamily("custom-1234" as ReaderFont, "system-sans");
+  assert.ok(stack.includes(CJK_SANS), `custom chain dropped the Chinese selection: ${stack}`);
+  assert.ok(stack.indexOf(CJK_SANS) < stack.lastIndexOf("serif"), `CJK must precede the generic keyword: ${stack}`);
+});
+
+test("the enhanced CJK option leads its chain, with the system face behind it as fallback", () => {
+  const chain = cjkFonts.find((font) => font.id === "enhanced")?.family;
+  assert.ok(chain, "expected an \"enhanced\" entry in cjkFonts");
+  assert.ok(chain!.includes(CJK_SERIF), `enhanced chain is missing the system serif fallback: ${chain}`);
+  assert.ok(chain!.includes("Lantern Enhanced Chinese Serif"), `enhanced chain is missing the pack: ${chain}`);
+  // Both faces are fenced to the same CJK codepoints, so whichever is listed
+  // first wins every character they share. Behind the system face the pack
+  // would only surface for glyphs the OS lacks — an option that visibly did
+  // nothing for the reader who deliberately downloaded it.
+  assert.ok(
+    chain!.indexOf("Lantern Enhanced Chinese Serif") < chain!.indexOf(CJK_SERIF),
+    `the enhanced pack must precede the system CJK family: ${chain}`,
+  );
+
+  // Spliced into an actual Latin chain, the same order has to survive: Latin
+  // family, the pack, the system CJK fallback, then the generic keyword.
+  const stack = getFontFamily("georgia", "enhanced");
+  assert.equal(stack, `Georgia, "Lantern Enhanced Chinese Serif", ${CJK_SERIF}, serif`);
+});
+
+test("cjkFontFaceCss declares both isolated wrapper faces with a CJK-only unicode-range", () => {
+  const css = cjkFontFaceCss();
+  assert.equal(css.split("@font-face").length - 1, 2, "expected exactly the serif and sans wrapper faces");
+  for (const family of [CJK_SERIF, CJK_SANS]) {
+    assert.ok(css.includes(`font-family: ${family}`), `cjkFontFaceCss is missing ${family}`);
+  }
+  // Every rule fences itself to CJK-ish codepoints, never the full Unicode
+  // range a plain `local()` face would otherwise be free to claim.
+  const ranges = [...css.matchAll(/unicode-range: ([^;]+);/g)].map((match) => match[1]);
+  assert.equal(ranges.length, 2);
+  for (const range of ranges) {
+    assert.ok(range.includes("U+2E80-9FFF"), `unicode-range missing the CJK block: ${range}`);
+    assert.ok(!range.includes("U+0000"), `unicode-range should not claim the Latin block: ${range}`);
   }
 });
 

@@ -8,6 +8,11 @@ import {
   getReaderMeasure,
   getThemeStyles,
 } from "../../components/reader-settings";
+import {
+  AUTO_LINE_SPACING_CJK,
+  AUTO_LINE_SPACING_LATIN,
+  isAutoLineSpacing,
+} from "../../components/reader-paragraph-settings";
 import { prefersReducedMotion } from "../../components/page-turn-transition";
 import {
   READER_STYLESHEET_MARKER,
@@ -163,19 +168,56 @@ export function getReaderThemeVars(theme: string, customTheme?: ReaderCustomThem
 // `fontSize` is passed separately because the rendered size can be smaller than
 // the stored one on a narrow viewport (see getReaderMeasure). Callers that know
 // the viewport pass the resolved size; the rest fall back to the stored one.
+// The "auto" line-spacing default splits by script (AUTO_LINE_SPACING_LATIN /
+// _CJK). Here the split is expressed with `:lang()` rather than by resolving
+// the book's language in JS, because `:lang()` resolves per element: a Chinese
+// block quote inside an English book picks up the CJK leading on its own, and
+// vice versa. `resolveLineSpacing` is for the surfaces that have no DOM
+// language markup to read (the .txt reader).
+const CJK_LANG_SELECTOR = ":lang(zh), :lang(ja), :lang(ko)";
+
 export function getReaderCSS(
   settings: ReaderSettingsState,
   fontSize: number = settings.fontSize,
 ): string {
   const themeColors = getThemeStyles(settings.theme, settings.customTheme);
-  const fontFamily = getFontFamily(settings.font);
+  const fontFamily = getFontFamily(settings.font, settings.cjkFont);
   const letterSpacing = settings.charSpacing === 0 ? "normal" : `${settings.charSpacing * 0.01}em`;
   const wordSpacing = settings.wordSpacing === 0 ? "normal" : `${settings.wordSpacing * 0.01}em`;
   const paragraphTypographyCss = getParagraphTypographyCSS(settings);
+  const autoLineSpacing = isAutoLineSpacing(settings.lineSpacing);
+  const baseLineHeight = autoLineSpacing
+    ? String(AUTO_LINE_SPACING_LATIN)
+    : String(settings.lineSpacing);
+  // `:lang()` has class-level specificity (0,1,0), so it outranks the bare
+  // `body` / `p, span, div, …` type selectors above it and does not need
+  // `!important` to fight them — but both carry `!important` already, and
+  // within one origin `!important` is settled by specificity, so the
+  // higher-specificity `:lang()` rule wins. It is emitted *before* the drop-cap
+  // rule, which is (0,1,1) and therefore still wins over it on both counts.
+  const autoLineHeightCss = autoLineSpacing ? `
+    ${CJK_LANG_SELECTOR} {
+      line-height: ${AUTO_LINE_SPACING_CJK} !important;
+    }
+  ` : "";
   const chapterBreakCss = settings.readingMode === "paginated" ? `
     [data-lantern-chapter-start] {
       break-before: column !important;
       page-break-before: always !important;
+    }
+    /* In a column, a single line stranded at a column boundary reads as a
+       mistake. Two-line minimums are the Western convention; CJK has no such
+       taboo, and in a narrow column forcing two lines shunts whole paragraphs
+       to the next column for nothing — so CJK keeps the single-line minimum.
+       Both properties are inherited, so the :lang() rule (specificity
+       (0,1,0)) overrides the type-selector rule above it for CJK content. */
+    p, div, li, dd, blockquote, td {
+      orphans: 2;
+      widows: 2;
+    }
+    ${CJK_LANG_SELECTOR} {
+      orphans: 1;
+      widows: 1;
     }
   ` : "";
   return `
@@ -185,7 +227,7 @@ export function getReaderCSS(
       color: ${themeColors.text} !important;
       font-family: ${fontFamily} !important;
       font-size: ${fontSize}px !important;
-      line-height: ${settings.lineSpacing} !important;
+      line-height: ${baseLineHeight} !important;
       letter-spacing: ${letterSpacing} !important;
       word-spacing: ${wordSpacing} !important;
       text-wrap: pretty;
@@ -193,9 +235,10 @@ export function getReaderCSS(
     p, span, div, li, td, th, h1, h2, h3, h4, h5, h6 {
       color: ${themeColors.text} !important;
       font-family: ${fontFamily} !important;
-      line-height: ${settings.lineSpacing} !important;
+      line-height: ${baseLineHeight} !important;
     }
-    /* Publisher drop caps (marked by markTypographyDropCapParagraphs, which
+    ${autoLineHeightCss}
+    /* Publisher drop caps (marked by stampPublisherTypography, which
        captures the true value before this stylesheet is live) keep their
        original first-letter line-height instead of the forced one above —
        an oversized floated letter needs a tight line-height to sit level
@@ -253,7 +296,7 @@ export function getReaderCSS(
 // following `getReaderCSS`'s reader-configured ones.
 export function getFootnoteCSS(settings: ReaderSettingsState): string {
   const themeColors = getThemeStyles(settings.theme, settings.customTheme);
-  const fontFamily = getFontFamily(settings.font);
+  const fontFamily = getFontFamily(settings.font, settings.cjkFont);
   return `
     html, body {
       margin: 0 !important;

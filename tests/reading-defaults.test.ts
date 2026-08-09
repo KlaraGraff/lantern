@@ -16,6 +16,7 @@ const defaults = {
   theme: "sepia",
   customTheme: { background: "#ffffff", text: "#111111" },
   font: "palatino",
+  cjkFont: "system-sans",
   fontSize: 26,
   narrowFontShrink: true,
   readingMode: "scrolling",
@@ -26,7 +27,7 @@ const defaults = {
   showPageNumbers: false,
   previousPageBinding: "ArrowLeft",
   nextPageBinding: "ArrowRight",
-  lineSpacing: 1.8,
+  lineSpacing: "auto",
   charSpacing: 0,
   wordSpacing: 0,
   textJustification: false,
@@ -52,7 +53,10 @@ test("the values come from the reader's own defaults, not a second table", () =>
   const rows = buildReadingDefaultSettings(defaults);
   assert.equal(rows.font_size, "26");
   assert.equal(rows.reader_theme, "sepia");
-  assert.equal(rows.line_spacing, "1.8");
+  // The auto sentinel has to survive the reset too: writing a number here
+  // would take every install off the per-script default on first reset.
+  assert.equal(rows.line_spacing, "auto");
+  assert.equal(rows.cjk_font_family, "system-sans");
   assert.equal(rows.narrow_font_shrink, "true");
   assert.equal(rows.show_book_progress, "false");
   assert.equal(rows.page_columns, "2");

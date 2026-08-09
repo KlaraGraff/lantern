@@ -13,6 +13,7 @@ const previous: ReaderSettingsState = {
   theme: "paper",
   customTheme: { color: "#DDE8D8", opacity: 70 },
   font: "palatino",
+  cjkFont: "system",
   fontSize: 26,
   narrowFontShrink: true,
   readingMode: "scrolling",
@@ -352,4 +353,25 @@ test("rendition layout does not downgrade PDF, text, or reflowable EPUB", () => 
   assert.equal(getReaderCapabilities("text", "pre-paginated").supportsReflowSettings, true);
   assert.equal(getReaderCapabilities("epub", "reflowable").supportsReflowSettings, true);
   assert.equal(getReaderCapabilities("epub").supportsReflowSettings, true);
+});
+
+test("the auto line spacing sentinel survives the merge at both layers", () => {
+  // `"auto"` is stored as a literal string. A merge that ran it through a
+  // numeric parser would read it as unparseable, fall through to `previous`,
+  // and quietly take the install off the per-script default for good.
+  assert.equal(merge({ line_spacing: "auto" }).lineSpacing, "auto");
+  assert.equal(merge({ line_spacing: "1.5" }, { line_spacing: "auto" }).lineSpacing, "auto");
+  assert.equal(merge({ line_spacing: "auto" }, { line_spacing: "2.4" }).lineSpacing, 2.4);
+});
+
+test("the Chinese font is global-only — a book_settings row cannot override it", () => {
+  assert.equal(merge({ cjk_font_family: "enhanced" }).cjkFont, "enhanced");
+  // No per-book layer by design: it would need `reader_global_key()` in
+  // `commands/settings.rs` taught about the key, and "which Chinese face" is
+  // not a per-book decision the way font size or margins are.
+  assert.equal(merge({}, { cjk_font_family: "enhanced" }).cjkFont, previous.cjkFont);
+});
+
+test("without any row the Chinese font stays where it was", () => {
+  assert.equal(merge().cjkFont, previous.cjkFont);
 });

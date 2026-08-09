@@ -16,6 +16,16 @@ import {
   type ReaderCustomTheme,
   type ReaderTheme,
 } from "../reader-settings";
+import { getReaderCjkFontOptions } from "../reader-cjk-font-options";
+import {
+  AUTO_LINE_SPACING_THUMB,
+  isAutoLineSpacing,
+  paragraphStyleMode,
+  parseLineSpacing,
+  withFirstLineIndent,
+  withParagraphSpacing,
+  type LineSpacing,
+} from "../reader-paragraph-settings";
 import { loadCustomFonts, type CustomFontRecord } from "../custom-fonts";
 import { notifyReadingAssistanceSettingsChanged } from "../reading-assistance-events";
 import { ROW_CONTROL_WIDTH, type SettingsProps } from "./types";
@@ -154,9 +164,10 @@ export default function ReadingSettings({
   const [readerTheme, setReaderTheme] = useState<ReaderTheme>(getDefaultReaderTheme());
   const [customTheme, setCustomTheme] = useState<ReaderCustomTheme>(() => parseReaderCustomTheme(null));
   const [fontFamily, setFontFamily] = useState("georgia");
+  const [cjkFontFamily, setCjkFontFamily] = useState("system");
   const [fontSize, setFontSize] = useState(26);
   const [narrowFontShrink, setNarrowFontShrink] = useState(true);
-  const [lineSpacing, setLineSpacing] = useState(1.8);
+  const [lineSpacing, setLineSpacing] = useState<LineSpacing>("auto");
   const [charSpacing, setCharSpacing] = useState(0);
   const [wordSpacing, setWordSpacing] = useState(0);
   const [textJustification, setTextJustification] = useState(false);
@@ -223,6 +234,9 @@ export default function ReadingSettings({
         case "fontFamily":
           if (values.font_family) setFontFamily(values.font_family);
           break;
+        case "cjkFontFamily":
+          if (values.cjk_font_family) setCjkFontFamily(values.cjk_font_family);
+          break;
         case "fontSize":
           if (values.font_size) setFontSize(parseInt(values.font_size));
           break;
@@ -230,7 +244,7 @@ export default function ReadingSettings({
           setNarrowFontShrink(values.narrow_font_shrink !== "false");
           break;
         case "lineSpacing":
-          if (values.line_spacing) setLineSpacing(parseFloat(values.line_spacing));
+          if (values.line_spacing) setLineSpacing(parseLineSpacing(values.line_spacing));
           break;
         case "charSpacing":
           if (values.char_spacing) setCharSpacing(parseInt(values.char_spacing));
@@ -520,6 +534,21 @@ export default function ReadingSettings({
           options={fontOptions}
         />
       </div>
+      {/* 中文字体 —— 和西文分开选。CSS 的字体匹配是逐字符的，一条链里排在
+          通用关键字前面的中文字族会抢走它能渲染的西文字符，所以两边必须各自
+          成链，不能共用一个下拉。 */}
+      <div className="flex items-center justify-between min-h-[73px] py-3">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.cjkFontFamily")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.cjkFontFamilyHint")}</p>
+        </div>
+        <Select
+          className={ROW_CONTROL_WIDTH}
+          value={cjkFontFamily}
+          onChange={(v) => { setCjkFontFamily(v); void persist({ cjk_font_family: v }); showSavedToast(); }}
+          options={getReaderCjkFontOptions(t)}
+        />
+      </div>
       <EnhancedFontSettings />
       {/* Importing needs a native file picker. Without one there is no way to
           put a font here, so the whole group goes rather than leaving a list
@@ -638,13 +667,40 @@ export default function ReadingSettings({
           }}
         />
       </div>
-      {/* Line Spacing */}
+      {/* Line Spacing —— 默认「自动」，按脚本分（中文 1.8 / 西文 1.6）。数字
+          框没法表达「自动」，所以自动态下它显示两个默认值之间的落点，右边挂
+          一句说明；一旦手输数字就接管成具体值，再想回自动点行尾的链接。 */}
       <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>
           <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.layout.lineSpacing")}</p>
-          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.layout.lineSpacingHint")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">
+            {isAutoLineSpacing(lineSpacing) ? t("settings.layout.lineSpacingAutoHint") : t("settings.layout.lineSpacingHint")}
+          </p>
+          {!isAutoLineSpacing(lineSpacing) && (
+            <button
+              type="button"
+              className="mt-1 text-[12px] text-accent-text underline underline-offset-2"
+              onClick={() => { setLineSpacing("auto"); void persist({ line_spacing: "auto" }); showSavedToast(); }}
+            >
+              {t("settings.layout.lineSpacingUseAuto")}
+            </button>
+          )}
         </div>
-        <NumberInput value={lineSpacing} onChange={setLineSpacing} {...numberRow("line_spacing", lineSpacing)} suffix="x" min={1} max={3} />
+        <NumberInput
+          value={isAutoLineSpacing(lineSpacing) ? AUTO_LINE_SPACING_THUMB : lineSpacing}
+          onChange={setLineSpacing}
+          onFocus={() => setFocusedNumberKey("line_spacing")}
+          // 不能借 `numberRow`：它在 blur 时无条件写下渲染时的那个数字，而自动
+          // 态渲染出来的是落点值。只是点进框里再点出去，就会把「自动」悄悄写成
+          // 1.7。只有真的改成了数字才落盘。
+          onBlur={() => {
+            setFocusedNumberKey(null);
+            if (!isAutoLineSpacing(lineSpacing)) void persist({ line_spacing: String(lineSpacing) });
+          }}
+          suffix="x"
+          min={1}
+          max={3}
+        />
       </div>
       {/* Character Spacing */}
       <div className="flex items-center justify-between min-h-[73px] py-3">
@@ -679,7 +735,14 @@ export default function ReadingSettings({
           <div className="mt-2 grid grid-cols-4 gap-1 rounded-lg bg-bg-input p-1" role="group" aria-label={t("settings.layout.paragraphSpacing")}>
             {(["none", "compact", "comfortable", "loose"] as const).map((value) => (
               <button key={value} type="button" aria-pressed={paragraphSpacing === value} onClick={() => {
-                setParagraphSpacing(value); void persist({ paragraph_spacing: value }); showSavedToast();
+                const next = withParagraphSpacing(value, { paragraphSpacing, firstLineIndent });
+                setParagraphSpacing(next.paragraphSpacing);
+                setFirstLineIndent(next.firstLineIndent);
+                void persist({
+                  paragraph_spacing: next.paragraphSpacing,
+                  first_line_indent: String(next.firstLineIndent),
+                });
+                showSavedToast();
               }} className={`h-8 rounded-md text-[12px] ${paragraphSpacing === value ? "bg-bg-surface font-medium text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"}`}>
                 {t(`readerSettings.paragraphSpacing.${value}`)}
               </button>
@@ -693,9 +756,25 @@ export default function ReadingSettings({
             <p className="mt-0.5 text-[12px] text-text-muted">{t("settings.layout.firstLineIndentHint")}</p>
           </div>
           <Toggle label={t("settings.layout.firstLineIndent")} checked={firstLineIndent} onChange={(value) => {
-            setFirstLineIndent(value); void persist({ first_line_indent: String(value) }); showSavedToast();
+            const next = withFirstLineIndent(value, { paragraphSpacing, firstLineIndent });
+            setFirstLineIndent(next.firstLineIndent);
+            setParagraphSpacing(next.paragraphSpacing);
+            void persist({
+              first_line_indent: String(next.firstLineIndent),
+              paragraph_spacing: next.paragraphSpacing,
+            });
+            showSavedToast();
           }} />
         </div>
+        {/* 互斥说明。不禁用对方控件——禁用会读成「坏了」；直接改掉再解释一句，
+            用户能看懂刚才发生了什么。 */}
+        {paragraphStyleMode({ paragraphSpacing, firstLineIndent }) !== "neutral" && (
+          <p className="mt-2 text-[12px] leading-[18px] text-text-muted">
+            {t(paragraphStyleMode({ paragraphSpacing, firstLineIndent }) === "indent"
+              ? "settings.layout.paragraphExclusive.indent"
+              : "settings.layout.paragraphExclusive.spacing")}
+          </p>
+        )}
       </div>
       <div className="flex items-center justify-between min-h-[73px] py-3">
         <div>

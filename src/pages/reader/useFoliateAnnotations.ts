@@ -814,7 +814,10 @@ export function useFoliateAnnotations({
     const css = wordMarkerCss(
       markerStyle,
       automaticStyle,
-      getFontFamily(readerSettingsRef.current.font),
+      // The marker's own font is meant to be the reading font, so it has to
+      // follow the Chinese half of the pair too — otherwise a marked Chinese
+      // word renders in a different face from the sentence around it.
+      getFontFamily(readerSettingsRef.current.font, readerSettingsRef.current.cjkFont),
     );
     for (const { doc, index } of view.renderer?.getContents?.() ?? []) {
       if (!doc || typeof index !== "number") continue;

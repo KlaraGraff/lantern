@@ -22,6 +22,7 @@ import {
   isReaderFontAvailable,
   parseReaderCustomTheme,
 } from "../../components/reader-settings.ts";
+import { parseLineSpacing } from "../../components/reader-paragraph-settings.ts";
 import {
   DEFAULT_NEXT_PAGE_BINDING,
   DEFAULT_PREVIOUS_PAGE_BINDING,
@@ -58,6 +59,10 @@ export const readerPreferenceSettingKeys = {
   previousPageBinding: "previous_page_binding",
   nextPageBinding: "next_page_binding",
   narrowFontShrink: "narrow_font_shrink",
+  // 全局专属，没有 per-book 行——per-book 会牵动 `commands/settings.rs` 的
+  // `reader_global_key()` 提升映射，而「这本书用哪款中文字体」本来也不是一个
+  // 书籍级的决定。西文字体（`font`）保留 per-book，那是既有行为。
+  cjkFont: "cjk_font_family",
   textJustification: "text_justification",
   paragraphSpacing: "paragraph_spacing",
   firstLineIndent: "first_line_indent",
@@ -148,7 +153,12 @@ export function createDefaultReaderSettings(): ReaderSettingsState {
   return {
     theme: getDefaultReaderTheme(),
     customTheme: parseReaderCustomTheme(null),
-    font: "palatino",
+    // Palatino 只有 macOS 装了。Windows / Linux 上这条链会掉进系统中文字族的
+    // 西文字形（细、糊、字距怪）——CSS 字体匹配是逐字符的，排在通用关键字前
+    // 面的中文字族会抢走它能渲染的西文字符。Literata 是随包打进 `public/fonts/`
+    // 的，三平台一致。
+    font: "literata",
+    cjkFont: "system",
     fontSize: 26,
     narrowFontShrink: true,
     readingMode: "scrolling",
@@ -159,7 +169,7 @@ export function createDefaultReaderSettings(): ReaderSettingsState {
     showPageNumbers: false,
     previousPageBinding: DEFAULT_PREVIOUS_PAGE_BINDING,
     nextPageBinding: DEFAULT_NEXT_PAGE_BINDING,
-    lineSpacing: 1.8,
+    lineSpacing: "auto",
     charSpacing: 0,
     wordSpacing: 0,
     textJustification: false,
@@ -202,6 +212,8 @@ export function resolveReaderSettings(
       pageColumnsSetting(globalSettings.page_columns, previous.pageColumns),
     ),
     font: isReaderFontAvailable(requestedFont) ? requestedFont : "system",
+    // 全局专属，理由见 `readerPreferenceSettingKeys` 里这个键的注释。
+    cjkFont: globalSettings.cjk_font_family || previous.cjkFont,
     fontSize: numberSetting(perBookSettings[perBookSettingKeys.fontSize])
       ?? (globalSettings.font_size ? parseInt(globalSettings.font_size) : previous.fontSize),
     // Global-only: the reader panel has no per-book control for it.
@@ -227,8 +239,11 @@ export function resolveReaderSettings(
     bookFinishedHint: booleanSetting(globalSettings.book_finished_hint, previous.bookFinishedHint),
     previousPageBinding: globalSettings.previous_page_binding || previous.previousPageBinding,
     nextPageBinding: globalSettings.next_page_binding || previous.nextPageBinding,
-    lineSpacing: numberSetting(perBookSettings[perBookSettingKeys.lineSpacing])
-      ?? (globalSettings.line_spacing ? parseFloat(globalSettings.line_spacing) : previous.lineSpacing),
+    // `"auto"` 也是一个合法的存储值，不能走 `numberSetting`——它会把 "auto"
+    // 判成不可解析然后落回上一层，等于自动态永远存不住。
+    lineSpacing: perBookSettings[perBookSettingKeys.lineSpacing] !== undefined
+      ? parseLineSpacing(perBookSettings[perBookSettingKeys.lineSpacing])
+      : (globalSettings.line_spacing ? parseLineSpacing(globalSettings.line_spacing) : previous.lineSpacing),
     wordSpacing: numberSetting(perBookSettings[perBookSettingKeys.wordSpacing])
       ?? (globalSettings.word_spacing ? parseInt(globalSettings.word_spacing) : previous.wordSpacing),
     textJustification: booleanSetting(
@@ -561,6 +576,10 @@ export function useReaderSettingsSync(bookId: string | undefined): ReaderSetting
       || previous.customTheme.opacity !== next.customTheme.opacity) {
       changed[readerPreferenceSettingKeys.customTheme] = JSON.stringify(next.customTheme);
     }
+    // Global-only, so it has no per-book branch above to fall back on: without
+    // this line the Aa panel's Chinese-font picker restyles the page and saves
+    // nothing, and the choice is gone at the next restart.
+    if (previous.cjkFont !== next.cjkFont) changed[readerPreferenceSettingKeys.cjkFont] = next.cjkFont;
     if (previous.pageTurnAnimation !== next.pageTurnAnimation) changed[readerPreferenceSettingKeys.pageTurnAnimation] = next.pageTurnAnimation;
     if (previous.showChapterProgress !== next.showChapterProgress) changed[readerPreferenceSettingKeys.showChapterProgress] = String(next.showChapterProgress);
     if (previous.showBookProgress !== next.showBookProgress) changed[readerPreferenceSettingKeys.showBookProgress] = String(next.showBookProgress);

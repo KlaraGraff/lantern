@@ -51,10 +51,39 @@ export interface BuiltinFont {
  * a face hinted for 90s low-resolution screens that goes soft at reading sizes.
  * Naming them keeps the result predictable on both platforms, and pairs a serif
  * CJK face with the serif Latin ones and a gothic with the sans ones.
+ *
+ * Naming them is not enough on its own, though: CSS font matching runs per
+ * character, not per script, so a bare `"Songti SC"` in the chain will also
+ * claim any Latin character it happens to have a (thin, badly-spaced) glyph
+ * for — on a machine missing Georgia, that is every Latin letter in the
+ * chain, not just the CJK ones. `CJK_SERIF` / `CJK_SANS` therefore do not name
+ * the system faces directly; they name a wrapper family, declared below with
+ * `unicode-range` fencing it to CJK codepoints only, exactly the pattern
+ * `src/index.css` already uses for the app shell (`Lantern UI Latin` /
+ * `Lantern UI CJK`). The wrapper's own `src` still resolves to Songti SC /
+ * SimSun via `local()` — only the codepoints it is allowed to claim change.
  */
+export const CJK_UNICODE_RANGE =
+  // CJK radicals through the main Unified Ideographs block — covers Hiragana,
+  // Katakana, and Extension A along the way, since they all fall inside it.
+  "U+2E80-9FFF, "
+  // CJK Compatibility Ideographs — a handful of legacy code-converted forms
+  // that sit above the main block and would otherwise render as tofu.
+  + "U+F900-FAFF, "
+  // Fullwidth forms: the fullwidth CJK punctuation (，。！？) prose actually
+  // uses is here, not in the CJK block above.
+  + "U+FF00-FFEF";
+
+// Unquoted names, kept as the one source of truth for both the exported quoted
+// family strings below and the @font-face rules that back them further down —
+// so the two can never drift apart into a chain that names a face nothing
+// declares, or a declared face nothing names.
+const CJK_SERIF_NAME = "Lantern Reader CJK Serif";
+const CJK_SANS_NAME = "Lantern Reader CJK Sans";
+
 /** Shared with the system-font entries in reader-settings, so every reader font agrees. */
-export const CJK_SERIF = '"Songti SC", "SimSun"';
-export const CJK_SANS = '"PingFang SC", "Microsoft YaHei"';
+export const CJK_SERIF = `"${CJK_SERIF_NAME}"`;
+export const CJK_SANS = `"${CJK_SANS_NAME}"`;
 
 const SERIF_FALLBACK = `Georgia, ${CJK_SERIF}, serif`;
 const SANS_FALLBACK = `system-ui, ${CJK_SANS}, sans-serif`;
@@ -128,4 +157,43 @@ export function installBuiltinFontFacesInDocument(doc: Document) {
 
 export function installBuiltinFontFaces() {
   installBuiltinFontFacesInDocument(document);
+}
+
+/**
+ * The two `unicode-range`-fenced wrapper faces `CJK_SERIF` / `CJK_SANS` name.
+ * `local()` sources rather than `url()`: these resolve to whatever CJK face
+ * the OS already ships (Songti SC / PingFang SC on macOS, SimSun / Microsoft
+ * YaHei on Windows), not a bundled file — nothing to fetch, so no `font-display`
+ * swap flash either way.
+ */
+function cjkFace(familyName: string, systemFontNames: string[]): string {
+  const src = systemFontNames.map((name) => `local("${name}")`).join(", ");
+  return `@font-face { font-family: "${familyName}"; src: ${src}; `
+    + `font-display: swap; unicode-range: ${CJK_UNICODE_RANGE}; }`;
+}
+
+export function cjkFontFaceCss(): string {
+  return [
+    cjkFace(CJK_SERIF_NAME, ["Songti SC", "SimSun"]),
+    cjkFace(CJK_SANS_NAME, ["PingFang SC", "Microsoft YaHei"]),
+  ].join("\n");
+}
+
+const CJK_STYLE_ID = "lantern-cjk-font-faces";
+
+/** Install the two isolated CJK wrapper faces into a document (the app shell or a Foliate chapter). */
+export function installCjkFontFacesInDocument(doc: Document) {
+  let style = doc.getElementById(CJK_STYLE_ID) as HTMLStyleElement | null;
+  if (!style) {
+    style = doc.createElement("style");
+    style.id = CJK_STYLE_ID;
+    (doc.head ?? doc.documentElement).appendChild(style);
+  } else if (style.textContent) {
+    return;
+  }
+  style.textContent = cjkFontFaceCss();
+}
+
+export function installCjkFontFaces() {
+  installCjkFontFacesInDocument(document);
 }

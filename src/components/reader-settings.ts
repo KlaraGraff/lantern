@@ -44,6 +44,40 @@ export interface ReaderFontOption {
   filePath?: string;
 }
 
+export interface ReaderCjkFontOption {
+  id: string;
+  label: string;
+  /**
+   * Not a full chain — just the CJK segment `getFontFamily` splices into a
+   * Latin font's own chain, in place of whichever isolated system CJK family
+   * (`CJK_SERIF` / `CJK_SANS`, from builtin-fonts.ts) that chain already
+   * names. `system` and `system-sans` are themselves that same isolated
+   * family, so selecting either of those is a straight swap; `enhanced`
+   * leads with the downloadable pack and keeps the system serif behind it,
+   * so it degrades to plain `system` until the pack is actually installed.
+   */
+  family: string;
+}
+
+/**
+ * The Chinese half of the reader's font pair — independent of `fonts` above,
+ * which is Latin-only now that the two are set separately (see `getFontFamily`).
+ *
+ * `enhanced` is `"Lantern Enhanced Chinese Serif"` (installed by
+ * `installEnhancedFontFace` in enhanced-fonts.ts), listed *ahead* of the
+ * isolated system serif face. It has to lead: both faces are fenced to the
+ * same CJK codepoints, so whichever comes first wins every character they
+ * share, and behind the system face the pack would only ever surface for
+ * glyphs the OS lacks — an option the user selected that visibly did nothing.
+ * The system face stays behind it as the fallback for readers who have not
+ * downloaded the pack, so the option is safe to select either way.
+ */
+export const cjkFonts: ReaderCjkFontOption[] = [
+  { id: "system", label: "System Serif", family: CJK_SERIF },
+  { id: "system-sans", label: "System Sans", family: CJK_SANS },
+  { id: "enhanced", label: "Enhanced Serif", family: `"Lantern Enhanced Chinese Serif", ${CJK_SERIF}` },
+];
+
 export const fonts: ReaderFontOption[] = [
   // These are Latin-only faces too, so they name the same CJK fallbacks as the
   // bundled ones. Without that, which font Chinese lands in depends on the
@@ -246,9 +280,41 @@ export function getReaderThemes() {
   return themes;
 }
 
-export function getFontFamily(fontId: ReaderFont): string {
-  if (fontId.startsWith("custom-")) return `${customFontFamily(fontId)}, serif`;
-  return fonts.find((font) => font.id === fontId)?.family ?? "Inter, system-ui, sans-serif";
+/**
+ * Latin and CJK are set separately (`cjkFonts` above), but `fonts[].family`
+ * still bakes in a default CJK segment per Latin font — the isolated serif
+ * face for serif Latin fonts, the isolated sans face for sans ones — because
+ * that per-font string is also read directly, with no `cjkId` in reach, by
+ * `MarkerStyleSettings.tsx`'s marker-font preview.
+ *
+ * Omitting `cjkId` returns that baked-in chain unchanged — the single-argument
+ * call sites (`marker-style.ts`, `useFoliateAnnotations.ts`) predate the CJK
+ * setting and must keep rendering exactly as before. Passing one splices the
+ * chosen CJK segment in over whichever isolated system face (`CJK_SERIF` or
+ * `CJK_SANS`) the baked-in chain already names, keeping the chain's order:
+ * Latin family, then CJK family, then the generic keyword.
+ *
+ * `"system"` is spliced like any other id rather than short-circuiting to the
+ * baked-in chain, because the baked-in CJK segment tracks the *Latin* font —
+ * sans for Inter, serif for Georgia. Short-circuiting would mean picking
+ * 系统宋体 alongside a sans Latin font silently rendered 黑体, and that the
+ * Chinese font changed whenever the Latin one did. Setting them separately is
+ * the whole point of the pair, so the CJK id wins outright.
+ */
+export function getFontFamily(fontId: ReaderFont, cjkId?: string): string {
+  // An imported font is a Latin face like any other, so it names the isolated
+  // CJK serif too. Without that segment there is nothing for the splice below
+  // to replace, and choosing a Chinese font while reading in a custom Latin
+  // font would quietly do nothing.
+  const base = fontId.startsWith("custom-")
+    ? `${customFontFamily(fontId)}, ${CJK_SERIF}, serif`
+    : fonts.find((font) => font.id === fontId)?.family ?? "Inter, system-ui, sans-serif";
+  if (cjkId === undefined) return base;
+  const cjkFamily = cjkFonts.find((font) => font.id === cjkId)?.family;
+  if (!cjkFamily) return base;
+  if (base.includes(CJK_SERIF)) return base.replace(CJK_SERIF, cjkFamily);
+  if (base.includes(CJK_SANS)) return base.replace(CJK_SANS, cjkFamily);
+  return base;
 }
 
 export function isReaderFontAvailable(fontId: ReaderFont): boolean {

@@ -20,6 +20,15 @@ import {
   type ReaderCustomTheme,
   type ReaderTheme,
 } from "./reader-settings";
+import { getReaderCjkFontOptions } from "./reader-cjk-font-options";
+import {
+  AUTO_LINE_SPACING_THUMB,
+  isAutoLineSpacing,
+  paragraphStyleMode,
+  withFirstLineIndent,
+  withParagraphSpacing,
+  type LineSpacing,
+} from "./reader-paragraph-settings";
 import {
   filterReaderSettingConflicts,
   isPendingUndoActionable,
@@ -50,7 +59,19 @@ export type ParagraphSpacing = "original" | "none" | "compact" | "comfortable" |
 export interface ReaderSettingsState {
   theme: ReaderTheme;
   customTheme: ReaderCustomTheme;
+  /** 西文字体。中文字符不走它——见 `cjkFont`。 */
   font: ReaderFont;
+  /**
+   * 中文字体，和西文字体分开选。
+   *
+   * CSS 的字体匹配是逐字符的：一条 `Georgia, "Songti SC", serif` 的字体链，在
+   * 一台没装 Georgia 却装了宋体的机器上，拉丁字母会掉进宋体自带的西文字形，
+   * 而不是掉到 `serif`。所以中西文必须各自成链、用 `unicode-range` 隔离，
+   * 而不是共用一个下拉。
+   *
+   * 全局设置，没有 per-book 行：换中文字体不是「这本书要这样」的决定。
+   */
+  cjkFont: string;
   fontSize: number; // px
   narrowFontShrink: boolean; // shrink the rendered size when the column is too narrow
   readingMode: ReadingMode;
@@ -61,7 +82,11 @@ export interface ReaderSettingsState {
   showPageNumbers: boolean;
   previousPageBinding: string;
   nextPageBinding: string;
-  lineSpacing: number; // multiplier, e.g. 1.5
+  /**
+   * 行距倍数，`"auto"` 表示按脚本走默认值（中文 1.8 / 西文 1.6，见
+   * `reader-paragraph-settings.ts`）。新装默认 `"auto"`。
+   */
+  lineSpacing: LineSpacing;
   charSpacing: number; // percentage, 0 = normal
   wordSpacing: number; // percentage, 0 = normal
   textJustification: boolean;
@@ -480,7 +505,9 @@ function ReaderSettings({
     }
     if (key === "fontSize") return `${value}px`;
     if (key === "charSpacing" || key === "wordSpacing" || key === "margins") return `${value}%`;
-    if (key === "lineSpacing") return `${value}×`;
+    if (key === "lineSpacing") {
+      return isAutoLineSpacing(value as LineSpacing) ? t("readerSettings.lineSpacingAuto") : `${value}×`;
+    }
     return String(value);
   };
   const overrideNote = (key: PerBookOverrideKey) => (
@@ -770,12 +797,23 @@ function ReaderSettings({
       {capabilities.supportsReflowSettings && (
       <div className="px-4 py-3 border-b border-border-light">
         <p className="text-[11px] font-medium text-text-muted tracking-[0.5px] uppercase mb-2">{t("readerSettings.font")}</p>
-        <Select
-          value={settings.font}
-          onChange={(v) => update({ font: v as ReaderFont })}
-          options={getReaderFontOptions(settings.font, t("readerSettings.fontUnavailable"))}
-        />
+        <div className="flex flex-col gap-1">
+          <span className="text-[11px] text-text-muted">{t("readerSettings.fontLatin")}</span>
+          <Select
+            value={settings.font}
+            onChange={(v) => update({ font: v as ReaderFont })}
+            options={getReaderFontOptions(settings.font, t("readerSettings.fontUnavailable"))}
+          />
+        </div>
         {overrideNote("font")}
+        <div className="mt-3 flex flex-col gap-1">
+          <span className="text-[11px] text-text-muted">{t("readerSettings.fontCjk")}</span>
+          <Select
+            value={settings.cjkFont}
+            onChange={(v) => update({ cjkFont: v })}
+            options={getReaderCjkFontOptions(t)}
+          />
+        </div>
       </div>
       )}
 
@@ -792,17 +830,35 @@ function ReaderSettings({
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between">
             <span className="text-[13px] font-medium text-text-primary">{t("readerSettings.lineSpacing")}</span>
-            <span className="text-[13px] text-text-muted">{settings.lineSpacing}</span>
+            {isAutoLineSpacing(settings.lineSpacing) ? (
+              <span className="text-[13px] text-text-muted">{t("readerSettings.lineSpacingAuto")}</span>
+            ) : (
+              <span className="flex items-center gap-2 text-[13px] text-text-muted">
+                {settings.lineSpacing}
+                <button
+                  type="button"
+                  className="text-[11px] text-accent-text underline underline-offset-2"
+                  onClick={() => update({ lineSpacing: "auto" })}
+                >
+                  {t("readerSettings.lineSpacingAuto")}
+                </button>
+              </span>
+            )}
           </div>
           <input
             type="range"
             min={1}
             max={3}
             step={0.1}
-            value={settings.lineSpacing}
+            // 「自动」在滑块上没有真实位置——把滑块停在中西文两个默认值中间，
+            // 拖动即视为放弃自动、接管成具体数字。
+            value={isAutoLineSpacing(settings.lineSpacing) ? AUTO_LINE_SPACING_THUMB : settings.lineSpacing}
             onChange={(e) => update({ lineSpacing: Number(e.target.value) })}
             className={sliderClass}
           />
+          {isAutoLineSpacing(settings.lineSpacing) && (
+            <p className="text-[11px] leading-4 text-text-muted">{t("readerSettings.lineSpacingAutoHint")}</p>
+          )}
           {overrideNote("lineSpacing")}
         </div>
 
@@ -863,7 +919,7 @@ function ReaderSettings({
                   key={value}
                   type="button"
                   aria-pressed={settings.paragraphSpacing === value}
-                  onClick={() => update({ paragraphSpacing: value })}
+                  onClick={() => update(withParagraphSpacing(value, settings))}
                   className={`h-7 rounded-md text-[11px] transition-colors ${settings.paragraphSpacing === value ? "bg-bg-surface font-medium text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"}`}
                 >
                   {t(`readerSettings.paragraphSpacing.${value}`)}
@@ -877,9 +933,16 @@ function ReaderSettings({
               <span className="text-[13px] font-medium text-text-primary">{t("readerSettings.firstLineIndent")}</span>
               <p className="mt-0.5 text-[11px] leading-4 text-text-muted">{t("readerSettings.firstLineIndentHint")}</p>
             </div>
-            <Toggle label={t("readerSettings.firstLineIndent")} checked={settings.firstLineIndent} onChange={(checked) => update({ firstLineIndent: checked })} />
+            <Toggle label={t("readerSettings.firstLineIndent")} checked={settings.firstLineIndent} onChange={(checked) => update(withFirstLineIndent(checked, settings))} />
           </div>
           {overrideNote("firstLineIndent")}
+          {paragraphStyleMode(settings) !== "neutral" && (
+            <p className="mt-2 text-[11px] leading-4 text-text-muted">
+              {t(paragraphStyleMode(settings) === "indent"
+                ? "readerSettings.paragraphExclusive.indent"
+                : "readerSettings.paragraphExclusive.spacing")}
+            </p>
+          )}
         </div>
 
         {/* Margins */}

@@ -45,6 +45,8 @@ import {
   type TextBookBlock,
   type TextBookDocument,
 } from "./text-book-location";
+import { getTextBookParagraphStyle, isCjkText } from "./text-book-typography";
+import { resolveLineSpacing } from "./reader-paragraph-settings";
 
 interface TextBookReaderProps {
   bookId: string;
@@ -626,7 +628,17 @@ function TextBookReader({
     [documentBlocks],
   );
   const firstDocumentBlockStart = documentBlocks[0]?.source_start;
-  const readerFontFamily = getFontFamily(settings.font);
+  const readerFontFamily = getFontFamily(settings.font, settings.cjkFont);
+  // The paragraph renderer below depends on exactly these three fields, but
+  // `settings` is a fresh object on every reader-settings change and the
+  // article is rendered unvirtualized. Depending on the whole object would
+  // rebuild every paragraph element in the book on each frame of, say, a
+  // line-spacing drag.
+  const paragraphSettings = useMemo(() => ({
+    textJustification: settings.textJustification,
+    paragraphSpacing: settings.paragraphSpacing,
+    firstLineIndent: settings.firstLineIndent,
+  }), [settings.textJustification, settings.paragraphSpacing, settings.firstLineIndent]);
   const automaticWordSet = useMemo(
     () => new Set(settings.showLookupMarkers
       ? [
@@ -1421,78 +1433,87 @@ function TextBookReader({
   const typography = useMemo(() => ({
     backgroundColor: getThemeStyles(settings.theme, settings.customTheme).body,
     color: getThemeStyles(settings.theme, settings.customTheme).text,
-    fontFamily: getFontFamily(settings.font),
+    fontFamily: getFontFamily(settings.font, settings.cjkFont),
     fontSize: `${measure.fontSize}px`,
-    lineHeight: settings.lineSpacing,
+    // 容器上的行距按西文解析——标题、分隔线这些非正文块用它。正文段落在下面
+    // 按自己那一段是中文还是西文各自覆盖，因为「自动」行距是按脚本分的。
+    lineHeight: resolveLineSpacing(settings.lineSpacing, false),
     letterSpacing: settings.charSpacing === 0 ? undefined : `${settings.charSpacing * 0.01}em`,
     wordSpacing: settings.wordSpacing === 0 ? undefined : `${settings.wordSpacing * 0.01}em`,
   }), [measure.fontSize, settings]);
 
-  const paragraphStyle = useMemo<React.CSSProperties>(() => {
-    const paragraphGap = settings.paragraphSpacing === "original" ? undefined : {
-      none: "0",
-      compact: "0.45em",
-      comfortable: "0.85em",
-      loose: "1.25em",
-    }[settings.paragraphSpacing];
-    const sample = document?.chunks.flatMap((chunk) => chunk.blocks).find((block) => block.kind === "paragraph")?.text || "";
-    const isCjk = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(sample);
-    return {
-      textAlign: settings.textJustification ? "justify" : undefined,
-      hyphens: settings.textJustification && !isCjk ? "auto" : undefined,
-      WebkitHyphens: settings.textJustification && !isCjk ? "auto" : undefined,
-      marginBottom: paragraphGap,
-      textIndent: settings.firstLineIndent ? (isCjk ? "2em" : "1.5em") : undefined,
-    };
-  }, [document, settings.firstLineIndent, settings.paragraphSpacing, settings.textJustification]);
-
-  const renderedDocument = useMemo(() => document?.chunks.map((chunk, chunkIndex) => (
-    <section key={chunkIndex}>
-      {chunk.blocks.map((block) => {
-        const isFlashing = flashOffset !== null
-          && block.source_start <= flashOffset
-          && block.source_end >= flashOffset;
-        const className = `${isFlashing ? "outline outline-2 outline-purple-400 outline-offset-4" : ""} transition-colors`;
-        const content = renderHighlightedBlock(
-          block,
-          highlights,
-          onHighlightClick,
-          markerStyle,
-          readerFontFamily,
-          automaticWordSet,
-          automaticExceptionSet,
-          visibleLookupOccurrenceMarks,
-        );
-        const attributes = {
-          key: block.source_start,
-          "data-text-source-start": block.source_start,
-          "data-text-source-end": block.source_end,
-        };
-        if (block.kind === "heading") {
-          const startsChapterPage = isPaginated
-            && block.starts_page === true
-            && block.source_start !== firstDocumentBlockStart;
-          const headingStyle = startsChapterPage
-            ? { breakBefore: "column", pageBreakBefore: "always" } as React.CSSProperties
-            : undefined;
-          return block.depth === 0 ? (
-            <h2 {...attributes} style={headingStyle} className={`mb-8 mt-14 text-[1.35em] font-semibold leading-snug ${className}`}>
-              {content}
-            </h2>
-          ) : (
-            <h3 {...attributes} style={headingStyle} className={`mb-6 mt-10 text-[1.15em] font-semibold leading-snug ${className}`}>
-              {content}
-            </h3>
+  const renderedDocument = useMemo(() => document?.chunks.map((chunk, chunkIndex) => {
+    // Tracks whether a "paragraph" kind block has already been seen, so the
+    // opening paragraph of the document can skip the first-line indent like a
+    // chapter opener does in the EPUB reader -- a running flag kept across one
+    // forward pass over `chunk.blocks`, not a re-scan per paragraph.
+    //
+    // Only the first chunk may claim that exception. Chunks are not chapters:
+    // `chunk_text_blocks` splits purely on accumulated byte count against a
+    // 24,000-character target, with no heading awareness at all. Letting every
+    // chunk claim it would leave one mid-scene paragraph flush left roughly
+    // every 24,000 characters. Real chapter openers are already covered by the
+    // `previousBlock?.kind === "heading"` half of the condition below.
+    let sawParagraph = chunkIndex > 0;
+    return (
+      <section key={chunkIndex}>
+        {chunk.blocks.map((block, blockIndex, blocks) => {
+          const isFlashing = flashOffset !== null
+            && block.source_start <= flashOffset
+            && block.source_end >= flashOffset;
+          const className = `${isFlashing ? "outline outline-2 outline-purple-400 outline-offset-4" : ""} transition-colors`;
+          const content = renderHighlightedBlock(
+            block,
+            highlights,
+            onHighlightClick,
+            markerStyle,
+            readerFontFamily,
+            automaticWordSet,
+            automaticExceptionSet,
+            visibleLookupOccurrenceMarks,
           );
-        }
-        return (
-          <p {...attributes} style={paragraphStyle} className={`mb-5 whitespace-pre-wrap ${className}`}>
-            {content}
-          </p>
-        );
-      })}
-    </section>
-  )) ?? null, [
+          const attributes = {
+            key: block.source_start,
+            "data-text-source-start": block.source_start,
+            "data-text-source-end": block.source_end,
+          };
+          if (block.kind === "heading") {
+            const startsChapterPage = isPaginated
+              && block.starts_page === true
+              && block.source_start !== firstDocumentBlockStart;
+            const headingStyle = startsChapterPage
+              ? { breakBefore: "column", pageBreakBefore: "always" } as React.CSSProperties
+              : undefined;
+            return block.depth === 0 ? (
+              <h2 {...attributes} style={headingStyle} className={`mb-8 mt-14 text-[1.35em] font-semibold leading-snug ${className}`}>
+                {content}
+              </h2>
+            ) : (
+              <h3 {...attributes} style={headingStyle} className={`mb-6 mt-10 text-[1.15em] font-semibold leading-snug ${className}`}>
+                {content}
+              </h3>
+            );
+          }
+          const isFirstParagraphInChunk = !sawParagraph;
+          sawParagraph = true;
+          const previousBlock = blocks[blockIndex - 1];
+          const isCjkParagraph = isCjkText(block.text);
+          const paragraphStyle = {
+            ...getTextBookParagraphStyle(paragraphSettings, {
+              isCjk: isCjkParagraph,
+              noIndent: isFirstParagraphInChunk || previousBlock?.kind === "heading",
+            }),
+            lineHeight: resolveLineSpacing(settings.lineSpacing, isCjkParagraph),
+          };
+          return (
+            <p {...attributes} style={paragraphStyle} className={`mb-5 whitespace-pre-wrap ${className}`}>
+              {content}
+            </p>
+          );
+        })}
+      </section>
+    );
+  }) ?? null, [
     automaticExceptionSet,
     automaticWordSet,
     document,
@@ -1502,8 +1523,9 @@ function TextBookReader({
     isPaginated,
     markerStyle,
     onHighlightClick,
-    paragraphStyle,
     readerFontFamily,
+    paragraphSettings,
+    settings.lineSpacing,
     visibleLookupOccurrenceMarks,
   ]);
 

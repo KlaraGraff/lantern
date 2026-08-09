@@ -166,6 +166,7 @@ const baseState: ReaderSettingsState = {
   theme: "paper",
   customTheme: { color: "#DDE8D8", opacity: 70 },
   font: "palatino",
+  cjkFont: "system",
   fontSize: 26,
   narrowFontShrink: true,
   readingMode: "scrolling",

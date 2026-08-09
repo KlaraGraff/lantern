@@ -21,7 +21,8 @@ import {
   type ReaderInteraction,
 } from "../../components/reader-interaction";
 import { installCustomFontFacesInDocument } from "../../components/custom-fonts";
-import { installBuiltinFontFacesInDocument } from "../../components/builtin-fonts";
+import { installBuiltinFontFacesInDocument, installCjkFontFacesInDocument } from "../../components/builtin-fonts";
+import { ENHANCED_FONT_FACE_EVENT, installEnhancedFontFaceInChapter } from "../../components/enhanced-fonts";
 import { expandWordForms } from "../../components/word-forms";
 import { isNarrowPassiveVocabViewport } from "../../components/passive-vocab";
 import type { Highlight } from "../../hooks/useBookmarks";
@@ -64,9 +65,9 @@ import type {
 import { readerOpenKey } from "./reader-open-key";
 import { toReaderOpenError, type ReaderOpenError } from "./reader-open-error";
 import {
-  markTypographyDropCapParagraphs,
   markTypographyIndentExceptions,
   markTypographyMediaParagraphs,
+  stampPublisherTypography,
 } from "./reader-typography";
 import type { SidePanel, TracesTab } from "./side-panel";
 
@@ -348,6 +349,18 @@ export function useFoliateView({
   useEffect(() => {
     applyPassiveVocabAnnotationsRef.current = applyPassiveVocabAnnotations;
   }, [applyPassiveVocabAnnotations]);
+  // Chapter documents get the enhanced-pack face at load. Installing or
+  // removing the pack mid-read has to reach the chapters already on screen too,
+  // or the reader sees nothing change until they navigate twice.
+  useEffect(() => {
+    const reinstall = () => {
+      for (const { doc } of viewRef.current?.renderer?.getContents?.() ?? []) {
+        if (doc) installEnhancedFontFaceInChapter(doc);
+      }
+    };
+    window.addEventListener(ENHANCED_FONT_FACE_EVENT, reinstall);
+    return () => window.removeEventListener(ENHANCED_FONT_FACE_EVENT, reinstall);
+  }, [viewRef]);
   // The rest of the callbacks the opened view calls back into. All of them are
   // invoked from foliate event listeners or from post-open code, never during
   // the open itself, so a ref is enough — and it keeps their identity out of
@@ -515,6 +528,17 @@ export function useFoliateView({
         if (hidden) (target as HTMLElement | null)?.removeAttribute?.("hidden");
         const contents = (nestedView.renderer?.getContents?.() ?? []) as Array<{ doc?: Document }>;
         const doc = contents[0]?.doc;
+        // The popover is its own document, and the main view's `load` handler
+        // never fires for it — so without this it names the reading font in
+        // `getFootnoteCSS` while declaring none of the faces, and falls back to
+        // the generic serif. Latent until the default font became a bundled
+        // one; before that the default happened to be a system face.
+        if (doc) {
+          installBuiltinFontFacesInDocument(doc);
+          installCjkFontFacesInDocument(doc);
+          installEnhancedFontFaceInChapter(doc);
+          installCustomFontFacesInDocument(doc);
+        }
         const measured = doc ? Math.ceil(doc.documentElement.getBoundingClientRect().height) : 0;
         const height = Math.min(
           FOOTNOTE_POPOVER_MAX_HEIGHT,
@@ -780,8 +804,14 @@ export function useFoliateView({
         markChapterStarts(doc, index);
         markTypographyMediaParagraphs(doc);
         markTypographyIndentExceptions(doc);
-        markTypographyDropCapParagraphs(doc);
+        stampPublisherTypography(doc);
         installBuiltinFontFacesInDocument(doc);
+        // Each chapter is its own document, so every face the reading chain
+        // names has to be declared again here — the bundled Latin faces above,
+        // the CJK wrappers `CJK_SERIF` / `CJK_SANS` resolve through, the
+        // downloadable Chinese pack, and any imported custom font.
+        installCjkFontFacesInDocument(doc);
+        installEnhancedFontFaceInChapter(doc);
         installCustomFontFacesInDocument(doc);
         if (loadedInteractionDocumentsRef.current.has(doc)) return;
         loadedInteractionDocumentsRef.current.add(doc);

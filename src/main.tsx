@@ -5,7 +5,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import "./index.css";
 import "./i18n";
 import { installReaderDiagnostics } from "./utils/readerDiagnostics";
-import { installBuiltinFontFaces } from "./components/builtin-fonts";
+import { installBuiltinFontFaces, installCjkFontFaces } from "./components/builtin-fonts";
 import { applyAppZoom, readAppZoom } from "./services/app-zoom-window";
 
 // Install global fault sinks before anything else runs. On macOS 12 / Safari
@@ -28,6 +28,11 @@ if (!(Map.prototype as any).getOrInsertComputed) {
 // Declare the bundled reading fonts before React mounts, so the first paint of
 // the reader and the settings preview already has the faces available.
 installBuiltinFontFaces();
+// The CJK half of every reading chain. `CJK_SERIF` / `CJK_SANS` name wrapper
+// families, not the system faces directly, so without this declaration those
+// names resolve to nothing and Chinese falls through to the generic keyword —
+// in the .txt reader, the marker previews and the settings previews alike.
+installCjkFontFaces();
 
 // Apply cached theme synchronously before React mounts so the window doesn't
 // flash light-mode on cold start. Reconciled with the DB in App.tsx.
