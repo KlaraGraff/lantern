@@ -2624,8 +2624,6 @@
   "profile.yourText.softHint": "Past the suggested length. A longer profile makes it easier for answers to miss the point, especially with lighter models. You can keep writing, or let it help you trim.",
   "profile.yourText.saveFailed": "Couldn't save — try again.",
   "profile.yourText.draftRestored": "This is what you hadn't saved last time — brought back here.",
-  "profile.yourText.emptyPrompt": "What you're studying for, your first language, the tone you want, anything to avoid — write it however you like. Nothing here gets touched automatically.",
-  "profile.yourText.startWriting": "Start writing",
   "profile.tidyNow": "Tidy",
   "profile.compressNow": "Compress",
   "profile.system.heading": "Summarized for you",

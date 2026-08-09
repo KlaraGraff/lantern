@@ -2624,8 +2624,6 @@
   "profile.yourText.softHint": "超过建议上限了。画像越长，回答越容易抓不住重点——用较弱模型时更明显。可以继续写，也可以让它帮你压一压。",
   "profile.yourText.saveFailed": "保存失败，请重试。",
   "profile.yourText.draftRestored": "这是你上次没保存完的内容，已经恢复。",
-  "profile.yourText.emptyPrompt": "你在准备什么考试、母语是什么、想要什么口吻、有什么忌讳——随便写，怎么组织都行。这一段系统一个字都不会动。",
-  "profile.yourText.startWriting": "开始写",
   "profile.tidyNow": "整理",
   "profile.compressNow": "压缩一下",
   "profile.system.heading": "系统总结的",

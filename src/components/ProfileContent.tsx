@@ -143,6 +143,17 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
     if (!editing && state) setDraftText(state.userText);
   }, [state, editing]);
 
+  // 空态就是编辑态：没写过东西的时候不再先摆一段说明+「开始写」按钮，进来
+  // 光标就落在输入框里。`editing` 仍然要真的置位——自动保存草稿和上面那个
+  // 缓冲同步的 effect 都看它，光把编辑器渲染出来是不够的。
+  useEffect(() => {
+    if (!state || state.userText.length > 0 || editing) return;
+    const restorable = state.draftText.length > 0;
+    setDraftText(restorable ? state.draftText : "");
+    setRestoredDraftNotice(restorable);
+    setEditing(true);
+  }, [state, editing]);
+
   // Draft autosave: `profile_save_draft` has no limit and never blocks —
   // it exists so an in-progress edit survives a crash or an accidental
   // close, not so every keystroke round-trips eagerly.
@@ -523,7 +534,9 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
                 setPendingMove(null);
               }}
             />
-          ) : editing ? (
+          ) : editing || !state.userText ? (
+            /* `|| !state.userText` 只是兜住 auto-open effect 生效前的那一帧，
+               免得空态闪一下别的东西——真正的开关还是 `editing`。 */
             <div className="rounded-xl border border-lavender bg-bg-surface p-3.5 ring-2 ring-accent-bg">
               {restoredDraftNotice && (
                 <p className="mb-2 text-[11.5px] leading-[1.6] text-text-muted">{t("profile.yourText.draftRestored")}</p>
@@ -563,9 +576,13 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
                     {t("profile.tidyNow")}
                   </Button>
                 )}
-                <Button variant="ghost" size="sm" disabled={saving} onClick={cancelEditing}>
-                  {t("common.cancel")}
-                </Button>
+                {/* 还没存过正文时，编辑器就是这一栏的常态，「取消」没有可回到
+                    的地方——只有正在做移动时它还有意义（取消 = 什么都没发生）。 */}
+                {(state.userText || pendingMove) && (
+                  <Button variant="ghost" size="sm" disabled={saving} onClick={cancelEditing}>
+                    {t("common.cancel")}
+                  </Button>
+                )}
                 {pendingMove && (
                   <>
                     <span className="flex-1" />
@@ -578,7 +595,7 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
                 )}
               </div>
             </div>
-          ) : state.userText ? (
+          ) : (
             <div className="rounded-xl border border-soft-lilac bg-bg-surface p-3.5">
               {state.userText.split("\n").filter(Boolean).map((line, index) => (
                 <p key={index} className="text-[13px] leading-[1.7] text-text-primary last:mb-0" style={{ marginBottom: 9 }}>
@@ -590,13 +607,6 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
                   <Pencil size={13} />
                   {t("common.edit")}
                 </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-dashed border-border bg-bg-muted p-3.5">
-              <p className="text-[12.4px] leading-[1.7] text-text-muted">{t("profile.yourText.emptyPrompt")}</p>
-              <div className="mt-2 flex items-center gap-1">
-                <Button size="sm" onClick={startEditing}>{t("profile.yourText.startWriting")}</Button>
               </div>
             </div>
           )}
