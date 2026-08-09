@@ -7,6 +7,7 @@ import { createUuid } from "../../utils/randomUuid";
 import type { AiErrorCode } from "../../utils/aiError";
 import type { ReaderInteraction, SerializableRect } from "../reader-interaction";
 import { saveVocabWord } from "../vocab/collect";
+import { serializeCardSnapshot } from "../vocab/cardSnapshot";
 import {
   cachedLearningCardResult,
   learningCardCacheEnvelope,
@@ -516,6 +517,7 @@ export default function LearningCardController({
         contextSentence: interaction.context || null,
         contextExplanation: projected.contextExplanation ?? projected.definition ?? null,
         cfi: interaction.location || null,
+        cardSnapshot: serializeCardSnapshot(result),
       });
       setCollected(true);
       window.dispatchEvent(new CustomEvent("vocab-changed", { detail: { bookId, cfi: interaction.location } }));

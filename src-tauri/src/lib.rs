@@ -1007,6 +1007,7 @@ pub fn run() {
             commands::oauth::openai_oauth_logout,
             // Vocabulary
             commands::vocab::add_vocab_word,
+            commands::vocab::get_vocab_card_snapshot,
             commands::vocab::remove_vocab_word,
             commands::vocab::list_vocab_words,
             commands::vocab::check_vocab_exists,

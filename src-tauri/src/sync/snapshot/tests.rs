@@ -1252,6 +1252,7 @@ fn apply_peer_parent_tombstones_suppress_snapshot_children() {
                 mastery_source: "manual".into(),
                 mastery_reason: None,
                 list_status: "confirmed".into(),
+                card_snapshot: None,
             }),
         ),
         ev(
@@ -1840,6 +1841,7 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
                 mastery_source: "manual".into(),
                 mastery_reason: None,
                 list_status: "confirmed".into(),
+                card_snapshot: None,
             }),
         ),
         ev(
@@ -1866,6 +1868,7 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
                 mastery_source: "manual".into(),
                 mastery_reason: None,
                 list_status: "watchlist".into(),
+                card_snapshot: None,
             }),
         ),
         ev(
@@ -1892,6 +1895,7 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
                 mastery_source: "manual".into(),
                 mastery_reason: None,
                 list_status: "watchlist".into(),
+                card_snapshot: None,
             }),
         ),
         ev(
@@ -1900,6 +1904,7 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
             EventBody::VocabListStatusSet {
                 id: "voc-promoted".into(),
                 list_status: "confirmed".into(),
+                card_snapshot: None,
             },
         ),
         // `definition` exercise: a word saved with the card blob the repair
@@ -1930,6 +1935,7 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
                 mastery_source: "manual".into(),
                 mastery_reason: None,
                 list_status: "confirmed".into(),
+                card_snapshot: None,
             }),
         ),
         ev(

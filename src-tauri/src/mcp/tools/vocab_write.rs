@@ -389,6 +389,7 @@ impl LanternMcpHandler {
             context_sentence,
             context_explanation,
             cfi,
+            None,
             &self.state.db,
             sync,
         )

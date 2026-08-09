@@ -16,6 +16,11 @@ export interface SaveVocabWordArgs {
   gloss?: string | null;
   /** The long, card-shaped text this save produced, if any. */
   contextExplanation?: string | null;
+  /**
+   * The whole learning card result, serialised, for a future vocabulary
+   * detail surface. Nothing reads this yet.
+   */
+  cardSnapshot?: string | null;
 }
 
 /**
@@ -80,6 +85,7 @@ export async function saveVocabWord<T = unknown>(args: SaveVocabWordArgs) {
     contextSentence: args.contextSentence || null,
     contextExplanation: args.contextExplanation || null,
     cfi: args.cfi || null,
+    cardSnapshot: args.cardSnapshot || null,
   });
 }
 

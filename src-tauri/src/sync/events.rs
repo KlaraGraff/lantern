@@ -290,7 +290,18 @@ pub enum EventBody {
     // `VocabMasterySet` because list membership and mastery tier are
     // different facts that change on different triggers.
     #[serde(rename = "vocab.list_status.set")]
-    VocabListStatusSet { id: String, list_status: String },
+    VocabListStatusSet {
+        id: String,
+        list_status: String,
+        // Set only on the watchlist→confirmed transition triggered by an
+        // explicit save that brought a card snapshot (migration 067); a
+        // lookup-driven promotion never carries one. `default` lets
+        // older-client payloads decode; `skip_serializing_if` keeps the
+        // wire form compact for the common case where this transition has
+        // no snapshot to carry.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        card_snapshot: Option<String>,
+    },
     /// A saved word's definition, rewritten in place — by the reader pressing
     /// regenerate (`commands::vocab_regloss`) or by the automatic repair of a
     /// definition that holds a whole learning card
@@ -576,6 +587,13 @@ pub struct VocabPayload {
     // saved, which is exactly what they all are.
     #[serde(default = "default_list_status")]
     pub list_status: String,
+    // Added for the learning card's captured modules (see migration 067):
+    // the serialised `LearningCardResult` JSON, or None when the card was
+    // not saved with one, or its serialised size exceeded the guard.
+    // `default` lets older-client payloads decode; `skip_serializing_if`
+    // keeps the wire form compact for senders that never populate it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_snapshot: Option<String>,
 }
 
 fn default_mastery_source() -> String {
@@ -818,10 +836,12 @@ mod tests {
             mastery_source: "manual".into(),
             mastery_reason: None,
             list_status: "confirmed".into(),
+            card_snapshot: None,
         })));
         roundtrip(&mk(EventBody::VocabListStatusSet {
             id: "v1".into(),
             list_status: "watchlist".into(),
+            card_snapshot: None,
         }));
         roundtrip(&mk(EventBody::VocabMasterySet {
             id: "v1".into(),

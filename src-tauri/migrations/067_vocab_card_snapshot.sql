@@ -1,0 +1,19 @@
+-- Migration 067 — vocab card snapshot.
+--
+-- The learning card produces up to 11 word modules (common senses,
+-- collocations, morphology, grammar role, synonyms, usage, memory aid,
+-- source excerpt, translation, context meaning, word info), but until now
+-- only two of them (`context_explanation` and the short `gloss`) survived
+-- past the card closing. Everything else the model produced — and the user
+-- paid for — was discarded.
+--
+-- `card_snapshot` stores the serialised `LearningCardResult` JSON so a future
+-- vocabulary detail surface can show it without re-generating it. It rides
+-- on `vocab_words` rather than a side table because the row already
+-- participates in the sync path — no new sync plumbing beyond carrying this
+-- field through, same reasoning as other nullable text columns here.
+--
+-- Deliberately excluded from the shared column-list SELECT constant used by
+-- list queries (see `commands/vocab.rs`) so it never bloats a word list
+-- fetch; it is only read by a dedicated single-word command.
+ALTER TABLE vocab_words ADD COLUMN card_snapshot TEXT;

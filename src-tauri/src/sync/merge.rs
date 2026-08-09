@@ -103,9 +103,11 @@ pub fn apply_event(tx: &Transaction, event: &Event) -> AppResult<()> {
             },
         ),
         EventBody::VocabDelete { id } => apply_vocab_delete(tx, event, id),
-        EventBody::VocabListStatusSet { id, list_status } => {
-            apply_vocab_list_status(tx, event, id, list_status)
-        }
+        EventBody::VocabListStatusSet {
+            id,
+            list_status,
+            card_snapshot,
+        } => apply_vocab_list_status(tx, event, id, list_status, card_snapshot.as_deref()),
         EventBody::VocabDefinitionSet { id, definition } => {
             apply_vocab_definition(tx, event, id, definition)
         }
@@ -863,8 +865,8 @@ fn apply_vocab_add(tx: &Transaction, event: &Event, p: &VocabPayload) -> AppResu
           mastery, mastery_source, mastery_reason, review_count, next_review_at,
           review_interval_days, last_reviewed_at, last_review_rating,
           fsrs_stability, fsrs_difficulty, fsrs_version, list_status,
-          created_at, updated_at, updated_by_device)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+          created_at, updated_at, updated_by_device, card_snapshot)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
         params![
             p.id,
             p.book_id,
@@ -888,6 +890,7 @@ fn apply_vocab_add(tx: &Transaction, event: &Event, p: &VocabPayload) -> AppResu
             p.created_at.unwrap_or(event.ts),
             event.ts,
             event.device,
+            p.card_snapshot,
         ],
     )?;
     Ok(())
@@ -899,18 +902,24 @@ fn apply_vocab_add(tx: &Transaction, event: &Event, p: &VocabPayload) -> AppResu
 /// own `(updated_at, updated_by_device)` rather than gated behind the
 /// mastery LWW tuple, because a lookup on one device and a manual save on
 /// another can race and either fact may legitimately win.
+/// `card_snapshot` rides along on the one transition that can carry one (an
+/// explicit save promoting a watchlist row — see migration 067) rather than
+/// getting its own event: a `COALESCE` write, same rule `apply_vocab_definition`
+/// uses for `context_explanation` — a `None` here never erases a peer's
+/// already-stored snapshot.
 fn apply_vocab_list_status(
     tx: &Transaction,
     event: &Event,
     id: &str,
     list_status: &str,
+    card_snapshot: Option<&str>,
 ) -> AppResult<()> {
     tx.execute(
         "UPDATE vocab_words
-         SET list_status = ?1, updated_at = ?2, updated_by_device = ?3
-         WHERE id = ?4
-           AND (updated_at < ?2 OR (updated_at = ?2 AND updated_by_device < ?3))",
-        params![list_status, event.ts, event.device, id],
+         SET list_status = ?1, card_snapshot = COALESCE(?2, card_snapshot), updated_at = ?3, updated_by_device = ?4
+         WHERE id = ?5
+           AND (updated_at < ?3 OR (updated_at = ?3 AND updated_by_device < ?4))",
+        params![list_status, card_snapshot, event.ts, event.device, id],
     )?;
     Ok(())
 }
@@ -3337,6 +3346,7 @@ mod tests {
                         mastery_source: "manual".into(),
                         mastery_reason: None,
                         list_status: "confirmed".into(),
+                        card_snapshot: None,
                     }),
                 ),
                 ev(
@@ -3424,6 +3434,7 @@ mod tests {
                         mastery_source: "auto".into(),
                         mastery_reason: Some("{\"reason\":\"exposure_promotion\"}".into()),
                         list_status: "confirmed".into(),
+                        card_snapshot: None,
                     }),
                 ),
                 ev(
@@ -3458,6 +3469,130 @@ mod tests {
         assert_eq!(reason, None);
     }
 
+    // --- card_snapshot (migration 067) ---
+
+    /// A word saved with a card snapshot on the adding device must still
+    /// carry it after a fresh device replays the same `vocab.add` event.
+    #[test]
+    fn a_card_snapshot_survives_a_vocab_add_sync_round_trip() {
+        let mut db = open_db();
+        let snapshot = r#"{"modules":{"word_info":{"summary":"clear"}}}"#.to_string();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(
+                    1100,
+                    "dev-A",
+                    EventBody::VocabAdd(VocabPayload {
+                        id: "v1".into(),
+                        book_id: "b1".into(),
+                        word: "lucid".into(),
+                        definition: "clear".into(),
+                        context_sentence: None,
+                        context_explanation: None,
+                        cfi: None,
+                        mastery: "new".into(),
+                        review_count: 0,
+                        next_review_at: None,
+                        review_interval_days: 0,
+                        last_reviewed_at: None,
+                        last_review_rating: None,
+                        fsrs_stability: None,
+                        fsrs_difficulty: None,
+                        fsrs_version: 1,
+                        created_at: None,
+                        mastery_source: "manual".into(),
+                        mastery_reason: None,
+                        list_status: "confirmed".into(),
+                        card_snapshot: Some(snapshot.clone()),
+                    }),
+                ),
+            ],
+        );
+        let stored: Option<String> = db
+            .query_row(
+                "SELECT card_snapshot FROM vocab_words WHERE id = 'v1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, Some(snapshot));
+    }
+
+    /// The watchlist→confirmed promotion is the one `vocab.list_status.set`
+    /// transition that can carry a snapshot (an explicit save on a word
+    /// still in the observation zone). A receiving device must apply it, and
+    /// a later promotion with no snapshot must not erase one already there.
+    #[test]
+    fn a_snapshot_carried_on_list_status_promotion_survives_and_is_never_erased() {
+        let mut db = open_db();
+        let snapshot = r#"{"modules":{"word_info":{"summary":"being alone"}}}"#.to_string();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(
+                    1100,
+                    "dev-A",
+                    EventBody::VocabAdd(VocabPayload {
+                        id: "v1".into(),
+                        book_id: "b1".into(),
+                        word: "solitude".into(),
+                        definition: "being alone".into(),
+                        context_sentence: None,
+                        context_explanation: None,
+                        cfi: None,
+                        mastery: "new".into(),
+                        review_count: 0,
+                        next_review_at: None,
+                        review_interval_days: 0,
+                        last_reviewed_at: None,
+                        last_review_rating: None,
+                        fsrs_stability: None,
+                        fsrs_difficulty: None,
+                        fsrs_version: 1,
+                        created_at: None,
+                        mastery_source: "manual".into(),
+                        mastery_reason: None,
+                        list_status: "watchlist".into(),
+                        card_snapshot: None,
+                    }),
+                ),
+                ev(
+                    1200,
+                    "dev-A",
+                    EventBody::VocabListStatusSet {
+                        id: "v1".into(),
+                        list_status: "confirmed".into(),
+                        card_snapshot: Some(snapshot.clone()),
+                    },
+                ),
+                // A later promotion-shaped event with no snapshot (replaying
+                // the same save, or a different device's plain promotion)
+                // must not wipe the one already stored.
+                ev(
+                    1300,
+                    "dev-A",
+                    EventBody::VocabListStatusSet {
+                        id: "v1".into(),
+                        list_status: "confirmed".into(),
+                        card_snapshot: None,
+                    },
+                ),
+            ],
+        );
+        let (list_status, stored): (String, Option<String>) = db
+            .query_row(
+                "SELECT list_status, card_snapshot FROM vocab_words WHERE id = 'v1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(list_status, "confirmed");
+        assert_eq!(stored, Some(snapshot));
+    }
+
     // --- vocab.definition.set ---
 
     /// A saved word as the adding device published it. `definition` is the
@@ -3484,6 +3619,7 @@ mod tests {
             mastery_source: "manual".into(),
             mastery_reason: None,
             list_status: "confirmed".into(),
+            card_snapshot: None,
         })
     }
 

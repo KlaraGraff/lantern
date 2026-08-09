@@ -377,9 +377,33 @@ impl VocabReviewRating {
 /// card was in on the way in. Both are decided by the card-construction rules
 /// below, so recomputing them at the call site would mean keeping a second
 /// copy of those rules in step with this one.
+/// What a single review answer is allowed to do to a word's mastery tier.
+///
+/// A review is evidence, not a fresh judgement: it can only push the tier in
+/// the direction the answer supports. A pass is evidence of knowing the
+/// word — but only a long-enough interval is *strong* evidence, strong
+/// enough to promote. A fail is always evidence of not knowing it. Anything
+/// weaker than that (a pass with a short interval) is not evidence either
+/// way, so it must leave the tier untouched rather than default to a guess.
+/// `Keep` exists so that "leave it alone" can never be confused with a
+/// concrete tier value the way an `Option<&str>` that also carries "new
+/// value" would.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MasteryOutcome {
+    /// The card's interval reached the mastery threshold: raise the tier to
+    /// `"mastered"`.
+    Promote,
+    /// The reader failed to recall the word (`Again`): drop the tier to
+    /// `"learning"`.
+    Demote,
+    /// Neither of the above: do not touch `mastery`, `mastery_source`, or
+    /// `mastery_reason` — whatever set them stands.
+    Keep,
+}
+
 #[derive(Debug, Clone)]
 struct ScheduledReview {
-    mastery: String,
+    mastery_outcome: MasteryOutcome,
     review_interval_days: i64,
     next_review_at: i64,
     stability: f64,
@@ -446,13 +470,23 @@ fn schedule_review(
     } else {
         now.saturating_add(interval.saturating_mul(DAY_MS))
     };
-    let mastery = if interval >= 21 && !matches!(rating, VocabReviewRating::Again) {
-        "mastered"
+    // A review is only allowed to move the tier in the direction the answer
+    // is evidence for: failing a card (`Again`) is real evidence of not
+    // knowing the word and demotes it; a long enough interval on any other
+    // rating is evidence of knowing it and promotes it. Everything in
+    // between is not evidence either way, so the tier — and whatever
+    // `mastery_source`/`mastery_reason` currently say about how it got
+    // there, e.g. the reading-exposure engine's explanation — must be left
+    // exactly as it was. See `MasteryOutcome`.
+    let mastery_outcome = if matches!(rating, VocabReviewRating::Again) {
+        MasteryOutcome::Demote
+    } else if interval >= 21 {
+        MasteryOutcome::Promote
     } else {
-        "learning"
+        MasteryOutcome::Keep
     };
     Ok(ScheduledReview {
-        mastery: mastery.to_string(),
+        mastery_outcome,
         review_interval_days: interval,
         next_review_at,
         stability: f64::from(chosen.memory.stability),
@@ -722,6 +756,17 @@ pub(crate) fn set_definition(
     })
 }
 
+/// Cap on the serialised `card_snapshot` JSON. Kept in bytes (not chars) so a
+/// multi-byte-heavy card can't sneak past a character-count guard. Anything
+/// larger is stored as `NULL` rather than truncated — a partial JSON blob
+/// would not deserialise back into a `LearningCardResult` at read time, so
+/// there is no useful "shorter but still valid" form to keep.
+const MAX_CARD_SNAPSHOT_BYTES: usize = 64 * 1024;
+
+fn clamp_card_snapshot(card_snapshot: Option<String>) -> Option<String> {
+    card_snapshot.filter(|value| value.len() <= MAX_CARD_SNAPSHOT_BYTES)
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub fn add_vocab_word(
@@ -731,6 +776,7 @@ pub fn add_vocab_word(
     context_sentence: Option<String>,
     context_explanation: Option<String>,
     cfi: Option<String>,
+    card_snapshot: Option<String>,
     db: State<'_, Db>,
     sync: State<'_, SyncWriter>,
 ) -> AppResult<VocabWord> {
@@ -741,6 +787,7 @@ pub fn add_vocab_word(
         context_sentence,
         context_explanation,
         cfi,
+        card_snapshot,
         &db,
         &sync,
     )
@@ -754,12 +801,14 @@ pub(crate) fn add_vocab_word_inner(
     context_sentence: Option<String>,
     context_explanation: Option<String>,
     cfi: Option<String>,
+    card_snapshot: Option<String>,
     db: &Db,
     sync: &SyncWriter,
 ) -> AppResult<VocabWord> {
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis();
     let device = sync.self_device().to_string();
+    let card_snapshot = clamp_card_snapshot(card_snapshot);
 
     log::debug!("vocab: add_vocab_word book_id={book_id} word={word:?}");
 
@@ -786,14 +835,19 @@ pub(crate) fn add_vocab_word_inner(
                 // sitting in the observation zone from an earlier lookup —
                 // that's an explicit save, so it promotes immediately
                 // regardless of lookup count. Source stays whatever it was
-                // (this path never touches mastery_source/reason).
+                // (this path never touches mastery_source/reason). A
+                // non-null incoming snapshot replaces the stored one; a null
+                // incoming snapshot leaves whatever was already saved alone
+                // (COALESCE), same rule `set_definition` uses for
+                // `context_explanation`.
                 tx.execute(
-                    "UPDATE vocab_words SET list_status = 'confirmed', updated_at = ?1, updated_by_device = ?2 WHERE id = ?3",
-                    params![now, device, existing.id],
+                    "UPDATE vocab_words SET list_status = 'confirmed', card_snapshot = COALESCE(?1, card_snapshot), updated_at = ?2, updated_by_device = ?3 WHERE id = ?4",
+                    params![card_snapshot, now, device, existing.id],
                 )?;
                 events.push(EventBody::VocabListStatusSet {
                     id: existing.id.clone(),
                     list_status: "confirmed".to_string(),
+                    card_snapshot: card_snapshot.clone(),
                 });
                 return Ok(VocabWord {
                     list_status: "confirmed".to_string(),
@@ -808,9 +862,9 @@ pub(crate) fn add_vocab_word_inner(
         }
 
         tx.execute(
-            "INSERT INTO vocab_words (id, book_id, word, definition, context_sentence, context_explanation, cfi, mastery, review_count, next_review_at, list_status, created_at, updated_at, updated_by_device)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'new', 0, NULL, 'confirmed', ?8, ?8, ?9)",
-            params![id, book_id, word, definition, context_sentence, context_explanation, cfi, now, device],
+            "INSERT INTO vocab_words (id, book_id, word, definition, context_sentence, context_explanation, cfi, card_snapshot, mastery, review_count, next_review_at, list_status, created_at, updated_at, updated_by_device)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'new', 0, NULL, 'confirmed', ?9, ?9, ?10)",
+            params![id, book_id, word, definition, context_sentence, context_explanation, cfi, card_snapshot, now, device],
         )?;
         events.push(EventBody::VocabAdd(VocabPayload {
             id: id.clone(),
@@ -824,6 +878,7 @@ pub(crate) fn add_vocab_word_inner(
             mastery_source: "manual".to_string(),
             mastery_reason: None,
             list_status: "confirmed".to_string(),
+            card_snapshot: card_snapshot.clone(),
             review_count: 0,
             next_review_at: None,
             review_interval_days: 0,
@@ -862,6 +917,30 @@ pub(crate) fn add_vocab_word_inner(
     })?;
 
     Ok(vocab)
+}
+
+/// The single reader of `card_snapshot`. Deliberately its own command rather
+/// than a field on `VocabWord`: that struct is what list queries hand back
+/// (`SELECT_COLS`, on purpose, never includes this column — see migration
+/// 067), so folding the snapshot into it would either bloat every list fetch
+/// or leave the field silently `None` on rows that do have one. Nothing
+/// calls this yet; it exists for a future vocabulary detail surface.
+#[tauri::command]
+pub fn get_vocab_card_snapshot(word_id: String, db: State<'_, Db>) -> AppResult<Option<String>> {
+    get_vocab_card_snapshot_inner(&word_id, &db)
+}
+
+pub(crate) fn get_vocab_card_snapshot_inner(word_id: &str, db: &Db) -> AppResult<Option<String>> {
+    let snapshot = db
+        .reader()
+        .query_row(
+            "SELECT card_snapshot FROM vocab_words WHERE id = ?1",
+            params![word_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()?
+        .flatten();
+    Ok(snapshot)
 }
 
 /// Runs on every lookup, inside `save_lookup_record_inner`'s transaction,
@@ -924,6 +1003,7 @@ pub(crate) fn observe_lookup_for_vocab(
                 mastery_source: "manual".to_string(),
                 mastery_reason: None,
                 list_status: "watchlist".to_string(),
+                card_snapshot: None,
                 review_count: 0,
                 next_review_at: None,
                 review_interval_days: 0,
@@ -957,6 +1037,7 @@ pub(crate) fn observe_lookup_for_vocab(
     events.push(EventBody::VocabListStatusSet {
         id: vocab_id.clone(),
         list_status: "confirmed".to_string(),
+        card_snapshot: None,
     });
 
     let book_title = tx
@@ -1154,7 +1235,7 @@ pub(crate) fn record_vocab_review_inner(
             now,
         )?;
         let ScheduledReview {
-            mastery,
+            mastery_outcome,
             review_interval_days,
             next_review_at,
             stability,
@@ -1163,33 +1244,95 @@ pub(crate) fn record_vocab_review_inner(
             state_before,
         } = scheduled;
         let review_count = current.review_count.saturating_add(1);
-        tx.execute(
-            "UPDATE vocab_words
-             SET mastery = ?1, review_count = ?2, next_review_at = ?3,
-                 review_interval_days = ?4, last_reviewed_at = ?5, last_review_rating = ?6,
-                 fsrs_stability = ?7, fsrs_difficulty = ?8, fsrs_version = 1,
-                 mastery_source = 'manual', mastery_reason = NULL,
-                 updated_at = ?5, updated_by_device = ?9
-             WHERE id = ?10",
-            params![
-                mastery,
-                review_count,
-                next_review_at,
-                review_interval_days,
-                now,
-                rating.as_str(),
-                stability,
-                difficulty,
-                device,
-                id,
-            ],
-        )?;
-        // An actual review outranks whatever the exposure scorer had guessed,
-        // so the automatic sentence is cleared rather than left to contradict
-        // the tier the reader just earned. `mastery_source` stays binary —
-        // migration 038 defines 'manual' as "the user set it or a review
-        // decided it", and the ability to roll back only the 'auto' rows
-        // depends on that staying a two-valued column.
+        // A review may only promote or demote the tier (see `MasteryOutcome`);
+        // `Keep` must leave `mastery`, `mastery_source`, and `mastery_reason`
+        // exactly as they were, including a reading-exposure explanation
+        // this review is not strong enough evidence to overrule. That is two
+        // UPDATE shapes, not one UPDATE that writes the old value back — the
+        // FSRS columns below still change on every review, and writing back
+        // a value that was merely read a moment earlier would clobber a
+        // concurrent writer's change to those three columns with a stale
+        // read of them.
+        let new_mastery: Option<&'static str> = match mastery_outcome {
+            MasteryOutcome::Promote => Some("mastered"),
+            MasteryOutcome::Demote => Some("learning"),
+            MasteryOutcome::Keep => None,
+        };
+        if let Some(mastery) = new_mastery {
+            // An actual promotion or demotion outranks whatever the exposure
+            // scorer had guessed, so the automatic sentence is cleared rather
+            // than left to contradict the tier the reader just earned.
+            tx.execute(
+                "UPDATE vocab_words
+                 SET mastery = ?1, review_count = ?2, next_review_at = ?3,
+                     review_interval_days = ?4, last_reviewed_at = ?5, last_review_rating = ?6,
+                     fsrs_stability = ?7, fsrs_difficulty = ?8, fsrs_version = 1,
+                     mastery_source = 'manual', mastery_reason = NULL,
+                     updated_at = ?5, updated_by_device = ?9
+                 WHERE id = ?10",
+                params![
+                    mastery,
+                    review_count,
+                    next_review_at,
+                    review_interval_days,
+                    now,
+                    rating.as_str(),
+                    stability,
+                    difficulty,
+                    device,
+                    id,
+                ],
+            )?;
+        } else {
+            // Keep: the tier columns are simply absent from this statement,
+            // not re-written with the value `current` held before the FSRS
+            // columns changed.
+            tx.execute(
+                "UPDATE vocab_words
+                 SET review_count = ?1, next_review_at = ?2,
+                     review_interval_days = ?3, last_reviewed_at = ?4, last_review_rating = ?5,
+                     fsrs_stability = ?6, fsrs_difficulty = ?7, fsrs_version = 1,
+                     updated_at = ?4, updated_by_device = ?8
+                 WHERE id = ?9",
+                params![
+                    review_count,
+                    next_review_at,
+                    review_interval_days,
+                    now,
+                    rating.as_str(),
+                    stability,
+                    difficulty,
+                    device,
+                    id,
+                ],
+            )?;
+        }
+        let mastery = new_mastery
+            .map(str::to_string)
+            .unwrap_or_else(|| current.mastery.clone());
+        let mastery_source = if new_mastery.is_some() {
+            "manual".to_string()
+        } else {
+            current.mastery_source.clone()
+        };
+        let mastery_reason = if new_mastery.is_some() {
+            None
+        } else {
+            current.mastery_reason.clone()
+        };
+        // The timeline (and the statistics page's counts drawn from it) must
+        // only see a row when the tier actually moved — a Promote/Demote
+        // outcome whose resulting value happens to match what was already
+        // stored (e.g. an already-`mastered` word promoted again) is not a
+        // transition.
+        if new_mastery.is_some() && mastery != current.mastery {
+            let reason = if mastery_outcome == MasteryOutcome::Promote {
+                "review_promotion"
+            } else {
+                "review_demotion"
+            };
+            record_mastery_event(tx, id, &current.mastery, &mastery, "review", reason, "{}", now)?;
+        }
         let progress = VocabProgress {
             mastery,
             next_review_at: Some(next_review_at),
@@ -1200,8 +1343,8 @@ pub(crate) fn record_vocab_review_inner(
             fsrs_stability: Some(stability),
             fsrs_difficulty: Some(difficulty),
             fsrs_version: 1,
-            mastery_source: "manual".to_string(),
-            mastery_reason: None,
+            mastery_source,
+            mastery_reason,
         };
         events.push(EventBody::VocabMasterySet {
             id: id.to_string(),
@@ -1749,6 +1892,7 @@ pub(crate) fn do_import_vocab_backup(
                 fsrs_version: word.fsrs_version,
                 created_at: Some(created_at),
                 list_status: word.list_status.clone(),
+                card_snapshot: None,
             }));
             imported += 1;
         }
@@ -1963,6 +2107,7 @@ mod tests {
             Some("True freedom is the courage to be disliked.".to_string()),
             None,
             Some("epubcfi(/6/2!/4/2)".to_string()),
+            None,
             &db,
             &sync,
         )
@@ -1971,6 +2116,7 @@ mod tests {
             "book-chapter",
             "Solitude",
             "being alone",
+            None,
             None,
             None,
             None,
@@ -2011,12 +2157,12 @@ mod tests {
         let (dir, db, sync) = setup_import_db();
         insert_import_book(&db, "book-a");
         insert_import_book(&db, "book-b");
-        let a = add_vocab_word_inner("book-a", "Courage", "def a", None, None, None, &db, &sync)
+        let a = add_vocab_word_inner("book-a", "Courage", "def a", None, None, None, None, &db, &sync)
             .unwrap();
-        let b = add_vocab_word_inner("book-b", "courage", "def b", None, None, None, &db, &sync)
+        let b = add_vocab_word_inner("book-b", "courage", "def b", None, None, None, None, &db, &sync)
             .unwrap();
         let other =
-            add_vocab_word_inner("book-b", "solitude", "def c", None, None, None, &db, &sync)
+            add_vocab_word_inner("book-b", "solitude", "def c", None, None, None, None, &db, &sync)
                 .unwrap();
         (dir, db, sync, a.id, b.id, other.id)
     }
@@ -2263,6 +2409,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             &db,
             &sync,
         )
@@ -2295,7 +2442,7 @@ mod tests {
             ("delta", "mastered"),
         ] {
             let added =
-                add_vocab_word_inner("book-a", word, "a definition", None, None, None, &db, &sync)
+                add_vocab_word_inner("book-a", word, "a definition", None, None, None, None, &db, &sync)
                     .unwrap();
             update_vocab_mastery_inner(&added.id, mastery, None, &db, &sync).unwrap();
         }
@@ -2323,6 +2470,7 @@ mod tests {
             "book-a",
             "steadfast",
             "a definition",
+            None,
             None,
             None,
             None,
@@ -2369,6 +2517,7 @@ mod tests {
             "book-a",
             "lucid",
             "a definition",
+            None,
             None,
             None,
             None,
@@ -2629,7 +2778,7 @@ mod tests {
     #[test]
     fn again_returns_word_to_short_learning_interval() {
         let first = schedule_review(VocabReviewRating::Again, None, None, None, 1_000).unwrap();
-        assert_eq!(first.mastery, "learning");
+        assert_eq!(first.mastery_outcome, MasteryOutcome::Demote);
         assert_eq!(first.review_interval_days, 0);
         // A zero-day interval must still land in the future. The upstream
         // scheduler has no learning steps, so this floor is ours; without it
@@ -2674,6 +2823,151 @@ mod tests {
         .unwrap();
         assert!(second.review_interval_days >= first.review_interval_days);
         assert!(second.next_review_at > 1_000);
+    }
+
+    /// Sets a word's tier and provenance directly, the way the reading-
+    /// exposure engine or a prior review would have left it, so a review
+    /// test can start from a known tier instead of `"new"`.
+    fn seed_mastery(db: &Db, id: &str, mastery: &str, mastery_source: &str, mastery_reason: Option<&str>) {
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE vocab_words SET mastery = ?1, mastery_source = ?2, mastery_reason = ?3 WHERE id = ?4",
+                params![mastery, mastery_source, mastery_reason, id],
+            )
+            .unwrap();
+    }
+
+    fn mastery_event_count(db: &Db, id: &str) -> usize {
+        crate::commands::mastery_events::list_mastery_events_for(db, id)
+            .unwrap()
+            .len()
+    }
+
+    /// A passing rating on a card whose interval lands under the mastery
+    /// threshold is not strong evidence either way — a right answer must not
+    /// demote a tier the reading-exposure engine already raised, and it does
+    /// not promote it either. `mastery_source`/`mastery_reason` — the
+    /// exposure engine's own provenance — must be untouched, and no
+    /// `mastery_events` row should appear (the statistics page counts those
+    /// rows as tier changes).
+    #[test]
+    fn a_passing_review_under_the_mastery_threshold_keeps_an_auto_tier_and_its_reason() {
+        let (_dir, db, sync, a, _b, _other) = setup_sibling_db();
+        seed_mastery(
+            &db,
+            &a,
+            "familiar",
+            "auto",
+            Some("{\"reason\":\"exposure_promotion\"}"),
+        );
+        let before_events = mastery_event_count(&db, &a);
+
+        // First-ever review, no prior FSRS state: a "good" rating lands a
+        // short interval (single-digit days), well under the 21-day
+        // threshold.
+        let reviewed = record_vocab_review_inner(&a, VocabReviewRating::Good, &db, &sync).unwrap();
+
+        assert!(
+            reviewed.review_interval_days < 21,
+            "test assumption broken: first-ever 'good' review must land under \
+             the mastery threshold, got {}",
+            reviewed.review_interval_days
+        );
+        assert_eq!(reviewed.mastery, "familiar");
+        assert_eq!(reviewed.mastery_source, "auto");
+        assert_eq!(
+            reviewed.mastery_reason.as_deref(),
+            Some("{\"reason\":\"exposure_promotion\"}")
+        );
+        assert_eq!(
+            mastery_event_count(&db, &a),
+            before_events,
+            "a Keep outcome must not write a mastery_events row"
+        );
+    }
+
+    /// A `mastered` word answered Hard, with an interval still under the
+    /// threshold, is not evidence of forgetting the word — only `Again` is.
+    /// The tier must hold.
+    #[test]
+    fn a_hard_review_under_the_mastery_threshold_does_not_demote_a_mastered_word() {
+        let (_dir, db, sync, a, _b, _other) = setup_sibling_db();
+        seed_mastery(&db, &a, "mastered", "manual", None);
+
+        // First-ever review: "hard" lands an even shorter interval than
+        // "good" does.
+        let reviewed = record_vocab_review_inner(&a, VocabReviewRating::Hard, &db, &sync).unwrap();
+
+        assert!(
+            reviewed.review_interval_days < 21,
+            "test assumption broken: first-ever 'hard' review must land under \
+             the mastery threshold, got {}",
+            reviewed.review_interval_days
+        );
+        assert_eq!(reviewed.mastery, "mastered");
+    }
+
+    /// An interval that reaches the mastery threshold promotes the tier,
+    /// and — unlike the Keep path — this is a real transition, so it must
+    /// leave exactly one row on the timeline.
+    #[test]
+    fn a_review_that_reaches_the_mastery_threshold_promotes_to_mastered() {
+        let (_dir, db, sync, a, b, _other) = setup_sibling_db();
+        seed_mastery(&db, &a, "learning", "manual", None);
+        // Seed FSRS state as if the card was last reviewed at the Unix
+        // epoch: `now` (real wall-clock time) is decades later, so the
+        // elapsed time alone drives the scheduler's interval for this
+        // "good" rating well past 21 days.
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE vocab_words SET fsrs_stability = 1.0, fsrs_difficulty = 5.0, last_reviewed_at = 0 WHERE id = ?1",
+                params![a],
+            )
+            .unwrap();
+        let before_events = mastery_event_count(&db, &a);
+
+        let reviewed = record_vocab_review_inner(&a, VocabReviewRating::Good, &db, &sync).unwrap();
+
+        assert!(
+            reviewed.review_interval_days >= 21,
+            "test assumption broken: expected the seeded elapsed time to \
+             produce a >=21-day interval, got {}",
+            reviewed.review_interval_days
+        );
+        assert_eq!(reviewed.mastery, "mastered");
+        assert_eq!(reviewed.mastery_source, "manual");
+        assert_eq!(reviewed.mastery_reason, None);
+        assert_eq!(stored_word(&db, &b).mastery, "mastered");
+        assert_eq!(
+            mastery_event_count(&db, &a),
+            before_events + 1,
+            "a Promote outcome must write exactly one mastery_events row"
+        );
+    }
+
+    /// `Again` is the one rating that is real evidence of not knowing a
+    /// word, so it demotes regardless of tier or interval — even a word the
+    /// reading-exposure engine had raised to `familiar`.
+    #[test]
+    fn an_again_rating_always_demotes_to_learning() {
+        let (_dir, db, sync, a, _b, _other) = setup_sibling_db();
+        seed_mastery(
+            &db,
+            &a,
+            "familiar",
+            "auto",
+            Some("{\"reason\":\"exposure_promotion\"}"),
+        );
+
+        let reviewed = record_vocab_review_inner(&a, VocabReviewRating::Again, &db, &sync).unwrap();
+
+        assert_eq!(reviewed.mastery, "learning");
+        assert_eq!(reviewed.mastery_source, "manual");
+        assert_eq!(reviewed.mastery_reason, None);
     }
 
     // --- Observation zone (docs/impls/reading-flow-decisions-2026-08-06.md
@@ -2790,6 +3084,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             &db,
             &sync,
         )
@@ -2810,6 +3105,7 @@ mod tests {
             "book-watch",
             "Courage",
             "the ability to act",
+            None,
             None,
             None,
             None,
@@ -2834,6 +3130,117 @@ mod tests {
         assert!(check_vocab_exists_inner(&db, "book-watch", "Solitude")
             .unwrap()
             .is_none());
+    }
+
+    // --- card_snapshot (migration 067) ---
+
+    #[test]
+    fn a_saved_card_snapshot_round_trips_through_the_dedicated_reader() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-a");
+        let snapshot = r#"{"modules":{"word_info":{"summary":"clear"}}}"#.to_string();
+        let saved = add_vocab_word_inner(
+            "book-a",
+            "lucid",
+            "a definition",
+            None,
+            None,
+            None,
+            Some(snapshot.clone()),
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        let read_back = get_vocab_card_snapshot_inner(&saved.id, &db).unwrap();
+        assert_eq!(read_back, Some(snapshot));
+    }
+
+    #[test]
+    fn a_null_snapshot_never_wipes_an_existing_one_on_the_watchlist_promotion_path() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-watch");
+
+        // First save brings a snapshot while the word is still in the
+        // observation zone from an earlier lookup.
+        crate::commands::lookup_history::save_lookup_record_inner(
+            lookup("book-watch", "Solitude", "epubcfi(/6/2)"),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        let snapshot = r#"{"modules":{"word_info":{"summary":"being alone"}}}"#.to_string();
+        let first = add_vocab_word_inner(
+            "book-watch",
+            "Solitude",
+            "a definition",
+            None,
+            None,
+            None,
+            Some(snapshot.clone()),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        assert_eq!(first.list_status, "confirmed");
+        assert_eq!(
+            get_vocab_card_snapshot_inner(&first.id, &db).unwrap(),
+            Some(snapshot.clone())
+        );
+
+        // A second save of the same already-confirmed word with no snapshot
+        // must not blank the one already stored. The existing word matches
+        // the no-write branch, so nothing changes either way — this pins
+        // that "no snapshot offered" is never mistaken for "erase it".
+        add_vocab_word_inner(
+            "book-watch",
+            "Solitude",
+            "a definition",
+            None,
+            None,
+            None,
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+        assert_eq!(
+            get_vocab_card_snapshot_inner(&first.id, &db).unwrap(),
+            Some(snapshot)
+        );
+    }
+
+    #[test]
+    fn an_oversized_snapshot_is_stored_as_null_rather_than_truncated() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-a");
+        let oversized = "x".repeat(MAX_CARD_SNAPSHOT_BYTES + 1);
+        let saved = add_vocab_word_inner(
+            "book-a",
+            "lucid",
+            "a definition",
+            None,
+            None,
+            None,
+            Some(oversized),
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        assert_eq!(get_vocab_card_snapshot_inner(&saved.id, &db).unwrap(), None);
+    }
+
+    #[test]
+    fn get_vocab_card_snapshot_is_none_when_the_row_never_had_one() {
+        let (_dir, db, sync) = setup_import_db();
+        insert_import_book(&db, "book-a");
+        let saved = add_vocab_word_inner(
+            "book-a", "lucid", "a definition", None, None, None, None, &db, &sync,
+        )
+        .unwrap();
+
+        assert_eq!(get_vocab_card_snapshot_inner(&saved.id, &db).unwrap(), None);
     }
 }
 
