@@ -55,6 +55,28 @@ function normalizedExplanationMode(value: string | undefined): string {
   return defaultExplanationMode(i18n.language);
 }
 
+/**
+ * 讲解风格 — how *far* one card ranges, not how hard its words are.
+ *
+ * Word difficulty is the learner level's job; this only decides how many
+ * points a card makes. `thorough` is the default because a reader who never
+ * opens this setting is better served by the fuller card: the shorter one is
+ * a deliberate choice to stop reading sooner, not a safe fallback.
+ *
+ * Mirrors `normalized_explanation_style` in `src-tauri/src/commands/ai/prompt.rs`,
+ * which is where the setting actually reaches the model. Anything unreadable
+ * lands on `thorough` on both sides.
+ */
+const EXPLANATION_STYLES = ["thorough", "essential"] as const;
+type ExplanationStyle = (typeof EXPLANATION_STYLES)[number];
+
+/** How many sample points each style shows — the real counts from the samples. */
+const STYLE_SAMPLE_POINTS: Record<ExplanationStyle, number> = { thorough: 7, essential: 5 };
+
+function normalizedExplanationStyle(value: string | undefined): ExplanationStyle {
+  return value === "essential" ? "essential" : "thorough";
+}
+
 function errorCode(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -79,6 +101,8 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
   const [cefrLevel, setCefrLevel] = useState("B1");
   const [cefrSource, setCefrSource] = useState("manual");
   const [explanationMode, setExplanationMode] = useState<string>(() => defaultExplanationMode(i18n.language));
+  const [explanationStyle, setExplanationStyle] = useState<ExplanationStyle>("thorough");
+  const [styleSampleOpen, setStyleSampleOpen] = useState(false);
   const [translationLanguage, setTranslationLanguage] = useState("zh");
   const [levelWordClass, setLevelWordClass] = useState("ai");
   const [lowLevelEnglishAcknowledged, setLowLevelEnglishAcknowledged] = useState(false);
@@ -112,6 +136,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
     const translatedTo = settings.translation_language || "zh";
     const mode = normalizedExplanationMode(settings.explanation_mode);
     setExplanationMode(mode);
+    setExplanationStyle(normalizedExplanationStyle(settings.explanation_style));
     setTranslationLanguage(translatedTo);
     setLevelWordClass(settings.level_observation_word_class === "local" ? "local" : "ai");
     const acknowledged = settings.cefr_low_level_english_warning_ack === "true";
@@ -333,6 +358,126 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
           ]}
         />
       </div>
+      {/*
+        Not a Select: both styles are named on screen at all times, because the
+        choice is not obvious from either name alone — the reader has to see
+        that one card is longer and the other is shorter before they can pick.
+        The samples stay collapsed so this row does not push the rest of the
+        tab off screen, and open themselves the moment the choice changes,
+        which is exactly when "what did I just do" needs answering.
+      */}
+      <div className="py-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-[220px] flex-1">
+            <p className="text-[14px] font-medium text-text-primary">
+              {t("settings.learner.explanationStyle")}
+            </p>
+            <p className="text-[12px] text-text-muted mt-0.5 max-w-[420px]">
+              {t("settings.learner.explanationStyleHint")}
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-expanded={styleSampleOpen}
+            onClick={() => setStyleSampleOpen((open) => !open)}
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border bg-bg-surface px-2.5 text-[12px] font-medium text-text-secondary hover:border-accent"
+          >
+            {styleSampleOpen
+              ? t("settings.learner.explanationStyleHideSample")
+              : t("settings.learner.explanationStyleShowSample")}
+            {styleSampleOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+        </div>
+
+        <div
+          role="radiogroup"
+          aria-label={t("settings.learner.explanationStyle")}
+          className="mt-3 grid gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))]"
+        >
+          {EXPLANATION_STYLES.map((style) => {
+            const selected = explanationStyle === style;
+            const name = t(`settings.learner.explanationStyle${style === "thorough" ? "Thorough" : "Essential"}`);
+            return (
+              <button
+                key={style}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => {
+                  if (selected) return;
+                  setExplanationStyle(style);
+                  setStyleSampleOpen(true);
+                  void save("explanation_style", style).then(() => showSavedToast());
+                }}
+                className={`cursor-pointer rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                  selected ? "border-accent ring-1 ring-accent" : "border-border hover:border-accent/50"
+                }`}
+              >
+                <p className={`text-[13px] font-semibold ${selected ? "text-accent-text" : "text-text-primary"}`}>
+                  {name}
+                </p>
+                <p className="mt-1 text-[11px] leading-5 text-text-muted">
+                  {t(`settings.learner.explanationStyle${style === "thorough" ? "Thorough" : "Essential"}Sub`)}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+
+        <p className="mt-2 text-[11px] leading-5 text-text-muted">
+          {t("settings.learner.explanationStyleScopeNote")}
+        </p>
+
+        {styleSampleOpen && (
+          <div className="mt-3 rounded-lg border border-border bg-bg-muted p-3">
+            <p className="text-[11px] leading-5 text-text-muted">
+              {t("settings.learner.explanationStyleSample.caption")}
+            </p>
+            <p className="mt-1 text-[12px] leading-5 text-text-secondary">
+              <span className="font-semibold text-text-primary">
+                {t("settings.learner.explanationStyleSample.word")}
+              </span>
+              {" · "}
+              {t("settings.learner.explanationStyleSample.sentence")}
+            </p>
+            <div className="mt-3 grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr))]">
+              {EXPLANATION_STYLES.map((style) => {
+                const selected = explanationStyle === style;
+                const count = STYLE_SAMPLE_POINTS[style];
+                return (
+                  <div
+                    key={style}
+                    className={`rounded-md border bg-bg-surface p-2.5 ${selected ? "border-accent" : "border-border-light"}`}
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className={`text-[12px] font-semibold ${selected ? "text-accent-text" : "text-text-primary"}`}>
+                        {t(`settings.learner.explanationStyle${style === "thorough" ? "Thorough" : "Essential"}`)}
+                      </p>
+                      <span className="text-[10px] text-text-muted">
+                        {t("settings.learner.explanationStyleSample.pointCount", { count })}
+                      </span>
+                    </div>
+                    <p className="mt-1.5 text-[12px] leading-5 text-text-secondary">
+                      {t(`settings.learner.explanationStyleSample.${style}Summary`)}
+                    </p>
+                    <ul className="mt-1.5 list-disc space-y-1 pl-4 text-[11px] leading-5 text-text-muted">
+                      {Array.from({ length: count }, (_, index) => (
+                        <li key={index}>
+                          {t(`settings.learner.explanationStyleSample.${style}${index + 1}`)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-3 text-[11px] leading-5 text-text-muted">
+              {t("settings.learner.explanationStyleSample.languageNote")}
+            </p>
+          </div>
+        )}
+      </div>
+
       <div className="flex min-h-[82px] flex-wrap items-center justify-between gap-4 py-3">
         <div className="min-w-[220px] flex-1">
           <p className="text-[14px] font-medium text-text-primary">
