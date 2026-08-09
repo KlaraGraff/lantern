@@ -22,7 +22,14 @@ import { activeScene } from "./promo";
 
 const DAY = 86_400_000;
 const now = Date.now();
-const ago = (days: number) => Math.floor((now - days * DAY) / 1000);
+/**
+ * Unix **milliseconds**, like every timestamp the real backend writes: migration
+ * 009 converted every synced table to `INTEGER` unix millis, `next_review_at`
+ * included, and nothing has written seconds since. This used to divide by 1000,
+ * which is why the reader panel rendered notes as `20653d ago` — the app was
+ * reading a 1970s date and reporting it faithfully.
+ */
+const ago = (days: number) => now - days * DAY;
 
 /** A tiny inline cover so the grid has something to lay out. */
 function cover(label: string, bg: string): string {
@@ -174,7 +181,7 @@ function mkWord(
     created_at: createdAt,
     updated_at: createdAt,
     last_reviewed_at: mastery > 0 ? createdAt : null,
-    due_at: Math.floor((now + dueInDays * DAY) / 1000),
+    due_at: now + dueInDays * DAY,
     notes: null,
     tags: [],
     source: "reader",

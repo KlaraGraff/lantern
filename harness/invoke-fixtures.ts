@@ -37,7 +37,13 @@ type Fixture = unknown | ((args: Args) => unknown);
 const bookById = (id: unknown): HarnessBook =>
   LIBRARY.find((b) => b.id === id) ?? LIBRARY[0] ?? BOOKS[0];
 
-const nowSec = () => Math.floor(Date.now() / 1000);
+/**
+ * Named for what it used to return. Every synced timestamp in this app is unix
+ * milliseconds (migration 009), and `due_at` comparisons here run against
+ * `VOCAB`, whose timestamps are now millis too — so a seconds clock would make
+ * every word look due.
+ */
+const nowMs = () => Date.now();
 
 /** Anchors hidden during this session. Derived highlights are computed on the
  *  backend, so the harness only has to remember the decisions taken about them. */
@@ -292,8 +298,8 @@ export const FIXTURES: Record<string, Fixture> = {
       cfi_range: source?.cfi ?? "",
       color: "yellow",
       text_content: source?.text ?? null,
-      created_at: nowSec(),
-      updated_at: nowSec(),
+      created_at: nowMs(),
+      updated_at: nowMs(),
     };
     harnessPromoted.push(promoted);
     return promoted;
@@ -432,18 +438,18 @@ export const FIXTURES: Record<string, Fixture> = {
    * ---------------------------------------------------------------- */
   list_vocab_words: () => VOCAB.slice(),
   list_all_vocab_words: () => VOCAB.slice(),
-  list_vocab_due_for_review: () => VOCAB.filter((w) => w.due_at <= nowSec()),
+  list_vocab_due_for_review: () => VOCAB.filter((w) => w.due_at <= nowMs()),
   check_vocab_exists: null,
   get_vocab_stats: {
     total: VOCAB.length,
-    due_for_review: VOCAB.filter((w) => w.due_at <= nowSec()).length,
+    due_for_review: VOCAB.filter((w) => w.due_at <= nowMs()).length,
     learning: 2,
     mastered: 1,
     new: 1,
   },
   get_vocab_learning_dashboard: {
     total: VOCAB.length,
-    due_today: VOCAB.filter((w) => w.due_at <= nowSec()).length,
+    due_today: VOCAB.filter((w) => w.due_at <= nowMs()).length,
     by_mastery: { "0": 1, "1": 2, "2": 1, "3": 1, "4": 1 },
     recent: VOCAB.slice(0, 3),
     streak_days: 4,
@@ -454,9 +460,9 @@ export const FIXTURES: Record<string, Fixture> = {
   list_review_piles: () => [
     {
       kind: "due",
-      word_ids: VOCAB.filter((w) => w.due_at <= nowSec()).map((w) => w.id),
-      words: VOCAB.filter((w) => w.due_at <= nowSec()),
-      newest_activity_at: nowSec(),
+      word_ids: VOCAB.filter((w) => w.due_at <= nowMs()).map((w) => w.id),
+      words: VOCAB.filter((w) => w.due_at <= nowMs()),
+      newest_activity_at: nowMs(),
     },
   ],
   list_word_marks: () => VOCAB.map((w) => ({ normalized_word: w.normalized_word, enabled: true })),
@@ -538,8 +544,8 @@ export const FIXTURES: Record<string, Fixture> = {
       enabled: true,
       state: "valid",
       sort_order: 0,
-      created_at: nowSec(),
-      updated_at: nowSec(),
+      created_at: nowMs(),
+      updated_at: nowMs(),
       masked_key: "sk-…harness",
     },
   ],
@@ -557,7 +563,7 @@ export const FIXTURES: Record<string, Fixture> = {
     chunkCount: 42,
     embeddedCount: 42,
     embeddingModel: "harness-embed-3",
-    indexedAt: nowSec(),
+    indexedAt: nowMs(),
     overview: {
       sectionIndex: null,
       sectionTitle: null,
@@ -677,7 +683,7 @@ export const FIXTURES: Record<string, Fixture> = {
   enhanced_font_status: { installed: false, enabled: false, downloading: false, bytes: 0 },
   list_custom_fonts: [],
   speech_cache_stats: { bytes: 1_240_000, entries: 18, limitBytes: 200_000_000 },
-  speech_voice_options: { options: ["en-US-AriaNeural", "en-GB-SoniaNeural"], updated_at: nowSec() },
+  speech_voice_options: { options: ["en-US-AriaNeural", "en-GB-SoniaNeural"], updated_at: nowMs() },
   speech_list_models: ["tts-1"],
   speech_custom_key_configured: false,
   /** `OcrPackageStatus` / `OcrAssetsOverview` — see `src/ocr/types.ts`. */
@@ -690,7 +696,7 @@ export const FIXTURES: Record<string, Fixture> = {
         bookId: BOOKS[2].id,
         title: BOOKS[2].title,
         byteSize: 12_400_000,
-        createdAt: nowSec(),
+        createdAt: nowMs(),
         availability: "local",
       },
     ],
@@ -828,7 +834,7 @@ export const FIXTURES: Record<string, Fixture> = {
     manualWords: 282,
     vocabWords: 612,
   },
-  export_vocab_backup: { version: 1, words: VOCAB.slice(), exported_at: nowSec() },
+  export_vocab_backup: { version: 1, words: VOCAB.slice(), exported_at: nowMs() },
 };
 
 function harnessProfile() {
@@ -846,8 +852,8 @@ function harnessProfile() {
     max_tokens: 2048,
     reasoning_effort: null,
     system_prompt: null,
-    created_at: nowSec(),
-    updated_at: nowSec(),
+    created_at: nowMs(),
+    updated_at: nowMs(),
   };
 }
 

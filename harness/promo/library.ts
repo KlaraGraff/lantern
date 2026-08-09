@@ -17,7 +17,8 @@ import type { HarnessBook } from "../fixture-data";
 
 const DAY = 86_400_000;
 const now = Date.now();
-const ago = (days: number) => Math.floor((now - days * DAY) / 1000);
+/** Unix **milliseconds** — the only unit any synced table has used since migration 009. */
+const ago = (days: number) => now - days * DAY;
 
 /** 主角书。第 1、2、3、4、6 张图的正文、查词、对话、引用都出自它。 */
 export const HERO_BOOK_ID = "pride-and-prejudice";
