@@ -41,7 +41,7 @@ const bookById = (id: unknown): HarnessBook =>
 
 /**
  * Named for what it used to return. Every synced timestamp in this app is unix
- * milliseconds (migration 009), and `due_at` comparisons here run against
+ * milliseconds (migration 009), and `next_review_at` comparisons here run against
  * `VOCAB`, whose timestamps are now millis too — so a seconds clock would make
  * every word look due.
  */
@@ -449,18 +449,18 @@ export const FIXTURES: Record<string, Fixture> = {
    * ---------------------------------------------------------------- */
   list_vocab_words: () => VOCAB.slice(),
   list_all_vocab_words: () => VOCAB.slice(),
-  list_vocab_due_for_review: () => VOCAB.filter((w) => w.due_at <= nowMs()),
+  list_vocab_due_for_review: () => VOCAB.filter((w) => w.next_review_at <= nowMs()),
   check_vocab_exists: null,
   get_vocab_stats: {
     total: VOCAB.length,
-    due_for_review: VOCAB.filter((w) => w.due_at <= nowMs()).length,
+    due_for_review: VOCAB.filter((w) => w.next_review_at <= nowMs()).length,
     learning: 2,
     mastered: 1,
     new: 1,
   },
   get_vocab_learning_dashboard: {
     total: VOCAB.length,
-    due_today: VOCAB.filter((w) => w.due_at <= nowMs()).length,
+    due_today: VOCAB.filter((w) => w.next_review_at <= nowMs()).length,
     by_mastery: { "0": 1, "1": 2, "2": 1, "3": 1, "4": 1 },
     recent: VOCAB.slice(0, 3),
     streak_days: 4,
@@ -480,8 +480,8 @@ export const FIXTURES: Record<string, Fixture> = {
         book_title: "The Wind in the Willows",
         solo_word_lookups: null,
       },
-      word_ids: VOCAB.filter((w) => w.due_at <= nowMs()).map((w) => w.id),
-      words: VOCAB.filter((w) => w.due_at <= nowMs()),
+      word_ids: VOCAB.filter((w) => w.next_review_at <= nowMs()).map((w) => w.id),
+      words: VOCAB.filter((w) => w.next_review_at <= nowMs()),
       newest_activity_at: nowMs(),
     },
     {

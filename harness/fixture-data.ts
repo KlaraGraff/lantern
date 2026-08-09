@@ -144,24 +144,36 @@ export const COLLECTIONS = [
   { id: "col-reference", name: "Reference", book_count: 1, sort_order: 1, created_at: ago(30), updated_at: ago(30) },
 ];
 
-/** Every mastery band represented, one of them due today. */
+const MASTERY_TIERS = ["new", "learning", "familiar", "mastered"] as const;
+type MasteryTier = (typeof MASTERY_TIERS)[number];
+
+/**
+ * Every mastery band represented, one of them due today.
+ *
+ * The tier is the string the column actually holds — `vocab_words.mastery` has
+ * been TEXT since migration 002. Numbers here used to make the list render
+ * `vocab.mastery.1` as literal text, so the sweep was walking a vocabulary
+ * surface that could not exist, and the real one went unchecked.
+ */
 export const VOCAB = [
-  mkWord("vw-1", "riverbank", 0, "The mole found himself on the riverbank.", ago(3), 0),
-  mkWord("vw-2", "gregarious", 1, "A gregarious creature by any measure.", ago(6), -1),
-  mkWord("vw-3", "obstinate", 2, "He was obstinate about the boat.", ago(11), 5),
-  mkWord("vw-4", "equanimity", 3, "Bear it with equanimity.", ago(20), 14),
-  mkWord("vw-5", "providence", 4, "Providence, he called it.", ago(45), 60),
-  mkWord("vw-6", "caravan", 1, "The caravan stood in the yard.", ago(2), -2),
+  mkWord("vw-1", "riverbank", "new", "The mole found himself on the riverbank.", ago(3), 0),
+  mkWord("vw-2", "gregarious", "learning", "A gregarious creature by any measure.", ago(6), -1),
+  mkWord("vw-3", "obstinate", "familiar", "He was obstinate about the boat.", ago(11), 5),
+  mkWord("vw-4", "equanimity", "mastered", "Bear it with equanimity.", ago(20), 14),
+  mkWord("vw-5", "providence", "mastered", "Providence, he called it.", ago(45), 60),
+  mkWord("vw-6", "caravan", "learning", "The caravan stood in the yard.", ago(2), -2),
 ];
 
 function mkWord(
   id: string,
   word: string,
-  mastery: number,
+  mastery: MasteryTier,
   context: string,
   createdAt: number,
   dueInDays: number,
 ) {
+  const tier = MASTERY_TIERS.indexOf(mastery);
+  const nextReviewAt = now + dueInDays * DAY;
   return {
     id,
     word,
@@ -183,12 +195,20 @@ function mkWord(
     // surface renders as the empty state — nothing below it ever gets swept.
     list_status: "confirmed",
     mastery,
-    mastery_level: mastery,
-    review_count: mastery * 2,
+    // The reading-exposure engine decided the top band; everything else was
+    // the reader or a review, so the "自动判定" badge gets swept on exactly
+    // one row rather than on all of them or none.
+    mastery_source: mastery === "mastered" ? "auto" : "manual",
+    mastery_reason: null,
+    review_count: tier * 2,
     created_at: createdAt,
     updated_at: createdAt,
-    last_reviewed_at: mastery > 0 ? createdAt : null,
-    due_at: now + dueInDays * DAY,
+    last_reviewed_at: tier > 0 ? createdAt : null,
+    // Without this the list computes `NaN days` for every row: the column is
+    // `next_review_at`, and `due_at` was a name nothing on the frontend reads.
+    next_review_at: nextReviewAt,
+    review_interval_days: Math.max(dueInDays, 0),
+    last_review_rating: tier > 0 ? "good" : null,
     notes: null,
     tags: [],
     source: "reader",
