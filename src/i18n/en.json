@@ -2240,7 +2240,7 @@
   "onboarding.step1.conversionResult": "From your {{examLabel}} score of {{score}}, you're roughly {{level}} — already selected above; change it if you disagree.",
   "onboarding.step1.conversionFailed": "Couldn't convert that — try again.",
   "onboarding.step1.langHead": "What language should explanations use?",
-  "onboarding.step1.langSub": "Independent of the level above. Pick the one you can read at a glance — an explanation you have to decode is not an explanation.",
+  "onboarding.step1.langSub": "The recommendation follows the level above; the choice is still yours. Pick the one you can read at a glance — an explanation you have to decode is not an explanation.",
   "onboarding.step1.noteChinese": "Examples stay in English",
   "onboarding.step1.noteBilingual": "Chinese first, one English line",
   "onboarding.step1.noteEnglish": "Difficulty follows your level",

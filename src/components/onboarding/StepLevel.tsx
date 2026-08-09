@@ -13,8 +13,12 @@ import {
   scoreWithinRule,
   type CefrLevel,
 } from "../settings/cefr";
-import { defaultExplanationMode } from "../../i18n";
-import { explanationSampleKey, type ExplanationMode } from "./explanation-samples";
+import {
+  explanationSampleKey,
+  recommendedExplanationMode,
+  storedExplanationMode,
+  type ExplanationMode,
+} from "./explanation-samples";
 
 const EXPLANATION_MODES: ExplanationMode[] = ["chinese", "adaptive_bilingual", "english_by_level"];
 
@@ -29,12 +33,6 @@ const MODE_NOTE_KEY: Record<ExplanationMode, string> = {
   adaptive_bilingual: "onboarding.step1.noteBilingual",
   english_by_level: "onboarding.step1.noteEnglish",
 };
-
-function resolveInitialExplanationMode(settings: Record<string, string>, uiLanguage: string): ExplanationMode {
-  const value = settings.explanation_mode;
-  if ((EXPLANATION_MODES as string[]).includes(value)) return value as ExplanationMode;
-  return defaultExplanationMode(uiLanguage);
-}
 
 interface CefrEstimate {
   estimated_cefr: string;
@@ -72,11 +70,15 @@ export default function StepLevel({ settings, save, onNext }: StepLevelProps) {
   const [conversionError, setConversionError] = useState(false);
   const [conversionResult, setConversionResult] = useState<{ level: string; examLabel: string; score: string } | null>(null);
   const [saving, setSaving] = useState(false);
-  const [explanationMode, setExplanationMode] = useState<ExplanationMode>(() =>
-    resolveInitialExplanationMode(settings, i18n.language),
+  // `null` = 还没自己挑过，跟着等级的推荐走。改过等级就换一档推荐，这是这一步
+  // 最想说清的那件事：等级不只调解释的难度，也调用什么语言解释。重放引导时把
+  // 存过的那一档当成「自己挑过」—— 已经表过态的选择不该被等级重新覆盖一遍。
+  const [pickedMode, setPickedMode] = useState<ExplanationMode | null>(() =>
+    storedExplanationMode(settings.explanation_mode),
   );
   const [touched, setTouched] = useState(false);
-  const recommendedMode = defaultExplanationMode(i18n.language);
+  const recommendedMode = recommendedExplanationMode(level, i18n.language);
+  const explanationMode = pickedMode ?? recommendedMode;
 
   const examScoreRule = EXAM_SCORE_RULES[examType]?.overall ?? EXAM_SCORE_RULES.ielts.overall;
   const examLabel = EXAM_OPTIONS.find((option) => option.value === examType)?.label ?? examType;
@@ -225,7 +227,7 @@ export default function StepLevel({ settings, save, onNext }: StepLevelProps) {
                 <button
                   type="button"
                   onClick={() => {
-                    setExplanationMode(mode);
+                    setPickedMode(mode);
                     setTouched(true);
                   }}
                   className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left"

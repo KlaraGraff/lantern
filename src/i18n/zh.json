@@ -2240,7 +2240,7 @@
   "onboarding.step1.conversionResult": "按{{examLabel}} {{score}} 分推算，你大概在 {{level}} —— 已替你选好，不同意可以直接改上面。",
   "onboarding.step1.conversionFailed": "换算失败，请再试一次。",
   "onboarding.step1.langHead": "讲解用什么语言？",
-  "onboarding.step1.langSub": "和上面的等级无关。挑一个你一眼能看懂的——看不懂的解释等于没解释。",
+  "onboarding.step1.langSub": "推荐哪一档跟着上面的等级走，但选哪一档你说了算。挑一个你一眼能看懂的——看不懂的解释等于没解释。",
   "onboarding.step1.noteChinese": "例句仍是英文",
   "onboarding.step1.noteBilingual": "中文为主，补一句英文",
   "onboarding.step1.noteEnglish": "按你的等级调难度",
