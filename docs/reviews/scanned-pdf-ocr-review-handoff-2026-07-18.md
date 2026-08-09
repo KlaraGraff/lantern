@@ -1515,7 +1515,7 @@ Phase H ── 发布前硬化
 
 ### 22.1 已有文档
 
-- `docs/impls/scanned-pdf-ocr-pipeline.md`：当前可执行实施计划与 Phase A–H 边界。
+- `docs/impls/archive/scanned-pdf-ocr-pipeline.md`：当时可执行的实施计划与 Phase A–H 边界（已归档）。
 - `docs/reviews/scanned-pdf-ocr-phase-c-poc-2026-07-18.md`：Phase C 可复现实测证据与开放门槛。
 - `docs/reviews/scanned-pdf-ocr-upgrade-proposal-2026-07-17.md`：早期完整背景、候选比较、风险与验收表。
 - `docs/arch/overview.md`：Lantern 书库、Reader、SQLite 和 iCloud 同步架构。
@@ -1535,7 +1535,7 @@ Phase H ── 发布前硬化
 | 事件路径验证 | `src-tauri/src/sync/validation.rs` |
 | replay 和未知事件行为 | `src-tauri/src/sync/replay.rs`、`src-tauri/src/sync/log.rs` |
 | 原子 outbox | `src-tauri/src/sync/writer.rs` |
-| peer manifest | `src-tauri/src/sync/peer.rs` |
+| peer manifest | `src-tauri/src/sync/peers.rs` |
 | snapshot | `src-tauri/src/sync/snapshot/` |
 | iCloud 存储切换和 copy-back | `src-tauri/src/commands/sync.rs` |
 | vendored PDF Reader | `public/foliate-js/` |

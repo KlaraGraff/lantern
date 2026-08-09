@@ -128,7 +128,7 @@ i18n 四段式:`settings.autoAnalysis.job.user_profile.title / .what / .sends / 
 ## 纪律
 
 - 不 `git add` / 不 `git commit`;改动留在工作区交主会话审查。
-- 不动 `followup_difficulty.rs`(上游只读)、`harness/`、`scripts/*.mjs`、`src-tauri/src/mcp/control.rs`。
+- 不动 `followup_difficulty.rs`(上游只读)、`harness/`、`scripts/*.mjs`、`src-tauri/src/mcp/control.rs`(该文件只存在于停摆分支 `codex/mcp-control-bridge-wip`,`main` 上没有;这条纪律因此已自动满足)。
 - 所有用户可见字符串走 i18n;不留英文硬编码。
 - 凭据纪律照旧:画像内容不是凭据,进 `lantern.db` 没问题;任何密钥仍归 `secrets.db`。
 - 完工后 `cargo check` + `cargo test`(src-tauri)全绿再交。

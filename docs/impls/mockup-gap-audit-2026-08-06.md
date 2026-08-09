@@ -1,7 +1,7 @@
 # 样张 vs 代码：缺口审计
 
 > 2026-08-06。审计对象是两份手机样张：
-> - `docs/impls/mobile-settings-mockup.html`（25 屏，**已批准**，正在实现）
+> - `docs/impls/archive/mobile-settings-mockup.html`（25 屏，**已批准**，正在实现）
 > - `docs/impls/mobile-authoring-pages-mockup.html`（16 屏，**未批准**）
 >
 > 起因：实现「书籍来源」的 agent 撞墙——样张画的东西后端一行都没有。
@@ -103,7 +103,7 @@
 
 触发时机也不一样：样张写「下次打开 Lantern 时在前台跑」，实际是**读完当场同步触发**（`useBooks.ts:140`）。
 
-「等着分析的 2 本书」「书架进度横幅」「现在就跑」「停止」全部不存在——没有待办队列（`migrations/043_pending_book_reviews.sql` 不是队列，按它自己的注释那是**失败标记**）、没有批量 runner、没有进度事件流、没有 cancel 命令。
+「等着分析的 2 本书」「书架进度横幅」「现在就跑」「停止」全部不存在——没有待办队列（`src-tauri/migrations/043_pending_book_reviews.sql` 不是队列，按它自己的注释那是**失败标记**）、没有批量 runner、没有进度事件流、没有 cancel 命令。
 
 - [ ] 补做全部（大）
 - [ ] 样张改成真实的三个作业，队列/横幅划掉 ← **推荐**
@@ -154,7 +154,7 @@
 
 真实形态是完全不同的东西：
 
-- **表里没有分类维度。** `migrations/027_word_forms.sql` 的 `word_forms` 表只有 `normalized_word` 主键 + `forms` 一个**扁平 JSON 字符串数组**。没有 category 列。
+- **表里没有分类维度。** `src-tauri/migrations/027_word_forms.sql` 的 `word_forms` 表只有 `normalized_word` 主键 + `forms` 一个**扁平 JSON 字符串数组**。没有 category 列。
 - **开关是单一布尔。** `expandWordForms(words, enabled)` —— 一个 `enabled`，非开即关。
 - **UI 是逐词清单**，不是分类开关：搜索框 + 每个已标记单词一行 + 逗号分隔自由文本 + AI 批量/单词重取（`WordFormsManager.tsx`）。
 - **「派生词」这一档后端明确拒绝生产。** `word_forms.rs:41` 的系统提示词逐字写着只要屈折变化，并把派生关系列为**禁止项**（例中点名 nation → national 不许给）。这个开关打开也不会有任何东西。

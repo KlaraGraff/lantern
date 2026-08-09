@@ -423,7 +423,7 @@ buildbot for the same reason. This is not theoretical here:
   Android build selects, so coverage *looks* complete — while Linux has system OpenSSL, a
   working keyring backend, and `HOME` set, which is exactly where Android diverges.
 - Rot reproduced live on 2026-08-02: `cargo clippy --target aarch64-apple-ios-sim -- -D warnings`
-  fails with two `never used` errors on `src/icloud.rs:92` and `:106` while the identical host
+  fails with two `never used` errors on `src-tauri/src/icloud.rs:92` and `:106` while the identical host
   command passes. Cause: `dcc90e9`, the [F-010](#f-010--only-a-real-ios-compile-finds-the-cfg-holes) fix itself, committed **less than 24
   hours earlier**. One gating decision, one new breakage, next day.
 
@@ -516,7 +516,7 @@ on why a fork is a coordination tool, not a cost tool).
 
 ### D-011 — P2 waits for the desktop mastery line to finish
 
-The mobile UI phase does not start until `docs/impls/reading-driven-mastery-and-review.md`
+The mobile UI phase does not start until `docs/impls/archive/reading-driven-mastery-and-review.md`
 is fully landed. P4/P5/P6 may run before then; P2 and P3 may not.
 
 **Why:** P2's own checklist — the Home sidebar becoming a drawer, the reduced settings pane,
@@ -860,7 +860,7 @@ runtime callers use it: speech cache and OCR runtime.
 `imported-fonts/` under `Db.data_dir` — the shared iCloud folder when sync is on, otherwise the
 local app data dir, both derived from Tauri's `app.path().app_data_dir()`. `commands/fonts.rs`
 no longer calls `resolve_app_data_dir()` at all. This does not fix F-003; it removes one caller
-from it. See `docs/impls/syncable-custom-fonts.md`.
+from it. See `docs/impls/archive/syncable-custom-fonts.md`.
 
 ### F-004 — The reader engine is already WebKit-safe
 
@@ -898,7 +898,7 @@ The reasoning below is what predicted it; the run is what settles it.
 `UIDocumentPickerViewController(forOpeningContentTypes:asCopy:)`
 (`tauri-plugin-dialog-2.6.0/ios/Sources/DialogPlugin.swift:119-121`) with
 `asCopy: args.fileAccessMode == .scoped ? false : true`. Lantern never sets
-`fileAccessMode`, and the Rust default is `None` (`src/lib.rs:419`), so `asCopy: true` —
+`fileAccessMode`, and the Rust default is `None` (`tauri-plugin-dialog-2.6.0/src/lib.rs:419`), so `asCopy: true` —
 iOS copies the picked file into the app sandbox and returns a plain `file://` URL.
 `into_path()` succeeds and the downstream `fs::copy` works.
 
@@ -1475,7 +1475,7 @@ vertical lock 8px, horizontal dominance 1.5×) are the expensive part and are fr
    it turned unbounded growth into a bounded, downward-trending band. Numbers in
    [Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device)
 2. ~~Stop background SQLite writes on app suspension (`0xdead10cc` termination risk)~~ —
-   **done 2026-08-06.** `src/lifecycle.rs`. Tauri turned out to offer no hook at all: `RunEvent`
+   **done 2026-08-06.** `src-tauri/src/lifecycle.rs`. Tauri turned out to offer no hook at all: `RunEvent`
    has `Resumed` and no suspension counterpart on any platform, so the UIKit notifications are
    observed directly through `NSNotificationCenter`. The three background workers
    (`sync-flush`, `cover-writer`, the watcher tick) take a permit around each unit of work;
@@ -1487,7 +1487,7 @@ vertical lock 8px, horizontal dominance 1.5×) are the expensive part and are fr
    both logged the quiesce and the release, and `lantern.db-wal` went 16512 → 0 bytes on
    backgrounding. The kill itself can only be falsified on hardware, in P6.
 3. ~~`NSURLIsExcludedFromBackupKey` on caches and logs~~ — **done 2026-08-06.**
-   `src/backup.rs`. Three directories are excluded at every launch: `speech-cache`,
+   `src-tauri/src/backup.rs`. Three directories are excluded at every launch: `speech-cache`,
    `prepared`, and the log directory. The motivating number is the speech cache's own
    ceiling — it is allowed to reach 2 GiB before it evicts anything, against a 5 GB free
    iCloud Backup allowance for the entire device. `books/`, `covers/`, `sources/`,
@@ -1521,8 +1521,8 @@ iOS ↔ macOS only ([D-007](#d-007--windows-sync-is-out-of-scope)).
 [Q-004](#q-004--macos-relocation-to-the-app-container-answered--there-is-nothing-to-relocate)
 is closed and added nothing to the estimate below.
 
-1. ~~Widen `cfg(target_os = "macos")` → `cfg(target_vendor = "apple")` in `src/icloud.rs` and
-   `src/sync/log.rs`~~ — **done 2026-08-06.** Nine gates in `icloud.rs` and four in
+1. ~~Widen `cfg(target_os = "macos")` → `cfg(target_vendor = "apple")` in `src-tauri/src/icloud.rs` and
+   `src-tauri/src/sync/log.rs`~~ — **done 2026-08-06.** Nine gates in `icloud.rs` and four in
    `sync/log.rs`, not the six this line predicted; the line numbers it named were stale.
    **The `not(macos)` stubs were kept, not deleted** — Windows and Linux still need them, and
    the OCR manager (which calls the eviction pair) does compile on Windows. What changed on
@@ -1626,7 +1626,7 @@ all in-repo work — see [D-014](#d-014--first-ios-release-is-testflight-not-the
 | P1 — Capability layer + routing | **Done** | Tapping a book opens it in-window; desktop-only surfaces are gated by [D-005](#d-005--capability-flags-not-platform-checks) flags |
 | P2 — Mobile UI | **Items 1–2 done; 3 and 5 still blocked** | [D-011](#d-011--p2-waits-for-the-desktop-mastery-line-to-finish) blocked the phase on the desktop mastery line. That line is still at "design aligned, not implemented", so the file collision it predicted is not happening yet, and on 2026-08-06 the phase was split rather than held: item 1 (responsive foundation) and item 2 (the Home drawer) landed, because neither touches `Reader.tsx` or `ExplainPopover.tsx`. **Items 3 and 5 stay blocked** — those two files are the mastery line's core surface and D-011 still holds for them. Items 4, 6, 7, 8 are unblocked and unstarted. Five items now postdate the 18.5-day estimate: mobile AI settings ([D-012](#d-012--the-phone-gets-ai-contextual-glosses-not-ai-chat)), a book-downloading state ([D-013](#d-013--books-download-on-demand-not-eagerly)), and the three Tier-1 promotions from [§1](#1-goals-and-non-goals) — note editing, collection management and 书籍来源 (items 9–11). The phase is unscored against its new scope |
 | P3 — Touch interaction | Not started | Same file collision as P2; follows it |
-| P4 — iOS adaptation | **Done** | Rust-side, no frontend overlap — ran before P2. Item 1 was the PDF retention leak [Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) surfaced, fixed and re-measured; item 2 the suspension gate in `src/lifecycle.rs`; item 3 backup exclusion in `src/backup.rs`. Item 4 shrank to nothing (the `keyring` it budgeted for was deleted in v2.6.0); the Cargo-table half moved out and is done. The one claim still owed to hardware is that the suspension gate prevents a real `0xdead10cc` kill — P6 |
+| P4 — iOS adaptation | **Done** | Rust-side, no frontend overlap — ran before P2. Item 1 was the PDF retention leak [Q-002](#q-002--does-the-reader-hold-acceptable-memory-on-a-real-device) surfaced, fixed and re-measured; item 2 the suspension gate in `src-tauri/src/lifecycle.rs`; item 3 backup exclusion in `src-tauri/src/backup.rs`. Item 4 shrank to nothing (the `keyring` it budgeted for was deleted in v2.6.0); the Cargo-table half moved out and is done. The one claim still owed to hardware is that the suspension gate prevents a real `0xdead10cc` kill — P6 |
 | P5 — iCloud sync | **Item 1 done** | iOS ↔ macOS only. The `cfg` gates in `icloud.rs` and `sync/log.rs` are widened to `target_vendor = "apple"` and both targets compile clean. [Q-004](#q-004--macos-relocation-to-the-app-container-answered--there-is-nothing-to-relocate) closed at zero cost — no migration, because there are no users to migrate. Rust-side; runs before P2 |
 | P6 — Ship | Not started | TestFlight only ([D-014](#d-014--first-ios-release-is-testflight-not-the-app-store)). The account-level notarization blocker cleared 2026-08-06; everything left is in-repo |
 

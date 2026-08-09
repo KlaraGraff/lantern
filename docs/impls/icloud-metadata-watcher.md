@@ -144,7 +144,7 @@ objc2-foundation = { version = "0.3", features = ["NSFileManager", "NSFileCoordi
 ### 3.1 It is all there
 
 `NSMetadataQuery` is present, generated, and complete. From
-`src/generated/NSMetadata.rs`:
+`objc2-foundation-0.3.2/src/generated/NSMetadata.rs`:
 
 ```rust
 extern_class!(
@@ -202,7 +202,7 @@ pub static NSMetadataQueryUpdateRemovedItemsKey: &'static NSString;
 pub static NSMetadataQueryUbiquitousDocumentsScope: &'static NSString;
 ```
 
-and from `src/generated/NSMetadataAttributes.rs`, all `#[cfg(feature = "NSString")]`:
+and from `objc2-foundation-0.3.2/src/generated/NSMetadataAttributes.rs`, all `#[cfg(feature = "NSString")]`:
 
 ```rust
 pub static NSMetadataItemURLKey: &'static NSString;
@@ -234,7 +234,7 @@ additionally gated on the feature for its *argument* type. The features Lantern 
 | `NSDate` | `setNotificationBatchingInterval` (it takes `NSTimeInterval`), and `NSDate` for the run-loop deadline |
 | `NSRunLoop` | `NSRunLoop::currentRunLoop`, `runMode_beforeDate`, `NSDefaultRunLoopMode` |
 
-`NSNumber` (for percent-downloaded) lives in `src/generated/NSValue.rs`, so the already-enabled
+`NSNumber` (for percent-downloaded) lives in `objc2-foundation-0.3.2/src/generated/NSValue.rs`, so the already-enabled
 `NSValue` covers it. `NSOperation`, `NSNotification`, `NSString`, `NSURL` and `block2` are all
 already on.
 
@@ -281,7 +281,7 @@ indistinguishable from a query that works and has nothing to report.
 
 ### 3.4 The house style this has to match
 
-`src/lifecycle.rs:173-245` already does exactly this dance for UIKit's suspension notifications:
+`src-tauri/src/lifecycle.rs:173-245` already does exactly this dance for UIKit's suspension notifications:
 `NSNotificationCenter::defaultCenter()`, a `block2::RcBlock` taking
 `NonNull<objc2_foundation::NSNotification>`, `addObserverForName_object_queue_usingBlock` inside
 one `unsafe` block, and `std::mem::forget` on the tokens with a comment saying it is a deliberate
@@ -289,7 +289,7 @@ per-process leak. Its comment also records *why* the queue argument is `None` �
 synchronously on the posting thread. The new module follows that shape, including keeping the
 `unsafe` blocks narrow and giving each one a reason.
 
-`src/icloud.rs` is the second reference: `#[cfg(target_vendor = "apple")]` on the real body,
+`src-tauri/src/icloud.rs` is the second reference: `#[cfg(target_vendor = "apple")]` on the real body,
 `#[cfg(not(target_vendor = "apple"))]` on a stub with the same signature, immediately below it.
 
 ---
@@ -523,7 +523,7 @@ at each step, as P5 item 1 did.
 `#[cfg(target_os = "ios")]` today. The backend selector needs it on macOS too. Item 2 widens it
 to `target_vendor = "apple"` as part of relocating the desktop root into the container
 ([D-015](../roadmap/mobile-ios.md)). **Item 3 should land after item 2.** If it lands first,
-widen the gate in `src/icloud.rs` as step 0 and accept that the selector returns `false` on macOS
+widen the gate in `src-tauri/src/icloud.rs` as step 0 and accept that the selector returns `false` on macOS
 until the root actually moves — which is correct, not a workaround.
 
 **Step 1 — `src-tauri/Cargo.toml`.** Add `NSMetadata`, `NSMetadataAttributes`, `NSArray`,

@@ -184,6 +184,6 @@ if (update) { await update.downloadAndInstall(onProgress); await relaunch(); }
 
 - `.github/workflows/notary-probe.yml` — 排查公证用的探针，已完成使命
 - `.github/workflows/notary-check.yml` — 同上，留着也无害
-- `docs/impls/apple-signing-release-handoff-2026-08-04.md` 和 `apple-signing-release-continuation-prompt-2026-08-04.md` — 过程文件，问题已解决，可删
+- ~~两份 2026-08-04 的 apple-signing 交接过程文件~~ — 已删除（核实于 2026-08-09），公证结论留在 `docs/impls/archive/apple-notarization-record.md`
 - `HANDOFF.md` — 过程文件，按其自身说明「读完即删」
 - `.codex-release-v2.8.2/` — **一个嵌套在项目目录里的完整 git clone**。它未被 `.gitignore` 覆盖，`git status` 里一直显示为未跟踪目录，有被误提交的风险。确认没用了就删，或者至少加进 `.gitignore`。

@@ -2,7 +2,7 @@
 
 > **状态：** Phase 1（管线骨架）与 Phase 2 路线 A（Calibre 转换器）的**代码实现已完成**，`cargo test`（466 通过）/ `cargo clippy` / `npx tsc` / `npm run lint` 全绿。**运行时/GUI 验收未做**（实现会话无图形环境），本文档是给测试者的完整验收清单。
 >
-> 计划与设计背景见 [`docs/impls/format-normalization-pipeline.md`](../impls/archive/format-normalization-pipeline.md)。
+> 计划与设计背景见 [`docs/impls/archive/format-normalization-pipeline.md`](../impls/archive/format-normalization-pipeline.md)。
 >
 > **第一次接手的人先读 [验收说明与咨询提示词](format-normalization-acceptance-brief.md)** —— 那份解释了在验什么、为什么代码测试不够、要准备什么，并附了一段可以直接发给验收人的话。本文是逐条打勾用的清单。
 

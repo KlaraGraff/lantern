@@ -8,6 +8,12 @@
 > 原始审查方式：只阅读源码、配置和提交差异  
 > 执行更新：2026-07-12，已按本文件实施可在代码层面完成的改进。未启动应用、未进行 iCloud 实机同步、未调用真实 AI API、未创建安装包或签名。
 
+> **门牌号声明（补记于 2026-08-09）：** 下文的文件路径和行号是 `5595d37` 那棵代码树的，按当时原样保留、不逐条改写——改了就不再是当时读到的东西。其中这几个今天已经不存在，照着找会扑空：
+> - `src-tauri/src/commands/books.rs` —— 已拆成目录 `src-tauri/src/commands/books/`（`import.rs` / `query.rs` / `mutate.rs` / `format.rs` / `pdf.rs` / `convert_prepare.rs` / `text_prepare.rs` / `text_headings.rs`）。
+> - `src/components/LookupPopover.tsx` —— 随 `ai_lookup` 命令一起删除，查词改走学习卡（见 [`product-ux-audit-2026-08.md`](../roadmap/product-ux-audit-2026-08.md) 的「校订批注」）。
+> - `src/pages/DictionaryPage.tsx` —— 已删除；收藏词搜索现在只在 `src/components/DictionaryPanel.tsx` / `DictionaryContent.tsx` 里。
+> - `src/pages/SettingsPage.tsx` —— 已删除，即本文第 5 条建议的处理方式；设置界面只剩 `SettingsModal`。
+
 ## 1. 结论摘要
 
 本次静态审查和后续代码执行不能证明应用已经可以正常运行，也不能替代实机验收。首期功能现已覆盖暖色阅读主题、查词历史、生词收藏、学习状态、正文词汇标记开关，以及从查词进入 AI 侧栏等主要界面；本轮已处理可由静态实现确认的安全、同步、格式与核心交互问题。
@@ -624,6 +630,8 @@ src-tauri/src/import/detect.rs
 src-tauri/src/import/text.rs
 src-tauri/src/import/epub_writer.rs
 ```
+
+> 未采纳（核实于 2026-08-09）：`src-tauri/src/import/` 这个模块从未建立。格式识别与转换最终留在 `src-tauri/src/commands/books/` 下（`import.rs` / `convert_prepare.rs` 等）。上面四个路径是当时的建议，不是代码里的文件。
 
 Tauri `import_book` 和 MCP `add_book` 共用同一个 dispatcher。识别顺序以 magic/container 内容为主，扩展名只作提示：
 

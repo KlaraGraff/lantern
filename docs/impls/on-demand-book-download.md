@@ -31,24 +31,24 @@ Verified against the crate on this machine, not from memory:
 `objc2-foundation = "0.3"` in `src-tauri/Cargo.toml` resolves to.
 
 Every ubiquitous key is exported behind **both** `NSString` and `NSURL` features
-(`src/generated/mod.rs`), and both are already enabled in this repo's feature list, alongside
+(`objc2-foundation-0.3.2/src/generated/mod.rs`), and both are already enabled in this repo's feature list, alongside
 `NSValue` (which is what exports `NSNumber`) and `NSError`. No `Cargo.toml` change was needed.
 
 ```rust
-// src/generated/mod.rs:4328
+// objc2-foundation-0.3.2/src/generated/mod.rs:4328
 #[cfg(all(feature = "NSString", feature = "NSURL"))]
 pub use self::__NSURL::NSURLUbiquitousItemPercentDownloadedKey;
 
-// src/generated/NSURL.rs:801-803
+// objc2-foundation-0.3.2/src/generated/NSURL.rs:801-803
 #[cfg(feature = "NSString")]
 #[deprecated = "Use NSMetadataUbiquitousItemPercentDownloadedKey instead"]
 pub static NSURLUbiquitousItemPercentDownloadedKey: &'static NSURLResourceKey;
 
-// src/generated/NSURL.rs:783-784 — not deprecated
+// objc2-foundation-0.3.2/src/generated/NSURL.rs:783-784 — not deprecated
 #[cfg(feature = "NSString")]
 pub static NSURLUbiquitousItemIsDownloadingKey: &'static NSURLResourceKey;
 
-// src/generated/NSMetadataAttributes.rs:124-125 — the replacement Apple points at
+// objc2-foundation-0.3.2/src/generated/NSMetadataAttributes.rs:124-125 — the replacement Apple points at
 #[cfg(feature = "NSString")]
 pub static NSMetadataUbiquitousItemPercentDownloadedKey: &'static NSString;
 ```
@@ -74,7 +74,7 @@ Three findings drove the design:
 The accessor used is the per-key one, not the batch one:
 
 ```rust
-// src/generated/NSURL.rs:1376-1386 (declared unsafe there)
+// objc2-foundation-0.3.2/src/generated/NSURL.rs:1376-1386 (declared unsafe there)
 #[cfg(all(feature = "NSError", feature = "NSString"))]
 pub unsafe fn getResourceValue_forKey_error(
     &self,

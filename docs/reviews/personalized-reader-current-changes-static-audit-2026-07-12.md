@@ -2,9 +2,14 @@
 
 > 审查日期：2026-07-12  
 > 审查快照：`feat/personalized-reader`，`HEAD 5595d37` 加 2026-07-12 23:27（Africa/Casablanca）时的未提交改动  
-> 对照依据：`docs/roadmap/personalized-english-reader-master-plan.md`、`docs/impls/personalized-english-reader.md`、`docs/reviews/personalized-reader-static-code-review-2026-07-12.md`  
+> 对照依据：`docs/roadmap/personalized-english-reader-master-plan.md`、`docs/impls/archive/personalized-english-reader.md`（当时在 `docs/impls/` 下，后已归档）、`docs/reviews/personalized-reader-static-code-review-2026-07-12.md`  
 > 审查方式：只阅读源码、配置、迁移和 Git 差异  
 > 明确未执行：应用启动、构建、测试、类型检查、Lint、真实 AI 请求、iCloud 实机同步、签名、公证和视觉验收
+
+> **门牌号声明（补记于 2026-08-09）：** 下文的文件路径和行号是当时那棵代码树的，按原样保留、不逐条改写。其中这几个今天已经不存在：
+> - `src-tauri/src/commands/books.rs` —— 已拆成目录 `src-tauri/src/commands/books/`。
+> - `src-tauri/src/sync/snapshot.rs` —— 已拆成目录 `src-tauri/src/sync/snapshot/`（`mod.rs` / `apply.rs` / `compact.rs` / `rows.rs`）。
+> - 迁移文件写作 `migrations/…`，实际在 `src-tauri/migrations/` 下。
 
 ## 1. 总结论
 

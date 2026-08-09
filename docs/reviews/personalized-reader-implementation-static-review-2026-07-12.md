@@ -8,6 +8,11 @@
 > 审查方式：只阅读当前源码、配置、依赖锁文件和 Git 差异  
 > 明确未执行：应用启动、测试、构建、类型检查、Lint、真实 AI 请求、iCloud 实机同步、安装包制作、签名、公证和视觉验收
 
+> **门牌号声明（补记于 2026-08-09）：** 下文的文件路径和行号是 `5595d37` 那棵代码树的，按当时原样保留、不逐条改写。其中这几个今天已经不存在：
+> - `src-tauri/src/commands/books.rs` —— 已拆成目录 `src-tauri/src/commands/books/`。
+> - `src/components/LookupPopover.tsx` —— 随 `ai_lookup` 命令一起删除，查词改走学习卡。
+> - `src/components/BookmarksPanel.tsx` —— 书签与笔记并表后由 `src/components/ReaderNotesPanel.tsx`、`AnnotationsContent.tsx` 接手。
+
 ## 1. 结论
 
 当前改动覆盖了原方案的大部分功能面，但不能认定为“已经全部按原文档完成”。安全边界、AI 多凭据界面、查询历史管理、格式入口、当前版本/原项目双分组等已有明显实施；iCloud、系统凭据存储、格式转换、正文标注生命周期、成熟 SRS 和完整版本元数据仍存在关键缺口。

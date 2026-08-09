@@ -200,6 +200,8 @@ v1.4 的 AES-GCM + Keychain 加密 vault 已被有意迁移为**明文 SQLite**(
 ## 九、剩余项详细实施方案(供执行 agent)
 
 > 每项含:目标、根因回顾、精确改动点(文件:符号)、推荐方案(含代码骨架)、备选方案与取舍、验证方式、回归风险。除非另注,所有路径相对 `quill/`,基线为 `fix/audit-2026-07-15`(已含第一批修复)。**动手前先 `git checkout main && git pull` 确认 PR #8 是否已合并,再据此选择基线分支。**
+>
+> **路径声明(补记于 2026-08-09):** 本节里跟在「新建 / 新增」后面的文件名是**方案要创建的文件**,不是当时或现在存在的文件。P-1 和 C-5 至今仍在「第二批(待执行)」里,所以 `src/hooks/settingsStore.ts`、`tests/settings-store.test.ts`、`tests/ai-chat-helpers.test.ts` 都不存在——照着找会扑空,不是链接失效。C-5 第 1 步部分被后续工作吸收:`tests/marker-style.test.ts` 已有,reader 设置的回归网以 `tests/reader-settings-merge.test.ts` 等一组文件落地,不叫 `tests/reader-settings.test.ts`。
 
 ### P-1 + C-4 —— `useSettings` 单例化 + 保存乐观更新/回滚
 
@@ -295,7 +297,7 @@ v1.4 的 AES-GCM + Keychain 加密 vault 已被有意迁移为**明文 SQLite**(
 
 **方案**:
 1. `README.md` 与 `README.en.md` 各加"安全与数据存储 / Security & data storage"小节,写明:凭据(API key、OAuth token)以明文存于本地 `secrets.db`(0600、不同步),该设计规避 Keychain 反复授权;同机同用户的其他进程可读取;建议开启全盘加密(FileVault)。
-2. 可选:`docs/security.md` 落更详细的威胁模型;`components/settings/AiSettings.tsx` 密钥输入区加一行 i18n 提示(`en.json`/`zh.json` 同步加 key)。
+2. 可选:`docs/guide/security.md` 落更详细的威胁模型;`components/settings/AiSettings.tsx` 密钥输入区加一行 i18n 提示(`en.json`/`zh.json` 同步加 key)。
 
 **验证**:文档渲染检查;若加 UI 提示,`tsc`/`eslint` + i18n key 两语言齐全。**回归风险**:极低(纯文档);UI 提示需遵守"所有用户可见文案走 i18n"约定。
 

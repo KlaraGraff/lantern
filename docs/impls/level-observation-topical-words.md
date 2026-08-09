@@ -1,6 +1,6 @@
 # 水平对照 · 题材词筛除（topical-word screening）
 
-> 依附于 `docs/impls/reading-driven-mastery-and-review.md` §6/§7 的水平对照行。
+> 依附于 `docs/impls/archive/reading-driven-mastery-and-review.md` §6/§7 的水平对照行。
 > 本文只覆盖 2026-08 拍板的增强：把「查的词属于哪类」纳入证据。
 > 2026-08-08 修订：AI 甄别改为默认模式（用户拍板），本机启发式降级为
 > 回退与可选项。原「AI 违反 ruleLocal」的否决被推翻——承诺文案随模式走，

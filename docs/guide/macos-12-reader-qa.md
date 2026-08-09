@@ -2,7 +2,7 @@
 
 > 状态：**v2.0.2 已收到真实 Monterey 的 Preparing 卡死反馈；v2.0.3 修复候选待同机复验。**
 >
-> 实施方案：[`docs/impls/macos-12-reader-webkit-compatibility.md`](../impls/archive/macos-12-reader-webkit-compatibility.md)
+> 实施方案：[`docs/impls/archive/macos-12-reader-webkit-compatibility.md`](../impls/archive/macos-12-reader-webkit-compatibility.md)
 
 本文用于验证同一套 Lantern Reader 在现代 WebKit 选择 ZIP 原生流和 PDF.js modern，在 macOS 12 /
 Safari 15.1 选择 ZIP 纯 JavaScript 流式 fallback 和 PDF.js legacy。**开发服务器、Node、当前 macOS

@@ -4,7 +4,7 @@
 
 > 性质：对整个阅读器的**重新**审查，不继承 [`product-ux-audit-2026-08.md`](product-ux-audit-2026-08.md) 与 [`feature-linkage-analysis-2026-08.md`](feature-linkage-analysis-2026-08.md) 的结论——那两份只作为「历史决策记录」使用（避免重提已否决方向、避免把已 ship 当新提案）。差异见 §四。
 > 方法：5 个维度的代码事实盘点（阅读页 / AI 管线 / 词汇系统 / 书库统计同步 MCP / 设置面），关键结论全部由主会话回代码核验，标注 文件:行号。
-> 基线：`main @ ca2bae4`，工作区含未提交的 `src-tauri/src/mcp/control.rs`。
+> 基线：`main @ ca2bae4`，工作区含未提交的 `src-tauri/src/mcp/control.rs`。该文件至今没有进 `main`，只活在停摆分支 `codex/mcp-control-bridge-wip` 上（去向见 issue #14）——在当前工作树里找不到它是正常的。
 > 回答两个问题：①还能加什么 AI/自动化让阅读体验更个性化；②哪里设计得不好。
 
 ---

@@ -1,7 +1,7 @@
 # 交接：读者相对覆盖率 + 人物别名表可见可改
 
 **状态：** ~~最终版。样张已定稿并经用户确认，实现未开始。~~ **已过期——两块都已实现并合入 `main`，见文末 §6。不要照本文件重做一遍。**
-**给谁看：** ~~接手实现的人 / 代理。~~ 现在只作设计依据留存：`src-tauri/src/commands/coverage.rs`、`migrations/066_reader_coverage.sql` 和 `src-tauri/src/lib.rs` 的注释按节号引用本文件，所以本文件保留而不删除。
+**给谁看：** ~~接手实现的人 / 代理。~~ 现在只作设计依据留存：`src-tauri/src/commands/coverage.rs`、`src-tauri/migrations/066_reader_coverage.sql` 和 `src-tauri/src/lib.rs` 的注释按节号引用本文件，所以本文件保留而不删除。
 **日期：** 2026-08-09（撰写日）；同日实现完成，见 §6
 
 > **这份文件是自足的。** 所有产品决策已经定完，写在 §0.5。实现过程中**不需要回头找人确认任何一条**——遇到本文件没写到的细节，按 §0.5 末尾的默认规则自己拍板，往前做。做完一次性汇报即可。
@@ -324,4 +324,4 @@ Lantern 现在算的不是这个。现有的「词汇难度」区块把书里的
 
 ### 6.2 本文件为什么没有随交接结束而删除
 
-交接文档的寿命通常等于一次交接。这一份是例外：三处生产代码按节号引用它作为设计依据——`migrations/066_reader_coverage.sql:2`（§2.4 a、b）、`src-tauri/src/commands/coverage.rs:4`（§2）、`src-tauri/src/lib.rs:818`（§2）。删掉它会让这三条注释指向空气，所以改为保留 + 在此立牌。
+交接文档的寿命通常等于一次交接。这一份是例外：三处生产代码按节号引用它作为设计依据——`src-tauri/migrations/066_reader_coverage.sql:2`（§2.4 a、b）、`src-tauri/src/commands/coverage.rs:4`（§2）、`src-tauri/src/lib.rs:818`（§2）。删掉它会让这三条注释指向空气，所以改为保留 + 在此立牌。

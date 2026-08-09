@@ -149,7 +149,7 @@ found by running, not by reading. **Cost: 1 day.**
 
 ### 2.2 Runtime gaps — compile fine, behave wrong
 
-**PDF covers.** `src/pdfium.rs` uses `Pdfium::bind_to_library` — a *runtime* dylib load with
+**PDF covers.** Lantern's `src-tauri/src/pdfium.rs` uses `Pdfium::bind_to_library` — a *runtime* dylib load with
 an explicit "fall back to no cover rather than failing the import" contract. So pdfium is
 **not** a compile blocker on either mobile platform; it degrades to no cover. Restoring it on
 Android means shipping `libpdfium.so` per ABI into `jniLibs/` (prebuilts exist for all four).
@@ -279,7 +279,8 @@ screens one at a time is what produces the second UI nobody wanted.
 
 ## 4. Capability flags — what D-005 is missing
 
-Readest's `AppService` (`src/types/system.ts:82`) declares 30 capability fields. Defaults all
+Readest's `AppService` (`apps/readest-app/src/types/system.ts:82`, in the readest checkout)
+declares 30 capability fields. Defaults all
 live as `false` in an abstract `BaseAppService`, and `NativeAppService` overrides each one
 with a single expression off `osType()`. Worth stealing:
 

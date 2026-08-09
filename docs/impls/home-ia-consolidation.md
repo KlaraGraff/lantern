@@ -55,6 +55,8 @@
 
 **动到**：`src/components/settings/settings-sections.ts`、`src/components/SettingsModal.tsx`、`src/components/settings/PersonalSettings.tsx`（新建，薄壳）、`src/i18n/{zh,en}.json`（`settings.personal.*`）
 
+> 落地时的偏差（核实于 2026-08-09）：`personal` section 已经在，但**那个薄壳没建**——`SettingsModal.tsx:334` 直接 `<ProfileContent embedded />`。计划里的 `PersonalSettings.tsx` 从未存在，别去找它。
+
 - `SETTINGS_SECTIONS` 加 `personal`，`group: "core"`，图标 `UserRound`，放在 `SETTINGS_SECTION_ORDER` 的 **`general` 之后、`reading` 之前**。
 - `SettingsModal` 的 render map 加一项，渲染现有的 `ProfileContent`。**`ProfileContent` 内部这一步不动**（内部改动归步骤 3）。
 - `isSectionAvailable` 里 `personal` 全平台可用。
@@ -161,6 +163,8 @@
 ## 步骤 7 — 「对话 / 解释」合并成一个列表
 
 **动到**：`src/components/ChatsContent.tsx`、`src/components/ExplanationsContent.tsx`
+
+> 落地时的偏差（核实于 2026-08-09）：这一步做了，但不是就地改这两个文件——两者被删除，合并结果是 `src/components/qa/`（`QaContent.tsx` + `useQaTimeline.ts` + `types.ts`）。计划里的这两个文件名今天已经不存在。
 
 **单独一步，放最后。** 两种记录字段不同构（一个是多轮线程 `ChatSummary`，一个是绑 CFI 的单次解释 `Explanation`，公共字段只有 `id`/`book_id`/`model`/`created_at`/`updated_at`），混一个时间线要**按类型分叉渲染**，接近重写这两个页面的展示层 —— 这不是删标签。前六步都不依赖它，所以它出问题不会卡住别的。
 

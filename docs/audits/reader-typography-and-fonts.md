@@ -74,7 +74,7 @@ DEFAULT_CJK_VIEW_SETTINGS:     fullJustification: true, textIndent: 2,
 两条设计取向值得注意：**默认值按脚本和屏宽分叉**（CJK 一套、西文一套、手机一套），
 以及**默认不覆盖出版方**（`overrideLayout: false` 时不加 `!important`）。
 
-CSS 生成（`src/utils/style.ts:545-670`）里 Lantern 没有的东西：
+CSS 生成（`apps/readest-app/src/utils/style.ts:545-670`）里 Lantern 没有的东西：
 
 - `html { orphans: 2; widows: 2; hanging-punctuation: allow-end last }`，
   CJK 段落再降到 `widows: 1; orphans: 1`。
@@ -88,7 +88,7 @@ CSS 生成（`src/utils/style.ts:545-670`）里 Lantern 没有的东西：
 
 ### Readium CSS（EPUB 阅读器的参考实现，Thorium 用它）
 
-`docs/CSS14-user_settings_recs.md` 两句关键结论：
+`readium/css` 仓库的 `docs/CSS14-user_settings_recs.md`（**上游路径，不是本仓库的文件**）两句关键结论：
 
 > "Typography-wise, it is OK to hyphenate body copy with `text-align: left`,
 > it is **critical** to hyphenate body copy with `text-align: justify`."
@@ -311,7 +311,8 @@ Readest 西文 1.4 / CJK 1.6；通行建议是西文 1.4–1.6、CJK 1.7–2.0�
 
 ## 参考
 
-- Readest 源码：`apps/readest-app/src/services/constants.ts`、`src/utils/style.ts`
+- Readest 源码（路径相对 readest 仓库根，不是本仓库的文件）：
+  `apps/readest-app/src/services/constants.ts`、`apps/readest-app/src/utils/style.ts`
   <https://github.com/readest/readest>
 - Readium CSS 用户设置建议
   <https://github.com/readium/css/blob/master/docs/CSS14-user_settings_recs.md>
