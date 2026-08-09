@@ -1032,6 +1032,8 @@ pub fn run() {
             // doc; injecting either segment into follow-up prompts is a
             // later batch.
             commands::profile::profile_get,
+            commands::profile::profile_card_evidence,
+            commands::profile::profile_injection_preview,
             commands::profile::profile_save_text,
             commands::profile::profile_save_draft,
             commands::profile::profile_move_card,

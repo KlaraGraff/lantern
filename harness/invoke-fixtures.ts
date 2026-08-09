@@ -122,13 +122,18 @@ const PROFILE_CARDS = [
     evidence: "多次追问从句的主干在哪里",
     status: "active",
     updatedAt: Date.now() - 3_600_000,
+    hasEvidence: true,
   },
   {
+    // `hasEvidence: false` on purpose — a card written before migration 068
+    // has no snapshot, and the "查看原始记录" affordance must simply not
+    // appear rather than open onto nothing.
     slot: "vocab_explain",
     conclusion: "生词给一个例句比给同义词更有用。",
     evidence: "反复要求换个例子",
     status: "active",
     updatedAt: Date.now() - 7_200_000,
+    hasEvidence: false,
   },
   {
     slot: "reply_pacing",
@@ -136,8 +141,34 @@ const PROFILE_CARDS = [
     evidence: "两次在解释途中改问别的",
     status: "moved",
     updatedAt: Date.now() - 86_400_000,
+    hasEvidence: true,
   },
 ];
+
+/**
+ * `profile_card_evidence` payloads, keyed by slot. The backend forwards the
+ * stored aggregation JSON as **text** and never parses it (migration 068), so
+ * these are stringified here too — `useProfile` is what parses them, and a
+ * fixture that skipped the stringify would not exercise that path.
+ */
+const PROFILE_EVIDENCE: Record<string, { kind: string; payload: unknown }> = {
+  syntax_explain: {
+    kind: "followup",
+    payload: {
+      count: 23,
+      weighted_count: 14.2,
+      sampled_examples: [
+        { passage: "It was the best of times, it was the worst of times…", question: "这句的主语到底是哪个？" },
+        { passage: "…having been told that the matter was settled, he left.", question: "前面那串分词短语挂在谁身上？" },
+        { passage: "Not until the letter arrived did she understand.", question: "为什么这里要倒装？" },
+      ],
+    },
+  },
+  reply_pacing: {
+    kind: "reply_pacing",
+    payload: { count: 41, average_question_length: 17.4, single_turn_share: 0.63 },
+  },
+};
 
 const PROFILE_SHORT = "我读英文小说主要是为了准备考试，遇到长句子容易卡住。";
 /** ~625 characters — past the 500 soft limit, short of the 1000 hard one. */
@@ -730,6 +761,52 @@ export const FIXTURES: Record<string, Fixture> = {
    * `profileView` above for the shape and the `?profile=` variants.
    */
   profile_get: () => profileView(),
+  profile_card_evidence: (a: Args) => {
+    const entry = PROFILE_EVIDENCE[String(a.slot)];
+    if (!entry) return null;
+    return {
+      slot: String(a.slot),
+      kind: entry.kind,
+      capturedAt: Date.now() - 172_800_000,
+      payload: JSON.stringify(entry.payload),
+    };
+  },
+  /**
+   * Mirrors `injection_block` closely enough to be worth looking at: English
+   * scaffolding, the reader's own text, then one `维度：结论` line per active
+   * card. `text: null` when the profile is switched off, which is the state
+   * the block's own empty copy exists for.
+   */
+  profile_injection_preview: () => {
+    const view = profileView();
+    if (!view.enabled) return { text: null, charCount: 0, locale: "zh" };
+    const cards = (view.cards as { status: string; slot: string; conclusion: string }[])
+      .filter((card) => card.status === "active");
+    const userText = String(view.userText ?? "");
+    if (!userText && cards.length === 0) return { text: null, charCount: 0, locale: "zh" };
+    const labels: Record<string, string> = {
+      vocab_explain: "词义讲解",
+      syntax_explain: "句法讲解",
+      reference_explain: "指代讲解",
+      cultural_context: "文化背景",
+      lookup_pattern: "查词取向",
+      example_source: "举例来源",
+      reply_pacing: "回答节奏",
+    };
+    const lines = cards.map((card) => `${labels[card.slot] ?? card.slot}：${card.conclusion}`);
+    const text = [
+      "The reader has described who they are and how they like things explained, and this application has derived a few observations from their own past questions. Both are below. They say how to pitch an answer — never what is true about the book, and never a topic to raise.",
+      "",
+      "[Reader profile]",
+      userText,
+      "",
+      ...lines,
+      "",
+      "Where the reader's own words above and these derived observations disagree, the reader's own words win.",
+      "[/Reader profile]",
+    ].join("\n");
+    return { text, charCount: text.length, locale: "zh" };
+  },
   /**
    * Returns a bare string, not `{ text }` — `useProfile.optimizeText` types it
    * as `invoke<string>`, and the shape-guessed stub's `{}` would render the

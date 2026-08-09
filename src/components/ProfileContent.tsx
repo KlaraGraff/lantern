@@ -17,6 +17,8 @@ import Toast from "./ui/Toast";
 import { useProfile, type ProfileCard, type ProfileSlot } from "../hooks/useProfile";
 import { PROFILE_SLOT_ICONS, profileSlotOrder } from "./profile/profile-slots";
 import OptimizeComparePanel from "./profile/OptimizeComparePanel";
+import InjectionPreviewBlock from "./profile/InjectionPreviewBlock";
+import CardEvidencePanel from "./profile/CardEvidencePanel";
 import HardLimitDialog from "./profile/HardLimitDialog";
 import DeleteCardDialog from "./profile/DeleteCardDialog";
 import DeleteAllDialog from "./profile/DeleteAllDialog";
@@ -69,6 +71,7 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
   const { t } = useTranslation();
   const {
     state,
+    injection,
     loading,
     loadError,
     refresh,
@@ -83,6 +86,7 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
     summarizeNow,
     compressText,
     tidyText,
+    loadCardEvidence,
     setEnabled,
   } = useProfile();
 
@@ -102,6 +106,10 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
   // unprompted. Ghost cards already gate their evidence behind
   // `expandedGhosts`; this is the same idea for active cards.
   const [expandedEvidence, setExpandedEvidence] = useState<Set<ProfileSlot>>(new Set());
+  // One level deeper than `expandedEvidence`: the 依据 phrase is the
+  // summarizer's own account of its reasoning, this is the aggregation
+  // snapshot it was actually reading (migration 068 / `CardEvidencePanel`).
+  const [expandedRecords, setExpandedRecords] = useState<Set<ProfileSlot>>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<ProfileSlot | null>(null);
   const [confirmingDeleteAll, setConfirmingDeleteAll] = useState(false);
   const [cardBusy, setCardBusy] = useState<ProfileSlot | null>(null);
@@ -333,6 +341,15 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
     });
   };
 
+  const toggleRecordsExpanded = (slot: ProfileSlot) => {
+    setExpandedRecords((prev) => {
+      const next = new Set(prev);
+      if (next.has(slot)) next.delete(slot);
+      else next.add(slot);
+      return next;
+    });
+  };
+
   /**
    * Opens the move-edit flow (state ⑤'s left half) — shared by both entry
    * points (the card's own button and the delete dialog's escape hatch), per
@@ -497,6 +514,11 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
 
       <div className="min-h-0 flex-1 overflow-y-auto px-page py-5">
         <div className="mx-auto max-w-[820px]">
+          {/* ── AI 现在这样理解你 ── the assembled block, above both halves
+              that feed it, because it is the only thing here that actually
+              leaves the app. */}
+          <InjectionPreviewBlock preview={injection} enabled={state.enabled} />
+
           {/* ── 你写的 ── */}
           <div className="mb-1.5 flex items-center gap-2">
             <p className="text-[11px] font-bold uppercase tracking-wide text-text-muted">{t("profile.yourText.heading")}</p>
@@ -668,11 +690,28 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
                               <>
                                 <b className="font-semibold text-text-secondary">{t("profile.evidenceLabel")}</b>
                                 {card.evidence}
+                                {card.hasEvidence && (
+                                  <>
+                                    {" · "}
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleRecordsExpanded(card.slot)}
+                                      className="font-medium text-accent-text hover:opacity-75"
+                                    >
+                                      {expandedRecords.has(card.slot)
+                                        ? t("profile.evidence.hideRecords")
+                                        : t("profile.evidence.viewRecords")}
+                                    </button>
+                                  </>
+                                )}
                                 <br />
                               </>
                             )}
                             {t("profile.movedTakeoverNote")}
                           </div>
+                          {card.hasEvidence && expandedRecords.has(card.slot) && (
+                            <CardEvidencePanel slot={card.slot} load={loadCardEvidence} />
+                          )}
                         </>
                       )}
                     </div>
@@ -697,10 +736,34 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
                           {expandedEvidence.has(card.slot) ? t("profile.collapse") : t("profile.expand")}
                         </button>
                         {expandedEvidence.has(card.slot) && (
-                          <div className="mt-1.5 rounded-lg bg-bg-muted px-2.5 py-2 text-[11.5px] leading-[1.65] text-text-muted">
-                            <b className="font-semibold text-text-secondary">{t("profile.evidenceLabel")}</b>
-                            {card.evidence}
-                          </div>
+                          <>
+                            <div className="mt-1.5 rounded-lg bg-bg-muted px-2.5 py-2 text-[11.5px] leading-[1.65] text-text-muted">
+                              <b className="font-semibold text-text-secondary">{t("profile.evidenceLabel")}</b>
+                              {card.evidence}
+                              {/* The 依据 line above is a phrase the summarizer
+                                  wrote about its own reasoning. This is the
+                                  link out to what it was actually reading —
+                                  absent on cards written before the snapshot
+                                  existed, rather than opening onto nothing. */}
+                              {card.hasEvidence && (
+                                <>
+                                  {" · "}
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleRecordsExpanded(card.slot)}
+                                    className="font-medium text-accent-text hover:opacity-75"
+                                  >
+                                    {expandedRecords.has(card.slot)
+                                      ? t("profile.evidence.hideRecords")
+                                      : t("profile.evidence.viewRecords")}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                            {card.hasEvidence && expandedRecords.has(card.slot) && (
+                              <CardEvidencePanel slot={card.slot} load={loadCardEvidence} />
+                            )}
+                          </>
                         )}
                       </>
                     )}

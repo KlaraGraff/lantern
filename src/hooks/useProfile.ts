@@ -43,6 +43,74 @@ export interface ProfileCard {
   evidence: string;
   status: ProfileCardStatus;
   updatedAt: number;
+  /**
+   * Whether `profile_card_evidence` has a stored aggregation snapshot for this
+   * slot. Cards written before migration 068 don't, so the drill-down is only
+   * offered when there is in fact something behind it.
+   */
+  hasEvidence: boolean;
+}
+
+/**
+ * Which shape `ProfileCardEvidence.payload` parses to. The four follow-up
+ * dimensions share one shape and collapse to `"followup"`; the other three are
+ * one-of-a-kind. Mirrors `evidence_kind` in `profile.rs`.
+ */
+export type EvidenceKind = "followup" | "lookup_pattern" | "example_source" | "reply_pacing" | "unknown";
+
+export interface FollowupEvidence {
+  count: number;
+  weighted_count: number;
+  sampled_examples: { passage: string; question: string }[];
+}
+
+export interface LookupPatternEvidence {
+  count: number;
+  repeat_lookup_rate: number;
+  band_distribution: Record<string, number>;
+  sample_words: string[];
+}
+
+export interface ExampleSourceEvidence {
+  top_books: { title: string; author: string; language: string | null; share: number }[];
+}
+
+export interface ReplyPacingEvidence {
+  count: number;
+  average_question_length: number;
+  single_turn_share: number;
+}
+
+export type EvidencePayload =
+  | FollowupEvidence
+  | LookupPatternEvidence
+  | ExampleSourceEvidence
+  | ReplyPacingEvidence;
+
+/**
+ * The records a card's conclusion was actually drawn from — a snapshot taken
+ * when the summarizer wrote that conclusion, not a query re-run now. `payload`
+ * arrives as the raw JSON text the backend stored (it never parses it; the
+ * shape belongs to whichever aggregation produced it), so this hook parses it
+ * once here and hands the caller a value it can render.
+ */
+export interface ProfileCardEvidence {
+  slot: ProfileSlot;
+  kind: EvidenceKind;
+  capturedAt: number | null;
+  payload: EvidencePayload;
+}
+
+/**
+ * The assembled block that actually leaves the app — what the AI is told about
+ * the reader, verbatim, English scaffolding included. `text` is `null` when
+ * nothing is being injected at all (profile switched off, or both halves
+ * empty). Mirrors the Rust `InjectionPreview`.
+ */
+export interface InjectionPreview {
+  text: string | null;
+  charCount: number;
+  locale: string;
 }
 
 /**
@@ -83,6 +151,7 @@ const SOFT_LIMIT_SETTING_KEY = "profile.soft_limit";
  */
 export function useProfile() {
   const [state, setState] = useState<ProfileState | null>(null);
+  const [injection, setInjection] = useState<InjectionPreview | null>(null);
   const [loading, setLoading] = useState(true);
   // Set only by a failed *initial* load (no `state` to fall back on yet) — a
   // failed refresh after that point leaves the last-known `state` on screen
@@ -94,9 +163,20 @@ export function useProfile() {
   const refresh = useCallback(async () => {
     const generation = ++requestGenerationRef.current;
     try {
-      const result = await invoke<ProfileState>("profile_get");
+      // Fetched together so the "AI 现在这样理解你" block can never show a
+      // stale assembly of cards the page below it has already re-rendered.
+      // The preview is best-effort: a failure there leaves the page working
+      // and simply hides that one block, rather than failing the whole load.
+      const [result, preview] = await Promise.all([
+        invoke<ProfileState>("profile_get"),
+        invoke<InjectionPreview>("profile_injection_preview").catch((err) => {
+          console.error("Failed to load profile injection preview:", err);
+          return null;
+        }),
+      ]);
       if (generation !== requestGenerationRef.current) return;
       setState(result);
+      setInjection(preview);
       setLoadError(false);
       hasLoadedRef.current = true;
     } catch (err) {
@@ -120,7 +200,9 @@ export function useProfile() {
     let unlisten: (() => void) | undefined;
     listenForSettingsChanged((values) => {
       if (disposed) return;
-      if (SOFT_LIMIT_SETTING_KEY in values) refresh();
+      // `language` matters too: the injected block titles its cards in the
+      // reader's own language, so switching it changes the previewed text.
+      if (SOFT_LIMIT_SETTING_KEY in values || "language" in values) refresh();
     }).then((stop) => {
       if (disposed) stop();
       else unlisten = stop;
@@ -230,6 +312,29 @@ export function useProfile() {
     });
   }, []);
 
+  /**
+   * The destination for a card's "查看原始记录" — the aggregation snapshot the
+   * conclusion was written from. Returns `null` when the card has no snapshot
+   * (written before migration 068), or when the stored JSON can't be parsed;
+   * in both cases the caller shows nothing rather than an error, since this is
+   * a drill-down onto an explanation that is already fully readable above it.
+   */
+  const loadCardEvidence = useCallback(async (slot: ProfileSlot): Promise<ProfileCardEvidence | null> => {
+    const raw = await invoke<{
+      slot: ProfileSlot;
+      kind: EvidenceKind;
+      capturedAt: number | null;
+      payload: string;
+    } | null>("profile_card_evidence", { slot });
+    if (!raw) return null;
+    try {
+      return { ...raw, payload: JSON.parse(raw.payload) as EvidencePayload };
+    } catch (err) {
+      console.error("Failed to parse profile card evidence:", err);
+      return null;
+    }
+  }, []);
+
   const setEnabled = useCallback(
     async (enabled: boolean) => {
       const value = String(enabled);
@@ -242,6 +347,7 @@ export function useProfile() {
 
   return {
     state,
+    injection,
     loading,
     loadError,
     softLimit,
@@ -256,6 +362,7 @@ export function useProfile() {
     summarizeNow,
     compressText,
     tidyText,
+    loadCardEvidence,
     setEnabled,
   };
 }

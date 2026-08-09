@@ -1105,16 +1105,34 @@ fn active_cards_json(conn: &Connection) -> AppResult<String> {
 /// reviewed conclusion for it; `watermark`/`inserted_text` are left as they
 /// were (untouched columns in the `ON CONFLICT` clause), since neither
 /// changes just because a new conclusion landed.
-fn upsert_card(conn: &Connection, slot: &str, conclusion: &str, evidence: &str, now: i64) -> AppResult<()> {
+///
+/// `evidence_payload` is the pre-aggregation block this run handed the
+/// summarizer for this dimension — the records the conclusion was actually
+/// drawn from, snapshotted here so the reader can open it later (migration
+/// 068). It moves in lockstep with `conclusion`, including down to `NULL`: a
+/// conclusion written without a payload must not inherit the previous one's,
+/// or the drill-down would show records that had nothing to do with the
+/// sentence above them.
+fn upsert_card(
+    conn: &Connection,
+    slot: &str,
+    conclusion: &str,
+    evidence: &str,
+    evidence_payload: Option<&str>,
+    now: i64,
+) -> AppResult<()> {
     conn.execute(
-        "INSERT INTO profile_cards (slot, conclusion, evidence, status, created_at, updated_at)
-         VALUES (?1, ?2, ?3, 'active', ?4, ?4)
+        "INSERT INTO profile_cards
+           (slot, conclusion, evidence, evidence_payload, evidence_at, status, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?5, ?5)
          ON CONFLICT(slot) DO UPDATE SET
            conclusion = excluded.conclusion,
            evidence = excluded.evidence,
+           evidence_payload = excluded.evidence_payload,
+           evidence_at = excluded.evidence_at,
            status = 'active',
            updated_at = excluded.updated_at",
-        params![slot, conclusion, evidence, now],
+        params![slot, conclusion, evidence, evidence_payload, now],
     )?;
     Ok(())
 }
@@ -1199,10 +1217,25 @@ pub async fn run_summarize<R: Runtime>(
         return Ok(0);
     }
 
+    // The block this run actually showed the model, per slot — snapshotted
+    // alongside the conclusion so the card's drill-down can never drift away
+    // from the sentence it explains. See migration 068.
+    let payloads: HashMap<&str, String> = contexts
+        .iter()
+        .map(|ctx| (ctx.slot, ctx.payload.to_string()))
+        .collect();
+
     let conn = db.conn.lock().map_err(|error| AppError::Other(error.to_string()))?;
     let cards_before = active_cards_json(&conn)?;
     for card in &cards {
-        upsert_card(&conn, &card.slot, &card.conclusion, &card.evidence, now)?;
+        upsert_card(
+            &conn,
+            &card.slot,
+            &card.conclusion,
+            &card.evidence,
+            payloads.get(card.slot.as_str()).map(String::as_str),
+            now,
+        )?;
         conn.execute(
             "INSERT INTO profile_events (slot, event_type, user_text, created_at) VALUES (?1, 'rewrite', NULL, ?2)",
             params![card.slot, now],
@@ -1272,6 +1305,12 @@ pub struct ProfileCard {
     pub evidence: String,
     pub status: CardStatus,
     pub updated_at: i64,
+    /// Whether [`profile_card_evidence`] has anything to show for this slot.
+    /// Sent instead of the payload itself so the list query stays cheap, and
+    /// so the "查看原始记录" affordance is only drawn when there is in fact a
+    /// record behind it — cards written before migration 068 have no
+    /// snapshot and simply don't offer the link.
+    pub has_evidence: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1303,7 +1342,9 @@ pub fn profile_get_inner(db: &Db) -> AppResult<ProfileView> {
     let enabled_flag = enabled(&conn);
 
     let mut stmt = conn.prepare(
-        "SELECT slot, conclusion, evidence, status, updated_at FROM profile_cards WHERE status IN ('active','moved')",
+        "SELECT slot, conclusion, evidence, status, updated_at,
+                evidence_payload IS NOT NULL AS has_evidence
+         FROM profile_cards WHERE status IN ('active','moved')",
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(ProfileCard {
@@ -1312,6 +1353,7 @@ pub fn profile_get_inner(db: &Db) -> AppResult<ProfileView> {
             evidence: row.get("evidence")?,
             status: CardStatus::from_db(&row.get::<_, String>("status")?),
             updated_at: row.get("updated_at")?,
+            has_evidence: row.get::<_, i64>("has_evidence")? != 0,
         })
     })?;
     let mut cards: Vec<ProfileCard> = rows.collect::<Result<_, _>>()?;
@@ -1353,6 +1395,70 @@ pub fn profile_get_inner(db: &Db) -> AppResult<ProfileView> {
 #[tauri::command]
 pub fn profile_get(db: State<'_, Db>) -> AppResult<ProfileView> {
     profile_get_inner(&db)
+}
+
+// ---------------------------------------------------------------------------
+// Evidence drill-down — the records a conclusion was drawn from
+// ---------------------------------------------------------------------------
+
+/// Which payload shape [`CardEvidence::payload`] holds, so the frontend
+/// dispatches on the data's own shape rather than re-deriving it from the
+/// slot registry. The four follow-up dimensions share one shape and collapse
+/// to `followup`; the other three are one-of-a-kind and keep their slot name.
+fn evidence_kind(slot: &str) -> &'static str {
+    if FOLLOWUP_CATEGORY.iter().any(|(key, _)| *key == slot) {
+        return "followup";
+    }
+    match slot {
+        "lookup_pattern" => "lookup_pattern",
+        "example_source" => "example_source",
+        "reply_pacing" => "reply_pacing",
+        _ => "unknown",
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CardEvidence {
+    pub slot: String,
+    /// See [`evidence_kind`].
+    pub kind: String,
+    /// When the snapshot was taken — i.e. when this conclusion was written.
+    pub captured_at: Option<i64>,
+    /// The stored aggregation block, forwarded as the JSON text it was
+    /// written as. Rust does not parse it and never has: the shape belongs to
+    /// whichever `build_*_block` produced it, and the frontend renders it
+    /// through i18n. Same house pattern as `mastery_events.detail`.
+    pub payload: String,
+}
+
+pub fn profile_card_evidence_inner(db: &Db, slot: &str) -> AppResult<Option<CardEvidence>> {
+    let conn = db.reader();
+    let row: Option<(Option<String>, Option<i64>)> = conn
+        .query_row(
+            "SELECT evidence_payload, evidence_at FROM profile_cards WHERE slot = ?1",
+            params![slot],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((Some(payload), captured_at)) = row else {
+        return Ok(None);
+    };
+    Ok(Some(CardEvidence {
+        slot: slot.to_string(),
+        kind: evidence_kind(slot).to_string(),
+        captured_at,
+        payload,
+    }))
+}
+
+/// The destination for the card's "查看原始记录" affordance. `None` when the
+/// dimension has no card, or has one written before migration 068 — the
+/// frontend never asks in that case (`ProfileCard::has_evidence`), but a
+/// stale view is not an error.
+#[tauri::command]
+pub fn profile_card_evidence(slot: String, db: State<'_, Db>) -> AppResult<Option<CardEvidence>> {
+    profile_card_evidence_inner(&db, &slot)
 }
 
 // ---------------------------------------------------------------------------
@@ -1464,6 +1570,46 @@ pub fn injection_block(db: &Db, locale: &str) -> AppResult<Option<String>> {
     block.push('\n');
     block.push_str(PROFILE_CLOSE);
     Ok(Some(block))
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InjectionPreview {
+    /// The block verbatim, English scaffolding included — this is the text,
+    /// not a description of it. `None` means nothing is being injected at
+    /// all: the profile is switched off, or both halves are empty.
+    pub text: Option<String>,
+    /// Character count of `text`, so the frontend never has to agree with the
+    /// backend about what counts as a character.
+    pub char_count: usize,
+    /// The locale the block was rendered in — the same `settings.language`
+    /// the chat path passes down, so the preview is the real thing rather
+    /// than a differently-labelled twin.
+    pub locale: String,
+}
+
+pub fn profile_injection_preview_inner(db: &Db) -> AppResult<InjectionPreview> {
+    let locale = {
+        let conn = db.reader();
+        read_setting(&conn, "language").unwrap_or_else(|| "en".to_string())
+    };
+    let text = injection_block(db, &locale)?;
+    let char_count = text.as_deref().map(|t| t.chars().count()).unwrap_or(0);
+    Ok(InjectionPreview {
+        text,
+        char_count,
+        locale,
+    })
+}
+
+/// What the AI is actually told about the reader. The profile page shows the
+/// seven cards and the free-text box, but until now nothing showed the one
+/// thing that leaves the app — the assembled block. Reads the same function
+/// the follow-up path reads, deliberately: a preview built from a second
+/// implementation would eventually stop being a preview.
+#[tauri::command]
+pub fn profile_injection_preview(db: State<'_, Db>) -> AppResult<InjectionPreview> {
+    profile_injection_preview_inner(&db)
 }
 
 pub fn profile_save_text_inner(db: &Db, text: &str) -> AppResult<()> {
@@ -2106,7 +2252,7 @@ mod tests {
         insert_card(&db, "vocab_explain", "deleted", Some(watermark), now);
         {
             let conn = db.conn.lock().unwrap();
-            upsert_card(&conn, "vocab_explain", "conclusion", "evidence", now).unwrap();
+            upsert_card(&conn, "vocab_explain", "conclusion", "evidence", None, now).unwrap();
         }
         let (status, stored_watermark): (String, Option<i64>) = db
             .reader()
@@ -2960,5 +3106,142 @@ mod tests {
         .unwrap_err();
 
         assert!(matches!(err, AppError::Other(ref message) if message == "PROFILE_TEXT_EMPTY"));
+    }
+
+    // --- evidence drill-down (migration 068) ---
+
+    #[test]
+    fn a_card_written_with_a_payload_can_show_the_records_behind_it() {
+        let (_dir, db) = setup();
+        let now = 20 * DAY_MS;
+        let payload = serde_json::json!({
+            "count": 12,
+            "weighted_count": 8.5,
+            "sampled_examples": [{ "passage": "a passage", "question": "why?" }],
+        })
+        .to_string();
+        {
+            let conn = db.conn.lock().unwrap();
+            upsert_card(
+                &conn,
+                "vocab_explain",
+                "conclusion",
+                "evidence",
+                Some(&payload),
+                now,
+            )
+            .unwrap();
+        }
+
+        let evidence = profile_card_evidence_inner(&db, "vocab_explain")
+            .unwrap()
+            .expect("a card written with a payload has evidence");
+        assert_eq!(evidence.kind, "followup");
+        assert_eq!(evidence.captured_at, Some(now));
+        // Forwarded verbatim — byte-identical to what was stored.
+        assert_eq!(evidence.payload, payload);
+
+        let view = profile_get_inner(&db).unwrap();
+        let card = view
+            .cards
+            .iter()
+            .find(|card| card.slot == "vocab_explain")
+            .unwrap();
+        assert!(card.has_evidence);
+    }
+
+    /// Cards that predate migration 068 have no snapshot. They must degrade
+    /// to "no drill-down offered", never to a link that opens onto nothing.
+    #[test]
+    fn a_card_without_a_payload_offers_no_drill_down() {
+        let (_dir, db) = setup();
+        card_with_conclusion(&db, "vocab_explain", "active", "老结论");
+
+        assert!(profile_card_evidence_inner(&db, "vocab_explain")
+            .unwrap()
+            .is_none());
+        let view = profile_get_inner(&db).unwrap();
+        let card = view
+            .cards
+            .iter()
+            .find(|card| card.slot == "vocab_explain")
+            .unwrap();
+        assert!(!card.has_evidence);
+    }
+
+    /// A rewrite must not leave the previous run's records sitting under a
+    /// sentence they never produced.
+    #[test]
+    fn rewriting_a_conclusion_replaces_its_evidence_rather_than_keeping_the_old_one() {
+        let (_dir, db) = setup();
+        let first = serde_json::json!({ "count": 6 }).to_string();
+        let second = serde_json::json!({ "count": 30 }).to_string();
+        {
+            let conn = db.conn.lock().unwrap();
+            upsert_card(&conn, "reply_pacing", "旧结论", "旧依据", Some(&first), 1_000).unwrap();
+            upsert_card(&conn, "reply_pacing", "新结论", "新依据", Some(&second), 2_000).unwrap();
+        }
+        let evidence = profile_card_evidence_inner(&db, "reply_pacing")
+            .unwrap()
+            .unwrap();
+        assert_eq!(evidence.payload, second);
+        assert_eq!(evidence.captured_at, Some(2_000));
+        assert_eq!(evidence.kind, "reply_pacing");
+
+        // ...and a rewrite that arrived without one clears it, rather than
+        // pairing a fresh sentence with stale records.
+        {
+            let conn = db.conn.lock().unwrap();
+            upsert_card(&conn, "reply_pacing", "更新结论", "依据", None, 3_000).unwrap();
+        }
+        assert!(profile_card_evidence_inner(&db, "reply_pacing")
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn every_dimension_maps_to_a_known_evidence_shape() {
+        for dim in DIMENSIONS {
+            assert_ne!(
+                evidence_kind(dim.key),
+                "unknown",
+                "dimension {} has no evidence shape",
+                dim.key
+            );
+        }
+        assert_eq!(evidence_kind("lookup_pattern"), "lookup_pattern");
+        assert_eq!(evidence_kind("cultural_context"), "followup");
+    }
+
+    // --- injection preview ---
+
+    #[test]
+    fn the_preview_is_the_block_itself_not_a_description_of_it() {
+        let (_dir, db) = setup();
+        set_user_text(&db, "我读得慢");
+        card_with_conclusion(&db, "vocab_explain", "active", "先给词源");
+        {
+            let conn = db.conn.lock().unwrap();
+            write_setting(&conn, "language", "zh").unwrap();
+        }
+
+        let preview = profile_injection_preview_inner(&db).unwrap();
+        assert_eq!(preview.locale, "zh");
+        let text = preview.text.clone().expect("something is being injected");
+        assert_eq!(text, injection_block(&db, "zh").unwrap().unwrap());
+        assert_eq!(preview.char_count, text.chars().count());
+    }
+
+    #[test]
+    fn the_preview_reports_nothing_when_the_profile_is_switched_off() {
+        let (_dir, db) = setup();
+        set_user_text(&db, "我读得慢");
+        {
+            let conn = db.conn.lock().unwrap();
+            write_setting(&conn, ENABLED_KEY, "false").unwrap();
+        }
+        let preview = profile_injection_preview_inner(&db).unwrap();
+        assert_eq!(preview.text, None);
+        assert_eq!(preview.char_count, 0);
     }
 }

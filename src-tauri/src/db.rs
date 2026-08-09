@@ -191,6 +191,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
         67,
         include_str!("../migrations/067_vocab_card_snapshot.sql"),
     ),
+    (
+        68,
+        include_str!("../migrations/068_profile_card_evidence.sql"),
+    ),
 ];
 
 fn register_sqlite_vec() {
