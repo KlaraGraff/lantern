@@ -93,6 +93,8 @@ const PASSIVE_VOCAB_ROOT_ATTRIBUTE = "data-passive-vocab-root";
 const PASSIVE_VOCAB_RAIL_ATTRIBUTE = "data-passive-vocab-margin-rail";
 const PASSIVE_VOCAB_LABEL_ATTRIBUTE = "data-passive-vocab-margin-label";
 const PASSIVE_VOCAB_RUBY_TEXT_ATTRIBUTE = "data-passive-vocab-ruby-text";
+/** Fraction of the base font size the gloss is drawn at; shared by CSS and the measurer. */
+const RUBY_GLOSS_SCALE = 0.62;
 const PASSIVE_VOCAB_OVERFLOW_ATTRIBUTE = "data-passive-vocab-margin-overflow";
 const PASSIVE_VOCAB_MARKER_ATTRIBUTE = "data-passive-vocab-marker";
 const PASSIVE_VOCAB_MARKER_LABEL_ATTRIBUTE = "data-passive-vocab-marker-label";
@@ -333,14 +335,25 @@ function transparentWrapper(doc: Document, range: Range, tag: "ruby" | "span") {
   return wrapper;
 }
 
+/**
+ * The gloss is a `::before` fed by an attribute, not a child node.
+ *
+ * It used to be a real `<rt>`, and that is what painted a stray rule above
+ * every annotated word: the正文 markers are drawn from the CFI range's
+ * `getClientRects()`, and an `<rt>` inside the wrapper is inside that range —
+ * one word came back as three rectangles (the word, plus two for the gloss),
+ * so the marker was stroked under the gloss as well. Measured in Chromium: 3
+ * rects with the node, 1 without it. A pseudo-element generates a box but no
+ * node, so the range sees the word and nothing else.
+ *
+ * Returns the wrapper (not the gloss) because that is now the only element
+ * there is — `spreadGlosses` measures the pseudo through it.
+ */
 function installRuby(doc: Document, range: Range, label: string) {
   const ruby = transparentWrapper(doc, range, "ruby");
   ruby.className = "lantern-passive-vocab-ruby";
-  const rt = doc.createElement("rt");
-  rt.setAttribute(PASSIVE_VOCAB_RUBY_TEXT_ATTRIBUTE, "");
-  rt.textContent = label;
-  ruby.append(rt);
-  return rt;
+  ruby.setAttribute(PASSIVE_VOCAB_RUBY_TEXT_ATTRIBUTE, label);
+  return ruby;
 }
 
 /**
@@ -350,10 +363,20 @@ function installRuby(doc: Document, range: Range, label: string) {
  * five-letter word was cut off mid-character — and the exact behaviour differs
  * between WebKit and Chromium, which this app ships on both of. Absolutely
  * positioning the annotation inside a relatively-positioned inline-block base
- * makes it free of the base's width in every engine; the base's `padding-top`
- * puts back the line-box room that native ruby would have reserved, so
- * surrounding text is pushed apart exactly as before instead of being drawn
- * over.
+ * makes it free of the base's width in every engine.
+ *
+ * Two details are load-bearing and were both wrong before:
+ *
+ *  - **`margin-top`, not `padding-top`.** Either one reserves the line-box room
+ *    that native ruby would have taken (an atomic inline box contributes its
+ *    *margin* box to line height, CSS 2.1 §10.8) — measured, a paragraph is
+ *    131px tall with either. But padding is inside the border box, so the word's
+ *    own rectangle grew by 1.15em upwards, and every marker drawn from that
+ *    rectangle floated a line above the word it belonged to.
+ *  - **`bottom: 100%`, not `top: 0`.** With `top: 0` the gloss pinned itself to
+ *    the top of the reserved strip, i.e. against the *previous* line; anchoring
+ *    it to the bottom of the strip puts it just above its own word, which is
+ *    where a reader looks for it.
  *
  * `--lantern-passive-vocab-shift` is the horizontal nudge that keeps two
  * glosses on the same line off each other; it defaults to zero, so a document
@@ -366,20 +389,21 @@ function rubyStyleSheet(doc: Document) {
     ruby[${PASSIVE_VOCAB_ROOT_ATTRIBUTE}] {
       display: inline-block;
       position: relative;
-      padding-top: 1.15em;
+      margin-top: 1.15em;
       text-indent: 0;
       ruby-position: over;
     }
-    rt[${PASSIVE_VOCAB_RUBY_TEXT_ATTRIBUTE}] {
+    ruby[${PASSIVE_VOCAB_ROOT_ATTRIBUTE}]::before {
+      content: attr(${PASSIVE_VOCAB_RUBY_TEXT_ATTRIBUTE});
       position: absolute;
-      top: 0;
+      bottom: 100%;
       left: 50%;
       transform: translateX(calc(-50% + var(--lantern-passive-vocab-shift, 0px)));
       white-space: nowrap;
       text-indent: 0;
       color: inherit;
       opacity: .7;
-      font: 500 0.62em/1.15 system-ui, sans-serif;
+      font: 500 ${RUBY_GLOSS_SCALE}em/1.15 system-ui, sans-serif;
       pointer-events: none;
       -webkit-user-select: none;
       user-select: none;
@@ -393,22 +417,71 @@ function rubyStyleSheet(doc: Document) {
  * annotation in the document is in place — measuring as each one is inserted
  * would read positions that the next insertion invalidates.
  */
-function spreadGlosses(annotations: HTMLElement[]) {
-  if (annotations.length < 2) return;
+function spreadGlosses(wrappers: HTMLElement[]) {
+  if (wrappers.length < 2) return;
   let boxes: PassiveVocabGlossBox[];
   try {
-    boxes = annotations.map((rt) => {
-      const rect = rt.getBoundingClientRect();
-      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
-    });
+    boxes = wrappers.map((wrapper) => glossBox(wrapper));
   } catch {
     // Nothing to measure against (a torn-down document); centred is fine.
     return;
   }
   const shifts = passiveVocabGlossShifts(boxes);
   shifts.forEach((shift, index) => {
-    if (shift > 0) annotations[index].style.setProperty("--lantern-passive-vocab-shift", `${Math.round(shift)}px`);
+    if (shift > 0) wrappers[index].style.setProperty("--lantern-passive-vocab-shift", `${Math.round(shift)}px`);
   });
+}
+
+/**
+ * Where a gloss lands, without a node to ask.
+ *
+ * The gloss is a pseudo-element, so it has no `getBoundingClientRect`. Its
+ * width is still readable through `getComputedStyle(el, "::before")` in both
+ * engines this app ships on; when that returns something unusable (`auto`, or
+ * a DOM that does not lay out at all), the text is measured in a throwaway span
+ * carrying the same font instead — a wrong width here would silently stop
+ * `passiveVocabGlossShifts` from separating neighbours, and glosses drawn on
+ * top of each other are worse than one extra reflow.
+ *
+ * Vertically the box is the strip directly above the word, which is all the
+ * row-grouping in `passiveVocabGlossShifts` needs: two glosses on one line
+ * share a wrapper top, and the next line's is a full line lower.
+ */
+function glossBox(wrapper: HTMLElement): PassiveVocabGlossBox {
+  const doc = wrapper.ownerDocument;
+  const view = doc.defaultView;
+  const rect = wrapper.getBoundingClientRect();
+  const centre = (rect.left + rect.right) / 2;
+  const base = view ? parseFloat(view.getComputedStyle(wrapper).fontSize) : NaN;
+  const fontSize = Number.isFinite(base) ? base * RUBY_GLOSS_SCALE : 0;
+  const label = wrapper.getAttribute(PASSIVE_VOCAB_RUBY_TEXT_ATTRIBUTE) ?? "";
+
+  let width = view ? parseFloat(view.getComputedStyle(wrapper, "::before").width) : NaN;
+  if (!Number.isFinite(width)) width = measureGlossText(doc, label, fontSize);
+
+  const height = fontSize * 1.15;
+  return {
+    left: centre - width / 2,
+    right: centre + width / 2,
+    top: rect.top - height,
+    bottom: rect.top,
+  };
+}
+
+/** Last-resort width for a gloss, in the same font the `::before` rule sets. */
+function measureGlossText(doc: Document, label: string, fontSize: number) {
+  const probe = doc.createElement("span");
+  probe.textContent = label;
+  Object.assign(probe.style, {
+    position: "absolute",
+    visibility: "hidden",
+    whiteSpace: "nowrap",
+    font: `500 ${fontSize}px/1.15 system-ui, sans-serif`,
+  });
+  doc.body.append(probe);
+  const width = probe.getBoundingClientRect().width;
+  probe.remove();
+  return width;
 }
 
 /**
@@ -737,13 +810,11 @@ export function installPassiveVocabAnnotations(options: PassiveVocabDomInstallOp
 export function cleanupPassiveVocabAnnotations(doc: Document) {
   markerTeardowns.get(doc)?.();
   doc.querySelectorAll<HTMLElement>(`[${PASSIVE_VOCAB_ROOT_ATTRIBUTE}]`).forEach((wrapper) => {
+    // Every wrapper holds nothing but the book's own nodes — the ruby gloss is
+    // a pseudo-element and the margin note lives on a rail — so unwrapping is
+    // enough to put the paragraph back exactly as the book shipped it.
     const content = doc.createDocumentFragment();
-    for (const child of [...wrapper.childNodes]) {
-      // Foliate documents live in an iframe, so `instanceof HTMLElement` from
-      // the host window is not reliable here.
-      if (child.nodeType === 1 && (child as Element).hasAttribute(PASSIVE_VOCAB_RUBY_TEXT_ATTRIBUTE)) continue;
-      content.append(child);
-    }
+    content.append(...wrapper.childNodes);
     wrapper.replaceWith(content);
   });
   doc.querySelectorAll(`[${PASSIVE_VOCAB_RAIL_ATTRIBUTE}]`).forEach((rail) => rail.remove());

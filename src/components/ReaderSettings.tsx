@@ -913,8 +913,8 @@ function ReaderSettings({
               <span className="text-[13px] font-medium text-text-primary">{t("readerSettings.paragraphSpacing")}</span>
               {settings.paragraphSpacing === "original" && <span className="text-[11px] text-text-muted">{t("readerSettings.publisherDefault")}</span>}
             </div>
-            <div className="mt-2 grid grid-cols-4 gap-1 rounded-lg bg-bg-input p-1" role="group" aria-label={t("readerSettings.paragraphSpacing")}>
-              {(["none", "compact", "comfortable", "loose"] as const).map((value) => (
+            <div className="mt-2 grid grid-cols-5 gap-1 rounded-lg bg-bg-input p-1" role="group" aria-label={t("readerSettings.paragraphSpacing")}>
+              {(["original", "none", "compact", "comfortable", "loose"] as const).map((value) => (
                 <button
                   key={value}
                   type="button"

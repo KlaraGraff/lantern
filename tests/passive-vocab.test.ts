@@ -173,8 +173,11 @@ test("the limit caps definitions, and words past it show nothing rather than a m
   assert.equal(passiveVocabLabel("to move gradually toward"), "to move gradually toward");
   assert.equal(passiveVocabLabel("逐渐向某处移动"), "逐渐向某处移动");
   // Width, not character count: a full-width character costs two columns, so
-  // fourteen Chinese characters fill the same budget as twenty-eight Latin ones.
-  assert.equal(passiveVocabLabel("一".repeat(20)), `${"一".repeat(13)}…`);
+  // sixteen Chinese characters fill the same budget as thirty-two Latin ones.
+  assert.equal(passiveVocabLabel("一".repeat(20)), `${"一".repeat(15)}…`);
+  // The card's own contextual line has to survive the guard rail whole — this
+  // is 30 columns, and a 28-column ceiling clamped it to "…（做…".
+  assert.equal(passiveVocabLabel("非常仔细、一丝不苟地（做某事）"), "非常仔细、一丝不苟地（做某事）");
   assert.ok(passiveVocabLabel("Meaning in this context: to tell a story in order").endsWith("…"));
 
   const tight = selectPassiveVocab(words, 1);
@@ -516,14 +519,42 @@ test("the ruby gloss overflows its word instead of being clipped to it", () => {
   const sheets = doc.querySelectorAll("[data-passive-vocab-style]") as unknown as { textContent: string }[];
   assert.equal(sheets.length, 1);
   const css = sheets[0].textContent.replace(/\s+/g, " ");
-  assert.match(css, /rt\[data-passive-vocab-ruby-text\] \{[^}]*position: absolute/);
-  assert.match(css, /rt\[data-passive-vocab-ruby-text\] \{[^}]*white-space: nowrap/);
-  assert.match(css, /rt\[data-passive-vocab-ruby-text\] \{[^}]*left: 50%/);
+  assert.match(css, /::before \{[^}]*position: absolute/);
+  assert.match(css, /::before \{[^}]*white-space: nowrap/);
+  assert.match(css, /::before \{[^}]*left: 50%/);
   assert.match(css, /translateX\(calc\(-50% \+ var\(--lantern-passive-vocab-shift, 0px\)\)\)/);
   // The base has to reserve the line-box room the absolute annotation no
-  // longer takes, or the gloss would be drawn over the line above.
-  assert.match(css, /ruby\[data-passive-vocab-root\] \{[^}]*padding-top/);
+  // longer takes, or the gloss would be drawn over the line above — but with
+  // `margin`, never `padding`. Padding is inside the border box, so it grew
+  // the word's own rectangle upwards and every marker painted from that
+  // rectangle (the正文 underline) floated a line above its word.
+  assert.match(css, /ruby\[data-passive-vocab-root\] \{[^}]*margin-top/);
+  assert.doesNotMatch(css, /ruby\[data-passive-vocab-root\] \{[^}]*padding-top/);
+  // Anchored to the bottom of that reserved strip, i.e. just above its own
+  // word, rather than the top of it, i.e. against the previous line.
+  assert.match(css, /::before \{[^}]*bottom: 100%/);
   assert.match(css, /ruby\[data-passive-vocab-root\] \{[^}]*position: relative/);
+});
+
+// The bug this covers: the正文 markers are stroked over every rectangle in the
+// CFI range's `getClientRects()`, and an `<rt>` inside the wrapper is inside
+// that range. One annotated word came back as three rectangles — the word plus
+// two for the gloss — so a rule was drawn under the gloss as well, which reads
+// as a stray line floating above the word. A pseudo-element gloss generates a
+// box but no node, so the range sees the word and nothing else.
+test("the ruby gloss adds no node inside the wrapper, so the word's own rects stay clean", () => {
+  const { doc } = createFakeDoc();
+  installPassiveVocabAnnotations({
+    doc,
+    annotations: [{ cfi: "epubcfi(/6/2)", label: "一丝不苟地", stage: "definition" }],
+    resolveRange: () => fakeRange({ left: 10, top: 100, width: 20 }),
+    style: "ruby",
+  });
+  const wrappers = doc.querySelectorAll("[data-passive-vocab-root]") as unknown as FakeLike[];
+  assert.equal(wrappers.length, 1);
+  // The gloss is carried as an attribute and drawn by `content: attr(...)`.
+  assert.equal(wrappers[0].getAttribute("data-passive-vocab-ruby-text"), "一丝不苟地");
+  assert.equal(doc.querySelectorAll("rt").length, 0);
 });
 
 test("glosses on one line are nudged apart, and separate lines are left alone", () => {

@@ -62,13 +62,13 @@ test("clamping is width-aware and marks what it cut", () => {
   const clamped = clampGloss(wide);
   assert.ok(clamped.endsWith("…"));
   assert.ok(glossWidth(clamped) <= MAX_GLOSS_WIDTH);
-  // Thirteen full-width characters plus the ellipsis is 27 columns; a
-  // fourteenth would be 29.
-  assert.equal(clamped, `${"一".repeat(13)}…`);
+  // Fifteen full-width characters plus the ellipsis is 31 columns; a
+  // sixteenth would be 33.
+  assert.equal(clamped, `${"一".repeat(15)}…`);
 
   const latin = clampGloss("a".repeat(40));
   assert.ok(glossWidth(latin) <= MAX_GLOSS_WIDTH);
-  assert.equal(latin, `${"a".repeat(27)}…`);
+  assert.equal(latin, `${"a".repeat(31)}…`);
 });
 
 test("clamping collapses the newlines a blob would otherwise carry into the row", () => {

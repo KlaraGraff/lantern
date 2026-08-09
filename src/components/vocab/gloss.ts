@@ -15,9 +15,14 @@
 /**
  * Full-width scripts carry roughly twice the meaning per character and take
  * roughly twice the horizontal room, so the ceiling is counted in columns
- * rather than characters: about 14 CJK characters, or about 28 Latin ones.
+ * rather than characters: about 16 CJK characters, or about 32 Latin ones.
  * The model is asked for far less than this (~8 CJK / ~24 Latin); the ceiling
  * is the guard rail, not the target.
+ *
+ * It was 28, which cut the card's own contextual line one character short of
+ * fitting — "非常仔细、一丝不苟地（做某事）" is 30 columns — so a perfectly good
+ * gloss the reader could see in the card was clamped to "…（做…" over the word.
+ * A guard rail that rejects the thing it is meant to pass is set too tight.
  */
 const WIDE_CHARACTER = new RegExp(
   "[\\u1100-\\u115F\\u2E80-\\u303E\\u3041-\\u33FF\\u3400-\\u4DBF\\u4E00-\\u9FFF"
@@ -25,7 +30,7 @@ const WIDE_CHARACTER = new RegExp(
   + "\\uFFE0-\\uFFE6]",
 );
 
-export const MAX_GLOSS_WIDTH = 28;
+export const MAX_GLOSS_WIDTH = 32;
 
 /** Display width in columns, counting full-width characters as two. */
 export function glossWidth(text: string) {

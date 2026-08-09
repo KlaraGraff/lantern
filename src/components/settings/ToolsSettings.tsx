@@ -505,6 +505,19 @@ export default function ToolsSettings({
       {view === "interaction" && (
         <div className="mx-auto w-full max-w-[620px]">
           <SettingsRow
+            title={t("dictionary.privacyToggleLabel")}
+            subtitle={t("dictionary.privacyToggleHint")}
+          >
+            <Toggle
+              label={t("dictionary.privacyToggleLabel")}
+              checked={dictionaryLookupEnabled}
+              onChange={(enabled) => {
+                setDictionaryLookupEnabled(enabled);
+                persistLegacy("dictionary_lookup_enabled", String(enabled));
+              }}
+            />
+          </SettingsRow>
+          <SettingsRow
             title={t("settings.tools.interaction.doubleClick")}
             subtitle={t("settings.tools.interaction.doubleClickHint")}
           >
@@ -518,19 +531,6 @@ export default function ToolsSettings({
                 }
                 setDoubleClickQuickLookup(enabled);
                 persistLegacy("double_click_quick_lookup", String(enabled));
-              }}
-            />
-          </SettingsRow>
-          <SettingsRow
-            title={t("dictionary.privacyToggleLabel")}
-            subtitle={t("dictionary.privacyToggleHint")}
-          >
-            <Toggle
-              label={t("dictionary.privacyToggleLabel")}
-              checked={dictionaryLookupEnabled}
-              onChange={(enabled) => {
-                setDictionaryLookupEnabled(enabled);
-                persistLegacy("dictionary_lookup_enabled", String(enabled));
               }}
             />
           </SettingsRow>

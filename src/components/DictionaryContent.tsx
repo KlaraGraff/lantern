@@ -452,14 +452,21 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
   const collectRecord = useCallback(async (record: LookupRecord) => {
     setCollectingId(record.id);
     try {
-      // The stored definition is the one the reader already paid for, so it is
-      // reused rather than asking the model to say the same thing twice — but
-      // a lookup record's `definition` is the learning card's projection, so
-      // it is only short enough to be a gloss some of the time.
+      // The stored text is the one the reader already paid for, so it is
+      // reused rather than asking the model to say the same thing twice.
+      //
+      // The *contextual* line is what is offered, though, never `definition`.
+      // A lookup record's `definition` deliberately prefers the word entry
+      // over the contextual meaning, because a cached lookup is reused for the
+      // same word in other sentences — which makes it exactly the wrong thing
+      // to print above one particular word. Offered as a gloss it produced
+      // "副词，拼写为 m-e-t-i-c-u-l-…": part-of-speech metadata, clamped
+      // mid-word, sitting over the sentence. Anything too long here falls
+      // through to the short-gloss model call, which is the right shape.
       await saveVocabWord({
         bookId: record.book_id,
         word: record.lookup_text,
-        gloss: record.definition,
+        gloss: record.context_explanation ?? record.definition,
         contextSentence: record.context_sentence,
         contextExplanation: record.context_explanation ?? record.definition ?? null,
         cfi: record.cfi,

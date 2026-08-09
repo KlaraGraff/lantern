@@ -730,26 +730,6 @@ export default function ReadingSettings({
             setTextJustification(value); void persist({ text_justification: String(value) }); showSavedToast();
           }} />
         </div>
-        <div className="mt-3">
-          <p className="text-[14px] font-medium text-text-primary">{t("settings.layout.paragraphSpacing")}</p>
-          <div className="mt-2 grid grid-cols-4 gap-1 rounded-lg bg-bg-input p-1" role="group" aria-label={t("settings.layout.paragraphSpacing")}>
-            {(["none", "compact", "comfortable", "loose"] as const).map((value) => (
-              <button key={value} type="button" aria-pressed={paragraphSpacing === value} onClick={() => {
-                const next = withParagraphSpacing(value, { paragraphSpacing, firstLineIndent });
-                setParagraphSpacing(next.paragraphSpacing);
-                setFirstLineIndent(next.firstLineIndent);
-                void persist({
-                  paragraph_spacing: next.paragraphSpacing,
-                  first_line_indent: String(next.firstLineIndent),
-                });
-                showSavedToast();
-              }} className={`h-8 rounded-md text-[12px] ${paragraphSpacing === value ? "bg-bg-surface font-medium text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"}`}>
-                {t(`readerSettings.paragraphSpacing.${value}`)}
-              </button>
-            ))}
-          </div>
-          {paragraphSpacing === "original" && <p className="mt-1.5 text-[12px] text-text-muted">{t("settings.layout.publisherDefault")}</p>}
-        </div>
         <div className="mt-3 flex items-center justify-between gap-4">
           <div>
             <p className="text-[14px] font-medium text-text-primary">{t("settings.layout.firstLineIndent")}</p>
@@ -765,6 +745,26 @@ export default function ReadingSettings({
             });
             showSavedToast();
           }} />
+        </div>
+        <div className="mt-3">
+          <p className="text-[14px] font-medium text-text-primary">{t("settings.layout.paragraphSpacing")}</p>
+          <div className="mt-2 grid grid-cols-5 gap-1 rounded-lg bg-bg-input p-1" role="group" aria-label={t("settings.layout.paragraphSpacing")}>
+            {(["original", "none", "compact", "comfortable", "loose"] as const).map((value) => (
+              <button key={value} type="button" aria-pressed={paragraphSpacing === value} onClick={() => {
+                const next = withParagraphSpacing(value, { paragraphSpacing, firstLineIndent });
+                setParagraphSpacing(next.paragraphSpacing);
+                setFirstLineIndent(next.firstLineIndent);
+                void persist({
+                  paragraph_spacing: next.paragraphSpacing,
+                  first_line_indent: String(next.firstLineIndent),
+                });
+                showSavedToast();
+              }} className={`h-8 rounded-md text-[12px] ${paragraphSpacing === value ? "bg-bg-surface font-medium text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"}`}>
+                {t(`readerSettings.paragraphSpacing.${value}`)}
+              </button>
+            ))}
+          </div>
+          {paragraphSpacing === "original" && <p className="mt-1.5 text-[12px] text-text-muted">{t("settings.layout.publisherDefault")}</p>}
         </div>
         {/* 互斥说明。不禁用对方控件——禁用会读成「坏了」；直接改掉再解释一句，
             用户能看懂刚才发生了什么。 */}

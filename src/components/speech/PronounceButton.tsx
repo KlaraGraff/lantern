@@ -54,9 +54,13 @@ export default function PronounceButton({
         onClick={toggleAccent}
         title={switchAccentLabel}
         aria-label={switchAccentLabel}
-        className={`flex items-center justify-center rounded border px-1 font-medium leading-none transition-colors ${
+        // No border. The card header sits on the accent fill, and a boxed
+        // two-letter chip there reads as a lit-up control demanding attention
+        // rather than as the quiet accent label it is. The hover fill is the
+        // affordance instead.
+        className={`flex items-center justify-center rounded px-1 font-medium leading-none transition-colors ${
           size === "md" ? "h-[18px] text-[11px]" : "h-4 text-[10px]"
-        } border-border/70 text-text-muted hover:border-accent/60 hover:text-accent-text`}
+        } text-text-muted hover:bg-bg-surface/70 hover:text-accent-text`}
       >
         {accentLabel}
       </button>

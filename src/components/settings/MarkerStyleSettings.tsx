@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AlertTriangle, ChevronDown, ChevronRight, Info, Pipette } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -510,13 +510,34 @@ function VisibilitySection({
       </p>
 
       <div className="mt-1.5">
+        {/* No chip icon of its own, so it sits ahead of the marked-color list
+            rather than indented under the lookup row. Hidden rather than
+            disabled while lookup marks are off: there is nothing to keep
+            from fading. */}
+        {visibility.showLookupMarkers && (
+          <div className="flex min-h-[52px] items-center gap-3 border-t border-border-light py-3 first:border-t-0">
+            <div className="min-w-0 flex-1">
+              <p className={`text-[13px] ${lookupNeverFade ? "text-text-primary" : "text-text-muted"}`}>
+                {t("settings.tools.markers.visibility.lookupNeverFade")}
+              </p>
+              <p className="text-[11px] leading-[17px] text-text-muted">
+                {t("settings.tools.markers.visibility.lookupNeverFadeHint")}
+              </p>
+            </div>
+            <Toggle
+              label={t("settings.tools.markers.visibility.lookupNeverFade")}
+              checked={lookupNeverFade}
+              onChange={onLookupNeverFadeChange}
+            />
+          </div>
+        )}
         {MARKER_VISIBILITY_KEYS.map((key) => {
           const row = VISIBILITY_ROW[key];
           const shown = visibility[key];
           const label = t(row.titleKey);
           return (
-            <Fragment key={key}>
             <div
+              key={key}
               className="flex min-h-[52px] items-center gap-3 border-t border-border-light py-3 first:border-t-0"
             >
               {/* Two spans, not one: the paper is the outer one and the mark the
@@ -548,28 +569,6 @@ function VisibilitySection({
                 onChange={(next) => onChange({ ...visibility, [key]: next })}
               />
             </div>
-            {/* Indented to clear the chip column above, so it reads as a
-                qualifier on the lookup row rather than a fourth mark. Hidden
-                rather than disabled while lookup marks are off: there is
-                nothing to keep from fading. */}
-            {key === "showLookupMarkers" && shown && (
-              <div className="flex min-h-[52px] items-center gap-3 border-t border-border-light py-3 pl-[100px]">
-                <div className="min-w-0 flex-1">
-                  <p className={`text-[13px] ${lookupNeverFade ? "text-text-primary" : "text-text-muted"}`}>
-                    {t("settings.tools.markers.visibility.lookupNeverFade")}
-                  </p>
-                  <p className="text-[11px] leading-[17px] text-text-muted">
-                    {t("settings.tools.markers.visibility.lookupNeverFadeHint")}
-                  </p>
-                </div>
-                <Toggle
-                  label={t("settings.tools.markers.visibility.lookupNeverFade")}
-                  checked={lookupNeverFade}
-                  onChange={onLookupNeverFadeChange}
-                />
-              </div>
-            )}
-            </Fragment>
           );
         })}
       </div>

@@ -62,14 +62,14 @@ test("resolveInBookPreviewPlan: new/learning (and no tier at all) resolve to the
 });
 
 test("resolveInBookPreviewPlan: definition stage carries the reader's own style and the truncated label", () => {
-  // Wider than passiveVocabLabel's 28-column ceiling, so the preview shows the
+  // Wider than passiveVocabLabel's 32-column ceiling, so the preview shows the
   // same clamped label the real in-book annotation would.
   const longDefinition = "abcdefghijklmnopqrstuvwxyz0123456789";
   const rubyPlan = resolveInBookPreviewPlan(settings({ style: "ruby" }), "new", longDefinition, "His countenance betrayed nothing.", "countenance", "epubcfi(/6/2!/4/2)");
   assert.equal(rubyPlan.kind, "definition");
   if (rubyPlan.kind === "definition") {
     assert.equal(rubyPlan.style, "ruby");
-    assert.equal(rubyPlan.label, "abcdefghijklmnopqrstuvwxyz0…");
+    assert.equal(rubyPlan.label, "abcdefghijklmnopqrstuvwxyz01234…");
     assert.deepEqual(rubyPlan.sentence, { before: "His ", answer: "countenance", after: " betrayed nothing." });
   }
 
