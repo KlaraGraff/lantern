@@ -18,6 +18,7 @@ import {
   CHATS,
   CHAT_MESSAGES,
   COLLECTIONS,
+  EXPLANATIONS,
   HIGHLIGHTS,
   NOTES,
   PERSON_ALIAS_GROUPS,
@@ -597,6 +598,62 @@ export const FIXTURES: Record<string, Fixture> = {
   get_chat: () => CHATS[0],
   create_chat: () => CHATS[0],
   list_chat_messages: () => CHAT_MESSAGES.slice(),
+  /**
+   * The other half of the merged 问答 list. Without this the shape-guessed
+   * stub answers `{}`, `useExplanations` stores an empty page, and every
+   * explanation row — the passage rule, the markdown body, the jump-back
+   * button, the whole `kind === "explanation"` arm of `useQaTimeline` — is
+   * unreachable in the sweep while the page still looks like it rendered.
+   *
+   * Filters mirror `query_all_explanations` rather than being approximated,
+   * because the two differ in a way that shows on screen: `total` and `items`
+   * narrow to the selected book, but the `books` facets deliberately do not —
+   * otherwise picking a book empties the dropdown you picked it from and
+   * there is no way back to "all books".
+   */
+  list_explanations: (a: Args) => {
+    const search = String(a.search ?? "").trim().toLowerCase();
+    const bookId = a.bookId == null ? "" : String(a.bookId);
+    const pageSize = Math.min(200, Math.max(1, Number(a.limit) || 50));
+
+    const matchesSearch = (e: (typeof EXPLANATIONS)[number]) =>
+      search === "" ||
+      e.passage.toLowerCase().includes(search) ||
+      e.explanation.toLowerCase().includes(search);
+
+    // Newest first, id ascending as the tie-break — the same ordering the
+    // command's `ORDER BY e.updated_at DESC, e.id ASC` produces, and the one
+    // the cursor below assumes.
+    const found = EXPLANATIONS.filter(matchesSearch).sort(
+      (left, right) => right.updated_at - left.updated_at || left.id.localeCompare(right.id),
+    );
+    const scoped = found.filter((e) => bookId === "" || e.book_id === bookId);
+
+    const cursor = a.cursor == null ? "" : String(a.cursor);
+    const [cursorStamp, cursorId] = cursor.split(":");
+    const after = cursor
+      ? scoped.filter(
+          (e) =>
+            e.updated_at < Number(cursorStamp) ||
+            (e.updated_at === Number(cursorStamp) && e.id > cursorId),
+        )
+      : scoped;
+
+    const items = after.slice(0, pageSize);
+    const last = items[items.length - 1];
+    const facets = new Map<string, { book_id: string; book_title: string | null; count: number }>();
+    for (const e of found) {
+      const facet = facets.get(e.book_id) ?? { book_id: e.book_id, book_title: e.book_title, count: 0 };
+      facet.count += 1;
+      facets.set(e.book_id, facet);
+    }
+    return {
+      items,
+      next_cursor: after.length > pageSize && last ? `${last.updated_at}:${last.id}` : null,
+      total: scoped.length,
+      books: Array.from(facets.values()),
+    };
+  },
   save_chat_message: () => CHAT_MESSAGES[1],
   replace_chat_message: () => CHAT_MESSAGES[1],
   /**

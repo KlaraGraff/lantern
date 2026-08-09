@@ -378,6 +378,99 @@ export const CHAT_MESSAGES = [
 ];
 
 /**
+ * Saved passage explanations — field for field the `Explanation` struct in
+ * `src-tauri/src/commands/explanations.rs`, which is also the `Explanation`
+ * interface in `src/hooks/useExplanations.ts`.
+ *
+ * These share the "问答" list with `CHATS`, so the timestamps are chosen to
+ * straddle the one chat (`ago(4)`): the merged timeline in `useQaTimeline`
+ * sorts both kinds into one list, and a seed where every explanation is newer
+ * than every chat would render as two blocks and never prove the interleave.
+ *
+ * Branch coverage, in the order `QaContent` reads them:
+ *  - `cfi`: one row carries a real one and one is empty. The "jump back to
+ *    source" button only renders for a non-empty `cfi`, so both rows are
+ *    needed to walk each side of it.
+ *  - `chapter`: nullable, and the meta line drops it with a `.filter(Boolean)`
+ *    rather than printing an empty segment — one row leaves it null.
+ *  - `explanation`: markdown, not plain text, because the body goes through
+ *    `AiMarkdown`; and long enough that the collapsed `line-clamp-3` and the
+ *    expanded state actually differ when the sweep clicks the row.
+ *  - Two books, so the book filter's facet dropdown has something to switch
+ *    between.
+ *
+ * `variant` matches what `current_variant` would compute against the harness
+ * settings below (`cefr_level: "B2"`, no `explanation_mode` key, so the
+ * default mode) — nothing reads it, but a fixture that contradicts its own
+ * settings map is a trap for whoever reads it next.
+ *
+ * Timestamps go through the shared `ago()`, which is what keeps these rows in
+ * the same unit as `CHATS` — the two kinds are sorted against each other in
+ * one list, and a seed where they disagree on units doesn't interleave, it
+ * segregates.
+ */
+export const EXPLANATIONS = [
+  {
+    id: "exp-1",
+    book_id: "book-epub-reading",
+    passage: "Believe me, my young friend, there is nothing—absolutely nothing—half so much worth doing as simply messing about in boats.",
+    normalized_passage: "believe me, my young friend, there is nothing—absolutely nothing—half so much worth doing as simply messing about in boats.",
+    explanation:
+      "**messing about** here is not *making a mess*. It is the idle, unhurried pottering you do when the doing is the point and there is no errand at the end of it.\n\n- **mess about** (BrE) — to spend time with no particular aim\n- **worth doing** — the gerund is what carries the value judgement\n\nRat is not recommending boats. He is recommending having nowhere to be.",
+    context_sentence: "The Rat said nothing, but stooped and unfastened a rope and hauled on it.",
+    chapter: "The River Bank",
+    cfi: "epubcfi(/6/4!/4/2/8,/1:0,/1:118)",
+    variant: "adaptive_bilingual|B2",
+    provider_profile_id: "profile-harness",
+    model: "harness-model",
+    saved: true,
+    created_at: ago(0.5),
+    updated_at: ago(0.5),
+    book_title: "The Wind in the Willows",
+  },
+  {
+    // No CFI: the explain came off a passage the reader typed or pasted rather
+    // than selected, so there is nothing to jump back to and the button hides.
+    id: "exp-2",
+    book_id: "book-epub-reading",
+    passage: "The Mole had been working very hard all the morning, spring-cleaning his little home.",
+    normalized_passage: "the mole had been working very hard all the morning, spring-cleaning his little home.",
+    explanation:
+      "过去完成进行时（*had been working*）在这里做的事很具体：它把「一上午都在干活」压成背景，好让下一句的**突然放弃**有东西可以对照。\n\n换成一般过去时 *worked*，那一上午就成了一件已经结束的事，后面的转折也就没什么可转的了。",
+    context_sentence: null,
+    chapter: null,
+    cfi: "",
+    variant: "adaptive_bilingual|B2",
+    provider_profile_id: null,
+    model: null,
+    saved: true,
+    created_at: ago(3),
+    updated_at: ago(3),
+    book_title: "The Wind in the Willows",
+  },
+  {
+    // Older than the chat above it, so the merged timeline has to interleave
+    // rather than concatenate. Second book, so the facet dropdown has two.
+    id: "exp-3",
+    book_id: "book-epub-finished",
+    passage: "You have power over your mind — not outside events. Realize this, and you will find strength.",
+    normalized_passage: "you have power over your mind — not outside events. realize this, and you will find strength.",
+    explanation:
+      "The sentence turns on a contrast the English keeps implicit: `over your mind` / `not outside events`.\n\n> 能支配的是判断，不是遭遇。\n\n*Realize* is imperative, not descriptive — Marcus is issuing himself an instruction, which is what most of this book is.",
+    context_sentence: "Written to himself on campaign, not for publication.",
+    chapter: "Book VIII",
+    cfi: "epubcfi(/6/14!/4/2/26,/1:0,/1:92)",
+    variant: "adaptive_bilingual|B2",
+    provider_profile_id: "profile-harness",
+    model: "harness-model",
+    saved: true,
+    created_at: ago(11),
+    updated_at: ago(6),
+    book_title: "Meditations",
+  },
+];
+
+/**
  * Field for field the shape of `AliasGroupView` in
  * `src-tauri/src/ai/grounding/aliases.rs` — `entries`, not `aliases`, and no
  * group-level `mentions`. The section reads `group.entries` directly, so a
