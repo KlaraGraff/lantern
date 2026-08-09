@@ -444,6 +444,123 @@ pub fn load_vocab_profile_summary(db: &Db) -> AppResult<VocabProfileSummary> {
     })
 }
 
+/// One row of the expanded "那 8.2% 到底是哪些词" list (06).
+///
+/// Carries evidence, not a verdict: how many times the book uses the word, how
+/// many times the reader has seen it, how many times they looked it up. Which
+/// chip that becomes ("读到过 6 次没查", "查过 3 次", "从没遇到过") is a
+/// sentence, and sentences live in the i18n files.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnknownWord {
+    pub word: String,
+    /// Occurrences in this book.
+    pub tokens: i64,
+    /// The reader's own definition, when this word is already in their list.
+    /// `None` otherwise — a gloss is not invented here, and nothing in this
+    /// module goes to the network for one.
+    pub gloss: Option<String>,
+    /// Times seen on a settled screen, across every book.
+    pub encounters: i64,
+    pub lookups: i64,
+    /// True only when the reader has turned "眼熟 counts as known" off: with it
+    /// on, these words are known and are not in this list at all.
+    pub familiar: bool,
+}
+
+/// The words of a book the reader has not learned, commonest first.
+///
+/// Proper nouns are absent by construction — they are classified as names, and
+/// the footnote under the list says so. `count_familiar` mirrors the setting:
+/// with it off, the "眼熟" band joins the list rather than the known set, which
+/// is where the mockup's 眼熟 chip comes from.
+///
+/// The whole list is returned, not a page of it. It is a few thousand rows at
+/// most (Moby-Dick, the worst case in the library, has about 4 900), the
+/// grouping in the interface needs the totals anyway, and the CSV export (D5)
+/// needs every row.
+pub fn load_unknown_words(
+    db: &Db,
+    book_id: &str,
+    count_familiar: bool,
+) -> AppResult<Vec<UnknownWord>> {
+    let (counts, _) = load_word_counts(db, book_id)?;
+    if counts.is_empty() {
+        return Ok(Vec::new());
+    }
+    let profile = load_reader_profile(db)?;
+    let names = load_alias_names(db, book_id)?;
+    let listed = listed_forms(db, &counts, |_| {})?;
+
+    let mut wanted: Vec<(String, i64, bool)> = Vec::new();
+    for (word, tally) in &counts {
+        match classify(word, *tally, listed.contains(word), &profile, &names) {
+            Bucket::Unknown => wanted.push((word.clone(), tally.tokens, false)),
+            Bucket::Familiar if !count_familiar => wanted.push((word.clone(), tally.tokens, true)),
+            _ => {}
+        }
+    }
+
+    // Three whole-table reads rather than three statements per word: the list
+    // is thousands of rows long, and every one of these tables is keyed by the
+    // same normalized form.
+    let conn = db.reader();
+    let mut glosses: HashMap<String, String> = HashMap::new();
+    {
+        let mut statement =
+            conn.prepare("SELECT word, definition FROM vocab_words WHERE definition <> ''")?;
+        let mut rows = statement.query([])?;
+        while let Some(row) = rows.next()? {
+            let word: String = row.get(0)?;
+            glosses.entry(normalize(&word)).or_insert(row.get(1)?);
+        }
+    }
+    let mut encounters: HashMap<String, i64> = HashMap::new();
+    {
+        let mut statement = conn.prepare(
+            "SELECT normalized_word, SUM(encounter_count) FROM reading_word_exposures
+              GROUP BY normalized_word",
+        )?;
+        let mut rows = statement.query([])?;
+        while let Some(row) = rows.next()? {
+            encounters.insert(row.get(0)?, row.get(1)?);
+        }
+    }
+    let mut lookups: HashMap<String, i64> = HashMap::new();
+    {
+        let mut statement = conn.prepare(
+            "SELECT normalized_text, COUNT(*) FROM lookup_records GROUP BY normalized_text",
+        )?;
+        let mut rows = statement.query([])?;
+        while let Some(row) = rows.next()? {
+            lookups.insert(row.get(0)?, row.get(1)?);
+        }
+    }
+    drop(conn);
+
+    let mut words: Vec<UnknownWord> = wanted
+        .into_iter()
+        .map(|(word, tokens, familiar)| UnknownWord {
+            gloss: glosses.get(&word).cloned(),
+            encounters: encounters.get(&word).copied().unwrap_or(0),
+            lookups: lookups.get(&word).copied().unwrap_or(0),
+            word,
+            tokens,
+            familiar,
+        })
+        .collect();
+    // Commonest first, and alphabetical within a tie so the list is stable
+    // across two calls with the same data — a list that reshuffles itself on
+    // every expand reads as a list that is guessing.
+    words.sort_by(|left, right| {
+        right
+            .tokens
+            .cmp(&left.tokens)
+            .then_with(|| left.word.cmp(&right.word))
+    });
+    Ok(words)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CoverageStatus {
@@ -876,6 +993,19 @@ pub fn compute_book_coverage(book_id: String, app: AppHandle, db: State<'_, Db>)
 #[tauri::command]
 pub fn get_vocab_profile(db: State<'_, Db>) -> AppResult<VocabProfileSummary> {
     load_vocab_profile_summary(&db)
+}
+
+/// Synchronous rather than spawned, unlike the coverage pass: this runs only
+/// when the reader expands the list, and it does the frequency scan once for a
+/// book whose word list is already in the database.
+#[tauri::command]
+pub fn get_book_unknown_words(
+    book_id: String,
+    count_familiar: bool,
+    db: State<'_, Db>,
+) -> AppResult<Vec<UnknownWord>> {
+    crate::sync::validation::validate_entity_id(&book_id)?;
+    load_unknown_words(&db, &book_id, count_familiar)
 }
 
 /// Where the clearing dialog's progress and completion arrive (09b).

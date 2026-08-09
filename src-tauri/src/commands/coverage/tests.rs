@@ -362,6 +362,103 @@ fn the_summary_names_the_only_book_read_and_stops_naming_it_at_two() {
 }
 
 #[test]
+fn the_expanded_list_holds_unknown_words_and_neither_names_nor_owned_ones() {
+    let (_directory, db) = test_db();
+    insert_book(&db, "book", "Book", 0);
+    insert_vocab(&db, "v1", "Whale", "mastered", None);
+    write_word_counts(
+        &db,
+        "book",
+        &count_word_tallies(["Ahab met the harpooneer. Ahab liked the whale."]),
+        Some("sha"),
+    )
+    .unwrap();
+
+    let words = load_unknown_words(&db, "book", true).unwrap();
+    let forms: Vec<&str> = words.iter().map(|word| word.word.as_str()).collect();
+
+    assert!(forms.contains(&"harpooneer"), "{forms:?}");
+    assert!(!forms.contains(&"ahab"), "a name is not a word to learn");
+    assert!(!forms.contains(&"whale"), "already mastered");
+}
+
+#[test]
+fn the_familiar_band_joins_the_list_only_once_the_reader_stops_counting_it() {
+    let (_directory, db) = test_db();
+    insert_book(&db, "book", "Book", 0);
+    insert_vocab(&db, "v1", "cetology", "new", Some(FAMILIAR_ENOUGH_CREDIT));
+    write_word_counts(
+        &db,
+        "book",
+        &count_word_tallies(["cetology and cetology"]),
+        Some("sha"),
+    )
+    .unwrap();
+
+    let counted = load_unknown_words(&db, "book", true).unwrap();
+    assert!(counted.iter().all(|word| word.word != "cetology"));
+
+    let uncounted = load_unknown_words(&db, "book", false).unwrap();
+    let row = uncounted
+        .iter()
+        .find(|word| word.word == "cetology")
+        .unwrap();
+    assert!(row.familiar);
+    assert_eq!(row.tokens, 2);
+}
+
+#[test]
+fn every_row_carries_the_evidence_its_chip_is_written_from() {
+    let (_directory, db) = test_db();
+    insert_book(&db, "book", "Book", 0);
+    insert_vocab(&db, "v1", "binnacle", "new", None);
+    insert_exposure(&db, "e1", "book", "binnacle", 6);
+    insert_lookup(&db, "l1", "book", "binnacle", 1_700_000_000_000);
+    write_word_counts(
+        &db,
+        "book",
+        &count_word_tallies(["binnacle binnacle binnacle"]),
+        Some("sha"),
+    )
+    .unwrap();
+
+    let words = load_unknown_words(&db, "book", true).unwrap();
+    let row = words.iter().find(|word| word.word == "binnacle").unwrap();
+
+    assert_eq!(row.tokens, 3);
+    assert_eq!(row.gloss.as_deref(), Some("def"));
+    assert_eq!(row.encounters, 6);
+    assert_eq!(row.lookups, 1);
+    assert!(!row.familiar);
+}
+
+#[test]
+fn the_list_is_commonest_first_and_settles_ties_alphabetically() {
+    let (_directory, db) = test_db();
+    insert_book(&db, "book", "Book", 0);
+    write_word_counts(
+        &db,
+        "book",
+        &count_word_tallies(["scrimshaw gam scrimshaw gam scrimshaw gam davit"]),
+        Some("sha"),
+    )
+    .unwrap();
+
+    let words = load_unknown_words(&db, "book", true).unwrap();
+    let forms: Vec<&str> = words.iter().map(|word| word.word.as_str()).collect();
+
+    assert_eq!(forms, vec!["gam", "scrimshaw", "davit"]);
+}
+
+#[test]
+fn a_book_whose_words_were_never_counted_asks_for_nothing() {
+    let (_directory, db) = test_db();
+    insert_book(&db, "book", "Book", 0);
+
+    assert!(load_unknown_words(&db, "book", true).unwrap().is_empty());
+}
+
+#[test]
 fn an_untouched_device_reports_nothing_rather_than_zeroes_it_invented() {
     let (_directory, db) = test_db();
 
