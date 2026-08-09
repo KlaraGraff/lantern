@@ -45,8 +45,11 @@ const source = (n: number, snippet: string): Source => ({
 });
 
 /**
- * 「他明明说不去」这一轮。首图和引用图共用它 —— 问题短、答案里三处角标，
+ * 「他明明说不去」这一轮。首图和上下文图共用它 —— 问题短、答案里三处角标，
  * 缩略之后仍然看得出「每句话都能点回原文」。
+ *
+ * 问和答都用中文译名（班纳特、宾利、丽萃），原文引用仍是英文 —— 这正是人物
+ * 别名表在做的事：书里一个汉字都没有，照样能用中文名问。
  */
 const VISIT_SOURCES: Source[] = [
   source(1, "He had always intended to visit him, though to the last always assuring his wife that he should not go"),
@@ -57,9 +60,9 @@ const VISIT_SOURCES: Source[] = [
 const VISIT_ANSWER = [
   "他从头到尾都打算去，只是嘴上一直说不去 [S1]。",
   "",
-  "拜访是他一个人去的，回来也没讲；直到那天傍晚，Mrs. Bennet 都还不知道这件事已经办完了 [S2]。",
+  "拜访是他一个人去的，回来也没讲；直到那天傍晚，班纳特太太都还不知道这件事已经办完了 [S2]。",
   "",
-  "他挑的揭晓方式也是绕的：先冲正在修帽子的 Lizzy 说了句「不知道 Bingley 先生喜不喜欢」[S3]，等太太把「我们又不去拜访」抱怨完，才顺势把底掀开。",
+  "他挑的揭晓方式也是绕的：先冲正在修帽子的丽萃说了句「不知道宾利先生喜不喜欢」[S3]，等太太把「我们又不去拜访」抱怨完，才顺势把底掀开。",
   "",
   "所以这不是改主意，是他惯常的取乐方式 —— 消息压到最后一刻，看太太先着急。",
 ].join("\n");
@@ -145,7 +148,7 @@ export const PROMO_CHATS = [
   {
     id: "promo-visit",
     book_id: "pride-and-prejudice",
-    title: "他明明说不去拜访 Bingley",
+    title: "他明明说不去拜访宾利",
     model: "harness-model-large",
     pinned: false,
     metadata: null,
@@ -173,7 +176,7 @@ const PROGRESS = 34;
 
 export const PROMO_CHAT_MESSAGES: Record<string, PromoMessage[]> = {
   "promo-visit": [
-    userTurn("promo-visit-1", "promo-visit", "他前面明明说不去拜访 Bingley，后来怎么又去了？", 1),
+    userTurn("promo-visit-1", "promo-visit", "班纳特先生前面明明说不去拜访宾利，后来怎么又去了？", 1),
     assistantTurn("promo-visit-2", "promo-visit", VISIT_ANSWER, 1, {
       sources: VISIT_SOURCES,
       spoilerGuard: { active: true, wholeBookIntent: true, progress: PROGRESS },
@@ -326,3 +329,13 @@ export function promoLearningCard(text: unknown): unknown | null {
 
 /** 首图双击的那个词。放在这里，场景和内容不用两边各写一份。 */
 export const HERO_LOOKUP_WORD = "waited";
+
+/**
+ * 卡片宽度设成「紧凑」。默认的「自动」在这本书上会撑到六百多像素，一张卡就把
+ * 正文压掉大半 —— 这是设置里真有的一档（划词与卡片 › 卡片设计 › 卡片宽度），
+ * 只写这一个字段，其余全部走应用自己的默认值。
+ */
+export const PROMO_CARD_CONFIG = JSON.stringify({
+  version: 2,
+  cards: { word: { widthMode: "compact" } },
+});

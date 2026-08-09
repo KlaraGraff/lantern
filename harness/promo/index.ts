@@ -12,6 +12,8 @@
  * 因为那部分需要真的去摸 DOM，和纯数据分开。
  */
 
+import { PROMO_CARD_CONFIG } from "./content";
+
 export interface Scene {
   /** 覆盖到 harness 设置上的键值，会盖过 fixture-data 的默认值。 */
   settings?: Record<string, string>;
@@ -35,6 +37,7 @@ const ZH: Record<string, string> = {
   theme_reader: "paper",
   font_size: "19",
   line_height: "1.7",
+  learning_card_config: PROMO_CARD_CONFIG,
 };
 
 export const SCENES: Record<string, Scene> = {

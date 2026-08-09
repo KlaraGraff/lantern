@@ -219,12 +219,38 @@ async function lookupWord(word: string, maxTurns = 6): Promise<void> {
  * AI 侧栏
  * ------------------------------------------------------------------ */
 
-async function openAiPanel(): Promise<HTMLElement> {
+async function openAiPanel(): Promise<void> {
   const toggle = await waitFor("AI 助手按钮", () => byLabel(text("reader.aiAssistant")));
   toggle.click();
   await waitFor("侧栏输入框", () => document.querySelector("textarea"));
   await settle();
-  return toggle;
+}
+
+/**
+ * 把侧栏拖窄。默认 525px 在 1280 的窗口里占掉四成，正文只剩两条窄栏。
+ *
+ * 走的是那条真的拖拽把手（`useSidePanelResize`）：一次 pointerdown 加一次
+ * pointerup 就够 —— 松手时它按 clientX 重算最终宽度，中间的 pointermove 只
+ * 影响拖动过程中的实时预览。宽度不写进设置里，所以只能这么拖。
+ */
+async function narrowAiPanel(target: number): Promise<void> {
+  const handle = await waitFor(
+    "侧栏的拖拽把手",
+    () => document.querySelector<HTMLElement>("div.cursor-col-resize"),
+  );
+  const box = handle.getBoundingClientRect();
+  const startX = box.x + box.width / 2;
+  const current = (handle.nextElementSibling as HTMLElement | null)?.getBoundingClientRect().width ?? 525;
+  const common = { bubbles: true, cancelable: true, pointerId: 1, button: 0, isPrimary: true };
+
+  handle.dispatchEvent(new PointerEvent("pointerdown", { ...common, clientX: startX, clientY: box.y + 20 }));
+  window.dispatchEvent(new PointerEvent("pointerup", {
+    ...common,
+    // delta = startX - clientX，往右拖就是变窄。
+    clientX: startX + (current - target),
+    clientY: box.y + 20,
+  }));
+  await settle();
 }
 
 /** 从对话列表里挑一轮已经答完的对话 —— 比现场发一条更稳，也不需要假后端。 */
@@ -248,7 +274,8 @@ const ACTIONS: Record<string, () => Promise<void>> = {
   async hero() {
     await waitForBook();
     await openAiPanel();
-    await openChat("他明明说不去拜访 Bingley");
+    await narrowAiPanel(420);
+    await openChat("他明明说不去拜访宾利");
     await lookupWord(HERO_LOOKUP_WORD);
   },
 
@@ -263,7 +290,7 @@ const ACTIONS: Record<string, () => Promise<void>> = {
   async context() {
     await waitForBook();
     await openAiPanel();
-    await openChat("他明明说不去拜访 Bingley");
+    await openChat("他明明说不去拜访宾利");
   },
 
   /** 一张就地加注的查词卡，正文不被侧栏挤窄。 */
