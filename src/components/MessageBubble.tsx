@@ -228,6 +228,7 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
           <AliasDisclosureLine
             resolution={msg.aliasResolution}
             precedingUserContent={precedingUserContent}
+            bookId={msg.bookId}
             onSwapAlias={onSwapAlias ? (canonical) => onSwapAlias(msg.id, canonical) : undefined}
           />
         )}

@@ -251,6 +251,7 @@
   "ai.aliasDisclosure.medium.body": "「{{alias}}」按「{{canonical}}」找的。",
   "ai.aliasDisclosure.medium.swapTo": "换成「{{canonical}}」",
   "ai.aliasDisclosure.medium.description": "你教过「{{alias}}」指的是「{{canonical}}」，这次按它找的。",
+  "ai.aliasDisclosure.medium.manage": "管理这本书的别名",
   "ai.aliasDisclosure.low.body": "没认出「{{phrase}}」是谁，按原文找的。",
   "ai.aliasDisclosure.low.confirm": "✓ 对，就是「{{canonical}}」",
   "ai.aliasDisclosure.low.reject": "不是，是别人",

@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AliasDecision, AliasMatch, AliasResolutionMetadata, ChatMessage } from "../hooks/useAiChat";
 import { serializeMessageMetadata } from "../hooks/useAiChat";
+import IndexManagerModal from "./IndexManagerModal";
 
 // Mirrors the camelCase fields of AliasGroupView (person_aliases.rs) — only
 // `canonical` is needed here, the picker just lists names.
@@ -63,6 +64,9 @@ interface AliasDisclosureLineProps {
   /** What the reader actually typed — quoted back in the low-confidence
    *  line ("couldn't tell who X refers to"). */
   precedingUserContent: string;
+  /** Which book's alias table the "manage" link opens. Omitted for a message
+   *  that was not asked against a book — the link is then simply absent. */
+  bookId?: string;
   /** Re-asks the question naming `canonical` instead. Left undefined until
    *  the panel hosting this chat threads its `send()` through — see this
    *  component's call site in MessageBubble.tsx for the current gap. */
@@ -73,8 +77,10 @@ interface AliasDisclosureLineProps {
  *  docs/impls/alias-routing-mockup.html. Quiet and informational, not an
  *  alert: a reader who asked a perfectly fine question shouldn't see a
  *  warning color for it. */
-export function AliasDisclosureLine({ resolution, precedingUserContent, onSwapAlias }: AliasDisclosureLineProps) {
+export function AliasDisclosureLine({ resolution, precedingUserContent, bookId, onSwapAlias }: AliasDisclosureLineProps) {
   const { t } = useTranslation();
+  /** The alias whose table the reader asked to see, or null for closed (D9). */
+  const [managing, setManaging] = useState<string | null>(null);
 
   if (resolution.confidence === "low") {
     if (!precedingUserContent) return null;
@@ -123,9 +129,24 @@ export function AliasDisclosureLine({ resolution, precedingUserContent, onSwapAl
                 {t("ai.aliasDisclosure.medium.swapTo", { canonical })}
               </button>
             ))}
+            {/* Swapping fixes this one answer; the reading itself keeps coming
+                back until the table changes. This is the second of those two
+                doors, and it opens on the alias the reader is doubting. */}
+            {bookId && (
+              <button
+                type="button"
+                onClick={() => setManaging(match.alias)}
+                className="text-text-muted underline decoration-dotted underline-offset-2 hover:text-text-secondary cursor-pointer"
+              >
+                {t("ai.aliasDisclosure.medium.manage")}
+              </button>
+            )}
           </div>
         );
       })}
+      {managing && bookId && (
+        <IndexManagerModal bookId={bookId} focusAlias={managing} onClose={() => setManaging(null)} />
+      )}
     </div>
   );
 }

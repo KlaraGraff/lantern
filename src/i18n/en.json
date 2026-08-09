@@ -251,6 +251,7 @@
   "ai.aliasDisclosure.medium.body": "Searched “{{alias}}” as {{canonical}}.",
   "ai.aliasDisclosure.medium.swapTo": "Try {{canonical}} instead",
   "ai.aliasDisclosure.medium.description": "You taught Lantern that “{{alias}}” means {{canonical}} — searched as that.",
+  "ai.aliasDisclosure.medium.manage": "Manage this book’s aliases",
   "ai.aliasDisclosure.low.body": "Couldn't tell who “{{phrase}}” refers to — searched for it literally.",
   "ai.aliasDisclosure.low.confirm": "✓ Yes, it's {{canonical}}",
   "ai.aliasDisclosure.low.reject": "No, someone else",

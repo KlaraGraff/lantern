@@ -68,9 +68,16 @@ interface PendingDelete {
  * independent commands that have nothing to do with `ai_index_details`. */
 export default function PersonAliasesSection({
   bookId,
+  focusAlias,
   onLeaveForSettings,
 }: {
   bookId: string;
+  /**
+   * An alias the reader arrived doubting, from the line above an answer (D9).
+   * The table narrows to it and, when it turned out to be ambiguous, lands on
+   * the card that explains why.
+   */
+  focusAlias?: string;
   /**
    * Close the index manager. The settings modal sits at `z-50` and this one at
    * `z-[70]`, so a deep link into 选模型 would otherwise open behind the dialog
@@ -99,7 +106,13 @@ export default function PersonAliasesSection({
   const [expanded, setExpanded] = useState(false);
   /** Bridges the reader answered with 「两个都留着」, by alias text. */
   const [settledAliases, setSettledAliases] = useState<string[]>([]);
+  /** The alias `focusAlias` landed on, ringed until the reader searches again. */
+  const [spotlight, setSpotlight] = useState<string | null>(null);
   const bridgeRefs = useRef(new Map<string, HTMLDivElement>());
+  const sectionRef = useRef<HTMLElement | null>(null);
+  /** The `focusAlias` already landed on, so a re-render does not re-narrow a
+   *  table the reader has since searched their own way. */
+  const landedOn = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     const next = await invoke<AliasGroupView[]>("list_person_aliases", { bookId });
@@ -181,6 +194,33 @@ export default function PersonAliasesSection({
   const visibleRows = searching || expanded ? shown : sections.visible;
   const openBridges = ambiguities.filter((item) => !settledAliases.includes(item.alias));
 
+  /**
+   * D9's landing. Runs once the table is in hand, because where to land depends
+   * on what the table says: an ambiguous alias has a card explaining it, an
+   * ordinary one has only its row, and one that is no longer in the table at
+   * all — deleted, or rebuilt away since the answer was written — has neither.
+   * That last case is not an error; the section simply opens.
+   */
+  useEffect(() => {
+    if (!focusAlias || groups == null || landedOn.current === focusAlias) return;
+    landedOn.current = focusAlias;
+    const known = rows.some((row) =>
+      [...row.names, ...row.descriptions].some((entry) => entry.alias === focusAlias),
+    );
+    if (known) {
+      setQuery(focusAlias);
+      setFilter("all");
+      setSpotlight(focusAlias);
+    }
+    // The bridge band sits above the table and ignores the search box, so its
+    // card is already mounted here — no wait for the narrowing to commit.
+    const bridge = bridgeRefs.current.get(focusAlias);
+    (bridge ?? sectionRef.current)?.scrollIntoView({
+      block: bridge ? "nearest" : "start",
+      behavior: "smooth",
+    });
+  }, [focusAlias, groups, rows]);
+
   const sourceLabel = {
     auto: "indexManager.aliases.sourceAuto",
     user: "indexManager.aliases.sourceUser",
@@ -260,6 +300,10 @@ export default function PersonAliasesSection({
           sourceQuery: null,
         })),
     });
+
+  /** Rings the chip `focusAlias` landed on, so the reader's eye finds the one
+   *  alias they came in doubting before it finds the row it sits in. */
+  const spotlit = (alias: string) => (alias === spotlight ? " ring-2 ring-accent/60" : "");
 
   /** Jump from a table chip to the card that explains it. */
   const revealBridge = (alias: string) => {
@@ -454,7 +498,7 @@ export default function PersonAliasesSection({
   };
 
   return (
-    <section className="mt-5">
+    <section ref={sectionRef} className="mt-5">
       <div className="mb-2 flex items-center justify-between">
         <h4 className="text-[13px] font-medium text-text-primary">{t("indexManager.aliases.title")}</h4>
         {!building && rows.length > 0 && (
@@ -631,7 +675,7 @@ export default function PersonAliasesSection({
               <Search size={12} className="absolute left-2 top-2 text-text-muted" />
               <input
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => { setQuery(event.target.value); setSpotlight(null); }}
                 placeholder={t("indexManager.aliases.searchPlaceholder")}
                 className="h-7 w-full rounded-md border border-border bg-bg-surface pl-7 pr-2.5 text-[12px] text-text-primary outline-none"
               />
@@ -642,7 +686,7 @@ export default function PersonAliasesSection({
                   key={option}
                   type="button"
                   aria-pressed={filter === option}
-                  onClick={() => setFilter(option)}
+                  onClick={() => { setFilter(option); setSpotlight(null); }}
                   className={`px-2.5 text-[11.5px] ${index > 0 ? "border-l border-border" : ""} ${
                     filter === option
                       ? "bg-bg-input font-medium text-text-primary"
@@ -688,7 +732,7 @@ export default function PersonAliasesSection({
                         key={entry.id}
                         type="button"
                         onClick={() => revealBridge(entry.alias)}
-                        className="inline-flex items-center gap-1 rounded-full border border-warning/55 bg-bg-surface px-2 py-0.5 text-[11px] leading-5 text-warning"
+                        className={`inline-flex items-center gap-1 rounded-full border border-warning/55 bg-bg-surface px-2 py-0.5 text-[11px] leading-5 text-warning${spotlit(entry.alias)}`}
                       >
                         {entry.alias}
                         <span className="inline-flex items-center gap-0.5 rounded-full bg-warning/15 px-1.5 text-[10px]">
@@ -705,7 +749,7 @@ export default function PersonAliasesSection({
                           entry.source === "user"
                             ? "border-accent bg-accent-bg text-accent-text"
                             : "border-border bg-bg-input text-text-secondary"
-                        } ${pendingDelete?.anchor === entry.id ? "opacity-40" : ""}`}
+                        } ${pendingDelete?.anchor === entry.id ? "opacity-40" : ""}${spotlit(entry.alias)}`}
                       >
                         {entry.alias}
                         <button
@@ -757,7 +801,7 @@ export default function PersonAliasesSection({
                     <div className="mt-1.5 w-full border-t border-dashed border-border-light pt-1.5">
                       {row.descriptions.map((entry) => (
                         <div key={entry.id} className={descriptionsDimmed ? "opacity-45" : undefined}>
-                          <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-warning/50 bg-warning/10 px-2 py-0.5 text-[11px] leading-5 text-warning">
+                          <span className={`inline-flex max-w-full items-center gap-1 rounded-full border border-warning/50 bg-warning/10 px-2 py-0.5 text-[11px] leading-5 text-warning${spotlit(entry.alias)}`}>
                             <span aria-hidden="true" className="text-[10.5px] opacity-75">≈</span>
                             <span className="sr-only">{t("indexManager.aliases.approxLabel")}</span>
                             <span className="min-w-0 break-words">{entry.alias}</span>

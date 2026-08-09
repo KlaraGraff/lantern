@@ -38,11 +38,15 @@ function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: 
 export default function IndexManagerModal({
   bookId,
   bookTitle,
+  focusAlias,
   onClose,
 }: {
   bookId: string;
   /** Optional: the header falls back to the generic name without it. */
   bookTitle?: string;
+  /** Opened from the disclosure line above an answer (D9): land the alias
+   *  section on this alias instead of the top of the modal. */
+  focusAlias?: string;
   onClose(): void;
 }) {
   const { t, i18n } = useTranslation();
@@ -417,7 +421,7 @@ export default function IndexManagerModal({
                   </details>
                 ))}
               </section>
-              <PersonAliasesSection bookId={bookId} onLeaveForSettings={onClose} />
+              <PersonAliasesSection bookId={bookId} focusAlias={focusAlias} onLeaveForSettings={onClose} />
               <details className="mt-5"><summary className="cursor-pointer text-[13px] font-medium text-text-primary">{t("indexManager.chunkPreview")}</summary><div className="mt-2 space-y-2">{details.chunks.map((chunk) => <div key={chunk.index} className="rounded-md bg-bg-input p-3 text-[11px] leading-5 text-text-secondary"><p className="font-medium text-text-primary">{chunk.sectionTitle || `#${chunk.index + 1}`}</p>{chunk.snippet}</div>)}</div></details>
             </>
           )}
