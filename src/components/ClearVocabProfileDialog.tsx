@@ -57,12 +57,21 @@ export default function ClearVocabProfileDialog({
   }, []);
 
   // Escape is the same exit as Cancel, and disappears for the same reason.
+  //
+  // Capture phase, and the key is swallowed either way: this dialog opens on
+  // top of the settings modal, which has its own document-level Escape handler
+  // that closes the whole modal. Left to bubble, Escape would take the settings
+  // modal — and this dialog with it — out from under a delete that had already
+  // started writing.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) onClose();
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!busy) onClose();
     };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
   }, [busy, onClose]);
 
   useEffect(() => {
