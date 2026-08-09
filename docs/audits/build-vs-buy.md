@@ -265,7 +265,7 @@ genre: row.get(12)?,
 - **词典内存缓存** `commands/dictionary.rs:53-155` —— 「到顶就清空」而非 LRU 是有注释说明的取舍（上限只约束一个会话，重建成本是每个真正被回看的词一次请求），别往这儿推 LRU 库。
 - **抽屉手势状态机** `hooks/useDrawerGesture.ts`，297 行 —— `tests/drawer-gesture.test.ts` + `tests/mobile-home-drawer.test.ts` 双覆盖，0 次 bug，常数是对着参照产品调出来的，且刻意用 `useSyncExternalStore` + ref 避免拖拽期间 React 重渲染。
 - **设置批量写入** `pages/reader/useReaderSettingsSync.ts:412-522` —— 历史上的两次真实竞态（`e393438`、`f84c116`）都是队列合并与 flush 时序问题，不是去抖时序问题；现已被 `tests/reader-settings-restore-race.test.ts` 和 `tests/reader-settings-merge.test.ts` 覆盖，换去抖库一行都修不到。
-- **手写 debounce（5 处）** `Home.tsx:271`/`:366`/`:391`、`useReaderZoom.ts:74`、`useWindowSizePersistence.ts:16` —— 每处 5 行同一惯用法，为此引 `use-debounce` 得不偿失；值得做的是就地抽一个内部 helper。
+- **手写 debounce（6 处）** `Home.tsx:271`/`:366`/`:391`、`useReaderZoom.ts:74`、`useWindowFramePersistence.ts:47`/`:58` —— 每处 5 行同一惯用法，为此引 `use-debounce` 得不偿失；值得做的是就地抽一个内部 helper。
 - **i18n 句中强调** `i18n/emphasis.ts`，41 行 —— 注释 `:11-13` 已经点名 `<Trans>` 并给了拒绝理由（全仓库没用过它，为几句话引入「翻译里带 HTML」的约定比一个 split 函数承诺更大）。
 - **颜色数学** `reader-settings.ts:310-348`、`mark-palette.ts:270` —— WCAG 对比度公式和 alpha 通道十六进制（后者在 4 个文件里各写一遍：`mark-palette.ts:277`、`marker-style.ts:172`/`:190`、`MarkerStyleSettings.tsx:56`）。0 次 bug，代价只是显示。该做的是合并成一个内部 helper，不是引 `culori`/`color2k`。
 - **`DAY_MS` 常量 × 7** `level_observation.rs:38`、`book_difficulty.rs:623`、`vocab.rs:133`、`vocab_learning.rs:26`、`profile.rs:53`、`review_piles.rs:19`、`ai/lookup.rs:190` —— 两种写法（`86_400_000` 与 `24*60*60*1000`）。全都是滚动 N×24h 窗口，不是日历日边界，所以不是正确性 bug；合并成一处常量即可，不需要库。

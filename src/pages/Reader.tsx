@@ -92,7 +92,7 @@ import {
   useReaderSettingsSync,
 } from "./reader/useReaderSettingsSync";
 import { measureRenderedTextRect } from "./reader/reader-settings-placement";
-import { useWindowSizePersistence } from "./reader/useWindowSizePersistence";
+import { useWindowFramePersistence } from "./reader/useWindowFramePersistence";
 import { useSidePanelResize } from "./reader/useSidePanelResize";
 import {
   useFoliateAnnotations,
@@ -1226,7 +1226,7 @@ export default function Reader() {
     setReaderSettings,
   ]);
 
-  useWindowSizePersistence(bookId, isStandaloneWindow);
+  useWindowFramePersistence(bookId, isStandaloneWindow);
   const { availabilityState, retryAvailability } = useBookAvailability(book, setBook);
   const { dialog: cellularConsentDialog, requestConsent: requestCellularConsent } =
     useCellularDownloadConsent();
