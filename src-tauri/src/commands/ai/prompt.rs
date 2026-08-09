@@ -27,6 +27,16 @@ pub(super) fn normalized_explanation_mode(mode: Option<&str>) -> &'static str {
     }
 }
 
+/// Normalize damaged or unrecognized values into the two user-visible styles.
+/// Anything unrecognized lands on `thorough`: a reader who never touched the
+/// setting gets the fuller explanation.
+pub(super) fn normalized_explanation_style(style: Option<&str>) -> &'static str {
+    match style.map(str::trim) {
+        Some("essential") => "essential",
+        _ => "thorough",
+    }
+}
+
 pub(super) fn explanation_matches_translation(
     mode: &str,
     cefr: &str,
@@ -54,7 +64,24 @@ fn normalized_cefr_level(cefr: &str) -> &str {
 /// The level picks the words, never the substance. Without this, a low level
 /// reads as permission to cover less, and dropping to an easier level thins the
 /// card out instead of simplifying it.
-const LEVEL_GOVERNS_LANGUAGE_ONLY: &str = " The level sets the language of the explanation, not how much is explained: depth, coverage, and how many senses to treat come from the requested density and counts. Never drop, merge, or thin a point because the level is low — say the same thing in simpler words.";
+const LEVEL_GOVERNS_LANGUAGE_ONLY: &str = " The level sets the language of the explanation, not how much is explained: depth, coverage, and how many senses to treat come from the requested density and counts. Never drop, merge, or thin a point because the level is low — say the same thing in simpler words and in more, shorter sentences. Split one point into two sentences rather than compressing it into one.";
+
+/// How an explanation is shaped, as opposed to what it covers. Read by every
+/// level, every explanation language, and both styles: the style constants
+/// below decide how much background to give, this decides the sentence shapes
+/// that carry it. Only the third rule's counter-examples are Chinese-specific;
+/// the other five hold for English prose just as well, which is why this hangs
+/// off the shared exit of `explanation_strategy` rather than a language arm.
+const SHARED_PROSE_SHAPE: &str = "\n\nThese rules govern the shape of an explanation, never its coverage. They apply at every level and in every explanation style:\n— Open each module with the meaning itself, in one short clause. Do not open by ruling out another sense, by naming the part of speech, or by restating the question.\n— Order points by usefulness to a reader mid-sentence: what it means here, how to recognise it, what it goes with, then background and contrasts. Etymology and sense history come last, never first.\n— One point per entry in `details`. A point may be a full, formal sentence; it may not be two points joined by 而／其中／由于／从而／二者.\n— Parentheses may hold only pronunciation, an example, or the original English form. Never put the meaning itself, or an explanation, in parentheses.\n— When a grammatical or stylistic term is used, state the plain-language point first and name the term after it.\n— Put an English example on its own entry, followed by its Chinese rendering. Never trail an example after a sentence of analysis.";
+
+/// The two style arms. Style governs how much background an explanation
+/// carries; the CEFR level governs the words it is carried in. The two are
+/// orthogonal, so both constants close with a floor: `thorough` may not trade
+/// coverage for brevity, and `essential` may not drop a point the sentence
+/// cannot be read without.
+const STYLE_THOROUGH: &str = "\n\nExplanation style: thorough. Cover the background as well as the use: etymology when it explains the current sense, register and how formal the word is, how the senses diverged, and how the word differs from its near-synonyms. Formal written Chinese is welcome here — long pre-nominal modifiers, nominal constructions such as 进行／作出／具有, and subordinate clauses are all allowed, as long as each entry still carries exactly one point. Never trade coverage for brevity.";
+
+const STYLE_ESSENTIAL: &str = "\n\nExplanation style: essential. Cover only what the reader can act on in this sentence: what it means here, how to recognise it, and what it usually goes with. Leave out etymology, register notes, sense history, and synonym contrasts unless the sentence cannot be understood without them. Write short Chinese sentences, lead with verbs, and avoid nominal constructions such as 进行／作出／具有. Never leave out a point the reader needs to read this sentence.";
 
 /// The escape hatch that makes a level survivable: an accurate word the reader
 /// may not know is kept and glossed on the spot, rather than swapped for a
@@ -65,10 +92,10 @@ fn above_level_gloss_rule(level: &str, chinese_gloss_allowed: bool) -> String {
     } else {
         "a few simpler English words in parentheses"
     };
-    format!(" When an explanation needs a word above CEFR {level}, keep the accurate word and gloss it inline right where it appears — {gloss}. Never leave an above-level word unglossed, and never replace it with a vaguer one.")
+    format!(" When an explanation needs a word above CEFR {level}, keep the accurate word and gloss it where it appears — {gloss} when the gloss is two or three words, otherwise as its own short sentence immediately after. Never leave an above-level word unglossed, and never replace it with a vaguer one.")
 }
 
-pub(super) fn explanation_strategy(mode: &str, cefr: &str) -> String {
+pub(super) fn explanation_strategy(mode: &str, cefr: &str, style: &str) -> String {
     let level = normalized_cefr_level(cefr);
     // Wording only: sentence length, register, and vocabulary range. Anything
     // that would limit what gets covered belongs to the density settings.
@@ -97,14 +124,21 @@ pub(super) fn explanation_strategy(mode: &str, cefr: &str) -> String {
             "Use English as the explanation language at CEFR {level}, with precise wording appropriate to that level. {english_constraint} Put Chinese only in the requested target_translation module; do not add a separate Chinese gloss to explanation modules."
         ),
     };
+    // Style is orthogonal to the explanation language: an English-only mode
+    // still gets its style arm, and the level still governs wording alone.
+    let style_rules = match normalized_explanation_style(Some(style)) {
+        "essential" => STYLE_ESSENTIAL,
+        _ => STYLE_THOROUGH,
+    };
     // Chinese explanations have no English level to fall short of.
     if mode == "chinese" {
-        return strategy;
+        return format!("{strategy}{SHARED_PROSE_SHAPE}{style_rules}");
     }
     // An English-only mode stays English-only: its gloss is simpler English.
-    let chinese_gloss_allowed = mode == "adaptive_bilingual" && matches!(level, "A1" | "A2" | "B1" | "B2");
+    let chinese_gloss_allowed =
+        mode == "adaptive_bilingual" && matches!(level, "A1" | "A2" | "B1" | "B2");
     format!(
-        "{strategy}{LEVEL_GOVERNS_LANGUAGE_ONLY}{}",
+        "{strategy}{LEVEL_GOVERNS_LANGUAGE_ONLY}{}{SHARED_PROSE_SHAPE}{style_rules}",
         above_level_gloss_rule(level, chinese_gloss_allowed),
     )
 }
@@ -112,14 +146,18 @@ pub(super) fn explanation_strategy(mode: &str, cefr: &str) -> String {
 pub(super) fn learning_language_strategy(
     mode: &str,
     cefr: &str,
+    style: &str,
     translation_language: &str,
 ) -> String {
     let level = normalized_cefr_level(cefr);
     let translation = language_name(translation_language);
+    // The translation caveat comes before the strategy: the strategy now ends
+    // in the multi-line prose-shape and style block, and a lone sentence
+    // trailing that block would read as part of the style rules.
     format!(
-        "Learner level: {level}. Explanation mode: {}. Translation language: {translation}. {} The translation language applies only to the requested target_translation module; do not let it change the explanation language.",
+        "Learner level: {level}. Explanation mode: {}. Translation language: {translation}. The translation language applies only to the requested target_translation module; do not let it change the explanation language. {}",
         normalized_explanation_mode(Some(mode)),
-        explanation_strategy(mode, level),
+        explanation_strategy(mode, level, style),
     )
 }
 
@@ -216,7 +254,7 @@ mod tests {
     fn a_level_constrains_wording_without_thinning_the_card() {
         for mode in ["english_by_level", "adaptive_bilingual"] {
             for level in ["A1", "A2", "B1", "B2", "C1", "C2"] {
-                let strategy = explanation_strategy(mode, level);
+                let strategy = explanation_strategy(mode, level, "thorough");
                 assert!(
                     strategy.contains("not how much is explained"),
                     "{mode}/{level}"
@@ -229,25 +267,24 @@ mod tests {
         }
         // The old level lines doubled as coverage limits, which is what made a
         // lower level read as a thinner card rather than an easier one.
-        let beginner = explanation_strategy("english_by_level", "A1");
+        let beginner = explanation_strategy("english_by_level", "A1", "thorough");
         assert!(!beginner.contains("one core meaning at a time"));
-        assert!(
-            !explanation_strategy("english_by_level", "A2").contains("Avoid abstract terminology")
-        );
+        assert!(!explanation_strategy("english_by_level", "A2", "thorough")
+            .contains("Avoid abstract terminology"));
     }
 
     #[test]
     fn the_hard_word_gloss_respects_an_english_only_mode() {
-        let bilingual = explanation_strategy("adaptive_bilingual", "B1");
+        let bilingual = explanation_strategy("adaptive_bilingual", "B1", "thorough");
         assert!(bilingual.contains("short Chinese (Simplified) gloss in parentheses"));
-        let bilingual_b2 = explanation_strategy("adaptive_bilingual", "B2");
+        let bilingual_b2 = explanation_strategy("adaptive_bilingual", "B2", "thorough");
         assert!(bilingual_b2.contains("short Chinese (Simplified) gloss in parentheses"));
         for (mode, level) in [
             ("english_by_level", "B1"),
             ("english_by_level", "B2"),
             ("adaptive_bilingual", "C1"),
         ] {
-            let strategy = explanation_strategy(mode, level);
+            let strategy = explanation_strategy(mode, level, "thorough");
             assert!(strategy.contains("simpler English words"), "{mode}/{level}");
             assert!(
                 !strategy.contains("Chinese (Simplified) gloss in parentheses"),
@@ -255,12 +292,12 @@ mod tests {
             );
         }
         // Chinese prose has no English level to fall short of.
-        assert!(!explanation_strategy("chinese", "B1").contains("above CEFR"));
+        assert!(!explanation_strategy("chinese", "B1", "thorough").contains("above CEFR"));
     }
 
     #[test]
     fn low_cefr_adaptive_prompt_prioritizes_accurate_bilingual_output() {
-        let strategy = learning_language_strategy("adaptive_bilingual", "A1", "zh");
+        let strategy = learning_language_strategy("adaptive_bilingual", "A1", "thorough", "zh");
         assert!(strategy.contains("accurate Chinese (Simplified) is primary"));
         assert!(strategy.contains("very short CEFR A1 English"));
         assert!(strategy.contains("Do not mechanically repeat"));
@@ -270,7 +307,7 @@ mod tests {
     fn b1_adaptive_prompt_is_chinese_primary() {
         // The language flip point moved from B1 to B2: B1 now shares the
         // Chinese-primary arm with A1/A2 rather than flipping to English.
-        let strategy = learning_language_strategy("adaptive_bilingual", "B1", "zh");
+        let strategy = learning_language_strategy("adaptive_bilingual", "B1", "thorough", "zh");
         assert!(strategy.contains("accurate Chinese (Simplified) is primary"));
         assert!(strategy.contains("very short CEFR B1 English"));
         assert!(strategy.contains("Do not mechanically repeat"));
@@ -278,7 +315,7 @@ mod tests {
 
     #[test]
     fn b2_adaptive_prompt_is_english_primary_with_chinese_gloss() {
-        let strategy = learning_language_strategy("adaptive_bilingual", "B2", "zh");
+        let strategy = learning_language_strategy("adaptive_bilingual", "B2", "thorough", "zh");
         assert!(strategy.contains("clear CEFR B2 English is primary"));
         assert!(strategy.contains("add brief Chinese (Simplified) only where"));
         assert!(strategy.contains("Do not mechanically duplicate sentences."));
@@ -287,7 +324,8 @@ mod tests {
     #[test]
     fn upper_cefr_adaptive_prompt_keeps_chinese_in_translation_module() {
         for level in ["C1", "C2"] {
-            let strategy = learning_language_strategy("adaptive_bilingual", level, "zh");
+            let strategy =
+                learning_language_strategy("adaptive_bilingual", level, "thorough", "zh");
             assert!(strategy.contains("English"), "level={level}");
             assert!(
                 strategy.contains("Chinese only in the requested target_translation module"),
@@ -299,10 +337,112 @@ mod tests {
 
     #[test]
     fn translation_language_does_not_change_chinese_explanation_mode() {
-        let strategy = learning_language_strategy("chinese", "B1", "en");
+        let strategy = learning_language_strategy("chinese", "B1", "thorough", "en");
         assert!(strategy.contains("Write explanations in clear Chinese (Simplified)."));
         assert!(strategy.contains("Translation language: English."));
         assert!(strategy.contains("applies only to the requested target_translation module"));
+    }
+
+    /// A phrase that appears in exactly one style arm, used to prove the two
+    /// never bleed into each other.
+    const THOROUGH_MARKER: &str = "Explanation style: thorough.";
+    const ESSENTIAL_MARKER: &str = "Explanation style: essential.";
+
+    #[test]
+    fn the_prose_shape_reaches_every_mode_level_and_style() {
+        for mode in ["english_by_level", "adaptive_bilingual", "chinese"] {
+            for level in ["A1", "A2", "B1", "B2", "C1", "C2"] {
+                for style in ["thorough", "essential"] {
+                    let strategy = explanation_strategy(mode, level, style);
+                    assert!(
+                        strategy.contains("These rules govern the shape of an explanation"),
+                        "{mode}/{level}/{style}"
+                    );
+                    assert!(
+                        strategy.contains("One point per entry in `details`."),
+                        "{mode}/{level}/{style}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn exactly_one_style_arm_is_emitted() {
+        for mode in ["english_by_level", "adaptive_bilingual", "chinese"] {
+            for level in ["A1", "B2", "C2"] {
+                let thorough = explanation_strategy(mode, level, "thorough");
+                assert!(thorough.contains(THOROUGH_MARKER), "{mode}/{level}");
+                assert!(thorough.contains("Never trade coverage for brevity."));
+                assert!(!thorough.contains(ESSENTIAL_MARKER), "{mode}/{level}");
+
+                let essential = explanation_strategy(mode, level, "essential");
+                assert!(essential.contains(ESSENTIAL_MARKER), "{mode}/{level}");
+                assert!(essential
+                    .contains("Never leave out a point the reader needs to read this sentence."));
+                assert!(!essential.contains(THOROUGH_MARKER), "{mode}/{level}");
+            }
+        }
+    }
+
+    #[test]
+    fn style_is_independent_of_the_explanation_language() {
+        // An English-only explanation language still gets its style arm, and
+        // the level still governs wording alone in both styles.
+        for style in ["thorough", "essential"] {
+            let english_only = explanation_strategy("english_by_level", "C1", style);
+            assert!(english_only.contains("Write explanations in English at CEFR C1."));
+            assert!(
+                english_only.contains("not how much is explained"),
+                "{style}"
+            );
+            let chinese = explanation_strategy("chinese", "C1", style);
+            assert!(chinese.starts_with("Write explanations in clear Chinese (Simplified)."));
+            assert!(chinese.contains("Explanation style: "), "{style}");
+        }
+    }
+
+    #[test]
+    fn a_damaged_style_falls_back_to_thorough() {
+        for value in [
+            Some(""),
+            Some("   "),
+            Some("Thorough"),
+            Some("ESSENTIAL"),
+            Some("brief"),
+            Some("\u{fffd}\u{0}garbage"),
+            Some("详解"),
+            None,
+        ] {
+            assert_eq!(
+                normalized_explanation_style(value),
+                "thorough",
+                "value={value:?}"
+            );
+        }
+        // Only the exact stored value selects the short arm; surrounding
+        // whitespace is trimmed the way the mode setting is.
+        assert_eq!(normalized_explanation_style(Some("essential")), "essential");
+        assert_eq!(
+            normalized_explanation_style(Some("  essential  ")),
+            "essential"
+        );
+        // A damaged value reaching the prompt behaves like the default.
+        assert!(
+            explanation_strategy("adaptive_bilingual", "B1", "garbage").contains(THOROUGH_MARKER)
+        );
+    }
+
+    #[test]
+    fn the_learning_strategy_carries_the_style_through() {
+        let thorough = learning_language_strategy("adaptive_bilingual", "B1", "thorough", "zh");
+        assert!(thorough.contains(THOROUGH_MARKER));
+        assert!(!thorough.contains(ESSENTIAL_MARKER));
+        let essential = learning_language_strategy("adaptive_bilingual", "B1", "essential", "zh");
+        assert!(essential.contains(ESSENTIAL_MARKER));
+        assert!(!essential.contains(THOROUGH_MARKER));
+        // The translation caveat survives moving ahead of the strategy block.
+        assert!(essential.contains("applies only to the requested target_translation module"));
     }
 
     #[test]
