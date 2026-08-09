@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Highlighter, LayoutPanelTop, MousePointer2, MousePointerClick, PanelRightOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { defaultExplanationMode } from "../../i18n";
 import {
   LEARNING_CARD_CONFIG_SETTING_KEY,
   createDefaultCardDesignConfig,
@@ -186,7 +187,7 @@ export default function ToolsSettings({
   onPreviewChange,
   onNavigationGuardChange,
 }: ToolsSettingsProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [view, setView] = useState<ToolsView>("interaction");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [cardKind, setCardKind] = useState<LearningCardKind>("word");
@@ -318,9 +319,9 @@ export default function ToolsSettings({
     };
   }, [editorController, loading, settings]);
 
-  const previewExplanationMode = settings.explanation_mode || "adaptive_bilingual";
+  const previewExplanationMode = settings.explanation_mode || defaultExplanationMode(i18n.language);
   const resolvedExplanationLanguage = previewExplanationMode === "chinese"
-    || (previewExplanationMode === "adaptive_bilingual" && ["A1", "A2"].includes(settings.cefr_level || "B1"))
+    || (previewExplanationMode === "adaptive_bilingual" && ["A1", "A2", "B1"].includes(settings.cefr_level || "B1"))
     ? "zh"
     : "en";
   const targetLanguage = settings.translation_language || "zh";

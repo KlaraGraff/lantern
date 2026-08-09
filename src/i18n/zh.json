@@ -2195,7 +2195,7 @@
   "onboarding.progress.done": "好了",
 
   "onboarding.step1.title": "你的英语大概在哪一档？",
-  "onboarding.step1.why": "Lantern 会按你的程度调整解释的深浅——同一个词，给你和给别人看到的不一样。这是它和普通词典最大的区别。随时可以在设置里改。",
+  "onboarding.step1.why": "Lantern 会按你的程度调整解释的用词难度——同一个词，给你和给别人的讲法不一样，但讲到的内容一样多。这是它和普通词典最大的区别。随时可以在设置里改。",
   "onboarding.step1.examDisclosure": "说不准？用四六级 / 雅思成绩换算",
   "onboarding.step1.examConvert": "换算",
   "onboarding.step1.examConverting": "换算中…",

@@ -2,7 +2,7 @@ import { useCallback, useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { AlertTriangle, ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
-import i18n from "../../i18n";
+import i18n, { defaultExplanationMode } from "../../i18n";
 import Select from "../ui/Select";
 import Toggle from "../ui/Toggle";
 import ClearVocabProfileDialog from "../ClearVocabProfileDialog";
@@ -51,8 +51,8 @@ interface LanguageAssessmentSummary extends CefrEstimate {
 }
 
 function normalizedExplanationMode(value: string | undefined): string {
-  if (value === "english_by_level" || value === "chinese") return value;
-  return "adaptive_bilingual";
+  if (value === "english_by_level" || value === "chinese" || value === "adaptive_bilingual") return value;
+  return defaultExplanationMode(i18n.language);
 }
 
 function errorCode(error: unknown): string {
@@ -78,7 +78,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
   const [profileSoftLimit, setProfileSoftLimit] = useState("1200");
   const [cefrLevel, setCefrLevel] = useState("B1");
   const [cefrSource, setCefrSource] = useState("manual");
-  const [explanationMode, setExplanationMode] = useState("adaptive_bilingual");
+  const [explanationMode, setExplanationMode] = useState<string>(() => defaultExplanationMode(i18n.language));
   const [translationLanguage, setTranslationLanguage] = useState("zh");
   const [levelWordClass, setLevelWordClass] = useState("ai");
   const [lowLevelEnglishAcknowledged, setLowLevelEnglishAcknowledged] = useState(false);
@@ -311,7 +311,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
             {t("settings.learner.explanationMode", { defaultValue: "Explanation language" })}
           </p>
           <p className="text-[12px] text-text-muted mt-0.5 max-w-[290px]">
-            {t("settings.learner.explanationModeHint", { defaultValue: "A1-A2 use accurate Chinese plus simple English; higher levels gradually use more English" })}
+            {t("settings.learner.explanationModeHint", { defaultValue: "A1-B1 use accurate Chinese plus a short English restatement; B2 and above gradually use more English" })}
           </p>
         </div>
         <Select

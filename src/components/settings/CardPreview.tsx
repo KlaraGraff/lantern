@@ -172,7 +172,9 @@ export default function CardPreview({
   const [customActionLoading, setCustomActionLoading] = useState(false);
   const localResult = useMemo(() => {
     const level = learnerLevel.trim().toUpperCase();
-    const beginnerAdaptive = explanationMode === "adaptive_bilingual" && ["A1", "A2"].includes(level);
+    // Mirrors the backend ladder in `prompt.rs::explanation_strategy`: adaptive
+    // bilingual is Chinese-primary through B1 and only flips to English at B2.
+    const beginnerAdaptive = explanationMode === "adaptive_bilingual" && ["A1", "A2", "B1"].includes(level);
     const language = explanationMode === "chinese" || beginnerAdaptive
       ? "zh"
       : explanationMode === "english_by_level" || explanationMode === "adaptive_bilingual"

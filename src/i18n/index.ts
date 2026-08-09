@@ -57,4 +57,13 @@ export async function reconcileLanguage(): Promise<void> {
   }
 }
 
+/**
+ * The product default for a user who has never touched the explanation-mode
+ * setting: Chinese interfaces default to a fully Chinese explanation, every
+ * other interface language keeps the adaptive bilingual ladder.
+ */
+export function defaultExplanationMode(uiLanguage: string): "chinese" | "adaptive_bilingual" {
+  return uiLanguage.startsWith("zh") ? "chinese" : "adaptive_bilingual";
+}
+
 export default i18n;

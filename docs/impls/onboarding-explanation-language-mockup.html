@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>样张 · 引导第一步加入「讲解语言」</title>
+<style>
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --color-bg-page: #f4f4f5;
+    --color-bg-surface: #ffffff;
+    --color-bg-muted: #fafafa;
+    --color-text-primary: #18181b;
+    --color-text-secondary: #52525c;
+    --color-text-muted: #71717b;
+    --color-border: #e4e4e7;
+    --color-border-light: #f4f4f5;
+    --color-accent: #7c3aed;
+    --color-accent-bg: #f3e8ff;
+    --color-accent-text: #7c3aed;
+  }
+  .dark {
+    --color-bg-page: #101014;
+    --color-bg-surface: #18191d;
+    --color-bg-muted: #1e1f24;
+    --color-text-primary: #f4f4f5;
+    --color-text-secondary: #a1a1aa;
+    --color-text-muted: #82828c;
+    --color-border: #34343d;
+    --color-border-light: #2a2b31;
+    --color-accent: #8b5cf6;
+    --color-accent-bg: #302647;
+    --color-accent-text: #a78bfa;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 24px 80px;
+    background: #e9e9ec;
+    font-family: var(--font-sans);
+    color: #18181b;
+  }
+  h1.page { font-size: 20px; margin: 0 0 6px; }
+  p.page { font-size: 13px; color: #52525c; margin: 0 0 32px; max-width: 760px; line-height: 1.7; }
+
+  .grid { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+
+  .panel { width: 520px; }
+  .panel > .caption {
+    font-size: 12px; font-weight: 600; color: #52525c;
+    margin: 0 0 8px; letter-spacing: .02em;
+  }
+  .panel > .caption span { font-weight: 400; color: #71717b; }
+
+  /* ── the modal itself ── */
+  .stage {
+    background: var(--color-bg-page);
+    padding: 22px;
+    border-radius: 14px;
+  }
+  .card {
+    background: var(--color-bg-surface);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0,0,0,.10);
+    overflow: hidden;
+  }
+  .card-body { padding: 22px 22px 18px; }
+
+  .dots { display: flex; gap: 6px; padding: 16px 22px 0; }
+  .dot { width: 6px; height: 6px; border-radius: 999px; background: var(--color-border); }
+  .dot.on { background: var(--color-accent); width: 18px; }
+
+  h2.step { font-size: 18px; font-weight: 600; color: var(--color-text-primary); margin: 0; }
+  p.why { font-size: 13px; line-height: 20px; color: var(--color-text-secondary); margin: 8px 0 0; }
+
+  .levels { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 20px; }
+  .lv {
+    height: 44px; border-radius: 6px; border: 1px solid var(--color-border);
+    background: var(--color-bg-surface); color: var(--color-text-secondary);
+    font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center;
+  }
+  .lv.on { border-color: var(--color-accent); background: var(--color-accent-bg); color: var(--color-accent-text); }
+
+  .disclosure {
+    margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--color-border-light);
+    font-size: 12px; font-weight: 500; color: var(--color-text-secondary);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .chev { font-size: 10px; color: var(--color-text-muted); }
+
+  /* ── the new block ── */
+  .langblock { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--color-border-light); }
+  .langhead { font-size: 13px; font-weight: 600; color: var(--color-text-primary); margin: 0; }
+  .langsub { font-size: 12px; line-height: 18px; color: var(--color-text-muted); margin: 4px 0 0; }
+
+  .opts { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .opt {
+    border: 1px solid var(--color-border); border-radius: 8px;
+    background: var(--color-bg-surface); overflow: hidden;
+  }
+  .opt.on { border-color: var(--color-accent); }
+  .opt-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+  .radio {
+    width: 15px; height: 15px; border-radius: 999px; border: 1.5px solid var(--color-border);
+    flex: 0 0 auto; position: relative;
+  }
+  .opt.on .radio { border-color: var(--color-accent); }
+  .opt.on .radio::after {
+    content: ""; position: absolute; inset: 3px; border-radius: 999px; background: var(--color-accent);
+  }
+  .opt-name { font-size: 13px; font-weight: 600; color: var(--color-text-primary); }
+  .opt-tag {
+    font-size: 11px; font-weight: 500; color: var(--color-accent-text);
+    background: var(--color-accent-bg); border-radius: 4px; padding: 2px 6px;
+  }
+  .opt-note { font-size: 12px; color: var(--color-text-muted); margin-left: auto; }
+
+  .sample {
+    border-top: 1px dashed var(--color-border);
+    background: var(--color-bg-muted);
+    padding: 11px 12px 12px 37px;
+  }
+  .sample-lbl {
+    font-size: 11px; color: var(--color-text-muted); margin: 0 0 5px;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .sample-src { font-size: 12px; color: var(--color-text-muted); margin: 0 0 7px; font-style: italic; }
+  .sample-src b { font-style: normal; color: var(--color-text-secondary); border-bottom: 1.5px solid var(--color-accent); }
+  .sample-txt { font-size: 12.5px; line-height: 19px; color: var(--color-text-secondary); margin: 0; }
+  .sample-txt .en { color: var(--color-text-muted); }
+
+  .footnote { font-size: 11.5px; line-height: 17px; color: var(--color-text-muted); margin: 10px 0 0; }
+
+  .actions {
+    margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--color-border-light);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .skip { font-size: 13px; font-weight: 500; color: var(--color-text-muted); }
+  .btn {
+    background: var(--color-accent); color: #fff; border-radius: 6px;
+    font-size: 13px; font-weight: 600; padding: 9px 18px;
+  }
+
+  .note {
+    width: 520px; font-size: 12.5px; line-height: 19px; color: #52525c;
+    background: #fff; border: 1px solid #e4e4e7; border-left: 3px solid #7c3aed;
+    border-radius: 8px; padding: 12px 14px;
+  }
+  .note b { color: #18181b; }
+  .note ul { margin: 7px 0 0; padding-left: 17px; }
+  .note li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<h1 class="page">样张 · 引导第一步加入「讲解语言」</h1>
+<p class="page">
+  不新增步骤，嵌进现有的第一步。等级管<b>用词难度</b>，讲解语言管<b>用哪种语言</b>——两半放在一起，解绑关系才看得出来。
+  三个选项都带同一个词的真实样例，本地生成、不花 token。默认选中「中文讲解」。
+</p>
+
+<div class="grid">
+
+  <!-- A -->
+  <div class="panel">
+    <p class="caption">A · 默认态 <span>（中文讲解选中，样例展开）</span></p>
+    <div class="stage">
+      <div class="card">
+        <div class="dots"><i class="dot on"></i><i class="dot"></i><i class="dot"></i></div>
+        <div class="card-body">
+          <h2 class="step">你的英语大概在什么水平？</h2>
+          <p class="why">Lantern 会按你的程度调整解释的用词难度——同一个词，给你和给别人的讲法不一样，但讲到的内容一样多。这是它和普通词典最大的区别。随时可以在设置里改。</p>
+
+          <div class="levels">
+            <div class="lv">A1</div><div class="lv">A2</div><div class="lv on">B1</div>
+            <div class="lv">B2</div><div class="lv">C1</div><div class="lv">C2</div>
+          </div>
+
+          <div class="disclosure"><span class="chev">▶</span>有四六级／雅思／托福成绩？换算一下</div>
+
+          <div class="langblock">
+            <p class="langhead">讲解用什么语言？</p>
+            <p class="langsub">和上面的等级无关。挑一个你一眼能看懂的——看不懂的解释等于没解释。</p>
+
+            <div class="opts">
+              <div class="opt on">
+                <div class="opt-row">
+                  <i class="radio"></i>
+                  <span class="opt-name">中文讲解</span>
+                  <span class="opt-tag">推荐</span>
+                  <span class="opt-note">例句仍是英文</span>
+                </div>
+                <div class="sample">
+                  <p class="sample-lbl">样例 · 本地生成，不花额度</p>
+                  <p class="sample-src">He stood there, <b>bewildered</b>, as the crowd surged past him.</p>
+                  <p class="sample-txt">在这句里是「被弄懵了、完全摸不着头脑」——不是单纯的困惑，而是眼前的事太乱、一时反应不过来。比 confused 重。</p>
+                </div>
+              </div>
+
+              <div class="opt">
+                <div class="opt-row">
+                  <i class="radio"></i>
+                  <span class="opt-name">中英对照</span>
+                  <span class="opt-note">中文为主，补一句英文</span>
+                </div>
+              </div>
+
+              <div class="opt">
+                <div class="opt-row">
+                  <i class="radio"></i>
+                  <span class="opt-name">全英文</span>
+                  <span class="opt-note">按你的等级调难度</span>
+                </div>
+              </div>
+            </div>
+
+            <p class="footnote">拿不准就用推荐的。设置里随时能换，换了不影响已经存下的卡片。</p>
+          </div>
+
+          <div class="actions">
+            <span class="skip">跳过</span>
+            <span class="btn">下一步</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="panel">
+    <p class="caption">B · 选中「中英对照」<span>（样例跟着换，其余不动）</span></p>
+    <div class="stage">
+      <div class="card">
+        <div class="dots"><i class="dot on"></i><i class="dot"></i><i class="dot"></i></div>
+        <div class="card-body">
+          <h2 class="step">你的英语大概在什么水平？</h2>
+          <p class="why">Lantern 会按你的程度调整解释的用词难度——同一个词，给你和给别人的讲法不一样，但讲到的内容一样多。这是它和普通词典最大的区别。随时可以在设置里改。</p>
+
+          <div class="levels">
+            <div class="lv">A1</div><div class="lv">A2</div><div class="lv on">B1</div>
+            <div class="lv">B2</div><div class="lv">C1</div><div class="lv">C2</div>
+          </div>
+
+          <div class="disclosure"><span class="chev">▶</span>有四六级／雅思／托福成绩？换算一下</div>
+
+          <div class="langblock">
+            <p class="langhead">讲解用什么语言？</p>
+            <p class="langsub">和上面的等级无关。挑一个你一眼能看懂的——看不懂的解释等于没解释。</p>
+
+            <div class="opts">
+              <div class="opt">
+                <div class="opt-row">
+                  <i class="radio"></i>
+                  <span class="opt-name">中文讲解</span>
+                  <span class="opt-tag">推荐</span>
+                  <span class="opt-note">例句仍是英文</span>
+                </div>
+              </div>
+
+              <div class="opt on">
+                <div class="opt-row">
+                  <i class="radio"></i>
+                  <span class="opt-name">中英对照</span>
+                  <span class="opt-note">中文为主，补一句英文</span>
+                </div>
+                <div class="sample">
+                  <p class="sample-lbl">样例 · 本地生成，不花额度</p>
+                  <p class="sample-src">He stood there, <b>bewildered</b>, as the crowd surged past him.</p>
+                  <p class="sample-txt">在这句里是「被弄懵了、摸不着头脑」，程度比 confused 重。<span class="en">Completely confused — too much is happening to take it in.</span></p>
+                </div>
+              </div>
+
+              <div class="opt">
+                <div class="opt-row">
+                  <i class="radio"></i>
+                  <span class="opt-name">全英文</span>
+                  <span class="opt-note">按你的等级调难度</span>
+                </div>
+              </div>
+            </div>
+
+            <p class="footnote">拿不准就用推荐的。设置里随时能换，换了不影响已经存下的卡片。</p>
+          </div>
+
+          <div class="actions">
+            <span class="skip">跳过</span>
+            <span class="btn">下一步</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="panel">
+    <p class="caption">C · 选中「全英文」<span>（样例随左边的等级变，这里是 B1）</span></p>
+    <div class="stage">
+      <div class="card">
+        <div class="dots"><i class="dot on"></i><i class="dot"></i><i class="dot"></i></div>
+        <div class="card-body">
+          <h2 class="step">你的英语大概在什么水平？</h2>
+          <p class="why">Lantern 会按你的程度调整解释的用词难度——同一个词，给你和给别人的讲法不一样，但讲到的内容一样多。这是它和普通词典最大的区别。随时可以在设置里改。</p>
+
+          <div class="levels">
+            <div class="lv">A1</div><div class="lv">A2</div><div class="lv on">B1</div>
+            <div class="lv">B2</div><div class="lv">C1</div><div class="lv">C2</div>
+          </div>
+
+          <div class="disclosure"><span class="chev">▶</span>有四六级／雅思／托福成绩？换算一下</div>
+
+          <div class="langblock">
+            <p class="langhead">讲解用什么语言？</p>
+            <p class="langsub">和上面的等级无关。挑一个你一眼能看懂的——看不懂的解释等于没解释。</p>
+
+            <div class="opts">
+              <div class="opt">
+                <div class="opt-row">
+                  <i class="radio"></i>
+                  <span class="opt-name">中文讲解</span>
+                  <span class="opt-tag">推荐</span>
+                  <span class="opt-note">例句仍是英文</span>
+                </div>
+              </div>
+
+              <div class="opt">
+                <div class="opt-row">
+                  <i class="radio"></i>
+                  <span class="opt-name">中英对照</span>
+                  <span class="opt-note">中文为主，补一句英文</span>
+                </div>
+              </div>
+
+              <div class="opt on">
+                <div class="opt-row">
+                  <i class="radio"></i>
+                  <span class="opt-name">全英文</span>
+                  <span class="opt-note">按你的等级调难度</span>
+                </div>
+                <div class="sample">
+                  <p class="sample-lbl">样例 · 本地生成，不花额度 · 跟着 B1</p>
+                  <p class="sample-src">He stood there, <b>bewildered</b>, as the crowd surged past him.</p>
+                  <p class="sample-txt">Here it means completely confused — so confused that you cannot think clearly or understand what is going on around you.</p>
+                </div>
+              </div>
+            </div>
+
+            <p class="footnote">拿不准就用推荐的。设置里随时能换，换了不影响已经存下的卡片。</p>
+          </div>
+
+          <div class="actions">
+            <span class="skip">跳过</span>
+            <span class="btn">下一步</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="panel dark">
+    <p class="caption" style="color:#52525c">D · 深色模式 <span>（默认态）</span></p>
+    <div class="stage">
+      <div class="card">
+        <div class="dots"><i class="dot on"></i><i class="dot"></i><i class="dot"></i></div>
+        <div class="card-body">
+          <h2 class="step">你的英语大概在什么水平？</h2>
+          <p class="why">Lantern 会按你的程度调整解释的用词难度——同一个词，给你和给别人的讲法不一样，但讲到的内容一样多。这是它和普通词典最大的区别。随时可以在设置里改。</p>
+
+          <div class="levels">
+            <div class="lv">A1</div><div class="lv">A2</div><div class="lv on">B1</div>
+            <div class="lv">B2</div><div class="lv">C1</div><div class="lv">C2</div>
+          </div>
+
+          <div class="disclosure"><span class="chev">▶</span>有四六级／雅思／托福成绩？换算一下</div>
+
+          <div class="langblock">
+            <p class="langhead">讲解用什么语言？</p>
+            <p class="langsub">和上面的等级无关。挑一个你一眼能看懂的——看不懂的解释等于没解释。</p>
+
+            <div class="opts">
+              <div class="opt on">
+                <div class="opt-row">
+                  <i class="radio"></i>
+                  <span class="opt-name">中文讲解</span>
+                  <span class="opt-tag">推荐</span>
+                  <span class="opt-note">例句仍是英文</span>
+                </div>
+                <div class="sample">
+                  <p class="sample-lbl">样例 · 本地生成，不花额度</p>
+                  <p class="sample-src">He stood there, <b>bewildered</b>, as the crowd surged past him.</p>
+                  <p class="sample-txt">在这句里是「被弄懵了、完全摸不着头脑」——不是单纯的困惑，而是眼前的事太乱、一时反应不过来。比 confused 重。</p>
+                </div>
+              </div>
+
+              <div class="opt">
+                <div class="opt-row">
+                  <i class="radio"></i>
+                  <span class="opt-name">中英对照</span>
+                  <span class="opt-note">中文为主，补一句英文</span>
+                </div>
+              </div>
+
+              <div class="opt">
+                <div class="opt-row">
+                  <i class="radio"></i>
+                  <span class="opt-name">全英文</span>
+                  <span class="opt-note">按你的等级调难度</span>
+                </div>
+              </div>
+            </div>
+
+            <p class="footnote">拿不准就用推荐的。设置里随时能换，换了不影响已经存下的卡片。</p>
+          </div>
+
+          <div class="actions">
+            <span class="skip">跳过</span>
+            <span class="btn">下一步</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>三处需要你点头的取舍</b>
+    <ul>
+      <li><b>模式改了名字。</b>「自适应双语」→「中英对照」，「英文分级」→「全英文」。原来的名字在描述实现，新名字在描述你会看到什么。设置页同步改。</li>
+      <li><b>样例是死的还是活的。</b>样张里是写死的一句话（三种模式各一份，中英各一套，跟着界面语言走）。好处是零延迟、零成本、绝对可控；代价是它不反映你实际选的等级——只有「全英文」那条我建议做成按等级取三份预制文案（A1–A2 / B1–B2 / C1–C2）。设置页那个免费本地预览是真调模型的，引导里我不建议那么做：第一屏卡住比什么都劝退。</li>
+      <li><b>跳过等于选推荐。</b>点「跳过」时把「中文讲解」和 B1 一起写进设置，而不是留空——留空会走后端兜底，那个兜底是自适应双语，等于跳过的人被塞了一个我们刚判定太难的默认值。</li>
+    </ul>
+  </div>
+
+</div>
+
+</body>
+</html>

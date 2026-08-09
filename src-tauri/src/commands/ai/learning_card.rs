@@ -722,7 +722,7 @@ mod tests {
         ));
         assert!(explanation_matches_translation(
             "adaptive_bilingual",
-            "B2",
+            "C1",
             "en"
         ));
         assert!(explanation_matches_translation(
@@ -739,6 +739,13 @@ mod tests {
         assert!(!explanation_matches_translation(
             "adaptive_bilingual",
             "B1",
+            "en"
+        ));
+        // B2's explanation now carries a Chinese gloss for hard points, so it
+        // no longer counts as redundant with the English target_translation.
+        assert!(!explanation_matches_translation(
+            "adaptive_bilingual",
+            "B2",
             "en"
         ));
         assert!(!explanation_matches_translation(

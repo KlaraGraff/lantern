@@ -2195,7 +2195,7 @@
   "onboarding.progress.done": "All set",
 
   "onboarding.step1.title": "Where's your English level roughly?",
-  "onboarding.step1.why": "Lantern adjusts how deep an explanation goes based on your level — the same word looks different to you than to someone else. That's the biggest difference from a plain dictionary. You can change this anytime in Settings.",
+  "onboarding.step1.why": "Lantern adjusts how simple the wording is based on your level — the same word is explained in different words for you than for someone else, but covers just as much either way. That's the biggest difference from a plain dictionary. You can change this anytime in Settings.",
   "onboarding.step1.examDisclosure": "Not sure? Convert from an exam score (CET / IELTS / etc.)",
   "onboarding.step1.examConvert": "Convert",
   "onboarding.step1.examConverting": "Converting…",

@@ -36,7 +36,7 @@ pub(super) fn explanation_matches_translation(
         "chinese" => matches!(translation_language.trim(), "zh" | "zh-CN" | "zh-Hans"),
         "english_by_level" => matches!(translation_language.trim(), "en" | "en-US" | "en-GB"),
         "adaptive_bilingual" => {
-            matches!(normalized_cefr_level(cefr), "B2" | "C1" | "C2")
+            matches!(normalized_cefr_level(cefr), "C1" | "C2")
                 && matches!(translation_language.trim(), "en" | "en-US" | "en-GB")
         }
         _ => false,
@@ -87,14 +87,11 @@ pub(super) fn explanation_strategy(mode: &str, cefr: &str) -> String {
         "chinese" => (
             "Write explanations in clear Chinese (Simplified). English source words, quotations, pronunciation, and examples may remain in English, but explanatory prose must be Chinese."
         ).to_string(),
-        _ if matches!(level, "A1" | "A2") => format!(
+        _ if matches!(level, "A1" | "A2" | "B1") => format!(
             "Use adaptive bilingual explanation: accurate Chinese (Simplified) is primary, followed by a very short CEFR {level} English explanation and English examples where requested. Do not mechanically repeat every sentence in both languages. {english_constraint}"
         ),
-        _ if level == "B1" => format!(
-            "Use adaptive bilingual explanation: simple CEFR B1 English is primary; add brief Chinese (Simplified) only where an abstract point could be misunderstood. {english_constraint} Do not mechanically duplicate sentences."
-        ),
         _ if level == "B2" => format!(
-            "Use English as the explanation language at CEFR B2. {english_constraint} Put Chinese only in the requested target_translation module; do not add a separate Chinese gloss to explanation modules."
+            "Use adaptive bilingual explanation: clear CEFR B2 English is primary; add brief Chinese (Simplified) only where an abstract point could be misunderstood. {english_constraint} Do not mechanically duplicate sentences."
         ),
         _ => format!(
             "Use English as the explanation language at CEFR {level}, with precise wording appropriate to that level. {english_constraint} Put Chinese only in the requested target_translation module; do not add a separate Chinese gloss to explanation modules."
@@ -105,7 +102,7 @@ pub(super) fn explanation_strategy(mode: &str, cefr: &str) -> String {
         return strategy;
     }
     // An English-only mode stays English-only: its gloss is simpler English.
-    let chinese_gloss_allowed = mode == "adaptive_bilingual" && matches!(level, "A1" | "A2" | "B1");
+    let chinese_gloss_allowed = mode == "adaptive_bilingual" && matches!(level, "A1" | "A2" | "B1" | "B2");
     format!(
         "{strategy}{LEVEL_GOVERNS_LANGUAGE_ONLY}{}",
         above_level_gloss_rule(level, chinese_gloss_allowed),
@@ -243,9 +240,11 @@ mod tests {
     fn the_hard_word_gloss_respects_an_english_only_mode() {
         let bilingual = explanation_strategy("adaptive_bilingual", "B1");
         assert!(bilingual.contains("short Chinese (Simplified) gloss in parentheses"));
+        let bilingual_b2 = explanation_strategy("adaptive_bilingual", "B2");
+        assert!(bilingual_b2.contains("short Chinese (Simplified) gloss in parentheses"));
         for (mode, level) in [
             ("english_by_level", "B1"),
-            ("adaptive_bilingual", "B2"),
+            ("english_by_level", "B2"),
             ("adaptive_bilingual", "C1"),
         ] {
             let strategy = explanation_strategy(mode, level);
@@ -268,8 +267,26 @@ mod tests {
     }
 
     #[test]
+    fn b1_adaptive_prompt_is_chinese_primary() {
+        // The language flip point moved from B1 to B2: B1 now shares the
+        // Chinese-primary arm with A1/A2 rather than flipping to English.
+        let strategy = learning_language_strategy("adaptive_bilingual", "B1", "zh");
+        assert!(strategy.contains("accurate Chinese (Simplified) is primary"));
+        assert!(strategy.contains("very short CEFR B1 English"));
+        assert!(strategy.contains("Do not mechanically repeat"));
+    }
+
+    #[test]
+    fn b2_adaptive_prompt_is_english_primary_with_chinese_gloss() {
+        let strategy = learning_language_strategy("adaptive_bilingual", "B2", "zh");
+        assert!(strategy.contains("clear CEFR B2 English is primary"));
+        assert!(strategy.contains("add brief Chinese (Simplified) only where"));
+        assert!(strategy.contains("Do not mechanically duplicate sentences."));
+    }
+
+    #[test]
     fn upper_cefr_adaptive_prompt_keeps_chinese_in_translation_module() {
-        for level in ["B2", "C1", "C2"] {
+        for level in ["C1", "C2"] {
             let strategy = learning_language_strategy("adaptive_bilingual", level, "zh");
             assert!(strategy.contains("English"), "level={level}");
             assert!(

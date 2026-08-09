@@ -153,7 +153,7 @@ export function createDefaultCardDesignConfig(): CardDesignConfigV1 {
     cards: {
       word: defaultCard(
         "word",
-        ["context_meaning", "common_senses", "collocations", "synonyms"],
+        ["context_meaning", "word_info", "common_senses", "collocations", "synonyms"],
         [],
         {
           defaultDensity: "compact",
