@@ -14,6 +14,16 @@
  */
 @custom-variant touch (@media (pointer: coarse));
 
+/* 深色跟的是应用里选的那一档，不是操作系统。
+ *
+ * Tailwind 4 的 `dark:` 默认编译成 `@media (prefers-color-scheme: dark)`，而
+ * 主题开关（`theme-preference.ts`）切的是根元素上的 `.dark` 类。两者不接线时，
+ * 变量层（`.dark { --color-… }`）照常翻转、`dark:` 工具类却一动不动 —— 结果就是
+ * 系统浅色 + 应用深色下，`bg-white dark:bg-bg-surface` 这类写法停在白底上，深色
+ * 文字变量压上去几乎读不出来（设置弹窗、Toast、首页提示条都中过）。这一行把
+ * `dark:` 改判给 `.dark`，让工具类和变量走同一个开关。 */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @font-face {
   font-family: "Lantern UI Latin";
   src: local("Inter");
