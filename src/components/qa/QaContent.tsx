@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
+import { useEffect, useMemo, useRef, useState, lazy, Suspense, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRightFromLine, BookOpen, Loader2, MessageSquare, Search, Sparkles, Trash2 } from "lucide-react";
 import Input from "../ui/Input";
@@ -24,7 +24,7 @@ const ChatDetailView = lazy(() => import("../ChatDetailView"));
  * shape-compatible, so each row still dispatches on `entry.kind` to decide
  * what it renders and what clicking it does.
  */
-export default function QaContent() {
+export default function QaContent({ menuButton }: { menuButton?: ReactNode } = {}) {
   const { t, i18n } = useTranslation();
   const openInReader = useOpenBook();
   const [search, setSearch] = useState("");
@@ -128,9 +128,14 @@ export default function QaContent() {
       <header className="relative shrink-0 border-b border-border px-page pb-5 pt-titlebar">
         <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-titlebar" />
         <div className="mb-4 flex items-end justify-between gap-4">
-          <div>
-            <h1 className="text-[24px] font-semibold text-text-primary">{t("qa.title")}</h1>
-            <p className="mt-1 text-[13px] text-text-muted">{t("qa.subtitle")}</p>
+          <div className="flex min-w-0 items-start">
+            {/* Boxed to the title's own line height so the icon lands on the
+                heading rather than floating between it and the subtitle. */}
+            {menuButton && <div className="flex h-9 shrink-0 items-center">{menuButton}</div>}
+            <div className="min-w-0">
+              <h1 className="text-[24px] font-semibold text-text-primary">{t("qa.title")}</h1>
+              <p className="mt-1 text-[13px] text-text-muted">{t("qa.subtitle")}</p>
+            </div>
           </div>
           <span className="text-[12px] text-text-muted">{t("qa.count", { count: total })}</span>
         </div>

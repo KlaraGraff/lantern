@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   AlertTriangle,
@@ -83,7 +83,7 @@ const SEGMENT_LABEL: Record<Segment, string> = {
   earlier: "notes.earlier",
 };
 
-export default function AnnotationsContent() {
+export default function AnnotationsContent({ menuButton }: { menuButton?: ReactNode } = {}) {
   const { t, i18n } = useTranslation();
   const openInReader = useOpenBook();
   const [items, setItems] = useState<Annotation[]>([]);
@@ -313,9 +313,14 @@ export default function AnnotationsContent() {
       <header className="relative shrink-0 border-b border-border px-page pb-5 pt-titlebar">
         <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-titlebar" />
         <div className="mb-4 flex items-end justify-between gap-4">
-          <div>
-            <h1 className="text-[24px] font-semibold text-text-primary">{t("annotations.title")}</h1>
-            <p className="mt-1 text-[13px] text-text-muted">{t("annotations.subtitle")}</p>
+          <div className="flex min-w-0 items-start">
+            {/* Boxed to the title's own line height so the icon lands on the
+                heading rather than floating between it and the subtitle. */}
+            {menuButton && <div className="flex h-9 shrink-0 items-center">{menuButton}</div>}
+            <div className="min-w-0">
+              <h1 className="text-[24px] font-semibold text-text-primary">{t("annotations.title")}</h1>
+              <p className="mt-1 text-[13px] text-text-muted">{t("annotations.subtitle")}</p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[12px] text-text-muted">{t("annotations.count", { count: total })}</span>

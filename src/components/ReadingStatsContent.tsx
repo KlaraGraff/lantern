@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -40,7 +40,7 @@ function formatTokens(tokens: number, language: string, t: TFunction): string {
  * on its own root for the same reason: Home's shell is a row flexbox and this
  * pane has to claim the width the sidebar isn't using.
  */
-export default function ReadingStatsContent({ onOpenReview }: { onOpenReview?: () => void } = {}) {
+export default function ReadingStatsContent({ onOpenReview, menuButton }: { onOpenReview?: () => void; menuButton?: ReactNode } = {}) {
   const { t, i18n } = useTranslation();
   const adapter = useMemo(() => createTauriReadingStatsAdapter(i18n.language), [i18n.language]);
   const [acknowledged, setAcknowledged] = useState(false);
@@ -144,6 +144,7 @@ export default function ReadingStatsContent({ onOpenReview }: { onOpenReview?: (
   return (
     <div className="flex-1 flex flex-col min-w-0">
       <ReadingStats
+        menuButton={menuButton}
         adapter={adapter}
         labels={labels}
         provider={provider}

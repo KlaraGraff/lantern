@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertCircle, ArrowRight, BookOpen, CalendarDays, LockKeyhole, RefreshCw, Sparkles, X } from "lucide-react";
 import type {
   AutoReviewOffer,
@@ -32,6 +32,13 @@ export interface ReadingStatsProps {
   /** The "去复习 →" link on the learning view's due-for-review metric. Points
    * at the same review entry point the sidebar's own "Review" row opens. */
   onOpenReview?(): void;
+  /**
+   * The narrow layout's drawer opener, supplied by `Home.tsx` and absent on
+   * desktop. It has to reach the loading, error and empty states too, not just
+   * the full dashboard: narrow has no persistent sidebar, so a state without
+   * this button is a page the reader cannot leave.
+   */
+  menuButton?: ReactNode;
 }
 
 function reviewErrorCode(error: unknown): ReadingReviewErrorCode {
@@ -683,6 +690,7 @@ export default function ReadingStats({
   onOpenBook,
   onOpenLevelSettings,
   onOpenReview,
+  menuButton,
 }: ReadingStatsProps) {
   const [view, setView] = useState<ReadingStatsView>("history");
   const [range, setRange] = useState<ReadingStatsRange>("year");
@@ -808,13 +816,26 @@ export default function ReadingStats({
     await generateReview();
   }, [generateReview, onAcknowledgeAiReviewDisclosure]);
 
+  // Floated over the state rather than laid out with it: these three screens
+  // centre their whole content in the viewport, and giving them a header row
+  // would push that off-centre for the sake of one button.
+  const floatingMenu = menuButton ? (
+    <div className="absolute left-page top-0 pt-titlebar">{menuButton}</div>
+  ) : null;
+
   if (loading && !dashboard) {
-    return <div className="grid h-full place-items-center bg-bg-surface text-[12px] text-text-muted" role="status">{labels.loading}</div>;
+    return (
+      <div className="relative grid h-full place-items-center bg-bg-surface text-[12px] text-text-muted" role="status">
+        {floatingMenu}
+        {labels.loading}
+      </div>
+    );
   }
 
   if (loadError && !dashboard) {
     return (
-      <div className="grid h-full place-items-center bg-bg-surface">
+      <div className="relative grid h-full place-items-center bg-bg-surface">
+        {floatingMenu}
         <div className="text-center" role="alert">
           <AlertCircle size={24} className="mx-auto text-danger-text" aria-hidden="true" />
           <p className="mt-3 text-[12px] text-text-secondary">{labels.loadFailed}</p>
@@ -826,7 +847,8 @@ export default function ReadingStats({
 
   if (!dashboard || dashboard.overview.sessionCount === 0) {
     return (
-      <div className="grid h-full place-items-center bg-bg-surface px-6 text-center">
+      <div className="relative grid h-full place-items-center bg-bg-surface px-6 text-center">
+        {floatingMenu}
         <div className="max-w-md">
           <span className="mx-auto grid size-16 place-items-center rounded-2xl bg-accent-bg text-accent"><BookOpen size={27} aria-hidden="true" /></span>
           <h1 className="mt-5 font-serif text-[21px] font-semibold text-text-primary">{labels.emptyTitle}</h1>
@@ -847,9 +869,14 @@ export default function ReadingStats({
   return (
     <main className="h-full overflow-y-auto bg-bg-surface text-text-primary">
       <header className="sticky top-0 z-20 flex min-h-[104px] items-end justify-between gap-6 border-b border-border bg-bg-surface/95 px-8 pb-4 pt-titlebar backdrop-blur">
-        <div>
+        <div className="flex min-w-0 items-start">
+          {/* Boxed to the title's own line height so the icon lands on the
+              heading rather than floating between it and the subtitle. */}
+          {menuButton && <div className="flex h-9 shrink-0 items-center">{menuButton}</div>}
+          <div className="min-w-0">
           <h1 className="text-[23px] font-semibold">{labels.title}</h1>
           <p className="mt-1 text-[11px] text-text-muted">{view === "history" ? labels.subtitleHistory : view === "calendar" ? labels.subtitleCalendar : labels.subtitleLearning}</p>
+          </div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <select value={bookId ?? ""} onChange={(event) => setBookId(event.target.value || null)} className="h-8 rounded-lg border border-border bg-bg-surface px-2.5 text-[11px] text-text-secondary">

@@ -491,18 +491,37 @@ export default function Home() {
 
   const backgroundProps = unreachable(isNarrow && drawerOpen);
 
+  // The only way back to the library menu once the drawer has closed, so every
+  // panel gets one — not just the book list. Narrow has no persistent sidebar
+  // and these panels have no back button, so a panel without this button is a
+  // room with no door: picking 笔记 from the drawer used to strand the reader
+  // there until they relaunched the app.
+  const menuButton = isNarrow ? (
+    <Button
+      ref={hamburgerRef}
+      variant="icon"
+      size="md"
+      className="touch:size-11 -ml-2 mr-1 shrink-0"
+      aria-label={t("home.openSidebar")}
+      aria-expanded={drawerOpen}
+      onClick={() => setDrawerOpen(true)}
+    >
+      <Menu size={20} />
+    </Button>
+  ) : null;
+
   const content =
     activeFilter === "vocab" ? (
-        <DictionaryContent initialView={vocabInitialView} />
+        <DictionaryContent initialView={vocabInitialView} menuButton={menuButton} />
       ) : activeFilter === "qa" ? (
         // "问答" — one time-ordered list holding what used to be two pages,
         // 对话 and 解释 (docs/impls/home-ia-consolidation.md steps 1 and 7).
         // Rows dispatch on kind; there is no filter to pick between them.
-        <QaContent />
+        <QaContent menuButton={menuButton} />
       ) : activeFilter === "notes" ? (
-        <AnnotationsContent />
+        <AnnotationsContent menuButton={menuButton} />
       ) : activeFilter === "stats" ? (
-        <ReadingStatsContent onOpenReview={() => { setVocabInitialView("review"); setActiveFilter("vocab"); }} />
+        <ReadingStatsContent menuButton={menuButton} onOpenReview={() => { setVocabInitialView("review"); setActiveFilter("vocab"); }} />
       ) : (
         <main className="flex-1 flex flex-col min-w-0">
           <div className="border-b border-border px-page pb-section relative select-none">
@@ -511,19 +530,7 @@ export default function Home() {
                 dragged narrow still has them. */}
             {platform.hasTitleBarInset && <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar" />}
             <div className={`${TOP_INSET} flex items-center justify-between mb-4`}>
-              {isNarrow && (
-                <Button
-                  ref={hamburgerRef}
-                  variant="icon"
-                  size="md"
-                  className="touch:size-11 -ml-2 mr-1"
-                  aria-label={t("home.openSidebar")}
-                  aria-expanded={drawerOpen}
-                  onClick={() => setDrawerOpen(true)}
-                >
-                  <Menu size={20} />
-                </Button>
-              )}
+              {menuButton}
               {/* `md:flex-initial` is the CSS initial value, so the desktop row
                   is the two-item `justify-between` it has always been. */}
               <h1 className="flex-1 md:flex-initial text-[21px] md:text-[24px] font-semibold text-text-primary tracking-[0.07px]">

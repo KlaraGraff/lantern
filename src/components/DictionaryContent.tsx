@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, lazy, Suspense, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
@@ -194,9 +194,11 @@ interface DictionaryContentProps {
    * page with a different highlighted row.
    */
   initialView?: "all" | "review";
+  /** Narrow-layout drawer opener; see `Home.tsx`. Absent on desktop. */
+  menuButton?: ReactNode;
 }
 
-export default function DictionaryContent({ initialView = "all" }: DictionaryContentProps = {}) {
+export default function DictionaryContent({ initialView = "all", menuButton }: DictionaryContentProps = {}) {
   const { t, i18n } = useTranslation();
   const openInReader = useOpenBook();
   const { words, remove, updateMastery, recordReview, refresh: refreshWords } = useAllDictionary();
@@ -889,7 +891,8 @@ export default function DictionaryContent({ initialView = "all" }: DictionaryCon
       <div className="px-page pb-2 relative select-none">
         <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar" />
         <div className="pt-titlebar flex items-center justify-between mb-6">
-          <div className="flex min-w-0 items-baseline gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            {menuButton}
             <h1 className="text-[24px] font-semibold text-text-primary tracking-[0.07px]">
               {contentTab === "vocab" ? t("vocab.title") : t("vocab.history")}
             </h1>
