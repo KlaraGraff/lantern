@@ -161,8 +161,8 @@ const colorNames = {
   en: { yellow: "Yellow", green: "Green", blue: "Blue", pink: "Pink", purple: "Purple" } as Record<string, string>,
 };
 const masteryNames = {
-  zh: { new: "新词", learning: "学习中", mastered: "已掌握" } as Record<string, string>,
-  en: { new: "New", learning: "Learning", mastered: "Mastered" } as Record<string, string>,
+  zh: { new: "新词", learning: "学习中", familiar: "眼熟", mastered: "读顺了" } as Record<string, string>,
+  en: { new: "New", learning: "Learning", familiar: "Familiar", mastered: "Effortless" } as Record<string, string>,
 };
 
 export function serializeMarkdown(records: readonly ExportRecord[], title: string, chinese: boolean, selected: ExportFields = exportFieldDefaults.markdown) {
