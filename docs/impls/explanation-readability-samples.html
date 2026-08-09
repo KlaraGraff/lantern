@@ -3,29 +3,37 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>解释怎么写才不打断阅读 — 并排样张</title>
+<title>详解 / 简答 — 两种解释风格并排样张</title>
 <style>
   :root {
     --bg: #ffffff;
     --bg-page: #f4f4f5;
+    --bg-muted: #fafafa;
     --text: #18181b;
     --text-2: #52525c;
     --text-3: #71717b;
     --border: #e4e4e7;
+    --border-light: #f4f4f5;
     --accent: #7c3aed;
     --accent-soft: rgba(124, 58, 237, .08);
+    --teal: #0f766e;
+    --teal-soft: rgba(15, 118, 110, .08);
     --bad-soft: rgba(113, 113, 123, .06);
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #18191d;
       --bg-page: #151518;
+      --bg-muted: #1f2023;
       --text: #f4f4f5;
       --text-2: #c9c9d1;
       --text-3: #9a9aa4;
       --border: #34343d;
+      --border-light: #2a2b31;
       --accent: #a78bfa;
-      --accent-soft: rgba(167, 139, 250, .12);
+      --accent-soft: rgba(167, 139, 250, .13);
+      --teal: #5eead4;
+      --teal-soft: rgba(94, 234, 212, .11);
       --bad-soft: rgba(154, 154, 164, .07);
     }
   }
@@ -52,7 +60,8 @@
   h1 { font-size: 22px; line-height: 1.4; margin: 10px 0 8px; font-weight: 650; letter-spacing: -.2px; }
   h2 { font-size: 16px; margin: 0 0 6px; font-weight: 650; letter-spacing: -.1px; }
   p { margin: 0 0 10px; }
-  .lede { color: var(--text-2); font-size: 13px; max-width: 62ch; }
+  .lede { color: var(--text-2); font-size: 13px; max-width: 64ch; }
+  .lede b, .panel b { color: var(--text); font-weight: 600; }
 
   .panel {
     background: var(--bg);
@@ -62,6 +71,28 @@
   }
   .section { margin-top: 40px; }
   .section > .eyebrow { margin-bottom: 12px; display: block; }
+
+  /* ---- framing callout ---- */
+  .callout {
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    background: var(--bg);
+    border-radius: 0 12px 12px 0;
+    padding: 14px 18px;
+    margin: 16px 0 0;
+  }
+  .callout h2 { font-size: 14px; margin-bottom: 4px; }
+  .callout p { color: var(--text-2); margin-bottom: 0; max-width: 66ch; }
+  .callout p + p { margin-top: 8px; }
+
+  /* ---- the two styles, named ---- */
+  .styles { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+  @media (max-width: 760px) { .styles { grid-template-columns: 1fr; } }
+  .style-card { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .style-card .n { font-size: 15px; font-weight: 650; margin-bottom: 3px; }
+  .style-card.a .n { color: var(--accent); }
+  .style-card.b .n { color: var(--teal); }
+  .style-card .s { color: var(--text-2); font-size: 12.5px; margin: 0; }
 
   /* ---- prompt evidence ---- */
   .quote {
@@ -123,9 +154,14 @@
     font-weight: 600;
     padding: 9px 16px;
     border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
   }
+  .col-head .cnt { font-weight: 500; letter-spacing: 0; text-transform: none; opacity: .75; }
   .col.now .col-head { color: var(--text-3); background: var(--bad-soft); }
-  .col.next .col-head { color: var(--accent); background: var(--accent-soft); }
+  .col.deep .col-head { color: var(--accent); background: var(--accent-soft); }
+  .col.brief .col-head { color: var(--teal); background: var(--teal-soft); }
   .col-body { padding: 14px 16px 16px; }
 
   .mod { margin-top: 14px; }
@@ -140,6 +176,7 @@
     margin-bottom: 6px;
   }
   .summary { font-size: 13px; margin: 0 0 8px; }
+  .summary strong { color: var(--text); font-weight: 650; }
   .details { list-style: none; margin: 0; padding: 0; }
   .details li {
     position: relative;
@@ -161,22 +198,24 @@
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
     font-size: .94em;
   }
-  .col.next .summary strong { color: var(--text); font-weight: 650; }
+  .ex-line { display: block; margin-top: 2px; }
 
   .note {
     margin-top: 12px;
-    border-left: 2px solid var(--accent);
+    border-left: 2px solid var(--border);
     padding: 2px 0 2px 12px;
     font-size: 12px;
     color: var(--text-2);
   }
   .note b { color: var(--text); font-weight: 600; }
+  .note .d { color: var(--accent); font-weight: 600; }
+  .note .b { color: var(--teal); font-weight: 600; }
 
   /* ---- rules ---- */
   .rule { border-top: 1px solid var(--border); padding: 14px 0 4px; }
   .rule:first-of-type { border-top: 0; padding-top: 2px; }
   .rule-title { font-size: 13px; font-weight: 650; margin-bottom: 4px; }
-  .rule-title span { color: var(--accent); margin-right: 6px; font-family: ui-monospace, monospace; font-size: 11px; }
+  .rule-title span.num { color: var(--accent); margin-right: 6px; font-family: ui-monospace, monospace; font-size: 11px; }
   .rule-why { color: var(--text-2); font-size: 12px; margin-bottom: 8px; }
   .ex { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   @media (max-width: 760px) { .ex { grid-template-columns: 1fr; } }
@@ -189,6 +228,8 @@
     color: var(--text-2);
   }
   .ex .good { background: var(--accent-soft); }
+  .ex .fork-a { background: var(--accent-soft); }
+  .ex .fork-b { background: var(--teal-soft); }
   .ex-label {
     display: block;
     font-size: 10px;
@@ -198,9 +239,25 @@
     margin-bottom: 3px;
     color: var(--text-3);
   }
-  .ex .good .ex-label { color: var(--accent); }
+  .ex .good .ex-label, .ex .fork-a .ex-label { color: var(--accent); }
+  .ex .fork-b .ex-label { color: var(--teal); }
+  .fork-band {
+    margin-top: 26px;
+    border-top: 1px dashed var(--border);
+    padding-top: 16px;
+  }
+  .fork-band > p { color: var(--text-2); font-size: 12px; max-width: 64ch; }
 
   /* ---- draft ---- */
+  .layer { margin-top: 20px; }
+  .layer > .lh {
+    font-size: 13px;
+    font-weight: 650;
+    padding-bottom: 6px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .layer > .lh span { color: var(--text-3); font-weight: 500; margin-left: 8px; font-size: 12px; }
   .draft { margin-top: 18px; }
   .draft h3 { font-size: 13px; font-weight: 650; margin: 0 0 4px; }
   .draft .where {
@@ -209,6 +266,7 @@
     color: var(--text-3);
     margin-bottom: 8px;
   }
+  .draft .after { color: var(--text-2); font-size: 12px; margin: 6px 0 0; max-width: 66ch; }
   .diff { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 6px; }
   .diff > div {
     font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -219,6 +277,7 @@
   }
   .diff .old { background: var(--bad-soft); color: var(--text-3); border-bottom: 1px solid var(--border); }
   .diff .new { background: var(--accent-soft); color: var(--text-2); }
+  .diff .newb { background: var(--teal-soft); color: var(--text-2); border-top: 1px solid var(--border); }
   .diff .k {
     display: block;
     font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
@@ -230,6 +289,18 @@
     color: var(--text-3);
   }
   .diff .new .k { color: var(--accent); }
+  .diff .newb .k { color: var(--teal); }
+
+  .flag {
+    margin-top: 12px;
+    background: var(--bg-muted);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .flag b { color: var(--text); }
 
   footer { margin-top: 48px; color: var(--text-3); font-size: 11.5px; }
 </style>
@@ -238,26 +309,108 @@
 <div class="wrap">
 
   <span class="eyebrow">Lantern · 学习卡文案</span>
-  <h1>解释怎么写才不打断阅读</h1>
+  <h1>详解 / 简答 —— 两种解释风格</h1>
   <p class="lede">
-    这份样张只改写法，不改内容。左右两栏讲的东西一样多——同样的义项、同样的搭配、同样的语法点、同样的例句，
-    一个都没少。区别只在句子怎么排。
+    上一版样张问的是「解释该写多简」。看下来结论不是简的赢了，而是<b>两种都要</b>：
+    中文是母语，读长句的成本本来就低，详实准确的解释更有用；但有时候只想立刻知道这句里它是什么意思。
+    所以这一版把它做成一个可选项——<b>详解</b>和<b>简答</b>，在设置里选。
   </p>
-  <p class="lede">
-    下面每组的左栏，是按 <code>learning_card.rs</code> 当前提示词的约束推演出来的输出。
-    推演依据附在下一节，原文照抄，可以直接对。
-  </p>
+
+  <div class="styles">
+    <div class="style-card a">
+      <div class="n">详解</div>
+      <p class="s">连词源、正式程度、近义词之间的差别一起讲。句子偏书面，信息最全。</p>
+    </div>
+    <div class="style-card b">
+      <div class="n">简答</div>
+      <p class="s">只讲这一句里用得上的：什么意思、怎么认出来、常跟什么走。句子短。</p>
+    </div>
+  </div>
+
+  <div class="callout">
+    <h2>「详解」不等于现在这样</h2>
+    <p>
+      现在卡片写出来的东西是详细的，但它有几个跟详细无关的毛病：答案埋在「并非……而是……」后面才出现；
+      词源、义项分化、词性判断三件事塞进同一句；最能当场用上的那一条排在最后。
+      这些是缺陷，不是风格——修掉它们一个字的信息量都不会少。
+    </p>
+    <p>
+      所以下面先单独放一组<b>「现在的写法 → 改良后的详解」</b>，确认详细这一栏本身也被改进过。
+      之后的六组才是真正要选的那两个选项：<b>详解 vs 简答</b>。
+    </p>
+  </div>
+
+  <!-- ===================== 改良对照 ===================== -->
+  <section class="section">
+    <span class="eyebrow">第一步 — 详细那一栏自己也要修</span>
+
+    <div class="sample" style="margin-top:12px">
+      <div class="sample-head">
+        <span class="word">sound</span>
+        <span class="tag">同一个词 · 同一句 · 同样的信息量</span>
+        <span class="sent">Her reasoning was <em>sound</em>, but the numbers behind it were three years old.</span>
+      </div>
+      <div class="cols">
+        <div class="col now">
+          <div class="col-head"><span>现在的写法</span><span class="cnt">1 条摘要 + 3 条细目</span></div>
+          <div class="col-body">
+            <div class="mod">
+              <span class="mod-label">context_meaning · detailed</span>
+              <p class="summary">此处的 sound 并非表示「声音」这一常见名词义，而是用作形容词，指某种推理、判断或方法在逻辑上是站得住脚的、不存在明显缺陷的（即可靠、无懈可击）。</p>
+              <ul class="details">
+                <li>作形容词的 sound 与其名词义「声音」在词源上虽属同源，但在现代英语中已分化为两个基本互不干扰的义项，读者需依据其在句中所处的句法位置（此处位于系动词 was 之后作表语）来判断其词性。</li>
+                <li>该义项常与 reasoning、argument、judgment、advice 等表示推理或决策的抽象名词搭配，用以强调其内部逻辑不存在可被攻击的漏洞；与之相对的 unsound 则表示存在缺陷。</li>
+                <li>需要注意的是，sound 在此仅评价推理过程本身的严密性，并不保证其结论为真——这正是后半句以 but 转折、指出数据陈旧的原因所在。 A sound argument can still rest on old numbers.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div class="col deep">
+          <div class="col-head"><span>改良后的详解</span><span class="cnt">1 条摘要 + 7 条细目</span></div>
+          <div class="col-body">
+            <div class="mod">
+              <span class="mod-label">context_meaning · detailed</span>
+              <p class="summary"><strong>站得住脚。</strong>这里的 sound 是形容词，说的是她那套推理在逻辑上没有漏洞、经得起推敲。</p>
+              <ul class="details">
+                <li>它担保的范围很窄：sound 只评价推理过程本身是否严密，并不担保结论为真。这正是后半句用 but 转折的原因——逻辑是通的，可它所依据的数据已经是三年前的了。</li>
+                <li>怎么认出来：看 sound 前面那个词。这里它跟在系动词 was 后面，后面又没有名词跟着，所以只能是形容词作表语，不可能是「声音」那个名词。</li>
+                <li>常跟什么走：这个义项几乎只与推理、判断、决策一类的抽象名词搭配。<span class="ex-line en">sound reasoning / a sound argument / sound judgment / sound advice</span></li>
+                <li>要说反面，用它的反义词 unsound，指论证内部存在站不住的地方。</li>
+                <li>正式程度上，sound 属于中性偏书面的评价用语，多见于书评、社论、学术与商业写作；日常口语里同样的意思更常说 that makes sense。</li>
+                <li>背景：形容词的 sound 与名词的 sound（声音）只是拼写碰巧相同，来路完全不同——形容词出自古英语 gesund（健康、完好，与德语 gesund 同源），名词出自拉丁语 sonus（声响）。二者之间不存在「由声音引申出可靠」这层关系，读到时不必顺着声音去猜。</li>
+                <li><span class="en">Her reasoning was sound.</span> = 她的推理站得住脚。</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note">
+        <b>两栏装的是同一批信息</b>——词性判断、搭配、反义词、评价范围、词源，一条没少，右栏反而多了正式程度和一条更准的词源。
+        变的只有排法：答案挪到第一句；最能当场用的「严密不等于结论对」从句尾提到第一条；
+        原来挤在一句里的词源、义项分化、词性判断拆成了三条；「A sound argument…」那句英文不再吊在中文句子屁股后面。
+      </p>
+      <div class="flag">
+        <b>顺手改掉一个事实错误：</b>旧左栏（以及上一版的右栏）都写着形容词 sound 与名词 sound「同源」。
+        这是错的，两者分别来自古英语 gesund 和拉丁语 sonus，只是拼写撞车。新的两栏都已改正。
+      </div>
+    </div>
+  </section>
 
   <!-- ===================== 依据 ===================== -->
   <section class="section">
-    <span class="eyebrow">左栏的依据 — 当前提示词原文</span>
+    <span class="eyebrow">现状的依据 — 当前提示词原文</span>
     <div class="panel">
       <h2>现在的默认单词卡是这样发出去的</h2>
       <p style="color:var(--text-2)">
         默认配置在 <code>src/components/learning-card/config.ts</code>：<code>defaultDensity: "compact"</code>，
         开启 <code>context_meaning</code>（<b>detailed</b>）、<code>word_info</code>、<code>common_senses</code>、
-        <code>collocations</code>（三个 compact）、<code>synonyms</code>（standard）。
+        <code>collocations</code>（三个随默认值 compact）、<code>synonyms</code>（standard）。
         <code>target_translation</code> 默认关闭。默认级别 B1，讲解模式 adaptive_bilingual，也就是中文为主。
+      </p>
+      <p style="color:var(--text-2)">
+        下面六段引文都是现行代码原文，可以直接对。它们解释的是<b>现状为什么长成那样</b>——
+        注意框架已经变了：这些条目不再是「一档要改成什么」，而是<b>两档都要遵守的共用底线</b>，
+        风格的分叉另外挂在它们后面。
       </p>
 
       <div class="quote">
@@ -269,6 +422,7 @@
         这一句是问题的源头。它对 <code>detailed</code> 的全部要求是四个抽象名词，没说形状。
         「nuance and distinctions」正好是最容易写成从句套从句的那类内容，而模块只有
         <code>summary</code> 和 <code>details</code> 两个格子装，于是全堆在一起。
+        <b>详解也需要这一条改掉</b>：详解的出口应该是多列几条，而不是把句子写更长。
       </p>
 
       <div class="quote">
@@ -289,7 +443,7 @@
       <p style="color:var(--text-2)">
         中文这一侧只有「accurate」一个标准。英文那一侧有六档具体约束（A1「very short sentences」、
         B2「keep sentence length controlled」……），中文一条都没有。
-        只要求准确、不要求好读，模型就往词典腔上靠。
+        只要求准确、不要求好读，模型就往词典腔上靠。<b>这里正是两档风格该插进去的位置</b>。
       </p>
 
       <div class="quote">
@@ -323,7 +477,11 @@
 
   <!-- ===================== 样本 ===================== -->
   <section class="section">
-    <span class="eyebrow">并排样本 — 六个词</span>
+    <span class="eyebrow">第二步 — 真正要选的两个选项 · 六个词</span>
+    <p class="lede" style="margin-bottom:4px">
+      从这里开始，两栏都已经遵守六条共用规矩。差别只剩两处：<b>给不给背景和理论</b>、<b>句子写多书面</b>。
+      两栏都是认真写的版本，没有哪一栏是拿来当靶子的。
+    </p>
 
     <!-- 1 sound -->
     <div class="sample">
@@ -333,31 +491,35 @@
         <span class="sent">Her reasoning was <em>sound</em>, but the numbers behind it were three years old.</span>
       </div>
       <div class="cols">
-        <div class="col now">
-          <div class="col-head">现在的写法</div>
+        <div class="col deep">
+          <div class="col-head"><span>详解</span><span class="cnt">7 条</span></div>
           <div class="col-body">
             <div class="mod">
               <span class="mod-label">context_meaning · detailed</span>
-              <p class="summary">此处的 sound 并非表示「声音」这一常见名词义，而是用作形容词，指某种推理、判断或方法在逻辑上是站得住脚的、不存在明显缺陷的（即可靠、无懈可击）。</p>
+              <p class="summary"><strong>站得住脚。</strong>这里的 sound 是形容词，说的是她那套推理在逻辑上没有漏洞、经得起推敲。</p>
               <ul class="details">
-                <li>作形容词的 sound 与其名词义「声音」在词源上虽属同源，但在现代英语中已分化为两个基本互不干扰的义项，读者需依据其在句中所处的句法位置（此处位于系动词 was 之后作表语）来判断其词性。</li>
-                <li>该义项常与 reasoning、argument、judgment、advice 等表示推理或决策的抽象名词搭配，用以强调其内部逻辑不存在可被攻击的漏洞；与之相对的 unsound 则表示存在缺陷。</li>
-                <li>需要注意的是，sound 在此仅评价推理过程本身的严密性，并不保证其结论为真——这正是后半句以 but 转折、指出数据陈旧的原因所在。 A sound argument can still rest on old numbers.</li>
+                <li>它担保的范围很窄：sound 只评价推理过程本身是否严密，并不担保结论为真。这正是后半句用 but 转折的原因——逻辑是通的，可它所依据的数据已经是三年前的了。</li>
+                <li>怎么认出来：看 sound 前面那个词。这里它跟在系动词 was 后面，后面又没有名词跟着，所以只能是形容词作表语，不可能是「声音」那个名词。</li>
+                <li>常跟什么走：这个义项几乎只与推理、判断、决策一类的抽象名词搭配。<span class="ex-line en">sound reasoning / a sound argument / sound judgment / sound advice</span></li>
+                <li>要说反面，用它的反义词 unsound，指论证内部存在站不住的地方。</li>
+                <li>正式程度上，sound 属于中性偏书面的评价用语，多见于书评、社论、学术与商业写作；日常口语里同样的意思更常说 that makes sense。</li>
+                <li>背景：形容词的 sound 与名词的 sound（声音）只是拼写碰巧相同，来路完全不同——形容词出自古英语 gesund（健康、完好，与德语 gesund 同源），名词出自拉丁语 sonus（声响）。二者之间不存在「由声音引申出可靠」这层关系，读到时不必顺着声音去猜。</li>
+                <li><span class="en">Her reasoning was sound.</span> = 她的推理站得住脚。</li>
               </ul>
             </div>
           </div>
         </div>
-        <div class="col next">
-          <div class="col-head">改过的写法</div>
+        <div class="col brief">
+          <div class="col-head"><span>简答</span><span class="cnt">5 条</span></div>
           <div class="col-body">
             <div class="mod">
               <span class="mod-label">context_meaning · detailed</span>
               <p class="summary"><strong>站得住脚。</strong>这里 sound 是形容词，说她的推理没有漏洞。</p>
               <ul class="details">
                 <li>推理没漏洞，不等于结论对。所以后半句用 but 转折：逻辑是通的，数据却是三年前的。</li>
-                <li>它跟名词 sound（声音）确实同源，但现在完全是两个词，别往声音上想。</li>
                 <li>怎么认：看前面。前面是 was，那就是形容词。</li>
-                <li>常跟推理类的词走：<span class="en">sound reasoning / a sound argument / sound judgment / sound advice</span>。反过来说有漏洞，用 unsound。</li>
+                <li>常跟推理类的词走：<span class="en">sound reasoning / a sound argument / sound judgment / sound advice</span>。说有漏洞，用 unsound。</li>
+                <li>它跟「声音」那个 sound 只是拼得一样，来路不同，别往声音上想。</li>
                 <li><span class="en">Her reasoning was sound.</span> = 她的推理站得住脚。</li>
               </ul>
             </div>
@@ -365,9 +527,11 @@
         </div>
       </div>
       <p class="note">
-        <b>左栏卡在哪：</b>第一句先花二十多个字否定「声音」，「站得住脚」压在句子后半。
-        第一条把词源、义项分化、词性判断三件事塞进一句，中间还夹一个括号插入语。
-        第三条最有用的一句「严密不等于结论对」被「需要注意的是」和一个破折号推到句尾才落地。
+        <b>差别落在哪：</b>
+        <span class="d">详解</span>把「反义词 unsound」单拎一条、加了一条正式程度（书评社论 vs 口语 makes sense）、
+        词源写到了具体来源（gesund / sonus）。
+        <span class="b">简答</span>把反义词并进搭配那条的句尾，删掉正式程度，词源压成一句「拼得一样、来路不同」。
+        句法上，详解第一条用了「它担保的范围很窄：……并不担保……这正是……的原因」这样的书面链条，简答直接写「推理没漏洞，不等于结论对」。
       </p>
     </div>
 
@@ -379,35 +543,39 @@
         <span class="sent">I <em>figured</em> she had already left, so I locked up and went home.</span>
       </div>
       <div class="cols">
-        <div class="col now">
-          <div class="col-head">现在的写法</div>
+        <div class="col deep">
+          <div class="col-head"><span>详解</span><span class="cnt">7 条 + 1 模块</span></div>
           <div class="col-body">
             <div class="mod">
               <span class="mod-label">context_meaning · detailed</span>
-              <p class="summary">figure 在此并非作名词表示「数字」或「人物形象」，而是用作及物动词，其后接省略了 that 的宾语从句，表达说话人基于当时情境所作出的一种非正式推断（即「我当时判断」）。</p>
+              <p class="summary"><strong>我当时判断、我猜。</strong>这里的 figure 是及物动词，后面直接跟一整句话，表示说话人根据当时情形作出的一个并不确定的推断。</p>
               <ul class="details">
-                <li>该用法在美式英语口语中使用频率较高，其语域（register，指语言使用的正式程度）明显低于 assume、presume 等同义表达，因此多见于对话、书信及第一人称叙述，而在正式书面语中通常应予避免。</li>
-                <li>由于 figured 采用过去时，且后半句表明说话人据此采取了行动（locked up and went home），可以推知这一推断在事后往往被证明是错误的——这是该结构在叙述中常见的隐含意味，但并非其固有的语法含义。</li>
-                <li>常见搭配包括 I figured (that)…、figure sb for sth、go figure 等，其中 go figure 已固化为表示惊讶的独立感叹语。</li>
+                <li>它常常带着一层叙述意味：figured 用的是过去时，后半句又交代他据此锁门回了家。英语叙事里这样铺陈，往往是在为「他猜错了」作准备。这属于叙述习惯，不是 figure 本身的语法含义，读的时候可以当作一个提示，但不能当作定论。</li>
+                <li>怎么认出来：看它前后。前面是主语 I，后面直接跟着一个完整的句子 she had already left，中间的 that 被省略了。名词不可能这样带一整个句子，所以此处只能是动词。</li>
+                <li>常跟什么走，有三个值得单记：<span class="ex-line en">I figured (that)… / figure sb for sth / go figure</span></li>
+                <li>其中 go figure 已经固化成一句独立的感叹，放在意外的事情后面，意思接近「你说怪不怪」。</li>
+                <li>正式程度：这个义项属于口语，在美式英语中尤其常见，多见于对话、书信和第一人称叙述，正式书面语通常改用 assume 或 conclude。这种「同一个意思、适合用在多正式的场合」的差别，术语叫语域（register）。</li>
+                <li>近义之间：assume 是姑且认定、并不追究依据；presume 更书面，且暗示说话人有理由这样认为；reckon 在英式口语里最接近 figure 的随意程度。</li>
+                <li><span class="en">I figured she had already left.</span> = 我以为她已经走了。</li>
               </ul>
             </div>
             <div class="mod">
               <span class="mod-label">common_senses · compact</span>
-              <p class="summary">作名词时指数字、数据或人物形象；作动词时在非正式语体中表示推断或认为。</p>
+              <p class="summary">名词指数字或数据，也指远处看不清的身影，还可指某个领域里的人物；动词在口语中表示推断、认为。</p>
             </div>
           </div>
         </div>
-        <div class="col next">
-          <div class="col-head">改过的写法</div>
+        <div class="col brief">
+          <div class="col-head"><span>简答</span><span class="cnt">5 条 + 1 模块</span></div>
           <div class="col-body">
             <div class="mod">
               <span class="mod-label">context_meaning · detailed</span>
               <p class="summary"><strong>我猜。</strong>这里 figure 是动词，等于 I thought，后面直接跟一整句，that 可以省。</p>
               <ul class="details">
-                <li>口语词。跟 assume、presume 一个意思，但随便得多，多用在对话和第一人称叙述里；正式书面语一般不用。</li>
                 <li>他用了过去时 figured，后半句又说他真去锁门回家了。这么写通常在铺垫一件事：他猜错了。这是叙述习惯，不是语法规定。</li>
                 <li>怎么认：前面是 I，后面跟着一整句话，那它只能是动词。</li>
                 <li>常见说法：<span class="en">I figured (that)… / figure sb for sth / go figure</span>。<span class="en">go figure</span> 是固定说法，意思接近「你说怪不怪」。</li>
+                <li>口语词。跟 assume、presume 一个意思，但随便得多；正式书面语一般不用。</li>
                 <li><span class="en">I figured she had already left.</span> = 我以为她已经走了。</li>
               </ul>
             </div>
@@ -419,11 +587,10 @@
         </div>
       </div>
       <p class="note">
-        <b>左栏卡在哪：</b>开头一句六十多字，从「不是名词」讲到「省略 that 的宾语从句」再讲到「非正式推断」，
-        三件事一口气说完，「我当时判断」还被关在最后的括号里。
-        第一条先摆出 register 这个术语再解释它，读者得停下来解析括号。
-        第二条用「由于……可以推知……——这是……但并非……」，转两道弯才说到「他猜错了」。
-        compact 那条也一样：「作名词时……作动词时……」两句合成一句，中间靠分号硬接。
+        <b>差别落在哪：</b>
+        <span class="d">详解</span>多出两条：一条把语域这个概念讲出来并给了名字，一条逐个说清 assume / presume / reckon 的差别；
+        go figure 也从搭配那条里拆出来单独一条。<span class="b">简答</span>把这些收成半句「跟 assume、presume 一个意思，但随便得多」。
+        <code>common_senses</code> 那个 compact 模块最能看出书面度的差别：详解写成一句完整的分号句，简答用冒号列词。
       </p>
     </div>
 
@@ -435,31 +602,36 @@
         <span class="sent">She gave a <em>tentative</em> nod, as if the answer might still change.</span>
       </div>
       <div class="cols">
-        <div class="col now">
-          <div class="col-head">现在的写法</div>
+        <div class="col deep">
+          <div class="col-head"><span>详解</span><span class="cnt">8 条</span></div>
           <div class="col-body">
             <div class="mod">
               <span class="mod-label">context_meaning · detailed</span>
-              <p class="summary">tentative 在此作定语修饰 nod，表示该动作是在缺乏确定性的心理状态下作出的，即带有试探性质、尚未形成最终承诺的（其核心语义为「未定的、不确定的」）。</p>
+              <p class="summary"><strong>犹豫的、没底的。</strong>这里的 tentative 修饰 nod：她点了头，但点得不干脆，心里还没定下来。</p>
               <ul class="details">
-                <li>该词兼有两个相互关联的义项：一是描述人的态度或动作缺乏自信、显得迟疑（如本句）；二是描述计划、安排、结论等尚属初步、有待确认（如 a tentative agreement），二者共同的语义基础在于「尚未最终确定」这一特征。</li>
-                <li>从构词上看，tentative 源自拉丁语 tentare（尝试），与 attempt、tempt 同源；其副词形式 tentatively 常置于句首或动词之前，用以限定整个陈述的确定程度。</li>
-                <li>as if 引导的从句在此起到语义印证的作用，明确了这一点头之所以被称为 tentative，是因为说话人认为对方仍保留改变答案的可能。 She nodded, but she was not sure yet.</li>
+                <li>句子后半的 as if 从句正是这个判断的依据：她认为对方随时可能改口，所以这个点头只是一次暂时的表态，而不是最终的答应。</li>
+                <li>怎么认出来：tentative 夹在冠词 a 和名词 nod 之间，处在典型的定语位置，修饰的就是紧跟其后的那个名词。</li>
+                <li>这个词有两条用法，共同点都是「还没最终定下来」。一条用于人，指态度迟疑、缺乏把握，本句即属此类。</li>
+                <li>另一条用于事，指计划、安排、结论尚属初步、有待确认。<span class="ex-line en">a tentative agreement（初步协议） / a tentative date（暂定的日期）</span></li>
+                <li>副词形式是 tentatively，常置于句首或动词之前，用来限定整句话的确定程度，意思接近「暂且」。<span class="ex-line en">We tentatively agreed to meet on Friday. = 我们暂且说定周五见。</span></li>
+                <li>词源上它来自拉丁语 tentare（尝试），与 attempt、tempt 同源，骨子里就是「试一下、还没做实」。记住这一层，上面两条用法就能串成一件事。</li>
+                <li>近义之间：hesitant 的重点在人当下不敢动，只说态度；provisional 带行政、法律色彩，指临时的、待批准的；tentative 介于两者之间，既能形容人的神态，也能形容事情的安排。</li>
+                <li><span class="en">She gave a tentative nod.</span> = 她犹豫地点了下头。</li>
               </ul>
             </div>
           </div>
         </div>
-        <div class="col next">
-          <div class="col-head">改过的写法</div>
+        <div class="col brief">
+          <div class="col-head"><span>简答</span><span class="cnt">5 条</span></div>
           <div class="col-body">
             <div class="mod">
               <span class="mod-label">context_meaning · detailed</span>
               <p class="summary"><strong>犹豫的。</strong>这里修饰 nod：她点了头，但没点实——心里还没定。</p>
               <ul class="details">
-                <li>这个词有两层用法，共同点都是「还没定下来」。说人，是态度迟疑、没把握，就像本句。说事，是计划或结论还只是初步的：<span class="en">a tentative agreement</span>（初步协议）。</li>
                 <li>as if 那半句就是在解释为什么用 tentative：她觉得对方可能还会改口，所以头点得不干脆。</li>
-                <li>来自拉丁语 tentare（尝试），跟 attempt、tempt 同源，都带「试一下」的味道。</li>
-                <li>副词是 tentatively，放句首或动词前，意思接近「暂且」：<span class="en">We tentatively agreed to meet on Friday.</span></li>
+                <li>怎么认：夹在 a 和 nod 中间，修饰的就是后面那个名词。</li>
+                <li>这个词有两层用法，共同点都是「还没定下来」。说人，是态度迟疑，就像本句。说事，是计划还只是初步的：<span class="en">a tentative agreement</span>（初步协议）。</li>
+                <li>副词是 tentatively，放句首或动词前，意思接近「暂且」：<span class="ex-line en">We tentatively agreed to meet on Friday.</span></li>
                 <li><span class="en">She gave a tentative nod.</span> = 她犹豫地点了下头。</li>
               </ul>
             </div>
@@ -467,9 +639,10 @@
         </div>
       </div>
       <p class="note">
-        <b>左栏卡在哪：</b>答案「犹豫」被包在「在缺乏确定性的心理状态下作出的」这个名词化短语里，
-        读完还得自己再翻译一遍。第一条一句话讲完两个义项加一条共同点，中间用分号硬接，两个例子都塞在括号里。
-        第二条把词源和副词用法接在同一个句号里，两件不相干的事共用一句。
+        <b>差别落在哪：</b>
+        <span class="d">详解</span>把两条用法拆成两条（各带例子），另给了词源和 hesitant / provisional 的辨析。
+        <span class="b">简答</span>把两条用法并回一条、只留一个例子，词源和辨析整条不给。
+        句法上差别最明显的是第一条：详解写「句子后半的 as if 从句正是这个判断的依据」，简答写「as if 那半句就是在解释为什么用 tentative」。
       </p>
     </div>
 
@@ -481,30 +654,36 @@
         <span class="sent">The smell of burnt coffee <em>lingered</em> in the stairwell long after the shop had closed.</span>
       </div>
       <div class="cols">
-        <div class="col now">
-          <div class="col-head">现在的写法</div>
+        <div class="col deep">
+          <div class="col-head"><span>详解</span><span class="cnt">8 条</span></div>
           <div class="col-body">
             <div class="mod">
               <span class="mod-label">context_meaning · detailed</span>
-              <p class="summary">linger 作不及物动词，指某一事物在其产生的原因已经消失之后依然持续存在、迟迟不予消退，此处的主语为 the smell，故表示气味在店铺关门后仍长时间滞留于楼梯间（即「久久不散」）。</p>
+              <p class="summary"><strong>久久不散。</strong>这里的主语是那股糊咖啡味：店关门已久，味道仍留在楼梯间没有退去。</p>
               <ul class="details">
-                <li>该动词的主语既可以是气味、声音、疑虑、记忆等抽象或感官性事物，也可以是人（此时表示「逗留、迟迟不走」，如 She lingered by the door），两类用法的共同点在于均含有「本该结束却仍在持续」这一隐含对比。</li>
-                <li>linger 通常与表示地点的介词短语（in、on、around）或表示时间延续的状语（long after、for hours）连用，本句同时具备上述两项特征，其中 long after 进一步强化了持续时间超出预期这一含义。</li>
-                <li>其现在分词 lingering 可作形容词，修饰 doubt、pain、smell 等名词，表示残留的、挥之不去的。 The smell stayed a long time.</li>
+                <li>linger 的核心是一层对比：某样东西本该随着它的起因一同结束，却仍在持续。本句的起因是那家咖啡店，店既已关门，味道理应散尽，可它没有；句末的 long after 又把「拖得比预想更久」再强调了一次。</li>
+                <li>怎么认出来：linger 是不及物动词，后面不接承受动作的对象，跟着的是地点或时间。本句 lingered 之后直接就是介词短语 in the stairwell。</li>
+                <li>常跟什么走，分两类。地点用 in / on / around。<span class="ex-line en">linger in the air / linger on the tongue / linger around the doorway</span></li>
+                <li>时间用 long after、for hours、for days，本句两类都齐了。</li>
+                <li>主语也分两类。一类是气味、声音、疑虑、记忆这些无形之物；另一类是人，此时的意思是磨蹭着不肯走。<span class="ex-line en">She lingered by the door. = 她在门口磨蹭着没走。</span></li>
+                <li>它的现在分词 lingering 可以直接充当形容词，修饰 doubt、pain、smell 一类名词，意思是残留的、挥之不去的。<span class="ex-line en">a lingering doubt（一丝挥之不去的疑虑）</span></li>
+                <li>正式程度上，linger 偏文学、偏书面，多见于叙述与描写；日常口语说味道没散，更常说 the smell stayed 或 the smell didn't go away。</li>
+                <li><span class="en">The smell lingered in the stairwell.</span> = 那股味道久久留在楼梯间。</li>
               </ul>
             </div>
           </div>
         </div>
-        <div class="col next">
-          <div class="col-head">改过的写法</div>
+        <div class="col brief">
+          <div class="col-head"><span>简答</span><span class="cnt">6 条</span></div>
           <div class="col-body">
             <div class="mod">
               <span class="mod-label">context_meaning · detailed</span>
               <p class="summary"><strong>赖着不走。</strong>这里说的是味道：店都关门半天了，糊咖啡味还留在楼梯间没散。</p>
               <ul class="details">
-                <li>linger 的重点是「本该结束却还在」。主语可以是味道、声音、疑虑、记忆，也可以是人——说人就是磨蹭着不走：<span class="en">She lingered by the door.</span></li>
-                <li>不及物动词，后面不接宾语，接的是地点或时间。</li>
-                <li>常见搭配两类：地点用 in / on / around，时间用 long after、for hours。本句两样都有，long after 又把「拖得比预想久」加重了一次。</li>
+                <li>linger 的重点是「本该结束却还在」。句末 long after 又把「拖得比预想久」加重了一次。</li>
+                <li>怎么认：不及物动词，后面不接宾语，跟的是地点或时间。</li>
+                <li>常见搭配两类：地点用 in / on / around，时间用 long after、for hours。本句两样都有。</li>
+                <li>主语可以是味道、声音、疑虑、记忆，也可以是人——说人就是磨蹭着不走：<span class="en">She lingered by the door.</span></li>
                 <li>分词 lingering 能当形容词，意思是「残留的、挥之不去的」：<span class="en">a lingering doubt / a lingering smell</span>。</li>
                 <li><span class="en">The smell lingered in the stairwell.</span> = 那股味道久久留在楼梯间。</li>
               </ul>
@@ -513,9 +692,10 @@
         </div>
       </div>
       <p class="note">
-        <b>左栏卡在哪：</b>开头一句七十多字，先给学术式定义「在其产生的原因已经消失之后依然持续存在」，
-        再回头补「主语为 the smell」，最后才在括号里给出「久久不散」——答案在整句的最后四个字。
-        第一条用「既可以……也可以……（此时表示……）……共同点在于……」，读者得一路记住前面的分支，才接得住句尾那句总结。
+        <b>差别落在哪：</b>
+        <span class="d">详解</span>把两类搭配拆成两条并各给例句、多了一条正式程度（偏文学 vs 口语说 stayed）。
+        <span class="b">简答</span>把两类搭配写在一行、例句只留最必要的两处，不谈语域。
+        最能看出书面度的是第一条：详解用「某样东西本该随着它的起因一同结束，却仍在持续」，简答用「本该结束却还在」。
       </p>
     </div>
 
@@ -527,32 +707,42 @@
         <span class="sent">His apology was so <em>dry</em> that no one could tell whether he meant it.</span>
       </div>
       <div class="cols">
-        <div class="col now">
-          <div class="col-head">现在的写法</div>
+        <div class="col deep">
+          <div class="col-head"><span>详解</span><span class="cnt">6 条 + 辨析 4 条</span></div>
           <div class="col-body">
             <div class="mod">
               <span class="mod-label">context_meaning · detailed</span>
-              <p class="summary">dry 在此并非表示「干燥」这一物理属性，而是用于描述言语或幽默的表达方式，指其在传递内容时刻意不附加任何情感色彩或语气提示，从而使听者难以判断说话人的真实态度（常译作「冷淡的」「不动声色的」）。</p>
+              <p class="summary"><strong>不动声色、一点情绪都不带。</strong>这里的 dry 形容他说话的方式：道歉的话说了，语气里却不给任何提示。</p>
               <ul class="details">
-                <li>该义项最典型的搭配是 dry humour（英式拼写）与 dry wit，指以完全平淡的语调说出可笑内容的幽默方式；与之相关但不完全等同的还有 deadpan（面无表情的），后者更侧重面部表情而非措辞本身。</li>
-                <li>值得注意的是，dry 用于此义时并不必然含有贬义，其褒贬取决于语境：在评价幽默感时多为褒义，而在评价道歉、致辞等本应带有情感的言语行为时（如本句）则往往隐含批评。</li>
-                <li>本句的 so...that... 结构将这一特征与其后果直接关联，说明正是由于语气过于平淡，听者才无法判断其诚意。 He said sorry with no feeling at all.</li>
+                <li>正因为语气太平，别人才判断不了他是不是真心的。句子用 so...that... 把这个特征和它造成的后果直接连了起来。</li>
+                <li>怎么认出来：看 dry 修饰的是什么。修饰 apology 这种「说出来的话」时，它一律与「干燥」无关，只评价说话的方式。</li>
+                <li>常跟什么走：最典型的是 dry humour（英式拼写，美式作 dry humor）和 dry wit，指用毫无起伏的语调说出好笑的内容；此外还有 dry tone、dry delivery、dry remark。</li>
+                <li>褒贬取决于场合，这是最容易用错的一点。评价一个人的幽默感 dry，通常是称赞；评价道歉、悼词、祝辞这类本该带情绪的言语行为 dry，像本句这样，基本就是在挑刺。</li>
+                <li>背景：这个义项由「干」的物理义引申而来——没有水分，也就没有润色、没有铺垫。英语里还有一条平行的引申：a dry book 指枯燥无味的书，走的是同一条路子。</li>
+                <li><span class="en">His apology was dry.</span> = 他的道歉冷冰冰的。</li>
               </ul>
             </div>
             <div class="mod">
               <span class="mod-label">synonyms · standard</span>
-              <p class="summary">wry 侧重以自嘲或反讽的方式表达，deadpan 强调面部表情毫无变化，laconic 则指用词极少而非语气平淡，三者与 dry 的区别在于 dry 所强调的是语气层面刻意剥离情感这一特征本身。</p>
+              <p class="summary">这四个词都沾「不动声色」，但各自压在不同的地方：</p>
+              <ul class="details">
+                <li><span class="en">dry</span> —— 重点在语气：内容照说，感情不放进去。</li>
+                <li><span class="en">wry</span> —— 重点在态度：带着自嘲或反讽，话里有刺。</li>
+                <li><span class="en">deadpan</span> —— 重点在表情：脸上一丝变化都没有，多用来说表演和讲笑话的方式。</li>
+                <li><span class="en">laconic</span> —— 重点在字数：话极少，说完就停；它并不评价语气平不平。</li>
+              </ul>
             </div>
           </div>
         </div>
-        <div class="col next">
-          <div class="col-head">改过的写法</div>
+        <div class="col brief">
+          <div class="col-head"><span>简答</span><span class="cnt">6 条 + 辨析 4 条</span></div>
           <div class="col-body">
             <div class="mod">
               <span class="mod-label">context_meaning · detailed</span>
               <p class="summary"><strong>冷冰冰的。</strong>他道了歉，语气却一点情绪都没有，别人听不出他是不是真心的。</p>
               <ul class="details">
                 <li>这个 dry 跟「干」没关系。它说的是讲话方式：内容照说，语气不给任何提示。</li>
+                <li>怎么认：修饰的是 apology 这种「说出来的话」，不是东西。</li>
                 <li>最常见的搭配是 <span class="en">dry humour</span>（英式拼写）和 <span class="en">dry wit</span>：用毫无起伏的语气说好笑的话。</li>
                 <li>夸还是贬，看场合。说人幽默感 dry，是夸。说道歉、致辞这种本该带情绪的话 dry，像本句，基本就是在挑刺。</li>
                 <li><span class="en">so...that...</span> 把因果直接连起来：正因为语气太平，别人才判断不了他的诚意。</li>
@@ -573,10 +763,10 @@
         </div>
       </div>
       <p class="note">
-        <b>左栏卡在哪：</b>开头八十字，前一半在说「不是干燥」，接着用「刻意不附加任何情感色彩或语气提示」这种书面定义绕一圈，
-        「不动声色」到最后才在括号里出现。第一条用「与之相关但不完全等同的还有」，把 deadpan 的差别压成一个从句。
-        第二条以「值得注意的是」开头，真正能用的判断规则「夸还是贬看场合」被埋在「其褒贬取决于语境」后面的冒号里。
-        synonyms 那条更明显：四个词的辨析写成一句话，读到第三个逗号就得回头找主语。
+        <b>差别落在哪：</b>这一组是唯一两栏条数相同的——共用规矩已经把两边都拉成一条一件事，
+        真正的差别只剩每条里面装多少。<span class="d">详解</span>的搭配那条多给了 dry tone / dry delivery / dry remark，
+        并保留了一条从物理义到语气义的引申背景（连带 a dry book 这条平行线索）；<span class="b">简答</span>整条不要背景。
+        <code>synonyms</code> 模块最能看出分叉：结构一样，详解每条先点出「压在哪一维」（语气／态度／表情／字数）再解释，简答直接给结果。
       </p>
     </div>
 
@@ -588,31 +778,35 @@
         <span class="sent">She answered with a <em>brittle</em> laugh and changed the subject.</span>
       </div>
       <div class="cols">
-        <div class="col now">
-          <div class="col-head">现在的写法</div>
+        <div class="col deep">
+          <div class="col-head"><span>详解</span><span class="cnt">7 条</span></div>
           <div class="col-body">
             <div class="mod">
               <span class="mod-label">context_meaning · detailed</span>
-              <p class="summary">brittle 的本义为「易碎的、脆的」（多用于描述玻璃、骨骼等物理性质），此处则为其比喻用法，用以形容笑声或语气表面维持镇定、实则紧绷而缺乏内在支撑，随时可能崩溃（即勉强的、强撑的）。</p>
+              <p class="summary"><strong>强撑出来的。</strong>这里的 brittle 形容那声笑：表面还稳得住，其实绷得很紧，一碰就散。</p>
               <ul class="details">
-                <li>该比喻的语义来源在于物理属性与心理状态之间的映射关系：易碎之物看似坚硬完整、实则无法承受压力，这一特征被转用于描述人在情绪压力之下所维持的表面平静。</li>
-                <li>与之构成常见搭配的名词包括 laugh、smile、voice、cheerfulness 等，均属表面情绪的表达方式；需要加以区分的是 fragile，后者强调本身柔弱、需要保护，而 brittle 强调僵硬且突然断裂。</li>
-                <li>本句中 and changed the subject 这一后续动作为上述判断提供了语境支持，表明说话人希望回避当前话题，这与 brittle 所暗示的紧张状态相互印证。 Her laugh sounded forced.</li>
+                <li>后半句的 and changed the subject 就是这个判断的依据：她笑完立刻岔开话题，说明那声笑是用来遮掩的，并非真的觉得好笑。</li>
+                <li>怎么认出来：看它修饰的是什么。用在 laugh、smile、voice 这类词前面，一律是比喻义；只有修饰玻璃、骨头、塑料、头发这类实物时，它才是本义「脆的、一掰就断的」。</li>
+                <li>常跟什么走：laugh、smile、voice、cheerfulness、politeness——全是「摆在表面上的情绪」。</li>
+                <li>最常见的混淆是与 fragile 混用，两者其实相反。fragile 指本身柔弱、需要人小心护着；brittle 指绷得很硬、看着没事，然后毫无预兆地断掉。用在人身上，fragile 是「经不起」，brittle 是「快撑不住了还在撑」。</li>
+                <li>这个比喻之所以成立，靠的是物理属性与心理状态之间的一层对应：脆的东西看似坚硬完整，实则受不了力；把这层对应搬到人身上，就是压力之下勉强维持的那份平静。这种把一个领域的性质搬到另一个领域的说法，叫隐喻映射。</li>
+                <li>正式程度上，brittle 的比喻义偏文学，多见于小说与人物描写；日常口语说勉强的笑，更常说 a forced laugh。</li>
+                <li><span class="en">She answered with a brittle laugh.</span> = 她勉强笑了一声作答。</li>
               </ul>
             </div>
           </div>
         </div>
-        <div class="col next">
-          <div class="col-head">改过的写法</div>
+        <div class="col brief">
+          <div class="col-head"><span>简答</span><span class="cnt">5 条</span></div>
           <div class="col-body">
             <div class="mod">
               <span class="mod-label">context_meaning · detailed</span>
               <p class="summary"><strong>强撑出来的笑。</strong>表面还稳得住，其实绷得很紧，一碰就散。</p>
               <ul class="details">
-                <li>brittle 本义是「脆、一掰就断」，说玻璃、说骨头。这里是比喻：脆的东西看着硬，其实受不了力——拿来说人硬撑着的情绪，正合适。</li>
+                <li>后半句 <span class="en">and changed the subject</span> 就是证据：她赶紧岔开话题，说明那声笑确实是撑出来的。</li>
+                <li>怎么认：后面跟 laugh、smile、voice，就是比喻义；跟玻璃、骨头，才是本义「脆」。</li>
                 <li>常搭配 laugh、smile、voice、cheerfulness，都是「表面上的情绪」。</li>
                 <li>别跟 fragile 混。fragile 是本来就柔弱，需要人护着；brittle 是绷得硬，然后突然断。</li>
-                <li>后半句 <span class="en">and changed the subject</span> 就是证据：她赶紧岔开话题，说明那声笑确实是撑出来的。</li>
                 <li><span class="en">She answered with a brittle laugh.</span> = 她勉强笑了一声作答。</li>
               </ul>
             </div>
@@ -620,91 +814,103 @@
         </div>
       </div>
       <p class="note">
-        <b>左栏卡在哪：</b>开头一句里套了两层括号，本义、适用对象、比喻义、答案排成一串，
-        「勉强的、强撑的」到最后才出现。第一条整句都在讲「映射关系」这个抽象概念，
-        读完才发现它要说的其实是一句大白话：脆的东西看着硬、其实受不了力。
-        第二条把搭配和 fragile 的辨析用分号并成一句，「需要加以区分的是」又把重点推到了后半句。
+        <b>差别落在哪：</b>这一组差得最开，因为它是比喻义。
+        <span class="d">详解</span>专门用一条讲这个比喻是怎么成立的（脆的东西看着硬、其实受不了力），末尾才给出「隐喻映射」这个名字；
+        另有一条谈正式程度，说明口语里同样的意思说 a forced laugh。
+        <span class="b">简答</span>两条都不要，只留能当场判断的四条。
+        fragile 的辨析两栏都在，但详解多说了一层「用在人身上」的区别。
       </p>
     </div>
   </section>
 
   <!-- ===================== 规矩 ===================== -->
   <section class="section">
-    <span class="eyebrow">右栏遵循的八条规矩</span>
+    <span class="eyebrow">六条共用 + 两条分叉</span>
     <div class="panel">
       <p style="color:var(--text-2);margin-bottom:14px">
-        八条都是能照着执行的动作，不是形容词。将来直接写进提示词。
+        前六条是<b>缺陷修复</b>，两种风格都必须遵守，修完不掉一个字的信息量。
+        后两条才是<b>风格</b>：只有它们决定你选的是哪一档。八条都是能照着执行的动作，不是形容词。
       </p>
 
       <div class="rule">
-        <div class="rule-title"><span>01</span>先给答案，再给理由。</div>
-        <div class="rule-why">第一句就是中文答案，能多短就多短。不铺垫、不先否定别的义项、不先报词性。</div>
+        <div class="rule-title"><span class="num">共 01</span>答案先行。</div>
+        <div class="rule-why">开头第一句就是这个词在这句里的意思。不先否定别的义项、不先报词性、不复述问题。之后爱写多长写多长。</div>
         <div class="ex">
-          <div><span class="ex-label">反</span>sound 在此并非表示「声音」这一常见名词义，而是用作形容词，指推理站得住脚的。</div>
-          <div class="good"><span class="ex-label">正</span>站得住脚。这里 sound 是形容词。</div>
+          <div><span class="ex-label">反 · 现在的写法</span>此处的 sound 并非表示「声音」这一常见名词义，而是用作形容词，指某种推理、判断或方法在逻辑上是站得住脚的。</div>
+          <div class="good"><span class="ex-label">正 · 详解也照做</span>站得住脚。这里的 sound 是形容词，说的是她那套推理在逻辑上没有漏洞、经得起推敲。</div>
         </div>
       </div>
 
       <div class="rule">
-        <div class="rule-title"><span>02</span>一句话只说一件事。</div>
-        <div class="rule-why">出现第二个「而／其中／由于／从而／二者」就断句。宁可多写一句，不要多套一层。</div>
+        <div class="rule-title"><span class="num">共 02</span>按有用程度排序，不按学术顺序。</div>
+        <div class="rule-why">读者顺序是：这句里什么意思 → 怎么认出来 → 常跟什么走 → 背景与辨析。词源、义项分化史一律往后放，别占前排。</div>
         <div class="ex">
-          <div><span class="ex-label">反</span>该词兼有两个相互关联的义项：一是……；二是……，二者共同的语义基础在于「尚未最终确定」这一特征。</div>
-          <div class="good"><span class="ex-label">正</span>这个词有两层用法，共同点都是「还没定下来」。说人，是态度迟疑。说事，是计划还只是初步的。</div>
+          <div><span class="ex-label">反 · 现在的写法</span>第一条讲词源与义项分化，最有用的「严密不等于结论对」排在第三条句尾。</div>
+          <div class="good"><span class="ex-label">正 · 详解也照做</span>第一条就是「它担保的范围很窄……并不担保结论为真」，词源退到最后一条。</div>
         </div>
       </div>
 
       <div class="rule">
-        <div class="rule-title"><span>03</span>术语先给白话，再给名字；不给名字也行。</div>
-        <div class="rule-why">先摆术语再解释，读者要停一次；先说人话，术语就成了附注。</div>
+        <div class="rule-title"><span class="num">共 03</span>一个点一条。</div>
+        <div class="rule-why">不是把话说短，是别把词源、义项分化、词性判断三件事塞进同一句。详解的每一条可以是完整、书面、详实的句子——只是一条只讲一件事。detailed 的出口是<b>多列几条</b>，不是把句子写更长。</div>
         <div class="ex">
-          <div><span class="ex-label">反</span>其语域（register，指语言使用的正式程度）明显低于 assume。</div>
-          <div class="good"><span class="ex-label">正</span>比 assume 随便得多，多用在对话里。</div>
+          <div><span class="ex-label">反 · 现在的写法</span>作形容词的 sound 与其名词义在词源上虽属同源，但在现代英语中已分化为两个义项，读者需依据其在句中所处的句法位置（此处位于系动词 was 之后作表语）来判断其词性。</div>
+          <div class="good"><span class="ex-label">正 · 详解也照做</span>拆成两条：一条「怎么认出来：看 sound 前面那个词……只能是形容词作表语」，一条「背景：形容词的 sound 与名词的 sound 只是拼写碰巧相同，来路完全不同——……」。</div>
         </div>
       </div>
 
       <div class="rule">
-        <div class="rule-title"><span>04</span>括号里只放三样：读音、例子、原词。</div>
-        <div class="rule-why">解释不进括号。句子中间插一段解释，等于让人读两遍。</div>
+        <div class="rule-title"><span class="num">共 04</span>括号里只放读音、例子、原词。</div>
+        <div class="rule-why">解释不进括号。要解释就另起一句。句子中间插一段解释，等于让人读两遍。</div>
         <div class="ex">
-          <div><span class="ex-label">反</span>使听者难以判断说话人的真实态度（常译作「冷淡的」「不动声色的」）。</div>
-          <div class="good"><span class="ex-label">正</span>冷冰冰的。别人听不出他是不是真心的。</div>
+          <div><span class="ex-label">反 · 现在的写法</span>使听者难以判断说话人的真实态度（常译作「冷淡的」「不动声色的」）。</div>
+          <div class="good"><span class="ex-label">正 · 详解也照做</span>不动声色、一点情绪都不带。这里的 dry 形容他说话的方式：道歉的话说了，语气里却不给任何提示。<br>（括号里剩下的只有 dry humour「英式拼写，美式作 dry humor」这类原词说明。）</div>
         </div>
       </div>
 
       <div class="rule">
-        <div class="rule-title"><span>05</span>名词前的修饰超过十个字，就拆成短句。</div>
-        <div class="rule-why">中文的长定语要读到最后才知道在说谁。拆开就没这个问题。</div>
+        <div class="rule-title"><span class="num">共 05</span>术语先给白话，再给名字。</div>
+        <div class="rule-why">详解<b>保留</b>术语——那正是理论基础的一部分。但顺序不能反：先把话说明白，术语跟在后面当附注。先摆术语再解释，读者要停一次。</div>
         <div class="ex">
-          <div><span class="ex-label">反</span>该动作是在缺乏确定性的心理状态下作出的。</div>
-          <div class="good"><span class="ex-label">正</span>她点了头，但没点实——心里还没定。</div>
+          <div><span class="ex-label">反 · 现在的写法</span>其语域（register，指语言使用的正式程度）明显低于 assume、presume 等同义表达。</div>
+          <div class="good"><span class="ex-label">正 · 详解也照做</span>这个义项属于口语……正式书面语通常改用 assume 或 conclude。这种「同一个意思、适合用在多正式的场合」的差别，术语叫语域（register）。</div>
         </div>
       </div>
 
       <div class="rule">
-        <div class="rule-title"><span>06</span>用动词，别用「进行／作出／具有／存在／属于」。</div>
-        <div class="rule-why">这类说法把动作变成名词，句子立刻变书面。直接用动词，字更少、更快。</div>
+        <div class="rule-title"><span class="num">共 06</span>英文例句单独一行，后面直接跟中文。</div>
+        <div class="rule-why">例句是用来对照的，不是用来分析的。别把例句和讲解揉进同一句，也别把它吊在中文句子屁股后面。</div>
         <div class="ex">
-          <div><span class="ex-label">反</span>该动作具有试探性质，尚未形成最终承诺。</div>
-          <div class="good"><span class="ex-label">正</span>她还在试探，没把话说死。</div>
+          <div><span class="ex-label">反 · 现在的写法</span>……这一后续动作为上述判断提供了语境支持，表明说话人希望回避当前话题。 Her laugh sounded forced.</div>
+          <div class="good"><span class="ex-label">正 · 详解也照做</span>She answered with a brittle laugh. = 她勉强笑了一声作答。</div>
         </div>
       </div>
 
-      <div class="rule">
-        <div class="rule-title"><span>07</span>给能照着做的判断步骤，不给原理。</div>
-        <div class="rule-why">「依据句法位置判断」是原理，读者用不上。「看前面那个词」是步骤，当场能用。</div>
-        <div class="ex">
-          <div><span class="ex-label">反</span>读者需依据其在句中所处的句法位置来判断其词性。</div>
-          <div class="good"><span class="ex-label">正</span>看前面那个词：前面是 was，就是形容词。</div>
-        </div>
-      </div>
+      <div class="fork-band">
+        <p style="margin-bottom:14px">
+          <b style="color:var(--text)">以下两条不是对错，是选项。</b>左格是详解会写的，右格是简答会写的，两边都合格。
+        </p>
 
-      <div class="rule">
-        <div class="rule-title"><span>08</span>英文例句单独一行，后面直接跟中文。</div>
-        <div class="rule-why">例句是用来对照的，不是用来分析的。别把例句和讲解揉进同一句。</div>
-        <div class="ex">
-          <div><span class="ex-label">反</span>……这一后续动作为上述判断提供了语境支持，表明说话人希望回避当前话题。 Her laugh sounded forced.</div>
-          <div class="good"><span class="ex-label">正</span>She answered with a brittle laugh. = 她勉强笑了一声作答。</div>
+        <div class="rule" style="border-top:0;padding-top:0">
+          <div class="rule-title"><span class="num">分 07</span>给不给背景和理论。</div>
+          <div class="rule-why">详解给足：词源、正式程度与语域、义项如何分化、近义词之间的差别，一样不少。简答只给这一句里用得上的判断步骤，背景整条不出现。</div>
+          <div class="ex">
+            <div class="fork-a"><span class="ex-label">详解</span>背景：形容词的 sound 与名词的 sound（声音）只是拼写碰巧相同，来路完全不同——形容词出自古英语 gesund（健康、完好，与德语 gesund 同源），名词出自拉丁语 sonus（声响）。<br><br>正式程度上，sound 属于中性偏书面的评价用语，多见于书评、社论、学术与商业写作；日常口语里同样的意思更常说 that makes sense。</div>
+            <div class="fork-b"><span class="ex-label">简答</span>它跟「声音」那个 sound 只是拼得一样，来路不同，别往声音上想。<br><br>（正式程度不给。）</div>
+          </div>
+        </div>
+
+        <div class="rule">
+          <div class="rule-title"><span class="num">分 08</span>句子写多书面。</div>
+          <div class="rule-why">详解允许长定语、允许「进行／作出／具有」这类名词化说法、允许从句。简答用短句、用动词、不名词化。两边说的是同一件事。</div>
+          <div class="ex">
+            <div class="fork-a"><span class="ex-label">详解</span>这个比喻之所以成立，靠的是物理属性与心理状态之间的一层对应：脆的东西看似坚硬完整，实则受不了力；把这层对应搬到人身上，就是压力之下勉强维持的那份平静。</div>
+            <div class="fork-b"><span class="ex-label">简答</span>（这一条不出现。简答里 brittle 只留「怎么认、常搭配什么、别跟 fragile 混」。）</div>
+          </div>
+          <div class="ex" style="margin-top:10px">
+            <div class="fork-a"><span class="ex-label">详解</span>linger 的核心是一层对比：某样东西本该随着它的起因一同结束，却仍在持续。</div>
+            <div class="fork-b"><span class="ex-label">简答</span>linger 的重点是「本该结束却还在」。</div>
+          </div>
         </div>
       </div>
     </div>
@@ -715,96 +921,164 @@
     <span class="eyebrow">提示词改动草案 — 只是草案，代码未改</span>
     <div class="panel">
       <p style="color:var(--text-2)">
-        七处。前三处是主力，能不能治住取决于它们；后四处是拆掉现在正在生产长句的那几条规则。
+        分成两层。<b>共用层改一次</b>：六条共用规矩写进两个分支都会读到的地方，
+        再拆掉四条正在生产违规句子的旧规则——一共七处编辑，两档风格都受它管。
+        <b>分叉层做成两个常量</b>：按设置切换，接在共用层后面。
+      </p>
+      <p style="color:var(--text-2)">
+        落点选在 <code>prompt.rs</code> 的 <code>explanation_strategy()</code>。
+        <code>explain.rs</code> 直接调它，<code>learning_card.rs</code> 和 <code>custom_action.rs</code>
+        经由 <code>learning_language_strategy()</code> 调它——改一处，查词、卡片、自定义动作全部跟着走。
       </p>
 
-      <div class="draft">
-        <h3>1 · 给中文讲解一份写法约束</h3>
-        <div class="where">prompt.rs — 新增常量，在中文为主的每一档后面追加</div>
-        <div class="diff">
-          <div class="old"><span class="k">现状</span>中文侧只有 “accurate Chinese (Simplified) is primary”。英文侧有六档 english_constraint，中文侧一条都没有。</div>
-          <div class="new"><span class="k">建议新增 CHINESE_PROSE_RULES</span>When writing Chinese explanatory prose, follow these sentence-shape rules. They govern shape only, never coverage:<br>
-          — Open each module with the meaning itself, in one short clause. Do not open by ruling out another sense, by naming the part of speech, or by restating the question.<br>
-          — One claim per sentence. Split rather than joining with 而／其中／由于／从而／二者.<br>
-          — Keep a pre-nominal modifier under about ten characters. Turn a longer one into its own clause.<br>
-          — Use verbs. Avoid 进行／作出／具有／存在／属于 followed by a nominalized noun.<br>
-          — Parentheses may hold only pronunciation, an example, or the original English form. Never put the meaning itself in parentheses.<br>
-          — When a grammatical or stylistic term is needed, state the plain-language point first. The term is optional and comes after.<br>
-          — Give a test the reader can run, not the principle behind it.<br>
-          — Put an English example on its own entry, followed by its Chinese rendering. Do not analyse it in the same sentence.</div>
+      <!-- ---------- 共用层 ---------- -->
+      <div class="layer">
+        <div class="lh">共用层 <span>七处编辑 · 承载六条共用规矩 · 两档都读</span></div>
+
+        <div class="draft">
+          <h3>共 A · 新增一份中文行文约束，六条共用规矩全写在这里</h3>
+          <div class="where">prompt.rs — 新增常量 SHARED_PROSE_SHAPE，在 explanation_strategy 末尾追加</div>
+          <div class="diff">
+            <div class="old"><span class="k">现状</span>中文侧只有 “accurate Chinese (Simplified) is primary”。英文侧有六档 english_constraint，中文侧一条都没有。</div>
+            <div class="new"><span class="k">建议新增 SHARED_PROSE_SHAPE</span>These rules govern the shape of an explanation, never its coverage. They apply at every level and in every explanation style:<br>
+            — Open each module with the meaning itself, in one short clause. Do not open by ruling out another sense, by naming the part of speech, or by restating the question.<br>
+            — Order points by usefulness to a reader mid-sentence: what it means here, how to recognise it, what it goes with, then background and contrasts. Etymology and sense history come last, never first.<br>
+            — One point per entry in `details`. A point may be a full, formal sentence; it may not be two points joined by 而／其中／由于／从而／二者.<br>
+            — Parentheses may hold only pronunciation, an example, or the original English form. Never put the meaning itself, or an explanation, in parentheses.<br>
+            — When a grammatical or stylistic term is used, state the plain-language point first and name the term after it.<br>
+            — Put an English example on its own entry, followed by its Chinese rendering. Never trail an example after a sentence of analysis.</div>
+          </div>
+          <p class="after">
+            六条里只有第三条的反例词（而／其中／由于……）是中文特有的，其余五条对英文讲解同样成立，
+            所以这份常量挂在 <code>explanation_strategy</code> 的公共出口上，不分语言档。
+          </p>
+        </div>
+
+        <div class="draft">
+          <h3>共 B · 把 detailed 从「更长」改成「更多条」</h3>
+          <div class="where">learning_card.rs — learning_card_system_prompt，密度定义那一句</div>
+          <div class="diff">
+            <div class="old"><span class="k">现在</span>detailed = deeper usage, relationships, nuance, and distinctions inside that module.</div>
+            <div class="new"><span class="k">建议</span>detailed = more points inside that module — deeper usage, relationships, nuance, distinctions — each as its own entry in `details`, one point per entry. Detailed means more entries, never longer sentences.</div>
+          </div>
+          <p class="after">
+            这一条最关键，也是详解最需要的一条。现在 detailed 的唯一出口是把句子写长；
+            改完之后出口变成多列几条，详解的信息量一点不减，简答也不会被逼着写长句。
+          </p>
+        </div>
+
+        <div class="draft">
+          <h3>共 C · 「换简单的词」补上「也换短的句」</h3>
+          <div class="where">prompt.rs — LEVEL_GOVERNS_LANGUAGE_ONLY</div>
+          <div class="diff">
+            <div class="old"><span class="k">现在</span>Never drop, merge, or thin a point because the level is low — say the same thing in simpler words.</div>
+            <div class="new"><span class="k">建议</span>Never drop, merge, or thin a point because the level is low — say the same thing in simpler words and in more, shorter sentences. Split one point into two sentences rather than compressing it into one.</div>
+          </div>
+          <div class="flag">
+            <b>关于测试：</b><code>a_level_constrains_wording_without_thinning_the_card</code> 实际只断言两个子串——
+            <code>"not how much is explained"</code> 和 <code>"above CEFR {level}"</code>，
+            另外反向断言不含 <code>"one core meaning at a time"</code> 与 <code>"Avoid abstract terminology"</code>。
+            <b>改这句末尾不会让它变红</b>；上一版样张写的「断言了这句的部分文本，改动要同步测试」说重了。
+            真正需要新测试的是新增的 SHARED_PROSE_SHAPE 与两个风格常量：应当补断言，确认两档风格各自出现、且不同时出现。
+          </div>
+        </div>
+
+        <div class="draft">
+          <h3>共 D · 让插入式注解可以挪到句子后面</h3>
+          <div class="where">prompt.rs — above_level_gloss_rule（对应共用规矩 04）</div>
+          <div class="diff">
+            <div class="old"><span class="k">现在</span>gloss it inline right where it appears — a few simpler English words, or a short Chinese (Simplified) gloss in parentheses.</div>
+            <div class="new"><span class="k">建议</span>gloss it where it appears — in parentheses when the gloss is two or three words, otherwise as its own short sentence immediately after. Never leave an above-level word unglossed, and never replace it with a vaguer one.</div>
+          </div>
+        </div>
+
+        <div class="draft">
+          <h3>共 E · 义项锚定改成正面陈述，不要先否定</h3>
+          <div class="where">learning_card.rs — 锚定段落末句（对应共用规矩 01）</div>
+          <div class="diff">
+            <div class="old"><span class="k">现在</span>A statistically more common sense never leads, replaces, or contradicts the contextual one.</div>
+            <div class="new"><span class="k">建议</span>A statistically more common sense never leads, replaces, or contradicts the contextual one. State the contextual sense positively and first. Mention the more common sense only when the reader is likely to import it, and only after the contextual sense already stands.</div>
+          </div>
+        </div>
+
+        <div class="draft">
+          <h3>共 F · 允许直接写出这个词</h3>
+          <div class="where">learning_card.rs — 复述限制那一句</div>
+          <div class="diff">
+            <div class="old"><span class="k">现在</span>Do not repeat sourceText inside modules unless source_excerpt was requested.</div>
+            <div class="new"><span class="k">建议</span>Do not restate the whole of sourceText inside modules unless source_excerpt was requested. Naming the selected word or phrase itself is fine and usually clearer than referring to it indirectly.</div>
+          </div>
+          <p class="after">
+            单词卡的 sourceText 就是那个词。现在这句话让模型改用「该词在此处」，读者要多绕一次指代。
+          </p>
+        </div>
+
+        <div class="draft">
+          <h3>共 G · context_meaning 的开头写死</h3>
+          <div class="where">learning_card.rs — learning_kind_instructions("word")（对应共用规矩 01）</div>
+          <div class="diff">
+            <div class="old"><span class="k">现在</span>context_meaning must lead with the actual contextual meaning.</div>
+            <div class="new"><span class="k">建议</span>context_meaning must open with the contextual meaning itself, as a short standalone clause, before any part of speech, grammar, or contrast with another sense.</div>
+          </div>
+          <p class="after">
+            「lead with」只约束了排在第一位的是什么内容，没约束那一句话本身怎么排。
+            补上「短句、独立成句、放最前面」，答案才落到第一眼。
+          </p>
         </div>
       </div>
 
-      <div class="draft">
-        <h3>2 · 把 detailed 从「更长」改成「更多条」</h3>
-        <div class="where">learning_card.rs — learning_card_system_prompt，密度定义那一句</div>
-        <div class="diff">
-          <div class="old"><span class="k">现在</span>detailed = deeper usage, relationships, nuance, and distinctions inside that module.</div>
-          <div class="new"><span class="k">建议</span>detailed = more points inside that module — deeper usage, relationships, nuance, distinctions — each as its own entry in `details`, one point per entry. Detailed means more entries, never longer sentences.</div>
-        </div>
-        <p style="color:var(--text-2);font-size:12px;margin:0">
-          这一条最关键。现在 detailed 的唯一出口是把句子写长，改完之后出口变成多列几条，信息量一点不减。
-        </p>
-      </div>
+      <!-- ---------- 分叉层 ---------- -->
+      <div class="layer">
+        <div class="lh">分叉层 <span>两个常量 · 承载分叉规矩 07 与 08 · 按设置二选一</span></div>
 
-      <div class="draft">
-        <h3>3 · 「换简单的词」补上「也换短的句」</h3>
-        <div class="where">prompt.rs — LEVEL_GOVERNS_LANGUAGE_ONLY</div>
-        <div class="diff">
-          <div class="old"><span class="k">现在</span>Never drop, merge, or thin a point because the level is low — say the same thing in simpler words.</div>
-          <div class="new"><span class="k">建议</span>Never drop, merge, or thin a point because the level is low — say the same thing in simpler words and shorter sentences. Split one point into two sentences rather than compressing it into one.</div>
+        <div class="draft">
+          <h3>分 1 · 新增设置项与取值</h3>
+          <div class="where">settings 表新键 explanation_style，取值 thorough | essential，默认 thorough</div>
+          <p class="after" style="margin-top:0">
+            默认给详解——这是用户明确表达的偏好（「更详细准确的解释对我们更有益处」）。
+            <code>normalized_explanation_style()</code> 照 <code>normalized_explanation_mode()</code> 的写法，
+            把损坏值和未知值都收敛到 <code>thorough</code>。
+          </p>
         </div>
-        <p style="color:var(--text-2);font-size:12px;margin:0">
-          注意：prompt.rs 里 <code>a_level_constrains_wording_without_thinning_the_card</code> 断言了这句的部分文本，改动要同步测试。
-        </p>
-      </div>
 
-      <div class="draft">
-        <h3>4 · 让插入式注解可以挪到句子后面</h3>
-        <div class="where">prompt.rs — above_level_gloss_rule</div>
-        <div class="diff">
-          <div class="old"><span class="k">现在</span>gloss it inline right where it appears — a few simpler English words, or a short Chinese (Simplified) gloss in parentheses.</div>
-          <div class="new"><span class="k">建议</span>gloss it where it appears — in parentheses when the gloss is two or three words, otherwise as its own short sentence immediately after. Never leave an above-level word unglossed, and never replace it with a vaguer one.</div>
+        <div class="draft">
+          <h3>分 2 · 两个风格常量，接在共用层后面</h3>
+          <div class="where">prompt.rs — 新增 STYLE_THOROUGH / STYLE_ESSENTIAL，在 SHARED_PROSE_SHAPE 之后追加其一</div>
+          <div class="diff">
+            <div class="new"><span class="k">STYLE_THOROUGH（详解）</span>Explanation style: thorough. Cover the background as well as the use: etymology when it explains the current sense, register and how formal the word is, how the senses diverged, and how the word differs from its near-synonyms. Formal written Chinese is welcome here — long pre-nominal modifiers, nominal constructions such as 进行／作出／具有, and subordinate clauses are all allowed, as long as each entry still carries exactly one point. Never trade coverage for brevity.</div>
+            <div class="newb"><span class="k">STYLE_ESSENTIAL（简答）</span>Explanation style: essential. Cover only what the reader can act on in this sentence: what it means here, how to recognise it, and what it usually goes with. Leave out etymology, register notes, sense history, and synonym contrasts unless the sentence cannot be understood without them. Write short Chinese sentences, lead with verbs, and avoid nominal constructions such as 进行／作出／具有. Never leave out a point the reader needs to read this sentence.</div>
+          </div>
+          <p class="after">
+            两条常量都以一句防线收尾：详解的防线是「不许为简洁减内容」，简答的防线是「不许把该句读懂所需的点砍掉」。
+            没有这两句，模型很容易把风格当成放松标准的许可。
+          </p>
         </div>
-      </div>
 
-      <div class="draft">
-        <h3>5 · 义项锚定改成正面陈述，不要先否定</h3>
-        <div class="where">learning_card.rs — 锚定段落末句</div>
-        <div class="diff">
-          <div class="old"><span class="k">现在</span>A statistically more common sense never leads, replaces, or contradicts the contextual one.</div>
-          <div class="new"><span class="k">建议</span>A statistically more common sense never leads, replaces, or contradicts the contextual one. State the contextual sense positively and first. Mention the more common sense only when the reader is likely to import it, and only after the contextual sense already stands.</div>
+        <div class="draft">
+          <h3>分 3 · 函数签名要跟着改</h3>
+          <div class="where">prompt.rs — explanation_strategy(mode, cefr) → (mode, cefr, style)；learning_language_strategy 同</div>
+          <p class="after" style="margin-top:0">
+            三个调用点：<code>explain.rs:22</code>、<code>learning_card.rs:350</code>、<code>custom_action.rs:120</code>。
+            三处都要把新设置读出来传进去。风格与讲解语言彼此独立——
+            选了「全英文」讲解语言，风格仍然生效（第 08 条中文特有的部分自然落空，其余七条照用）。
+          </p>
         </div>
-      </div>
 
-      <div class="draft">
-        <h3>6 · 允许直接写出这个词</h3>
-        <div class="where">learning_card.rs — 复述限制那一句</div>
-        <div class="diff">
-          <div class="old"><span class="k">现在</span>Do not repeat sourceText inside modules unless source_excerpt was requested.</div>
-          <div class="new"><span class="k">建议</span>Do not restate the whole of sourceText inside modules unless source_excerpt was requested. Naming the selected word or phrase itself is fine and usually clearer than referring to it indirectly.</div>
+        <div class="draft">
+          <h3>分 4 · 设置只管以后，不改已存的</h3>
+          <div class="where">界面文案 —— 见 src/components/settings/LearningSettings.tsx 的「讲解风格」一行</div>
+          <p class="after" style="margin-top:0">
+            切换风格只影响之后生成的卡片，已经存下的笔记和生词卡不会被改写。
+            这句话必须出现在界面上，否则用户会以为一切换就要重刷整个生词本。
+          </p>
         </div>
-        <p style="color:var(--text-2);font-size:12px;margin:0">
-          单词卡的 sourceText 就是那个词。现在这句话让模型改用「该词在此处」，读者要多绕一次指代。
-        </p>
-      </div>
-
-      <div class="draft">
-        <h3>7 · context_meaning 的开头写死</h3>
-        <div class="where">learning_card.rs — learning_kind_instructions("word")</div>
-        <div class="diff">
-          <div class="old"><span class="k">现在</span>context_meaning must lead with the actual contextual meaning.</div>
-          <div class="new"><span class="k">建议</span>context_meaning must open with the contextual meaning itself, as a short standalone clause, before any part of speech, grammar, or contrast with another sense.</div>
-        </div>
-        <p style="color:var(--text-2);font-size:12px;margin:0">
-          「lead with」只约束了排在第一位的是什么内容，没约束那一句话本身怎么排。补上「短句、独立成句、放最前面」，答案才落到第一眼。
-        </p>
       </div>
     </div>
   </section>
 
   <footer>
-    样张文件：docs/impls/explanation-readability-samples.html · 六个英文例句均为自造，未引用任何出版物原文。
+    样张文件：docs/impls/explanation-readability-samples.html · 六个英文例句均为自造，未引用任何出版物原文。<br>
+    设置里这一行的形态：两张常驻卡片直接点选，默认收起，切换即展开样本。
   </footer>
 
 </div>
