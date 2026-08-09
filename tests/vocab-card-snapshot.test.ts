@@ -47,3 +47,36 @@ test("the guard counts encoded bytes, not characters — multi-byte text is neve
   assert.ok(new TextEncoder().encode(json).length > MAX_CARD_SNAPSHOT_BYTES);
   assert.equal(serializeCardSnapshot(result), null);
 });
+
+// The refresh stamp. "Regenerate" now rebuilds the whole card, so the panel's
+// date label has to distinguish the card that came with the word from the one
+// that replaced it — and the collect path has to keep writing exactly the
+// bytes it always wrote, or every card already in the database changes shape.
+
+test("no timestamp means the bytes are exactly what a collect stored", () => {
+  const result = { modules: { word_info: { summary: "clear" } } };
+  assert.equal(serializeCardSnapshot(result), JSON.stringify(result));
+});
+
+test("a timestamp rides along inside the stored card", () => {
+  const result = { modules: { word_info: { summary: "clear" } } };
+  const json = serializeCardSnapshot(result, 1_770_000_000_000);
+  assert.ok(json);
+  assert.deepEqual(JSON.parse(json!), { ...result, refreshedAt: 1_770_000_000_000 });
+});
+
+test("stamping does not mutate the card it was handed", () => {
+  // The same result object is still on screen in the reader's card.
+  const result: Record<string, unknown> = { modules: {} };
+  serializeCardSnapshot(result, 1_770_000_000_000);
+  assert.deepEqual(result, { modules: {} });
+});
+
+test("a stamped card is measured against the byte guard after stamping", () => {
+  // Just under the guard before the timestamp is added, over it afterwards:
+  // the stamp must not be the thing that smuggles a blob past the limit.
+  const filler = "x".repeat(MAX_CARD_SNAPSHOT_BYTES - 40);
+  const result = { modules: { word_info: { summary: filler } } };
+  assert.ok(serializeCardSnapshot(result));
+  assert.equal(serializeCardSnapshot(result, 1_770_000_000_000), null);
+});

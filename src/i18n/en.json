@@ -337,6 +337,7 @@
   "vocab.detail.cardSnapshot.moduleCount_one": "{{count}} more section",
   "vocab.detail.cardSnapshot.moduleCount_other": "{{count}} more sections",
   "vocab.detail.cardSnapshot.savedOn": "Saved {{date}}",
+  "vocab.detail.cardSnapshot.refreshedOn": "Refreshed {{date}}",
   "vocab.detail.cardSnapshot.loading": "Loading…",
   "vocab.detail.cardSnapshot.unreadable": "This card can't be read anymore. Everything above is stored separately and is fine.",
   "vocab.entry.copy": "Copy full entry",

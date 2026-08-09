@@ -50,7 +50,18 @@ export interface CardSnapshotModule {
 export type CardSnapshotView =
   | { status: "none" }
   | { status: "unreadable" }
-  | { status: "ready"; kind: LearningCardKind; modules: CardSnapshotModule[] };
+  | {
+    status: "ready";
+    kind: LearningCardKind;
+    modules: CardSnapshotModule[];
+    /**
+     * When this card replaced an earlier one, in unix millis. Absent on every
+     * card the collect path stored, which is what makes the panel's date
+     * label honest without a migration: no stamp means the card is still the
+     * one collected with the word.
+     */
+    refreshedAt?: number;
+  };
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -88,6 +99,16 @@ function readKind(value: unknown): LearningCardKind {
 }
 
 /**
+ * The regenerate path's own timestamp. Anything that is not a real moment —
+ * missing, a string, zero, negative, NaN — reads as "never refreshed", which
+ * falls the label back to the word's collection date rather than printing a
+ * date derived from garbage.
+ */
+function readRefreshedAt(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+/**
  * @param json the raw `card_snapshot` column, as `get_vocab_card_snapshot`
  *   hands it back: the JSON of a `LearningCardResult`, or null.
  */
@@ -118,5 +139,10 @@ export function buildCardSnapshotView(json: string | null | undefined): CardSnap
   });
 
   if (modules.length === 0) return { status: "none" };
-  return { status: "ready", kind, modules };
+  const refreshedAt = readRefreshedAt(parsed.refreshedAt);
+  // The key is left off entirely when there is no stamp, so a snapshot written
+  // before regeneration existed is indistinguishable from one written after.
+  return refreshedAt === undefined
+    ? { status: "ready", kind, modules }
+    : { status: "ready", kind, modules, refreshedAt };
 }

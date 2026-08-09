@@ -172,6 +172,9 @@ function mkWord(
     translation: `${word} 的释义`,
     phonetic: `/ˈharnəs/`,
     context_sentence: context,
+    // The panel's "in this sentence" section, which "Regenerate" rewrites.
+    // Absent, the section never renders and the sweep never reaches it.
+    context_explanation: `In this sentence, ${word} carries the harness fixture's sense of it.`,
     book_id: "book-epub-reading",
     book_title: "The Wind in the Willows",
     cfi: "epubcfi(/6/4!/4/2/2)",

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowRight, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -9,6 +9,7 @@ import AiMarkdown from "../ai-markdown/AiMarkdown";
 import { parseDefinition, truncateMiddle } from "./entry-text";
 import PronounceButton from "../speech/PronounceButton";
 import VocabCardSnapshot from "./VocabCardSnapshot";
+import { canRegenerateCard, regenerateVocabCard } from "./regenerateCard";
 
 interface WordNote {
   id: string;
@@ -53,6 +54,21 @@ export default function VocabEntryDetails({
   const [regenerated, setRegenerated] = useState<DictionaryWord | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [regenerateError, setRegenerateError] = useState(false);
+  /**
+   * Bumped once a regeneration has landed, to make the snapshot below reread
+   * its column. It reads on the word id alone, which does not change here —
+   * and a card snapshot still showing the card the reader just replaced is the
+   * exact contradiction this whole path exists to remove. Never reset: it only
+   * ever forces a reread, and switching rows already triggers one.
+   */
+  const [snapshotToken, setSnapshotToken] = useState(0);
+  /**
+   * The row the panel is currently showing, for the async paths to check
+   * against when they come back. A merged entry can swap which row is primary
+   * under a mounted panel, and a card generated for the old word must not be
+   * painted over the new one.
+   */
+  const activeWordId = useRef(savedWord.id);
   const word = regenerated ?? savedWord;
   const { definition } = parseDefinition(word.definition);
   const contextSentence = word.context_sentence?.trim() || null;
@@ -64,20 +80,33 @@ export default function VocabEntryDetails({
   // A merged entry can swap which row is primary under a mounted panel; the
   // previous row's regenerated text must not survive that.
   useEffect(() => {
+    activeWordId.current = savedWord.id;
     setRegenerated(null);
     setRegenerateError(false);
+    setRegenerating(false);
   }, [savedWord.id]);
 
   const regenerate = async () => {
+    const id = savedWord.id;
     setRegenerating(true);
     setRegenerateError(false);
     try {
-      const updated = await invoke<Partial<DictionaryWord>>("regenerate_vocab_definition", {
-        id: savedWord.id,
-        // The reader's own UI language, the same choice the save path makes.
-        locale: i18n.resolvedLanguage || i18n.language || null,
-      });
+      // A word saved without its sentence has no card to rebuild, so it keeps
+      // the one-line re-gloss and writes no snapshot — there is nothing below
+      // for a new definition to contradict.
+      const updated = canRegenerateCard(word)
+        ? await regenerateVocabCard(word)
+        : await invoke<Partial<DictionaryWord>>("regenerate_vocab_definition", {
+          id,
+          // The reader's own UI language, the same choice the save path makes.
+          locale: i18n.resolvedLanguage || i18n.language || null,
+        });
+      // The panel moved on while the card was being written. The row itself is
+      // already updated — that is what the reader asked for — but nothing of
+      // it belongs on the word now on screen.
+      if (activeWordId.current !== id) return;
       setRegenerated({ ...word, ...updated });
+      setSnapshotToken((value) => value + 1);
       // The definition is printed above the word in the book and listed in
       // every vocabulary surface, so the change is not this panel's alone.
       notifyReaders("vocab-changed", {
@@ -85,10 +114,10 @@ export default function VocabEntryDetails({
         cfi: word.cfi ?? undefined,
       });
     } catch (error) {
-      console.error("Failed to regenerate vocabulary definition:", error);
-      setRegenerateError(true);
+      console.error("Failed to regenerate vocabulary card:", error);
+      if (activeWordId.current === id) setRegenerateError(true);
     } finally {
-      setRegenerating(false);
+      if (activeWordId.current === id) setRegenerating(false);
     }
   };
 
@@ -236,10 +265,14 @@ export default function VocabEntryDetails({
         </section>
       )}
 
-      {/* The rest of the learning card, exactly as it was captured on collect.
-          Everything above this line is a live column on the row; this is a
-          snapshot, and it says so. */}
-      <VocabCardSnapshot wordId={word.id} createdAt={word.created_at} />
+      {/* The rest of the learning card, as it was captured on collect or as
+          "Regenerate" last rebuilt it. Everything above this line is a live
+          column on the row; this is a snapshot, and it says which. */}
+      <VocabCardSnapshot
+        wordId={word.id}
+        createdAt={word.created_at}
+        refreshToken={snapshotToken}
+      />
 
       <div className="flex items-baseline justify-between gap-3 border-t border-border-light pt-2 text-[11px] text-text-muted">
         <span className="min-w-0 truncate">

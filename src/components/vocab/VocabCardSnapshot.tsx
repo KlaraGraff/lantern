@@ -20,6 +20,12 @@ export interface VocabCardSnapshotProps {
   wordId: string;
   /** When the word was collected — the card was captured in the same breath. */
   createdAt: number;
+  /**
+   * Changes whenever the panel above has rewritten this word's card. The word
+   * id stays the same across a regeneration, so without this the section would
+   * go on showing the card that was just replaced.
+   */
+  refreshToken?: number;
 }
 
 function Skeleton() {
@@ -35,14 +41,21 @@ function Skeleton() {
 }
 
 /**
- * The whole learning card as it stood the moment the word was collected.
+ * The whole learning card behind a saved word — as it stood when the word was
+ * collected, or as "Regenerate" above last rebuilt it.
  *
- * It is a snapshot, not a live answer: "Regenerate" above rewrites the one-line
- * meaning and never touches this, so the date has to be on screen or the two
- * halves of the panel look like they contradict each other. An absolute date,
- * not "3 months ago" — the point being made is that this is old.
+ * It is a snapshot, not a live answer, so the date has to be on screen or the
+ * two halves of the panel look like they contradict each other. An absolute
+ * date, not "3 months ago" — the point being made is how old this is. Which
+ * date it is depends on whether the card has ever been rebuilt, and saying
+ * "saved on" over a card that was refreshed last week would be the same lie
+ * in the other direction.
  */
-export default function VocabCardSnapshot({ wordId, createdAt }: VocabCardSnapshotProps) {
+export default function VocabCardSnapshot({
+  wordId,
+  createdAt,
+  refreshToken = 0,
+}: VocabCardSnapshotProps) {
   const { t, i18n } = useTranslation();
   const { settings, save } = useSettings();
   const expanded = settings[CARD_SNAPSHOT_EXPANDED_KEY] === "true";
@@ -65,7 +78,7 @@ export default function VocabCardSnapshot({ wordId, createdAt }: VocabCardSnapsh
     return () => {
       cancelled = true;
     };
-  }, [wordId]);
+  }, [wordId, refreshToken]);
 
   const toggle = () => {
     void save(CARD_SNAPSHOT_EXPANDED_KEY, expanded ? "false" : "true").catch(() => {});
@@ -127,7 +140,10 @@ export default function VocabCardSnapshot({ wordId, createdAt }: VocabCardSnapsh
     );
   }
 
-  const savedOn = new Date(createdAt).toLocaleDateString(
+  // A card that has never been rebuilt is dated by the word's own collection
+  // date; one that has carries its own stamp, because `created_at` stops being
+  // the truth about the card the first time it is regenerated.
+  const stamped = new Date(view.refreshedAt ?? createdAt).toLocaleDateString(
     i18n.resolvedLanguage || i18n.language || undefined,
     { year: "numeric", month: "long", day: "numeric" },
   );
@@ -145,7 +161,9 @@ export default function VocabCardSnapshot({ wordId, createdAt }: VocabCardSnapsh
           {t("vocab.detail.cardSnapshot.title")}
         </button>
         <span className="shrink-0 text-[10px] text-text-muted">
-          {t("vocab.detail.cardSnapshot.savedOn", { date: savedOn })}
+          {view.refreshedAt
+            ? t("vocab.detail.cardSnapshot.refreshedOn", { date: stamped })
+            : t("vocab.detail.cardSnapshot.savedOn", { date: stamped })}
         </span>
       </div>
 

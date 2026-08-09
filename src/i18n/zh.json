@@ -337,6 +337,7 @@
   "vocab.detail.cardSnapshot.moduleCount_one": "还有 {{count}} 块",
   "vocab.detail.cardSnapshot.moduleCount_other": "还有 {{count}} 块",
   "vocab.detail.cardSnapshot.savedOn": "{{date}} 存下的",
+  "vocab.detail.cardSnapshot.refreshedOn": "{{date}} 刷新的",
   "vocab.detail.cardSnapshot.loading": "读取中…",
   "vocab.detail.cardSnapshot.unreadable": "这张卡片读不出来了。上面几段是另外存的，不受影响。",
   "vocab.entry.copy": "复制全部内容",

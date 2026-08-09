@@ -191,6 +191,15 @@ function profileView(): Record<string, unknown> {
   return { ...base, ...(PROFILE_VARIANTS[profileVariant()]?.() ?? {}) };
 }
 
+/**
+ * Cards rewritten by the vocabulary panel's "regenerate" this session, keyed
+ * by word id, so the snapshot section rereads the new one rather than the
+ * seeded card. Real `update_vocab_card` writes definition, explanation and
+ * snapshot in one transaction and refuses a blank definition; the sweep only
+ * asserts that the round trip does not throw, so neither rule is modelled.
+ */
+const harnessRegeneratedCards = new Map<string, string>();
+
 export const FIXTURES: Record<string, Fixture> = {
   /* ---------------------------------------------------------------- *
    * Boot / shell
@@ -489,13 +498,35 @@ export const FIXTURES: Record<string, Fixture> = {
   get_word_forms: [],
   find_covering_word_mark_rule: null,
   record_vocab_review: () => VOCAB[0],
-  // The three states the vocabulary panel's saved-card section can be in, so
-  // the sweep reaches the disclosure and its damaged-blob branch instead of
-  // only the "no card" one an unstubbed `Option<String>` would give it.
+  // The four states the vocabulary panel's saved-card section can be in, so
+  // the sweep reaches the disclosure, its damaged-blob branch and its
+  // "refreshed on" date instead of only the "no card" one an unstubbed
+  // `Option<String>` would give it.
   get_vocab_card_snapshot: ({ wordId }: Args) => {
+    const regenerated = harnessRegeneratedCards.get(String(wordId));
+    if (regenerated !== undefined) return regenerated;
     if (wordId === "vw-2") return "{ this one is corrupt";
     if (wordId === "vw-4" || wordId === "vw-5") return null;
+    // A card rebuilt long after the word was collected, which is the whole
+    // reason the stamp exists: this row's `created_at` is months older.
+    if (wordId === "vw-3") return JSON.stringify({ ...CARD_SNAPSHOT, refreshedAt: nowMs() });
     return JSON.stringify(CARD_SNAPSHOT);
+  },
+  update_vocab_card: ({ id, definition, contextExplanation, cardSnapshot }: Args) => {
+    // `null` means "leave this column alone", never "erase it" — the same rule
+    // the real command follows, and the one the panel depends on when the
+    // snapshot is refused for being over the size guard.
+    if (typeof cardSnapshot === "string") harnessRegeneratedCards.set(String(id), cardSnapshot);
+    const word = VOCAB.find((entry) => entry.id === id) ?? VOCAB[0];
+    return {
+      ...word,
+      definition: typeof definition === "string" ? definition : word.definition,
+      // Spread only when there is a value: the real command `COALESCE`s and
+      // re-selects the row, so it can hand back an unchanged explanation but
+      // never a blanked one.
+      ...(typeof contextExplanation === "string" ? { context_explanation: contextExplanation } : {}),
+      updated_at: nowMs(),
+    };
   },
 
   /* ---------------------------------------------------------------- *

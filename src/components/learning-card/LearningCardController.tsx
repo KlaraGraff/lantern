@@ -14,12 +14,12 @@ import {
   learningCardCacheSignature,
 } from "./cache";
 import { getResponsiveLearningCardWidth, learningCardFailure } from "./config";
+import { cardVocabFields, moduleText, projection } from "./projection.ts";
 import type {
   CardDesignConfigV1,
   LearningCardActionId,
   LearningCardNote,
   LearningCardResult,
-  LearningModuleContent,
   WordMemoryHint,
 } from "./types";
 import LearningCardView from "./LearningCardView";
@@ -70,26 +70,6 @@ interface LearningCardStreamChunk {
 interface CardPoint {
   left: number;
   top: number;
-}
-
-function moduleText(content: LearningModuleContent | undefined): string {
-  if (!content) return "";
-  return [
-    content.heading,
-    content.summary,
-    ...(content.details ?? []),
-    ...(content.items ?? []).flatMap((item) => [item.title, item.text, ...(item.examples ?? []).flatMap((example) => [example.source, example.target])]),
-    content.quote,
-  ].filter(Boolean).join("\n");
-}
-
-function projection(result: LearningCardResult) {
-  const context = moduleText(result.modules.context_meaning);
-  const wordInfo = moduleText(result.modules.word_info);
-  return {
-    definition: wordInfo || context,
-    contextExplanation: context || null,
-  };
 }
 
 // Cards already open keep their place, so each new one is nudged down-right to
@@ -503,19 +483,20 @@ export default function LearningCardController({
       return;
     }
     if (action === "collect") {
-      const projected = projection(result);
       // `definition` is one short line above the word; the card's own text is
       // the long form and belongs in `context_explanation`. Storing the card
       // in `definition` (as this did) put a module heading over every saved
       // word and corrupted the vocabulary list, review cards and export with
       // it. The card's summary is offered as the gloss and used only if it is
-      // already short enough.
+      // already short enough. `cardVocabFields` is shared with the vocabulary
+      // panel's regenerate, which has to land on the same two values.
+      const fields = cardVocabFields(result);
       await saveVocabWord({
         bookId,
         word: interaction.text,
-        gloss: result.modules.context_meaning?.summary ?? result.modules.word_info?.summary ?? null,
+        gloss: fields.gloss,
         contextSentence: interaction.context || null,
-        contextExplanation: projected.contextExplanation ?? projected.definition ?? null,
+        contextExplanation: fields.contextExplanation,
         cfi: interaction.location || null,
         cardSnapshot: serializeCardSnapshot(result),
       });

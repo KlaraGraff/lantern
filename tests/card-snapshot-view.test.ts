@@ -155,3 +155,46 @@ test("hasModuleContent accepts any one populated field and rejects the rest", ()
   assert.equal(hasModuleContent("summary"), false);
   assert.equal(hasModuleContent([{ summary: "x" }]), false);
 });
+
+// The date label the panel prints over this section. Every card stored before
+// "regenerate" rebuilt whole cards is dated by the word's own `created_at`,
+// which stops being the truth the first time the card is replaced — so the
+// stamp travels inside the blob, and its absence is what keeps every existing
+// snapshot reading as "saved on" without a migration.
+
+test("a card with no stamp is not dated by itself — the panel falls back to the word", () => {
+  const json = JSON.stringify({ kind: "word", modules: { usage: { summary: "formal" } } });
+  assert.equal(ready(json).refreshedAt, undefined);
+  // Absent, not present-and-undefined: nothing downstream can tell a rebuilt
+  // card from a collected one by key presence alone.
+  assert.equal("refreshedAt" in ready(json), false);
+});
+
+test("a stamp written by the regenerate path is read back", () => {
+  const json = JSON.stringify({
+    kind: "word",
+    modules: { usage: { summary: "formal" } },
+    refreshedAt: 1_770_000_000_000,
+  });
+  assert.equal(ready(json).refreshedAt, 1_770_000_000_000);
+});
+
+test("a stamp that is not a real moment is ignored rather than printed", () => {
+  const stamped = (refreshedAt: unknown) => ready(JSON.stringify({
+    kind: "word",
+    modules: { usage: { summary: "formal" } },
+    refreshedAt,
+  })).refreshedAt;
+  assert.equal(stamped("2026-08-09"), undefined);
+  assert.equal(stamped(0), undefined);
+  assert.equal(stamped(-1), undefined);
+  assert.equal(stamped(null), undefined);
+  assert.equal(stamped({}), undefined);
+});
+
+test("the stamp does not make an empty card readable", () => {
+  // A stamped blob with nothing left to draw is still nothing to draw; the
+  // section must not appear just because a timestamp is present.
+  const json = JSON.stringify({ kind: "word", modules: {}, refreshedAt: 1_770_000_000_000 });
+  assert.deepEqual(buildCardSnapshotView(json), { status: "none" });
+});
