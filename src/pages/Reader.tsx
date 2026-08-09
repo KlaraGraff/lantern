@@ -9,7 +9,7 @@ import {
   ArrowLeft,
   BookOpen,
   List,
-  Bot,
+  Sparkles,
   Layers,
   Loader2,
   Minus,
@@ -2034,7 +2034,7 @@ export default function Reader() {
             title={t("reader.aiAssistant")}
             onClick={toggleAiPanel}
           >
-            <Bot size={16} />
+            <Sparkles size={16} />
           </Button>
         </div>
       </header>
