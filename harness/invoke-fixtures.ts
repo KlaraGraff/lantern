@@ -31,6 +31,7 @@ import {
 } from "./fixture-data";
 import { isShooting } from "./promo";
 import { PROMO_BOOKS, PROMO_COLLECTIONS } from "./promo/library";
+import { PROMO_CHATS, PROMO_CHAT_MESSAGES, promoLearningCard } from "./promo/content";
 
 type Args = Record<string, unknown>;
 type Fixture = unknown | ((args: Args) => unknown);
@@ -104,6 +105,9 @@ const LIBRARY: HarnessBook[] = emptyLibrary()
     : BOOKS;
 
 const LIBRARY_COLLECTIONS = isShooting() ? PROMO_COLLECTIONS : COLLECTIONS;
+
+/** Same split for chats: the shot shelf gets conversations about its own books. */
+const SHELF_CHATS = isShooting() ? PROMO_CHATS : CHATS;
 
 /* ------------------------------------------------------------------ *
  * Profile
@@ -679,11 +683,14 @@ export const FIXTURES: Record<string, Fixture> = {
   get_book_ai_state: { indexStatus: "missing", hasSummaries: false, summariesStale: false },
   ai_embedding_probe: { available: false, reason: "harness" },
   openai_oauth_status: { connected: false, account_id: null },
-  list_all_chats: () => CHATS.slice(),
-  list_chats: () => CHATS.slice(),
-  get_chat: () => CHATS[0],
-  create_chat: () => CHATS[0],
-  list_chat_messages: () => CHAT_MESSAGES.slice(),
+  list_all_chats: () => SHELF_CHATS.slice(),
+  list_chats: () => SHELF_CHATS.slice(),
+  get_chat: (a: Args) => SHELF_CHATS.find((c) => c.id === a.chatId) ?? SHELF_CHATS[0],
+  create_chat: () => SHELF_CHATS[0],
+  list_chat_messages: (a: Args) =>
+    isShooting()
+      ? (PROMO_CHAT_MESSAGES[String(a.chatId)] ?? []).slice()
+      : CHAT_MESSAGES.slice(),
   /**
    * The other half of the merged 问答 list. Without this the shape-guessed
    * stub answers `{}`, `useExplanations` stores an empty page, and every
@@ -823,6 +830,15 @@ export const FIXTURES: Record<string, Fixture> = {
     return `${kept || text}${direction}`;
   },
   ai_cancel: true,
+  /**
+   * 只在拍样张时有值（见 `DELIBERATE_REJECTIONS`）。返回值就是卡片渲染的东西，
+   * 流式事件只影响「边生成边显示」，不影响最终那一屏，所以这里不必伪造事件。
+   */
+  ai_learning_card: (a: Args) => {
+    const card = promoLearningCard(a.text);
+    if (!card) throw new Error(`harness: 样张里没有 "${String(a.text)}" 这张卡`);
+    return card;
+  },
   /**
    * Hand-written because `AiRequestCountsSection` dereferences
    * `summary.current.byFeature` behind only a `if (!summary)` guard: the
@@ -1045,7 +1061,10 @@ export const DELIBERATE_REJECTIONS: Record<string, string> = {
   ai_chat: "harness: no AI backend",
   ai_explain: "harness: no AI backend",
   ai_translate_passage: "harness: no AI backend",
-  ai_learning_card: "harness: no AI backend",
+  // 拍样张时这一条让位给 `ai_learning_card` 的固定卡片：查词卡是那批图的
+  // 主角，而 `LearningCardController` 拿到返回值就直接渲染，走的和线上是同
+  // 一条路径 —— 不需要一个假的流式后端，也就不算走后门。
+  ...(isShooting() ? {} : { ai_learning_card: "harness: no AI backend" }),
   ai_xray: "harness: no AI backend",
   ai_vocab_gloss: "harness: no AI backend",
   ai_custom_action: "harness: no AI backend",

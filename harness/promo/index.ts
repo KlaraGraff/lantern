@@ -59,14 +59,25 @@ export const SCENES: Record<string, Scene> = {
   library: { settings: ZH },
 };
 
-/** 当前 URL 要求的场景名；没有就返回 null。 */
-export function activeShotName(): string | null {
+/**
+ * 进场时 URL 里要的场景名，只认这一次。
+ *
+ * 必须在模块求值时定死：`applySceneRoute()` 之后应用自己还会 navigate，
+ * React Router 一路把 query 丢掉，等到 `load` 事件时地址栏上已经没有
+ * `?shot=` 了 —— 每次现读的话，场景和 fixture 层会在中途集体失忆。
+ */
+const SHOT_NAME: string | null = (() => {
   try {
     const name = new URLSearchParams(window.location.search).get("shot");
     return name && name in SCENES ? name : null;
   } catch {
     return null;
   }
+})();
+
+/** 当前 URL 要求的场景名；没有就返回 null。 */
+export function activeShotName(): string | null {
+  return SHOT_NAME;
 }
 
 export function activeScene(): Scene | null {

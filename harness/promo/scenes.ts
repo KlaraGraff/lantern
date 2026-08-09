@@ -1,7 +1,7 @@
 /**
  * 场景的「动作」部分 —— 需要摸到 DOM 才能做的事。
  *
- * 数据在 `index.ts`（设置、路由），这里只管两件：
+ * 数据在 `index.ts`（设置、路由）和 `content.ts`（AI 产出），这里只管两件：
  *   1. 应用挂载**之前**把地址栏改成场景要的路由，这样 BrowserRouter 一开局
  *      就在对的页面，不会先闪一下书库再跳走；
  *   2. 应用挂载**之后**去点该点的东西，然后在 <html> 上打一个
@@ -9,8 +9,14 @@
  *
  * 为什么用「点」而不是直接改 state：点得动才说明这个界面真的存在。样张的全部
  * 价值就在这一句上 —— 一旦开始走后门，图就又开始撒谎了。
+ *
+ * 唯一一处「深入」是正文里的双击：EPUB 正文在 foliate 的 iframe 里，而
+ * `foliate-paginator` 的 shadow root 是关闭的。拿 document 走的是 foliate 自己
+ * 的公开 API（`renderer.getContents()`），和 `src/pages/reader/` 里取正文
+ * document 的那一条路完全一样；派的也是真的 `dblclick`，坐标真的落在那个词上。
  */
 import zh from "../../src/i18n/zh.json";
+import { HERO_LOOKUP_WORD } from "./content";
 import { activeScene, activeShotName } from "./index";
 
 /** 截图脚本等的就是这个属性。 */
@@ -28,41 +34,55 @@ const FREEZE_CSS = `
 `;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const text = (key: string) => (zh as Record<string, string>)[key] ?? key;
+
+/** 谁先到算谁；等不到的东西一律有兜底，绝不把整个场景挂在一个 await 上。 */
+const atMost = <T,>(ms: number, work: Promise<T>) =>
+  Promise.race([work, sleep(ms)]);
 
 /** 两帧 + 一小段静默，等 React 提交完、图片解码完。 */
 async function settle(): Promise<void> {
-  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  // 标签页不可见时 rAF 根本不会触发（后台节流），所以必须给它一个上限 ——
+  // 否则在没打开的窗口里跑，场景会永远停在第一次 settle 上，连超时都等不到。
+  await atMost(500, new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   await sleep(120);
-  try {
-    await document.fonts.ready;
-  } catch {
-    /* 字体 API 不在就算了，不值得为它中断。 */
-  }
-  await Promise.all(
+  await atMost(2000, document.fonts.ready.catch(() => undefined));
+  await atMost(5000, Promise.all(
     [...document.images]
       .filter((img) => !img.complete)
       .map((img) => new Promise<void>((r) => {
         img.addEventListener("load", () => r(), { once: true });
         img.addEventListener("error", () => r(), { once: true });
       })),
-  );
+  ));
 }
 
-/** 轮询直到 `find()` 返回东西，或者超时返回 null。 */
-async function waitFor<T>(find: () => T | null | undefined, timeoutMs = 8000): Promise<T | null> {
+/** 轮询直到 `find()` 返回东西；超时是硬错误，不是「拍一张凑合的」。 */
+async function waitFor<T>(what: string, find: () => T | null | undefined, timeoutMs = 10_000): Promise<T> {
   const until = Date.now() + timeoutMs;
   for (;;) {
     const hit = find();
     if (hit) return hit;
-    if (Date.now() > until) return null;
+    if (Date.now() > until) throw new Error(`等不到：${what}`);
     await sleep(80);
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * 找元素：一律按可见文案或 aria-label，取自应用自己的词条表
+ * ------------------------------------------------------------------ */
+
+const buttons = (scope: ParentNode = document) => [...scope.querySelectorAll<HTMLElement>("button")];
+
+const byLabel = (label: string, scope?: ParentNode): HTMLElement | null =>
+  buttons(scope).find((b) => b.getAttribute("aria-label") === label) ?? null;
+
+const byText = (label: string, scope?: ParentNode): HTMLElement | null =>
+  buttons(scope).find((b) => b.textContent?.trim().startsWith(label)) ?? null;
+
 /**
  * 左栏的行没有 test id，也不该为了截图去 src/ 里加一个 —— harness 的规矩是
- * 「src/ 不知道 harness 存在」。所以按行上显示的字去找，字直接取自应用自己的
- * 词条表，不另抄一份。
+ * 「src/ 不知道 harness 存在」。所以按行上显示的字去找。
  */
 const FILTER_LABEL_KEY: Record<string, string> = {
   all: "sidebar.allBooks",
@@ -78,16 +98,180 @@ const FILTER_LABEL_KEY: Record<string, string> = {
 
 function sidebarRow(filterId: string): HTMLElement | null {
   const key = FILTER_LABEL_KEY[filterId];
-  const label = key ? (zh as Record<string, string>)[key] : null;
-  if (!label) return null;
+  if (!key) return null;
   // 侧栏在 <aside> 里；限定范围，免得撞上正文里同名的字。
-  const scope = document.querySelector("aside") ?? document.body;
-  return (
-    [...scope.querySelectorAll<HTMLElement>("button")].find(
-      (b) => b.textContent?.trim().startsWith(label),
-    ) ?? null
-  );
+  return byText(text(key), document.querySelector("aside") ?? document.body);
 }
+
+/* ------------------------------------------------------------------ *
+ * 阅读器
+ * ------------------------------------------------------------------ */
+
+interface FoliateContents {
+  index: number;
+  doc: Document;
+}
+
+interface FoliateView extends HTMLElement {
+  renderer?: { getContents(): FoliateContents[]; next(): void; prev(): void };
+}
+
+/** 正文那一份 document。书还没铺完时返回 null。 */
+function readerContents(): FoliateContents | null {
+  const view = document.querySelector<FoliateView>("foliate-view");
+  const contents = view?.renderer?.getContents?.() ?? [];
+  const first = contents[0];
+  return first?.doc?.body?.textContent?.trim() ? first : null;
+}
+
+const waitForBook = () => waitFor("正文铺好", readerContents, 25_000);
+
+/** 正文里某个词的位置，换算到宿主页面的坐标系。 */
+interface WordHit {
+  doc: Document;
+  /** iframe 自己坐标系里的点，`dblclick` 用它。 */
+  local: { x: number; y: number };
+  /** 宿主页面坐标系里的同一个点，用来判断这个词这一页看不看得见。 */
+  host: { x: number; y: number };
+}
+
+function findWord(word: string): WordHit[] {
+  const contents = readerContents();
+  if (!contents) return [];
+  const { doc } = contents;
+  const frame = doc.defaultView?.frameElement?.getBoundingClientRect();
+  if (!frame) return [];
+
+  const hits: WordHit[] = [];
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const data = node.nodeValue ?? "";
+    for (let at = data.indexOf(word); at >= 0; at = data.indexOf(word, at + 1)) {
+      const range = doc.createRange();
+      range.setStart(node, at);
+      range.setEnd(node, at + word.length);
+      const box = range.getBoundingClientRect();
+      if (!box.width) continue;
+      const local = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      hits.push({ doc, local, host: { x: frame.x + local.x, y: frame.y + local.y } });
+    }
+  }
+  return hits;
+}
+
+/**
+ * 这个点当前这一页是不是真的看得见。分栏排版下整章都在 iframe 里铺开，
+ * 翻页只是平移 —— 光有坐标不够，得问一句「这个点上现在是不是正文」。
+ */
+function visibleInReader(host: { x: number; y: number }): boolean {
+  if (host.x < 0 || host.y < 0) return false;
+  if (host.x > document.documentElement.clientWidth) return false;
+  if (host.y > document.documentElement.clientHeight) return false;
+  return Boolean(document.elementFromPoint(host.x, host.y)?.closest("foliate-view"));
+}
+
+/**
+ * 翻页直到这个词落在看得见的一页上，然后双击它。
+ *
+ * 派的是完整的一串鼠标事件，因为 `useReaderInteractions` 挂的是 `dblclick`，
+ * 而它取词靠的是 `caretRangeFromPoint(clientX, clientY)` —— 坐标必须真的落在
+ * 那个词上，随便找个元素 `.click()` 是骗不过去的。
+ */
+async function lookupWord(word: string, maxTurns = 6): Promise<void> {
+  await waitForBook();
+  const view = document.querySelector<FoliateView>("foliate-view");
+
+  let hit: WordHit | undefined;
+  for (let turn = 0; turn <= maxTurns; turn++) {
+    hit = findWord(word).find((candidate) => visibleInReader(candidate.host));
+    if (hit) break;
+    view?.renderer?.next?.();
+    await sleep(320);
+  }
+  if (!hit) throw new Error(`翻了 ${maxTurns} 页也没让 "${word}" 露出来`);
+
+  const { doc, local } = hit;
+  const target = doc.elementFromPoint(local.x, local.y);
+  if (!target) throw new Error(`"${word}" 的坐标上没有元素`);
+
+  const common = {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    view: doc.defaultView,
+    clientX: local.x,
+    clientY: local.y,
+  } as const;
+  for (const [type, detail] of [
+    ["mousedown", 1], ["mouseup", 1], ["click", 1],
+    ["mousedown", 2], ["mouseup", 2], ["click", 2], ["dblclick", 2],
+  ] as const) {
+    target.dispatchEvent(new MouseEvent(type, { ...common, detail }));
+  }
+
+  // 取词是延迟触发的（要先让三击有机会到达），所以卡片不会立刻出现。
+  await waitFor(`"${word}" 的查词卡`, () => document.querySelector('[role="dialog"], [data-card="learning"]')
+    ?? buttons().find((b) => b.textContent?.trim() === text("reader.card.collect"))?.closest("div"));
+  await settle();
+}
+
+/* ------------------------------------------------------------------ *
+ * AI 侧栏
+ * ------------------------------------------------------------------ */
+
+async function openAiPanel(): Promise<HTMLElement> {
+  const toggle = await waitFor("AI 助手按钮", () => byLabel(text("reader.aiAssistant")));
+  toggle.click();
+  await waitFor("侧栏输入框", () => document.querySelector("textarea"));
+  await settle();
+  return toggle;
+}
+
+/** 从对话列表里挑一轮已经答完的对话 —— 比现场发一条更稳，也不需要假后端。 */
+async function openChat(title: string): Promise<void> {
+  const picker = await waitFor("对话列表入口", () => byText(text("ai.newChat")));
+  picker.click();
+  const row = await waitFor(`对话「${title}」`, () => byText(title));
+  row.click();
+  // 「来源」那一栏是解析 metadata 之后才画的，等它出现就等于等到了整轮答案 ——
+  // 角标本身是按钮不是链接，按 href 找是找不到的。
+  await waitFor("答案的来源栏", () => document.body.innerText.includes(text("ai.sources")));
+  await settle();
+}
+
+/* ------------------------------------------------------------------ *
+ * 每张图各自要摆的样子
+ * ------------------------------------------------------------------ */
+
+const ACTIONS: Record<string, () => Promise<void>> = {
+  /** 正文 + 查词卡 + 一轮带引用的对话，三块同框。 */
+  async hero() {
+    await waitForBook();
+    await openAiPanel();
+    await openChat("他明明说不去拜访 Bingley");
+    await lookupWord(HERO_LOOKUP_WORD);
+  },
+
+  /** 生词清单那一轮：角标密、来源行长。 */
+  async citations() {
+    await waitForBook();
+    await openAiPanel();
+    await openChat("这一章我会卡住的词");
+  },
+
+  /** 进度提示 +「结合全书重新回答」。 */
+  async context() {
+    await waitForBook();
+    await openAiPanel();
+    await openChat("他明明说不去拜访 Bingley");
+  },
+
+  /** 一张就地加注的查词卡，正文不被侧栏挤窄。 */
+  async levels() {
+    await waitForBook();
+    await lookupWord("circumspection");
+  },
+};
 
 /* ------------------------------------------------------------------ *
  * 对外
@@ -117,16 +301,20 @@ export async function runScene(): Promise<void> {
 
   try {
     if (scene.libraryFilter) {
-      const row = await waitFor(() => sidebarRow(scene.libraryFilter as string));
-      if (row) row.click();
-      else console.warn(`[shot:${name}] 左栏找不到 "${scene.libraryFilter}" 这一行`);
+      const row = await waitFor(`左栏的「${scene.libraryFilter}」`, () => sidebarRow(scene.libraryFilter as string));
+      row.click();
     }
+
+    await ACTIONS[name]?.();
 
     await settle();
     document.documentElement.setAttribute(READY_ATTR, name);
     console.info(`[shot:${name}] ready`);
   } catch (error) {
     // 没就位也要打标记，否则截图脚本只能干等到超时，还看不出是哪一步炸的。
+    // 原因也挂到 DOM 上：无头 Chrome 的控制台没人看得见，脚本得能读出来。
+    const why = error instanceof Error ? error.message : String(error);
+    document.documentElement.setAttribute("data-shot-error", why);
     document.documentElement.setAttribute(READY_ATTR, `${name}:failed`);
     console.error(`[shot:${name}] 布置失败`, error);
   }

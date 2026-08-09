@@ -28,8 +28,12 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = 1440;
 const ORIGIN = `http://localhost:${PORT}`;
-/** 场景就位的等待上限。超时就照原样拍一张，方便看卡在哪儿。 */
-const READY_TIMEOUT_MS = 20_000;
+/**
+ * 场景就位的等待上限。超时就照原样拍一张，方便看卡在哪儿。
+ * 必须比场景里最长的那个等待（等 EPUB 铺完，25 秒）更宽，否则脚本会先一步
+ * 放弃，拍到的是一张还在加载的图。
+ */
+const READY_TIMEOUT_MS = 45_000;
 
 const CHROME =
   process.env.CHROME_BIN ??
@@ -41,7 +45,7 @@ const CHROME =
  * 实际像素是这里的两倍）。顺序就是 README 里的顺序。
  */
 const SHOTS = [
-  { name: "hero", scene: "hero", size: [1280, 800] },
+  { name: "hero", scene: "hero", size: [1280, 840] },
   { name: "level", scene: "levels", size: [900, 560] },
   { name: "context", scene: "context", size: [1280, 800] },
   { name: "citations", scene: "citations", size: [1280, 800] },
@@ -195,7 +199,10 @@ async function capture(cdp, shot, outFile) {
   writeFileSync(outFile, Buffer.from(data, "base64"));
 
   if (!ready) return "场景超时（照原样拍了一张）";
-  if (String(ready).endsWith(":failed")) return "场景布置报错（见 harness 控制台）";
+  if (String(ready).endsWith(":failed")) {
+    const why = await evaluate(cdp, "document.documentElement.getAttribute('data-shot-error')");
+    return `场景布置报错 — ${why ?? "原因不明"}`;
+  }
   return null;
 }
 
@@ -248,7 +255,13 @@ try {
 } finally {
   if (chrome) {
     chrome.child.kill("SIGKILL");
-    rmSync(chrome.profile, { recursive: true, force: true });
+    // Chrome 被 SIGKILL 之后还在往 profile 里写，直接删会撞上 ENOTEMPTY；
+    // 重试几次还不行就留着 —— 临时目录不值得为它把整次拍摄判成失败。
+    try {
+      rmSync(chrome.profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch {
+      /* 系统自己会回收 tmpdir。 */
+    }
   }
   if (harness && !keep) harness.kill("SIGTERM");
   else if (harness) console.log(`· harness 留在 ${ORIGIN}（--keep）`);
