@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>样张 · 查过的词高亮随熟悉度褪色</title>
+<title>样张 · 查过的词高亮随熟悉度褪到消失</title>
 <style>
   :root {
     --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -14,19 +14,16 @@
     --ink-soft: #6b675e;
 
     --surface: #ffffff;
-    --muted: #fafafa;
     --text-1: #18181b;
-    --text-2: #52525c;
     --text-3: #71717b;
     --border: #e4e4e7;
-    --border-light: #f4f4f5;
     --accent: #7c3aed;
     --accent-bg: #f3e8ff;
     --accent-text: #7c3aed;
 
-    /* 自动高亮的实际取值：#C0BA96，底色 16%，带下划线 */
+    /* 查词标记的实际取值：#C0BA96，底色 16%，实线下划线 */
     --mark: 192, 186, 150;
-    --mark-line: #a89f74;
+    --mark-line: 168, 159, 116;
   }
   .dark {
     --paper: #17171a;
@@ -34,18 +31,15 @@
     --ink-soft: #8e8a82;
 
     --surface: #18191d;
-    --muted: #1e1f24;
     --text-1: #f4f4f5;
-    --text-2: #a1a1aa;
     --text-3: #82828c;
     --border: #34343d;
-    --border-light: #2a2b31;
     --accent: #8b5cf6;
     --accent-bg: #302647;
     --accent-text: #a78bfa;
 
     --mark: 208, 200, 160;
-    --mark-line: #b3a97e;
+    --mark-line: 179, 169, 126;
   }
 
   * { box-sizing: border-box; }
@@ -54,95 +48,84 @@
     background: #e9e9ec; font-family: var(--font-sans); color: #18181b;
   }
   h1.page { font-size: 20px; margin: 0 0 6px; }
-  p.page { font-size: 13px; color: #52525c; margin: 0 0 8px; max-width: 780px; line-height: 1.75; }
+  p.page { font-size: 13px; color: #52525c; margin: 0 0 8px; max-width: 820px; line-height: 1.75; }
   p.page b { color: #18181b; }
-  .sep { height: 1px; background: #d6d6da; margin: 30px 0 26px; max-width: 1090px; }
+  .sep { height: 1px; background: #d6d6da; margin: 30px 0 26px; max-width: 1096px; }
 
   .grid { display: flex; flex-wrap: wrap; gap: 26px; align-items: flex-start; }
-  .panel > .caption {
-    font-size: 12px; font-weight: 600; color: #52525c; margin: 0 0 8px; letter-spacing: .02em;
-  }
+  .panel > .caption { font-size: 12px; font-weight: 600; color: #52525c; margin: 0 0 8px; letter-spacing: .02em; }
   .panel > .caption span { font-weight: 400; color: #71717b; }
-  .panel.dark > .caption { color: #52525c; }
 
   /* ── 书页 ── */
   .page-stage {
     background: var(--paper); border-radius: 10px; padding: 26px 28px 24px;
     box-shadow: 0 8px 24px rgba(0,0,0,.09);
   }
-  .prose {
-    font-family: var(--font-serif); font-size: 16px; line-height: 30px; color: var(--ink); margin: 0;
-  }
+  .prose { font-family: var(--font-serif); font-size: 16px; line-height: 31px; color: var(--ink); margin: 0; }
   .prose + .prose { margin-top: 14px; }
 
-  /* 褪色四档 */
-  .m1 { background: rgba(var(--mark), .16); border-bottom: 1px solid var(--mark-line); border-radius: 2px; padding: 0 1px; }
-  .m2 { background: rgba(var(--mark), .09); border-bottom: 1px solid rgba(168,159,116,.55); border-radius: 2px; padding: 0 1px; }
-  .m3 { border-bottom: 1px dashed rgba(168,159,116,.5); }
-  .m4 { }
-  .dark .m2 { border-bottom-color: rgba(179,169,126,.55); }
-  .dark .m3 { border-bottom-color: rgba(179,169,126,.5); }
+  /* 查词标记：只淡出，形状不变（实线下划线全程保持） */
+  .k1 { background: rgba(var(--mark), .16); border-bottom: 1px solid rgba(var(--mark-line), 1); border-radius: 2px; padding: 0 1px; }
+  .k2 { background: rgba(var(--mark), .09); border-bottom: 1px solid rgba(var(--mark-line), .55); border-radius: 2px; padding: 0 1px; }
+  .k3 { }
+
+  /* 收藏后的档位标记：现状，未改动 */
+  .v-new      { border-bottom: 1.5px solid #D97706; }
+  .v-learning { border-bottom: 1.5px solid #2F9E8F; }
+  .v-familiar { border-bottom: 1.5px dashed rgba(148,163,184,.9); }
+  .v-mastered { }
 
   /* 手动标记：不参与褪色 */
   .mh { background: rgba(233,185,73,.34); border-radius: 2px; padding: 0 1px; }
 
-  /* ── 四档对照表 ── */
+  /* ── 阶梯表 ── */
+  .ladder-wrap { background: var(--paper); border-radius: 10px; padding: 4px 24px 6px; box-shadow: 0 8px 24px rgba(0,0,0,.09); }
   .ladder { width: 100%; border-collapse: collapse; }
-  .ladder td { padding: 13px 0; border-bottom: 1px solid var(--border-light); vertical-align: middle; }
-  .ladder tr:last-child td { border-bottom: 0; }
-  .ladder .stage-name { font-size: 12.5px; font-weight: 600; color: var(--text-1); white-space: nowrap; padding-right: 16px; }
-  .ladder .stage-when { font-size: 11.5px; color: var(--text-3); white-space: nowrap; padding-right: 22px; }
-  .ladder .stage-demo { font-family: var(--font-serif); font-size: 15.5px; line-height: 26px; color: var(--ink); }
-  .ladder-wrap {
-    background: var(--paper); border-radius: 10px; padding: 6px 24px;
-    box-shadow: 0 8px 24px rgba(0,0,0,.09);
+  .ladder td { padding: 12px 0; border-bottom: 1px solid rgba(120,110,90,.14); vertical-align: middle; }
+  .ladder tr.last td { border-bottom: 0; }
+  .ladder tr.head td {
+    font-size: 11px; font-weight: 600; letter-spacing: .04em; color: var(--ink-soft);
+    padding: 14px 0 7px; border-bottom: 1px solid rgba(120,110,90,.28);
   }
-  .ladder-wrap .stage-name { color: var(--ink); }
-  .ladder-wrap .stage-when { color: var(--ink-soft); }
-  .ladder-wrap td { border-bottom-color: rgba(120,110,90,.14); }
+  .ladder .n { font-size: 12.5px; font-weight: 600; color: var(--ink); white-space: nowrap; padding-right: 16px; }
+  .ladder .w { font-size: 11.5px; color: var(--ink-soft); white-space: nowrap; padding-right: 22px; }
+  .ladder .d { font-family: var(--font-serif); font-size: 15.5px; line-height: 26px; color: var(--ink); }
+  .gone { font-family: var(--font-sans); font-size: 11px; color: var(--ink-soft); margin-left: 10px; }
 
   /* ── 设置行 ── */
-  .settings {
-    background: var(--surface); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.09);
-    overflow: hidden; width: 100%;
-  }
+  .settings { background: var(--surface); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.09); overflow: hidden; width: 100%; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 20px; height: 73px; border-bottom: 1px solid rgba(0,0,0,.10); }
   .dark .row { border-bottom-color: rgba(255,255,255,.10); }
   .row:last-child { border-bottom: 0; }
-  .row.tall { height: auto; padding-top: 15px; padding-bottom: 16px; align-items: flex-start; flex-direction: column; gap: 11px; }
   .row-label { font-size: 13px; font-weight: 500; color: var(--text-1); }
-  .row-hint { font-size: 12px; line-height: 18px; color: var(--text-3); margin-top: 3px; max-width: 400px; }
+  .row-hint { font-size: 12px; line-height: 18px; color: var(--text-3); margin-top: 3px; max-width: 430px; }
   .toggle { width: 40px; height: 23px; border-radius: 999px; background: var(--accent); position: relative; flex: 0 0 auto; }
   .toggle::after { content: ""; position: absolute; top: 3px; right: 3px; width: 17px; height: 17px; border-radius: 999px; background: #fff; }
-  .seg { display: flex; gap: 7px; width: 100%; }
-  .seg-item {
-    flex: 1; border: 1px solid var(--border); border-radius: 7px; padding: 9px 11px 10px; background: var(--surface);
-  }
-  .seg-item.on { border-color: var(--accent); background: var(--accent-bg); }
-  .seg-name { font-size: 12.5px; font-weight: 600; color: var(--text-1); display: flex; align-items: center; gap: 6px; }
-  .seg-item.on .seg-name { color: var(--accent-text); }
-  .seg-tag { font-size: 10.5px; font-weight: 500; color: var(--accent-text); background: var(--accent-bg); border-radius: 4px; padding: 1px 5px; }
-  .seg-item.on .seg-tag { background: rgba(255,255,255,.65); }
-  .dark .seg-item.on .seg-tag { background: rgba(0,0,0,.28); }
-  .seg-hint { font-size: 11.5px; line-height: 17px; color: var(--text-3); margin-top: 4px; }
+  .toggle.off { background: rgba(120,120,130,.35); }
+  .toggle.off::after { right: auto; left: 3px; }
 
   .note {
-    width: 540px; font-size: 12.5px; line-height: 19px; color: #52525c;
+    font-size: 12.5px; line-height: 19px; color: #52525c;
     background: #fff; border: 1px solid #e4e4e7; border-left: 3px solid #7c3aed;
     border-radius: 8px; padding: 12px 14px;
   }
   .note b { color: #18181b; }
   .note ul { margin: 7px 0 0; padding-left: 17px; }
   .note li { margin-bottom: 5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 11px; font-size: 11.5px; color: var(--ink-soft); font-family: var(--font-sans); }
+  .legend span { font-family: var(--font-serif); font-size: 14px; color: var(--ink); margin-right: 5px; }
 </style>
 </head>
 <body>
 
-<h1 class="page">样张 · 查过的词高亮随熟悉度褪色</h1>
+<h1 class="page">样张 · 查过的词高亮随熟悉度褪到消失</h1>
 <p class="page">
-  现在：查过的词在整本书里被<b>永久</b>涂同一个深度，读到后段一页七八个。
-  改成：高亮是一个<b>会过期的提示</b>——刚查完最显眼，每再读到一次淡一档，到「读顺了」就不再显示。
-  档位直接读现有的阅读曝光引擎，不新增数据。<b>你自己划的标记不参与褪色</b>，那是你选的，凭什么替你淡掉。
+  一条规矩：<b>没有任何自动标记是永久的</b>。任何在你回忆之前就替你回答的标记，都必须有尽头。
+  唯一不褪的是你自己划的标记——那是你选的。
+</p>
+<p class="page">
+  改的只有<b>查词标记</b>（查了、还没收藏的词）：它现在永远是同一个深度。收藏过的词走的是另一套，
+  已经会随档位递减并在「读顺了」时消失，本次不动。查词标记<b>只降透明度、不换形状</b>——虚线是「眼熟」占着的，不借。
 </p>
 
 <div class="sep"></div>
@@ -150,45 +133,60 @@
 <div class="grid">
 
   <!-- A -->
-  <div class="panel" style="width: 640px">
-    <p class="caption">A · 四档长什么样 <span>（同一个词，四个阶段）</span></p>
+  <div class="panel" style="width: 660px">
+    <p class="caption">A · 每一种标记的全程 <span>（同一个词，从出现到消失）</span></p>
     <div class="ladder-wrap">
       <table class="ladder">
+        <tr class="head"><td colspan="3">查词标记 · 本次改动</td></tr>
         <tr>
-          <td class="stage-name">刚查过</td>
-          <td class="stage-when">这次和下次遇到</td>
-          <td class="stage-demo">the harbour lay <span class="m1">shrouded</span> in mist</td>
+          <td class="n">刚查过</td><td class="w">这次和下次遇到</td>
+          <td class="d">the harbour lay <span class="k1">shrouded</span> in mist</td>
         </tr>
         <tr>
-          <td class="stage-name">读到过几次</td>
-          <td class="stage-when">再遇 2–3 次</td>
-          <td class="stage-demo">the harbour lay <span class="m2">shrouded</span> in mist</td>
+          <td class="n">又读到几次</td><td class="w">再遇 2–3 次</td>
+          <td class="d">the harbour lay <span class="k2">shrouded</span> in mist</td>
         </tr>
         <tr>
-          <td class="stage-name">眼熟</td>
-          <td class="stage-when">再遇 4 次以上</td>
-          <td class="stage-demo">the harbour lay <span class="m3">shrouded</span> in mist</td>
+          <td class="n">不再提示</td><td class="w">再遇 4 次以上</td>
+          <td class="d">the harbour lay <span class="k3">shrouded</span> in mist<span class="gone">← 什么都不画</span></td>
+        </tr>
+
+        <tr class="head"><td colspan="3">收藏过的词 · 现状，未改动</td></tr>
+        <tr>
+          <td class="n">新词</td><td class="w">刚收藏</td>
+          <td class="d">the harbour lay <span class="v-new">shrouded</span> in mist</td>
         </tr>
         <tr>
-          <td class="stage-name">读顺了</td>
-          <td class="stage-when">不再提示</td>
-          <td class="stage-demo">the harbour lay <span class="m4">shrouded</span> in mist</td>
+          <td class="n">学习中</td><td class="w">在复习</td>
+          <td class="d">the harbour lay <span class="v-learning">shrouded</span> in mist</td>
         </tr>
         <tr>
-          <td class="stage-name">你划的标记</td>
-          <td class="stage-when">永不褪色</td>
-          <td class="stage-demo">the harbour lay <span class="mh">shrouded in mist</span></td>
+          <td class="n">眼熟</td><td class="w">读到过几次</td>
+          <td class="d">the harbour lay <span class="v-familiar">shrouded</span> in mist</td>
+        </tr>
+        <tr>
+          <td class="n">读顺了</td><td class="w">不再提示</td>
+          <td class="d">the harbour lay <span class="v-mastered">shrouded</span> in mist<span class="gone">← 什么都不画</span></td>
+        </tr>
+
+        <tr class="head"><td colspan="3">你自己划的 · 永不褪色</td></tr>
+        <tr class="last">
+          <td class="n">手动标记</td><td class="w">你划的就是你划的</td>
+          <td class="d">the harbour lay <span class="mh">shrouded in mist</span></td>
         </tr>
       </table>
     </div>
   </div>
 
-  <!-- 说明 -->
-  <div class="note" style="margin-top: 26px">
-    <b>为什么第三档只剩一条虚线</b>
+  <div class="note" style="width: 410px; margin-top: 26px">
+    <b>为什么只降透明度、不换形状</b>
     <ul>
-      <li>底色是「这里有东西」，下划线是「这个词有来历」。词越熟，你越不需要前者，但还想在某一眼里认出它查过——所以底色先退，线后退。</li>
-      <li>到「读顺了」全部消失，是为了把<b>回忆的机会</b>还给你：第 200 页那次遇见本来是一次免费复习，永久高亮会在你开口之前就替你答了。</li>
+      <li>这个软件里「中性色虚线」已经有含义了——它是<b>眼熟</b>。查词标记如果中途变成虚线，页面上就有两种东西长得一样、意思不同。</li>
+      <li>所以查词标记全程实线，靠淡下去表达「这个提示快到期了」，靠消失表达「到期了」。形状只说「我是哪一类标记」，深浅只说「我还剩多少」。</li>
+    </ul>
+    <b style="display:block; margin-top:11px">档位从哪来</b>
+    <ul>
+      <li>直接读现有的阅读曝光引擎——它本来就在数每个词你读到过几次。不新增数据、不新增表、不新增设置项。</li>
     </ul>
   </div>
 
@@ -199,36 +197,49 @@
 <div class="grid">
 
   <!-- B -->
-  <div class="panel" style="width: 530px">
-    <p class="caption">B · 现在 <span>（读到中后段的真实一页）</span></p>
+  <div class="panel" style="width: 535px">
+    <p class="caption">B · 现在 <span>（读到中后段的真实一页，四种标记混在一起）</span></p>
     <div class="page-stage">
       <p class="prose">
-        By the time the ferry reached the <span class="m1">quay</span>, the light had gone
-        <span class="m1">amber</span> and the whole harbour lay <span class="m1">shrouded</span>
-        in a mist that <span class="m1">muffled</span> even the gulls. Nobody on deck spoke.
+        By the time the ferry reached the <span class="k1">quay</span>, the light had gone
+        <span class="k1">amber</span> and the whole harbour lay <span class="k1">shrouded</span>
+        in a mist that <span class="v-new">muffled</span> even the gulls. Nobody on deck spoke.
       </p>
       <p class="prose">
         She had rehearsed the sentence a hundred times, and it still came out
-        <span class="m1">strangled</span> — a thin, <span class="m1">brittle</span> thing that
-        the wind took before he could <span class="m1">discern</span> a word of it.
+        <span class="k1">strangled</span> — a thin, <span class="k1">brittle</span> thing that the
+        wind took before he could <span class="v-learning">discern</span> a word of it. The
+        <span class="k1">gangway</span> shuddered under them.
       </p>
+    </div>
+    <div class="legend">
+      <div><span class="k1">词</span>查过（永远同一深度）</div>
+      <div><span class="v-new">词</span>新词</div>
+      <div><span class="v-learning">词</span>学习中</div>
     </div>
   </div>
 
   <!-- C -->
-  <div class="panel" style="width: 530px">
-    <p class="caption">C · 褪色之后 <span>（同一页，同一批词，档位不同）</span></p>
+  <div class="panel" style="width: 535px">
+    <p class="caption">C · 之后 <span>（同一页、同一批词，各自走到了各自的位置）</span></p>
     <div class="page-stage">
       <p class="prose">
-        By the time the ferry reached the <span class="m3">quay</span>, the light had gone
-        <span class="m4">amber</span> and the whole harbour lay <span class="m1">shrouded</span>
-        in a mist that <span class="m2">muffled</span> even the gulls. Nobody on deck spoke.
+        By the time the ferry reached the <span class="k3">quay</span>, the light had gone
+        <span class="k3">amber</span> and the whole harbour lay <span class="k1">shrouded</span>
+        in a mist that <span class="v-new">muffled</span> even the gulls. Nobody on deck spoke.
       </p>
       <p class="prose">
         She had rehearsed the sentence a hundred times, and it still came out
-        <span class="m2">strangled</span> — a thin, <span class="m4">brittle</span> thing that
-        the wind took before he could <span class="m3">discern</span> a word of it.
+        <span class="k2">strangled</span> — a thin, <span class="k3">brittle</span> thing that the
+        wind took before he could <span class="v-familiar">discern</span> a word of it. The
+        <span class="k2">gangway</span> shuddered under them.
       </p>
+    </div>
+    <div class="legend">
+      <div><span class="k1">词</span>刚查过</div>
+      <div><span class="k2">词</span>又读到几次</div>
+      <div><span class="v-familiar">词</span>眼熟</div>
+      <div>quay / amber / brittle 已经不画了</div>
     </div>
   </div>
 
@@ -239,64 +250,51 @@
 <div class="grid">
 
   <!-- D -->
-  <div class="panel dark" style="width: 530px">
-    <p class="caption">D · 深色模式 <span>（褪色之后）</span></p>
+  <div class="panel dark" style="width: 535px">
+    <p class="caption">D · 深色模式 <span>（同 C）</span></p>
     <div class="page-stage">
       <p class="prose">
-        By the time the ferry reached the <span class="m3">quay</span>, the light had gone
-        <span class="m4">amber</span> and the whole harbour lay <span class="m1">shrouded</span>
-        in a mist that <span class="m2">muffled</span> even the gulls. Nobody on deck spoke.
+        By the time the ferry reached the <span class="k3">quay</span>, the light had gone
+        <span class="k3">amber</span> and the whole harbour lay <span class="k1">shrouded</span>
+        in a mist that <span class="v-new">muffled</span> even the gulls. Nobody on deck spoke.
       </p>
       <p class="prose">
         She had rehearsed the sentence a hundred times, and it still came out
-        <span class="m2">strangled</span> — a thin, <span class="m4">brittle</span> thing that
-        the wind took before he could <span class="m3">discern</span> a word of it.
+        <span class="k2">strangled</span> — a thin, <span class="k3">brittle</span> thing that the
+        wind took before he could <span class="v-familiar">discern</span> a word of it. The
+        <span class="k2">gangway</span> shuddered under them.
       </p>
     </div>
   </div>
 
   <!-- E -->
-  <div class="panel" style="width: 530px">
+  <div class="panel" style="width: 535px">
     <p class="caption">E · 设置里的样子 <span>（工具 → 阅读辅助）</span></p>
     <div class="settings">
       <div class="row">
         <div>
           <p class="row-label">高亮查过的词</p>
-          <p class="row-hint">在正文里标出你查过的词。</p>
+          <p class="row-hint">在正文里标出你查过的词。读得越熟标记越淡，读顺了就不再显示。</p>
         </div>
         <div class="toggle"></div>
       </div>
-      <div class="row tall">
+      <div class="row">
         <div>
-          <p class="row-label">高亮怎么消失</p>
-          <p class="row-hint">你划的标记不受这里影响，永远保持原样。</p>
+          <p class="row-label">标记一直保持</p>
+          <p class="row-hint">关掉褪色，查过的词永远维持同一个深度。给拿高亮当读书笔记用的人。</p>
         </div>
-        <div class="seg">
-          <div class="seg-item on">
-            <p class="seg-name">随熟悉度褪色 <span class="seg-tag">推荐</span></p>
-            <p class="seg-hint">每再读到一次淡一档，读顺了就不再显示</p>
-          </div>
-          <div class="seg-item">
-            <p class="seg-name">一直保持</p>
-            <p class="seg-hint">查过就一直是同一个深度</p>
-          </div>
-        </div>
+        <div class="toggle off"></div>
       </div>
+    </div>
+    <div class="note" style="margin-top: 14px">
+      <b>一个开关而不是三选一</b>
+      <ul>
+        <li>褪色是默认行为，不是一个需要挑选的模式。多出来那一行是给想拒绝它的人的出口，默认关着——设置页每多一个需要读懂的选项，就多一个人卡在那里。</li>
+        <li>新老用户一视同仁，不做版本判断：这个项目还没铺开，没有需要兼容的旧习惯。</li>
+      </ul>
     </div>
   </div>
 
-</div>
-
-<div class="sep"></div>
-
-<div class="grid">
-  <div class="note" style="width: 1090px">
-    <b>需要你点头的两件事</b>
-    <ul>
-      <li><b>老用户默认走哪一边。</b>我的建议是新老用户都默认「随熟悉度褪色」，不做版本判断——这个项目还没铺开，没必要为兼容旧行为留一条分叉。想要旧行为的人在设置里一键切回「一直保持」。</li>
-      <li><b>「一直保持」要不要留。</b>留着的理由是有人拿高亮当读书笔记而不是学习提示，砍掉会得罪他们；不留的理由是每多一个开关，设置页就多一分。我倾向留，因为它一行搞定，而且给了褪色一个可以被拒绝的出口。</li>
-    </ul>
-  </div>
 </div>
 
 </body>

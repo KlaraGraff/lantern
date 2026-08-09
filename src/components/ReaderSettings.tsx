@@ -69,6 +69,8 @@ export interface ReaderSettingsState {
   firstLineIndent: boolean;
   margins: number; // percentage of the available reading width
   showLookupMarkers: boolean;
+  /** Global only: when on, a lookup mark never thins out, whatever the backend says. */
+  lookupMarkersNeverFade: boolean;
   showNewVocabMarkers: boolean;
   showLearningMarkers: boolean;
   chapterEndReviewHint: boolean;

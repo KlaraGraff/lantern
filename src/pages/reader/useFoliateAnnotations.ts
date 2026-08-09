@@ -47,6 +47,12 @@ import {
   wordMarkerStyle,
 } from "../../components/mark-palette";
 import {
+  fadedLookupMarkStyle,
+  lookupFadeLevel,
+  FADED_LOOKUP_STRENGTH,
+  type LookupFade,
+} from "../../components/lookup-fade";
+import {
   installCustomFontFacesInDocument,
   type CustomFontRecord,
 } from "../../components/custom-fonts";
@@ -96,6 +102,12 @@ export interface WordMarkException {
 export interface LookupOccurrenceMark {
   location: string;
   enabled: boolean;
+  /**
+   * How much of the mark is left at this occurrence. `gone` occurrences still
+   * arrive — the list is what selection is judged against — and are simply not
+   * drawn. See `lookupFadeLevel`.
+   */
+  fade: LookupFade;
 }
 
 /** Just enough of a margin note (P3.2) to mark the passage it was written about. */
@@ -113,7 +125,13 @@ interface NoteAnchorPage { notes: NoteAnchorMark[] }
 const NOTE_ANCHOR_LIMIT = 500;
 
 type MarkerKind = "lookup" | "vocab";
-export type FoliateMarker = { color: string; kind: MarkerKind };
+/**
+ * `fade` rides alongside `kind` rather than inside it: a tap on a faded lookup
+ * mark still opens the learning card, and that path keys off `kind === "lookup"`
+ * (see `useFoliateView`). How faint the mark is drawn is a separate question
+ * from what it is.
+ */
+export type FoliateMarker = { color: string; kind: MarkerKind; fade?: "full" | "faded" };
 type AppliedAnnotation = { color: string; styleKind: AnnotationStyleKind };
 
 function drawMarkerRects(
@@ -121,6 +139,9 @@ function drawMarkerRects(
   style: MarkerVisualStyle,
   isPdf: boolean,
   boxHeight: number | null,
+  // 0–1, the underline's own share of the fade. The background already carries
+  // it in `style.opacity`; the underline group is otherwise drawn solid.
+  underlineOpacity = 1,
 ) {
   const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
   group.setAttribute("fill", style.color);
@@ -130,6 +151,7 @@ function drawMarkerRects(
   const fills = document.createElementNS("http://www.w3.org/2000/svg", "g");
   fills.setAttribute("opacity", String(style.opacity / 100));
   const lines = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  if (underlineOpacity < 1) lines.setAttribute("opacity", String(underlineOpacity));
   group.append(fills, lines);
   for (const { left, top, height, width } of rects) {
     // getClientRects reports the line box, so a wide line height would paint a
@@ -259,11 +281,19 @@ export function drawFoliateAnnotation(
     });
     return;
   }
-  if (annotation.styleKind === "manual" || annotation.styleKind === "automatic") {
-    const style = annotation.styleKind === "manual"
+  if (annotation.styleKind === "manual"
+    || annotation.styleKind === "automatic"
+    || annotation.styleKind === "automaticFaded") {
+    const faded = annotation.styleKind === "automaticFaded";
+    const base = annotation.styleKind === "manual"
       ? markerStyle.manual
       : effectiveAutomaticMarkerStyle(markerStyle);
-    draw((rects) => drawMarkerRects(rects, markerOverlayStyle(style), isPdf, boxHeight));
+    // Relative to whatever the reader set, never a fixed pair of numbers — see
+    // `FADED_LOOKUP_STRENGTH`. A manual mark never reaches this branch faded:
+    // the reader drew it, so it is theirs to remove.
+    const style = faded ? fadedLookupMarkStyle(base) : base;
+    const underlineOpacity = faded ? FADED_LOOKUP_STRENGTH : 1;
+    draw((rects) => drawMarkerRects(rects, markerOverlayStyle(style), isPdf, boxHeight, underlineOpacity));
     return;
   }
   const marker = wordMarkerStyle[annotation.color];
@@ -416,9 +446,12 @@ export function useFoliateAnnotations({
     const next = new Map<string, FoliateMarker>();
     if (settings.showLookupMarkers) {
       for (const mark of lookupOccurrences) {
-        if (mark.enabled && mark.location && !manual.has(mark.location)) {
-          next.set(mark.location, { color: wordMarkerColor.lookup, kind: "lookup" });
-        }
+        if (!mark.enabled || !mark.location || manual.has(mark.location)) continue;
+        // `gone` occurrences still arrive in the list — the backend needs them
+        // for its own bookkeeping — and it is here that they stop being drawn.
+        const level = lookupFadeLevel(mark.fade, settings.lookupMarkersNeverFade);
+        if (!level) continue;
+        next.set(mark.location, { color: wordMarkerColor.lookup, kind: "lookup", fade: level });
       }
     }
     if (supportsWordMarkers) {
@@ -438,7 +471,12 @@ export function useFoliateAnnotations({
     autoMarkersRef.current = next;
     const desired = new Map<string, AppliedAnnotation>([...next.entries()].map(([cfi, marker]) => [
       cfi,
-      { color: marker.color, styleKind: marker.kind === "lookup" ? "automatic" : "vocab" },
+      {
+        color: marker.color,
+        styleKind: marker.kind !== "lookup"
+          ? "vocab"
+          : marker.fade === "faded" ? "automaticFaded" : "automatic",
+      },
     ]));
     // Note anchors go in first and never overwrite: foliate's overlayer is keyed
     // by CFI, so a note mark laid over a highlight would evict the highlight
@@ -1008,6 +1046,9 @@ export function useFoliateAnnotations({
 
   const markerVisibility = [
     readerSettings.showLookupMarkers,
+    // Not visibility exactly, but it decides the same thing for a `gone`
+    // occurrence: whether anything is drawn there at all.
+    readerSettings.lookupMarkersNeverFade,
     readerSettings.showNewVocabMarkers,
     readerSettings.showLearningMarkers,
   ].join(":");

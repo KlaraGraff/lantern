@@ -13,6 +13,12 @@ import {
   markerStyleCss,
   type MarkerStyleConfig,
 } from "./marker-style";
+import {
+  fadedLookupMarkStyle,
+  lookupFadeLevel,
+  FADED_LOOKUP_STRENGTH,
+  type LookupFade,
+} from "./lookup-fade";
 import type { PageColumns, ReaderSettingsState } from "./ReaderSettings";
 import { prefersReducedMotion } from "./page-turn-transition";
 import type { Highlight } from "../hooks/useBookmarks";
@@ -92,6 +98,14 @@ interface WordMarkException {
 interface LookupOccurrenceMark {
   location: string;
   enabled: boolean;
+  /** How much of the mark is left. `gone` still arrives here; it just isn't drawn. */
+  fade: LookupFade;
+}
+
+/** A lookup occurrence that survived the fade check, and how faint to draw it. */
+interface ResolvedLookupMark {
+  location: string;
+  faded: boolean;
 }
 
 function textOffsetInBlock(element: HTMLElement, node: Node, offset: number): number {
@@ -301,7 +315,7 @@ function renderHighlightedBlock(
   readerFontFamily: string,
   automaticWords: Set<string>,
   automaticExceptions: Set<string>,
-  lookupOccurrenceMarks: LookupOccurrenceMark[],
+  lookupOccurrenceMarks: ResolvedLookupMark[],
 ): ReactNode[] {
   const manualRanges = highlights
     .flatMap((highlight, priority) => {
@@ -323,16 +337,20 @@ function renderHighlightedBlock(
           renderedOffsetToSourceOffset(block, segment.index, "start"),
           renderedOffsetToSourceOffset(block, end, "end"),
         );
-        return automaticExceptions.has(`${word}\0${location}`) ? [] : [{ start: segment.index, end }];
+        return automaticExceptions.has(`${word}\0${location}`)
+          ? []
+          : [{ start: segment.index, end, faded: false }];
       });
   const occurrenceAutomaticRanges = lookupOccurrenceMarks.flatMap((mark) => {
-    if (!mark.enabled) return [];
     const location = parseTextLocation(mark.location);
     if (!location || location.end <= block.source_start || location.start >= block.source_end) return [];
     const start = sourceOffsetToRenderedOffset(block, Math.max(location.start, block.source_start));
     const end = sourceOffsetToRenderedOffset(block, Math.min(location.end, block.source_end));
-    return end > start ? [{ start, end }] : [];
+    return end > start ? [{ start, end, faded: mark.faded }] : [];
   });
+  // Word-mark rules go first and the dedupe keeps the first of any pair, so a
+  // span that is both a marked word and a faded occurrence stays full strength
+  // — the rule says "always mark this word", and it outranks the fade.
   const automaticRanges = [
     ...wholeBookAutomaticRanges,
     ...occurrenceAutomaticRanges,
@@ -343,10 +361,11 @@ function renderHighlightedBlock(
   const ranges = [
     ...manualRanges.map((range) => ({ ...range, kind: "manual" as const })),
     ...automaticRanges.map((range, priority) => ({
-      ...range,
+      start: range.start,
+      end: range.end,
       highlight: null,
       priority: manualRanges.length + priority,
-      kind: "automatic" as const,
+      kind: (range.faded ? "automaticFaded" : "automatic") as "automatic" | "automaticFaded",
     })),
   ].sort((a, b) => a.start - b.start || a.end - b.end || a.priority - b.priority);
 
@@ -357,7 +376,12 @@ function renderHighlightedBlock(
   // inside an earlier one, including the non-overlapping text after it.
   const boundaries = [...new Set(ranges.flatMap((range) => [range.start, range.end]))]
     .sort((left, right) => left - right);
-  const segments: Array<{ start: number; end: number; highlight: Highlight | null; kind: "manual" | "automatic" | null }> = [];
+  const segments: Array<{
+    start: number;
+    end: number;
+    highlight: Highlight | null;
+    kind: "manual" | "automatic" | "automaticFaded" | null;
+  }> = [];
   let previous = 0;
   for (let index = 0; index < boundaries.length - 1; index += 1) {
     const start = boundaries[index];
@@ -388,14 +412,20 @@ function renderHighlightedBlock(
 
   const nodes: ReactNode[] = [];
   for (const segment of coalesced) {
-    if (segment.kind === "automatic") {
-      const automaticStyle = effectiveAutomaticMarkerStyle(markerStyle);
+    if (segment.kind === "automatic" || segment.kind === "automaticFaded") {
+      const faded = segment.kind === "automaticFaded";
+      const configured = effectiveAutomaticMarkerStyle(markerStyle);
+      // Same fade the foliate overlay applies, by a completely different route
+      // — inline CSS here, SVG rects there — which is why the arithmetic lives
+      // in `lookup-fade.ts` and neither renderer keeps its own copy.
+      const automaticStyle = faded ? fadedLookupMarkStyle(configured) : configured;
       nodes.push(
         <span
-          key={`automatic:${segment.start}:${segment.end}`}
+          key={`${segment.kind}:${segment.start}:${segment.end}`}
           style={markerStyleCss(
             automaticStyle,
             markerFontFamily(automaticStyle.font, readerFontFamily),
+            faded ? FADED_LOOKUP_STRENGTH : 1,
           )}
         >
           {block.text.slice(segment.start, segment.end)}
@@ -610,9 +640,15 @@ function TextBookReader({
     () => new Set(wordMarkExceptions.map((exception) => `${exception.normalized_word}\0${exception.location}`)),
     [wordMarkExceptions],
   );
-  const visibleLookupOccurrenceMarks = useMemo(
-    () => settings.showLookupMarkers ? lookupOccurrenceMarks : [],
-    [lookupOccurrenceMarks, settings.showLookupMarkers],
+  const visibleLookupOccurrenceMarks = useMemo<ResolvedLookupMark[]>(
+    () => settings.showLookupMarkers
+      ? lookupOccurrenceMarks.flatMap((mark) => {
+          if (!mark.enabled) return [];
+          const level = lookupFadeLevel(mark.fade, settings.lookupMarkersNeverFade);
+          return level ? [{ location: mark.location, faded: level === "faded" }] : [];
+        })
+      : [],
+    [lookupOccurrenceMarks, settings.lookupMarkersNeverFade, settings.showLookupMarkers],
   );
 
   const updateEffectivePageColumns = useCallback(() => {

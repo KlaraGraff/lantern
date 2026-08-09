@@ -67,6 +67,51 @@ pub struct WordMarkException {
     pub updated_at: i64,
 }
 
+/// How much of a lookup occurrence mark's original depth is still warranted,
+/// derived at read time from how many times the reader has since met the
+/// word on their own — without the lookup panel open. It is never stored: a
+/// mark's row carries no fade column, so every reader of the same data
+/// recomputes the same answer from `reading_word_exposures`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LookupMarkFade {
+    Full,
+    Faded,
+    Gone,
+}
+
+impl LookupMarkFade {
+    fn from_unaided_encounters(unaided: i64) -> Self {
+        match unaided {
+            0..=1 => LookupMarkFade::Full,
+            2..=3 => LookupMarkFade::Faded,
+            _ => LookupMarkFade::Gone,
+        }
+    }
+}
+
+/// Sums, across every chapter of `book_id`, the encounters of
+/// `normalized_word` that happened with the lookup panel closed — i.e. the
+/// reader met the word on their own, unaided by having just looked it up.
+/// `MAX(encounter_count - encounters_on_lookup_active_screen, 0)` guards the
+/// same defensive floor `PendingRow::unscored` uses in
+/// `src/mastery/store.rs`, since the lookup-active count is a subset of the
+/// total but SQLite cannot enforce that invariant for us.
+fn lookup_mark_fade(
+    conn: &rusqlite::Connection,
+    book_id: &str,
+    normalized_word: &str,
+) -> rusqlite::Result<LookupMarkFade> {
+    let unaided: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(MAX(encounter_count - encounters_on_lookup_active_screen, 0)), 0)
+         FROM reading_word_exposures
+         WHERE book_id = ?1 AND normalized_word = ?2",
+        params![book_id, normalized_word],
+        |row| row.get(0),
+    )?;
+    Ok(LookupMarkFade::from_unaided_encounters(unaided))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LookupOccurrenceMark {
     pub id: String,
@@ -77,6 +122,7 @@ pub struct LookupOccurrenceMark {
     pub enabled: bool,
     pub created_at: i64,
     pub updated_at: i64,
+    pub fade: LookupMarkFade,
 }
 
 #[derive(Debug, Serialize)]
@@ -910,6 +956,7 @@ pub(crate) fn set_lookup_occurrence_mark_inner(
         ));
         Ok(())
     })?;
+    let fade = lookup_mark_fade(&db.reader(), book_id, &normalized_word)?;
     Ok(LookupOccurrenceMark {
         id,
         book_id: book_id.to_string(),
@@ -919,6 +966,7 @@ pub(crate) fn set_lookup_occurrence_mark_inner(
         enabled,
         created_at,
         updated_at: timestamp,
+        fade,
     })
 }
 
@@ -932,26 +980,44 @@ fn ensure_lookup_occurrence_mark_inner(
     validate_entity_id(book_id)?;
     let existing = {
         let conn = db.reader();
-        conn.query_row(
-            "SELECT id, book_id, normalized_word, display_word, location, enabled,
-                    created_at, updated_at
-             FROM lookup_occurrence_marks
-             WHERE book_id = ?1 AND location = ?2",
-            params![book_id, location],
-            |row| {
-                Ok(LookupOccurrenceMark {
-                    id: row.get("id")?,
-                    book_id: row.get("book_id")?,
-                    normalized_word: row.get("normalized_word")?,
-                    display_word: row.get("display_word")?,
-                    location: row.get("location")?,
-                    enabled: row.get::<_, i64>("enabled")? != 0,
-                    created_at: row.get("created_at")?,
-                    updated_at: row.get("updated_at")?,
+        let row = conn
+            .query_row(
+                "SELECT id, book_id, normalized_word, display_word, location, enabled,
+                        created_at, updated_at
+                 FROM lookup_occurrence_marks
+                 WHERE book_id = ?1 AND location = ?2",
+                params![book_id, location],
+                |row| {
+                    Ok((
+                        row.get::<_, String>("id")?,
+                        row.get::<_, String>("book_id")?,
+                        row.get::<_, String>("normalized_word")?,
+                        row.get::<_, String>("display_word")?,
+                        row.get::<_, String>("location")?,
+                        row.get::<_, i64>("enabled")? != 0,
+                        row.get::<_, i64>("created_at")?,
+                        row.get::<_, i64>("updated_at")?,
+                    ))
+                },
+            )
+            .optional()?;
+        match row {
+            Some((id, book_id, normalized_word, display_word, location, enabled, created_at, updated_at)) => {
+                let fade = lookup_mark_fade(&conn, &book_id, &normalized_word)?;
+                Some(LookupOccurrenceMark {
+                    id,
+                    book_id,
+                    normalized_word,
+                    display_word,
+                    location,
+                    enabled,
+                    created_at,
+                    updated_at,
+                    fade,
                 })
-            },
-        )
-        .optional()?
+            }
+            None => None,
+        }
     };
     if let Some(existing) = existing {
         return Ok(existing);
@@ -991,6 +1057,27 @@ pub fn list_lookup_occurrence_marks(
 ) -> AppResult<Vec<LookupOccurrenceMark>> {
     validate_entity_id(&book_id)?;
     let conn = db.reader();
+
+    // One pass over this book's exposure rows instead of one query per mark:
+    // a book can carry hundreds of marks, and each would otherwise repeat the
+    // same per-chapter SUM that `lookup_mark_fade` runs for a single word.
+    let mut unaided_by_word: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    {
+        let mut exposure_statement = conn.prepare(
+            "SELECT normalized_word,
+                    SUM(MAX(encounter_count - encounters_on_lookup_active_screen, 0)) AS unaided
+             FROM reading_word_exposures
+             WHERE book_id = ?1
+             GROUP BY normalized_word",
+        )?;
+        let mut exposure_rows = exposure_statement.query(params![book_id])?;
+        while let Some(row) = exposure_rows.next()? {
+            let word: String = row.get("normalized_word")?;
+            let unaided: i64 = row.get("unaided")?;
+            unaided_by_word.insert(word, unaided);
+        }
+    }
+
     let mut statement = conn.prepare(
         "SELECT id, book_id, normalized_word, display_word, location, enabled,
                 created_at, updated_at
@@ -1000,15 +1087,19 @@ pub fn list_lookup_occurrence_marks(
     )?;
     let rows = statement
         .query_map(params![book_id], |row| {
+            let normalized_word: String = row.get("normalized_word")?;
+            let unaided = unaided_by_word.get(&normalized_word).copied().unwrap_or(0);
+            let fade = LookupMarkFade::from_unaided_encounters(unaided);
             Ok(LookupOccurrenceMark {
                 id: row.get("id")?,
                 book_id: row.get("book_id")?,
-                normalized_word: row.get("normalized_word")?,
+                normalized_word,
                 display_word: row.get("display_word")?,
                 location: row.get("location")?,
                 enabled: row.get::<_, i64>("enabled")? != 0,
                 created_at: row.get("created_at")?,
                 updated_at: row.get("updated_at")?,
+                fade,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -1567,6 +1658,99 @@ mod tests {
         assert!(
             query_word_mark_exceptions(&db, "book").unwrap().is_empty(),
             "no rule marks the word any more, so the exclusion is not live"
+        );
+    }
+
+    /// Inserts one `reading_word_exposures` row for a single chapter. Tests
+    /// that need multiple chapters call this more than once with distinct
+    /// `chapter` labels — `lookup_mark_fade` sums across all of them.
+    fn insert_exposure(
+        db: &Db,
+        book_id: &str,
+        chapter: &str,
+        word: &str,
+        encounter_count: i64,
+        encounters_on_lookup_active_screen: i64,
+    ) {
+        let normalized_word = normalize_learning_term(word);
+        let conn = db.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO reading_word_exposures
+             (id, book_id, chapter, normalized_word, encounter_count,
+              encounters_on_lookup_active_screen, first_seen_at, last_seen_at,
+              created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, 1, 1, 1)",
+            params![
+                format!("{book_id}:{chapter}:{normalized_word}"),
+                book_id,
+                chapter,
+                normalized_word,
+                encounter_count,
+                encounters_on_lookup_active_screen,
+            ],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn lookup_mark_fade_is_full_at_zero_or_one_unaided_encounter() {
+        let (_dir, db, _sync) = setup();
+        // Every `db.reader()` here is a temporary on purpose: it guards the
+        // same mutex `insert_exposure` takes, so binding one to a `let` and
+        // then inserting deadlocks the test against itself.
+        assert_eq!(
+            lookup_mark_fade(&db.reader(), "book", "running").unwrap(),
+            LookupMarkFade::Full,
+            "no exposure rows at all means zero unaided encounters"
+        );
+
+        insert_exposure(&db, "book", "ch1", "Running", 1, 0);
+        assert_eq!(
+            lookup_mark_fade(&db.reader(), "book", "running").unwrap(),
+            LookupMarkFade::Full
+        );
+    }
+
+    #[test]
+    fn lookup_mark_fade_is_faded_at_two_or_three_unaided_encounters() {
+        let (_dir, db, _sync) = setup();
+        insert_exposure(&db, "book", "ch1", "Running", 2, 0);
+        assert_eq!(
+            lookup_mark_fade(&db.reader(), "book", "running").unwrap(),
+            LookupMarkFade::Faded,
+            "two unaided encounters"
+        );
+
+        // A second chapter pushes the total to three, still summed across
+        // chapters rather than reset per chapter.
+        insert_exposure(&db, "book", "ch2", "Running", 1, 0);
+        assert_eq!(
+            lookup_mark_fade(&db.reader(), "book", "running").unwrap(),
+            LookupMarkFade::Faded,
+            "three unaided encounters, summed across chapters"
+        );
+    }
+
+    #[test]
+    fn lookup_mark_fade_is_gone_at_four_or_more_unaided_encounters() {
+        let (_dir, db, _sync) = setup();
+        insert_exposure(&db, "book", "ch1", "Running", 4, 0);
+        assert_eq!(
+            lookup_mark_fade(&db.reader(), "book", "running").unwrap(),
+            LookupMarkFade::Gone
+        );
+    }
+
+    #[test]
+    fn lookup_mark_fade_stays_full_when_every_encounter_was_lookup_active() {
+        let (_dir, db, _sync) = setup();
+        // Ten total encounters, but every one of them happened with the
+        // lookup panel open — none was the reader meeting the word unaided,
+        // so the mark must not fade at all.
+        insert_exposure(&db, "book", "ch1", "Running", 10, 10);
+        assert_eq!(
+            lookup_mark_fade(&db.reader(), "book", "running").unwrap(),
+            LookupMarkFade::Full
         );
     }
 

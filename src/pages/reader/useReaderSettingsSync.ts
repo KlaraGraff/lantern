@@ -170,6 +170,9 @@ export function createDefaultReaderSettings(): ReaderSettingsState {
     // asking a fresh install to tune it first.
     margins: 4,
     ...DEFAULT_MARKER_VISIBILITY,
+    // Off by default: fading is the point of the feature, and this is the way
+    // out for readers who use lookup marks as reading notes instead.
+    lookupMarkersNeverFade: false,
     chapterEndReviewHint: true,
     bookFinishedHint: true,
   };
@@ -256,6 +259,13 @@ export function resolveReaderSettings(
     showLookupMarkers: booleanSetting(
       perBookSettings[perBookSettingKeys.showLookupMarkers],
       booleanSetting(globalSettings.show_lookup_markers, DEFAULT_MARKER_VISIBILITY.showLookupMarkers),
+    ),
+    // Global-only, like the two hint toggles above: nothing about "do my marks
+    // fade" is book-shaped, and a per-book row would need `commands/settings.rs`
+    // taught about it for no gain.
+    lookupMarkersNeverFade: booleanSetting(
+      globalSettings.lookup_markers_never_fade,
+      previous.lookupMarkersNeverFade,
     ),
     showNewVocabMarkers: booleanSetting(
       perBookSettings[perBookSettingKeys.showNewVocabMarkers],

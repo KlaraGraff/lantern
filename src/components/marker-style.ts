@@ -168,12 +168,26 @@ export function markerFontFamily(font: MarkerFontChoice, readerFont?: string) {
   return getFontFamily(font);
 }
 
-export function markerStyleCss(style: MarkerVisualStyle, fontFamily?: string) {
+/**
+ * `underlineOpacity` is separate from `style.opacity` because the two are not
+ * the same question: the background is worn at whatever strength the reader
+ * chose, and an underline is drawn at full strength whatever that number says.
+ * A lookup mark fading out has to take both down together, so it hands the
+ * underline its own factor rather than pretending the opacity slider covers it.
+ */
+export function markerStyleCss(
+  style: MarkerVisualStyle,
+  fontFamily?: string,
+  underlineOpacity = 1,
+) {
   const alpha = Math.round((style.opacity / 100) * 255).toString(16).padStart(2, "0");
+  const underlineAlpha = Math.round(underlineOpacity * 255).toString(16).padStart(2, "0");
   return {
     backgroundColor: style.background ? `${style.color}${alpha}` : "transparent",
     textDecoration: style.underline ? "underline" : "none",
-    textDecorationColor: style.color,
+    // Left bare at full strength, so nothing that already renders an unfaded
+    // mark starts emitting an eight-digit hex it did not emit before.
+    textDecorationColor: underlineOpacity >= 1 ? style.color : `${style.color}${underlineAlpha}`,
     textDecorationThickness: style.underline ? "1.5px" : undefined,
     textUnderlineOffset: style.underline ? "0.14em" : undefined,
     fontWeight: style.bold ? 700 : undefined,

@@ -135,6 +135,7 @@ const REHYDRATION_GROUPS: readonly RehydrationGroup[] = [
   { id: "autoHighlight", keys: ["auto_highlight_lookup_words"] },
   { id: "markerStyle", keys: [MARKER_STYLE_SETTING_KEY] },
   { id: "markerVisibility", keys: MARKER_VISIBILITY_KEYS.map((key) => MARKER_VISIBILITY_SETTING_KEY[key]) },
+  { id: "lookupFade", keys: ["lookup_markers_never_fade"] },
   {
     id: "interaction",
     keys: [
@@ -197,6 +198,9 @@ export default function ToolsSettings({
   const [autoHighlightLookupWords, setAutoHighlightLookupWords] = useState(true);
   const [markerStyle, setMarkerStyle] = useState<MarkerStyleConfig>(createDefaultMarkerStyleConfig);
   const [markerVisibility, setMarkerVisibility] = useState<MarkerVisibility>(DEFAULT_MARKER_VISIBILITY);
+  // Off unless the row says otherwise — the opposite default from the marker
+  // visibility switches above, so it reads `=== "true"` rather than `!== "false"`.
+  const [lookupMarkersNeverFade, setLookupMarkersNeverFade] = useState(false);
   const [doubleClickQuickLookup, setDoubleClickQuickLookup] = useState(true);
   const [dictionaryLookupEnabled, setDictionaryLookupEnabled] = useState(true);
   const [tripleClickQuickSelect, setTripleClickQuickSelect] = useState(true);
@@ -255,6 +259,7 @@ export default function ToolsSettings({
     setAutoHighlightLookupWords(settings.auto_highlight_lookup_words !== "false");
     setMarkerStyle(parseMarkerStyleConfig(settings[MARKER_STYLE_SETTING_KEY]));
     setMarkerVisibility(resolveMarkerVisibility(settings));
+    setLookupMarkersNeverFade(settings.lookup_markers_never_fade === "true");
     setDoubleClickQuickLookup(settings.double_click_quick_lookup !== "false");
     setDictionaryLookupEnabled(settings.dictionary_lookup_enabled !== "false");
     setTripleClickQuickSelect(settings.triple_click_quick_select !== "false");
@@ -298,6 +303,9 @@ export default function ToolsSettings({
           break;
         case "markerVisibility":
           setMarkerVisibility(resolveMarkerVisibility(settings));
+          break;
+        case "lookupFade":
+          setLookupMarkersNeverFade(settings.lookup_markers_never_fade === "true");
           break;
         case "interaction":
           setDoubleClickQuickLookup(settings.double_click_quick_lookup !== "false");
@@ -713,6 +721,11 @@ export default function ToolsSettings({
             onChange={persistMarkerStyle}
             visibility={markerVisibility}
             onVisibilityChange={persistMarkerVisibility}
+            lookupNeverFade={lookupMarkersNeverFade}
+            onLookupNeverFadeChange={(enabled) => {
+              setLookupMarkersNeverFade(enabled);
+              persistLegacy("lookup_markers_never_fade", String(enabled));
+            }}
             lookupRow={(
               <SettingsRow
                 title={t("settings.tools.autoHighlightLookupWords", { defaultValue: "查词后自动标记" })}

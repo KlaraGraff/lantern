@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AlertTriangle, ChevronDown, ChevronRight, Info, Pipette } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -42,6 +42,13 @@ interface MarkerStyleSettingsProps {
   /** The global default for which vocabulary marks the text shows. */
   visibility: MarkerVisibility;
   onVisibilityChange: (value: MarkerVisibility) => void;
+  /**
+   * The opt-out from fading (`lookup_markers_never_fade`). It belongs under the
+   * lookup switch rather than beside it: it is not a fourth kind of mark, it is
+   * a qualifier on the one above it, and it says nothing while that one is off.
+   */
+  lookupNeverFade: boolean;
+  onLookupNeverFadeChange: (value: boolean) => void;
 }
 
 /** Which of the two styles the controls below the sample are editing. */
@@ -466,10 +473,14 @@ function VisibilitySection({
   visibility,
   automatic,
   onChange,
+  lookupNeverFade,
+  onLookupNeverFadeChange,
 }: {
   visibility: MarkerVisibility;
   automatic: MarkerVisualStyle;
   onChange: (value: MarkerVisibility) => void;
+  lookupNeverFade: boolean;
+  onLookupNeverFadeChange: (value: boolean) => void;
 }) {
   const { t } = useTranslation();
   // The same reasoning the collision chips use: these sit on the settings panel
@@ -504,8 +515,8 @@ function VisibilitySection({
           const shown = visibility[key];
           const label = t(row.titleKey);
           return (
+            <Fragment key={key}>
             <div
-              key={key}
               className="flex min-h-[52px] items-center gap-3 border-t border-border-light py-3 first:border-t-0"
             >
               {/* Two spans, not one: the paper is the outer one and the mark the
@@ -537,6 +548,28 @@ function VisibilitySection({
                 onChange={(next) => onChange({ ...visibility, [key]: next })}
               />
             </div>
+            {/* Indented to clear the chip column above, so it reads as a
+                qualifier on the lookup row rather than a fourth mark. Hidden
+                rather than disabled while lookup marks are off: there is
+                nothing to keep from fading. */}
+            {key === "showLookupMarkers" && shown && (
+              <div className="flex min-h-[52px] items-center gap-3 border-t border-border-light py-3 pl-[100px]">
+                <div className="min-w-0 flex-1">
+                  <p className={`text-[13px] ${lookupNeverFade ? "text-text-primary" : "text-text-muted"}`}>
+                    {t("settings.tools.markers.visibility.lookupNeverFade")}
+                  </p>
+                  <p className="text-[11px] leading-[17px] text-text-muted">
+                    {t("settings.tools.markers.visibility.lookupNeverFadeHint")}
+                  </p>
+                </div>
+                <Toggle
+                  label={t("settings.tools.markers.visibility.lookupNeverFade")}
+                  checked={lookupNeverFade}
+                  onChange={onLookupNeverFadeChange}
+                />
+              </div>
+            )}
+            </Fragment>
           );
         })}
       </div>
@@ -562,6 +595,8 @@ export default function MarkerStyleSettings({
   lookupRow,
   visibility,
   onVisibilityChange,
+  lookupNeverFade,
+  onLookupNeverFadeChange,
 }: MarkerStyleSettingsProps) {
   const { t } = useTranslation();
   const [customFonts, setCustomFonts] = useState<CustomFontRecord[]>([]);
@@ -715,6 +750,8 @@ export default function MarkerStyleSettings({
         visibility={visibility}
         automatic={automatic}
         onChange={onVisibilityChange}
+        lookupNeverFade={lookupNeverFade}
+        onLookupNeverFadeChange={onLookupNeverFadeChange}
       />
 
       {/* Last: the word-form list can run long and scrolls on its own, so

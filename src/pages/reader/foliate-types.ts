@@ -1,5 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- foliate-js has no TS definitions */
-export type AnnotationStyleKind = "manual" | "automatic" | "vocab" | "continuous" | "note";
+/**
+ * `automaticFaded` is the automatic style one step down — a lookup mark the
+ * reader has met again since. It is a style kind rather than a number carried
+ * beside the colour because that is what `useFoliateAnnotations` already diffs
+ * on: a mark crossing from full to faded changes its kind, and the existing
+ * "redraw when the kind changed" rule picks it up with nothing added.
+ */
+export type AnnotationStyleKind =
+  | "manual"
+  | "automatic"
+  | "automaticFaded"
+  | "vocab"
+  | "continuous"
+  | "note";
 
 export interface FoliateView extends HTMLElement {
   open(file: string | File | Blob): Promise<void>;
