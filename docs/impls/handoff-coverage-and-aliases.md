@@ -1,8 +1,8 @@
 # 交接：读者相对覆盖率 + 人物别名表可见可改
 
-**状态：** 最终版。样张已定稿并经用户确认，实现未开始。
-**给谁看：** 接手实现的人 / 代理。假定你没参与前面的评审，本文件自带全部前提。
-**日期：** 2026-08-09
+**状态：** ~~最终版。样张已定稿并经用户确认，实现未开始。~~ **已过期——两块都已实现并合入 `main`，见文末 §6。不要照本文件重做一遍。**
+**给谁看：** ~~接手实现的人 / 代理。~~ 现在只作设计依据留存：`src-tauri/src/commands/coverage.rs`、`migrations/066_reader_coverage.sql` 和 `src-tauri/src/lib.rs` 的注释按节号引用本文件，所以本文件保留而不删除。
+**日期：** 2026-08-09（撰写日）；同日实现完成，见 §6
 
 > **这份文件是自足的。** 所有产品决策已经定完，写在 §0.5。实现过程中**不需要回头找人确认任何一条**——遇到本文件没写到的细节，按 §0.5 末尾的默认规则自己拍板，往前做。做完一次性汇报即可。
 
@@ -306,3 +306,22 @@ Lantern 现在算的不是这个。现有的「词汇难度」区块把书里的
 - **不要对整个文件跑 `rustfmt`。** CI 不检查格式（`.github/workflows/ci.yaml` 里没有 fmt 步骤），全文件格式化会在 diff 里塞几十行无关重排，审查时得一条条挑出来。只格式化你自己写的部分。
 - **无头截图会重挂 React 树。** 用 CDP 走查界面时用高视口 + `captureBeyondViewport: false`；如果状态莫名回到初始值，先怀疑截图而不是代码。
 - **`Db::open_readonly` / `open_readwrite` 把读写两个连接别名成同一把锁**（`db.rs:295`、`:327`）。持有 `db.conn.lock()` 的时候再调 `db.reader()` 会自己锁死自己。正常 app 路径（`Db::new`）是两个独立连接，安全；只有 `lantern mcp` 子进程用那两个构造器。覆盖率如果要在一个事务里同时读词频表和书表，注意这一点。
+
+---
+
+## 6. 已被后续实现推翻的结论（滚动更新）
+
+本节只增不改。上面 §0–§5 是 2026-08-09 凌晨定稿时的判断，原样保留；凡是已经被实现推翻的，在这里逐条记账。
+
+### 6.1 「实现未开始」——已推翻
+
+- **原话在哪：** 文件抬头的 **状态** 行，「最终版。样张已定稿并经用户确认，实现未开始。」
+- **被什么推翻：** 定稿提交 `c39f3b8`（08-09 01:12）之后 91 分钟内，两块界面全部实现并合入 `main`：
+  - **板块二 · 人物别名表**（§3）：`df65b90` 别名表接上歧义桥卡片、三段折叠、出现次数与两处确认；`c840aed` 答复行落到别名表对应条目。§3.3「今天缺的三件事」已全部补齐。
+  - **板块一 · 覆盖率**（§2）：`f054154` 迁移 066 落库 → `99ca964` 四个命令接前端 → `b5c6017` 展开词表 → `49275a6` 清除画像前计数 → `0148390` 书架批量百分比。
+- **现在实际是什么样：** 后端 `src-tauri/src/commands/coverage.rs`（1241 行）、`src-tauri/migrations/066_reader_coverage.sql`、`src-tauri/src/commands/ai/person_aliases.rs`（`list` / `build` / `add` / `teach_description` / `delete` / `clear` 六个命令）；前端 `src/hooks/useBookCoverage.ts`、`src/hooks/useShelfCoverage.ts`、`src/components/PersonAliasesSection.tsx`、`src/components/AliasDisclosure.tsx`、`src/components/ClearVocabProfileDialog.tsx`，以及 `BookGrid.tsx` / `BookList.tsx` 的书架百分比。
+- **为什么这条特别危险：** 抬头同时写着「本文件自足」「不需要回头找人确认任何一条」「往前做」。一个新接手的代理照做，会把已经上线的两块界面重新实现一遍。
+
+### 6.2 本文件为什么没有随交接结束而删除
+
+交接文档的寿命通常等于一次交接。这一份是例外：三处生产代码按节号引用它作为设计依据——`migrations/066_reader_coverage.sql:2`（§2.4 a、b）、`src-tauri/src/commands/coverage.rs:4`（§2）、`src-tauri/src/lib.rs:818`（§2）。删掉它会让这三条注释指向空气，所以改为保留 + 在此立牌。

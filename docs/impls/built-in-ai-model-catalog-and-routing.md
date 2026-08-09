@@ -227,9 +227,11 @@ Lantern 必须做到：
 | 添加 Profile | 已有 | `AiSettings.tsx::createProfile` |
 | 拖动 Profile 排序 | 已有 | `AiSettings.tsx` 的 `SortableList` 与 `ai_reorder_profiles` |
 | 本地凭据存储 | 已有 | `src-tauri/src/secrets.rs` |
-| 智谱预设 | 未实现 | Provider 选择、默认值和文案 |
-| `/v4` 兼容端点 | 未实现 | `openai_compat.rs`、`router.rs::models_endpoint` |
-| 模型目录 | 未实现 | 设置页目录 UI 和预设数据 |
+| 智谱预设 | ~~未实现~~ **已作废，不是待办**，见 §14.1 | Provider 选择、默认值和文案 |
+| `/v4` 兼容端点 | ~~未实现~~ **已实现**，见 §14.2 | `openai_compat.rs`、`router.rs::models_endpoint` |
+| 模型目录 | ~~未实现~~ **已实现**（DeepSeek 版），见 §14.3 | 设置页目录 UI 和预设数据 |
+
+> **本节整表已过期。** 文件开头的 2026-08-02 修订说明列出了当时改写的章节（§1、§1.1、§2.2、§6.1、Phase 1、§11）——**§7 不在其中，所以这张「现状」表停在了改写之前**。逐条订正见 §14。
 
 ## 8. 必须先修的技术问题
 
@@ -402,3 +404,34 @@ https://open.bigmodel.cn/api/paas/v4/chat/completions
 - DeepSeek API Key 管理：<https://platform.deepseek.com/api_keys>
 
 服务商可能调整免费模型、限额、模型 ID 和页面 URL。实现和发布前应重新核对官方文档，但这种变化只能更新目录元数据，不能静默改写用户已经保存的调用路由。
+
+---
+
+## 14. 已被后续实现推翻的结论（滚动更新）
+
+本节只增不改。§1–§13 是 2026-08-02 交接时的判断，原样保留；被后续实现或决策推翻的条目在这里逐条记账。
+
+起因：文件开头的 2026-08-02 修订说明按章节列了当时改写的范围，**§7「现有代码基础」不在那份名单里**，于是那张表一直停在改写前的状态，把三件已经不成立的事写成了「未实现」。
+
+### 14.1 「智谱预设 · 未实现」——已作废，不是待办
+
+- **原话在哪：** §7 表格「智谱预设 | 未实现」。
+- **被什么推翻：** `b493e4c`（2026-08-02，`feat(ai): lead the catalog with DeepSeek, drop the free preset`）。文件开头的修订说明已经写明理由：实测 GLM-4.7-Flash 在语法拆解和词义辨析上会给出「看起来像样、实际错误」的输出。§13 末尾也已注明「以下智谱/Z.ai 链接仅作历史记录保留，目录里已无对应预设」。
+- **现在实际是什么样：** `src-tauri/src/ai/router.rs` 的 provider 取值为 `openai` / `anthropic` / `deepseek` / `ollama` / `lmstudio` / `custom`，**没有 zhipu**。全仓库搜 `zhipu` / `智谱` / `glm` 在 `src/` 与 `src-tauri/src/` 下零命中。
+- **为什么要立牌：** 「未实现」读起来是待办，会有人去把它实现掉；实际它是被实测否决的方案。§3「智谱连接流程」同理，只作历史记录读。
+
+### 14.2 「`/v4` 兼容端点 · 未实现」——已实现
+
+- **原话在哪：** §7 表格「`/v4` 兼容端点 | 未实现 | `openai_compat.rs`、`router.rs::models_endpoint`」，以及 §8.1「必须先修的技术问题」。
+- **被什么推翻：** `a552243`（2026-08-02，`fix(ai): stop appending /v1 to a base URL that already carries a version`），已在 `main` 上。
+- **现在实际是什么样：** 公共函数 `compat_endpoint()` 在 `src-tauri/src/ai/mod.rs:45`，配套 `ends_with_version_segment()`。它按 `v<数字>` 匹配而不是硬比 `/v1`，所以 `/v4`（以及任何未来版本段）都不会被重复拼接。§8.1 描述的正是它修掉的那个 bug。
+  - 调用方已统一：`openai_compat.rs:77`（chat）、`anthropic.rs:94`（messages）、`grounding/vector.rs:789`（embeddings）、`router.rs::models_endpoint`（模型列表）。
+  - 有回归测试锁住：`src-tauri/src/ai/mod.rs:214` 断言 `https://host.example/api/paas/v4` + `chat/completions` → `.../api/paas/v4/chat/completions`；:227 对全部路径做同样断言；:254 确保主机名 `v4.example.com` 不被误判为版本段；`router.rs:4309` 覆盖 `models_endpoint` 的 `/v4` 情形。
+- **危险程度：** 这条最容易造成重复劳动——它把文件和符号名都点了出来（`openai_compat.rs`、`router.rs::models_endpoint`），照着做的人会去改两个已经改好的地方。
+
+### 14.3 「模型目录 · 未实现」——已实现（按 DeepSeek 版目录）
+
+- **原话在哪：** §7 表格「模型目录 | 未实现 | 设置页目录 UI 和预设数据」。
+- **被什么推翻：** 同 `b493e4c`，以及 `fde45ca`（把 Anthropic 预填从 Opus 5 改为 Sonnet 5）。
+- **现在实际是什么样：** 预设数据在 `src/components/settings/aiPresets.ts`（`DEEPSEEK_BASE_URL`、`DEEPSEEK_DEFAULT_MODEL = "deepseek-v4-flash"`、`keyPage`、`usagePage`、`COST_TIER_CLASSES`），目录 UI 由 `src/components/settings/AiServiceCard.tsx` 通过 `availablePresets()` / `presetFor()` 渲染（:29、:158、:648）。
+- **保留的差异：** §6「内置目录与更新」描述的**在线目录**（远程拉取 + 内置回退）确实仍未实现。但 §6 自己就写了「该在线目录不属于首版阻塞项；首版随应用版本更新内置预设即可」——所以这是有意推迟，不是遗漏。

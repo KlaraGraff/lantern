@@ -1,6 +1,9 @@
 # 扫描 PDF OCR 与可同步派生资产升级方案：独立审核交接稿
 
-> 文档状态：**方案已对齐，实施进行中；尚未完成最终 go/no-go**
+> 文档状态：~~方案已对齐，实施进行中；尚未完成最终 go/no-go~~
+> **已过期（核实于 2026-08-09）——方案已落地并发布，本文此后只作当时的评审记录读，不要当作待办或未决方案。**
+> 证据：两份实施计划都已归档（`docs/impls/archive/scanned-pdf-ocr-pipeline.md`、`docs/impls/archive/scanned-pdf-ocr-v1-parallel-plan.md`）；后端 `src-tauri/src/commands/ocr/` 九个模块（`assets` / `backend` / `jobs` / `manager` / `package` / `publish` / `resolver` / `validate` / `mod`）；`src-tauri/src/lib.rs:842+` 已注册 `ocr_package_status` / `ocr_package_download` / `ocr_package_cancel` / `ocr_package_uninstall` / `ocr_start` / `ocr_cancel` / `ocr_retry` / `ocr_job_status`；设置界面 `src/components/settings/OcrSettings.tsx`；`src/i18n/zh.json` 有 69 处 `ocr` 键。
+> 下文正文（含「设计草案」「尚未实现」等证据等级标注）保留 2026-07-18 当时的判断原样，不逐句改写。
 >
 > 整理日期：2026-07-18
 >
