@@ -36,7 +36,7 @@ function formatTokens(tokens: number, language: string, t: TFunction): string {
  * navigation instead of a same-page filter (`docs/impls/sidebar-ia-options-mockup.html`,
  * option C) — the route is gone, so this is the only place `<ReadingStats>`
  * still mounts. `flex-1 min-w-0` is what every other same-page content
- * component (`DictionaryContent`, `ChatsContent`, `AnnotationsContent`) puts
+ * component (`DictionaryContent`, `QaContent`, `AnnotationsContent`) puts
  * on its own root for the same reason: Home's shell is a row flexbox and this
  * pane has to claim the width the sidebar isn't using.
  */

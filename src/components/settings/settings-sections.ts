@@ -9,6 +9,7 @@ import {
   Terminal,
   Sparkles,
   Volume2,
+  UserRound,
   type LucideIcon,
 } from "lucide-react";
 import type { SettingsSection, SettingsView } from "../settings-destination";
@@ -77,6 +78,7 @@ export interface SettingsSectionMeta {
 /** Desktop nav order, and (via `rootRows`) narrow root list order. One place for both. */
 export const SETTINGS_SECTION_ORDER: readonly SettingsSection[] = [
   "general",
+  "personal",
   "reading",
   "learning",
   "tools",
@@ -97,6 +99,15 @@ export const SETTINGS_SECTIONS: Record<SettingsSection, SettingsSectionMeta> = {
     // normal row inside 通用 (`Select` already auto-sheets on a touch device),
     // so it no longer has a root row of its own.
     rootRows: [{ id: "general", skeletonWidth: 52 }],
+  },
+  personal: {
+    group: "core",
+    icon: UserRound,
+    labelKey: "settings.personal.title",
+    subtitleKey: "settings.personal.subtitle",
+    // 用户画像 moved here from its own sidebar row (docs/impls/home-ia-consolidation.md
+    // step 1); renders the existing `ProfileContent` unchanged for now.
+    rootRows: [{ id: "personal", skeletonWidth: 38 }],
   },
   reading: {
     group: "core",

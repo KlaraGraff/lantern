@@ -542,8 +542,10 @@ mod tests {
             )
             .unwrap();
             conn.execute(
-                "INSERT INTO bookmarks (id, book_id, cfi, label, created_at, updated_at)
-                 VALUES ('bm1','b1','epubcfi(/6/2!/4)','Ch1',?1,?1)",
+                "INSERT INTO notes (id, book_id, anchor_kind, scope, location, content,
+                                    content_format, created_at, updated_at, updated_by_device)
+                 VALUES ('bm1','b1','position','book','epubcfi(/6/2!/4)','Ch1',
+                         'plain_text',?1,?1,'dev-A')",
                 params![now],
             )
             .unwrap();

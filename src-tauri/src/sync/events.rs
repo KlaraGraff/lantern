@@ -235,6 +235,11 @@ pub enum EventBody {
     #[serde(rename = "highlight.note.set")]
     HighlightNoteSet { id: String, note: Option<String> },
 
+    // Legacy inbound: migration 065 retired the `bookmarks` table — a bookmark
+    // is a `notes` row with `anchor_kind = 'position'`, and new ones publish
+    // `note.upsert` / `note.delete`. These two variants stay so old peer logs
+    // still deserialize *and* still carry their data across: the merge arms
+    // replay them into `notes` using the same derivation the migration used.
     #[serde(rename = "bookmark.add")]
     BookmarkAdd(BookmarkPayload),
     #[serde(rename = "bookmark.delete")]
@@ -474,6 +479,7 @@ pub struct HighlightPayload {
     pub text_content: Option<String>,
 }
 
+/// Wire form of a pre-065 bookmark. Read-only now — see `EventBody::BookmarkAdd`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BookmarkPayload {
     pub id: String,

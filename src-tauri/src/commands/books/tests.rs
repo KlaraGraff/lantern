@@ -1690,8 +1690,11 @@ fn delete_book_command_persists_book_and_chat_tombstones() {
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO bookmarks (id, book_id, cfi, created_at, updated_at)
-             VALUES ('bm1', 'b1', 'epubcfi(/6/2!)', ?1, ?1)",
+            "INSERT INTO notes
+             (id, book_id, anchor_kind, scope, location, content, content_format,
+              created_at, updated_at, updated_by_device)
+             VALUES ('bm1', 'b1', 'position', 'book', 'epubcfi(/6/2!)', '',
+                     'plain_text', ?1, ?1, 'dev-A')",
             params![now],
         )
         .unwrap();
@@ -1788,7 +1791,7 @@ fn delete_book_command_persists_book_and_chat_tombstones() {
     for table in [
         "books",
         "highlights",
-        "bookmarks",
+        "notes",
         "vocab_words",
         "lookup_records",
         "collection_books",

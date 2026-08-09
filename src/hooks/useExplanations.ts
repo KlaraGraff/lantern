@@ -72,10 +72,14 @@ export function useExplanations() {
         limit: PAGE_SIZE,
       });
       if (generation !== requestGenerationRef.current) return;
-      setItems(page.items);
-      setTotal(page.total);
-      setCursor(page.next_cursor);
-      setBooks(page.books);
+      // Defensive: an unstubbed/mismatched backend can answer with a partial
+      // object (the smoke harness's fallback for a command with no fixture
+      // does exactly this) — fall back to an empty page rather than storing
+      // `undefined` where callers expect arrays to iterate.
+      setItems(page.items ?? []);
+      setTotal(page.total ?? 0);
+      setCursor(page.next_cursor ?? null);
+      setBooks(page.books ?? []);
     } catch (err) {
       console.error("Failed to load explanations:", err);
     }
@@ -93,10 +97,10 @@ export function useExplanations() {
         limit: PAGE_SIZE,
       });
       if (generation !== requestGenerationRef.current) return;
-      setItems((previous) => [...previous, ...page.items]);
-      setCursor(page.next_cursor);
-      setTotal(page.total);
-      setBooks(page.books);
+      setItems((previous) => [...previous, ...(page.items ?? [])]);
+      setCursor(page.next_cursor ?? null);
+      setTotal(page.total ?? 0);
+      setBooks(page.books ?? []);
     } finally {
       setLoadingMore(false);
     }

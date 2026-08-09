@@ -1345,7 +1345,7 @@ fn apply_peer_parent_tombstones_suppress_snapshot_children() {
 
     for table in [
         "highlights",
-        "bookmarks",
+        "notes",
         "vocab_words",
         "collection_books",
         "chats",
@@ -1578,7 +1578,7 @@ fn snapshot_tombstone_for_book_removes_local_children() {
         tx.commit().unwrap();
     }
 
-    for table in ["books", "highlights", "bookmarks"] {
+    for table in ["books", "highlights", "notes"] {
         let n: i64 = local
             .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
             .unwrap();
@@ -1592,6 +1592,111 @@ fn snapshot_tombstone_for_book_removes_local_children() {
         )
         .unwrap();
     assert_eq!(tomb, 1);
+}
+
+/// A peer that has not yet run migration 065 still ships its bookmarks in the
+/// snapshot's `bookmarks` map. Ingesting it must produce the same position
+/// notes the migration produces locally — and a bookmark the reader already
+/// deleted here must stay deleted.
+#[test]
+fn pre_065_peer_snapshot_delivers_its_bookmarks_as_position_notes() {
+    let mut local = open_db();
+    {
+        let tx = local.transaction().unwrap();
+        merge::insert_tombstone(&tx, merge::entity::NOTE, "bm-deleted-here", 9_000).unwrap();
+        tx.commit().unwrap();
+    }
+
+    let mut snap = Snapshot::from_events("dev-B", &[ev(1000, "dev-B", import("b1"))]).unwrap();
+    assert!(
+        snap.state.bookmarks.is_empty(),
+        "this build must never write the legacy map itself"
+    );
+    for (id, cfi, label, created, updated) in [
+        (
+            "bm-labelled",
+            "epubcfi(/6/4!)",
+            Some("come back here".to_string()),
+            1100,
+            1150,
+        ),
+        ("bm-bare", "epubcfi(/6/8!)", None, 1200, 1200),
+        ("bm-deleted-here", "epubcfi(/6/9!)", None, 1300, 1300),
+    ] {
+        snap.state.bookmarks.insert(
+            id.to_string(),
+            BookmarkRow {
+                book_id: "b1".into(),
+                cfi: cfi.into(),
+                label,
+                created_at: created,
+                updated_at: updated,
+            },
+        );
+    }
+
+    {
+        let tx = local.transaction().unwrap();
+        snap.apply_peer(&tx, "dev-B").unwrap();
+        tx.commit().unwrap();
+    }
+
+    let row = |id: &str| -> (String, String, Option<String>, Option<String>, String, i64, i64) {
+        local
+            .query_row(
+                "SELECT anchor_kind, scope, location, selected_text, content,
+                        created_at, updated_at
+                 FROM notes WHERE id = ?1",
+                params![id],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                    ))
+                },
+            )
+            .unwrap()
+    };
+    assert_eq!(
+        row("bm-labelled"),
+        (
+            "position".into(),
+            "book".into(),
+            Some("epubcfi(/6/4!)".into()),
+            None,
+            "come back here".into(),
+            1100,
+            1150,
+        )
+    );
+    assert_eq!(
+        row("bm-bare"),
+        (
+            "position".into(),
+            "book".into(),
+            Some("epubcfi(/6/8!)".into()),
+            None,
+            String::new(),
+            1200,
+            1200,
+        )
+    );
+    let resurrected: i64 = local
+        .query_row(
+            "SELECT COUNT(*) FROM notes WHERE id = 'bm-deleted-here'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        resurrected, 0,
+        "a locally deleted bookmark must not come back through an old peer's snapshot"
+    );
 }
 
 #[test]
@@ -1938,7 +2043,7 @@ fn snapshot_equivalence_events_vs_snapshot_yields_same_state() {
     for table in [
         "books",
         "highlights",
-        "bookmarks",
+        "notes",
         "vocab_words",
         "word_mark_rules",
         "word_mark_exceptions",

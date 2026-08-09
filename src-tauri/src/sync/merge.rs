@@ -172,6 +172,10 @@ pub mod entity {
     pub const BOOK: &str = "book";
     pub const BOOK_ASSET: &str = "book_asset";
     pub const HIGHLIGHT: &str = "highlight";
+    /// Legacy tag, kept because it is on disk in old `_tombstones` rows and
+    /// inside peer snapshots written before migration 065. Nothing writes it
+    /// any more — `insert_tombstone` rewrites it to [`NOTE`], which is what a
+    /// bookmark's row became.
     pub const BOOKMARK: &str = "bookmark";
     pub const VOCAB: &str = "vocab";
     pub const NOTE: &str = "note";
@@ -219,6 +223,18 @@ pub fn tombstone_timestamp(tx: &Transaction, entity: &str, id: &str) -> AppResul
 }
 
 pub fn insert_tombstone(tx: &Transaction, entity: &str, id: &str, ts: i64) -> AppResult<()> {
+    // Single choke point for the 065 rename. Old peer logs and old peer
+    // snapshots still carry `bookmark` delete markers; migration 065 moved the
+    // rows themselves into `notes`, so there is now exactly one question worth
+    // asking about that id and it is `('note', id)`. Rewriting here rather than
+    // at each caller means the snapshot tombstone pass, the legacy
+    // `bookmark.delete` arm, and `cascade_delete` all agree without any of them
+    // knowing about the rename.
+    let entity = if entity == entity::BOOKMARK {
+        entity::NOTE
+    } else {
+        entity
+    };
     tx.execute(
         "INSERT INTO _tombstones (entity, id, ts) VALUES (?1, ?2, ?3)
          ON CONFLICT(entity, id) DO UPDATE SET ts = MAX(_tombstones.ts, excluded.ts)",
@@ -270,8 +286,10 @@ pub fn cascade_delete(tx: &Transaction, entity: &str, id: &str, ts: i64) -> AppR
             tx.execute("DELETE FROM highlights WHERE id = ?1", params![id])?;
             Ok(())
         }
+        // Legacy tag from a pre-065 peer snapshot. The row it names is a
+        // position note now.
         entity::BOOKMARK => {
-            tx.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])?;
+            tx.execute("DELETE FROM notes WHERE id = ?1", params![id])?;
             Ok(())
         }
         entity::VOCAB => {
@@ -347,7 +365,7 @@ fn cascade_delete_book(tx: &Transaction, id: &str, ts: i64) -> AppResult<()> {
     // Mirror the `apply_book_delete` cascade exactly. Replay runs with FK
     // off, so we can't rely on ON DELETE CASCADE.
     //
-    // For the direct-child tables (highlights, bookmarks, vocab_words,
+    // For the direct-child tables (highlights, vocab_words,
     // collection_books) we don't write per-row tombstones —
     // late `*.add` events for those tables are caught by their parent-
     // tombstone check on `('book', id)`.
@@ -415,7 +433,6 @@ fn cascade_delete_book(tx: &Transaction, id: &str, ts: i64) -> AppResult<()> {
         params![id],
     )?;
     tx.execute("DELETE FROM book_summaries WHERE book_id = ?1", params![id])?;
-    tx.execute("DELETE FROM bookmarks WHERE book_id = ?1", params![id])?;
     tx.execute("DELETE FROM highlights WHERE book_id = ?1", params![id])?;
     tx.execute("DELETE FROM vocab_words WHERE book_id = ?1", params![id])?;
     tx.execute("DELETE FROM lookup_records WHERE book_id = ?1", params![id])?;
@@ -762,35 +779,71 @@ fn apply_highlight_color(tx: &Transaction, event: &Event, id: &str, color: &str)
 }
 
 // ---------------------------------------------------------------------------
-// bookmarks (append-only — no LWW, no updated_by_device)
+// bookmarks — legacy inbound only.
+//
+// The table is gone (migration 065): a bookmark is a `notes` row with
+// `anchor_kind = 'position'`. These two arms exist because peer logs written
+// before 065 still hold `bookmark.add` / `bookmark.delete`, and a device that
+// bootstraps by replaying such a log would otherwise silently lose every
+// bookmark that had not yet been folded into a peer snapshot.
+//
+// Nothing emits them any more — `commands::bookmarks` publishes `note.upsert`
+// and `note.delete` like every other note. The derivation below is the same
+// one migration 065 performs in SQL, so replaying an old event lands on the
+// row the migration would have produced.
 // ---------------------------------------------------------------------------
 
 fn apply_bookmark_add(tx: &Transaction, event: &Event, p: &BookmarkPayload) -> AppResult<()> {
-    if is_tombstoned(tx, entity::BOOKMARK, &p.id)?
+    // The id is the note's id — a bookmark and its note are one entity, not a
+    // copy — so its own tombstone is now filed under `note`, whether it got
+    // there through migration 065's fold or through a later delete in the UI.
+    if is_tombstoned(tx, entity::NOTE, &p.id)?
         || parent_tombstoned(tx, &[(entity::BOOK, &p.book_id)])?
     {
         return Ok(());
     }
+    // `OR IGNORE`, not the LWW upsert `apply_note_upsert` uses: this event
+    // predates the merge, so anything already sitting under that id is newer
+    // by construction and must not be overwritten by it.
+    //
+    // `updated_by_device` is the constant `'migration'`, not `event.device`,
+    // for the same reason migration 065 and `insert_legacy_bookmark_as_note`
+    // use it: all three are derivations of one pre-065 row, and a device that
+    // reaches this row by replaying an old log must land on the same bytes as
+    // one that reached it by running the migration. Stamping the emitting
+    // device here would leave the two disagreeing on exactly the column that
+    // breaks a same-millisecond LWW tie in `apply_note_upsert`.
     tx.execute(
-        "INSERT OR IGNORE INTO bookmarks (id, book_id, cfi, label, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
-        params![p.id, p.book_id, p.cfi, p.label, event.ts],
+        "INSERT OR IGNORE INTO notes
+         (id, book_id, anchor_kind, normalized_word, scope, location, selected_text,
+          content, content_format, created_at, updated_at, updated_by_device)
+         VALUES (?1, ?2, 'position', NULL, 'book', ?3, NULL, ?4, 'plain_text', ?5, ?5, 'migration')",
+        params![
+            p.id,
+            p.book_id,
+            p.cfi,
+            p.label.as_deref().unwrap_or(""),
+            event.ts,
+        ],
     )?;
     Ok(())
 }
 
 // Unconditional delete, no `(updated_at, updated_by_device)` guard — same
 // shape as `apply_highlight_delete`, and it converges the same way. There's
-// no bookmark-update event to race (bookmarks are add/delete only, per the
-// section comment above), so the only two things this needs to be safe
-// against are: replaying itself (idempotent — a second `DELETE` matches zero
-// rows, and `insert_tombstone`'s `MAX(ts, ...)` merge is order-independent),
-// and racing `apply_bookmark_add` (which checks `is_tombstoned` up front, so
-// an add delivered after this delete is suppressed regardless of arrival
-// order — delete always wins).
+// no bookmark-update event to race (bookmarks were add/delete only), so the
+// only two things this needs to be safe against are: replaying itself
+// (idempotent — a second `DELETE` matches zero rows, and `insert_tombstone`'s
+// `MAX(ts, ...)` merge is order-independent), and racing `apply_bookmark_add`
+// (which checks `is_tombstoned` up front, so an add delivered after this
+// delete is suppressed regardless of arrival order — delete always wins).
+//
+// The tombstone goes under `note`, which is also where a same-id
+// `note.upsert` from a peer that already migrated will look — so an old
+// delete still outranks a newer-arriving edit of the row it deleted.
 fn apply_bookmark_delete(tx: &Transaction, event: &Event, id: &str) -> AppResult<()> {
-    tx.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])?;
-    insert_tombstone(tx, entity::BOOKMARK, id, event.ts)?;
+    tx.execute("DELETE FROM notes WHERE id = ?1", params![id])?;
+    insert_tombstone(tx, entity::NOTE, id, event.ts)?;
     Ok(())
 }
 
@@ -2026,8 +2079,10 @@ mod tests {
                  VALUES ('c1','Fav',0,1700000000000,1700000000000);
              INSERT INTO collection_books (collection_id, book_id, created_at, updated_at)
                  VALUES ('c1','b1',1700000000000,1700000000000);
-             INSERT INTO bookmarks (id, book_id, cfi, label, created_at, updated_at)
-                 VALUES ('bm1','b1','epubcfi(/6/2!/4)','Ch1',1700000000000,1700000000000);
+             INSERT INTO notes (id, book_id, anchor_kind, scope, location, content,
+                                content_format, created_at, updated_at, updated_by_device)
+                 VALUES ('bm1','b1','position','book','epubcfi(/6/2!/4)','Ch1',
+                         'plain_text',1700000000000,1700000000000,'dev-A');
              INSERT INTO highlights (id, book_id, cfi_range, color, text_content, created_at, updated_at)
                  VALUES ('h1','b1','epubcfi(/6/4!/2,/4)','yellow','q',1700000000000,1700000000000);
              INSERT INTO vocab_words (id, book_id, word, definition, context_sentence, cfi, mastery, review_count, next_review_at, created_at, updated_at)
@@ -2938,12 +2993,144 @@ mod tests {
                 ev(2000, "dev-A", EventBody::BookDelete { id: "b1".into() }),
             ],
         );
-        for table in ["books", "highlights", "bookmarks"] {
+        for table in ["books", "highlights", "notes"] {
             let n: i64 = db
                 .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
                 .unwrap();
             assert_eq!(n, 0, "{table} should be empty after book delete");
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // legacy bookmark events (pre-065 peer logs)
+    // -----------------------------------------------------------------------
+
+    /// A device bootstrapping off an old peer's log must end up with the same
+    /// rows migration 065 would have produced locally — otherwise every
+    /// bookmark that predates the merge quietly disappears on that device.
+    #[test]
+    fn legacy_bookmark_add_lands_as_a_position_note() {
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(
+                    1100,
+                    "dev-A",
+                    EventBody::BookmarkAdd(BookmarkPayload {
+                        id: "bm-labelled".into(),
+                        book_id: "b1".into(),
+                        cfi: "epubcfi(/6/4!)".into(),
+                        label: Some("come back here".into()),
+                    }),
+                ),
+                ev(
+                    1200,
+                    "dev-A",
+                    EventBody::BookmarkAdd(BookmarkPayload {
+                        id: "bm-bare".into(),
+                        book_id: "b1".into(),
+                        cfi: "epubcfi(/6/8!)".into(),
+                        label: None,
+                    }),
+                ),
+            ],
+        );
+
+        let row = |id: &str| -> (String, String, Option<String>, Option<String>, String, i64) {
+            db.query_row(
+                "SELECT anchor_kind, scope, location, selected_text, content, created_at
+                 FROM notes WHERE id = ?1",
+                params![id],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                    ))
+                },
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            row("bm-labelled"),
+            (
+                "position".into(),
+                "book".into(),
+                Some("epubcfi(/6/4!)".into()),
+                None,
+                "come back here".into(),
+                1100,
+            )
+        );
+        assert_eq!(
+            row("bm-bare"),
+            (
+                "position".into(),
+                "book".into(),
+                Some("epubcfi(/6/8!)".into()),
+                None,
+                String::new(),
+                1200,
+            )
+        );
+    }
+
+    /// The delete side has to file its tombstone under `note`, because that is
+    /// the only entity the live code consults. Filed under the retired
+    /// `bookmark` name it would be invisible, and a later replay of the
+    /// matching `bookmark.add` would resurrect the row.
+    #[test]
+    fn legacy_bookmark_delete_tombstones_the_note_and_blocks_resurrection() {
+        let mut db = open_db();
+        let add = |ts: i64| {
+            ev(
+                ts,
+                "dev-A",
+                EventBody::BookmarkAdd(BookmarkPayload {
+                    id: "bm1".into(),
+                    book_id: "b1".into(),
+                    cfi: "epubcfi(/6/4!)".into(),
+                    label: None,
+                }),
+            )
+        };
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                add(1100),
+                ev(1200, "dev-A", EventBody::BookmarkDelete { id: "bm1".into() }),
+                add(1300),
+            ],
+        );
+
+        let live: i64 = db
+            .query_row("SELECT COUNT(*) FROM notes WHERE id = 'bm1'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(live, 0, "a re-applied add must not outlive the delete");
+        let filed: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM _tombstones WHERE entity = 'note' AND id = 'bm1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(filed, 1, "tombstone must be filed under 'note'");
+        let stale: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM _tombstones WHERE entity = 'bookmark'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(stale, 0, "nothing may be written under the retired entity");
     }
 
     // -----------------------------------------------------------------------
@@ -3671,7 +3858,7 @@ mod tests {
             let tables = [
                 "books",
                 "highlights",
-                "bookmarks",
+                "notes",
                 "vocab_words",
                 "collections",
                 "collection_books",

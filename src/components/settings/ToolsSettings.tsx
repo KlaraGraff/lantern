@@ -136,7 +136,12 @@ const REHYDRATION_GROUPS: readonly RehydrationGroup[] = [
   { id: "markerVisibility", keys: MARKER_VISIBILITY_KEYS.map((key) => MARKER_VISIBILITY_SETTING_KEY[key]) },
   {
     id: "interaction",
-    keys: ["double_click_quick_lookup", "triple_click_quick_select", "triple_click_scope"],
+    keys: [
+      "double_click_quick_lookup",
+      "triple_click_quick_select",
+      "triple_click_scope",
+      "dictionary_lookup_enabled",
+    ],
   },
   { id: "menuShortcuts", keys: [SHOW_MENU_SHORTCUTS_SETTING_KEY] },
   { id: "bindings", keys: [READER_BINDINGS_SETTING_KEY] },
@@ -192,6 +197,7 @@ export default function ToolsSettings({
   const [markerStyle, setMarkerStyle] = useState<MarkerStyleConfig>(createDefaultMarkerStyleConfig);
   const [markerVisibility, setMarkerVisibility] = useState<MarkerVisibility>(DEFAULT_MARKER_VISIBILITY);
   const [doubleClickQuickLookup, setDoubleClickQuickLookup] = useState(true);
+  const [dictionaryLookupEnabled, setDictionaryLookupEnabled] = useState(true);
   const [tripleClickQuickSelect, setTripleClickQuickSelect] = useState(true);
   const [tripleClickScope, setTripleClickScope] = useState<TripleClickScope>("sentence");
   const [showMenuShortcuts, setShowMenuShortcuts] = useState(true);
@@ -249,6 +255,7 @@ export default function ToolsSettings({
     setMarkerStyle(parseMarkerStyleConfig(settings[MARKER_STYLE_SETTING_KEY]));
     setMarkerVisibility(resolveMarkerVisibility(settings));
     setDoubleClickQuickLookup(settings.double_click_quick_lookup !== "false");
+    setDictionaryLookupEnabled(settings.dictionary_lookup_enabled !== "false");
     setTripleClickQuickSelect(settings.triple_click_quick_select !== "false");
     setTripleClickScope(parseTripleClickScope(settings.triple_click_scope));
     setShowMenuShortcuts(settings[SHOW_MENU_SHORTCUTS_SETTING_KEY] !== "false");
@@ -293,6 +300,7 @@ export default function ToolsSettings({
           break;
         case "interaction":
           setDoubleClickQuickLookup(settings.double_click_quick_lookup !== "false");
+          setDictionaryLookupEnabled(settings.dictionary_lookup_enabled !== "false");
           setTripleClickQuickSelect(settings.triple_click_quick_select !== "false");
           setTripleClickScope(parseTripleClickScope(settings.triple_click_scope));
           break;
@@ -501,6 +509,19 @@ export default function ToolsSettings({
                 }
                 setDoubleClickQuickLookup(enabled);
                 persistLegacy("double_click_quick_lookup", String(enabled));
+              }}
+            />
+          </SettingsRow>
+          <SettingsRow
+            title={t("dictionary.privacyToggleLabel")}
+            subtitle={t("dictionary.privacyToggleHint")}
+          >
+            <Toggle
+              label={t("dictionary.privacyToggleLabel")}
+              checked={dictionaryLookupEnabled}
+              onChange={(enabled) => {
+                setDictionaryLookupEnabled(enabled);
+                persistLegacy("dictionary_lookup_enabled", String(enabled));
               }}
             />
           </SettingsRow>

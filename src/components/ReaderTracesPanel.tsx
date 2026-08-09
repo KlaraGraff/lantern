@@ -1,9 +1,7 @@
 import type { ComponentProps } from "react";
 import { useTranslation } from "react-i18next";
-import BookmarksPanel from "./BookmarksPanel";
-import HighlightsPanel from "./HighlightsPanel";
 import DictionaryPanel from "./DictionaryPanel";
-import ReaderNotesRail from "./ReaderNotesRail";
+import ReaderNotesPanel from "./ReaderNotesPanel";
 import ReaderXrayPanel from "./ReaderXrayPanel";
 import PanelTabs, { type PanelTab } from "./ui/PanelTabs";
 import type { TracesTab } from "../pages/reader/side-panel";
@@ -11,37 +9,32 @@ import type { TracesTab } from "../pages/reader/side-panel";
 interface ReaderTracesPanelProps {
   tab: TracesTab;
   onTabChange: (tab: TracesTab) => void;
-  bookmarksProps: ComponentProps<typeof BookmarksPanel>;
-  highlightsProps: ComponentProps<typeof HighlightsPanel>;
+  notesProps: ComponentProps<typeof ReaderNotesPanel>;
   vocabProps: ComponentProps<typeof DictionaryPanel>;
-  notesProps: ComponentProps<typeof ReaderNotesRail>;
   xrayProps: ComponentProps<typeof ReaderXrayPanel>;
 }
 
 /**
- * 痕迹 (traces): the merger of what used to be separately-toggled panels —
- * bookmarks, highlights, vocab, notes, context — into one docked panel with
- * tabs. Each tab still mounts only its own component (unmounting the others),
- * the same "one active at a time" behavior they had before the merge.
+ * 痕迹 (traces): everything the reader left in this book, docked in one panel
+ * with three tabs — 笔记, 生词, 语境. Each tab mounts only its own component,
+ * the "one active at a time" behaviour they have always had.
  *
- * The five are one flat row. Highlights previously sat in a second tab bar
- * nested under bookmarks, so the panel showed "书签" containing "书签", and the
- * two stacked 45px bars cost as much vertical space as a list row. Flattening
- * removed both problems without having to invent a parent name for the pair.
+ * There used to be five. 书签 and 划线 were separate tabs beside 笔记, which
+ * asked the reader to know which of the three had produced the thing they were
+ * looking for before they could go look for it. They are one list now — see
+ * `ReaderNotesPanel` — and the three that remain are three genuinely different
+ * questions: what I marked, what I looked up, what this book has said so far.
  *
- * Context came last, from the AI panel. Unmounting it on a tab change is fine
- * and deliberate: its safe-scope results are memoized in a module-level cache
- * inside the panel, so reopening the tab on the same subject restores it
- * without another AI call.
+ * Unmounting 语境 on a tab change is fine and deliberate: its safe-scope
+ * results are memoized in a module-level cache inside the panel, so reopening
+ * the tab on the same subject restores it without another AI call.
  */
-export default function ReaderTracesPanel({ tab, onTabChange, bookmarksProps, highlightsProps, vocabProps, notesProps, xrayProps }: ReaderTracesPanelProps) {
+export default function ReaderTracesPanel({ tab, onTabChange, notesProps, vocabProps, xrayProps }: ReaderTracesPanelProps) {
   const { t } = useTranslation();
 
   const tabs: readonly PanelTab<TracesTab>[] = [
-    { id: "bookmarks", label: t("reader.traces.tab.bookmarks") },
-    { id: "highlights", label: t("reader.traces.tab.highlights") },
-    { id: "vocab", label: t("reader.traces.tab.vocab") },
     { id: "notes", label: t("reader.traces.tab.notes") },
+    { id: "vocab", label: t("reader.traces.tab.vocab") },
     { id: "xray", label: t("reader.traces.tab.xray") },
   ];
 
@@ -49,10 +42,8 @@ export default function ReaderTracesPanel({ tab, onTabChange, bookmarksProps, hi
     <div className="flex h-full flex-col bg-bg-muted">
       <PanelTabs tabs={tabs} active={tab} onChange={onTabChange} label={t("reader.traces.tabsLabel")} />
       <div className="min-h-0 flex-1">
-        {tab === "bookmarks" && <BookmarksPanel {...bookmarksProps} />}
-        {tab === "highlights" && <HighlightsPanel {...highlightsProps} />}
+        {tab === "notes" && <ReaderNotesPanel {...notesProps} />}
         {tab === "vocab" && <DictionaryPanel {...vocabProps} />}
-        {tab === "notes" && <ReaderNotesRail {...notesProps} />}
         {tab === "xray" && <ReaderXrayPanel {...xrayProps} />}
       </div>
     </div>

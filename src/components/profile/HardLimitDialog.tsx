@@ -1,12 +1,13 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { WandSparkles } from "lucide-react";
 import Button from "../ui/Button";
 
 interface HardLimitDialogProps {
   softLimit: number;
   hardLimit: number;
   onBackToEdit: () => void;
-  onOptimize: () => void;
+  onCompress: () => void;
 }
 
 /**
@@ -15,8 +16,13 @@ interface HardLimitDialogProps {
  * truncation path. "回去修改" just closes the dialog — the draft underneath
  * is untouched either way, since the hook never persists text over the hard
  * limit in the first place.
+ *
+ * This is the **only** place "压缩" ever appears (步骤 3): compressing is
+ * allowed to merge near-duplicate requirements, which is a stronger move
+ * than the editor's own always-available "整理" button is allowed to make —
+ * it only belongs here, gated on actually being over the hard limit.
  */
-export default function HardLimitDialog({ softLimit, hardLimit, onBackToEdit, onOptimize }: HardLimitDialogProps) {
+export default function HardLimitDialog({ softLimit, hardLimit, onBackToEdit, onCompress }: HardLimitDialogProps) {
   const { t } = useTranslation();
   const dialogRef = useRef<HTMLDivElement>(null);
 
@@ -47,7 +53,10 @@ export default function HardLimitDialog({ softLimit, hardLimit, onBackToEdit, on
         <div className="mt-3.5 flex items-center gap-2 border-t border-border-light px-5 py-3.5">
           <Button variant="ghost" size="sm" onClick={onBackToEdit}>{t("profile.hardLimit.backToEdit")}</Button>
           <span className="flex-1" />
-          <Button size="sm" onClick={onOptimize}>{t("profile.optimize")}</Button>
+          <Button size="sm" onClick={onCompress}>
+            <WandSparkles size={14} />
+            {t("profile.compressNow")}
+          </Button>
         </div>
       </div>
     </div>

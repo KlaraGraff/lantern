@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   BookmarkPlus,
   CircleHelp,
@@ -26,8 +27,22 @@ import {
   type ReaderActionBinding,
   type ReaderMenuAction,
 } from "./reader-bindings";
+import { useSettings } from "../hooks/useSettings";
 
 export type { ReaderMenuAction };
+
+interface DictionaryGroup {
+  pos: string;
+  senses: string;
+}
+
+interface DictionaryEntry {
+  word: string;
+  phonetic: string | null;
+  groups: DictionaryGroup[];
+  omittedSenseCount: number;
+  fallbackSummary: string | null;
+}
 
 interface ReaderContextMenuProps {
   anchorRect: SerializableRect;
@@ -84,6 +99,36 @@ export default function ReaderContextMenu({
 }: ReaderContextMenuProps) {
   const { t, i18n } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
+  // Every standalone component that needs a setting reads it this way — the
+  // reader's own `useReaderSettingsSync` is out of reach from a component
+  // this self-contained, and a generic key-value fetch here is cheap.
+  const { settings: dictionarySettings } = useSettings();
+  const dictionaryEnabled = dictionarySettings.dictionary_lookup_enabled !== "false";
+  const [dictionaryEntry, setDictionaryEntry] = useState<DictionaryEntry | null>(null);
+  // Single click already opens this menu after the double-click grace period
+  // (`cancelPendingWordClick` in useReaderInteractions.ts) has passed, so no
+  // new gesture is introduced — this is one more row on a toolbar that was
+  // already going to appear.
+  const dictionaryQuery = kind === "word" && dictionaryEnabled ? text : null;
+
+  useEffect(() => {
+    setDictionaryEntry(null);
+    if (!dictionaryQuery) return;
+    let cancelled = false;
+    invoke<DictionaryEntry>("dictionary_lookup_word", { word: dictionaryQuery })
+      .then((entry) => {
+        if (!cancelled) setDictionaryEntry(entry);
+      })
+      .catch(() => {
+        // A genuine not-found, or a failure with no usable fallback: the row
+        // simply does not appear. No "not found" message is ever shown.
+        if (!cancelled) setDictionaryEntry(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dictionaryQuery]);
+
   const customActionIds = customActions.map((action) => action.id);
   const customActionKey = customActionIds.join(",");
   const actions = useMemo(
@@ -174,11 +219,12 @@ export default function ReaderContextMenu({
   const primaryIsLookup = kind !== "passage";
   const definitions: Record<string, { label: string; icon: typeof Sparkles; run: () => void }> = {
     primary: {
-      label: kind === "word"
-        ? t("contextMenu.lookUp", { defaultValue: "查词" })
-        : primaryIsLookup
-          ? t("contextMenu.definePhrase", { defaultValue: "释义" })
-          : t("contextMenu.interpretPassage", { defaultValue: "解读" }),
+      // One label for all three kinds now: word/phrase/passage used to say
+      // 查词/释义/解读, which read as three different actions. They were
+      // always the same AI call (`onLookup`/`onExplain` differ only in
+      // whether the reader has a selection) — 查词 itself now names the new,
+      // free, single-click dictionary layer below instead.
+      label: t("contextMenu.explain", { defaultValue: "解释" }),
       icon: Sparkles,
       run: primaryIsLookup ? onLookup : onExplain,
     },
@@ -218,14 +264,58 @@ export default function ReaderContextMenu({
     }])),
   };
 
+  const showDictionary = kind === "word" && dictionaryEntry !== null;
+
   return (
     <div
       ref={menuRef}
       role="menu"
       aria-label={text}
-      className="fixed z-[62] w-[220px] rounded-md border border-border bg-bg-surface py-1 shadow-context"
+      className={`fixed z-[62] ${showDictionary ? "w-[300px]" : "w-[220px]"} rounded-md border border-border bg-bg-surface py-1 shadow-context`}
       style={{ left: anchorRect.right, top: anchorRect.bottom + 8 }}
     >
+      {showDictionary && dictionaryEntry ? (
+        <div className="mx-1 mb-1 border-b border-border-light px-2 pb-2 pt-1.5">
+          <div className="flex items-baseline gap-2">
+            <span className="text-[13px] font-semibold text-text-primary">{dictionaryEntry.word}</span>
+            {dictionaryEntry.phonetic ? (
+              <span className="text-[11px] text-text-muted">/{dictionaryEntry.phonetic}/</span>
+            ) : null}
+          </div>
+          {dictionaryEntry.fallbackSummary ? (
+            // Degraded fallback: no phonetic, no part-of-speech grouping —
+            // one line, already hard-truncated by the backend.
+            <p className="mt-1 line-clamp-2 text-[12px] leading-5 text-text-secondary">
+              {dictionaryEntry.fallbackSummary}
+            </p>
+          ) : (
+            <>
+              <div className="mt-1 space-y-1">
+                {dictionaryEntry.groups.map((group, index) => (
+                  // `line-clamp-2` is the visual cap the spec actually states —
+                  // two lines per part of speech, ellipsis, no scroll and no way
+                  // to expand. The backend's character budget decides how many
+                  // senses to send and therefore what `omittedSenseCount` says;
+                  // it cannot know this menu's width, and a single unsplittable
+                  // sense is deliberately never cut mid-way there, so without
+                  // this a full-budget group renders three lines.
+                  <p key={index} className="line-clamp-2 text-[12px] leading-5 text-text-secondary">
+                    {group.pos ? (
+                      <span className="mr-1 font-medium text-text-primary">{group.pos}</span>
+                    ) : null}
+                    {group.senses}
+                  </p>
+                ))}
+              </div>
+              {dictionaryEntry.omittedSenseCount > 0 ? (
+                <p className="mt-1 text-[11px] leading-4 text-text-muted">
+                  {t("dictionary.moreSenses", { count: dictionaryEntry.omittedSenseCount })}
+                </p>
+              ) : null}
+            </>
+          )}
+        </div>
+      ) : null}
       {onNote ? (
         <button
           type="button"

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, type ReactNode } from "react"
 import { useTranslation } from "react-i18next";
 import { X, ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
 import GeneralSettings from "./settings/GeneralSettings";
+import ProfileContent from "./ProfileContent";
 import ReadingSettings from "./settings/ReadingSettings";
 import LearningSettings from "./settings/LearningSettings";
 import ServicesSettings from "./settings/ServicesSettings";
@@ -326,6 +327,11 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
   const renderSection = (section: SettingsSection): ReactNode => {
     switch (section) {
       case "general": return <GeneralSettings {...settingsProps} />;
+      // Renders the same full-page component the old 用户画像 sidebar row used
+      // to (docs/impls/home-ia-consolidation.md step 2) — a container swap
+      // only, its internals are untouched. It carries its own header, which is
+      // why the desktop pane header is suppressed for this section below.
+      case "personal": return <ProfileContent embedded />;
       case "reading": return (
         <ReadingSettings
           {...settingsProps}
@@ -612,8 +618,10 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
             >
               {/* Pane header — title + subtitle, then a rule with room
                   below it. Suppressed for About, which leads with its
-                  centered identity card. */}
-              {desktopSection !== "about" && (
+                  centered identity card, and for Personal, which renders
+                  `ProfileContent` verbatim — that component carries its own
+                  full header (title, subtitle, actions). */}
+              {desktopSection !== "about" && desktopSection !== "personal" && (
                 <div className="flex flex-col gap-1">
                   <h3 className="text-[18px] font-semibold text-text-primary">
                     {active?.label}

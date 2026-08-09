@@ -42,9 +42,9 @@ pub struct Annotation {
     pub updated_at: i64,
 }
 
-/// Pill-row counts. Computed over the search / book / date filters but
-/// *ignoring* the type filter, so switching type never rewrites the numbers
-/// the user is choosing between.
+/// How the union breaks down. Computed over the search / book / date filters
+/// but *ignoring* the type filter, so slicing by type never rewrites the
+/// numbers.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct AnnotationCounts {
     pub all: usize,
@@ -52,6 +52,12 @@ pub struct AnnotationCounts {
     pub with_notes: usize,
     pub words: usize,
     pub selections: usize,
+    /// Places the reader kept: `anchor_kind = 'position'`, the merged
+    /// bookmark / free-standing note. An empty one is a bookmark and still
+    /// counts — it is a thing the reader left, not a blank row.
+    pub positions: usize,
+    /// Everything that is not a looked-up word: what the notes page shows.
+    pub marks: usize,
     pub bare_highlights: usize,
 }
 
@@ -67,7 +73,19 @@ pub struct AnnotationPage {
 }
 
 /// Type-filter tokens accepted by `list_annotations`.
-const KINDS: [&str; 4] = ["highlight", "with_note", "word", "selection"];
+///
+/// `mark` is the one the notes page asks for: everything except looked-up
+/// words, which have their own page. `position` exists so the three anchor
+/// kinds can each be named — without it a kept place answers to no type token
+/// at all and would drop out of any sliced view.
+const KINDS: [&str; 6] = [
+    "highlight",
+    "with_note",
+    "word",
+    "selection",
+    "position",
+    "mark",
+];
 
 /// The union, as a CTE. `folded` picks at most one note per anchor (the most
 /// recently updated one) so a highlight can never fan out into several rows;
@@ -150,7 +168,9 @@ const KIND_FILTER: &str = "
        OR (?5 = 'highlight' AND i.highlight_id IS NOT NULL)
        OR (?5 = 'with_note' AND i.content IS NOT NULL AND TRIM(i.content) <> '')
        OR (?5 = 'word' AND i.anchor_kind = 'word')
-       OR (?5 = 'selection' AND i.anchor_kind = 'selection'))
+       OR (?5 = 'selection' AND i.anchor_kind = 'selection')
+       OR (?5 = 'position' AND i.anchor_kind = 'position')
+       OR (?5 = 'mark' AND i.anchor_kind <> 'word'))
 ";
 
 /// Reads an `items i LEFT JOIN books b` row. `items` has no `title` column of
@@ -207,6 +227,8 @@ pub(crate) fn query_annotations(
                     COALESCE(SUM(i.content IS NOT NULL AND TRIM(i.content) <> ''), 0) AS with_notes,
                     COALESCE(SUM(i.anchor_kind = 'word'), 0) AS words,
                     COALESCE(SUM(i.anchor_kind = 'selection'), 0) AS selections,
+                    COALESCE(SUM(i.anchor_kind = 'position'), 0) AS positions,
+                    COALESCE(SUM(i.anchor_kind <> 'word'), 0) AS marks,
                     COALESCE(SUM(i.highlight_id IS NOT NULL
                                  AND (i.content IS NULL OR TRIM(i.content) = '')), 0) AS bare_highlights
              FROM items i LEFT JOIN books b ON b.id = i.book_id
@@ -220,18 +242,23 @@ pub(crate) fn query_annotations(
                 with_notes: row.get("with_notes")?,
                 words: row.get("words")?,
                 selections: row.get("selections")?,
+                positions: row.get("positions")?,
+                marks: row.get("marks")?,
                 bare_highlights: row.get("bare_highlights")?,
             })
         },
     )?;
 
-    // Every highlight is a selection, so the bare count survives both the
-    // "highlights" and "passages" filters untouched.
+    // Every highlight is a selection, so the bare count survives the
+    // "highlights", "passages" and "marks" slices untouched. A kept place
+    // carries no highlight, so slicing down to positions leaves none.
     let (total, bare_highlights) = match kind {
         None => (counts.all, counts.bare_highlights),
         Some("highlight") => (counts.highlights, counts.bare_highlights),
         Some("with_note") => (counts.with_notes, 0),
         Some("word") => (counts.words, 0),
+        Some("position") => (counts.positions, 0),
+        Some("mark") => (counts.marks, counts.bare_highlights),
         Some(_) => (counts.selections, counts.bare_highlights),
     };
 
@@ -506,6 +533,53 @@ mod tests {
 
         assert!(
             query_annotations(&f.db, None, Some("nonsense"), None, None, None, None, 100).is_err()
+        );
+    }
+
+    #[test]
+    fn a_kept_place_is_an_item_even_with_nothing_written_on_it() {
+        let f = fixture();
+        note(&f.db, "n1", Some("b1"), "position", None, Some("cfi-9"), "", 1000);
+
+        let page = list(&f.db, None);
+        assert_eq!(ids(&page), vec!["n:n1"]);
+        let item = &page.annotations[0];
+        assert_eq!(item.anchor_kind, "position");
+        assert_eq!(item.content, None, "an empty bookmark has no note body");
+        assert_eq!(item.location.as_deref(), Some("cfi-9"));
+        assert_eq!(page.total, 1);
+        assert_eq!(page.counts.positions, 1);
+        assert_eq!(page.counts.with_notes, 0);
+    }
+
+    #[test]
+    fn kept_places_answer_to_position_and_mark_but_never_to_word() {
+        let f = fixture();
+        highlight(&f.db, "h1", "b1", "cfi-1", "quoted", 1000);
+        note(&f.db, "n1", Some("b1"), "position", None, Some("cfi-2"), "why I stopped here", 1100);
+        note(&f.db, "n2", Some("b1"), "position", None, Some("cfi-3"), "", 1200);
+        note(&f.db, "n3", Some("b1"), "word", Some("courage"), None, "gloss", 1300);
+        note(&f.db, "n4", Some("b1"), "selection", None, Some("cfi-4"), "on a passage", 1400);
+
+        let positions = list(&f.db, Some("position"));
+        assert_eq!(ids(&positions), vec!["n:n2", "n:n1"]);
+        assert_eq!(positions.total, 2);
+        assert_eq!(positions.bare_highlights, 0);
+
+        // The notes page asks for `mark`: everything except looked-up words.
+        let marks = list(&f.db, Some("mark"));
+        assert_eq!(ids(&marks), vec!["n:n4", "n:n2", "n:n1", "h:h1"]);
+        assert_eq!(marks.total, 4);
+        assert_eq!(marks.bare_highlights, 1);
+
+        assert_eq!(ids(&list(&f.db, Some("word"))), vec!["n:n3"]);
+        assert_eq!(ids(&list(&f.db, Some("selection"))), vec!["n:n4", "h:h1"]);
+
+        let counts = list(&f.db, None).counts;
+        assert_eq!(
+            (counts.all, counts.words, counts.selections, counts.positions, counts.marks),
+            (5, 1, 2, 2, 4),
+            "every item is a word, a selection or a position, and marks is all but the words"
         );
     }
 

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Library, BookOpen, CheckCircle2, FolderClosed, BookA, Plus, MessageSquare, Pencil, Trash2, GripVertical, RefreshCw, StickyNote, BarChart3, RotateCcw, MoreHorizontal, WandSparkles, UserRound } from "lucide-react";
+import { Library, BookOpen, CheckCircle2, FolderClosed, BookA, Plus, MessageCircleQuestion, Pencil, Trash2, GripVertical, RefreshCw, StickyNote, BarChart3, MoreHorizontal } from "lucide-react";
 import Button from "./ui/Button";
 import LanternLogo from "./LanternLogo";
 import { platform } from "../services/platform";
@@ -79,16 +79,17 @@ export default function Sidebar({ activeFilter, onFilterChange, bookCounts, coll
   ];
   // Three-section IA (docs/impls/sidebar-ia-options-mockup.html, option C):
   // library answers "what to read", memos answers "what reading produced",
-  // collections answers "how it's organized". All five memo rows are same-page
-  // filters — reading history used to be the one row here that navigated to
-  // its own route; now it is `activeFilter === "stats"` like its neighbors.
+  // collections answers "how it's organized". All memo rows are same-page
+  // filters. Collapsed from seven rows to four (docs/impls/home-ia-consolidation.md
+  // step 1): 标注→笔记 (renamed, bookmarks folded in); 复习 dropped as a row —
+  // its entry is the 回顾 board that already sits at the top of the words page,
+  // so nothing moved, one row just stopped duplicating it; 对话+解释 merged into
+  // 问答 (`qa` — one list, `QaContent`, ordered by time and dispatching on
+  // kind); 用户画像 moved to 设置·个人.
   const memoFilters = [
-    { id: "chats", label: t("sidebar.chats"), icon: MessageSquare },
-    { id: "vocab", label: t("sidebar.vocab"), icon: BookA },
-    { id: "review", label: t("sidebar.review"), icon: RotateCcw },
     { id: "notes", label: t("sidebar.notes"), icon: StickyNote },
-    { id: "explanations", label: t("sidebar.explanations"), icon: WandSparkles },
-    { id: "profile", label: t("sidebar.profile"), icon: UserRound },
+    { id: "vocab", label: t("sidebar.vocab"), icon: BookA },
+    { id: "qa", label: t("sidebar.qa"), icon: MessageCircleQuestion },
     { id: "stats", label: t("sidebar.readingStats"), icon: BarChart3 },
   ];
   const { collections, create, rename, remove, reorder } = collectionsHook;

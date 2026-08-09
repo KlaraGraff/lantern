@@ -40,9 +40,11 @@ interface PendingMove {
 }
 
 /**
- * "用户画像" — same-page filter (`activeFilter === "profile"`, wired in
- * `Home.tsx`), following the pattern `ExplanationsContent.tsx` and
- * `ReadingStatsContent.tsx` already established for this category of panel.
+ * "个人" — a section of the settings modal (`SettingsSection === "personal"`),
+ * not a page of its own any more (docs/impls/home-ia-consolidation.md step 2).
+ * Structurally it still follows the full-height pane pattern
+ * `ReadingStatsContent.tsx` established, which is why it takes `embedded` to
+ * drop the title-bar padding and drag region when it renders inside the modal.
  *
  * Visual/interaction spec: docs/impls/user-profile-mockup.html (v6). States
  * ⓪–⑥ all live in this one component plus its `profile/` subcomponents:
@@ -51,7 +53,19 @@ interface PendingMove {
  * ⑤ move/undo (the editor's `PendingMove` branch + ghosted card collapse) ·
  * ⑥ delete-card confirm (`DeleteCardDialog`).
  */
-export default function ProfileContent() {
+interface ProfileContentProps {
+  /**
+   * True when this renders inside the settings modal (设置 · 个人) rather than
+   * as a page of its own. The modal is not a window: the title-bar inset and
+   * the drag region belong to a full-page container, and left in place inside
+   * the modal the drag region would let a reader drag the OS window by what
+   * looks like ordinary modal content. The heading also steps down to match
+   * the other settings panes.
+   */
+  embedded?: boolean;
+}
+
+export default function ProfileContent({ embedded = false }: ProfileContentProps = {}) {
   const { t } = useTranslation();
   const {
     state,
@@ -67,7 +81,8 @@ export default function ProfileContent() {
     deleteCard,
     deleteAll,
     summarizeNow,
-    optimizeText,
+    compressText,
+    tidyText,
     setEnabled,
   } = useProfile();
 
@@ -76,9 +91,17 @@ export default function ProfileContent() {
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
   const [showHardLimit, setShowHardLimit] = useState(false);
-  const [showCompare, setShowCompare] = useState(false);
+  // 步骤 3: "整理" (tidy, reorder-only) and "压缩" (compress, may merge) share
+  // this one compare panel — `null` means neither is open, and the two never
+  // show at once (see the editor footer / `HardLimitDialog` below).
+  const [compareMode, setCompareMode] = useState<"compress" | "tidy" | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const [expandedGhosts, setExpandedGhosts] = useState<Set<ProfileSlot>>(new Set());
+  // 依据 is collapsed by default per 步骤 3 — it's still there for anyone who
+  // wants to check the reasoning behind a card, it just isn't shown
+  // unprompted. Ghost cards already gate their evidence behind
+  // `expandedGhosts`; this is the same idea for active cards.
+  const [expandedEvidence, setExpandedEvidence] = useState<Set<ProfileSlot>>(new Set());
   const [deleteTarget, setDeleteTarget] = useState<ProfileSlot | null>(null);
   const [confirmingDeleteAll, setConfirmingDeleteAll] = useState(false);
   const [cardBusy, setCardBusy] = useState<ProfileSlot | null>(null);
@@ -290,6 +313,15 @@ export default function ProfileContent() {
     });
   };
 
+  const toggleEvidenceExpanded = (slot: ProfileSlot) => {
+    setExpandedEvidence((prev) => {
+      const next = new Set(prev);
+      if (next.has(slot)) next.delete(slot);
+      else next.add(slot);
+      return next;
+    });
+  };
+
   /**
    * Opens the move-edit flow (state ⑤'s left half) — shared by both entry
    * points (the card's own button and the delete dialog's escape hatch), per
@@ -395,11 +427,11 @@ export default function ProfileContent() {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col bg-bg-surface">
-      <header className="relative shrink-0 border-b border-border px-page pb-4 pt-titlebar">
-        <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-titlebar" />
+      <header className={`relative shrink-0 border-b border-border px-page pb-4 ${embedded ? "pt-4" : "pt-titlebar"}`}>
+        {!embedded && <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-titlebar" />}
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-[24px] font-semibold text-text-primary">{t("profile.title")}</h1>
+            <h1 className={`${embedded ? "text-[18px]" : "text-[24px]"} font-semibold text-text-primary`}>{t("profile.title")}</h1>
             <p className="mt-1 max-w-[58ch] text-[13px] leading-[1.6] text-text-secondary">
               {state.enabled ? t("profile.subtitle") : t("profile.subtitleOff")}
             </p>
@@ -436,14 +468,14 @@ export default function ProfileContent() {
         {!state.enabled ? (
           <span>{t("profile.strip.off")}</span>
         ) : neverSummarized ? (
-          <span>{t("profile.strip.firstBatch", { done: state.newFollowupsSinceLastBatch, total: state.batchSize })}</span>
+          <span>{t("profile.strip.firstBatch")}</span>
         ) : (
           <span>
             {state.lastSummarizedAt
               ? t("profile.strip.lastSummarized", { when: timeAgo(state.lastSummarizedAt), count: state.revisionCount })
               : t("profile.strip.neverSummarized")}
             {" · "}
-            {t("profile.strip.batchProgress", { done: state.newFollowupsSinceLastBatch, total: state.batchSize })}
+            {t("profile.strip.batchProgress")}
           </span>
         )}
         <span className="flex-1" />
@@ -470,18 +502,19 @@ export default function ProfileContent() {
             </span>
           </div>
 
-          {showCompare ? (
+          {compareMode ? (
             <OptimizeComparePanel
+              mode={compareMode}
               originalText={draftText}
               softLimit={softLimit}
               hardLimit={hardLimit}
-              optimizeText={optimizeText}
-              onCancel={() => setShowCompare(false)}
+              runText={compareMode === "compress" ? compressText : tidyText}
+              onCancel={() => setCompareMode(null)}
               onUse={(text) => {
                 setDraftText(text);
-                setShowCompare(false);
+                setCompareMode(null);
                 setEditing(true);
-                // An optimized rewrite generally no longer contains the
+                // A rewritten draft generally no longer contains the
                 // inserted line verbatim — treat this as a normal edit from
                 // here on rather than risk sending a stale insertedText. The
                 // reader explicitly asked for this trade (N3): if a move was
@@ -517,10 +550,17 @@ export default function ProfileContent() {
                   {saving && <Loader2 size={14} className="animate-spin" />}
                   {t("common.save")}
                 </Button>
-                {overSoft && !pendingMove && (
-                  <Button variant="secondary" size="sm" onClick={() => setShowCompare(true)}>
+                {/* "整理" only reorders (never merges or drops a requirement) and
+                    has nothing to do with length, so unlike "压缩" it's not
+                    gated on `overSoft` — it's available any time the editor
+                    is open and there isn't a move pending. Once `overHard`,
+                    saving is blocked outright and `HardLimitDialog` becomes
+                    the only place an AI rewrite button shows (its "压缩"),
+                    so this one steps aside instead of showing alongside it. */}
+                {!overHard && !pendingMove && (
+                  <Button variant="secondary" size="sm" onClick={() => setCompareMode("tidy")}>
                     <WandSparkles size={14} />
-                    {t("profile.optimize")}
+                    {t("profile.tidyNow")}
                   </Button>
                 )}
                 <Button variant="ghost" size="sm" disabled={saving} onClick={cancelEditing}>
@@ -568,7 +608,7 @@ export default function ProfileContent() {
               <>
                 <span className="flex-1" />
                 <span className="text-[11.2px] tabular-nums text-text-muted">
-                  {t("profile.system.count", { active: activeCards.length, total: profileSlotOrder().length, chars: conclusionChars })}
+                  {t("profile.system.count", { chars: conclusionChars })}
                 </span>
               </>
             )}
@@ -637,10 +677,22 @@ export default function ProfileContent() {
                     </div>
                     <p className="mt-1 text-[13px] leading-[1.7] text-text-primary">{card.conclusion}</p>
                     {card.evidence && (
-                      <div className="mt-2 rounded-lg bg-bg-muted px-2.5 py-2 text-[11.5px] leading-[1.65] text-text-muted">
-                        <b className="font-semibold text-text-secondary">{t("profile.evidenceLabel")}</b>
-                        {card.evidence}
-                      </div>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => toggleEvidenceExpanded(card.slot)}
+                          className="mt-1.5 flex items-center gap-1 text-[11.5px] font-medium text-text-muted hover:text-text-secondary"
+                        >
+                          {expandedEvidence.has(card.slot) ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                          {expandedEvidence.has(card.slot) ? t("profile.collapse") : t("profile.expand")}
+                        </button>
+                        {expandedEvidence.has(card.slot) && (
+                          <div className="mt-1.5 rounded-lg bg-bg-muted px-2.5 py-2 text-[11.5px] leading-[1.65] text-text-muted">
+                            <b className="font-semibold text-text-secondary">{t("profile.evidenceLabel")}</b>
+                            {card.evidence}
+                          </div>
+                        )}
+                      </>
                     )}
                     <div className="mt-2.5 flex items-center gap-1 border-t border-border-light pt-2">
                       <Button
@@ -685,9 +737,9 @@ export default function ProfileContent() {
           softLimit={softLimit}
           hardLimit={hardLimit}
           onBackToEdit={() => setShowHardLimit(false)}
-          onOptimize={() => {
+          onCompress={() => {
             setShowHardLimit(false);
-            setShowCompare(true);
+            setCompareMode("compress");
           }}
         />
       )}

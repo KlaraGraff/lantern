@@ -26,6 +26,12 @@ pub struct SnapshotState {
     pub book_assets: BTreeMap<String, BookAssetRow>,
     #[serde(default)]
     pub highlights: BTreeMap<String, HighlightRow>,
+    /// Always empty in snapshots this build writes: migration 065 retired the
+    /// `bookmarks` table, and a bookmark is now a `notes` row with
+    /// `anchor_kind = 'position'`. The field survives on the reading side only
+    /// — dropping it would make a peer snapshot written before 065 parse
+    /// cleanly while silently discarding every bookmark in it, which is how a
+    /// device that bootstraps from an old peer would lose them all.
     #[serde(default)]
     pub bookmarks: BTreeMap<String, BookmarkRow>,
     #[serde(default)]
@@ -156,6 +162,8 @@ pub struct HighlightRow {
     pub updated_by_device: String,
 }
 
+/// A pre-065 bookmark, as an old peer's snapshot still spells it. Never
+/// written any more — see `SnapshotState::bookmarks`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BookmarkRow {
     pub book_id: String,

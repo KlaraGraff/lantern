@@ -917,6 +917,7 @@ pub fn run() {
             commands::enhanced_fonts::enhanced_font_remove,
             // Dictionary pronunciation audio (cached on disk, never synced)
             commands::dictionary::dictionary_gloss,
+            commands::dictionary::dictionary_lookup_word,
             commands::speech::speech_dictionary_audio,
             commands::speech::speech_edge_audio,
             commands::speech::speech_custom_audio,
@@ -1036,7 +1037,8 @@ pub fn run() {
             commands::profile::profile_delete_card,
             commands::profile::profile_delete_all,
             commands::profile::profile_summarize_now,
-            commands::profile::profile_optimize_text,
+            commands::profile::profile_compress_text,
+            commands::profile::profile_tidy_text,
             // Local lookup history
             commands::lookup_history::save_lookup_record,
             commands::lookup_history::get_cached_lookup,

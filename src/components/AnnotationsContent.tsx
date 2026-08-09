@@ -1,27 +1,29 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   AlertTriangle,
+  Bookmark,
   BookOpen,
   Download,
-  FileText,
-  Highlighter,
   Loader2,
-  Pencil,
   Plus,
   Search,
   Trash2,
-  Type,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import Input from "./ui/Input";
 import Select from "./ui/Select";
 import { useOpenBook } from "../hooks/useOpenBook";
+import { savedHighlightColor } from "./mark-palette";
 
 /**
  * One anchor's worth of marking. A highlight, a note, or a highlight with a
  * note written on it — the backend folds the last pair into one row so the
  * same passage never shows up twice.
+ *
+ * `position` is a place the reader kept: the merged bookmark / free-standing
+ * note. Its `content` may be empty, and that is not an unfinished row — it is
+ * a bookmark.
  */
 interface Annotation {
   id: string;
@@ -29,7 +31,7 @@ interface Annotation {
   note_id: string | null;
   book_id: string | null;
   book_title: string | null;
-  anchor_kind: "word" | "selection";
+  anchor_kind: "word" | "selection" | "position";
   normalized_word: string | null;
   scope: "book" | "global" | "detached";
   location: string | null;
@@ -40,66 +42,73 @@ interface Annotation {
   updated_at: number;
 }
 
-interface AnnotationCounts {
-  all: number;
-  highlights: number;
-  with_notes: number;
-  words: number;
-  selections: number;
-  bare_highlights: number;
-}
-
 interface AnnotationPage {
   annotations: Annotation[];
   next_cursor: string | null;
   total: number;
-  bare_highlights: number;
-  counts: AnnotationCounts;
 }
 
-type KindFilter = "" | "highlight" | "with_note" | "word" | "selection";
-
 const PAGE_SIZE = 100;
-const EMPTY_COUNTS: AnnotationCounts = {
-  all: 0, highlights: 0, with_notes: 0, words: 0, selections: 0, bare_highlights: 0,
+
+/**
+ * Looked-up words live on the vocabulary page and nowhere else. `mark` is the
+ * backend's name for everything but them — see `commands/annotations.rs`.
+ */
+const KIND = "mark";
+
+type Segment = "today" | "week" | "earlier";
+
+const DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * When something was written, coarsely.
+ *
+ * This page dropped its two date pickers: nobody hunting for the line they
+ * drew last week wants to type two dates to find it, and the pickers were the
+ * only reason the page ever felt like a database query. What is left is the
+ * distinction a reader actually makes — today, recently, a while ago — drawn
+ * as separators they scroll past rather than controls they operate.
+ */
+function segmentOf(when: number, now: Date): Segment {
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (when >= startOfToday) return "today";
+  // Weeks start on Monday, which is where "本周" puts the boundary.
+  const startOfWeek = startOfToday - ((now.getDay() + 6) % 7) * DAY;
+  return when >= startOfWeek ? "week" : "earlier";
+}
+
+const SEGMENT_LABEL: Record<Segment, string> = {
+  today: "notes.today",
+  week: "notes.thisWeek",
+  earlier: "notes.earlier",
 };
 
-export default function AnnotationsContent({ onOpenVocab }: { onOpenVocab?: (word: string) => void }) {
+export default function AnnotationsContent() {
   const { t, i18n } = useTranslation();
   const openInReader = useOpenBook();
   const [items, setItems] = useState<Annotation[]>([]);
   const [bookCatalog, setBookCatalog] = useState<Map<string, string>>(new Map());
   const [search, setSearch] = useState("");
   const [bookId, setBookId] = useState("");
-  const [kind, setKind] = useState<KindFilter>("");
-  const [updatedAfter, setUpdatedAfter] = useState("");
-  const [updatedBefore, setUpdatedBefore] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
-  const [bare, setBare] = useState(0);
-  const [counts, setCounts] = useState<AnnotationCounts>(EMPTY_COUNTS);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
-
-  const dateBoundary = (value: string, endOfDay = false) => {
-    if (!value) return null;
-    const date = new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}`);
-    return Number.isNaN(date.getTime()) ? null : date.getTime();
-  };
+  const editorRef = useRef<HTMLTextAreaElement>(null);
 
   const queryPage = useCallback((cursor: string | null, limit = PAGE_SIZE) => invoke<AnnotationPage>("list_annotations", {
     bookId: bookId || null,
-    kind: kind || null,
+    kind: KIND,
     search: search.trim() || null,
-    updatedAfter: dateBoundary(updatedAfter),
-    updatedBefore: dateBoundary(updatedBefore, true),
+    updatedAfter: null,
+    updatedBefore: null,
     cursor,
     limit,
-  }), [bookId, kind, search, updatedAfter, updatedBefore]);
+  }), [bookId, search]);
 
   const rememberBooks = useCallback((page: AnnotationPage) => {
     setBookCatalog((current) => {
@@ -118,8 +127,6 @@ export default function AnnotationsContent({ onOpenVocab }: { onOpenVocab?: (wor
       setItems(page.annotations);
       setNextCursor(page.next_cursor);
       setTotal(page.total);
-      setBare(page.bare_highlights);
-      setCounts(page.counts);
       rememberBooks(page);
     } finally {
       setLoading(false);
@@ -130,7 +137,7 @@ export default function AnnotationsContent({ onOpenVocab }: { onOpenVocab?: (wor
   // only the ones on the first page of the current filter.
   useEffect(() => {
     invoke<AnnotationPage>("list_annotations", {
-      bookId: null, kind: null, search: null, updatedAfter: null,
+      bookId: null, kind: KIND, search: null, updatedAfter: null,
       updatedBefore: null, cursor: null, limit: 500,
     })
       .then((page) => {
@@ -148,6 +155,16 @@ export default function AnnotationsContent({ onOpenVocab }: { onOpenVocab?: (wor
     return () => window.clearTimeout(timer);
   }, [refresh]);
 
+  // Opening the editor lands the caret after what is already written, so
+  // typing continues the note instead of pushing in front of it.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editingId || !editor) return;
+    editor.focus();
+    const end = editor.value.length;
+    editor.setSelectionRange(end, end);
+  }, [editingId]);
+
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
@@ -156,8 +173,6 @@ export default function AnnotationsContent({ onOpenVocab }: { onOpenVocab?: (wor
       setItems((current) => [...current, ...page.annotations]);
       setNextCursor(page.next_cursor);
       setTotal(page.total);
-      setBare(page.bare_highlights);
-      setCounts(page.counts);
       rememberBooks(page);
     } finally {
       setLoadingMore(false);
@@ -174,10 +189,10 @@ export default function AnnotationsContent({ onOpenVocab }: { onOpenVocab?: (wor
     } while (cursor);
     const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
     const rows = [
-      ["type", "highlighted", "scope", "book", "source_text", "word", "note", "updated_at"],
+      ["type", "highlighted", "scope", "book", "source_text", "note", "updated_at"],
       ...all.map((item) => [
         item.anchor_kind, item.highlight_id ? "1" : "0", item.scope, item.book_title,
-        item.selected_text, item.normalized_word, item.content,
+        item.selected_text, item.content,
         new Date(item.updated_at).toISOString(),
       ]),
     ];
@@ -199,14 +214,11 @@ export default function AnnotationsContent({ onOpenVocab }: { onOpenVocab?: (wor
     year: "numeric", month: "short", day: "numeric",
   }), [i18n.language]);
 
-  const filtersActive = Boolean(search.trim() || bookId || kind || updatedAfter || updatedBefore);
+  const filtersActive = Boolean(search.trim() || bookId);
 
   const clearFilters = () => {
     setSearch("");
     setBookId("");
-    setKind("");
-    setUpdatedAfter("");
-    setUpdatedBefore("");
   };
 
   const startEditing = (item: Annotation) => {
@@ -215,29 +227,47 @@ export default function AnnotationsContent({ onOpenVocab }: { onOpenVocab?: (wor
     setDraft(item.content ?? "");
   };
 
+  const stopEditing = () => {
+    setEditingId(null);
+    setDraft("");
+  };
+
   /**
+   * Commits what is in the editor, on the way out of it.
+   *
    * Every note is a `notes` row — a highlight carries no text of its own.
    * Writing on a highlight therefore saves a note anchored at the same range
    * (`location == cfi_range`), which is exactly what the union folds back into
    * this one item on the next read.
+   *
+   * Clearing the text deletes the note but never the row it was written on: a
+   * highlight is still a highlight with nothing said about it, and a kept place
+   * with its text removed is a bookmark again rather than nothing at all.
    */
-  const saveDraft = async (item: Annotation) => {
+  const commit = async (item: Annotation) => {
+    if (saving) return;
     const content = draft.trim();
-    if (!content || saving) return;
+    if (content === (item.content ?? "")) {
+      stopEditing();
+      return;
+    }
     setSaving(true);
     try {
-      await invoke("save_note", {
-        id: item.note_id,
-        bookId: item.book_id,
-        anchorKind: item.anchor_kind,
-        word: item.normalized_word,
-        scope: item.note_id ? item.scope : "book",
-        location: item.location,
-        selectedText: item.selected_text,
-        content,
-      });
-      setEditingId(null);
-      setDraft("");
+      if (!content && item.note_id && item.anchor_kind !== "position") {
+        await invoke("delete_note", { id: item.note_id });
+      } else if (content || item.note_id) {
+        await invoke("save_note", {
+          id: item.note_id,
+          bookId: item.book_id,
+          anchorKind: item.anchor_kind,
+          word: null,
+          scope: item.note_id ? item.scope : "book",
+          location: item.location,
+          selectedText: item.anchor_kind === "position" ? null : item.selected_text,
+          content,
+        });
+      }
+      stopEditing();
       await refresh();
     } finally {
       setSaving(false);
@@ -251,13 +281,8 @@ export default function AnnotationsContent({ onOpenVocab }: { onOpenVocab?: (wor
     await refresh();
   };
 
-  const pills: { value: KindFilter; label: string; count: number; icon?: React.ReactNode }[] = [
-    { value: "", label: t("annotations.filters.all"), count: counts.all },
-    { value: "highlight", label: t("annotations.filters.highlights"), count: counts.highlights, icon: <Highlighter size={12} /> },
-    { value: "with_note", label: t("annotations.filters.withNotes"), count: counts.with_notes, icon: <FileText size={12} /> },
-    { value: "word", label: t("annotations.filters.words"), count: counts.words },
-    { value: "selection", label: t("annotations.filters.selections"), count: counts.selections },
-  ];
+  const now = new Date();
+  let lastSegment: Segment | null = null;
 
   return (
     <main className="flex min-w-0 flex-1 flex-col bg-bg-surface">
@@ -269,11 +294,7 @@ export default function AnnotationsContent({ onOpenVocab }: { onOpenVocab?: (wor
             <p className="mt-1 text-[13px] text-text-muted">{t("annotations.subtitle")}</p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[12px] text-text-muted">
-              {bare > 0
-                ? t("annotations.countWithBare", { total, bare })
-                : t("annotations.count", { count: total })}
-            </span>
+            <span className="text-[12px] text-text-muted">{t("annotations.count", { count: total })}</span>
             <button type="button" onClick={() => downloadCsv().catch(() => {})} title={t("annotations.export")} aria-label={t("annotations.export")} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input"><Download size={15} /></button>
           </div>
         </div>
@@ -286,37 +307,8 @@ export default function AnnotationsContent({ onOpenVocab }: { onOpenVocab?: (wor
             className="min-w-[280px] flex-1"
           />
           <Select className="w-[180px]" value={bookId} onChange={setBookId} options={bookOptions} />
-          <label className="flex h-9 items-center gap-1.5 rounded-md border border-border bg-bg-input px-2 text-[11px] text-text-muted">
-            {t("notes.filters.from")}
-            <input type="date" value={updatedAfter} max={updatedBefore || undefined} onChange={(event) => setUpdatedAfter(event.target.value)} className="bg-transparent text-[12px] text-text-secondary outline-none" />
-          </label>
-          <label className="flex h-9 items-center gap-1.5 rounded-md border border-border bg-bg-input px-2 text-[11px] text-text-muted">
-            {t("notes.filters.to")}
-            <input type="date" value={updatedBefore} min={updatedAfter || undefined} onChange={(event) => setUpdatedBefore(event.target.value)} className="bg-transparent text-[12px] text-text-secondary outline-none" />
-          </label>
         </div>
       </header>
-
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-border px-page py-2.5">
-        {pills.map((pill) => (
-          <button
-            key={pill.value || "all"}
-            type="button"
-            onClick={() => setKind(pill.value)}
-            aria-pressed={kind === pill.value}
-            className={`flex h-7 items-center gap-1.5 rounded-full border px-3 text-[11.5px] font-medium ${
-              kind === pill.value
-                ? "border-accent/25 bg-accent-bg text-accent-text"
-                : "border-border bg-bg-surface text-text-secondary hover:bg-bg-input"
-            }`}
-          >
-            {pill.icon}
-            {pill.label}
-            <span className={kind === pill.value ? "text-[10.5px] text-accent-text" : "text-[10.5px] text-text-muted"}>{pill.count}</span>
-          </button>
-        ))}
-        <span className="ml-auto hidden text-[10.5px] text-text-muted lg:block">{t("annotations.filters.hint")}</span>
-      </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-page">
         {loading ? (
@@ -324,7 +316,7 @@ export default function AnnotationsContent({ onOpenVocab }: { onOpenVocab?: (wor
         ) : items.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
             <div className="flex size-14 items-center justify-center rounded-full bg-accent-bg text-accent-text">
-              {filtersActive ? <Search size={22} /> : <Highlighter size={22} />}
+              {filtersActive ? <Search size={22} /> : <Bookmark size={22} />}
             </div>
             <p className="text-[14px] font-medium text-text-secondary">
               {filtersActive ? t("annotations.noResult") : t("annotations.empty")}
@@ -339,55 +331,106 @@ export default function AnnotationsContent({ onOpenVocab }: { onOpenVocab?: (wor
             )}
           </div>
         ) : (
-          <div className="mx-auto max-w-[920px] divide-y divide-border-light">
+          <div className="mx-auto max-w-[920px]">
             {items.map((item) => {
-              const hasNote = Boolean(item.content);
-              const isWord = item.anchor_kind === "word";
+              const segment = segmentOf(item.updated_at, now);
+              const opensSegment = segment !== lastSegment;
+              lastSegment = segment;
+              const isPlace = item.anchor_kind === "position";
+              const editing = editingId === item.id;
               return (
-                <article key={item.id} className="py-[18px] first:pt-0">
-                  <div className="flex items-start gap-3">
+                <div key={item.id}>
+                  {opensSegment && (
+                    <p className="pb-1.5 pt-5 text-[11px] font-medium tracking-[0.4px] text-text-muted first:pt-0">
+                      {t(SEGMENT_LABEL[segment])}
+                    </p>
+                  )}
+                  <article className="flex items-start gap-3 border-t border-border-light py-[18px]">
+                    {/* The only thing that says what kind of mark this is, and
+                        it says it without a word. */}
+                    <div className="mt-0.5 flex w-4 shrink-0 justify-center">
+                      {isPlace ? (
+                        <Bookmark size={15} className="text-text-muted" />
+                      ) : (
+                        <span
+                          className="block h-[30px] w-[4px] rounded-full"
+                          style={{ backgroundColor: item.color ? savedHighlightColor[item.color] ?? savedHighlightColor.yellow : "var(--color-border)" }}
+                        />
+                      )}
+                    </div>
+
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        {isWord && item.normalized_word && (
-                          <p className="break-words text-[13px] font-semibold text-text-primary">{item.normalized_word}</p>
-                        )}
-                        {item.highlight_id && (
-                          <span className="flex items-center gap-1 rounded-sm bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-700 dark:text-amber-300">
-                            <Highlighter size={10} />
-                            {t("annotations.chip.highlight")}
-                          </span>
-                        )}
-                        {hasNote && (
-                          <span className="rounded-sm bg-link/10 px-1.5 py-0.5 text-[10px] text-link">
-                            {t("annotations.chip.hasNote")}
-                          </span>
-                        )}
-                        <span className={`rounded-sm px-1.5 py-0.5 text-[10px] ${isWord ? "bg-accent-bg text-accent-text" : "bg-bg-input text-text-muted"}`}>
-                          {t(isWord ? "annotations.chip.word" : "annotations.chip.selection")}
-                        </span>
-                        {item.scope === "global" ? (
-                          <span className="rounded-sm bg-accent-bg px-1.5 py-0.5 text-[10px] text-accent-text">
-                            {t("learningCard.notes.scope.global")}
-                          </span>
-                        ) : item.scope === "detached" ? (
-                          <span className="rounded-sm bg-bg-input px-1.5 py-0.5 text-[10px] text-text-muted">
-                            {t("learningCard.notes.scope.detached")}
-                          </span>
-                        ) : null}
-                      </div>
+                      {isPlace ? (
+                        <p className="text-[13px] font-medium text-text-primary">{t("notes.keptPlace")}</p>
+                      ) : item.selected_text ? (
+                        <p className="whitespace-pre-wrap break-words font-serif text-[13px] leading-[1.75] text-text-body">
+                          {item.selected_text}
+                        </p>
+                      ) : null}
+
+                      {editing ? (
+                        <div className="mt-2">
+                          <textarea
+                            ref={editorRef}
+                            rows={4}
+                            value={draft}
+                            onChange={(event) => setDraft(event.target.value)}
+                            onBlur={() => commit(item).catch(() => setSaving(false))}
+                            onKeyDown={(event) => {
+                              if (event.key === "Escape") { event.preventDefault(); stopEditing(); }
+                              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); event.currentTarget.blur(); }
+                            }}
+                            className="w-full resize-y rounded-lg border border-accent/40 bg-bg-surface px-3 py-2.5 text-[13px] leading-[1.7] text-text-primary outline-none focus:border-accent"
+                          />
+                          <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-accent-text">
+                            {saving && <Loader2 size={11} className="animate-spin motion-reduce:animate-none" />}
+                            {t("annotations.editing")}
+                          </p>
+                        </div>
+                      ) : item.content ? (
+                        // The body is the edit entry point. There is no pencil:
+                        // the thing you want to change is the thing you click.
+                        <button type="button" onClick={() => startEditing(item)} className="mt-2 block w-full text-left">
+                          <span className="block whitespace-pre-wrap break-words text-[13px] leading-[1.7] text-text-secondary">{item.content}</span>
+                        </button>
+                      ) : (
+                        <button type="button" onClick={() => startEditing(item)} className="mt-2 block text-left text-[11.5px] text-text-placeholder hover:text-accent-text">
+                          {t("annotations.noNote")}
+                        </button>
+                      )}
+
                       <p className="mt-1.5 text-[11px] text-text-muted">
                         {item.book_title || (item.scope === "detached" ? t("notes.detachedSource") : t("common.unknownBook"))} · {formatter.format(item.updated_at)}
                       </p>
+
+                      {confirmingId === item.id && (
+                        <div className="mt-2.5 flex items-start gap-2.5 rounded-lg border border-danger-border bg-danger-bg px-3 py-2.5">
+                          <AlertTriangle size={14} className="mt-0.5 shrink-0 text-danger-text" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[12px] font-medium text-danger-text">
+                              {t(isPlace ? "notes.deletePlaceTitle" : "notes.deleteMarkTitle")}
+                            </p>
+                            <p className="mt-1 text-[10.5px] leading-[1.55] text-danger-text/80">
+                              {t(isPlace ? "notes.deletePlaceBody" : "notes.deleteMarkBody")}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1.5 self-center">
+                            <button type="button" onClick={() => setConfirmingId(null)} className="h-7 rounded-md border border-danger-border bg-bg-surface px-2.5 text-[11px] text-danger-text">
+                              {t("common.cancel")}
+                            </button>
+                            <button type="button" onClick={() => deleteItem(item).catch(() => {})} className="h-7 rounded-md bg-danger px-2.5 text-[11px] text-white">
+                              {t("annotations.delete.confirm")}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
+
                     <div className="flex shrink-0 items-center gap-1">
-                      {!hasNote && item.highlight_id && editingId !== item.id ? (
+                      {!item.content && !editing && (
                         <button type="button" onClick={() => startEditing(item)} className="flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] text-text-secondary hover:border-accent/30 hover:bg-accent-bg hover:text-accent-text">
                           <Plus size={12} />
-                          {t("annotations.addNote")}
-                        </button>
-                      ) : (
-                        <button type="button" onClick={() => startEditing(item)} title={t("common.edit")} aria-label={t("common.edit")} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text">
-                          <Pencil size={14} />
+                          {t("notes.writeSomething")}
                         </button>
                       )}
                       {item.book_id && item.location && (
@@ -395,83 +438,12 @@ export default function AnnotationsContent({ onOpenVocab }: { onOpenVocab?: (wor
                           <BookOpen size={14} />
                         </button>
                       )}
-                      <button type="button" onClick={() => { setEditingId(null); setConfirmingId(item.id); }} title={t("common.delete")} aria-label={t("common.delete")} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-danger-bg hover:text-danger-text">
+                      <button type="button" onClick={() => { stopEditing(); setConfirmingId(item.id); }} title={t("common.delete")} aria-label={t("common.delete")} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-danger-bg hover:text-danger-text">
                         <Trash2 size={14} />
                       </button>
                     </div>
-                  </div>
-
-                  {item.selected_text && !isWord && (
-                    <p className="mt-2.5 whitespace-pre-wrap break-words border-l-[3px] border-amber-400/70 py-2 pl-3 font-serif text-[13px] leading-[1.75] text-text-body">
-                      {item.selected_text}
-                    </p>
-                  )}
-
-                  {hasNote ? (
-                    <p className="mt-2 whitespace-pre-wrap break-words text-[13px] leading-[1.7] text-text-secondary">{item.content}</p>
-                  ) : editingId === item.id ? null : (
-                    <p className="mt-2 text-[11.5px] text-text-placeholder">{t("annotations.noNote")}</p>
-                  )}
-
-                  {isWord && item.normalized_word && onOpenVocab && (
-                    <button type="button" onClick={() => onOpenVocab(item.normalized_word!)} className="mt-2.5 flex h-[26px] items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] text-text-secondary hover:border-accent/30 hover:bg-accent-bg hover:text-accent-text">
-                      <Type size={12} />
-                      {t("annotations.viewInVocab")}
-                    </button>
-                  )}
-
-                  {editingId === item.id && (
-                    <div className="mt-2.5">
-                      <textarea
-                        autoFocus
-                        rows={4}
-                        value={draft}
-                        onChange={(event) => setDraft(event.target.value)}
-                        className="w-full resize-y rounded-lg border border-accent/40 bg-bg-surface px-3 py-2.5 text-[13px] leading-[1.7] text-text-primary outline-none focus:border-accent"
-                      />
-                      <div className="mt-2 flex items-center gap-2">
-                        {item.book_title && (
-                          <span className="flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] text-text-secondary">
-                            <BookOpen size={12} />
-                            {t("annotations.scopeBook", { book: item.book_title })}
-                          </span>
-                        )}
-                        <div className="flex-1" />
-                        <button type="button" onClick={() => { setEditingId(null); setDraft(""); }} className="h-8 rounded-md px-3 text-[12px] text-text-muted hover:bg-bg-input">
-                          {t("common.cancel")}
-                        </button>
-                        <button type="button" disabled={!draft.trim() || saving} onClick={() => saveDraft(item).catch(() => setSaving(false))} className="flex h-8 items-center gap-1.5 rounded-md bg-accent px-3.5 text-[12px] font-medium text-white disabled:opacity-45">
-                          {saving && <Loader2 size={12} className="animate-spin" />}
-                          {saving ? t("readerNotes.saving") : t("common.save")}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {confirmingId === item.id && (
-                    <div className="mt-2.5 flex items-start gap-2.5 rounded-lg border border-danger-border bg-danger-bg px-3 py-2.5">
-                      <AlertTriangle size={14} className="mt-0.5 shrink-0 text-danger-text" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[12px] font-medium text-danger-text">
-                          {t(item.highlight_id ? "annotations.delete.highlightTitle" : "annotations.delete.noteTitle")}
-                        </p>
-                        {item.highlight_id && (
-                          <p className="mt-1 text-[10.5px] leading-[1.55] text-danger-text/80">
-                            {t(hasNote ? "annotations.delete.highlightWithNoteBody" : "annotations.delete.highlightBody")}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1.5 self-center">
-                        <button type="button" onClick={() => setConfirmingId(null)} className="h-7 rounded-md border border-danger-border bg-bg-surface px-2.5 text-[11px] text-danger-text">
-                          {t("common.cancel")}
-                        </button>
-                        <button type="button" onClick={() => deleteItem(item).catch(() => {})} className="h-7 rounded-md bg-danger px-2.5 text-[11px] text-white">
-                          {t("annotations.delete.confirm")}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </article>
+                  </article>
+                </div>
               );
             })}
             {nextCursor && (

@@ -1,15 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-export interface Bookmark {
-  id: string;
-  book_id: string;
-  cfi: string;
-  label: string | null;
-  created_at: number;
-  updated_at: number;
-}
-
 export interface Highlight {
   id: string;
   book_id: string;
@@ -24,55 +15,14 @@ function notifyHighlightChanged(bookId: string) {
   window.dispatchEvent(new CustomEvent("highlight-changed", { detail: { bookId } }));
 }
 
-// Reading-behavior collection (see src/pages/reader/reading-behavior.ts)
-// listens for this as one of the operations that resets a screen's
-// no-op idle timer — bookmarking is deliberate engagement with the
-// current page, same as annotating or looking a word up.
-function notifyBookmarkChanged(bookId: string) {
-  window.dispatchEvent(new CustomEvent("bookmark-changed", { detail: { bookId } }));
-}
-
-export function useBookmarks(bookId: string) {
-  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
-
-  const refresh = useCallback(async () => {
-    try {
-      const result = await invoke<Bookmark[]>("list_bookmarks", {
-        bookId,
-      });
-      setBookmarks(result);
-    } catch (err) {
-      console.error("Failed to load bookmarks:", err);
-    }
-  }, [bookId]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const add = useCallback(
-    async (cfi: string, label?: string) => {
-      const bookmark = await invoke<Bookmark>("add_bookmark", {
-        bookId,
-        cfi,
-        label: label || null,
-      });
-      setBookmarks((prev) => [bookmark, ...prev]);
-      notifyBookmarkChanged(bookId);
-      return bookmark;
-    },
-    [bookId]
-  );
-
-  const remove = useCallback(async (id: string) => {
-    await invoke("remove_bookmark", { id });
-    setBookmarks((prev) => prev.filter((b) => b.id !== id));
-    notifyBookmarkChanged(bookId);
-  }, [bookId]);
-
-  return { bookmarks, refresh, add, remove };
-}
-
+/**
+ * Bookmarks are not a table, a command, or a hook of their own: a bookmark is a
+ * `notes` row with `anchor_kind = 'position'`, read and written through
+ * `list_notes` / `save_note` / `delete_note` like any other note. The
+ * `add_bookmark` / `list_bookmarks` / `remove_bookmark` commands still exist on
+ * the backend for the MCP tools that speak that shape; nothing in the UI calls
+ * them. See `ReaderNotesPanel`.
+ */
 export function useHighlights(bookId: string) {
   const [highlights, setHighlights] = useState<Highlight[]>([]);
 

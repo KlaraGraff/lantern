@@ -9,10 +9,8 @@ import Sidebar from "../components/Sidebar";
 import BookGrid from "../components/BookGrid";
 import BookList from "../components/BookList";
 import DictionaryContent from "../components/DictionaryContent";
-import ChatsContent from "../components/ChatsContent";
+import QaContent from "../components/qa/QaContent";
 import AnnotationsContent from "../components/AnnotationsContent";
-import ExplanationsContent from "../components/ExplanationsContent";
-import ProfileContent from "../components/ProfileContent";
 import ReadingStatsContent from "../components/ReadingStatsContent";
 import { openSettings } from "../components/settings-open";
 import { listenForSettingsChanged } from "../components/settings-events";
@@ -78,6 +76,15 @@ export default function Home() {
   const location = useLocation();
   const navigate = useNavigate();
   const [activeFilter, setActiveFilter] = useState("all");
+  // The former `复习`/review sidebar row is gone (docs/impls/home-ia-consolidation.md
+  // step 1); its only remaining entry points are programmatic — the reader's
+  // "review these" hand-off and the reading-stats page's review CTA. Both used
+  // to set `activeFilter` to a dedicated "review" id; now they land on the
+  // same `vocab` filter and flip this instead, which `DictionaryContent`
+  // already knows how to consume via its `initialView` prop. A plain sidebar
+  // click on 单词 (via `handleFilterChange`) always resets this to "all", so
+  // the collapsed/review-focused start state never lingers past one visit.
+  const [vocabInitialView, setVocabInitialView] = useState<"all" | "review">("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
@@ -104,6 +111,9 @@ export default function Home() {
   // Picking anything in the sidebar is navigation, and navigation is done with
   // the drawer. On the desktop there is nothing to close.
   const handleFilterChange = useCallback((filter: string) => {
+    // Any explicit sidebar pick is a plain visit, not a review hand-off — see
+    // `vocabInitialView` above.
+    setVocabInitialView("all");
     setActiveFilter(filter);
     setDrawerOpen(false);
   }, [setDrawerOpen]);
@@ -237,14 +247,6 @@ export default function Home() {
     return () => { unlisten.then((fn) => fn()); };
   }, []);
 
-  // A word annotation links to the vocabulary tab. The tab switch is the whole
-  // contract today; the event carries the word for the vocabulary page to
-  // focus if it ever wants to, and is harmlessly unheard until then.
-  const openVocabWord = useCallback((word: string) => {
-    setActiveFilter("vocab");
-    window.dispatchEvent(new CustomEvent("vocab-open-word", { detail: { word } }));
-  }, []);
-
   // The reader sends readers here to review with a navigation intent rather
   // than a global event, so it survives Home not being mounted yet. Cleared
   // right after acting on it, same as Reader.tsx's openVocab handler, so a
@@ -252,7 +254,8 @@ export default function Home() {
   useEffect(() => {
     const state = location.state as { openReview?: boolean } | null;
     if (!state?.openReview) return;
-    setActiveFilter("review");
+    setVocabInitialView("review");
+    setActiveFilter("vocab");
     navigate(location.pathname, { replace: true });
   }, [location.state, location.pathname, navigate]);
 
@@ -490,19 +493,16 @@ export default function Home() {
 
   const content =
     activeFilter === "vocab" ? (
-        <DictionaryContent />
-      ) : activeFilter === "review" ? (
-        <DictionaryContent initialView="review" />
-      ) : activeFilter === "chats" ? (
-        <ChatsContent />
+        <DictionaryContent initialView={vocabInitialView} />
+      ) : activeFilter === "qa" ? (
+        // "问答" — one time-ordered list holding what used to be two pages,
+        // 对话 and 解释 (docs/impls/home-ia-consolidation.md steps 1 and 7).
+        // Rows dispatch on kind; there is no filter to pick between them.
+        <QaContent />
       ) : activeFilter === "notes" ? (
-        <AnnotationsContent onOpenVocab={openVocabWord} />
-      ) : activeFilter === "explanations" ? (
-        <ExplanationsContent />
-      ) : activeFilter === "profile" ? (
-        <ProfileContent />
+        <AnnotationsContent />
       ) : activeFilter === "stats" ? (
-        <ReadingStatsContent onOpenReview={() => setActiveFilter("review")} />
+        <ReadingStatsContent onOpenReview={() => { setVocabInitialView("review"); setActiveFilter("vocab"); }} />
       ) : (
         <main className="flex-1 flex flex-col min-w-0">
           <div className="border-b border-border px-page pb-section relative select-none">

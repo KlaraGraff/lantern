@@ -32,18 +32,18 @@ function labels(rows: readonly SettingsRootRow[]): string[] {
   return rows.map((row) => row.id);
 }
 
-test("the full root list is ten rows in four groups", () => {
+test("the full root list is eleven rows in four groups", () => {
   const groups = groupSettingsRootRows(() => true);
   assert.deepEqual(
     groups.map((group) => [group.id, group.headingKey ?? null, labels(group.rows)]),
     [
-      ["core", null, ["general", "reading", "learning", "tools"]],
+      ["core", null, ["general", "personal", "reading", "learning", "tools"]],
       ["ai", "settings.groups.ai", ["models", "speech", "autoAnalysis"]],
       ["library", "settings.groups.library", ["library"]],
       ["misc", null, ["mcp", "about"]],
     ],
   );
-  assert.equal(groups.flatMap((group) => group.rows).length, 10);
+  assert.equal(groups.flatMap((group) => group.rows).length, 11);
 });
 
 test("a section the platform lacks takes its row with it", () => {
@@ -52,7 +52,7 @@ test("a section the platform lacks takes its row with it", () => {
   const withoutMcp = groupSettingsRootRows(availableOnPhone);
   const misc = withoutMcp.find((group) => group.id === "misc");
   assert.deepEqual(labels(misc?.rows ?? []), ["about"]);
-  assert.equal(withoutMcp.flatMap((group) => group.rows).length, 9);
+  assert.equal(withoutMcp.flatMap((group) => group.rows).length, 10);
 
   const withoutEverything = groupSettingsRootRows(() => false);
   assert.equal(withoutEverything.length, 0);
@@ -61,6 +61,7 @@ test("a section the platform lacks takes its row with it", () => {
 test("every row points at a section the modal can render", () => {
   const sections: SettingsSection[] = [
     "general",
+    "personal",
     "reading",
     "learning",
     "services",

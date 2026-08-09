@@ -50,6 +50,27 @@ type HarnessHighlight = Omit<(typeof HIGHLIGHTS)[number], "text_content"> & {
 };
 const harnessPromoted: HarnessHighlight[] = [];
 
+/** Notes written during the session, plus the seeded ones minus any deleted. */
+interface HarnessNote {
+  id: string;
+  book_id: string;
+  anchor_kind: string;
+  normalized_word: string | null;
+  scope: string;
+  location: string | null;
+  selected_text: string | null;
+  content: string;
+  content_format: string;
+  created_at: number;
+  updated_at: number;
+}
+const harnessSavedNotes: HarnessNote[] = [];
+const harnessDeletedNotes = new Set<string>();
+const harnessNotes = (): HarnessNote[] => [
+  ...NOTES.filter((n) => !harnessDeletedNotes.has(n.id) && !harnessSavedNotes.some((s) => s.id === n.id)),
+  ...harnessSavedNotes,
+];
+
 /** Counter behind `add_person_alias`'s returned id — distinct per write so two
  *  confirmations in one sweep don't hand the receipt the same row to undo. */
 let harnessAliasWrites = 0;
@@ -281,41 +302,130 @@ export const FIXTURES: Record<string, Fixture> = {
   list_bookmarks: () => BOOKMARKS.slice(),
   add_bookmark: () => BOOKMARKS[0],
   add_highlight: () => HIGHLIGHTS[0],
-  list_notes: () => ({ notes: NOTES.slice(), total: NOTES.length, next_cursor: null }),
-  list_context_notes: () => NOTES.slice(),
-  save_note: () => NOTES[0],
-  list_annotations: () => ({
-    annotations: [
+  list_notes: (args: Args) => {
+    const kind = args.anchorKind == null ? null : String(args.anchorKind);
+    const notes = harnessNotes().filter((n) => kind === null || n.anchor_kind === kind);
+    return { notes, total: notes.length, next_cursor: null };
+  },
+  list_context_notes: () => harnessNotes(),
+  // Writes for real, so 「记住这里」 puts a row in the list the way the command
+  // does: a new id when there is none, an in-place update when there is.
+  save_note: (args: Args) => {
+    const id = args.id == null ? `note-${harnessSavedNotes.length + 2}` : String(args.id);
+    const now = Date.now();
+    const existing = harnessSavedNotes.find((n) => n.id === id);
+    const saved = {
+      id,
+      book_id: String(args.bookId ?? "book-epub-reading"),
+      anchor_kind: String(args.anchorKind ?? "selection"),
+      normalized_word: (args.word as string | null) ?? null,
+      scope: String(args.scope ?? "book"),
+      location: (args.location as string | null) ?? null,
+      selected_text: (args.selectedText as string | null) ?? null,
+      content: String(args.content ?? ""),
+      content_format: "markdown",
+      created_at: existing?.created_at ?? now,
+      updated_at: now,
+    };
+    if (existing) harnessSavedNotes[harnessSavedNotes.indexOf(existing)] = saved;
+    else harnessSavedNotes.push(saved);
+    return saved;
+  },
+  delete_note: (args: Args) => {
+    const id = String(args.id ?? "");
+    const at = harnessSavedNotes.findIndex((n) => n.id === id);
+    if (at >= 0) harnessSavedNotes.splice(at, 1);
+    else harnessDeletedNotes.add(id);
+    return null;
+  },
+  // Shape mirrors `commands::annotations::{Annotation, AnnotationPage}`: one
+  // row per anchor, a note folded onto the highlight it sits on, and a kept
+  // place (`anchor_kind: "position"`) standing in for what used to be a
+  // bookmark — its empty `content` is the bookmark, not an unfinished row.
+  list_annotations: () => {
+    // Note/highlight timestamps are milliseconds (`sync.next_logical_timestamp()`),
+    // while the fixture module keeps seconds. Convert, and spread the rows over
+    // the three bands the notes page separates on so all of them get drawn.
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const when = [Date.now(), Date.now() - 2 * DAY_MS, Date.now() - 3 * DAY_MS, Date.now() - 40 * DAY_MS];
+    // One band per row: created_at and updated_at of the same row share it.
+    let row = -1;
+    let half = 0;
+    const at = () => {
+      if (half++ % 2 === 0) row++;
+      return when[Math.min(row, when.length - 1)];
+    };
+    const annotations = [
       ...HIGHLIGHTS.map((h) => ({
-        kind: "highlight",
-        id: h.id,
+        id: `h:${h.id}`,
+        highlight_id: h.id,
+        note_id: null,
         book_id: h.book_id,
         book_title: "The Wind in the Willows",
-        cfi: h.cfi_range,
+        anchor_kind: "selection",
+        normalized_word: null,
+        scope: "book",
+        location: h.cfi_range,
+        selected_text: h.text_content,
         color: h.color,
-        text_content: h.text_content,
-        note: null,
-        created_at: h.created_at,
-        updated_at: h.updated_at,
+        content: null,
+        created_at: at(),
+        updated_at: at(),
       })),
-      ...BOOKMARKS.map((b) => ({
-        kind: "bookmark",
-        id: b.id,
+      ...harnessNotes().map((n) => ({
+        id: `n:${n.id}`,
+        highlight_id: null,
+        note_id: n.id,
+        book_id: n.book_id,
+        book_title: "The Wind in the Willows",
+        anchor_kind: n.anchor_kind,
+        normalized_word: n.normalized_word,
+        scope: n.scope,
+        location: n.location,
+        selected_text: n.selected_text,
+        color: null,
+        content: n.content,
+        // A note written this session already carries a millisecond stamp;
+        // a seeded one gets the next band.
+        created_at: n.created_at > 1e12 ? n.created_at : at(),
+        updated_at: n.updated_at > 1e12 ? n.updated_at : at(),
+      })),
+      ...BOOKMARKS.filter((b) => !harnessDeletedNotes.has(b.id)).map((b) => ({
+        id: `n:${b.id}`,
+        highlight_id: null,
+        note_id: b.id,
         book_id: b.book_id,
         book_title: "The Wind in the Willows",
-        cfi: b.cfi,
+        anchor_kind: "position",
+        normalized_word: null,
+        scope: "book",
+        location: b.cfi,
+        selected_text: null,
         color: null,
-        text_content: b.label,
-        note: null,
-        created_at: b.created_at,
-        updated_at: b.updated_at,
+        content: "",
+        created_at: at(),
+        updated_at: at(),
       })),
-    ],
-    next_cursor: null,
-    total: HIGHLIGHTS.length + BOOKMARKS.length,
-    bare_highlights: 1,
-    counts: { highlights: HIGHLIGHTS.length, bookmarks: BOOKMARKS.length, notes: NOTES.length },
-  }),
+    ];
+    const positions = annotations.filter((a) => a.anchor_kind === "position").length;
+    const words = annotations.filter((a) => a.anchor_kind === "word").length;
+    return {
+      annotations,
+      next_cursor: null,
+      total: annotations.length,
+      bare_highlights: HIGHLIGHTS.length,
+      counts: {
+        all: annotations.length,
+        highlights: HIGHLIGHTS.length,
+        with_notes: annotations.filter((a) => a.content).length,
+        words,
+        selections: annotations.length - positions - words,
+        positions,
+        marks: annotations.length - words,
+        bare_highlights: HIGHLIGHTS.length,
+      },
+    };
+  },
 
   /* ---------------------------------------------------------------- *
    * Vocabulary / learning

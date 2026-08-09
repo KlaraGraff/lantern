@@ -386,13 +386,21 @@ impl Snapshot {
             }
             upsert_highlight(tx, id, row)?;
         }
+        // Pre-065 snapshots only. The id is the note's id, so its tombstone is
+        // filed under `note` — see `merge::insert_tombstone`.
         for (id, row) in &self.state.bookmarks {
-            if merge::is_tombstoned(tx, merge::entity::BOOKMARK, id)?
+            if merge::is_tombstoned(tx, merge::entity::NOTE, id)?
                 || merge::is_tombstoned(tx, merge::entity::BOOK, &row.book_id)?
             {
                 continue;
             }
-            insert_bookmark(tx, id, row)?;
+            if validation::validate_entity_id(id).is_err()
+                || validation::validate_entity_id(&row.book_id).is_err()
+            {
+                log::warn!("sync: skipping legacy bookmark row with an unusable id");
+                continue;
+            }
+            insert_legacy_bookmark_as_note(tx, id, row)?;
         }
         for (id, row) in &self.state.vocab_words {
             if merge::is_tombstoned(tx, merge::entity::VOCAB, id)?
@@ -737,12 +745,27 @@ fn upsert_highlight(tx: &Transaction, id: &str, r: &HighlightRow) -> AppResult<(
     Ok(())
 }
 
-fn insert_bookmark(tx: &Transaction, id: &str, r: &BookmarkRow) -> AppResult<()> {
+/// Materialize a pre-065 bookmark from an old peer's snapshot as the position
+/// note migration 065 would have made of it — same id, same timestamps, same
+/// `'migration'` device tag, so the two derivations agree row for row.
+///
+/// `INSERT OR IGNORE` rather than the LWW upsert `upsert_note` uses: the
+/// source snapshot predates the merge, so whatever is already under that id
+/// locally is newer by construction.
+fn insert_legacy_bookmark_as_note(tx: &Transaction, id: &str, r: &BookmarkRow) -> AppResult<()> {
     tx.execute(
-        "INSERT OR IGNORE INTO bookmarks
-         (id, book_id, cfi, label, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![id, r.book_id, r.cfi, r.label, r.created_at, r.updated_at],
+        "INSERT OR IGNORE INTO notes
+         (id, book_id, anchor_kind, normalized_word, scope, location, selected_text,
+          content, content_format, created_at, updated_at, updated_by_device)
+         VALUES (?1, ?2, 'position', NULL, 'book', ?3, NULL, ?4, 'plain_text', ?5, ?6, 'migration')",
+        params![
+            id,
+            r.book_id,
+            r.cfi,
+            r.label.as_deref().unwrap_or(""),
+            r.created_at,
+            r.updated_at,
+        ],
     )?;
     Ok(())
 }
@@ -1322,26 +1345,10 @@ pub(super) fn dump_state(conn: &Connection) -> AppResult<SnapshotState> {
     }
     drop(stmt);
 
-    // bookmarks
-    let mut stmt =
-        conn.prepare("SELECT id, book_id, cfi, label, created_at, updated_at FROM bookmarks")?;
-    let rows = stmt.query_map([], |r| {
-        Ok((
-            r.get::<_, String>("id")?,
-            BookmarkRow {
-                book_id: r.get("book_id")?,
-                cfi: r.get("cfi")?,
-                label: r.get("label")?,
-                created_at: r.get("created_at")?,
-                updated_at: r.get("updated_at")?,
-            },
-        ))
-    })?;
-    for row in rows {
-        let (id, b) = row?;
-        state.bookmarks.insert(id, b);
-    }
-    drop(stmt);
+    // bookmarks: nothing to capture — migration 065 retired the table, and
+    // every bookmark now leaves through the `notes` pass below as an
+    // `anchor_kind = 'position'` row. `state.bookmarks` stays empty on the way
+    // out and is only ever filled by parsing an older peer's snapshot.
 
     // vocab_words
     let mut stmt = conn.prepare(

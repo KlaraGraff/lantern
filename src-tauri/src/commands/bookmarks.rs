@@ -4,10 +4,22 @@ use tauri::State;
 
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
-use crate::sync::events::{BookmarkPayload, EventBody, HighlightPayload};
+use crate::sync::events::{EventBody, HighlightPayload};
 use crate::sync::merge::{entity, insert_tombstone};
 use crate::sync::writer::SyncWriter;
 
+use super::notes;
+
+/// `anchor_kind` of the `notes` rows that used to be the `bookmarks` table.
+pub(crate) const POSITION_ANCHOR: &str = "position";
+
+/// A place in a book, and a line the reader may not have written.
+///
+/// Not a table of its own since migration 065 — this is a projection of a
+/// `notes` row with `anchor_kind = 'position'`, kept because the MCP bookmark
+/// tools speak this shape. `label` is `content` with the empty string read
+/// back as "nothing written here", which is the same distinction the old
+/// nullable column made.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Bookmark {
     pub id: String,
@@ -16,6 +28,22 @@ pub struct Bookmark {
     pub label: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+impl Bookmark {
+    fn from_note(note: notes::Note) -> AppResult<Self> {
+        let (Some(book_id), Some(cfi)) = (note.book_id, note.location) else {
+            return Err(AppError::Other("BOOKMARK_ANCHOR_MISSING".to_string()));
+        };
+        Ok(Bookmark {
+            id: note.id,
+            book_id,
+            cfi,
+            label: Some(note.content).filter(|value| !value.is_empty()),
+            created_at: note.created_at,
+            updated_at: note.updated_at,
+        })
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -48,6 +76,10 @@ pub fn add_bookmark(
     add_bookmark_inner(&book_id, &cfi, label, &db, &sync)
 }
 
+/// One write path with `save_note`, one entity on the wire (`note.upsert`),
+/// one row in one table. The only thing this adds over calling
+/// `notes::save_note_inner` directly is the `Bookmark` projection its MCP
+/// callers expect.
 pub(crate) fn add_bookmark_inner(
     book_id: &str,
     cfi: &str,
@@ -55,33 +87,19 @@ pub(crate) fn add_bookmark_inner(
     db: &Db,
     sync: &SyncWriter,
 ) -> AppResult<Bookmark> {
-    let id = uuid::Uuid::new_v4().to_string();
-    let now = chrono::Utc::now().timestamp_millis();
-
-    let bookmark = Bookmark {
-        id: id.clone(),
-        book_id: book_id.to_string(),
-        cfi: cfi.to_string(),
-        label: label.clone(),
-        created_at: now,
-        updated_at: now,
-    };
-
-    sync.with_tx(db, now, |tx, events| {
-        tx.execute(
-            "INSERT INTO bookmarks (id, book_id, cfi, label, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
-            params![id, book_id, cfi, label, now],
-        )?;
-        events.push(EventBody::BookmarkAdd(BookmarkPayload {
-            id: id.clone(),
-            book_id: book_id.to_string(),
-            cfi: cfi.to_string(),
-            label: label.clone(),
-        }));
-        Ok(())
-    })?;
-
-    Ok(bookmark)
+    let note = notes::save_note_inner(
+        None,
+        Some(book_id.to_string()),
+        POSITION_ANCHOR,
+        None,
+        "book",
+        Some(cfi.to_string()),
+        None,
+        label.as_deref().unwrap_or(""),
+        db,
+        sync,
+    )?;
+    Bookmark::from_note(note)
 }
 
 #[tauri::command]
@@ -93,41 +111,52 @@ pub fn remove_bookmark(
     delete_bookmarks_inner(&[id], &db, &sync).map(|_| ())
 }
 
+/// Deletes are the one place the projection has to stay narrow: this is
+/// reachable from the MCP `delete_bookmarks` tool, and delegating straight to
+/// `delete_notes_inner` would quietly let it delete any note in the library.
+/// Filter to position notes first, so the tool can still only reach what
+/// `get_bookmarks` showed it.
 pub(crate) fn delete_bookmarks_inner(
     ids: &[String],
     db: &Db,
     sync: &SyncWriter,
 ) -> AppResult<usize> {
-    let timestamp = sync.next_logical_timestamp();
-    sync.with_tx(db, timestamp, |tx, events| {
-        let mut deleted = 0;
-        for id in ids {
-            crate::sync::validation::validate_entity_id(id)?;
-            if tx.execute("DELETE FROM bookmarks WHERE id = ?1", params![id])? > 0 {
-                insert_tombstone(tx, entity::BOOKMARK, id, timestamp)?;
-                events.push(EventBody::BookmarkDelete { id: id.clone() });
-                deleted += 1;
-            }
+    let conn = db.reader();
+    let mut positions = Vec::with_capacity(ids.len());
+    for id in ids {
+        crate::sync::validation::validate_entity_id(id)?;
+        let is_position: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM notes WHERE id = ?1 AND anchor_kind = ?2)",
+            params![id, POSITION_ANCHOR],
+            |row| row.get(0),
+        )?;
+        if is_position {
+            positions.push(id.clone());
         }
-        Ok(deleted)
-    })
+    }
+    drop(conn);
+    notes::delete_notes_inner(&positions, db, sync)
 }
 
 /// Shared query helper. Same shape as `list_bookmarks` — both the Tauri
-/// command and the MCP `get_bookmarks` tool call this so the column
-/// list lives in exactly one place.
+/// command and the MCP `get_bookmarks` tool call this so the projection
+/// lives in exactly one place.
 pub(crate) fn query_bookmarks(db: &Db, book_id: &str) -> AppResult<Vec<Bookmark>> {
     let conn = db.reader();
     let mut stmt = conn.prepare(
-        "SELECT id, book_id, cfi, label, created_at, updated_at FROM bookmarks WHERE book_id = ?1 ORDER BY created_at DESC",
+        "SELECT id, book_id, location, content, created_at, updated_at
+         FROM notes
+         WHERE book_id = ?1 AND anchor_kind = ?2 AND location IS NOT NULL
+         ORDER BY created_at DESC",
     )?;
     let bookmarks = stmt
-        .query_map(params![book_id], |row| {
+        .query_map(params![book_id, POSITION_ANCHOR], |row| {
+            let label: String = row.get("content")?;
             Ok(Bookmark {
                 id: row.get("id")?,
                 book_id: row.get("book_id")?,
-                cfi: row.get("cfi")?,
-                label: row.get("label")?,
+                cfi: row.get("location")?,
+                label: Some(label).filter(|value| !value.is_empty()),
                 created_at: row.get("created_at")?,
                 updated_at: row.get("updated_at")?,
             })

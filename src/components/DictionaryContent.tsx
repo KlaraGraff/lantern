@@ -293,23 +293,6 @@ export default function DictionaryContent({ initialView = "all" }: DictionaryCon
     return () => window.clearTimeout(timer);
   }, [contentTab, historySearch, historyBookFilter, refreshHistory]);
 
-  // The annotations page links a word annotation here. Landing on the tab is
-  // not enough — the word has to be the thing you are looking at, so the
-  // filters that could hide it are cleared rather than merely respected.
-  useEffect(() => {
-    const openWord = (event: Event) => {
-      const word = (event as CustomEvent<{ word?: string }>).detail?.word;
-      if (!word) return;
-      setContentTab("vocab");
-      setBookFilter(null);
-      setReviewOnly(false);
-      setSearch(word);
-      setExpandedWordId(vocabMergeKey(word));
-    };
-    window.addEventListener("vocab-open-word", openWord);
-    return () => window.removeEventListener("vocab-open-word", openWord);
-  }, []);
-
   useEffect(() => {
     const updateNow = () => setNow(Date.now());
     updateNow();

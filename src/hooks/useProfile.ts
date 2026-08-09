@@ -204,15 +204,27 @@ export function useProfile() {
   }, [refresh]);
 
   /**
-   * Utility-tier optimize pass: `profile_optimize_text(text, direction)`
-   * returns the rewritten text as a bare string (never `{ text }`) and never
-   * writes it back — the result only ever lands in the side-by-side compare
-   * panel, applied via `saveText` if the reader picks it. `text` is always
-   * the *unsaved* editor buffer, not what's on disk; `direction` is `null`
-   * when the reader hasn't typed one.
+   * Utility-tier rewrite passes — 步骤 3 splits the old one-button
+   * `profile_optimize_text` into two commands with different rules:
+   * `compressText` (`profile_compress_text`) may merge near-duplicate
+   * requirements and cut filler to shrink toward the limit; `tidyText`
+   * (`profile_tidy_text`) may only reorder — it must never merge, drop, or
+   * invent a requirement, and the result is allowed to come back longer.
+   * Both return the rewritten text as a bare string (never `{ text }`) and
+   * never write it back — the result only ever lands in the side-by-side
+   * compare panel, applied via `saveText` if the reader picks it. `text` is
+   * always the *unsaved* editor buffer, not what's on disk; `direction` is
+   * `null` when the reader hasn't typed one.
    */
-  const optimizeText = useCallback(async (text: string, direction?: string) => {
-    return invoke<string>("profile_optimize_text", {
+  const compressText = useCallback(async (text: string, direction?: string) => {
+    return invoke<string>("profile_compress_text", {
+      text,
+      direction: direction || null,
+    });
+  }, []);
+
+  const tidyText = useCallback(async (text: string, direction?: string) => {
+    return invoke<string>("profile_tidy_text", {
       text,
       direction: direction || null,
     });
@@ -242,7 +254,8 @@ export function useProfile() {
     deleteCard,
     deleteAll,
     summarizeNow,
-    optimizeText,
+    compressText,
+    tidyText,
     setEnabled,
   };
 }

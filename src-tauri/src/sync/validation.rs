@@ -46,6 +46,10 @@ pub fn validate_tombstone_entity(entity: &str) -> AppResult<()> {
         entity,
         "book"
             | "highlight"
+            // Legacy-inbound only. Migration 065 folded `bookmark` tombstones
+            // into `note`, and `merge::insert_tombstone` rewrites the tag on
+            // the way in — but an old peer snapshot still spells it this way
+            // and must validate before it can be rewritten.
             | "bookmark"
             | "vocab"
             | "note"
@@ -142,11 +146,20 @@ pub(crate) fn validate_note_fields(
             && !word.chars().any(char::is_control)
             && normalize_learning_term(word) == word
     });
-    if !matches!(anchor_kind, "word" | "selection")
+    // `position` (migration 065) is the retired `bookmarks` table: a place in
+    // one book, plus text the reader may not have written. It is the one
+    // anchor with no quoted passage — that absence is what lets a reader note
+    // a page without first selecting a sentence on it — so `selected_text`
+    // must be empty, and a location it cannot point at is meaningless.
+    let position_anchor_is_valid = anchor_kind != "position"
+        || (scope == "book" && location.is_some() && selected_text.is_none());
+    if !matches!(anchor_kind, "word" | "selection" | "position")
         || !matches!(scope, "book" | "global" | "detached")
         || (scope == "book" && book_id.is_none())
         || (scope == "detached" && book_id.is_some())
         || (anchor_kind == "word" && normalized_word.is_none())
+        || (anchor_kind == "position" && normalized_word.is_some())
+        || !position_anchor_is_valid
         || !normalized_word_is_valid
         || content.len() > MAX_NOTE_CONTENT_BYTES
         || selected_text.is_some_and(|text| text.len() > MAX_NOTE_SELECTED_TEXT_BYTES)

@@ -172,20 +172,24 @@ describe("pileKey", () => {
 // There is no DOM in this test runner, so this checks the source directly —
 // the same technique tests/i18n-keys.test.ts uses to check literal t() calls.
 //
-// Since the sidebar-IA rework (docs/impls/sidebar-ia-options-mockup.html,
-// option C) Review is one of five rows rendered off a single shared template
-// in the "随记"/Memos section (`memoFilters.map(...)`), not its own bespoke
-// JSX block — so this checks that Review is one of the ids the template maps
-// over, and that the shared template itself never renders a count for any of
-// its rows (which covers Review along with its neighbors).
+// The row itself is gone as of docs/impls/home-ia-consolidation.md step 1 —
+// the 回顾 board already sat at the top of the words page, so the sidebar row
+// was a second door onto the same room. That makes the red line easier to
+// hold, not harder: an entry that does not exist cannot grow a badge. What is
+// left to guard is that it stays gone, and that the shared memo-row template
+// keeps resolving badges through the vocab-only allowlist rather than growing
+// per-row count logic that a re-added review row could inherit.
 describe("sidebar review row", () => {
   const sidebarSource = readFileSync(path.join(rootDir, "src/components/Sidebar.tsx"), "utf8");
 
-  test("review is one of the memo rows", () => {
-    assert.match(
-      sidebarSource,
-      /\{\s*id:\s*"review",\s*label:\s*t\("sidebar\.review"\),\s*icon:\s*RotateCcw\s*\}/,
-      "no \"review\" entry found in memoFilters",
+  test("review is not a sidebar row at all", () => {
+    assert.ok(
+      !/id:\s*"review"/.test(sidebarSource),
+      'a "review" row is back in the sidebar — the 回顾 board on the words page is the entry',
+    );
+    assert.ok(
+      !/sidebar\.review/.test(sidebarSource),
+      "Sidebar.tsx still references the retired sidebar.review key",
     );
   });
 

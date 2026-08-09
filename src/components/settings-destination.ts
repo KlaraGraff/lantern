@@ -1,5 +1,6 @@
 export type SettingsSection =
   | "general"
+  | "personal"
   | "reading"
   | "learning"
   | "services"
@@ -31,6 +32,7 @@ export type SettingsDestination =
 
 const SECTIONS = new Set<SettingsSection>([
   "general",
+  "personal",
   "reading",
   "learning",
   "services",

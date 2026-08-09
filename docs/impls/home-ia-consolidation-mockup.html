@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>主页信息架构收拢 — 样张 v4（复核后修正）— Lantern</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #ececf0; color: #18181b; padding: 40px 24px 100px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1240px; margin: 0 auto; }
+  h1 { font-size: 23px; margin-bottom: 6px; letter-spacing: -.2px; }
+  .sub { color: #71717b; font-size: 13px; line-height: 1.85; margin-bottom: 26px; max-width: 900px; }
+  .sub b { color: #3f3f46; }
+  .screen { margin-bottom: 58px; }
+  .screen > h2 { font-size: 15.5px; margin-bottom: 5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .screen > .desc { color: #71717b; font-size: 12.5px; margin-bottom: 16px; max-width: 900px; line-height: 1.85; }
+  .desc b { color: #3f3f46; font-weight: 600; }
+  .rule { height: 1px; background: rgba(0,0,0,.08); margin: 0 0 32px; }
+  code { background: #f3f3f5; border-radius: 4px; padding: 1px 5px; font-size: 11.5px; color: #52525c; }
+
+  .tag { display: inline-block; font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 999px; vertical-align: 1px; }
+  .tag.new  { background: #dcfce7; color: #15803d; }
+  .tag.move { background: #fef3c7; color: #b45309; }
+  .tag.gone { background: #fee2e2; color: #b91c1c; }
+  .tag.keep { background: #e4e4e7; color: #52525b; }
+  .tag.back { background: #dbeafe; color: #1d4ed8; }
+
+  .cols { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+  .col { flex: 1; min-width: 300px; }
+  .caption { font-size: 11.5px; color: #a1a1aa; margin-bottom: 8px; font-weight: 600; letter-spacing: .02em; }
+
+  /* ══ 模型图 ══ */
+  .model { display: flex; gap: 16px; flex-wrap: wrap; }
+  .mcard { flex: 1; min-width: 300px; background: #fff; border-radius: 12px; padding: 20px 22px; box-shadow: 0 2px 12px rgba(0,0,0,.05); }
+  .mcard .mt { display: flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .mcard .mt svg { width: 17px; height: 17px; color: #7c3aed; }
+  .mcard .md { font-size: 12.5px; color: #71717b; line-height: 1.85; }
+  .mcard .mg { margin-top: 14px; padding-top: 13px; border-top: 1px solid #f0f0f2; font-size: 12px; color: #52525c; line-height: 1.9; }
+  .mcard .mg em { font-style: normal; color: #a1a1aa; }
+  .mcard.merged { background: #f6fbf7; box-shadow: none; border: 1px solid #cfe9d6; }
+  .mcard.merged .mt svg { color: #15803d; }
+
+  /* ══ app frame ══ */
+  .app { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,.09), 0 1px 3px rgba(0,0,0,.06); display: flex; }
+  .app.tall { min-height: 520px; }
+
+  /* ══ sidebar ══ */
+  .sb { width: 224px; flex-shrink: 0; background: #fafafa; border-right: 1px solid #e4e4e7; padding: 0 16px 12px; display: flex; flex-direction: column; gap: 22px; }
+  .sb.standalone { border-radius: 12px; border: 1px solid #e4e4e7; box-shadow: 0 4px 20px rgba(0,0,0,.05); }
+  .sb .brand { display: flex; align-items: center; gap: 10px; padding: 16px 0 2px; }
+  .sb .brand .logo { width: 26px; height: 26px; border-radius: 7px; background: linear-gradient(140deg,#a855f7,#7c3aed); flex-shrink: 0; }
+  .sb .brand span { font-size: 17px; font-weight: 600; letter-spacing: .5px; }
+  .sb h3 { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .3px; color: #71717b; margin-bottom: 10px; }
+  .sb .rows { display: flex; flex-direction: column; gap: 3px; }
+  .sb .r { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 11px; border-radius: 8px; font-size: 13.5px; font-weight: 500; color: #52525c; }
+  .sb .r svg { width: 15px; height: 15px; color: #71717b; flex-shrink: 0; }
+  .sb .r .n { margin-left: auto; font-size: 11.5px; color: #a1a1aa; font-weight: 500; }
+  .sb .r.on { background: #f3e8ff; color: #7c3aed; }
+  .sb .r.on svg { color: #7c3aed; }
+  .sb .r.on .n { color: #7c3aed; }
+  .sb .r .badge { margin-left: auto; min-width: 17px; height: 17px; border-radius: 999px; background: #7c3aed; color: #fff; font-size: 10px; font-weight: 600; display: grid; place-items: center; padding: 0 4px; }
+  .sb .foot { margin-top: auto; border-top: 1px solid #e4e4e7; padding-top: 12px; display: flex; align-items: center; gap: 10px; }
+  .sb .foot .av { width: 28px; height: 28px; border-radius: 50%; background: #7c3aed; color: #fff; font-size: 11.5px; font-weight: 600; display: grid; place-items: center; }
+  .sb .foot .t1 { font-size: 12.5px; font-weight: 500; }
+  .sb .foot .t2 { font-size: 11px; color: #71717b; }
+
+  /* ══ content ══ */
+  .ct { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .ct-head { border-bottom: 1px solid #e4e4e7; padding: 20px 24px 16px; }
+  .ct-head .top { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+  .ct-head h4 { font-size: 22px; font-weight: 600; letter-spacing: -.3px; }
+  .ct-head .st { font-size: 12.5px; color: #71717b; margin-top: 4px; }
+  .ct-head .cnt { font-size: 11.5px; color: #71717b; white-space: nowrap; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .inp { flex: 1; min-width: 240px; height: 34px; border: 1px solid #e4e4e7; border-radius: 8px; background: #f3f3f5; display: flex; align-items: center; gap: 8px; padding: 0 11px; font-size: 12.5px; color: #a1a1aa; }
+  .inp svg { width: 14px; height: 14px; }
+  .sel { height: 34px; border: 1px solid #e4e4e7; border-radius: 8px; background: #fff; display: flex; align-items: center; gap: 7px; padding: 0 11px; font-size: 12.5px; color: #52525c; }
+  .sel::after { content: ""; width: 5px; height: 5px; border-right: 1.4px solid #a1a1aa; border-bottom: 1.4px solid #a1a1aa; transform: rotate(45deg) translate(-1px,-1px); }
+  .iconbtn { width: 32px; height: 32px; border-radius: 7px; display: grid; place-items: center; color: #a1a1aa; }
+  .iconbtn svg { width: 15px; height: 15px; }
+  .headbtn { height: 34px; padding: 0 13px; border-radius: 8px; background: #7c3aed; color: #fff; font-size: 12.5px; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .headbtn svg { width: 14px; height: 14px; }
+  .headbtn .k { background: rgba(255,255,255,.24); border-radius: 999px; padding: 0 6px; font-size: 11px; line-height: 16px; }
+
+  /* ══ list ══ */
+  .list { padding: 18px 24px; display: flex; flex-direction: column; }
+  .entry { padding: 16px 0; border-top: 1px solid #f4f4f5; display: flex; gap: 13px; }
+  .entry:first-child { border-top: none; padding-top: 2px; }
+  .entry .edge { width: 16px; flex-shrink: 0; display: flex; justify-content: center; padding-top: 3px; }
+  .entry .edge .bar { width: 3px; border-radius: 2px; align-self: stretch; }
+  .entry .edge svg { width: 14px; height: 14px; color: #a1a1aa; }
+  .entry .main { min-width: 0; flex: 1; }
+  .entry .quote { font-family: Georgia, "Songti SC", serif; font-size: 13px; line-height: 1.78; color: #0a0a0a; }
+  .entry .pos { font-size: 12.5px; color: #3f3f46; }
+  .entry .body { margin-top: 8px; font-size: 12.5px; line-height: 1.75; color: #52525c; }
+  .entry .body.editable { border-radius: 6px; box-shadow: 0 0 0 1px #ede9fe inset; padding: 5px 7px; margin-left: -7px; }
+  .entry .nobody { margin-top: 8px; font-size: 11.5px; color: #b4b4bb; }
+  .entry .meta { font-size: 11px; color: #a1a1aa; margin-top: 9px; }
+  .entry .acts { display: flex; gap: 3px; flex-shrink: 0; align-items: flex-start; }
+  .ghostbtn { height: 27px; display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid #e4e4e7; border-radius: 7px; font-size: 11px; color: #52525c; background: #fff; white-space: nowrap; }
+  .ghostbtn svg { width: 12px; height: 12px; }
+  .tsep { font-size: 11px; font-weight: 600; color: #a1a1aa; letter-spacing: .04em; padding: 18px 0 2px; border-top: 1px solid #f4f4f5; }
+  .tsep:first-child { border-top: none; padding-top: 0; }
+  .tsep + .entry { border-top: none; }
+
+  .empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 11px; text-align: center; padding: 56px 24px; }
+  .empty .ic { width: 56px; height: 56px; border-radius: 50%; background: #f3e8ff; color: #7c3aed; display: grid; place-items: center; }
+  .empty .ic svg { width: 22px; height: 22px; }
+  .empty .t { font-size: 14px; font-weight: 500; color: #52525c; }
+  .empty .h { font-size: 12px; line-height: 1.9; color: #a1a1aa; max-width: 380px; }
+
+  .dlg { background: #fff; border-radius: 12px; box-shadow: 0 20px 25px rgba(0,0,0,.15), 0 8px 10px rgba(0,0,0,.1); padding: 20px; }
+  .dlg h5 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+  .dlg p { font-size: 12.5px; line-height: 1.85; color: #71717b; }
+  .dlg .btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+  .btn { height: 32px; padding: 0 14px; border-radius: 8px; font-size: 12.5px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+  .btn svg { width: 13px; height: 13px; }
+  .btn.ghost { border: 1px solid #e4e4e7; color: #52525c; background: #fff; }
+  .btn.danger { background: #e7000b; color: #fff; }
+  .btn.prim { background: #7c3aed; color: #fff; }
+
+  /* ══ settings ══ */
+  .modal { background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,.1), 0 1px 3px rgba(0,0,0,.06); display: flex; min-height: 470px; max-width: 980px; }
+  .nav { width: 200px; flex-shrink: 0; background: #f7f7f8; border-right: 1px solid rgba(0,0,0,.07); padding: 14px 10px; }
+  .nav .gl { font-size: 10.5px; font-weight: 600; color: #a1a1aa; letter-spacing: .06em; padding: 13px 10px 5px; }
+  .nav .it { display: flex; align-items: center; gap: 9px; font-size: 13px; padding: 7px 10px; border-radius: 8px; color: #3f3f46; position: relative; }
+  .nav .it svg { width: 14px; height: 14px; opacity: .7; }
+  .nav .it.on { background: #ede9fe; color: #6d28d9; font-weight: 600; }
+  .nav .it.on svg { opacity: 1; }
+  .nav .it .tag { position: absolute; right: 7px; }
+  .pane { flex: 1; padding: 22px 26px 28px; min-width: 0; }
+  .pane h3 { font-size: 16px; font-weight: 600; }
+  .pane .ph { font-size: 12px; color: #a1a1aa; margin-top: 3px; margin-bottom: 8px; line-height: 1.7; }
+  .srow { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid rgba(0,0,0,.06); padding: 11px 0; }
+  .srow .nm { font-size: 13.5px; font-weight: 500; }
+  .srow .hi { font-size: 11.5px; color: #a1a1aa; margin-top: 3px; line-height: 1.65; max-width: 440px; }
+  .srow.danger .nm { color: #dc2626; }
+  .gh { font-size: 11.5px; font-weight: 700; color: #a1a1aa; letter-spacing: .05em; padding: 22px 0 4px; }
+  .toggle { width: 36px; height: 21px; border-radius: 999px; background: #7c3aed; position: relative; flex-shrink: 0; }
+  .toggle::after { content: ""; position: absolute; top: 2.5px; right: 2.5px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .field { width: 190px; height: 32px; border: 1px solid #e4e4e7; border-radius: 8px; background: #fff; display: flex; align-items: center; padding: 0 10px; font-size: 12.5px; }
+  .ta { border: 1px solid #e4e4e7; border-radius: 10px; background: #fff; padding: 12px 13px; font-size: 12.5px; line-height: 1.8; color: #3f3f46; }
+  .ta.list li { margin-left: 15px; }
+  .tafoot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
+  .tafoot .cc { font-size: 11px; color: #a1a1aa; }
+  .tafoot .cc.warn { color: #b45309; font-weight: 600; }
+  .pcard { border: 1px solid #e4e4e7; border-radius: 10px; padding: 11px 13px; margin-top: 8px; background: #fafafa; }
+  .pcard .k { font-size: 11.5px; font-weight: 600; color: #52525c; margin-bottom: 4px; }
+  .pcard .v { font-size: 12.5px; line-height: 1.7; color: #3f3f46; }
+  .pcard .evid { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e4e4e7; font-size: 11px; color: #a1a1aa; line-height: 1.7; }
+  .pcard .cacts { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .pcard.ghost { background: #fbfbfc; border-style: dashed; }
+  .pcard.ghost .k, .pcard.ghost .v { color: #a1a1aa; }
+  .tinybtn { height: 25px; padding: 0 9px; border-radius: 6px; border: 1px solid #e4e4e7; background: #fff; font-size: 11px; color: #52525c; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .tinybtn svg { width: 11px; height: 11px; }
+  .tinybtn.q { border: none; background: none; color: #a1a1aa; padding: 0 4px; }
+
+  .diff { display: flex; gap: 14px; flex-wrap: wrap; }
+  .dcol { flex: 1; min-width: 275px; }
+  .dlabel { font-size: 11px; color: #a1a1aa; font-weight: 600; margin-bottom: 6px; display: flex; justify-content: space-between; gap: 8px; }
+  .dlabel b { color: #15803d; }
+
+  /* ══ reader ══ */
+  .reader { display: flex; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,.09); }
+  .rpage { flex: 1; min-width: 0; padding: 32px 44px; }
+  .rpage p { font-family: Georgia, "Songti SC", serif; font-size: 15px; line-height: 2.05; color: #0a0a0a; margin-bottom: 15px; }
+  .hl-y { background: rgba(251,191,36,.35); border-radius: 2px; padding: 1px 0; }
+  .hl-g { background: rgba(74,222,128,.3); border-radius: 2px; padding: 1px 0; }
+  .wtap { box-shadow: 0 0 0 2px #ddd6fe; border-radius: 3px; background: #f5f3ff; }
+  .rpanel { width: 322px; flex-shrink: 0; border-left: 1px solid #e4e4e7; background: #fafafa; display: flex; flex-direction: column; }
+  .rpanel .ptabs { display: flex; height: 45px; border-bottom: 1px solid #e4e4e7; padding: 0 6px; }
+  .rpanel .ptab { flex: 1; display: grid; place-items: center; font-size: 12.5px; font-weight: 500; color: #71717b; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .rpanel .ptab.on { color: #7c3aed; border-bottom-color: #7c3aed; font-weight: 600; }
+  .rpanel .pacts { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 9px 11px; border-bottom: 1px solid #e4e4e7; }
+  .rpanel .pacts .c { font-size: 11px; color: #a1a1aa; }
+  .minipill { height: 26px; display: inline-flex; align-items: center; gap: 5px; padding: 0 10px; border-radius: 999px; border: 1px solid #e4e4e7; background: #fff; font-size: 11.5px; color: #52525c; }
+  .minipill svg { width: 12px; height: 12px; }
+  .rentry { padding: 12px 13px; border-bottom: 1px solid #efeff1; display: flex; gap: 10px; }
+  .rentry.here { background: #fbf9ff; box-shadow: inset 2px 0 0 #c4b5fd; }
+  .rentry .edge { width: 14px; flex-shrink: 0; display: flex; justify-content: center; padding-top: 2px; }
+  .rentry .edge .bar { width: 3px; border-radius: 2px; align-self: stretch; }
+  .rentry .edge svg { width: 13px; height: 13px; color: #a1a1aa; }
+  .rentry .q { font-family: Georgia,"Songti SC",serif; font-size: 12.5px; line-height: 1.7; color: #18181b; }
+  .rentry .p { font-size: 12px; color: #3f3f46; }
+  .rentry .n { font-size: 12px; line-height: 1.7; color: #52525c; margin-top: 6px; }
+  .rentry .m { font-size: 10.5px; color: #a1a1aa; margin-top: 7px; }
+  .rsep { padding: 7px 13px; font-size: 10.5px; color: #a1a1aa; background: #f4f4f5; border-bottom: 1px solid #e9e9ec; }
+
+  /* ══ 选中工具条 / 词典行 ══ */
+  .pop { display: inline-block; background: #fff; border: 1px solid rgba(0,0,0,.08); border-radius: 10px; box-shadow: 0 10px 15px rgba(0,0,0,.1), 0 4px 6px rgba(0,0,0,.08); overflow: hidden; max-width: 560px; }
+  .pop .dhead { display: flex; align-items: baseline; gap: 9px; padding: 10px 12px 9px; }
+  .pop .dw { font-size: 14px; font-weight: 600; flex-shrink: 0; }
+  .pop .dp { font-size: 12px; color: #a1a1aa; font-family: Georgia, serif; flex-shrink: 0; }
+  .pop .dsum { font-size: 12.5px; color: #52525c; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pop .dbody { padding: 0 12px 11px; display: flex; flex-direction: column; gap: 6px; }
+  .pop .dg { display: flex; gap: 10px; font-size: 12.5px; line-height: 1.75; }
+  .pop .dg .ps { flex: 0 0 24px; color: #7c3aed; font-weight: 600; font-style: italic; }
+  .pop .dg .sn { color: #3f3f46; min-width: 0; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .pop .dcut { padding: 0 12px 11px; font-size: 11.5px; color: #a1a1aa; }
+  .pop .dbar { border-top: 1px solid #efeff1; padding: 5px 6px; display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
+  .pop .miss { padding: 10px 12px; font-size: 12px; color: #a1a1aa; }
+  .seltoolbar { display: inline-flex; align-items: center; gap: 2px; background: #fff; border: 1px solid rgba(0,0,0,.08); border-radius: 10px; box-shadow: 0 10px 15px rgba(0,0,0,.1), 0 4px 6px rgba(0,0,0,.08); padding: 5px 6px; flex-wrap: wrap; }
+  .a { height: 30px; padding: 0 10px; border-radius: 7px; font-size: 12.5px; color: #18181b; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .a.prim { background: #f3e8ff; color: #7c3aed; font-weight: 600; }
+  .a svg { width: 13px; height: 13px; }
+  .div { width: 1px; height: 18px; background: #e4e4e7; margin: 0 4px; }
+  .dots { display: inline-flex; gap: 4px; padding: 0 6px; }
+  .dots i { width: 13px; height: 13px; border-radius: 50%; display: block; }
+
+  table.gl { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.05); }
+  table.gl th, table.gl td { text-align: left; padding: 11px 14px; font-size: 12.5px; border-bottom: 1px solid #f0f0f2; vertical-align: top; line-height: 1.75; }
+  table.gl th { background: #fafafa; font-size: 11px; font-weight: 600; color: #71717b; letter-spacing: .04em; text-transform: uppercase; }
+  table.gl tr:last-child td { border-bottom: none; }
+  table.gl .old { color: #b91c1c; }
+  table.gl .new { color: #15803d; font-weight: 600; }
+  .note { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 12px 14px; font-size: 12.5px; line-height: 1.9; color: #78350f; margin-top: 14px; }
+  .note code { background: #fef3c7; color: #78350f; }
+  .note.red { background: #fef2f2; border-color: #fecaca; color: #7f1d1d; }
+  .note.red code { background: #fee2e2; color: #7f1d1d; }
+  .scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-library" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 6l4 14M12 6v14M8 8v12M4 4v16"/></symbol>
+  <symbol id="i-bookopen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="i-note" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11l5-5V5a2 2 0 0 0-2-2Z"/><path d="M15 21v-4a2 2 0 0 1 2-2h4"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.2 6.5 17.5 2.8a2 2 0 0 0-2.8 0L3 14.5V21h6.5L21.2 9.3a2 2 0 0 0 0-2.8z"/></symbol>
+  <symbol id="i-word" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 12h5M10.2 9h2.6l1.7 6h-6z" stroke-width="1.6"/></symbol>
+  <symbol id="i-qa" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M9.5 8.5a2.5 2.5 0 0 1 4.4 1.6c0 1.7-2.4 1.9-2.4 3.4" stroke-width="1.6"/><path d="M11.5 16h.01" stroke-width="2"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9M13 17V5M8 17v-3"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5v14"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></symbol>
+  <symbol id="i-dl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"/></symbol>
+  <symbol id="i-cap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 9 12 5 2 9l10 4z"/><path d="M6 11v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5"/></symbol>
+  <symbol id="i-tool" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h3l6-6"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="12" rx="3"/><path d="M12 3v5M8 14h.01M16 14h.01"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-5M12 8h.01"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-5-6-5M12 19h8"/></symbol>
+  <symbol id="i-hl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h3l6-6"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4z"/></symbol>
+  <symbol id="i-rot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+  <symbol id="i-msg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+  <symbol id="i-moveto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 10 20 5l-5-5" transform="translate(0 7)"/><path d="M20 12H9a5 5 0 0 0-5 5v3"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5z"/></symbol>
+  <symbol id="i-vol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></symbol>
+</svg>
+
+<div class="page">
+
+<h1>主页信息架构收拢 — 样张 v4</h1>
+<p class="sub">
+  v3 有一批零件是我<b>看着界面猜它干什么就砍了</b>。复核之后：三处砍错（砍掉的是唯一入口）、两处我描述的东西<b>代码里根本没有</b>、一整块功能漏画。
+  v4 把这些改回来，并加上词典层和「压缩 / 整理」的拆分。<br>
+  <span class="tag new">新</span> 新增　<span class="tag move">移</span> 换位置　<span class="tag gone">删</span> 不再存在　<span class="tag back">改回</span> v3 砍错、v4 恢复
+</p>
+
+<div class="scroll">
+<table class="gl" style="margin-bottom:16px">
+  <tr><th style="width:22%">v3 我砍掉的</th><th style="width:13%">复核结论</th><th>事实</th></tr>
+  <tr><td>设置·个人「立即总结」</td><td class="old">砍错了</td><td>总结只有两条路：自动攒够 20 条追问，或点这颗按钮。删了只能干等。<b>恢复</b>，但旁边的「已攒 18/30」计数确实砍掉，换成一句「上次整理于 3 天前」。</td></tr>
+  <tr><td>阅读器面板「＋ 新建笔记」</td><td class="old">砍错了</td><td>它是唯一能建「不针对任何一句话、就想在这页写一笔」的入口，其他路径都要求先选中文字。<b>恢复</b>——而且并表之后它和「记住这里」本来就该是同一颗按钮。</td></tr>
+  <tr><td>笔记页每行的铅笔图标</td><td class="old">砍错了</td><td>我以为「点正文就能改」。<b>正文没有 onClick，点不动。</b>铅笔是列表里唯一能改笔记正文的入口。v4 的做法：<b>给正文加点击进编辑，然后才删图标</b>——能力不丢，零件少一个。</td></tr>
+  <tr><td>「5/7 个维度」旁灰着的<b>空卡片</b></td><td class="old">不存在</td><td>没有空卡片。没结论的维度根本不出现在列表里。只有一行计数文字——那一行可以砍。</td></tr>
+  <tr><td>阅读器面板<b>「本页 / 全书」切换</b></td><td class="old">不存在</td><td>所有面板本来就一直显示全书。这一条整条从清单删除。</td></tr>
+  <tr><td>画像卡片的<b>「移动到文字」/「撤销」</b></td><td class="old">整块漏画</td><td>三个入口（卡片上、幽灵卡上、删除确认框里），是这一页交互的核心。v4 screen ⑧ 补齐。</td></tr>
+  <tr><td>侧栏「复习」独立一行</td><td class="new">砍得对</td><td>和「单词」确实是同一个组件，只差 <code>initialView</code>；红点也是同一个 <code>dueForReviewCount</code>。</td></tr>
+  <tr><td>笔记页五个筛选 / 起止日期</td><td>可砍，有代价</td><td>它们过滤的是后端查询，不是前端摆设。砍掉后找「上周划的线」会变难 → v4 用<b>按时间分段的列表</b>补回这个能力，不用两个日期选择器。</td></tr>
+  <tr><td>卡片下的「依据：…」</td><td>可砍，有代价</td><td>它和结论是同一次 AI 输出，是你判断这条结论是不是瞎编的唯一凭据。v4 <b>不删，收进展开态</b>。</td></tr>
+  <tr><td>「对话 / 解释」合并成一个列表</td><td>可做，但不是删标签</td><td>两种记录字段不同构（一个是多轮线程，一个是绑 CFI 的单次解释），混一个时间线要按类型分叉渲染，<b>接近重写这两个页面的展示层</b>。已确认值这个工作量。</td></tr>
+</table>
+</div>
+<div class="note red" style="margin-bottom:30px">
+  <b>我砍错的三样有一个共同点：它们都是那件事的唯一入口。</b>
+  以后砍任何零件之前先跑这一问——<b>砍掉之后，这件事还有别的路吗？</b>过了这一问，三条都会当场露出来。
+</div>
+<div class="rule"></div>
+
+
+<!-- ① 两样东西 -->
+<section class="screen">
+  <h2>① 书里只有两样东西</h2>
+  <p class="desc">你在书里只做两个动作：<b>选中一段话</b>，或者<b>标记当前这个位置</b>。每个动作对应一样东西，没有第三样。</p>
+  <div class="model">
+    <div class="mcard">
+      <div class="mt"><svg><use href="#i-note"/></svg>笔记</div>
+      <div class="md">一定挂在<b>你选中的那段原文</b>上。选中就有颜色；想说点什么就接着写，不想写就放着。</div>
+      <div class="mg">怎么产生：选中文字 → 「划线」或「写笔记」<br><em>过去叫「高亮 / 标记 / 划线 / 标注」，四个名字，同一样东西</em></div>
+    </div>
+    <div class="mcard">
+      <div class="mt"><svg><use href="#i-bookmark"/></svg>书签</div>
+      <div class="md">一个<b>位置</b>，不挂原文。读到想回来的地方按一下，位置就留住了；<b>想接着写一句话也可以，写不写都行</b>。</div>
+      <div class="mg">怎么产生：阅读器面板 → 「记住这里」<br><em>按钮过去叫「在此处添加书签」——你说别扭，换掉了</em></div>
+    </div>
+    <div class="mcard merged">
+      <div class="mt"><svg><use href="#i-pencil"/></svg>独立笔记 <span class="tag back">改回</span></div>
+      <div class="md" style="color:#71717b">没选中任何文字就直接写的笔记，绑定<b>当前阅读位置</b>（<code>ReaderNotesRail.tsx:70</code>，<code>selectedText: null</code>）。</div>
+      <div class="mg" style="border-top-color:#cfe9d6">
+        <b style="color:#15803d">不删，和「书签」合成同一样东西。</b>
+        v3 我判它和书签重复所以砍掉——重复是真的，但它是「不针对具体某句话、只想在这页记一笔」的<b>唯一</b>建立方式，砍了这件事就没了。
+        并表之后「书签」和「独立笔记」本来就是同一行数据（位置 ＋ 可有可无的一句话），<b>所以答案不是删一个，是让一颗按钮同时产出两者</b>。
+      </div>
+    </div>
+  </div>
+
+  <div class="scroll">
+  <table class="gl" style="margin-top:18px">
+    <tr><th style="width:20%">这件事</th><th style="width:28%">现在叫什么</th><th style="width:13%">之后</th><th>为什么</th></tr>
+    <tr>
+      <td>选中一段文字，给它上色</td>
+      <td class="old">标记（选中菜单）/ 划线（面板标签）/ 高亮（标注页正文）</td>
+      <td class="new">划线</td>
+      <td>只当<b>动词</b>，出现在选中菜单的按钮上。「标记」这个词让出来，专给「整词标记 / 查词标记」——那是另一套功能，现在两边抢同一个词。</td>
+    </tr>
+    <tr>
+      <td>你在书里留下的东西，汇总看</td>
+      <td class="old">标注（一页）＋ 书签（阅读器里的另一个标签页）</td>
+      <td class="new">笔记</td>
+      <td>一个页面、一个入口。书签和笔记<b>同列不同名</b>——放一起看是对的，但不必逼它们叫同一个词。</td>
+    </tr>
+    <tr>
+      <td>查过的词</td>
+      <td class="old">单词页有一份，标注页里还有一份</td>
+      <td class="new">只在单词</td>
+      <td>你问「单词不也是划线的一种吗」——正文里那个颜色确实像划线，但它是查词留下的痕迹，归单词管。<b>一个东西一个家，不在两页各出现一次。</b></td>
+    </tr>
+    <tr>
+      <td>AI 说的话（一次的、多轮的）</td>
+      <td class="old">解释、对话（侧栏两行）</td>
+      <td class="new">问答</td>
+      <td>合成一行，<b>里面也不再分标签</b>——一个列表按时间排，多轮的标一句「3 轮」。代价见 screen ⑥。</td>
+    </tr>
+    <tr>
+      <td>单击一个词，白拿一条释义</td>
+      <td class="old">没有。所有查词都要花 API</td>
+      <td class="new">词典</td>
+      <td><b>新增的一层</b>，见 screen ⑩。词典给广度（所有义项并排），AI 给准度（就这一句是哪个意思）。</td>
+    </tr>
+  </table>
+  </div>
+</section>
+<div class="rule"></div>
+
+
+<!-- ② 侧栏 -->
+<section class="screen">
+  <h2>② 侧栏：七行 → 四行</h2>
+  <p class="desc">「随记」改名「我的记录」——「随记」听起来就是笔记的同义词，会和下面第一行打架。三行不是删掉，是并进了别的行；<b>并进去之后也没有产生新的标签栏</b>。</p>
+  <div class="cols">
+    <div class="col" style="max-width:270px;min-width:250px">
+      <div class="caption">现在</div>
+      <aside class="sb standalone">
+        <div class="brand"><div class="logo"></div><span>Lantern</span></div>
+        <div><h3>书库</h3><div class="rows">
+          <div class="r"><svg><use href="#i-library"/></svg>全部书籍<span class="n">42</span></div>
+          <div class="r"><svg><use href="#i-bookopen"/></svg>在读<span class="n">5</span></div>
+          <div class="r"><svg><use href="#i-check"/></svg>已读完<span class="n">11</span></div>
+        </div></div>
+        <div><h3>随记</h3><div class="rows">
+          <div class="r"><svg><use href="#i-msg"/></svg>对话</div>
+          <div class="r"><svg><use href="#i-word"/></svg>单词</div>
+          <div class="r"><svg><use href="#i-rot"/></svg>复习<span class="badge">12</span></div>
+          <div class="r"><svg><use href="#i-note"/></svg>标注</div>
+          <div class="r"><svg><use href="#i-spark"/></svg>解释</div>
+          <div class="r"><svg><use href="#i-user"/></svg>用户画像</div>
+          <div class="r"><svg><use href="#i-chart"/></svg>阅读历程</div>
+        </div></div>
+        <div><h3>收藏集</h3><div class="rows"><div class="r"><svg><use href="#i-folder"/></svg>维多利亚小说<span class="n">7</span></div></div></div>
+        <div class="foot"><div class="av">LJ</div><div><div class="t1">李建威</div><div class="t2">设置</div></div></div>
+      </aside>
+    </div>
+
+    <div class="col" style="max-width:270px;min-width:250px">
+      <div class="caption">之后</div>
+      <aside class="sb standalone">
+        <div class="brand"><div class="logo"></div><span>Lantern</span></div>
+        <div><h3>书库</h3><div class="rows">
+          <div class="r"><svg><use href="#i-library"/></svg>全部书籍<span class="n">42</span></div>
+          <div class="r"><svg><use href="#i-bookopen"/></svg>在读<span class="n">5</span></div>
+          <div class="r"><svg><use href="#i-check"/></svg>已读完<span class="n">11</span></div>
+        </div></div>
+        <div><h3>我的记录</h3><div class="rows">
+          <div class="r on"><svg><use href="#i-note"/></svg>笔记<span class="n">96</span></div>
+          <div class="r"><svg><use href="#i-word"/></svg>单词<span class="badge">12</span></div>
+          <div class="r"><svg><use href="#i-qa"/></svg>问答<span class="n">49</span></div>
+          <div class="r"><svg><use href="#i-chart"/></svg>阅读历程</div>
+        </div></div>
+        <div><h3>收藏集</h3><div class="rows"><div class="r"><svg><use href="#i-folder"/></svg>维多利亚小说<span class="n">7</span></div></div></div>
+        <div class="foot"><div class="av">LJ</div><div><div class="t1">李建威</div><div class="t2">设置 · 个人</div></div></div>
+      </aside>
+    </div>
+
+    <div class="col" style="min-width:340px">
+      <div class="caption">变了什么</div>
+      <table class="gl">
+        <tr><th>行</th><th>去向</th></tr>
+        <tr><td>标注</td><td><span class="tag move">改名</span> → <b>笔记</b>，书签并进来</td></tr>
+        <tr><td>复习</td><td><span class="tag gone">删行</span> → 单词页头上一颗按钮。<b>红点移到「单词」行</b>，不会漏看</td></tr>
+        <tr><td>对话</td><td><span class="tag gone">删行</span> → 并进「问答」同一个列表</td></tr>
+        <tr><td>解释</td><td><span class="tag gone">删行</span> → 并进「问答」同一个列表</td></tr>
+        <tr><td>用户画像</td><td><span class="tag move">搬走</span> → 设置 · 个人</td></tr>
+        <tr><td>阅读历程</td><td><span class="tag keep">留</span> 独立一行</td></tr>
+      </table>
+      <div class="note" style="margin-top:12px">
+        「单词」和「复习」<b>本来就是同一个组件</b>（<code>Home.tsx:492</code>，两个入口只差一个 <code>initialView</code>），却占了侧栏两行。这一条已复核，几乎零成本。
+      </div>
+    </div>
+  </div>
+</section>
+<div class="rule"></div>
+
+
+<!-- ③ 笔记页 -->
+<section class="screen">
+  <h2>③ 笔记页 <span class="tag new">重画</span></h2>
+  <p class="desc">
+    <b>页面上没有一个分类词，也没有一个筛选按钮。</b> 左边那条颜色就是你划线时选的颜色，左边那颗图标就是书签——看一眼就知道是什么。
+    头上只剩两样：搜索框、书籍下拉。<b>时间靠分段找</b>，不靠两个日期选择器。
+  </p>
+  <div class="app tall">
+    <aside class="sb">
+      <div class="brand"><div class="logo"></div><span>Lantern</span></div>
+      <div><h3>书库</h3><div class="rows">
+        <div class="r"><svg><use href="#i-library"/></svg>全部书籍<span class="n">42</span></div>
+        <div class="r"><svg><use href="#i-bookopen"/></svg>在读<span class="n">5</span></div>
+        <div class="r"><svg><use href="#i-check"/></svg>已读完<span class="n">11</span></div>
+      </div></div>
+      <div><h3>我的记录</h3><div class="rows">
+        <div class="r on"><svg><use href="#i-note"/></svg>笔记<span class="n">96</span></div>
+        <div class="r"><svg><use href="#i-word"/></svg>单词<span class="badge">12</span></div>
+        <div class="r"><svg><use href="#i-qa"/></svg>问答<span class="n">49</span></div>
+        <div class="r"><svg><use href="#i-chart"/></svg>阅读历程</div>
+      </div></div>
+      <div><h3>收藏集</h3><div class="rows"><div class="r"><svg><use href="#i-folder"/></svg>维多利亚小说<span class="n">7</span></div></div></div>
+      <div class="foot"><div class="av">LJ</div><div><div class="t1">李建威</div><div class="t2">设置</div></div></div>
+    </aside>
+
+    <div class="ct">
+      <div class="ct-head">
+        <div class="top">
+          <div>
+            <h4>笔记</h4>
+            <div class="st">你在书里留下的每一处痕迹。</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="cnt">96 条</span>
+            <div class="iconbtn"><svg><use href="#i-dl"/></svg></div>
+          </div>
+        </div>
+        <div class="toolbar">
+          <div class="inp"><svg><use href="#i-search"/></svg>搜索原文或你写的内容</div>
+          <div class="sel">全部书籍</div>
+        </div>
+      </div>
+
+      <div class="list">
+        <div class="tsep">本周</div>
+        <article class="entry">
+          <div class="edge"><div class="bar" style="background:#fbbf24"></div></div>
+          <div class="main">
+            <p class="quote">It is in vain to say human beings ought to be satisfied with tranquillity: they must have action; and they will make it if they cannot find it.</p>
+            <p class="body">这句是全书的引擎。她不是在抱怨阁楼太闷，是在说人不动就会自己制造动静——后面纵火那段的伏笔。</p>
+            <p class="meta">Jane Eyre · 第 12 章 · 3 天前</p>
+          </div>
+          <div class="acts">
+            <div class="iconbtn"><svg><use href="#i-bookopen"/></svg></div>
+            <div class="iconbtn"><svg><use href="#i-trash"/></svg></div>
+          </div>
+        </article>
+
+        <article class="entry">
+          <div class="edge"><svg><use href="#i-bookmark"/></svg></div>
+          <div class="main">
+            <p class="pos">第 36 章「后甲板」</p>
+            <p class="nobody">还没写字。</p>
+            <p class="meta">Moby-Dick · 昨天</p>
+          </div>
+          <div class="acts">
+            <button class="ghostbtn"><svg><use href="#i-plus"/></svg>写点什么</button>
+            <div class="iconbtn"><svg><use href="#i-bookopen"/></svg></div>
+            <div class="iconbtn"><svg><use href="#i-trash"/></svg></div>
+          </div>
+        </article>
+
+        <article class="entry">
+          <div class="edge"><div class="bar" style="background:#4ade80"></div></div>
+          <div class="main">
+            <p class="quote">they need exercise for their faculties, and a field for their efforts, as much as their brothers do.</p>
+            <p class="body editable">绿色是我留给「说得对但还没想透」的那一类。这句和上面那句是同一个论证的两级。<span style="color:#a1a1aa">▍</span></p>
+            <p class="meta" style="color:#7c3aed">正在编辑 · 点别处即保存　<span class="tag back">改回</span> 正文可点直接改，不用先按铅笔</p>
+          </div>
+          <div class="acts">
+            <div class="iconbtn"><svg><use href="#i-bookopen"/></svg></div>
+            <div class="iconbtn"><svg><use href="#i-trash"/></svg></div>
+          </div>
+        </article>
+
+        <div class="tsep">更早</div>
+        <article class="entry">
+          <div class="edge"><div class="bar" style="background:#fbbf24"></div></div>
+          <div class="main">
+            <p class="quote">It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.</p>
+            <p class="nobody">还没写字。</p>
+            <p class="meta">Pride and Prejudice · 第 1 章 · 5 天前</p>
+          </div>
+          <div class="acts">
+            <button class="ghostbtn"><svg><use href="#i-plus"/></svg>写点什么</button>
+            <div class="iconbtn"><svg><use href="#i-bookopen"/></svg></div>
+            <div class="iconbtn"><svg><use href="#i-trash"/></svg></div>
+          </div>
+        </article>
+
+        <article class="entry">
+          <div class="edge"><svg><use href="#i-bookmark"/></svg></div>
+          <div class="main">
+            <p class="pos">第 27 章</p>
+            <p class="body">从这里往后重读一遍，前面那次读太快了。</p>
+            <p class="meta">Jane Eyre · 上周</p>
+          </div>
+          <div class="acts">
+            <div class="iconbtn"><svg><use href="#i-bookopen"/></svg></div>
+            <div class="iconbtn"><svg><use href="#i-trash"/></svg></div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </div>
+  <div class="note">
+    <b>铅笔图标砍掉的前提是先给正文加点击进编辑</b>（今天的正文是不可点的死文本，<code>AnnotationsContent.tsx:410</code>）。顺序不能反——先删图标就等于删掉唯一的编辑入口。<br>
+    这一页真正删掉的：五个筛选、起止日期、每条上的彩色小标签、「其中 41 条只划线」那种带催促意味的统计。<b>时间维度用「今天 / 本周 / 更早」分段补回来</b>，找「上周划的线」靠滚，不靠两个日期控件。<br>
+    <b>单词笔记不在这一页出现</b>——查过的词只在「单词」页。
+  </div>
+</section>
+<div class="rule"></div>
+
+
+<!-- ④ 空态 + 删除确认 -->
+<section class="screen">
+  <h2>④ 空态 · 两种删除确认</h2>
+  <p class="desc">同一颗垃圾桶，两种后果。删划线是不可逆的——书里的颜色和你写的字一起没——这句话要说出来。</p>
+  <div class="cols">
+    <div class="col" style="min-width:380px">
+      <div class="caption">一条都还没有</div>
+      <div class="app" style="min-height:290px">
+        <div class="ct">
+          <div class="empty">
+            <div class="ic"><svg><use href="#i-note"/></svg></div>
+            <div class="t">还没有笔记</div>
+            <div class="h">读到觉得重要的句子，选中它就能划线，想说什么随时补上；读到想回来的地方，按「记住这里」留个书签。两样都会出现在这一页。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col" style="min-width:360px">
+      <div class="caption">删笔记</div>
+      <div class="dlg" style="margin-bottom:16px">
+        <h5>删掉这条笔记？</h5>
+        <p>书里的颜色，和你写在这里的字，会一起消失。原文不受影响。</p>
+        <div class="btns"><button class="btn ghost">取消</button><button class="btn danger">删除</button></div>
+      </div>
+      <div class="caption">删书签</div>
+      <div class="dlg">
+        <h5>删掉这个书签？</h5>
+        <p>只是取消这个位置的记号。原文，以及你在这附近划过的线，都不受影响。</p>
+        <div class="btns"><button class="btn ghost">取消</button><button class="btn danger">删除</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+<div class="rule"></div>
+
+
+<!-- ⑤ 单词 -->
+<section class="screen">
+  <h2>⑤ 单词：复习从标签变成按钮</h2>
+  <p class="desc">
+    「复习」不再是侧栏一行，也<b>不是一个标签页</b>——它是页头右上那颗按钮，上面直接带着待复习的数量。
+    进去是抽卡片，抽完回到词表。侧栏「单词」行的红点和这颗按钮的数字是同一个数（复核确认：同一个 <code>dueForReviewCount</code>）。
+  </p>
+  <div class="app" style="min-height:360px">
+    <aside class="sb">
+      <div class="brand"><div class="logo"></div><span>Lantern</span></div>
+      <div><h3>书库</h3><div class="rows">
+        <div class="r"><svg><use href="#i-library"/></svg>全部书籍<span class="n">42</span></div>
+        <div class="r"><svg><use href="#i-bookopen"/></svg>在读<span class="n">5</span></div>
+        <div class="r"><svg><use href="#i-check"/></svg>已读完<span class="n">11</span></div>
+      </div></div>
+      <div><h3>我的记录</h3><div class="rows">
+        <div class="r"><svg><use href="#i-note"/></svg>笔记<span class="n">96</span></div>
+        <div class="r on"><svg><use href="#i-word"/></svg>单词<span class="badge">12</span></div>
+        <div class="r"><svg><use href="#i-qa"/></svg>问答<span class="n">49</span></div>
+        <div class="r"><svg><use href="#i-chart"/></svg>阅读历程</div>
+      </div></div>
+      <div class="foot"><div class="av">LJ</div><div><div class="t1">李建威</div><div class="t2">设置</div></div></div>
+    </aside>
+    <div class="ct">
+      <div class="ct-head">
+        <div class="top">
+          <div><h4>单词</h4><div class="st">查过的词都在这里，包括你给某个词写下的话。</div></div>
+          <button class="headbtn"><svg><use href="#i-rot"/></svg>复习 <span class="k">12</span></button>
+        </div>
+        <div class="toolbar">
+          <div class="inp"><svg><use href="#i-search"/></svg>搜索单词、释义或书籍</div>
+          <div class="sel">全部书籍</div>
+          <div class="sel">最新</div>
+        </div>
+      </div>
+      <div class="list">
+        <article class="entry"><div class="main">
+          <p class="pos" style="font-weight:600">tranquillity <span style="font-family:Georgia,serif;color:#a1a1aa;font-size:11.5px">/trænˈkwɪləti/</span></p>
+          <p class="body">平静；安宁。<span style="color:#a1a1aa">— they must have action; and they will make it if they cannot find it.</span></p>
+          <p class="body" style="color:#3f3f46">和 calmness 的差别：tranquillity 更偏「外部环境静」，calmness 偏「人自己稳」。这里说的是环境。</p>
+          <p class="meta">Jane Eyre · 查过 3 次 · 6 天前</p></div>
+          <div class="acts"><div class="iconbtn"><svg><use href="#i-bookopen"/></svg></div><div class="iconbtn"><svg><use href="#i-trash"/></svg></div></div>
+        </article>
+        <article class="entry"><div class="main">
+          <p class="pos" style="font-weight:600">ensnare <span style="font-family:Georgia,serif;color:#a1a1aa;font-size:11.5px">/ɪnˈsner/</span></p>
+          <p class="body">诱捕；使落入圈套。<span style="color:#a1a1aa">— I am no bird; and no net ensnares me.</span></p>
+          <p class="meta">Jane Eyre · 查过 1 次 · 上周</p></div>
+          <div class="acts"><div class="iconbtn"><svg><use href="#i-bookopen"/></svg></div><div class="iconbtn"><svg><use href="#i-trash"/></svg></div></div>
+        </article>
+        <article class="entry"><div class="main">
+          <p class="pos" style="font-weight:600">acknowledged <span style="font-family:Georgia,serif;color:#a1a1aa;font-size:11.5px">/əkˈnɑlɪdʒd/</span></p>
+          <p class="body">公认的。<span style="color:#a1a1aa">— It is a truth universally acknowledged…</span></p>
+          <p class="meta">Pride and Prejudice · 查过 2 次 · 5 天前</p></div>
+          <div class="acts"><div class="iconbtn"><svg><use href="#i-bookopen"/></svg></div><div class="iconbtn"><svg><use href="#i-trash"/></svg></div></div>
+        </article>
+      </div>
+    </div>
+  </div>
+  <p class="desc" style="margin-top:12px">
+    你写给某个词的话（原来在标注页里那种紫色「单词」条目），现在直接跟在这个词的释义下面。<b>没有加粗放大，没有紫色填充</b>——它就是这一页的正文。
+    音标是<span class="tag new">新</span>的，词典层换成 <code>jsonapi</code> 之后白拿的（screen ⑩）。
+  </p>
+</section>
+<div class="rule"></div>
+
+
+<!-- ⑥ 问答 -->
+<section class="screen">
+  <h2>⑥ 问答：一个列表，没有标签</h2>
+  <p class="desc">
+    「解释」和「对话」都是 AI 挂在某一句上说的话——一次问完的和问了三轮的，是同一样东西的两种长度。
+    合成一个按时间排的列表，多轮的在末尾多一行「继续问了 3 轮 · 展开」。<b>这和书签、笔记合列是同一个道理。</b>
+  </p>
+  <div class="app" style="min-height:380px">
+    <aside class="sb">
+      <div class="brand"><div class="logo"></div><span>Lantern</span></div>
+      <div><h3>书库</h3><div class="rows">
+        <div class="r"><svg><use href="#i-library"/></svg>全部书籍<span class="n">42</span></div>
+        <div class="r"><svg><use href="#i-bookopen"/></svg>在读<span class="n">5</span></div>
+        <div class="r"><svg><use href="#i-check"/></svg>已读完<span class="n">11</span></div>
+      </div></div>
+      <div><h3>我的记录</h3><div class="rows">
+        <div class="r"><svg><use href="#i-note"/></svg>笔记<span class="n">96</span></div>
+        <div class="r"><svg><use href="#i-word"/></svg>单词<span class="badge">12</span></div>
+        <div class="r on"><svg><use href="#i-qa"/></svg>问答<span class="n">49</span></div>
+        <div class="r"><svg><use href="#i-chart"/></svg>阅读历程</div>
+      </div></div>
+      <div class="foot"><div class="av">LJ</div><div><div class="t1">李建威</div><div class="t2">设置</div></div></div>
+    </aside>
+    <div class="ct">
+      <div class="ct-head">
+        <div class="top">
+          <div><h4>问答</h4><div class="st">AI 说过的话，都连着当时读的那一句。</div></div>
+          <span class="cnt">49 条</span>
+        </div>
+        <div class="toolbar">
+          <div class="inp"><svg><use href="#i-search"/></svg>搜索原文或 AI 的回答</div>
+          <div class="sel">全部书籍</div>
+        </div>
+      </div>
+      <div class="list">
+        <div class="tsep">本周</div>
+        <article class="entry">
+          <div class="edge"><div class="bar" style="background:#e4e4e7"></div></div>
+          <div class="main">
+            <p class="quote" style="color:#52525c">…the panic of the whiteness of the whale.</p>
+            <p class="body">这里的 panic 不是「恐慌情绪」，是古希腊语 Pan（潘神）留下的义项：一种没有对象、说不出来源的恐惧。梅尔维尔整章都在论证白色的可怕恰恰在于它什么都不是——所以用这个词，不用 fear。</p>
+            <p class="meta">Moby-Dick · 第 42 章 · 2 天前</p>
+          </div>
+          <div class="acts"><div class="iconbtn"><svg><use href="#i-bookopen"/></svg></div><div class="iconbtn"><svg><use href="#i-trash"/></svg></div></div>
+        </article>
+        <article class="entry">
+          <div class="edge"><div class="bar" style="background:#e4e4e7"></div></div>
+          <div class="main">
+            <p class="quote" style="color:#52525c">It is in vain to say human beings ought to be satisfied with tranquillity…</p>
+            <p class="body">it is in vain to say 是一个虚主语句式：「说……是没用的」。ought to 在这里不是义务，是别人对她的期待。整句的重心在转折之后。</p>
+            <p class="meta">Jane Eyre · 第 12 章 · 3 天前</p>
+          </div>
+          <div class="acts"><div class="iconbtn"><svg><use href="#i-bookopen"/></svg></div><div class="iconbtn"><svg><use href="#i-trash"/></svg></div></div>
+        </article>
+        <div class="tsep">更早</div>
+        <article class="entry">
+          <div class="edge"><div class="bar" style="background:#e4e4e7"></div></div>
+          <div class="main">
+            <p class="quote" style="color:#52525c">Call me Ishmael.</p>
+            <p class="body">Ishmael 是《创世记》里被赶出家门的长子，「流放者」的代名词。叙述者说「叫我以实玛利」而不是「我叫以实玛利」——他在给自己挑一个名字，不是报出本名。</p>
+            <p class="meta" style="color:#7c3aed">继续问了 3 轮 · 展开</p>
+            <p class="meta">Moby-Dick · 第 1 章 · 上周</p>
+          </div>
+          <div class="acts"><div class="iconbtn"><svg><use href="#i-bookopen"/></svg></div><div class="iconbtn"><svg><use href="#i-trash"/></svg></div></div>
+        </article>
+      </div>
+    </div>
+  </div>
+  <div class="note">
+    <b>这一屏是整份方案里工作量最大的一块，不是「删掉一个标签栏」。</b>
+    复核确认两种记录字段不同构：<code>ChatSummary</code> 有 <code>message_count / last_message</code>，没有 <code>passage / cfi</code>；<code>Explanation</code> 有 <code>passage / cfi / context_sentence</code>，没有多轮内容。
+    能对齐的公共字段只有 <code>id / book_id / model / created_at</code>。合成一个时间线之后，<b>每一行仍要按类型分叉渲染，点进去也是两套不同的界面</b>（一个是对话线程，一个是单段解释）。
+    已确认值这个工作量——侧栏两行收成一行，是这件事的主要目的。
+  </div>
+</section>
+<div class="rule"></div>
+
+
+<!-- ⑦ 设置 · 个人 -->
+<section class="screen">
+  <h2>⑦ 设置 · 新增「个人」栏 <span class="tag new">新</span></h2>
+  <p class="desc">
+    排在第一位。收进来两样：<b>显示名</b>（原本挤在「通用」里，但它是关于你的，不是关于界面的）和<b>整份用户画像</b>。
+    比 v3 多了三样：<b>「上次整理于」＋「现在整理一次」</b>、卡片上的<b>「移到我的文字里」</b>、以及输入框下面的<b>「整理」</b>。
+  </p>
+  <div class="modal">
+    <nav class="nav">
+      <div class="it on"><svg><use href="#i-user"/></svg>个人 <span class="tag new">新</span></div>
+      <div class="it"><svg><use href="#i-globe"/></svg>通用</div>
+      <div class="it"><svg><use href="#i-bookopen"/></svg>阅读</div>
+      <div class="it"><svg><use href="#i-cap"/></svg>学习</div>
+      <div class="it"><svg><use href="#i-tool"/></svg>工具</div>
+      <div class="gl">AI 配置</div>
+      <div class="it"><svg><use href="#i-bot"/></svg>服务配置</div>
+      <div class="it"><svg><use href="#i-spark"/></svg>自动分析</div>
+      <div class="gl">书库</div>
+      <div class="it"><svg><use href="#i-library"/></svg>书库</div>
+      <div class="it"><svg><use href="#i-term"/></svg>MCP</div>
+      <div class="it"><svg><use href="#i-info"/></svg>关于</div>
+    </nav>
+    <div class="pane">
+      <h3>个人</h3>
+      <div class="ph">你是谁，以及 AI 回答你的时候该先知道什么。</div>
+
+      <div class="srow">
+        <div><div class="nm">显示名 <span class="tag move">从「通用」搬来</span></div>
+        <div class="hi">你的本地身份 — 用于划线和笔记的署名</div></div>
+        <div class="field">李建威</div>
+      </div>
+
+      <div class="gh">用户画像 <span class="tag move">从侧栏搬来</span></div>
+      <div class="srow">
+        <div><div class="nm">让 AI 读这份画像</div>
+        <div class="hi">关掉之后不再累计新追问，也不再自动总结。你写的那段和已有卡片都留着，重新打开就继续生效。</div></div>
+        <div class="toggle"></div>
+      </div>
+
+      <div style="margin-top:18px">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:7px">你写的</div>
+        <ul class="ta list">
+          <li>母语中文，正在准备 GRE</li>
+          <li>讲解生词时不要先给中文翻译，先让我猜，猜错再纠正</li>
+          <li>不要用「换句话说」这类过渡句，直接说结论</li>
+          <li>文学作品多讲时代背景</li>
+          <li>维多利亚小说的社会常识可以讲细一点</li>
+        </ul>
+        <div class="tafoot">
+          <span class="cc">418 / 1200 字</span>
+          <button class="tinybtn"><svg><use href="#i-spark"/></svg>整理</button>
+        </div>
+      </div>
+
+      <div style="margin-top:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <div style="font-size:12.5px;font-weight:600">系统总结的</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:11px;color:#a1a1aa">上次整理于 3 天前</span>
+            <button class="tinybtn"><svg><use href="#i-rot"/></svg>现在整理一次</button>
+          </div>
+        </div>
+
+        <div class="pcard">
+          <div class="k">词义讲解</div>
+          <div class="v">倾向要「这个词在这句里为什么是这个义项」，而不是义项列表。</div>
+          <div class="cacts">
+            <button class="tinybtn"><svg><use href="#i-moveto"/></svg>移到我的文字里</button>
+            <button class="tinybtn q">看依据 ⌄</button>
+            <button class="tinybtn q">删除</button>
+          </div>
+        </div>
+
+        <div class="pcard">
+          <div class="k">文化背景 <span style="font-weight:400;color:#a1a1aa;font-size:11px">· 已展开</span></div>
+          <div class="v">遇到 19 世纪英国社会制度相关的段落会主动追问，通常问到第二轮。</div>
+          <div class="evid"><b>依据：</b>近 30 次追问里有 22 次落在时代背景上，其中 14 次你追问了第二轮。</div>
+          <div class="cacts">
+            <button class="tinybtn"><svg><use href="#i-moveto"/></svg>移到我的文字里</button>
+            <button class="tinybtn q">收起 ⌃</button>
+            <button class="tinybtn q">删除</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="srow danger" style="margin-top:22px;border-bottom:none">
+        <div><div class="nm">删除整份画像</div>
+        <div class="hi">会清空你写的这段、全部卡片、以及背后的记录留痕，不做部分保留。</div></div>
+        <button class="btn ghost" style="border-color:#ffc9c9;color:#e7000b">删除</button>
+      </div>
+    </div>
+  </div>
+  <div class="note">
+    <b>真正砍掉的只剩两样</b>：「已攒 18 / 30 条」（内部计数——换成一句「上次整理于 3 天前」，同样告诉你新不新，但不逼你盯进度条）、「5 / 7 个维度有结论」（复核确认旁边并没有灰卡片，就一行字）。<br>
+    <b>「依据」默认收起，点「看依据」展开。</b> 它和结论是同一次 AI 输出，是你判断这条结论有没有被瞎编的唯一凭据——不能删，但也不该常驻在面板上。<br>
+    卡片<b>有几张显示几张</b>，攒够了自己会冒出来，不用先给你看空位。
+  </div>
+</section>
+<div class="rule"></div>
+
+
+<!-- ⑧ 画像的四个状态 -->
+<section class="screen">
+  <h2>⑧ 画像的四个状态 <span class="tag back">改回</span> <span class="tag new">新</span></h2>
+  <p class="desc">
+    前两个是 v3 整块漏掉的<b>卡片移动与撤销</b>；后两个是<b>「整理」和「压缩」的分工</b>。
+    一句话记住这两颗按钮的分水岭：<b>压缩可以合并，整理不可以。压缩管「太长了」，整理管「写得乱」。</b>
+  </p>
+
+  <div class="cols" style="margin-bottom:22px">
+    <div class="col" style="min-width:330px">
+      <div class="caption">① 移动到我的文字里</div>
+      <div class="pcard" style="margin-top:0;background:#fff">
+        <div class="k">词义讲解</div>
+        <div class="v">倾向要「这个词在这句里为什么是这个义项」，而不是义项列表。</div>
+        <div class="cacts"><button class="tinybtn"><svg><use href="#i-moveto"/></svg>移到我的文字里</button></div>
+      </div>
+      <p class="desc" style="margin:10px 0 0">
+        把这条结论写进<b>你自己那段文字</b>里，主动权从系统转到你手上——之后它不会再被自动改写。
+        原卡片变成下面这张灰的。
+      </p>
+    </div>
+    <div class="col" style="min-width:330px">
+      <div class="caption">② 变成幽灵卡，可撤销</div>
+      <div class="pcard ghost" style="margin-top:0">
+        <div class="k">词义讲解 <span style="font-weight:400;font-size:11px">· 已移到你的文字里</span></div>
+        <div class="v">倾向要「这个词在这句里为什么是这个义项」，而不是义项列表。</div>
+        <div class="cacts"><button class="tinybtn"><svg><use href="#i-undo"/></svg>撤销</button></div>
+      </div>
+      <p class="desc" style="margin:10px 0 0">
+        撤销会<b>把刚插进去的那句话从你的文字里精确删掉</b>（<code>remove_inserted_text</code>），卡片恢复成可再生成。不是「再复制一份」。
+      </p>
+    </div>
+  </div>
+
+  <div class="cols" style="margin-bottom:22px">
+    <div class="col" style="min-width:330px">
+      <div class="caption">③ 删卡确认 —— 里面藏着第三个移动入口</div>
+      <div class="dlg">
+        <h5>删掉「词义讲解」这条？</h5>
+        <p>下次攒够新的追问，系统可能会重新总结出一条类似的。如果你想让它<b>不再变</b>，可以改成移到你自己的文字里。</p>
+        <div class="btns">
+          <button class="btn ghost">取消</button>
+          <button class="btn ghost"><svg><use href="#i-moveto"/></svg>移过去代替删除</button>
+          <button class="btn danger">删除</button>
+        </div>
+      </div>
+    </div>
+    <div class="col" style="min-width:330px">
+      <div class="caption">④ 超出上限 —— 唯一会看到「压缩」的地方</div>
+      <div class="dlg">
+        <h5>超出上限，没法保存</h5>
+        <p>你写了 <b>2,610 字</b>，上限 2,400 字。这段会整段发给 AI，太长了反而会稀释掉里面每一条要求。</p>
+        <div class="btns">
+          <button class="btn ghost">回去修改</button>
+          <button class="btn prim"><svg><use href="#i-spark"/></svg>压缩一下</button>
+        </div>
+      </div>
+      <p class="desc" style="margin:10px 0 0">
+        <b>「压缩」不在编辑器里出现</b>——你没超字数的时候它无事可做。任何时刻你只看得见一颗 AI 按钮。
+      </p>
+    </div>
+  </div>
+
+  <div class="caption">整理 vs 压缩：同一段文字，两种改法</div>
+  <div class="diff">
+    <div class="dcol">
+      <div class="dlabel"><span>改前（你随手写的）</span><span>176 字</span></div>
+      <div class="ta">在准备 GRE，母语中文。讲解时不要先给中文翻译——先让我自己猜，猜错了再纠正。不喜欢「换句话说」这种过渡句，直接说结论。文学作品里的时代背景多讲一点，我读维多利亚小说经常卡在社会常识上。</div>
+    </div>
+    <div class="dcol">
+      <div class="dlabel"><span><b>整理</b>后 —— 结构变了，字数没少</span><span>字数 +12%</span></div>
+      <ul class="ta list" style="border-color:#bbf7d0;background:#f7fdf9">
+        <li>母语中文，正在准备 GRE</li>
+        <li>讲解生词时不要先给中文翻译，先让我猜，猜错再纠正</li>
+        <li>不要用「换句话说」这类过渡句，直接说结论</li>
+        <li>文学作品多讲时代背景</li>
+        <li>维多利亚小说的社会常识可以讲细一点</li>
+      </ul>
+      <p class="desc" style="margin:8px 0 0">
+        原文最后一句里其实压着<b>两件事</b>（多讲背景 ＋ 社会常识讲细），整理把它拆成两行。<b>一行一条，一条一件事，一条都不许合并、不许删。</b>
+      </p>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>为什么是扁平的 <code>-</code> 清单，不是完整 Markdown。</b>
+    这段文字最后是拼进 system prompt、和别的内容一起发出去的。你自己加的 <code>##</code> 标题层级会跟外层提示词的结构打架；扁平列表歧义最小——每行是一条独立指令，模型逐条对照，也最省 token。所以整理<b>不加标题、不加粗、不套代码块</b>。<br>
+    <b>两颗按钮的提示词差在哪：</b>整理＝「重排，一行一条，每行只讲一件事，去掉自述和客套，<b>禁止合并、禁止删减</b>」；压缩＝「降到 N 字以内，<b>允许合并同类</b>，但不许丢掉任何一条要求，不许新增」。<br>
+    两者都<b>不直接写回</b>——出「改前 / 改后」两栏，你点了才算数（<code>profile_optimize_text</code> 现在就是这么做的）。
+  </div>
+</section>
+<div class="rule"></div>
+
+
+<!-- ⑨ 阅读器面板 -->
+<section class="screen">
+  <h2>⑨ 阅读器面板：五标签 → 三标签</h2>
+  <p class="desc">
+    原来是 <span style="text-decoration:line-through">书签 · 划线 · 生词 · 笔记 · 语境</span>——五个标签挤在 322px 里，前三个互相重叠。现在是 <b>笔记 · 生词 · 语境</b>。<br>
+    <b>「记住这里」这颗按钮留着，而且现在一颗顶两颗</b><span class="tag back">改回</span>：按一下留住当前位置，光标立刻落进去，想写就写、不写就是个纯书签。这就是并表之后「书签」和「独立笔记」合成的那一样东西。<br>
+    <span class="tag gone">删</span> v3 说要砍的「本页 / 全书」切换——<b>复核确认它根本不存在</b>，面板本来就一直显示全书。这条从清单里删掉了。
+  </p>
+  <div class="reader">
+    <div class="rpage">
+      <p>It is in vain to say human beings ought to be satisfied with tranquillity: <span class="hl-y">they must have action; and they will make it if they cannot find it.</span> Millions are condemned to a stiller doom than mine, and millions are in silent revolt against their lot.</p>
+      <p>Nobody knows how many rebellions besides political rebellions ferment in the masses of life which people earth. Women are supposed to be very calm generally: but women feel just as men feel; <span class="hl-g">they need exercise for their faculties</span>, and a field for their efforts, as much as their brothers do.</p>
+      <p>They suffer from too rigid a restraint, too absolute a stagnation, precisely as men would suffer; and it is narrow-minded in their more privileged fellow-creatures to say that they ought to confine themselves to making puddings and knitting stockings.</p>
+    </div>
+    <aside class="rpanel">
+      <div class="ptabs">
+        <div class="ptab on">笔记</div>
+        <div class="ptab">生词</div>
+        <div class="ptab">语境</div>
+      </div>
+      <div class="pacts">
+        <span class="c">全书 24 条</span>
+        <div class="minipill"><svg><use href="#i-bookmark"/></svg>记住这里</div>
+      </div>
+      <div style="overflow:auto">
+        <div class="rentry">
+          <div class="edge"><svg><use href="#i-bookmark"/></svg></div>
+          <div>
+            <div class="p">第 11 章末</div>
+            <div class="n">这一整段的节奏和前面完全不一样，回头对照第 5 章再读一遍。</div>
+            <div class="m">昨天 · 按「记住这里」之后顺手写的</div>
+          </div>
+        </div>
+        <div class="rsep">你现在读到这里</div>
+        <div class="rentry here">
+          <div class="edge"><div class="bar" style="background:#fbbf24"></div></div>
+          <div>
+            <div class="q">they must have action; and they will make it if they cannot find it.</div>
+            <div class="n">这句是全书的引擎。她不是在抱怨阁楼太闷。</div>
+            <div class="m">3 天前</div>
+          </div>
+        </div>
+        <div class="rentry here">
+          <div class="edge"><div class="bar" style="background:#4ade80"></div></div>
+          <div>
+            <div class="q">they need exercise for their faculties</div>
+            <div class="m" style="margin-top:6px;color:#b4b4bb">还没写字 · 写点什么</div>
+          </div>
+        </div>
+        <div class="rentry">
+          <div class="edge"><svg><use href="#i-bookmark"/></svg></div>
+          <div>
+            <div class="p">第 20 章开头</div>
+            <div class="m" style="margin-top:6px;color:#b4b4bb">纯书签，没写字</div>
+          </div>
+        </div>
+        <div class="rentry">
+          <div class="edge"><div class="bar" style="background:#fbbf24"></div></div>
+          <div>
+            <div class="q">I am no bird; and no net ensnares me.</div>
+            <div class="m">第 23 章 · 上周</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+  <div class="note">
+    面板里书签和划线<b>混在一列按位置排</b>，靠左边那一格区分：一条颜色＝划线，一颗图标＝书签。带不带字都行，不另开一栏。
+  </div>
+</section>
+<div class="rule"></div>
+
+
+<!-- ⑩ 单击一个词：词典 -->
+<section class="screen">
+  <h2>⑩ 单击一个词：白拿一条释义 <span class="tag new">新</span></h2>
+  <p class="desc">
+    <b>单击 = 词典（免费），双击 = 解释（AI）。</b> 单击本来就已经会弹工具条了，所以这一层<b>不新增手势、不新增弹窗</b>——只是在工具条顶上多一行。
+    双击完全不变，还是直接开 AI 学习卡；「等一下看是不是双击」的机制（<code>cancelPendingWordClick</code>）已经写好了，双击时这行词典根本来不及出现。
+  </p>
+
+  <div class="cols" style="align-items:flex-start">
+    <div class="col" style="min-width:auto;flex:0 0 auto">
+      <div class="caption">单击 bank —— 一上来就是全的，没有展开按钮</div>
+      <div class="pop" style="width:470px">
+        <div class="dhead">
+          <span class="dw">bank</span>
+          <span class="dp">/bæŋk/</span>
+        </div>
+        <div class="dbody">
+          <div class="dg"><span class="ps">n.</span><span class="sn">银行；储蓄罐；库存，库；<b>河岸</b>；斜坡；云团，雾团；一排，一组</span></div>
+          <div class="dg"><span class="ps">v.</span><span class="sn">把（钱）存入银行；与银行有业务往来；（飞机）倾斜飞行；使反弹</span></div>
+          <div class="dg"><span class="ps">名</span><span class="sn">（英、德、俄）班克，（法、匈）邦克（人名）</span></div>
+        </div>
+        <div class="dbar">
+          <span class="a prim"><svg><use href="#i-hl"/></svg>划线</span>
+          <span class="dots"><i style="background:#fcd34d"></i><i style="background:#86efac"></i><i style="background:#93c5fd"></i><i style="background:#f9a8d4"></i></span>
+          <span class="a">写笔记</span><span class="div"></span>
+          <span class="a"><svg><use href="#i-spark"/></svg>解释</span>
+          <span class="a">问 AI</span><span class="div"></span>
+          <span class="a"><svg><use href="#i-vol"/></svg></span>
+        </div>
+      </div>
+      <p class="desc" style="margin:9px 0 0;max-width:470px">三行装得下，一行没砍。<b>这是绝大多数词的样子。</b></p>
+    </div>
+
+    <div class="col" style="min-width:auto;flex:0 0 auto">
+      <div class="caption">碰到 run 这种巨长的 —— 到顶就停</div>
+      <div class="pop" style="width:470px">
+        <div class="dhead">
+          <span class="dw">run</span>
+          <span class="dp">/rʌn/</span>
+        </div>
+        <div class="dbody">
+          <div class="dg"><span class="ps">v.</span><span class="sn">跑，奔跑；管理，经营；运转，运行；（车辆）行驶；流动，淌；竞选；蔓延，延伸；褪色，掉色；（时间）流逝；连续上演；使运转；驾驶；（液体）流出；（机器）开动；发表，刊登；走私；（颜色）渗开</span></div>
+          <div class="dg"><span class="ps">n.</span><span class="sn">跑步；一段路程；连续演出；趋势，动向；（棒球）得分；（袜子上的）抽丝；（畜栏）圈；印数；航程；急需；一连串；（滑雪）滑道；（纸牌）顺子；自由出入权</span></div>
+          <div class="dg"><span class="ps">名</span><span class="sn">（英）伦（人名）</span></div>
+        </div>
+        <div class="dcut">还有 18 条较少见的义项没显示 · 双击 run 让 AI 直接告诉你这里是哪个意思</div>
+        <div class="dbar">
+          <span class="a prim"><svg><use href="#i-hl"/></svg>划线</span>
+          <span class="dots"><i style="background:#fcd34d"></i><i style="background:#86efac"></i><i style="background:#93c5fd"></i><i style="background:#f9a8d4"></i></span>
+          <span class="a">写笔记</span><span class="div"></span>
+          <span class="a"><svg><use href="#i-spark"/></svg>解释</span>
+          <span class="a">问 AI</span><span class="div"></span>
+          <span class="a"><svg><use href="#i-vol"/></svg></span>
+        </div>
+      </div>
+      <p class="desc" style="margin:9px 0 0;max-width:470px">每个词性<b>最多两行</b>，超出的用「…」收尾；<b>最多三个词性</b>。不滚动、不展开。</p>
+    </div>
+  </div>
+
+  <p class="desc" style="margin-top:16px">
+    <b>按词性分行是这一屏唯一重要的设计。</b> 词性往往直接决定义项——句子里 bank 是名词还是动词，你一眼判断得出，然后只扫那一组。
+    这也是<b>不能只显示第一个义项</b>的原因：只给「银行」，而书里说的是「河岸」，比不给还糟。
+  </p>
+
+  <div class="note" style="margin-top:14px">
+    <b>为什么砍掉的部分不给任何找回路径。</b><br>
+    词典这一层的定位是<b>白拿的、扫一眼的</b>——它负责广度，不负责穷尽。一个词多到装不下的时候，你要的从来不是「把剩下 18 条也翻出来自己找」，而是<b>「这句话里它是哪个意思」</b>——那是双击、是 AI 的活，而且它就在同一条工具条上，隔一个手势。
+    所以留一句灰字说明砍了多少、去哪儿问，比留一个展开按钮诚实：<b>展开按钮是在假装剩下的义项对你有用。</b><br>
+    上限按每词性 2 行 × 最多 3 个词性定：<b>宁可每个词性都露一点，也不要让某个词性整个消失</b>——词性是判断入口，少一个入口比少几条义项贵得多。
+  </div>
+
+  <div class="cols" style="margin-top:16px;align-items:flex-start">
+    <div class="col" style="min-width:auto;flex:0 0 auto">
+      <div class="caption">兜底 —— 主接口挂了，落回 suggest</div>
+      <div class="pop" style="width:400px">
+        <div class="dhead">
+          <span class="dw">bank</span>
+          <span class="dsum">n. 银行；储蓄罐；库存，库；河岸；斜坡…</span>
+        </div>
+        <div class="dbar">
+          <span class="a prim"><svg><use href="#i-hl"/></svg>划线</span>
+          <span class="a">写笔记</span><span class="div"></span>
+          <span class="a"><svg><use href="#i-spark"/></svg>解释</span>
+        </div>
+      </div>
+      <p class="desc" style="margin:9px 0 0;max-width:400px">没有音标、分不了词性，只剩被截到 53 字的一行。<b>画质降级，不是空白。</b></p>
+    </div>
+    <div class="col" style="min-width:auto;flex:0 0 auto">
+      <div class="caption">查不到 —— 这一行直接不出现</div>
+      <div class="pop" style="width:400px">
+        <div class="dbar" style="border-top:none">
+          <span class="a prim"><svg><use href="#i-hl"/></svg>划线</span>
+          <span class="dots"><i style="background:#fcd34d"></i><i style="background:#86efac"></i></span>
+          <span class="a">写笔记</span><span class="div"></span>
+          <span class="a"><svg><use href="#i-spark"/></svg>解释</span>
+          <span class="a">问 AI</span>
+        </div>
+      </div>
+      <p class="desc" style="margin:9px 0 0;max-width:400px">回今天的样子，<b>没有「未找到」这种没用的提示</b>。</p>
+    </div>
+  </div>
+
+  <div class="scroll">
+  <table class="gl" style="margin-top:18px">
+    <tr><th style="width:20%">实测</th><th style="width:26%">suggest（今天在跑的）</th><th>jsonapi ＋ <code>dicts=[["ec"]]</code>（换成这个）</th></tr>
+    <tr><td>义项</td><td class="old">硬截到 53 字，七个词实测全部一样长，<code>bank</code> 结尾是残缺的 <code>v....</code></td><td class="new">完整。<code>run</code> 回了 25 个动词义项 ＋ 20 个名词义项，一个没截</td></tr>
+    <tr><td>分组</td><td class="old">全糊在一个字符串里</td><td class="new">已按词性分好组，不用自己切</td></tr>
+    <tr><td>音标</td><td class="old">无</td><td class="new"><code>bæŋk</code> / <code>rʌn</code> / <code>sprɪŋ</code></td></tr>
+    <tr><td>词组</td><td class="old">只能查单词</td><td class="new"><code>look up</code> 回 4 条短语义项</td></tr>
+    <tr><td>中文</td><td class="old">基本没用</td><td>走 <code>ce</code> 段，至少给拼音。<b>结构和 ec 不同，要单独解析，本轮不挡设计</b></td></tr>
+    <tr><td>体积 / 耗时</td><td>约 0.4 KB</td><td class="new">1.4 KB / 0.8 秒（不加 <code>dicts</code> 是 115 KB / 2.7 秒，必须加）</td></tr>
+  </table>
+  </div>
+
+  <div class="note">
+    <b>三个代价，说在前面。</b><br>
+    ① 每点一个词就往 <code>dict.youdao.com</code> 发一次请求。今天只在没配 AI 时兜底才发，改完是常态——<b>设置里要写明，并且要有开关</b>（默认开）。已有的会话缓存挡住重复词。<br>
+    ② <b>这两个接口都没有官方契约</b>，没文档、没服务条款，可以在任何一天改字段或关掉。jsonapi 字段是深层嵌套的（<code>ec.word[].trs[].tr[].l.i[]</code>），表面积比 suggest 大——所以必须留兜底。<br>
+    ③ 不显示<b>词形变化</b>（复数 / 过去式）和<b>考试标签</b>（CET4 / 考研）。那是应试词典的零件，跟读书无关。
+  </div>
+</section>
+<div class="rule"></div>
+
+
+<!-- ⑪ 选中工具条 -->
+<section class="screen">
+  <h2>⑪ 选中一整段之后 <span class="tag back">改回</span></h2>
+  <p class="desc">
+    v3 我把「查词」和「解读」并排画在一起——<b>画错了，它们从来不同时出现</b>。
+    代码里主按钮只有<b>一个位置</b>（<code>ReaderContextMenu.tsx:174</code>），按你选了什么自动改名换活：选一个词叫「查词」、选 5 个词以内叫「释义」、选一整句叫「解读」。
+  </p>
+
+  <div class="scroll">
+  <table class="gl" style="margin-bottom:18px">
+    <tr><th style="width:30%">你选了什么</th><th style="width:16%">判定</th><th style="width:16%">今天那颗按钮叫</th><th>之后</th></tr>
+    <tr><td>单独一个词</td><td><code>word</code></td><td class="old">查词</td><td rowspan="3" class="new" style="vertical-align:middle">全部统一成<b>「解释」</b>一个名字。<br><span style="color:#71717b;font-weight:400">三个名字是同一颗按钮换皮，正是这轮一直在砍的过度分类。而且「查词」这个名字要让出来给单击的免费词典——否则两个查词一个免费一个收费，必炸。</span></td></tr>
+    <tr><td>≤5 个词，不含句末标点</td><td><code>phrase</code></td><td class="old">释义</td></tr>
+    <tr><td>6 个词以上，或含 <code>. ! ? 。！？；:</code></td><td><code>passage</code></td><td class="old">解读</td></tr>
+  </table>
+  </div>
+
+  <div class="cols">
+    <div class="col" style="min-width:auto;flex:0 0 auto">
+      <div class="caption">现在（选一整句）</div>
+      <div class="seltoolbar">
+        <span class="a">标记</span><span class="a">笔记</span><span class="div"></span>
+        <span class="a">解读</span><span class="a">仅翻译</span><span class="a">问 AI</span><span class="div"></span>
+        <span class="a">朗读</span><span class="a">复制</span>
+      </div>
+      <p class="desc" style="margin:9px 0 0">选一整句时<b>没有「查词」这颗按钮</b>。</p>
+    </div>
+    <div class="col" style="min-width:auto;flex:0 0 auto">
+      <div class="caption">之后</div>
+      <div class="seltoolbar">
+        <span class="a prim"><svg><use href="#i-hl"/></svg>划线</span>
+        <span class="dots"><i style="background:#fcd34d"></i><i style="background:#86efac"></i><i style="background:#93c5fd"></i><i style="background:#f9a8d4"></i></span>
+        <span class="a">写笔记</span><span class="div"></span>
+        <span class="a"><svg><use href="#i-spark"/></svg>解释</span><span class="a">仅翻译</span><span class="a">问 AI</span><span class="div"></span>
+        <span class="a"><svg><use href="#i-vol"/></svg></span><span class="a">复制</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="scroll">
+  <table class="gl" style="margin-top:18px">
+    <tr><th style="width:16%"></th><th style="width:26%">词典</th><th>解释</th></tr>
+    <tr><td><b>花钱吗</b></td><td class="new">不花</td><td class="old">一次 API</td></tr>
+    <tr><td><b>怎么触发</b></td><td>单击一个词</td><td>双击，或选中后点「解释」</td></tr>
+    <tr><td><b>它知道什么</b></td><td>只知道这个词。<b>所有义项并排，你自己认</b></td><td>知道你在读哪一句。<b>只给这一句里的那个意思</b></td></tr>
+  </table>
+  </div>
+
+  <p class="desc" style="margin-top:14px">
+    两个词，两件事，<b>分界线是「它知不知道你在读哪一句」</b>——这条线用户一次就懂。
+    「划线」和「写笔记」两颗按钮产出同一种记录，差别只在写不写字，所以挨着放、中间不隔线。<b>「标记」这个名字让给整词标记那套功能，两边不再抢。</b>
+  </p>
+</section>
+<div class="rule"></div>
+
+
+<!-- ⑫ 落地顺序 -->
+<section class="screen">
+  <h2>⑫ 落地顺序</h2>
+  <p class="desc">六步，每步能单独提交、单独回退。只有第 4 步动数据库。<b>第 1 步和第 6 步互不依赖，可以并行。</b></p>
+  <div class="scroll">
+  <table class="gl">
+    <tr><th style="width:5%"></th><th style="width:22%">做什么</th><th style="width:26%">动到哪</th><th>说明</th></tr>
+    <tr>
+      <td><b>1</b></td>
+      <td>词汇统一 ＋ 侧栏收拢（不含问答合并）</td>
+      <td><code>Sidebar.tsx</code>、<code>Home.tsx</code> 的 filter 分支、<code>zh/en.json</code></td>
+      <td>纯改名和纯路由，风险最低。「复习」变按钮、「查词 / 释义 / 解读」统一成「解释」都在这一步。</td>
+    </tr>
+    <tr>
+      <td><b>2</b></td>
+      <td>用户画像搬进设置「个人」</td>
+      <td><code>settings-sections.ts</code> 加一节、<code>ProfileContent</code> 换容器</td>
+      <td>组件整块搬。<b>只砍两样</b>：「已攒 18/30」和「5/7 个维度」。移动 / 撤销 / 删卡 / 依据全部原样带过去，依据默认收起。</td>
+    </tr>
+    <tr>
+      <td><b>3</b></td>
+      <td>「一键优化」拆成「整理」和「压缩」</td>
+      <td><code>profile.rs</code> 拆成两个命令（两套提示词）、<code>OptimizeComparePanel</code> 复用、<code>HardLimitDialog</code> 文案</td>
+      <td>后端已有的 <code>profile_optimize_text</code> 就是「压缩」那一半，加一个「整理」的兄弟命令即可。两者共用「改前 / 改后」比较面板。</td>
+    </tr>
+    <tr>
+      <td><b>4</b></td>
+      <td>书签与独立笔记并表</td>
+      <td>新迁移：<code>bookmarks</code> → <code>notes</code>（<code>anchor_kind='position'</code>）</td>
+      <td>迁移 035 干过一模一样的事（把 <code>highlights.note</code> 并进 <code>notes</code>），有现成范式和现成的同步处理。<b>面板的「记住这里」保留</b>，并成一颗按钮同时产出书签和位置笔记。</td>
+    </tr>
+    <tr>
+      <td><b>5</b></td>
+      <td>阅读器面板五标签 → 三标签；笔记页正文可编辑 ＋ 时间分段</td>
+      <td><code>ReaderTracesPanel</code>、<code>BookmarksPanel</code> ＋ <code>ReaderNotesRail</code> 合并；<code>AnnotationsContent</code></td>
+      <td>排在并表之后，面板一上来读的就是统一后的数据。<b>笔记页必须先给正文加点击进编辑，再删铅笔图标</b>——顺序反了就删掉了唯一入口。</td>
+    </tr>
+    <tr>
+      <td><b>6</b></td>
+      <td>词典层：jsonapi ＋ suggest 兜底</td>
+      <td><code>commands/dictionary.rs</code> 换主路径、<code>useReaderInteractions.ts</code> 单击态、设置里加一个开关</td>
+      <td>和 1–5 完全不相干，可以并行做。<b>先把兜底写对再上默认开</b>——这一层一旦默认开，它就是每次单击都要跑的路径。</td>
+    </tr>
+    <tr>
+      <td><b>7</b></td>
+      <td>「对话 / 解释」合并成一个列表</td>
+      <td><code>ChatsContent</code> ＋ <code>ExplanationsContent</code> 展示层重写</td>
+      <td><b>单独一步，放最后。</b>两种记录字段不同构，这不是删标签，是重写。前六步都不依赖它，所以它出问题不会卡住别的。</td>
+    </tr>
+  </table>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

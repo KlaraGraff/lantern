@@ -306,22 +306,28 @@ pub fn list_notes(
     )
 }
 
-#[tauri::command]
-pub fn list_context_notes(
-    book_id: String,
-    word: Option<String>,
-    location: Option<String>,
-    db: State<'_, Db>,
+/// Everything the reader has written about one thing they are looking at: a
+/// word (theirs across the library, or just in this book) or an anchor in this
+/// book.
+///
+/// An anchor answers with both kinds of note that can sit on one, because
+/// after the merge there are two: a note on a passage they selected, and a
+/// note on a place they kept. Asking only for selections would hide the second
+/// from the card that is standing on top of it.
+pub(crate) fn query_context_notes(
+    db: &Db,
+    book_id: &str,
+    word: Option<&str>,
+    location: Option<&str>,
 ) -> AppResult<Vec<Note>> {
     let normalized_word = word
-        .as_deref()
         .map(normalize_learning_term)
         .filter(|value| !value.is_empty());
     let conn = db.reader();
     let mut statement = conn.prepare(&format!(
         "SELECT {NOTE_COLUMNS} FROM notes n LEFT JOIN books b ON b.id = n.book_id
          WHERE ((?2 IS NOT NULL AND n.anchor_kind = 'word' AND n.normalized_word = ?2 AND (n.scope = 'global' OR n.book_id = ?1))
-            OR (?3 IS NOT NULL AND n.anchor_kind = 'selection' AND n.book_id = ?1 AND n.location = ?3))
+            OR (?3 IS NOT NULL AND n.anchor_kind IN ('selection', 'position') AND n.book_id = ?1 AND n.location = ?3))
          ORDER BY n.updated_at DESC, n.id ASC"
     ))?;
     let notes = statement
@@ -329,6 +335,16 @@ pub fn list_context_notes(
         .collect::<Result<Vec<_>, _>>()
         .map_err(AppError::from)?;
     Ok(notes)
+}
+
+#[tauri::command]
+pub fn list_context_notes(
+    book_id: String,
+    word: Option<String>,
+    location: Option<String>,
+    db: State<'_, Db>,
+) -> AppResult<Vec<Note>> {
+    query_context_notes(&db, &book_id, word.as_deref(), location.as_deref())
 }
 
 #[cfg(test)]
@@ -399,6 +415,420 @@ mod tests {
             })
             .unwrap();
         assert_eq!(original, "legacy note");
+    }
+
+    /// Migration 065's own text, so the re-run test drives exactly what ships
+    /// rather than a copy that can drift away from it.
+    const MIGRATION_065: &str =
+        include_str!("../../migrations/065_bookmarks_become_position_notes.sql");
+
+    /// Schema 64 plus a book — the state migration 065 is written against.
+    fn seed_at_64() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        Db::run_migrations_up_to(&conn, 64).unwrap();
+        conn.execute(
+            "INSERT INTO books
+             (id, title, author, file_path, format, status, progress, created_at, updated_at)
+             VALUES ('b1', 'Book', 'Author', 'books/b1.epub', 'epub', 'reading', 0, 1000, 1000)",
+            [],
+        )
+        .unwrap();
+        conn
+    }
+
+    fn table_exists(conn: &Connection, name: &str) -> bool {
+        conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+            params![name],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    fn count(conn: &Connection, sql: &str) -> i64 {
+        conn.query_row(sql, [], |row| row.get(0)).unwrap()
+    }
+
+    #[test]
+    fn migration_065_runs_on_a_library_that_never_held_a_bookmark() {
+        let conn = seed_at_64();
+        assert!(table_exists(&conn, "bookmarks"));
+
+        Db::run_migrations_up_to(&conn, 65).unwrap();
+
+        assert!(!table_exists(&conn, "bookmarks"));
+        assert_eq!(count(&conn, "SELECT COUNT(*) FROM notes"), 0);
+    }
+
+    /// The one that matters: nothing may be lost, and nothing already in
+    /// `notes` may be disturbed. Both flavours of bookmark are here — one the
+    /// reader labelled, one they only marked — because the label-less kind is
+    /// the whole reason `content` has to tolerate an empty string.
+    #[test]
+    fn migration_065_moves_every_bookmark_into_notes_without_touching_the_notes_already_there() {
+        let conn = seed_at_64();
+        conn.execute_batch(
+            "INSERT INTO bookmarks (id, book_id, cfi, label, created_at, updated_at)
+               VALUES ('bm-labelled', 'b1', 'epubcfi(/6/4!)', 'come back here', 1100, 1150);
+             INSERT INTO bookmarks (id, book_id, cfi, label, created_at, updated_at)
+               VALUES ('bm-bare', 'b1', 'epubcfi(/6/8!)', NULL, 1200, 1200);
+             INSERT INTO notes
+               (id, book_id, anchor_kind, normalized_word, scope, location, selected_text,
+                content, content_format, created_at, updated_at, updated_by_device)
+               VALUES ('n-selection', 'b1', 'selection', NULL, 'book', 'epubcfi(/6/2!)',
+                       'quoted', 'a thought', 'plain_text', 1300, 1300, 'dev-A');
+             INSERT INTO notes
+               (id, book_id, anchor_kind, normalized_word, scope, location, selected_text,
+                content, content_format, created_at, updated_at, updated_by_device)
+               VALUES ('n-word', 'b1', 'word', 'ostensibly', 'book', NULL, NULL,
+                       'looked it up', 'plain_text', 1400, 1400, 'dev-B');",
+        )
+        .unwrap();
+
+        Db::run_migrations_up_to(&conn, 65).unwrap();
+
+        assert!(!table_exists(&conn, "bookmarks"));
+        assert_eq!(
+            count(&conn, "SELECT COUNT(*) FROM notes"),
+            4,
+            "two bookmarks in, two notes already there, four rows out — none merged, none dropped"
+        );
+
+        type Row = (
+            Option<String>,
+            String,
+            Option<String>,
+            String,
+            Option<String>,
+            Option<String>,
+            String,
+            String,
+            i64,
+            i64,
+            String,
+        );
+        let read = |id: &str| -> Row {
+            conn.query_row(
+                "SELECT book_id, anchor_kind, normalized_word, scope, location, selected_text,
+                        content, content_format, created_at, updated_at, updated_by_device
+                 FROM notes WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                        row.get(8)?,
+                        row.get(9)?,
+                        row.get(10)?,
+                    ))
+                },
+            )
+            .unwrap()
+        };
+
+        assert_eq!(
+            read("bm-labelled"),
+            (
+                Some("b1".into()),
+                "position".into(),
+                None,
+                "book".into(),
+                Some("epubcfi(/6/4!)".into()),
+                None,
+                "come back here".into(),
+                "plain_text".into(),
+                1100,
+                1150,
+                "migration".into(),
+            ),
+            "the label becomes the note's text; both timestamps carry across untouched"
+        );
+        assert_eq!(
+            read("bm-bare"),
+            (
+                Some("b1".into()),
+                "position".into(),
+                None,
+                "book".into(),
+                Some("epubcfi(/6/8!)".into()),
+                None,
+                String::new(),
+                "plain_text".into(),
+                1200,
+                1200,
+                "migration".into(),
+            ),
+            "a bookmark nobody wrote on is a position note with empty text, not a dropped row"
+        );
+
+        // The notes that were already there must come out byte-identical.
+        assert_eq!(
+            read("n-selection"),
+            (
+                Some("b1".into()),
+                "selection".into(),
+                None,
+                "book".into(),
+                Some("epubcfi(/6/2!)".into()),
+                Some("quoted".into()),
+                "a thought".into(),
+                "plain_text".into(),
+                1300,
+                1300,
+                "dev-A".into(),
+            )
+        );
+        assert_eq!(
+            read("n-word"),
+            (
+                Some("b1".into()),
+                "word".into(),
+                Some("ostensibly".into()),
+                "book".into(),
+                None,
+                None,
+                "looked it up".into(),
+                "plain_text".into(),
+                1400,
+                1400,
+                "dev-B".into(),
+            )
+        );
+    }
+
+    /// A bookmark the reader deleted must not walk back in as a note, and the
+    /// marker that says so has to end up under the name the new code asks
+    /// about (`note`) rather than the retired one (`bookmark`).
+    #[test]
+    fn migration_065_folds_bookmark_tombstones_into_note_tombstones() {
+        let conn = seed_at_64();
+        conn.execute_batch(
+            "INSERT INTO bookmarks (id, book_id, cfi, label, created_at, updated_at)
+               VALUES ('bm-live', 'b1', 'epubcfi(/6/4!)', NULL, 1100, 1100);
+             INSERT INTO bookmarks (id, book_id, cfi, label, created_at, updated_at)
+               VALUES ('bm-deleted-elsewhere', 'b1', 'epubcfi(/6/6!)', NULL, 1200, 1200);
+             INSERT INTO _tombstones (entity, id, ts)
+               VALUES ('bookmark', 'bm-deleted-elsewhere', 1250);
+             INSERT INTO _tombstones (entity, id, ts) VALUES ('bookmark', 'bm-long-gone', 900);",
+        )
+        .unwrap();
+
+        Db::run_migrations_up_to(&conn, 65).unwrap();
+
+        assert_eq!(
+            count(&conn, "SELECT COUNT(*) FROM _tombstones WHERE entity = 'bookmark'"),
+            0,
+            "no delete marker may be left under the retired name"
+        );
+        for id in ["bm-deleted-elsewhere", "bm-long-gone"] {
+            let ts: i64 = conn
+                .query_row(
+                    "SELECT ts FROM _tombstones WHERE entity = 'note' AND id = ?1",
+                    params![id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(ts > 0, "{id} lost its tombstone timestamp");
+        }
+        assert_eq!(
+            count(&conn, "SELECT COUNT(*) FROM notes"),
+            1,
+            "only the live bookmark becomes a note"
+        );
+        assert_eq!(
+            count(&conn, "SELECT COUNT(*) FROM notes WHERE id = 'bm-live'"),
+            1
+        );
+    }
+
+    /// The migration is written to survive a second pass — see its header. A
+    /// re-run must be a no-op, not a duplicated row and not an error.
+    #[test]
+    fn migration_065_is_safe_to_run_twice() {
+        let conn = seed_at_64();
+        conn.execute(
+            "INSERT INTO bookmarks (id, book_id, cfi, label, created_at, updated_at)
+             VALUES ('bm1', 'b1', 'epubcfi(/6/4!)', 'note to self', 1100, 1150)",
+            [],
+        )
+        .unwrap();
+        Db::run_migrations_up_to(&conn, 65).unwrap();
+        let after_first: Vec<(String, String, i64, i64)> = {
+            let mut statement = conn
+                .prepare("SELECT id, content, created_at, updated_at FROM notes ORDER BY id")
+                .unwrap();
+            let rows = statement
+                .query_map([], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                })
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+            rows
+        };
+
+        conn.execute_batch(MIGRATION_065).unwrap();
+
+        let after_second: Vec<(String, String, i64, i64)> = {
+            let mut statement = conn
+                .prepare("SELECT id, content, created_at, updated_at FROM notes ORDER BY id")
+                .unwrap();
+            let rows = statement
+                .query_map([], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                })
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+            rows
+        };
+        assert_eq!(after_first, after_second);
+        assert!(!table_exists(&conn, "bookmarks"));
+    }
+
+    /// The capability the merge exists to keep, not to spend: text anchored to
+    /// a place rather than to a sentence. `selected_text` is `None` and stays
+    /// `None`, and empty text is a legal thing to save — that is a bookmark.
+    #[test]
+    fn a_position_note_saves_with_and_without_anything_written_on_it() {
+        let directory = TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let sync = SyncWriter::new("dev-A".into());
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO books
+                 (id, title, author, file_path, format, status, progress, created_at, updated_at)
+                 VALUES ('b1', 'Book', 'Author', 'books/b1.epub', 'epub', 'reading', 0, 1, 1)",
+                [],
+            )
+            .unwrap();
+        }
+
+        let bare = save_note_inner(
+            None,
+            Some("b1".into()),
+            "position",
+            None,
+            "book",
+            Some("epubcfi(/6/4!)".into()),
+            None,
+            "",
+            &db,
+            &sync,
+        )
+        .unwrap();
+        assert_eq!(bare.anchor_kind, "position");
+        assert_eq!(bare.content, "");
+        assert_eq!(bare.selected_text, None);
+
+        let written = save_note_inner(
+            Some(bare.id.clone()),
+            Some("b1".into()),
+            "position",
+            None,
+            "book",
+            Some("epubcfi(/6/4!)".into()),
+            None,
+            "and now a sentence about it",
+            &db,
+            &sync,
+        )
+        .unwrap();
+        assert_eq!(written.id, bare.id, "writing on it is an edit, not a new row");
+        assert_eq!(written.created_at, bare.created_at);
+        assert_eq!(written.content, "and now a sentence about it");
+
+        // A position note points at a spot, not at a passage — quoting text
+        // into one would make it a selection note wearing the wrong label.
+        assert!(save_note_inner(
+            None,
+            Some("b1".into()),
+            "position",
+            None,
+            "book",
+            Some("epubcfi(/6/4!)".into()),
+            Some("quoted".into()),
+            "",
+            &db,
+            &sync,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn an_anchor_answers_with_both_the_passage_note_and_the_kept_place_on_it() {
+        let directory = TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let sync = SyncWriter::new("dev-A".into());
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO books
+                 (id, title, author, file_path, format, status, progress, created_at, updated_at)
+                 VALUES ('b1', 'Book', 'Author', 'books/b1.epub', 'epub', 'reading', 0, 1, 1)",
+                [],
+            )
+            .unwrap();
+        }
+        let here = "epubcfi(/6/4!/2)";
+
+        let passage = save_note_inner(
+            None,
+            Some("b1".into()),
+            "selection",
+            None,
+            "book",
+            Some(here.into()),
+            Some("quoted".into()),
+            "about the passage",
+            &db,
+            &sync,
+        )
+        .unwrap();
+        let place = save_note_inner(
+            None,
+            Some("b1".into()),
+            "position",
+            None,
+            "book",
+            Some(here.into()),
+            None,
+            "about the place",
+            &db,
+            &sync,
+        )
+        .unwrap();
+        save_note_inner(
+            None,
+            Some("b1".into()),
+            "position",
+            None,
+            "book",
+            Some("epubcfi(/6/4!/9)".into()),
+            None,
+            "somewhere else",
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        let found = query_context_notes(&db, "b1", None, Some(here)).unwrap();
+        let ids: Vec<&str> = found.iter().map(|note| note.id.as_str()).collect();
+        assert_eq!(ids.len(), 2, "an anchor can carry both kinds of note");
+        assert!(ids.contains(&passage.id.as_str()));
+        assert!(ids.contains(&place.id.as_str()));
+
+        // A word question is still a word question — anchors do not leak into it.
+        assert!(query_context_notes(&db, "b1", Some("courage"), None)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

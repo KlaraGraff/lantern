@@ -124,7 +124,7 @@ import { useProgressReadout } from "./reader/useProgressReadout";
 import { chaptersToTicks, type ScrubberTick } from "./reader/progress-scrubber-math";
 import ProgressScrubber from "../components/ProgressScrubber";
 import ReaderExportDialog from "../components/ReaderExportDialog";
-import { type ReaderNoteAnchor } from "../components/ReaderNotesRail";
+import { type ReaderNoteAnchor } from "../components/ReaderNotesPanel";
 import ContinuousReadAloudToolbar from "../components/ContinuousReadAloudToolbar";
 import { useContinuousReadAloud } from "../hooks/useContinuousReadAloud";
 import { supportsContinuousReadAloud } from "../components/continuous-read-aloud";
@@ -207,14 +207,14 @@ export default function Reader() {
   const supportsCfiNavigation = capabilities.supportsCfiNavigation;
   const [loading, setLoading] = useState(true);
   const [sidePanel, setSidePanel] = useState<SidePanel>(null);
-  const [tracesTab, setTracesTab] = useState<TracesTab>("bookmarks");
+  const [tracesTab, setTracesTab] = useState<TracesTab>("notes");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tocOpen, setTocOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [xrayInteraction, setXrayInteraction] = useState<ReaderInteraction | null>(null);
   useEffect(() => {
-    setTracesTab("bookmarks");
+    setTracesTab("notes");
     setXrayInteraction(null);
   }, [bookId]);
   // Bumped on every ⌘F, even while the panel is already open, so it re-focuses/re-selects the input.
@@ -1478,66 +1478,6 @@ export default function Reader() {
     setSidePanel("ai");
   };
 
-  const resolveNoteAnchorPosition = useCallback((cfi: string) => {
-    const view = viewRef.current;
-    const viewport = readerViewportRef.current;
-    if (!view || !viewport) return undefined;
-    try {
-      const { index, anchor } = view.resolveCFI(cfi);
-      const content = view.renderer?.getContents?.()
-        ?.find((candidate: { index?: number }) => candidate.index === index) as { doc?: Document } | undefined;
-      if (!content?.doc) return undefined;
-      const range = anchor(content.doc);
-      const rect = range.getBoundingClientRect();
-      if (rect.width === 0 && rect.height === 0) return undefined;
-      const frame = content.doc.defaultView?.frameElement as HTMLElement | null;
-      const frameRect = frame?.getBoundingClientRect();
-      return (frameRect?.top ?? 0) + rect.top - viewport.getBoundingClientRect().top;
-    } catch {
-      return undefined;
-    }
-  }, [readerViewportRef, viewRef]);
-
-  /**
-   * The page a note's anchor sits on, for the card's page chip — or nothing,
-   * when there is no honest answer.
-   *
-   * A PDF renders one page per section, so every note in the book can be paged
-   * exactly. A reflowable book has no page numbers until it is laid out, and it
-   * is only ever laid out where the reader is: asking for the page of a passage
-   * the engine is not showing has no answer, and a guessed chip on a card is
-   * worse than no chip at all.
-   */
-  const bookFormat = book?.format;
-  const resolveNoteAnchorPage = useCallback((cfi: string) => {
-    const view = viewRef.current;
-    const viewport = readerViewportRef.current;
-    if (!view) return undefined;
-    try {
-      const { index, anchor } = view.resolveCFI(cfi);
-      if (bookFormat === "pdf") return index + 1;
-      if (!pageInfo || !viewport) return undefined;
-      const content = view.renderer?.getContents?.()
-        ?.find((candidate: { index?: number }) => candidate.index === index) as { doc?: Document } | undefined;
-      if (!content?.doc) return undefined;
-      const rect = anchor(content.doc).getBoundingClientRect();
-      if (rect.width === 0 && rect.height === 0) return undefined;
-      const frame = content.doc.defaultView?.frameElement as HTMLElement | null;
-      const frameRect = frame?.getBoundingClientRect();
-      const left = (frameRect?.left ?? 0) + rect.left;
-      const top = (frameRect?.top ?? 0) + rect.top;
-      const bounds = viewport.getBoundingClientRect();
-      // Paginated columns keep their geometry off-screen, so "did it resolve" is
-      // not "is it on this page" — the anchor has to actually overlap the
-      // viewport before the current page number describes it.
-      const onThisPage = left < bounds.right && left + rect.width > bounds.left
-        && top < bounds.bottom && top + rect.height > bounds.top;
-      return onThisPage ? pageInfo.current : undefined;
-    } catch {
-      return undefined;
-    }
-  }, [bookFormat, pageInfo, readerViewportRef, viewRef]);
-
   // Handle navigation state from ChatsPage ("Open in Reader")
   // Supports both location.state (main window) and URL search params (standalone window)
   useEffect(() => {
@@ -2456,28 +2396,6 @@ export default function Reader() {
             <ReaderTracesPanel
               tab={tracesTab}
               onTabChange={setTracesTab}
-              bookmarksProps={{
-                bookId,
-                onNavigate: navigateToCfi,
-                getCurrentCfi: () => currentCfiRef.current,
-                getCurrentLabel: () => {
-                  const idx = currentChapterIndex;
-                  return idx >= 0 && idx < chapters.length
-                    ? chapters[idx].title
-                    : t("common.bookmark");
-                },
-                getPageFromCfi: () => {
-                  // foliate-js uses fraction-based progress, not location indices
-                  // Return page info from current state if available
-                  return pageInfo?.current ?? null;
-                },
-              }}
-              highlightsProps={{
-                bookId,
-                onNavigate: navigateToCfi,
-                getPageFromCfi: () => pageInfo?.current ?? null,
-                onExport: () => setExportOpen(true),
-              }}
               vocabProps={{
                 bookId,
                 bookTitle: book.title,
@@ -2497,9 +2415,8 @@ export default function Reader() {
                   setSelectedNoteAnchor(null);
                   viewRef.current?.deselect();
                 },
-                resolveAnchorPosition: resolveNoteAnchorPosition,
-                resolveAnchorPage: resolveNoteAnchorPage,
-                layoutKey: `${currentSectionIndex}:${progress}:${pageInfo?.current ?? ""}`,
+                resolveChapter: resolveExportChapter,
+                onExport: () => setExportOpen(true),
               }}
               xrayProps={{
                 bookId,
