@@ -46,13 +46,18 @@ const definition = (id: LearningModuleId): LearningModuleDefinition => ({
 export const MODULE_DEFINITIONS: Record<LearningCardKind, LearningModuleDefinition[]> = {
   word: [
     definition("context_meaning"),
+    // 「全句大意」和「全句脉络」讲的是整个句子，卡片其余部分讲的都是那一个词。
+    // 两块紧挨着排在语境含义之后，读的顺序就是「这句在说什么 → 这句怎么搭起来
+    // 的 → 这个词本身」——初级读者卡住的地方在前面，不用先翻过一堆词条资料。
+    definition("sentence_gist"),
+    definition("grammar_role"),
     definition("word_info"),
     definition("target_translation"),
     definition("common_senses"),
     definition("collocations"),
     definition("morphology"),
-    definition("grammar_role"),
     definition("synonyms"),
+    definition("why_this_word"),
     definition("usage"),
     definition("memory_aid"),
     definition("source_excerpt"),
@@ -122,7 +127,16 @@ const moduleConfig = (
   density: ModuleDensity = "inherit",
 ): CardModuleConfig => ({ id, enabled, defaultExpanded, density });
 
-const defaultCard = (
+/**
+ * Build one kind's config from the list of modules that should be on. Anything
+ * not named is appended in `MODULE_DEFINITIONS` order and left off, so a card
+ * built here always carries the full module list — the settings panel needs
+ * every module present in order to offer it, enabled or not.
+ *
+ * Exported because the CEFR presets in `level-presets.ts` build their cards the
+ * same way the factory defaults do; two builders would drift.
+ */
+export const buildCardKindConfig = (
   kind: LearningCardKind,
   enabled: LearningModuleId[],
   collapsed: LearningModuleId[] = [],
@@ -151,7 +165,7 @@ export function createDefaultCardDesignConfig(): CardDesignConfigV1 {
   return {
     version: 2,
     cards: {
-      word: defaultCard(
+      word: buildCardKindConfig(
         "word",
         ["context_meaning", "word_info", "common_senses", "collocations", "synonyms"],
         [],
@@ -160,11 +174,11 @@ export function createDefaultCardDesignConfig(): CardDesignConfigV1 {
           densities: { context_meaning: "detailed", synonyms: "standard" },
         },
       ),
-      phrase: defaultCard(
+      phrase: buildCardKindConfig(
         "phrase",
         ["context_meaning", "target_translation", "common_senses"],
       ),
-      passage: defaultCard(
+      passage: buildCardKindConfig(
         "passage",
         ["context_meaning", "target_translation", "idioms"],
       ),

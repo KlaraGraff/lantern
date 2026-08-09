@@ -16,6 +16,16 @@ import { ROW_CONTROL_WIDTH, type SettingsProps } from "./types";
 import { LANGUAGE_OPTIONS } from "./languageOptions";
 import { notifyAllReaders } from "../../utils/notifyReaders";
 import {
+  LEARNING_CARD_CONFIG_SETTING_KEY,
+  LEARNING_CARD_SOURCE_LEVEL,
+  LEARNING_CARD_SOURCE_SETTING_KEY,
+  cardDesignConfigForLevel,
+  cardPresetFollowsLevel,
+  isCefrLevel,
+  serializeCardDesignConfig,
+} from "../learning-card";
+import { notifyReadingAssistanceSettingsChanged } from "../reading-assistance-events";
+import {
   CEFR_LEVELS,
   EXAM_OPTIONS,
   EXAM_SCORE_RULES,
@@ -217,6 +227,23 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
     { min: rule.min, max: rule.max, step: rule.step },
   );
 
+  /**
+   * 等级还决定学习卡默认显示哪几块 —— A 档卡在句子上，C 档卡在词的分寸上。
+   * 只在读者没在「划词与卡片」里自己动过卡片时改写，跟引导第一步同一条规矩，
+   * 见 `cardPresetFollowsLevel`。写完要通知阅读器，否则开着的书还用着旧卡片。
+   */
+  const applyCardPresetForLevel = async (level: string) => {
+    if (!isCefrLevel(level) || !cardPresetFollowsLevel(settings)) return;
+    const keys = {
+      [LEARNING_CARD_CONFIG_SETTING_KEY]: serializeCardDesignConfig(cardDesignConfigForLevel(level)),
+      // 没有哪一档把「目标语言译文」放进单词卡，legacy 那个开关跟着一起归位。
+      show_translation: "false",
+      [LEARNING_CARD_SOURCE_SETTING_KEY]: LEARNING_CARD_SOURCE_LEVEL,
+    };
+    await saveBulk(keys);
+    await notifyReadingAssistanceSettingsChanged(Object.keys(keys));
+  };
+
   const applyAssessmentLevel = async (level: string, source: string) => {
     setCefrLevel(level);
     setCefrSource(source);
@@ -227,6 +254,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
     );
     await save("cefr_level", level);
     await save("cefr_source", source);
+    await applyCardPresetForLevel(level);
     showSavedToast(t("settings.learner.levelApplied"));
   };
 
@@ -311,6 +339,11 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
               ? t("settings.learner.manualSource")
               : t("settings.learner.assessmentSource")}
           </p>
+          {cardPresetFollowsLevel(settings) && (
+            <p className="mt-1 max-w-[420px] text-[11px] leading-[17px] text-text-muted">
+              {t("settings.learner.cardPresetNote", { section: t("settings.tools.title") })}
+            </p>
+          )}
         </div>
         <Select
           className={ROW_CONTROL_WIDTH}
@@ -325,6 +358,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
             void Promise.all([
               save("cefr_level", level),
               save("cefr_source", "manual"),
+              applyCardPresetForLevel(level),
             ]).then(() => showSavedToast(t("settings.learner.manualLevelSaved")));
           }}
           options={CEFR_LEVELS.map((level) => ({ value: level, label: level }))}

@@ -113,13 +113,15 @@ fn learning_modules_for_kind(kind: &str) -> Option<&'static [&'static str]> {
     match kind {
         "word" => Some(&[
             "context_meaning",
+            "sentence_gist",
+            "grammar_role",
             "word_info",
             "target_translation",
             "common_senses",
             "collocations",
             "morphology",
-            "grammar_role",
             "synonyms",
+            "why_this_word",
             "usage",
             "memory_aid",
             "source_excerpt",
@@ -312,7 +314,12 @@ fn learning_request_from_config(kind: &str, raw: &str) -> AppResult<LearningCard
 
 fn learning_kind_instructions(kind: &str) -> &'static str {
     match kind {
-        "word" => "Explain the selected word as used in this exact context. word_info covers spelling, pronunciation, part of speech, and form; context_meaning must open with the contextual meaning itself, as a short standalone clause, before any part of speech, grammar, or contrast with another sense.",
+        // sentence_gist / grammar_role / why_this_word are the three modules the
+        // CEFR presets swap between, so their boundaries have to be stated: two
+        // of them talk about the whole sentence while every other module talks
+        // about the one word, and grammar_role exists only in its jargon-free
+        // form — naming a clause type there defeats the module.
+        "word" => "Explain the selected word as used in this exact context. word_info covers spelling, pronunciation, part of speech, and form; context_meaning must open with the contextual meaning itself, as a short standalone clause, before any part of speech, grammar, or contrast with another sense. sentence_gist and grammar_role are about the whole surrounding sentence, not the selected word: sentence_gist says what that sentence as a whole is saying, in plain everyday wording, without translating it piece by piece and without naming grammar; grammar_role says who does what and which part of the sentence each remaining piece describes, again in plain wording — never name a tense, clause type, part of speech, or sentence element there, and never use grammar vocabulary at all. why_this_word takes a position: say what the author gains by choosing this word over the closest ordinary alternative, name that alternative, and keep it to the difference in effect rather than a neutral list of synonyms.",
         "phrase" => "Explain the selected phrase in its exact context. Prefer its contextual or idiomatic meaning over a word-by-word gloss.",
         "passage" => "Interpret the selected sentence or passage without restating it. Lead with its contextual meaning, then explain only the requested grammar, terms, references, idioms, patterns, or tone.",
         _ => "",

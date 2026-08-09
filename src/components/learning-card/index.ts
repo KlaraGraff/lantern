@@ -4,6 +4,7 @@ export { default as LearningCardModules } from "./LearningCardModules";
 export { default as LearningCardNotes } from "./LearningCardNotes";
 export { default as LearningCardController } from "./LearningCardController";
 export * from "./config";
+export * from "./level-presets";
 export * from "./fixtures";
 export * from "./streaming";
 export type * from "./types";

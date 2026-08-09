@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import { defaultExplanationMode } from "../../i18n";
 import {
   LEARNING_CARD_CONFIG_SETTING_KEY,
+  LEARNING_CARD_SOURCE_MANUAL,
+  LEARNING_CARD_SOURCE_SETTING_KEY,
   createDefaultCardDesignConfig,
   parseCardDesignConfig,
   serializeCardDesignConfig,
@@ -407,6 +409,9 @@ export default function ToolsSettings({
     queueSave({
       [LEARNING_CARD_CONFIG_SETTING_KEY]: serializeCardDesignConfig(normalized),
       show_translation: String(translationEnabled),
+      // 一旦读者自己动过卡片，等级就不再改写它。跟讲解语言那档同一条规矩：
+      // 已经表过态的选择不该被等级重新覆盖一遍。
+      [LEARNING_CARD_SOURCE_SETTING_KEY]: LEARNING_CARD_SOURCE_MANUAL,
     });
   };
   const persistLegacy = (key: string, value: string) => {

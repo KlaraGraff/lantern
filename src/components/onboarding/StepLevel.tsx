@@ -6,6 +6,14 @@ import Button from "../ui/Button";
 import Input from "../ui/Input";
 import Select from "../ui/Select";
 import {
+  LEARNING_CARD_CONFIG_SETTING_KEY,
+  LEARNING_CARD_SOURCE_LEVEL,
+  LEARNING_CARD_SOURCE_SETTING_KEY,
+  cardDesignConfigForLevel,
+  cardPresetFollowsLevel,
+  serializeCardDesignConfig,
+} from "../learning-card";
+import {
   CEFR_LEVELS,
   EXAM_OPTIONS,
   EXAM_SCORE_RULES,
@@ -77,6 +85,9 @@ export default function StepLevel({ settings, save, onNext }: StepLevelProps) {
     storedExplanationMode(settings.explanation_mode),
   );
   const [touched, setTouched] = useState(false);
+  // 读一次就够：引导这一步不会有别人来改卡片配置，而每次渲染都重算会让说明文案
+  // 在保存后自己消失。
+  const [followsLevel] = useState(() => cardPresetFollowsLevel(settings));
   const recommendedMode = recommendedExplanationMode(level, i18n.language);
   const explanationMode = pickedMode ?? recommendedMode;
 
@@ -117,6 +128,14 @@ export default function StepLevel({ settings, save, onNext }: StepLevelProps) {
         save("cefr_level", level),
         save("cefr_source", source),
         save("explanation_mode", explanationMode),
+        // 等级换的是学习卡默认显示哪几块 —— A 档卡在句子上，C 档卡在词的分寸
+        // 上。只在读者没自己动过卡片时写，见 `cardPresetFollowsLevel`。
+        ...(followsLevel
+          ? [
+              save(LEARNING_CARD_CONFIG_SETTING_KEY, serializeCardDesignConfig(cardDesignConfigForLevel(level))),
+              save(LEARNING_CARD_SOURCE_SETTING_KEY, LEARNING_CARD_SOURCE_LEVEL),
+            ]
+          : []),
       ]);
       onNext();
     } finally {
@@ -150,6 +169,12 @@ export default function StepLevel({ settings, save, onNext }: StepLevelProps) {
           </button>
         ))}
       </div>
+
+      {followsLevel && (
+        <p className="mt-2.5 text-[11.5px] leading-[17px] text-text-muted">
+          {t("onboarding.step1.cardPresetNote", { section: t("settings.tools.title") })}
+        </p>
+      )}
 
       <div className="mt-4 border-t border-border-light pt-3">
         <button

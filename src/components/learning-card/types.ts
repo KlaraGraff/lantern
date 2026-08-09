@@ -5,6 +5,8 @@ export type CardWidthMode = "auto" | "compact" | "wide";
 
 export type BuiltInLearningModuleId =
   | "context_meaning"
+  | "sentence_gist"
+  | "why_this_word"
   | "word_info"
   | "target_translation"
   | "common_senses"
