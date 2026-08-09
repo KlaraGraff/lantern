@@ -134,7 +134,7 @@
 
   .actions {
     margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--color-border-light);
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center; justify-content: flex-end;
   }
   .skip { font-size: 13px; font-weight: 500; color: var(--color-text-muted); }
   .btn {
@@ -192,7 +192,7 @@
                   <span class="opt-note">例句仍是英文</span>
                 </div>
                 <div class="sample">
-                  <p class="sample-lbl">样例 · 本地生成，不花额度</p>
+                  <p class="sample-lbl">样例</p>
                   <p class="sample-src">He stood there, <b>bewildered</b>, as the crowd surged past him.</p>
                   <p class="sample-txt">在这句里是「被弄懵了、完全摸不着头脑」——不是单纯的困惑，而是眼前的事太乱、一时反应不过来。比 confused 重。</p>
                 </div>
@@ -219,8 +219,7 @@
           </div>
 
           <div class="actions">
-            <span class="skip">跳过</span>
-            <span class="btn">下一步</span>
+            <span class="btn">按推荐下一步</span>
           </div>
         </div>
       </div>
@@ -265,7 +264,7 @@
                   <span class="opt-note">中文为主，补一句英文</span>
                 </div>
                 <div class="sample">
-                  <p class="sample-lbl">样例 · 本地生成，不花额度</p>
+                  <p class="sample-lbl">样例</p>
                   <p class="sample-src">He stood there, <b>bewildered</b>, as the crowd surged past him.</p>
                   <p class="sample-txt">在这句里是「被弄懵了、摸不着头脑」，程度比 confused 重。<span class="en">Completely confused — too much is happening to take it in.</span></p>
                 </div>
@@ -284,7 +283,6 @@
           </div>
 
           <div class="actions">
-            <span class="skip">跳过</span>
             <span class="btn">下一步</span>
           </div>
         </div>
@@ -338,7 +336,7 @@
                   <span class="opt-note">按你的等级调难度</span>
                 </div>
                 <div class="sample">
-                  <p class="sample-lbl">样例 · 本地生成，不花额度 · 跟着 B1</p>
+                  <p class="sample-lbl">样例 · 跟着你选的 B1</p>
                   <p class="sample-src">He stood there, <b>bewildered</b>, as the crowd surged past him.</p>
                   <p class="sample-txt">Here it means completely confused — so confused that you cannot think clearly or understand what is going on around you.</p>
                 </div>
@@ -349,7 +347,6 @@
           </div>
 
           <div class="actions">
-            <span class="skip">跳过</span>
             <span class="btn">下一步</span>
           </div>
         </div>
@@ -387,7 +384,7 @@
                   <span class="opt-note">例句仍是英文</span>
                 </div>
                 <div class="sample">
-                  <p class="sample-lbl">样例 · 本地生成，不花额度</p>
+                  <p class="sample-lbl">样例</p>
                   <p class="sample-src">He stood there, <b>bewildered</b>, as the crowd surged past him.</p>
                   <p class="sample-txt">在这句里是「被弄懵了、完全摸不着头脑」——不是单纯的困惑，而是眼前的事太乱、一时反应不过来。比 confused 重。</p>
                 </div>
@@ -414,8 +411,7 @@
           </div>
 
           <div class="actions">
-            <span class="skip">跳过</span>
-            <span class="btn">下一步</span>
+            <span class="btn">按推荐下一步</span>
           </div>
         </div>
       </div>
@@ -423,11 +419,11 @@
   </div>
 
   <div class="note">
-    <b>三处需要你点头的取舍</b>
+    <b>三处取舍（已定）</b>
     <ul>
-      <li><b>模式改了名字。</b>「自适应双语」→「中英对照」，「英文分级」→「全英文」。原来的名字在描述实现，新名字在描述你会看到什么。设置页同步改。</li>
-      <li><b>样例是死的还是活的。</b>样张里是写死的一句话（三种模式各一份，中英各一套，跟着界面语言走）。好处是零延迟、零成本、绝对可控；代价是它不反映你实际选的等级——只有「全英文」那条我建议做成按等级取三份预制文案（A1–A2 / B1–B2 / C1–C2）。设置页那个免费本地预览是真调模型的，引导里我不建议那么做：第一屏卡住比什么都劝退。</li>
-      <li><b>跳过等于选推荐。</b>点「跳过」时把「中文讲解」和 B1 一起写进设置，而不是留空——留空会走后端兜底，那个兜底是自适应双语，等于跳过的人被塞了一个我们刚判定太难的默认值。</li>
+      <li><b>模式改名。</b>「自适应双语」→「中英对照」，「英文分级」→「全英文」。原来的名字在描述实现，新名字在描述你会看到什么。设置页同步改。</li>
+      <li><b>样例写死。</b>不调模型——很多人在引导阶段还没配好模型，活样例会直接开天窗。三种模式各一份预制文案，中英界面各一套；「全英文」那条按等级取三份（A1–A2 / B1–B2 / C1–C2）。设置页那个免费本地预览仍然真调模型，两者互不影响。</li>
+      <li><b>跳过等于按推荐。</b>左侧按钮直接叫「按推荐下一步」，点下去把「中文讲解」和 B1 一起写进设置，而不是留空——留空会走后端兜底，那个兜底是中英对照，等于跳过的人被塞了一个我们刚判定太难的默认值。</li>
     </ul>
   </div>
 

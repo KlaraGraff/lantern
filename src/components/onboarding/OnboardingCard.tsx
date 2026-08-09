@@ -222,7 +222,6 @@ export default function OnboardingCard() {
               settings={settings}
               save={save}
               onNext={() => setStep(2)}
-              onSkip={() => setStep(2)}
             />
           ) : step === 2 ? (
             <StepImport

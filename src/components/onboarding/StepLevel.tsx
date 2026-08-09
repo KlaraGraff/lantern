@@ -13,6 +13,28 @@ import {
   scoreWithinRule,
   type CefrLevel,
 } from "../settings/cefr";
+import { defaultExplanationMode } from "../../i18n";
+import { explanationSampleKey, type ExplanationMode } from "./explanation-samples";
+
+const EXPLANATION_MODES: ExplanationMode[] = ["chinese", "adaptive_bilingual", "english_by_level"];
+
+const MODE_NAME_KEY: Record<ExplanationMode, string> = {
+  chinese: "settings.learner.chinese",
+  adaptive_bilingual: "settings.learner.adaptiveBilingual",
+  english_by_level: "settings.learner.englishByLevel",
+};
+
+const MODE_NOTE_KEY: Record<ExplanationMode, string> = {
+  chinese: "onboarding.step1.noteChinese",
+  adaptive_bilingual: "onboarding.step1.noteBilingual",
+  english_by_level: "onboarding.step1.noteEnglish",
+};
+
+function resolveInitialExplanationMode(settings: Record<string, string>, uiLanguage: string): ExplanationMode {
+  const value = settings.explanation_mode;
+  if ((EXPLANATION_MODES as string[]).includes(value)) return value as ExplanationMode;
+  return defaultExplanationMode(uiLanguage);
+}
 
 interface CefrEstimate {
   estimated_cefr: string;
@@ -30,7 +52,6 @@ interface StepLevelProps {
   settings: Record<string, string>;
   save: (key: string, value: string) => Promise<void>;
   onNext: () => void;
-  onSkip: () => void;
 }
 
 /**
@@ -40,8 +61,8 @@ interface StepLevelProps {
  * the fuller reading-score / ambiguous-range flow stays available later in
  * Settings for anyone who wants that precision.
  */
-export default function StepLevel({ settings, save, onNext, onSkip }: StepLevelProps) {
-  const { t } = useTranslation();
+export default function StepLevel({ settings, save, onNext }: StepLevelProps) {
+  const { t, i18n } = useTranslation();
   const [level, setLevel] = useState<CefrLevel>(() => resolveInitialCefrLevel(settings));
   const [source, setSource] = useState("manual");
   const [examOpen, setExamOpen] = useState(false);
@@ -51,6 +72,11 @@ export default function StepLevel({ settings, save, onNext, onSkip }: StepLevelP
   const [conversionError, setConversionError] = useState(false);
   const [conversionResult, setConversionResult] = useState<{ level: string; examLabel: string; score: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [explanationMode, setExplanationMode] = useState<ExplanationMode>(() =>
+    resolveInitialExplanationMode(settings, i18n.language),
+  );
+  const [touched, setTouched] = useState(false);
+  const recommendedMode = defaultExplanationMode(i18n.language);
 
   const examScoreRule = EXAM_SCORE_RULES[examType]?.overall ?? EXAM_SCORE_RULES.ielts.overall;
   const examLabel = EXAM_OPTIONS.find((option) => option.value === examType)?.label ?? examType;
@@ -73,6 +99,7 @@ export default function StepLevel({ settings, save, onNext, onSkip }: StepLevelP
       setLevel(assessment.estimated_cefr as CefrLevel);
       setSource("assessment:onboarding");
       setConversionResult({ level: assessment.estimated_cefr, examLabel, score });
+      setTouched(true);
     } catch {
       setConversionError(true);
       setConversionResult(null);
@@ -84,7 +111,11 @@ export default function StepLevel({ settings, save, onNext, onSkip }: StepLevelP
   const handleNext = async () => {
     setSaving(true);
     try {
-      await Promise.all([save("cefr_level", level), save("cefr_source", source)]);
+      await Promise.all([
+        save("cefr_level", level),
+        save("cefr_source", source),
+        save("explanation_mode", explanationMode),
+      ]);
       onNext();
     } finally {
       setSaving(false);
@@ -105,6 +136,7 @@ export default function StepLevel({ settings, save, onNext, onSkip }: StepLevelP
               setLevel(option);
               setSource("manual");
               setConversionResult(null);
+              setTouched(true);
             }}
             className={`h-11 rounded-md border text-[13px] font-semibold transition-colors ${
               level === option
@@ -176,17 +208,77 @@ export default function StepLevel({ settings, save, onNext, onSkip }: StepLevelP
         )}
       </div>
 
-      <div className="mt-6 flex items-center justify-between border-t border-border-light pt-4">
-        <button
-          type="button"
-          onClick={onSkip}
-          className="text-[13px] font-medium text-text-muted hover:text-text-secondary"
-        >
-          {t("onboarding.skip")}
-        </button>
+      <div className="mt-4 border-t border-border-light pt-3.5">
+        <p className="text-[13px] font-semibold text-text-primary">{t("onboarding.step1.langHead")}</p>
+        <p className="mt-1 text-[12px] leading-[18px] text-text-muted">{t("onboarding.step1.langSub")}</p>
+
+        <div className="mt-3 flex flex-col gap-2">
+          {EXPLANATION_MODES.map((mode) => {
+            const selected = explanationMode === mode;
+            return (
+              <div
+                key={mode}
+                className={`overflow-hidden rounded-md border bg-bg-surface ${
+                  selected ? "border-accent" : "border-border"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExplanationMode(mode);
+                    setTouched(true);
+                  }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left"
+                >
+                  <span
+                    className={`relative size-[15px] flex-none rounded-full border-[1.5px] ${
+                      selected ? "border-accent" : "border-border"
+                    }`}
+                  >
+                    {selected && (
+                      <span className="absolute inset-[3px] rounded-full bg-accent" />
+                    )}
+                  </span>
+                  <span className="text-[13px] font-semibold text-text-primary">{t(MODE_NAME_KEY[mode])}</span>
+                  {mode === recommendedMode && (
+                    <span className="rounded bg-accent-bg px-1.5 py-0.5 text-[11px] font-medium text-accent-text">
+                      {t("onboarding.step1.recommendedTag")}
+                    </span>
+                  )}
+                  <span className="ml-auto text-[12px] text-text-muted">{t(MODE_NOTE_KEY[mode])}</span>
+                </button>
+
+                {selected && (
+                  <div className="border-t border-dashed border-border bg-bg-muted px-3 py-2.5 pl-[37px]">
+                    <p className="mb-1.5 flex items-center gap-1 text-[11px] text-text-muted">
+                      {mode === "english_by_level"
+                        ? t("onboarding.step1.sampleLabelLeveled", { level })
+                        : t("onboarding.step1.sampleLabel")}
+                    </p>
+                    <p className="mb-1.5 text-[12px] italic text-text-muted">
+                      {t("onboarding.step1.sampleBefore")}
+                      <b className="border-b-[1.5px] border-accent font-normal not-italic text-text-secondary">
+                        {t("onboarding.step1.sampleWord")}
+                      </b>
+                      {t("onboarding.step1.sampleAfter")}
+                    </p>
+                    <p className="text-[12.5px] leading-[19px] text-text-secondary">
+                      {t(explanationSampleKey(mode, level))}
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <p className="mt-2.5 text-[11.5px] leading-[17px] text-text-muted">{t("onboarding.step1.langFootnote")}</p>
+      </div>
+
+      <div className="mt-5 flex items-center justify-end border-t border-border-light pt-4">
         <Button variant="primary" size="md" disabled={saving} onClick={() => void handleNext()}>
           {saving && <Loader2 size={13} className="animate-spin" />}
-          {t("onboarding.next")}
+          {touched ? t("onboarding.next") : t("onboarding.step1.nextRecommended")}
         </Button>
       </div>
     </div>
