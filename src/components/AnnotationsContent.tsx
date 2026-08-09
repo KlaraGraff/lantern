@@ -150,10 +150,21 @@ export default function AnnotationsContent() {
       .catch(() => {});
   }, [t]);
 
+  // Only typing is debounced; a mount or a book pick fires straight away.
+  // See `qa/QaContent.tsx` for why the first load must not wait — short
+  // version: the smoke sweep settles faster than the timer and unmounts the
+  // page before the request it was going to make ever happens.
+  const lastSearch = useRef<string | null>(null);
   useEffect(() => {
+    const typing = lastSearch.current !== null && lastSearch.current !== search;
+    lastSearch.current = search;
+    if (!typing) {
+      refresh().catch(() => {});
+      return;
+    }
     const timer = window.setTimeout(() => refresh().catch(() => {}), 180);
     return () => window.clearTimeout(timer);
-  }, [refresh]);
+  }, [refresh, search]);
 
   // Opening the editor lands the caret after what is already written, so
   // typing continues the note instead of pushing in front of it.

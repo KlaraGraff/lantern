@@ -287,8 +287,19 @@ export default function DictionaryContent({ initialView = "all" }: DictionaryCon
 
   const historySearch = contentTab === "history" ? search.trim() : "";
   const historyBookFilter = contentTab === "history" ? bookFilter ?? undefined : undefined;
+  // Only typing is debounced; arriving on the tab or picking a book fires
+  // straight away. See `qa/QaContent.tsx` for why the first load must not
+  // wait — short version: the smoke sweep settles faster than the timer and
+  // unmounts the page before the request it was going to make ever happens.
+  const lastHistorySearch = useRef<string | null>(null);
   useEffect(() => {
     if (contentTab !== "history") return;
+    const typing = lastHistorySearch.current !== null && lastHistorySearch.current !== historySearch;
+    lastHistorySearch.current = historySearch;
+    if (!typing) {
+      refreshHistory(historySearch, historyBookFilter);
+      return;
+    }
     const timer = window.setTimeout(() => refreshHistory(historySearch, historyBookFilter), 200);
     return () => window.clearTimeout(timer);
   }, [contentTab, historySearch, historyBookFilter, refreshHistory]);

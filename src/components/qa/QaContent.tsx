@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, lazy, Suspense } from "react";
+import { useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRightFromLine, BookOpen, Loader2, MessageSquare, Search, Sparkles, Trash2 } from "lucide-react";
 import Input from "../ui/Input";
@@ -42,17 +42,33 @@ export default function QaContent() {
 
   // Mounting this panel *is* "the filter becoming active" — Home swaps it
   // in and out of the ternary rather than hiding it, so there is no
-  // separate "became active" event to listen for. The 180ms debounce
-  // mirrors AnnotationsContent so fast typing doesn't
-  // fire a request per keystroke.
+  // separate "became active" event to listen for.
+  //
+  // Only typing is debounced. A mount, a tab switch, or a pick from the book
+  // dropdown is one discrete event with nothing to coalesce, and making it
+  // wait costs twice over. The reader sits on a spinner for a list that was
+  // already in the database — and the smoke sweep never sees this page's data
+  // at all: its `settle()` gives up after two frames plus 60ms of a quiet
+  // invoke bus (`harness/smoke.ts`), which is up long before a 180ms timer
+  // fires, so it moves on, unmounts the panel, and this effect's own cleanup
+  // cancels the request that was about to happen. The sweep was reporting
+  // green on a list it had never once loaded.
+  const lastSearch = useRef<string | null>(null);
   useEffect(() => {
     let cancelled = false;
+    const typing = lastSearch.current !== null && lastSearch.current !== search;
+    lastSearch.current = search;
     setLoading(true);
-    const timer = window.setTimeout(() => {
+    const run = () => {
       refresh(search, bookId)
         .catch(() => {})
         .finally(() => { if (!cancelled) setLoading(false); });
-    }, 180);
+    };
+    if (!typing) {
+      run();
+      return () => { cancelled = true; };
+    }
+    const timer = window.setTimeout(run, 180);
     return () => { cancelled = true; window.clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, bookId]);
