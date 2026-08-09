@@ -519,6 +519,56 @@ fn the_clearing_dialog_counts_what_the_clear_really_takes_and_leaves() {
     assert_eq!(after.vocab_words, 3);
 }
 
+/// The shelf lists finished books only. A `running` row still carries the
+/// previous scan's numbers (05b) and a `pending` row carries zeroes, and
+/// neither is a value a badge may quote.
+#[test]
+fn the_shelf_is_only_told_about_books_that_finished_counting() {
+    let (_directory, db) = test_db();
+    insert_book(&db, "done", "Done", 0);
+    insert_book(&db, "midway", "Midway", 0);
+    insert_book(&db, "never", "Never", 0);
+    let tally = CoverageTally {
+        total_tokens: 1000,
+        distinct_words: 400,
+        mastered_tokens: 900,
+        familiar_tokens: 40,
+        name_tokens: 20,
+        unknown_tokens: 40,
+        name_words: 3,
+        unknown_words: 25,
+    };
+    store(
+        &db,
+        "done",
+        CoverageStatus::Done,
+        &tally,
+        None,
+        Some("sha"),
+        None,
+    )
+    .unwrap();
+    store(
+        &db,
+        "midway",
+        CoverageStatus::Running,
+        &tally,
+        None,
+        Some("sha"),
+        None,
+    )
+    .unwrap();
+
+    let shelf = load_shelf_coverage(&db).unwrap();
+
+    assert_eq!(shelf.len(), 1);
+    assert_eq!(shelf[0].book_id, "done");
+    assert_eq!(shelf[0].total_tokens, 1000);
+    assert_eq!(shelf[0].mastered_tokens, 900);
+    assert_eq!(shelf[0].familiar_tokens, 40);
+    assert_eq!(shelf[0].name_tokens, 20);
+}
+
 /// A device with nothing on it must not offer a dialog full of zeroes as if
 /// they were losses.
 #[test]

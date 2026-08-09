@@ -1008,6 +1008,60 @@ pub fn get_book_unknown_words(
     load_unknown_words(&db, &book_id, count_familiar)
 }
 
+/// One finished book, reduced to what a shelf badge needs (08, D7).
+///
+/// The four token counts rather than a percentage, for the same reason
+/// [`BookReaderCoverage`] stores none: which of the two percentages is *the*
+/// coverage is a setting, and the shelf must be able to follow a flip of it
+/// without a round trip. `baseline_books` rides along because a badge is a
+/// point or it is nothing — a book whose sample only supports a range gets no
+/// badge, and that call is made with the same rule the card uses.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShelfCoverage {
+    pub book_id: String,
+    pub total_tokens: i64,
+    pub mastered_tokens: i64,
+    pub familiar_tokens: i64,
+    pub name_tokens: i64,
+    pub baseline_books: i64,
+}
+
+/// Every book with a finished coverage row, in one query.
+///
+/// The shelf asks once and looks each book up locally. Asking per card would
+/// be one command per book on a shelf that scrolls, and staleness is not
+/// checked here on purpose: re-hashing every file to dim a badge would cost
+/// more than the badge is worth, and the book's own page is where a stale
+/// number gets explained.
+pub fn load_shelf_coverage(db: &Db) -> AppResult<Vec<ShelfCoverage>> {
+    let conn = db.reader();
+    let mut statement = conn.prepare(
+        "SELECT book_id, total_tokens, mastered_tokens, familiar_tokens, name_tokens,
+                baseline_books
+           FROM book_reader_coverage
+          WHERE status = 'done' AND total_tokens > 0",
+    )?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(ShelfCoverage {
+                book_id: row.get("book_id")?,
+                total_tokens: row.get("total_tokens")?,
+                mastered_tokens: row.get("mastered_tokens")?,
+                familiar_tokens: row.get("familiar_tokens")?,
+                name_tokens: row.get("name_tokens")?,
+                baseline_books: row.get("baseline_books")?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+#[tauri::command]
+pub fn list_shelf_coverage(db: State<'_, Db>) -> AppResult<Vec<ShelfCoverage>> {
+    load_shelf_coverage(&db)
+}
+
 /// What the clearing dialog puts in its two columns (09).
 ///
 /// Counted rather than described, because "会被清除 / 不受影响" is a promise
