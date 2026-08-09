@@ -48,7 +48,7 @@ docs/
 - **Backend tests:** Write unit tests for new backend commands before moving to frontend.
 - **Cargo.lock:** Run `cargo check` after version bumps to sync `Cargo.lock` before committing.
 - **Version bumps & releases:** Tag with `v` prefix, push tag to trigger release CI.
-- **Pre-release health check:** Before every `/release`, run a repo-wide health check (stale branches, outdated docs, dangling references) and report only the conclusions to the user.
+- **Pre-release health check:** Before every `/release`, run a repo-wide health check (stale branches, outdated docs, dangling references, stale open issues) and report only the conclusions to the user. Prune the issue ledger: close dead issues, rewrite vague ones; more than ~10 open issues means the ledger is overloaded — clean before adding.
 
 ## Skills (slash commands)
 
