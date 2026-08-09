@@ -1,4 +1,18 @@
 {
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ctx=$(echo '== git status --short =='; git status --short; echo; echo '== git worktree list =='; git worktree list; echo; echo '== open issues =='; gh issue list --limit 10 2>/dev/null || echo '(gh 不可用)'); jq -n --arg c \"$ctx\" '{hookSpecificOutput:{hookEventName:\"SessionStart\",additionalContext:(\"开工自查快照（未提交改动/工作树可能属于其他会话，改文件前先核对领域；open issues 是当前任务台账）：\\n\"+$c)}}' 2>/dev/null || true",
+            "timeout": 15,
+            "statusMessage": "开工自查：扫描在制品"
+          }
+        ]
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(npm install:*)",
