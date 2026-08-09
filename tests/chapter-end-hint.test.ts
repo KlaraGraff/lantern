@@ -166,7 +166,7 @@ test("the collapsed state starts with the panel hidden and only the toggle, line
 
 test("expanding flips the toggle label, aria-expanded, and fires onExpandChange(true, root)", () => {
   const { doc, allElements } = createFakeDoc();
-  let expandChangeCalls: Array<[boolean, unknown]> = [];
+  const expandChangeCalls: Array<[boolean, unknown]> = [];
   installChapterEndHint(baseOptions(doc, {
     onExpandChange: (expanded, root) => { expandChangeCalls.push([expanded, root]); },
   }));

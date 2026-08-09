@@ -131,7 +131,9 @@ describe("reader export fields", () => {
 
   it("drops only the unchecked CSV columns and never kind or book", () => {
     const text = serializeCsv(records, only("word", "definition"));
-    assert.equal(text.split("\r\n")[0], `﻿"kind","book","word","definition"`);
+    // Escaped, not pasted: the byte-order mark Excel needs is invisible in the
+    // source and a linter cannot tell it from a stray control character.
+    assert.equal(text.split("\r\n")[0], `\uFEFF"kind","book","word","definition"`);
     assert.equal(text.split("\r\n")[1], `"highlight","A Book","",""`);
   });
 
