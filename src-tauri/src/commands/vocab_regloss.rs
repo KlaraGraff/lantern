@@ -7,32 +7,37 @@
 //! word again does not rewrite it, and no replay ever will. A gloss the model
 //! got wrong — or one that is merely unhelpful — was permanent.
 //!
-//! It is also the manual counterpart `commands::auto_analysis`'s second rule
-//! requires: `vocab_gloss_backfill` repairs damaged definitions automatically,
-//! and a reader who switches that job off must still have a way to repair
-//! their own rows. A bulk "repair now" button would have satisfied the rule
-//! and then died with the backlog; this one outlives it, because rewording a
-//! perfectly valid gloss is a thing readers want on a row that was never
-//! damaged.
+//! # The card-blob heuristic and the displacement rule
 //!
-//! # What it shares with the backfill, and what it does not
+//! This module also carries [`looks_like_card_blob`] and
+//! [`displaced_explanation`], the two structural helpers behind the
+//! displacement rule below. They originally belonged to a one-time repair job
+//! that walked every saved word and re-glossed the ones an early, unreleased
+//! version of the app had filled with a whole learning card instead of a
+//! short gloss. The app was never distributed while that defect was live, so
+//! no user's data ever needed the repair, and the job itself has been
+//! removed. The two helpers stayed, because `set_definition` and
+//! `sync::merge::apply_vocab_definition` still need to
+//! recognise a card-shaped blob wherever one turns up in a `definition`
+//! column and park it under `context_explanation` instead of discarding it.
+//!
+//! # What the write does
 //!
 //! The write is not merely the same shape, it is the same function:
 //! [`vocab::set_definition`](crate::commands::vocab::set_definition). The new
 //! gloss goes to `definition`, and the text it displaces moves to
 //! `context_explanation` only when that column is empty **and** the displaced
-//! text is a card blob — see
-//! [`displaced_explanation`](crate::commands::vocab_gloss_backfill::displaced_explanation)
-//! for why the second condition exists and why it changes nothing for the
-//! repair job. On failure, an empty reply, or no configured provider, the row
-//! is left exactly as it was: a bad gloss is bad, a blank one is worse.
+//! text is a card blob — see [`displaced_explanation`] for why the second
+//! condition exists. On failure, an empty reply, or no configured provider,
+//! the row is left exactly as it was: a bad gloss is bad, a blank one is
+//! worse.
 //!
-//! What differs is the accounting. [`FEATURE`] is neither `vocab_gloss` (the
-//! save path) nor `vocab_gloss_backfill` (the job), and `origin` is `"user"`,
-//! not `"auto"`. The auto-analysis console totals a job's spend by `feature`
-//! and separates deliberate spend from background spend by `origin`; billing a
-//! button the reader pressed as background repair would overstate what the app
-//! spends behind their back by exactly what they chose to spend themselves.
+//! What differs is the accounting. [`FEATURE`] is not `vocab_gloss` (the save
+//! path), and `origin` is `"user"`, not `"auto"`. The auto-analysis console
+//! totals a job's spend by `feature` and separates deliberate spend from
+//! background spend by `origin`; billing a button the reader pressed as
+//! background repair would overstate what the app spends behind their back by
+//! exactly what they chose to spend themselves.
 //!
 //! # Sync
 //!
@@ -52,18 +57,78 @@
 use rusqlite::{params, OptionalExtension};
 use tauri::{AppHandle, Runtime, State};
 
-use crate::commands::ai::vocabulary::generate_vocab_gloss;
+use crate::commands::ai::vocabulary::{
+    gloss_display_width, generate_vocab_gloss, MAX_GLOSS_WIDTH,
+};
 use crate::commands::vocab::{row_to_vocab, set_definition, VocabWord, SELECT_COLS};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 use crate::secrets::Secrets;
 use crate::sync::writer::SyncWriter;
 
+/// Does this `definition` hold a card instead of a gloss?
+///
+/// Two signals, both structural rather than language-dependent:
+///
+/// - **More than one line.** A gloss is one line by construction — every path
+///   that writes one runs it through `sanitize_gloss`, which keeps only the
+///   first non-empty line. Anything with an interior newline was assembled from
+///   sections.
+/// - **Wider than the ceiling.** [`MAX_GLOSS_WIDTH`] columns is what fits above
+///   a word; the blobs in question run 400–500 characters. Measured in display
+///   columns, so a Chinese gloss and an English one get the same budget.
+///
+/// Deliberately *not* matched on module headings ("Meaning in this context" and
+/// friends): those strings are localised, so matching them would repair a
+/// Chinese reader's rows and quietly skip an English one's. The two structural
+/// signals already cover every blob those headings appear in.
+pub fn looks_like_card_blob(definition: &str) -> bool {
+    let trimmed = definition.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    trimmed.contains('\n') || gloss_display_width(trimmed) > MAX_GLOSS_WIDTH
+}
+
+/// What, if anything, the text being replaced should be parked under.
+///
+/// One rule, two callers — this module's own regenerate path and
+/// `sync::merge::apply_vocab_definition` — because a definition change now
+/// travels between devices and the receiving device must end up with the same
+/// two columns the sending one has.
+///
+/// Two conditions, and the second is narrower than it used to be:
+///
+/// - **The explanation column is empty.** A reader's own kept analysis is
+///   never collateral.
+/// - **The displaced text is a card blob.** These blobs come from data an
+///   early, unreleased version of the app wrote before the two save paths
+///   were unified — the selection menu wrote a short contextual gloss, and
+///   the learning card dumped its whole rendered text into `definition`
+///   instead. On an ordinary regenerate the displaced text is a previous
+///   one-line gloss, and parking *that* under "In context" invents an
+///   explanation the reader never asked for out of a sentence they just
+///   rejected. `looks_like_card_blob` is exactly the line between the two
+///   cases.
+pub fn displaced_explanation(
+    old_definition: &str,
+    existing_explanation: Option<&str>,
+) -> Option<String> {
+    if existing_explanation.is_some_and(|value| !value.trim().is_empty()) {
+        return None;
+    }
+    let trimmed = old_definition.trim();
+    if !looks_like_card_blob(trimmed) {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
 /// The `ai_usage_records.feature` tag for a reader-pressed regeneration.
 ///
 /// Its own slug on purpose. `vocab_gloss` would hide these calls inside
-/// ordinary word saving; `vocab_gloss_backfill` is a job id, and the console
-/// reads that column as "what this job spent". `ai::request_counts` folds an
+/// ordinary word saving, and the console would have no separate column to
+/// read this regeneration's spend from. `ai::request_counts` folds an
 /// unrecognised slug into its honest `other` bucket, so nothing has to be
 /// taught about it to keep the reassurance total correct.
 pub const FEATURE: &str = "vocab_gloss_regenerate";
@@ -149,6 +214,51 @@ fn read_word(db: &Db, id: &str) -> AppResult<VocabWord> {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    // --- the heuristic ---
+
+    #[test]
+    fn a_short_single_line_gloss_is_not_a_blob() {
+        assert!(!looks_like_card_blob("讲述、叙述"));
+        assert!(!looks_like_card_blob("to move gradually toward"));
+        assert!(!looks_like_card_blob(""));
+        assert!(!looks_like_card_blob("   "));
+    }
+
+    #[test]
+    fn a_multi_line_definition_is_a_blob_however_short() {
+        assert!(looks_like_card_blob("讲述\n\n更多解释"));
+    }
+
+    #[test]
+    fn the_card_shaped_definition_this_heuristic_exists_for_is_matched() {
+        let blob = "Meaning in this context\nThe narrator uses \"recount\" to mean telling a \
+                    story in order, not counting again.\n\nExamples\n- He recounted the voyage.";
+        assert!(looks_like_card_blob(blob));
+    }
+
+    // A repaired row must never be picked up again, or a regenerate would
+    // treat its own output as a blob on the very next pass.
+    #[test]
+    fn a_gloss_this_module_would_produce_never_matches_again() {
+        let repaired = crate::commands::ai::vocabulary::sanitize_gloss(
+            "Meaning in this context\nA long explanation follows.",
+        );
+        assert!(!looks_like_card_blob(&repaired));
+    }
+
+    // --- the displacement rule ---
+
+    #[test]
+    fn only_a_blob_is_parked_under_the_explanation() {
+        let blob = "Meaning in this context\nto that place, in older English.";
+        assert_eq!(displaced_explanation(blob, None).as_deref(), Some(blob));
+        // An explanation already there is never overwritten.
+        assert_eq!(displaced_explanation(blob, Some("kept")), None);
+        assert_eq!(displaced_explanation(blob, Some("  ")).as_deref(), Some(blob));
+        // An ordinary gloss is discarded rather than filed.
+        assert_eq!(displaced_explanation("到那里", None), None);
+    }
 
     fn setup() -> (TempDir, Db) {
         let dir = TempDir::new().unwrap();
@@ -422,7 +532,7 @@ mod tests {
             .unwrap();
         assert_eq!(origin, "user");
         assert_eq!(feature, FEATURE);
-        assert_ne!(feature, crate::commands::vocab_gloss_backfill::JOB_ID);
+        assert_ne!(feature, "vocab_gloss");
     }
 
     /// Reversal of `the_sync_clock_is_left_where_it_was`, which asserted the

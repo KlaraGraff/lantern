@@ -8,7 +8,7 @@ import { presetFor } from "./aiPresets";
 import {
   compactTokens,
   consoleWindowStart,
-  groupJobsByTrigger,
+  groupJobsByFamily,
   needsUnit,
   tokenScaleFor,
   type AutoAnalysisConsoleData,
@@ -136,11 +136,11 @@ export default function AutoAnalysisSettings() {
         )}
       </div>
 
-      {groupJobsByTrigger(data.jobs).map(([trigger, jobs]) => (
-        <section key={trigger} className="mt-5">
+      {groupJobsByFamily(data.jobs).map(([family, jobs]) => (
+        <section key={family} className="mt-5">
           <h3 className="border-b border-black/10 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.6px] text-text-muted">
-            {t(`settings.autoAnalysis.trigger.${trigger}`, {
-              defaultValue: t("settings.autoAnalysis.trigger.unknown"),
+            {t(`settings.autoAnalysis.family.${family}`, {
+              defaultValue: t("settings.autoAnalysis.family.other"),
             })}
           </h3>
           {jobs.map((job) => (
@@ -175,7 +175,6 @@ export default function AutoAnalysisSettings() {
           ))}
         </p>
         <p>{t("settings.autoAnalysis.footer.silentFailure")}</p>
-        <p>{t("settings.autoAnalysis.footer.manualRemains")}</p>
       </div>
     </div>
   );
@@ -208,7 +207,14 @@ function JobRow({
           {t(`settings.autoAnalysis.job.${job.id}.what`)}
         </p>
         <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-[1.5] text-text-muted">
+          {/* When a job runs used to be the group heading. Grouping now
+              answers "what is this for", so the timing rides along with the
+              run count — the two are read together anyway. */}
           <span>
+            {t(`settings.autoAnalysis.trigger.${job.trigger}`, {
+              defaultValue: t("settings.autoAnalysis.trigger.unknown"),
+            })}
+            {" · "}
             {job.autoCalls > 0
               ? t("settings.autoAnalysis.ranTimes", {
                   times: job.autoCalls,

@@ -303,12 +303,10 @@ pub enum EventBody {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         card_snapshot: Option<String>,
     },
-    /// A saved word's definition, rewritten in place — by the reader pressing
-    /// regenerate (`commands::vocab_regloss`) or by the automatic repair of a
-    /// definition that holds a whole learning card
-    /// (`commands::vocab_gloss_backfill`). Before this event `definition` was
-    /// write-once across every sync path: `vocab.add` creates the row with
-    /// `INSERT OR IGNORE` and can never correct one.
+    /// A saved word's definition, rewritten in place by the reader pressing
+    /// regenerate (`commands::vocab_regloss`). Before this event `definition`
+    /// was write-once across every sync path: `vocab.add` creates the row
+    /// with `INSERT OR IGNORE` and can never correct one.
     ///
     /// It carries the new definition and nothing else. The text it displaces
     /// is *not* on the wire: the receiving device holds its own copy of the
@@ -324,9 +322,9 @@ pub enum EventBody {
     /// Sibling of `vocab.definition.set`, not a replacement for it: that event
     /// says "one sentence changed and the receiving device works out what the
     /// old sentence displaces"; this one says "there is a new card, and here
-    /// are all three columns it produced". The two writers still exist for
-    /// different reasons — `vocab_gloss_backfill` repairs a definition without
-    /// ever generating a card, and has nothing to put in the other two columns.
+    /// are all three columns it produced". A plain definition regenerate has
+    /// nothing to put in the other two columns, which is why it stays on the
+    /// lighter event instead.
     ///
     /// # Why not reuse an existing event
     ///

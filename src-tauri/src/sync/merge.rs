@@ -947,8 +947,8 @@ fn apply_vocab_list_status(
 /// The event carries only the new definition. The old text this device is
 /// about to lose is *its own*, so the displacement rule runs here against the
 /// local row rather than travelling: `displaced_explanation` is the same
-/// function `vocab_regloss` and `vocab_gloss_backfill` call, which is what
-/// makes the local and remote outcomes identical.
+/// function `vocab_regloss` and `commands::vocab::set_definition` call, which
+/// is what makes the local and remote outcomes identical.
 ///
 /// A row that does not exist locally is a no-op, like `apply_vocab_mastery`'s
 /// zero-row UPDATE — the definition arrives with the `vocab.add` that creates
@@ -970,7 +970,7 @@ fn apply_vocab_definition(
         return Ok(());
     };
     let displaced =
-        crate::commands::vocab_gloss_backfill::displaced_explanation(&current, explanation.as_deref());
+        crate::commands::vocab_regloss::displaced_explanation(&current, explanation.as_deref());
     tx.execute(
         "UPDATE vocab_words
          SET definition = ?1,

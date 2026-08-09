@@ -9,11 +9,11 @@
 //! nothing about opening or rereading that book calls `compute_and_store`
 //! again.
 //!
-//! Three properties, all borrowed from `commands::vocab_gloss_backfill`'s
-//! shape even though the reason differs — that job paces itself against an
-//! AI provider's rate limit and a reader's quota; this one paces itself
-//! against the reader's CPU and disk, since a section backfill re-parses the
-//! book's file:
+//! Three properties, in a shape any one-time launch backfill in this codebase
+//! follows even though the reason differs from job to job — a job pacing
+//! itself against an AI provider's rate limit and a reader's quota looks the
+//! same as this one, which paces itself against the reader's CPU and disk,
+//! since a section backfill re-parses the book's file:
 //!
 //! - **Paced and capped per launch.** [`RUN_MAX`] books, [`BOOK_DELAY_MS`]
 //!   apart, so a library with hundreds of already-analyzed books is caught up
@@ -57,13 +57,12 @@ pub const RUN_MAX: usize = 5;
 const BOOK_DELAY_MS: u64 = 500;
 
 /// How long the job waits after launch before its first book. Startup is
-/// already contended (migrations, library scan, sync, the vocab-gloss
-/// repair); nothing here is urgent enough to compete with it.
+/// already contended (migrations, library scan, sync); nothing here is
+/// urgent enough to compete with it.
 const STARTUP_DELAY_MS: u64 = 25_000;
 
-/// One run at a time, process-wide — mirrors `vocab_gloss_backfill::RUNNING`
-/// for the same reason: two windows opening in quick succession must not
-/// each start a run over the same books.
+/// One run at a time, process-wide: two windows opening in quick succession
+/// must not each start a run over the same books.
 static RUNNING: AtomicBool = AtomicBool::new(false);
 
 struct PendingBook {
@@ -157,8 +156,7 @@ fn backfill_one(db: &Db, book_id: &str, expected_sha256: Option<&str>) -> AppRes
 /// Runs entirely on whatever thread calls it — [`spawn_on_start`] is the
 /// only caller in the app, and it runs this on a blocking-pool thread, the
 /// same way `compute_book_difficulty`'s own worker does, because extraction
-/// is CPU- and disk-bound rather than the network wait `vocab_gloss_backfill`
-/// paces against.
+/// is CPU- and disk-bound rather than a network wait.
 pub fn run_backfill(db: &Db, limit: usize) -> AppResult<usize> {
     let rows = pending(db, limit)?;
     if rows.is_empty() {

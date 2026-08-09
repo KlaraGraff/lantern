@@ -12,7 +12,6 @@ import BookOpenGateProvider from "./components/BookOpenGateProvider";
 import McpApprovalDialog from "./components/McpApprovalDialog";
 import OnboardingCard from "./components/onboarding/OnboardingCard";
 import UpdateToast from "./components/UpdateToast";
-import VocabGlossBackfillNotice from "./components/VocabGlossBackfillNotice";
 import { reconcileLanguage } from "./i18n";
 import { useAppZoom } from "./hooks/useAppZoom";
 import { openReaderWindow } from "./utils/openReaderWindow";
@@ -164,13 +163,9 @@ function AppContent() {
       {isMainWindow && <OnboardingCard />}
       {/* One window checks and one window announces. A reader window mounting
           its own copy would run a second check and stack a second toast. */}
-      {/* The repair runs once per launch in the backend and emits to every
-          window; only the library window announces it, so a reader with a
-          book open does not get the same notice twice. */}
       {isMainWindow && (
         <ErrorBoundary scope="silent">
           <UpdateToast />
-          <VocabGlossBackfillNotice />
         </ErrorBoundary>
       )}
     </BookOpenGateProvider>

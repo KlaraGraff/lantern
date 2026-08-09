@@ -691,10 +691,9 @@ fn validate_mastery(mastery: &str) -> AppResult<()> {
 
 /// Rewrite one saved word's `definition` and publish the change.
 ///
-/// The single write both definition rewriters go through —
-/// `vocab_regloss::regenerate_vocab_definition` (the reader's button) and
-/// `vocab_gloss_backfill` (the automatic repair) — so the two cannot drift,
-/// and so the rule a receiving device replays in
+/// The single write that rewrites a definition —
+/// `vocab_regloss::regenerate_vocab_definition` (the reader's button) — goes
+/// through this function, and the rule a receiving device replays in
 /// `sync::merge::apply_vocab_definition` is literally the same code.
 ///
 /// Returns `false` when the row is gone, which is the only way this writes
@@ -735,7 +734,7 @@ pub(crate) fn set_definition(
         // Read inside the transaction that writes, so "is the explanation
         // column empty" is decided by the row the write lands on rather than
         // by a value read before the AI call.
-        let displaced = crate::commands::vocab_gloss_backfill::displaced_explanation(
+        let displaced = crate::commands::vocab_regloss::displaced_explanation(
             &current,
             explanation.as_deref(),
         );

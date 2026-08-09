@@ -80,41 +80,57 @@ export function needsUnit(tokens: number, scale: TokenScale): boolean {
 }
 
 /**
- * Console groups, in the order the mockup fixes: by *when a job runs*, not
- * by which part of the app it belongs to. What the reader is deciding is
- * when their quota gets spent — the module a job lives in is not a fact
- * about that.
- *
- * Triggers arriving from a newer backend than this build fall to the end
- * under their own heading rather than vanishing; a switch the reader cannot
- * see is a switch they cannot turn off.
- *
- * `repair` is last on purpose, and it is the only group that empties itself:
- * a repair job is finite, so once its backlog is gone the registry stops
- * offering the row at all. Everything above it recurs for as long as the
- * reader keeps reading, which is the order they are worth thinking about in.
- * `book_imported` leads for the same reason `book_finished` used to: it is
- * the earliest moment in a book's life, so a reader scanning the list meets
- * the groups in the order their own reading will.
+ * Within a family, the order jobs are worth reading in — earliest moment in
+ * a book's life first. Also the tie-break the console sorts rows by, and the
+ * i18n key for the "when does this run" label each row carries.
  */
-export const TRIGGER_ORDER = [
-  "book_imported",
-  "book_finished",
-  "daily",
-  "batch",
-  "repair",
-] as const;
+export const TRIGGER_ORDER = ["book_imported", "book_finished", "daily", "batch"] as const;
 
-export function groupJobsByTrigger(jobs: AutoAnalysisJobView[]): [string, AutoAnalysisJobView[]][] {
-  const groups = new Map<string, AutoAnalysisJobView[]>();
-  for (const job of jobs) {
-    const bucket = groups.get(job.trigger);
-    if (bucket) bucket.push(job);
-    else groups.set(job.trigger, [job]);
-  }
-  const rank = (trigger: string) => {
+/**
+ * Console groups: by *what a job is for*, not by when it runs.
+ *
+ * The question this screen answers is "is this one worth my quota", and the
+ * answer turns on what the reader gets back — better search, a review to
+ * come back to, explanations that fit them. When it runs is a smaller fact,
+ * so it stays on the row (next to that row's call count) instead of
+ * organising the page.
+ *
+ * A job id this build does not know about falls into `other` rather than
+ * vanishing: a switch the reader cannot see is a switch they cannot turn off.
+ */
+export const FAMILY_ORDER = ["retrieval", "review", "personalization", "other"] as const;
+
+const JOB_FAMILY: Record<string, string> = {
+  grounding_context: "retrieval",
+  person_aliases: "retrieval",
+  reading_review: "review",
+  review_pile_curation: "review",
+  followup_difficulty: "personalization",
+  user_profile: "personalization",
+};
+
+export function familyOf(jobId: string): string {
+  return JOB_FAMILY[jobId] ?? "other";
+}
+
+export function groupJobsByFamily(jobs: AutoAnalysisJobView[]): [string, AutoAnalysisJobView[]][] {
+  const triggerRank = (trigger: string) => {
     const index = (TRIGGER_ORDER as readonly string[]).indexOf(trigger);
     return index === -1 ? TRIGGER_ORDER.length : index;
+  };
+  const groups = new Map<string, AutoAnalysisJobView[]>();
+  for (const job of jobs) {
+    const family = familyOf(job.id);
+    const bucket = groups.get(family);
+    if (bucket) bucket.push(job);
+    else groups.set(family, [job]);
+  }
+  for (const bucket of groups.values()) {
+    bucket.sort((a, b) => triggerRank(a.trigger) - triggerRank(b.trigger));
+  }
+  const rank = (family: string) => {
+    const index = (FAMILY_ORDER as readonly string[]).indexOf(family);
+    return index === -1 ? FAMILY_ORDER.length : index;
   };
   return [...groups.entries()].sort(([a], [b]) => rank(a) - rank(b));
 }

@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   compactTokens,
   consoleWindowStart,
-  groupJobsByTrigger,
+  groupJobsByFamily,
   needsUnit,
   tokenScaleFor,
   type AutoAnalysisJobView,
@@ -55,36 +55,39 @@ test("the window is the last thirty days", () => {
   assert.equal(now - consoleWindowStart(now), 30 * 24 * 60 * 60 * 1000);
 });
 
-test("groups follow when a job runs, not what module it lives in", () => {
-  const grouped = groupJobsByTrigger([
-    job({ id: "c", trigger: "batch" }),
-    job({ id: "a", trigger: "book_finished" }),
-    job({ id: "b", trigger: "daily" }),
+test("groups follow what a job is for, not when it runs", () => {
+  const grouped = groupJobsByFamily([
+    job({ id: "user_profile", trigger: "batch" }),
+    job({ id: "reading_review", trigger: "book_finished" }),
+    job({ id: "person_aliases", trigger: "book_imported" }),
   ]);
   assert.deepEqual(
-    grouped.map(([trigger]) => trigger),
-    ["book_finished", "daily", "batch"],
+    grouped.map(([family]) => family),
+    ["retrieval", "review", "personalization"],
   );
 });
 
-test("a trigger this build has never heard of still gets a heading", () => {
+test("a job this build has never heard of still gets a heading", () => {
   // A switch the reader cannot see is a switch they cannot turn off, so an
-  // unknown trigger sorts last instead of dropping its jobs.
-  const grouped = groupJobsByTrigger([
-    job({ id: "future", trigger: "when_the_moon_is_full" }),
-    job({ id: "a", trigger: "book_finished" }),
+  // unrecognised job sorts last instead of dropping out of the console.
+  const grouped = groupJobsByFamily([
+    job({ id: "moon_phase_summaries", trigger: "daily" }),
+    job({ id: "reading_review", trigger: "book_finished" }),
   ]);
   assert.deepEqual(
-    grouped.map(([trigger]) => trigger),
-    ["book_finished", "when_the_moon_is_full"],
+    grouped.map(([family]) => family),
+    ["review", "other"],
   );
 });
 
-test("jobs sharing a trigger stay in one group, in backend order", () => {
-  const grouped = groupJobsByTrigger([
-    job({ id: "first", trigger: "book_finished" }),
-    job({ id: "second", trigger: "book_finished" }),
+test("inside a family, the earliest moment in a book's life leads", () => {
+  const grouped = groupJobsByFamily([
+    job({ id: "review_pile_curation", trigger: "daily" }),
+    job({ id: "reading_review", trigger: "book_finished" }),
   ]);
   assert.equal(grouped.length, 1);
-  assert.deepEqual(grouped[0][1].map((entry) => entry.id), ["first", "second"]);
+  assert.deepEqual(grouped[0][1].map((entry) => entry.id), [
+    "reading_review",
+    "review_pile_curation",
+  ]);
 });

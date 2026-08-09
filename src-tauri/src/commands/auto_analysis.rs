@@ -16,15 +16,6 @@
 //! The registry deliberately lists only jobs whose analysis actually exists.
 //! A switch that gates nothing is worse than a missing row — it reads as a
 //! feature the reader has, and turning it off changes nothing.
-//!
-//! That rule has a second edge, which [`AutoAnalysisJob::applies`] answers: a
-//! job can also *run out of work permanently*. `vocab_gloss_backfill` repairs
-//! a fixed set of damaged rows and, once the last one is repaired, can never
-//! run again — leaving its switch on screen forever would be the dead switch
-//! that rule forbids. So a job may declare a predicate for "is there still
-//! anything here to decide about", and the console drops the row when the
-//! answer is no. It is a property of the job, not of the screen: the
-//! onboarding intro reads the same list and has to make the same omission.
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -51,18 +42,6 @@ pub enum AutoAnalysisTrigger {
     /// classification call fires once accumulated rows cross a fixed
     /// threshold, so the trigger is a count, not a clock.
     Batch,
-    /// A finite repair of data an earlier defect of ours corrupted: a bounded
-    /// slice of the backlog on each launch, until the backlog is empty, and
-    /// then never again — see `commands::vocab_gloss_backfill`, the one job
-    /// that uses this today.
-    ///
-    /// This is its own variant rather than a reuse of one above because that
-    /// is the whole point of this field. `Daily` would promise a recurring
-    /// cost that this job does not have; `Batch` would promise the opposite
-    /// of the truth, that the work grows as the reader reads, when it only
-    /// ever shrinks. What a reader deciding about this row needs to know is
-    /// that the spend is finite and ends by itself.
-    Repair,
     /// Once, when a book is brought into the library — see
     /// `ai::grounding::context`, the one job that uses this today.
     ///
@@ -110,25 +89,6 @@ pub struct AutoAnalysisJob {
     /// doc comment on `is_enabled` for why `true` is the norm and what
     /// justifies the one job that is not.
     pub default_enabled: bool,
-    /// Whether this job still has anything left to do. `None` — the normal
-    /// case — means "always", for a job whose work arrives with the reading
-    /// and therefore never runs out.
-    ///
-    /// `Some(check)` is for a job with a finite backlog. When the check says
-    /// no, the console omits the row entirely: the switch would gate nothing,
-    /// and the module doc's first rule cuts both ways. The check has to be
-    /// cheap, because it runs on every console read, and it has to be derived
-    /// from the same query the job itself uses to find its work — two
-    /// independent notions of "is there anything left" would eventually
-    /// disagree, and the visible symptom of that is a switch that does
-    /// nothing.
-    pub applies: Option<fn(&Connection) -> bool>,
-}
-
-impl AutoAnalysisJob {
-    fn applicable(&self, conn: &Connection) -> bool {
-        self.applies.is_none_or(|check| check(conn))
-    }
 }
 
 /// Every job the reader can authorise.
@@ -145,11 +105,6 @@ impl AutoAnalysisJob {
 /// docs/impls/reading-driven-mastery-and-review.md §5.5 — because unlike
 /// `review_pile_curation` it produces no reader-facing output to judge yet;
 /// it only accumulates data for statistics this registry does not gate.
-/// `vocab_gloss_backfill` (`commands::vocab_gloss_backfill`) is the first job
-/// with a finite backlog and the first to ship *on* against the
-/// `review_pile_curation` precedent — see its module doc for why a repair of
-/// our own defect is the one case where default-on is the conservative
-/// answer. The mockup's other rows are absent on purpose until theirs do.
 /// `grounding_context` (`ai::grounding::context`) is the first `Feature`-layer
 /// job, and the first whose switch the reader may already have found
 /// elsewhere: the embedding settings page offers the same toggle, writing the
@@ -166,42 +121,30 @@ pub const JOBS: &[AutoAnalysisJob] = &[
         trigger: AutoAnalysisTrigger::BookImported,
         layer: AutoAnalysisLayer::Feature,
         default_enabled: true,
-        applies: None,
     },
     AutoAnalysisJob {
         id: crate::ai::grounding::aliases::JOB_ID,
         trigger: AutoAnalysisTrigger::BookImported,
         layer: AutoAnalysisLayer::Feature,
         default_enabled: true,
-        applies: None,
-    },
-    AutoAnalysisJob {
-        id: crate::commands::vocab_gloss_backfill::JOB_ID,
-        trigger: AutoAnalysisTrigger::Repair,
-        layer: AutoAnalysisLayer::Feature,
-        default_enabled: true,
-        applies: Some(crate::commands::vocab_gloss_backfill::has_pending),
     },
     AutoAnalysisJob {
         id: "reading_review",
         trigger: AutoAnalysisTrigger::BookFinished,
         layer: AutoAnalysisLayer::Personalization,
         default_enabled: true,
-        applies: None,
     },
     AutoAnalysisJob {
         id: crate::commands::review_pile_ai::JOB_ID,
         trigger: AutoAnalysisTrigger::Daily,
         layer: AutoAnalysisLayer::Personalization,
         default_enabled: false,
-        applies: None,
     },
     AutoAnalysisJob {
         id: crate::commands::followup_difficulty::JOB_ID,
         trigger: AutoAnalysisTrigger::Batch,
         layer: AutoAnalysisLayer::Personalization,
         default_enabled: true,
-        applies: None,
     },
     AutoAnalysisJob {
         id: crate::commands::profile::JOB_ID,
@@ -212,7 +155,6 @@ pub const JOBS: &[AutoAnalysisJob] = &[
         trigger: AutoAnalysisTrigger::Batch,
         layer: AutoAnalysisLayer::Personalization,
         default_enabled: true,
-        applies: None,
     },
 ];
 
@@ -433,26 +375,11 @@ fn view_of(db: &Db, job_id: &str) -> AppResult<AutoAnalysisJobView> {
         .ok_or_else(|| AppError::Other("AUTO_ANALYSIS_JOB_UNKNOWN".to_string()))
 }
 
-/// `console_inner` with every job that has run out of work dropped.
-///
-/// The headline totals are deliberately left alone: a job that no longer has
-/// a row still spent what it spent, and the same reasoning that keeps a
-/// removed job's tokens in the total applies here. Only the switch goes away,
-/// because only the switch would now be lying.
-fn console_for_display(db: &Db, since_ms: i64) -> AppResult<AutoAnalysisConsole> {
-    let mut console = console_inner(db, since_ms)?;
-    let conn = db.reader();
-    console
-        .jobs
-        .retain(|view| job(&view.id).is_ok_and(|job| job.applicable(&conn)));
-    Ok(console)
-}
-
 /// The console's whole model, for automatic calls recorded at or after
 /// `since_ms`.
 #[tauri::command]
 pub fn auto_analysis_console(since_ms: i64, db: State<'_, Db>) -> AppResult<AutoAnalysisConsole> {
-    console_for_display(&db, since_ms)
+    console_inner(&db, since_ms)
 }
 
 fn set_enabled_inner(db: &Db, job_id: &str, enabled: bool) -> AppResult<AutoAnalysisJobView> {
@@ -849,85 +776,6 @@ mod tests {
             off.ever_enabled,
             "switching back off must not erase that it was tried"
         );
-    }
-
-    /// A job with a finite backlog earns its row only while the backlog
-    /// exists. `vocab_gloss_backfill` is the first such job: on a library
-    /// with nothing damaged in it, the console must not show a switch that
-    /// can no longer change anything.
-    #[test]
-    fn a_job_with_nothing_left_to_do_loses_its_row() {
-        let (_dir, db) = setup();
-        let job_id = crate::commands::vocab_gloss_backfill::JOB_ID;
-        let console = console_for_display(&db, 0).unwrap();
-        assert!(console.jobs.iter().all(|view| view.id != job_id));
-        // The other three have no backlog to run out of, so they stay.
-        assert_eq!(console.jobs.len(), JOBS.len() - 1);
-    }
-
-    #[test]
-    fn a_job_with_work_left_keeps_its_row() {
-        let (_dir, db) = setup();
-        let job_id = crate::commands::vocab_gloss_backfill::JOB_ID;
-        {
-            let conn = db.conn.lock().unwrap();
-            let now = chrono::Utc::now().timestamp_millis();
-            conn.execute(
-                "INSERT INTO books (id, title, author, file_path, status, progress, created_at, updated_at)
-                 VALUES ('book1', 'T', 'A', 'books/t.epub', 'reading', 0, ?1, ?1)",
-                params![now],
-            )
-            .unwrap();
-            conn.execute(
-                "INSERT INTO vocab_words
-                    (id, book_id, word, definition, cfi, mastery, review_count,
-                     created_at, updated_at, updated_by_device)
-                 VALUES ('w1', 'book1', 'thither', 'Meaning in this context\nto that place',
-                     'epubcfi(/6/4!/4/2)', 'new', 0, ?1, ?1, 'test')",
-                params![now],
-            )
-            .unwrap();
-        }
-        let console = console_for_display(&db, 0).unwrap();
-        let view = console.jobs.iter().find(|view| view.id == job_id).unwrap();
-        // And it ships on: the reader never opted into the damage.
-        assert!(view.enabled);
-        assert_eq!(view.trigger, AutoAnalysisTrigger::Repair);
-    }
-
-    /// Losing the row must not lose the tokens. The reader was charged for
-    /// those calls whether or not a switch still explains them — the same
-    /// reasoning that keeps a removed job's spend in the headline.
-    #[test]
-    fn a_retired_row_still_counts_toward_the_headline() {
-        let (_dir, db) = setup();
-        insert_usage(&db, "user", "lookup", 5_000, 1_000);
-        insert_usage(
-            &db,
-            "auto",
-            crate::commands::vocab_gloss_backfill::JOB_ID,
-            5_000,
-            300,
-        );
-        let console = console_for_display(&db, 0).unwrap();
-        assert!(console
-            .jobs
-            .iter()
-            .all(|view| view.id != crate::commands::vocab_gloss_backfill::JOB_ID));
-        assert_eq!(console.auto_tokens, 300);
-        assert_eq!(console.ratio_percent, Some(30));
-    }
-
-    /// A job that has run out of work is still a registered job: its switch
-    /// must stay writable, or a console read racing an emptying backlog would
-    /// start erroring.
-    #[test]
-    fn a_retired_job_can_still_be_switched() {
-        let (_dir, db) = setup();
-        let job_id = crate::commands::vocab_gloss_backfill::JOB_ID;
-        let off = set_enabled_inner(&db, job_id, false).unwrap();
-        assert!(!off.enabled);
-        assert!(!is_enabled(&db.reader(), job_id));
     }
 
     /// A job whose default is `true` has never needed the switch touched to
