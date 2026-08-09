@@ -813,6 +813,13 @@ pub fn run() {
             commands::book_difficulty::get_vocab_pass_rates,
             commands::book_difficulty::get_book_difficulty_sections,
             commands::book_difficulty::get_reading_pace,
+            // Reader-relative coverage — the same book counted against this
+            // reader's own known words rather than against the frequency
+            // table (migration 066, docs/impls/handoff-coverage-and-aliases.md §2)
+            commands::coverage::get_book_coverage,
+            commands::coverage::compute_book_coverage,
+            commands::coverage::get_vocab_profile,
+            commands::coverage::clear_vocab_profile,
             // Local reading history and optional AI prose (never synced)
             commands::reading_stats::record_reading_session,
             commands::reading_stats::checkpoint_reading_session,

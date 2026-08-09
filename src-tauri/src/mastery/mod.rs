@@ -121,7 +121,7 @@ const CHAPTER_CREDIT_CAP: f64 = 2.0;
 const LOOKUP_ACTIVE_MULTIPLIER: f64 = 1.5;
 
 /// New or Learning -> Familiar. See the module doc for why it is exactly 4.
-const FAMILIAR_CREDIT: f64 = 4.0;
+pub(crate) const FAMILIAR_CREDIT: f64 = 4.0;
 
 /// Familiar -> Mastered. Twice the first hop: claiming a reader has mastered
 /// a word is the strongest claim this system makes without ever asking them.

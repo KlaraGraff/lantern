@@ -239,7 +239,7 @@ pub(crate) fn count_words<'a>(texts: impl IntoIterator<Item = &'a str>) -> HashM
 
 /// One form's occurrences, and how many of them were capitalized.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct WordTally {
+pub struct WordTally {
     pub tokens: i64,
     pub capitalized: i64,
 }

@@ -9,6 +9,7 @@ pub mod bookmarks;
 pub mod books;
 pub mod chats;
 pub mod collections;
+pub mod coverage;
 pub mod dictionary;
 pub mod enhanced_fonts;
 pub mod explanations;
