@@ -235,10 +235,11 @@ pub(crate) fn get_vocab_learning_dashboard_inner(
         |row| row.get(0),
     )?;
     let mastered_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM mastery_events me
+        "SELECT COUNT(DISTINCT me.vocab_word_id) FROM mastery_events me
            JOIN vocab_words vw ON vw.id = me.vocab_word_id
           WHERE me.to_mastery = 'mastered' AND me.created_at >= ?1 AND me.created_at < ?2
-            AND vw.list_status = 'confirmed' AND (?3 IS NULL OR vw.book_id = ?3)",
+            AND vw.list_status = 'confirmed' AND vw.mastery = 'mastered'
+            AND (?3 IS NULL OR vw.book_id = ?3)",
         params![query.period_start, query.period_end, book],
         |row| row.get(0),
     )?;
@@ -423,7 +424,7 @@ mod tests {
         // Outside the period — must not be counted.
         insert_lookup(&db, "l3", "b1", 1_600_000_000_000);
 
-        insert_vocab_word(&db, "v1", "b1", "new", "confirmed", 1_700_000_010_000, None);
+        insert_vocab_word(&db, "v1", "b1", "mastered", "confirmed", 1_700_000_010_000, None);
         // A watchlist row (never saved) must not inflate new_words_count.
         insert_vocab_word(&db, "v2", "b1", "new", "watchlist", 1_700_000_010_000, None);
 
@@ -439,6 +440,56 @@ mod tests {
         assert_eq!(dashboard.lookup_count, 2);
         assert_eq!(dashboard.new_words_count, 1);
         assert_eq!(dashboard.mastered_count, 1);
+    }
+
+    #[test]
+    fn mastered_count_deduplicates_a_word_that_flapped_up_down_up_within_the_period() {
+        let (_dir, db) = test_db();
+        insert_book(&db, "b1");
+        insert_vocab_word(&db, "v1", "b1", "mastered", "confirmed", 1_700_000_000_000, None);
+        insert_mastery_event(&db, "v1", "mastered", 1_700_000_010_000);
+        insert_mastery_event(&db, "v1", "learning", 1_700_000_020_000);
+        insert_mastery_event(&db, "v1", "mastered", 1_700_000_030_000);
+
+        let dashboard = get_vocab_learning_dashboard_inner(
+            &db,
+            &base_query(1_690_000_000_000, 1_710_000_000_000),
+        )
+        .unwrap();
+        assert_eq!(dashboard.mastered_count, 1);
+    }
+
+    #[test]
+    fn mastered_count_excludes_a_word_that_fell_back_to_learning_after_the_promotion() {
+        let (_dir, db) = test_db();
+        insert_book(&db, "b1");
+        insert_vocab_word(&db, "v1", "b1", "learning", "confirmed", 1_700_000_000_000, None);
+        insert_mastery_event(&db, "v1", "mastered", 1_700_000_010_000);
+        insert_mastery_event(&db, "v1", "learning", 1_700_000_020_000);
+
+        let dashboard = get_vocab_learning_dashboard_inner(
+            &db,
+            &base_query(1_690_000_000_000, 1_710_000_000_000),
+        )
+        .unwrap();
+        assert_eq!(dashboard.mastered_count, 0);
+    }
+
+    #[test]
+    fn mastered_count_counts_two_distinct_words_that_are_each_still_mastered() {
+        let (_dir, db) = test_db();
+        insert_book(&db, "b1");
+        insert_vocab_word(&db, "v1", "b1", "mastered", "confirmed", 1_700_000_000_000, None);
+        insert_vocab_word(&db, "v2", "b1", "mastered", "confirmed", 1_700_000_000_000, None);
+        insert_mastery_event(&db, "v1", "mastered", 1_700_000_010_000);
+        insert_mastery_event(&db, "v2", "mastered", 1_700_000_020_000);
+
+        let dashboard = get_vocab_learning_dashboard_inner(
+            &db,
+            &base_query(1_690_000_000_000, 1_710_000_000_000),
+        )
+        .unwrap();
+        assert_eq!(dashboard.mastered_count, 2);
     }
 
     #[test]
