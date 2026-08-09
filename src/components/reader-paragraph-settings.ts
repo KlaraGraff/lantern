@@ -21,18 +21,25 @@ export interface ParagraphStyleState {
   paragraphSpacing: ParagraphSpacing;
 }
 
-/** 开缩进时把冲突的段间距压回 `none`；关缩进时不动段间距。 */
+/**
+ * 开缩进时把段间距一律压回 `none`；关缩进时不动段间距。
+ *
+ * 「一律」包括 `original`（跟随出版方）。这一条和上面那个中立态的说法不矛盾，
+ * 因为两个方向问的不是同一件事：选了「跟随出版方」只是没表态，不该反过来把
+ * 缩进关掉；但**打开缩进**是明确表态，而出版方留的那点边距终归还是边距——
+ * 而且它恰好是出厂默认值，多数 EPUB 的出版方样式表又确实给段落留了空隙。
+ * 不压的话，「打开首行缩进」这个最常见的第一次操作，给出的正是缩进和空隙同时
+ * 存在的业余排版。
+ *
+ * 压完之后用户仍然可以手动把段间距改回「跟随出版方」——那是他明确要「缩进 +
+ * 出版方边距」，我们不再去纠正。互斥只做一次，不做一个来回拉扯的循环。
+ */
 export function withFirstLineIndent(
   firstLineIndent: boolean,
   current: ParagraphStyleState,
 ): ParagraphStyleState {
   if (!firstLineIndent) return { ...current, firstLineIndent };
-  return {
-    firstLineIndent: true,
-    paragraphSpacing: paragraphSpacingConflictsWithIndent(current.paragraphSpacing)
-      ? "none"
-      : current.paragraphSpacing,
-  };
+  return { firstLineIndent: true, paragraphSpacing: "none" };
 }
 
 /** 选了明确要空隙的段间距就关掉缩进；选 `original` / `none` 不动缩进。 */

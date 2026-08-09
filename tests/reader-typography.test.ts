@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { ReaderSettingsState } from "../src/components/ReaderSettings";
 import {
+  TYPOGRAPHY_BLANK_BLOCK_CLASS,
   TYPOGRAPHY_DROP_CAP_PARAGRAPH_CLASS,
   TYPOGRAPHY_HANGING_INDENT_CLASS,
   TYPOGRAPHY_INLINE_DIV_CLASS,
@@ -57,6 +58,20 @@ test("typography enhancements target eligible paragraphs and exclude structural 
   assert.match(css, /hyphens: auto/);
   assert.match(css, /hyphens: manual/);
   assert.doesNotMatch(css, /:lang\(ru\)/);
+});
+
+test("the paragraph gap spares blockquotes and blank scene-break blocks", () => {
+  const css = getParagraphTypographyCSS(enabled);
+  const gapRule = css.slice(0, css.indexOf("margin-bottom"));
+  const gapSelector = gapRule.slice(gapRule.lastIndexOf("}") + 1);
+  // A quote block's own margins separate it from the prose; rewriting them
+  // makes the quote run into the next sentence. It still justifies like a
+  // paragraph — only the gap rule lets it go.
+  assert.doesNotMatch(gapSelector, /blockquote/);
+  assert.match(css, /blockquote/);
+  // An empty <p> is a scene break made of nothing but its own margin, so any
+  // gap value — zero included — would erase the break along with the space.
+  assert.match(gapSelector, new RegExp(`:not\\(\\.${TYPOGRAPHY_BLANK_BLOCK_CLASS}\\)`));
 });
 
 test("every :not() argument is a single class, so Safari 15 keeps the whole rule", () => {

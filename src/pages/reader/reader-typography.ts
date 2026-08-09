@@ -22,6 +22,18 @@ export const TYPOGRAPHY_INLINE_DIV_CLASS = "lantern-typography-inline-div";
 // own stylesheet suppressed — see `stampPublisherTypography`.
 export const TYPOGRAPHY_PUBLISHER_ALIGNED_CLASS = "lantern-typography-publisher-aligned";
 export const TYPOGRAPHY_HANGING_INDENT_CLASS = "lantern-typography-hanging-indent";
+/**
+ * A block with no text of its own. Publishers use one as a scene break — an
+ * empty `<p>` whose entire job is the vertical space its margin makes. Setting
+ * the paragraph gap (including to `0`) would collapse it to nothing and take
+ * the scene break with it, so blank blocks keep whatever margin the publisher
+ * gave them. Blocks holding only an image are already spared by
+ * `TYPOGRAPHY_MEDIA_PARAGRAPH_CLASS`.
+ *
+ * Matched in JS: `:empty` does not match `<p> </p>` or `<p><br/></p>`, which
+ * is most of what this shape looks like in the wild.
+ */
+export const TYPOGRAPHY_BLANK_BLOCK_CLASS = "lantern-typography-blank";
 
 // Embedded as a comment on the first line of every reader stylesheet (see
 // `getReaderCSS` in reader-theme.ts) so `stampPublisherTypography` below can
@@ -125,6 +137,11 @@ const HEADING_OR_RULE_TAGS = new Set(["H1", "H2", "H3", "H4", "H5", "H6", "HR"])
  * indent rule on the oldest platform we support, silently. `querySelectorAll`
  * has no such limit, so the matching happens here and the stylesheet is left
  * with nothing but single class names to exclude.
+ *
+ * The same pass also stamps `TYPOGRAPHY_STRUCTURAL_CLASS` and
+ * `TYPOGRAPHY_BLANK_BLOCK_CLASS`, which are about the paragraph gap rather than
+ * the indent — they ride along because this is the one walk over every
+ * candidate block in the section.
  */
 const NEVER_INDENT_SELECTOR = [
   // Their own container already carries the horizontal offset, so an indent
@@ -155,6 +172,10 @@ export function markTypographyIndentExceptions(doc: Document): void {
       || neverIndent.has(paragraph)
       || (previousSibling !== null && HEADING_OR_RULE_TAGS.has(normalizedTagName(previousSibling)));
     paragraph.classList.toggle(TYPOGRAPHY_NO_INDENT_PARAGRAPH_CLASS, noIndent);
+    paragraph.classList.toggle(
+      TYPOGRAPHY_BLANK_BLOCK_CLASS,
+      (paragraph.textContent ?? "").trim().length === 0,
+    );
   }
   // Containers that are themselves never paragraph candidates still have to
   // be reset, because a `<p>` inside them would otherwise inherit their
@@ -353,6 +374,15 @@ export function getParagraphTypographyCSS(
     + `:not(.${TYPOGRAPHY_MEDIA_PARAGRAPH_CLASS}):not(.${TYPOGRAPHY_PUBLISHER_ALIGNED_CLASS})`;
   const paragraphSelectors = PARAGRAPH_BASE_SELECTORS.map((base) => `${base}${paragraphSuffix}`);
   const paragraphSelector = paragraphSelectors.join(",\n    ");
+  // The gap rule is narrower than the alignment rule. A `<blockquote>` is a
+  // block of quoted matter, not a paragraph in the body rhythm — it justifies
+  // like one but its own margins separate the quote from the prose around it,
+  // and rewriting them makes the quote run into the next sentence. Blank
+  // blocks are the publisher's scene breaks; see TYPOGRAPHY_BLANK_BLOCK_CLASS.
+  const gapSelector = PARAGRAPH_BASE_SELECTORS
+    .filter((base) => base !== "blockquote")
+    .map((base) => `${base}${paragraphSuffix}:not(.${TYPOGRAPHY_BLANK_BLOCK_CLASS})`)
+    .join(",\n    ");
   // Indent gets its own, narrower selector: the media/structural/alignment
   // exclusions above still apply, plus the paragraphs marked by
   // markTypographyIndentExceptions, the publisher's own hanging indents, and
@@ -406,8 +436,11 @@ export function getParagraphTypographyCSS(
     ${paragraphSelector} {
       ${settings.textJustification ? "text-align: justify !important;" : ""}
       ${hyphenationCss}
-      ${paragraphGap ? `margin-bottom: ${paragraphGap} !important;` : ""}
     }
+    ${paragraphGap ? `
+    ${gapSelector} {
+      margin-bottom: ${paragraphGap} !important;
+    }` : ""}
     ${settings.firstLineIndent ? `
     ${indentSelector} {
       text-indent: 1.5em !important;

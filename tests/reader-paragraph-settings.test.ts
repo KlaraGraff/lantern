@@ -20,13 +20,22 @@ test("turning the indent on clears a paragraph gap that would double up with it"
   }
 });
 
-test("the indent leaves the two neutral spacing values alone", () => {
-  // `original` means "I have not said" and `none` is what the indent tradition
-  // wants anyway — neither is a competing answer to "did the paragraph end".
-  for (const spacing of ["original", "none"] as const) {
+test("turning the indent on flattens every paragraph gap, publisher default included", () => {
+  // `original` is the factory default, and most EPUB publishers do leave a gap
+  // between paragraphs — so leaving it alone would mean the single most common
+  // way to reach this feature is also the one that produces indent *and* gap.
+  for (const spacing of ["original", "none", "compact", "comfortable", "loose"] as const) {
     const next = withFirstLineIndent(true, { firstLineIndent: false, paragraphSpacing: spacing });
-    assert.equal(next.paragraphSpacing, spacing);
+    assert.deepEqual(next, { firstLineIndent: true, paragraphSpacing: "none" });
   }
+});
+
+test("picking the publisher default back afterwards keeps the indent", () => {
+  // The exclusion fires once, on the way in. Re-choosing "follow the publisher"
+  // is the reader saying they want indent *and* publisher margins; correcting
+  // that a second time would be a loop the user cannot get out of.
+  const next = withParagraphSpacing("original", { firstLineIndent: true, paragraphSpacing: "none" });
+  assert.deepEqual(next, { firstLineIndent: true, paragraphSpacing: "original" });
 });
 
 test("turning the indent off never touches the paragraph gap", () => {
