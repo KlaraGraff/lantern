@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { CloudDownload } from "lucide-react";
 import DeleteBookDialog, { type DeleteBookNotePolicy } from "./DeleteBookDialog";
 import IndexManagerModal from "./IndexManagerModal";
+import { useShelfCoverage } from "../hooks/useShelfCoverage";
 
 function CoverImage({ src, alt, title }: { src: string; alt: string; title: string }) {
   const [failed, setFailed] = useState(false);
@@ -43,6 +44,7 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
   const { t } = useTranslation();
   const requestOpen = useBookOpenGate();
   const navigate = useNavigate();
+  const coverageOf = useShelfCoverage();
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -106,6 +108,20 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
                   {t("bookGrid.finished")}
                 </div>
               )}
+              {/* Bottom-left: the top-right corner already belongs to 已读完,
+                  and a cover that is dimmed or still being prepared has
+                  nothing to say about how readable it is. */}
+              {book.available !== false && !isPendingPreparation(book) && (() => {
+                const percent = coverageOf(book.id);
+                return percent === null ? null : (
+                  <div
+                    className="absolute bottom-2 left-2 rounded-full bg-black/55 px-2 py-1 text-[12px] font-medium text-white"
+                    title={t("shelfCoverage.badgeTitle", { percent })}
+                  >
+                    {t("shelfCoverage.badge", { percent })}
+                  </div>
+                );
+              })()}
             </div>
             <h3 className="mt-3 text-[14px] font-semibold text-text-primary tracking-[-0.15px] truncate">
               {book.title}

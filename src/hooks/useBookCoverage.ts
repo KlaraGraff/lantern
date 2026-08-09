@@ -74,6 +74,25 @@ export interface CoverageProgress {
   totalTokens: number;
 }
 
+/** Mirrors the backend's `ShelfCoverage` — one finished book, badge-sized. */
+export interface ShelfCoverage {
+  bookId: string;
+  totalTokens: number;
+  masteredTokens: number;
+  familiarTokens: number;
+  nameTokens: number;
+  baselineBooks: number;
+}
+
+/** Mirrors the backend's `VocabProfileClearPreview` — the dialog's two columns. */
+export interface VocabProfileClearPreview {
+  autoMasteryWords: number;
+  exposureRecords: number;
+  computedBooks: number;
+  manualWords: number;
+  vocabWords: number;
+}
+
 /** How far clearing the profile has got, in exposure rows (09b). */
 export interface ClearProgress {
   cleared: number;
@@ -108,6 +127,14 @@ export function getBookUnknownWords(
   countFamiliar: boolean,
 ): Promise<UnknownWord[]> {
   return invoke<UnknownWord[]>("get_book_unknown_words", { bookId, countFamiliar });
+}
+
+export function listShelfCoverage(): Promise<ShelfCoverage[]> {
+  return invoke<ShelfCoverage[]>("list_shelf_coverage");
+}
+
+export function previewVocabProfileClear(): Promise<VocabProfileClearPreview> {
+  return invoke<VocabProfileClearPreview>("preview_vocab_profile_clear");
 }
 
 export function clearVocabProfile(): Promise<void> {

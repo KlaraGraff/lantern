@@ -307,6 +307,22 @@ export function wordChip(word: Pick<UnknownWord, "familiar" | "lookups" | "encou
   return { kind: "never" };
 }
 
+/**
+ * The shelf badge (08, D7), or `null` for a book that does not get one.
+ *
+ * A badge is one number in the corner of a cover; it has no room to say "some
+ * number between 93 and 97, and here is why". So it uses the same gate the
+ * card uses and stays away when the honest answer is a range — the book's own
+ * page is where a range gets the sentence it needs.
+ */
+export function shelfCoverageLabel(
+  row: Parameters<typeof coverageReading>[0],
+  countFamiliar: boolean,
+): string | null {
+  const reading = coverageReading(row, countFamiliar);
+  return reading.kind === "point" ? formatCoverage(reading.share) : null;
+}
+
 /** `0.9641` → `"96.4"`. One decimal everywhere, so ruler and prose agree. */
 export function formatCoverage(share: number): string {
   return (share * 100).toFixed(1);

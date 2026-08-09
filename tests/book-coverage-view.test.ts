@@ -17,6 +17,7 @@ import {
   scalePosition,
   shareAfterLearning,
   shelfCoverageFrom,
+  shelfCoverageLabel,
   THRESHOLD_ASSISTED,
   THRESHOLD_INDEPENDENT,
   unknownWordsCsv,
@@ -257,4 +258,24 @@ test("a comma in a gloss the reader typed does not shift the export's columns", 
   assert.equal(lines[0], "word,tokens,gloss,encounters,lookups");
   assert.equal(lines[1], '"leviathan",84,"巨兽；（此书中指）鲸",2,0');
   assert.equal(lines[2], '"cetology",12,"whale ""science"", broadly",0,0');
+});
+
+test("a shelf badge is a point or it is nothing", () => {
+  // Same book, same counts: confident enough for a number, and the setting
+  // picks which of the two the badge shows.
+  const settled = row({
+    totalTokens: 10_000,
+    masteredTokens: 9_500,
+    familiarTokens: 60,
+    nameTokens: 100,
+    baselineBooks: MIN_BASELINE_BOOKS,
+  });
+  assert.equal(shelfCoverageLabel(settled, true), "96.6");
+  assert.equal(shelfCoverageLabel(settled, false), "96.0");
+
+  // Too few books behind the profile — the card would show a range, so the
+  // badge shows nothing rather than picking an end of it.
+  assert.equal(shelfCoverageLabel({ ...settled, baselineBooks: 1 }, true), null);
+  // Enough books, but the "眼熟" band is too wide to round to one story.
+  assert.equal(shelfCoverageLabel({ ...settled, familiarTokens: 400 }, true), null);
 });

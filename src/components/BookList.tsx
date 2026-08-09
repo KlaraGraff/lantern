@@ -9,6 +9,7 @@ import EditMetadataModal from "./EditMetadataModal";
 import { useTranslation } from "react-i18next";
 import DeleteBookDialog, { type DeleteBookNotePolicy } from "./DeleteBookDialog";
 import IndexManagerModal from "./IndexManagerModal";
+import { useShelfCoverage } from "../hooks/useShelfCoverage";
 
 function CoverImage({ src, alt, title }: { src: string; alt: string; title: string }) {
   const [failed, setFailed] = useState(false);
@@ -42,6 +43,7 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
   const { t } = useTranslation();
   const requestOpen = useBookOpenGate();
   const navigate = useNavigate();
+  const coverageOf = useShelfCoverage();
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -140,6 +142,16 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
                       </span>
                     )}
                   </div>
+                  {/* In list view the cover is too small to carry a badge, so
+                      the same number rides in the meta line instead. */}
+                  {(() => {
+                    const percent = coverageOf(book.id);
+                    return percent === null ? null : (
+                      <span className="text-[12px] text-text-muted">
+                        {t("shelfCoverage.listLine", { percent })}
+                      </span>
+                    );
+                  })()}
                   <div className="w-full h-1.5 bg-accent/20 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-accent rounded-full"

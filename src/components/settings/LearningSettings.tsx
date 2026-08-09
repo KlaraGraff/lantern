@@ -4,6 +4,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { AlertTriangle, ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import i18n from "../../i18n";
 import Select from "../ui/Select";
+import Toggle from "../ui/Toggle";
+import ClearVocabProfileDialog from "../ClearVocabProfileDialog";
+import {
+  COUNT_FAMILIAR_SETTING_KEY,
+  SHELF_COVERAGE_SETTING_KEY,
+  countFamiliarFrom,
+  shelfCoverageFrom,
+} from "../../pages/book-details/coverage-view";
 import { ROW_CONTROL_WIDTH, type SettingsProps } from "./types";
 import { LANGUAGE_OPTIONS } from "./languageOptions";
 import { notifyAllReaders } from "../../utils/notifyReaders";
@@ -75,6 +83,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
   const [levelWordClass, setLevelWordClass] = useState("ai");
   const [lowLevelEnglishAcknowledged, setLowLevelEnglishAcknowledged] = useState(false);
   const [showLowLevelEnglishWarning, setShowLowLevelEnglishWarning] = useState(false);
+  const [clearingProfile, setClearingProfile] = useState(false);
   const [examFormOpen, setExamFormOpen] = useState(false);
   const [examType, setExamType] = useState("ielts");
   const [overallScore, setOverallScore] = useState("");
@@ -715,6 +724,52 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
           className={`${ROW_CONTROL_WIDTH} h-9 rounded-lg border border-transparent bg-bg-input px-3 text-[13px] font-medium text-text-primary text-center outline-none hover:border-border focus:border-accent`}
         />
       </div>
+
+      <div className="flex items-center justify-between min-h-[73px] py-3 border-t border-black/10">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.coverage.countFamiliar")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.coverage.countFamiliarHint")}</p>
+        </div>
+        <Toggle
+          checked={countFamiliarFrom(settings)}
+          label={t("settings.coverage.countFamiliar")}
+          onChange={async (checked) => {
+            await save(COUNT_FAMILIAR_SETTING_KEY, checked ? "true" : "false");
+            showSavedToast();
+          }}
+        />
+      </div>
+
+      <div className="flex items-center justify-between min-h-[73px] py-3 border-t border-black/10">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.coverage.showOnShelf")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.coverage.showOnShelfHint")}</p>
+        </div>
+        <Toggle
+          checked={shelfCoverageFrom(settings)}
+          label={t("settings.coverage.showOnShelf")}
+          onChange={async (checked) => {
+            await save(SHELF_COVERAGE_SETTING_KEY, checked ? "true" : "false");
+            showSavedToast();
+          }}
+        />
+      </div>
+
+      <div className="flex items-center justify-between min-h-[73px] py-3 border-t border-black/10">
+        <div>
+          <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">{t("settings.coverage.clearProfile")}</p>
+          <p className="text-[12px] text-text-muted mt-0.5">{t("settings.coverage.clearProfileHint")}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setClearingProfile(true)}
+          className={`${ROW_CONTROL_WIDTH} inline-flex h-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-danger-border text-[14px] font-medium text-danger-text transition-colors hover:bg-danger-bg`}
+        >
+          {t("settings.coverage.clearProfileAction")}
+        </button>
+      </div>
+
+      {clearingProfile && <ClearVocabProfileDialog onClose={() => setClearingProfile(false)} />}
     </div>
   );
 }
