@@ -282,7 +282,20 @@ export default function AnnotationsContent() {
   };
 
   const now = new Date();
-  let lastSegment: Segment | null = null;
+  // Whether a row opens a date heading is a property of the *sequence*, not of
+  // the row — it opens one only when the row above it sat in a different
+  // segment. Carrying that in a variable reassigned inside the map is what
+  // React Compiler rejects: memoized output can be replayed row by row, and a
+  // cursor that is only correct while the whole list renders top-to-bottom
+  // would then be stale. Deciding it up front makes each row self-contained.
+  const rows = items.map((item, index) => {
+    const segment = segmentOf(item.updated_at, now);
+    return {
+      item,
+      segment,
+      opensSegment: index === 0 || segment !== segmentOf(items[index - 1].updated_at, now),
+    };
+  });
 
   return (
     <main className="flex min-w-0 flex-1 flex-col bg-bg-surface">
@@ -332,10 +345,7 @@ export default function AnnotationsContent() {
           </div>
         ) : (
           <div className="mx-auto max-w-[920px]">
-            {items.map((item) => {
-              const segment = segmentOf(item.updated_at, now);
-              const opensSegment = segment !== lastSegment;
-              lastSegment = segment;
+            {rows.map(({ item, segment, opensSegment }) => {
               const isPlace = item.anchor_kind === "position";
               const editing = editingId === item.id;
               return (
