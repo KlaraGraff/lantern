@@ -207,6 +207,29 @@ export function profileMovedOn(
   return summary.updatedAt > Date.parse(row.profileAt);
 }
 
+/**
+ * Whether a word the reader has met a few times and never looked up counts as
+ * known (D2). Default on: it is the reading the two thresholds were written
+ * about, and the footnote always prints the other one beside it, so the choice
+ * is visible rather than hidden in a setting.
+ */
+export const COUNT_FAMILIAR_SETTING_KEY = "coverage_count_familiar";
+
+/**
+ * Whether the shelf shows each book's coverage under its title (D7). Default
+ * off — a shelf of numbers invites comparing books to each other, which is the
+ * one thing this measurement is not for.
+ */
+export const SHELF_COVERAGE_SETTING_KEY = "coverage_show_on_shelf";
+
+export function countFamiliarFrom(settings: Record<string, string>): boolean {
+  return settings[COUNT_FAMILIAR_SETTING_KEY] !== "false";
+}
+
+export function shelfCoverageFrom(settings: Record<string, string>): boolean {
+  return settings[SHELF_COVERAGE_SETTING_KEY] === "true";
+}
+
 export type WordGroupKey = "frequent" | "recurring" | "rare";
 
 /**

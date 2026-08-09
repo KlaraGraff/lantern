@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   compositionSlices,
+  countFamiliarFrom,
   coverageBand,
   coverageBounds,
   coverageReading,
@@ -15,6 +16,7 @@ import {
   SCALE_MIN,
   scalePosition,
   shareAfterLearning,
+  shelfCoverageFrom,
   THRESHOLD_ASSISTED,
   THRESHOLD_INDEPENDENT,
   unknownWordsCsv,
@@ -236,6 +238,14 @@ test("the chip beside a word is its strongest piece of evidence", () => {
 
 test("the rare group shows a handful before it says how many are left", () => {
   assert.equal(RARE_PREVIEW_LIMIT, 6);
+});
+
+test("眼熟 counts by default and the shelf stays quiet by default", () => {
+  assert.equal(countFamiliarFrom({}), true);
+  assert.equal(countFamiliarFrom({ coverage_count_familiar: "false" }), false);
+  assert.equal(countFamiliarFrom({ coverage_count_familiar: "true" }), true);
+  assert.equal(shelfCoverageFrom({}), false);
+  assert.equal(shelfCoverageFrom({ coverage_show_on_shelf: "true" }), true);
 });
 
 test("a comma in a gloss the reader typed does not shift the export's columns", () => {

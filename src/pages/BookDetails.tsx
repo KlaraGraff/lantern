@@ -29,6 +29,7 @@ import {
 } from "./book-details/difficulty-view";
 import { markEmphasis, splitEmphasis } from "../i18n/emphasis";
 import { toBackendQuery } from "./reading-stats/tauri-adapter";
+import CoverageSection from "./book-details/CoverageSection";
 import EditMetadataModal from "../components/EditMetadataModal";
 import DeleteBookDialog from "../components/DeleteBookDialog";
 
@@ -267,6 +268,12 @@ export default function BookDetails() {
             </div>
           ))}
         </section>
+
+        <CoverageSection
+          bookId={book.id}
+          bookTitle={book.title}
+          onStartReading={() => requestOpen(book)}
+        />
 
         <section className="mt-6" aria-labelledby="book-difficulty-heading">
           <div className="mb-3">
