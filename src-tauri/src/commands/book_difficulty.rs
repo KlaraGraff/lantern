@@ -168,27 +168,59 @@ impl BandTally {
 /// the same word. Single characters and pure numbers are dropped: neither
 /// says anything about vocabulary difficulty.
 pub(crate) fn tokenize(text: &str) -> Vec<String> {
+    tokenize_cased(text)
+        .into_iter()
+        .map(|(word, _)| word)
+        .collect()
+}
+
+/// [`tokenize`], keeping one extra bit per occurrence: whether it started with
+/// a capital letter.
+///
+/// The lowercasing above is what makes `The` and `the` one word, and it is also
+/// what destroys the only signal a plain frequency table has for a proper noun.
+/// Coverage needs that signal back (see migration 066), and asking for it here
+/// rather than in a second pass means the casing is read while the character is
+/// already in hand.
+///
+/// Per *occurrence*, not per form, deliberately: one capital says nothing (any
+/// word can open a sentence), while "every occurrence in a whole book was
+/// capitalized" is what separates Heathcliff from a rare adjective.
+pub(crate) fn tokenize_cased(text: &str) -> Vec<(String, bool)> {
     let mut tokens = Vec::new();
     let mut current = String::new();
+    let mut capital = false;
+    let mut started = false;
     for character in text.chars() {
         if character.is_alphanumeric() {
+            if !started {
+                capital = character.is_uppercase();
+                started = true;
+            }
             current.extend(character.to_lowercase());
         } else if character == '\'' || character == '\u{2019}' {
             current.push('\'');
         } else {
-            flush_token(&mut tokens, &mut current);
+            flush_token(&mut tokens, &mut current, &mut capital, &mut started);
         }
     }
-    flush_token(&mut tokens, &mut current);
+    flush_token(&mut tokens, &mut current, &mut capital, &mut started);
     tokens
 }
 
-fn flush_token(tokens: &mut Vec<String>, current: &mut String) {
+fn flush_token(
+    tokens: &mut Vec<(String, bool)>,
+    current: &mut String,
+    capital: &mut bool,
+    started: &mut bool,
+) {
     let token = current.trim_matches('\'');
     if token.chars().count() > 1 && !token.chars().all(char::is_numeric) {
-        tokens.push(token.to_string());
+        tokens.push((token.to_string(), *capital));
     }
     current.clear();
+    *capital = false;
+    *started = false;
 }
 
 /// Count every token once, keyed by form. Counting first and looking up
@@ -200,6 +232,34 @@ pub(crate) fn count_words<'a>(texts: impl IntoIterator<Item = &'a str>) -> HashM
     for text in texts {
         for token in tokenize(text) {
             *counts.entry(token).or_insert(0) += 1;
+        }
+    }
+    counts
+}
+
+/// One form's occurrences, and how many of them were capitalized.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct WordTally {
+    pub tokens: i64,
+    pub capitalized: i64,
+}
+
+/// [`count_words`], carrying the casing through so the result can be stored in
+/// `book_word_counts`. Same single pass — the difficulty computation needs the
+/// counts and the coverage computation needs the counts plus the casing, and
+/// walking a novel twice to collect them separately would be the one avoidable
+/// cost in either.
+pub(crate) fn count_word_tallies<'a>(
+    texts: impl IntoIterator<Item = &'a str>,
+) -> HashMap<String, WordTally> {
+    let mut counts: HashMap<String, WordTally> = HashMap::new();
+    for text in texts {
+        for (token, capital) in tokenize_cased(text) {
+            let tally = counts.entry(token).or_default();
+            tally.tokens += 1;
+            if capital {
+                tally.capitalized += 1;
+            }
         }
     }
     counts
@@ -354,6 +414,66 @@ pub(crate) fn write_sections(
     Ok(())
 }
 
+/// Replace a book's word list (migration 066) with the one just counted.
+///
+/// Delete-then-insert for the reason [`write_sections`] uses it: a recompute
+/// can find *fewer* forms than last time — a re-import, a different OCR pass —
+/// and an upsert would leave words behind that the current file no longer
+/// contains, which coverage would then count against the reader forever.
+///
+/// One prepared statement for the whole book: ~13 000 rows for Wuthering
+/// Heights, ~19 000 for Moby-Dick, all inside the transaction the caller's
+/// aggregate row is already paying for.
+pub(crate) fn write_word_counts(
+    db: &Db,
+    book_id: &str,
+    counts: &HashMap<String, WordTally>,
+    source_sha256: Option<&str>,
+) -> AppResult<()> {
+    let mut conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
+    let tx = conn.transaction()?;
+    tx.execute(
+        "DELETE FROM book_word_counts WHERE book_id = ?1",
+        params![book_id],
+    )?;
+    {
+        let mut statement = tx.prepare(
+            "INSERT INTO book_word_counts (book_id, word, tokens, capitalized, source_sha256)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )?;
+        for (word, tally) in counts {
+            statement.execute(params![
+                book_id,
+                word,
+                tally.tokens,
+                tally.capitalized,
+                source_sha256,
+            ])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// Drop a book's word list. Called wherever the aggregate row is about to say
+/// "unsupported" or "failed": a word list that no longer describes anything
+/// countable would otherwise let a later coverage pass compute a number for a
+/// book whose text could not be read.
+fn clear_word_counts(db: &Db, book_id: &str) -> AppResult<()> {
+    let conn = db
+        .conn
+        .lock()
+        .map_err(|error| AppError::Other(error.to_string()))?;
+    conn.execute(
+        "DELETE FROM book_word_counts WHERE book_id = ?1",
+        params![book_id],
+    )?;
+    Ok(())
+}
+
 /// Drop a book's per-section rows without touching `book_difficulty` itself.
 /// Called wherever the aggregate row is about to say "unsupported" or
 /// "failed" — a section breakdown that no longer sums to the (now zeroed)
@@ -453,18 +573,25 @@ pub(crate) fn compute_and_store(db: &Db, book_id: &str) -> AppResult<BookDifficu
                     "book difficulty: could not clear stale section data for {book_id}: {error}"
                 );
             }
+            if let Err(error) = clear_word_counts(db, book_id) {
+                log::warn!("book difficulty: could not clear the word list for {book_id}: {error}");
+            }
             return load(db, book_id);
         }
         BookSource::Ready(source) => source,
     };
 
     let sections = extract_source_text(db, book_id, &source)?;
-    let counts = count_words(
+    let tallies = count_word_tallies(
         sections
             .iter()
             .flat_map(|section| section.blocks.iter())
             .map(|block| block.text.as_str()),
     );
+    let counts: HashMap<String, i64> = tallies
+        .iter()
+        .map(|(word, tally)| (word.clone(), tally.tokens))
+        .collect();
     let tally = accumulate(db, &counts)?;
     store(
         db,
@@ -474,6 +601,12 @@ pub(crate) fn compute_and_store(db: &Db, book_id: &str) -> AppResult<BookDifficu
         source.sha256.as_deref(),
         None,
     )?;
+    // Best-effort, like the section breakdown below it: the aggregate row is
+    // already committed, and a book that ends up without a word list is simply
+    // one the coverage pass will count for itself later.
+    if let Err(error) = write_word_counts(db, book_id, &tallies, source.sha256.as_deref()) {
+        log::warn!("book difficulty: could not store the word list for {book_id}: {error}");
+    }
     if let Err(error) = write_sections(
         db,
         book_id,
@@ -502,6 +635,9 @@ fn record_failure(db: &Db, book_id: &str, message: &str) -> BookDifficulty {
     }
     if let Err(error) = clear_sections(db, book_id) {
         log::warn!("book difficulty: could not clear stale section data for {book_id}: {error}");
+    }
+    if let Err(error) = clear_word_counts(db, book_id) {
+        log::warn!("book difficulty: could not clear the word list for {book_id}: {error}");
     }
     let mut row = load(db, book_id)
         .unwrap_or_else(|_| BookDifficulty::empty(book_id, DifficultyStatus::Failed));
@@ -957,6 +1093,78 @@ mod tests {
         let counts = count_words(["the cat sat on the mat", "THE end"]);
         assert_eq!(counts.get("the"), Some(&3));
         assert_eq!(counts.get("cat"), Some(&1));
+    }
+
+    #[test]
+    fn casing_is_kept_per_occurrence_not_per_form() {
+        // Same form, three occurrences, two of them capitalized — the form
+        // itself is still lowercased, so the flag is the only surviving
+        // evidence that this word ever wore a capital.
+        let tallies = count_word_tallies(["The cat. THE end.", "the cat"]);
+        assert_eq!(
+            tallies.get("the"),
+            Some(&WordTally {
+                tokens: 3,
+                capitalized: 2
+            })
+        );
+        assert_eq!(
+            tallies.get("cat"),
+            Some(&WordTally {
+                tokens: 2,
+                capitalized: 0
+            })
+        );
+    }
+
+    #[test]
+    fn a_name_is_capitalized_every_time_and_an_ordinary_word_is_not() {
+        // The whole proper-noun rule rests on this difference: "Ahab" never
+        // appears in lower case, while "sublime" opening a sentence also turns
+        // up mid-sentence somewhere in a book of any length.
+        let tallies = count_word_tallies([
+            "Ahab paced the deck. Sublime, the sea.",
+            "Ahab said nothing sublime.",
+        ]);
+        let ahab = tallies["ahab"];
+        assert_eq!(ahab.tokens, ahab.capitalized);
+        let sublime = tallies["sublime"];
+        assert!(sublime.capitalized > 0 && sublime.capitalized < sublime.tokens);
+    }
+
+    #[test]
+    fn an_opening_quotation_mark_does_not_hide_the_capital() {
+        // The apostrophe branch pushes into the buffer without going through
+        // the alphanumeric arm, so a word opening with one must still be
+        // recognised as capitalized by the first *letter*.
+        let tallies = count_word_tallies(["‘Twas Queequeg."]);
+        assert_eq!(tallies["twas"].capitalized, 1);
+        assert_eq!(tallies["queequeg"].capitalized, 1);
+    }
+
+    #[test]
+    fn the_word_list_replaces_rather_than_merges() {
+        let (_dir, db) = test_db();
+        insert_book(&db, "sha-1");
+        write_word_counts(
+            &db,
+            "book",
+            &count_word_tallies(["whale whale ship"]),
+            Some("sha-1"),
+        )
+        .unwrap();
+        // A re-import with fewer words must not leave "ship" behind: coverage
+        // would go on counting a word the current file no longer contains.
+        write_word_counts(&db, "book", &count_word_tallies(["whale"]), Some("sha-2")).unwrap();
+        let conn = db.conn.lock().unwrap();
+        let rows: Vec<(String, i64, Option<String>)> = conn
+            .prepare("SELECT word, tokens, source_sha256 FROM book_word_counts WHERE book_id = 'book' ORDER BY word")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(rows, vec![("whale".to_string(), 1, Some("sha-2".to_string()))]);
     }
 
     #[test]

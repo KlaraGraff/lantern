@@ -182,6 +182,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
         64,
         include_str!("../migrations/064_reset_polluted_exposures.sql"),
     ),
+    (66, include_str!("../migrations/066_reader_coverage.sql")),
 ];
 
 fn register_sqlite_vec() {
