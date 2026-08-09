@@ -175,6 +175,10 @@ function mkWord(
     book_id: "book-epub-reading",
     book_title: "The Wind in the Willows",
     cfi: "epubcfi(/6/4!/4/2/2)",
+    // Without this the saved list filters every fixture word out
+    // (`useDictionary` keeps only `confirmed` rows) and the whole vocabulary
+    // surface renders as the empty state — nothing below it ever gets swept.
+    list_status: "confirmed",
     mastery,
     mastery_level: mastery,
     review_count: mastery * 2,
@@ -187,6 +191,58 @@ function mkWord(
     source: "reader",
   };
 }
+
+/**
+ * A whole learning card as `vocab_words.card_snapshot` stores it — the shape
+ * `LearningCardResult` serialises to. `context_meaning` and `source_excerpt`
+ * are in here on purpose: the vocabulary panel prints both from their own
+ * columns and has to drop them from the snapshot rather than draw them twice.
+ */
+export const CARD_SNAPSHOT = {
+  version: 1,
+  kind: "word",
+  sourceText: "gregarious",
+  modules: {
+    context_meaning: { summary: "Sociable — happiest with company around." },
+    source_excerpt: { quote: "A gregarious creature by any measure." },
+    word_info: {
+      heading: "gregarious · adjective",
+      meta: ["/ɡrɪˈɡeəriəs/", "formal-ish"],
+    },
+    common_senses: {
+      items: [
+        {
+          title: "Fond of company",
+          meta: ["of people", "most common"],
+          text: "Enjoys being around others rather than alone.",
+          examples: [{ source: "A gregarious host, never happier than mid-party.", target: "很爱热闹的主人。" }],
+        },
+        {
+          title: "Living in flocks or herds",
+          meta: ["of animals", "technical"],
+          text: "The biologist's sense, and the older one.",
+        },
+      ],
+    },
+    collocations: {
+      details: [
+        "**a gregarious personality** — the usual pairing",
+        "**gregarious by nature** — hedges it as a disposition, not a mood",
+      ],
+    },
+    morphology: {
+      summary: "From Latin *grex* (flock) — the same root as **congregate** and **segregate**.",
+    },
+    synonyms: {
+      items: [
+        { title: "sociable", text: "Plainer, and says nothing about how much company." },
+        { title: "outgoing", text: "About making the first move; gregarious is about wanting the crowd." },
+      ],
+    },
+    usage: { summary: "Warm rather than neutral — it reads as a compliment." },
+    memory_aid: { summary: "**Greg** brings the **crew**: *grex* is a flock." },
+  },
+};
 
 export const HIGHLIGHTS = [
   {

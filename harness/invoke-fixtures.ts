@@ -15,6 +15,7 @@ import {
   AUTO_HIGHLIGHTS,
   BOOKMARKS,
   BOOKS,
+  CARD_SNAPSHOT,
   CHATS,
   CHAT_MESSAGES,
   COLLECTIONS,
@@ -458,12 +459,27 @@ export const FIXTURES: Record<string, Fixture> = {
     added_this_week: 3,
   },
   list_mastery_events: [],
+  // `kind` is a tagged object, not a string — `ReviewPile` in
+  // src/components/review/review-piles.ts. The old `kind: "due"` made
+  // `PileCard` throw on `pile.kind.kind` the moment a pile had any words in
+  // it, which only started happening once the fixture words became visible.
   list_review_piles: () => [
     {
-      kind: "due",
+      kind: {
+        kind: "repeat_lookups_in_book",
+        book_id: "book-epub-reading",
+        book_title: "The Wind in the Willows",
+        solo_word_lookups: null,
+      },
       word_ids: VOCAB.filter((w) => w.due_at <= nowMs()).map((w) => w.id),
       words: VOCAB.filter((w) => w.due_at <= nowMs()),
       newest_activity_at: nowMs(),
+    },
+    {
+      kind: { kind: "long_unseen" },
+      word_ids: VOCAB.slice(3).map((w) => w.id),
+      words: VOCAB.slice(3),
+      newest_activity_at: VOCAB[4].created_at,
     },
   ],
   list_word_marks: () => VOCAB.map((w) => ({ normalized_word: w.normalized_word, enabled: true })),
@@ -473,6 +489,14 @@ export const FIXTURES: Record<string, Fixture> = {
   get_word_forms: [],
   find_covering_word_mark_rule: null,
   record_vocab_review: () => VOCAB[0],
+  // The three states the vocabulary panel's saved-card section can be in, so
+  // the sweep reaches the disclosure and its damaged-blob branch instead of
+  // only the "no card" one an unstubbed `Option<String>` would give it.
+  get_vocab_card_snapshot: ({ wordId }: Args) => {
+    if (wordId === "vw-2") return "{ this one is corrupt";
+    if (wordId === "vw-4" || wordId === "vw-5") return null;
+    return JSON.stringify(CARD_SNAPSHOT);
+  },
 
   /* ---------------------------------------------------------------- *
    * Dictionary / lookup

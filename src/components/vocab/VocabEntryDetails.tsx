@@ -8,6 +8,7 @@ import { timeAgo } from "../../utils/timeAgo";
 import AiMarkdown from "../ai-markdown/AiMarkdown";
 import { parseDefinition, truncateMiddle } from "./entry-text";
 import PronounceButton from "../speech/PronounceButton";
+import VocabCardSnapshot from "./VocabCardSnapshot";
 
 interface WordNote {
   id: string;
@@ -234,6 +235,11 @@ export default function VocabEntryDetails({
           ))}
         </section>
       )}
+
+      {/* The rest of the learning card, exactly as it was captured on collect.
+          Everything above this line is a live column on the row; this is a
+          snapshot, and it says so. */}
+      <VocabCardSnapshot wordId={word.id} createdAt={word.created_at} />
 
       <div className="flex items-baseline justify-between gap-3 border-t border-border-light pt-2 text-[11px] text-text-muted">
         <span className="min-w-0 truncate">

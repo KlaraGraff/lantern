@@ -115,16 +115,25 @@ function DetailEntries({ details }: { details: string[] }) {
   return <>{blocks}</>;
 }
 
-function ModuleContent({
+/**
+ * One module's body. Exported because the saved-card snapshot in the
+ * vocabulary panel draws the same modules from the same shape, and a second
+ * copy of these rules would drift the two apart. It takes the two counts it
+ * needs rather than a whole `CardKindConfig`, since a snapshot read back
+ * months later has no live card config behind it.
+ */
+export function LearningModuleBody({
   moduleId,
   content,
   density,
-  card,
+  exampleCount,
+  keyTermCount,
 }: {
   moduleId: LearningModuleId;
   content: LearningModuleContent;
   density: ContentDensity;
-  card: CardKindConfig;
+  exampleCount: number;
+  keyTermCount: number;
 }) {
   const meta = density === "compact" ? content.meta?.slice(0, 2) : content.meta;
   const details = density === "compact"
@@ -133,7 +142,7 @@ function ModuleContent({
       ? content.details?.slice(0, 1)
       : content.details;
   const itemLimit = moduleId === "key_terms"
-    ? card.keyTermCount
+    ? keyTermCount
     : density === "compact"
       ? 3
       : undefined;
@@ -164,7 +173,7 @@ function ModuleContent({
               key={`${item.title}:${index}`}
               item={item}
               density={density}
-              exampleCount={card.exampleCount}
+              exampleCount={exampleCount}
             />
           ))}
         </ul>
@@ -235,7 +244,13 @@ function ModuleSection({
               <div className="h-3 w-3/5 animate-pulse rounded-sm bg-bg-input" />
             </div>
           ) : content ? (
-            <ModuleContent moduleId={config.id} content={content} density={density} card={card} />
+            <LearningModuleBody
+              moduleId={config.id}
+              content={content}
+              density={density}
+              exampleCount={card.exampleCount}
+              keyTermCount={card.keyTermCount}
+            />
           ) : null}
         </div>
       )}
