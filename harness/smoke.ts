@@ -51,6 +51,12 @@ import { sleep } from "./task";
 
 const MAX_ACTIONS_PER_SCOPE = 120;
 const MAX_DEPTH = 3;
+/**
+ * How many times one opener may be clicked again after the scope it opened
+ * closed itself. The narrow layout's library drawer closes on every row click,
+ * so its whole menu costs one re-open per row.
+ */
+const MAX_SCOPE_REOPENS = 24;
 const SETTLE_QUIET_MS = 60;
 const SETTLE_MAX_MS = 600;
 const READER_SETTLE_MAX_MS = 12_000;
@@ -536,18 +542,27 @@ async function act(target: Target, route: string): Promise<boolean> {
   return true;
 }
 
-async function sweepScope(scope: ParentNode, depth: number, baseRoute: string): Promise<void> {
+/**
+ * Returns `true` when the scope has nothing left worth clicking, and `false`
+ * when it went empty *without* being swept — see the re-open loop below.
+ */
+async function sweepScope(scope: ParentNode, depth: number, baseRoute: string): Promise<boolean> {
   const seen = new Set<string>();
+  const startingTargets = collectTargets(scope).length;
+  // A scope that empties out after fewer clicks than it started with did not
+  // run out of targets, it stopped offering them — it closed under us.
+  const collapsed = () => collectTargets(scope).length === 0 && seen.size < startingTargets;
+
   for (let guard = 0; guard < MAX_ACTIONS_PER_SCOPE; guard++) {
     if (outOfTime()) {
       report.notes.push(`time budget exhausted during ${baseRoute} (depth ${depth})`);
-      return;
+      return true;
     }
-    if (scope !== document && !(scope as Element).isConnected) return;
+    if (scope !== document && !(scope as Element).isConnected) return !collapsed();
     const target = collectTargets(scope).find(
       (t) => !seen.has(t.key) && !completed.has(`${baseRoute} ${t.key}`),
     );
-    if (!target) return;
+    if (!target) return !collapsed();
     seen.add(target.key);
 
     const dialogsBefore = openDialogs().length;
@@ -558,13 +573,47 @@ async function sweepScope(scope: ParentNode, depth: number, baseRoute: string): 
     // Anything that just appeared gets swept one level deeper, then closed.
     const after = openDialogs();
     if (after.length > dialogsBefore && depth < MAX_DEPTH) {
-      const opened = after[after.length - 1];
-      await sweepScope(opened, depth + 1, baseRoute);
+      let opened = after[after.length - 1];
+      // A control inside a drawer or a modal is allowed to close the thing it
+      // lives in, and the narrow layout's library drawer does exactly that on
+      // every sidebar row click. One descent therefore buys exactly one row:
+      // the drawer goes `inert`, the next `collectTargets` finds nothing, and
+      // the sweep leaves for good, because its opener is already in
+      // `completed` and will never fire again. That is how Notes, Words, Q&A
+      // and Reading history went unvisited in every narrow run. So re-open and
+      // carry on. `completed` is what makes this terminate: rows already
+      // clicked stay clicked, so each pass either reaches a new one or reports
+      // the scope exhausted.
+      for (let reopen = 0; ; reopen++) {
+        const actionsBefore = report.actions;
+        if (await sweepScope(opened, depth + 1, baseRoute)) break;
+        if (reopen >= MAX_SCOPE_REOPENS || report.actions === actionsBefore) {
+          report.notes.push(
+            `scope re-open budget spent at depth ${depth + 1} on ${baseRoute} (${target.name})`,
+          );
+          break;
+        }
+        await restore(baseRoute, dialogsBefore);
+        // Re-found rather than re-used: whatever the drawer did on the way out
+        // may have remounted the header the opener lives in, and the node
+        // captured before the descent is then detached even though the button
+        // is still on screen. Matched on `id` (tag, role, accessible name) and
+        // not on `key`, because `key` carries the element's position in the
+        // scope — and the page behind the drawer is exactly what just changed.
+        const opener = collectTargets(scope).find((t) => t.id === target.id);
+        if (!opener) break;
+        (opener.el as HTMLElement).click();
+        await settle();
+        const reopened = openDialogs();
+        if (reopened.length <= dialogsBefore) break;
+        opened = reopened[reopened.length - 1];
+      }
     }
     await restore(baseRoute, dialogsBefore);
     context.action = null;
   }
   report.notes.push(`scope action cap reached at depth ${depth} on ${baseRoute}`);
+  return true;
 }
 
 /** The settings modal is opened by a documented DOM event, not by a button. */

@@ -528,6 +528,15 @@ function gate(report) {
  * ------------------------------------------------------------------ */
 
 const keep = process.argv.includes("--keep");
+// `--layout=narrow` while debugging one surface: a full pass is three minutes,
+// and half of it is spent re-proving the layout that already works. CI passes
+// no flag and still runs both.
+const only = process.argv.find((arg) => arg.startsWith("--layout="))?.slice("--layout=".length);
+const layouts = only ? LAYOUTS.filter((l) => l.name === only) : LAYOUTS;
+if (!layouts.length) {
+  console.error(`unknown layout "${only}" — expected one of ${LAYOUTS.map((l) => l.name).join(", ")}`);
+  process.exit(2);
+}
 let harness = null;
 let exitCode = 0;
 
@@ -537,7 +546,7 @@ try {
 
   // Sequential, not parallel: two Chromes sweeping one dev server would race
   // for it, and the sweep's own timing budgets are tuned for an idle machine.
-  for (const layout of LAYOUTS) {
+  for (const layout of layouts) {
     const report = await runSweep(layout);
     summarize(report);
 
@@ -564,7 +573,7 @@ try {
 
   // Both layouts ran, so say so once — a single "PASSED" above could otherwise
   // be read as the whole gate having passed.
-  if (!exitCode) console.log(`✓ smoke PASSED (${LAYOUTS.map((l) => l.name).join(" + ")})`);
+  if (!exitCode) console.log(`✓ smoke PASSED (${layouts.map((l) => l.name).join(" + ")})`);
 } catch (error) {
   console.error(`\n✗ smoke driver failed: ${error instanceof Error ? error.message : error}`);
   exitCode = 1;
