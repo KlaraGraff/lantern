@@ -473,6 +473,25 @@ pub fn validate_event(event: &Event, expected_device: &str) -> AppResult<()> {
                 return Err(AppError::Other("SYNC_VOCAB_DEFINITION_INVALID".to_string()));
             }
         }
+        EventBody::VocabCardSet { id, definition, .. } => {
+            if event.v < 14 {
+                return Err(AppError::Other("SYNC_VOCAB_CARD_INVALID".to_string()));
+            }
+            validate_entity_id(id)?;
+            // Same refusal as `vocab.definition.set` above, for the same
+            // reason: a blank definition is a failed generation, and applying
+            // one would blank a row that still has readable text on it.
+            if definition.trim().is_empty() || definition.len() > MAX_VOCAB_DEFINITION_BYTES {
+                return Err(AppError::Other("SYNC_VOCAB_CARD_INVALID".to_string()));
+            }
+            // `card_snapshot` and `context_explanation` are deliberately not
+            // size-checked here. The writer clamps a snapshot over 64 KiB to
+            // `None` before it ever reaches an event, and the log-line cap
+            // bounds what a peer can hand us; rejecting on size would reject
+            // the peer's *entire* log over one oversized card. This matches
+            // `vocab.list_status.set`, which carries the same column under the
+            // same silence.
+        }
         _ => {}
     }
     Ok(())

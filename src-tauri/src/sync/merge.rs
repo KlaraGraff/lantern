@@ -111,6 +111,19 @@ pub fn apply_event(tx: &Transaction, event: &Event) -> AppResult<()> {
         EventBody::VocabDefinitionSet { id, definition } => {
             apply_vocab_definition(tx, event, id, definition)
         }
+        EventBody::VocabCardSet {
+            id,
+            definition,
+            context_explanation,
+            card_snapshot,
+        } => apply_vocab_card(
+            tx,
+            event,
+            id,
+            definition,
+            context_explanation.as_deref(),
+            card_snapshot.as_deref(),
+        ),
         EventBody::VocabReviewAppend(payload) => apply_vocab_review_append(tx, event, payload),
 
         EventBody::NoteUpsert(payload) => apply_note_upsert(tx, event, payload),
@@ -971,6 +984,57 @@ fn apply_vocab_definition(
     Ok(())
 }
 
+/// A whole learning card regenerated on another device — see
+/// `EventBody::VocabCardSet`.
+///
+/// Guarded by the same `(updated_at, updated_by_device)` compare as
+/// `apply_vocab_definition` and `apply_vocab_mastery`, because it writes the
+/// same three columns that clock already governs. That is also what settles
+/// the race the task of writing this raised: a regeneration here and a mastery
+/// change there inside one sync window are ordered against each other by the
+/// single row clock, and the older one loses wholesale. No new rule, and no
+/// second clock — see `commands::vocab::set_definition`'s doc comment for why
+/// a per-column clock was rejected.
+///
+/// Unlike `apply_vocab_definition` this reads nothing first and displaces
+/// nothing. The event carries every column it intends to change, so there is
+/// no local text to work out — running the displacement rule here would
+/// overwrite the `context_explanation` the sending card explicitly produced
+/// with the receiver's own stale definition.
+///
+/// A row that does not exist locally is a no-op — the zero-row `UPDATE` is the
+/// whole guard, as with every sibling arm, and the tombstone check
+/// `apply_vocab_delete` relies on is likewise unnecessary for the same reason
+/// spelled out above it.
+fn apply_vocab_card(
+    tx: &Transaction,
+    event: &Event,
+    id: &str,
+    definition: &str,
+    context_explanation: Option<&str>,
+    card_snapshot: Option<&str>,
+) -> AppResult<()> {
+    tx.execute(
+        "UPDATE vocab_words
+         SET definition = ?1,
+             context_explanation = COALESCE(?2, context_explanation),
+             card_snapshot = COALESCE(?3, card_snapshot),
+             updated_at = ?4,
+             updated_by_device = ?5
+         WHERE id = ?6
+           AND (updated_at < ?4 OR (updated_at = ?4 AND updated_by_device < ?5))",
+        params![
+            definition,
+            context_explanation,
+            card_snapshot,
+            event.ts,
+            event.device,
+            id
+        ],
+    )?;
+    Ok(())
+}
+
 struct VocabMasteryUpdate<'a> {
     mastery: &'a str,
     next_review_at: Option<i64>,
@@ -1076,9 +1140,10 @@ fn apply_vocab_review_append(
 // Unconditional delete, no tuple guard — same idempotency argument as
 // `apply_highlight_delete` covers replays of this event and races against
 // `apply_vocab_add` (tombstone-checked, so a late add stays suppressed).
-// It also has three update arms to race that carry no tombstone check of
-// their own — `apply_vocab_list_status`, `apply_vocab_definition`, and
-// `apply_vocab_mastery` — each a plain `UPDATE ... WHERE id = ?`. None of
+// It also has four update arms to race that carry no tombstone check of
+// their own — `apply_vocab_list_status`, `apply_vocab_definition`,
+// `apply_vocab_card`, and `apply_vocab_mastery` — each a plain
+// `UPDATE ... WHERE id = ?`. None of
 // them need one: once this delete has run, the row is gone and their
 // `WHERE id = ?` matches zero rows regardless of replay order, so delete
 // always wins over any of them rather than the two being compared by tuple.
@@ -3727,6 +3792,192 @@ mod tests {
             ],
         );
         assert_eq!(vocab_gloss(&db, "v1"), ("到那里".to_string(), None));
+    }
+
+    // --- vocab.card.set ---
+
+    fn card_set(
+        id: &str,
+        definition: &str,
+        context_explanation: Option<&str>,
+        card_snapshot: Option<&str>,
+    ) -> EventBody {
+        EventBody::VocabCardSet {
+            id: id.into(),
+            definition: definition.into(),
+            context_explanation: context_explanation.map(str::to_string),
+            card_snapshot: card_snapshot.map(str::to_string),
+        }
+    }
+
+    fn vocab_card(db: &Connection, id: &str) -> (String, Option<String>, Option<String>) {
+        db.query_row(
+            "SELECT definition, context_explanation, card_snapshot
+               FROM vocab_words WHERE id = ?1",
+            params![id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap()
+    }
+
+    /// The point of the event: one device regenerates the whole card, the
+    /// other shows the new one. All three columns arrive together, so unlike
+    /// `vocab.definition.set` nothing is worked out locally.
+    #[test]
+    fn a_regenerated_card_reaches_the_second_device_whole() {
+        let mut db = open_db();
+        let snapshot = r#"{"modules":{"word_info":{"summary":"到那里"}}}"#;
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1100, "dev-A", add_vocab("v1", "到那处", None)),
+                ev(
+                    1200,
+                    "dev-B",
+                    card_set("v1", "到那里", Some("Here it means the manor."), Some(snapshot)),
+                ),
+            ],
+        );
+        assert_eq!(
+            vocab_card(&db, "v1"),
+            (
+                "到那里".to_string(),
+                Some("Here it means the manor.".to_string()),
+                Some(snapshot.to_string())
+            )
+        );
+        let (at, by): (i64, String) = db
+            .query_row(
+                "SELECT updated_at, updated_by_device FROM vocab_words WHERE id = 'v1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((at, by.as_str()), (1200, "dev-B"));
+    }
+
+    /// The rule that separates this event from `vocab.definition.set`: it does
+    /// not displace. The receiver's old definition is not filed under "In
+    /// context", because the sending card said what belongs there.
+    #[test]
+    fn an_arriving_card_writes_the_explanation_it_carries_rather_than_displacing() {
+        let mut db = open_db();
+        let blob = "Meaning in this context\nto that place, in older English.";
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1100, "dev-A", add_vocab("v1", blob, None)),
+                ev(1200, "dev-B", card_set("v1", "到那里", Some("The new card's paragraph."), None)),
+            ],
+        );
+        let (definition, explanation, _) = vocab_card(&db, "v1");
+        assert_eq!(definition, "到那里");
+        assert_eq!(explanation.as_deref(), Some("The new card's paragraph."));
+        assert_ne!(explanation.as_deref(), Some(blob));
+    }
+
+    /// `None` is "this regeneration produced nothing for that column", never
+    /// "blank it". Both optional columns, both directions.
+    #[test]
+    fn an_arriving_card_with_no_snapshot_or_explanation_erases_neither() {
+        let mut db = open_db();
+        let snapshot = r#"{"modules":{"word_info":{"summary":"到那里"}}}"#;
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1100, "dev-A", add_vocab("v1", "到那处", Some("the reader's own kept analysis"))),
+                ev(
+                    1200,
+                    "dev-B",
+                    card_set("v1", "第一版", None, Some(snapshot)),
+                ),
+                ev(1300, "dev-B", card_set("v1", "第二版", None, None)),
+            ],
+        );
+        assert_eq!(
+            vocab_card(&db, "v1"),
+            (
+                "第二版".to_string(),
+                Some("the reader's own kept analysis".to_string()),
+                Some(snapshot.to_string())
+            )
+        );
+    }
+
+    /// Replay is at-least-once, and this arm writes three columns rather than
+    /// one — an equal clock has to short-circuit all three the same way.
+    #[test]
+    fn a_redelivered_card_changes_nothing() {
+        let mut db = open_db();
+        let snapshot = r#"{"modules":{"word_info":{"summary":"到那里"}}}"#;
+        let again = ev(1200, "dev-B", card_set("v1", "到那里", Some("paragraph"), Some(snapshot)));
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1100, "dev-A", add_vocab("v1", "到那处", None)),
+                again.clone(),
+                again,
+            ],
+        );
+        assert_eq!(
+            vocab_card(&db, "v1"),
+            (
+                "到那里".to_string(),
+                Some("paragraph".to_string()),
+                Some(snapshot.to_string())
+            )
+        );
+    }
+
+    /// The existing clock rule, unchanged and now applying to one more column
+    /// set: a regeneration older than what the row already carries loses
+    /// wholesale, including its snapshot.
+    #[test]
+    fn a_card_older_than_the_row_loses_every_column() {
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1100, "dev-A", add_vocab("v1", "到那处", None)),
+                // A newer write of any kind moves the row's clock past 1200.
+                ev(1500, "dev-C", definition_set("v1", "最新")),
+                ev(
+                    1200,
+                    "dev-B",
+                    card_set("v1", "过时", Some("stale"), Some(r#"{"stale":true}"#)),
+                ),
+            ],
+        );
+        let (definition, _, snapshot) = vocab_card(&db, "v1");
+        assert_eq!(definition, "最新");
+        assert_eq!(snapshot, None);
+    }
+
+    /// Delete outranks a card that was still in flight, by the same zero-row
+    /// `UPDATE` that covers every other vocab update arm.
+    #[test]
+    fn a_card_for_a_deleted_word_lands_nowhere() {
+        let mut db = open_db();
+        apply_all(
+            &mut db,
+            &[
+                ev(1000, "dev-A", import_book("b1")),
+                ev(1100, "dev-A", add_vocab("v1", "到那处", None)),
+                ev(1200, "dev-A", EventBody::VocabDelete { id: "v1".into() }),
+                ev(1300, "dev-B", card_set("v1", "到那里", None, Some(r#"{"a":1}"#))),
+            ],
+        );
+        let rows: i64 = db
+            .query_row("SELECT COUNT(*) FROM vocab_words WHERE id = 'v1'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(rows, 0);
     }
 
     fn review_append(id: &str, reviewed_at: i64, rating: &str) -> EventBody {

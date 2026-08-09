@@ -28,10 +28,11 @@ use sha2::{Digest, Sha256};
 /// the first event that may rewrite a saved word's definition; version 12 adds
 /// `auto_highlight.dismissal.set`, which hides one derived highlight; version
 /// 13 adds `vocab.review.append`, the first append-only event — see its
-/// doc comment for why it arbitrates nothing.
+/// doc comment for why it arbitrates nothing; version 14 adds `vocab.card.set`,
+/// which rewrites a saved word's whole learning card in one write.
 /// Readers retain old-version support while older clients reject newer
 /// envelopes instead of advancing their watermark past data they cannot apply.
-pub const EVENT_SCHEMA_VERSION: u32 = 13;
+pub const EVENT_SCHEMA_VERSION: u32 = 14;
 pub const MIN_SUPPORTED_EVENT_SCHEMA_VERSION: u32 = 1;
 
 pub fn is_supported_event_schema_version(version: u32) -> bool {
@@ -318,6 +319,46 @@ pub enum EventBody {
     /// data to the shared container.
     #[serde(rename = "vocab.definition.set")]
     VocabDefinitionSet { id: String, definition: String },
+    /// A saved word's whole learning card, regenerated and rewritten in place.
+    ///
+    /// Sibling of `vocab.definition.set`, not a replacement for it: that event
+    /// says "one sentence changed and the receiving device works out what the
+    /// old sentence displaces"; this one says "there is a new card, and here
+    /// are all three columns it produced". The two writers still exist for
+    /// different reasons — `vocab_gloss_backfill` repairs a definition without
+    /// ever generating a card, and has nothing to put in the other two columns.
+    ///
+    /// # Why not reuse an existing event
+    ///
+    /// `vocab.definition.set` carries one column and runs the displacement rule
+    /// on the receiver. Sending a regenerated card through it would lose the
+    /// snapshot entirely and would let the receiver's displacement overwrite the
+    /// `context_explanation` the new card explicitly produced.
+    ///
+    /// `vocab.list_status.set` does carry a `card_snapshot`, but it also asserts
+    /// a list status, and the only status it ever asserts is `'confirmed'`.
+    /// Publishing a regeneration through it would tell every peer that a word
+    /// still in the observation zone had been explicitly saved — a promotion the
+    /// reader never performed. An event that lies about one fact to move
+    /// another is worse than a new variant.
+    ///
+    /// # Null is "nothing new", never "erase it"
+    ///
+    /// Both optional columns are applied with `COALESCE`, the same rule
+    /// `apply_vocab_list_status` uses for the snapshot it carries. A card whose
+    /// module set produced no context paragraph, or whose snapshot exceeded the
+    /// 64 KiB cap and was clamped away by the writer, must not take the
+    /// reader's existing text down with it — absence here is the absence of a
+    /// replacement, not an instruction to blank the column.
+    #[serde(rename = "vocab.card.set")]
+    VocabCardSet {
+        id: String,
+        definition: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        context_explanation: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        card_snapshot: Option<String>,
+    },
     /// One completed SRS review, appended to `vocab_review_log`.
     ///
     /// The first append-only event in this enum, and the only one that
@@ -860,6 +901,23 @@ mod tests {
         roundtrip(&mk(EventBody::VocabDefinitionSet {
             id: "v1".into(),
             definition: "an unexpectedly happy turn".into(),
+        }));
+        roundtrip(&mk(EventBody::VocabCardSet {
+            id: "v1".into(),
+            definition: "an unexpectedly happy turn".into(),
+            context_explanation: Some("Here it lands on the narrator, not the ship.".into()),
+            card_snapshot: Some(r#"{"modules":{"word_info":{"summary":"a fortunate accident"}}}"#.into()),
+        }));
+        // A regeneration whose card produced neither a context paragraph nor a
+        // storable snapshot. Both keys drop off the wire, and the decoder has
+        // to rebuild the `None`s instead of failing on the missing keys — the
+        // difference between "no replacement" and "erase it" is decided by the
+        // merge rule, so the wire form must be able to say the former at all.
+        roundtrip(&mk(EventBody::VocabCardSet {
+            id: "v1".into(),
+            definition: "an unexpectedly happy turn".into(),
+            context_explanation: None,
+            card_snapshot: None,
         }));
         roundtrip(&mk(EventBody::VocabReviewAppend(VocabReviewLogPayload {
             id: "rev-1".into(),

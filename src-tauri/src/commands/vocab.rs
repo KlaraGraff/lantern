@@ -767,6 +767,137 @@ fn clamp_card_snapshot(card_snapshot: Option<String>) -> Option<String> {
     card_snapshot.filter(|value| value.len() <= MAX_CARD_SNAPSHOT_BYTES)
 }
 
+/// Write back one regenerated learning card: the summary that becomes the
+/// word's `definition`, the paragraph that becomes its `context_explanation`,
+/// and the whole card as `card_snapshot` — in one transaction, or not at all.
+///
+/// The generating half lives on the frontend, which holds the reader's module
+/// selection and density and streams the card. This is the other half, and it
+/// exists as its own command rather than an extension of
+/// `regenerate_vocab_definition` for that reason: by the time these three
+/// values are known there is no AI call left to make, only a row to write.
+///
+/// # What it deliberately does not do
+///
+/// **No displacement.** [`set_definition`] moves the text it is about to
+/// overwrite into `context_explanation` when that column is empty, because it
+/// only ever knows one new value and the old one may be a whole card blob
+/// worth rescuing. Here all three columns arrive together, so the same move
+/// would overwrite the paragraph the caller explicitly asked to store with the
+/// definition it explicitly asked to replace.
+///
+/// **No blank definitions.** An empty (or whitespace-only) `definition` fails
+/// the whole call before a byte is written, on
+/// `vocab_regloss`'s reasoning: a wrong gloss is bad, a missing one is worse,
+/// and the reader still has the old one until something better exists.
+///
+/// # `None` means "nothing new"
+///
+/// Both optional columns are written with `COALESCE`, so `None` leaves what is
+/// already stored alone — the rule `add_vocab_word_inner` and
+/// `merge::apply_vocab_list_status` already use for `card_snapshot`. A card
+/// that produced no context paragraph, and a snapshot clamped away for
+/// exceeding [`MAX_CARD_SNAPSHOT_BYTES`], both arrive here as `None`, and
+/// neither is a reason to take the reader's existing text down.
+///
+/// Returns `false` when the row is gone — the only way this writes nothing
+/// without erroring.
+pub(crate) fn set_card(
+    db: &Db,
+    sync: &SyncWriter,
+    id: &str,
+    definition: &str,
+    context_explanation: Option<String>,
+    card_snapshot: Option<String>,
+    now: i64,
+) -> AppResult<bool> {
+    let device = sync.self_device().to_string();
+    let card_snapshot = clamp_card_snapshot(card_snapshot);
+    sync.with_tx(db, now, |tx, events| {
+        let updated = tx.execute(
+            "UPDATE vocab_words
+             SET definition = ?1,
+                 context_explanation = COALESCE(?2, context_explanation),
+                 card_snapshot = COALESCE(?3, card_snapshot),
+                 updated_at = ?4,
+                 updated_by_device = ?5
+             WHERE id = ?6",
+            params![
+                definition,
+                context_explanation,
+                card_snapshot,
+                now,
+                device,
+                id
+            ],
+        )?;
+        if updated == 0 {
+            return Ok(false);
+        }
+        events.push(EventBody::VocabCardSet {
+            id: id.to_string(),
+            definition: definition.to_string(),
+            context_explanation: context_explanation.clone(),
+            card_snapshot: card_snapshot.clone(),
+        });
+        Ok(true)
+    })
+}
+
+/// Store a regenerated learning card against a saved word — see [`set_card`]
+/// for the rules, including why a blank `definition` is refused and why a
+/// `None` never erases a column.
+#[tauri::command]
+pub fn update_vocab_card(
+    id: String,
+    definition: String,
+    context_explanation: Option<String>,
+    card_snapshot: Option<String>,
+    db: State<'_, Db>,
+    sync: State<'_, SyncWriter>,
+) -> AppResult<VocabWord> {
+    update_vocab_card_inner(
+        &id,
+        &definition,
+        context_explanation,
+        card_snapshot,
+        &db,
+        &sync,
+    )
+}
+
+pub(crate) fn update_vocab_card_inner(
+    id: &str,
+    definition: &str,
+    context_explanation: Option<String>,
+    card_snapshot: Option<String>,
+    db: &Db,
+    sync: &SyncWriter,
+) -> AppResult<VocabWord> {
+    let definition = definition.trim();
+    if definition.is_empty() {
+        // Checked before the transaction opens so the failure is total: no
+        // snapshot stored, no explanation stored, no event published, nothing
+        // to roll back.
+        return Err(crate::error::AppError::Other(
+            "VOCAB_CARD_DEFINITION_EMPTY".to_string(),
+        ));
+    }
+    let now = chrono::Utc::now().timestamp_millis();
+    if !set_card(db, sync, id, definition, context_explanation, card_snapshot, now)? {
+        return Err(crate::error::AppError::Other(
+            "VOCAB_WORD_NOT_FOUND".to_string(),
+        ));
+    }
+    db.reader()
+        .query_row(
+            &format!("SELECT {SELECT_COLS} FROM vocab_words WHERE id = ?1"),
+            params![id],
+            row_to_vocab,
+        )
+        .map_err(Into::into)
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub fn add_vocab_word(
@@ -3241,6 +3372,373 @@ mod tests {
         .unwrap();
 
         assert_eq!(get_vocab_card_snapshot_inner(&saved.id, &db).unwrap(), None);
+    }
+
+    // --- update_vocab_card: writing back a regenerated learning card ---
+
+    /// Queue-only, with no device log attached, so every event this command
+    /// publishes stays parked in `_pending_publish` where a test can read it.
+    fn setup_card_db() -> (TempDir, Db, SyncWriter) {
+        let dir = TempDir::new().unwrap();
+        let db = Db::init(dir.path()).unwrap();
+        let sync = SyncWriter::new("dev-card".into());
+        sync.set_should_queue(true);
+        insert_import_book(&db, "book-card");
+        (dir, db, sync)
+    }
+
+    /// Every event the writer parked, newest last.
+    fn parked_events(db: &Db) -> Vec<String> {
+        let conn = db.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT body_json FROM _pending_publish ORDER BY rowid")
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        drop(stmt);
+        rows
+    }
+
+    /// The three columns a regenerated card writes, plus the LWW clock.
+    fn stored_card(db: &Db, id: &str) -> (String, Option<String>, Option<String>, i64, String) {
+        db.reader()
+            .query_row(
+                "SELECT definition, context_explanation, card_snapshot, updated_at,
+                        updated_by_device
+                   FROM vocab_words WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .unwrap()
+    }
+
+    /// A saved word carrying a full first card, so every test below starts
+    /// from something a regeneration can overwrite or fail to disturb.
+    fn saved_with_card(db: &Db, sync: &SyncWriter) -> (String, String) {
+        let snapshot = r#"{"modules":{"word_info":{"summary":"the first card"}}}"#.to_string();
+        let saved = add_vocab_word_inner(
+            "book-card",
+            "thither",
+            "the first summary",
+            Some("She went thither at once.".to_string()),
+            Some("the first paragraph".to_string()),
+            None,
+            Some(snapshot.clone()),
+            db,
+            sync,
+        )
+        .unwrap();
+        (saved.id, snapshot)
+    }
+
+    #[test]
+    fn a_regenerated_card_writes_all_three_columns_at_once() {
+        let (_dir, db, sync) = setup_card_db();
+        let (id, _) = saved_with_card(&db, &sync);
+        let new_snapshot = r#"{"modules":{"word_info":{"summary":"the second card"}}}"#.to_string();
+
+        let returned = update_vocab_card_inner(
+            &id,
+            "the second summary",
+            Some("the second paragraph".to_string()),
+            Some(new_snapshot.clone()),
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        assert_eq!(returned.definition, "the second summary");
+        assert_eq!(
+            returned.context_explanation.as_deref(),
+            Some("the second paragraph")
+        );
+        let (definition, explanation, snapshot, _, device) = stored_card(&db, &id);
+        assert_eq!(definition, "the second summary");
+        assert_eq!(explanation.as_deref(), Some("the second paragraph"));
+        assert_eq!(snapshot, Some(new_snapshot));
+        // The clock moves with the write: all three columns sync, so a row
+        // that advertised a new card without stamping itself would lose to a
+        // peer's older snapshot and get the old card handed straight back.
+        assert_eq!(device, "dev-card");
+    }
+
+    /// The rule this command exists to *not* have: `set_definition` would file
+    /// the outgoing summary under "In context". Here the caller said what goes
+    /// there, and that is what gets stored.
+    #[test]
+    fn the_outgoing_summary_is_not_displaced_over_the_paragraph_the_caller_gave() {
+        let (_dir, db, sync) = setup_card_db();
+        // A card blob in `definition` is exactly what `displaced_explanation`
+        // rescues — so if displacement ran here, this is the case that would
+        // show it.
+        let saved = add_vocab_word_inner(
+            "book-card",
+            "thither",
+            "Meaning in this context\nto that place, in older English.",
+            None,
+            None,
+            None,
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        update_vocab_card_inner(
+            &saved.id,
+            "到那里",
+            Some("the new card's paragraph".to_string()),
+            None,
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        let (definition, explanation, _, _, _) = stored_card(&db, &saved.id);
+        assert_eq!(definition, "到那里");
+        assert_eq!(explanation.as_deref(), Some("the new card's paragraph"));
+    }
+
+    #[test]
+    fn a_null_snapshot_means_no_new_card_not_erase_the_old_one() {
+        let (_dir, db, sync) = setup_card_db();
+        let (id, first_snapshot) = saved_with_card(&db, &sync);
+
+        update_vocab_card_inner(&id, "the second summary", None, None, &db, &sync).unwrap();
+
+        let (definition, explanation, snapshot, _, _) = stored_card(&db, &id);
+        assert_eq!(definition, "the second summary");
+        // Both optional columns follow the same rule.
+        assert_eq!(explanation.as_deref(), Some("the first paragraph"));
+        assert_eq!(snapshot, Some(first_snapshot));
+    }
+
+    #[test]
+    fn an_oversized_regenerated_snapshot_is_dropped_and_the_stored_one_stands() {
+        let (_dir, db, sync) = setup_card_db();
+        let (id, first_snapshot) = saved_with_card(&db, &sync);
+        let oversized = "x".repeat(MAX_CARD_SNAPSHOT_BYTES + 1);
+
+        update_vocab_card_inner(&id, "the second summary", None, Some(oversized), &db, &sync)
+            .unwrap();
+
+        let (definition, _, snapshot, _, _) = stored_card(&db, &id);
+        // The definition still lands — an unstorable snapshot is not a failed
+        // regeneration, only a card too big to keep a copy of.
+        assert_eq!(definition, "the second summary");
+        assert_eq!(snapshot, Some(first_snapshot.clone()));
+        // And what goes out on the wire matches what went into the row, so a
+        // peer does not end up storing a snapshot this device refused.
+        let published = parked_events(&db);
+        let card_event = published
+            .iter()
+            .find(|body| body.contains(r#""type":"vocab.card.set""#))
+            .expect("the regeneration must publish");
+        assert!(
+            !card_event.contains("xxxxxxxx"),
+            "the clamped-away snapshot must not travel: {card_event}"
+        );
+        assert!(
+            !card_event.contains(&first_snapshot),
+            "a snapshot this write never stored must not be republished: {card_event}"
+        );
+    }
+
+    /// A wrong summary is bad; a blank one is worse. The refusal is total —
+    /// the paragraph and the snapshot offered alongside it are not written
+    /// either, because a card is one thing.
+    #[test]
+    fn a_blank_definition_fails_before_a_single_byte_is_written() {
+        let (_dir, db, sync) = setup_card_db();
+        let (id, first_snapshot) = saved_with_card(&db, &sync);
+        let (_, _, _, before, _) = stored_card(&db, &id);
+        let events_before = parked_events(&db).len();
+
+        for blank in ["", "   ", "\n\t "] {
+            let error = update_vocab_card_inner(
+                &id,
+                blank,
+                Some("a paragraph that must not land".to_string()),
+                Some(r#"{"must":"not land"}"#.to_string()),
+                &db,
+                &sync,
+            )
+            .unwrap_err();
+            assert!(error.to_string().contains("VOCAB_CARD_DEFINITION_EMPTY"));
+        }
+
+        let (definition, explanation, snapshot, updated_at, _) = stored_card(&db, &id);
+        assert_eq!(definition, "the first summary");
+        assert_eq!(explanation.as_deref(), Some("the first paragraph"));
+        assert_eq!(snapshot, Some(first_snapshot));
+        assert_eq!(updated_at, before, "a refused write must not move the clock");
+        assert_eq!(
+            parked_events(&db).len(),
+            events_before,
+            "a refused write must publish nothing"
+        );
+    }
+
+    /// Surrounding whitespace is trimmed rather than stored — the same
+    /// treatment `vocab_regloss` gives a streamed gloss, and the reason the
+    /// blank check above can be a plain `is_empty` on the trimmed value.
+    #[test]
+    fn a_padded_summary_is_stored_trimmed() {
+        let (_dir, db, sync) = setup_card_db();
+        let (id, _) = saved_with_card(&db, &sync);
+
+        update_vocab_card_inner(&id, "  到那里\n", None, None, &db, &sync).unwrap();
+
+        let (definition, _, _, _, _) = stored_card(&db, &id);
+        assert_eq!(definition, "到那里");
+    }
+
+    /// The word was deleted while the card was still streaming. Nothing to
+    /// write, nothing to publish, and the caller hears why instead of getting
+    /// a silent success on a row that no longer exists.
+    #[test]
+    fn a_word_deleted_mid_regeneration_is_a_clean_not_found() {
+        let (_dir, db, sync) = setup_card_db();
+        let (id, _) = saved_with_card(&db, &sync);
+        delete_vocab_words_inner(std::slice::from_ref(&id), &db, &sync).unwrap();
+        let events_before = parked_events(&db).len();
+
+        let error = update_vocab_card_inner(
+            &id,
+            "the second summary",
+            None,
+            Some(r#"{"a":1}"#.to_string()),
+            &db,
+            &sync,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("VOCAB_WORD_NOT_FOUND"));
+        assert_eq!(
+            parked_events(&db).len(),
+            events_before,
+            "a write that matched no row must publish nothing"
+        );
+    }
+
+    /// The reader's other devices hear the whole card, not just its summary.
+    #[test]
+    fn the_regenerated_card_is_published_with_all_three_fields() {
+        let (_dir, db, sync) = setup_card_db();
+        let (id, _) = saved_with_card(&db, &sync);
+        let new_snapshot = r#"{"modules":{"word_info":{"summary":"the second card"}}}"#.to_string();
+
+        update_vocab_card_inner(
+            &id,
+            "the second summary",
+            Some("the second paragraph".to_string()),
+            Some(new_snapshot.clone()),
+            &db,
+            &sync,
+        )
+        .unwrap();
+
+        let published = parked_events(&db);
+        let card_event = published
+            .iter()
+            .find(|body| body.contains(r#""type":"vocab.card.set""#))
+            .unwrap_or_else(|| panic!("expected a vocab.card.set, got {published:?}"));
+        assert!(card_event.contains(r#""definition":"the second summary""#));
+        assert!(card_event.contains("the second paragraph"));
+        assert!(card_event.contains("the second card"));
+        // Not the list-status event: publishing through that one would tell
+        // every peer the reader had explicitly saved a word they only
+        // regenerated.
+        assert!(
+            !published
+                .iter()
+                .any(|body| body.contains(r#""type":"vocab.list_status.set""#)),
+            "a regeneration must not assert a list status: {published:?}"
+        );
+    }
+
+    /// What the writer published must replay into the same three columns on
+    /// the receiving device — the local write and `merge::apply_vocab_card`
+    /// agreeing is the whole contract.
+    #[test]
+    fn what_the_command_publishes_replays_into_the_same_row() {
+        let (_dir, db, sync) = setup_card_db();
+        let (id, _) = saved_with_card(&db, &sync);
+        let new_snapshot = r#"{"modules":{"word_info":{"summary":"the second card"}}}"#.to_string();
+        update_vocab_card_inner(
+            &id,
+            "the second summary",
+            Some("the second paragraph".to_string()),
+            Some(new_snapshot.clone()),
+            &db,
+            &sync,
+        )
+        .unwrap();
+        let card_event = parked_events(&db)
+            .into_iter()
+            .find(|body| body.contains(r#""type":"vocab.card.set""#))
+            .expect("the regeneration must publish");
+        let body: crate::sync::events::EventBody = serde_json::from_str(&card_event).unwrap();
+
+        // A second device holding the pre-regeneration row.
+        let peer_dir = TempDir::new().unwrap();
+        let peer = Db::init(peer_dir.path()).unwrap();
+        let peer_sync = SyncWriter::new("dev-peer".into());
+        peer_sync.set_should_queue(true);
+        insert_import_book(&peer, "book-card");
+        let mirrored = add_vocab_word_inner(
+            "book-card",
+            "thither",
+            "the first summary",
+            None,
+            Some("the first paragraph".to_string()),
+            None,
+            Some(r#"{"modules":{"word_info":{"summary":"the first card"}}}"#.to_string()),
+            &peer,
+            &peer_sync,
+        )
+        .unwrap();
+        // The event names the writing device's row id, which is what a real
+        // peer would already share via `vocab.add`.
+        peer.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE vocab_words SET id = ?1 WHERE id = ?2",
+                params![id, mirrored.id],
+            )
+            .unwrap();
+
+        let event = crate::sync::events::Event {
+            id: "01HYZX0000000000000000EVT1".to_string(),
+            ts: chrono::Utc::now().timestamp_millis() + 1,
+            device: "11111111-2222-3333-4444-555555555555".to_string(),
+            v: crate::sync::events::EVENT_SCHEMA_VERSION,
+            body,
+            extra: Default::default(),
+        };
+        {
+            let conn = peer.conn.lock().unwrap();
+            let tx = conn.unchecked_transaction().unwrap();
+            crate::sync::merge::apply_event(&tx, &event).unwrap();
+            tx.commit().unwrap();
+        }
+
+        let (definition, explanation, snapshot, _, _) = stored_card(&peer, &id);
+        assert_eq!(definition, "the second summary");
+        assert_eq!(explanation.as_deref(), Some("the second paragraph"));
+        assert_eq!(snapshot, Some(new_snapshot));
     }
 }
 
