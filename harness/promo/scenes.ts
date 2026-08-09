@@ -16,7 +16,7 @@
  * document 的那一条路完全一样；派的也是真的 `dblclick`，坐标真的落在那个词上。
  */
 import zh from "../../src/i18n/zh.json";
-import { HERO_LOOKUP_WORD } from "./content";
+import { ENDING_JUMP, HERO_LOOKUP_WORD, VOCAB_JUMP } from "./content";
 import { activeScene, activeShotName } from "./index";
 
 /** 截图脚本等的就是这个属性。 */
@@ -227,13 +227,14 @@ async function openAiPanel(): Promise<void> {
 }
 
 /**
- * 把侧栏拖窄。默认 525px 在 1280 的窗口里占掉四成，正文只剩两条窄栏。
+ * 把侧栏拖到指定宽度。默认 525px：首图里嫌宽（正文只剩两条窄栏），侧栏特写里
+ * 又嫌窄，所以两个方向都要能调。
  *
  * 走的是那条真的拖拽把手（`useSidePanelResize`）：一次 pointerdown 加一次
  * pointerup 就够 —— 松手时它按 clientX 重算最终宽度，中间的 pointermove 只
  * 影响拖动过程中的实时预览。宽度不写进设置里，所以只能这么拖。
  */
-async function narrowAiPanel(target: number): Promise<void> {
+async function setAiPanelWidth(target: number): Promise<void> {
   const handle = await waitFor(
     "侧栏的拖拽把手",
     () => document.querySelector<HTMLElement>("div.cursor-col-resize"),
@@ -265,6 +266,37 @@ async function openChat(title: string): Promise<void> {
   await settle();
 }
 
+/**
+ * 点回答里的第 n 个角标。
+ *
+ * 角标是 `CitationChip` 画的 `<button aria-label="Source n">`，正文里和底下
+ * 那排来源芯片用的是同一个组件 —— 按 DOM 顺序第一个就是正文里的那个。
+ *
+ * 点完应用会在目标章节里检索这句原文、跳过去、把它高亮三秒。所以这一步必须
+ * 放在场景的最后：等得太久，快门按下时高亮已经撤了。
+ */
+async function clickCitation(marker: number, sectionIndex: number): Promise<void> {
+  const chip = await waitFor(`角标 S${marker}`, () => byLabel(`Source ${marker}`));
+  chip.click();
+  // 跨章跳转要先把那一章加载出来再检索，快的时候一百毫秒，慢的时候两秒。
+  await waitFor(
+    `阅读器停在第 ${sectionIndex} 节`,
+    () => (readerContents()?.index === sectionIndex ? true : null),
+    8000,
+  );
+  // 同章跳转上面那条立刻就满足了，所以再给高亮一点画出来的时间。
+  await sleep(400);
+}
+
+/** 展开「回答范围」那个菜单 —— 四档（自动 / 选区 / 本章 / 全书）一次全露出来。 */
+async function openScopeMenu(): Promise<void> {
+  const label = text("ai.scope.trigger").replace("{{scope}}", text("ai.scope.auto"));
+  const trigger = await waitFor("回答范围按钮", () => byText(label));
+  trigger.click();
+  await waitFor("回答范围菜单", () => document.querySelector('[role="menu"]'));
+  await settle();
+}
+
 /* ------------------------------------------------------------------ *
  * 每张图各自要摆的样子
  * ------------------------------------------------------------------ */
@@ -274,23 +306,37 @@ const ACTIONS: Record<string, () => Promise<void>> = {
   async hero() {
     await waitForBook();
     await openAiPanel();
-    await narrowAiPanel(420);
+    await setAiPanelWidth(420);
     await openChat("他明明说不去拜访宾利");
     await lookupWord(HERO_LOOKUP_WORD);
   },
 
-  /** 生词清单那一轮：角标密、来源行长。 */
+  /**
+   * 左边一份长生词清单（每条带角标、底下一排来源芯片），右边是点了其中一个
+   * 角标之后的正文 —— 被引的那一句正高亮着。两边的对应关系是这张图的全部。
+   */
   async citations() {
     await waitForBook();
     await openAiPanel();
+    await setAiPanelWidth(560);
     await openChat("这一章我会卡住的词");
+    await clickCitation(VOCAB_JUMP.marker, VOCAB_JUMP.sectionIndex);
   },
 
-  /** 进度提示 +「结合全书重新回答」。 */
+  /**
+   * 侧栏特写：展开的回答范围、开着的阅读思考保护、一条明显问全书的问题，以及
+   * 回答下面那句「已按你的阅读进度回答（前 34%）」和「结合全书重新回答」。
+   *
+   * 先点最后一个角标把阅读器带到第二十一章，左边的进度读数才和右边那句 34%
+   * 对得上；再展开范围菜单 —— 顺序反了的话，点角标会把菜单关掉。
+   */
   async context() {
     await waitForBook();
     await openAiPanel();
-    await openChat("他明明说不去拜访宾利");
+    await setAiPanelWidth(600);
+    await openChat("达西和伊丽莎白最后会怎么样");
+    await clickCitation(ENDING_JUMP.marker, ENDING_JUMP.sectionIndex);
+    await openScopeMenu();
   },
 
   /** 一张就地加注的查词卡，正文不被侧栏挤窄。 */

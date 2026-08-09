@@ -12,12 +12,19 @@
  *  3. **不编数字。** 章节序号取自真实 EPUB 的 spine，百分比取自书架上真有的
  *     阅读进度。
  *
- * 原文全部来自 Standard Ebooks 的《Pride and Prejudice》第二章（公有领域）。
+ * 原文全部来自 Standard Ebooks 的《Pride and Prejudice》（公有领域），章节
+ * 范围止于第二十一章 —— 书架上那本书正读到 34%，再往后的原文不该出现在回答里。
  */
 
+/**
+ * spine 里第 0、1 项是扉页和版权页，所以第 N 章就是第 N+1 项。这本书 65 个
+ * spine 项、61 章，下面每一处 `sectionIndex` 都是这么来的，没有一个是猜的。
+ */
+const chapterIndex = (chapter: number) => chapter + 1;
+const chapterHref = (chapter: number) => `text/chapter-${chapter}.xhtml`;
+
 /** 主角书在 spine 里的第 4 项（封面 / 扉页 / 版权页之后），也就是第二章。 */
-const CH2 = 3;
-const CH2_HREF = "text/chapter-2.xhtml";
+const CH2 = chapterIndex(2);
 
 const DAY = 86_400_000;
 const ago = (days: number) => Date.now() - days * DAY;
@@ -35,14 +42,17 @@ interface Source {
   snippet: string;
 }
 
-const source = (n: number, snippet: string): Source => ({
+/** 引自第几章。`title` 是那一章在书里印的罗马数字，和目录上的一致。 */
+const from = (chapter: number, title: string) => (n: number, snippet: string): Source => ({
   marker: `S${n}`,
-  chunkId: `pp-ch2-${n}`,
-  sectionIndex: CH2,
-  sectionHref: CH2_HREF,
-  sectionTitle: "II",
+  chunkId: `pp-ch${chapter}-${n}`,
+  sectionIndex: chapterIndex(chapter),
+  sectionHref: chapterHref(chapter),
+  sectionTitle: title,
   snippet,
 });
+
+const source = from(2, "II");
 
 /**
  * 「他明明说不去」这一轮。首图和上下文图共用它 —— 问题短、答案里三处角标，
@@ -101,6 +111,37 @@ const VOCAB_ANSWER = [
   "其中 **deign** 和 **circumspection** 明显高出你现在的等级，但这一章少了它们就读不出 Mr. Bennet 的语气，所以留着了，后面括号里是就地的解释。",
 ].join("\n");
 
+/**
+ * 「他俩最后怎么样」这一轮 —— 第 4 张图（它知道你读到哪）的主角。
+ *
+ * 问题必须明显指向全书，下面那条「已按你的阅读进度回答」和「结合全书重新回答」
+ * 才会出现；而回答本身只许用前 34%（读到第二十一章）已经写出来的东西。五处
+ * 引用分别落在第三、六、十六、十八、二十一章，都在这条线以内。
+ */
+const ENDING_SOURCES: Source[] = [
+  from(3, "III")(1, "She is tolerable; but not handsome enough to tempt me"),
+  from(6, "VI")(2, "I have been meditating on the very great pleasure which a pair of fine eyes in the face of a pretty woman can bestow."),
+  from(16, "XVI")(3, "We are not on friendly terms, and it always gives me pain to meet him"),
+  from(18, "XVIII")(4, "she found herself suddenly addressed by Mr. Darcy, who took her so much by surprise in his application for her hand"),
+  from(21, "XXI")(5, "The whole party have left Netherfield by this time, and are on their way to town; and without any intention of coming back again."),
+];
+
+const ENDING_ANSWER = [
+  "到你现在读到的地方，书里还没有写到结果。已经摆出来的是这些：",
+  "",
+  "**开场是他先得罪了她。** 第一场舞会上宾利劝他去请伊丽莎白跳舞，他当着人说「还行，但没好看到能打动我」[S1]，而这句话她就在旁边听着。",
+  "",
+  "**他那边先松动。** 到第六章，他已经在跟宾利小姐说一双好看的眼睛能带来多大的乐趣，说的就是她 [S2]。她自己完全不知道。",
+  "",
+  "**中间又被推远一次。** 韦翰讲了他和达西的旧账，末了那句「我们关系并不好，见到他总让我难受」[S3]，让伊丽莎白更确信自己最初的判断没错。",
+  "",
+  "**尼日斐的舞会上他主动来请她跳舞**，突然到她没反应过来就答应了 [S4]。",
+  "",
+  "**然后宾利一家走了。** 卡罗琳的信说他们已经动身进城，而且不打算再回来 [S5] —— 你正读到这里。",
+  "",
+  "所以现在能确定的只有：两个人的判断都还没修正过。再往后的事，前 34% 里没有。",
+].join("\n");
+
 interface PromoMessage {
   id: string;
   chat_id: string;
@@ -146,6 +187,16 @@ const assistantTurn = (
 
 export const PROMO_CHATS = [
   {
+    id: "promo-ending",
+    book_id: "pride-and-prejudice",
+    title: "达西和伊丽莎白最后会怎么样",
+    model: "harness-model-large",
+    pinned: false,
+    metadata: null,
+    created_at: ago(0),
+    updated_at: ago(0),
+  },
+  {
     id: "promo-visit",
     book_id: "pride-and-prejudice",
     title: "他明明说不去拜访宾利",
@@ -175,6 +226,15 @@ export const PROMO_CHATS = [
 const PROGRESS = 34;
 
 export const PROMO_CHAT_MESSAGES: Record<string, PromoMessage[]> = {
+  "promo-ending": [
+    userTurn("promo-ending-1", "promo-ending", "达西和伊丽莎白最后走到一起了吗？", 0),
+    assistantTurn("promo-ending-2", "promo-ending", ENDING_ANSWER, 0, {
+      sources: ENDING_SOURCES,
+      spoilerGuard: { active: true, wholeBookIntent: true, progress: PROGRESS },
+      route: "whole_book",
+      sectionIndex: chapterIndex(21),
+    }),
+  ],
   "promo-visit": [
     userTurn("promo-visit-1", "promo-visit", "班纳特先生前面明明说不去拜访宾利，后来怎么又去了？", 1),
     assistantTurn("promo-visit-2", "promo-visit", VISIT_ANSWER, 1, {
@@ -329,6 +389,17 @@ export function promoLearningCard(text: unknown): unknown | null {
 
 /** 首图双击的那个词。放在这里，场景和内容不用两边各写一份。 */
 export const HERO_LOOKUP_WORD = "waited";
+
+/**
+ * 第 4 张图要点的那个角标。点它有两层作用：既演示「角标能点回原文」，又把
+ * 阅读器真的带到第二十一章 —— 那儿正好是全书 34%，和回答下面那句「已按你的
+ * 阅读进度回答（前 34%）」对得上。不这么做的话，画面左边停在第二章，右边却
+ * 写着 34%，一眼就穿帮。
+ */
+export const ENDING_JUMP = { marker: 5, sectionIndex: chapterIndex(21) };
+
+/** 第 5 张图要点的那个角标：第二章里 `deigned` 那一句，点完原文就地高亮。 */
+export const VOCAB_JUMP = { marker: 14, sectionIndex: CH2 };
 
 /**
  * 卡片宽度设成「紧凑」。默认的「自动」在这本书上会撑到六百多像素，一张卡就把

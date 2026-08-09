@@ -47,8 +47,8 @@ const CHROME =
 const SHOTS = [
   { name: "hero", scene: "hero", size: [1280, 840] },
   { name: "level", scene: "levels", size: [900, 560] },
-  { name: "context", scene: "context", size: [1280, 800] },
-  { name: "citations", scene: "citations", size: [1280, 800] },
+  { name: "context", scene: "context", size: [1020, 880] },
+  { name: "citations", scene: "citations", size: [1280, 900] },
   { name: "mastery", scene: "vocab", size: [1180, 740] },
   { name: "difficulty", scene: "difficulty", size: [1180, 860] },
   { name: "modules", scene: "cards", size: [1180, 880] },
