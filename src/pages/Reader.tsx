@@ -824,6 +824,33 @@ export default function Reader() {
     supportsWordMarkers,
   ]);
 
+  const handleDictionaryGlance = useCallback((interaction: ReaderInteraction, definition: string) => {
+    if (!bookId) return;
+    // The same screen-level signal a card lookup emits, at full strength: the
+    // 1.5× boost the OTHER words on this screen get is justified by "the
+    // reader is working through this screen word by word", which a dictionary
+    // check proves exactly as well as an AI card does. The glanced word itself
+    // lands in `lookedUpWords` and so collects no boost of its own.
+    recordReadingOperation("lookup", interaction.normalizedText || undefined);
+    // Half a lookup's worth of demotion, plus a lifetime tally that files the
+    // word into the watchlist on its fourth glance — see
+    // docs/impls/dictionary-glance-mastery.md.
+    invoke<{ entered_watchlist: boolean }>("record_dictionary_glance", {
+      input: {
+        bookId,
+        word: interaction.text,
+        definition,
+        contextSentence: interaction.context || null,
+        cfi: interaction.location || null,
+      },
+    }).then((outcome) => {
+      if (!outcome.entered_watchlist) return;
+      window.dispatchEvent(new CustomEvent("vocab-changed", { detail: { bookId, cfi: interaction.location } }));
+    }).catch(() => {
+      // A glance is a background signal; a failed one is not worth a toast.
+    });
+  }, [bookId, recordReadingOperation]);
+
   const handleTextBookError = useCallback((error: string) => {
     setReaderError(toReaderOpenError(error, "text"));
     setBookReady(false);
@@ -2485,6 +2512,13 @@ export default function Reader() {
             setContextMenu(null);
           }}
           onXray={contextMenu.location ? () => openXray(contextMenu) : undefined}
+          // Only a single click on a word can end as a glance. A word reached
+          // by dragging a selection gets the same card, but the gesture no
+          // longer says "I stopped on this word" — and under-counting is the
+          // side to err on for something that costs mastery.
+          onGlance={bookId && contextMenu.trigger === "word-menu"
+            ? (definition) => handleDictionaryGlance(contextMenu, definition)
+            : undefined}
           onLookup={() => {
             openLearningCard({ ...contextMenu, trigger: "word-quick-lookup" });
             setContextMenu(null);

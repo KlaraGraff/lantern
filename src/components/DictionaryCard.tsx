@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { usePronunciation } from "./speech/usePronunciation";
+import { GLANCE_SAFE_ATTR } from "./dictionary-glance";
 
 export interface DictionaryGroup {
   pos: string;
@@ -275,6 +276,9 @@ export default function DictionaryCard({
                   <button
                     type="button"
                     role="menuitem"
+                    // Reading more of the entry is the dictionary glance, not a
+                    // detour away from it — see dictionary-glance.ts.
+                    {...{ [GLANCE_SAFE_ATTR]: "" }}
                     onClick={toggleExpanded}
                     className="rounded-sm font-medium text-accent-text underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   >

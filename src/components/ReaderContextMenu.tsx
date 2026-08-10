@@ -19,6 +19,15 @@ import {
   type SerializableRect,
 } from "./reader-interaction";
 import DictionaryCard, { type DictionaryEntry } from "./DictionaryCard";
+import {
+  clickSpendsGlance,
+  glanceCounts,
+  glanceDefinition,
+  newGlanceAttempt,
+  GLANCE_DWELL_MS,
+  GLANCE_SAFE_ATTR,
+  type GlanceClickNode,
+} from "./dictionary-glance";
 import SpeakMenuRow from "./speech/SpeakMenuRow";
 import { playbackDetaches } from "./speech/routing";
 import {
@@ -56,6 +65,14 @@ interface ReaderContextMenuProps {
   onSave: () => void;
   onToggleMark?: () => void;
   onRemoveBookWordMark?: () => void;
+  /**
+   * The reader read the dictionary entry and did nothing else — see
+   * `dictionary-glance.ts` for the three conditions. Fired once per word, at
+   * the moment the menu closes on it (or the reader clicks a second word).
+   * Omitted by the reader for menus a glance cannot come from, e.g. a word
+   * reached by dragging a selection rather than by a single click.
+   */
+  onGlance?: (definition: string) => void;
   customActions?: Array<{ id: `custom_${string}`; name: string }>;
   onCustomAction?: (id: `custom_${string}`) => void;
 }
@@ -82,6 +99,7 @@ export default function ReaderContextMenu({
   onSave,
   onToggleMark,
   onRemoveBookWordMark,
+  onGlance,
   customActions = [],
   onCustomAction,
 }: ReaderContextMenuProps) {
@@ -125,6 +143,61 @@ export default function ReaderContextMenu({
     return () => {
       cancelled = true;
     };
+  }, [dictionaryQuery]);
+
+  // The running account for the word currently on the card. Mutated by the
+  // three effects below rather than held in state: nothing here is rendered,
+  // and a re-render per timer tick would re-measure and re-position the menu.
+  const glanceRef = useRef(newGlanceAttempt());
+  const onGlanceRef = useRef(onGlance);
+  useEffect(() => {
+    onGlanceRef.current = onGlance;
+  });
+
+  // Settlement. Runs when the menu unmounts and when the reader clicks a
+  // second word without closing the first — both are "the menu closed on this
+  // word" as far as the account is concerned. Declared before the two effects
+  // that write to the account so that on a word change React resets it here
+  // before either of them touches the new one.
+  useEffect(() => {
+    if (!dictionaryQuery) return;
+    const attempt = (glanceRef.current = newGlanceAttempt());
+    return () => {
+      if (glanceCounts(attempt)) onGlanceRef.current?.(attempt.definition);
+    };
+  }, [dictionaryQuery]);
+
+  // The dwell clock. Starts only once a real entry is on screen — the skeleton
+  // is not a definition, and neither is 词典里没有这个词.
+  useEffect(() => {
+    if (dictionaryLoading || !dictionaryEntry) return;
+    const attempt = glanceRef.current;
+    attempt.definition = glanceDefinition(dictionaryEntry);
+    const timer = window.setTimeout(() => {
+      attempt.dwelt = true;
+    }, GLANCE_DWELL_MS);
+    return () => window.clearTimeout(timer);
+  }, [dictionaryEntry, dictionaryLoading]);
+
+  // Did the reader go on to do something else? Listened for in the capture
+  // phase, because the row's own handler closes the menu and the account has
+  // to be marked before it does. Keyboard activation arrives here too — the
+  // menu's shortcut handling clicks the row rather than calling it.
+  useEffect(() => {
+    const menu = menuRef.current;
+    if (!menu || !dictionaryQuery) return;
+    const noteAction = (event: MouseEvent) => {
+      const path: GlanceClickNode[] = [];
+      for (let node = event.target as Element | null; node && node !== menu; node = node.parentElement) {
+        path.push({
+          isMenuItem: node.getAttribute("role") === "menuitem",
+          glanceSafe: node.hasAttribute(GLANCE_SAFE_ATTR),
+        });
+      }
+      if (clickSpendsGlance(path)) glanceRef.current.spent = true;
+    };
+    menu.addEventListener("click", noteAction, true);
+    return () => menu.removeEventListener("click", noteAction, true);
   }, [dictionaryQuery]);
 
   const customActionIds = customActions.map((action) => action.id);
