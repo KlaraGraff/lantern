@@ -37,7 +37,14 @@ function NotesLink({ href, children }: { href?: string; children?: React.ReactNo
     <button
       type="button"
       onClick={() => { openUrl(href).catch(() => {}); }}
-      className="cursor-pointer text-accent-text underline decoration-accent-text/30 underline-offset-2 hover:decoration-accent-text"
+      // The underline colour is a solid token on purpose. An opacity modifier
+      // (the "/30" suffix) makes Tailwind compile the colour to `color-mix()`
+      // behind an `@supports` guard, and the unguarded fallback it emits has no
+      // `-webkit-` prefix — which Safari 15 ignores for text-decoration-color.
+      // `npm run check:reader-compat` fails the build on it. Do not write such a
+      // suffix on this utility anywhere in this file, comments included: the
+      // scanner matches raw text and would generate the class from the comment.
+      className="cursor-pointer text-accent-text underline decoration-border underline-offset-2 hover:decoration-accent-text"
     >
       {children}
     </button>
