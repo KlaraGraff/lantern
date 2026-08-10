@@ -32,10 +32,10 @@ export const PROMO_COVERAGE_ROWS = [
     distinctWords: 6505,
     masteredTokens: 115084,
     familiarTokens: 728,
-    nameTokens: 5518,
-    unknownTokens: 5258,
-    nameWords: 206,
-    unknownWords: 2442,
+    nameTokens: 5559,
+    unknownTokens: 5217,
+    nameWords: 207,
+    unknownWords: 2441,
   },
   {
     bookId: "alices-adventures-in-wonderland",
@@ -166,7 +166,6 @@ export const PROMO_COVERAGE_ROWS = [
  */
 export const PROMO_UNKNOWN_WORDS = [
   { word: "civility", tokens: 42, rank: 15097 },
-  { word: "de", tokens: 41, rank: null },
   { word: "attentions", tokens: 30, rank: 9083 },
   { word: "endeavour", tokens: 25, rank: 11169 },
   { word: "particulars", tokens: 23, rank: 9990 },
@@ -225,4 +224,5 @@ export const PROMO_UNKNOWN_WORDS = [
   { word: "uncommonly", tokens: 9, rank: 17315 },
   { word: "uneasiness", tokens: 9, rank: 9042 },
   { word: "unreasonable", tokens: 9, rank: 9514 },
+  { word: "bestow", tokens: 8, rank: 13070 },
 ] as const;
