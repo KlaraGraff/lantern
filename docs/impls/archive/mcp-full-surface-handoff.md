@@ -13,8 +13,8 @@
 
 **Handoff date:** 2026-08-03  
 **Status:** Paused by the user. The next owner should continue from this document; the current owner must not continue implementation.  
-**Canonical clone:** `/Users/lijianwei/vibecoding/Lantern`  
-**Isolated worktree:** `/Users/lijianwei/vibecoding/Lantern-mcp-full-surface`  
+**Canonical clone:** `~/vibecoding/Lantern`  
+**Isolated worktree:** `~/vibecoding/Lantern-mcp-full-surface`  
 **Branch:** `codex/mcp-full-surface-audit`  
 **Base HEAD:** `2bb61200242e4c00728ed2cf587a9d6566f723ad`
 
@@ -172,7 +172,7 @@ Those seven formatting-only changes should be restored to `HEAD` before further 
 
 ## Recommended takeover sequence
 
-1. Work only in `/Users/lijianwei/vibecoding/Lantern-mcp-full-surface`; run `git fetch origin && git status` and inspect concurrent changes before editing.
+1. Work only in `~/vibecoding/Lantern-mcp-full-surface`; run `git fetch origin && git status` and inspect concurrent changes before editing.
 2. Remove only the seven documented formatting-noise diffs.
 3. Re-run the corpus validation command documented in `docs/testing/mcp-tool-selection-README.md`.
 4. Delegate at least two independent blind selection evaluations to GPT-5.6-series Sub-agents.

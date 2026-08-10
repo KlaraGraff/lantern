@@ -7,9 +7,9 @@
 
 你来接手 Lantern 的 MCP 改造。
 
-请在专用 worktree `/Users/lijianwei/vibecoding/Lantern-mcp-full-surface` 中工作，不要影响正在由其他任务使用的主仓库。开始前先完整阅读仓库的 `AGENTS.md` 和交接文档：
+请在专用 worktree `~/vibecoding/Lantern-mcp-full-surface` 中工作，不要影响正在由其他任务使用的主仓库。开始前先完整阅读仓库的 `AGENTS.md` 和交接文档：
 
-`/Users/lijianwei/vibecoding/Lantern-mcp-full-surface/docs/impls/mcp-full-surface-handoff.md`
+`~/vibecoding/Lantern-mcp-full-surface/docs/impls/mcp-full-surface-handoff.md`
 
 背景是：上一轮希望让 MCP 全量开放 Lantern 已发布的用户能力，不设置需要用户先启用的工具包，也不通过工具描述教用户怎么做事。只有可能产生 API 费用，以及永久删除、破坏性覆盖等危险且不可逆的操作需要确认。
 

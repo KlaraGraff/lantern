@@ -18,9 +18,6 @@ This directory contains implementation guides for the Lantern ebook reader. Comp
 
 ## Reference
 
-- [单人 + AI 协作的工作流卫生指南](workflow-hygiene.md) — 分支与并行、半途而废的改动、垃圾分支、
-  需求反复、长对话黑箱、「对话到底干完没有」这六个问题的诊断与推理过程。文中定下的纪律已经收进
-  规则文件（全局 `CLAUDE.md` / 本仓库 `AGENTS.md`），本文保留的是**为什么**。
 - [macOS distribution and signing](macos-distribution.md)
 - [Security notes — local credentials](security.md)
 - [Product screenshots — shot list and brief](screenshots.md)

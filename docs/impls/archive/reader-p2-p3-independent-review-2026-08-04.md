@@ -6,7 +6,7 @@
 
 ## 0. 复核基准与仓库状态（必须先读）
 
-**仓库**：`/Users/lijianwei/vibecoding/Lantern`，分支 `main`。已执行 `git fetch origin && git status` 确认为规范仓库（canonical clone），不是机器上的其他陈旧克隆。
+**仓库**：`~/vibecoding/Lantern`，分支 `main`。已执行 `git fetch origin && git status` 确认为规范仓库（canonical clone），不是机器上的其他陈旧克隆。
 
 **HEAD 在复核期间发生了漂移，这不是本次复核造成的。** 开始时 HEAD = `6f28481`（`docs(reader): hand off P2-P3 design review`）。复核进行中另一个任务持续向 `main` 提交重构：
 

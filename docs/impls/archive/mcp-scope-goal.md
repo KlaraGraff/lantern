@@ -10,7 +10,7 @@
 
 你来完成 Lantern 的 MCP 改造。产品方向已经和用户对齐完毕，依据是仓库 README 第四节。**不要重新论证方向，不要扩大范围。** 你的任务是把下面这份目录实现到可交付状态。
 
-工作副本：`/Users/lijianwei/vibecoding/Lantern-mcp-full-surface`，分支 `codex/mcp-full-surface-audit`。开始前先读 `AGENTS.md`，尤其是 Restraint 一节。
+工作副本：`~/vibecoding/Lantern-mcp-full-surface`，分支 `codex/mcp-full-surface-audit`。开始前先读 `AGENTS.md`，尤其是 Restraint 一节。
 
 ---
 

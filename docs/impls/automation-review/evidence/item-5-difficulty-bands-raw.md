@@ -123,7 +123,7 @@ curl -s -L "https://www.gutenberg.org/cache/epub/11/pg11.txt"     -o .../scratch
 # then sed between the "*** START OF" / "*** END OF" line numbers found via grep -n, into
 # moby_dick.txt / origin_of_species.txt / alice.txt
 
-cd /Users/lijianwei/vibecoding/Lantern/src-tauri
+cd ~/vibecoding/Lantern/src-tauri
 cargo test --lib commands::book_difficulty::tests::evidence_item5_band_analysis -- --nocapture
 ```
 
@@ -311,7 +311,7 @@ file.
 ## Complete unedited raw stdout
 
 ```
-   Compiling lantern v2.13.1 (/Users/lijianwei/vibecoding/Lantern/src-tauri)
+   Compiling lantern v2.13.1 (~/vibecoding/Lantern/src-tauri)
     Finished `test` profile [unoptimized + debuginfo] target(s) in 12.72s
      Running unittests src/lib.rs (target/debug/deps/lantern_lib-4e6aedd3f66cd1d0)
 

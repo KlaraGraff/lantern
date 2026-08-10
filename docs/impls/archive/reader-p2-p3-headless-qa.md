@@ -32,7 +32,7 @@
   --hide-scrollbars --user-data-dir=/private/tmp/lantern-headless-profile \\
   --window-size=1440,960 \\
   --screenshot=/private/tmp/lantern-p21.png \\
-  file:///Users/lijianwei/vibecoding/Lantern/docs/impls/reader-p2-structured-export-mockup.html
+  file://$PWD/docs/impls/reader-p2-structured-export-mockup.html
 ```
 
 输出：P2.1、P3.1 阅读历程和 P3.1 AI 首次调用说明均成功写入 PNG。该 Chrome 安装随后仍尝试唤醒更新/崩溃服务，截图落盘后立即终止对应无头进程；其余条目采用仓库已有的本地、已确认样张截图。

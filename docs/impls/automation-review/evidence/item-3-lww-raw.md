@@ -8,7 +8,7 @@ File under test: `src-tauri/src/sync/merge.rs` (5049 lines at time of this run).
 
 ```
 export PATH="$HOME/.cargo/bin:$PATH"
-cd /Users/lijianwei/vibecoding/Lantern/src-tauri
+cd ~/vibecoding/Lantern/src-tauri
 
 # static census
 wc -l src/sync/merge.rs
@@ -611,7 +611,7 @@ pub mod validation;
 The four `#[test]` functions ran as separate threads, so their `println!` output is interleaved in the raw capture below — this is the actual, unedited terminal output, not reordered.
 
 ```
-   Compiling lantern v2.13.1 (/Users/lijianwei/vibecoding/Lantern/src-tauri)
+   Compiling lantern v2.13.1 (~/vibecoding/Lantern/src-tauri)
     Finished `test` profile [unoptimized + debuginfo] target(s) in 3.40s
      Running unittests src/lib.rs (target/debug/deps/lantern_lib-4e6aedd3f66cd1d0)
 
@@ -742,4 +742,4 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 1489 filtered out; f
 
 - Deleted `src-tauri/src/sync/tmp_lww_probe.rs`.
 - Removed the `#[cfg(test)] mod tmp_lww_probe;` line from `src-tauri/src/sync/mod.rs`.
-- Verified `git status --porcelain` in `/Users/lijianwei/vibecoding/Lantern` shows no diff in `src-tauri/src/sync/mod.rs` and no `tmp_lww_probe.rs` file, and shows this evidence file as the only new path under `docs/`.
+- Verified `git status --porcelain` in `~/vibecoding/Lantern` shows no diff in `src-tauri/src/sync/mod.rs` and no `tmp_lww_probe.rs` file, and shows this evidence file as the only new path under `docs/`.
