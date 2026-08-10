@@ -199,6 +199,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
         69,
         include_str!("../migrations/069_dictionary_glances.sql"),
     ),
+    (
+        70,
+        include_str!("../migrations/070_repair_word_info_glosses.sql"),
+    ),
 ];
 
 fn register_sqlite_vec() {

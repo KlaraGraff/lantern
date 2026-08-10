@@ -21,7 +21,7 @@ const card = (modules: LearningCardResult["modules"]): LearningCardResult => ({
   modules,
 });
 
-test("the gloss is offered by the contextual meaning first, then the word entry", () => {
+test("the gloss is offered by the contextual meaning, never by the word entry", () => {
   assert.equal(
     cardVocabFields(card({
       context_meaning: { summary: "sociable, in this sentence" },
@@ -29,20 +29,28 @@ test("the gloss is offered by the contextual meaning first, then the word entry"
     })).gloss,
     "sociable, in this sentence",
   );
-  assert.equal(
-    cardVocabFields(card({ word_info: { summary: "fond of company" } })).gloss,
-    "fond of company",
-  );
+  // `word_info` describes spelling, pronunciation and form. "reuniting is the
+  // present participle of reunite" is true and useless over a word, and it is
+  // what this used to offer — so nothing is offered instead, and the save path
+  // falls through to a fresh one-line gloss or the offline dictionary.
+  assert.equal(cardVocabFields(card({ word_info: { summary: "fond of company" } })).gloss, null);
   assert.equal(cardVocabFields(card({ usage: { summary: "warm" } })).gloss, null);
 });
 
-test("only the summary line is ever offered as the gloss", () => {
-  // `definition` is one short line printed above the word in the book. A
-  // module's headings, lists and examples belong to the long form.
+test("a contextual meaning that skipped the summary still offers its own words", () => {
+  // The contract puts the bare sense in `summary`; a model that put it in
+  // `heading` instead wrote the same line under a different key, and dropping
+  // it there is what sent the gloss down to `word_info` in the first place.
   assert.equal(
     cardVocabFields(card({
-      context_meaning: { heading: "in this sentence", details: ["a", "b"] },
+      context_meaning: { heading: "与家人重聚", details: ["这里指与妻子、母亲和兄弟重新团聚。"] },
+      word_info: { summary: "reuniting 是 reunite 的现在分词形式" },
     })).gloss,
+    "与家人重聚",
+  );
+  // Lists and examples are still never the gloss.
+  assert.equal(
+    cardVocabFields(card({ context_meaning: { details: ["a", "b"] } })).gloss,
     null,
   );
 });
@@ -72,15 +80,33 @@ test("a card with neither module contributes nothing rather than an empty string
   );
 });
 
-test("the lookup record keeps the word entry over the contextual meaning", () => {
-  // The opposite preference to the vocabulary gloss, and deliberately so: a
-  // cached lookup is reused for the same word in other sentences.
+test("the lookup record stores the same short gloss the vocabulary list stores", () => {
+  // Every lookup drops the word into the observation zone
+  // (`observe_lookup_for_vocab`), which copies this string straight into
+  // `vocab_words.definition` — the annotation printed over the word. It used
+  // to be the whole `word_info` module, so a first lookup planted a four-line
+  // morphology blob there.
   const result = projection(card({
     context_meaning: { summary: "sociable, in this sentence" },
     word_info: { summary: "fond of company" },
   }));
-  assert.equal(result.definition, "fond of company");
+  assert.equal(result.definition, "sociable, in this sentence");
   assert.equal(result.contextExplanation, "sociable, in this sentence");
+});
+
+test("a lookup record never stores a blob, even when no module offers a gloss", () => {
+  const result = projection(card({
+    word_info: {
+      summary: "reuniting 是 reunite 的现在分词形式",
+      details: ["拼写：re-uniting，前缀 re- 表示“再次”。", "发音：/ˌriːjuːˈnaɪtɪŋ/"],
+    },
+  }));
+  assert.equal(result.definition.includes("\n"), false);
+  assert.equal(isShortGloss(result.definition), true);
+});
+
+test("a card with nothing in it leaves the lookup record's gloss empty", () => {
+  assert.equal(projection(card({})).definition, "");
 });
 
 test("a card written to the two-part contract needs no second model call", () => {
