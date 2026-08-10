@@ -192,6 +192,15 @@ node scripts/shoot-readme.mjs
 
 TikTok 值得说明一下：你看到的 Web Coding 分享确实在那，但那类内容的核心是**「做的过程」而不是「做出的东西」**。如果你要做 TikTok/抖音，选题 1 那个方向才成立，功能介绍在那个平台是发不动的。
 
+### 已写好的两条
+
+| 平台 | 选题 | 稿子 |
+| --- | --- | --- |
+| 小红书 | 5 · 解释比原文还难 | [post-xhs-level.md](post-xhs-level.md) |
+| 抖音 | 1 · 我用 AI 写了一个英文阅读器 | [post-douyin-build.md](post-douyin-build.md) |
+
+两条都要等正式版发布、样张重拍进仓库之后才能发。
+
 ### 四周节奏
 
 - **第 0 周**：拍截图、做封面模板、写配置教程、改 GitHub 描述和 Topics。**一条内容都别发。**
