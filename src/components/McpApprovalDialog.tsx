@@ -137,14 +137,14 @@ export default function McpApprovalDialog() {
   const Icon = isPaid ? CircleDollarSign : TriangleAlert;
 
   return createPortal(
-    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-overlay p-4">
+    <div className="motion-scrim fixed inset-0 z-[110] flex items-center justify-center bg-overlay p-4">
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
-        className="w-[min(480px,calc(100vw-32px))] rounded-lg border border-border bg-bg-surface p-5 shadow-context"
+        className="motion-dialog w-[min(480px,calc(100vw-32px))] rounded-lg border border-border bg-bg-surface p-5 shadow-context"
       >
         <div className="flex items-start gap-3">
           <div className={`flex size-9 shrink-0 items-center justify-center rounded-md ${isPaid ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" : "bg-danger-bg text-danger-text"}`}>

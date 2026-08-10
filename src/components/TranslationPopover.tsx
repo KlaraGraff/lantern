@@ -195,7 +195,7 @@ export default function TranslationPopover({
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const { ref: floatingRef, style: floatingStyle, isOutside } = usePopoverPosition(x, y);
+  const { ref: floatingRef, style: floatingStyle, className: motionClass, isOutside } = usePopoverPosition(x, y);
 
   const { content, contentRef, streaming, aiError, languageNotConfigured, targetLang, streamError, retry } =
     useStreamingTranslation(text, context, bookId, bookTitle, bookAuthor, chapter, cfi);
@@ -270,7 +270,7 @@ export default function TranslationPopover({
     <div className="fixed inset-0 z-40" onClick={onClose} />
     <div
       ref={floatingRef}
-      className="fixed z-[62] w-[520px] bg-bg-surface border border-border/80 rounded-xl shadow-context"
+      className={`${motionClass} fixed z-[62] w-[520px] bg-bg-surface border border-border/80 rounded-xl shadow-context`}
       style={floatingStyle}
     >
       {/* Header */}

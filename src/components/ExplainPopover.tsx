@@ -250,7 +250,7 @@ export default function ExplainPopover({
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
-  const { ref: floatingRef, style: floatingStyle, isOutside } = usePopoverPosition(x, y);
+  const { ref: floatingRef, style: floatingStyle, className: motionClass, isOutside } = usePopoverPosition(x, y);
   // A single word keeps today's "save to vocab" primary action; anything
   // with internal whitespace is a passage, which gets "save explanation"
   // instead (see docs/impls/q257-persist-explanations.md §2.3).
@@ -390,7 +390,7 @@ export default function ExplainPopover({
     <div className="fixed inset-0 z-40" onClick={onClose} />
     <div
       ref={floatingRef}
-      className="fixed z-[62] w-[440px] bg-bg-surface border border-border/80 rounded-xl shadow-context"
+      className={`${motionClass} fixed z-[62] w-[440px] bg-bg-surface border border-border/80 rounded-xl shadow-context`}
       style={floatingStyle}
     >
       {/* Header */}

@@ -131,6 +131,9 @@ export default function OptionMenu({ anchorRef, items, value, onSelect, onClose 
       left: rect.left,
       width: rect.width,
       maxHeight: Math.min(menuHeight, openUp ? spaceAbove : spaceBelow),
+      // Unfolds from the edge nearest the trigger, so a menu that opened
+      // upward grows up out of the field rather than down into it.
+      transformOrigin: openUp ? "left bottom" : "left top",
       ...(openUp
         ? { bottom: window.innerHeight - rect.top + MENU_GAP }
         : { top: rect.bottom + MENU_GAP }),
@@ -147,7 +150,7 @@ export default function OptionMenu({ anchorRef, items, value, onSelect, onClose 
       // registers as an outside click for ancestor popovers (e.g.
       // ReaderSettings) and closes them before the option's onClick fires.
       onMouseDown={(event) => event.stopPropagation()}
-      className="fixed z-[70] bg-bg-surface border border-border rounded-xl shadow-popover overflow-y-auto"
+      className="motion-pop fixed z-[70] bg-bg-surface border border-border rounded-xl shadow-popover overflow-y-auto"
     >
       {items.map((item, index) => {
         const isActive = item.value === value;

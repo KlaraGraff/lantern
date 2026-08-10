@@ -1,7 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { StickyNote, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { savedHighlightColor } from "./mark-palette";
+import { anchorTransformOrigin } from "./motion";
+
+/** How far above the highlight the toolbar sits, so it clears the text. */
+const TOOLBAR_LIFT = 44;
+/** Breathing room kept between the toolbar and the window edge. */
+const VIEWPORT_MARGIN = 8;
 
 interface HighlightToolbarProps {
   x: number;
@@ -67,20 +73,23 @@ export default function HighlightToolbar({
     };
   }, [onClose]);
 
-  // Clamp position to viewport
-  useEffect(() => {
-    if (!ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    const vw = window.innerWidth;
-    if (rect.right > vw) {
-      ref.current.style.left = `${x - rect.width}px`;
-    }
-    if (rect.left < 0) {
-      ref.current.style.left = "8px";
-    }
-    if (rect.top < 0) {
-      ref.current.style.top = "8px";
-    }
+  // Clamp position to viewport, then point the entry animation at the
+  // highlight. Layout size rather than the rendered rect, and before paint
+  // rather than after, because the toolbar is mid-scale on the frame this
+  // runs — a rect would be short and an after-paint write would show the
+  // toolbar in the wrong place first.
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const width = element.offsetWidth;
+    let left = x;
+    let top = y - TOOLBAR_LIFT;
+    if (left + width > window.innerWidth) left = x - width;
+    if (left < 0) left = VIEWPORT_MARGIN;
+    if (top < 0) top = VIEWPORT_MARGIN;
+    element.style.left = `${left}px`;
+    element.style.top = `${top}px`;
+    anchorTransformOrigin(element, { x, y }, { left, top });
   }, [x, y]);
 
   const handleSaveNote = () => {
@@ -91,8 +100,8 @@ export default function HighlightToolbar({
   return (
     <div
       ref={ref}
-      className="fixed z-50 flex flex-col w-[220px] gap-2 p-2 bg-bg-surface/95 backdrop-blur-sm rounded-2xl shadow-context"
-      style={{ left: x, top: y - 44 }}
+      className="motion-pop fixed z-50 flex flex-col w-[220px] gap-2 p-2 bg-bg-surface/95 backdrop-blur-sm rounded-2xl shadow-context"
+      style={{ left: x, top: y - TOOLBAR_LIFT }}
     >
       <div className="flex items-center gap-2 px-1 h-7">
         {Object.entries(savedHighlightColor).map(([name, hex]) => (

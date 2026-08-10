@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   BookOpen,
   CheckCircle2,
@@ -17,6 +17,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCollections } from "../hooks/useCollections";
 import { useTranslation } from "react-i18next";
 import { deriveBookIndexState, type BookIndexState, type IndexDetails } from "./index-state";
+import { anchorTransformOrigin } from "./motion";
+
+/** Fixed width of the collections submenu — it is set on the element too. */
+const SUBMENU_WIDTH = 200;
 
 interface BookContextMenuProps {
   x: number;
@@ -59,6 +63,11 @@ export default function BookContextMenu({
   const { t } = useTranslation();
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const submenuRef = useRef<HTMLDivElement>(null);
+  // Where the clamp above actually put the menu. Kept rather than re-measured
+  // so the submenu can be placed against it without a `getBoundingClientRect`,
+  // which would read the menu mid-entry-animation if the pointer reaches the
+  // collections row inside the first frames.
+  const placement = useRef({ left: x, top: y });
   // The same reading the index modal opens on, so the menu can say whether
   // it's worth opening at all. Until it arrives the item keeps its plain
   // label rather than flashing a state it hasn't checked.
@@ -90,18 +99,20 @@ export default function BookContextMenu({
     };
   }, [onClose]);
 
-  // Clamp main menu position to viewport
-  useEffect(() => {
-    if (!menuRef.current) return;
-    const rect = menuRef.current.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    if (rect.right > vw) {
-      menuRef.current.style.left = `${x - rect.width}px`;
-    }
-    if (rect.bottom > vh) {
-      menuRef.current.style.top = `${y - rect.height}px`;
-    }
+  // Clamp main menu position to viewport, then grow it out of the cursor.
+  // Layout size rather than the rendered rect: the menu is mid-scale on the
+  // frame this runs, and a rect would measure the smaller, in-flight box.
+  useLayoutEffect(() => {
+    const element = menuRef.current;
+    if (!element) return;
+    const width = element.offsetWidth;
+    const height = element.offsetHeight;
+    const left = x + width > window.innerWidth ? x - width : x;
+    const top = y + height > window.innerHeight ? y - height : y;
+    element.style.left = `${left}px`;
+    element.style.top = `${top}px`;
+    placement.current = { left, top };
+    anchorTransformOrigin(element, { x, y }, { left, top });
   }, [x, y]);
 
   useEffect(() => {
@@ -140,26 +151,32 @@ export default function BookContextMenu({
   };
 
   // Compute submenu position
-  const [submenuStyle, setSubmenuStyle] = useState<React.CSSProperties>({ left: x + 200, top: y });
+  const [submenuStyle, setSubmenuStyle] = useState<React.CSSProperties>({ left: x + SUBMENU_WIDTH, top: y });
   useEffect(() => {
-    if (!showCollections || !menuRef.current) return;
-    const rect = menuRef.current.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const collectionBtn = menuRef.current.querySelector("[data-collection-trigger]");
-    const btnRect = collectionBtn?.getBoundingClientRect();
-    const top = btnRect ? btnRect.top : rect.top;
-    if (rect.right + 200 > vw) {
-      setSubmenuStyle({ left: rect.left - 200, top });
-    } else {
-      setSubmenuStyle({ left: rect.right, top });
-    }
+    const element = menuRef.current;
+    if (!showCollections || !element) return;
+    const { left, top: menuTop } = placement.current;
+    const right = left + element.offsetWidth;
+    // `offsetTop` is measured inside the menu, which is the row's offset
+    // parent — the same reason it survives the entry animation that a
+    // viewport-relative rect would not.
+    const trigger = element.querySelector<HTMLElement>("[data-collection-trigger]");
+    const top = menuTop + (trigger?.offsetTop ?? 0);
+    const opensLeft = right + SUBMENU_WIDTH > window.innerWidth;
+    setSubmenuStyle({
+      left: opensLeft ? left - SUBMENU_WIDTH : right,
+      top,
+      // Unfolds from the edge it is attached to, so it reads as coming out of
+      // the parent menu rather than appearing beside it.
+      transformOrigin: opensLeft ? "right top" : "left top",
+    });
   }, [showCollections, x, y]);
 
   return (
     <>
       <div
         ref={menuRef}
-        className="fixed z-50 bg-bg-surface/95 border border-border/80 rounded-[10px] py-1 w-[220px] backdrop-blur-sm shadow-[0px_20px_25px_0px_rgba(0,0,0,0.15),0px_8px_10px_0px_rgba(0,0,0,0.15)]"
+        className="motion-pop fixed z-50 bg-bg-surface/95 border border-border/80 rounded-[10px] py-1 w-[220px] backdrop-blur-sm shadow-[0px_20px_25px_0px_rgba(0,0,0,0.15),0px_8px_10px_0px_rgba(0,0,0,0.15)]"
         style={{ left: x, top: y }}
       >
         {/* Status indicator */}
@@ -299,7 +316,7 @@ export default function BookContextMenu({
       {showCollections && (
         <div
           ref={submenuRef}
-          className="fixed z-[51] bg-bg-surface/95 border border-border/80 rounded-[10px] py-1 w-[200px] backdrop-blur-sm shadow-[0px_20px_25px_0px_rgba(0,0,0,0.15),0px_8px_10px_0px_rgba(0,0,0,0.15)]"
+          className="motion-pop fixed z-[51] bg-bg-surface/95 border border-border/80 rounded-[10px] py-1 w-[200px] backdrop-blur-sm shadow-[0px_20px_25px_0px_rgba(0,0,0,0.15),0px_8px_10px_0px_rgba(0,0,0,0.15)]"
           style={submenuStyle}
           onMouseEnter={() => {
             if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);

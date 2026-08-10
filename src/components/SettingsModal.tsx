@@ -414,7 +414,7 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
         aria-modal="true"
         aria-label={t("settings.title")}
         tabIndex={-1}
-        className={`fixed inset-0 z-50 flex flex-col pl-safe-left pr-safe-right ${
+        className={`motion-scrim fixed inset-0 z-50 flex flex-col pl-safe-left pr-safe-right ${
           atRoot ? "bg-bg-page" : "bg-bg-surface"
         }`}
       >
@@ -515,7 +515,7 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay"
+      className="motion-scrim fixed inset-0 z-50 flex items-center justify-center bg-overlay"
       onClick={(e) => {
         if (e.target === e.currentTarget) requestClose();
       }}
@@ -526,7 +526,7 @@ export default function SettingsModal({ open, onClose, initialSection, initialVi
         aria-modal="true"
         aria-label={t("settings.title")}
         tabIndex={-1}
-        className={`relative flex max-h-[760px] overflow-hidden rounded-lg border border-border bg-white shadow-[0px_25px_50px_-12px_rgba(0,0,0,0.25)] dark:bg-bg-surface ${
+        className={`motion-dialog relative flex max-h-[760px] overflow-hidden rounded-lg border border-border bg-white shadow-[0px_25px_50px_-12px_rgba(0,0,0,0.25)] dark:bg-bg-surface ${
           previewOpen
             ? "w-[min(780px,calc(100vw_-_32px))] xl:w-[min(1400px,calc(100vw_-_32px))]"
             : "w-[min(780px,calc(100vw_-_32px))]"

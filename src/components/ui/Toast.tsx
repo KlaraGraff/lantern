@@ -17,7 +17,11 @@ interface ToastProps {
   variant?: "row" | "panel";
 }
 
-const SURFACE = "rounded-[14px] border border-border bg-white shadow-popover dark:bg-bg-surface";
+// `motion-drop-in` belongs here rather than on the wrapper below: the
+// wrapper is centred with `-translate-x-1/2`, and an animation there would
+// overwrite the transform holding it in place.
+const SURFACE =
+  "motion-drop-in rounded-[14px] border border-border bg-white shadow-popover dark:bg-bg-surface";
 
 export default function Toast({ children, icon, className = "", variant = "row" }: ToastProps) {
   return (

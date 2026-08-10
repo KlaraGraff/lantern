@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight } from "lucide-react";
-import { prefersReducedMotion } from "./page-turn-transition";
 import { usePopoverPosition } from "./use-popover-position";
 
 // Total bubble width and the width handed to the nested foliate-view's
@@ -41,10 +40,8 @@ export default function FootnotePopover({
   onJumpToSource,
 }: FootnotePopoverProps) {
   const { t } = useTranslation();
-  const { ref: floatingRef, style: floatingStyle, isOutside } = usePopoverPosition(x, y);
+  const { ref: floatingRef, style: floatingStyle, className: motionClass, isOutside } = usePopoverPosition(x, y);
   const bodyHostRef = useRef<HTMLDivElement>(null);
-  const [entered, setEntered] = useState(false);
-  const reducedMotion = prefersReducedMotion();
 
   // The nested view arrives already open and laid out (see useFoliateView) —
   // this just reparents it into the visible bubble. On unmount it is only
@@ -58,12 +55,6 @@ export default function FootnotePopover({
       contentHost.remove();
     };
   }, [contentHost]);
-
-  useEffect(() => {
-    if (reducedMotion) return;
-    const id = requestAnimationFrame(() => setEntered(true));
-    return () => cancelAnimationFrame(id);
-  }, [reducedMotion]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -95,13 +86,7 @@ export default function FootnotePopover({
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
         ref={floatingRef}
-        className={`fixed z-50 rounded-lg border border-border/80 bg-bg-surface shadow-context ${
-          reducedMotion
-            ? ""
-            : `transition-[opacity,transform] duration-150 ease-out ${
-              entered ? "opacity-100 scale-100" : "opacity-0 scale-95"
-            }`
-        }`}
+        className={`${motionClass} fixed z-50 rounded-lg border border-border/80 bg-bg-surface shadow-context`}
         style={{ ...floatingStyle, width: FOOTNOTE_POPOVER_WIDTH }}
       >
         <div className="px-3.5 pt-3">

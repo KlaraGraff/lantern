@@ -598,13 +598,62 @@ html[data-reader-page-animation="cover"][data-reader-page-direction="previous"]:
   to { opacity: 1; transform: none; }
 }
 
+/*
+ * Modals: the scrim and the panel it dims for.
+ *
+ * Two classes rather than one because they want different speeds. The scrim
+ * is a flat wash — the eye reads it the moment it starts, so a slow fade only
+ * delays the dialog behind it. The panel carries the content, and content
+ * arriving needs long enough to be seen arriving.
+ *
+ * These sit on separate elements (scrim on the `fixed inset-0` backdrop,
+ * dialog on the panel inside it), so the panel's transform never fights the
+ * flex centring that put it there.
+ */
+.motion-scrim {
+  animation: motion-fade-in var(--motion-fast) var(--ease-out-soft) both;
+}
+
+.motion-dialog {
+  animation: motion-dialog-in var(--motion-base) var(--ease-out-soft) both;
+}
+
+@keyframes motion-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes motion-dialog-in {
+  from { opacity: 0; transform: scale(0.97) translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/*
+ * Toasts, which come in from the edge they are pinned to.
+ *
+ * Goes on the toast's inner surface, never its positioning wrapper: that
+ * wrapper is centred with `-translate-x-1/2`, and an animation on the same
+ * element would overwrite the very transform holding it in place.
+ */
+.motion-drop-in {
+  animation: motion-drop-in var(--motion-base) var(--ease-out-soft) both;
+}
+
+@keyframes motion-drop-in {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: none; }
+}
+
 /* One switch for the lot. Reduced motion means *no* motion here, not slower
    motion: every one of these animates position or size, which is exactly what
    the setting exists to stop. The end state is the visible one, so removing
    the animation leaves the element where it belongs. */
 @media (prefers-reduced-motion: reduce) {
   .motion-pop,
-  .motion-stagger-in {
+  .motion-stagger-in,
+  .motion-scrim,
+  .motion-dialog,
+  .motion-drop-in {
     animation: none !important;
   }
   .motion-collapse,

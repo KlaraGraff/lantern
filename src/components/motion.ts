@@ -63,3 +63,33 @@ export function motionDuration(token: MotionDuration): number {
 export function motionEasing(token: MotionEasing): string {
   return readToken(`--ease-${token}`) || FALLBACK_EASING[token];
 }
+
+/**
+ * Point a scaling element's growth at the thing that opened it.
+ *
+ * `.motion-pop` scales from 96%, and a default centre origin makes every
+ * popover swell out of its own middle no matter where the click was. Anchoring
+ * the origin at the click instead is what turns the animation from decoration
+ * into a reply: the menu unfolds from the word, the toolbar from the
+ * highlight.
+ *
+ * The anchor is usually a corner of the element, but not always — a popover
+ * shifted away from a viewport edge no longer starts at the point that opened
+ * it, so the point is clamped into the box rather than assumed to be on it.
+ * An origin outside the box would swing the element in from off to one side.
+ *
+ * Both arguments are in viewport coordinates, and the element's own size comes
+ * from `offsetWidth`/`offsetHeight` rather than `getBoundingClientRect()`:
+ * the rect is measured *after* transforms, so calling this while the entry
+ * animation is running would size the origin against a box 4% smaller than the
+ * one that settles a frame later.
+ */
+export function anchorTransformOrigin(
+  element: HTMLElement,
+  anchor: { x: number; y: number },
+  box: { left: number; top: number },
+): void {
+  const originX = Math.min(Math.max(anchor.x, box.left), box.left + element.offsetWidth) - box.left;
+  const originY = Math.min(Math.max(anchor.y, box.top), box.top + element.offsetHeight) - box.top;
+  element.style.transformOrigin = `${originX}px ${originY}px`;
+}

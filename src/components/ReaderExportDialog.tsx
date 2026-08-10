@@ -199,8 +199,8 @@ export default function ReaderExportDialog({ open, bookId, bookTitle, onClose, r
   };
   if (!open) return null;
 
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4" onKeyDown={onDialogKeyDown} onMouseDown={(event) => { if (event.currentTarget === event.target && status !== "saving") onClose(); }}>
-    <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="reader-export-title" className="w-full max-w-3xl overflow-hidden rounded-xl border border-border bg-bg-surface shadow-2xl">
+  return <div className="motion-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4" onKeyDown={onDialogKeyDown} onMouseDown={(event) => { if (event.currentTarget === event.target && status !== "saving") onClose(); }}>
+    <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="reader-export-title" className="motion-dialog w-full max-w-3xl overflow-hidden rounded-xl border border-border bg-bg-surface shadow-2xl">
       <header className="flex items-start gap-4 border-b border-border px-6 py-5">
         <div><h2 id="reader-export-title" ref={titleRef} tabIndex={-1} className="text-lg font-semibold outline-none">{format === "anki" ? t("readerExport.ankiTitle") : t("readerExport.title")}</h2><p className="mt-1 text-sm text-text-muted">{t("readerExport.subtitle")}</p></div>
         <button disabled={status === "saving"} onClick={onClose} aria-label={t("common.close")} className="ml-auto rounded-md p-1 text-text-muted hover:bg-bg-input hover:text-text-primary disabled:cursor-wait disabled:opacity-40"><X size={18} /></button>

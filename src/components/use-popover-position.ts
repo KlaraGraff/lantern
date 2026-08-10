@@ -1,6 +1,7 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useLayoutEffect, useMemo } from "react";
 import { autoUpdate, useFloating } from "@floating-ui/react-dom";
 import { POPOVER_PLACEMENT, popoverMiddleware } from "./popover-placement";
+import { anchorTransformOrigin } from "./motion";
 
 /**
  * Where a click-anchored popover goes.
@@ -36,6 +37,11 @@ export interface PopoverPosition {
   isOutside: (node: Node | null) => boolean;
   /** Spread onto the popover's `style`. Already includes `position: fixed`. */
   style: React.CSSProperties;
+  /**
+   * Add to the popover's `className`. Carries the entry animation, and is
+   * empty until the popover has a position — see below for why that matters.
+   */
+  className: string;
 }
 
 /**
@@ -53,20 +59,45 @@ export function usePopoverPosition(x: number, y: number): PopoverPosition {
     [x, y],
   );
 
-  const { refs, floatingStyles, isPositioned } = useFloating({
+  const {
+    refs,
+    elements,
+    floatingStyles,
+    isPositioned,
+    x: left,
+    y: top,
+  } = useFloating({
     elements: { reference },
     placement: POPOVER_PLACEMENT,
     strategy: "fixed",
+    // Position with `left`/`top` instead of the default `transform`. Floating
+    // UI prefers `transform` because it is cheaper to update, but there is
+    // only one `transform` per element and the entry animation needs it —
+    // leaving it to positioning would mean the popover either scales or lands
+    // in the right place, not both.
+    transform: false,
     whileElementsMounted: autoUpdate,
     middleware: popoverMiddleware(),
   });
 
+  // `elements.floating` rather than `refs.floating.current`: Floating UI keeps
+  // the node in state as well as in a ref, and reading the state copy is what
+  // lets both the effect below and `isOutside` be plain functions of a value.
+  // The ref version is a `.current` read, which the React Compiler cannot
+  // reason about and gives up optimizing the whole hook over.
+  const floating = elements.floating;
+
+  // Grow the popover out of the point that was clicked. `shift()` may have
+  // pushed it off that point to clear a viewport edge, which is exactly the
+  // case `anchorTransformOrigin` clamps for.
+  useLayoutEffect(() => {
+    if (!floating || !isPositioned) return;
+    anchorTransformOrigin(floating, { x, y }, { left, top });
+  }, [floating, isPositioned, x, y, left, top]);
+
   const isOutside = useCallback(
-    (node: Node | null) => {
-      const element = refs.floating.current;
-      return Boolean(element && node && !element.contains(node));
-    },
-    [refs.floating],
+    (node: Node | null) => Boolean(floating && node && !floating.contains(node)),
+    [floating],
   );
 
   return {
@@ -75,5 +106,12 @@ export function usePopoverPosition(x: number, y: number): PopoverPosition {
     // The first placement is measured, so it lands one frame after mount.
     // Without this the popover paints once at the top-left corner first.
     style: { ...floatingStyles, visibility: isPositioned ? "visible" : "hidden" },
+    // Held back for the same frame the visibility is. An animation that starts
+    // at mount would spend its first frames behind `visibility: hidden` and
+    // the popover would appear part-way through its own entrance; withholding
+    // the class until placement lands starts it on the frame it becomes
+    // visible. `autoUpdate` re-runs placement later without clearing
+    // `isPositioned`, so a resize does not replay the entrance.
+    className: isPositioned ? "motion-pop" : "",
   };
 }

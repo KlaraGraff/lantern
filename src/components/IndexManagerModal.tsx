@@ -289,8 +289,8 @@ export default function IndexManagerModal({
   const showAdvanced = state != null && state !== "none" && state !== "unsupported" && !running;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-overlay" onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div role="dialog" aria-modal="true" className="flex max-h-[86vh] w-[min(760px,calc(100vw-32px))] flex-col overflow-hidden rounded-lg border border-border bg-bg-surface shadow-popover">
+    <div className="motion-scrim fixed inset-0 z-[70] flex items-center justify-center bg-overlay" onClick={(event) => event.target === event.currentTarget && onClose()}>
+      <div role="dialog" aria-modal="true" className="motion-dialog flex max-h-[86vh] w-[min(760px,calc(100vw-32px))] flex-col overflow-hidden rounded-lg border border-border bg-bg-surface shadow-popover">
         <header className="flex items-center justify-between border-b border-border px-5 py-4">
           <div className="flex min-w-0 items-center gap-2">
             <Database size={17} className="shrink-0 text-accent-text" />

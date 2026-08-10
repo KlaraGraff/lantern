@@ -22,10 +22,10 @@ export default function SaveDialog({ open, onCancel, onSave }: SaveDialogProps) 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay">
+    <div className="motion-scrim fixed inset-0 z-50 flex items-center justify-center bg-overlay">
       <div
         ref={dialogRef}
-        className="bg-bg-surface rounded-xl shadow-lg w-[400px] p-6"
+        className="motion-dialog bg-bg-surface rounded-xl shadow-lg w-[400px] p-6"
       >
         <h3 className="text-[18px] font-semibold text-text-primary mb-2">
           Save Settings?

@@ -19,6 +19,7 @@ import {
   type SerializableRect,
 } from "./reader-interaction";
 import DictionaryCard, { type DictionaryEntry } from "./DictionaryCard";
+import { anchorTransformOrigin } from "./motion";
 import {
   clickSpendsGlance,
   glanceCounts,
@@ -280,16 +281,12 @@ export default function ReaderContextMenu({
           : Math.max(gap, anchorRect.top - rect.height - gap);
       element.style.left = `${left}px`;
       element.style.top = `${top}px`;
-      // Grow out of the word that was clicked, wherever the menu ended up
-      // relative to it. The anchor's centre is clamped into the menu's own box
-      // so the origin stays on an edge or corner rather than flying off it
-      // when the menu lands well away from the click — which is the case
-      // whenever the viewport pushed it back into view.
-      const anchorX = (anchorRect.left + anchorRect.right) / 2;
-      const anchorY = (anchorRect.top + anchorRect.bottom) / 2;
-      const originX = Math.min(Math.max(anchorX, left), left + rect.width) - left;
-      const originY = Math.min(Math.max(anchorY, top), top + rect.height) - top;
-      element.style.transformOrigin = `${originX}px ${originY}px`;
+      // Grow out of the selection, wherever the menu ended up relative to it.
+      anchorTransformOrigin(
+        element,
+        { x: (anchorRect.left + anchorRect.right) / 2, y: (anchorRect.top + anchorRect.bottom) / 2 },
+        { left, top },
+      );
     };
     positionMenu();
     const observer = new ResizeObserver(positionMenu);

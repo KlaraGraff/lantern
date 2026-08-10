@@ -38,10 +38,10 @@ export default function DeleteBookDialog({ title, onCancel, onConfirm }: DeleteB
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay px-4" onMouseDown={(event) => {
+    <div className="motion-scrim fixed inset-0 z-[60] flex items-center justify-center bg-overlay px-4" onMouseDown={(event) => {
       if (event.target === event.currentTarget && !busy) onCancel();
     }}>
-      <div role="dialog" aria-modal="true" aria-labelledby="delete-book-title" className="w-[480px] max-w-full rounded-lg border border-border bg-bg-surface p-5 shadow-popover">
+      <div role="dialog" aria-modal="true" aria-labelledby="delete-book-title" className="motion-dialog w-[480px] max-w-full rounded-lg border border-border bg-bg-surface p-5 shadow-popover">
         <div className="flex items-start gap-3">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-danger-bg text-danger-text">
             <BookX size={18} />
