@@ -19,6 +19,14 @@
  * and the control run proving our output reproduces upstream's published list
  * exactly at upstream's caps, are in
  * docs/impls/word-frequency-data-sources.md.
+ *
+ * What this script deliberately does NOT do: fix upstream's tokenizer. Words
+ * the corpus split apart ("cannot" -> "can" + "not") land here with a rank
+ * far too rare to trust, and the fix lives downstream, in the CORRECTIONS
+ * table in `src-tauri/src/word_frequency/mod.rs`, which reapplies itself
+ * every time the table is parsed. Regenerating this file therefore does not
+ * lose those fixes — but a new correction belongs there, not here, and the
+ * output of this script stays a faithful copy of the upstream ranking.
  */
 
 import { readFile, writeFile } from "node:fs/promises";

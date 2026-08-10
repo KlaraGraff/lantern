@@ -202,10 +202,170 @@ fn the_table_parses_into_fifty_thousand_words_across_every_band() {
         "every band should have at least one word"
     );
     // Ranks are positions in a frequency ordering: no gaps below the top of
-    // the range, and no two words claiming the same place.
-    let mut ranks: Vec<u32> = parsed.values().map(|entry| entry.rank).collect();
+    // the range, and no two words claiming the same place — except for words
+    // CORRECTIONS has overwritten. A corrected word ("cannot") is
+    // deliberately reassigned the rank of a word already in the table
+    // ("can"), so it collides on purpose and the rank it vacated (31 132) is
+    // never re-claimed. Exclude the corrected words first: the invariant
+    // describes the raw upstream ordering, which is exactly what a
+    // correction is declaring itself an exception to.
+    let corrected: Vec<&str> = CORRECTIONS.iter().map(|(word, _)| *word).collect();
+    let mut ranks: Vec<u32> = parsed
+        .iter()
+        .filter(|(word, _)| !corrected.contains(&word.as_str()))
+        .map(|(_, entry)| entry.rank)
+        .collect();
     ranks.sort_unstable();
     ranks.dedup();
-    assert_eq!(ranks.len(), parsed.len(), "ranks must be distinct");
+    assert_eq!(
+        ranks.len(),
+        parsed.len() - corrected.len(),
+        "ranks must be distinct once corrected words are excluded"
+    );
     assert_eq!(ranks[0], 1);
+}
+
+/// "sister's" is not a harder word than "sister" — it is the same word with
+/// a grammatical marker the frequency table was never asked about. A
+/// straight-apostrophe possessive should resolve to the stem's own entry.
+#[test]
+fn straight_apostrophe_possessive_falls_back_to_the_stem() {
+    let (_dir, db) = test_db();
+    let forms = FormIndex::new(&db);
+
+    let stem = lookup_with(&forms, "sister").unwrap().unwrap();
+    let possessive = lookup_with(&forms, "sister's").unwrap().unwrap();
+    assert_eq!(possessive, stem);
+}
+
+/// Same fallback, curly apostrophe (U+2019). `normalize_learning_term` does
+/// not normalize the glyph away, so the fallback has to accept both.
+#[test]
+fn curly_apostrophe_possessive_falls_back_to_the_stem() {
+    let (_dir, db) = test_db();
+    let forms = FormIndex::new(&db);
+
+    let stem = lookup_with(&forms, "sister").unwrap().unwrap();
+    let possessive = lookup_with(&forms, "sister\u{2019}s").unwrap().unwrap();
+    assert_eq!(possessive, stem);
+}
+
+/// The plural possessive ("sisters'") keeps the plural's own rank, not the
+/// singular's — stripping only the apostrophe, not the trailing "s" too.
+#[test]
+fn plural_possessive_falls_back_to_the_plural_stem() {
+    let (_dir, db) = test_db();
+    let forms = FormIndex::new(&db);
+
+    let plural_stem = lookup_with(&forms, "sisters").unwrap().unwrap();
+    let possessive = lookup_with(&forms, "sisters'").unwrap().unwrap();
+    assert_eq!(possessive, plural_stem);
+    // And it is genuinely the plural's rank, not the singular's — pinned
+    // against the table's real numbers (english-fiction.tsv: sister 454,
+    // sisters 1773) so a future edit to the fallback that accidentally
+    // stripped the plural "s" as well would be caught.
+    assert_eq!(plural_stem.rank, 1773);
+}
+
+/// "it's" has its own row — at rank 17 467, which is not a fact about
+/// English but the residue upstream's tokenizer left behind after splitting
+/// most occurrences into "it" + "'s". The stem's rank has to win over a row
+/// like that, or the commonest contraction in English dialogue lands in
+/// band 4 and gets offered to the reader as a word to study.
+#[test]
+fn a_contractions_own_row_loses_to_the_stem_when_the_row_is_worse() {
+    let (_dir, db) = test_db();
+    let forms = FormIndex::new(&db);
+
+    let its = lookup_with(&forms, "it's").unwrap().unwrap();
+    let it = lookup_with(&forms, "it").unwrap().unwrap();
+    assert_eq!(its, it);
+    assert_eq!(its.band, 1);
+    // And the row it beat is genuinely there and genuinely worse, so this is
+    // the better-rank rule firing rather than a lookup miss falling through
+    // to the stem (english-fiction.tsv: it 11, it's 17467).
+    assert_eq!(
+        parse_table(FREQUENCY_TSV).get("it's").unwrap().rank,
+        17_467,
+        "the upstream row is still parsed; lookup just declines to trust it"
+    );
+}
+
+/// Every one of the 15 rows in the table containing an apostrophe-s sits
+/// past rank 17 000, so the rule reaches all of them, not just "it's". Two
+/// more spot checks — a contraction and a possessive noun — plus proof that
+/// a word without an apostrophe is untouched by any of this.
+#[test]
+fn the_whole_apostrophe_s_family_resolves_through_its_stem() {
+    let (_dir, db) = test_db();
+    let forms = FormIndex::new(&db);
+
+    // "let's" is ranked 39 735 on its own row, "father's" 48 204.
+    for (word, stem) in [("let's", "let"), ("father's", "father")] {
+        let contracted = lookup_with(&forms, word).unwrap().unwrap();
+        let bare = lookup_with(&forms, stem).unwrap().unwrap();
+        assert_eq!(contracted, bare, "{word} should score as {stem}");
+        assert_eq!(contracted.band, 1);
+    }
+    // Nothing about a word with no apostrophe changes.
+    assert_eq!(lookup_with(&forms, "civility").unwrap().unwrap().rank, 15_097);
+}
+
+/// A possessive whose stem is *also* absent from the table must not
+/// resolve to anything — the fallback strips a grammatical marker, it does
+/// not invent a word that was never in the source list.
+#[test]
+fn possessive_of_an_unknown_stem_stays_unknown() {
+    let (_dir, db) = test_db();
+    let forms = FormIndex::new(&db);
+
+    assert!(lookup_with(&forms, "zzznonexistentword's").unwrap().is_none());
+}
+
+/// "cannot" is ranked 31 132 upstream because Google Books Ngram tokenizes
+/// it as "can" + "not", so the row measures only the stragglers. Left alone
+/// it is the single commonest "word you don't know yet" in any English novel
+/// for any reader under a 31 000-word vocabulary — a data defect wearing the
+/// costume of a fact about the book.
+#[test]
+fn cannot_correction_matches_the_harder_of_its_parts() {
+    let (_dir, db) = test_db();
+    let cannot = lookup(&db, "cannot")
+        .unwrap()
+        .expect("cannot is corrected, not dropped");
+    let can = lookup(&db, "can").unwrap().expect("\"can\" is in the table");
+    assert_eq!(cannot.band, 1);
+    assert_eq!(
+        cannot.rank, can.rank,
+        "cannot should be no harder than its harder component, \"can\""
+    );
+}
+
+/// A correction naming a part the table does not have would silently do
+/// nothing — the parse skips it rather than panicking. That is the right
+/// behaviour at runtime and the wrong thing to discover in production, so
+/// the check lives here instead.
+#[test]
+fn every_correction_names_parts_the_table_actually_has() {
+    let (_dir, db) = test_db();
+    for (word, parts) in CORRECTIONS {
+        for part in *parts {
+            assert!(
+                lookup(&db, part).unwrap().is_some(),
+                "correction for {word:?} references {part:?}, which is not in the table"
+            );
+        }
+    }
+}
+
+#[test]
+fn uncorrected_word_keeps_its_upstream_rank() {
+    let (_dir, db) = test_db();
+    let entry = lookup(&db, "can't")
+        .unwrap()
+        .expect("\"can't\" is in the table");
+    assert_eq!(
+        entry.rank, 13_223,
+        "can't is not in CORRECTIONS and does not end in apostrophe-s, so nothing should touch it"
+    );
 }

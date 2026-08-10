@@ -107,6 +107,30 @@
 //! get looked up, but a miss here does not prove no relationship exists —
 //! only that neither this word nor a word it's linked to has been recorded.
 //!
+//! ## Possessive fallback
+//!
+//! Before the `word_forms` scan above, [`lookup_with`] also strips a trailing
+//! `'s` or `s'` and looks the bare stem up. A possessive is not a new word —
+//! "sister's" is exactly as hard as "sister" — so a book full of "mother's",
+//! "brother's", "ladyship's" should not read as full of unknown words just
+//! because the frequency table, like most such tables, is built on the bare
+//! noun. It runs before the `word_forms` scan because it is cheap (no
+//! database access) and total (it never needs a prior lookup to have
+//! populated anything).
+//!
+//! The stem wins over the word's *own* row when both are present and the
+//! stem's rank is better, which looks backwards until you look at what the
+//! rows are. Only 15 entries in the whole 50 000-word table contain `'s`,
+//! and every one of them sits past rank 17 000 — "it's" 17 467, "that's"
+//! 26 973, "father's" 48 204, "let's" 39 735. Those are not measurements of
+//! how rare those strings are; they are the same tokenizer artifact
+//! [`CORRECTIONS`] exists for, the residue left after upstream's tokenizer
+//! split most occurrences into two tokens. Trusting the exact row over the
+//! stem would leave "father's" scored rarer than "parsonage" and hand the
+//! reader "it's" as a word to study. Taking the better of the two applies
+//! one rule to both halves of the problem: a clitic is never harder than
+//! what it hangs off.
+//!
 //! Lazy + loaded once: [`table`] parses the word list on first call via
 //! [`OnceLock`] and reuses the parsed map for the process lifetime, so a
 //! lookup never re-reads or re-parses the file.
@@ -181,6 +205,20 @@ pub struct FrequencyEntry {
     pub rank: u32,
 }
 
+/// Upstream corpus artifacts, fixed one at a time. Not a place to tune ranks
+/// — every entry must document why upstream is wrong and how the correction
+/// is derived.
+///
+/// `("cannot", &["can", "not"])` — Google Books Ngram tokenizes "cannot" as
+/// two words, "can" + "not", so the word's own row (rank 31 132) never
+/// accumulated its real count and is far too rare to trust. The rule:
+/// a compound the corpus split apart is no harder than the harder of its
+/// parts, so the correction looks up "can" and "not" after parsing and takes
+/// the larger (harder) of the two ranks — currently "can" at 62 — rather
+/// than hardcoding a number that would silently go stale if the table is
+/// regenerated and "can"'s rank shifts.
+const CORRECTIONS: &[(&str, &[&str])] = &[("cannot", &["can", "not"])];
+
 fn parse_table(source: &str) -> HashMap<String, FrequencyEntry> {
     let mut map = HashMap::new();
     for line in source.lines() {
@@ -217,6 +255,26 @@ fn parse_table(source: &str) -> HashMap<String, FrequencyEntry> {
                 band: band_for_rank(rank),
                 rank,
             });
+    }
+    for (word, parts) in CORRECTIONS {
+        let Some(rank) = parts
+            .iter()
+            .map(|part| map.get(*part).map(|entry| entry.rank))
+            .collect::<Option<Vec<_>>>()
+            .and_then(|ranks| ranks.into_iter().max())
+        else {
+            // A part isn't in the table (e.g. the corpus was swapped for one
+            // that doesn't have it) — skip rather than panic, since this
+            // runs at first lookup, not at build time.
+            continue;
+        };
+        map.insert(
+            word.to_string(),
+            FrequencyEntry {
+                band: band_for_rank(rank),
+                rank,
+            },
+        );
     }
     map
 }
@@ -260,8 +318,20 @@ pub fn lookup_with(forms: &FormIndex<'_>, word: &str) -> AppResult<Option<Freque
     if normalized.is_empty() {
         return Ok(None);
     }
-    if let Some(entry) = table().get(&normalized) {
-        return Ok(Some(*entry));
+    let exact = table().get(&normalized).copied();
+    let stem = possessive_stem(&normalized)
+        .and_then(|stem| table().get(stem))
+        .copied();
+    // The better (lower) rank wins rather than the exact spelling, because
+    // for a word ending in `'s` the exact row is the untrustworthy one — see
+    // the module doc's "Possessive fallback" section.
+    let best = match (exact, stem) {
+        (Some(exact), Some(stem)) if stem.rank < exact.rank => Some(stem),
+        (Some(exact), _) => Some(exact),
+        (None, stem) => stem,
+    };
+    if let Some(entry) = best {
+        return Ok(Some(entry));
     }
     for candidate in forms.related(&normalized)? {
         if let Some(entry) = table().get(candidate) {
@@ -269,6 +339,30 @@ pub fn lookup_with(forms: &FormIndex<'_>, word: &str) -> AppResult<Option<Freque
         }
     }
     Ok(None)
+}
+
+/// Strips a trailing possessive marker (`'s` or `s'`) from an already
+/// [`normalize_learning_term`]-normalized word, returning the bare stem —
+/// or `None` when `normalized` does not end in one.
+///
+/// Accepts both apostrophe glyphs. `normalize_learning_term` keeps whatever
+/// glyph the source text used — unlike `tokenize_cased` in
+/// `book_difficulty`, it does not normalize U+2019 (’) to U+0027 ('), so a
+/// word reaching this fallback from a different call site than book-scoring
+/// may still carry the curly form.
+fn possessive_stem(normalized: &str) -> Option<&str> {
+    fn is_apostrophe(character: char) -> bool {
+        character == '\'' || character == '’'
+    }
+
+    // "sisters'" — the apostrophe alone. The plural "s" belongs to the stem
+    // and stays: "sisters'" is the plural's rank, not the singular's.
+    if let Some(stem) = normalized.strip_suffix(is_apostrophe) {
+        return (stem.ends_with('s') && stem.len() > 1).then_some(stem);
+    }
+    // "sister's" — apostrophe plus "s".
+    let stem = normalized.strip_suffix('s')?.strip_suffix(is_apostrophe)?;
+    (!stem.is_empty()).then_some(stem)
 }
 
 /// Every spelling `word_forms` links to every other, both directions, built
