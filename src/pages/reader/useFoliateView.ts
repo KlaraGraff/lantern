@@ -62,6 +62,13 @@ import type {
   ReaderPageInfo,
   TocChapter,
 } from "./foliate-types";
+import {
+  bodyMatterRange,
+  MAX_MATTER_SECTIONS,
+  parseSectionMatter,
+  type BodyMatterRange,
+  type SectionMatter,
+} from "./chapter-count";
 import { readerOpenKey } from "./reader-open-key";
 import { toReaderOpenError, type ReaderOpenError } from "./reader-open-error";
 import {
@@ -201,6 +208,7 @@ interface UseFoliateViewOptions {
   getCurrentLabel: () => string;
   notifyLocationChanged: () => void;
   setChapters: Dispatch<SetStateAction<TocChapter[]>>;
+  setBodyMatter: Dispatch<SetStateAction<BodyMatterRange | null>>;
   setCurrentChapterIndex: Dispatch<SetStateAction<number>>;
   setCurrentSectionIndex: Dispatch<SetStateAction<number>>;
   setProgress: Dispatch<SetStateAction<number>>;
@@ -288,6 +296,98 @@ async function resolveTocSectionIndex(
   }
 }
 
+const EPUB_NS = "http://www.idpf.org/2007/ops";
+
+interface FoliateSection {
+  /** The section's manifest href — resolves back to its raw spine index. */
+  id?: string;
+  createDocument?: () => Promise<Document> | Document;
+}
+
+async function readSectionMatter(
+  section: FoliateSection | undefined,
+  end: "front" | "back",
+): Promise<SectionMatter | undefined> {
+  if (!section || typeof section.createDocument !== "function") return undefined;
+  try {
+    const doc = await withTimeout(
+      Promise.resolve(section.createDocument()),
+      1_500,
+      "READER_SECTION_MATTER_TIMEOUT",
+    );
+    const body = doc?.body;
+    if (!body) return undefined;
+    // XHTML parsed as XML keeps the prefix bound to the EPUB namespace; an
+    // HTML-parsed document only has the literal attribute name.
+    return parseSectionMatter(
+      body.getAttributeNS?.(EPUB_NS, "type") ?? body.getAttribute?.("epub:type"),
+      end,
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Finds the span of spine sections holding the book's body, so the top bar's
+ * chapter count can skip titlepages, imprints, endnotes and colophons.
+ *
+ * Front and back matter sit at the ends of the spine, so this walks inward from
+ * each end reading `<body epub:type>` and stops at the first section that is
+ * neither — usually two or three small files per end, never the whole book.
+ *
+ * Positions are reported in raw spine numbering, the same space the TOC's
+ * `sectionIndex` lives in, by resolving each probed section back through its own
+ * href instead of trusting its array position: foliate-js drops spine entries
+ * whose manifest item is missing, which shifts `book.sections` out of step with
+ * the raw spine. (That only realigns the indices — a book broken enough to have
+ * a dangling itemref also leaves a hole in the run, which stops the walk early
+ * and simply trims less.)
+ */
+async function probeBodyMatterRange(book: {
+  sections?: unknown;
+  landmarks?: unknown;
+  resolveHref?: (href: string) => unknown | Promise<unknown>;
+}): Promise<BodyMatterRange | null> {
+  const sections = Array.isArray(book.sections) ? (book.sections as FoliateSection[]) : [];
+  if (sections.length === 0) return null;
+  const spineIndexOf = async (position: number): Promise<number | undefined> => (
+    await resolveTocSectionIndex(book, sections[position]?.id)
+  );
+  const sectionCount = ((await spineIndexOf(sections.length - 1)) ?? sections.length - 1) + 1;
+
+  const matter = new Map<number, SectionMatter>();
+  const limit = Math.min(MAX_MATTER_SECTIONS, sections.length);
+  const probe = async (position: number, end: "front" | "back"): Promise<boolean> => {
+    const expected: SectionMatter = end === "front" ? "frontmatter" : "backmatter";
+    const kind = await readSectionMatter(sections[position], end);
+    if (kind !== expected) return false;
+    const index = (await spineIndexOf(position)) ?? position;
+    if (matter.has(index)) return false;
+    matter.set(index, kind);
+    return true;
+  };
+  for (let position = 0; position < limit; position += 1) {
+    if (!await probe(position, "front")) break;
+  }
+  for (let step = 0; step < limit; step += 1) {
+    if (!await probe(sections.length - 1 - step, "back")) break;
+  }
+
+  // EPUB 3 `landmarks`, or the EPUB 2 `<guide>` foliate-js falls back to. Both
+  // arrive as `{ href, type: string[] }`; `text` is the EPUB 2 spelling.
+  const landmarks = Array.isArray(book.landmarks)
+    ? book.landmarks as { href?: unknown; type?: unknown }[]
+    : [];
+  const bodyLandmark = landmarks.find((entry) => Array.isArray(entry?.type)
+    && (entry.type as unknown[]).some((token) => token === "bodymatter" || token === "text"));
+  const landmarkBodyStart = typeof bodyLandmark?.href === "string"
+    ? await resolveTocSectionIndex(book, bodyLandmark.href)
+    : undefined;
+
+  return bodyMatterRange({ sectionCount, matter, landmarkBodyStart });
+}
+
 export function useFoliateView({
   book,
   bookId,
@@ -328,6 +428,7 @@ export function useFoliateView({
   getCurrentLabel,
   notifyLocationChanged,
   setChapters,
+  setBodyMatter,
   setCurrentChapterIndex,
   setCurrentSectionIndex,
   setProgress,
@@ -689,6 +790,11 @@ export function useFoliateView({
           chaptersRef.current = resolved;
           setChapters(resolved);
         });
+        // Which of those TOC entries are actually chapters — see chapter-count.ts.
+        void probeBodyMatterRange(view.book).then((range) => {
+          if (cancelled) return;
+          setBodyMatter(range);
+        }).catch(() => {});
       }
 
       view.addEventListener("relocate", ((event: CustomEvent) => {

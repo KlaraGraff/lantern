@@ -108,6 +108,7 @@ import type {
 } from "./reader/foliate-types";
 import { useFoliateView } from "./reader/useFoliateView";
 import { tocUnitKind } from "./reader/chapter-pagination";
+import { chapterReadout, type BodyMatterRange } from "./reader/chapter-count";
 import { useReaderNavigation } from "./reader/useReaderNavigation";
 import { useJumpHistory } from "./reader/useJumpHistory";
 import { toggleSidePanel, type SidePanel, type TracesTab } from "./reader/side-panel";
@@ -221,6 +222,10 @@ export default function Reader() {
   const [searchFocusToken, setSearchFocusToken] = useState(0);
   const [tocSavedState, setTocSavedState] = useState<TocSavedState | undefined>(undefined);
   const [chapters, setChapters] = useState<TocChapter[]>([]);
+  // Which spine sections are the book's body, so front/back matter does not
+  // inflate the top bar's chapter count. Null until probed, or when the book
+  // says nothing about it.
+  const [bodyMatter, setBodyMatter] = useState<BodyMatterRange | null>(null);
   const [currentChapterIndex, setCurrentChapterIndex] = useState(-1);
   const [currentSectionIndex, setCurrentSectionIndex] = useState(-1);
   const [progress, setProgress] = useState(0);
@@ -953,18 +958,10 @@ export default function Reader() {
     }
   }, [showScrubber, bookReady, chapters]);
 
-  const chapterCounter = useMemo(() => {
-    const readingUnits = chapters
-      .map((chapter, index) => ({ chapter, index }))
-      .filter(({ chapter, index }) => chapters[index + 1]?.depth <= chapter.depth || index === chapters.length - 1)
-      .map(({ index }) => index);
-    if (readingUnits.length === 0) return null;
-    const current = readingUnits.findIndex((index) => index >= Math.max(0, currentChapterIndex));
-    return {
-      current: (current < 0 ? readingUnits.length - 1 : current) + 1,
-      total: readingUnits.length,
-    };
-  }, [chapters, currentChapterIndex]);
+  const chapterCounter = useMemo(
+    () => chapterReadout(chapters, currentChapterIndex, bodyMatter),
+    [chapters, currentChapterIndex, bodyMatter],
+  );
 
   const currentScope = useMemo(() => {
     const anchorIndex = currentChapterIndex >= 0
@@ -1188,6 +1185,7 @@ export default function Reader() {
     currentCfiRef.current = null;
     chaptersRef.current = [];
     setChapters([]);
+    setBodyMatter(null);
     setTocSavedState(undefined);
     setCurrentChapterIndex(-1);
     setCurrentSectionIndex(-1);
@@ -1432,6 +1430,7 @@ export default function Reader() {
     getCurrentLabel,
     notifyLocationChanged,
     setChapters,
+    setBodyMatter,
     setCurrentChapterIndex,
     setCurrentSectionIndex,
     setProgress,
@@ -1915,7 +1914,7 @@ export default function Reader() {
                 <span className="text-[13px] text-text-muted leading-4">
                   {book.format === "pdf"
                     ? pageInfo ? t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total }) : ""
-                    : chapterCounter ? t("reader.chapterOf", chapterCounter) : ""}
+                    : chapterCounter ? t("reader.chapterOf", { ...chapterCounter }) : ""}
                 </span>
               </div>
             </>
@@ -1931,7 +1930,7 @@ export default function Reader() {
             <span className="text-[12px] leading-4 opacity-60">
               {book.format === "pdf"
                 ? pageInfo ? t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total }) : ""
-                : chapterCounter ? t("reader.chapterOf", chapterCounter) : ""}
+                : chapterCounter ? t("reader.chapterOf", { ...chapterCounter }) : ""}
             </span>
           </div>
         )}
