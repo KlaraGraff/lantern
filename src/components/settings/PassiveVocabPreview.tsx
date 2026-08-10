@@ -94,7 +94,7 @@ export default function PassiveVocabPreview({ style, limit }: { style: PassiveVo
                       // width of a long word, reading as letter-spaced.
                       <ruby className="[ruby-align:center]">
                         {line.word}
-                        <rt className="font-sans text-[8px] font-medium leading-none" style={{ color: PAPER_INK_MUTED }}>
+                        <rt className="font-sans text-[7px] font-normal leading-none" style={{ color: PAPER_INK_MUTED }}>
                           {gloss}
                         </rt>
                       </ruby>

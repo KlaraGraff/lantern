@@ -93,8 +93,21 @@ const PASSIVE_VOCAB_ROOT_ATTRIBUTE = "data-passive-vocab-root";
 const PASSIVE_VOCAB_RAIL_ATTRIBUTE = "data-passive-vocab-margin-rail";
 const PASSIVE_VOCAB_LABEL_ATTRIBUTE = "data-passive-vocab-margin-label";
 const PASSIVE_VOCAB_RUBY_TEXT_ATTRIBUTE = "data-passive-vocab-ruby-text";
-/** Fraction of the base font size the gloss is drawn at; shared by CSS and the measurer. */
-const RUBY_GLOSS_SCALE = 0.62;
+/**
+ * Fraction of the base font size the gloss is drawn at; shared by CSS and the
+ * measurer. Deliberately small: the gloss is there to be *available*, not to
+ * compete with the sentence for the reader's eye.
+ */
+const RUBY_GLOSS_SCALE = 0.5;
+/** Line height of the gloss, as a multiple of its own font size. */
+const RUBY_GLOSS_LINE_HEIGHT = 1.1;
+/**
+ * Room reserved above the line for the gloss, in ems of the *base* font. It
+ * only has to clear the gloss itself (`SCALE × LINE_HEIGHT` ≈ 0.55em) plus a
+ * hair of air; anything more shows up as a visible gap in the paragraph and
+ * makes an annotated line look like a section break.
+ */
+const RUBY_GLOSS_RESERVE = 0.72;
 const PASSIVE_VOCAB_OVERFLOW_ATTRIBUTE = "data-passive-vocab-margin-overflow";
 const PASSIVE_VOCAB_MARKER_ATTRIBUTE = "data-passive-vocab-marker";
 const PASSIVE_VOCAB_MARKER_LABEL_ATTRIBUTE = "data-passive-vocab-marker-label";
@@ -371,7 +384,7 @@ function installRuby(doc: Document, range: Range, label: string) {
  *    that native ruby would have taken (an atomic inline box contributes its
  *    *margin* box to line height, CSS 2.1 §10.8) — measured, a paragraph is
  *    131px tall with either. But padding is inside the border box, so the word's
- *    own rectangle grew by 1.15em upwards, and every marker drawn from that
+ *    own rectangle grew by the reserved strip upwards, and every marker drawn from that
  *    rectangle floated a line above the word it belonged to.
  *  - **`bottom: 100%`, not `top: 0`.** With `top: 0` the gloss pinned itself to
  *    the top of the reserved strip, i.e. against the *previous* line; anchoring
@@ -389,7 +402,7 @@ function rubyStyleSheet(doc: Document) {
     ruby[${PASSIVE_VOCAB_ROOT_ATTRIBUTE}] {
       display: inline-block;
       position: relative;
-      margin-top: 1.15em;
+      margin-top: ${RUBY_GLOSS_RESERVE}em;
       text-indent: 0;
       ruby-position: over;
     }
@@ -402,8 +415,8 @@ function rubyStyleSheet(doc: Document) {
       white-space: nowrap;
       text-indent: 0;
       color: inherit;
-      opacity: .7;
-      font: 500 ${RUBY_GLOSS_SCALE}em/1.15 system-ui, sans-serif;
+      opacity: .55;
+      font: 400 ${RUBY_GLOSS_SCALE}em/${RUBY_GLOSS_LINE_HEIGHT} system-ui, sans-serif;
       pointer-events: none;
       -webkit-user-select: none;
       user-select: none;
@@ -459,7 +472,7 @@ function glossBox(wrapper: HTMLElement): PassiveVocabGlossBox {
   let width = view ? parseFloat(view.getComputedStyle(wrapper, "::before").width) : NaN;
   if (!Number.isFinite(width)) width = measureGlossText(doc, label, fontSize);
 
-  const height = fontSize * 1.15;
+  const height = fontSize * RUBY_GLOSS_LINE_HEIGHT;
   return {
     left: centre - width / 2,
     right: centre + width / 2,
@@ -476,7 +489,7 @@ function measureGlossText(doc: Document, label: string, fontSize: number) {
     position: "absolute",
     visibility: "hidden",
     whiteSpace: "nowrap",
-    font: `500 ${fontSize}px/1.15 system-ui, sans-serif`,
+    font: `400 ${fontSize}px/${RUBY_GLOSS_LINE_HEIGHT} system-ui, sans-serif`,
   });
   doc.body.append(probe);
   const width = probe.getBoundingClientRect().width;
