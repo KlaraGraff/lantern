@@ -2369,6 +2369,10 @@
   "update.toast.upToDate": "已是最新版本",
   "update.toast.error": "检查更新失败",
   "update.toast.dismiss": "关闭",
+  "update.toast.notes.label": "更新日志",
+  "update.toast.notes.expand": "展开全部",
+  "update.toast.notes.collapse": "收起",
+  "update.toast.notes.viewOnGitHub": "在 GitHub 上查看",
 
 
   "bookDetails.missing": "书架里已经没有这本书了。",

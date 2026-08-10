@@ -318,6 +318,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Write the signing and completeness notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -387,3 +389,26 @@ jobs:
 
           cat notes.md
           gh release edit "$TAG" --notes-file notes.md
+
+      # `tauri-action` wrote `latest.json` during the build, filling its `notes`
+      # field with the placeholder `releaseBody` above -- the only text that
+      # existed at build time. The updater reads that field, not the release
+      # body, so every edit made after the build (the step above; the changelog
+      # a human publishes later) reached the release page and never reached the
+      # reader being offered the update. Through v2.15.2 the in-app prompt said
+      # only "the installers are ready".
+      #
+      # Re-upload the asset with `notes` taken from the body as it now stands.
+      # This run can only carry the neutral notes above -- the changelog does
+      # not exist yet -- so `/release` runs the same script again after
+      # publishing it, which is the run that puts the real thing in front of
+      # readers. The script is idempotent and rewrites nothing but `notes`.
+      #
+      # Non-fatal: a release with stale `notes` is the status quo, and failing
+      # here would fail a release whose installers are already built and good.
+      - name: Put the release notes into latest.json
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: node scripts/update-notes.mjs "${{ github.ref_name }}"

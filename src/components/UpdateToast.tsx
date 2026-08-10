@@ -4,13 +4,20 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { AlertTriangle, ArrowDownToLine, Loader2, X } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { AlertTriangle, ArrowDownToLine, ChevronDown, ChevronUp, Loader2, X } from "lucide-react";
 import Toast from "./ui/Toast";
+import UpdateNotes from "./UpdateNotes";
 import { platform } from "../services/platform";
 import { DISMISSED_UPDATE_VERSION_KEY, runUpdateCheck, shouldSuppressAutoPrompt } from "../services/updateCheck";
+import { extractLocaleNotes } from "../services/updateNotes";
 
 /** How long the manual "you're up to date" confirmation stays up. */
 const UP_TO_DATE_MS = 4000;
+
+/** Where "view on GitHub" goes — the release page for the offered version. */
+const releasePageUrl = (version: string) =>
+  `https://github.com/KlaraGraff/lantern/releases/tag/v${version}`;
 
 type View =
   | { kind: "idle" }
@@ -28,6 +35,12 @@ type View =
  * update in flight and nothing to configure about it mid-flight. The auto-check
  * toggle lives in General settings; the manual entry point is the app menu.
  *
+ * The prompt says what changed, not just that something did. `latest.json`
+ * carries the published release notes, and the toast renders the block written
+ * in the reader's interface language — collapsed, because a release note that
+ * covers the page is one nobody reads. When a release has no usable notes the
+ * panel is not shown empty; the toast falls back to the one-line prompt.
+ *
  * Silent unless it has something to say: the launch check surfaces nothing
  * until an update actually exists. A manual check additionally shows the
  * transient `checking` / `upToDate` / `error` states, because a click that
@@ -38,11 +51,15 @@ type View =
  * into it there would throw.
  */
 export default function UpdateToast() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [view, setView] = useState<View>({ kind: "idle" });
   // Guards the check itself, not the download: a menu click while a download is
   // running must not start a second check behind it.
   const checking = useRef(false);
+  // Reset per offered update rather than per mount, so a version dismissed
+  // while expanded is not re-offered already expanded.
+  const [notesExpanded, setNotesExpanded] = useState(false);
+  const [notesOverflow, setNotesOverflow] = useState(false);
 
   const runCheck = useCallback(async (manual: boolean) => {
     if (checking.current) return;
@@ -61,6 +78,8 @@ export default function UpdateToast() {
         if (shouldSuppressAutoPrompt(manual, result.update.version, dismissed)) {
           setView({ kind: "idle" });
         } else {
+          setNotesExpanded(false);
+          setNotesOverflow(false);
           setView({ kind: "available", update: result.update });
         }
       } else if (result.status === "upToDate") {
@@ -198,19 +217,73 @@ export default function UpdateToast() {
     );
   }
 
+  const version = view.update.version;
+  const updateButton = (
+    <button
+      type="button"
+      onClick={() => void install(view.update)}
+      className="h-7 shrink-0 rounded-lg bg-accent px-2.5 text-[12px] font-medium text-white"
+    >
+      {t("update.toast.update")}
+    </button>
+  );
+
+  // `body` is the `notes` field of `latest.json`. It is bilingual, so only the
+  // block matching the interface language is rendered; a release published
+  // before the notes pipeline existed has nothing usable in there and falls
+  // through to the bare one-line prompt below.
+  const notes = extractLocaleNotes(view.update.body, i18n.language);
+
+  if (!notes) {
+    return (
+      <Toast icon={<ArrowDownToLine size={14} className="shrink-0 text-accent-text" />}>
+        <span className="flex items-center gap-3">
+          <span className="flex-1">{t("update.toast.available", { version })}</span>
+          {updateButton}
+          {dismiss}
+        </span>
+      </Toast>
+    );
+  }
+
   return (
-    <Toast icon={<ArrowDownToLine size={14} className="shrink-0 text-accent-text" />}>
-      <span className="flex items-center gap-3">
-        <span className="flex-1">{t("update.toast.available", { version: view.update.version })}</span>
-        <button
-          type="button"
-          onClick={() => void install(view.update)}
-          className="h-7 shrink-0 rounded-lg bg-accent px-2.5 text-[12px] font-medium text-white"
-        >
-          {t("update.toast.update")}
-        </button>
-        {dismiss}
-      </span>
+    <Toast variant="panel">
+      <div className="w-[360px] text-[13px] tracking-[-0.08px] text-text-secondary">
+        <div className="flex items-start gap-3 py-2.5 pr-2 pl-4">
+          <ArrowDownToLine size={14} className="mt-[3px] shrink-0 text-accent-text" />
+          <span className="flex-1">{t("update.toast.available", { version })}</span>
+          {dismiss}
+        </div>
+        <UpdateNotes
+          notes={notes}
+          expanded={notesExpanded}
+          onOverflowChange={setNotesOverflow}
+          label={t("update.toast.notes.label")}
+        />
+        <div className="flex items-center gap-3 border-t border-border-light py-2 pr-3 pl-4">
+          {/* Only offered when the clamp actually hid something. */}
+          {notesOverflow && (
+            <button
+              type="button"
+              onClick={() => setNotesExpanded((open) => !open)}
+              aria-expanded={notesExpanded}
+              className="flex items-center gap-1 text-[12px] text-text-muted hover:text-accent-text"
+            >
+              {notesExpanded ? t("update.toast.notes.collapse") : t("update.toast.notes.expand")}
+              {notesExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => { openUrl(releasePageUrl(version)).catch(() => {}); }}
+            className="text-[12px] text-text-muted hover:text-accent-text"
+          >
+            {t("update.toast.notes.viewOnGitHub")}
+          </button>
+          <span className="flex-1" />
+          {updateButton}
+        </div>
+      </div>
     </Toast>
   );
 }

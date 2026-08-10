@@ -1,0 +1,23 @@
+{
+  "version": "2.15.2",
+  "notes": "[简体中文](#chinese) · [English](#english)\n\n<a id=\"chinese\"></a>\n## 中文\n\nLantern v2.15.2 的安装包已准备完成。\n\n- macOS：仅支持 Apple Silicon（M 系列）Mac，要求 macOS 12 Monterey 或更高版本。\n- Windows：提供 Windows 11 x64 安装包。\n\n[查看此版本的提交记录](https://github.com/KlaraGraff/lantern/commits/v2.15.2)\n\n<a id=\"english\"></a>\n## English\n\nThe Lantern v2.15.2 installers are ready.\n\n- macOS: Apple Silicon (M-series) Macs only, running macOS 12 Monterey or later.\n- Windows: Windows 11 x64 installer available.\n\n[View commits in this release](https://github.com/KlaraGraff/lantern/commits/v2.15.2)",
+  "pub_date": "2026-08-10T14:30:42.491Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWHUraHRpTnR5NDFXOUo1RGFYZmpoZHQ4VWZaaEFWaHhPU3pDMDBhN0l4YXRQb29UdlllRWNkK2tEQ2FDVER5WG9URHRJYWRDejZyeGh5NUVOMHRNcjRCSXpZSmxNbFFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2MzcxOTMxCWZpbGU6TGFudGVybi5hcHAudGFyLmd6CnN4ZlQ0L2IwQ3Yyb3k2R3ZWSHpjZmFUUWVKNGpSR05STWNqTWIxRXVxQXFRN2xNVmtGYWxaN1BzZ3I2SjZuRDFkd0ZFSHBxOXFqYlAyazJwT01jNEN3PT0K",
+      "url": "https://github.com/KlaraGraff/lantern/releases/download/v2.15.2/Lantern_aarch64.app.tar.gz"
+    },
+    "darwin-aarch64-app": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWHUraHRpTnR5NDFXOUo1RGFYZmpoZHQ4VWZaaEFWaHhPU3pDMDBhN0l4YXRQb29UdlllRWNkK2tEQ2FDVER5WG9URHRJYWRDejZyeGh5NUVOMHRNcjRCSXpZSmxNbFFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2MzcxOTMxCWZpbGU6TGFudGVybi5hcHAudGFyLmd6CnN4ZlQ0L2IwQ3Yyb3k2R3ZWSHpjZmFUUWVKNGpSR05STWNqTWIxRXVxQXFRN2xNVmtGYWxaN1BzZ3I2SjZuRDFkd0ZFSHBxOXFqYlAyazJwT01jNEN3PT0K",
+      "url": "https://github.com/KlaraGraff/lantern/releases/download/v2.15.2/Lantern_aarch64.app.tar.gz"
+    },
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWHUraHRpTnR5NDBHNGwzY2EyQ2VuOGY3WFZVMDV1a2pLOEhaRjlqSmprSksxNXVObG5MeGtmcm14ZW5Qdlovam4vTFhGNUhNdCtycm9reUE2YTRUd1FpMjdnWlUwZHcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2MzcyMjM4CWZpbGU6TGFudGVybl8yLjE1LjJfeDY0LXNldHVwLmV4ZQpKOGNLVkVUMi9IWEt4ZHNWeUNEUXdCNVpwOXVYT2lnNnB5ZXRJTjU2cHpoMEhqcFdHaFYxVVNkWENzMUMrVjErVkV5bnA4Wmd6NTM2VElDaTN6VkRBQT09Cg==",
+      "url": "https://github.com/KlaraGraff/lantern/releases/download/v2.15.2/Lantern_2.15.2_x64-setup.exe"
+    },
+    "windows-x86_64-nsis": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWHUraHRpTnR5NDBHNGwzY2EyQ2VuOGY3WFZVMDV1a2pLOEhaRjlqSmprSksxNXVObG5MeGtmcm14ZW5Qdlovam4vTFhGNUhNdCtycm9reUE2YTRUd1FpMjdnWlUwZHcwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg2MzcyMjM4CWZpbGU6TGFudGVybl8yLjE1LjJfeDY0LXNldHVwLmV4ZQpKOGNLVkVUMi9IWEt4ZHNWeUNEUXdCNVpwOXVYT2lnNnB5ZXRJTjU2cHpoMEhqcFdHaFYxVVNkWENzMUMrVjErVkV5bnA4Wmd6NTM2VElDaTN6VkRBQT09Cg==",
+      "url": "https://github.com/KlaraGraff/lantern/releases/download/v2.15.2/Lantern_2.15.2_x64-setup.exe"
+    }
+  }
+}

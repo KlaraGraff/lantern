@@ -2369,6 +2369,10 @@
   "update.toast.upToDate": "You're up to date",
   "update.toast.error": "Update check failed",
   "update.toast.dismiss": "Dismiss",
+  "update.toast.notes.label": "What's new",
+  "update.toast.notes.expand": "Show all",
+  "update.toast.notes.collapse": "Show less",
+  "update.toast.notes.viewOnGitHub": "View on GitHub",
 
 
   "bookDetails.missing": "This book is no longer in the library.",
