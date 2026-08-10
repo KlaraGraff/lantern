@@ -159,7 +159,7 @@ fn promotion_resets_credit_to_zero() {
 fn demotion_resets_credit_to_zero() {
     let decision = apply_lookup(
         &WordState::new(Tier::Mastered, 6.0),
-        Lookup { at_ms: 1_000 },
+        Lookup::card(1_000),
     );
     assert_eq!(decision.tier, Tier::Familiar);
     assert_close(decision.credit, 0.0);
@@ -172,7 +172,7 @@ fn demotion_resets_credit_to_zero() {
 fn a_first_lookup_costs_exactly_one_tier() {
     let decision = apply_lookup(
         &WordState::new(Tier::Mastered, 3.0),
-        Lookup { at_ms: 1_000 },
+        Lookup::card(1_000),
     );
     assert_eq!(decision.tier, Tier::Familiar);
     assert!(decision.changed);
@@ -183,19 +183,18 @@ fn a_first_lookup_costs_exactly_one_tier() {
 
 #[test]
 fn a_second_lookup_inside_the_window_drops_straight_to_learning() {
-    let first = apply_lookup(&WordState::new(Tier::Mastered, 3.0), Lookup { at_ms: 0 });
+    let first = apply_lookup(&WordState::new(Tier::Mastered, 3.0), Lookup::card(0));
     let state = WordState {
         tier: first.tier,
         credit: first.credit,
         last_lookup_at_ms: Some(0),
         lookups_in_window: first.lookups_in_window,
+        glances_in_window: 0,
     };
 
     let second = apply_lookup(
         &state,
-        Lookup {
-            at_ms: REPEAT_LOOKUP_WINDOW_MS - 1,
-        },
+        Lookup::card(REPEAT_LOOKUP_WINDOW_MS - 1),
     );
     assert_eq!(second.tier, Tier::Learning);
     assert!(second.changed);
@@ -211,8 +210,9 @@ fn a_third_lookup_inside_the_window_marks_the_word_a_blocker_for_its_book() {
         credit: 0.0,
         last_lookup_at_ms: Some(1_000),
         lookups_in_window: 2,
+        glances_in_window: 0,
     };
-    let third = apply_lookup(&state, Lookup { at_ms: 2_000 });
+    let third = apply_lookup(&state, Lookup::card(2_000));
     assert_eq!(third.tier, Tier::Learning);
     // Already at the floor, so nothing moved — and "nothing moved" is what
     // §2.6's timeline must not fill up with. The blocker flag is what this
@@ -229,7 +229,7 @@ fn a_third_lookup_inside_the_window_marks_the_word_a_blocker_for_its_book() {
 fn a_lookup_on_a_word_already_at_the_floor_writes_no_timeline_row() {
     let decision = apply_lookup(
         &WordState::new(Tier::Learning, 2.5),
-        Lookup { at_ms: 1_000 },
+        Lookup::card(1_000),
     );
     assert_eq!(decision.tier, Tier::Learning);
     assert!(!decision.changed);
@@ -248,12 +248,11 @@ fn a_lookup_outside_the_window_starts_the_ladder_over() {
         credit: 0.0,
         last_lookup_at_ms: Some(0),
         lookups_in_window: 2,
+        glances_in_window: 0,
     };
     let decision = apply_lookup(
         &state,
-        Lookup {
-            at_ms: REPEAT_LOOKUP_WINDOW_MS + 1,
-        },
+        Lookup::card(REPEAT_LOOKUP_WINDOW_MS + 1),
     );
     assert_eq!(decision.tier, Tier::Familiar);
     assert_eq!(decision.reason, Some(REASON_LOOKUP_DEMOTION));
@@ -265,9 +264,115 @@ fn a_lookup_outside_the_window_starts_the_ladder_over() {
 /// assessed it.
 #[test]
 fn a_lookup_on_an_unassessed_word_files_it_as_learning() {
-    let decision = apply_lookup(&WordState::default(), Lookup { at_ms: 1_000 });
+    let decision = apply_lookup(&WordState::default(), Lookup::card(1_000));
     assert_eq!(decision.tier, Tier::Learning);
     assert!(decision.changed);
+}
+
+/// One glance is doubt, not defeat. It costs half the credit and no tier —
+/// which is the whole reason the dictionary strip could be wired in at all: at
+/// full weight, the reader's cheapest, most casual gesture would demote a word
+/// every time they used it.
+#[test]
+fn a_single_glance_costs_credit_but_no_tier() {
+    let decision = apply_lookup(&WordState::new(Tier::Mastered, 6.0), Lookup::glance(1_000));
+    assert_eq!(decision.tier, Tier::Mastered);
+    assert!(!decision.changed);
+    assert_eq!(decision.reason, None);
+    assert_close(decision.credit, 3.0);
+    assert_eq!(decision.lookups_in_window, 0);
+    assert_eq!(decision.glances_in_window, 1);
+}
+
+/// Two glances are worth one card: the same rung, reached the slow way.
+#[test]
+fn two_glances_inside_the_window_cost_one_tier() {
+    let first = apply_lookup(&WordState::new(Tier::Mastered, 6.0), Lookup::glance(0));
+    let state = WordState {
+        tier: first.tier,
+        credit: first.credit,
+        last_lookup_at_ms: Some(0),
+        lookups_in_window: first.lookups_in_window,
+        glances_in_window: first.glances_in_window,
+    };
+
+    let second = apply_lookup(&state, Lookup::glance(REPEAT_LOOKUP_WINDOW_MS - 1));
+    assert_eq!(second.tier, Tier::Familiar);
+    assert!(second.changed);
+    assert_eq!(second.reason, Some(REASON_LOOKUP_DEMOTION));
+    assert!(!second.is_book_blocker);
+    assert_eq!(second.glances_in_window, 2);
+    // Halved twice, not zeroed: two glances are two moments of hesitation, and
+    // the ladder has already taken the tier for them.
+    assert_close(second.credit, 1.5);
+}
+
+/// The mixed chain, which is what a real reader's week looks like: a card,
+/// then two dictionary checks. 1.0 + 0.5 + 0.5 = 2.0 — straight to Learning on
+/// the third, exactly where a second card would have put them.
+#[test]
+fn a_card_then_two_glances_lands_on_the_same_rung_as_two_cards() {
+    let state = WordState {
+        tier: Tier::Familiar,
+        credit: 0.0,
+        last_lookup_at_ms: Some(0),
+        lookups_in_window: 1,
+        glances_in_window: 1,
+    };
+    let decision = apply_lookup(&state, Lookup::glance(1_000));
+    assert_eq!(decision.tier, Tier::Learning);
+    assert!(decision.changed);
+    assert_eq!(decision.reason, Some(REASON_REPEAT_LOOKUP_DEMOTION));
+    assert!(!decision.is_book_blocker);
+    assert_eq!(decision.lookups_in_window, 1);
+    assert_eq!(decision.glances_in_window, 2);
+}
+
+/// Six glances in a week reach the blocker rung. A word the reader has to
+/// re-check that often is holding up the book whether or not they ever opened
+/// a card on it.
+#[test]
+fn six_glances_inside_the_window_mark_the_word_a_blocker() {
+    let state = WordState {
+        tier: Tier::Learning,
+        credit: 0.0,
+        last_lookup_at_ms: Some(0),
+        lookups_in_window: 0,
+        glances_in_window: 5,
+    };
+    let decision = apply_lookup(&state, Lookup::glance(1_000));
+    assert!(decision.is_book_blocker);
+    assert_eq!(decision.glances_in_window, 6);
+    // Already at the floor: the flag is the outcome, not a tier move.
+    assert!(!decision.changed);
+}
+
+/// Falling outside the window clears both counters together. A chain is one
+/// stretch of doubt, and half of one cannot survive into the next.
+#[test]
+fn a_stale_chain_forgets_its_glances_too() {
+    let state = WordState {
+        tier: Tier::Mastered,
+        credit: 0.0,
+        last_lookup_at_ms: Some(0),
+        lookups_in_window: 1,
+        glances_in_window: 3,
+    };
+    let decision = apply_lookup(&state, Lookup::glance(REPEAT_LOOKUP_WINDOW_MS + 1));
+    assert_eq!(decision.tier, Tier::Mastered);
+    assert!(!decision.changed);
+    assert_eq!(decision.lookups_in_window, 0);
+    assert_eq!(decision.glances_in_window, 1);
+}
+
+/// The property the whole change rests on: for a reader who never glances,
+/// the weighted ladder is bit-for-bit the ladder that shipped. 1.0, 2.0 and
+/// 3.0 fall on their 1st, 2nd and 3rd card.
+#[test]
+fn the_weighted_ladder_is_the_old_ladder_for_card_only_readers() {
+    for (cards, expected) in [(1u32, 1.0), (2, 2.0), (3, 3.0)] {
+        assert_close(chain_weight(cards, 0), expected);
+    }
 }
 
 #[test]

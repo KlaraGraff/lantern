@@ -262,6 +262,7 @@ pub fn save_lookup_record_inner(
             events,
             &book_id,
             &lookup_text,
+            crate::mastery::LookupKind::Card,
             now,
             &device,
         )?;

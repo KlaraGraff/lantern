@@ -161,6 +161,68 @@ pub const ABSOLUTE_MAX_WPM: f64 = 600.0;
 /// problem, and only the latter earns the hard drop.
 const REPEAT_LOOKUP_WINDOW_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
+/// What one AI learning card is worth on the ladder below. The unit the other
+/// weights are expressed in, so it is 1.0 by definition rather than by choice.
+const CARD_LOOKUP_WEIGHT: f64 = 1.0;
+
+/// What one dictionary glance is worth — the free definition that rides on top
+/// of the single-click menu. Half a card, so two glances cost what one card
+/// costs.
+///
+/// The reader's own reasoning, and it is the right one: opening the card is
+/// what you do when you are genuinely stuck, while glancing at the dictionary
+/// is "unsure, but not that unsure" — or plain laziness about opening the
+/// card. Both are evidence against knowing the word; neither is as strong as
+/// stopping to read a full explanation.
+///
+/// The gesture is not the signal, though. See
+/// `docs/impls/dictionary-glance-mastery.md` §1 for what has to be true before
+/// a click counts as a glance at all — a single click is also how you reach
+/// "记笔记" and "标记", and those must not read as lookups.
+const GLANCE_WEIGHT: f64 = 0.5;
+
+/// §2.3's ladder, expressed in [`CARD_LOOKUP_WEIGHT`] units instead of in
+/// lookups. The three rungs are 1.0 / 2.0 / 3.0 precisely so that a reader who
+/// never glances gets bit-for-bit the behaviour they had when this was an
+/// integer count of lookups: the weighted form is a generalization, not a
+/// re-tuning.
+const DEMOTE_ONE_TIER_WEIGHT: f64 = 1.0;
+const DEMOTE_TO_LEARNING_WEIGHT: f64 = 2.0;
+const BOOK_BLOCKER_WEIGHT: f64 = 3.0;
+
+/// How many lifetime glances at one word in one book file it into the
+/// watchlist.
+///
+/// Words enter the vocabulary list by being looked up (`observe_lookup_for_vocab`),
+/// and until they are in it there is no tier for any of this to move. A reader
+/// who checks the dictionary instead of opening cards would therefore never
+/// get a single word tracked, which would make the whole weighted ladder above
+/// unreachable for exactly the reader it was built for.
+///
+/// Four rather than one because a glance is a much cheaper act than opening a
+/// card, and because a single click is a step on the way to marking, noting
+/// and copying. Lifetime rather than windowed: the question this threshold
+/// asks is "does this word keep stopping you", not "did it stop you this
+/// week", and the only consequence of answering yes is that the word joins the
+/// watchlist — cheap to get wrong, costly to miss.
+pub const GLANCE_ENTRY_THRESHOLD: i64 = 4;
+
+/// Two glances at the same word in the same place, this close together, are
+/// one glance.
+///
+/// The frontend gate already throws away everything that is not a deliberate
+/// look — the menu has to stay open past the definition rendering, and no
+/// other menu action may be taken. What it cannot see is the reader closing
+/// the menu and immediately reopening it on the same word: a fat-fingered
+/// dismissal, a scroll that ate the tap. Both halves of the same click, and
+/// both would pass the gate.
+///
+/// Position is part of the comparison, not just time. The same word read
+/// twice in one minute at two different places in the book is two encounters
+/// with two different sentences around it, and the reader stopping at both is
+/// exactly the evidence this feature exists to collect.
+const GLANCE_DEDUPE_WINDOW_MS: i64 = 60_000;
+
 /// `docs/impls/reading-flow-decisions-2026-08-06.md` §2.2's progress floor
 /// for auto-marking a book finished. Not 100: a book's own back matter
 /// (colophon, acknowledgements, ads for other titles) is not a fixed
@@ -261,6 +323,9 @@ impl Tier {
 pub const REASON_EXPOSURE_PROMOTION: &str = "exposure_promotion";
 pub const REASON_LOOKUP_DEMOTION: &str = "lookup_demotion";
 pub const REASON_REPEAT_LOOKUP_DEMOTION: &str = "repeat_lookup_demotion";
+/// [`GLANCE_ENTRY_THRESHOLD`] glances filed a word the reader never opened a
+/// card for into the watchlist.
+pub const REASON_GLANCE_ENTRY: &str = "glance_entry";
 
 /// One screen on which the word was visible and *not* looked up.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -324,11 +389,58 @@ pub struct ExposureBatch {
     pub chapters: Vec<ChapterExposures>,
 }
 
+/// The two ways a reader can ask what a word means, and the only thing that
+/// separates them here: what each is worth on the ladder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LookupKind {
+    /// The AI learning card — the reader stopped and asked for an explanation.
+    Card,
+    /// The free dictionary definition on the single-click menu.
+    Glance,
+}
+
+impl LookupKind {
+    fn weight(self) -> f64 {
+        match self {
+            LookupKind::Card => CARD_LOOKUP_WEIGHT,
+            LookupKind::Glance => GLANCE_WEIGHT,
+        }
+    }
+
+    /// What is left of the word's accumulated credit afterwards. A card takes
+    /// all of it; a glance takes half.
+    pub fn credit_multiplier(self) -> f64 {
+        (1.0 - self.weight()).clamp(0.0, 1.0)
+    }
+}
+
 /// A lookup the reader performed on the word.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Lookup {
     pub at_ms: i64,
+    pub kind: LookupKind,
+}
+
+/// Production callers take the kind as a parameter and build the struct
+/// directly; these read better in the tests, where which kind it is *is* the
+/// thing under test.
+#[cfg(test)]
+impl Lookup {
+    pub fn card(at_ms: i64) -> Self {
+        Self {
+            at_ms,
+            kind: LookupKind::Card,
+        }
+    }
+
+    pub fn glance(at_ms: i64) -> Self {
+        Self {
+            at_ms,
+            kind: LookupKind::Glance,
+        }
+    }
 }
 
 /// The word's stored mastery state, as the caller reads it out of
@@ -343,9 +455,15 @@ pub struct WordState {
     /// this, not from the first lookup in the chain, so a reader who keeps
     /// checking a word every few days stays inside one chain.
     pub last_lookup_at_ms: Option<i64>,
-    /// How many lookups the current chain has already accumulated. Reset by
-    /// any lookup that falls outside the window.
+    /// How many *card* lookups the current chain has already accumulated.
+    /// Reset by any lookup that falls outside the window.
     pub lookups_in_window: u32,
+    /// How many *glances* the current chain has already accumulated. Kept
+    /// apart from `lookups_in_window` rather than folded into a single stored
+    /// weight because the word-detail page has to tell the reader which of the
+    /// two they actually did — and because a stored weight next to the counts
+    /// it is derived from is state that can drift.
+    pub glances_in_window: u32,
 }
 
 impl Default for WordState {
@@ -355,6 +473,7 @@ impl Default for WordState {
             credit: 0.0,
             last_lookup_at_ms: None,
             lookups_in_window: 0,
+            glances_in_window: 0,
         }
     }
 }
@@ -397,6 +516,9 @@ pub struct Decision {
     /// Persist alongside the lookup timestamp — the next call needs it to
     /// know where in the chain it lands.
     pub lookups_in_window: u32,
+    /// The glance half of the same chain. Same contract as
+    /// `lookups_in_window`.
+    pub glances_in_window: u32,
 }
 
 fn weight_for_occurrence(occurrence: u32) -> f64 {
@@ -529,45 +651,96 @@ pub fn apply_exposures(state: &WordState, batch: &ExposureBatch) -> Decision {
         reason: changed.then_some(REASON_EXPOSURE_PROMOTION),
         is_book_blocker: false,
         lookups_in_window: state.lookups_in_window,
+        glances_in_window: state.glances_in_window,
     }
 }
 
-/// Apply one lookup: the reader stopped and asked what this word means.
+/// What a chain of `cards` card lookups and `glances` glances costs, in
+/// [`CARD_LOOKUP_WEIGHT`] units.
 ///
-/// §2.3's ladder, in order — one tier for the first, all the way back to
-/// Learning for a second inside [`REPEAT_LOOKUP_WINDOW_MS`], and a blocker
-/// flag from the third on. Credit resets on every lookup regardless of
-/// whether the tier moved: credit is evidence the reader knew the word, and
-/// a lookup is the reader saying otherwise.
+/// Computed from the two counts on every read rather than accumulated into a
+/// stored float: the counts are integers, so this is exact, and there is no
+/// third piece of state to fall out of step with them.
+pub fn chain_weight(cards: u32, glances: u32) -> f64 {
+    f64::from(cards) * CARD_LOOKUP_WEIGHT + f64::from(glances) * GLANCE_WEIGHT
+}
+
+/// Apply one lookup: the reader stopped and asked what this word means —
+/// either by opening the card ([`LookupKind::Card`]) or by reading the free
+/// dictionary definition on the single-click menu ([`LookupKind::Glance`]).
+///
+/// §2.3's ladder, now measured in weight rather than in occurrences: one tier
+/// down at [`DEMOTE_ONE_TIER_WEIGHT`], all the way back to Learning at
+/// [`DEMOTE_TO_LEARNING_WEIGHT`], and a blocker flag at
+/// [`BOOK_BLOCKER_WEIGHT`], all inside [`REPEAT_LOOKUP_WINDOW_MS`]. A reader
+/// who only ever opens cards sees no change whatsoever: their 1st, 2nd and 3rd
+/// lookups land on exactly those three rungs.
+///
+/// A lone glance sits below the first rung and moves no tier. That is the
+/// point of weighting it — one stray click cannot cost a tier — and it is also
+/// why `changed` is false there, so no timeline row is written for it.
+///
+/// Credit is discounted by the weight of what just happened
+/// (`credit * (1 - weight)`): credit is evidence the reader knew the word, a
+/// card lookup is them saying otherwise outright, and a glance is them saying
+/// it halfway.
 pub fn apply_lookup(state: &WordState, lookup: Lookup) -> Decision {
     let within_window = state
         .last_lookup_at_ms
         .is_some_and(|previous| lookup.at_ms.saturating_sub(previous) <= REPEAT_LOOKUP_WINDOW_MS);
-    let chain = if within_window {
-        state.lookups_in_window.saturating_add(1)
+    let (prior_cards, prior_glances) = if within_window {
+        (state.lookups_in_window, state.glances_in_window)
     } else {
-        1
+        (0, 0)
     };
+    let (cards, glances) = match lookup.kind {
+        LookupKind::Card => (prior_cards.saturating_add(1), prior_glances),
+        LookupKind::Glance => (prior_cards, prior_glances.saturating_add(1)),
+    };
+    let before = chain_weight(prior_cards, prior_glances);
+    let weight = chain_weight(cards, glances);
+    // A rung is paid for by *crossing* it, not by standing past it. The
+    // distinction did not exist when every lookup weighed 1.0 and therefore
+    // landed on a rung exactly; a half-weight glance can land between two, and
+    // "at or past the first rung -> down one tier" would charge that middle
+    // step a tier of its own. A card then a glance would then cost two tiers
+    // where two cards cost two — making the cheaper gesture cost the same,
+    // which is the one thing the weighting exists to prevent.
+    let crossed = |rung: f64| before < rung && weight >= rung;
 
-    let (tier, reason, is_book_blocker) = match chain {
-        1 => (state.tier.next_down(), REASON_LOOKUP_DEMOTION, false),
-        2 => (Tier::Learning, REASON_REPEAT_LOOKUP_DEMOTION, false),
-        // Third and beyond: already at the floor, so the only thing left to
-        // record is that this word keeps stopping the reader in this book.
-        // That is `is_book_blocker`, and it needs no timeline row — the
-        // caller is already persisting `lookups_in_window` next to the lookup
-        // timestamp, which is the same fact.
-        _ => (Tier::Learning, REASON_REPEAT_LOOKUP_DEMOTION, true),
+    let (tier, reason, is_book_blocker) = if crossed(DEMOTE_TO_LEARNING_WEIGHT) {
+        (
+            Tier::Learning,
+            REASON_REPEAT_LOOKUP_DEMOTION,
+            weight >= BOOK_BLOCKER_WEIGHT,
+        )
+    } else if crossed(DEMOTE_ONE_TIER_WEIGHT) {
+        (state.tier.next_down(), REASON_LOOKUP_DEMOTION, false)
+    } else {
+        // Between rungs, or past the last one. The credit discount below still
+        // applies — this says "not quite sure", which is worth recording — but
+        // no tier moves. Past `BOOK_BLOCKER_WEIGHT` the tier has nowhere lower
+        // to go anyway, and the only thing each further lookup adds is that
+        // this word keeps stopping the reader in this book. That is
+        // `is_book_blocker`, and it needs no timeline row of its own: the
+        // caller already persists both counts next to the lookup timestamp,
+        // which is the same fact.
+        (
+            state.tier,
+            REASON_LOOKUP_DEMOTION,
+            weight >= BOOK_BLOCKER_WEIGHT,
+        )
     };
     let changed = tier != state.tier;
 
     Decision {
         tier,
-        credit: 0.0,
+        credit: state.credit.max(0.0) * lookup.kind.credit_multiplier(),
         changed,
         reason: changed.then_some(reason),
         is_book_blocker,
-        lookups_in_window: chain,
+        lookups_in_window: cards,
+        glances_in_window: glances,
     }
 }
 

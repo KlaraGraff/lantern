@@ -11,6 +11,7 @@ pub mod chats;
 pub mod collections;
 pub mod coverage;
 pub mod dictionary;
+pub mod dictionary_glance;
 pub mod enhanced_fonts;
 pub mod explanations;
 pub mod fonts;

@@ -1073,6 +1073,79 @@ pub(crate) fn get_vocab_card_snapshot_inner(word_id: &str, db: &Db) -> AppResult
     Ok(snapshot)
 }
 
+/// File a word the reader has only ever glanced at into the watchlist.
+///
+/// Returns the new row's id, or `None` when the word already has a row in this
+/// book — in which case there is nothing to create and the caller's normal
+/// chain handling covers it.
+///
+/// Deliberately narrower than [`observe_lookup_for_vocab`]: it never touches an
+/// existing row, and never promotes watchlist to confirmed. Promotion to
+/// confirmed stays keyed on `lookup_records`, which glances do not enter — see
+/// `docs/impls/dictionary-glance-mastery.md` §4.
+///
+/// The row is created at `new` and moved to `learning` by the caller through
+/// [`set_auto_mastery`], rather than being inserted at `learning` directly.
+/// That is the same two-step the AI-card path already takes (insert `new`, then
+/// let the demotion move it), and it is what produces the timeline row and the
+/// one-sentence explanation the word-detail page owes the reader. A word
+/// inserted straight at `learning` would appear there having silently changed
+/// tier, which is exactly what migration 038 exists to prevent.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn create_watchlist_word_from_glance(
+    tx: &rusqlite::Transaction,
+    events: &mut Vec<EventBody>,
+    book_id: &str,
+    word: &str,
+    definition: &str,
+    context_sentence: Option<&str>,
+    cfi: Option<&str>,
+    now: i64,
+    device: &str,
+) -> AppResult<Option<String>> {
+    let exists: Option<String> = tx
+        .query_row(
+            "SELECT id FROM vocab_words WHERE book_id = ?1 AND word = ?2 COLLATE NOCASE LIMIT 1",
+            params![book_id, word],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if exists.is_some() {
+        return Ok(None);
+    }
+
+    let id = uuid::Uuid::new_v4().to_string();
+    tx.execute(
+        "INSERT INTO vocab_words (id, book_id, word, definition, context_sentence, context_explanation, cfi, mastery, review_count, next_review_at, list_status, created_at, updated_at, updated_by_device)
+         VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, 'new', 0, NULL, 'watchlist', ?7, ?7, ?8)",
+        params![id, book_id, word, definition, context_sentence, cfi, now, device],
+    )?;
+    events.push(EventBody::VocabAdd(VocabPayload {
+        id: id.clone(),
+        book_id: book_id.to_string(),
+        word: word.to_string(),
+        definition: definition.to_string(),
+        context_sentence: context_sentence.map(str::to_string),
+        context_explanation: None,
+        cfi: cfi.map(str::to_string),
+        mastery: "new".to_string(),
+        mastery_source: "manual".to_string(),
+        mastery_reason: None,
+        list_status: "watchlist".to_string(),
+        card_snapshot: None,
+        review_count: 0,
+        next_review_at: None,
+        review_interval_days: 0,
+        last_reviewed_at: None,
+        last_review_rating: None,
+        fsrs_stability: None,
+        fsrs_difficulty: None,
+        fsrs_version: 1,
+        created_at: Some(now),
+    }));
+    Ok(Some(id))
+}
+
 /// Runs on every lookup, inside `save_lookup_record_inner`'s transaction,
 /// before `mastery::store::apply_lookup_to_word` — that function only scores
 /// a word that already has a `vocab_words` row, so the first lookup has to

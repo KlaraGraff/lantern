@@ -27,13 +27,14 @@ use rusqlite::{params, OptionalExtension, Transaction};
 
 use crate::calibration;
 use crate::commands::lookup_history::normalize;
-use crate::commands::vocab::set_auto_mastery;
+use crate::commands::vocab::{create_watchlist_word_from_glance, set_auto_mastery};
 use crate::error::AppResult;
 use crate::sync::events::EventBody;
 
 use super::{
-    apply_exposures, apply_lookup, ChapterExposures, Exposure, ExposureBatch, Lookup, Tier,
-    WordState, REASON_EXPOSURE_PROMOTION, REASON_LOOKUP_DEMOTION, REASON_REPEAT_LOOKUP_DEMOTION,
+    apply_exposures, apply_lookup, ChapterExposures, Exposure, ExposureBatch, Lookup, LookupKind,
+    Tier, WordState, GLANCE_DEDUPE_WINDOW_MS, GLANCE_ENTRY_THRESHOLD, REASON_EXPOSURE_PROMOTION,
+    REASON_GLANCE_ENTRY, REASON_LOOKUP_DEMOTION, REASON_REPEAT_LOOKUP_DEMOTION,
 };
 
 /// One `reading_word_exposures` row with unscored occurrences on it.
@@ -186,18 +187,24 @@ pub fn score_book_exposures(
 /// Runs inside the caller's transaction, alongside the `lookup_records` write
 /// it describes, so the two facts cannot come apart.
 ///
-/// ## Why every sibling row's credit is reset, not just one
+/// ## Why every sibling row's credit is discounted, not just one
 ///
 /// The same word saved from three books is three rows and one entry to the
 /// reader — that is why every mastery write here propagates to siblings.
 /// Credit has to follow the same rule. Credit is evidence the reader knew the
 /// word and a lookup is the reader saying otherwise, so a lookup in book B
 /// cannot leave book A's half-finished promotion standing.
+///
+/// Each row is discounted from *its own* credit rather than from one shared
+/// number. A card multiplies by zero, so the distinction never arose before;
+/// a glance multiplies by a half, and halving book A's credit has to mean half
+/// of what book A had.
 pub fn apply_lookup_to_word(
     tx: &Transaction<'_>,
     events: &mut Vec<EventBody>,
     book_id: &str,
     lookup_text: &str,
+    kind: LookupKind,
     now: i64,
     device: &str,
 ) -> AppResult<bool> {
@@ -210,15 +217,25 @@ pub fn apply_lookup_to_word(
         return Ok(false);
     };
 
+    let progress = rows
+        .iter()
+        .map(|row| load_progress(tx, &row.id))
+        .collect::<AppResult<Vec<_>>>()?;
     // The chain lives on whichever sibling was written last. Reading the most
     // recent one keeps a reader who looks the word up in a different book
     // inside the same repeat window, which is the point of the window.
-    let state = load_chain(tx, &rows)?.with_tier(primary.tier);
-    let decision = apply_lookup(&state, Lookup { at_ms: now });
+    let state = newest_chain(&progress).with_tier(primary.tier);
+    let decision = apply_lookup(&state, Lookup { at_ms: now, kind });
 
     if decision.changed {
         let reason = decision.reason.unwrap_or(REASON_LOOKUP_DEMOTION);
-        let detail = lookup_detail(tx, book_id, reason, decision.lookups_in_window);
+        let detail = lookup_detail(
+            tx,
+            book_id,
+            reason,
+            decision.lookups_in_window,
+            decision.glances_in_window,
+        );
         set_auto_mastery(
             tx,
             events,
@@ -231,21 +248,165 @@ pub fn apply_lookup_to_word(
             device,
         )?;
     }
-    for row in &rows {
+    let multiplier = kind.credit_multiplier();
+    for (row, before) in rows.iter().zip(&progress) {
+        let credit = before.credit.max(0.0) * multiplier;
         save_progress(
             tx,
             &row.id,
-            decision.credit,
+            credit,
             &WordState {
                 tier: decision.tier,
-                credit: decision.credit,
+                credit,
                 last_lookup_at_ms: Some(now),
                 lookups_in_window: decision.lookups_in_window,
+                glances_in_window: decision.glances_in_window,
             },
             now,
         )?;
     }
     Ok(decision.changed)
+}
+
+/// What one dictionary glance did.
+#[derive(Debug, Clone, Copy, Default, serde::Serialize)]
+pub struct GlanceOutcome {
+    /// False when the 60-second same-position dedupe swallowed it. Nothing
+    /// below it ran.
+    pub counted: bool,
+    /// The word's lifetime glance total in this book, after this one.
+    pub glance_count: i64,
+    /// This glance was the [`GLANCE_ENTRY_THRESHOLD`]th, and filed the word
+    /// into the watchlist.
+    pub entered_watchlist: bool,
+    /// A tier moved — either the entry above, or the weighted chain.
+    pub tier_changed: bool,
+}
+
+/// Record that the reader single-clicked a word and read the free dictionary
+/// definition without doing anything else.
+///
+/// The frontend owns the hard part of this decision and this function trusts
+/// it: the menu stayed open past the definition rendering, and no other menu
+/// action was taken. See `docs/impls/dictionary-glance-mastery.md` §1 for why
+/// the gate lives there — only the menu knows whether it was still open, and
+/// only it knows what else was clicked.
+///
+/// Two things happen here, in order, and the order matters:
+///
+/// 1. the lifetime ledger advances, and on its [`GLANCE_ENTRY_THRESHOLD`]th
+///    entry the word joins the watchlist at `learning`;
+/// 2. the weighted chain runs, worth half a card lookup.
+///
+/// Entry first, because a word with no vocabulary row has no tier for step 2
+/// to move — running the chain first would silently drop the very glance that
+/// earned the word its place. It does not double-punish: the chain lives on
+/// `mastery_progress`, which only exists for rows in the list, so a word
+/// entering now starts its chain at this glance and no earlier one.
+#[allow(clippy::too_many_arguments)]
+pub fn record_glance(
+    tx: &Transaction<'_>,
+    events: &mut Vec<EventBody>,
+    book_id: &str,
+    word: &str,
+    definition: &str,
+    context_sentence: Option<&str>,
+    cfi: Option<&str>,
+    now: i64,
+    device: &str,
+) -> AppResult<GlanceOutcome> {
+    let normalized = normalize(word);
+    if normalized.is_empty() {
+        return Ok(GlanceOutcome::default());
+    }
+
+    let previous: Option<(i64, i64, Option<String>)> = tx
+        .query_row(
+            "SELECT glance_count, last_glanced_at, last_cfi
+               FROM dictionary_glances WHERE book_id = ?1 AND normalized_word = ?2",
+            params![book_id, normalized],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+
+    if let Some((count, last_at, last_cfi)) = &previous {
+        let same_place = cfi.is_some() && last_cfi.as_deref() == cfi;
+        if same_place && now.saturating_sub(*last_at) < GLANCE_DEDUPE_WINDOW_MS {
+            return Ok(GlanceOutcome {
+                counted: false,
+                glance_count: *count,
+                ..GlanceOutcome::default()
+            });
+        }
+    }
+
+    let glance_count = previous.as_ref().map_or(0, |(count, _, _)| *count) + 1;
+    tx.execute(
+        "INSERT INTO dictionary_glances
+            (book_id, normalized_word, glance_count, first_glanced_at, last_glanced_at,
+             last_cfi, updated_at)
+         VALUES (?1, ?2, 1, ?3, ?3, ?4, ?3)
+         ON CONFLICT(book_id, normalized_word) DO UPDATE SET
+             glance_count = glance_count + 1,
+             last_glanced_at = ?3,
+             last_cfi = ?4,
+             updated_at = ?3",
+        params![book_id, normalized, now, cfi],
+    )?;
+
+    let mut entered_watchlist = false;
+    if glance_count >= GLANCE_ENTRY_THRESHOLD {
+        if let Some(id) = create_watchlist_word_from_glance(
+            tx,
+            events,
+            book_id,
+            word.trim(),
+            definition,
+            context_sentence,
+            cfi,
+            now,
+            device,
+        )? {
+            let detail = glance_entry_detail(tx, book_id, glance_count);
+            set_auto_mastery(
+                tx,
+                events,
+                &id,
+                Tier::New.as_str(),
+                Tier::Learning.as_str(),
+                REASON_GLANCE_ENTRY,
+                &detail,
+                now,
+                device,
+            )?;
+            entered_watchlist = true;
+        }
+    }
+
+    let tier_changed =
+        apply_lookup_to_word(tx, events, book_id, word, LookupKind::Glance, now, device)?;
+    Ok(GlanceOutcome {
+        counted: true,
+        glance_count,
+        entered_watchlist,
+        tier_changed: tier_changed || entered_watchlist,
+    })
+}
+
+/// The numbers `vocab.mastery.because.glance_entry.detail` interpolates: "You
+/// checked the dictionary for it {glanceCount} times in {bookTitle}, so it has
+/// been added to your list."
+fn glance_entry_detail(tx: &Transaction<'_>, book_id: &str, glance_count: i64) -> String {
+    let mut detail = serde_json::Map::new();
+    detail.insert(
+        "reason".to_string(),
+        REASON_GLANCE_ENTRY.to_string().into(),
+    );
+    if let Ok(Some(title)) = book_title(tx, book_id) {
+        detail.insert("book_title".to_string(), title.into());
+    }
+    detail.insert("glance_count".to_string(), glance_count.into());
+    serde_json::Value::Object(detail).to_string()
 }
 
 /// The vocabulary rows a lookup applies to: every row spelling this word, the
@@ -284,26 +445,34 @@ fn load_lookup_targets(
 }
 
 /// The word's lookup chain, taken from whichever sibling row was looked up
-/// most recently. Credit is not read: a lookup discards it either way.
-fn load_chain(tx: &Transaction<'_>, rows: &[VocabTarget]) -> AppResult<WordState> {
-    let mut chain = WordState::default();
-    for row in rows {
-        let state = load_progress(tx, &row.id)?;
-        if state.last_lookup_at_ms > chain.last_lookup_at_ms {
-            chain = state;
-        }
-    }
-    Ok(chain)
+/// most recently — never mind which book the reader is holding now, since one
+/// word's doubt is one word's doubt.
+///
+/// A word never looked up has `None` on every row and falls through to the
+/// default, which is the same empty chain.
+fn newest_chain(progress: &[WordState]) -> WordState {
+    progress
+        .iter()
+        .max_by_key(|state| state.last_lookup_at_ms)
+        .copied()
+        .unwrap_or_default()
 }
 
 /// The numbers `vocab.mastery.because.lookup_demotion.detail` and its repeat
 /// variant interpolate. A missing book title degrades the sentence to the
 /// plain variant rather than rendering a hole.
+///
+/// Both counts always go in, including on the first rung where the old
+/// single-lookup sentence carried no number at all. The frontend needs them to
+/// pick between "你又查了它一次", "你查了 2 次词典" and the mixed form: which
+/// sentence is true is decided by *what the reader did*, not by which rung it
+/// happened to land on, so the rung cannot be what gates the numbers.
 fn lookup_detail(
     tx: &Transaction<'_>,
     book_id: &str,
     reason: &str,
     lookups_in_window: u32,
+    glances_in_window: u32,
 ) -> String {
     let mut detail = serde_json::Map::new();
     detail.insert("reason".to_string(), reason.to_string().into());
@@ -313,6 +482,8 @@ fn lookup_detail(
     if reason == REASON_REPEAT_LOOKUP_DEMOTION {
         detail.insert("lookup_count".to_string(), lookups_in_window.into());
     }
+    detail.insert("card_count".to_string(), lookups_in_window.into());
+    detail.insert("glance_count".to_string(), glances_in_window.into());
     serde_json::Value::Object(detail).to_string()
 }
 
@@ -496,7 +667,7 @@ fn book_title(tx: &Transaction<'_>, book_id: &str) -> AppResult<Option<String>> 
 fn load_progress(tx: &Transaction<'_>, vocab_word_id: &str) -> AppResult<WordState> {
     let state = tx
         .query_row(
-            "SELECT credit, last_lookup_at, lookups_in_window
+            "SELECT credit, last_lookup_at, lookups_in_window, glances_in_window
                FROM mastery_progress WHERE vocab_word_id = ?1",
             params![vocab_word_id],
             |row| {
@@ -506,6 +677,9 @@ fn load_progress(tx: &Transaction<'_>, vocab_word_id: &str) -> AppResult<WordSta
                     last_lookup_at_ms: row.get("last_lookup_at")?,
                     lookups_in_window: row
                         .get::<_, i64>("lookups_in_window")?
+                        .clamp(0, u32::MAX as i64) as u32,
+                    glances_in_window: row
+                        .get::<_, i64>("glances_in_window")?
                         .clamp(0, u32::MAX as i64) as u32,
                 })
             },
@@ -530,15 +704,18 @@ fn save_progress(
 ) -> AppResult<()> {
     tx.execute(
         "INSERT INTO mastery_progress
-            (vocab_word_id, credit, last_lookup_at, lookups_in_window, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5)
+            (vocab_word_id, credit, last_lookup_at, lookups_in_window,
+             glances_in_window, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT(vocab_word_id) DO UPDATE SET
-             credit = ?2, last_lookup_at = ?3, lookups_in_window = ?4, updated_at = ?5",
+             credit = ?2, last_lookup_at = ?3, lookups_in_window = ?4,
+             glances_in_window = ?5, updated_at = ?6",
         params![
             vocab_word_id,
             credit,
             state.last_lookup_at_ms,
             i64::from(state.lookups_in_window),
+            i64::from(state.glances_in_window),
             now,
         ],
     )?;

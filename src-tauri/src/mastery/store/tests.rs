@@ -7,12 +7,15 @@
 //! split across flushes, and whether §2.4's exclusions still bite now that
 //! something downstream consumes what they let through.
 
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 
+use crate::commands::dictionary_glance::{record_dictionary_glance_inner, GlanceInput};
 use crate::commands::lookup_history::{save_lookup_record_inner, LookupInput};
 use crate::commands::reading_behavior::{record_reading_behavior_batch_inner, ScreenExposureInput};
 use crate::db::Db;
 use crate::sync::writer::SyncWriter;
+
+use super::GlanceOutcome;
 
 const BOOK: &str = "book-1";
 const WORD_ID: &str = "vocab-1";
@@ -596,4 +599,164 @@ fn a_lookup_in_one_book_clears_the_same_words_credit_in_another() {
     };
     assert_eq!(credits.len(), 2, "both rows carry progress");
     assert!(credits.iter().all(|credit| *credit == 0.0));
+}
+
+/// The reader single-clicks a word and reads the definition. `cfi` is what
+/// the 60-second dedupe compares on, so passing `None` means "somewhere else
+/// in the book" and every call counts.
+fn glance(db: &Db, sync: &SyncWriter, word: &str, cfi: Option<&str>) -> GlanceOutcome {
+    record_dictionary_glance_inner(
+        GlanceInput {
+            book_id: BOOK.to_string(),
+            word: word.to_string(),
+            definition: "a definition".to_string(),
+            context_sentence: None,
+            cfi: cfi.map(str::to_string),
+        },
+        db,
+        sync,
+    )
+    .unwrap()
+}
+
+/// The glanced word's row, found by spelling rather than by [`WORD_ID`] —
+/// a word the engine filed itself has an id nobody chose.
+fn glanced_word(db: &Db, word: &str) -> Option<(String, String, String, Option<String>)> {
+    db.reader()
+        .query_row(
+            "SELECT mastery, mastery_source, list_status, mastery_reason
+               FROM vocab_words WHERE word = ?1 COLLATE NOCASE",
+            params![word],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()
+        .unwrap()
+}
+
+#[test]
+fn four_glances_file_an_untracked_word_into_the_watchlist_at_learning() {
+    let (_dir, db, sync) = fixture();
+    for _ in 0..3 {
+        glance(&db, &sync, "quiet", None);
+        assert!(
+            glanced_word(&db, "quiet").is_none(),
+            "three glances is not yet a pattern"
+        );
+    }
+
+    let outcome = glance(&db, &sync, "quiet", None);
+    assert!(outcome.entered_watchlist);
+    assert_eq!(outcome.glance_count, 4);
+
+    let (mastery, source, list_status, reason) = glanced_word(&db, "quiet").unwrap();
+    // Learning, not new: the reader has demonstrably assessed this word four
+    // times. And watchlist, not confirmed — they never chose to keep it.
+    assert_eq!(mastery, "learning");
+    assert_eq!(source, "auto");
+    assert_eq!(list_status, "watchlist");
+    let detail: serde_json::Value = serde_json::from_str(&reason.unwrap()).unwrap();
+    assert_eq!(detail["reason"], "glance_entry");
+    assert_eq!(detail["book_title"], "Quiet Book");
+    assert_eq!(detail["glance_count"], 4);
+}
+
+#[test]
+fn a_glance_never_enters_lookup_history() {
+    // §4: every row in that table is a card the reader can reopen. A glance
+    // has no card behind it, so a row there would be an entry in the history
+    // list, and in exports, that opens onto nothing.
+    let (_dir, db, sync) = fixture();
+    for _ in 0..5 {
+        glance(&db, &sync, "quiet", None);
+    }
+    let records: i64 = db
+        .reader()
+        .query_row("SELECT COUNT(*) FROM lookup_records", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(records, 0);
+}
+
+#[test]
+fn reopening_the_same_menu_within_a_minute_is_one_glance() {
+    let (_dir, db, sync) = fixture();
+    let first = glance(&db, &sync, "quiet", Some("epubcfi(/6/4!/4/2/2)"));
+    assert!(first.counted);
+
+    let second = glance(&db, &sync, "quiet", Some("epubcfi(/6/4!/4/2/2)"));
+    assert!(!second.counted);
+    assert_eq!(second.glance_count, 1);
+
+    // The same word further along the book is a different encounter with a
+    // different sentence around it, and stopping at both is the evidence.
+    let elsewhere = glance(&db, &sync, "quiet", Some("epubcfi(/6/8!/4/2/2)"));
+    assert!(elsewhere.counted);
+    assert_eq!(elsewhere.glance_count, 2);
+}
+
+#[test]
+fn a_glance_on_a_tracked_word_halves_its_credit_without_moving_the_tier() {
+    let (_dir, db, sync) = fixture();
+    save_word(&db, "quiet", "new");
+    read_across_chapters(&db, &sync, 3, "quiet");
+    assert!((credit_of(&db) - 3.0).abs() < 1e-9);
+
+    let outcome = glance(&db, &sync, "quiet", None);
+    assert!(outcome.counted);
+    assert!(!outcome.tier_changed);
+    assert_eq!(mastery_of(&db).0, "new");
+    assert!((credit_of(&db) - 1.5).abs() < 1e-9);
+}
+
+#[test]
+fn two_glances_inside_the_window_cost_a_tracked_word_one_tier() {
+    let (_dir, db, sync) = fixture();
+    save_word(&db, "quiet", "mastered");
+
+    assert!(!glance(&db, &sync, "quiet", None).tier_changed);
+    assert_eq!(mastery_of(&db).0, "mastered");
+
+    assert!(glance(&db, &sync, "quiet", None).tier_changed);
+    let (mastery, source, reason) = mastery_of(&db);
+    assert_eq!(mastery, "familiar");
+    assert_eq!(source, "auto");
+    // Both counts travel with the sentence, so the copy can say what the
+    // reader actually did rather than calling two dictionary checks "lookups".
+    let detail: serde_json::Value = serde_json::from_str(&reason.unwrap()).unwrap();
+    assert_eq!(detail["reason"], "lookup_demotion");
+    assert_eq!(detail["card_count"], 0);
+    assert_eq!(detail["glance_count"], 2);
+}
+
+#[test]
+fn a_card_and_a_glance_together_reach_the_repeat_rung() {
+    let (_dir, db, sync) = fixture();
+    save_word(&db, "quiet", "mastered");
+
+    look_up(&db, &sync, "quiet");
+    assert_eq!(mastery_of(&db).0, "familiar");
+    glance(&db, &sync, "quiet", None);
+    assert_eq!(mastery_of(&db).0, "familiar", "1.5 is short of the rung");
+
+    glance(&db, &sync, "quiet", None);
+    let (mastery, _, reason) = mastery_of(&db);
+    assert_eq!(mastery, "learning");
+    let detail: serde_json::Value = serde_json::from_str(&reason.unwrap()).unwrap();
+    assert_eq!(detail["reason"], "repeat_lookup_demotion");
+    assert_eq!(detail["card_count"], 1);
+    assert_eq!(detail["glance_count"], 2);
+}
+
+#[test]
+fn a_stale_chain_forgets_its_glances_too() {
+    let (_dir, db, sync) = fixture();
+    save_word(&db, "quiet", "mastered");
+
+    glance(&db, &sync, "quiet", None);
+    backdate_lookup(&db, 8);
+    glance(&db, &sync, "quiet", None);
+    assert_eq!(
+        mastery_of(&db).0,
+        "mastered",
+        "two glances eight days apart are two separate moments of doubt"
+    );
 }
