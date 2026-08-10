@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>样张 · 动效升级（查词卡片 / popover / 弹窗 / Toast）</title>
+<style>
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+
+    --paper: #fbf8f1;
+    --ink: #2c2a26;
+
+    --surface: #ffffff;
+    --surface-muted: #fafafa;
+    --input: #f3f3f5;
+    --text-1: #18181b;
+    --text-2: #52525c;
+    --text-3: #71717b;
+    --border: #e4e4e7;
+    --border-light: #f4f4f5;
+    --accent: #7c3aed;
+    --accent-bg: #f3e8ff;
+    --accent-text: #7c3aed;
+    --overlay: rgba(0,0,0,.5);
+    --shadow-menu: 0 10px 30px rgba(0,0,0,.14), 0 2px 6px rgba(0,0,0,.06);
+
+    /* ── 提议新增的动效 token（真正要写进 index.css 的就是这几行） ── */
+    --motion-instant: 90ms;   /* 悬停反馈、交叉淡入 */
+    --motion-fast: 140ms;     /* popover / 菜单出场 */
+    --motion-base: 220ms;     /* 展开收起、弹窗、Toast */
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .dark {
+    --paper: #17171a;
+    --ink: #d9d5cd;
+
+    --surface: #18191d;
+    --surface-muted: #1d1e23;
+    --input: #26272d;
+    --text-1: #f4f4f5;
+    --text-2: #b5b5bd;
+    --text-3: #82828c;
+    --border: #34343d;
+    --border-light: #26272d;
+    --accent: #8b5cf6;
+    --accent-bg: #302647;
+    --accent-text: #a78bfa;
+    --overlay: rgba(0,0,0,.6);
+    --shadow-menu: 0 10px 30px rgba(0,0,0,.5), 0 2px 6px rgba(0,0,0,.3);
+  }
+
+  /* 「减弱动态效果」总开关。真实实现里这层写在
+     @media (prefers-reduced-motion: reduce) 里，跟系统设置走；
+     样张里做成按钮，方便直接看关掉之后的样子。 */
+  body.reduce-motion * {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 34px 24px 90px;
+    background: #e9e9ec; font-family: var(--font-sans); color: #18181b;
+    transition: background var(--motion-base) var(--ease-in-out);
+  }
+  body.dark { background: #0e0e11; color: #f4f4f5; }
+
+  h1.page { font-size: 21px; margin: 0 0 8px; }
+  h2.page {
+    font-size: 15px; margin: 0 0 4px; letter-spacing: .01em;
+    display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
+  }
+  h2.page .no {
+    font-size: 11px; font-weight: 700; color: #fff; background: var(--accent);
+    border-radius: 999px; padding: 2px 8px; letter-spacing: .04em;
+  }
+  h2.page .no.opt { background: #a1a1aa; }
+  p.page { font-size: 13px; color: #52525c; margin: 0 0 10px; max-width: 900px; line-height: 1.8; }
+  body.dark p.page { color: #a1a1ab; }
+  body.dark h1.page, body.dark h2.page { color: #f4f4f5; }
+  p.page b { color: #18181b; }
+  body.dark p.page b { color: #f4f4f5; }
+  code.k {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+    background: rgba(124,58,237,.10); color: #6d28d9; padding: 1px 5px; border-radius: 4px;
+  }
+  body.dark code.k { background: rgba(139,92,246,.18); color: #c4b5fd; }
+
+  .sep { height: 1px; background: #d6d6da; margin: 34px 0 26px; max-width: 1180px; }
+  body.dark .sep { background: #2a2a31; }
+
+  /* ── 顶部控制条 ── */
+  .toolbar {
+    position: sticky; top: 0; z-index: 60; margin: -34px -24px 26px; padding: 12px 24px;
+    background: rgba(233,233,236,.86); backdrop-filter: blur(10px);
+    border-bottom: 1px solid #d6d6da;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  }
+  body.dark .toolbar { background: rgba(14,14,17,.86); border-bottom-color: #2a2a31; }
+  .toolbar .spacer { flex: 1; }
+  .btn {
+    font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text-1);
+    border-radius: 7px; padding: 7px 13px;
+    transition: background var(--motion-instant) var(--ease-in-out),
+                border-color var(--motion-instant) var(--ease-in-out),
+                color var(--motion-instant) var(--ease-in-out);
+  }
+  .btn:hover { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-text); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.08); color: #fff; }
+  .btn.on { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-text); }
+
+  /* ── 双栏对比 ── */
+  .grid { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start; }
+  .panel { flex: 1 1 430px; min-width: 380px; }
+  .panel > .caption {
+    font-size: 12px; font-weight: 700; color: #52525c; margin: 0 0 9px;
+    display: flex; align-items: center; gap: 7px;
+  }
+  body.dark .panel > .caption { color: #a1a1ab; }
+  .panel > .caption .dot { width: 7px; height: 7px; border-radius: 999px; background: #a1a1aa; }
+  .panel.after > .caption .dot { background: var(--accent); }
+  .panel > .caption span.note { font-weight: 400; color: #82828c; }
+
+  .stage {
+    background: var(--paper); border-radius: 10px; padding: 22px 24px 24px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.09); position: relative; min-height: 300px;
+  }
+  body.dark .stage { box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  .prose {
+    font-family: var(--font-serif); font-size: 16px; line-height: 31px;
+    color: var(--ink); margin: 0; user-select: none;
+  }
+  .prose + .prose { margin-top: 12px; }
+  .word {
+    background: rgba(192,186,150,.16); border-bottom: 1px solid rgba(168,159,116,1);
+    border-radius: 2px; padding: 0 1px; cursor: pointer;
+  }
+  .word:hover { background: rgba(192,186,150,.34); }
+  .hint-click {
+    font-family: var(--font-sans); font-size: 11px; color: #a8a296; margin: 14px 0 0;
+  }
+
+  /* ══════════════════════════════════════════
+     菜单本体（查词卡片 + 操作行）
+     ══════════════════════════════════════════ */
+  .menu {
+    position: absolute; width: 268px; z-index: 20;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: var(--shadow-menu); padding: 5px 0 5px; overflow: hidden;
+  }
+  .menu[hidden] { display: none; }
+
+  /* 新版出场：从被点的词那个角「长出来」。
+     真实实现用 @starting-style，不支持的旧内核直接出现 = 今天的行为。 */
+  .menu.anim { transform-origin: var(--origin, top left); }
+  .menu.anim.entering {
+    animation: pop-in var(--motion-fast) var(--ease-out) both;
+  }
+  .menu.anim.leaving {
+    animation: pop-out var(--motion-instant) ease-in both;
+  }
+  @keyframes pop-in {
+    from { opacity: 0; transform: scale(.96) translateY(-4px); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes pop-out {
+    from { opacity: 1; transform: none; }
+    to   { opacity: 0; transform: scale(.98); }
+  }
+
+  .card { margin: 0 4px 4px; padding: 6px 8px 8px; border-bottom: 1px solid var(--border-light); }
+  .card-head { display: flex; align-items: center; gap: 8px; }
+  .card-word { font-size: 13px; font-weight: 600; color: var(--text-1); }
+  .card-ipa { font-size: 11px; color: var(--text-3); }
+  .card-speak {
+    margin-left: auto; display: flex; gap: 4px; align-items: center;
+  }
+  .icon-btn {
+    width: 22px; height: 22px; border-radius: 4px; border: 0; background: transparent;
+    color: var(--text-3); display: flex; align-items: center; justify-content: center; cursor: pointer;
+    transition: background var(--motion-instant) var(--ease-in-out), color var(--motion-instant) var(--ease-in-out);
+  }
+  .icon-btn:hover { background: var(--accent-bg); color: var(--accent-text); }
+  .accent-chip {
+    height: 18px; border: 1px solid var(--border); border-radius: 4px; background: transparent;
+    font: inherit; font-size: 10px; font-weight: 500; color: var(--text-3); padding: 0 4px; cursor: pointer;
+  }
+
+  /* 骨架条 */
+  .skel { height: 11px; border-radius: 3px; background: var(--border); animation: pulse 1.6s ease-in-out infinite; }
+  .skel.ipa { height: 10px; width: 56px; border-radius: 3px; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+  .skel-body { padding: 4.5px 0; display: grid; gap: 9px; }
+  .skel-body .skel:nth-child(2) { width: 66%; }
+
+  /* 骨架 → 正文：旧版硬切、新版交叉淡入（正文一开始就在，只是透明） */
+  .swap { position: relative; margin-top: 4px; }
+  .swap > .skel-layer { position: absolute; inset: 0; }
+  .swap.x > .skel-layer { transition: opacity var(--motion-instant) var(--ease-in-out); }
+  .swap.x > .body-layer { transition: opacity var(--motion-instant) var(--ease-in-out); }
+  .swap[data-state="loading"] > .body-layer { opacity: 0; }
+  .swap[data-state="ready"]   > .skel-layer { opacity: 0; pointer-events: none; }
+  /* 旧版：没有过渡，直接切显示 */
+  .swap:not(.x)[data-state="loading"] > .body-layer { visibility: hidden; }
+  .swap:not(.x)[data-state="ready"]   > .skel-layer { display: none; }
+
+  .sense { font-size: 12px; line-height: 20px; color: var(--text-2); margin: 0; }
+  .sense + .sense { margin-top: 4px; }
+  .sense .pos { font-weight: 500; color: var(--text-1); margin-right: 4px; }
+  .sense.clamp { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }
+  .sense.clamp.c6 { -webkit-line-clamp: 6; }
+
+  /* 展开收起：grid-template-rows 0fr→1fr，这是仓里 LearningCardModules 已经在用的解法 */
+  .more { display: grid; grid-template-rows: 0fr; }
+  .more.anim { transition: grid-template-rows var(--motion-base) var(--ease-in-out); }
+  .more > .more-inner { overflow: hidden; min-height: 0; }
+  .more.open { grid-template-rows: 1fr; }
+
+  .more-line { font-size: 11px; line-height: 16px; color: var(--text-3); margin: 4px 0 0; }
+  .link-btn {
+    border: 0; background: transparent; font: inherit; font-size: 11px; font-weight: 500;
+    color: var(--accent-text); cursor: pointer; padding: 0; text-underline-offset: 2px;
+  }
+  .link-btn:hover { text-decoration: underline; }
+  .ai-hint { font-size: 11px; line-height: 16px; color: var(--text-3); margin: 4px 0 0; }
+
+  .menu-row {
+    margin: 0 4px; width: calc(100% - 8px); height: 36px; border: 0; background: transparent;
+    display: flex; align-items: center; gap: 12px; padding: 0 12px; border-radius: 4px;
+    font: inherit; font-size: 13px; font-weight: 500; color: var(--text-1); cursor: pointer; text-align: left;
+    transition: background var(--motion-instant) var(--ease-in-out);
+  }
+  .menu-row:hover { background: var(--accent-bg); }
+  .menu-row .ico { width: 16px; color: var(--text-3); flex: 0 0 16px; }
+  .menu-row .sc { margin-left: auto; font-size: 11px; color: var(--text-3); }
+
+  /* ══════════════════════════════════════════
+     #4 其它 popover（解释气泡）
+     ══════════════════════════════════════════ */
+  .bubble {
+    position: absolute; width: 280px; z-index: 20;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: var(--shadow-menu); padding: 12px 13px;
+  }
+  .bubble[hidden] { display: none; }
+  .bubble.anim { transform-origin: var(--origin, top left); }
+  .bubble.anim.entering { animation: pop-in var(--motion-fast) var(--ease-out) both; }
+  .bubble.anim.leaving { animation: pop-out var(--motion-instant) ease-in both; }
+  .bubble h4 { margin: 0 0 6px; font-size: 12px; color: var(--text-3); font-weight: 600; }
+  .bubble p { margin: 0; font-size: 13px; line-height: 21px; color: var(--text-1); }
+
+  /* ══════════════════════════════════════════
+     #5 模态框
+     ══════════════════════════════════════════ */
+  .modal-stage {
+    position: relative; height: 300px; border-radius: 10px; overflow: hidden;
+    background: var(--surface-muted); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .scrim { position: absolute; inset: 0; background: var(--overlay); }
+  .scrim[hidden], .dialog[hidden] { display: none; }
+  .scrim.anim { transition: opacity var(--motion-base) var(--ease-in-out); }
+  .scrim.anim.entering { animation: fade-in var(--motion-base) var(--ease-in-out) both; }
+  .scrim.anim.leaving { animation: fade-out var(--motion-fast) var(--ease-in-out) both; }
+  @keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes fade-out { from { opacity: 1 } to { opacity: 0 } }
+
+  .dialog {
+    position: absolute; width: 300px; background: var(--surface); border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.28); padding: 18px 18px 15px; z-index: 5;
+  }
+  .dialog.anim.entering { animation: dialog-in var(--motion-base) var(--ease-out) both; }
+  .dialog.anim.leaving { animation: dialog-out var(--motion-fast) ease-in both; }
+  @keyframes dialog-in {
+    from { opacity: 0; transform: scale(.97) translateY(8px); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes dialog-out {
+    from { opacity: 1; transform: none; }
+    to   { opacity: 0; transform: scale(.99) translateY(3px); }
+  }
+  .dialog h3 { margin: 0 0 7px; font-size: 14px; color: var(--text-1); }
+  .dialog p { margin: 0 0 14px; font-size: 12.5px; line-height: 19px; color: var(--text-2); }
+  .dialog .row { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* ══════════════════════════════════════════
+     #6 Toast
+     ══════════════════════════════════════════ */
+  .toast-stage {
+    position: relative; height: 190px; border-radius: 10px; overflow: hidden;
+    background: var(--surface-muted); border: 1px solid var(--border);
+  }
+  .toast {
+    position: absolute; right: 14px; bottom: 14px; width: 262px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 10px 26px rgba(0,0,0,.16); padding: 11px 12px;
+    display: flex; gap: 10px; align-items: flex-start;
+  }
+  .toast[hidden] { display: none; }
+  .toast.anim.entering { animation: toast-in var(--motion-base) var(--ease-out) both; }
+  .toast.anim.leaving { animation: toast-out var(--motion-fast) ease-in both; }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(14px) scale(.97); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes toast-out {
+    from { opacity: 1; transform: none; }
+    to   { opacity: 0; transform: translateY(6px) scale(.99); }
+  }
+  .toast .t-body { min-width: 0; }
+  .toast .t-title { font-size: 12.5px; font-weight: 600; color: var(--text-1); margin: 0 0 2px; }
+  .toast .t-sub { font-size: 11.5px; color: var(--text-3); margin: 0; line-height: 16px; }
+
+  /* ══════════════════════════════════════════
+     可选：#7 数字、#8 书架错峰
+     ══════════════════════════════════════════ */
+  .num-stage {
+    border-radius: 10px; background: var(--surface); border: 1px solid var(--border);
+    padding: 20px; display: flex; align-items: baseline; gap: 10px; min-height: 92px;
+  }
+  .num { font-size: 34px; font-weight: 700; color: var(--text-1); font-variant-numeric: tabular-nums; }
+  .num-unit { font-size: 13px; color: var(--text-3); }
+  .roll { display: inline-flex; overflow: hidden; height: 40px; }
+  .roll .digit { display: inline-block; height: 40px; overflow: hidden; }
+  .roll .digit .strip { display: block; transition: transform var(--motion-base) var(--ease-out); }
+  .roll .digit .strip span { display: block; height: 40px; line-height: 40px; }
+
+  .shelf {
+    border-radius: 10px; background: var(--surface); border: 1px solid var(--border);
+    padding: 16px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; min-height: 150px;
+  }
+  .bookcard {
+    border-radius: 7px; background: linear-gradient(150deg, #ded7f5, #f3e8ff);
+    aspect-ratio: 3/4.2; border: 1px solid var(--border);
+  }
+  body.dark .bookcard { background: linear-gradient(150deg, #33294d, #221c33); }
+  .bookcard.anim { animation: card-in 260ms var(--ease-out) both; animation-delay: var(--d, 0ms); }
+  @keyframes card-in {
+    from { opacity: 0; transform: translateY(9px) scale(.98); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px;
+  }
+  .legend .chip {
+    font-size: 11.5px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 999px; padding: 5px 11px; color: var(--text-2);
+  }
+  .legend .chip b { color: var(--text-1); }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <button class="btn primary" id="playAll">▶ 同时触发全部</button>
+  <button class="btn" id="themeBtn">切到深色</button>
+  <button class="btn" id="rmBtn">减弱动态效果：关</button>
+  <div class="spacer"></div>
+  <span style="font-size:11.5px;color:#71717b">左＝今天的样子 · 右＝提议的样子 · 每块都能单独反复点</span>
+</div>
+
+<h1 class="page">动效升级样张</h1>
+<p class="page">
+  左右两栏是<b>同一个界面</b>，只有动效不同。所有新动效只用 CSS，不引任何动画库；
+  时长和缓动全部来自下面这五个变量，改一处全应用同步变。
+  旧版 macOS（Safari 15 内核）不支持时的表现，就是左栏——<b>新系统上变好，旧系统上不变差</b>。
+</p>
+<div class="legend">
+  <span class="chip"><b>--motion-instant</b> 90ms · 交叉淡入、悬停</span>
+  <span class="chip"><b>--motion-fast</b> 140ms · popover 出场</span>
+  <span class="chip"><b>--motion-base</b> 220ms · 展开、弹窗、Toast</span>
+  <span class="chip"><b>--ease-out</b> 快起慢收 · 出场</span>
+  <span class="chip"><b>--ease-in-out</b> 对称 · 双向</span>
+</div>
+
+<div class="sep"></div>
+
+<!-- ═══════════════ #1 #2 #3 查词卡片 ═══════════════ -->
+<h2 class="page"><span class="no">#1 #2 #3</span> 查词卡片</h2>
+<p class="page">
+  点正文里带底线的 <b>deliver</b>。三层变化叠在一起：
+  <b>①</b> 菜单从被点的词那个角长出来（<code class="k">transform-origin</code> 跟随实际落位），而不是凭空闪现；
+  <b>②</b> 骨架条和词条正文交叉淡入 90ms —— 正文其实一开始就排好了版只是透明的，所以卡片高度全程不动；
+  <b>③</b> 点「展开全部」时高度用 <code class="k">grid-template-rows</code> 过渡，不再瞬间跳一大截。
+</p>
+<div class="grid">
+  <div class="panel">
+    <p class="caption"><span class="dot"></span>现在</p>
+    <div class="stage" id="dictBefore">
+      <p class="prose">The courier promised to <span class="word" data-word>deliver</span> the parcel before noon, but the storm had other plans.</p>
+      <p class="prose">She had rehearsed the speech for weeks, hoping to deliver it without once glancing at her notes.</p>
+      <p class="hint-click">↑ 点带底线的词</p>
+    </div>
+  </div>
+  <div class="panel after">
+    <p class="caption"><span class="dot"></span>新的 <span class="note">— 出场 140ms / 交接 90ms / 展开 220ms</span></p>
+    <div class="stage" id="dictAfter">
+      <p class="prose">The courier promised to <span class="word" data-word>deliver</span> the parcel before noon, but the storm had other plans.</p>
+      <p class="prose">She had rehearsed the speech for weeks, hoping to deliver it without once glancing at her notes.</p>
+      <p class="hint-click">↑ 点带底线的词</p>
+    </div>
+  </div>
+</div>
+
+<div class="sep"></div>
+
+<!-- ═══════════════ #4 其它 popover ═══════════════ -->
+<h2 class="page"><span class="no">#4</span> 其它气泡：解释、翻译、高亮工具条、右键菜单</h2>
+<p class="page">
+  和 #1 共用同一个类，改的只是 className。这里用「解释这句」气泡演示：
+  点句子任意位置。注意<b>关闭也有动效</b>（90ms 缩回），今天是啪一下消失。
+</p>
+<div class="grid">
+  <div class="panel">
+    <p class="caption"><span class="dot"></span>现在</p>
+    <div class="stage" id="bubbleBefore" style="min-height:200px">
+      <p class="prose" style="cursor:pointer" data-sentence>The storm had other plans.</p>
+      <p class="hint-click">↑ 点这句话</p>
+    </div>
+  </div>
+  <div class="panel after">
+    <p class="caption"><span class="dot"></span>新的</p>
+    <div class="stage" id="bubbleAfter" style="min-height:200px">
+      <p class="prose" style="cursor:pointer" data-sentence>The storm had other plans.</p>
+      <p class="hint-click">↑ 点这句话</p>
+    </div>
+  </div>
+</div>
+
+<div class="sep"></div>
+
+<!-- ═══════════════ #5 模态框 ═══════════════ -->
+<h2 class="page"><span class="no">#5</span> 弹窗：设置、删除确认、导出</h2>
+<p class="page">遮罩淡入 220ms，内容同时从 97% 放到 100% 并往上走 8px。关闭时反过来，快一点（140ms）。</p>
+<div class="grid">
+  <div class="panel">
+    <p class="caption"><span class="dot"></span>现在</p>
+    <div class="modal-stage" id="modalBefore">
+      <button class="btn" data-open>打开弹窗</button>
+    </div>
+  </div>
+  <div class="panel after">
+    <p class="caption"><span class="dot"></span>新的</p>
+    <div class="modal-stage" id="modalAfter">
+      <button class="btn" data-open>打开弹窗</button>
+    </div>
+  </div>
+</div>
+
+<div class="sep"></div>
+
+<!-- ═══════════════ #6 Toast ═══════════════ -->
+<h2 class="page"><span class="no">#6</span> 更新提示 Toast</h2>
+<p class="page">从右下角托上来，220ms。今天是直接出现在那儿。</p>
+<div class="grid">
+  <div class="panel">
+    <p class="caption"><span class="dot"></span>现在</p>
+    <div class="toast-stage" id="toastBefore">
+      <div style="padding:14px"><button class="btn" data-open>触发提示</button></div>
+    </div>
+  </div>
+  <div class="panel after">
+    <p class="caption"><span class="dot"></span>新的</p>
+    <div class="toast-stage" id="toastAfter">
+      <div style="padding:14px"><button class="btn" data-open>触发提示</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="sep"></div>
+
+<!-- ═══════════════ 可选 ═══════════════ -->
+<h2 class="page"><span class="no opt">可选 #7</span> 数字滚动（阅读统计 / 生词计数）</h2>
+<p class="page">
+  number-flow 那一路的手法，自己写 30 行 CSS 就有。我的看法是<b>可以不做</b>——
+  统计页的数字一天变不了几次，滚动反而会让人以为数字在实时跳。放在这里是让你亲眼否掉它。
+</p>
+<div class="grid">
+  <div class="panel">
+    <p class="caption"><span class="dot"></span>现在</p>
+    <div class="num-stage"><span class="num" id="numBefore">1284</span><span class="num-unit">个词已认识</span></div>
+    <div style="margin-top:10px"><button class="btn" data-num="before">+37</button></div>
+  </div>
+  <div class="panel after">
+    <p class="caption"><span class="dot"></span>新的</p>
+    <div class="num-stage"><span class="roll" id="numAfter"></span><span class="num-unit">个词已认识</span></div>
+    <div style="margin-top:10px"><button class="btn" data-num="after">+37</button></div>
+  </div>
+</div>
+
+<div class="sep"></div>
+
+<h2 class="page"><span class="no opt">可选 #8</span> 书架卡片错峰入场</h2>
+<p class="page">
+  每张晚 30ms 淡入。<b>容易做过头</b>——书多了就变成一道波浪，而书架是每次开 app 都要看的界面，
+  第五十次看会烦。我的建议是只在<b>首次冷启动</b>做，之后的返回不做。你看着定。
+</p>
+<div class="grid">
+  <div class="panel">
+    <p class="caption"><span class="dot"></span>现在</p>
+    <div class="shelf" id="shelfBefore"></div>
+    <div style="margin-top:10px"><button class="btn" data-shelf="before">重新加载</button></div>
+  </div>
+  <div class="panel after">
+    <p class="caption"><span class="dot"></span>新的</p>
+    <div class="shelf" id="shelfAfter"></div>
+    <div style="margin-top:10px"><button class="btn" data-shelf="after">重新加载</button></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var SPEAK_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
+  function ico(d) {
+    return '<svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>';
+  }
+  var ICON_COPY = ico('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>');
+  var ICON_MARK = ico('<path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>');
+  var ICON_AI = ico('<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/>');
+
+  /* ── 查词卡片 ─────────────────────────────── */
+  function menuMarkup(animated) {
+    return '' +
+      '<div class="card">' +
+        '<div class="card-head">' +
+          '<span class="card-word">deliver</span>' +
+          '<span class="ipa-slot"></span>' +
+          '<span class="card-speak">' +
+            '<button class="icon-btn" title="朗读">' + SPEAK_SVG + '</button>' +
+            '<button class="accent-chip">US</button>' +
+          '</span>' +
+        '</div>' +
+        '<div class="swap' + (animated ? ' x' : '') + '" data-state="loading">' +
+          '<div class="skel-layer"><div class="skel-body"><div class="skel"></div><div class="skel"></div></div></div>' +
+          '<div class="body-layer">' +
+            '<p class="sense clamp c6" data-senses>' +
+              '<span class="pos">v.</span>递送；投递；交付；发表（演说）；履行（承诺）；接生' +
+            '</p>' +
+            '<div class="more' + (animated ? ' anim' : '') + '"><div class="more-inner">' +
+              '<p class="sense"><span class="pos">v.</span>解救；使摆脱；给予（打击）；使产生（效果）；转让</p>' +
+              '<p class="sense"><span class="pos">n.</span>（板球）投球</p>' +
+            '</div></div>' +
+            '<p class="more-line"><span data-count>还有 6 条释义，</span><button class="link-btn" data-toggle>展开全部</button></p>' +
+            '<p class="ai-hint">双击让 AI 告诉你这里是哪个意思</p>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<button class="menu-row">' + ICON_COPY + '<span>复制</span><span class="sc">⌘C</span></button>' +
+      '<button class="menu-row">' + ICON_MARK + '<span>标记生词</span></button>' +
+      '<button class="menu-row">' + ICON_AI + '<span>问 AI</span></button>';
+  }
+
+  function setupDict(stageId, animated) {
+    var stage = document.getElementById(stageId);
+    var word = stage.querySelector('[data-word]');
+    var menu = document.createElement('div');
+    menu.className = 'menu' + (animated ? ' anim' : '');
+    menu.hidden = true;
+    menu.innerHTML = menuMarkup(animated);
+    stage.appendChild(menu);
+
+    var swap = menu.querySelector('.swap');
+    var more = menu.querySelector('.more');
+    var toggle = menu.querySelector('[data-toggle]');
+    var count = menu.querySelector('[data-count]');
+    var ipaSlot = menu.querySelector('.ipa-slot');
+    var loadTimer = null;
+
+    toggle.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = more.classList.toggle('open');
+      toggle.textContent = open ? '收起' : '展开全部';
+      count.textContent = open ? '' : '还有 6 条释义，';
+      menu.querySelector('[data-senses]').classList.toggle('clamp', !open);
+    });
+
+    function reset() {
+      clearTimeout(loadTimer);
+      swap.setAttribute('data-state', 'loading');
+      ipaSlot.innerHTML = '<span class="skel ipa"></span>';
+      more.classList.remove('open');
+      toggle.textContent = '展开全部';
+      count.textContent = '还有 6 条释义，';
+      menu.querySelector('[data-senses]').classList.add('clamp');
+    }
+
+    function open() {
+      reset();
+      var r = word.getBoundingClientRect();
+      var s = stage.getBoundingClientRect();
+      menu.style.left = Math.round(r.left - s.left) + 'px';
+      menu.style.top = Math.round(r.bottom - s.top + 6) + 'px';
+      menu.style.setProperty('--origin', 'top left');
+      menu.hidden = false;
+      menu.classList.remove('leaving');
+      if (animated) {
+        menu.classList.remove('entering');
+        void menu.offsetWidth;
+        menu.classList.add('entering');
+      }
+      // 词典查询回来了：骨架交给正文
+      loadTimer = setTimeout(function () {
+        ipaSlot.innerHTML = '<span class="card-ipa">/dɪˈlɪvər/</span>';
+        swap.setAttribute('data-state', 'ready');
+      }, 620);
+    }
+
+    function close() {
+      if (menu.hidden) return;
+      clearTimeout(loadTimer);
+      if (!animated) { menu.hidden = true; return; }
+      menu.classList.remove('entering');
+      menu.classList.add('leaving');
+      setTimeout(function () { menu.hidden = true; menu.classList.remove('leaving'); }, 100);
+    }
+
+    word.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (!menu.hidden) { close(); return; }
+      open();
+    });
+    menu.addEventListener('click', function (e) { e.stopPropagation(); });
+    document.addEventListener('click', close);
+    return { open: open, close: close };
+  }
+
+  /* ── 解释气泡 ─────────────────────────────── */
+  function setupBubble(stageId, animated) {
+    var stage = document.getElementById(stageId);
+    var sentence = stage.querySelector('[data-sentence]');
+    var bubble = document.createElement('div');
+    bubble.className = 'bubble' + (animated ? ' anim' : '');
+    bubble.hidden = true;
+    bubble.innerHTML = '<h4>这句在说什么</h4><p>「有别的打算」是拟人说法：暴风雨当然没有计划，这里是说事情没按送货员的安排走。</p>';
+    stage.appendChild(bubble);
+
+    function open() {
+      var r = sentence.getBoundingClientRect();
+      var s = stage.getBoundingClientRect();
+      bubble.style.left = Math.round(r.left - s.left) + 'px';
+      bubble.style.top = Math.round(r.bottom - s.top + 8) + 'px';
+      bubble.hidden = false;
+      bubble.classList.remove('leaving');
+      if (animated) {
+        bubble.classList.remove('entering');
+        void bubble.offsetWidth;
+        bubble.classList.add('entering');
+      }
+    }
+    function close() {
+      if (bubble.hidden) return;
+      if (!animated) { bubble.hidden = true; return; }
+      bubble.classList.remove('entering');
+      bubble.classList.add('leaving');
+      setTimeout(function () { bubble.hidden = true; bubble.classList.remove('leaving'); }, 100);
+    }
+    sentence.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (!bubble.hidden) { close(); return; }
+      open();
+    });
+    bubble.addEventListener('click', function (e) { e.stopPropagation(); });
+    document.addEventListener('click', close);
+    return { open: open, close: close };
+  }
+
+  /* ── 模态框 ───────────────────────────────── */
+  function setupModal(stageId, animated) {
+    var stage = document.getElementById(stageId);
+    var scrim = document.createElement('div');
+    scrim.className = 'scrim' + (animated ? ' anim' : '');
+    scrim.hidden = true;
+    var dialog = document.createElement('div');
+    dialog.className = 'dialog' + (animated ? ' anim' : '');
+    dialog.hidden = true;
+    dialog.innerHTML = '<h3>删除《雾都孤儿》？</h3><p>阅读进度、笔记和这本书里标记的生词都会一并删除，不能撤销。</p>' +
+      '<div class="row"><button class="btn" data-cancel>取消</button><button class="btn primary" data-cancel>删除</button></div>';
+    stage.appendChild(scrim);
+    stage.appendChild(dialog);
+
+    function open() {
+      scrim.hidden = false; dialog.hidden = false;
+      [scrim, dialog].forEach(function (el) {
+        el.classList.remove('leaving');
+        if (!animated) return;
+        el.classList.remove('entering');
+        void el.offsetWidth;
+        el.classList.add('entering');
+      });
+    }
+    function close() {
+      if (dialog.hidden) return;
+      if (!animated) { scrim.hidden = true; dialog.hidden = true; return; }
+      [scrim, dialog].forEach(function (el) {
+        el.classList.remove('entering');
+        el.classList.add('leaving');
+      });
+      setTimeout(function () {
+        scrim.hidden = true; dialog.hidden = true;
+        scrim.classList.remove('leaving'); dialog.classList.remove('leaving');
+      }, 145);
+    }
+    stage.querySelector('[data-open]').addEventListener('click', open);
+    scrim.addEventListener('click', close);
+    dialog.querySelectorAll('[data-cancel]').forEach(function (b) { b.addEventListener('click', close); });
+    return { open: open, close: close };
+  }
+
+  /* ── Toast ────────────────────────────────── */
+  function setupToast(stageId, animated) {
+    var stage = document.getElementById(stageId);
+    var toast = document.createElement('div');
+    toast.className = 'toast' + (animated ? ' anim' : '');
+    toast.hidden = true;
+    toast.innerHTML = '<div class="t-body"><p class="t-title">Lantern 2.16.0 已就绪</p>' +
+      '<p class="t-sub">重启后生效。更新内容见发布说明。</p></div>';
+    stage.appendChild(toast);
+    var hideTimer = null;
+
+    function open() {
+      clearTimeout(hideTimer);
+      toast.hidden = false;
+      toast.classList.remove('leaving');
+      if (animated) {
+        toast.classList.remove('entering');
+        void toast.offsetWidth;
+        toast.classList.add('entering');
+      }
+      hideTimer = setTimeout(close, 2600);
+    }
+    function close() {
+      if (toast.hidden) return;
+      if (!animated) { toast.hidden = true; return; }
+      toast.classList.remove('entering');
+      toast.classList.add('leaving');
+      setTimeout(function () { toast.hidden = true; toast.classList.remove('leaving'); }, 145);
+    }
+    stage.querySelector('[data-open]').addEventListener('click', open);
+    return { open: open, close: close };
+  }
+
+  /* ── 数字 ─────────────────────────────────── */
+  var numValue = 1284;
+  var rollEl = document.getElementById('numAfter');
+  function renderRoll(value, animate) {
+    var digits = String(value).split('');
+    if (rollEl.children.length !== digits.length) {
+      rollEl.innerHTML = digits.map(function () {
+        return '<span class="digit num"><span class="strip">' +
+          '0123456789'.split('').map(function (d) { return '<span>' + d + '</span>'; }).join('') +
+          '</span></span>';
+      }).join('');
+      animate = false;
+    }
+    digits.forEach(function (d, i) {
+      var strip = rollEl.children[i].firstChild;
+      if (!animate) strip.style.transition = 'none';
+      strip.style.transform = 'translateY(-' + (Number(d) * 40) + 'px)';
+      if (!animate) { void strip.offsetWidth; strip.style.transition = ''; }
+    });
+  }
+  renderRoll(numValue, false);
+  document.querySelectorAll('[data-num]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (btn.dataset.num === 'before') {
+        var el = document.getElementById('numBefore');
+        el.textContent = String(Number(el.textContent) + 37);
+      } else {
+        numValue += 37;
+        renderRoll(numValue, true);
+      }
+    });
+  });
+
+  /* ── 书架 ─────────────────────────────────── */
+  function fillShelf(id, animated) {
+    var shelf = document.getElementById(id);
+    shelf.innerHTML = '';
+    for (var i = 0; i < 8; i++) {
+      var card = document.createElement('div');
+      card.className = 'bookcard' + (animated ? ' anim' : '');
+      card.style.setProperty('--d', (i * 30) + 'ms');
+      shelf.appendChild(card);
+    }
+  }
+  fillShelf('shelfBefore', false);
+  fillShelf('shelfAfter', true);
+  document.querySelectorAll('[data-shelf]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var which = btn.dataset.shelf;
+      fillShelf(which === 'before' ? 'shelfBefore' : 'shelfAfter', which === 'after');
+    });
+  });
+
+  /* ── 装配 ─────────────────────────────────── */
+  var demos = [
+    setupDict('dictBefore', false), setupDict('dictAfter', true),
+    setupBubble('bubbleBefore', false), setupBubble('bubbleAfter', true),
+    setupModal('modalBefore', false), setupModal('modalAfter', true),
+    setupToast('toastBefore', false), setupToast('toastAfter', true)
+  ];
+
+  document.getElementById('playAll').addEventListener('click', function (e) {
+    e.stopPropagation();
+    demos.forEach(function (d) { d.close(); });
+    setTimeout(function () { demos.forEach(function (d) { d.open(); }); }, 160);
+    fillShelf('shelfBefore', false);
+    fillShelf('shelfAfter', true);
+  });
+
+  var themeBtn = document.getElementById('themeBtn');
+  themeBtn.addEventListener('click', function () {
+    var dark = document.body.classList.toggle('dark');
+    themeBtn.textContent = dark ? '切到浅色' : '切到深色';
+  });
+
+  var rmBtn = document.getElementById('rmBtn');
+  rmBtn.addEventListener('click', function () {
+    var on = document.body.classList.toggle('reduce-motion');
+    rmBtn.textContent = '减弱动态效果：' + (on ? '开' : '关');
+    rmBtn.classList.toggle('on', on);
+  });
+})();
+</script>
+</body>
+</html>
