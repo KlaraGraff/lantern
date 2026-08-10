@@ -19,14 +19,22 @@ const WORD_EXCERPT = "A good translator must render the tone as well as the word
 
 const wordModules = (language: FixtureLanguage): Partial<Record<LearningModuleId, LearningModuleContent>> =>
   language === "zh" ? {
+    // `summary` doubles as the line printed above the word in the book, so it
+    // is a bare sense and the explanation is the first `details` entry — the
+    // fixtures have to show the shape the prompt now asks for, or the settings
+    // preview stops matching real cards.
     context_meaning: content(
-      "这里指把原文的内容换一种形式重新表达出来，而不只是替换词语。",
-      ["宾语是 the tone，说明作者要求译者连语气一起转达。", "这层含义偏正式，常见于翻译、艺术和技术写作。"],
+      "换一种形式重新表达",
+      [
+        "这里指把原文的内容重新做出来，而不只是把词换掉。",
+        "宾语是 the tone，说明作者要求译者连语气一起转达。",
+        "这层含义偏正式，常见于翻译、艺术和技术写作。",
+      ],
     ),
     sentence_gist: content("好的译者不能只把词换过来，还得把原文的语气一起带过去。"),
     word_info: content("render", ["原形：render", "词形变化：renders / rendered / rendering"], [], ["/ˈrendə(r)/", "verb", "base form"]),
     target_translation: content("呈现；表达；给予；使成为"),
-    common_senses: content("常见含义", [], [
+    common_senses: content("本文用的是第一个义项。", [], [
       { title: "表达；译出", text: "把内容换成另一种语言、媒介或表现形式。", examples: [
         { source: "She rendered the poem into English.", target: "她把这首诗译成了英文。" },
         { source: "The artist rendered the scene in charcoal.", target: "画家用炭笔画出了那个场景。" },
@@ -48,7 +56,7 @@ const wordModules = (language: FixtureLanguage): Partial<Record<LearningModuleId
         { source: "The noise rendered the recording unusable.", target: "噪音让这段录音没法用了。" },
       ] },
     ]),
-    collocations: content("常见搭配", [], [
+    collocations: content("常与语言、帮助、状态、裁决这几类词连用。", [], [
       { title: "render sth into English", text: "把某个内容译成英语。" },
       { title: "render assistance", text: "正式场合下提供帮助或服务。" },
       { title: "render sth useless", text: "使某物失去作用，后接形容词。" },
@@ -63,13 +71,17 @@ const wordModules = (language: FixtureLanguage): Partial<Record<LearningModuleId
     source_excerpt: { quote: WORD_EXCERPT },
   } : {
     context_meaning: content(
-      "To express something again in another form, not just swap the words.",
-      ["The object is the tone, so the writer asks for the feeling to carry over too.", "The register is formal, typical of translation, art, and technical writing."],
+      "remake in another form",
+      [
+        "Here it means turning the content into another form, not just swapping the words.",
+        "The object is the tone, so the writer asks for the feeling to carry over too.",
+        "The register is formal, typical of translation, art, and technical writing.",
+      ],
     ),
     sentence_gist: content("A good translator has to carry the feeling across, not just swap the words."),
     word_info: content("render", ["Lemma: render", "Inflections: renders / rendered / rendering"], [], ["/ˈrendə(r)/", "verb", "base form"]),
     target_translation: content("呈现；表达；给予；使成为"),
-    common_senses: content("Common meanings", [], [
+    common_senses: content("The first sense below is the one used here.", [], [
       { title: "Express in another form", text: "To turn something into another language, medium, or performance.", examples: [
         { source: "She rendered the poem into English.", target: "她把这首诗译成了英文。" },
         { source: "The artist rendered the scene in charcoal.", target: "画家用炭笔画出了那个场景。" },
@@ -91,7 +103,7 @@ const wordModules = (language: FixtureLanguage): Partial<Record<LearningModuleId
         { source: "The noise rendered the recording unusable.", target: "噪音让这段录音没法用了。" },
       ] },
     ]),
-    collocations: content("Common combinations", [], [
+    collocations: content("It pairs with words for language, help, a state, or a ruling.", [], [
       { title: "render sth into English", text: "To turn a text into English." },
       { title: "render assistance", text: "To give help or service, in formal use." },
       { title: "render sth useless", text: "To leave something with no use; an adjective follows." },
@@ -108,7 +120,10 @@ const wordModules = (language: FixtureLanguage): Partial<Record<LearningModuleId
 
 const phraseModules = (language: FixtureLanguage): Partial<Record<LearningModuleId, LearningModuleContent>> =>
   language === "zh" ? {
-    context_meaning: content("这里表示某件事最终反而带来了积极、意外的结果。", ["说话者是在回顾一个起初看似不利的变化。"]),
+    context_meaning: content("因祸得福", [
+      "这里表示某件事最终反而带来了积极、意外的结果。",
+      "说话者是在回顾一个起初看似不利的变化。",
+    ]),
     target_translation: content("结果证明这是因祸得福。"),
     common_senses: content("常用于描述坏事带来未预料到的好处。", [], [
       { title: "a blessing in disguise", text: "表面是坏事，后来才发现有好处。", examples: [
@@ -123,7 +138,10 @@ const phraseModules = (language: FixtureLanguage): Partial<Record<LearningModule
     usage: content("适合用于回顾已经显现积极结果的事件。"),
     source_excerpt: { quote: "Losing the contract turned out to be a blessing in disguise." },
   } : {
-    context_meaning: content("Something that first looked harmful but later produced an unexpected benefit.", ["The speaker is looking back after the positive result became clear."]),
+    context_meaning: content("a hidden stroke of luck", [
+      "Something that first looked harmful but later produced an unexpected benefit.",
+      "The speaker is looking back after the positive result became clear.",
+    ]),
     target_translation: content("结果证明这是因祸得福。"),
     common_senses: content("Used when a bad event leads to an unforeseen advantage.", [], [
       { title: "a blessing in disguise", text: "An apparent problem that later proves helpful.", examples: [

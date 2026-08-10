@@ -5,6 +5,7 @@ import {
   moduleText,
   projection,
 } from "../src/components/learning-card/projection.ts";
+import { condenseGloss, isShortGloss } from "../src/components/vocab/gloss.ts";
 import type { LearningCardResult } from "../src/components/learning-card/types.ts";
 
 // The bug this exists for: these rules used to be private helpers inside
@@ -80,6 +81,36 @@ test("the lookup record keeps the word entry over the contextual meaning", () =>
   }));
   assert.equal(result.definition, "fond of company");
   assert.equal(result.contextExplanation, "sociable, in this sentence");
+});
+
+test("a card written to the two-part contract needs no second model call", () => {
+  // `context_meaning.summary` is the bare sense and the explanation sits in
+  // `details`, so the gloss the card offers already fits above the word: it is
+  // stored as-is, and the reader sees the same words in the book and in the
+  // card. When the summary was a whole sentence it never fit, and every save
+  // paid for a separate `ai_vocab_gloss` call that wrote a second, differently
+  // worded answer for the same word.
+  const fields = cardVocabFields(card({
+    context_meaning: {
+      summary: "极其仔细、一丝不苟",
+      details: ["这里指桌面上的纸张被安排得非常精确，不容打扰。", "比 neatly 更强，带着近乎苛求的认真。"],
+    },
+  }));
+  assert.equal(isShortGloss(fields.gloss), true);
+  assert.equal(condenseGloss(fields.gloss), "极其仔细、一丝不苟");
+  // The explanation is not lost — it is the long form, in reading order.
+  assert.match(fields.contextExplanation ?? "", /^极其仔细、一丝不苟\n这里指/);
+});
+
+test("a summary that ignores the contract still fails the fit test", () => {
+  // The guard that sends the save down the fallback chain rather than letting
+  // a paragraph land above a word.
+  assert.equal(
+    isShortGloss(cardVocabFields(card({
+      context_meaning: { summary: "这里指“极其仔细、一丝不苟地”，形容桌面上的纸张被安排得非常精确、不容打扰。" },
+    })).gloss),
+    false,
+  );
 });
 
 test("moduleText flattens a module in the order it is drawn", () => {
