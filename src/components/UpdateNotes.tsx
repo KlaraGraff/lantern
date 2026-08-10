@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -98,11 +98,23 @@ export default function UpdateNotes({
 }: UpdateNotesProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const [overflowing, setOverflowing] = useState(false);
+  const [atEnd, setAtEnd] = useState(false);
   const reported = useRef<boolean | null>(null);
+
+  // Expanded, the panel scrolls — and macOS hides its scrollbar until the
+  // moment you scroll, so the only standing cue that more text is below is the
+  // fade. It has to lift once there is nothing more to reach, or it reads as
+  // "still more" at the end of the notes.
+  const syncAtEnd = useCallback(() => {
+    const element = scroller.current;
+    if (!element) return;
+    setAtEnd(element.scrollTop + element.clientHeight >= element.scrollHeight - 1);
+  }, []);
 
   useLayoutEffect(() => {
     const element = scroller.current;
     if (!element) return;
+    syncAtEnd();
     // Measure against the collapsed clamp specifically: once expanded, the
     // element scrolls, so its own overflow no longer answers "was anything
     // hidden when collapsed".
@@ -115,13 +127,14 @@ export default function UpdateNotes({
       reported.current = next;
       onOverflowChange(next);
     }
-  }, [notes, expanded, onOverflowChange]);
+  }, [notes, expanded, onOverflowChange, syncAtEnd]);
 
   return (
     <div className="relative border-t border-border-light">
       <div
         ref={scroller}
         aria-label={label}
+        onScroll={expanded ? syncAtEnd : undefined}
         // Only the expanded panel is focusable: a scroll region the keyboard
         // can reach but cannot scroll (because it is clamped) is a trap.
         tabIndex={expanded ? 0 : undefined}
@@ -134,7 +147,7 @@ export default function UpdateNotes({
           {notes}
         </Markdown>
       </div>
-      {!expanded && overflowing && (
+      {overflowing && !(expanded && atEnd) && (
         <div
           aria-hidden
           className="pointer-events-none absolute inset-x-0 bottom-0 h-11 bg-gradient-to-b from-transparent to-white dark:to-bg-surface"

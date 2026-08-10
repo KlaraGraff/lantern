@@ -46,7 +46,12 @@ export default function UpdateToast() {
   const version = "version" in state ? state.version : null;
   useEffect(() => {
     setNotesExpanded(false);
-    setNotesOverflow(false);
+    // `notesOverflow` is deliberately not reset here. It is an answer
+    // `UpdateNotes` measures and reports, and this effect runs *after* the
+    // layout effect that reports it — resetting would erase the measurement
+    // for the version that just arrived, hiding the expand control on every
+    // release long enough to need it. The measurement re-runs on its own when
+    // the notes change, so a short release still reports back false.
   }, [version]);
 
   if (!platform.hasUpdater || state.kind === "idle") return null;
