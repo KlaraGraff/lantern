@@ -240,29 +240,72 @@ pub fn listed_forms(
 
 /// Every name this book's alias table (059) knows, as normalized forms.
 ///
-/// Only the capitalized words of each entry are taken. An alias row can be a
-/// description rather than a name — "the doctor", "船长的朋友" — and folding
-/// those in whole would quietly declare `the` a proper noun, which on a reader
-/// with no profile yet would hand them several percent of the book for free.
-/// Capitalization is the same evidence the rule above rests on, applied to the
-/// alias text instead of the book text.
+/// Only the capitalized words of each entry are taken, plus the particles
+/// [`internal_particles`] rescues. An alias row can be a description rather
+/// than a name — "the doctor", "船长的朋友" — and folding those in whole would
+/// quietly declare `the` a proper noun, which on a reader with no profile yet
+/// would hand them several percent of the book for free. Capitalization is the
+/// same evidence the rule above rests on, applied to the alias text instead of
+/// the book text.
 pub fn load_alias_names(db: &Db, book_id: &str) -> AppResult<HashSet<String>> {
-    let conn = db.reader();
-    let mut statement =
-        conn.prepare("SELECT canonical, alias FROM book_person_aliases WHERE book_id = ?1")?;
-    let mut rows = statement.query([book_id])?;
+    // The rows are read and the connection released before any frequency
+    // lookup: `FormIndex` takes `db.reader()` itself the first time a word
+    // misses the table, and that guard is not reentrant.
+    let entries = {
+        let conn = db.reader();
+        let mut statement =
+            conn.prepare("SELECT canonical, alias FROM book_person_aliases WHERE book_id = ?1")?;
+        let mut rows = statement.query([book_id])?;
+        let mut entries: Vec<Vec<(String, bool)>> = Vec::new();
+        while let Some(row) = rows.next()? {
+            for column in [0usize, 1] {
+                let text: String = row.get(column)?;
+                entries.push(crate::commands::book_difficulty::tokenize_cased(&text));
+            }
+        }
+        entries
+    };
+
     let mut names = HashSet::new();
-    while let Some(row) = rows.next()? {
-        for column in [0usize, 1] {
-            let text: String = row.get(column)?;
-            for (token, capitalized) in crate::commands::book_difficulty::tokenize_cased(&text) {
-                if capitalized {
-                    names.insert(token);
-                }
+    for entry in &entries {
+        for (token, capitalized) in entry {
+            if *capitalized {
+                names.insert(token.clone());
+            }
+        }
+    }
+
+    let forms = FormIndex::new(db);
+    for entry in &entries {
+        for token in internal_particles(entry) {
+            if lookup_with(&forms, token)?.is_none() {
+                names.insert(token.clone());
             }
         }
     }
     Ok(names)
+}
+
+/// The lowercase words of one alias entry that sit *between* two capitalized
+/// ones — `de` in "Lady Catherine de Bourgh".
+///
+/// The capitalized-only rule above is right, and this is the hole it leaves:
+/// a name's internal particles are written lowercase, so `Lady`, `Catherine`
+/// and `Bourgh` become names while `de` falls through to "words you don't know
+/// yet" — 41 occurrences of it in *Pride and Prejudice*, second only to
+/// `civility`, and not a word the reader has any business learning.
+///
+/// Position alone is not enough, which is why the caller keeps only the ones
+/// the frequency table has never heard of. This yields candidates, not names:
+/// `of` in "Anne of Green Gables" and `van` in "Ludwig van Beethoven" are
+/// yielded too, and the table catches both. An entry's first or last token is
+/// excluded outright, because "de Bourgh" as a whole alias says nothing about
+/// `de` — only being surrounded does.
+fn internal_particles(entry: &[(String, bool)]) -> impl Iterator<Item = &String> {
+    entry
+        .windows(3)
+        .filter(|window| window[0].1 && !window[1].1 && window[2].1)
+        .map(|window| &window[1].0)
 }
 
 /// A book's stored word list (migration 066), with the hash of the file it was

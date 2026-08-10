@@ -16,7 +16,9 @@
  * | 这里 | 端上 |
  * | --- | --- |
  * | `blockText()` | `src-tauri/src/ai/grounding/extract.rs::extract_epub`（同一组块级标签） |
- * | `tokenize()`  | `book_difficulty.rs::tokenize_cased`（同样的小写化、撇号处理、单字符丢弃） |
+ * | `tokenizeCased()` | `book_difficulty.rs::tokenize_cased`（同样的小写化、撇号处理、单字符丢弃） |
+ * | `aliasNames()` | `coverage.rs::load_alias_names`（每条别名取大写词） |
+ * | `internalParticles()` | `coverage.rs::internal_particles`（夹在两个大写词中间的小写词） |
  * | `classify()`  | `coverage.rs::classify`（掌握 → 人名 → 眼熟 → 还不认识，同样的顺序） |
  * | 频率表 | `src-tauri/src/word_frequency/english-fiction.tsv`，同一个文件 |
  *
@@ -83,28 +85,38 @@ if (readerArg) {
 }
 
 /**
- * 这本书的人名地名。
+ * 这本书的人名地名，**一条一条**，不是打散的词。
  *
  * 端上这一份来自 `book_person_aliases`（migration 059），由应用自己的名字识别
  * 跑出来；`load_alias_names` 只取其中大写开头的词。这里手抄一份等价的，因为
  * harness 不跑那一趟。规则本身没变：**人名不算「你还没学会的词」**——把伊丽莎白
  * 的姓氏列进生词表，是对读者的冒犯。
+ *
+ * 存成完整的别名条目而不是词表，是因为 `internalParticles()` 要看**位置**：
+ * "Catherine de Bourgh" 里的 `de` 之所以是名字的一部分，全靠它两边站着两个大写
+ * 词。词一打散，这个条件就没了。
+ *
+ * 只用姓和名，不带 Mr / Lady 这类称谓：称谓要么本来就在频率表前几百名（`lady`
+ * 402、`miss` 362），要么全书从不小写（`mr`、`mrs`，早被「表里没有 + 没小写过」
+ * 那条认成名字了），加进来一个数都不动，却会让这份手抄件和上一次的结果对不齐。
  */
 const ALIASES = [
-  "Elizabeth", "Lizzy", "Eliza", "Jane", "Mary", "Catherine", "Kitty", "Lydia",
-  "Bennet", "Darcy", "Fitzwilliam", "Bingley", "Caroline", "Louisa", "Hurst",
-  "Georgiana", "Wickham", "Collins", "William", "Lucas", "Charlotte", "Maria",
-  "Gardiner", "Philips", "Forster", "Denny", "Chamberlayne", "Pratt", "Younge",
-  "Reynolds", "Hill", "Sarah", "Nicholls", "Annesley", "Metcalfe", "Long",
-  "Goulding", "King", "Watson", "Harrington", "Pope", "Webbs", "Robinson",
-  "Jones", "Stone", "Haggerston", "Morris", "Anne", "Bourgh", "Rosings",
-  "Hunsford", "Longbourn", "Netherfield", "Pemberley", "Meryton", "Lambton",
-  "Brighton", "Ramsgate", "Gracechurch", "Cheapside", "Hertfordshire",
-  "Derbyshire", "Kent", "London", "Lakes", "Matlock", "Dovedale", "Chatsworth",
-  "Blenheim", "Warwick", "Kenilworth", "Birmingham", "Newcastle", "Epsom",
-  "Clapham", "Barnet", "Hatfield", "Scotland", "Gretna", "Green", "Grosvenor",
-  "James", "Michaelmas", "Christmas", "Easter", "Lucases", "Bennets",
-  "Bingleys", "Gardiners", "Collinses", "Philipses", "Forsters", "Darcys",
+  "Elizabeth Bennet", "Lizzy", "Eliza", "Jane Bennet", "Mary Bennet",
+  "Kitty Bennet", "Lydia Bennet", "Fitzwilliam Darcy", "Georgiana Darcy",
+  "Bingley", "Caroline Bingley", "Louisa Hurst", "Wickham", "William Collins",
+  "William Lucas", "Charlotte Lucas", "Maria Lucas", "Gardiner", "Philips",
+  "Forster", "Denny", "Chamberlayne", "Pratt", "Younge", "Reynolds", "Hill",
+  "Sarah", "Nicholls", "Annesley", "Metcalfe", "Long", "Goulding", "King",
+  "Watson", "Harrington", "Pope", "Webbs", "Robinson", "Jones", "Stone",
+  "Haggerston", "Morris", "Catherine de Bourgh", "Anne de Bourgh",
+  "Rosings", "Hunsford", "Longbourn", "Netherfield", "Pemberley", "Meryton",
+  "Lambton", "Brighton", "Ramsgate", "Gracechurch", "Cheapside",
+  "Hertfordshire", "Derbyshire", "Kent", "London", "Lakes", "Matlock",
+  "Dovedale", "Chatsworth", "Blenheim", "Warwick", "Kenilworth", "Birmingham",
+  "Newcastle", "Epsom", "Clapham", "Barnet", "Hatfield", "Scotland",
+  "Gretna Green", "Grosvenor", "James", "Michaelmas", "Christmas", "Easter",
+  "Lucases", "Bennets", "Bingleys", "Gardiners", "Collinses", "Philipses",
+  "Forsters", "Darcys",
 ];
 
 /* ------------------------------------------------------------------ *
@@ -184,17 +196,16 @@ function blockText(xhtml) {
  * 分词：book_difficulty.rs::tokenize_cased 的等价实现
  * ------------------------------------------------------------------ */
 
-function tokenize(text, tally) {
+/** 一段文字的词，每个词带一位「原文是不是大写开头」。 */
+function tokenizeCased(text) {
+  const tokens = [];
   let current = "";
   let capital = false;
   let started = false;
   const flush = () => {
     const token = current.replace(/^'+|'+$/g, "");
     if ([...token].length > 1 && !/^[0-9]+$/u.test(token)) {
-      const entry = tally.get(token) ?? { tokens: 0, capitalized: 0 };
-      entry.tokens += 1;
-      if (capital) entry.capitalized += 1;
-      tally.set(token, entry);
+      tokens.push({ word: token, capital });
     }
     current = "";
     capital = false;
@@ -214,6 +225,16 @@ function tokenize(text, tally) {
     }
   }
   flush();
+  return tokens;
+}
+
+function tokenize(text, tally) {
+  for (const { word, capital } of tokenizeCased(text)) {
+    const entry = tally.get(word) ?? { tokens: 0, capitalized: 0 };
+    entry.tokens += 1;
+    if (capital) entry.capitalized += 1;
+    tally.set(word, entry);
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -267,9 +288,46 @@ function possessiveStem(word) {
 }
 
 const known = new Set(READER.savedKnown);
+
+/**
+ * 一条别名里夹在两个大写词**中间**的小写词 —— "Catherine de Bourgh" 的 `de`。
+ *
+ * 端上是 `coverage.rs::internal_particles`。首尾的不算：一条以小写开头的别名
+ * （"the Grange"）是描述的可能性和是名字碎片的可能性一样大，只有被夹住才说明
+ * 问题。
+ */
+function* internalParticles(tokens) {
+  for (let index = 1; index < tokens.length - 1; index += 1) {
+    if (tokens[index].capital) continue;
+    if (!tokens[index - 1].capital || !tokens[index + 1].capital) continue;
+    yield tokens[index].word;
+  }
+}
+
+/**
+ * 一组别名条目认出来的名字集合，端上 `load_alias_names` 的等价实现：每条取大写
+ * 词，再加上被夹住**且频率表里查不到**的小写词。
+ *
+ * 那道查表是安全阀。位置本身不足以定案 —— "Anne of Green Gables" 里的 `of` 同样
+ * 被夹着，但它是全表第 5 名，读者早就会了，把它记成专有名词等于白送一个百分点。
+ * 只有连频率表都不认识的碎片（`de`），才除了归给名字之外无处可去。
+ */
+function aliasNames(entries) {
+  const tokenized = entries.map(tokenizeCased);
+  const names = new Set();
+  for (const tokens of tokenized) {
+    for (const { word, capital } of tokens) if (capital) names.add(word);
+  }
+  for (const tokens of tokenized) {
+    for (const word of internalParticles(tokens)) {
+      if (rankOf(word) === undefined) names.add(word);
+    }
+  }
+  return names;
+}
+
 /** 人名表只有主角书有；别的书靠「表里没有 + 全书没小写过」那条规则认名字。 */
-const namesFor = (bookId) =>
-  bookId === HERO ? new Set(ALIASES.map((name) => name.toLowerCase())) : new Set();
+const namesFor = (bookId) => (bookId === HERO ? aliasNames(ALIASES) : new Set());
 
 /** 一本书的四类词次。分类顺序照抄 `coverage.rs::classify`。 */
 function measure(bookId) {

@@ -215,6 +215,73 @@ fn only_the_capitalized_words_of_an_alias_become_names() {
 }
 
 #[test]
+fn a_particle_inside_a_name_is_a_name_too() {
+    let (_directory, db) = test_db();
+    insert_book(&db, "book", "Pride and Prejudice", 34);
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO book_person_aliases (id, book_id, canonical, alias, source, created_at, kind)
+             VALUES ('a1', 'book', 'Lady Catherine de Bourgh', 'Lady Catherine', 'auto', 1, 'name')",
+            [],
+        )
+        .unwrap();
+
+    let names = load_alias_names(&db, "book").unwrap();
+
+    // Surrounded by two capitalized words and unknown to the frequency table:
+    // the reader has nowhere to file "de" but the name it belongs to.
+    assert!(names.contains("de"));
+    assert!(names.contains("bourgh"));
+}
+
+#[test]
+fn an_ordinary_word_inside_a_name_stays_an_ordinary_word() {
+    let (_directory, db) = test_db();
+    insert_book(&db, "book", "Anne of Green Gables", 0);
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO book_person_aliases (id, book_id, canonical, alias, source, created_at, kind)
+             VALUES ('a1', 'book', 'Anne of Green Gables', 'Anne', 'auto', 1, 'name')",
+            [],
+        )
+        .unwrap();
+
+    let names = load_alias_names(&db, "book").unwrap();
+
+    assert!(names.contains("gables"));
+    // "of" is rank 5 in the frequency table, so it is already accounted for
+    // wherever this reader stands — claiming it as a proper noun would hand
+    // over a percent of the book on the strength of one title.
+    assert!(!names.contains("of"));
+}
+
+#[test]
+fn a_particle_at_the_edge_of_an_alias_is_not_a_name() {
+    let (_directory, db) = test_db();
+    insert_book(&db, "book", "Pride and Prejudice", 34);
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO book_person_aliases (id, book_id, canonical, alias, source, created_at, kind)
+             VALUES ('a1', 'book', 'de Bourgh', 'de Bourgh', 'auto', 1, 'name')",
+            [],
+        )
+        .unwrap();
+
+    let names = load_alias_names(&db, "book").unwrap();
+
+    assert!(names.contains("bourgh"));
+    // Leading, not surrounded. An alias that merely *starts* lowercase is as
+    // likely to be a description ("the Grange") as a name fragment.
+    assert!(!names.contains("de"));
+}
+
+#[test]
 fn an_alias_from_another_book_is_not_this_books_name() {
     let (_directory, db) = test_db();
     insert_book(&db, "book", "Moby-Dick", 10);
