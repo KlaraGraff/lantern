@@ -105,6 +105,8 @@ harness/fixture-data.ts    the fake library, vocab, settings, chats…
 harness/invoke-fixtures.ts per-command invoke responses
 harness/shape-defaults.ts  fallback stubs guessed from the Rust return type
 harness/tauri/*.ts         one mock per @tauri-apps package
+harness/promo/*.ts         the README screenshot scenes (see below)
+harness/books/             the twelve public-domain EPUBs the promo shots use
 ```
 
 `harness/` is outside `tsconfig.json`'s `include` and outside `npm run lint`'s
@@ -170,6 +172,45 @@ default stub is the point.
   served by dev middleware at `/__harness/book.epub` and `/__harness/book.pdf`.
   The `convertFileSrc` mock maps any book path onto them, so the reader opens a
   genuine file through foliate-js rather than a stub.
+
+## Promo shots (`?shot=<scene>`)
+
+The README screenshots are taken from this harness, not from a real build and
+not from an image model, so that **an effect the app cannot render cannot show
+up in a promo image**. `scripts/shoot-readme.mjs` starts the harness, opens
+`?shot=<scene>` per shot, waits for the page to declare itself ready, and
+screenshots over CDP. The shot list, what each one has to prove, and the
+delivery checklist live in [`docs/guide/screenshots.md`](../docs/guide/screenshots.md).
+
+```
+harness/promo/index.ts      one entry per scene: which settings to override,
+                            which route to land on
+harness/promo/scenes.ts     post-mount DOM work — click the sidebar, double-click
+                            a word, expand a panel — then stamp data-shot-ready
+harness/promo/library.ts    the twelve-book shelf (all US public domain)
+harness/promo/content.ts    the AI text the fixtures hand back in shot mode
+harness/promo/coverage*.ts  book-coverage numbers, computed not written
+```
+
+Four rules hold this together:
+
+- **Everything is off unless `?shot=` is present.** `activeShotName()` is
+  resolved once at module evaluation — not read live — because the app navigates
+  after boot and React Router drops the query string; a live read would make the
+  scene and fixture layers forget themselves mid-shot. `npm run smoke` is
+  unaffected by any of this.
+- **Scenes click, they do not inject.** Elements are found by the visible string
+  in `src/i18n/zh.json` or by `aria-label`. **Nothing in `src/` knows the harness
+  exists** — no `data-testid` goes in there. If a scene cannot reach a state by
+  clicking, the app cannot either, and the shot is wrong, not the harness.
+- **AI text is a fixture, but a structurally real one.** No API key exists here,
+  so `invoke-fixtures.ts` supplies the card and chat payloads — in the shapes the
+  app really renders (`LearningCardResult`, chat messages, citations), with
+  sentences that genuinely occur in those twelve books.
+- **Numbers are computed, never typed.** `scripts/promo-coverage.mjs` reads the
+  same EPUBs, tokenizes and classifies the way the Rust side does, and writes
+  `harness/promo/coverage.generated.ts`. Re-run it whenever the word-frequency
+  table or the classification rules change on the Rust side.
 
 ## The reader, honestly
 
