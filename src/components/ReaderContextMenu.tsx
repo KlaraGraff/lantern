@@ -18,6 +18,7 @@ import {
   type InteractionKind,
   type SerializableRect,
 } from "./reader-interaction";
+import DictionaryCard, { type DictionaryEntry } from "./DictionaryCard";
 import SpeakMenuRow from "./speech/SpeakMenuRow";
 import { playbackDetaches } from "./speech/routing";
 import {
@@ -30,19 +31,6 @@ import {
 import { useSettings } from "../hooks/useSettings";
 
 export type { ReaderMenuAction };
-
-interface DictionaryGroup {
-  pos: string;
-  senses: string;
-}
-
-interface DictionaryEntry {
-  word: string;
-  phonetic: string | null;
-  groups: DictionaryGroup[];
-  omittedSenseCount: number;
-  fallbackSummary: string | null;
-}
 
 interface ReaderContextMenuProps {
   anchorRect: SerializableRect;
@@ -104,7 +92,12 @@ export default function ReaderContextMenu({
   // this self-contained, and a generic key-value fetch here is cheap.
   const { settings: dictionarySettings } = useSettings();
   const dictionaryEnabled = dictionarySettings.dictionary_lookup_enabled !== "false";
+  // The card's closing line tells the reader to double-click. It may only say
+  // so while double-click actually looks the word up — the same key
+  // `TextBookReader` and `useReaderInteractions` gate the gesture on.
+  const doubleClickLooksUp = dictionarySettings.double_click_quick_lookup !== "false";
   const [dictionaryEntry, setDictionaryEntry] = useState<DictionaryEntry | null>(null);
+  const [dictionaryLoading, setDictionaryLoading] = useState(false);
   // Single click already opens this menu after the double-click grace period
   // (`cancelPendingWordClick` in useReaderInteractions.ts) has passed, so no
   // new gesture is introduced — this is one more row on a toolbar that was
@@ -113,6 +106,7 @@ export default function ReaderContextMenu({
 
   useEffect(() => {
     setDictionaryEntry(null);
+    setDictionaryLoading(Boolean(dictionaryQuery));
     if (!dictionaryQuery) return;
     let cancelled = false;
     invoke<DictionaryEntry>("dictionary_lookup_word", { word: dictionaryQuery })
@@ -120,9 +114,13 @@ export default function ReaderContextMenu({
         if (!cancelled) setDictionaryEntry(entry);
       })
       .catch(() => {
-        // A genuine not-found, or a failure with no usable fallback: the row
-        // simply does not appear. No "not found" message is ever shown.
+        // A genuine not-found, or a failure with no usable fallback. The card
+        // stays and says so: collapsing it here would move the whole menu a
+        // second time, which is the jump the skeleton exists to avoid.
         if (!cancelled) setDictionaryEntry(null);
+      })
+      .finally(() => {
+        if (!cancelled) setDictionaryLoading(false);
       });
     return () => {
       cancelled = true;
@@ -264,7 +262,12 @@ export default function ReaderContextMenu({
     }])),
   };
 
-  const showDictionary = kind === "word" && dictionaryEntry !== null;
+  // Driven by the query, not by its result: the card is up before the lookup
+  // resolves, so the menu never changes width or position mid-flight.
+  const showDictionary = dictionaryQuery !== null;
+  // The card carries its own pronounce button beside the word, so the row
+  // below would be a duplicate.
+  const speakInCard = showDictionary && actions.includes("speak");
 
   return (
     <div
@@ -274,47 +277,14 @@ export default function ReaderContextMenu({
       className={`fixed z-[62] ${showDictionary ? "w-[300px]" : "w-[220px]"} rounded-md border border-border bg-bg-surface py-1 shadow-context`}
       style={{ left: anchorRect.right, top: anchorRect.bottom + 8 }}
     >
-      {showDictionary && dictionaryEntry ? (
-        <div className="mx-1 mb-1 border-b border-border-light px-2 pb-2 pt-1.5">
-          <div className="flex items-baseline gap-2">
-            <span className="text-[13px] font-semibold text-text-primary">{dictionaryEntry.word}</span>
-            {dictionaryEntry.phonetic ? (
-              <span className="text-[11px] text-text-muted">/{dictionaryEntry.phonetic}/</span>
-            ) : null}
-          </div>
-          {dictionaryEntry.fallbackSummary ? (
-            // Degraded fallback: no phonetic, no part-of-speech grouping —
-            // one line, already hard-truncated by the backend.
-            <p className="mt-1 line-clamp-2 text-[12px] leading-5 text-text-secondary">
-              {dictionaryEntry.fallbackSummary}
-            </p>
-          ) : (
-            <>
-              <div className="mt-1 space-y-1">
-                {dictionaryEntry.groups.map((group, index) => (
-                  // No CSS clamp here on purpose. The backend is the single
-                  // truncator (`CHARS_PER_LINE` there is this card's width), so
-                  // what it says it sent is what renders. A `line-clamp` on top
-                  // of it would silently swallow the last sense of a
-                  // full-budget group while `omittedSenseCount` went on
-                  // counting it as shown — the count would understate what the
-                  // reader cannot see.
-                  <p key={index} className="text-[12px] leading-5 text-text-secondary">
-                    {group.pos ? (
-                      <span className="mr-1 font-medium text-text-primary">{group.pos}</span>
-                    ) : null}
-                    {group.senses}
-                  </p>
-                ))}
-              </div>
-              {dictionaryEntry.omittedSenseCount > 0 ? (
-                <p className="mt-1 text-[11px] leading-4 text-text-muted">
-                  {t("dictionary.moreSenses", { count: dictionaryEntry.omittedSenseCount })}
-                </p>
-              ) : null}
-            </>
-          )}
-        </div>
+      {showDictionary ? (
+        <DictionaryCard
+          word={text}
+          loading={dictionaryLoading}
+          entry={dictionaryEntry}
+          showSpeak={speakInCard}
+          showAiHint={doubleClickLooksUp}
+        />
       ) : null}
       {onNote ? (
         <button
@@ -343,6 +313,7 @@ export default function ReaderContextMenu({
         // Owns its own playback and accent toggle, so it needs no wiring from
         // the reader and does not dismiss the menu when used.
         if (action === "speak") {
+          if (speakInCard) return null;
           return (
             <SpeakMenuRow
               key={action}

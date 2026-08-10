@@ -26,25 +26,12 @@ const MAX_QUERY_CHARS: usize = 64;
 /// Glosses are a few dozen bytes each; this is a session-lifetime convenience,
 /// not a store worth spilling to disk.
 const MAX_CACHE_ENTRIES: usize = 2_000;
-/// At most this many part-of-speech groups are shown at once. Whatever comes
-/// after the third is folded into `omitted_sense_count` rather than shown.
-const MAX_GROUPS: usize = 3;
-/// How many CJK characters one line of the card holds: it is 300px wide, and
-/// the sense text renders at 12px, so ~23 fit — rounded down for the latin
-/// part-of-speech label that shares the first line. The backend has to know
-/// this number because it is the *only* truncator: the card no longer clamps
-/// in CSS, so `omitted_sense_count` is honest only if the budget enforced
-/// here is the budget the card can actually show.
-const CHARS_PER_LINE: usize = 22;
-/// Sense lines the card gives away in total, shared out among the groups it
-/// shows rather than handed to each one. A fixed per-group budget rationed a
-/// single-part-of-speech entry as though two more parts of speech were
-/// competing for the room — which is why `deliver` (one `v.`, eleven senses)
-/// showed eight and pushed the rest to the AI while two thirds of the card
-/// stood empty.
-const CARD_SENSE_LINES: usize = 6;
-/// No group is squeezed below this, however many groups there are.
-const MIN_GROUP_LINES: usize = 2;
+/// Sanity bounds, not display decisions. How much of an entry is *shown* is
+/// the card's business — it is the only layer that knows how wide it is and
+/// how many lines it can spare, and it can now expand to show the rest. These
+/// two only stop a pathological response from crossing the IPC boundary.
+const MAX_GROUPS: usize = 8;
+const MAX_SENSES_PER_GROUP: usize = 40;
 /// `ec` appends a transliteration group to a lot of ordinary words —
 /// `bank` → `【名】（Bank）（英、德、俄）班克`. It is worth nothing to someone who
 /// just clicked an ordinary word mid-sentence, and it costs one of the three
@@ -346,39 +333,16 @@ fn split_pos_marker(raw: &str) -> (String, Vec<String>) {
     (String::new(), split_senses(trimmed))
 }
 
-/// Caps one group's senses to a character budget: joins as many whole senses
-/// as fit, but always keeps at least one even if it alone overruns the
-/// budget (a group that vanishes is worse than a group that runs long), and
-/// marks the cut with `…` when something was left out. Returns the display
-/// text and how many senses made it in, so the caller can compute how many
-/// did not.
-fn cap_group(senses: &[String], budget: usize) -> (String, usize) {
-    if senses.is_empty() {
-        return (String::new(), 0);
-    }
-    let mut used = 0usize;
-    let mut included = 0usize;
-    for sense in senses {
-        let len = sense.chars().count();
-        let extra = if included == 0 { len } else { len + 1 };
-        if included > 0 && used + extra > budget {
-            break;
-        }
-        used += extra;
-        included += 1;
-    }
-    let text = senses[..included].join("；");
-    let text = if included < senses.len() { format!("{text}…") } else { text };
-    (text, included)
-}
-
-/// One part-of-speech group in the expanded entry: `n.` / `v.` / `名`, and
-/// the (possibly truncated) senses under it.
+/// One part-of-speech group: `n.` / `v.` / `名`, and every sense under it,
+/// one per element. Deliberately *not* pre-joined into a display string —
+/// the card measures the individual senses to work out how many its clamp
+/// actually swallowed, which is the only way that count can be right at any
+/// width or font size.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DictionaryGroup {
     pub pos: String,
-    pub senses: String,
+    pub senses: Vec<String>,
 }
 
 /// The full-fidelity entry shown in the reader's single-click dictionary
@@ -392,15 +356,7 @@ pub struct DictionaryEntry {
     pub word: String,
     pub phonetic: Option<String>,
     pub groups: Vec<DictionaryGroup>,
-    pub omitted_sense_count: u32,
     pub fallback_summary: Option<String>,
-}
-
-/// Splits `CARD_SENSE_LINES` between however many groups will actually be
-/// shown, so one part of speech gets the whole card and three get two lines
-/// each.
-fn group_char_budget(shown_groups: usize) -> usize {
-    (CARD_SENSE_LINES / shown_groups.max(1)).max(MIN_GROUP_LINES) * CHARS_PER_LINE
 }
 
 /// Drops the `【名】` transliteration group — but only if something else is
@@ -412,12 +368,12 @@ fn drop_name_group(groups: Vec<(String, Vec<String>)>) -> Vec<(String, Vec<Strin
     if real.is_empty() { names } else { real }
 }
 
-/// Caps `raw_groups` to `MAX_GROUPS` and each kept group to its share of the
-/// card, then reports how many senses were left out in total — both the ones
-/// trimmed from a kept group and every sense in a group beyond the third.
-/// Senses dropped with the `【名】` group are not counted as omitted: they were
-/// never candidates for display. `None` means every group was empty (nothing
-/// to show).
+/// Turns parsed groups into an entry, whole. Nothing is trimmed for display
+/// here: the card decides what fits and what hides behind 展开, and it is the
+/// only layer that can — a character budget computed back here has no idea
+/// how wide the card is or what type size it renders at, and cutting on
+/// whole-sense boundaries to respect one leaves a ragged half-empty line.
+/// `None` means every group was empty (nothing to show).
 fn entry_from_groups(
     word: String,
     phonetic: Option<String>,
@@ -430,21 +386,18 @@ fn entry_from_groups(
     if non_empty.is_empty() {
         return None;
     }
-    let candidates = drop_name_group(non_empty);
-    let budget = group_char_budget(candidates.len().min(MAX_GROUPS));
-    let total_senses: usize = candidates.iter().map(|(_, senses)| senses.len()).sum();
-    let mut shown_senses = 0usize;
-    let mut groups = Vec::new();
-    for (pos, senses) in candidates.into_iter().take(MAX_GROUPS) {
-        let (text, included) = cap_group(&senses, budget);
-        shown_senses += included;
-        groups.push(DictionaryGroup { pos, senses: text });
-    }
+    let groups = drop_name_group(non_empty)
+        .into_iter()
+        .take(MAX_GROUPS)
+        .map(|(pos, mut senses)| {
+            senses.truncate(MAX_SENSES_PER_GROUP);
+            DictionaryGroup { pos, senses }
+        })
+        .collect();
     Some(DictionaryEntry {
         word,
         phonetic,
         groups,
-        omitted_sense_count: total_senses.saturating_sub(shown_senses) as u32,
         fallback_summary: None,
     })
 }
@@ -524,7 +477,6 @@ fn fallback_entry(query: &str, explain: &str) -> DictionaryEntry {
         word: query.to_string(),
         phonetic: None,
         groups: Vec::new(),
-        omitted_sense_count: 0,
         fallback_summary: Some(summary),
     }
 }
@@ -700,7 +652,7 @@ mod tests {
         assert_eq!(entry.phonetic.as_deref(), Some("bæŋk"));
         assert_eq!(entry.groups.len(), 2, "the 【名】 transliteration group is not one of them");
         assert_eq!(entry.groups[0].pos, "n.");
-        assert!(entry.groups[0].senses.starts_with("银行"), "{}", entry.groups[0].senses);
+        assert_eq!(entry.groups[0].senses[0], "银行");
         assert_eq!(entry.groups[1].pos, "v.");
     }
 
@@ -716,16 +668,19 @@ mod tests {
     }
 
     #[test]
-    fn a_single_part_of_speech_entry_gets_the_whole_card() {
-        // Real `deliver`: Youdao packs all eleven senses into one `v.` group,
-        // so there is no second part of speech to compete for the room. Under
-        // a fixed per-group budget this showed eight and sent the reader to
-        // the AI for the other three.
+    fn every_sense_reaches_the_card_untrimmed() {
+        // Real `deliver`: Youdao packs all eleven senses into one `v.` group.
+        // The backend hands over all eleven — deciding that only some fit is
+        // the card's job, and it can now expand to the rest.
         const DELIVER_EC: &str = r#"{"ec": {"word": [{"usphone": "dɪˈlɪvər", "trs": [{"tr": [{"l": {"i": ["v. 投递，运送；履行，兑现；交付，移交；发表，宣布；接生，分娩；解救，拯救；投掷，击打；（法官或法庭）宣布（判决）；拉（选票）；发行，发布（计算机程序）；处理"]}}]}]}]}}"#;
         let entry = build_entry("deliver", parse(DELIVER_EC)).expect("deliver should resolve");
         assert_eq!(entry.groups.len(), 1);
-        assert_eq!(entry.omitted_sense_count, 0, "{}", entry.groups[0].senses);
-        assert!(entry.groups[0].senses.ends_with("处理"), "{}", entry.groups[0].senses);
+        assert_eq!(entry.groups[0].senses.len(), 11);
+        assert_eq!(entry.groups[0].senses[10], "处理");
+        assert!(
+            entry.groups.iter().all(|g| g.senses.iter().all(|s| !s.ends_with('…'))),
+            "no sense is cut mid-way — a ragged half-empty line is exactly what this avoids",
+        );
     }
 
     #[test]
@@ -733,26 +688,19 @@ mod tests {
         // `first_sense("bank")` would be "银行" (money) alone — exactly the
         // "misleadingly confident" single line this display must not show.
         let entry = build_entry("bank", parse(BANK_EC)).unwrap();
-        assert_ne!(entry.groups[0].senses, "银行");
-        assert!(entry.groups[0].senses.contains('；') || entry.groups[0].senses.contains('…'));
+        assert!(entry.groups[0].senses.len() > 1);
     }
 
     #[test]
-    fn ec_entry_caps_groups_and_reports_what_was_cut() {
+    fn a_huge_entry_keeps_all_of_its_senses() {
+        // `run` is the worst real case: two groups of ~20-25 senses. All of
+        // them cross, because 展开 has to have something to expand to.
         let entry = build_entry("run", parse(RUN_EC)).expect("run should resolve");
         assert_eq!(entry.groups.len(), 2, "v. and n.; run's third group is 【名】");
-        // Both the verb and noun groups have far more senses than fit the
-        // budget, so both should be truncated (never dropped outright) and
-        // the omitted count should reflect real cut senses.
-        assert!(entry.groups[0].senses.ends_with('…'), "{}", entry.groups[0].senses);
-        assert!(entry.groups[1].senses.ends_with('…'), "{}", entry.groups[1].senses);
-        assert!(!entry.groups[0].senses.is_empty());
-        assert!(!entry.groups[1].senses.is_empty());
-        assert!(entry.omitted_sense_count > 0);
-        let budget = group_char_budget(entry.groups.len());
+        assert!(entry.groups[0].senses.len() > 20, "{}", entry.groups[0].senses.len());
+        assert!(entry.groups[1].senses.len() > 15, "{}", entry.groups[1].senses.len());
         for group in &entry.groups {
-            // Budget plus the trailing ellipsis, generously bounded.
-            assert!(group.senses.chars().count() <= budget + 4, "{}", group.senses);
+            assert!(group.senses.len() <= MAX_SENSES_PER_GROUP);
         }
     }
 
@@ -775,7 +723,7 @@ mod tests {
         assert_eq!(entry.phonetic.as_deref(), Some("yín háng"));
         assert_eq!(entry.groups.len(), 3);
         assert!(entry.groups.iter().all(|group| group.pos.is_empty()));
-        assert!(entry.groups[0].senses.starts_with("银行"), "{}", entry.groups[0].senses);
+        assert_eq!(entry.groups[0].senses[0], "银行");
     }
 
     #[test]
@@ -784,26 +732,12 @@ mod tests {
         assert_eq!(entry.phonetic, None);
         assert_eq!(entry.groups.len(), 3);
         assert!(entry.groups.iter().all(|group| group.pos.is_empty()));
-        assert!(entry.groups[0].senses.starts_with("改善前景或条件"));
+        assert!(entry.groups[0].senses[0].starts_with("改善前景或条件"));
     }
 
     #[test]
     fn genuinely_not_found_response_yields_no_entry() {
         assert!(build_entry("asdfqwerzz", parse(NOT_FOUND)).is_none());
-    }
-
-    #[test]
-    fn cap_group_always_keeps_at_least_one_sense() {
-        let senses = vec!["一个非常非常非常非常非常非常非常非常非常非常长的义项，长到自己就超过预算".to_string()];
-        let (text, included) = cap_group(&senses, 10);
-        assert_eq!(included, 1);
-        assert!(text.starts_with("一个"));
-        assert!(!text.ends_with('…'), "a single, unsplittable sense is not truncated mid-way");
-    }
-
-    #[test]
-    fn cap_group_of_nothing_is_empty() {
-        assert_eq!(cap_group(&[], 60), (String::new(), 0));
     }
 
     #[test]
@@ -838,8 +772,7 @@ mod tests {
         let entry = DictionaryEntry {
             word: "bank".to_string(),
             phonetic: Some("bæŋk".to_string()),
-            groups: vec![DictionaryGroup { pos: "n.".to_string(), senses: "银行".to_string() }],
-            omitted_sense_count: 0,
+            groups: vec![DictionaryGroup { pos: "n.".to_string(), senses: vec!["银行".to_string()] }],
             fallback_summary: None,
         };
         let result = merge_lookup_outcome(Ok(Some(entry.clone())), "bank", None);

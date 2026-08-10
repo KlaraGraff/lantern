@@ -29,6 +29,11 @@ import {
   resolveSettings,
   type HarnessBook,
 } from "./fixture-data";
+import {
+  DICTIONARY_ENTRIES,
+  DICTIONARY_MISS,
+  GENERIC_DICTIONARY_ENTRY,
+} from "./dictionary-data";
 import { isShooting } from "./promo";
 import { PROMO_BOOKS, PROMO_COLLECTIONS } from "./promo/library";
 import { PROMO_CHATS, PROMO_CHAT_MESSAGES, promoLearningCard } from "./promo/content";
@@ -841,6 +846,31 @@ export const FIXTURES: Record<string, Fixture> = {
     if (!card) throw new Error(`harness: 样张里没有 "${String(a.text)}" 这张卡`);
     return card;
   },
+
+  /* ---------------------------------------------------------------- *
+   * Dictionary
+   * ---------------------------------------------------------------- *
+   * 查词卡是单击查词那一层的全部内容，而它的难点全在数据的形状上：`deliver`
+   * 只有一个词性、十一条释义，`light` 有三四个词性、其中一个二十一条。默认桩
+   * 给的空结构只渲染得出「词典里没有这个词」那一种，正好是唯一不用验的那种。
+   * 所以这里放真数据 —— 行数裁切、末行有没有留白、「还有 N 条未显示」数得准
+   * 不准，只有真文本量得出来。
+   */
+  dictionary_lookup_word: (a: Args) => {
+    const word = String(a.word ?? "");
+    const key = word.toLowerCase();
+    // 有道查不到时后端是报错，不是返回空条目 —— 前端的 not-found 卡走的是
+    // catch 那一支，所以这里也得抛。
+    if (key === DICTIONARY_MISS) throw new Error("harness: 词典里没有这个词");
+    const entry = DICTIONARY_ENTRIES[key] ?? GENERIC_DICTIONARY_ENTRY;
+    return {
+      word,
+      phonetic: entry.phonetic,
+      groups: entry.groups,
+      fallbackSummary: null,
+    };
+  },
+
   /**
    * Hand-written because `AiRequestCountsSection` dereferences
    * `summary.current.byFeature` behind only a `if (!summary)` guard: the
