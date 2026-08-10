@@ -77,7 +77,7 @@ describe("capPileChips", () => {
 describe("pileReasonKey", () => {
   test("a one-word repeat_lookups_in_book pile uses the solo 来由 with its lookup count interpolated", () => {
     const p = pile(
-      { kind: "repeat_lookups_in_book", book_id: "b1", book_title: "Emma", solo_word_lookups: 4 },
+      { kind: "repeat_lookups_in_book", book_id: "b1", book_title: "Emma", solo_word_lookups: 4, solo_word_glances: 0 },
       ["w1"],
     );
     const reason = pileReasonKey(p);
@@ -85,9 +85,29 @@ describe("pileReasonKey", () => {
     assert.deepEqual(reason.params, { count: "4" });
   });
 
+  test("a word the reader only ever checked in the dictionary is not described as 'looked up'", () => {
+    const p = pile(
+      { kind: "repeat_lookups_in_book", book_id: "b1", book_title: "Emma", solo_word_lookups: 0, solo_word_glances: 4 },
+      ["w1"],
+    );
+    const reason = pileReasonKey(p);
+    assert.equal(reason.key, "reviewBoard.pile.repeatLookupsInBook.reasonSoloGlances");
+    assert.deepEqual(reason.params, { glances: "4" });
+  });
+
+  test("a word stopped on both ways names both counts", () => {
+    const p = pile(
+      { kind: "repeat_lookups_in_book", book_id: "b1", book_title: "Emma", solo_word_lookups: 1, solo_word_glances: 2 },
+      ["w1"],
+    );
+    const reason = pileReasonKey(p);
+    assert.equal(reason.key, "reviewBoard.pile.repeatLookupsInBook.reasonSoloMixed");
+    assert.deepEqual(reason.params, { count: "1", glances: "2" });
+  });
+
   test("a multi-word repeat_lookups_in_book pile uses the plural 来由, not the solo one", () => {
     const p = pile(
-      { kind: "repeat_lookups_in_book", book_id: "b1", book_title: "Emma", solo_word_lookups: null },
+      { kind: "repeat_lookups_in_book", book_id: "b1", book_title: "Emma", solo_word_lookups: null, solo_word_glances: null },
       ["w1", "w2", "w3"],
     );
     const reason = pileReasonKey(p);
@@ -114,7 +134,7 @@ describe("pileReasonKey", () => {
 describe("pileTitleKey", () => {
   test("interpolates the book title and the chapter for the kinds that carry them", () => {
     assert.deepEqual(
-      pileTitleKey({ kind: "repeat_lookups_in_book", book_id: "b1", book_title: "Emma", solo_word_lookups: null }),
+      pileTitleKey({ kind: "repeat_lookups_in_book", book_id: "b1", book_title: "Emma", solo_word_lookups: null, solo_word_glances: null }),
       { key: "reviewBoard.pile.repeatLookupsInBook.title", params: { book: "Emma" } },
     );
     assert.deepEqual(
@@ -126,7 +146,7 @@ describe("pileTitleKey", () => {
 
 describe("splitReviewPiles", () => {
   test("long_unseen is excluded from the main cards and returned separately", () => {
-    const repeat = pile({ kind: "repeat_lookups_in_book", book_id: "b1", book_title: "Emma", solo_word_lookups: null }, ["w1", "w2"]);
+    const repeat = pile({ kind: "repeat_lookups_in_book", book_id: "b1", book_title: "Emma", solo_word_lookups: null, solo_word_glances: null }, ["w1", "w2"]);
     const promoted = pile({ kind: "promoted_then_looked_up" }, ["w3"]);
     const unseen = pile({ kind: "long_unseen" }, ["w4"]);
     const { cards, longUnseen } = splitReviewPiles([repeat, promoted, unseen]);
@@ -137,7 +157,7 @@ describe("splitReviewPiles", () => {
   });
 
   test("the 'Also' section is absent (null) when the backend did not return a long_unseen pile", () => {
-    const repeat = pile({ kind: "repeat_lookups_in_book", book_id: "b1", book_title: "Emma", solo_word_lookups: null }, ["w1"]);
+    const repeat = pile({ kind: "repeat_lookups_in_book", book_id: "b1", book_title: "Emma", solo_word_lookups: null, solo_word_glances: null }, ["w1"]);
     const { cards, longUnseen } = splitReviewPiles([repeat]);
     assert.deepEqual(cards, [repeat]);
     assert.equal(longUnseen, null);
@@ -153,8 +173,8 @@ describe("splitReviewPiles", () => {
 
 describe("pileKey", () => {
   test("distinguishes piles of the same kind by their book (or chapter)", () => {
-    const a = pileKey({ kind: { kind: "repeat_lookups_in_book", book_id: "b1", book_title: "Emma", solo_word_lookups: null } });
-    const b = pileKey({ kind: { kind: "repeat_lookups_in_book", book_id: "b2", book_title: "Persuasion", solo_word_lookups: null } });
+    const a = pileKey({ kind: { kind: "repeat_lookups_in_book", book_id: "b1", book_title: "Emma", solo_word_lookups: null, solo_word_glances: null } });
+    const b = pileKey({ kind: { kind: "repeat_lookups_in_book", book_id: "b2", book_title: "Persuasion", solo_word_lookups: null, solo_word_glances: null } });
     assert.notEqual(a, b);
   });
 

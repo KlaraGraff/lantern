@@ -21,16 +21,21 @@ const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ReviewPileKind {
-    /// One pile per book. Words looked up more than once inside that one book.
+    /// One pile per book. Words the reader kept stopping on inside that one
+    /// book — see [`repeat_lookups_piles`] for what "kept" weighs out to.
     RepeatLookupsInBook {
         book_id: String,
         book_title: String,
-        /// How many times the reader looked that word up, but only when the
-        /// pile holds exactly one word. The approved copy for a one-word pile
-        /// leans entirely on this number ("only one word — but you looked it
-        /// up four times"), and without it the card would have to fall back
-        /// to apologising for being small.
+        /// How the reader spent those stops, but only when the pile holds
+        /// exactly one word. The approved copy for a one-word pile leans
+        /// entirely on the number ("only one word — but you looked it up four
+        /// times"), and without it the card would have to fall back to
+        /// apologising for being small. Split by kind because the sentence
+        /// names them separately: an AI card and a dictionary check are not
+        /// the same act, and calling four dictionary checks "looked it up four
+        /// times" describes something the reader did not do.
         solo_word_lookups: Option<i64>,
+        solo_word_glances: Option<i64>,
     },
     /// Words the exposure engine promoted, that the reader then looked up.
     PromotedThenLookedUp,
@@ -151,29 +156,57 @@ pub(crate) fn list_review_piles_at(db: &Db, now_ms: i64) -> AppResult<Vec<Review
     Ok(piles)
 }
 
-/// Pile 1: one pile per book, for words looked up more than once in that
+/// Pile 1: one pile per book, for words the reader kept stopping on in that
 /// book. `lookup_records` has a UNIQUE index on (book_id, cfi,
 /// normalized_text), so a naive `lookup_count > 1` only catches "same
 /// position twice" and misses "two different positions in the same book" —
-/// the same phenomenon, arguably the stronger signal. Summing lookup_count
-/// grouped by (book_id, normalized_text) catches both.
+/// the same phenomenon, arguably the stronger signal. Summing grouped by
+/// (book_id, normalized word) catches both.
+///
+/// ## What counts as stopping
+///
+/// Both kinds of lookup, at the weights the mastery ladder already uses: an
+/// AI card is 1.0, a dictionary glance 0.5 (migration 069). The bar is a
+/// weight of **2.0**, which is exactly today's "more than once" for a reader
+/// who only ever opens cards — two cards, or one card and two dictionary
+/// checks, or four dictionary checks. Card-only piles are therefore
+/// unchanged, member for member.
+///
+/// 2.0 is not a fresh invention either: it is the same rung at which the
+/// ladder sends a word back to `learning`. A word in this pile is a word that
+/// hit that rung, which is the one-sentence story the module doc demands.
+///
+/// The SQL compares `2 * cards + glances >= 4` rather than the halved form —
+/// same inequality, integer arithmetic, no float in a `HAVING`.
 ///
 /// `v.list_status = 'confirmed'` excludes the observation zone (see
 /// migration 044): a word still sitting there hasn't been saved, so it has
-/// no business turning up in review.
+/// no business turning up in review. Words filed in by glances alone land in
+/// the watchlist, so they wait there like every other unsaved word.
 fn repeat_lookups_piles(conn: &Connection) -> AppResult<Vec<ReviewPile>> {
     let mut stmt = conn.prepare(
-        "SELECT v.book_id, b.title, v.id, agg.newest, agg.total_lookups
+        "SELECT v.book_id, b.title, v.id, agg.newest, agg.cards, agg.glances
          FROM vocab_words v
          JOIN books b ON b.id = v.book_id
          JOIN (
-             SELECT book_id, normalized_text,
-                    SUM(lookup_count) AS total_lookups,
-                    MAX(last_looked_up_at) AS newest
-             FROM lookup_records
-             GROUP BY book_id, normalized_text
-             HAVING SUM(lookup_count) > 1
-         ) agg ON agg.book_id = v.book_id AND agg.normalized_text = lower(trim(v.word))
+             SELECT book_id, word,
+                    SUM(cards) AS cards,
+                    SUM(glances) AS glances,
+                    MAX(newest) AS newest
+             FROM (
+                 SELECT book_id, normalized_text AS word,
+                        lookup_count AS cards, 0 AS glances,
+                        last_looked_up_at AS newest
+                 FROM lookup_records
+                 UNION ALL
+                 SELECT book_id, normalized_word AS word,
+                        0 AS cards, glance_count AS glances,
+                        last_glanced_at AS newest
+                 FROM dictionary_glances
+             )
+             GROUP BY book_id, word
+             HAVING SUM(cards) * 2 + SUM(glances) >= 4
+         ) agg ON agg.book_id = v.book_id AND agg.word = lower(trim(v.word))
          WHERE v.list_status = 'confirmed'",
     )?;
     let rows = stmt
@@ -184,6 +217,7 @@ fn repeat_lookups_piles(conn: &Connection) -> AppResult<Vec<ReviewPile>> {
                 row.get::<_, String>(2)?,
                 row.get::<_, i64>(3)?,
                 row.get::<_, i64>(4)?,
+                row.get::<_, i64>(5)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -191,11 +225,12 @@ fn repeat_lookups_piles(conn: &Connection) -> AppResult<Vec<ReviewPile>> {
     struct RepeatWord {
         word_id: String,
         newest: i64,
-        total_lookups: i64,
+        cards: i64,
+        glances: i64,
     }
 
     let mut by_book: HashMap<String, (String, Vec<RepeatWord>)> = HashMap::new();
-    for (book_id, book_title, word_id, newest, total_lookups) in rows {
+    for (book_id, book_title, word_id, newest, cards, glances) in rows {
         by_book
             .entry(book_id)
             .or_insert_with(|| (book_title, Vec::new()))
@@ -203,7 +238,8 @@ fn repeat_lookups_piles(conn: &Connection) -> AppResult<Vec<ReviewPile>> {
             .push(RepeatWord {
                 word_id,
                 newest,
-                total_lookups,
+                cards,
+                glances,
             });
     }
 
@@ -217,9 +253,9 @@ fn repeat_lookups_piles(conn: &Connection) -> AppResult<Vec<ReviewPile>> {
                     .then_with(|| a.word_id.cmp(&b.word_id))
             });
             let newest_activity_at = words.iter().map(|word| word.newest).max().unwrap_or(0);
-            let solo_word_lookups = match words.as_slice() {
-                [only] => Some(only.total_lookups),
-                _ => None,
+            let (solo_word_lookups, solo_word_glances) = match words.as_slice() {
+                [only] => (Some(only.cards), Some(only.glances)),
+                _ => (None, None),
             };
             let word_ids = words.into_iter().map(|word| word.word_id).collect();
             ReviewPile {
@@ -227,6 +263,7 @@ fn repeat_lookups_piles(conn: &Connection) -> AppResult<Vec<ReviewPile>> {
                     book_id,
                     book_title,
                     solo_word_lookups,
+                    solo_word_glances,
                 },
                 word_ids,
                 words: Vec::new(),
@@ -464,6 +501,22 @@ mod tests {
         .unwrap();
     }
 
+    /// The lifetime dictionary tally for one (book, word) — migration 069.
+    fn insert_glances(
+        conn: &RusqliteConnection,
+        book_id: &str,
+        normalized_word: &str,
+        last_glanced_at: i64,
+        glance_count: i64,
+    ) {
+        conn.execute(
+            "INSERT INTO dictionary_glances (book_id, normalized_word, glance_count, first_glanced_at, last_glanced_at, last_cfi, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?4, NULL, ?4)",
+            params![book_id, normalized_word, glance_count, last_glanced_at],
+        )
+        .unwrap();
+    }
+
     fn insert_mastery_event(
         conn: &RusqliteConnection,
         vocab_word_id: &str,
@@ -546,6 +599,100 @@ mod tests {
             .find(|p| matches!(p.kind, ReviewPileKind::RepeatLookupsInBook { .. }))
             .expect("expected a RepeatLookupsInBook pile");
         assert_eq!(pile.word_ids, vec!["w1".to_string()]);
+    }
+
+    /// Four dictionary checks weigh 2.0 — the same bar two AI cards clear.
+    #[test]
+    fn four_dictionary_checks_land_a_word_in_the_pile() {
+        let (_dir, db) = setup();
+        let conn = db.conn.lock().unwrap();
+        insert_book(&conn, "book-a", "Book A");
+        insert_vocab_word(&conn, "w1", "book-a", "solitude", None);
+        insert_glances(&conn, "book-a", "solitude", 3_000, 4);
+        drop(conn);
+
+        let piles = list_review_piles_at(&db, 10_000).unwrap();
+        assert_eq!(
+            piles[0].kind,
+            ReviewPileKind::RepeatLookupsInBook {
+                book_id: "book-a".to_string(),
+                book_title: "Book A".to_string(),
+                solo_word_lookups: Some(0),
+                solo_word_glances: Some(4),
+            }
+        );
+        // The dictionary tally carries the pile's timestamp when it is the
+        // only thing in it.
+        assert_eq!(piles[0].newest_activity_at, 3_000);
+    }
+
+    /// Three weigh 1.5. Under the bar, and deliberately so: the bar is the
+    /// same rung the mastery ladder uses to send a word back to `learning`.
+    #[test]
+    fn three_dictionary_checks_do_not() {
+        let (_dir, db) = setup();
+        let conn = db.conn.lock().unwrap();
+        insert_book(&conn, "book-a", "Book A");
+        insert_vocab_word(&conn, "w1", "book-a", "solitude", None);
+        insert_glances(&conn, "book-a", "solitude", 3_000, 3);
+        drop(conn);
+
+        let piles = list_review_piles_at(&db, 10_000).unwrap();
+        assert!(!piles
+            .iter()
+            .any(|p| matches!(p.kind, ReviewPileKind::RepeatLookupsInBook { .. })));
+    }
+
+    /// One card plus two dictionary checks is also 2.0, and the copy has to be
+    /// able to say so — hence both counts, not one total.
+    #[test]
+    fn a_card_and_two_dictionary_checks_reach_the_bar_together() {
+        let (_dir, db) = setup();
+        let conn = db.conn.lock().unwrap();
+        insert_book(&conn, "book-a", "Book A");
+        insert_vocab_word(&conn, "w1", "book-a", "solitude", None);
+        insert_lookup_record(
+            &conn,
+            "l1",
+            "book-a",
+            "solitude",
+            None,
+            Some("cfi-1"),
+            1_000,
+            1,
+        );
+        insert_glances(&conn, "book-a", "solitude", 4_000, 2);
+        drop(conn);
+
+        let piles = list_review_piles_at(&db, 10_000).unwrap();
+        assert_eq!(
+            piles[0].kind,
+            ReviewPileKind::RepeatLookupsInBook {
+                book_id: "book-a".to_string(),
+                book_title: "Book A".to_string(),
+                solo_word_lookups: Some(1),
+                solo_word_glances: Some(2),
+            }
+        );
+        // Newest across both kinds of activity, not just the cards.
+        assert_eq!(piles[0].newest_activity_at, 4_000);
+    }
+
+    /// A word filed in by glances alone sits in the watchlist, and the
+    /// observation zone stays out of review however loud its signal is.
+    #[test]
+    fn a_glanced_watchlist_word_stays_out_of_the_pile() {
+        let (_dir, db) = setup();
+        let conn = db.conn.lock().unwrap();
+        insert_book(&conn, "book-a", "Book A");
+        insert_watchlist_word(&conn, "w1", "book-a", "solitude");
+        insert_glances(&conn, "book-a", "solitude", 3_000, 6);
+        drop(conn);
+
+        let piles = list_review_piles_at(&db, 10_000).unwrap();
+        assert!(!piles
+            .iter()
+            .any(|p| matches!(p.kind, ReviewPileKind::RepeatLookupsInBook { .. })));
     }
 
     #[test]
@@ -728,6 +875,7 @@ mod tests {
                 book_title: "Book A".to_string(),
                 // Summed across both positions, not just the newest row.
                 solo_word_lookups: Some(4),
+                solo_word_glances: Some(0),
             }
         );
     }
@@ -857,6 +1005,7 @@ mod tests {
                     book_id: "book-b".to_string(),
                     book_title: "Book B".to_string(),
                     solo_word_lookups: Some(2),
+                    solo_word_glances: Some(0),
                 },
                 &ReviewPileKind::RecentChapterLookups {
                     book_id: "book-a".to_string(),
@@ -867,6 +1016,7 @@ mod tests {
                     book_id: "book-a".to_string(),
                     book_title: "Book A".to_string(),
                     solo_word_lookups: Some(2),
+                    solo_word_glances: Some(0),
                 },
                 &ReviewPileKind::LongUnseen,
             ]

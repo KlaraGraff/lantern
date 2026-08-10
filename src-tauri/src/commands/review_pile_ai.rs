@@ -775,6 +775,7 @@ mod tests {
             book_id: "b1".to_string(),
             book_title: "Book".to_string(),
             solo_word_lookups: None,
+            solo_word_glances: None,
         };
         let b = ReviewPileKind::RecentChapterLookups {
             book_id: "b1".to_string(),
@@ -796,6 +797,7 @@ mod tests {
                 book_id: "book-a".to_string(),
                 book_title: "Book A".to_string(),
                 solo_word_lookups: None,
+                solo_word_glances: None,
             },
             word_ids: vec!["w1".to_string(), "w2".to_string()],
             words: Vec::new(),

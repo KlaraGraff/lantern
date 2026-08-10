@@ -50,6 +50,22 @@ fn insert_lookup(db: &Db, id: &str, normalized_text: &str, count: i64) {
         .unwrap();
 }
 
+/// One (book, word) row of the lifetime dictionary tally, with `count`
+/// qualified glances on it.
+fn insert_glances(db: &Db, normalized_word: &str, count: i64) {
+    db.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO dictionary_glances
+                (book_id, normalized_word, glance_count, first_glanced_at,
+                 last_glanced_at, last_cfi, updated_at)
+             VALUES (?1, ?2, ?3, 1700000000000, 1700000000000, NULL, 1700000000000)",
+            params![BOOK, normalized_word, count],
+        )
+        .unwrap();
+}
+
 // -- guardrail 1: insufficient sample -> default -------------------------
 
 /// Below MIN_WORDS_FOR_LOOKUP_RATE, the rate must stay unset — never a rate
@@ -75,6 +91,42 @@ fn clearing_the_word_floor_computes_a_rate() {
     let (_dir, db) = fixture();
     insert_screen(&db, "s1", MIN_WORDS_FOR_LOOKUP_RATE, 1_700_000_000_000);
     insert_lookup(&db, "l1", "quiet", 15);
+
+    let conn = db.reader();
+    let calibration = compute(&conn, 1_700_000_100_000).unwrap();
+    assert_eq!(
+        calibration.lookup_rate_per_1000,
+        Some(15.0 * 1000.0 / MIN_WORDS_FOR_LOOKUP_RATE as f64)
+    );
+}
+
+/// A reader who only ever reads the free dictionary strip is still a reader
+/// who stops on words. Counting only `lookup_records` measured them as someone
+/// who never looks anything up, which pushed their scale to the floor and
+/// discounted every word they walked past — see `compute`'s own comment.
+#[test]
+fn a_dictionary_only_reader_still_has_a_lookup_rate() {
+    let (_dir, db) = fixture();
+    insert_screen(&db, "s1", MIN_WORDS_FOR_LOOKUP_RATE, 1_700_000_000_000);
+    insert_glances(&db, "quiet", 15);
+
+    let conn = db.reader();
+    let calibration = compute(&conn, 1_700_000_100_000).unwrap();
+    assert_eq!(
+        calibration.lookup_rate_per_1000,
+        Some(15.0 * 1000.0 / MIN_WORDS_FOR_LOOKUP_RATE as f64)
+    );
+}
+
+/// Full strength, not the half-weight the mastery ladder gives a glance: the
+/// two answer different questions (how much doubt one word drew, versus how
+/// closely this reader works a text).
+#[test]
+fn a_glance_counts_as_much_as_a_card_toward_the_rate() {
+    let (_dir, db) = fixture();
+    insert_screen(&db, "s1", MIN_WORDS_FOR_LOOKUP_RATE, 1_700_000_000_000);
+    insert_lookup(&db, "l1", "quiet", 6);
+    insert_glances(&db, "still", 9);
 
     let conn = db.reader();
     let calibration = compute(&conn, 1_700_000_100_000).unwrap();

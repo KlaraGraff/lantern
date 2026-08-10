@@ -519,6 +519,7 @@ export const FIXTURES: Record<string, Fixture> = {
         book_id: "book-epub-reading",
         book_title: "The Wind in the Willows",
         solo_word_lookups: null,
+        solo_word_glances: null,
       },
       word_ids: VOCAB.filter((w) => w.next_review_at <= nowMs()).map((w) => w.id),
       words: VOCAB.filter((w) => w.next_review_at <= nowMs()),

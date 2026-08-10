@@ -6,7 +6,14 @@ import type { DictionaryWord } from "../../hooks/useDictionary";
  * board renders `list_review_piles()`'s result as-is; nothing here re-sorts it.
  */
 export type ReviewPileKind =
-  | { kind: "repeat_lookups_in_book"; book_id: string; book_title: string; solo_word_lookups: number | null }
+  | {
+      kind: "repeat_lookups_in_book";
+      book_id: string;
+      book_title: string;
+      /** AI cards, and dictionary checks, counted separately — see `pileReasonKey`. Both null unless the pile holds exactly one word. */
+      solo_word_lookups: number | null;
+      solo_word_glances: number | null;
+    }
   | { kind: "promoted_then_looked_up" }
   | { kind: "recent_chapter_lookups"; book_id: string; book_title: string; chapter: string }
   | { kind: "long_unseen" };
@@ -88,9 +95,13 @@ export function pileTitleKey(kind: ReviewPileKind): PileCopyKey {
 
 /**
  * i18n key (and interpolation params) for a pile's 来由/reason sentence.
- * `repeat_lookups_in_book` is the only kind with two variants: a one-word
- * pile reads its own repeat count as the point, rather than "more than once
- * in this book" — chosen by word-count, not by anything the caller decides.
+ * `repeat_lookups_in_book` is the only kind with variants: a one-word pile
+ * reads its own repeat count as the point, rather than "more than once in
+ * this book" — chosen by word-count, not by anything the caller decides. That
+ * count then splits three ways by *how* the reader stopped, the same split
+ * `mastery-explanation.ts` makes: cards only, dictionary only, or both. Four
+ * dictionary checks are not "you looked it up four times", so the sentence
+ * names what actually happened.
  * `ago` is a pre-formatted relative-time string (see `../../utils/timeAgo`);
  * this module stays i18n-agnostic, so it takes the resolved string, not a
  * timestamp.
@@ -100,9 +111,23 @@ export function pileReasonKey(pile: Pick<ReviewPile, "kind" | "word_ids">, ago?:
   switch (kind.kind) {
     case "repeat_lookups_in_book":
       if (pile.word_ids.length === 1) {
+        const cards = kind.solo_word_lookups ?? 0;
+        const glances = kind.solo_word_glances ?? 0;
+        if (glances === 0) {
+          return {
+            key: "reviewBoard.pile.repeatLookupsInBook.reasonSolo",
+            params: { count: String(cards) },
+          };
+        }
+        if (cards === 0) {
+          return {
+            key: "reviewBoard.pile.repeatLookupsInBook.reasonSoloGlances",
+            params: { glances: String(glances) },
+          };
+        }
         return {
-          key: "reviewBoard.pile.repeatLookupsInBook.reasonSolo",
-          params: { count: String(kind.solo_word_lookups ?? 0) },
+          key: "reviewBoard.pile.repeatLookupsInBook.reasonSoloMixed",
+          params: { count: String(cards), glances: String(glances) },
         };
       }
       return { key: "reviewBoard.pile.repeatLookupsInBook.reason" };

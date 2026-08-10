@@ -53,7 +53,7 @@
 //!
 //! [`compute`] never loops over `reading_word_exposures` or the full
 //! `lookup_records` / `reading_screen_dwells` history in Rust. The lookup
-//! rate is two SQL `SUM` aggregates — SQLite's own job, not this process's.
+//! rate is three SQL `SUM` aggregates — SQLite's own job, not this process's.
 //! The reading-speed median has no SQL aggregate to lean on (SQLite has no
 //! `MEDIAN`), so it stays a bounded, recency-ordered fetch of at most
 //! [`SPEED_SAMPLE_SCREENS`] rows, mirroring the exact bound
@@ -201,13 +201,32 @@ fn compute(conn: &Connection, now: i64) -> AppResult<Calibration> {
         None
     };
 
-    // -- §5.2: lookup rate. Two SQL SUMs, each a single aggregate row —
-    // no per-row Rust iteration over either table.
-    let total_lookups: i64 = conn.query_row(
+    // -- §5.2: lookup rate. Three SQL SUMs, each a single aggregate row —
+    // no per-row Rust iteration over any of the tables.
+    let total_cards: i64 = conn.query_row(
         "SELECT COALESCE(SUM(lookup_count), 0) FROM lookup_records",
         [],
         |row| row.get(0),
     )?;
+    // Free dictionary definitions the reader actually read (migration 069),
+    // counted at **full** strength — unlike the mastery ladder, which weighs a
+    // glance as half an AI card.
+    //
+    // The two are different questions. The ladder's weight measures how much
+    // doubt the reader expressed about one word; this rate measures how
+    // attentively they work through a text at all, because that is what
+    // decides whether a word they walked *past* is evidence they knew it. On
+    // that question a dictionary check is exactly as much of a stop as a card
+    // is. Left out, a reader who only ever uses the free dictionary measures
+    // as someone who never looks anything up, their scale is pushed to the
+    // floor, and every word they skipped is discounted — the opposite of what
+    // their behaviour shows.
+    let total_glances: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(glance_count), 0) FROM dictionary_glances",
+        [],
+        |row| row.get(0),
+    )?;
+    let total_lookups = total_cards.saturating_add(total_glances);
     let total_words: i64 = conn.query_row(
         "SELECT COALESCE(SUM(word_count), 0) FROM reading_screen_dwells",
         [],

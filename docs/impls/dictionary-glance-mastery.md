@@ -112,9 +112,12 @@ CREATE TABLE dictionary_glances (
 
 变体选择放在 `mastery-explanation.ts` 里（纯函数，可单测），不放在组件里。
 
-## 8. 本轮不做
+## 8. 复习堆与校准系数
 
-- **拦路词复习堆**（`review_piles::repeat_lookups_piles`）今天数的是 `lookup_records`，把 glance 塞进去会改动复习界面里读者看得见的东西。等这套跑出数据再单独对齐。
-- **校准系数**（`calibration::lookup_rate_scale`）的分子也只数 `lookup_records`。主要靠 glance 查词的读者会被测成「很少查词的人」，`scale` 被压向 0.5，升档反而变慢。方向上是保守的（少给分不是多给分），但仍然是错的，需要一起改。同样等下一轮。
+这两处原本列为「本轮不做」，随后一起补上了。它们和第 2 节的半档权重不是同一个问题，权重也不同——理由见下。
 
-两条都记在这里，不许静默蒸发。
+**拦路词复习堆**（`review_piles::repeat_lookups_piles`）现在把 `lookup_records` 和 `dictionary_glances` 用一个 `UNION ALL` 子查询合起来按 (book, word) 聚合，门槛是权重 **2.0**：两张卡、或一卡两词典、或四次词典。这对只开卡的读者是恒等变换——原来的「查了不止一次」就是 2.0——所以既有的堆一个成员都没变。2.0 也不是新造的数：它正是阶梯上「打回 learning」那一档，堆的一句话来由因此还是一句话。SQL 里写成 `SUM(cards) * 2 + SUM(glances) >= 4`，同一个不等式，整数算术，`HAVING` 里不出现浮点。
+
+堆的时间戳取两个来源的 `MAX`。单词堆的文案要把两种查法分开说，所以 `RepeatLookupsInBook` 带出 `solo_word_lookups` / `solo_word_glances` 两个字段，前端按「只有卡片 / 只有词典 / 两种都有」选三句话中的一句——和第 7 节词详情页的分法一致。四次翻词典不能叫「你查了它四次」。多词那句原来的结尾「不是随手一查」也跟着删了：一个纯由词典查询攒出来的堆，那半句是在否定它自己。
+
+**校准系数**（`calibration::lookup_rate_scale`）的分子改成卡片次数 + glance 次数，glance 按**满权重**计，不是 0.5。这不是不一致，是两个不同的问题：阶梯问的是「这次停顿有多说明他不认识这个词」，一次免费查词的证明力只有半张卡；而 lookup rate 问的是「这个读者读得有多细」，停下来翻词典和停下来开卡片，在这个问题上是一回事。同一条原则也解释了第 5 节为什么给满。
