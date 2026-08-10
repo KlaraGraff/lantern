@@ -339,8 +339,16 @@ const ACTIONS: Record<string, () => Promise<void>> = {
     await openScopeMenu();
   },
 
-  /** 一张就地加注的查词卡，正文不被侧栏挤窄。 */
-  async levels() {
+  /**
+   * 两张等级图共用一个动作：查同一个词、同一句话。差别全在设置里 —— 卡片显示
+   * 哪几块由学习者等级定，内容也按等级各生成一份。
+   */
+  async levelA2() {
+    await waitForBook();
+    await lookupWord("circumspection");
+  },
+
+  async levelC1() {
     await waitForBook();
     await lookupWord("circumspection");
   },

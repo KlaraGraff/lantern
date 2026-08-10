@@ -835,7 +835,9 @@ export const FIXTURES: Record<string, Fixture> = {
    * 流式事件只影响「边生成边显示」，不影响最终那一屏，所以这里不必伪造事件。
    */
   ai_learning_card: (a: Args) => {
-    const card = promoLearningCard(a.text);
+    // 等级会换掉卡片显示哪几块，所以内容也得按等级取 —— 取的就是应用自己读的
+    // 那个 `cefr_level`，样张里没有第二套开关。
+    const card = promoLearningCard(a.text, resolveSettings().cefr_level);
     if (!card) throw new Error(`harness: 样张里没有 "${String(a.text)}" 这张卡`);
     return card;
   },

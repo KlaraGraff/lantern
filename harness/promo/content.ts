@@ -382,9 +382,93 @@ const CARDS: Record<string, unknown> = {
   },
 };
 
-export function promoLearningCard(text: unknown): unknown | null {
+/**
+ * 同一个词，按学习者等级换一套内容。
+ *
+ * 等级换的是「显示哪几块」（见 `src/components/learning-card/level-presets.ts`）：
+ * A2 是 当前语境含义 / 全句大意 / 全句脉络 / 单词信息 / 常见释义，C1 换成
+ * 当前语境含义 / 用词取舍 / 常用搭配 / 语气与使用场景 / 常见释义。块数一样多，
+ * 密度也一样 —— 低一档不是「给少几块」，是先把整句说清楚。
+ *
+ * 所以这两份不是同一份内容删几行，是各写各的：真让模型按这两套模块生成，出来
+ * 的也是两份不同的文字。
+ */
+const LEVEL_CARDS: Record<string, Record<string, unknown>> = {
+  circumspection: {
+    A2: {
+      version: 1,
+      kind: "word",
+      sourceText: "circumspection",
+      modules: {
+        context_meaning: {
+          summary: "这个词的意思是「凡事先看看四周再动」的谨慎。但这句不是在夸她——他在拿这个词笑话太太。",
+          details: [
+            "太太刚说「我自己都不认识他，怎么替人引荐」，他就接了一句「我敬佩你的审慎」。",
+            "紧接着他说「你不肯出面，那我自己来」——前面那句敬佩，是为了衬这句。",
+          ],
+        },
+        sentence_gist: {
+          summary: "他表面上说「认识才半个月，是不好乱介绍」，其实是在说：那我去。",
+        },
+        grammar_role: {
+          summary: "说话的是父亲 Mr. Bennet；「敬佩」的对象是太太的谨慎，也就是她上一句「我跟人家都不认识」。后半句「认识两周确实太短」是替她把理由补完，好显得他很认真。",
+        },
+        word_info: {
+          summary: "circumspection /ˌsɜːkəmˈspekʃn/ 名词；形容词是 circumspect。",
+          meta: ["正式", "circum（周围）+ spect（看）"],
+        },
+        common_senses: {
+          items: [
+            { title: "审慎、周全", text: "做事之前把四周都看一遍再决定。" },
+            { title: "说话留一手", text: "不把话说死，也算这个词管的范围。" },
+          ],
+        },
+      },
+    },
+
+    C1: {
+      version: 1,
+      kind: "word",
+      sourceText: "circumspection",
+      modules: {
+        context_meaning: {
+          summary: "字面是「审慎周全」，这里是反话：他用一个郑重其事的大词，去罩太太那点「没经人介绍就不好开口」的讲究。",
+          details: [
+            "同一段话里他先敬佩，再替她把理由补完，最后一句才是真的：你不出面，我来。",
+            "奥斯汀的讽刺常藏在这种词上——句子越体面，落差越大。",
+          ],
+        },
+        why_this_word: {
+          summary: "换成 caution 或 care，就只是「小心」；circumspection 是公文和道德说教里的词，郑重、成体系。把这么大一个词按在一件小事上，敬佩就成了打趣。",
+        },
+        collocations: {
+          items: [
+            { title: "with circumspection", text: "谨慎地（做某事），最常见的用法。" },
+            { title: "a degree of circumspection", text: "一定程度的审慎，语气克制。" },
+          ],
+        },
+        usage: {
+          summary: "正式、偏书面，日常口语基本不用。放进对话里要么显得极郑重，要么像这里一样反着说。",
+          meta: ["正式", "常带反讽"],
+        },
+        common_senses: {
+          items: [
+            { title: "审慎、周全", text: "circum（周围）+ spect（看）：动手之前先把四周看一遍。" },
+          ],
+        },
+      },
+    },
+  },
+};
+
+/**
+ * `level` 传的就是设置里的 `cefr_level`。给了等级、而且这个词备了那一档的内容，
+ * 就用那一份；否则回到默认那份（出厂等级 B2 的模块组合）。
+ */
+export function promoLearningCard(text: unknown, level?: unknown): unknown | null {
   const key = String(text ?? "").trim().toLowerCase().replace(/[^a-z']/g, "");
-  return CARDS[key] ?? null;
+  const byLevel = level ? LEVEL_CARDS[key]?.[String(level)] : undefined;
+  return byLevel ?? CARDS[key] ?? null;
 }
 
 /** 首图双击的那个词。放在这里，场景和内容不用两边各写一份。 */

@@ -12,6 +12,9 @@
  * 因为那部分需要真的去摸 DOM，和纯数据分开。
  */
 
+import { serializeCardDesignConfig } from "../../src/components/learning-card/config";
+import { cardDesignConfigForLevel } from "../../src/components/learning-card/level-presets";
+import type { CefrLevel } from "../../src/components/settings/cefr";
 import { PROMO_CARD_CONFIG } from "./content";
 
 export interface Scene {
@@ -40,11 +43,32 @@ const ZH: Record<string, string> = {
   learning_card_config: PROMO_CARD_CONFIG,
 };
 
+/**
+ * 按学习者等级配好的一套设置。
+ *
+ * 卡片配置不是手写的：`cardDesignConfigForLevel()` 就是应用在设置页和首次引导
+ * 里选完等级后写进去的那一份，这里只是把同一个函数的结果端上来。宽度改成
+ * 「窄」是纯排版选择（卡片宽度本来就是设置项），和等级无关。
+ */
+const zhAtLevel = (level: CefrLevel): Record<string, string> => {
+  const config = cardDesignConfigForLevel(level);
+  return {
+    ...ZH,
+    cefr_level: level,
+    learning_card_source: "level",
+    learning_card_config: serializeCardDesignConfig({
+      ...config,
+      cards: { ...config.cards, word: { ...config.cards.word, widthMode: "compact" } },
+    }),
+  };
+};
+
 export const SCENES: Record<string, Scene> = {
   /** 1 阅读器全景：正文 + 查词卡 + AI 侧栏。 */
   hero: { settings: ZH, route: "/reader/pride-and-prejudice" },
-  /** 2 同一个词，两个 CEFR 等级的解释。 */
-  levels: { settings: ZH, route: "/reader/pride-and-prejudice" },
+  /** 2 同一个词、同一句话，两个学习者等级各给一张卡（README 里左右并排）。 */
+  levelA2: { settings: zhAtLevel("A2"), route: "/reader/pride-and-prejudice" },
+  levelC1: { settings: zhAtLevel("C1"), route: "/reader/pride-and-prejudice" },
   /** 3 带上下文的追问。 */
   context: { settings: ZH, route: "/reader/pride-and-prejudice" },
   /** 4 回答里的引用可以点回原文。 */

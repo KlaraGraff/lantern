@@ -46,7 +46,9 @@ const CHROME =
  */
 const SHOTS = [
   { name: "hero", scene: "hero", size: [1280, 840] },
-  { name: "level", scene: "levels", size: [900, 560] },
+  // 等级那一张在 README 里是左右并排的两图，所以拍成两张，各拍各的等级。
+  { name: "level-a2", scene: "levelA2", size: [820, 1040] },
+  { name: "level-c1", scene: "levelC1", size: [820, 1040] },
   { name: "context", scene: "context", size: [1020, 880] },
   { name: "citations", scene: "citations", size: [1280, 900] },
   { name: "mastery", scene: "vocab", size: [1180, 740] },

@@ -55,8 +55,10 @@ But "meeting you where you are" slides easily into being vague for the sake of b
 
 A separate **explanation style** switch governs how many points a card gives: **Thorough** adds more, **Essentials** keeps only what you need right now.
 
-<!-- screenshot placeholder: learning preferences, plus the same word explained at two levels
-![Explanations tuned to your level](assets/screenshots/level.png)
+<!-- screenshot placeholder: the same word in the same sentence, one card per level
+| A2 | C1 |
+| --- | --- |
+| ![The card at A2](assets/screenshots/level-a2.png) | ![The card at C1](assets/screenshots/level-c1.png) |
 -->
 
 ### It knows what kind of explanation you want
