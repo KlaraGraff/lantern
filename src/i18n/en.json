@@ -669,6 +669,7 @@
   "settings.learner.manualSource": "Current level was selected manually and takes priority over estimates.",
   "settings.learner.assessmentSource": "Current level was explicitly applied from an exam estimate.",
   "settings.learner.cardPresetNote": "Your level also sets which parts the learning card shows: lower levels get the sentence explained first, higher levels get the fine points of word choice. Once you edit the card under “{{section}}”, it stops following your level.",
+  "settings.learner.explanationModeLevelNote": "Your level also sets which language explanations are written in: lower levels get the whole thing in Chinese, higher levels switch to English only. Once you pick a language yourself under “{{setting}}” below, it stops following your level.",
   "settings.learner.manualLevelSaved": "Manual learner level saved",
   "settings.learner.levelApplied": "Estimated learner level applied",
   "settings.learner.explanationMode": "Explanation Language",

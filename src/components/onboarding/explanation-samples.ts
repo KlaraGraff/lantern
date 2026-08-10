@@ -1,6 +1,19 @@
-import type { CefrLevel } from "../settings/cefr";
+// Explicit extension: this module is loaded directly by the node test runner,
+// which does not resolve extensionless imports the way Vite does.
+import { CEFR_LEVELS, DEFAULT_CEFR_LEVEL, type CefrLevel } from "../settings/cefr.ts";
 
 export type ExplanationMode = "chinese" | "adaptive_bilingual" | "english_by_level";
+
+export const EXPLANATION_MODE_SETTING_KEY = "explanation_mode";
+
+/**
+ * 讲解语言这一档是谁定的：`level` 表示跟着等级的推荐来，`manual` 表示读者自己
+ * 挑过。跟 `learning_card_source` 同一条规矩 —— 等级是输入，这个键记的是谁说了
+ * 最后一句话。
+ */
+export const EXPLANATION_MODE_SOURCE_SETTING_KEY = "explanation_mode_source";
+export const EXPLANATION_MODE_SOURCE_LEVEL = "level";
+export const EXPLANATION_MODE_SOURCE_MANUAL = "manual";
 
 /**
  * 引导第一步推荐哪一档讲解语言 —— 跟着等级走，不是一档到底。
@@ -26,6 +39,35 @@ export function recommendedExplanationMode(level: CefrLevel, uiLanguage: string)
 export function storedExplanationMode(value: string | undefined): ExplanationMode | null {
   if (value === "chinese" || value === "adaptive_bilingual" || value === "english_by_level") return value;
   return null;
+}
+
+/**
+ * 改等级时该不该顺手把讲解语言也换成新等级的推荐档。
+ *
+ * 没有 `explanation_mode_source` 的老数据 —— 也就是这个键存在之前走完引导的人
+ * —— 不能照搬学习卡那条「存过就算他自己挑的」：引导**总是**写 `explanation_mode`，
+ * 哪怕读者一下都没点，存下来的也只是那一档推荐值。照搬的话谁都跟不上等级，
+ * 要修的那个缺口原样留着。
+ *
+ * 所以未标记时改看值本身：存的正好是**当时那个等级**会推荐的一档，就说明他没
+ * 偏离过推荐，当作跟随；存的是别的一档，那是他主动挑的，不动。界面语言换过的
+ * 人可能被误判成「自己挑过」（推荐值跟着界面语言变），这一侧偏保守 ——
+ * 少跟一次只是维持现状，多覆盖一次却会掀掉读者明确表过的态。
+ */
+export function explanationModeFollowsLevel(
+  settings: Record<string, string | undefined>,
+  uiLanguage: string,
+): boolean {
+  const source = settings[EXPLANATION_MODE_SOURCE_SETTING_KEY];
+  if (source === EXPLANATION_MODE_SOURCE_MANUAL) return false;
+  if (source === EXPLANATION_MODE_SOURCE_LEVEL) return true;
+  const stored = storedExplanationMode(settings[EXPLANATION_MODE_SETTING_KEY]);
+  if (!stored) return true;
+  const level = settings.cefr_level;
+  const storedLevel = (CEFR_LEVELS as readonly string[]).includes(level ?? "")
+    ? (level as CefrLevel)
+    : DEFAULT_CEFR_LEVEL;
+  return stored === recommendedExplanationMode(storedLevel, uiLanguage);
 }
 
 /**

@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  EXPLANATION_MODE_SETTING_KEY,
+  EXPLANATION_MODE_SOURCE_LEVEL,
+  EXPLANATION_MODE_SOURCE_MANUAL,
+  EXPLANATION_MODE_SOURCE_SETTING_KEY,
+  explanationModeFollowsLevel,
   explanationSampleKey,
   recommendedExplanationMode,
   storedExplanationMode,
@@ -62,4 +67,106 @@ test("storedExplanationMode only trusts the three real values", () => {
   assert.equal(storedExplanationMode(undefined), null);
   assert.equal(storedExplanationMode(""), null);
   assert.equal(storedExplanationMode("bilingual"), null);
+});
+
+test("an explicit source has the last word, in both directions", () => {
+  assert.equal(
+    explanationModeFollowsLevel(
+      {
+        [EXPLANATION_MODE_SOURCE_SETTING_KEY]: EXPLANATION_MODE_SOURCE_LEVEL,
+        // 值跟等级推荐对不上也照样跟随 —— 标记说了算，不用再猜。
+        [EXPLANATION_MODE_SETTING_KEY]: "english_by_level",
+        cefr_level: "A2",
+      },
+      "zh",
+    ),
+    true,
+  );
+  assert.equal(
+    explanationModeFollowsLevel(
+      {
+        [EXPLANATION_MODE_SOURCE_SETTING_KEY]: EXPLANATION_MODE_SOURCE_MANUAL,
+        [EXPLANATION_MODE_SETTING_KEY]: "chinese",
+        cefr_level: "B1",
+      },
+      "zh",
+    ),
+    false,
+  );
+});
+
+test("nothing stored at all follows the level", () => {
+  assert.equal(explanationModeFollowsLevel({}, "zh"), true);
+  assert.equal(explanationModeFollowsLevel({ cefr_level: "B1" }, "en"), true);
+});
+
+// 没有来源标记的老数据：引导总会写下讲解语言，所以只能看值本身。存的正好是当时
+// 那个等级的推荐档 —— 他没偏离过推荐 —— 就当作跟随。
+test("unmarked data follows the level when it still sits on the recommendation", () => {
+  assert.equal(
+    explanationModeFollowsLevel(
+      { [EXPLANATION_MODE_SETTING_KEY]: "chinese", cefr_level: "B1" },
+      "zh",
+    ),
+    true,
+  );
+  assert.equal(
+    explanationModeFollowsLevel(
+      { [EXPLANATION_MODE_SETTING_KEY]: "adaptive_bilingual", cefr_level: "B2" },
+      "zh",
+    ),
+    true,
+  );
+  assert.equal(
+    explanationModeFollowsLevel(
+      { [EXPLANATION_MODE_SETTING_KEY]: "adaptive_bilingual", cefr_level: "B1" },
+      "en",
+    ),
+    true,
+  );
+});
+
+test("unmarked data that deviated from the recommendation is left alone", () => {
+  // B1 推荐中文，存的却是全英文 —— 只可能是他自己挑的。
+  assert.equal(
+    explanationModeFollowsLevel(
+      { [EXPLANATION_MODE_SETTING_KEY]: "english_by_level", cefr_level: "B1" },
+      "zh",
+    ),
+    false,
+  );
+  assert.equal(
+    explanationModeFollowsLevel(
+      { [EXPLANATION_MODE_SETTING_KEY]: "chinese", cefr_level: "C1" },
+      "zh",
+    ),
+    false,
+  );
+});
+
+test("unmarked data without a level is read against the default level", () => {
+  // 没存等级就是 B1，跟 `resolveInitialCefrLevel` 一个默认。
+  assert.equal(explanationModeFollowsLevel({ [EXPLANATION_MODE_SETTING_KEY]: "chinese" }, "zh"), true);
+  assert.equal(
+    explanationModeFollowsLevel({ [EXPLANATION_MODE_SETTING_KEY]: "chinese", cefr_level: "bogus" }, "zh"),
+    true,
+  );
+  assert.equal(
+    explanationModeFollowsLevel({ [EXPLANATION_MODE_SETTING_KEY]: "english_by_level" }, "zh"),
+    false,
+  );
+});
+
+test("an unreadable stored mode is treated as never having been chosen", () => {
+  assert.equal(
+    explanationModeFollowsLevel({ [EXPLANATION_MODE_SETTING_KEY]: "bilingual", cefr_level: "C1" }, "zh"),
+    true,
+  );
+});
+
+// 缺口本身：B1 走完引导的读者升到 C1，讲解语言得跟着换成全英文。
+test("the level upgrade this exists for lands on English", () => {
+  const settings = { [EXPLANATION_MODE_SETTING_KEY]: "chinese", cefr_level: "B1" };
+  assert.equal(explanationModeFollowsLevel(settings, "zh"), true);
+  assert.equal(recommendedExplanationMode("C1", "zh"), "english_by_level");
 });

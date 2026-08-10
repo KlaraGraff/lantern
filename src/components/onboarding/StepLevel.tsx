@@ -22,6 +22,10 @@ import {
   type CefrLevel,
 } from "../settings/cefr";
 import {
+  EXPLANATION_MODE_SETTING_KEY,
+  EXPLANATION_MODE_SOURCE_LEVEL,
+  EXPLANATION_MODE_SOURCE_MANUAL,
+  EXPLANATION_MODE_SOURCE_SETTING_KEY,
   explanationSampleKey,
   recommendedExplanationMode,
   storedExplanationMode,
@@ -127,7 +131,13 @@ export default function StepLevel({ settings, save, onNext }: StepLevelProps) {
       await Promise.all([
         save("cefr_level", level),
         save("cefr_source", source),
-        save("explanation_mode", explanationMode),
+        save(EXPLANATION_MODE_SETTING_KEY, explanationMode),
+        // 这一步总会写下讲解语言，所以事后从值本身分不出「他挑的」和「推荐给
+        // 他的」—— 手点过某一档才算他自己的选择，之后设置页改等级不再覆盖它。
+        save(
+          EXPLANATION_MODE_SOURCE_SETTING_KEY,
+          pickedMode ? EXPLANATION_MODE_SOURCE_MANUAL : EXPLANATION_MODE_SOURCE_LEVEL,
+        ),
         // 等级换的是学习卡默认显示哪几块 —— A 档卡在句子上，C 档卡在词的分寸
         // 上。只在读者没自己动过卡片时写，见 `cardPresetFollowsLevel`。
         ...(followsLevel

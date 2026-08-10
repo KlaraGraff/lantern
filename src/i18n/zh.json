@@ -669,6 +669,7 @@
   "settings.learner.manualSource": "当前等级由你手动选择，始终优先于考试估算。",
   "settings.learner.assessmentSource": "当前等级由你明确采用考试估算后设置。",
   "settings.learner.cardPresetNote": "等级还决定学习卡片默认显示哪几块：低一档先讲清整句，高一档讲透用词分寸。在「{{section}}」里改过卡片后，这里就不再跟着等级走。",
+  "settings.learner.explanationModeLevelNote": "等级也决定用什么语言讲解：低一档整段中文托着，高一档换成全英文。在下面「{{setting}}」里自己选过之后，这里就不再跟着等级走。",
   "settings.learner.manualLevelSaved": "已保存手动学习者等级",
   "settings.learner.levelApplied": "已采用考试估算等级",
   "settings.learner.explanationMode": "讲解语言",

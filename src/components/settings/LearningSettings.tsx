@@ -26,6 +26,14 @@ import {
 } from "../learning-card";
 import { notifyReadingAssistanceSettingsChanged } from "../reading-assistance-events";
 import {
+  EXPLANATION_MODE_SETTING_KEY,
+  EXPLANATION_MODE_SOURCE_LEVEL,
+  EXPLANATION_MODE_SOURCE_MANUAL,
+  EXPLANATION_MODE_SOURCE_SETTING_KEY,
+  explanationModeFollowsLevel,
+  recommendedExplanationMode,
+} from "../onboarding/explanation-samples";
+import {
   CEFR_LEVELS,
   EXAM_OPTIONS,
   EXAM_SCORE_RULES,
@@ -228,33 +236,70 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
   );
 
   /**
-   * 等级还决定学习卡默认显示哪几块 —— A 档卡在句子上，C 档卡在词的分寸上。
-   * 只在读者没在「划词与卡片」里自己动过卡片时改写，跟引导第一步同一条规矩，
-   * 见 `cardPresetFollowsLevel`。写完要通知阅读器，否则开着的书还用着旧卡片。
+   * 等级还决定用什么语言讲解 —— 讲解语言是把梯子，不是偏好开关，见
+   * `recommendedExplanationMode`。跟学习卡同一条规矩：只在读者没自己挑过讲解
+   * 语言时改写，见 `explanationModeFollowsLevel`。
    */
-  const applyCardPresetForLevel = async (level: string) => {
-    if (!isCefrLevel(level) || !cardPresetFollowsLevel(settings)) return;
-    const keys = {
-      [LEARNING_CARD_CONFIG_SETTING_KEY]: serializeCardDesignConfig(cardDesignConfigForLevel(level)),
+  const explanationFollowsLevel = explanationModeFollowsLevel(settings, i18n.language);
+
+  /** 换到这一级之后生效的讲解语言 —— 低等级警告要按它算，不是按屏幕上的旧值。 */
+  const explanationModeForLevel = (level: string) => (
+    explanationFollowsLevel && isCefrLevel(level)
+      ? recommendedExplanationMode(level, i18n.language)
+      : explanationMode
+  );
+
+  /**
+   * 改等级要连着改的都在这里，一次写完。
+   *
+   * 等级还决定两件事：学习卡默认显示哪几块（A 档卡在句子上，C 档卡在词的分寸
+   * 上），以及用什么语言讲解。两样都只在读者没自己动过时才改写 —— 见
+   * `cardPresetFollowsLevel` 和 `explanationModeFollowsLevel` —— 并且都把来源
+   * 写成 `level`，往后不必再靠值去猜是谁定的。
+   *
+   * 一次 `saveBulk` 而不是分几次：分开写会有一瞬间「新等级 + 旧讲解语言」的
+   * 组合，A1 撞上全英文的那条警告正好会在那一瞬间闪一下。写完通知阅读器，
+   * 否则开着的书还用着旧设置。
+   */
+  const applyLevel = async (level: string, source: string) => {
+    const followed: Record<string, string> = {};
+    if (isCefrLevel(level) && cardPresetFollowsLevel(settings)) {
+      followed[LEARNING_CARD_CONFIG_SETTING_KEY] = serializeCardDesignConfig(cardDesignConfigForLevel(level));
       // 没有哪一档把「目标语言译文」放进单词卡，legacy 那个开关跟着一起归位。
-      show_translation: "false",
-      [LEARNING_CARD_SOURCE_SETTING_KEY]: LEARNING_CARD_SOURCE_LEVEL,
+      followed.show_translation = "false";
+      followed[LEARNING_CARD_SOURCE_SETTING_KEY] = LEARNING_CARD_SOURCE_LEVEL;
+    }
+    const mode = explanationModeForLevel(level);
+    if (explanationFollowsLevel && isCefrLevel(level)) {
+      followed[EXPLANATION_MODE_SETTING_KEY] = mode;
+      followed[EXPLANATION_MODE_SOURCE_SETTING_KEY] = EXPLANATION_MODE_SOURCE_LEVEL;
+    }
+    setCefrLevel(level);
+    setCefrSource(source);
+    setExplanationMode(mode);
+    setShowLowLevelEnglishWarning(
+      (level === "A1" || level === "A2")
+      && mode === "english_by_level"
+      && !lowLevelEnglishAcknowledged,
+    );
+    await saveBulk({ cefr_level: level, cefr_source: source, ...followed });
+    const notifyKeys = Object.keys(followed);
+    if (notifyKeys.length > 0) await notifyReadingAssistanceSettingsChanged(notifyKeys);
+  };
+
+  /** 读者自己挑了一档，从此不再跟着等级走。 */
+  const saveManualExplanationMode = async (mode: string) => {
+    setExplanationMode(mode);
+    const keys = {
+      [EXPLANATION_MODE_SETTING_KEY]: mode,
+      [EXPLANATION_MODE_SOURCE_SETTING_KEY]: EXPLANATION_MODE_SOURCE_MANUAL,
     };
     await saveBulk(keys);
     await notifyReadingAssistanceSettingsChanged(Object.keys(keys));
   };
 
   const applyAssessmentLevel = async (level: string, source: string) => {
-    setCefrLevel(level);
-    setCefrSource(source);
-    setShowLowLevelEnglishWarning(
-      (level === "A1" || level === "A2")
-      && explanationMode === "english_by_level"
-      && !lowLevelEnglishAcknowledged,
-    );
-    await save("cefr_level", level);
-    await save("cefr_source", source);
-    await applyCardPresetForLevel(level);
+    await applyLevel(level, source);
     showSavedToast(t("settings.learner.levelApplied"));
   };
 
@@ -344,22 +389,20 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
               {t("settings.learner.cardPresetNote", { section: t("settings.tools.title") })}
             </p>
           )}
+          {explanationFollowsLevel && (
+            <p className="mt-1 max-w-[420px] text-[11px] leading-[17px] text-text-muted">
+              {t("settings.learner.explanationModeLevelNote", {
+                setting: t("settings.learner.explanationMode"),
+              })}
+            </p>
+          )}
         </div>
         <Select
           className={ROW_CONTROL_WIDTH}
           value={cefrLevel}
           onChange={(level) => {
-            setCefrLevel(level);
-            setCefrSource("manual");
-            const lowLevel = level === "A1" || level === "A2";
-            setShowLowLevelEnglishWarning(
-              lowLevel && explanationMode === "english_by_level" && !lowLevelEnglishAcknowledged,
-            );
-            void Promise.all([
-              save("cefr_level", level),
-              save("cefr_source", "manual"),
-              applyCardPresetForLevel(level),
-            ]).then(() => showSavedToast(t("settings.learner.manualLevelSaved")));
+            void applyLevel(level, "manual")
+              .then(() => showSavedToast(t("settings.learner.manualLevelSaved")));
           }}
           options={CEFR_LEVELS.map((level) => ({ value: level, label: level }))}
         />
@@ -377,13 +420,12 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
           className={ROW_CONTROL_WIDTH}
           value={explanationMode}
           onChange={(mode) => {
-            setExplanationMode(mode);
             setShowLowLevelEnglishWarning(
               mode === "english_by_level"
               && (cefrLevel === "A1" || cefrLevel === "A2")
               && !lowLevelEnglishAcknowledged,
             );
-            void save("explanation_mode", mode).then(() => showSavedToast());
+            void saveManualExplanationMode(mode).then(() => showSavedToast());
           }}
           options={[
             { value: "adaptive_bilingual", label: t("settings.learner.adaptiveBilingual", { defaultValue: "Adaptive bilingual" }) },
@@ -576,9 +618,9 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
               <button
                 type="button"
                 onClick={() => {
-                  setExplanationMode("adaptive_bilingual");
                   setShowLowLevelEnglishWarning(false);
-                  void save("explanation_mode", "adaptive_bilingual").then(() => showSavedToast());
+                  // 从警告里退回中英对照也是他自己的一次表态，等级不再改写它。
+                  void saveManualExplanationMode("adaptive_bilingual").then(() => showSavedToast());
                 }}
                 className="h-7 rounded-md bg-accent px-2.5 text-[11px] font-medium text-white"
               >
