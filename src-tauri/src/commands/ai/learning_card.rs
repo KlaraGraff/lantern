@@ -390,6 +390,201 @@ fn module_has_content(module: &LearningModuleContent) -> bool {
             .is_some_and(|value| !value.trim().is_empty())
 }
 
+/// The JSON object inside whatever the model actually sent.
+///
+/// A card that arrived intact parses on the first line here and the rest never
+/// runs. The rest exists because the ways a model misses the protocol are not
+/// evenly spread: it answers correctly and then adds a closing sentence, or
+/// wraps the object in a fence it forgets to close, or stops mid-object. All
+/// three leave the modules the reader already watched stream in perfectly
+/// intact, and all three used to throw the whole card away.
+fn learning_card_json(payload: &str) -> Option<serde_json::Value> {
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) {
+        return Some(value);
+    }
+    let start = payload.find('{')?;
+    let body = &payload[start..];
+
+    // Where each bracket opens and closes, ignoring anything inside a string.
+    // `closings` records byte offsets just past a `}`/`]` that still left an
+    // enclosing bracket open — every one of those is a point the object can be
+    // cut at and closed by hand.
+    let mut stack: Vec<char> = Vec::new();
+    let mut closings: Vec<(usize, Vec<char>)> = Vec::new();
+    let mut balanced_end: Option<usize> = None;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, character) in body.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match character {
+            '"' => in_string = true,
+            '{' | '[' => stack.push(character),
+            '}' | ']' => {
+                stack.pop();
+                let end = offset + character.len_utf8();
+                if stack.is_empty() {
+                    balanced_end = Some(end);
+                    break;
+                }
+                closings.push((end, stack.clone()));
+            }
+            _ => {}
+        }
+    }
+
+    // A complete object with prose hanging off either end.
+    if let Some(end) = balanced_end {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&body[..end]) {
+            return Some(value);
+        }
+    }
+
+    // Cut off truncated by closing what is still open, newest cut first so the
+    // salvage keeps as many modules as the answer actually finished.
+    for (end, open) in closings.iter().rev().take(64) {
+        let mut candidate = body[..*end].to_string();
+        for bracket in open.iter().rev() {
+            candidate.push(if *bracket == '{' { '}' } else { ']' });
+        }
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&candidate) {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn text_field(value: Option<&serde_json::Value>) -> Option<String> {
+    let text = value?.as_str()?.trim();
+    (!text.is_empty()).then(|| text.to_string())
+}
+
+/// A list of strings from a field the model may have written as one string, a
+/// list, or a list with a stray number or object in it.
+fn text_list(value: Option<&serde_json::Value>) -> Vec<String> {
+    match value {
+        Some(serde_json::Value::Array(entries)) => entries
+            .iter()
+            .filter_map(|entry| text_field(Some(entry)))
+            .collect(),
+        other => text_field(other).into_iter().collect(),
+    }
+}
+
+fn lenient_examples(value: Option<&serde_json::Value>) -> Vec<LearningExample> {
+    let Some(serde_json::Value::Array(entries)) = value else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter_map(|entry| match entry {
+            serde_json::Value::String(source) if !source.trim().is_empty() => Some(LearningExample {
+                source: source.trim().to_string(),
+                target: None,
+            }),
+            serde_json::Value::Object(fields) => Some(LearningExample {
+                source: text_field(fields.get("source"))?,
+                target: text_field(fields.get("target")),
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+fn lenient_items(value: Option<&serde_json::Value>) -> Vec<LearningContentItem> {
+    let Some(serde_json::Value::Array(entries)) = value else {
+        return Vec::new();
+    };
+    entries
+        .iter()
+        .filter_map(|entry| match entry {
+            serde_json::Value::String(title) if !title.trim().is_empty() => {
+                Some(LearningContentItem {
+                    title: title.trim().to_string(),
+                    text: None,
+                    meta: Vec::new(),
+                    examples: Vec::new(),
+                })
+            }
+            serde_json::Value::Object(fields) => {
+                let text = text_field(fields.get("text"));
+                // A row with only prose is still a row; dropping it because the
+                // model forgot the title loses the one thing it wrote.
+                let title = text_field(fields.get("title")).or_else(|| text.clone())?;
+                Some(LearningContentItem {
+                    title,
+                    text: text_field(fields.get("text")),
+                    meta: text_list(fields.get("meta")),
+                    examples: lenient_examples(fields.get("examples")),
+                })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// One module, read as generously as it can be without inventing content.
+///
+/// An object gets the strict shape first, so a well-formed module is
+/// byte-identical to what it always was. Everything else covers the deviations
+/// the prompt already forbids and models make anyway: a bare string where an
+/// object belongs, a list of points where a module belongs, a number in `meta`.
+///
+/// The list case is checked *before* serde on purpose. A derived struct
+/// `Deserialize` also accepts a sequence, filling fields in declaration order —
+/// so `["前缀 re-", "词根 unite"]` parses silently as a heading and a summary,
+/// which is a plausible-looking module made of the wrong two lines.
+fn module_from_value(value: &serde_json::Value) -> Option<LearningModuleContent> {
+    match value {
+        serde_json::Value::String(summary) if !summary.trim().is_empty() => {
+            Some(LearningModuleContent {
+                summary: Some(summary.trim().to_string()),
+                ..LearningModuleContent::default()
+            })
+        }
+        serde_json::Value::Array(_) => Some(LearningModuleContent {
+            details: text_list(Some(value)),
+            ..LearningModuleContent::default()
+        }),
+        serde_json::Value::Object(fields) => Some(
+            serde_json::from_value::<LearningModuleContent>(value.clone()).unwrap_or_else(|_| {
+                LearningModuleContent {
+                    heading: text_field(fields.get("heading")),
+                    summary: text_field(fields.get("summary")),
+                    meta: text_list(fields.get("meta")),
+                    details: text_list(fields.get("details")),
+                    items: lenient_items(fields.get("items")),
+                    quote: text_field(fields.get("quote")),
+                }
+            }),
+        ),
+        _ => None,
+    }
+}
+
+/// The model's answer, reduced to the modules that were asked for and are
+/// readable.
+///
+/// The contract used to be all-or-nothing: an id nobody requested, a module
+/// written as a string, a version field the model rounded to 1.0 — any one of
+/// them failed the whole card, and the reader lost eight good modules to the
+/// ninth. Which is exactly how it failed in practice, because a model drifts at
+/// the *end* of a long structured answer, not at the start.
+///
+/// So nothing here fails on a deviation it can route around. A module that
+/// cannot be read is dropped, an id that was not requested is dropped, and the
+/// envelope's `version`/`kind` are simply overwritten with what was asked for —
+/// the same treatment `sourceText` already got. The card fails only when there
+/// is nothing left to show, which is the one case the reader has to be told
+/// about because there is nothing to look at.
 fn parse_learning_card_response(
     raw: &str,
     kind: &str,
@@ -406,36 +601,37 @@ fn parse_learning_card_response(
     if payload.is_empty() {
         return Err(AppError::Ai("LEARNING_CARD_PROTOCOL_EMPTY".to_string()));
     }
-    let mut response: LearningCardResponse = serde_json::from_str(payload)
-        .map_err(|_| AppError::Ai("LEARNING_CARD_PROTOCOL_INVALID_JSON".to_string()))?;
-    if response.version != LEARNING_CARD_SCHEMA_VERSION || response.kind != kind {
-        return Err(AppError::Ai(
-            "LEARNING_CARD_PROTOCOL_VERSION_OR_KIND".to_string(),
-        ));
-    }
+    let value = learning_card_json(payload)
+        .ok_or_else(|| AppError::Ai("LEARNING_CARD_PROTOCOL_INVALID_JSON".to_string()))?;
     let requested_ids: BTreeSet<_> = requested
         .modules
         .iter()
         .map(|module| module.id.as_str())
         .collect();
-    if response
-        .modules
-        .keys()
-        .any(|id| !requested_ids.contains(id.as_str()))
-    {
-        return Err(AppError::Ai(
-            "LEARNING_CARD_PROTOCOL_UNREQUESTED_MODULE".to_string(),
-        ));
-    }
-    if !requested_ids
-        .iter()
-        .any(|id| response.modules.get(*id).is_some_and(module_has_content))
-    {
+    let modules = value
+        .get("modules")
+        .and_then(|modules| modules.as_object())
+        .map(|modules| {
+            modules
+                .iter()
+                .filter(|(id, _)| requested_ids.contains(id.as_str()))
+                .filter_map(|(id, content)| {
+                    let module = module_from_value(content)?;
+                    module_has_content(&module).then(|| (id.clone(), module))
+                })
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    if modules.is_empty() {
         return Err(AppError::Ai("LEARNING_CARD_PROTOCOL_EMPTY".to_string()));
     }
-    response.source_text = source_text.to_string();
-    response.provenance = None;
-    Ok(response)
+    Ok(LearningCardResponse {
+        version: LEARNING_CARD_SCHEMA_VERSION,
+        kind: kind.to_string(),
+        source_text: source_text.to_string(),
+        modules,
+        provenance: None,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -701,13 +897,87 @@ mod tests {
     }
 
     #[test]
-    fn learning_protocol_rejects_empty_and_unrequested_modules() {
+    fn learning_protocol_rejects_a_card_with_nothing_in_it() {
         let request = default_learning_request("phrase").unwrap();
-        let missing = r#"{"version":1,"kind":"phrase","sourceText":"x","modules":{}}"#;
-        assert!(parse_learning_card_response(missing, "phrase", "x", &request).is_err());
+        for raw in [
+            r#"{"version":1,"kind":"phrase","sourceText":"x","modules":{}}"#,
+            // Everything present was invented, so nothing requested survives.
+            r#"{"version":1,"kind":"phrase","sourceText":"x","modules":{"tone":{"summary":"extra"}}}"#,
+            // A module that is present but says nothing is not content.
+            r#"{"version":1,"kind":"phrase","sourceText":"x","modules":{"context_meaning":{"summary":"  "}}}"#,
+        ] {
+            assert!(
+                parse_learning_card_response(raw, "phrase", "x", &request).is_err(),
+                "{raw} was accepted",
+            );
+        }
+    }
 
-        let unexpected = r#"{"version":1,"kind":"phrase","sourceText":"x","modules":{"context_meaning":{"summary":"meaning"},"tone":{"summary":"extra"}}}"#;
-        assert!(parse_learning_card_response(unexpected, "phrase", "x", &request).is_err());
+    // The failure the reader actually met: eight good modules and one bad one
+    // at the end, reported as "the model did not answer in card format" with
+    // the eight thrown away. A model drifts at the end of a long structured
+    // answer, so the ninth module must cost the ninth module and nothing more.
+    #[test]
+    fn learning_protocol_drops_the_bad_module_and_keeps_the_rest() {
+        let request = default_learning_request("word").unwrap();
+        let raw = r#"{"version":"1.0","kind":"vocabulary","sourceText":"x","modules":{
+            "context_meaning":{"summary":"与家人重聚","details":["这里指与妻子重新团聚。"]},
+            "word_info":"reuniting 是 reunite 的现在分词",
+            "morphology":["前缀 re- 表示再次","词根 unite 表示联合"],
+            "collocations":{"items":[{"text":"reunite with family"},"reunited at last",42]},
+            "tone":{"summary":"nobody asked for this"},
+            "common_senses":{"items":[{"title":"a","examples":["He reunited with her.",{"source":"s","target":"t"}]}]}
+        }}"#;
+        let parsed = parse_learning_card_response(raw, "word", "Reuniting", &request).unwrap();
+        // The envelope is ours, not the model's.
+        assert_eq!(parsed.version, 1);
+        assert_eq!(parsed.kind, "word");
+        assert_eq!(parsed.source_text, "Reuniting");
+        assert_eq!(
+            parsed.modules["context_meaning"].summary.as_deref(),
+            Some("与家人重聚")
+        );
+        // A module written as a bare string, and one written as a list.
+        assert_eq!(
+            parsed.modules["word_info"].summary.as_deref(),
+            Some("reuniting 是 reunite 的现在分词")
+        );
+        assert_eq!(parsed.modules["morphology"].details.len(), 2);
+        // A row with prose but no title keeps its prose; the stray number goes.
+        let collocations = &parsed.modules["collocations"].items;
+        assert_eq!(collocations.len(), 2);
+        assert_eq!(collocations[0].title, "reunite with family");
+        assert_eq!(collocations[1].title, "reunited at last");
+        assert_eq!(
+            parsed.modules["common_senses"].items[0].examples[0].source,
+            "He reunited with her."
+        );
+        assert!(!parsed.modules.contains_key("tone"));
+    }
+
+    // Three ways a good answer used to be discarded whole: prose after it, a
+    // fence the model never closed, and a response that simply stopped.
+    #[test]
+    fn learning_protocol_finds_the_card_inside_a_chatty_answer() {
+        let request = default_learning_request("word").unwrap();
+        let good = r#"{"version":1,"kind":"word","sourceText":"x","modules":{"context_meaning":{"summary":"与家人重聚"},"word_info":{"summary":"现在分词"}}}"#;
+        for raw in [
+            format!("好的，这是卡片：\n{good}\n希望对你有帮助！"),
+            format!("```json\n{good}"),
+        ] {
+            let parsed = parse_learning_card_response(&raw, "word", "x", &request)
+                .unwrap_or_else(|error| panic!("{raw} reported as {error}"));
+            assert_eq!(parsed.modules.len(), 2);
+        }
+
+        // Cut off mid-module: the modules that finished are still readable.
+        let truncated = r#"{"version":1,"kind":"word","sourceText":"x","modules":{"context_meaning":{"summary":"与家人重聚","details":["这里指与妻子重新团聚。"]},"word_info":{"summary":"现在分"#;
+        let parsed = parse_learning_card_response(truncated, "word", "x", &request).unwrap();
+        assert_eq!(
+            parsed.modules["context_meaning"].summary.as_deref(),
+            Some("与家人重聚")
+        );
+        assert!(!parsed.modules.contains_key("word_info"));
     }
 
     #[test]

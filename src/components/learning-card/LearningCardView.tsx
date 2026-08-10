@@ -33,6 +33,13 @@ interface LearningCardViewProps {
   /** What the model has thought so far, streamed as it arrives. */
   reasoning?: string;
   error?: string | null;
+  /**
+   * The `error` arrived after modules had already streamed in. Those modules
+   * are shown as usual and the failure becomes a strip under them — an answer
+   * that broke in its last section is not a reason to blank the eight sections
+   * before it.
+   */
+  partial?: boolean;
   /** Present when `error` came from the AI route, so the card can route out of it. */
   aiErrorCode?: AiErrorCode | null;
   presentationMode?: boolean;
@@ -91,6 +98,7 @@ export default function LearningCardView({
   thinking = false,
   reasoning = "",
   error = null,
+  partial = false,
   aiErrorCode = null,
   presentationMode = false,
   notes,
@@ -209,7 +217,7 @@ export default function LearningCardView({
         onDoubleClick={onLookupWord}
         onMouseUp={onSelectText}
       >
-        {error ? (
+        {error && !partial ? (
           <div className="flex min-h-32 flex-col items-center justify-center gap-2 px-5 py-6 text-center" role="alert">
             <AlertCircle size={18} className="text-danger-text" />
             <p className="max-w-full break-words text-[12px] text-text-secondary">{error}</p>
@@ -270,6 +278,34 @@ export default function LearningCardView({
               highlightedModuleId={highlightedModuleId}
               animateChanges={animateModuleChanges}
             />
+            {/*
+              The answer came apart partway. Everything above finished streaming
+              and is as good as any other card, so the failure is reported where
+              it happened — at the bottom, under the last module that made it —
+              rather than replacing the card with an error page. Nothing on this
+              path is written to the lookup cache.
+            */}
+            {error && (
+              <div
+                role="alert"
+                className="flex items-center gap-2 border-t border-border/60 bg-bg-muted px-4 py-2.5"
+              >
+                <AlertCircle size={13} className="shrink-0 text-danger-text" aria-hidden="true" />
+                <p className="min-w-0 flex-1 break-words text-[11px] leading-4 text-text-muted">
+                  {t("learningCard.partialAnswer")}
+                </p>
+                {onRetry && (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    className="flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md border border-border px-2.5 text-[11px] font-medium text-text-primary hover:bg-bg-input"
+                  >
+                    <RotateCw size={12} />
+                    {t("common.retry")}
+                  </button>
+                )}
+              </div>
+            )}
             <LearningCardNotes
               notes={notes}
               editorOpen={noteEditorOpen}

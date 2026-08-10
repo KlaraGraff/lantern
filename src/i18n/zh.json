@@ -1794,6 +1794,7 @@
   "common.moreDetail": "详细说明",
   "learningCard.modelSaidNothing": "模型没有返回任何内容。请重试，或在 AI 设置里换一个模型。",
   "learningCard.modelOffFormat": "模型没有按卡片格式作答。请重试，或在 AI 设置里换一个模型。",
+  "learningCard.partialAnswer": "这张卡片没有写完，以上是已经写好的部分。",
   "learningCard.allModulesDisabled": "这张卡片没有可展示的板块。可在设置中开启或恢复默认。",
   "learningCard.cachedRefresh": "缓存结果 · 重新查询",
   "learningCard.memory.masteredIn": "你在《{{book}}》里标记为读顺了，这张卡已跳过基础释义",

@@ -24,7 +24,7 @@ import type {
 } from "./types";
 import LearningCardView from "./LearningCardView";
 import { LearningCardStreamParser } from "./streaming";
-import { focusFirstElement, trapTabKey } from "../focus-trap";
+import { getFocusableElements, trapTabKey } from "../focus-trap";
 
 interface LearningCardResponse extends LearningCardResult {
   provenance?: {
@@ -177,6 +177,13 @@ export default function LearningCardController({
    * can act on it here (retry) or has to change a setting first.
    */
   const [aiErrorCode, setAiErrorCode] = useState<AiErrorCode | null>(null);
+  /**
+   * The card failed, but modules had already finished streaming into it. Those
+   * modules are complete and correct — the answer only came apart afterwards —
+   * so they stay on screen and the failure is reported as a strip beneath them
+   * instead of replacing them.
+   */
+  const [partial, setPartial] = useState(false);
   const [fromCache, setFromCache] = useState(false);
   const [notes, setNotes] = useState<LearningCardNote[]>([]);
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
@@ -209,6 +216,7 @@ export default function LearningCardController({
     setReasoning("");
     setError(null);
     setAiErrorCode(null);
+    setPartial(false);
     setFromCache(false);
     const requestId = createUuid();
     const card = config.cards[interaction.kind];
@@ -220,6 +228,10 @@ export default function LearningCardController({
     );
     const parser = new LearningCardStreamParser(allowedModuleIds);
     let active = true;
+    // How many modules finished streaming before anything went wrong. A card
+    // that failed after showing eight modules is not a blank card, and clearing
+    // the eight to print one error is the reader losing work that arrived.
+    let streamed = 0;
     let unlisten: UnlistenFn | undefined;
     // Reasoning arrives token by token. Coalescing a frame's worth of it into
     // one update keeps a model that thinks for a minute from re-rendering the
@@ -279,6 +291,7 @@ export default function LearningCardController({
             setThinking(false);
             const streamedModules = parser.push(event.payload.delta);
             if (Object.keys(streamedModules).length === 0) return;
+            streamed += Object.keys(streamedModules).length;
             setResult((current) => ({
               ...current,
               modules: { ...current.modules, ...streamedModules },
@@ -327,6 +340,10 @@ export default function LearningCardController({
         const { key, aiCode } = learningCardFailure(message);
         setAiErrorCode(aiCode);
         setError(key ? t(key) : message);
+        // Nothing is written to the lookup cache on this path — `save_lookup_record`
+        // only ever runs on the success branch above — so a salvaged card is
+        // shown once and never reused as if it were whole.
+        setPartial(streamed > 0);
         setLoading(false);
         setThinking(false);
       } finally {
@@ -362,9 +379,15 @@ export default function LearningCardController({
   useEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
-    // The old query here left the `:disabled` filter off, so a card whose first
-    // control starts disabled focused nothing at all and the trap never engaged.
-    focusFirstElement(wrapper);
+    // The card itself takes focus, not its first control.
+    //
+    // Focusing the first control (the pronounce button, as it happens) drew a
+    // focus ring around it the moment any card opened — a highlight on a button
+    // the reader never pointed at, on every lookup and every cached card. The
+    // card is a `tabIndex={-1}` container, so focus can rest on it: Escape and
+    // the Tab trap work from the first keystroke, and the first Tab moves to the
+    // first control, which is where a ring belongs.
+    wrapper.focus({ preventScroll: true });
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -372,7 +395,9 @@ export default function LearningCardController({
         return;
       }
       if (event.key !== "Tab") return;
-      trapTabKey(event, wrapper);
+      // The wrapper is part of the ring so Shift+Tab off the first control
+      // lands back on the card rather than escaping to the page behind it.
+      trapTabKey(event, wrapper, { elements: [wrapper, ...getFocusableElements(wrapper)] });
     };
     wrapper.addEventListener("keydown", onKeyDown);
     return () => wrapper.removeEventListener("keydown", onKeyDown);
@@ -456,12 +481,16 @@ export default function LearningCardController({
     }
   }, []);
 
+  // A salvaged card has real modules in it, so its actions stay usable: the
+  // reader can collect or copy the part that arrived. Only a card with nothing
+  // in it disables them.
+  const unusable = loading || (Boolean(error) && !partial);
   const actionStates = useMemo(() => ({
-    collect: { collected, disabled: loading || Boolean(error) },
-    ask_ai: { disabled: loading || Boolean(error) },
+    collect: { collected, disabled: unusable },
+    ask_ai: { disabled: unusable },
     note: { disabled: false },
-    copy: { copied, disabled: loading || Boolean(error) },
-  }), [collected, copied, error, loading]);
+    copy: { copied, disabled: unusable },
+  }), [collected, copied, unusable]);
 
   const onAction = useCallback(async (action: LearningCardActionId) => {
     if (action === "ask_ai") {
@@ -531,7 +560,8 @@ export default function LearningCardController({
   return (
     <div
       ref={wrapperRef}
-      className={elevated ? "fixed z-[61]" : "fixed z-[60]"}
+      tabIndex={-1}
+      className={elevated ? "fixed z-[61] outline-none" : "fixed z-[60] outline-none"}
       style={{ left: position.left, top: position.top }}
       onPointerDown={onFocus}
     >
@@ -544,6 +574,7 @@ export default function LearningCardController({
         thinking={thinking}
         reasoning={reasoning}
         error={error}
+        partial={partial}
         aiErrorCode={aiErrorCode}
         notes={notes}
         noteEditorOpen={noteEditorOpen}
