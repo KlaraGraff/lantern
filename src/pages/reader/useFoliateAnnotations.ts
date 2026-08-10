@@ -455,8 +455,18 @@ export function useFoliateAnnotations({
       }
     }
     if (supportsWordMarkers) {
+      // Words the whole-word layer is already painting in the document itself.
+      // Both layers draw an underline, at different heights — the CSS one sits
+      // at `text-underline-offset`, the overlay one on the baseline — so a word
+      // in both ends up with two parallel lines under it. One word, one mark:
+      // where the word layer paints, the overlay stands down. It loses nothing,
+      // because a rule paints every occurrence of the word, this one included.
+      const wordLayer = supportsReflowSettings && settings.showLookupMarkers
+        ? new Set(wordMarkWordsRef.current)
+        : new Set<string>();
       for (const word of vocab) {
         if (!word.cfi || manual.has(word.cfi)) continue;
+        if (wordLayer.has(normalizeInteractionText(word.word))) continue;
         // Looked up by tier, never worked out by elimination. The chain this
         // replaced ended in "everything that is not mastered or learning", so
         // `familiar` — a real tier since migration 038 — was painted with the
@@ -508,7 +518,13 @@ export function useFoliateAnnotations({
       }
     }));
     appliedAnnotationsRef.current = desired;
-  }, [readerSettingsRef, supportsManualAnnotations, supportsWordMarkers, viewRef]);
+  }, [
+    readerSettingsRef,
+    supportsManualAnnotations,
+    supportsReflowSettings,
+    supportsWordMarkers,
+    viewRef,
+  ]);
 
   // "Go review" from the chapter-end line: a standalone reader window has no
   // library of its own to route within, so there it just closes back to the
@@ -1095,11 +1111,23 @@ export function useFoliateAnnotations({
           .filter((exception) => exception.excluded)
           .map((exception) => `${exception.normalized_word}\0${exception.location}`));
         applyFoliateMarkerStyles();
+        // The overlay stands down where this layer paints, so a rule that just
+        // started painting a word has to take the overlay's mark off it in the
+        // same pass — otherwise the two lines sit together until the next full
+        // refresh, which is exactly the moment the reader is looking.
+        void applyAnnotations();
       }).catch(() => {});
     };
     window.addEventListener("word-mark-changed", refresh);
     return () => window.removeEventListener("word-mark-changed", refresh);
-  }, [applyFoliateMarkerStyles, bookId, isTextBook, markerStyleRef, supportsWordMarkers]);
+  }, [
+    applyAnnotations,
+    applyFoliateMarkerStyles,
+    bookId,
+    isTextBook,
+    markerStyleRef,
+    supportsWordMarkers,
+  ]);
 
   useEffect(() => {
     if (!bookId || isTextBook || !supportsWordMarkers) return;
@@ -1110,11 +1138,15 @@ export function useFoliateAnnotations({
         markerStyleRef.current.wordMatchScope === "forms",
       );
       applyFoliateMarkerStyles();
+      // Same reason as the rule listener above: the set of words this layer
+      // paints just changed, and the overlay's mark for them has to go.
+      void applyAnnotations();
     };
     void refresh();
     window.addEventListener("word-forms-changed", refresh);
     return () => window.removeEventListener("word-forms-changed", refresh);
   }, [
+    applyAnnotations,
     applyFoliateMarkerStyles,
     bookId,
     isTextBook,
