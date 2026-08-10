@@ -471,6 +471,149 @@ html[data-reader-page-animation="cover"][data-reader-page-direction="previous"]:
   to { transform: translateX(0); }
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+ * Motion
+ *
+ * Four durations and two curves, and every hand-written animation in the app
+ * spends them rather than inventing its own. Before this block the timings
+ * were 150 / 200 / 240 / 300ms picked one at a time at four call sites, which
+ * is how an app ends up feeling subtly inconsistent without any single screen
+ * looking wrong.
+ *
+ * These are plain custom properties rather than `@theme` entries on purpose:
+ * Tailwind drops theme variables no utility references, and the only things
+ * that read these are the classes below, which its scanner never sees.
+ *
+ * `docs/impls/motion-system.md` has the survey this came out of, including
+ * why no animation library is involved.
+ * ══════════════════════════════════════════════════════════════════════ */
+:root {
+  /* Hover feedback, and the crossfade between a skeleton and what replaces it.
+     Short enough to read as "already there", long enough not to flicker. */
+  --motion-instant: 90ms;
+  /* Popovers, menus, and anything anchored to a click. */
+  --motion-fast: 140ms;
+  /* Height changes, modals, toasts — things that move a distance. */
+  --motion-base: 220ms;
+  /* Deliberately absent: a "slow" step. Nothing in a reading app should take
+     longer than this to get out of the reader's way. */
+
+  /* Entrances. Nearly all of the distance is covered in the first third, so
+     the element reads as already-arrived while it is still settling. */
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Anything that has to run both directions and look the same each way. */
+  --ease-in-out-soft: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/*
+ * A popover growing out of the thing it was opened from.
+ *
+ * The scale is the whole point: 0.96 → 1 from an origin placed on the anchor
+ * makes the card look like it came from the tapped word rather than from
+ * nowhere. The owner sets `transform-origin` — only it knows where the anchor
+ * ended up after the placement logic ran — and the 4px lift covers the case
+ * where it does not, since the default origin is the box's own centre.
+ *
+ * The element this goes on must not already be using `transform` for its
+ * position. `ReaderContextMenu` writes `left`/`top`, which is why it can wear
+ * this class directly.
+ */
+.motion-pop {
+  animation: motion-pop var(--motion-fast) var(--ease-out-soft) both;
+}
+
+@keyframes motion-pop {
+  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/*
+ * Two layers that trade places: a placeholder, and what finally replaces it.
+ *
+ * Whichever layer is current sits in flow and owns the container's height; the
+ * other is taken out of flow on top of it and faded. So the placeholder still
+ * sizes the box while the request is out, exactly as it did when it was the
+ * only thing rendered — the crossfade is added to the swap, not substituted
+ * for the reserved space.
+ *
+ * What this does *not* do is animate the height. If the arriving content is a
+ * different height from the placeholder, the box still changes size in one
+ * frame; only the ink crossfades. Making that gradual costs a measurement pass
+ * and there is nothing to measure against until the content is already there,
+ * so the answer is to size the placeholder well — see the skeleton in
+ * `DictionaryCard`, which is two bars precisely because that is where most
+ * entries land.
+ */
+.motion-crossfade {
+  position: relative;
+}
+
+.motion-crossfade > .motion-crossfade-out,
+.motion-crossfade > .motion-crossfade-in {
+  transition: opacity var(--motion-instant) var(--ease-in-out-soft);
+}
+
+.motion-crossfade[data-settled="false"] > .motion-crossfade-in,
+.motion-crossfade[data-settled="true"] > .motion-crossfade-out {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/*
+ * Height from 0 to whatever the content turns out to be.
+ *
+ * `height: auto` is not an animatable value, so the row grows instead: a grid
+ * track from `0fr` to `1fr` interpolates, and the child clips itself while it
+ * happens. Same technique `LearningCardModules` has used since the streaming
+ * card shipped; this is the shared copy.
+ */
+.motion-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--motion-base) var(--ease-in-out-soft);
+}
+
+.motion-collapse > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.motion-collapse[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+
+/*
+ * Cards arriving in sequence rather than all at once. First cold start only —
+ * see `BookGrid`. The delay is supplied per card as `--motion-stagger-index`.
+ */
+.motion-stagger-in {
+  animation: motion-stagger-in 260ms var(--ease-out-soft) both;
+  animation-delay: calc(var(--motion-stagger-index, 0) * 30ms);
+}
+
+@keyframes motion-stagger-in {
+  from { opacity: 0; transform: translateY(9px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+/* One switch for the lot. Reduced motion means *no* motion here, not slower
+   motion: every one of these animates position or size, which is exactly what
+   the setting exists to stop. The end state is the visible one, so removing
+   the animation leaves the element where it belongs. */
+@media (prefers-reduced-motion: reduce) {
+  .motion-pop,
+  .motion-stagger-in {
+    animation: none !important;
+  }
+  .motion-collapse,
+  .motion-crossfade > .motion-crossfade-out,
+  .motion-crossfade > .motion-crossfade-in {
+    transition: none !important;
+  }
+}
+
 /*
  * The word-frequency pass reports completion, not progress, so the bar it
  * fills has no fraction to show. It sweeps instead — honest about the fact

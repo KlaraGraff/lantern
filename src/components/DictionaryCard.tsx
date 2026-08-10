@@ -2,6 +2,8 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { usePronunciation } from "./speech/usePronunciation";
 import { GLANCE_SAFE_ATTR } from "./dictionary-glance";
+import { prefersReducedMotion } from "./page-turn-transition";
+import { motionDuration, motionEasing } from "./motion";
 
 export interface DictionaryGroup {
   pos: string;
@@ -105,6 +107,8 @@ export default function DictionaryCard({
   const [expanded, setExpanded] = useState(false);
   const [clippedSenses, setClippedSenses] = useState(0);
   const sensesRef = useRef<HTMLDivElement>(null);
+  /** The senses box's height as it was before the last expand/collapse. */
+  const heightBeforeToggle = useRef<number | null>(null);
 
   const {
     empty: nothingToSpeak,
@@ -158,11 +162,48 @@ export default function DictionaryCard({
   // Collapsing must not leave the reader staring at the middle of a long
   // entry: the card scrolls when expanded, so put it back at the top.
   const toggleExpanded = () => {
+    // Read before the state change, because after it there is no way back to
+    // the height we are animating from — see the effect below.
+    heightBeforeToggle.current = sensesRef.current?.getBoundingClientRect().height ?? null;
     setExpanded((was) => {
       if (was) sensesRef.current?.scrollTo({ top: 0 });
       return !was;
     });
   };
+
+  /**
+   * Expanding and collapsing, as a height the box travels rather than one it
+   * teleports to.
+   *
+   * The usual `grid-template-rows: 0fr → 1fr` trick does not apply here: this
+   * is not content being revealed below content that stays put. Expanding
+   * swaps the parts of speech the card renders *and* drops the line clamp off
+   * the ones it was already showing, so both the old and the new height are
+   * whatever the layout says — neither is zero and neither is known in
+   * advance. Measuring across the commit is the only way to get both.
+   *
+   * `overflow: hidden` rides along for the duration. It is not animatable, so
+   * the Web Animations API holds it flat across both keyframes; without it a
+   * collapse would spill the taller content out over the menu rows below for
+   * the length of the animation.
+   */
+  useLayoutEffect(() => {
+    const root = sensesRef.current;
+    const from = heightBeforeToggle.current;
+    heightBeforeToggle.current = null;
+    if (!root || from === null || prefersReducedMotion()) return;
+    const to = root.getBoundingClientRect().height;
+    // Nothing moved — a short entry whose senses all fit either way.
+    if (Math.abs(to - from) < 1) return;
+    const animation = root.animate(
+      [
+        { height: `${from}px`, overflow: "hidden" },
+        { height: `${to}px`, overflow: "hidden" },
+      ],
+      { duration: motionDuration("base"), easing: motionEasing("in-out-soft") },
+    );
+    return () => animation.cancel();
+  }, [expanded]);
 
   const aiHint = t("dictionary.askAiHint", {
     defaultValue: "双击让 AI 告诉你这里是哪个意思",
@@ -222,30 +263,45 @@ export default function DictionaryCard({
         </p>
       )}
 
-      {loading ? (
-        // Two bars: the height the great majority of entries settle at, so the
-        // swap to real text moves the menu as little as possible.
-        <div className="mt-1 space-y-[9px] py-[4.5px]">
+      {/*
+        Both layers stay mounted so the swap can cross-fade: an element that
+        first appears in the same frame it is asked to fade in has no previous
+        opacity to come from, and would simply pop. The skeleton owns the
+        card's height until the lookup lands, then steps out of flow and fades
+        off the top of the real entry — see `.motion-crossfade`.
+
+        `inert` on the idle layer is what keeps that from costing anything: the
+        entry's "展开全部" is a `menuitem`, and the reader's arrow keys walk
+        every `menuitem` in the menu. Without it the row would join that walk a
+        beat before it is real.
+      */}
+      <div className="motion-crossfade mt-1" data-settled={loading ? "false" : "true"}>
+        {/* Two bars: the height the great majority of entries settle at, so
+            the swap to real text moves the menu as little as possible. */}
+        <div
+          className="motion-crossfade-out space-y-[9px] py-[4.5px]"
+          aria-hidden={!loading}
+          inert={!loading}
+        >
           <div className="h-[11px] animate-pulse rounded-sm bg-border" />
           <div className="h-[11px] w-2/3 animate-pulse rounded-sm bg-border" />
         </div>
-      ) : (
-        <>
+        <div className="motion-crossfade-in" aria-hidden={loading} inert={loading}>
           {!entry ? (
-            <p className="mt-1 text-[12px] leading-5 text-text-secondary">
+            <p className="text-[12px] leading-5 text-text-secondary">
               {t("dictionary.notFound", { defaultValue: "词典里没有这个词" })}
             </p>
           ) : entry.fallbackSummary ? (
             // Degraded fallback: no phonetic, no part-of-speech grouping — one
             // line, already hard-truncated by the backend.
-            <p className="mt-1 text-[12px] leading-5 text-text-secondary">
+            <p className="text-[12px] leading-5 text-text-secondary">
               {entry.fallbackSummary}
             </p>
           ) : (
             <>
               <div
                 ref={sensesRef}
-                className={`mt-1 space-y-1 ${expanded ? "max-h-[min(46vh,420px)] overflow-y-auto pr-1" : ""}`}
+                className={`space-y-1 ${expanded ? "max-h-[min(46vh,420px)] overflow-y-auto pr-1" : ""}`}
               >
                 {shownGroups.map((group, index) => (
                   <p
@@ -297,8 +353,8 @@ export default function DictionaryCard({
           {showAiHint ? (
             <p className="mt-1 text-[11px] leading-4 text-text-muted">{aiHint}</p>
           ) : null}
-        </>
-      )}
+        </div>
+      </div>
     </div>
   );
 }

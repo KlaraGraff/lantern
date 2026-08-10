@@ -259,7 +259,11 @@ export default function ReaderContextMenu({
     const element = menuRef.current;
     if (!element) return;
     const positionMenu = () => {
-      const rect = element.getBoundingClientRect();
+      // Layout size, not `getBoundingClientRect()`: the menu wears an entry
+      // animation that scales it from 96%, and a rect read mid-animation
+      // would place the menu against a box 4% smaller than the one that
+      // settles a frame later.
+      const rect = { width: element.offsetWidth, height: element.offsetHeight };
       const gap = 8;
       const roomRight = window.innerWidth - anchorRect.right - gap;
       const roomLeft = anchorRect.left - gap;
@@ -276,6 +280,16 @@ export default function ReaderContextMenu({
           : Math.max(gap, anchorRect.top - rect.height - gap);
       element.style.left = `${left}px`;
       element.style.top = `${top}px`;
+      // Grow out of the word that was clicked, wherever the menu ended up
+      // relative to it. The anchor's centre is clamped into the menu's own box
+      // so the origin stays on an edge or corner rather than flying off it
+      // when the menu lands well away from the click — which is the case
+      // whenever the viewport pushed it back into view.
+      const anchorX = (anchorRect.left + anchorRect.right) / 2;
+      const anchorY = (anchorRect.top + anchorRect.bottom) / 2;
+      const originX = Math.min(Math.max(anchorX, left), left + rect.width) - left;
+      const originY = Math.min(Math.max(anchorY, top), top + rect.height) - top;
+      element.style.transformOrigin = `${originX}px ${originY}px`;
     };
     positionMenu();
     const observer = new ResizeObserver(positionMenu);
@@ -347,7 +361,7 @@ export default function ReaderContextMenu({
       ref={menuRef}
       role="menu"
       aria-label={text}
-      className={`fixed z-[62] ${showDictionary ? "w-[300px]" : "w-[220px]"} rounded-md border border-border bg-bg-surface py-1 shadow-context`}
+      className={`motion-pop fixed z-[62] ${showDictionary ? "w-[300px]" : "w-[220px]"} rounded-md border border-border bg-bg-surface py-1 shadow-context`}
       style={{ left: anchorRect.right, top: anchorRect.bottom + 8 }}
     >
       {showDictionary ? (

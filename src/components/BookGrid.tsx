@@ -31,6 +31,29 @@ function CoverImage({ src, alt, title }: { src: string; alt: string; title: stri
   );
 }
 
+/**
+ * Whether this launch has already spent its shelf entrance.
+ *
+ * Module scope on purpose. The entrance is meant to happen once per cold
+ * start, and every narrower place to keep the flag would fire it again:
+ * component state resets when the grid remounts, and the grid remounts every
+ * time the user comes back from the reader or switches collection. Walking
+ * back into a shelf you have already seen should be instant.
+ *
+ * It resets when the page context does — a real app relaunch, or a dev
+ * reload — which is exactly the boundary we want.
+ */
+let shelfEntranceSpent = false;
+
+/**
+ * Where the stagger stops growing. Cards past this share the last delay.
+ *
+ * Past roughly a dozen the rest are below the fold, so letting the delay keep
+ * climbing buys an animation nobody sees and a shelf whose tail is still
+ * fading in a second after it arrived.
+ */
+const STAGGER_CAP = 12;
+
 interface BookGridProps {
   books: Book[];
   hasMore?: boolean;
@@ -54,6 +77,26 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
   const [deleteTarget, setDeleteTarget] = useState<Book | null>(null);
   const [indexBookId, setIndexBookId] = useState<string | null>(null);
 
+  // The staggered entrance, decided once at mount and never revisited.
+  const [staggerEntrance] = useState(() => !shelfEntranceSpent);
+  useEffect(() => {
+    shelfEntranceSpent = true;
+  }, []);
+
+  // How many books the shelf held when it first had any. The grid often mounts
+  // empty and fills a tick later, so the count cannot be read at mount; and
+  // freezing it once is what keeps "load more" from staggering page two into
+  // view under a user who is already scrolling.
+  //
+  // Set during render rather than in an effect on purpose: an effect runs
+  // after the browser has already painted the cards, so the animation would
+  // start from a frame in which they were visible. React re-renders in place
+  // here, before any commit, and the cards paint once — already animating.
+  const [entranceSize, setEntranceSize] = useState<number | null>(null);
+  if (staggerEntrance && entranceSize === null && books.length > 0) {
+    setEntranceSize(books.length);
+  }
+
   const handleContextMenu = (e: React.MouseEvent, book: Book) => {
     e.preventDefault();
     setContextMenu({ x: e.clientX, y: e.clientY, book });
@@ -73,12 +116,13 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
   return (
     <>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-6">
-        {books.map((book) => (
+        {books.map((book, index) => (
           <button
             key={book.id}
             onClick={() => { openBook(book).catch(() => {}); }}
             onContextMenu={(e) => handleContextMenu(e, book)}
-            className={`text-left cursor-pointer group ${book.available === false ? "opacity-60" : ""} ${isPendingPreparation(book) ? "cursor-wait" : ""}`}
+            className={`text-left cursor-pointer group ${staggerEntrance && index < (entranceSize ?? 0) ? "motion-stagger-in" : ""} ${book.available === false ? "opacity-60" : ""} ${isPendingPreparation(book) ? "cursor-wait" : ""}`}
+            style={staggerEntrance ? ({ "--motion-stagger-index": Math.min(index, STAGGER_CAP) } as React.CSSProperties) : undefined}
           >
             <div className="relative bg-border rounded-lg overflow-hidden shadow-card aspect-[3/4]">
               {book.cover_data ? (
