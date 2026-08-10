@@ -1,6 +1,10 @@
 pub mod ai;
 pub mod annotations;
 pub mod app;
+// Desktop-only, like the updater plugin it drives: there is no self-update on
+// Apple's mobile platforms and the plugin is not compiled for them.
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub mod app_update;
 pub mod auto_analysis;
 pub mod auto_highlights;
 pub mod book_difficulty;

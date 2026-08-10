@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import LanternLogo from "../LanternLogo";
 import { platform as platformCaps, type PlatformId } from "../../services/platform";
-import { runUpdateCheck } from "../../services/updateCheck";
+import { useUpdater } from "../../hooks/useUpdater";
 import Button from "../ui/Button";
 import { ROW_CONTROL_WIDTH } from "./types";
 
@@ -62,44 +62,22 @@ function platformLabel(): string {
   }
 }
 
-type UpdateRowState =
-  | { kind: "idle" }
-  | { kind: "checking" }
-  | { kind: "upToDate" }
-  | { kind: "available"; version: string }
-  | { kind: "error" };
-
 export default function AboutSettings() {
   const { t } = useTranslation();
   const [buildInfo, setBuildInfo] = useState<BuildInfo | null>(null);
   const [copied, setCopied] = useState(false);
   const platform = platformLabel();
   // Windows has no app menu, so this row is the only manual "check for
-  // updates" entry point it gets. Shares `runUpdateCheck` with the launch/menu
-  // toast so this and the macOS menu item never drift into two answers for
-  // the same question — this just displays the result in place instead of
-  // raising a toast for it.
-  const [updateRow, setUpdateRow] = useState<UpdateRowState>({ kind: "idle" });
-  const checkingUpdate = useRef(false);
+  // updates" entry point it gets — and it has to be able to finish the job,
+  // not just report that there is one. It shares the whole lifecycle with the
+  // toast rather than running a check of its own, so the two can never give
+  // different answers, and a download started here keeps going if the reader
+  // closes Settings.
+  const { state: update, check, download, install } = useUpdater();
 
   useEffect(() => {
     invoke<BuildInfo>("app_build_info").then(setBuildInfo).catch(() => setBuildInfo(null));
   }, []);
-
-  const checkForUpdates = async () => {
-    if (checkingUpdate.current) return;
-    checkingUpdate.current = true;
-    setUpdateRow({ kind: "checking" });
-    const result = await runUpdateCheck();
-    if (result.status === "available") {
-      setUpdateRow({ kind: "available", version: result.update.version });
-    } else if (result.status === "upToDate") {
-      setUpdateRow({ kind: "upToDate" });
-    } else {
-      setUpdateRow({ kind: "error" });
-    }
-    checkingUpdate.current = false;
-  };
 
   const open = (url: string) => {
     openUrl(url).catch(() => {});
@@ -124,6 +102,35 @@ export default function AboutSettings() {
       setCopied(false);
     }
   };
+
+  // What the row says, and what its one button does about it. Derived rather
+  // than stored: the row has no state of its own to fall out of step with.
+  const updateAction =
+    update.kind === "ready" ? "restart" : update.kind === "available" ? "update" : "check";
+  const updateBusy =
+    update.kind === "checking" || update.kind === "downloading" || update.kind === "installing";
+  const updateHint = (() => {
+    switch (update.kind) {
+      case "checking":
+        return t("update.toast.checking");
+      case "upToDate":
+        return t("update.toast.upToDate");
+      case "available":
+        return t("update.toast.available", { version: update.version });
+      case "downloading":
+        return update.progress === null
+          ? t("update.toast.downloadingIndeterminate")
+          : t("update.toast.downloading", { progress: update.progress });
+      case "ready":
+        return t("update.toast.ready", { version: update.version });
+      case "installing":
+        return t("update.toast.installing");
+      case "error":
+        return t("update.toast.error");
+      default:
+        return t("settings.about.checkForUpdatesHint");
+    }
+  })();
 
   return (
     <div className="flex flex-col min-h-full pb-2">
@@ -160,28 +167,43 @@ export default function AboutSettings() {
           latter, since it needs the two-line title+hint layout. */}
       {platformCaps.hasUpdater && (
         <div className="flex items-center justify-between min-h-[73px] py-3">
-          <div>
+          <div className="min-w-0 flex-1 pr-4">
             <p className="text-[14px] font-medium text-text-primary tracking-[-0.15px]">
               {t("settings.about.checkForUpdates")}
             </p>
-            <p className="text-[12px] text-text-muted mt-0.5">
-              {updateRow.kind === "idle" && t("settings.about.checkForUpdatesHint")}
-              {updateRow.kind === "checking" && t("update.toast.checking")}
-              {updateRow.kind === "upToDate" && t("update.toast.upToDate")}
-              {updateRow.kind === "available" &&
-                t("update.toast.available", { version: updateRow.version })}
-              {updateRow.kind === "error" && t("update.toast.error")}
-            </p>
+            <p className="text-[12px] text-text-muted mt-0.5">{updateHint}</p>
+            {/* The bar is the only place this row can show progress; the
+                button is busy saying what happens next. */}
+            {update.kind === "downloading" && (
+              <span className="mt-2 block h-1 w-full max-w-[220px] overflow-hidden rounded-full bg-bg-input">
+                <span
+                  className={`block h-full rounded-full bg-accent ${
+                    update.progress === null
+                      ? "w-1/3 animate-pulse"
+                      : "transition-[width] duration-200"
+                  }`}
+                  style={update.progress === null ? undefined : { width: `${update.progress}%` }}
+                />
+              </span>
+            )}
           </div>
           <Button
-            variant="secondary"
+            variant={updateAction === "check" ? "secondary" : "primary"}
             size="sm"
             className={`${ROW_CONTROL_WIDTH} justify-center gap-1.5`}
-            disabled={updateRow.kind === "checking"}
-            onClick={() => void checkForUpdates()}
+            disabled={updateBusy}
+            onClick={() => {
+              if (updateAction === "restart") void install();
+              else if (updateAction === "update") void download();
+              else void check(true);
+            }}
           >
-            {updateRow.kind === "checking" && <Loader2 size={14} className="shrink-0 animate-spin" />}
-            {t("settings.about.checkForUpdatesButton")}
+            {updateBusy && <Loader2 size={14} className="shrink-0 animate-spin" />}
+            {updateAction === "restart"
+              ? t("update.toast.restartNow")
+              : updateAction === "update"
+                ? t("update.toast.update")
+                : t("settings.about.checkForUpdatesButton")}
           </Button>
         </div>
       )}

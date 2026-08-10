@@ -775,6 +775,14 @@ pub fn run() {
             commands::app::reveal_logs,
             commands::app::app_build_info,
             commands::app::log_webview_warning,
+            // Self-update. Desktop-only for the same reason as the OCR block
+            // below — see the cfgs in `commands::app_update`.
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            commands::app_update::update_check,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            commands::app_update::update_download,
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            commands::app_update::update_install,
             // Books
             commands::books::import_book_from_dialog,
             commands::books::list_books,

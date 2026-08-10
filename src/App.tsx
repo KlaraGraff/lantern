@@ -12,6 +12,7 @@ import BookOpenGateProvider from "./components/BookOpenGateProvider";
 import McpApprovalDialog from "./components/McpApprovalDialog";
 import OnboardingCard from "./components/onboarding/OnboardingCard";
 import UpdateToast from "./components/UpdateToast";
+import { UpdaterProvider } from "./hooks/useUpdater";
 import { reconcileLanguage } from "./i18n";
 import { useAppZoom } from "./hooks/useAppZoom";
 import { openReaderWindow } from "./utils/openReaderWindow";
@@ -155,19 +156,24 @@ function AppContent() {
         <ReasoningEffortNotice />
         <AiRouteFallbackNotice />
       </ErrorBoundary>
-      {/* Settings belong to the window that owns the library, not to a page.
-          A desktop reader window forwards to this one by label instead of
-          mounting a second modal of its own. */}
-      {isMainWindow && <SettingsHost />}
-      {isMainWindow && <McpApprovalDialog />}
-      {isMainWindow && <OnboardingCard />}
-      {/* One window checks and one window announces. A reader window mounting
-          its own copy would run a second check and stack a second toast. */}
-      {isMainWindow && (
-        <ErrorBoundary scope="silent">
-          <UpdateToast />
-        </ErrorBoundary>
-      )}
+      {/* Wraps exactly the two surfaces that show an update — the toast and
+          the Settings → About row — so they share one lifecycle instead of
+          each running its own check. A download begun in Settings therefore
+          survives closing the modal, progress and all. Inactive outside the
+          main window: one window checks, one window announces. */}
+      <UpdaterProvider active={isMainWindow}>
+        {/* Settings belong to the window that owns the library, not to a page.
+            A desktop reader window forwards to this one by label instead of
+            mounting a second modal of its own. */}
+        {isMainWindow && <SettingsHost />}
+        {isMainWindow && <McpApprovalDialog />}
+        {isMainWindow && <OnboardingCard />}
+        {isMainWindow && (
+          <ErrorBoundary scope="silent">
+            <UpdateToast />
+          </ErrorBoundary>
+        )}
+      </UpdaterProvider>
     </BookOpenGateProvider>
   );
 }

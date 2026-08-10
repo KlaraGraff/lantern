@@ -118,6 +118,11 @@ zstd = "0.13"
 tar = "0.4"
 tauri-plugin-updater = "=2.10.1"
 tauri-plugin-process = "=2.3.1"
+# Verifies a package that was downloaded on an earlier run before installing it
+# (commands/app_update.rs). The plugin verifies its own fresh downloads, but
+# keeps `verify_signature` private, so a staged package has to be checked with
+# the same primitive the plugin uses — hence the same crate, not a hash.
+minisign-verify = "0.2"
 
 # These back the iCloud Drive integration in icloud.rs and the coordinated
 # append in sync/log.rs. Widened from `target_os = "macos"` to the whole Apple

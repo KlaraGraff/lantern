@@ -2844,6 +2844,7 @@ dependencies = [
  "libc",
  "log",
  "lopdf",
+ "minisign-verify",
  "msedge-tts",
  "notify",
  "objc2",
