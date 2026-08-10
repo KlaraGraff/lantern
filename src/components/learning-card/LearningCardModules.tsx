@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import AiMarkdown, { AlertStrip } from "../ai-markdown/AiMarkdown";
 import { leadingAlertTag } from "../ai-markdown/plugins";
 import { getEffectiveDensity, MODULE_DEFINITIONS } from "./config";
+import { isRedundantHeading } from "./heading";
 import type {
   CardKindConfig,
   CardModuleConfig,
@@ -128,12 +129,15 @@ export function LearningModuleBody({
   density,
   exampleCount,
   keyTermCount,
+  title,
 }: {
   moduleId: LearningModuleId;
   content: LearningModuleContent;
   density: ContentDensity;
   exampleCount: number;
   keyTermCount: number;
+  /** The module title already drawn above this body, so a heading that only repeats it can be dropped. */
+  title?: string;
 }) {
   const meta = density === "compact" ? content.meta?.slice(0, 2) : content.meta;
   const details = density === "compact"
@@ -147,12 +151,13 @@ export function LearningModuleBody({
       ? 3
       : undefined;
   const items = itemLimit === undefined ? content.items : content.items?.slice(0, itemLimit);
+  const heading = isRedundantHeading(content.heading, title) ? undefined : content.heading;
 
   return (
     <div className="break-words text-[12px] leading-[1.55]">
-      {content.heading && (
+      {heading && (
         <AiMarkdown size="compact" inline className="mb-1 font-semibold text-text-primary">
-          {content.heading}
+          {heading}
         </AiMarkdown>
       )}
       {meta && meta.length > 0 && (
@@ -215,6 +220,7 @@ function ModuleSection({
 
   if (!loading && !hasContent(content)) return null;
   const density = getEffectiveDensity(config, card);
+  const title = config.id.startsWith("custom_") ? labelKey : t(labelKey);
 
   return (
     <section
@@ -232,7 +238,7 @@ function ModuleSection({
           ? <ChevronDown size={14} className="mt-0.5 shrink-0 text-text-muted" />
           : <ChevronRight size={14} className="mt-0.5 shrink-0 text-text-muted" />}
         <span className="min-w-0 flex-1 break-words text-[12px] font-semibold text-text-primary">
-          {config.id.startsWith("custom_") ? labelKey : t(labelKey)}
+          {title}
         </span>
         <span className="shrink-0 text-[10px] text-text-muted">{t(`settings.tools.density.${density}`)}</span>
       </button>
@@ -250,6 +256,7 @@ function ModuleSection({
               density={density}
               exampleCount={card.exampleCount}
               keyTermCount={card.keyTermCount}
+              title={title}
             />
           ) : null}
         </div>

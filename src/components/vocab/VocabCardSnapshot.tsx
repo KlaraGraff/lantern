@@ -185,6 +185,7 @@ export default function VocabCardSnapshot({
             density="detailed"
             exampleCount={3}
             keyTermCount={8}
+            title={t(module.labelKey)}
           />
         </section>
       ))}
