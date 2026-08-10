@@ -506,6 +506,24 @@ html[data-reader-page-animation="cover"][data-reader-page-direction="previous"]:
 }
 
 /*
+ * Every entrance below fills `backwards`, never `both`.
+ *
+ * `both` keeps the animation in effect after it ends, and a filled transform
+ * animation leaves the element composited — which makes it the containing
+ * block for `position: fixed` descendants and clips them to its own overflow.
+ * The symptom was a drag preview inside the settings dialog: it flew off by
+ * exactly the dialog's top-left offset and was cut off at the dialog's edge,
+ * because dnd-kit's overlay is `position: fixed` and the dialog had quietly
+ * become its viewport.
+ *
+ * Nothing is lost. Every one of these ends at the element's natural state —
+ * `opacity: 1; transform: none` — so once the animation is over there is
+ * nothing left for the fill to hold. `backwards` still covers the frame before
+ * it starts, which is the half that matters (a staggered card must not flash
+ * at full opacity during its delay).
+ */
+
+/*
  * A popover growing out of the thing it was opened from.
  *
  * The scale is the whole point: 0.96 → 1 from an origin placed on the anchor
@@ -519,7 +537,7 @@ html[data-reader-page-animation="cover"][data-reader-page-direction="previous"]:
  * this class directly.
  */
 .motion-pop {
-  animation: motion-pop var(--motion-fast) var(--ease-out-soft) both;
+  animation: motion-pop var(--motion-fast) var(--ease-out-soft) backwards;
 }
 
 @keyframes motion-pop {
@@ -589,7 +607,7 @@ html[data-reader-page-animation="cover"][data-reader-page-direction="previous"]:
  * see `BookGrid`. The delay is supplied per card as `--motion-stagger-index`.
  */
 .motion-stagger-in {
-  animation: motion-stagger-in 260ms var(--ease-out-soft) both;
+  animation: motion-stagger-in 260ms var(--ease-out-soft) backwards;
   animation-delay: calc(var(--motion-stagger-index, 0) * 30ms);
 }
 
@@ -611,11 +629,11 @@ html[data-reader-page-animation="cover"][data-reader-page-direction="previous"]:
  * flex centring that put it there.
  */
 .motion-scrim {
-  animation: motion-fade-in var(--motion-fast) var(--ease-out-soft) both;
+  animation: motion-fade-in var(--motion-fast) var(--ease-out-soft) backwards;
 }
 
 .motion-dialog {
-  animation: motion-dialog-in var(--motion-base) var(--ease-out-soft) both;
+  animation: motion-dialog-in var(--motion-base) var(--ease-out-soft) backwards;
 }
 
 @keyframes motion-fade-in {
@@ -636,7 +654,7 @@ html[data-reader-page-animation="cover"][data-reader-page-direction="previous"]:
  * element would overwrite the very transform holding it in place.
  */
 .motion-drop-in {
-  animation: motion-drop-in var(--motion-base) var(--ease-out-soft) both;
+  animation: motion-drop-in var(--motion-base) var(--ease-out-soft) backwards;
 }
 
 @keyframes motion-drop-in {

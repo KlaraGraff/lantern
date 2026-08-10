@@ -18,6 +18,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useState, type CSSProperties, type ReactNode, type SyntheticEvent } from "react";
+import { createPortal } from "react-dom";
 
 interface SortableRenderState {
   dragging: boolean;
@@ -141,13 +142,25 @@ export default function SortableList<T>({
           ))}
         </div>
       </SortableContext>
-      <DragOverlay dropAnimation={{ duration: 160, easing: "ease" }}>
-        {activeItem ? (
-          <div className="cursor-grabbing overflow-hidden rounded-md bg-bg-surface opacity-95 shadow-context">
-            {renderItem(activeItem, activeIndex, { dragging: true, overlay: true })}
-          </div>
-        ) : null}
-      </DragOverlay>
+      {/*
+        The overlay is portalled to the body because it is `position: fixed`,
+        and a fixed element is only viewport-positioned while no ancestor has
+        claimed it. Sortable lists live inside dialogs, and a dialog that is
+        transformed — mid-entrance, or filling a finished entrance — becomes
+        the containing block for everything fixed inside it: the preview then
+        sits offset by the dialog's own top-left and is clipped at its edge.
+        Rendering it at the body keeps that out of the list's hands entirely.
+      */}
+      {createPortal(
+        <DragOverlay dropAnimation={{ duration: 160, easing: "ease" }}>
+          {activeItem ? (
+            <div className="cursor-grabbing overflow-hidden rounded-md bg-bg-surface opacity-95 shadow-context">
+              {renderItem(activeItem, activeIndex, { dragging: true, overlay: true })}
+            </div>
+          ) : null}
+        </DragOverlay>,
+        document.body,
+      )}
     </DndContext>
   );
 }
