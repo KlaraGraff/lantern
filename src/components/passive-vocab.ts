@@ -108,6 +108,13 @@ const RUBY_GLOSS_LINE_HEIGHT = 1.1;
  * makes an annotated line look like a section break.
  */
 const RUBY_GLOSS_RESERVE = 0.72;
+/**
+ * The air between the gloss and the word it belongs to, in ems of the *gloss*
+ * font. Kept deliberately tiny: the gloss has to read as belonging to the word
+ * below it rather than to the line above, and the two gaps are competing —
+ * whatever is left of the reserved strip is the gap on the other side.
+ */
+const RUBY_GLOSS_GAP = 0.1;
 const PASSIVE_VOCAB_OVERFLOW_ATTRIBUTE = "data-passive-vocab-margin-overflow";
 const PASSIVE_VOCAB_MARKER_ATTRIBUTE = "data-passive-vocab-marker";
 const PASSIVE_VOCAB_MARKER_LABEL_ATTRIBUTE = "data-passive-vocab-marker-label";
@@ -390,6 +397,14 @@ function installRuby(doc: Document, range: Range, label: string) {
  *    the top of the reserved strip, i.e. against the *previous* line; anchoring
  *    it to the bottom of the strip puts it just above its own word, which is
  *    where a reader looks for it.
+ *  - **`line-height: 1` on the wrapper.** An inline-block's border box is its
+ *    own line box, so at the reader's line height (1.6–1.7) it stood ~0.3em
+ *    taller than the word on each side — and `bottom: 100%` anchors to that
+ *    box, not to the letters. The gloss ended up further from its own word
+ *    than from the line above it, which reads as belonging to the wrong line.
+ *    Measured at 19px/1.6: the box shrinks 30px → 19px, pulling the gloss 5.7px
+ *    down onto its word. The word itself does not move — an inline-block sits
+ *    on the baseline, and only the empty half-leading around it goes away.
  *
  * `--lantern-passive-vocab-shift` is the horizontal nudge that keeps two
  * glosses on the same line off each other; it defaults to zero, so a document
@@ -403,13 +418,14 @@ function rubyStyleSheet(doc: Document) {
       display: inline-block;
       position: relative;
       margin-top: ${RUBY_GLOSS_RESERVE}em;
+      line-height: 1;
       text-indent: 0;
       ruby-position: over;
     }
     ruby[${PASSIVE_VOCAB_ROOT_ATTRIBUTE}]::before {
       content: attr(${PASSIVE_VOCAB_RUBY_TEXT_ATTRIBUTE});
       position: absolute;
-      bottom: 100%;
+      bottom: calc(100% + ${RUBY_GLOSS_GAP}em);
       left: 50%;
       transform: translateX(calc(-50% + var(--lantern-passive-vocab-shift, 0px)));
       white-space: nowrap;

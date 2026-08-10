@@ -531,9 +531,16 @@ test("the ruby gloss overflows its word instead of being clipped to it", () => {
   assert.match(css, /ruby\[data-passive-vocab-root\] \{[^}]*margin-top/);
   assert.doesNotMatch(css, /ruby\[data-passive-vocab-root\] \{[^}]*padding-top/);
   // Anchored to the bottom of that reserved strip, i.e. just above its own
-  // word, rather than the top of it, i.e. against the previous line.
-  assert.match(css, /::before \{[^}]*bottom: 100%/);
+  // word, rather than the top of it, i.e. against the previous line. The `calc`
+  // adds back a deliberate hair of air so the two do not touch.
+  assert.match(css, /::before \{[^}]*bottom: calc\(100% \+ [\d.]+em\)/);
   assert.match(css, /ruby\[data-passive-vocab-root\] \{[^}]*position: relative/);
+  // `bottom: 100%` anchors to the wrapper's border box, and an inline-block's
+  // border box *is* a line box — at the reader's line height it stands a third
+  // of an em taller than the word on each side, which pushes the gloss further
+  // from its own word than from the line above. Collapsing the wrapper's line
+  // height to 1 removes that half-leading; the word itself does not move.
+  assert.match(css, /ruby\[data-passive-vocab-root\] \{[^}]*line-height: 1;/);
 });
 
 // The bug this covers: the正文 markers are stroked over every rectangle in the
