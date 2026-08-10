@@ -20,6 +20,7 @@ import {
   coverageBounds,
   coverageReading,
   formatCoverage,
+  frequentNoteKey,
   groupUnknownWords,
   isProfileEmpty,
   profileMovedOn,
@@ -783,7 +784,10 @@ function UnknownWordsPanel({
         <p className="text-[11.5px] text-text-secondary">{t("bookCoverage.words.empty")}</p>
       ) : (
         <div className="mt-1">
-          {groups.map((group) => (
+          {groups.map((group) => {
+            const from = `${formatCoverage(share)}%`;
+            const to = `${formatCoverage(shareAfterLearning(share, group.tokens, coverage.totalTokens))}%`;
+            return (
             <div key={group.key} className="mt-[18px] first:mt-0">
               <h4 className="flex items-baseline gap-2 text-[11px] font-semibold text-text-secondary">
                 {t(`bookCoverage.words.group.${group.key}`)}
@@ -802,10 +806,7 @@ function UnknownWordsPanel({
               </h4>
               {group.key === "frequent" ? (
                 <p className="mt-1 text-[10.5px] leading-[1.7] text-text-muted">
-                  {t("bookCoverage.words.frequentNote", {
-                    from: `${formatCoverage(share)}%`,
-                    to: `${formatCoverage(shareAfterLearning(share, group.tokens, coverage.totalTokens))}%`,
-                  })}
+                  {t(frequentNoteKey(group.forms, from, to), { from, to })}
                 </p>
               ) : null}
               {group.key === "rare" ? (
@@ -855,7 +856,8 @@ function UnknownWordsPanel({
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

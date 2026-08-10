@@ -285,6 +285,24 @@ export function shareAfterLearning(share: number, groupTokens: number, totalToke
   return Math.min(1, share + groupTokens / totalTokens);
 }
 
+/**
+ * Which sentence goes under the "40 times or more" group.
+ *
+ * There used to be one, and it assumed two things at once: that the group holds
+ * several words, and that learning them visibly moves the number. Both fail
+ * together on a reader who is already high — the group thins out to a single
+ * word, that word is under 0.05% of the text, and the sentence prints as "from
+ * 95.9% to 95.9%" about "these words". The better the reader, the likelier they
+ * see it.
+ *
+ * The flat test compares the **formatted strings**, not the floats. What reads
+ * as a contradiction is two identical numbers on screen; whether they differ in
+ * the twelfth decimal is not the reader's problem.
+ */
+export function frequentNoteKey(forms: number, from: string, to: string): string {
+  return `bookCoverage.words.frequentNote${forms <= 1 ? "One" : ""}${from === to ? "Flat" : ""}`;
+}
+
 export type WordChip =
   | { kind: "familiar" }
   | { kind: "lookups"; count: number }

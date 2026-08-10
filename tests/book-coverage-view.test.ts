@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   compositionSlices,
@@ -8,6 +11,7 @@ import {
   coverageBounds,
   coverageReading,
   formatCoverage,
+  frequentNoteKey,
   groupUnknownWords,
   INTERVAL_WIDTH_LIMIT,
   isProfileEmpty,
@@ -228,6 +232,39 @@ test("learning the densest group moves coverage by that group's share of the boo
   assert.equal(formatCoverage(shareAfterLearning(0.918, 1903, 212_470)), "92.7");
   assert.equal(shareAfterLearning(0.99, 100_000, 100_000), 1);
   assert.equal(shareAfterLearning(0.5, 10, 0), 0.5);
+});
+
+test("the densest-group sentence never claims a rise the printed numbers do not show", () => {
+  const key = (forms: number, from: string, to: string) => frequentNoteKey(forms, from, to).replace("bookCoverage.words.", "");
+  // 十一个词、涨了一个点：原来那句话，唯一一种它成立的情形。
+  assert.equal(key(11, "91.8%", "92.7%"), "frequentNote");
+  // 高手读者的常态：只剩一个词，而且它太小，四舍五入之后两个数印出来一样 ——
+  // 这正是「会从 95.9% 升到 95.9%」的来处。
+  assert.equal(key(1, "95.9%", "95.9%"), "frequentNoteOneFlat");
+  // 两个轴是独立的：一个词也可能真的把数字推动一格。
+  assert.equal(key(1, "95.4%", "95.9%"), "frequentNoteOne");
+  assert.equal(key(4, "95.9%", "95.9%"), "frequentNoteFlat");
+  // 判的是印出来的字符串，不是浮点差。差在第十二位小数上，读者看到的仍是两个
+  // 一样的数。
+  assert.equal(key(3, `${formatCoverage(0.959_000_000_1)}%`, `${formatCoverage(0.959)}%`), "frequentNoteFlat");
+});
+
+test("all four of those sentences are actually translated", () => {
+  // i18n-keys.test.ts only sees keys written out as literals, and this one is
+  // assembled from a template — so a missing translation would reach the reader
+  // as the raw key. That check has to happen here or nowhere.
+  const keys = new Set([
+    frequentNoteKey(11, "91.8%", "92.7%"),
+    frequentNoteKey(1, "95.4%", "95.9%"),
+    frequentNoteKey(4, "95.9%", "95.9%"),
+    frequentNoteKey(1, "95.9%", "95.9%"),
+  ]);
+  assert.equal(keys.size, 4, "the four cases must not collapse onto the same key");
+  const i18n = path.join(fileURLToPath(new URL(".", import.meta.url)), "../src/i18n");
+  for (const locale of readdirSync(i18n).filter((name) => name.endsWith(".json"))) {
+    const table = JSON.parse(readFileSync(path.join(i18n, locale), "utf8")) as Record<string, string>;
+    for (const key of keys) assert.ok(table[key], `${locale} is missing ${key}`);
+  }
 });
 
 test("the chip beside a word is its strongest piece of evidence", () => {
