@@ -292,14 +292,14 @@ export default function ReaderContextMenu({
             <>
               <div className="mt-1 space-y-1">
                 {dictionaryEntry.groups.map((group, index) => (
-                  // `line-clamp-2` is the visual cap the spec actually states —
-                  // two lines per part of speech, ellipsis, no scroll and no way
-                  // to expand. The backend's character budget decides how many
-                  // senses to send and therefore what `omittedSenseCount` says;
-                  // it cannot know this menu's width, and a single unsplittable
-                  // sense is deliberately never cut mid-way there, so without
-                  // this a full-budget group renders three lines.
-                  <p key={index} className="line-clamp-2 text-[12px] leading-5 text-text-secondary">
+                  // No CSS clamp here on purpose. The backend is the single
+                  // truncator (`CHARS_PER_LINE` there is this card's width), so
+                  // what it says it sent is what renders. A `line-clamp` on top
+                  // of it would silently swallow the last sense of a
+                  // full-budget group while `omittedSenseCount` went on
+                  // counting it as shown — the count would understate what the
+                  // reader cannot see.
+                  <p key={index} className="text-[12px] leading-5 text-text-secondary">
                     {group.pos ? (
                       <span className="mr-1 font-medium text-text-primary">{group.pos}</span>
                     ) : null}
