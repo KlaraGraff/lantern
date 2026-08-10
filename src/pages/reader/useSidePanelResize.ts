@@ -9,7 +9,27 @@ import {
 
 const PANEL_MIN_WIDTH = 320;
 const PANEL_MAX_WIDTH = 700;
-const PANEL_DEFAULT_WIDTH = 525;
+/**
+ * Panel defaults are set by line length, not by pixels.
+ *
+ * A panel and the book column compete for the same screen. What decides the
+ * split is how many characters land on one line inside each — the typographic
+ * "measure". Bringhurst's comfortable band is 45–75 characters; WCAG 1.4.8 caps
+ * a line at 80 characters, or 40 for CJK, because a Han character is about
+ * twice as wide. The AI answers here are mixed Chinese and English, so the CJK
+ * count is the binding one.
+ *
+ * 66 characters is the optimum for a *primary* reading surface. This is not
+ * one — the book is. So the panel takes the lower half of the band and the
+ * width it gives up goes back to the page. Subtracting the list padding, the
+ * bubble border and the bubble padding (52px in total) from 440 leaves 388px of
+ * 14px text: ~53 Latin characters, ~28 Han. Both mid-band, both clear of the
+ * WCAG ceiling. The old 525 sat at 65 / 34 — inside the band, but spending 36%
+ * of a 1440px window on the sidebar to get there.
+ *
+ * Reasoning in full, with the competitor survey: `docs/guide/side-panel-width.md`.
+ */
+const PANEL_DEFAULT_WIDTH = 440;
 /**
  * Width is per panel, not per tab. The AI panel holds a conversation and the
  * traces panel holds lists, so they want different widths and dragging one
@@ -23,7 +43,9 @@ const PANEL_DEFAULT_WIDTH = 525;
  */
 export type ResizableSidePanel = "ai" | "traces";
 
-const PANEL_DEFAULT_WIDTHS: Partial<Record<ResizableSidePanel, number>> = { traces: 460 };
+// Lists, not prose — no measure to satisfy, only "a word, its gloss and its
+// metadata fit on one row". Scaled down by the same proportion as the AI panel.
+const PANEL_DEFAULT_WIDTHS: Partial<Record<ResizableSidePanel, number>> = { traces: 400 };
 
 interface ShadowHost {
   shadowRoot: ShadowRoot | null;
