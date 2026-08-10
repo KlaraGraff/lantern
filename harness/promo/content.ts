@@ -390,8 +390,13 @@ const CARDS: Record<string, unknown> = {
  * 当前语境含义 / 用词取舍 / 常用搭配 / 语气与使用场景 / 常见释义。块数一样多，
  * 密度也一样 —— 低一档不是「给少几块」，是先把整句说清楚。
  *
- * 所以这两份不是同一份内容删几行，是各写各的：真让模型按这两套模块生成，出来
- * 的也是两份不同的文字。
+ * 语言也跟着等级走：中文界面下 A2 推荐中文讲解，C1 推荐全英文（见
+ * `recommendedExplanationMode`）。所以 C1 这一份整张是英文的，按后端
+ * `explanation_strategy` 给 C1 定的那条来写 —— 用词精确、句子可以复杂一点，
+ * 遇到超出 C1 的词就地用更简单的英文加注，不许换成更含糊的词。
+ *
+ * 所以这两份不是同一份内容删几行，是各写各的：真让模型按这两套模块、这两档
+ * 讲解语言生成，出来的也是两份不同的文字。
  */
 const LEVEL_CARDS: Record<string, Record<string, unknown>> = {
   circumspection: {
@@ -432,28 +437,28 @@ const LEVEL_CARDS: Record<string, Record<string, unknown>> = {
       sourceText: "circumspection",
       modules: {
         context_meaning: {
-          summary: "字面是「审慎周全」，这里是反话：他用一个郑重其事的大词，去罩太太那点「没经人介绍就不好开口」的讲究。",
+          summary: "Literally the habit of looking all around before acting. Here it is ironic: he wraps his wife's small scruple (a hesitation about what is proper) in a word built for grave decisions.",
           details: [
-            "同一段话里他先敬佩，再替她把理由补完，最后一句才是真的：你不出面，我来。",
-            "奥斯汀的讽刺常藏在这种词上——句子越体面，落差越大。",
+            "In one speech he first honours her caution, then supplies the reasoning she never offered, and only at the end says what he means: if you will not do it, I will.",
+            "Austen's irony often sits in a word like this — the more decorous (polite and correct) the sentence, the wider the gap it hides.",
           ],
         },
         why_this_word: {
-          summary: "换成 caution 或 care，就只是「小心」；circumspection 是公文和道德说教里的词，郑重、成体系。把这么大一个词按在一件小事上，敬佩就成了打趣。",
+          summary: "caution or care would have said only \"being careful\". circumspection belongs to sermons and official prose — weighty and systematic. Set against a fortnight's acquaintance, the compliment turns into teasing.",
         },
         collocations: {
           items: [
-            { title: "with circumspection", text: "谨慎地（做某事），最常见的用法。" },
-            { title: "a degree of circumspection", text: "一定程度的审慎，语气克制。" },
+            { title: "with circumspection", text: "Carefully, after weighing the situation; the commonest form." },
+            { title: "a degree of circumspection", text: "A measured amount of caution, deliberately understated." },
           ],
         },
         usage: {
-          summary: "正式、偏书面，日常口语基本不用。放进对话里要么显得极郑重，要么像这里一样反着说。",
-          meta: ["正式", "常带反讽"],
+          summary: "Formal and mainly written; rare in speech. In dialogue it either sounds solemn or, as here, says the opposite of what it states.",
+          meta: ["Formal", "Often ironic"],
         },
         common_senses: {
           items: [
-            { title: "审慎、周全", text: "circum（周围）+ spect（看）：动手之前先把四周看一遍。" },
+            { title: "Careful weighing before acting", text: "circum (around) + spect (look): look all around you before you move." },
           ],
         },
       },

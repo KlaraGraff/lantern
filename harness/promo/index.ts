@@ -14,6 +14,7 @@
 
 import { serializeCardDesignConfig } from "../../src/components/learning-card/config";
 import { cardDesignConfigForLevel } from "../../src/components/learning-card/level-presets";
+import { recommendedExplanationMode } from "../../src/components/onboarding/explanation-samples";
 import type { CefrLevel } from "../../src/components/settings/cefr";
 import { PROMO_CARD_CONFIG } from "./content";
 
@@ -46,15 +47,19 @@ const ZH: Record<string, string> = {
 /**
  * 按学习者等级配好的一套设置。
  *
- * 卡片配置不是手写的：`cardDesignConfigForLevel()` 就是应用在设置页和首次引导
- * 里选完等级后写进去的那一份，这里只是把同一个函数的结果端上来。宽度改成
- * 「窄」是纯排版选择（卡片宽度本来就是设置项），和等级无关。
+ * 两处都不是手写的，都是端应用自己那个函数的结果：
+ *   - 卡片显示哪几块 —— `cardDesignConfigForLevel()`，读者在引导第一步或设置页
+ *     选完等级后写进去的就是这一份；
+ *   - 讲解语言 —— `recommendedExplanationMode()`，中文界面下 A2 推中文讲解、
+ *     C1 推全英文。这一档不是附带的：C1 的卡片本来就该是英文的。
+ * 宽度改成「窄」是纯排版选择（卡片宽度本来就是设置项），和等级无关。
  */
 const zhAtLevel = (level: CefrLevel): Record<string, string> => {
   const config = cardDesignConfigForLevel(level);
   return {
     ...ZH,
     cefr_level: level,
+    explanation_mode: recommendedExplanationMode(level, "zh"),
     learning_card_source: "level",
     learning_card_config: serializeCardDesignConfig({
       ...config,
