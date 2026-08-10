@@ -171,7 +171,7 @@ Reading statistics work the same way: **Reading history / Reading calendar / Lea
 
 **But a preset shouldn't dictate your method.** Build your own: name it, write **a prompt entirely your own** (up to 2,000 characters) generating from the current selection, its context and the book, then add it to a card alongside the built-ins. Up to 8 custom modules per card type, plus 6 custom selection actions.
 
-So you can build **complex-sentence breakdown** for IELTS, **rhetoric and narrative perspective** for literature, **terminology and prerequisites** for technical books, or a **minimal look-up** that barely interrupts.
+So you can build **"do people still say this?"** for old novels (is the word still in everyday use, and what would you write instead today), **rhetoric and narrative perspective** for literature, **terminology and prerequisites** for technical books, or a **minimal look-up** that barely interrupts.
 
 <!-- screenshot placeholder: custom module editor + module ordering
 ![Custom AI modules](assets/screenshots/modules.png)
