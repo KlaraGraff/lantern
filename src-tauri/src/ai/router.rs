@@ -1022,6 +1022,37 @@ fn routable_profiles(db: &Db, enabled: Vec<AiProfile>, cutoff: i64) -> AppResult
     Ok(routable)
 }
 
+/// The route one request actually gets, and the cutoff it was chosen with.
+///
+/// A cooldown says which model to try first while there is a choice. It was
+/// never meant to be a lock: when every configured model is resting, the
+/// request goes out anyway and the provider answers for itself. Otherwise a
+/// reader with a single model would press retry and watch nothing happen for a
+/// minute — the route would have decided on their behalf that the attempt is
+/// not worth making, which is not its job.
+///
+/// Route order stays the user's own in that case. A rest is not evidence about
+/// which model is better, only about which one answered last.
+///
+/// The cutoff comes back because it is what the failure message is written
+/// from: after the fallback, no cooldown is holding anything up, so "everything
+/// is resting" is no longer a truthful reason for an empty route.
+fn route_for_request(
+    db: &Db,
+    enabled: &[AiProfile],
+    retry: AiRetryMode,
+) -> AppResult<(Vec<AiProfile>, i64)> {
+    let cutoff = cooldown_cutoff(retry);
+    let routable = routable_profiles(db, enabled.to_vec(), cutoff)?;
+    if !routable.is_empty() || cutoff == i64::MAX {
+        return Ok((routable, cutoff));
+    }
+    Ok((
+        routable_profiles(db, enabled.to_vec(), i64::MAX)?,
+        i64::MAX,
+    ))
+}
+
 /// Why a set of keys could not carry a request, in terms the reader can act on.
 /// Each answer is a different next move: add one, switch one back on, replace
 /// one, or wait.
@@ -2102,8 +2133,7 @@ async fn stream_with_failover_inner<R: Runtime>(
     if enabled_profiles.is_empty() {
         return Err(AppError::Other("AI_NOT_CONFIGURED".to_string()));
     }
-    let timestamp = cooldown_cutoff(retry);
-    let profiles = routable_profiles(db, enabled_profiles.clone(), timestamp)?;
+    let (profiles, timestamp) = route_for_request(db, &enabled_profiles, retry)?;
     if profiles.is_empty() {
         return Err(empty_route_error(db, &enabled_profiles, timestamp)?);
     }
@@ -3953,6 +3983,89 @@ mod tests {
         );
         assert_eq!(route(deadline), vec![free.id.clone(), paid.id.clone()]);
         assert_eq!(route(deadline - 1), vec![paid.id.clone()]);
+    }
+
+    /// A rest is a preference between models, not a lock on the reader. With
+    /// only one model configured there is no preference to express, so the
+    /// request goes out during the rest instead of failing before it is sent.
+    #[test]
+    fn a_lone_resting_model_still_gets_the_request() {
+        let directory = tempfile::TempDir::new().unwrap();
+        let db = Db::init(directory.path()).unwrap();
+        let secrets = Secrets::init_in_memory().unwrap();
+        let only = create_profile(
+            &db,
+            "Only".to_string(),
+            "custom".to_string(),
+            "api_key".to_string(),
+            Some("https://gateway.example/v1".to_string()),
+            "model".to_string(),
+            0.2,
+            None,
+            false,
+            None,
+            true,
+        )
+        .unwrap();
+        add_credential(
+            &db,
+            &secrets,
+            only.id.clone(),
+            "Key".to_string(),
+            "key".to_string(),
+        )
+        .unwrap();
+        let route = |retry| {
+            let enabled = profiles(&db, true).unwrap();
+            route_for_request(&db, &enabled, retry)
+                .unwrap()
+                .0
+                .into_iter()
+                .map(|profile| profile.view.id)
+                .collect::<Vec<_>>()
+        };
+
+        update_profile_health(
+            &db,
+            &profile_by_id(&db, &only.id).unwrap(),
+            Some(AiErrorKind::RateLimit),
+            None,
+            None,
+        );
+        assert_eq!(profile_by_id(&db, &only.id).unwrap().view.state, "cooldown");
+        // Neither an automatic attempt nor a hand-pressed retry is turned away.
+        assert_eq!(route(AiRetryMode::Automatic), vec![only.id.clone()]);
+        assert_eq!(route(AiRetryMode::Manual), vec![only.id.clone()]);
+
+        // A second model changes the answer: now the rest has something to
+        // express, and the request goes to the one that is not resting.
+        let spare = create_profile(
+            &db,
+            "Spare".to_string(),
+            "custom".to_string(),
+            "api_key".to_string(),
+            Some("https://gateway.example/v1".to_string()),
+            "model".to_string(),
+            0.2,
+            None,
+            false,
+            None,
+            true,
+        )
+        .unwrap();
+        add_credential(
+            &db,
+            &secrets,
+            spare.id.clone(),
+            "Key".to_string(),
+            "spare-key".to_string(),
+        )
+        .unwrap();
+        assert_eq!(route(AiRetryMode::Automatic), vec![spare.id.clone()]);
+        assert_eq!(
+            route(AiRetryMode::Manual),
+            vec![only.id.clone(), spare.id.clone()]
+        );
     }
 
     /// A model with nothing to send is not part of the route either. It used to

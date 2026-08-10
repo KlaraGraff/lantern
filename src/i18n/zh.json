@@ -1357,6 +1357,7 @@
   "settings.ai.fallbackToPaidIn": "{{from}} 暂时不可用，已改用 {{to}}（按量付费），约 {{duration}} 后恢复。",
   "settings.ai.health.available": "可用",
   "settings.ai.health.cooldown": "暂时不可用",
+  "settings.ai.health.lastFailed": "上次调用失败",
   "settings.ai.health.retest": "需重新测试",
   "settings.ai.health.keysOff": "密钥已全部停用",
   "settings.ai.health.unavailable": "配置不可用",

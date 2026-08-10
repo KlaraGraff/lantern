@@ -1010,6 +1010,9 @@ export default function AiSettings({ showSavedToast, onSaveRef, onDirtyChange }:
               learnedEfforts={effortHints[profile.id] ?? NO_EFFORT_HINTS}
               testResult={testResults[profile.id]}
               healthStale={staleHealthIds.has(profile.id)}
+              hasFallback={profiles.some(
+                (other) => other.id !== profile.id && other.enabled && other.state !== "invalid",
+              )}
               oauthStatus={oauthStatus}
               oauthLoading={oauthLoading}
               onToggleExpanded={() => setExpandedId((current) => current === profile.id ? null : profile.id)}

@@ -127,6 +127,11 @@ interface AiServiceCardProps {
   learnedEfforts: AiEffortHints;
   testResult?: AiConnectionTestResult;
   healthStale: boolean;
+  /** Whether another enabled model could take a request in this one's place.
+   *  A rest is the route preferring somebody else for a while; with nobody
+   *  else to prefer, the request comes here anyway and there is no rest to
+   *  report. */
+  hasFallback: boolean;
   oauthStatus: OAuthStatus;
   oauthLoading: boolean;
   onToggleExpanded: () => void;
@@ -208,8 +213,13 @@ function profileHealth(
   result: AiConnectionTestResult | undefined,
   healthStale: boolean,
   remaining: number | null,
+  hasFallback: boolean,
   t: (key: string, options?: Record<string, unknown>) => string,
 ): { label: string; className: string } {
+  // A rest is only a live condition while its deadline is still ahead. Once it
+  // passes, the model is back in the route and nothing has been learned since
+  // — the state column simply still holds the last thing that happened.
+  const resting = remaining != null && remaining > 0;
   const countdown =
     remaining != null && remaining > 0
       ? ` · ${t("settings.ai.health.remaining", { duration: formatDuration(remaining, t) })}`
@@ -292,15 +302,24 @@ function profileHealth(
       className: "bg-accent-bg text-accent-text",
     };
   }
-  if (profile.state === "quota") {
+  if (profile.state === "quota" && resting) {
     return {
       label: `${t("settings.ai.health.quota")}${countdown}`,
       className: "bg-accent-bg text-accent-text",
     };
   }
-  if (profile.state === "cooldown") {
+  if (profile.state === "cooldown" && resting && hasFallback) {
     return {
       label: `${t("settings.ai.health.cooldown")}${countdown}`,
+      className: "bg-accent-bg text-accent-text",
+    };
+  }
+  // Resting with nobody to hand the request to, or rested and not tried since.
+  // Either way the next request comes here, so the only thing left to say is
+  // what happened last time — not that the model is out of reach.
+  if (profile.state === "cooldown" || profile.state === "quota") {
+    return {
+      label: t("settings.ai.health.lastFailed"),
       className: "bg-accent-bg text-accent-text",
     };
   }
@@ -334,6 +353,7 @@ export default function AiServiceCard({
   learnedEfforts,
   testResult,
   healthStale,
+  hasFallback,
   oauthStatus,
   oauthLoading,
   onToggleExpanded,
@@ -441,6 +461,7 @@ export default function AiServiceCard({
     testResult,
     healthStale,
     remaining,
+    hasFallback,
     t,
   );
 

@@ -645,6 +645,11 @@ pub async fn ai_learning_card(
     chapter: Option<String>,
     card_config: String,
     request_id: String,
+    // The card's own retry button, not an automatic one. A hand-pressed retry
+    // is the user saying "try anyway" — cooldowns become ordering hints for
+    // that one request instead of gates, so a single configured model can
+    // never leave the reader with a button that does nothing.
+    retry: Option<bool>,
     app: AppHandle,
     db: State<'_, Db>,
     secrets: State<'_, Secrets>,
@@ -754,7 +759,7 @@ pub async fn ai_learning_card(
         &messages,
         Some(max_tokens),
         crate::ai::router::AiRequestPurpose::Utility,
-        crate::ai::router::AiRetryMode::Automatic,
+        crate::ai::router::retry_mode(retry),
         Some(&request_id),
         Some(&stream_event_name),
         "user",

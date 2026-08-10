@@ -1359,6 +1359,7 @@
   "settings.ai.fallbackToPaidIn": "{{from}} is unavailable right now, so {{to}} answered instead — it bills per use. Back in about {{duration}}.",
   "settings.ai.health.available": "Available",
   "settings.ai.health.cooldown": "Temporarily unavailable",
+  "settings.ai.health.lastFailed": "Last attempt failed",
   "settings.ai.health.retest": "Retest needed",
   "settings.ai.health.keysOff": "All keys off",
   "settings.ai.health.unavailable": "Unusable setup",

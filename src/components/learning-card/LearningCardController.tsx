@@ -313,6 +313,9 @@ export default function LearningCardController({
           chapter: chapter || null,
           cardConfig: JSON.stringify(config),
           requestId,
+          // A hand-pressed retry means "try anyway": the route stops treating
+          // a resting model as out of play for this one request.
+          retry: retry > 0,
         });
         if (!active) return;
         setResult(response);
