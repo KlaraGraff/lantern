@@ -284,8 +284,14 @@ export default function LearningCardView({
               it happened — at the bottom, under the last module that made it —
               rather than replacing the card with an error page. Nothing on this
               path is written to the lookup cache.
+
+              Keyed on `partial`, not on `error`: the answer can come apart two
+              ways. The stream can die, which leaves an error and the modules
+              that arrived; or it can finish with brackets the backend has to
+              close by hand, which leaves no error at all and a card missing
+              whatever came after the cut. Both are the same thing to read.
             */}
-            {error && (
+            {partial && (
               <div
                 role="alert"
                 className="flex items-center gap-2 border-t border-border/60 bg-bg-muted px-4 py-2.5"

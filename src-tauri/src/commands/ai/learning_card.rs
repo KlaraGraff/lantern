@@ -79,8 +79,28 @@ pub struct LearningCardResponse {
     pub kind: String,
     pub source_text: String,
     pub modules: BTreeMap<String, LearningModuleContent>,
+    /// Whether the answer stood on its own, or had to be closed by hand.
+    ///
+    /// The salvaging parser is what keeps a card that broke in its last module
+    /// from taking the first twelve down with it — but a salvaged card is
+    /// missing whatever came after the cut, and the reader must not be handed
+    /// that gap again tomorrow from the cache. `false` says "show this once,
+    /// keep nothing".
+    ///
+    /// Fewer modules than were asked for does not make a card incomplete: a
+    /// model that has nothing to say about collocations and leaves the module
+    /// out wrote a perfectly good answer. Only a payload that could not be
+    /// parsed without repair counts.
+    #[serde(default = "complete_by_default")]
+    pub complete: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenance: Option<LearningCardProvenance>,
+}
+
+/// Cards written before the flag existed were all cached as whole, and every
+/// one of them parsed cleanly to get there.
+fn complete_by_default() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -398,9 +418,14 @@ fn module_has_content(module: &LearningModuleContent) -> bool {
 /// wraps the object in a fence it forgets to close, or stops mid-object. All
 /// three leave the modules the reader already watched stream in perfectly
 /// intact, and all three used to throw the whole card away.
-fn learning_card_json(payload: &str) -> Option<serde_json::Value> {
+///
+/// The `bool` is whether the object was found whole. Prose on either side of a
+/// complete object still counts as whole — the card itself is all there. Only
+/// the last branch, which closes brackets the model never closed, returns
+/// `false`, and that is the one whose card must not reach the cache.
+fn learning_card_json(payload: &str) -> Option<(serde_json::Value, bool)> {
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) {
-        return Some(value);
+        return Some((value, true));
     }
     let start = payload.find('{')?;
     let body = &payload[start..];
@@ -444,7 +469,7 @@ fn learning_card_json(payload: &str) -> Option<serde_json::Value> {
     // A complete object with prose hanging off either end.
     if let Some(end) = balanced_end {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&body[..end]) {
-            return Some(value);
+            return Some((value, true));
         }
     }
 
@@ -456,7 +481,7 @@ fn learning_card_json(payload: &str) -> Option<serde_json::Value> {
             candidate.push(if *bracket == '{' { '}' } else { ']' });
         }
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(&candidate) {
-            return Some(value);
+            return Some((value, false));
         }
     }
     None
@@ -601,7 +626,7 @@ fn parse_learning_card_response(
     if payload.is_empty() {
         return Err(AppError::Ai("LEARNING_CARD_PROTOCOL_EMPTY".to_string()));
     }
-    let value = learning_card_json(payload)
+    let (value, complete) = learning_card_json(payload)
         .ok_or_else(|| AppError::Ai("LEARNING_CARD_PROTOCOL_INVALID_JSON".to_string()))?;
     let requested_ids: BTreeSet<_> = requested
         .modules
@@ -630,6 +655,7 @@ fn parse_learning_card_response(
         kind: kind.to_string(),
         source_text: source_text.to_string(),
         modules,
+        complete,
         provenance: None,
     })
 }
@@ -973,6 +999,8 @@ mod tests {
             let parsed = parse_learning_card_response(&raw, "word", "x", &request)
                 .unwrap_or_else(|error| panic!("{raw} reported as {error}"));
             assert_eq!(parsed.modules.len(), 2);
+            // Whole card, prose around it. Nothing was repaired, so it caches.
+            assert!(parsed.complete, "{raw}");
         }
 
         // Cut off mid-module: the modules that finished are still readable.
@@ -983,6 +1011,22 @@ mod tests {
             Some("与家人重聚")
         );
         assert!(!parsed.modules.contains_key("word_info"));
+        // The salvage is worth showing once and worth caching never: the modules
+        // past the cut are gone, and a cached card is what the reader gets back
+        // every time afterwards.
+        assert!(!parsed.complete);
+    }
+
+    #[test]
+    fn a_short_answer_the_model_meant_to_write_is_still_a_whole_card() {
+        // Only repair marks a card incomplete. A model with nothing to say about
+        // a module leaves it out, and that answer parses on the first line — it
+        // is a finished card and belongs in the cache like any other.
+        let request = default_learning_request("word").unwrap();
+        let sparse = r#"{"version":1,"kind":"word","sourceText":"x","modules":{"context_meaning":{"summary":"与家人重聚"}}}"#;
+        let parsed = parse_learning_card_response(sparse, "word", "x", &request).unwrap();
+        assert_eq!(parsed.modules.len(), 1);
+        assert!(parsed.complete);
     }
 
     #[test]

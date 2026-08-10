@@ -136,6 +136,13 @@ export interface LearningCardResult {
   kind: LearningCardKind;
   sourceText: string;
   modules: Partial<Record<LearningModuleId, LearningModuleContent>>;
+  /**
+   * `false` when the backend had to close brackets the model never closed. The
+   * card is readable — that is the whole point of salvaging it — but whatever
+   * came after the cut is missing, so it is shown once and not cached.
+   * Absent on cards read back from the cache, which were whole when written.
+   */
+  complete?: boolean;
 }
 
 export interface LearningCardNote {

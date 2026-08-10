@@ -255,6 +255,14 @@ export default function LearningCardController({
         setLoading(false);
         setThinking(false);
         if (interaction.kind === "word") onLookupSuccess?.(interaction);
+        // A card the parser had to close by hand is missing everything past the
+        // cut. It is worth reading once, which is why it is on screen at all —
+        // but caching it would hand the reader the same gap every time they
+        // looked the word up again, with no way to ask for the rest.
+        if (response.complete === false) {
+          setPartial(true);
+          return;
+        }
         const projected = projection(response);
         invoke("save_lookup_record", {
           bookId,
