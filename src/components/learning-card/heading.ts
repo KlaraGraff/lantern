@@ -21,7 +21,7 @@ function normalise(text: string) {
   return text
     .replace(/[*`=]/g, "")
     .replace(/\s+/g, "")
-    .replace(/^[「『“"'（(【\[]+|[」』”"'）)】\]]+$/g, "")
+    .replace(/^[「『“"'（(【[]+|[」』”"'）)】\]]+$/g, "")
     .replace(/[:：.。!！?？、,，]+$/g, "")
     .toLowerCase()
     .trim();
