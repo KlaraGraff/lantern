@@ -20,6 +20,8 @@
  *     "exposures": 4,
  *     "lookups": 0,                     // unused today, reserved
  *     "lookup_count": 3,
+ *     "card_count": 1,                  // AI learning cards opened, this window
+ *     "glance_count": 2,                // dictionary definitions read
  *     "rating": "good"                  // one of vocab.rating.*
  *   }
  */
@@ -32,6 +34,17 @@ export interface MasteryDetail {
   exposures?: number;
   lookups?: number;
   lookup_count?: number;
+  /**
+   * The two lookup kinds, counted separately (migration 069). A demotion can
+   * be caused by AI cards, by free dictionary definitions, or by a mix, and
+   * the sentence has to say which — calling a dictionary check "looking it up"
+   * describes something the reader did not do.
+   *
+   * Absent on every row written before 069, which is exactly the cards-only
+   * case, so their sentences are unchanged.
+   */
+  card_count?: number;
+  glance_count?: number;
   rating?: "again" | "hard" | "good" | "easy";
 }
 
@@ -40,6 +53,7 @@ export const MASTERY_REASON_CODES = [
   "exposure_promotion",
   "lookup_demotion",
   "repeat_lookup_demotion",
+  "glance_entry",
   "user_override",
   "review_promotion",
   "review_demotion",
@@ -64,19 +78,41 @@ const BECAUSE_REASON_CODES: readonly MasteryReasonCode[] = [
   "exposure_promotion",
   "lookup_demotion",
   "repeat_lookup_demotion",
+  "glance_entry",
 ];
 
-// Fields a reason code's fully-interpolated sentence needs. Missing any of
-// them falls back to a reason-only sentence instead of a string with a hole
-// punched in the middle of it.
-const REQUIRED_FIELDS: Record<MasteryReasonCode, (keyof MasteryDetail)[]> = {
-  exposure_promotion: ["book_title", "distinct_days", "exposures"],
-  lookup_demotion: ["book_title"],
-  repeat_lookup_demotion: ["book_title", "lookup_count"],
-  user_override: [],
-  review_promotion: ["rating"],
-  review_demotion: ["rating"],
-  watchlist_promoted: ["book_title", "lookup_count"],
+/**
+ * Which of a demotion's sentences is the true one. The two lookup reasons each
+ * have three, because a demotion can be earned three ways and only one of them
+ * is "you looked it up".
+ *
+ * `detail` — the cards-only sentence, and the one every pre-069 row gets: no
+ * glance counted means the wording that shipped is still exactly right.
+ */
+type LookupVariant = "detail" | "glances" | "mixed";
+
+function lookupVariant(detail: MasteryDetail | null): LookupVariant {
+  const glances = detail?.glance_count ?? 0;
+  if (glances <= 0) return "detail";
+  return (detail?.card_count ?? 0) > 0 ? "mixed" : "glances";
+}
+
+// Fields a variant's fully-interpolated sentence needs, keyed
+// `<reason>.<variant>`. Missing any of them falls back to a reason-only
+// sentence instead of a string with a hole punched in the middle of it.
+const REQUIRED_FIELDS: Record<string, (keyof MasteryDetail)[]> = {
+  "exposure_promotion.detail": ["book_title", "distinct_days", "exposures"],
+  "lookup_demotion.detail": ["book_title"],
+  "lookup_demotion.glances": ["book_title", "glance_count"],
+  "lookup_demotion.mixed": ["book_title", "card_count", "glance_count"],
+  "repeat_lookup_demotion.detail": ["book_title", "lookup_count"],
+  "repeat_lookup_demotion.glances": ["book_title", "glance_count"],
+  "repeat_lookup_demotion.mixed": ["book_title", "card_count", "glance_count"],
+  "glance_entry.detail": ["book_title", "glance_count"],
+  "user_override.detail": [],
+  "review_promotion.detail": ["rating"],
+  "review_demotion.detail": ["rating"],
+  "watchlist_promoted.detail": ["book_title", "lookup_count"],
 };
 
 /** Safe JSON.parse: malformed, empty, or non-object input degrades to null. */
@@ -91,8 +127,22 @@ export function parseMasteryDetail(json: string | null | undefined): MasteryDeta
   }
 }
 
-function hasRequiredFields(reason: MasteryReasonCode, detail: MasteryDetail | null): boolean {
-  return REQUIRED_FIELDS[reason].every((field) => detail?.[field] != null);
+/**
+ * The variant suffix to render, or `"plain"` when the facts the fuller
+ * sentence needs are not all there.
+ *
+ * Which variant is *true* is decided by what the reader did, so the shape of
+ * the detail picks it; whether it can be *rendered* is decided by the fields
+ * present. A row claiming a mix but carrying only one of the two counts falls
+ * back rather than rendering a hole.
+ */
+function variantFor(reason: MasteryReasonCode, detail: MasteryDetail | null): string {
+  const variant =
+    reason === "lookup_demotion" || reason === "repeat_lookup_demotion"
+      ? lookupVariant(detail)
+      : "detail";
+  const required = REQUIRED_FIELDS[`${reason}.${variant}`] ?? [];
+  return required.every((field) => detail?.[field] != null) ? variant : "plain";
 }
 
 function detailParams(detail: MasteryDetail | null): Record<string, string | number> {
@@ -104,6 +154,8 @@ function detailParams(detail: MasteryDetail | null): Record<string, string | num
   if (typeof detail.exposures === "number") params.exposures = detail.exposures;
   if (typeof detail.lookups === "number") params.lookups = detail.lookups;
   if (typeof detail.lookup_count === "number") params.lookupCount = detail.lookup_count;
+  if (typeof detail.card_count === "number") params.cardCount = detail.card_count;
+  if (typeof detail.glance_count === "number") params.glanceCount = detail.glance_count;
   if (typeof detail.rating === "string") params.rating = detail.rating;
   return params;
 }
@@ -139,7 +191,7 @@ export function masteryBecauseExplanation(reasonJson: string | null | undefined)
   const detail = parseMasteryDetail(reasonJson);
   const reason = detail?.reason;
   if (!isMasteryReasonCode(reason) || !BECAUSE_REASON_CODES.includes(reason)) return null;
-  const variant = hasRequiredFields(reason, detail) ? "detail" : "plain";
+  const variant = variantFor(reason, detail);
   return { key: `vocab.mastery.because.${reason}.${variant}`, params: detailParams(detail) };
 }
 
@@ -162,6 +214,6 @@ export function timelineEventExplanation(
   if (!isMasteryReasonCode(reason)) {
     return { key: "vocab.mastery.timeline.generic", params };
   }
-  const variant = hasRequiredFields(reason, detail) ? "detail" : "plain";
+  const variant = variantFor(reason, detail);
   return { key: `vocab.mastery.timeline.${reason}.${variant}`, params };
 }

@@ -150,3 +150,82 @@ test("every key this module can produce exists in both locale files", () => {
     assertTranslated(`vocab.mastery.timeline.${reason}.plain`);
   }
 });
+
+// —— The two lookup kinds, told apart ————————————————————————————————
+//
+// A demotion earned by reading dictionary definitions must not be described as
+// "you looked it up again" — the reader never opened a card, and being told
+// they did is the app misreporting its own evidence back at them.
+
+test("masteryBecauseExplanation: no glances is the sentence that already shipped", () => {
+  const explanation = masteryBecauseExplanation(
+    '{"reason":"lookup_demotion","book_title":"Persuasion","card_count":1,"glance_count":0}',
+  );
+  assert.equal(explanation?.key, "vocab.mastery.because.lookup_demotion.detail");
+});
+
+test("masteryBecauseExplanation: a pre-069 row, with neither count, keeps its old sentence", () => {
+  const explanation = masteryBecauseExplanation('{"reason":"lookup_demotion","book_title":"Persuasion"}');
+  assert.deepEqual(explanation, {
+    key: "vocab.mastery.because.lookup_demotion.detail",
+    params: { bookTitle: "Persuasion" },
+  });
+});
+
+test("masteryBecauseExplanation: dictionary-only demotions get their own sentence", () => {
+  const explanation = masteryBecauseExplanation(
+    '{"reason":"lookup_demotion","book_title":"Persuasion","card_count":0,"glance_count":2}',
+  );
+  assert.deepEqual(explanation, {
+    key: "vocab.mastery.because.lookup_demotion.glances",
+    params: { bookTitle: "Persuasion", cardCount: 0, glanceCount: 2 },
+  });
+});
+
+test("masteryBecauseExplanation: a mixed chain names both kinds", () => {
+  const explanation = masteryBecauseExplanation(
+    '{"reason":"repeat_lookup_demotion","book_title":"Persuasion","lookup_count":1,"card_count":1,"glance_count":2}',
+  );
+  assert.deepEqual(explanation, {
+    key: "vocab.mastery.because.repeat_lookup_demotion.mixed",
+    params: { bookTitle: "Persuasion", lookupCount: 1, cardCount: 1, glanceCount: 2 },
+  });
+});
+
+test("masteryBecauseExplanation: a mixed chain missing its book title falls back, not renders a hole", () => {
+  const explanation = masteryBecauseExplanation(
+    '{"reason":"lookup_demotion","card_count":1,"glance_count":2}',
+  );
+  assert.equal(explanation?.key, "vocab.mastery.because.lookup_demotion.plain");
+});
+
+test("masteryBecauseExplanation: glance_entry explains a word the dictionary alone filed", () => {
+  const explanation = masteryBecauseExplanation(
+    '{"reason":"glance_entry","book_title":"Persuasion","glance_count":4}',
+  );
+  assert.deepEqual(explanation, {
+    key: "vocab.mastery.because.glance_entry.detail",
+    params: { bookTitle: "Persuasion", glanceCount: 4 },
+  });
+});
+
+test("timelineEventExplanation: the variant follows the counts, not the rung", () => {
+  const explanation = timelineEventExplanation(
+    "repeat_lookup_demotion",
+    '{"book_title":"Persuasion","lookup_count":0,"card_count":0,"glance_count":4}',
+    "familiar",
+    "learning",
+  );
+  assert.equal(explanation.key, "vocab.mastery.timeline.repeat_lookup_demotion.glances");
+});
+
+test("every glance variant this module can produce exists in both locale files", () => {
+  for (const reason of ["lookup_demotion", "repeat_lookup_demotion"]) {
+    for (const variant of ["glances", "mixed"]) {
+      assertTranslated(`vocab.mastery.because.${reason}.${variant}`);
+      assertTranslated(`vocab.mastery.timeline.${reason}.${variant}`);
+    }
+  }
+  assertTranslated("vocab.mastery.because.glance_entry.plain");
+  assertTranslated("vocab.mastery.timeline.glance_entry.plain");
+});
