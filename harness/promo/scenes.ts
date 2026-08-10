@@ -16,7 +16,13 @@
  * document 的那一条路完全一样；派的也是真的 `dblclick`，坐标真的落在那个词上。
  */
 import zh from "../../src/i18n/zh.json";
-import { ENDING_JUMP, HERO_LOOKUP_WORD, VOCAB_JUMP } from "./content";
+import {
+  ENDING_JUMP,
+  HERO_LOOKUP_WORD,
+  MASTERY_WORD,
+  PROMO_CUSTOM_MODULE_NAME,
+  VOCAB_JUMP,
+} from "./content";
 import { activeScene, activeShotName } from "./index";
 
 /** 截图脚本等的就是这个属性。 */
@@ -298,6 +304,207 @@ async function openScopeMenu(): Promise<void> {
 }
 
 /* ------------------------------------------------------------------ *
+ * 设置 · 个人（用户画像）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 打开设置里的某一节。
+ *
+ * 用户画像不是一条路由 —— 它是设置模态框里的「个人」那一节
+ * （`SettingsModal` 的 `personal`）。入口就是左栏最底下那一行（头像 + 「设置」），
+ * 所以这里先点它，再点节名，和读者的路径一模一样。
+ */
+async function openSettingsSection(sectionLabel: string): Promise<void> {
+  const entry = await waitFor("左栏底部的设置入口", () =>
+    buttons(document.querySelector("aside") ?? document.body)
+      .find((b) => b.textContent?.includes(text("settings.title"))) ?? null);
+  entry.click();
+
+  const dialog = await waitFor("设置模态框", () => document.querySelector<HTMLElement>('[role="dialog"]'));
+  const row = await waitFor(`设置里的「${sectionLabel}」`, () => byText(sectionLabel, dialog));
+  row.click();
+  await settle();
+}
+
+/**
+ * 把某张画像卡的「依据」一路摊开：先展开卡片自己那一句依据，再点进「查看
+ * 原始记录」，露出写这条结论时模型真正读到的那份聚合记录。
+ *
+ * 卡片上没有可以直接找的标识，就按卡头显示的维度名定位到那张卡，再在它内部找
+ * 按钮 —— 三张卡上的「展开」字样一模一样，不限定范围会点到第一张。
+ */
+async function expandProfileEvidence(slotLabel: string): Promise<void> {
+  const card = await waitFor(`画像卡「${slotLabel}」`, () => {
+    const heading = [...document.querySelectorAll<HTMLElement>("h5")]
+      .find((h) => h.textContent?.trim() === slotLabel);
+    return heading?.closest<HTMLElement>("div.rounded-xl") ?? null;
+  });
+
+  (await waitFor("卡片上的「展开」", () => byText(text("profile.expand"), card))).click();
+  (await waitFor("「查看原始记录」", () =>
+    buttons(card).find((b) => b.textContent?.trim() === text("profile.evidence.viewRecords")) ?? null)).click();
+  // 记录是异步取回来的（`profile_card_evidence`），等那句「记录 → 结论 → 提示词」
+  // 出现才算真的摊开了 —— 否则拍到的是一行「正在取出…」。
+  await waitFor("原始记录", () =>
+    card.textContent?.includes(text("profile.evidence.chain")) ? true : null);
+  await settle();
+}
+
+/**
+ * 把设置模态框滚到某个小标题贴着顶。
+ *
+ * 画像页比模态框高得多：上面还有「AI 现在这样理解你」，下面三张卡加摊开的原始
+ * 记录，一屏根本装不下。这张图要的是「自己写的那几行 → 系统总结的结论 → 结论
+ * 的依据」这一段连着的内容，所以让画面从「你写的」开始。
+ *
+ * 滚的是那个小标题相对滚动容器的位置，不是一个拍脑袋的像素数 —— 字号、行高、
+ * 文案长度以后再变，这张图的构图也不会跟着漂。
+ */
+async function scrollSettingsTo(heading: string): Promise<void> {
+  // 小标题不是按钮，所以不能用 byText（那个只翻 button）；画像那边是 <p>，
+  // 卡片设计那边是 <h4>，两种都收。
+  const anchor = await waitFor(`「${heading}」小标题`, () =>
+    [...(document.querySelector('[role="dialog"]') ?? document.body).querySelectorAll<HTMLElement>("p, h4")]
+      .find((el) => el.textContent?.trim() === heading) ?? null);
+  const scroller = anchor.closest<HTMLElement>(".overflow-y-scroll");
+  if (!scroller) throw new Error("设置模态框里找不到滚动容器");
+  scroller.scrollTop += anchor.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 12;
+  await settle();
+}
+
+/* ------------------------------------------------------------------ *
+ * 设置 · 划词与卡片
+ * ------------------------------------------------------------------ */
+
+/** 「划词与卡片」里的二级页签（划词行为 / 卡片设计 / 选区菜单 / 正文标记）。 */
+async function openToolsView(label: string): Promise<void> {
+  const tab = await waitFor(`页签「${label}」`, () =>
+    buttons().find((b) => b.getAttribute("role") === "tab" && b.textContent?.trim() === label) ?? null);
+  tab.click();
+  await settle();
+}
+
+/**
+ * 展开模块列表里的某一行。
+ *
+ * 行首那个按钮带 `aria-expanded`，和生词本那边同一个套路；自定义模块的行名就是
+ * 用户自己起的名字（内置模块走词条表），所以传进来的字要和数据那边同一个常量。
+ */
+async function expandCardModule(name: string): Promise<void> {
+  const row = await waitFor(`模块行「${name}」`, () =>
+    buttons().find((b) =>
+      b.getAttribute("aria-expanded") !== null && b.textContent?.trim() === name) ?? null);
+  row.click();
+  // 提示词是自定义模块独有的，等它出现才算编辑器真的展开了。
+  await waitFor("提示词输入框", () => document.querySelector("textarea"));
+  await settle();
+}
+
+/**
+ * 点右边预览面板上的「生成真实预览」。
+ *
+ * 不点的话，自定义模块在预览卡上只是一句占位文案（「此处将展示……」）—— 那是应用
+ * 的真实状态，但它证明不了这张图要证明的事：自己写的模块和内置模块一样，会出现在
+ * 卡片里、由模型填出内容。点下去走的是 `ai_learning_card`，和读者在正文里查词
+ * 是同一条命令，只不过样张里模型那一端是 `content.ts` 里那份定稿。
+ */
+async function generateRealPreview(): Promise<void> {
+  const button = await waitFor("「生成真实预览」", () =>
+    buttons().find((b) => b.textContent?.trim() === text("settings.tools.generateRealPreview")) ?? null);
+  button.click();
+  // 按钮上的说明会从「本地样例，不消耗 API」换成「当前显示真实 AI 结果」，
+  // 换完才说明返回值已经渲染进卡片了。
+  await waitFor("真实结果", () =>
+    document.body.textContent?.includes(text("settings.tools.realPreviewActive")) ? true : null);
+  await settle();
+}
+
+/* ------------------------------------------------------------------ *
+ * 设置 · MCP
+ * ------------------------------------------------------------------ */
+
+/**
+ * 打开某个客户端的集成开关（Toggle 的 `aria-label` 就是它左边那行标题）。
+ *
+ * 真机上这一下会去改 `~/.claude.json`；样张里改的是 harness 那份状态，但界面
+ * 走的是同一条路 —— 点开关 → `mcp_set_integration` → 回头再问一次状态。写权限
+ * 那个开关一下都不碰：默认关着，图上也该是关着的。
+ */
+async function enableMcpClient(label: string): Promise<void> {
+  const toggle = await waitFor(`「${label}」开关`, () => byLabel(label));
+  toggle.click();
+  await waitFor("开关变成开", () => toggle.getAttribute("aria-checked") === "true" ? true : null);
+  await settle();
+}
+
+/* ------------------------------------------------------------------ *
+ * 生词本
+ * ------------------------------------------------------------------ */
+
+/** 从某个元素往上找真正在滚的那个祖先；找不到就是整页在滚。 */
+function scrollerOf(el: HTMLElement): HTMLElement {
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    const overflow = getComputedStyle(node).overflowY;
+    if ((overflow === "auto" || overflow === "scroll") && node.scrollHeight > node.clientHeight + 4) return node;
+  }
+  return document.scrollingElement as HTMLElement;
+}
+
+/**
+ * 展开生词清单里的某一行，然后把画面滚到这一行贴着顶。
+ *
+ * 生词页上面还有一大片（统计、复习堆、筛选条），展开的那一行落在屏幕外面很正常。
+ * 滚的是「这一行相对滚动容器」的距离，不是拍脑袋的像素数 —— 上面那片以后加减
+ * 一块，这张图的构图也不跟着漂。
+ */
+async function expandVocabRow(word: string): Promise<void> {
+  const row = await waitFor(`生词行「${word}」`, () =>
+    buttons().find((b) => b.getAttribute("aria-expanded") !== null && b.textContent?.trim().startsWith(word)) ?? null);
+  row.click();
+
+  // 掌握度时间线是展开之后才去取的（`list_mastery_events`），等它出来再定构图，
+  // 否则滚完页面还会被它撑高一截。
+  await waitFor("掌握度时间线", () =>
+    document.body.textContent?.includes(text("vocab.mastery.timelineHeading")) ? true : null);
+
+  const card = row.closest<HTMLElement>("div.rounded-\\[10px\\]") ?? row;
+  const scroller = scrollerOf(card);
+  // 滚一次不够：页面上半段（复习堆那几块）是各自异步取回来的，晚到一块就把下面
+  // 的内容整体往下推，构图跟着漂。所以滚完再量一次，直到不动了为止。
+  for (let pass = 0; pass < 6; pass += 1) {
+    const off = card.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 12;
+    if (Math.abs(off) < 4) break;
+    scroller.scrollTop += off;
+    await settle();
+  }
+}
+
+/* ---------------- 书籍详情 ---------------- */
+
+/**
+ * 把「这本书对你」那张卡滚到贴着顶。
+ *
+ * 详情页上面还有封面、简介、难度那几块，卡片一进来就在屏幕外。和生词本那边
+ * 同一个道理：量的是卡片相对滚动容器的距离，量完再量一次 —— 覆盖率、生词
+ * 清单都是各自异步取回来的，晚到一块就把下面顶下去。
+ */
+async function scrollCardToTop(heading: string): Promise<void> {
+  const anchor = await waitFor(`「${heading}」小标题`, () =>
+    [...document.querySelectorAll<HTMLElement>("h2, h3")]
+      .find((node) => node.textContent?.trim() === heading) ?? null);
+  const card = anchor.closest<HTMLElement>("section") ?? anchor;
+  const scroller = scrollerOf(card);
+  // 详情页的页头是 sticky 的，滚到「容器顶」等于滚到页头底下。让开它那么高。
+  const header = document.querySelector("header")?.getBoundingClientRect().height ?? 0;
+  for (let pass = 0; pass < 6; pass += 1) {
+    const off = card.getBoundingClientRect().top - scroller.getBoundingClientRect().top - header - 12;
+    if (Math.abs(off) < 4) break;
+    scroller.scrollTop += off;
+    await settle();
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * 每张图各自要摆的样子
  * ------------------------------------------------------------------ */
 
@@ -352,6 +559,81 @@ const ACTIONS: Record<string, () => Promise<void>> = {
     await waitForBook();
     await lookupWord("circumspection");
   },
+
+  /**
+   * 生词本里摊开的那一条：档位、「自动判定」、一句说清凭什么的话、四档随手改，
+   * 以及底下那条时间线。主角是时间线 —— 它证明这个档位有来由，而且一按就能推翻。
+   */
+  async vocab() {
+    await expandVocabRow(MASTERY_WORD);
+  },
+
+  /**
+   * 「这本书对你」：覆盖率落在那把带 95% / 98% 两条线的尺子上，四类词次的构成，
+   * 以及摊开的那张「还不认识的词」清单。
+   *
+   * 清单是点开的，不是默认展开的 —— 界面本来就要点一下「看看那 X% 是哪些词」，
+   * 这张图里那一下也真的点了。图上的每个数都出自
+   * `scripts/promo-coverage.mjs`：真 EPUB，端上同一套分词和分类规则。
+   */
+  async coverage() {
+    // 覆盖率是异步算的，先等结论那句话出现，再点展开 —— 反了的话按钮还不在。
+    await waitFor("覆盖率结论", () =>
+      document.body.textContent?.includes(text("bookCoverage.heading")) ? true : null);
+    // 按钮上带着覆盖率（「看看那 95.5% 是哪些词」），所以只认插值之前那一截。
+    const prefix = text("bookCoverage.action.showWords").split("{{")[0].trim();
+    const show = await waitFor(`「${prefix}…」`, () =>
+      buttons().find((b) => b.textContent?.trim().startsWith(prefix)) ?? null);
+    show.click();
+    await waitFor("还不认识的词清单", () =>
+      document.body.textContent?.includes(text("bookCoverage.words.group.frequent")) ? true : null);
+    await scrollCardToTop(text("bookCoverage.heading"));
+  },
+
+  /**
+   * 用户画像。图的主角是摊开的那条依据 —— 结论下面先是总结器自己写的那一句，
+   * 再往里一层是它当时读到的原始记录。每张卡底下的「移动到上段修改」照常在框里：
+   * 冲突时以你写的那段为准，这一条得看得见。
+   */
+  /**
+   * 卡片模块：左边是这张卡的模块列表（开着的五块、关着的八块、能上下挪），
+   * 其中一行是读者自己写的模块，摊开着，提示词一字不落；右边是应用自己那块
+   * 预览，里面那张卡上就有这个模块产出的内容。
+   *
+   * 预览是点进「卡片设计」时应用自己打开的，不是场景多点的一下 —— 这一页的
+   * 常态就是边改边看。
+   *
+   * 最后要滚一下：模块列表上面还压着密度、宽度、例句数量三行设置，不滚的话画面
+   * 从那三行开始，提示词就被切在下边框外 —— 而提示词正是这张图要证明的东西。
+   */
+  async cards() {
+    await openSettingsSection(text("settings.tools.title"));
+    await openToolsView(text("settings.tools.views.cards"));
+    await expandCardModule(PROMO_CUSTOM_MODULE_NAME);
+    await generateRealPreview();
+    await scrollSettingsTo(text("settings.tools.modulesTitle"));
+  },
+
+  /**
+   * MCP：把书库交给外部 AI 客户端。
+   *
+   * 图上要立住的是两件事：接进来只要一个开关；而「读」和「写」是两个开关，写的
+   * 那个默认关着 —— 所以这里只点 Claude Code 那一个，写权限保持原样。
+   *
+   * 这一节比模态框高一点点，装不下。滚掉顶上那个「MCP」大标题（左栏正高亮着
+   * MCP，标题不承载信息），换来下面那段配置 JSON 完整入画。
+   */
+  async mcp() {
+    await openSettingsSection(text("settings.mcp.title"));
+    await enableMcpClient(text("settings.mcp.claudeCode"));
+    await scrollSettingsTo(text("settings.mcp.claudeCode"));
+  },
+
+  async profile() {
+    await openSettingsSection(text("settings.personal.title"));
+    await expandProfileEvidence(text("profile.slot.syntax_explain"));
+    await scrollSettingsTo(text("profile.yourText.heading"));
+  },
 };
 
 /* ------------------------------------------------------------------ *
@@ -386,7 +668,11 @@ export async function runScene(): Promise<void> {
       row.click();
     }
 
-    await ACTIONS[name]?.();
+    // 键是**场景名**（`SCENES` 的键），不是 SHOTS 里那个图名 —— 两者可以不同
+    // （`mastery` 这张图用的是 `vocab` 场景）。对不上时这里会静悄悄什么都不做，
+    // 拍出来还是一张「刚进页面」的图，所以没动作的场景要在日志里说一声。
+    if (ACTIONS[name]) await ACTIONS[name]();
+    else console.info(`[shot:${name}] 这个场景没有动作，只拍进场状态`);
 
     await settle();
     document.documentElement.setAttribute(READY_ATTR, name);

@@ -49,11 +49,19 @@ const SHOTS = [
   // 等级那一张在 README 里是左右并排的两图，所以拍成两张，各拍各的等级。
   { name: "level-a2", scene: "levelA2", size: [820, 1040] },
   { name: "level-c1", scene: "levelC1", size: [820, 1040] },
+  // 画像在设置模态框里，模态框宽度封顶 780、高度封顶 760，窗口再大也只是把两边
+  // 的书库露得更多。收到 1000 是让内容占满画面，同时留一圈压暗的背景说明它开在哪儿。
+  { name: "profile", scene: "profile", size: [1000, 980] },
   { name: "context", scene: "context", size: [1020, 880] },
   { name: "citations", scene: "citations", size: [1280, 900] },
-  { name: "mastery", scene: "vocab", size: [1180, 740] },
-  { name: "difficulty", scene: "difficulty", size: [1180, 860] },
-  { name: "modules", scene: "cards", size: [1180, 880] },
+  // 摊开的那一条整个有 809px 高（词头 + 释义 + 原句 + 掌握度面板），页头又占掉
+  // 250px —— 1100 刚好把这一整条从头到尾装进画面。矮一点，时间线和「我其实不
+  // 认识」就掉出去了，而那两块正是这张图要证明的东西。
+  { name: "mastery", scene: "vocab", size: [1180, 1100] },
+  { name: "coverage", scene: "coverage", size: [1180, 1240] },
+  // 预览面板要到 xl（1280）才停在模态框旁边，窄一点它就翻上来盖住设置本身。
+  // 这一页的意思正是「左边改、右边看」，所以窗口必须过那条线。
+  { name: "modules", scene: "cards", size: [1360, 940] },
   { name: "mcp", scene: "mcp", size: [1180, 900] },
 ];
 

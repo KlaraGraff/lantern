@@ -16,7 +16,7 @@ import { serializeCardDesignConfig } from "../../src/components/learning-card/co
 import { cardDesignConfigForLevel } from "../../src/components/learning-card/level-presets";
 import { recommendedExplanationMode } from "../../src/components/onboarding/explanation-samples";
 import type { CefrLevel } from "../../src/components/settings/cefr";
-import { PROMO_CARD_CONFIG } from "./content";
+import { PROMO_CARD_CONFIG, PROMO_CARD_CONFIG_CUSTOM } from "./content";
 
 export interface Scene {
   /** 覆盖到 harness 设置上的键值，会盖过 fixture-data 的默认值。 */
@@ -74,18 +74,26 @@ export const SCENES: Record<string, Scene> = {
   /** 2 同一个词、同一句话，两个学习者等级各给一张卡（README 里左右并排）。 */
   levelA2: { settings: zhAtLevel("A2"), route: "/reader/pride-and-prejudice" },
   levelC1: { settings: zhAtLevel("C1"), route: "/reader/pride-and-prejudice" },
-  /** 3 带上下文的追问。 */
+  /** 3 用户画像：上半段自己写的，下半段系统总结的，其中一张摊开了依据。 */
+  profile: { settings: ZH },
+  /** 4 带上下文的追问。 */
   context: { settings: ZH, route: "/reader/pride-and-prejudice" },
-  /** 4 回答里的引用可以点回原文。 */
+  /** 5 回答里的引用可以点回原文。 */
   citations: { settings: ZH, route: "/reader/pride-and-prejudice" },
-  /** 5 单词的掌握度与复习时间线。 */
+  /** 6 单词的掌握度与复习时间线。 */
   vocab: { settings: ZH, libraryFilter: "vocab" },
-  /** 6 这本书的词汇难度。 */
-  difficulty: { settings: ZH, route: "/book/pride-and-prejudice" },
-  /** 7 学习卡片的模块开关。 */
-  cards: { settings: ZH },
-  /** 8 MCP：把书库交给外部 AI 客户端。 */
-  mcp: { settings: { ...ZH, mcp_enabled: "true" } },
+  /** 7 这本书对你：覆盖率落在尺子上，以及那些还不认识的词。 */
+  coverage: { settings: ZH, route: "/book/pride-and-prejudice" },
+  /** 8 学习卡片的模块：内置的能排能关，不够用就自己写一个。 */
+  cards: { settings: { ...ZH, learning_card_config: PROMO_CARD_CONFIG_CUSTOM } },
+  /**
+   * 9 MCP：把书库交给外部 AI 客户端。
+   *
+   * 开关不在设置表里 —— 真机上它读的是客户端自己的配置文件（`~/.claude.json`、
+   * `~/.codex/config.toml`）和 `mcp_write_enabled`，所以这里没有可覆盖的键，
+   * 状态由场景真的去点那个开关得到。
+   */
+  mcp: { settings: ZH },
 
   /** 书库全景。不进 README，用来单独检查书架长什么样。 */
   library: { settings: ZH },

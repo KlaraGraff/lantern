@@ -36,7 +36,21 @@ import {
 } from "./dictionary-data";
 import { isShooting } from "./promo";
 import { PROMO_BOOKS, PROMO_COLLECTIONS } from "./promo/library";
-import { PROMO_CHATS, PROMO_CHAT_MESSAGES, promoLearningCard } from "./promo/content";
+import {
+  promoBookCoverage,
+  promoShelfCoverage,
+  promoUnknownWords,
+  promoVocabProfile,
+} from "./promo/coverage";
+import {
+  PROMO_CHATS,
+  PROMO_CHAT_MESSAGES,
+  PROMO_MASTERY_EVENTS,
+  PROMO_PROFILE_EVIDENCE,
+  promoLearningCard,
+  promoProfileView,
+  promoVocabWords,
+} from "./promo/content";
 
 type Args = Record<string, unknown>;
 type Fixture = unknown | ((args: Args) => unknown);
@@ -111,8 +125,25 @@ const LIBRARY: HarnessBook[] = emptyLibrary()
 
 const LIBRARY_COLLECTIONS = isShooting() ? PROMO_COLLECTIONS : COLLECTIONS;
 
+/**
+ * MCP 那一节要显示的可执行文件路径。真机上是 `current_binary_path()`，也就是
+ * 装到哪儿就显示哪儿；这里写成 macOS 装完之后的标准位置 —— 既是真实形状，又不会
+ * 把谁的用户名印到截图里。
+ */
+const MCP_BINARY_PATH = "/Applications/Lantern.app/Contents/MacOS/lantern";
+
+/** 三个开关的当前值。真机上两个存在客户端配置文件里、一个存在 settings 表。 */
+const MCP_STATE = { claude_code: false, codex: false, write_enabled: false };
+
 /** Same split for chats: the shot shelf gets conversations about its own books. */
 const SHELF_CHATS = isShooting() ? PROMO_CHATS : CHATS;
+
+/**
+ * Same split again for the saved words. The smoke fixture's words come from a
+ * book that is not on the promo shelf, so a shot of the vocabulary page would
+ * otherwise name a book the reader cannot see anywhere else in the image.
+ */
+const SAVED_WORDS = isShooting() ? promoVocabWords() : VOCAB;
 
 /* ------------------------------------------------------------------ *
  * Profile
@@ -214,6 +245,9 @@ const PROFILE_VARIANTS: Record<string, () => Record<string, unknown>> = {
  * at all.
  */
 function profileView(): Record<string, unknown> {
+  // 拍样张时整页换成样张那一份（写给一个真读者看的内容、书架上那三本书）。
+  // `?profile=` 的六个状态和 `?shot=` 从不同时出现，所以两条路各走各的。
+  if (isShooting()) return promoProfileView();
   const base = {
     userText: PROFILE_SHORT,
     draftText: `${PROFILE_SHORT}希望解释能短一点。`,
@@ -487,52 +521,62 @@ export const FIXTURES: Record<string, Fixture> = {
   /* ---------------------------------------------------------------- *
    * Vocabulary / learning
    * ---------------------------------------------------------------- */
-  list_vocab_words: () => VOCAB.slice(),
-  list_all_vocab_words: () => VOCAB.slice(),
-  list_vocab_due_for_review: () => VOCAB.filter((w) => w.next_review_at <= nowMs()),
+  list_vocab_words: () => SAVED_WORDS.slice(),
+  list_all_vocab_words: () => SAVED_WORDS.slice(),
+  list_vocab_due_for_review: () => SAVED_WORDS.filter((w) => w.next_review_at <= nowMs()),
   check_vocab_exists: null,
   get_vocab_stats: {
-    total: VOCAB.length,
-    due_for_review: VOCAB.filter((w) => w.next_review_at <= nowMs()).length,
+    total: SAVED_WORDS.length,
+    due_for_review: SAVED_WORDS.filter((w) => w.next_review_at <= nowMs()).length,
     learning: 2,
     mastered: 1,
     new: 1,
   },
   get_vocab_learning_dashboard: {
-    total: VOCAB.length,
-    due_today: VOCAB.filter((w) => w.next_review_at <= nowMs()).length,
+    total: SAVED_WORDS.length,
+    due_today: SAVED_WORDS.filter((w) => w.next_review_at <= nowMs()).length,
     by_mastery: { "0": 1, "1": 2, "2": 1, "3": 1, "4": 1 },
-    recent: VOCAB.slice(0, 3),
+    recent: SAVED_WORDS.slice(0, 3),
     streak_days: 4,
     reviewed_today: 2,
     added_this_week: 3,
   },
-  list_mastery_events: [],
+  // 拍样张时只有主角词有时间线 —— 六个词各挂三条事件，那张图就成了「每个词都
+  // 恰好有完整履历」，而真实的生词本不长那样。
+  list_mastery_events: ({ vocabWordId }: Args) =>
+    (isShooting() && vocabWordId === PROMO_MASTERY_EVENTS[0].vocab_word_id
+      ? PROMO_MASTERY_EVENTS
+      : []),
   // `kind` is a tagged object, not a string — `ReviewPile` in
   // src/components/review/review-piles.ts. The old `kind: "due"` made
   // `PileCard` throw on `pile.kind.kind` the moment a pile had any words in
   // it, which only started happening once the fixture words became visible.
-  list_review_piles: () => [
-    {
-      kind: {
-        kind: "repeat_lookups_in_book",
-        book_id: "book-epub-reading",
-        book_title: "The Wind in the Willows",
-        solo_word_lookups: null,
-        solo_word_glances: null,
+  list_review_piles: () => {
+    const due = SAVED_WORDS.filter((w) => w.next_review_at <= nowMs());
+    return [
+      {
+        kind: {
+          kind: "repeat_lookups_in_book",
+          // 这一堆是「在某本书里反复查过的词」，所以书名必须是这些词真正来自的
+          // 那一本 —— 样张里是书架上那本，smoke 里是它自己那本。
+          book_id: SAVED_WORDS[0].book_id,
+          book_title: SAVED_WORDS[0].book_title,
+          solo_word_lookups: null,
+          solo_word_glances: null,
+        },
+        word_ids: due.map((w) => w.id),
+        words: due,
+        newest_activity_at: nowMs(),
       },
-      word_ids: VOCAB.filter((w) => w.next_review_at <= nowMs()).map((w) => w.id),
-      words: VOCAB.filter((w) => w.next_review_at <= nowMs()),
-      newest_activity_at: nowMs(),
-    },
-    {
-      kind: { kind: "long_unseen" },
-      word_ids: VOCAB.slice(3).map((w) => w.id),
-      words: VOCAB.slice(3),
-      newest_activity_at: VOCAB[4].created_at,
-    },
-  ],
-  list_word_marks: () => VOCAB.map((w) => ({ normalized_word: w.normalized_word, enabled: true })),
+      {
+        kind: { kind: "long_unseen" },
+        word_ids: SAVED_WORDS.slice(3).map((w) => w.id),
+        words: SAVED_WORDS.slice(3),
+        newest_activity_at: SAVED_WORDS[4].created_at,
+      },
+    ];
+  },
+  list_word_marks: () => SAVED_WORDS.map((w) => ({ normalized_word: w.normalized_word, enabled: true })),
   list_word_mark_exceptions: [],
   list_lookup_occurrence_marks: [],
   list_word_forms: [],
@@ -546,6 +590,9 @@ export const FIXTURES: Record<string, Fixture> = {
   get_vocab_card_snapshot: ({ wordId }: Args) => {
     const regenerated = harnessRegeneratedCards.get(String(wordId));
     if (regenerated !== undefined) return regenerated;
+    // 样张的词没有存卡片：smoke 那张卡讲的是另一本书里的另一个词，挂到这里就
+    // 是图上第一处假话。没有卡片这一支应用本来就不出声，画面也干净。
+    if (isShooting()) return null;
     if (wordId === "vw-2") return "{ this one is corrupt";
     if (wordId === "vw-4" || wordId === "vw-5") return null;
     // A card rebuilt long after the word was collected, which is the whole
@@ -775,7 +822,7 @@ export const FIXTURES: Record<string, Fixture> = {
    */
   profile_get: () => profileView(),
   profile_card_evidence: (a: Args) => {
-    const entry = PROFILE_EVIDENCE[String(a.slot)];
+    const entry = (isShooting() ? PROMO_PROFILE_EVIDENCE : PROFILE_EVIDENCE)[String(a.slot)];
     if (!entry) return null;
     return {
       slot: String(a.slot),
@@ -909,15 +956,28 @@ export const FIXTURES: Record<string, Fixture> = {
     pending_events: 0,
     last_replay_at: null,
   },
-  mcp_integration_status: {
-    enabled: false,
-    write_access: false,
-    port: 4599,
-    integrations: [],
-    endpoint: "http://127.0.0.1:4599/mcp",
+  /**
+   * MCP 那一节读的是 `McpIntegrationStatus`（`commands/mcp.rs`）：哪个客户端已经
+   * 登记、写权限开没开、二进制在哪。三个开关都是「点完再问一次状态」，所以这里
+   * 记一份可变状态 —— 否则点下去界面纹丝不动，看起来像坏了。
+   */
+  mcp_integration_status: () => ({ ...MCP_STATE, binary_path: MCP_BINARY_PATH }),
+  mcp_set_integration: (a: Args) => {
+    const key = String(a.client) === "codex" ? "codex" : "claude_code";
+    MCP_STATE[key] = Boolean(a.enabled);
+    return null;
+  },
+  mcp_set_write_access: (a: Args) => {
+    MCP_STATE.write_enabled = Boolean(a.enabled);
+    return null;
   },
   mcp_list_pending_approvals: [],
-  mcp_config_snippet: '{ "mcpServers": {} }',
+  // 形状和 `mcp_config_snippet` 一样：serde 的 pretty JSON，两个空格。
+  mcp_config_snippet: JSON.stringify(
+    { mcpServers: { lantern: { command: MCP_BINARY_PATH, args: ["mcp"] } } },
+    null,
+    2,
+  ),
   enhanced_font_status: { installed: false, enabled: false, downloading: false, bytes: 0 },
   list_custom_fonts: [],
   speech_cache_stats: { bytes: 1_240_000, entries: 18, limitBytes: 200_000_000 },
@@ -1008,7 +1068,10 @@ export const FIXTURES: Record<string, Fixture> = {
   // (enough baseline books, a narrow "眼熟" band), because the interval state
   // is the one that shows nothing and would leave the sweep unable to tell a
   // working card from a broken one.
-  get_book_coverage: (a: Args) => ({
+  //
+  // 拍样张时换成真数出来的那一份：README 上的百分比不能是编的，所以
+  // `scripts/promo-coverage.mjs` 拿真 EPUB 按端上的规则数了一遍。
+  get_book_coverage: (a: Args) => (isShooting() ? promoBookCoverage(a.bookId ?? a.book_id) : {
     bookId: String(a.bookId ?? a.book_id ?? BOOKS[0].id),
     status: "done",
     totalTokens: 84_000,
@@ -1028,7 +1091,7 @@ export const FIXTURES: Record<string, Fixture> = {
     error: null,
     stale: false,
   }),
-  get_vocab_profile: {
+  get_vocab_profile: isShooting() ? promoVocabProfile() : {
     booksRead: 6,
     singleBookTitle: null,
     singleBookProgress: null,
@@ -1042,12 +1105,12 @@ export const FIXTURES: Record<string, Fixture> = {
     familiarForms: 1_240,
     updatedAt: Date.now(),
   },
-  get_book_unknown_words: [
+  get_book_unknown_words: isShooting() ? promoUnknownWords() : [
     { word: "gunwale", tokens: 61, gloss: "舷缘", encounters: 12, lookups: 3, familiar: false },
     { word: "scrimshaw", tokens: 18, gloss: null, encounters: 4, lookups: 0, familiar: true },
     { word: "davit", tokens: 7, gloss: null, encounters: 0, lookups: 0, familiar: false },
   ],
-  list_shelf_coverage: BOOKS.map((book, index) => ({
+  list_shelf_coverage: isShooting() ? promoShelfCoverage() : BOOKS.map((book, index) => ({
     bookId: book.id,
     totalTokens: 84_000,
     masteredTokens: 79_400 - index * 900,

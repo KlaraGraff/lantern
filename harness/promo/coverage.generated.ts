@@ -1,0 +1,228 @@
+/**
+ * 由 `node scripts/promo-coverage.mjs` 生成，不要手改。
+ *
+ * 第 7 张样张（「这本书对你」）里的每一个数字，都数自 `harness/books/` 下那十二本
+ * 真 EPUB，用的是端上同一套分词和分类规则。要换读者的假设或重新数，改脚本再跑一次。
+ */
+
+/**
+ * 这份数字背后唯一的假设：样张读者认识哪些词。
+ * 频率表前 8,000 名算「读顺了」，往后到第 9,000 名算「眼熟」。
+ */
+export const PROMO_COVERAGE_READER = {
+  masteredRank: 8000,
+  familiarRank: 9000,
+  savedKnown: ["tolerable", "waited", "discretion"],
+  savedUnknown: { deigned: 2, circumspection: 3, bestow: 1 },
+} as const;
+
+/** 书架上读完的九本 —— 覆盖率的对照组，`baselineBooks` 数的就是它。 */
+export const PROMO_BASELINE_BOOKS = 9;
+
+/**
+ * 词汇画像里的「读过的量」：词次含在读那三本按进度折算的部分，词形只数读完的九本。
+ */
+export const PROMO_EXPOSURE = { tokens: 1224599, words: 30771 } as const;
+
+/** 每本书的四类词次（`BookReaderCoverage` 的字段名）。主角书排第一。 */
+export const PROMO_COVERAGE_ROWS = [
+  {
+    bookId: "pride-and-prejudice",
+    totalTokens: 126588,
+    distinctWords: 6505,
+    masteredTokens: 115084,
+    familiarTokens: 728,
+    nameTokens: 5518,
+    unknownTokens: 5258,
+    nameWords: 206,
+    unknownWords: 2442,
+  },
+  {
+    bookId: "alices-adventures-in-wonderland",
+    totalTokens: 29150,
+    distinctWords: 2824,
+    masteredTokens: 26802,
+    familiarTokens: 229,
+    nameTokens: 680,
+    unknownTokens: 1439,
+    nameWords: 61,
+    unknownWords: 551,
+  },
+  {
+    bookId: "dracula",
+    totalTokens: 411773,
+    distinctWords: 9518,
+    masteredTokens: 385345,
+    familiarTokens: 1833,
+    nameTokens: 8977,
+    unknownTokens: 15618,
+    nameWords: 384,
+    unknownWords: 3615,
+  },
+  {
+    bookId: "emma",
+    totalTokens: 157656,
+    distinctWords: 7344,
+    masteredTokens: 143578,
+    familiarTokens: 801,
+    nameTokens: 6446,
+    unknownTokens: 6831,
+    nameWords: 228,
+    unknownWords: 2813,
+  },
+  {
+    bookId: "heart-of-darkness",
+    totalTokens: 37102,
+    distinctWords: 5607,
+    masteredTokens: 33958,
+    familiarTokens: 298,
+    nameTokens: 298,
+    unknownTokens: 2548,
+    nameWords: 73,
+    unknownWords: 1735,
+  },
+  {
+    bookId: "jane-eyre",
+    totalTokens: 178239,
+    distinctWords: 12935,
+    masteredTokens: 161060,
+    familiarTokens: 1325,
+    nameTokens: 3734,
+    unknownTokens: 12120,
+    nameWords: 380,
+    unknownWords: 6331,
+  },
+  {
+    bookId: "meditations",
+    totalTokens: 53469,
+    distinctWords: 4703,
+    masteredTokens: 48259,
+    familiarTokens: 418,
+    nameTokens: 957,
+    unknownTokens: 3835,
+    nameWords: 328,
+    unknownWords: 1674,
+  },
+  {
+    bookId: "moby-dick",
+    totalTokens: 214622,
+    distinctWords: 17758,
+    masteredTokens: 184762,
+    familiarTokens: 2154,
+    nameTokens: 4525,
+    unknownTokens: 23181,
+    nameWords: 1191,
+    unknownWords: 9698,
+  },
+  {
+    bookId: "the-adventures-of-tom-sawyer",
+    totalTokens: 70001,
+    distinctWords: 7512,
+    masteredTokens: 62325,
+    familiarTokens: 485,
+    nameTokens: 1574,
+    unknownTokens: 5617,
+    nameWords: 179,
+    unknownWords: 2668,
+  },
+  {
+    bookId: "the-great-gatsby",
+    totalTokens: 46986,
+    distinctWords: 6033,
+    masteredTokens: 42275,
+    familiarTokens: 301,
+    nameTokens: 1607,
+    unknownTokens: 2803,
+    nameWords: 329,
+    unknownWords: 1684,
+  },
+  {
+    bookId: "the-picture-of-dorian-gray",
+    totalTokens: 77102,
+    distinctWords: 7035,
+    masteredTokens: 70991,
+    familiarTokens: 411,
+    nameTokens: 1469,
+    unknownTokens: 4231,
+    nameWords: 409,
+    unknownWords: 2326,
+  },
+  {
+    bookId: "the-wind-in-the-willows",
+    totalTokens: 58666,
+    distinctWords: 6716,
+    masteredTokens: 53155,
+    familiarTokens: 805,
+    nameTokens: 299,
+    unknownTokens: 4407,
+    nameWords: 77,
+    unknownWords: 2288,
+  },
+] as const;
+
+/**
+ * 主角书里读者还不认识的词，次数多的在前 —— 端上 `load_unknown_words` 的排法。
+ * 只留前 60 个：界面按 40 次 / 5 次分组，尾巴那一堆只会露出几个词的预览。
+ */
+export const PROMO_UNKNOWN_WORDS = [
+  { word: "civility", tokens: 42, rank: 15097 },
+  { word: "de", tokens: 41, rank: null },
+  { word: "attentions", tokens: 30, rank: 9083 },
+  { word: "endeavour", tokens: 25, rank: 11169 },
+  { word: "particulars", tokens: 23, rank: 9990 },
+  { word: "etc", tokens: 22, rank: 25538 },
+  { word: "enquiries", tokens: 18, rank: 12289 },
+  { word: "parsonage", tokens: 18, rank: 18556 },
+  { word: "politeness", tokens: 17, rank: 9470 },
+  { word: "prevailed", tokens: 16, rank: 9562 },
+  { word: "supposing", tokens: 16, rank: 9313 },
+  { word: "disagreeable", tokens: 14, rank: 9382 },
+  { word: "gratified", tokens: 14, rank: 11313 },
+  { word: "grieved", tokens: 14, rank: 10968 },
+  { word: "partiality", tokens: 14, rank: 25577 },
+  { word: "recollected", tokens: 14, rank: 16558 },
+  { word: "engagements", tokens: 13, rank: 15141 },
+  { word: "imprudent", tokens: 13, rank: 22918 },
+  { word: "sentiments", tokens: 13, rank: 9038 },
+  { word: "tolerably", tokens: 13, rank: 17336 },
+  { word: "chaise", tokens: 12, rank: 9906 },
+  { word: "favourable", tokens: 12, rank: 12002 },
+  { word: "insufficient", tokens: 12, rank: 15537 },
+  { word: "shire", tokens: 12, rank: 22926 },
+  { word: "assurances", tokens: 11, rank: 14776 },
+  { word: "boast", tokens: 11, rank: 10319 },
+  { word: "clergyman", tokens: 11, rank: 10160 },
+  { word: "delicacy", tokens: 11, rank: 9634 },
+  { word: "elopement", tokens: 11, rank: 26931 },
+  { word: "endeavoured", tokens: 11, rank: 12277 },
+  { word: "excessively", tokens: 11, rank: 14814 },
+  { word: "flatter", tokens: 11, rank: 11657 },
+  { word: "happiest", tokens: 11, rank: 9039 },
+  { word: "exertion", tokens: 10, rank: 9060 },
+  { word: "honoured", tokens: 10, rank: 9816 },
+  { word: "imprudence", tokens: 10, rank: 28287 },
+  { word: "nieces", tokens: 10, rank: 14181 },
+  { word: "preference", tokens: 10, rank: 9815 },
+  { word: "tête", tokens: 10, rank: 16879 },
+  { word: "thither", tokens: 10, rank: 9642 },
+  { word: "unlucky", tokens: 10, rank: 9741 },
+  { word: "vexation", tokens: 10, rank: 16003 },
+  { word: "abode", tokens: 9, rank: 9932 },
+  { word: "dependence", tokens: 9, rank: 17158 },
+  { word: "desirous", tokens: 9, rank: 14318 },
+  { word: "dined", tokens: 9, rank: 9909 },
+  { word: "elegance", tokens: 9, rank: 9616 },
+  { word: "enquiry", tokens: 9, rank: 13284 },
+  { word: "entail", tokens: 9, rank: 20000 },
+  { word: "evils", tokens: 9, rank: 12366 },
+  { word: "governess", tokens: 9, rank: 9185 },
+  { word: "heightened", tokens: 9, rank: 9321 },
+  { word: "impertinence", tokens: 9, rank: 19035 },
+  { word: "proposals", tokens: 9, rank: 15205 },
+  { word: "propriety", tokens: 9, rank: 10966 },
+  { word: "quitted", tokens: 9, rank: 13909 },
+  { word: "rejoiced", tokens: 9, rank: 11730 },
+  { word: "uncommonly", tokens: 9, rank: 17315 },
+  { word: "uneasiness", tokens: 9, rank: 9042 },
+  { word: "unreasonable", tokens: 9, rank: 9514 },
+] as const;
