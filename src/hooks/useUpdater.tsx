@@ -3,18 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { platform } from "../services/platform";
-
-/**
- * Settings key: the version the reader last dismissed from the launch-time
- * prompt.
- *
- * Version-keyed, not a boolean flag. A flag can only mean "a prompt has been
- * shown and dismissed" — once set there is no way back to "show the next
- * one", so the very next real release would stay silent too. Storing the
- * version means dismissing v2.1.0 goes quiet only for v2.1.0; a later v2.2.0
- * compares unequal and prompts again.
- */
-const DISMISSED_UPDATE_VERSION_KEY = "dismissed_update_version";
+import {
+  DISMISSED_UPDATE_VERSION_KEY,
+  shouldSuppressAutoPrompt,
+} from "../services/updateCheck";
 
 /** Progress event emitted by `commands/app_update.rs` during a download. */
 const PROGRESS_EVENT = "update:download-progress";
@@ -119,7 +111,7 @@ export function UpdaterProvider({
         const dismissed = await invoke<string | null>("get_setting", {
           key: DISMISSED_UPDATE_VERSION_KEY,
         }).catch(() => null);
-        if (dismissed === status.available) {
+        if (shouldSuppressAutoPrompt(manual, status.available, dismissed)) {
           setState({ kind: "idle" });
           return;
         }
