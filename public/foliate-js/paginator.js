@@ -872,6 +872,17 @@ export class Paginator extends HTMLElement {
     get size() {
         return this.#container.getBoundingClientRect()[this.sideProp]
     }
+    // LANTERN: viewport rect of the page area. The #top grid flanks the
+    // container with `1fr` tracks that absorb whatever width the column cap
+    // leaves over, so on a wide window those tracks are blank strips several
+    // hundred pixels across. Lantern parks the lookup card in one of them
+    // instead of over the text, and needs to know where the text ends to do it.
+    // A superset of the text — the container also holds the half-gap margin
+    // tracks — which is the safe direction to be wrong in. The shadow root is
+    // closed, so this cannot be measured from outside without a getter.
+    get pageRect() {
+        return this.#container?.getBoundingClientRect() ?? null
+    }
     get viewSize() {
         return this.#view.element.getBoundingClientRect()[this.sideProp]
     }

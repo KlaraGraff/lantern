@@ -1482,6 +1482,17 @@ export default function Reader() {
     };
   }, []);
 
+  // The page area, for whoever needs to keep off the text — today the learning
+  // card, which parks itself in a blank side margin when one is wide enough to
+  // hold it. Only the reflowable paginator has margins worth docking in; the
+  // fixed-layout and PDF renderers have no `pageRect` and answer `null`, which
+  // sends the card back to opening beside the word.
+  const getReaderPageRect = useCallback((): SerializableRect | null => {
+    const rect = viewRef.current?.renderer?.pageRect;
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+    return serializableRect(rect);
+  }, []);
+
   // Toolbar buttons toggle their own panel open/closed. Traces reopens on
   // whichever of its tabs was last active (tracesTab persists across
   // close/reopen); the AI panel has only the conversation to reopen on.
@@ -2666,6 +2677,7 @@ export default function Reader() {
             : undefined}
           config={learningCardConfig}
           readerRect={readerRect}
+          getTextRect={getReaderPageRect}
           stackIndex={index}
           elevated={card.id === topLearningCardId}
           onLookupWord={(event) => lookupWordInPanel(event, card.interaction)}

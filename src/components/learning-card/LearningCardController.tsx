@@ -14,6 +14,7 @@ import {
   learningCardCacheSignature,
 } from "./cache";
 import { getResponsiveLearningCardWidth, learningCardFailure } from "./config";
+import { cardPosition, clampCardPoint, type CardPoint } from "./placement";
 import { cardVocabFields, moduleText, projection } from "./projection.ts";
 import type {
   CardDesignConfigV1,
@@ -49,6 +50,9 @@ interface LearningCardControllerProps {
   chapter?: string;
   config: CardDesignConfigV1;
   readerRect?: SerializableRect | DOMRect | null;
+  /** The page area, in viewport coordinates — read once, when the card opens.
+   *  Lets the card stand in a blank margin instead of over the text. */
+  getTextRect?: () => SerializableRect | null;
   stackIndex?: number;
   elevated?: boolean;
   onClose: () => void;
@@ -67,78 +71,6 @@ interface LearningCardStreamChunk {
   error?: string;
 }
 
-interface CardPoint {
-  left: number;
-  top: number;
-}
-
-// Cards already open keep their place, so each new one is nudged down-right to
-// leave the earlier headers reachable when two words sit on the same line.
-const STACK_STEP = 22;
-const STACK_STEP_LIMIT = 3;
-
-function cardPosition(
-  interaction: ReaderInteraction,
-  readerRect: SerializableRect | DOMRect | null | undefined,
-  width: number,
-  stackIndex = 0,
-) {
-  const reader = readerRect ?? {
-    left: 0,
-    top: 0,
-    right: window.innerWidth,
-    bottom: window.innerHeight,
-    width: window.innerWidth,
-    height: window.innerHeight,
-  };
-  const margin = 12;
-  const availableHeight = Math.max(0, reader.height - margin * 2);
-  const maxHeight = Math.min(window.innerHeight * 0.75, availableHeight);
-  const preferredRight = interaction.anchorRect.right + 8;
-  const preferredLeft = interaction.anchorRect.left - width - 8;
-  const left = preferredRight + width <= reader.right - margin
-    ? preferredRight
-    : preferredLeft >= reader.left + margin
-      ? preferredLeft
-      : Math.max(reader.left + margin, Math.min(
-          interaction.anchorRect.left,
-          reader.right - width - margin,
-        ));
-  const below = reader.bottom - interaction.anchorRect.bottom - margin;
-  const above = interaction.anchorRect.top - reader.top - margin;
-  const top = below >= Math.min(360, maxHeight) || below >= above
-    ? Math.min(interaction.anchorRect.bottom + 8, reader.bottom - maxHeight - margin)
-    : Math.max(reader.top + margin, interaction.anchorRect.top - maxHeight - 8);
-  const cascade = Math.min(stackIndex, STACK_STEP_LIMIT) * STACK_STEP;
-  return {
-    left: left + cascade,
-    top: Math.max(reader.top + margin, top) + cascade,
-    maxHeight,
-  };
-}
-
-function clampCardPoint(
-  point: CardPoint,
-  readerRect: SerializableRect | DOMRect | null | undefined,
-  cardWidth: number,
-  cardHeight: number,
-): CardPoint {
-  const reader = readerRect ?? {
-    left: 0,
-    top: 0,
-    right: window.innerWidth,
-    bottom: window.innerHeight,
-  };
-  const margin = 12;
-  const minLeft = reader.left + margin;
-  const minTop = reader.top + margin;
-  const maxLeft = Math.max(minLeft, reader.right - cardWidth - margin);
-  const maxTop = Math.max(minTop, reader.bottom - cardHeight - margin);
-  return {
-    left: Math.min(maxLeft, Math.max(minLeft, point.left)),
-    top: Math.min(maxTop, Math.max(minTop, point.top)),
-  };
-}
 
 export default function LearningCardController({
   interaction,
@@ -148,6 +80,7 @@ export default function LearningCardController({
   chapter,
   config,
   readerRect,
+  getTextRect,
   stackIndex = 0,
   elevated = false,
   onClose,
@@ -413,7 +346,11 @@ export default function LearningCardController({
     config.cards[interaction.kind],
     availableWidth,
   );
-  const initialPosition = cardPosition(interaction, bounds, width, stackIndex);
+  // Measured once, on the frame the card opens. Where the card stands is a
+  // decision, not a live binding: re-reading it every render would have the
+  // card jump sides when a panel opens under it, and it can be dragged anyway.
+  const [textRect] = useState(() => getTextRect?.() ?? null);
+  const initialPosition = cardPosition(interaction, bounds, width, stackIndex, textRect);
   const [position, setPosition] = useState<CardPoint>(() => ({
     left: initialPosition.left,
     top: initialPosition.top,
