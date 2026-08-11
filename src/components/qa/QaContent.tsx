@@ -10,6 +10,8 @@ import AiMarkdown from "../ai-markdown/AiMarkdown";
 import { timeAgo } from "../../utils/timeAgo";
 import { useQaTimeline } from "./useQaTimeline";
 import { chatRounds, isMultiRoundChat, type QaEntry } from "./types";
+import { TOP_INSET } from "../../utils/top-inset";
+import { platform } from "../../services/platform";
 
 // A chat thread is opened by explicit click, never on first paint of this
 // tab — so the markdown renderer it pulls in for message bubbles waits
@@ -125,8 +127,13 @@ export default function QaContent({ menuButton }: { menuButton?: ReactNode } = {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col bg-bg-surface">
-      <header className="relative shrink-0 border-b border-border px-page pb-5 pt-titlebar">
-        <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-titlebar" />
+      <header className={`relative shrink-0 border-b border-border px-page pb-5 ${TOP_INSET}`}>
+{/* macOS only: it is the traffic-light drag strip, and on a phone it
+            would be an invisible 44px sheet over the header. Harmless on a
+            notched device, where the safe inset already pushes the title clear
+            of it — and a dead zone over the ☰ button on an iPhone SE, whose
+            inset is 20pt. Same guard as `Home.tsx`. */}
+        {platform.hasTitleBarInset && <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-titlebar" />}
         <div className="mb-4 flex items-end justify-between gap-4">
           <div className="flex min-w-0 items-start">
             {/* Boxed to the title's own line height so the icon lands on the

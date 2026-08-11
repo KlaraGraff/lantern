@@ -22,6 +22,7 @@ import { summarizeImportFailures } from "../hooks/import-batch";
 import { useCollections } from "../hooks/useCollections";
 import { useIsNarrow } from "../hooks/useIsNarrow";
 import { platform } from "../services/platform";
+import { TOP_INSET } from "../utils/top-inset";
 import { getFocusableElements, resolveTabFocus } from "../components/focus-trap";
 import {
   useDrawerGesture,
@@ -40,12 +41,6 @@ function formatError(err: unknown): string {
   }
 }
 
-/**
- * The strip macOS needs left clear for its traffic lights, and its first real
- * consumer. Keyed to the platform and never to the width: the same window
- * dragged down to 400px still has them.
- */
-const TOP_INSET = platform.hasTitleBarInset ? "pt-titlebar" : "pt-safe-top";
 
 /** Only the fallback for a panel that has not been measured yet. */
 const DRAWER_WIDTH_PX = 300;

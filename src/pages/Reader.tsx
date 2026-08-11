@@ -137,6 +137,7 @@ import ContinuousReadAloudToolbar from "../components/ContinuousReadAloudToolbar
 import { useContinuousReadAloud } from "../hooks/useContinuousReadAloud";
 import { supportsContinuousReadAloud } from "../components/continuous-read-aloud";
 import { platform } from "../services/platform";
+import { TOP_INSET_SLIM as TOP_INSET } from "../utils/top-inset";
 
 // The reader header reserves room for whatever the OS puts above it. On macOS
 // that is the traffic lights, and the reserve doubles as the drag region. On a
@@ -145,7 +146,6 @@ import { platform } from "../services/platform";
 // `Sidebar.tsx` — the reader was simply the one surface that never got
 // converted, which is why on Windows it alone still reserved 32px for a title
 // bar that isn't there.
-const TOP_INSET = platform.hasTitleBarInset ? "pt-titlebar-slim" : "pt-safe-top";
 
 // Opened only on an explicit "explain" action, never on first paint of the
 // reader — so the markdown renderer it needs waits for that action too.

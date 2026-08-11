@@ -17,7 +17,7 @@ import type {
   VocabMasteryDistribution,
 } from "./reading-stats/types";
 import { ReadingReviewError } from "./reading-stats/types";
-import { platform } from "../services/platform";
+import { TOP_INSET } from "../utils/top-inset";
 import type { LevelObservation } from "./reading-stats/level-observation";
 import { splitEmphasis } from "../i18n/emphasis";
 
@@ -28,7 +28,6 @@ import { splitEmphasis } from "../i18n/emphasis";
  * traffic lights to clear. Same ternary as `Home.tsx`, `Sidebar.tsx`,
  * `Reader.tsx` and `BookDetails.tsx`.
  */
-const TOP_INSET = platform.hasTitleBarInset ? "pt-titlebar" : "pt-safe-top";
 
 /**
  * The overview strip's four cells, written out rather than computed, because

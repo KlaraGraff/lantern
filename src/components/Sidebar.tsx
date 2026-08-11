@@ -4,6 +4,7 @@ import { Library, BookOpen, CheckCircle2, FolderClosed, BookA, Plus, MessageCirc
 import Button from "./ui/Button";
 import LanternLogo from "./LanternLogo";
 import { platform } from "../services/platform";
+import { TOP_INSET } from "../utils/top-inset";
 import { memoRowBadgeCount } from "./sidebar-badges";
 import type { Collection } from "../hooks/useCollections";
 
@@ -51,7 +52,6 @@ const ROW_HEIGHT = "h-11 md:h-9";
  * narrow still has them and still needs the strip left clear. Branching on width
  * here would put the brand name under the close button.
  */
-const TOP_INSET = platform.hasTitleBarInset ? "pt-titlebar" : "pt-safe-top";
 
 const SIDEBAR_MIN = 180;
 const SIDEBAR_MAX = 400;

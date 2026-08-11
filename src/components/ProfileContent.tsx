@@ -24,6 +24,8 @@ import DeleteCardDialog from "./profile/DeleteCardDialog";
 import DeleteAllDialog from "./profile/DeleteAllDialog";
 import { timeAgo } from "../utils/timeAgo";
 import { useCoarsePointer } from "../hooks/useCoarsePointer";
+import { TOP_INSET } from "../utils/top-inset";
+import { platform } from "../services/platform";
 
 function countClass(length: number, softLimit: number, hardLimit: number) {
   if (length > hardLimit) return "text-danger-text";
@@ -463,8 +465,8 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
 
   return (
     <main className="flex min-w-0 flex-1 flex-col bg-bg-surface">
-      <header className={`relative shrink-0 border-b border-border px-page pb-4 ${embedded ? "pt-4" : "pt-titlebar"}`}>
-        {!embedded && <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-titlebar" />}
+      <header className={`relative shrink-0 border-b border-border px-page pb-4 ${embedded ? "pt-4" : TOP_INSET}`}>
+        {!embedded && platform.hasTitleBarInset && <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-titlebar" />}
         {/* Title beside buttons needs about 500px. Inside the settings modal
             on a phone there are roughly 310px, and the two buttons take 200 of
             them — so the row becomes two rows, title first. */}

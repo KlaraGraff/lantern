@@ -34,17 +34,8 @@ import EditMetadataModal from "../components/EditMetadataModal";
 import DeleteBookDialog from "../components/DeleteBookDialog";
 import BottomSheet from "../components/ui/BottomSheet";
 import { useIsNarrow } from "../hooks/useIsNarrow";
-import { platform } from "../services/platform";
+import { TOP_INSET } from "../utils/top-inset";
 
-/**
- * What the OS puts above the header. On macOS that is the traffic lights, and
- * the reserve is theirs whatever the window's width — a user who drags the
- * window under 768px still has traffic lights. On a phone it is the status bar
- * and the notch, which `pt-safe-top` reads off the viewport. Same ternary as
- * `Home.tsx`, `Sidebar.tsx` and `Reader.tsx`: the reserve is a platform
- * question, never a width one.
- */
-const TOP_INSET = platform.hasTitleBarInset ? "pt-titlebar" : "pt-safe-top";
 
 /**
  * One cell of the metrics strip, which is 2×2 on a phone and 1×4 on a desktop.

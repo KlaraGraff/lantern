@@ -62,6 +62,8 @@ import {
   parseCardDesignConfig,
   type LearningCardResult,
 } from "./learning-card";
+import { TOP_INSET } from "../utils/top-inset";
+import { platform } from "../services/platform";
 
 // Deferred the same way VocabEntry.tsx defers it — this panel only opens on
 // an explicit expand, and the markdown renderer it drags in has no business
@@ -896,8 +898,13 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
     <div className="flex-1 flex flex-col min-w-0">
       {/* Header */}
       <div className="px-page pb-2 relative select-none">
-        <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar" />
-        <div className="pt-titlebar flex items-center justify-between mb-6">
+{/* macOS only: it is the traffic-light drag strip, and on a phone it
+            would be an invisible 44px sheet over the header. Harmless on a
+            notched device, where the safe inset already pushes the title clear
+            of it — and a dead zone over the ☰ button on an iPhone SE, whose
+            inset is 20pt. Same guard as `Home.tsx`. */}
+        {platform.hasTitleBarInset && <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar" />}
+        <div className={`${TOP_INSET} flex items-center justify-between mb-6`}>
           <div className="flex min-w-0 items-center gap-3">
             {menuButton}
             <h1 className="text-[24px] font-semibold text-text-primary tracking-[0.07px]">

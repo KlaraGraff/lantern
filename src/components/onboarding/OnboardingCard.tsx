@@ -176,14 +176,21 @@ export default function OnboardingCard() {
       ? t("onboarding.progress.last")
       : t("onboarding.progress.stepOf", { step });
 
+  // The 16px gutter is a floor, not the value: on a phone this card is within a
+  // few points of the whole screen, so a flat 16px puts the step dots and
+  // 「第 1 步，共 3 步」 underneath the status bar. Each edge takes whichever is
+  // larger, the gutter or that edge's inset — and the card measures itself
+  // against the padded box (`max-h-full`) rather than `100vh`, which on iOS is
+  // the *largest* viewport and would push the bottom back under the home
+  // indicator.
   return createPortal(
-    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-overlay p-4">
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-overlay pt-[max(1rem,var(--spacing-safe-top))] pr-[max(1rem,var(--spacing-safe-right))] pb-[max(1rem,var(--spacing-safe-bottom))] pl-[max(1rem,var(--spacing-safe-left))]">
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="flex max-h-[calc(100vh-32px)] w-[min(560px,calc(100vw-32px))] flex-col overflow-hidden rounded-lg border border-border bg-bg-surface shadow-context"
+        className="flex max-h-full w-[min(560px,100%)] flex-col overflow-hidden rounded-lg border border-border bg-bg-surface shadow-context"
       >
         <div className="flex items-center justify-between gap-3 border-b border-border-light px-5 py-3">
           <div className="flex items-center gap-1.5">

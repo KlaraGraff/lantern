@@ -8,6 +8,7 @@ import { textLocation } from "./text-book-location";
 import type { ChatSummary } from "../hooks/useChats";
 import Button from "./ui/Button";
 import MessageBubble from "./MessageBubble";
+import { TOP_INSET } from "../utils/top-inset";
 
 interface ChatDetailViewProps {
   chat: ChatSummary;
@@ -76,7 +77,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-bg-muted">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 pt-titlebar pb-3 bg-bg-surface border-b border-border shrink-0">
+      <div className={`flex items-center justify-between px-6 ${TOP_INSET} pb-3 bg-bg-surface border-b border-border shrink-0`}>
         <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={onBack}
