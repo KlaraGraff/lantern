@@ -66,6 +66,26 @@ const SUPPORTS_INERT = typeof HTMLElement !== "undefined" && "inert" in HTMLElem
 const unreachable = (yes: boolean): React.HTMLAttributes<HTMLDivElement> =>
   !yes ? {} : SUPPORTS_INERT ? { inert: true } : { "aria-hidden": true };
 
+/**
+ * Grid or list, remembered across visits.
+ *
+ * On a desktop the reader opens in a window of its own and this page never
+ * unmounts, so plain component state looked like it worked. On a phone there
+ * is one window and the reader is a route: coming back from a book remounts
+ * Home, and a reader who had chosen list got grid again every single time.
+ *
+ * `localStorage`, not the `settings` table, and for the same reason the sidebar
+ * width lives there — this is how one device is laid out, not what the reader
+ * has chosen for their library, and syncing it would have a Mac and a phone
+ * overwriting each other's answer to a question they are entitled to answer
+ * differently.
+ */
+const VIEW_MODE_STORAGE_KEY = "library-view-mode";
+
+function readStoredViewMode(): "grid" | "list" {
+  return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === "list" ? "list" : "grid";
+}
+
 export default function Home() {
   const { t } = useTranslation();
   const location = useLocation();
@@ -80,7 +100,7 @@ export default function Home() {
   // click on 单词 (via `handleFilterChange`) always resets this to "all", so
   // the collapsed/review-focused start state never lingers past one visit.
   const [vocabInitialView, setVocabInitialView] = useState<"all" | "review">("all");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [viewMode, setViewMode] = useState<"grid" | "list">(readStoredViewMode);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [isDragging, setIsDragging] = useState(false);
@@ -105,6 +125,11 @@ export default function Home() {
 
   // Picking anything in the sidebar is navigation, and navigation is done with
   // the drawer. On the desktop there is nothing to close.
+  const changeViewMode = useCallback((mode: "grid" | "list") => {
+    setViewMode(mode);
+    localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+  }, []);
+
   const handleFilterChange = useCallback((filter: string) => {
     // Any explicit sidebar pick is a plain visit, not a review hand-off — see
     // `vocabInitialView` above.
@@ -536,7 +561,7 @@ export default function Home() {
                   variant="icon"
                   size="md"
                   active={viewMode === "grid"}
-                  onClick={() => setViewMode("grid")}
+                  onClick={() => changeViewMode("grid")}
                 >
                   <LayoutGrid size={16} />
                 </Button>
@@ -544,7 +569,7 @@ export default function Home() {
                   variant="icon"
                   size="md"
                   active={viewMode === "list"}
-                  onClick={() => setViewMode("list")}
+                  onClick={() => changeViewMode("list")}
                 >
                   <List size={16} />
                 </Button>

@@ -189,7 +189,10 @@ export default function BookSearchPanel({
       className="flex h-full min-h-0 w-full flex-col bg-bg-muted md:border-r md:border-border"
     >
       <div className="shrink-0 border-b border-border px-5 py-3 bg-bg-surface flex flex-col gap-2">
-        <h2 className="text-[15px] font-semibold text-text-primary leading-5">
+        {/* Below the breakpoint this panel covers the screen and wears the
+            reader's nav bar, which already names it — see `coveringPanelBar`.
+            Two identical titles stacked one on the other read as a bug. */}
+        <h2 className="hidden md:block text-[15px] font-semibold text-text-primary leading-5">
           {t("reader.search.title")}
         </h2>
         <div className="flex items-center gap-1.5 h-[30px] px-2 rounded-lg bg-bg-input border border-border">

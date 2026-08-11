@@ -212,7 +212,10 @@ function TableOfContents({
       className="flex h-full min-h-0 w-full flex-col bg-bg-muted md:border-r md:border-border"
     >
       <div className="shrink-0 border-b border-border px-5 py-3 bg-bg-surface">
-        <h2 className="text-[15px] font-semibold text-text-primary leading-5">
+        {/* Below the breakpoint this panel covers the screen and wears the
+            reader's nav bar, which already names it — see `coveringPanelBar`.
+            Two identical titles stacked one on the other read as a bug. */}
+        <h2 className="hidden md:block text-[15px] font-semibold text-text-primary leading-5">
           {t("reader.tocTitle")}
         </h2>
         <p className="text-[12px] text-text-muted leading-4 mt-0.5">
