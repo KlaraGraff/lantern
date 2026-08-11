@@ -77,6 +77,13 @@ targets:
       - sdk: MetalKit.framework
       - sdk: QuartzCore.framework
       - sdk: Security.framework
+      # `icloud::cellular`'s reachability probe (D-016). The `#[link]` attribute
+      # on its `extern "C"` block does not carry: the Rust half builds as a
+      # staticlib and Xcode drives the final link, so a framework named only in
+      # Rust is a link error here and nowhere else — `cargo check` and `clippy`
+      # never link, which is why this went unnoticed until the first real
+      # iOS build.
+      - sdk: SystemConfiguration.framework
       - sdk: UIKit.framework
       - sdk: WebKit.framework
     preBuildScripts:

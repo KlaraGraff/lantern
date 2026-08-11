@@ -15,9 +15,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.8.4</string>
+	<string>2.15.5</string>
 	<key>CFBundleVersion</key>
-	<string>2.8.4</string>
+	<string>2.15.5</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -181,6 +181,11 @@
 		system may type the file as that one instead, and it stays greyed out.
 		The format has a dozen competing declarations in the wild. This block
 		fixes the case where Lantern is the only claimant, and worsens none.
+
+		This comment has been eaten twice now — once by `xcodegen generate` and
+		once by an `npm run tauri ios build`, both of which rewrite this file
+		wholesale. If it goes missing again, restore it; the block below is
+		load-bearing and nothing else in the repo explains why.
 	-->
 	<key>UTImportedTypeDeclarations</key>
 	<array>
