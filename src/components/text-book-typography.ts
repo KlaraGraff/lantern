@@ -90,6 +90,10 @@ export function getTextBookParagraphStyle(
 
   const style: CSSProperties & HyphenationLimitProperties = {
     textAlign: settings.textJustification ? "justify" : undefined,
+    // Justify-only, and for the reasons measured in `reader-typography.ts`:
+    // it cuts the loosest line's word gap by ~21% in justified text and makes
+    // ragged text visibly worse. The EPUB and plain-text readers must agree.
+    textWrap: settings.textJustification ? "pretty" : undefined,
     marginBottom: paragraphGap,
     textIndent: settings.firstLineIndent && !noIndent ? (isCjk ? "2em" : "1.5em") : undefined,
   };

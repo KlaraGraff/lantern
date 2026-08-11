@@ -170,7 +170,10 @@ export default function ReadingSettings({
   const [lineSpacing, setLineSpacing] = useState<LineSpacing>("auto");
   const [charSpacing, setCharSpacing] = useState(0);
   const [wordSpacing, setWordSpacing] = useState(0);
-  const [textJustification, setTextJustification] = useState(false);
+  // Derived, not a second copy of the default — same reason as `margins` below.
+  const [textJustification, setTextJustification] = useState(
+    () => createDefaultReaderSettings().textJustification,
+  );
   const [paragraphSpacing, setParagraphSpacing] = useState<ParagraphSpacing>("original");
   const [firstLineIndent, setFirstLineIndent] = useState(false);
   // Same default as `createDefaultReaderSettings()` — read from there instead
@@ -253,11 +256,16 @@ export default function ReadingSettings({
           if (values.word_spacing) setWordSpacing(parseInt(values.word_spacing));
           break;
         case "paragraph":
-          setTextJustification(values.text_justification === "true");
+          // Guarded, like every other row here: an absent row means "never
+          // touched", which must leave the toggle at its default, not force it
+          // off. Unguarded this read showed 两端对齐 as off on a fresh install
+          // while the reader was in fact justifying. A row that is present but
+          // reads "false" is still a non-empty string, so it still applies.
+          if (values.text_justification) setTextJustification(values.text_justification === "true");
           if (["original", "none", "compact", "comfortable", "loose"].includes(values.paragraph_spacing)) {
             setParagraphSpacing(values.paragraph_spacing as ParagraphSpacing);
           }
-          setFirstLineIndent(values.first_line_indent === "true");
+          if (values.first_line_indent) setFirstLineIndent(values.first_line_indent === "true");
           break;
         case "margins":
           if (values.margins) setMargins(parseInt(values.margins));

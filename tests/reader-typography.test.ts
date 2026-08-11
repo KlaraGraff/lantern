@@ -43,6 +43,19 @@ test("publisher paragraph styles are untouched until a typography enhancement is
   assert.doesNotMatch(css, /text-indent: 1\.5em !important/);
 });
 
+test("text-wrap: pretty rides with justification and never applies to ragged text", () => {
+  // Measured on iOS 26 Safari at the reader's own parameters: `pretty` cuts the
+  // loosest justified line's word gap from 2.43x to 1.93x, but pushes a ragged
+  // column's right-edge variance the wrong way (16% -> 18%). So it is strictly
+  // a companion to justify, not a global improvement.
+  assert.match(getParagraphTypographyCSS(enabled), /text-wrap: pretty/);
+  assert.doesNotMatch(getParagraphTypographyCSS(settings), /text-wrap: pretty/);
+  assert.doesNotMatch(
+    getParagraphTypographyCSS({ ...settings, firstLineIndent: true }),
+    /text-wrap: pretty/,
+  );
+});
+
 test("typography enhancements target eligible paragraphs and exclude structural exceptions", () => {
   const css = getParagraphTypographyCSS(enabled);
   assert.match(css, /text-align: justify !important/);

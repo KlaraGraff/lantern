@@ -172,7 +172,13 @@ export function createDefaultReaderSettings(): ReaderSettingsState {
     lineSpacing: "auto",
     charSpacing: 0,
     wordSpacing: 0,
-    textJustification: false,
+    // On by default, matching every mainstream reading app. A ragged right
+    // edge is the honest default for a *wide* column, but the measure this app
+    // actually gets on a phone — around 45 characters — makes the rag loud:
+    // measured 16% right-edge variance (58px of 366pt) on iOS. Justify trades
+    // that for looser word gaps, and `text-wrap: pretty` plus the corrected
+    // `MEASURE_EM_MIN` (see reader-settings.ts) keep those gaps in range.
+    textJustification: true,
     paragraphSpacing: "original",
     firstLineIndent: false,
     // 0% reads too tight in the two-page layout, the default `pageColumns`

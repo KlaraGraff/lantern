@@ -87,6 +87,16 @@ test("non-CJK justified paragraphs get auto hyphenation bounded by the limit pro
   assert.equal(vendorStyle.hyphenateLimitLines, "2");
 });
 
+test("text-wrap: pretty rides with justification, in both scripts, and never without it", () => {
+  // Same rule as the EPUB reader (see reader-typography.test.ts) — the two
+  // readers must not disagree about how a justified paragraph is set.
+  for (const isCjk of [false, true]) {
+    const on = getTextBookParagraphStyle(settingsWith({ textJustification: true }), { isCjk, noIndent: false });
+    assert.equal(on.textWrap, "pretty");
+  }
+  assert.equal(getTextBookParagraphStyle(settingsWith(), { isCjk: false, noIndent: false }).textWrap, undefined);
+});
+
 test("hyphenation stays off entirely when justification is off", () => {
   const style = getTextBookParagraphStyle(settingsWith(), { isCjk: false, noIndent: false });
   assert.equal(style.hyphens, undefined);

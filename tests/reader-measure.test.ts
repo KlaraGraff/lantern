@@ -52,6 +52,21 @@ test("two columns each get the cap, not the pair", () => {
   assert.equal(getReaderMeasure(settings, 900, 1400).columns, 1);
 });
 
+test("the shrink threshold is high enough to actually fire on a phone-width column", () => {
+  // Regression guard for the reason mobile prose looked stretched: at the old
+  // 22em the phone's column (~600 CSS px against a 26px default) came out at
+  // 23em — just above the threshold — so nothing ever shrank and the line ran
+  // ~41 characters, too few word gaps to absorb the leftover space. The
+  // property being pinned is not the constant's value but that a column this
+  // wide is treated as narrow.
+  assert.ok(getEffectiveFontSize({ fontSize: 26, narrowFontShrink: true }, 600) < 26);
+  // And that the size it lands on gives at least 45 Latin characters:
+  // 0.495em average advance for Literata, less ~4 characters that
+  // `text-wrap: pretty` gives up per line.
+  const fitted = getEffectiveFontSize({ fontSize: 26, narrowFontShrink: true }, 600);
+  assert.ok(600 / (fitted * 0.495) - 4 >= 45);
+});
+
 test("a narrow viewport shrinks the rendered size", () => {
   assert.equal(getReaderMeasure(base, 390, 800).fontSize, Math.floor(390 / MEASURE_EM_MIN));
   // Once shrunk the column is the full width again — there is nothing to cap.

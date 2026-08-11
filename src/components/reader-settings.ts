@@ -12,10 +12,24 @@ export const FONT_SIZE_MAX = 48;
 // So one cap serves both. Fixed on purpose — this is a typographic constant,
 // not a taste knob, and exposing it as a setting only invites bad values.
 export const MEASURE_EM_CAP = 34;
-// The other end of the same range: 22em is ~45 Latin characters. Below this a
-// width cap cannot help, because there is no surplus width to give away — only
-// a smaller font can bring the line back into range.
-export const MEASURE_EM_MIN = 22;
+// The other end of the same range: below this a width cap cannot help, because
+// there is no surplus width to give away — only a smaller font can bring the
+// line back into range.
+//
+// This used to be 22, on the assumption that 22em is ~45 Latin characters —
+// i.e. an average advance of 0.5em. Measured against Literata, the font this
+// app actually ships and defaults to, the advance is 0.495em and justified
+// text laid out with `text-wrap: pretty` gives up a further ~4 characters per
+// line, so 22em delivers ~40 characters, not 45. The old value therefore sat
+// just under the real column width on a phone and never fired at all: the
+// reader stayed at its declared size and ran ~41 characters per line, which
+// left only six or seven word gaps to absorb each line's leftover space —
+// the actual cause of the stretched-looking lines on mobile, and something no
+// alignment or hyphenation setting can fix.
+//
+// 25em is the same 45-character floor restated in measured units:
+// (45 + 4) * 0.495 = 24.3em, rounded up for headroom.
+export const MEASURE_EM_MIN = 25;
 
 /** Clamp a reading column to the maximum comfortable line length. */
 export function capMeasureWidth(availableWidth: number, fontSize: number): number {
