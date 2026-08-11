@@ -2,6 +2,8 @@
 //! batched map/merge pass, rendering the result, and the one-line gloss stored
 //! when a word is saved.
 
+use std::collections::HashMap;
+
 use tauri::{AppHandle, Emitter, State};
 
 use super::chat::{ready_index_source_hash, SectionContextMetadata};
@@ -140,8 +142,166 @@ fn vocabulary_map_messages(
     ]
 }
 
+/// Furthest-along first, matching `lookup::lookup_memory`: a word saved in two
+/// books can carry two states, and the one that says the reader knows it wins.
+fn mastery_rank(mastery: &str) -> u8 {
+    match mastery {
+        "mastered" => 0,
+        "learning" => 1,
+        _ => 2,
+    }
+}
+
+/// The reader's own state for each scanned candidate, positionally aligned with
+/// `candidates`. `None` means the word is not in the vocabulary book at all.
+///
+/// Deliberately read *after* extraction rather than injected into the map
+/// prompt. Injecting the vocabulary book would make every batch cost scale with
+/// how much the reader has saved, and it would compete with the source text for
+/// the batch token budget. Reading it back afterwards costs one local query,
+/// leaves the extraction itself byte-identical, and cannot change which words
+/// the model finds.
+///
+/// Cross-book for the same reason lookups are: mastery is a property of the
+/// reader, not of the book a word happened to be met in.
+fn candidate_mastery(
+    conn: &rusqlite::Connection,
+    candidates: &[grounding::vocabulary::VocabularyCandidate],
+) -> Vec<Option<String>> {
+    let mut states = vec![None; candidates.len()];
+    if candidates.is_empty() {
+        return states;
+    }
+
+    // Surface form first, dictionary form second: the model returns the form as
+    // it appears in the text as `term` and the lemma separately, and the saved
+    // row may be keyed by either one.
+    let keys: Vec<Vec<String>> = candidates
+        .iter()
+        .map(|candidate| {
+            let mut keys: Vec<String> = Vec::new();
+            for value in [Some(candidate.term.as_str()), candidate.lemma.as_deref()]
+                .into_iter()
+                .flatten()
+            {
+                let normalized = crate::sync::events::normalize_learning_term(value);
+                if !normalized.is_empty() && !keys.contains(&normalized) {
+                    keys.push(normalized);
+                }
+            }
+            keys
+        })
+        .collect();
+
+    let mut saved: HashMap<String, String> = HashMap::new();
+    let record = |saved: &mut HashMap<String, String>, word: String, mastery: String| {
+        match saved.get(&word) {
+            Some(existing) if mastery_rank(existing) <= mastery_rank(&mastery) => {}
+            _ => {
+                saved.insert(word, mastery);
+            }
+        }
+    };
+
+    let mut wanted: Vec<String> = Vec::new();
+    for key in keys.iter().flatten() {
+        if !wanted.contains(key) {
+            wanted.push(key.clone());
+        }
+    }
+    let placeholders = vec!["?"; wanted.len()].join(",");
+    let direct = conn
+        .prepare(&format!(
+            "SELECT word, mastery FROM vocab_words
+             WHERE word COLLATE NOCASE IN ({placeholders})"
+        ))
+        .and_then(|mut statement| {
+            statement
+                .query_map(rusqlite::params_from_iter(wanted.iter()), |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        });
+    for (word, mastery) in direct.unwrap_or_default() {
+        record(
+            &mut saved,
+            crate::sync::events::normalize_learning_term(&word),
+            mastery,
+        );
+    }
+
+    // Second pass for candidates the surface form and the lemma both missed:
+    // an inflection the model did not lemmatise can still be a known form of a
+    // saved word. Only form sets belonging to saved words are read, so the cost
+    // is bounded by the vocabulary book, and a missing `word_forms` row simply
+    // degrades to the exact matching above — the same graceful loss
+    // `grounding::quotes::expand_forms` is built around.
+    let unmatched: Vec<&String> = keys
+        .iter()
+        .flatten()
+        .filter(|key| !saved.contains_key(*key))
+        .collect();
+    if !unmatched.is_empty() {
+        let forms = conn
+            .prepare(
+                "SELECT f.forms, v.mastery
+                 FROM word_forms f
+                 JOIN vocab_words v ON v.word = f.normalized_word COLLATE NOCASE",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            });
+        for (raw, mastery) in forms.unwrap_or_default() {
+            let Ok(parsed) = serde_json::from_str::<Vec<String>>(&raw) else {
+                continue;
+            };
+            for form in parsed {
+                let normalized = crate::sync::events::normalize_learning_term(&form);
+                if normalized.is_empty() {
+                    continue;
+                }
+                if unmatched.iter().any(|key| **key == normalized) {
+                    record(&mut saved, normalized, mastery.clone());
+                }
+            }
+        }
+    }
+
+    for (index, candidate_keys) in keys.iter().enumerate() {
+        states[index] = candidate_keys
+            .iter()
+            .filter_map(|key| saved.get(key))
+            .min_by_key(|mastery| mastery_rank(mastery))
+            .cloned();
+    }
+    states
+}
+
+/// The label shown next to a word the reader has already filed.
+///
+/// Marked, never dropped. Removing known words would silently shrink the list
+/// and read as the scan having missed them, and it takes away the choice to
+/// review one anyway; a label answers the actual complaint — that a chapter
+/// list buries new words among ones the reader learned months ago — without
+/// deciding for them.
+fn mastery_label(mastery: &str, chinese: bool) -> &'static str {
+    match (mastery, chinese) {
+        ("mastered", true) => "已掌握",
+        ("mastered", false) => "mastered",
+        ("learning", true) => "学习中",
+        ("learning", false) => "learning",
+        (_, true) => "已在生词本",
+        (_, false) => "already in your vocabulary",
+    }
+}
+
 fn render_vocabulary_candidates(
     candidates: &[grounding::vocabulary::VocabularyCandidate],
+    mastery: &[Option<String>],
     language: &str,
     partial: bool,
     processed_batches: usize,
@@ -173,6 +333,19 @@ fn render_vocabulary_candidates(
         return output;
     }
 
+    let already_mastered = mastery
+        .iter()
+        .flatten()
+        .filter(|state| state.as_str() == "mastered")
+        .count();
+    if already_mastered > 0 {
+        output.push_str(&if chinese {
+            format!("其中 {already_mastered} 个你已标为「已掌握」，下方逐条标出。\n\n")
+        } else {
+            format!("{already_mastered} of them are already marked mastered, flagged individually below.\n\n")
+        });
+    }
+
     for (index, candidate) in candidates.iter().enumerate() {
         let marker = (index < VOCABULARY_SOURCE_METADATA_LIMIT).then(|| format!("S{}", index + 1));
         let term = candidate.term.replace('\n', " ");
@@ -188,6 +361,18 @@ fn render_vocabulary_candidates(
             .unwrap_or(if chinese { "未提供" } else { "Not provided" })
             .replace('\n', " ");
         output.push_str(&format!("### {}. {}\n", index + 1, term));
+        // First bullet on purpose: scanning for what is already known is the
+        // whole reason this line exists, and it has to be readable without
+        // reading the entry.
+        if let Some(state) = mastery.get(index).and_then(Option::as_deref) {
+            output.push_str(if chinese {
+                "- 你的记录："
+            } else {
+                "- Your record: "
+            });
+            output.push_str(mastery_label(state, chinese));
+            output.push('\n');
+        }
         if let Some(lemma) = candidate.lemma.as_deref() {
             output.push_str(if chinese { "- 词元：" } else { "- Lemma: " });
             output.push_str(lemma);
@@ -332,8 +517,10 @@ async fn run_vocabulary_scan(
     }
     let candidates = grounding::vocabulary::merge_candidates(candidates);
     let sources = vocabulary_source_list(&candidates, &plan.source_chunks);
+    let mastery = candidate_mastery(&db.reader(), &candidates);
     let content = render_vocabulary_candidates(
         &candidates,
+        &mastery,
         language,
         plan.partial || failed_batches > 0,
         plan.batches.len().saturating_sub(failed_batches),
@@ -758,7 +945,7 @@ mod tests {
             std::slice::from_ref(&candidate),
             std::slice::from_ref(&chunk),
         );
-        let rendered = render_vocabulary_candidates(&[candidate], "zh", true, 2, 3);
+        let rendered = render_vocabulary_candidates(&[candidate], &[None], "zh", true, 2, 3);
         assert!(rendered.contains("2/3"));
         assert!(rendered.contains("### 1. resilient"));
         assert!(rendered.contains("[S1]"));
@@ -814,6 +1001,156 @@ mod tests {
             Some("When I was nineteen years old, I spoke at a conference on logotherapy.")
         );
         assert_eq!(sources[1].snippet, "The meaning-centered approach");
+    }
+
+    fn vocabulary_book(words: &[(&str, &str)]) -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        Db::run_migrations_on(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO books
+             (id, title, author, file_path, format, status, progress, created_at, updated_at)
+             VALUES ('book', 'Book', 'Author', 'books/b.epub', 'epub', 'reading', 0, 1000, 1000)",
+            [],
+        )
+        .unwrap();
+        for (index, (word, mastery)) in words.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO vocab_words
+                 (id, book_id, word, definition, mastery, review_count, created_at, updated_at)
+                 VALUES (?1, 'book', ?2, 'saved', ?3, 0, 1000, 1000)",
+                rusqlite::params![format!("v{index}"), word, mastery],
+            )
+            .unwrap();
+        }
+        conn
+    }
+
+    fn scanned(term: &str, lemma: Option<&str>) -> grounding::vocabulary::VocabularyCandidate {
+        grounding::vocabulary::VocabularyCandidate {
+            term: term.into(),
+            lemma: lemma.map(str::to_string),
+            part_of_speech: None,
+            pronunciation: None,
+            meaning: None,
+            context: None,
+            quote: "quote".into(),
+            chunk_id: "chapter-1".into(),
+            section_title: None,
+            char_start: None,
+            char_end: None,
+            chunk_index: 0,
+        }
+    }
+
+    #[test]
+    fn a_scan_reports_the_reader_state_of_words_they_already_saved() {
+        let conn = vocabulary_book(&[("resilient", "mastered"), ("logotherapy", "learning")]);
+
+        let states = candidate_mastery(
+            &conn,
+            &[
+                scanned("Resilient", None),
+                scanned("logotherapy", None),
+                scanned("meaning-centered", None),
+            ],
+        );
+
+        // Case and surrounding punctuation are normalised away, so the form as
+        // it appears in the text still finds the saved row.
+        assert_eq!(states[0].as_deref(), Some("mastered"));
+        assert_eq!(states[1].as_deref(), Some("learning"));
+        assert_eq!(states[2], None);
+    }
+
+    #[test]
+    fn an_inflection_is_matched_through_its_lemma() {
+        let conn = vocabulary_book(&[("recount", "mastered")]);
+
+        let states = candidate_mastery(&conn, &[scanned("recounted", Some("recount"))]);
+
+        assert_eq!(states[0].as_deref(), Some("mastered"));
+    }
+
+    /// The lemma is the cheap path and it covers most inflections, but the model
+    /// does not always supply one. A saved form set closes that gap.
+    #[test]
+    fn an_inflection_without_a_lemma_is_matched_through_a_saved_form_set() {
+        let conn = vocabulary_book(&[("recount", "learning")]);
+        conn.execute(
+            "INSERT INTO word_forms (normalized_word, forms, source, updated_at)
+             VALUES ('recount', ?1, 'user', 1000)",
+            rusqlite::params![serde_json::json!(["recounted", "recounting"]).to_string()],
+        )
+        .unwrap();
+
+        let states = candidate_mastery(&conn, &[scanned("recounting", None)]);
+
+        assert_eq!(states[0].as_deref(), Some("learning"));
+    }
+
+    /// A form set for a word the reader never saved says nothing about mastery,
+    /// so it must not produce a label.
+    #[test]
+    fn a_form_set_without_a_saved_word_flags_nothing() {
+        let conn = vocabulary_book(&[]);
+        conn.execute(
+            "INSERT INTO word_forms (normalized_word, forms, source, updated_at)
+             VALUES ('recount', ?1, 'model', 1000)",
+            rusqlite::params![serde_json::json!(["recounting"]).to_string()],
+        )
+        .unwrap();
+
+        let states = candidate_mastery(&conn, &[scanned("recounting", None)]);
+
+        assert_eq!(states[0], None);
+    }
+
+    #[test]
+    fn the_furthest_along_state_wins_when_a_word_is_saved_twice() {
+        let conn = vocabulary_book(&[("resilient", "new")]);
+        conn.execute(
+            "INSERT INTO vocab_words
+             (id, book_id, word, definition, mastery, review_count, created_at, updated_at)
+             VALUES ('second', 'book', 'resilient', 'saved', 'mastered', 4, 1000, 1000)",
+            [],
+        )
+        .unwrap();
+
+        let states = candidate_mastery(&conn, &[scanned("resilient", None)]);
+
+        assert_eq!(states[0].as_deref(), Some("mastered"));
+    }
+
+    #[test]
+    fn an_empty_scan_asks_the_database_for_nothing() {
+        let conn = vocabulary_book(&[("resilient", "mastered")]);
+
+        assert!(candidate_mastery(&conn, &[]).is_empty());
+    }
+
+    #[test]
+    fn the_renderer_labels_known_words_and_counts_the_mastered_ones() {
+        let candidates = vec![scanned("resilient", None), scanned("logotherapy", None)];
+        let mastery = vec![Some("mastered".to_string()), None];
+
+        let rendered = render_vocabulary_candidates(&candidates, &mastery, "zh", false, 1, 1);
+
+        assert!(rendered.contains("其中 1 个你已标为「已掌握」"));
+        assert!(rendered.contains("### 1. resilient\n- 你的记录：已掌握"));
+        // The unknown word keeps the shape it had before this feature existed.
+        assert!(rendered.contains("### 2. logotherapy\n- 词义："));
+        // Known words are labelled, never dropped.
+        assert!(rendered.contains("resilient"));
+    }
+
+    #[test]
+    fn a_scan_with_nothing_saved_renders_exactly_as_it_did_before() {
+        let candidates = vec![scanned("resilient", None)];
+
+        let labelled = render_vocabulary_candidates(&candidates, &[None], "en", false, 1, 1);
+
+        assert!(!labelled.contains("Your record"));
+        assert!(!labelled.contains("already marked mastered"));
     }
 
     #[test]
