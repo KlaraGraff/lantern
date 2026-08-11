@@ -167,6 +167,8 @@
   "reader.retry": "Retry",
   "reader.returnToLibrary": "Return to library",
   "reader.downloadingFromICloud": "Downloading from iCloud...",
+  "reader.downloadingFromICloudPercent": "Downloading from iCloud... {{percent}}%",
+  "reader.downloadFailed": "The download did not finish. The book is still in iCloud — retry when you have a connection.",
   "reader.downloadTimeout": "Download is taking too long. Please check your internet connection.",
   "reader.zoom.fit": "Fit",
   "reader.zoom.fitTooltip": "Fit to width",

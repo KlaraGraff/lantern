@@ -16,15 +16,14 @@ import { CELLULAR_CONSENT_SETTING_KEY, type CellularDownloadConsent } from "./us
  * checkbox), no third option. Nothing here enforces that on a second caller;
  * it only has to stay true because both read from the same spec.
  *
- * **Not wired into a book-open flow yet.** The only two current callers of
- * `diagnoseBookFile` — `src/pages/reader/useReaderFileDiagnosis.ts` and
- * `useBookAvailability.ts` — were out of scope for the change that added this
- * hook (both live under `src/pages/reader/`, off limits for that work), and
- * neither passes a `requestId` today, so neither can reach the watched path
- * this gate lives on. This hook is ready to drop into either once that
- * wiring happens: render `dialog` in the tree, call `requestConsent()` when
- * `isCellularConsentError` catches, then retry with whatever the promise
- * resolves to.
+ * Wired into the reader: `Reader.tsx` mounts the hook and renders `dialog`,
+ * and `src/pages/reader/useReaderFileDiagnosis.ts` mints the `requestId` that
+ * puts the probe on the watched path this gate lives on — it catches
+ * `isCellularConsentError`, awaits `requestConsent()`, and retries with
+ * `retryDiagnoseBookFileAfterConsent`, or falls back to the placeholder state
+ * on a deny. `useBookAvailability.ts` still polls unwatched and so never
+ * reaches the gate; that poll only asks whether the file is there, it never
+ * asks for a download.
  */
 export function useCellularDownloadConsent() {
   const { t } = useTranslation();

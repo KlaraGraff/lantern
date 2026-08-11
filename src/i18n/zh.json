@@ -167,6 +167,8 @@
   "reader.retry": "重试",
   "reader.returnToLibrary": "返回书架",
   "reader.downloadingFromICloud": "正在从 iCloud 下载...",
+  "reader.downloadingFromICloudPercent": "正在从 iCloud 下载... {{percent}}%",
+  "reader.downloadFailed": "这次没下完。书还在 iCloud 里，联网后再试一次。",
   "reader.downloadTimeout": "下载时间过长，请检查网络连接。",
   "reader.zoom.fit": "适应",
   "reader.zoom.fitTooltip": "适应宽度",

@@ -1557,8 +1557,32 @@ is closed and added nothing to the estimate below.
    phone writes — and `src-tauri/Info.plist` now declares `NSUbiquitousContainers` for the Mac
    too. The `lantern` subfolder is gone with it: the container is already this app's. Signing
    is untouched
-3. Replace the `notify` watcher with `NSMetadataQuery` — kqueue does not observe
-   iCloud-initiated downloads
+3. ~~Replace the `notify` watcher with `NSMetadataQuery` — kqueue does not observe
+   iCloud-initiated downloads~~ — **done 2026-08-11, and this line's premise was wrong twice.**
+
+   **iOS never had kqueue.** `notify 6.1.1` picks `RecommendedWatcher` by `target_os`
+   (`src/lib.rs:370–397`), and its arms are linux/android, macOS, Windows, and the four BSDs;
+   iOS matches none, so it falls through to `PollWatcher`. A poll *does* see an iCloud
+   download land — it stats the directory rather than waiting to be told — so the phone was
+   never failing to converge. It was converging **slowly**: `notify`'s default `poll_interval`
+   is 30 seconds (`src/config.rs:112`). The real defect was latency, not blindness.
+
+   So `NSMetadataQuery` was added **alongside** the poll, not in place of it
+   (`src-tauri/src/sync/icloud_query.rs`, new). Not caution for its own sake: nothing about
+   this query can be exercised until item 5 provisions a container on real hardware, and
+   staking convergence on a mechanism that only runs where nobody can debug it is the wrong
+   trade. If the query never fires the phone behaves exactly as it does today; if it fires,
+   the same `tick` happens in a quarter-second instead of up to thirty.
+
+   iOS only — on macOS the shared directory is a constructed path into a container the app
+   claims no ubiquity scope over ([Q-005](#q-005--can-the-macos-build-reach-the-apps-ubiquity-container-answered--yes-for-free)),
+   so `NSMetadataQueryUbiquitousDocumentsScope` would cover nothing there, and FSEvents already
+   reports those writes promptly. The watcher now takes both sources on one channel
+   (`enum Wake { Fs, ICloud }`); an iCloud wake skips the path filter, which exists only for
+   `notify`'s noise. Verified: `cargo check`, `cargo clippy --all-targets`,
+   `cargo clippy --target aarch64-apple-ios`, `cargo check --target aarch64-apple-ios-sim`
+   all clean; 7 `sync::watcher` tests green. **Unverifiable until item 5:** whether the query
+   fires at all against a provisioned container.
 4. **Partly already done, and this line used to overstate the work.**
    `is_awaiting_icloud_download` in `icloud.rs` already reads
    `NSURLUbiquitousItemDownloadingStatusKey`, and `file_readability` already consults it before
@@ -1569,6 +1593,25 @@ is closed and added nothing to the estimate below.
    cellular connection the first such download asks first and the answer sticks
    ([D-016](#d-016--on-cellular-a-book-download-asks-once-and-remembers)), which adds a
    remembered setting and therefore a row in mobile settings
+
+   **Closed 2026-08-11.** The backend half had already landed — `icloud/download.rs` watches a
+   placeholder and emits `book-download-<requestId>`, `icloud/cellular.rs` gates it — but
+   **nothing on the frontend listened to that channel**, which meant the acting half was
+   running invisibly: the bytes came down behind a screen that said the book could not be
+   opened, and stayed there until somebody pressed Retry. That is the failure this item was
+   written to remove, so it was not done.
+
+   `useReaderFileDiagnosis` now subscribes before it invokes (the order the backend's channel
+   contract requires — `start_watch` can emit during the invoke), and `Reader.tsx` renders an
+   iCloud placeholder as a **wait** rather than a failure: spinner, percentage when iCloud
+   reports one and an indeterminate line when it does not, and no red icon in front of a
+   download in progress. On `phase: "ready"` the reader reopens itself. `cancelled`/`failed`
+   deliberately do not — they leave the same unopenable file that was already on screen, and
+   the screen turns back into an error with `reader.downloadFailed`. The cellular dialog was
+   already wired (`Reader.tsx` + `useReaderFileDiagnosis`); only its hook's doc comment still
+   claimed otherwise, and that is fixed. Verified: tsc clean, lint 0 errors, 1421 tests /
+   1419 pass / 0 fail / 2 skipped, build passed. **Unverifiable without hardware:** what a
+   real iCloud download reports for `percent`, and how often it reports nothing at all
 5. iCloud Documents entitlement, container ID in the provisioning profile,
    `NSUbiquitousContainers` in `Info.plist` — **in-repo half done 2026-08-06, and it moved to
    the front of this phase** because nothing else here works until the container exists.

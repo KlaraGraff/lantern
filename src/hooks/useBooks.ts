@@ -229,6 +229,14 @@ export async function diagnoseBookFile(id: string, requestId?: string): Promise<
   return invoke<BookAvailability>("diagnose_book_file", { id, requestId: requestId ?? null });
 }
 
+// D-013's channel name and event shape live in `book-download.ts` (pure, no
+// i18n import) for the same reason `cellular-consent.ts` does — see that file.
+export {
+  bookDownloadEventName,
+  type BookDownloadPhase,
+  type BookDownloadProgress,
+} from "./book-download";
+
 // D-016's error code, settings key, and consent predicate live in
 // `cellular-consent.ts` (pure, no i18n import) — see that file's doc comment
 // for why. Re-exported here so existing callers keep one import site.

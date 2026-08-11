@@ -1343,7 +1343,22 @@ export default function Reader() {
   const { availabilityState, retryAvailability } = useBookAvailability(book, setBook);
   const { dialog: cellularConsentDialog, requestConsent: requestCellularConsent } =
     useCellularDownloadConsent();
-  useReaderFileDiagnosis(bookId, readerError, setReaderError, requestCellularConsent);
+  // The Retry button's own handler, minus the preparation branch — a book that
+  // was waiting on iCloud has nothing to convert, it only ever needed its
+  // bytes. Shared so an arriving download and a pressed button take the same
+  // path back into the reader instead of two that can drift apart.
+  const reopenBook = useCallback(() => {
+    setReaderError(null);
+    setCurrentSectionIndex(-1);
+    setReaderRetry((value) => value + 1);
+  }, [setReaderError, setCurrentSectionIndex, setReaderRetry]);
+  const { download: bookDownload } = useReaderFileDiagnosis(
+    bookId,
+    readerError,
+    setReaderError,
+    requestCellularConsent,
+    reopenBook,
+  );
   // Bound key/mouse triggers speak without opening any card, so the reader owns
   // its own playback slot alongside the cards and the selection menu.
   const { speak: speakSelection } = useSpeech();
@@ -1814,11 +1829,43 @@ export default function Reader() {
     // an unreadable file looks like from inside the parser.
     const fileProblem = fileStatusExplainsFailure(readerError.fileStatus);
     const invalidPdf = readerError.kind === "invalid-pdf" && !fileProblem;
+    // The file is in iCloud and the backend is fetching it (D-013). Until that
+    // watch ends, this is a wait, not a failure — the parser error underneath
+    // is describing bytes that had not arrived yet, and putting a red icon and
+    // "could not open" in front of a download in progress is exactly the thing
+    // P5 asked to stop doing. It becomes a failure again only when the
+    // download itself says so.
+    const downloadEnded = bookDownload?.phase === "failed" || bookDownload?.phase === "cancelled";
+    const waitingOnDownload = readerError.fileStatus === "icloud_placeholder" && !downloadEnded;
     const fileMessage = readerError.fileStatus === "missing"
       ? t("reader.fileUnavailable")
       : readerError.fileStatus === "icloud_placeholder"
-        ? t("reader.downloadingFromICloud")
+        ? (downloadEnded ? t("reader.downloadFailed") : t("reader.downloadingFromICloud"))
         : t("reader.fileUnreadable");
+
+    if (waitingOnDownload) {
+      // iCloud reports no percentage for a great many downloads, so the number
+      // is shown when there is one and the spinner carries the wait when there
+      // is not — never a 0% that would look stalled.
+      const percent = bookDownload?.percent;
+      return (
+        <>
+        <div role="status" className="flex h-screen flex-col items-center justify-center gap-4 px-6 text-center">
+          <Loader2 size={24} className="animate-spin text-text-muted" aria-hidden="true" />
+          <p className="max-w-[420px] text-[14px] text-text-muted">
+            {percent === undefined
+              ? t("reader.downloadingFromICloud")
+              : t("reader.downloadingFromICloudPercent", { percent: Math.round(percent) })}
+          </p>
+          <Button variant="ghost" size="sm" onClick={returnToLibrary}>
+            <ArrowLeft size={14} />
+            {t("reader.returnToLibrary")}
+          </Button>
+        </div>
+        {cellularConsentDialog}
+        </>
+      );
+    }
     // Retry is worth offering whenever the file might be different next time —
     // an iCloud download finishing, a volume coming back — but not for a PDF
     // whose structure is broken, where it would fail identically.
@@ -1882,9 +1929,7 @@ export default function Reader() {
                     ));
                   return;
                 }
-                setReaderError(null);
-                setCurrentSectionIndex(-1);
-                setReaderRetry((value) => value + 1);
+                reopenBook();
               }}
             >
               {t("reader.retry")}
