@@ -37,7 +37,14 @@ interface Props {
   onPrevious: () => void;
   onNext: () => void;
   onRateChange: (rate: number) => void;
-  onCollapsedChange: (collapsed: boolean) => void;
+  /**
+   * Omitted where there is nowhere for the collapsed player to go. On a narrow
+   * viewport the compact capsule lives in a header cluster that is not rendered
+   * at all, so collapsing would leave audio playing with no pause, no stop and
+   * nothing on screen. No callback means no chevron and no Escape-to-collapse:
+   * the bar is the only transport, so it stays.
+   */
+  onCollapsedChange?: (collapsed: boolean) => void;
 }
 
 /**
@@ -64,10 +71,10 @@ export default function ContinuousReadAloudToolbar({ state, labels, onStart, onP
   const active = state.status !== "idle" && state.status !== "finished" && state.status !== "error";
   const playing = state.status === "playing" || state.status === "loading";
   const onSectionKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === "Escape") { event.preventDefault(); onCollapsedChange(true); }
+    if (event.key === "Escape" && onCollapsedChange) { event.preventDefault(); onCollapsedChange(true); }
   };
   if (state.collapsed && active) {
-    return <button type="button" onClick={() => onCollapsedChange(false)} className="flex h-8 items-center gap-2 rounded-full border border-border-light bg-bg-surface px-3 text-xs text-text-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" aria-label={labels.expand}><Volume2 size={14} className={playing ? "animate-pulse text-accent-text" : ""} />{state.status === "paused" ? labels.paused : labels.reading} · {labels.speed(state.rate)}<ChevronDown size={13} /></button>;
+    return <button type="button" onClick={() => onCollapsedChange?.(false)} className="flex h-8 items-center gap-2 rounded-full border border-border-light bg-bg-surface px-3 text-xs text-text-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent" aria-label={labels.expand}><Volume2 size={14} className={playing ? "animate-pulse text-accent-text" : ""} />{state.status === "paused" ? labels.paused : labels.reading} · {labels.speed(state.rate)}<ChevronDown size={13} /></button>;
   }
 
   const statusLabel = state.status === "paused"
@@ -166,7 +173,7 @@ export default function ContinuousReadAloudToolbar({ state, labels, onStart, onP
       <button type="button" className={SMALL_KEY} onClick={onStop} aria-label={state.status === "finished" ? labels.leaveAtEnd : labels.stop} title={state.status === "finished" ? labels.leaveAtEnd : labels.stop}><Square size={14} fill="currentColor" /></button>
       {/* Deliberately absent while finished or errored: `active` excludes both,
           so the expanded bar is the only way out of them. */}
-      {active && <button type="button" className={SMALL_KEY} onClick={() => onCollapsedChange(true)} aria-label={labels.collapse} title={labels.collapse}><ChevronUp size={16} /></button>}
+      {active && onCollapsedChange && <button type="button" className={SMALL_KEY} onClick={() => onCollapsedChange(true)} aria-label={labels.collapse} title={labels.collapse}><ChevronUp size={16} /></button>}
     </div>
   </section>;
 }

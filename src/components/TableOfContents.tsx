@@ -202,9 +202,14 @@ function TableOfContents({
   };
 
   return (
+    // No width and no docking here. The reader decides whether this is a 320px
+    // column beside the page or the whole reading area, and a panel that names
+    // its own `w-80` cannot be told the second thing. The right border goes
+    // with the column: it separates the panel from the page, and with no page
+    // beside it it is just a line down the edge of the screen.
     <aside
       aria-label={t("reader.tocTitle")}
-      className="w-80 shrink-0 h-full bg-bg-muted border-r border-border flex flex-col"
+      className="flex h-full min-h-0 w-full flex-col bg-bg-muted md:border-r md:border-border"
     >
       <div className="shrink-0 border-b border-border px-5 py-3 bg-bg-surface">
         <h2 className="text-[15px] font-semibold text-text-primary leading-5">

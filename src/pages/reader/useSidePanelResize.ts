@@ -51,10 +51,28 @@ interface ShadowHost {
   shadowRoot: ShadowRoot | null;
 }
 
+/**
+ * `resizable` is false on a viewport too narrow to split, where the panel
+ * covers the reading area instead of docking beside it. There is nothing left
+ * to drag then, and a 6px drag bar under a finger is not a small control but a
+ * trap — so the reader stops rendering the bar, and this stops answering.
+ *
+ * Both, deliberately. Not rendering the bar is what actually prevents the drag,
+ * since every window listener this hook installs is installed from inside
+ * `handlePanelResizePointerDown` and nothing else calls it. The guard below is
+ * the second lock: a live `pointerdown` handler sitting under an element that
+ * was merely hidden with CSS is worse than a visible one, and this makes that
+ * mistake unreachable rather than merely absent.
+ *
+ * `panelWidth` comes back undefined in that mode, so the reader has no inline
+ * width to write and the stylesheet's breakpoint owns the panel's geometry —
+ * an inline `width` would beat any class it was given.
+ */
 export function useSidePanelResize<T extends ShadowHost>(
   viewRef: RefObject<T | null>,
   viewerRef: RefObject<HTMLElement | null>,
   panel: ResizableSidePanel | null,
+  resizable: boolean,
 ) {
   const [widths, setWidths] = useState<Partial<Record<ResizableSidePanel, number>>>({});
   // Nothing is open, so nothing is measured — the container is hidden. Any slot
@@ -74,6 +92,7 @@ export function useSidePanelResize<T extends ShadowHost>(
   }, [panelKey, panelWidth]);
 
   const handlePanelResizePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!resizable) return;
     if (event.button !== 0) return;
     event.preventDefault();
     isDraggingRef.current = true;
@@ -191,7 +210,11 @@ export function useSidePanelResize<T extends ShadowHost>(
     window.addEventListener("pointercancel", handlePointerCancel);
     window.addEventListener("blur", handleWindowBlur);
     handle.addEventListener("lostpointercapture", handleLostPointerCapture);
-  }, [viewRef, viewerRef]);
+  }, [resizable, viewRef, viewerRef]);
 
-  return { handlePanelResizePointerDown, panelRef, panelWidth };
+  return {
+    handlePanelResizePointerDown,
+    panelRef,
+    panelWidth: resizable ? panelWidth : undefined,
+  };
 }

@@ -386,7 +386,7 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
           disabled={!bookId}
           title={t(spoilerGuardEnabled ? "ai.spoilerGuard.bookOn" : "ai.spoilerGuard.bookOff")}
           aria-label={t(spoilerGuardEnabled ? "ai.spoilerGuard.bookOn" : "ai.spoilerGuard.bookOff")}
-          className={`flex size-7 shrink-0 items-center justify-center rounded-lg hover:bg-bg-input disabled:opacity-40 ${spoilerGuardEnabled ? "text-accent-text" : "text-text-muted"}`}
+          className={`flex size-7 touch:size-11 shrink-0 items-center justify-center rounded-lg hover:bg-bg-input disabled:opacity-40 ${spoilerGuardEnabled ? "text-accent-text" : "text-text-muted"}`}
         >
           <BookOpen size={15} />
         </button>
@@ -395,13 +395,13 @@ function AiPanel({ bookId, bookTitle, bookAuthor, currentChapter, currentSection
           onClick={() => setIndexOpen(true)}
           disabled={!bookId}
           title={t("indexManager.title")}
-          className="flex size-7 shrink-0 items-center justify-center rounded-lg hover:bg-bg-input disabled:opacity-40"
+          className="flex size-7 touch:size-11 shrink-0 items-center justify-center rounded-lg hover:bg-bg-input disabled:opacity-40"
         >
           <Database size={15} className="text-text-muted" />
         </button>
         <button
           onClick={handleNewChat}
-          className="shrink-0 size-7 rounded-lg flex items-center justify-center hover:bg-bg-input cursor-pointer"
+          className="shrink-0 size-7 touch:size-11 rounded-lg flex items-center justify-center hover:bg-bg-input cursor-pointer"
         >
           <Plus size={16} className="text-text-muted" />
         </button>

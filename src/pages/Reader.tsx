@@ -8,6 +8,7 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   ArrowLeft,
   BookOpen,
+  ChevronLeft,
   List,
   Sparkles,
   Layers,
@@ -15,10 +16,13 @@ import {
   Minus,
   Plus,
   FileWarning,
+  MoreHorizontal,
   Search,
+  Type,
   Volume2,
 } from "lucide-react";
 import Button from "../components/ui/Button";
+import BottomSheet from "../components/ui/BottomSheet";
 import Toast from "../components/ui/Toast";
 import AiPanel from "../components/AiPanel";
 import ReaderTracesPanel from "../components/ReaderTracesPanel";
@@ -112,6 +116,9 @@ import { chapterReadout, type BodyMatterRange } from "./reader/chapter-count";
 import { useReaderNavigation } from "./reader/useReaderNavigation";
 import { useJumpHistory } from "./reader/useJumpHistory";
 import { toggleSidePanel, type SidePanel, type TracesTab } from "./reader/side-panel";
+import { closesOnNavigate, narrowPanel, panelShellVisible, type ReaderPanelId } from "./reader/narrow-panels";
+import { readerToolbarOverflow } from "./reader/reader-toolbar";
+import { isNarrowNow, useIsNarrow } from "../hooks/useIsNarrow";
 import {
   fileStatusExplainsFailure,
   toReaderOpenError,
@@ -129,6 +136,16 @@ import { type ReaderNoteAnchor } from "../components/ReaderNotesPanel";
 import ContinuousReadAloudToolbar from "../components/ContinuousReadAloudToolbar";
 import { useContinuousReadAloud } from "../hooks/useContinuousReadAloud";
 import { supportsContinuousReadAloud } from "../components/continuous-read-aloud";
+import { platform } from "../services/platform";
+
+// The reader header reserves room for whatever the OS puts above it. On macOS
+// that is the traffic lights, and the reserve doubles as the drag region. On a
+// phone it is the status bar and the notch, which `pt-safe-top` reads off the
+// viewport rather than guessing at. Same ternary as `Home.tsx` and
+// `Sidebar.tsx` — the reader was simply the one surface that never got
+// converted, which is why on Windows it alone still reserved 32px for a title
+// bar that isn't there.
+const TOP_INSET = platform.hasTitleBarInset ? "pt-titlebar-slim" : "pt-safe-top";
 
 // Opened only on an explicit "explain" action, never on first paint of the
 // reader — so the markdown renderer it needs waits for that action too.
@@ -207,12 +224,19 @@ export default function Reader() {
   );
   const supportsCfiNavigation = capabilities.supportsCfiNavigation;
   const [loading, setLoading] = useState(true);
+  // Width, not input type. A 900px iPad still has room to dock a panel beside
+  // the page; a macOS window dragged to phone width does not. `useIsNarrow`
+  // asks the same `min-width: 48rem` question `md:` asks, so the JavaScript
+  // decisions below and the breakpoint-gated classes can never disagree about
+  // where the reader changes shape.
+  const isNarrow = useIsNarrow();
   const [sidePanel, setSidePanel] = useState<SidePanel>(null);
   const [tracesTab, setTracesTab] = useState<TracesTab>("notes");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tocOpen, setTocOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [overflowMenuOpen, setOverflowMenuOpen] = useState(false);
   const [xrayInteraction, setXrayInteraction] = useState<ReaderInteraction | null>(null);
   useEffect(() => {
     setTracesTab("notes");
@@ -220,6 +244,30 @@ export default function Reader() {
   }, [bookId]);
   // Bumped on every ⌘F, even while the panel is already open, so it re-focuses/re-selects the input.
   const [searchFocusToken, setSearchFocusToken] = useState(0);
+
+  // One screen, one panel.
+  //
+  // A wide reader docks the TOC on the left and the AI panel on the right at
+  // the same time, so their open state is three independent flags written by a
+  // dozen entry points — the toolbar, ⌘F, the selection menu, a vocab marker,
+  // router state arriving from another page. A narrow reader has room for one,
+  // and asking each of those entry points to also close the other two would
+  // mean every future one has to remember. These two effects collapse whatever
+  // the callers produced instead, so a caller only ever writes its own flag.
+  //
+  // They cannot ping-pong: each watches only the flags it does not write, so a
+  // steady state re-runs at most one of them and it writes a value already in
+  // place, which React drops without a re-render.
+  useEffect(() => {
+    if (!isNarrow || !sidePanel) return;
+    setTocOpen(false);
+    setSearchOpen(false);
+  }, [isNarrow, sidePanel]);
+
+  useEffect(() => {
+    if (!isNarrow || (!tocOpen && !searchOpen)) return;
+    setSidePanel(null);
+  }, [isNarrow, tocOpen, searchOpen]);
   const [tocSavedState, setTocSavedState] = useState<TocSavedState | undefined>(undefined);
   const [chapters, setChapters] = useState<TocChapter[]>([]);
   // Which spine sections are the book's body, so front/back matter does not
@@ -242,6 +290,23 @@ export default function Reader() {
   // no `createDocument` for it to walk, so whole-book search would silently
   // find nothing there. Scoped to EPUB only, same boundary as the scrubber.
   const supportsSearch = (book?.render_format || book?.format) === "epub";
+  /**
+   * The ⋯ sheet's contents; empty on a wide header, which has a button for each
+   * of them — so an empty list is also the answer to "should ⋯ render at all".
+   *
+   * Up here, and memoized, on purpose. It is only read down in the JSX, but the
+   * reader takes several early returns (loading, open failure, book not found)
+   * before that point, so a hook beside its one use site would be a conditional
+   * hook. Left unmemoized it allocates a fresh array every render, which the
+   * React Compiler cannot reconcile with the hand-written `useCallback` deps
+   * elsewhere in this component and answers by skipping the whole file.
+   */
+  const overflowActions = useMemo(() => readerToolbarOverflow({
+    narrow: isNarrow,
+    supportsSearch,
+    supportsCfiNavigation,
+    readAloudAvailable: continuousReadAloudAvailable,
+  }), [continuousReadAloudAvailable, isNarrow, supportsCfiNavigation, supportsSearch]);
   const {
     pushJump,
     popJump,
@@ -443,7 +508,7 @@ export default function Reader() {
     }
     return undefined;
   }, []);
-  const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef, sidePanel);
+  const { handlePanelResizePointerDown, panelRef, panelWidth } = useSidePanelResize(viewRef, viewerRef, sidePanel, !isNarrow);
   const {
     zoom,
     zoomRef,
@@ -1085,6 +1150,18 @@ export default function Reader() {
     || continuousReadAloud.state.status === "playing"
     || continuousReadAloud.state.status === "paused";
 
+  // A player collapsed while the window was wide loses its home the moment the
+  // window narrows past the breakpoint: the capsule lives in the header
+  // cluster, and that cluster stops rendering. Expanding on the way down is
+  // what keeps pause and stop reachable — the alternative is audio playing
+  // with no control anywhere on screen.
+  const collapsedReadAloud = continuousReadAloud.state.collapsed;
+  const setReadAloudCollapsed = continuousReadAloud.setCollapsed;
+  useEffect(() => {
+    if (!isNarrow || !collapsedReadAloud) return;
+    setReadAloudCollapsed(false);
+  }, [isNarrow, collapsedReadAloud, setReadAloudCollapsed]);
+
   const recordReadingSession = useCallback(async (input: {
     bookId: string;
     startedAt: number;
@@ -1600,10 +1677,30 @@ export default function Reader() {
   // the reader. `memo` on the components only bites if every prop keeps its
   // identity between renders, which is why these are `useCallback` rather than
   // inline arrows.
+  /**
+   * Hands the screen back to the page once the reader has picked a destination
+   * out of a panel. A no-op wide, where the panel is docked beside the page and
+   * closing it would throw away the list being worked through — see
+   * `closesOnNavigate`.
+   *
+   * Reads the breakpoint with the unsubscribed `isNarrowNow()` rather than the
+   * `isNarrow` already in scope so this keeps one identity for the life of the
+   * reader. Everything it is threaded into is memoized precisely so the panels'
+   * `memo` bites, and a callback that changed on a window resize would undo
+   * that for every page turn afterwards.
+   */
+  const closeNarrowPanels = useCallback(() => {
+    if (!closesOnNavigate(isNarrowNow())) return;
+    setTocOpen(false);
+    setSearchOpen(false);
+    setSidePanel(null);
+  }, []);
+
   const handleTocNavigate = useCallback((page: number) => {
     const chapter = chapters[page - 1];
     if (chapter?.targetHref) navigateToChapter(chapter.targetHref);
-  }, [chapters, navigateToChapter]);
+    closeNarrowPanels();
+  }, [chapters, closeNarrowPanels, navigateToChapter]);
 
   const closeReaderSettings = useCallback(() => setSettingsOpen(false), []);
 
@@ -1645,13 +1742,19 @@ export default function Reader() {
 
   const consumeAiContext = useCallback(() => setAiContext(undefined), []);
 
+  // Tapping a citation in an answer means "show me that passage", which on a
+  // narrow screen it cannot do while the conversation is covering it. Nothing
+  // is lost by closing: the panel is hidden rather than unmounted, so the
+  // conversation is exactly where it was when the reader taps ✨ again.
   const navigateToCitedCfi = useCallback((cfi: string) => {
     flashNavigationTarget(cfi).catch(() => {});
-  }, [flashNavigationTarget]);
+    closeNarrowPanels();
+  }, [closeNarrowPanels, flashNavigationTarget]);
 
   const navigateToCitedSource = useCallback((source: CitedSource) => {
     navigateToSource(source).catch(() => {});
-  }, [navigateToSource]);
+    closeNarrowPanels();
+  }, [closeNarrowPanels, navigateToSource]);
 
   // Leave for another book, carrying the way back. The target is checked first
   // rather than navigated to hopefully: a book deleted since the answer was
@@ -1848,6 +1951,75 @@ export default function Reader() {
     setSearchFocusToken((token) => token + 1);
   };
 
+  /**
+   * The panel a narrow reader is showing over the page, and null on a wide one
+   * — where the panels dock beside the page and nothing covers it.
+   */
+  const coveringPanel: ReaderPanelId | null = isNarrow
+    ? narrowPanel({ tocOpen, searchOpen, sidePanel })
+    : null;
+
+  /**
+   * The one heading a covering panel carries, and the one thing its ⟨ button
+   * is labelled to leave. Literal `t()` calls per branch so the i18n key scan
+   * (tests/i18n-keys.test.ts) can see them.
+   */
+  const coveringPanelTitle = (panel: ReaderPanelId): string => {
+    if (panel === "toc") return t("reader.tocTitle");
+    if (panel === "search") return t("reader.search.title");
+    if (panel === "traces") return t("reader.traces.title");
+    return t("reader.aiAssistant");
+  };
+
+  /** The one way out of a panel that has taken over the screen. */
+  const closeAllPanels = () => {
+    setTocOpen(false);
+    setSearchOpen(false);
+    setSidePanel(null);
+  };
+
+  /**
+   * Where a panel sits.
+   *
+   * Wide: a column in the body's flex row, beside the page, exactly as before.
+   * Narrow: absolutely positioned over the whole reading area.
+   *
+   * Over rather than instead of, deliberately — the difference is invisible
+   * (the panel covers the page either way) and it is the reason opening a panel
+   * on a phone does not make the book jump. Taking the page's width away would
+   * relayout it to zero and back, and foliate re-columnizes the whole chapter
+   * on a width change: the reader would watch the text re-wrap twice per panel
+   * visit and could land on a different page than they left. The overlay leaves
+   * the page's box exactly where it was.
+   */
+  const panelShellClass = (open: boolean, width: string, covering: boolean) => (
+    panelShellVisible(open, isNarrow, covering)
+      ? `absolute inset-0 z-50 flex flex-col md:static md:inset-auto md:z-auto md:h-full md:shrink-0 ${width}`
+      : "hidden"
+  );
+
+  /**
+   * The nav bar a covering panel wears. It exists only below the breakpoint,
+   * where the panel is the whole screen and the toolbar button that opened it
+   * is a 36px icon in the corner — technically a way out, and not one anybody
+   * should have to find.
+   */
+  const coveringPanelBar = (panel: ReaderPanelId) => (
+    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-bg-surface pl-1 pr-3">
+      <button
+        type="button"
+        onClick={closeAllPanels}
+        aria-label={t("reader.panelBack")}
+        className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-lg text-text-secondary hover:bg-bg-input"
+      >
+        <ChevronLeft size={20} />
+      </button>
+      <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-text-primary">
+        {coveringPanelTitle(panel)}
+      </span>
+    </div>
+  );
+
   /** X-Ray's primary entry point: the selection menu's "查看语境解释". Opens the traces panel on its 语境 tab with the interaction that seeds the answer. */
   const openXray = (interaction: ReaderInteraction) => {
     setContextMenu(null);
@@ -1867,24 +2039,29 @@ export default function Reader() {
       )}
       {/* Header */}
       <header
-        className={`flex items-center justify-between px-section pt-titlebar-slim pb-2 shrink-0 relative select-none ${isStandaloneWindow ? "" : "bg-bg-surface border-b border-border"}`}
+        className={`flex items-center justify-between gap-1 px-3 md:gap-0 md:px-section ${TOP_INSET} pb-2 shrink-0 relative select-none ${isStandaloneWindow ? "" : "bg-bg-surface border-b border-border"}`}
         style={isStandaloneWindow ? {
           backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body,
           color: getThemeStyles(readerSettings.theme, readerSettings.customTheme).text,
           borderBottom: `1px solid ${getThemeStyles(readerSettings.theme, readerSettings.customTheme).text}1a`,
         } : undefined}
       >
-        <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar-slim" />
+        {platform.hasTitleBarInset && (
+          <div data-tauri-drag-region className="absolute top-0 left-0 right-0 h-titlebar-slim" />
+        )}
 
         {/* Left section */}
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2 md:min-w-[auto] md:gap-3">
           {isStandaloneWindow ? (
-            <div className="size-10 rounded-lg bg-accent flex items-center justify-center">
+            <div className="hidden size-10 rounded-lg bg-accent md:flex items-center justify-center">
               <BookOpen size={18} className="text-white" />
             </div>
           ) : (
             <>
-              <Button variant="icon" size="md" onClick={() => navigate("/")}>
+              {/* 36px is under the 44px both Apple and WCAG 2.5.5 ask for. The
+                  header's icon buttons grow on a coarse pointer — a modality
+                  question, unlike the layout above, so `touch:` and not `md:`. */}
+              <Button variant="icon" size="md" className="touch:size-11" onClick={() => navigate("/")}>
                 <ArrowLeft size={16} />
               </Button>
               <div className="w-px h-6 bg-border" />
@@ -1899,7 +2076,7 @@ export default function Reader() {
                 variant="icon"
                 size="md"
                 active={tocOpen}
-                className={tocOpen ? "bg-accent-bg" : ""}
+                className={`touch:size-11 ${tocOpen ? "bg-accent-bg" : ""}`}
                 aria-label={t(tocOpen ? "reader.tocClose" : "reader.tocOpen")}
                 aria-expanded={tocOpen}
                 title={t(tocOpen ? "reader.tocClose" : "reader.tocOpen")}
@@ -1907,12 +2084,18 @@ export default function Reader() {
               >
                 <List size={16} />
               </Button>
-              {supportsSearch && (
+              {/* Removed from the tree under narrow, not hidden with a class:
+                  `Button` bakes `inline-flex` into its own base string, and
+                  `hidden` cannot beat it — same specificity, and Tailwind emits
+                  `.hidden` first, so the later `.inline-flex` wins and the
+                  button stays on screen. The folded-into-⋯ decision has to be
+                  made in JS here, the way `overflowActions` already makes it. */}
+              {supportsSearch && !isNarrow && (
                 <Button
                   variant="icon"
                   size="md"
                   active={searchOpen}
-                  className={searchOpen ? "bg-accent-bg" : ""}
+                  className={`touch:size-11 ${searchOpen ? "bg-accent-bg" : ""}`}
                   aria-label={t(searchOpen ? "reader.search.close" : "reader.search.open")}
                   aria-expanded={searchOpen}
                   title={t(searchOpen ? "reader.search.close" : "reader.search.open")}
@@ -1924,15 +2107,20 @@ export default function Reader() {
             </>
           ) : (
             <>
-              {/* Book icon + title on left in main window */}
-              <div className="size-10 rounded-lg bg-accent flex items-center justify-center">
+              {/* Book icon + title on left in main window. The cover square is
+                  decoration — at phone width it costs 40px and says nothing the
+                  title beside it does not, so it goes and the title gets the
+                  room. */}
+              <div className="hidden size-10 rounded-lg bg-accent md:flex items-center justify-center">
                 <BookOpen size={18} className="text-white" />
               </div>
-              <div className="flex flex-col">
-                <h1 className="text-[16px] font-semibold text-text-primary leading-5">
+              {/* `min-w-0` + `truncate` only below the breakpoint: a wide header
+                  has room to let a long title wrap, and did. */}
+              <div className="flex min-w-0 flex-col md:min-w-[auto]">
+                <h1 className="truncate text-[16px] font-semibold text-text-primary leading-5 md:overflow-visible md:whitespace-normal">
                   {book.title}
                 </h1>
-                <span className="text-[13px] text-text-muted leading-4">
+                <span className="truncate text-[13px] text-text-muted leading-4 md:overflow-visible md:whitespace-normal">
                   {book.format === "pdf"
                     ? pageInfo ? t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total }) : ""
                     : chapterCounter ? t("reader.chapterOf", { ...chapterCounter }) : ""}
@@ -1942,13 +2130,16 @@ export default function Reader() {
           )}
         </div>
 
-        {/* Center — book title in standalone window */}
+        {/* Center — book title in standalone window. Absolutely centred, so it
+            has no flex box to be squeezed by and would sit straight on top of
+            the buttons at phone width; capped rather than hidden, because it is
+            the only place a standalone window names the book. */}
         {isStandaloneWindow && (
-          <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-none">
-            <h1 className="text-[14px] font-semibold leading-5" style={{ color: "inherit" }}>
+          <div className="absolute left-1/2 max-w-[45%] -translate-x-1/2 flex flex-col items-center pointer-events-none md:max-w-none">
+            <h1 className="max-w-full truncate text-[14px] font-semibold leading-5 md:overflow-visible md:whitespace-normal" style={{ color: "inherit" }}>
               {book.title}
             </h1>
-            <span className="text-[12px] leading-4 opacity-60">
+            <span className="max-w-full truncate text-[12px] leading-4 opacity-60 md:overflow-visible md:whitespace-normal">
               {book.format === "pdf"
                 ? pageInfo ? t("reader.pageOf", { current: pageInfo.current, total: pageInfo.total }) : ""
                 : chapterCounter ? t("reader.chapterOf", { ...chapterCounter }) : ""}
@@ -1957,7 +2148,7 @@ export default function Reader() {
         )}
 
         {/* Right section */}
-        <div className="flex items-center">
+        <div className="flex shrink-0 items-center">
           {/* TOC button in main window */}
           {!isStandaloneWindow && (
             <>
@@ -1965,7 +2156,7 @@ export default function Reader() {
                 variant="icon"
                 size="md"
                 active={tocOpen}
-                className={tocOpen ? "bg-accent-bg" : ""}
+                className={`touch:size-11 ${tocOpen ? "bg-accent-bg" : ""}`}
                 aria-label={t(tocOpen ? "reader.tocClose" : "reader.tocOpen")}
                 aria-expanded={tocOpen}
                 title={t(tocOpen ? "reader.tocClose" : "reader.tocOpen")}
@@ -1973,12 +2164,18 @@ export default function Reader() {
               >
                 <List size={16} />
               </Button>
-              {supportsSearch && (
+              {/* Removed from the tree under narrow, not hidden with a class:
+                  `Button` bakes `inline-flex` into its own base string, and
+                  `hidden` cannot beat it — same specificity, and Tailwind emits
+                  `.hidden` first, so the later `.inline-flex` wins and the
+                  button stays on screen. The folded-into-⋯ decision has to be
+                  made in JS here, the way `overflowActions` already makes it. */}
+              {supportsSearch && !isNarrow && (
                 <Button
                   variant="icon"
                   size="md"
                   active={searchOpen}
-                  className={searchOpen ? "bg-accent-bg" : ""}
+                  className={`touch:size-11 ${searchOpen ? "bg-accent-bg" : ""}`}
                   aria-label={t(searchOpen ? "reader.search.close" : "reader.search.open")}
                   aria-expanded={searchOpen}
                   title={t(searchOpen ? "reader.search.close" : "reader.search.open")}
@@ -1990,6 +2187,11 @@ export default function Reader() {
             </>
           )}
 
+          {/* Read-aloud keeps its whole cluster or nothing: the collapsed
+              transport is five controls in a row, which is the entire narrow
+              header on its own. Below the breakpoint it lives in the ⋯ sheet,
+              and once playing it has the floating bar over the page. */}
+          <div className="hidden md:contents">
           {continuousReadAloudAvailable && (
             continuousReadAloud.state.collapsed && continuousReadAloud.state.status !== "idle" ? (
               <ContinuousReadAloudToolbar
@@ -2009,6 +2211,7 @@ export default function Reader() {
                 variant="icon"
                 size="md"
                 active={continuousReadAloud.state.status !== "idle"}
+                className="touch:size-11"
                 disabled={!bookReady}
                 aria-label={t("reader.continuousReadAloud.start")}
                 title={t("reader.continuousReadAloud.start")}
@@ -2021,9 +2224,14 @@ export default function Reader() {
               </Button>
             )
           )}
+          </div>
 
           <button
-            ref={settingsAnchorRef}
+            // Below the breakpoint this button is gone and the ⋯ button carries
+            // the ref instead — `ReaderSettings` measures its popover against
+            // whatever this points at, and a `display:none` element measures
+            // zero and would drop the panel in the corner of the screen.
+            ref={isNarrow ? undefined : settingsAnchorRef}
             onClick={() => {
               setSettingsOpen((open) => !open);
               setTocOpen(false);
@@ -2031,7 +2239,7 @@ export default function Reader() {
             }}
             aria-label={t("reader.typography")}
             title={t("reader.typography")}
-            className={`flex items-center justify-center gap-1 size-9 rounded-lg cursor-pointer transition-colors ${
+            className={`hidden md:flex items-center justify-center gap-1 size-9 touch:size-11 rounded-lg cursor-pointer transition-colors ${
               settingsOpen ? "text-accent-text" : isStandaloneWindow ? "opacity-60 hover:opacity-100" : "text-text-muted hover:bg-bg-input"
             }`}
           >
@@ -2060,11 +2268,12 @@ export default function Reader() {
             onClearLookupMarks={bookId ? clearLookupMarks : undefined}
           />
 
-          {supportsCfiNavigation && (
+          {supportsCfiNavigation && !isNarrow && (
             <Button
               variant="icon"
               size="md"
               active={sidePanel === "traces"}
+              className="touch:size-11"
               aria-label={t("reader.traces.title")}
               title={t("reader.traces.title")}
               onClick={toggleTracesPanel}
@@ -2077,39 +2286,139 @@ export default function Reader() {
             variant="icon"
             size="md"
             active={sidePanel === "ai"}
+            className="touch:size-11"
             aria-label={t("reader.aiAssistant")}
             title={t("reader.aiAssistant")}
             onClick={toggleAiPanel}
           >
             <Sparkles size={16} />
           </Button>
+
+          {/* Everything the narrow header could not keep. Renders only when
+              `readerToolbarOverflow` has something to put in it, which is only
+              ever below the breakpoint. */}
+          {overflowActions.length > 0 && (
+            <Button
+              ref={settingsAnchorRef}
+              variant="icon"
+              size="md"
+              active={overflowMenuOpen}
+              className="touch:size-11"
+              aria-label={t("reader.moreControls")}
+              aria-expanded={overflowMenuOpen}
+              title={t("reader.moreControls")}
+              onClick={() => {
+                // The typography popover anchors here, so this button is inside
+                // `ReaderSettings`' own "clicked outside" test and cannot close
+                // it that way. Closing it explicitly is what makes a second tap
+                // on ⋯ mean "put that away", not "stack a sheet on top of it".
+                setSettingsOpen(false);
+                setOverflowMenuOpen((open) => !open);
+              }}
+            >
+              <MoreHorizontal size={18} />
+            </Button>
+          )}
         </div>
       </header>
 
+      <BottomSheet
+        // Tied to the same condition as the ⋯ button rather than to its own
+        // flag: dragging a desktop window past the breakpoint unmounts ⋯ and
+        // empties `overflowActions`, and a still-open sheet would sit there as
+        // a full-screen modal with a title and no rows.
+        open={overflowMenuOpen && overflowActions.length > 0}
+        onClose={() => setOverflowMenuOpen(false)}
+        title={t("reader.moreControls")}
+      >
+        <div className="px-2 pb-1">
+          {overflowActions.map((action) => {
+            const run = () => {
+              setOverflowMenuOpen(false);
+              if (action === "typography") setSettingsOpen(true);
+              else if (action === "search") toggleSearchPanel();
+              else if (action === "traces") toggleTracesPanel();
+              else if (continuousReadAloud.state.status === "idle") void continuousReadAloud.start();
+              else continuousReadAloud.setCollapsed(false);
+            };
+            const label = action === "typography"
+              ? t("reader.typography")
+              : action === "search"
+                ? t("reader.search.open")
+                : action === "traces"
+                  ? t("reader.traces.title")
+                  // "开始朗读" on a row that is actually going to bring an
+                  // already-playing bar back is a label that lies about what
+                  // the tap does. Say what the player is doing instead.
+                  : continuousReadAloud.state.status === "idle"
+                    ? t("reader.continuousReadAloud.start")
+                    : continuousReadAloud.state.status === "paused"
+                      ? t("reader.continuousReadAloud.paused")
+                      : t("reader.continuousReadAloud.reading");
+            const Icon = action === "typography"
+              ? Type
+              : action === "search"
+                ? Search
+                : action === "traces"
+                  ? Layers
+                  : Volume2;
+            const active = (action === "search" && searchOpen)
+              || (action === "traces" && sidePanel === "traces")
+              || (action === "readAloud" && continuousReadAloud.state.status !== "idle");
+            return (
+              <button
+                key={action}
+                type="button"
+                onClick={run}
+                disabled={action === "readAloud" && !bookReady}
+                className={`flex h-12 w-full cursor-pointer items-center gap-3 rounded-lg px-3 text-left disabled:opacity-40 ${
+                  active ? "text-accent-text" : "text-text-primary"
+                }`}
+              >
+                <Icon size={18} className={active ? "" : "text-text-muted"} />
+                <span className="text-[15px]">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </BottomSheet>
+
       {/* Body */}
+      {/* `relative` is what the narrow panels position against — see `panelShellClass`. */}
       <div
-        className="flex flex-1 overflow-hidden"
+        className="relative flex flex-1 overflow-hidden"
         style={{ backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body }}
       >
-        <TableOfContents
-          open={tocOpen}
-          chapters={tocChapters}
-          currentPage={currentChapterIndex + 1}
-          onNavigate={handleTocNavigate}
-          bookId={bookId}
-          savedState={tocSavedState}
-        />
+        <div className={panelShellClass(tocOpen, "md:w-80", coveringPanel === "toc")}>
+          {coveringPanel === "toc" && coveringPanelBar("toc")}
+          <div className="min-h-0 flex-1">
+            <TableOfContents
+              open={tocOpen}
+              chapters={tocChapters}
+              currentPage={currentChapterIndex + 1}
+              onNavigate={handleTocNavigate}
+              bookId={bookId}
+              savedState={tocSavedState}
+            />
+          </div>
+        </div>
         {supportsSearch && bookId && (
-          <BookSearchPanel
-            open={searchOpen}
-            onClose={() => setSearchOpen(false)}
-            bookId={bookId}
-            viewRef={viewRef}
-            focusToken={searchFocusToken}
-            onNavigateToCfi={(cfi) => {
-              flashNavigationTarget(cfi).catch(() => {});
-            }}
-          />
+          <div className={panelShellClass(searchOpen, "md:w-80", coveringPanel === "search")}>
+            {coveringPanel === "search" && coveringPanelBar("search")}
+            <div className="min-h-0 flex-1">
+              <BookSearchPanel
+                open={searchOpen}
+                onClose={() => setSearchOpen(false)}
+                bookId={bookId}
+                viewRef={viewRef}
+                focusToken={searchFocusToken}
+                onNavigateToCfi={(cfi) => {
+                  flashNavigationTarget(cfi).catch(() => {});
+                  closeNarrowPanels();
+                }}
+              />
+            </div>
+          </div>
         )}
         <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body }}>
           <main
@@ -2303,7 +2612,12 @@ export default function Reader() {
                     onPrevious={() => { void continuousReadAloud.previous(); }}
                     onNext={() => { void continuousReadAloud.next(); }}
                     onRateChange={continuousReadAloud.setRate}
-                    onCollapsedChange={continuousReadAloud.setCollapsed}
+                    // Under narrow the collapsed capsule's home is the header
+                    // cluster, which is not rendered below the breakpoint —
+                    // collapsing there would keep the audio playing with no
+                    // transport anywhere on screen. So this bar does not offer
+                    // it, rather than offering a way out that leads nowhere.
+                    onCollapsedChange={isNarrow ? undefined : continuousReadAloud.setCollapsed}
                   />
                 </div>
               )}
@@ -2398,7 +2712,12 @@ export default function Reader() {
           </footer>
         </div>
 
-        {sidePanel && (
+        {/* Not rendered at all below the breakpoint, rather than hidden: a
+            full-screen panel has nothing to resize, and a 6px drag strip on a
+            touchscreen is a control nobody can hit on purpose and everybody
+            hits by accident. `useSidePanelResize` refuses the drag from its
+            side too. */}
+        {sidePanel && !isNarrow && (
           <div
             onPointerDown={handlePanelResizePointerDown}
             className="w-1 h-full shrink-0 cursor-col-resize touch-none hover:bg-accent/30 transition-colors z-10"
@@ -2406,14 +2725,19 @@ export default function Reader() {
         )}
         <div
           ref={panelRef}
-          className={sidePanel ? "shrink-0 h-full" : "hidden"}
+          className={panelShellClass(sidePanel !== null, "", coveringPanel === "ai" || coveringPanel === "traces")}
+          // `panelWidth` is undefined below the breakpoint, so no inline width
+          // is written and the panel's classes are free to size it. An inline
+          // width would beat every one of them.
           style={{ width: panelWidth }}
           onPointerDownCapture={blockPageTurnKeyboard}
         >
+          {coveringPanel === "ai" && coveringPanelBar("ai")}
+          {coveringPanel === "traces" && coveringPanelBar("traces")}
           {/* No tab bar: X-Ray moved to the traces panel, so the conversation is
               the only thing in here and a one-tab switcher would be a label
               pretending to be a control. The panel gains back its 45px. */}
-          <div className={sidePanel === "ai" ? "flex h-full flex-col" : "hidden"}>
+          <div className={sidePanel === "ai" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
             <div className="relative flex-1 min-h-0">
               <div className="h-full">
                 <AiPanel
@@ -2432,7 +2756,12 @@ export default function Reader() {
                   onContextConsumed={consumeAiContext}
                   onNavigateToCfi={navigateToCitedCfi}
                   onNavigateToSource={navigateToCitedSource}
-                  onNavigateToQuote={navigateToQuote}
+                  // A cross-book quote changes the route param but not this
+                  // component instance, and the bookId reset effect does not
+                  // touch `sidePanel` — so without this the other book opens
+                  // underneath a full-screen AI panel, hiding both the passage
+                  // and the offer to go back.
+                  onNavigateToQuote={(quote) => { closeNarrowPanels(); navigateToQuote(quote); }}
                   onLookupWord={lookupWordInPanel}
                   onSelectText={openPanelSelectionMenu}
                 />
@@ -2440,6 +2769,7 @@ export default function Reader() {
             </div>
           </div>
           {supportsCfiNavigation && sidePanel === "traces" && bookId && (
+            <div className="min-h-0 flex-1">
             <ReaderTracesPanel
               tab={tracesTab}
               onTabChange={setTracesTab}
@@ -2448,6 +2778,7 @@ export default function Reader() {
                 bookTitle: book.title,
                 onNavigate: (cfi) => {
                   flashNavigationTarget(cfi).catch(() => {});
+                  closeNarrowPanels();
                 },
                 initialWordCfi: activeVocabCfi,
                 onWordDetailClosed: () => setActiveVocabCfi(null),
@@ -2456,7 +2787,10 @@ export default function Reader() {
               notesProps={{
                 bookId,
                 currentCfi: () => currentCfiRef.current,
-                onNavigate: navigateToCfi,
+                onNavigate: (cfi) => {
+                  navigateToCfi(cfi);
+                  closeNarrowPanels();
+                },
                 selectedAnchor: selectedNoteAnchor,
                 onSelectedAnchorHandled: () => {
                   setSelectedNoteAnchor(null);
@@ -2472,10 +2806,25 @@ export default function Reader() {
                 currentChapter: currentChapterIndex >= 0 ? chapters[currentChapterIndex]?.title : undefined,
                 progress,
                 onClear: () => setXrayInteraction(null),
-                onNavigate: async (source) => await navigateToSource(source) !== false,
-                onNavigateCurrent: navigateToCurrentXrayOccurrence,
+                // Only a jump that actually landed hands the screen back — a
+                // failed one would close the panel and leave the reader looking
+                // at the same page with nothing to say why.
+                onNavigate: async (source) => {
+                  const arrived = await navigateToSource(source) !== false;
+                  if (arrived) closeNarrowPanels();
+                  return arrived;
+                },
+                // Sits next to `onNavigate` in the same list and means the same
+                // thing to a reader — "take me to that page" — so it hands the
+                // screen back the same way.
+                onNavigateCurrent: async (location) => {
+                  const arrived = await navigateToCurrentXrayOccurrence(location);
+                  if (arrived) closeNarrowPanels();
+                  return arrived;
+                },
               }}
             />
+            </div>
           )}
         </div>
       </div>

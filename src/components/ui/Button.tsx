@@ -34,6 +34,10 @@ const iconSizeStyles: Record<ButtonSize, string> = {
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ variant = "primary", size = "md", active, className = "", children, ...props }, ref) => {
+    // `inline-flex` here means a caller cannot hide a Button with `hidden`:
+    // the two classes have equal specificity and Tailwind emits `.hidden`
+    // first, so `.inline-flex` wins and the button stays on screen. To drop a
+    // Button at a breakpoint, stop rendering it — don't pass `hidden md:…`.
     const base = "inline-flex items-center shrink-0 cursor-pointer transition-colors disabled:opacity-50 disabled:pointer-events-none";
     const variantClass = active
       ? variant === "icon"

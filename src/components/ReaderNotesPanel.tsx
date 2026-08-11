@@ -451,7 +451,7 @@ export default function ReaderNotesPanel({
           <span className="text-[12.5px] font-medium tracking-[-0.15px] text-text-primary">{t("notes.keepThisPlace")}</span>
         </button>
         {onExport && (
-          <button type="button" onClick={onExport} title={t("readerExport.open")} aria-label={t("readerExport.open")} className="grid size-7 shrink-0 place-items-center rounded-lg text-text-muted hover:bg-bg-input hover:text-text-primary">
+          <button type="button" onClick={onExport} title={t("readerExport.open")} aria-label={t("readerExport.open")} className="grid size-7 touch:size-11 shrink-0 place-items-center rounded-lg text-text-muted hover:bg-bg-input hover:text-text-primary">
             <Download size={15} />
           </button>
         )}

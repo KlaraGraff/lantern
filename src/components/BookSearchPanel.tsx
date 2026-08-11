@@ -182,9 +182,11 @@ export default function BookSearchPanel({
   };
 
   return (
+    // Width and docking belong to the reader, not here — see the same note in
+    // `TableOfContents`.
     <aside
       aria-label={t("reader.search.title")}
-      className="w-80 shrink-0 h-full bg-bg-muted border-r border-border flex flex-col"
+      className="flex h-full min-h-0 w-full flex-col bg-bg-muted md:border-r md:border-border"
     >
       <div className="shrink-0 border-b border-border px-5 py-3 bg-bg-surface flex flex-col gap-2">
         <h2 className="text-[15px] font-semibold text-text-primary leading-5">

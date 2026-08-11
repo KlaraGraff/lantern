@@ -135,6 +135,8 @@
   "reader.traces.tab.notes": "Notes",
   "reader.traces.tab.xray": "Context",
   "reader.typography": "Typography",
+  "reader.moreControls": "More",
+  "reader.panelBack": "Back to the book",
   "reader.tocTitle": "Table of Contents",
   "reader.tocOpen": "Open table of contents",
   "reader.tocClose": "Close table of contents",
