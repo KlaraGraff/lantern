@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import DeleteBookDialog, { type DeleteBookNotePolicy } from "./DeleteBookDialog";
 import IndexManagerModal from "./IndexManagerModal";
 import { useShelfCoverage } from "../hooks/useShelfCoverage";
+import { useLongPress } from "../hooks/useLongPress";
 
 function CoverImage({ src, alt, title }: { src: string; alt: string; title: string }) {
   const [failed, setFailed] = useState(false);
@@ -58,6 +59,14 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
     setContextMenu({ x: e.clientX, y: e.clientY, book });
   };
 
+  // The finger's spelling of the same gesture. Without it the nine actions in
+  // `BookContextMenu` have no entry point at all on a phone.
+  const longPressBook = useRef<Book | null>(null);
+  const longPress = useLongPress((x, y) => {
+    const book = longPressBook.current;
+    if (book) setContextMenu({ x, y, book });
+  });
+
   // An unavailable book still opens: the reader owns the iCloud download and
   // shows the waiting screen. Refusing the click here left evicted books dead.
   const openBook = async (book: Book) => {
@@ -77,6 +86,8 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
             key={book.id}
             onClick={() => { openBook(book).catch(() => {}); }}
             onContextMenu={(e) => handleContextMenu(e, book)}
+            {...longPress}
+            onPointerDown={(e) => { longPressBook.current = book; longPress.onPointerDown(e); }}
             className={`flex items-start gap-4 p-4 border border-border rounded-lg text-left cursor-pointer hover:bg-bg-muted transition-colors ${book.available === false ? "opacity-60" : ""} ${isPendingPreparation(book) ? "cursor-wait" : ""}`}
           >
             {/* Cover */}

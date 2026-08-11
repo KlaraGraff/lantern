@@ -11,6 +11,7 @@ import { CloudDownload } from "lucide-react";
 import DeleteBookDialog, { type DeleteBookNotePolicy } from "./DeleteBookDialog";
 import IndexManagerModal from "./IndexManagerModal";
 import { useShelfCoverage } from "../hooks/useShelfCoverage";
+import { useLongPress } from "../hooks/useLongPress";
 
 function CoverImage({ src, alt, title }: { src: string; alt: string; title: string }) {
   const [failed, setFailed] = useState(false);
@@ -102,6 +103,14 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
     setContextMenu({ x: e.clientX, y: e.clientY, book });
   };
 
+  // The finger's spelling of the same gesture. Without it the nine actions in
+  // `BookContextMenu` have no entry point at all on a phone.
+  const longPressBook = useRef<Book | null>(null);
+  const longPress = useLongPress((x, y) => {
+    const book = longPressBook.current;
+    if (book) setContextMenu({ x, y, book });
+  });
+
   // An unavailable book still opens: the reader owns the iCloud download and
   // shows the waiting screen. Refusing the click here left evicted books dead.
   const openBook = async (book: Book) => {
@@ -121,6 +130,8 @@ export default function BookGrid({ books, hasMore, loadMore, loadingMore, active
             key={book.id}
             onClick={() => { openBook(book).catch(() => {}); }}
             onContextMenu={(e) => handleContextMenu(e, book)}
+            {...longPress}
+            onPointerDown={(e) => { longPressBook.current = book; longPress.onPointerDown(e); }}
             className={`text-left cursor-pointer group ${staggerEntrance && index < (entranceSize ?? 0) ? "motion-stagger-in" : ""} ${book.available === false ? "opacity-60" : ""} ${isPendingPreparation(book) ? "cursor-wait" : ""}`}
             style={staggerEntrance ? ({ "--motion-stagger-index": Math.min(index, STAGGER_CAP) } as React.CSSProperties) : undefined}
           >

@@ -10,7 +10,7 @@ import {
 import {
   LONG_PRESS,
   longPressPointerEligible,
-} from "../src/pages/reader/long-press.ts";
+} from "../src/utils/long-press.ts";
 
 const touch = (over: Partial<{ pointerType: string; isPrimary: boolean; button: number }> = {}) => ({
   pointerType: "touch",

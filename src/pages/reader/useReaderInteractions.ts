@@ -24,7 +24,7 @@ import { bindingFromKeyboardEvent } from "../../components/reader-bindings";
 import { appZoomCommandFor, nextAppZoom } from "../../services/app-zoom";
 import { persistAppZoom, readAppZoom } from "../../services/app-zoom-window";
 import { clickCountGraceMs } from "./click-grace";
-import { createLongPressTracker, LONG_PRESS } from "./long-press";
+import { createLongPressTracker, LONG_PRESS } from "../../utils/long-press";
 import { createSwipeTracker } from "./swipe-page-turn";
 
 /**

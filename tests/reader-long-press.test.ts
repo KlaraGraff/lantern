@@ -6,7 +6,7 @@ import {
   createLongPressTracker,
   longPressPointerEligible,
   longPressTravelExceeded,
-} from "../src/pages/reader/long-press.ts";
+} from "../src/utils/long-press.ts";
 import { bindingFromMouseEvent } from "../src/components/reader-bindings.ts";
 
 const touch = (over: Partial<{

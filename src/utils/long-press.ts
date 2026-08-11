@@ -1,17 +1,19 @@
 /**
- * When a press-and-hold counts as "open the selection menu here".
+ * When a press-and-hold counts as "open the context menu here".
  *
- * A finger has no second button, so the reader's selection menu — and with it
- * the free dictionary strip that feeds mastery at half an AI card's weight
- * (`dictionary-glance.ts`) — was reachable only from a `contextmenu` event.
- * Long press is the touch spelling of that gesture. Whether a given press
- * qualifies is arithmetic over three facts (which pointer, how far it
+ * A finger has no second button, so everything Lantern hangs off `contextmenu`
+ * — the reader's selection menu and the free dictionary strip behind it
+ * (`dictionary-glance.ts`), the shelf's per-book menu — was unreachable by
+ * touch. Long press is the touch spelling of that gesture. Whether a given
+ * press qualifies is arithmetic over three facts (which pointer, how far it
  * travelled, how long it stayed), so it lives here rather than tangled into
- * the document listeners in `useReaderInteractions.ts` — the same split
+ * the listeners of whichever surface needs it — the same split
  * `dictionary-glance.ts` and `learning-card/placement.ts` already use.
  *
  * Framework-free and DOM-free on purpose: the caller owns the timer and the
- * events, this owns the decision.
+ * events, this owns the decision. `hooks/useLongPress.ts` is the React
+ * wrapper that owns both for an ordinary element; the reader drives the
+ * tracker itself because its listeners are on the book's iframe document.
  */
 
 export interface LongPressConfig {
