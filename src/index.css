@@ -751,3 +751,57 @@ html[data-reader-page-animation="cover"][data-reader-page-direction="previous"]:
 [data-tauri-drag-region] {
   cursor: default;
 }
+
+/* Long-press on a control is a gesture, not a text selection.
+ *
+ * iOS answers a press-and-hold by growing selection handles around whatever
+ * word is under the finger and, on an image or a link, by raising the native
+ * callout ("Save Image", "Open in New Tab"). On a page of prose that is
+ * exactly right. On a button it is not: the reader gets handles around the
+ * words 「打开设置」 instead of the button pressing, and on a book cover the
+ * native callout races the card menu that long-press now opens — the two
+ * gestures are the same gesture, and the OS wins.
+ *
+ * Scoped to controls rather than reset on `body`, deliberately: an AI answer,
+ * a dictionary sense and a note are prose the reader has every reason to
+ * select and copy, and a body-wide `user-select: none` with opt-ins scattered
+ * back through the tree gets one of them wrong sooner or later. The book's own
+ * text is a separate document inside the reader's iframe and is not reachable
+ * from here at all.
+ *
+ * The same element list as the `touch-action: manipulation` rule in
+ * `@layer base` — same idea, same answer to "is this a control".
+ *
+ * Fenced behind `pointer: coarse` because a mouse has no long-press: on the
+ * desktop, drag-selecting a button's label is harmless and occasionally
+ * useful, and there is no callout to suppress. */
+@media (pointer: coarse) {
+  button,
+  select,
+  summary,
+  label,
+  [role="button"],
+  [role="tab"],
+  [role="switch"],
+  [role="menuitem"],
+  [role="option"] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  /* `a` is left out of the list above on purpose: a link inside an AI answer
+   * is part of the prose, and cutting it out of the selection would make the
+   * paragraph around it uncopyable in one gesture. */
+
+  /* A field nested inside one of those — a search box in a labelled row, the
+   * note editor inside a card — still has to hand the reader a caret and a
+   * selection. Same specificity, written second, so it wins. */
+  input,
+  textarea,
+  [contenteditable="true"] {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+  }
+}
