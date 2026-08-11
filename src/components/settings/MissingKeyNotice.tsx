@@ -15,17 +15,20 @@ interface MissingKeyNoticeProps {
 /**
  * The pane a reader lands on when a model synced across but its key did not.
  *
- * Three parts, in the order they are useful: what is missing, what Lantern
- * observed, and the way out. The way out comes before the diagnosis in
- * prominence — entering the key here is the only move that is both fast and
- * certain, and a reader who takes it never needs to read the rest.
+ * Three parts, in the order they are useful: what is missing, why — stated as
+ * fact, not diagnosed — and the way out. Lantern keeps every API key and OAuth
+ * token in one local file that never leaves the device it was entered on (see
+ * `src-tauri/src/secrets.rs`), so a credential never following its model's
+ * settings across devices is the product working as built, not a fault to
+ * chase down. The way out comes before that explanation in prominence anyway
+ * — entering the key here is the only move that is both fast and certain, and
+ * a reader who takes it never needs to read the rest.
  *
- * There is deliberately no spinner and no progress bar. A spinner promises that
- * waiting works; here waiting may never finish, and the honest shape of that is
- * a button that says what it can do.
+ * There is deliberately no spinner and no progress bar. A spinner promises
+ * that waiting works; nothing here is ever in flight to wait for.
  *
- * See `missing-key.ts` for which state is chosen when, and D-018 for why the
- * inference is allowed to be stated at all.
+ * See `missing-key.ts` for what each state still tracks, and why the machine
+ * stays even though its states mostly render the same copy today.
  */
 export default function MissingKeyNotice({
   name,
@@ -50,24 +53,14 @@ export default function MissingKeyNotice({
         {t("settings.ai.missingKey.observation", { name })}
       </p>
 
-      {state.kind === "waiting" && (
-        <p className="mt-2 text-[11.5px] leading-[1.7] text-text-secondary">
-          {t("settings.ai.missingKey.waiting")}
-        </p>
-      )}
+      {/* `waiting` and `alone` add nothing here — both render the shared copy
+          above and stop. Only `inferred` has something extra to say, and it
+          is a fact (where the configuration came from), not a conclusion
+          about the key. See missing-key.ts for why the states stay distinct
+          in code even though two of them look identical on screen. */}
       {state.kind === "inferred" && (
-        <>
-          <p className="mt-2 text-[11.5px] leading-[1.7] text-text-secondary">
-            {t("settings.ai.missingKey.evidence", { peer: state.peer })}
-          </p>
-          <p className="mt-2 text-[11.5px] leading-[1.7] text-text-secondary">
-            {t("settings.ai.missingKey.inference")}
-          </p>
-        </>
-      )}
-      {state.kind === "alone" && (
         <p className="mt-2 text-[11.5px] leading-[1.7] text-text-secondary">
-          {t("settings.ai.missingKey.alone")}
+          {t("settings.ai.missingKey.evidence", { peer: state.peer })}
         </p>
       )}
 
@@ -96,12 +89,6 @@ export default function MissingKeyNotice({
       <p className="mt-1.5 text-[11px] leading-[1.65] text-text-muted">
         {t("settings.ai.missingKey.recheckHint")}
       </p>
-
-      {state.kind === "inferred" && (
-        <p className="mt-3 border-t border-warning/20 pt-3 text-[11px] leading-[1.65] text-text-muted">
-          {t("settings.ai.missingKey.checkSwitch")}
-        </p>
-      )}
     </section>
   );
 }

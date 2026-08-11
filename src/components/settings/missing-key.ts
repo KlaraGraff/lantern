@@ -1,23 +1,29 @@
 /**
- * "The model is here, its key is not" — which channel failed, and how sure we
- * are allowed to sound about it.
+ * "The model is here, its key is not" — which state this device is in, and
+ * how long it has been there.
  *
- * Per [D-018](../../../docs/roadmap/mobile-ios.md#d-018--a-missing-credential-names-the-channel-that-failed-instead-of-shrugging),
- * two independent channels carry a model to a second device. Its name, provider
- * and endpoint ride the iCloud Documents container along with the library; its
- * key rides a synchronizable Keychain item. Nothing reports the Keychain
- * switch — a write with it off still returns success, and Apple puts no bound
- * on arrival time once it is on — so the cause is genuinely undetectable.
+ * Two independent channels carry a model to a second device today: its name,
+ * provider and endpoint ride the iCloud Documents container along with the
+ * library, and that one arrives. Its credential does not ride anything —
+ * Lantern keeps every API key and OAuth token in one local `secrets.db` that
+ * never leaves the device it was entered on (see `src-tauri/src/secrets.rs`'s
+ * module comment: "one table, one file, no operating-system credential
+ * store"). There is no synchronizable Keychain item: the `keyring` crate was
+ * removed from `Cargo.toml` in v2.6.0, and nothing in this codebase calls
+ * `SecItemAdd`/`SecItemCopyMatching`. So a key "not arriving" is not a fault
+ * to diagnose on any platform — it was never going to arrive. The copy says
+ * exactly that and sends the reader to type it in again, here.
  *
- * What *is* observable is the other channel. A named peer in `sync_status` is
- * direct evidence that the document channel delivers from that device. When a
- * configuration arrived and its credential did not, the two channels differ by
- * exactly one variable, and naming that variable points at a switch the reader
- * can go and flip. The conclusion stays an inference in the copy — "probably",
- * never "it is off" — and the pane shows the observation it reasoned from.
- *
- * The states are kept here, apart from the component, because the interesting
- * part is the decision and not the markup.
+ * The state machine below — `waiting` / `inferred` / `alone`, the grace
+ * window, reading `sync_status` for a named peer — predates that correction.
+ * It used to carry an inference ("the other channel delivered and this one
+ * didn't, so your iCloud Keychain switch is probably off") that a real
+ * synced-credential channel would have made true. That inference is gone
+ * from the rendered copy because it is false for every reader today; see
+ * MissingKeyNotice.tsx for exactly what each state still shows. The
+ * machinery itself stays: the day a synced-credential channel ships, these
+ * are the same three states and the same clock that reasoning will need
+ * again, and rebuilding it from scratch would just reproduce this file.
  */
 
 import { isLocalModelServerProvider } from "./aiPresets.ts";
@@ -31,21 +37,27 @@ export interface MissingKeyPeer {
 export type MissingKeyState =
   /** Nothing to say: there is a key, or this profile does not use keys. */
   | { kind: "none" }
-  /** Too early to blame anything. A key entered on a Mac a moment ago is
-   *  probably still in flight, and saying otherwise would be wrong most of the
-   *  time it is said. */
+  /** Under the grace window since this device first noticed the key
+   *  missing. Renders the same base copy as `alone` (MissingKeyNotice.tsx
+   *  adds nothing extra for either) — the distinction is kept only so the
+   *  window has something to gate once inference-bearing copy comes back. */
   | { kind: "waiting" }
-  /** One channel through, the other not, for longer than that. */
+  /** A named peer proves the document-sync channel is delivering from that
+   *  device. Contributes one factual aside naming it; draws no conclusion
+   *  about the key, which never rode that channel or any other. */
   | { kind: "inferred"; peer: string }
-  /** No second device, so no control channel and nothing to infer from. */
+  /** No named peer to point to — no document-sync pairing, no peers seen
+   *  yet, or a peer with no name to print. Renders the same base copy as
+   *  `waiting`. */
   | { kind: "alone" };
 
 /**
- * How long the pane stays on "give it a moment" before it will name a channel.
+ * How long the pane withholds the `inferred` peer-provenance aside.
  *
- * A minute is the cost of the false positive D-018 accepts: the switch is on
- * and this one item is merely late. Escalating on a threshold rather than
- * hedging harder keeps the eventual sentence worth reading.
+ * Kept at the value D-018 originally chose to avoid a premature accusation —
+ * a sentence this pane no longer states at all. Preserved so a future
+ * synced-credential feature inherits the same window instead of re-deriving
+ * it; today all it delays is a harmless factual mention, not a conclusion.
  */
 export const KEYCHAIN_GRACE_MS = 60_000;
 
@@ -53,9 +65,9 @@ export interface MissingKeyInput {
   /** This profile authenticates with API keys and has none on this device. */
   missing: boolean;
   /**
-   * This platform is on the iCloud pair — the one place both channels exist, so
-   * the one place comparing them means anything. Windows keeps its credentials
-   * local and never had a second channel to lose.
+   * This platform is on the iCloud document-sync pair — the one place a
+   * peer's name is ever available to mention. Windows never joins that sync
+   * and has no peer to name either, so it always resolves to `alone`.
    */
   pairedSync: boolean;
   peers: MissingKeyPeer[];
