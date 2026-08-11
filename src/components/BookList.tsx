@@ -11,6 +11,7 @@ import DeleteBookDialog, { type DeleteBookNotePolicy } from "./DeleteBookDialog"
 import IndexManagerModal from "./IndexManagerModal";
 import { useShelfCoverage } from "../hooks/useShelfCoverage";
 import { useLongPress } from "../hooks/useLongPress";
+import { toPlainText } from "../utils/plain-text";
 
 function CoverImage({ src, alt, title }: { src: string; alt: string; title: string }) {
   const [failed, setFailed] = useState(false);
@@ -126,9 +127,12 @@ export default function BookList({ books, hasMore, loadMore, loadingMore, active
               <p className="text-[14px] text-text-secondary tracking-[-0.15px] leading-5">
                 {book.author}
               </p>
+              {/* The blurb is `dc:description` straight out of the EPUB, and
+                  that field is allowed to carry markup — untrusted markup, at
+                  that. One truncated line has no use for it either way. */}
               {book.description && (
                 <p className="text-[12px] text-text-muted leading-4 mt-1 truncate">
-                  {book.description}
+                  {toPlainText(book.description)}
                 </p>
               )}
               {isPendingPreparation(book) && (
