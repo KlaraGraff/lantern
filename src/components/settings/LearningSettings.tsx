@@ -795,7 +795,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
                       key={level}
                       type="button"
                       onClick={() => void applyAssessmentLevel(level, "assessment:confirmed")}
-                      className="h-8 min-w-10 rounded-md border border-border bg-bg-surface px-3 text-[12px] font-semibold text-text-secondary hover:border-accent hover:text-accent-text"
+                      className="h-8 min-w-10 touch:h-11 touch:min-w-11 touch:text-[13px] rounded-md border border-border bg-bg-surface px-3 text-[12px] font-semibold text-text-secondary hover:border-accent hover:text-accent-text"
                     >
                       {level}
                     </button>

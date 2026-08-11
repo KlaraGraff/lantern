@@ -203,12 +203,15 @@ export function PageTurnBindingButton({
     return () => window.removeEventListener("contextmenu", onContextMenu, true);
   }, [active]);
 
+  // Height and type grow under `touch:`; the 92px width floor does not. A phone
+  // shows this row at 390px with the setting's label and hint beside it, and
+  // widening the button is what starts squeezing that text.
   return (
     <button
       type="button"
       aria-pressed={active}
       onClick={() => onActivate(active ? null : direction)}
-      className={`inline-flex h-8 min-w-[92px] items-center justify-center gap-1.5 rounded-md border px-2 text-[12px] font-medium transition-colors ${
+      className={`inline-flex h-8 min-w-[92px] shrink-0 items-center justify-center gap-1.5 rounded-md border px-2 text-[12px] font-medium transition-colors touch:h-11 touch:text-[13px] ${
         active
           ? "border-accent bg-accent-bg text-accent-text"
           : "border-border bg-bg-input text-text-secondary hover:border-accent/50"

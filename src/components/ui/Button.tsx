@@ -20,16 +20,31 @@ const variantStyles: Record<ButtonVariant, string> = {
     "text-text-muted hover:bg-bg-input justify-center",
 };
 
+/**
+ * The three sizes are a mouse's sizes: 32, 36 and 40px, all of them under the
+ * 44px a fingertip needs. `touch:` — `(pointer: coarse)`, so a phone but not a
+ * trackpad — collapses all three to 44px tall.
+ *
+ * Collapsing rather than scaling is deliberate. The distinction between `sm`
+ * and `md` is visual density, which is a thing you can afford when the pointer
+ * is a pixel wide; under a finger it is the difference between a button that
+ * works and one that does not, and there is no size below 44 worth preserving.
+ * Width still varies, so the sizes remain visually distinct in a row.
+ *
+ * Font size is left alone. Text legibility and target size are separate
+ * problems, and growing type here would reflow 170 call sites for a reason
+ * none of them asked for.
+ */
 const sizeStyles: Record<ButtonSize, string> = {
-  sm: "h-8 px-2 text-[13px] rounded-md gap-1.5",
-  md: "h-9 px-3 text-[14px] rounded-lg gap-2",
-  lg: "h-10 px-4 text-[14px] rounded-lg gap-2",
+  sm: "h-8 px-2 text-[13px] rounded-md gap-1.5 touch:h-11 touch:px-3",
+  md: "h-9 px-3 text-[14px] rounded-lg gap-2 touch:h-11 touch:px-3.5",
+  lg: "h-10 px-4 text-[14px] rounded-lg gap-2 touch:h-11",
 };
 
 const iconSizeStyles: Record<ButtonSize, string> = {
-  sm: "size-8 rounded-md",
-  md: "size-9 rounded-lg",
-  lg: "size-10 rounded-lg",
+  sm: "size-8 rounded-md touch:size-11",
+  md: "size-9 rounded-lg touch:size-11",
+  lg: "size-10 rounded-lg touch:size-11",
 };
 
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(

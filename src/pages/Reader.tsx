@@ -2652,7 +2652,11 @@ export default function Reader() {
                   )}
                 </div>
               )}
-              <div className="flex items-center justify-between h-8">
+              {/* The footer's height is set here, not by its contents, so it
+                  has to be told about the finger: `Button` grows to 44px under
+                  `touch:` and a 32px row would let the PDF zoom controls hang
+                  out over the progress track above them. */}
+              <div className="flex items-center justify-between h-8 touch:h-11">
                 <div className={`flex min-w-0 items-center gap-2 text-[12px] tabular-nums ${isStandaloneWindow ? "opacity-60" : "text-text-muted"}`}>
                   {supportsScrubber ? (
                     // P1.5's click-cycle readout. The button stays in the DOM
@@ -2664,7 +2668,7 @@ export default function Reader() {
                       onClick={() => cycleProgressReadoutMode(effectiveProgressReadoutMode)}
                       title={t("reader.progressReadout.toggleLabel")}
                       aria-label={progressReadoutText ? undefined : t("reader.progressReadout.toggleLabel")}
-                      className={`cursor-pointer text-left hover:opacity-100 ${progressReadoutText ? "" : "min-w-[12px]"}`}
+                      className={`cursor-pointer text-left hover:opacity-100 touch:inline-flex touch:min-h-11 touch:items-center ${progressReadoutText ? "" : "min-w-[12px] touch:min-w-11"}`}
                     >
                       {progressReadoutText}
                     </button>
@@ -2699,7 +2703,7 @@ export default function Reader() {
                       type="button"
                       onClick={handleZoomFit}
                       title={t("reader.zoom.fitTooltip")}
-                      className={`text-[12px] font-medium min-w-[36px] px-1 text-center tabular-nums hover:opacity-100 ${isStandaloneWindow ? "opacity-60" : "text-text-muted"} ${zoom === "fit" ? "" : "cursor-pointer"}`}
+                      className={`text-[12px] font-medium min-w-[36px] px-1 text-center tabular-nums hover:opacity-100 touch:inline-flex touch:min-h-11 touch:min-w-11 touch:items-center touch:justify-center ${isStandaloneWindow ? "opacity-60" : "text-text-muted"} ${zoom === "fit" ? "" : "cursor-pointer"}`}
                     >
                       {zoom === "fit" ? t("reader.zoom.fit") : `${zoom}%`}
                     </button>
@@ -2708,7 +2712,7 @@ export default function Reader() {
                     </Button>
                   </div>
                 )}
-                <span className="w-8" aria-hidden="true" />
+                <span className="w-8 touch:w-11" aria-hidden="true" />
               </div>
             </div>
           </footer>
