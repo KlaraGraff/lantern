@@ -70,7 +70,7 @@ export default function CardModuleRow({
           onClick={() => onMove(index, index - 1)}
           title={t("settings.tools.moveUp")}
           aria-label={t("settings.tools.moveModuleUp", { name: label })}
-          className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25"
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25 touch:size-11"
         >
           <ArrowUp size={12} />
         </button>
@@ -80,7 +80,7 @@ export default function CardModuleRow({
           onClick={() => onMove(index, index + 1)}
           title={t("settings.tools.moveDown")}
           aria-label={t("settings.tools.moveModuleDown", { name: label })}
-          className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25"
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25 touch:size-11"
         >
           <ArrowDown size={12} />
         </button>
@@ -96,8 +96,9 @@ export default function CardModuleRow({
             title={t("common.delete")}
             onClick={onDelete}
             // focus-visible keeps the button from being a target the keyboard
-            // can reach but nobody can see.
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted opacity-0 transition-opacity hover:bg-danger-bg hover:text-danger-text focus-visible:opacity-100 group-hover:opacity-100"
+            // can reach but nobody can see. touch:opacity-100 does the same for
+            // a finger, which never triggers `group-hover:` at all.
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted opacity-0 transition-opacity hover:bg-danger-bg hover:text-danger-text focus-visible:opacity-100 group-hover:opacity-100 touch:size-11 touch:opacity-100"
           >
             <Trash2 size={13} />
           </button>

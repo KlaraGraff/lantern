@@ -219,7 +219,7 @@ export default function ChatDetailView({ chat, onBack, onChatDeleted }: ChatDeta
       {/* Delete confirmation */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay">
-          <div className="bg-bg-surface rounded-xl shadow-lg w-[400px] p-6">
+          <div className="bg-bg-surface rounded-xl shadow-lg w-[400px] max-w-[calc(100vw-32px)] p-6">
             <h3 className="text-[18px] font-semibold text-text-primary mb-2">
               {t("chats.deleteTitle")}
             </h3>

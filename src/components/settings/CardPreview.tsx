@@ -457,7 +457,7 @@ export default function CardPreview({
               onClick={() => setRealResult(null)}
               title={t("settings.tools.restoreLocalPreview")}
               aria-label={t("settings.tools.restoreLocalPreview")}
-              className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input"
+              className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input touch:size-11"
             >
               <RotateCcw size={14} />
             </button>
@@ -467,7 +467,7 @@ export default function CardPreview({
             onClick={() => void generateRealPreview()}
             disabled={realLoading}
             title={t("settings.tools.generateRealPreviewHint")}
-            className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-bg-surface px-2.5 text-[11px] font-medium text-text-secondary hover:border-accent disabled:opacity-50"
+            className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-bg-surface px-2.5 text-[11px] font-medium text-text-secondary hover:border-accent disabled:opacity-50 touch:h-11"
           >
             {realLoading ? <Loader2 size={13} className="animate-spin" /> : <WandSparkles size={13} />}
             {t("settings.tools.generateRealPreview")}

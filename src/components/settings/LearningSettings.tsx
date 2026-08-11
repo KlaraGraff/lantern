@@ -456,7 +456,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
             type="button"
             aria-expanded={styleSampleOpen}
             onClick={() => setStyleSampleOpen((open) => !open)}
-            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border bg-bg-surface px-2.5 text-[12px] font-medium text-text-secondary hover:border-accent"
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border bg-bg-surface px-2.5 text-[12px] font-medium text-text-secondary hover:border-accent touch:h-11"
           >
             {styleSampleOpen
               ? t("settings.learner.explanationStyleHideSample")
@@ -611,7 +611,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
                   setShowLowLevelEnglishWarning(false);
                   void save("cefr_low_level_english_warning_ack", "true").then(() => showSavedToast());
                 }}
-                className="h-7 rounded-md border border-border bg-bg-surface px-2.5 text-[11px] font-medium text-text-secondary hover:border-accent"
+                className="h-7 rounded-md border border-border bg-bg-surface px-2.5 text-[11px] font-medium text-text-secondary hover:border-accent touch:h-11 touch:inline-flex touch:items-center touch:justify-center"
               >
                 {t("settings.learner.continueEnglish")}
               </button>
@@ -622,7 +622,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
                   // 从警告里退回中英对照也是他自己的一次表态，等级不再改写它。
                   void saveManualExplanationMode("adaptive_bilingual").then(() => showSavedToast());
                 }}
-                className="h-7 rounded-md bg-accent px-2.5 text-[11px] font-medium text-white"
+                className="h-7 rounded-md bg-accent px-2.5 text-[11px] font-medium text-white touch:h-11 touch:inline-flex touch:items-center touch:justify-center"
               >
                 {t("settings.learner.useAdaptiveBilingual")}
               </button>
@@ -649,7 +649,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
               setAssessmentError(null);
               setAssessmentLoadFailed(false);
             }}
-            className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-bg-surface px-2.5 text-[12px] font-medium text-text-secondary hover:border-accent"
+            className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-bg-surface px-2.5 text-[12px] font-medium text-text-secondary hover:border-accent touch:h-11"
           >
             <Plus size={14} />
             {t("settings.learner.addAssessment")}
@@ -726,14 +726,14 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
                   setAssessmentError(null);
                   setAssessmentLoadFailed(false);
                 }}
-                className="h-8 rounded-md px-3 text-[12px] font-medium text-text-muted hover:bg-bg-input"
+                className="h-8 rounded-md px-3 text-[12px] font-medium text-text-muted hover:bg-bg-input touch:h-11 touch:inline-flex touch:items-center touch:justify-center"
               >
                 {t("common.cancel")}
               </button>
               <button
                 type="submit"
                 disabled={savingAssessment || overallScore.trim() === ""}
-                className="h-8 rounded-md bg-accent px-3 text-[12px] font-medium text-white disabled:opacity-40"
+                className="h-8 rounded-md bg-accent px-3 text-[12px] font-medium text-white disabled:opacity-40 touch:h-11 touch:inline-flex touch:items-center touch:justify-center"
               >
                 {savingAssessment ? t("settings.learner.saving") : t("settings.learner.saveAndEstimate")}
               </button>
@@ -778,7 +778,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
                 <button
                   type="button"
                   onClick={() => void applyAssessmentLevel(assessmentSummary.estimated_cefr, "assessment:combined")}
-                  className="h-8 shrink-0 rounded-md border border-border bg-bg-surface px-3 text-[12px] font-medium text-text-secondary hover:border-accent"
+                  className="h-8 shrink-0 rounded-md border border-border bg-bg-surface px-3 text-[12px] font-medium text-text-secondary hover:border-accent touch:h-11 touch:inline-flex touch:items-center touch:justify-center"
                 >
                   {t("settings.learner.useEstimate", { defaultValue: "Use this level" })}
                 </button>
@@ -864,14 +864,14 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
                           type="button"
                           disabled={deletingAssessmentId === assessment.id}
                           onClick={() => void deleteAssessment(assessment.id)}
-                          className="h-7 rounded-md bg-danger-bg px-2 text-[11px] font-medium text-danger-text disabled:opacity-40"
+                          className="h-7 rounded-md bg-danger-bg px-2 text-[11px] font-medium text-danger-text disabled:opacity-40 touch:h-11 touch:inline-flex touch:items-center touch:justify-center"
                         >
                           {t("common.confirm")}
                         </button>
                         <button
                           type="button"
                           onClick={() => setConfirmDeleteId(null)}
-                          className="h-7 rounded-md px-2 text-[11px] text-text-muted hover:bg-bg-input"
+                          className="h-7 rounded-md px-2 text-[11px] text-text-muted hover:bg-bg-input touch:h-11 touch:inline-flex touch:items-center touch:justify-center"
                         >
                           {t("common.cancel")}
                         </button>
@@ -882,7 +882,7 @@ export default function LearningSettings({ settings, loading, save, saveBulk, sh
                         onClick={() => setConfirmDeleteId(assessment.id)}
                         title={t("settings.learner.deleteAssessment")}
                         aria-label={t("settings.learner.deleteAssessment")}
-                        className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-danger-bg hover:text-danger-text"
+                        className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-danger-bg hover:text-danger-text touch:size-11"
                       >
                         <Trash2 size={14} />
                       </button>

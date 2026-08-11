@@ -118,7 +118,7 @@ export default function CardDesignSettings({
               onClick={onOpenDensityHelp}
               title={t("settings.tools.densityHelp.open")}
               aria-label={t("settings.tools.densityHelp.open")}
-              className="flex size-6 items-center justify-center rounded-md text-text-muted hover:bg-bg-input"
+              className="flex size-6 items-center justify-center rounded-md text-text-muted hover:bg-bg-input touch:size-11"
             >
               <CircleHelp size={13} />
             </button>
@@ -322,7 +322,7 @@ export default function CardDesignSettings({
                   setOpenId(id);
                 });
               }}
-              className="flex h-8 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-accent-text hover:bg-accent-bg"
+              className="flex h-8 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-accent-text hover:bg-accent-bg touch:h-11"
             ><Plus size={13} />{t("settings.tools.custom.addModule")}</button>
           ) : <span />}
           <Button

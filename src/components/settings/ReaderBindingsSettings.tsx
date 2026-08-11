@@ -124,7 +124,7 @@ export default function ReaderBindingsSettings({
               <button
                 type="button"
                 onClick={() => setRecording(index)}
-                className={`flex h-8 min-w-[120px] items-center justify-center gap-1.5 rounded-md border px-2 text-[11px] ${recording === index ? "border-accent bg-accent-bg text-accent-text" : "border-border text-text-secondary"}`}
+                className={`flex h-8 min-w-[120px] items-center justify-center gap-1.5 rounded-md border px-2 text-[11px] touch:h-11 ${recording === index ? "border-accent bg-accent-bg text-accent-text" : "border-border text-text-secondary"}`}
               >
                 <Keyboard size={13} />
                 {recording === index ? t("settings.tools.bindings.recording") : formatReaderBinding(binding.trigger, i18n.language)}
@@ -134,14 +134,14 @@ export default function ReaderBindingsSettings({
                   key={click.trigger}
                   type="button"
                   onClick={() => setClickTrigger(index, click)}
-                  className="h-8 shrink-0 rounded-md border border-border px-2 text-[11px] text-text-secondary hover:bg-bg-input"
+                  className="h-8 shrink-0 rounded-md border border-border px-2 text-[11px] text-text-secondary hover:bg-bg-input touch:h-11 touch:inline-flex touch:items-center touch:justify-center"
                 >{t(`settings.tools.bindings.${click.label}`)}</button>
               ))}
               <button
                 type="button"
                 title={t("common.delete")}
                 onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
-                className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-danger-bg hover:text-danger-text"
+                className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-danger-bg hover:text-danger-text touch:size-11"
               ><Trash2 size={13} /></button>
             </div>
             {errors[index] && <p className="mt-1 text-[10px] text-danger-text">{errors[index]}</p>}

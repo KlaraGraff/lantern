@@ -325,7 +325,7 @@ export default function MessageBubble({ msg, messages, streaming, onNavigateToCf
               type="button"
               onClick={handleQuote}
               title={t("ai.quoteReply.hint")}
-              className="flex items-center gap-1 rounded px-1 py-0.5 text-[11px] text-text-muted opacity-0 transition-opacity hover:text-text-primary focus-visible:opacity-100 group-hover:opacity-100 cursor-pointer"
+              className="flex items-center gap-1 rounded px-1 py-0.5 text-[11px] text-text-muted opacity-0 transition-opacity hover:text-text-primary focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-100 cursor-pointer"
             >
               <Quote size={11} />
               {t("ai.quoteReply.action")}

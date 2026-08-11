@@ -224,7 +224,7 @@ export default function AboutSettings() {
             type="button"
             title={t("settings.about.copyDiagnostics")}
             onClick={copyDiagnostics}
-            className="mt-3 h-8 w-full flex items-center justify-center gap-2 rounded-lg border border-border text-[12px] text-text-secondary hover:bg-bg-input cursor-pointer"
+            className="mt-3 h-8 w-full flex items-center justify-center gap-2 rounded-lg border border-border text-[12px] text-text-secondary hover:bg-bg-input cursor-pointer touch:h-11"
           >
             {copied ? <Check size={14} /> : <Copy size={14} />}
             {copied ? t("settings.about.copied") : t("settings.about.copyDiagnostics")}

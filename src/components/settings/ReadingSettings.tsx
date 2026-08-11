@@ -578,7 +578,7 @@ export default function ReadingSettings({
                   setFontBusy(false);
                 }
               }}
-              className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium text-text-secondary hover:bg-bg-input disabled:opacity-50"
+              className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[11px] font-medium text-text-secondary hover:bg-bg-input disabled:opacity-50 touch:h-11"
             >
               <Download size={13} />
               {t("settings.layout.importFonts")}
@@ -628,7 +628,7 @@ export default function ReadingSettings({
                         setFontBusy(false);
                       }
                     }}
-                    className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-surface hover:text-danger-text disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-surface hover:text-danger-text disabled:cursor-not-allowed disabled:opacity-50 touch:size-11"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -759,7 +759,7 @@ export default function ReadingSettings({
                   first_line_indent: String(next.firstLineIndent),
                 });
                 showSavedToast();
-              }} className={`h-8 rounded-md text-[12px] ${paragraphSpacing === value ? "bg-bg-surface font-medium text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"}`}>
+              }} className={`h-8 rounded-md text-[12px] touch:h-11 ${paragraphSpacing === value ? "bg-bg-surface font-medium text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"}`}>
                 {t(`readerSettings.paragraphSpacing.${value}`)}
               </button>
             ))}
@@ -928,7 +928,7 @@ export default function ReadingSettings({
                 void persist({ [chip.settingKey]: String(next) });
                 showSavedToast();
               }}
-              className={`h-8 rounded-full border px-3 text-[12px] font-medium transition-colors ${
+              className={`h-8 rounded-full border px-3 text-[12px] font-medium transition-colors touch:h-11 ${
                 chip.checked
                   ? "border-accent bg-accent-bg text-accent-text"
                   : "border-border text-text-secondary hover:border-accent/50"

@@ -1346,7 +1346,10 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
                           </button>
                           <button
                             onClick={(event) => { event.stopPropagation(); requestDeleteEntry(entry); }}
-                            className="absolute top-4 right-4 p-1 rounded hover:bg-bg-surface/80 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                            // `touch:` is `(pointer: coarse)`: Tailwind compiles
+                            // `group-hover:` behind `(hover: hover)`, so on a finger
+                            // this stays `opacity-0` forever without it.
+                            className="absolute top-4 right-4 p-1 rounded hover:bg-bg-surface/80 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity touch:opacity-100"
                           >
                             <Trash2 size={15} className="text-text-muted" />
                           </button>
@@ -1479,7 +1482,7 @@ export default function DictionaryContent({ initialView = "all", menuButton }: D
                             <span className="text-[11px] text-text-muted">{timeAgo(entry.primary.created_at)}</span>
                             <button
                               onClick={(event) => { event.stopPropagation(); requestDeleteEntry(entry); }}
-                              className="p-1 rounded hover:bg-bg-surface/80 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="p-1 rounded hover:bg-bg-surface/80 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity touch:opacity-100"
                             >
                               <Trash2 size={14} className="text-text-muted" />
                             </button>

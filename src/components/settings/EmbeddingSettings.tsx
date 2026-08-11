@@ -279,7 +279,7 @@ export default function EmbeddingSettings() {
         <button
           type="button"
           onClick={() => void stopBatch()}
-          className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] font-medium text-danger-text transition-colors hover:bg-bg-input"
+          className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] font-medium text-danger-text transition-colors hover:bg-bg-input touch:h-11"
         >
           {t("settings.ai.batchStop")}
         </button>

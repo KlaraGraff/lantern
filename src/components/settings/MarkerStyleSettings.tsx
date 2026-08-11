@@ -321,7 +321,7 @@ function TreatmentToggle({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`h-8 rounded-md border px-3 text-[11px] font-medium transition-colors ${
+      className={`h-8 rounded-md border px-3 text-[11px] font-medium transition-colors touch:h-11 ${
         active
           ? "border-accent bg-accent-bg text-accent-text"
           : "border-border bg-bg-surface text-text-secondary hover:bg-bg-input"
@@ -762,7 +762,7 @@ export default function MarkerStyleSettings({
               type="button"
               aria-expanded={wordFormsOpen}
               onClick={() => setWordFormsOpen((open) => !open)}
-              className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-input"
+              className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-input touch:size-11"
             >
               {wordFormsOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             </button>

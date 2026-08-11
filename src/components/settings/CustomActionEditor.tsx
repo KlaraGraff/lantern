@@ -242,7 +242,7 @@ export default function CustomActionEditor({
             maxLength={MAX_CUSTOM_PROMPT_LENGTH}
             rows={5}
             onChange={(event) => edit({ prompt: event.target.value })}
-            className="w-full resize-y rounded-md border border-border bg-bg-surface px-3 py-2 pr-10 text-[12px] leading-5 text-text-primary outline-none focus:border-accent"
+            className="w-full resize-y rounded-md border border-border bg-bg-surface px-3 py-2 pr-10 text-[12px] leading-5 text-text-primary outline-none focus:border-accent touch:pr-14"
           />
           <button
             type="button"
@@ -250,7 +250,7 @@ export default function CustomActionEditor({
             disabled={!draft.name.trim() || !draft.prompt.trim() || optimizeLocked}
             title={optimizing ? t("common.cancel") : t("settings.tools.custom.optimize")}
             aria-label={optimizing ? t("common.cancel") : t("settings.tools.custom.optimize")}
-            className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text disabled:opacity-30"
+            className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input hover:text-accent-text disabled:opacity-30 touch:size-11"
           >
             {optimizing ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
           </button>
@@ -267,7 +267,7 @@ export default function CustomActionEditor({
               setHistoryIndex(0);
               setDraft((current) => ({ ...current, prompt: history[0] }));
             }}
-            className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25"
+            className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25 touch:size-11"
           ><Undo2 size={13} /></button>
           <button
             type="button"
@@ -277,7 +277,7 @@ export default function CustomActionEditor({
               setHistoryIndex(1);
               setDraft((current) => ({ ...current, prompt: history[1] }));
             }}
-            className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25"
+            className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25 touch:size-11"
           ><Redo2 size={13} /></button>
         </div>
       )}
@@ -352,7 +352,7 @@ export default function CustomActionEditor({
             }
             onDelete();
           }}
-          className="flex h-8 items-center gap-1.5 rounded-md px-2 text-[11px] text-danger-text hover:bg-danger-bg"
+          className="flex h-8 items-center gap-1.5 rounded-md px-2 text-[11px] text-danger-text hover:bg-danger-bg touch:h-11"
         ><Trash2 size={13} />{t("common.delete")}</button>
         <div className="flex gap-2">
           <Button

@@ -134,7 +134,7 @@ export default function SelectionMenuSettings({
               type="button"
               aria-expanded={openId === item.id}
               onClick={() => toggleOpen(item.id)}
-              className={`flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input ${item.enabled ? "" : "opacity-50"}`}
+              className={`flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input touch:size-11 ${item.enabled ? "" : "opacity-50"}`}
             >
               {openId === item.id ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             </button>
@@ -155,7 +155,7 @@ export default function SelectionMenuSettings({
             onClick={() => move(index, index - 1)}
             title={t("settings.tools.moveUp")}
             aria-label={t("settings.tools.moveMenuActionUp", { name: label })}
-            className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25"
+            className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25 touch:size-11"
           >
             <ArrowUp size={12} />
           </button>
@@ -165,7 +165,7 @@ export default function SelectionMenuSettings({
             onClick={() => move(index, index + 1)}
             title={t("settings.tools.moveDown")}
             aria-label={t("settings.tools.moveMenuActionDown", { name: label })}
-            className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25"
+            className="flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input disabled:opacity-25 touch:size-11"
           >
             <ArrowDown size={12} />
           </button>
@@ -188,8 +188,9 @@ export default function SelectionMenuSettings({
               title={t("common.delete")}
               onClick={() => requestDelete(item.id, label)}
               // focus-visible keeps the button from being a target the keyboard
-              // can reach but nobody can see.
-              className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted opacity-0 transition-opacity hover:bg-danger-bg hover:text-danger-text focus-visible:opacity-100 group-hover:opacity-100"
+              // can reach but nobody can see. touch:opacity-100 does the same for
+              // a finger, which never triggers `group-hover:` at all.
+              className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted opacity-0 transition-opacity hover:bg-danger-bg hover:text-danger-text focus-visible:opacity-100 group-hover:opacity-100 touch:size-11 touch:opacity-100"
             >
               <Trash2 size={13} />
             </button>
@@ -279,7 +280,7 @@ export default function SelectionMenuSettings({
                 setOpenId(id);
               });
             }}
-            className="flex h-8 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-accent-text hover:bg-accent-bg"
+            className="flex h-8 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-accent-text hover:bg-accent-bg touch:h-11"
           ><Plus size={13} />{t("settings.tools.custom.addAction")}</button>
         ) : <span />}
         <Button

@@ -79,7 +79,7 @@ export default function EditMetadataModal({
       className="motion-scrim fixed inset-0 z-50 flex items-center justify-center bg-overlay"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="motion-dialog bg-bg-surface rounded-xl shadow-lg w-[400px] p-6">
+      <div className="motion-dialog bg-bg-surface rounded-xl shadow-lg w-[400px] max-w-[calc(100vw-32px)] p-6">
         <h3 className="text-[18px] font-semibold text-text-primary mb-5">
           {t("editInfo.title")}
         </h3>
