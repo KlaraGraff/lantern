@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import { Check, ChevronLeft, ChevronRight, Keyboard, Loader2, MousePointer2, Search, Trash2 } from "lucide-react";
 import Toggle from "./ui/Toggle";
+import { useIsNarrow } from "../hooks/useIsNarrow";
 import type { PassiveVocabSettings } from "./passive-vocab";
 import Select from "./ui/Select";
 import {
@@ -101,6 +102,29 @@ export interface ReaderSettingsState {
   chapterEndReviewHint: boolean;
   bookFinishedHint: boolean;
 }
+
+/**
+ * The panel's two shapes.
+ *
+ * Wide: the anchored popover it has always been, 320px hanging off the toolbar
+ * button, placed around the text column by `resolveReaderSettingsPlacement`.
+ *
+ * Narrow: the whole screen, exactly like the reader's four other panels. Not a
+ * preference — the popover is 320px of a 402pt screen, its placement maths
+ * assumes a text column that is not there, and its only way out was a click on
+ * the page behind it. On a phone that reads as a panel that opened wrong and
+ * cannot be closed.
+ *
+ * `z-[60]` rather than `z-50`, and that is the whole of the "it opens *under*
+ * the AI panel" bug: the covering panel shells are `z-50` too, and they render
+ * later in `Reader.tsx`, so an equal stacking level handed them the win. The
+ * settings sheet is opened from the toolbar on top of whatever is showing, so
+ * it has to outrank them.
+ */
+const SHEET_CLASS =
+  "fixed inset-0 z-[60] flex flex-col overflow-hidden bg-bg-surface pt-safe-top pb-safe-bottom pl-safe-left pr-safe-right";
+const POPOVER_CLASS =
+  "fixed z-50 flex w-[320px] max-w-[calc(100dvw-16px)] flex-col overflow-hidden rounded-lg border border-border bg-bg-surface shadow-popover";
 
 interface ReaderSettingsProps {
   open: boolean;
@@ -245,6 +269,7 @@ function ReaderSettings({
   measureTextRect,
 }: ReaderSettingsProps) {
   const { t } = useTranslation();
+  const isNarrow = useIsNarrow();
   const popoverRef = useRef<HTMLDivElement>(null);
   const textRectRef = useRef<PlacementRect | null>(null);
   const [position, setPosition] = useState({ top: 0, right: 8, maxHeight: 0 });
@@ -265,7 +290,10 @@ function ReaderSettings({
   const [undoError, setUndoError] = useState<string | null>(null);
 
   useLayoutEffect(() => {
-    if (!open) {
+    // Narrow renders the sheet, which is `inset-0` and has nothing to place.
+    // Measuring anyway would force a layout of the book's text column on every
+    // open for a number nothing reads.
+    if (!open || isNarrow) {
       textRectRef.current = null;
       return;
     }
@@ -286,7 +314,7 @@ function ReaderSettings({
     updatePosition();
     window.addEventListener("resize", updatePosition);
     return () => window.removeEventListener("resize", updatePosition);
-  }, [open, anchorRef, measureTextRect]);
+  }, [open, isNarrow, anchorRef, measureTextRect]);
 
   useEffect(() => {
     if (!open) return;
@@ -534,9 +562,37 @@ function ReaderSettings({
     ) : null
   );
 
+  /**
+   * The nav bar the sheet wears, and the panel's only way out under a finger.
+   *
+   * Deliberately the same shape as `coveringPanelBar` in `Reader.tsx` — 48px,
+   * a ⟨ in a 44pt hit box, then the heading. The four reader panels already
+   * teach that gesture; typography arriving with a different one would be a
+   * second thing to learn for no reason.
+   *
+   * `onBack` is the scope sub-views walking one level up. Without it the ⟨
+   * leaves the panel entirely, which is what the top level means by "back".
+   */
+  const sheetBar = (title: string, onBack?: () => void) => (
+    <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-bg-surface pl-1 pr-3">
+      <button
+        type="button"
+        onClick={onBack ?? onClose}
+        aria-label={onBack ? t("common.back") : t("common.close")}
+        className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-lg text-text-secondary hover:bg-bg-input"
+      >
+        <ChevronLeft size={20} />
+      </button>
+      <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-text-primary">
+        {title}
+      </span>
+    </div>
+  );
+
   if (!open) return null;
 
   if (scopeView !== "main") {
+    const stepBack = () => setScopeView(scopeView === "manage" ? "main" : scopeView === "confirm" ? "manage" : "confirm");
     const selectedCount = selectedConflictIds.size;
     const allVisibleSelected = visibleConflicts.length > 0
       && visibleConflicts.every((conflict) => selectedConflictIds.has(conflict.id));
@@ -544,30 +600,35 @@ function ReaderSettings({
       <div
         ref={popoverRef}
         data-reader-settings
-        className="fixed z-50 flex w-[320px] max-w-[calc(100dvw-16px)] flex-col overflow-hidden rounded-lg border border-border bg-bg-surface shadow-popover"
-        style={{ top: position.top, right: position.right, height: position.maxHeight, maxHeight: position.maxHeight }}
+        role={isNarrow ? "dialog" : undefined}
+        aria-modal={isNarrow ? true : undefined}
+        aria-label={isNarrow ? t("reader.typography") : undefined}
+        className={isNarrow ? SHEET_CLASS : POPOVER_CLASS}
+        style={isNarrow ? undefined : { top: position.top, right: position.right, height: position.maxHeight, maxHeight: position.maxHeight }}
       >
-        <div className="flex h-12 shrink-0 items-center border-b border-border-light px-3">
-          <button
-            type="button"
-            className="mr-1 flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input"
-            onClick={() => setScopeView(scopeView === "manage" ? "main" : scopeView === "confirm" ? "manage" : "confirm")}
-            aria-label={t("common.back")}
-          >
-            <ChevronLeft size={17} />
-          </button>
-          <h2 className="text-[13px] font-medium text-text-primary">
-            {t(`readerSettings.scope.${scopeView}Title`)}
-          </h2>
-          <button
-            type="button"
-            className="ml-auto flex size-8 items-center justify-center rounded-md text-[18px] text-text-muted hover:bg-bg-input"
-            onClick={onClose}
-            aria-label={t("common.close")}
-          >
-            ×
-          </button>
-        </div>
+        {isNarrow ? sheetBar(t(`readerSettings.scope.${scopeView}Title`), stepBack) : (
+          <div className="flex h-12 shrink-0 items-center border-b border-border-light px-3">
+            <button
+              type="button"
+              className="mr-1 flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-input"
+              onClick={stepBack}
+              aria-label={t("common.back")}
+            >
+              <ChevronLeft size={17} />
+            </button>
+            <h2 className="text-[13px] font-medium text-text-primary">
+              {t(`readerSettings.scope.${scopeView}Title`)}
+            </h2>
+            <button
+              type="button"
+              className="ml-auto flex size-8 items-center justify-center rounded-md text-[18px] text-text-muted hover:bg-bg-input"
+              onClick={onClose}
+              aria-label={t("common.close")}
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {scopeView === "manage" && (
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
@@ -720,13 +781,8 @@ function ReaderSettings({
     );
   }
 
-  return (
-    <div
-      ref={popoverRef}
-      data-reader-settings
-      className="fixed z-50 flex w-[320px] max-w-[calc(100dvw-16px)] flex-col overflow-y-auto rounded-lg border border-border bg-bg-surface shadow-popover"
-      style={{ top: position.top, right: position.right, maxHeight: position.maxHeight }}
-    >
+  const mainBody = (
+    <>
       {overrideStateKeys.length > 0 ? (
         <button
           type="button"
@@ -916,14 +972,20 @@ function ReaderSettings({
               <span className="text-[13px] font-medium text-text-primary">{t("readerSettings.paragraphSpacing")}</span>
               {settings.paragraphSpacing === "original" && <span className="text-[11px] text-text-muted">{t("readerSettings.publisherDefault")}</span>}
             </div>
-            <div className="mt-2 grid grid-cols-5 gap-1 rounded-lg bg-bg-input p-1" role="group" aria-label={t("readerSettings.paragraphSpacing")}>
+            {/* Three columns over two rows below `md:`, five across above it.
+                Five equal columns of a 320px popover is 54px a piece, and
+                「舒适」 fits that while "Comfortable" does not — the label ran
+                straight out of the control's right edge. Widening the panel is
+                not the fix either: the same five labels have to survive a
+                language that spells them longer. */}
+            <div className="mt-2 grid grid-cols-3 gap-1 rounded-lg bg-bg-input p-1 md:grid-cols-5" role="group" aria-label={t("readerSettings.paragraphSpacing")}>
               {(["original", "none", "compact", "comfortable", "loose"] as const).map((value) => (
                 <button
                   key={value}
                   type="button"
                   aria-pressed={settings.paragraphSpacing === value}
                   onClick={() => update(withParagraphSpacing(value, settings))}
-                  className={`h-7 rounded-md text-[11px] transition-colors ${settings.paragraphSpacing === value ? "bg-bg-surface font-medium text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"}`}
+                  className={`h-7 min-w-0 truncate rounded-md px-1 text-[11px] transition-colors touch:h-10 ${settings.paragraphSpacing === value ? "bg-bg-surface font-medium text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"}`}
                 >
                   {t(`readerSettings.paragraphSpacing.${value}`)}
                 </button>
@@ -1111,6 +1173,33 @@ function ReaderSettings({
           </div>
         </div>
       )}
+    </>
+  );
+
+  if (isNarrow) {
+    return (
+      <div
+        ref={popoverRef}
+        data-reader-settings
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("reader.typography")}
+        className={SHEET_CLASS}
+      >
+        {sheetBar(t("reader.typography"))}
+        <div className="min-h-0 flex-1 overflow-y-auto">{mainBody}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={popoverRef}
+      data-reader-settings
+      className="fixed z-50 flex w-[320px] max-w-[calc(100dvw-16px)] flex-col overflow-y-auto rounded-lg border border-border bg-bg-surface shadow-popover"
+      style={{ top: position.top, right: position.right, maxHeight: position.maxHeight }}
+    >
+      {mainBody}
     </div>
   );
 }
