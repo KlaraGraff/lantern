@@ -14,9 +14,7 @@
 
 </div>
 
-<!-- screenshot placeholder: reader overview (text + lookup card + AI sidebar)
 ![Lantern reading view](assets/screenshots/hero.png)
--->
 
 ---
 
@@ -55,11 +53,9 @@ But "meeting you where you are" slides easily into being vague for the sake of b
 
 A separate **explanation style** switch governs how many points a card gives: **Thorough** adds more, **Essentials** keeps only what you need right now.
 
-<!-- screenshot placeholder: the same word in the same sentence, one card per level
 | A2 | C1 |
 | --- | --- |
 | ![The card at A2](assets/screenshots/level-a2.png) | ![The card at C1](assets/screenshots/level-c1.png) |
--->
 
 ### It knows what kind of explanation you want
 
@@ -71,9 +67,7 @@ So there's a **user profile** page the AI reads before it answers. The top half 
 - **On conflict, what you wrote wins.** Disagree and move it into the top half; that dimension is yours from then on.
 - **The whole thing can be switched off**, contents preserved.
 
-<!-- screenshot placeholder: profile page — what you wrote, the seven-dimension cards, one opened onto its evidence
 ![It knows what kind of explanation you want](assets/screenshots/profile.png)
--->
 
 ### It knows how far you've read
 
@@ -83,9 +77,7 @@ Reading-thought protection confines answers to what you've read and marks them "
 
 Character and term cards work the same way — **capped at where you are**, and when you need the whole-book view it says up front that this includes unread plot, for that one card only.
 
-<!-- screenshot placeholder: AI sidebar scope picker, protection switch, progress note under the answer
 ![It knows how far you've read](assets/screenshots/context.png)
--->
 
 ---
 
@@ -115,9 +107,7 @@ Chat history is an ever-growing stream; a word list is words cut off from their 
 
 Select a passage, hit **Interpret**, and **the result is cached**: select the same passage again in the same book and it's instant, with no second API call. Press save only if it's worth keeping — caching saves money, the list is curated by you.
 
-<!-- screenshot placeholder: superscripted vocabulary list, and the passage a superscript jumps to
 ![Clickable citations](assets/screenshots/citations.png)
--->
 
 ---
 
@@ -131,9 +121,7 @@ A word appeared on a screen you read and you didn't look it up — that's eviden
 
 Every word opens onto **"how it got here"**: which day, in which book, how many cross-day encounters without a look-up, what each review graded it. Disagree, and there's always **"I don't actually know this one"**. Mastery is stored **per word** and shared across books.
 
-<!-- screenshot placeholder: mastery timeline with "I don't actually know this one"
 ![Mastery you read your way into](assets/screenshots/mastery.png)
--->
 
 ### Review gives you piles with reasons, not a queue
 
@@ -153,9 +141,7 @@ Three boundaries: **thin records get an interval and its basis**, and if the ran
 
 Before you first open a book this converges into an **open card**: vocabulary composition, which chapters are heaviest, roughly how long it will take at your pace — **shown once**. A scanned file gets "Download and recognise" right here: local OCR, nothing uploaded, and you can start reading immediately.
 
-<!-- screenshot placeholder: coverage ruler + token composition + which words would help most
 ![This book, measured against you](assets/screenshots/coverage.png)
--->
 
 ### Everything that spends money on its own, on one screen
 
@@ -173,9 +159,7 @@ Reading statistics work the same way: **Reading history / Reading calendar / Lea
 
 So you can build **"do people still say this?"** for old novels (is the word still in everyday use, and what would you write instead today), **rhetoric and narrative perspective** for literature, **terminology and prerequisites** for technical books, or a **minimal look-up** that barely interrupts.
 
-<!-- screenshot placeholder: custom module editor + module ordering
 ![Custom AI modules](assets/screenshots/modules.png)
--->
 
 ---
 
@@ -187,9 +171,7 @@ Lantern ships an **MCP server**. Turn it on and Claude Code or Codex can read yo
 
 So you can ask, from a terminal: "given my English level, pick three books from my library I could actually finish." It reads your real reading record.
 
-<!-- screenshot placeholder: MCP settings beside a Claude Code terminal
 ![Hand your library to Claude Code](assets/screenshots/mcp.png)
--->
 
 ---
 
