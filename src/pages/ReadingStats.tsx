@@ -17,8 +17,32 @@ import type {
   VocabMasteryDistribution,
 } from "./reading-stats/types";
 import { ReadingReviewError } from "./reading-stats/types";
+import { platform } from "../services/platform";
 import type { LevelObservation } from "./reading-stats/level-observation";
 import { splitEmphasis } from "../i18n/emphasis";
+
+/**
+ * What the OS puts above the header — traffic lights on macOS, the status bar
+ * and notch on a phone. A platform question, never a width one: this window
+ * has no minimum width, so a macOS user can drag it under 768px and still have
+ * traffic lights to clear. Same ternary as `Home.tsx`, `Sidebar.tsx`,
+ * `Reader.tsx` and `BookDetails.tsx`.
+ */
+const TOP_INSET = platform.hasTitleBarInset ? "pt-titlebar" : "pt-safe-top";
+
+/**
+ * The overview strip's four cells, written out rather than computed, because
+ * the two layouts disagree about exactly one of them: the third opens a row
+ * when the strip is 2×2 and sits mid-strip when it is 1×4, so it takes its
+ * left rule only from `md:` up. Tailwind scans source text, so these have to
+ * be literal strings either way.
+ */
+const OVERVIEW_CELL = [
+  "border-b border-border pr-4 pb-3 md:border-b-0 md:pr-5 md:pb-0",
+  "border-b border-l border-border pl-4 pb-3 md:border-b-0 md:px-5 md:pb-0",
+  "pr-4 pt-3 md:border-l md:border-border md:px-5 md:pt-0",
+  "border-l border-border pl-4 pt-3 md:pl-5 md:pt-0",
+];
 
 export interface ReadingStatsProps {
   adapter: ReadingStatsAdapter;
@@ -93,8 +117,8 @@ function ReviewPanel({
   const showPending = !review && !error && !generating && pendingReason !== null;
 
   return (
-    <section className="rounded-xl border border-border bg-bg-surface p-5" aria-labelledby="reading-review-heading">
-      <div className="flex items-start justify-between gap-5">
+    <section className="rounded-xl border border-border bg-bg-surface p-4 md:p-5" aria-labelledby="reading-review-heading">
+      <div className="flex flex-col items-start gap-3 md:flex-row md:justify-between md:gap-5">
         <div>
           <div className="flex items-center gap-2">
             <Sparkles size={15} className="text-accent" aria-hidden="true" />
@@ -111,7 +135,7 @@ function ReviewPanel({
           type="button"
           onClick={onGenerate}
           disabled={generating}
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-[11px] font-medium text-white disabled:cursor-wait disabled:opacity-60"
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-[11px] font-medium text-white disabled:cursor-wait disabled:opacity-60 touch:h-11 touch:px-4"
         >
           <RefreshCw size={13} className={generating ? "animate-spin" : ""} aria-hidden="true" />
           {generating ? labels.aiGenerating : review || pendingReason ? labels.aiRefresh : labels.aiGenerate}
@@ -290,8 +314,13 @@ function ReadingCalendar({ days, labels }: { days: ReadingStatsCalendarDay[]; la
         <h2 id="reading-calendar-heading" className="text-[13px] font-semibold text-text-primary">{labels.calendarHeading}</h2>
         <p className="mt-1 text-[10px] text-text-muted">{labels.calendarDescription}</p>
       </div>
-      <div ref={containerRef} className="relative rounded-xl border border-border bg-bg-surface p-5">
+      <div ref={containerRef} className="relative rounded-xl border border-border bg-bg-surface p-4 md:p-5">
         {days.length ? (
+          /* The one place on the page where a 44px target is the wrong
+             answer: a year of days at 44px is a 16,000px grid, and the
+             heatmap's whole point is a year at a glance. The dots stay 13px
+             and scroll; tapping one selects the day, and the detail it opens
+             below is where the finger-sized controls are. */
           <div
             className="grid w-full gap-1.5 overflow-x-auto pb-1"
             style={{ gridTemplateRows: "repeat(7, 13px)", gridAutoFlow: "column", gridAutoColumns: "13px" }}
@@ -503,29 +532,32 @@ function LearningView({
           <p className="mx-auto mt-1.5 max-w-sm whitespace-pre-line text-[10px] leading-5 text-text-muted">{labels.learningEmptyDescription}</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-border bg-bg-surface p-5">
-          <div className="grid grid-cols-4">
-            <div className="pr-4">
+        <div className="rounded-xl border border-border bg-bg-surface p-4 md:p-5">
+          {/* 2×2 on a phone, 1×4 from `md:` up — four columns of 19px serif
+              figures do not fit in 390px, and a strip you have to swipe is a
+              strip nobody finishes. The rules move with the shape. */}
+          <div className="grid grid-cols-2 md:grid-cols-4">
+            <div className="border-b border-border-light pr-3 pb-3 md:border-b-0 md:pr-4 md:pb-0">
               <strong className="block font-serif text-[19px] font-medium text-text-primary">{learning.lookupCount}</strong>
               <span className="mt-0.5 block text-[10px] text-text-muted">{labels.learningLookupCount}</span>
             </div>
-            <div className="border-l border-border-light px-4">
+            <div className="border-b border-l border-border-light pl-3 pb-3 md:border-b-0 md:px-4 md:pb-0">
               <strong className="block font-serif text-[19px] font-medium text-text-primary">{learning.newWordsCount}</strong>
               <span className="mt-0.5 block text-[10px] text-text-muted">{labels.learningNewWords}</span>
             </div>
-            <div className="border-l border-border-light px-4">
+            <div className="pr-3 pt-3 md:border-l md:border-border-light md:px-4 md:pt-0">
               <strong className="block font-serif text-[19px] font-medium text-text-primary">{learning.masteredCount}</strong>
               <span className="mt-0.5 block text-[10px] text-text-muted">{labels.learningMastered}</span>
             </div>
-            <div className="border-l border-border-light pl-4">
+            <div className="border-l border-border-light pl-3 pt-3 md:pl-4 md:pt-0">
               <strong className="block font-serif text-[19px] font-medium text-text-primary">{learning.dueForReviewCount}</strong>
-              <span className="mt-0.5 flex items-center gap-1 text-[10px] text-text-muted">
+              <span className="mt-0.5 flex flex-wrap items-center gap-x-1 text-[10px] text-text-muted">
                 {labels.learningDueForReview}
                 <button
                   type="button"
                   onClick={onOpenReview}
                   disabled={!onOpenReview}
-                  className="inline-flex items-center gap-0.5 font-medium text-accent-text disabled:cursor-default disabled:opacity-60"
+                  className="inline-flex items-center gap-0.5 font-medium text-accent-text disabled:cursor-default disabled:opacity-60 touch:min-h-11"
                 >
                   {labels.learningGoToReview}
                   <ArrowRight size={10} aria-hidden="true" />
@@ -559,13 +591,16 @@ function Modal({ title, onClose, children }: { title: string; onClose(): void; c
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-overlay p-6" role="presentation" onMouseDown={(event) => {
+    /* Same halving as the open-book card: 24px of overlay margin plus 20px of
+       card padding is 88px of a phone's 390, spent on air in front of a
+       dialog that has a paragraph of prose in it. */
+    <div className="fixed inset-0 z-50 grid place-items-center bg-overlay p-4 md:p-6" role="presentation" onMouseDown={(event) => {
       if (event.currentTarget === event.target) onClose();
     }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="reading-stats-modal-title" className="w-full max-w-md rounded-xl bg-bg-surface p-5 shadow-popover">
+      <section role="dialog" aria-modal="true" aria-labelledby="reading-stats-modal-title" className="w-full max-w-md rounded-xl bg-bg-surface p-4 shadow-popover md:p-5">
         <div className="flex items-center justify-between gap-4">
           <h2 id="reading-stats-modal-title" className="text-[15px] font-semibold text-text-primary">{title}</h2>
-          <button ref={closeRef} type="button" onClick={onClose} className="grid size-8 place-items-center rounded-lg text-text-muted hover:bg-bg-input">
+          <button ref={closeRef} type="button" onClick={onClose} className="grid size-8 place-items-center rounded-lg text-text-muted hover:bg-bg-input touch:size-11">
             <X size={16} aria-hidden="true" />
           </button>
         </div>
@@ -612,8 +647,8 @@ function LevelObservationRow({
         </h2>
         <p className="mt-1 text-[10.5px] text-text-muted">{labels.levelDescription}</p>
       </div>
-      <div className="rounded-xl border border-border bg-bg-surface p-5">
-        <div className="flex items-baseline justify-between gap-5">
+      <div className="rounded-xl border border-border bg-bg-surface p-4 md:p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-1">
           <h3 className="text-[12.5px] font-semibold text-text-primary">
             {labels.levelDeclared(observation.declaredLevel)}
           </h3>
@@ -646,14 +681,14 @@ function LevelObservationRow({
               <button
                 type="button"
                 onClick={() => onApply(suggested)}
-                className="h-8 rounded-lg border border-border bg-bg-surface px-3 text-[12px] text-text-secondary hover:bg-bg-input"
+                className="h-8 rounded-lg border border-border bg-bg-surface px-3 text-[12px] text-text-secondary hover:bg-bg-input touch:h-11 touch:px-3.5"
               >
                 {labels.levelApply(suggested)}
               </button>
-              <button type="button" onClick={onKeep} className="h-8 rounded-lg px-3 text-[12px] text-text-muted hover:bg-bg-input">
+              <button type="button" onClick={onKeep} className="h-8 rounded-lg px-3 text-[12px] text-text-muted hover:bg-bg-input touch:h-11 touch:px-3.5">
                 {labels.levelKeep(observation.declaredLevel)}
               </button>
-              <button type="button" onClick={onStop} className="h-8 rounded-lg px-3 text-[12px] text-text-muted hover:bg-bg-input">
+              <button type="button" onClick={onStop} className="h-8 rounded-lg px-3 text-[12px] text-text-muted hover:bg-bg-input touch:h-11 touch:px-3.5">
                 {labels.levelStop}
               </button>
             </>
@@ -663,10 +698,10 @@ function LevelObservationRow({
             // Without it this variant would be the one row on the page the
             // reader cannot get rid of.
             <>
-              <button type="button" onClick={onOpenSettings} className="h-8 rounded-lg px-3 text-[12px] text-text-muted hover:bg-bg-input">
+              <button type="button" onClick={onOpenSettings} className="h-8 rounded-lg px-3 text-[12px] text-text-muted hover:bg-bg-input touch:h-11 touch:px-3.5">
                 {labels.levelOpenSettings}
               </button>
-              <button type="button" onClick={onStop} className="h-8 rounded-lg px-3 text-[12px] text-text-muted hover:bg-bg-input">
+              <button type="button" onClick={onStop} className="h-8 rounded-lg px-3 text-[12px] text-text-muted hover:bg-bg-input touch:h-11 touch:px-3.5">
                 {labels.levelStop}
               </button>
             </>
@@ -820,7 +855,7 @@ export default function ReadingStats({
   // centre their whole content in the viewport, and giving them a header row
   // would push that off-centre for the sake of one button.
   const floatingMenu = menuButton ? (
-    <div className="absolute left-page top-0 pt-titlebar">{menuButton}</div>
+    <div className={`absolute left-page top-0 ${TOP_INSET}`}>{menuButton}</div>
   ) : null;
 
   if (loading && !dashboard) {
@@ -839,7 +874,7 @@ export default function ReadingStats({
         <div className="text-center" role="alert">
           <AlertCircle size={24} className="mx-auto text-danger-text" aria-hidden="true" />
           <p className="mt-3 text-[12px] text-text-secondary">{labels.loadFailed}</p>
-          <button type="button" onClick={() => setReloadKey((value) => value + 1)} className="mt-3 h-8 rounded-lg bg-accent px-3 text-[11px] text-white">{labels.retry}</button>
+          <button type="button" onClick={() => setReloadKey((value) => value + 1)} className="mt-3 h-8 rounded-lg bg-accent px-3 text-[11px] text-white touch:h-11 touch:px-4">{labels.retry}</button>
         </div>
       </div>
     );
@@ -868,34 +903,37 @@ export default function ReadingStats({
 
   return (
     <main className="h-full overflow-y-auto bg-bg-surface text-text-primary">
-      <header className="sticky top-0 z-20 flex min-h-[104px] items-end justify-between gap-6 border-b border-border bg-bg-surface/95 px-8 pb-4 pt-titlebar backdrop-blur">
+      {/* Title above controls on a phone: the five controls alone are wider
+          than 390px and already wrap, and leaving the heading to fight them
+          for the same line just squeezed it into three lines of its own. */}
+      <header className={`sticky top-0 z-20 flex flex-col items-stretch justify-between gap-3 border-b border-border bg-bg-surface/95 px-4 pb-3 backdrop-blur md:min-h-[104px] md:flex-row md:items-end md:gap-6 md:px-8 md:pb-4 ${TOP_INSET}`}>
         <div className="flex min-w-0 items-start">
           {/* Boxed to the title's own line height so the icon lands on the
               heading rather than floating between it and the subtitle. */}
           {menuButton && <div className="flex h-9 shrink-0 items-center">{menuButton}</div>}
           <div className="min-w-0">
-          <h1 className="text-[23px] font-semibold">{labels.title}</h1>
+          <h1 className="text-[19px] font-semibold md:text-[23px]">{labels.title}</h1>
           <p className="mt-1 text-[11px] text-text-muted">{view === "history" ? labels.subtitleHistory : view === "calendar" ? labels.subtitleCalendar : labels.subtitleLearning}</p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <select value={bookId ?? ""} onChange={(event) => setBookId(event.target.value || null)} className="h-8 rounded-lg border border-border bg-bg-surface px-2.5 text-[11px] text-text-secondary">
+        <div className="flex flex-wrap items-center gap-2 md:justify-end">
+          <select value={bookId ?? ""} onChange={(event) => setBookId(event.target.value || null)} className="h-8 max-w-full rounded-lg border border-border bg-bg-surface px-2.5 text-[11px] text-text-secondary touch:h-11">
             <option value="">{labels.allBooks}</option>
             {knownBooks.map((book) => <option key={book.bookId} value={book.bookId}>{book.title}</option>)}
           </select>
           <div className="flex rounded-lg border border-border bg-bg-input p-0.5" role="group">
             {(["last30Days", "year", "all"] as const).map((value) => (
-              <button key={value} type="button" aria-pressed={range === value} onClick={() => setRange(value)} className={`h-7 rounded-md px-2.5 text-[10px] ${range === value ? "bg-bg-surface font-medium text-text-primary shadow-sm" : "text-text-muted"}`}>
+              <button key={value} type="button" aria-pressed={range === value} onClick={() => setRange(value)} className={`h-7 rounded-md px-2.5 text-[10px] touch:h-10 touch:px-3 touch:text-[11px] ${range === value ? "bg-bg-surface font-medium text-text-primary shadow-sm" : "text-text-muted"}`}>
                 {value === "last30Days" ? labels.last30Days : value === "year" ? labels.thisYear : labels.allTime}
               </button>
             ))}
           </div>
-          <button type="button" aria-label={labels.privacyButton} onClick={() => setPrivacyOpen(true)} className="grid size-8 place-items-center rounded-lg border border-border text-text-muted hover:bg-bg-input">
+          <button type="button" aria-label={labels.privacyButton} onClick={() => setPrivacyOpen(true)} className="grid size-8 place-items-center rounded-lg border border-border text-text-muted hover:bg-bg-input touch:size-11">
             <LockKeyhole size={14} aria-hidden="true" />
           </button>
           <div className="flex rounded-lg border border-accent/25 bg-accent-bg p-0.5" role="group">
             {(["history", "calendar", "learning"] as const).map((value) => (
-              <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)} className={`h-7 rounded-md px-2.5 text-[10px] ${view === value ? "bg-bg-surface font-medium text-accent-text shadow-sm" : "text-text-muted"}`}>
+              <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)} className={`h-7 rounded-md px-2.5 text-[10px] touch:h-10 touch:px-3 touch:text-[11px] ${view === value ? "bg-bg-surface font-medium text-accent-text shadow-sm" : "text-text-muted"}`}>
                 {value === "history" ? labels.historyView : value === "calendar" ? labels.calendarView : labels.learningView}
               </button>
             ))}
@@ -903,10 +941,13 @@ export default function ReadingStats({
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-[1040px] space-y-6 px-7 py-7">
-        <section className="grid grid-cols-4 border-y border-border py-4">
+      <div className="mx-auto w-full max-w-[1040px] space-y-6 px-4 py-5 md:px-7 md:py-7">
+        {/* Same 2×2 fold as the learning strip and the book page: four
+            columns of 24px serif figures need about 320px more than a phone
+            has. */}
+        <section className="grid grid-cols-2 border-y border-border py-4 md:grid-cols-4">
           {metrics.map(([value, label], index) => (
-            <div key={label} className={`px-5 ${index ? "border-l border-border" : "pl-0"}`}>
+            <div key={label} className={OVERVIEW_CELL[index]}>
               <strong className="block font-serif text-[24px] font-medium">{value}</strong>
               <span className="mt-1 block text-[10px] text-text-muted">{label}</span>
             </div>
@@ -951,7 +992,7 @@ export default function ReadingStats({
               <li key={item} className="py-3">{item}</li>
             ))}
           </ul>
-          <button type="button" onClick={() => setPrivacyOpen(false)} className="mt-4 h-8 w-full rounded-lg bg-accent text-[11px] font-medium text-white">{labels.close}</button>
+          <button type="button" onClick={() => setPrivacyOpen(false)} className="mt-4 h-8 w-full rounded-lg bg-accent text-[11px] font-medium text-white touch:h-11">{labels.close}</button>
         </Modal>
       ) : null}
 
@@ -964,7 +1005,7 @@ export default function ReadingStats({
             <div><dt className="font-semibold text-text-primary">{labels.aiDisclosureExcludes}</dt><dd className="text-text-muted">{labels.aiDisclosureExcludesValue}</dd></div>
             <div><dt className="font-semibold text-text-primary">{labels.aiDisclosureBilling}</dt><dd className="text-text-muted">{provider.billingNotice}</dd></div>
           </dl>
-          <button type="button" onClick={() => void confirmDisclosure()} className="mt-4 h-8 w-full rounded-lg bg-accent text-[11px] font-medium text-white">{labels.aiDisclosureConfirm}</button>
+          <button type="button" onClick={() => void confirmDisclosure()} className="mt-4 h-8 w-full rounded-lg bg-accent text-[11px] font-medium text-white touch:h-11">{labels.aiDisclosureConfirm}</button>
         </Modal>
       ) : null}
     </main>
