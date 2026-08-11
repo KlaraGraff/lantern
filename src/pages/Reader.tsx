@@ -357,6 +357,16 @@ export default function Reader() {
   const settingsAnchorRef = useRef<HTMLButtonElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
   const readerViewportRef = useRef<HTMLElement>(null);
+  // The same node as `readerViewportRef`, kept in state so effects can wait for
+  // it. A plain ref is not enough: <main> does not exist during the loading
+  // return above, so a mount-time effect would find `null` and never look
+  // again — which left `readerRect` null for the whole session and made the
+  // learning card measure itself against the window instead of the page.
+  const [readerViewportEl, setReaderViewportEl] = useState<HTMLElement | null>(null);
+  const attachReaderViewport = useCallback((node: HTMLElement | null) => {
+    readerViewportRef.current = node;
+    setReaderViewportEl(node);
+  }, []);
   const viewRef = useRef<FoliateView | null>(null);
   // Raw dwell/exposure collection for the future mastery/review engine
   // (docs/impls/reading-driven-mastery-and-review.md) — collection and
@@ -1462,7 +1472,7 @@ export default function Reader() {
   });
 
   useEffect(() => {
-    const element = readerViewportRef.current;
+    const element = readerViewportEl;
     if (!element) return;
     let frame = 0;
     const update = () => {
@@ -1480,7 +1490,7 @@ export default function Reader() {
       observer.disconnect();
       window.removeEventListener("resize", update);
     };
-  }, []);
+  }, [readerViewportEl]);
 
   // The page area, for whoever needs to keep off the text — today the learning
   // card, which parks itself in a blank side margin when one is wide enough to
@@ -2103,7 +2113,7 @@ export default function Reader() {
         )}
         <div className="flex-1 flex flex-col min-w-0" style={{ backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body }}>
           <main
-            ref={readerViewportRef}
+            ref={attachReaderViewport}
             className="reader-page-viewport flex-1 relative overflow-hidden"
             style={{ backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body }}
             onClick={() => {
