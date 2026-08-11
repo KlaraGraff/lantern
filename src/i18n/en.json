@@ -2381,6 +2381,7 @@
 
   "bookDetails.missing": "This book is no longer in the library.",
   "bookDetails.backToLibrary": "Back to library",
+  "bookDetails.moreActions": "More actions",
   "bookDetails.continueReading": "Continue reading",
   "bookDetails.startReading": "Start reading",
   "bookDetails.durationHm": "{{hours}} h {{minutes}} m",

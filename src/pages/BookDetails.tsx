@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowLeft, BookOpen } from "lucide-react";
+import { ArrowLeft, BookOpen, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 
 import {
   deleteBook,
@@ -32,6 +32,40 @@ import { toBackendQuery } from "./reading-stats/tauri-adapter";
 import CoverageSection from "./book-details/CoverageSection";
 import EditMetadataModal from "../components/EditMetadataModal";
 import DeleteBookDialog from "../components/DeleteBookDialog";
+import BottomSheet from "../components/ui/BottomSheet";
+import { useIsNarrow } from "../hooks/useIsNarrow";
+import { platform } from "../services/platform";
+
+/**
+ * What the OS puts above the header. On macOS that is the traffic lights, and
+ * the reserve is theirs whatever the window's width — a user who drags the
+ * window under 768px still has traffic lights. On a phone it is the status bar
+ * and the notch, which `pt-safe-top` reads off the viewport. Same ternary as
+ * `Home.tsx`, `Sidebar.tsx` and `Reader.tsx`: the reserve is a platform
+ * question, never a width one.
+ */
+const TOP_INSET = platform.hasTitleBarInset ? "pt-titlebar" : "pt-safe-top";
+
+/**
+ * One cell of the metrics strip, which is 2×2 on a phone and 1×4 on a desktop.
+ *
+ * Written as a function of the index rather than four literal class strings
+ * because the two layouts disagree about exactly one cell: the third. It opens
+ * a row when the strip is 2×2 (so no rule to its left) and sits mid-strip when
+ * the strip is 1×4 (so it needs one). Everything else follows from "odd cells
+ * have a neighbour to their left" and "the first row has a row under it".
+ */
+function metricCellClass(index: number): string {
+  const vertical = index === 0
+    ? "pr-[18px]"
+    : index === 2
+      ? "pr-[18px] md:border-l md:border-border md:pl-[18px]"
+      : "border-l border-border pl-[18px] md:pr-[18px]";
+  const horizontal = index < 2
+    ? "border-b border-border-light pb-3 md:border-b-0 md:pb-0"
+    : "pt-3 md:pt-0";
+  return `${vertical} ${horizontal}`;
+}
 
 /** How far back to look for books to build a baseline from. Finished books
  *  only, newest first — a shelf of two hundred should not cost two hundred
@@ -70,6 +104,11 @@ export default function BookDetails() {
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [overrideOpen, setOverrideOpen] = useState(false);
+  // Edit and delete come off the header on a phone: three buttons and a back
+  // link do not share 390px, and the one that has to stay is the one the page
+  // exists for. Delete being a tap further away is a bonus, not the reason.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const isNarrow = useIsNarrow();
 
   const { difficulty, loading, callError, compute, setOverride } = useBookDifficulty(id);
 
@@ -193,44 +232,85 @@ export default function BookDetails() {
 
   return (
     <main className="h-screen overflow-y-auto bg-bg-surface text-text-primary">
-      <header className="sticky top-0 z-20 flex min-h-[96px] items-end justify-between gap-5 border-b border-border bg-bg-surface/95 px-7 pb-3.5 pt-titlebar backdrop-blur">
+      <header className={`sticky top-0 z-20 flex min-h-[72px] items-end justify-between gap-3 border-b border-border bg-bg-surface/95 px-4 pb-2.5 ${TOP_INSET} backdrop-blur md:min-h-[96px] md:gap-5 md:px-7 md:pb-3.5`}>
         <button
           type="button"
           onClick={() => navigate("/")}
-          className="flex items-center gap-1.5 text-[13px] text-text-secondary hover:text-text-primary"
+          aria-label={isNarrow ? t("bookDetails.backToLibrary") : undefined}
+          className="flex h-11 shrink-0 items-center gap-1.5 text-[13px] text-text-secondary hover:text-text-primary md:h-auto"
         >
-          <ArrowLeft size={15} aria-hidden="true" />
-          {t("bookDetails.backToLibrary")}
+          <ArrowLeft size={isNarrow ? 20 : 15} aria-hidden="true" />
+          <span className="hidden md:inline">{t("bookDetails.backToLibrary")}</span>
         </button>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
             onClick={() => requestOpen(book)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-[12px] font-medium text-white"
+            className="inline-flex h-11 min-w-0 items-center gap-1.5 rounded-lg bg-accent px-4 text-[14px] font-medium text-white md:h-8 md:px-3 md:text-[12px]"
           >
-            <BookOpen size={14} aria-hidden="true" />
-            {book.progress > 0 ? t("bookDetails.continueReading") : t("bookDetails.startReading")}
+            <BookOpen size={14} aria-hidden="true" className="shrink-0" />
+            <span className="truncate">
+              {book.progress > 0 ? t("bookDetails.continueReading") : t("bookDetails.startReading")}
+            </span>
           </button>
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="h-8 rounded-lg border border-border px-3 text-[12px] text-text-secondary hover:bg-bg-input"
-          >
-            {t("bookMenu.editInfo")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setDeleting(true)}
-            className="h-8 rounded-lg px-3 text-[12px] text-text-muted hover:bg-bg-input"
-          >
-            {t("bookMenu.deleteBook")}
-          </button>
+          {isNarrow ? (
+            <button
+              type="button"
+              onClick={() => setMoreOpen(true)}
+              aria-label={t("bookDetails.moreActions")}
+              className="grid size-11 shrink-0 place-items-center rounded-lg text-text-muted hover:bg-bg-input"
+            >
+              <MoreHorizontal size={20} aria-hidden="true" />
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="h-8 rounded-lg border border-border px-3 text-[12px] text-text-secondary hover:bg-bg-input"
+              >
+                {t("bookMenu.editInfo")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleting(true)}
+                className="h-8 rounded-lg px-3 text-[12px] text-text-muted hover:bg-bg-input"
+              >
+                {t("bookMenu.deleteBook")}
+              </button>
+            </>
+          )}
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-[1000px] px-7 py-6">
-        <section className="grid grid-cols-[120px_1fr] gap-[22px] border-b border-border pb-[22px]">
-          <div className="aspect-[3/4] w-[120px] overflow-hidden rounded-md bg-bg-muted shadow-card">
+      <BottomSheet
+        open={isNarrow && moreOpen}
+        onClose={() => setMoreOpen(false)}
+        title={t("bookDetails.moreActions")}
+      >
+        <div className="px-2 pb-1">
+          <button
+            type="button"
+            onClick={() => { setMoreOpen(false); setEditing(true); }}
+            className="flex h-12 w-full cursor-pointer items-center gap-3 rounded-lg px-3 text-left text-text-primary"
+          >
+            <Pencil size={18} className="text-text-muted" aria-hidden="true" />
+            <span className="text-[15px]">{t("bookMenu.editInfo")}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMoreOpen(false); setDeleting(true); }}
+            className="flex h-12 w-full cursor-pointer items-center gap-3 rounded-lg px-3 text-left text-danger-text"
+          >
+            <Trash2 size={18} aria-hidden="true" />
+            <span className="text-[15px]">{t("bookMenu.deleteBook")}</span>
+          </button>
+        </div>
+      </BottomSheet>
+
+      <div className="mx-auto w-full max-w-[1000px] px-4 py-5 md:px-7 md:py-6">
+        <section className="grid grid-cols-[96px_1fr] gap-4 border-b border-border pb-5 md:grid-cols-[120px_1fr] md:gap-[22px] md:pb-[22px]">
+          <div className="aspect-[3/4] w-full overflow-hidden rounded-md bg-bg-muted shadow-card md:w-[120px]">
             {book.cover_data ? (
               <img src={book.cover_data} alt="" className="size-full object-cover" />
             ) : (
@@ -240,7 +320,7 @@ export default function BookDetails() {
             )}
           </div>
           <div className="min-w-0">
-            <h1 className="mb-1.5 font-serif text-[24px] font-semibold leading-[1.25]">{book.title}</h1>
+            <h1 className="mb-1.5 font-serif text-[21px] font-semibold leading-[1.25] md:text-[24px]">{book.title}</h1>
             <p className="text-[13px] text-text-secondary">{book.author}</p>
             <div className="mt-3 flex flex-wrap gap-1.5">
               <span className="rounded-md bg-accent-bg px-2 py-[3px] text-[10.5px] text-accent-text">{statusLabel}</span>
@@ -260,9 +340,15 @@ export default function BookDetails() {
           </div>
         </section>
 
-        <section className="grid grid-cols-4 border-b border-border py-4">
+        {/* Four numbers side by side is a desktop strip: at 390px each column
+            would be ~83px for a 22px serif number and its label. Two rows of
+            two instead — not a horizontal scroller, because a row of figures
+            you have to swipe to finish is a row nobody finishes. The rules
+            follow the shape: vertical between the pair, horizontal under the
+            first row, and the wide layout gets its single strip back. */}
+        <section className="grid grid-cols-2 border-b border-border py-2 md:grid-cols-4 md:py-4">
           {metrics.map(([value, label], index) => (
-            <div key={label} className={index ? "border-l border-border px-[18px]" : "pr-[18px]"}>
+            <div key={label} className={metricCellClass(index)}>
               <strong className="block font-serif text-[22px] font-medium leading-[1.2]">{value}</strong>
               <span className="mt-1.5 block text-[10.5px] text-text-muted">{label}</span>
             </div>
@@ -280,7 +366,10 @@ export default function BookDetails() {
             <h2 id="book-difficulty-heading" className="text-[13.5px] font-semibold">{t("bookDifficulty.heading")}</h2>
             <p className="mt-1 text-[10.5px] text-text-muted">{t("bookDifficulty.description")}</p>
           </div>
-          <div className="rounded-[13px] border border-border px-5 py-[18px]">
+          {/* 40px of side padding is affordable on a desktop card and is 11%
+              of a phone's width, taken off the one section that has a table in
+              it. The card keeps its inset on wide screens. */}
+          <div className="rounded-[13px] border border-border px-3.5 py-[18px] md:px-5">
             <DifficultySection
               difficulty={difficulty}
               loading={loading}
@@ -328,12 +417,15 @@ export default function BookDetails() {
 
 function FileRow({ label, hint, value }: { label: string; hint?: string; value: string }) {
   return (
-    <div className="flex min-h-[56px] items-center justify-between gap-5 border-b border-border-light py-2">
-      <span className="text-[12.5px]">
+    <div className="flex min-h-[56px] items-center justify-between gap-4 border-b border-border-light py-2 md:gap-5">
+      <span className="shrink-0 text-[12.5px]">
         {label}
         {hint ? <small className="mt-0.5 block text-[10.5px] text-text-muted">{hint}</small> : null}
       </span>
-      <span className="text-right text-[12px] tabular-nums text-text-secondary">{value}</span>
+      {/* A file name is one long unbreakable token as far as the layout is
+          concerned, and a flex item will not shrink below its own min-content.
+          Without the break it pushes the row past the viewport on a phone. */}
+      <span className="min-w-0 break-all text-right text-[12px] tabular-nums text-text-secondary">{value}</span>
     </div>
   );
 }
@@ -507,7 +599,9 @@ function DifficultySection({
 
   return (
     <>
-      <div className="flex items-start justify-between gap-6">
+      {/* Same stacking as the coverage card: the verdict keeps the width, the
+          provenance stamp drops under it on a phone. */}
+      <div className="flex flex-col items-start justify-between gap-3 md:flex-row md:gap-6">
         <div className="min-w-0">
           {verdictLine ? (
             <p className={`m-0 font-serif text-[19px] leading-[1.6] ${permanent ? "text-text-secondary" : ""}`}>
@@ -540,7 +634,7 @@ function DifficultySection({
             </p>
           ) : null}
         </div>
-        <div className="shrink-0 text-right text-[10px] leading-[1.7] text-text-muted">
+        <div className="shrink-0 text-[10px] leading-[1.7] text-text-muted md:text-right">
           {difficulty.computedAt ? (
             <strong className="block text-[11px] font-semibold text-text-secondary">
               {t("bookDifficulty.stamp.computedAt", { date: stampFormat.format(new Date(difficulty.computedAt)) })}
@@ -564,7 +658,7 @@ function DifficultySection({
           <button
             type="button"
             onClick={onCompute}
-            className="h-8 shrink-0 rounded-lg bg-accent px-3 text-[12px] font-medium text-white"
+            className="h-8 shrink-0 rounded-lg bg-accent px-3 text-[12px] font-medium text-white touch:h-11 touch:px-4 touch:text-[13px]"
           >
             {t("bookDifficulty.recompute")}
           </button>
@@ -601,8 +695,14 @@ function DifficultySection({
             <span>{t("bookDifficulty.axisRare")}</span>
           </div>
 
+          {/* Three columns need 190 + 118 + 74 + gaps ≈ 410px, which a phone
+              does not have. Rather than drop a column — every one of them is
+              load-bearing for "why is this book hard" — each row folds into
+              two lines: band and share on top, the rank range under the band,
+              with the share spanning both. Same DOM either way; only the cells'
+              placement changes, so nothing is duplicated or hidden. */}
           <div className="mt-4 border-t border-border-light">
-            <div className="grid grid-cols-[minmax(190px,1.15fr)_118px_74px] items-center gap-3.5 border-b border-border-light px-0.5 py-[7px] text-[10px] tracking-[0.04em] text-text-muted">
+            <div className="hidden grid-cols-[minmax(190px,1.15fr)_118px_74px] items-center gap-3.5 border-b border-border-light px-0.5 py-[7px] text-[10px] tracking-[0.04em] text-text-muted md:grid">
               <span>{t("bookDifficulty.columnBand")}</span>
               <span>{t("bookDifficulty.columnRank")}</span>
               <span className="text-right">{t("bookDifficulty.columnShare")}</span>
@@ -610,23 +710,23 @@ function DifficultySection({
             {slices.map((slice) => (
               <div
                 key={slice.band ?? "unlisted"}
-                className="grid grid-cols-[minmax(190px,1.15fr)_118px_74px] items-center gap-3.5 border-b border-border-light px-0.5 py-[11px]"
+                className="grid grid-cols-[1fr_auto] items-center gap-x-3.5 gap-y-1 border-b border-border-light px-0.5 py-[11px] md:grid-cols-[minmax(190px,1.15fr)_118px_74px] md:gap-y-0"
               >
-                <span className="flex items-center gap-2.5 text-[12px]">
-                  <i className="size-2.5 shrink-0 rounded-[3px]" style={{ background: slice.color }} aria-hidden="true" />
+                <span className="col-start-1 row-start-1 flex flex-wrap items-baseline gap-x-2.5 gap-y-1 text-[12px] md:items-center">
+                  <i className="size-2.5 shrink-0 self-center rounded-[3px]" style={{ background: slice.color }} aria-hidden="true" />
                   {slice.band === null ? t("bookDifficulty.bandUnlisted") : t("bookDifficulty.bandName", { band: slice.band })}
                   <small className="text-[10.5px] font-normal text-text-muted">
                     {slice.band === null ? t("bookDifficulty.bandUnlistedHint") : t(`bookDifficulty.bandHint.${slice.band}`)}
                   </small>
                 </span>
-                <span className="text-[10.5px] tabular-nums text-text-muted">
+                <span className="col-start-1 row-start-2 text-[10.5px] tabular-nums text-text-muted md:col-start-2 md:row-start-1">
                   {slice.from === null
                     ? "—"
                     : slice.to === null
                       ? t("bookDifficulty.rankFrom", { from: numbers.format(slice.from) })
                       : t("bookDifficulty.rankRange", { from: numbers.format(slice.from), to: numbers.format(slice.to) })}
                 </span>
-                <span className={`text-right font-serif text-[14px] font-medium tabular-nums ${slice.band === null ? "text-text-muted" : ""}`}>
+                <span className={`col-start-2 row-span-2 row-start-1 self-center text-right font-serif text-[14px] font-medium tabular-nums md:col-start-3 md:row-span-1 ${slice.band === null ? "text-text-muted" : ""}`}>
                   {formatShare(slice.share)}%
                 </span>
               </div>
@@ -641,12 +741,25 @@ function DifficultySection({
           {difficulty.status === "too_short" ? ` ${t("bookDifficulty.tooShortFooter")}` : ""}
           {difficulty.status === "unsupported" ? ` ${t("bookDifficulty.unsupportedFooter")}` : ""}
         </p>
-        <span className="flex shrink-0 gap-4">
-          <button type="button" onClick={onToggleOverride} className="text-[11px] whitespace-nowrap text-accent-text">
+        {/* Two links, not two buttons — but a link you press is still a target,
+            and at 11px these are about 60×15. Under a finger they get the 44px
+            height without the border or fill that would make them read as
+            buttons; the type stays small so the footnote above still reads as
+            the primary text of the row. */}
+        <span className="flex shrink-0 gap-4 touch:-my-3">
+          <button
+            type="button"
+            onClick={onToggleOverride}
+            className="text-[11px] whitespace-nowrap text-accent-text touch:inline-flex touch:min-h-11 touch:items-center"
+          >
             {t("bookDifficulty.override.open")}
           </button>
           {offerRecompute && !offerStaleRecompute ? (
-            <button type="button" onClick={onCompute} className="text-[11px] whitespace-nowrap text-accent-text">
+            <button
+              type="button"
+              onClick={onCompute}
+              className="text-[11px] whitespace-nowrap text-accent-text touch:inline-flex touch:min-h-11 touch:items-center"
+            >
               {t("bookDifficulty.recompute")}
             </button>
           ) : null}
@@ -700,7 +813,7 @@ function OverridePanel({
               type="button"
               aria-pressed={active}
               onClick={() => onSetOverride(active ? null : choice)}
-              className={`h-[30px] rounded-lg border px-3 text-[11.5px] ${
+              className={`h-[30px] rounded-lg border px-3 text-[11.5px] touch:h-11 touch:px-3.5 touch:text-[13px] ${
                 active
                   ? "border-accent font-semibold text-accent-text"
                   : choice === "hidden"

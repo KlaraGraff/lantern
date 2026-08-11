@@ -2381,6 +2381,7 @@
 
   "bookDetails.missing": "书架里已经没有这本书了。",
   "bookDetails.backToLibrary": "返回书架",
+  "bookDetails.moreActions": "更多操作",
   "bookDetails.continueReading": "继续阅读",
   "bookDetails.startReading": "开始阅读",
   "bookDetails.durationHm": "{{hours}} 小时 {{minutes}} 分",

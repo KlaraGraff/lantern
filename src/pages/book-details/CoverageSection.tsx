@@ -66,7 +66,10 @@ export default function CoverageSection({
         </h2>
         <p className="mt-1 text-[10.5px] text-text-muted">{t("bookCoverage.description")}</p>
       </div>
-      <div className="rounded-[13px] border border-border px-5 py-[18px]">
+      {/* Narrower side padding on a phone, for the same reason as the
+          difficulty card: 40px of inset is 11% of the width, and there are
+          tables under here that need every pixel of it. */}
+      <div className="rounded-[13px] border border-border px-3.5 py-[18px] md:px-5">
         <CoverageBody
           bookId={bookId}
           bookTitle={bookTitle}
@@ -225,7 +228,7 @@ function CoverageBody({
             <button
               type="button"
               onClick={onStartReading}
-              className="h-8 rounded-lg bg-accent px-3 text-[12px] font-medium text-white"
+              className="h-8 rounded-lg bg-accent px-3 text-[12px] font-medium text-white touch:h-11 touch:px-4 touch:text-[13px]"
             >
               {t("bookCoverage.empty.start")}
             </button>
@@ -279,7 +282,13 @@ function CoverageBody({
     <>
       <Ladder band={reading.band} />
 
-      <div className="flex items-start justify-between gap-6">
+      {/* The verdict sentence is set at 19px serif and is the one thing on
+          this card that must not be squeezed; the stamp beside it is a
+          provenance note in 10px. On a phone the stamp goes under the
+          sentence rather than taking 120px off it — and left-aligned there,
+          because right-aligned text with nothing to its right reads as a
+          mistake. */}
+      <div className="flex flex-col items-start justify-between gap-3 md:flex-row md:gap-6">
         <div className="min-w-0">
           <p className="m-0 font-serif text-[19px] leading-[1.6]">
             {emphasize(t("bookCoverage.line", {
@@ -306,7 +315,7 @@ function CoverageBody({
             </p>
           ) : null}
         </div>
-        <div className="shrink-0 text-right text-[10px] leading-[1.7] tabular-nums text-text-muted">
+        <div className="shrink-0 text-[10px] leading-[1.7] tabular-nums text-text-muted md:text-right">
           {coverage.computedAt ? (
             <strong className="block text-[11px] font-semibold text-text-secondary">
               {t("bookCoverage.stamp.computedAt", { date: dateOnly.format(new Date(coverage.computedAt)) })}
@@ -341,8 +350,12 @@ function CoverageBody({
             </span>
           ))}
         </div>
+        {/* Same fold as the difficulty table: name and share on the first
+            line, the explanation under the name, share spanning both. The
+            column headings go with the columns — on two lines they would be
+            labelling nothing. */}
         <div className="mt-3 border-t border-border-light">
-          <div className="grid grid-cols-[minmax(150px,1.2fr)_1fr_74px] gap-3.5 border-b border-border-light px-0.5 py-[7px] text-[10px] tracking-[0.04em] text-text-muted">
+          <div className="hidden grid-cols-[minmax(150px,1.2fr)_1fr_74px] gap-3.5 border-b border-border-light px-0.5 py-[7px] text-[10px] tracking-[0.04em] text-text-muted md:grid">
             <span>{t("bookCoverage.compo.head")}</span>
             <span>{t("bookCoverage.compo.headHint")}</span>
             <span className="text-right">{t("bookCoverage.compo.headValue")}</span>
@@ -350,14 +363,16 @@ function CoverageBody({
           {slices.map((slice) => (
             <div
               key={slice.key}
-              className="grid grid-cols-[minmax(150px,1.2fr)_1fr_74px] items-center gap-3.5 border-b border-border-light px-0.5 py-2.5"
+              className="grid grid-cols-[1fr_auto] items-center gap-x-3.5 gap-y-1 border-b border-border-light px-0.5 py-2.5 md:grid-cols-[minmax(150px,1.2fr)_1fr_74px] md:gap-y-0"
             >
-              <span className="flex items-center gap-2.5 text-[12px]">
+              <span className="col-start-1 row-start-1 flex items-center gap-2.5 text-[12px]">
                 <i className="size-2.5 shrink-0 rounded-[3px]" style={{ background: slice.color }} aria-hidden="true" />
                 {t(`bookCoverage.row.${slice.key}.name`)}
               </span>
-              <span className="text-[10.5px] text-text-muted">{t(`bookCoverage.row.${slice.key}.hint`)}</span>
-              <span className={`text-right font-serif text-[14px] font-medium tabular-nums ${slice.key === "name" ? "text-text-muted" : ""}`}>
+              <span className="col-start-1 row-start-2 text-[10.5px] leading-[1.6] text-text-muted md:col-start-2 md:row-start-1">
+                {t(`bookCoverage.row.${slice.key}.hint`)}
+              </span>
+              <span className={`col-start-2 row-span-2 row-start-1 self-center text-right font-serif text-[14px] font-medium tabular-nums md:col-start-3 md:row-span-1 ${slice.key === "name" ? "text-text-muted" : ""}`}>
                 {formatCoverage(slice.share)}%
               </span>
             </div>
@@ -444,6 +459,19 @@ function Ladder({ band, quiet = false }: { band: CoverageBand; quiet?: boolean }
 }
 
 /**
+ * Which way a label hangs off its mark. Centred in the middle of the ruler,
+ * and pinned to the edge near either end — a reading of 88.2% puts the mark at
+ * the very left, and a centred label there would have half of itself outside
+ * the card. The ruler is about 330px wide on a phone and the label is roughly
+ * 46px, so the changeover happens at 7% of the width; 8 and 92 give it room.
+ */
+function anchor(percent: number): string {
+  if (percent < 8) return "translate-x-0";
+  if (percent > 92) return "-translate-x-full";
+  return "-translate-x-1/2";
+}
+
+/**
  * The ruler, 88% to 100%. Drawn with a point, with a range, or with neither —
  * the empty state shows the two reference lines and nothing else, which is the
  * only honest way to introduce a scale you have no reading for.
@@ -473,13 +501,13 @@ function Scale({
     <div className="mt-[18px]">
       <div className="relative h-[26px]">
         {mark !== null ? (
-          <div className="absolute bottom-[calc(100%+6px)] -translate-x-1/2 whitespace-nowrap" style={{ left: `${mark}%` }}>
+          <div className={`absolute bottom-[calc(100%+6px)] whitespace-nowrap ${anchor(mark)}`} style={{ left: `${mark}%` }}>
             <b className="font-serif text-[17px] font-semibold tabular-nums text-accent-text">{formatCoverage(point ?? 0)}%</b>
           </div>
         ) : null}
         {range ? (
           <div
-            className="absolute bottom-[calc(100%+6px)] -translate-x-1/2 whitespace-nowrap"
+            className={`absolute bottom-[calc(100%+6px)] whitespace-nowrap ${anchor(left + width / 2)}`}
             style={{ left: `${left + width / 2}%` }}
           >
             <b className="font-serif text-[15px] font-semibold tabular-nums text-accent-text">
@@ -591,12 +619,12 @@ function SourceRows({ profile, thin }: { profile: VocabProfileSummary | null; th
   return (
     <div className="mt-4 border-t border-border-light">
       {rows.map((row) => (
-        <div key={row.key} className="flex items-center justify-between gap-5 border-b border-border-light px-0.5 py-[11px]">
-          <span className="text-[12px]">
+        <div key={row.key} className="flex items-center justify-between gap-4 border-b border-border-light px-0.5 py-[11px] md:gap-5">
+          <span className="min-w-0 text-[12px]">
             {t(`bookCoverage.sources.${row.key}.label`)}
             <small className="mt-0.5 block text-[10.5px] text-text-muted">{row.hint}</small>
           </span>
-          <span className={`text-[12px] tabular-nums ${row.none ? "text-text-muted" : "text-text-secondary"}`}>
+          <span className={`shrink-0 text-right text-[12px] tabular-nums ${row.none ? "text-text-muted" : "text-text-secondary"}`}>
             {row.value}
           </span>
         </div>
@@ -762,7 +790,7 @@ function UnknownWordsPanel({
   }, [frequent, collecting, bookId]);
 
   return (
-    <div className="mt-5 rounded-[13px] border border-border px-5 py-[18px]">
+    <div className="mt-5 rounded-[13px] border border-border px-3.5 py-[18px] md:px-5">
       <div className="mb-3 flex items-start justify-between gap-5">
         <div className="min-w-0">
           <h3 className="text-[13.5px] font-semibold">{t("bookCoverage.words.heading", { title: bookTitle })}</h3>
@@ -826,17 +854,24 @@ function UnknownWordsPanel({
                   </div>
                 </>
               ) : (
+                /* Four columns with a 332px floor against a phone's ~330px of
+                   content. Word and count stay on the first line — they are
+                   what the list is scanned for — with the gloss and the "seen
+                   3 times" chip on the second. Nothing is dropped; the row
+                   just gets two lines instead of one. */
                 <div className="mt-1.5 border-t border-border-light">
                   {group.words.map((word) => {
                     const chip = wordChip(word);
                     return (
                       <div
                         key={word.word}
-                        className="grid grid-cols-[minmax(120px,1fr)_1fr_92px_78px] items-center gap-3.5 border-b border-border-light px-0.5 py-[9px]"
+                        className="grid grid-cols-[1fr_auto] items-center gap-x-3.5 gap-y-1 border-b border-border-light px-0.5 py-[9px] md:grid-cols-[minmax(120px,1fr)_1fr_92px_78px] md:gap-y-0"
                       >
-                        <span className="text-[13px] font-medium">{word.word}</span>
-                        <span className="text-[11px] text-text-muted">{word.gloss ?? ""}</span>
-                        <span className="text-[10.5px] text-text-secondary">
+                        <span className="col-start-1 row-start-1 text-[13px] font-medium">{word.word}</span>
+                        <span className="col-start-1 row-start-2 text-[11px] leading-[1.5] text-text-muted md:col-start-2 md:row-start-1">
+                          {word.gloss ?? ""}
+                        </span>
+                        <span className="col-start-2 row-start-2 justify-self-end text-[10.5px] text-text-secondary md:col-start-3 md:row-start-1 md:justify-self-start">
                           <span className={`inline-block rounded-[5px] px-1.5 py-0.5 text-[10px] ${chip.kind === "familiar" ? "bg-accent-bg text-accent-text" : "bg-bg-input text-text-muted"}`}>
                             {chip.kind === "familiar"
                               ? t("bookCoverage.chip.familiar")
@@ -847,7 +882,7 @@ function UnknownWordsPanel({
                                   : t("bookCoverage.chip.never")}
                           </span>
                         </span>
-                        <span className="text-right text-[11.5px] tabular-nums text-text-secondary">
+                        <span className="col-start-2 row-start-1 text-right text-[11.5px] tabular-nums text-text-secondary md:col-start-4">
                           {t("bookCoverage.words.count", { times: word.tokens })}
                         </span>
                       </div>
@@ -923,7 +958,7 @@ function Footnote({ children, links }: { children: React.ReactNode; links?: Reac
   return (
     <div className="mt-4 flex flex-wrap items-start justify-between gap-5 border-t border-border pt-3">
       <p className="m-0 max-w-[620px] text-[10.5px] leading-[1.8] text-text-muted">{children}</p>
-      {links ? <span className="flex shrink-0 gap-4">{links}</span> : null}
+      {links ? <span className="flex shrink-0 flex-wrap gap-4 touch:-my-3">{links}</span> : null}
     </div>
   );
 }
@@ -937,12 +972,15 @@ function LinkButton({
   disabled?: boolean;
   children: React.ReactNode;
 }) {
+  // Small type, finger-sized box. The height comes from `touch:` and nothing
+  // else does, so on a desktop these stay the quiet footnote links they are
+  // meant to be.
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="whitespace-nowrap text-[11px] text-accent-text disabled:text-text-muted"
+      className="whitespace-nowrap text-[11px] text-accent-text disabled:text-text-muted touch:inline-flex touch:min-h-11 touch:items-center"
     >
       {children}
     </button>
@@ -954,7 +992,7 @@ function QuietButton({ onClick, children }: { onClick(): void; children: React.R
     <button
       type="button"
       onClick={onClick}
-      className="h-8 rounded-lg border border-border px-3 text-[12px] text-text-secondary hover:bg-bg-input"
+      className="h-8 rounded-lg border border-border px-3 text-[12px] text-text-secondary hover:bg-bg-input touch:h-11 touch:px-4 touch:text-[13px]"
     >
       {children}
     </button>
