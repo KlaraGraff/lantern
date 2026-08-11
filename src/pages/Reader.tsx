@@ -2041,7 +2041,12 @@ export default function Reader() {
    */
   const panelShellClass = (open: boolean, width: string, covering: boolean) => (
     panelShellVisible(open, isNarrow, covering)
-      ? `absolute inset-0 z-50 flex flex-col md:static md:inset-auto md:z-auto md:h-full md:shrink-0 ${width}`
+      // A covering panel is the whole screen, home indicator included, so it
+      // owns the bottom inset itself — the reader's footer, which reserves it
+      // the rest of the time, is underneath the panel and reserving nothing.
+      // `covering` is only ever true below the breakpoint, so the `md:` reset
+      // is belt and braces.
+      ? `absolute inset-0 z-50 flex flex-col md:static md:inset-auto md:z-auto md:h-full md:shrink-0 ${covering ? "pb-safe-bottom md:pb-0" : ""} ${width}`
       : "hidden"
   );
 
@@ -2673,7 +2678,13 @@ export default function Reader() {
 
           {/* Bottom progress bar */}
           <footer
-            className={`px-page pb-2 pt-0 shrink-0 ${isStandaloneWindow ? "" : "bg-bg-surface"}`}
+            // The 8px bottom gutter is a floor, not the value. This footer is
+            // the last thing on the screen, so on a phone its 8px lands inside
+            // the home indicator's 34pt and the progress readout sits under the
+            // bar — and because it is a `shrink-0` sibling of <main>, whatever
+            // it fails to reserve is room the text above it keeps and then has
+            // clipped. `max()` so desktop is untouched: no inset, no change.
+            className={`px-page pb-[max(0.5rem,var(--spacing-safe-bottom))] pt-0 shrink-0 ${isStandaloneWindow ? "" : "bg-bg-surface"}`}
             style={isStandaloneWindow ? {
               backgroundColor: getThemeStyles(readerSettings.theme, readerSettings.customTheme).body,
               color: getThemeStyles(readerSettings.theme, readerSettings.customTheme).text,
