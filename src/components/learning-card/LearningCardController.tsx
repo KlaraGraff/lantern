@@ -3,9 +3,11 @@ import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent }
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
+import { useCoarsePointer } from "../../hooks/useCoarsePointer";
 import { createUuid } from "../../utils/randomUuid";
 import type { AiErrorCode } from "../../utils/aiError";
 import type { ReaderInteraction, SerializableRect } from "../reader-interaction";
+import BottomSheet from "../ui/BottomSheet";
 import { saveVocabWord } from "../vocab/collect";
 import { serializeCardSnapshot } from "../vocab/cardSnapshot";
 import {
@@ -14,6 +16,7 @@ import {
   learningCardCacheSignature,
 } from "./cache";
 import { getResponsiveLearningCardWidth, learningCardFailure } from "./config";
+import { useIsFrontMobileCard } from "./mobileCardStack";
 import { cardPosition, clampCardPoint, type CardPoint } from "./placement";
 import { cardVocabFields, moduleText, projection } from "./projection.ts";
 import type {
@@ -93,6 +96,12 @@ export default function LearningCardController({
 }: LearningCardControllerProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const { t } = useTranslation();
+  // Mirrors `index.css`'s `touch:` variant: which presentation to render, not
+  // just which classes to apply, so it is read once here rather than sniffed
+  // from viewport width. See `mobileCardStack.ts` for what "front" means once
+  // more than one card is open under a finger.
+  const coarsePointer = useCoarsePointer();
+  const isFrontMobileCard = useIsFrontMobileCard(stackIndex, coarsePointer);
   const [retry, setRetry] = useState(0);
   const [result, setResult] = useState<LearningCardResponse>({
     version: 1,
@@ -320,6 +329,15 @@ export default function LearningCardController({
     }
   }, [bookId, interaction.kind, interaction.text, refreshNotes]);
 
+  // `mounted` is in the dependency list, not decoration: on a coarse pointer a
+  // card that is not the front one renders `null`, so `wrapperRef.current` is
+  // still null the first time this runs. It is null even for the front card —
+  // `mobileCardStack` registers in a layout effect, which is after the render
+  // that reads the registry, so the first render of every card answers "not
+  // front". Without a dependency that changes when the wrapper appears, this
+  // effect would arm nothing and never run again: no focus, no Escape, no Tab
+  // trap, for as long as the sheet is open.
+  const mounted = !coarsePointer || isFrontMobileCard;
   useEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
@@ -345,7 +363,7 @@ export default function LearningCardController({
     };
     wrapper.addEventListener("keydown", onKeyDown);
     return () => wrapper.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [onClose, mounted]);
 
   const bounds = readerRect ?? null;
   const availableWidth = bounds?.width ?? window.innerWidth;
@@ -357,8 +375,15 @@ export default function LearningCardController({
   // Measured once, on the frame the card opens. Where the card stands is a
   // decision, not a live binding: re-reading it every render would have the
   // card jump sides when a panel opens under it, and it can be dragged anyway.
-  const [textRect] = useState(() => getTextRect?.() ?? null);
-  const initialPosition = cardPosition(interaction, bounds, width, stackIndex, textRect);
+  //
+  // Coarse pointer skips this pixel geometry entirely. `BottomSheet` pins
+  // itself to the viewport with plain CSS, not `cardPosition`'s desktop
+  // cascade math, so there is nothing here for a touch session to read —
+  // `textRect` is never measured and `cardPosition` is never called.
+  const [textRect] = useState(() => (coarsePointer ? null : (getTextRect?.() ?? null)));
+  const initialPosition = coarsePointer
+    ? { left: 0, top: 0, maxHeight: 0 }
+    : cardPosition(interaction, bounds, width, stackIndex, textRect);
   const [position, setPosition] = useState<CardPoint>(() => ({
     left: initialPosition.left,
     top: initialPosition.top,
@@ -386,6 +411,10 @@ export default function LearningCardController({
   }, [bounds, initialPosition.maxHeight, width]);
 
   useEffect(() => {
+    // Same reason as `initialPosition` above: on coarse pointer the sheet
+    // owns its own position, so there is no pixel clamp to re-run when the
+    // card resizes.
+    if (coarsePointer) return;
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
     const clampCurrent = () => updatePosition(positionRef.current);
@@ -397,7 +426,7 @@ export default function LearningCardController({
       observer.disconnect();
       window.removeEventListener("resize", clampCurrent);
     };
-  }, [updatePosition]);
+  }, [coarsePointer, updatePosition]);
 
   const onDragPointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     if (event.button !== 0) return;
@@ -505,6 +534,81 @@ export default function LearningCardController({
     }
   }, [bookId, interaction, noteDraft, noteId, noteScope, refreshNotes]);
 
+  const view = (
+    <LearningCardView
+      result={result}
+      config={config}
+      availableWidth={availableWidth}
+      maxHeight={coarsePointer ? undefined : initialPosition.maxHeight}
+      loading={loading}
+      thinking={thinking}
+      reasoning={reasoning}
+      error={error}
+      partial={partial}
+      aiErrorCode={aiErrorCode}
+      notes={notes}
+      noteEditorOpen={noteEditorOpen}
+      noteDraft={noteDraft}
+      noteSaving={noteSaving}
+      noteScope={noteScope}
+      onNoteScopeChange={setNoteScope}
+      actionStates={actionStates}
+      onAction={onAction}
+      onClose={onClose}
+      // A bottom sheet does not free-drag: there is nowhere else for it to go
+      // and no pixel position for a drag to write back to (see `coarsePointer`
+      // above). Leaving these undefined also drops `LearningCardView`'s own
+      // drag handle from the header on touch.
+      onDragPointerDown={coarsePointer ? undefined : onDragPointerDown}
+      onDragPointerMove={coarsePointer ? undefined : onDragPointerMove}
+      onDragPointerEnd={coarsePointer ? undefined : onDragPointerEnd}
+      onRetry={() => setRetry((value) => value + 1)}
+      onRefresh={fromCache ? () => setRetry((value) => value + 1) : undefined}
+      // A cached card was written before this record was read, so claiming
+      // the record shaped it would be a guess. Only a fresh answer earns it.
+      memoryHint={fromCache ? null : memoryHint}
+      onLookupWord={onLookupWord}
+      onSelectText={onSelectText}
+      onNoteDraftChange={setNoteDraft}
+      onNoteSave={saveNote}
+      onNoteCancel={() => { setNoteEditorOpen(false); setNoteDraft(""); setNoteId(null); }}
+      onNoteEdit={(note) => { setNoteId(note.id); setNoteDraft(note.content); setNoteScope(note.scope ?? "book"); setNoteEditorOpen(true); }}
+      onNoteDelete={(note) => {
+        invoke("delete_note", { id: note.id }).then(refreshNotes).catch(() => {});
+      }}
+      onViewAllNotes={onViewAllNotes}
+      sheetPresentation={coarsePointer}
+    />
+  );
+
+  if (coarsePointer) {
+    // Cards stay resident once opened — the desktop cascade keeps every one of
+    // them on screen — but a phone only has room for one sheet. `isFrontMobileCard`
+    // picks the most recently opened card still open; everything behind it stays
+    // mounted (still streaming, if it was) but renders nothing.
+    //
+    // Closing the front card does not blank the screen: `onClose` only removes
+    // this one card from `useLearningCards`' array, so the next render hands
+    // "front" to whichever card was open before it. That is a deliberate choice
+    // over discarding every older card the moment a new one opens — an in-flight
+    // AI answer the reader has not finished reading is not something an
+    // accidental second tap should throw away, and the five-card cap already in
+    // `useLearningCards` exists for exactly this kind of accumulation.
+    if (!isFrontMobileCard) return null;
+    return (
+      <BottomSheet open onClose={onClose} manageFocus={false} scroll={false}>
+        <div
+          ref={wrapperRef}
+          tabIndex={-1}
+          className="flex min-h-0 flex-1 flex-col outline-none"
+          onPointerDown={onFocus}
+        >
+          {view}
+        </div>
+      </BottomSheet>
+    );
+  }
+
   return (
     <div
       ref={wrapperRef}
@@ -513,45 +617,7 @@ export default function LearningCardController({
       style={{ left: position.left, top: position.top }}
       onPointerDown={onFocus}
     >
-      <LearningCardView
-        result={result}
-        config={config}
-        availableWidth={availableWidth}
-        maxHeight={initialPosition.maxHeight}
-        loading={loading}
-        thinking={thinking}
-        reasoning={reasoning}
-        error={error}
-        partial={partial}
-        aiErrorCode={aiErrorCode}
-        notes={notes}
-        noteEditorOpen={noteEditorOpen}
-        noteDraft={noteDraft}
-        noteSaving={noteSaving}
-        noteScope={noteScope}
-        onNoteScopeChange={setNoteScope}
-        actionStates={actionStates}
-        onAction={onAction}
-        onClose={onClose}
-        onDragPointerDown={onDragPointerDown}
-        onDragPointerMove={onDragPointerMove}
-        onDragPointerEnd={onDragPointerEnd}
-        onRetry={() => setRetry((value) => value + 1)}
-        onRefresh={fromCache ? () => setRetry((value) => value + 1) : undefined}
-        // A cached card was written before this record was read, so claiming
-        // the record shaped it would be a guess. Only a fresh answer earns it.
-        memoryHint={fromCache ? null : memoryHint}
-        onLookupWord={onLookupWord}
-        onSelectText={onSelectText}
-        onNoteDraftChange={setNoteDraft}
-        onNoteSave={saveNote}
-        onNoteCancel={() => { setNoteEditorOpen(false); setNoteDraft(""); setNoteId(null); }}
-        onNoteEdit={(note) => { setNoteId(note.id); setNoteDraft(note.content); setNoteScope(note.scope ?? "book"); setNoteEditorOpen(true); }}
-        onNoteDelete={(note) => {
-          invoke("delete_note", { id: note.id }).then(refreshNotes).catch(() => {});
-        }}
-        onViewAllNotes={onViewAllNotes}
-      />
+      {view}
     </div>
   );
 }

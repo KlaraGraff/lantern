@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { AlertCircle, ChevronDown, ChevronRight, GripHorizontal, History, Loader2, RotateCw, Settings, Sparkles, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { platform } from "../../services/platform";
 import { isAiRetryableError, isAiSettingsError, type AiErrorCode } from "../../utils/aiError";
 import {
   getLearningCardTargetWidth,
@@ -43,6 +44,13 @@ interface LearningCardViewProps {
   /** Present when `error` came from the AI route, so the card can route out of it. */
   aiErrorCode?: AiErrorCode | null;
   presentationMode?: boolean;
+  /**
+   * Drawn inside `BottomSheet` on coarse pointer: the sheet already
+   * supplies the rounded top corners, the border-less scrim and the shadow,
+   * so the card fills it edge to edge instead of floating inside as a second
+   * bordered box.
+   */
+  sheetPresentation?: boolean;
   notes?: LearningCardNote[];
   noteEditorOpen?: boolean;
   noteDraft?: string;
@@ -101,6 +109,7 @@ export default function LearningCardView({
   partial = false,
   aiErrorCode = null,
   presentationMode = false,
+  sheetPresentation = false,
   notes,
   noteEditorOpen,
   noteDraft,
@@ -156,8 +165,10 @@ export default function LearningCardView({
       role={presentationMode ? "region" : "dialog"}
       aria-modal={presentationMode ? undefined : true}
       aria-labelledby={titleId}
-      className="flex min-h-0 max-w-full flex-col overflow-hidden rounded-md border border-border/80 bg-bg-surface shadow-context"
-      style={{ width: `${width}px`, maxHeight }}
+      className={`flex min-h-0 max-w-full flex-col overflow-hidden bg-bg-surface ${
+        sheetPresentation ? "w-full" : "rounded-md border border-border/80 shadow-context"
+      }`}
+      style={sheetPresentation ? { maxHeight } : { width: `${width}px`, maxHeight }}
     >
       <header
         onPointerDown={(event) => {
@@ -183,7 +194,7 @@ export default function LearningCardView({
             onClick={onRefresh}
             title={t("learningCard.cachedRefresh")}
             aria-label={t("learningCard.cachedRefresh")}
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-surface/70"
+            className="flex size-7 touch:size-11 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-surface/70"
           >
             <RotateCw size={13} />
           </button>
@@ -197,7 +208,7 @@ export default function LearningCardView({
             onClick={onClose}
             title={t("common.close")}
             aria-label={t("common.close")}
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-surface/70"
+            className="flex size-7 touch:size-11 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-bg-surface/70"
           >
             <X size={14} />
           </button>
@@ -226,6 +237,14 @@ export default function LearningCardView({
                 type="button"
                 onClick={async () => {
                   await invoke("open_settings_on_main", { section: "services" });
+                  // `open_settings_on_main` already targets the window labelled
+                  // "main" and shows/focuses it from the Rust side. Where the OS
+                  // hands out one window per book (D-005 `hasWindow`), that is a
+                  // separate window from this reader and needs bringing forward
+                  // from here too. Where it does not, this card's own window IS
+                  // "main" — there is nowhere else for focus to go, the same
+                  // reasoning `notifyReaders.ts` uses for its second half.
+                  if (!platform.hasWindow) return;
                   const main = await WebviewWindow.getByLabel("main");
                   await main?.setFocus();
                 }}

@@ -24,6 +24,7 @@ import { bindingFromKeyboardEvent } from "../../components/reader-bindings";
 import { appZoomCommandFor, nextAppZoom } from "../../services/app-zoom";
 import { persistAppZoom, readAppZoom } from "../../services/app-zoom-window";
 import { clickCountGraceMs } from "./click-grace";
+import { createLongPressTracker, LONG_PRESS } from "./long-press";
 
 /**
  * How close to the edge a drag has to get before the page turns. Wide enough to
@@ -33,6 +34,8 @@ import { clickCountGraceMs } from "./click-grace";
 const EDGE_TURN_MARGIN_PX = 24;
 /** Minimum spacing between page turns while the pointer is held at the edge. */
 const EDGE_TURN_INTERVAL_MS = 600;
+
+const TOUCH_CALLOUT_STYLE_ID = "lantern-touch-callout";
 
 interface InteractionView {
   getCFI(index: number, range: Range): string;
@@ -144,6 +147,20 @@ export function useReaderInteractions({
     bookFormat,
     interactionGeneration,
   }: InstallDocumentInteractionsOptions) => {
+    // WebKit answers a long press on text with its own callout (拷贝 / 查询),
+    // which would open on top of the menu this file now opens for the same
+    // gesture. Only the callout is suppressed — selection itself is
+    // `-webkit-user-select`, deliberately untouched, so dragging the handles
+    // still works and the reader can still hand a passage to the OS. Scoped by
+    // the same media query the `touch:` class variant uses, so a mouse-driven
+    // document keeps exactly the behaviour it had.
+    if (!doc.getElementById(TOUCH_CALLOUT_STYLE_ID)) {
+      const calloutStyle = doc.createElement("style");
+      calloutStyle.id = TOUCH_CALLOUT_STYLE_ID;
+      calloutStyle.textContent = "@media (pointer: coarse){html{-webkit-touch-callout:none}}";
+      (doc.head ?? doc.documentElement).appendChild(calloutStyle);
+    }
+
     const missingPdfTextLayer = () => {
       if (bookFormat !== "pdf") return false;
       const canvas = doc.querySelector("#canvas > canvas") as HTMLCanvasElement | null;
@@ -187,6 +204,41 @@ export function useReaderInteractions({
       };
     };
 
+    /**
+     * The menu for a range the pointer landed on, shaped exactly the way the
+     * single-click path shapes it.
+     *
+     * `viaSelection` is the one thing that varies: a range taken from a
+     * selection the reader already had is a selection menu of whatever kind
+     * the text classifies as, while a range resolved from the point under the
+     * pointer is always the word menu. That distinction is not cosmetic — the
+     * reader only counts a dictionary glance towards mastery for the
+     * `word-menu` trigger, so it decides whether a lookup on this platform
+     * feeds the mastery engine at all.
+     */
+    const interactionForRange = (
+      range: Range,
+      viaSelection: boolean,
+    ): ReaderInteraction | null => {
+      const text = range.toString().trim();
+      const normalizedText = normalizeInteractionText(text);
+      const location = view.getCFI(index, range);
+      if (!text || !normalizedText || !location) return null;
+      const locale = doc.documentElement.lang || undefined;
+      return {
+        trigger: viaSelection ? "selection-menu" : "word-menu",
+        kind: viaSelection ? classifySelection(text, locale) : "word",
+        text,
+        normalizedText,
+        context: contextForRange(range, text),
+        location,
+        anchorRect: viewportRectForRange(range),
+        source: "foliate",
+        format: bookFormat === "pdf" ? "pdf" : "epub",
+        locale,
+      };
+    };
+
     let activePointerId: number | null = null;
     let selectionSnapshot: ReaderSelectionSnapshot | null = null;
     let pointerCaptureTarget: Element | null = null;
@@ -209,6 +261,35 @@ export function useReaderInteractions({
      * opened. Cleared on every pointerdown, so it cannot outlive its gesture.
      */
     let tripleClickOwnsClick = false;
+    /**
+     * Long press — the touch spelling of right-click.
+     *
+     * A finger has no second button, so every path into this menu was a
+     * `contextmenu` event and a phone could not open it at all. Held here
+     * rather than in the tracker: the tracker decides, these three carry the
+     * decision through the rest of the gesture.
+     */
+    const longPress = createLongPressTracker();
+    let longPressTimer: number | null = null;
+    /**
+     * The selection this press started with, taken at pointerdown rather than
+     * when the timer fires. WebKit makes its own word selection partway
+     * through a long press, so a snapshot read at 500 ms would sometimes find
+     * a selection the reader never made — and the menu would open as a
+     * "selection menu" on a word, which is the shape that does *not* count a
+     * dictionary glance. Read before the finger has been down long enough for
+     * WebKit to have done anything, the answer is the reader's alone.
+     */
+    let longPressSnapshot: ReaderSelectionSnapshot | null = null;
+    /** Same job as `tripleClickSelectionHandled`, for the press that held. */
+    let longPressSelectionHandled = false;
+    const cancelLongPress = () => {
+      if (longPressTimer !== null) {
+        window.clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+      longPress.cancel();
+    };
     const scheduleSelectionMenu = (delay = 150, includeWord = false) => {
       cancelPendingSelectionMenu();
       pendingSelectionMenuRef.current = window.setTimeout(() => {
@@ -248,8 +329,9 @@ export function useReaderInteractions({
       } catch {
         // WebKit can release capture before dispatching lostpointercapture.
       }
-      if (tripleClickSelectionHandled) {
+      if (tripleClickSelectionHandled || longPressSelectionHandled) {
         tripleClickSelectionHandled = false;
+        longPressSelectionHandled = false;
         return;
       }
       if (!openMenu || Date.now() < forceClickSuppressedUntilRef.current) {
@@ -271,6 +353,44 @@ export function useReaderInteractions({
       }
     };
 
+    /**
+     * The held press resolved. Deliberately the same two steps the single-click
+     * path takes — snapshot first, word under the pointer second — so the menu
+     * a phone opens carries the identical interaction a mouse would have
+     * produced, down to the trigger the mastery engine reads.
+     */
+    const openLongPressMenu = (x: number, y: number, target: EventTarget | null) => {
+      if (!supportsSelection || isInteractiveReaderTarget(target)) return;
+      cancelPendingWordClick();
+      cancelPendingSelectionMenu();
+      const selectionRange = rangeFromSelectionSnapshotAtPoint(longPressSnapshot, x, y);
+      const range = selectionRange ?? wordRangeAtPoint(
+        doc,
+        x,
+        y,
+        doc.documentElement.lang || undefined,
+      );
+      if (!range) {
+        // A held press on a scanned page is the same "there is no text here"
+        // question a right-click asks, and gets the same answer.
+        if (showMissingPdfTextIntent()) longPress.suppressClick(Date.now());
+        return;
+      }
+      const interaction = interactionForRange(range, Boolean(selectionRange));
+      if (!interaction) return;
+      // This gesture decided what is selected; the pointerup closing it must
+      // not re-derive a selection and reschedule a menu over this one.
+      longPressSelectionHandled = true;
+      // Same 80 ms window `finalizePointerSelection` uses — replacing the
+      // selection fires `selectionchange`, and letting that reschedule would
+      // drop back to the word-suppressing default menu.
+      selectionNormalizationUntil = Date.now() + 80;
+      replaceDocumentSelection(doc, range);
+      selectionSnapshot = snapshotSelectionRange(range);
+      longPress.suppressClick(Date.now());
+      openLearningInteraction(interaction);
+    };
+
     doc.addEventListener("pointerdown", (event: PointerEvent) => {
       if (event.button !== 0) return;
       activePointerId = event.pointerId;
@@ -284,17 +404,43 @@ export function useReaderInteractions({
         // Some iframe surfaces reject capture; document/window listeners remain active.
       }
       cancelPendingSelectionMenu();
+      cancelLongPress();
+      longPressSelectionHandled = false;
+      longPressSnapshot = null;
+      if (longPress.begin({
+        pointerId: event.pointerId,
+        pointerType: event.pointerType,
+        button: event.button,
+        isPrimary: event.isPrimary,
+        x: event.clientX,
+        y: event.clientY,
+      })) {
+        longPressSnapshot = snapshotSelectionRange(selectedRange(doc));
+        const { pointerId, clientX, clientY, target } = event;
+        longPressTimer = window.setTimeout(() => {
+          longPressTimer = null;
+          if (readerInteractionGenerationRef.current !== interactionGeneration) return;
+          if (!longPress.hold(pointerId)) return;
+          openLongPressMenu(clientX, clientY, target);
+        }, LONG_PRESS.holdMs);
+      }
     });
     doc.addEventListener("pointermove", (event: PointerEvent) => {
+      // Ahead of the `activePointerId` guard below: a scroll in continuous mode
+      // moves a pointer the selection bookkeeping may never have claimed, and
+      // that still has to call the hold off.
+      if (longPress.move(event.pointerId, event.clientX, event.clientY)) cancelLongPress();
       if (event.pointerId !== activePointerId || !pointerStart) return;
       if (Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) >= 5) {
         pointerMoved = true;
       }
     });
     doc.addEventListener("pointerup", (event: PointerEvent) => {
+      cancelLongPress();
       finalizePointerSelection(event.pointerId);
     });
     doc.addEventListener("pointercancel", (event: PointerEvent) => {
+      cancelLongPress();
       finalizePointerSelection(event.pointerId, false);
     });
     doc.addEventListener("lostpointercapture", (event: PointerEvent) => {
@@ -302,18 +448,30 @@ export function useReaderInteractions({
     });
     const contentWindow = doc.defaultView;
     const handleContentPointerUp = (event: PointerEvent) => {
+      cancelLongPress();
       finalizePointerSelection(event.pointerId);
     };
     const handleContentPointerCancel = (event: PointerEvent) => {
+      cancelLongPress();
       finalizePointerSelection(event.pointerId, false);
     };
     const handleContentBlur = () => {
       if (window.document.hasFocus()) return;
+      cancelLongPress();
       finalizePointerSelection(undefined, false);
     };
-    const handleHostPointerUp = () => finalizePointerSelection();
-    const handleHostPointerCancel = () => finalizePointerSelection(undefined, false);
-    const handleHostBlur = () => finalizePointerSelection(undefined, false);
+    const handleHostPointerUp = () => {
+      cancelLongPress();
+      finalizePointerSelection();
+    };
+    const handleHostPointerCancel = () => {
+      cancelLongPress();
+      finalizePointerSelection(undefined, false);
+    };
+    const handleHostBlur = () => {
+      cancelLongPress();
+      finalizePointerSelection(undefined, false);
+    };
     contentWindow?.addEventListener("pointerup", handleContentPointerUp);
     contentWindow?.addEventListener("pointercancel", handleContentPointerCancel);
     contentWindow?.addEventListener("blur", handleContentBlur);
@@ -412,6 +570,12 @@ export function useReaderInteractions({
 
     doc.addEventListener("click", (event: MouseEvent) => {
       if (annotationClickDocumentRef.current === doc) return;
+      // The synthetic click that trails a long press. Answered before anything
+      // else, because the first thing this handler does is clear the menu the
+      // press just opened — and because letting it through would also queue a
+      // word lookup, i.e. the reader would finish a long press and get a page
+      // of card they never asked for.
+      if (longPress.consumeClick(Date.now())) return;
       // A third click the triple-click handler already answered at mousedown,
       // menu included. Clearing the context menu here would close the one that
       // gesture just opened, since a press held longer than the menu's own 30ms
@@ -456,24 +620,8 @@ export function useReaderInteractions({
       }
       replaceDocumentSelection(doc, range);
       selectionSnapshot = snapshotSelectionRange(range);
-      const text = range.toString().trim();
-      const location = view.getCFI(index, range);
-      const normalizedText = normalizeInteractionText(text);
-      if (!text || !normalizedText || !location) return;
-      const interaction: ReaderInteraction = {
-        trigger: selectionRange ? "selection-menu" : "word-menu",
-        kind: selectionRange
-          ? classifySelection(text, doc.documentElement.lang || undefined)
-          : "word",
-        text,
-        normalizedText,
-        context: contextForRange(range, text),
-        location,
-        anchorRect: viewportRectForRange(range),
-        source: "foliate",
-        format: bookFormat === "pdf" ? "pdf" : "epub",
-        locale: doc.documentElement.lang || undefined,
-      };
+      const interaction = interactionForRange(range, Boolean(selectionRange));
+      if (!interaction) return;
       pendingWordClickRef.current = window.setTimeout(() => {
         pendingWordClickRef.current = null;
         openLearningInteraction(interaction);

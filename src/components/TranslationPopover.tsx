@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { platform } from "../services/platform";
 import {
   X,
   Loader2,
@@ -22,6 +23,8 @@ import { createUuid } from "../utils/randomUuid";
 import { notifyReaders } from "../utils/notifyReaders";
 import { saveVocabWord } from "./vocab/collect";
 import { focusWordFor } from "./focus-word";
+import BottomSheet from "./ui/BottomSheet";
+import { useCoarsePointer } from "../hooks/useCoarsePointer";
 
 interface TranslationPopoverProps {
   x: number;
@@ -196,6 +199,9 @@ export default function TranslationPopover({
   const [saved, setSaved] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const { ref: floatingRef, style: floatingStyle, className: motionClass, isOutside } = usePopoverPosition(x, y);
+  // Same device-driven fork as `ExplainPopover` / `Select` — a coarse pointer
+  // gets the bottom sheet, a fine pointer keeps this exact floating popover.
+  const isTouch = useCoarsePointer();
 
   const { content, contentRef, streaming, aiError, languageNotConfigured, targetLang, streamError, retry } =
     useStreamingTranslation(text, context, bookId, bookTitle, bookAuthor, chapter, cfi);
@@ -265,12 +271,175 @@ export default function TranslationPopover({
 
   const langName = LANG_NAMES[targetLang] || targetLang;
 
+  // Original-text disclosure, not-configured state, and the
+  // streaming/loading/error/content switch. Identical markup under either
+  // presentation — see the matching comment in `ExplainPopover`.
+  const translationBody = (
+    <>
+      <div className="relative pt-3 pb-2">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="absolute top-3 right-0 size-6 flex items-center justify-center rounded hover:bg-bg-muted cursor-pointer touch:size-11"
+        >
+          {expanded ? (
+            <ChevronUp size={14} className="text-text-muted" />
+          ) : (
+            <ChevronDown size={14} className="text-text-muted" />
+          )}
+        </button>
+        {expanded ? (
+          <div className="pr-7 max-h-[120px] overflow-auto">
+            <p className="text-[13px] text-text-muted italic leading-[1.55]">
+              {text}
+            </p>
+          </div>
+        ) : (
+          <p className="text-[13px] text-text-muted italic leading-[1.55] line-clamp-2 pr-7">
+            {text}
+          </p>
+        )}
+      </div>
+
+      <div className="h-px bg-border/60 mb-3" />
+
+      {/* Not configured state */}
+      {hasConfigurationError ? (
+        <div className="flex flex-col items-center gap-2 py-4 text-center">
+          <p className="text-[13px] text-text-muted">
+            {languageNotConfigured
+              ? t("translation.languageNotConfigured")
+              : aiError ? t(aiErrorMessageKey(aiError)) : null}
+          </p>
+          <button
+            onClick={async () => {
+              onClose();
+              await invoke("open_settings_on_main", { section: languageNotConfigured ? "tools" : "services" });
+              // Single-window platforms are already in the window that just
+              // opened — see the same guard in ExplainPopover / notifyReaders.
+              if (!platform.hasWindow) return;
+              const main = await WebviewWindow.getByLabel("main");
+              await main?.setFocus();
+            }}
+            className="flex items-center gap-1.5 text-[13px] font-medium text-accent-text hover:opacity-70 cursor-pointer touch:min-h-11 touch:text-[14px]"
+          >
+            <Settings size={14} />
+            {languageNotConfigured ? t("translation.openSettings") : t("ai.openSettings")}
+          </button>
+          {isAiRetryableError(aiError) && <AiRetryButton onClick={retry} />}
+        </div>
+      ) : null}
+
+      {/* Translation body */}
+      {!hasConfigurationError && !streamError &&
+        (streaming && !content ? (
+          <div className="flex items-center gap-1.5 py-1">
+            <Loader2 size={14} className="animate-spin text-text-muted" />
+            <span className="text-[13px] text-text-muted">
+              {t("translation.translating")}
+            </span>
+          </div>
+        ) : (
+          <p className="text-[13px] text-text-primary leading-[1.55]">
+            {content}
+            {streaming && (
+              <Loader2
+                size={12}
+                className="inline-block ml-0.5 animate-spin text-text-muted"
+              />
+            )}
+          </p>
+        ))}
+      {!hasConfigurationError && streamError && (
+        <div className="flex flex-col items-center gap-2 py-3 text-center">
+          <p className="text-[13px] text-text-muted">{t("ai.requestFailed")}</p>
+          <AiRetryButton onClick={retry} />
+        </div>
+      )}
+    </>
+  );
+
+  // Save / Ask Follow Up / Copy — same three actions, touch-sized targets.
+  const translationFooter = allDone && hasContent && !hasConfigurationError && !streamError && (
+    <div className="flex items-center justify-between px-4 py-2.5 border-t border-border/40 touch:flex-wrap touch:gap-y-2">
+      <div className="flex items-center gap-3 touch:flex-wrap touch:gap-y-2">
+        <button
+          onClick={handleSave}
+          disabled={saved}
+          className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-accent-text hover:opacity-70 disabled:opacity-50 disabled:cursor-default touch:min-h-11 touch:text-[14px]"
+        >
+          {saved ? <Check size={14} /> : <BookmarkPlus size={14} />}
+          {saved ? t("lookup.saved") : t("lookup.saveToDict")}
+        </button>
+        {onAskFollowUp && (
+          <button
+            onClick={() => {
+              const quote = [
+                `Text: ${text}`,
+                context ? `Context: ${context}` : "",
+                `Translation: ${contentRef.current}`,
+              ].filter(Boolean).join("\n\n");
+              onAskFollowUp(quote, cfi, focusWordFor(text));
+              onClose();
+            }}
+            className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-text-secondary hover:text-accent-text touch:min-h-11 touch:text-[14px]"
+          >
+            <MessageSquareMore size={14} />
+            {t("lookup.askFollowUp")}
+          </button>
+        )}
+      </div>
+      <button
+        onClick={handleCopy}
+        className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-text-muted hover:opacity-70 touch:min-h-11 touch:text-[14px]"
+      >
+        {copied ? <Check size={14} /> : <Copy size={14} />}
+        {copied ? t("translation.copied") : t("translation.copy")}
+      </button>
+    </div>
+  );
+
+  // Coarse pointer: full-width bottom sheet, same reasoning as
+  // `ExplainPopover` — `BottomSheet` owns the scroll and the 80vh cap, the
+  // header stays pinned so close is reachable while translation streams in.
+  if (isTouch) {
+    return (
+      <BottomSheet open onClose={onClose}>
+        <div className="sticky top-0 z-10 flex items-center justify-between bg-accent-bg px-4 py-3 border-b border-border/40">
+          <div className="flex items-center gap-2">
+            <Languages size={16} className="text-accent-text" />
+            <span className="text-[15px] font-medium text-accent-text tracking-[-0.15px]">
+              {t("translation.title")}
+            </span>
+            {langName && (
+              <span className="text-[13px] text-accent-text/60">{langName}</span>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            aria-label={t("common.close")}
+            className="flex size-11 items-center justify-center rounded-full hover:bg-bg-surface/60 cursor-pointer"
+          >
+            <X size={16} className="text-text-muted" />
+          </button>
+        </div>
+
+        <div className="px-4 pb-2">{translationBody}</div>
+
+        {translationFooter}
+      </BottomSheet>
+    );
+  }
+
+  // `max-w-[calc(100vw-32px)]` below is a safety floor for a fine-pointer
+  // window narrowed below 520px (a mouse-driven desktop window, not a
+  // phone — those take the branch above). Every other class on this box is
+  // unchanged from before `isTouch` existed.
   return (
     <>
     <div className="fixed inset-0 z-40" onClick={onClose} />
     <div
       ref={floatingRef}
-      className={`${motionClass} fixed z-[62] w-[520px] bg-bg-surface border border-border/80 rounded-xl shadow-context`}
+      className={`${motionClass} fixed z-[62] w-[520px] max-w-[calc(100vw-32px)] bg-bg-surface border border-border/80 rounded-xl shadow-context`}
       style={floatingStyle}
     >
       {/* Header */}
@@ -293,125 +462,10 @@ export default function TranslationPopover({
       </div>
 
       {/* Content */}
-      <div className="px-4 pb-2 max-h-[420px] overflow-auto">
-        {/* Original text — collapsible, collapsed by default */}
-        <div className="relative pt-3 pb-2">
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="absolute top-3 right-0 size-6 flex items-center justify-center rounded hover:bg-bg-muted cursor-pointer"
-          >
-            {expanded ? (
-              <ChevronUp size={14} className="text-text-muted" />
-            ) : (
-              <ChevronDown size={14} className="text-text-muted" />
-            )}
-          </button>
-          {expanded ? (
-            <div className="pr-7 max-h-[120px] overflow-auto">
-              <p className="text-[13px] text-text-muted italic leading-[1.55]">
-                {text}
-              </p>
-            </div>
-          ) : (
-            <p className="text-[13px] text-text-muted italic leading-[1.55] line-clamp-2 pr-7">
-              {text}
-            </p>
-          )}
-        </div>
-
-        <div className="h-px bg-border/60 mb-3" />
-
-        {/* Not configured state */}
-        {hasConfigurationError ? (
-          <div className="flex flex-col items-center gap-2 py-4 text-center">
-            <p className="text-[13px] text-text-muted">
-              {languageNotConfigured
-                ? t("translation.languageNotConfigured")
-                : aiError ? t(aiErrorMessageKey(aiError)) : null}
-            </p>
-            <button
-              onClick={async () => {
-                onClose();
-                await invoke("open_settings_on_main", { section: languageNotConfigured ? "tools" : "services" });
-                const main = await WebviewWindow.getByLabel("main");
-                await main?.setFocus();
-              }}
-              className="flex items-center gap-1.5 text-[13px] font-medium text-accent-text hover:opacity-70 cursor-pointer"
-            >
-              <Settings size={14} />
-              {languageNotConfigured ? t("translation.openSettings") : t("ai.openSettings")}
-            </button>
-            {isAiRetryableError(aiError) && <AiRetryButton onClick={retry} />}
-          </div>
-        ) : null}
-
-        {/* Translation body */}
-        {!hasConfigurationError && !streamError &&
-          (streaming && !content ? (
-            <div className="flex items-center gap-1.5 py-1">
-              <Loader2 size={14} className="animate-spin text-text-muted" />
-              <span className="text-[13px] text-text-muted">
-                {t("translation.translating")}
-              </span>
-            </div>
-          ) : (
-            <p className="text-[13px] text-text-primary leading-[1.55]">
-              {content}
-              {streaming && (
-                <Loader2
-                  size={12}
-                  className="inline-block ml-0.5 animate-spin text-text-muted"
-                />
-              )}
-            </p>
-          ))}
-        {!hasConfigurationError && streamError && (
-          <div className="flex flex-col items-center gap-2 py-3 text-center">
-            <p className="text-[13px] text-text-muted">{t("ai.requestFailed")}</p>
-            <AiRetryButton onClick={retry} />
-          </div>
-        )}
-      </div>
+      <div className="px-4 pb-2 max-h-[420px] overflow-auto">{translationBody}</div>
 
       {/* Footer — Save, Ask Follow Up, Copy */}
-      {allDone && hasContent && !hasConfigurationError && !streamError && (
-        <div className="flex items-center justify-between px-4 py-2.5 border-t border-border/40">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleSave}
-              disabled={saved}
-              className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-accent-text hover:opacity-70 disabled:opacity-50 disabled:cursor-default"
-            >
-              {saved ? <Check size={14} /> : <BookmarkPlus size={14} />}
-              {saved ? t("lookup.saved") : t("lookup.saveToDict")}
-            </button>
-            {onAskFollowUp && (
-              <button
-                onClick={() => {
-                  const quote = [
-                    `Text: ${text}`,
-                    context ? `Context: ${context}` : "",
-                    `Translation: ${contentRef.current}`,
-                  ].filter(Boolean).join("\n\n");
-                  onAskFollowUp(quote, cfi, focusWordFor(text));
-                  onClose();
-                }}
-                className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-text-secondary hover:text-accent-text"
-              >
-                <MessageSquareMore size={14} />
-                {t("lookup.askFollowUp")}
-              </button>
-            )}
-          </div>
-          <button
-            onClick={handleCopy}
-            className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-text-muted hover:opacity-70"
-          >
-            {copied ? <Check size={14} /> : <Copy size={14} />}
-            {copied ? t("translation.copied") : t("translation.copy")}
-          </button>
-        </div>
-      )}
+      {translationFooter}
     </div>
     </>
   );

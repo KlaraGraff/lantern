@@ -42,6 +42,14 @@ import { useSettings } from "../hooks/useSettings";
 
 export type { ReaderMenuAction };
 
+/**
+ * One menu row. 36px under a mouse, 44px under a finger — the same floor every
+ * other touch surface in the app uses, and the reason this menu needed the
+ * `touch:` variant at all: a long press now opens it (see `long-press.ts`), so
+ * it is a control a thumb has to hit rather than one a cursor points at.
+ */
+const MENU_ROW_CLASS = "mx-1 flex h-9 touch:h-11 w-[calc(100%-8px)] items-center gap-3 rounded-sm px-3 text-left text-[13px] touch:text-[15px] font-medium text-text-primary hover:bg-accent-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
+
 interface ReaderContextMenuProps {
   anchorRect: SerializableRect;
   text: string;
@@ -353,12 +361,16 @@ export default function ReaderContextMenu({
   // below would be a duplicate.
   const speakInCard = showDictionary && actions.includes("speak");
 
+  // The width cap below is a `max-w`, not a narrower fixed width under
+  // `touch:`: 300px already fits a 390px phone, and only the smallest viewports
+  // have to give any of it back. The positioner measures `offsetWidth`, so a
+  // menu the cap has shrunk is still placed against its real box.
   return (
     <div
       ref={menuRef}
       role="menu"
       aria-label={text}
-      className={`motion-pop fixed z-[62] ${showDictionary ? "w-[300px]" : "w-[220px]"} rounded-md border border-border bg-bg-surface py-1 shadow-context`}
+      className={`motion-pop fixed z-[62] max-w-[calc(100vw-16px)] ${showDictionary ? "w-[300px]" : "w-[220px]"} rounded-md border border-border bg-bg-surface py-1 shadow-context`}
       style={{ left: anchorRect.right, top: anchorRect.bottom + 8 }}
     >
       {showDictionary ? (
@@ -375,7 +387,7 @@ export default function ReaderContextMenu({
           type="button"
           role="menuitem"
           onClick={onNote}
-          className="mx-1 flex h-9 w-[calc(100%-8px)] items-center gap-3 rounded-sm px-3 text-left text-[13px] font-medium text-text-primary hover:bg-accent-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className={MENU_ROW_CLASS}
         >
           <MessageSquareMore size={16} className="shrink-0 text-text-muted" />
           <span className="min-w-0 flex-1 truncate">{t("readerNotes.menuAction")}</span>
@@ -386,7 +398,7 @@ export default function ReaderContextMenu({
           type="button"
           role="menuitem"
           onClick={onXray}
-          className="mx-1 flex h-9 w-[calc(100%-8px)] items-center gap-3 rounded-sm px-3 text-left text-[13px] font-medium text-text-primary hover:bg-accent-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          className={MENU_ROW_CLASS}
         >
           <CircleHelp size={16} className="shrink-0 text-text-muted" />
           <span className="min-w-0 flex-1 truncate">{t("readerXray.menuAction")}</span>
@@ -432,7 +444,7 @@ export default function ReaderContextMenu({
               onClick={definition.run}
               disabled={action === "highlight" && markStateLoading}
               aria-busy={action === "highlight" && markStateLoading ? true : undefined}
-              className="mx-1 flex h-9 w-[calc(100%-8px)] items-center gap-3 rounded-sm px-3 text-left text-[13px] font-medium text-text-primary hover:bg-accent-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-wait disabled:opacity-50"
+              className={`${MENU_ROW_CLASS} disabled:cursor-wait disabled:opacity-50`}
             >
               <Icon size={16} className="shrink-0 text-text-muted" />
               <span className="min-w-0 flex-1 truncate">{definition.label}</span>
@@ -443,7 +455,7 @@ export default function ReaderContextMenu({
                 type="button"
                 role="menuitem"
                 onClick={onRemoveBookWordMark}
-                className="mx-1 flex h-9 w-[calc(100%-8px)] items-center gap-3 rounded-sm px-3 text-left text-[13px] font-medium text-text-primary hover:bg-accent-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className={MENU_ROW_CLASS}
               >
                 <Highlighter size={16} className="shrink-0 text-text-muted" />
                 <span className="min-w-0 flex-1 truncate">

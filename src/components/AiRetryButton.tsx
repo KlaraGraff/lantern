@@ -15,7 +15,7 @@ export default function AiRetryButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-1.5 text-[13px] font-medium text-accent-text hover:opacity-70 cursor-pointer"
+      className="flex items-center gap-1.5 touch:min-h-11 touch:text-[15px] text-[13px] font-medium text-accent-text hover:opacity-70 cursor-pointer"
     >
       <RotateCcw size={14} />
       {t("ai.retry")}

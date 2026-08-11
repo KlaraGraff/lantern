@@ -233,7 +233,7 @@ export default function DictionaryCard({
               onClick={play}
               title={playLabel}
               aria-label={playLabel}
-              className="flex h-[22px] w-[22px] items-center justify-center rounded-sm text-text-muted transition-colors hover:bg-accent-bg hover:text-accent-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="flex h-[22px] w-[22px] touch:size-11 items-center justify-center rounded-sm text-text-muted transition-colors hover:bg-accent-bg hover:text-accent-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <Icon
                 size={16}
@@ -246,7 +246,7 @@ export default function DictionaryCard({
               onClick={toggleAccent}
               title={switchAccentLabel}
               aria-label={switchAccentLabel}
-              className="flex h-[18px] shrink-0 items-center rounded border border-border/70 px-1 text-[10px] font-medium leading-none text-text-muted transition-colors hover:border-accent/60 hover:text-accent-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="flex h-[18px] touch:h-11 touch:px-2.5 touch:text-[12px] shrink-0 items-center rounded border border-border/70 px-1 text-[10px] font-medium leading-none text-text-muted transition-colors hover:border-accent/60 hover:text-accent-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               {accentLabel}
             </button>
@@ -336,7 +336,7 @@ export default function DictionaryCard({
                     // detour away from it — see dictionary-glance.ts.
                     {...{ [GLANCE_SAFE_ATTR]: "" }}
                     onClick={toggleExpanded}
-                    className="rounded-sm font-medium text-accent-text underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    className="rounded-sm touch:inline-flex touch:min-h-11 touch:items-center font-medium text-accent-text underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   >
                     {expanded
                       ? t("dictionary.collapse", { defaultValue: "收起" })

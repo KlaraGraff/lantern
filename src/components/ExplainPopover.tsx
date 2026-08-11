@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { platform } from "../services/platform";
 import { X, Loader2, WandSparkles, BookmarkPlus, Check, Copy, Settings, MessageSquareMore, BookOpenCheck, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { usePopoverPosition } from "./use-popover-position";
@@ -13,6 +14,8 @@ import { notifyReaders } from "../utils/notifyReaders";
 import { saveVocabWord } from "./vocab/collect";
 import { focusWordFor } from "./focus-word";
 import { timeAgo } from "../utils/timeAgo";
+import BottomSheet from "./ui/BottomSheet";
+import { useCoarsePointer } from "../hooks/useCoarsePointer";
 
 interface ExplainPopoverProps {
   x: number;
@@ -251,6 +254,12 @@ export default function ExplainPopover({
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
   const { ref: floatingRef, style: floatingStyle, className: motionClass, isOutside } = usePopoverPosition(x, y);
+  // Presentation follows the input device, not the window width — see
+  // `Select`'s use of the same hook. The floating-point-anchored popover is
+  // unreachable on a touch device (390px clips a 440px box with no shrink
+  // floor), so coarse pointers get the bottom sheet instead; fine pointers
+  // keep the exact popover this file always rendered.
+  const isTouch = useCoarsePointer();
   // A single word keeps today's "save to vocab" primary action; anything
   // with internal whitespace is a passage, which gets "save explanation"
   // instead (see docs/impls/q257-persist-explanations.md §2.3).
@@ -285,6 +294,11 @@ export default function ExplainPopover({
   const openAiSettings = async () => {
     onClose();
     await invoke("open_settings_on_main", { section: "services" });
+    // Only where a second window can exist. On a single-window platform this
+    // card already lives in the window `open_settings_on_main` just opened
+    // settings in, and `getByLabel("main")` would reject into an uncaught
+    // rejection for no gain — same guard as `notifyReaders.ts`.
+    if (!platform.hasWindow) return;
     const main = await WebviewWindow.getByLabel("main");
     await main?.setFocus();
   };
@@ -385,12 +399,207 @@ export default function ExplainPopover({
     };
   }, [onClose, isOutside]);
 
+  // Selected-passage quote, cache-hit marker, and the loading/error/content
+  // state switch. Identical markup under either presentation — only the box
+  // it sits inside (fixed-width floating card vs. full-width sheet) differs,
+  // so this is built once and dropped into whichever wrapper `isTouch` picks.
+  const explainBody = (
+    <>
+      <div className="border-l-2 border-[#c084fc] pl-3 pt-3 pb-1">
+        <p className="text-[12px] italic text-text-muted line-clamp-3">{text}</p>
+      </div>
+
+      {/* Cache-hit replay marker — content appeared at once, not streamed */}
+      {fromCache && cachedAt != null && (
+        <div className="pl-3 pt-1">
+          <span className="text-[12px] text-text-muted">
+            {t("explain.cachedAt", { when: timeAgo(cachedAt) })}
+          </span>
+        </div>
+      )}
+
+      {aiError === "AI_NOT_CONFIGURED" ? (
+        <div className="flex flex-col gap-3 py-3 text-left">
+          <div>
+            <p className="text-[13px] font-medium text-text-primary">{t("ai.notConfiguredExplain.title")}</p>
+            <p className="mt-1 text-[12px] leading-5 text-text-muted">{t("ai.notConfiguredExplain.body")}</p>
+          </div>
+          <button
+            onClick={() => void openAiSettings()}
+            className="flex items-center gap-1.5 self-start text-[13px] font-medium text-accent-text hover:opacity-70 cursor-pointer touch:min-h-11 touch:text-[14px]"
+          >
+            <Settings size={14} />
+            {t("ai.notConfiguredExplain.connect")}
+          </button>
+
+          <div className="border-t border-border/40 pt-3">
+            {dictState === "idle" ? (
+              <button
+                onClick={checkLocalDictionary}
+                className="flex items-center gap-1.5 text-[12px] font-medium text-text-secondary hover:text-accent-text cursor-pointer touch:min-h-11 touch:text-[13px]"
+              >
+                <BookOpenCheck size={13} />
+                {t("ai.notConfiguredExplain.checkDictionary")}
+              </button>
+            ) : dictState === "loading" ? (
+              <div className="flex items-center gap-1.5 text-[12px] text-text-muted">
+                <Loader2 size={13} className="animate-spin" />
+                {t("ai.notConfiguredExplain.dictLoading")}
+              </div>
+            ) : dictState === "notFound" ? (
+              <p className="text-[12px] text-text-muted">{t("ai.notConfiguredExplain.dictNotFound")}</p>
+            ) : (
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-[0.5px] text-text-muted">
+                  {t("ai.notConfiguredExplain.dictLabel")}
+                </p>
+                <p className="mt-1 text-[13px] leading-5 text-text-primary">{dictText}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : aiError ? (
+        <div className="flex flex-col items-center gap-2 py-4 text-center">
+          <p className="text-[13px] text-text-muted">{t(aiErrorMessageKey(aiError))}</p>
+          <button
+            onClick={() => void openAiSettings()}
+            className="flex items-center gap-1.5 text-[13px] font-medium text-accent-text hover:opacity-70 cursor-pointer touch:min-h-11 touch:text-[14px]"
+          >
+            <Settings size={14} />
+            {t("ai.openSettings")}
+          </button>
+          {isAiRetryableError(aiError) && <AiRetryButton onClick={retry} />}
+        </div>
+      ) : streaming && !content ? (
+        <div className="flex items-center gap-1.5 py-3">
+          <Loader2 size={14} className="animate-spin text-text-muted" />
+          <span className="text-[13px] text-text-muted">{t("explain.thinking")}</span>
+        </div>
+      ) : streamError ? (
+        <div className="flex flex-col items-center gap-2 py-3 text-center">
+          <p className="text-[13px] text-text-muted">{t("ai.requestFailed")}</p>
+          <AiRetryButton onClick={retry} />
+        </div>
+      ) : (
+        <div className="pt-2.5">
+          <AiMarkdown size="compact" streaming={streaming} className="text-[13px] text-text-primary">
+            {content}
+          </AiMarkdown>
+          {streaming && (
+            <Loader2 size={12} className="inline-block ml-0.5 animate-spin text-text-muted" />
+          )}
+        </div>
+      )}
+    </>
+  );
+
+  // Save / Ask Follow Up / Copy — same three actions, touch-sized targets.
+  // `touch:flex-wrap` is the escape valve if a long localized label ever
+  // doesn't fit next to a 44px-tall neighbor; at the base sizes this row
+  // already fits without wrapping, so it's a no-op there.
+  const explainFooter = !streaming && content && !aiError && !streamError && (
+    <div className="flex items-center justify-between px-4 py-2.5 border-t border-border/40 touch:flex-wrap touch:gap-y-2">
+      <div className="flex items-center gap-3 touch:flex-wrap touch:gap-y-2">
+        {isSingleWordSelection ? (
+          <button
+            onClick={handleSave}
+            disabled={saved}
+            className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-accent-text hover:opacity-70 disabled:opacity-50 disabled:cursor-default touch:min-h-11 touch:text-[14px]"
+          >
+            {saved ? <Check size={14} /> : <BookmarkPlus size={14} />}
+            {saved ? t("lookup.saved") : t("lookup.saveToDict")}
+          </button>
+        ) : customAction ? null : (
+          // Custom-action results never persist (their prompts can change
+          // under an unchanged name — see plan O-3), so a passage selected
+          // through one gets no save button rather than a dead one.
+          <button
+            onClick={handleSaveExplanation}
+            disabled={!savedId || explanationSaved}
+            className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-accent-text hover:opacity-70 disabled:opacity-50 disabled:cursor-default touch:min-h-11 touch:text-[14px]"
+          >
+            {explanationSaved ? <Check size={14} /> : <BookmarkPlus size={14} />}
+            {explanationSaved ? t("explain.explanationSaved") : t("explain.saveExplanation")}
+          </button>
+        )}
+        {onAskFollowUp && (
+          <button
+            onClick={() => {
+              const quote = [
+                `Text: ${text}`,
+                sentence ? `Context: ${sentence}` : "",
+                `Explanation: ${contentRef.current}`,
+              ].filter(Boolean).join("\n\n");
+              onAskFollowUp(quote, cfi, focusWordFor(text));
+              onClose();
+            }}
+            className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-text-secondary hover:text-accent-text touch:min-h-11 touch:text-[14px]"
+          >
+            <MessageSquareMore size={14} />
+            {t("lookup.askFollowUp")}
+          </button>
+        )}
+      </div>
+      <button
+        onClick={handleCopy}
+        className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-text-muted hover:opacity-70 touch:min-h-11 touch:text-[14px]"
+      >
+        {copied ? <Check size={14} /> : <Copy size={14} />}
+        {copied ? t("explain.copied") : t("explain.copy")}
+      </button>
+    </div>
+  );
+
+  // Coarse pointer: full-width bottom sheet, scroll and 80vh cap owned by
+  // `BottomSheet`, header pinned so retry/close stay reachable while the
+  // (possibly long, streaming) explanation scrolls underneath it.
+  if (isTouch) {
+    return (
+      <BottomSheet open onClose={onClose}>
+        <div className="sticky top-0 z-10 flex items-center justify-between bg-accent-bg px-4 py-3 border-b border-border/40">
+          <div className="flex items-center gap-2">
+            <WandSparkles size={16} className="text-accent-text" />
+            <span className="text-[15px] font-medium text-accent-text tracking-[-0.15px]">
+              {customAction?.name ?? t("explain.title")}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={retry}
+              disabled={streaming}
+              title={t("explain.reexplain")}
+              aria-label={t("explain.reexplain")}
+              className="flex size-11 items-center justify-center rounded-full hover:bg-bg-surface/60 cursor-pointer disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent"
+            >
+              <RotateCcw size={16} className="text-text-muted" />
+            </button>
+            <button
+              onClick={onClose}
+              aria-label={t("common.close")}
+              className="flex size-11 items-center justify-center rounded-full hover:bg-bg-surface/60 cursor-pointer"
+            >
+              <X size={16} className="text-text-muted" />
+            </button>
+          </div>
+        </div>
+
+        <div className="px-4 pb-2">{explainBody}</div>
+
+        {explainFooter}
+      </BottomSheet>
+    );
+  }
+
+  // `max-w-[calc(100vw-32px)]` below is a safety floor for a fine-pointer
+  // window narrowed below 440px (a mouse-driven desktop window, not a
+  // phone — those take the branch above). Every other class on this box is
+  // unchanged from before `isTouch` existed.
   return (
     <>
     <div className="fixed inset-0 z-40" onClick={onClose} />
     <div
       ref={floatingRef}
-      className={`${motionClass} fixed z-[62] w-[440px] bg-bg-surface border border-border/80 rounded-xl shadow-context`}
+      className={`${motionClass} fixed z-[62] w-[440px] max-w-[calc(100vw-32px)] bg-bg-surface border border-border/80 rounded-xl shadow-context`}
       style={floatingStyle}
     >
       {/* Header */}
@@ -421,148 +630,10 @@ export default function ExplainPopover({
       </div>
 
       {/* Content */}
-      <div className="px-4 pb-2 max-h-[360px] overflow-auto">
-        {/* Selected passage */}
-        <div className="border-l-2 border-[#c084fc] pl-3 pt-3 pb-1">
-          <p className="text-[12px] italic text-text-muted line-clamp-3">{text}</p>
-        </div>
-
-        {/* Cache-hit replay marker — content appeared at once, not streamed */}
-        {fromCache && cachedAt != null && (
-          <div className="pl-3 pt-1">
-            <span className="text-[12px] text-text-muted">
-              {t("explain.cachedAt", { when: timeAgo(cachedAt) })}
-            </span>
-          </div>
-        )}
-
-        {aiError === "AI_NOT_CONFIGURED" ? (
-          <div className="flex flex-col gap-3 py-3 text-left">
-            <div>
-              <p className="text-[13px] font-medium text-text-primary">{t("ai.notConfiguredExplain.title")}</p>
-              <p className="mt-1 text-[12px] leading-5 text-text-muted">{t("ai.notConfiguredExplain.body")}</p>
-            </div>
-            <button
-              onClick={() => void openAiSettings()}
-              className="flex items-center gap-1.5 self-start text-[13px] font-medium text-accent-text hover:opacity-70 cursor-pointer"
-            >
-              <Settings size={14} />
-              {t("ai.notConfiguredExplain.connect")}
-            </button>
-
-            <div className="border-t border-border/40 pt-3">
-              {dictState === "idle" ? (
-                <button
-                  onClick={checkLocalDictionary}
-                  className="flex items-center gap-1.5 text-[12px] font-medium text-text-secondary hover:text-accent-text cursor-pointer"
-                >
-                  <BookOpenCheck size={13} />
-                  {t("ai.notConfiguredExplain.checkDictionary")}
-                </button>
-              ) : dictState === "loading" ? (
-                <div className="flex items-center gap-1.5 text-[12px] text-text-muted">
-                  <Loader2 size={13} className="animate-spin" />
-                  {t("ai.notConfiguredExplain.dictLoading")}
-                </div>
-              ) : dictState === "notFound" ? (
-                <p className="text-[12px] text-text-muted">{t("ai.notConfiguredExplain.dictNotFound")}</p>
-              ) : (
-                <div>
-                  <p className="text-[10px] font-medium uppercase tracking-[0.5px] text-text-muted">
-                    {t("ai.notConfiguredExplain.dictLabel")}
-                  </p>
-                  <p className="mt-1 text-[13px] leading-5 text-text-primary">{dictText}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : aiError ? (
-          <div className="flex flex-col items-center gap-2 py-4 text-center">
-            <p className="text-[13px] text-text-muted">{t(aiErrorMessageKey(aiError))}</p>
-            <button
-              onClick={() => void openAiSettings()}
-              className="flex items-center gap-1.5 text-[13px] font-medium text-accent-text hover:opacity-70 cursor-pointer"
-            >
-              <Settings size={14} />
-              {t("ai.openSettings")}
-            </button>
-            {isAiRetryableError(aiError) && <AiRetryButton onClick={retry} />}
-          </div>
-        ) : streaming && !content ? (
-          <div className="flex items-center gap-1.5 py-3">
-            <Loader2 size={14} className="animate-spin text-text-muted" />
-            <span className="text-[13px] text-text-muted">{t("explain.thinking")}</span>
-          </div>
-        ) : streamError ? (
-          <div className="flex flex-col items-center gap-2 py-3 text-center">
-            <p className="text-[13px] text-text-muted">{t("ai.requestFailed")}</p>
-            <AiRetryButton onClick={retry} />
-          </div>
-        ) : (
-          <div className="pt-2.5">
-            <AiMarkdown size="compact" streaming={streaming} className="text-[13px] text-text-primary">
-              {content}
-            </AiMarkdown>
-            {streaming && (
-              <Loader2 size={12} className="inline-block ml-0.5 animate-spin text-text-muted" />
-            )}
-          </div>
-        )}
-      </div>
+      <div className="px-4 pb-2 max-h-[360px] overflow-auto">{explainBody}</div>
 
       {/* Footer — Save, Ask Follow Up, Copy */}
-      {!streaming && content && !aiError && !streamError && (
-        <div className="flex items-center justify-between px-4 py-2.5 border-t border-border/40">
-          <div className="flex items-center gap-3">
-            {isSingleWordSelection ? (
-              <button
-                onClick={handleSave}
-                disabled={saved}
-                className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-accent-text hover:opacity-70 disabled:opacity-50 disabled:cursor-default"
-              >
-                {saved ? <Check size={14} /> : <BookmarkPlus size={14} />}
-                {saved ? t("lookup.saved") : t("lookup.saveToDict")}
-              </button>
-            ) : customAction ? null : (
-              // Custom-action results never persist (their prompts can change
-              // under an unchanged name — see plan O-3), so a passage selected
-              // through one gets no save button rather than a dead one.
-              <button
-                onClick={handleSaveExplanation}
-                disabled={!savedId || explanationSaved}
-                className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-accent-text hover:opacity-70 disabled:opacity-50 disabled:cursor-default"
-              >
-                {explanationSaved ? <Check size={14} /> : <BookmarkPlus size={14} />}
-                {explanationSaved ? t("explain.explanationSaved") : t("explain.saveExplanation")}
-              </button>
-            )}
-            {onAskFollowUp && (
-              <button
-                onClick={() => {
-                  const quote = [
-                    `Text: ${text}`,
-                    sentence ? `Context: ${sentence}` : "",
-                    `Explanation: ${contentRef.current}`,
-                  ].filter(Boolean).join("\n\n");
-                  onAskFollowUp(quote, cfi, focusWordFor(text));
-                  onClose();
-                }}
-                className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-text-secondary hover:text-accent-text"
-              >
-                <MessageSquareMore size={14} />
-                {t("lookup.askFollowUp")}
-              </button>
-            )}
-          </div>
-          <button
-            onClick={handleCopy}
-            className="flex items-center gap-1.5 text-[13px] font-medium cursor-pointer text-text-muted hover:opacity-70"
-          >
-            {copied ? <Check size={14} /> : <Copy size={14} />}
-            {copied ? t("explain.copied") : t("explain.copy")}
-          </button>
-        </div>
-      )}
+      {explainFooter}
     </div>
     </>
   );

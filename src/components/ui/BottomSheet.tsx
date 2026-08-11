@@ -9,17 +9,48 @@ interface BottomSheetProps {
   title?: string;
   /** Second, muted line under the title. */
   description?: string;
+  /**
+   * Off for a caller that already traps focus on its own root — the learning
+   * card does, on the wrapper it puts `tabIndex={-1}` on. Two traps over one
+   * dialog is not twice as safe: this one listens on `document` in the capture
+   * phase, so it would eat the Escape the caller's own listener is waiting for,
+   * and Tab would be answered by whichever trap ran first.
+   */
+  manageFocus?: boolean;
+  /**
+   * Off when the children own their scrolling. The default single scroll
+   * region is right for a list of options; a card with its own sticky header
+   * and internal panes needs the height handed to it instead.
+   */
+  scroll?: boolean;
   children: ReactNode;
 }
 
 /**
- * The touch presentation for pickers that are a dropdown (`OptionMenu`) under
- * a mouse — see `Select`. Scrim + sheet, portaled to `document.body` the same
- * way every other dialog in the app is (`ConfirmDialog`, `DensityHelpDialog`):
- * there is no shared portal-root component to route through, just
+ * A sheet that rises from the bottom edge: the touch presentation for pickers
+ * that are a dropdown (`OptionMenu`) under a mouse — see `Select` — and for
+ * anything else that is a floating box on a desktop and has nowhere to float
+ * on a phone. Scrim + sheet, portaled to `document.body` the same way every
+ * other dialog in the app is (`ConfirmDialog`, `DensityHelpDialog`): there is
+ * no shared portal-root component to route through, just
  * `createPortal(..., document.body)` called at the point of use.
+ *
+ * Everything a sheet looks like — the scrim, the corner radius, the grabber,
+ * the height ceiling, the layer it sits on — lives here and only here. The two
+ * behaviours callers genuinely differ on, focus and scrolling, are props
+ * rather than a second copy of this file: sheets that disagree about their own
+ * geometry are sheets a reader can tell apart, which is the one thing they
+ * must never be.
  */
-export default function BottomSheet({ open, onClose, title, description, children }: BottomSheetProps) {
+export default function BottomSheet({
+  open,
+  onClose,
+  title,
+  description,
+  manageFocus = true,
+  scroll = true,
+  children,
+}: BottomSheetProps) {
   const sheetRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const titleId = useId();
@@ -30,14 +61,14 @@ export default function BottomSheet({ open, onClose, title, description, childre
   // unmount and on the next run of this effect, which for a boolean dependency
   // means exactly "when `open` goes back to false".
   useEffect(() => {
-    if (!open) return;
+    if (!open || !manageFocus) return;
     openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     focusFirstElement(sheetRef.current);
     return () => openerRef.current?.focus();
-  }, [open]);
+  }, [open, manageFocus]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !manageFocus) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -53,7 +84,7 @@ export default function BottomSheet({ open, onClose, title, description, childre
     // own, and Escape should dismiss it and go no further.
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [open, onClose]);
+  }, [open, onClose, manageFocus]);
 
   if (!open) return null;
 
@@ -72,7 +103,9 @@ export default function BottomSheet({ open, onClose, title, description, childre
         // ancestor popover it happens to be portaled past (e.g. ReaderSettings) —
         // the same defensive stopPropagation OptionMenu uses for the same reason.
         onMouseDown={(event) => event.stopPropagation()}
-        className="absolute inset-x-0 bottom-0 flex max-h-[80vh] flex-col rounded-t-[20px] bg-bg-surface pt-2 shadow-context"
+        className={`absolute inset-x-0 bottom-0 flex max-h-[85vh] flex-col rounded-t-[20px] bg-bg-surface pt-2 shadow-context${
+          scroll ? "" : " overflow-hidden pb-[calc(var(--spacing-safe-bottom)+8px)]"
+        }`}
       >
         <div className="mx-auto h-1 w-[38px] shrink-0 rounded-full bg-border" aria-hidden="true" />
         {title && (
@@ -85,7 +118,13 @@ export default function BottomSheet({ open, onClose, title, description, childre
             {description}
           </p>
         )}
-        <div className="min-h-0 overflow-y-auto overscroll-contain pb-[calc(var(--spacing-safe-bottom)+8px)]">
+        <div
+          className={
+            scroll
+              ? "min-h-0 overflow-y-auto overscroll-contain pb-[calc(var(--spacing-safe-bottom)+8px)]"
+              : "flex min-h-0 flex-1 flex-col"
+          }
+        >
           {children}
         </div>
       </div>

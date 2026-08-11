@@ -63,14 +63,19 @@ export default function LearningCardNotes({
           <div className="mt-1.5 flex min-h-6 items-center gap-2 text-[10px] text-text-muted">
             {note.scope && <span>{t(`learningCard.notes.scope.${note.scope}`)}</span>}
             {note.updatedAt && <span>{formatter.format(note.updatedAt)}</span>}
-            <div className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+            {/* `touch:opacity-100` is not a nicety. Tailwind 4 compiles
+                `group-hover:` behind `(hover: hover)`, so on a finger these
+                two never leave `opacity-0` — edit and delete would be
+                invisible and unreachable on the phone. Same fix as
+                `BookSourcesSettings.tsx`'s row actions. */}
+            <div className="ml-auto flex items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 touch:opacity-100">
               {onEdit && (
                 <button
                   type="button"
                   onClick={() => onEdit(note)}
                   title={t("common.edit")}
                   aria-label={t("common.edit")}
-                  className="flex size-6 items-center justify-center rounded-md hover:bg-bg-input"
+                  className="flex size-6 touch:size-11 items-center justify-center rounded-md hover:bg-bg-input"
                 >
                   <Pencil size={12} />
                 </button>
@@ -81,7 +86,7 @@ export default function LearningCardNotes({
                   onClick={() => onDelete(note)}
                   title={t("common.delete")}
                   aria-label={t("common.delete")}
-                  className="flex size-6 items-center justify-center rounded-md text-danger-text hover:bg-danger-bg"
+                  className="flex size-6 touch:size-11 items-center justify-center rounded-md text-danger-text hover:bg-danger-bg"
                 >
                   <Trash2 size={12} />
                 </button>

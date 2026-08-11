@@ -38,7 +38,7 @@ export default function LearningCardActions({ states, onAction }: LearningCardAc
             type="button"
             disabled={state?.disabled}
             onClick={() => onAction?.(action)}
-            className={`flex min-h-8 items-center gap-1.5 text-[12px] font-medium transition-colors disabled:cursor-default disabled:opacity-40 ${
+            className={`flex min-h-8 touch:min-h-11 items-center gap-1.5 text-[12px] font-medium transition-colors disabled:cursor-default disabled:opacity-40 ${
               action === "collect" ? "text-accent-text" : "text-text-secondary hover:text-accent-text"
             }`}
           >

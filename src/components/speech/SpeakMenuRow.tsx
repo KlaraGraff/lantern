@@ -47,7 +47,7 @@ export default function SpeakMenuRow({
 
   return (
     <div>
-      <div className="mx-1 flex h-9 w-[calc(100%-8px)] items-center rounded-sm hover:bg-accent-bg">
+      <div className="mx-1 flex h-9 touch:h-11 w-[calc(100%-8px)] items-center rounded-sm hover:bg-accent-bg">
         <button
           type="button"
           role="menuitem"
@@ -58,7 +58,7 @@ export default function SpeakMenuRow({
             if (starting) onHandOff?.();
           }}
           title={playLabel}
-          className={`flex h-9 min-w-0 flex-1 items-center gap-3 rounded-sm px-3 text-left text-[13px] font-medium text-text-primary ${FOCUS_RING}`}
+          className={`flex h-9 touch:h-11 touch:text-[15px] min-w-0 flex-1 items-center gap-3 rounded-sm px-3 text-left text-[13px] font-medium text-text-primary ${FOCUS_RING}`}
         >
           <Icon
             size={16}
@@ -73,7 +73,7 @@ export default function SpeakMenuRow({
           onClick={toggleAccent}
           title={switchAccentLabel}
           aria-label={switchAccentLabel}
-          className={`mr-2 flex h-[18px] shrink-0 items-center rounded border border-border/70 px-1 text-[10px] font-medium leading-none text-text-muted transition-colors hover:border-accent/60 hover:text-accent-text ${FOCUS_RING}`}
+          className={`mr-2 flex h-[18px] touch:h-11 touch:px-2.5 touch:text-[12px] shrink-0 items-center rounded border border-border/70 px-1 text-[10px] font-medium leading-none text-text-muted transition-colors hover:border-accent/60 hover:text-accent-text ${FOCUS_RING}`}
         >
           {accentLabel}
         </button>
