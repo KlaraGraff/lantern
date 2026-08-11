@@ -21,6 +21,7 @@
 
 pub mod device;
 pub mod events;
+pub mod icloud_query;
 pub mod log;
 pub mod merge;
 pub mod migration;

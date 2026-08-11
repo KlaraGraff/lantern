@@ -1,6 +1,13 @@
-//! `notify`-backed watcher on `<shared>/logs/` — debounces fs events and
-//! triggers `ReplayEngine::tick()` so the local DB converges with peers
-//! without the user having to mash a button.
+//! Watcher on the shared directory — debounces change signals and triggers
+//! `ReplayEngine::tick()` so the local DB converges with peers without the
+//! user having to mash a button.
+//!
+//! Two sources feed the same debounce loop. `notify` is the filesystem one and
+//! runs everywhere; on iOS it additionally gets an `NSMetadataQuery` over the
+//! ubiquity container ([`super::icloud_query`]), because there `notify`
+//! resolves to a 30-second poll and the OS can say the same thing sooner.
+//! A signal is a signal — the loop does not care which arrived, only that
+//! something did.
 //!
 //! Implementation is a single dedicated `std::thread` that owns the
 //! recommended `notify::Watcher` and its `mpsc::Receiver`. Debounce uses
@@ -34,7 +41,19 @@ use notify::{recommended_watcher, RecursiveMode, Watcher};
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
 
+use super::icloud_query::{self, QueryHandle};
 use super::replay::ReplayEngine;
+
+/// What woke the loop.
+///
+/// The filesystem variant carries its event because it has to be filtered —
+/// `notify` reports a lot that is not ours. The iCloud variant carries
+/// nothing: `NSMetadataQuery` only ever speaks about the container it was
+/// scoped to, so there is nothing left to decide.
+enum Wake {
+    Fs(Box<notify::Event>),
+    ICloud,
+}
 
 /// Minimum gap between batches of fs events before the watcher fires a
 /// `tick`. Hand-picked: long enough to coalesce iCloud's bursty
@@ -53,6 +72,10 @@ pub struct WatcherHandle {
     /// `Box<dyn Watcher + Send>` whose Drop teardown is what cleanly
     /// disengages the FSEvents stream on macOS.
     _watcher: Box<dyn Watcher + Send>,
+    /// The iCloud metadata query, where there is one. `None` on every
+    /// platform but iOS, and on iOS if the query refused to start — in both
+    /// cases the `notify` source carries the watcher on its own.
+    _query: Option<QueryHandle>,
 }
 
 impl WatcherHandle {
@@ -110,12 +133,13 @@ pub fn spawn(shared_dir: PathBuf, db: Db, engine: Arc<ReplayEngine>) -> AppResul
     std::fs::create_dir_all(&fonts_dir)?;
 
     let (tx, rx) = mpsc::channel();
+    let fs_tx = tx.clone();
     let mut watcher = recommended_watcher(move |res: notify::Result<notify::Event>| {
         // Drop errors silently — `notify` reports things like
         // "directory we don't watch was renamed" that aren't actionable.
         // The next valid event still wakes us up.
         if let Ok(ev) = res {
-            let _ = tx.send(ev);
+            let _ = fs_tx.send(Wake::Fs(Box::new(ev)));
         }
     })
     .map_err(|e| AppError::Other(format!("notify watcher init: {e}")))?;
@@ -132,6 +156,10 @@ pub fn spawn(shared_dir: PathBuf, db: Db, engine: Arc<ReplayEngine>) -> AppResul
         .watch(&fonts_dir, RecursiveMode::NonRecursive)
         .map_err(|e| AppError::Other(format!("notify watch {fonts_dir:?}: {e}")))?;
 
+    // iOS only, and best-effort: `None` here just means the `notify` source
+    // is the only one, which is what every other platform runs anyway.
+    let query = icloud_query::spawn(tx, || Wake::ICloud);
+
     let stop = Arc::new(AtomicBool::new(false));
     let stop_thread = Arc::clone(&stop);
 
@@ -144,11 +172,12 @@ pub fn spawn(shared_dir: PathBuf, db: Db, engine: Arc<ReplayEngine>) -> AppResul
         stop,
         join: Some(join),
         _watcher: Box::new(watcher),
+        _query: query,
     })
 }
 
 fn run_loop(
-    rx: mpsc::Receiver<notify::Event>,
+    rx: mpsc::Receiver<Wake>,
     stop: Arc<AtomicBool>,
     db: Db,
     engine: Arc<ReplayEngine>,
@@ -164,11 +193,7 @@ fn run_loop(
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => return,
         };
-        // Filter out unrelated events early — saves a tick on noisy
-        // file managers. We tick on any log/snapshot/cover change; the
-        // engine's watermarks (and `ingest_peer_covers`' has-cover guard)
-        // make it cheap to re-tick when nothing actually moved.
-        if !is_relevant_event(&first) {
+        if !wakes_the_engine(&first) {
             continue;
         }
 
@@ -208,6 +233,20 @@ fn run_loop(
         if let Err(e) = engine.tick(&db) {
             log::error!("sync watcher: tick failed: {e}");
         }
+    }
+}
+
+/// Whether this wake is worth a `tick`.
+///
+/// Filtering out unrelated events early saves a tick on noisy file managers.
+/// We tick on any log/snapshot/cover change; the engine's watermarks (and
+/// `ingest_peer_covers`' has-cover guard) make it cheap to re-tick when
+/// nothing actually moved. An iCloud wake has nothing to filter — the query is
+/// scoped to our own container and speaks only about what changed inside it.
+fn wakes_the_engine(wake: &Wake) -> bool {
+    match wake {
+        Wake::Fs(event) => is_relevant_event(event),
+        Wake::ICloud => true,
     }
 }
 
@@ -422,6 +461,22 @@ mod tests {
         assert!(relevant("/shared/books/.b1.ocr.asset-1.pdf.icloud"));
         // A log placeholder materializing also counts.
         assert!(relevant("/shared/logs/.peer.jsonl.icloud"));
+    }
+
+    #[test]
+    fn an_icloud_wake_is_never_filtered() {
+        // The path filter exists for `notify`'s noise. `NSMetadataQuery` only
+        // ever speaks about our own container, so running its wakes through
+        // the extension list would drop real peer changes on the floor — a
+        // download that lands as `foo.epub.download` before being renamed, for
+        // one.
+        assert!(wakes_the_engine(&Wake::ICloud));
+
+        let mut noise = notify::Event::new(notify::EventKind::Modify(
+            notify::event::ModifyKind::Data(notify::event::DataChange::Content),
+        ));
+        noise.paths.push(PathBuf::from("/tmp/random.txt"));
+        assert!(!wakes_the_engine(&Wake::Fs(Box::new(noise))));
     }
 
     /// End-to-end: a cover file landing under `covers/` (no `logs/` event
