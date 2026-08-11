@@ -162,7 +162,7 @@ export default function BookOpenCard({ book, onClose, onContinue, onHideForever 
           <p className="mt-2 text-[12.5px] leading-[1.7] text-text-secondary">
             {t("bookOpenCard.recognitionFailedBody")}
           </p>
-          <div className="mt-4 flex gap-2">
+          <div className="mt-4 flex flex-wrap gap-2">
             <Button onClick={() => void ocrJob.retry()}>{t("bookOpenCard.retryRecognition")}</Button>
             <Button variant="secondary" onClick={onContinue}>{t("bookOpenCard.readDirectly")}</Button>
           </div>
@@ -189,7 +189,7 @@ export default function BookOpenCard({ book, onClose, onContinue, onHideForever 
               />
             </div>
           ) : null}
-          <div className="mt-4 flex gap-2">
+          <div className="mt-4 flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => void ocrJob.cancel()}>{t("bookOpenCard.cancelRecognition")}</Button>
             <Button onClick={onContinue}>{t("bookOpenCard.goReadWhileRecognizing")}</Button>
           </div>
@@ -222,7 +222,7 @@ export default function BookOpenCard({ book, onClose, onContinue, onHideForever 
               </div>
             </>
           ) : null}
-          <div className="mt-4 flex gap-2">
+          <div className="mt-4 flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => void ocrPackage.cancel()}>{t("ocr.actions.cancelDownload")}</Button>
             <Button onClick={onContinue}>{t("bookOpenCard.readDirectly")}</Button>
           </div>
@@ -237,7 +237,7 @@ export default function BookOpenCard({ book, onClose, onContinue, onHideForever 
         <p className="mt-2 text-[11.5px] leading-[1.7] text-text-muted">
           {t("bookOpenCard.scannedOcrHint", { size: formatOcrBytes(pkg?.totalBytes) })}
         </p>
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-wrap gap-2">
           <Button onClick={handleDownloadAndRecognize}>{t("bookOpenCard.downloadAndRecognize")}</Button>
           <Button variant="secondary" onClick={onContinue}>{t("bookOpenCard.readDirectly")}</Button>
         </div>
@@ -351,21 +351,26 @@ export default function BookOpenCard({ book, onClose, onContinue, onHideForever 
         <button
           type="button"
           onClick={() => setDisclosureOpen((v) => !v)}
-          className="flex items-center gap-1 text-[11.5px] font-medium text-accent-text"
+          className="flex items-center gap-1 text-[11.5px] font-medium text-accent-text touch:min-h-11"
         >
           {t("bookOpenCard.disclosureToggle")}
           {disclosureOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
         </button>
         {disclosureOpen ? (
+          /* The three text columns are sized for their headings, not their
+             values — "第 3 档 / 23% / 78%" needs about half of what the wide
+             layout reserves. Narrowing them on a phone leaves the fourth
+             column enough width to still be a bar rather than a stub, so the
+             row stays on one line and no column is dropped. */
           <div className="mt-3 border-t border-border-light">
-            <div className="grid grid-cols-[minmax(120px,1.2fr)_70px_90px_1fr] items-center gap-2 border-b border-border-light py-1.5 text-[9.5px] tracking-[0.03em] text-text-muted">
+            <div className="grid grid-cols-[minmax(78px,1.1fr)_54px_62px_1fr] items-center gap-2 border-b border-border-light py-1.5 text-[9.5px] tracking-[0.03em] text-text-muted md:grid-cols-[minmax(120px,1.2fr)_70px_90px_1fr]">
               <span>{t("bookOpenCard.disclosureColBand")}</span>
               <span>{t("bookOpenCard.disclosureColShare")}</span>
               <span>{t("bookOpenCard.disclosureColPassRate")}</span>
               <span>{t("bookOpenCard.disclosureColContribution")}</span>
             </div>
             {rows.map((row) => (
-              <div key={row.band} className="grid grid-cols-[minmax(120px,1.2fr)_70px_90px_1fr] items-center gap-2 border-b border-border-light py-1.5">
+              <div key={row.band} className="grid grid-cols-[minmax(78px,1.1fr)_54px_62px_1fr] items-center gap-2 border-b border-border-light py-1.5 md:grid-cols-[minmax(120px,1.2fr)_70px_90px_1fr]">
                 <span className="text-[11px] text-text-secondary">{t("bookDifficulty.bandName", { band: row.band })}</span>
                 <span className="text-[11px] tabular-nums text-text-secondary">{row.bookSharePercent}%</span>
                 <span className="text-[11px] tabular-nums text-text-secondary">
@@ -480,17 +485,20 @@ export default function BookOpenCard({ book, onClose, onContinue, onHideForever 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-6">
-      <div className="relative flex max-h-[85vh] w-full max-w-[560px] flex-col overflow-y-auto rounded-xl bg-bg-surface p-6 shadow-context">
+    /* 24px of overlay margin plus 24px of card padding is 96px of a phone's
+       390 — a quarter of the width spent on air, in front of the one card
+       that has a table in it. Both halve on a narrow screen. */
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4 md:p-6">
+      <div className="relative flex max-h-[85vh] w-full max-w-[560px] flex-col overflow-y-auto rounded-xl bg-bg-surface p-4 shadow-context md:p-6">
         <button
           type="button"
           onClick={onClose}
           aria-label={t("bookOpenCard.close")}
-          className="absolute right-4 top-4 flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input"
+          className="absolute right-4 top-4 flex size-7 items-center justify-center rounded-md text-text-muted hover:bg-bg-input touch:right-2 touch:top-2 touch:size-11"
         >
           <X size={15} />
         </button>
-        <p className="m-0 max-w-[420px] pr-8 text-[13px] font-medium text-text-muted">{book.title}</p>
+        <p className="m-0 max-w-[420px] pr-8 text-[13px] font-medium text-text-muted touch:pr-14">{book.title}</p>
 
         {showStaleBanner ? (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-bg-muted px-3.5 py-3">
@@ -508,7 +516,7 @@ export default function BookOpenCard({ book, onClose, onContinue, onHideForever 
           <button
             type="button"
             onClick={onHideForever}
-            className="text-[11.5px] text-text-muted hover:text-text-secondary"
+            className="text-[11.5px] text-text-muted hover:text-text-secondary touch:inline-flex touch:min-h-11 touch:items-center"
           >
             {t("bookOpenCard.hideForever")}
           </button>
