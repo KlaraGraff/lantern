@@ -991,6 +991,7 @@ export default function Reader() {
     handlePageTurnKeyDown,
     handlePageTurnMouseDown,
     handlePageTurnWheel,
+    handleSwipePageTurn,
   } = usePageTurnInput({
     bookFormat: book?.format,
     settingsRef: readerSettingsRef,
@@ -1472,6 +1473,7 @@ export default function Reader() {
     handlePageTurnMouseDown,
     handlePageTurnContextMenu,
     handlePageTurnWheel,
+    handleSwipePageTurn,
     handleReaderBinding,
     onReturnJump: handleJumpBack,
     onOpenSearch: handleOpenSearch,

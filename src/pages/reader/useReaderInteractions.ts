@@ -25,6 +25,7 @@ import { appZoomCommandFor, nextAppZoom } from "../../services/app-zoom";
 import { persistAppZoom, readAppZoom } from "../../services/app-zoom-window";
 import { clickCountGraceMs } from "./click-grace";
 import { createLongPressTracker, LONG_PRESS } from "./long-press";
+import { createSwipeTracker } from "./swipe-page-turn";
 
 /**
  * How close to the edge a drag has to get before the page turns. Wide enough to
@@ -75,6 +76,7 @@ interface ReaderInteractionsOptions {
   handlePageTurnMouseDown(event: MouseEvent): void;
   handlePageTurnContextMenu(event: MouseEvent): void;
   handlePageTurnWheel(event: WheelEvent): void;
+  handleSwipePageTurn(direction: "previous" | "next"): void;
   handleReaderBinding(trigger: string, interaction: ReaderInteraction | null): boolean;
   /**
    * The unified jump-history return action (P1.3), bound to ⌘[ and Alt+←
@@ -136,6 +138,7 @@ export function useReaderInteractions({
   handlePageTurnMouseDown,
   handlePageTurnContextMenu,
   handlePageTurnWheel,
+  handleSwipePageTurn,
   handleReaderBinding,
   onReturnJump,
   onOpenSearch,
@@ -270,6 +273,13 @@ export function useReaderInteractions({
      * decision through the rest of the gesture.
      */
     const longPress = createLongPressTracker();
+    /**
+     * The other gesture the same finger might mean. It is fed from the same
+     * three listeners as the long press, and the two are wired to rule each
+     * other out: a hold that fires cancels the swipe, and a swipe that turns a
+     * page has already travelled far past the hold's tolerance.
+     */
+    const swipe = createSwipeTracker();
     let longPressTimer: number | null = null;
     /**
      * The selection this press started with, taken at pointerdown rather than
@@ -405,6 +415,25 @@ export function useReaderInteractions({
       }
       cancelPendingSelectionMenu();
       cancelLongPress();
+      // Not while text is selected: the finger is most likely on a selection
+      // handle, and dragging one across the page is how a reader extends a
+      // selection — the one horizontal touch gesture that must never page.
+      swipe.cancel();
+      if (!selectedRange(doc)) {
+        swipe.begin({
+          pointerId: event.pointerId,
+          pointerType: event.pointerType,
+          isPrimary: event.isPrimary,
+          button: event.button,
+          x: event.clientX,
+          y: event.clientY,
+          // One clock for every event this tracker sees, never
+          // `event.timeStamp`: that is relative to the time origin of the
+          // document the event came from, and foliate's iframe gets a fresh
+          // origin on every section load. `wheel-page-turn.ts` carries the
+          // same note for the same reason.
+        }, performance.now());
+      }
       longPressSelectionHandled = false;
       longPressSnapshot = null;
       if (longPress.begin({
@@ -421,6 +450,10 @@ export function useReaderInteractions({
           longPressTimer = null;
           if (readerInteractionGenerationRef.current !== interactionGeneration) return;
           if (!longPress.hold(pointerId)) return;
+          // The menu is opening under this finger. Whatever it does next is
+          // not a page turn — without this, a reader who holds, sees the menu,
+          // then drags would page out from under it.
+          swipe.cancel(pointerId);
           openLongPressMenu(clientX, clientY, target);
         }, LONG_PRESS.holdMs);
       }
@@ -430,6 +463,8 @@ export function useReaderInteractions({
       // moves a pointer the selection bookkeeping may never have claimed, and
       // that still has to call the hold off.
       if (longPress.move(event.pointerId, event.clientX, event.clientY)) cancelLongPress();
+      const turn = swipe.move(event.pointerId, event.clientX, event.clientY, performance.now());
+      if (turn) handleSwipePageTurn(turn);
       if (event.pointerId !== activePointerId || !pointerStart) return;
       if (Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y) >= 5) {
         pointerMoved = true;
@@ -437,10 +472,12 @@ export function useReaderInteractions({
     });
     doc.addEventListener("pointerup", (event: PointerEvent) => {
       cancelLongPress();
+      swipe.cancel(event.pointerId);
       finalizePointerSelection(event.pointerId);
     });
     doc.addEventListener("pointercancel", (event: PointerEvent) => {
       cancelLongPress();
+      swipe.cancel(event.pointerId);
       finalizePointerSelection(event.pointerId, false);
     });
     doc.addEventListener("lostpointercapture", (event: PointerEvent) => {
@@ -449,10 +486,12 @@ export function useReaderInteractions({
     const contentWindow = doc.defaultView;
     const handleContentPointerUp = (event: PointerEvent) => {
       cancelLongPress();
+      swipe.cancel(event.pointerId);
       finalizePointerSelection(event.pointerId);
     };
     const handleContentPointerCancel = (event: PointerEvent) => {
       cancelLongPress();
+      swipe.cancel(event.pointerId);
       finalizePointerSelection(event.pointerId, false);
     };
     const handleContentBlur = () => {
@@ -462,10 +501,12 @@ export function useReaderInteractions({
     };
     const handleHostPointerUp = () => {
       cancelLongPress();
+      swipe.cancel();
       finalizePointerSelection();
     };
     const handleHostPointerCancel = () => {
       cancelLongPress();
+      swipe.cancel();
       finalizePointerSelection(undefined, false);
     };
     const handleHostBlur = () => {
@@ -818,6 +859,7 @@ export function useReaderInteractions({
     handlePageTurnKeyDown,
     handlePageTurnMouseDown,
     handlePageTurnWheel,
+    handleSwipePageTurn,
     handleZoom,
     handleZoomFit,
     onReturnJump,

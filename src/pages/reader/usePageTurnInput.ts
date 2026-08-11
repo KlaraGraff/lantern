@@ -150,6 +150,23 @@ export function usePageTurnInput({
     wheelGestureRef.current?.handleWheel(event);
   }, []);
 
+  /**
+   * The swipe gesture's way in. It is recognised inside foliate's iframe, where
+   * the pointer events are (`useReaderInteractions`), but it turns pages
+   * through the same dispatcher as the wheel and the keyboard — so a reader
+   * swiping faster than the page animation gets the same coalescing, and the
+   * two inputs cannot queue against each other.
+   *
+   * Gated on the same two conditions as the wheel: no overlay in the way, and
+   * paginated flow. In continuous flow there is no page to turn, and the
+   * gesture would be competing with the scroll it is already careful to avoid.
+   */
+  const handleSwipePageTurn = useCallback((direction: PageDirection) => {
+    if (overlayOpenRef.current) return;
+    if (settingsRef.current.readingMode !== "paginated") return;
+    pageTurnDispatcher.dispatch(direction);
+  }, [pageTurnDispatcher, settingsRef]);
+
   useEffect(() => {
     const viewport = readerViewportRef.current;
     if (!viewport) return;
@@ -181,5 +198,6 @@ export function usePageTurnInput({
     handlePageTurnKeyDown,
     handlePageTurnMouseDown,
     handlePageTurnWheel,
+    handleSwipePageTurn,
   };
 }
