@@ -92,6 +92,15 @@ text field in Lantern was between 10px and 14px and would have tripped that thre
 floor is now in place, and [the section below](#the-16px-floor-and-why-it-is-the-one-unlayered-rule)
 explains why it is a single stylesheet rule rather than an edit to each component.
 
+**Correction, measured on the Simulator (2026-08-11).** The font floor works and is not
+the whole story. It is the whole story in mobile Safari; WKWebView also fits the *focused
+element's box* to the viewport width regardless of its font size. Settings → Personal, with
+its textarea computing to 16px, still zoomed to ~1.22× and scrolled ~37px right — enough to
+put the back chevron off the left edge, permanently, because nothing zooms back out on blur.
+`maximum-scale=1` is therefore now applied, but only while something is focused, and removed
+again on blur: see `src/services/focus-zoom-guard.ts`. Pinch-zoom survives for every moment
+the reader is reading, which is the property this section was protecting.
+
 **`touch-action` was not set on the root.** A blanket `html { touch-action: manipulation }`
 is the one-liner that covers every clickable `div` without enumerating anything, and it was
 rejected because `touch-action` intersects down the ancestor chain: a value on the root is a

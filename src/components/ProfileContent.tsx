@@ -23,6 +23,7 @@ import HardLimitDialog from "./profile/HardLimitDialog";
 import DeleteCardDialog from "./profile/DeleteCardDialog";
 import DeleteAllDialog from "./profile/DeleteAllDialog";
 import { timeAgo } from "../utils/timeAgo";
+import { useCoarsePointer } from "../hooks/useCoarsePointer";
 
 function countClass(length: number, softLimit: number, hardLimit: number) {
   if (length > hardLimit) return "text-danger-text";
@@ -69,6 +70,7 @@ interface ProfileContentProps {
 
 export default function ProfileContent({ embedded = false }: ProfileContentProps = {}) {
   const { t } = useTranslation();
+  const coarsePointer = useCoarsePointer();
   const {
     state,
     injection,
@@ -117,6 +119,10 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
   const [restoredDraftNotice, setRestoredDraftNotice] = useState(false);
+  // True only while the editor is open because the effect below opened it, not
+  // because the reader asked for it. The distinction exists purely so the
+  // textarea knows whether it may take focus — see `autoFocus` on it.
+  const [autoOpened, setAutoOpened] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const errorTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const noticeTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -160,6 +166,7 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
     setDraftText(restorable ? state.draftText : "");
     setRestoredDraftNotice(restorable);
     setEditing(true);
+    setAutoOpened(true);
   }, [state, editing]);
 
   // Draft autosave: `profile_save_draft` has no limit and never blocks —
@@ -225,6 +232,7 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
   const startEditing = () => {
     setDraftText(bufferBase);
     setEditing(true);
+    setAutoOpened(false);
     setSaveFailed(false);
     setRestoredDraftNotice(hasRestorableDraft);
   };
@@ -550,6 +558,7 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
                 setDraftText(text);
                 setCompareMode(null);
                 setEditing(true);
+                setAutoOpened(false);
                 // A rewritten draft generally no longer contains the
                 // inserted line verbatim — treat this as a normal edit from
                 // here on rather than risk sending a stale insertedText. The
@@ -568,7 +577,11 @@ export default function ProfileContent({ embedded = false }: ProfileContentProps
               )}
               <textarea
                 ref={textareaRef}
-                autoFocus={!pendingMove}
+                /* 「空态就是编辑态」那条只在鼠标下成立：键盘不占地方，光标落进
+                   输入框是省一次点击。手指下同一个动作代价完全不同——进「个人」
+                   页就弹起键盘、页面自己滚到底部，读者连页面长什么样都没看见。
+                   所以只压掉自动打开这一条路径；读者自己点「编辑」照样聚焦。 */
+                autoFocus={!pendingMove && !(coarsePointer && autoOpened)}
                 value={draftText}
                 onChange={(event) => setDraftText(event.target.value)}
                 placeholder={t("profile.yourText.placeholder")}

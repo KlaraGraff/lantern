@@ -7,11 +7,17 @@ import "./i18n";
 import { installReaderDiagnostics } from "./utils/readerDiagnostics";
 import { installBuiltinFontFaces, installCjkFontFaces } from "./components/builtin-fonts";
 import { applyAppZoom, readAppZoom } from "./services/app-zoom-window";
+import { installFocusZoomGuard } from "./services/focus-zoom-guard";
 
 // Install global fault sinks before anything else runs. On macOS 12 / Safari
 // 15.1 a missing runtime API can throw at module top-level or inside the PDF
 // Worker, where no local try/catch sees it; this routes those to the app log.
 installReaderDiagnostics();
+
+// Before React mounts, so the first focusable thing the app renders is already
+// covered — an autofocused field in a panel that opens on load would otherwise
+// zoom the page before any listener existed. Inert off a coarse pointer.
+installFocusZoomGuard();
 
 // Polyfill Map.getOrInsertComputed for PDF.js v5.5+ (Stage 3 proposal, not yet in WebKit)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
