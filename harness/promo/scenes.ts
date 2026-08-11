@@ -420,24 +420,6 @@ async function generateRealPreview(): Promise<void> {
 }
 
 /* ------------------------------------------------------------------ *
- * 设置 · MCP
- * ------------------------------------------------------------------ */
-
-/**
- * 打开某个客户端的集成开关（Toggle 的 `aria-label` 就是它左边那行标题）。
- *
- * 真机上这一下会去改 `~/.claude.json`；样张里改的是 harness 那份状态，但界面
- * 走的是同一条路 —— 点开关 → `mcp_set_integration` → 回头再问一次状态。写权限
- * 那个开关一下都不碰：默认关着，图上也该是关着的。
- */
-async function enableMcpClient(label: string): Promise<void> {
-  const toggle = await waitFor(`「${label}」开关`, () => byLabel(label));
-  toggle.click();
-  await waitFor("开关变成开", () => toggle.getAttribute("aria-checked") === "true" ? true : null);
-  await settle();
-}
-
-/* ------------------------------------------------------------------ *
  * 生词本
  * ------------------------------------------------------------------ */
 
@@ -612,21 +594,6 @@ const ACTIONS: Record<string, () => Promise<void>> = {
     await expandCardModule(PROMO_CUSTOM_MODULE_NAME);
     await generateRealPreview();
     await scrollSettingsTo(text("settings.tools.modulesTitle"));
-  },
-
-  /**
-   * MCP：把书库交给外部 AI 客户端。
-   *
-   * 图上要立住的是两件事：接进来只要一个开关；而「读」和「写」是两个开关，写的
-   * 那个默认关着 —— 所以这里只点 Claude Code 那一个，写权限保持原样。
-   *
-   * 这一节比模态框高一点点，装不下。滚掉顶上那个「MCP」大标题（左栏正高亮着
-   * MCP，标题不承载信息），换来下面那段配置 JSON 完整入画。
-   */
-  async mcp() {
-    await openSettingsSection(text("settings.mcp.title"));
-    await enableMcpClient(text("settings.mcp.claudeCode"));
-    await scrollSettingsTo(text("settings.mcp.claudeCode"));
   },
 
   async profile() {

@@ -86,15 +86,6 @@ export const SCENES: Record<string, Scene> = {
   coverage: { settings: ZH, route: "/book/pride-and-prejudice" },
   /** 8 学习卡片的模块：内置的能排能关，不够用就自己写一个。 */
   cards: { settings: { ...ZH, learning_card_config: PROMO_CARD_CONFIG_CUSTOM } },
-  /**
-   * 9 MCP：把书库交给外部 AI 客户端。
-   *
-   * 开关不在设置表里 —— 真机上它读的是客户端自己的配置文件（`~/.claude.json`、
-   * `~/.codex/config.toml`）和 `mcp_write_enabled`，所以这里没有可覆盖的键，
-   * 状态由场景真的去点那个开关得到。
-   */
-  mcp: { settings: ZH },
-
   /** 书库全景。不进 README，用来单独检查书架长什么样。 */
   library: { settings: ZH },
 };

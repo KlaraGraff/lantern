@@ -62,7 +62,6 @@ const SHOTS = [
   // 预览面板要到 xl（1280）才停在模态框旁边，窄一点它就翻上来盖住设置本身。
   // 这一页的意思正是「左边改、右边看」，所以窗口必须过那条线。
   { name: "modules", scene: "cards", size: [1360, 940] },
-  { name: "mcp", scene: "mcp", size: [1180, 900] },
 ];
 
 /** 不进 README，手动检查用。`node scripts/shoot-readme.mjs library` 拍得到。 */

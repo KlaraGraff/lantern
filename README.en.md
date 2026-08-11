@@ -171,8 +171,6 @@ Lantern ships an **MCP server**. Turn it on and Claude Code or Codex can read yo
 
 So you can ask, from a terminal: "given my English level, pick three books from my library I could actually finish." It reads your real reading record.
 
-![Hand your library to Claude Code](assets/screenshots/mcp.png)
-
 ---
 
 ## 6 · Everything is adjustable, and the defaults already thought it through

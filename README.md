@@ -171,8 +171,6 @@ Lantern 内置一个 **MCP 服务器**。打开它，Claude Code、Codex 就能�
 
 于是你可以在终端里问：「按我的英语水平，从我书库里挑三本能读下去的」。它读的是你真实的阅读记录。
 
-![把书库交给 Claude Code](assets/screenshots/mcp.png)
-
 ---
 
 ## 六 · 每一处都能改，而默认值已经替你想过
