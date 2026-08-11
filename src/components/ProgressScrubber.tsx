@@ -21,11 +21,15 @@ const KEYBOARD_PAGE_STEP = 0.1;
 
 /**
  * Interactive scrubber (P1.6) replacing the old static 1px progress line for
- * paginated EPUBs. Thickens on hover/focus/drag, shows chapter tick marks
- * derived from TOC data, and a tooltip with the chapter name + percentage
- * under the cursor. Dragging only moves a local indicator — navigation
- * happens once, in `onCommit`, on pointer release (or immediately for a
- * discrete keyboard step, since there is nothing to preview there).
+ * paginated EPUBs. Thickens on hover/focus/drag (always-on under `touch:`,
+ * since a finger has no hover state), shows chapter tick marks derived from
+ * TOC data, and a tooltip with the chapter name + percentage under the
+ * cursor (pushed further above the track under `touch:` so a finger doesn't
+ * cover it). Dragging only moves a local indicator — navigation happens
+ * once, in `onCommit`, on pointer release (or immediately for a discrete
+ * keyboard step, since there is nothing to preview there). The hit area
+ * grows under `touch:` via transparent padding on the outer element, not by
+ * thickening the visible track — see `touch:py-5` below.
  */
 export default function ProgressScrubber({
   progress,
@@ -134,13 +138,13 @@ export default function ProgressScrubber({
       onPointerCancel={handlePointerCancel}
       onPointerLeave={handlePointerLeave}
       onKeyDown={handleKeyDown}
-      className={`group relative w-full cursor-pointer touch-none py-1.5 ${
+      className={`group relative w-full cursor-pointer touch-none py-1.5 touch:py-5 ${
         isDragging ? "" : ""
       }`}
     >
       <div
         className={`relative w-full rounded-full transition-[height] duration-150 motion-reduce:transition-none ${
-          isDragging ? "h-1.5" : "h-px group-hover:h-1.5 group-focus-visible:h-1.5"
+          isDragging ? "h-1.5" : "h-px touch:h-1.5 group-hover:h-1.5 group-focus-visible:h-1.5"
         } ${isStandaloneWindow ? "opacity-10" : "bg-border"}`}
         style={isStandaloneWindow ? { backgroundColor: "currentColor" } : undefined}
       >
@@ -165,7 +169,7 @@ export default function ProgressScrubber({
         ))}
         <div
           aria-hidden="true"
-          className={`absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-0 transition-opacity duration-150 motion-reduce:transition-none group-hover:opacity-100 group-focus-visible:opacity-100 ${
+          className={`absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-0 transition-opacity duration-150 motion-reduce:transition-none touch:opacity-100 group-hover:opacity-100 group-focus-visible:opacity-100 ${
             isDragging ? "opacity-100" : ""
           }`}
           style={{
@@ -177,7 +181,7 @@ export default function ProgressScrubber({
       {showTooltip && (
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute bottom-full mb-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-[#18181B]/90 px-2.5 py-1.5 text-center text-[12px] leading-4 text-white shadow-popover"
+          className="pointer-events-none absolute bottom-full mb-2 touch:mb-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-[#18181B]/90 px-2.5 py-1.5 text-center text-[12px] leading-4 text-white shadow-popover"
           style={{ left: `${clampPercent((previewFraction ?? 0) * 100)}%` }}
         >
           {previewChapter
