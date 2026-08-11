@@ -99,6 +99,8 @@ At least two independent GPT-5.6-series evaluators should run before freezing th
 ## Backend control bridge in progress
 
 `src-tauri/src/mcp/control.rs` was a backend foundation for MCP control of live app and reader windows. It was **not feature complete**, and it was discarded: the shipped `open_in_reader` reuses the existing `.mcp-notify` sentinel in 52 lines instead. The 1,059-line original survives on branch `codex/mcp-control-bridge-wip` at commit `d611c9b`.
+(Updated 2026-08-11: issue #14 ruled the control-surface direction abandoned. The branch is
+deleted; the same commit is archived under the tag `archive/mcp-control-bridge-wip`.)
 
 > **Corrected 2026-08-08.** This paragraph used to point at `3e99e3c`, whose
 > subject line is "preserve discarded control bridge" — but that commit does

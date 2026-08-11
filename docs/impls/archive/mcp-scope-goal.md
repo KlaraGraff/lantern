@@ -139,6 +139,7 @@ README 同一节还给了一条硬边界：
 1. `git fetch origin && git status`，检查是否有其他 agent 的在途改动。
 2. 把 7 个 rustfmt 噪音文件恢复到 `HEAD`。
 3. `control.rs` 不合入本轮。先把含它的当前工作树状态提交到废弃分支 `codex/mcp-control-bridge-wip` 保底，再从 `mcp/mod.rs`、`state.rs` 移除引用并删除该文件。
+   （2026-08-11 补记：issue #14 裁决放弃控制面方向，该分支已删除，同一提交归档在 tag `archive/mcp-control-bridge-wip`。）
 4. 把 `docs/impls/mcp-full-surface-handoff.md`、`mcp-full-surface-takeover-prompt.md` 移到 `docs/impls/archive/`——它们已被本文件取代。
 
 ### 阶段 1 · 冻结目录文档
